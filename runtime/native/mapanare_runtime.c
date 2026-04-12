@@ -683,12 +683,17 @@ MAPANARE_EXPORT double mapanare_agent_avg_latency_us(mapanare_agent_t *agent) {
 
 MAPANARE_EXPORT void mapanare_agent_destroy(mapanare_agent_t *agent) {
     if (!agent) return;
-    /* Drain inbox/outbox — discard remaining messages.
-     * Messages are void* and may not be heap-allocated,
-     * so we cannot free them here. Callers own message lifetime. */
+    /* v4.33.0 Phase 4.3 (Viper M5, 2nd cycle): drain inbox/outbox and
+     * free remaining messages IF a destructor was provided. If
+     * message_dtor is NULL, messages are discarded without freeing
+     * (backwards-compatible — caller owns lifetime). */
     void *msg = NULL;
-    while (mapanare_ring_pop(&agent->inbox, &msg) == 0) { (void)msg; }
-    while (mapanare_ring_pop(&agent->outbox, &msg) == 0) { (void)msg; }
+    while (mapanare_ring_pop(&agent->inbox, &msg) == 0) {
+        if (agent->message_dtor && msg) agent->message_dtor(msg);
+    }
+    while (mapanare_ring_pop(&agent->outbox, &msg) == 0) {
+        if (agent->message_dtor && msg) agent->message_dtor(msg);
+    }
     mapanare_ring_destroy(&agent->inbox);
     mapanare_ring_destroy(&agent->outbox);
     /* v4.28.0: destroy the MPSC producer lock added in agent_init. */

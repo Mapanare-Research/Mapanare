@@ -2140,7 +2140,24 @@ MN_EXPORT void __mn_signal_on_change(MnSignal *signal, MnSignalCallback cb, void
 
 /* --- Propagation (topological, depth-first) --- */
 
+/* v4.33.0 Phase 4.1 (Viper, 8th cycle): depth limit for the recursive
+ * propagation DFS. A pathological computed-signal chain overflows the
+ * stack without a bound. 1024 is generous — real-world reactive graphs
+ * are typically < 20 deep. */
+#define MN_SIGNAL_PROPAGATE_MAX_DEPTH 1024
+static _Thread_local int64_t mn_signal_propagate_depth = 0;
+
 static void mn_signal_propagate(MnSignal *signal) {
+    if (mn_signal_propagate_depth >= MN_SIGNAL_PROPAGATE_MAX_DEPTH) {
+        fprintf(stderr,
+                "mapanare: signal propagation depth %ld exceeds max %d "
+                "— likely a cycle in the computed-signal graph\n",
+                (long)mn_signal_propagate_depth,
+                MN_SIGNAL_PROPAGATE_MAX_DEPTH);
+        abort();
+    }
+    mn_signal_propagate_depth++;
+
     /* Snapshot subscriber list under the lock so realloc in subscribe
      * cannot invalidate our iteration pointer. */
     mn_signal_lock();
@@ -2174,6 +2191,8 @@ static void mn_signal_propagate(MnSignal *signal) {
     for (int64_t i = 0; i < signal->cb_len; i++) {
         signal->callbacks[i].fn(signal->value, signal->callbacks[i].user_data);
     }
+
+    mn_signal_propagate_depth--;
 }
 
 /* --- Batching --- */

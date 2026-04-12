@@ -227,6 +227,15 @@ typedef struct mapanare_agent {
     /* Internal */
     mapanare_thread_t        thread;
     mapanare_atomic_i32      running;           /* internal run flag */
+
+    /* v4.33.0 Phase 4.3 (Viper M5, 2nd cycle): optional destructor for
+     * in-flight messages. If non-NULL, mapanare_agent_destroy calls
+     * message_dtor(msg) for every message still in the inbox/outbox
+     * before discarding it. Set by the compiler's agent wrapper at
+     * spawn time when the message type is heap-allocated. NULL means
+     * "caller owns lifetime" (backwards-compatible with all existing
+     * agents). */
+    void (*message_dtor)(void *msg);
 } mapanare_agent_t;
 
 /** Initialise an agent.  Does NOT start it — call mapanare_agent_spawn(). */

@@ -203,7 +203,20 @@ def build() -> pathlib.Path:
         + asan_flags,
         check=True,
     )
-    print(f"  Binary: {binary} ({binary.stat().st_size} bytes)")
+    unstripped_size = binary.stat().st_size
+    print(f"  Binary: {binary} ({unstripped_size} bytes)")
+
+    # v4.33.0 Phase 4.2 (Mamba): strip the binary to reduce size.
+    # Default on; set STRIP=0 to keep debug symbols for development.
+    if os.environ.get("STRIP", "1") != "0":
+        import shutil
+
+        strip_bin = shutil.which("strip")
+        if strip_bin:
+            subprocess.run([strip_bin, str(binary)], check=True, capture_output=True)
+            stripped_size = binary.stat().st_size
+            pct = 100.0 * (1.0 - stripped_size / unstripped_size) if unstripped_size else 0
+            print(f"  Stripped: {stripped_size} bytes ({pct:.0f}% reduction)")
 
     # Cleanup intermediate .o files
     for f in [main_o, obj_path, *runtime_objects]:
