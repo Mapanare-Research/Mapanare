@@ -6,6 +6,7 @@
  */
 
 #include "mapanare_db.h"
+#include "mapanare_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,15 +52,7 @@
  * from constant strings. We must untag before reading.
  * ======================================================================= */
 
-/** Extract a null-terminated C string from MnString. Caller must free. */
-static char *mnstr_to_cstr(MnString s) {
-    const char *data = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
-    char *cstr = (char *)malloc((size_t)s.len + 1);
-    if (!cstr) return NULL;
-    if (s.len > 0) memcpy(cstr, data, (size_t)s.len);
-    cstr[s.len] = '\0';
-    return cstr;
-}
+/* v4.32.0 Phase 2.3: mnstr_to_cstr is now in mapanare_internal.h */
 
 /* =======================================================================
  * Handle table infrastructure
@@ -68,12 +61,10 @@ static char *mnstr_to_cstr(MnString s) {
  * Handle = array index + 1 (so 0 means "invalid/error").
  * ======================================================================= */
 
-#define MN_MAX_HANDLES 256
-
-/* Generic handle table */
-typedef struct {
-    void *ptrs[MN_MAX_HANDLES];
-} MnHandleTable;
+/* v4.32.0: MnHandleTable and MN_MAX_HANDLES are now in
+ * mapanare_internal.h. The local handle_alloc/get/free functions
+ * below use 1-based handles (return index+1, access h-1) and are NOT
+ * equivalent to the header's mn_handle_alloc/get/free (0-based). */
 
 static int64_t handle_alloc(MnHandleTable *t, void *ptr) {
     for (int i = 0; i < MN_MAX_HANDLES; i++) {

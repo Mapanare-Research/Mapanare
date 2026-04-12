@@ -868,18 +868,14 @@ MN_IO_EXPORT void __mn_event_loop_free(MnEventLoop *loop) {
  * TCP/TLS API. Uses mn_untag() from mapanare_core.h for pointer safety.
  * ======================================================================= */
 
-#include "mapanare_core.h"
-
-/* Utility: extract a null-terminated C string from MnString.
- * Caller must free the result. */
-static char *mnstr_to_cstr(MnString s) {
-    const char *data = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
-    char *cstr = (char *)malloc((size_t)s.len + 1);
-    if (!cstr) return NULL;
-    memcpy(cstr, data, (size_t)s.len);
-    cstr[s.len] = '\0';
-    return cstr;
-}
+/* v4.32.0 Phase 2.3 (Mamba H3, 6th cycle): the local mnstr_to_cstr
+ * that lived here since v1.2.0 had no ``len < 0`` guard — if
+ * ``__mn_file_read_or_empty`` returned its ``-1`` sentinel, the
+ * ``memcpy`` at the old line 879 would wrap ``(size_t)-1`` and crash.
+ * Replaced by the canonical ``static inline`` definition in
+ * ``mapanare_internal.h`` which guards ``len < 0``, ``data == NULL``,
+ * and ``len == 0``. */
+#include "mapanare_internal.h"
 
 MN_IO_EXPORT int64_t __mn_tcp_connect_str(MnString host, int64_t port) {
     char *chost = mnstr_to_cstr(host);
