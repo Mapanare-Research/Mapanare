@@ -791,6 +791,218 @@ This recipe demonstrates:
 
 ---
 
+## Building an AI Agent in Mapanare
+
+This chapter walks through building a complete AI application using Mapanare's stdlib AI modules. By the end, you'll have a retrieval-augmented generation (RAG) agent that answers questions from a document corpus.
+
+### Prerequisites
+
+Install Ollama and pull two models:
+
+```bash
+ollama serve
+ollama pull llama3.2           # Chat model
+ollama pull nomic-embed-text   # Embedding model
+```
+
+No API keys required. Everything runs locally.
+
+### Step 1: Talk to an LLM
+
+The simplest AI program in Mapanare is a single chat call:
+
+<!-- pseudo -->
+```mn
+import ai::llm
+
+fn main() {
+    let config = ollama("llama3.2")
+    let result = chat(config, [
+        system_msg("Be concise."),
+        user_msg("What is 2+2?")
+    ])
+    match result {
+        Ok(r) => print(r.content),
+        Err(e) => print(error_message(e))
+    }
+}
+```
+
+The `chat()` function works with OpenAI, Anthropic, Groq, and Ollama. Switch backends by changing the config constructor:
+
+<!-- pseudo -->
+```mn
+let openai_config = openai("sk-...", "gpt-4o")
+let claude_config = anthropic("sk-ant-...", "claude-sonnet-4-20250514")
+let local_config = ollama("llama3.2")
+```
+
+### Step 2: Structured Extraction
+
+Use `__struct_meta::<T>()` to extract typed data from unstructured text:
+
+<!-- pseudo -->
+```mn
+import ai::llm
+
+struct Address {
+    street: String,
+    city: String,
+    state: String,
+    zip: String,
+}
+
+fn main() {
+    let config = ollama("llama3.2")
+    let schema = __struct_meta::<Address>()
+    let result = extract_text(config, schema, "123 Main St, Springfield, IL 62701")
+    match result {
+        Ok(json) => print(json),
+        Err(e) => print(extract_error_message(e))
+    }
+}
+```
+
+The `__struct_meta::<T>()` builtin generates a JSON schema at compile time from the struct definition. The LLM is prompted to return JSON matching that schema. If the response is malformed, `extract_with_schema()` retries automatically (up to 2 times by default).
+
+### Step 3: Embed and Search
+
+Vector embeddings turn text into numbers that capture meaning. Similar texts have similar vectors.
+
+<!-- pseudo -->
+```mn
+import ai::embedding
+
+fn main() {
+    let config = ollama_embed("nomic-embed-text")
+
+    let r1 = embed(config, "Mapanare compiles to LLVM IR")
+    let r2 = embed(config, "Rust also uses LLVM")
+    let r3 = embed(config, "cats are fluffy")
+
+    // cosine_similarity: 1.0 = identical, 0.0 = unrelated
+    // r1 vs r2: high similarity (both about LLVM)
+    // r1 vs r3: low similarity (programming vs cats)
+}
+```
+
+The `VectorStore` provides in-memory top-k similarity search:
+
+<!-- pseudo -->
+```mn
+import ai::embedding
+
+fn main() {
+    let config = ollama_embed("nomic-embed-text")
+    let store = new_store()
+
+    // Add documents
+    let e1 = embed(config, "agents are concurrent")
+    store_add(store, "doc1", "agents are concurrent", e1.vector)
+
+    // Search
+    let q = embed(config, "how does concurrency work?")
+    let results = store_search(store, q.vector, 3)
+    // results[0] is the most similar document
+}
+```
+
+### Step 4: Chunk Documents for RAG
+
+Real documents are too long to embed as a single vector. Split them into passages first:
+
+<!-- pseudo -->
+```mn
+import ai::rag
+
+fn main() {
+    let text = "Long document text. Multiple sentences. Each one matters."
+    let chunks = chunk_by_sentences(text, 200)
+    // Each chunk is ~200 characters, split on sentence boundaries
+    // Also available: chunk_text (fixed-size), chunk_by_paragraphs
+}
+```
+
+### Step 5: The Full RAG Pipeline
+
+Combine everything: chunk documents, embed chunks, build an index, query with context, ask the LLM:
+
+<!-- pseudo -->
+```mn
+import ai::llm
+import ai::embedding
+import ai::rag
+
+fn main() {
+    let embed_config = ollama_embed("nomic-embed-text")
+    let llm_config = ollama("llama3.2")
+
+    // 1. Chunk and embed documents
+    let docs = ["Agents are concurrent...", "Signals are reactive..."]
+    let store = new_store()
+    // ... embed each doc, store_add to index ...
+
+    // 2. At query time: embed query, search, augment, ask
+    let query = "How do agents work?"
+    let q_emb = embed(embed_config, query)
+    let results = store_search(store, q_emb.vector, 3)
+
+    // 3. Build context from top results
+    let context = build_context_simple(["chunk1 text", "chunk2 text"])
+    let augmented = augment_prompt(query, context)
+
+    // 4. Ask LLM with context
+    let answer = chat(llm_config, [
+        system_msg("Answer based on the provided context."),
+        user_msg(augmented)
+    ])
+}
+```
+
+See `examples/ai/rag_agent.mn` for the complete, runnable version.
+
+### Step 6: Wrap It in an Agent
+
+Mapanare agents make it natural to build concurrent AI services:
+
+<!-- pseudo -->
+```mn
+agent QABot {
+    input question: String
+    output answer: String
+
+    fn handle(question: String) -> String {
+        // RAG pipeline here: embed, search, augment, chat
+        return "answer from LLM"
+    }
+}
+
+fn main() {
+    let bot = spawn QABot()
+    bot.question <- "What are signals?"
+    let response = sync bot.answer
+    print(response)
+    sync bot.stop()
+}
+```
+
+The agent handles concurrency, message queuing, and lifecycle automatically. You can spawn multiple agents for parallel multi-model queries, consensus voting, or pipeline architectures.
+
+### Summary
+
+The AI stdlib (`stdlib/ai/`) provides four modules:
+
+| Module | Purpose |
+|--------|---------|
+| `llm.mn` | Chat, streaming, structured extraction, retry, fallback, consensus |
+| `embedding.mn` | Vector embeddings, similarity search, vector store |
+| `rag.mn` | Chunking, context building, prompt augmentation |
+| `structured.mn` | Documentation for `__struct_meta::<T>()` and `extract_with_schema()` |
+
+Combined with first-class agents, signals, and streams, Mapanare makes AI applications feel like regular code instead of framework glue.
+
+---
+
 ## Tips and Patterns
 
 ### Prefer `Result` over Panics

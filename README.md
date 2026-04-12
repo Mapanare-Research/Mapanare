@@ -68,7 +68,25 @@ That same idea drives the rest of the language. Mapanare makes these primitives 
 - **Signals** replace callback hell with automatic dependency tracking
 - **Streams** compose with `|>` the way you think about data, with operator fusion built in
 - **Tensors** get compile-time shape validation in the experimental LLVM backend
+- **AI stdlib** — unified LLM chat (OpenAI/Anthropic/Ollama), structured extraction via compile-time JSON schema, vector embeddings, RAG chunking and retrieval
 - **No OOP** — structs, enums, and pattern matching instead of class hierarchies
+
+### Hello AI
+
+```mn
+import ai::llm
+
+fn main() {
+    let config = ollama("llama3.2")
+    let result = ask(config, "What is Mapanare?")
+    match result {
+        Ok(answer) => print(answer),
+        Err(e) => print(error_message(e))
+    }
+}
+```
+
+No API key. Runs locally via Ollama. See the [AI cookbook chapter](docs/cookbook.md#building-an-ai-agent-in-mapanare) for structured extraction, embeddings, RAG, and agent patterns.
 
 Read the full [manifesto](docs/manifesto.md).
 
