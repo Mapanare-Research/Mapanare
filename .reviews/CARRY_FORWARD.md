@@ -104,12 +104,21 @@ items that were explicitly deferred out of the recovery arc.
 | A3 | Deprecated Python emitter removal (`PythonMIREmitter`) | v4.2.0 | LOW | **5** | DEFERRED | v5.0.0 |
 | A4 | llvmlite JIT emitter removal | v4.2.0 | LOW | **5** | DEFERRED | v5.0.0 |
 | A5 | Culebra `list-element-size-undercount` template tightens | v4.30.0 | LOW | 1 | OPEN | Culebra project, not Mapanare |
-| A6 | Residual 69-line match-lowering shape diff between stage2 and stage3 | v4.28.0 | LOW | **3** | OPEN | v5.x rewrite of match lowering |
+| A6 | Residual 69-line match-lowering shape diff between stage2 and stage3 | v4.28.0 | LOW | **3** | **CLOSED** | v4.34.0 — Maranget decision-tree rewrite in both pipelines; `mapanare/pattern_matching.py` shared helper |
 | A7 | Self-hosted semantic analysis never wired into `compile()` | v4.26.0 | LOW | **3** | OPEN | v5.0.0 self-hosted maturity sprint |
 | A8 | Split `UNKNOWN` into `UNRESOLVED` + `ERROR` in semantic.py | v4.26.0 | LOW | **3** | OPEN | v5.0.0 |
 | A9 | `emit_c.mn` (770 lines) references non-existent MIR types | v4.2.0 | LOW | **5** | OPEN | v5.0.0 — delete or rewrite |
 | 49 | Drop-glue skip-struct-ret early return at `emit_llvm_text.py:1097-1099` (8th cycle, Viper Issue #14 at v4.26.0, not previously in ledger) | v4.18.0 era | LOW | **8** | OPEN | v4.32.0 Phase 2.2 (opportunistic) or v4.33.0+. The early return short-circuits `_extract_ret_ptrs` before the per-type drop-glue helpers can consult `ret_ptr_fields`. Phase 2.2 is a pure-refactor extraction that may naturally eliminate this branch; if it does, mark CLOSED at PR-merge. If it doesn't, carries to v4.33.0. Viper V1. |
 | 50 | Agent `mapanare_agent_destroy` drops in-flight messages without freeing them (`runtime/native/mapanare_runtime.c:686-691`, 2nd cycle, Viper M5 at v4.26.0, not previously in ledger) | v4.26.0 | LOW | **2** | OPEN | v4.33.0+. The destroy path walks the inbox ring to count pending messages but does not free their payloads. 20-line runtime change: iterate the ring, call `__mn_free` on each payload before releasing the agent handle. Viper M5. |
+
+## Items resolved in v4.34.0
+
+| # | Item | First reported | Severity | Resolved in | Evidence |
+|---|------|----------------|----------|-------------|----------|
+| A6 | 69-line match-lowering stage2/stage3 diff | v4.28.0 | LOW | v4.34.0 | Maranget decision-tree rewrite in `mapanare/pattern_matching.py`, `mapanare/lower.py`, `mapanare/semantic.py` |
+| L1 | `MN_PROFILE_FREE` never called in `__mn_free` (6th cycle) | Viper | LOW | v4.34.0 | `__mn_free_sized(ptr, size)` at `runtime/native/mapanare_core.c` |
+| L2 | `__mn_read_line` 4KB stack truncation (6th cycle) | Viper | LOW | v4.34.0 | `getline(3)` on POSIX at `runtime/native/mapanare_core.c` |
+| L3 | Arena allocator thread safety | Viper | LOW | v4.34.0 | Spinlock via `__sync_lock_test_and_set` in `mn_arena_alloc` |
 
 ## Items resolved in pre-v4.27.0 releases
 

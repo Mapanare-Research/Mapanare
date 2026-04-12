@@ -8,7 +8,7 @@
 > checking from "warning or missing" to "compile-time error with
 > rustc-quality diagnostic."
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No (same surface syntax; improved IR shape and error messages)
 **Prerequisite:** v4.33.0 (the `?` operator release — `?` desugars to match, so v4.34.0's match rewrite automatically improves `?` IR quality)
 **Delta review:** No (zero new syntax — decision-tree rewrite is invisible to users except via better error messages)

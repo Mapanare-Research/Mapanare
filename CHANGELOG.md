@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.34.0] - 2026-04-12
+
+**Match Decision-Tree Rewrite + Exhaustiveness — A6 closed.**
+Zero new syntax. Pure correctness release. Closes `CARRY_FORWARD.md` A6
+(69-line stage2/stage3 fixed-point diff open since v4.28.0).
+
+### Changed — Pattern matching rewrite (Maranget 2008)
+
+- **Decision-tree match lowering**: `mapanare/lower.py::_lower_match`
+  replaced wholesale with Maranget's decision-tree compilation algorithm.
+  Flat switch optimization preserves current IR shape for simple matches;
+  nested switches handle multi-level patterns like `Some(Ok(v))`.
+  Shared helper at `mapanare/pattern_matching.py`.
+
+- **Exhaustiveness checking upgrade**: `mapanare/semantic.py`
+  `_check_match_exhaustiveness` replaced with decision-tree based
+  detection. Non-exhaustive matches are now compile errors (not warnings)
+  with rustc-quality witness patterns (e.g., `pattern 'None' is not
+  covered`). Unreachable arms produce warnings.
+
+- **Exhaustiveness test suite**: `tests/semantic/test_match_exhaustive.py`
+  — 11 cases covering Option, Result, user enums, wildcards, literals,
+  witness quality, and message format.
+
+- **New golden test**: `tests/golden/48_match_nested_exhaustive.mn` —
+  Result<T, E> Ok/Err destructuring with nested patterns. Reference:
+  `tests/golden/48_match_nested_exhaustive.ref.ll`.
+
+- **Design document**: `docs/roadmap/v4/v4.34.0/DESIGN.md` — algorithm
+  reference, pattern matrix representation, decision-tree nodes, emission
+  rules, byte-identity invariant (6 rules), error diagnostics, worked
+  examples. Reviewed by Cobra (data structures) and Rattler (emission).
+
+### Fixed — LOW sweep (3 items)
+
+- **`MN_PROFILE_FREE` wired** (6th cycle, Viper).
+  `runtime/native/mapanare_core.c`: new `__mn_free_sized(ptr, size)`
+  calls `MN_PROFILE_FREE` before `free`. `mn_alloc_live` now tracks
+  currently-live bytes when `MN_PROFILE_MEM` is enabled.
+
+- **`__mn_read_line` 4KB truncation** (6th cycle, Viper).
+  `runtime/native/mapanare_core.c`: use `getline(3)` on POSIX for
+  arbitrarily long lines. Windows fallback loops `fgets` into a
+  growing buffer. No more silent truncation at 4095 bytes.
+
+- **Arena allocator thread safety** (Viper).
+  `runtime/native/mapanare_core.c`: spinlock via
+  `__sync_lock_test_and_set` in `mn_arena_alloc`. All `head`/`used`
+  updates serialized. Lock field added to `MnArena` struct in
+  `runtime/native/mapanare_core.h`.
+
 ## [4.33.0] - 2026-04-11
 
 **The `?` Operator — first new language feature in 7 releases.**
