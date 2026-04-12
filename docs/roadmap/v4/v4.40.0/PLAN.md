@@ -4,7 +4,7 @@
 > with diagnostics pushed to the client without the user running a
 > command. VS Code extension packaged and marketplace-ready.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.39.0
 **Delta review:** No

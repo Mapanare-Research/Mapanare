@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.40.0] - 2026-04-12
+
+**LSP Diagnostic Streaming + VS Code Polish — last Arc 2 feature release.**
+Diagnostics appear in the editor without running a command. VS Code
+extension scaffold + marketplace listing ready.
+
+### Added
+
+- `mapanare/lsp/diagnostics.py` — new module: `semantic_error_to_diagnostic()`
+  with 1-based to 0-based conversion, `relatedInformation` for suggestions,
+  `run_semantic_check()` for integrated parse + semantic diagnostics.
+- Debounced diagnostic streaming: `didChange` triggers semantic re-check after
+  300ms idle; `didSave` triggers immediately. Stale diagnostics cleared on fix.
+- `editor/vscode/package.json` — VS Code extension manifest v0.6.0 with all
+  Arc 2 LSP capabilities declared.
+- `editor/vscode/PUBLISH.md` — marketplace publish steps (ready, not pushed).
+- `tests/lsp/MANUAL_SMOKE_TEST.md` — 14-item checklist for pre-release.
+- `tests/lsp/test_diagnostics_stream.py` — 10 tests (conversion, severity,
+  suggestions, parse errors, clean files).
+
 ## [4.39.0] - 2026-04-12
 
 **LSP Completion — context-aware completions in four contexts.**

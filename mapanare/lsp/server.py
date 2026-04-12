@@ -16,6 +16,7 @@ from mapanare.lsp.analysis import (
     analyze_document,
     invalidate_document,
 )
+from mapanare.lsp.diagnostics import run_semantic_check
 from mapanare.lsp.workspace import WorkspaceIndex
 
 logger = logging.getLogger("mapanare-lsp")
@@ -30,6 +31,9 @@ _sources: dict[str, str] = {}
 _fixable_diagnostics: dict[str, list[tuple[lsp.Diagnostic, object]]] = {}
 # v4.37.0: workspace-wide symbol index for cross-module go-to-def
 _workspace = WorkspaceIndex()
+# v4.40.0: debounce timers for diagnostic streaming
+_debounce_timers: dict[str, object] = {}  # uri -> timer handle
+_DEBOUNCE_MS = 300
 
 
 def _uri_to_path(uri: str) -> Optional[Path]:
@@ -45,6 +49,21 @@ def _rebuild_workspace_file(uri: str, source: str) -> None:
     path = _uri_to_path(uri)
     if path and path.suffix == ".mn":
         _workspace.rebuild_file(path, source=source)
+
+
+def _run_and_publish_semantic_diagnostics(uri: str, source: str) -> None:
+    """v4.40.0: run semantic check and publish diagnostics via LSP push."""
+    diagnostics = run_semantic_check(source, uri)
+    server.text_document_publish_diagnostics(
+        lsp.PublishDiagnosticsParams(uri=uri, diagnostics=diagnostics)
+    )
+
+
+def _debounced_recheck(uri: str) -> None:
+    """v4.40.0: debounced re-check — called after 300ms idle on didChange."""
+    source = _sources.get(uri, "")
+    if source:
+        _run_and_publish_semantic_diagnostics(uri, source)
 
 
 def _analyze_and_publish(uri: str, source: str) -> None:
@@ -157,7 +176,18 @@ def on_change(params: lsp.DidChangeTextDocumentParams) -> None:
     uri = params.text_document.uri
     if params.content_changes:
         source = params.content_changes[-1].text
+        _sources[uri] = source
         _analyze_and_publish(uri, source)
+        # v4.40.0: debounced semantic re-check
+        import threading
+
+        old_timer = _debounce_timers.pop(uri, None)
+        if old_timer is not None and hasattr(old_timer, "cancel"):
+            old_timer.cancel()
+        timer = threading.Timer(_DEBOUNCE_MS / 1000.0, _debounced_recheck, args=[uri])
+        timer.daemon = True
+        _debounce_timers[uri] = timer
+        timer.start()
 
 
 @server.feature(lsp.TEXT_DOCUMENT_DID_SAVE)
@@ -167,6 +197,8 @@ def on_save(params: lsp.DidSaveTextDocumentParams) -> None:
         _analyze_and_publish(uri, params.text)
         # v4.37.0: incrementally update workspace index on save
         _rebuild_workspace_file(uri, params.text)
+        # v4.40.0: immediate semantic re-check on save (no debounce)
+        _run_and_publish_semantic_diagnostics(uri, params.text)
 
 
 @server.feature(lsp.TEXT_DOCUMENT_DID_CLOSE)

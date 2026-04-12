@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.39.0** (shipped) — LSP completion: context-aware completions for imports, types, field/method, and fallback identifiers. Builtin method tables for Option/Result/List/String. 39 new LSP tests total.
-- **v4.40.0** (next) — Diagnostic streaming + VS Code extension polish. Last LSP feature before Arc 2 panel.
+- **v4.40.0** (shipped) — LSP diagnostic streaming + VS Code extension polish. Debounced semantic re-check on change, relatedInformation for suggestions. VS Code extension manifest ready. 49 new LSP tests total across Arc 2.
+- **v4.41.0** (next) — Arc 2 panel release. Zero new features. Full 7-reviewer panel.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
