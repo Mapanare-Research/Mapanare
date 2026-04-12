@@ -9843,6 +9843,11 @@ fn lower_send(st: LowerState, target: Expr, value: Expr) -> LowerResult {
 // Error propagation lowering
 // ---------------------------------------------------------------------------
 
+// v4.33.0: fixed block ordering bug — add_block sets current_block_idx,
+// so the Branch must be emitted BEFORE creating the ok/err blocks.
+// Otherwise the Branch ends up in the err block and the entry block
+// has no terminator (MIR verifier: "block does not end with a
+// terminator").
 fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult {
     let val_r: LowerResult = lower_expr(st, inner)
     let mut s: LowerState = val_r.state
@@ -9851,7 +9856,8 @@ fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult {
     let tag_r: LowerResult = make_value(s, mir_bool(), "tag")
     s = emit_instr(tag_r.state, Instruction::EnumTag(tag_r.value, val_r.value))
 
-    // Create blocks
+    // Create block labels (but do NOT add them yet — we need to emit
+    // the Branch into the CURRENT block first)
     let ok_label_r: LowerResult = fresh_block_label(s, "prop_ok")
     s = ok_label_r.state
     let ok_label: String = ok_label_r.value.name
@@ -9860,20 +9866,21 @@ fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult {
     s = err_label_r.state
     let err_label: String = err_label_r.value.name
 
-    s = add_block(s, ok_label)
-    let ok_idx: Int = s.current_block_idx
+    // Branch on tag — emitted into the CURRENT (entry) block
+    s = emit_instr(s, Instruction::Branch(tag_r.value, ok_label, err_label))
+
+    // Now create the target blocks (this switches current_block_idx)
     s = add_block(s, err_label)
     let err_idx: Int = s.current_block_idx
 
-    // Branch on tag
-    s = emit_instr(s, Instruction::Branch(tag_r.value, ok_label, err_label))
-
     // Error path: return the error
-    s = set_block(s, err_idx)
     s = emit_instr(s, Instruction::Return(Some(val_r.value)))
 
+    // Create ok block
+    s = add_block(s, ok_label)
+    let ok_idx: Int = s.current_block_idx
+
     // Ok path: unwrap
-    s = set_block(s, ok_idx)
     let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
     s = emit_instr(dest_r.state, Instruction::Unwrap(dest_r.value, val_r.value))
     return new_lower_result(dest_r.value, s)
