@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.41.0] - 2026-04-12
+
+**Arc 2 Panel Release — zero new features.**
+Second 5-minor cadence panel. Grades the LSP maturity arc (v4.37.0-v4.40.0).
+
+### Panel
+
+- Full 7-reviewer panel: `.reviews/v4.41.0/README.md`
+- Pre-panel audit: 17/17 SESSION_REPORT claims verified (100% pass rate)
+- Arc 2 delivers 9 LSP features across 4 releases with 49 new tests
+
 ## [4.40.0] - 2026-04-12
 
 **LSP Diagnostic Streaming + VS Code Polish — last Arc 2 feature release.**

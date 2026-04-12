@@ -8,17 +8,16 @@
 
 ## Version Configuration
 
-**TARGET VERSION:** `v4.36.0`
+**TARGET VERSION:** `v4.41.0`
 
-> **This is the Arc 1 cadence panel.** Mapanare v4.32.0–v4.36.0 is
-> Arc 1 (error handling + pattern matching), the first post-recovery
-> arc. v4.33.0 shipped the `?` operator, v4.34.0 the Maranget
-> decision-tree rewrite (closing A6), v4.35.0 match guards +
-> or-patterns. v4.36.0 is the 5-minor cadence panel: zero new
-> features, full 7-reviewer audit. If this panel returns aggregate
-> ≥9.0 with zero NEEDS WORK verdicts, Arc 1 closes and v4.37.0
-> opens Arc 2 (LSP maturity). If not, v4.37.0 becomes a recovery
-> release and Arc 2 slides.
+> **This is the Arc 2 cadence panel.** Mapanare v4.37.0–v4.41.0 is
+> Arc 2 (LSP maturity). v4.37.0 built the WorkspaceIndex + cross-module
+> go-to-def, v4.38.0 added find-references + rename, v4.39.0 added
+> context-aware completion, v4.40.0 added diagnostic streaming + VS Code
+> polish. v4.41.0 is the 5-minor cadence panel: zero new features, full
+> 7-reviewer audit. If this panel returns aggregate ≥9.0 with zero
+> NEEDS WORK verdicts, Arc 2 closes and v4.42.0 opens Arc 3 (tensor
+> completeness). If not, v4.42.0 becomes a recovery release.
 
 Set the review output directory based on this version:
 

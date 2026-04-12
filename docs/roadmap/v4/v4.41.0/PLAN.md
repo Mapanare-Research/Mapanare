@@ -4,7 +4,7 @@
 > Panel runs against a stable target with 4 releases of LSP work
 > to grade.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.40.0
 **Delta review:** No
