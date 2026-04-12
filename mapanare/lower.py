@@ -50,7 +50,6 @@ from mapanare.ast_nodes import (
     LambdaExpr,
     LetBinding,
     ListLiteral,
-    LiteralPattern,
     MapLiteral,
     MatchExpr,
     MethodCallExpr,
@@ -79,7 +78,6 @@ from mapanare.ast_nodes import (
     TypeExpr,
     UnaryExpr,
     WhileLoop,
-    WildcardPattern,
 )
 from mapanare.mir import (
     AgentSend,
@@ -299,6 +297,8 @@ class MIRLowerer:
         self._specialized_fns: set[str] = set()  # mangled names already lowered
         self._generic_struct_defs: dict[str, StructDef] = {}  # name → AST of generic struct
         self._generic_impl_defs: dict[str, ImplDef] = {}  # target → AST of generic impl
+        # Cycle guard for recursive types in _match_type_context
+        self._match_ctx_stack: set[str] = set()
 
     # -- Name generation ---------------------------------------------------
 
@@ -2852,104 +2852,68 @@ class MIRLowerer:
         self._emit(Const(dest=result, ty=ret_ty, value=None))
         return result
 
+    # -- Match lowering (decision-tree, Maranget 2008) -----------------------
+
     def _lower_match(self, expr: MatchExpr) -> Value:
-        """Lower match expression to Switch + basic blocks.
+        """Lower match expression using decision-tree compilation.
 
-        Structure:
-            %subject = <lower subject>
-            %tag = enum_tag %subject
-            switch %tag [variant1 => arm1_bb, ...] default default_bb
-        arm_bb:
-            %payload = enum_payload %subject::Variant
-            <bind pattern vars>
-            %arm_val = <lower arm body>
-            jump merge_bb
-        merge_bb:
-            %result = phi [arm1_bb: %val1, arm2_bb: %val2, ...]
+        Builds a Maranget decision tree, then emits MIR blocks:
+        - Flat tree (single-level switch): Switch targets action blocks directly
+        - Nested tree: intermediate switch blocks for inner pattern splits
+        See docs/roadmap/v4/v4.34.0/DESIGN.md.
         """
+        from mapanare.pattern_matching import (
+            DTFail,
+            DTLeaf,
+            DTSwitch,
+            PatternMatrix,
+            PatternRow,
+            build_decision_tree,
+        )
+
         subject = self._lower_expr(expr.subject)
+        ctx = self._match_type_context(subject.ty)
 
+        rows = [PatternRow(patterns=[arm.pattern], action_idx=i) for i, arm in enumerate(expr.arms)]
+        matrix = PatternMatrix(rows=rows, type_contexts=[ctx])
+        tree = build_decision_tree(matrix)
+
+        # Create merge block and action blocks (one per arm)
         merge_bb = self._new_block(self._fresh_block("match_merge"))
+        action_blocks: list[BasicBlock] = []
+        for _ in expr.arms:
+            action_blocks.append(self._new_block(self._fresh_block("match_arm")))
 
-        # Create blocks for each arm
-        arm_blocks: list[BasicBlock] = []
-        for _arm in expr.arms:
-            arm_bb = self._new_block(self._fresh_block("match_arm"))
-            arm_blocks.append(arm_bb)
+        # Emit switch structure from the decision tree
+        if isinstance(tree, DTLeaf):
+            self._emit(Jump(target=action_blocks[tree.action_idx].label))
+        elif isinstance(tree, DTFail):
+            self._emit(Jump(target=merge_bb.label))
+        elif isinstance(tree, DTSwitch) and self._is_flat_switch(tree):
+            self._emit_flat_switch(tree, subject, action_blocks, merge_bb)
+        elif isinstance(tree, DTSwitch):
+            self._emit_nested_switch(tree, [subject], action_blocks, merge_bb)
 
-        # Build switch cases
-        cases: list[tuple[Any, str]] = []
-        default_block = merge_bb.label
-
-        for i, arm in enumerate(expr.arms):
-            pat = arm.pattern
-            if isinstance(pat, ConstructorPattern):
-                cases.append((pat.name, arm_blocks[i].label))
-            elif isinstance(pat, LiteralPattern):
-                lit_val = self._get_literal_value(pat.value)
-                cases.append((lit_val, arm_blocks[i].label))
-            elif isinstance(pat, IdentPattern) and self._is_enum_variant(pat.name, subject.ty):
-                # Bare enum variant name used as pattern (e.g., `Add => ...`)
-                cases.append((pat.name, arm_blocks[i].label))
-            elif isinstance(pat, (WildcardPattern, IdentPattern)):
-                default_block = arm_blocks[i].label
-            else:
-                default_block = arm_blocks[i].label
-
-        # Emit switch or branch
-        if cases:
-            # Preserve the subject's type on the tag so the LLVM emitter can
-            # resolve variant names to the correct enum (avoids collisions when
-            # multiple enums share variant names like "Call" or "Return").
-            tag = self._make_value(ty=subject.ty, prefix="tag")
-            self._emit(EnumTag(dest=tag, enum_val=subject))
-            self._emit(Switch(tag=tag, cases=cases, default_block=default_block))
-        elif arm_blocks:
-            # No enum patterns — jump to first arm
-            self._emit(Jump(target=arm_blocks[0].label))
-
-        # Lower each arm
+        # Lower each arm body
         arm_results: list[tuple[str, Value]] = []
         for i, arm in enumerate(expr.arms):
-            self._set_block(arm_blocks[i])
+            self._set_block(action_blocks[i])
             self._push_scope()
-
-            # Bind pattern variables
-            pat = arm.pattern
-            if isinstance(pat, ConstructorPattern):
-                for j, arg_pat in enumerate(pat.args):
-                    if isinstance(arg_pat, IdentPattern):
-                        payload_ty = self._infer_payload_type(subject.ty, pat.name, j)
-                        payload = self._make_value(ty=payload_ty, prefix=arg_pat.name)
-                        self._emit(
-                            EnumPayload(
-                                dest=payload, enum_val=subject, variant=pat.name, payload_idx=j
-                            )
-                        )
-                        self._define_var(arg_pat.name, payload)
-            elif isinstance(pat, IdentPattern):
-                self._define_var(pat.name, subject)
-
-            # Lower arm body
+            self._bind_match_arm(arm.pattern, subject)
             if isinstance(arm.body, Block):
                 arm_val = self._lower_block(arm.body)
             else:
                 arm_val = self._lower_expr(arm.body)
-
             exit_bb = self._block
             if not self._block_terminated():
                 self._emit(Jump(target=merge_bb.label))
-
             self._pop_scope()
-
             if arm_val is not None and exit_bb is not None:
                 arm_results.append((exit_bb.label, arm_val))
 
         # Merge block
         self._set_block(merge_bb)
         if arm_results:
-            # Use the function's return type when the arm type doesn't match —
-            # this prevents the C emitter from generating undersized variables.
             phi_ty = arm_results[0][1].ty
             if self._fn and self._fn.return_type.kind != TypeKind.VOID:
                 phi_ty = self._fn.return_type
@@ -2957,13 +2921,223 @@ class MIRLowerer:
             self._emit(Phi(dest=result, incoming=arm_results))
             return result
 
-        # All arms terminated — merge block is unreachable but callers may
-        # reference the result.  Use the function's return type so the C
-        # emitter generates a correctly-sized variable (not int64_t).
+        # All arms terminated — unreachable merge
         ret_ty = self._fn.return_type if self._fn else mir_void()
         result = self._make_value(ty=ret_ty, prefix="match_result")
         self._emit(Const(dest=result, ty=ret_ty, value=None))
         return result
+
+    def _match_type_context(self, ty: MIRType) -> Any:
+        """Build a TypeContext for pattern matching from a MIR type."""
+        from mapanare.pattern_matching import TypeContext
+
+        kind = ty.kind
+        args = ty.type_info.args
+
+        # Cycle guard: recursive types (e.g., Expr with BinOp(Expr, Expr))
+        type_key = ty.type_info.name or ""
+        if type_key and type_key in self._match_ctx_stack:
+            return TypeContext(is_closed=False)
+        if type_key:
+            self._match_ctx_stack.add(type_key)
+        try:
+            return self._match_type_context_inner(ty, kind, args)
+        finally:
+            self._match_ctx_stack.discard(type_key)
+
+    def _match_type_context_inner(self, ty: MIRType, kind: TypeKind, args: list[Any]) -> Any:
+        from mapanare.pattern_matching import ConstructorInfo, TypeContext
+
+        if kind == TypeKind.OPTION:
+            some_sub = [self._match_type_context(MIRType(args[0]))] if args else []
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("Some", 1), ConstructorInfo("None", 0)],
+                sub_contexts={"Some": some_sub},
+            )
+
+        if kind == TypeKind.RESULT:
+            ok_sub = [self._match_type_context(MIRType(args[0]))] if args else []
+            err_sub = [self._match_type_context(MIRType(args[1]))] if len(args) >= 2 else []
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("Ok", 1), ConstructorInfo("Err", 1)],
+                sub_contexts={"Ok": ok_sub, "Err": err_sub},
+            )
+
+        enum_name = ty.type_info.name
+        if enum_name and (
+            kind == TypeKind.ENUM
+            or (kind == TypeKind.STRUCT and enum_name in self._enum_variants)
+        ):
+            variants = self._module.enums.get(enum_name, [])
+            ctors: list[ConstructorInfo] = []
+            sub_ctxs: dict[str, list[TypeContext]] = {}
+            for vname, payload_types in variants:
+                arity = len(payload_types)
+                ctors.append(ConstructorInfo(vname, arity))
+                if arity > 0:
+                    sub_ctxs[vname] = [self._match_type_context(pt) for pt in payload_types]
+            return TypeContext(is_closed=True, all_constructors=ctors, sub_contexts=sub_ctxs)
+
+        if kind == TypeKind.BOOL:
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("true", 0), ConstructorInfo("false", 0)],
+            )
+
+        return TypeContext(is_closed=False)
+
+    @staticmethod
+    def _is_flat_switch(tree: Any) -> bool:
+        """True if the tree is single-level: all children are DTLeaf."""
+        from mapanare.pattern_matching import DTLeaf
+
+        for _, subtree in tree.cases:
+            if not isinstance(subtree, DTLeaf):
+                return False
+        if tree.default is not None and not isinstance(tree.default, DTLeaf):
+            return False
+        return True
+
+    def _emit_flat_switch(
+        self,
+        tree: Any,
+        subject: Value,
+        action_blocks: list[BasicBlock],
+        merge_bb: BasicBlock,
+    ) -> None:
+        """Emit a flat switch: Switch instruction targets action blocks directly."""
+        from mapanare.pattern_matching import DTLeaf
+
+        cases: list[tuple[Any, str]] = []
+        default_block = merge_bb.label
+
+        for tag, subtree in tree.cases:
+            assert isinstance(subtree, DTLeaf)
+            cases.append((tag, action_blocks[subtree.action_idx].label))
+
+        if tree.default is not None:
+            assert isinstance(tree.default, DTLeaf)
+            default_block = action_blocks[tree.default.action_idx].label
+
+        if cases:
+            tag_val = self._make_value(ty=subject.ty, prefix="tag")
+            self._emit(EnumTag(dest=tag_val, enum_val=subject))
+            self._emit(Switch(tag=tag_val, cases=cases, default_block=default_block))
+        elif action_blocks:
+            self._emit(Jump(target=action_blocks[0].label))
+
+    def _emit_nested_switch(
+        self,
+        tree: Any,
+        col_values: list[Value],
+        action_blocks: list[BasicBlock],
+        merge_bb: BasicBlock,
+    ) -> None:
+        """Emit a nested decision tree with intermediate switch blocks."""
+        from mapanare.pattern_matching import DTFail, DTLeaf, DTSwitch
+
+        col_val = col_values[tree.column_idx]
+
+        # Pre-create case blocks
+        case_block_info: list[tuple[str, Any, BasicBlock]] = []
+        switch_cases: list[tuple[Any, str]] = []
+        for tag, subtree in tree.cases:
+            case_bb = self._new_block(self._fresh_block(f"match_case_{tag}"))
+            switch_cases.append((tag, case_bb.label))
+            case_block_info.append((tag, subtree, case_bb))
+
+        # Default block
+        default_label = merge_bb.label
+        default_info: tuple[Any, BasicBlock] | None = None
+        if tree.default is not None:
+            default_bb = self._new_block(self._fresh_block("match_default"))
+            default_label = default_bb.label
+            default_info = (tree.default, default_bb)
+
+        # Emit tag extraction + switch in current block
+        tag_val = self._make_value(ty=col_val.ty, prefix="tag")
+        self._emit(EnumTag(dest=tag_val, enum_val=col_val))
+        self._emit(Switch(tag=tag_val, cases=switch_cases, default_block=default_label))
+
+        # Emit each case block
+        for tag, subtree, case_bb in case_block_info:
+            self._set_block(case_bb)
+
+            if isinstance(subtree, DTLeaf):
+                self._emit(Jump(target=action_blocks[subtree.action_idx].label))
+            elif isinstance(subtree, DTFail):
+                self._emit(Jump(target=merge_bb.label))
+            elif isinstance(subtree, DTSwitch):
+                # Extract payloads for sub-columns, then recurse
+                ctor_arity = self._ctor_arity(col_val.ty, tag)
+                sub_values: list[Value] = []
+                for j in range(ctor_arity):
+                    payload_ty = self._infer_payload_type(col_val.ty, tag, j)
+                    payload = self._make_value(ty=payload_ty, prefix=f"pay_{j}")
+                    self._emit(
+                        EnumPayload(dest=payload, enum_val=col_val, variant=tag, payload_idx=j)
+                    )
+                    sub_values.append(payload)
+                new_col_values = (
+                    col_values[: tree.column_idx] + sub_values + col_values[tree.column_idx + 1 :]
+                )
+                self._emit_nested_switch(subtree, new_col_values, action_blocks, merge_bb)
+
+        # Emit default block
+        if default_info is not None:
+            subtree, def_bb = default_info
+            self._set_block(def_bb)
+            new_col_values = (
+                col_values[: tree.column_idx] + col_values[tree.column_idx + 1 :]
+            )
+            if isinstance(subtree, DTLeaf):
+                self._emit(Jump(target=action_blocks[subtree.action_idx].label))
+            elif isinstance(subtree, DTFail):
+                self._emit(Jump(target=merge_bb.label))
+            elif isinstance(subtree, DTSwitch):
+                self._emit_nested_switch(subtree, new_col_values, action_blocks, merge_bb)
+
+    def _bind_match_arm(self, pat: Any, subject: Value) -> None:
+        """Bind pattern variables from a match arm, handling nested constructors."""
+        if isinstance(pat, ConstructorPattern):
+            for j, arg_pat in enumerate(pat.args):
+                if isinstance(arg_pat, (IdentPattern, ConstructorPattern)):
+                    payload_ty = self._infer_payload_type(subject.ty, pat.name, j)
+                    pfx = (
+                        arg_pat.name
+                        if isinstance(arg_pat, IdentPattern)
+                        else f"pay_{pat.name}_{j}"
+                    )
+                    payload = self._make_value(ty=payload_ty, prefix=pfx)
+                    self._emit(
+                        EnumPayload(
+                            dest=payload, enum_val=subject, variant=pat.name, payload_idx=j
+                        )
+                    )
+                    if isinstance(arg_pat, IdentPattern):
+                        self._define_var(arg_pat.name, payload)
+                    else:
+                        # Nested constructor — recurse
+                        self._bind_match_arm(arg_pat, payload)
+        elif isinstance(pat, IdentPattern):
+            self._define_var(pat.name, subject)
+
+    def _ctor_arity(self, ty: MIRType, tag: str) -> int:
+        """Get the arity of a constructor for a given type."""
+        kind = ty.kind
+        if kind == TypeKind.OPTION:
+            return 1 if tag == "Some" else 0
+        if kind == TypeKind.RESULT:
+            return 1
+        enum_name = ty.type_info.name
+        if enum_name:
+            variants = self._module.enums.get(enum_name, [])
+            for vname, payload_types in variants:
+                if vname == tag:
+                    return len(payload_types)
+        return 0
 
     def _lower_interp_string(self, expr: InterpString) -> Value:
         """Lower string interpolation."""
@@ -2981,27 +3155,6 @@ class MIRLowerer:
         dest = self._make_value(ty=mir_string())
         self._emit(InterpConcat(dest=dest, parts=parts))
         return dest
-
-    # -- Helpers -----------------------------------------------------------
-
-    def _is_enum_variant(self, name: str, subject_ty: MIRType | None = None) -> bool:
-        """Check if a name matches a known enum variant (local only for now)."""
-        for variant_names in self._enum_variants.values():
-            if name in variant_names:
-                return True
-        return False
-
-    def _get_literal_value(self, expr: Expr) -> Any:
-        """Extract the literal value from an expression (for switch cases)."""
-        if isinstance(expr, IntLiteral):
-            return expr.value
-        if isinstance(expr, FloatLiteral):
-            return expr.value
-        if isinstance(expr, BoolLiteral):
-            return expr.value
-        if isinstance(expr, StringLiteral):
-            return expr.value
-        return None
 
 
 # ---------------------------------------------------------------------------
