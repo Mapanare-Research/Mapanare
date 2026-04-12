@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (recovery arc: v4.27.0 + v4.28.0 + v4.29.0 shipped; v4.30.0–v4.31.0 planned)
+## Where We Are (v4.52.0 shipped — Arc 5 release 1: self-hosted semantic wiring, A7 closed)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

@@ -7,7 +7,9 @@
 > was closed in v4.27.0; A7 is the self-hosted side. v4.52.0 finally
 > closes it.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Single session. Audit found 24 divergent items; 3 fixed (D1-D3), 21 deferred.
+**Decisions taken:** Audit-first (default). Wiring already done (main.mn:297). Ported D1 (`?` operator), D2 (match guard Bool), D3 (while Bool). Deferred match exhaustiveness (needs Maranget port). No diagnostics.mn needed — format_error in main.mn adequate.
 **Breaking:** No (the self-hosted compiler gains errors it used to silently accept, but existing correct programs are unaffected)
 **Prerequisite:** v4.51.0 (arc 4 panel PASS)
 **Delta review:** No (no new syntax — internal compiler wiring)

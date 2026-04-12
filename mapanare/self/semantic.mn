@@ -304,7 +304,9 @@ struct SemState {
     errors: List<SemanticError>,
     scope: Scope,
     filename: String,
-    current_span: Span
+    current_span: Span,
+    current_fn_return: TypeInfo,
+    current_fn_name: String
 }
 
 struct InferResult {
@@ -320,7 +322,7 @@ fn new_sem_state(filename: String) -> SemState {
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
     let zero_span: Span = make_span(0, 0, 0, 0)
-    return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span }
+    return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "" }
 }
 
 fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult {
@@ -339,7 +341,7 @@ fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState {
     let err: SemanticError = new_semantic_error(msg, line, col, st.filename)
     let mut errs: List<SemanticError> = st.errors
     errs.push(err)
-    return new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span }
+    return new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
 }
 
 fn add_error_here(st: SemState, msg: String) -> SemState {
@@ -356,14 +358,14 @@ fn add_error_msg(st: SemState, msg: String) -> SemState {
 
 fn push_scope(st: SemState) -> SemState {
     let child: Scope = new_scope(Some(st.scope))
-    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span }
+    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
     return new_st
 }
 
 fn pop_scope(st: SemState) -> SemState {
     match st.scope.parent {
         Some(parent) => {
-            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span }
+            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
             return new_st
         },
         _ => { return st }
@@ -371,13 +373,17 @@ fn pop_scope(st: SemState) -> SemState {
 }
 
 fn set_span(st: SemState, span: Span) -> SemState {
-    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span }
+    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
 }
 
 fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState {
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
-    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span }
+    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
     return new_st
+}
+
+fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState {
+    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name }
 }
 
 // ---------------------------------------------------------------------------
@@ -627,7 +633,32 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "error_prop" {
         let ir_errprop: InferResult = infer_expr(st, expr_errorprop_inner(expr))
-        return new_infer_result(unknown_type(), ir_errprop.st)
+        let mut st_ep: SemState = ir_errprop.st
+        let inner_name: String = ir_errprop.type_info.name
+        // v4.52.0: validate ? operator (D1 fix)
+        if inner_name != "<unknown>" {
+            if inner_name != "Result" {
+                if inner_name != "Option" {
+                    st_ep = add_error_here(st_ep, "`?` requires `Result` or `Option`, got `" + inner_name + "`")
+                }
+            }
+        }
+        // Check enclosing function returns compatible type
+        if inner_name == "Result" {
+            if st_ep.current_fn_return.name != "<unknown>" {
+                if st_ep.current_fn_return.name != "Result" {
+                    st_ep = add_error_here(st_ep, "`?` on a `Result` value requires the enclosing function `" + st_ep.current_fn_name + "` to return `Result`")
+                }
+            }
+        }
+        if inner_name == "Option" {
+            if st_ep.current_fn_return.name != "<unknown>" {
+                if st_ep.current_fn_return.name != "Option" {
+                    st_ep = add_error_here(st_ep, "`?` on an `Option` value requires the enclosing function `" + st_ep.current_fn_name + "` to return `Option`")
+                }
+            }
+        }
+        return new_infer_result(unknown_type(), st_ep)
     }
 
     if ek == "list_lit" {
@@ -1032,11 +1063,17 @@ fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferR
         let arm_st: SemState = push_scope(st2)
         let bound_st: SemState = bind_pattern(arm_st, arm.pattern)
         // v4.35.0: type-check optional guard (must be Bool)
+        // v4.52.0: actually enforce Bool type (D2 fix)
         let mut guarded_st: SemState = bound_st
         match arm.guard {
             Some(g) => {
                 let gr: InferResult = infer_expr(bound_st, g)
                 guarded_st = gr.st
+                if gr.type_info.name != "<unknown>" {
+                    if gr.type_info.name != "Bool" {
+                        guarded_st = add_error_here(guarded_st, "match guard must be a Bool expression, got " + gr.type_info.name)
+                    }
+                }
             },
             None => {}
         }
@@ -1266,7 +1303,14 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState {
     }
     if sk == "while" {
         let wr: InferResult = infer_expr(st, stmt_while_cond(stmt))
-        let inner: SemState = push_scope(wr.st)
+        let mut st_while: SemState = wr.st
+        // v4.52.0: while condition must be Bool (D3 fix)
+        if wr.type_info.name != "<unknown>" {
+            if wr.type_info.name != "Bool" {
+                st_while = add_error_here(st_while, "While condition must be Bool, got " + wr.type_info.name)
+            }
+        }
+        let inner: SemState = push_scope(st_while)
         let after: SemState = check_block(inner, stmt_while_body(stmt))
         return pop_scope(after)
     }
@@ -1554,7 +1598,9 @@ fn check_def(st: SemState, def: Definition) -> SemState {
 
 fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
     let inner: SemState = push_scope(set_span(st, data.span))
-    let mut st2: SemState = inner
+    // v4.52.0: set function context for ? operator validation
+    let ret_type: TypeInfo = resolve_type_opt(data.return_type)
+    let mut st2: SemState = set_fn_context(inner, data.name, ret_type)
 
     // Register parameters
     let mut pi: Int = 0

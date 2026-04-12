@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.52.0] - 2026-04-12
+
+**Arc 5 Release 1 — Self-Hosted Semantic Wiring (A7 Closed).**
+The self-hosted compiler's semantic pass is confirmed wired and validated.
+Three divergent-breaking checks ported from the Python bootstrap.
+
+### Added
+
+- `?` operator semantic validation: rejects `?` on non-Result/Option types and
+  when enclosing function doesn't return a compatible type
+  (`mapanare/self/semantic.mn:628–650`)
+- Match guard Bool enforcement: `match x { n if <expr> => ... }` now rejects
+  non-Bool guard expressions (`mapanare/self/semantic.mn:1036–1044`)
+- While condition Bool enforcement: `while <expr>` now rejects non-Bool conditions
+  (`mapanare/self/semantic.mn:1270–1275`)
+- `current_fn_return` and `current_fn_name` tracking in `SemState` struct for
+  `?` operator context validation (`mapanare/self/semantic.mn:307–308`)
+- Regression test suite `tests/self_hosted/test_semantic_wiring.py` (11 tests)
+
+### Changed
+
+- Removed double-printing of semantic errors in `compile()` — errors are now
+  returned to the caller, not printed inline (`mapanare/self/main.mn:298`)
+
+### Fixed
+
+- **A7 CLOSED**: Self-hosted semantic analysis confirmed wired into `compile()`
+  at `mapanare/self/main.mn:298`. Broken `.mn` files now produce exit 1 with
+  error messages through `mnc-stage1`. 29 releases after the original v4.5.0
+  claim that it was wired.
+
+### Audit
+
+- Full side-by-side audit of `semantic.mn` vs `semantic.py`: 23 checks at
+  parity, 3 divergent-breaking fixed (D1-D3), 21 divergent items deferred,
+  4 benign divergences documented. See `docs/roadmap/v4/v4.52.0/AUDIT.md`.
+
 ## [4.45.0] - 2026-04-12
 
 **Arc 3 Release 4 — Tensor Reductions + Slicing.**

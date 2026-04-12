@@ -105,7 +105,7 @@ items that were explicitly deferred out of the recovery arc.
 | A4 | llvmlite JIT emitter removal | v4.2.0 | LOW | **5** | DEFERRED | v5.0.0 |
 | A5 | Culebra `list-element-size-undercount` template tightens | v4.30.0 | LOW | 1 | OPEN | Culebra project, not Mapanare |
 | A6 | Residual 69-line match-lowering shape diff between stage2 and stage3 | v4.28.0 | LOW | **3** | **CLOSED** | v4.34.0 — Maranget decision-tree rewrite in both pipelines; `mapanare/pattern_matching.py` shared helper |
-| A7 | Self-hosted semantic analysis never wired into `compile()` | v4.26.0 | LOW | **3** | OPEN | v5.0.0 self-hosted maturity sprint |
+| A7 | Self-hosted semantic analysis never wired into `compile()` | v4.26.0 | LOW | **3** | **CLOSED** | v4.52.0 — `check()` called at `mapanare/self/main.mn:298`; 3 divergent-breaking checks ported (D1 `?` operator, D2 match guard Bool, D3 while Bool); 11 regression tests in `tests/self_hosted/test_semantic_wiring.py` |
 | A8 | Split `UNKNOWN` into `UNRESOLVED` + `ERROR` in semantic.py | v4.26.0 | LOW | **3** | OPEN | v5.0.0 |
 | A9 | `emit_c.mn` (770 lines) references non-existent MIR types | v4.2.0 | LOW | **5** | OPEN | v5.0.0 — delete or rewrite |
 | 49 | Drop-glue skip-struct-ret early return at `emit_llvm_text.py:1097-1099` (8th cycle, Viper Issue #14 at v4.26.0, not previously in ledger) | v4.18.0 era | LOW | **8** | OPEN | v4.32.0 Phase 2.2 (opportunistic) or v4.33.0+. The early return short-circuits `_extract_ret_ptrs` before the per-type drop-glue helpers can consult `ret_ptr_fields`. Phase 2.2 is a pure-refactor extraction that may naturally eliminate this branch; if it does, mark CLOSED at PR-merge. If it doesn't, carries to v4.33.0. Viper V1. |

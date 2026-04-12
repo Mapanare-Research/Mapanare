@@ -294,17 +294,9 @@ fn compile(source: String, filename: String) -> CompileResult {
     let resolved: Program = resolve_imports(program, filename, visited)
 
     // Stage 3: semantic analysis
+    // v4.52.0: check() returns errors; callers handle display (removed double-print)
     let errors: List<SemanticError> = check(resolved, filename)
     if len(errors) > 0 {
-        let mut ei: Int = 0
-        for _ in 0..1000 {
-            if ei >= len(errors) {
-                return new_compile_result(false, "", errors)
-            }
-            let err: SemanticError = errors[ei]
-            print(format_error(err))
-            ei = ei + 1
-        }
         return new_compile_result(false, "", errors)
     }
 
