@@ -5,7 +5,7 @@
 > the "AI-native" claim starts meaning something users can actually
 > `import`.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.46.0 (arc 3 panel PASS)
 **Delta review:** No (library-only)

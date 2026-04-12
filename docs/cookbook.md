@@ -699,6 +699,38 @@ This recipe demonstrates:
 
 ---
 
+## 16. AI: Chat with an LLM
+
+Talk to any LLM with a unified interface. Supports OpenAI, Anthropic, Groq, and Ollama.
+
+<!-- pseudo -->
+```mn
+import ai::llm
+
+fn main() {
+    // Ollama: no API key needed, runs locally
+    let config = llm.ollama("llama3.2")
+
+    let response = llm.chat(config, [
+        llm.system_msg("Be concise."),
+        llm.user_msg("What is 2 + 2?")
+    ])
+
+    match response {
+        Ok(r) => print(r.content),
+        Err(e) => print(llm.error_message(e))
+    }
+}
+```
+
+This recipe demonstrates:
+- **Unified LLM interface** across 5 providers via `llm.mn`
+- **Result-based error handling** (`Result<LLMResponse, LLMError>`)
+- **Message constructors** (`system_msg`, `user_msg`, `assistant_msg`)
+- **Environment config** via `llm.default_config()` + `MAPANARE_LLM_*` env vars
+
+---
+
 ## Tips and Patterns
 
 ### Prefer `Result` over Panics
