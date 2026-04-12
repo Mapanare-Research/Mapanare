@@ -731,6 +731,66 @@ This recipe demonstrates:
 
 ---
 
+## 17. Embeddings: Semantic Search
+
+Generate vector embeddings and search by similarity.
+
+<!-- pseudo -->
+```mn
+import ai::embedding
+
+fn main() {
+    let config = ollama_embed("nomic-embed-text")
+    let r1 = embed(config, "Mapanare is a compiled language")
+    let r2 = embed(config, "Rust is a systems language")
+    let r3 = embed(config, "cats are cute animals")
+
+    match r1 {
+        Ok(e1) => {
+            // Cosine similarity: higher = more similar
+            let sim12 = cosine_similarity(e1.vector, r2.vector)
+            let sim13 = cosine_similarity(e1.vector, r3.vector)
+            print("lang vs lang: " + str(sim12))
+            print("lang vs cats: " + str(sim13))
+        },
+        Err(e) => print(error_message(e))
+    }
+}
+```
+
+This recipe demonstrates:
+- **Vector embeddings** via Ollama (no API key)
+- **Cosine similarity** for semantic comparison
+- Also available: `dot_product()`, `euclidean_distance()`, `normalize()`
+
+---
+
+## 18. RAG: Retrieval-Augmented Generation
+
+Chunk documents, embed them, search by query, augment LLM prompts.
+
+<!-- pseudo -->
+```mn
+import ai::rag
+import ai::embedding
+
+fn main() {
+    let chunks = chunk_by_sentences("Long document text here...", 200)
+    // Embed each chunk, store in vector index, search by query
+    let context = build_context_simple(["relevant chunk 1", "relevant chunk 2"])
+    let prompt = augment_prompt("What is the main topic?", context)
+    print(prompt)
+}
+```
+
+This recipe demonstrates:
+- **Sentence-aware chunking** (`chunk_by_sentences`, `chunk_by_paragraphs`)
+- **Context building** from retrieved chunks
+- **Prompt augmentation** for RAG-style Q&A
+- Also available: `chunk_documents()` for multi-document, `build_context_budgeted()` for token limits
+
+---
+
 ## Tips and Patterns
 
 ### Prefer `Result` over Panics

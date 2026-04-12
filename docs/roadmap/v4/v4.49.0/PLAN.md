@@ -4,7 +4,7 @@
 > provide the building blocks for retrieval-augmented generation:
 > embedding a text corpus, computing similarity, top-k retrieval.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
 **Breaking:** No
 **Prerequisite:** v4.48.0
 **Delta review:** No (library-only)
