@@ -161,13 +161,31 @@ def _py_ctype_for(type_name: str, known_structs: set[str]) -> str:
     return "ctypes.c_int64"
 
 
+class BindError(Exception):
+    """Raised when the binding generator encounters an unsupported type."""
+
+
 def _py_annotation_for(type_name: str, known_structs: set[str]) -> str:
-    """Return the Python type annotation used in the wrapper function signature."""
+    """Return the Python type annotation used in the wrapper function signature.
+
+    v4.32.0 Phase 2.4 (Boa M3): raises ``BindError`` on compound types
+    the generator does not know how to marshal (``List<T>``,
+    ``Result<T, E>``, ``Option<T>``, etc.) instead of silently falling
+    back to ``"int"`` which causes silent corruption at the ABI boundary.
+    """
     if type_name in _PY_ANNOTATION_FOR_PRIMITIVE:
         return _PY_ANNOTATION_FOR_PRIMITIVE[type_name]
     if type_name in known_structs:
         return type_name
-    return "int"
+    # v4.32.0 Boa M3: loud failure instead of silent "int" fallback.
+    raise BindError(
+        f"unsupported type '{type_name}' in binding signature. "
+        f"The binding generator does not know how to marshal this type "
+        f"to Python ctypes. If you know the correct ctypes form, extend "
+        f"_py_annotation_for() in mapanare/bind.py. "
+        f"Known primitive types: {sorted(_PY_ANNOTATION_FOR_PRIMITIVE)}. "
+        f"Known struct types: {sorted(known_structs)}."
+    )
 
 
 def generate_python(spec: BindingSpec) -> str:
@@ -252,20 +270,40 @@ def generate_python(spec: BindingSpec) -> str:
 
     # Struct definitions must appear before any function that references them in
     # argtypes / restype — ctypes needs the class to exist when we assign.
+    #
+    # v4.32.0 Phase 2.4 (Boa M2): for fields of type String, the ctypes
+    # field is prefixed with ``_`` so a Python @property can shadow it
+    # and auto-unwrap ``_MnString`` → ``str``.  Nested structs with
+    # String fields get the same treatment recursively (a nested struct
+    # is already a ctypes.Structure subclass that has its own properties).
     for st in spec.structs:
         lines.append(f"class {st.name}(ctypes.Structure):")
         lines.append(f'    """Mapanare ``{st.name}`` — passed and returned by value."""')
         lines.append("")
         lines.append("    _fields_ = [")
+        string_fields: list[str] = []
         for f in st.fields:
             ctype = _py_ctype_for(f.type_name, known_structs)
             if ctype == "_MnString":
-                ctype = "_MnString"
+                # Use ``_name`` in _fields_ so the property ``name`` can shadow.
+                lines.append(f'        ("_{f.name}", _MnString),')
+                string_fields.append(f.name)
             elif ctype not in {"_MnString"} and not ctype.startswith("ctypes."):
                 # Nested struct — reference the class directly.
-                pass
-            lines.append(f'        ("{f.name}", {ctype}),')
+                lines.append(f'        ("{f.name}", {ctype}),')
+            else:
+                lines.append(f'        ("{f.name}", {ctype}),')
         lines.append("    ]")
+        # Generate property accessors for String fields.
+        for fname in string_fields:
+            lines.append("")
+            lines.append("    @property")
+            lines.append(f"    def {fname}(self) -> str:")
+            lines.append(f"        return self._{fname}.to_str()")
+            lines.append("")
+            lines.append(f"    @{fname}.setter")
+            lines.append(f"    def {fname}(self, value: str) -> None:")
+            lines.append(f"        self._{fname} = _MnString.from_str(value)")
         lines.append("")
 
     for en in spec.enums:

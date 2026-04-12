@@ -255,3 +255,68 @@ def test_ffi_mode_flag_exists() -> None:
 
     params = inspect.signature(_compile_to_llvm_ir).parameters
     assert "ffi_mode" in params, "_compile_to_llvm_ir must expose ffi_mode parameter"
+
+
+# ---------------------------------------------------------------------------
+# v4.32.0 Phase 2.4 — struct String unwrap + annotation fallback
+# ---------------------------------------------------------------------------
+
+
+def test_struct_with_string_field(tmp_path: Path) -> None:
+    """v4.32.0 Boa M2: a struct with a ``String`` field must auto-unwrap
+    ``_MnString`` to ``str`` when accessed via the generated property.
+
+    Without this, the Python caller receives a raw ``_MnString`` for the
+    ``name`` field instead of a ``str``, requiring manual ``.to_str()``
+    that no Python user would know to call.
+    """
+    source = tmp_path / "personlib.mn"
+    source.write_text("""\
+struct Person {
+    name: String,
+    age: Int
+}
+
+fn make_person(name: String, age: Int) -> Person {
+    return new Person { name: name, age: age }
+}
+
+fn main() {
+    let p = make_person("Ada", 42)
+    print(p.name)
+}
+""")
+    out_dir = _run_bind(source, tmp_path)
+    # Check the generated wrapper has a property accessor, not a raw field.
+    wrapper_src = (out_dir / "personlib.py").read_text()
+    assert "@property" in wrapper_src, "String field should generate a property accessor"
+    assert '("_name", _MnString)' in wrapper_src, "ctypes field should be prefixed _name"
+
+    # Live round-trip: make_person returns a Person, access .name as str
+    wrapper = _load_wrapper(out_dir, "personlib")
+    p = wrapper.make_person("Ada", 42)
+    assert isinstance(p.name, str), f"Expected str, got {type(p.name).__name__}"
+    assert p.name == "Ada"
+    assert p.age == 42
+
+
+def test_unknown_type_raises_bind_error() -> None:
+    """v4.32.0 Boa M3: ``_py_annotation_for`` must raise ``BindError`` on
+    compound types it doesn't know how to marshal, instead of silently
+    falling back to ``"int"``.
+    """
+    from mapanare.bind import BindError, _py_annotation_for
+
+    with pytest.raises(BindError, match="unsupported type.*List<Int>"):
+        _py_annotation_for("List<Int>", set())
+
+    with pytest.raises(BindError, match="unsupported type.*Result<T, E>"):
+        _py_annotation_for("Result<T, E>", set())
+
+    with pytest.raises(BindError, match="unsupported type.*Option<T>"):
+        _py_annotation_for("Option<T>", set())
+
+    # Known types should NOT raise
+    assert _py_annotation_for("Int", set()) == "int"
+    assert _py_annotation_for("String", set()) == "str"
+    assert _py_annotation_for("MyStruct", {"MyStruct"}) == "MyStruct"
