@@ -450,6 +450,7 @@ class MatchArm(ASTNode):
 
     pattern: Pattern = field(default_factory=lambda: Pattern())
     body: Expr | Block = field(default_factory=Expr)
+    guard: Expr | None = None
 
 
 @dataclass
@@ -495,6 +496,13 @@ class ConstructorPattern(Pattern):
 
     name: str = ""
     args: list[Pattern] = field(default_factory=list)
+
+
+@dataclass
+class OrPattern(Pattern):
+    """Or-pattern: matches if any alternative matches. `A | B | C`."""
+
+    alternatives: list[Pattern] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

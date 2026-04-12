@@ -329,12 +329,17 @@ if_expr: KW_IF expr block (KW_ELSE block)? -> if_simple
 
 match_expr: KW_MATCH expr LBRACE _nl* match_arms _nl* RBRACE
 match_arms: (match_arm (COMMA _nl* match_arm)* COMMA?)?
-match_arm: pattern FAT_ARROW (expr | block)
+match_arm: pattern guard? FAT_ARROW (expr | block)
+guard: KW_IF assign_expr
 
-?pattern: wildcard_pattern
-        | constructor_pattern
-        | literal_pattern
-        | ident_pattern
+?pattern: or_pattern
+
+or_pattern: pattern_alt (BAR pattern_alt)*
+
+?pattern_alt: wildcard_pattern
+            | constructor_pattern
+            | literal_pattern
+            | ident_pattern
 
 wildcard_pattern: KW_WILDCARD
 constructor_pattern: NAME LPAREN (pattern (COMMA pattern)*)? RPAREN

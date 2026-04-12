@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.34.0** (shipped) — Pattern matching decision-tree rewrite (Maranget 2008). Closes A6 (69-line stage2/stage3 diff). Exhaustiveness checking upgraded to compile-time errors with witness patterns. 3 LOW items closed. Zero new syntax.
-- **v4.35.0** (next) — Match guards + or-patterns on top of the decision-tree infrastructure. Delta review required (two new syntactic forms).
+- **v4.35.0** (shipped) — Match guards (`if cond`) + or-patterns (`A | B | C`) on top of v4.34.0's decision-tree infrastructure. Guard fall-through via re-run from remaining rows. Or-pattern row expansion in Maranget engine. 3 LOW items closed (pthread_once sweep). Two new syntactic forms, delta-reviewed.
+- **v4.36.0** (next) — Arc 1 panel release. Zero new features. Full 7-reviewer panel.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

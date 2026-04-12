@@ -128,13 +128,15 @@ enum Pattern {
     Wildcard,
     IdentPat(String),
     LiteralPat(Expr),
-    ConstructorPat(String, List<Pattern>)
+    ConstructorPat(String, List<Pattern>),
+    OrPat(List<Pattern>)
 }
 
 struct MatchArm {
     span: Span,
     pattern: Pattern,
-    body: MatchArmBody
+    body: MatchArmBody,
+    guard: Option<Expr>
 }
 
 enum MatchArmBody {
@@ -752,7 +754,8 @@ pub fn pattern_kind(p: Pattern) -> String {
         Wildcard => { return "wildcard" },
         IdentPat(_) => { return "ident" },
         LiteralPat(_) => { return "literal" },
-        ConstructorPat(_, _) => { return "constructor" }
+        ConstructorPat(_, _) => { return "constructor" },
+        OrPat(_) => { return "or" }
     }
 }
 
@@ -767,6 +770,9 @@ pub fn pattern_ctor_name(p: Pattern) -> String {
 }
 pub fn pattern_ctor_args(p: Pattern) -> List<Pattern> {
     match p { ConstructorPat(_, a) => { return a }, _ => { let empty: List<Pattern> = []; return empty } }
+}
+pub fn pattern_or_alts(p: Pattern) -> List<Pattern> {
+    match p { OrPat(alts) => { return alts }, _ => { let empty: List<Pattern> = []; return empty } }
 }
 
 // ---- MatchArmBody kind + accessors ----------------------------------------

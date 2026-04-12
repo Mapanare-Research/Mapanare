@@ -936,6 +936,11 @@ class SemanticChecker:
         for arm in expr.arms:
             self._push_scope()
             self._bind_pattern(arm.pattern, subject_type)
+            # v4.35.0: type-check optional guard (must be Bool)
+            if arm.guard is not None:
+                guard_type = self._infer_expr(arm.guard)
+                if guard_type.kind not in (TypeKind.BOOL, TypeKind.UNKNOWN):
+                    self._error("match guard must be a Bool expression", arm.guard)
             if isinstance(arm.body, Block):
                 self._check_block(arm.body)
             elif isinstance(arm.body, Expr):
@@ -1062,6 +1067,7 @@ class SemanticChecker:
         from mapanare.ast_nodes import (
             ConstructorPattern,
             IdentPattern,
+            OrPattern,
         )
 
         if isinstance(pattern, IdentPattern):
@@ -1075,6 +1081,56 @@ class SemanticChecker:
             for i, arg in enumerate(pattern.args):
                 arg_type = field_types[i] if i < len(field_types) else None
                 self._bind_pattern(arg, arg_type)
+        elif isinstance(pattern, OrPattern):
+            # v4.35.0: verify all alternatives bind the same names, then bind
+            all_names = [self._collect_pattern_names(alt) for alt in pattern.alternatives]
+            ref = all_names[0]
+            for i, names in enumerate(all_names[1:], 1):
+                if names != ref:
+                    missing = ref - names
+                    extra = names - ref
+                    parts = []
+                    if missing:
+                        parts.append(f"missing {sorted(missing)}")
+                    if extra:
+                        parts.append(f"extra {sorted(extra)}")
+                    self._error(
+                        f"or-pattern alternatives must bind the same names: {'; '.join(parts)}",
+                        pattern.alternatives[i],
+                    )
+            # Bind from the first alternative (all have the same names)
+            self._bind_pattern(pattern.alternatives[0], subject_type)
+
+    def _collect_pattern_names(self, pattern: object) -> set[str]:
+        """Collect all variable names bound by a pattern (excludes enum variants)."""
+        from mapanare.ast_nodes import ConstructorPattern, IdentPattern, OrPattern
+
+        names: set[str] = set()
+        if isinstance(pattern, IdentPattern):
+            # Check if the name is an enum variant; if so, it's not a binding
+            if not self._is_enum_variant_name(pattern.name):
+                names.add(pattern.name)
+        elif isinstance(pattern, ConstructorPattern):
+            for arg in pattern.args:
+                names |= self._collect_pattern_names(arg)
+        elif isinstance(pattern, OrPattern):
+            if pattern.alternatives:
+                names = self._collect_pattern_names(pattern.alternatives[0])
+        return names
+
+    def _is_enum_variant_name(self, name: str) -> bool:
+        """Check if a name refers to an enum variant in any visible enum."""
+        # Walk all symbols looking for enums with a matching variant
+        for scope in (self.current_scope, self.global_scope):
+            s = scope
+            while s is not None:
+                for sym in s.symbols.values():
+                    if sym.kind == SymbolKind.ENUM and isinstance(sym.node, EnumDef):
+                        for v in sym.node.variants:
+                            if v.name == name:
+                                return True
+                s = s.parent
+        return False
 
     def _resolve_variant_fields(
         self, subject_type: TypeInfo | None, variant_name: str

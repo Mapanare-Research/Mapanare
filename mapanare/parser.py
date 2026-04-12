@@ -62,6 +62,7 @@ from mapanare.ast_nodes import (
     NamedType,
     NamespaceAccessExpr,
     NoneLiteral,
+    OrPattern,
     Param,
     PipeDef,
     PipeExpr,
@@ -1022,11 +1023,27 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def match_arm(self, children: list[Any]) -> MatchArm:
         items = _filter(children)
+        if len(items) == 3:
+            # pattern, guard_expr, body
+            return MatchArm(
+                pattern=items[0], body=items[2], guard=items[1],
+                span=_span_from_children(children),
+            )
         return MatchArm(pattern=items[0], body=items[1], span=_span_from_children(children))
+
+    def guard(self, children: list[Any]) -> Any:
+        items = _filter(children)
+        return items[0]
 
     # ------------------------------------------------------------------
     # Patterns
     # ------------------------------------------------------------------
+
+    def or_pattern(self, children: list[Any]) -> Any:
+        items = _filter(children)
+        if len(items) == 1:
+            return items[0]
+        return OrPattern(alternatives=items, span=_span_from_children(children))
 
     def wildcard_pattern(self, children: list[Any]) -> WildcardPattern:
         return WildcardPattern(span=_span_from_children(children))

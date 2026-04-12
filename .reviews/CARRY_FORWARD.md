@@ -120,6 +120,14 @@ items that were explicitly deferred out of the recovery arc.
 | L2 | `__mn_read_line` 4KB stack truncation (6th cycle) | Viper | LOW | v4.34.0 | `getline(3)` on POSIX at `runtime/native/mapanare_core.c` |
 | L3 | Arena allocator thread safety | Viper | LOW | v4.34.0 | Spinlock via `__sync_lock_test_and_set` in `mn_arena_alloc` |
 
+## Items resolved in v4.35.0
+
+| # | Item | First reported | Severity | Resolved in | Evidence |
+|---|------|----------------|----------|-------------|----------|
+| L4 | `s_net_initialized` non-atomic (5th cycle) | Viper | LOW | v4.35.0 | `pthread_once` / `InitOnceExecuteOnce` at `runtime/native/mapanare_io.c` |
+| L5 | `ssl_load_library` CAS-before-init (3rd cycle) | Viper M7 | LOW | v4.35.0 | `pthread_once` / `InitOnceExecuteOnce` replacing atomic CAS at `runtime/native/mapanare_io.c` |
+| L6 | `s_bcrypt` cache thread safety (3rd cycle) | Viper | LOW | v4.35.0 | `InitOnceExecuteOnce` at `runtime/native/mapanare_io.c` |
+
 ## Items resolved in pre-v4.27.0 releases
 
 Retained for traceability so the full panel can see which historic

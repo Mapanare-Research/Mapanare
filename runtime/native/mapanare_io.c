@@ -86,35 +86,45 @@
  * 1. TCP Networking
  * ======================================================================= */
 
-static int s_net_initialized = 0;
-
-MN_IO_EXPORT int64_t __mn_net_init(void) {
-    if (s_net_initialized) return 0;
+/* v4.35.0: thread-safe net init via pthread_once / InitOnceExecuteOnce.
+ * Closes LOW carry-forward (s_net_initialized, 5th cycle). */
+static int s_net_init_result = 0;
 #ifdef _WIN32
+static INIT_ONCE s_net_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK net_init_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-        return -1;
+        s_net_init_result = -1;
     }
+    return TRUE;
+}
+#else
+#include <pthread.h>
+static pthread_once_t s_net_once = PTHREAD_ONCE_INIT;
+static void net_init_impl(void) {
+    /* No-op on POSIX — sockets work without init. */
+    s_net_init_result = 0;
+}
 #endif
-    s_net_initialized = 1;
-    return 0;
+
+MN_IO_EXPORT int64_t __mn_net_init(void) {
+#ifdef _WIN32
+    InitOnceExecuteOnce(&s_net_once, net_init_cb, NULL, NULL);
+#else
+    pthread_once(&s_net_once, net_init_impl);
+#endif
+    return s_net_init_result;
 }
 
 MN_IO_EXPORT void __mn_net_cleanup(void) {
 #ifdef _WIN32
-    if (s_net_initialized) {
-        WSACleanup();
-        s_net_initialized = 0;
-    }
-#else
-    s_net_initialized = 0;
+    WSACleanup();
 #endif
 }
 
 MN_IO_EXPORT int64_t __mn_tcp_connect(const char *host, int64_t port) {
-    if (!s_net_initialized) {
-        if (__mn_net_init() < 0) return -1;
-    }
+    if (__mn_net_init() < 0) return -1;
 
     struct addrinfo hints, *res = NULL, *rp;
     memset(&hints, 0, sizeof(hints));
@@ -147,9 +157,7 @@ MN_IO_EXPORT int64_t __mn_tcp_connect(const char *host, int64_t port) {
 }
 
 MN_IO_EXPORT int64_t __mn_tcp_listen(const char *host, int64_t port, int64_t backlog) {
-    if (!s_net_initialized) {
-        if (__mn_net_init() < 0) return -1;
-    }
+    if (__mn_net_init() < 0) return -1;
 
     struct addrinfo hints, *res = NULL;
     memset(&hints, 0, sizeof(hints));
@@ -313,14 +321,9 @@ static struct {
     fn_SSL_CTX_set_default_verify_paths SSL_CTX_set_default_verify_paths;
 } s_ssl = {0};
 
-/* Internal: load OpenSSL dynamically (thread-safe via atomic flag) */
-static int ssl_load_library(void) {
-    if (__atomic_load_n(&s_ssl.loaded, __ATOMIC_ACQUIRE))
-        return s_ssl.available ? 0 : -1;
-    int expected = 0;
-    if (!__atomic_compare_exchange_n(&s_ssl.loaded, &expected, 1, 0,
-                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
-        return s_ssl.available ? 0 : -1;
+/* v4.35.0: thread-safe SSL init via pthread_once / InitOnceExecuteOnce.
+ * Replaces atomic CAS pattern. Closes LOW carry-forward (ssl_load_library, 3rd cycle). */
+static void ssl_load_library_impl(void) {
     s_ssl.available = 0;
 
 #ifdef _WIN32
@@ -330,7 +333,7 @@ static int ssl_load_library(void) {
     s_ssl.libcrypto = LoadLibraryA("libcrypto-3-x64.dll");
     if (!s_ssl.libcrypto) s_ssl.libcrypto = LoadLibraryA("libcrypto-1_1-x64.dll");
     if (!s_ssl.libcrypto) s_ssl.libcrypto = LoadLibraryA("libeay32.dll");
-    if (!s_ssl.libssl || !s_ssl.libcrypto) return -1;
+    if (!s_ssl.libssl || !s_ssl.libcrypto) return;
 
     #define SSL_SYM(name) s_ssl.name = (fn_##name)GetProcAddress(s_ssl.libssl, #name)
     #define CRYPTO_SYM(name) s_ssl.name = (fn_##name)GetProcAddress(s_ssl.libcrypto, #name)
@@ -350,7 +353,7 @@ static int ssl_load_library(void) {
     if (!s_ssl.libcrypto) s_ssl.libcrypto = dlopen("libcrypto.dylib", RTLD_NOW);
     #endif
 
-    if (!s_ssl.libssl || !s_ssl.libcrypto) return -1;
+    if (!s_ssl.libssl || !s_ssl.libcrypto) return;
 
     #define SSL_SYM(name) s_ssl.name = (fn_##name)dlsym(s_ssl.libssl, #name)
     #define CRYPTO_SYM(name) s_ssl.name = (fn_##name)dlsym(s_ssl.libcrypto, #name)
@@ -377,11 +380,31 @@ static int ssl_load_library(void) {
         !s_ssl.SSL_new || !s_ssl.SSL_free || !s_ssl.SSL_set_fd ||
         !s_ssl.SSL_connect || !s_ssl.SSL_read || !s_ssl.SSL_write ||
         !s_ssl.SSL_shutdown || !s_ssl.SSL_ctrl) {
-        return -1;
+        return;
     }
 
     s_ssl.available = 1;
-    return 0;
+    s_ssl.loaded = 1;
+}
+
+#ifdef _WIN32
+static INIT_ONCE s_ssl_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK ssl_load_library_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    ssl_load_library_impl();
+    return TRUE;
+}
+#else
+static pthread_once_t s_ssl_once = PTHREAD_ONCE_INIT;
+#endif
+
+static int ssl_load_library(void) {
+#ifdef _WIN32
+    InitOnceExecuteOnce(&s_ssl_once, ssl_load_library_cb, NULL, NULL);
+#else
+    pthread_once(&s_ssl_once, ssl_load_library_impl);
+#endif
+    return s_ssl.available ? 0 : -1;
 }
 
 /* TLS context wrapper — holds SSL* and SSL_CTX* together */
@@ -1226,22 +1249,30 @@ MN_IO_EXPORT MnString __mn_base64_decode_str(MnString data) {
 
 /* --- Random bytes --- */
 
+/* v4.35.0: thread-safe BCrypt init via InitOnceExecuteOnce.
+ * Closes LOW carry-forward (s_bcrypt, 3rd cycle). */
+#ifdef _WIN32
+typedef long (WINAPI *fn_BCryptGenRandom)(void*, unsigned char*, unsigned long, unsigned long);
+static HMODULE s_bcrypt = NULL;
+static fn_BCryptGenRandom s_bcrypt_gen = NULL;
+static INIT_ONCE s_bcrypt_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK bcrypt_init_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    s_bcrypt = LoadLibraryA("bcrypt.dll");
+    if (s_bcrypt) {
+        s_bcrypt_gen = (fn_BCryptGenRandom)GetProcAddress(s_bcrypt, "BCryptGenRandom");
+    }
+    return TRUE;
+}
+#endif
+
 MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n) {
     if (n <= 0) return __mn_str_empty();
     char *buf = (char *)malloc((size_t)n);
     if (!buf) return __mn_str_empty();
 
 #ifdef _WIN32
-    /* Use BCryptGenRandom (Vista+) — cached HMODULE to avoid leak */
-    typedef long (WINAPI *fn_BCryptGenRandom)(void*, unsigned char*, unsigned long, unsigned long);
-    static HMODULE s_bcrypt = NULL;
-    static fn_BCryptGenRandom s_bcrypt_gen = NULL;
-    if (!s_bcrypt) {
-        s_bcrypt = LoadLibraryA("bcrypt.dll");
-        if (s_bcrypt) {
-            s_bcrypt_gen = (fn_BCryptGenRandom)GetProcAddress(s_bcrypt, "BCryptGenRandom");
-        }
-    }
+    InitOnceExecuteOnce(&s_bcrypt_once, bcrypt_init_cb, NULL, NULL);
     if (s_bcrypt_gen && s_bcrypt_gen(NULL, (unsigned char *)buf, (unsigned long)n, 2 /*BCRYPT_USE_SYSTEM_PREFERRED_RNG*/) == 0) {
         MnString result = __mn_str_from_parts(buf, n);
         free(buf);

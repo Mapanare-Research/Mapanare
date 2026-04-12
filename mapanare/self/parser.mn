@@ -237,8 +237,8 @@ fn new_enum_variant(name: String, fields: List<TypeExpr>) -> EnumVariant {
     return new EnumVariant { span: new_span(0, 0, 0, 0), name: name, fields: fields }
 }
 
-fn new_match_arm(pattern: Pattern, body: MatchArmBody) -> MatchArm {
-    return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body }
+fn new_match_arm(pattern: Pattern, body: MatchArmBody, guard: Option<Expr>) -> MatchArm {
+    return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body, guard: guard }
 }
 
 fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData {
@@ -2003,16 +2003,26 @@ fn parse_match_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
 fn parse_match_arm_item(tokens: List<Token>, pos: Int, filename: String) -> MatchArmResult {
     let pr: PatternResult = parse_pattern(tokens, pos, filename)
     let mut p: Int = pr.pos
+
+    // v4.35.0: optional guard — `if <expr>` before `=>`
+    let mut guard: Option<Expr> = None
+    if peek_type(tokens, p) == "KW_IF" {
+        p = p + 1
+        let gr: ExprResult = parse_expr(tokens, p, filename, 0)
+        guard = Some(gr.expr)
+        p = gr.pos
+    }
+
     p = expect(tokens, p, "FAT_ARROW")
 
     if peek_type(tokens, p) == "LBRACE" {
         let br: BlockResult = parse_block(tokens, p, filename)
-        let arm_blk: MatchArm = new_match_arm(pr.pattern, MatchArmBody::BlockBody(br.block))
+        let arm_blk: MatchArm = new_match_arm(pr.pattern, MatchArmBody::BlockBody(br.block), guard)
         return new_match_arm_result(arm_blk, br.pos)
     }
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
-    let arm_expr: MatchArm = new_match_arm(pr.pattern, MatchArmBody::ExprBody(er.expr))
+    let arm_expr: MatchArm = new_match_arm(pr.pattern, MatchArmBody::ExprBody(er.expr), guard)
     return new_match_arm_result(arm_expr, er.pos)
 }
 
@@ -2021,6 +2031,26 @@ fn parse_match_arm_item(tokens: List<Token>, pos: Int, filename: String) -> Matc
 // ---------------------------------------------------------------------------
 
 fn parse_pattern(tokens: List<Token>, pos: Int, filename: String) -> PatternResult {
+    // v4.35.0: parse or-patterns — `pattern_alt (| pattern_alt)*`
+    let first: PatternResult = parse_pattern_alt(tokens, pos, filename)
+    let mut p: Int = first.pos
+    if peek_type(tokens, p) != "BAR" {
+        return first
+    }
+    let mut alts: List<Pattern> = [first.pattern]
+    for _ in 0..20 {
+        if peek_type(tokens, p) != "BAR" {
+            return new_pattern_result(Pattern::OrPat(alts), p)
+        }
+        p = p + 1
+        let next: PatternResult = parse_pattern_alt(tokens, p, filename)
+        alts.push(next.pattern)
+        p = next.pos
+    }
+    return new_pattern_result(Pattern::OrPat(alts), p)
+}
+
+fn parse_pattern_alt(tokens: List<Token>, pos: Int, filename: String) -> PatternResult {
     let tt: String = peek_type(tokens, pos)
     let val: String = peek_value(tokens, pos)
 

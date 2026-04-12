@@ -3324,6 +3324,25 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
                 }
             }
             if pk_arm == "wildcard" { default_lbl = label }
+            // v4.35.0: or-patterns — add one switch case per alternative
+            if pk_arm == "or" {
+                let alts: List<Pattern> = pattern_or_alts(arm.pattern)
+                let mut oi: Int = 0
+                for _ in 0..20 {
+                    if oi >= len(alts) { oi = len(alts) } else {
+                        let alt: Pattern = alts[oi]
+                        let apk: String = pattern_kind(alt)
+                        if apk == "constructor" { cases.push(new_switch_case(pattern_ctor_name(alt), label)) }
+                        if apk == "literal" { cases.push(new_switch_case(get_literal_value(pattern_literal_expr(alt)), label)) }
+                        if apk == "ident" {
+                            let apn: String = pattern_ident_name(alt)
+                            if is_enum_variant(s, apn) { cases.push(new_switch_case(apn, label)) } else { default_lbl = label }
+                        }
+                        if apk == "wildcard" { default_lbl = label }
+                        oi = oi + 1
+                    }
+                }
+            }
             i = i + 1
         }
     }
@@ -3383,6 +3402,32 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             // to preserve LowerState type (avoids emitter type tracking loss)
             let s_bound: LowerState = bind_arm_pattern(s, subject_r.value, arm.pattern)
             s = s_bound
+
+            // v4.35.0: guard fall-through — evaluate guard, branch on result
+            match arm.guard {
+                Some(guard_expr) => {
+                    let guard_r: LowerResult = lower_expr(s, guard_expr)
+                    s = guard_r.state
+                    let pass_r: LowerResult = fresh_block_label(s, "guard_pass")
+                    s = pass_r.state
+                    let pass_label: String = pass_r.value.name
+                    let fail_r: LowerResult = fresh_block_label(s, "guard_fail")
+                    s = fail_r.state
+                    let fail_label: String = fail_r.value.name
+                    s = emit_instr(s, Instruction::Branch(guard_r.value, pass_label, fail_label))
+                    // Guard fail: jump to next arm or merge
+                    s = add_block(s, fail_label)
+                    if ai + 1 < na_match {
+                        let next_label: String = arm_labels[ai + 1]
+                        s = emit_instr(s, Instruction::Jump(next_label))
+                    } else {
+                        s = emit_instr(s, Instruction::Jump(merge_label))
+                    }
+                    // Guard pass: continue to body
+                    s = add_block(s, pass_label)
+                },
+                None => {}
+            }
 
             // Lower arm body
             let arm_val_r: LowerResult = lower_arm_body(s, arm.body)
@@ -3496,6 +3541,13 @@ fn bind_arm_pattern(st: LowerState, subject_val: Value, pat: Pattern) -> LowerSt
     }
     if pk == "ident" {
         return bind_ident_pattern(st, subject_val, pattern_ident_name(pat))
+    }
+    // v4.35.0: or-patterns — bind from first alternative
+    if pk == "or" {
+        let alts: List<Pattern> = pattern_or_alts(pat)
+        if len(alts) > 0 {
+            return bind_arm_pattern(st, subject_val, alts[0])
+        }
     }
     return st
 }

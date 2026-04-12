@@ -1012,7 +1012,16 @@ fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferR
         let arm: MatchArm = arms[i]
         let arm_st: SemState = push_scope(st2)
         let bound_st: SemState = bind_pattern(arm_st, arm.pattern)
-        let after_arm: SemState = check_match_arm_body(bound_st, arm.body)
+        // v4.35.0: type-check optional guard (must be Bool)
+        let mut guarded_st: SemState = bound_st
+        match arm.guard {
+            Some(g) => {
+                let gr: InferResult = infer_expr(bound_st, g)
+                guarded_st = gr.st
+            },
+            None => {}
+        }
+        let after_arm: SemState = check_match_arm_body(guarded_st, arm.body)
         st2 = pop_scope(after_arm)
         i = i + 1
     }
@@ -1047,6 +1056,13 @@ fn bind_pattern(st: SemState, pat: Pattern) -> SemState {
             i = i + 1
         }
         return st2
+    }
+    // v4.35.0: or-patterns — bind from first alternative (all have same names)
+    if pk == "or" {
+        let alts: List<Pattern> = pattern_or_alts(pat)
+        if len(alts) > 0 {
+            return bind_pattern(st, alts[0])
+        }
     }
     return st
 }

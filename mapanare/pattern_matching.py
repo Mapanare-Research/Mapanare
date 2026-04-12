@@ -12,6 +12,7 @@ from mapanare.ast_nodes import (
     ConstructorPattern,
     IdentPattern,
     LiteralPattern,
+    OrPattern,
     Pattern,
     WildcardPattern,
 )
@@ -108,6 +109,7 @@ def _is_wildcard(pat: Pattern, variant_names: set[str] | None = None) -> bool:
         if variant_names is not None:
             return pat.name not in variant_names
         return True
+    # OrPattern is never a wildcard (it should be expanded before reaching here)
     return False
 
 
@@ -295,8 +297,32 @@ def _sort_by_definition_order(
     return ctors
 
 
+def _expand_row(row: PatternRow) -> list[PatternRow]:
+    """Expand a row: if any column has an OrPattern, split into multiple rows."""
+    for col_idx, pat in enumerate(row.patterns):
+        if isinstance(pat, OrPattern):
+            result: list[PatternRow] = []
+            for alt in pat.alternatives:
+                new_patterns = row.patterns[:col_idx] + [alt] + row.patterns[col_idx + 1 :]
+                new_row = PatternRow(patterns=new_patterns, action_idx=row.action_idx)
+                result.extend(_expand_row(new_row))
+            return result
+    return [row]
+
+
+def expand_or_patterns(matrix: PatternMatrix) -> PatternMatrix:
+    """Expand OrPattern entries into multiple rows with the same action_idx."""
+    new_rows: list[PatternRow] = []
+    for row in matrix.rows:
+        new_rows.extend(_expand_row(row))
+    return PatternMatrix(rows=new_rows, type_contexts=matrix.type_contexts)
+
+
 def build_decision_tree(matrix: PatternMatrix) -> DecisionTree:
     """Build a decision tree from a pattern matrix (Maranget 2008)."""
+    # v4.35.0: expand or-patterns into multiple rows before the algorithm
+    matrix = expand_or_patterns(matrix)
+
     # Base case 1: no rows — non-exhaustive
     if not matrix.rows:
         witness = _build_fail_witness(matrix)
@@ -476,4 +502,6 @@ def display_witness(pat: Pattern) -> str:
         return pat.name
     if isinstance(pat, LiteralPattern):
         return _literal_tag(pat)
+    if isinstance(pat, OrPattern):
+        return " | ".join(display_witness(a) for a in pat.alternatives)
     return "_"

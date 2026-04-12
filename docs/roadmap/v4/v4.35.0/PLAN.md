@@ -7,7 +7,7 @@
 > alternatives), and guards are a post-match check that fits cleanly
 > between the `Leaf` node and the action jump.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No (additive syntax; existing matches keep working unchanged)
 **Prerequisite:** v4.34.0 (decision-tree match lowering must be byte-identical between pipelines first — A6 closed)
 **Delta review:** **YES** — Coral lens, with Rattler cross-check on the guard lowering. Two new syntactic forms means the reviewer verifies both.

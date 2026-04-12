@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.35.0] - 2026-04-12
+
+**Match Guards + Or-Patterns — last growth release of Arc 1.**
+Two new syntactic forms building on v4.34.0's decision-tree infrastructure.
+3 LOW runtime items closed (pthread_once sweep).
+
+### Added — Match guards
+
+- **Guard syntax**: `case pattern if cond => body` — optional `if <expr>`
+  clause between pattern and `=>`. Guard must be `Bool`. Guard can reference
+  pattern bindings. Guard failure falls through to remaining arms.
+  Grammar: `guard: KW_IF assign_expr` in `mapanare/mapanare.lark`.
+  AST: `MatchArm.guard: Expr | None` in `mapanare/ast_nodes.py`.
+  Lowering: `Branch` + fallback decision tree in `mapanare/lower.py`.
+  Self-hosted mirror: `mapanare/self/ast.mn`, `parser.mn`, `semantic.mn`, `lower.mn`.
+
+### Added — Or-patterns
+
+- **Or-pattern syntax**: `case A | B | C => body` — pattern disjunction.
+  All alternatives must bind the same variable names. Compiles to multiple
+  rows in the Maranget pattern matrix (shared action block).
+  Grammar: `or_pattern: pattern_alt (BAR pattern_alt)*` in `mapanare/mapanare.lark`.
+  AST: `OrPattern` class in `mapanare/ast_nodes.py`.
+  Engine: `expand_or_patterns` in `mapanare/pattern_matching.py`.
+  Self-hosted mirror: `OrPat(List<Pattern>)` in `mapanare/self/ast.mn`.
+
+### Added — Tests
+
+- `tests/golden/49_match_guards.mn` — guard fall-through with integers
+- `tests/golden/50_match_or_patterns.mn` — or-patterns with enum categorization
+- `tests/golden/51_match_guards_and_or.mn` — combined guards + or-patterns
+- `tests/parser/test_match_guards.py` — 5 parser tests for guard syntax
+- `tests/parser/test_match_or_patterns.py` — 7 parser tests for or-patterns
+- `tests/semantic/test_match_guards.py` — 5 semantic tests (Bool check, bindings, exhaustiveness)
+- `tests/semantic/test_match_or_patterns.py` — 4 semantic tests (binding compat, exhaustiveness)
+
+### Fixed — Runtime thread safety (LOW carry-forward)
+
+- `runtime/native/mapanare_io.c`: `s_net_initialized` replaced with
+  `pthread_once` / `InitOnceExecuteOnce` (5th cycle, Viper)
+- `runtime/native/mapanare_io.c`: `ssl_load_library` atomic CAS replaced
+  with `pthread_once` / `InitOnceExecuteOnce` (3rd cycle, Viper M7)
+- `runtime/native/mapanare_io.c`: `s_bcrypt` non-atomic check replaced
+  with `InitOnceExecuteOnce` (3rd cycle, Windows-only)
+
 ## [4.34.0] - 2026-04-12
 
 **Match Decision-Tree Rewrite + Exhaustiveness — A6 closed.**

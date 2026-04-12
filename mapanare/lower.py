@@ -2903,6 +2903,28 @@ class MIRLowerer:
             self._set_block(action_blocks[i])
             self._push_scope()
             self._bind_match_arm(arm.pattern, subject)
+
+            # v4.35.0: guard fall-through — evaluate guard, branch on result
+            if arm.guard is not None:
+                guard_val = self._lower_expr(arm.guard)
+                body_bb = self._new_block(self._fresh_block("guard_pass"))
+                fallback_bb = self._new_block(self._fresh_block("guard_fail"))
+                self._emit(Branch(cond=guard_val, true_block=body_bb.label, false_block=fallback_bb.label))
+                # Emit fallback: decision tree from remaining rows
+                self._set_block(fallback_bb)
+                remaining_rows = [
+                    PatternRow(patterns=[expr.arms[j].pattern], action_idx=j)
+                    for j in range(i + 1, len(expr.arms))
+                ]
+                if remaining_rows:
+                    remaining_matrix = PatternMatrix(rows=remaining_rows, type_contexts=[ctx])
+                    remaining_tree = build_decision_tree(remaining_matrix)
+                    self._emit_decision_tree(remaining_tree, [subject], action_blocks, merge_bb)
+                else:
+                    self._emit(Jump(target=merge_bb.label))
+                # Continue body in the guard_pass block
+                self._set_block(body_bb)
+
             if isinstance(arm.body, Block):
                 arm_val = self._lower_block(arm.body)
             else:
@@ -3116,8 +3138,30 @@ class MIRLowerer:
             elif isinstance(subtree, DTSwitch):
                 self._emit_nested_switch(subtree, new_col_values, action_blocks, merge_bb)
 
+    def _emit_decision_tree(
+        self,
+        tree: Any,
+        col_values: list[Value],
+        action_blocks: list[BasicBlock],
+        merge_bb: BasicBlock,
+    ) -> None:
+        """Emit code for a decision tree (v4.35.0 — used by guard fall-through)."""
+        from mapanare.pattern_matching import DTFail, DTLeaf, DTSwitch
+
+        if isinstance(tree, DTLeaf):
+            self._emit(Jump(target=action_blocks[tree.action_idx].label))
+        elif isinstance(tree, DTFail):
+            self._emit(Jump(target=merge_bb.label))
+        elif isinstance(tree, DTSwitch):
+            if self._is_flat_switch(tree):
+                self._emit_flat_switch(tree, col_values[0], action_blocks, merge_bb)
+            else:
+                self._emit_nested_switch(tree, col_values, action_blocks, merge_bb)
+
     def _bind_match_arm(self, pat: Any, subject: Value) -> None:
         """Bind pattern variables from a match arm, handling nested constructors."""
+        from mapanare.ast_nodes import OrPattern
+
         if isinstance(pat, ConstructorPattern):
             for j, arg_pat in enumerate(pat.args):
                 if isinstance(arg_pat, (IdentPattern, ConstructorPattern)):
@@ -3140,6 +3184,9 @@ class MIRLowerer:
                         self._bind_match_arm(arg_pat, payload)
         elif isinstance(pat, IdentPattern):
             self._define_var(pat.name, subject)
+        elif isinstance(pat, OrPattern):
+            # v4.35.0: bind from first alternative (all have same names)
+            self._bind_match_arm(pat.alternatives[0], subject)
 
     def _ctor_arity(self, ty: MIRType, tag: str) -> int:
         """Get the arity of a constructor for a given type."""
