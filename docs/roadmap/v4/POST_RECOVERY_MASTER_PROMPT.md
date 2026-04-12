@@ -306,6 +306,30 @@ Don't push the tag until:
 2. SESSION_REPORT.md fact-checked
 3. `.reviews/CARRY_FORWARD.md` updated
 4. The PLAN.md exit criteria are all checked
+5. **Roadmap status updated** (see below)
+
+### Roadmap status update (mandatory, every release)
+
+After all exit criteria are green and before pushing, update the roadmap
+docs so the next session (or any reader) can see the current state at a
+glance:
+
+1. **PLAN.md** — change `**Status:** PLANNED` to `**Status:** DONE (YYYY-MM-DD)`.
+   Add the `**Session log:**` and `**Decisions taken:**` fields.
+2. **v4/README.md versions table** — if the version's row says `(planned)`,
+   remove the `(planned)` marker. Add a one-line summary of what actually
+   shipped if it differs from the plan.
+3. **ROADMAP.md release history** — same: remove `(planned)` marker from the
+   version's row in the release history table. If the row doesn't exist yet
+   (for v4.33.0+), add one.
+4. **ROADMAP.md "Where We Are" header** — bump the version number in the
+   section heading to the version you just tagged.
+5. **CLAUDE.md** — update the `Current Version & Roadmap` line to reflect the
+   new version and its theme.
+
+This takes ~5 minutes and prevents the drift that caused the v4.18.0–v4.26.0
+regression. The principle: **docs match code at every tag, not just at review
+time.**
 
 ---
 

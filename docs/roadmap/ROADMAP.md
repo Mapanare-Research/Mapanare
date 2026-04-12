@@ -60,17 +60,23 @@ section to prevent scope creep.
 
 | **v4.32.0** | Arc-end panel closure | Close 9 HIGH/MEDIUM items from v4.31.0 panel: list OOB abort, self-hosted emitter parity, drop-glue extraction, mnstr_to_cstr consolidation, signal recompute lock, bind.py unwrap, CI gate split, stale artifact cleanup, ledger schema update. Zero new features. | 1 day |
 
-Post-recovery releases follow the 45-version plan in `docs/roadmap/v4/POST_RECOVERY_ROADMAP.md`.
+Post-recovery releases follow the **45-version plan** organized into **9 thematic arcs** of 5 releases each, with a scheduled 7-reviewer panel at the end of every arc. Full details in `docs/roadmap/v4/POST_RECOVERY_ROADMAP.md`.
 
-After the panel certified v4.31.0, the project resumed normal feature work:
+### Post-Recovery Arcs (v4.33.0 → v4.76.0)
 
-| Feature | Target |
-|---------|--------|
-| **Distributed agent routing** | v5.0.0 |
-| **JIT hot-module replacement** | v5.x |
-| **LSP improvements** | v5.x |
-| **`await` coroutine lowering (LLVM coroutine intrinsics)** | v5.0.0 (deferred from v4.30.0) |
-| **DWARF debug info** | v4.32.0 if appetite, else v5.x (deferred from v4.29.0) |
+| Arc | Versions | Theme | Panel | Key deliverable |
+|-----|----------|-------|-------|-----------------|
+| **1** | v4.33.0 – v4.36.0 | Error handling + Pattern matching | v4.36.0 | `?` operator, decision-tree match, guards + or-patterns |
+| **2** | v4.37.0 – v4.41.0 | LSP maturity | v4.41.0 | Go-to-def, find-refs, rename, completion, VS Code extension |
+| **3** | v4.42.0 – v4.46.0 | Tensor completeness | v4.46.0 | Tensor literals, indexing, broadcasting, reductions + slicing |
+| **4** | v4.47.0 – v4.51.0 | Stdlib AI/LLM | v4.51.0 | Unified LLM interface, structured output, embeddings + RAG |
+| **5** | v4.52.0 – v4.56.0 | Compiler debt drain | v4.56.0 | Self-hosted semantic wiring (A7), UNRESOLVED/ERROR split (A8), `const` Path A |
+| **6** | v4.57.0 – v4.61.0 | Deprecation + deletion | v4.61.0 | Python emitter deletion, llvmlite JIT deletion, dead code final pass |
+| **7** | v4.62.0 – v4.66.0 | DWARF debug info | v4.66.0 | `DICompileUnit`, `DISubprogram`, line metadata, `llvm.dbg.declare`/`value` |
+| **8** | v4.67.0 – v4.71.0 | Coroutine foundation | v4.71.0 | Design doc, `async`/`await` grammar + AST, semantic analysis, MIR suspension |
+| **9** | v4.72.0 – v4.76.0 | Coroutine completion | v4.76.0 | Suspend/resume/destroy, runtime scheduler, `for await`, end-to-end demos |
+
+Every arc follows: **3–4 feature releases → 1 panel release**. Each panel release ships minimal new work so the panel has a stable target. The lead can tag v5.0.0 at any point — the plan doesn't change.
 
 The historical "What's Next" sequence (v4.1.0–v4.7.0) below is preserved as
 the original refactor plan record. All items have been completed but the panel
@@ -331,6 +337,16 @@ SUMMARY.md files.
 | **v4.29.0** (planned) | Build Infrastructure + Test Honesty | `mapanare_db.c` + `mapanare_html.c` linked; Makefile build-rt enumeration; `extern "Python" fn` decision; `verify_fixed_point.sh` propagates exit; CI hollow-feature gate (`raise NotImplementedError` = 0) |
 | **v4.30.0** (planned) | Codegen + Emitter Carry-Forwards | `await` decision; agent dispatch wired; optimizer non-convergence ICE; `stream_fusion` in fixpoint; self-hosted DCE BFS + `clean_phis_in_block`; six 7-cycle emitter items closed |
 | **v4.31.0** (planned) | Documentation Truth + Process | SPEC sync (26 versions stale); Spanish README sync; User-Agent bump; dead code sweep; CHANGELOG honesty + docs-drift CI scripts; **next 7-reviewer panel runs and certifies recovery arc complete** |
+| **v4.32.0** | Arc-End Panel Closure | Close 9 HIGH/MEDIUM from v4.31.0 panel; zero new features |
+| **v4.33.0–v4.36.0** (planned) | Arc 1: Error Handling + Pattern Matching | `?` operator, decision-tree match rewrite, guards + or-patterns. Panel at v4.36.0 |
+| **v4.37.0–v4.41.0** (planned) | Arc 2: LSP Maturity | Go-to-def, find-refs, rename, completion, VS Code extension. Panel at v4.41.0 |
+| **v4.42.0–v4.46.0** (planned) | Arc 3: Tensor Completeness | Tensor literals, indexing, broadcasting, reductions + slicing. Panel at v4.46.0 |
+| **v4.47.0–v4.51.0** (planned) | Arc 4: Stdlib AI/LLM | Unified LLM interface, structured output, embeddings + RAG. Panel at v4.51.0 |
+| **v4.52.0–v4.56.0** (planned) | Arc 5: Compiler Debt Drain | Self-hosted semantic wiring, UNRESOLVED/ERROR split, `const` Path A. Panel at v4.56.0 |
+| **v4.57.0–v4.61.0** (planned) | Arc 6: Deprecation + Deletion | Python emitter, llvmlite JIT, dead code final pass. Panel at v4.61.0 |
+| **v4.62.0–v4.66.0** (planned) | Arc 7: DWARF Debug Info | `DICompileUnit`, `DISubprogram`, line metadata, `llvm.dbg.declare`. Panel at v4.66.0 |
+| **v4.67.0–v4.71.0** (planned) | Arc 8: Coroutine Foundation | Design doc, `async`/`await` grammar + AST, semantic, MIR suspension. Panel at v4.71.0 |
+| **v4.72.0–v4.76.0** (planned) | Arc 9: Coroutine Completion | Suspend/resume/destroy, scheduler, `for await`, end-to-end demos. Panel at v4.76.0 |
 
 ---
 
