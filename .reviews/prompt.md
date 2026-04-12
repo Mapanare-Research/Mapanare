@@ -8,16 +8,17 @@
 
 ## Version Configuration
 
-**TARGET VERSION:** `v4.41.0`
+**TARGET VERSION:** `v4.46.0`
 
-> **This is the Arc 2 cadence panel.** Mapanare v4.37.0–v4.41.0 is
-> Arc 2 (LSP maturity). v4.37.0 built the WorkspaceIndex + cross-module
-> go-to-def, v4.38.0 added find-references + rename, v4.39.0 added
-> context-aware completion, v4.40.0 added diagnostic streaming + VS Code
-> polish. v4.41.0 is the 5-minor cadence panel: zero new features, full
-> 7-reviewer audit. If this panel returns aggregate ≥9.0 with zero
-> NEEDS WORK verdicts, Arc 2 closes and v4.42.0 opens Arc 3 (tensor
-> completeness). If not, v4.42.0 becomes a recovery release.
+> **This is the Arc 3 cadence panel.** Mapanare v4.42.0–v4.45.0 is
+> Arc 3 (Tensor completeness). v4.42.0 added tensor literals + runtime
+> wiring, v4.43.0 added multi-dimensional indexing + bounds checking,
+> v4.44.0 added NumPy-style broadcasting + SPEC §3.10 closure, v4.45.0
+> added reductions + slicing + linear regression demo. v4.46.0 is the
+> 5-minor cadence panel: zero new features, full 7-reviewer audit.
+> If this panel returns aggregate ≥9.0 with zero NEEDS WORK verdicts,
+> Arc 3 closes and v4.47.0 opens Arc 4 (stdlib AI/LLM). If not,
+> v4.47.0 becomes a recovery release.
 
 Set the review output directory based on this version:
 
