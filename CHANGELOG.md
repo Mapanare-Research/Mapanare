@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.33.0] - 2026-04-11
+
+**The `?` Operator — first new language feature in 7 releases.**
+First growth release of Arc 1 (Error Handling + Pattern Matching).
+Delta review mandatory per `.reviews/REVIEW_CADENCE.md`.
+
+### Added — `?` operator for `Result<T, E>` and `Option<T>`
+
+- **`expr?` early-return syntax** — desugars to `match` + `return Err(e)`.
+  Grammar production `error_prop` at `mapanare/mapanare.lark`, AST node
+  `ErrorPropExpr` at `mapanare/ast_nodes.py`, lowering at
+  `mapanare/lower.py::_lower_error_prop`. No changes to
+  `mapanare/emit_llvm_text.py` — pure AST-level sugar.
+
+- **Semantic type-checking** (v4.33.0 new): `mapanare/semantic.py`
+  `_check_error_prop` validates that the inner expression is
+  `Result<T, E>` or `Option<T>`, the enclosing function returns a
+  compatible type, and produces diagnostic messages when misused.
+
+- **Self-hosted lowerer bug fix**: `mapanare/self/lower.mn`
+  `lower_error_prop` had a block-ordering bug where `add_block` switched
+  `current_block_idx` before the `Branch` was emitted, leaving the entry
+  block without a terminator. MIR verifier caught it; fix emits Branch
+  before creating target blocks.
+
+- **Golden test**: `tests/golden/47_try_operator.mn` — Ok path
+  (42+8=50) and Err path ("failed" propagates). Passes on both Python
+  bootstrap and `mnc-stage1`. Reference:
+  `tests/golden/47_try_operator.ref.ll`.
+
+- **Parser tests**: `tests/parser/test_try_operator.py` — 5 tests
+  covering positive parsing + negative rejection of `?` in invalid
+  positions.
+
+- **Semantic tests**: `tests/semantic/test_try_operator.py` — 5 tests
+  covering valid Result/Option usage + type-mismatch errors.
+
+### Fixed — LOW sweep (3 items from v4.31.0 panel)
+
+- **`mn_signal_propagate` depth limit** (Viper, 8th cycle).
+  `runtime/native/mapanare_core.c`: `MN_SIGNAL_PROPAGATE_MAX_DEPTH=1024`
+  with per-thread depth counter. Aborts with diagnostic on cycle-like
+  deep graphs.
+
+- **`mnc-stage1` stripped** (Mamba). `scripts/build_stage1.py` runs
+  `strip` post-link (opt-out: `STRIP=0`). Binary 3.3MB → 2.9MB.
+
+- **Agent destroy message dtor** (Viper M5, 2nd cycle, row #50).
+  `runtime/native/mapanare_runtime.h`: new `message_dtor` field on
+  `mapanare_agent_t`. `mapanare_agent_destroy` calls it for every
+  in-flight message during drain. NULL = backwards-compatible.
+
 ## [4.32.0] - 2026-04-11
 
 **Arc-End Panel Closure — closes 9 HIGH + MEDIUM items from the
