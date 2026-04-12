@@ -528,6 +528,14 @@ class MIRLowerer:
 
         return is_terminator(self._block.instructions[-1])
 
+    @staticmethod
+    def _block_is_terminated(bb: BasicBlock) -> bool:
+        if not bb.instructions:
+            return False
+        from mapanare.mir import is_terminator
+
+        return is_terminator(bb.instructions[-1])
+
     # -- Scope management --------------------------------------------------
 
     def _push_scope(self) -> None:
@@ -2844,10 +2852,17 @@ class MIRLowerer:
             )
             return result
 
-        # Both branches terminated — merge block is unreachable but callers
-        # may reference the result.  Use the function's return type so the C
-        # emitter generates a correctly-sized variable.
-        ret_ty = self._fn.return_type if self._fn else mir_void()
+        # Neither branch produced a value. If the merge IS reachable (at
+        # least one branch didn't terminate), this is a void if-statement —
+        # use VOID type so match arm void detection sees it correctly.
+        # Only use the function return type when the merge is truly
+        # unreachable (both branches terminate).
+        then_term = then_exit_bb is not None and self._block_is_terminated(then_exit_bb)
+        else_term = else_exit_bb is not None and self._block_is_terminated(else_exit_bb)
+        if then_term and else_term:
+            ret_ty = self._fn.return_type if self._fn else mir_void()
+        else:
+            ret_ty = mir_void()
         result = self._make_value(ty=ret_ty, prefix="if_result")
         self._emit(Const(dest=result, ty=ret_ty, value=None))
         return result
@@ -2925,20 +2940,20 @@ class MIRLowerer:
                     arm_results.append((exit_bb.label, arm_val))
             self._pop_scope()
 
-        # Merge block — always emit phi when arm_results is non-empty, using
-        # the function return type. This matches the self-hosted convention
-        # and ensures byte-identity (Rule 4).
+        # Merge block — mirrors self-hosted all_zero check.
         self._set_block(merge_bb)
 
-        if arm_results:
-            ret_ty = self._fn.return_type if self._fn else mir_void()
-            if ret_ty.kind == TypeKind.VOID:
-                ret_ty = arm_results[0][1].ty
-            result = self._make_value(ty=ret_ty, prefix="match_result")
+        has_real_value = any(val.name != "zeroinitializer" for _, val in arm_results)
+
+        if arm_results and has_real_value:
+            phi_ty = arm_results[0][1].ty
+            if self._fn and self._fn.return_type.kind != TypeKind.VOID:
+                phi_ty = self._fn.return_type
+            result = self._make_value(ty=phi_ty, prefix="match_result")
             self._emit(Phi(dest=result, incoming=arm_results))
             return result
 
-        # All arms terminated — unreachable merge
+        # All arms terminated or all void — unreachable merge
         ret_ty = self._fn.return_type if self._fn else mir_void()
         result = self._make_value(ty=ret_ty, prefix="match_result")
         self._emit(Const(dest=result, ty=ret_ty, value=None))
