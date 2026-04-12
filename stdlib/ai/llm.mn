@@ -1708,3 +1708,202 @@ pub fn cost_summary(resp: LLMResponse) -> String {
     pon cost: Float = response_cost(resp)
     da usage_summary(resp.usage) + ", cost: $" + str(cost)
 }
+
+// ---------------------------------------------------------------------------
+// Streaming types (v4.47.0)
+// ---------------------------------------------------------------------------
+
+pub tipo ChatChunk {
+    delta: String,
+    finish_reason: String,
+    is_done: Bool
+}
+
+fn new_chunk(delta: String, reason: String, done: Bool) -> ChatChunk {
+    da new ChatChunk {delta: delta, finish_reason: reason, is_done: done}
+}
+
+fn content_chunk(delta: String) -> ChatChunk {
+    da new_chunk(delta, "", false)
+}
+
+fn final_chunk(reason: String) -> ChatChunk {
+    da new_chunk("", reason, true)
+}
+
+// ---------------------------------------------------------------------------
+// Streaming chat (v4.47.0)
+//
+// Synchronous-per-chunk: blocks on each chunk arrival.
+// Real async lands in v4.74.0 with coroutines.
+// ---------------------------------------------------------------------------
+
+pub fn chat_stream(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatChunk> {
+    // Build provider-specific request body (same as chat, but streaming)
+    pon mut body: String = ""
+    pon mut headers: Map<String, String> = #{}
+
+    match config.provider {
+        OpenAI => {
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
+            body = build_openai_body(config, msgs)
+            headers = openai_headers(config)
+        },
+        Anthropic => {
+            body = build_anthropic_body(config, messages)
+            headers = anthropic_headers(config)
+        },
+        Groq => {
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
+            body = build_openai_body(config, msgs)
+            headers = openai_headers(config)
+        },
+        Ollama => {
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
+            body = build_ollama_body(config, msgs)
+            headers = ollama_headers()
+        },
+        Custom => {
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
+            body = build_openai_body(config, msgs)
+            headers = openai_headers(config)
+        }
+    }
+
+    // Send request via existing HTTP helper
+    pon http_result: HttpResult = https_post(config.host, config.port, config.path, headers, body, config.timeout_ms)
+    si http_result.ok == false {
+        da [final_chunk("error: " + http_result.error_msg)]
+    }
+
+    // Parse the full response body into chunks
+    // Note: v4.47.0 streaming is post-hoc (receives full body then splits).
+    // Real per-chunk streaming requires async I/O (v4.74.0).
+    da parse_stream_response(config, http_result.body)
+}
+
+// Parse response body into ChatChunk list based on provider
+fn parse_stream_response(config: LLMConfig, body: String) -> List<ChatChunk> {
+    pon mut chunks: List<ChatChunk> = []
+
+    // Split by newlines and process each line
+    pon lines: List<String> = split_lines(body)
+    pon mut i: Int = 0
+    mien i < len(lines) {
+        pon line: String = lines[i]
+        i = i + 1
+        si len(line) > 0 {
+            // OpenAI/Anthropic SSE format: "data: {...}"
+            si line.starts_with("data: ") {
+                pon json_str: String = line.substr(6, len(line))
+                si json_str != "[DONE]" {
+                    // Extract delta content from JSON using existing jget
+                    pon delta: String = jget(json_str, "content")
+                    si len(delta) > 0 {
+                        chunks = chunks + [content_chunk(delta)]
+                    }
+                } sino {
+                    chunks = chunks + [final_chunk("stop")]
+                }
+            } sino {
+                // Ollama format: newline-delimited JSON
+                si line.starts_with("{") {
+                    pon msg_obj: String = jget(line, "message")
+                    pon mut delta: String = ""
+                    si len(msg_obj) > 0 {
+                        delta = jget(msg_obj, "content")
+                    } sino {
+                        delta = jget(line, "content")
+                    }
+                    pon done: String = jget(line, "done")
+                    si done == "true" {
+                        chunks = chunks + [final_chunk("stop")]
+                    } sino {
+                        si len(delta) > 0 {
+                            chunks = chunks + [content_chunk(delta)]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    da chunks
+}
+
+// ---------------------------------------------------------------------------
+// Default config from environment (v4.47.0)
+//
+// Reads MAPANARE_LLM_BACKEND, MAPANARE_LLM_API_KEY, MAPANARE_LLM_MODEL,
+// MAPANARE_LLM_BASE_URL. Defaults to Ollama at localhost:11434.
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_env_get(name: String) -> String
+
+pub fn default_config() -> LLMConfig {
+    pon mut backend: String = __mn_env_get("MAPANARE_LLM_BACKEND")
+    pon api_key: String = __mn_env_get("MAPANARE_LLM_API_KEY")
+    pon mut model: String = __mn_env_get("MAPANARE_LLM_MODEL")
+    pon base_url: String = __mn_env_get("MAPANARE_LLM_BASE_URL")
+
+    // Default backend selection
+    si len(backend) == 0 {
+        si len(api_key) > 0 {
+            backend = "openai"
+        } sino {
+            backend = "ollama"
+        }
+    }
+
+    si backend == "openai" {
+        si len(model) == 0 { model = "gpt-4o" }
+        da openai(api_key, model)
+    }
+    si backend == "anthropic" {
+        si len(model) == 0 { model = "claude-sonnet-4-20250514" }
+        da anthropic(api_key, model)
+    }
+    si backend == "groq" {
+        si len(model) == 0 { model = "llama-3.3-70b-versatile" }
+        da groq(api_key, model)
+    }
+    si backend == "ollama" {
+        si len(model) == 0 { model = "llama3.2" }
+        si len(base_url) > 0 {
+            da ollama_at(base_url, 11434, model)
+        }
+        da ollama(model)
+    }
+    // Fallback to Ollama
+    da ollama("llama3.2")
+}
+
+// ---------------------------------------------------------------------------
+// String helpers for streaming (v4.47.0)
+// ---------------------------------------------------------------------------
+
+fn split_lines(s: String) -> List<String> {
+    pon mut lines: List<String> = []
+    pon mut current: String = ""
+    pon mut i: Int = 0
+    mien i < len(s) {
+        pon c: String = s.char_at(i)
+        i = i + 1
+        si c == "\n" {
+            si len(current) > 0 {
+                lines = lines + [current]
+            }
+            current = ""
+        } sino {
+            si c != "\r" {
+                current = current + c
+            }
+        }
+    }
+    si len(current) > 0 {
+        lines = lines + [current]
+    }
+    da lines
+}
+
+// starts_with and extract_json_field removed — using String.starts_with()
+// method and the existing jget() function instead.
