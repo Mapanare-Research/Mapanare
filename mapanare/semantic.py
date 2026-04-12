@@ -886,6 +886,12 @@ class SemanticChecker:
                         TypeInfo(kind=TypeKind.STRUCT, name="JsonError"),
                     ],
                 )
+            if name == "__struct_meta":
+                if len(expr.type_args) != 1:
+                    self._error("__struct_meta expects exactly one type argument", expr)
+                if len(expr.args) != 0:
+                    self._error("__struct_meta takes no arguments", expr)
+                return STRING_TYPE
 
         if isinstance(expr.callee, Identifier):
             sym = self.current_scope.lookup(expr.callee.name)

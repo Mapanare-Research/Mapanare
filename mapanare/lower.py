@@ -1666,6 +1666,8 @@ class MIRLowerer:
                 return self._lower_encode_struct(expr, args[0])
             if fn_name == "decode_to" and len(args) == 1:
                 return self._lower_decode_to(expr, args[0])
+            if fn_name == "__struct_meta" and len(args) == 0:
+                return self._lower_struct_meta(expr)
 
         # Monomorphize generic function calls
         if isinstance(expr.callee, Identifier):
@@ -1939,6 +1941,52 @@ class MIRLowerer:
         final = self._make_value(ty=mir_string())
         self._emit(BinOp(dest=final, op=BinOpKind.ADD, lhs=result, rhs=close))
         return final
+
+    def _lower_struct_meta(self, expr: CallExpr) -> Value:
+        """Lower __struct_meta::<T>() — returns JSON schema string for struct T (v4.48.0)."""
+        type_arg = expr.type_args[0]
+        struct_name = type_arg.name if hasattr(type_arg, "name") else ""
+        fields = self._module.structs.get(struct_name, [])
+
+        # Map Mapanare types to JSON schema types
+        def _json_type(ftype: MIRType) -> str:
+            kind = ftype.type_info.kind
+            if kind == TypeKind.STRING:
+                return "string"
+            if kind == TypeKind.INT:
+                return "integer"
+            if kind == TypeKind.FLOAT:
+                return "number"
+            if kind == TypeKind.BOOL:
+                return "boolean"
+            if kind == TypeKind.LIST:
+                return "array"
+            if kind == TypeKind.OPTION:
+                # Optional fields: use the inner type
+                if ftype.type_info.args:
+                    return _json_type(MIRType(ftype.type_info.args[0]))
+                return "string"
+            return "string"
+
+        # Build JSON schema at compile time as a constant string
+        props: list[str] = []
+        required: list[str] = []
+        for fname, ftype in fields:
+            jtype = _json_type(ftype)
+            props.append(f'"{fname}": {{"type": "{jtype}"}}')
+            if ftype.type_info.kind != TypeKind.OPTION:
+                required.append(f'"{fname}"')
+
+        props_str = ", ".join(props)
+        req_str = ", ".join(required)
+        schema = (
+            f'{{"type": "object", "properties": {{{props_str}}}, '
+            f'"required": [{req_str}]}}'
+        )
+
+        dest = self._make_value(ty=mir_string())
+        self._emit(Const(dest=dest, ty=mir_string(), value=schema))
+        return dest
 
     def _encode_field_to_json(self, field_val: Value, ftype: MIRType) -> Value:
         """Generate MIR to convert a field value to its JSON string representation."""
