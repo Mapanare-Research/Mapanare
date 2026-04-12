@@ -528,13 +528,6 @@ class MIRLowerer:
 
         return is_terminator(self._block.instructions[-1])
 
-    @staticmethod
-    def _block_is_terminated(bb: BasicBlock) -> bool:
-        if not bb.instructions:
-            return False
-        from mapanare.mir import is_terminator
-
-        return is_terminator(bb.instructions[-1])
 
     # -- Scope management --------------------------------------------------
 
@@ -2852,19 +2845,11 @@ class MIRLowerer:
             )
             return result
 
-        # Neither branch produced a value. If the merge IS reachable (at
-        # least one branch didn't terminate), this is a void if-statement —
-        # use VOID type so match arm void detection sees it correctly.
-        # Only use the function return type when the merge is truly
-        # unreachable (both branches terminate).
-        then_term = then_exit_bb is not None and self._block_is_terminated(then_exit_bb)
-        else_term = else_exit_bb is not None and self._block_is_terminated(else_exit_bb)
-        if then_term and else_term:
-            ret_ty = self._fn.return_type if self._fn else mir_void()
-        else:
-            ret_ty = mir_void()
-        result = self._make_value(ty=ret_ty, prefix="if_result")
-        self._emit(Const(dest=result, ty=ret_ty, value=None))
+        # Neither branch produced a value — this is a void if-statement.
+        # Use VOID type to match the self-hosted lowerer's convention, so
+        # match arm void detection treats the result correctly.
+        result = self._make_value(ty=mir_void(), prefix="if_result")
+        self._emit(Const(dest=result, ty=mir_void(), value=None))
         return result
 
     # -- Match lowering (decision-tree, Maranget 2008) -----------------------
