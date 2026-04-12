@@ -62,7 +62,8 @@ Six phases:
 | **v4.28.0** (planned) | | Concurrency + Carry-forwards | New races (signal/agent/registry); matmul carry-forwards (27 versions overdue); version string regression |
 | **v4.29.0** (planned) | | Build Infrastructure + Test Honesty | Orphaned runtime files (1,942 lines); `extern "Python"` decision; CI hollow-feature gate; `verify_fixed_point.sh` teeth |
 | **v4.30.0** (planned) | | Codegen + Emitter Carry-Forwards | `await` decision; agent dispatch; optimizer non-convergence ICE; six 7-cycle emitter items |
-| **v4.31.0** (planned) | | Documentation Truth + Process | SPEC sync (26 versions); CHANGELOG honesty CI; docs-drift CI; **next panel re-run certifies arc complete** |
+| **v4.31.0** | | Documentation Truth + Process | SPEC sync (26 versions); CHANGELOG honesty CI; docs-drift CI; **panel: 9.343/10, arc terminates** |
+| **v4.32.0** | | Arc-End Panel Closure | Close 9 HIGH/MEDIUM from v4.31.0 panel; zero new features; first post-recovery release |
 
 ## What v4.0.0 Delivered
 

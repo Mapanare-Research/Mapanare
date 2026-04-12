@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.32.0] - 2026-04-11
+
+**Arc-End Panel Closure — closes 9 HIGH + MEDIUM items from the
+v4.31.0 seven-reviewer panel. Zero new features. First post-recovery
+release; preserves recovery-arc discipline.**
+
+The v4.31.0 panel returned 9.343/10 aggregate (5 PASS + 2 PASS WITH
+NOTES), terminating the recovery arc. The panel surfaced 9 HIGH/MEDIUM
+action items plus ledger-hygiene work. This release closes all 9.
+
+Full session log: [`docs/roadmap/v4/v4.32.0/SESSION_REPORT.md`](./docs/roadmap/v4/v4.32.0/SESSION_REPORT.md).
+
+### Fixed — runtime correctness
+
+- **`__mn_list_get` / `__mn_list_set` abort on OOB** (Viper V2, HIGH).
+  v4.31.0 removed the `__mn_list_oob_buf` 4KB zero-buffer workaround
+  but left the OOB path returning NULL, which the emitter dereferences
+  unconditionally. Now prints `mapanare: list index N out of bounds
+  (len=M)` on stderr and calls `abort()`. Regression test:
+  `tests/runtime/test_list_bounds.py` (8 OOB cases + 1 in-bounds
+  sanity). v4.14.0 canary
+  `tests/llvm/test_break_nested.py` still passes.
+  `docs/cookbook.md` gains a bounds-checking note at section 3.
+
+- **Signal recompute race closed** (Viper M2, MEDIUM).
+  `mn_signal_recompute` now runs under the signal mutex — closes the
+  race where `compute_fn` writes to `signal->value` outside any lock.
+  POSIX signal mutex upgraded to `PTHREAD_MUTEX_RECURSIVE` so
+  `compute_fn` can safely call `__mn_signal_get` on dependencies
+  (standard reactive-graph pattern). TSan stress test:
+  `tests/runtime/tsan/signal_recompute_stress.c` (4 threads x 5000
+  iterations, zero races).
+
+- **`mnstr_to_cstr` consolidated to `runtime/native/mapanare_internal.h`**
+  (Mamba H3, 6th cycle, MEDIUM). Three local copies (in
+  `runtime/native/mapanare_io.c`, `runtime/native/mapanare_db.c`,
+  `runtime/native/mapanare_html.c`) replaced by a single `static inline`
+  definition. The `runtime/native/mapanare_io.c` copy had no `len < 0`
+  guard — the `memcpy` would crash on `__mn_file_read_or_empty`'s `-1`
+  sentinel. The canonical definition guards `len < 0`, `data == NULL`,
+  and `len == 0`.
+
+### Fixed — self-hosted emitter parity (Rattler #8, Cobra #14, HIGH)
+
+- **`get_fn_attrs` expanded from 25 to ~90 entries** mirroring the
+  Python `_RUNTIME_FN_ATTRS` table at `mapanare/emit_llvm_text.py`.
+  New `get_fn_ret_prefix` emits `noalias` on 13 allocator return
+  types. Stage2.ll proof: `noalias` 0 → 22, `willreturn` 0 → 188.
+  Source: `mapanare/self/emit_llvm.mn`.
+
+- **`emit_add` / `emit_sub` / `emit_mul` emit `nsw`** for signed
+  integer arithmetic, matching `mapanare/emit_llvm_text.py`. Stage2.ll
+  proof: `nsw` 0 → 1007. Source: `mapanare/self/emit_llvm_ir.mn`.
+
+- **`__mn_map_new` declared and called with 4 parameters** (key_size,
+  val_size, key_type, val_type), matching the runtime at
+  `runtime/native/mapanare_core.c`. Stage2.ll proof:
+  `declare noalias ptr @__mn_map_new(i64, i64, i64, i64) nounwind willreturn`.
+  Source: `mapanare/self/emit_llvm.mn`.
+
+### Fixed — FFI binding generator (Boa M2 + M3, MEDIUM)
+
+- **Struct String fields auto-unwrap** in generated Python bindings.
+  `mapanare/bind.py` now generates `@property` accessors that call
+  `_MnString.to_str()` / `_MnString.from_str()` for every `String`
+  field. Test: `tests/bind/test_python_binding.py::test_struct_with_string_field`.
+
+- **Unknown compound types raise `BindError`** instead of silently
+  falling back to `"int"`. `_py_annotation_for` in `mapanare/bind.py`
+  now fails loudly on `List<T>`, `Result<T, E>`, `Option<T>`, etc.
+  Test: `tests/bind/test_python_binding.py::test_unknown_type_raises_bind_error`.
+
+### Refactored — drop-glue extraction (Cobra Issue #12, 10th cycle, MEDIUM)
+
+- **`_emit_drop_glue` in `mapanare/emit_llvm_text.py` extracted into 8
+  methods**: a 48-line dispatcher + `_emit_drop_glue_collect_ret_ptrs`
+  (57 lines) + 7 per-resource helpers (32-50 lines each). Pure
+  refactor: IR output (`mapanare/self/main.ll`) byte-identical before/after.
+
+### Removed — stale binary artifacts (Boa M1 + Cobra Issue #4, MEDIUM)
+
+- `git rm runtime/native/libmapanare_rt.a` — committed archive was
+  source-clean, artifact-stale (still carried `__mn_list_oob_buf`
+  after v4.31.0 removed the source). `make build-rt` regenerates.
+- `git rm mapanare/self/stage2.ll` — 30K-line stale IR from March 29,
+  both gitignored and tracked (Cobra's half-fix from v4.29.0).
+- `.gitignore` updated: `runtime/native/*.a` added.
+- New CI gate: `make check-no-tracked-binaries` fails if any ELF/PE/
+  Mach-O/archive is tracked in `runtime/native/` or `mapanare/self/`
+  (allowlists `mnc-seed`).
+
+### Changed — process + CI (Anaconda MEDIUM + ledger hygiene)
+
+- **CI gate steps run independently** via `if: always()` in
+  `.github/workflows/ci.yml` — a gate-1 failure no longer masks
+  gates 2-5.
+- **`scripts/check_changelog_honesty.py`** and
+  **`scripts/check_no_hollow_features.py`** fall back to `grep -rl`
+  when `.git` is absent (Debian `dpkg-buildpackage` environments).
+- **`.reviews/CARRY_FORWARD.md`** gains a dual-closure schema (PY vs
+  SH columns) per Rattler/Cobra/Viper consensus. Rows #30-#35 updated
+  with asymmetric closure status. Two new rows: #49 (drop-glue
+  skip-struct-ret, Viper V1) and #50 (agent destroy message leak,
+  Viper M5).
+
 ## [4.31.0] - 2026-04-11
 
 **Documentation Truth + Process Hardening — recovery release #5, zero

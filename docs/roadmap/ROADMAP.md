@@ -56,12 +56,13 @@ section to prevent scope creep.
 | **v4.30.0** | Codegen + optimizer + emitter carry-forwards | `await` decision, `_emit_agent_wrap` no-op stub, optimizer non-convergence ICE, `stream_fusion` placement, self-hosted DCE BFS + `clean_phis_in_block`, six 7-cycle emitter carry-forwards (i64*, void()*, list bitcast, nsw flags, `__mn_map_new` arity, noalias/willreturn) | 1–2 days |
 | **v4.31.0** | Documentation truth + process hardening | SPEC sync (26 versions stale), Spanish README sync, SPEC line 121 `di` label, bilingual keywords table, User-Agent bump, dead code removal (`__mn_list_oob_buf`), CI hollow-feature gate, CHANGELOG honesty script, docs-vs-code drift detector, carry-forward queue file, **next 7-reviewer panel re-run** | 1 day |
 
-**The recovery arc terminates externally.** v4.31.0 ships only when the next
-7-reviewer panel returns aggregate ≥9.0 with zero NEEDS WORK verdicts. If the
-panel doesn't agree the arc is done, the arc isn't done — outstanding items
-flow into v4.32.0 and continue.
+**The recovery arc terminated at v4.31.0** with aggregate 9.343/10, 5 PASS + 2 PASS WITH NOTES, zero NEEDS WORK.
 
-After the panel certifies v4.31.0, the project resumes normal feature work:
+| **v4.32.0** | Arc-end panel closure | Close 9 HIGH/MEDIUM items from v4.31.0 panel: list OOB abort, self-hosted emitter parity, drop-glue extraction, mnstr_to_cstr consolidation, signal recompute lock, bind.py unwrap, CI gate split, stale artifact cleanup, ledger schema update. Zero new features. | 1 day |
+
+Post-recovery releases follow the 45-version plan in `docs/roadmap/v4/POST_RECOVERY_ROADMAP.md`.
+
+After the panel certified v4.31.0, the project resumed normal feature work:
 
 | Feature | Target |
 |---------|--------|
