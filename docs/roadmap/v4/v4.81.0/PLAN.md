@@ -6,7 +6,7 @@
 > the documentation Boa has requested since Arc 3 (v4.80.0). The panel
 > grades whether the infrastructure is solid and the debt is truly zero.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.80.0
 **Delta review:** No

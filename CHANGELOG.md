@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.81.0] - 2026-04-13
+
+**Arc 10 Panel Release — Integration Tests + Debt Zero.**
+7-reviewer panel grades v4.77.0-v4.80.0. PASS (9.00/10). Zero NEEDS WORK.
+First panel of the post-plan era. Arc 10 closes.
+
+### Added
+
+- `.reviews/v4.81.0/` panel materials: PRE_PANEL_AUDIT.md, 7 reviewer files,
+  README.md summary with verdict table and arc retrospective
+
 ## [4.80.0] - 2026-04-13
 
 **Arc 10 Release 4 — Documentation: Async Cookbook + SPEC Futures + gdb Tutorial.**

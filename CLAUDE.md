@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.80.0** (shipped) — Arc 10 release 4. Documentation: async cookbook, SPEC Futures section 29, gdb/lldb debugging tutorial. No compiler changes.
+- **v4.81.0** (shipped) — Arc 10 panel release. PASS (9.00/10). Zero NEEDS WORK. Integration harness, debt zero, docs graded. Arc 10 closes.
 - **v5.0.0** (when ready) — Major version tag. The lead's call. Zero additional work required — v4.76.0 is release-gate quality.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
