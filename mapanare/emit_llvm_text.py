@@ -2194,7 +2194,9 @@ class LLVMTextEmitter:
         # Build param list with byref/sret ABI adjustments
         param_parts: list[str] = []
         if self._fn_use_sret:
-            param_parts.append(f"ptr sret({self._fn_sret_ty}) {self._sret_ptr}")
+            # v4.84.0: noalias on sret — the caller-allocated return slot
+            # does not alias any other pointer the function can observe.
+            param_parts.append(f"ptr noalias sret({self._fn_sret_ty}) {self._sret_ptr}")
         for p in fn.params:
             ty = self._rty(p.ty)
             s = self._san(p.name)
@@ -2207,9 +2209,11 @@ class LLVMTextEmitter:
 
         lk = "internal " if (not fn.is_public and fn.name != "main") else ""
         # v4.83.0: nounwind on all user-defined functions — Mapanare has no
-        # exception mechanism, so LLVM can assume no unwind paths. This
-        # enables better code generation (no .eh_frame, no landing pads).
-        fn_attrs = " nounwind"
+        # exception mechanism, so LLVM can assume no unwind paths.
+        # v4.84.0: willreturn — all Mapanare functions terminate (infinite
+        # recursion/loops are UB). This enables LICM to hoist calls out
+        # of loops and DSE to eliminate dead stores before calls.
+        fn_attrs = " nounwind willreturn"
         # v4.70.0: presplitcoroutine attribute for async functions
         coro_attr = " presplitcoroutine" if fn.is_async else ""
         dbg_ref = ""
