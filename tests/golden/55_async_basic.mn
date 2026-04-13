@@ -1,0 +1,12 @@
+// Golden test: async fn basic (v4.75.0)
+// Tests that an async fn returns a value via block_on.
+// Expected output: 42
+
+async fn compute() -> Int {
+    return 42
+}
+
+fn main() {
+    let result = block_on(compute())
+    print(str(result))
+}
