@@ -15,7 +15,9 @@ from mapanare.ast_nodes import (
     AgentDef,
     AssertStmt,
     AssignExpr,
+    AsyncFnDef,
     ASTNode,
+    AwaitExpr,
     BinaryExpr,
     Block,
     BoolLiteral,
@@ -797,11 +799,11 @@ class MIRLowerer:
                 self._module.pipes[actual.name] = MIRPipeInfo(name=actual.name, stages=stages)
 
             # Store generic function AST definitions for monomorphization
-            if isinstance(actual, FnDef) and actual.type_params:
+            if isinstance(actual, (FnDef, AsyncFnDef)) and actual.type_params:
                 self._generic_fn_defs[actual.name] = actual
 
             # Collect function return/param types for call-site type propagation
-            if isinstance(actual, FnDef):
+            if isinstance(actual, (FnDef, AsyncFnDef)):
                 if actual.return_type is not None:
                     self._fn_return_types[actual.name] = _resolve_type_expr(actual.return_type)
                 if actual.params:
@@ -841,6 +843,22 @@ class MIRLowerer:
             if actual.type_params:
                 return  # Generic functions lowered on demand via monomorphization
             self._lower_fn(actual)
+        elif isinstance(actual, AsyncFnDef):
+            # v4.68.0: honest interim — grammar + AST real, lowering not yet.
+            # Coroutine lowering (LLVM intrinsics) arrives at v4.70.0.
+            from mapanare.diagnostics import Diagnostic, Label, Severity
+
+            span = actual.span
+            diag = Diagnostic(
+                severity=Severity.ERROR,
+                message="async fn is under construction — lowering arrives in v4.70.0",
+                labels=[Label(span=span, message="async fn cannot be compiled yet", primary=True)],
+                notes=[
+                    "semantic analysis and MIR lowering for async fn are not yet implemented",
+                    "this will compile in v4.70.0+; see docs/roadmap/v4/v4.67.0/DESIGN.md §4",
+                ],
+            )
+            raise RuntimeError(str(diag))
         elif isinstance(actual, AgentDef):
             self._lower_agent(actual)
         elif isinstance(actual, ImplDef):
@@ -1419,12 +1437,21 @@ class MIRLowerer:
         if isinstance(expr, SyncExpr):
             return self._lower_sync(expr)
 
-        # v4.30.0: ``AwaitExpr`` branch removed (Path B). The expression
-        # used to lower to a pure identity (``return self._lower_expr(
-        # expr.expr)``) because v4.19.0–v4.24.0 never wired real
-        # coroutine intrinsics. The grammar + AST node are gone; any
-        # lingering source that tries to use ``await`` now fails at
-        # parse time with a clear ``unexpected token`` diagnostic.
+        if isinstance(expr, AwaitExpr):
+            # v4.68.0: honest interim — grammar + AST real, lowering not yet.
+            from mapanare.diagnostics import Diagnostic, Label, Severity
+
+            span = expr.span
+            diag = Diagnostic(
+                severity=Severity.ERROR,
+                message="await is under construction — lowering arrives in v4.70.0",
+                labels=[Label(span=span, message="await cannot be compiled yet", primary=True)],
+                notes=[
+                    "coroutine suspension via LLVM intrinsics is not yet implemented",
+                    "this will compile in v4.70.0+; see docs/roadmap/v4/v4.67.0/DESIGN.md §4",
+                ],
+            )
+            raise RuntimeError(str(diag))
 
         if isinstance(expr, SendExpr):
             return self._lower_send(expr)

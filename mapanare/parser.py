@@ -14,7 +14,9 @@ from mapanare.ast_nodes import (
     AgentOutput,
     AssertStmt,
     AssignExpr,
+    AsyncFnDef,
     ASTNode,
+    AwaitExpr,
     BinaryExpr,
     Block,
     BoolLiteral,
@@ -995,7 +997,7 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             result.span = _span_from_children(children)
             return result
         # Attach decorators to the definition
-        if isinstance(defn, (FnDef, AgentDef)):
+        if isinstance(defn, (FnDef, AsyncFnDef, AgentDef)):
             defn.decorators = decorators
         defn.span = _span_from_children(children)
         return defn
@@ -1038,9 +1040,10 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         items = _filter(children)
         return SyncExpr(expr=items[0], span=_span_from_children(children))
 
-    # v4.30.0: ``await_expr`` and ``async_fn_def`` handlers removed
-    # (Path B). The grammar no longer has the rules, so the Lark
-    # transformer has nothing to dispatch to.
+    # v4.68.0: ``await_expr`` restored (Arc 8). See v4.67.0/DESIGN.md §3.2.
+    def await_expr(self, children: list[Any]) -> AwaitExpr:
+        items = _filter(children)
+        return AwaitExpr(expr=items[0], span=_span_from_children(children))
 
     def signal_value(self, children: list[Any]) -> SignalExpr:
         items = _filter(children)
@@ -1203,6 +1206,61 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             idx += 1
         body = items[idx] if idx < len(items) else Block()
         return FnDef(
+            name=name,
+            public=public,
+            type_params=type_params,
+            params=params,
+            return_type=return_type,
+            body=body,
+            trait_bounds=trait_bounds,
+            span=_span_from_children(children),
+        )
+
+    # ------------------------------------------------------------------
+    # Async function definition (v4.68.0, Arc 8)
+    # ------------------------------------------------------------------
+
+    def async_fn_def(self, children: list[Any]) -> AsyncFnDef:
+        public = _has_pub_prefix(children)
+        items = _filter(children)
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
+            idx += 1
+        # Skip past KW_ASYNC (already consumed by grammar, filtered by _filter
+        # only if it's in _SKIP — it won't be since it's a keyword token)
+        if isinstance(items[idx], Token) and items[idx].type == "KW_ASYNC":
+            idx += 1
+        name = str(items[idx])
+        idx += 1
+        type_params: list[str] = []
+        trait_bounds: dict[str, str] = {}
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and items[idx]
+            and isinstance(items[idx][0], (str, TypeParam))
+        ):
+            raw_tps = items[idx]
+            if raw_tps and isinstance(raw_tps[0], TypeParam):
+                type_params = [tp.name for tp in raw_tps]
+                trait_bounds = {tp.name: tp.bound for tp in raw_tps if tp.bound}
+            else:
+                type_params = raw_tps
+            idx += 1
+        params: list[Param] = []
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and (not items[idx] or isinstance(items[idx][0], Param))
+        ):
+            params = items[idx]
+            idx += 1
+        return_type: TypeExpr | None = None
+        if idx < len(items) and isinstance(items[idx], TypeExpr):
+            return_type = items[idx]
+            idx += 1
+        body = items[idx] if idx < len(items) else Block()
+        return AsyncFnDef(
             name=name,
             public=public,
             type_params=type_params,

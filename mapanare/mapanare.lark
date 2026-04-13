@@ -28,19 +28,9 @@ start: (_nl* (definition | stmt))* _nl*
            | impl_trait_def
            | impl_def
            | const_def
-// v4.30.0: ``async_fn_def`` removed (Path B). ``async`` / ``await``
-// were grammar-only since v4.19.0 — the lowerer treated ``await expr``
-// as pure identity (v4.24.0: "single-threaded await: just evaluate the
-// expression"), so the keywords advertised a concurrency primitive the
-// compiler never implemented. The v4.26.0 seven-reviewer panel (Viper
-// H2, Rattler #5) flagged this as a core hollow-feature case. The
-// recovery arc is not the place to ship LLVM coroutine intrinsics;
-// async/await becomes a v5.0.0 roadmap item built on the existing
-// cooperative scheduler in the C runtime. See
-// ``docs/roadmap/v4/v4.30.0/PLAN.md`` Phase 1 (Path B) and
-// ``docs/roadmap/ROADMAP.md`` v5.0.0 feature list.
+           | async_fn_def
 
-decorated_def: (decorator _nl*)+ (fn_def | agent_def | struct_def | enum_def | tipo_def)
+decorated_def: (decorator _nl*)+ (fn_def | async_fn_def | agent_def | struct_def | enum_def | tipo_def)
 decorator: AT NAME (LPAREN arg_list? RPAREN)?
 
 // Doc comments: /// lines before a definition are collected into a doc_comment node
@@ -64,8 +54,11 @@ export_names: NAME (COMMA NAME)* COMMA?
 // ------------------------------------------------------------
 
 fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
-// v4.30.0: ``async_fn_def`` rule removed. See the comment on the
-// ``_def`` alternation above for the full rationale.
+
+// v4.68.0: ``async_fn_def`` restored (Arc 8). Backed by DESIGN.md
+// (v4.67.0). Lowering to LLVM coroutine intrinsics arrives at v4.70.0;
+// until then the lowerer emits a "under construction" diagnostic.
+async_fn_def: (KW_PUB | PLUS)? KW_ASYNC KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
 
 // FFI: extern "C" fn name(params) -> RetType
 //
@@ -265,6 +258,7 @@ expr_stmt: expr
 ?unary_expr: postfix_expr
            | MINUS unary_expr -> neg_op
            | BANG unary_expr -> not_op
+           | KW_AWAIT unary_expr -> await_expr
 
 ?postfix_expr: atom_expr
              | postfix_expr LPAREN arg_list? RPAREN -> call_expr
@@ -414,12 +408,12 @@ KW_NEW: "new"
 KW_ASSERT: "assert"
 KW_BREAK.2: /(?:break|sal)(?![a-zA-Z0-9_])/
 KW_CONTINUE.2: /(?:continue|sigue)(?![a-zA-Z0-9_])/
-// v4.30.0: KW_ASYNC / KW_AWAIT terminals removed (Path B). ``async``
-// and ``await`` are now plain identifiers — a user can write
-// ``let async = 1`` without the lexer trapping them. The v4.19.0 and
-// v4.24.0 "async/await wired" CHANGELOG claims were struck in this
-// release; see docs/roadmap/v4/v4.30.0/PLAN.md Phase 1 for the full
-// hollow-feature diagnosis.
+// v4.68.0: KW_ASYNC / KW_AWAIT restored (Arc 8). Backed by
+// v4.67.0/DESIGN.md. ``async`` and ``await`` are reserved keywords
+// again. This is a breaking change from v4.30.0-v4.67.0 where they
+// were plain identifiers. LLVM coroutine lowering arrives at v4.70.0.
+KW_ASYNC.2: /async(?![a-zA-Z0-9_])/
+KW_AWAIT.2: /await(?![a-zA-Z0-9_])/
 KW_DI.2: /di(?![a-zA-Z0-9_])/
 ELLIPSIS: "..."
 

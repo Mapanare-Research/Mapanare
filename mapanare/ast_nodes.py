@@ -267,12 +267,21 @@ class SyncExpr(Expr):
     expr: Expr = field(default_factory=Expr)
 
 
-# v4.30.0: ``AwaitExpr`` deleted (Path B). ``async`` / ``await`` were
-# grammar-only since v4.19.0 — the lowerer treated ``await expr`` as
-# pure identity. See ``docs/roadmap/v4/v4.30.0/PLAN.md`` Phase 1 and
-# the ``Removed`` section of the v4.30.0 CHANGELOG entry for the full
-# hollow-feature diagnosis. Real async/await (LLVM coroutine
-# intrinsics) is a v5.0.0 roadmap item.
+# v4.68.0: ``AwaitExpr`` restored (Arc 8). Backed by v4.67.0/DESIGN.md §3.
+# Lowering to LLVM coroutine intrinsics arrives at v4.70.0; until then
+# the lowerer emits a rustc-quality "under construction" diagnostic.
+
+
+@dataclass
+class AwaitExpr(Expr):
+    """Await expression: `await future_expr`.
+
+    Suspends the current coroutine until the operand Future<T> is ready.
+    Only valid inside ``async fn`` bodies (enforced at semantic time, v4.69.0).
+    See v4.67.0/DESIGN.md §3.2.
+    """
+
+    expr: Expr = field(default_factory=Expr)
 
 
 @dataclass
@@ -581,6 +590,25 @@ class Param(ASTNode):
 @dataclass
 class FnDef(Definition):
     """Function definition: `fn name(params) -> RetType { body }`."""
+
+    name: str = ""
+    public: bool = False
+    type_params: list[str] = field(default_factory=list)
+    params: list[Param] = field(default_factory=list)
+    return_type: TypeExpr | None = None
+    body: Block = field(default_factory=lambda: Block())
+    decorators: list[Decorator] = field(default_factory=list)
+    trait_bounds: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class AsyncFnDef(Definition):
+    """Async function definition: `async fn name(params) -> RetType { body }`.
+
+    The declared return type T is sugar for Future<T>. Lowering to LLVM
+    coroutine intrinsics arrives at v4.70.0; until then the lowerer emits
+    a rustc-quality "under construction" diagnostic. See v4.67.0/DESIGN.md §3.1.
+    """
 
     name: str = ""
     public: bool = False
