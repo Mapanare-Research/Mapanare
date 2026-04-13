@@ -6,7 +6,9 @@
 > milestone: `async fn foo() -> Int { return 42 }` called from
 > `main()` returns 42.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** block_on builtin, inline-resume await, end-to-end async IR pipeline. 8 new tests (57 total). Panel items Viper #1/#2 addressed (coro.destroy + free in block_on).
+**Decisions taken:** Main-thread only (cooperative). Inline-resume at await points (no real suspension — correct for CPU-bound async). Tight poll via resume loop in block_on. Single global scheduler implied by inline-resume model.
 **Breaking:** No
 **Prerequisite:** v4.72.0
 **Delta review:** No (runtime work)

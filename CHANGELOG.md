@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.73.0] - 2026-04-13
+
+**Arc 9 Release 2 — Runtime Scheduler Integration. async fn runs end-to-end.**
+`block_on(future)` drives coroutines to completion from non-async main().
+`await` uses inline-resume to drive inner coroutines synchronously. The
+load-bearing milestone: `async fn compute() -> Int { return 42 }` actually
+returns 42.
+
+### Added
+
+- `mapanare/mir.py` — `BlockOn` instruction for driving futures from non-async
+  context
+- `mapanare/lower.py` — `block_on()` recognized as builtin, emits `BlockOn`
+  instruction
+- `mapanare/emit_llvm_text.py` — `_do_block_on`: extract handle, resume loop
+  until `coro.done`, extract value, `coro.destroy` + `free(box)` + `free(future)`
+- `tests/llvm/test_block_on.py` — 8 tests: resume loop, done check, destroy +
+  free, value extraction, end-to-end pipeline (simple + nested + multiple)
+  (`tests/llvm/test_block_on.py`)
+
+### Changed
+
+- `mapanare/emit_llvm_text.py` — `_do_await_suspend` rewritten: inline-resume
+  drives inner coroutine via `coro.resume` loop instead of suspending outer
+  (correct for single-threaded cooperative model; full suspension v5.x)
+
 ## [4.72.0] - 2026-04-13
 
 **Arc 9 Release 1 — Coroutine Lowering Pt 2 (Suspend/Resume/Destroy).** `await`
