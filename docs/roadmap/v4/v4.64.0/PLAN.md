@@ -5,7 +5,8 @@
 > in gdb now shows the correct source line. `addr2line` on a compiled
 > binary returns the right `.mn` file and line number.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Line metadata implemented via _L() hook. ret void patching and _is_term() fixed for !dbg suffixes. 28 DWARF tests pass. llvm-dwarfdump --verify clean.
 **Breaking:** No
 **Prerequisite:** v4.63.0 (compile unit + subprograms exist)
 **Delta review:** No

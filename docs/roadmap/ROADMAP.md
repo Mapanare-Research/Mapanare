@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.63.0 shipped — Arc 7 release 2: first real DWARF emission)
+## Where We Are (v4.64.0 shipped — Arc 7 release 3: line-accurate DWARF on every instruction)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

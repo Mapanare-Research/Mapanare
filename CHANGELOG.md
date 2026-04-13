@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.64.0] - 2026-04-12
+
+**Arc 7 Release 3 — Line-accurate DWARF.** Every source-origin instruction
+gets `!dbg !<N>` pointing at a `!DILocation`. DWARF line table populated.
+`addr2line` returns correct `.mn` source lines.
+
+### Added
+
+- `mapanare/emit_llvm_text.py` — line metadata on instructions: `_L()` auto-appends
+  `!dbg !<N>` when debug is enabled and the current instruction has a source span
+- `!DILocation(line, column, scope)` cached by `(file, line, col)` triple
+- `_current_span` and `_current_subprogram_id` tracking per function
+- `tests/llvm/test_dwarf_line_info.py` — 6 tests verifying instruction attachments,
+  DILocation emission, multi-function line info
+
+### Fixed
+
+- `ret void` → `ret i64 0` patching in main function now handles `!dbg` suffixes
+  (`mapanare/emit_llvm_text.py`)
+- `_is_term()` terminator detection now strips `!dbg` before matching
+
 ## [4.63.0] - 2026-04-12
 
 **Arc 7 Release 2 — First real DWARF emission.** `-g` builds now emit

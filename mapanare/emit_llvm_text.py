@@ -520,6 +520,8 @@ class LLVMTextEmitter:
         self._debug_metadata_lines: list[str] = []
         self._debug_subprogram_ids: dict[str, int] = {}
         self._debug_cu_id: int = -1
+        self._current_span: "SourceSpan | None" = None
+        self._current_subprogram_id: int = -1
         # dispatch
         self._disp: dict[type, Any] = {}
         self._init_disp()
@@ -1064,6 +1066,14 @@ class LLVMTextEmitter:
         return a
 
     def _L(self, txt: str) -> None:  # noqa: N802
+        if self._debug_enabled and self._current_span and self._current_subprogram_id >= 0:
+            span = self._current_span
+            if span.line > 0:
+                file_id = next(iter(self._debug_file_table.values()), 0)
+                loc_id = self._get_debug_location(
+                    file_id, span.line, span.column, self._current_subprogram_id
+                )
+                txt = f"{txt}, !dbg !{loc_id}"
         self._blk[self._cb].append(f"  {txt}")
 
     @staticmethod
@@ -1837,6 +1847,7 @@ class LLVMTextEmitter:
         self._dphi = []
         self._lroots = {}
         self._fn = fn
+        self._current_subprogram_id = self._debug_subprogram_ids.get(fn.name, -1)
         self._local_strings = []
         self._str_slots = {}
         self._last_tracked_str_slot = None
@@ -1988,6 +1999,7 @@ class LLVMTextEmitter:
             for inst in bb.instructions:
                 if isinstance(inst, Phi):
                     continue
+                self._current_span = getattr(inst, "span", None)
                 h = self._disp.get(type(inst))
                 if h:
                     h(inst)
@@ -2046,8 +2058,15 @@ class LLVMTextEmitter:
             self._ensure("__mn_intern_destroy", VOID, [])
             for lbl in self._blk:
                 for idx, ln in enumerate(self._blk[lbl]):
-                    if ln.strip() == "ret void":
-                        self._blk[lbl][idx] = "  call void @__mn_intern_destroy()\n  ret i64 0"
+                    stripped = ln.strip()
+                    if stripped == "ret void" or stripped.startswith("ret void, !dbg"):
+                        # Preserve any !dbg attachment
+                        dbg = ""
+                        if ", !dbg" in stripped:
+                            dbg = ", " + stripped.split(", ", 1)[1]
+                        self._blk[lbl][idx] = (
+                            f"  call void @__mn_intern_destroy(){dbg}\n  ret i64 0{dbg}"
+                        )
 
         # Build param list with byref/sret ABI adjustments
         param_parts: list[str] = []
@@ -2097,7 +2116,7 @@ class LLVMTextEmitter:
 
     @staticmethod
     def _is_term(line: str) -> bool:
-        s = line.strip()
+        s = line.split(", !dbg")[0].strip() if ", !dbg" in line else line.strip()
         return (
             s.startswith("ret ")
             or s.startswith("br ")
