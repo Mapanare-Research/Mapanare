@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.73.0** (shipped) — Arc 9 release 2. async fn runs end-to-end. `block_on(future)` + inline-resume `await`. 57 async tests.
-- **v4.74.0** (next) — Arc 9 release 3: `for await` syntax. Delta review mandatory.
+- **v4.74.0** (shipped) — Arc 9 release 3. `for await x in stream` syntax. Delta review PASS. 62 async tests.
+- **v4.75.0** (next) — Arc 9 release 4: end-to-end demos + golden tests. Cookbook chapter.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

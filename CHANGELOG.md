@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.74.0] - 2026-04-13
+
+**Arc 9 Release 3 — `for await` + Stream Async Iterator.** New syntax:
+`for await x in stream { ... }`. Desugars to loop with async iteration.
+Delta review PASS (Rattler + Coral).
+
+### Added
+
+- `mapanare/mapanare.lark` — `for_await_stmt` production
+- `mapanare/ast_nodes.py` — `ForAwaitLoop` AST node
+- `mapanare/parser.py` — `for_await_stmt` transformer
+- `mapanare/semantic.py` — async context check for `for await`
+- `mapanare/lower.py` — `_lower_for_await` desugars to for-loop pattern
+- `tests/parser/test_for_await.py` — 5 tests: parsing, async context, lowering
+  (`tests/parser/test_for_await.py`)
+- `.reviews/deltas/v4.74.0-for-await.md` — delta review verdicts
+
 ## [4.73.0] - 2026-04-13
 
 **Arc 9 Release 2 — Runtime Scheduler Integration. async fn runs end-to-end.**

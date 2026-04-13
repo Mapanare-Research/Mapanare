@@ -5,7 +5,9 @@
 > `next() -> Future<Option<T>>`. Delta review mandatory (new
 > syntactic form).
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** for await grammar, AST, parser, semantic, lowering. 5 new tests. Delta review PASS (Rattler + Coral).
+**Decisions taken:** for await is sugar (desugars to for loop). No cancellation on break (v5.x). Stream close via None in Option. Inline-resume model from v4.73.0 handles async producers.
 **Breaking:** No
 **Prerequisite:** v4.73.0 (scheduler + `block_on` + basic coroutines runnable)
 **Delta review:** **YES** — new syntax (`for await`). Rattler primary.
