@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.68.0] - 2026-04-12
+
+**Arc 8 Release 2 — `async`/`await` Grammar + AST + Parser.** Syntax returns
+with design-doc backing. Lowering to LLVM coroutine intrinsics arrives at
+v4.70.0; until then the lowerer emits a rustc-quality "under construction"
+error. Delta review PASS from Rattler, Anaconda, Coral.
+
+### Added
+
+- `mapanare/mapanare.lark` — `async_fn_def` production, `await_expr` at unary
+  precedence level, `KW_ASYNC` / `KW_AWAIT` re-reserved as keywords
+- `mapanare/ast_nodes.py` — `AsyncFnDef` and `AwaitExpr` dataclass nodes
+- `mapanare/parser.py` — transformer methods for both new grammar productions
+- `mapanare/semantic.py` — stub registration and checking for `AsyncFnDef` /
+  `AwaitExpr` (tightened in v4.69.0)
+- `mapanare/lower.py` — "under construction" `RuntimeError` at lower time for
+  both `AsyncFnDef` and `AwaitExpr`, with v4.70.0 pointer and DESIGN.md note
+- `mapanare/self/lexer.mn` — `KW_ASYNC` / `KW_AWAIT` tokens restored
+- `mapanare/self/parser.mn` — `is_async` flag activated in `parse_fn_def`,
+  `KW_AWAIT` branch in `parse_unary`, `KW_ASYNC` dispatch in `parse_definition`
+- `tests/parser/test_async_await.py` — 14 tests: construction, params, public,
+  generics, precedence, reserved keywords
+  (`tests/parser/test_async_await.py`)
+- `tests/semantic/test_async_interim_error.py` — 5 tests: lowerer error,
+  semantic stub acceptance
+  (`tests/semantic/test_async_interim_error.py`)
+- `.reviews/deltas/v4.68.0-async-grammar.md` — delta review verdicts
+
+### Breaking
+
+- `async` and `await` are reserved keywords again. Code using them as variable
+  names (valid since v4.30.0) will fail to parse. This is a documented reversal
+  of the v4.30.0 Path B strike, backed by v4.67.0/DESIGN.md.
+
 ## [4.67.0] - 2026-04-12
 
 **Arc 8 Release 1 — Coroutine Design Document. Design-only, no code.**

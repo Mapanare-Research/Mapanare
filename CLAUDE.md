@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.67.0** (shipped) — Arc 8 release 1. Design-only. Coroutine DESIGN.md locks LLVM switched-resume ABI, Option A scheduler, `{i8,ptr}` Future. No code.
-- **v4.68.0** (next) — Arc 8 release 2: `async fn`/`await` grammar + AST + parser. Delta review mandatory.
+- **v4.68.0** (shipped) — Arc 8 release 2. `async fn`/`await` grammar + AST + parser. Lowering errors honestly ("under construction — v4.70.0"). Delta review PASS.
+- **v4.69.0** (next) — Arc 8 release 3: semantic analysis for async/await. `Future<T>` type, await-inside-async enforcement.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

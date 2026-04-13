@@ -6,7 +6,9 @@
 > Compiling an `async fn` at v4.68.0 produces a "not yet lowered"
 > error; semantics and lowering come in v4.69.0-v4.70.0.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Grammar, AST, parser, semantic stub, lowerer error, self-hosted mirror, 19 tests. Delta review PASS from 3 reviewers.
+**Decisions taken:** await at unary precedence (Rust-style), AsyncFnDef as dedicated node (not flag on FnDef), async/await re-reserved as keywords (breaking from v4.30.0-v4.67.0).
 **Breaking:** No (additive; `async` and `await` become reserved words again)
 **Prerequisite:** v4.67.0 (DESIGN.md approved)
 **Delta review:** **YES — mandatory.** Rattler primary, Anaconda + Coral cross-check.
