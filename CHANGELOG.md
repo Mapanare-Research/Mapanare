@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.88.0] - 2026-04-13
+
+**Arc 12 Release 2 — Loop Detection + Strength Reduction.**
+Loop analysis infrastructure (dominators, natural loops, MIRLoop) and
+strength reduction pass (mod-by-power-of-2 to AND). LICM infrastructure
+built but disabled due to miscompilation — fix tracked for v4.89.0.
+
+### Added
+
+- `MIRLoop` dataclass in `mir.py` (header, body, back_edge, preheader)
+- `compute_dominators` — iterative dataflow dominator computation
+- `find_natural_loops` — back-edge detection on dominator tree
+- `strength_reduction` pass — mod by power of 2 replaced with bitwise AND
+- `licm_hoisted` + `strength_reduced` counters in `MIRPassStats`
+
 ## [4.87.0] - 2026-04-13
 
 **Arc 12 Release 1 — MIR Inlining Pass.**

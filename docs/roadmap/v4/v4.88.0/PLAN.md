@@ -12,7 +12,7 @@
 > is lost. MIR-level LICM can safely hoist more because it knows which
 > Mapanare functions are pure.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.87.0
 **Delta review:** No
