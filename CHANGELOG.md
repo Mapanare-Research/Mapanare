@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.84.0] - 2026-04-13
+
+**Arc 11 Release 3 — Function Attributes + Aliasing Hints.**
+Complete the IR annotation pass: every user function has willreturn + nounwind,
+every sret parameter has noalias.
+
+### Changed
+
+- `willreturn` attribute on all user-defined function definitions
+- `noalias` on all sret (struct-return) parameters
+- Combined with v4.83.0: all user functions now have `nounwind willreturn`,
+  all GEPs have `inbounds`, integer arithmetic has `nsw`, TBAA tree at module level
+
 ## [4.83.0] - 2026-04-13
 
 **Arc 11 Release 2 — IR Quality: nounwind + inbounds + TBAA.**

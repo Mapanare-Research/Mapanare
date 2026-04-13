@@ -6,7 +6,7 @@
 > aggressively, hoist invariant loads out of loops, and eliminate
 > redundant null checks.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.83.0
 **Delta review:** No

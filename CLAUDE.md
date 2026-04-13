@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.83.0** (shipped) — Arc 11 release 2. IR quality: nounwind on all user functions, inbounds on all GEPs, TBAA metadata tree. Modest benchmark improvements (+2-17%).
+- **v4.84.0** (shipped) — Arc 11 release 3. Function attributes: willreturn + noalias sret. Combined with v4.83.0: full IR annotation pass complete (nounwind, willreturn, nsw, inbounds, TBAA).
 - **v5.0.0** (when ready) — Major version tag. The lead's call. Zero additional work required — v4.76.0 is release-gate quality.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
