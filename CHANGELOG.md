@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.77.0] - 2026-04-13
+
+**Arc 10 Release 1 — Integration Test Harness.**
+First post-plan release. Every panel since Arc 3 flagged the same gap: tests
+validate IR shape but never compile and run the output. v4.77.0 builds the
+infrastructure that closes that gap.
+
+### Added
+
+- `tests/integration/conftest.py` — pipeline fixtures: `compile_mn`, `assemble_ll`,
+  `optimize_bc`, `codegen_obj`, `link_binary`, `run_binary`, `full_pipeline`
+- `tests/integration/test_golden_pipeline.py` — parametrized test discovering all
+  58 golden `.mn` files, running each through emit-llvm → llvm-as → opt -O2 →
+  llc → clang link → execute, comparing stdout against expected output
+- `tests/integration/expected/` — 46 expected output files generated from the
+  Python bootstrap pipeline
+- `.github/workflows/integration.yml` — CI gate: Ubuntu + LLVM-18, builds C
+  runtime, runs integration suite on every push/PR to `dev`
+- `scripts/integration_report.py` — JUnit XML → `RESULTS.md` per-test per-stage
+  pass/fail table
+- `tests/integration/RESULTS.md` — initial results: 46/58 pass end-to-end
+
+### Results
+
+- **46 pass** — full pipeline end-to-end (emit through run + stdout match)
+- **5 xfail** — try operator IR type mismatch (1), combined guard+or patterns (1),
+  async/await not yet in emit-llvm (3)
+- **7 skip** — external resources (file I/O, stdin, crypto, regex, HTTP, GPU)
+
 ## [4.76.0] - 2026-04-13
 
 **Arc 9 Panel Release — Coroutine Completion Close. END OF THE 45-RELEASE PLAN.**
