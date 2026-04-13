@@ -1,0 +1,86 @@
+"""v4.68.0 Phase 8 — Interim error tests for async fn lowering.
+
+The lowerer must produce a rustc-quality "under construction" error when it
+encounters an ``AsyncFnDef``, pointing the user at v4.70.0. This is the
+honest interim state — grammar real, lowering not yet. See DESIGN.md §4.
+"""
+
+from __future__ import annotations
+
+import textwrap
+
+import pytest
+
+from mapanare.ast_nodes import AsyncFnDef
+from mapanare.lower import lower
+from mapanare.parser import parse
+from mapanare.semantic import SemanticChecker
+
+
+class TestAsyncFnInterimError:
+    def test_async_fn_lowering_raises_under_construction(self) -> None:
+        """Lowering an async fn produces a RuntimeError with the v4.70.0 pointer."""
+        source = textwrap.dedent("""\
+            async fn fetch() -> Int {
+                return 42
+            }
+        """)
+        tree = parse(source)
+        checker = SemanticChecker()
+        checker.check(tree)
+        with pytest.raises(RuntimeError, match=r"under construction.*v4\.70\.0"):
+            lower(tree)
+
+    def test_async_fn_error_mentions_version(self) -> None:
+        """The error message mentions it's under construction and v4.70.0."""
+        source = textwrap.dedent("""\
+            async fn work(x: Int) -> Int {
+                return x + 1
+            }
+        """)
+        tree = parse(source)
+        checker = SemanticChecker()
+        checker.check(tree)
+        with pytest.raises(RuntimeError, match=r"under construction"):
+            lower(tree)
+
+    def test_regular_fn_still_lowers(self) -> None:
+        """Non-async functions are unaffected by the async interim."""
+        source = textwrap.dedent("""\
+            fn add(a: Int, b: Int) -> Int {
+                return a + b
+            }
+        """)
+        tree = parse(source)
+        checker = SemanticChecker()
+        checker.check(tree)
+        module = lower(tree)
+        assert module.get_function("add") is not None
+
+    def test_semantic_checker_accepts_async_fn(self) -> None:
+        """The semantic checker must not reject async fn at v4.68.0 (stub)."""
+        source = textwrap.dedent("""\
+            async fn fetch(url: String) -> String {
+                return url
+            }
+        """)
+        tree = parse(source)
+        checker = SemanticChecker()
+        # Should not raise — semantic accepts async fn as a stub
+        checker.check(tree)
+
+    def test_semantic_checker_accepts_await_expr(self) -> None:
+        """The semantic checker must not reject await at v4.68.0 (stub)."""
+        source = textwrap.dedent("""\
+            async fn f() -> Int {
+                let x = await get_value()
+                return x
+            }
+            fn get_value() -> Int {
+                return 42
+            }
+        """)
+        tree = parse(source)
+        checker = SemanticChecker()
+        # Should not raise — await checking is a stub until v4.69.0
+        checker.check(tree)
