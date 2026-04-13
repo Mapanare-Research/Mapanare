@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.57.0] - 2026-04-12
+
+**DEPRECATION NOTICE: The Python transpiler backend (`PythonMIREmitter`)
+will be removed in v4.58.0.** This is the final release where
+`mapanare compile`, `mapanare repl`, and the `mapanare.emit_python_mir`
+module are available. Migrate to the LLVM backend (`mapanare build`) or
+WASM backend (`mapanare emit-wasm`). See `docs/migration/v4.57-to-v4.58.md`.
+
+Arc 6 release 1 — deprecation warnings only, no deletion.
+
+### Deprecated
+
+- `mapanare/emit_python_mir.py` — `DeprecationWarning` on import, on
+  `PythonMIREmitter()` instantiation, and on `emitter.emit()`. All
+  warnings reference v4.58.0 and the migration guide.
+- `mapanare compile` CLI command — stderr warning on every invocation
+- `mapanare repl` — stderr warning at startup (REPL uses Python backend)
+- `_compile_source()` internal function — `DeprecationWarning` via
+  `warnings.warn`
+
+### Changed
+
+- `tests/conftest.py` — `_PYTHON_MIR_XFAIL` tracking version retargeted
+  from v5.0.0 to v4.58.0 (the actual deletion release)
+
+### Added
+
+- `docs/migration/v4.57-to-v4.58.md` — thorough migration guide covering
+  every CLI flag, library API, test infrastructure change, timeline, and FAQ
+  (`tests/test_deprecation_warnings.py::TestMigrationGuide::test_migration_guide_exists`)
+- `tests/test_deprecation_warnings.py` — 7 tests verifying warning
+  behavior, CLI stderr output, migration guide presence, and emitter
+  regression (emitter still produces valid Python)
+
 ## [4.56.0] - 2026-04-12
 
 **Arc 5 Panel Release — Compiler Debt Drain Close.**

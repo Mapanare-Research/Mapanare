@@ -6,7 +6,9 @@
 > so users of the Python backend (if any exist) have time to
 > migrate.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Phases 1-7 executed in single session. All 10 exit criteria green.
+**Decisions taken:** Decision 1: specific (v4.58.0 named). Decision 2: both import-time and __init__. Decision 3: thorough migration guide.
 **Breaking:** No (still works; just warns)
 **Prerequisite:** v4.56.0 (arc 5 panel PASS)
 **Delta review:** No

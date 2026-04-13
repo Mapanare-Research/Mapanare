@@ -5,7 +5,8 @@ idiomatic Python source with asyncio agents, reactive signals, and
 async streams.
 
 .. deprecated:: 2.0.0
-    The Python transpiler backend is deprecated. Use the LLVM or WASM backend.
+    The Python transpiler backend is deprecated and will be removed in v4.58.0.
+    Use the LLVM or WASM backend. See docs/migration/v4.57-to-v4.58.md.
 """
 
 from __future__ import annotations
@@ -13,8 +14,9 @@ from __future__ import annotations
 import warnings
 
 warnings.warn(
-    "mapanare.emit_python_mir is deprecated since v2.0.0. "
-    "Use the LLVM backend (mapanare build) or WASM backend (mapanare emit-wasm) instead.",
+    "mapanare.emit_python_mir is deprecated and will be removed in v4.58.0. "
+    "Use the LLVM backend (mapanare build) or WASM backend (mapanare emit-wasm) instead. "
+    "See docs/migration/v4.57-to-v4.58.md for the migration path.",
     DeprecationWarning,
     stacklevel=2,
 )
@@ -81,6 +83,13 @@ class PythonMIREmitter:
     """
 
     def __init__(self, python_path: list[str] | None = None) -> None:
+        warnings.warn(
+            "PythonMIREmitter is deprecated and will be removed in v4.58.0. "
+            "Use the LLVM backend via `mapanare build` or `mapanare emit-llvm`. "
+            "See docs/migration/v4.57-to-v4.58.md for the migration path.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._indent: int = 0
         self._lines: list[str] = []
         # Per-function state
@@ -105,6 +114,13 @@ class PythonMIREmitter:
 
     def emit(self, module: MIRModule) -> str:
         """Emit a complete Python source file from a MIR module."""
+        warnings.warn(
+            "PythonMIREmitter.emit() is deprecated and will be removed in v4.58.0. "
+            "Use the LLVM backend via `mapanare build` or `mapanare emit-llvm`. "
+            "See docs/migration/v4.57-to-v4.58.md for the migration path.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._lines = []
         self._scan_features(module)
         self._detect_async_fns(module)

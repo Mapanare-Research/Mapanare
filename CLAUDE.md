@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.56.0** (shipped) — Arc 5 panel release. 7-reviewer panel grades v4.52.0-v4.55.0 compiler debt drain. A7+A8+A9 closed, const Path A shipped.
-- **v4.57.0** (next) — Arc 6 release 1: deprecation + deletion (Python emitter warnings).
+- **v4.57.0** (shipped) — Arc 6 release 1. Python emitter deprecation warnings on all public entries. Migration guide at `docs/migration/v4.57-to-v4.58.md`. Deletion in v4.58.0.
+- **v4.58.0** (next) — Arc 6 release 2: Python emitter deletion (`emit_python_mir.py` + `mapanare compile` + `mapanare repl` removed).
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

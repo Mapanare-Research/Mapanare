@@ -109,10 +109,19 @@ def _compile_source(
     """Parse, check, optimize, and emit Python from Mapanare source. Returns Python code.
 
     .. deprecated:: 2.0.0
-        This function uses the legacy Python transpiler backend. New code should
-        use ``_compile_to_llvm_ir`` + ``jit_compile_and_run`` instead. Kept for
-        ``cmd_compile``, REPL, and test compatibility.
+        This function uses the legacy Python transpiler backend and will be
+        removed in v4.58.0. Use ``_compile_to_llvm_ir`` + ``jit_compile_and_run``
+        instead. See docs/migration/v4.57-to-v4.58.md.
     """
+    import warnings as _w
+
+    _w.warn(
+        "The Python transpiler backend is deprecated and will be removed in v4.58.0. "
+        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm'. "
+        "See docs/migration/v4.57-to-v4.58.md.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
 
@@ -269,14 +278,18 @@ def cmd_compile(args: argparse.Namespace) -> None:
     import warnings
 
     warnings.warn(
-        "The 'compile' subcommand targets the deprecated Python backend. "
-        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead.",
+        "The 'compile' subcommand targets the deprecated Python backend "
+        "and will be removed in v4.58.0. "
+        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead. "
+        "See docs/migration/v4.57-to-v4.58.md.",
         DeprecationWarning,
         stacklevel=1,
     )
     print(
-        "warning: 'mapanare compile' targets the deprecated Python backend. "
-        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead.",
+        "warning: 'mapanare compile' targets the deprecated Python backend "
+        "and will be removed in v4.58.0. "
+        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead. "
+        "See docs/migration/v4.57-to-v4.58.md.",
         file=sys.stderr,
     )
     source = _read_source(args.source)
@@ -462,6 +475,12 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 def cmd_repl(args: argparse.Namespace) -> None:
     """Start an interactive Mapanare REPL."""
+    print(
+        "warning: the REPL uses the deprecated Python transpiler backend, "
+        "which will be removed in v4.58.0. "
+        "See docs/migration/v4.57-to-v4.58.md.",
+        file=sys.stderr,
+    )
     opt_level = _parse_opt_level(args)
     namespace: dict[str, object] = {"__name__": "__repl__"}
     # Accumulated definitions to re-emit with each evaluation

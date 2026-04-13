@@ -99,10 +99,10 @@ items that were explicitly deferred out of the recovery arc.
 
 | # | Item | First reported | Severity | Cycles | Status | Tracking version |
 |---|------|----------------|----------|--------|--------|------------------|
-| A1 | Real `await` coroutine lowering (LLVM coroutine intrinsics) | v4.19.0 | MEDIUM | **2** | DEFERRED | v5.0.0 |
+| A1 | Real `await` coroutine lowering (LLVM coroutine intrinsics) | v4.19.0 | MEDIUM | **2** | DEFERRED | v4.67.0+ (Arc 8: coroutine foundation) |
 | A2 | DWARF debug info emission | v0.7.0 | MEDIUM | **6** | DEFERRED | v5.x |
-| A3 | Deprecated Python emitter removal (`PythonMIREmitter`) | v4.2.0 | LOW | **5** | DEFERRED | v5.0.0 |
-| A4 | llvmlite JIT emitter removal | v4.2.0 | LOW | **5** | DEFERRED | v5.0.0 |
+| A3 | Deprecated Python emitter removal (`PythonMIREmitter`) | v4.2.0 | LOW | **5** | IN PROGRESS | v4.57.0 warnings shipped; v4.58.0 deletion. `DeprecationWarning` on import, `__init__`, `emit()`. CLI stderr warnings on `compile`, `repl`. Migration guide: `docs/migration/v4.57-to-v4.58.md`. 7 regression tests in `tests/test_deprecation_warnings.py`. |
+| A4 | llvmlite JIT emitter removal | v4.2.0 | LOW | **5** | DEFERRED | v4.59.0 |
 | A5 | Culebra `list-element-size-undercount` template tightens | v4.30.0 | LOW | 1 | OPEN | Culebra project, not Mapanare |
 | A6 | Residual 69-line match-lowering shape diff between stage2 and stage3 | v4.28.0 | LOW | **3** | **CLOSED** | v4.34.0 — Maranget decision-tree rewrite in both pipelines; `mapanare/pattern_matching.py` shared helper |
 | A7 | Self-hosted semantic analysis never wired into `compile()` | v4.26.0 | LOW | **3** | **CLOSED** | v4.52.0 — `check()` called at `mapanare/self/main.mn:298`; 3 divergent-breaking checks ported (D1 `?` operator, D2 match guard Bool, D3 while Bool); 11 regression tests in `tests/self_hosted/test_semantic_wiring.py` |
@@ -118,7 +118,7 @@ items that were explicitly deferred out of the recovery arc.
 | P4 | SPEC §5.6 "compatible types" wording vs name-set-only implementation | v4.36.0 (Coral) | MEDIUM | 1 | **CLOSED** | v4.42.0 — SPEC §5.6 corrected at `docs/SPEC.md:906` |
 | P5 | `examples/` showcase gap (3rd cycle) | v4.31.0 (Coral) | MEDIUM | **3** | **CLOSED** | v4.50.0 — 4 AI demos (basic_chat, basic_stream, chat_agent, rag_agent) + cookbook AI chapter + 8 sample docs |
 | P6 | Unreachable-arm warning path zero test coverage | v4.36.0 (Boa M2) | MEDIUM | 1 | OPEN | v4.37.0 — add test_unreachable_arm_warning |
-| A10b | Self-hosted const scope issue: const symbols not found in fn bodies | v4.55.0 | LOW | 1 | OPEN | v4.57.0+ — scope-chain threading issue in self-hosted semantic.mn; Python pipeline works |
+| A10b | Self-hosted const scope issue: const symbols not found in fn bodies | v4.55.0 | LOW | **2** | OPEN | v4.58.0+ — scope-chain threading issue in self-hosted semantic.mn; Python pipeline works. Deferred from v4.57.0 (warnings-only release, no compiler changes). |
 
 ## Items resolved in v4.36.0
 

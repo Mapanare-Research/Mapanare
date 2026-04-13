@@ -1,20 +1,19 @@
 """Global test configuration.
 
-v5.x tracking — deprecated PythonMIREmitter gaps
+v4.58.0 tracking — deprecated PythonMIREmitter gaps
 -------------------------------------------------
 
 The tests in ``_PYTHON_MIR_XFAIL`` below exercise the legacy Python backend
 (``PythonMIREmitter``). That backend is deprecated: the canonical compile
 path is LLVM for native and WebAssembly for browser/server. The Python
 backend is kept only for the interactive REPL and for historical
-documentation examples. It will be retired in v5.x along with a full
-stdlib rewrite in Mapanare, at which point all of these xfails get
+documentation examples. It will be removed in v4.58.0, at which point all of these xfails get
 deleted along with the emitter itself.
 
 v4.29.0 (v4.29.0 PLAN §2.4) tightened the rules so that every
 ``pytest.mark.xfail`` in this repository now needs a tracking version.
-This whole set is tracked as ``v5.0.0: deprecated Python emitter goes
-away along with these tests``. Until v5.0.0 lands, each entry below is
+This whole set is tracked as ``v4.58.0: deprecated Python emitter goes
+away along with these tests``. Until v4.58.0 lands, each entry below is
 *not* a regression — the Python emitter never ran MIR-lowered code
 before v4.2.0, and MIRPython has known gaps (drop-glue stubs, empty
 match arms, agent/signal/stream lowering).
@@ -32,8 +31,8 @@ from __future__ import annotations
 
 import pytest
 
-# v5.0.0: the whole set is tied to the deprecated PythonMIREmitter; when
-# the emitter is deleted in v5.0.0, this set and pytest_collection_modifyitems
+# v4.58.0: the whole set is tied to the deprecated PythonMIREmitter; when
+# the emitter is deleted in v4.58.0, this set and pytest_collection_modifyitems
 # go with it.
 _PYTHON_MIR_XFAIL: set[str] = {
     # e2e: agents, signals, streams, Option/Result, match, imports
@@ -113,14 +112,14 @@ _PYTHON_MIR_XFAIL: set[str] = {
     "tests/benchmarks/test_benchmark_integrity.py::TestStreamPipelineIntegrity::test_produces_correct_output",
 }
 
-# v5.0.0: tracking version. When the deprecated Python backend is
+# v4.58.0: tracking version. When the deprecated Python backend is
 # retired, the whole set above and the dynamic xfail below go away.
 _REASON = (
-    "v5.0.0: PythonMIREmitter gap (deprecated Python backend). "
+    "v4.58.0: PythonMIREmitter gap (deprecated Python backend). "
     "These tests exercised the legacy Python emitter path via "
     "use_mir=False before emit_python.py was deleted in v4.2.0. "
     "They are retained as regression coverage for the deprecated "
-    "backend until v5.0.0 removes it along with the legacy Python "
+    "backend until v4.58.0 removes it along with the legacy Python "
     "codegen."
 )
 
@@ -128,5 +127,5 @@ _REASON = (
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if item.nodeid in _PYTHON_MIR_XFAIL:
-            # v5.0.0 tracking: this dynamic xfail matches the set above.
+            # v4.58.0 tracking: this dynamic xfail matches the set above.
             item.add_marker(pytest.mark.xfail(reason=_REASON, strict=False))
