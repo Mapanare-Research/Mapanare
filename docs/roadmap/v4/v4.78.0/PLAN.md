@@ -7,7 +7,7 @@
 > has been open for 3 cycles. All three are LOW severity with known
 > fixes. This release closes them.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.77.0
 **Delta review:** No

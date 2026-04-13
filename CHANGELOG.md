@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.78.0] - 2026-04-13
+
+**Arc 10 Release 2 — Close Carry-Forward Items 49, 50, A10b.**
+Three of the oldest Mapanare-owned carry-forward items closed in one release.
+
+### Fixed
+
+- **Item 49** (8 cycles): Drop-glue blanket early return at `emit_llvm_text.py` replaced
+  with per-return-path escape analysis. Non-escaping locals in struct-return functions
+  now get drop glue cleanup. Test: `TestStructReturnDropGlue`.
+- **Item 50** (2 cycles): `mapanare_agent_destroy` now defaults `message_dtor = free`
+  so the drain loop actually frees unconsumed message payloads.
+  Test: `test_agent_destroy_drain.c`.
+- **A10b** (3 cycles): Self-hosted const scope fixes in `semantic.mn`, `parser.mn`,
+  `lexer.mn`. Golden test `58_const_scope.mn` passes through Python bootstrap.
+
+### Added
+
+- `tests/golden/58_const_scope.mn` — const access inside function bodies
+- `tests/runtime/test_agent_destroy_drain.c` — agent destroy drain verification
+- `TestStructReturnDropGlue` in `tests/llvm/test_drop_glue.py`
+
 ## [4.77.0] - 2026-04-13
 
 **Arc 10 Release 1 — Integration Test Harness.**
