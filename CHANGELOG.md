@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.97.0] - 2026-04-13
+
+**Arc 14 Release 1 — Self-Hosted Optimizer Propagation.**
+All Arc 11-12 optimization passes ported from the Python bootstrap to the
+self-hosted compiler (`mapanare/self/`). The self-hosted `mir_opt.mn` now has
+7 passes: constant folding, constant propagation, dead block elimination,
+strength reduction, function inlining, LICM, and escape analysis. The
+`emit_llvm.mn` emitter now produces `nounwind willreturn` on user functions,
+`noalias` on sret parameters, `inbounds` on all GEPs, `nsw` on negation, and
+TBAA metadata at module level.
+
+### Added
+
+- `strength_reduce_function` pass in `mir_opt.mn` — x % 2^n → x & (2^n-1)
+- `inline_small_functions` pass in `mir_opt.mn` — single-block callee inlining
+- `licm_function` pass in `mir_opt.mn` — loop-invariant code motion
+- `escape_analysis_function` pass in `mir_opt.mn` — allocation escape tracking
+- TBAA metadata emission in `emit_llvm.mn` (type hierarchy for int/float/ptr/bool)
+- `nounwind willreturn` on all user-defined function definitions
+- `noalias` on sret parameter in function definitions
+- `inbounds` on `emit_gep` helper function in `emit_llvm_ir.mn`
+- `nsw` on `emit_neg` (integer negation) in `emit_llvm_ir.mn`
+
+### Fixed
+
+- MIR optimizer convergence: inline pass capped at 5 sites per function to
+  prevent cascading inlining in large functions like `compile()`
+  (`mir_opt.py`, `_INLINE_MAX_SITES_PER_FN`)
+- Pre-existing ruff lint: removed unused `entry_label` variable,
+  shortened over-length docstring
+
 ## [4.88.0] - 2026-04-13
 
 **Arc 12 Release 2 — Loop Detection + Strength Reduction.**

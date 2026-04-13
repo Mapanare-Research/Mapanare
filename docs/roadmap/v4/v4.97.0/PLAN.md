@@ -8,7 +8,9 @@
 > them, and verifies the fixed-point still holds. The self-hosted
 > compiler compiling itself faster is the proof.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** `docs/roadmap/v4/v4.97.0/SESSION_REPORT.md`
+**Decisions taken:** Port order as planned; `si` keyword workaround; inline convergence cap; escape analysis conservative
 **Breaking:** No
 **Prerequisite:** v4.96.0
 **Delta review:** No

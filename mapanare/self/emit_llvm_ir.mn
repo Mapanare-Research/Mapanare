@@ -164,7 +164,7 @@ fn emit_fneg(name: String, operand: String) -> String {
 }
 
 fn emit_neg(name: String, ty: String, operand: String) -> String {
-    return "  " + name + " =sub " + ty + " 0, " + operand
+    return "  " + name + " =sub nsw " + ty + " 0, " + operand
 }
 
 fn emit_not(name: String, operand: String) -> String {
@@ -244,7 +244,7 @@ fn emit_ret_void() -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_gep(name: String, ty: String, ptr: String, idx: String) -> String {
-    return "  " + name + " =getelementptr " + ty + ", ptr " + ptr + ", i64 0, i64 " + idx
+    return "  " + name + " =getelementptr inbounds " + ty + ", ptr " + ptr + ", i64 0, i64 " + idx
 }
 
 fn emit_insertvalue(name: String, struct_ty: String, agg: String, val: String, val_ty: String, idx: String) -> String {

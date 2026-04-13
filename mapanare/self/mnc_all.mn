@@ -11498,7 +11498,7 @@ fn emit_fneg(name: String, operand: String) -> String {
 }
 
 fn emit_neg(name: String, ty: String, operand: String) -> String {
-    return "  " + name + " =sub " + ty + " 0, " + operand
+    return "  " + name + " =sub nsw " + ty + " 0, " + operand
 }
 
 fn emit_not(name: String, operand: String) -> String {
@@ -11578,7 +11578,7 @@ fn emit_ret_void() -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_gep(name: String, ty: String, ptr: String, idx: String) -> String {
-    return "  " + name + " =getelementptr " + ty + ", ptr " + ptr + ", i64 0, i64 " + idx
+    return "  " + name + " =getelementptr inbounds " + ty + ", ptr " + ptr + ", i64 0, i64 " + idx
 }
 
 fn emit_insertvalue(name: String, struct_ty: String, agg: String, val: String, val_ty: String, idx: String) -> String {
@@ -15226,7 +15226,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     let mut param_types: List<String> = []
     // If sret, first param is the return pointer
     if use_sret {
-        params_str = "ptr sret(" + ret_ty + ") %__sret__"
+        params_str = "ptr noalias sret(" + ret_ty + ") %__sret__"
     }
     let mut pi: Int = 0
     let nfparams: Int = len(f.params)
@@ -15269,7 +15269,10 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     if use_sret { abi_ret = "void" }
     // main() returns i32 (C ABI) instead of void for clean exit codes
     if fn_name == "main" { abi_ret = "i32" }
-    s = emit_line(s, visibility + " " + abi_ret + " @" + fn_name + "(" + params_str + ") {")
+    // v4.97.0: nounwind willreturn on all user-defined functions.
+    // Mapanare has no exceptions (nounwind) and all functions terminate (willreturn).
+    // Matches Python bootstrap at emit_llvm_text.py:2239-2244.
+    s = emit_line(s, visibility + " " + abi_ret + " @" + fn_name + "(" + params_str + ") nounwind willreturn {")
 
     // Emit basic blocks — entry block gets byref param fixup.
     // Extracted from single loop to avoid return-in-for and else-branch bugs.
@@ -15490,6 +15493,23 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
             gi = gi + 1
         }
     }
+    // v4.97.0: TBAA metadata — type-based alias analysis descriptors.
+    // Matches Python bootstrap at emit_llvm_text.py:911-927.
+    // Declares a type hierarchy so LLVM can prove non-aliasing between
+    // int/float/ptr/bool accesses, enabling load/store reordering.
+    st = emit_blank(st)
+    st = emit_line(st, "!mapanare.version = !{!0}")
+    st = emit_line(st, "!0 = !{!\"4.97.0\"}")
+    st = emit_line(st, "!1 = !{!\"Mapanare TBAA\"}")
+    st = emit_line(st, "!2 = !{!\"int\", !1}")
+    st = emit_line(st, "!3 = !{!\"float\", !1}")
+    st = emit_line(st, "!4 = !{!\"ptr\", !1}")
+    st = emit_line(st, "!5 = !{!\"bool\", !1}")
+    st = emit_line(st, "!6 = !{!2, !2, i64 0}")
+    st = emit_line(st, "!7 = !{!3, !3, i64 0}")
+    st = emit_line(st, "!8 = !{!4, !4, i64 0}")
+    st = emit_line(st, "!9 = !{!5, !5, i64 0}")
+
     // Join all lines into a single string
     return join("\n", st.lines)
 }

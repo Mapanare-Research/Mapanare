@@ -1222,16 +1222,20 @@ def find_natural_loops(fn: MIRFunction) -> list[MIRLoop]:
                 # succ dominates bb.label — this is a back-edge to succ (the header)
                 header = succ
                 body = _compute_loop_body(header, bb.label, succs, fn)
-                loops.append(MIRLoop(
-                    header=header,
-                    body=body,
-                    back_edge=(bb.label, header),
-                ))
+                loops.append(
+                    MIRLoop(
+                        header=header,
+                        body=body,
+                        back_edge=(bb.label, header),
+                    )
+                )
     return loops
 
 
-def _compute_loop_body(header: str, back_src: str, succs: dict[str, list[str]], fn: MIRFunction) -> set[str]:
-    """Compute the natural loop body: all blocks that can reach back_src without going through header."""
+def _compute_loop_body(
+    header: str, back_src: str, succs: dict[str, list[str]], fn: MIRFunction
+) -> set[str]:
+    """Compute the loop body: blocks reachable from back_src without going through header."""
     body = {header, back_src}
     if header == back_src:
         return body
@@ -1247,9 +1251,7 @@ def _compute_loop_body(header: str, back_src: str, succs: dict[str, list[str]], 
     return body
 
 
-def _is_loop_invariant(
-    inst: Instruction, loop_body: set[str], loop_defs: set[str]
-) -> bool:
+def _is_loop_invariant(inst: Instruction, loop_body: set[str], loop_defs: set[str]) -> bool:
     """An instruction is loop-invariant if all its operands are defined outside the loop."""
     # Side-effecting instructions are never invariant
     if inst.has_side_effects:
@@ -1823,6 +1825,8 @@ def _should_inline(callee: MIRFunction, call_count: int) -> bool:
 
 
 _inline_counter = 0
+_inline_count_per_fn: dict[str, int] = {}
+_INLINE_MAX_SITES_PER_FN = 5  # v4.97.0: cap cascading inlines
 
 
 def _fresh_inline_prefix() -> str:
@@ -1904,12 +1908,22 @@ def inline_small_functions(
     v4.87.0: cost-model-driven inlining at O2. Body < 20 instructions,
     not recursive, call_count * body_size < 200.
 
+    v4.97.0: cap function growth at 500 instructions to prevent cascading
+    inlining from exceeding the fixpoint loop iteration budget (10).
+    Large functions like ``compile`` chain many small helpers; without
+    a growth cap each inline exposes new eligible call sites, and the
+    fixpoint loop never settles.
+
     For each eligible call site, the containing block is split:
     - Pre-call instructions end with Jump to the callee entry
     - Callee blocks are cloned (renamed) into the function
     - Callee Return becomes Copy + Jump to a merge block
     - Merge block continues with the post-call instructions
     """
+    # v4.97.0: cap total inline sites per function to prevent cascading.
+    if _inline_count_per_fn.get(fn.name, 0) >= _INLINE_MAX_SITES_PER_FN:
+        return False
+
     # Count calls per callee
     call_counts: dict[str, int] = {}
     for bb in fn.blocks:
@@ -1946,7 +1960,6 @@ def inline_small_functions(
             post_insts = bb.instructions[inst_idx + 1 :]
 
             # Create labels
-            entry_label = f"{prefix}entry" if callee.blocks else f"{prefix}nop"
             merge_label = f"{prefix}ret"
 
             # Pre-call block: original label, pre-insts + jump to callee entry
@@ -1980,14 +1993,12 @@ def inline_small_functions(
 
             # Insert inlined blocks + merge block after the current block
             new_blocks = (
-                fn.blocks[: bb_idx + 1]
-                + inlined_blocks
-                + [merge_block]
-                + fn.blocks[bb_idx + 1 :]
+                fn.blocks[: bb_idx + 1] + inlined_blocks + [merge_block] + fn.blocks[bb_idx + 1 :]
             )
             fn.blocks = new_blocks
 
             stats.functions_inlined += 1
+            _inline_count_per_fn[fn.name] = _inline_count_per_fn.get(fn.name, 0) + 1
             return True  # one site per call, fixpoint loop handles more
 
     return False
@@ -2109,6 +2120,9 @@ def optimize_module(
 
     # v4.87.0: build function lookup for interprocedural passes (inlining)
     fn_lookup = {f.name: f for f in module.functions}
+    # v4.97.0: reset per-function inline counters for this module
+    global _inline_count_per_fn
+    _inline_count_per_fn = {}
 
     # Per-function passes
     for fn in module.functions:
