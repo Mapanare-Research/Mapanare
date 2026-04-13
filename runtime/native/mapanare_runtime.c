@@ -605,6 +605,14 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
 
     mapanare_sem_init(&agent->inbox_ready, 0);
     mapanare_sem_init(&agent->outbox_ready, 0);
+
+    /* v4.78.0 (CARRY_FORWARD #50): default message_dtor to free() so
+     * in-flight messages are freed on agent destroy.  Previously
+     * message_dtor was NULL after memset, so the drain loop in
+     * mapanare_agent_destroy silently leaked every unconsumed payload.
+     * Agents needing custom destructors can override after init. */
+    agent->message_dtor = free;
+
     return 0;
 }
 
