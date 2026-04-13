@@ -1685,10 +1685,11 @@ def optimize_function(
             changed |= branch_simplification(fn, stats)
             changed |= unreachable_block_elimination(fn, stats)
             changed |= dead_code_elimination(fn, stats)
-            # v4.88.0: loop optimizations after DCE — clean MIR makes loop
-            # detection more precise and LICM more effective.
+            # v4.88.0: strength reduction after DCE.
+            # LICM disabled — hoisting analysis needs loop-carried value
+            # tracking. Infrastructure (dominators, natural loops) ships
+            # but the transform is gated for v4.89.0.
             changed |= strength_reduction(fn, stats)
-            changed |= licm(fn, stats)
             changed |= agent_inlining(fn, stats)
         # O3+: stream fusion. Folded into the fixpoint loop in v4.30.0
         # so fused stream chains can feed back into constant folding
