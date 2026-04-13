@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.69.0] - 2026-04-13
+
+**Arc 8 Release 3 — Semantic Analysis for async/await.** `Future<T>` becomes a
+first-class type. Async fn return type automatically wrapped. Three new
+rustc-quality semantic errors catch async misuse at compile time.
+
+### Added
+
+- `mapanare/types.py` — `TypeKind.FUTURE` enum variant, registered in all
+  type registries (`BUILTIN_GENERIC_TYPES`, `BUILTIN_GENERIC_ARITY`,
+  `BUILTIN_GENERIC_KINDS`, `_NAME_TO_KIND`)
+- `mapanare/semantic.py` — `_in_async` context tracking, `_check_async_fn()`
+  method, `Future<T>` return type wrapping in `_register_def`
+- `mapanare/semantic.py` — `AwaitExpr` type checking: validates async context,
+  validates `Future<T>` operand, extracts `T` as result type
+- `mapanare/semantic.py` — "did you forget 'await'?" error on `Future<T>` in
+  binary operations (arithmetic, comparison, equality)
+- `tests/semantic/test_async_semantics.py` — 11 tests: return type wrapping (3),
+  await-outside-async (2), await-on-non-Future (2), forgot-to-await (2),
+  regressions (2) (`tests/semantic/test_async_semantics.py`)
+
 ## [4.68.0] - 2026-04-12
 
 **Arc 8 Release 2 — `async`/`await` Grammar + AST + Parser.** Syntax returns

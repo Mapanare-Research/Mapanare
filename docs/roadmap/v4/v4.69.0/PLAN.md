@@ -6,7 +6,9 @@
 > constructor. Lowering still errors — but the error moves from
 > parse time to semantic time, which is progress.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** TypeKind.FUTURE added, async fn return type wrapped in Future<T>, await-outside-async error, await-on-non-Future error, forgot-to-await arithmetic error. 11 new tests.
+**Decisions taken:** Error (not warning) for missing await; reject await inside non-async closures; Future<T> uses uniform {i8,ptr} representation per DESIGN.md §3.3.
 **Breaking:** No
 **Prerequisite:** v4.68.0
 **Delta review:** No (no new syntax; type system extension)

@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.68.0** (shipped) — Arc 8 release 2. `async fn`/`await` grammar + AST + parser. Lowering errors honestly ("under construction — v4.70.0"). Delta review PASS.
-- **v4.69.0** (next) — Arc 8 release 3: semantic analysis for async/await. `Future<T>` type, await-inside-async enforcement.
+- **v4.69.0** (shipped) — Arc 8 release 3. `Future<T>` type, async semantic analysis. Await-outside-async error, await-on-non-Future error, forgot-to-await error.
+- **v4.70.0** (next) — Arc 8 release 4: MIR lowering pt 1. Coroutine prelude (`coro.id`, `coro.begin`, `coro.suspend`).
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

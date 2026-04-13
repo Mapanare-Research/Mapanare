@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.68.0 shipped — Arc 8: async/await grammar + AST + parser, lowering at v4.70.0)
+## Where We Are (v4.69.0 shipped — Arc 8: Future<T> type + async semantic analysis, lowering at v4.70.0)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural
