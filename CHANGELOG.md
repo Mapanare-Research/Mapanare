@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.53.0] - 2026-04-12
+
+**Arc 5 Release 2 — UNRESOLVED/ERROR Type Split (A8 Closed).**
+Cascade error suppression in the self-hosted semantic pass. A single
+undefined symbol now fires one error instead of cascading into N.
+
+### Added
+
+- `error_type()` sentinel in `mapanare/self/semantic.mn` — marks expressions
+  whose type is definitively wrong (vs `unknown_type()` = not yet inferred)
+- `type_should_skip()` helper — unifies `<unknown>`, `<unresolved>`, `<error>`
+  checks across all 31 type-comparison sites
+- `type_is_error()` predicate for cascade suppression guards
+- Cascade suppression at 12 check sites: `check_binary_expr`,
+  `check_arithmetic_binary`, `check_logical_binary`, `check_matmul_binary`,
+  `check_unary_expr`, `check_call_resolved`, `check_assign_expr`,
+  `check_if_expr`, `check_let_stmt`, `check_pipe_expr`, `infer_expr`
+  (field_access, method_call, index, error_prop)
+- Regression test `tests/self_hosted/test_error_cascade_self_hosted.py` (8 tests)
+
+### Fixed
+
+- **A8 CLOSED**: Single undefined symbol fires 1 error instead of 4 cascading.
+  `UNKNOWN` kept as alias for one release (remove in v4.54.0).
+
 ## [4.52.0] - 2026-04-12
 
 **Arc 5 Release 1 — Self-Hosted Semantic Wiring (A7 Closed).**

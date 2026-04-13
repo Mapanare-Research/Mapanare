@@ -6,7 +6,9 @@
 > (type is definitely wrong — halt). The split makes semantic errors
 > fire at the right place instead of cascading.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Single session with v4.52.0. Added error_type() + type_should_skip() + cascade suppression at 12 sites.
+**Decisions taken:** Alias approach (keep UNKNOWN for one release). Every recursive check site gets suppression (default). Transition point before lowering (default — already implicit since check() runs before lower()).
 **Breaking:** No (internal type system refactor; no user-visible grammar change)
 **Prerequisite:** v4.52.0 (semantic pass must be wired)
 **Delta review:** No

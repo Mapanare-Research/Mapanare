@@ -43,6 +43,24 @@ fn unknown_type() -> TypeInfo {
     return make_type("<unknown>")
 }
 
+// v4.53.0: UNRESOLVED/ERROR split (A8)
+fn error_type() -> TypeInfo {
+    return make_type("<error>")
+}
+
+fn type_is_error(ti: TypeInfo) -> Bool {
+    return ti.name == "<error>"
+}
+
+// Returns true for <unknown>, <unresolved>, or <error> — any type where
+// downstream checks should be skipped (either "not yet known" or "already broken").
+fn type_should_skip(name: String) -> Bool {
+    if name == "<unknown>" { return true }
+    if name == "<unresolved>" { return true }
+    if name == "<error>" { return true }
+    return false
+}
+
 fn int_type() -> TypeInfo {
     return make_type("Int")
 }
@@ -401,8 +419,9 @@ fn is_type_param(name: String) -> Bool {
 }
 
 fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
-    if a.name == "<unknown>" { return true }
-    if b.name == "<unknown>" { return true }
+    // v4.53.0: skip check for unknown/unresolved/error types
+    if type_should_skip(a.name) { return true }
+    if type_should_skip(b.name) { return true }
     if is_type_param(a.name) { return true }
     if is_type_param(b.name) { return true }
     if a.is_function {
@@ -439,7 +458,7 @@ fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
 fn is_numeric_type(name: String) -> Bool {
     if name == "Int" { return true }
     if name == "Float" { return true }
-    if name == "<unknown>" { return true }
+    if type_should_skip(name) { return true }
     return false
 }
 
@@ -448,7 +467,7 @@ fn is_arithmetic_operand(name: String) -> Bool {
     if name == "Float" { return true }
     if name == "String" { return true }
     if name == "Tensor" { return true }
-    if name == "<unknown>" { return true }
+    if type_should_skip(name) { return true }
     return false
 }
 
@@ -564,7 +583,7 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
             Some(sym) => { return new_infer_result(sym.type_info, st) },
             _ => {
                 let st_ident_err: SemState = add_error_here(st, "Undefined variable '" + name + "'")
-                return new_infer_result(unknown_type(), st_ident_err)
+                return new_infer_result(error_type(), st_ident_err)
             }
         }
     }
@@ -575,6 +594,8 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "method_call" {
         let obj_r: InferResult = infer_expr(st, expr_method_obj(expr))
+        // v4.53.0: cascade suppression — ERROR receiver propagates
+        if type_is_error(obj_r.type_info) { return new_infer_result(error_type(), obj_r.st) }
         let mut st_method: SemState = obj_r.st
         let args: List<Expr> = expr_method_args(expr)
         let mut i_method: Int = 0
@@ -590,6 +611,8 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "field_access" {
         let obj_r_field: InferResult = infer_expr(st, expr_field_obj(expr))
+        // v4.53.0: cascade suppression — ERROR receiver propagates
+        if type_is_error(obj_r_field.type_info) { return new_infer_result(error_type(), obj_r_field.st) }
         return new_infer_result(unknown_type(), obj_r_field.st)
     }
 
@@ -599,6 +622,11 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "index" {
         let obj_r_idx: InferResult = infer_expr(st, expr_index_obj(expr))
+        // v4.53.0: cascade suppression — ERROR receiver propagates
+        if type_is_error(obj_r_idx.type_info) {
+            let idx_r_skip: InferResult = infer_expr(obj_r_idx.st, expr_index_idx(expr))
+            return new_infer_result(error_type(), idx_r_skip.st)
+        }
         let idx_r: InferResult = infer_expr(obj_r_idx.st, expr_index_idx(expr))
         // List<T>[i] -> T
         if obj_r_idx.type_info.name == "List" {
@@ -633,28 +661,33 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "error_prop" {
         let ir_errprop: InferResult = infer_expr(st, expr_errorprop_inner(expr))
+        // v4.53.0: cascade suppression — ERROR inner propagates without new error
+        if type_is_error(ir_errprop.type_info) { return new_infer_result(error_type(), ir_errprop.st) }
         let mut st_ep: SemState = ir_errprop.st
         let inner_name: String = ir_errprop.type_info.name
         // v4.52.0: validate ? operator (D1 fix)
-        if inner_name != "<unknown>" {
+        if !type_should_skip(inner_name) {
             if inner_name != "Result" {
                 if inner_name != "Option" {
                     st_ep = add_error_here(st_ep, "`?` requires `Result` or `Option`, got `" + inner_name + "`")
+                    return new_infer_result(error_type(), st_ep)
                 }
             }
         }
         // Check enclosing function returns compatible type
         if inner_name == "Result" {
-            if st_ep.current_fn_return.name != "<unknown>" {
+            if !type_should_skip(st_ep.current_fn_return.name) {
                 if st_ep.current_fn_return.name != "Result" {
                     st_ep = add_error_here(st_ep, "`?` on a `Result` value requires the enclosing function `" + st_ep.current_fn_name + "` to return `Result`")
+                    return new_infer_result(error_type(), st_ep)
                 }
             }
         }
         if inner_name == "Option" {
-            if st_ep.current_fn_return.name != "<unknown>" {
+            if !type_should_skip(st_ep.current_fn_return.name) {
                 if st_ep.current_fn_return.name != "Option" {
                     st_ep = add_error_here(st_ep, "`?` on an `Option` value requires the enclosing function `" + st_ep.current_fn_name + "` to return `Option`")
+                    return new_infer_result(error_type(), st_ep)
                 }
             }
         }
@@ -760,6 +793,9 @@ fn check_binary_expr(st: SemState, left: Expr, op: String, right: Expr) -> Infer
     let lt: String = lr.type_info.name
     let rt: String = rr.type_info.name
     let st2: SemState = rr.st
+    // v4.53.0: cascade suppression — ERROR on either side propagates
+    if lt == "<error>" { return new_infer_result(error_type(), st2) }
+    if rt == "<error>" { return new_infer_result(error_type(), st2) }
 
     // Arithmetic operators
     if op == "+" { return check_arithmetic_binary(st2, lt, rt, op, lr.type_info, rr.type_info) }
@@ -789,7 +825,7 @@ fn check_binary_expr(st: SemState, left: Expr, op: String, right: Expr) -> Infer
 fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult {
     // Tensor element-wise operations
     if lt == "Tensor" {
-        if rt != "<unknown>" {
+        if !type_should_skip(rt) {
             if rt != "Tensor" {
                 if rt != "Int" {
                     if rt != "Float" {
@@ -802,7 +838,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         return new_infer_result(make_type("Tensor"), st)
     }
     if rt == "Tensor" {
-        if lt != "<unknown>" {
+        if !type_should_skip(lt) {
             if lt != "Int" {
                 if lt != "Float" {
                     let st_tensor_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for " + lt + " and Tensor")
@@ -814,22 +850,22 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
     }
 
     // Non-tensor arithmetic
-    if lt != "<unknown>" {
+    if !type_should_skip(lt) {
         if lt != "Int" {
             if lt != "Float" {
                 if lt != "String" {
                     let st_arith_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
-                    return new_infer_result(unknown_type(), st_arith_lt)
+                    return new_infer_result(error_type(), st_arith_lt)
                 }
             }
         }
     }
-    if rt != "<unknown>" {
+    if !type_should_skip(rt) {
         if rt != "Int" {
             if rt != "Float" {
                 if rt != "String" {
                     let st_arith_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
-                    return new_infer_result(unknown_type(), st_arith_rt)
+                    return new_infer_result(error_type(), st_arith_rt)
                 }
             }
         }
@@ -841,12 +877,12 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
 
 fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> InferResult {
     let mut st2: SemState = st
-    if lt != "<unknown>" {
+    if !type_should_skip(lt) {
         if lt != "Bool" {
             st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + lt)
         }
     }
-    if rt != "<unknown>" {
+    if !type_should_skip(rt) {
         if rt != "Bool" {
             st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + rt)
         }
@@ -856,12 +892,12 @@ fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> Inf
 
 fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult {
     let mut st2: SemState = st
-    if lt != "<unknown>" {
+    if !type_should_skip(lt) {
         if lt != "Tensor" {
             st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + lt)
         }
     }
-    if rt != "<unknown>" {
+    if !type_should_skip(rt) {
         if rt != "Tensor" {
             st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + rt)
         }
@@ -884,13 +920,15 @@ fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, 
 fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
     let or: InferResult = infer_expr(st, operand)
     let ot: String = or.type_info.name
+    // v4.53.0: cascade suppression
+    if ot == "<error>" { return new_infer_result(error_type(), or.st) }
 
     if op == "-" {
-        if ot != "<unknown>" {
+        if !type_should_skip(ot) {
             if ot != "Int" {
                 if ot != "Float" {
                     let st_neg: SemState = add_error_here(or.st, "Unary '-' not supported for type " + ot)
-                    return new_infer_result(or.type_info, st_neg)
+                    return new_infer_result(error_type(), st_neg)
                 }
             }
         }
@@ -898,10 +936,10 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
     }
 
     if op == "!" {
-        if ot != "<unknown>" {
+        if !type_should_skip(ot) {
             if ot != "Bool" {
                 let st_not: SemState = add_error_here(or.st, "Unary '!' requires Bool, got " + ot)
-                return new_infer_result(bool_type(), st_not)
+                return new_infer_result(error_type(), st_not)
             }
         }
         return new_infer_result(bool_type(), or.st)
@@ -965,11 +1003,13 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
             },
             _ => {
                 let st_undef: SemState = add_error_here(st, "Undefined function '" + name + "'")
-                return new_infer_result(unknown_type(), st_undef)
+                return new_infer_result(error_type(), st_undef)
             }
         }
     }
     let cr: InferResult = infer_expr(st, callee)
+    // v4.53.0: cascade suppression — ERROR callee propagates
+    if type_is_error(cr.type_info) { return new_infer_result(error_type(), cr.st) }
     return new_infer_result(unknown_type(), cr.st)
 }
 
@@ -989,8 +1029,9 @@ fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> Inf
                 if sym.mutable == false {
                     st_assign = add_error_here(st_assign, "Cannot assign to immutable variable '" + name + "'")
                 }
-                if sym.type_info.name != "<unknown>" {
-                    if vr.type_info.name != "<unknown>" {
+                // v4.53.0: skip type check if either side is error/unknown
+                if !type_should_skip(sym.type_info.name) {
+                    if !type_should_skip(vr.type_info.name) {
                         if types_compatible(sym.type_info, vr.type_info) == false {
                             st_assign = add_error_here(st_assign, "Type mismatch in assignment to '" + name + "'")
                         }
@@ -1017,7 +1058,8 @@ fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Optio
     let cr: InferResult = infer_expr(st, cond)
     let mut st2: SemState = cr.st
 
-    if cr.type_info.name != "<unknown>" {
+    // v4.53.0: skip check for unknown/error types
+    if !type_should_skip(cr.type_info.name) {
         if cr.type_info.name != "Bool" {
             st2 = add_error_here(st2, "If condition must be Bool, got " + cr.type_info.name)
         }
@@ -1069,7 +1111,7 @@ fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferR
             Some(g) => {
                 let gr: InferResult = infer_expr(bound_st, g)
                 guarded_st = gr.st
-                if gr.type_info.name != "<unknown>" {
+                if !type_should_skip(gr.type_info.name) {
                     if gr.type_info.name != "Bool" {
                         guarded_st = add_error_here(guarded_st, "match guard must be a Bool expression, got " + gr.type_info.name)
                     }
@@ -1180,7 +1222,7 @@ fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult {
             },
             _ => {
                 let st_err: SemState = add_error_here(st, "Undefined agent '" + name + "'")
-                return new_infer_result(unknown_type(), st_err)
+                return new_infer_result(error_type(), st_err)
             }
         }
     }
@@ -1227,8 +1269,8 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
                     if sym.type_info.is_function {
                         if len(sym.type_info.param_types) > 0 {
                             let expected: TypeInfo = sym.type_info.param_types[0]
-                            if expected.name != "<unknown>" {
-                                if lr.type_info.name != "<unknown>" {
+                            if !type_should_skip(expected.name) {
+                                if !type_should_skip(lr.type_info.name) {
                                     if types_compatible(expected, lr.type_info) == false {
                                         let st3_mismatch: SemState = add_error_here(st2, "Pipe type mismatch: piped to '" + name + "'")
                                         match sym.type_info.return_type {
@@ -1252,7 +1294,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
             },
             _ => {
                 let st3_undef: SemState = add_error_here(st2, "Undefined function '" + name + "'")
-                return new_infer_result(unknown_type(), st3_undef)
+                return new_infer_result(error_type(), st3_undef)
             }
         }
     }
@@ -1305,7 +1347,7 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState {
         let wr: InferResult = infer_expr(st, stmt_while_cond(stmt))
         let mut st_while: SemState = wr.st
         // v4.52.0: while condition must be Bool (D3 fix)
-        if wr.type_info.name != "<unknown>" {
+        if !type_should_skip(wr.type_info.name) {
             if wr.type_info.name != "Bool" {
                 st_while = add_error_here(st_while, "While condition must be Bool, got " + wr.type_info.name)
             }
@@ -1339,8 +1381,9 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
     let mut st2: SemState = vr.st
 
     // Check annotation matches value type
-    if ann_type.name != "<unknown>" {
-        if vr.type_info.name != "<unknown>" {
+    // v4.53.0: skip if either side is unknown/error (cascade suppression)
+    if !type_should_skip(ann_type.name) {
+        if !type_should_skip(vr.type_info.name) {
             if types_compatible(ann_type, vr.type_info) == false {
                 st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name)
             }
@@ -1349,7 +1392,7 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
 
     // Use annotation if available, otherwise inferred
     let resolved: TypeInfo = ann_type
-    if ann_type.name == "<unknown>" {
+    if type_should_skip(ann_type.name) {
         let resolved2: TypeInfo = vr.type_info
         let sym: Symbol = new_symbol(name, "variable", resolved2, mutable)
         return define_in_scope(st2, name, sym)
@@ -1389,7 +1432,7 @@ fn check_signal_decl(st: SemState, name: String, mutable: Bool, type_ann: Option
     let vr: InferResult = infer_expr(st, value)
     let ann_type: TypeInfo = resolve_type_opt(type_ann)
     let resolved: TypeInfo = ann_type
-    if ann_type.name == "<unknown>" {
+    if type_should_skip(ann_type.name) {
         let resolved2: TypeInfo = vr.type_info
         let mut args: List<TypeInfo> = []
         args.push(resolved2)
@@ -1408,7 +1451,7 @@ fn check_stream_decl(st: SemState, name: String, type_ann: Option<TypeExpr>, val
     let vr: InferResult = infer_expr(st, value)
     let ann_type: TypeInfo = resolve_type_opt(type_ann)
     let resolved: TypeInfo = ann_type
-    if ann_type.name == "<unknown>" {
+    if type_should_skip(ann_type.name) {
         let resolved2: TypeInfo = vr.type_info
         let args: List<TypeInfo> = []
         let stream_type: TypeInfo = make_generic_type("Stream", args)
