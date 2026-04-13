@@ -5,7 +5,9 @@
 > CARRY_FORWARD.md reconciliation. No new features, no deletions
 > beyond dead code.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** All phases executed. Vulture clean (0 real dead code). 8 past-due tracking versions re-dated. CARRY_FORWARD reconciled.
+**Decisions taken:** Vulture at 90% confidence. Past-due items re-tracked to v4.62.0+ (Arc 7). llvmlite guards in 24 test files left as dormant skipif (future migration).
 **Breaking:** No (only dead code goes)
 **Prerequisite:** v4.59.0
 **Delta review:** No

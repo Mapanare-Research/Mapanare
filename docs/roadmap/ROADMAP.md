@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.59.0 shipped — Arc 6 release 3: llvmlite JIT deleted, A4 closed)
+## Where We Are (v4.60.0 shipped — Arc 6 release 4: dead-code audit, ready for panel)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

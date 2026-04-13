@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.60.0] - 2026-04-12
+
+**Dead-code audit + test honesty final pass.** Housekeeping release before the
+Arc 6 panel. No new features, no behavior changes.
+
+### Changed
+
+- `.reviews/CARRY_FORWARD.md` — 8 past-due tracking versions re-dated from
+  v4.33.0-v4.58.0 to v4.62.0+ (Arc 7). CLOSED items evidence verified.
+  Cycle counts updated.
+
+### Verified
+
+- Vulture dead-code audit: 0 real dead code at 90% confidence (3 false positives)
+- TODO/FIXME audit: 8 comments, all in code generators (valid runtime placeholders)
+- Skip-tracking audit: `check_silent_skips.py` clean
+- Stale files: no `.orig`/`.bak`/`.rej` found
+- 24 test files with `HAS_LLVMLITE` guards: dormant (skip gracefully), migration
+  to clang-based compilation deferred to future release
+
 ## [4.59.0] - 2026-04-12
 
 **BREAKING: `mapanare jit` and `mapanare run --release` have been removed.**

@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.59.0** (shipped) — Arc 6 release 3. llvmlite JIT deleted (A4 closed). `mapanare jit` + `--release` removed. `mapanare build` uses clang directly.
-- **v4.60.0** (next) — Arc 6 release 4: dead-code audit + test honesty sweep before panel.
+- **v4.60.0** (shipped) — Arc 6 release 4. Dead-code audit + CARRY_FORWARD reconciliation. 8 past-due tracking versions re-dated. Vulture clean.
+- **v4.61.0** (next) — Arc 6 panel release.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
