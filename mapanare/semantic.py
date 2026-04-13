@@ -637,7 +637,7 @@ class SemanticChecker:
                 return UNKNOWN_TYPE
             # Operand is not Future<T> — error
             self._error(
-                f"'await' requires a Future<T>, got {inner_type.display_name()}",
+                f"'await' requires a Future<T>, got {inner_type.display_name}",
                 expr,
             )
             return UNKNOWN_TYPE
@@ -729,7 +729,7 @@ class SemanticChecker:
         if left.kind == TypeKind.FUTURE or right.kind == TypeKind.FUTURE:
             future_side = "left" if left.kind == TypeKind.FUTURE else "right"
             future_type = left if left.kind == TypeKind.FUTURE else right
-            inner = future_type.args[0].display_name() if future_type.args else "T"
+            inner = future_type.args[0].display_name if future_type.args else "T"
             self._error(
                 f"Cannot use Future<{inner}> in '{expr.op}' operation — "
                 f"did you forget 'await'? Use 'await' to get the {inner} value.",
