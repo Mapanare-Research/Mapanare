@@ -142,11 +142,9 @@ class TestCoroutinePrelude:
         assert "declare i8 @llvm.coro.suspend" in ir
 
 
-class TestAwaitStillErrors:
-    def test_await_expr_errors_at_v4_72(self) -> None:
-        """await expression should still error, now pointing at v4.72.0."""
-        import pytest
-
+class TestAwaitNowWorks:
+    def test_await_expr_compiles(self) -> None:
+        """v4.72.0: await expression compiles to suspension IR (no longer errors)."""
         source = textwrap.dedent("""\
             async fn get() -> Int { return 1 }
             async fn f() -> Int {
@@ -155,5 +153,6 @@ class TestAwaitStillErrors:
             }
             fn main() -> Int { return 0 }
         """)
-        with pytest.raises(RuntimeError, match=r"v4\.72\.0"):
-            _emit(source)
+        ir = _emit(source)
+        assert "@llvm.coro.save" in ir
+        assert "@llvm.coro.suspend" in ir
