@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.62.0** (shipped) — Arc 7 release 1. DWARF design doc + emitter infrastructure. `-g` flag wired. No DWARF output yet.
-- **v4.63.0** (next) — Arc 7 release 2: DICompileUnit + DISubprogram emission.
+- **v4.63.0** (shipped) — Arc 7 release 2. First real DWARF: DICompileUnit + DISubprogram per function. `llvm-dwarfdump --verify` passes.
+- **v4.64.0** (next) — Arc 7 release 3: DILocation line metadata on every instruction.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

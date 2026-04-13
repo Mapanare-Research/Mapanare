@@ -518,6 +518,8 @@ class LLVMTextEmitter:
         self._debug_location_cache: dict[tuple[int, int, int], int] = {}
         self._debug_type_cache: dict[str, int] = {}
         self._debug_metadata_lines: list[str] = []
+        self._debug_subprogram_ids: dict[str, int] = {}
+        self._debug_cu_id: int = -1
         # dispatch
         self._disp: dict[type, Any] = {}
         self._init_disp()
@@ -599,17 +601,140 @@ class LLVMTextEmitter:
         self._debug_file_table[path] = mid
         return mid
 
-    def _get_debug_location(self, file_id: int, line: int, col: int) -> int:
+    def _get_debug_location(self, file_id: int, line: int, col: int, scope_id: int) -> int:
         """Return the metadata ID for a source location, creating if needed."""
         key = (file_id, line, col)
         if key in self._debug_location_cache:
             return self._debug_location_cache[key]
         mid = self._alloc_metadata_id()
         self._debug_metadata_lines.append(
-            f"!{mid} = !DILocation(line: {line}, column: {col}, scope: !{{}})"
+            f"!{mid} = !DILocation(line: {line}, column: {col}, scope: !{scope_id})"
         )
         self._debug_location_cache[key] = mid
         return mid
+
+    def _get_debug_basic_type(self, name: str, size: int, encoding: str) -> int:
+        """Return metadata ID for a DWARF basic type, cached by name."""
+        if name in self._debug_type_cache:
+            return self._debug_type_cache[name]
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{mid} = !DIBasicType(name: \"{name}\", size: {size}, encoding: {encoding})"
+        )
+        self._debug_type_cache[name] = mid
+        return mid
+
+    def _get_debug_type_for_mir(self, ty: MIRType) -> int:
+        """Map a MIR type to a DWARF basic type metadata ID."""
+        from mapanare.types import TypeKind
+
+        k = ty.kind
+        if k == TypeKind.INT:
+            return self._get_debug_basic_type("Int", 64, "DW_ATE_signed")
+        elif k == TypeKind.FLOAT:
+            return self._get_debug_basic_type("Float", 64, "DW_ATE_float")
+        elif k == TypeKind.BOOL:
+            return self._get_debug_basic_type("Bool", 8, "DW_ATE_boolean")
+        else:
+            # Placeholder for String, List, Map, etc. — treated as opaque ptr
+            return self._get_debug_basic_type("ptr", 64, "DW_ATE_address")
+
+    def _emit_debug_subroutine_type(self, fn: "MIRFunction") -> int:
+        """Emit a DISubroutineType for a function and return its metadata ID."""
+        type_refs = []
+        # Return type (first element; None for void)
+        rt = fn.return_type
+        if rt and rt.kind.value not in ("void", "Void"):
+            type_refs.append(f"!{self._get_debug_type_for_mir(rt)}")
+        else:
+            type_refs.append("null")
+        # Parameter types
+        for p in fn.params:
+            type_refs.append(f"!{self._get_debug_type_for_mir(p.ty)}")
+        types_list = ", ".join(type_refs)
+        # Cache by signature tuple
+        sig_key = tuple(type_refs)
+        cache_key = str(sig_key)
+        if cache_key in self._debug_type_cache:
+            return self._debug_type_cache[cache_key]
+        types_mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(f"!{types_mid} = !{{{types_list}}}")
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{mid} = !DISubroutineType(types: !{types_mid})"
+        )
+        self._debug_type_cache[cache_key] = mid
+        return mid
+
+    def _emit_debug_compile_unit(self, source_file: str) -> int:
+        """Emit a DICompileUnit and return its metadata ID."""
+        file_id = self._get_debug_file(source_file)
+        mid = self._alloc_metadata_id()
+        ver = self._version()
+        self._debug_metadata_lines.append(
+            f"!{mid} = distinct !DICompileUnit("
+            f"language: DW_LANG_C99, "
+            f"file: !{file_id}, "
+            f'producer: "Mapanare {ver}", '
+            f"isOptimized: true, "
+            f"runtimeVersion: 0, "
+            f"emissionKind: FullDebug)"
+        )
+        self._debug_cu_id = mid
+        return mid
+
+    def _emit_debug_subprogram(self, fn: "MIRFunction", source_file: str) -> int:
+        """Emit a DISubprogram for a function and return its metadata ID."""
+        file_id = self._get_debug_file(source_file)
+        line = fn.source_line if fn.source_line else 0
+        sr_type_id = self._emit_debug_subroutine_type(fn)
+        is_local = "true" if (not fn.is_public and fn.name != "main") else "false"
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{mid} = distinct !DISubprogram("
+            f'name: "{fn.name}", '
+            f'linkageName: "{fn.name}", '
+            f"scope: !{self._debug_cu_id}, "
+            f"file: !{file_id}, "
+            f"line: {line}, "
+            f"type: !{sr_type_id}, "
+            f"isLocal: {is_local}, "
+            f"isDefinition: true, "
+            f"scopeLine: {line}, "
+            f"spFlags: DISPFlagDefinition, "
+            f"unit: !{self._debug_cu_id})"
+        )
+        return mid
+
+    def _build_debug_metadata_section(self) -> list[str]:
+        """Build the module-level DWARF metadata section."""
+        if not self._debug_enabled or not hasattr(self, "_debug_cu_id"):
+            return []
+        lines = [
+            "",
+            f"!llvm.dbg.cu = !{{!{self._debug_cu_id}}}",
+            "!llvm.module.flags = !{!_mf_dwarf, !_mf_di, !_mf_wchar}",
+            "",
+        ]
+        # Module flags use named placeholders — resolve them
+        dwarf_mid = self._alloc_metadata_id()
+        di_mid = self._alloc_metadata_id()
+        wchar_mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{dwarf_mid} = !{{i32 7, !\"Dwarf Version\", i32 5}}"
+        )
+        self._debug_metadata_lines.append(
+            f"!{di_mid} = !{{i32 2, !\"Debug Info Version\", i32 3}}"
+        )
+        self._debug_metadata_lines.append(
+            f"!{wchar_mid} = !{{i32 1, !\"wchar_size\", i32 4}}"
+        )
+        # Replace placeholders
+        lines[2] = f"!llvm.module.flags = !{{!{dwarf_mid}, !{di_mid}, !{wchar_mid}}}"
+        # All metadata nodes
+        lines.extend(self._debug_metadata_lines)
+        lines.append("")
+        return lines
 
     # ── public entry point ──────────────────────────────────────────
     def emit(self, mir: MIRModule) -> str:
@@ -646,18 +771,26 @@ class LLVMTextEmitter:
                 [self._rty(p.ty) for p in f.params],
                 False,
             )
-        # 4) emit bodies
+        # 4) DWARF metadata (v4.63.0) — emit compile unit + subprograms BEFORE bodies
+        if self._debug_enabled:
+            source_file = getattr(mir, "source_file", self._name + ".mn")
+            self._emit_debug_compile_unit(source_file)
+            for f in mir.functions:
+                if f.blocks:
+                    sp_id = self._emit_debug_subprogram(f, source_file)
+                    self._debug_subprogram_ids[f.name] = sp_id
+        # 5) emit bodies
         fns: list[str] = []
         for f in mir.functions:
             if f.blocks:
                 fns.append(self._emit_fn(f))
-        # 5) agent wrappers
+        # 6) agent wrappers
         for aname, ainfo in mir.agents.items():
             fns.append(self._emit_agent_wrap(aname, ainfo))
-        # 6) pipe defs
+        # 7) pipe defs
         for pname, pinfo in mir.pipes.items():
             fns.append(self._emit_pipe(pname, pinfo))
-        # 7) assemble
+        # 8) assemble
         hdr = [
             f"; ModuleID = '{self._name}'",
             f'source_filename = "{self._name}"',
@@ -666,7 +799,16 @@ class LLVMTextEmitter:
             "",
         ]
         ver = self._version()
-        tail = ["", "!mapanare.version = !{!0}", f'!0 = !{{!"{ver}"}}', ""]
+        if self._debug_enabled:
+            # Version metadata uses allocated IDs to avoid collision with debug IDs
+            ver_list_id = self._alloc_metadata_id()
+            ver_str_id = self._alloc_metadata_id()
+            self._debug_metadata_lines.append(f'!{ver_str_id} = !{{!"{ver}"}}')
+            tail = ["", f"!mapanare.version = !{{!{ver_list_id}}}"]
+            self._debug_metadata_lines.append(f"!{ver_list_id} = !{{!{ver_str_id}}}")
+            tail += self._build_debug_metadata_section()
+        else:
+            tail = ["", "!mapanare.version = !{!0}", f'!0 = !{{!"{ver}"}}', ""]
         parts = hdr
         if self._globals:
             parts += self._globals + [""]
@@ -1922,7 +2064,10 @@ class LLVMTextEmitter:
         abi_rt = "void" if self._fn_use_sret else rt
 
         lk = "internal " if (not fn.is_public and fn.name != "main") else ""
-        out: list[str] = [f"define {lk}{abi_rt} @{fn.name}({ps}) {{", "pre_entry:"]
+        dbg_ref = ""
+        if self._debug_enabled and fn.name in self._debug_subprogram_ids:
+            dbg_ref = f" !dbg !{self._debug_subprogram_ids[fn.name]}"
+        out: list[str] = [f"define {lk}{abi_rt} @{fn.name}({ps}){dbg_ref} {{", "pre_entry:"]
         out.extend(self._ent)
         # Store params into allocas (byref params get memcpy from pointer)
         for p in fn.params:

@@ -5,7 +5,9 @@
 > function. `llvm-dwarfdump` will now show function boundaries and
 > source-file associations.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** All phases executed. DICompileUnit + DISubprogram + basic types emitted. llvm-dwarfdump --verify passes. 22 tests.
+**Decisions taken:** DW_LANG_C99, FullDebug emissionKind, placeholder ptr type for non-primitive types.
 **Breaking:** No (additive)
 **Prerequisite:** v4.62.0 (infrastructure)
 **Delta review:** No

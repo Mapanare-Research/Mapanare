@@ -72,14 +72,14 @@ class TestLocationTableDeduplication:
 
     def test_same_location_same_id(self) -> None:
         e = _make_emitter(debug=True)
-        id1 = e._get_debug_location(0, 10, 5)
-        id2 = e._get_debug_location(0, 10, 5)
+        id1 = e._get_debug_location(0, 10, 5, scope_id=0)
+        id2 = e._get_debug_location(0, 10, 5, scope_id=0)
         assert id1 == id2
 
     def test_different_locations_different_ids(self) -> None:
         e = _make_emitter(debug=True)
-        id1 = e._get_debug_location(0, 10, 5)
-        id2 = e._get_debug_location(0, 20, 1)
+        id1 = e._get_debug_location(0, 10, 5, scope_id=0)
+        id2 = e._get_debug_location(0, 20, 1, scope_id=0)
         assert id1 != id2
 
 

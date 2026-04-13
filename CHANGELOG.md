@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.63.0] - 2026-04-12
+
+**Arc 7 Release 2 — First real DWARF emission.** `-g` builds now emit
+`!DICompileUnit`, `!DIFile`, `!DIBasicType`, `!DISubroutineType`, and
+`!DISubprogram` for every function. `llvm-dwarfdump --verify` passes.
+
+### Added
+
+- `mapanare/emit_llvm_text.py` — DWARF metadata emission:
+  `_get_debug_basic_type()` for Int/Float/Bool with proper DWARF encodings,
+  `_get_debug_type_for_mir()` type mapper, `_emit_debug_subroutine_type()`,
+  `_emit_debug_compile_unit()`, `_emit_debug_subprogram()`,
+  `_build_debug_metadata_section()` for module-level metadata assembly
+- Function definitions now carry `!dbg !N` linking to their `DISubprogram`
+- DWARFv5 module flags: `Dwarf Version = 5`, `Debug Info Version = 3`
+- `tests/llvm/test_dwarf_compile_unit.py` — 12 tests verifying compile unit,
+  subprograms, basic types, and debug-off behavior
+
 ## [4.62.0] - 2026-04-12
 
 **Arc 7 Release 1 — DWARF Design + Infrastructure.**
