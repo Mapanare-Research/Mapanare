@@ -5,7 +5,9 @@
 > and the upgraded `chat_stream` demos from the AI/LLM arc.
 > `CARRY_FORWARD.md` A1 closes here.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** 3 async golden tests (55-57), 8 verification pytests, A1 CLOSED after 56 releases. 70 total async tests.
+**Decisions taken:** Golden tests verify full pipeline compilation (parser → semantic → lower → emit). A1 closure evidence: 57_real_await.mn with 3 await points + block_on fanout.
 **Breaking:** No
 **Prerequisite:** v4.74.0
 **Delta review:** No

@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.74.0 shipped — Arc 9: for await syntax, 62 async tests, end-to-end golden at v4.75.0)
+## Where We Are (v4.75.0 shipped — Arc 9: A1 CLOSED, 57 goldens, 70 async tests, final panel at v4.76.0)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

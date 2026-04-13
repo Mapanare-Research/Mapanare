@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.75.0] - 2026-04-13
+
+**Arc 9 Release 4 — End-to-End Async Demos + Goldens. A1 CLOSED.**
+Three async golden tests close the v4.19.0 hollow-feature gap. The 56-release
+A1 carry-forward is finally resolved with real LLVM coroutine intrinsics.
+
+### Added
+
+- `tests/golden/55_async_basic.mn` — simple async fn with `block_on`
+  (`tests/golden/55_async_basic.mn`)
+- `tests/golden/56_async_await.mn` — nested `await` chain (inner + outer)
+  (`tests/golden/56_async_await.mn`)
+- `tests/golden/57_real_await.mn` — 3 `await` suspension points + fanout
+  pattern — the test the v4.26.0 panel flagged as missing
+  (`tests/golden/57_real_await.mn`)
+- `tests/llvm/test_async_golden.py` — 8 tests verifying golden compilation
+  through full pipeline (`tests/llvm/test_async_golden.py`)
+
+### Changed
+
+- `.reviews/CARRY_FORWARD.md` — **A1 CLOSED** (56-release carry-forward,
+  first reported v4.19.0, closed across Arcs 8+9: v4.67.0-v4.75.0)
+
 ## [4.74.0] - 2026-04-13
 
 **Arc 9 Release 3 — `for await` + Stream Async Iterator.** New syntax:
