@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.98.0** (shipped) — Arc 14 release 2: final cross-language benchmark. 10 programs, 3 languages, FINAL_REPORT.md published. 20-120x faster than Python, within 1.1-2.1x of Rust.
+- **v4.99.0** (shipped) — Arc 14 panel: 6.59/10, Option B. v5 NOT tagged. Tagged-pointer UB, list indexing, async linking must be fixed. v4.100.0+ continues.
 - **v5.0.0** (when ready) — Major version tag. The lead's call. Zero additional work required — v4.76.0 is release-gate quality.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.

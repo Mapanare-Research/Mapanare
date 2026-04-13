@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.99.0] - 2026-04-13
+
+**Arc 14 Release 3 — Final Panel + v5 Gate Decision.**
+7-reviewer panel grades Arcs 10-14 (v4.77.0-v4.98.0). Aggregate 6.59/10,
+3 NEEDS WORK. **Option B: continue v4.100.0+.** v5.0.0 not tagged.
+Tagged-pointer UB, list indexing bug, and async linking gap identified
+as v5-blocking issues. RETROSPECTIVE.md documents the full v4.x journey.
+
+### Added
+
+- `docs/roadmap/v4/v4.99.0/RETROSPECTIVE.md` — full v4.x journey narrative
+- `docs/roadmap/v4/v4.99.0/MEASUREMENTS.md` — current state snapshot
+- `.reviews/v4.99.0/PRE_PANEL_AUDIT.md` — arc 10-14 fact-check
+- `.reviews/v4.99.0/README.md` — panel summary with 11-item docket
+- `.reviews/v4.99.0/V5_DECISION.md` — Option B decision with rationale
+
+### Panel Findings
+
+- Tagged-pointer UB (`mn_tag_heap` bit 0 of char*) is CRITICAL — must fix
+- List indexing returns garbage in some contexts — HIGH
+- Optimization O2 speedup claims were overstated — acknowledged
+- Language design is coherent (Coral 7.5/10) — no grammar blockers
+- Benchmark discipline is honest — all reviewers acknowledged
+
 ## [4.98.0] - 2026-04-13
 
 **Arc 14 Release 2 — Final Cross-Language Benchmark.**

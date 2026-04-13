@@ -8,7 +8,9 @@
 > aggregate score determines the v5 decision. This is where the v4.x
 > journey either graduates to v5.0.0 or continues.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** `docs/roadmap/v4/v4.99.0/SESSION_REPORT.md`
+**Decisions taken:** Holistic grading with arc-level commentary; Option B (6.59/10, 3 NEEDS WORK); VERSION → 4.100.0
 **Breaking:** No
 **Prerequisite:** v4.98.0
 **Delta review:** No
