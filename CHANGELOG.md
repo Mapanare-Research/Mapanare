@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.59.0] - 2026-04-12
+
+**BREAKING: `mapanare jit` and `mapanare run --release` have been removed.**
+The `llvmlite` Python dependency is gone. `mapanare build` now uses `clang`
+directly to compile LLVM IR to object code. See `docs/migration/v4.58-to-v4.59.md`.
+
+Arc 6 release 3 — llvmlite JIT deletion. A4 closed.
+
+### Removed
+
+- <!-- no-check --> `mapanare/jit.py` (285 lines) — llvmlite-based JIT compiler
+- `mapanare jit` CLI subcommand
+- `mapanare run --release` flag (LLVM JIT path)
+- `llvmlite` from `pyproject.toml` optional dependencies (both `[llvm]` and `[dev]` groups)
+
+### Changed
+
+- `mapanare build` now compiles LLVM IR to object code via `clang -c` subprocess
+  instead of llvmlite (`mapanare/cli.py`)
+- `mapanare/test_runner.py` — test execution uses clang AOT compilation instead
+  of llvmlite MCJIT
+- `scripts/build_stage1.py` — llvmlite fallback removed; clang is required
+- `tests/bootstrap/test_stage1_compile.py` — IR verification uses `llvm-as`,
+  object compilation uses `clang -c`
+
+### Added
+
+- `tests/test_llvmlite_removed.py` — 5 regression gate tests verifying the
+  deletion is complete
+- `docs/migration/v4.58-to-v4.59.md` — migration guide for JIT removal
+
 ## [4.58.0] - 2026-04-12
 
 **BREAKING: The Python transpiler backend has been removed.** `mapanare compile`,

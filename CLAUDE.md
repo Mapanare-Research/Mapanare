@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.58.0** (shipped) — Arc 6 release 2. Python emitter deleted (A3 closed). ~1,500 lines removed. LLVM is the sole backend.
-- **v4.59.0** (next) — Arc 6 release 3: llvmlite JIT deletion (A4).
+- **v4.59.0** (shipped) — Arc 6 release 3. llvmlite JIT deleted (A4 closed). `mapanare jit` + `--release` removed. `mapanare build` uses clang directly.
+- **v4.60.0** (next) — Arc 6 release 4: dead-code audit + test honesty sweep before panel.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
@@ -300,13 +300,13 @@ Every run auto-updates `tests/golden/BENCHMARKS.md` with per-test metrics (sourc
 
 ```
 .mn source → Lark LALR parser → AST (dataclasses) → Semantic checker → MIR lowering → MIR optimizer (O0-O3) → Emitter
-                                                                                                                 ├→ emit_llvm_text.py  → LLVM IR (text, no llvmlite)
+                                                                                                                 ├→ emit_llvm_text.py  → LLVM IR (text)
                                                                                                                  ├→ emit_c.py          → C source
                                                                                                                  └→ emit_wasm.py       → WebAssembly (WAT/WASM)
 ```
 
 Key modules in `mapanare/`:
-- `cli.py` — Entry point, command dispatch (run, build, jit, check, emit-llvm, emit-mir, emit-wasm, fmt, test, lint, doc, deploy, init)
+- `cli.py` — Entry point, command dispatch (run, build, check, emit-llvm, emit-mir, emit-wasm, fmt, test, lint, doc, deploy, init)
 - `parser.py` — Lark transformer: parse tree → AST dataclass nodes
 - `ast_nodes.py` — All AST node definitions
 - `semantic.py` — Two-pass type checker and scope resolver
@@ -314,7 +314,7 @@ Key modules in `mapanare/`:
 - `lower.py` — AST → MIR lowering (1,397 lines)
 - `mir_opt.py` — MIR optimizer passes (constant folding, DCE, copy propagation, block merging)
 - `optimizer.py` — AST-level optimizer (constant folding, DCE, agent inlining, stream fusion)
-- `emit_llvm_text.py` — LLVM IR generation (text-based, no llvmlite dependency)
+- `emit_llvm_text.py` — LLVM IR generation (text-based)
 - `emit_c.py` — C source generation from MIR
 - `emit_wasm.py` — WebAssembly (WAT) generation from MIR (v2.0.0)
 - `wasm_linker.py` — wasm-ld integration for multi-module WASM linking (v2.0.0)

@@ -5,7 +5,9 @@
 > in one release because the footprint is smaller than the Python
 > emitter.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** All 9 phases executed. All 12 exit criteria green.
+**Decisions taken:** Decision 1: delete cmd_jit entirely (Option A). Decision 2: fully remove llvmlite (no optional dep). Decision 3: standalone migration doc.
 **Breaking:** **Minor breaking** (`mapanare jit` removed; replacement is `mapanare run`)
 **Prerequisite:** v4.58.0
 **Delta review:** No

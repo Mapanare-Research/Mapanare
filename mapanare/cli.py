@@ -289,13 +289,7 @@ def cmd_check(args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
-    """Compile and run an .mn source file.
-
-    Default backend: C (emit C → gcc → run).
-    Use ``--release`` for LLVM JIT (requires llvmlite).
-    """
-    release = getattr(args, "release", False)
-
+    """Compile and run an .mn source file via the C backend (emit C → gcc → run)."""
     # Enable tracing if --trace is passed
     trace_mode = getattr(args, "trace", None)
     if trace_mode:
@@ -322,34 +316,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     opt_level = _parse_opt_level(args)
     debug = _resolve_debug(args)
 
-    if not release:
-        # --- C backend (default) ---
-        try:
-            c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
-        except ParseError as e:
-            _emit_parse_error(e, source, args.source)
-            sys.exit(1)
-        except SemanticErrors as e:
-            _emit_semantic_errors(e, source)
-            sys.exit(1)
-        except ValueError as e:
-            print(f"error: {e}", file=sys.stderr)
-            sys.exit(1)
-
-        _run_c_source(c_source, args.source)
-        return
-
-    # --- LLVM backend (--release) ---
-    resolver = ModuleResolver()
     try:
-        llvm_ir = _compile_to_llvm_ir(
-            source,
-            args.source,
-            opt_level=opt_level,
-            resolver=resolver,
-            debug=debug,
-            no_verify=_resolve_no_verify(args),
-        )
+        c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
@@ -360,9 +328,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    from mapanare.jit import jit_compile_and_run
-
-    jit_compile_and_run(llvm_ir, opt_level=opt_level.value)
+    _run_c_source(c_source, args.source)
 
 
 def cmd_fmt(args: argparse.Namespace) -> None:
@@ -554,50 +520,6 @@ def cmd_login(args: argparse.Namespace) -> None:
     sys.exit(1)
 
 
-def cmd_jit(args: argparse.Namespace) -> None:
-    """JIT-compile an .mn source file via LLVM and execute natively."""
-    source = _read_source(args.source)
-    opt_level = _parse_opt_level(args)
-    debug = _resolve_debug(args)
-    resolver = ModuleResolver()
-    try:
-        llvm_ir = _compile_to_llvm_ir(
-            source,
-            args.source,
-            opt_level=opt_level,
-            resolver=resolver,
-            debug=debug,
-            no_verify=_resolve_no_verify(args),
-        )
-    except ParseError as e:
-        _emit_parse_error(e, source, args.source)
-        sys.exit(1)
-    except SemanticErrors as e:
-        _emit_semantic_errors(e, source)
-        sys.exit(1)
-    except ValueError as e:
-        print(f"error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    from mapanare.jit import jit_compile_and_run
-
-    bench = getattr(args, "bench", False)
-    if bench:
-        import time
-
-        wall0 = time.perf_counter()
-        cpu0 = time.process_time()
-        jit_compile_and_run(llvm_ir, opt_level=opt_level.value)
-        wall1 = time.perf_counter() - wall0
-        cpu1 = time.process_time() - cpu0
-        print("__BENCH_METRICS__")
-        print(f"wall_time_s={round(wall1, 6)}")
-        print(f"cpu_time_s={round(cpu1, 6)}")
-        print("peak_memory_kb=0")
-    else:
-        jit_compile_and_run(llvm_ir, opt_level=opt_level.value)
-
-
 def cmd_build(args: argparse.Namespace) -> None:
     """Compile an .mn source file to a native binary via LLVM."""
     source = _read_source(args.source)
@@ -629,16 +551,34 @@ def cmd_build(args: argparse.Namespace) -> None:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    from mapanare.jit import jit_compile_to_object
+    import tempfile
 
-    obj_bytes = jit_compile_to_object(llvm_ir, opt_level=opt_level.value)
-
-    # Write object file to a temporary location (not the final output path)
+    # Write LLVM IR to a temp file, then compile to object via clang
     base = os.path.splitext(args.source)[0]
     obj_ext = ".obj" if os.name == "nt" else ".o"
     obj_path = base + obj_ext
-    with open(obj_path, "wb") as f:
-        f.write(obj_bytes)
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".ll", delete=False, encoding="utf-8"
+    ) as ll_file:
+        ll_file.write(llvm_ir)
+        ll_path = ll_file.name
+
+    try:
+        clang_cmd = [
+            "clang",
+            "-c",
+            f"-O{opt_level.value}",
+            ll_path,
+            "-o",
+            obj_path,
+        ]
+        result = subprocess.run(clang_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"error: clang failed:\n{result.stderr}", file=sys.stderr)
+            sys.exit(1)
+    finally:
+        os.unlink(ll_path)
 
     # Collect --link-lib flags as -l<lib> / <lib>.lib for linker
     link_libs: list[str] = getattr(args, "link_lib", None) or []
@@ -1577,12 +1517,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Start Prometheus metrics endpoint (default :9090)",
     )
-    p_run.add_argument(
-        "--release",
-        action="store_true",
-        default=False,
-        help="Use LLVM backend (requires llvmlite). Default: C backend via gcc.",
-    )
     _add_opt_level_args(p_run)
     _add_debug_flag(p_run)
     _add_edition_flag(p_run)
@@ -1665,15 +1599,6 @@ def build_parser() -> argparse.ArgumentParser:
     # login
     p_login = subparsers.add_parser("login", help="Authenticate with the Mapanare package registry")
     p_login.set_defaults(func=cmd_login)
-
-    # jit
-    p_jit = subparsers.add_parser("jit", help="JIT-compile and run .mn source natively via LLVM")
-    p_jit.add_argument("source", help="Path to .mn source file")
-    p_jit.add_argument("--bench", action="store_true", help="Output benchmark metrics")
-    _add_opt_level_args(p_jit)
-    _add_debug_flag(p_jit)
-    _add_no_verify_flag(p_jit)
-    p_jit.set_defaults(func=cmd_jit)
 
     # build
     p_build = subparsers.add_parser("build", help="Compile .mn source to native binary")

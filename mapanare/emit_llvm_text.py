@@ -1,7 +1,6 @@
-"""Text-based LLVM IR emitter — no llvmlite dependency.
+"""Text-based LLVM IR emitter.
 
 Generates alloca/load/store IR. clang mem2reg optimizes to SSA.
-This avoids llvmlite's codegen bugs with large struct values.
 """
 
 from __future__ import annotations
@@ -459,7 +458,7 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
 
 
 class LLVMTextEmitter:
-    """Emit LLVM IR as text from a MIR module. No llvmlite dependency."""
+    """Emit LLVM IR as text from a MIR module."""
 
     def __init__(
         self,

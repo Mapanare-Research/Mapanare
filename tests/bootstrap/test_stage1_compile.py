@@ -7,6 +7,7 @@ native binary (mnc-stage1) can lex, parse, type-check, and emit LLVM IR.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import subprocess
@@ -54,29 +55,59 @@ class TestStage1Compilation:
         assert "define" in llvm_ir
 
     def test_self_hosted_ir_verifies(self) -> None:
-        """The generated LLVM IR passes LLVM's module verifier."""
-        from llvmlite import binding as llvm
+        """The generated LLVM IR passes LLVM's module verifier (via llvm-as)."""
+        import subprocess
+        import tempfile
+
+        source, filename = _read_self_hosted()
+        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".ll", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(llvm_ir)
+            ll_path = f.name
 
         try:
-            llvm.initialize()
-        except RuntimeError:
-            pass
-        llvm.initialize_native_target()
-        llvm.initialize_native_asmprinter()
-
-        source, filename = _read_self_hosted()
-        llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
-        mod = llvm.parse_assembly(llvm_ir)
-        mod.verify()
+            result = subprocess.run(
+                ["llvm-as", ll_path, "-o", "/dev/null"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert result.returncode == 0, f"llvm-as verification failed:\n{result.stderr}"
+        finally:
+            os.unlink(ll_path)
 
     def test_self_hosted_ir_compiles_to_object(self) -> None:
-        """The LLVM IR can be compiled to native object code."""
-        from mapanare.jit import jit_compile_to_object
+        """The LLVM IR can be compiled to native object code (via clang)."""
+        import subprocess
+        import tempfile
 
         source, filename = _read_self_hosted()
         llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
-        obj_bytes = jit_compile_to_object(llvm_ir, opt_level=0)
-        assert len(obj_bytes) > 0, "Object code is empty"
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".ll", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(llvm_ir)
+            ll_path = f.name
+
+        obj_path = ll_path.replace(".ll", ".o")
+        try:
+            result = subprocess.run(
+                ["clang", "-c", "-O0", ll_path, "-o", obj_path],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            assert result.returncode == 0, f"clang compile failed:\n{result.stderr}"
+            assert os.path.getsize(obj_path) > 0, "Object file is empty"
+        finally:
+            if os.path.exists(ll_path):
+                os.unlink(ll_path)
+            if os.path.exists(obj_path):
+                os.unlink(obj_path)
 
     def test_self_hosted_contains_all_modules(self) -> None:
         """The compiled IR contains functions from all 7 self-hosted modules."""

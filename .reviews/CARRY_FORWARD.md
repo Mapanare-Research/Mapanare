@@ -102,7 +102,7 @@ items that were explicitly deferred out of the recovery arc.
 | A1 | Real `await` coroutine lowering (LLVM coroutine intrinsics) | v4.19.0 | MEDIUM | **2** | DEFERRED | v4.67.0+ (Arc 8: coroutine foundation) |
 | A2 | DWARF debug info emission | v0.7.0 | MEDIUM | **6** | DEFERRED | v5.x |
 | A3 | Deprecated Python emitter removal (`PythonMIREmitter`) | v4.2.0 | LOW | **5** | **CLOSED** | v4.58.0 — `mapanare/emit_python_mir.py` deleted (1,236 lines), `cmd_compile`/`cmd_repl` removed, `_PYTHON_MIR_XFAIL` deleted, ~3,500 total lines removed. Regression gate: `tests/test_python_emitter_deleted.py` (6 tests). |
-| A4 | llvmlite JIT emitter removal | v4.2.0 | LOW | **5** | DEFERRED | v4.59.0 |
+| A4 | llvmlite JIT emitter removal | v4.2.0 | LOW | **5** | **CLOSED** | v4.59.0 — `mapanare/jit.py` deleted (285 lines), `cmd_jit` + `--release` removed, llvmlite dependency dropped from pyproject.toml. `mapanare build` uses clang directly. Regression gate: `tests/test_llvmlite_removed.py` (5 tests). |
 | A5 | Culebra `list-element-size-undercount` template tightens | v4.30.0 | LOW | 1 | OPEN | Culebra project, not Mapanare |
 | A6 | Residual 69-line match-lowering shape diff between stage2 and stage3 | v4.28.0 | LOW | **3** | **CLOSED** | v4.34.0 — Maranget decision-tree rewrite in both pipelines; `mapanare/pattern_matching.py` shared helper |
 | A7 | Self-hosted semantic analysis never wired into `compile()` | v4.26.0 | LOW | **3** | **CLOSED** | v4.52.0 — `check()` called at `mapanare/self/main.mn:298`; 3 divergent-breaking checks ported (D1 `?` operator, D2 match guard Bool, D3 while Bool); 11 regression tests in `tests/self_hosted/test_semantic_wiring.py` |

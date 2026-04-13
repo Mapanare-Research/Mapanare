@@ -66,8 +66,7 @@ def build() -> pathlib.Path:
         print(f"  IR: {ir.count(chr(10))} lines ← {ir_path}")
     else:
         # 1. Generate LLVM IR
-        emitter = "llvmlite" if "--llvmlite" in sys.argv else "text"
-        print(f"[1/6] Generating LLVM IR from mapanare/self/*.mn (emitter={emitter}) ...")
+        print("[1/6] Generating LLVM IR from mapanare/self/*.mn ...")
         from mapanare.multi_module import compile_multi_module_mir
 
         source = (SELF_DIR / "main.mn").read_text(encoding="utf-8")
@@ -101,20 +100,16 @@ def build() -> pathlib.Path:
     import shutil
 
     clang_bin = shutil.which("clang")
+    if not clang_bin:
+        print("error: clang not found. Install LLVM/clang to compile IR to object code.")
+        sys.exit(1)
     opt_flag = "-O2"
-    if clang_bin:
-        subprocess.run(
-            [clang_bin, "-c", opt_flag, str(ir_path), "-o", str(obj_path)],
-            check=True,
-            capture_output=True,
-        )
-        print(f"  Object: {obj_path.stat().st_size} bytes → {obj_path} (clang {opt_flag})")
-    else:
-        from mapanare.jit import jit_compile_to_object
-
-        obj_bytes = jit_compile_to_object(ir, opt_level=1)
-        obj_path.write_bytes(obj_bytes)
-        print(f"  Object: {len(obj_bytes)} bytes → {obj_path} (llvmlite -O2)")
+    subprocess.run(
+        [clang_bin, "-c", opt_flag, str(ir_path), "-o", str(obj_path)],
+        check=True,
+        capture_output=True,
+    )
+    print(f"  Object: {obj_path.stat().st_size} bytes → {obj_path} (clang {opt_flag})")
 
     # 4. Compile C runtime
     # v4.29.0: ``mapanare_db.c`` (1,130 lines, SQLite/Postgres/Redis +

@@ -15,11 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-llvm = [
-    "llvmlite",
-]
 dev = [
-    "llvmlite",
     "pytest",
     "pytest-asyncio",
     "pytest-xdist",
