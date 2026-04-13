@@ -1,8 +1,8 @@
-"""v4.73.0 — block_on builtin and end-to-end async IR tests.
+"""v4.73.0/v4.92.0 — block_on builtin and end-to-end async IR tests.
 
-Tests that block_on(future) emits resume loop + value extraction + cleanup,
-and that the full async pipeline (async fn + await + block_on) produces
-coherent IR.
+v4.92.0: block_on now uses the scheduler (__mn_coro_scheduler_register +
+__mn_coro_scheduler_run) instead of an inline resume loop. await inside
+async functions emits real coro.suspend. Tests updated to match.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ def _emit(source: str) -> str:
 
 
 class TestBlockOn:
-    def test_block_on_emits_resume_loop(self) -> None:
-        """block_on should emit a coro.resume loop."""
+    def test_block_on_emits_scheduler_call(self) -> None:
+        """block_on should register with scheduler and call run (v4.92.0)."""
         source = textwrap.dedent("""\
             async fn compute() -> Int { return 42 }
             fn main() -> Int {
@@ -36,8 +36,8 @@ class TestBlockOn:
             }
         """)
         ir = _emit(source)
-        assert "block_on.loop" in ir
-        assert "@llvm.coro.resume" in ir
+        assert "@__mn_coro_scheduler_register" in ir
+        assert "@__mn_coro_scheduler_run" in ir
 
     def test_block_on_checks_done(self) -> None:
         """block_on should check coro.done after each resume."""
@@ -76,7 +76,7 @@ class TestBlockOn:
         ir = _emit(source)
         assert "block_on.done" in ir
         # GEP into future to extract value
-        assert "getelementptr {i8, ptr}" in ir
+        assert "getelementptr inbounds {i8, ptr}" in ir
 
 
 class TestEndToEndAsyncIR:
@@ -93,8 +93,8 @@ class TestEndToEndAsyncIR:
         # Async fn has coroutine prelude
         assert "presplitcoroutine" in ir
         assert "@llvm.coro.id" in ir
-        # block_on drives it
-        assert "block_on.loop" in ir
+        # block_on uses scheduler (v4.92.0)
+        assert "@__mn_coro_scheduler_register" in ir
         # Result extraction
         assert "block_on.done" in ir
 
@@ -114,10 +114,10 @@ class TestEndToEndAsyncIR:
         ir = _emit(source)
         # Both async fns have prelude
         assert ir.count("presplitcoroutine") >= 2
-        # await drives inner inline
-        assert "await.drive" in ir or "await.check" in ir
-        # block_on drives outer
-        assert "block_on.loop" in ir
+        # await has drive + real suspend (v4.92.0)
+        assert "await.drive" in ir or "await.suspend" in ir
+        # block_on uses scheduler (v4.92.0)
+        assert "@__mn_coro_scheduler_run" in ir
 
     def test_await_inline_resume(self) -> None:
         """await uses inline resume (coro.resume on inner) not suspension."""
@@ -149,4 +149,4 @@ class TestEndToEndAsyncIR:
             }
         """)
         ir = _emit(source)
-        assert ir.count("block_on.loop.") >= 2
+        assert ir.count("block_on.done.") >= 2

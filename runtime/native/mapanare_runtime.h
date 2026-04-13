@@ -579,4 +579,33 @@ MAPANARE_EXPORT mapanare_thread_pool_t *mapanare_ensure_pool(void);
 /** Destroy the global lazy-initialized thread pool (call at shutdown). */
 MAPANARE_EXPORT void mapanare_pool_destroy_global(void);
 
+/* -----------------------------------------------------------------------
+ * Coroutine scheduler (v4.92.0)
+ *
+ * Single-threaded cooperative scheduler for async/await coroutines.
+ * Maintains a table of registered coroutines and the futures they await.
+ * Called from LLVM IR emitted by the Mapanare compiler.
+ * ----------------------------------------------------------------------- */
+
+/** Initialize the global coroutine scheduler with the given initial capacity. */
+MN_EXPORT void __mn_coro_scheduler_init(uint32_t initial_cap);
+
+/** Register a coroutine handle with the scheduler. */
+MN_EXPORT void __mn_coro_scheduler_register(void *handle);
+
+/** Register that a coroutine handle is waiting on a specific future. */
+MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr);
+
+/** Step the scheduler: resume all ready coroutines. Returns count resumed. */
+MN_EXPORT uint32_t __mn_coro_scheduler_step(void);
+
+/** Run the scheduler until all coroutines complete. */
+MN_EXPORT void __mn_coro_scheduler_run(void);
+
+/** Destroy the global coroutine scheduler (call at shutdown). */
+MN_EXPORT void __mn_coro_scheduler_destroy(void);
+
+/** Async file read: returns a Future<String> immediately, reads on a thread. */
+MN_EXPORT void *__mn_file_read_async(MnString path);
+
 #endif /* MAPANARE_RUNTIME_H */

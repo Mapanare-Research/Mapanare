@@ -11,7 +11,7 @@
 > scheduler resumes the coroutine only when the awaited future becomes
 > ready — enabling true non-blocking I/O.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.91.0
 **Delta review:** No

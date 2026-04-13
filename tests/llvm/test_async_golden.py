@@ -32,7 +32,7 @@ class TestAsyncBasicGolden:
         """55_async_basic.mn compiles with coroutine prelude."""
         ir = _compile_golden("55_async_basic.mn")
         assert "presplitcoroutine" in ir
-        assert "block_on.loop" in ir
+        assert "block_on.done" in ir
         assert "@llvm.coro.id" in ir
 
     def test_55_has_compute_fn(self) -> None:
@@ -79,5 +79,5 @@ class TestRealAwaitGolden:
     def test_57_has_block_on(self) -> None:
         """57_real_await.mn uses block_on in main."""
         ir = _compile_golden("57_real_await.mn")
-        assert "block_on.loop" in ir
+        assert "block_on.done" in ir
         assert "@llvm.coro.destroy" in ir

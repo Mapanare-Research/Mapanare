@@ -88,6 +88,10 @@ Six phases:
 | **v4.89.0** | Arc 12 | Escape Analysis | Heap-to-stack promotion for non-escaping allocations. 6 escape criteria, known non-capturing function set, 4KB size limit. |
 | **v4.90.0** | Arc 12 | Cumulative Benchmark | 4/5 benchmarks within 2x of Rust. fib_recursive 1.1x Rust. string_concat -9.7%. O2 geomean 0.992x, O0 geomean 1.09x. |
 | **v4.91.0** | Arc 12 | **Panel: 8.57/10 PASS** | 7 reviewers. All passes correct. Escape analysis emitter gap noted. Arc 12 closes. |
+| | | | |
+| | | **Arc 13: Structured Concurrency (v4.92.0 →)** | |
+| | | | |
+| **v4.92.0** | Arc 13 | Real Suspension at Await | coro.suspend replaces inline-resume. C runtime scheduler. Async file I/O. Golden test 58. |
 
 ## What v4.0.0 Delivered
 

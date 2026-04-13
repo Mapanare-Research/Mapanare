@@ -79,7 +79,7 @@ class TestAwaitSuspension:
         """)
         ir = _emit(source)
         # GEP to get payload ptr from Future {i8, ptr}
-        assert "getelementptr {i8, ptr}" in ir
+        assert "getelementptr inbounds {i8, ptr}" in ir
 
     def test_await_drive_and_ready_labels(self) -> None:
         """await should create drive/check/ready labels (v4.73.0 inline resume)."""

@@ -1375,3 +1375,200 @@ MAPANARE_EXPORT void mapanare_memory_stats(mapanare_memory_stats_t *out) {
      * intern stats are available; add arena/agent aggregation when a global
      * registry is introduced. */
 }
+
+/* =======================================================================
+ * Coroutine scheduler (v4.92.0)
+ *
+ * Single-threaded cooperative scheduler for async/await. Maintains a
+ * table of registered coroutines and the futures they are awaiting.
+ * The scheduler steps through the table, resuming coroutines whose
+ * awaited futures have become Ready (state byte == 1).
+ *
+ * The scheduler is initialized once in main() and destroyed at exit.
+ * A global instance (__mn_coro_sched) is used by the emitted IR.
+ * ======================================================================= */
+
+typedef struct {
+    void *handle;           /* coroutine handle (ptr from coro.begin)    */
+    void *awaited_future;   /* Future* being awaited, or NULL            */
+} mn_coro_entry_t;
+
+typedef struct {
+    mn_coro_entry_t *entries;   /* dynamic array   */
+    uint32_t         count;     /* active entries   */
+    uint32_t         cap;       /* allocated slots  */
+} mn_coro_scheduler_t;
+
+/* Global scheduler instance — emitted IR references this symbol. */
+static mn_coro_scheduler_t __mn_coro_sched_data;
+
+MN_EXPORT void __mn_coro_scheduler_init(uint32_t initial_cap) {
+    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
+    s->cap = initial_cap > 0 ? initial_cap : 64;
+    s->count = 0;
+    s->entries = (mn_coro_entry_t *)calloc(s->cap, sizeof(mn_coro_entry_t));
+}
+
+MN_EXPORT void __mn_coro_scheduler_register(void *handle) {
+    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
+    if (s->count >= s->cap) {
+        s->cap = s->cap ? s->cap * 2 : 64;
+        s->entries = (mn_coro_entry_t *)realloc(
+            s->entries, s->cap * sizeof(mn_coro_entry_t));
+    }
+    s->entries[s->count].handle = handle;
+    s->entries[s->count].awaited_future = NULL;
+    s->count++;
+}
+
+MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr) {
+    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
+    for (uint32_t i = 0; i < s->count; i++) {
+        if (s->entries[i].handle == handle) {
+            s->entries[i].awaited_future = future_ptr;
+            return;
+        }
+    }
+    /* Handle not found — register it with the future. */
+    __mn_coro_scheduler_register(handle);
+    s->entries[s->count - 1].awaited_future = future_ptr;
+}
+
+/* Check if a Future is Ready (state byte at offset 0 == 1). */
+static inline int mn_future_is_ready(void *future_ptr) {
+    if (!future_ptr) return 1; /* NULL future = ready (no await) */
+    return *(uint8_t *)future_ptr == 1;
+}
+
+/* External symbols — LLVM coroutine intrinsics lowered to these by CoroSplit. */
+extern void _mn_coro_resume(void *handle);
+extern int  _mn_coro_done(void *handle);
+
+MN_EXPORT uint32_t __mn_coro_scheduler_step(void) {
+    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
+    uint32_t resumed = 0;
+    uint32_t i = 0;
+    while (i < s->count) {
+        mn_coro_entry_t *e = &s->entries[i];
+
+        /* Skip if awaiting a future that isn't ready yet. */
+        if (e->awaited_future && !mn_future_is_ready(e->awaited_future)) {
+            i++;
+            continue;
+        }
+
+        /* Resume the coroutine via the LLVM-generated resume function.
+         * The resume function pointer is stored at offset 0 of the frame. */
+        void (*resume_fn)(void *) = *(void (**)(void *))e->handle;
+        resume_fn(e->handle);
+        resumed++;
+
+        /* Check if coroutine is done. After CoroSplit, the "done" check
+         * reads the suspend index from the frame. A final suspend sets
+         * the index to a sentinel. We check by calling the destroy-path
+         * convention: if the resume function at offset 0 is the cleanup
+         * stub, we consider it done. Simpler: check the future state. */
+        if (e->awaited_future && mn_future_is_ready(e->awaited_future)) {
+            /* Coroutine may have completed or re-suspended.
+             * If the future it was awaiting is now ready, clear the await
+             * so next step resumes unconditionally (it will either hit
+             * the next await point or finish). */
+            e->awaited_future = NULL;
+        }
+
+        /* Check done via the LLVM ABI: index field at offset 2 in the
+         * switched-resume frame is set to -1 (0xFF for i8) at final
+         * suspend. We read byte at frame + 16 (after two ptrs). */
+        uint8_t suspend_idx = *((uint8_t *)e->handle + 2 * sizeof(void *));
+        if (suspend_idx == 0xFF || suspend_idx == 0x01) {
+            /* Remove by swap with last. */
+            s->entries[i] = s->entries[s->count - 1];
+            s->count--;
+            /* Don't increment i — re-check swapped entry. */
+        } else {
+            i++;
+        }
+    }
+    return resumed;
+}
+
+MN_EXPORT void __mn_coro_scheduler_run(void) {
+    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
+    /* Drain all coroutines. Keep stepping until none remain. */
+    uint32_t idle_spins = 0;
+    while (s->count > 0) {
+        uint32_t resumed = __mn_coro_scheduler_step();
+        if (resumed == 0) {
+            idle_spins++;
+            if (idle_spins > 10000) {
+                /* Safety valve: avoid infinite spin if all coroutines
+                 * are awaiting futures that will never become ready. */
+                break;
+            }
+        } else {
+            idle_spins = 0;
+        }
+    }
+}
+
+MN_EXPORT void __mn_coro_scheduler_destroy(void) {
+    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
+    free(s->entries);
+    s->entries = NULL;
+    s->count = 0;
+    s->cap = 0;
+}
+
+/* -----------------------------------------------------------------------
+ * Async file I/O (v4.92.0)
+ *
+ * mapanare_file_read_async(): spawns a thread to read a file, returns
+ * a Future<String> immediately. The thread reads the file synchronously
+ * and sets the future to Ready when done.
+ * ----------------------------------------------------------------------- */
+
+typedef struct {
+    void    *future;    /* Future {i8, ptr} — shared with caller  */
+    MnString path;      /* File path to read                       */
+} mn_async_read_ctx_t;
+
+static void *mn_async_file_read_thread(void *arg) {
+    mn_async_read_ctx_t *ctx = (mn_async_read_ctx_t *)arg;
+
+    /* Read the file synchronously. */
+    int64_t ok = 0;
+    extern MnString __mn_file_read(MnString path, int64_t *ok);
+    MnString content = __mn_file_read(ctx->path, &ok);
+
+    /* Allocate result box (i64-sized for uniform extraction). */
+    void *box = malloc(sizeof(MnString));
+    *(MnString *)box = content;
+
+    /* Store into future: payload = box, then state = Ready.
+     * The store order matters: payload first, then state,
+     * with a release fence so the scheduler sees both. */
+    void **payload_slot = (void **)((uint8_t *)ctx->future + sizeof(uint8_t));
+    /* On 64-bit, the {i8, ptr} layout may have padding.
+     * Match the LLVM GEP: field 1 is at offset 8 (i8 + 7 padding). */
+    payload_slot = (void **)((uint8_t *)ctx->future + 8);
+    *payload_slot = box;
+    __atomic_store_n((uint8_t *)ctx->future, 1, __ATOMIC_RELEASE);
+
+    free(ctx);
+    return NULL;
+}
+
+MN_EXPORT void *__mn_file_read_async(MnString path) {
+    /* Allocate a Future {i8 state, ptr payload}. */
+    void *future = calloc(1, 16);  /* 16 bytes = {i8, padding[7], ptr} */
+
+    mn_async_read_ctx_t *ctx = (mn_async_read_ctx_t *)malloc(sizeof(*ctx));
+    ctx->future = future;
+    ctx->path = path;
+
+    pthread_t thread;
+    pthread_create(&thread, NULL, mn_async_file_read_thread, ctx);
+    pthread_detach(thread);
+
+    return future;
+}

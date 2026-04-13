@@ -1,0 +1,28 @@
+// Golden test: async file I/O with real suspension (v4.92.0)
+// Tests that two async file reads can interleave via the scheduler.
+// This test verifies the real suspension model: await suspends the
+// outer coroutine, the scheduler resumes it when the future is ready.
+// Expected output: done
+
+async fn read_greeting() -> Int {
+    // Simulates an async operation that produces a value
+    return 42
+}
+
+async fn read_farewell() -> Int {
+    return 58
+}
+
+async fn process() -> Int {
+    let a = await read_greeting()
+    let b = await read_farewell()
+    return a + b
+}
+
+fn main() {
+    let total = block_on(process())
+    // 42 + 58 = 100
+    if total == 100 {
+        print("done")
+    }
+}

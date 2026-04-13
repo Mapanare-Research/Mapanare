@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.91.0 shipped — Arc 12 panel: 8.57/10 PASS. MIR optimizer graded, arc closes.)
+## Where We Are (v4.92.0 shipped — Real suspension at await. Arc 13 begins.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural
