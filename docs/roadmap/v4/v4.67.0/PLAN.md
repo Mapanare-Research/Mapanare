@@ -5,7 +5,9 @@
 > document in arcs 8 and 9. Every subsequent coroutine release
 > references it.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** DESIGN.md written (8 sections, ~7500 words). 4 reviewers signed off. Rattler approved, no veto.
+**Decisions taken:** Switched-resume ABI, Option A scheduler, {i8,ptr} Future, -O1 default pipeline, dedicated AsyncFnDef node, async debug info deferred to v5.x.
 **Breaking:** No (no code)
 **Prerequisite:** v4.66.0 (arc 7 panel PASS)
 **Delta review:** No (no syntax — design review only)

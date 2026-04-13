@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.66.0 shipped — Arc 7 panel close: DWARF graded, CONDITIONAL PASS 7.71/10)
+## Where We Are (v4.67.0 shipped — Arc 8 opens: coroutine design doc, foundation for async/await)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.66.0** (shipped) — Arc 7 panel release. CONDITIONAL PASS (7.71/10). A2 closed. Testing depth + gdb docs flagged.
-- **v4.67.0** (next) — Arc 8 release 1: coroutine foundation design.
+- **v4.67.0** (shipped) — Arc 8 release 1. Design-only. Coroutine DESIGN.md locks LLVM switched-resume ABI, Option A scheduler, `{i8,ptr}` Future. No code.
+- **v4.68.0** (next) — Arc 8 release 2: `async fn`/`await` grammar + AST + parser. Delta review mandatory.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

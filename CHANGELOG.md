@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.67.0] - 2026-04-12
+
+**Arc 8 Release 1 — Coroutine Design Document. Design-only, no code.**
+Produces `docs/roadmap/v4/v4.67.0/DESIGN.md`, the foundation document for
+arcs 8+9 (v4.68.0-v4.76.0). Specifies LLVM coroutine lowering, runtime
+scheduler extension, user-visible `async fn`/`await` semantics, and the
+verification plan for 8 subsequent releases.
+
+### Added
+
+- `docs/roadmap/v4/v4.67.0/DESIGN.md` — coroutine design document (8 sections,
+  3 appendices, ~7500 words). Covers: LLVM coroutine spec summary, existing
+  scheduler state, target async semantics, lowering strategy with IR examples,
+  runtime scheduler extension API, risk register, per-release verification plan,
+  rejected options (green threads, manual state machines, CPS, poll-based, fibers)
+- `docs/roadmap/v4/v4.67.0/SESSION_REPORT.md` — design review with 4 informal
+  reviewers (Rattler APPROVED, Anaconda APPROVED WITH NOTES, Coral APPROVED,
+  Mamba APPROVED WITH NOTES)
+
+### Decisions Locked
+
+- **Coroutine ABI:** switched-resume (`llvm.coro.id`) — generic handles, HALO
+- **Scheduler:** Option A (inline in main, cooperative) — v5.x for B/C
+- **Future<T>:** `{i8 state, ptr payload}` — uniform size, handle reuse
+- **Pass pipeline:** LLVM default `-O1` (`presplitcoroutine` attribute sufficient)
+- **AST:** dedicated `AsyncFnDef` node (not a flag on `FnDef`)
+- **Debug info for async:** deferred to v5.x (Arc 7 DWARF baseline sufficient)
+
 ## [4.66.0] - 2026-04-12
 
 **Arc 7 Panel Release — DWARF Debug Info Close.**

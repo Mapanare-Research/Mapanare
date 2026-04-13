@@ -74,7 +74,7 @@ Six phases:
 | **v4.52.0–v4.56.0** | Arc 5 | Compiler Debt Drain | Self-hosted semantic wiring (A7), UNRESOLVED/ERROR split (A8), `const` Path A. Panel at v4.56.0 |
 | **v4.57.0–v4.61.0** | Arc 6 | Deprecation + Deletion | Python emitter, llvmlite JIT, dead code final pass. Panel at v4.61.0 |
 | **v4.62.0–v4.66.0** | Arc 7 | DWARF Debug Info | `DICompileUnit`, `DISubprogram`, line metadata, `llvm.dbg.declare`. Panel at v4.66.0 |
-| **v4.67.0–v4.71.0** | Arc 8 | Coroutine Foundation | Design doc, `async`/`await` grammar + AST, semantic, MIR suspension. Panel at v4.71.0 |
+| **v4.67.0–v4.71.0** | Arc 8 | Coroutine Foundation | v4.67.0: DESIGN.md shipped (no code). `async`/`await` grammar + AST, semantic, MIR suspension. Panel at v4.71.0 |
 | **v4.72.0–v4.76.0** | Arc 9 | Coroutine Completion | Suspend/resume/destroy, scheduler, `for await`, end-to-end demos. Panel at v4.76.0 |
 
 ## What v4.0.0 Delivered
