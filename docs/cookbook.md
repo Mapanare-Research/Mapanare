@@ -21,6 +21,7 @@ Real-world examples and patterns for common tasks. Each recipe is a complete, ru
 13. [Trait Polymorphism](#13-trait-polymorphism)
 14. [Command-Line Calculator](#14-command-line-calculator)
 15. [Tensor Operations: Linear Regression](#15-tensor-operations-linear-regression)
+16. [Async/Await](cookbook/async.md) (separate chapter)
 
 ---
 

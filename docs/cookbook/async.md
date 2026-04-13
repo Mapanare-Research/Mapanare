@@ -4,6 +4,12 @@ Progressive tutorial for asynchronous programming in Mapanare. Each example is a
 
 See [SPEC.md](../SPEC.md) section 29 for the formal semantics. See the [Coroutine Design Document](../roadmap/v4/v4.67.0/DESIGN.md) for LLVM lowering details.
 
+> **Note:** Async/await uses LLVM coroutine intrinsics implemented in Arc 8-9
+> (v4.67.0-v4.76.0). The examples below match the golden tests
+> (`tests/golden/55-57_async_*.mn`). The Python bootstrap's `emit-llvm`
+> backend does not yet support async; these examples compile through the
+> native compiler path (`mnc run`).
+
 ---
 
 ## 1. Your First Async Function

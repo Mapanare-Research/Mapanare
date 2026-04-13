@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.80.0] - 2026-04-13
+
+**Arc 10 Release 4 — Documentation: Async Cookbook + SPEC Futures + gdb Tutorial.**
+Three documentation deliverables closing recurring Boa panel feedback. No compiler changes.
+
+### Added
+
+- `docs/cookbook/async.md` — 7-section progressive async/await tutorial
+  (basic async fn, await chains, fan-out, computations, strings, block_on, pitfalls)
+- `docs/SPEC.md` section 29 — Futures and Async/Await formal specification
+  (7 subsections: async fn, await, Future<T>, block_on, lifecycle, memory, interactions)
+- `docs/guides/debugging.md` — 9-section gdb/lldb debugging tutorial
+  (compile with -g, breakpoints, stepping, variables, backtraces, async, valgrind, tips)
+- Updated Appendix C: `async`/`await` moved from reserved to real keywords
+
 ## [4.79.0] - 2026-04-13
 
 **Arc 10 Release 3 — Carry-Forward Ledger at Zero.**

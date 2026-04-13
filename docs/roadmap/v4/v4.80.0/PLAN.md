@@ -6,7 +6,7 @@
 > no async cookbook chapter, no formal SPEC section on futures, no
 > debugger tutorial using the DWARF output from Arc 7.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.79.0
 **Delta review:** No
