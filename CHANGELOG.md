@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.82.0] - 2026-04-13
+
+**Arc 11 Release 1 — Baseline Benchmark Suite.**
+Measurement-first: 5 workloads at O0/O1/O2, cross-language comparison against
+Python and Rust. No IR changes. The baseline for all future optimizer work.
+
+### Added
+
+- `benchmarks/optimizer/` — 5 benchmark programs (fib, quicksort, matmul, string_concat, agent_fanout)
+- `benchmarks/optimizer/run_baseline.py` — harness: compile at O0/O1/O2, measure 5 runs, record JSON
+- Cross-language equivalents in Python (.py), Go (.go), Rust (.rs) for all 5 benchmarks
+- `benchmarks/optimizer/v4.82.0-baseline.json` — raw timing data
+- `benchmarks/optimizer/BASELINE.md` — analysis with 3 tables + narrative
+
+### Results
+
+- fib_recursive O2: 19.5ms (41x faster than Python, 1.1x slower than Rust)
+- quicksort O2: 1.6ms (26x faster than Python, 1.5x slower than Rust)
+- matmul_naive O2: 1.3ms (50x faster than Python, 1.6x slower than Rust)
+- string_concat O2: 96.1ms (2.7x SLOWER than Python — runtime allocation issue)
+- agent_fanout O2: 0.7ms (43x faster than Python, 1.4x slower than Rust)
+
 ## [4.81.0] - 2026-04-13
 
 **Arc 10 Panel Release — Integration Tests + Debt Zero.**

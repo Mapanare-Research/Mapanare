@@ -1,0 +1,261 @@
+{
+  "mapanare": [
+    {
+      "benchmark": "fib_recursive",
+      "opt_level": "O0",
+      "median_ms": 57.45,
+      "min_ms": 57.43,
+      "max_ms": 57.47,
+      "runs": 5,
+      "output": "fib(35) = 9227465",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "fib_recursive",
+      "opt_level": "O1",
+      "median_ms": 19.62,
+      "min_ms": 19.5,
+      "max_ms": 19.71,
+      "runs": 5,
+      "output": "fib(35) = 9227465",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "fib_recursive",
+      "opt_level": "O2",
+      "median_ms": 19.55,
+      "min_ms": 19.35,
+      "max_ms": 19.72,
+      "runs": 5,
+      "output": "fib(35) = 9227465",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "quicksort",
+      "opt_level": "O0",
+      "median_ms": 2.34,
+      "min_ms": 2.34,
+      "max_ms": 2.37,
+      "runs": 5,
+      "output": "checksum = 1402571529093800",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "quicksort",
+      "opt_level": "O1",
+      "median_ms": 1.78,
+      "min_ms": 1.77,
+      "max_ms": 1.83,
+      "runs": 5,
+      "output": "checksum = 1406730007593640",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "quicksort",
+      "opt_level": "O2",
+      "median_ms": 1.63,
+      "min_ms": 1.62,
+      "max_ms": 1.76,
+      "runs": 5,
+      "output": "checksum = 1398981764383400",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "matmul_naive",
+      "opt_level": "O0",
+      "median_ms": 2.05,
+      "min_ms": 2.05,
+      "max_ms": 2.1,
+      "runs": 5,
+      "output": "checksum = 377670736158640",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "matmul_naive",
+      "opt_level": "O1",
+      "median_ms": 1.31,
+      "min_ms": 1.28,
+      "max_ms": 1.41,
+      "runs": 5,
+      "output": "checksum = 377394406973360",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "matmul_naive",
+      "opt_level": "O2",
+      "median_ms": 1.28,
+      "min_ms": 1.27,
+      "max_ms": 1.29,
+      "runs": 5,
+      "output": "checksum = 379323866947504",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "string_concat",
+      "opt_level": "O0",
+      "median_ms": 99.73,
+      "min_ms": 97.95,
+      "max_ms": 100.08,
+      "runs": 5,
+      "output": "len = 50000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "string_concat",
+      "opt_level": "O1",
+      "median_ms": 102.31,
+      "min_ms": 97.96,
+      "max_ms": 105.6,
+      "runs": 5,
+      "output": "len = 50000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "string_concat",
+      "opt_level": "O2",
+      "median_ms": 96.08,
+      "min_ms": 96.03,
+      "max_ms": 97.35,
+      "runs": 5,
+      "output": "len = 50000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "opt_level": "O0",
+      "median_ms": 0.59,
+      "min_ms": 0.56,
+      "max_ms": 0.64,
+      "runs": 5,
+      "output": "total = 27472500",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "opt_level": "O1",
+      "median_ms": 0.58,
+      "min_ms": 0.57,
+      "max_ms": 0.6,
+      "runs": 5,
+      "output": "total = 27472500",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "opt_level": "O2",
+      "median_ms": 0.65,
+      "min_ms": 0.56,
+      "max_ms": 0.69,
+      "runs": 5,
+      "output": "total = 27472500",
+      "correct": true,
+      "status": "ok"
+    }
+  ],
+  "cross_language": [
+    {
+      "benchmark": "fib_recursive",
+      "language": "python",
+      "median_ms": 808.58,
+      "output": "fib(35) = 9227465"
+    },
+    {
+      "benchmark": "fib_recursive",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    },
+    {
+      "benchmark": "fib_recursive",
+      "language": "rust",
+      "median_ms": 17.01,
+      "output": "fib(35) = 9227465"
+    },
+    {
+      "benchmark": "quicksort",
+      "language": "python",
+      "median_ms": 41.69,
+      "output": "checksum = 485"
+    },
+    {
+      "benchmark": "quicksort",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    },
+    {
+      "benchmark": "quicksort",
+      "language": "rust",
+      "median_ms": 1.05,
+      "output": "checksum = 485"
+    },
+    {
+      "benchmark": "matmul_naive",
+      "language": "python",
+      "median_ms": 65.11,
+      "output": "checksum = 643536"
+    },
+    {
+      "benchmark": "matmul_naive",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    },
+    {
+      "benchmark": "matmul_naive",
+      "language": "rust",
+      "median_ms": 0.76,
+      "output": "checksum = 643536"
+    },
+    {
+      "benchmark": "string_concat",
+      "language": "python",
+      "median_ms": 36.16,
+      "output": "len = 50000"
+    },
+    {
+      "benchmark": "string_concat",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    },
+    {
+      "benchmark": "string_concat",
+      "language": "rust",
+      "median_ms": 0.75,
+      "output": "len = 50000"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "language": "python",
+      "median_ms": 29.76,
+      "output": "total = 27472500"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "language": "rust",
+      "median_ms": 0.52,
+      "output": "total = 27472500"
+    }
+  ]
+}

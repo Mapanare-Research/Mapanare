@@ -7,7 +7,7 @@
 > comparison against Python, Go, and Rust. All numbers recorded in
 > machine-readable JSON and human-readable Markdown.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.81.0
 **Delta review:** No
