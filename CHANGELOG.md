@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.85.0] - 2026-04-13
+
+**Arc 11 Release 4 — Benchmark Refresh: Phase 1 Results.**
+Re-ran all benchmarks with v4.83+v4.84 IR annotations. Published ARC11_RESULTS.md.
+
+### Added
+
+- `benchmarks/optimizer/v4.85.0-final.json` — fresh benchmark data with cross-language
+- `benchmarks/optimizer/ARC11_RESULTS.md` — 5 tables + narrative analysis
+
+### Results
+
+The 2-3x hypothesis did not materialize. IR annotations (nsw, nounwind, willreturn,
+inbounds, TBAA, noalias sret) produced no statistically significant improvement —
+all results within measurement noise. The bottleneck is opaque runtime FFI calls,
+not instruction-level metadata. Closing the Rust gap requires Phase 2 work: inline
+list operations, string builder, SROA.
+
 ## [4.84.0] - 2026-04-13
 
 **Arc 11 Release 3 — Function Attributes + Aliasing Hints.**

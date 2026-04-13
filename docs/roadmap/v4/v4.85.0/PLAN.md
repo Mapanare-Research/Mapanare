@@ -7,7 +7,7 @@
 > Publishes `ARC11_RESULTS.md` -- the definitive answer to "did it
 > work?"
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.84.0
 **Delta review:** No
