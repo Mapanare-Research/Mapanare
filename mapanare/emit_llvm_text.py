@@ -708,6 +708,64 @@ class LLVMTextEmitter:
         )
         return mid
 
+    def _emit_debug_composite_type(self, name: str, fields: list[tuple[str, "MIRType"]]) -> int:
+        """Emit a DICompositeType for a struct and return its metadata ID."""
+        cache_key = f"struct:{name}"
+        if cache_key in self._debug_type_cache:
+            return self._debug_type_cache[cache_key]
+        members = []
+        offset = 0
+        for fname, fty in fields:
+            fty_id = self._get_debug_type_for_mir(fty)
+            size = 64  # all types are 64-bit in Mapanare's IR layout
+            mem_id = self._alloc_metadata_id()
+            self._debug_metadata_lines.append(
+                f"!{mem_id} = !DIDerivedType(tag: DW_TAG_member, "
+                f'name: "{fname}", size: {size}, offset: {offset}, '
+                f"baseType: !{fty_id})"
+            )
+            members.append(f"!{mem_id}")
+            offset += size
+        elems_id = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(f"!{elems_id} = !{{{', '.join(members)}}}")
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{mid} = !DICompositeType(tag: DW_TAG_structure_type, "
+            f'name: "{name}", size: {offset}, elements: !{elems_id})'
+        )
+        self._debug_type_cache[cache_key] = mid
+        return mid
+
+    def _emit_debug_local_variable(
+        self, name: str, ty_id: int, scope_id: int, line: int, arg_index: int = 0
+    ) -> int:
+        """Emit a DILocalVariable and return its metadata ID."""
+        mid = self._alloc_metadata_id()
+        arg_part = f", arg: {arg_index}" if arg_index > 0 else ""
+        file_id = next(iter(self._debug_file_table.values()), 0)
+        self._debug_metadata_lines.append(
+            f"!{mid} = !DILocalVariable(name: \"{name}\"{arg_part}, "
+            f"scope: !{scope_id}, file: !{file_id}, line: {line}, type: !{ty_id})"
+        )
+        return mid
+
+    def _emit_dbg_declare(self, alloca_ref: str, var_meta_id: int) -> None:
+        """Emit an llvm.dbg.declare call after an alloca."""
+        if not self._debug_enabled or self._current_subprogram_id < 0:
+            return
+        loc_suffix = ""
+        if self._current_span and self._current_span.line > 0:
+            file_id = next(iter(self._debug_file_table.values()), 0)
+            loc_id = self._get_debug_location(
+                file_id, self._current_span.line, self._current_span.column,
+                self._current_subprogram_id
+            )
+            loc_suffix = f", !dbg !{loc_id}"
+        self._blk[self._cb].append(
+            f"  call void @llvm.dbg.declare(metadata ptr {alloca_ref}, "
+            f"metadata !{var_meta_id}, metadata !DIExpression()){loc_suffix}"
+        )
+
     def _build_debug_metadata_section(self) -> list[str]:
         """Build the module-level DWARF metadata section."""
         if not self._debug_enabled or not hasattr(self, "_debug_cu_id"):
@@ -792,7 +850,11 @@ class LLVMTextEmitter:
         # 7) pipe defs
         for pname, pinfo in mir.pipes.items():
             fns.append(self._emit_pipe(pname, pinfo))
-        # 8) assemble
+        # 8) debug intrinsic declarations (v4.65.0)
+        if self._debug_enabled:
+            self._decls.append("declare void @llvm.dbg.declare(metadata, metadata, metadata) nounwind readnone")
+            self._decls.append("declare void @llvm.dbg.value(metadata, metadata, metadata) nounwind readnone")
+        # 9) assemble
         hdr = [
             f"; ModuleID = '{self._name}'",
             f'source_filename = "{self._name}"',
@@ -1991,6 +2053,30 @@ class LLVMTextEmitter:
                 self._alloc[nm] = (a, ty)
                 self._ent.append(f"  {a} = alloca {ty}, align 8")
                 self._ent.append(f"  store {ty} {_zero(ty)}, ptr {a}")
+
+        # emit dbg.declare for parameters (v4.65.0)
+        if self._debug_enabled and self._current_subprogram_id >= 0:
+            for idx, p in enumerate(fn.params, 1):
+                sname = self._san(p.name)
+                alloca_ref = None
+                for k in (p.name, sname, f"%{sname}"):
+                    if k in self._alloc:
+                        alloca_ref = self._alloc[k][0]
+                        break
+                if alloca_ref:
+                    ty_id = self._get_debug_type_for_mir(p.ty)
+                    var_id = self._emit_debug_local_variable(
+                        p.name, ty_id, self._current_subprogram_id,
+                        fn.source_line or 1, arg_index=idx
+                    )
+                    file_id = next(iter(self._debug_file_table.values()), 0)
+                    loc_id = self._get_debug_location(
+                        file_id, fn.source_line or 1, 0, self._current_subprogram_id
+                    )
+                    self._ent.append(
+                        f"  call void @llvm.dbg.declare(metadata ptr {alloca_ref}, "
+                        f"metadata !{var_id}, metadata !DIExpression()), !dbg !{loc_id}"
+                    )
 
         # emit blocks
         for bb in fn.blocks:

@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.64.0** (shipped) — Arc 7 release 3. Line-accurate DWARF: `!dbg` on every source-origin instruction. `addr2line` returns correct `.mn` source lines.
-- **v4.65.0** (next) — Arc 7 release 4: DILocalVariable + `llvm.dbg.declare` for variable inspection.
+- **v4.65.0** (shipped) — Arc 7 release 4. DWARF variables: DILocalVariable + `llvm.dbg.declare`. A2 closed (6 cycles). gdb can inspect parameters.
+- **v4.66.0** (next) — Arc 7 panel release.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

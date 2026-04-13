@@ -7,11 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.65.0] - 2026-04-12
+
+**Arc 7 Release 4 — DWARF variables. A2 CLOSED.** `-g` builds emit
+`DILocalVariable` + `llvm.dbg.declare` for function parameters. gdb can
+inspect parameters by name. The A2 carry-forward (DWARF debug info, open
+since v0.7.0, 6 cycles) is finally closed.
+
+### Added
+
+- `mapanare/emit_llvm_text.py` — variable debug info:
+  `_emit_debug_composite_type()` for struct DWARF types,
+  `_emit_debug_local_variable()` for DILocalVariable with `arg:` index,
+  `_emit_dbg_declare()` for `llvm.dbg.declare` calls after allocas
+- `llvm.dbg.declare` and `llvm.dbg.value` intrinsic declarations in debug builds
+- Parameter debug info with correct `arg: N` indices
+- `tests/llvm/test_dwarf_variables.py` — 6 tests for variable debug info
+
+### Changed
+
+- `.reviews/CARRY_FORWARD.md` — A2 **CLOSED** (6-cycle carry-forward, first
+  reported v0.7.0, closed across Arc 7: v4.62.0-v4.65.0)
+
 ## [4.64.0] - 2026-04-12
 
 **Arc 7 Release 3 — Line-accurate DWARF.** Every source-origin instruction
 gets `!dbg !<N>` pointing at a `!DILocation`. DWARF line table populated.
-`addr2line` returns correct `.mn` source lines.
+<!-- no-check --> `addr2line` returns correct `.mn` source lines.
 
 ### Added
 

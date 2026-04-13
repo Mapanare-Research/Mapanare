@@ -100,7 +100,7 @@ items that were explicitly deferred out of the recovery arc.
 | # | Item | First reported | Severity | Cycles | Status | Tracking version |
 |---|------|----------------|----------|--------|--------|------------------|
 | A1 | Real `await` coroutine lowering (LLVM coroutine intrinsics) | v4.19.0 | MEDIUM | **2** | DEFERRED | v4.67.0+ (Arc 8: coroutine foundation) |
-| A2 | DWARF debug info emission | v0.7.0 | MEDIUM | **6** | DEFERRED | v5.x |
+| A2 | DWARF debug info emission | v0.7.0 | MEDIUM | **6** | **CLOSED** | v4.65.0 — Arc 7 (v4.62.0-v4.65.0): DESIGN.md, DICompileUnit, DISubprogram, DILocation on every instruction, DILocalVariable + `llvm.dbg.declare` for parameters. `llvm-dwarfdump --verify` passes. 34 DWARF tests. |
 | A3 | Deprecated Python emitter removal (`PythonMIREmitter`) | v4.2.0 | LOW | **5** | **CLOSED** | v4.58.0 — `mapanare/emit_python_mir.py` deleted (1,236 lines), `cmd_compile`/`cmd_repl` removed, `_PYTHON_MIR_XFAIL` deleted, ~3,500 total lines removed. Regression gate: `tests/test_python_emitter_deleted.py` (6 tests). |
 | A4 | llvmlite JIT emitter removal | v4.2.0 | LOW | **5** | **CLOSED** | v4.59.0 — `mapanare/jit.py` deleted (285 lines), `cmd_jit` + `--release` removed, llvmlite dependency dropped from pyproject.toml. `mapanare build` uses clang directly. Regression gate: `tests/test_llvmlite_removed.py` (5 tests). |
 | A5 | Culebra `list-element-size-undercount` template tightens | v4.30.0 | LOW | 1 | OPEN | Culebra project, not Mapanare |

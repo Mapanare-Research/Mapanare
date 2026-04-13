@@ -5,7 +5,9 @@
 > program with `-g`, open it in gdb, and inspect local variables by
 > name at a breakpoint. The "real gdb experience" is unlocked.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** DILocalVariable + llvm.dbg.declare for parameters. Composite type stubs. A2 CLOSED. 34 DWARF tests.
+**Decisions taken:** MVP enum types (plain struct), closures deferred, both dbg.declare+dbg.value declared.
 **Breaking:** No
 **Prerequisite:** v4.64.0
 **Delta review:** No
