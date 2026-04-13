@@ -850,7 +850,24 @@ class LLVMTextEmitter:
         # 7) pipe defs
         for pname, pinfo in mir.pipes.items():
             fns.append(self._emit_pipe(pname, pinfo))
-        # 8) debug intrinsic declarations (v4.65.0)
+        # 8a) coroutine intrinsic declarations (v4.70.0)
+        if any(f.is_async for f in mir.functions if f.blocks):
+            # Ensure malloc/free are declared for frame + future allocation
+            self._decl_fn("malloc", "ptr", ["i64"])
+            self._decl_fn("free", "void", ["ptr"])
+            self._decls.append("; -- coroutine intrinsics (v4.70.0) --")
+            self._decls.append("declare token @llvm.coro.id(i32, ptr, ptr, ptr)")
+            self._decls.append("declare i1 @llvm.coro.alloc(token)")
+            self._decls.append("declare i64 @llvm.coro.size.i64()")
+            self._decls.append("declare ptr @llvm.coro.begin(token, ptr)")
+            self._decls.append("declare i8 @llvm.coro.suspend(token, i1)")
+            self._decls.append("declare i1 @llvm.coro.end(ptr, i1, token)")
+            self._decls.append("declare ptr @llvm.coro.free(token, ptr)")
+            self._decls.append("declare void @llvm.coro.resume(ptr)")
+            self._decls.append("declare void @llvm.coro.destroy(ptr)")
+            self._decls.append("declare i1 @llvm.coro.done(ptr)")
+            self._decls.append("declare token @llvm.coro.save(ptr)")
+        # 8b) debug intrinsic declarations (v4.65.0)
         if self._debug_enabled:
             self._decls.append("declare void @llvm.dbg.declare(metadata, metadata, metadata) nounwind readnone")
             self._decls.append("declare void @llvm.dbg.value(metadata, metadata, metadata) nounwind readnone")
@@ -2169,34 +2186,123 @@ class LLVMTextEmitter:
         abi_rt = "void" if self._fn_use_sret else rt
 
         lk = "internal " if (not fn.is_public and fn.name != "main") else ""
+        # v4.70.0: presplitcoroutine attribute for async functions
+        coro_attr = " presplitcoroutine" if fn.is_async else ""
         dbg_ref = ""
         if self._debug_enabled and fn.name in self._debug_subprogram_ids:
             dbg_ref = f" !dbg !{self._debug_subprogram_ids[fn.name]}"
-        out: list[str] = [f"define {lk}{abi_rt} @{fn.name}({ps}){dbg_ref} {{", "pre_entry:"]
-        out.extend(self._ent)
-        # Store params into allocas (byref params get memcpy from pointer)
-        for p in fn.params:
-            ty = self._rty(p.ty)
-            s = self._san(p.name)
-            if p.name in self._fn_byref_params:
-                # Load from byref pointer into the local zeroed alloca
-                tmp = self._f("bp")
-                out.append(f"  {tmp} = load {ty}, ptr %{s}.byref")
-                out.append(f"  store {ty} {tmp}, ptr %{s}.addr")
-            else:
-                out.append(f"  store {ty} %{s}, ptr %{s}.addr")
-        if fn.blocks:
-            out.append(f"  br label %{fn.blocks[0].label}")
-        mir_labels = {bb.label for bb in fn.blocks}
-        for bb in fn.blocks:
-            out.append(f"{bb.label}:")
-            out.extend(self._blk[bb.label])
-        # Emit drop glue blocks (drop.skip.*, drop.check.*, drop.free.*, etc.)
-        for lbl, lines in self._blk.items():
-            if lbl not in mir_labels:
-                out.append(f"{lbl}:")
-                out.extend(lines)
-        out.append("}")
+
+        if fn.is_async:
+            # v4.70.0: Async function — emit coroutine prelude wrapper.
+            # The function returns ptr (the Future handle) regardless of the
+            # declared return type. The actual return value goes into the Future.
+            out: list[str] = [
+                f"define {lk}ptr @{fn.name}({ps}){coro_attr}{dbg_ref} {{",
+                "coro.entry:",
+                f"  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)",
+                f"  %coro.size = call i64 @llvm.coro.size.i64()",
+                f"  %coro.mem = call ptr @malloc(i64 %coro.size)",
+                f"  %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)",
+                f"  ; Allocate Future struct: {{i8 state, ptr payload}}",
+                f"  %future = call ptr @malloc(i64 16)",
+                f"  store i8 0, ptr %future",
+                f"  %future.hdl.slot = getelementptr {{i8, ptr}}, ptr %future, i32 0, i32 1",
+                f"  store ptr %coro.hdl, ptr %future.hdl.slot",
+                f"  ; Initial suspend",
+                f"  %coro.init.save = call token @llvm.coro.save(ptr %coro.hdl)",
+                f"  %coro.init.susp = call i8 @llvm.coro.suspend(token %coro.init.save, i1 false)",
+                f"  switch i8 %coro.init.susp, label %coro.ret [",
+                f"    i8 0, label %pre_entry",
+                f"    i8 1, label %coro.cleanup",
+                f"  ]",
+                "",
+                "pre_entry:",
+            ]
+            out.extend(self._ent)
+            for p in fn.params:
+                ty = self._rty(p.ty)
+                s = self._san(p.name)
+                if p.name in self._fn_byref_params:
+                    tmp = self._f("bp")
+                    out.append(f"  {tmp} = load {ty}, ptr %{s}.byref")
+                    out.append(f"  store {ty} {tmp}, ptr %{s}.addr")
+                else:
+                    out.append(f"  store {ty} %{s}, ptr %{s}.addr")
+            if fn.blocks:
+                out.append(f"  br label %{fn.blocks[0].label}")
+            mir_labels = {bb.label for bb in fn.blocks}
+            for bb in fn.blocks:
+                out.append(f"{bb.label}:")
+                # Rewrite "ret <ty> <val>" to store into Future + final suspend
+                rewritten = []
+                for line in self._blk[bb.label]:
+                    stripped = line.strip()
+                    if stripped.startswith("ret ") and not stripped.startswith("ret void"):
+                        # Extract the return value and type
+                        parts = stripped.split(" ", 2)
+                        if len(parts) >= 3:
+                            ret_ty = parts[1]
+                            ret_val = parts[2].split(",")[0]  # strip !dbg suffix
+                            t = self._f("ret.box")
+                            rewritten.append(f"  {t} = call ptr @malloc(i64 8)")
+                            rewritten.append(f"  store {ret_ty} {ret_val}, ptr {t}")
+                            rewritten.append(f"  store i8 1, ptr %future")
+                            rewritten.append(f"  %ret.val.slot = getelementptr {{i8, ptr}}, ptr %future, i32 0, i32 1")
+                            rewritten.append(f"  store ptr {t}, ptr %ret.val.slot")
+                            rewritten.append(f"  br label %coro.final")
+                        else:
+                            rewritten.append(line)
+                    elif stripped == "ret void":
+                        rewritten.append(f"  store i8 1, ptr %future")
+                        rewritten.append(f"  br label %coro.final")
+                    else:
+                        rewritten.append(line)
+                out.extend(rewritten)
+            # Emit drop glue blocks
+            for lbl, lines in self._blk.items():
+                if lbl not in mir_labels:
+                    out.append(f"{lbl}:")
+                    out.extend(lines)
+            # Coroutine epilogue blocks
+            out.append("coro.final:")
+            out.append("  %coro.final.save = call token @llvm.coro.save(ptr %coro.hdl)")
+            out.append("  %coro.final.susp = call i8 @llvm.coro.suspend(token %coro.final.save, i1 true)")
+            out.append("  switch i8 %coro.final.susp, label %coro.ret [")
+            out.append("    i8 0, label %coro.ret")
+            out.append("    i8 1, label %coro.cleanup")
+            out.append("  ]")
+            out.append("coro.cleanup:")
+            out.append("  %coro.mem.free = call ptr @llvm.coro.free(token %coro.id, ptr %coro.hdl)")
+            out.append("  call void @free(ptr %coro.mem.free)")
+            out.append("  br label %coro.ret")
+            out.append("coro.ret:")
+            out.append("  call i1 @llvm.coro.end(ptr %coro.hdl, i1 false, token none)")
+            out.append("  ret ptr %future")
+            out.append("}")
+        else:
+            # Regular (non-async) function emission
+            out: list[str] = [f"define {lk}{abi_rt} @{fn.name}({ps}){dbg_ref} {{", "pre_entry:"]
+            out.extend(self._ent)
+            for p in fn.params:
+                ty = self._rty(p.ty)
+                s = self._san(p.name)
+                if p.name in self._fn_byref_params:
+                    tmp = self._f("bp")
+                    out.append(f"  {tmp} = load {ty}, ptr %{s}.byref")
+                    out.append(f"  store {ty} {tmp}, ptr %{s}.addr")
+                else:
+                    out.append(f"  store {ty} %{s}, ptr %{s}.addr")
+            if fn.blocks:
+                out.append(f"  br label %{fn.blocks[0].label}")
+            mir_labels = {bb.label for bb in fn.blocks}
+            for bb in fn.blocks:
+                out.append(f"{bb.label}:")
+                out.extend(self._blk[bb.label])
+            for lbl, lines in self._blk.items():
+                if lbl not in mir_labels:
+                    out.append(f"{lbl}:")
+                    out.extend(lines)
+            out.append("}")
         out.append("")
         return "\n".join(out)
 

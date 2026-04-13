@@ -768,6 +768,7 @@ class MIRFunction:
     blocks: list[BasicBlock] = field(default_factory=list)
     decorators: list[str] = field(default_factory=list)  # metadata from AST decorators
     is_public: bool = False
+    is_async: bool = False  # v4.70.0: coroutine — emit presplitcoroutine + coro prelude
     source_line: int = 0  # Source line where this function is defined
     source_file: str = ""  # Source file name
 

@@ -844,21 +844,13 @@ class MIRLowerer:
                 return  # Generic functions lowered on demand via monomorphization
             self._lower_fn(actual)
         elif isinstance(actual, AsyncFnDef):
-            # v4.68.0: honest interim — grammar + AST real, lowering not yet.
-            # Coroutine lowering (LLVM intrinsics) arrives at v4.70.0.
-            from mapanare.diagnostics import Diagnostic, Label, Severity
-
-            span = actual.span
-            diag = Diagnostic(
-                severity=Severity.ERROR,
-                message="async fn is under construction — lowering arrives in v4.70.0",
-                labels=[Label(span=span, message="async fn cannot be compiled yet", primary=True)],
-                notes=[
-                    "semantic analysis and MIR lowering for async fn are not yet implemented",
-                    "this will compile in v4.70.0+; see docs/roadmap/v4/v4.67.0/DESIGN.md §4",
-                ],
-            )
-            raise RuntimeError(str(diag))
+            # v4.70.0: lower async fn — same as regular fn but marks MIRFunction
+            # as is_async=True. The LLVM emitter wraps the body in the coroutine
+            # prelude/epilogue (coro.id, coro.begin, coro.end, cleanup).
+            if actual.type_params:
+                return  # Generic async functions lowered on demand
+            mir_fn = self._lower_fn(actual)  # type: ignore[arg-type]
+            mir_fn.is_async = True
         elif isinstance(actual, AgentDef):
             self._lower_agent(actual)
         elif isinstance(actual, ImplDef):
@@ -1438,17 +1430,17 @@ class MIRLowerer:
             return self._lower_sync(expr)
 
         if isinstance(expr, AwaitExpr):
-            # v4.68.0: honest interim — grammar + AST real, lowering not yet.
+            # v4.70.0: await suspension lowering arrives at v4.72.0.
             from mapanare.diagnostics import Diagnostic, Label, Severity
 
             span = expr.span
             diag = Diagnostic(
                 severity=Severity.ERROR,
-                message="await is under construction — lowering arrives in v4.70.0",
+                message="await suspension is under construction — arrives in v4.72.0",
                 labels=[Label(span=span, message="await cannot be compiled yet", primary=True)],
                 notes=[
-                    "coroutine suspension via LLVM intrinsics is not yet implemented",
-                    "this will compile in v4.70.0+; see docs/roadmap/v4/v4.67.0/DESIGN.md §4",
+                    "coroutine prelude emits at v4.70.0 but suspend/resume needs v4.72.0",
+                    "see docs/roadmap/v4/v4.67.0/DESIGN.md §4.6.2 for the await lowering plan",
                 ],
             )
             raise RuntimeError(str(diag))
