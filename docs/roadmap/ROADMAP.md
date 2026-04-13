@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.93.0 shipped — Multi-threaded work-stealing scheduler. Arc 13 release 2.)
+## Where We Are (v4.94.0 shipped — Async benchmark suite. Arc 13 release 3.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

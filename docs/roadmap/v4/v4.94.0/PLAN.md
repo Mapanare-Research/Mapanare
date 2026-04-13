@@ -8,7 +8,7 @@
 > changes. This is the v4.82.0 pattern (baseline first, optimize
 > later) applied to async.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.93.0
 **Delta review:** No

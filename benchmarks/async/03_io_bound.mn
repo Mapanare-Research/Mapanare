@@ -1,0 +1,25 @@
+// Async benchmark 3: I/O-bound simulation (v4.94.0)
+// Simulates async I/O by doing minimal CPU work per task.
+// Each "I/O" task just returns a constant (real I/O would use
+// __mn_file_read_async; this isolates scheduler overhead).
+// Expected output: checksum = 1000
+
+async fn io_task(id: Int) -> Int {
+    return 1
+}
+
+async fn io_fanout() -> Int {
+    let mut total = 0
+    let mut i = 0
+    while i < 1000 {
+        let v = await io_task(i)
+        total = total + v
+        i = i + 1
+    }
+    return total
+}
+
+fn main() {
+    let result = block_on(io_fanout())
+    print("checksum = " + str(result))
+}

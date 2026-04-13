@@ -1,0 +1,36 @@
+// Async benchmark 5: Backpressure chain (v4.94.0)
+// A pipeline of async stages where each depends on the previous.
+// Tests scheduler behavior under dependency chains (no free parallelism).
+// Expected output: checksum = 100
+
+async fn stage_a(n: Int) -> Int {
+    return n + 1
+}
+
+async fn stage_b(n: Int) -> Int {
+    return n * 2
+}
+
+async fn stage_c(n: Int) -> Int {
+    return n - 1
+}
+
+async fn pipeline() -> Int {
+    let mut total = 0
+    let mut i = 0
+    while i < 50 {
+        let a = await stage_a(i)
+        let b = await stage_b(a)
+        let c = await stage_c(b)
+        total = total + c
+        i = i + 1
+    }
+    // total = sum((i+1)*2 - 1 for i in 0..49) = sum(2i+1 for i in 0..49)
+    // = 2*sum(i,0..49) + 50 = 2*1225 + 50 = 2500
+    return total
+}
+
+fn main() {
+    let result = block_on(pipeline())
+    print("checksum = " + str(result))
+}

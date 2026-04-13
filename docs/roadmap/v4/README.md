@@ -93,6 +93,7 @@ Six phases:
 | | | | |
 | **v4.92.0** | Arc 13 | Real Suspension at Await | coro.suspend replaces inline-resume. C runtime scheduler. Async file I/O. Golden test 58. |
 | **v4.93.0** | Arc 13 | Multi-Threaded Scheduler | Chase-Lev work-stealing deques, N worker threads, condvar parking, spawn() builtin. Golden test 59. |
+| **v4.94.0** | Arc 13 | Async Benchmark Suite | 5 workloads x 3 languages, harness, Python baselines. Mapanare runtime pending rebuild. |
 
 ## What v4.0.0 Delivered
 
