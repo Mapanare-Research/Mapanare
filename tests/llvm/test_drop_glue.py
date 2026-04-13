@@ -66,6 +66,59 @@ class TestClosureDropGlue:
         assert "__mn_alloc" in ir_text or "mn_arena_alloc" in ir_text or "malloc" in ir_text
 
 
+class TestStructReturnDropGlue:
+    """v4.78.0: verify drop glue runs for non-escaping locals in struct-return functions.
+
+    CARRY_FORWARD #49 (8 cycles): the blanket early return skipped ALL
+    drop glue for functions returning structs with ptr fields. Now that
+    the per-kind helpers use ret_ptr_fields, drop glue must run for
+    local strings that are NOT part of the return value.
+    """
+
+    def test_struct_return_emits_drop_glue_for_locals(self) -> None:
+        source = textwrap.dedent("""\
+            struct Pair {
+                a: Int,
+                b: Int
+            }
+            fn make_pair(x: Int) -> Pair {
+                let msg: String = "creating pair"
+                print(msg)
+                let r: Pair = new Pair { a: x, b: x + 1 }
+                return r
+            }
+            fn main() {
+                let p: Pair = make_pair(5)
+                print(str(p.a))
+            }
+        """)
+        ir_text = _to_ir(source)
+        assert "define" in ir_text
+
+    def test_struct_with_string_field_return_has_drop_glue(self) -> None:
+        source = textwrap.dedent("""\
+            struct Named {
+                name: String,
+                value: Int
+            }
+            fn make_named(x: Int) -> Named {
+                let tmp: String = str(x) + " items"
+                print(tmp)
+                let r: Named = new Named { name: str(x), value: x }
+                return r
+            }
+            fn main() {
+                let n: Named = make_named(42)
+                print(n.name)
+            }
+        """)
+        ir_text = _to_ir(source)
+        # v4.78.0: drop glue should run for the 'tmp' local (heap-allocated
+        # via str()+concat, which is NOT the return value) even though the
+        # function returns a struct with a ptr field (name: String).
+        assert "__mn_str_free" in ir_text
+
+
 class TestCombinedDropGlue:
     """Verify combined string and closure operations."""
 

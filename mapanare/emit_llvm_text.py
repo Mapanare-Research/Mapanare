@@ -1437,13 +1437,12 @@ class LLVMTextEmitter:
         )
         if not has_any:
             return
-        # Skip compound returns that contain ptr fields — escape analysis
-        # cannot follow them. v4.32.0 Viper V1 (8th cycle) asked for
-        # this early return to be retired because per-kind helpers now
-        # consult ret_ptr_fields directly, but Phase 2.2 is a pure
-        # refactor — tracked to v4.33.0 as CARRY_FORWARD.md row #49.
-        if ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL) and "ptr" in ret_ty:
-            return
+        # v4.78.0: removed blanket early return that skipped ALL drop glue
+        # for struct returns containing ptr fields (CARRY_FORWARD #49, 8
+        # cycles). _emit_drop_glue_collect_ret_ptrs now extracts every
+        # escaping pointer from the return value, and the per-kind helpers
+        # compare against ret_ptr_fields before freeing — so the blanket
+        # bail is no longer needed.
 
         self._ensure("__mn_str_free", VOID, [STR])
         ret_str_ptrs, ret_list_ptrs, ret_env, ret_ptr_fields = (
