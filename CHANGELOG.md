@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.56.0] - 2026-04-12
+
+**Arc 5 Panel Release — Compiler Debt Drain Close.**
+7-reviewer panel grades v4.52.0-v4.55.0. Arc 5 closes. Three carry-forward
+A-items drained, `const` Path A delivered, 33 new tests.
+
+### Added
+
+- `.reviews/v4.56.0/` panel materials: PRE_PANEL_AUDIT.md, MEASUREMENTS.md,
+  7 reviewer files, README.md summary
+
 ## [4.55.0] - 2026-04-12
 
 **Arc 5 Release 4 — `const` Path A (v4.26.0 CRITICAL finally closed).**

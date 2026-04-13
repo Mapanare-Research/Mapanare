@@ -118,6 +118,7 @@ items that were explicitly deferred out of the recovery arc.
 | P4 | SPEC §5.6 "compatible types" wording vs name-set-only implementation | v4.36.0 (Coral) | MEDIUM | 1 | **CLOSED** | v4.42.0 — SPEC §5.6 corrected at `docs/SPEC.md:906` |
 | P5 | `examples/` showcase gap (3rd cycle) | v4.31.0 (Coral) | MEDIUM | **3** | **CLOSED** | v4.50.0 — 4 AI demos (basic_chat, basic_stream, chat_agent, rag_agent) + cookbook AI chapter + 8 sample docs |
 | P6 | Unreachable-arm warning path zero test coverage | v4.36.0 (Boa M2) | MEDIUM | 1 | OPEN | v4.37.0 — add test_unreachable_arm_warning |
+| A10b | Self-hosted const scope issue: const symbols not found in fn bodies | v4.55.0 | LOW | 1 | OPEN | v4.57.0+ — scope-chain threading issue in self-hosted semantic.mn; Python pipeline works |
 
 ## Items resolved in v4.36.0
 

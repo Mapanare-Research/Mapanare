@@ -4,7 +4,9 @@
 > compiler debt drain from v4.52.0–v4.55.0 — four long-standing
 > `CARRY_FORWARD.md` A-items resolved.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Same session as v4.52.0-v4.55.0. Pre-panel audit verified all 4 closures. 7 reviewers spawned in parallel.
+**Decisions taken:** 6 broken fixtures verified. const Path A checklist in PRE_PANEL_AUDIT.md.
 **Breaking:** No
 **Prerequisite:** v4.55.0
 **Delta review:** No

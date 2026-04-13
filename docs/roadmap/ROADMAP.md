@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.55.0 shipped — Arc 5 release 4: real const Path A, v4.26.0 CRITICAL closed)
+## Where We Are (v4.56.0 shipped — Arc 5 panel close: compiler debt drain graded)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural
