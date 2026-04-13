@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.86.0] - 2026-04-13
+
+**Arc 11 Panel Release — Optimizer Phase 1 Graded.**
+7-reviewer panel. PASS (8.71/10). 5 PASS, 2 PASS WITH NOTES. Arc 11 closes.
+Honest negative: IR annotations correct but no user-visible speedup — bottleneck
+is runtime FFI. Measurement infrastructure validated.
+
+### Added
+
+- `.reviews/v4.86.0/` panel materials
+
 ## [4.85.0] - 2026-04-13
 
 **Arc 11 Release 4 — Benchmark Refresh: Phase 1 Results.**

@@ -6,7 +6,7 @@
 > the IR quality improvements are correct, the measurements are
 > reproducible, and the performance gains are real.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.85.0
 **Delta review:** No
