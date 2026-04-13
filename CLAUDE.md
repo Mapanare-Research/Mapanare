@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.86.0** (shipped) — Arc 11 panel release. PASS (8.71/10). Optimizer Phase 1: IR annotations correct, no user-visible speedup, bottleneck is runtime FFI. fib within 10% of Rust. Arc 11 closes.
+- **v4.87.0** (shipped) — Arc 12 release 1. MIR inlining pass: cost-model-driven function inlining at O2 for single-block callees. First new MIR optimization since v4.30.0.
 - **v5.0.0** (when ready) — Major version tag. The lead's call. Zero additional work required — v4.76.0 is release-gate quality.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.

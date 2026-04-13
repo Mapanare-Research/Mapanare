@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.87.0] - 2026-04-13
+
+**Arc 12 Release 1 — MIR Inlining Pass.**
+First new MIR optimization pass since v4.30.0. Cost-model-driven function
+inlining at O2 for single-block callees.
+
+### Added
+
+- `inline_small_functions` pass in `mir_opt.py` — inlines small, non-recursive,
+  single-block functions at call sites within the O2 fixpoint loop
+- `functions_inlined` counter in `MIRPassStats`
+- `fn_lookup` parameter on `optimize_function` for interprocedural access
+
 ## [4.86.0] - 2026-04-13
 
 **Arc 11 Panel Release — Optimizer Phase 1 Graded.**

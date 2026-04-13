@@ -13,7 +13,7 @@
 > sites, enabling downstream constant folding and DCE to eliminate
 > overhead that survives through the LLVM pipeline.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.86.0
 **Delta review:** No
