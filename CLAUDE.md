@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.75.0** (shipped) — Arc 9 release 4. A1 CLOSED (56-release carry-forward). Golden tests 55-57. 70 async tests.
-- **v4.76.0** (next) — Arc 9 panel release. Final panel of the 45-release plan.
+- **v4.76.0** (shipped) — Arc 9 panel release. PASS (8.86/10). **END OF 45-RELEASE PLAN.** async/await real. A1 closed. First 10/10 ever (Coral).
+- **v5.0.0** (when ready) — Major version tag. The lead's call. Zero additional work required — v4.76.0 is release-gate quality.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

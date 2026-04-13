@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.76.0] - 2026-04-13
+
+**Arc 9 Panel Release — Coroutine Completion Close. END OF THE 45-RELEASE PLAN.**
+7-reviewer panel grades v4.72.0-v4.75.0. PASS (8.86/10). Zero NEEDS WORK.
+First 10/10 in project history (Coral). Arc 9 closes. The POST_RECOVERY_ROADMAP
+is complete: 45 releases, 9 arcs, 9 panels, every feature with a delta review,
+every carry-forward tracked.
+
+### Added
+
+- `.reviews/v4.76.0/` panel materials: PRE_PANEL_AUDIT.md, 7 reviewer files,
+  README.md summary with verdict table and the 45-release journey metrics
+
 ## [4.75.0] - 2026-04-13
 
 **Arc 9 Release 4 — End-to-End Async Demos + Goldens. A1 CLOSED.**

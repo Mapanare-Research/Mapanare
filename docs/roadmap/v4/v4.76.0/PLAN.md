@@ -10,7 +10,9 @@
 > more feature work, tag v5.0.0 (zero additional work — v4.76.0 is
 > already release-gate quality), or both.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** Final panel. PASS (8.86/10). First 10/10 in project history (Coral). Arc 9 closes. 45-release plan complete. 9 items deferred to v5.x.
+**Decisions taken:** Arc 9 closes. The 45-release plan ends. Lead can tag v5.0.0 at will.
 **Breaking:** No
 **Prerequisite:** v4.75.0
 **Delta review:** No
