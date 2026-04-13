@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.61.0] - 2026-04-12
+
+**Arc 6 Panel Release — Deprecation + Deletion Close.**
+7-reviewer panel grades v4.57.0-v4.60.0. Arc 6 closes. A3+A4 closed,
+~1,820 lines removed from package, llvmlite dependency dropped.
+
+### Added
+
+- `.reviews/v4.61.0/` panel materials: PRE_PANEL_AUDIT.md, MEASUREMENTS.md,
+  7 reviewer files, README.md summary
+
 ## [4.60.0] - 2026-04-12
 
 **Dead-code audit + test honesty final pass.** Housekeeping release before the

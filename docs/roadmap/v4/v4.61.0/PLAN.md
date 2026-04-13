@@ -3,7 +3,9 @@
 > **Sixth 5-minor cadence panel.** Arc 6 closes. Panel grades the
 > deletion work from v4.57.0-v4.60.0.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Panel executed. 7 reviewers spawned in parallel. Verdict: PASS (8.71/10). Arc 6 closes.
+**Decisions taken:** Decision 1: fresh install verified (no llvmlite). Decision 2: metrics recorded in MEASUREMENTS.md.
 **Breaking:** No
 **Prerequisite:** v4.60.0
 **Delta review:** No
