@@ -5,7 +5,9 @@
 > that no longer exist — it has been stale since v4.2.0's emitter
 > consolidation. v4.54.0 executes Path A (rewrite) or Path B (delete).
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Same session as v4.52.0+v4.53.0. File already deleted in v4.2.0 — this release is documentation correction + formal A9 closure.
+**Decisions taken:** Path B (delete). See DECISIONS.md.
 **Breaking:** No (depending on path choice — Path B deletes a self-hosted module that's already broken; Path A restores it)
 **Prerequisite:** v4.53.0
 **Delta review:** No

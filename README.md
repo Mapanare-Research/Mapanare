@@ -570,17 +570,16 @@ See [Mapanare-Research/skills](https://github.com/Mapanare-Research/skills) for 
 
 ## Self-Hosted Compiler
 
-The compiler is written in Mapanare itself (`mapanare/self/`) — 15,000+ lines across 11 modules, plus 4 language transpilers:
+The compiler is written in Mapanare itself (`mapanare/self/`) — 15,000+ lines across 10 modules, plus 4 language transpilers:
 
 - `lexer.mn` — Tokenizer (575 lines)
 - `ast.mn` — AST definitions (781 lines)
 - `parser.mn` — Recursive descent parser (2,249 lines)
-- `semantic.mn` — Type checker (1,880 lines)
+- `semantic.mn` — Type checker (1,980 lines)
 - `lower.mn` + `lower_state.mn` — MIR lowering (4,189 lines)
 - `mir.mn` — MIR data structures (791 lines)
 - `emit_llvm.mn` + `emit_llvm_ir.mn` — LLVM IR emitter (3,672 lines)
-- `emit_c.mn` — C emitter (770 lines)
-- `main.mn` — Compiler driver (755 lines)
+- `main.mn` — Compiler driver (805 lines)
 - `transpiler.mn` — Shared transpiler framework (596 lines)
 - `from_python.mn`, `from_php.mn`, `from_typescript.mn`, `from_go.mn` — Language transpilers (4,824 lines)
 

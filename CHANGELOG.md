@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.54.0] - 2026-04-12
+
+**Arc 5 Release 3 — `emit_c.mn` Decision: Path B (A9 Closed).**
+Formal closure of the self-hosted C emitter carry-forward. The file was
+deleted in v4.2.0; v4.54.0 corrects all stale documentation claims.
+
+### Removed
+
+- 6 stale documentation references to `emit_c.mn` / "11 modules" corrected to
+  "10 modules" (`CLAUDE.md:7`, `README.md:573,582`, `docs/roadmap/v4/README.md:21`)
+
+### Added
+
+- `docs/roadmap/v4/v4.54.0/DECISIONS.md` — Path B decision rationale
+- `tests/self_hosted/test_c_emitter_deleted.py` — regression gate preventing
+  accidental resurrection of `mapanare/self/emit_c.mn`
+
+### Fixed
+
+- **A9 CLOSED**: Self-hosted C emitter confirmed deleted since v4.2.0. All
+  documentation claims corrected. 5-cycle carry-forward formally closed.
+
 ## [4.53.0] - 2026-04-12
 
 **Arc 5 Release 2 — UNRESOLVED/ERROR Type Split (A8 Closed).**

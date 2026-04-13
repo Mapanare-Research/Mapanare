@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (primary) and C (fallback via gcc). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 15,000+ lines of `.mn` across 11 modules in `mapanare/self/`. The compiler compiles itself — `bash scripts/build_from_seed.sh` builds from source with no Python.
+Mapanare is an AI-native compiled programming language with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (primary) and C (fallback via gcc). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 15,000+ lines of `.mn` across 10 modules in `mapanare/self/`. The compiler compiles itself — `bash scripts/build_from_seed.sh` builds from source with no Python.
 
 ## Current Version & Roadmap
 
-- **v4.53.0** (shipped) — Arc 5 release 2: UNRESOLVED/ERROR type split (A8 closed). Cascade suppression at 12 check sites. 1 undefined fn → 1 error (was 4).
-- **v4.54.0** (next) — Arc 5 release 3: A9 emit_c.mn decision (rewrite or delete).
+- **v4.54.0** (shipped) — Arc 5 release 3: emit_c.mn decision Path B (A9 closed). Stale "11 modules" docs corrected. Regression gate added.
+- **v4.55.0** (next) — Arc 5 release 4: real `const` (Path A fix for v4.26.0 CRITICAL).
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 

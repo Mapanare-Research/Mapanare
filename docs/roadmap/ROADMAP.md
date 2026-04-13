@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.53.0 shipped — Arc 5 release 2: UNRESOLVED/ERROR split, A8 closed)
+## Where We Are (v4.54.0 shipped — Arc 5 release 3: emit_c.mn Path B, A9 closed)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

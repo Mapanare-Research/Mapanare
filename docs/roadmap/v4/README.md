@@ -18,7 +18,7 @@ Six phases:
 
 ## Headline Techs
 
-- Self-hosted compiler: 15,000+ lines of .mn, 11 modules, fixed-point verified
+- Self-hosted compiler: 15,000+ lines of .mn, 10 modules, fixed-point verified
 - 40/40 golden tests, 4,845+ pytest, 9.79/10 code review
 - Architectural audit: 21 issues identified, systematic fix plan
 - Emitter consolidation: 3 LLVM emitters -> 1 (delete ~8,500 lines)
