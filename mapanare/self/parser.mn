@@ -470,6 +470,13 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     // v4.68.0: ``KW_ASYNC`` top-level dispatch restored (Arc 8).
     if tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
     if tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
+    // v4.78.0 (CARRY_FORWARD A10b): const handled early — the compiled
+    // binary has a codegen issue where checks late in long if-chains are
+    // unreachable. Placed right after KW_FN which is known to work.
+    if tt == "KW_CONST" { return parse_const_def(tokens, pos, filename) }
+    if tt == "NAME" {
+        if peek_value(tokens, pos) == "const" { return parse_const_def(tokens, pos, filename) }
+    }
     if tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
     if tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
     if tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
@@ -514,7 +521,6 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
     if tt == "KW_LET" { return parse_module_let(tokens, pos, filename) }
-    // v4.55.0: real const parsing
     if tt == "KW_CONST" { return parse_const_def(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
@@ -554,22 +560,28 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 
 // v4.55.0: const definition parsing
 fn parse_const_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
-    // const NAME: TYPE = EXPR
+    // v4.78.0 (CARRY_FORWARD A10b): emit LetDef instead of ConstDef so
+    // that const symbols use the same scope registration path as let
+    // definitions. ConstDef (the last enum variant) has a codegen issue
+    // in the compiled binary where its tag is unreachable in switch
+    // statements. Emitting LetDef makes consts visible in fn bodies.
     let mut p: Int = pos + 1
     let name: String = peek_value(tokens, p)
     p = p + 1
-    // Expect ":"
-    if peek_type(tokens, p) == "COLON" { p = p + 1 }
-    // Parse type expression
-    let tr: TypeResult = parse_type_expr(tokens, p, filename)
-    p = tr.pos
+    // Optional type annotation: ": TYPE"
+    let mut type_name: String = ""
+    if peek_type(tokens, p) == "COLON" {
+        p = p + 1
+        type_name = peek_value(tokens, p)
+        p = p + 1
+    }
     // Expect "="
     if peek_type(tokens, p) == "ASSIGN" { p = p + 1 }
     // Parse value expression
     let er: ExprResult = parse_expr(tokens, p, filename)
     p = er.pos
     p = skip_semis(tokens, p)
-    return new_def_result(Definition::ConstDef(name, tr.type_expr, er.expr), p)
+    return new_def_result(Definition::LetDef(name, type_name, er.expr), p)
 }
 
 // ---------------------------------------------------------------------------

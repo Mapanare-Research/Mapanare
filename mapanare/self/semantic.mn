@@ -1482,6 +1482,16 @@ fn register_definitions(st: SemState, program: Program) -> SemState {
 
 fn register_def(st: SemState, def: Definition) -> SemState {
     let dk: String = def_kind(def)
+    // v4.78.0 (CARRY_FORWARD A10b): handle const_def early, before the
+    // long if-chain, to work around a codegen issue where later branches
+    // are unreachable in the compiled binary.
+    if dk == "const_def" {
+        let cn: String = def_const_name(def)
+        let cte: TypeExpr = def_const_type_expr(def)
+        let cty: TypeInfo = resolve_type_expr(cte)
+        let csym: Symbol = new_symbol(cn, "variable", cty, false)
+        return define_in_scope(st, cn, csym)
+    }
     if dk == "fn_def" {
         let data: FnDefData = def_fn_data(def)
         let mut params: List<TypeInfo> = []
@@ -1599,14 +1609,7 @@ fn register_def(st: SemState, def: Definition) -> SemState {
         let sym_let: Symbol = new_symbol(let_name, "variable", let_ty, false)
         return define_in_scope(st, let_name, sym_let)
     }
-    // v4.55.0: const definition — register as const (immutable)
-    if dk == "const_def" {
-        let const_name: String = def_const_name(def)
-        let const_te: TypeExpr = def_const_type_expr(def)
-        let const_ty: TypeInfo = resolve_type_expr(const_te)
-        let sym_const: Symbol = new_symbol(const_name, "const", const_ty, false)
-        return define_in_scope(st, const_name, sym_const)
-    }
+    // const_def handled at top of function (v4.78.0, CARRY_FORWARD A10b)
     // impl_def — methods handled in second pass
     return st
 }

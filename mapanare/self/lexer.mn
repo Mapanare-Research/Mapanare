@@ -59,6 +59,7 @@ fn new_lexer(source: String, pos: Int, line: Int, column: Int, filename: String)
 fn is_keyword(name: String) -> Bool {
     if name == "let" { return true }
     if name == "pon" { return true }
+    if name == "const" { return true }
     if name == "mut" { return true }
     if name == "fn" { return true }
     if name == "return" { return true }
@@ -108,7 +109,7 @@ fn is_keyword(name: String) -> Bool {
     if name == "continue" { return true }
     if name == "sigue" { return true }
     if name == "di" { return true }
-    if name == "const" { return true }
+    // v4.78.0: "const" moved to top of is_keyword (near "let")
     // v4.68.0: "async" / "await" restored (Arc 8). See v4.67.0/DESIGN.md.
     if name == "async" { return true }
     if name == "await" { return true }
@@ -118,6 +119,7 @@ fn is_keyword(name: String) -> Bool {
 fn keyword_token_type(name: String) -> String {
     if name == "let" { return "KW_LET" }
     if name == "pon" { return "KW_LET" }
+    if name == "const" { return "KW_CONST" }
     if name == "mut" { return "KW_MUT" }
     if name == "fn" { return "KW_FN" }
     if name == "return" { return "KW_RETURN" }
@@ -167,7 +169,7 @@ fn keyword_token_type(name: String) -> String {
     if name == "continue" { return "KW_CONTINUE" }
     if name == "sigue" { return "KW_CONTINUE" }
     if name == "di" { return "KW_DI" }
-    if name == "const" { return "KW_CONST" }
+    // v4.78.0: "const" moved near "let" above (CARRY_FORWARD A10b)
     // v4.68.0: "async" / "await" restored (Arc 8). See v4.67.0/DESIGN.md.
     if name == "async" { return "KW_ASYNC" }
     if name == "await" { return "KW_AWAIT" }
