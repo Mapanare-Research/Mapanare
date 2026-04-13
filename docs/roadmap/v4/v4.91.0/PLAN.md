@@ -11,7 +11,7 @@
 > preserves semantics, LICM never hoists side effects, and escape
 > analysis never promotes an escaping allocation.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.90.0
 **Delta review:** No
