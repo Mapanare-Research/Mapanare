@@ -2269,6 +2269,116 @@ Functions: `regex_match`, `regex_search`, `regex_replace`, `regex_split`. Charac
 
 ---
 
+## 29. Futures and Async/Await
+
+> **v4.72.0-v4.76.0 (Arc 9).** Async/await was implemented across arcs 8 and 9
+> using LLVM switched-resume coroutines. See the [Coroutine Design Document](roadmap/v4/v4.67.0/DESIGN.md)
+> for the full implementation spec. This section defines the user-visible semantics.
+
+### 29.1 `async fn` -- Asynchronous Function Declaration
+
+An `async fn` declares a function that can suspend and resume:
+
+```mn
+async fn fetch_data(url: String) -> String {
+    let response = await http_get(url)
+    return response.body
+}
+```
+
+Semantics:
+
+- The declared return type `T` is sugar for `Future<T>`. Calling an `async fn` does **not** execute the body -- it creates a suspended coroutine and returns a `Future<T>` handle immediately.
+- The body executes when the returned future is driven by `await` (from another async context) or `block_on` (from synchronous code).
+- An `async fn` may contain zero or more `await` expressions. An `async fn` with zero `await` points is valid -- it completes on first resume (single-step coroutine).
+- `async fn` can call non-async functions freely. Non-async functions cannot use `await`.
+
+### 29.2 `await expr` -- Suspension Point
+
+```mn
+let result = await some_async_fn(args)
+```
+
+`await` suspends the current coroutine until the operand future is ready.
+
+- The operand must have type `Future<U>`. Type error otherwise.
+- If the future is already `Ready`, the value is extracted immediately without suspending.
+- If the future is `Pending`, the current coroutine suspends. The scheduler resumes it when the awaited future becomes `Ready`.
+- The expression evaluates to type `U`.
+- `await` is only valid inside `async fn` bodies. Using `await` outside an async context is a semantic error.
+
+### 29.3 `Future<T>` -- The Future Type
+
+`Future<T>` is a built-in generic type representing a value that may not be available yet.
+
+**States:**
+
+| State | Value | Meaning |
+|-------|-------|---------|
+| `Pending` | 0 | The coroutine has not yet produced a value. |
+| `Ready` | 1 | The value is available. |
+
+**LLVM representation:**
+
+```llvm
+%Future = type { i8, ptr }
+; field 0: state (0 = Pending, 1 = Ready)
+; field 1: payload pointer
+;   Pending: ptr to the coroutine handle (for scheduler resume)
+;   Ready:   ptr to the result value (heap-allocated T)
+```
+
+All `Future<T>` have the same LLVM type (`{i8, ptr}`) regardless of `T`, enabling a uniform scheduler queue.
+
+**User-visible operations:**
+
+| Operation | Context | Description |
+|-----------|---------|-------------|
+| `await future` | async fn body | Suspend until ready, extract `T` |
+| `block_on(future)` | sync fn body | Run event loop until ready, return `T` |
+
+No explicit `.poll()`, `.cancel()`, or `.then()` in v4.x. The scheduler is the sole driver.
+
+### 29.4 `block_on(future)` -- Synchronous Driver
+
+`block_on` is a built-in function that bridges synchronous and asynchronous code:
+
+```mn
+fn main() {
+    let result: Int = block_on(compute())
+}
+```
+
+- Drives the event loop until the given future resolves.
+- Returns the unwrapped value of type `T`.
+- May only be called from synchronous functions. Calling `block_on` from inside an `async fn` will deadlock (the event loop is already running).
+
+### 29.5 Coroutine Lifecycle
+
+1. **Creation.** Calling an `async fn` allocates a coroutine frame on the heap and returns a `Future<T>` in `Pending` state.
+2. **First resume.** The scheduler (or `block_on`) calls `llvm.coro.resume` on the coroutine handle. Execution begins at the function entry point.
+3. **Suspension.** At each `await` point, if the operand future is `Pending`, the coroutine saves its state and returns to the scheduler.
+4. **Resumption.** When the awaited future becomes `Ready`, the scheduler resumes the suspended coroutine. Execution continues after the `await` expression.
+5. **Completion.** When the coroutine reaches a `return` statement (or the end of the body), it stores the result, transitions the future to `Ready`, and destroys the coroutine frame.
+
+### 29.6 Memory Model
+
+- **Frame allocation.** Each coroutine frame is heap-allocated via `malloc`. LLVM's CoroElide pass may promote this to a stack allocation when the future's lifetime is bounded by the caller.
+- **Spilled variables.** Values whose definitions and uses span a suspension point are stored in the coroutine frame. The LLVM CoroSplit pass handles this automatically.
+- **Result allocation.** The result value is heap-allocated when the future becomes `Ready`. The caller frees it after extracting the value via `await` or `block_on`.
+- **Destruction.** `llvm.coro.destroy` is called when the future is consumed or goes out of scope. This runs the coroutine's cleanup path and frees the frame.
+
+### 29.7 Interaction with Other Primitives
+
+| Primitive | Interaction |
+|-----------|-------------|
+| Agents | Agents run on their own threads. `async fn` runs within the caller's event loop. No implicit agent spawning. |
+| Signals | Signal reads inside `async fn` are synchronous (no suspension). |
+| Streams | `for await` iterates over an async stream, suspending between elements. |
+| Closures | Closures may capture variables from the enclosing `async fn`. Captured values that cross suspension points are spilled into the coroutine frame. |
+
+---
+
 ## Appendix A: Grammar Summary (EBNF Sketch)
 
 This is a simplified sketch of the grammar. The authoritative grammar is in `mapanare/mapanare.lark`.
@@ -2425,24 +2535,13 @@ The LLVM emitter translates MIR to LLVM IR, producing native machine code. This 
 
 The following identifiers are reserved for future use and cannot be used as variable or function names, even though they have no current semantics:
 
-> **v4.30.0 note on `async` / `await`:** Earlier v4.x releases tokenized
-> these as keywords and parsed an `async fn` / `await expr` syntax that
-> the lowerer treated as pure identity — grammar theatre with no
-> coroutine state machine, no suspension point, no Stream integration,
-> and no cooperative scheduler wiring. v4.30.0 Path B removed the
-> tokens, the grammar rules, the AST node, and the self-hosted
-> lexer/parser handling; the keywords are now **soft reserved**. The
-> Mapanare lexer will let you write `let await = 1` without an error,
-> but the SPEC continues to reserve both names because v5.0.0 is
-> scheduled to reintroduce them with a real lowering to LLVM coroutine
-> intrinsics on top of the cooperative scheduler in the C runtime. Any
-> production source that binds `async` or `await` as an identifier
-> today will break on the v5.0.0 upgrade.
+> **v4.72.0-v4.76.0 update:** `async` and `await` are now real keywords
+> with full LLVM coroutine lowering (switched-resume ABI). See section
+> 29 for the specification. They are no longer listed in the reserved
+> table below.
 
 | Reserved | Potential Future Use |
 |---|---|
-| `async` | Asynchronous function declaration (v5.0.0; soft-reserved in v4.30.0+) |
-| `await` | Asynchronous expression (v5.0.0; soft-reserved in v4.30.0+) |
 | `yield` | Generator / coroutine yield |
 | `macro` | Compile-time macro system |
 | `where` | Generic constraint clauses |
