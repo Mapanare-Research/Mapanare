@@ -12,7 +12,7 @@
 > temporary strings, intermediate Result/Option wrappers, and
 > short-lived agent structs free at runtime.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.88.0
 **Delta review:** No

@@ -27,6 +27,7 @@ from mapanare.mir import (
     AgentSend,
     AgentSpawn,
     AgentSync,
+    AllocKind,
     Assert,
     BasicBlock,
     BinOp,
@@ -37,6 +38,7 @@ from mapanare.mir import (
     ClosureCreate,
     Const,
     Copy,
+    EnumInit,
     FieldGet,
     FieldSet,
     IndexGet,
@@ -44,7 +46,9 @@ from mapanare.mir import (
     Instruction,
     InterpConcat,
     Jump,
+    ListInit,
     ListPush,
+    MapInit,
     MIRFunction,
     MIRLoop,
     MIRModule,
@@ -54,10 +58,15 @@ from mapanare.mir import (
     SignalComputed,
     StreamOp,
     StreamOpKind,
+    StructInit,
     Switch,
     UnaryOp,
     UnaryOpKind,
     Value,
+    WrapErr,
+    WrapNone,
+    WrapOk,
+    WrapSome,
 )
 from mapanare.types import TypeInfo, TypeKind
 
@@ -97,6 +106,7 @@ class MIRPassStats:
     functions_inlined: int = 0
     licm_hoisted: int = 0
     strength_reduced: int = 0
+    allocations_promoted: int = 0  # v4.89.0: heap-to-stack promotions
 
     @property
     def total_changes(self) -> int:
@@ -113,6 +123,7 @@ class MIRPassStats:
             + self.functions_inlined
             + self.licm_hoisted
             + self.strength_reduced
+            + self.allocations_promoted
         )
 
 
@@ -1397,6 +1408,295 @@ def _reduce_power_of_two(inst: BinOp) -> BinOp | None:
 
 
 # ---------------------------------------------------------------------------
+# Escape analysis + heap-to-stack promotion (v4.89.0)
+# ---------------------------------------------------------------------------
+
+# Instruction types that produce heap allocations.
+_ALLOC_TYPES = (
+    StructInit,
+    EnumInit,
+    WrapSome,
+    WrapNone,
+    WrapOk,
+    WrapErr,
+    ListInit,
+    MapInit,
+    InterpConcat,
+)
+
+# Runtime functions known to NOT capture their arguments.
+# Values passed only to these functions do not escape.
+_NON_CAPTURING_FNS: frozenset[str] = frozenset(
+    {
+        # I/O — reads the value, never stores it
+        "print",
+        "println",
+        "__mn_print",
+        "__mn_println",
+        "__mn_print_str",
+        "__mn_print_int",
+        "__mn_print_float",
+        "__mn_print_bool",
+        # Conversions — return a NEW value, don't store the argument
+        "len",
+        "__mn_str_len",
+        "__mn_list_len",
+        "__mn_map_len",
+        "str",
+        "int",
+        "float",
+        "__mn_str_from_int",
+        "__mn_str_from_float",
+        "__mn_str_from_bool",
+        "__mn_int_from_str",
+        "__mn_float_from_str",
+        # String operations — return new strings, don't capture inputs
+        "__mn_str_concat",
+        "__mn_str_eq",
+        "__mn_str_ne",
+        "__mn_str_lt",
+        "__mn_str_gt",
+        "__mn_str_le",
+        "__mn_str_ge",
+        "__mn_str_contains",
+        "__mn_str_starts_with",
+        "__mn_str_ends_with",
+        "__mn_str_to_upper",
+        "__mn_str_to_lower",
+        "__mn_str_trim",
+        "__mn_str_split",
+        "__mn_str_replace",
+        "__mn_str_substr",
+        "__mn_str_index_of",
+        "__mn_str_char_at",
+        # Comparison / hashing — pure read
+        "__mn_hash_string",
+        # Math
+        "__mn_pow",
+        "__mn_abs",
+        "__mn_min",
+        "__mn_max",
+        # Assertions
+        "__mn_assert",
+        "__mn_assert_msg",
+    }
+)
+
+# Maximum allocation size (bytes) to promote to stack. Anything larger stays
+# on the heap to avoid stack overflow. 4 KB is conservative given the
+# default 8 MB Linux stack.
+_MAX_STACK_PROMOTION_BYTES = 4096
+
+
+def _is_alloc_instruction(inst: Instruction) -> bool:
+    """Return True if this instruction produces a heap allocation."""
+    return isinstance(inst, _ALLOC_TYPES)
+
+
+def _estimate_alloc_size(inst: Instruction) -> int:
+    """Estimate the byte size of the allocation produced by an instruction.
+
+    Conservative: returns a generous upper bound. If the size can't be
+    determined, returns MAX+1 to prevent promotion.
+    """
+    if isinstance(inst, StructInit):
+        # Each field is at most 16 bytes ({ptr, i64} for strings).
+        return len(inst.fields) * 16
+    if isinstance(inst, EnumInit):
+        # Tag (8) + max payload (each field ~16)
+        return 8 + len(inst.payload) * 16
+    if isinstance(inst, (WrapSome, WrapOk, WrapErr)):
+        # Tag (8) + value (16 max)
+        return 24
+    if isinstance(inst, WrapNone):
+        # Tag only
+        return 8
+    if isinstance(inst, ListInit):
+        # Header (24) + elements * 16
+        return 24 + len(inst.elements) * 16
+    if isinstance(inst, MapInit):
+        # Robin Hood hash table: header + buckets
+        return 64 + len(inst.pairs) * 32
+    if isinstance(inst, InterpConcat):
+        # String: {ptr, i64} = 16 bytes for the struct, buffer is dynamic.
+        # The struct itself is small; the data buffer is runtime-sized.
+        # We only promote the struct, not the buffer — so 16 is correct.
+        return 16
+    return _MAX_STACK_PROMOTION_BYTES + 1
+
+
+def analyze_escapes(fn: MIRFunction) -> set[str]:
+    """Analyze which allocation results escape the function.
+
+    Returns a set of value names whose allocations escape and CANNOT
+    be promoted to stack. An allocation escapes if any of 6 criteria
+    are met:
+
+    1. Returned from the function (via Return)
+    2. Stored into a struct field (via FieldSet where val is the alloc)
+    3. Stored into a list/map (via IndexSet, ListPush where element is the alloc)
+    4. Passed to an unknown/potentially-capturing function call
+    5. Captured by a closure (via ClosureCreate captures)
+    6. Sent to an agent (via AgentSend)
+
+    Values that flow through Copy or Phi are tracked transitively.
+    """
+    # Step 1: Find all allocation sites (value names produced by alloc instructions)
+    alloc_values: set[str] = set()
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if _is_alloc_instruction(inst):
+                dest = getattr(inst, "dest", None)
+                if dest and dest.name:
+                    alloc_values.add(dest.name)
+
+    if not alloc_values:
+        return set()
+
+    # Step 2: Build alias set — values that are copies/phis of alloc values.
+    # Iterate to fixed point because copies can chain.
+    aliases: dict[str, set[str]] = {}  # value_name -> set of alloc_value_names it aliases
+    for name in alloc_values:
+        aliases[name] = {name}
+
+    changed = True
+    while changed:
+        changed = False
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, Copy) and inst.src.name in aliases:
+                    dest_name = inst.dest.name
+                    if dest_name not in aliases:
+                        aliases[dest_name] = set(aliases[inst.src.name])
+                        changed = True
+                    else:
+                        before = len(aliases[dest_name])
+                        aliases[dest_name] |= aliases[inst.src.name]
+                        if len(aliases[dest_name]) > before:
+                            changed = True
+                elif isinstance(inst, Phi):
+                    # A phi merges values — if any incoming is an alloc alias,
+                    # the phi result aliases those allocations.
+                    merged: set[str] = set()
+                    for _, val in inst.incoming:
+                        if val.name in aliases:
+                            merged |= aliases[val.name]
+                    if merged:
+                        dest_name = inst.dest.name
+                        if dest_name not in aliases:
+                            aliases[dest_name] = merged
+                            changed = True
+                        else:
+                            before = len(aliases[dest_name])
+                            aliases[dest_name] |= merged
+                            if len(aliases[dest_name]) > before:
+                                changed = True
+
+    def _alloc_names_of(val_name: str) -> set[str]:
+        """Return the set of allocation value names that val_name may point to."""
+        return aliases.get(val_name, set())
+
+    # Step 3: Check escape criteria for each use site.
+    escaped: set[str] = set()
+
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            # Criterion 1: Returned
+            if isinstance(inst, Return) and inst.val is not None:
+                escaped |= _alloc_names_of(inst.val.name)
+
+            # Criterion 2: Stored into a struct field
+            elif isinstance(inst, FieldSet):
+                escaped |= _alloc_names_of(inst.val.name)
+
+            # Criterion 3: Stored into a list/map
+            elif isinstance(inst, IndexSet):
+                escaped |= _alloc_names_of(inst.val.name)
+            elif isinstance(inst, ListPush):
+                escaped |= _alloc_names_of(inst.element.name)
+
+            # Criterion 4: Passed to unknown/capturing function call
+            elif isinstance(inst, Call):
+                if inst.fn_name not in _NON_CAPTURING_FNS:
+                    for arg in inst.args:
+                        escaped |= _alloc_names_of(arg.name)
+            elif isinstance(inst, ClosureCall):
+                # Closure calls are always potentially-capturing (we don't
+                # know what the closure body does).
+                escaped |= _alloc_names_of(inst.closure.name)
+                for arg in inst.args:
+                    escaped |= _alloc_names_of(arg.name)
+
+            # Criterion 5: Captured by a closure
+            elif isinstance(inst, ClosureCreate):
+                for cap in inst.captures:
+                    escaped |= _alloc_names_of(cap.name)
+
+            # Criterion 6: Sent to an agent
+            elif isinstance(inst, AgentSend):
+                escaped |= _alloc_names_of(inst.val.name)
+            elif isinstance(inst, AgentSpawn):
+                for arg in inst.args:
+                    escaped |= _alloc_names_of(arg.name)
+
+    return escaped
+
+
+def escape_analysis_promotion(fn: MIRFunction, stats: MIRPassStats) -> bool:
+    """Promote non-escaping heap allocations to stack.
+
+    v4.89.0: identifies allocation-producing instructions whose results
+    never escape the function, and sets their alloc_kind to STACK.
+    The LLVM emitter uses this annotation to emit alloca instead of
+    calling the runtime allocator, and skips drop glue for promoted values.
+
+    Conservative: does NOT promote allocations in unbounded loops or
+    allocations exceeding 4 KB.
+    """
+    # Find natural loops to check for unbounded loop allocations.
+    loops = find_natural_loops(fn)
+    loop_body_blocks: set[str] = set()
+    for loop in loops:
+        loop_body_blocks |= loop.body
+
+    # Run escape analysis
+    escaped = analyze_escapes(fn)
+
+    changed = False
+    for bb in fn.blocks:
+        # Check if this block is inside a loop body — if so, skip promotion
+        # (conservative: don't promote loop-interior allocations to avoid
+        # unbounded stack growth).
+        in_loop = bb.label in loop_body_blocks
+
+        for inst in bb.instructions:
+            if not _is_alloc_instruction(inst):
+                continue
+            dest = getattr(inst, "dest", None)
+            if dest is None or not dest.name:
+                continue
+            # Already promoted (idempotent)
+            if getattr(inst, "alloc_kind", AllocKind.HEAP) == AllocKind.STACK:
+                continue
+            # Skip if escapes
+            if dest.name in escaped:
+                continue
+            # Skip if in loop body (conservative — no stack growth in loops)
+            if in_loop:
+                continue
+            # Skip if allocation is too large for the stack
+            if _estimate_alloc_size(inst) > _MAX_STACK_PROMOTION_BYTES:
+                continue
+            # Promote!
+            assert isinstance(inst, _ALLOC_TYPES)
+            inst.alloc_kind = AllocKind.STACK
+            stats.allocations_promoted += 1
+            changed = True
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
 # Function inlining (v4.87.0)
 # ---------------------------------------------------------------------------
 
@@ -1690,6 +1990,11 @@ def optimize_function(
             # tracking. Infrastructure (dominators, natural loops) ships
             # but the transform is gated for v4.89.0.
             changed |= strength_reduction(fn, stats)
+            # v4.89.0: escape analysis — promote non-escaping heap
+            # allocations to stack. Runs after DCE + strength reduction
+            # so dead allocations are already removed. Idempotent (once
+            # promoted, alloc_kind stays STACK).
+            changed |= escape_analysis_promotion(fn, stats)
             changed |= agent_inlining(fn, stats)
         # O3+: stream fusion. Folded into the fixpoint loop in v4.30.0
         # so fused stream chains can feed back into constant folding

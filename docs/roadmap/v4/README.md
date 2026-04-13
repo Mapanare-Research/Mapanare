@@ -80,6 +80,12 @@ Six phases:
 | | | **Arc 10: Integration Tests + Debt Zero (v4.77.0 →)** | |
 | | | | |
 | **v4.77.0** | Arc 10 | Integration Test Harness | 58 golden tests through full LLVM pipeline (emit → llvm-as → opt → llc → link → run). 46 pass, 5 xfail, 7 skip. |
+| | | | |
+| | | **Arc 12: LLVM + MIR Optimization (v4.87.0 →)** | |
+| | | | |
+| **v4.87.0** | Arc 12 | MIR Function Inlining | Cost-model inlining at O2 (< 20 instr, not recursive), single-block callees only. |
+| **v4.88.0** | Arc 12 | Loop Detection + Strength Reduction | Dominators, natural loops, MIRLoop. Strength reduction (mod→AND). LICM built but disabled. |
+| **v4.89.0** | Arc 12 | Escape Analysis | Heap-to-stack promotion for non-escaping allocations. 6 escape criteria, known non-capturing function set, 4KB size limit. |
 
 ## What v4.0.0 Delivered
 

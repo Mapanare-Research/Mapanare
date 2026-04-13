@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.77.0 shipped — Integration test harness. 46/58 golden pass full LLVM pipeline. Arc 10 begins.)
+## Where We Are (v4.89.0 shipped — Escape analysis: heap-to-stack promotion. Arc 12 release 3.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

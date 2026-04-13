@@ -30,6 +30,23 @@ from typing import Any
 from mapanare.types import UNKNOWN_TYPE, TypeInfo, TypeKind
 
 # ---------------------------------------------------------------------------
+# Allocation kind (v4.89.0 — escape analysis)
+# ---------------------------------------------------------------------------
+
+
+class AllocKind(Enum):
+    """Where an allocation lives after escape analysis.
+
+    HEAP: default — allocated via the arena / runtime allocator.
+    STACK: promoted — the value never escapes the function, so it can
+           live on the stack (alloca) instead of the heap.
+    """
+
+    HEAP = auto()
+    STACK = auto()
+
+
+# ---------------------------------------------------------------------------
 # MIR Types — thin wrappers around TypeInfo for the IR layer
 # ---------------------------------------------------------------------------
 
@@ -259,6 +276,7 @@ class StructInit(Instruction):
     dest: Value = field(default_factory=Value)
     struct_type: MIRType = field(default_factory=mir_unknown)
     fields: list[tuple[str, Value]] = field(default_factory=list)  # (field_name, value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -290,6 +308,7 @@ class ListInit(Instruction):
     dest: Value = field(default_factory=Value)
     elem_type: MIRType = field(default_factory=mir_unknown)
     elements: list[Value] = field(default_factory=list)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -353,6 +372,7 @@ class MapInit(Instruction):
     key_type: MIRType = field(default_factory=mir_unknown)
     val_type: MIRType = field(default_factory=mir_unknown)
     pairs: list[tuple[Value, Value]] = field(default_factory=list)  # (key, value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 # --- Enum / Tagged Union ---
@@ -366,6 +386,7 @@ class EnumInit(Instruction):
     enum_type: MIRType = field(default_factory=mir_unknown)
     variant: str = ""
     payload: list[Value] = field(default_factory=list)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -395,6 +416,7 @@ class WrapSome(Instruction):
 
     dest: Value = field(default_factory=Value)
     val: Value = field(default_factory=Value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -403,6 +425,7 @@ class WrapNone(Instruction):
 
     dest: Value = field(default_factory=Value)
     ty: MIRType = field(default_factory=mir_unknown)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -411,6 +434,7 @@ class WrapOk(Instruction):
 
     dest: Value = field(default_factory=Value)
     val: Value = field(default_factory=Value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -419,6 +443,7 @@ class WrapErr(Instruction):
 
     dest: Value = field(default_factory=Value)
     val: Value = field(default_factory=Value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -673,6 +698,7 @@ class InterpConcat(Instruction):
 
     dest: Value = field(default_factory=Value)
     parts: list[Value] = field(default_factory=list)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 # --- Assert ---

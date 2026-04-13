@@ -6,14 +6,21 @@ from mapanare.mir import (
     AgentSend,
     AgentSpawn,
     AgentSync,
+    AllocKind,
     BasicBlock,
     BinOp,
     BinOpKind,
     Branch,
     Call,
+    ClosureCreate,
     Const,
     Copy,
+    EnumInit,
+    FieldSet,
+    InterpConcat,
     Jump,
+    ListInit,
+    MapInit,
     MIRFunction,
     MIRModule,
     MIRType,
@@ -21,10 +28,13 @@ from mapanare.mir import (
     Return,
     StreamOp,
     StreamOpKind,
+    StructInit,
     Switch,
     UnaryOp,
     UnaryOpKind,
     Value,
+    WrapOk,
+    WrapSome,
     mir_bool,
     mir_float,
     mir_int,
@@ -35,12 +45,14 @@ from mapanare.mir_opt import (
     MIROptLevel,
     MIRPassStats,
     agent_inlining,
+    analyze_escapes,
     branch_simplification,
     constant_folding,
     constant_propagation,
     copy_propagation,
     dead_code_elimination,
     dead_function_elimination,
+    escape_analysis_promotion,
     optimize_module,
     stream_fusion,
     unreachable_block_elimination,
@@ -1667,3 +1679,301 @@ class TestPassCombinations:
         phi = fn.blocks[1].instructions[0]
         assert isinstance(phi, Phi)
         assert phi.incoming[0][1].name == "%orig"
+
+
+# ===================================================================
+# Escape Analysis (v4.89.0)
+# ===================================================================
+
+
+class TestEscapeAnalysis:
+    """Tests for escape analysis + heap-to-stack promotion."""
+
+    def test_local_struct_promoted(self) -> None:
+        """A StructInit whose result is only used locally should be promoted."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        StructInit(
+                            dest=_v("%s"),
+                            struct_type=mir_int(),
+                            fields=[("x", _v("%1"))],
+                        ),
+                        # Only pass to a non-capturing function
+                        Call(dest=_v("%r"), fn_name="print", args=[_v("%s")]),
+                        Return(val=None),
+                    ],
+                ),
+            ],
+        )
+        stats = MIRPassStats()
+        changed = escape_analysis_promotion(fn, stats)
+        assert changed
+        assert stats.allocations_promoted == 1
+        si = fn.blocks[0].instructions[0]
+        assert isinstance(si, StructInit)
+        assert si.alloc_kind == AllocKind.STACK
+
+    def test_returned_struct_not_promoted(self) -> None:
+        """A StructInit whose result is returned should NOT be promoted."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        StructInit(
+                            dest=_v("%s"),
+                            struct_type=mir_int(),
+                            fields=[("x", _v("%1"))],
+                        ),
+                        Return(val=_v("%s")),
+                    ],
+                ),
+            ],
+        )
+        escaped = analyze_escapes(fn)
+        assert "%s" in escaped
+        stats = MIRPassStats()
+        escape_analysis_promotion(fn, stats)
+        assert stats.allocations_promoted == 0
+
+    def test_closure_capture_escapes(self) -> None:
+        """A value captured by a closure should escape."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        WrapSome(dest=_v("%opt"), val=_v("%1")),
+                        ClosureCreate(
+                            dest=_v("%clos"),
+                            fn_name="lambda_0",
+                            captures=[_v("%opt")],
+                            capture_types=[mir_int()],
+                        ),
+                        Return(val=None),
+                    ],
+                ),
+            ],
+        )
+        escaped = analyze_escapes(fn)
+        assert "%opt" in escaped
+
+    def test_unknown_call_escapes(self) -> None:
+        """A value passed to an unknown function should escape."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        WrapOk(dest=_v("%ok"), val=_v("%1")),
+                        Call(dest=_v("%r"), fn_name="some_unknown_fn", args=[_v("%ok")]),
+                        Return(val=None),
+                    ],
+                ),
+            ],
+        )
+        escaped = analyze_escapes(fn)
+        assert "%ok" in escaped
+
+    def test_non_capturing_call_no_escape(self) -> None:
+        """A value passed only to a known non-capturing fn should NOT escape."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        EnumInit(
+                            dest=_v("%e"),
+                            enum_type=mir_int(),
+                            variant="Some",
+                            payload=[_v("%1")],
+                        ),
+                        Call(dest=_v("%r"), fn_name="__mn_print", args=[_v("%e")]),
+                        Return(val=None),
+                    ],
+                ),
+            ],
+        )
+        escaped = analyze_escapes(fn)
+        assert "%e" not in escaped
+
+    def test_field_set_escapes(self) -> None:
+        """A value stored into a struct field escapes (it's reachable through the struct)."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        ListInit(
+                            dest=_v("%list"),
+                            elem_type=mir_int(),
+                            elements=[_v("%1")],
+                        ),
+                        FieldSet(obj=_v("%obj"), field_name="items", val=_v("%list")),
+                        Return(val=None),
+                    ],
+                ),
+            ],
+        )
+        escaped = analyze_escapes(fn)
+        assert "%list" in escaped
+
+    def test_agent_send_escapes(self) -> None:
+        """A value sent to an agent escapes."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        MapInit(
+                            dest=_v("%m"),
+                            key_type=mir_string(),
+                            val_type=mir_int(),
+                        ),
+                        AgentSend(agent=_v("%agent"), channel="ch", val=_v("%m")),
+                        Return(val=None),
+                    ],
+                ),
+            ],
+        )
+        escaped = analyze_escapes(fn)
+        assert "%m" in escaped
+
+    def test_copy_alias_escapes(self) -> None:
+        """If a copy of an alloc value escapes, the original escapes too."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        StructInit(
+                            dest=_v("%s"),
+                            struct_type=mir_int(),
+                            fields=[("x", _v("%1"))],
+                        ),
+                        Copy(dest=_v("%alias"), src=_v("%s")),
+                        Return(val=_v("%alias")),
+                    ],
+                ),
+            ],
+        )
+        escaped = analyze_escapes(fn)
+        assert "%s" in escaped
+
+    def test_idempotent(self) -> None:
+        """Running escape analysis twice produces no extra changes."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        StructInit(
+                            dest=_v("%s"),
+                            struct_type=mir_int(),
+                            fields=[("x", _v("%1"))],
+                        ),
+                        Call(dest=_v("%r"), fn_name="print", args=[_v("%s")]),
+                        Return(val=None),
+                    ],
+                ),
+            ],
+        )
+        stats = MIRPassStats()
+        escape_analysis_promotion(fn, stats)
+        assert stats.allocations_promoted == 1
+        # Second run: no changes
+        stats2 = MIRPassStats()
+        changed = escape_analysis_promotion(fn, stats2)
+        assert not changed
+        assert stats2.allocations_promoted == 0
+
+    def test_multiple_allocs_mixed(self) -> None:
+        """Multiple allocations: some escape, some don't."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        StructInit(
+                            dest=_v("%local"),
+                            struct_type=mir_int(),
+                            fields=[("x", _v("%1"))],
+                        ),
+                        StructInit(
+                            dest=_v("%escaped"),
+                            struct_type=mir_int(),
+                            fields=[("y", _v("%2"))],
+                        ),
+                        Call(dest=_v("%r"), fn_name="print", args=[_v("%local")]),
+                        Return(val=_v("%escaped")),
+                    ],
+                ),
+            ],
+        )
+        stats = MIRPassStats()
+        escape_analysis_promotion(fn, stats)
+        assert stats.allocations_promoted == 1
+        # %local promoted, %escaped not
+        si0 = fn.blocks[0].instructions[0]
+        si1 = fn.blocks[0].instructions[1]
+        assert isinstance(si0, StructInit) and si0.alloc_kind == AllocKind.STACK
+        assert isinstance(si1, StructInit) and si1.alloc_kind == AllocKind.HEAP
+
+    def test_interp_concat_promoted(self) -> None:
+        """InterpConcat whose result is only printed should be promoted."""
+        fn = _simple_fn(
+            "test",
+            [
+                BasicBlock(
+                    label="entry",
+                    instructions=[
+                        InterpConcat(dest=_v("%s"), parts=[_v("%a"), _v("%b")]),
+                        Call(dest=_v("%r"), fn_name="print", args=[_v("%s")]),
+                        Return(val=None),
+                    ],
+                ),
+            ],
+        )
+        stats = MIRPassStats()
+        escape_analysis_promotion(fn, stats)
+        assert stats.allocations_promoted == 1
+
+    def test_optimize_module_includes_escape_analysis(self) -> None:
+        """optimize_module at O2 should run escape analysis."""
+        module = MIRModule(
+            name="test",
+            functions=[
+                _simple_fn(
+                    "main",
+                    [
+                        BasicBlock(
+                            label="entry",
+                            instructions=[
+                                StructInit(
+                                    dest=_v("%s"),
+                                    struct_type=mir_int(),
+                                    fields=[("x", _v("%1"))],
+                                ),
+                                Call(dest=_v("%r"), fn_name="print", args=[_v("%s")]),
+                                Return(val=None),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        )
+        _, stats = optimize_module(module, MIROptLevel.O2)
+        assert stats.allocations_promoted >= 1
