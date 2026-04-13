@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.83.0] - 2026-04-13
+
+**Arc 11 Release 2 — IR Quality: nounwind + inbounds + TBAA.**
+First real IR improvement release. Three changes to emit_llvm_text.py.
+
+### Changed
+
+- `nounwind` attribute on all user-defined function definitions
+- `inbounds` on all remaining GEP instructions (Future type, array, agent)
+- TBAA metadata tree emitted at module level (int/float/ptr/bool type nodes)
+
+### Results
+
+| Benchmark | v4.82.0 O2 | v4.83.0 O2 | Delta |
+|-----------|------------|------------|-------|
+| fib_recursive | 19.6ms | 19.1ms | +2.5% |
+| string_concat | 96.1ms | 91.7ms | +4.6% |
+| agent_fanout | 0.7ms | 0.5ms | +16.9% |
+
 ## [4.82.0] - 2026-04-13
 
 **Arc 11 Release 1 — Baseline Benchmark Suite.**

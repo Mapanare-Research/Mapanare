@@ -6,7 +6,7 @@
 > alloca patterns so `mem2reg` can promote them. These are the four
 > lowest-hanging fruit that unlock LLVM's mid-level optimizer.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.82.0
 **Delta review:** No
