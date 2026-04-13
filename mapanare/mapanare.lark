@@ -27,6 +27,7 @@ start: (_nl* (definition | stmt))* _nl*
            | trait_def
            | impl_trait_def
            | impl_def
+           | const_def
 // v4.30.0: ``async_fn_def`` removed (Path B). ``async`` / ``await``
 // were grammar-only since v4.19.0 — the lowerer treated ``await expr``
 // as pure identity (v4.24.0: "single-threaded await: just evaluate the
@@ -197,6 +198,9 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 
 
 let_stmt: KW_LET KW_MUT? NAME (COLON type_expr)? ASSIGN expr
+
+// v4.55.0: real const — distinct from let, requires type annotation + constant initializer
+const_def: KW_CONST NAME COLON type_expr ASSIGN expr
 return_stmt: KW_RETURN expr?
 break_stmt: KW_BREAK
 continue_stmt: KW_CONTINUE
@@ -376,6 +380,7 @@ tuple_expr: LPAREN expr COMMA expr (COMMA expr)* RPAREN
 // Priority .2 ensures bilingual keywords beat the NAME regex.
 // ============================================================
 
+KW_CONST.2: /const(?![a-zA-Z0-9_])/
 KW_LET.2: /(?:let|pon)(?![a-zA-Z0-9_])/
 KW_MUT: "mut"
 KW_FN: "fn"

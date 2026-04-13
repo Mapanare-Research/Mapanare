@@ -6,7 +6,9 @@
 > "budgeted for a future release that actually needs named tensor
 > dimensions." The tensor arc (v4.42.0–v4.45.0) delivered the need.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Same session as v4.52.0-v4.54.0. Grammar, AST, parser, semantic, lower all implemented. Self-hosted scope issue found (const refs in fn bodies).
+**Decisions taken:** Module-level only (default). Explicit type annotation required (default). Depth limit 10 (default). v4.27.0 negative guard deleted.
 **Breaking:** No (additive: `const` becomes a real keyword, distinct from `let`)
 **Prerequisite:** v4.54.0
 **Delta review:** **YES** — new keyword. Coral primary, Anaconda secondary (type-system lens).

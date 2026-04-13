@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.55.0] - 2026-04-12
+
+**Arc 5 Release 4 — `const` Path A (v4.26.0 CRITICAL finally closed).**
+Real `const` keyword with distinct `ConstDef` AST node, compile-time constant
+folding, immutability enforcement, and proper `TypeExpr` preservation.
+
+### Added
+
+- `const` keyword back in grammar with `KW_CONST` terminal + `const_def` rule
+  (`mapanare/mapanare.lark`)
+- `ConstDef` dataclass — distinct from `ModuleLetDef`, preserves full `TypeExpr`
+  (`mapanare/ast_nodes.py`)
+- `ConstDef` parser transformer (`mapanare/parser.py:593`)
+- `SymbolKind.CONST` + `const_value` field on `Symbol` (`mapanare/semantic.py`)
+- `_fold_constant()` — recursive constant folder for literals, const refs, binary ops
+  with depth limit 10 (`mapanare/semantic.py`)
+- Assignment-to-const rejection: "Cannot assign to const 'N'" (`mapanare/semantic.py`)
+- Non-constant initializer rejection: "const initializer must be a constant expression"
+- `ConstDef` lowering with expression folding (`mapanare/lower.py`)
+- Self-hosted mirror: `const` in lexer, parser, AST, semantic, lower
+  (`mapanare/self/lexer.mn`, `parser.mn`, `ast.mn`, `semantic.mn`, `lower.mn`)
+- `tests/parser/test_const.py` (6 tests) + `tests/semantic/test_const.py` (7 tests)
+- `tests/golden/54_const_basic.mn` golden test
+
+### Removed
+
+- v4.27.0 Path B negative guard `test_const_keyword_is_parse_error` — replaced by
+  positive const tests
+
+### Fixed
+
+- v4.26.0 CRITICAL: `const` is now a real keyword with real semantics, not a parser
+  alias. 29 releases after the original finding.
+
+### Known Limitations
+
+- Self-hosted compiler: const symbols not resolved in function bodies due to scope-chain
+  threading issue. Tracked for v4.56.0 investigation. Python pipeline fully functional.
+- Tensor shape substitution (`const N: Int = 3; Tensor<Float>[N, N]`) deferred to v4.56.0+
+
 ## [4.54.0] - 2026-04-12
 
 **Arc 5 Release 3 — `emit_c.mn` Decision: Path B (A9 Closed).**

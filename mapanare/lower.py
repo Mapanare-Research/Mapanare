@@ -54,6 +54,7 @@ from mapanare.ast_nodes import (
     MatchExpr,
     TensorLiteral,
     MethodCallExpr,
+    ConstDef,
     ModuleLetDef,
     NamedType,
     NamespaceAccessExpr,
@@ -739,9 +740,14 @@ class MIRLowerer:
             elif isinstance(actual, ImportDef):
                 self._module.imports.append((actual.path, actual.items))
 
-            elif isinstance(actual, ModuleLetDef):
+            elif isinstance(actual, (ModuleLetDef, ConstDef)):
                 val: int | float | str | None = None
                 ty = mir_int()
+                type_name = ""
+                if isinstance(actual, ConstDef):
+                    type_name = getattr(actual.type_expr, "name", "") if actual.type_expr else ""
+                else:
+                    type_name = actual.type_name
                 if actual.value is not None:
                     if isinstance(actual.value, IntLiteral):
                         val = actual.value.value
@@ -755,8 +761,30 @@ class MIRLowerer:
                     elif isinstance(actual.value, FloatLiteral):
                         val = actual.value.value
                         ty = mir_float()
+                    elif isinstance(actual, ConstDef):
+                        # v4.55.0: const folding — evaluate constant expressions
+                        from mapanare.semantic import SemanticChecker
+                        folder = SemanticChecker.__new__(SemanticChecker)
+                        folder._const_table = {}
+                        for n, (t, v) in self._module_consts.items():
+                            if v is not None:
+                                folder._const_table[n] = v
+                        folded = folder._fold_constant(actual.value)
+                        if folded is not None:
+                            if isinstance(folded, int):
+                                val = folded
+                                ty = mir_int()
+                            elif isinstance(folded, float):
+                                val = folded
+                                ty = mir_float()
+                            elif isinstance(folded, str):
+                                val = folded
+                                ty = mir_string()
+                            elif isinstance(folded, bool):
+                                val = 1 if folded else 0
+                                ty = mir_bool()
                 self._module_consts[actual.name] = (ty, val)
-                self._module.consts.append((actual.name, actual.type_name, val))
+                self._module.consts.append((actual.name, type_name, val))
 
             elif isinstance(actual, TraitDef):
                 self._module.trait_names.append(actual.name)

@@ -1,0 +1,12 @@
+// Golden test: const keyword (v4.55.0)
+// Tests module-level const with literal, const reference, and arithmetic.
+
+const N: Int = 100
+const DOUBLED: Int = 200
+const GREETING: String = "hello"
+
+fn main() {
+    print(str(N))
+    print(str(DOUBLED))
+    print(GREETING)
+}

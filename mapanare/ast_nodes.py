@@ -745,6 +745,22 @@ class ModuleLetDef(Definition):
 
 
 @dataclass
+class ConstDef(Definition):
+    """v4.55.0: Real const definition — ``const NAME: TYPE = EXPR``.
+
+    Distinct from ``ModuleLetDef``:
+    - ``type_expr`` is the full ``TypeExpr`` (not collapsed to a string)
+    - Requires a compile-time constant initializer
+    - Immutability enforced by the semantic checker
+    - Can be used in tensor shape positions
+    """
+
+    name: str = ""
+    type_expr: TypeExpr | None = None  # full TypeExpr, not collapsed to .name
+    value: Expr | None = None
+
+
+@dataclass
 class SignalDecl(Stmt):
     """Signal declaration as a statement (inside agent or fn)."""
 

@@ -511,6 +511,8 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
     if tt == "KW_LET" { return parse_module_let(tokens, pos, filename) }
+    // v4.55.0: real const parsing
+    if tt == "KW_CONST" { return parse_const_def(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
     // Fallback: skip unknown token
@@ -545,6 +547,26 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 
     let trail_items: List<String> = []
     return new_def_result(Definition::ImportDef(path, trail_items), p)
+}
+
+// v4.55.0: const definition parsing
+fn parse_const_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    // const NAME: TYPE = EXPR
+    let mut p: Int = pos + 1
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+    // Expect ":"
+    if peek_type(tokens, p) == "COLON" { p = p + 1 }
+    // Parse type expression
+    let tr: TypeResult = parse_type_expr(tokens, p, filename)
+    p = tr.pos
+    // Expect "="
+    if peek_type(tokens, p) == "ASSIGN" { p = p + 1 }
+    // Parse value expression
+    let er: ExprResult = parse_expr(tokens, p, filename)
+    p = er.pos
+    p = skip_semis(tokens, p)
+    return new_def_result(Definition::ConstDef(name, tr.type_expr, er.expr), p)
 }
 
 // ---------------------------------------------------------------------------

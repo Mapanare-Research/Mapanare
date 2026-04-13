@@ -68,21 +68,6 @@ class TestTensorShapes:
         errors = check(ast, filename="test.mn")
         assert not errors
 
-    def test_const_keyword_is_parse_error(self) -> None:
-        """`const` is not a Mapanare keyword and must fail to parse.
-
-        v4.27.0 Path B guard: prevents ``const`` from silently resurrecting
-        as a parser alias for ``ModuleLetDef``. If this test starts passing,
-        someone reintroduced the keyword without wiring its semantics.
-        """
-        from mapanare.parser import ParseError
-
-        src = "const N: Int = 3\nfn main() { print(N) }\n"
-        try:
-            parse(src, filename="test.mn")
-        except ParseError:
-            return
-        raise AssertionError(
-            "`const` parsed successfully — Path B revert has regressed; add a "
-            "ConstDef AST node and wire the semantics before allowing the keyword back."
-        )
+    # v4.27.0 Path B guard ``test_const_keyword_is_parse_error`` deleted in
+    # v4.55.0: ``const`` is now a real keyword with proper ConstDef semantics.
+    # See tests/parser/test_const.py and tests/semantic/test_const.py.

@@ -22,6 +22,7 @@ from mapanare.ast_nodes import (
     CallExpr,
     CharLiteral,
     ConstructExpr,
+    ConstDef,
     ConstructorPattern,
     ContinueStmt,
     Decorator,
@@ -585,6 +586,19 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             name=name,
             mutable=mutable,
             type_annotation=type_ann,
+            value=value,
+            span=_span_from_children(children),
+        )
+
+    def const_def(self, children: list[Any]) -> ConstDef:
+        """v4.55.0: ``const NAME: TYPE = EXPR`` — real const definition."""
+        items = _filter(children)
+        name = str(items[0])
+        type_expr = items[1]  # full TypeExpr, not collapsed to .name
+        value = items[2]
+        return ConstDef(
+            name=name,
+            type_expr=type_expr,
             value=value,
             span=_span_from_children(children),
         )

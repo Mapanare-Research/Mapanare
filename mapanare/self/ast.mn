@@ -254,7 +254,8 @@ enum Definition {
     ExportDef(Option<Definition>, List<String>),
     ExternFnDef(String, String, List<Param>, Option<TypeExpr>),
     TraitDef(String, List<FnDefData>),
-    LetDef(String, String, Expr)
+    LetDef(String, String, Expr),
+    ConstDef(String, TypeExpr, Expr)
 }
 
 // ---------------------------------------------------------------------------
@@ -656,7 +657,8 @@ pub fn def_kind(d: Definition) -> String {
         ExportDef(_, _) => { return "export_def" },
         ExternFnDef(_, _, _, _) => { return "extern_fn_def" },
         TraitDef(_, _) => { return "trait_def" },
-        LetDef(_, _, _) => { return "let_def" }
+        LetDef(_, _, _) => { return "let_def" },
+        ConstDef(_, _, _) => { return "const_def" }
     }
 }
 
@@ -728,6 +730,17 @@ pub fn def_let_type(d: Definition) -> String {
 }
 pub fn def_let_value(d: Definition) -> Expr {
     match d { LetDef(_, _, v) => { return v }, _ => { return Expr::IntLit(0) } }
+}
+
+// v4.55.0: ConstDef accessors
+pub fn def_const_name(d: Definition) -> String {
+    match d { ConstDef(n, _, _) => { return n }, _ => { return "" } }
+}
+pub fn def_const_type_expr(d: Definition) -> TypeExpr {
+    match d { ConstDef(_, te, _) => { return te }, _ => { return TypeExpr::Named("") } }
+}
+pub fn def_const_value(d: Definition) -> Expr {
+    match d { ConstDef(_, _, v) => { return v }, _ => { return Expr::IntLit(0) } }
 }
 
 // ---- TypeExpr kind + accessors --------------------------------------------

@@ -167,6 +167,10 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState {
     if dk == "let_def" {
         return register_module_let(st, defn)
     }
+    // v4.55.0: const_def — register same as let_def for lowering
+    if dk == "const_def" {
+        return register_module_const(st, defn)
+    }
     return st
 }
 
@@ -174,6 +178,49 @@ fn register_module_let(st: LowerState, defn: Definition) -> LowerState {
     let name: String = def_let_name(defn)
     let type_name: String = def_let_type(defn)
     let value_expr: Expr = def_let_value(defn)
+    let ek: String = expr_kind(value_expr)
+    let mut s: LowerState = st
+    let mut mod_tmp: MIRModule = s.module
+    let mut consts_list: List<ModuleConst> = mod_tmp.consts
+    let mut lv: List<LambdaEntry> = s.lambda_vars
+    if ek == "int_lit" {
+        let iv: Int = expr_int_val(value_expr)
+        let mc: ModuleConst = new_module_const_int(name, type_name, iv)
+        consts_list.push(mc)
+        let entry: LambdaEntry = new_lambda_entry("__const__" + name, "int:" + toString(iv))
+        lv.push(entry)
+    }
+    if ek == "string_lit" {
+        let sv: String = expr_string_val(value_expr)
+        let mc: ModuleConst = new_module_const_str(name, type_name, sv)
+        consts_list.push(mc)
+        let entry: LambdaEntry = new_lambda_entry("__const__" + name, "string:" + sv)
+        lv.push(entry)
+    }
+    if ek == "float_lit" {
+        let mc: ModuleConst = new_module_const_int(name, type_name, 0)
+        consts_list.push(mc)
+    }
+    if ek == "bool_lit" {
+        let bv: Int = 0
+        if expr_bool_val(value_expr) { let bv: Int = 1 }
+        let mc: ModuleConst = new_module_const_int(name, type_name, bv)
+        consts_list.push(mc)
+        let entry: LambdaEntry = new_lambda_entry("__const__" + name, "bool:" + toString(bv))
+        lv.push(entry)
+    }
+    mod_tmp.consts = consts_list
+    s.module = mod_tmp
+    s.lambda_vars = lv
+    return s
+}
+
+// v4.55.0: const lowering — same as let but uses ConstDef accessors
+fn register_module_const(st: LowerState, defn: Definition) -> LowerState {
+    let name: String = def_const_name(defn)
+    let te: TypeExpr = def_const_type_expr(defn)
+    let type_name: String = type_expr_name(te)
+    let value_expr: Expr = def_const_value(defn)
     let ek: String = expr_kind(value_expr)
     let mut s: LowerState = st
     let mut mod_tmp: MIRModule = s.module

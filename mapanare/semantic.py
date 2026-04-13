@@ -20,6 +20,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ConstDef,
     CharLiteral,
     ConstructExpr,
     ContinueStmt,
@@ -211,6 +212,11 @@ class SymbolKind(StrEnum):
     PARAM = "param"
     TRAIT = "trait"
     MODULE = "module"
+    CONST = "const"
+
+
+# v4.55.0: compile-time constant values for const folding
+ConstantValue = int | float | bool | str
 
 
 @dataclass
@@ -222,6 +228,7 @@ class Symbol:
     type_info: TypeInfo = field(default_factory=lambda: UNKNOWN_TYPE)
     mutable: bool = False
     node: ASTNode | None = None
+    const_value: ConstantValue | None = None
 
 
 class Scope:
@@ -304,6 +311,8 @@ class SemanticChecker:
         # type checking. Set by _check_fn, read by the ErrorPropExpr handler.
         self._current_fn_return_type: TypeInfo | None = None
         self._current_fn_name: str = ""
+        # v4.55.0: const folding table (name -> folded value)
+        self._const_table: dict[str, ConstantValue] = {}
 
         # Register built-in traits
         for trait_name, methods in BUILTIN_TRAITS.items():
@@ -973,7 +982,12 @@ class SemanticChecker:
             if sym is None:
                 self._error(f"Undefined variable '{expr.target.name}'", expr.target)
                 return UNKNOWN_TYPE
-            if not sym.mutable:
+            if sym.kind == SymbolKind.CONST:
+                self._error(
+                    f"Cannot assign to const '{expr.target.name}'",
+                    expr.target,
+                )
+            elif not sym.mutable:
                 self._error(
                     f"Cannot assign to immutable variable '{expr.target.name}'",
                     expr.target,
@@ -1691,6 +1705,60 @@ class SemanticChecker:
             Symbol(name=decl.name, kind=SymbolKind.VARIABLE, type_info=stream_type),
         )
 
+    # -- Constant folding (v4.55.0) --------------------------------------
+
+    def _fold_constant(self, expr: Expr, depth: int = 0) -> ConstantValue | None:
+        """Evaluate an expression at compile time. Returns None if not foldable."""
+        if depth > 10:
+            return None
+        if isinstance(expr, IntLiteral):
+            return expr.value
+        if isinstance(expr, FloatLiteral):
+            return expr.value
+        if isinstance(expr, BoolLiteral):
+            return expr.value
+        if isinstance(expr, StringLiteral):
+            return expr.value
+        if isinstance(expr, Identifier):
+            return self._const_table.get(expr.name)
+        if isinstance(expr, BinaryExpr):
+            left = self._fold_constant(expr.left, depth + 1)
+            right = self._fold_constant(expr.right, depth + 1)
+            if left is None or right is None:
+                return None
+            return self._fold_binop(left, expr.op, right)
+        if isinstance(expr, UnaryExpr):
+            operand = self._fold_constant(expr.operand, depth + 1)
+            if operand is None:
+                return None
+            if expr.op == "-" and isinstance(operand, (int, float)):
+                return -operand
+            if expr.op == "!" and isinstance(operand, bool):
+                return not operand
+        return None
+
+    @staticmethod
+    def _fold_binop(
+        left: ConstantValue, op: str, right: ConstantValue
+    ) -> ConstantValue | None:
+        try:
+            if op == "+" and isinstance(left, str) and isinstance(right, str):
+                return left + right
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                if op == "+":
+                    return left + right
+                if op == "-":
+                    return left - right
+                if op == "*":
+                    return left * right
+                if op == "/" and right != 0:
+                    return left // right if isinstance(left, int) and isinstance(right, int) else left / right
+                if op == "%" and right != 0:
+                    return left % right
+        except (OverflowError, ZeroDivisionError):
+            return None
+        return None
+
     # -- Definition registration (first pass) ---------------------------
 
     def _register_definitions(self, program: Program) -> None:
@@ -1861,6 +1929,28 @@ class SemanticChecker:
             self.global_scope.define(
                 defn.name,
                 Symbol(name=defn.name, kind=SymbolKind.VARIABLE, type_info=ty, node=defn),
+            )
+        elif isinstance(defn, ConstDef):
+            # v4.55.0: real const — register with type, fold value, mark as const
+            ty = self._resolve_type_expr(defn.type_expr) if defn.type_expr else UNKNOWN_TYPE
+            folded = self._fold_constant(defn.value) if defn.value else None
+            if defn.value and folded is None:
+                self._error(
+                    "const initializer must be a constant expression "
+                    "(only literals, const references, and arithmetic on constants are allowed)",
+                    defn,
+                )
+            if folded is not None:
+                self._const_table[defn.name] = folded
+            self.global_scope.define(
+                defn.name,
+                Symbol(
+                    name=defn.name,
+                    kind=SymbolKind.CONST,
+                    type_info=ty,
+                    node=defn,
+                    const_value=folded,
+                ),
             )
         elif isinstance(defn, DocComment):
             if defn.definition:
