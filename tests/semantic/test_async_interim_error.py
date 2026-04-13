@@ -18,8 +18,8 @@ from mapanare.semantic import SemanticChecker
 
 
 class TestAsyncFnInterimError:
-    def test_async_fn_lowering_raises_under_construction(self) -> None:
-        """Lowering an async fn produces a RuntimeError with the v4.70.0 pointer."""
+    def test_async_fn_lowering_succeeds(self) -> None:
+        """v4.70.0: async fn lowering works (coroutine prelude emitted)."""
         source = textwrap.dedent("""\
             async fn fetch() -> Int {
                 return 42
@@ -28,11 +28,13 @@ class TestAsyncFnInterimError:
         tree = parse(source)
         checker = SemanticChecker()
         checker.check(tree)
-        with pytest.raises(RuntimeError, match=r"under construction.*v4\.70\.0"):
-            lower(tree)
+        module = lower(tree)
+        fn = module.get_function("fetch")
+        assert fn is not None
+        assert fn.is_async is True
 
-    def test_async_fn_error_mentions_version(self) -> None:
-        """The error message mentions it's under construction and v4.70.0."""
+    def test_async_fn_is_async_flag(self) -> None:
+        """v4.70.0: MIRFunction has is_async=True for async fn."""
         source = textwrap.dedent("""\
             async fn work(x: Int) -> Int {
                 return x + 1
@@ -41,8 +43,10 @@ class TestAsyncFnInterimError:
         tree = parse(source)
         checker = SemanticChecker()
         checker.check(tree)
-        with pytest.raises(RuntimeError, match=r"under construction"):
-            lower(tree)
+        module = lower(tree)
+        fn = module.get_function("work")
+        assert fn is not None
+        assert fn.is_async is True
 
     def test_regular_fn_still_lowers(self) -> None:
         """Non-async functions are unaffected by the async interim."""
