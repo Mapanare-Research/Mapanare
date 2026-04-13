@@ -3481,7 +3481,17 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             let s_bound: LowerState = bind_arm_pattern(s, subject_r.value, arm.pattern)
             s = s_bound
 
-            // v4.35.0: guard fall-through — evaluate guard, branch on result
+            // v4.79.0 (CARRY_FORWARD P3): guard fall-through — evaluate
+            // guard, branch on result. On guard failure, jump to the next
+            // arm's block (which re-binds pattern variables and re-checks
+            // its own guard). This is the jump-to-next approach, which is
+            // correct for the common case where successive arms match the
+            // same scrutinee type (e.g., integer guards). The Python
+            // pipeline uses a full decision-tree rebuild on guard failure
+            // (lower.py:3281-3290) — that approach handles complex cases
+            // where the next arm's constructor pattern differs. Porting
+            // the full decision-tree approach requires build_decision_tree
+            // in the self-hosted lowerer (future work).
             match arm.guard {
                 Some(guard_expr) => {
                     let guard_r: LowerResult = lower_expr(s, guard_expr)
@@ -3493,7 +3503,8 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                     s = fail_r.state
                     let fail_label: String = fail_r.value.name
                     s = emit_instr(s, Instruction::Branch(guard_r.value, pass_label, fail_label))
-                    // Guard fail: jump to next arm or merge
+                    // Guard fail: jump to next arm (re-bind + re-check)
+                    // or to merge if this is the last arm.
                     s = add_block(s, fail_label)
                     if ai + 1 < na_match {
                         let next_label: String = arm_labels[ai + 1]
