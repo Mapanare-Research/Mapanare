@@ -511,6 +511,13 @@ class LLVMTextEmitter:
         self._signal_vars: list[str] = []  # dest names for signal cleanup
         self._stream_vars: list[str] = []  # dest names for stream cleanup
         self._tensor_vars: list[str] = []  # dest names for tensor cleanup (v4.42.0)
+        # debug info (DWARF) — v4.62.0 infrastructure
+        self._debug_enabled: bool = debug
+        self._debug_metadata_counter: int = 0
+        self._debug_file_table: dict[str, int] = {}
+        self._debug_location_cache: dict[tuple[int, int, int], int] = {}
+        self._debug_type_cache: dict[str, int] = {}
+        self._debug_metadata_lines: list[str] = []
         # dispatch
         self._disp: dict[type, Any] = {}
         self._init_disp()
@@ -561,6 +568,48 @@ class LLVMTextEmitter:
         d[StreamInit] = self._do_stream_init
         d[StreamOp] = self._do_stream_op
         d[Assert] = self._do_assert
+
+    # ── debug metadata helpers (v4.62.0) ─────────────────────────────
+
+    def _alloc_metadata_id(self) -> int:
+        """Return the next free metadata ID."""
+        mid = self._debug_metadata_counter
+        self._debug_metadata_counter += 1
+        return mid
+
+    def _emit_debug_metadata(self, content: str) -> str:
+        """Emit a metadata node and return its ``!N`` reference."""
+        mid = self._alloc_metadata_id()
+        ref = f"!{mid}"
+        self._debug_metadata_lines.append(f"{ref} = {content}")
+        return ref
+
+    def _get_debug_file(self, path: str) -> int:
+        """Return the metadata ID for a source file, creating if needed."""
+        if path in self._debug_file_table:
+            return self._debug_file_table[path]
+        import os
+
+        directory = os.path.dirname(path) or "."
+        filename = os.path.basename(path)
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{mid} = !DIFile(filename: \"{filename}\", directory: \"{directory}\")"
+        )
+        self._debug_file_table[path] = mid
+        return mid
+
+    def _get_debug_location(self, file_id: int, line: int, col: int) -> int:
+        """Return the metadata ID for a source location, creating if needed."""
+        key = (file_id, line, col)
+        if key in self._debug_location_cache:
+            return self._debug_location_cache[key]
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{mid} = !DILocation(line: {line}, column: {col}, scope: !{{}})"
+        )
+        self._debug_location_cache[key] = mid
+        return mid
 
     # ── public entry point ──────────────────────────────────────────
     def emit(self, mir: MIRModule) -> str:

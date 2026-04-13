@@ -1325,52 +1325,24 @@ def _format_mapanare(source: str) -> str:
 
 
 def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
-    """Add -g/--debug flag.
-
-    v4.29.0: the flag is accepted for forward compatibility but is a
-    no-op. DWARF debug info emission was claimed in multiple v4.x
-    roadmap documents but never shipped — 38 tests in
-    ``tests/llvm/test_dwarf_debug_info.py`` had been ``pytest.mark.skip``
-    since v4.2.0, which the v4.26.0 seven-reviewer panel flagged as a
-    core hollow-feature case. The claim is now struck (SPEC 21.3 marks
-    DWARF as "deferred to v5.x"); the flag stays so scripts that pass
-    ``-g`` do not break, and ``_resolve_debug`` prints a loud stderr
-    warning every time it is used so nobody is silently misled into
-    believing debug info was emitted.
-    """
+    """Add -g/--debug flag for DWARF debug info emission (v4.62.0+)."""
     parser.add_argument(
         "-g",
         "--debug",
         action="store_true",
         default=False,
-        help=(
-            "Accepted for compatibility; DWARF debug info emission is not "
-            "implemented (deferred to v5.x). Using this flag prints a "
-            "warning and has no effect on the emitted IR."
-        ),
+        help="Emit DWARF debug info in the generated IR/binary.",
     )
 
 
 def _resolve_debug(args: argparse.Namespace) -> bool:
-    """Return ``debug`` from argparse and warn on stderr if it was set.
+    """Return ``True`` if the ``-g`` / ``--debug`` flag was passed.
 
-    v4.29.0: DWARF debug info is deferred to v5.x. The ``-g`` / ``--debug``
-    flag is retained as a no-op for forward compatibility, but every use
-    emits a loud stderr warning so developers do not silently trust a
-    debug-less binary. The warning deliberately names the tracking
-    version so the reader knows where to look for the real feature.
+    v4.62.0: DWARF debug info infrastructure is in place. The ``-g`` flag
+    now enables debug metadata emission (skeleton at v4.62.0; full DWARF
+    by v4.65.0). The v4.29.0 deferral warning has been removed.
     """
-    value = bool(getattr(args, "debug", False))
-    if value:
-        print(
-            "warning: -g/--debug is a no-op in v4.x — DWARF debug info "
-            "emission is not implemented and has been deferred to v5.x. "
-            "The emitted IR/binary will NOT contain source-level debug "
-            "information; source-level debuggers (gdb, lldb) will show "
-            "only machine-level frames.",
-            file=sys.stderr,
-        )
-    return value
+    return bool(getattr(args, "debug", False))
 
 
 def _add_edition_flag(parser: argparse.ArgumentParser) -> None:

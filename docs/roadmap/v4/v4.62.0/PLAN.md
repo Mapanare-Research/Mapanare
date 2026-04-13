@@ -5,7 +5,9 @@
 > build on. Produces DESIGN.md, adds `Span` threading through MIR,
 > and adds the `_emit_debug_metadata` infrastructure in the emitter.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** All phases executed. DESIGN.md written. Emitter infrastructure added. -g flag wired. 10 tests pass.
+**Decisions taken:** Option C (recompute from Span). DWARFv5. DW_LANG_C99.
 **Breaking:** No
 **Prerequisite:** v4.61.0 (arc 6 panel PASS)
 **Delta review:** No (no new syntax; design + infrastructure)

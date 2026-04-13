@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.62.0] - 2026-04-12
+
+**Arc 7 Release 1 — DWARF Design + Infrastructure.**
+Foundation for debug info emission. No user-visible DWARF yet — all
+subsequent Arc 7 releases build on this infrastructure.
+
+### Added
+
+- `docs/roadmap/v4/v4.62.0/DESIGN.md` — 8-section DWARF design document
+  covering LLVM metadata primer, Option C decision, pass pipeline, flags,
+  risk register, verification plan, rejected options
+- `mapanare/emit_llvm_text.py` — debug metadata infrastructure:
+  `_debug_enabled`, `_alloc_metadata_id()`, `_emit_debug_metadata()`,
+  `_get_debug_file()`, `_get_debug_location()` with deduplication caches
+- `scripts/check_dwarf.sh` — DWARF verification script (passes trivially at v4.62.0)
+- `tests/llvm/test_dwarf_infrastructure.py` — 10 infrastructure tests
+
+### Changed
+
+- `mapanare/cli.py` `_resolve_debug` — v4.29.0 deferral warning removed.
+  `-g` flag now enables debug metadata emission (skeleton at v4.62.0).
+- `mapanare/cli.py` `_add_debug_flag` — help text updated from "no-op" to
+  "Emit DWARF debug info"
+
 ## [4.61.0] - 2026-04-12
 
 **Arc 6 Panel Release — Deprecation + Deletion Close.**
