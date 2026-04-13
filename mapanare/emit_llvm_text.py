@@ -893,7 +893,24 @@ class LLVMTextEmitter:
             self._debug_metadata_lines.append(f"!{ver_list_id} = !{{!{ver_str_id}}}")
             tail += self._build_debug_metadata_section()
         else:
-            tail = ["", "!mapanare.version = !{!0}", f'!0 = !{{!"{ver}"}}', ""]
+            # v4.83.0: TBAA metadata tree for alias analysis.
+            # !0 = version string, !1 = TBAA root, !2-!5 = type nodes,
+            # !6-!9 = access tags (used on load/store via !tbaa !N).
+            tail = [
+                "",
+                "!mapanare.version = !{!0}",
+                f'!0 = !{{!"{ver}"}}',
+                '!1 = !{!"Mapanare TBAA"}',
+                '!2 = !{!"int", !1}',
+                '!3 = !{!"float", !1}',
+                '!4 = !{!"ptr", !1}',
+                '!5 = !{!"bool", !1}',
+                "!6 = !{!2, !2, i64 0}",
+                "!7 = !{!3, !3, i64 0}",
+                "!8 = !{!4, !4, i64 0}",
+                "!9 = !{!5, !5, i64 0}",
+                "",
+            ]
         parts = hdr
         if self._globals:
             parts += self._globals + [""]
@@ -2189,6 +2206,10 @@ class LLVMTextEmitter:
         abi_rt = "void" if self._fn_use_sret else rt
 
         lk = "internal " if (not fn.is_public and fn.name != "main") else ""
+        # v4.83.0: nounwind on all user-defined functions — Mapanare has no
+        # exception mechanism, so LLVM can assume no unwind paths. This
+        # enables better code generation (no .eh_frame, no landing pads).
+        fn_attrs = " nounwind"
         # v4.70.0: presplitcoroutine attribute for async functions
         coro_attr = " presplitcoroutine" if fn.is_async else ""
         dbg_ref = ""
@@ -2200,7 +2221,7 @@ class LLVMTextEmitter:
             # The function returns ptr (the Future handle) regardless of the
             # declared return type. The actual return value goes into the Future.
             out: list[str] = [
-                f"define {lk}ptr @{fn.name}({ps}){coro_attr}{dbg_ref} {{",
+                f"define {lk}ptr @{fn.name}({ps}){fn_attrs}{coro_attr}{dbg_ref} {{",
                 "coro.entry:",
                 f"  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)",
                 f"  %coro.size = call i64 @llvm.coro.size.i64()",
@@ -2209,7 +2230,7 @@ class LLVMTextEmitter:
                 f"  ; Allocate Future struct: {{i8 state, ptr payload}}",
                 f"  %future = call ptr @malloc(i64 16)",
                 f"  store i8 0, ptr %future",
-                f"  %future.hdl.slot = getelementptr {{i8, ptr}}, ptr %future, i32 0, i32 1",
+                f"  %future.hdl.slot = getelementptr inbounds {{i8, ptr}}, ptr %future, i32 0, i32 1",
                 f"  store ptr %coro.hdl, ptr %future.hdl.slot",
                 f"  ; Initial suspend",
                 f"  %coro.init.save = call token @llvm.coro.save(ptr %coro.hdl)",
@@ -2251,7 +2272,7 @@ class LLVMTextEmitter:
                             rewritten.append(f"  store {ret_ty} {ret_val}, ptr {t}")
                             rvs = self._f("ret.val.slot")
                             rewritten.append(f"  store i8 1, ptr %future")
-                            rewritten.append(f"  {rvs} = getelementptr {{i8, ptr}}, ptr %future, i32 0, i32 1")
+                            rewritten.append(f"  {rvs} = getelementptr inbounds {{i8, ptr}}, ptr %future, i32 0, i32 1")
                             rewritten.append(f"  store ptr {t}, ptr {rvs}")
                             rewritten.append(f"  br label %coro.final")
                         else:
@@ -2285,7 +2306,7 @@ class LLVMTextEmitter:
             out.append("}")
         else:
             # Regular (non-async) function emission
-            out: list[str] = [f"define {lk}{abi_rt} @{fn.name}({ps}){dbg_ref} {{", "pre_entry:"]
+            out: list[str] = [f"define {lk}{abi_rt} @{fn.name}({ps}){fn_attrs}{dbg_ref} {{", "pre_entry:"]
             out.extend(self._ent)
             for p in fn.params:
                 ty = self._rty(p.ty)
@@ -2479,7 +2500,7 @@ class LLVMTextEmitter:
         vals = ", ".join(f"i64 {o}" for o in offsets)
         self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
         gep = self._f("offp")
-        self._L(f"{gep} = getelementptr [{len(offsets)} x i64], " f"ptr {name}, i64 0, i64 0")
+        self._L(f"{gep} = getelementptr inbounds [{len(offsets)} x i64], " f"ptr {name}, i64 0, i64 0")
         return gep
 
     # --- Cast ---
@@ -3809,7 +3830,7 @@ class LLVMTextEmitter:
         shape_a = self._alloca(f"[{rank} x i64]", "tshape")
         for dim_idx, dim_val in enumerate(i.shape):
             gep = self._f("tsd")
-            self._L(f"{gep} = getelementptr [{rank} x i64], ptr {shape_a}, i64 0, i64 {dim_idx}")
+            self._L(f"{gep} = getelementptr inbounds [{rank} x i64], ptr {shape_a}, i64 0, i64 {dim_idx}")
             self._L(f"store i64 {dim_val}, ptr {gep}")
 
         # Step 2: Determine element size
@@ -4524,7 +4545,7 @@ class LLVMTextEmitter:
         st_ptr = self._f("aw.st.ptr")
         st_val = self._f("aw.st")
         is_rdy = self._f("aw.rdy")
-        self._L(f"{st_ptr} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 0")
+        self._L(f"{st_ptr} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 0")
         self._L(f"{st_val} = load i8, ptr {st_ptr}")
         self._L(f"{is_rdy} = icmp eq i8 {st_val}, 1")
         self._L(f"br i1 {is_rdy}, label %{ready_lbl}, label %{drive_lbl}")
@@ -4534,7 +4555,7 @@ class LLVMTextEmitter:
         self._cb = drive_lbl
         hdl_ptr = self._f("aw.hdl.ptr")
         hdl = self._f("aw.hdl")
-        self._L(f"{hdl_ptr} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+        self._L(f"{hdl_ptr} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
         self._L(f"{hdl} = load ptr, ptr {hdl_ptr}")
         self._L(f"call void @llvm.coro.resume(ptr {hdl})")
         self._L(f"br label %{check_lbl}")
@@ -4554,7 +4575,7 @@ class LLVMTextEmitter:
         val_ptr = self._f("aw.val.ptr")
         val_box = self._f("aw.val.box")
         val_raw = self._f("aw.val")
-        self._L(f"{val_ptr} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+        self._L(f"{val_ptr} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
         self._L(f"{val_box} = load ptr, ptr {val_ptr}")
         self._L(f"{val_raw} = load i64, ptr {val_box}")
         # Store extracted value into the dest alloca
@@ -4574,7 +4595,7 @@ class LLVMTextEmitter:
         # Extract handle from future
         hp = self._f("bo.hdl.ptr")
         hd = self._f("bo.hdl")
-        self._L(f"{hp} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+        self._L(f"{hp} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
         self._L(f"{hd} = load ptr, ptr {hp}")
         self._L(f"br label %{loop_lbl}")
 
@@ -4592,7 +4613,7 @@ class LLVMTextEmitter:
         vp = self._f("bo.val.ptr")
         vb = self._f("bo.val.box")
         vr = self._f("bo.val")
-        self._L(f"{vp} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+        self._L(f"{vp} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
         self._L(f"{vb} = load ptr, ptr {vp}")
         self._L(f"{vr} = load i64, ptr {vb}")
         # Destroy coroutine frame + free future and box (panel items Viper #1, #2)
@@ -4788,7 +4809,7 @@ class LLVMTextEmitter:
             if hn in self._sigs:
                 hp = f"@{hn}"
             lines.append(f"  %name.{i} = alloca [1 x i8], align 1")
-            lines.append(f"  %np.{i} = getelementptr [1 x i8], ptr %name.{i}, i64 0, i64 0")
+            lines.append(f"  %np.{i} = getelementptr inbounds [1 x i8], ptr %name.{i}, i64 0, i64 0")
             lines.append(
                 f"  %ag.{i} = call ptr @mapanare_agent_new(ptr %np.{i}, ptr {hp},"
                 f" ptr null, i32 256, i32 256)"
