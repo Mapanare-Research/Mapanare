@@ -692,6 +692,23 @@ class Assert(Instruction):
         return True
 
 
+# --- Coroutine (v4.72.0) ---
+
+
+@dataclass(slots=True)
+class AwaitSuspend(Instruction):
+    """Await suspension point: suspends the coroutine until the future is ready.
+
+    The `future` operand is a Future<T> value (ptr to {i8, ptr} struct).
+    The `dest` receives the extracted T value when the future is Ready.
+    The LLVM emitter translates this to coro.save + coro.suspend + switch +
+    a fast-path readiness check. See v4.67.0/DESIGN.md §4.6.2.
+    """
+
+    dest: Value = field(default_factory=Value)
+    future: Value = field(default_factory=Value)  # Future<T> ptr
+
+
 # --- Phi ---
 
 

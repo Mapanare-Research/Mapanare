@@ -1430,20 +1430,15 @@ class MIRLowerer:
             return self._lower_sync(expr)
 
         if isinstance(expr, AwaitExpr):
-            # v4.70.0: await suspension lowering arrives at v4.72.0.
-            from mapanare.diagnostics import Diagnostic, Label, Severity
+            # v4.72.0: real await lowering. Evaluates the inner expression
+            # (which returns a Future<T> ptr), then emits AwaitSuspend which
+            # the LLVM emitter translates to save/suspend/switch + extraction.
+            from mapanare.mir import AwaitSuspend
 
-            span = expr.span
-            diag = Diagnostic(
-                severity=Severity.ERROR,
-                message="await suspension is under construction — arrives in v4.72.0",
-                labels=[Label(span=span, message="await cannot be compiled yet", primary=True)],
-                notes=[
-                    "coroutine prelude emits at v4.70.0 but suspend/resume needs v4.72.0",
-                    "see docs/roadmap/v4/v4.67.0/DESIGN.md §4.6.2 for the await lowering plan",
-                ],
-            )
-            raise RuntimeError(str(diag))
+            future_val = self._lower_expr(expr.expr)
+            dest = self._make_value(prefix="await")
+            self._emit(AwaitSuspend(dest=dest, future=future_val))
+            return dest
 
         if isinstance(expr, SendExpr):
             return self._lower_send(expr)

@@ -14,6 +14,7 @@ from mapanare.mir import (
     AgentSpawn,
     AgentSync,
     Assert,
+    AwaitSuspend,
     BinOp,
     BinOpKind,
     Branch,
@@ -572,6 +573,7 @@ class LLVMTextEmitter:
         d[StreamInit] = self._do_stream_init
         d[StreamOp] = self._do_stream_op
         d[Assert] = self._do_assert
+        d[AwaitSuspend] = self._do_await_suspend
 
     # ── debug metadata helpers (v4.62.0) ─────────────────────────────
 
@@ -2246,9 +2248,10 @@ class LLVMTextEmitter:
                             t = self._f("ret.box")
                             rewritten.append(f"  {t} = call ptr @malloc(i64 8)")
                             rewritten.append(f"  store {ret_ty} {ret_val}, ptr {t}")
+                            rvs = self._f("ret.val.slot")
                             rewritten.append(f"  store i8 1, ptr %future")
-                            rewritten.append(f"  %ret.val.slot = getelementptr {{i8, ptr}}, ptr %future, i32 0, i32 1")
-                            rewritten.append(f"  store ptr {t}, ptr %ret.val.slot")
+                            rewritten.append(f"  {rvs} = getelementptr {{i8, ptr}}, ptr %future, i32 0, i32 1")
+                            rewritten.append(f"  store ptr {t}, ptr {rvs}")
                             rewritten.append(f"  br label %coro.final")
                         else:
                             rewritten.append(line)
@@ -4497,6 +4500,57 @@ class LLVMTextEmitter:
             r = f"@{i.fn_name}"  # function is already ptr
             return r
         return "null"
+
+    # --- Coroutine await suspension (v4.72.0) ---
+
+    def _do_await_suspend(self, i: AwaitSuspend) -> None:
+        """Emit save/suspend/switch for an await expression.
+
+        Pattern: fast-path check (is future already ready?) + suspension.
+        See v4.67.0/DESIGN.md §4.6.2.
+        """
+        fv, _ft = self._get(i.future)
+        # Unique labels for this await point
+        n = self._c
+        self._c += 1
+        ready_lbl = f"await.ready.{n}"
+        suspend_lbl = f"await.suspend.{n}"
+        resume_lbl = f"await.resume.{n}"
+
+        # Fast-path: check if future is already ready
+        st_ptr = self._f("aw.st.ptr")
+        st_val = self._f("aw.st")
+        is_rdy = self._f("aw.rdy")
+        self._L(f"{st_ptr} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 0")
+        self._L(f"{st_val} = load i8, ptr {st_ptr}")
+        self._L(f"{is_rdy} = icmp eq i8 {st_val}, 1")
+        self._L(f"br i1 {is_rdy}, label %{ready_lbl}, label %{suspend_lbl}")
+
+        # Suspend path
+        self._blk[suspend_lbl] = []
+        self._cb = suspend_lbl
+        save_tok = self._f("aw.save")
+        susp_val = self._f("aw.susp")
+        self._L(f"{save_tok} = call token @llvm.coro.save(ptr %coro.hdl)")
+        self._L(f"{susp_val} = call i8 @llvm.coro.suspend(token {save_tok}, i1 false)")
+        self._L(f"switch i8 {susp_val}, label %coro.ret [i8 0, label %{resume_lbl} i8 1, label %coro.cleanup]")
+
+        # Resume path — future should now be ready
+        self._blk[resume_lbl] = []
+        self._cb = resume_lbl
+        self._L(f"br label %{ready_lbl}")
+
+        # Ready path — extract value from future
+        self._blk[ready_lbl] = []
+        self._cb = ready_lbl
+        val_ptr = self._f("aw.val.ptr")
+        val_box = self._f("aw.val.box")
+        val_raw = self._f("aw.val")
+        self._L(f"{val_ptr} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+        self._L(f"{val_box} = load ptr, ptr {val_ptr}")
+        self._L(f"{val_raw} = load i64, ptr {val_box}")
+        # Store extracted value into the dest alloca
+        self._put(i.dest, val_raw, "i64")
 
     # --- Assert ---
     def _do_assert(self, i: Assert) -> None:
