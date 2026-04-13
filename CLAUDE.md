@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.78.0** (shipped) — Arc 10 release 2. Carry-forward debt drain: items 49 (drop-glue escape analysis), 50 (agent destroy drain), A10b (const scope). 3 oldest open items closed.
+- **v4.79.0** (shipped) — Arc 10 release 3. Carry-forward ledger at zero: P2 (pattern_matching.py tests), P3 (guard fall-through), P6 (unreachable-arm coverage). 0 Mapanare-owned open items.
 - **v5.0.0** (when ready) — Major version tag. The lead's call. Zero additional work required — v4.76.0 is release-gate quality.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.

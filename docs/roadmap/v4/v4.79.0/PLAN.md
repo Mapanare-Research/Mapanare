@@ -6,7 +6,7 @@
 > coverage) all trace back to the v4.36.0 panel. After this release,
 > the carry-forward ledger shows 0 Mapanare-owned open items.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.78.0
 **Delta review:** No

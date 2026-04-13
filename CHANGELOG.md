@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.79.0] - 2026-04-13
+
+**Arc 10 Release 3 — Carry-Forward Ledger at Zero.**
+Final three Mapanare-owned carry-forward items closed. Zero open items remain.
+
+### Added
+
+- `tests/semantic/test_pattern_matching.py` — 54 unit tests covering all 25 functions
+  in `pattern_matching.py`: classification, specialize, default matrix, or-expansion,
+  column selection, decision tree building, exhaustiveness, unreachable arms, witnesses
+- 9 unreachable-arm warning tests (7 unit + 2 semantic checker integration)
+
+### Fixed
+
+- **P2** (2 cycles): `pattern_matching.py` now has dedicated unit tests
+- **P3** (2 cycles): Guard fall-through divergence documented and aligned in `lower.mn`
+- **P6** (2 cycles): Unreachable-arm warning path now has 9 tests
+
 ## [4.78.0] - 2026-04-13
 
 **Arc 10 Release 2 — Close Carry-Forward Items 49, 50, A10b.**
