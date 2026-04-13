@@ -315,6 +315,9 @@ class SemanticChecker:
         self._current_fn_name: str = ""
         # v4.55.0: const folding table (name -> folded value)
         self._const_table: dict[str, ConstantValue] = {}
+        # v4.69.0: track whether we're inside an async fn body.
+        # Set by _check_async_fn, read by the AwaitExpr handler.
+        self._in_async: bool = False
 
         # Register built-in traits
         for trait_name, methods in BUILTIN_TRAITS.items():
@@ -614,10 +617,29 @@ class SemanticChecker:
             self._infer_expr(expr.expr)
             return UNKNOWN_TYPE
         if isinstance(expr, AwaitExpr):
-            # v4.68.0: accept the node, infer the inner expression.
-            # Async-specific type checks (must be Future<T>, must be inside
-            # async fn) arrive at v4.69.0.
-            self._infer_expr(expr.expr)
+            # v4.69.0: full await type checking.
+            # 1. Must be inside an async fn
+            if not self._in_async:
+                self._error(
+                    "'await' can only be used inside an 'async fn'",
+                    expr,
+                )
+                return UNKNOWN_TYPE
+            # 2. Operand must be Future<T>
+            inner_type = self._infer_expr(expr.expr)
+            if inner_type.kind == TypeKind.FUTURE:
+                # Extract T from Future<T>
+                if inner_type.args:
+                    return inner_type.args[0]
+                return UNKNOWN_TYPE
+            if inner_type.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED, TypeKind.ANY):
+                # Can't validate — allow through
+                return UNKNOWN_TYPE
+            # Operand is not Future<T> — error
+            self._error(
+                f"'await' requires a Future<T>, got {inner_type.display_name()}",
+                expr,
+            )
             return UNKNOWN_TYPE
         if isinstance(expr, SendExpr):
             self._check_send(expr)
@@ -702,6 +724,18 @@ class SemanticChecker:
                 return BOOL_TYPE
             if expr.op in logical_ops:
                 return BOOL_TYPE
+
+        # v4.69.0: Future<T> used in arithmetic → "did you forget to await?"
+        if left.kind == TypeKind.FUTURE or right.kind == TypeKind.FUTURE:
+            future_side = "left" if left.kind == TypeKind.FUTURE else "right"
+            future_type = left if left.kind == TypeKind.FUTURE else right
+            inner = future_type.args[0].display_name() if future_type.args else "T"
+            self._error(
+                f"Cannot use Future<{inner}> in '{expr.op}' operation — "
+                f"did you forget 'await'? Use 'await' to get the {inner} value.",
+                expr,
+            )
+            return UNKNOWN_TYPE
 
         if expr.op in arithmetic_ops:
             # Tensor element-wise ops: Tensor +/-/*// Tensor -> Tensor
@@ -1792,18 +1826,20 @@ class SemanticChecker:
                 Symbol(name=defn.name, kind=SymbolKind.FUNCTION, type_info=fn_type, node=defn),
             )
         elif isinstance(defn, AsyncFnDef):
-            # v4.68.0: register async fn in global scope as a function type.
-            # Semantic tightening (Future<T> return type rewriting) arrives at v4.69.0.
+            # v4.69.0: register async fn — return type wrapped in Future<T>.
+            # Calling an async fn returns Future<T>, not T directly.
             saved_tp = self._current_type_params
             self._current_type_params = set(defn.type_params) if defn.type_params else set()
             param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
-            ret = self._resolve_type_expr(defn.return_type)
+            inner_ret = self._resolve_type_expr(defn.return_type)
             self._current_type_params = saved_tp
+            # Wrap return type: async fn foo() -> T  =>  fn type returns Future<T>
+            future_ret = TypeInfo(kind=TypeKind.FUTURE, name="Future", args=[inner_ret])
             fn_type = TypeInfo(
                 kind=TypeKind.FN,
                 is_function=True,
                 param_types=param_types,
-                return_type=ret,
+                return_type=future_ret,
             )
             self.global_scope.define(
                 defn.name,
@@ -2152,10 +2188,8 @@ class SemanticChecker:
         if isinstance(defn, FnDef):
             self._check_fn(defn)
         elif isinstance(defn, AsyncFnDef):
-            # v4.68.0: check the body the same way as a regular fn.
-            # Async-specific semantic checks (await-outside-async, Future<T>
-            # return type rewriting) arrive at v4.69.0.
-            self._check_fn(defn)  # type: ignore[arg-type]  # AsyncFnDef has same shape as FnDef
+            # v4.69.0: check body with async context active.
+            self._check_async_fn(defn)
         elif isinstance(defn, ExternFnDef):
             pass  # No body to check; registration handled in first pass
         elif isinstance(defn, AgentDef):
@@ -2195,6 +2229,13 @@ class SemanticChecker:
         self._current_type_params = saved_type_params
         self._current_fn_return_type = saved_fn_return
         self._current_fn_name = saved_fn_name
+
+    def _check_async_fn(self, fn: AsyncFnDef) -> None:  # type: ignore[override]
+        """v4.69.0: check an async fn body with async context active."""
+        saved_in_async = self._in_async
+        self._in_async = True
+        self._check_fn(fn)  # type: ignore[arg-type]
+        self._in_async = saved_in_async
 
     def _check_decorators(self, defn: ASTNode) -> None:
         """Validate decorator annotations on a definition (Phase 5.2)."""

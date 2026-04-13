@@ -40,6 +40,7 @@ class TypeKind(Enum):
     STREAM = auto()
     CHANNEL = auto()
     TENSOR = auto()
+    FUTURE = auto()  # v4.69.0: Future<T> — coroutine result type
 
     # Compound / user-defined
     FN = auto()
@@ -80,6 +81,7 @@ _NAME_TO_KIND: dict[str, TypeKind] = {
     "Stream": TypeKind.STREAM,
     "Channel": TypeKind.CHANNEL,
     "Tensor": TypeKind.TENSOR,
+    "Future": TypeKind.FUTURE,
     "Range": TypeKind.RANGE,
     "any": TypeKind.ANY,
 }
@@ -252,7 +254,7 @@ PRIMITIVE_KINDS = frozenset(
 )
 
 BUILTIN_GENERIC_TYPES = frozenset(
-    {"Option", "Result", "List", "Map", "Signal", "Stream", "Channel", "Tensor"}
+    {"Option", "Result", "List", "Map", "Signal", "Stream", "Channel", "Tensor", "Future"}
 )
 
 BUILTIN_GENERIC_ARITY: dict[str, int] = {
@@ -264,6 +266,7 @@ BUILTIN_GENERIC_ARITY: dict[str, int] = {
     "Stream": 1,
     "Tensor": 1,
     "Channel": 1,
+    "Future": 1,
 }
 
 BUILTIN_GENERIC_KINDS = frozenset(
@@ -276,6 +279,7 @@ BUILTIN_GENERIC_KINDS = frozenset(
         TypeKind.STREAM,
         TypeKind.CHANNEL,
         TypeKind.TENSOR,
+        TypeKind.FUTURE,
     }
 )
 
