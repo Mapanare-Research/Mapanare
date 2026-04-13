@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.98.0] - 2026-04-13
+
+**Arc 14 Release 2 — Final Cross-Language Benchmark.**
+10 benchmark programs (5 optimizer + 5 system) measured against Python and
+Rust. Mapanare runs 20-120x faster than Python, within 1.1-2.1x of Rust.
+Arena allocator beats Rust on small struct allocation. Comprehensive
+FINAL_REPORT.md published for the v4.99.0 panel.
+
+### Added
+
+- `benchmarks/system/` — 5 new system benchmarks: struct_alloc, enum_match,
+  closure_capture (struct-based), prime_sieve, compile_self
+- `benchmarks/system/*.py` — Python equivalents for all 5 system benchmarks
+- `benchmarks/system/*.rs` — Rust equivalents for all 5 system benchmarks
+- `benchmarks/run_final.py` — unified v4.98.0 harness (compile, measure,
+  cross-language, JSON output)
+- `benchmarks/FINAL_REPORT.md` — comprehensive report with 4 comparison tables,
+  methodology, analysis by category, progress narrative
+- `benchmarks/v4.98.0-final.json` — machine-readable results
+
+### Changed
+
+- README.md performance section updated with v4.98.0 headline numbers
+
 ## [4.97.0] - 2026-04-13
 
 **Arc 14 Release 1 — Self-Hosted Optimizer Propagation.**

@@ -1,0 +1,27 @@
+// Benchmark: Prime sieve (compute-intensive loop)
+// Count primes up to 100,000 using trial division.
+// Tests loop overhead, modular arithmetic, branch prediction.
+
+fn is_prime(n: Int) -> Bool {
+    si n < 2 { da false }
+    si n < 4 { da true }
+    si n % 2 == 0 { da false }
+    pon mut d: Int = 3
+    mien d * d <= n {
+        si n % d == 0 { da false }
+        d = d + 2
+    }
+    da true
+}
+
+fn main() {
+    pon mut count: Int = 0
+    pon mut i: Int = 0
+    mien i < 100000 {
+        si is_prime(i) {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    print("primes = " + str(count))
+}

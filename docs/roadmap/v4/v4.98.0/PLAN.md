@@ -7,7 +7,9 @@
 > definitive "where does Mapanare stand" document that the v4.99.0
 > panel will reference.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** `docs/roadmap/v4/v4.98.0/SESSION_REPORT.md`
+**Decisions taken:** WSL (no bare metal); O2 only (no appendix); Python+Rust (no Go — not installed); no GPU; async compile-only (no link); prime sieve replaces list_ops (list indexing bug)
 **Breaking:** No
 **Prerequisite:** v4.97.0
 **Delta review:** No

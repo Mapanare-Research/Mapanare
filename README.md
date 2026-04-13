@@ -360,17 +360,21 @@ mapanare emit-wasm --binary hello.mn     # Emit WAT + compile to WASM
 
 ## Benchmarks
 
-Cross-language benchmarks comparing Mapanare against Python, Go, and Rust. Each benchmark runs 3 times; median wall time reported. Run `python -m benchmarks.cross_language.run_benchmarks` to reproduce.
+Mapanare compiles to native code via LLVM. On a 10-benchmark suite (compute, allocation, dispatch, mixed workloads), Mapanare runs **20-120x faster than Python** and **within 1.1-2.1x of Rust**. The arena allocator beats Rust on small struct allocation. See [`benchmarks/FINAL_REPORT.md`](benchmarks/FINAL_REPORT.md) for full methodology and analysis.
 
-### Performance (wall time, lower is better)
+### Performance (v4.98.0, LLVM O2, wall time in ms)
 
-| Benchmark | Features Tested | Mapanare | MN Native (LLVM) | Python | Go | Rust | vs Python |
-|-----------|-----------------|----------|-------------------|--------|----|------|-----------|
-| Fibonacci (recursive, n=35) | Functions, recursion, arithmetic | 1.2104s | **0.0448s** | 1.1885s | 0.0341s | 0.0211s | 26.5x (native) |
-| Message Passing (10K msgs) | Agents, spawn, send (`<-`), sync, concurrency | 0.9989s | — | 1.0978s | 0.0025s | 0.0203s | 1.1x |
-| Stream Pipeline (1M items) | Streams, `stream()`, `.map()`, `.filter()`, `.fold()` | 1.1141s | **0.0165s** | 1.0342s | 0.0005s | 0.0001s | 62.8x (native) |
-| Matrix Multiply (100x100) | Nested loops, arithmetic, variables | 0.1769s | **0.0199s** | 0.4556s | 0.0005s | 0.0009s | 22.9x (native) |
-| Agent Pipeline (1K msgs) | Agents, spawn, send, sync, string ops, multi-stage | — | — | — | — | — | — |
+| Benchmark | Mapanare | Python | Rust | vs Python | vs Rust |
+|-----------|----------|--------|------|-----------|---------|
+| fib(35) | **19.6** | 799.7 | 17.4 | 41x faster | 1.1x slower |
+| quicksort 10K | **2.0** | 48.9 | 1.0 | 24x faster | 2.0x slower |
+| matmul 64x64 | **1.3** | 71.3 | 0.8 | 55x faster | 1.6x slower |
+| struct alloc 100K | **0.6** | 72.9 | 0.8 | 122x faster | faster |
+| enum match 100K | **2.3** | 49.6 | 1.1 | 22x faster | 2.1x slower |
+| prime sieve 100K | **3.0** | 91.0 | 2.6 | 30x faster | 1.2x slower |
+| compile_self | **1.1** | 52.3 | 1.0 | 48x faster | 1.1x slower |
+
+> AMD Ryzen 9 7950X, WSL2, LLVM 18.1.3, Python 3.12.3, Rust 1.94.1. Median of 5 runs. Reproduce: `python3 benchmarks/run_final.py --runs 5 --cross-language`
 
 ### Python Transpile Benchmarks (zero manual edits)
 

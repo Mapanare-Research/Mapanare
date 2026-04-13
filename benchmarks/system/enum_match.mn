@@ -1,0 +1,44 @@
+// Benchmark: Enum matching
+// Match 100,000 values through a 6-variant enum.
+// Tests pattern dispatch overhead.
+
+enum Shape {
+    Circle(Int),
+    Square(Int),
+    Triangle(Int, Int),
+    Point,
+    Line(Int),
+    Rect(Int, Int)
+}
+
+fn area(s: Shape) -> Int {
+    match s {
+        Circle(r) => { da r * r * 3 },
+        Square(side) => { da side * side },
+        Triangle(base, height) => { da base * height / 2 },
+        Point => { da 0 },
+        Line(len) => { da len },
+        Rect(w, h) => { da w * h }
+    }
+}
+
+fn make_shape(i: Int) -> Shape {
+    pon tag: Int = i % 6
+    si tag == 0 { da Shape::Circle(i % 50 + 1) }
+    si tag == 1 { da Shape::Square(i % 30 + 1) }
+    si tag == 2 { da Shape::Triangle(i % 20 + 1, i % 40 + 1) }
+    si tag == 3 { da Shape::Point }
+    si tag == 4 { da Shape::Line(i % 100 + 1) }
+    da Shape::Rect(i % 25 + 1, i % 35 + 1)
+}
+
+fn main() {
+    pon mut total: Int = 0
+    pon mut i: Int = 0
+    mien i < 100000 {
+        pon s: Shape = make_shape(i)
+        total = total + area(s)
+        i = i + 1
+    }
+    print("checksum = " + str(total))
+}
