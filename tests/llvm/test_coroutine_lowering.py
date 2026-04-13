@@ -81,8 +81,8 @@ class TestAwaitSuspension:
         # GEP to get payload ptr from Future {i8, ptr}
         assert "getelementptr {i8, ptr}" in ir
 
-    def test_await_suspend_and_resume_labels(self) -> None:
-        """await should create suspend/resume/ready labels."""
+    def test_await_drive_and_ready_labels(self) -> None:
+        """await should create drive/check/ready labels (v4.73.0 inline resume)."""
         source = textwrap.dedent("""\
             async fn inner() -> Int { return 42 }
             async fn outer() -> Int {
@@ -92,7 +92,7 @@ class TestAwaitSuspension:
             fn main() -> Int { return 0 }
         """)
         ir = _emit(source)
-        assert "await.suspend" in ir
+        assert "await.drive" in ir
         assert "await.ready" in ir
 
     def test_multiple_awaits_unique_labels(self) -> None:
