@@ -1659,7 +1659,7 @@ class SemanticChecker:
             self._push_scope()
             self.current_scope.define(
                 stmt.var_name,
-                Symbol(name=stmt.var_name, kind=SymbolKind.LOCAL, type_info=UNKNOWN_TYPE),
+                Symbol(name=stmt.var_name, kind=SymbolKind.VARIABLE, type_info=UNKNOWN_TYPE),
             )
             self._check_block(stmt.body)
             self._pop_scope()
