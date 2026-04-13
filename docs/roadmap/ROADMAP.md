@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.71.0 shipped — Arc 8 panel close: coroutine foundation PASS WITH NOTES 8.29/10, Arc 9 opens)
+## Where We Are (v4.72.0 shipped — Arc 9: await compiles to suspension IR, runtime scheduler at v4.73.0)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

@@ -6,7 +6,9 @@
 > erroring at lower time. Still not runnable — the scheduler
 > integration is v4.73.0.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** AwaitSuspend MIR instruction, real await lowering, LLVM emission with fast-path check + save/suspend/switch. 8 new tests. Panel item Rattler #4 (ret.val.slot uniqueness) fixed.
+**Decisions taken:** Fast-path optimization for already-ready futures. Value extraction loads i64 from Future box. Drop glue before coro.free per DESIGN.md §4.9.
 **Breaking:** No
 **Prerequisite:** v4.71.0 (arc 8 panel PASS — if NEEDS WORK, this plan slips)
 **Delta review:** No (internal lowering)

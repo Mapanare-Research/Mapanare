@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.72.0] - 2026-04-13
+
+**Arc 9 Release 1 — Coroutine Lowering Pt 2 (Suspend/Resume/Destroy).** `await`
+stops erroring and produces real LLVM coroutine suspension IR. Fast-path
+readiness check avoids unnecessary suspension for already-resolved futures.
+Still not runnable — runtime scheduler is v4.73.0.
+
+### Added
+
+- `mapanare/mir.py` — `AwaitSuspend` instruction (dest + future fields) for
+  coroutine suspension at await points
+- `mapanare/lower.py` — `AwaitExpr` lowering: evaluates inner expression
+  (Future<T>), emits `AwaitSuspend` MIR instruction
+- `mapanare/emit_llvm_text.py` — `_do_await_suspend` handler: fast-path
+  readiness check (`icmp eq i8 state, 1`), `coro.save` + `coro.suspend` +
+  `switch` suspension, value extraction from Future `{i8, ptr}` struct
+- `tests/llvm/test_coroutine_lowering.py` — 8 tests: save/suspend emission,
+  fast-path check, value extraction, unique labels, prelude integration
+  (`tests/llvm/test_coroutine_lowering.py`)
+
+### Fixed
+
+- `mapanare/emit_llvm_text.py` — `ret.val.slot` GEP name now unique per
+  return statement in multi-return async fns (v4.71.0 panel item Rattler #4)
+
 ## [4.71.0] - 2026-04-13
 
 **Arc 8 Panel Release — Coroutine Foundation Close.**

@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.71.0** (shipped) — Arc 8 panel release. PASS WITH NOTES (8.29/10). Coroutine foundation approved. Arc 9 opens.
-- **v4.72.0** (next) — Arc 9 release 1: suspension lowering + scheduler. `await` becomes real.
+- **v4.72.0** (shipped) — Arc 9 release 1. `await` compiles to real suspension IR (coro.save/suspend/switch + fast-path). Runtime scheduler at v4.73.0.
+- **v4.73.0** (next) — Arc 9 release 2: runtime scheduler extension. `async fn` actually runs.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
