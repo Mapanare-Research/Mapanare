@@ -76,6 +76,10 @@ Six phases:
 | **v4.62.0–v4.66.0** | Arc 7 | DWARF Debug Info | `DICompileUnit`, `DISubprogram`, line metadata, `llvm.dbg.declare`. Panel at v4.66.0 |
 | **v4.67.0–v4.71.0** | Arc 8 | Coroutine Foundation | v4.67.0: DESIGN.md shipped (no code). `async`/`await` grammar + AST, semantic, MIR suspension. Panel at v4.71.0 |
 | **v4.72.0–v4.76.0** | Arc 9 | Coroutine Completion | Suspend/resume/destroy, scheduler, `for await`, end-to-end demos. Panel at v4.76.0 |
+| | | | |
+| | | **Arc 10: Integration Tests + Debt Zero (v4.77.0 →)** | |
+| | | | |
+| **v4.77.0** | Arc 10 | Integration Test Harness | 58 golden tests through full LLVM pipeline (emit → llvm-as → opt → llc → link → run). 46 pass, 5 xfail, 7 skip. |
 
 ## What v4.0.0 Delivered
 

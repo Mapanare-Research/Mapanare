@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.76.0 shipped — END OF 45-RELEASE PLAN. Arc 9 panel PASS 8.86/10. async/await real. A1 closed.)
+## Where We Are (v4.77.0 shipped — Integration test harness. 46/58 golden pass full LLVM pipeline. Arc 10 begins.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural
