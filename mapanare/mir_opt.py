@@ -12,6 +12,7 @@ Passes:
 - Dead function elimination: remove uncalled functions
 - Unreachable block elimination: remove blocks with no predecessors
 - Branch simplification: constant conditions become Jump
+- Function inlining: small functions (< 20 instr, not recursive) inlined at call site
 - Agent inlining: single-spawn agents become direct calls
 - Stream fusion: fuse adjacent StreamOp instructions
 """
@@ -92,6 +93,7 @@ class MIRPassStats:
     branches_simplified: int = 0
     agents_inlined: int = 0
     streams_fused: int = 0
+    functions_inlined: int = 0
 
     @property
     def total_changes(self) -> int:
@@ -105,6 +107,7 @@ class MIRPassStats:
             + self.branches_simplified
             + self.agents_inlined
             + self.streams_fused
+            + self.functions_inlined
         )
 
 
@@ -1129,6 +1132,226 @@ def stream_fusion(fn: MIRFunction, stats: MIRPassStats) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Function inlining (v4.87.0)
+# ---------------------------------------------------------------------------
+
+# Inline budget constants
+_INLINE_MAX_BODY = 20  # max instructions in callee body
+_INLINE_MAX_BUDGET = 200  # max call_count * body_size
+
+
+def _is_recursive(fn: MIRFunction) -> bool:
+    """True if the function calls itself (directly)."""
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if isinstance(inst, Call) and inst.fn_name == fn.name:
+                return True
+    return False
+
+
+def _instruction_count(fn: MIRFunction) -> int:
+    """Count non-terminator instructions in a function."""
+    return sum(len(bb.instructions) for bb in fn.blocks)
+
+
+def _should_inline(callee: MIRFunction, call_count: int) -> bool:
+    """Cost-model heuristic: inline if small, not recursive, within budget.
+
+    v4.87.0: conservative — only inline single-block callees to avoid
+    multi-block cloning bugs (branch/phi/switch renaming). Multi-block
+    inlining is future work once the transform is battle-tested.
+    """
+    if callee.is_async:
+        return False
+    if _is_recursive(callee):
+        return False
+    # v4.87.0: only single-block callees (no branches, no phi, no switch)
+    if len(callee.blocks) != 1:
+        return False
+    body_size = _instruction_count(callee)
+    if body_size > _INLINE_MAX_BODY:
+        return False
+    if body_size == 0:
+        return False
+    if call_count * body_size > _INLINE_MAX_BUDGET:
+        return False
+    if callee.name == "main":
+        return False
+    return True
+
+
+_inline_counter = 0
+
+
+def _fresh_inline_prefix() -> str:
+    """Generate a unique prefix for inlined value/block names."""
+    global _inline_counter
+    _inline_counter += 1
+    return f"_inl{_inline_counter}_"
+
+
+def _clone_value(v: Value, prefix: str, rename: dict[str, str]) -> Value:
+    """Clone a Value with renamed SSA names."""
+    if v.name in rename:
+        return Value(name=rename[v.name], ty=v.ty)
+    if v.name.startswith("%"):
+        new_name = f"%{prefix}{v.name[1:]}"
+        rename[v.name] = new_name
+        return Value(name=new_name, ty=v.ty)
+    return v  # constants, globals — keep as-is
+
+
+def _clone_instruction(
+    inst: Instruction, prefix: str, rename: dict[str, str], ret_label: str
+) -> list[Instruction]:
+    """Clone an instruction with renamed values.
+
+    Return instructions become Copy + Jump to the return merge block.
+    """
+    import copy as _copy
+
+    if isinstance(inst, Return):
+        result: list[Instruction] = []
+        if inst.val is not None:
+            cloned_val = _clone_value(inst.val, prefix, rename)
+            ret_dest_name = f"%{prefix}retval"
+            result.append(Copy(dest=Value(name=ret_dest_name, ty=cloned_val.ty), src=cloned_val))
+        result.append(Jump(target=ret_label))
+        return result
+
+    cloned = _copy.deepcopy(inst)
+
+    # Rename all Value fields in the cloned instruction
+    for field_name in type(cloned).__dataclass_fields__:
+        val = getattr(cloned, field_name)
+        if isinstance(val, Value) and val.name:
+            setattr(cloned, field_name, _clone_value(val, prefix, rename))
+        elif isinstance(val, list):
+            new_list = []
+            for item in val:
+                if isinstance(item, Value):
+                    new_list.append(_clone_value(item, prefix, rename))
+                elif isinstance(item, tuple) and len(item) == 2:
+                    # Phi incoming: (label, value)
+                    lbl, v = item
+                    new_lbl = f"{prefix}{lbl}" if not lbl.startswith("@") else lbl
+                    new_v = _clone_value(v, prefix, rename) if isinstance(v, Value) else v
+                    new_list.append((new_lbl, new_v))
+                else:
+                    new_list.append(item)
+            setattr(cloned, field_name, new_list)
+
+    # Rename branch/jump targets
+    if isinstance(cloned, Jump):
+        cloned.target = f"{prefix}{cloned.target}"
+    elif isinstance(cloned, Branch):
+        cloned.true_block = f"{prefix}{cloned.true_block}"
+        cloned.false_block = f"{prefix}{cloned.false_block}"
+    elif isinstance(cloned, Switch):
+        cloned.cases = [(tag, f"{prefix}{lbl}") for tag, lbl in cloned.cases]
+        cloned.default_block = f"{prefix}{cloned.default_block}"
+
+    return [cloned]
+
+
+def inline_small_functions(
+    fn: MIRFunction, fn_lookup: dict[str, MIRFunction], stats: MIRPassStats
+) -> bool:
+    """Inline small function calls within ``fn``.
+
+    v4.87.0: cost-model-driven inlining at O2. Body < 20 instructions,
+    not recursive, call_count * body_size < 200.
+
+    For each eligible call site, the containing block is split:
+    - Pre-call instructions end with Jump to the callee entry
+    - Callee blocks are cloned (renamed) into the function
+    - Callee Return becomes Copy + Jump to a merge block
+    - Merge block continues with the post-call instructions
+    """
+    # Count calls per callee
+    call_counts: dict[str, int] = {}
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if isinstance(inst, Call) and inst.fn_name in fn_lookup:
+                call_counts[inst.fn_name] = call_counts.get(inst.fn_name, 0) + 1
+
+    # Determine eligible callees
+    eligible = {
+        name
+        for name, count in call_counts.items()
+        if name in fn_lookup and _should_inline(fn_lookup[name], count)
+    }
+    if not eligible:
+        return False
+
+    # Process one inline site per iteration (the fixpoint loop handles cascading)
+    for bb_idx, bb in enumerate(fn.blocks):
+        for inst_idx, inst in enumerate(bb.instructions):
+            if not isinstance(inst, Call) or inst.fn_name not in eligible:
+                continue
+
+            callee = fn_lookup[inst.fn_name]
+            prefix = _fresh_inline_prefix()
+            rename: dict[str, str] = {}
+
+            # Map callee params to call arguments
+            for param, arg in zip(callee.params, inst.args):
+                rename[f"%{param.name}"] = arg.name
+
+            # Split: instructions before the call
+            pre_insts = bb.instructions[:inst_idx]
+            # Split: instructions after the call
+            post_insts = bb.instructions[inst_idx + 1 :]
+
+            # Create labels
+            entry_label = f"{prefix}entry" if callee.blocks else f"{prefix}nop"
+            merge_label = f"{prefix}ret"
+
+            # Pre-call block: original label, pre-insts + jump to callee entry
+            if callee.blocks:
+                callee_entry = f"{prefix}{callee.blocks[0].label}"
+            else:
+                callee_entry = merge_label
+            pre_insts.append(Jump(target=callee_entry))
+            bb.instructions = pre_insts
+
+            # Clone callee blocks
+            inlined_blocks: list[BasicBlock] = []
+            for callee_bb in callee.blocks:
+                new_label = f"{prefix}{callee_bb.label}"
+                cloned_insts: list[Instruction] = []
+                for callee_inst in callee_bb.instructions:
+                    cloned_insts.extend(
+                        _clone_instruction(callee_inst, prefix, rename, merge_label)
+                    )
+                inlined_blocks.append(BasicBlock(label=new_label, instructions=cloned_insts))
+
+            # Merge block: copy return value to call dest + post-call instructions
+            ret_val_name = f"%{prefix}retval"
+            merge_insts: list[Instruction] = []
+            if inst.dest.name:
+                merge_insts.append(
+                    Copy(dest=inst.dest, src=Value(name=ret_val_name, ty=inst.dest.ty))
+                )
+            merge_insts.extend(post_insts)
+            merge_block = BasicBlock(label=merge_label, instructions=merge_insts)
+
+            # Insert inlined blocks + merge block after the current block
+            new_blocks = (
+                fn.blocks[: bb_idx + 1]
+                + inlined_blocks
+                + [merge_block]
+                + fn.blocks[bb_idx + 1 :]
+            )
+            fn.blocks = new_blocks
+
+            stats.functions_inlined += 1
+            return True  # one site per call, fixpoint loop handles more
+
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Pass Manager
 # ---------------------------------------------------------------------------
 
@@ -1158,7 +1381,12 @@ class MIROptimizerNonConvergence(Exception):
     """
 
 
-def optimize_function(fn: MIRFunction, level: MIROptLevel, stats: MIRPassStats) -> None:
+def optimize_function(
+    fn: MIRFunction,
+    level: MIROptLevel,
+    stats: MIRPassStats,
+    fn_lookup: dict[str, MIRFunction] | None = None,
+) -> None:
     """Run optimization passes on a single function."""
     if level == MIROptLevel.O0:
         return
@@ -1185,6 +1413,10 @@ def optimize_function(fn: MIRFunction, level: MIROptLevel, stats: MIRPassStats) 
         # O2+: copy propagation, branch simplification, unreachable blocks, DCE, agent inlining
         if level >= MIROptLevel.O2:
             changed |= copy_propagation(fn, stats)
+            # v4.87.0: function inlining after copy propagation — inlined
+            # bodies benefit from already-propagated arguments.
+            if fn_lookup:
+                changed |= inline_small_functions(fn, fn_lookup, stats)
             changed |= branch_simplification(fn, stats)
             changed |= unreachable_block_elimination(fn, stats)
             changed |= dead_code_elimination(fn, stats)
@@ -1221,9 +1453,12 @@ def optimize_module(
     if level == MIROptLevel.O0:
         return module, stats
 
+    # v4.87.0: build function lookup for interprocedural passes (inlining)
+    fn_lookup = {f.name: f for f in module.functions}
+
     # Per-function passes
     for fn in module.functions:
-        optimize_function(fn, level, stats)
+        optimize_function(fn, level, stats, fn_lookup=fn_lookup)
 
     # Module-level passes
     if level >= MIROptLevel.O2:
