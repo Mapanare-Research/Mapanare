@@ -86,6 +86,7 @@ Six phases:
 | **v4.87.0** | Arc 12 | MIR Function Inlining | Cost-model inlining at O2 (< 20 instr, not recursive), single-block callees only. |
 | **v4.88.0** | Arc 12 | Loop Detection + Strength Reduction | Dominators, natural loops, MIRLoop. Strength reduction (mod→AND). LICM built but disabled. |
 | **v4.89.0** | Arc 12 | Escape Analysis | Heap-to-stack promotion for non-escaping allocations. 6 escape criteria, known non-capturing function set, 4KB size limit. |
+| **v4.90.0** | Arc 12 | Cumulative Benchmark | 4/5 benchmarks within 2x of Rust. fib_recursive 1.1x Rust. string_concat -9.7%. O2 geomean 0.992x, O0 geomean 1.09x. |
 
 ## What v4.0.0 Delivered
 

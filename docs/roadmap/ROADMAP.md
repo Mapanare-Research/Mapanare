@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.89.0 shipped — Escape analysis: heap-to-stack promotion. Arc 12 release 3.)
+## Where We Are (v4.90.0 shipped — Cumulative benchmark: 4/5 within 2x Rust, fib 1.1x Rust. Arc 12 release 4.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

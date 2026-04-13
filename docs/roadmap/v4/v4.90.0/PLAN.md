@@ -12,7 +12,7 @@
 > and MIR-level contributions, with cross-language context (Go, Rust,
 > Python).
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.89.0
 **Delta review:** No

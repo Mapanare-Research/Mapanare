@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.89.0** (shipped) — Arc 12 release 3. Escape analysis: heap-to-stack promotion for non-escaping allocations. 6 escape criteria, known non-capturing function set, 4KB size cap, loop-safety guard. 12 new tests.
+- **v4.90.0** (shipped) — Arc 12 release 4. Cumulative optimizer benchmark: v4.82.0 to v4.90.0. 4/5 benchmarks within 2x of Rust. fib_recursive 1.1x Rust. string_concat -9.7%. Geometric mean O2 0.992x (flat), O0 1.09x (9% better IR quality).
 - **v5.0.0** (when ready) — Major version tag. The lead's call. Zero additional work required — v4.76.0 is release-gate quality.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
