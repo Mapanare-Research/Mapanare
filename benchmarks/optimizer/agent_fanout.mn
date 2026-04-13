@@ -1,0 +1,26 @@
+// Benchmark 5: Simulated agent fanout (sequential, no real agents)
+// Tests function call overhead, loop iteration, accumulation.
+// Real agent benchmarks require the runtime scheduler; this simulates
+// the compute pattern with pure functions.
+
+fn worker(id: Int, message: Int) -> Int {
+    // Simulate work: multiply and accumulate
+    da (message * (id + 1)) % 1000000
+}
+
+fn main() {
+    pon num_workers: Int = 10
+    pon num_messages: Int = 1000
+    pon mut total: Int = 0
+
+    pon mut msg: Int = 0
+    mien msg < num_messages {
+        pon mut w: Int = 0
+        mien w < num_workers {
+            total = total + worker(w, msg)
+            w = w + 1
+        }
+        msg = msg + 1
+    }
+    print("total = " + str(total))
+}

@@ -1,0 +1,13 @@
+// Benchmark 1: Recursive Fibonacci
+// Pure integer compute. Stresses function call overhead + integer arithmetic.
+// Expected: fib(35) = 9227465
+
+fn fib(n: Int) -> Int {
+    si n <= 1 { da n }
+    da fib(n - 1) + fib(n - 2)
+}
+
+fn main() {
+    pon r: Int = fib(35)
+    print("fib(35) = " + str(r))
+}

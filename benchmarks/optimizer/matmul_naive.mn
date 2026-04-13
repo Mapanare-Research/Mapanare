@@ -1,0 +1,41 @@
+// Benchmark 3: Naive matrix multiply (64x64)
+// Tests nested loops, integer arithmetic, list access patterns.
+// Uses flattened 1D lists for matrices (row-major).
+
+fn main() {
+    pon n: Int = 64
+    pon n2: Int = n * n
+
+    // Initialize A and B with deterministic values
+    pon mut a: List<Int> = []
+    pon mut b: List<Int> = []
+    pon mut c: List<Int> = []
+    pon mut idx: Int = 0
+    mien idx < n2 {
+        a.push((idx * 3 + 7) % 100)
+        b.push((idx * 5 + 13) % 100)
+        c.push(0)
+        idx = idx + 1
+    }
+
+    // C = A * B (naive triple loop)
+    pon mut i: Int = 0
+    mien i < n {
+        pon mut j: Int = 0
+        mien j < n {
+            pon mut sum: Int = 0
+            pon mut k: Int = 0
+            mien k < n {
+                sum = sum + a[i * n + k] * b[k * n + j]
+                k = k + 1
+            }
+            c[i * n + j] = sum
+            j = j + 1
+        }
+        i = i + 1
+    }
+
+    // Checksum: sum of corner values
+    pon cs: Int = c[0] + c[n - 1] + c[(n - 1) * n] + c[n2 - 1]
+    print("checksum = " + str(cs))
+}
