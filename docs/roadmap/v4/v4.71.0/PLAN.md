@@ -5,7 +5,9 @@
 > runnable yet — that's arc 9 — but it's halfway there and each step
 > is structurally correct.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** Panel executed. PASS WITH NOTES (8.29/10). Zero NEEDS WORK. Arc 8 closes. 9 action items tracked for Arc 9.
+**Decisions taken:** Arc 8 closes despite below-9.0 aggregate — foundation is sound per all 7 reviewers. Arc 9 opens at v4.72.0.
 **Breaking:** No
 **Prerequisite:** v4.70.0
 **Delta review:** No

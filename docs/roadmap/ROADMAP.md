@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.70.0 shipped — Arc 8: coroutine prelude emits, suspend/resume at v4.72.0)
+## Where We Are (v4.71.0 shipped — Arc 8 panel close: coroutine foundation PASS WITH NOTES 8.29/10, Arc 9 opens)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

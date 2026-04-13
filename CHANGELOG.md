@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.71.0] - 2026-04-13
+
+**Arc 8 Panel Release — Coroutine Foundation Close.**
+7-reviewer panel grades v4.67.0-v4.70.0. PASS WITH NOTES (8.29/10). Zero NEEDS
+WORK. Arc 8 closes — coroutine foundation (design doc, grammar, semantic analysis,
+prelude lowering) is approved. Suspension, scheduler, and end-to-end arrive in
+Arc 9 (v4.72.0-v4.76.0).
+
+### Added
+
+- `.reviews/v4.71.0/` panel materials: PRE_PANEL_AUDIT.md, 7 reviewer files,
+  README.md summary with verdict table and 9 action items
+
 ## [4.70.0] - 2026-04-13
 
 **Arc 8 Release 4 — Coroutine Lowering Pt 1 (Prelude).** First real LLVM
