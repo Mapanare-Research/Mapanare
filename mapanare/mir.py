@@ -709,6 +709,18 @@ class AwaitSuspend(Instruction):
     future: Value = field(default_factory=Value)  # Future<T> ptr
 
 
+@dataclass(slots=True)
+class BlockOn(Instruction):
+    """block_on(future): drive a future to completion from non-async context.
+
+    Resumes the coroutine behind the future until done, extracts the result,
+    destroys the frame, frees the future. See v4.67.0/DESIGN.md §5.
+    """
+
+    dest: Value = field(default_factory=Value)
+    future: Value = field(default_factory=Value)
+
+
 # --- Phi ---
 
 

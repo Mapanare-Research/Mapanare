@@ -15,6 +15,7 @@ from mapanare.mir import (
     AgentSync,
     Assert,
     AwaitSuspend,
+    BlockOn,
     BinOp,
     BinOpKind,
     Branch,
@@ -574,6 +575,7 @@ class LLVMTextEmitter:
         d[StreamOp] = self._do_stream_op
         d[Assert] = self._do_assert
         d[AwaitSuspend] = self._do_await_suspend
+        d[BlockOn] = self._do_block_on
 
     # ── debug metadata helpers (v4.62.0) ─────────────────────────────
 
@@ -4501,44 +4503,51 @@ class LLVMTextEmitter:
             return r
         return "null"
 
-    # --- Coroutine await suspension (v4.72.0) ---
+    # --- Coroutine await (v4.73.0 — inline resume) ---
 
     def _do_await_suspend(self, i: AwaitSuspend) -> None:
-        """Emit save/suspend/switch for an await expression.
+        """Emit inline-resume loop for an await expression.
 
-        Pattern: fast-path check (is future already ready?) + suspension.
+        v4.73.0: single-threaded cooperative model. Instead of suspending
+        the outer coroutine, we drive the inner coroutine to completion
+        inline via a coro.resume loop. This is correct for CPU-bound async
+        fns. Full suspension + scheduler handoff is v5.x (I/O-bound).
         See v4.67.0/DESIGN.md §4.6.2.
         """
         fv, _ft = self._get(i.future)
-        # Unique labels for this await point
         n = self._c
         self._c += 1
+        check_lbl = f"await.check.{n}"
+        drive_lbl = f"await.drive.{n}"
         ready_lbl = f"await.ready.{n}"
-        suspend_lbl = f"await.suspend.{n}"
-        resume_lbl = f"await.resume.{n}"
 
-        # Fast-path: check if future is already ready
+        # Check if future is already ready
         st_ptr = self._f("aw.st.ptr")
         st_val = self._f("aw.st")
         is_rdy = self._f("aw.rdy")
         self._L(f"{st_ptr} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 0")
         self._L(f"{st_val} = load i8, ptr {st_ptr}")
         self._L(f"{is_rdy} = icmp eq i8 {st_val}, 1")
-        self._L(f"br i1 {is_rdy}, label %{ready_lbl}, label %{suspend_lbl}")
+        self._L(f"br i1 {is_rdy}, label %{ready_lbl}, label %{drive_lbl}")
 
-        # Suspend path
-        self._blk[suspend_lbl] = []
-        self._cb = suspend_lbl
-        save_tok = self._f("aw.save")
-        susp_val = self._f("aw.susp")
-        self._L(f"{save_tok} = call token @llvm.coro.save(ptr %coro.hdl)")
-        self._L(f"{susp_val} = call i8 @llvm.coro.suspend(token {save_tok}, i1 false)")
-        self._L(f"switch i8 {susp_val}, label %coro.ret [i8 0, label %{resume_lbl} i8 1, label %coro.cleanup]")
+        # Drive path — resume the inner coroutine, then re-check
+        self._blk[drive_lbl] = []
+        self._cb = drive_lbl
+        hdl_ptr = self._f("aw.hdl.ptr")
+        hdl = self._f("aw.hdl")
+        self._L(f"{hdl_ptr} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+        self._L(f"{hdl} = load ptr, ptr {hdl_ptr}")
+        self._L(f"call void @llvm.coro.resume(ptr {hdl})")
+        self._L(f"br label %{check_lbl}")
 
-        # Resume path — future should now be ready
-        self._blk[resume_lbl] = []
-        self._cb = resume_lbl
-        self._L(f"br label %{ready_lbl}")
+        # Re-check readiness after resume
+        self._blk[check_lbl] = []
+        self._cb = check_lbl
+        st2 = self._f("aw.st2")
+        rdy2 = self._f("aw.rdy2")
+        self._L(f"{st2} = load i8, ptr {st_ptr}")
+        self._L(f"{rdy2} = icmp eq i8 {st2}, 1")
+        self._L(f"br i1 {rdy2}, label %{ready_lbl}, label %{drive_lbl}")
 
         # Ready path — extract value from future
         self._blk[ready_lbl] = []
@@ -4551,6 +4560,47 @@ class LLVMTextEmitter:
         self._L(f"{val_raw} = load i64, ptr {val_box}")
         # Store extracted value into the dest alloca
         self._put(i.dest, val_raw, "i64")
+
+    def _do_block_on(self, i: BlockOn) -> None:
+        """Emit block_on(future): drive coroutine to completion, extract result.
+
+        v4.73.0: resume loop until done, extract value, destroy + free.
+        """
+        fv, _ft = self._get(i.future)
+        n = self._c
+        self._c += 1
+        loop_lbl = f"block_on.loop.{n}"
+        done_lbl = f"block_on.done.{n}"
+
+        # Extract handle from future
+        hp = self._f("bo.hdl.ptr")
+        hd = self._f("bo.hdl")
+        self._L(f"{hp} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+        self._L(f"{hd} = load ptr, ptr {hp}")
+        self._L(f"br label %{loop_lbl}")
+
+        # Resume loop
+        self._blk[loop_lbl] = []
+        self._cb = loop_lbl
+        self._L(f"call void @llvm.coro.resume(ptr {hd})")
+        dn = self._f("bo.done")
+        self._L(f"{dn} = call i1 @llvm.coro.done(ptr {hd})")
+        self._L(f"br i1 {dn}, label %{done_lbl}, label %{loop_lbl}")
+
+        # Done — extract value, destroy, free
+        self._blk[done_lbl] = []
+        self._cb = done_lbl
+        vp = self._f("bo.val.ptr")
+        vb = self._f("bo.val.box")
+        vr = self._f("bo.val")
+        self._L(f"{vp} = getelementptr {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+        self._L(f"{vb} = load ptr, ptr {vp}")
+        self._L(f"{vr} = load i64, ptr {vb}")
+        # Destroy coroutine frame + free future and box (panel items Viper #1, #2)
+        self._L(f"call void @llvm.coro.destroy(ptr {hd})")
+        self._L(f"call void @free(ptr {vb})")
+        self._L(f"call void @free(ptr {fv})")
+        self._put(i.dest, vr, "i64")
 
     # --- Assert ---
     def _do_assert(self, i: Assert) -> None:

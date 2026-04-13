@@ -583,6 +583,7 @@ class MIRLowerer:
             "signal",
             "stream",
             "computed",
+            "block_on",
         }
         struct_names = set(self._struct_fields.keys())
         enum_names = set(self._enum_variants.keys())
@@ -1710,6 +1711,17 @@ class MIRLowerer:
                 return self._lower_decode_to(expr, args[0])
             if fn_name == "__struct_meta" and len(args) == 0:
                 return self._lower_struct_meta(expr)
+
+        # v4.73.0: block_on(future) — drive a future to completion
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "block_on":
+            from mapanare.mir import BlockOn
+
+            if len(args) != 1:
+                dest = self._make_value()
+                return dest
+            dest = self._make_value(prefix="block_on")
+            self._emit(BlockOn(dest=dest, future=args[0]))
+            return dest
 
         # Monomorphize generic function calls
         if isinstance(expr.callee, Identifier):
