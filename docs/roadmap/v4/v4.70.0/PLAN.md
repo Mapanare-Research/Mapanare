@@ -5,7 +5,9 @@
 > `llvm.coro.begin`) for every `async fn`. Suspension/resume/destroy
 > come in v4.72.0.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-13)
+**Session log:** Coroutine prelude emits for all async fns. presplitcoroutine attribute, coro.id/alloc/begin/suspend/end, cleanup block, Future allocation. 11 new tests. await errors at v4.72.0.
+**Decisions taken:** Always heap-allocated frame via malloc (stack optimization v5.x). LLVM default -O1 pipeline (per DESIGN.md §4.8). Frame layout opaque (trust CoroSplit).
 **Breaking:** No
 **Prerequisite:** v4.69.0
 **Delta review:** No (internal lowering — no user-visible syntax change)

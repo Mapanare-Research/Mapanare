@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.70.0] - 2026-04-13
+
+**Arc 8 Release 4 — Coroutine Lowering Pt 1 (Prelude).** First real LLVM
+coroutine IR. `async fn` produces structurally correct IR with `presplitcoroutine`
+attribute, coroutine prelude/epilogue, and Future struct allocation. `await`
+suspension arrives at v4.72.0.
+
+### Added
+
+- `mapanare/mir.py` — `MIRFunction.is_async` field for coroutine marking
+- `mapanare/lower.py` — `AsyncFnDef` now lowers to MIR (no longer errors);
+  `is_async=True` set on the MIR function
+- `mapanare/emit_llvm_text.py` — coroutine prelude/epilogue wrapper for async fns:
+  `presplitcoroutine` attribute, `coro.entry` block with `llvm.coro.id`/`alloc`/`begin`,
+  initial + final suspend via `llvm.coro.suspend`, cleanup block with `llvm.coro.free`,
+  Future `{i8, ptr}` struct allocation, return rewriting to store into Future
+- `mapanare/emit_llvm_text.py` — 12 coroutine intrinsic declarations
+  (`llvm.coro.id`, `llvm.coro.alloc`, `llvm.coro.size.i64`, `llvm.coro.begin`,
+  `llvm.coro.suspend`, `llvm.coro.end`, `llvm.coro.free`, `llvm.coro.resume`,
+  `llvm.coro.destroy`, `llvm.coro.done`, `llvm.coro.save`)
+- `tests/llvm/test_coroutine_prelude.py` — 11 tests: attribute, intrinsics,
+  cleanup, Future, ptr return, no-coro-on-sync, await error at v4.72.0
+  (`tests/llvm/test_coroutine_prelude.py`)
+
+### Changed
+
+- `mapanare/lower.py` — `AwaitExpr` error message updated: target v4.72.0
+  (was v4.70.0)
+
 ## [4.69.0] - 2026-04-13
 
 **Arc 8 Release 3 — Semantic Analysis for async/await.** `Future<T>` becomes a
