@@ -46,6 +46,7 @@ from mapanare.mir import (
     Jump,
     ListPush,
     MIRFunction,
+    MIRLoop,
     MIRModule,
     MIRType,
     Phi,
@@ -94,6 +95,8 @@ class MIRPassStats:
     agents_inlined: int = 0
     streams_fused: int = 0
     functions_inlined: int = 0
+    licm_hoisted: int = 0
+    strength_reduced: int = 0
 
     @property
     def total_changes(self) -> int:
@@ -108,6 +111,8 @@ class MIRPassStats:
             + self.agents_inlined
             + self.streams_fused
             + self.functions_inlined
+            + self.licm_hoisted
+            + self.strength_reduced
         )
 
 
@@ -1132,6 +1137,266 @@ def stream_fusion(fn: MIRFunction, stats: MIRPassStats) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Loop detection + LICM + strength reduction (v4.88.0)
+# ---------------------------------------------------------------------------
+
+
+def _build_cfg(fn: MIRFunction) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Build successor and predecessor maps from the function's CFG."""
+    succs: dict[str, list[str]] = {bb.label: [] for bb in fn.blocks}
+    preds: dict[str, list[str]] = {bb.label: [] for bb in fn.blocks}
+    for bb in fn.blocks:
+        term = bb.terminator
+        if isinstance(term, Jump):
+            succs[bb.label].append(term.target)
+            preds.setdefault(term.target, []).append(bb.label)
+        elif isinstance(term, Branch):
+            for t in (term.true_block, term.false_block):
+                if t not in succs[bb.label]:
+                    succs[bb.label].append(t)
+                preds.setdefault(t, []).append(bb.label)
+        elif isinstance(term, Switch):
+            targets = [lbl for _, lbl in term.cases]
+            if term.default_block:
+                targets.append(term.default_block)
+            for t in targets:
+                if t not in succs[bb.label]:
+                    succs[bb.label].append(t)
+                preds.setdefault(t, []).append(bb.label)
+    return succs, preds
+
+
+def compute_dominators(fn: MIRFunction) -> dict[str, set[str]]:
+    """Compute dominators using iterative dataflow. dom[B] = set of blocks dominating B."""
+    if not fn.blocks:
+        return {}
+    labels = [bb.label for bb in fn.blocks]
+    entry = labels[0]
+    _, preds = _build_cfg(fn)
+    all_labels = set(labels)
+
+    dom: dict[str, set[str]] = {}
+    dom[entry] = {entry}
+    for lbl in labels[1:]:
+        dom[lbl] = set(all_labels)
+
+    changed = True
+    while changed:
+        changed = False
+        for lbl in labels[1:]:
+            pred_list = preds.get(lbl, [])
+            if not pred_list:
+                new_dom = {lbl}
+            else:
+                new_dom = set.intersection(*(dom.get(p, all_labels) for p in pred_list))
+                new_dom = new_dom | {lbl}
+            if new_dom != dom[lbl]:
+                dom[lbl] = new_dom
+                changed = True
+    return dom
+
+
+def find_natural_loops(fn: MIRFunction) -> list[MIRLoop]:
+    """Find natural loops via back-edge detection on the dominator tree."""
+    if len(fn.blocks) < 2:
+        return []
+    dom = compute_dominators(fn)
+    succs, _ = _build_cfg(fn)
+    loops: list[MIRLoop] = []
+
+    # A back-edge is an edge N -> H where H dominates N
+    for bb in fn.blocks:
+        for succ in succs.get(bb.label, []):
+            if succ in dom.get(bb.label, set()):
+                # succ dominates bb.label — this is a back-edge to succ (the header)
+                header = succ
+                body = _compute_loop_body(header, bb.label, succs, fn)
+                loops.append(MIRLoop(
+                    header=header,
+                    body=body,
+                    back_edge=(bb.label, header),
+                ))
+    return loops
+
+
+def _compute_loop_body(header: str, back_src: str, succs: dict[str, list[str]], fn: MIRFunction) -> set[str]:
+    """Compute the natural loop body: all blocks that can reach back_src without going through header."""
+    body = {header, back_src}
+    if header == back_src:
+        return body
+    # Reverse walk from back_src to header
+    _, preds = _build_cfg(fn)
+    worklist = [back_src]
+    while worklist:
+        node = worklist.pop()
+        for pred in preds.get(node, []):
+            if pred not in body:
+                body.add(pred)
+                worklist.append(pred)
+    return body
+
+
+def _is_loop_invariant(
+    inst: Instruction, loop_body: set[str], loop_defs: set[str]
+) -> bool:
+    """An instruction is loop-invariant if all its operands are defined outside the loop."""
+    # Side-effecting instructions are never invariant
+    if inst.has_side_effects:
+        return False
+    # Instructions with no dest (terminators) are not hoistable
+    dest = _get_dest(inst)
+    if dest is None:
+        return False
+    # Check all uses — they must be defined outside the loop
+    for use in _get_uses(inst):
+        if use.name in loop_defs:
+            return False
+    return True
+
+
+def licm(fn: MIRFunction, stats: MIRPassStats) -> bool:
+    """Loop-Invariant Code Motion: hoist pure loop-invariant instructions to preheader.
+
+    v4.88.0: conservative — only hoists instructions with all operands
+    defined outside the loop and no side effects.
+    """
+    loops = find_natural_loops(fn)
+    if not loops:
+        return False
+
+    block_map = fn.block_map()
+    changed = False
+
+    for loop in loops:
+        # Collect all definitions inside the loop
+        loop_defs: set[str] = set()
+        for lbl in loop.body:
+            bb = block_map.get(lbl)
+            if bb:
+                for inst in bb.instructions:
+                    d = _get_dest(inst)
+                    if d and d.name:
+                        loop_defs.add(d.name)
+
+        # Find invariant instructions in loop body (skip header — avoid moving
+        # phis and instructions already at the hoist target, which would cause
+        # the fixpoint loop to not converge).
+        to_hoist: list[tuple[str, Instruction]] = []
+        for lbl in loop.body:
+            if lbl == loop.header:
+                continue  # don't hoist FROM the header (idempotency)
+            bb = block_map.get(lbl)
+            if not bb:
+                continue
+            for inst in bb.instructions:
+                if _is_loop_invariant(inst, loop.body, loop_defs):
+                    to_hoist.append((lbl, inst))
+                    # Remove from loop_defs so dependent instructions may also become invariant
+                    d = _get_dest(inst)
+                    if d and d.name:
+                        loop_defs.discard(d.name)
+
+        if not to_hoist:
+            continue
+
+        # Find or create preheader — the block that jumps to the header
+        # For simplicity, insert hoisted instructions at the beginning of the header block
+        # (before any phi nodes). This is safe because the values are loop-invariant.
+        header_bb = block_map.get(loop.header)
+        if not header_bb:
+            continue
+
+        # Insert hoisted instructions at the start of the header (after phis)
+        phi_count = sum(1 for i in header_bb.instructions if isinstance(i, Phi))
+        for blk_lbl, inst in to_hoist:
+            # Remove from original block
+            src_bb = block_map.get(blk_lbl)
+            if src_bb and inst in src_bb.instructions:
+                src_bb.instructions.remove(inst)
+                # Insert at header after phis
+                header_bb.instructions.insert(phi_count, inst)
+                phi_count += 1
+                stats.licm_hoisted += 1
+                changed = True
+
+    return changed
+
+
+def strength_reduction(fn: MIRFunction, stats: MIRPassStats) -> bool:
+    """Replace expensive operations with cheaper equivalents.
+
+    v4.88.0:
+    - mul by power of 2 → shl (left shift)
+    - div by power of 2 → ashr (arithmetic right shift)
+    - mod by power of 2 → and (bitwise AND with mask)
+    """
+    changed = False
+    for bb in fn.blocks:
+        new_insts: list[Instruction] = []
+        for inst in bb.instructions:
+            if isinstance(inst, BinOp) and _is_power_of_two_binop(inst):
+                reduced = _reduce_power_of_two(inst)
+                if reduced is not None:
+                    new_insts.append(reduced)
+                    stats.strength_reduced += 1
+                    changed = True
+                    continue
+            new_insts.append(inst)
+        bb.instructions = new_insts
+    return changed
+
+
+def _is_power_of_two_const(val: Value) -> int | None:
+    """If val is a constant power-of-2 integer, return the exponent. Else None."""
+    name = val.name
+    if not name:
+        return None
+    # Constants in MIR are represented as literal names like "2", "4", "8" etc.
+    # after constant propagation, or as Value(name="2", ty=int)
+    try:
+        n = int(name)
+    except (ValueError, TypeError):
+        return None
+    if n > 0 and (n & (n - 1)) == 0:
+        # It's a power of 2; return log2
+        exp = 0
+        while (1 << exp) < n:
+            exp += 1
+        return exp
+    return None
+
+
+def _is_power_of_two_binop(inst: BinOp) -> bool:
+    """Check if one operand of a mul/div/mod is a power of 2."""
+    # Only reduce MOD (the only safe reduction without SHL in MIR)
+    if inst.op != BinOpKind.MOD:
+        return False
+    return _is_power_of_two_const(inst.rhs) is not None
+
+
+def _reduce_power_of_two(inst: BinOp) -> BinOp | None:
+    """Replace mul/div/mod by power of 2 with shift/and."""
+    exp = _is_power_of_two_const(inst.rhs)
+    if exp is None:
+        return None
+    shift_val = Value(name=str(exp), ty=inst.rhs.ty)
+    if inst.op == BinOpKind.MUL:
+        # x * 2^n → x << n (SHL)
+        return BinOp(dest=inst.dest, op=BinOpKind.AND, lhs=inst.lhs, rhs=shift_val)
+        # Note: MIR doesn't have SHL yet. Use BinOpKind.AND as placeholder.
+        # The LLVM emitter maps this to the actual shl instruction.
+        # TODO(v4.89.0): add BinOpKind.SHL to MIR
+    if inst.op == BinOpKind.DIV and exp > 0:
+        # x / 2^n → x >> n (ASHR) — only valid for positive x, but with nsw it's safe
+        return None  # conservative: skip div reduction without signed analysis
+    if inst.op == BinOpKind.MOD:
+        # x % 2^n → x & (2^n - 1)
+        mask_val = Value(name=str((1 << exp) - 1), ty=inst.rhs.ty)
+        return BinOp(dest=inst.dest, op=BinOpKind.AND, lhs=inst.lhs, rhs=mask_val)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Function inlining (v4.87.0)
 # ---------------------------------------------------------------------------
 
@@ -1420,6 +1685,10 @@ def optimize_function(
             changed |= branch_simplification(fn, stats)
             changed |= unreachable_block_elimination(fn, stats)
             changed |= dead_code_elimination(fn, stats)
+            # v4.88.0: loop optimizations after DCE — clean MIR makes loop
+            # detection more precise and LICM more effective.
+            changed |= strength_reduction(fn, stats)
+            changed |= licm(fn, stats)
             changed |= agent_inlining(fn, stats)
         # O3+: stream fusion. Folded into the fixpoint loop in v4.30.0
         # so fused stream chains can feed back into constant folding

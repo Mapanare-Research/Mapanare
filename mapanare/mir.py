@@ -811,6 +811,27 @@ class MIRFunction:
 
 
 # ---------------------------------------------------------------------------
+# Loop (v4.88.0)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MIRLoop:
+    """A natural loop in the CFG.
+
+    header: the loop entry block (target of the back-edge)
+    body: set of block labels that form the loop body (includes header)
+    back_edge: (source_label, header_label)
+    preheader: label of the preheader block (created by LICM if needed)
+    """
+
+    header: str = ""
+    body: set[str] = field(default_factory=set)
+    back_edge: tuple[str, str] = ("", "")
+    preheader: str = ""
+
+
+# ---------------------------------------------------------------------------
 # Module
 # ---------------------------------------------------------------------------
 
