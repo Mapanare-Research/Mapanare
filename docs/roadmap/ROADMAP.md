@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.65.0 shipped — Arc 7 release 4: DWARF variables, A2 closed after 6 cycles)
+## Where We Are (v4.66.0 shipped — Arc 7 panel close: DWARF graded, CONDITIONAL PASS 7.71/10)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

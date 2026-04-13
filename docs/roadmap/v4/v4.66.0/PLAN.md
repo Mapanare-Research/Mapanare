@@ -4,7 +4,9 @@
 > DWARF work from v4.62.0–v4.65.0 and specifically checks whether
 > gdb can debug a Mapanare program end-to-end.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** Panel executed. CONDITIONAL PASS (7.71/10). A2 closed. Testing depth + docs flagged.
+**Decisions taken:** Arc 7 closes despite below-9.0 aggregate — A2 closure is genuine. Action items tracked for Arc 8.
 **Breaking:** No
 **Prerequisite:** v4.65.0
 **Delta review:** No

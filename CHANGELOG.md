@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.66.0] - 2026-04-12
+
+**Arc 7 Panel Release — DWARF Debug Info Close.**
+7-reviewer panel grades v4.62.0-v4.65.0. Arc 7 closes with CONDITIONAL PASS
+(7.71/10). A2 definitively closed. Testing depth and user documentation flagged.
+
+### Added
+
+- `.reviews/v4.66.0/` panel materials: PRE_PANEL_AUDIT.md, MEASUREMENTS.md,
+  7 reviewer files, README.md summary
+
 ## [4.65.0] - 2026-04-12
 
 **Arc 7 Release 4 — DWARF variables. A2 CLOSED.** `-g` builds emit

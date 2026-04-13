@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.65.0** (shipped) — Arc 7 release 4. DWARF variables: DILocalVariable + `llvm.dbg.declare`. A2 closed (6 cycles). gdb can inspect parameters.
-- **v4.66.0** (next) — Arc 7 panel release.
+- **v4.66.0** (shipped) — Arc 7 panel release. CONDITIONAL PASS (7.71/10). A2 closed. Testing depth + gdb docs flagged.
+- **v4.67.0** (next) — Arc 8 release 1: coroutine foundation design.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
