@@ -17,8 +17,6 @@ from mapanare.ast_nodes import (
     LetBinding,
     Program,
 )
-from mapanare.emit_python_mir import PythonMIREmitter
-from mapanare.lower import lower as build_mir
 from mapanare.parser import ParseError, parse
 
 # ===================================================================
@@ -137,27 +135,3 @@ class TestImplicitMain:
         assert isinstance(p.definitions[1], FnDef)
         assert p.definitions[1].name == "main"
 
-    # ------------------------------------------------------------------
-    # 10. PythonMIREmitter: implicit main → sync def main (no async needed)
-    # ------------------------------------------------------------------
-    def test_emit_python_implicit_main(self) -> None:
-        p = parse('print("hello")')
-        mir_module = build_mir(p, module_name="test")
-        emitter = PythonMIREmitter()
-        output = emitter.emit(mir_module)
-        assert "def main()" in output
-        assert "main()" in output
-        # No async needed for a simple print
-        assert "async def main()" not in output
-        assert "asyncio.run" not in output
-
-    # ------------------------------------------------------------------
-    # 11. PythonMIREmitter: library (no main) → no asyncio.run
-    # ------------------------------------------------------------------
-    def test_emit_python_no_main_guard_for_library(self) -> None:
-        src = "fn helper() -> Int {\n    return 42\n}"
-        p = parse(src)
-        mir_module = build_mir(p, module_name="test")
-        emitter = PythonMIREmitter()
-        output = emitter.emit(mir_module)
-        assert "asyncio.run(main())" not in output

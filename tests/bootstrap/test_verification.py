@@ -358,21 +358,6 @@ class TestCLIIntegration:
         assert "define " in ir_text
         assert "double" in ir_text
 
-    def test_compile_to_python(self, tmp_path: Path) -> None:
-        """mapanare compile produces Python source."""
-        src = tmp_path / "hello.mn"
-        src.write_text('println("hello world")\n', encoding="utf-8")
-        out = tmp_path / "hello.py"
-        result = subprocess.run(
-            ["mapanare", "compile", str(src), "-o", str(out)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0
-        py_code = out.read_text(encoding="utf-8")
-        assert "hello world" in py_code
-
 
 # ---------------------------------------------------------------------------
 # Test 6: Sample program verification (benchmarks/cross_language/)

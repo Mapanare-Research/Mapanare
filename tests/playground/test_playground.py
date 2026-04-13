@@ -9,11 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from mapanare.emit_python_mir import PythonMIREmitter
-from mapanare.lower import lower as build_mir
-from mapanare.optimizer import OptLevel, optimize
 from mapanare.parser import parse
-from mapanare.semantic import check_or_raise
+from mapanare.semantic import SemanticErrors, check_or_raise
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 PLAYGROUND_DIR = REPO_ROOT / "playground"
@@ -25,22 +22,6 @@ COMPILER_DIR = PLAYGROUND_DIR / "public" / "compiler"
 # ---------------------------------------------------------------------------
 
 
-def compile_and_run(source: str) -> str:
-    """Compile Mapanare source to Python and execute, returning stdout."""
-    ast = parse(source, filename="<test>")
-    check_or_raise(ast, filename="<test>")
-    ast, _ = optimize(ast, OptLevel.O0)
-    mir_module = build_mir(ast, module_name="test")
-    emitter = PythonMIREmitter()
-    python_code = emitter.emit(mir_module)
-
-    import io
-    from contextlib import redirect_stdout
-
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        exec(python_code, {"__name__": "__main__"})
-    return buf.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -163,44 +144,6 @@ EXAMPLE_PROGRAMS = {
         }
     """),
 }
-
-
-@pytest.mark.parametrize("name", list(EXAMPLE_PROGRAMS.keys()))
-def test_example_compiles_and_runs(name: str) -> None:
-    """Each playground example must compile and execute without error."""
-    source = EXAMPLE_PROGRAMS[name]
-    output = compile_and_run(source)
-    assert isinstance(output, str)
-    assert len(output) > 0, f"Example '{name}' produced no output"
-
-
-def test_hello_world_output() -> None:
-    """Hello World example produces correct output."""
-    output = compile_and_run(EXAMPLE_PROGRAMS["Hello World"])
-    assert output.strip() == "Hello, Mapanare!"
-
-
-def test_fibonacci_output() -> None:
-    """Fibonacci example produces correct sequence."""
-    output = compile_and_run(EXAMPLE_PROGRAMS["Fibonacci"])
-    lines = output.strip().split("\n")
-    assert len(lines) == 10
-    assert "fib(0) = 0" in lines[0]
-    assert "fib(1) = 1" in lines[1]
-    assert "fib(9) = 34" in lines[9]
-
-
-def test_interpolation_output() -> None:
-    """String interpolation example works correctly."""
-    output = compile_and_run(EXAMPLE_PROGRAMS["String Interpolation"])
-    assert "Hello, World! Welcome to Mapanare." in output
-    assert "2 + 3 = 5" in output
-
-
-def test_option_result_output() -> None:
-    """Option/Result example works correctly."""
-    output = compile_and_run(EXAMPLE_PROGRAMS["Option & Result"])
-    assert "division by zero" in output.lower() or "Err" in output
 
 
 # ---------------------------------------------------------------------------
@@ -381,8 +324,6 @@ def test_parse_error_is_caught() -> None:
 
 def test_semantic_error_is_caught() -> None:
     """Semantic errors should be caught, not crash."""
-    from mapanare.semantic import SemanticErrors
-
     source = textwrap.dedent("""\
         fn main() {
             let x: Int = "not an int"

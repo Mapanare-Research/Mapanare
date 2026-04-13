@@ -101,7 +101,7 @@ items that were explicitly deferred out of the recovery arc.
 |---|------|----------------|----------|--------|--------|------------------|
 | A1 | Real `await` coroutine lowering (LLVM coroutine intrinsics) | v4.19.0 | MEDIUM | **2** | DEFERRED | v4.67.0+ (Arc 8: coroutine foundation) |
 | A2 | DWARF debug info emission | v0.7.0 | MEDIUM | **6** | DEFERRED | v5.x |
-| A3 | Deprecated Python emitter removal (`PythonMIREmitter`) | v4.2.0 | LOW | **5** | IN PROGRESS | v4.57.0 warnings shipped; v4.58.0 deletion. `DeprecationWarning` on import, `__init__`, `emit()`. CLI stderr warnings on `compile`, `repl`. Migration guide: `docs/migration/v4.57-to-v4.58.md`. 7 regression tests in `tests/test_deprecation_warnings.py`. |
+| A3 | Deprecated Python emitter removal (`PythonMIREmitter`) | v4.2.0 | LOW | **5** | **CLOSED** | v4.58.0 — `mapanare/emit_python_mir.py` deleted (1,236 lines), `cmd_compile`/`cmd_repl` removed, `_PYTHON_MIR_XFAIL` deleted, ~3,500 total lines removed. Regression gate: `tests/test_python_emitter_deleted.py` (6 tests). |
 | A4 | llvmlite JIT emitter removal | v4.2.0 | LOW | **5** | DEFERRED | v4.59.0 |
 | A5 | Culebra `list-element-size-undercount` template tightens | v4.30.0 | LOW | 1 | OPEN | Culebra project, not Mapanare |
 | A6 | Residual 69-line match-lowering shape diff between stage2 and stage3 | v4.28.0 | LOW | **3** | **CLOSED** | v4.34.0 — Maranget decision-tree rewrite in both pipelines; `mapanare/pattern_matching.py` shared helper |

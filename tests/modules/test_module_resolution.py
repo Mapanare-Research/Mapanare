@@ -19,8 +19,6 @@ from pathlib import Path
 import pytest
 
 from mapanare.ast_nodes import (
-    ImportDef,
-    Program,
     TypeAlias,
 )
 from mapanare.modules import ModuleResolutionError, ModuleResolver
@@ -417,43 +415,6 @@ class TestBackwardCompatibility:
 # ---------------------------------------------------------------------------
 # Python emitter
 # ---------------------------------------------------------------------------
-
-
-class TestPythonEmitterImports:
-    """Tests that the Python emitter generates correct import statements."""
-
-    def test_emit_simple_import(self) -> None:
-        from mapanare.emit_python_mir import PythonMIREmitter
-        from mapanare.lower import lower as build_mir
-
-        imp = ImportDef(path=["utils"], items=[])
-        program = Program(definitions=[imp])
-        mir_module = build_mir(program, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "import utils" in code
-
-    def test_emit_nested_import(self) -> None:
-        from mapanare.emit_python_mir import PythonMIREmitter
-        from mapanare.lower import lower as build_mir
-
-        imp = ImportDef(path=["std", "io"], items=[])
-        program = Program(definitions=[imp])
-        mir_module = build_mir(program, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "import std.io" in code
-
-    def test_emit_selective_import(self) -> None:
-        from mapanare.emit_python_mir import PythonMIREmitter
-        from mapanare.lower import lower as build_mir
-
-        imp = ImportDef(path=["math", "trig"], items=["sin", "cos"])
-        program = Program(definitions=[imp])
-        mir_module = build_mir(program, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "from math.trig import sin, cos" in code
 
 
 # ---------------------------------------------------------------------------

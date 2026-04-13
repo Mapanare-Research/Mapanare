@@ -14,7 +14,6 @@ from mapanare.ast_nodes import (
     LetBinding,
     StringLiteral,
 )
-from mapanare.emit_python_mir import PythonMIREmitter
 from mapanare.lower import lower as build_mir
 from mapanare.parser import parse
 from mapanare.semantic import check
@@ -236,63 +235,6 @@ fn main() {
 
 
 # ---------------------------------------------------------------------------
-# Python emitter tests
-# ---------------------------------------------------------------------------
-
-
-class TestPythonEmitInterpolation:
-    """Test that the Python emitter generates correct f-strings."""
-
-    def test_simple_fstring(self) -> None:
-        source = """
-fn main() {
-    let name = "world"
-    print("Hello, ${name}!")
-}
-"""
-        prog = parse(source)
-        mir_module = build_mir(prog, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert 'f"Hello, {name}!"' in code
-
-    def test_expr_fstring(self) -> None:
-        source = """
-fn main() {
-    let a = 1
-    let b = 2
-    print("sum: ${a + b}")
-}
-"""
-        prog = parse(source)
-        mir_module = build_mir(prog, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert 'f"sum: {' in code
-
-    def test_no_interp_stays_repr(self) -> None:
-        source = """
-fn main() {
-    let x = "hello world"
-}
-"""
-        prog = parse(source)
-        mir_module = build_mir(prog, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "'hello world'" in code or '"hello world"' in code
-        assert "f'" not in code and 'f"' not in code
-
-    def test_multi_line_string_emit(self) -> None:
-        source = 'fn main() { let x = """line1\\nline2""" }'
-        prog = parse(source)
-        mir_module = build_mir(prog, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "line1" in code
-
-
-# ---------------------------------------------------------------------------
 # LLVM emitter tests
 # ---------------------------------------------------------------------------
 
@@ -344,52 +286,3 @@ fn main() {
 # ---------------------------------------------------------------------------
 
 
-class TestE2EInterpolation:
-    """End-to-end tests: parse → semantic → emit → execute."""
-
-    def test_e2e_interpolation_python(self) -> None:
-        source = """
-fn main() {
-    let name = "Mapanare"
-    print("Hello, ${name}!")
-}
-"""
-        prog = parse(source)
-        errors = check(prog)
-        assert len(errors) == 0
-        mir_module = build_mir(prog, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert 'f"Hello, {name}!"' in code
-
-    def test_e2e_multi_interpolation(self) -> None:
-        source = """
-fn main() {
-    let first = "Ada"
-    let last = "Lovelace"
-    print("${first} ${last}")
-}
-"""
-        prog = parse(source)
-        errors = check(prog)
-        assert len(errors) == 0
-        mir_module = build_mir(prog, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert 'f"{first} {last}"' in code
-
-    def test_e2e_nested_expr(self) -> None:
-        source = """
-fn main() {
-    let x: Int = 10
-    let y: Int = 20
-    print("result: ${x + y}")
-}
-"""
-        prog = parse(source)
-        errors = check(prog)
-        assert len(errors) == 0
-        mir_module = build_mir(prog, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert 'f"result: {' in code

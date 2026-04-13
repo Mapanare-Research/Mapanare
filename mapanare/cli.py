@@ -99,44 +99,6 @@ def _parse_opt_level(args: argparse.Namespace) -> OptLevel:
     return OptLevel(getattr(args, "opt_level", 2))
 
 
-def _compile_source(
-    source: str,
-    filename: str,
-    opt_level: OptLevel = OptLevel.O2,
-    resolver: ModuleResolver | None = None,
-    python_path: list[str] | None = None,
-) -> str:
-    """Parse, check, optimize, and emit Python from Mapanare source. Returns Python code.
-
-    .. deprecated:: 2.0.0
-        This function uses the legacy Python transpiler backend and will be
-        removed in v4.58.0. Use ``_compile_to_llvm_ir`` + ``jit_compile_and_run``
-        instead. See docs/migration/v4.57-to-v4.58.md.
-    """
-    import warnings as _w
-
-    _w.warn(
-        "The Python transpiler backend is deprecated and will be removed in v4.58.0. "
-        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm'. "
-        "See docs/migration/v4.57-to-v4.58.md.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    ast = parse(source, filename=filename)
-    check_or_raise(ast, filename=filename, resolver=resolver)
-
-    from mapanare.emit_python_mir import PythonMIREmitter
-    from mapanare.lower import lower as build_mir
-    from mapanare.mir_opt import MIROptLevel
-    from mapanare.mir_opt import optimize_module as mir_optimize
-
-    mir_module = build_mir(ast, module_name=os.path.splitext(os.path.basename(filename))[0])
-    mir_opt_level = MIROptLevel(opt_level.value)
-    mir_module, _ = mir_optimize(mir_module, mir_opt_level)
-    emitter = PythonMIREmitter(python_path=python_path)
-    return emitter.emit(mir_module)
-
-
 def _verify_mir_or_exit(mir_module: object, no_verify: bool) -> None:
     """Run the MIR verifier unless the caller explicitly bypassed it.
 
@@ -273,76 +235,6 @@ def _compile_multi_module_text(
     )
 
 
-def cmd_compile(args: argparse.Namespace) -> None:
-    """Compile an .mn source file to Python."""
-    import warnings
-
-    warnings.warn(
-        "The 'compile' subcommand targets the deprecated Python backend "
-        "and will be removed in v4.58.0. "
-        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead. "
-        "See docs/migration/v4.57-to-v4.58.md.",
-        DeprecationWarning,
-        stacklevel=1,
-    )
-    print(
-        "warning: 'mapanare compile' targets the deprecated Python backend "
-        "and will be removed in v4.58.0. "
-        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead. "
-        "See docs/migration/v4.57-to-v4.58.md.",
-        file=sys.stderr,
-    )
-    source = _read_source(args.source)
-    opt_level = _parse_opt_level(args)
-    python_path: list[str] = getattr(args, "python_path", None) or []
-    resolver = ModuleResolver()
-    try:
-        python_code = _compile_source(
-            source,
-            args.source,
-            opt_level=opt_level,
-            resolver=resolver,
-            python_path=python_path,
-        )
-    except ParseError as e:
-        _emit_parse_error(e, source, args.source)
-        sys.exit(1)
-    except SemanticErrors as e:
-        _emit_semantic_errors(e, source)
-        sys.exit(1)
-
-    out_path = args.o or args.source.replace(".mn", ".py")
-    out_dir = os.path.dirname(os.path.abspath(out_path))
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(python_code)
-    print(f"compiled {args.source} -> {out_path}")
-
-    # Also compile any resolved imported modules
-    _compile_resolved_modules(resolver, opt_level, out_dir)
-
-
-def _compile_resolved_modules(resolver: ModuleResolver, opt_level: OptLevel, out_dir: str) -> None:
-    """Compile all resolved imported modules to Python in the output directory."""
-    from mapanare.emit_python_mir import PythonMIREmitter
-    from mapanare.lower import lower as build_mir
-    from mapanare.mir_opt import MIROptLevel
-    from mapanare.mir_opt import optimize_module as mir_optimize
-
-    for filepath, module in resolver.all_modules():
-        mod_name = os.path.splitext(os.path.basename(filepath))[0]
-        mod_out = os.path.join(out_dir, mod_name + ".py")
-        if os.path.abspath(mod_out) == os.path.abspath(filepath.replace(".mn", ".py")):
-            continue
-        mir_module = build_mir(module.program, module_name=mod_name)
-        mir_opt_level = MIROptLevel(opt_level.value)
-        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        with open(mod_out, "w", encoding="utf-8") as f:
-            f.write(code)
-        print(f"  compiled module {mod_name} -> {mod_out}")
-
-
 def cmd_check(args: argparse.Namespace) -> None:
     """Type-check an .mn source file with error recovery."""
     source = _read_source(args.source)
@@ -471,70 +363,6 @@ def cmd_run(args: argparse.Namespace) -> None:
     from mapanare.jit import jit_compile_and_run
 
     jit_compile_and_run(llvm_ir, opt_level=opt_level.value)
-
-
-def cmd_repl(args: argparse.Namespace) -> None:
-    """Start an interactive Mapanare REPL."""
-    print(
-        "warning: the REPL uses the deprecated Python transpiler backend, "
-        "which will be removed in v4.58.0. "
-        "See docs/migration/v4.57-to-v4.58.md.",
-        file=sys.stderr,
-    )
-    opt_level = _parse_opt_level(args)
-    namespace: dict[str, object] = {"__name__": "__repl__"}
-    # Accumulated definitions to re-emit with each evaluation
-    definitions: list[str] = []
-
-    print(f"Mapanare {__version__} REPL — type 'exit' or Ctrl+D to quit")
-
-    while True:
-        try:
-            line = input("mn> ")
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-
-        text = line.strip()
-        if not text:
-            continue
-        if text in ("exit", "quit"):
-            break
-
-        # Multi-line: collect until braces balance
-        brace_depth = text.count("{") - text.count("}")
-        while brace_depth > 0:
-            try:
-                continuation = input("... ")
-            except (EOFError, KeyboardInterrupt):
-                print()
-                break
-            text += "\n" + continuation
-            brace_depth += continuation.count("{") - continuation.count("}")
-
-        # Try compiling as a top-level definition or statement
-        try:
-            python_code = _compile_source(text, "<repl>", opt_level=opt_level)
-        except ParseError as e:
-            print(f"parse error: {e}")
-            continue
-        except SemanticErrors as e:
-            for err in e.errors:
-                print(f"error: {err.message}")
-            continue
-
-        # Track function/struct/enum definitions for persistence
-        is_def = text.lstrip().startswith(("fn ", "pub fn ", "struct ", "enum ", "agent ", "pipe "))
-        if is_def:
-            definitions.append(text)
-
-        try:
-            code = compile(python_code, "<repl>", "exec")
-            exec(code, namespace)
-        except SystemExit:
-            break
-        except Exception as exc:
-            print(f"runtime error ({type(exc).__name__}): {exc}")
 
 
 def cmd_fmt(args: argparse.Namespace) -> None:
@@ -1713,23 +1541,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # compile
-    p_compile = subparsers.add_parser(
-        "compile", help="[DEPRECATED] Compile .mn source to Python (use 'build' or 'emit-wasm')"
-    )
-    p_compile.add_argument("source", help="Path to .mn source file")
-    p_compile.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
-    p_compile.add_argument(
-        "--python-path",
-        metavar="DIR",
-        action="append",
-        help='Add directory to Python module search path (for extern "Python" interop)',
-    )
-    _add_opt_level_args(p_compile)
-
-    _add_edition_flag(p_compile)
-    p_compile.set_defaults(func=cmd_compile)
-
     # check
     p_check = subparsers.add_parser("check", help="Type-check .mn source")
     p_check.add_argument("source", help="Path to .mn source file")
@@ -1777,11 +1588,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_edition_flag(p_run)
     _add_no_verify_flag(p_run)
     p_run.set_defaults(func=cmd_run)
-
-    # repl
-    p_repl = subparsers.add_parser("repl", help="Start interactive REPL")
-    _add_opt_level_args(p_repl)
-    p_repl.set_defaults(func=cmd_repl)
 
     # fmt
     p_fmt = subparsers.add_parser("fmt", help="Format .mn source")

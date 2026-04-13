@@ -54,21 +54,6 @@ class TestDocCommentParsing:
         errors = check(ast, filename="test.mn")
         assert len(errors) == 0
 
-    def test_doc_comment_python_emit(self):
-        """Doc-commented definitions should emit valid Python."""
-        from mapanare.emit_python_mir import PythonMIREmitter
-        from mapanare.lower import lower as build_mir
-        from mapanare.semantic import check_or_raise
-
-        source = "/// Adds two ints.\nfn add(a: Int, b: Int) -> Int {\n    return a + b\n}"
-        ast = parse(source, filename="test.mn")
-        check_or_raise(ast, filename="test.mn")
-        mir_module = build_mir(ast, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "def add(" in code
-
-
 class TestDocGenerator:
     """Test HTML doc generation from doc items."""
 

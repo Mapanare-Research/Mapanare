@@ -8,8 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.57.0** (shipped) — Arc 6 release 1. Python emitter deprecation warnings on all public entries. Migration guide at `docs/migration/v4.57-to-v4.58.md`. Deletion in v4.58.0.
-- **v4.58.0** (next) — Arc 6 release 2: Python emitter deletion (`emit_python_mir.py` + `mapanare compile` + `mapanare repl` removed).
+- **v4.58.0** (shipped) — Arc 6 release 2. Python emitter deleted (A3 closed). ~1,500 lines removed. LLVM is the sole backend.
+- **v4.59.0** (next) — Arc 6 release 3: llvmlite JIT deletion (A4).
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
 
@@ -301,13 +301,12 @@ Every run auto-updates `tests/golden/BENCHMARKS.md` with per-test metrics (sourc
 ```
 .mn source → Lark LALR parser → AST (dataclasses) → Semantic checker → MIR lowering → MIR optimizer (O0-O3) → Emitter
                                                                                                                  ├→ emit_llvm_text.py  → LLVM IR (text, no llvmlite)
-                                                                                                                 ├→ emit_python_mir.py → Python source (DEPRECATED)
                                                                                                                  ├→ emit_c.py          → C source
                                                                                                                  └→ emit_wasm.py       → WebAssembly (WAT/WASM)
 ```
 
 Key modules in `mapanare/`:
-- `cli.py` — Entry point, command dispatch (run, build, jit, check, compile, emit-llvm, emit-mir, emit-wasm, fmt, test, lint, doc, deploy, init)
+- `cli.py` — Entry point, command dispatch (run, build, jit, check, emit-llvm, emit-mir, emit-wasm, fmt, test, lint, doc, deploy, init)
 - `parser.py` — Lark transformer: parse tree → AST dataclass nodes
 - `ast_nodes.py` — All AST node definitions
 - `semantic.py` — Two-pass type checker and scope resolver
@@ -316,7 +315,6 @@ Key modules in `mapanare/`:
 - `mir_opt.py` — MIR optimizer passes (constant folding, DCE, copy propagation, block merging)
 - `optimizer.py` — AST-level optimizer (constant folding, DCE, agent inlining, stream fusion)
 - `emit_llvm_text.py` — LLVM IR generation (text-based, no llvmlite dependency)
-- `emit_python_mir.py` — MIR-based Python transpiler (DEPRECATED)
 - `emit_c.py` — C source generation from MIR
 - `emit_wasm.py` — WebAssembly (WAT) generation from MIR (v2.0.0)
 - `wasm_linker.py` — wasm-ld integration for multi-module WASM linking (v2.0.0)
@@ -386,8 +384,7 @@ All type definitions, builtin registries, and type-name mappings live in `types.
 Starting with v0.8.0, the project moves toward Python independence:
 - **Stdlib in .mn:** New stdlib modules are written in Mapanare (`.mn`), compiled to native code via LLVM. No more Python `.py` stdlib files.
 - **C runtime as foundation:** OS-level primitives (sockets, TLS, file I/O) live in the C runtime. Everything above (HTTP, JSON, routing) is pure Mapanare.
-- **Test on LLVM:** Every test should run on the LLVM backend, not just Python.
-- **Python backend = legacy:** Kept for reference and bootstrapping, but not the target for new features.
+- **Test on LLVM:** Every test should run on the LLVM backend.
 
 ## GPU Backend (v2.0.0)
 

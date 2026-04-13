@@ -4,7 +4,9 @@
 > deleted (~1,220 lines). `cmd_run` / `cmd_compile` default paths updated
 > to skip the deprecated Python branch. Test infrastructure cleaned up.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-12)
+**Session log:** All 9 phases executed in single session. All 13 exit criteria green.
+**Decisions taken:** Decision 1: keep mixed tests, delete Python branches. Decision 2: bootstrap chain audited (no hidden deps). Decision 3: cmd_jit kept (Python branch removed).
 **Breaking:** **Minor breaking** (the deprecated Python backend is removed; warnings in v4.57.0 gave users one release to migrate)
 **Prerequisite:** v4.57.0 (deprecation warnings shipped)
 **Delta review:** No

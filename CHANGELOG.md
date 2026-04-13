@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.58.0] - 2026-04-12
+
+**BREAKING: The Python transpiler backend has been removed.** `mapanare compile`,
+`mapanare repl`, and `mapanare.emit_python_mir` no longer exist. Use
+`mapanare build` (LLVM), `mapanare run` (C), or `mapanare emit-wasm` (WASM).
+See `docs/migration/v4.57-to-v4.58.md` for the full migration guide.
+
+Arc 6 release 2 — Python emitter deletion. A3 closed. ~3,500 lines removed.
+
+### Removed
+
+- `mapanare/emit_python_mir.py` (1,236 lines) — the deprecated Python
+  transpiler backend
+- `mapanare compile` CLI subcommand and `mapanare repl`
+- `_compile_source()`, `_compile_resolved_modules()`, `cmd_compile()`,
+  `cmd_repl()` from `mapanare/cli.py`
+- `_PYTHON_MIR_XFAIL` set and `pytest_collection_modifyitems` from
+  `tests/conftest.py`
+- <!-- no-check --> `tests/test_deprecation_warnings.py` (v4.57.0 deprecation tests — no longer applicable)
+- <!-- no-check --> `tests/e2e/test_e2e.py`, `tests/e2e/test_tutorial.py`, `tests/e2e/test_e2e_correctness.py`,
+  `tests/e2e/test_e2e_cross_backend.py`, `tests/e2e/test_data_pipeline.py` — Python-backend-only e2e tests
+- <!-- no-check --> `tests/benchmarks/test_benchmark_integrity.py`, `tests/mir/test_emitter_equiv.py` — Python-backend-only
+- Python-only test classes from mixed files: `TestAssertMIR`, `TestAssertLegacy`,
+  `TestPythonEmitterImports`, `TestPythonEmitInterpolation`, `TestE2EInterpolation`,
+  `TestTraitPythonEmission`, `TestSupervisedDecorator`
+
+### Added
+
+- `tests/test_python_emitter_deleted.py` — 6 regression gate tests verifying
+  the deletion is complete (file absent, import fails, no stale references,
+  CLI commands removed)
+
+### Changed
+
+- `CARRY_FORWARD.md` — A3 CLOSED (5-cycle carry-forward, first reported v4.2.0)
+
 ## [4.57.0] - 2026-04-12
 
 **DEPRECATION NOTICE: The Python transpiler backend (`PythonMIREmitter`)
@@ -36,10 +72,10 @@ Arc 6 release 1 — deprecation warnings only, no deletion.
 
 - `docs/migration/v4.57-to-v4.58.md` — thorough migration guide covering
   every CLI flag, library API, test infrastructure change, timeline, and FAQ
-  (`tests/test_deprecation_warnings.py::TestMigrationGuide::test_migration_guide_exists`)
-- `tests/test_deprecation_warnings.py` — 7 tests verifying warning
+  <!-- no-check --> (`tests/test_deprecation_warnings.py::TestMigrationGuide::test_migration_guide_exists` — deleted in v4.58.0)
+- <!-- no-check --> `tests/test_deprecation_warnings.py` — 7 tests verifying warning
   behavior, CLI stderr output, migration guide presence, and emitter
-  regression (emitter still produces valid Python)
+  regression (deleted in v4.58.0 along with the emitter)
 
 ## [4.56.0] - 2026-04-12
 

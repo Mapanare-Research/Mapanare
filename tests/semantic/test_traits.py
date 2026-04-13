@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from mapanare.ast_nodes import FnDef, ImplDef, TraitDef
-from mapanare.emit_python_mir import PythonMIREmitter
 from mapanare.lower import lower as build_mir
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker
@@ -360,60 +359,6 @@ class TestTraitSemantic:
 # ---------------------------------------------------------------------------
 # Python emission tests
 # ---------------------------------------------------------------------------
-
-
-class TestTraitPythonEmission:
-    """Test Python backend emission of traits."""
-
-    def test_trait_emits_protocol(self) -> None:
-        src = "trait Display {\n    fn to_string(self) -> String\n}\n"
-        p = parse(src)
-        mir_module = build_mir(p, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "from typing import Protocol" in code
-        assert "class Display(Protocol):" in code
-        assert "def to_string(self) -> str: ..." in code
-
-    def test_trait_with_params_emits_protocol(self) -> None:
-        src = "trait Eq {\n    fn eq(self, other: Int) -> Bool\n}\n"
-        p = parse(src)
-        mir_module = build_mir(p, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "class Eq(Protocol):" in code
-        assert "def eq(self, other: int) -> bool: ..." in code
-
-    def test_empty_trait_emits_pass(self) -> None:
-        src = "trait Marker {\n}\n"
-        p = parse(src)
-        mir_module = build_mir(p, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "class Marker(Protocol):" in code
-        assert "pass" in code
-
-    def test_trait_impl_methods_merged_into_struct(self) -> None:
-        src = (
-            "trait Display {\n"
-            "    fn to_string(self) -> String\n"
-            "}\n"
-            "struct Point {\n"
-            "    x: Float,\n"
-            "    y: Float\n"
-            "}\n"
-            "impl Display for Point {\n"
-            "    fn to_string(self) -> String {\n"
-            '        return "point"\n'
-            "    }\n"
-            "}\n"
-        )
-        p = parse(src)
-        mir_module = build_mir(p, module_name="test")
-        emitter = PythonMIREmitter()
-        code = emitter.emit(mir_module)
-        assert "class Point:" in code
-        assert "def to_string(self)" in code
 
 
 # ---------------------------------------------------------------------------
