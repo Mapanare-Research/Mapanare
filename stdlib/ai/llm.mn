@@ -306,27 +306,28 @@ pub fn with_tools(c: LLMConfig, tools: List<ToolDef>) -> LLMConfig {
 // ---------------------------------------------------------------------------
 
 fn escape_json(s: String) -> String {
+    // v4.95.0: StringBuilder for O(n) instead of O(n^2) escaping
     pon slen: Int = len(s)
-    pon mut result: String = ""
+    pon mut sb = sb_create()
     pon mut i: Int = 0
     mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "\"" {
-            result = result + "\\\""
+            sb_append(sb, "\\\"")
         } sino { si ch == "\\" {
-            result = result + "\\\\"
+            sb_append(sb, "\\\\")
         } sino { si ch == "\n" {
-            result = result + "\\n"
+            sb_append(sb, "\\n")
         } sino { si ch == "\r" {
-            result = result + "\\r"
+            sb_append(sb, "\\r")
         } sino { si ch == "\t" {
-            result = result + "\\t"
+            sb_append(sb, "\\t")
         } sino {
-            result = result + ch
+            sb_append(sb, ch)
         } } } } }
         i = i + 1
     }
-    da result
+    da sb_to_string(sb)
 }
 
 // ---------------------------------------------------------------------------
@@ -772,15 +773,16 @@ fn message_to_json(msg: ChatMessage) -> String {
 }
 
 fn messages_to_json(messages: List<ChatMessage>) -> String {
+    // v4.95.0: StringBuilder for O(n) JSON array assembly
     pon count: Int = len(messages)
-    pon mut result: String = ""
+    pon mut sb = sb_create()
     pon mut i: Int = 0
     mien i < count {
-        si i > 0 { result = result + "," }
-        result = result + message_to_json(messages[i])
+        si i > 0 { sb_append(sb, ",") }
+        sb_append(sb, message_to_json(messages[i]))
         i = i + 1
     }
-    da result
+    da sb_to_string(sb)
 }
 
 fn tool_to_json(t: ToolDef) -> String {
@@ -793,15 +795,16 @@ fn tool_to_json(t: ToolDef) -> String {
 }
 
 fn tools_to_json(tools: List<ToolDef>) -> String {
+    // v4.95.0: StringBuilder for O(n) JSON array assembly
     pon count: Int = len(tools)
-    pon mut result: String = ""
+    pon mut sb = sb_create()
     pon mut i: Int = 0
     mien i < count {
-        si i > 0 { result = result + "," }
-        result = result + tool_to_json(tools[i])
+        si i > 0 { sb_append(sb, ",") }
+        sb_append(sb, tool_to_json(tools[i]))
         i = i + 1
     }
-    da result
+    da sb_to_string(sb)
 }
 
 fn build_openai_body(config: LLMConfig, messages: List<ChatMessage>) -> String {

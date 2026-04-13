@@ -301,6 +301,10 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "chr": STRING_TYPE,
     "join": STRING_TYPE,
     "typeof": STRING_TYPE,
+    # StringBuilder builtins (v4.95.0)
+    "sb_create": UNKNOWN_TYPE,  # sb_create() -> StringBuilder
+    "sb_append": VOID_TYPE,  # sb_append(sb, str) -> void
+    "sb_to_string": STRING_TYPE,  # sb_to_string(sb) -> String (consumes builder)
     # Async/await builtins (v4.73.0+)
     "block_on": UNKNOWN_TYPE,  # block_on(Future<T>) -> T; type inferred from future
     "spawn": TypeInfo(kind=TypeKind.FUTURE),  # v4.93.0: spawn async task for multi-threaded execution

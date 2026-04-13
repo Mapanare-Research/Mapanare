@@ -470,6 +470,91 @@ MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
     return s;
 }
 
+/* =======================================================================
+ * StringBuilder (v4.95.0) — amortized O(1) string append
+ *
+ * Replaces the O(n^2) pattern of repeated __mn_str_concat in loops.
+ * Exponential growth (2x) with initial capacity 64 bytes.
+ * ======================================================================= */
+
+/* MnStringBuilder is defined in mapanare_core.h */
+
+MN_EXPORT MnStringBuilder __mn_sb_create(int64_t initial_cap) {
+    MnStringBuilder sb;
+    sb.cap = initial_cap > 0 ? initial_cap : 64;
+    sb.buf = (char *)__mn_alloc(sb.cap);
+    sb.buf[0] = '\0';
+    sb.len = 0;
+    return sb;
+}
+
+static void mn_sb_grow(MnStringBuilder *sb, int64_t needed) {
+    int64_t new_cap = sb->cap;
+    while (new_cap < needed) {
+        new_cap = new_cap * 2;
+        if (new_cap < 0) new_cap = needed; /* overflow guard */
+    }
+    char *new_buf = (char *)__mn_alloc(new_cap);
+    if (sb->len > 0) memcpy(new_buf, sb->buf, (size_t)sb->len);
+    new_buf[sb->len] = '\0';
+    __mn_free(sb->buf);
+    sb->buf = new_buf;
+    sb->cap = new_cap;
+}
+
+MN_EXPORT void __mn_sb_append(MnStringBuilder *sb, MnString s) {
+    if (s.len <= 0) return;
+    const char *data = mn_untag(s.data);
+    int64_t needed = sb->len + s.len + 1;
+    if (needed > sb->cap) {
+        mn_sb_grow(sb, needed);
+    }
+    memcpy(sb->buf + sb->len, data, (size_t)s.len);
+    sb->len += s.len;
+    sb->buf[sb->len] = '\0';
+}
+
+MN_EXPORT void __mn_sb_append_char(MnStringBuilder *sb, char c) {
+    int64_t needed = sb->len + 2;
+    if (needed > sb->cap) {
+        mn_sb_grow(sb, needed);
+    }
+    sb->buf[sb->len] = c;
+    sb->len++;
+    sb->buf[sb->len] = '\0';
+}
+
+MN_EXPORT MnString __mn_sb_to_string(MnStringBuilder *sb) {
+    /* Transfer ownership: the buffer becomes the string's data.
+     * The StringBuilder is consumed (zeroed out). */
+    MnString s;
+    if (sb->len == 0) {
+        __mn_free(sb->buf);
+        s = __mn_str_empty();
+    } else {
+        /* Realloc to exact size if significantly oversized. */
+        if (sb->cap > sb->len * 2 + 1) {
+            char *tight = (char *)__mn_alloc(sb->len + 1);
+            memcpy(tight, sb->buf, (size_t)sb->len + 1);
+            __mn_free(sb->buf);
+            sb->buf = tight;
+        }
+        s.data = mn_tag_heap(sb->buf);
+        s.len = sb->len;
+    }
+    sb->buf = NULL;
+    sb->len = 0;
+    sb->cap = 0;
+    return s;
+}
+
+MN_EXPORT void __mn_sb_destroy(MnStringBuilder *sb) {
+    if (sb->buf) __mn_free(sb->buf);
+    sb->buf = NULL;
+    sb->len = 0;
+    sb->cap = 0;
+}
+
 MN_EXPORT MnString __mn_str_char_at(MnString s, int64_t i) {
     if (i < 0 || i >= s.len) {
         return __mn_str_empty();

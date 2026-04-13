@@ -10,7 +10,7 @@
 > automatic loop-concat optimization, and refactors the AI stdlib
 > to eliminate the pathology.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.94.0
 **Delta review:** No

@@ -50,6 +50,14 @@ MN_EXPORT MnString __mn_str_empty(void);
 /** Concatenate two strings. Returns a new heap-allocated string. */
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b);
 
+/* --- StringBuilder (v4.95.0) --- */
+typedef struct { char *buf; int64_t len; int64_t cap; } MnStringBuilder;
+MN_EXPORT MnStringBuilder __mn_sb_create(int64_t initial_cap);
+MN_EXPORT void __mn_sb_append(MnStringBuilder *sb, MnString s);
+MN_EXPORT void __mn_sb_append_char(MnStringBuilder *sb, char c);
+MN_EXPORT MnString __mn_sb_to_string(MnStringBuilder *sb);
+MN_EXPORT void __mn_sb_destroy(MnStringBuilder *sb);
+
 /** Get the character at index `i` as a single-character string.
  *  Returns empty string if out of bounds. */
 MN_EXPORT MnString __mn_str_char_at(MnString s, int64_t i);

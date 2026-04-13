@@ -1788,6 +1788,23 @@ class MIRLowerer:
             self._emit(Call(dest=dest, fn_name="__mn_coro_spawn", args=[args[0]]))
             return args[0]  # return the future, not the spawn result
 
+        # v4.95.0: StringBuilder builtins
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "sb_create":
+            dest = self._make_value(prefix="sb")
+            self._emit(Call(dest=dest, fn_name="__mn_sb_create", args=[]))
+            return dest
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "sb_append":
+            if len(args) >= 2:
+                dest = self._make_value(prefix="sb_app")
+                self._emit(Call(dest=dest, fn_name="__mn_sb_append", args=args[:2]))
+            return self._make_value()
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "sb_to_string":
+            if len(args) >= 1:
+                dest = self._make_value(prefix="sb_str")
+                self._emit(Call(dest=dest, fn_name="__mn_sb_to_string", args=args[:1]))
+                return dest
+            return self._make_value()
+
         # Monomorphize generic function calls
         if isinstance(expr.callee, Identifier):
             fn_name = expr.callee.name
