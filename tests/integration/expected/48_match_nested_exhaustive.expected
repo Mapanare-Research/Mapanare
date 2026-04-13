@@ -1,0 +1,4 @@
+ok: 5
+err: zero
+ok: 42
+err: fail
