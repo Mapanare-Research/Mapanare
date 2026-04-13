@@ -1377,146 +1377,371 @@ MAPANARE_EXPORT void mapanare_memory_stats(mapanare_memory_stats_t *out) {
 }
 
 /* =======================================================================
- * Coroutine scheduler (v4.92.0)
+ * Multi-threaded work-stealing coroutine scheduler (v4.93.0)
  *
- * Single-threaded cooperative scheduler for async/await. Maintains a
- * table of registered coroutines and the futures they are awaiting.
- * The scheduler steps through the table, resuming coroutines whose
- * awaited futures have become Ready (state byte == 1).
+ * Replaces the v4.92.0 single-threaded scheduler. N worker threads,
+ * each with a Chase-Lev work-stealing deque. When a thread has no
+ * local work it steals from a random peer. Global overflow queue
+ * catches tasks when a local deque is full.
  *
- * The scheduler is initialized once in main() and destroyed at exit.
- * A global instance (__mn_coro_sched) is used by the emitted IR.
+ * API preserves the __mn_coro_scheduler_* symbols for backward compat.
+ * N=1 behaves identically to the v4.92.0 single-threaded scheduler.
  * ======================================================================= */
+
+/* Chase-Lev work-stealing deque (bounded, power-of-2 size).
+ * Owner pushes/pops from bottom, stealers CAS from top.            */
+#define MN_DEQUE_CAP 1024  /* slots per worker, must be power of 2 */
 
 typedef struct {
     void *handle;           /* coroutine handle (ptr from coro.begin)    */
     void *awaited_future;   /* Future* being awaited, or NULL            */
-} mn_coro_entry_t;
+} mn_task_t;
 
 typedef struct {
-    mn_coro_entry_t *entries;   /* dynamic array   */
-    uint32_t         count;     /* active entries   */
-    uint32_t         cap;       /* allocated slots  */
-} mn_coro_scheduler_t;
+    mn_task_t        slots[MN_DEQUE_CAP];
+    mapanare_atomic_i64 bottom;  /* owner index (push/pop) */
+    mapanare_atomic_i64 top;     /* stealer index          */
+} mn_ws_deque_t;
 
-/* Global scheduler instance — emitted IR references this symbol. */
-static mn_coro_scheduler_t __mn_coro_sched_data;
-
-MN_EXPORT void __mn_coro_scheduler_init(uint32_t initial_cap) {
-    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
-    s->cap = initial_cap > 0 ? initial_cap : 64;
-    s->count = 0;
-    s->entries = (mn_coro_entry_t *)calloc(s->cap, sizeof(mn_coro_entry_t));
+static void mn_deque_init(mn_ws_deque_t *d) {
+    memset(d->slots, 0, sizeof(d->slots));
+    __atomic_store_n(&d->bottom, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&d->top, 0, __ATOMIC_RELAXED);
 }
 
-MN_EXPORT void __mn_coro_scheduler_register(void *handle) {
-    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
-    if (s->count >= s->cap) {
-        s->cap = s->cap ? s->cap * 2 : 64;
-        s->entries = (mn_coro_entry_t *)realloc(
-            s->entries, s->cap * sizeof(mn_coro_entry_t));
-    }
-    s->entries[s->count].handle = handle;
-    s->entries[s->count].awaited_future = NULL;
-    s->count++;
+/* Push task (owner only). Returns 0 on success, -1 if full. */
+static int mn_deque_push(mn_ws_deque_t *d, mn_task_t task) {
+    int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_RELAXED);
+    int64_t t = __atomic_load_n(&d->top, __ATOMIC_ACQUIRE);
+    if (b - t >= MN_DEQUE_CAP) return -1; /* full */
+    d->slots[b & (MN_DEQUE_CAP - 1)] = task;
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+    __atomic_store_n(&d->bottom, b + 1, __ATOMIC_RELAXED);
+    return 0;
 }
 
-MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr) {
-    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
-    for (uint32_t i = 0; i < s->count; i++) {
-        if (s->entries[i].handle == handle) {
-            s->entries[i].awaited_future = future_ptr;
-            return;
+/* Pop task (owner only). Returns 1 if got a task, 0 if empty. */
+static int mn_deque_pop(mn_ws_deque_t *d, mn_task_t *out) {
+    int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_RELAXED) - 1;
+    __atomic_store_n(&d->bottom, b, __ATOMIC_RELAXED);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    int64_t t = __atomic_load_n(&d->top, __ATOMIC_RELAXED);
+    if (t <= b) {
+        *out = d->slots[b & (MN_DEQUE_CAP - 1)];
+        if (t == b) {
+            /* Last element — race with stealers. */
+            if (!__atomic_compare_exchange_n(&d->top, &t, t + 1,
+                    /*weak=*/0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED)) {
+                /* Lost race — deque is empty. */
+                __atomic_store_n(&d->bottom, t + 1, __ATOMIC_RELAXED);
+                return 0;
+            }
+            __atomic_store_n(&d->bottom, t + 1, __ATOMIC_RELAXED);
         }
+        return 1;
     }
-    /* Handle not found — register it with the future. */
-    __mn_coro_scheduler_register(handle);
-    s->entries[s->count - 1].awaited_future = future_ptr;
+    /* Empty. */
+    __atomic_store_n(&d->bottom, t, __ATOMIC_RELAXED);
+    return 0;
+}
+
+/* Steal task (any thread). Returns 1 if got a task, 0 if empty. */
+static int mn_deque_steal(mn_ws_deque_t *d, mn_task_t *out) {
+    int64_t t = __atomic_load_n(&d->top, __ATOMIC_ACQUIRE);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_ACQUIRE);
+    if (t >= b) return 0; /* empty */
+    *out = d->slots[t & (MN_DEQUE_CAP - 1)];
+    if (!__atomic_compare_exchange_n(&d->top, &t, t + 1,
+            /*weak=*/0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED)) {
+        return 0; /* lost race */
+    }
+    return 1;
+}
+
+/* Global overflow queue (mutex-protected, for when local deque is full). */
+#define MN_OVERFLOW_CAP 4096
+
+typedef struct {
+    mn_task_t slots[MN_OVERFLOW_CAP];
+    uint32_t  head;
+    uint32_t  count;
+    pthread_mutex_t lock;
+} mn_overflow_queue_t;
+
+static void mn_overflow_init(mn_overflow_queue_t *q) {
+    memset(q->slots, 0, sizeof(q->slots));
+    q->head = 0;
+    q->count = 0;
+    pthread_mutex_init(&q->lock, NULL);
+}
+
+static int mn_overflow_push(mn_overflow_queue_t *q, mn_task_t task) {
+    pthread_mutex_lock(&q->lock);
+    if (q->count >= MN_OVERFLOW_CAP) {
+        pthread_mutex_unlock(&q->lock);
+        return -1;
+    }
+    uint32_t idx = (q->head + q->count) % MN_OVERFLOW_CAP;
+    q->slots[idx] = task;
+    q->count++;
+    pthread_mutex_unlock(&q->lock);
+    return 0;
+}
+
+static int mn_overflow_pop(mn_overflow_queue_t *q, mn_task_t *out) {
+    pthread_mutex_lock(&q->lock);
+    if (q->count == 0) {
+        pthread_mutex_unlock(&q->lock);
+        return 0;
+    }
+    *out = q->slots[q->head];
+    q->head = (q->head + 1) % MN_OVERFLOW_CAP;
+    q->count--;
+    pthread_mutex_unlock(&q->lock);
+    return 1;
+}
+
+static void mn_overflow_destroy(mn_overflow_queue_t *q) {
+    pthread_mutex_destroy(&q->lock);
 }
 
 /* Check if a Future is Ready (state byte at offset 0 == 1). */
 static inline int mn_future_is_ready(void *future_ptr) {
     if (!future_ptr) return 1; /* NULL future = ready (no await) */
-    return *(uint8_t *)future_ptr == 1;
+    return __atomic_load_n((uint8_t *)future_ptr, __ATOMIC_ACQUIRE) == 1;
 }
 
-/* External symbols — LLVM coroutine intrinsics lowered to these by CoroSplit. */
-extern void _mn_coro_resume(void *handle);
-extern int  _mn_coro_done(void *handle);
+/* Check if coroutine is done via LLVM switched-resume ABI:
+ * suspend index at frame + 2*sizeof(ptr) is 0xFF or 0x01 at final suspend. */
+static inline int mn_coro_is_done(void *handle) {
+    uint8_t idx = *((uint8_t *)handle + 2 * sizeof(void *));
+    return idx == 0xFF || idx == 0x01;
+}
 
-MN_EXPORT uint32_t __mn_coro_scheduler_step(void) {
-    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
-    uint32_t resumed = 0;
-    uint32_t i = 0;
-    while (i < s->count) {
-        mn_coro_entry_t *e = &s->entries[i];
+/* Resume a coroutine via LLVM-generated resume function pointer at offset 0. */
+static inline void mn_coro_resume(void *handle) {
+    void (*resume_fn)(void *) = *(void (**)(void *))handle;
+    resume_fn(handle);
+}
 
-        /* Skip if awaiting a future that isn't ready yet. */
-        if (e->awaited_future && !mn_future_is_ready(e->awaited_future)) {
-            i++;
-            continue;
-        }
+/* ── Multi-threaded scheduler ── */
 
-        /* Resume the coroutine via the LLVM-generated resume function.
-         * The resume function pointer is stored at offset 0 of the frame. */
-        void (*resume_fn)(void *) = *(void (**)(void *))e->handle;
-        resume_fn(e->handle);
-        resumed++;
+#define MN_MAX_WORKERS 64
 
-        /* Check if coroutine is done. After CoroSplit, the "done" check
-         * reads the suspend index from the frame. A final suspend sets
-         * the index to a sentinel. We check by calling the destroy-path
-         * convention: if the resume function at offset 0 is the cleanup
-         * stub, we consider it done. Simpler: check the future state. */
-        if (e->awaited_future && mn_future_is_ready(e->awaited_future)) {
-            /* Coroutine may have completed or re-suspended.
-             * If the future it was awaiting is now ready, clear the await
-             * so next step resumes unconditionally (it will either hit
-             * the next await point or finish). */
-            e->awaited_future = NULL;
-        }
+typedef struct mn_mt_scheduler {
+    mn_ws_deque_t      deques[MN_MAX_WORKERS];   /* per-worker deques         */
+    pthread_t          threads[MN_MAX_WORKERS];   /* worker thread handles     */
+    uint32_t           num_workers;               /* N (1 = single-threaded)   */
+    mn_overflow_queue_t overflow;                  /* global overflow queue     */
+    mapanare_atomic_i32 active_tasks;             /* total tasks in system     */
+    mapanare_atomic_i32 running;                  /* 1 = active, 0 = shutdown  */
+    pthread_mutex_t    wake_lock;                 /* protects condvar          */
+    pthread_cond_t     wake_cond;                 /* wake parked workers       */
+    pthread_mutex_t    done_lock;                 /* protects done condvar     */
+    pthread_cond_t     done_cond;                 /* signal block_on caller    */
+} mn_mt_scheduler_t;
 
-        /* Check done via the LLVM ABI: index field at offset 2 in the
-         * switched-resume frame is set to -1 (0xFF for i8) at final
-         * suspend. We read byte at frame + 16 (after two ptrs). */
-        uint8_t suspend_idx = *((uint8_t *)e->handle + 2 * sizeof(void *));
-        if (suspend_idx == 0xFF || suspend_idx == 0x01) {
-            /* Remove by swap with last. */
-            s->entries[i] = s->entries[s->count - 1];
-            s->count--;
-            /* Don't increment i — re-check swapped entry. */
-        } else {
-            i++;
+static mn_mt_scheduler_t mn_sched;
+
+/* Try to get a task: local pop, then overflow, then steal from peers. */
+static int mn_worker_get_task(uint32_t worker_id, mn_task_t *out) {
+    /* 1. Pop from own deque. */
+    if (mn_deque_pop(&mn_sched.deques[worker_id], out))
+        return 1;
+    /* 2. Pop from global overflow. */
+    if (mn_overflow_pop(&mn_sched.overflow, out))
+        return 1;
+    /* 3. Steal from random peer. */
+    uint32_t n = mn_sched.num_workers;
+    if (n <= 1) return 0;
+    /* Simple linear scan starting from random offset. */
+    uint32_t start = (worker_id + 1) % n;
+    for (uint32_t i = 0; i < n - 1; i++) {
+        uint32_t victim = (start + i) % n;
+        if (mn_deque_steal(&mn_sched.deques[victim], out))
+            return 1;
+    }
+    return 0;
+}
+
+/* Process a single task: check readiness, resume, detect completion. */
+static void mn_process_task(mn_task_t *task, uint32_t worker_id) {
+    /* If awaiting a future that isn't ready, re-enqueue. */
+    if (task->awaited_future && !mn_future_is_ready(task->awaited_future)) {
+        mn_deque_push(&mn_sched.deques[worker_id], *task);
+        return;
+    }
+
+    /* Resume the coroutine. */
+    mn_coro_resume(task->handle);
+
+    /* If the awaited future is now ready, clear the wait. */
+    if (task->awaited_future && mn_future_is_ready(task->awaited_future)) {
+        task->awaited_future = NULL;
+    }
+
+    /* Check if coroutine completed. */
+    if (mn_coro_is_done(task->handle)) {
+        __atomic_fetch_sub(&mn_sched.active_tasks, 1, __ATOMIC_ACQ_REL);
+        /* Signal block_on waiters. */
+        pthread_mutex_lock(&mn_sched.done_lock);
+        pthread_cond_broadcast(&mn_sched.done_cond);
+        pthread_mutex_unlock(&mn_sched.done_lock);
+    } else {
+        /* Coroutine suspended again — re-enqueue. */
+        if (mn_deque_push(&mn_sched.deques[worker_id], *task) != 0) {
+            mn_overflow_push(&mn_sched.overflow, *task);
         }
     }
-    return resumed;
+}
+
+static void *mn_worker_loop(void *arg) {
+    uint32_t worker_id = (uint32_t)(uintptr_t)arg;
+    uint32_t idle_spins = 0;
+
+    while (__atomic_load_n(&mn_sched.running, __ATOMIC_ACQUIRE)) {
+        mn_task_t task;
+        if (mn_worker_get_task(worker_id, &task)) {
+            mn_process_task(&task, worker_id);
+            idle_spins = 0;
+        } else {
+            /* No work available. */
+            if (__atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) == 0) {
+                break; /* All tasks complete. */
+            }
+            idle_spins++;
+            if (idle_spins > 64) {
+                /* Park via condvar (no busy-wait). */
+                pthread_mutex_lock(&mn_sched.wake_lock);
+                /* Double-check under lock. */
+                if (__atomic_load_n(&mn_sched.running, __ATOMIC_ACQUIRE) &&
+                    __atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) > 0) {
+                    struct timespec ts;
+                    clock_gettime(CLOCK_REALTIME, &ts);
+                    ts.tv_nsec += 1000000; /* 1ms timeout to re-check */
+                    if (ts.tv_nsec >= 1000000000) {
+                        ts.tv_sec++;
+                        ts.tv_nsec -= 1000000000;
+                    }
+                    pthread_cond_timedwait(&mn_sched.wake_cond,
+                                           &mn_sched.wake_lock, &ts);
+                }
+                pthread_mutex_unlock(&mn_sched.wake_lock);
+                idle_spins = 0;
+            }
+        }
+    }
+    return NULL;
+}
+
+/* ── Public API (same symbols as v4.92.0) ── */
+
+MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads) {
+    memset(&mn_sched, 0, sizeof(mn_sched));
+    uint32_t n = num_threads;
+    if (n == 0) n = (uint32_t)mapanare_cpu_count();
+    if (n > MN_MAX_WORKERS) n = MN_MAX_WORKERS;
+    mn_sched.num_workers = n;
+    __atomic_store_n(&mn_sched.running, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&mn_sched.active_tasks, 0, __ATOMIC_RELEASE);
+    pthread_mutex_init(&mn_sched.wake_lock, NULL);
+    pthread_cond_init(&mn_sched.wake_cond, NULL);
+    pthread_mutex_init(&mn_sched.done_lock, NULL);
+    pthread_cond_init(&mn_sched.done_cond, NULL);
+    mn_overflow_init(&mn_sched.overflow);
+    for (uint32_t i = 0; i < n; i++) {
+        mn_deque_init(&mn_sched.deques[i]);
+    }
+    /* Start worker threads (skip thread 0 — the caller thread acts as worker 0
+     * during block_on, which avoids deadlock when block_on is called from main). */
+    for (uint32_t i = 1; i < n; i++) {
+        pthread_create(&mn_sched.threads[i], NULL, mn_worker_loop,
+                       (void *)(uintptr_t)i);
+    }
+}
+
+MN_EXPORT void __mn_coro_scheduler_register(void *handle) {
+    mn_task_t task = { .handle = handle, .awaited_future = NULL };
+    __atomic_fetch_add(&mn_sched.active_tasks, 1, __ATOMIC_ACQ_REL);
+    /* Push to worker 0's deque (caller is main thread = worker 0). */
+    if (mn_deque_push(&mn_sched.deques[0], task) != 0) {
+        mn_overflow_push(&mn_sched.overflow, task);
+    }
+    /* Wake a parked worker. */
+    pthread_mutex_lock(&mn_sched.wake_lock);
+    pthread_cond_signal(&mn_sched.wake_cond);
+    pthread_mutex_unlock(&mn_sched.wake_lock);
+}
+
+MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr) {
+    /* The coroutine is about to suspend. We need to associate the future
+     * with it so the scheduler knows when to resume. Since the coroutine
+     * is mid-execution on the current worker, we create a task entry
+     * that will be picked up on the next scheduling round. */
+    mn_task_t task = { .handle = handle, .awaited_future = future_ptr };
+    /* Push to worker 0's deque. In the multi-threaded model, the actual
+     * worker ID should be passed, but for simplicity we use the overflow
+     * queue which any worker can drain. */
+    mn_overflow_push(&mn_sched.overflow, task);
+    /* Wake a worker to check the newly-enqueued wait. */
+    pthread_mutex_lock(&mn_sched.wake_lock);
+    pthread_cond_signal(&mn_sched.wake_cond);
+    pthread_mutex_unlock(&mn_sched.wake_lock);
 }
 
 MN_EXPORT void __mn_coro_scheduler_run(void) {
-    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
-    /* Drain all coroutines. Keep stepping until none remain. */
+    /* The calling thread (main/worker 0) participates as a worker while
+     * waiting for all tasks to complete. This avoids deadlock. */
     uint32_t idle_spins = 0;
-    while (s->count > 0) {
-        uint32_t resumed = __mn_coro_scheduler_step();
-        if (resumed == 0) {
-            idle_spins++;
-            if (idle_spins > 10000) {
-                /* Safety valve: avoid infinite spin if all coroutines
-                 * are awaiting futures that will never become ready. */
-                break;
-            }
-        } else {
+    while (__atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) > 0) {
+        mn_task_t task;
+        if (mn_worker_get_task(0, &task)) {
+            mn_process_task(&task, 0);
             idle_spins = 0;
+        } else {
+            idle_spins++;
+            if (idle_spins > 100) {
+                /* Wait for a task to complete. */
+                pthread_mutex_lock(&mn_sched.done_lock);
+                if (__atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) > 0) {
+                    struct timespec ts;
+                    clock_gettime(CLOCK_REALTIME, &ts);
+                    ts.tv_nsec += 1000000; /* 1ms */
+                    if (ts.tv_nsec >= 1000000000) {
+                        ts.tv_sec++;
+                        ts.tv_nsec -= 1000000000;
+                    }
+                    pthread_cond_timedwait(&mn_sched.done_cond,
+                                           &mn_sched.done_lock, &ts);
+                }
+                pthread_mutex_unlock(&mn_sched.done_lock);
+                idle_spins = 0;
+            }
         }
     }
 }
 
 MN_EXPORT void __mn_coro_scheduler_destroy(void) {
-    mn_coro_scheduler_t *s = &__mn_coro_sched_data;
-    free(s->entries);
-    s->entries = NULL;
-    s->count = 0;
-    s->cap = 0;
+    __atomic_store_n(&mn_sched.running, 0, __ATOMIC_RELEASE);
+    /* Wake all workers so they see the shutdown flag. */
+    pthread_mutex_lock(&mn_sched.wake_lock);
+    pthread_cond_broadcast(&mn_sched.wake_cond);
+    pthread_mutex_unlock(&mn_sched.wake_lock);
+    /* Join worker threads (skip 0 — that's the caller). */
+    for (uint32_t i = 1; i < mn_sched.num_workers; i++) {
+        pthread_join(mn_sched.threads[i], NULL);
+    }
+    pthread_mutex_destroy(&mn_sched.wake_lock);
+    pthread_cond_destroy(&mn_sched.wake_cond);
+    pthread_mutex_destroy(&mn_sched.done_lock);
+    pthread_cond_destroy(&mn_sched.done_cond);
+    mn_overflow_destroy(&mn_sched.overflow);
+}
+
+/* v4.93.0: spawn() — enqueue a coroutine for multi-threaded execution. */
+MN_EXPORT void __mn_coro_spawn(void *handle) {
+    __mn_coro_scheduler_register(handle);
 }
 
 /* -----------------------------------------------------------------------

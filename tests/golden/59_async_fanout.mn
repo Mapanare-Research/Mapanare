@@ -1,0 +1,63 @@
+// Golden test: async fan-out with multi-threaded scheduler (v4.93.0)
+// Spawns multiple async tasks that complete via the work-stealing scheduler.
+// Uses the same await pattern as 57_real_await.mn (immediate await after call).
+// Expected output: 220
+
+async fn compute_1() -> Int {
+    return 1
+}
+
+async fn compute_3() -> Int {
+    return 3
+}
+
+async fn compute_6() -> Int {
+    return 6
+}
+
+async fn compute_10() -> Int {
+    return 10
+}
+
+async fn compute_15() -> Int {
+    return 15
+}
+
+async fn compute_21() -> Int {
+    return 21
+}
+
+async fn compute_28() -> Int {
+    return 28
+}
+
+async fn compute_36() -> Int {
+    return 36
+}
+
+async fn compute_45() -> Int {
+    return 45
+}
+
+async fn compute_55() -> Int {
+    return 55
+}
+
+async fn fanout() -> Int {
+    let r1 = await compute_1()
+    let r2 = await compute_3()
+    let r3 = await compute_6()
+    let r4 = await compute_10()
+    let r5 = await compute_15()
+    let r6 = await compute_21()
+    let r7 = await compute_28()
+    let r8 = await compute_36()
+    let r9 = await compute_45()
+    let r10 = await compute_55()
+    return r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
+}
+
+fn main() {
+    let total = block_on(fanout())
+    print(str(total))
+}

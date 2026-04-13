@@ -1777,6 +1777,17 @@ class MIRLowerer:
             self._emit(BlockOn(dest=dest, future=args[0]))
             return dest
 
+        # v4.93.0: spawn(async_call()) — enqueue for multi-threaded execution
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "spawn":
+            if len(args) != 1:
+                dest = self._make_value()
+                return dest
+            # spawn returns the Future handle (same as the async call result)
+            # The emitter will emit __mn_coro_spawn(handle) to register it.
+            dest = self._make_value(prefix="spawn")
+            self._emit(Call(dest=dest, fn_name="__mn_coro_spawn", args=[args[0]]))
+            return args[0]  # return the future, not the spawn result
+
         # Monomorphize generic function calls
         if isinstance(expr.callee, Identifier):
             fn_name = expr.callee.name

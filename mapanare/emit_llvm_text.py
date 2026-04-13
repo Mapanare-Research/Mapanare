@@ -877,13 +877,14 @@ class LLVMTextEmitter:
             self._decls.append("declare void @llvm.coro.destroy(ptr)")
             self._decls.append("declare i1 @llvm.coro.done(ptr)")
             self._decls.append("declare token @llvm.coro.save(ptr)")
-            # v4.92.0: coroutine scheduler runtime declarations
-            self._decls.append("; -- coroutine scheduler (v4.92.0) --")
+            # v4.93.0: multi-threaded work-stealing scheduler runtime declarations
+            self._decls.append("; -- coroutine scheduler (v4.93.0) --")
             self._decls.append("declare void @__mn_coro_scheduler_init(i32)")
             self._decls.append("declare void @__mn_coro_scheduler_register(ptr)")
             self._decls.append("declare void @__mn_coro_register_wait(ptr, ptr)")
             self._decls.append("declare void @__mn_coro_scheduler_run()")
             self._decls.append("declare void @__mn_coro_scheduler_destroy()")
+            self._decls.append("declare void @__mn_coro_spawn(ptr)")
             self._decls.append("declare ptr @__mn_file_read_async({ptr, i64})")
         # 8b) debug intrinsic declarations (v4.65.0)
         if self._debug_enabled:
@@ -2198,7 +2199,7 @@ class LLVMTextEmitter:
             sched_init = ""
             sched_destroy = ""
             if getattr(self, "_module_has_async", False):
-                sched_init = "  call void @__mn_coro_scheduler_init(i32 64)\n"
+                sched_init = "  call void @__mn_coro_scheduler_init(i32 0)\n"  # 0 = auto-detect cores
                 sched_destroy = "  call void @__mn_coro_scheduler_destroy()\n"
             if sched_init:
                 # Add scheduler init as first instruction in entry block

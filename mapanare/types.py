@@ -303,6 +303,7 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "typeof": STRING_TYPE,
     # Async/await builtins (v4.73.0+)
     "block_on": UNKNOWN_TYPE,  # block_on(Future<T>) -> T; type inferred from future
+    "spawn": TypeInfo(kind=TypeKind.FUTURE),  # v4.93.0: spawn async task for multi-threaded execution
     "__mn_file_read_async": TypeInfo(kind=TypeKind.FUTURE),  # v4.92.0: async file read
     # C runtime functions used by the self-hosted compiler driver (main.mn)
     "__mn_argc": INT_TYPE,

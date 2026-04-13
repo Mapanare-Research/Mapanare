@@ -580,30 +580,30 @@ MAPANARE_EXPORT mapanare_thread_pool_t *mapanare_ensure_pool(void);
 MAPANARE_EXPORT void mapanare_pool_destroy_global(void);
 
 /* -----------------------------------------------------------------------
- * Coroutine scheduler (v4.92.0)
+ * Multi-threaded work-stealing coroutine scheduler (v4.93.0)
  *
- * Single-threaded cooperative scheduler for async/await coroutines.
- * Maintains a table of registered coroutines and the futures they await.
- * Called from LLVM IR emitted by the Mapanare compiler.
+ * N worker threads, each with a Chase-Lev work-stealing deque.
+ * When idle, threads steal from random peers. N=1 backward
+ * compatible with the v4.92.0 single-threaded model.
  * ----------------------------------------------------------------------- */
 
-/** Initialize the global coroutine scheduler with the given initial capacity. */
-MN_EXPORT void __mn_coro_scheduler_init(uint32_t initial_cap);
+/** Initialize the scheduler with N worker threads (0 = auto-detect cores). */
+MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads);
 
-/** Register a coroutine handle with the scheduler. */
+/** Register a coroutine handle with the scheduler (enqueue for execution). */
 MN_EXPORT void __mn_coro_scheduler_register(void *handle);
 
 /** Register that a coroutine handle is waiting on a specific future. */
 MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr);
-
-/** Step the scheduler: resume all ready coroutines. Returns count resumed. */
-MN_EXPORT uint32_t __mn_coro_scheduler_step(void);
 
 /** Run the scheduler until all coroutines complete. */
 MN_EXPORT void __mn_coro_scheduler_run(void);
 
 /** Destroy the global coroutine scheduler (call at shutdown). */
 MN_EXPORT void __mn_coro_scheduler_destroy(void);
+
+/** Spawn a coroutine for multi-threaded execution (v4.93.0). */
+MN_EXPORT void __mn_coro_spawn(void *handle);
 
 /** Async file read: returns a Future<String> immediately, reads on a thread. */
 MN_EXPORT void *__mn_file_read_async(MnString path);

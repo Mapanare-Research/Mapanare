@@ -9,7 +9,7 @@
 > each with a local task queue, stealing from peers when idle. Async
 > workloads scale with core count.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.92.0
 **Delta review:** No

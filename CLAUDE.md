@@ -8,7 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.92.0** (shipped) — Arc 13 release 1. Real suspension at await points: coro.suspend replaces inline-resume, C runtime scheduler, async file I/O. Golden test 58.
+- **v4.93.0** (shipped) — Arc 13 release 2. Multi-threaded work-stealing scheduler: Chase-Lev deques, N worker threads (auto-detect cores), condvar parking, spawn() builtin. Golden test 59.
 - **v5.0.0** (when ready) — Major version tag. The lead's call. Zero additional work required — v4.76.0 is release-gate quality.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
