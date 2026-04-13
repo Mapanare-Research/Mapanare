@@ -95,6 +95,7 @@ Six phases:
 | **v4.93.0** | Arc 13 | Multi-Threaded Scheduler | Chase-Lev work-stealing deques, N worker threads, condvar parking, spawn() builtin. Golden test 59. |
 | **v4.94.0** | Arc 13 | Async Benchmark Suite | 5 workloads x 3 languages, harness, Python baselines. Mapanare runtime pending rebuild. |
 | **v4.95.0** | Arc 13 | StringBuilder | C runtime StringBuilder (amortized O(1)). Loop-concat MIR pass. AI stdlib refactored. |
+| **v4.96.0** | Arc 13 | **Panel: 8.57/10 PASS** | 7 reviewers. Multi-threaded async + StringBuilder validated. Mamba's v4.51.0 finding resolved. Arc 13 closes. |
 
 ## What v4.0.0 Delivered
 

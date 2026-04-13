@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.95.0 shipped — StringBuilder + O(n^2) string concat fix. Arc 13 release 4.)
+## Where We Are (v4.96.0 shipped — Arc 13 panel: 8.57/10 PASS. Multi-threaded async + StringBuilder. Arc 13 closes.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural
