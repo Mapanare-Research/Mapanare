@@ -461,6 +461,19 @@ class ForLoop(Stmt):
 
 
 @dataclass
+class ForAwaitLoop(Stmt):
+    """Async for loop: `for await x in stream { ... }`.
+
+    Desugars to a loop calling `await stream.next()` and matching
+    `Some(x)` / `None`. See v4.67.0/DESIGN.md §3.6.
+    """
+
+    var_name: str = ""
+    iterable: Expr = field(default_factory=Expr)
+    body: Block = field(default_factory=lambda: Block())
+
+
+@dataclass
 class WhileLoop(Stmt):
     """While loop: `while cond { ... }`."""
 

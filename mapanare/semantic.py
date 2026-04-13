@@ -17,6 +17,7 @@ from mapanare.ast_nodes import (
     AsyncFnDef,
     ASTNode,
     AwaitExpr,
+    ForAwaitLoop,
     BinaryExpr,
     Block,
     BoolLiteral,
@@ -1649,6 +1650,19 @@ class SemanticChecker:
                 self._infer_expr(stmt.value)
         elif isinstance(stmt, ForLoop):
             self._check_for(stmt)
+        elif isinstance(stmt, ForAwaitLoop):
+            # v4.74.0: for await — must be inside async fn
+            if not self._in_async:
+                self._error("'for await' can only be used inside an 'async fn'", stmt)
+            # Check the iterable expression
+            self._infer_expr(stmt.iterable)
+            self._push_scope()
+            self.current_scope.define(
+                stmt.var_name,
+                Symbol(name=stmt.var_name, kind=SymbolKind.LOCAL, type_info=UNKNOWN_TYPE),
+            )
+            self._check_block(stmt.body)
+            self._pop_scope()
         elif isinstance(stmt, WhileLoop):
             self._check_while(stmt)
         elif isinstance(stmt, SignalDecl):

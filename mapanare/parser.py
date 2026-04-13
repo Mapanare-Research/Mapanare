@@ -17,6 +17,7 @@ from mapanare.ast_nodes import (
     AsyncFnDef,
     ASTNode,
     AwaitExpr,
+    ForAwaitLoop,
     BinaryExpr,
     Block,
     BoolLiteral,
@@ -632,6 +633,15 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         iterable = items[1]
         body = items[2]
         return ForLoop(
+            var_name=name, iterable=iterable, body=body, span=_span_from_children(children)
+        )
+
+    def for_await_stmt(self, children: list[Any]) -> ForAwaitLoop:
+        items = _filter(children)
+        name = str(items[0])
+        iterable = items[1]
+        body = items[2]
+        return ForAwaitLoop(
             var_name=name, iterable=iterable, body=body, span=_span_from_children(children)
         )
 

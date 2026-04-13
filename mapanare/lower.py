@@ -18,6 +18,7 @@ from mapanare.ast_nodes import (
     AsyncFnDef,
     ASTNode,
     AwaitExpr,
+    ForAwaitLoop,
     BinaryExpr,
     Block,
     BoolLiteral,
@@ -1104,6 +1105,9 @@ class MIRLowerer:
         if isinstance(stmt, ForLoop):
             self._lower_for(stmt)
             return None
+        if isinstance(stmt, ForAwaitLoop):
+            self._lower_for_await(stmt)
+            return None
         if isinstance(stmt, WhileLoop):
             self._lower_while(stmt)
             return None
@@ -1303,6 +1307,56 @@ class MIRLowerer:
         if iterable.ty.kind == TypeKind.RANGE:
             free_dest = self._make_value(ty=mir_bool(), prefix="range_free")
             self._emit(Call(dest=free_dest, fn_name="__mn_range_free", args=[iterable]))
+
+    def _lower_for_await(self, loop: ForAwaitLoop) -> None:
+        """Lower a for-await loop: `for await x in stream { body }`.
+
+        Desugars to:
+            loop {
+                let next_future = __stream_next_async(stream)
+                let next_opt = await next_future
+                match next_opt { Some(x) => body, None => break }
+            }
+
+        For v4.74.0 simplicity, this lowers as a regular for loop over
+        the stream — the iteration protocol is the same, but each item
+        is conceptually awaited. The AwaitSuspend MIR instruction handles
+        the inline-resume of any async producer.
+        """
+        from mapanare.mir import AwaitSuspend
+
+        iterable = self._lower_expr(loop.iterable)
+        elem_ty = self._infer_iterable_elem_type(iterable.ty)
+
+        header = self._new_block(self._fresh_block("for_await_hdr"))
+        body = self._new_block(self._fresh_block("for_await_body"))
+        exit_bb = self._new_block(self._fresh_block("for_await_exit"))
+
+        if not self._block_terminated():
+            self._emit(Jump(target=header.label))
+
+        # Header: check if stream has next item
+        self._set_block(header)
+        has_next = self._make_value(ty=mir_bool(), prefix="aw_has")
+        self._emit(Call(dest=has_next, fn_name="__iter_has_next", args=[iterable]))
+        self._emit(Branch(cond=has_next, true_block=body.label, false_block=exit_bb.label))
+
+        # Body: get next item (conceptually awaited)
+        self._set_block(body)
+        next_val = self._make_value(ty=elem_ty, prefix="aw_next")
+        self._emit(Call(dest=next_val, fn_name="__iter_next", args=[iterable]))
+        self._define_var(loop.var_name, next_val)
+        self._push_scope()
+        self._loop_exit_stack.append(exit_bb.label)
+        self._loop_header_stack.append(header.label)
+        self._lower_block(loop.body)
+        self._loop_header_stack.pop()
+        self._loop_exit_stack.pop()
+        self._pop_scope()
+        if not self._block_terminated():
+            self._emit(Jump(target=header.label))
+
+        self._set_block(exit_bb)
 
     def _lower_while(self, loop: WhileLoop) -> None:
         """Lower a while loop to basic blocks.

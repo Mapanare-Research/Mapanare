@@ -181,6 +181,7 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 
 ?stmt: let_stmt
      | for_stmt
+     | for_await_stmt
      | while_stmt
      | return_stmt
      | break_stmt
@@ -200,6 +201,8 @@ continue_stmt: KW_CONTINUE
 assert_stmt: KW_ASSERT expr (COMMA expr)?
 di_stmt: KW_DI expr
 for_stmt: KW_FOR NAME KW_IN expr block
+// v4.74.0: for await — async stream iteration. See DESIGN.md §3.6.
+for_await_stmt: KW_FOR KW_AWAIT NAME KW_IN expr block
 while_stmt: KW_WHILE expr block
 expr_stmt: expr
 
