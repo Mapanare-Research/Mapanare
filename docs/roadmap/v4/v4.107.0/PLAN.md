@@ -8,7 +8,7 @@
 > publishes the complete 6-language comparison. No code changes to
 > Mapanare. Pure measurement.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.106.0
 **Delta review:** No

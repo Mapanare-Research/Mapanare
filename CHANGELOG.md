@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.107.0] - 2026-04-14
+
+**Phase C release 1 — cross-language benchmark surface.** Pure
+measurement release. Zero changes to the Mapanare compiler, runtime,
+or any `.mn` source file. v4.98.0's `FINAL_REPORT.md` compared
+Mapanare against Python and Rust only (Go was "not installed," C was
+"deferred to v5.x"). v4.107.0 closes that gap: 12 new benchmark
+programs (6 Go + 6 C) and a rewritten harness publish the full
+six-column comparison.
+
+### Added
+
+- `benchmarks/cross_language/go/` — 6 Go programs (fib_recursive,
+  quicksort, struct_alloc, enum_match, prime_sieve, string_concat).
+  Each emits `__BENCH_METRICS__` via `clock_gettime` + `getrusage`.
+  `go vet` clean.
+- `benchmarks/cross_language/c/` — 6 C programs. Compile clean with
+  both `gcc -O2 -Wall -Wextra -Wpedantic` and the same clang
+  invocation. UBSan clean.
+- `benchmarks/cross_language/FULL_COMPARISON.md` — five-table
+  comparison (wall time, peak memory, binary size, LOC, speedup vs C
+  gcc) across C (gcc), C (clang), Rust, Go, Mapanare O2, and
+  Python 3.12.
+- `benchmarks/cross_language/v4.107.0-results.json` — raw 36-cell
+  result set (6 workloads × 6 language configs × 10 runs).
+
+### Changed
+
+- `benchmarks/cross_language/run_benchmarks.py` rewritten as a
+  6-language × 6-workload harness. `BENCHMARKS` is now a registry of
+  `BenchSpec` records mapping each workload to its five source paths
+  (Mapanare, Python, Rust live under `optimizer/` or `system/`; Go
+  and C under the new `go/` and `c/` subdirs). All runs wrapped by
+  `/usr/bin/time -v` for accurate per-process peak RSS.
+- Measurement protocol: 10 runs per configuration, highest and lowest
+  dropped, median of the middle 8 reported (vs v4.98.0's 5 runs,
+  median of middle 3).
+- Correctness check tightened from prefix-match to exact expected
+  output.
+
+### Headlines
+
+- Mapanare O2 on pure compute (fib_recursive, prime_sieve) is
+  1.7–1.9× slower than C gcc, on par with Rust, faster than Go.
+- Mapanare tagged-union dispatch (enum_match) is 27× slower than C
+  gcc — the v4.106.0 Phase B panel's **Rt.1** boxed-enum overhead.
+- Mapanare string_concat is 1278× slower than C gcc and 2× slower
+  than Python. This is the v4.108.0 StringBuilder target.
+- Geometric mean (fib + enum_match + prime_sieve + string_concat):
+  Mapanare is 9.5× slower than C gcc, 2.8× slower than Rust,
+  **1.3× slower than Go**, and **44.6× faster than Python**.
+
+### Discovered (pre-existing Mapanare bug)
+
+- **Docket Qs.1 — `List<Int>` indexing returns garbage.**
+  `arr.push(42); print(str(arr[0]))` prints `<?>`. `len(arr)` is
+  correct, only element access fails. Surfaced by v4.107.0's strict
+  checksum check; hidden by v4.98.0's permissive prefix-match.
+  Affects `benchmarks/optimizer/quicksort.mn` — produces
+  `1.4 × 10¹⁵` instead of `485`. Not fixed here (v4.107.0 is pure
+  measurement); filed for v4.108.0+.
+
 ## [4.106.0] - 2026-04-14
 
 **Phase B panel.** Seven reviewers graded v4.100.0–v4.105.0 (Phase A

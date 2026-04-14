@@ -52,9 +52,11 @@ RESULTS_FILE = BENCH_DIR / "v4.107.0-results.json"
 # Benchmark registry
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BenchSpec:
     """Where each language's source for this workload lives + expected output."""
+
     name: str
     expected: str  # Prefix match against stdout first line.
     mn_path: Path
@@ -128,6 +130,7 @@ BENCHMARKS: list[BenchSpec] = [
 # Data containers
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SingleRun:
     wall_time_s: float = -1.0
@@ -163,14 +166,13 @@ class LangResult:
         self.cpu_median_ms = statistics.median(r.cpu_time_s for r in valid) * 1000.0
         self.mem_peak_kb = max(r.peak_memory_kb for r in valid)
         # Correctness: all runs must have produced the expected output.
-        self.correct = all(
-            r.output.startswith(expected) or expected in r.output for r in valid
-        )
+        self.correct = all(r.output.startswith(expected) or expected in r.output for r in valid)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _find_tool(name: str) -> str | None:
     """Find a tool binary, trying plain name then -18, -17 suffixes."""
@@ -217,7 +219,7 @@ def _count_lines(path: Path) -> int:
         line = raw.strip()
         if not line:
             continue
-        if line.startswith("//") or line.startswith("#") or line.startswith("/*") or line.startswith("*"):
+        if line.startswith(("//", "#", "/*", "*")):
             continue
         if any(kw in line for kw in SKIP_KWS):
             continue
@@ -343,6 +345,7 @@ def _run_external(cmd: list[str], timeout: int = 120) -> SingleRun:
 # Language runners
 # ---------------------------------------------------------------------------
 
+
 def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
     """Compile .mn to native via LLVM -O2 pipeline, run, time externally."""
     result = LangResult(
@@ -370,12 +373,31 @@ def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
         obj = td / f"{name}.o"
         binary = td / name
 
+        emit_cmd = [sys.executable, "-m", "mapanare", "emit-llvm", str(spec.mn_path), "-o", str(ll)]
+        llc_cmd = [
+            tools["llc"],
+            "-filetype=obj",
+            "-relocation-model=pic",
+            str(opt_bc),
+            "-o",
+            str(obj),
+        ]
+        link_cmd = [
+            tools["clang"],
+            str(obj),
+            str(RUNTIME_LIB),
+            "-lm",
+            "-lpthread",
+            "-ldl",
+            "-o",
+            str(binary),
+        ]
         steps = [
-            ([sys.executable, "-m", "mapanare", "emit-llvm", str(spec.mn_path), "-o", str(ll)], "emit"),
+            (emit_cmd, "emit"),
             ([tools["llvm-as"], str(ll), "-o", str(bc)], "llvm-as"),
             ([tools["opt"], "-O2", str(bc), "-o", str(opt_bc)], "opt"),
-            ([tools["llc"], "-filetype=obj", "-relocation-model=pic", str(opt_bc), "-o", str(obj)], "llc"),
-            ([tools["clang"], str(obj), str(RUNTIME_LIB), "-lm", "-lpthread", "-ldl", "-o", str(binary)], "link"),
+            (llc_cmd, "llc"),
+            (link_cmd, "link"),
         ]
         for cmd, stage in steps:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -430,9 +452,7 @@ def run_python(spec: BenchSpec, n_runs: int) -> LangResult:
     )
 
     # Warmup
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False, encoding="utf-8"
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as tmp:
         tmp.write(wrapped)
         tmp_path = tmp.name
 
@@ -466,7 +486,9 @@ def run_rust(spec: BenchSpec, n_runs: int) -> LangResult:
         binary = Path(tmpdir) / spec.rs_path.stem
         r = subprocess.run(
             [rustc, "-O", str(spec.rs_path), "-o", str(binary)],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if r.returncode != 0:
             result.error = f"compile_fail: {r.stderr[:200]}"
@@ -503,7 +525,10 @@ def run_go_compiled(spec: BenchSpec, n_runs: int) -> LangResult:
         env["GOPATH"] = env.get("GOPATH") or str(Path.home() / "gopath")
         r = subprocess.run(
             [go, "build", "-o", str(binary), str(spec.go_path)],
-            capture_output=True, text=True, timeout=120, env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
         )
         if r.returncode != 0:
             result.error = f"compile_fail: {r.stderr[:200]}"
@@ -518,7 +543,12 @@ def run_go_compiled(spec: BenchSpec, n_runs: int) -> LangResult:
     return result
 
 
-def _run_c_variant(spec: BenchSpec, n_runs: int, compiler_tool: str, language_label: str) -> LangResult:
+def _run_c_variant(
+    spec: BenchSpec,
+    n_runs: int,
+    compiler_tool: str,
+    language_label: str,
+) -> LangResult:
     """Shared runner for C (gcc) and C (clang) variants."""
     result = LangResult(
         benchmark=spec.name,
@@ -537,7 +567,9 @@ def _run_c_variant(spec: BenchSpec, n_runs: int, compiler_tool: str, language_la
         binary = Path(tmpdir) / spec.name
         r = subprocess.run(
             [cc, "-O2", "-Wall", "-Wextra", str(spec.c_path), "-o", str(binary)],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if r.returncode != 0:
             result.error = f"compile_fail: {r.stderr[:200]}"
@@ -605,7 +637,11 @@ def run_all(only: str | None, n_runs: int) -> dict:
             else:
                 status = "ok" if res.correct else "WRONG CHECKSUM"
                 mem = f"mem={res.mem_peak_kb:>7.0f}KB" if res.mem_peak_kb > 0 else "mem=N/A"
-                bin_kb = f"bin={res.binary_size_bytes / 1024:>6.1f}KB" if res.binary_size_bytes else "bin=N/A"
+                bin_kb = (
+                    f"bin={res.binary_size_bytes / 1024:>6.1f}KB"
+                    if res.binary_size_bytes
+                    else "bin=N/A"
+                )
                 print(
                     f"  {res.language:<16s} "
                     f"wall={res.wall_median_ms:>8.3f}ms  "
@@ -659,7 +695,12 @@ def _format_summary_table(data: dict) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="v4.107.0 cross-language benchmark suite")
     parser.add_argument("--runs", type=int, default=10, help="runs per config (default: 10)")
-    parser.add_argument("--only", type=str, default=None, help="substring match against benchmark name")
+    parser.add_argument(
+        "--only",
+        type=str,
+        default=None,
+        help="substring match against benchmark name",
+    )
     parser.add_argument("--output", type=str, default=str(RESULTS_FILE))
     args = parser.parse_args()
 
