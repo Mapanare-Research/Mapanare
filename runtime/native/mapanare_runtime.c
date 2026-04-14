@@ -13,6 +13,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <signal.h>
+#include <errno.h>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -1683,19 +1684,73 @@ MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads) {
         mn_deque_init(&mn_sched.deques[i]);
     }
     /* Start worker threads (skip thread 0 — the caller thread acts as worker 0
-     * during block_on, which avoids deadlock when block_on is called from main). */
+     * during block_on, which avoids deadlock when block_on is called from main).
+     *
+     * v4.113.0 (docket #11): pthread_create can fail with EAGAIN when the
+     * per-user thread limit is exceeded, or ENOMEM / EPERM in rarer cases.
+     * Prior to v4.113.0 the return value was silently dropped — the
+     * scheduler would report `num_workers = N` while having only
+     * `num_workers - k` live threads, making every task-steal look idle
+     * and stalling the whole program. Bail with a specific message that
+     * names what failed (thread N of M) and why (strerror on the real
+     * errno), so `RLIMIT_NPROC` exhaustion doesn't masquerade as a
+     * generic hang. */
     for (uint32_t i = 1; i < n; i++) {
-        pthread_create(&mn_sched.threads[i], NULL, mn_worker_loop,
-                       (void *)(uintptr_t)i);
+        int rc = pthread_create(&mn_sched.threads[i], NULL, mn_worker_loop,
+                                (void *)(uintptr_t)i);
+        if (rc != 0) {
+            fprintf(stderr,
+                    "mapanare: async runtime: failed to spawn worker thread "
+                    "%u of %u: %s (errno %d). Likely causes: "
+                    "RLIMIT_NPROC exhausted, or ENOMEM at pthread stack "
+                    "allocation. Try lowering MAPANARE_ASYNC_THREADS or "
+                    "raising `ulimit -u`.\n",
+                    i, n, strerror(rc), rc);
+            exit(1);
+        }
     }
 }
 
 MN_EXPORT void __mn_coro_scheduler_register(void *handle) {
+    /* v4.113.0 (docket #11): refuse to enqueue a coroutine before
+     * __mn_coro_scheduler_init has run. Pre-v4.113.0 the scheduler
+     * would silently push into a zero-initialised deque (num_workers=0)
+     * and __mn_coro_scheduler_run would spin forever waiting for
+     * active_tasks to drain. Emit a specific message naming the
+     * missing call so the user knows which init to add. */
+    if (mn_sched.num_workers == 0) {
+        fprintf(stderr,
+                "mapanare: async runtime: cannot spawn task — scheduler "
+                "not initialised. The main() emitted by the compiler "
+                "should call __mn_coro_scheduler_init() before any "
+                "async function runs; if this message appeared, the "
+                "emitter (mapanare/emit_llvm_text.py) dropped that "
+                "call for the current entry point.\n");
+        exit(1);
+    }
     mn_task_t task = { .handle = handle, .awaited_future = NULL };
     __atomic_fetch_add(&mn_sched.active_tasks, 1, __ATOMIC_ACQ_REL);
-    /* Push to worker 0's deque (caller is main thread = worker 0). */
+    /* Push to worker 0's deque (caller is main thread = worker 0).
+     *
+     * v4.113.0 (docket #11): both the per-worker deque and the global
+     * overflow queue are bounded; if both are full the task must not
+     * be silently dropped (previously we did, and the scheduler would
+     * deadlock waiting on a task the scheduler never actually held).
+     * Undo the active_tasks bump, name which queue refused the push,
+     * and bail. This path is rare but when it triggers silent drop
+     * was spectacularly hard to diagnose. */
     if (mn_deque_push(&mn_sched.deques[0], task) != 0) {
-        mn_overflow_push(&mn_sched.overflow, task);
+        if (mn_overflow_push(&mn_sched.overflow, task) != 0) {
+            __atomic_fetch_sub(&mn_sched.active_tasks, 1, __ATOMIC_ACQ_REL);
+            fprintf(stderr,
+                    "mapanare: async runtime: failed to spawn task — both "
+                    "worker-0 deque (cap=%u) and global overflow queue "
+                    "(cap=%u) are full. Too many concurrent spawn() calls "
+                    "without await points; the scheduler cannot drain. "
+                    "Rewrite to spawn in batches or add an await.\n",
+                    (unsigned)MN_DEQUE_CAP, (unsigned)MN_OVERFLOW_CAP);
+            exit(1);
+        }
     }
     /* Wake a parked worker. */
     pthread_mutex_lock(&mn_sched.wake_lock);
@@ -1711,8 +1766,23 @@ MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr) {
     mn_task_t task = { .handle = handle, .awaited_future = future_ptr };
     /* Push to worker 0's deque. In the multi-threaded model, the actual
      * worker ID should be passed, but for simplicity we use the overflow
-     * queue which any worker can drain. */
-    mn_overflow_push(&mn_sched.overflow, task);
+     * queue which any worker can drain.
+     *
+     * v4.113.0 (docket #11): same silent-drop concern as
+     * __mn_coro_scheduler_register, but this one is worse — the
+     * coroutine is SUSPENDED waiting for a future that will never be
+     * resumed. Report the awaited future's address and bail so the
+     * user sees a specific "await lost its resumer" failure instead
+     * of a hang. */
+    if (mn_overflow_push(&mn_sched.overflow, task) != 0) {
+        fprintf(stderr,
+                "mapanare: async runtime: cannot register await — global "
+                "overflow queue (cap=%u) is full. Coroutine at %p is "
+                "awaiting Future at %p; without a resumer slot it will "
+                "never wake. Rewrite to limit concurrent awaits.\n",
+                (unsigned)MN_OVERFLOW_CAP, handle, future_ptr);
+        exit(1);
+    }
     /* Wake a worker to check the newly-enqueued wait. */
     pthread_mutex_lock(&mn_sched.wake_lock);
     pthread_cond_signal(&mn_sched.wake_cond);
@@ -1813,15 +1883,47 @@ static void *mn_async_file_read_thread(void *arg) {
 }
 
 MN_EXPORT void *__mn_file_read_async(MnString path) {
-    /* Allocate a Future {i8 state, ptr payload}. */
+    /* Allocate a Future {i8 state, ptr payload}.
+     *
+     * v4.113.0 (docket #11): calloc / malloc / pthread_create all
+     * check on the happy path; each failure mode gets a specific
+     * message naming WHAT we were trying to allocate (Future vs.
+     * context) and which errno came back. Previously a failure here
+     * produced either a SIGSEGV (from dereferencing NULL future /
+     * ctx) or a silent hang (detached thread never started, Future
+     * state byte never set to Ready). */
     void *future = calloc(1, 16);  /* 16 bytes = {i8, padding[7], ptr} */
+    if (!future) {
+        fprintf(stderr,
+                "mapanare: async runtime: cannot start file_read_async "
+                "— out of memory allocating Future (16 bytes).\n");
+        exit(1);
+    }
 
     mn_async_read_ctx_t *ctx = (mn_async_read_ctx_t *)malloc(sizeof(*ctx));
+    if (!ctx) {
+        free(future);
+        fprintf(stderr,
+                "mapanare: async runtime: cannot start file_read_async "
+                "— out of memory allocating reader context (%zu bytes).\n",
+                sizeof(*ctx));
+        exit(1);
+    }
     ctx->future = future;
     ctx->path = path;
 
     pthread_t thread;
-    pthread_create(&thread, NULL, mn_async_file_read_thread, ctx);
+    int rc = pthread_create(&thread, NULL, mn_async_file_read_thread, ctx);
+    if (rc != 0) {
+        free(ctx);
+        free(future);
+        fprintf(stderr,
+                "mapanare: async runtime: failed to spawn file-read "
+                "thread: %s (errno %d). The Future would never resolve; "
+                "aborting rather than hanging the caller.\n",
+                strerror(rc), rc);
+        exit(1);
+    }
     pthread_detach(thread);
 
     return future;
