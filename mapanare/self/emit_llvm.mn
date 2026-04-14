@@ -1451,11 +1451,32 @@ fn is_name_in_byref(byref_names: List<String>, name: String) -> Bool {
     return false
 }
 
-fn is_byref_type(ty: String) -> Bool {
-    // Large types (> 64 bytes) should use byref/sret passing.
-    // This prevents ABI issues with large struct copies.
+// v4.112.0 docket #7: real struct size computation.
+// llvm_type_size() returns 256 for all %struct.Foo (a safe upper
+// bound for malloc), but that over-classifies small user structs as
+// byref. is_byref_type_st() resolves %struct.Foo through the
+// registered struct table and uses the inline {...} form for size
+// computation, matching the Python bootstrap's _tsz behavior.
+fn is_byref_type_st(st: EmitState, ty: String) -> Bool {
+    // Named struct: resolve to inline {...} form via registered entry.
     if ty.starts_with("%struct.") {
-        // All structs > 64 bytes use byref. Use llvm_type_size heuristic.
+        let sz_real: Int = struct_byte_size(st, ty)
+        if sz_real > 64 { return true }
+        return false
+    }
+    // Inline struct: compute directly.
+    if ty.starts_with("{") {
+        let sz_lit: Int = llvm_type_size(ty)
+        if sz_lit > 64 { return true }
+    }
+    return false
+}
+
+// Back-compat wrapper for any call site that lacks EmitState access.
+// Uses the legacy 256 heuristic (over-classifies named structs as
+// byref) — only called from contexts where st is not threaded.
+fn is_byref_type(ty: String) -> Bool {
+    if ty.starts_with("%struct.") {
         let sz_st: Int = llvm_type_size(ty)
         if sz_st > 64 { return true }
         return false
@@ -1465,6 +1486,33 @@ fn is_byref_type(ty: String) -> Bool {
         if sz_lit > 64 { return true }
     }
     return false
+}
+
+// Compute real byte size of a named struct type by looking up its
+// llvm_type (the inline {...} form) in the struct table.
+// Returns 256 as a safe upper bound if the struct is not registered
+// (e.g. forward reference before registration, opaque type).
+fn struct_byte_size(st: EmitState, ty: String) -> Int {
+    // Strip "%struct." prefix
+    if !ty.starts_with("%struct.") { return llvm_type_size(ty) }
+    let name: String = ty.substr(8, len(ty) - 8)
+    // Look up registered struct entry
+    let mut i: Int = 0
+    let nstructs: Int = len(st.structs)
+    for _ in 0..10000 {
+        if i >= nstructs { return 256 }
+        let entry: StructEntry = st.structs[i]
+        if entry.name == name {
+            // entry.llvm_type is the inline "{ f0, f1, ... }" form.
+            // llvm_aggregate_size counts comma-separated fields × 8
+            // bytes each — adequate for Mapanare's 64-bit types
+            // (i64, ptr, double are all 8 bytes; String = {ptr,i64} =
+            // 16 bytes = 2 fields × 8).
+            return llvm_aggregate_size(entry.llvm_type)
+        }
+        i = i + 1
+    }
+    return 256
 }
 
 fn find_alloca_for_value(st: EmitState, value_name: String) -> String {
@@ -2705,7 +2753,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
             // Byref: large struct args → store to alloca, pass pointer
             let mut pass_ty: String = aty
             let mut pass_name: String = an
-            if is_byref_type(aty) {
+            if is_byref_type_st(s, aty) {
                 let ba: String = "%barg" + toString(s.counter)
                 s.counter = s.counter + 1
                 s = emit_line(s, "  " + ba + " = alloca " + aty)
@@ -2730,7 +2778,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                 return emit_line(s, emit_call_void(fn_name, args_str))
             }
             // sret: large struct returns via hidden pointer
-            if is_byref_type(fe.ret_type) {
+            if is_byref_type_st(s, fe.ret_type) {
                 let sret_a: String = "%sret" + toString(s.counter)
                 s.counter = s.counter + 1
                 s = emit_line(s, "  " + sret_a + " = alloca " + fe.ret_type)
@@ -2751,7 +2799,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                 return emit_line(s, emit_call_void(fn_name, args_str))
             }
             // sret for unregistered functions with large struct returns
-            if is_byref_type(ret_ty) {
+            if is_byref_type_st(s, ret_ty) {
                 let sret_b: String = "%sret" + toString(s.counter)
                 s.counter = s.counter + 1
                 s = emit_line(s, "  " + sret_b + " = alloca " + ret_ty)
@@ -2919,7 +2967,7 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
                 return emit_line(st, emit_ret_void())
             }
             // If using sret (large struct return), store to sret pointer and ret void
-            if is_byref_type(ty) {
+            if is_byref_type_st(st, ty) {
                 let mut s: EmitState = emit_line(st, "  store " + ty + " " + val.name + ", ptr %__sret__")
                 return emit_line(s, emit_ret_void())
             }
@@ -3180,7 +3228,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     }
 
     // Determine byref/sret: large structs passed by pointer
-    let use_sret: Bool = is_byref_type(ret_ty) && f.name != "main"
+    let use_sret: Bool = is_byref_type_st(st, ret_ty) && f.name != "main"
 
     // Build parameter list with byref adjustments
     let mut params_str: String = ""
@@ -3199,7 +3247,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
             let need_sep: Bool = pi > 0 || use_sret
             let mut sep: String = ""
             if need_sep { sep = ", " }
-            if is_byref_type(pty_sig) {
+            if is_byref_type_st(st, pty_sig) {
                 // Large param: pass by pointer
                 params_str = params_str + sep + "ptr %" + p_sig.name + ".byref"
             } else {
@@ -3250,7 +3298,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
             if pi3 < nfparams3 {
                 let p_byref: MIRParam = f.params[pi3]
                 let pty_byref: String = resolve_mir_type(p_byref.ty)
-                if is_byref_type(pty_byref) {
+                if is_byref_type_st(s, pty_byref) {
                     s = emit_line(s, "  %" + p_byref.name + ".addr = alloca " + pty_byref)
                     s = emit_line(s, "  %" + p_byref.name + ".bp = load " + pty_byref + ", ptr %" + p_byref.name + ".byref")
                     s = emit_line(s, "  store " + pty_byref + " %" + p_byref.name + ".bp, ptr %" + p_byref.name + ".addr")
@@ -3266,7 +3314,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
             if pn < nfparamsn {
                 let pp: MIRParam = f.params[pn]
                 let ppty: String = resolve_mir_type(pp.ty)
-                if is_byref_type(ppty) {
+                if is_byref_type_st(s, ppty) {
                     byref_names.push(pp.name)
                 }
                 pn = pn + 1
