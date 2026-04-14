@@ -7,6 +7,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.123.0] - 2026-04-14
+
+**Phase F closeout release 3 — dead-code sweep.** Pure cleanup;
+net −1,963 lines (1,203 from `mapanare/optimizer.py`, 1,029 from its
+companion test file, plus smaller edits). The AST-level optimiser
+(`mapanare/optimizer.py`) has been superseded by the MIR optimiser
+(`mapanare/mir_opt.py`) since the v3.x era. Its only entry point was
+the undocumented `--legacy-optimizer` flag on `emit-mir`, which no
+test exercised; test coverage was 9%. Multiple v4 panel reviewers
+flagged it as dead weight. Also removed: the TBAA (Type-Based Alias
+Analysis) metadata tree that the LLVM emitter declared in every
+module header but never attached to any load/store — v4.109.0
+forensics confirmed it was 100% dead and wiring it would not help
+at −O2.
+
+No behaviour change. Golden tests through `mnc-stage1`: 27/65,
+unchanged from v4.122.0. Full pytest failure set is byte-identical
+to v4.122.0 HEAD baseline (39 carry-forward An.1 failures + 12
+pre-existing bootstrap failures; zero new failures). `mnc-stage1`
+rebuilds cleanly. `libmapanare_rt.a` byte-identical to v4.122.0.
+
+### Removed
+
+- **`mapanare/optimizer.py`** (1,203 lines). AST-level optimiser
+  (constant folding, DCE, agent inlining, stream fusion) from the
+  v3.x era. Last non-legacy usage dropped when `cmd_emit_mir` stopped
+  calling `optimize(ast, ...)` by default in an earlier release.
+- **`--legacy-optimizer` CLI flag** from `mapanare/cli.py`. The
+  argparse registration and the `if legacy: ast, _ = optimize(...)`
+  branch in `cmd_emit_mir` are gone. The MIR optimiser runs
+  unconditionally.
+- **`tests/optimizer/test_optimizer.py`** (1,029 lines). Exclusively
+  tested `mapanare.optimizer`. Companion file
+  `tests/optimizer/test_non_convergence.py` is kept — it tests
+  `mapanare.mir_opt`, not the deleted AST optimiser.
+- **`TestOptimizerIntegration` class** from
+  `tests/bootstrap/test_verification.py` (34 parametrised tests
+  across `mapanare/self/*.mn`). Replaced by a comment block
+  pointing to the live MIR-level coverage in `tests/mir/`,
+  `tests/llvm/`, and the native golden-test harness.
+- **TBAA metadata declaration block** in
+  `mapanare/emit_llvm_text.py` (nodes `!1`–`!9`: root, 4 type
+  nodes, 4 access tags). The module header still emits
+  `!mapanare.version = !{!0}` with the build version; just the
+  dead TBAA subtree is gone.
+
+### Changed
+
+- **`mapanare/cli.py`** — `from mapanare.optimizer import OptLevel,
+  optimize` is replaced by `from mapanare.mir_opt import MIROptLevel
+  as OptLevel`. All call-site type annotations continue to read
+  `OptLevel` (they now resolve to `MIROptLevel`, which is
+  byte-compatible — both are `IntEnum` with the same `O0`–`O3`
+  values). Downstream `MIROptLevel(opt_level.value)` calls are
+  identity conversions post-change but left in place to minimise
+  diff scope.
+- **`tests/llvm/test_drop_glue.py`**,
+  **`tests/llvm/test_emitter_hardening.py`** — `OptLevel` imports
+  switched to `from mapanare.mir_opt import MIROptLevel as OptLevel`;
+  no test assertions change.
+- **`tests/test_examples.py::test_wasm_example_emits_wat`** — the
+  `ast, _ = optimize(ast, OptLevel.O0)` call is removed (it was a
+  no-op at `O0` per the old optimiser). Lowering + WASM emission
+  is unchanged.
+- **`playground/src/worker.js`**,
+  **`playground/scripts/bundle-compiler.sh`**,
+  **`tests/playground/test_playground.py`** — `optimizer.py`
+  removed from the playground's compiler bundle manifest and the
+  in-worker `optimize()` calls stripped from both the WASM and
+  Python compile paths.
+- **`docs/BOOTSTRAP.md`** — "Key files" table updated: `optimizer.py`
+  row replaced with `lower.py` + `mir_opt.py` rows.
+- **`CLAUDE.md`** — "Key modules in `mapanare/`" list updated; the
+  `optimizer.py` entry is gone.
+
+### Fixed
+
+- Nothing (this is a cleanup release, not a bug fix).
+
+### Test-suite state
+
+- **Audit subset pytest** (excluding `tests/bootstrap/`): 5,053
+  passed / 39 failed / 103 skipped / 7 xfailed in 96.6 s. Baseline
+  at HEAD (v4.122.0): 5,103 passed / 39 failed / 103 skipped / 7
+  xfailed. Delta: −50 passed (the deleted
+  `tests/optimizer/test_optimizer.py`), identical failure set.
+- **Bootstrap pytest**: 213 passed / 12 failed in 35.5 s. Baseline:
+  247 passed / 12 failed. Delta: −34 passed (the deleted
+  `TestOptimizerIntegration` class), identical failure set.
+- **Golden tests through `mnc-stage1`**: 27 passed / 38 failed —
+  byte-identical to v4.122.0.
+
+### Lint state
+
+- Modified files clean on `ruff` and `black` **on the lines this
+  release touched.** `mapanare/emit_llvm_text.py` carries 50
+  pre-existing ruff findings and a black quote-style reformat
+  queue (both present at v4.122.0 HEAD and unchanged by this
+  release — An.2 carry-forward on the v4.126.0 track).
+
+### Carry-forward
+
+- **An.1** (51 pre-existing pytest failures outside the v4.117.0
+  audit scope) — unchanged.
+- **An.2** (pre-existing lint debt in `lower.py` /
+  `emit_llvm_text.py`) — unchanged.
+- **Rt.1** (boxed-enum payload overhead — `enum_match` 24× slower
+  than C, 2× slower than Rust) — next release (v4.124.0).
+
 ## [4.122.0] - 2026-04-14
 
 **Phase F closeout release 2 — Qs.1 fix.** `List<Int>` element access

@@ -14,8 +14,8 @@ from mapanare.diagnostics import (
     format_diagnostic,
     format_summary,
 )
+from mapanare.mir_opt import MIROptLevel as OptLevel
 from mapanare.modules import ModuleResolver
-from mapanare.optimizer import OptLevel, optimize
 from mapanare.parser import ParseError, parse, parse_recovering
 from mapanare.semantic import SemanticErrors, check_or_raise
 from mapanare.targets import get_target, host_target_name, list_targets
@@ -848,17 +848,13 @@ def cmd_emit_mir(args: argparse.Namespace) -> None:
 
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    legacy = getattr(args, "legacy_optimizer", False)
     resolver = ModuleResolver()
     try:
         ast = parse(source, filename=args.source)
         check_or_raise(ast, filename=args.source, resolver=resolver)
-        if legacy:
-            ast, _ = optimize(ast, opt_level)
         mir_module = build_mir(ast, module_name=os.path.splitext(os.path.basename(args.source))[0])
-        if not legacy:
-            mir_opt_level = MIROptLevel(opt_level.value)
-            mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+        mir_opt_level = MIROptLevel(opt_level.value)
+        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
@@ -1655,12 +1651,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_emit_mir = subparsers.add_parser("emit-mir", help="Emit MIR (mid-level IR) for .mn source")
     p_emit_mir.add_argument("source", help="Path to .mn source file")
     p_emit_mir.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
-    p_emit_mir.add_argument(
-        "--legacy-optimizer",
-        action="store_true",
-        default=False,
-        help="Use the legacy AST-based optimizer instead of MIR optimizer",
-    )
     _add_opt_level_args(p_emit_mir)
     p_emit_mir.set_defaults(func=cmd_emit_mir)
 

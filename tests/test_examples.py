@@ -137,7 +137,6 @@ def test_mobile_example_parses(mn_file: Path) -> None:
 try:
     from mapanare.emit_wasm import WasmEmitter
     from mapanare.lower import lower
-    from mapanare.optimizer import OptLevel, optimize
 
     HAS_WASM_EMITTER = True
 except ImportError:
@@ -161,7 +160,6 @@ def test_wasm_example_emits_wat(mn_file: Path) -> None:
         check_or_raise(ast, filename=str(mn_file))
     except SemanticErrors:
         pytest.xfail("Semantic errors (likely import resolution)")
-    ast, _ = optimize(ast, OptLevel.O0)
     mir_module = lower(ast, source_file=str(mn_file))
     emitter = WasmEmitter()
     wat = emitter.emit(mir_module)

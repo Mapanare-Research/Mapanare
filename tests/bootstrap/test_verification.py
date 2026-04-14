@@ -25,7 +25,6 @@ from mapanare.ast_nodes import (
     StructDef,
 )
 from mapanare.cli import _compile_to_llvm_ir
-from mapanare.optimizer import OptLevel, optimize
 from mapanare.parser import parse
 from mapanare.semantic import check
 
@@ -246,7 +245,6 @@ class TestFixedPoint:
         assert ir1 == ir2
 
 
-
 # ---------------------------------------------------------------------------
 # Test 5: CLI integration — compile and run sample programs
 # ---------------------------------------------------------------------------
@@ -422,31 +420,10 @@ class TestSamplePrograms:
         assert len(program.definitions) > 0
 
 
-# ---------------------------------------------------------------------------
-# Test 7: Optimizer integration with self-hosted sources
-# ---------------------------------------------------------------------------
-
-
-class TestOptimizerIntegration:
-    """Verify the optimizer works on self-hosted compiler sources."""
-
-    @pytest.mark.parametrize("mn_file", MN_FILES, ids=[f.stem for f in MN_FILES])
-    def test_optimize_no_crash(self, mn_file: Path) -> None:
-        """Optimizer runs without crashing on self-hosted sources."""
-        source = mn_file.read_text(encoding="utf-8")
-        program = parse(source, filename=mn_file.name)
-        optimized, stats = optimize(program, OptLevel.O2)
-        assert optimized is not None
-        assert len(optimized.definitions) > 0
-
-    @pytest.mark.parametrize("mn_file", MN_FILES, ids=[f.stem for f in MN_FILES])
-    def test_optimize_preserves_definitions(self, mn_file: Path) -> None:
-        """Optimizer doesn't drop definitions (may inline/fold, but count stays >= original)."""
-        source = mn_file.read_text(encoding="utf-8")
-        program = parse(source, filename=mn_file.name)
-        original_count = len(program.definitions)
-        optimized, _ = optimize(program, OptLevel.O1)
-        # Optimizer should preserve at least the same number of top-level definitions
-        assert (
-            len(optimized.definitions) >= original_count * 0.9
-        ), f"Optimizer dropped too many defs: {len(optimized.definitions)} < {original_count}"
+# Test 7 (TestOptimizerIntegration) was removed in v4.123.0: the legacy
+# AST optimizer (`mapanare.optimizer`) was deleted as dead code (1,203
+# lines, 9% test coverage, reachable only via `--legacy-optimizer` which
+# no test exercised). The MIR optimizer (`mapanare.mir_opt`) is the
+# active optimization pipeline and is tested end-to-end via the full
+# compile/golden pipeline under `tests/mir/`, `tests/llvm/`, and the
+# native golden-test harness.

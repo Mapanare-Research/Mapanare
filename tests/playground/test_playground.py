@@ -204,7 +204,6 @@ REQUIRED_COMPILER_FILES = [
     "types.py",
     "parser.py",
     "semantic.py",
-    "optimizer.py",
     "emit_python.py",
     "diagnostics.py",
     "mapanare.lark",

@@ -8,13 +8,17 @@
 > to any load/store, confirmed 100% dead by v4.109.0 forensics). This
 > release deletes both. The codebase gets smaller.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-14)
 **Breaking:** No
 **Prerequisite:** v4.122.0
 **Delta review:** No
 **Full panel:** No (v4.130.0)
 **Estimated work:** 1 sprint
 **Theme:** Delete dead code. Net negative lines.
+**Outcome:** −1,963 net lines. `mapanare/optimizer.py` (1,203 lines) +
+`tests/optimizer/test_optimizer.py` (1,029 lines) deleted. TBAA
+metadata declaration removed. Golden tests 27/65 unchanged. Zero
+new pytest failures.
 
 ---
 

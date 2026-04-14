@@ -529,7 +529,7 @@ class TestEmitterOutputSuite:
         a real win for codegen, but the assertion was written when the
         emitter still left the named definitions in place.
         """
-        from mapanare.optimizer import OptLevel
+        from mapanare.mir_opt import MIROptLevel as OptLevel
 
         source = textwrap.dedent("""\
             fn add(a: Int, b: Int) -> Int {

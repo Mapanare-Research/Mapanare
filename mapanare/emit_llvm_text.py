@@ -908,22 +908,14 @@ class LLVMTextEmitter:
             self._debug_metadata_lines.append(f"!{ver_list_id} = !{{!{ver_str_id}}}")
             tail += self._build_debug_metadata_section()
         else:
-            # v4.83.0: TBAA metadata tree for alias analysis.
-            # !0 = version string, !1 = TBAA root, !2-!5 = type nodes,
-            # !6-!9 = access tags (used on load/store via !tbaa !N).
+            # Module version metadata. v4.123.0 removed the TBAA tree
+            # (nodes !1–!9) that used to live here: it was declared but
+            # never attached to any load/store, confirmed 100% dead by
+            # v4.109.0 forensics, and wiring it would not help at -O2.
             tail = [
                 "",
                 "!mapanare.version = !{!0}",
                 f'!0 = !{{!"{ver}"}}',
-                '!1 = !{!"Mapanare TBAA"}',
-                '!2 = !{!"int", !1}',
-                '!3 = !{!"float", !1}',
-                '!4 = !{!"ptr", !1}',
-                '!5 = !{!"bool", !1}',
-                "!6 = !{!2, !2, i64 0}",
-                "!7 = !{!3, !3, i64 0}",
-                "!8 = !{!4, !4, i64 0}",
-                "!9 = !{!5, !5, i64 0}",
                 "",
             ]
         parts = hdr

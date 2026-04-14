@@ -10,7 +10,7 @@ from __future__ import annotations
 import textwrap
 
 from mapanare.cli import _compile_to_llvm_ir
-from mapanare.optimizer import OptLevel
+from mapanare.mir_opt import MIROptLevel as OptLevel
 
 
 def _to_ir(source: str, filename: str = "test.mn") -> str:
