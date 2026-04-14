@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.117.0] - 2026-04-14
+
+**Phase E release 3 — testing sweep.** The v4.120.0 panel will only
+be as good as the evidence. This release makes CI trustworthy before
+Phase F begins. Zero compiler or runtime code changes.
+
+### Added
+
+- **`tests/FLAKY_AUDIT.md`** — 5-run flaky test audit across 9
+  subdirectories (1,501 tests, golden/integration/llvm/lexer/parser/
+  semantic/mir/emit/cli). Pairwise diff of failure sets: zero diffs.
+  **Zero flaky tests.** The 22 observed failures are deterministic
+  pre-existing bugs (14 stale CLI tests asserting on the pre-rename
+  `mapanare compile` command; 3 DWARF deferral-warning tests for a
+  feature SPEC §21.3 marks deferred; 2 drop-glue count drifts from
+  v4.101.0 move-semantics; 1 cross-module linkage specifier
+  over-specification; 1 emitter-hardening count drift from StringBuilder
+  + coroutine helpers; 1 bounded-generic trait monomorphization edge
+  case). Adding `@pytest.mark.flaky` to deterministic failures would
+  be dishonest; all 22 are catalogued with root cause for v4.120.0
+  panel review.
+- **`tests/integration/test_pipeline_hardening.py`** — 6 new tests
+  enforcing the `full_pipeline` harness fail-loud contract.
+  Deliberately feeds broken inputs at each stage and asserts the
+  harness captures the correct stage and a non-empty error message:
+  (1) unparseable `.mn` → `emit` error; (2) hand-crafted invalid `.ll`
+  → `llvm-as` non-zero exit; (3) binary that exits 42 → non-zero
+  `pr.exit_code` captured; (4) binary that `sleep(60)`s → timeout
+  raises cleanly; (5) stdout mismatch vs `.expected` → reported on
+  `stdout` stage (uses `monkeypatch` to point `EXPECTED_DIR` at a
+  tmp fixture); (6) negative control — hello.mn happy path still
+  passes. All 6 tests PASS.
+- **`tests/COVERAGE.md`** — per-module coverage audit of the Python
+  compiler sources under `mapanare/`. Aggregate 43% as measured
+  (8,896 / 20,894 statements) across 7 core-pipeline test directories.
+  **Within the core pipeline: 73%.** Individual modules: `ast_nodes.py`
+  100%, `mir.py` 95%, `types.py` 92%, `lexer.py` 89%,
+  `pattern_matching.py` 88%, `multi_module.py` 83%, `semantic.py` 81%,
+  `parser.py` 78%, `mir_opt.py` 72%, `lower.py` 69%,
+  `emit_llvm_text.py` 65%. Below-50% tail identified with reasons
+  per module; five recommendations for future coverage work
+  (rewrite stale CLI tests, merge emit_c / wasm / lsp scopes, delete
+  `optimizer.py` as dead code, boost `diagnostics.py`, flip informational
+  gate to enforcing after baseline stabilises).
+
+### Changed
+
+- **`.github/workflows/sanitizers.yml`** — extended the `tsan-async`
+  job to include the v4.115.0 native async I/O demos
+  (`examples/async_file_io.mn`, `examples/async_http_demo.mn`) on top
+  of the three async goldens. Any future scheduler or coroutine-frame
+  race under I/O-heavy workloads now fails CI at PR time.
+  `async_http_demo.mn`'s CI-safe fallback (clean exit 0 when outbound
+  TCP is sandboxed) is preserved; only TSan races (exit 99) or crashes
+  are treated as failures.
+- **`.github/workflows/ci.yml`** — new `coverage` job (informational,
+  not gating) runs the exact command from the audit and uploads
+  `coverage.xml` as a 30-day artifact. `|| true` on the test step so
+  the 8 deterministic failures in scope don't break the coverage
+  upload. PLAN.md Decision: "Run coverage as a separate job, not on
+  the critical path."
+
+### Not changed
+
+- **ASan / TSan gates already existed.** `sanitizers.yml` has carried
+  three sanitizer jobs (valgrind full golden suite, ASan full golden
+  suite, TSan async goldens) with regression baselines since v4.105.0.
+  This release extends TSan to the v4.115.0 demos and documents the
+  existing infrastructure; Phase 1 and Phase 2 did not require new CI
+  jobs because the permanent gates were already in place.
+- No changes under `mapanare/`, `runtime/native/`, `mapanare/self/`,
+  `stdlib/`, `scripts/`. `libmapanare_rt.a` byte-identical to v4.116.0.
+
+### Dockets
+
+No new dockets opened. The 22 deterministic test failures are
+catalogued in FLAKY_AUDIT.md per bucket and remain open for v4.120.0
+panel review. The five coverage recommendations in COVERAGE.md are
+future work, not filed rows.
+
+### Verification
+
+- 5-run flaky audit: runs 1-4 produce identical 22-failure sets
+  (`diff` empty across all 4 pairs); run 5 adds the 6 new hardening
+  tests to the pass count but the failure set is still identical.
+- 6 new hardening tests: PASS.
+- Coverage run: 22.5 s wall, produces a term-missing report + HTML.
+- TSan async golden + demo extensions: verified by reading the
+  workflow; CI will confirm on next push.
+
 ## [4.116.0] - 2026-04-14
 
 **Phase E release 2 — documentation batch.** Boa has flagged doc

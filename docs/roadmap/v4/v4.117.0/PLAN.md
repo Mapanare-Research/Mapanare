@@ -7,13 +7,15 @@
 > pipeline fails loudly on error instead of passing silently. After
 > this release, the test infrastructure is production-grade.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-14)
 **Breaking:** No
 **Prerequisite:** v4.116.0
 **Delta review:** No
 **Full panel:** No (v4.120.0)
 **Estimated work:** 1 sprint
 **Theme:** Make every test trustworthy. No silent passes, no hidden flakes.
+**Session log:** `docs/roadmap/v4/v4.117.0/SESSION_REPORT.md`
+**Decisions taken:** ASan scope = full golden suite (Decision 1, default; already in place via v4.105.0); TSan scope = async tests only (Decision 2, default) + v4.115.0 async I/O demos extension; flaky threshold = 5 runs (Decision 3, default); coverage measured against the 7 core-pipeline test directories only (full-suite coverage with xdist took >5 min — targeted scope finishes in 22 s and covers the live compiler path); informational coverage CI gate (not enforcing) per risk register.
 
 ---
 
