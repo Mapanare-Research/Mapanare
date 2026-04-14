@@ -608,4 +608,16 @@ MN_EXPORT void __mn_coro_spawn(void *handle);
 /** Async file read: returns a Future<String> immediately, reads on a thread. */
 MN_EXPORT void *__mn_file_read_async(MnString path);
 
+/* v4.105.0 Phase 4 — crash breadcrumbs (async-signal-safe).
+ *
+ * The compiler driver (or the self-hosted compiler itself, in a later
+ * release) calls __mn_set_current_source / __mn_set_current_phase to
+ * leave a thread-local trail. On SIGSEGV / SIGABRT / SIGBUS / SIGFPE /
+ * SIGILL, the handler installed by __mn_install_crash_handler prints
+ * "[CRASH] <signame> during <phase> at <file>:<line>" and a backtrace,
+ * using only async-signal-safe primitives. */
+MN_EXPORT void __mn_set_current_source(const char *filename, int32_t line);
+MN_EXPORT void __mn_set_current_phase(const char *phase);
+MN_EXPORT void __mn_install_crash_handler(void);
+
 #endif /* MAPANARE_RUNTIME_H */

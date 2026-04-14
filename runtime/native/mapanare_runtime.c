@@ -1805,3 +1805,132 @@ MN_EXPORT void *__mn_file_read_async(MnString path) {
 
     return future;
 }
+
+/* -----------------------------------------------------------------------
+ * v4.105.0 Phase 4 — crash breadcrumbs (async-signal-safe)
+ *
+ * The compiler driver sets a thread-local "current source" pointer as it
+ * descends through the compile pipeline. On SIGSEGV/SIGABRT/SIGBUS, the
+ * signal handler prints this pointer alongside the signal number using
+ * only async-signal-safe primitives (write(2), hand-rolled int format,
+ * backtrace_symbols_fd which is explicitly AS-safe).
+ *
+ * Why this exists: v4.105.0 Phase 3's TSan run showed the previous
+ * crash_handler (mnc_main.c:23-34 pre-v4.105.0) called fprintf() and
+ * backtrace() which triggers malloc via ld.so — UB inside a signal.
+ * ----------------------------------------------------------------------- */
+
+#ifndef _WIN32
+#include <execinfo.h>
+
+/* Thread-local breadcrumb: last-observed source location.
+ * Both fields are set by __mn_set_current_source; the handler reads them. */
+static __thread const char *mn_current_file  = NULL;
+static __thread int32_t     mn_current_line  = 0;
+static __thread const char *mn_current_phase = NULL;  /* e.g., "parse", "lower", "emit" */
+
+/* Set file:line breadcrumb. The compiler driver calls this as it
+ * opens a file or enters a function. Must be inlined-free and cheap. */
+MN_EXPORT void __mn_set_current_source(const char *filename, int32_t line) {
+    mn_current_file = filename;
+    mn_current_line = line;
+}
+
+MN_EXPORT void __mn_set_current_phase(const char *phase) {
+    mn_current_phase = phase;
+}
+
+/* AS-safe unsigned decimal print. Writes to fd 2. */
+static void mn_as_write_uint(int fd, uint64_t v) {
+    char buf[24];
+    int i = 23;
+    buf[i--] = 0;
+    if (v == 0) { buf[i--] = '0'; }
+    while (v > 0) { buf[i--] = (char)('0' + (v % 10)); v /= 10; }
+    (void)!write(fd, buf + i + 1, 23 - i - 1);
+}
+
+/* AS-safe signed decimal print. */
+static void mn_as_write_int(int fd, int64_t v) {
+    if (v < 0) { (void)!write(fd, "-", 1); v = -v; }
+    mn_as_write_uint(fd, (uint64_t)v);
+}
+
+static void mn_as_write_cstr(int fd, const char *s) {
+    if (!s) return;
+    size_t n = 0;
+    while (s[n] && n < 4096) n++;
+    (void)!write(fd, s, n);
+}
+
+static void mn_as_write_sig_name(int fd, int sig) {
+    const char *n = NULL;
+    switch (sig) {
+        case SIGSEGV: n = "SIGSEGV"; break;
+        case SIGABRT: n = "SIGABRT"; break;
+        case SIGBUS:  n = "SIGBUS";  break;
+        case SIGFPE:  n = "SIGFPE";  break;
+        case SIGILL:  n = "SIGILL";  break;
+        case SIGPIPE: n = "SIGPIPE"; break;
+        default: break;
+    }
+    if (n) mn_as_write_cstr(fd, n);
+    else { mn_as_write_cstr(fd, "signal "); mn_as_write_int(fd, sig); }
+}
+
+/* The signal handler. Async-signal-safe: no malloc, no stdio, no locks. */
+static void mn_crashdiag_handler(int sig) {
+    const int fd = 2;  /* stderr */
+
+    (void)!write(fd, "\n[CRASH] ", 9);
+    mn_as_write_sig_name(fd, sig);
+
+    if (mn_current_phase) {
+        (void)!write(fd, " during ", 8);
+        mn_as_write_cstr(fd, mn_current_phase);
+    }
+    if (mn_current_file) {
+        (void)!write(fd, " at ", 4);
+        mn_as_write_cstr(fd, mn_current_file);
+        if (mn_current_line > 0) {
+            (void)!write(fd, ":", 1);
+            mn_as_write_int(fd, mn_current_line);
+        }
+    }
+    (void)!write(fd, "\n", 1);
+
+    /* backtrace_symbols_fd is explicitly listed in signal-safety(7) as
+     * async-signal-safe. backtrace() itself triggers a lazy ld.so load
+     * on first invocation; that *is* unsafe but only the first time.
+     * Accept this trade-off: the alternative is no backtrace at all. */
+    void *frames[32];
+    int n = backtrace(frames, 32);
+    backtrace_symbols_fd(frames, n, fd);
+    (void)!write(fd, "\n", 1);
+
+    _exit(128 + sig);
+}
+
+/* Install the handler on SIGSEGV/SIGABRT/SIGBUS/SIGFPE/SIGILL.
+ * Uses sigaction (not signal) for portable semantics.
+ * Called once from mnc_main.c before any compiler work. */
+MN_EXPORT void __mn_install_crash_handler(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = mn_crashdiag_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESETHAND;  /* let a second crash abort cleanly */
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGBUS,  &sa, NULL);
+    sigaction(SIGFPE,  &sa, NULL);
+    sigaction(SIGILL,  &sa, NULL);
+}
+
+#else  /* _WIN32 */
+MN_EXPORT void __mn_set_current_source(const char *filename, int32_t line) {
+    (void)filename; (void)line;
+}
+MN_EXPORT void __mn_set_current_phase(const char *phase) { (void)phase; }
+MN_EXPORT void __mn_install_crash_handler(void) { }
+#endif
