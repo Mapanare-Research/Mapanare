@@ -1,0 +1,31 @@
+// v4.122.0: Qs.1 regression. List<Int> element access must produce
+// an Int value (i64), not a pointer, in every position: direct
+// argument to a function call, let binding, arithmetic, comparison,
+// loop index. Before the fix, the native pipeline printed "<?>" for
+// `print(str(arr[0]))` (str() saw a pointer) and raw pointer values
+// for `let v: Int = arr[0]`. Python bootstrap was correct.
+
+fn main() {
+    let mut arr: List<Int> = []
+    arr.push(42)
+    arr.push(99)
+    arr.push(7)
+
+    // Direct argument to a function call.
+    print(str(arr[0]))
+
+    // Let binding.
+    let v: Int = arr[0]
+    print(str(v))
+
+    // Second element.
+    print(str(arr[1]))
+
+    // After mutation.
+    arr.push(100)
+    print(str(arr[3]))
+
+    // In arithmetic.
+    let sum: Int = arr[0] + arr[1]
+    print(str(sum))
+}

@@ -8,13 +8,14 @@
 > "would embarrass a v5 label." This release finds the root cause,
 > fixes it, and adds a regression test.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-14)
 **Breaking:** No
 **Prerequisite:** v4.121.0
 **Delta review:** No
 **Full panel:** No (v4.130.0)
 **Estimated work:** 1 sprint
 **Theme:** Fix the flagship List<Int> indexing bug. Native pipeline must match Python bootstrap.
+**Outcome:** Shipped. Single-line behavioural fix in `mapanare/lower.py::_lower_let` — after patching `ListInit.elem_type` for empty lists with annotations, also rebind `val` to carry the declared type so downstream `IndexGet` / `ListPush` / `len` see correct element type args. Native pipeline now matches Python bootstrap for all five test patterns. Self-hosted compiler verified not to need a mirror fix. New golden `65_list_int_indexing.mn` + 5 IR-level regression tests pin the invariant. See `SESSION_REPORT.md` for details.
 
 ---
 

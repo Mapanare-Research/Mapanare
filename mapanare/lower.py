@@ -1259,6 +1259,12 @@ class MIRLowerer:
                         if isinstance(inst, ListInit) and inst.dest == val:
                             inst.elem_type = MIRType(declared.type_info.args[0])
                             break
+                # v4.122.0 (Qs.1): also lift the Value's type so downstream
+                # IndexGet / ListPush / len lowering sees the element type.
+                # Without this, `let arr: List<Int> = []; print(str(arr[0]))`
+                # reaches the LLVM emitter with `%arr.ty.args == [<unknown>]`
+                # and IndexGet emits a raw-pointer read instead of `load i64`.
+                val = Value(name=val.name, ty=declared)
         # When the expression type is unknown or lacks inner type args but a type
         # annotation is provided, use the annotation to preserve full type info.
         if let.type_annotation:

@@ -7,6 +7,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.122.0] - 2026-04-14
+
+**Phase F closeout release 2 — Qs.1 fix.** `List<Int>` element access
+through an empty-literal-with-annotation declaration
+(`let arr: List<Int> = []`) now produces correct values on the native
+pipeline. Before the fix, `print(str(arr[0]))` printed `<?>` and
+`let v: Int = arr[0]` bound a raw heap pointer cast to i64. The bug
+lived in `mapanare/lower.py`: a special-case block patched the
+`ListInit` instruction's element type but never lifted the Value's
+`ty.type_info.args`, so downstream `IndexGet` lowering saw an
+UNKNOWN-typed list element and defaulted to a raw pointer read. Python
+bootstrap produced correct output all along (the interpreter doesn't
+use the LLVM emitter), which is why this bug survived 122 versions
+without surfacing in `pytest`. The fix is one line in `_lower_let`:
+after patching the ListInit, also rebind `val = Value(name=val.name,
+ty=declared)` so the named alias carries the full list element type.
+
+V5_READINESS had called this "would embarrass a v5 label" (Qs.1 in
+the v4.120.0 panel). It is now closed. Self-hosted compiler does not
+need a mirror fix — `self/lower.mn::lower_let` already unconditionally
+rewrites `val_ty = declared` when an annotation is present, and
+`self/emit_llvm.mn::emit_index_get` defaults to `load i64` when the
+destination type is unknown rather than dropping the load entirely.
+
+### Added
+
+- **`tests/golden/65_list_int_indexing.mn`** — new golden test with
+  five usage patterns of `List<Int>` indexing: direct argument to
+  `str()`, let binding, second-element access, after mutation,
+  arithmetic. Expected output: `42 / 42 / 99 / 100 / 141`. Passes
+  through the Python bootstrap, through mnc-stage1, and through the
+  full integration pipeline (`emit-llvm → llvm-as → opt -O2 → llc →
+  clang → run`). Reference IR at
+  `tests/golden/65_list_int_indexing.ref.ll`; expected stdout at
+  `tests/integration/expected/65_list_int_indexing.expected`.
+- **`tests/llvm/test_emitter_hardening.py::TestListIntIndexingQs1`**
+  — five IR-level regression tests that pin the fix at the LLVM text
+  layer: empty-literal-annotation indexing must emit `load i64, ptr`
+  (not `alloca ptr`); let-binding must not rely on `ptrtoint`;
+  arithmetic must operate on two `load i64` operands; `List<Float>`
+  must emit `load double, ptr`; `List<MyStruct>` must still load the
+  struct aggregate (regression guard for reference-type lists).
+
+### Fixed
+
+- **Qs.1 — `List<Int>` indexing in argument position.**
+  `mapanare/lower.py::MIRLowerer._lower_let`, the empty-list branch
+  at lines 1253–1268, now lifts `val = Value(name=val.name,
+  ty=declared)` after patching the `ListInit.elem_type`. Before the
+  fix, an empty list literal returned a Value with
+  `ty.type_info.args = [<unknown>]` and the subsequent `Copy` to the
+  named alias (`%arr`) inherited that UNKNOWN; `_lower_index_get`
+  then set `dest.ty = MIRType(obj.ty.type_info.args[0])` → UNKNOWN;
+  `emit_llvm_text.py::_do_idx_get` resolved UNKNOWN to PTR via
+  `_rty` and took the "pointer passthrough" branch, emitting
+  `store ptr` / `load ptr` instead of `store i64` / `load i64`. The
+  bug surfaced two ways: `str(arr[0])` — the `str()` emitter
+  fell through to `<?>` because it could not infer the scalar kind
+  from a PTR-typed argument; and `let v: Int = arr[0]` — the
+  LLVM emitter used `ptrtoint` to coerce the pointer into an i64,
+  binding a heap pointer value. Both now produce correct integer
+  output.
+
+### Changed
+
+- **`mapanare/self/main.ll` regenerated** against the new lowerer.
+  The diff is ~1,700 line shuffles (≈1 net line change) plus the
+  version string bump from 4.112.0 → 4.122.0. The self-hosted
+  compiler's code paths do not exercise the fixed branch (the
+  self-hosted emitter has different defaults that avoid the bug
+  structurally), so the behavioural delta is zero.
+
+### Test-suite state
+
+- **Audit subset (9 dirs, 1,461 tests collected today):** 1,461
+  passed / 0 failed / 7 skipped / 5 xfailed.
+- **Full `pytest tests/`:** 4,923 passed / 38 failed / 103 skipped /
+  7 xfailed. The 38 failures are all pre-existing An.1 carry-forward
+  items (test_doc_links, test_runner, test_ci lint wrappers,
+  test_python_binding, e2e/test_e2e_llvm, spec/test_spec_compliance,
+  native/test_c_hardening, native/test_db_*, native/test_fs_extended,
+  native/test_memory_stress, runtime/test_user_agent,
+  self_hosted/test_main_mn). Confirmed pre-existing by running the
+  same suite against v4.121.0 HEAD (39 failures — the one extra was
+  the integration test for the new `65_list_int_indexing.mn` golden,
+  which fails pre-fix and passes post-fix).
+- **Golden through mnc-stage1:** 27/65 tests pass (up from 26/64
+  at v4.121.0; the new `65_list_int_indexing` is the one additional
+  pass). No regressions; every previously-passing golden still passes.
+
+### Lint state
+
+- **`mapanare/lower.py`** — added 6 lines (a comment and a single
+  `Value` constructor call); ruff clean on the new lines. Pre-existing
+  baseline lint debt (13 findings: import ordering, unused imports,
+  8 line-length flags in tensor lowering) unchanged — still panel
+  item An.2 on the v4.123.0+ track.
+- **`tests/llvm/test_emitter_hardening.py`** — added 119 lines (the
+  new `TestListIntIndexingQs1` class); black + ruff clean.
+
+### Carry-forward (unchanged from v4.121.0)
+
+- **An.1** — 38 uncatalogued `pytest tests/` failures outside the
+  9-subdirectory audit scope. Next panel work.
+- **An.2** — `mapanare/lower.py` baseline lint debt (13 findings,
+  all pre-existing, none introduced by v4.122.0).
+- **Rt.1** — enum boxing overhead (v4.123.0+ track).
+- **Sh.8** — self-hosted `semantic.mn` missing `None`/`Some`/`Ok`
+  constructor registration, blocks fixed-point self-compilation
+  (v4.124.0 target per PLAN).
+- **Sh.2, Sh.4–Sh.7, Sh.9a/b, Sh.10** — self-hosted emitter gaps.
+- **TBAA.1, willreturn.1, Instr.1** — deferred to v5.x.
+
 ## [4.121.0] - 2026-04-14
 
 **Phase F closeout release 1 — DWARF deferral warning + bounded-generic
