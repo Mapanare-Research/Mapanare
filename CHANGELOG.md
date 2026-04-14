@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.113.0] - 2026-04-14
+
+**Phase D release 3 — coroutine frame decoupling + medium/low
+docket closure.** Closes the last three v4.99.0 docket items —
+#8 (coroutine frame layout coupling), #10 (keyword collision
+SPEC), #11 (async error messages). Zero open items from v4.99.0
+after this release. Prep for the Phase D panel at v4.114.0.
+
+### Closed
+
+- **Docket #8** (MEDIUM, from the v4.99.0 panel) — `mn_coro_is_done`
+  in `runtime/native/mapanare_runtime.c` read offset 0 of the
+  coroutine frame via raw `*(void **)handle` cast. Replaced with a
+  named `mn_coro_frame_prefix_t` struct that documents the LLVM
+  switched-resume ABI contract (resume_fn at offset 0, destroy_fn
+  at offset sizeof(void*)). Behaviourally equivalent; grep-able;
+  one named definition to update if the ABI ever moves.
+
+- **Docket #10** (LOW, from the v4.99.0 panel) — SPEC had no
+  consolidated reserved-keyword section. New §2.1.1 "Reserved
+  Keyword Master List" lists all 42 hard-reserved identifiers
+  across both lexers (`mapanare/mapanare.lark` and
+  `mapanare/self/lexer.mn`) with English, Spanish, category, and
+  AST role. Removed stale "Soft-reserved: async, await" text;
+  those have been hard keywords since v4.68.0/v4.72.0. Appendix C
+  rewritten to distinguish future-reserved from hard-reserved.
+
+- **Docket #11** (LOW, from the v4.99.0 panel) — 5 async failure
+  sites in `runtime/native/mapanare_runtime.c` had silent-drop or
+  NULL-deref behaviour. Each now emits a specific stderr message
+  naming what failed, why, and the user's mitigation:
+  - `__mn_coro_scheduler_init`: worker `pthread_create` failure
+    names the worker index + strerror.
+  - `__mn_coro_scheduler_register`: refuses enqueue when scheduler
+    not initialised; refuses when both deque and overflow queue
+    are full.
+  - `__mn_coro_register_wait`: bails on overflow-full with
+    coroutine handle + awaited Future address.
+  - `__mn_file_read_async`: checks calloc, malloc, pthread_create
+    individually.
+
+### Changed
+
+- `mapanare_runtime.c`: added `#include <errno.h>` (needed for
+  `strerror` on thread-create return values).
+- `docs/SPEC.md`: strengthened §2.1 intro with explicit identifier
+  rule, whole-word matching note, and lexer source cross-references.
+- `docs/SPEC.md` Appendix C: removed `continue` and `const` rows
+  (both are already tokenized; see §2.1.1).
+
+### Unchanged
+
+- Golden test suite through `mnc-stage1`: 26/64 — byte-for-byte
+  identical to v4.112.0. Zero regressions.
+- Stage2 validation: 0/11 modules — unchanged from v4.112.0
+  (pre-existing Sh.8 gap on `None`/`Some`/`Ok` self-hosted
+  constructor registration).
+- Async native output: 55/56/57 still produce 42/43/110.
+- Valgrind: 0 errors on all three async goldens; pre-existing
+  leaks match v4.112.0 byte-for-byte.
+
+### Docket status after v4.113.0
+
+Zero open items from the v4.99.0 panel. Carry-forward dockets
+(Sh.1–Sh.8, Qs.1, Rt.1, TBAA.1, willreturn.1) are all from later
+releases and remain open for future work.
+
 ## [4.112.0] - 2026-04-14
 
 **Phase D release 2 — fixed-point verification + docket #7 fix.**

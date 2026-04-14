@@ -7,7 +7,7 @@
 > error messages are unhelpful. This release closes all three and preps
 > for the Phase D panel at v4.114.0.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.112.0
 **Delta review:** No
