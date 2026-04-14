@@ -96,6 +96,14 @@ Six phases:
 | **v4.94.0** | Arc 13 | Async Benchmark Suite | 5 workloads x 3 languages, harness, Python baselines. Mapanare runtime pending rebuild. |
 | **v4.95.0** | Arc 13 | StringBuilder | C runtime StringBuilder (amortized O(1)). Loop-concat MIR pass. AI stdlib refactored. |
 | **v4.96.0** | Arc 13 | **Panel: 8.57/10 PASS** | 7 reviewers. Multi-threaded async + StringBuilder validated. Mamba's v4.51.0 finding resolved. Arc 13 closes. |
+| | | | |
+| | | **Arc 14: Final Panel (v4.97.0 → v4.99.0)** | |
+| | | | |
+| **v4.99.0** | Arc 14 | **Panel: 6.59/10 NEEDS WORK** | 7 reviewers. Option B: continue v4.100.0+. v5.0.0 not tagged. Tagged-pointer UB, list indexing, async linking identified as v5-blocking. |
+| | | | |
+| | | **Phase A: Bug Sprint (v4.100.0 →)** | |
+| | | | |
+| **v4.100.0** | Phase A | Tagged-Pointer UB Fix (partial) | Docket #1: UB structurally eliminated via `MnString` bitfield (`len:63, is_heap:1`). ABI preserved (16 bytes). Self-hosted compiler output still corrupted — confirmed pre-existing, **not** caused by the tagged pointer; deferred to v4.101.0. |
 
 ## What v4.0.0 Delivered
 

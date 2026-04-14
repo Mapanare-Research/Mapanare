@@ -8,7 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
-- **v4.99.0** (shipped) — Arc 14 panel: 6.59/10, Option B. v5 NOT tagged. Tagged-pointer UB, list indexing, async linking must be fixed. v4.100.0+ continues.
+- **v4.100.0** (shipped) — Phase A release 1. Tagged-pointer UB structurally removed via `MnString` bitfield (`len:63, is_heap:1`), ABI preserved at 16 bytes. `mnc-stage1` output corruption persists and is confirmed pre-existing (not caused by the UB); deferred to v4.101.0.
+- **v4.99.0** (shipped) — Arc 14 panel: 6.59/10, Option B. v5 NOT tagged. Tagged-pointer UB, list indexing, async linking must be fixed.
 - **v5.0.0** (when ready) — Major version tag. The lead's call. Zero additional work required — v4.76.0 is release-gate quality.
 
 See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.

@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.100.0] - 2026-04-13
+
+**Phase A Release 1 — Tagged-pointer UB eliminated (structural fix only).**
+Docket item #1 from the v4.99.0 panel: `mn_tag_heap` OR'd bit 0 into the
+`MnString.data` pointer, producing a `const char *` that wasn't a valid
+pointer and tripping LLVM's pointer-provenance analysis at -O2. The UB is
+gone — the data pointer is now always a valid pointer. The heap flag
+moved into a 1-bit C bitfield sharing the `len` word, so `MnString` stays
+16 bytes and the SysV AMD64 / Win64 ABI at every call site is unchanged.
+
+### Changed
+
+- `MnString` layout: `{ const char *data; uint64_t len : 63; uint64_t is_heap : 1; }`
+  (16 bytes, same as before; only the second eightbyte's bit layout changed).
+- `runtime/native/mapanare_core.{h,c}`: removed `mn_tag_heap` / `mn_is_heap`
+  / `mn_untag` helpers; construction sites set `s.is_heap` explicitly.
+- `runtime/native/mapanare_internal.h` + `mapanare_io.c` + `mapanare_html.c`:
+  dropped the manual `(uintptr_t)ptr & ~1` untag idiom — the data pointer
+  no longer needs masking.
+- `mapanare/self/emit_llvm.mn`: direct `.len` extractvalue reads now
+  mask bit 63 (`and i64 %raw, 0x7FFFFFFFFFFFFFFF`) because LLVM IR still
+  sees `{ ptr, i64 }` and doesn't know about the bitfield.
+- `mapanare/bind.py`: `_MnString` ctypes class split `len`/`is_heap`
+  via property, pointer read no longer bit-masks — reflects the new C layout.
+
+### Deviated from plan
+
+The plan specified an `int8_t is_heap` field. That would grow MnString
+from 16 → 24 bytes and cross the SysV AMD64 16-byte boundary, forcing
+every MnString call site to switch to sret/byval calling convention.
+Empirical confirmation: `call {ptr, i64, i8}` with a clang-compiled
+24-byte-return C callee segfaulted (see /tmp minimal repros in the
+session notes). The bitfield encoding is an equivalent fix that
+preserves the ABI — the data pointer is still a valid pointer, and the
+heap flag rides in the integer's high bit where LLVM can't exploit it.
+
+### Known limitations
+
+- `mnc-stage1` still produces byte-level corrupted output for complex
+  programs at -O2 and -O0 alike. Confirmed pre-existing: the pristine
+  v4.99.0 binary (reverting every v4.100.0 change) shows the same 16-byte
+  garbage prefix on declaration lines, so it is NOT caused by the
+  tagged-pointer UB the plan targeted. Root cause unidentified — the
+  pattern looks like an MnString struct being memcpy'd into an output
+  buffer where its data bytes should be. Docket item #1 is partially
+  closed (UB removed); golden-test verification deferred to v4.101.0.
+- `docs/roadmap/v4/v4.100.0/PLAN.md` exit criteria 5–9 not met because
+  of the above.
+
 ## [4.99.0] - 2026-04-13
 
 **Arc 14 Release 3 — Final Panel + v5 Gate Decision.**

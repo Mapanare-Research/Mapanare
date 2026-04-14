@@ -18,9 +18,14 @@
  * ----------------------------------------------------------------------- */
 
 static inline char *mnstr_to_cstr(MnString s) {
-    const char *raw = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
-    int64_t len = s.len;
-    if (len < 0) len = 0;
+    /* v4.100.0: the data pointer is now always a valid pointer (the
+     * tagged-pointer scheme has been replaced by a bit-field
+     * ``is_heap`` inside MnString — see mapanare_core.h). ``len`` is
+     * a 63-bit unsigned bitfield so it can't be negative; the old
+     * ``if (len < 0) len = 0`` guard is dead, but NULL-data is still
+     * a possible failure mode. */
+    const char *raw = s.data;
+    uint64_t len = s.len;
     char *buf = (char *)malloc((size_t)len + 1);
     if (!buf) return NULL;
     if (len > 0 && raw) memcpy(buf, raw, (size_t)len);

@@ -1216,10 +1216,16 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
     let dn: String = dest.name
     let obj_ty: String = resolve_type(st, obj.ty)
 
-    // String .len → extractvalue index 1
+    // String .len → extractvalue index 1, then mask off the is_heap
+    // flag (v4.100.0 packs is_heap into bit 63 of the second eightbyte;
+    // the LLVM struct type is still { ptr, i64 } so LLVM hands back the
+    // raw word). The C runtime sees the bitfield directly and doesn't
+    // need the mask; Mapanare-emitted IR has to apply it.
     if obj.ty.kind == TK_STRING() {
         if field_name == "len" {
-            s = emit_line(s, emit_extractvalue(dn, llvm_string(), on, "1"))
+            let raw: String = dn + ".raw"
+            s = emit_line(s, emit_extractvalue(raw, llvm_string(), on, "1"))
+            s = emit_line(s, "  " + dn + " = and i64 " + raw + ", 9223372036854775807")
             return s
         }
         // String methods (contains, starts_with, etc.) — not struct fields.

@@ -158,27 +158,17 @@ int64_t mn_checked_add(int64_t a, int64_t b) {
 }
 
 /* -----------------------------------------------------------------------
- * Tag-bit helpers for heap vs constant string distinction.
+ * v4.100.0: the tagged-pointer scheme has been removed. The heap flag
+ * now lives in the ``is_heap`` bitfield on MnString (see mapanare_core.h).
  *
- * We use the lowest bit of the data pointer as a tag:
- *   0 = constant (points to .rodata or static global) — do NOT free
- *   1 = heap-allocated via __mn_alloc            — safe to free
- *
- * All calloc/malloc returns are at least 8-byte aligned, so the lowest
- * bit is always 0. We set it to 1 after allocation.
+ * ``mn_untag`` used to mask bit 0 off the data pointer; it now trivially
+ * returns the pointer unchanged, but is kept as a macro so the mechanical
+ * diff across this file is small. The construction helpers (``mn_tag_heap``
+ * and ``mn_is_heap``) are gone — callers set ``s.is_heap = 1`` / check
+ * ``s.is_heap`` directly.
  * ----------------------------------------------------------------------- */
 
-static inline const char *mn_tag_heap(const char *ptr) {
-    return (const char *)((uintptr_t)ptr | 1);
-}
-
-static inline int mn_is_heap(const char *ptr) {
-    return (int)((uintptr_t)ptr & 1);
-}
-
-static inline const char *mn_untag(const char *ptr) {
-    return (const char *)((uintptr_t)ptr & ~(uintptr_t)1);
-}
+#define mn_untag(ptr) (ptr)
 
 /* -----------------------------------------------------------------------
  * Arena Allocator
@@ -340,7 +330,7 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
     intern_ensure_table();
     if (!s_intern_table) { intern_unlock(); return s; }
 
-    const char *raw = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
+    const char *raw = s.data;
     uint64_t h = intern_hash(raw, s.len);
     size_t mask = s_intern_tbl_sz - 1;
     size_t idx = (size_t)(h & mask);
@@ -351,7 +341,7 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
         MnInternEntry *e = &s_intern_table[pos];
         if (!e->occupied) break;
         if (e->hash == h && e->str.len == s.len) {
-            const char *eraw = (const char *)((uintptr_t)e->str.data & ~(uintptr_t)1);
+            const char *eraw = e->str.data;
             if (memcmp(eraw, raw, (size_t)s.len) == 0) {
                 intern_unlock();
                 return e->str;  /* deduplicated */
@@ -416,14 +406,16 @@ MN_EXPORT MnString __mn_str_from_cstr(const char *cstr) {
     if (!cstr) {
         s.data = "";
         s.len = 0;
+        s.is_heap = 0;
         return s;
     }
     int64_t len = (int64_t)strlen(cstr);
     char *buf = (char *)__mn_alloc(len + 1);
     memcpy(buf, cstr, (size_t)len);
     buf[len] = '\0';
-    s.data = mn_tag_heap(buf);
-    s.len = len;
+    s.data = buf;
+    s.len = (uint64_t)len;
+    s.is_heap = 1;
     return s;
 }
 
@@ -432,13 +424,15 @@ MN_EXPORT MnString __mn_str_from_parts(const char *data, int64_t len) {
     if (!data || len <= 0) {
         s.data = "";
         s.len = 0;
+        s.is_heap = 0;
         return s;
     }
     char *buf = (char *)__mn_alloc(len + 1);
     memcpy(buf, data, (size_t)len);
     buf[len] = '\0';
-    s.data = mn_tag_heap(buf);
-    s.len = len;
+    s.data = buf;
+    s.len = (uint64_t)len;
+    s.is_heap = 1;
     return s;
 }
 
@@ -446,16 +440,17 @@ MN_EXPORT MnString __mn_str_empty(void) {
     MnString s;
     s.data = "";
     s.len = 0;
+    s.is_heap = 0;
     return s;
 }
 
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
     if (a.len <= 0 && b.len <= 0) return __mn_str_empty();
-    if (a.len <= 0) return __mn_str_from_parts(mn_untag(b.data), b.len);
-    if (b.len <= 0) return __mn_str_from_parts(mn_untag(a.data), a.len);
-    const char *a_data = mn_untag(a.data);
-    const char *b_data = mn_untag(b.data);
-    int64_t total = mn_checked_add(a.len, b.len);
+    if (a.len <= 0) return __mn_str_from_parts(b.data, (int64_t)b.len);
+    if (b.len <= 0) return __mn_str_from_parts(a.data, (int64_t)a.len);
+    const char *a_data = a.data;
+    const char *b_data = b.data;
+    int64_t total = mn_checked_add((int64_t)a.len, (int64_t)b.len);
 #ifdef MN_PROFILE_MEM
     atomic_fetch_add_explicit(&mn_concat_count, 1, memory_order_relaxed);
     atomic_fetch_add_explicit(&mn_concat_bytes, (int64_t)(total + 1), memory_order_relaxed);
@@ -465,8 +460,9 @@ MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
     if (b.len > 0) memcpy(buf + a.len, b_data, (size_t)b.len);
     buf[total] = '\0';
     MnString s;
-    s.data = mn_tag_heap(buf);
-    s.len = total;
+    s.data = buf;
+    s.len = (uint64_t)total;
+    s.is_heap = 1;
     return s;
 }
 
@@ -539,8 +535,9 @@ MN_EXPORT MnString __mn_sb_to_string(MnStringBuilder *sb) {
             __mn_free(sb->buf);
             sb->buf = tight;
         }
-        s.data = mn_tag_heap(sb->buf);
-        s.len = sb->len;
+        s.data = sb->buf;
+        s.len = (uint64_t)sb->len;
+        s.is_heap = 1;
     }
     sb->buf = NULL;
     sb->len = 0;
@@ -719,14 +716,15 @@ MN_EXPORT MnString __mn_str_to_upper(MnString s) {
     }
     buf[s.len] = '\0';
     MnString r;
-    r.data = mn_tag_heap(buf);
+    r.data = buf;
     r.len = s.len;
+    r.is_heap = 1;
     return r;
 }
 
 MN_EXPORT MnString __mn_str_to_lower(MnString s) {
     if (s.len == 0) return __mn_str_empty();
-    const char *data = mn_untag(s.data);
+    const char *data = s.data;
     char *buf = (char *)__mn_alloc(s.len + 1);
     for (int64_t i = 0; i < s.len; i++) {
         char c = data[i];
@@ -734,8 +732,9 @@ MN_EXPORT MnString __mn_str_to_lower(MnString s) {
     }
     buf[s.len] = '\0';
     MnString r;
-    r.data = mn_tag_heap(buf);
+    r.data = buf;
     r.len = s.len;
+    r.is_heap = 1;
     return r;
 }
 
@@ -780,21 +779,22 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
     buf[new_len] = '\0';
 
     MnString r;
-    r.data = mn_tag_heap(buf);
-    r.len = new_len;
+    r.data = buf;
+    r.len = (uint64_t)new_len;
+    r.is_heap = 1;
     return r;
 }
 
-/* str(true) / str(false) — return non-heap constants (never freed).
- * Aligned to 2 so mn_untag (clear bit 0) is a no-op. */
-static const char s_true[]  __attribute__((aligned(2))) = "true";
-static const char s_false[] __attribute__((aligned(2))) = "false";
+/* str(true) / str(false) — return non-heap constants (never freed). */
+static const char s_true[]  = "true";
+static const char s_false[] = "false";
 
 MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
     MnString s;
     if (value) { s.data = s_true;  s.len = 4; }
     else       { s.data = s_false; s.len = 5; }
-    return s;  /* data pointer is NOT heap-tagged → mn_str_free is a no-op */
+    s.is_heap = 0;  /* static storage — drop glue must not free */
+    return s;
 }
 
 /* str(N) for -128..127 — pre-initialized cache (zero allocation). */
@@ -802,7 +802,7 @@ MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
 #define SMALL_INT_MAX  127
 #define SMALL_INT_RANGE (SMALL_INT_MAX - SMALL_INT_MIN + 1)
 
-static char   s_int_bufs[SMALL_INT_RANGE][8] __attribute__((aligned(8))); /* max "-128\0" = 5 chars, padded+aligned for mn_untag */
+static char   s_int_bufs[SMALL_INT_RANGE][8]; /* max "-128\0" = 5 chars */
 static MnString s_int_cache[SMALL_INT_RANGE];
 
 /*
@@ -816,8 +816,9 @@ static BOOL CALLBACK init_small_int_cache_cb(PINIT_ONCE once, PVOID param, PVOID
     for (int i = 0; i < SMALL_INT_RANGE; i++) {
         int val = SMALL_INT_MIN + i;
         int n = snprintf(s_int_bufs[i], sizeof(s_int_bufs[i]), "%d", val);
-        s_int_cache[i].data = s_int_bufs[i]; /* NOT heap-tagged */
-        s_int_cache[i].len  = (int64_t)n;
+        s_int_cache[i].data    = s_int_bufs[i]; /* static storage */
+        s_int_cache[i].len     = (uint64_t)n;
+        s_int_cache[i].is_heap = 0;
     }
     return TRUE;
 }
@@ -830,8 +831,9 @@ static void init_small_int_cache_impl(void) {
     for (int i = 0; i < SMALL_INT_RANGE; i++) {
         int val = SMALL_INT_MIN + i;
         int n = snprintf(s_int_bufs[i], sizeof(s_int_bufs[i]), "%d", val);
-        s_int_cache[i].data = s_int_bufs[i]; /* NOT heap-tagged */
-        s_int_cache[i].len  = (int64_t)n;
+        s_int_cache[i].data    = s_int_bufs[i]; /* static storage */
+        s_int_cache[i].len     = (uint64_t)n;
+        s_int_cache[i].is_heap = 0;
     }
 }
 static void init_small_int_cache(void) {
@@ -874,14 +876,14 @@ MN_EXPORT double __mn_str_to_float(MnString s) {
 }
 
 MN_EXPORT void __mn_str_free(MnString s) {
-    if (s.data && mn_is_heap(s.data)) {
-        __mn_free((void *)mn_untag(s.data));
+    if (s.data && s.is_heap) {
+        __mn_free((void *)s.data);
     }
 }
 
 MN_EXPORT void __mn_str_print(MnString s) {
     if (s.len > 0) {
-        fwrite(mn_untag(s.data), 1, (size_t)s.len, stdout);
+        fwrite(s.data, 1, (size_t)s.len, stdout);
     }
 }
 
@@ -944,8 +946,9 @@ MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {
     buf[total] = '\0';
 
     MnString r;
-    r.data = mn_tag_heap(buf);
-    r.len = total;
+    r.data = buf;
+    r.len = (uint64_t)total;
+    r.is_heap = 1;
     return r;
 }
 
@@ -1376,8 +1379,9 @@ MN_EXPORT MnString __mn_file_read(MnString path, int64_t *ok) {
     buf[read] = '\0';
 
     MnString s;
-    s.data = mn_tag_heap(buf);
-    s.len = (int64_t)read;
+    s.data = buf;
+    s.len = (uint64_t)read;
+    s.is_heap = 1;
     *ok = 1;
     return s;
 }
@@ -2731,16 +2735,16 @@ MN_EXPORT MnString __mn_argv(int64_t index) {
     return __mn_str_from_cstr(g_argv[index]);
 }
 
-/** Read a file, returning its content. Returns empty string on error.
- *  Unlike __mn_file_read which uses a pointer param, this returns a
- *  sentinel (empty string with len == -1) on failure so Mapanare code
- *  can call it without pointer types. */
+/** Read a file, returning its content. Returns empty string on error
+ *  (Mapanare callers distinguish by checking ``len(result) > 0``).
+ *  v4.100.0: the previous len=-1 sentinel no longer fits because ``len``
+ *  is a 63-bit unsigned bitfield; empty/failure collapse into the same
+ *  zero-length string, matching how every caller already checked it. */
 MN_EXPORT MnString __mn_file_read_or_empty(MnString path) {
     int64_t ok = 0;
     MnString result = __mn_file_read(path, &ok);
     if (!ok) {
-        MnString empty = { "", -1 };  /* len == -1 signals failure */
-        return empty;
+        return __mn_str_empty();
     }
     return result;
 }

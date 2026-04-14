@@ -50,7 +50,7 @@
 
 /** Get untagged pointer to MnString data (no copy, no null terminator guarantee). */
 static const char *mnstr_data(MnString s) {
-    return (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
+    return s.data;
 }
 
 /* =======================================================================

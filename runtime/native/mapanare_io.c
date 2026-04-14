@@ -909,8 +909,9 @@ MN_IO_EXPORT int64_t __mn_tcp_connect_str(MnString host, int64_t port) {
 }
 
 MN_IO_EXPORT int64_t __mn_tcp_send_str(int64_t fd, MnString data) {
-    const char *buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
-    return __mn_tcp_send(fd, buf, data.len);
+    /* v4.100.0: data.data is now always a valid pointer (no more
+     * tagged-pointer bit-0 hack). */
+    return __mn_tcp_send(fd, data.data, (int64_t)data.len);
 }
 
 MN_IO_EXPORT MnString __mn_tcp_recv_str(int64_t fd, int64_t max_len) {
@@ -944,7 +945,7 @@ MN_IO_EXPORT int64_t __mn_tls_connect_str(int64_t fd, MnString hostname) {
 
 MN_IO_EXPORT int64_t __mn_tls_write_str(int64_t tls_ctx, MnString data) {
     void *ctx = (void *)(uintptr_t)tls_ctx;
-    const char *buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *buf = data.data;
     return __mn_tls_write(ctx, buf, data.len);
 }
 
@@ -1070,7 +1071,7 @@ static MnString evp_hash(MnString data, void *(*md_fn)(void), int digest_len) {
     unsigned char md[64]; /* big enough for SHA-512 */
     unsigned int md_len = 0;
 
-    const char *buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *buf = data.data;
 
     if (s_evp.EVP_DigestInit_ex(ctx, md_fn(), NULL) != 1 ||
         s_evp.EVP_DigestUpdate(ctx, buf, (size_t)data.len) != 1 ||
@@ -1103,8 +1104,8 @@ MN_IO_EXPORT MnString __mn_sha512_str(MnString data) {
 MN_IO_EXPORT MnString __mn_hmac_sha256_str(MnString key, MnString data) {
     if (evp_load() < 0 || !s_evp.HMAC) return __mn_str_empty();
 
-    const char *key_buf = (const char *)((uintptr_t)key.data & ~(uintptr_t)1);
-    const char *data_buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *key_buf = key.data;
+    const char *data_buf = data.data;
 
     unsigned char md[32];
     unsigned int md_len = 0;
@@ -1120,7 +1121,7 @@ MN_IO_EXPORT MnString __mn_hmac_sha256_str(MnString key, MnString data) {
 /* --- Hex encode/decode (pure C) --- */
 
 MN_IO_EXPORT MnString __mn_hex_encode_str(MnString data) {
-    const unsigned char *src = (const unsigned char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const unsigned char *src = (const unsigned char *)data.data;
     int64_t slen = data.len;
     int64_t olen = slen * 2;
     char *out = (char *)malloc((size_t)olen + 1);
@@ -1139,7 +1140,7 @@ MN_IO_EXPORT MnString __mn_hex_encode_str(MnString data) {
 }
 
 MN_IO_EXPORT MnString __mn_hex_decode_str(MnString data) {
-    const char *src = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *src = data.data;
     int64_t slen = data.len;
     if (slen % 2 != 0) return __mn_str_empty();
 
@@ -1174,7 +1175,7 @@ static const char b64_table[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 MN_IO_EXPORT MnString __mn_base64_encode_str(MnString data) {
-    const unsigned char *src = (const unsigned char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const unsigned char *src = (const unsigned char *)data.data;
     int64_t slen = data.len;
     int64_t olen = 4 * ((slen + 2) / 3);
     char *out = (char *)malloc((size_t)olen + 1);
@@ -1214,7 +1215,7 @@ static int b64_decode_char(char c) {
 }
 
 MN_IO_EXPORT MnString __mn_base64_decode_str(MnString data) {
-    const char *src = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *src = data.data;
     int64_t slen = data.len;
     if (slen == 0 || slen % 4 != 0) return __mn_str_empty();
 
@@ -1415,7 +1416,7 @@ typedef struct {
 MN_IO_EXPORT int64_t __mn_regex_compile_str(MnString pattern) {
     if (pcre2_load() < 0) return 0;
 
-    const char *pat = (const char *)((uintptr_t)pattern.data & ~(uintptr_t)1);
+    const char *pat = pattern.data;
 
     MnRegexHandle *h = (MnRegexHandle *)calloc(1, sizeof(MnRegexHandle));
     if (!h) return 0;
@@ -1445,7 +1446,7 @@ MN_IO_EXPORT int64_t __mn_regex_exec_str(int64_t handle, MnString subject, int64
     MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
     if (!h->code) return -1;
 
-    const char *subj = (const char *)((uintptr_t)subject.data & ~(uintptr_t)1);
+    const char *subj = subject.data;
 
     h->rc = s_pcre2.match(
         h->code,
@@ -1477,7 +1478,7 @@ MN_IO_EXPORT MnString __mn_regex_group_str(int64_t handle, MnString subject, int
     size_t end   = h->ovector[2 * group_idx + 1];
     if (start == MN_PCRE2_UNSET || end == MN_PCRE2_UNSET) return __mn_str_empty();
 
-    const char *subj = (const char *)((uintptr_t)subject.data & ~(uintptr_t)1);
+    const char *subj = subject.data;
     return __mn_str_from_parts(subj + start, (int64_t)(end - start));
 }
 
@@ -1523,8 +1524,8 @@ MN_IO_EXPORT MnString __mn_regex_replace_str(int64_t handle, MnString subject,
     /* If substitute function not available, return subject unchanged */
     if (!s_pcre2.substitute) return subject;
 
-    const char *subj = (const char *)((uintptr_t)subject.data & ~(uintptr_t)1);
-    const char *repl = (const char *)((uintptr_t)replacement.data & ~(uintptr_t)1);
+    const char *subj = subject.data;
+    const char *repl = replacement.data;
 
     uint32_t opts = MN_PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
     if (replace_all) opts |= MN_PCRE2_SUBSTITUTE_GLOBAL;

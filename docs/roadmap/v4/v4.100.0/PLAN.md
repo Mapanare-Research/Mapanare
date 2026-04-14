@@ -8,7 +8,7 @@
 > release removes the bit-tagging and replaces it with an explicit
 > `int8_t is_heap` field in the `MnString` struct.
 
-**Status:** PLANNED
+**Status:** PARTIAL — tagged-pointer UB eliminated via bitfield; golden-test verification blocked by pre-existing self-hosted-emitter bug (deferred to v4.101.0).
 **Breaking:** No
 **Prerequisite:** v4.99.0
 **Delta review:** No
