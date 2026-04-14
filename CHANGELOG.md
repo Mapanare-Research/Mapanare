@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.114.0] - 2026-04-14
+
+**Phase D panel release — NEEDS WORK at aggregate 8.21.** Zero
+code changes. Seven reviewers graded v4.111.0-v4.113.0. Two PASS
+verdicts (Viper 8.5, Boa 8.5), five PASS WITH NOTES, zero NEEDS
+WORK. The aggregate falls 0.29 below the Phase D PASS threshold
+of 8.5 — per the decision rule (aggregate >= 8.5, zero NEEDS WORK)
+applied mechanically, the panel returns NEEDS WORK and schedules
+a v4.114.1 patch release.
+
+### Shipped
+
+- **Panel artifacts** covering v4.111.0-v4.113.0:
+  - `docs/roadmap/v4/v4.114.0/MEASUREMENTS.md` — 9 quantitative
+    sections (golden rates both pipelines, fixed-point, sanitizer
+    results, 11-item docket closure table, Phase D diff).
+  - `docs/roadmap/v4/v4.114.0/DOCKET_AUDIT.md` — line-by-line
+    verification of all 11 v4.99.0 items with code-change
+    references + test coverage + regression status. 11/11 CLOSED.
+  - `.reviews/v4.114.0/PRE_PANEL_AUDIT.md` — 19-claim fact-check
+    across three SESSION_REPORTs.
+  - `.reviews/v4.114.0/01-rattler.md` through `07-mamba.md` —
+    seven reviewer perspectives.
+  - `.reviews/v4.114.0/README.md` — verdict table + decision
+    rule + findings.
+
+### Panel verdict
+
+| Reviewer | Score | Verdict |
+|---|---:|---|
+| Rattler  | 8.2 | PASS WITH NOTES |
+| Viper    | 8.5 | PASS |
+| Anaconda | 7.8 | PASS WITH NOTES |
+| Cobra    | 8.0 | PASS WITH NOTES |
+| Coral    | 8.3 | PASS WITH NOTES |
+| Boa      | 8.5 | PASS |
+| Mamba    | 8.2 | PASS WITH NOTES |
+| **Agg**  | **8.21** | — |
+
+### Unanimous CLOSED — 11/11 v4.99.0 docket items
+
+Every item has a code-change reference, test coverage, and zero
+regression across Phase D. The docket is empty.
+
+### Panel findings for v4.114.1 (HIGH)
+
+- **R1/Cb1:** v4.112.0 release name "fixed-point verification"
+  overreaches — the 3-stage script does not converge at Stage 1
+  (Sh.8 blocker). Rename to "divergence analysis + byref fix" in
+  CLAUDE.md and the v4/README.md row.
+- **Cb1:** Commit `tests/bootstrap/byref_test.mn` or equivalent
+  reproducing the v4.112.0 acceptance case.
+
+### Panel findings for v4.114.1 (LOW)
+
+- **M1:** Add cleanup-intent comment at `__mn_coro_register_wait`
+  overflow-full bail path in `mapanare_runtime.c`.
+
+### Panel findings deferred to Phase E
+
+- **A.1:** Self-hosted pipeline CI gate (carry-forward from
+  v4.106.0).
+- **A.2:** Fixed-point CI gate — either close Sh.8 or document
+  gate absence.
+- **B.1:** Reachability tests for 4 of 5 async error sites.
+- **Co.1:** Pre-existing user-code coroutine leaks in 56/57.
+- **Instr.1:** Culebra scan over 854K-line main.ll (three panels
+  blocked).
+
+### vs. v4.106.0 panel
+
+| | v4.106.0 | v4.114.0 | Δ |
+|---|---:|---:|---:|
+| Aggregate | 7.87 | 8.21 | +0.34 |
+| PASS count | 1 | 2 | +1 |
+| NEEDS WORK | 0 | 0 | 0 |
+
+Every reviewer who moved vs v4.106.0 moved up.
+
 ## [4.113.0] - 2026-04-14
 
 **Phase D release 3 — coroutine frame decoupling + medium/low

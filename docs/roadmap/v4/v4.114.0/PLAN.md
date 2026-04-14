@@ -7,7 +7,7 @@
 > benchmarked, Phase D closes the remaining docket items and proves the
 > self-hosted compiler works end-to-end.
 
-**Status:** TODO
+**Status:** DONE (panel returned NEEDS WORK @ 8.21 < 8.5 — v4.114.1 patch scheduled)
 **Breaking:** No
 **Prerequisite:** v4.113.0
 **Delta review:** No
