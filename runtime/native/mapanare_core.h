@@ -87,6 +87,13 @@ MN_EXPORT void __mn_sb_append_char(MnStringBuilder *sb, char c);
 MN_EXPORT MnString __mn_sb_to_string(MnStringBuilder *sb);
 MN_EXPORT void __mn_sb_destroy(MnStringBuilder *sb);
 
+/* v4.108.0: pointer-based API for the MIR auto-StringBuilder pass.
+ * These thin wrappers let the emitter work with scalar pointers
+ * instead of the 24-byte `MnStringBuilder` struct-by-value return.
+ * See mapanare/mir_opt.py:string_concat_optimization. */
+MN_EXPORT MnStringBuilder *__mn_sb_new(int64_t initial_cap);
+MN_EXPORT MnString __mn_sb_finish(MnStringBuilder *sb);
+
 /** Get the character at index `i` as a single-character string.
  *  Returns empty string if out of bounds. */
 MN_EXPORT MnString __mn_str_char_at(MnString s, int64_t i);

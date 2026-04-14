@@ -552,6 +552,28 @@ MN_EXPORT void __mn_sb_destroy(MnStringBuilder *sb) {
     sb->cap = 0;
 }
 
+/* v4.108.0: pointer-based API.
+ * `__mn_sb_new` allocates both the struct and the initial buffer on the
+ * heap so that subsequent calls work with a single scalar pointer
+ * (simpler ABI for the MIR emitter). `__mn_sb_finish` consumes the
+ * builder — transfers ownership of the buffer to the returned
+ * `MnString` and frees the struct. */
+MN_EXPORT MnStringBuilder *__mn_sb_new(int64_t initial_cap) {
+    MnStringBuilder *sb = (MnStringBuilder *)malloc(sizeof(MnStringBuilder));
+    if (!sb) return NULL;
+    sb->cap = initial_cap > 0 ? initial_cap : 64;
+    sb->buf = (char *)__mn_alloc(sb->cap);
+    sb->buf[0] = '\0';
+    sb->len = 0;
+    return sb;
+}
+
+MN_EXPORT MnString __mn_sb_finish(MnStringBuilder *sb) {
+    MnString s = __mn_sb_to_string(sb);  /* zeros out sb, transfers buf */
+    free(sb);                            /* free the struct itself */
+    return s;
+}
+
 MN_EXPORT MnString __mn_str_char_at(MnString s, int64_t i) {
     if (i < 0 || i >= s.len) {
         return __mn_str_empty();
