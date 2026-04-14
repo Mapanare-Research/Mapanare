@@ -1,0 +1,50 @@
+=================================================================
+==10874==ERROR: AddressSanitizer: global-buffer-overflow on address 0x0000008da521 at pc 0x0000004d4139 bp 0x7f04deef30e0 sp 0x7f04deef28a0
+READ of size 2 at 0x0000008da521 thread T1
+    #0 0x4d4138 in StrtolFixAndCheck(void*, char const*, char**, char*, int) asan_interceptors.cpp.o
+    #1 0x4bfcc2 in strtoll (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x4bfcc2) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+    #2 0x7c1eae in mir_opt__try_strength_reduce (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x7c1eae) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+
+0x0000008da521 is located 63 bytes before global variable '.str.1813' defined in '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/main.ll' (0x8da560) of size 10
+0x0000008da521 is located 31 bytes before global variable '.str.1812' defined in '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/main.ll' (0x8da540) of size 12
+0x0000008da521 is located 0 bytes after global variable '.str.1811' defined in '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/main.ll' (0x8da520) of size 1
+SUMMARY: AddressSanitizer: global-buffer-overflow asan_interceptors.cpp.o in StrtolFixAndCheck(void*, char const*, char**, char*, int)
+Shadow bytes around the buggy address:
+  0x0000008da280: 05 f9 f9 f9 00 01 f9 f9 00 02 f9 f9 01 f9 f9 f9
+  0x0000008da300: 00 02 f9 f9 00 04 f9 f9 05 f9 f9 f9 00 01 f9 f9
+  0x0000008da380: 00 00 f9 f9 07 f9 f9 f9 00 06 f9 f9 00 02 f9 f9
+  0x0000008da400: 00 f9 f9 f9 00 f9 f9 f9 05 f9 f9 f9 07 f9 f9 f9
+  0x0000008da480: 05 f9 f9 f9 05 f9 f9 f9 07 f9 f9 f9 06 f9 f9 f9
+=>0x0000008da500: 03 f9 f9 f9[01]f9 f9 f9 00 04 f9 f9 00 02 f9 f9
+  0x0000008da580: 00 02 f9 f9 00 01 f9 f9 00 03 f9 f9 00 02 f9 f9
+  0x0000008da600: 00 00 f9 f9 00 02 f9 f9 00 00 f9 f9 03 f9 f9 f9
+  0x0000008da680: 07 f9 f9 f9 01 f9 f9 f9 00 01 f9 f9 01 f9 f9 f9
+  0x0000008da700: 00 f9 f9 f9 01 f9 f9 f9 05 f9 f9 f9 00 02 f9 f9
+  0x0000008da780: 04 f9 f9 f9 01 f9 f9 f9 00 f9 f9 f9 01 f9 f9 f9
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+Thread T1 created by T0 here:
+    #0 0x4bcdd5 in pthread_create (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x4bcdd5) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+    #1 0x515b37 in main /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:117:9
+    #2 0x7f04e154f1c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #3 0x7f04e154f28a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #4 0x43c614 in _start (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x43c614) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+
+==10874==ABORTING
