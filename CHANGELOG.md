@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.110.0] - 2026-04-14
+
+**Phase C release 4 (final) — full benchmark refresh with all fixes
+applied.** Pure measurement; zero code changes. Publishes the
+definitive cross-language performance document (`PHASE_C_RESULTS.md`)
+that replaces `FINAL_REPORT.md` (v4.98.0, pre-Phase A) and
+`FULL_COMPARISON.md` (v4.107.0, pre-StringBuilder) as canonical.
+
+### Measured (v4.110.0, geomeans over 5 correct workloads)
+
+- **50× faster than Python** 3.12 (geomean)
+- **1.06× slower than Rust** — effectively on par
+- **2.10× slower than Go**
+- **4.85× slower than C (gcc -O2)** (was 9.48× in v4.107.0)
+
+The 2× narrowing of the vs-C ratio traces entirely to v4.108.0's
+auto-StringBuilder fix: `string_concat` went from 94.57 ms → 1.36 ms
+(70× speedup, 109× memory reduction, from 246 MB peak to 2.26 MB).
+
+### Added
+
+- `benchmarks/PHASE_C_RESULTS.md` — canonical performance document
+  (7 tables: cross-language wall-clock, relative-time ratios + geomeans,
+  v4.99.0 delta, v4.82.0 cumulative delta, peak memory, binary size,
+  lines of code), plus methodology, per-category analysis, before/after
+  on string_concat, and reproducibility commands.
+- `benchmarks/v4.110.0-final.json` — raw 6×6 results, 10 runs per config.
+- `benchmarks/v4.110.0-extra.json` — Mapanare-only matmul_naive +
+  agent_fanout measurements for the v4.82.0 cumulative delta.
+- `benchmarks/v4.110.0-deltas.txt` — formatted delta tables.
+- `benchmarks/compute_deltas.py` — script that produces Tables 3, 4,
+  and the same-harness control table from the raw JSON.
+- `benchmarks/run_extra_bench.py` — script that measures the two
+  Mapanare-only programs not in the cross-language harness.
+
+### Changed
+
+- `README.md` — performance section rewritten against v4.110.0
+  numbers; now links to `benchmarks/PHASE_C_RESULTS.md` as canonical
+  reference instead of the stale `FINAL_REPORT.md`.
+- `benchmarks/FINAL_REPORT.md` — SUPERSEDED banner added; kept as a
+  historical record of the v4.98.0 pre-panel measurement.
+- `benchmarks/cross_language/FULL_COMPARISON.md` — SUPERSEDED banner
+  added; retained as the same-harness control baseline (v4.107.0 is
+  the "pre-StringBuilder" reference used in the Table 3 control).
+
+### Findings
+
+- **Post-v4.107.0 same-harness control is flat.** Every benchmark
+  except string_concat moves by ≤ 5% (within run-to-run noise at
+  sub-millisecond scale). `enum_match` shows −16% compatible with
+  v4.103.0's enum-dispatch fix but at the edge of measurement noise;
+  not claimed as a headline.
+- **v4.98.0 → v4.110.0 "regressions" on sub-millisecond benchmarks
+  are harness artifact**, not compiler regression. v4.98.0 used raw
+  `time.perf_counter()` without `/usr/bin/time -v` wrap; v4.107.0+
+  uses GNU time, which adds ~0.5-1 ms per call. The v4.107.0 same-
+  harness control isolates real post-v4.107.0 change.
+- **v4.82.0 cumulative geomean: 1.821× speedup** across 5 optimizer
+  programs. string_concat (75×) carries the entire result.
+- **struct_alloc: Mapanare beats Rust (0.71×)** — arena bulk-free
+  vs per-struct `Drop::drop` is the one place Mapanare has a
+  structural advantage, and it shows up consistently.
+- **prime_sieve: Mapanare ties Rust exactly** (both 3.43 ms).
+- **enum_match: 22× slower than C** remains the single largest
+  known optimizer opportunity (docket Rt.1, boxed enum payloads).
+
+### Dockets (open for v4.111.0+)
+
+- **Qs.1** — `List<Int>` indexing: `arr.push(42); print(str(arr[0]))`
+  prints `<?>`. Causes quicksort checksum validation to fail; wall-
+  clock numbers for that program are shown but cannot be cited.
+- **Rt.1** — Boxed enum payload overhead (enum_match 22× slower than C).
+- **TBAA.1** — TBAA metadata is defined in the module header but
+  never attached to any load or store (v4.109.0 finding); decide to
+  wire it up or remove it.
+- **willreturn.1** — `willreturn` on `__mn_sb_*` runtime declarations
+  blocks DSE of stores the call observes; audit `RUNTIME_FN_ATTRS`.
+
+### What's next
+
+Phase C is complete. v4.111.0 opens Phase D: self-hosted compiler
+maturity — shifting focus from performance measurement to closing
+gaps between the Python bootstrap and the self-hosted compiler.
+
 ## [4.109.0] - 2026-04-14
 
 **Phase C release 3 — Arcs 11–12 optimizer ROI analysis.** Pure

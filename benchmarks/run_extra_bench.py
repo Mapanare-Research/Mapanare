@@ -15,8 +15,7 @@ import tempfile
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent / "c" / "Users" / "Juan" / "Documents" / "GitHub" / "Mapanare"
-# Fallback: harness is called from the repo root, so use that directly.
+# Harness is called from the repo root.
 ROOT = Path("/mnt/c/Users/Juan/Documents/GitHub/Mapanare")
 RUNTIME_LIB = ROOT / "runtime" / "native" / "libmapanare_rt.a"
 TIME_BIN = "/usr/bin/time"
@@ -73,12 +72,18 @@ def compile_mn(mn_path, outbin):
     opt_bc = td / f"{name}.opt.bc"
     obj = td / f"{name}.o"
 
+    emit = [sys.executable, "-m", "mapanare", "emit-llvm", str(mn_path), "-o", str(ll)]
+    llc = [tools["llc"], "-filetype=obj", "-relocation-model=pic", str(opt_bc), "-o", str(obj)]
+    link = [
+        tools["clang"], str(obj), str(RUNTIME_LIB),
+        "-lm", "-lpthread", "-ldl", "-o", str(outbin),
+    ]
     steps = [
-        ([sys.executable, "-m", "mapanare", "emit-llvm", str(mn_path), "-o", str(ll)], "emit"),
+        (emit, "emit"),
         ([tools["llvm-as"], str(ll), "-o", str(bc)], "llvm-as"),
         ([tools["opt"], "-O2", str(bc), "-o", str(opt_bc)], "opt"),
-        ([tools["llc"], "-filetype=obj", "-relocation-model=pic", str(opt_bc), "-o", str(obj)], "llc"),
-        ([tools["clang"], str(obj), str(RUNTIME_LIB), "-lm", "-lpthread", "-ldl", "-o", str(outbin)], "link"),
+        (llc, "llc"),
+        (link, "link"),
     ]
     for cmd, stage in steps:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=ROOT)
@@ -145,7 +150,12 @@ def main():
         if r["error"]:
             print(f"  ERR: {r['error']}")
         else:
-            print(f"  wall={r['wall_median_ms']:.3f}ms  mem={r['mem_peak_kb']:.0f}KB  bin={r['binary_size_bytes']}B  correct={r['correct']}  output={r.get('output_sample','')[:40]}")
+            line = f"  wall={r['wall_median_ms']:.3f}ms"
+            line += f"  mem={r['mem_peak_kb']:.0f}KB"
+            line += f"  bin={r['binary_size_bytes']}B"
+            line += f"  correct={r['correct']}"
+            line += f"  output={r.get('output_sample', '')[:40]}"
+            print(line)
     outpath = ROOT / "benchmarks" / "v4.110.0-extra.json"
     outpath.write_text(json.dumps({
         "version": "4.110.0",

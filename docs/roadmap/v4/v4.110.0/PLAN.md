@@ -8,7 +8,7 @@
 > measure everything one final time. Comprehensive comparison with
 > all fixes applied. The definitive "where does Mapanare stand" document.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.109.0
 **Delta review:** No
