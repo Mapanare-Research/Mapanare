@@ -164,3 +164,39 @@ jobs:
             echo "=== $t ==="
             "/tmp/async/$t.bin"
           done
+
+      # v4.117.0 Phase 2 extension: the v4.115.0 async demos exercise
+      # real file I/O and real HTTP inside async pipelines (not just
+      # the minimal block_on/await shape that goldens 55-57 cover).
+      # Gate them under TSan too so any future race in the scheduler
+      # or coroutine frame handling under I/O-heavy workloads fails
+      # CI at PR time. `async_http_demo.mn` exits 0 cleanly if outbound
+      # TCP is blocked; that's CI-safe by design.
+      - name: TSan — v4.115.0 async I/O demos
+        run: |
+          export TSAN_OPTIONS=halt_on_error=1:report_bugs=1:exitcode=99
+          mkdir -p /tmp/async_demos
+          for demo in async_file_io async_http_demo; do
+            python -m mapanare emit-llvm "examples/${demo}.mn" -o "/tmp/async_demos/${demo}.ll"
+            llc "/tmp/async_demos/${demo}.ll" -o "/tmp/async_demos/${demo}.s"
+            clang -O1 -g -fsanitize=thread -fno-omit-frame-pointer -no-pie \
+                "/tmp/async_demos/${demo}.s" /tmp/tsan_rt/libmapanare_rt_tsan.a \
+                -lm -lpthread -ldl -o "/tmp/async_demos/${demo}.bin"
+            echo "=== ${demo} ==="
+            timeout 20 "/tmp/async_demos/${demo}.bin" || {
+              rc=$?
+              # TSan exits 99 on race detection; any other non-zero is
+              # a crash. async_http_demo is allowed to exit 0 when the
+              # sandbox blocks TCP (it prints a deterministic message).
+              if [ $rc -eq 99 ]; then
+                echo "TSan race detected in ${demo} — FAIL"
+                exit 1
+              fi
+              if [ "${demo}" = "async_http_demo" ] && [ $rc -eq 0 ]; then
+                :
+              else
+                echo "${demo} exited ${rc} — FAIL"
+                exit 1
+              fi
+            }
+          done
