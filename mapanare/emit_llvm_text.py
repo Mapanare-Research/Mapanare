@@ -4783,7 +4783,15 @@ class LLVMTextEmitter:
             self._L(f"{dn} = call i1 @llvm.coro.done(ptr {hd})")
             self._L(f"br i1 {dn}, label %{done_lbl}, label %{loop_lbl}")
 
-        # Done — extract value, destroy, free
+        # Done — extract value, destroy, free.
+        # v4.102.0: the coroutine's final-suspend path overwrites
+        # ``future.payload`` (slot 1 of the {i8, ptr} Future) with the
+        # boxed return value — so after scheduler_run completes, that
+        # slot no longer holds the coroutine handle. The old code
+        # reloaded slot 1 a second time for llvm.coro.destroy, which
+        # handed the destroy intrinsic a pointer to an 8-byte malloc'd
+        # int and segfaulted at destroy_fn. Reuse the ``hd`` loaded
+        # before scheduler_run — that's the real handle.
         self._blk[done_lbl] = []
         self._cb = done_lbl
         vp = self._f("bo.val.ptr")
@@ -4792,12 +4800,13 @@ class LLVMTextEmitter:
         self._L(f"{vp} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
         self._L(f"{vb} = load ptr, ptr {vp}")
         self._L(f"{vr} = load i64, ptr {vb}")
-        # Destroy coroutine frame + free future and box
-        hp2 = self._f("bo.hdl2.ptr")
-        hd2 = self._f("bo.hdl2")
-        self._L(f"{hp2} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
-        self._L(f"{hd2} = load ptr, ptr {hp2}")
-        self._L(f"call void @llvm.coro.destroy(ptr {hd2})")
+        # Destroy coroutine frame + free future and box. ``hd`` was
+        # loaded above (before scheduler_run / resume loop) and still
+        # points to the coroutine frame — safe to pass to
+        # llvm.coro.destroy. The destroy intrinsic lowers to
+        # handle[8](handle) — the destroy_fn pointer, still valid
+        # after the resume-fn slot was nulled on final suspend.
+        self._L(f"call void @llvm.coro.destroy(ptr {hd})")
         self._L(f"call void @free(ptr {vb})")
         self._L(f"call void @free(ptr {fv})")
         self._put(i.dest, vr, "i64")

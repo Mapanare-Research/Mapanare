@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.102.0] - 2026-04-13
+
+**Phase A Release 3 — Async Mapanare programs run natively for the first
+time.** All three async golden tests (`55_async_basic.mn`,
+`56_async_await.mn`, `57_real_await.mn`) compile through the Python
+bootstrap, link against `libmapanare_rt.a`, and execute to completion
+with the expected output (42, 43, 110). Valgrind clean: zero errors,
+zero leaks. Dockets #3 (async can't link) and #6 (runtime symbol
+export) from the v4.99.0 panel are closed.
+
+The docket framed this as a build-system gap — scheduler symbols
+missing from the runtime archive. Phase 1's audit disproved that:
+`mapanare_runtime.c` has been in `RUNTIME_SOURCES` since v4.29.0 and
+all six `__mn_coro_scheduler_*` symbols were already in the archive
+as `T`. The real blockers were two correctness bugs that only
+surfaced once linking worked (which it did after v4.101.0 made the
+emitted IR valid end-to-end).
+
+### Fixed
+
+- `runtime/native/mapanare_runtime.c` — `mn_coro_is_done` now checks
+  `*(void **)handle == NULL` instead of byte `handle[16]`. LLVM 18's
+  coroutine splitter, when lowering `llvm.coro.suspend(..., i1 true)`
+  (final suspend), emits code that stores NULL into the resume-fn
+  slot at frame offset 0 — that's the canonical done marker. The
+  old offset-16 check inspected user state, not a status field, so
+  the scheduler never detected completion and re-enqueued already-
+  done coroutines, crashing on the next NULL-function-pointer call
+  from `mn_process_task`.
+- `mapanare/emit_llvm_text.py` — `_do_block_on` now reuses the
+  `hd` SSA value loaded before `scheduler_run` when calling
+  `llvm.coro.destroy`, instead of reloading the same slot. The
+  coroutine's final-suspend path overwrites `future.payload` with
+  its boxed return value, so the reload returned an 8-byte
+  malloc-pointer and `coro.destroy` lowered to
+  `(boxed_int)->destroy_fn()` — a segfault.
+
+### Added
+
+- `.github/workflows/ci.yml` native job now compiles + links + runs
+  all three async goldens and verifies the output, with a 10-second
+  timeout per test. This is the first CI step to exercise the
+  scheduler end-to-end.
+
+### Closed (from v4.99.0 panel docket)
+
+- **#3 (async can't link)** — linking works; running works; all
+  three async goldens pass.
+- **#6 (scheduler export)** — already exported since v4.29.0;
+  confirmed whole with `nm`.
+
 ## [4.101.0] - 2026-04-13
 
 **Phase A Release 2 — Self-hosted emitter output corruption fixed.** The

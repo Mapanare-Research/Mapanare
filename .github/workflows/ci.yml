@@ -229,6 +229,54 @@ jobs:
             -o /tmp/test_html_smoke -lm -lpthread -ldl
           /tmp/test_html_smoke
 
+      # v4.102.0: async native run. Before this release, no Mapanare
+      # async program had ever linked — the coroutine scheduler
+      # symbols (``__mn_coro_scheduler_*``) lived in the C runtime
+      # source but were never archived into ``libmapanare_rt.a``, and
+      # ``mn_coro_is_done`` checked the wrong frame offset, so any
+      # attempt to link and run crashed with a NULL-function-pointer
+      # call from ``mn_process_task``. This step proves the end-to-end
+      # pipeline: Python bootstrap emits the coroutine IR, clang links
+      # it against the runtime archive, and the resulting binary runs
+      # to completion with the expected output. Three async golden
+      # tests are exercised to catch pattern-specific regressions
+      # (basic return, single await, fan-out with multiple awaits).
+      - name: Install LLVM + clang (for async native run)
+        run: |
+          sudo apt-get install -y llvm-18 clang-18
+          sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+
+      - name: Setup Python for async native run
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare (for emit-llvm)
+        run: pip install -e ".[dev]"
+
+      - name: Compile + link + run async golden tests natively
+        run: |
+          set -e
+          for t in 55_async_basic 56_async_await 57_real_await; do
+            echo "--- $t ---"
+            python -m mapanare emit-llvm "tests/golden/$t.mn" -o "/tmp/$t.ll"
+            clang "/tmp/$t.ll" \
+              -L runtime/native -lmapanare_rt \
+              -lpthread -lm -ldl \
+              -o "/tmp/$t"
+            out=$(timeout 10 "/tmp/$t")
+            case "$t" in
+              55_async_basic) expected="42";;
+              56_async_await) expected="43";;
+              57_real_await)  expected="110";;
+            esac
+            if [ "$out" != "$expected" ]; then
+              echo "FAIL: $t expected '$expected' got '$out'"
+              exit 1
+            fi
+            echo "OK: $t -> $out"
+          done
+
       - name: Verify Makefile RUNTIME_SOURCES vs runtime/native/*.c
         run: make check-runtime-sources
 

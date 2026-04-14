@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.101.0 shipped — Phase A Release 2. Self-hosted emitter corruption fixed: dockets #1 + #2 closed; golden 0/61 → 16/62.)
+## Where We Are (v4.102.0 shipped — Phase A Release 3. First native async run: dockets #3 + #6 closed; three async goldens run end-to-end, valgrind clean.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

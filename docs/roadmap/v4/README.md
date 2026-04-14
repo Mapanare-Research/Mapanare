@@ -105,6 +105,7 @@ Six phases:
 | | | | |
 | **v4.100.0** | Phase A | Tagged-Pointer UB Fix (partial) | Docket #1: UB structurally eliminated via `MnString` bitfield (`len:63, is_heap:1`). ABI preserved (16 bytes). Self-hosted compiler output still corrupted — confirmed pre-existing, **not** caused by the tagged pointer; deferred to v4.101.0. |
 | **v4.101.0** | Phase A | Self-Hosted Emitter Corruption Fixed | Dockets #1 + #2 closed. Python emitter's drop glue was freeing heap strings pushed into lists / stored as struct fields. Six sites in `emit_llvm_text.py` gained move-semantics. `mnc-stage1` now emits clean, `llvm-as`-valid IR. Golden: 0/61 → 16/62. Regression test `62_list_output.mn` added. |
+| **v4.102.0** | Phase A | First Native Async Run | Dockets #3 + #6 closed. Two bugs: `mn_coro_is_done` checked wrong frame offset (fixed to `handle[0] == NULL` per LLVM's final-suspend lowering); `_do_block_on` reloaded the coroutine handle from a slot the coroutine overwrites with its return value (fixed to reuse cached handle). All 3 async goldens run natively (42, 43, 110). Valgrind clean. CI step added. |
 
 ## What v4.0.0 Delivered
 

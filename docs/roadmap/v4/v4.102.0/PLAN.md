@@ -7,7 +7,7 @@
 > run natively. This release fixes the build system, links async golden
 > tests, and runs them end-to-end.
 
-**Status:** PLANNED
+**Status:** DONE — 2026-04-13. See SESSION_REPORT.md. Not a build-system bug — the archive was already complete. Two correctness bugs: `mn_coro_is_done` checked wrong frame offset (8 bytes into user state, not the resume-fn slot), and `_do_block_on` reloaded the coroutine handle from a slot the coroutine overwrites with its return value. Fixes: 3 lines in `mapanare_runtime.c`, 1 line in `emit_llvm_text.py` (reuse cached handle). All 3 async goldens run natively (42, 43, 110). CI step added.
 **Breaking:** No
 **Prerequisite:** v4.101.0
 **Delta review:** No

@@ -1,163 +1,163 @@
 # Mapanare Benchmarks - Linux
 
-Generated: 2026-04-14 02:05 UTC  
-Version: 4.101.0 (`eca7895`)  
+Generated: 2026-04-14 02:39 UTC  
+Version: 4.102.0 (`f542bea`)  
 Platform: Linux x86_64, Python 3.12.3  
-Total time: 6.5s  
+Total time: 6.6s  
 
 ## Bootstrap Compiler (Python)
 
 | Test | Src | IR | KB | Fns | BBs | Stk | ms | Trend | Status |
 |------|----:|---:|---:|----:|----:|----:|---:|-------|--------|
-| 01_hello | 3 | 41 | 1.1 | 1 | 2 | 9 | 654 | `-------- ^` | PASS |
-| 02_arithmetic | 4 | 55 | 1.7 | 1 | 4 | 25 | 7 | `         v` | PASS |
-| 03_function | 8 | 59 | 1.8 | 1 | 6 | 25 | 6 | `    _    v` | PASS |
+| 01_hello | 3 | 41 | 1.1 | 1 | 2 | 9 | 792 | `-------. v` | PASS |
+| 02_arithmetic | 4 | 55 | 1.7 | 1 | 4 | 25 | 8 | `         ^` | PASS |
+| 03_function | 8 | 59 | 1.8 | 1 | 6 | 25 | 7 | `   _     ^` | PASS |
 | 04_if_else | 8 | 45 | 1.2 | 1 | 4 | 9 | 6 | `         ^` | PASS |
-| 05_for_loop | 7 | 105 | 3.3 | 1 | 7 | 75 | 6 | `         v` | PASS |
-| 06_struct | 9 | 70 | 2.3 | 1 | 4 | 49 | 6 | `         v` | PASS |
-| 07_enum_match | 13 | 76 | 2.4 | 1 | 5 | 42 | 14 | `         v` | PASS |
-| 08_list | 5 | 112 | 4.1 | 1 | 6 | 121 | 7 | `         v` | PASS |
-| 09_string_methods | 5 | 97 | 3.5 | 1 | 6 | 51 | 5 | `         ^` | PASS |
-| 10_result | 14 | 151 | 5.2 | 2 | 10 | 147 | 6 | `         ^` | PASS |
-| 11_closure | 5 | 111 | 3.7 | 1 | 8 | 89 | 5 | `         v` | PASS |
-| 12_while | 7 | 86 | 2.6 | 1 | 7 | 58 | 5 | `         v` | PASS |
-| 13_fib | 10 | 121 | 3.5 | 2 | 9 | 106 | 8 | `        ` | PASS |
-| 14_nested_struct | 9 | 70 | 2.3 | 1 | 4 | 49 | 6 | `        ` | PASS |
-| 15_multifunction | 12 | 87 | 2.8 | 1 | 10 | 50 | 7 | `         v` | PASS |
-| 16_string_escape | 8 | 65 | 2.2 | 1 | 2 | 27 | 7 | `____._-. v` | PASS |
-| 17_option | 19 | 197 | 6.5 | 2 | 15 | 173 | 8 | `.._--.-. v` | PASS |
-| 18_method_chain | 9 | 133 | 5.1 | 1 | 8 | 84 | 6 | `_......_ v` | PASS |
-| 19_nested_match | 18 | 208 | 7.1 | 2 | 15 | 186 | 7 | `_._-._._ v` | PASS |
-| 20_recursion | 11 | 139 | 4.3 | 2 | 11 | 123 | 6 | `         v` | PASS |
-| 21_list_ops | 15 | 239 | 8.7 | 2 | 13 | 277 | 6 | `_.....~. v` | PASS |
-| 22_string_builder | 14 | 159 | 5.7 | 2 | 11 | 124 | 5 | `.-..-...` | PASS |
-| 23_multi_return | 15 | 117 | 4.1 | 1 | 8 | 98 | 7 | `__.___.- ^` | PASS |
-| 24_enum_methods | 20 | 118 | 4.1 | 2 | 8 | 82 | 6 | `        ` | PASS |
-| 25_fizzbuzz | 18 | 213 | 6.9 | 2 | 20 | 166 | 6 | `_._.-._. ^` | PASS |
+| 05_for_loop | 7 | 105 | 3.3 | 1 | 7 | 75 | 6 | `         ^` | PASS |
+| 06_struct | 9 | 70 | 2.3 | 1 | 4 | 49 | 6 | `         ^` | PASS |
+| 07_enum_match | 13 | 76 | 2.4 | 1 | 5 | 42 | 13 | `         ^` | PASS |
+| 08_list | 5 | 112 | 4.1 | 1 | 6 | 121 | 7 | `         ^` | PASS |
+| 09_string_methods | 5 | 97 | 3.5 | 1 | 6 | 51 | 6 | `        ` | PASS |
+| 10_result | 14 | 151 | 5.2 | 2 | 10 | 147 | 7 | `         v` | PASS |
+| 11_closure | 5 | 111 | 3.7 | 1 | 8 | 89 | 4 | `         ^` | PASS |
+| 12_while | 7 | 86 | 2.6 | 1 | 7 | 58 | 6 | `         ^` | PASS |
+| 13_fib | 10 | 121 | 3.5 | 2 | 9 | 106 | 5 | `         ^` | PASS |
+| 14_nested_struct | 9 | 70 | 2.3 | 1 | 4 | 49 | 5 | `        ` | PASS |
+| 15_multifunction | 12 | 87 | 2.8 | 1 | 10 | 50 | 6 | `         ^` | PASS |
+| 16_string_escape | 8 | 65 | 2.2 | 1 | 2 | 27 | 6 | `___._-.* ^` | PASS |
+| 17_option | 19 | 197 | 6.5 | 2 | 15 | 173 | 7 | `._--.-.~ ^` | PASS |
+| 18_method_chain | 9 | 133 | 5.1 | 1 | 8 | 84 | 7 | `......_- ^` | PASS |
+| 19_nested_match | 18 | 208 | 7.1 | 2 | 15 | 186 | 7 | `._-._._. ^` | PASS |
+| 20_recursion | 11 | 139 | 4.3 | 2 | 11 | 123 | 5 | `         ^` | PASS |
+| 21_list_ops | 15 | 239 | 8.7 | 2 | 13 | 277 | 8 | `.....~..` | PASS |
+| 22_string_builder | 14 | 159 | 5.7 | 2 | 11 | 124 | 8 | `-..-....` | PASS |
+| 23_multi_return | 15 | 117 | 4.1 | 1 | 8 | 98 | 7 | `_.___.--` | PASS |
+| 24_enum_methods | 20 | 118 | 4.1 | 2 | 8 | 82 | 7 | `        ` | PASS |
+| 25_fizzbuzz | 18 | 213 | 6.9 | 2 | 20 | 166 | 5 | `._.-._..` | PASS |
 | 26_generics | 29 | 125 | 4.0 | 1 | 12 | 63 | 7 | `        ` | PASS |
-| 27_impl | 21 | 77 | 2.2 | 1 | 6 | 50 | 7 | ` __..___` | PASS |
-| 28_traits | 25 | 82 | 2.5 | 1 | 6 | 58 | 8 | `_...-.-. v` | PASS |
-| 29_generic_impl | 24 | 89 | 2.7 | 1 | 8 | 59 | 6 | `______._ v` | PASS |
-| 30_nested_generics | 20 | 124 | 4.5 | 1 | 2 | 117 | 7 | `_._.__..` | PASS |
-| 31_generic_multi | 35 | 129 | 4.2 | 1 | 12 | 93 | 7 | `         v` | PASS |
-| 32_generic_enum | 16 | 48 | 1.3 | 1 | 2 | 18 | 6 | `        ` | PASS |
-| 33_break_continue | 58 | 437 | 13.3 | 5 | 36 | 446 | 9 | `        ` | PASS |
-| 34_file_io | 19 | 245 | 10.3 | 1 | 12 | 185 | 6 | `        ` | PASS |
-| 35_stdin | 4 | 101 | 3.8 | 1 | 8 | 65 | 5 | ` ...*--_ v` | PASS |
-| 36_crypto | 13 | 156 | 6.1 | 1 | 12 | 108 | 7 | `__..--_. ^` | PASS |
-| 37_regex | 10 | 172 | 7.1 | 1 | 8 | 109 | 5 | `.......  v` | PASS |
-| 38_http | 5 | 83 | 3.0 | 1 | 6 | 49 | 4 | ` __ _ __` | PASS |
-| 39_gpu_detect | 8 | 153 | 5.8 | 1 | 13 | 100 | 5 | `         ^` | PASS |
-| 40_gpu_tensor | 18 | 398 | 16.9 | 1 | 25 | 478 | 7 | `  __  __` | PASS |
-| 41_module_let | 13 | 54 | 1.5 | 1 | 4 | 18 | 6 | `   *     ^` | PASS |
-| 42_module_let_string | 19 | 58 | 1.7 | 1 | 4 | 18 | 6 | `*****..* ^` | PASS |
-| 43_module_let_math | 19 | 58 | 1.7 | 1 | 4 | 18 | 6 | `_-_*__ _ ^` | PASS |
-| 45_ffi_bind | 15 | 107 | 2.9 | 2 | 9 | 83 | 7 | `  ~*    ` | PASS |
-| 47_try_operator | 32 | 297 | 10.9 | 4 | 23 | 279 | 8 | `        ` | PASS |
-| 48_match_nested_exhaustive | 23 | 346 | 13.8 | 3 | 32 | 309 | 7 | `         v` | PASS |
-| 49_match_guards | 16 | 214 | 7.1 | 2 | 16 | 169 | 8 | `_-  **__` | PASS |
-| 49_tensor_literal | 58 | 744 | 30.6 | 1 | 48 | 826 | 10 | `___ -*-_ v` | PASS |
-| 50_match_or_patterns | 25 | 186 | 6.9 | 2 | 11 | 140 | 6 | ` __ *__- ^` | PASS |
-| 50_tensor_indexing | 46 | 687 | 28.3 | 1 | 34 | 899 | 8 | `....* ..` | PASS |
-| 51_match_guards_and_or | 17 | 0 | 0.0 | 0 | 0 | 0 | 4 | ` ...*...` | FAIL |
-| 51_tensor_broadcast | 57 | 632 | 26.0 | 1 | 48 | 660 | 8 | ` _..*._. ^` | PASS |
-| 52_tensor_slicing | 49 | 668 | 27.7 | 1 | 42 | 750 | 8 | ` .*****. v` | PASS |
-| 53_linear_regression | 43 | 399 | 16.2 | 1 | 25 | 413 | 6 | `...*....` | PASS |
-| 54_const_basic | 12 | 95 | 3.3 | 1 | 6 | 59 | 5 | `  ******` | PASS |
-| 55_async_basic | 12 | 145 | 5.2 | 2 | 11 | 41 | 5 | `  **  **` | PASS |
-| 56_async_await | 17 | 234 | 8.4 | 3 | 22 | 73 | 7 | ` *******` | PASS |
-| 57_real_await | 28 | 403 | 14.7 | 5 | 44 | 121 | 5 | `  *   *  v` | PASS |
-| 58_async_file_io | 28 | 320 | 11.4 | 4 | 34 | 90 | 5 | ` *     . ^` | PASS |
-| 58_const_scope | 21 | 70 | 2.0 | 1 | 10 | 18 | 6 | `   ** **` | PASS |
-| 59_async_fanout | 63 | 1026 | 38.0 | 12 | 121 | 345 | 8 | `.... .**` | PASS |
-| 62_list_output | 35 | 313 | 14.7 | 2 | 22 | 289 | 9 | `*  v` | PASS |
-| **Total** | **1219** | **12349** | **457.1** | **104** | **941** | **9861** | **1055** | | **61/62** |
+| 27_impl | 21 | 77 | 2.2 | 1 | 6 | 50 | 6 | `__..___. ^` | PASS |
+| 28_traits | 25 | 82 | 2.5 | 1 | 6 | 58 | 6 | `...-.-.~ ^` | PASS |
+| 29_generic_impl | 24 | 89 | 2.7 | 1 | 8 | 59 | 6 | `_____.__` | PASS |
+| 30_nested_generics | 20 | 124 | 4.5 | 1 | 2 | 117 | 7 | `._.__..- ^` | PASS |
+| 31_generic_multi | 35 | 129 | 4.2 | 1 | 12 | 93 | 10 | `        ` | PASS |
+| 32_generic_enum | 16 | 48 | 1.3 | 1 | 2 | 18 | 6 | `       _ ^` | PASS |
+| 33_break_continue | 58 | 437 | 13.3 | 5 | 36 | 446 | 12 | `        ` | PASS |
+| 34_file_io | 19 | 245 | 10.3 | 1 | 12 | 185 | 8 | `        ` | PASS |
+| 35_stdin | 4 | 101 | 3.8 | 1 | 8 | 65 | 5 | `...*--_. ^` | PASS |
+| 36_crypto | 13 | 156 | 6.1 | 1 | 12 | 108 | 7 | `_..--_.~ ^` | PASS |
+| 37_regex | 10 | 172 | 7.1 | 1 | 8 | 109 | 6 | `...... . ^` | PASS |
+| 38_http | 5 | 83 | 3.0 | 1 | 6 | 49 | 5 | `__ _ __  v` | PASS |
+| 39_gpu_detect | 8 | 153 | 5.8 | 1 | 13 | 100 | 6 | `         v` | PASS |
+| 40_gpu_tensor | 18 | 398 | 16.9 | 1 | 25 | 478 | 7 | ` __  ___` | PASS |
+| 41_module_let | 13 | 54 | 1.5 | 1 | 4 | 18 | 5 | `  *      ^` | PASS |
+| 42_module_let_string | 19 | 58 | 1.7 | 1 | 4 | 18 | 4 | `----__-* ^` | PASS |
+| 43_module_let_math | 19 | 58 | 1.7 | 1 | 4 | 18 | 6 | `-_*__ _- ^` | PASS |
+| 45_ffi_bind | 15 | 107 | 2.9 | 2 | 9 | 83 | 6 | ` ~*    . ^` | PASS |
+| 47_try_operator | 32 | 297 | 10.9 | 4 | 23 | 279 | 10 | `         ^` | PASS |
+| 48_match_nested_exhaustive | 23 | 346 | 13.8 | 3 | 32 | 309 | 8 | `         ^` | PASS |
+| 49_match_guards | 16 | 214 | 7.1 | 2 | 16 | 169 | 6 | `-  **__* ^` | PASS |
+| 49_tensor_literal | 58 | 744 | 30.6 | 1 | 48 | 826 | 10 | `__ -*-__` | PASS |
+| 50_match_or_patterns | 25 | 186 | 6.9 | 2 | 11 | 140 | 5 | `__ *__-_ v` | PASS |
+| 50_tensor_indexing | 46 | 687 | 28.3 | 1 | 34 | 899 | 8 | `...* ...` | PASS |
+| 51_match_guards_and_or | 17 | 0 | 0.0 | 0 | 0 | 0 | 4 | `...*....` | FAIL |
+| 51_tensor_broadcast | 57 | 632 | 26.0 | 1 | 48 | 660 | 7 | `_..*._..` | PASS |
+| 52_tensor_slicing | 49 | 668 | 27.7 | 1 | 42 | 750 | 8 | `.*****.* ^` | PASS |
+| 53_linear_regression | 43 | 399 | 16.2 | 1 | 25 | 413 | 6 | `..*.....` | PASS |
+| 54_const_basic | 12 | 95 | 3.3 | 1 | 6 | 59 | 5 | ` *******` | PASS |
+| 55_async_basic | 12 | 143 | 5.0 | 2 | 11 | 41 | 5 | ` **  ***` | PASS |
+| 56_async_await | 17 | 232 | 8.3 | 3 | 22 | 73 | 5 | `_______* ^` | PASS |
+| 57_real_await | 28 | 401 | 14.6 | 5 | 44 | 121 | 6 | ` *   *  ` | PASS |
+| 58_async_file_io | 28 | 318 | 11.3 | 4 | 34 | 90 | 6 | `*     .  v` | PASS |
+| 58_const_scope | 21 | 70 | 2.0 | 1 | 10 | 18 | 7 | `  ** ***` | PASS |
+| 59_async_fanout | 63 | 1024 | 37.9 | 12 | 121 | 345 | 8 | `... .***` | PASS |
+| 62_list_output | 35 | 313 | 14.7 | 2 | 22 | 289 | 8 | `*   ^` | PASS |
+| **Total** | **1219** | **12339** | **456.5** | **104** | **941** | **9861** | **1197** | | **61/62** |
 
 ## Native Compiler (mnc-stage1)
 
 | Test | IR | KB | Fns | ms | Match | Status |
 |------|---:|---:|----:|---:|-------|--------|
-| 01_hello | 132 | 7.8 | 1 | 87 | YES | PASS |
-| 02_arithmetic | 137 | 7.8 | 1 | 87 | YES | PASS |
-| 03_function | 0 | 0.0 | 0 | 103 | - | FAIL |
-| 04_if_else | 149 | 8.3 | 1 | 118 | YES | PASS |
-| 05_for_loop | 0 | 0.0 | 0 | 111 | - | FAIL |
+| 01_hello | 132 | 7.8 | 1 | 114 | YES | PASS |
+| 02_arithmetic | 137 | 7.8 | 1 | 133 | YES | PASS |
+| 03_function | 0 | 0.0 | 0 | 116 | - | FAIL |
+| 04_if_else | 149 | 8.3 | 1 | 111 | YES | PASS |
+| 05_for_loop | 0 | 0.0 | 0 | 97 | - | FAIL |
 | 06_struct | 0 | 0.0 | 0 | 42 | - | FAIL |
-| 07_enum_match | 154 | 8.6 | 1 | 93 | YES | PASS |
-| 08_list | 164 | 9.1 | 1 | 107 | YES | PASS |
-| 09_string_methods | 145 | 8.4 | 1 | 84 | YES | PASS |
-| 10_result | 0 | 0.0 | 0 | 111 | - | FAIL |
-| 11_closure | 0 | 0.0 | 0 | 89 | - | FAIL |
-| 12_while | 0 | 0.0 | 0 | 108 | - | FAIL |
-| 13_fib | 0 | 0.0 | 0 | 142 | - | FAIL |
-| 14_nested_struct | 0 | 0.0 | 0 | 50 | - | FAIL |
-| 15_multifunction | 0 | 0.0 | 0 | 108 | - | FAIL |
-| 16_string_escape | 151 | 8.7 | 1 | 104 | YES | PASS |
-| 17_option | 215 | 10.7 | 2 | 132 | YES | PASS |
-| 18_method_chain | 162 | 9.2 | 1 | 111 | YES | PASS |
-| 19_nested_match | 0 | 0.0 | 0 | 110 | - | FAIL |
-| 20_recursion | 0 | 0.0 | 0 | 93 | - | FAIL |
-| 21_list_ops | 0 | 0.0 | 0 | 89 | - | FAIL |
-| 22_string_builder | 0 | 0.0 | 0 | 101 | - | FAIL |
+| 07_enum_match | 154 | 8.6 | 1 | 105 | YES | PASS |
+| 08_list | 164 | 9.1 | 1 | 130 | YES | PASS |
+| 09_string_methods | 145 | 8.4 | 1 | 98 | YES | PASS |
+| 10_result | 0 | 0.0 | 0 | 92 | - | FAIL |
+| 11_closure | 0 | 0.0 | 0 | 100 | - | FAIL |
+| 12_while | 0 | 0.0 | 0 | 86 | - | FAIL |
+| 13_fib | 0 | 0.0 | 0 | 133 | - | FAIL |
+| 14_nested_struct | 0 | 0.0 | 0 | 38 | - | FAIL |
+| 15_multifunction | 0 | 0.0 | 0 | 87 | - | FAIL |
+| 16_string_escape | 151 | 8.7 | 1 | 87 | YES | PASS |
+| 17_option | 215 | 10.7 | 2 | 116 | YES | PASS |
+| 18_method_chain | 162 | 9.2 | 1 | 106 | YES | PASS |
+| 19_nested_match | 0 | 0.0 | 0 | 107 | - | FAIL |
+| 20_recursion | 0 | 0.0 | 0 | 120 | - | FAIL |
+| 21_list_ops | 0 | 0.0 | 0 | 118 | - | FAIL |
+| 22_string_builder | 0 | 0.0 | 0 | 147 | - | FAIL |
 | 23_multi_return | 0 | 0.0 | 0 | 47 | - | FAIL |
-| 24_enum_methods | 0 | 0.0 | 0 | 115 | - | FAIL |
-| 25_fizzbuzz | 0 | 0.0 | 0 | 104 | - | FAIL |
-| 26_generics | 0 | 0.0 | 0 | 41 | - | FAIL |
-| 27_impl | 0 | 0.0 | 0 | 47 | - | FAIL |
-| 28_traits | 0 | 0.0 | 0 | 42 | - | FAIL |
-| 29_generic_impl | 0 | 0.0 | 0 | 43 | - | FAIL |
-| 30_nested_generics | 0 | 0.0 | 0 | 43 | - | FAIL |
-| 31_generic_multi | 0 | 0.0 | 0 | 34 | - | FAIL |
-| 32_generic_enum | 149 | 8.3 | 1 | 80 | YES | PASS |
-| 33_break_continue | 0 | 0.0 | 0 | 87 | - | FAIL |
-| 34_file_io | 200 | 11.4 | 1 | 101 | YES | PASS |
-| 35_stdin | 142 | 8.3 | 1 | 121 | YES | PASS |
-| 36_crypto | 161 | 9.3 | 1 | 144 | YES | PASS |
-| 37_regex | 182 | 10.4 | 1 | 91 | YES | PASS |
-| 38_http | 138 | 8.1 | 1 | 89 | YES | PASS |
-| 39_gpu_detect | 155 | 8.8 | 1 | 116 | YES | PASS |
-| 40_gpu_tensor | 0 | 0.0 | 0 | 91 | - | FAIL |
-| 41_module_let | 0 | 0.0 | 0 | 108 | - | FAIL |
-| 42_module_let_string | 0 | 0.0 | 0 | 108 | - | FAIL |
-| 43_module_let_math | 0 | 0.0 | 0 | 101 | - | FAIL |
-| 45_ffi_bind | 0 | 0.0 | 0 | 123 | - | FAIL |
-| 47_try_operator | 0 | 0.0 | 0 | 122 | - | FAIL |
-| 48_match_nested_exhaustive | 0 | 0.0 | 0 | 93 | - | FAIL |
-| 49_match_guards | 0 | 0.0 | 0 | 116 | - | FAIL |
-| 49_tensor_literal | 0 | 0.0 | 0 | 40 | - | FAIL |
-| 50_match_or_patterns | 0 | 0.0 | 0 | 119 | - | FAIL |
-| 50_tensor_indexing | 0 | 0.0 | 0 | 46 | - | FAIL |
-| 51_tensor_broadcast | 0 | 0.0 | 0 | 33 | - | FAIL |
+| 24_enum_methods | 0 | 0.0 | 0 | 110 | - | FAIL |
+| 25_fizzbuzz | 0 | 0.0 | 0 | 87 | - | FAIL |
+| 26_generics | 0 | 0.0 | 0 | 29 | - | FAIL |
+| 27_impl | 0 | 0.0 | 0 | 37 | - | FAIL |
+| 28_traits | 0 | 0.0 | 0 | 35 | - | FAIL |
+| 29_generic_impl | 0 | 0.0 | 0 | 45 | - | FAIL |
+| 30_nested_generics | 0 | 0.0 | 0 | 49 | - | FAIL |
+| 31_generic_multi | 0 | 0.0 | 0 | 47 | - | FAIL |
+| 32_generic_enum | 149 | 8.3 | 1 | 113 | YES | PASS |
+| 33_break_continue | 0 | 0.0 | 0 | 141 | - | FAIL |
+| 34_file_io | 200 | 11.4 | 1 | 148 | YES | PASS |
+| 35_stdin | 142 | 8.3 | 1 | 125 | YES | PASS |
+| 36_crypto | 161 | 9.3 | 1 | 90 | YES | PASS |
+| 37_regex | 182 | 10.4 | 1 | 98 | YES | PASS |
+| 38_http | 138 | 8.1 | 1 | 111 | YES | PASS |
+| 39_gpu_detect | 155 | 8.8 | 1 | 124 | YES | PASS |
+| 40_gpu_tensor | 0 | 0.0 | 0 | 68 | - | FAIL |
+| 41_module_let | 0 | 0.0 | 0 | 63 | - | FAIL |
+| 42_module_let_string | 0 | 0.0 | 0 | 72 | - | FAIL |
+| 43_module_let_math | 0 | 0.0 | 0 | 78 | - | FAIL |
+| 45_ffi_bind | 0 | 0.0 | 0 | 96 | - | FAIL |
+| 47_try_operator | 0 | 0.0 | 0 | 151 | - | FAIL |
+| 48_match_nested_exhaustive | 0 | 0.0 | 0 | 94 | - | FAIL |
+| 49_match_guards | 0 | 0.0 | 0 | 93 | - | FAIL |
+| 49_tensor_literal | 0 | 0.0 | 0 | 29 | - | FAIL |
+| 50_match_or_patterns | 0 | 0.0 | 0 | 82 | - | FAIL |
+| 50_tensor_indexing | 0 | 0.0 | 0 | 34 | - | FAIL |
+| 51_tensor_broadcast | 0 | 0.0 | 0 | 35 | - | FAIL |
 | 52_tensor_slicing | 0 | 0.0 | 0 | 30 | - | FAIL |
-| 53_linear_regression | 0 | 0.0 | 0 | 33 | - | FAIL |
-| 54_const_basic | 0 | 0.0 | 0 | 29 | - | FAIL |
-| 55_async_basic | 0 | 0.0 | 0 | 30 | - | FAIL |
-| 56_async_await | 0 | 0.0 | 0 | 31 | - | FAIL |
-| 57_real_await | 0 | 0.0 | 0 | 30 | - | FAIL |
-| 58_async_file_io | 0 | 0.0 | 0 | 32 | - | FAIL |
-| 58_const_scope | 0 | 0.0 | 0 | 36 | - | FAIL |
-| 59_async_fanout | 0 | 0.0 | 0 | 46 | - | FAIL |
-| 62_list_output | 0 | 0.0 | 0 | 45 | - | FAIL |
-| **Total** | | | | **4969** | **16/62** | **16/62** |
+| 53_linear_regression | 0 | 0.0 | 0 | 29 | - | FAIL |
+| 54_const_basic | 0 | 0.0 | 0 | 30 | - | FAIL |
+| 55_async_basic | 0 | 0.0 | 0 | 31 | - | FAIL |
+| 56_async_await | 0 | 0.0 | 0 | 33 | - | FAIL |
+| 57_real_await | 0 | 0.0 | 0 | 38 | - | FAIL |
+| 58_async_file_io | 0 | 0.0 | 0 | 39 | - | FAIL |
+| 58_const_scope | 0 | 0.0 | 0 | 41 | - | FAIL |
+| 59_async_fanout | 0 | 0.0 | 0 | 41 | - | FAIL |
+| 62_list_output | 0 | 0.0 | 0 | 41 | - | FAIL |
+| **Total** | | | | **4964** | **16/62** | **16/62** |
 
 ## Speed Comparison
 
 | Test | Bootstrap (ms) | Stage1 (ms) | Speedup |
 |------|---------------:|------------:|--------:|
-| 01_hello | 654 | 87 | 7.5x |
-| 02_arithmetic | 7 | 87 | 0.1x |
-| 04_if_else | 6 | 118 | 0.1x |
-| 07_enum_match | 14 | 93 | 0.2x |
-| 08_list | 7 | 107 | 0.1x |
-| 09_string_methods | 5 | 84 | 0.1x |
-| 16_string_escape | 7 | 104 | 0.1x |
-| 17_option | 8 | 132 | 0.1x |
-| 18_method_chain | 6 | 111 | 0.1x |
-| 32_generic_enum | 6 | 80 | 0.1x |
-| 34_file_io | 6 | 101 | 0.1x |
-| 35_stdin | 5 | 121 | 0.0x |
-| 36_crypto | 7 | 144 | 0.1x |
-| 37_regex | 5 | 91 | 0.1x |
-| 38_http | 4 | 89 | 0.0x |
-| 39_gpu_detect | 5 | 116 | 0.0x |
+| 01_hello | 792 | 114 | 7.0x |
+| 02_arithmetic | 8 | 133 | 0.1x |
+| 04_if_else | 6 | 111 | 0.1x |
+| 07_enum_match | 13 | 105 | 0.1x |
+| 08_list | 7 | 130 | 0.1x |
+| 09_string_methods | 6 | 98 | 0.1x |
+| 16_string_escape | 6 | 87 | 0.1x |
+| 17_option | 7 | 116 | 0.1x |
+| 18_method_chain | 7 | 106 | 0.1x |
+| 32_generic_enum | 6 | 113 | 0.1x |
+| 34_file_io | 8 | 148 | 0.1x |
+| 35_stdin | 5 | 125 | 0.0x |
+| 36_crypto | 7 | 90 | 0.1x |
+| 37_regex | 6 | 98 | 0.1x |
+| 38_http | 5 | 111 | 0.0x |
+| 39_gpu_detect | 6 | 124 | 0.0x |
 

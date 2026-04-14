@@ -1512,11 +1512,19 @@ static inline int mn_future_is_ready(void *future_ptr) {
     return __atomic_load_n((uint8_t *)future_ptr, __ATOMIC_ACQUIRE) == 1;
 }
 
-/* Check if coroutine is done via LLVM switched-resume ABI:
- * suspend index at frame + 2*sizeof(ptr) is 0xFF or 0x01 at final suspend. */
+/* Check if coroutine is done. LLVM's coroutine splitter, when lowering a
+ * `final` suspend (`llvm.coro.suspend(..., i1 true)`), emits code in the
+ * resume function that stores a null resume function pointer at
+ * frame[0] before returning. So a completed coroutine has frame[0] ==
+ * NULL. That is the canonical "done" marker across all LLVM versions
+ * that implement the switched-resume ABI; the earlier v4.92.0 check
+ * (suspend index at offset 2*ptr_size) was speculative and did not
+ * match what LLVM 18 actually emits — the value at that offset is
+ * user state, not a marker. The NULL-at-frame[0] check is robust
+ * because it's what `llvm.coro.done(handle)` resolves to after the
+ * coroutine splitter lowers it. */
 static inline int mn_coro_is_done(void *handle) {
-    uint8_t idx = *((uint8_t *)handle + 2 * sizeof(void *));
-    return idx == 0xFF || idx == 0x01;
+    return *(void **)handle == NULL;
 }
 
 /* Resume a coroutine via LLVM-generated resume function pointer at offset 0. */

@@ -8,6 +8,7 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
+- **v4.102.0** (shipped) — Phase A release 3. First native async run in project history. Two bugs fixed: `mn_coro_is_done` checked wrong frame offset (now `handle[0] == NULL` per LLVM 18's final-suspend lowering); `_do_block_on` reloaded the coroutine handle from a Future slot the coroutine overwrites with its return value (now reuses the cached handle). All 3 async goldens (55/56/57) run natively with expected outputs (42, 43, 110); valgrind clean; CI step added. Dockets #3 + #6 closed.
 - **v4.101.0** (shipped) — Phase A release 2. Self-hosted emitter output corruption fixed: root cause was use-after-free drop glue in the Python emitter — heap strings pushed into lists / stored as struct fields were being freed at function return even though the container held live pointers to them. Six call sites in `mapanare/emit_llvm_text.py` gained move-semantics (`_move_resource`). `mnc-stage1` now emits clean, `llvm-as`-valid IR. Golden tests: 0/61 → 16/62. Dockets #1 + #2 closed.
 - **v4.100.0** (shipped) — Phase A release 1. Tagged-pointer UB structurally removed via `MnString` bitfield (`len:63, is_heap:1`), ABI preserved at 16 bytes. `mnc-stage1` output corruption persists and is confirmed pre-existing (not caused by the UB); deferred to v4.101.0.
 - **v4.99.0** (shipped) — Arc 14 panel: 6.59/10, Option B. v5 NOT tagged. Tagged-pointer UB, list indexing, async linking must be fixed.
