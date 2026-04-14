@@ -1,0 +1,31 @@
+{
+  "version": "4.110.0",
+  "date": "2026-04-14",
+  "note": "matmul_naive + agent_fanout (needed for v4.82.0 cumulative delta)",
+  "results": [
+    {
+      "benchmark": "matmul_naive",
+      "language": "Mapanare O2",
+      "lines_of_code": 31,
+      "binary_size_bytes": 63728,
+      "runs": [],
+      "wall_median_ms": 2.287349518155679,
+      "mem_peak_kb": 2260.0,
+      "correct": true,
+      "error": "",
+      "output_sample": "checksum = 375519891300272"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "language": "Mapanare O2",
+      "lines_of_code": 18,
+      "binary_size_bytes": 59632,
+      "runs": [],
+      "wall_median_ms": 1.2215554888825864,
+      "mem_peak_kb": 2136.0,
+      "correct": true,
+      "error": "",
+      "output_sample": "total = 27472500"
+    }
+  ]
+}
