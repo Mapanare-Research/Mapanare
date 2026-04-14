@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.115.0] - 2026-04-14
+
+**Phase E release 1 — async I/O demo running natively.** The
+v4.99.0 panel flagged: *no async program has been demonstrated
+with real I/O*. This release ships two example programs that close
+that gap, plus a guide.
+
+### Added
+
+- `examples/async_file_io.mn` — cooperative async file I/O demo.
+  Writes a known input file, reads it back, runs an async pipeline
+  of byte-based counters (byte_at-based line + word count), writes
+  a two-field summary to `/tmp/async_file_io_output.txt` from
+  inside an awaited `write_summary`. `block_on` drives the
+  pipeline from `main()`. Verified at `-O0` and `-O2`.
+- `examples/async_http_demo.mn` — real HTTP GET to
+  `http://example.com/` (540 bytes), async pipeline over the
+  fetched body (byte count, marker substring check), summary file
+  at `/tmp/async_http_demo_summary.txt`. Deterministic non-crash
+  exit if network unreachable (sandbox-safe in CI).
+- `docs/guides/async.md` (244 lines) — mental model, `async fn` /
+  `await` / `block_on` syntax reference, walked end-to-end
+  examples, what-works / what-doesn't tables with docket IDs,
+  recipe catalog for the Sh.9 emitter workarounds, further-reading
+  pointers.
+
+### Changed
+
+- Nothing. Zero modifications under `mapanare/`, `runtime/native/`,
+  `mapanare/self/`, `tests/`, `scripts/`, `stdlib/`. Pure
+  application-level work.
+
+### Dockets opened
+
+- **Sh.9a** — Python bootstrap emitter: `await` on a String-
+  returning async fn produces invalid IR (type mismatch between
+  future-extraction GEP and inlined String return).
+- **Sh.9b** — Python bootstrap emitter: DCE eliminates `await`
+  calls whose return value is unused, silently dropping any
+  side-effecting C call inside the async fn.
+- **Sh.10** — `__mn_file_read_async` (runtime symbol since
+  v4.92.0) still not reachable from Mapanare source. Pre-requisite:
+  Sh.9a.
+
+Both Sh.9 bugs are worked around in the example files and
+documented in `docs/guides/async.md` as recipes so users don't
+re-hit them.
+
+### Regression check
+
+- Python-bootstrap golden: 63/64 (unchanged, `51_match_guards_and_or`
+  pre-existing).
+- Async goldens 55/56/57: 42/43/110 (unchanged).
+- `libmapanare_rt.a`: byte-identical to v4.114.0; no runtime rebuild.
+
 ## [4.114.0] - 2026-04-14
 
 **Phase D panel release — NEEDS WORK at aggregate 8.21.** Zero

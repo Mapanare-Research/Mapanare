@@ -9,7 +9,7 @@
 > binaries. If native async I/O requires C runtime additions, those
 > are implemented here.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.114.0
 **Delta review:** No
