@@ -1,9 +1,19 @@
 # Mapanare Language Specification
 
-**Version:** 1.0.0
-**Status:** 1.0 Final
+**Version:** 4.116.0
+**Status:** Live — synced to the v4.116.0 cut (2026-04-14)
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code. A legacy Python transpiler backend exists for reference and bootstrapping only.
+
+> **Spec sync discipline.** Each v4.x panel release fact-checks this
+> spec against the live grammar (`mapanare/mapanare.lark`), type
+> system (`mapanare/types.py`), and self-hosted lexer
+> (`mapanare/self/lexer.mn`). The v4.116.0 documentation batch confirms
+> the three sections most frequently flagged: §2.1 (keywords + bilingual
+> master list), §2.2 (operator precedence, 13 levels), and §29 (futures
+> / async-await) are in lock-step with the current implementation. If
+> you discover drift, open a documentation issue against the specific
+> section number.
 
 ---
 
@@ -2355,6 +2365,17 @@ Functions: `regex_match`, `regex_search`, `regex_replace`, `regex_split`. Charac
 > **v4.72.0-v4.76.0 (Arc 9).** Async/await was implemented across arcs 8 and 9
 > using LLVM switched-resume coroutines. See the [Coroutine Design Document](roadmap/v4/v4.67.0/DESIGN.md)
 > for the full implementation spec. This section defines the user-visible semantics.
+>
+> **v4.115.0 status update.** Native file I/O and network I/O inside
+> async pipelines were demonstrated end-to-end in
+> `examples/async_file_io.mn` and `examples/async_http_demo.mn`. The
+> async model is **cooperative, not preemptive**: async fns yield only
+> at `await` points; synchronous runtime calls (`__mn_file_write`,
+> `http_get`) block the current worker for their duration. Full
+> non-blocking suspension is a v5.x target. The self-hosted compiler
+> (`mnc-stage1`) does not yet lower async — async programs currently
+> compile through the Python bootstrap's `emit-llvm` pipeline and link
+> against `libmapanare_rt.a` for a native binary (docket Sh.4).
 
 ### 29.1 `async fn` -- Asynchronous Function Declaration
 
@@ -2455,7 +2476,7 @@ fn main() {
 |-----------|-------------|
 | Agents | Agents run on their own threads. `async fn` runs within the caller's event loop. No implicit agent spawning. |
 | Signals | Signal reads inside `async fn` are synchronous (no suspension). |
-| Streams | `for await` iterates over an async stream, suspending between elements. |
+| Streams | `for await` iterates over an async stream, suspending between elements — *planned (v5.x)*. The `for await` grammar is not yet tokenized; today, iterate synchronously over a `Stream<T>` and `await` individual async-fn calls inside the loop body. |
 | Closures | Closures may capture variables from the enclosing `async fn`. Captured values that cross suspension points are spilled into the coroutine frame. |
 
 ---
