@@ -7,13 +7,28 @@
 > Assess v5 readiness. Audit every claim in every SESSION_REPORT from
 > v4.100.0 onward. This is the last release before the panel.
 
-**Status:** PLANNED
+**Status:** DONE (shipped 2026-04-14)
 **Breaking:** No
 **Prerequisite:** v4.118.0
 **Delta review:** No
 **Full panel:** No (v4.120.0)
 **Estimated work:** 1 sprint
 **Theme:** Look back honestly. Prepare the evidence for the final panel.
+
+## Result
+
+All 7 exit criteria met. Four panel-facing documents committed at
+`docs/roadmap/v4/v4.120.0/`:
+
+- `RETROSPECTIVE.md` — 339 lines, narrative of v4.0.0 → v4.118.0
+- `STATISTICS.md` — 238 lines, hard-number compilation
+- `V5_READINESS.md` — 285 lines, neutral feature-by-feature gap analysis
+- `AUDIT_NOTES.md` — 366 lines, 47 claims from 19 SESSION_REPORTs
+  spot-checked; 0 material discrepancies, 3 cosmetic line-count drifts
+  documented
+
+Zero compiler/runtime code changes. SESSION_REPORTs not retroactively
+edited. See `SESSION_REPORT.md` in this directory.
 
 ---
 

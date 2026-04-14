@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.119.0] - 2026-04-14
+
+**Phase F release 2 — retrospective + pre-panel preparation.** The
+four documents the v4.120.0 panel reviewers will reference are
+committed. Zero compiler/runtime code changes. Pure analysis and
+verification. The panel is next.
+
+### Added (all under `docs/roadmap/v4/v4.120.0/`)
+
+- **`RETROSPECTIVE.md`** (339 lines) — narrative of the full v4.x
+  arc from v4.0.0 (production-gate release after v3.47.0's 9.79
+  panel) through the feature arcs, the v4.26.0 crisis (8.20 / 10,
+  first non-unanimous panel, 4 NEEDS WORK / 0 PASS), the v4.31.0
+  recovery (9.34 / 10), the v4.76.0 coroutine arc peak (8.86 / 10),
+  the v4.77-v4.99 drift (−2.27 over 23 releases without panel
+  oversight), the v4.99.0 v5-gate failure (6.59 / 10, 3 NEEDS
+  WORK), and the 20-release recovery arc (v4.100.0 – v4.118.0, six
+  named phases). Closes with an honest "what worked / what didn't"
+  post-mortem naming the optimiser ROI miss, documentation lag,
+  deferred MEDIUM items, and v4.112.0 naming churn. Single most
+  load-bearing sentence: **"the recovery arc was net-negative lines
+  of code: −1,155 net lines across v4.99.0 → v4.118.0 (−2,434 Py,
+  +939 self-hosted, +340 C). It removed more than it added."**
+
+- **`STATISTICS.md`** (238 lines) — hard-number compilation: 121 v4.x
+  release directories, 20-release recovery arc summary table, panel
+  score trajectory chart (ASCII, v3.33.0 → v4.114.0 with v4.120.0
+  TBD), codebase size now + v4.99.0 → v4.118.0 growth table, golden
+  test progress (0/61 → 26/64 literal / 39/64 effective), carry-
+  forward ledger (11 open, all v4.99.0 CRITICAL/HIGH/MEDIUM closed),
+  CI gate inventory (10 enforcing, 1 informational), benchmark
+  headline geomean (5.46× vs C gcc, 36.9× faster than Python, 42.6×
+  faster than Python asyncio, 1.74× slower than Go goroutines),
+  recovery-arc file inventory. Every number names its methodology.
+
+- **`V5_READINESS.md`** (285 lines) — neutral feature-by-feature
+  status matrix. Sections: the mechanical decision rule, what "v5"
+  means, language core (24 features), runtime (11 primitives), self-
+  hosted compiler (10 milestones), stdlib (11 modules), ecosystem
+  (8 packages / tools), documentation (11 artefacts), CI (11 gates).
+  Eight itemised "known gaps that would embarrass a v5 label": self-
+  hosted async / tensor / const gaps (Sh.4/5/6/7), unprovable fixed-
+  point (Sh.8), no package manager, boxed-enum overhead (Rt.1),
+  `List<Int>` indexing quirk (Qs.1), `optimizer.py` 9% coverage,
+  14 stale CLI tests pre-rename, TBAA metadata declared-but-not-wired.
+  Closing "nothing additional is required between v4.119.0 and v5.0.0
+  if the panel votes Option A" — the panel decision is the gate.
+
+- **`AUDIT_NOTES.md`** (366 lines) — claim-level audit of all 19
+  SESSION_REPORTs from v4.100.0 through v4.118.0. Structure:
+  summary block (47 claims spot-checked, 0 material, 3 cosmetic) +
+  per-release section (19 sections, one per release) + itemised
+  discrepancies + methodology note. The three cosmetic drifts are:
+  `OPT_ROI_ANALYSIS.md` −1 line, `DIVERGENCE_ANALYSIS.md` −1 line,
+  `mapanare/self/main.ll` −3,073 lines (expected: v4.108.0 MIR rewrite
+  + v4.111.0 disabled 4 zero-ROI passes). **No SESSION_REPORTs were
+  retroactively edited.** The panel sees the original text with this
+  audit as its overlay.
+
+### Changed
+
+- `CHANGELOG.md` — `[4.119.0]` entry (this one)
+- `CLAUDE.md` — v4.119.0 summary prepended
+- `docs/roadmap/v4/README.md` — v4.119.0 row
+- `docs/roadmap/ROADMAP.md` — header pointer updated
+- `docs/roadmap/v4/v4.119.0/PLAN.md` — Status → DONE
+
+### Not changed
+
+- Zero changes under `mapanare/`, `runtime/native/`, `mapanare/self/`,
+  `stdlib/`, `scripts/`, or `tests/`. `libmapanare_rt.a` byte-identical
+  to v4.118.0. This is a documentation and analysis release.
+
+### Exit criteria (7 items)
+
+| # | Check | Status |
+|---|---|---|
+| 1 | Retrospective covering v4.0.0 – v4.118.0 | PASS — `RETROSPECTIVE.md` 339 lines |
+| 2 | Statistics compiled | PASS — `STATISTICS.md` 238 lines |
+| 3 | v5 readiness assessment | PASS — `V5_READINESS.md` 285 lines |
+| 4 | Pre-panel audit of all SESSION_REPORTs | PASS — `AUDIT_NOTES.md` 366 lines, 47 claims, 0 material discrepancies |
+| 5 | Discrepancies documented (not hidden) | PASS — 3 cosmetic drifts itemised |
+| 6 | All documents in `docs/roadmap/v4/v4.120.0/` | PASS — 4 new `.md` files, 1,228 lines total |
+| 7 | Standard closeout clean | PASS (this entry + SESSION_REPORT + PLAN → DONE + VERSION bump) |
+
+### Dockets — none opened
+
+No new dockets. Analysis-only. All 11 open dockets carry forward
+unchanged (Rt.1, Sh.2, Qs.1, Sh.4/5/6/7/8, TBAA.1, willreturn.1,
+Sh.9a, Sh.9b, Sh.10). Each sized and planned for v5.x per the
+V5_READINESS matrix.
+
 ## [4.118.0] - 2026-04-14
 
 **Phase F release 1 — final cross-language benchmark.** The
