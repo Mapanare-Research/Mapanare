@@ -7,7 +7,7 @@
 > mean speedup: 0.992x. fib(35) moved by 0.2ms. Why? This release
 > investigates. No new optimizations. Pure forensics.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.108.0
 **Delta review:** No

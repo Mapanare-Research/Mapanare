@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.109.0] - 2026-04-14
+
+**Phase C release 3 — Arcs 11–12 optimizer ROI analysis.** Pure
+forensics. Zero code changes. The question `TOTAL_RESULTS.md` has
+dodged since v4.90.0 — why did eight releases of optimizer work
+produce a 0.992× aggregate geomean at -O2? — is answered here with
+per-workload, per-hint, and per-pass decomposition.
+
+### Added
+
+- `benchmarks/optimizer/OPT_ROI_ANALYSIS.md` — 264-line analysis
+  documenting methodology, all three hypotheses tested, per-workload
+  attribution, per-hint verdicts, and recommendations.
+- `docs/roadmap/v4/v4.109.0/artifacts/` — 30+ artifacts: pre/post
+  -O2 IR for all 4 optimizer benchmarks (hinted + stripped variants),
+  per-pass outputs for 10 LLVM passes, pass-pipeline dumps,
+  phase summary documents.
+
+### Findings
+
+- **Arcs 11–12 produced +24%, +9%, 0%, and −21%** on the four
+  optimizer benchmarks (matmul, quicksort, fib, string_concat
+  respectively). The 0.992× aggregate geomean is a statistical
+  artifact of mixing heterogeneous workloads — a 24% win plus a 21%
+  regression average to approximately flat. The work was not wasted;
+  the accounting was bad.
+- **TBAA metadata is 100% dead.** The emitter defines the TBAA tree
+  at module level (`!1..!9`) but never attaches `!tbaa` to any load
+  or store across any of the four benchmarks. Arc 11's TBAA
+  contribution to alias analysis is exactly zero. The only reference
+  is a comment at `emit_llvm_text.py:913` describing the intended
+  wiring, which was never written.
+- **Function attributes — not inline nsw/nuw flags — are the
+  load-bearing Arc 11 contribution.** `nounwind`/`willreturn`/
+  `readonly`/`noalias` on runtime-call declarations cross pass
+  boundaries via LLVM's module-level attribute table and change
+  downstream decisions (early-cse, licm, mldst-motion, dse) without
+  being consumed inline by any single pass. Per-pass diffs show zero
+  instruction-level differences on hinted vs stripped input for
+  every (pass × benchmark) cell.
+- **H2 rejected for fib.** Scaling from fib(35) to fib(45) (120×
+  work) does not expose latent hint value. LLVM converges to
+  equivalent codegen at any size.
+- **`willreturn` on `__mn_sb_*` is actively harmful for
+  string_concat** — it blocks DSE of stores the call might observe.
+  Introduced by v4.108.0's MIR pass routing through the builder API.
+
+### New dockets for v4.110.0+
+
+- **TBAA wiring**: decide wire-vs-remove before v4.110.0.
+- **`willreturn` audit**: case-by-case review of `RUNTIME_FN_ATTRS`
+  in `emit_llvm_text.py`; heap-modifying calls should not carry
+  `willreturn` because it blocks DSE.
+- **Escape-analysis codegen**: Arc 12 shipped the infrastructure
+  (`AllocKind.STACK`); the emitter still routes heap-safe
+  allocations through the runtime. Stack promotion is where the
+  next structural speedup on allocator-bound benchmarks lives.
+
+### Known gaps (carried forward)
+
+- **Qs.1** (`List<Int>` indexing returns garbage) still open from
+  v4.107.0. Prevents scaling quicksort and matmul safely for H2
+  testing.
+
 ## [4.108.0] - 2026-04-14
 
 **Phase C release 2 — string_concat fix.** v4.107.0's benchmark
