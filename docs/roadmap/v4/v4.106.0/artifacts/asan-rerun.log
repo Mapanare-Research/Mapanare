@@ -1,0 +1,4 @@
+
+=== ASan golden summary ===
+Total: 64  CLEAN: 21  ASAN_ERROR: 17  CRASH_NO_ASAN: 26
+TSV:  /tmp/v4_105_asan/asan-summary.tsv

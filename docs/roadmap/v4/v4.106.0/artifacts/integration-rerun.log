@@ -1,0 +1,8 @@
+---
+Full results in /tmp/v4_104_integration/results.tsv
+   64  TOTAL
+   60  PASS
+    1  SKIP_NEEDS_STDIN
+    1  SKIP_NEEDS_NETWORK
+    1  EMIT_ERR: aborting due to 2 errors
+    1  AS_ERR: llvm-as: /tmp/v4_104_integration/47_try_operator.ll:93:13: error: '%uw.11' defin

@@ -1,0 +1,5 @@
+
+=== Valgrind summary ===
+Total: 64  CLEAN: 0  WARNINGS_ONLY: 28  ERRORS: 36
+TSV:  /tmp/v4_105_valgrind/valgrind-summary.tsv
+Logs: /tmp/v4_105_valgrind/*.log

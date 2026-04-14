@@ -1,0 +1,65 @@
+test	rc	exit_code	definitely_lost	indirectly_lost	possibly_lost	still_reachable	error_types	class
+01_hello	0	0	25699	47694	0	0	none	WARNINGS_ONLY
+02_arithmetic	0	0	32448	51769	0	0	none	WARNINGS_ONLY
+03_function	99	99	22523	2670	50534	771	Invalid read of size 8	ERRORS
+04_if_else	0	0	38254	54855	0	0	none	WARNINGS_ONLY
+05_for_loop	99	99	44490	61094	0	0	Invalid read of size 8	ERRORS
+06_struct	99	99	38898	54958	0	0	Invalid read of size 8	ERRORS
+07_enum_match	0	0	46972	71488	0	0	none	WARNINGS_ONLY
+08_list	99	99	39411	56919	0	0	Invalid read of size 8	ERRORS
+09_string_methods	0	0	34507	53792	0	0	none	WARNINGS_ONLY
+10_result	99	99	73293	77970	0	0	Conditional jump or move depends on uninitialised value|Invalid read of size 1|Invalid read of size 2|Use of uninitialised value of size 8	ERRORS
+11_closure	99	99	19997	5820	50313	753	Invalid read of size 8	ERRORS
+12_while	99	99	39106	55219	0	0	Invalid read of size 8	ERRORS
+13_fib	99	99	46228	65060	0	0	Invalid read of size 8	ERRORS
+14_nested_struct	99	99	39028	54982	0	0	Invalid read of size 8	ERRORS
+15_multifunction	99	99	30212	2568	57734	822	Invalid read of size 8	ERRORS
+16_string_escape	0	0	37704	53405	0	0	none	WARNINGS_ONLY
+17_option	0	0	88084	87546	0	0	none	WARNINGS_ONLY
+18_method_chain	0	0	43210	60298	0	0	none	WARNINGS_ONLY
+19_nested_match	99	99	71874	91553	0	0	Invalid read of size 1|Invalid read of size 2|Invalid read of size 8	ERRORS
+20_recursion	99	99	49589	66281	0	0	Invalid read of size 8	ERRORS
+21_list_ops	99	99	75059	86761	0	0	Invalid read of size 8	ERRORS
+22_string_builder	99	99	60889	72464	0	0	Invalid read of size 8	ERRORS
+23_multi_return	99	99	36349	3293	59038	958	Invalid read of size 16|Invalid read of size 8	ERRORS
+24_enum_methods	99	99	65756	79967	0	0	Invalid read of size 8	ERRORS
+25_fizzbuzz	99	99	72342	76948	0	0	Invalid read of size 8	ERRORS
+26_generics	99	99	73388	4332	86741	1187	Conditional jump or move depends on uninitialised value|Invalid read of size 8	ERRORS
+27_impl	99	99	35791	2650	60644	1009	Invalid read of size 8	ERRORS
+28_traits	99	99	43156	3299	62639	1047	Invalid read of size 8	ERRORS
+29_generic_impl	99	99	46582	3236	64296	1056	Conditional jump or move depends on uninitialised value|Invalid read of size 8	ERRORS
+30_nested_generics	99	99	62394	69824	0	0	Conditional jump or move depends on uninitialised value	ERRORS
+31_generic_multi	99	99	67759	3995	72577	1354	Conditional jump or move depends on uninitialised value|Invalid read of size 8	ERRORS
+32_generic_enum	99	99	44920	55740	0	0	Invalid read of size 8	ERRORS
+33_break_continue	99	99	142646	142915	0	0	Invalid read of size 8	ERRORS
+34_file_io	0	0	69574	77026	0	0	none	WARNINGS_ONLY
+35_stdin	0	0	31638	50215	0	0	none	WARNINGS_ONLY
+36_crypto	0	0	48817	61971	0	0	none	WARNINGS_ONLY
+37_regex	0	0	47923	62504	0	0	none	WARNINGS_ONLY
+38_http	0	0	35457	52012	0	0	none	WARNINGS_ONLY
+39_gpu_detect	0	0	41252	55419	0	0	none	WARNINGS_ONLY
+40_gpu_tensor	99	99	88721	91397	0	0	Invalid read of size 8	ERRORS
+41_module_let	99	99	14404	717	46989	859	Invalid read of size 8	ERRORS
+42_module_let_string	99	99	15111	706	46380	1197	Invalid read of size 8	ERRORS
+43_module_let_math	99	99	16639	1779	47195	1293	Invalid read of size 1|Invalid read of size 8	ERRORS
+45_ffi_bind	99	99	36878	5529	60033	933	Invalid read of size 8	ERRORS
+47_try_operator	99	99	127819	108429	0	0	Conditional jump or move depends on uninitialised value|Invalid read of size 1|Invalid read of size 2|Invalid read of size 8|Use of uninitialised value of size 8	ERRORS
+48_match_nested_exhaustive	99	99	102218	94490	0	0	Invalid read of size 1|Invalid read of size 2|Invalid read of size 8	ERRORS
+49_match_guards	99	99	77152	78464	0	0	Invalid read of size 8	ERRORS
+49_tensor_literal	1	1	149289	54689	2786	36	none	WARNINGS_ONLY
+50_match_or_patterns	99	99	78004	88748	0	0	Conditional jump or move depends on uninitialised value|Invalid read of size 8|Use of uninitialised value of size 8	ERRORS
+50_tensor_indexing	1	1	99808	45992	1399	25	none	WARNINGS_ONLY
+51_match_guards_and_or	1	1	43937	46232	771	26	none	WARNINGS_ONLY
+51_tensor_broadcast	1	1	118949	51314	2532	36	none	WARNINGS_ONLY
+52_tensor_slicing	1	1	108840	48432	1529	33	none	WARNINGS_ONLY
+53_linear_regression	1	1	45390	42418	852	27	none	WARNINGS_ONLY
+54_const_basic	1	1	16586	35943	815	30	none	WARNINGS_ONLY
+55_async_basic	1	1	14025	36404	763	30	none	WARNINGS_ONLY
+56_async_await	1	1	17295	38384	763	30	none	WARNINGS_ONLY
+57_real_await	1	1	24775	55092	762	30	none	WARNINGS_ONLY
+58_async_file_io	1	1	21713	42321	765	30	none	WARNINGS_ONLY
+58_const_scope	1	1	20557	39236	763	25	none	WARNINGS_ONLY
+59_async_fanout	1	1	48426	69216	764	30	none	WARNINGS_ONLY
+62_list_output	99	99	57397	8779	85983	1773	Invalid read of size 8	ERRORS
+63_else_sino	99	99	99220	93720	0	0	Invalid read of size 8	ERRORS
+64_closure_typed	1	1	60197	57811	811	60	none	WARNINGS_ONLY
