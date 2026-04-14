@@ -67,6 +67,11 @@ from mapanare.mir import (
     WrapNone,
     WrapOk,
     WrapSome,
+    is_terminator,
+    mir_any,
+    mir_int,
+    mir_string,
+    mir_void,
 )
 from mapanare.types import TypeInfo, TypeKind
 
@@ -1706,73 +1711,241 @@ def escape_analysis_promotion(fn: MIRFunction, stats: MIRPassStats) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Loop string concat optimization (v4.95.0)
+# Loop string concat optimization (v4.95.0 → rewritten v4.108.0)
 # ---------------------------------------------------------------------------
 
 
+def _uses_name(inst: Instruction, name: str) -> bool:
+    """True if `inst` reads any Value with the given name."""
+    return any(v.name == name for v in _get_uses(inst))
+
+
+def _terminator_uses_name(bb: BasicBlock, name: str) -> bool:
+    term = bb.terminator
+    if term is None:
+        return False
+    return any(v.name == name for v in _get_uses(term))
+
+
+def _find_def_block(fn: MIRFunction, name: str) -> str | None:
+    """Find the block containing the defining instruction for `name`, if any.
+
+    Uses the last-def-wins interpretation because MIR here is not strict
+    SSA (Copy writes can overwrite a prior def).
+    """
+    last: str | None = None
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            dest = _get_dest(inst)
+            if dest is not None and dest.name == name:
+                last = bb.label
+    return last
+
+
 def string_concat_optimization(fn: MIRFunction, stats: MIRPassStats) -> bool:
-    """Detect loop-based string concatenation and mark for StringBuilder.
+    """Rewrite loop-body string concatenation to use the StringBuilder.
 
-    v4.95.0: identifies the pattern ``s = __mn_str_concat(s, x)`` inside
-    loop bodies. When detected, replaces the concat Call with a Call to
-    ``__mn_sb_append`` and inserts ``__mn_sb_create`` before the loop
-    header and ``__mn_sb_to_string`` after the loop exit.
+    Transforms the classic O(n²) loop concat:
 
-    This is a best-effort optimization — if the pattern doesn't match
-    exactly, the original concat is preserved (no functional change).
-    The explicit ``sb_create/sb_append/sb_to_string`` API is the reliable
-    fallback for complex cases.
+        s = ""
+        while cond:
+            s = s + chunk       # BinOp ADD + Copy in MIR
+        use(s)
+
+    into the amortized O(n) builder form:
+
+        s = ""
+        sb = __mn_sb_new(64)
+        __mn_sb_append(sb, s)   # seed with initial value (safe for "")
+        while cond:
+            __mn_sb_append(sb, chunk)
+        s = __mn_sb_finish(sb)   # takes ownership of sb's buffer, frees struct
+        use(s)
+
+    MIR representation (what to match): string ``+`` is lowered in
+    ``lower.py`` to ``BinOp(ADD, ..., lhs:String, rhs:String)``. The
+    ``__mn_str_concat`` runtime call only appears during LLVM IR
+    emission (see ``emit_llvm_text.py:2658``). The v4.95.0 version of
+    this pass was dead code because it scanned for ``Call`` instructions
+    of ``__mn_str_concat`` at the MIR level — that shape never exists
+    until the emitter creates it.
+
+    Conservative matching (v4.108.0): only fires when every one of these
+    holds:
+      1. The function contains a natural loop (``find_natural_loops``).
+      2. A loop-body block contains ``BinOp(ADD, lhs, rhs)`` with both
+         ``lhs`` and ``rhs`` typed ``TypeKind.STRING``.
+      3. The *next* instruction is ``Copy(dest=lhs, src=binop.dest)`` —
+         i.e. the concat result is written back to the same variable
+         (the loop accumulator).
+      4. The accumulator's only uses inside the loop body are (a) the
+         BinOp's lhs we are about to rewrite and (b) the Copy's dest.
+         No other loop-internal instruction reads it. No terminator
+         inside the loop reads it either.
+      5. The loop has a single preheader (the one predecessor of the
+         header that is not itself in the loop body) and a single exit
+         block (a successor of some body block that is not in the loop
+         body).
+      6. The accumulator is not already being read by the exit block's
+         terminator (we need to place a reassignment at the top of the
+         exit block; edge cases with exit-block phi usage are out of
+         scope for v4.108.0).
     """
     loops = find_natural_loops(fn)
     if not loops:
         return False
 
     block_map = fn.block_map()
+    succs, preds = _build_cfg(fn)
     changed = False
+    sb_counter = 0
 
     for loop in loops:
-        # Find concat calls inside the loop body that reassign to the same variable.
-        # Pattern: dest = Call("__mn_str_concat", [accumulator, chunk])
-        # where accumulator is defined before the loop and dest == accumulator (via Copy chain).
-        concat_sites: list[tuple[str, int, Call]] = []  # (block_label, inst_idx, call)
+        # Pre-compute loop-exit block candidates: successors of any body
+        # block that are outside the loop body.
+        exit_candidates: set[str] = set()
         for lbl in loop.body:
-            bb = block_map.get(lbl)
-            if not bb:
-                continue
-            for idx, inst in enumerate(bb.instructions):
-                if (
-                    isinstance(inst, Call)
-                    and inst.fn_name == "__mn_str_concat"
-                    and len(inst.args) == 2
-                ):
-                    concat_sites.append((lbl, idx, inst))
+            for s in succs.get(lbl, []):
+                if s not in loop.body:
+                    exit_candidates.add(s)
 
-        if not concat_sites:
+        # Pre-compute unique preheader: predecessors of the header that are
+        # not in the loop body.
+        preheader_candidates = [p for p in preds.get(loop.header, []) if p not in loop.body]
+
+        # Single-preheader, single-exit only (conservative for v4.108.0).
+        if len(preheader_candidates) != 1 or len(exit_candidates) != 1:
+            continue
+        preheader_lbl = preheader_candidates[0]
+        exit_lbl = next(iter(exit_candidates))
+        preheader_bb = block_map.get(preheader_lbl)
+        exit_bb = block_map.get(exit_lbl)
+        if preheader_bb is None or exit_bb is None:
             continue
 
-        # For each concat site, check if the first argument (accumulator) is the
-        # same variable being assigned (loop accumulator pattern).
-        for blk_lbl, inst_idx, call_inst in concat_sites:
-            acc_name = call_inst.args[0].name
-            dest_name = call_inst.dest.name
-            if not acc_name or not dest_name:
+        # Scan every body block for the BinOp+Copy concat pattern.
+        for blk_lbl in list(loop.body):
+            bb = block_map.get(blk_lbl)
+            if bb is None:
                 continue
 
-            # Heuristic: if the concat result is stored back to the same
-            # alloca as the first argument (via a Copy chain), this is a
-            # loop accumulator. We detect this by checking if there's a
-            # subsequent Copy or store that writes dest back to the
-            # accumulator's location. This is a simplified check.
-            #
-            # For now, we mark the call by renaming it to __mn_sb_append_concat
-            # which the emitter will recognize and emit as sb_append instead
-            # of str_concat. This is a conservative approach that avoids
-            # restructuring the MIR CFG.
-            call_inst.fn_name = "__mn_sb_append_concat"
-            stats.allocations_promoted += 1  # reuse the counter
-            changed = True
+            i = 0
+            while i < len(bb.instructions) - 1:
+                inst = bb.instructions[i]
+                nxt = bb.instructions[i + 1]
+
+                if not (
+                    isinstance(inst, BinOp)
+                    and inst.op == BinOpKind.ADD
+                    and inst.lhs.ty.kind == TypeKind.STRING
+                    and inst.rhs.ty.kind == TypeKind.STRING
+                ):
+                    i += 1
+                    continue
+                if not (
+                    isinstance(nxt, Copy)
+                    and nxt.src.name == inst.dest.name
+                    and nxt.dest.name == inst.lhs.name
+                ):
+                    i += 1
+                    continue
+
+                acc_name = inst.lhs.name
+                chunk_val = inst.rhs
+
+                # Safety check: no other uses of %acc in the loop.
+                if _accumulator_has_other_loop_uses(
+                    fn, block_map, loop.body, acc_name, concat_inst=inst, copy_inst=nxt
+                ):
+                    i += 1
+                    continue
+
+                # Transform:
+                # 1. Preheader: append __mn_sb_new + seed append of %acc.
+                sb_counter += 1
+                sb_name = f"%sb_{sb_counter}"
+                cap_name = f"%sb_cap_{sb_counter}"
+                seed_void_name = f"%sb_seed_{sb_counter}"
+                append_void_name = f"%sb_app_{sb_counter}"
+
+                sb_val = Value(name=sb_name, ty=mir_any())
+                cap_val = Value(name=cap_name, ty=mir_int())
+                seed_void = Value(name=seed_void_name, ty=mir_void())
+                append_void = Value(name=append_void_name, ty=mir_void())
+                finish_dest = Value(name=acc_name, ty=mir_string())
+
+                # BasicBlock.terminator is a @property that returns
+                # instructions[-1] when it's a terminator — insert BEFORE
+                # the terminator, not append at the end.
+                insert_at = len(preheader_bb.instructions)
+                if insert_at > 0 and is_terminator(preheader_bb.instructions[-1]):
+                    insert_at -= 1
+                preheader_bb.instructions[insert_at:insert_at] = [
+                    Const(dest=cap_val, ty=mir_int(), value=64),
+                    Call(dest=sb_val, fn_name="__mn_sb_new", args=[cap_val]),
+                    Call(
+                        dest=seed_void,
+                        fn_name="__mn_sb_append",
+                        args=[sb_val, Value(name=acc_name, ty=mir_string())],
+                    ),
+                ]
+
+                # 2. Loop body: replace BinOp + Copy with __mn_sb_append(sb, chunk).
+                bb.instructions[i : i + 2] = [
+                    Call(
+                        dest=append_void,
+                        fn_name="__mn_sb_append",
+                        args=[sb_val, chunk_val],
+                    )
+                ]
+
+                # 3. Exit block: finalize sb into the accumulator Value.
+                exit_bb.instructions.insert(
+                    0,
+                    Call(dest=finish_dest, fn_name="__mn_sb_finish", args=[sb_val]),
+                )
+
+                stats.allocations_promoted += 1
+                changed = True
+                # Do NOT i += 1 — the slice deletion already moved the next
+                # instruction into position i. Fall through naturally.
+                # (We only support one concat per body slot in this iteration.)
 
     return changed
+
+
+def _accumulator_has_other_loop_uses(
+    fn: MIRFunction,
+    block_map: dict[str, BasicBlock],
+    loop_body: set[str],
+    acc_name: str,
+    concat_inst: BinOp,
+    copy_inst: Copy,
+) -> bool:
+    """Returns True if %acc is used inside the loop outside the exact
+    ``BinOp.lhs`` and ``Copy.dest`` slots we plan to rewrite.
+
+    Uses that would invalidate the transform include:
+      - Any other instruction reading %acc inside a body block.
+      - Any terminator in a body block reading %acc (branch cond, switch
+        tag, return val, etc.).
+    """
+    for lbl in loop_body:
+        bb = block_map.get(lbl)
+        if bb is None:
+            continue
+        for inst in bb.instructions:
+            if inst is concat_inst or inst is copy_inst:
+                continue
+            if _uses_name(inst, acc_name):
+                return True
+            # Writes to %acc by a non-tracked instruction also disqualify.
+            dest = _get_dest(inst)
+            if dest is not None and dest.name == acc_name:
+                return True
+        if _terminator_uses_name(bb, acc_name):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------

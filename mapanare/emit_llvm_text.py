@@ -2847,6 +2847,48 @@ class LLVMTextEmitter:
         args = [(self._get(a)) for a in i.args]  # [(val, ty)]
         self._san(i.dest.name)
 
+        # v4.108.0: StringBuilder pointer-based API. The MIR auto-loop pass
+        # (string_concat_optimization) emits these calls to replace O(n²)
+        # concat loops with amortized O(n) builder appends.
+        if fn == "__mn_sb_new" and len(args) >= 1:
+            cv = (
+                args[0][0]
+                if args[0][1] == I64
+                else self._coerce(args[0][0], args[0][1], I64)
+            )
+            r = self._rt("__mn_sb_new", PTR, [I64], [(cv, I64)])
+            self._put(i.dest, r, PTR)
+            return
+        if fn == "__mn_sb_append" and len(args) >= 2:
+            sbv = (
+                args[0][0]
+                if args[0][1] == PTR
+                else self._coerce(args[0][0], args[0][1], PTR)
+            )
+            sv = (
+                args[1][0]
+                if args[1][1] == STR
+                else self._coerce(args[1][0], args[1][1], STR)
+            )
+            self._rt(
+                "__mn_sb_append",
+                VOID,
+                [PTR, STR],
+                [(sbv, PTR), (sv, STR)],
+            )
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "__mn_sb_finish" and len(args) >= 1:
+            sbv = (
+                args[0][0]
+                if args[0][1] == PTR
+                else self._coerce(args[0][0], args[0][1], PTR)
+            )
+            r = self._rt("__mn_sb_finish", STR, [PTR], [(sbv, PTR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+
         # print / println (both add newline; println is a deprecated alias)
         if fn in ("println", "print"):
             nl = True
