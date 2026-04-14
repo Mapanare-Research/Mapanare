@@ -2,13 +2,18 @@
 
 Progressive tutorial for asynchronous programming in Mapanare. Each example is a complete, runnable program.
 
-See [SPEC.md](../SPEC.md) section 29 for the formal semantics. See the [Coroutine Design Document](../roadmap/v4/v4.67.0/DESIGN.md) for LLVM lowering details.
+See [SPEC.md](../SPEC.md) section 29 for the formal semantics. See the [Coroutine Design Document](../roadmap/v4/v4.67.0/DESIGN.md) for LLVM lowering details. For the mental model, limitations, and Sh.9 workarounds, see the companion [`docs/guides/async.md`](../guides/async.md).
 
-> **Note:** Async/await uses LLVM coroutine intrinsics implemented in Arc 8-9
-> (v4.67.0-v4.76.0). The examples below match the golden tests
-> (`tests/golden/55-57_async_*.mn`). The Python bootstrap's `emit-llvm`
-> backend does not yet support async; these examples compile through the
-> native compiler path (`mnc run`).
+> **Note (corrected v4.116.0):** the earlier edition of this cookbook
+> stated that async programs compile through `mnc run` (the native
+> compiler path). That is reversed from current reality. Async examples
+> compile through the **Python bootstrap** `emit-llvm` path today and
+> link against `libmapanare_rt.a` for a native binary. The self-hosted
+> compiler (`mnc-stage1`) does **not** yet lower async (docket Sh.4,
+> carry-forward from Phase D). The golden tests
+> (`tests/golden/55-57_async_*.mn`) run under the bootstrap pipeline in
+> CI. The "async runs natively" claim is still true — it's the generated
+> binary that is native, not the compiler driver.
 
 ---
 
@@ -215,8 +220,165 @@ async fn immediate() -> Int {
 
 ---
 
+---
+
+## 8. Native Compilation Workflow (v4.115.0+)
+
+Every example above compiles to a native binary via the same pipeline.
+The Python bootstrap emits LLVM IR; `clang` links it against
+`libmapanare_rt.a`. Compiler driver in Python; runtime fully native.
+
+```bash
+# Emit LLVM IR from the .mn source
+python3 -m mapanare emit-llvm program.mn -o /tmp/program.ll
+
+# Link against the native runtime
+clang /tmp/program.ll \
+      -L runtime/native -lmapanare_rt \
+      -lpthread -lm -ldl \
+      -o /tmp/program
+
+# Run
+/tmp/program
+```
+
+The same pipeline works at `-O2`:
+
+```bash
+clang -O2 /tmp/program.ll -L runtime/native -lmapanare_rt -lpthread -lm -ldl -o /tmp/program
+```
+
+> **Why not `mnc-stage1`?** The self-hosted compiler does not lower
+> `async`/`await`/`block_on` yet. Five async golden tests are blocked
+> behind docket Sh.4. Until it ships, the Python bootstrap is the
+> route for async programs.
+
+## 9. Real File I/O Inside an Async Pipeline (v4.115.0)
+
+From [`examples/async_file_io.mn`](../../examples/async_file_io.mn).
+Runs byte-based counters over the content of `/tmp/async_input.txt` and
+writes a summary file from inside an `await write_summary(...)` call.
+
+```mn
+extern "C" fn __mn_file_read_or_empty(path: String) -> String
+extern "C" fn __mn_file_write(path: String, content: String) -> Int
+
+async fn count_lines(content: String) -> Int {
+    let mut n: Int = 0
+    let mut i: Int = 0
+    let limit: Int = len(content)
+    while i < limit {
+        if content.byte_at(i) == 10 { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+async fn write_summary(path: String, lines: Int) -> Int {
+    return __mn_file_write(path, "lines=" + str(lines) + "\n")
+}
+
+async fn process(content: String) -> Int {
+    let lines: Int = await count_lines(content)
+    let wrote: Int = await write_summary("/tmp/out.txt", lines)
+    return wrote + lines                       // fold wrote in; see §11 Sh.9b
+}
+
+fn main() {
+    let content: String = __mn_file_read_or_empty("/tmp/async_input.txt")
+    let encoded: Int = block_on(process(content))
+    print("done: " + str(encoded))
+}
+```
+
+Expected output given a three-line input file:
+
+```
+done: 3
+```
+
+## 10. Real HTTP GET Inside an Async Pipeline (v4.115.0)
+
+From [`examples/async_http_demo.mn`](../../examples/async_http_demo.mn).
+Issues a real HTTP GET to `http://example.com/`, runs a three-stage
+async pipeline over the body, and writes a summary file.
+
+```bash
+python3 -m mapanare emit-llvm examples/async_http_demo.mn -o /tmp/ahd.ll
+clang /tmp/ahd.ll -L runtime/native -lmapanare_rt -lpthread -lm -ldl \
+      -o /tmp/async_http_demo
+/tmp/async_http_demo
+```
+
+Sample output when the network is reachable:
+
+```
+fetched bytes=540
+pipeline bytes=540 marker=1
+summary file path: /tmp/async_http_demo_summary.txt
+```
+
+If the sandbox blocks outbound TCP, the demo exits 0 after printing a
+"network unreachable" line — CI-safe by design.
+
+## 11. Two Emitter Bugs to Know About (Sh.9)
+
+Two Python bootstrap emitter bugs were found while writing the v4.115.0
+demos. Both have simple workarounds. These are open dockets for a
+future release.
+
+### Sh.9a — `await` on a String-returning async fn emits invalid IR
+
+```mn
+// BROKEN: llvm-as rejects the generated IR
+async fn read_it() -> String { return "hello" }
+async fn use_it() -> Int {
+    let s: String = await read_it()   // emitter produces a type mismatch
+    return len(s)
+}
+```
+
+**Workaround:** fetch String content *before* entering the async
+pipeline and pass it as a parameter:
+
+```mn
+fn main() {
+    let content: String = __mn_file_read_or_empty("/tmp/in.txt")
+    let r: Int = block_on(process(content))   // async fn takes String param
+    print(str(r))
+}
+```
+
+### Sh.9b — DCE drops `await` calls whose Int return is unused
+
+```mn
+// BROKEN: write never happens
+async fn write_it() -> Int { return __mn_file_write("/tmp/x", "hi") }
+async fn run() -> Int {
+    let _w: Int = await write_it()   // return unused → DCE drops the whole call
+    return 0
+}
+```
+
+**Workaround:** always fold the `await` result into a later expression —
+easiest is the return value:
+
+```mn
+async fn run() -> Int {
+    let w: Int = await write_it()
+    return w                          // w is used, DCE leaves it alone
+}
+```
+
+Both workarounds appear in the v4.115.0 demos verbatim. Track progress
+in the next release's PLAN.md.
+
+---
+
 ## See Also
 
 - [SPEC.md](../SPEC.md) section 29 for the formal specification of `Future<T>`, `await`, and `block_on`
+- [`docs/guides/async.md`](../guides/async.md) — mental model, limitations table, further reading
 - [Coroutine Design Document](../roadmap/v4/v4.67.0/DESIGN.md) for LLVM lowering details
 - Golden tests: `tests/golden/55_async_basic.mn`, `56_async_await.mn`, `57_real_await.mn`
+- Examples: `examples/async_file_io.mn`, `examples/async_http_demo.mn` (both shipped in v4.115.0)
