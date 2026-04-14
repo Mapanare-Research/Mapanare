@@ -8,18 +8,29 @@
 
 ## Version Configuration
 
-**TARGET VERSION:** `v4.51.0`
+**TARGET VERSION:** `v4.114.0`
 
-> **This is the Arc 4 cadence panel.** Mapanare v4.47.0–v4.50.0 is
-> Arc 4 (Stdlib AI/LLM). v4.47.0 added ChatChunk streaming + env config
-> + fixed Arc 3 panel bugs, v4.48.0 added `__struct_meta::<T>()` compile-time
-> builtin + structured extraction with retry, v4.49.0 validated embeddings
-> + RAG modules (vector store, chunking, similarity), v4.50.0 shipped
-> end-to-end demos (chat_agent, rag_agent) + cookbook AI chapter + README
-> Hello AI snippet. v4.51.0 is the 5-minor cadence panel: zero new features,
-> full 7-reviewer audit. If this panel returns aggregate >=9.0 with zero
-> NEEDS WORK verdicts, Arc 4 closes and v4.52.0 opens Arc 5 (compiler
-> debt drain). If not, v4.52.0 becomes a recovery release.
+> **This is the Phase D close-out panel.** Mapanare v4.111.0-v4.113.0
+> is Phase D (self-hosted compiler maturity). v4.111.0 rebuilt
+> mnc-stage1 from the full self-hosted pipeline and ran all 64 golden
+> tests (21/64 → 26/64 after disabling 4 zero-ROI MIR passes).
+> v4.112.0 ran 3-stage fixed-point verification, classified
+> divergences, and closed docket #7 (byref size heuristic) with a
+> single-file fix in `mapanare/self/emit_llvm.mn` (`struct_byte_size`
+> + `is_byref_type_st` matching the Python bootstrap's `_tsz` at
+> `emit_llvm_text.py:141`). v4.113.0 closed the remaining three
+> v4.99.0 docket items: #8 (coroutine frame decoupled via named
+> `mn_coro_frame_prefix_t` struct), #10 (SPEC §2.1.1 Reserved
+> Keyword Master List — 42 entries, both lexers cross-referenced),
+> #11 (7 specific `mapanare: async runtime:` error messages across
+> 5 failure sites in the scheduler + `file_read_async`).
+>
+> v4.114.0 is the Phase D panel: zero new features, full 7-reviewer
+> audit. After this panel: **11/11 items from the v4.99.0 docket are
+> either CLOSED or ACCEPTED.** If this panel returns aggregate >=8.5
+> with zero NEEDS WORK verdicts, Phase D closes and v4.115.0 opens
+> Phase E (polish / v5.0.0 prep). If not, v4.114.1 becomes a recovery
+> release addressing the findings before Phase E begins.
 
 Set the review output directory based on this version:
 
