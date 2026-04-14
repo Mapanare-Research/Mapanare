@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.103.0 shipped — Phase A COMPLETE. All 5 critical/high docket items from v4.99.0 closed. Golden: 16/62 → 21/64. Next full panel: v4.106.0.)
+## Where We Are (v4.104.0 shipped — Phase B release 1: rebuild + verify. mnc-stage1 rebuilds cleanly at -O2; 60/64 goldens pass full integration pipeline; 3/3 async goldens run natively; 21/64 through mnc-stage1 unchanged (no regressions from Phase A); 5 semantic divergences docketed for v4.106.0 panel.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

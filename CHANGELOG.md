@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.104.0] - 2026-04-14
+
+**Phase B release 1 — rebuild and verify.** Verification-only release;
+zero code changes to compiler, runtime, or tests. The entire scope was
+to rebuild `mnc-stage1` from scratch at `-O2`, run all 64 golden tests
+through both `mnc-stage1` and the full LLVM integration pipeline, run
+the async tests natively end-to-end, and produce a divergence report
+comparing Python bootstrap output to `mnc-stage1` output for every
+test. The v4.99.0 panel asked "does the compiler still work under
+optimization after the Phase A fixes?" — answer recorded here.
+
+### Verified
+
+- **`mnc-stage1` rebuilds cleanly at `-O2`.** 857,645 lines of IR, 3.5 MB
+  stripped binary, 1m 21s wall time. Smoke test emits 134 lines for a
+  trivial hello program; IR validates with `llvm-as`; links via
+  `libmapanare_rt.a`; runs with correct output. `main.ll` self-validates
+  at `llvm-as` with zero errors (12.5 MB bitcode). Full log:
+  `docs/roadmap/v4/v4.104.0/artifacts/build.log`.
+- **Golden test count through `mnc-stage1` is 21/64** — unchanged from
+  v4.103.0's baseline of 21/64, no regressions from Phase A. All 43
+  failures classified by root-cause symbol or error message into 8
+  pre-existing categories (14 `mir_opt__block_successors` crashes,
+  9 `__mn_str_starts_with` crashes, 3 `lower__lower_expr` crashes,
+  3 MIR-verifier failures, 14 self-hosted semantic/parser gaps).
+  Classification: `docs/roadmap/v4/v4.104.0/PHASE2_GOLDEN.md`.
+- **Full integration pipeline passes for 60/64 tests**
+  (`emit-llvm` → `llvm-as` → `opt -O2` → `llc` → `clang -no-pie` → run).
+  2 skips (stdin, network), 2 failures both pre-existing:
+  `51_match_guards_and_or` (bootstrap rejects `Some(0) | None`),
+  `47_try_operator` (bootstrap `?`-op emits invalid IR — 17-version
+  latent bug caught for the first time because no CI gate runs
+  `llvm-as` on bootstrap output). Zero `opt`/`llc`/link/runtime
+  failures — Phase A's IR survives `-O2` across the full optimizer.
+  Details: `docs/roadmap/v4/v4.104.0/INTEGRATION_RESULTS.md`.
+- **Async goldens (55, 56, 57) run natively with expected output.**
+  55 prints 42, 56 prints 43, 57 prints 110. Valgrind clean for all
+  three (`--error-exitcode=99` → exit 0). Scheduler exports
+  (`__mn_coro_spawn`, `__mn_coro_scheduler_*`) confirmed via `nm` on
+  the stripped binaries — v4.102.0's linkage fix survives a clean
+  `-O2` rebuild. Details: `docs/roadmap/v4/v4.104.0/PHASE4_ASYNC.md`.
+- **Divergence report: bootstrap vs stage1 over 64 tests.** 18 of 18
+  runnable stage1-passable tests execute end-to-end; 17 of them
+  produce byte-identical output to the bootstrap (the 18th,
+  `34_file_io`, differs by stale `/tmp` directory state between
+  runs, not by compiler behavior). Five semantic-level divergences
+  filed as v4.106.0 docket items (`Div.1`–`Div.5`, severities
+  HIGH×2, MEDIUM×2, LOW×1). Details:
+  `docs/roadmap/v4/v4.104.0/DIVERGENCE_REPORT.md`.
+
+### Changed
+
+- No code changes. Zero diffs to `mapanare/`, `runtime/`, or `tests/`
+  other than the auto-generated `tests/golden/BENCHMARKS.md` and
+  `tests/golden/HISTORY.jsonl` refresh from running the test harness.
+
+### Known follow-ups (for v4.105.0 / v4.106.0)
+
+- `v4.105.0` will add valgrind + ASan + TSan CI gates on the full
+  golden suite, plus crash breadcrumbs in the compiler driver.
+- `v4.106.0` is the Phase B panel — the first since v4.99.0's 6.59/10.
+  The panel will grade:
+  - the 5 Phase A closures (v4.100.0–v4.103.0)
+  - the 5 divergence docket items (`Div.1`–`Div.5`)
+  - the 8 self-hosted failure categories from Phase 2
+
 ## [4.103.0] - 2026-04-13
 
 **Phase A complete — all 5 critical/high docket items from the

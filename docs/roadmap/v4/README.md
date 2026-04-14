@@ -107,6 +107,10 @@ Six phases:
 | **v4.101.0** | Phase A | Self-Hosted Emitter Corruption Fixed | Dockets #1 + #2 closed. Python emitter's drop glue was freeing heap strings pushed into lists / stored as struct fields. Six sites in `emit_llvm_text.py` gained move-semantics. `mnc-stage1` now emits clean, `llvm-as`-valid IR. Golden: 0/61 → 16/62. Regression test `62_list_output.mn` added. |
 | **v4.102.0** | Phase A | First Native Async Run | Dockets #3 + #6 closed. Two bugs: `mn_coro_is_done` checked wrong frame offset (fixed to `handle[0] == NULL` per LLVM's final-suspend lowering); `_do_block_on` reloaded the coroutine handle from a slot the coroutine overwrites with its return value (fixed to reuse cached handle). All 3 async goldens run natively (42, 43, 110). Valgrind clean. CI step added. |
 | **v4.103.0** | Phase A | else/sino + Closure Types; Phase A Complete | Dockets #4 + #5 closed. Drop-glue was freeing boxed-enum payloads reachable only transitively through the returned value — conservative skip when ret has any ptr field unblocked nested if/else. FnType now resolves to MIRType(FN); typed-variable calls go through ClosureCall; no-capture lambdas always emit ClosureCreate. 5 unrelated goldens also pass now (boxed-drop side-effect). 16/62 → 21/64. Phase A scorecard: 5/5 critical/high docket items closed. |
+| | | | |
+| | | **Phase B: Verify & Measure (v4.104.0 →)** | |
+| | | | |
+| **v4.104.0** | Phase B | Rebuild + Golden Verification | Verification-only release (zero code changes). mnc-stage1 rebuilt cleanly at `-O2` (1m21s, 3.5 MB stripped); 21/64 goldens through mnc-stage1 (unchanged from v4.103.0 — no regressions); **60/64 through full integration pipeline** (emit → llvm-as → opt -O2 → llc → clang → run); **3/3 async goldens run natively with expected output** (42, 43, 110) and valgrind clean; 17/18 runnable stage1 tests produce byte-identical output to bootstrap. 5 divergence docket items opened (`Div.1`–`Div.5`) for v4.106.0 panel: 2 HIGH (stage1 ?-op wrong-type store, bootstrap ?-op invalid IR), 2 MEDIUM (Option payload ABI, or-pattern with enum constructor), 1 LOW (main return type). |
 
 ## What v4.0.0 Delivered
 
