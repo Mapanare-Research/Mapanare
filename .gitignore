@@ -4,6 +4,15 @@
 # IR Doctor baselines (local, per-machine)
 .ir_doctor/
 
+# Culebra templates (installed locally from the culebra crate; regenerate via
+# `cp -r ~/.cargo/registry/src/*/culebra-*/culebra-templates ./culebra-templates`)
+culebra-templates/
+.culebra-*.jsonl
+.culebra-*.json
+
+# Claude Code per-project runtime state
+.claude/scheduled_tasks.lock
+
 # Python
 __pycache__/
 *.py[cod]

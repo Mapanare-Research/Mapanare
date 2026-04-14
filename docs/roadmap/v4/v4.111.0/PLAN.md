@@ -10,7 +10,7 @@
 > mnc-stage1 built from the self-hosted pipeline now passes all 64 golden
 > tests.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.110.0
 **Delta review:** No

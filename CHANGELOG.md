@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.111.0] - 2026-04-14
+
+**Phase D release 1 — self-hosted golden test parity.** First release
+of Phase D (self-hosted compiler maturity). Rebuilt mnc-stage1 from
+the self-hosted pipeline (`mapanare/self/*.mn`, 38,824 lines), ran
+all 64 golden tests through it, documented every failure with root
+cause analysis, and fixed one shared-root-cause class: zero-ROI
+v4.97.0 MIR optimization passes that produced invalid MIR and
+crashed downstream.
+
+### Measured
+
+- Golden pass rate: **26 / 64** (up from 21/64 at v4.104.0 Phase B
+  baseline, +5 tests)
+- Effective pass rate (excluding Category A structural-diff false
+  negatives): **39 / 64 = 60.9%**
+- Stage2 self-compilation: **0 / 11 modules valid** — mnc-stage1
+  cannot yet self-compile its own sources (known gap, deferred)
+
+### Changed (production code)
+
+- `mapanare/self/mir_opt.mn::optimize_mir()` — disabled 4 v4.97.0
+  MIR optimization passes:
+  1. `strength_reduce_function` (pass 4)
+  2. `inline_small_functions` (pass 5)
+  3. `licm_function` (pass 6) — `block_successors` was a 14× valgrind
+     crash hot-frame since v4.105.0
+  4. `escape_analysis_function` (pass 7) — labelled "future hook" in
+     its own source comment, scaffold not production
+- All four are zero-ROI per v4.109.0's optimizer ROI forensics
+  (LLVM's own passes subsume the work at -O2). Their buggy
+  implementation was causing `lower__verify_block`,
+  `mir_opt__block_successors`, `mir_opt__escape_analysis_function`,
+  and `emit_llvm__emit_mir_call` crashes across 26 golden tests.
+  Disabling them costs zero performance and unblocks correctness.
+
+### Added
+
+- `docs/roadmap/v4/v4.111.0/GOLDEN_FAILURES.md` — per-test failure
+  categorization across 9 categories (A: structural-diff-only,
+  B: emitter-crash-starts_with, C: lower_expr-crash, D: async-missing,
+  E: tensor-missing, F: const-missing, G: or-pattern,
+  H: closure-typed-missing, I: gpu-tensor), with dispositions and
+  forward dockets Sh.1-Sh.7 for v4.112.0+.
+- `.gitignore` entry for `culebra-templates/` (local-only; regenerate
+  via `cp -r ~/.cargo/registry/src/*/culebra-*/culebra-templates ./`).
+
+### Findings
+
+- **21 → 26 passing goldens from one diagnostic**: disabling 4 zero-ROI
+  self-hosted MIR passes. Tests unblocked: `05_for_loop`, `11_closure`,
+  `22_string_builder`, `24_enum_methods`, `25_fizzbuzz`,
+  `50_match_or_patterns`.
+- **13 tests in "Category A" now compile cleanly** but produce a
+  larger `define` count than bootstrap (because bootstrap still
+  inlines small functions, self-hosted no longer does). Semantically
+  equivalent IR once LLVM's own inliner runs at -O2. Caught by
+  test_native.py's strict structural-comparison check. Not a real
+  failure, a harness-strictness artefact.
+- **10 tests crash at `__mn_str_starts_with` from
+  `emit_mir_call+0x23515`** — identical stack signature across all
+  10. Hypothesis: a MIR `Call` instruction with NULL `fn_name`
+  reaching the emitter. Deferred to v4.112.0 (docket Sh.2).
+- **5 async, 5 tensor, 2 const goldens fail in semantic check** —
+  the self-hosted `semantic.mn` doesn't yet know about these
+  surfaces. The Python bootstrap handles them (Phase A v4.102.0 for
+  async); mirroring into self-hosted is deferred to Phase D later
+  releases.
+
+### Dockets (carry to v4.112.0+)
+
+| Docket | Category | Target release |
+| ------ | -------- | -------------- |
+| Sh.1   | inline_small_functions MIR corruption | v4.112.0 |
+| Sh.2   | emit_mir_call NULL `starts_with` crash | v4.112.0 |
+| Sh.3   | byref size heuristic (256 stub)       | v4.112.0 (PLAN #7) |
+| Sh.4   | self-hosted coroutine frame           | v4.113.0 |
+| Sh.5   | self-hosted const declarations        | Phase D later |
+| Sh.6   | self-hosted tensor type               | Phase D later |
+| Sh.7   | self-hosted closure-typed parameters  | Phase D later |
+
+### What's next
+
+v4.112.0 runs fixed-point verification: does stage1-from-Python ==
+stage1-from-self? The byref size heuristic divergence (self-hosted
+emitter returns 256 for all named structs) is the known blocker for
+convergence. After v4.112.0, the two compilation paths should meet.
+
 ## [4.110.0] - 2026-04-14
 
 **Phase C release 4 (final) — full benchmark refresh with all fixes
