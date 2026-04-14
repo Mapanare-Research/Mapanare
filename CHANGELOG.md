@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.106.0] - 2026-04-14
+
+**Phase B panel.** Seven reviewers graded v4.100.0–v4.105.0 (Phase A
+bug sprint + Phase B verification). Zero code changes to the compiler
+or runtime; the deliverable is the panel's verdict plus the docket it
+opens for v4.106.1 patch work.
+
+### Panel verdict
+
+**Aggregate: 7.87 / 10** — largest single-arc improvement since the
+v4.31.0 recovery close (+1.28 from v4.99.0's 6.59). Zero NEEDS WORK
+verdicts. Per the Phase B decision rule (aggregate ≥ 8.0 AND 0 NEEDS
+WORK → PASS), 7.87 falls 0.13 below the threshold. **Applied: NEEDS
+WORK → v4.106.1 patch.**
+
+| Reviewer | Score | Verdict |
+|----------|------:|---------|
+| Rattler (LLVM / codegen) | 7.8 | PASS WITH NOTES |
+| Viper (memory safety) | 7.5 | PASS WITH NOTES |
+| Anaconda (toolchain / CI) | 7.8 | PASS WITH NOTES |
+| Cobra (ABI / fixed-point) | 7.5 | PASS WITH NOTES |
+| Coral (language design) | 8.0 | PASS WITH NOTES |
+| Boa (developer experience) | 8.5 | **PASS** |
+| Mamba (C runtime) | 8.0 | PASS WITH NOTES |
+
+### Consensus findings
+
+- **All 5 critical / high v4.99.0 docket items remain CLOSED** with
+  verifiable evidence. Tagged-pointer UB (`is_heap` bitfield at
+  `runtime/native/mapanare_core.h:60`), list indexing (drop-glue fix),
+  scheduler exports (6 `__mn_coro_*` symbols in `libmapanare_rt.a`),
+  `else`/`sino` (golden 63), closure types (bootstrap path).
+- **v4.102.0's async scheduler is TSan-clean.** 3/3 async goldens run
+  under TSan-instrumented `libmapanare_rt_tsan.a` with zero data
+  races (42, 43, 110). Strongest positive signal in the release.
+- **v4.105.0's crash breadcrumbs work.** `[CRASH] SIGSEGV during
+  compile at tests/golden/03_function.mn` — symbolic signal, phase,
+  source file in one glance (vs. pre-v4.105.0's `[CRASH] Signal 11 at:`).
+
+### Load-bearing new finding (Rt.1)
+
+The PRE_PANEL_AUDIT classified the `64_closure_typed` miscompile under
+`opt -O2` as an LLVM bug. **Rattler's review overturned the
+classification** by reading the emitted IR directly: the 2-arg `sum`
+lambda emits `define internal void @lambda4(ptr %__env_ptr, ptr %a,
+ptr %b)` — `void` return and `ptr` parameters — while the caller does
+`call i64 %cfn(ptr, i64, i64)`. Opaque-pointer LLVM 18 accepts the
+malformed IR at `llvm-as` / verifier level (no error); `-O0`
+accidentally works due to register ABI; `-O2` inlines and propagates
+the previous `double(10)` result, printing `10` instead of `15`.
+
+This is **a Mapanare emitter bug, not an LLVM miscompile.** Promoted
+from Cl.1 to **Rt.1 HIGH** — the load-bearing reason the panel falls
+below 8.0.
+
+### v4.106.1 patch scope (narrow — 2 HIGH items only)
+
+1. **Rt.1** — fix multi-arg lambda emitter (`mapanare/lower.py` +
+   `mapanare/emit_llvm_text.py`): lambdas with arity ≥ 2 must emit
+   the correct return type and `i64` parameters instead of `void`
+   return and `ptr` parameters.
+2. **Rt.2 / Ih.1** — integration-pipeline harness must diff stdout
+   against bootstrap reference output. Currently counts any binary
+   that exits 0 as PASS; Rt.1 went undetected for two releases
+   because of this.
+
+Everything else found by the panel (`As.1` C-runtime list UAF,
+`Cb.1` Option ABI divergence, `Vp.1` LTO CI job, `Bo.1` async error
+messages) is Phase C scope — **not** v4.106.1 gates.
+
+### Re-panel scope after v4.106.1
+
+Only 3 domains re-grade: Rattler (did Rt.1 land?), Anaconda (does
+integration harness now diff stdout?), Coral (does
+`64_closure_typed` pass end-to-end through `-O2` with correct
+output?). Viper, Cobra, Boa, Mamba carry current grades unless the
+patch touches their domain.
+
+### Docket now open for v4.107.0+
+
+From the Phase B panel (consolidated):
+
+| # | Item | Severity |
+|---|------|----------|
+| Rt.1 | Multi-arg lambda emitter signatures | HIGH (v4.106.1) |
+| Rt.2 / Ih.1 | Integration harness stdout-diff | HIGH (v4.106.1) |
+| As.1 / Vg.2 / Vg.3 | `__mn_list_free` shared-buffer heap-UAF | MEDIUM |
+| Cb.1 | Option payload ABI unification (`{i1,i64}` vs `{i1,ptr}`) | MEDIUM |
+| Vp.1 | LTO build job in CI | MEDIUM |
+| Vp.2 | Crash handler opt-in vs constructor-attribute default | MEDIUM |
+| Bo.1 | `stage1` async error message rewrite | LOW |
+| Bo.2 | `stage1` loses source position (`0:0`) vs bootstrap | LOW |
+| Co.1 | Ergonomic `else if` in grammar | LOW |
+| Co.2 | Document closure ABI in SPEC | LOW |
+| Rt.3 | Audit emitter for other verifier-accepted signature mismatches | MEDIUM |
+| Cb.4 | Publish MnString ABI contract doc | LOW |
+
+Plus the 15 items already opened by v4.104.0 (`Div.*`) and v4.105.0
+(`Vg.*`, `As.*`).
+
+### Changed
+
+- No compiler / runtime code. Panel release only.
+- `.reviews/v4.99.0/V5_DECISION.md` — docket closure update documenting the 5 critical/high items CLOSED.
+- `.reviews/v4.106.0/` — new directory with 7 reviewer files, `PRE_PANEL_AUDIT.md`, panel `README.md`.
+- `docs/roadmap/v4/v4.106.0/MEASUREMENTS.md` — panel input summary.
+
 ## [4.105.0] - 2026-04-14
 
 **Phase B release 2 — debugging infrastructure.** Valgrind, AddressSanitizer,

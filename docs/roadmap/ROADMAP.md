@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.105.0 shipped — Phase B release 2: sanitizer instrumentation. Valgrind/ASan/TSan over the full 64-test suite; 3/3 async goldens TSan-clean; async-signal-safe crash handler + thread-local source breadcrumbs replace the legacy handler; `.github/workflows/sanitizers.yml` runs 3 jobs on every push. 10 docket items (`Vg.1`–`Vg.7`, `As.1`–`As.3`) open for the v4.106.0 panel.)
+## Where We Are (v4.106.0 Phase B panel complete — aggregate **7.87 / 10**, 0 NEEDS WORK, 1 PASS (Boa), 6 PASS WITH NOTES. All 5 critical/high v4.99.0 docket items CLOSED with evidence; +1.28 aggregate improvement since v4.99.0 (largest since the v4.31.0 recovery close). Below the 8.0 Phase B PASS threshold → **v4.106.1 patch**, narrow scope: Rt.1 (fix multi-arg lambda emitter signature — opaque-pointer LLVM 18 accepted `void(ptr,ptr,ptr)` vs caller's `i64(ptr,i64,i64)`, silently breaking `64_closure_typed` under `opt -O2`) + Rt.2/Ih.1 (integration harness stdout-diff). Re-panel Rattler/Anaconda/Coral after the patch; if PASS, Phase C (benchmarks) opens.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural
