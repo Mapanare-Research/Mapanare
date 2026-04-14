@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.120.0] - 2026-04-14
+
+**Phase F panel — v5 gate attempt 2 → Option B (continue
+v4.121.0+).** Seven reviewers graded the v4.100.0-v4.119.0
+recovery arc. Aggregate **8.21 / 10** (identical to v4.114.0). Two
+PASS (Boa documentation 8.7, Mamba C runtime/perf 8.5), four PASS
+WITH NOTES (Rattler 8.3, Viper 8.4, Cobra 7.9, Coral 8.1), one
+**NEEDS WORK** (Anaconda CI/testing 7.6). Mechanical rule applies:
+aggregate below 9.0 AND one NEEDS WORK → Option B. Lead
+independently directed Option B; the two channels agree.
+**v5.0.0 NOT tagged.** Zero compiler/runtime code changes.
+
+### Added
+
+- **`.reviews/v4.120.0/`** (9 files) — seven per-reviewer files,
+  panel summary README, and V5_DECISION.md. Each reviewer walks
+  the recovery arc in their domain, re-runs the relevant tooling,
+  and grades independently. No groupthink.
+- **`docs/roadmap/v4/v4.120.0/MEASUREMENTS.md`** — comprehensive
+  pre-panel snapshot: test counts (5,484 collected, 73 failed),
+  golden rates (Python bootstrap 64/64, mnc-stage1 26/64 literal /
+  39/64 effective, integration 60/64), fixed-point status (blocked
+  Sh.8), sanitizer CI gates (ASan + TSan + valgrind enforcing since
+  v4.105.0), benchmark summary, 11/11 v4.99.0 docket closures,
+  panel score history from v3.33.0 to today.
+- **`docs/roadmap/v4/v4.121.0/PLAN.md`** — preliminary plan for
+  next release (test + lint hygiene sweep). 6-phase, targets
+  `make test` green + `make lint` green, closes An.1/An.2/An.3/An.4/An.5
+  plus the 22 v4.117.0-audit stale-assertion failures.
+
+### Panel findings — carry-forward opened for v4.121.0+
+
+17 items opened across 7 reviewers, grouped by severity in
+`V5_DECISION.md`:
+
+- **Blockers:** Qs.1 (`List<Int>` indexing in argument position,
+  reproduced fresh by Rattler/Viper/Mamba), An.1/An.2/An.3 (CI
+  hygiene from Anaconda), Sh.8 (fixed-point blocker), Rt.1
+  (enum_match 24× slower than C gcc).
+- **Strongly recommended:** Sh.2 (self-hosted emitter crash 10
+  golden tests), Cb.1/Co.1 (README "self-hosted" wording
+  precision).
+- **Polish:** ASan.1 (Viper new: mn_list_rc UAF baseline review),
+  Cb.2, Co.2 (struct-literal-syntax), Co.3 (const direction), Co.4
+  (SPEC §29 polish), Bo.1 (user-facing known_issues doc), Bo.2
+  (getting-started native-mode prereq), Bo.3.
+- **Deferred to v5.x:** Sh.4/5/6/7 self-hosted feature gaps,
+  TBAA.1 / willreturn.1, Sh.9a/9b/10, Instr.1.
+
+### Changed
+
+- `CHANGELOG.md` — this entry
+- `CLAUDE.md` — v4.120.0 summary prepended; panel result recorded
+- `docs/roadmap/v4/README.md` — v4.120.0 row
+- `docs/roadmap/ROADMAP.md` — header pointer updated
+- `docs/roadmap/v4/v4.120.0/PLAN.md` Status → DONE
+
+### Not changed
+
+- No changes under `mapanare/`, `runtime/native/`, `mapanare/self/`,
+  `stdlib/`, `scripts/`, or `tests/`. `libmapanare_rt.a` byte-
+  identical to v4.119.0. Panel + decision release only.
+
+### v5 decision
+
+**NOT TAGGED.** The aggregate 8.21 is identical to v4.114.0. The
+panel held the line on quality but opened new findings (CI
+hygiene, docs precision) at the same rate the recovery arc closed
+v4.99.0 items. The mechanical rule produces Option B; the lead
+independently directed Option B; there is no conflict.
+
+`VERSION` bumps to `4.121.0`. The next v5 gate is proposed for
+v4.130.0 after a 6-release closeout arc (v4.121.0 test/lint
+hygiene → v4.122.0 Qs.1 + DWARF → v4.123.0 Rt.1 unbox → v4.124.0
+Sh.8 ctor → v4.125.0 benchmark refresh + docs → v4.126.0 dead-
+code sweep → v4.127.0-v4.129.0 buffer). Subject to lead approval.
+
+### Exit criteria (13 items)
+
+| # | Check | Status |
+|---|---|---|
+| 1 | Pre-panel sweep complete | PARTIAL — pytest run surfaced 73 failures that fed Anaconda's finding |
+| 2 | MEASUREMENTS.md published | PASS |
+| 3 | Panel executed: 7 reviewers, 7 scores, 7 grades | PASS |
+| 4 | Aggregate score recorded | PASS — 8.21/10 |
+| 5 | v5 decision documented | PASS — Option B in V5_DECISION.md |
+| 6 | Retrospective linked (from v4.119.0) | PASS |
+| 7 | Benchmarks verified (from v4.118.0) | PASS — Mamba spot-checked ±5% |
+| 8 | All 11 v4.99.0 docket items resolved or deferred | PASS — 11/11 CLOSED |
+| 9 | Golden: 64/64 both pipelines | PARTIAL — Python bootstrap 64/64; mnc-stage1 26/64 literal (39/64 effective, Sh.2/4/5/6/7 tracked) |
+| 10 | ASan + TSan clean (regression gates) | PASS |
+| 11 | CI gates live | PARTIAL — 10 enforcing gates; `make test` and `make lint` red on dev surface An.1/An.2 |
+| 12 | ROADMAP.md updated | PASS |
+| 13 | Standard closeout clean | PASS |
+
 ## [4.119.0] - 2026-04-14
 
 **Phase F release 2 — retrospective + pre-panel preparation.** The

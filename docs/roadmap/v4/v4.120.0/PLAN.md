@@ -9,13 +9,32 @@
 > hardened testing, Phase F measured everything and wrote the
 > retrospective. This is the gate.
 
-**Status:** PLANNED
+**Status:** DONE (shipped 2026-04-14)
 **Breaking:** No
 **Prerequisite:** v4.119.0
 **Delta review:** No
-**Full panel:** Yes -- 7 reviewers
+**Full panel:** Yes -- 7 reviewers (completed)
 **Estimated work:** 1 sprint
 **Theme:** 120 releases deep. The evidence is in. The panel decides.
+
+## Result
+
+**Aggregate: 8.21 / 10. Decision: Option B (continue v4.121.0+).
+v5.0.0 NOT tagged.**
+
+Panel breakdown: 2 PASS (Boa 8.7, Mamba 8.5), 4 PASS WITH NOTES
+(Rattler 8.3, Viper 8.4, Cobra 7.9, Coral 8.1), 1 NEEDS WORK
+(Anaconda 7.6). Mechanical rule fires Option B (aggregate < 9.0
+AND one NEEDS WORK). Lead independently directed Option B; no
+conflict.
+
+17 carry-forward items opened across 7 reviewers. Next release
+v4.121.0 — test + lint hygiene sweep per
+`docs/roadmap/v4/v4.121.0/PLAN.md`. Proposed 6-release closeout arc
+targeting v4.130.0 as the next v5 gate.
+
+See `SESSION_REPORT.md` in this directory and
+`.reviews/v4.120.0/{README.md,V5_DECISION.md}`.
 
 ---
 
