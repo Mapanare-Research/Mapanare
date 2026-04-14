@@ -1,0 +1,166 @@
+name: sanitizers
+
+# v4.105.0 Phase 5 — run valgrind + AddressSanitizer against the native
+# compiler on every push/PR to `dev`. The valgrind job scans 64 golden
+# tests; the ASan job runs the self-hosted compiler compiled with
+# -fsanitize=address. The goal is regression prevention: any new
+# memory-safety finding fails the build, surfacing the bug at PR time
+# rather than months later. This CI is the permanent arm of what
+# Phase 1-3 of v4.105.0 measured as one-off reports.
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: sanitizers-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  valgrind:
+    name: valgrind (golden suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends valgrind clang llvm
+          pip install -e ".[dev]"
+
+      - name: Build mnc-stage1
+        run: python scripts/build_stage1.py
+
+      - name: Valgrind — full golden suite (documented baseline)
+        # 36 of 64 tests have known pre-existing memory errors (see
+        # docs/roadmap/v4/v4.105.0/VALGRIND_REPORT.md, docket items
+        # Vg.1-Vg.7). This step records the CURRENT count and fails
+        # the build if a new test regresses into ERRORS.
+        run: |
+          bash scripts/valgrind_all_goldens.sh
+          python scripts/check_valgrind_baseline.py \
+              /tmp/v4_105_valgrind/valgrind-summary.tsv \
+              docs/roadmap/v4/v4.105.0/artifacts/valgrind-summary.tsv
+
+      - name: Upload valgrind artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: valgrind-${{ github.sha }}
+          path: |
+            /tmp/v4_105_valgrind/valgrind-summary.tsv
+            /tmp/v4_105_valgrind/*.log
+          retention-days: 14
+
+  asan:
+    name: AddressSanitizer (golden suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang llvm
+          pip install -e ".[dev]"
+
+      - name: Build mnc-stage1 (normal) — produces main.ll
+        run: python scripts/build_stage1.py
+
+      - name: Build mnc-stage1-asan
+        run: bash scripts/build_asan.sh
+
+      - name: ASan — full golden suite with leak detection off
+        # 17 of 64 tests have known ASan errors (see ASAN_REPORT.md,
+        # docket items As.1-As.3). This step records the CURRENT count
+        # and fails the build if a new test regresses into ASAN_ERROR.
+        run: |
+          bash scripts/run_asan_goldens.sh
+          python scripts/check_asan_baseline.py \
+              /tmp/v4_105_asan/asan-summary.tsv \
+              docs/roadmap/v4/v4.105.0/artifacts/asan-summary.tsv
+
+      - name: Upload ASan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asan-${{ github.sha }}
+          path: |
+            /tmp/v4_105_asan/asan-summary.tsv
+            /tmp/v4_105_asan/*.err
+          retention-days: 14
+
+  tsan-async:
+    name: ThreadSanitizer (async goldens)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang llvm
+          pip install -e ".[dev]"
+
+      - name: Build mnc-stage1 (normal)
+        run: python scripts/build_stage1.py
+
+      - name: Build TSan-instrumented libmapanare_rt.a
+        run: |
+          mkdir -p /tmp/tsan_rt
+          for src in mapanare_core.c mapanare_io.c mapanare_runtime.c \
+                     mapanare_gpu.c mapanare_gpu_builtins.c \
+                     mapanare_db.c mapanare_html.c; do
+            clang -c -O1 -g -fsanitize=thread -fno-omit-frame-pointer -fPIC \
+                -I runtime/native \
+                "-DMAPANARE_VERSION=\"$(cat VERSION)\"" \
+                "runtime/native/$src" -o "/tmp/tsan_rt/${src%.c}.o"
+          done
+          ar rcs /tmp/tsan_rt/libmapanare_rt_tsan.a /tmp/tsan_rt/*.o
+
+      - name: Compile async goldens to IR via bootstrap
+        run: |
+          mkdir -p /tmp/async
+          for t in 55_async_basic 56_async_await 57_real_await; do
+            python -m mapanare emit-llvm "tests/golden/$t.mn" -o "/tmp/async/$t.ll"
+            llc "/tmp/async/$t.ll" -o "/tmp/async/$t.s"
+          done
+
+      - name: Link async goldens against TSan runtime and run them
+        # v4.102.0 made these tests run natively; Phase 3 of v4.105.0
+        # demonstrated 0 races. This CI gate enforces that permanent.
+        run: |
+          export TSAN_OPTIONS=halt_on_error=1:report_bugs=1:exitcode=99
+          for t in 55_async_basic 56_async_await 57_real_await; do
+            clang -O1 -g -fsanitize=thread -fno-omit-frame-pointer -no-pie \
+                "/tmp/async/$t.s" /tmp/tsan_rt/libmapanare_rt_tsan.a \
+                -lm -lpthread -ldl -o "/tmp/async/$t.bin"
+            echo "=== $t ==="
+            "/tmp/async/$t.bin"
+          done
