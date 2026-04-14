@@ -12,7 +12,7 @@
 
 Built after years of hitting Python's limits in AI-native, concurrent, and tensor-heavy software.
 
-Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler (15,000+ lines of `.mn`) compiles itself to a fixed point. A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
+Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler (38,000+ lines of `.mn`) compiles itself. Across 5 cross-language benchmarks Mapanare's geometric mean is **50× faster than Python**, **1.06× on par with Rust**, and **4.85× slower than C (gcc -O2)** — see [benchmarks/PHASE_C_RESULTS.md](benchmarks/PHASE_C_RESULTS.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
 
@@ -25,8 +25,8 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.31.0-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-4845_passing-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-4.116.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-4845+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -177,6 +177,7 @@ What works today vs. what's planned.
 | Signals (reactive state, computed, batched) | Yes | Yes | Yes | Stable |
 | Streams + `\|>` pipe operator | Yes | Yes | Yes | Stable |
 | Pipes (multi-agent composition) | Yes | Yes | Yes | Stable |
+| Async / await (`async fn`, `await`, `block_on`) | Yes | No | No | New in v4.72.0 (native I/O demos in v4.115.0) |
 | Tensors (shape validation, `@` matmul) | No | No | No | Experimental |
 | GPU compute (8 builtins: detect, tensor ops) | Yes | No | No | Stable |
 | Python/PHP transpiler (`mapanare transpile`) | Yes | — | — | Stable |
@@ -301,6 +302,29 @@ let result = data
     |> map(fn(x) { x * 10 })
 ```
 
+### Async / Await
+
+Cooperative coroutines via `async fn`, `await`, and `block_on`. Lowered to LLVM switched-resume coroutines. Real file and network I/O inside async pipelines as of v4.115.0.
+
+```mn
+async fn fetch(n: Int) -> Int {
+    return n * 2
+}
+
+async fn pipeline() -> Int {
+    let a: Int = await fetch(10)
+    let b: Int = await fetch(20)
+    return a + b
+}
+
+fn main() {
+    let total: Int = block_on(pipeline())
+    print(str(total))   // 60
+}
+```
+
+See the [async cookbook](docs/cookbook/async.md) and [async guide](docs/guides/async.md) for native compilation workflows, real file/HTTP examples, and current limitations.
+
 ### GPU Compute
 
 GPU-accelerated tensor operations via 8 built-in functions. CUDA loaded dynamically via dlopen (no SDK required). Programs degrade gracefully to CPU when no GPU is available.
@@ -328,9 +352,14 @@ clang -O2 p.ll -o primes -lm         # LLVM IR → native binary
 ./primes                               # 29-68x faster than Python
 ```
 
-### Drop Into Any Stack (Coming in v4.2)
+### Drop Into Any Stack (Planned)
 
 Write your heavy compute in Mapanare, use it from Python, TypeScript, or Go — the compiler generates the bindings for you.
+
+> **Status (v4.116.0):** Shared-library output (`--lib`) and binding
+> generation (`--bindings`) are planned for a future v4.x release.
+> Until then, build with `mapanare build <file>.mn` for native binaries
+> or call Mapanare-compiled `.so`/`.dylib` through standard FFI.
 
 ```bash
 mapanare build mylib.mn --lib              # compile to shared library (.so/.dylib/.dll)
@@ -673,7 +702,11 @@ Requires Python 3.11+.
 | **v1.3.0** | Web & Security — crawler, vulnerability scanner, fuzzer, HTTP toolkit | Released |
 | **v2.0.0** | GPU & WASM — GPU compute (CUDA/Vulkan), WebAssembly backend, mobile targets | Released |
 | **v3.x** | Production Sprint — IO, networking, agents, real examples, package manager, GPU builtins | Released |
-| **v4.0.0** | Production — self-hosted compiler, Python transpiler, GPU compute, 4,845+ tests | **Current** |
+| **v4.0.0–v4.76.0** | Language Maturity — recovery arcs, error handling, LSP, tensor completeness, AI stdlib, DWARF, coroutines | Released |
+| **v4.77.0–v4.110.0** | Phase A/B/C — correctness recovery (tagged-pointer UB, list indexing, async linking), debugging infrastructure (valgrind/ASan/TSan), 5-language benchmark | Released |
+| **v4.111.0–v4.115.0** | Phase D/E (early) — self-hosted golden parity, panel hardening, native async I/O demos | Released |
+| **v4.116.0** | Phase E release 2 — documentation batch (README, SPEC, cookbook, guides) | **Current** |
+| **v4.120.0** | Phase F panel — v5 gate panel (attempt 2) | Planned |
 
 See the full [ROADMAP](docs/roadmap/ROADMAP.md) for details.
 
