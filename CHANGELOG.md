@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.108.0] - 2026-04-14
+
+**Phase C release 2 — string_concat fix.** v4.107.0's benchmark
+surface pinned `string_concat` at 94.57 ms, 9.8× slower than Python
+and 136× slower than Rust — the one embarrassing number in an
+otherwise competitive suite. v4.108.0 fixes it.
+
+### Fixed
+
+- **Auto-StringBuilder for loop concat (primary fix)**. The MIR
+  optimizer now pattern-matches `s = s + chunk` inside natural
+  loops (as `BinOp(ADD, String, String)` followed by
+  `Copy(dest=lhs, src=binop.dest)`) and rewrites the CFG to use the
+  C runtime's `__mn_sb_*` API: allocate once before the loop, amortized-O(1)
+  append inside, finalize into the accumulator on exit. Transforms
+  O(n²) allocation patterns into O(n).
+- **v4.95.0 dead-code pass resurrected**. The v4.95.0
+  `string_concat_optimization` pass matched
+  `Call("__mn_str_concat", ...)` but that pattern never appears in
+  the MIR (string `+` is represented as `BinOp ADD` until LLVM IR
+  emission). The pass has been dead code for 13 versions. v4.108.0
+  rewrites it against the real MIR shape.
+- **AI stdlib StringBuilder ABI**. `stdlib/ai/llm.mn` and
+  `stdlib/ai/embedding.mn` have called the explicit
+  `sb_create / sb_append / sb_to_string` builtins since v4.95.0, but
+  those lowered to `__mn_sb_create` (24-byte struct-by-value sret
+  return) that the emitter's auto-declare path mis-typed, producing
+  UB-prone calls. Retargeted lowering to new pointer-based wrappers.
+
+### Added
+
+- **`runtime/native/mapanare_core.c`**: `__mn_sb_new(cap)` (returns
+  pointer) and `__mn_sb_finish(sb)` (consumes + returns MnString +
+  frees struct). Thin wrappers on the v4.95.0 StringBuilder that
+  give the emitter a scalar-pointer ABI.
+- **`mapanare/emit_llvm_text.py`**: explicit `_do_call` handlers for
+  `__mn_sb_new / __mn_sb_append / __mn_sb_finish` with correct
+  per-argument ABIs. Finish results are registered via
+  `_track_string` so the drop-glue pass frees them.
+
+### Benchmark delta
+
+10 runs per config, median of middle 8, `/usr/bin/time -v` for peak
+RSS. Only `string_concat` changes meaningfully.
+
+| Metric                | v4.107.0   | v4.108.0 | Δ         |
+|-----------------------|-----------:|---------:|-----------|
+| string_concat wall    |  94.57 ms  | 1.72 ms  | **55× faster** |
+| string_concat peak RSS| 246,464 KB | 2,256 KB | **109× less memory** |
+
+Cross-language position after v4.108.0:
+
+| Language        | wall (ms) | vs Mapanare |
+|-----------------|----------:|:------------|
+| C (gcc -O2)     |   0.075   | 23× faster  |
+| C (clang -O2)   |   0.054   | 32× faster  |
+| Rust -O         |   1.515   | ~same       |
+| Mapanare O2     |   1.721   | —           |
+| Python 3.12     |   9.573   | **Mapanare 5.6× faster** |
+| Go              |  49.131   | **Mapanare 29× faster**  |
+
+Geometric mean across the 4 correct non-DCE'd workloads (fib,
+enum_match, prime_sieve, string_concat) drops from **9.5× slower
+than C gcc** (v4.107.0) to **6.5× slower** — Mapanare is now
+1.3× slower than Go on average (same as v4.107.0) and **46× faster
+than Python**.
+
+### Other benchmarks
+
+No regression. 5 non-string workloads all fall within run-to-run
+variance of v4.107.0. Golden test suite: 63/64 pass (the one failure,
+`51_match_guards_and_or`, is pre-existing since v4.104.0).
+
+### Known gaps (carried forward)
+
+- Docket **Qs.1** (`List<Int>` indexing returns garbage) from v4.107.0
+  remains open. Mapanare quicksort still produces an incorrect
+  checksum; unchanged by v4.108.0 scope.
+
 ## [4.107.0] - 2026-04-14
 
 **Phase C release 1 — cross-language benchmark surface.** Pure

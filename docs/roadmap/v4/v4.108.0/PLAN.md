@@ -9,7 +9,7 @@
 > pass that auto-detects `s = s + x` patterns in loops and rewrites
 > them to use the builder. Target: faster than Python (< 43ms).
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.107.0
 **Delta review:** No
