@@ -11595,7 +11595,9 @@ fn emit_bitcast(name: String, src_ty: String, val: String, dst_ty: String) -> St
 
 // ===== mir_opt.mn =====
 // mir_opt.mn — MIR optimizer for the Mapanare self-hosted compiler.
-// Three passes: constant folding, constant propagation, dead block elimination.
+// Seven passes: constant folding, constant propagation, dead block elimination,
+// strength reduction, function inlining, LICM, escape analysis.
+// v4.97.0: ported all Arc 11-12 optimization passes from Python bootstrap.
 // Wired into compile() after lower(), before emit().
 
 
@@ -12024,10 +12026,792 @@ fn dead_block_elim_function(f: MIRFunction) -> MIRFunction {
 }
 
 // ---------------------------------------------------------------------------
+// Pass 4: Strength reduction (v4.97.0)
+// x % 2^n → x & (2^n - 1) — replace modulo by power-of-two with bitmask
+// ---------------------------------------------------------------------------
+
+fn is_power_of_two(n: Int) -> Bool {
+    if n <= 0 { return false }
+    // n & (n-1) == 0 means n is a power of 2
+    let check: Int = n - 1
+    // Mapanare doesn't have bitwise AND on Int, so check manually
+    // Powers of 2: 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, ...
+    let mut p: Int = 1
+    for _ in 0..63 {
+        if p == n { return true }
+        p = p * 2
+    }
+    return false
+}
+
+fn power_of_two_mask(n: Int) -> Int {
+    // Returns n - 1 (the bitmask for x % n when n is power of 2)
+    return n - 1
+}
+
+fn try_strength_reduce(inst: Instruction) -> Option<Instruction> {
+    let ik: String = instr_kind(inst)
+    if ik != "binop" { return none }
+    let op: BinOpKind = instr_binop_op(inst)
+    // Only reduce Mod operations
+    match op {
+        Mod => {
+            let rhs: Value = instr_binop_rhs(inst)
+            // RHS must be a constant integer
+            if rhs.ty.kind != TK_INT() { return none }
+            if rhs.name.starts_with("%") { return none }
+            let n: Int = int(rhs.name)
+            if is_power_of_two(n) {
+                let mask: Int = power_of_two_mask(n)
+                let mask_val: Value = new Value { name: toString(mask), ty: rhs.ty }
+                // x % 2^n → x & (2^n - 1)
+                return Some(Instruction::BinOp(instr_dest(inst), BinOpKind::And, instr_binop_lhs(inst), mask_val))
+            }
+            return none
+        },
+        _ => { return none }
+    }
+}
+
+fn strength_reduce_block(bb: BasicBlock) -> BasicBlock {
+    let mut new_instrs: List<Instruction> = []
+    let mut i: Int = 0
+    let mut changed: Bool = false
+    for _ in 0..10000 {
+        if i >= len(bb.instructions) {
+            if changed {
+                return new BasicBlock { label: bb.label, instructions: new_instrs }
+            }
+            return bb
+        }
+        let inst: Instruction = bb.instructions[i]
+        let reduced: Option<Instruction> = try_strength_reduce(inst)
+        match reduced {
+            Some(new_inst) => {
+                new_instrs.push(new_inst)
+                changed = true
+            },
+            _ => { new_instrs.push(inst) }
+        }
+        i = i + 1
+    }
+    return bb
+}
+
+fn strength_reduce_function(f: MIRFunction) -> MIRFunction {
+    let mut new_blocks: List<BasicBlock> = []
+    let mut i: Int = 0
+    let mut changed: Bool = false
+    for _ in 0..5000 {
+        if i >= len(f.blocks) {
+            if changed {
+                return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: new_blocks, decorators: f.decorators, is_public: f.is_public }
+            }
+            return f
+        }
+        let orig: BasicBlock = f.blocks[i]
+        let reduced: BasicBlock = strength_reduce_block(orig)
+        new_blocks.push(reduced)
+        if reduced.label != orig.label || len(reduced.instructions) != len(orig.instructions) {
+            changed = true
+        }
+        i = i + 1
+    }
+    return f
+}
+
+// ---------------------------------------------------------------------------
+// Pass 5: Function inlining (v4.97.0)
+// Inline small, non-recursive, single-block callees into their call sites.
+// Heuristic: body < 20 instructions, not recursive, call_count * body_size < 200.
+// Caps at 5 inlines per function to prevent cascading.
+// ---------------------------------------------------------------------------
+
+struct FnLookupEntry {
+    name: String,
+    func: MIRFunction
+}
+
+fn find_fn_by_name(lookup: List<FnLookupEntry>, name: String) -> Option<MIRFunction> {
+    let mut i: Int = 0
+    for _ in 0..5000 {
+        if i >= len(lookup) { return none }
+        if lookup[i].name == name { return Some(lookup[i].func) }
+        i = i + 1
+    }
+    return none
+}
+
+fn instruction_count(f: MIRFunction) -> Int {
+    let mut count: Int = 0
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { return count }
+        count = count + len(f.blocks[bi].instructions)
+        bi = bi + 1
+    }
+    return count
+}
+
+fn is_recursive(f: MIRFunction) -> Bool {
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { return false }
+        let mut ii: Int = 0
+        for _ in 0..10000 {
+            if ii >= len(f.blocks[bi].instructions) { break }
+            let inst: Instruction = f.blocks[bi].instructions[ii]
+            if instr_kind(inst) == "call" {
+                if instr_call_fn(inst) == f.name { return true }
+            }
+            ii = ii + 1
+        }
+        bi = bi + 1
+    }
+    return false
+}
+
+fn should_inline(callee: MIRFunction, call_count: Int) -> Bool {
+    // Only single-block callees (no branches, no phi, no switch)
+    if len(callee.blocks) != 1 { return false }
+    if is_recursive(callee) { return false }
+    if callee.name == "main" { return false }
+    let body_size: Int = instruction_count(callee)
+    if body_size == 0 { return false }
+    if body_size > 20 { return false }
+    if call_count * body_size > 200 { return false }
+    return true
+}
+
+// Count how many times each function is called within fn
+struct CallCount {
+    name: String,
+    count: Int
+}
+
+fn count_calls(f: MIRFunction, lookup: List<FnLookupEntry>) -> List<CallCount> {
+    let mut counts: List<CallCount> = []
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { break }
+        let mut ii: Int = 0
+        for _ in 0..10000 {
+            if ii >= len(f.blocks[bi].instructions) { break }
+            let inst: Instruction = f.blocks[bi].instructions[ii]
+            if instr_kind(inst) == "call" {
+                let fn_name: String = instr_call_fn(inst)
+                // Check if this function exists in lookup
+                let fn_opt: Option<MIRFunction> = find_fn_by_name(lookup, fn_name)
+                match fn_opt {
+                    Some(_) => {
+                        // Find or create count entry
+                        let mut found: Bool = false
+                        let mut ci: Int = 0
+                        for _ in 0..1000 {
+                            if ci >= len(counts) { break }
+                            if counts[ci].name == fn_name {
+                                counts[ci] = new CallCount { name: fn_name, count: counts[ci].count + 1 }
+                                found = true
+                                break
+                            }
+                            ci = ci + 1
+                        }
+                        if found == false {
+                            counts.push(new CallCount { name: fn_name, count: 1 })
+                        }
+                    },
+                    _ => {}
+                }
+            }
+            ii = ii + 1
+        }
+        bi = bi + 1
+    }
+    return counts
+}
+
+fn get_call_count(counts: List<CallCount>, name: String) -> Int {
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i >= len(counts) { return 0 }
+        if counts[i].name == name { return counts[i].count }
+        i = i + 1
+    }
+    return 0
+}
+
+// Rename a value with an inline prefix
+fn rename_value(v: Value, prefix: String, renames: List<ConstEntry>) -> Value {
+    // Check if this value has been renamed
+    let opt: Option<String> = find_const(renames, v.name)
+    match opt {
+        Some(new_name) => { return new Value { name: new_name, ty: v.ty } },
+        _ => {
+            // If it starts with %, rename with prefix
+            if v.name.starts_with("%") {
+                let new_name: String = "%" + prefix + v.name.substr(1, len(v.name) - 1)
+                return new Value { name: new_name, ty: v.ty }
+            }
+            return v
+        }
+    }
+}
+
+// Clone a single instruction with renamed values
+fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<ConstEntry>, merge_label: String) -> List<Instruction> {
+    let ik: String = instr_kind(inst)
+    let mut result: List<Instruction> = []
+
+    // Return → Copy + Jump to merge
+    if ik == "return" {
+        let ret_val: Option<Value> = instr_return_val(inst)
+        match ret_val {
+            Some(rv) => {
+                let renamed_rv: Value = rename_value(rv, prefix, renames)
+                let ret_dest: Value = new Value { name: "%" + prefix + "retval", ty: renamed_rv.ty }
+                result.push(Instruction::Copy(ret_dest, renamed_rv))
+            },
+            _ => {}
+        }
+        result.push(Instruction::Jump(merge_label))
+        return result
+    }
+
+    // Const
+    if ik == "const" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        result.push(Instruction::Const(new_dest, instr_const_type(inst), instr_const_val(inst)))
+        return result
+    }
+
+    // Copy
+    if ik == "copy" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_src: Value = rename_value(instr_copy_src(inst), prefix, renames)
+        result.push(Instruction::Copy(new_dest, new_src))
+        return result
+    }
+
+    // BinOp
+    if ik == "binop" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_lhs: Value = rename_value(instr_binop_lhs(inst), prefix, renames)
+        let new_rhs: Value = rename_value(instr_binop_rhs(inst), prefix, renames)
+        result.push(Instruction::BinOp(new_dest, instr_binop_op(inst), new_lhs, new_rhs))
+        return result
+    }
+
+    // Call
+    if ik == "call" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let args: List<Value> = instr_call_args(inst)
+        let mut new_args: List<Value> = []
+        let mut ai: Int = 0
+        for _ in 0..100 {
+            if ai >= len(args) { break }
+            new_args.push(rename_value(args[ai], prefix, renames))
+            ai = ai + 1
+        }
+        result.push(Instruction::Call(new_dest, instr_call_fn(inst), new_args))
+        return result
+    }
+
+    // Alloca
+    if ik == "alloca" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        result.push(Instruction::Alloca(new_dest, instr_alloca_type(inst)))
+        return result
+    }
+
+    // Load
+    if ik == "load" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_ptr: Value = rename_value(instr_load_ptr(inst), prefix, renames)
+        result.push(Instruction::Load(new_dest, new_ptr))
+        return result
+    }
+
+    // Store
+    if ik == "store" {
+        let new_ptr: Value = rename_value(instr_store_ptr(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_store_val(inst), prefix, renames)
+        result.push(Instruction::Store(new_ptr, new_val))
+        return result
+    }
+
+    // UnaryOp
+    if ik == "unaryop" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_operand: Value = rename_value(instr_unaryop_operand(inst), prefix, renames)
+        result.push(Instruction::UnaryOp(new_dest, instr_unaryop_op(inst), new_operand))
+        return result
+    }
+
+    // Cast
+    if ik == "cast" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_src: Value = rename_value(instr_cast_src(inst), prefix, renames)
+        result.push(Instruction::Cast(new_dest, new_src, instr_cast_type(inst)))
+        return result
+    }
+
+    // For any other instruction kind, keep as-is (conservative)
+    result.push(inst)
+    return result
+}
+
+fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFunction {
+
+    // Count calls per callee
+    let call_counts: List<CallCount> = count_calls(f, lookup)
+    if len(call_counts) == 0 { return f }
+
+    // Find eligible callees
+    let mut eligible: List<String> = []
+    let mut ci: Int = 0
+    for _ in 0..1000 {
+        if ci >= len(call_counts) { break }
+        let cc: CallCount = call_counts[ci]
+        let callee_opt: Option<MIRFunction> = find_fn_by_name(lookup, cc.name)
+        match callee_opt {
+            Some(callee) => {
+                if should_inline(callee, cc.count) {
+                    eligible.push(cc.name)
+                }
+            },
+            _ => {}
+        }
+        ci = ci + 1
+    }
+    if len(eligible) == 0 { return f }
+
+    // Find first eligible call site and inline it
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { return f }
+        let bb: BasicBlock = f.blocks[bi]
+        let mut ii: Int = 0
+        for _ in 0..10000 {
+            if ii >= len(bb.instructions) { break }
+            let inst: Instruction = bb.instructions[ii]
+            if instr_kind(inst) == "call" {
+                let callee_name: String = instr_call_fn(inst)
+                if is_in_list(callee_name, eligible) {
+                    // Found an eligible call site — inline it
+                    let callee_opt2: Option<MIRFunction> = find_fn_by_name(lookup, callee_name)
+                    match callee_opt2 {
+                        Some(callee) => {
+                            // Use block index + instruction index for unique prefix
+                            let prefix: String = "_inl" + toString(bi) + "_" + toString(ii) + "_"
+                            let merge_label: String = prefix + "ret"
+
+                            // Build rename map: callee params → call arguments
+                            let mut renames: List<ConstEntry> = []
+                            let call_args: List<Value> = instr_call_args(inst)
+                            let mut pi2: Int = 0
+                            for _ in 0..100 {
+                                if pi2 >= len(callee.params) { break }
+                                if pi2 < len(call_args) {
+                                    renames.push(new ConstEntry { name: "%" + callee.params[pi2].name, value: call_args[pi2].name, ty: call_args[pi2].ty })
+                                }
+                                pi2 = pi2 + 1
+                            }
+
+                            // Split: pre-call instructions
+                            let mut pre_insts: List<Instruction> = []
+                            let mut ki: Int = 0
+                            for _ in 0..10000 {
+                                if ki >= ii { break }
+                                pre_insts.push(bb.instructions[ki])
+                                ki = ki + 1
+                            }
+
+                            // Clone callee's single block instructions
+                            let callee_entry: String = prefix + callee.blocks[0].label
+                            pre_insts.push(Instruction::Jump(callee_entry))
+
+                            // Clone callee block
+                            let mut cloned_insts: List<Instruction> = []
+                            let mut cli: Int = 0
+                            for _ in 0..10000 {
+                                if cli >= len(callee.blocks[0].instructions) { break }
+                                let cloned: List<Instruction> = clone_instr_for_inline(callee.blocks[0].instructions[cli], prefix, renames, merge_label)
+                                let mut cj: Int = 0
+                                for _ in 0..10 {
+                                    if cj >= len(cloned) { break }
+                                    cloned_insts.push(cloned[cj])
+                                    cj = cj + 1
+                                }
+                                cli = cli + 1
+                            }
+
+                            // Post-call instructions
+                            let mut post_insts: List<Instruction> = []
+                            let call_dest: Value = instr_dest(inst)
+                            if call_dest.name.starts_with("%") {
+                                let ret_val: Value = new Value { name: "%" + prefix + "retval", ty: call_dest.ty }
+                                post_insts.push(Instruction::Copy(call_dest, ret_val))
+                            }
+                            let mut pi3: Int = ii + 1
+                            for _ in 0..10000 {
+                                if pi3 >= len(bb.instructions) { break }
+                                post_insts.push(bb.instructions[pi3])
+                                pi3 = pi3 + 1
+                            }
+
+                            // Build new block list
+                            let mut new_blocks: List<BasicBlock> = []
+                            // Current block with pre-call instrs
+                            new_blocks.push(new BasicBlock { label: bb.label, instructions: pre_insts })
+                            // Cloned callee block
+                            new_blocks.push(new BasicBlock { label: callee_entry, instructions: cloned_insts })
+                            // Merge block with post-call instrs
+                            new_blocks.push(new BasicBlock { label: merge_label, instructions: post_insts })
+                            // Remaining blocks
+                            let mut ri: Int = bi + 1
+                            for _ in 0..5000 {
+                                if ri >= len(f.blocks) { break }
+                                new_blocks.push(f.blocks[ri])
+                                ri = ri + 1
+                            }
+                            // Prepend blocks before current
+                            let mut final_blocks: List<BasicBlock> = []
+                            let mut fi: Int = 0
+                            for _ in 0..5000 {
+                                if fi >= bi { break }
+                                final_blocks.push(f.blocks[fi])
+                                fi = fi + 1
+                            }
+                            let mut ni: Int = 0
+                            for _ in 0..5000 {
+                                if ni >= len(new_blocks) { break }
+                                final_blocks.push(new_blocks[ni])
+                                ni = ni + 1
+                            }
+
+                            return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: final_blocks, decorators: f.decorators, is_public: f.is_public }
+                        },
+                        _ => {}
+                    }
+                }
+            }
+            ii = ii + 1
+        }
+        bi = bi + 1
+    }
+    return f
+}
+
+// ---------------------------------------------------------------------------
+// Pass 6: LICM — Loop-invariant code motion (v4.97.0)
+// Detect natural loops via back-edge detection, hoist invariant instructions
+// to the loop preheader.
+// ---------------------------------------------------------------------------
+
+// Compute successor labels for a block
+fn block_successors(bb: BasicBlock) -> List<String> {
+    if len(bb.instructions) == 0 {
+        let empty: List<String> = []
+        return empty
+    }
+    return collect_targets(bb.instructions[len(bb.instructions) - 1])
+}
+
+// Check if instruction is side-effect-free (safe to hoist)
+fn is_pure_instruction(inst: Instruction) -> Bool {
+    let ik: String = instr_kind(inst)
+    // Pure: const, copy, binop, unaryop, cast
+    if ik == "const" { return true }
+    if ik == "copy" { return true }
+    if ik == "binop" { return true }
+    if ik == "unaryop" { return true }
+    if ik == "cast" { return true }
+    // Not pure: call, store, load (may have side effects), control flow
+    return false
+}
+
+// Check if all uses of an instruction are defined outside the loop
+fn is_loop_invariant(inst: Instruction, loop_body: List<String>, loop_defs: List<String>) -> Bool {
+    if is_pure_instruction(inst) == false { return false }
+    let ik: String = instr_kind(inst)
+    // Check operands
+    if ik == "binop" {
+        let lhs: Value = instr_binop_lhs(inst)
+        let rhs: Value = instr_binop_rhs(inst)
+        if lhs.name.starts_with("%") && is_in_list(lhs.name, loop_defs) { return false }
+        if rhs.name.starts_with("%") && is_in_list(rhs.name, loop_defs) { return false }
+        return true
+    }
+    if ik == "copy" {
+        let src: Value = instr_copy_src(inst)
+        if src.name.starts_with("%") && is_in_list(src.name, loop_defs) { return false }
+        return true
+    }
+    if ik == "unaryop" {
+        let operand: Value = instr_unaryop_operand(inst)
+        if operand.name.starts_with("%") && is_in_list(operand.name, loop_defs) { return false }
+        return true
+    }
+    if ik == "cast" {
+        let src: Value = instr_cast_src(inst)
+        if src.name.starts_with("%") && is_in_list(src.name, loop_defs) { return false }
+        return true
+    }
+    if ik == "const" { return true }
+    return false
+}
+
+// Collect all definitions (dest names) in loop body blocks
+fn collect_loop_defs(f: MIRFunction, loop_body: List<String>) -> List<String> {
+    let mut defs: List<String> = []
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { break }
+        if is_in_list(f.blocks[bi].label, loop_body) {
+            let mut ii: Int = 0
+            for _ in 0..10000 {
+                if ii >= len(f.blocks[bi].instructions) { break }
+                let inst: Instruction = f.blocks[bi].instructions[ii]
+                let dest: Value = instr_dest(inst)
+                if len(dest.name) > 0 && dest.name.starts_with("%") {
+                    if is_in_list(dest.name, defs) == false {
+                        defs.push(dest.name)
+                    }
+                }
+                ii = ii + 1
+            }
+        }
+        bi = bi + 1
+    }
+    return defs
+}
+
+// Find the index of a block label that appears before position `before_idx`
+fn find_earlier_block(blocks: List<BasicBlock>, label: String, before_idx: Int) -> Int {
+    let mut i: Int = 0
+    for _ in 0..5000 {
+        if i >= before_idx { return -1 }
+        if blocks[i].label == label { return i }
+        i = i + 1
+    }
+    return -1
+}
+
+// Find a loop-invariant instruction in the loop body (excluding header)
+// Returns (block_index, instruction_index) encoded as block_index * 100000 + inst_index
+// Returns -1 if none found
+fn find_invariant_in_loop(f: MIRFunction, header_idx: Int, back_idx: Int, loop_body: List<String>, loop_defs: List<String>) -> Int {
+    let mut lbi: Int = header_idx + 1
+    for _ in 0..5000 {
+        if lbi > back_idx { return -1 }
+        let mut lii: Int = 0
+        for _ in 0..10000 {
+            if lii >= len(f.blocks[lbi].instructions) { break }
+            let linst: Instruction = f.blocks[lbi].instructions[lii]
+            if is_loop_invariant(linst, loop_body, loop_defs) {
+                let dest: Value = instr_dest(linst)
+                if len(dest.name) > 0 {
+                    return lbi * 100000 + lii
+                }
+            }
+            lii = lii + 1
+        }
+        lbi = lbi + 1
+    }
+    return -1
+}
+
+// Hoist one instruction from src_block[src_idx] to header[before terminator]
+fn hoist_instruction(f: MIRFunction, header_idx: Int, src_block_idx: Int, src_inst_idx: Int) -> MIRFunction {
+    let hoisted: Instruction = f.blocks[src_block_idx].instructions[src_inst_idx]
+    // Remove from source block
+    let mut src_instrs: List<Instruction> = []
+    let mut ri: Int = 0
+    for _ in 0..10000 {
+        if ri >= len(f.blocks[src_block_idx].instructions) { break }
+        if ri != src_inst_idx {
+            src_instrs.push(f.blocks[src_block_idx].instructions[ri])
+        }
+        ri = ri + 1
+    }
+    // Insert into header before terminator
+    let header_bb: BasicBlock = f.blocks[header_idx]
+    let mut hdr_instrs: List<Instruction> = []
+    let insert_pos: Int = len(header_bb.instructions) - 1
+    let mut hi2: Int = 0
+    for _ in 0..10000 {
+        if hi2 >= len(header_bb.instructions) { break }
+        if hi2 == insert_pos {
+            hdr_instrs.push(hoisted)
+        }
+        hdr_instrs.push(header_bb.instructions[hi2])
+        hi2 = hi2 + 1
+    }
+    // Rebuild blocks
+    let mut new_blocks: List<BasicBlock> = []
+    let mut nbi: Int = 0
+    for _ in 0..5000 {
+        if nbi >= len(f.blocks) { break }
+        if nbi == header_idx {
+            new_blocks.push(new BasicBlock { label: header_bb.label, instructions: hdr_instrs })
+        } else if nbi == src_block_idx {
+            new_blocks.push(new BasicBlock { label: f.blocks[src_block_idx].label, instructions: src_instrs })
+        } else {
+            new_blocks.push(f.blocks[nbi])
+        }
+        nbi = nbi + 1
+    }
+    return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: new_blocks, decorators: f.decorators, is_public: f.is_public }
+}
+
+// Simple LICM: find back edges, identify loop-invariant instructions, hoist to header
+fn licm_function(f: MIRFunction) -> MIRFunction {
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { return f }
+        let bb: BasicBlock = f.blocks[bi]
+        let succs: List<String> = block_successors(bb)
+        let mut s_idx: Int = 0
+        for _ in 0..10 {
+            if s_idx >= len(succs) { break }
+            let header_idx: Int = find_earlier_block(f.blocks, succs[s_idx], bi)
+            if header_idx >= 0 {
+                // Found a back edge: bi → header_idx
+                let mut loop_body: List<String> = []
+                let mut li: Int = header_idx
+                for _ in 0..5000 {
+                    if li > bi { break }
+                    loop_body.push(f.blocks[li].label)
+                    li = li + 1
+                }
+                let loop_defs: List<String> = collect_loop_defs(f, loop_body)
+                let encoded: Int = find_invariant_in_loop(f, header_idx, bi, loop_body, loop_defs)
+                if encoded >= 0 {
+                    let src_block: Int = encoded / 100000
+                    let src_inst: Int = encoded - src_block * 100000
+                    return hoist_instruction(f, header_idx, src_block, src_inst)
+                }
+            }
+            s_idx = s_idx + 1
+        }
+        bi = bi + 1
+    }
+    return f
+}
+
+// ---------------------------------------------------------------------------
+// Pass 7: Escape analysis — heap-to-stack promotion (v4.97.0)
+// Track allocations (StructInit, EnumInit, ListInit, etc.), determine if
+// the allocated value escapes the function (returned, stored in struct,
+// passed to unknown call). If non-escaping, mark for stack allocation.
+// ---------------------------------------------------------------------------
+
+fn is_alloc_instruction(inst: Instruction) -> Bool {
+    let ik: String = instr_kind(inst)
+    if ik == "struct_init" { return true }
+    if ik == "enum_init" { return true }
+    if ik == "list_init" { return true }
+    if ik == "map_init" { return true }
+    if ik == "wrap_some" { return true }
+    if ik == "wrap_none" { return true }
+    if ik == "wrap_ok" { return true }
+    if ik == "wrap_err" { return true }
+    if ik == "interp_concat" { return true }
+    return false
+}
+
+// Check if a value name is used in ways that cause it to escape
+fn check_escape(f: MIRFunction, alloc_name: String) -> Bool {
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { break }
+        let mut ii: Int = 0
+        for _ in 0..10000 {
+            if ii >= len(f.blocks[bi].instructions) { break }
+            let inst: Instruction = f.blocks[bi].instructions[ii]
+            let ik: String = instr_kind(inst)
+            // Returned — escapes
+            if ik == "return" {
+                let rv: Option<Value> = instr_return_val(inst)
+                match rv {
+                    Some(val) => {
+                        if val.name == alloc_name { return true }
+                    },
+                    _ => {}
+                }
+            }
+            // Stored in a struct field — escapes
+            if ik == "field_set" {
+                if instr_fieldset_val(inst).name == alloc_name { return true }
+            }
+            // Stored in a container — escapes
+            if ik == "index_set" {
+                if instr_indexset_val(inst).name == alloc_name { return true }
+            }
+            // Passed to a call (conservative: any call = escape)
+            if ik == "call" {
+                let args: List<Value> = instr_call_args(inst)
+                let mut ai: Int = 0
+                for _ in 0..100 {
+                    if ai >= len(args) { break }
+                    if args[ai].name == alloc_name { return true }
+                    ai = ai + 1
+                }
+            }
+            // Agent send — escapes
+            if ik == "agent_send" {
+                if instr_agentsend_val(inst).name == alloc_name { return true }
+            }
+            ii = ii + 1
+        }
+        bi = bi + 1
+    }
+    return false
+}
+
+fn escape_analysis_function(f: MIRFunction) -> MIRFunction {
+    // Find all allocation sites
+    let mut alloc_names: List<String> = []
+    let mut bi: Int = 0
+    for _ in 0..5000 {
+        if bi >= len(f.blocks) { break }
+        let mut ii: Int = 0
+        for _ in 0..10000 {
+            if ii >= len(f.blocks[bi].instructions) { break }
+            let inst: Instruction = f.blocks[bi].instructions[ii]
+            if is_alloc_instruction(inst) {
+                let dest: Value = instr_dest(inst)
+                if dest.name.starts_with("%") {
+                    alloc_names.push(dest.name)
+                }
+            }
+            ii = ii + 1
+        }
+        bi = bi + 1
+    }
+    if len(alloc_names) == 0 { return f }
+
+    // For each allocation, check if it escapes
+    // Non-escaping allocations could be promoted to stack (alloca)
+    // For now, we mark them by not changing anything — the LLVM optimizer
+    // will handle the actual promotion with the TBAA and attribute hints
+    // we emit. This pass serves as documentation and future hook.
+    return f
+}
+
+// ---------------------------------------------------------------------------
 // Public API: optimize a MIR module
 // ---------------------------------------------------------------------------
 
 pub fn optimize_mir(module: MIRModule) -> MIRModule {
+    // Build function lookup table for inlining
+    let mut lookup: List<FnLookupEntry> = []
+    let mut li: Int = 0
+    for _ in 0..5000 {
+        if li >= len(module.functions) { break }
+        lookup.push(new FnLookupEntry { name: module.functions[li].name, func: module.functions[li] })
+        li = li + 1
+    }
     let mut new_fns: List<MIRFunction> = []
     let mut i: Int = 0
     for _ in 0..5000 {
@@ -12035,10 +12819,39 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
             return new MIRModule { name: module.name, functions: new_fns, structs: module.structs, enums: module.enums, extern_fns: module.extern_fns, agents: module.agents, pipes: module.pipes, imports: module.imports, trait_names: module.trait_names, consts: module.consts }
         }
         let f: MIRFunction = module.functions[i]
+        // Pass 1: constant folding
         let f2: MIRFunction = constant_fold_function(f)
+        // Pass 2: constant propagation
         let f3: MIRFunction = const_prop_function(f2)
+        // Pass 3: dead block elimination
         let f4: MIRFunction = dead_block_elim_function(f3)
-        new_fns.push(f4)
+        // Pass 4: strength reduction (v4.97.0) — disabled v4.111.0
+        // Corroborates with inline_small_functions in producing MIR that the
+        // verifier rejects ("block has no instructions", "block does not end
+        // with a terminator") on golden tests with user-defined functions
+        // (03_function onward, 13 tests). Zero-ROI per v4.109.0.
+        let f5: MIRFunction = f4
+        // Pass 5: function inlining (v4.97.0) — disabled v4.111.0
+        // Produces invalid MIR (blocks with corrupted instructions list) that
+        // crashes lower__verify_block on golden tests containing function
+        // calls. Mapanare's inliner duplicates v4.109.0's finding: LLVM's
+        // own inliner subsumes this work at -O2.
+        let f6: MIRFunction = f5
+        // Pass 6: LICM (v4.97.0) — disabled v4.111.0
+        // block_successors crashes on non-empty instruction lists in some
+        // compile paths (known valgrind hot-frame since v4.105.0, 14× crash
+        // site). v4.109.0 optimizer ROI analysis confirmed mapanare-LICM has
+        // zero instruction-level effect at -O2 — LLVM's licm pass runs later
+        // and does the same work. Skipping the self-hosted pass costs nothing.
+        let f7: MIRFunction = f6
+        // Pass 7: escape analysis (v4.97.0) — disabled v4.111.0
+        // escape_analysis_function crashes at +0x3f3 offset on tests with
+        // user-defined functions returning values (03_function, 11_closure,
+        // etc.). The comment in the source says "future hook" — the pass is
+        // scaffold, not production. Also noted as zero-ROI in v4.109.0 analysis
+        // (TBAA metadata is dead code, same program). Disable to unblock goldens.
+        let f8: MIRFunction = f7
+        new_fns.push(f8)
         i = i + 1
     }
     return module
@@ -13261,10 +14074,16 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
     let dn: String = dest.name
     let obj_ty: String = resolve_type(st, obj.ty)
 
-    // String .len → extractvalue index 1
+    // String .len → extractvalue index 1, then mask off the is_heap
+    // flag (v4.100.0 packs is_heap into bit 63 of the second eightbyte;
+    // the LLVM struct type is still { ptr, i64 } so LLVM hands back the
+    // raw word). The C runtime sees the bitfield directly and doesn't
+    // need the mask; Mapanare-emitted IR has to apply it.
     if obj.ty.kind == TK_STRING() {
         if field_name == "len" {
-            s = emit_line(s, emit_extractvalue(dn, llvm_string(), on, "1"))
+            let raw: String = dn + ".raw"
+            s = emit_line(s, emit_extractvalue(raw, llvm_string(), on, "1"))
+            s = emit_line(s, "  " + dn + " = and i64 " + raw + ", 9223372036854775807")
             return s
         }
         // String methods (contains, starts_with, etc.) — not struct fields.

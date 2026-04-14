@@ -1230,14 +1230,32 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
         let f3: MIRFunction = const_prop_function(f2)
         // Pass 3: dead block elimination
         let f4: MIRFunction = dead_block_elim_function(f3)
-        // Pass 4: strength reduction (v4.97.0)
-        let f5: MIRFunction = strength_reduce_function(f4)
-        // Pass 5: function inlining (v4.97.0)
-        let f6: MIRFunction = inline_small_functions(f5, lookup)
-        // Pass 6: LICM (v4.97.0)
-        let f7: MIRFunction = licm_function(f6)
-        // Pass 7: escape analysis (v4.97.0) — future hook
-        let f8: MIRFunction = escape_analysis_function(f7)
+        // Pass 4: strength reduction (v4.97.0) — disabled v4.111.0
+        // Corroborates with inline_small_functions in producing MIR that the
+        // verifier rejects ("block has no instructions", "block does not end
+        // with a terminator") on golden tests with user-defined functions
+        // (03_function onward, 13 tests). Zero-ROI per v4.109.0.
+        let f5: MIRFunction = f4
+        // Pass 5: function inlining (v4.97.0) — disabled v4.111.0
+        // Produces invalid MIR (blocks with corrupted instructions list) that
+        // crashes lower__verify_block on golden tests containing function
+        // calls. Mapanare's inliner duplicates v4.109.0's finding: LLVM's
+        // own inliner subsumes this work at -O2.
+        let f6: MIRFunction = f5
+        // Pass 6: LICM (v4.97.0) — disabled v4.111.0
+        // block_successors crashes on non-empty instruction lists in some
+        // compile paths (known valgrind hot-frame since v4.105.0, 14× crash
+        // site). v4.109.0 optimizer ROI analysis confirmed mapanare-LICM has
+        // zero instruction-level effect at -O2 — LLVM's licm pass runs later
+        // and does the same work. Skipping the self-hosted pass costs nothing.
+        let f7: MIRFunction = f6
+        // Pass 7: escape analysis (v4.97.0) — disabled v4.111.0
+        // escape_analysis_function crashes at +0x3f3 offset on tests with
+        // user-defined functions returning values (03_function, 11_closure,
+        // etc.). The comment in the source says "future hook" — the pass is
+        // scaffold, not production. Also noted as zero-ROI in v4.109.0 analysis
+        // (TBAA metadata is dead code, same program). Disable to unblock goldens.
+        let f8: MIRFunction = f7
         new_fns.push(f8)
         i = i + 1
     }
