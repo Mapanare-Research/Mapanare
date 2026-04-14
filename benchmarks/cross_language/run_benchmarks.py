@@ -1,17 +1,36 @@
-"""Mapanare vs Python vs Go vs Rust -- Benchmark Runner.
+"""v4.107.0 Cross-language benchmark suite.
 
-Measures: wall time, peak memory (RSS), CPU time.
-Runs each benchmark multiple times for stability.
-Process isolation per run.
+Compares Mapanare against 5 other languages across 6 workloads:
+
+  Languages (6)           Workloads (6)
+  --------------          --------------
+  C (gcc -O2)             fib_recursive
+  C (clang -O2)           quicksort
+  Rust -O                 struct_alloc
+  Go (go build)           enum_match
+  Mapanare (mnc opt -O2)  prime_sieve
+  Python 3.12             string_concat
+
+Each configuration is run `--runs N` times; the highest and lowest are
+dropped and the median of the middle runs is reported (10 runs -> median
+of middle 8 by default).
+
+Programs that emit a `__BENCH_METRICS__` block (Go, C, Python-wrapped)
+report internal wall time (excludes subprocess spawn). Mapanare and
+Rust binaries are timed externally via `time.perf_counter()` wrapped
+around `subprocess.run()`, which includes ~1-3 ms of spawn overhead.
+This is documented in the methodology section of FULL_COMPARISON.md.
 
 Usage:
-    python -m benchmarks.cross_language.run_benchmarks          # run all
-    python -m benchmarks.cross_language.run_benchmarks --only 01 # run only fibonacci
-    python -m benchmarks.cross_language.run_benchmarks --runs 5  # 5 iterations per benchmark
+    python benchmarks/cross_language/run_benchmarks.py
+    python benchmarks/cross_language/run_benchmarks.py --runs 10
+    python benchmarks/cross_language/run_benchmarks.py --only fib_recursive
+    python benchmarks/cross_language/run_benchmarks.py --only fib --runs 3
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -19,105 +38,191 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
-_VS_DIR = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent.parent
+BENCH_DIR = Path(__file__).resolve().parent
+RUNTIME_LIB = ROOT / "runtime" / "native" / "libmapanare_rt.a"
+RESULTS_FILE = BENCH_DIR / "v4.107.0-results.json"
 
-sys.path.insert(0, str(_ROOT))
 
+# ---------------------------------------------------------------------------
+# Benchmark registry
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BenchSpec:
+    """Where each language's source for this workload lives + expected output."""
+    name: str
+    expected: str  # Prefix match against stdout first line.
+    mn_path: Path
+    py_path: Path
+    rs_path: Path
+    go_path: Path
+    c_path: Path
+
+
+BENCHMARKS: list[BenchSpec] = [
+    BenchSpec(
+        name="fib_recursive",
+        expected="fib(35) = 9227465",
+        mn_path=ROOT / "benchmarks" / "optimizer" / "fib_recursive.mn",
+        py_path=ROOT / "benchmarks" / "optimizer" / "fib_recursive.py",
+        rs_path=ROOT / "benchmarks" / "optimizer" / "fib_recursive.rs",
+        go_path=ROOT / "benchmarks" / "cross_language" / "go" / "fib_recursive.go",
+        c_path=ROOT / "benchmarks" / "cross_language" / "c" / "fib_recursive.c",
+    ),
+    BenchSpec(
+        name="quicksort",
+        expected="checksum = 485",
+        mn_path=ROOT / "benchmarks" / "optimizer" / "quicksort.mn",
+        py_path=ROOT / "benchmarks" / "optimizer" / "quicksort.py",
+        rs_path=ROOT / "benchmarks" / "optimizer" / "quicksort.rs",
+        go_path=ROOT / "benchmarks" / "cross_language" / "go" / "quicksort.go",
+        c_path=ROOT / "benchmarks" / "cross_language" / "c" / "quicksort.c",
+    ),
+    BenchSpec(
+        name="struct_alloc",
+        expected="checksum = 29999700000",
+        mn_path=ROOT / "benchmarks" / "system" / "struct_alloc.mn",
+        py_path=ROOT / "benchmarks" / "system" / "struct_alloc.py",
+        rs_path=ROOT / "benchmarks" / "system" / "struct_alloc.rs",
+        go_path=ROOT / "benchmarks" / "cross_language" / "go" / "struct_alloc.go",
+        c_path=ROOT / "benchmarks" / "cross_language" / "c" / "struct_alloc.c",
+    ),
+    BenchSpec(
+        name="enum_match",
+        expected="checksum = 52818168",
+        mn_path=ROOT / "benchmarks" / "system" / "enum_match.mn",
+        py_path=ROOT / "benchmarks" / "system" / "enum_match.py",
+        rs_path=ROOT / "benchmarks" / "system" / "enum_match.rs",
+        go_path=ROOT / "benchmarks" / "cross_language" / "go" / "enum_match.go",
+        c_path=ROOT / "benchmarks" / "cross_language" / "c" / "enum_match.c",
+    ),
+    BenchSpec(
+        name="prime_sieve",
+        expected="primes = 9592",
+        # list_ops.mn is the Mapanare prime sieve; file is named list_ops
+        # for historical reasons but implements trial-division prime counting.
+        mn_path=ROOT / "benchmarks" / "system" / "list_ops.mn",
+        py_path=ROOT / "benchmarks" / "system" / "list_ops.py",
+        rs_path=ROOT / "benchmarks" / "system" / "list_ops.rs",
+        go_path=ROOT / "benchmarks" / "cross_language" / "go" / "prime_sieve.go",
+        c_path=ROOT / "benchmarks" / "cross_language" / "c" / "prime_sieve.c",
+    ),
+    BenchSpec(
+        name="string_concat",
+        expected="len = 50000",
+        mn_path=ROOT / "benchmarks" / "optimizer" / "string_concat.mn",
+        py_path=ROOT / "benchmarks" / "optimizer" / "string_concat.py",
+        rs_path=ROOT / "benchmarks" / "optimizer" / "string_concat.rs",
+        go_path=ROOT / "benchmarks" / "cross_language" / "go" / "string_concat.go",
+        c_path=ROOT / "benchmarks" / "cross_language" / "c" / "string_concat.c",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Data containers
+# ---------------------------------------------------------------------------
 
 @dataclass
 class SingleRun:
-    wall_time_s: float
-    cpu_time_s: float
-    peak_memory_kb: float
+    wall_time_s: float = -1.0
+    cpu_time_s: float = -1.0
+    peak_memory_kb: float = 0.0
     output: str = ""
 
 
 @dataclass
-class BenchResult:
+class LangResult:
     benchmark: str
     language: str
-    lines_of_code: int
+    lines_of_code: int = 0
+    binary_size_bytes: int = 0
     runs: list[SingleRun] = field(default_factory=list)
-    wall_median: float = 0.0
-    wall_min: float = 0.0
-    cpu_median: float = 0.0
+    wall_median_ms: float = 0.0
+    wall_min_ms: float = 0.0
+    cpu_median_ms: float = 0.0
     mem_peak_kb: float = 0.0
+    correct: bool = False
     error: str = ""
 
-    def aggregate(self) -> None:
+    def aggregate(self, expected: str) -> None:
         valid = [r for r in self.runs if r.wall_time_s >= 0]
         if not valid:
             return
-        self.wall_median = statistics.median(r.wall_time_s for r in valid)
-        self.wall_min = min(r.wall_time_s for r in valid)
-        self.cpu_median = statistics.median(r.cpu_time_s for r in valid)
+        # Drop highest and lowest if we have at least 4 runs; otherwise keep all.
+        walls = sorted(r.wall_time_s for r in valid)
+        if len(walls) >= 4:
+            walls = walls[1:-1]
+        self.wall_median_ms = statistics.median(walls) * 1000.0
+        self.wall_min_ms = min(walls) * 1000.0
+        self.cpu_median_ms = statistics.median(r.cpu_time_s for r in valid) * 1000.0
         self.mem_peak_kb = max(r.peak_memory_kb for r in valid)
+        # Correctness: all runs must have produced the expected output.
+        self.correct = all(
+            r.output.startswith(expected) or expected in r.output for r in valid
+        )
 
 
-@dataclass
-class BenchComparison:
-    benchmark: str
-    results: list[BenchResult] = field(default_factory=list)
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _find_tool(name: str) -> str | None:
+    """Find a tool binary, trying plain name then -18, -17 suffixes."""
+    for candidate in [name, f"{name}-18", f"{name}-17"]:
+        p = shutil.which(candidate)
+        if p:
+            return p
+    # Special cases for per-user installs
+    if name == "go" and not shutil.which("go"):
+        home_go = Path.home() / "go" / "bin" / "go"
+        if home_go.exists():
+            return str(home_go)
+    return None
 
 
 def _count_lines(path: Path) -> int:
-    """Count non-empty, non-comment lines, excluding benchmark instrumentation."""
+    """Count non-empty, non-comment lines, excluding instrumentation code."""
+    if not path.exists():
+        return 0
+    SKIP_KWS = [
+        "__BENCH_METRICS__",
+        "wall_time_s=",
+        "peak_memory_kb=",
+        "cpu_time_s=",
+        "runtime.GC",
+        "runtime.ReadMemStats",
+        "getrusage",
+        "clock_gettime",
+        "syscall.Getrusage",
+        "tv_to_sec",
+        "ts_to_sec",
+        "timevalSub",
+        "RUSAGE_SELF",
+        "CLOCK_MONOTONIC",
+        "sys/resource.h",
+        "sys/time.h",
+        "struct rusage",
+        "struct timespec",
+        "tracemalloc",
+        "perf_counter",
+    ]
     count = 0
-    skip_block = False
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        # Skip Rust tracking allocator boilerplate
-        if "struct TrackingAlloc" in stripped or "static ALLOCATED" in stripped:
-            skip_block = True
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line:
             continue
-        if skip_block:
-            if stripped.startswith("#[global_allocator]") or stripped.startswith("static A:"):
-                continue
-            if stripped == "}" and not any(
-                kw in stripped for kw in ["fn main", "fn fib", "fn mat"]
-            ):
-                skip_block = False
-                continue
+        if line.startswith("//") or line.startswith("#") or line.startswith("/*") or line.startswith("*"):
             continue
-        # Skip Go/Rust memory stats boilerplate
-        if any(
-            kw in stripped
-            for kw in [
-                "runtime.ReadMemStats",
-                "runtime.MemStats",
-                "runtime.GC",
-                "memBefore",
-                "memAfter",
-                "__BENCH_METRICS__",
-                "wall_time_s=",
-                "peak_memory_kb=",
-                "cpu_time_s=",
-                "PEAK.store",
-                "PEAK.load",
-                "ALLOCATED.store",
-            ]
-        ):
+        if any(kw in line for kw in SKIP_KWS):
             continue
-        # Skip benchmark metric print lines
-        if "Println" in stripped and "METRICS" in stripped:
-            continue
-        if "Printf" in stripped and ("wall_time_s" in stripped or "peak_memory_kb" in stripped):
-            continue
-        if "println!" in stripped and (
-            "METRICS" in stripped or "wall_time_s" in stripped or "peak_memory_kb" in stripped
-        ):
-            continue
-        if stripped and not stripped.startswith("//") and not stripped.startswith("#"):
-            count += 1
+        count += 1
     return count
-
-
-def _has_tool(name: str) -> bool:
-    return shutil.which(name) is not None
 
 
 def _parse_metrics(output: str) -> dict[str, float]:
@@ -137,491 +242,426 @@ def _parse_metrics(output: str) -> dict[str, float]:
     return metrics
 
 
-def _make_measured_script(bench_code: str) -> str:
-    """Wrap benchmark code with measurement instrumentation."""
-    return (
-        "import time, tracemalloc, sys\n"
-        "tracemalloc.start()\n"
-        "_cpu0 = time.process_time()\n"
-        "_wall0 = time.perf_counter()\n"
-        "\n" + bench_code + "\n\n"
-        "_wall1 = time.perf_counter() - _wall0\n"
-        "_cpu1 = time.process_time() - _cpu0\n"
-        "_mem = tracemalloc.get_traced_memory()[1]\n"
-        "tracemalloc.stop()\n"
-        "print('__BENCH_METRICS__')\n"
-        "print('wall_time_s=' + str(round(_wall1, 6)))\n"
-        "print('cpu_time_s=' + str(round(_cpu1, 6)))\n"
-        "print('peak_memory_kb=' + str(round(_mem / 1024, 1)))\n"
+def _strip_metrics(output: str) -> str:
+    """Remove __BENCH_METRICS__ block from output, leaving only program stdout."""
+    lines: list[str] = []
+    for line in output.splitlines():
+        s = line.strip()
+        if s == "__BENCH_METRICS__":
+            break
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _run_with_metrics(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> SingleRun:
+    """Run a binary that emits __BENCH_METRICS__, parse internal timing."""
+    try:
+        t0 = time.perf_counter()
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd)
+        t1 = time.perf_counter()
+    except subprocess.TimeoutExpired:
+        return SingleRun(output="TIMEOUT")
+
+    if r.returncode != 0:
+        return SingleRun(output=f"ERROR rc={r.returncode}: {r.stderr[:200]}")
+
+    metrics = _parse_metrics(r.stdout)
+    clean = _strip_metrics(r.stdout)
+    wall = metrics.get("wall_time_s", t1 - t0)
+    return SingleRun(
+        wall_time_s=wall,
+        cpu_time_s=metrics.get("cpu_time_s", wall),
+        peak_memory_kb=metrics.get("peak_memory_kb", 0.0),
+        output=clean,
     )
 
 
-def _run_script(script: str, cwd: str = str(_ROOT)) -> SingleRun:
-    """Write script to temp file, execute in isolated process, parse metrics."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False, encoding="utf-8", dir=cwd
-    ) as tmp:
-        tmp.write(script)
-        tmp_path = tmp.name
+_TIME_BIN = "/usr/bin/time"
 
+
+def _parse_gnu_time(stderr: str) -> tuple[float, float]:
+    """Parse /usr/bin/time -v output; return (peak_kb, cpu_seconds)."""
+    peak_kb = 0.0
+    user_s = 0.0
+    sys_s = 0.0
+    for raw in stderr.splitlines():
+        line = raw.strip()
+        if line.startswith("Maximum resident set size"):
+            peak_kb = float(line.split(":")[-1].strip())
+        elif line.startswith("User time"):
+            user_s = float(line.split(":")[-1].strip())
+        elif line.startswith("System time"):
+            sys_s = float(line.split(":")[-1].strip())
+    return peak_kb, user_s + sys_s
+
+
+def _run_external(cmd: list[str], timeout: int = 120) -> SingleRun:
+    """Run a binary that doesn't emit metrics; measure via /usr/bin/time -v.
+
+    Wall time uses perf_counter (includes ~1-3 ms /usr/bin/time overhead plus
+    subprocess spawn). Peak memory and CPU time come from GNU time's
+    structured output, which gives accurate per-process rusage.
+    """
+    use_gnu_time = Path(_TIME_BIN).is_file()
+    wrapped = [_TIME_BIN, "-v", "--"] + cmd if use_gnu_time else cmd
     try:
-        result = subprocess.run(
-            [sys.executable, tmp_path],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            cwd=cwd,
-        )
-        if result.returncode != 0:
-            return SingleRun(
-                wall_time_s=-1,
-                cpu_time_s=-1,
-                peak_memory_kb=0,
-                output=f"ERROR: {result.stderr[:500]}",
-            )
-        metrics = _parse_metrics(result.stdout)
-        clean = "\n".join(
-            l
-            for l in result.stdout.splitlines()
-            if l.strip() != "__BENCH_METRICS__" and "=" not in l
-        ).strip()
-        return SingleRun(
-            wall_time_s=metrics.get("wall_time_s", -1),
-            cpu_time_s=metrics.get("cpu_time_s", -1),
-            peak_memory_kb=metrics.get("peak_memory_kb", 0),
-            output=clean,
-        )
+        t0 = time.perf_counter()
+        r = subprocess.run(wrapped, capture_output=True, text=True, timeout=timeout)
+        t1 = time.perf_counter()
     except subprocess.TimeoutExpired:
-        return SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT")
-    finally:
-        os.unlink(tmp_path)
+        return SingleRun(output="TIMEOUT")
+
+    if r.returncode != 0:
+        return SingleRun(output=f"ERROR rc={r.returncode}: {r.stderr[:200]}")
+
+    if use_gnu_time:
+        peak_kb, cpu = _parse_gnu_time(r.stderr)
+    else:
+        peak_kb, cpu = 0.0, t1 - t0
+    return SingleRun(
+        wall_time_s=t1 - t0,
+        cpu_time_s=cpu,
+        peak_memory_kb=peak_kb,
+        output=r.stdout.strip(),
+    )
 
 
 # ---------------------------------------------------------------------------
 # Language runners
 # ---------------------------------------------------------------------------
 
-
-def run_mapanare(mn_file: Path, n_runs: int) -> BenchResult:
-    """Compile .mn to Python, wrap with measurement, run isolated."""
-    from mapanare.cli import _compile_source
-
-    source = mn_file.read_text(encoding="utf-8")
-    compiled = _compile_source(source, str(mn_file))
-
-    # The compiled code has:
-    #   async def main(): ...
-    #   if __name__ == "__main__":
-    #       import asyncio
-    #       asyncio.run(main())
-    #
-    # We replace the bottom block to inject measurement around asyncio.run
-    measured = compiled.replace(
-        'if __name__ == "__main__":\n    import asyncio\n\n    asyncio.run(main())',
-        (
-            'if __name__ == "__main__":\n'
-            "    import asyncio, time, tracemalloc\n"
-            "    tracemalloc.start()\n"
-            "    _cpu0 = time.process_time()\n"
-            "    _wall0 = time.perf_counter()\n"
-            "    asyncio.run(main())\n"
-            "    _wall1 = time.perf_counter() - _wall0\n"
-            "    _cpu1 = time.process_time() - _cpu0\n"
-            "    _mem = tracemalloc.get_traced_memory()[1]\n"
-            "    tracemalloc.stop()\n"
-            '    print("__BENCH_METRICS__")\n'
-            '    print("wall_time_s=" + str(round(_wall1, 6)))\n'
-            '    print("cpu_time_s=" + str(round(_cpu1, 6)))\n'
-            '    print("peak_memory_kb=" + str(round(_mem / 1024, 1)))\n'
-        ),
+def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
+    """Compile .mn to native via LLVM -O2 pipeline, run, time externally."""
+    result = LangResult(
+        benchmark=spec.name,
+        language="Mapanare O2",
+        lines_of_code=_count_lines(spec.mn_path),
     )
 
-    result = BenchResult(
-        benchmark=mn_file.stem,
-        language="Mapanare",
-        lines_of_code=_count_lines(mn_file),
-    )
-    for _ in range(n_runs):
-        run = _run_script(measured)
-        result.runs.append(run)
-    result.aggregate()
-    return result
+    tools = {t: _find_tool(t) for t in ["llvm-as", "opt", "llc", "clang"]}
+    if not all(tools.values()):
+        missing = [k for k, v in tools.items() if not v]
+        result.error = f"missing tools: {missing}"
+        return result
 
+    if not RUNTIME_LIB.exists():
+        result.error = f"missing runtime library: {RUNTIME_LIB}"
+        return result
 
-def run_mapanare_native(mn_file: Path, n_runs: int) -> BenchResult:
-    """Compile .mn to LLVM IR, JIT-compile via MCJIT, run natively."""
-    result = BenchResult(
-        benchmark=mn_file.stem,
-        language="Mapanare (native)",
-        lines_of_code=_count_lines(mn_file),
-    )
-
-    # Use subprocess to call mapa jit --bench for process isolation
-    for _ in range(n_runs):
-        try:
-            proc = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    f"import sys; sys.path.insert(0, r'{_ROOT}'); "
-                    f"from mapanare.cli import _compile_to_llvm_ir; "
-                    f"from mapanare.jit import jit_compile_and_run; "
-                    f"import time; "
-                    f"source = open(r'{mn_file}', encoding='utf-8').read(); "
-                    f"ir_code = _compile_to_llvm_ir(source, '{mn_file.name}'); "
-                    f"t0 = time.perf_counter(); c0 = time.process_time(); "
-                    f"jit_compile_and_run(ir_code); "
-                    f"w = time.perf_counter() - t0; c = time.process_time() - c0; "
-                    f"print('__BENCH_METRICS__'); "
-                    f"print('wall_time_s=' + str(round(w, 6))); "
-                    f"print('cpu_time_s=' + str(round(c, 6))); "
-                    f"print('peak_memory_kb=0')",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            run = _parse_native_run(proc.stdout)
-            result.runs.append(run)
-        except subprocess.TimeoutExpired:
-            result.runs.append(
-                SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT")
-            )
-        except Exception as e:
-            result.runs.append(
-                SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output=str(e))
-            )
-
-    result.aggregate()
-    return result
-
-
-def run_python(py_file: Path, n_runs: int) -> BenchResult:
-    """Extract benchmark code from Python file, wrap with measurement."""
-    source = py_file.read_text(encoding="utf-8")
-
-    # Extract: functions + main block body (dedented)
-    lines = source.splitlines()
-    func_lines: list[str] = []
-    main_lines: list[str] = []
-    in_main = False
-    for line in lines:
-        # Skip time import and timing code
-        if line.strip().startswith("import time"):
-            continue
-        if line.strip().startswith("if __name__"):
-            in_main = True
-            continue
-        if in_main:
-            if line.startswith("    "):
-                stripped = line[4:]
-                # Skip timing-related lines
-                if any(kw in stripped for kw in ["perf_counter", "elapsed", 'print(f"Time:']):
-                    continue
-                main_lines.append(stripped)
-            elif line.strip() == "":
-                main_lines.append("")
-            else:
-                in_main = False
-                func_lines.append(line)
-        else:
-            func_lines.append(line)
-
-    bench_code = "\n".join(func_lines) + "\n" + "\n".join(main_lines)
-    script = _make_measured_script(bench_code)
-
-    result = BenchResult(
-        benchmark=py_file.stem,
-        language="Python",
-        lines_of_code=_count_lines(py_file),
-    )
-    for _ in range(n_runs):
-        run = _run_script(script)
-        result.runs.append(run)
-    result.aggregate()
-    return result
-
-
-def _parse_native_run(output: str) -> SingleRun:
-    """Parse __BENCH_METRICS__ from Go/Rust output."""
-    metrics = _parse_metrics(output)
-    clean = "\n".join(
-        l
-        for l in output.splitlines()
-        if l.strip() != "__BENCH_METRICS__"
-        and not l.strip().startswith("wall_time_s=")
-        and not l.strip().startswith("cpu_time_s=")
-        and not l.strip().startswith("peak_memory_kb=")
-    ).strip()
-    wall = metrics.get("wall_time_s", -1)
-    return SingleRun(
-        wall_time_s=wall,
-        cpu_time_s=metrics.get("cpu_time_s", wall),  # fallback to wall
-        peak_memory_kb=metrics.get("peak_memory_kb", 0),
-        output=clean,
-    )
-
-
-def run_go(go_file: Path, n_runs: int) -> BenchResult | None:
-    if not _has_tool("go"):
-        return None
-    result = BenchResult(
-        benchmark=go_file.stem,
-        language="Go",
-        lines_of_code=_count_lines(go_file),
-    )
-    for _ in range(n_runs):
-        try:
-            proc = subprocess.run(
-                ["go", "run", str(go_file)],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            run = _parse_native_run(proc.stdout)
-            result.runs.append(run)
-        except subprocess.TimeoutExpired:
-            result.runs.append(
-                SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT")
-            )
-    result.aggregate()
-    return result
-
-
-def run_rust(rs_file: Path, n_runs: int) -> BenchResult | None:
-    if not _has_tool("rustc"):
-        return None
-    result = BenchResult(
-        benchmark=rs_file.stem,
-        language="Rust",
-        lines_of_code=_count_lines(rs_file),
-    )
     with tempfile.TemporaryDirectory() as tmpdir:
-        binary = os.path.join(tmpdir, "bench.exe" if os.name == "nt" else "bench")
-        comp = subprocess.run(
-            ["rustc", "-O", str(rs_file), "-o", binary],
-            capture_output=True,
-            text=True,
-            timeout=60,
+        td = Path(tmpdir)
+        name = spec.mn_path.stem
+        ll = td / f"{name}.ll"
+        bc = td / f"{name}.bc"
+        opt_bc = td / f"{name}.opt.bc"
+        obj = td / f"{name}.o"
+        binary = td / name
+
+        steps = [
+            ([sys.executable, "-m", "mapanare", "emit-llvm", str(spec.mn_path), "-o", str(ll)], "emit"),
+            ([tools["llvm-as"], str(ll), "-o", str(bc)], "llvm-as"),
+            ([tools["opt"], "-O2", str(bc), "-o", str(opt_bc)], "opt"),
+            ([tools["llc"], "-filetype=obj", "-relocation-model=pic", str(opt_bc), "-o", str(obj)], "llc"),
+            ([tools["clang"], str(obj), str(RUNTIME_LIB), "-lm", "-lpthread", "-ldl", "-o", str(binary)], "link"),
+        ]
+        for cmd, stage in steps:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if r.returncode != 0:
+                result.error = f"compile_fail at {stage}: {r.stderr[:200]}"
+                return result
+
+        result.binary_size_bytes = binary.stat().st_size
+        # Warmup
+        _run_external([str(binary)], timeout=60)
+        for _ in range(n_runs):
+            result.runs.append(_run_external([str(binary)], timeout=60))
+
+    result.aggregate(spec.expected)
+    return result
+
+
+def run_python(spec: BenchSpec, n_runs: int) -> LangResult:
+    """Wrap Python source with tracemalloc + timing, emit __BENCH_METRICS__."""
+    result = LangResult(
+        benchmark=spec.name,
+        language="Python 3.12",
+        lines_of_code=_count_lines(spec.py_path),
+    )
+    if not spec.py_path.exists():
+        result.error = f"missing: {spec.py_path}"
+        return result
+
+    source = spec.py_path.read_text(encoding="utf-8")
+    wrapped = (
+        "import time, tracemalloc, sys\n"
+        "tracemalloc.start()\n"
+        "_cpu0 = time.process_time()\n"
+        "_wall0 = time.perf_counter()\n"
+        "try:\n"
+    )
+    for line in source.splitlines():
+        if line.strip() == "":
+            wrapped += "\n"
+        else:
+            wrapped += "    " + line + "\n"
+    wrapped += (
+        "finally:\n"
+        "    _wall1 = time.perf_counter() - _wall0\n"
+        "    _cpu1 = time.process_time() - _cpu0\n"
+        "    _mem = tracemalloc.get_traced_memory()[1]\n"
+        "    tracemalloc.stop()\n"
+        "    print('__BENCH_METRICS__')\n"
+        "    print('wall_time_s=' + str(round(_wall1, 6)))\n"
+        "    print('cpu_time_s=' + str(round(_cpu1, 6)))\n"
+        "    print('peak_memory_kb=' + str(round(_mem / 1024, 1)))\n"
+    )
+
+    # Warmup
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(wrapped)
+        tmp_path = tmp.name
+
+    try:
+        _run_with_metrics([sys.executable, tmp_path])
+        for _ in range(n_runs):
+            result.runs.append(_run_with_metrics([sys.executable, tmp_path]))
+    finally:
+        os.unlink(tmp_path)
+
+    result.aggregate(spec.expected)
+    return result
+
+
+def run_rust(spec: BenchSpec, n_runs: int) -> LangResult:
+    """Compile .rs with rustc -O, time externally (no __BENCH_METRICS__)."""
+    result = LangResult(
+        benchmark=spec.name,
+        language="Rust -O",
+        lines_of_code=_count_lines(spec.rs_path),
+    )
+    if not spec.rs_path.exists():
+        result.error = f"missing: {spec.rs_path}"
+        return result
+    rustc = _find_tool("rustc")
+    if not rustc:
+        result.error = "rustc not installed"
+        return result
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        binary = Path(tmpdir) / spec.rs_path.stem
+        r = subprocess.run(
+            [rustc, "-O", str(spec.rs_path), "-o", str(binary)],
+            capture_output=True, text=True, timeout=120,
         )
-        if comp.returncode != 0:
-            result.error = f"COMPILE ERROR: {comp.stderr[:300]}"
+        if r.returncode != 0:
+            result.error = f"compile_fail: {r.stderr[:200]}"
             return result
 
+        result.binary_size_bytes = binary.stat().st_size
+        _run_external([str(binary)], timeout=60)
         for _ in range(n_runs):
-            try:
-                proc = subprocess.run(
-                    [binary],
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
-                run = _parse_native_run(proc.stdout)
-                result.runs.append(run)
-            except subprocess.TimeoutExpired:
-                result.runs.append(
-                    SingleRun(wall_time_s=-1, cpu_time_s=-1, peak_memory_kb=0, output="TIMEOUT")
-                )
-    result.aggregate()
+            result.runs.append(_run_external([str(binary)], timeout=60))
+
+    result.aggregate(spec.expected)
     return result
 
 
+def run_go_compiled(spec: BenchSpec, n_runs: int) -> LangResult:
+    """Compile .go with `go build -o bin`, run bin, parse __BENCH_METRICS__."""
+    result = LangResult(
+        benchmark=spec.name,
+        language="Go",
+        lines_of_code=_count_lines(spec.go_path),
+    )
+    if not spec.go_path.exists():
+        result.error = f"missing: {spec.go_path}"
+        return result
+    go = _find_tool("go")
+    if not go:
+        result.error = "go not installed"
+        return result
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        binary = Path(tmpdir) / spec.name
+        # Suppress GOPATH warning noise with explicit GOPATH env.
+        env = os.environ.copy()
+        env["GOPATH"] = env.get("GOPATH") or str(Path.home() / "gopath")
+        r = subprocess.run(
+            [go, "build", "-o", str(binary), str(spec.go_path)],
+            capture_output=True, text=True, timeout=120, env=env,
+        )
+        if r.returncode != 0:
+            result.error = f"compile_fail: {r.stderr[:200]}"
+            return result
+
+        result.binary_size_bytes = binary.stat().st_size
+        _run_with_metrics([str(binary)], timeout=60)
+        for _ in range(n_runs):
+            result.runs.append(_run_with_metrics([str(binary)], timeout=60))
+
+    result.aggregate(spec.expected)
+    return result
+
+
+def _run_c_variant(spec: BenchSpec, n_runs: int, compiler_tool: str, language_label: str) -> LangResult:
+    """Shared runner for C (gcc) and C (clang) variants."""
+    result = LangResult(
+        benchmark=spec.name,
+        language=language_label,
+        lines_of_code=_count_lines(spec.c_path),
+    )
+    if not spec.c_path.exists():
+        result.error = f"missing: {spec.c_path}"
+        return result
+    cc = _find_tool(compiler_tool)
+    if not cc:
+        result.error = f"{compiler_tool} not installed"
+        return result
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        binary = Path(tmpdir) / spec.name
+        r = subprocess.run(
+            [cc, "-O2", "-Wall", "-Wextra", str(spec.c_path), "-o", str(binary)],
+            capture_output=True, text=True, timeout=120,
+        )
+        if r.returncode != 0:
+            result.error = f"compile_fail: {r.stderr[:200]}"
+            return result
+
+        result.binary_size_bytes = binary.stat().st_size
+        _run_with_metrics([str(binary)], timeout=60)
+        for _ in range(n_runs):
+            result.runs.append(_run_with_metrics([str(binary)], timeout=60))
+
+    result.aggregate(spec.expected)
+    return result
+
+
+def run_c_gcc(spec: BenchSpec, n_runs: int) -> LangResult:
+    return _run_c_variant(spec, n_runs, "gcc", "C (gcc -O2)")
+
+
+def run_c_clang(spec: BenchSpec, n_runs: int) -> LangResult:
+    return _run_c_variant(spec, n_runs, "clang", "C (clang -O2)")
+
+
 # ---------------------------------------------------------------------------
-# Main
+# Main driver
 # ---------------------------------------------------------------------------
 
-BENCHMARKS = [
-    ("01_fibonacci", "Fibonacci (recursive, n=35)"),
-    ("02_concurrency", "Message Passing (10K msgs)"),
-    ("03_stream_pipeline", "Stream Pipeline (1M items)"),
-    ("04_matrix_mul", "Matrix Multiply (100x100)"),
-    ("05_agent_pipeline", "Agent Pipeline (1K msgs)"),
+LANG_ORDER = [
+    ("C (gcc -O2)", run_c_gcc),
+    ("C (clang -O2)", run_c_clang),
+    ("Rust -O", run_rust),
+    ("Go", run_go_compiled),
+    ("Mapanare O2", run_mapanare_o2),
+    ("Python 3.12", run_python),
 ]
 
 
-def run_all(only: str | None = None, n_runs: int = 3) -> list[BenchComparison]:
-    comparisons: list[BenchComparison] = []
-
+def run_all(only: str | None, n_runs: int) -> dict:
     print("=" * 78)
-    print("  MAPANARE vs PYTHON vs GO vs RUST -- Benchmark Suite")
+    print(f"  CROSS-LANGUAGE BENCHMARK SUITE (v4.107.0) -- {n_runs} runs per config")
     print("=" * 78)
 
-    tools = []
-    if _has_tool("go"):
-        tools.append("Go")
-    if _has_tool("rustc"):
-        tools.append("Rust")
-    print("\n  Toolchains: Python, Mapanare" + (f", {', '.join(tools)}" if tools else ""))
-    print(f"  Runs per benchmark: {n_runs} (median reported)")
-    print("  Metrics: wall time, CPU time, peak memory")
+    tool_report = {
+        "gcc": _find_tool("gcc"),
+        "clang": _find_tool("clang"),
+        "rustc": _find_tool("rustc"),
+        "go": _find_tool("go"),
+        "python": sys.executable,
+    }
+    print()
+    for name, path in tool_report.items():
+        print(f"  {name:<8s} {path or 'NOT FOUND'}")
     print()
 
-    for bench_id, bench_name in BENCHMARKS:
-        if only and only not in bench_id:
+    all_results: list[LangResult] = []
+    for spec in BENCHMARKS:
+        if only and only not in spec.name:
             continue
-
-        print(f"  [{bench_id}] {bench_name}")
-        print(f"  {'-' * 60}")
-
-        comp = BenchComparison(benchmark=bench_name)
-
-        # Mapanare (interpreted via Python transpiler)
-        mn_file = _VS_DIR / f"{bench_id}.mn"
-        if mn_file.exists():
-            print("    Mapanare  ... ", end="", flush=True)
-            try:
-                r = run_mapanare(mn_file, n_runs)
-                comp.results.append(r)
-                if r.error:
-                    print(f"ERROR: {r.error}")
-                else:
-                    print(
-                        f"{r.wall_median:.4f}s  "
-                        f"CPU:{r.cpu_median:.4f}s  "
-                        f"Mem:{r.mem_peak_kb:.0f}KB  "
-                        f"({r.lines_of_code} LOC)"
-                    )
-            except Exception as e:
-                print(f"ERROR: {e}")
-
-        # Mapanare Native (LLVM JIT)
-        if mn_file.exists() and bench_id not in ("02_concurrency", "05_agent_pipeline"):
-            print("    MN Native ... ", end="", flush=True)
-            try:
-                r = run_mapanare_native(mn_file, n_runs)
-                comp.results.append(r)
-                if r.error:
-                    print(f"ERROR: {r.error}")
-                else:
-                    print(
-                        f"{r.wall_median:.4f}s  "
-                        f"CPU:{r.cpu_median:.4f}s  "
-                        f"({r.lines_of_code} LOC)"
-                    )
-            except Exception as e:
-                print(f"ERROR: {e}")
-
-        # Python
-        py_file = _VS_DIR / f"{bench_id}.py"
-        if py_file.exists():
-            print("    Python    ... ", end="", flush=True)
-            r = run_python(py_file, n_runs)
-            comp.results.append(r)
-            print(
-                f"{r.wall_median:.4f}s  "
-                f"CPU:{r.cpu_median:.4f}s  "
-                f"Mem:{r.mem_peak_kb:.0f}KB  "
-                f"({r.lines_of_code} LOC)"
-            )
-
-        # Go
-        go_file = _VS_DIR / f"{bench_id}.go"
-        if go_file.exists():
-            r = run_go(go_file, n_runs)
-            if r:
-                comp.results.append(r)
-                mem_s = f"Mem:{r.mem_peak_kb:.0f}KB  " if r.mem_peak_kb > 0 else ""
-                print(f"    Go        ... {r.wall_median:.4f}s  {mem_s}({r.lines_of_code} LOC)")
+        print(f"[{spec.name}]")
+        for label, runner in LANG_ORDER:
+            _ = label  # display label comes from runner
+            res = runner(spec, n_runs)
+            all_results.append(res)
+            if res.error:
+                print(f"  {res.language:<16s} ERR: {res.error[:80]}")
             else:
-                print("    Go        ... skipped")
-
-        # Rust
-        rs_file = _VS_DIR / f"{bench_id}.rs"
-        if rs_file.exists():
-            r = run_rust(rs_file, n_runs)
-            if r:
-                comp.results.append(r)
-                mem_s = f"Mem:{r.mem_peak_kb:.0f}KB  " if r.mem_peak_kb > 0 else ""
-                print(f"    Rust      ... {r.wall_median:.4f}s  {mem_s}({r.lines_of_code} LOC)")
-            else:
-                print("    Rust      ... skipped")
-
-        comparisons.append(comp)
+                status = "ok" if res.correct else "WRONG CHECKSUM"
+                mem = f"mem={res.mem_peak_kb:>7.0f}KB" if res.mem_peak_kb > 0 else "mem=N/A"
+                bin_kb = f"bin={res.binary_size_bytes / 1024:>6.1f}KB" if res.binary_size_bytes else "bin=N/A"
+                print(
+                    f"  {res.language:<16s} "
+                    f"wall={res.wall_median_ms:>8.3f}ms  "
+                    f"{mem}  "
+                    f"{bin_kb}  "
+                    f"loc={res.lines_of_code:>3d}  "
+                    f"[{status}]"
+                )
         print()
 
-    _print_summary(comparisons)
+    return {
+        "version": "4.107.0",
+        "date": time.strftime("%Y-%m-%d"),
+        "runs_per_config": n_runs,
+        "environment": {
+            "os": "WSL2 (Ubuntu on Windows)",
+            "llvm_version": "18.1.3",
+            "python_version": sys.version.split()[0],
+            "tools": {k: v for k, v in tool_report.items()},
+        },
+        "results": [asdict(r) for r in all_results],
+    }
 
-    out_path = _VS_DIR / "results.json"
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump([asdict(c) for c in comparisons], f, indent=2)
-    print(f"\n  Results saved to {out_path}")
 
-    return comparisons
+def _format_summary_table(data: dict) -> str:
+    """Format the 6-column comparison table as Markdown."""
+    lines: list[str] = []
+    by_bench: dict[str, dict[str, LangResult]] = {}
+    for entry in data["results"]:
+        by_bench.setdefault(entry["benchmark"], {})[entry["language"]] = entry
 
-
-def _print_summary(comparisons: list[BenchComparison]) -> None:
-    print("\n" + "=" * 78)
-    print("  SUMMARY (median of all runs)")
-    print("=" * 78)
-
-    # Performance table
-    print("\n  >> PERFORMANCE")
-    hdr = (
-        f"  {'Benchmark':<28s} {'Lang':<10s} "
-        f"{'Wall(s)':>9s} {'CPU(s)':>9s} {'Mem(KB)':>9s} {'vs Py':>8s}"
-    )
-    print(hdr)
-    print("  " + "-" * 73)
-
-    for comp in comparisons:
-        py_time = next(
-            (r.wall_median for r in comp.results if r.language == "Python" and r.wall_median > 0),
-            None,
-        )
-        for r in comp.results:
-            if r.wall_median <= 0 and not r.error:
-                print(f"  {comp.benchmark:<28s} {r.language:<10s} {'ERR':>9s}")
-                continue
-            if r.error:
-                print(f"  {comp.benchmark:<28s} {r.language:<10s} {'ERR':>9s}  {r.error[:40]}")
-                continue
-            vs_py = ""
-            if py_time and py_time > 0 and r.wall_median > 0:
-                speedup = py_time / r.wall_median
-                vs_py = f"{speedup:.1f}x"
-            mem_str = f"{r.mem_peak_kb:.0f}" if r.mem_peak_kb > 0 else "N/A"
-            cpu_str = f"{r.cpu_median:.4f}" if r.cpu_median > 0 else "N/A"
-            print(
-                f"  {comp.benchmark:<28s} {r.language:<10s} "
-                f"{r.wall_median:>9.4f} {cpu_str:>9s} {mem_str:>9s} {vs_py:>8s}"
-            )
-        print()
-
-    # Expressiveness table (use Mapanare LOC — same for both interpreted and native)
-    print("  >> EXPRESSIVENESS (lines of code -- lower is better)")
-    hdr2 = f"  {'Benchmark':<28s} {'Mapanare':>10s} {'Python':>10s} {'Go':>10s} {'Rust':>10s}"
-    print(hdr2)
-    print("  " + "-" * 68)
-
-    for comp in comparisons:
-
-        def _loc(lang: str) -> str:
-            return next((str(r.lines_of_code) for r in comp.results if r.language == lang), "-")
-
-        mn_loc = _loc("Mapanare") if _loc("Mapanare") != "-" else _loc("Mapanare (native)")
-        print(
-            f"  {comp.benchmark:<28s} "
-            f"{mn_loc:>10s} {_loc('Python'):>10s} "
-            f"{_loc('Go'):>10s} {_loc('Rust'):>10s}"
-        )
-    print()
+    langs = [ln for ln, _ in LANG_ORDER]
+    header = "| Benchmark       | " + " | ".join(f"{ln}" for ln in langs) + " |"
+    sep = "|" + "---|" * (len(langs) + 1)
+    lines.append(header)
+    lines.append(sep)
+    for spec in BENCHMARKS:
+        row = [f"{spec.name:<15s}"]
+        for ln in langs:
+            r = by_bench.get(spec.name, {}).get(ln)
+            if r and r.get("wall_median_ms", 0) > 0:
+                row.append(f"{r['wall_median_ms']:.3f} ms")
+            elif r and r.get("error"):
+                row.append("ERR")
+            else:
+                row.append("—")
+        lines.append("| " + " | ".join(row) + " |")
+    return "\n".join(lines)
 
 
 def main() -> None:
-    only = None
-    n_runs = 3
-    args = sys.argv[1:]
-    i = 0
-    while i < len(args):
-        if args[i] == "--only" and i + 1 < len(args):
-            only = args[i + 1]
-            i += 2
-        elif args[i] == "--runs" and i + 1 < len(args):
-            n_runs = int(args[i + 1])
-            i += 2
-        else:
-            i += 1
-    run_all(only=only, n_runs=n_runs)
+    parser = argparse.ArgumentParser(description="v4.107.0 cross-language benchmark suite")
+    parser.add_argument("--runs", type=int, default=10, help="runs per config (default: 10)")
+    parser.add_argument("--only", type=str, default=None, help="substring match against benchmark name")
+    parser.add_argument("--output", type=str, default=str(RESULTS_FILE))
+    args = parser.parse_args()
+
+    data = run_all(only=args.only, n_runs=args.runs)
+
+    out_path = Path(args.output)
+    out_path.write_text(json.dumps(data, indent=2, default=str) + "\n")
+
+    print("=" * 78)
+    print("  SUMMARY TABLE (median wall time, ms)")
+    print("=" * 78)
+    print()
+    print(_format_summary_table(data))
+    print()
+    print(f"Results saved to {out_path}")
 
 
 if __name__ == "__main__":
