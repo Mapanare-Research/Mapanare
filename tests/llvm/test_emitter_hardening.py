@@ -401,7 +401,17 @@ class TestEmitterOutputSuite:
         assert "define" in ir_text
 
     def test_multiple_functions(self) -> None:
-        """Multiple function definitions and calls."""
+        """Multiple function definitions and calls.
+
+        v4.121.0: compiled at -O0 so the inliner does not collapse the
+        two-line ``add``/``mul`` helpers into ``main`` and DCE them.
+        At the test's previous default (O2) the optimizer eliminated
+        both function definitions, leaving the IR with only ``main`` —
+        a real win for codegen, but the assertion was written when the
+        emitter still left the named definitions in place.
+        """
+        from mapanare.optimizer import OptLevel
+
         source = textwrap.dedent("""\
             fn add(a: Int, b: Int) -> Int {
                 return a + b
@@ -417,7 +427,7 @@ class TestEmitterOutputSuite:
                 print(str(y))
             }
         """)
-        ir_text = _to_ir(source)
+        ir_text = _compile_to_llvm_ir(source, "test.mn", opt_level=OptLevel.O0)
         assert "define" in ir_text
         assert "add" in ir_text
         assert "mul" in ir_text

@@ -364,7 +364,16 @@ class TestPubVisibility:
             compile_multi_module_mir(source, root)
 
     def test_non_pub_gets_internal_linkage(self, tmp_path: Path) -> None:
-        """Non-pub functions in imported modules get LLVM internal linkage."""
+        """Non-pub functions in imported modules get LLVM internal linkage.
+
+        v4.121.0: compiled at -O0 so the inliner does not collapse the
+        one-line ``private_helper`` into ``public_api`` and DCE the
+        original definition. The default O2 pipeline correctly elides
+        ``helper__private_helper`` after inlining, but the test is
+        about *linkage* — proving non-pub helpers are not externally
+        visible. At -O0 the helper survives and the ``internal``
+        keyword can be observed.
+        """
         _write_mn(
             str(tmp_path),
             "helper.mn",
@@ -392,7 +401,7 @@ class TestPubVisibility:
         )
         with open(root, encoding="utf-8") as f:
             source = f.read()
-        ir_out = compile_multi_module_mir(source, root)
+        ir_out = compile_multi_module_mir(source, root, opt_level=0)
         assert "main" in ir_out
         # The public function should be present
         assert "helper__public_api" in ir_out

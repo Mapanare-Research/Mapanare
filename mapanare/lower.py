@@ -337,6 +337,39 @@ class MIRLowerer:
 
     # -- Generics monomorphization -----------------------------------------
 
+    @staticmethod
+    def _type_params_used_in_signature(fn_def: FnDef) -> bool:
+        """Return True if any of ``fn_def.type_params`` is referenced in the
+        param annotations or return type.
+
+        v4.121.0: a function declared as ``fn max<T: Ord>(a: Int, b: Int) -> Int``
+        has ``type_params=['T']`` even though ``T`` does not appear in the
+        signature. Without this check the function is unconditionally deferred
+        to on-demand monomorphization, but no caller ever supplies type
+        arguments (``T`` cannot be inferred from arg types — it isn't there)
+        so the function is silently dropped from MIR. Detecting the
+        unused-type-param case lets the lowerer emit a single canonical
+        instance rather than nothing at all.
+        """
+        if not fn_def.type_params:
+            return False
+        tp_set = set(fn_def.type_params)
+
+        def uses(te: TypeExpr | None) -> bool:
+            if te is None:
+                return False
+            if isinstance(te, NamedType):
+                return te.name in tp_set
+            if isinstance(te, GenericType):
+                return any(uses(a) for a in te.args)
+            if isinstance(te, FnType):
+                return uses(te.return_type) or any(uses(p) for p in te.param_types)
+            return False
+
+        if uses(fn_def.return_type):
+            return True
+        return any(uses(p.type_annotation) for p in fn_def.params)
+
     def _mangle_generic(self, name: str, type_args: list[MIRType]) -> str:
         """Produce a mangled name: identity + [Int] → identity__Int."""
         parts = []
@@ -814,8 +847,17 @@ class MIRLowerer:
                         stages.append(s.name)
                 self._module.pipes[actual.name] = MIRPipeInfo(name=actual.name, stages=stages)
 
-            # Store generic function AST definitions for monomorphization
-            if isinstance(actual, (FnDef, AsyncFnDef)) and actual.type_params:
+            # Store generic function AST definitions for monomorphization.
+            # v4.121.0: only register when at least one type parameter is
+            # actually used in the signature; otherwise the function is
+            # effectively monomorphic (degenerate case like
+            # ``fn max<T: Ord>(a: Int, b: Int) -> Int``) and is lowered
+            # directly by ``_lower_definition``.
+            if (
+                isinstance(actual, (FnDef, AsyncFnDef))
+                and actual.type_params
+                and self._type_params_used_in_signature(actual)
+            ):
                 self._generic_fn_defs[actual.name] = actual
 
             # Collect function return/param types for call-site type propagation
@@ -856,14 +898,14 @@ class MIRLowerer:
                 return
 
         if isinstance(actual, FnDef):
-            if actual.type_params:
+            if actual.type_params and self._type_params_used_in_signature(actual):
                 return  # Generic functions lowered on demand via monomorphization
             self._lower_fn(actual)
         elif isinstance(actual, AsyncFnDef):
             # v4.70.0: lower async fn — same as regular fn but marks MIRFunction
             # as is_async=True. The LLVM emitter wraps the body in the coroutine
             # prelude/epilogue (coro.id, coro.begin, coro.end, cleanup).
-            if actual.type_params:
+            if actual.type_params and self._type_params_used_in_signature(actual):
                 return  # Generic async functions lowered on demand
             mir_fn = self._lower_fn(actual)  # type: ignore[arg-type]
             mir_fn.is_async = True

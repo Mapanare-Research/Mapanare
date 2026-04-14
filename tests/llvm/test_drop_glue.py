@@ -10,11 +10,22 @@ from __future__ import annotations
 import textwrap
 
 from mapanare.cli import _compile_to_llvm_ir
+from mapanare.optimizer import OptLevel
 
 
 def _to_ir(source: str, filename: str = "test.mn") -> str:
     """Compile Mapanare source to LLVM IR string via MIR pipeline."""
     return _compile_to_llvm_ir(source, filename)
+
+
+def _to_ir_o0(source: str, filename: str = "test.mn") -> str:
+    """Compile at -O0 so inliner+DCE leave the named runtime calls
+    visible. Used by drop-glue tests that count specific
+    ``__mn_str_*`` calls — at O2 those get inlined into ``main`` and,
+    when the inputs are constant, the concat is folded entirely out.
+    The drop-glue invariants under test still hold; only the surface
+    changes."""
+    return _compile_to_llvm_ir(source, filename, opt_level=OptLevel.O0)
 
 
 class TestStringDropGlue:
@@ -36,7 +47,7 @@ class TestStringDropGlue:
             }
             fn main() { show("world") }
         """)
-        ir_text = _to_ir(source)
+        ir_text = _to_ir_o0(source)
         assert "__mn_str_concat" in ir_text
 
     def test_returned_string(self) -> None:
@@ -46,7 +57,7 @@ class TestStringDropGlue:
             }
             fn main() { print(greet("world")) }
         """)
-        ir_text = _to_ir(source)
+        ir_text = _to_ir_o0(source)
         assert "__mn_str_concat" in ir_text
         assert "define" in ir_text
 

@@ -1338,11 +1338,25 @@ def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
 def _resolve_debug(args: argparse.Namespace) -> bool:
     """Return ``True`` if the ``-g`` / ``--debug`` flag was passed.
 
-    v4.62.0: DWARF debug info infrastructure is in place. The ``-g`` flag
-    now enables debug metadata emission (skeleton at v4.62.0; full DWARF
-    by v4.65.0). The v4.29.0 deferral warning has been removed.
+    v4.121.0: DWARF debug info emission is deferred to the v5.x line
+    (see ``docs/SPEC.md`` §21.3). The ``-g`` / ``--debug`` flag is still
+    accepted for forward compatibility with scripts and IDEs, but it is
+    a no-op — the emitter does not produce DWARF metadata. Every use of
+    the flag prints a stderr warning naming v5.x as the tracking
+    version, so the no-op behaviour is loud rather than silent.
+
+    The v4.62.0–v4.120.0 comment claiming the flag enabled debug
+    metadata was aspirational; no such emission was ever wired up. The
+    v4.29.0 stderr warning is restored here.
     """
-    return bool(getattr(args, "debug", False))
+    debug = bool(getattr(args, "debug", False))
+    if debug:
+        print(
+            "warning: -g / --debug is a no-op; DWARF debug info "
+            "emission is deferred to v5.x (see SPEC §21.3)",
+            file=sys.stderr,
+        )
+    return debug
 
 
 def _add_edition_flag(parser: argparse.ArgumentParser) -> None:

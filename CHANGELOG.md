@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.121.0] - 2026-04-14
+
+**Phase F closeout release 1 — DWARF deferral warning + bounded-generic
+trait monomorphization fix.** Closes the last 22 of the v4.117.0 flaky
+audit's deterministic test failures. After v4.121.0, the v4.117.0
+1,501-test audit subset is **0 failures** across 3 sequential runs.
+The compiler change is two surgical edits (one in `mapanare/cli.py`,
+one in `mapanare/lower.py`); the rest is test hygiene that v4.120.0's
+panel-only release did not include.
+
+### Added
+
+- **`-g` / `--debug` deferral warning in CLI.**
+  `mapanare/cli.py::_resolve_debug` now prints
+  `warning: -g / --debug is a no-op; DWARF debug info emission is
+  deferred to v5.x (see SPEC §21.3)` to stderr whenever the flag is
+  passed. Restores the v4.29.0 behaviour that v4.62.0 removed under
+  an aspirational claim ("DWARF skeleton at v4.62.0; full DWARF by
+  v4.65.0") that never landed. SPEC §21.3 already documents the
+  deferral; the warning makes the no-op loud.
+- **`MIRLowerer._type_params_used_in_signature(fn_def)` helper in
+  `mapanare/lower.py`** — walks param annotations and the return type
+  for any `NamedType.name` that is in `fn_def.type_params`. Recurses
+  through `GenericType.args`, `FnType.param_types`, and
+  `FnType.return_type`.
+
+### Fixed
+
+- **Bounded-generic functions with unused type parameters now lower.**
+  `fn max<T: Ord>(a: Int, b: Int) -> Int { return a }` was silently
+  dropped from MIR because the generic-function path deferred all
+  `type_params`-bearing functions to on-demand monomorphization, and
+  no caller could supply type arguments for a `T` that does not
+  appear in the signature. `_lower_definition` and
+  `_register_declarations` now consult
+  `_type_params_used_in_signature` and lower the function as a
+  regular non-generic when no type parameter is referenced. Closes
+  `tests/semantic/test_traits.py::TestTraitLLVMEmission::test_trait_with_bounded_generic_fn`.
+- **3 DWARF deferral-warning tests** in
+  `tests/llvm/test_dwarf_debug_info.py::TestDebugFlagDeferred` — now
+  pass against the restored stderr warning.
+- **2 string drop-glue tests** in
+  `tests/llvm/test_drop_glue.py::TestStringDropGlue` (`test_str_concat`
+  and `test_returned_string`) — now compile at `-O0` so the inliner
+  does not collapse the helper functions and DCE the
+  `__mn_str_concat` call. The test surface (drop-glue invariant on
+  string returns and concat results) is unchanged.
+- **`tests/llvm/test_emitter_hardening.py::test_multiple_functions`**
+  — now compiles at `-O0` so the two-line `add` / `mul` helpers are
+  not inlined into `main` and eliminated. The "multiple-function
+  emitter" invariant still holds; only the surface (function names
+  surviving in the IR) drifted with optimizer tuning.
+- **`tests/llvm/test_cross_module.py::test_non_pub_gets_internal_linkage`**
+  — now compiles at `opt_level=0` so the one-line `private_helper` is
+  not inlined into `public_api` and DCE'd. The linkage invariant
+  (non-`pub` functions get `internal` linkage) is what the test is
+  about; the inliner had been correctly eliminating the helper and
+  the assertion drifted.
+
+### Changed
+
+- **`tests/cli/test_cli.py`** — 14 stale assertions targeting the
+  removed `compile` (.mn → `.py` Python emitter) subcommand
+  retired:
+  - `TestCompile` class (5 tests) **deleted**: the Python emitter
+    no longer exists in v3.x+, the negative-path coverage
+    (missing-file, syntax-error) is provided by `TestCheck`, and
+    no honest replacement existed.
+  - `TestArgparse::test_compile_subcommand_parsed` and
+    `test_compile_with_output` rewritten against `build` (the
+    surviving .mn → native binary subcommand).
+  - `TestOptLevelFlags` (7 `compile_*` tests) rewritten:
+    argparse-only checks now bind to `build`; the two
+    `_with_o*_runs` cases are downgraded to argparse smoke checks
+    because spawning a real `build` requires clang on PATH and
+    end-to-end `-O` coverage already lives in
+    `tests/integration/test_pipeline_hardening.py` and the
+    cross-language benchmark harness.
+
+### Test-suite state
+
+- **v4.117.0 audit subset (1,501 tests across 9 subdirectories): 0
+  failures.** All 22 deterministic failures the audit catalogued are
+  now closed (3 DWARF + 1 trait fixed in this release; 4 count-drift
+  / linkage / emitter assertions relaxed against optimizer tuning;
+  14 CLI tests rewritten against the surviving subcommand surface).
+- **3x sequential `pytest` runs of the audit subset: identical
+  pass/fail/skip/xfail counts in all 3 runs.** No flakes introduced.
+- **Full `pytest tests/`: 51 failures remain outside the audit's
+  subdirectory scope** (panel item **An.1**, opened in
+  `.reviews/v4.120.0/03-anaconda.md`). Out of v4.121.0 scope.
+
+### Lint state
+
+- 5 of the 6 files modified in v4.121.0 are black-clean and
+  ruff-clean. `mapanare/lower.py`'s pre-existing baseline (line
+  lengths in tensor lowering paths, two unused-import flags) is
+  unchanged by this release. Lint debt is panel item **An.2**, on
+  the v4.123.0+ track per `docs/roadmap/v4/v4.121.0/PLAN.md`.
+
+### Carry-forward
+
+- **An.1** — 51 uncatalogued pytest failures outside the v4.117.0
+  audit's 9-subdirectory scope. Opens at v4.122.0 or later.
+- **An.2** — lint debt (64 black-reformat + 204 ruff + 34 mypy as
+  measured in v4.120.0). Opens at v4.123.0+.
+- **An.3** — `test_fibonacci_run` regression. Cause unknown.
+- **Qs.1** — `List<Int>` indexing in argument position. v4.122.0
+  target.
+- **Sh.8** — self-hosted `semantic.mn` `None`/`Some`/`Ok` constructor
+  registration. v4.124.0 target. Blocks fixed-point.
+- **Rt.1** — boxed-enum payload overhead (`enum_match` 2× slower
+  than Rust). v4.123.0 target.
+- **Sh.2** — `__mn_str_starts_with` crash in self-hosted emitter
+  (10 golden tests).
+- All Phase D / Phase F panel polish items remain open per
+  `.reviews/v4.120.0/V5_DECISION.md` carry-forward.
+
 ## [4.120.0] - 2026-04-14
 
 **Phase F panel — v5 gate attempt 2 → Option B (continue
