@@ -254,10 +254,19 @@ def _strip_metrics(output: str) -> str:
 
 
 def _run_with_metrics(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> SingleRun:
-    """Run a binary that emits __BENCH_METRICS__, parse internal timing."""
+    """Run a binary that emits __BENCH_METRICS__, parse internal timing.
+
+    Wall time and CPU time come from the program's own __BENCH_METRICS__
+    block (excludes subprocess spawn). Peak memory comes from
+    /usr/bin/time -v wrapping around the child, because the program's own
+    getrusage(RUSAGE_SELF).ru_maxrss is inflated by Python's RSS at fork
+    time (pre-exec COW pages count toward the child's peak RSS).
+    """
+    use_gnu_time = Path(_TIME_BIN).is_file()
+    wrapped = [_TIME_BIN, "-v", "--"] + cmd if use_gnu_time else cmd
     try:
         t0 = time.perf_counter()
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd)
+        r = subprocess.run(wrapped, capture_output=True, text=True, timeout=timeout, cwd=cwd)
         t1 = time.perf_counter()
     except subprocess.TimeoutExpired:
         return SingleRun(output="TIMEOUT")
@@ -268,10 +277,14 @@ def _run_with_metrics(cmd: list[str], cwd: str | None = None, timeout: int = 120
     metrics = _parse_metrics(r.stdout)
     clean = _strip_metrics(r.stdout)
     wall = metrics.get("wall_time_s", t1 - t0)
+    if use_gnu_time:
+        peak_kb, _ = _parse_gnu_time(r.stderr)
+    else:
+        peak_kb = metrics.get("peak_memory_kb", 0.0)
     return SingleRun(
         wall_time_s=wall,
         cpu_time_s=metrics.get("cpu_time_s", wall),
-        peak_memory_kb=metrics.get("peak_memory_kb", 0.0),
+        peak_memory_kb=peak_kb,
         output=clean,
     )
 
