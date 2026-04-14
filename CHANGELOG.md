@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.116.0] - 2026-04-14
+
+**Phase E release 2 — documentation batch.** Boa has flagged doc
+drift in every panel since v4.82.0. This release addresses five
+specific gaps without touching a single line of compiler, runtime,
+or self-hosted code.
+
+### Changed
+
+- `README.md` — version badge 4.31.0 → 4.116.0; headline line adds
+  geometric-mean cross-language benchmark numbers (50× faster than
+  Python, 1.06× on par with Rust, 4.85× slower than C gcc -O2) with
+  a link to `benchmarks/PHASE_C_RESULTS.md`; self-hosted compiler
+  line count 15K → 38K to match current reality; Feature Status
+  table adds an `async` / `await` row (New in v4.72.0, native I/O
+  demos in v4.115.0); "Coming in v4.2" header on the shared-library
+  section replaced with "Planned" + a status note about the actual
+  v4.116.0 shipping surface; Roadmap table extended with Phase A
+  through Phase E rows and the v4.120.0 panel row.
+- `docs/SPEC.md` — header version 1.0.0 Final → 4.116.0 Live with a
+  sync-discipline note pointing at `mapanare.lark`, `types.py`, and
+  `self/lexer.mn` as the three authoritative sources; §29 adds a
+  v4.115.0 status note documenting the cooperative-not-preemptive
+  model, the native file + HTTP I/O demos, and the self-hosted
+  async-lowering gap (docket Sh.4); §29.7 `for await` row reflagged
+  as planned (v5.x) with the current workaround.
+- `docs/cookbook/async.md` — corrected the stale "compile through
+  `mnc run`" opening note (async compiles through the Python
+  bootstrap today; `mnc-stage1` doesn't lower async yet); added §8
+  Native Compilation Workflow (emit-llvm → clang → binary at -O0
+  and -O2); added §9 Real File I/O example from
+  `examples/async_file_io.mn`; added §10 Real HTTP GET example from
+  `examples/async_http_demo.mn`; added §11 Sh.9a / Sh.9b emitter-bug
+  recipes with the exact workarounds shipped in the v4.115.0 demos.
+- `docs/guides/debugging.md` — full rewrite to correct the stale
+  "Mapanare emits DWARF debug information when compiled with -g"
+  claim. SPEC §21.3 defers DWARF to v5.x; gdb/lldb show only
+  machine-level frames for Mapanare functions today. New focus:
+  valgrind as primary tool, AddressSanitizer, ThreadSanitizer,
+  `ir_doctor.py`, Culebra, the integration-test harness, and a
+  decision table mapping symptoms to the right tool.
+
+### Added
+
+- `docs/guides/getting_started.md` — new practical walk for
+  developers familiar with compiled languages: prerequisites
+  (Python 3.11+, clang 15+, LLVM 18.x), clone + install, hello.mn
+  through the Python bootstrap, hello.mn through the self-hosted
+  compiler (`mnc-stage1`), a what-does-not-work-yet table mapping
+  to dockets Sh.1-Sh.9, the build-from-seed path, running the test
+  suite, pointer table to SPEC / cookbook / debugging guide /
+  benchmarks / roadmap, and a troubleshooting footer covering the
+  five most common failure modes. Complements the longer
+  `docs/getting-started.md` feature-by-feature tour.
+- `docs/roadmap/v4/v4.116.0/VERIFICATION.md` — panel-facing receipt
+  documenting every code block in the updated docs that was compiled
+  through the Python bootstrap and run as a native binary. 7
+  compile-and-run snippets PASS; 3 async goldens produce the
+  expected 42/43/110 with zero regression from v4.115.0.
+
+### Not changed
+
+- Nothing under `mapanare/`, `runtime/native/`, `mapanare/self/`,
+  `tests/`, `scripts/`, `stdlib/`. Pure documentation work.
+- `libmapanare_rt.a` byte-identical to v4.115.0 (no runtime rebuild
+  needed, confirmed by verification log).
+
+### Dockets
+
+No new dockets opened. All v4.115.0 dockets (Sh.9a, Sh.9b, Sh.10)
+remain open — documented as known-issue recipes in the refreshed
+async cookbook so users don't re-hit them without a warning.
+
+### Verification
+
+- `mapanare emit-llvm` + `clang` link + run on 7 snippets across
+  README, cookbook, and getting-started — all produce the documented
+  output.
+- Async golden regression check: 55/56/57 → 42/43/110 (unchanged
+  from v4.115.0).
+- No `make test` regression (doc-only changes; test suite unaffected).
+
 ## [4.115.0] - 2026-04-14
 
 **Phase E release 1 — async I/O demo running natively.** The

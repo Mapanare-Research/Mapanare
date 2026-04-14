@@ -7,13 +7,15 @@
 > started guide. This release fixes all of that without changing a
 > single line of compiler or runtime code.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-14)
 **Breaking:** No
 **Prerequisite:** v4.115.0
 **Delta review:** No
 **Full panel:** No (v4.120.0)
 **Estimated work:** 1 sprint
 **Theme:** Make the docs match the code. Zero code changes.
+**Session log:** `docs/roadmap/v4/v4.116.0/SESSION_REPORT.md`
+**Decisions taken:** SPEC sync was flagged sections + spot-check (Decision 1, default); getting-started targets developers familiar with compiled languages (Decision 2, default); code verification covered updated/created docs only (Decision 3, default); existing `docs/getting-started.md` tutorial preserved as the language-feature tour, new `docs/guides/getting_started.md` is the practical build walk.
 
 ---
 
