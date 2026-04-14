@@ -1,0 +1,71 @@
+==================
+WARNING: ThreadSanitizer: signal-unsafe call inside of a signal (pid=12690)
+    #0 malloc <null> (mnc-stage1-tsan+0x46ed60) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #1 malloc elf/../include/rtld-malloc.h:56:10 (ld-linux-x86-64.so.2+0x319f) (BuildId: da07864eb4c1b06504b8688d25d7e84759fe708d)
+    #2 _dl_map_object_deps elf/dl-deps.c:463:26 (ld-linux-x86-64.so.2+0x319f)
+    #3 crash_handler /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:27:13 (mnc-stage1-tsan+0x4eee07) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #4 __tsan::CallUserSignalHandler(__tsan::ThreadState*, bool, bool, int, __sanitizer::__sanitizer_siginfo*, void*) tsan_interceptors_posix.cpp.o (mnc-stage1-tsan+0x478195) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #5 mir_opt__licm_function <null> (mnc-stage1-tsan+0x7aa29f) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #6 mir_opt__optimize_mir <null> (mnc-stage1-tsan+0x7ac7d8) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #7 compile <null> (mnc-stage1-tsan+0x4f1c3d) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #8 mn_main <null> (mnc-stage1-tsan+0x4f45e0) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #9 compiler_thread /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:100:5 (mnc-stage1-tsan+0x4eee61) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+
+SUMMARY: ThreadSanitizer: signal-unsafe call inside of a signal (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-tsan+0x46ed60) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c) in malloc
+==================
+==================
+WARNING: ThreadSanitizer: signal-unsafe call inside of a signal (pid=12690)
+    #0 malloc <null> (mnc-stage1-tsan+0x46ed60) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #1 malloc elf/../include/rtld-malloc.h:56:10 (ld-linux-x86-64.so.2+0x4d59) (BuildId: da07864eb4c1b06504b8688d25d7e84759fe708d)
+    #2 _dl_find_object_update elf/dl-find_object.c:794:33 (ld-linux-x86-64.so.2+0x4d59)
+    #3 crash_handler /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:27:13 (mnc-stage1-tsan+0x4eee07) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #4 __tsan::CallUserSignalHandler(__tsan::ThreadState*, bool, bool, int, __sanitizer::__sanitizer_siginfo*, void*) tsan_interceptors_posix.cpp.o (mnc-stage1-tsan+0x478195) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #5 mir_opt__licm_function <null> (mnc-stage1-tsan+0x7aa29f) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #6 mir_opt__optimize_mir <null> (mnc-stage1-tsan+0x7ac7d8) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #7 compile <null> (mnc-stage1-tsan+0x4f1c3d) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #8 mn_main <null> (mnc-stage1-tsan+0x4f45e0) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #9 compiler_thread /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:100:5 (mnc-stage1-tsan+0x4eee61) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+
+SUMMARY: ThreadSanitizer: signal-unsafe call inside of a signal (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-tsan+0x46ed60) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c) in malloc
+==================
+==================
+WARNING: ThreadSanitizer: signal-unsafe call inside of a signal (pid=12690)
+    #0 malloc <null> (mnc-stage1-tsan+0x46ed60) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #1 malloc elf/../include/rtld-malloc.h:56:10 (ld-linux-x86-64.so.2+0x4edc) (BuildId: da07864eb4c1b06504b8688d25d7e84759fe708d)
+    #2 _dlfo_mappings_segment_allocate elf/dl-find_object.c:217:15 (ld-linux-x86-64.so.2+0x4edc)
+    #3 _dl_find_object_update_1 elf/dl-find_object.c:671:22 (ld-linux-x86-64.so.2+0x4edc)
+    #4 _dl_find_object_update elf/dl-find_object.c:805:13 (ld-linux-x86-64.so.2+0x4edc)
+    #5 crash_handler /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:27:13 (mnc-stage1-tsan+0x4eee07) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #6 __tsan::CallUserSignalHandler(__tsan::ThreadState*, bool, bool, int, __sanitizer::__sanitizer_siginfo*, void*) tsan_interceptors_posix.cpp.o (mnc-stage1-tsan+0x478195) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #7 mir_opt__licm_function <null> (mnc-stage1-tsan+0x7aa29f) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #8 mir_opt__optimize_mir <null> (mnc-stage1-tsan+0x7ac7d8) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #9 compile <null> (mnc-stage1-tsan+0x4f1c3d) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #10 mn_main <null> (mnc-stage1-tsan+0x4f45e0) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #11 compiler_thread /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:100:5 (mnc-stage1-tsan+0x4eee61) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+
+SUMMARY: ThreadSanitizer: signal-unsafe call inside of a signal (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-tsan+0x46ed60) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c) in malloc
+==================
+==================
+WARNING: ThreadSanitizer: signal-unsafe call inside of a signal (pid=12690)
+    #0 free <null> (mnc-stage1-tsan+0x46f443) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #1 free elf/../include/rtld-malloc.h:50:4 (ld-linux-x86-64.so.2+0x5131) (BuildId: da07864eb4c1b06504b8688d25d7e84759fe708d)
+    #2 _dl_find_object_update elf/dl-find_object.c:806:3 (ld-linux-x86-64.so.2+0x5131)
+    #3 crash_handler /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:27:13 (mnc-stage1-tsan+0x4eee07) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #4 __tsan::CallUserSignalHandler(__tsan::ThreadState*, bool, bool, int, __sanitizer::__sanitizer_siginfo*, void*) tsan_interceptors_posix.cpp.o (mnc-stage1-tsan+0x478195) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #5 mir_opt__licm_function <null> (mnc-stage1-tsan+0x7aa29f) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #6 mir_opt__optimize_mir <null> (mnc-stage1-tsan+0x7ac7d8) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #7 compile <null> (mnc-stage1-tsan+0x4f1c3d) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #8 mn_main <null> (mnc-stage1-tsan+0x4f45e0) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+    #9 compiler_thread /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:100:5 (mnc-stage1-tsan+0x4eee61) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c)
+
+SUMMARY: ThreadSanitizer: signal-unsafe call inside of a signal (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-tsan+0x46f443) (BuildId: bd1265b7a98b611d41a8b36b462a626c6fbdff8c) in free
+==================
+
+[CRASH] Signal 11 at:
+./mapanare/self/mnc-stage1-tsan(___interceptor_backtrace+0xf5)[0x492a55]
+./mapanare/self/mnc-stage1-tsan[0x4eee08]
+./mapanare/self/mnc-stage1-tsan[0x478196]
+./mapanare/self/mnc-stage1-tsan[0x4786ba]
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)[0x7ffa1fa0e330]
+./mapanare/self/mnc-stage1-tsan(mir_opt__block_successors+0xfb)[0x7a7fbb]
+ThreadSanitizer: reported 4 warnings

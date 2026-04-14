@@ -1,0 +1,4 @@
+test	exit	tsan_warnings	stdout
+55_async_basic	0	0	42
+56_async_await	0	0	43
+57_real_await	0	0	110
