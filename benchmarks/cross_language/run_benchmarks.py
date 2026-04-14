@@ -1,4 +1,4 @@
-"""v4.107.0 Cross-language benchmark suite.
+"""v4.118.0 Cross-language benchmark suite.
 
 Compares Mapanare against 5 other languages across 6 workloads:
 
@@ -45,7 +45,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 BENCH_DIR = Path(__file__).resolve().parent
 RUNTIME_LIB = ROOT / "runtime" / "native" / "libmapanare_rt.a"
-RESULTS_FILE = BENCH_DIR / "v4.107.0-results.json"
+RESULTS_FILE = BENCH_DIR / "v4.118.0-results.json"
 
 
 # ---------------------------------------------------------------------------
@@ -608,7 +608,7 @@ LANG_ORDER = [
 
 def run_all(only: str | None, n_runs: int) -> dict:
     print("=" * 78)
-    print(f"  CROSS-LANGUAGE BENCHMARK SUITE (v4.107.0) -- {n_runs} runs per config")
+    print(f"  CROSS-LANGUAGE BENCHMARK SUITE (v4.118.0) -- {n_runs} runs per config")
     print("=" * 78)
 
     tool_report = {
@@ -653,7 +653,7 @@ def run_all(only: str | None, n_runs: int) -> dict:
         print()
 
     return {
-        "version": "4.107.0",
+        "version": "4.118.0",
         "date": time.strftime("%Y-%m-%d"),
         "runs_per_config": n_runs,
         "environment": {
@@ -693,7 +693,7 @@ def _format_summary_table(data: dict) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="v4.107.0 cross-language benchmark suite")
+    parser = argparse.ArgumentParser(description="v4.118.0 cross-language benchmark suite")
     parser.add_argument("--runs", type=int, default=10, help="runs per config (default: 10)")
     parser.add_argument(
         "--only",

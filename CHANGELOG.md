@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.118.0] - 2026-04-14
+
+**Phase F release 1 — final cross-language benchmark.** The
+definitive performance measurement for the v4.120.0 panel. Zero
+compiler or runtime code changes. All 6 workloads (fib_recursive,
+quicksort, struct_alloc, enum_match, prime_sieve, string_concat) run
+against 6 language configurations (C gcc -O2, C clang -O2, Rust -O,
+Go, Mapanare O2, Python 3.12) at 10 runs per cell, plus the 5
+native-async workloads (01_sequential_chain, 02_fanout, 03_io_bound,
+04_mixed_cpu_io, 05_backpressure) that v4.94.0 had to skip with
+"linking currently fails."
+
+### Added
+
+- **`benchmarks/FINAL_REPORT_v4.120.md`** — 500-line evidence
+  document for the v4.120.0 panel. Methodology (hardware, OS,
+  toolchain versions, run method, correctness protocol), 7 tables
+  (wall clock, peak memory, binary size, LOC, speedup vs C gcc,
+  progress arc v4.82.0 → v4.118.0, async benchmarks), 6 per-workload
+  ASCII position charts, spectrum analysis by workload category,
+  known-gap docket register (Rt.1, Qs.1, TBAA.1, willreturn.1, Sh.8,
+  Sh.9a/b), cross-reference with v4.107.0 `FULL_COMPARISON.md`, and
+  a reproducibility checklist with exact commands.
+
+- **`benchmarks/cross_language/v4.118.0-results.json`** — raw
+  per-run data: 10 runs × 6 workloads × 6 languages = 360 cells with
+  wall_time_s, cpu_time_s, peak_memory_kb, output (for checksum
+  validation). Every number in FINAL_REPORT tables 1–6 can be
+  re-derived from this file.
+
+- **`benchmarks/async/v4.118.0-async.json`** — raw async data: 10
+  runs × 5 workloads × 3 languages (Mapanare / Python asyncio / Go
+  goroutines). First time this file has Mapanare numbers that link
+  and execute — v4.94.0-baseline.json had only Python data because
+  `libmapanare_rt.a` lacked the v4.93.0 scheduler.
+
+### Changed
+
+- **`benchmarks/cross_language/run_benchmarks.py`** — version
+  strings bumped 4.107.0 → 4.118.0 (docstring, JSON output `version`
+  field, default output filename, banner, argparse description).
+  Four single-line edits. Harness behaviour unchanged.
+
+### Not changed
+
+- No changes under `mapanare/`, `runtime/native/`, `mapanare/self/`,
+  `stdlib/`, `scripts/`, or existing tests. `libmapanare_rt.a`
+  byte-identical to v4.117.0. This is a measurement release.
+
+### Headline numbers (Mapanare O2 wall, median of 10 runs, ms)
+
+| Benchmark       | v4.107.0 | v4.118.0 | Δ      |
+|-----------------|---------:|---------:|-------:|
+| fib_recursive   |   20.330 |   18.909 |  −7.0% |
+| quicksort       |    2.583 |    2.448 |  −5.2% |
+| struct_alloc    |    1.207 |    1.322 |  +9.5% |
+| enum_match      |    3.659 |    3.026 | −17.3% |
+| prime_sieve     |    3.433 |    3.438 |  +0.1% |
+| string_concat   |   94.570 |    1.320 | **−98.6%** ‡ |
+
+‡ Captured at v4.108.0 (Phase C StringBuilder fix); v4.118.0
+confirms persistence and harness match.
+
+### Geometric mean across 6 workloads (Mapanare O2 vs others)
+
+- **5.46× slower than C gcc -O2** (down from 9.5× at v4.107.0)
+- **1.13× slower than Rust -O**
+- **1.04× slower than Go** (on par)
+- **36.9× faster than Python 3.12**
+
+### Async geomean across 5 workloads
+
+- **42.6× faster than Python asyncio**
+- **1.74× slower than Go goroutines**
+
+### Correctness
+
+- 36/36 cross-language cells: correct checksums.
+- 5/5 async cells: correct checksums.
+- Zero wrong-checksum cells. Zero compile failures. Zero timeout
+  cells.
+
+### Exit criteria (8 items)
+
+| # | Check | Status |
+|---|---|---|
+| 1 | All 6 benchmarks × 5 language configs (+ 2 C variants) ran | PASS — `v4.118.0-results.json`, 36 cells |
+| 2 | 10 runs per config, median + stddev reported | PASS — 10 runs, middle-8 median |
+| 3 | Checksums match across languages | PASS — 36/36 + 5/5 async |
+| 4 | Progress table v4.82.0 → v4.99.0 → v4.118.0 computed | PASS — Table 6 |
+| 5 | `FINAL_REPORT_v4.120.md` published | PASS — 500 lines, 7 tables, 6 charts |
+| 6 | Methodology documented for reproducibility | PASS — §Methodology + §Reproducibility |
+| 7 | ASCII position charts generated | PASS — 6 charts, 1 per workload |
+| 8 | Standard closeout clean | PASS (this entry + SESSION_REPORT + VERSION bump) |
+
+### Dockets — none opened
+
+No new dockets from this release. Measurement-only. Carry-forward
+items (Rt.1, Qs.1, TBAA.1, Sh.8, Sh.9a/b) remain open for v5.x.
+
 ## [4.117.0] - 2026-04-14
 
 **Phase E release 3 — testing sweep.** The v4.120.0 panel will only

@@ -8,13 +8,24 @@
 > No code changes. No optimizations. Pure measurement of where
 > Mapanare stands after 20 recovery releases.
 
-**Status:** PLANNED
+**Status:** DONE (shipped 2026-04-14)
 **Breaking:** No
 **Prerequisite:** v4.117.0
 **Delta review:** No
 **Full panel:** No (v4.120.0)
 **Estimated work:** 1 sprint
 **Theme:** Measure everything. Publish the definitive "where does Mapanare stand" document.
+
+## Result
+
+All 8 exit criteria met. Geomean across 6 workloads: **5.46× slower
+than C gcc -O2** (down from 9.5× at v4.107.0), **1.13× slower than
+Rust**, **on par with Go**, **36.9× faster than Python 3.12**. Async
+geomean across 5 workloads: **42.6× faster than Python asyncio**,
+**1.74× slower than Go goroutines**. `string_concat` progress
+v4.82.0 → v4.118.0: **102.31 ms → 1.32 ms (77.5× speedup)**, Phase C
+(v4.108.0) credit. See `SESSION_REPORT.md` and
+`benchmarks/FINAL_REPORT_v4.120.md`.
 
 ---
 
