@@ -1,81 +1,100 @@
-# Mapanare v4.101.0 — Fix List Indexing Bug
+# Mapanare v4.101.0 — Self-Hosted Emitter Output Corruption
 
-> **Phase A release 2.** With the tagged-pointer UB fixed in v4.100.0,
-> the native binary produces correct string output. The next blocker is
-> the list indexing bug (v4.99.0 docket item #2, CRITICAL): `data[j]`
-> returns garbage in certain code contexts despite working correctly in
-> quicksort. This release reproduces, diagnoses, and fixes the root
-> cause.
+> **Phase A release 2.** v4.100.0 removed the tagged-pointer UB but the
+> observable output corruption persists — confirmed pre-existing in the
+> pristine v4.99.0 binary. The v4.100.0 session identified a clear
+> forensic fingerprint: every declaration line from `mnc-stage1` is
+> prefixed with 16 bytes of garbage matching an `MnString` struct
+> (`{ data, len }`) being written where the string's data bytes should
+> be. This release diagnoses and fixes the actual root cause, which
+> likely also explains the list indexing bug (docket #2) since both
+> involve incorrect element access in `List<String>`.
 
-**Status:** PLANNED
+**Status:** DONE — 2026-04-13. See SESSION_REPORT.md. Root cause was move-semantics gap in `mapanare/emit_llvm_text.py` (`_do_list_push`, `_do_struct_init`, `_do_field_set`, and related paths). Six sites fixed. Golden tests: 0/61 → 16/62. Regression test `tests/golden/62_list_output.mn` added.
 **Breaking:** No
 **Prerequisite:** v4.100.0
 **Delta review:** No
 **Full panel:** No (v4.106.0)
 **Estimated work:** 1 sprint
-**Theme:** Fix list element access returning garbage — the second critical bug from the v4.99.0 docket.
+**Theme:** Diagnose and fix the self-hosted emitter output corruption — the 16-byte MnString struct leak in the IR output stream.
 
 ---
 
 ## Scope
 
-The v4.99.0 panel identified list indexing as a CRITICAL bug: `data[j]` returns garbage values in certain contexts while working correctly in others (e.g., quicksort). This inconsistency points to a codegen bug in the emitter — the IR generated for list element access differs depending on context (function nesting, variable scope, optimization level, or surrounding code patterns).
+The v4.99.0 panel attributed garbled `mnc-stage1` output to tagged-pointer
+UB. v4.100.0 proved this wrong: the corruption exists in the pristine
+v4.99.0 binary with zero v4.100.0 changes applied. The real bug is in the
+self-hosted emitter's string output path.
 
-The approach: reproduce the bug with a minimal .mn program, compare the IR generated for working and broken list access, identify the divergence (likely a GEP with wrong indices, a load with wrong type, or a missing dereference), fix the emitter, and add a regression test.
+**The forensic fingerprint** (from v4.100.0 session):
+- Every declaration line has a 16-byte prefix of garbage.
+- The first 8 bytes look like user-space pointers (`0x00007f...`).
+- The second 8 bytes repeat across blocks.
+- This is exactly what you'd see if the 16-byte `MnString` struct
+  (`{ const char *data; uint64_t len:63; uint64_t is_heap:1; }`) was
+  being memcpy'd into the output buffer instead of dereferencing
+  `s.data` and writing the pointed-to bytes.
 
-With v4.100.0 fixing the tagged-pointer UB, we can now trust the native binary's output enough to isolate this bug. Before v4.100.0, garbled strings masked all other failures.
+**Three plausible culprits** (from v4.100.0 session):
+1. `List<String>` element access in the self-hosted emitter: elements
+   are stored by value (16 bytes each). If the emitter reads the element
+   pointer (`&s`) instead of the element's data pointer (`s.data`), the
+   struct bytes appear in the output.
+2. The `join("\n", st.lines)` call that produces final IR text — the
+   `join` implementation may be reading list element storage addresses
+   instead of dereferencing string data.
+3. `__mn_str_concat` chain in the emission path — the runtime function
+   is unit-tested and known-good, so the bug is more likely in the
+   emitted IR that calls it.
 
-## Phase 1 — Reproduce the bug
+**This likely subsumes docket #2** (list indexing). The panel reported
+`data[j]` returning garbage — which is exactly what happens if list
+element access returns the element's stack/heap address (16 bytes)
+instead of dereferencing the stored value. Fixing the emitter's string
+list access should fix both issues.
 
-- [ ] Review the v4.99.0 panel notes — identify which specific test or benchmark exhibits the list indexing failure
-- [ ] Search existing golden tests for list-heavy programs — identify which ones pass and which ones produce garbage
-- [ ] Create a minimal reproducer: `tests/golden/62_list_indexing.mn`
-  - Include at minimum: list creation, element access by variable index, element access in a loop, element access after list mutation
-  - Include the specific pattern that fails (from the panel's description)
-- [ ] Compile the reproducer through the Python bootstrap — verify it produces correct output
-- [ ] Compile the reproducer through mnc-stage1 — verify it produces garbage (confirming the bug)
+## Phase 1 — Instrument and compare
 
-## Phase 2 — Trace the emitter divergence
+- [ ] Compile a trivial program (`fn main() { print("hello") }`) through BOTH the Python bootstrap and mnc-stage1. Save both IR outputs.
+- [ ] Diff the outputs byte-by-byte. Identify exactly where the corruption begins — which function, which line, which string.
+- [ ] Instrument `__mn_str_print` with debug output: print the `MnString` struct fields (`data` pointer, `len`, `is_heap`) to stderr before writing. Rebuild mnc-stage1. Run the trivial program. Verify whether the struct fields are sane (valid pointer, reasonable length) or corrupted on arrival.
+- [ ] If the struct fields are sane but the output is still garbled, the bug is in `__mn_str_print` itself (unlikely — unit-tested). If the struct fields are garbage, the bug is upstream: the caller is passing the wrong value.
 
-- [ ] Emit LLVM IR for the reproducer: `python -m mapanare emit-llvm tests/golden/62_list_indexing.mn`
-- [ ] Emit LLVM IR from mnc-stage1 for the same file (if supported) or inspect the IR that the quicksort golden test generates for its list access
-- [ ] Compare the IR generated for working list access (quicksort) vs broken list access (reproducer):
-  - Focus on GEP instructions targeting list data
-  - Focus on load instructions reading list elements
-  - Focus on the list struct layout assumed by each access pattern
-- [ ] Identify the divergence — document the root cause:
-  - Wrong GEP index (off-by-one, wrong field)?
-  - Wrong load type (i64 vs ptr vs i8)?
-  - Missing dereference (loading the list struct instead of the element)?
-  - Pointer-to-pointer confusion?
+## Phase 2 — Trace the List<String> element access path
 
-## Phase 3 — Fix the emitter
+- [ ] In the self-hosted emitter (`mapanare/self/emit_llvm.mn`), find where `st.lines` (a `List<String>`) is built up via push/append.
+- [ ] Find where `st.lines` elements are accessed — likely in a `join` call or a loop that concatenates lines.
+- [ ] Emit the LLVM IR that the self-hosted emitter generates for this path. Look for:
+  - GEP into list data array: does it index by `16 * i` (correct for 16-byte MnString elements)?
+  - Load from list element: does it load `{ ptr, i64 }` (the MnString struct) or just `ptr` (wrong — that's just the data pointer)?
+  - After loading the MnString, does it extract `s.data` via `extractvalue` before passing to `__mn_str_print` / `__mn_str_concat`?
+- [ ] Compare this IR against what the Python bootstrap emitter generates for the same `join` / list iteration pattern. The Python IR is known-good — any divergence is the bug.
 
-- [ ] Fix the root cause in `mapanare/emit_llvm_text.py`
-- [ ] If the bug also exists in `mapanare/self/emit_llvm.mn`, fix it there too
-- [ ] If the bug is in `mapanare/lower.py` (wrong MIR generated for list access), fix at the MIR level
-- [ ] Verify the fix does not break quicksort or other working list access patterns
-- [ ] Re-emit IR for the reproducer — confirm the GEP/load now matches the working pattern
+## Phase 3 — Fix the root cause
 
-## Phase 4 — Regression test
+- [ ] Based on Phase 2 findings, fix the emitter. Most likely fix:
+  - If list element access returns `ptr` (address of element in list storage) instead of loading the `{ ptr, i64 }` struct at that address: add a load instruction after the GEP.
+  - If the MnString struct is loaded but `s.data` is not extracted: add `extractvalue { ptr, i64 }, 0` to get the data pointer before passing to print/concat.
+  - If `join` implementation in the self-hosted stdlib is wrong: fix the `join` function's IR emission.
+- [ ] Fix in `mapanare/self/emit_llvm.mn` (self-hosted emitter)
+- [ ] If the same pattern exists in `mapanare/emit_llvm_text.py` (Python emitter), fix there too — though the Python path produces correct output, so it may already be correct
+- [ ] If the bug is in `mapanare/self/lower.mn` (MIR lowering for list element access), fix at the MIR level
 
-- [ ] Finalize `tests/golden/62_list_indexing.mn` with comprehensive coverage:
-  - List literal construction
-  - Access by literal index: `data[0]`, `data[2]`
-  - Access by variable index: `let i = 1; data[i]`
-  - Access in a for loop: `for i in range(len(data))`
-  - Access after push/append
-  - Nested list access (if applicable): `data[i][j]`
-  - List passed as function argument, accessed inside
-- [ ] Add corresponding pytest: `tests/llvm/test_list_indexing.py` (or add cases to existing list test file)
-- [ ] Verify the golden test passes through both Python bootstrap and mnc-stage1
-
-## Phase 5 — Rebuild + full golden suite
+## Phase 4 — Verify the fix
 
 - [ ] Rebuild mnc-stage1: `python scripts/build_stage1.py`
-- [ ] Run all golden tests: `python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 -v`
-- [ ] Target: 62/62 (61 existing + 1 new `62_list_indexing.mn`)
-- [ ] Record pass count — any failures should be unrelated to list indexing
+- [ ] Run `./mapanare/self/mnc-stage1 tests/golden/01_hello.mn` — output should be clean IR, no 16-byte garbage prefix
+- [ ] Run `./mapanare/self/mnc-stage1 tests/golden/01_hello.mn | llvm-as -o /dev/null` — the output should be valid LLVM IR
+- [ ] Compare mnc-stage1 output vs Python bootstrap output for the same file — diff should show only cosmetic differences (label names, metadata), not structural corruption
+
+## Phase 5 — Golden test sweep
+
+- [ ] Run ALL golden tests through mnc-stage1: `python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 -v`
+- [ ] Record pass count. Target: significant improvement from 0/61 (pre-fix).
+- [ ] For any remaining failures, document whether they are caused by the same list-access pattern or a different issue.
+- [ ] If the list indexing bug (docket #2) is confirmed fixed as a side effect, document that in SESSION_REPORT.md.
+- [ ] Add regression test: `tests/golden/62_list_output.mn` — a program that builds a list of strings, joins them, and prints. Must produce correct output through both pipelines.
 
 ## Phase 6 — LOW sweep + closeout
 
@@ -86,18 +105,20 @@ With v4.100.0 fixing the tagged-pointer UB, we can now trust the native binary's
 
 ---
 
-## Exit criteria (8 items)
+## Exit criteria (10 items)
 
 | # | Check | Evidence |
 |---|---|---|
-| 1 | Bug reproduced: minimal .mn file shows garbage from list access | reproducer output |
-| 2 | Root cause identified and documented | SESSION_REPORT.md root cause section |
-| 3 | Fix applied in emitter (`emit_llvm_text.py` and/or `emit_llvm.mn`) | diff |
-| 4 | Regression test: `tests/golden/62_list_indexing.mn` | file exists, passes both pipelines |
-| 5 | Quicksort and other existing list tests still pass | no regressions |
-| 6 | 62/62 golden tests pass through mnc-stage1 | test log |
-| 7 | pytest integration tests pass | `make test` output |
-| 8 | Root cause does not affect C backend (`emit_c.py`) or is fixed there too | audit |
+| 1 | Root cause identified and documented | SESSION_REPORT.md root cause section |
+| 2 | 16-byte garbage prefix eliminated from mnc-stage1 output | `mnc-stage1 01_hello.mn` produces clean IR |
+| 3 | mnc-stage1 output passes `llvm-as` validation | `llvm-as -o /dev/null` succeeds |
+| 4 | Fix applied in self-hosted emitter | diff of `emit_llvm.mn` and/or `lower.mn` |
+| 5 | mnc-stage1 vs Python bootstrap output diff is cosmetic only | diff output |
+| 6 | Golden test pass count significantly improved from 0/61 | test log with pass count |
+| 7 | Regression test `62_list_output.mn` passes both pipelines | test log |
+| 8 | Docket #2 (list indexing) status assessed | SESSION_REPORT.md documents whether it's the same bug |
+| 9 | No regressions in Python bootstrap tests | `make test` output |
+| 10 | Valgrind clean on mnc-stage1 compiling 01_hello.mn | valgrind output |
 
 ---
 
@@ -105,9 +126,9 @@ With v4.100.0 fixing the tagged-pointer UB, we can now trust the native binary's
 
 - **Fix async linking** — that is v4.102.0.
 - **Fix else/sino or closure types** — that is v4.103.0.
-- **Optimize list performance** — this fixes correctness, not speed.
-- **Change list implementation** — the Robin Hood hash table for maps and the dynamic array for lists are unchanged. Only the codegen for element access is fixed.
-- **Run a panel** — Phase A has no panel. The next panel is v4.106.0.
+- **Optimize output** — this fixes correctness. The IR may be verbose but it must be valid.
+- **Achieve 61/61 golden** — the target is "significant improvement from 0/61" with root cause identified. Some failures may have unrelated causes.
+- **Run a panel** — next panel is v4.106.0.
 
 ---
 
@@ -115,14 +136,14 @@ With v4.100.0 fixing the tagged-pointer UB, we can now trust the native binary's
 
 | Risk | L | I | Mitigation |
 |---|---|---|---|
-| Root cause is in MIR lowering, not the emitter — fix is deeper than expected | medium | medium | Phase 2 traces from IR back to MIR; if the MIR is wrong, fix `lower.py` |
-| Fix breaks quicksort or other working list access patterns | low | high | Run ALL golden tests after the fix; quicksort is the first regression check |
-| Bug is actually in the C runtime list implementation, not the emitter | low | medium | Phase 2 IR comparison will reveal whether the issue is codegen or runtime |
-| Minimal reproducer does not trigger the bug (it is context-dependent) | medium | medium | Use the exact code pattern from the panel report; try multiple contexts |
-| Self-hosted emitter (`emit_llvm.mn`) has a different root cause than Python emitter | medium | medium | Fix both independently; verify both produce correct IR for the reproducer |
+| Root cause is not in List<String> access but somewhere else entirely | medium | medium | The 16-byte fingerprint strongly suggests MnString struct leak; Phase 1 instrumentation will confirm or rule out |
+| Fix breaks the Python bootstrap emitter path | low | high | Python path is known-good; changes to shared code must preserve Python output |
+| Multiple independent bugs compound to produce the corruption | medium | medium | Fix one at a time; verify each fix narrows the corruption |
+| Self-hosted emitter has architectural issues beyond a point fix | medium | high | If the bug is systemic (wrong calling convention for all struct-returning functions), document the scope and plan a follow-up |
+| Valgrind reveals additional memory issues unrelated to this bug | medium | low | Document, don't block. Valgrind issues become v4.105.0 scope (debugging infrastructure). |
 
 ---
 
 ## After v4.101.0
 
-v4.102.0 fixes async linking (docket item #3) and runs async programs natively for the first time. `__mn_coro_scheduler_*` functions are not exported to `libmapanare_rt.a` — a build system fix. After v4.102.0, three of the five critical/high docket items will be closed.
+If the output corruption is fixed, v4.102.0 proceeds with async linking (docket #3). If the corruption persists but is better understood, v4.102.0 may need to continue the investigation before moving to async. The session report will recommend the path based on findings.

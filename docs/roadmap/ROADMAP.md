@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.96.0 shipped — Arc 13 panel: 8.57/10 PASS. Multi-threaded async + StringBuilder. Arc 13 closes.)
+## Where We Are (v4.101.0 shipped — Phase A Release 2. Self-hosted emitter corruption fixed: dockets #1 + #2 closed; golden 0/61 → 16/62.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural

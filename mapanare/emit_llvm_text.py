@@ -2806,6 +2806,10 @@ class LLVMTextEmitter:
                 ea = self._alloca(et, "pea")
                 self._L(f"store {et} {ev}, ptr {ea}")
                 ep = ea  # opaque ptr, no bitcast
+                # v4.101.0: move semantics — the element is now owned
+                # by the list; zero its tracking slot so drop glue
+                # does not free it. See _do_list_push for details.
+                self._move_resource(elem_val.name)
                 self._ensure("__mn_list_push", VOID, ["ptr", PTR])
                 self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
                 self._put(i.dest, "0", I1)  # push returns void
@@ -3724,6 +3728,12 @@ class LLVMTextEmitter:
                 nxt = self._f("si")
                 self._L(f"{nxt} = insertvalue {sty} {cur}, {t} {v}, {idx}")
                 cur = nxt
+                # v4.101.0: move semantics — the field value is now
+                # owned by the struct. Zero its tracking slot so drop
+                # glue does not free the buffer the struct now holds a
+                # pointer to. Mirrors the fix in _do_list_push (see
+                # its comment for the root-cause rationale).
+                self._move_resource(fval.name)
             self._put(i.dest, cur, sty)
         else:
             # unknown struct
@@ -3834,6 +3844,9 @@ class LLVMTextEmitter:
                 if vt != ft:
                     vv = self._coerce(vv, vt, ft)
                 self._L(f"store {ft} {vv}, ptr {fp}")
+            # v4.101.0: move semantics for the stored value (see
+            # _do_list_push / _do_struct_init for the rationale).
+            self._move_resource(i.val.name)
             return
         # fallback: insertvalue
         ov, ot = self._get(i.obj)
@@ -3845,6 +3858,8 @@ class LLVMTextEmitter:
             r = self._f("iv")
             self._L(f"{r} = insertvalue {ot} {ov}, {ft} {vv}, {idx}")
             self._put(i.obj, r, ot)
+            # v4.101.0: move semantics for the stored value.
+            self._move_resource(i.val.name)
 
     # --- ListInit ---
     def _do_list_init(self, i: ListInit) -> None:
@@ -3866,6 +3881,10 @@ class LLVMTextEmitter:
                 self._L(f"store {et} {ev}, ptr {ea}")
                 ep = self._f("ep")
                 ep = ea  # opaque ptr, no bitcast
+                # v4.101.0: move element ownership into the list so
+                # drop glue does not free the backing buffer (see
+                # _do_list_push for the full rationale).
+                self._move_resource(elem.name)
                 self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
             r = self._f("ll")
             self._L(f"{r} = load {LIST}, ptr {la}")
@@ -3936,6 +3955,17 @@ class LLVMTextEmitter:
             ea = self._alloca(et, "ea")
             self._L(f"store {et} {ev}, ptr {ea}")
             ep = ea  # opaque ptr, no bitcast
+            # v4.101.0: move semantics — the element's ownership is
+            # transferred to the list. Zero out the element's tracking
+            # slot so drop glue does not free a buffer the list now
+            # owns a pointer to. Without this, heap-allocated strings
+            # pushed into a List<String> get use-after-freed at
+            # function return; readers of the list later see garbage
+            # where the first bytes of each pushed string should be.
+            # (Root cause for the self-hosted emitter's 16-byte
+            # garbage prefix on every `declare` line of mnc-stage1's
+            # output.)
+            self._move_resource(i.element.name)
             self._ensure("__mn_list_push", VOID, ["ptr", PTR])
             # Use the SOURCE alloca directly for push (not a copy)
             if t != LIST:
@@ -3966,6 +3996,9 @@ class LLVMTextEmitter:
             ea = self._alloca(et, "ea")
             self._L(f"store {et} {ev}, ptr {ea}")
             ep = ea  # opaque ptr, no bitcast
+            # v4.101.0 (see _do_list_push main path above): move the
+            # element into the list so drop glue does not free it.
+            self._move_resource(i.element.name)
             self._ensure("__mn_list_push", VOID, ["ptr", PTR])
             self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
             r = self._f("ul")

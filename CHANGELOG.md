@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.101.0] - 2026-04-13
+
+**Phase A Release 2 — Self-hosted emitter output corruption fixed.** The
+16-byte garbage prefix that mnc-stage1 wrote on every `declare` line of
+its LLVM IR output (and the related "list indexing returns garbage"
+symptom, docket item #2 from the v4.99.0 panel) were the same
+use-after-free: the Python emitter's drop glue freed heap-allocated
+strings at function return even after they had been `push()`-ed into a
+list or stored as a struct field. The allocator reused those addresses
+for later concat results, so the list held dangling pointers and
+readers saw whatever later string happened to land at the same
+address. Fixed by adding move-semantics calls at every site that
+transfers ownership of a heap value into a longer-lived container.
+
+Golden test pass rate through `mnc-stage1` improved from **0/61** →
+**16/62** (one regression test added). The remaining 46 failures are
+distinct pre-existing bugs previously masked by the output corruption
+(crashes in `semantic__infer_expr`, `mir_opt__block_successors`,
+async-await lexer paths, const-scope resolution) and become v4.102.0+
+scope.
+
+### Changed
+
+- `mapanare/emit_llvm_text.py`: six call sites now invoke
+  `self._move_resource(v.name)` on values transferred into a longer-
+  lived container — `_do_list_push` (main + fallback + direct-call
+  paths), `_do_list_init`, `_do_struct_init`, `_do_field_set`
+  (GEP-store + insertvalue fallback). Move-semantics zero the
+  element's `str_track` slot so the function-return drop loop skips
+  the free.
+
+### Added
+
+- `tests/golden/62_list_output.mn` + `.ref.ll` — regression test that
+  fails loudly if this class of use-after-free recurs. Builds a
+  `List<String>` inside a struct across a function boundary, joins
+  it, and prints. Exercises exactly the pattern the self-hosted
+  emitter relied on.
+
+### Fixed
+
+- mnc-stage1 now emits clean, `llvm-as`-valid LLVM IR for all inputs
+  it can parse + lower. `define i32 @main()` correctly named (was
+  `define void @   ()` with 3-space garbage before the fix).
+- Valgrind clean: `mnc-stage1 tests/golden/01_hello.mn` runs with
+  `ERROR SUMMARY: 0 errors`.
+
+### Closed
+
+- **Docket #1 (tagged-pointer UB)** — fully closed. v4.100.0 removed
+  the structural UB; v4.101.0 fixed the observable downstream
+  corruption the v4.99.0 panel originally attributed to it.
+- **Docket #2 (list indexing)** — closed as same root cause. Same
+  use-after-free in a different surface; the fix addresses both.
+
 ## [4.100.0] - 2026-04-13
 
 **Phase A Release 1 — Tagged-pointer UB eliminated (structural fix only).**
