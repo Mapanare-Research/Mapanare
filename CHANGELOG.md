@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.105.0] - 2026-04-14
+
+**Phase B release 2 — debugging infrastructure.** Valgrind, AddressSanitizer,
+and ThreadSanitizer run over the full golden suite and async goldens.
+Async-signal-safe crash handler with source breadcrumbs replaces the
+pre-existing legacy handler. CI gates in `.github/workflows/sanitizers.yml`
+catch memory-safety regressions on every push to `dev`.
+
+### Added
+
+- **Crash breadcrumbs** — `runtime/native/mapanare_runtime.c`:
+  thread-local `mn_current_file` / `mn_current_line` / `mn_current_phase`,
+  plus `__mn_set_current_source(file, line)` and
+  `__mn_set_current_phase(phase)`. New `__mn_install_crash_handler()`
+  wires `sigaction(SIGSEGV|SIGABRT|SIGBUS|SIGFPE|SIGILL)` to a handler
+  that uses only async-signal-safe primitives (`write(2)`, hand-rolled
+  integer format, `backtrace_symbols_fd`). Output format:
+  `[CRASH] SIGSEGV during compile at tests/golden/03_function.mn`.
+- **Driver integration** — `mapanare/self/mnc_main.c`: replaces the
+  pre-v4.105.0 `crash_handler` (which called `fprintf` and `backtrace()`
+  from inside a signal, both async-signal-unsafe). Installs the new
+  handler before anything else, stashes `argv[1]` into the main
+  thread's breadcrumb, and threads the source path into the compiler
+  worker via a new `compiler_thread_arg` struct so the breadcrumb
+  lives on the thread that crashes.
+- **Sanitizer build scripts** — `scripts/build_asan.sh`,
+  `scripts/build_tsan.sh`: produce `mnc-stage1-asan` and
+  `mnc-stage1-tsan` at `-O1` with `-fno-omit-frame-pointer`. Both
+  instrument main.ll, the 7 C runtime modules, and `mnc_main.c`.
+- **Sanitizer runners** — `scripts/valgrind_all_goldens.sh`,
+  `scripts/run_asan_goldens.sh`: drive the sanitized compiler across
+  all 64 goldens and write per-class summary TSVs.
+- **Regression gates** — `scripts/check_valgrind_baseline.py`,
+  `scripts/check_asan_baseline.py`: fail CI if any test transitions
+  from CLEAN/WARNINGS_ONLY into ERRORS/ASAN_ERROR relative to the
+  committed baseline. Fixes (errors → clean) are reported but not
+  required.
+- **CI workflow** — `.github/workflows/sanitizers.yml`: three jobs
+  (`valgrind`, `asan`, `tsan-async`) running on every push/PR to
+  `dev`. Artifacts uploaded with 14-day retention. Hard timeouts of
+  15-20 minutes per job.
+
+### Measured
+
+- **Valgrind**: 0 CLEAN, 28 WARNINGS_ONLY (leaks only), **36 ERRORS**
+  across 64 goldens. Top frames cluster into `mir_opt__block_successors`
+  (14×), `__mn_list_free` (12×), `emit_llvm__emit_mir_call` (11×).
+  Seven of the 21 Phase-2 golden passes have latent memory bugs that
+  produce correct output today (`06_struct`, `08_list`, `10_result`,
+  `12_while`, `14_nested_struct`, `30_nested_generics`, `32_generic_enum`).
+  Full report: `docs/roadmap/v4/v4.105.0/VALGRIND_REPORT.md`.
+- **AddressSanitizer**: 21 CLEAN, **17 ASAN_ERROR**, 26 CRASH_NO_ASAN.
+  Errors cluster into heap-use-after-free in `__mn_list_free` (12×,
+  shared-buffer double-free in the C runtime) and global-buffer-overflow
+  in `strtoll` (5×, self-hosted optimizer calling C `strtoll` on a
+  non-null-terminated `[N x i8]` string constant). Full report:
+  `docs/roadmap/v4/v4.105.0/ASAN_REPORT.md`.
+- **ThreadSanitizer**: **3/3 async goldens run with 0 data races**
+  (55→42, 56→43, 57→110). Compiler-side 64-test run shows 20 CLEAN
+  and 29 signal-unsafe-call warnings (all attributable to the legacy
+  crash handler — the very finding Phase 4 fixes). Full report:
+  `docs/roadmap/v4/v4.105.0/TSAN_REPORT.md`.
+
+### Changed
+
+- `runtime/native/mapanare_runtime.c` — +125 lines at EOF (crash
+  diagnostics). No changes to existing runtime functions; new code is
+  additive.
+- `runtime/native/mapanare_runtime.h` — 3 new `MN_EXPORT` declarations
+  in a named "v4.105.0 Phase 4" block.
+- `mapanare/self/mnc_main.c` — -23 legacy handler lines, +15 driver
+  wiring lines. Net: crisper, AS-safe, thread-aware breadcrumb.
+
+### Docket items opened for v4.106.0 panel
+
+From Phase 1 (valgrind): `Vg.1`–`Vg.7`
+(UAF in `lookup_struct_field_type`, `__mn_list_free` uninit use,
+uninit stack from `try_monomorphize_struct`, UAF in `fresh_tmp`,
+invalid read in `resolve_mir_type`, `emit_mir_basic_block` reads
+invalid memory, verifier reads invalid memory).
+
+From Phase 2 (ASan): `As.1`–`As.3`
+(C-runtime list shared-buffer double-free, `strtoll` on non-NUL-
+terminated IR constants, `__mn_str_eq` → `bcmp` on freed buffer).
+
+From Phase 3 (TSan): **Ts.1 closed in-release** — the async-signal-
+safe handler shipped in Phase 4 is the fix. No carry-forward TSan item.
+
+### Known limitations
+
+- `backtrace()` (glibc) is not listed in `signal-safety(7)` as
+  async-signal-safe; the first call triggers `ld.so` lazy symbol load
+  which `malloc`s. We accepted this trade-off — a signal-safe-only
+  handler with no backtrace was judged less useful than a slightly-
+  unsafe first-call that gives a stack trace. Documented for panel.
+- Breadcrumb is per-file at driver level, not per-function. Per-function
+  would require `__mn_set_current_source` calls inside the self-hosted
+  `mapanare/self/*.mn` — a future release. Driver-level breadcrumb
+  already satisfies the PLAN's exit criterion.
+
 ## [4.104.0] - 2026-04-14
 
 **Phase B release 1 — rebuild and verify.** Verification-only release;

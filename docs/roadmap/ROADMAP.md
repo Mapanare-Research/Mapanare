@@ -7,7 +7,7 @@
 
 ---
 
-## Where We Are (v4.104.0 shipped — Phase B release 1: rebuild + verify. mnc-stage1 rebuilds cleanly at -O2; 60/64 goldens pass full integration pipeline; 3/3 async goldens run natively; 21/64 through mnc-stage1 unchanged (no regressions from Phase A); 5 semantic divergences docketed for v4.106.0 panel.)
+## Where We Are (v4.105.0 shipped — Phase B release 2: sanitizer instrumentation. Valgrind/ASan/TSan over the full 64-test suite; 3/3 async goldens TSan-clean; async-signal-safe crash handler + thread-local source breadcrumbs replace the legacy handler; `.github/workflows/sanitizers.yml` runs 3 jobs on every push. 10 docket items (`Vg.1`–`Vg.7`, `As.1`–`As.3`) open for the v4.106.0 panel.)
 
 **The compiler core is in the best shape of its life.** 46/46 golden tests,
 11/11 stage2 modules, 4,845+ pytest, fixed-point self-compilation, structural
