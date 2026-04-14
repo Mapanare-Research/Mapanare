@@ -1512,25 +1512,46 @@ static inline int mn_future_is_ready(void *future_ptr) {
     return __atomic_load_n((uint8_t *)future_ptr, __ATOMIC_ACQUIRE) == 1;
 }
 
-/* Check if coroutine is done. LLVM's coroutine splitter, when lowering a
- * `final` suspend (`llvm.coro.suspend(..., i1 true)`), emits code in the
- * resume function that stores a null resume function pointer at
- * frame[0] before returning. So a completed coroutine has frame[0] ==
- * NULL. That is the canonical "done" marker across all LLVM versions
- * that implement the switched-resume ABI; the earlier v4.92.0 check
- * (suspend index at offset 2*ptr_size) was speculative and did not
- * match what LLVM 18 actually emits — the value at that offset is
- * user state, not a marker. The NULL-at-frame[0] check is robust
- * because it's what `llvm.coro.done(handle)` resolves to after the
- * coroutine splitter lowers it. */
+/* ── LLVM coroutine frame ABI (switched-resume lowering) ──
+ *
+ * v4.113.0 (docket #8): replaces the prior pattern of casting the
+ * coroutine handle directly to `void **` and indexing by hand. The
+ * LLVM switched-resume coroutine ABI places two function pointers at
+ * the head of every coroutine frame:
+ *
+ *   offset 0 = resume_fn  (NULL-nulled by the coroutine splitter on
+ *                          final suspend — this is what
+ *                          `llvm.coro.done(handle)` lowers to)
+ *   offset 8 = destroy_fn (still valid after final suspend; used by
+ *                          `llvm.coro.destroy`)
+ *
+ * Both slots are pointer-sized and follow the host ABI's pointer
+ * alignment. Everything after this prefix is opaque user state laid
+ * out by the coroutine splitter — we must never peek into it from C.
+ *
+ * By expressing the prefix as a named struct we get:
+ *   - one compile-time-checked place to update if the ABI ever moves
+ *   - self-documenting field access (`frame->resume_fn` reads better
+ *     than `*(void **)handle`)
+ *   - a single definition grep-able by reviewers — no magic offsets,
+ *     no hand-rolled casts scattered through the scheduler. */
+typedef struct mn_coro_frame_prefix {
+    void (*resume_fn)(void *handle);   /* NULL ⇒ coroutine completed */
+    void (*destroy_fn)(void *handle);  /* frees the coroutine frame  */
+} mn_coro_frame_prefix_t;
+
+/* Check if a coroutine has reached its final suspend. Equivalent to
+ * `llvm.coro.done(handle)` in the LLVM switched-resume lowering: the
+ * splitter nulls the resume_fn slot when the coroutine returns. */
 static inline int mn_coro_is_done(void *handle) {
-    return *(void **)handle == NULL;
+    const mn_coro_frame_prefix_t *frame = (const mn_coro_frame_prefix_t *)handle;
+    return frame->resume_fn == NULL;
 }
 
-/* Resume a coroutine via LLVM-generated resume function pointer at offset 0. */
+/* Resume a suspended coroutine by calling its LLVM-emitted resume_fn. */
 static inline void mn_coro_resume(void *handle) {
-    void (*resume_fn)(void *) = *(void (**)(void *))handle;
-    resume_fn(handle);
+    mn_coro_frame_prefix_t *frame = (mn_coro_frame_prefix_t *)handle;
+    frame->resume_fn(handle);
 }
 
 /* ── Multi-threaded scheduler ── */
