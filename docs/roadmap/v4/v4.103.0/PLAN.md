@@ -9,7 +9,7 @@
 > release adds golden tests for both, fixes whatever breaks, and closes
 > Phase A.
 
-**Status:** PLANNED
+**Status:** DONE — 2026-04-13. See SESSION_REPORT.md. **Phase A complete — all 5 critical/high docket items closed.** Docket #4 (else/sino) fixed via a deeper discovery: the Python emitter's drop-glue was freeing boxed enum payloads whose pointers lived transitively in the returned value but beyond `_extract_ret_ptrs`'s reach, causing `ElseClause` aliasing in the self-hosted AST. Conservative skip when return has any pointer field. Docket #5 (closure types) fixed via 3 changes in `lower.py`: FnType resolves to MIRType(FN), typed-variable calls emit ClosureCall, all lambdas emit ClosureCreate (empty-captures case = `{@fn_ptr, null}`). Both goldens run end-to-end via Python bootstrap + clang. Golden pass through mnc-stage1: 16/62 → 21/64 (5 more tests pass from the boxed-drop fix as side effect).
 **Breaking:** No
 **Prerequisite:** v4.102.0
 **Delta review:** No

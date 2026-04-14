@@ -374,8 +374,17 @@ class TestClosureLowering:
         lowerer = MIRLowerer()
         return lowerer.lower(program, module_name="test")
 
-    def test_lambda_no_capture_emits_const(self):
-        """A lambda with no captures should emit a Const FN reference."""
+    def test_lambda_no_capture_emits_closure_create(self):
+        """A no-capture lambda emits ClosureCreate with empty captures.
+
+        v4.103.0 changed this from Const-FN to ClosureCreate so the
+        same representation works whether the lambda is called
+        directly or passed through a parameter annotated with
+        ``fn(T) -> T`` (docket #5). The indirect-call path
+        (ClosureCall) expects a ``{ptr, ptr}`` struct; the emitter's
+        ClosureCreate path handles the empty-captures case by
+        emitting ``{@fn_ptr, null}`` inline.
+        """
         source = """
 fn main() -> Int {
     let f = (x) => x + 1
@@ -385,12 +394,12 @@ fn main() -> Int {
         module = self._lower_source(source)
         main_fn = module.get_function("main")
         assert main_fn is not None
-        # Should have a Const instruction with a lambda name
+        # Should have a ClosureCreate with an empty captures list
         insts = [
             inst
             for bb in main_fn.blocks
             for inst in bb.instructions
-            if isinstance(inst, Const) and inst.ty.kind == TypeKind.FN
+            if isinstance(inst, ClosureCreate) and not inst.captures
         ]
         assert len(insts) >= 1
 

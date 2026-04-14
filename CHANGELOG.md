@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.103.0] - 2026-04-13
+
+**Phase A complete — all 5 critical/high docket items from the
+v4.99.0 panel are closed.** This is the fourth and final release of
+the Bug Sprint. Dockets #4 (else/sino verification) and #5 (closure
+type annotations) both shipped. Two new regression tests cover the
+patterns end-to-end: `63_else_sino.mn` and `64_closure_typed.mn`,
+both producing the expected output through the Python bootstrap +
+clang + native binary path (valgrind clean on 64).
+
+### Fixed
+
+- `mapanare/emit_llvm_text.py` — `_emit_drop_glue_boxed` now skips
+  all boxed-enum-payload frees when the return value exposes any
+  pointer field. Without this, the Python emitter's drop-glue pass
+  was freeing boxes whose pointers lived transitively inside the
+  returned value at a nesting depth `_extract_ret_ptrs` cannot
+  reach (it walks LLVM-level struct values, not through heap
+  content). The allocator reused the freed addresses for the next
+  box allocation, aliasing nested AST/MIR structures. Observed as
+  the self-hosted semantic checker infinite-recursing on nested
+  if/else (inner `ElseClause`'s box aliasing the outer `ElseClause`)
+  and as 5 other golden tests failing for related reasons. The
+  conservative "skip if ret has any pointer" gate is a surgical
+  unblock; a type-aware pointer walker is the principled long-term
+  fix, deferred to Phase B.
+
+- `mapanare/lower.py` — three related changes to make closure type
+  annotations lower correctly end-to-end:
+  - `_resolve_type_expr(FnType)` now returns `MIRType(kind=FN)`
+    instead of `mir_unknown()`. Parameters annotated `fn(T) -> T`
+    were silently getting UNKNOWN type and the call site emitted
+    a direct `@f(x)` instead of an indirect call.
+  - `_lower_call` with an `Identifier` callee detects when the
+    name resolves to a variable with `TypeKind.FN` and emits
+    `ClosureCall` through the value.
+  - `_lower_lambda` always emits `ClosureCreate` (even for
+    no-capture lambdas). The old `Const(ty=FN, value=lambda_name)`
+    was fine for direct calls but not compatible with
+    `ClosureCall`'s `{ptr, ptr}` ABI when the lambda was passed
+    through a typed parameter. All closures now go through
+    `{ptr, ptr}`, with `env = null` for no-capture.
+
+### Added
+
+- `tests/golden/63_else_sino.mn` — regression test for nested
+  `if/else/else` and the Spanish keyword `sino`. Runs end-to-end
+  via Python bootstrap; self-hosted compiler has a separate
+  pre-existing String-lifetime bug that the test exposes
+  downstream, scoped for Phase B.
+- `tests/golden/64_closure_typed.mn` — regression test for
+  `fn(T) -> T` type annotations on parameters, let bindings, and
+  multi-parameter closures. Runs end-to-end via Python bootstrap
+  + clang.
+
+### Changed
+
+- `tests/llvm/test_closure_codegen.py::test_lambda_no_capture_*` —
+  renamed from `test_lambda_no_capture_emits_const` to
+  `test_lambda_no_capture_emits_closure_create` and updated the
+  assertion. Reflects the new no-capture-lambda representation.
+
+### Phase A scorecard (closed)
+
+- **#1 (tagged-pointer UB)** — v4.100.0
+- **#2 (list indexing bug)** — v4.101.0
+- **#3 (async can't link)** — v4.102.0
+- **#4 (else/sino verified)** — v4.103.0
+- **#5 (closure type annotations)** — v4.103.0
+
+The next panel is v4.106.0 — the first since v4.99.0's 6.59/10.
+
+### Stage1 golden test pass count
+
+- v4.102.0 baseline: 16/62
+- v4.103.0: 21/64 (5 existing tests newly pass because of the
+  boxed-drop fix: `06_struct`, `10_result`, `12_while`,
+  `14_nested_struct`, `30_nested_generics`; 2 new tests added,
+  both still hit separate pre-existing stage1 bugs)
+
 ## [4.102.0] - 2026-04-13
 
 **Phase A Release 3 — Async Mapanare programs run natively for the first

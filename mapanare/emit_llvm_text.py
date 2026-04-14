@@ -1663,7 +1663,31 @@ class LLVMTextEmitter:
 
         For each boxed slot, loads the raw ptr and frees it unless it
         aliases any returned pointer (ret_ptr_fields).
+
+        v4.103.0: conservative skip when the return value exposes any
+        pointer at any nesting level. A boxed enum payload can embed
+        other boxed pointers inside its heap storage, and
+        `_extract_ret_ptrs` only walks LLVM-level struct values — it
+        does not dereference pointers. So a box nested inside another
+        box does not appear in `ret_ptr_fields`, and drop-glue freed
+        it while it was still referenced from the returned enum.
+        Observed as self-hosted parser's `parse_if_expr` building an
+        inner `ElseBlock` whose box the drop-glue pass freed before
+        the outer If was fully constructed — the allocator reused
+        that address for the outer `ElseBlock`, and the nested if/
+        else check in `semantic.check_else_clause` walked the aliased
+        tree forever.
+
+        Any function whose return value contains a pointer is
+        potentially carrying a box. We skip all boxed drops for such
+        functions. Boxes fall through to process exit — acceptable
+        for a short-lived compiler binary. A principled fix requires
+        type-aware deep-pointer walking at return sites and is
+        scoped to a future release.
         """
+        if ret_ptr_fields and self._local_boxed:
+            # Potential box escape through returned pointer. Skip.
+            return
         for slot in self._local_boxed:
             bp = self._f("drop.bp")
             self._L(f"{bp} = load ptr, ptr {slot}")
@@ -2806,9 +2830,14 @@ class LLVMTextEmitter:
                 ea = self._alloca(et, "pea")
                 self._L(f"store {et} {ev}, ptr {ea}")
                 ep = ea  # opaque ptr, no bitcast
-                # v4.101.0: move semantics — the element is now owned
-                # by the list; zero its tracking slot so drop glue
-                # does not free it. See _do_list_push for details.
+                # v4.101.0 + v4.103.0: move semantics — the element is
+                # now owned by the list; zero its tracking slot so
+                # drop glue does not free it. See _do_list_push.
+                if elem_val.name in self._list_vars:
+                    self._list_vars.remove(elem_val.name)
+                root_e = self._lroots.get(elem_val.name)
+                if root_e and root_e in self._list_vars:
+                    self._list_vars.remove(root_e)
                 self._move_resource(elem_val.name)
                 self._ensure("__mn_list_push", VOID, ["ptr", PTR])
                 self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
@@ -3470,12 +3499,26 @@ class LLVMTextEmitter:
         # Move semantics: when a resource (list, string, boxed) is passed as
         # an argument to a user-defined function, transfer ownership so drop
         # glue won't free it.
+        # v4.103.0: also walk _lroots so a list passed via a loaded
+        # temp (e.g. new_block(span, stmts) where `stmts` was loaded
+        # into a fresh SSA before the call) still drops its root
+        # alloca from _list_vars. Without this, parse_block-style
+        # `return new_block(..., stmts)` left `stmts` tracked and the
+        # drop-glue pass freed its buffer out from under the returned
+        # Block — the inner else clause in nested if/else then
+        # aliased the outer else body, sending the semantic checker
+        # into infinite recursion on nested if/else.
         for j, (v, t) in enumerate(args):
             if j < len(i.args):
                 src_name = i.args[j].name
                 if t == LIST and src_name in self._list_vars:
                     self._list_vars.remove(src_name)
+                root_s = self._lroots.get(src_name)
+                if root_s and root_s in self._list_vars:
+                    self._list_vars.remove(root_s)
                 self._move_resource(src_name)
+                if root_s and root_s != src_name:
+                    self._move_resource(root_s)
 
         # User function
         if fn in self._sigs:
@@ -3603,11 +3646,15 @@ class LLVMTextEmitter:
     def _do_extern(self, i: ExternCall) -> None:
         args = [self._get(a) for a in i.args]
         # Move semantics for arguments (same as _do_call)
+        # v4.103.0: walk _lroots too (see _do_call).
         for j, (v, t) in enumerate(args):
             if j < len(i.args):
                 src_name = i.args[j].name
                 if t == LIST and src_name in self._list_vars:
                     self._list_vars.remove(src_name)
+                root_s = self._lroots.get(src_name)
+                if root_s and root_s in self._list_vars:
+                    self._list_vars.remove(root_s)
                 self._move_resource(src_name)
         full = f"{i.module}__{i.fn_name}" if i.module else i.fn_name
         if full not in self._sigs:
@@ -3733,6 +3780,23 @@ class LLVMTextEmitter:
                 # glue does not free the buffer the struct now holds a
                 # pointer to. Mirrors the fix in _do_list_push (see
                 # its comment for the root-cause rationale).
+                #
+                # v4.103.0: also drop the value from _list_vars so the
+                # list drop-glue pass skips it. The original v4.101.0
+                # fix covered strings and boxed enums (`_str_slots`,
+                # `_boxed_slots`) but left list tracking untouched.
+                # Parser code like ``new Block { stmts: stmts }`` lost
+                # its List<Stmt> buffer at parse_block's return,
+                # aliasing every nested block's stmts into whatever
+                # the allocator reused that address for — observed
+                # as the self-hosted semantic checker infinite-
+                # recursing on nested if/else because the inner else
+                # clause aliased the outer else body.
+                if fval.name in self._list_vars:
+                    self._list_vars.remove(fval.name)
+                root_fv = self._lroots.get(fval.name)
+                if root_fv and root_fv in self._list_vars:
+                    self._list_vars.remove(root_fv)
                 self._move_resource(fval.name)
             self._put(i.dest, cur, sty)
         else:
@@ -3846,6 +3910,12 @@ class LLVMTextEmitter:
                 self._L(f"store {ft} {vv}, ptr {fp}")
             # v4.101.0: move semantics for the stored value (see
             # _do_list_push / _do_struct_init for the rationale).
+            # v4.103.0: also drop from _list_vars (see _do_struct_init).
+            if i.val.name in self._list_vars:
+                self._list_vars.remove(i.val.name)
+            root_v = self._lroots.get(i.val.name)
+            if root_v and root_v in self._list_vars:
+                self._list_vars.remove(root_v)
             self._move_resource(i.val.name)
             return
         # fallback: insertvalue
@@ -3858,7 +3928,12 @@ class LLVMTextEmitter:
             r = self._f("iv")
             self._L(f"{r} = insertvalue {ot} {ov}, {ft} {vv}, {idx}")
             self._put(i.obj, r, ot)
-            # v4.101.0: move semantics for the stored value.
+            # v4.101.0 + v4.103.0: move semantics for the stored value.
+            if i.val.name in self._list_vars:
+                self._list_vars.remove(i.val.name)
+            root_v2 = self._lroots.get(i.val.name)
+            if root_v2 and root_v2 in self._list_vars:
+                self._list_vars.remove(root_v2)
             self._move_resource(i.val.name)
 
     # --- ListInit ---
@@ -3881,9 +3956,14 @@ class LLVMTextEmitter:
                 self._L(f"store {et} {ev}, ptr {ea}")
                 ep = self._f("ep")
                 ep = ea  # opaque ptr, no bitcast
-                # v4.101.0: move element ownership into the list so
-                # drop glue does not free the backing buffer (see
-                # _do_list_push for the full rationale).
+                # v4.101.0 + v4.103.0: move element ownership into the
+                # list so drop glue does not free the backing buffer
+                # (see _do_list_push for the full rationale).
+                if elem.name in self._list_vars:
+                    self._list_vars.remove(elem.name)
+                root_e = self._lroots.get(elem.name)
+                if root_e and root_e in self._list_vars:
+                    self._list_vars.remove(root_e)
                 self._move_resource(elem.name)
                 self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
             r = self._f("ll")
@@ -3965,6 +4045,13 @@ class LLVMTextEmitter:
             # (Root cause for the self-hosted emitter's 16-byte
             # garbage prefix on every `declare` line of mnc-stage1's
             # output.)
+            # v4.103.0: also drop from _list_vars so list drop-glue
+            # doesn't free pushed-list buffers (List<List<T>> case).
+            if i.element.name in self._list_vars:
+                self._list_vars.remove(i.element.name)
+            root_e = self._lroots.get(i.element.name)
+            if root_e and root_e in self._list_vars:
+                self._list_vars.remove(root_e)
             self._move_resource(i.element.name)
             self._ensure("__mn_list_push", VOID, ["ptr", PTR])
             # Use the SOURCE alloca directly for push (not a copy)
@@ -3996,8 +4083,13 @@ class LLVMTextEmitter:
             ea = self._alloca(et, "ea")
             self._L(f"store {et} {ev}, ptr {ea}")
             ep = ea  # opaque ptr, no bitcast
-            # v4.101.0 (see _do_list_push main path above): move the
-            # element into the list so drop glue does not free it.
+            # v4.101.0 + v4.103.0 (see _do_list_push main path above):
+            # move the element into the list so drop glue does not free it.
+            if i.element.name in self._list_vars:
+                self._list_vars.remove(i.element.name)
+            root_e = self._lroots.get(i.element.name)
+            if root_e and root_e in self._list_vars:
+                self._list_vars.remove(root_e)
             self._move_resource(i.element.name)
             self._ensure("__mn_list_push", VOID, ["ptr", PTR])
             self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")

@@ -40,6 +40,7 @@ from mapanare.ast_nodes import (
     FieldAccessExpr,
     FloatLiteral,
     FnDef,
+    FnType,
     ForLoop,
     GenericType,
     Identifier,
@@ -214,6 +215,19 @@ def _resolve_type_expr(te: TypeExpr | None) -> MIRType:
         if k != TypeKind.UNKNOWN:
             return MIRType(TypeInfo(kind=k, args=args))
         return MIRType(TypeInfo(kind=TypeKind.STRUCT, name=te.name, args=args))
+    if isinstance(te, FnType):
+        # v4.103.0: closure type annotations (docket #5). Previously
+        # FnType was handled by the `return mir_unknown()` fallback,
+        # which left parameters declared with `fn(T) -> T` with a
+        # UNKNOWN MIRType. The lowerer then could not tell that
+        # `f(x)` inside `fn apply(f: fn(Int)->Int, x: Int)` should
+        # be an indirect call through the value; it lowered to a
+        # direct `@f(x)` call and linking failed. Resolve FnType to
+        # a MIRType with kind=FN so the call-lowering path sees a
+        # callable variable and emits a ClosureCall.
+        params = [_resolve_type_expr(p).type_info for p in te.param_types]
+        ret = _resolve_type_expr(te.return_type).type_info
+        return MIRType(TypeInfo(kind=TypeKind.FN, args=params + [ret]))
     return mir_unknown()
 
 
@@ -1992,6 +2006,19 @@ class MIRLowerer:
                     self._emit(ClosureCall(dest=dest, closure=closure_val, args=args))
                     return dest
 
+            # v4.103.0: check if the name resolves to a variable whose
+            # type is a closure/function type. Parameters declared with
+            # `fn(T) -> T` annotations need indirect calls through the
+            # value, not direct calls by name — the v4.99.0 panel's
+            # docket #5 blocker. Without this, `return f(x)` inside
+            # `fn apply(f: fn(Int)->Int, x: Int) -> Int` was lowered
+            # to `call @f(x)` and linking failed with an undefined
+            # reference to `f`.
+            var_val = self._lookup_var(fn_name)
+            if var_val is not None and var_val.ty.kind == TypeKind.FN:
+                self._emit(ClosureCall(dest=dest, closure=var_val, args=args))
+                return dest
+
             # Resolve lambda variable names to actual function names
             resolved_name = self._lambda_vars.get(fn_name, fn_name)
             self._emit(Call(dest=dest, fn_name=resolved_name, args=args))
@@ -2810,15 +2837,36 @@ class MIRLowerer:
                 captures.append((var_name, var_val))
 
         if not captures:
-            # No captures — plain function reference (existing behavior)
+            # v4.103.0: no-capture lambdas used to be lowered as a
+            # plain function-pointer Const. That was fine when the
+            # lambda was only ever invoked directly (the call site
+            # looked up the function name in `_lambda_vars`), but it
+            # blocked docket #5: passing `double` to a parameter
+            # `f: fn(Int) -> Int`. Inside the callee, `f` has type
+            # FN in MIR — which must be a `{ptr, ptr}` closure struct
+            # for the indirect-call (ClosureCall) path to work. The
+            # no-capture lambda now always produces a ClosureCreate
+            # with an empty captures list; the emitter handles that
+            # case by emitting `{@fn_ptr, null}` inline. Direct calls
+            # still go through `_lambda_vars`, so nothing regresses.
+            env_param = _Param(name="__env_ptr")
+            modified_params = [env_param] + list(expr.params)
             fn_def = _FnDef(
                 name=lambda_name,
-                params=list(expr.params),
+                params=modified_params,
                 body=body_block,
             )
+            self._pending_captures = []
             self._lower_fn(fn_def)
             dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.FN)))
-            self._emit(Const(dest=dest, ty=MIRType(TypeInfo(kind=TypeKind.FN)), value=lambda_name))
+            self._emit(
+                ClosureCreate(
+                    dest=dest,
+                    fn_name=lambda_name,
+                    captures=[],
+                    capture_types=[],
+                )
+            )
             return dest
 
         # Has captures — create a closure

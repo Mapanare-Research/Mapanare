@@ -1,0 +1,25 @@
+// v4.103.0: closure type annotations (fn(T) -> T). The v4.99.0 panel
+// noted that the grammar accepts `fn(Int) -> Int` as a type but
+// lowering failed when a variable or parameter was annotated with a
+// closure type. Covers: closure assigned to a typed let binding,
+// closure passed as a typed function parameter, closure invoked
+// directly and through a parameter.
+
+fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+    return f(x)
+}
+
+fn combine(f: fn(Int, Int) -> Int, a: Int, b: Int) -> Int {
+    return f(a, b)
+}
+
+fn main() {
+    let double: fn(Int) -> Int = (x) => x * 2
+    let negate: fn(Int) -> Int = (x) => 0 - x
+    let sum: fn(Int, Int) -> Int = (a, b) => a + b
+
+    print(str(apply(double, 5)))
+    print(str(apply(negate, 3)))
+    print(str(double(10)))
+    print(str(combine(sum, 7, 8)))
+}

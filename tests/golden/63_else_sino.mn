@@ -1,0 +1,40 @@
+// v4.103.0: else/sino verification. Grammar supports both keywords
+// (`else` and the Spanish synonym `sino`), but the v4.99.0 panel noted
+// that benchmark programs used double-negation workarounds rather
+// than else branches — suggesting the feature was never verified
+// end-to-end through the native pipeline. This test covers: plain
+// else, `sino` (Spanish keyword), nested if/else/else, and else on
+// multi-line bodies.
+
+fn classify(x: Int) -> String {
+    if x > 0 {
+        return "positive"
+    } else {
+        if x < 0 {
+            return "negative"
+        } sino {
+            return "zero"
+        }
+    }
+}
+
+fn sign(x: Int) -> Int {
+    if x > 0 {
+        return 1
+    } sino {
+        if x < 0 {
+            return 0 - 1
+        } else {
+            return 0
+        }
+    }
+}
+
+fn main() {
+    print(classify(42))
+    print(classify(0 - 7))
+    print(classify(0))
+    print(str(sign(5)))
+    print(str(sign(0 - 5)))
+    print(str(sign(0)))
+}
