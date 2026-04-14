@@ -1,267 +1,316 @@
-# Debugging Mapanare Programs with gdb and lldb
+# Debugging Mapanare Programs
 
-This guide shows how to debug compiled Mapanare programs using standard native debuggers. Mapanare emits DWARF debug information when compiled with the `-g` flag, so gdb and lldb can map machine code back to your `.mn` source lines.
+> **v4.116.0 correction.** Earlier editions of this guide opened with
+> *"Mapanare emits DWARF debug information when compiled with the `-g`
+> flag"*. That is not true today and was flagged by the v4.26.0 panel
+> (Rattler #4). **DWARF emission is deferred to v5.x**; see SPEC §21.3.
+> Until then, `-g` is accepted for forward compatibility but the
+> emitted IR and linked binary contain no DWARF metadata; `gdb` / `lldb`
+> will show only machine-level frames for Mapanare functions. This guide
+> now focuses on what actually works: valgrind, AddressSanitizer,
+> ThreadSanitizer, `ir_doctor.py`, Culebra, and the integration-test
+> harness.
 
-**Prerequisites:** gdb (Linux/WSL) or lldb (macOS). LLVM toolchain installed.
+**Prerequisites:**
+
+- `clang` and LLVM 18.x (for `llvm-as`, `opt`, `llc`)
+- `valgrind` (Linux / WSL — primary memory-debugging tool)
+- `gdb` or `lldb` (for machine-level inspection only, until DWARF lands)
+- Python 3.11+ (for `ir_doctor.py`)
+- Optional: [Culebra](https://github.com/Mapanare-Research/Culebra) for IR-level diagnostics
 
 ---
 
-## 1. Compiling with Debug Info
+## 1. The Native-Binary Pipeline
 
-Pass `-g` to emit DWARF metadata in the generated LLVM IR:
+Every Mapanare program becomes a native ELF/Mach-O binary via:
 
 ```bash
-# Emit IR with debug info
-mapanare emit-llvm -g myprogram.mn -o myprogram.ll
+# Emit LLVM IR
+python3 -m mapanare emit-llvm program.mn -o /tmp/program.ll
 
-# Compile to native binary (keep debug info with -g)
-llvm-as myprogram.ll -o myprogram.bc
-llc -filetype=obj -relocation-model=pic myprogram.bc -o myprogram.o
-clang -g myprogram.o -L runtime/native -lmapanare_rt -lm -lpthread -ldl -o myprogram
+# Link against the C runtime
+clang /tmp/program.ll \
+      -L runtime/native -lmapanare_rt \
+      -lpthread -lm -ldl \
+      -o /tmp/program
+
+# Run
+/tmp/program
 ```
 
-The `-g` flag adds `DICompileUnit`, `DISubprogram`, and `DILocation` metadata to every function and instruction. Without `-g`, the binary has no source-level mapping and the debugger can only show assembly.
+For debugging, compile the **runtime** with `-g` (the default
+`runtime/native/Makefile` already does). The Mapanare side has no
+DWARF, but runtime frames in crash backtraces will be fully symbolic.
 
----
-
-## 2. Starting a Debug Session
-
-### gdb (Linux/WSL)
+For optimised-out variable inspection, drop `-O0`:
 
 ```bash
-gdb ./myprogram
+clang -O0 /tmp/program.ll -L runtime/native -lmapanare_rt -lpthread -lm -ldl -o /tmp/program
 ```
 
-### lldb (macOS)
+---
+
+## 2. Valgrind — Primary Memory-Error Tool
+
+Valgrind is the primary memory-debugging tool for Mapanare today. It
+does not need DWARF to be useful: it reports byte offsets into the
+struct or heap object where the error occurred.
 
 ```bash
-lldb ./myprogram
+valgrind --leak-check=full --track-origins=yes /tmp/program
 ```
 
-Both debuggers will load the DWARF sections and recognize your `.mn` source file.
+Common findings:
+
+| Finding | Usual cause | What to do |
+|---|---|---|
+| **Invalid read/write** | Struct field access at the wrong offset | Map offset to field with `ir_doctor.py valgrind-map` |
+| **Uninitialised value** | Alloca used before store | Check the alloca's first use in the IR |
+| **Conditional jump depends on uninitialised** | Same as above, but inside a branch | Same fix |
+| **Definitely lost** | Heap memory without a free | Check drop-glue emission in the emitter |
+| **Mismatched free / delete / delete[]** | Arena-allocated memory freed with `free` | Arena-backed lists and strings use `__mn_arena_free`, not `free` |
+
+### Mapping valgrind offsets to Mapanare struct fields
+
+When valgrind reports `Invalid read of size 8 at 0x... inside foo+0x20`,
+`ir_doctor.py` can resolve the 0x20 offset to a named field of a
+Mapanare struct:
+
+```bash
+python scripts/ir_doctor.py valgrind-map ./mapanare/self/mnc-stage1 tests/golden/07_enum_match.mn
+python scripts/ir_doctor.py structmap LowerState --offset 176
+python scripts/ir_doctor.py structmap             # list all structs + sizes
+```
+
+See [`scripts/ir_doctor.py --help`](../../scripts/ir_doctor.py) for the
+full command surface.
 
 ---
 
-## 3. Setting Breakpoints
+## 3. AddressSanitizer (ASan) — Fast Heap-UAF Detector
 
-### By function name
+ASan is orders of magnitude faster than valgrind for heap
+use-after-free and buffer overflow detection. It is wired into the
+`sanitizers.yml` CI workflow as of v4.105.0.
 
-Mapanare functions are emitted with their source names:
+```bash
+# Rebuild the runtime with ASan
+make -C runtime/native clean
+CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" make -C runtime/native libmapanare_rt_asan.a
 
-```
-(gdb) break main
-(gdb) break fib
-(gdb) break compute_sum
-```
+# Link against the ASan runtime
+clang -fsanitize=address /tmp/program.ll \
+      -L runtime/native -lmapanare_rt_asan \
+      -lpthread -lm -ldl \
+      -o /tmp/program_asan
 
-```
-(lldb) breakpoint set --name main
-(lldb) breakpoint set --name fib
-```
-
-### By source line
-
-If the binary was compiled with `-g`:
-
-```
-(gdb) break myprogram.mn:5
+# Run
+/tmp/program_asan
 ```
 
-```
-(lldb) breakpoint set --file myprogram.mn --line 5
+ASan reports heap-UAF, global-buffer-overflow, and stack-buffer-overflow
+with the runtime frames fully symbolic (the runtime is compiled with
+`-g`). The Mapanare side will still appear as machine-level frames.
+
+## 4. ThreadSanitizer (TSan) — Data-Race Detector
+
+TSan detects data races between threads, which matter for agent-heavy
+and async programs.
+
+```bash
+CFLAGS="-fsanitize=thread -g" make -C runtime/native libmapanare_rt_tsan.a
+clang -fsanitize=thread /tmp/program.ll \
+      -L runtime/native -lmapanare_rt_tsan \
+      -lpthread -lm -ldl \
+      -o /tmp/program_tsan
+/tmp/program_tsan
 ```
 
-### By condition
-
-```
-(gdb) break fib if n == 10
-```
+As of v4.105.0, the three async goldens (`55`/`56`/`57`) are TSan-clean.
+If you add an async or agent-heavy program and TSan fires, file it
+against the relevant `Vg.*` or `As.*` docket items (see the carry-
+forward ledger).
 
 ---
 
-## 4. Running and Stepping
+## 5. IR-Level Diagnostics with `ir_doctor.py`
 
-### Run the program
+`scripts/ir_doctor.py` is the primary per-function diagnostic for
+self-hosted compiler bugs. It runs `llvm-as` validation, detects
+structural pathologies (ALLOCA_ALIAS, EMPTY_SWITCH, MISSING_PERCENT,
+DUPLICATE_CASE, PHI_UNDEF_REF, RET_TYPE_MISMATCH, LOOP_PUSH), and tracks
+baselines so reruns show delta.
 
+Frequently useful commands:
+
+```bash
+# Validate and audit the self-hosted compiler IR
+python scripts/ir_doctor.py audit mapanare/self/main.ll
+
+# Per-function metrics table, top 15
+python scripts/ir_doctor.py --top 15 table mapanare/self/main.ll
+
+# Extract one function's IR
+python scripts/ir_doctor.py extract mapanare/self/main.ll emit_fn
+
+# Compare bootstrap and stage1 output on one golden
+python scripts/ir_doctor.py diff tests/golden/07_enum_match.mn
+
+# Validate string-constant byte counts
+python scripts/ir_doctor.py strings mapanare/self/main.ll
+
+# Run valgrind on a crash, auto-map offsets to struct fields
+python scripts/ir_doctor.py valgrind tests/golden/11_closure.mn
 ```
-(gdb) run
-(gdb) run arg1 arg2
-```
 
-```
-(lldb) run
-(lldb) run arg1 arg2
-```
-
-### Step through code
-
-| Action | gdb | lldb |
-|--------|-----|------|
-| Step into (next source line) | `step` / `s` | `step` / `s` |
-| Step over (skip function calls) | `next` / `n` | `next` / `n` |
-| Step out (finish current function) | `finish` | `finish` |
-| Continue to next breakpoint | `continue` / `c` | `continue` / `c` |
+Full help: `python scripts/ir_doctor.py --help`.
 
 ---
 
-## 5. Inspecting Variables
+## 6. Template-Driven Diagnostics with Culebra
 
-Mapanare variables are emitted as LLVM allocas with their source names:
+Culebra (v2.0.0) runs 49 templates across ABI, IR, Binary, Bootstrap,
+and C categories against `.ll` and `.c` files. The IR templates catch
+known pathologies before they reach a test run; the C templates cover
+generated-C output from `emit_c.py`.
 
-```
-(gdb) print x
-(gdb) print result
-(gdb) info locals
-```
+```bash
+# Full scan with autofix preview
+culebra scan mapanare/self/main.ll --autofix --dry-run
 
-```
-(lldb) frame variable
-(lldb) frame variable x
-(lldb) p x
-```
+# Triage findings (groups by root cause, dedup)
+culebra triage mapanare/self/main.ll --brief
 
-### Strings
+# Per-function metric comparison between stage outputs
+culebra compare stage1.ll stage2.ll --metric calls
 
-Mapanare strings are `{ptr, i64}` structs (pointer + length). To inspect:
+# Baseline + diff (for iterative fixing)
+culebra baseline save mapanare/self/main.ll
+culebra baseline diff mapanare/self/main.ll
 
-```
-(gdb) print *(char**)&msg
-(gdb) x/s *(char**)&msg
-```
-
-### Structs
-
-Struct fields are accessible by index since LLVM lowers them to unnamed struct types:
-
-```
-(gdb) print point
-(gdb) print point.x
+# Per-session debugging journal
+culebra journal add "fixing PHI-zeroinit in lower_fn" --action bug --tags phi
+culebra journal show
 ```
 
----
-
-## 6. Backtraces
-
-When a program crashes, the backtrace shows the call stack:
-
-```
-(gdb) bt
-```
-
-```
-(lldb) bt
-```
-
-Example output:
-
-```
-#0  fib (n=0) at fib.mn:3
-#1  fib (n=1) at fib.mn:5
-#2  fib (n=2) at fib.mn:5
-#3  main () at fib.mn:9
-```
-
-With `-g`, each frame shows the `.mn` filename and line number.
+See the `culebra-scan` skill (`/culebra-scan`) for the repo-standard
+entry point, and [Culebra on crates.io](https://crates.io/crates/culebra) for the full command reference.
 
 ---
 
 ## 7. Debugging Async Code
 
-Async functions are lowered to LLVM coroutines. After CoroSplit, each async function becomes three functions:
+Async functions lower to LLVM switched-resume coroutines. After
+CoroSplit, each async fn becomes three LLVM functions:
 
 | Function | Purpose |
 |----------|---------|
-| `compute` | Ramp function (runs until first suspend) |
-| `compute.resume` | Resume function (dispatches to continuation) |
-| `compute.destroy` | Cleanup function (frees coroutine frame) |
+| `foo` | Ramp — runs until first suspend |
+| `foo.resume` | Resume — dispatches to the continuation for each `await` point |
+| `foo.destroy` | Cleanup — frees the coroutine frame |
 
-### Setting breakpoints in async functions
+Without DWARF, you debug async programs by:
 
+1. **valgrind / ASan** for memory errors inside the coroutine frame.
+2. **`culebra extract`** to pull the ramp and resume IR for a given async fn.
+3. **Printf-style logging** inside the async body — `__mn_file_write` works
+   inside `async fn`, so you can log to a file from any `await` stage.
+
+The coroutine frame prefix (from v4.113.0) is documented in
+`runtime/native/mapanare_runtime.c:1539`:
+
+```c
+typedef struct {
+    void (*resume_fn)(void*);
+    void (*destroy_fn)(void*);
+} mn_coro_frame_prefix_t;
 ```
-(gdb) break compute
-(gdb) break compute.resume
-```
 
-### Inspecting coroutine state
-
-The coroutine frame contains spilled variables and a suspend index:
-
-```
-(gdb) print *(struct compute.Frame*)handle
-```
-
-The suspend index (field 2, type `i8`) indicates which `await` point the coroutine is paused at:
-- 0 = before first `await`
-- 1 = after first `await`
-- etc.
+`mn_coro_is_done(handle)` returns true when `handle[0] == NULL` — LLVM's
+final-suspend representation. Inspecting this from a debugger requires
+casting the opaque pointer to `mn_coro_frame_prefix_t*` manually.
 
 ---
 
-## 8. Crash Debugging with Valgrind
+## 8. Machine-Level `gdb` / `lldb` (Limited Without DWARF)
 
-Valgrind detects memory errors in compiled Mapanare programs:
+With no DWARF for Mapanare functions, source-level breakpoints by line
+do not work. You can still:
 
-```bash
-valgrind --leak-check=full ./myprogram
+### Break on a Mapanare function by LLVM name
+
+LLVM exports Mapanare functions with their source name, so:
+
+```
+(gdb) break main
+(gdb) break fib
+(gdb) run
 ```
 
-Common findings:
-- **Invalid read/write**: usually a struct field access at the wrong offset. Use `ir_doctor.py structmap` to map byte offsets to field names.
-- **Uninitialised value**: a variable used before assignment. Check the alloca initialization in the IR.
-- **Definitely lost**: heap memory not freed. Check drop glue emission for the function.
+will stop at the native entry point. Variables appear as raw registers
+and stack slots; there is no `print x` for Mapanare locals until DWARF
+lands.
 
-### Mapping crash offsets to struct fields
+### Backtraces
 
-The `ir_doctor.py` tool maps valgrind byte offsets to Mapanare struct fields:
+Backtraces show function names for Mapanare-defined functions, and full
+symbolic frames for runtime frames (the C runtime is built with `-g`):
 
-```bash
-python scripts/ir_doctor.py valgrind-map ./myprogram test.mn
-python scripts/ir_doctor.py structmap MyStruct --offset 24
 ```
+(gdb) bt
+#0  __mn_list_push_rc (list=0x..., val=...) at mapanare_runtime.c:2134
+#1  fib () at /tmp/program   <-- no file:line without DWARF
+#2  main () at /tmp/program
+```
+
+When a Mapanare frame is implicated, fall back to:
+
+- `ir_doctor.py extract` the function's IR
+- `culebra extract` the same, with syntax highlighting
+- Valgrind for memory errors
+- Printf-style logging
 
 ---
 
-## 9. Tips and Tricks
+## 9. Integration Test Harness
 
-### Print LLVM IR for a function
-
-```bash
-python scripts/ir_doctor.py extract main.ll my_function
-```
-
-### Check if your IR is valid
-
-```bash
-llvm-as myprogram.ll -o /dev/null
-```
-
-If `llvm-as` reports errors, the emitter produced invalid IR. File a bug.
-
-### Compile with optimizations disabled
-
-For easier debugging, compile at `-O0`:
-
-```bash
-mapanare emit-llvm -g -O0 myprogram.mn -o myprogram.ll
-```
-
-`-O0` disables constant folding, DCE, and copy propagation, so every variable and expression is visible in the debugger.
-
-### Use the integration test harness
-
-The v4.77.0 integration harness runs your program through the full pipeline:
+The v4.77.0 integration harness runs a program through the full pipeline
+— emit-llvm → llvm-as → opt → llc → clang → run — and catches IR
+validation, optimisation, link, and runtime errors in one command.
 
 ```bash
 pytest tests/integration/test_golden_pipeline.py -k "my_test" -v
 ```
 
-This catches IR validation errors, optimization failures, link errors, and runtime crashes in one command.
+The v4.104.0 ship added `llvm-as` as a hard gate: any emitter change
+that produces IR `llvm-as` rejects will fail this test suite before CI
+runs.
+
+---
+
+## 10. When to Use What
+
+| Symptom | Try first |
+|---|---|
+| Segfault or invalid read/write | `valgrind --track-origins=yes` |
+| Heap-UAF suspected | ASan build |
+| Race condition / thread hang | TSan build |
+| Wrong output but no crash | Integration harness, `ir_doctor.py diff` |
+| IR `llvm-as` rejects | `ir_doctor.py audit`, then `culebra scan` |
+| Self-hosted compiler crash on one file | `ir_doctor.py valgrind-map <file>` |
+| Pre-existing bug suspected | `culebra baseline diff` against last known good |
+| Async-specific issue | Printf logging + `culebra extract fn.resume` |
 
 ---
 
 ## See Also
 
-- [SPEC.md](../SPEC.md) section 29 for async/await formal semantics
-- [DWARF Implementation](../roadmap/v4/v4.62.0/) for the Arc 7 DWARF debug info work
-- `python scripts/ir_doctor.py --help` for all IR diagnostic tools
-- `python scripts/ir_doctor.py valgrind-map --help` for crash analysis
+- [SPEC.md §21.3](../SPEC.md#213-debug-info-dwarf--deferred-to-v5x) — DWARF deferral rationale
+- [SPEC.md §29](../SPEC.md#29-futures-and-asyncawait) — async/await semantics
+- [`docs/guides/async.md`](async.md) — async mental model
+- [`docs/cookbook/async.md`](../cookbook/async.md) — async recipes with native compilation
+- `python scripts/ir_doctor.py --help` — all IR diagnostics
+- `culebra --help` — all Culebra commands
+- `tests/integration/test_golden_pipeline.py` — end-to-end pipeline harness (v4.77.0+)
+- `runtime/native/mapanare_runtime.c` — the C runtime (built with `-g` by default)
