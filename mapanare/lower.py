@@ -1802,10 +1802,24 @@ class MIRLowerer:
             self._emit(Call(dest=dest, fn_name="__mn_coro_spawn", args=[args[0]]))
             return args[0]  # return the future, not the spawn result
 
-        # v4.95.0: StringBuilder builtins
+        # v4.95.0: StringBuilder builtins.
+        # v4.108.0: retargeted to the pointer-based runtime API
+        # (__mn_sb_new / __mn_sb_finish). The v4.95.0 lowering emitted
+        # __mn_sb_create which returns a 24-byte struct by value with
+        # sret ABI — the emitter's auto-declare path treated it as a
+        # plain ptr, producing calls that would fault or return garbage
+        # at runtime. stdlib/ai/llm.mn and embedding.mn were effectively
+        # broken since v4.95.0 because of this. The new pointer-based
+        # wrappers preserve the user-facing API while fixing the ABI.
         if isinstance(expr.callee, Identifier) and expr.callee.name == "sb_create":
+            # Optional initial capacity; default 64 bytes.
             dest = self._make_value(prefix="sb")
-            self._emit(Call(dest=dest, fn_name="__mn_sb_create", args=[]))
+            cap_args: list[Value] = args[:1] if args else []
+            if not cap_args:
+                cap_val = self._make_value(prefix="sb_cap", ty=mir_int())
+                self._emit(Const(dest=cap_val, ty=mir_int(), value=64))
+                cap_args = [cap_val]
+            self._emit(Call(dest=dest, fn_name="__mn_sb_new", args=cap_args))
             return dest
         if isinstance(expr.callee, Identifier) and expr.callee.name == "sb_append":
             if len(args) >= 2:
@@ -1814,8 +1828,8 @@ class MIRLowerer:
             return self._make_value()
         if isinstance(expr.callee, Identifier) and expr.callee.name == "sb_to_string":
             if len(args) >= 1:
-                dest = self._make_value(prefix="sb_str")
-                self._emit(Call(dest=dest, fn_name="__mn_sb_to_string", args=args[:1]))
+                dest = self._make_value(prefix="sb_str", ty=mir_string())
+                self._emit(Call(dest=dest, fn_name="__mn_sb_finish", args=args[:1]))
                 return dest
             return self._make_value()
 
