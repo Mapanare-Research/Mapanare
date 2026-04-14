@@ -1,0 +1,52 @@
+1c1
+< ; ModuleID = '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.109.0/artifacts/fib.bc'
+---
+> ; ModuleID = '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.109.0/artifacts/fib_stripped.bc'
+8,9c8
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64 } @__mn_str_from_int(i64) local_unnamed_addr #0
+---
+> declare { ptr, i64 } @__mn_str_from_int(i64) local_unnamed_addr
+11,12c10
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64 } @__mn_str_concat({ ptr, i64 }, { ptr, i64 }) local_unnamed_addr #0
+---
+> declare { ptr, i64 } @__mn_str_concat({ ptr, i64 }, { ptr, i64 }) local_unnamed_addr
+16,17c14
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare void @__mn_str_free({ ptr, i64 }) local_unnamed_addr #0
+---
+> declare void @__mn_str_free({ ptr, i64 }) local_unnamed_addr
+21,22c18,19
+< ; Function Attrs: mustprogress nofree nosync nounwind willreturn memory(none)
+< define internal fastcc i64 @fib(i64 %n) unnamed_addr #1 {
+---
+> ; Function Attrs: nofree nosync nounwind memory(none)
+> define internal fastcc i64 @fib(i64 %n) unnamed_addr #0 {
+30c27
+<   %accumulator.ret.tr = add nsw i64 %n.tr.lcssa, %accumulator.tr.lcssa
+---
+>   %accumulator.ret.tr = add i64 %n.tr.lcssa, %accumulator.tr.lcssa
+39c36
+<   %i.25 = add nsw i64 %c.13, %accumulator.tr5
+---
+>   %i.25 = add i64 %c.13, %accumulator.tr5
+44,45c41
+< ; Function Attrs: mustprogress nounwind willreturn
+< define noundef i64 @main() local_unnamed_addr #0 {
+---
+> define noundef i64 @main() local_unnamed_addr {
+52c48
+<   tail call void @__mn_str_println({ ptr, i64 } %rt.14) #2
+---
+>   tail call void @__mn_str_println({ ptr, i64 } %rt.14)
+69c65
+<   tail call void @__mn_intern_destroy() #2
+---
+>   tail call void @__mn_intern_destroy()
+73,75c69
+< attributes #0 = { mustprogress nounwind willreturn }
+< attributes #1 = { mustprogress nofree nosync nounwind willreturn memory(none) }
+< attributes #2 = { nounwind }
+---
+> attributes #0 = { nofree nosync nounwind memory(none) }

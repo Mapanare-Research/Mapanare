@@ -1,0 +1,56 @@
+1c1
+< ; ModuleID = '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.109.0/artifacts/string_concat.bc'
+---
+> ; ModuleID = '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.109.0/artifacts/string_concat_stripped.bc'
+16,17c16
+< ; Function Attrs: mustprogress nofree nounwind willreturn memory(read)
+< declare i64 @__mn_str_len({ ptr, i64 }) local_unnamed_addr #0
+---
+> declare i64 @__mn_str_len({ ptr, i64 }) local_unnamed_addr
+19,20c18
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64 } @__mn_str_from_int(i64) local_unnamed_addr #1
+---
+> declare { ptr, i64 } @__mn_str_from_int(i64) local_unnamed_addr
+22,23c20
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64 } @__mn_str_concat({ ptr, i64 }, { ptr, i64 }) local_unnamed_addr #1
+---
+> declare { ptr, i64 } @__mn_str_concat({ ptr, i64 }, { ptr, i64 }) local_unnamed_addr
+27,28c24
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare void @__mn_str_free({ ptr, i64 }) local_unnamed_addr #1
+---
+> declare void @__mn_str_free({ ptr, i64 }) local_unnamed_addr
+32,33c28
+< ; Function Attrs: mustprogress nounwind willreturn
+< define noundef i64 @main() local_unnamed_addr #1 {
+---
+> define noundef i64 @main() local_unnamed_addr {
+35,36c30,31
+<   %rt.11 = tail call ptr @__mn_sb_new(i64 64) #2
+<   tail call void @__mn_sb_append(ptr %rt.11, { ptr, i64 } { ptr @.str.0, i64 0 }) #2
+---
+>   %rt.11 = tail call ptr @__mn_sb_new(i64 64)
+>   tail call void @__mn_sb_append(ptr %rt.11, { ptr, i64 } { ptr @.str.0, i64 0 })
+41c36
+<   tail call void @__mn_sb_append(ptr %rt.11, { ptr, i64 } { ptr @.str.1, i64 5 }) #2
+---
+>   tail call void @__mn_sb_append(ptr %rt.11, { ptr, i64 } { ptr @.str.1, i64 5 })
+47c42
+<   %rt.36 = tail call { ptr, i64 } @__mn_sb_finish(ptr %rt.11) #2
+---
+>   %rt.36 = tail call { ptr, i64 } @__mn_sb_finish(ptr %rt.11)
+54c49
+<   tail call void @__mn_str_println({ ptr, i64 } %rt.51) #2
+---
+>   tail call void @__mn_str_println({ ptr, i64 } %rt.51)
+79c74
+<   tail call void @__mn_intern_destroy() #2
+---
+>   tail call void @__mn_intern_destroy()
+82,85d76
+< 
+< attributes #0 = { mustprogress nofree nounwind willreturn memory(read) }
+< attributes #1 = { mustprogress nounwind willreturn }
+< attributes #2 = { nounwind }

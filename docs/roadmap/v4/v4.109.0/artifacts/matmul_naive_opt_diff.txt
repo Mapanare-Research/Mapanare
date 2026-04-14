@@ -1,0 +1,80 @@
+1c1
+< ; ModuleID = '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.109.0/artifacts/matmul_naive.bc'
+---
+> ; ModuleID = '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.109.0/artifacts/matmul_naive_stripped.bc'
+8,9c8
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64, i64, i64, i64 } @__mn_list_new(i64) local_unnamed_addr #0
+---
+> declare { ptr, i64, i64, i64, i64 } @__mn_list_new(i64) local_unnamed_addr
+11,12c10
+< ; Function Attrs: nounwind
+< declare void @__mn_list_push(ptr, ptr) local_unnamed_addr #1
+---
+> declare void @__mn_list_push(ptr, ptr) local_unnamed_addr
+14,15c12
+< ; Function Attrs: nounwind
+< declare ptr @__mn_list_get(ptr, i64) local_unnamed_addr #1
+---
+> declare ptr @__mn_list_get(ptr, i64) local_unnamed_addr
+17,18c14
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64 } @__mn_str_from_int(i64) local_unnamed_addr #0
+---
+> declare { ptr, i64 } @__mn_str_from_int(i64) local_unnamed_addr
+20,21c16
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64 } @__mn_str_concat({ ptr, i64 }, { ptr, i64 }) local_unnamed_addr #0
+---
+> declare { ptr, i64 } @__mn_str_concat({ ptr, i64 }, { ptr, i64 }) local_unnamed_addr
+25,26c20
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare void @__mn_str_free({ ptr, i64 }) local_unnamed_addr #0
+---
+> declare void @__mn_str_free({ ptr, i64 }) local_unnamed_addr
+28,29c22
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare void @__mn_list_free(ptr) local_unnamed_addr #0
+---
+> declare void @__mn_list_free(ptr) local_unnamed_addr
+33,34c26
+< ; Function Attrs: mustprogress nounwind willreturn
+< define noundef i64 @main() local_unnamed_addr #0 {
+---
+> define noundef i64 @main() local_unnamed_addr {
+214c206
+<   %i.95 = add nsw i64 %p2i.94, %p2i.93
+---
+>   %i.95 = add i64 %p2i.94, %p2i.93
+226c218
+<   %i.106 = add nsw i64 %i.95, %p2i.105
+---
+>   %i.106 = add i64 %i.95, %p2i.105
+238c230
+<   %i.117 = add nsw i64 %i.106, %p2i.116
+---
+>   %i.117 = add i64 %i.106, %p2i.116
+243c235
+<   call void @__mn_str_println({ ptr, i64 } %rt.129) #1
+---
+>   call void @__mn_str_println({ ptr, i64 } %rt.129)
+276,277c268,269
+<   %i.206 = mul nsw i64 %p2i.205, %p2i.204
+<   %i.210 = add nsw i64 %i.206, %sum.a.161.0116
+---
+>   %i.206 = mul i64 %p2i.205, %p2i.204
+>   %i.210 = add i64 %i.206, %sum.a.161.0116
+332c324
+<   call void @__mn_intern_destroy() #1
+---
+>   call void @__mn_intern_destroy()
+337c329
+< declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) #2
+---
+> declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) #0
+339,341c331
+< attributes #0 = { mustprogress nounwind willreturn }
+< attributes #1 = { nounwind }
+< attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+---
+> attributes #0 = { nocallback nofree nounwind willreturn memory(argmem: write) }
