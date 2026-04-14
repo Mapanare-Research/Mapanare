@@ -1,0 +1,106 @@
+v4.114.0 pre-panel sweep — 2026-04-14
+=====================================
+
+## Python-bootstrap pipeline golden run
+
+  63 passed, 1 failed (51_match_guards_and_or — pre-existing
+  or-pattern limitation tracked since v4.108.0)
+
+## Self-hosted pipeline (mnc-stage1 from v4.112.0 build)
+
+  26 passed, 38 failed
+
+Same as v4.112.0 and v4.113.0 baselines. No regressions from
+Phase D work. Failure categories (unchanged from v4.111.0's
+GOLDEN_FAILURES.md):
+  - 10 __mn_str_starts_with crash (Sh.2)
+  - 5 async-missing (Sh.4)
+  - 5 tensor-missing (Sh.6)
+  - 2 const-missing (Sh.5)
+  - 1 closure-typed (Sh.7)
+  - 1 gpu-tensor
+  - remainder lower_expr / or-pattern / module / try
+
+## Stage2 validation (ir_doctor.py stage2)
+
+  0/11 modules valid
+  Blocked by docket Sh.8 (self-hosted semantic.mn does not
+  register None/Some/Ok as constructors). Python bootstrap
+  bypasses this via skip_check=True in build_stage1.py.
+
+## Fixed-point verification (scripts/verify_fixed_point.sh)
+
+  Fails at Stage 1: "Undefined variable 'None'" when
+  mnc-stage1 attempts to compile mnc_all.mn. This is the
+  same Sh.8 gap. No Stage 2 or Stage 3 artifacts produced.
+
+## Valgrind — async goldens
+
+  55_async_basic: ERROR SUMMARY 0, no leaks
+  56_async_await: ERROR SUMMARY 0, leaks in user inner() body
+                  (32 direct + 24 indirect = 56 bytes, 3 blocks)
+  57_real_await:  ERROR SUMMARY 0, leaks in fetch_a/b/c bodies
+                  (96 direct + 72 indirect = 168 bytes, 9 blocks)
+
+  All leaks pre-exist v4.113.0; byte-for-byte match against
+  HEAD~4 control rebuild (see
+  docs/roadmap/v4/v4.113.0/artifacts/async-valgrind.md).
+
+## AddressSanitizer — async + struct subset
+
+  55_async_basic: output=42  errors=0  leaks=0
+  56_async_await: output=43  errors=0  leaks=56 bytes (user code)
+  57_real_await:  output=110 errors=0  leaks=216 bytes (user code)
+  06_struct:      output=3   errors=0  leaks=0
+
+  Zero functional ASan errors across all four. LeakSanitizer
+  findings trace exclusively to user coroutine bodies, not to
+  the coroutine frame code v4.113.0 changed.
+
+## pytest collection
+
+  5,462 tests collected (vs v4.99.0 baseline of 5,374 — +88).
+
+## Self-hosted line count
+
+  39,763 lines across mapanare/self/*.mn + mnc_all.mn
+  (vs 38,824 at v4.99.0).
+
+## Hardcoded-offset audit (docket #8 verification)
+
+  $ grep -rn "*(void **)" runtime/ mapanare/
+    runtime/native/mapanare_runtime.c:1536:
+         *     than `*(void **)handle`)   [comment only]
+
+  $ grep -rEn "handle\s*\[\s*[0-9]+\s*\]" runtime/ mapanare/
+    mapanare/emit_llvm_text.py:4941:
+         # handle[8](handle) — the destroy_fn pointer   [comment only]
+
+  Zero raw coroutine-frame offset reads in executable code.
+  `mn_coro_frame_prefix_t` is the only way the runtime inspects
+  the coroutine frame.
+
+## Byref fix audit (docket #7 verification)
+
+  mapanare/self/emit_llvm.mn lines 1460, 1495 present:
+    - is_byref_type_st(st, ty) — state-aware classifier
+    - struct_byte_size(st, ty) — real struct size resolution
+  7 call sites updated to is_byref_type_st.
+
+## Async error-message audit (docket #11 verification)
+
+  7 specific "mapanare: async runtime:" messages in
+  runtime/native/mapanare_runtime.c (covering 5 sites):
+    line 1703: worker pthread_create failure
+    line 1723: scheduler not initialised
+    line 1746: deque + overflow both full
+    line 1779: register_wait overflow full
+    line 1898: file_read_async Future calloc fail
+    line 1907: file_read_async ctx malloc fail
+    line 1921: file_read_async pthread_create fail
+
+## SPEC keyword section audit (docket #10 verification)
+
+  docs/SPEC.md §2.1.1 "Reserved Keyword Master List" present
+  (line 53). 42-row table with bilingual forms. Cross-reference
+  to mapanare.lark:380-427 and self/lexer.mn:59-177.

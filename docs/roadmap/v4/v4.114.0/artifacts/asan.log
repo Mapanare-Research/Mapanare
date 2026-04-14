@@ -1,0 +1,28 @@
+ASan verification — v4.114.0 pre-panel sweep
+
+Runtime compiled with -O1 -fsanitize=address -fno-omit-frame-pointer -g.
+Golden binaries linked against libmapanare_rt_asan.a.
+
+Results:
+  55_async_basic  : output=42   errors=0  leaks=0
+  56_async_await  : output=43   errors=0  leaks=56 bytes (3 allocations, all in user coroutine body inner())
+  57_real_await   : output=110  errors=0  leaks=216 bytes (9 allocations, all in user coroutine bodies fetch_a/b/c)
+  06_struct       : output=3    errors=0  leaks=0
+
+All leaks trace to user-code malloc sites inside coroutine frames
+(the `inner`, `fetch_a`, `fetch_b`, `fetch_c` functions) — NOT
+to the coroutine frame infrastructure we changed in v4.113.0.
+Identical pattern to the valgrind output recorded in
+docs/roadmap/v4/v4.113.0/artifacts/async-valgrind.md; byte-for-byte
+match against the pre-v4.113.0 control rebuild.
+
+Functional ASan run (ASAN_OPTIONS=detect_leaks=0):
+  55_async_basic  -> 42
+  56_async_await  -> 43
+  57_real_await   -> 110
+
+ASan ERROR count: 0 across all four binaries.
+LeakSanitizer findings are pre-existing (tracked per CLAUDE.md:
+  "21 CLEAN / 17 ASAN_ERROR" at v4.105.0 baseline;
+  12 heap-UAF in mn_list_rc, 5 global-buffer-overflow in strtoll).
+Async-golden leak surface is unchanged by Phase D work.
