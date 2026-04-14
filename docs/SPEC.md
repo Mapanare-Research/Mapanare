@@ -34,7 +34,81 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 
 ### 2.1 Keywords
 
-The following identifiers are reserved as keywords and cannot be used as variable or function names.
+The following identifiers are reserved as keywords and cannot be used
+as variable, function, struct, enum, or type names. Attempting to do so
+is a parse error (`MN-P-006: unexpected token`) — for example
+`let sino = 42` fails because `sino` is the Spanish form of `else`.
+All keywords are case-sensitive and match only whole-word tokens
+(`ifcount` is a valid identifier; `if` is not).
+
+Every keyword listed below is hard-reserved in both lexers: the
+Python bootstrap grammar at `mapanare/mapanare.lark:380-427` and the
+self-hosted lexer at `mapanare/self/lexer.mn:59-177`
+(`is_keyword` and `keyword_token_type`). The two lists are kept in
+lock-step. Section 2.1.1 gives the authoritative alphabetical master
+list; sections 2.1.2 onward group the same keywords by role for
+readability. Tokens reserved for *future* use but not currently
+tokenized live in Appendix C.
+
+#### 2.1.1 Reserved Keyword Master List
+
+Every token in the following table is reserved by both lexers and
+cannot appear as an identifier. Bilingual pairs are grouped on the
+same row; multi-alias keywords (`trait`/`modo`/`way`) list every
+spelling.
+
+| English | Spanish / alias | Category | AST role |
+|---|---|---|---|
+| `agent` | — | Declarations | Define an agent |
+| `assert` | — | Control flow | Boolean assertion |
+| `async` | — | Concurrency | Mark a function as a coroutine (see §29) |
+| `await` | — | Concurrency | Suspend until a `Future` resolves (see §29) |
+| `break` | `sal` | Control flow | Exit innermost loop |
+| `const` | — | Bindings | Parser-reserved; use module-level `let` (see §2.1 note) |
+| `continue` | `sigue` | Control flow | Skip to next loop iteration |
+| — | `da` | Functions | Spanish form of `return` |
+| — | `di` | Statements | Print statement: `di expr` lowers to `print(expr)` |
+| `else` | `sino` | Control flow | Alternative branch |
+| `en` | — | Control flow | Spanish form of `in` |
+| `enum` | — | Declarations | Algebraic data type |
+| `export` | — | Modules | Re-export declaration |
+| `extern` | — | Functions | FFI declaration |
+| `false` | — | Literals | Boolean literal |
+| `fn` | — | Functions | Function declaration |
+| `for` | `cada` | Control flow | For-in loop |
+| `if` | `si` | Control flow | Conditional branch |
+| `impl` | — | Declarations | Method implementation block |
+| `import` | `usa` | Modules | Module import |
+| `in` | `en` | Control flow | For-loop iterable keyword |
+| `input` | — | Agents | Channel declaration inside `agent` block |
+| `let` | `pon` | Bindings | Immutable binding |
+| `match` | — | Control flow | Pattern matching expression |
+| `mut` | — | Bindings | Mutable binding modifier |
+| `new` | — | Declarations | Struct construction |
+| `none` | `nada` | Literals | `Option<T>::None` |
+| `output` | — | Agents | Channel declaration inside `agent` block |
+| `pipe` | — | Declarations | Pipeline declaration |
+| `pub` | — | Visibility | Public visibility modifier |
+| `return` | `da` | Functions | Return from function |
+| `self` | `yo` | Functions | Method receiver |
+| `signal` | — | Declarations | Reactive signal declaration |
+| `spawn` | — | Concurrency | Agent spawn |
+| `stream` | — | Declarations | Stream declaration |
+| `struct` | — | Declarations | Struct declaration |
+| `sync` | — | Concurrency | Agent/stream synchronization |
+| `Tensor` | — | Types | Tensor type constructor (§7) |
+| `trait` | `modo`, `way` | Declarations | Trait declaration |
+| `true` | — | Literals | Boolean literal |
+| `type` | `tipo` | Declarations | Type alias |
+| `while` | `mien` | Control flow | While loop |
+| `_` | — | Patterns | Wildcard pattern |
+
+> **Cross-reference audit (v4.113.0).** Every row above has been
+> checked against both lexer sources as of the v4.113.0 cut. If a
+> future change adds or removes a keyword in one lexer, this table
+> and the other lexer must be updated together; a mismatch is a
+> bootstrap-breaking bug. The audit procedure is recorded in
+> `docs/roadmap/v4/v4.113.0/artifacts/keyword-audit.md`.
 
 #### Bindings and Mutability
 
@@ -170,12 +244,19 @@ Keywords that currently only have an English spelling:
 `match`, `struct`, `enum`, `impl`, `export`, `extern`, `true`,
 `false`, `new`, `input`, `output`, `assert`.
 
-Soft-reserved (v4.30.0 onwards — documented but not tokenized): `async`, `await`.
+Also reserved by both lexers: `async`, `await` (hard keywords since
+v4.68.0 / v4.72.0 — see §29 for the coroutine specification), `di`
+(Spanish print statement, §9), `const` (parser-reserved with no
+semantics — use module-level `let` instead, see the `const` note in
+the *Bindings and Mutability* subsection below), `input`, `output`, `Tensor`, `_`.
 
 The self-hosted lexer (`mapanare/self/lexer.mn`) treats both columns
 as keywords. The Python bootstrap lexer is defined in
 `mapanare/mapanare.lark` — each bilingual alias appears as a second
 pattern on the same terminal (e.g. `KW_RETURN.2: /(?:return|da)(?![a-zA-Z0-9_])/`).
+Section 2.1.1 above is the authoritative master list — whenever a
+keyword is added or removed, both lexers, §2.1.1, and Appendix C
+must be updated in the same commit.
 
 ### 2.2 Operators
 
@@ -2533,7 +2614,12 @@ The LLVM emitter translates MIR to LLVM IR, producing native machine code. This 
 
 ## Appendix C: Reserved Keywords
 
-The following identifiers are reserved for future use and cannot be used as variable or function names, even though they have no current semantics:
+This appendix lists identifiers reserved *for future use*. They are
+not currently tokenized by either lexer but are treated as reserved
+by convention so that future language changes will not break existing
+code. For the complete list of identifiers that are **already**
+tokenized and enforced as keywords today, see §2.1.1
+*Reserved Keyword Master List*.
 
 > **v4.72.0-v4.76.0 update:** `async` and `await` are now real keywords
 > with full LLVM coroutine lowering (switched-resume ABI). See section
@@ -2547,13 +2633,11 @@ The following identifiers are reserved for future use and cannot be used as vari
 | `where` | Generic constraint clauses |
 | `use` | Path shortening |
 | `as` | Type casting / import renaming |
-| `const` | Compile-time constants |
 | `static` | Module-level mutable state |
 | `unsafe` | Escape hatch for memory safety |
 | `move` | Explicit ownership transfer |
 | `ref` | Reference binding in patterns |
 | `loop` | Infinite loop construct |
-| `continue` | Skip to next loop iteration |
 | `super` | Parent module reference |
 | `crate` | Root module reference |
 | `mod` | Module declaration |
