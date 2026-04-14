@@ -1,5 +1,15 @@
 # Mapanare v4.107.0 — Full Cross-Language Benchmark Comparison
 
+> **⚠ SUPERSEDED (2026-04-14).** This document captured the Mapanare
+> state immediately before the v4.108.0 auto-StringBuilder fix.
+> `string_concat` here reports 94.57 ms (246 MB peak); after v4.108.0
+> it is **1.36 ms (2.26 MB peak)** — a 70× speedup / 109× memory
+> reduction. The canonical reference for current performance is
+> [`../PHASE_C_RESULTS.md`](../PHASE_C_RESULTS.md). This file is
+> retained as a historical record of the pre-StringBuilder baseline;
+> it is also the "same-harness control" used in Phase C's delta
+> computation.
+
 > Measured 2026-04-14 on WSL2 (Ubuntu on Windows), AMD Ryzen 9 7950X,
 > 62 GB DDR5. **10 runs per configuration, highest and lowest dropped,
 > median of the middle 8 reported.**

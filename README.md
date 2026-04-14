@@ -360,21 +360,34 @@ mapanare emit-wasm --binary hello.mn     # Emit WAT + compile to WASM
 
 ## Benchmarks
 
-Mapanare compiles to native code via LLVM. On a 10-benchmark suite (compute, allocation, dispatch, mixed workloads), Mapanare runs **20-120x faster than Python** and **within 1.1-2.1x of Rust**. The arena allocator beats Rust on small struct allocation. See [`benchmarks/FINAL_REPORT.md`](benchmarks/FINAL_REPORT.md) for full methodology and analysis.
+Mapanare compiles to native code via LLVM. Across 5 correct-output
+workloads (compute, allocation, dispatch, string), Mapanare's geometric
+mean is **50× faster than Python**, **effectively tied with Rust
+(1.06×)**, **2.1× slower than Go**, and **4.85× slower than C (gcc -O2)**.
+The arena allocator beats Rust on small struct allocation. See
+[`benchmarks/PHASE_C_RESULTS.md`](benchmarks/PHASE_C_RESULTS.md) for full
+methodology, per-benchmark ratios, memory + binary size tables, and
+honest caveats.
 
-### Performance (v4.98.0, LLVM O2, wall time in ms)
+### Performance (v4.110.0, LLVM -O2, median of 10 runs, ms)
 
-| Benchmark | Mapanare | Python | Rust | vs Python | vs Rust |
-|-----------|----------|--------|------|-----------|---------|
-| fib(35) | **19.6** | 799.7 | 17.4 | 41x faster | 1.1x slower |
-| quicksort 10K | **2.0** | 48.9 | 1.0 | 24x faster | 2.0x slower |
-| matmul 64x64 | **1.3** | 71.3 | 0.8 | 55x faster | 1.6x slower |
-| struct alloc 100K | **0.6** | 72.9 | 0.8 | 122x faster | faster |
-| enum match 100K | **2.3** | 49.6 | 1.1 | 22x faster | 2.1x slower |
-| prime sieve 100K | **3.0** | 91.0 | 2.6 | 30x faster | 1.2x slower |
-| compile_self | **1.1** | 52.3 | 1.0 | 48x faster | 1.1x slower |
+| Benchmark | C (gcc) | Rust | Go | **Mapanare** | Python |
+|-----------|--------:|-----:|----:|-------------:|-------:|
+| fib_recursive       | 11.20 | 18.61 | 34.17 | **20.56** | 786.11 |
+| struct_alloc        |  0.60 |  1.77 |  0.02 |  **1.26** | 202.41 |
+| enum_match          |  0.14 |  1.93 |  0.20 |  **3.07** |  76.36 |
+| prime_sieve         |  2.02 |  3.43 |  2.09 |  **3.43** | 373.69 |
+| string_concat       |  0.07 |  1.28 | 31.67 |  **1.36** |   9.69 |
 
-> AMD Ryzen 9 7950X, WSL2, LLVM 18.1.3, Python 3.12.3, Rust 1.94.1. Median of 5 runs. Reproduce: `python3 benchmarks/run_final.py --runs 5 --cross-language`
+> WSL2 Ubuntu 24.04, LLVM 18.1.3, gcc 13.3.0, rustc 1.94.1, Go 1.22.5,
+> Python 3.12.3. `/usr/bin/time -v` for peak RSS, `time.perf_counter()` for
+> wall. Reproduce: `python3 benchmarks/cross_language/run_benchmarks.py --runs 10`
+
+**Headline moment (v4.108.0).** Auto-StringBuilder took `string_concat`
+from 94.57 ms to 1.36 ms — **70× faster**, **109× less memory**,
+**7× faster than Python**, **23× faster than Go**, nearly tied with Rust.
+One known correctness gap: `quicksort` fails a strict checksum check due
+to a `List<Int>` indexing bug (docket Qs.1, open for v4.111.0+).
 
 ### Python Transpile Benchmarks (zero manual edits)
 

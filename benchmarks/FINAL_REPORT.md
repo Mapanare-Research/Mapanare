@@ -1,5 +1,13 @@
 # Mapanare v4.98.0 — Final Cross-Language Benchmark Report
 
+> **⚠ SUPERSEDED (2026-04-14).** This document was the canonical
+> performance reference at v4.98.0 (pre-Phase A, pre-Phase C).
+> Numbers are stale: `string_concat` has since improved **70×** via
+> v4.108.0's auto-StringBuilder; Go and C benchmarks were added in
+> v4.107.0. The canonical reference is now
+> [`PHASE_C_RESULTS.md`](PHASE_C_RESULTS.md). This file is kept as a
+> historical record of the pre-panel measurement.
+
 > Measured 2026-04-13 on WSL2, AMD Ryzen 9 7950X (16-core), 62 GB RAM.
 > LLVM 18.1.3, Python 3.12.3, Rust 1.94.1. Go not installed.
 > 5 runs per benchmark, median of middle 3 reported.
