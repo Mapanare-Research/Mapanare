@@ -1,0 +1,160 @@
+// examples/async_file_io.mn — cooperative async file I/O demo (v4.115.0)
+//
+// Writes a known input file, reads it back, runs an async pipeline of
+// counters over the content, then writes a summary file from inside
+// another async fn. block_on drives the pipeline from main(). Real
+// I/O happens (fopen/fread/fwrite via the C runtime); async fn
+// provides the coroutine structure and await chains the results.
+//
+// Model: cooperative async. The I/O calls themselves are synchronous
+// C runtime functions (__mn_file_read_or_empty, __mn_file_write).
+// async fn provides the coroutine structure so multiple I/O-bound
+// tasks could be interleaved through the scheduler. Full non-blocking
+// suspension is a v5.x feature; this release proves the real I/O
+// path works from an async function running inside a native binary.
+//
+// Implementation note: as of v4.115.0 the Python bootstrap emitter
+// has a known limitation around `await` on async fns that return a
+// String — the string payload doesn't survive the future-extraction
+// path. The demo works around this by keeping all await chains on
+// Int and reading the file synchronously into a String once, then
+// passing that String into the async pipeline by reference. The
+// actual I/O happens; the async pipeline is exercised; the limitation
+// is documented in docs/guides/async.md as Sh.9.
+//
+// Paths are hardcoded to /tmp so the demo is self-contained and
+// needs no shell-level setup.
+//
+// Usage:
+//   python3 -m mapanare emit-llvm examples/async_file_io.mn -o /tmp/afi.ll
+//   clang /tmp/afi.ll -L runtime/native -lmapanare_rt -lpthread -lm -ldl \
+//         -o /tmp/async_file_io
+//   /tmp/async_file_io
+
+// ---------------------------------------------------------------------------
+// Runtime bindings
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_file_read_or_empty(path: String) -> String
+extern "C" fn __mn_file_write(path: String, content: String) -> Int
+
+// ---------------------------------------------------------------------------
+// Hardcoded paths so the demo is self-contained
+// ---------------------------------------------------------------------------
+
+fn input_path() -> String {
+    return "/tmp/async_file_io_input.txt"
+}
+
+fn output_path() -> String {
+    return "/tmp/async_file_io_output.txt"
+}
+
+fn seed_content() -> String {
+    return "hello async world\nmapanare compiles to native\nfile io works\n"
+    // Expected counts from seed_content(): 3 lines, 9 words.
+}
+
+// ---------------------------------------------------------------------------
+// Async pipeline — Int-only awaits over a shared String
+// ---------------------------------------------------------------------------
+
+// Count lines (number of '\n' characters) in `content`. Uses byte_at —
+// `content[i]` is string-slice syntax, not character access; byte_at is
+// the O(1) byte lookup.
+async fn count_lines(content: String) -> Int {
+    let mut n: Int = 0
+    let mut i: Int = 0
+    let limit: Int = len(content)
+    while i < limit {
+        if content.byte_at(i) == 10 {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+// Count whitespace-separated words in `content`. ASCII whitespace only.
+// Uses an Int flag (`in_word: 0/1`) instead of Bool — the Python bootstrap
+// emitter has a bug where a Bool local in an async fn that precedes a
+// file-write await silently drops the write. Recorded as Sh.9. The Int-
+// flag workaround is behaviourally identical.
+async fn count_words(content: String) -> Int {
+    let mut n: Int = 0
+    let mut in_word: Int = 0
+    let mut i: Int = 0
+    let limit: Int = len(content)
+    while i < limit {
+        let b: Int = content.byte_at(i)
+        let mut is_space: Int = 0
+        if b == 32 { is_space = 1 }
+        if b == 10 { is_space = 1 }
+        if b == 9  { is_space = 1 }
+        if b == 13 { is_space = 1 }
+        if is_space == 0 {
+            if in_word == 0 {
+                n = n + 1
+                in_word = 1
+            }
+        }
+        if is_space == 1 {
+            in_word = 0
+        }
+        i = i + 1
+    }
+    return n
+}
+
+// Format and write a summary line to the output file. Real file I/O
+// happens here, inside an async function. Returns 0 on success.
+async fn write_summary(path: String, lines: Int, words: Int) -> Int {
+    let body: String = "lines=" + str(lines) + " words=" + str(words) + "\n"
+    return __mn_file_write(path, body)
+}
+
+// Orchestrator. Takes the already-loaded content as input, runs two
+// counters concurrently, awaits both, then writes the summary file.
+// Returns lines + 1000*words so a single Int carries both back.
+//
+// Implementation note: `wrote` is folded into the return value so the
+// emitter's DCE pass does not eliminate the whole `await write_summary`
+// call as a dead store. Without this, the Int returned by write_summary
+// is unused, the async machinery drops the call, and the file is never
+// written. Recorded as Sh.9.
+async fn process(content: String) -> Int {
+    let lines: Int = await count_lines(content)
+    let words: Int = await count_words(content)
+    let wrote: Int = await write_summary(output_path(), lines, words)
+    return wrote + lines + 1000 * words
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+fn main() {
+    // 1. Seed the input file (real file write).
+    let seeded: Int = __mn_file_write(input_path(), seed_content())
+    if seeded != 0 {
+        print("seed failed")
+        return
+    }
+
+    // 2. Read it back synchronously (real file read). The String is then
+    //    fed into the async pipeline as a parameter — see header comment
+    //    on why this isn't `await read_file(...)`.
+    let content: String = __mn_file_read_or_empty(input_path())
+
+    // 3. Drive the async pipeline. block_on resumes the coroutine until
+    //    every await point is satisfied.
+    let encoded: Int = block_on(process(content))
+    let lines: Int = encoded % 1000
+    let words: Int = encoded / 1000
+
+    // 4. Read the summary file back so stdout confirms the write actually
+    //    landed on disk.
+    let readback: String = __mn_file_read_or_empty(output_path())
+    print("async pipeline: lines=" + str(lines) + " words=" + str(words))
+    print("summary file:   " + readback)
+}
