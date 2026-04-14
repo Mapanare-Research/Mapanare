@@ -8,7 +8,7 @@
 > sizes. This release runs the 3-stage fixed-point script, identifies
 > divergences, fixes the heuristic, and re-verifies.
 
-**Status:** TODO
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.111.0
 **Delta review:** No

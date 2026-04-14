@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.112.0] - 2026-04-14
+
+**Phase D release 2 — fixed-point verification + docket #7 fix.**
+Ran the 3-stage fixed-point verification script; documented
+divergences in `docs/roadmap/v4/v4.112.0/DIVERGENCE_ANALYSIS.md`;
+closed docket #7 (byref size heuristic) by adding real struct size
+computation to the self-hosted emitter.
+
+### Closed
+
+- **Docket #7** (from the v4.99.0 panel) — `mapanare/self/emit_llvm.mn`
+  `is_byref_type()` used a 256-byte stub for every `%struct.Foo`
+  type, causing all named struct types to be classified as byref
+  regardless of actual size. 16-byte `Small`/`Point`/`Pair` structs
+  were wrongly passed by reference. Fixed by adding
+  `struct_byte_size(st, ty)` that resolves `%struct.Foo` through the
+  registered struct table and uses the inline `{...}` form for size
+  computation, matching the Python bootstrap's `_tsz` behavior. All
+  7 call sites of `is_byref_type` updated to `is_byref_type_st(st, ty)`.
+
+### Changed
+
+- `mapanare/self/emit_llvm.mn` — single-file fix, 48 lines added
+  (new `struct_byte_size`, new `is_byref_type_st`, back-compat
+  wrapper retained as `is_byref_type`). 7 call sites updated.
+- `mapanare/self/mnc_all.mn` — regenerated via `concat_self.py`.
+
+### Added
+
+- `docs/roadmap/v4/v4.112.0/DIVERGENCE_ANALYSIS.md` — classification
+  of divergences (byref / structural / cosmetic / semantic-gap),
+  before/after comparison, exit-criteria table.
+- `docs/roadmap/v4/v4.112.0/SESSION_REPORT.md` — release summary.
+
+### Verified
+
+- **Byref classification correct** on `/tmp/byref_test.mn`: 16-byte
+  `Small` now passed by value (`%struct.Small %s`), 80-byte `Large`
+  still passed by reference (`ptr %l.byref`). IR validates,
+  compiles to working binary, output correct (311).
+- **Golden tests: 26/64 preserved** — identical to v4.111.0. Zero
+  regressions from the byref change. Small-struct tests
+  (06_struct, 14_nested_struct, 27_impl) now emit their methods
+  by-value where appropriate.
+
+### Blocked / not measured
+
+- **Fixed-point convergence** (stage2 == stage3) could not be
+  measured: stage1 fails to compile its own sources at Stage 1 with
+  `Undefined variable 'None'` in `mnc_all.mn`. This is a pre-existing
+  self-hosted semantic gap (surfaced in v4.111.0's stage2
+  validation), not caused by any v4.112.0 change. Python bootstrap
+  bypasses via `skip_check=True` in `build_stage1.py`; self-hosted
+  `semantic.mn` doesn't yet register `None`/`Some` as constructors.
+  New docket **Sh.8** opened for the fix.
+- **Culebra scan** deferred — 854K-line `main.ll` exceeded practical
+  bounded-time scan budget, same as v4.111.0.
+
+### Dockets
+
+| Docket | Status | Description |
+| ------ | ------ | ----------- |
+| **Sh.3** | **CLOSED** | Byref size heuristic — fixed this release |
+| Sh.8 (new) | OPEN | Self-hosted `None`/`Some`/`Ok` constructors — unblocks fixed-point |
+| Sh.1 | OPEN | `inline_small_functions` MIR corruption (v4.111.0) |
+| Sh.2 | OPEN | `emit_mir_call` NULL `starts_with` crash (v4.111.0) |
+
+### What's next
+
+v4.113.0 closes the remaining medium/low docket items from the
+v4.99.0 panel: #8 (coroutine frame layout coupling), #10 (keyword
+collision SPEC doc), #11 (async error messages). After v4.113.0 all
+v4.99.0 panel items are closed. v4.114.0 is the Phase D panel.
+
 ## [4.111.0] - 2026-04-14
 
 **Phase D release 1 — self-hosted golden test parity.** First release
