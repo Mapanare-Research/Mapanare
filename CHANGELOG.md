@@ -7,6 +7,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.124.0] - 2026-04-14
+
+**Phase F closeout release 4 — Rt.1: unboxed enum payloads for
+pointer-fits variants.** The Python LLVM emitter now stores small
+enum payloads inline in `{i64, i64, ..., i64}` (tag + up to 2
+payload slots) instead of heap-allocating through `{i64, ptr}`. Any
+enum whose variants all have ≤ 2 payload fields, with every field
+packable into i64 (Int / Float / Bool / pointer-sized), and no
+self-referential boxing, now construction and match without
+`malloc`, without pointer dereference, and without drop-glue free.
+
+Benchmark result: the `enum_match` benchmark (Shape enum with six
+variants including two 2-field `Triangle(Int,Int)` / `Rect(Int,Int)`
+cases) goes from **3.33 ms → 1.88 ms — a 1.77× speedup** across 100k
+iterations. Gap vs Rust narrows from 4.1× → 2.3×. Gap vs C gcc -O2
+narrows from 5.3× → 3.0×. The PLAN's "within 1.5× of Rust" target
+is not fully hit — 2.3× remains, attributable to the 24-byte
+by-value struct return on Mapanare's calling convention rather than
+to allocation traffic. The remaining gap is no longer algorithmic.
+
+Zero heap allocations per Shape construction (was 83,333 mallocs
+per 100k-iteration run). Valgrind clean on all enum-heavy goldens.
+Zero new pytest failures (failure set byte-identical to v4.123.0
+HEAD). Golden tests through `mnc-stage1`: 27/65 unchanged (the
+self-hosted emitter is deferred per PLAN decision 3 — Sh.8 blocks
+stage2 self-compilation anyway, and landing a parallel self-hosted
+change alongside the Python fix risks destabilising v4.125.0's
+Sh.8 target). `libmapanare_rt.a` byte-identical to v4.123.0.
+
+### Added
+
+- **Inline enum representation** in `mapanare/emit_llvm_text.py`:
+  - New `self._enum_inline: dict[str, int]` registry (slot count;
+    0 = boxed, 1 or 2 = inline with N payload slots).
+  - New `_compute_enum_inline_slots(pays, boxed)` helper decides
+    per-enum eligibility in `_reg_enum`.
+  - New `_type_fits_inline_slot(ft)` filter — admits `i64` / `double`
+    / `i1` / `i8` / `i16` / `i32` / `ptr` only; rejects String,
+    List, Map-struct, user structs, Option/Result wrapper structs.
+    Prevents ownership-sensitive types from being inlined (where
+    drop glue would skip the free it needs to do).
+  - New `_enum_ty(nm)` lookup — returns `{i64, i64, ..., i64}` for
+    inline enums, `{i64, ptr}` for boxed (unchanged legacy path).
+  - New `_pack_to_i64` / `_unpack_from_i64` helpers (Int direct;
+    Float bitcast; Bool / small-int zext; pointer ptrtoint —
+    and inverses).
+  - `_do_enum_init` inline branch: skips `malloc` + GEP-store chain;
+    builds the LLVM struct value via insertvalue with tag at slot 0
+    and packed payload at slots 1…N.
+  - `_do_enum_payload` inline branch: skips pointer dereference;
+    extracts from slot `payload_idx + 1` via `extractvalue` and
+    unpacks to field type.
+  - Preserves existing move semantics: `_move_resource`,
+    `_list_vars` removal, `_lroots` root-alias lookup all still
+    fire on the inlined payload value before packing.
+
+### Changed
+
+- **`_rty` / `_lookup_struct_or_enum`** now route enum types
+  through `_enum_ty` rather than returning the constant
+  `ENUM = "{i64, ptr}"` unconditionally. Function signatures for
+  enum-taking and enum-returning functions adapt per-enum.
+
+### Fixed
+
+- **Rt.1 — boxed-enum payload overhead.** Was named in the v4.120.0
+  panel docket as the single biggest remaining performance gap
+  (enum_match 24× slower than C, 2× slower than Rust per the
+  v4.118.0 cross-language benchmark). Closed for all enums that
+  qualify under the inline rule.
+
+### Deferred
+
+- **Self-hosted emitter (`mapanare/self/emit_llvm.mn`)** — parallel
+  inline path deferred to v4.126.0+ per PLAN decision 3. Requires
+  a new `EmitState` field for per-enum inline status and threaded
+  updates through `resolve_mir_type`, `emit_enum_init` (including
+  `compute_payload_alloc_size` / `compute_field_offset` siblings),
+  and `emit_enum_payload`. Stage2 self-compilation is blocked by
+  Sh.8 (v4.125.0 target); shipping a Python-only Rt.1 here keeps
+  the Sh.8 landing path clean and lets the benchmark evidence base
+  for the v4.130.0 panel land now.
+- **Close the remaining 2.3× Rust gap** — the residual overhead is
+  by-value 24-byte struct return; requires SRet-aware calling
+  convention or LLVM optimiser attribute work. Open for v4.125.0+
+  analysis, likely not a single-release fix.
+- **Inline beyond 2 payload slots** — rare in practice (most real
+  enums have ≤ 2 fields per variant); deferred to v5.x if demand
+  surfaces.
+
+### Test-suite state
+
+- **Audit subset pytest** (excluding `tests/bootstrap/`): 5,053
+  passed / 39 failed / 103 skipped / 7 xfailed in 99.2 s —
+  byte-identical failure set to v4.123.0 HEAD baseline.
+- **Bootstrap pytest**: 213 passed / 12 failed — byte-identical
+  failure set to HEAD.
+- **Golden tests through `mnc-stage1`**: 27 passed / 38 failed,
+  unchanged from v4.123.0. Self-hosted emitter deferred.
+- **Python bootstrap goldens**: 64/65 (pre-existing `51_match_guards_and_or`).
+- **Valgrind**: clean on `07_enum_match`, `10_result`, `17_option`,
+  and the `enum_match` benchmark binary — no errors, no definite
+  leaks.
+
+### Lint state
+
+- `mapanare/emit_llvm_text.py` ruff findings: 50 at HEAD baseline,
+  50 post-change (unchanged; An.2 carry-forward). New code is ruff-
+  clean.
+
+### Carry-forward
+
+- **An.1** (51 pre-existing pytest failures outside v4.117.0 audit
+  scope) — unchanged.
+- **An.2** (pre-existing lint debt in `lower.py` +
+  `emit_llvm_text.py`) — unchanged. On v4.126.0 track.
+- **Sh.8** (self-hosted `None`/`Some`/`Ok` constructor registration
+  in `semantic.mn`; blocks stage2 self-compilation) — v4.125.0 target.
+
 ## [4.123.0] - 2026-04-14
 
 **Phase F closeout release 3 — dead-code sweep.** Pure cleanup;

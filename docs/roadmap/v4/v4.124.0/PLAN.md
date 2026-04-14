@@ -8,13 +8,14 @@
 > struct. No heap allocation for Int, Float, Bool payloads. Single-
 > variant or Option-like enums benefit the most.
 
-**Status:** PLANNED
+**Status:** DONE (2026-04-14)
 **Breaking:** No (enum ABI internal; no stable FFI contract)
 **Prerequisite:** v4.123.0
 **Delta review:** No
 **Full panel:** No (v4.130.0)
 **Estimated work:** 1 sprint
 **Theme:** Close half the 2x performance gap vs Rust on enum-heavy code.
+**Outcome:** Python emitter only; up to 2 inline payload slots (`{i64, i64, i64}`). Shape benchmark: 3.34 ms → 1.89 ms (1.77× speedup). Gap vs Rust: 4.1× → 2.3× (closed 56%). Gap vs C: 5.3× → 3.0×. Target of 1.5× Rust not fully hit; remaining overhead is by-value return+pass of 24-byte struct. Self-hosted emitter deferred to v4.126.0+ per PLAN decision 3.
 
 ---
 

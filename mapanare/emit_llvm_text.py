@@ -480,6 +480,19 @@ class LLVMTextEmitter:
         self._struct_ty: dict[str, str] = {}
         self._enums: dict[str, tuple[dict[str, int], dict[str, list[MIRType]], dict[str, int]]] = {}
         self._boxed_enum: dict[str, set[tuple[str, int]]] = {}
+        # v4.124.0 Rt.1: inline slot count per registered enum.
+        #   0 = boxed (existing {i64, ptr} representation)
+        #   N ≥ 1 = inline {i64, i64, ..., i64} with N payload slots
+        # An enum qualifies for inline storage if every variant has at most
+        # N fields, each field is an 8-byte-or-smaller value packable into
+        # i64 (Int / Float / Bool / pointer), and no field is marked boxed
+        # for self-reference. Inline enums skip malloc on construction,
+        # skip the pointer chase on match, and have no drop-glue free.
+        # Cap: 2 slots (max 16 bytes of payload) per PLAN guidance —
+        # wider variants (3+ fields or heap-owned fields) stay boxed.
+        self._enum_inline: dict[str, int] = {}
+        # Maximum inline payload slots. Enums with more fields stay boxed.
+        self._MAX_INLINE_SLOTS = 2
         self._boxed_struct: dict[str, set[int]] = {}
         self._boxed_struct_mir: dict[str, dict[int, MIRType]] = {}
         self._struct_mir_types: dict[str, dict[int, MIRType]] = {}
@@ -957,6 +970,9 @@ class LLVMTextEmitter:
         if k == TypeKind.STRUCT:
             return self._lookup_struct_or_enum(mt.type_info.name)
         if k == TypeKind.ENUM:
+            nm = mt.type_info.name
+            if nm:
+                return self._enum_ty(nm)
             return ENUM
         if k == TypeKind.OPTION:
             a = mt.type_info.args
@@ -988,11 +1004,28 @@ class LLVMTextEmitter:
             if s.endswith("__" + nm):
                 return self._struct_ty[s]
         if nm in self._enums:
-            return ENUM
+            return self._enum_ty(nm)
         for e in self._enums:
             if e.endswith("__" + nm):
-                return ENUM
+                return self._enum_ty(e)
         return PTR
+
+    def _enum_ty(self, nm: str) -> str:
+        """LLVM struct type for a registered enum, inline or boxed.
+
+        Inline enums use `{i64, i64, ..., i64}` with one i64 tag slot
+        followed by N i64 payload slots, where N = _enum_inline[nm].
+        N == 0 variants (pure unit enums) get `{i64, i64}` to keep the
+        in-memory size consistent with single-payload enums — wider
+        allocation but it simplifies codegen / drop glue.
+        """
+        slots = self._enum_inline.get(nm, 0)
+        if slots == 0:
+            return ENUM
+        # Always emit at least one payload slot even for pure unit enums
+        # to keep the layout uniform and avoid a separate {i64} case.
+        n_slots = max(slots, 1)
+        return "{" + ", ".join(["i64"] * (1 + n_slots)) + "}"
 
     # ── registration ────────────────────────────────────────────────
     def _is_self_ref(self, parent: str, mt: MIRType) -> bool:
@@ -1058,6 +1091,85 @@ class LLVMTextEmitter:
         self._enums[nm] = (tags, pays, sizes)
         if boxed:
             self._boxed_enum[nm] = boxed
+        # v4.124.0 Rt.1: decide inline slot count for this enum (0 =
+        # boxed). Qualification: every variant field is i64-packable
+        # (Int / Float / Bool / pointer); no field is marked boxed for
+        # self-reference; max variant field count ≤ _MAX_INLINE_SLOTS.
+        self._enum_inline[nm] = self._compute_enum_inline_slots(pays, boxed)
+
+    def _compute_enum_inline_slots(
+        self,
+        pays: dict[str, list[MIRType]],
+        boxed: set[tuple[str, int]],
+    ) -> int:
+        """Return inline slot count (0 = boxed, N ≥ 1 = inline with N payload slots)."""
+        if boxed:
+            return 0
+        max_fields = 0
+        for _vn, pts in pays.items():
+            if len(pts) > max_fields:
+                max_fields = len(pts)
+            for pt in pts:
+                ft = self._rty(pt)
+                if not self._type_fits_inline_slot(ft):
+                    return 0
+        if max_fields > self._MAX_INLINE_SLOTS:
+            return 0
+        return max_fields
+
+    @staticmethod
+    def _type_fits_inline_slot(ft: str) -> bool:
+        """True if *ft* is an 8-byte-or-smaller value storable in an i64 slot
+        via bitcast / zext / ptrtoint without information loss.
+
+        Int / Float (double) / Bool (i1) / opaque pointers qualify. String
+        ({ptr, i64}), List ({ptr, i64, i64}), Result/Option wrapper structs,
+        and user structs do not."""
+        if ft in ("i64", "double", "i1", "i8", "i16", "i32", "ptr"):
+            return True
+        if ft.endswith("*"):
+            return True
+        return False
+
+    def _pack_to_i64(self, val: str, ft: str) -> str:
+        """Convert *val* of LLVM type *ft* into an i64 suitable for an inline
+        enum payload slot. Reverse of _unpack_from_i64."""
+        if ft == "i64":
+            return val
+        if ft == "double":
+            r = self._f("pk")
+            self._L(f"{r} = bitcast double {val} to i64")
+            return r
+        if ft in ("i1", "i8", "i16", "i32"):
+            r = self._f("pk")
+            self._L(f"{r} = zext {ft} {val} to i64")
+            return r
+        if ft == "ptr" or ft.endswith("*"):
+            r = self._f("pk")
+            self._L(f"{r} = ptrtoint ptr {val} to i64")
+            return r
+        # Unsupported type — should have been filtered by
+        # _type_fits_inline_slot during registration.
+        return val
+
+    def _unpack_from_i64(self, val: str, ft: str) -> str:
+        """Reverse of _pack_to_i64: extract a value of LLVM type *ft* from an
+        i64 payload slot."""
+        if ft == "i64":
+            return val
+        if ft == "double":
+            r = self._f("upk")
+            self._L(f"{r} = bitcast i64 {val} to double")
+            return r
+        if ft in ("i1", "i8", "i16", "i32"):
+            r = self._f("upk")
+            self._L(f"{r} = trunc i64 {val} to {ft}")
+            return r
+        if ft == "ptr" or ft.endswith("*"):
+            r = self._f("upk")
+            self._L(f"{r} = inttoptr i64 {val} to ptr")
+            return r
+        return val
 
     def _res_enum(self, raw: str) -> str:
         if raw in self._enums:
@@ -4231,6 +4343,39 @@ class LLVMTextEmitter:
             tag = tags.get(i.variant, 0)
             boxed = self._boxed_enum.get(en, set())
             ptypes = pays.get(i.variant, [])
+            # v4.124.0 Rt.1: inline representation — no malloc, no drop
+            # glue. Each payload field is packed into its own i64 slot
+            # (Int direct; Float bitcast; Bool/small-int zext; pointer
+            # ptrtoint). Unused slots store 0.
+            inline_slots = self._enum_inline.get(en, 0)
+            if inline_slots > 0:
+                enum_ty = self._enum_ty(en)
+                n_slots = max(inline_slots, 1)
+                packed: list[str] = []
+                for j in range(n_slots):
+                    if j < len(ptypes) and j < len(i.payload):
+                        pval = i.payload[j]
+                        ft = self._rty(ptypes[j])
+                        if pval.name in self._list_vars:
+                            self._list_vars.remove(pval.name)
+                        self._move_resource(pval.name)
+                        root_name = self._lroots.get(pval.name)
+                        if root_name and root_name in self._list_vars:
+                            self._list_vars.remove(root_name)
+                        v, t = self._get(pval)
+                        if t != ft:
+                            v = self._coerce(v, t, ft)
+                        packed.append(self._pack_to_i64(v, ft))
+                    else:
+                        packed.append("0")
+                cur = self._f("ei")
+                self._L(f"{cur} = insertvalue {enum_ty} undef, i64 {tag}, 0")
+                for j, iv in enumerate(packed):
+                    nxt = self._f("ei")
+                    self._L(f"{nxt} = insertvalue {enum_ty} {cur}, i64 {iv}, {j + 1}")
+                    cur = nxt
+                self._put(i.dest, cur, enum_ty)
+                return
             # Build payload struct type
             pflds: list[str] = []
             for j, pt in enumerate(ptypes):
@@ -4332,6 +4477,23 @@ class LLVMTextEmitter:
             boxed = self._boxed_enum.get(en, set())
             if not ptypes:
                 self._put(i.dest, "0", I1)
+                return
+            # v4.124.0 Rt.1: inline extraction — extract i64 from the
+            # relevant payload slot and unpack to the field type (no
+            # pointer chase, no load).
+            if self._enum_inline.get(en, 0) > 0:
+                inline_ty = self._enum_ty(en)
+                ev, et = self._get(i.enum_val)
+                if self._is_ptr(et):
+                    ev = self._coerce(ev, et, inline_ty)
+                    et = inline_ty
+                idx = i.payload_idx if len(ptypes) > 1 else 0
+                slot_idx = idx + 1  # tag occupies slot 0
+                raw = self._f("pr")
+                self._L(f"{raw} = extractvalue {et} {ev}, {slot_idx}")
+                ft = self._rty(ptypes[idx])
+                val = self._unpack_from_i64(raw, ft)
+                self._put(i.dest, val, ft)
                 return
             ev, et = self._get(i.enum_val)
             if self._is_ptr(et):
