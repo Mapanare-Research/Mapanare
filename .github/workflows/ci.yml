@@ -123,6 +123,40 @@ jobs:
         run: pytest tests/ -v -n auto --durations=20
 
   # ---------------------------------------------------------------------------
+  # v4.117.0 Phase 4 — informational coverage gate
+  # ---------------------------------------------------------------------------
+  # Runs pytest-cov on the core pipeline scope (parser/semantic/lower/MIR/
+  # emitter/lexer/ffi) and uploads the XML artifact. Does NOT gate on
+  # coverage thresholds — the tests/COVERAGE.md audit is the baseline,
+  # and a future release will flip this to gating once the numbers have
+  # stabilised across 5 releases.
+  coverage:
+    name: Coverage (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Mapanare with pytest-cov
+        run: pip install -e ".[dev]" pytest-cov
+      - name: Run coverage on core pipeline scope
+        run: |
+          pytest tests/llvm/ tests/lexer/ tests/parser/ tests/semantic/ \
+                 tests/mir/ tests/emit/ tests/ffi/ \
+                 --cov=mapanare --cov-report=xml --cov-report=term \
+                 --tb=no -q || true
+      - name: Upload coverage XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml-${{ github.sha }}
+          path: coverage.xml
+          retention-days: 30
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
   # Self-hosted compiler: build mnc-stage1 and validate golden tests
   # ---------------------------------------------------------------------------
   self-hosted:
