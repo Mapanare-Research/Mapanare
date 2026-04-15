@@ -1,19 +1,19 @@
 # Mapanare Language Specification
 
-**Version:** 4.116.0
-**Status:** Live — synced to the v4.116.0 cut (2026-04-14)
+**Version:** 4.129.0
+**Status:** Live — synced to the v4.129.0 cut (2026-04-15)
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code. A legacy Python transpiler backend exists for reference and bootstrapping only.
 
 > **Spec sync discipline.** Each v4.x panel release fact-checks this
 > spec against the live grammar (`mapanare/mapanare.lark`), type
 > system (`mapanare/types.py`), and self-hosted lexer
-> (`mapanare/self/lexer.mn`). The v4.116.0 documentation batch confirms
-> the three sections most frequently flagged: §2.1 (keywords + bilingual
-> master list), §2.2 (operator precedence, 13 levels), and §29 (futures
-> / async-await) are in lock-step with the current implementation. If
-> you discover drift, open a documentation issue against the specific
-> section number.
+> (`mapanare/self/lexer.mn`). The v4.129.0 documentation sync re-audits
+> §2.1 (keywords + bilingual master list), §2.1.1 (master keyword
+> table), §3 (type system), §6.3 (closures), §27.1 (stability count),
+> §28 (stdlib), and Appendix B (compilation pipeline) against the
+> v4.117.0–v4.128.0 changes. If you discover drift, open a
+> documentation issue against the specific section number.
 
 ---
 
@@ -74,7 +74,7 @@ spelling.
 | `async` | — | Concurrency | Mark a function as a coroutine (see §29) |
 | `await` | — | Concurrency | Suspend until a `Future` resolves (see §29) |
 | `break` | `sal` | Control flow | Exit innermost loop |
-| `const` | — | Bindings | Parser-reserved; use module-level `let` (see §2.1 note) |
+| `const` | — | Bindings | Compile-time constant: `const N: T = EXPR`; requires a type annotation and a constant-foldable initializer (see §2.1 note) |
 | `continue` | `sigue` | Control flow | Skip to next loop iteration |
 | — | `da` | Functions | Spanish form of `return` |
 | — | `di` | Statements | Print statement: `di expr` lowers to `print(expr)` |
@@ -127,13 +127,33 @@ spelling.
 | `let` | Declare an immutable binding. Also used at module scope: a top-level `let NAME: Type = value` declares a module-level immutable value visible to every function in the module. |
 | `mut` | Declare a mutable variable binding: `let mut x = 0`. |
 
-> **Note (v4.27.0):** `const` is not a Mapanare keyword. It was briefly added
-> in v4.18.0 as a parser alias for module-level `let` and was removed in
-> v4.27.0 as part of the post-review recovery because it carried no
-> additional semantics (no `ConstDef` AST node, no immutability beyond what
-> `let` already provides, no compile-time evaluation). Use module-level
-> `let` to declare top-level immutable values. `const` remains reserved for
-> future use — see *Appendix C: Reserved Keywords*.
+> **Note (v4.55.0, updated v4.129.0):** `const` is a Mapanare keyword.
+> Its history is non-linear: v4.18.0 introduced it as a parser alias
+> for module-level `let` with no additional semantics; v4.27.0
+> removed that alias during post-review recovery because the feature
+> was a shell; v4.55.0 reintroduced it as a real definition form
+> (`ConstDef` in `mapanare/ast_nodes.py`, `const_def` rule in
+> `mapanare/mapanare.lark`) with distinct semantics from module-level
+> `let`:
+>
+> - Requires a type annotation and a constant-foldable initializer
+>   (literals, other `const` references, and arithmetic on
+>   constants). Non-constant initializers are rejected at compile
+>   time with a diagnostic.
+> - Registered under `SymbolKind.CONST` in the semantic checker,
+>   distinct from `VARIABLE`; immutability is enforced.
+> - Usable in tensor-shape positions, where `let`-bound values are
+>   not.
+>
+> ```mn
+> const MAX_RETRIES: Int = 3
+> const TAU: Float = 2.0 * 3.141592653589793
+> ```
+>
+> v4.126.0 fixed `is_definition_start` in the self-hosted parser
+> (`mapanare/self/parser.mn`) to recognize `KW_CONST` at module
+> scope; goldens `54_const_basic` and `58_const_scope` pass through
+> both Python bootstrap and `mnc-stage1`.
 
 #### Functions and Definitions
 
@@ -456,6 +476,7 @@ Identifiers start with a letter or underscore, followed by letters, digits, or u
 | `Stream<T>` | `STREAM` | Asynchronous iterable producing values of type `T` over time. Supports backpressure. |
 | `Channel<T>` | `CHANNEL` | Typed, bounded message channel for inter-agent communication. Carries values of type `T`. |
 | `Tensor<T>[shape]` | `TENSOR` | N-dimensional array with element type `T` and compile-time verified shape. Example: `Tensor<Float>[3, 3]` is a 3x3 matrix of floats. |
+| `Future<T>` | `FUTURE` | The pending result of an `async fn` call; resolved by `await` (inside another async context) or `block_on` (from synchronous code). Added v4.69.0; see §29. |
 
 ### 3.3 Compound / User-Defined Types
 
@@ -566,7 +587,7 @@ Mapanare uses local type inference. The compiler infers types from the immediate
 - The condition in `if`, `while`, and `assert` must be `Bool`.
 - The `?` operator requires the enclosing function to return `Result` or `Option`.
 
-### 3.6 Struct Types
+### 3.7 Struct Types
 
 Structs are product types -- named collections of fields.
 
@@ -608,7 +629,7 @@ struct Pair<A, B> {
 }
 ```
 
-### 3.7 Enum Types (Algebraic Data Types)
+### 3.8 Enum Types (Algebraic Data Types)
 
 Enums are sum types -- tagged unions where each variant can carry different data.
 
@@ -657,7 +678,7 @@ enum Either<A, B> {
 }
 ```
 
-### 3.8 Option and Result Types
+### 3.9 Option and Result Types
 
 #### Option<T>
 
@@ -716,7 +737,7 @@ fn process(s: String) -> Result<Int, String> {
 
 When `?` is applied to a `Result`, it unwraps `Ok(v)` for the expression's value or returns `Err(e)` from the enclosing function. The enclosing function must return a compatible `Result` type.
 
-### 3.9 Agent Types
+### 3.10 Agent Types
 
 Agents have typed input and output channels that form their public interface.
 
@@ -736,7 +757,7 @@ agent Counter {
 
 When you `spawn` an agent, the returned handle exposes the input and output channels with their declared types. See section 9 (Agent Model) for full semantics.
 
-### 3.10 Tensor Types
+### 3.11 Tensor Types
 
 > **Status:** Stable on LLVM backend. Tensor literals (v4.42.0), multi-dimensional indexing with bounds checking (v4.43.0), NumPy-style broadcasting (v4.44.0), reductions and slicing (v4.45.0). GPU-accelerated when CUDA/Vulkan available; CPU fallback otherwise.
 
@@ -824,7 +845,7 @@ let m = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]
 let rows = m[0..2, _]   // First two rows, all columns -> [2, 3]
 ```
 
-### 3.11 Type Aliases
+### 3.12 Type Aliases
 
 ```mn
 type Name = String
@@ -834,7 +855,7 @@ type Callback = fn(Int) -> Bool
 
 Type aliases are transparent -- the alias name and the underlying type are interchangeable.
 
-### 3.12 Function Types
+### 3.13 Function Types
 
 Function types describe the signature of a callable value (function pointer or closure):
 
@@ -1138,8 +1159,8 @@ Closures capture variables from the enclosing scope:
 <!-- pseudo -->
 ```mn
 let offset = 10
-let add_offset = (x: Int) => x + offset
-print(add_offset(5))  // prints 15
+let add_offset = (x) => x + offset
+print(str(add_offset(5)))  // prints 15
 ```
 
 **Implementation:** Closures with free variables are compiled as a pair: `{function_pointer, environment_struct_pointer}`. The environment struct contains the captured variables. Variables are captured by value (copy).
@@ -2257,7 +2278,7 @@ Starting with v1.0.0, the following are frozen and will not change without an RF
 
 - **Syntax:** All grammar rules defined in this specification.
 - **Semantics:** Type checking rules, operator behavior, control flow semantics.
-- **Type system:** All 25 TypeKind variants and their behavior.
+- **Type system:** All 29 TypeKind variants and their behavior (see `mapanare/types.py::TypeKind`).
 - **Builtin functions:** Names, signatures, and behavior of all builtin functions.
 - **String methods:** All 15 methods and their signatures.
 - **Agent model:** Spawn, send, sync semantics, lifecycle states.
@@ -2286,19 +2307,33 @@ Any change to a frozen area requires:
 
 ---
 
-## 28. Standard Library (v0.9.0)
+## 28. Standard Library
 
-Seven native stdlib modules written in `.mn`, compiled via LLVM:
+The standard library is written in Mapanare (`.mn`) and compiled via
+LLVM. Modules live under `stdlib/` and are organized by domain. The
+following sub-sections document public APIs for the modules with
+stable, published surfaces. For the canonical list of shipped
+modules, see the `stdlib/` directory.
 
-| Module | Path | Description |
+**Domains currently covered:**
+
+| Domain | Path prefix | Representative modules |
 |---|---|---|
-| JSON | `encoding/json.mn` | Recursive descent JSON parser/serializer |
-| CSV | `encoding/csv.mn` | RFC 4180 CSV parser/writer |
-| HTTP Client | `net/http.mn` | HTTP/1.1 client on C runtime TCP/TLS |
-| HTTP Server | `net/http/server.mn` | HTTP server with routing and middleware |
-| WebSocket | `net/websocket.mn` | RFC 6455 WebSocket client and server |
-| Crypto | `crypto.mn` | SHA-1, SHA-256, HMAC, Base64, random bytes, JWT |
-| Regex | `text/regex.mn` | PCRE2-based regular expressions |
+| Encoding | `encoding/` | `json`, `csv`, `toml`, `yaml` |
+| Networking | `net/` | `http` (client), `http/server`, `websocket`, `http/session`, `http/sse` |
+| Crypto | `crypto.mn` | SHA-1, SHA-256, HMAC, Base64, random, JWT |
+| Text | `text/` | `regex` (PCRE2), `string_utils`, `text` |
+| Database | `db/` | `sqlite`, `postgres`, `redis`, `embedded_kv`, `migrate`, `pool` |
+| AI | `ai/` | `llm`, `embedding`, `rag`, `structured` |
+| GPU | `gpu/` | `device`, `kernel`, `tensor` |
+| Filesystem / system | `fs.mn`, `time.mn`, `log.mn`, `math.mn` | |
+| Testing | `test/runner.mn` | built-in `@test` runner |
+| WASM | `wasm/bridge.mn` | JS-interop bridge for the WASM backend |
+
+The per-module subsections that follow describe the public API for
+the most widely-used modules. New modules added after v4.129.0 should
+be added to `stdlib/` and, if their API is intended as stable, get
+a subsection here.
 
 ### JSON Module (`encoding/json`)
 
@@ -2576,8 +2611,8 @@ The Mapanare compiler uses a multi-stage pipeline with an intermediate represent
 
 ```
 .mn source --> Lexer --> Parser --> AST --> Semantic Analysis --> MIR Lowering --> MIR Optimizer --> Emitter
-                                                                                                    |--> Python (legacy)
                                                                                                     |--> LLVM IR --> Native Binary
+                                                                                                    |--> C Source  --> gcc/clang --> Native Binary
                                                                                                     +--> WebAssembly (WAT/WASM)
 ```
 
@@ -2609,27 +2644,63 @@ MIR is a typed, SSA-based intermediate representation that sits between the AST 
 | **Closures** | `ClosureCreate`, `ClosureCall`, `EnvLoad` |
 | **Strings** | `InterpConcat` |
 
-**MIR optimizer passes (applied at -O1 and above):**
+**MIR optimizer passes:**
+
+Optimization level (`-O0` through `-O3`) gates which passes run.
+`-O0` runs no passes; `-O2` is the default for `build`. See
+`mapanare/mir_opt.py` for the canonical pass list.
+
+Always-on (at `-O1` and above):
 
 - Constant folding and propagation
 - Dead code elimination
 - Copy propagation
 - Basic block merging
 - Unreachable block removal
+- Auto-StringBuilder rewrite for loop-accumulated string concat
+  (v4.108.0)
 
-### Python Transpiler (Legacy)
+Higher-level passes exist in `mir_opt.py` (strength reduction, small-
+function inlining, LICM, escape analysis, string-concat rewrite).
+Some are enabled only in the Python bootstrap and were disabled in
+the self-hosted compiler at v4.111.0 as zero-ROI; see
+`docs/roadmap/v4/v4.109.0/OPT_ROI_ANALYSIS.md` for the forensics.
+LLVM's own optimization pipeline handles most lowering-friendly
+rewrites at `-O2`.
 
-The Python emitter translates MIR to Python source code. This backend is legacy — kept for reference and bootstrapping only. It is not the target for new features.
+> **Note (v4.58.0):** A Python source emitter
+> (`mapanare/emit_python_mir.py`) existed historically as a
+> legacy transpiler target. It was removed in v4.58.0. A
+> regression test at `tests/test_python_emitter_deleted.py`
+> prevents reintroduction.
 
 ### LLVM Native Backend
 
-The LLVM emitter translates MIR to LLVM IR, producing native machine code. This is the production backend.
+The LLVM emitter (`mapanare/emit_llvm_text.py`) translates MIR to
+LLVM IR, producing native machine code. This is the production
+backend.
 
 - Agent spawn/send/sync codegen backed by the C runtime thread pool and ring buffers.
 - Compile-time tensor shape verification (element-wise ops and matmul via runtime calls).
-- Arena-based memory management with tag-bit string freeing (no garbage collector).
+- Arena-based memory management with `MnString` bitfield heap tagging (no garbage collector; v4.100.0 removed the older tagged-pointer UB).
 - Ahead-of-time compilation for deployment.
 - Cross-compilation to Linux x64, macOS ARM64, Windows x64.
+
+### C Backend (v3.0.0+)
+
+The C emitter (`mapanare/emit_c.py`) translates MIR to portable C
+source. `gcc` or `clang` then produces the native binary. The C
+backend is a fallback when the LLVM toolchain is unavailable and
+the primary path for platforms where the LLVM IR → object-code
+route is unreliable. It shares the runtime (`libmapanare_rt.a`)
+with the LLVM backend.
+
+### WebAssembly Backend (v2.0.0+)
+
+The WASM emitter (`mapanare/emit_wasm.py`) translates MIR to
+WebAssembly text format (WAT). The `wasm_linker.py` module
+links multi-module WAT into a single `.wasm` for browser or WASI
+targets. See §24.
 
 ---
 
