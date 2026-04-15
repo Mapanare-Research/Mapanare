@@ -19,6 +19,7 @@ MODULES=(
     lower_state.mn
     lower.mn
     emit_llvm_ir.mn
+    mir_opt.mn
     emit_llvm.mn
     main.mn
 )

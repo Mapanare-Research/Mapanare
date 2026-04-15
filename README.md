@@ -25,7 +25,7 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.125.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-4.129.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-4845+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
@@ -356,14 +356,17 @@ clang -O2 p.ll -o primes -lm         # LLVM IR → native binary
 
 Write your heavy compute in Mapanare, use it from Python, TypeScript, or Go — the compiler generates the bindings for you.
 
-> **Status (v4.116.0):** Shared-library output (`--lib`) and binding
-> generation (`--bindings`) are planned for a future v4.x release.
-> Until then, build with `mapanare build <file>.mn` for native binaries
-> or call Mapanare-compiled `.so`/`.dylib` through standard FFI.
+> **Status (v4.129.0):** Binding generation is shipped as the
+> `mapanare bind` subcommand (Python, TypeScript, Go). Shared-library
+> output (`--lib` on `build`) is still planned for a future v4.x
+> release. Until then, build with `mapanare build <file>.mn` for
+> native binaries.
 
 ```bash
-mapanare build mylib.mn --lib              # compile to shared library (.so/.dylib/.dll)
-mapanare build mylib.mn --lib --bindings   # also generate Python .pyi, TypeScript .d.ts, Go wrappers
+mapanare build mylib.mn                      # compile to native binary
+mapanare bind mylib.mn --lang python -o mylib.pyi   # generate Python FFI binding
+mapanare bind mylib.mn --lang ts     -o mylib.d.ts  # generate TypeScript FFI binding
+mapanare bind mylib.mn --lang go     -o mylib.go    # generate Go FFI binding
 ```
 
 ```python
@@ -711,8 +714,11 @@ Requires Python 3.11+.
 | **v4.0.0–v4.76.0** | Language Maturity — recovery arcs, error handling, LSP, tensor completeness, AI stdlib, DWARF, coroutines | Released |
 | **v4.77.0–v4.110.0** | Phase A/B/C — correctness recovery (tagged-pointer UB, list indexing, async linking), debugging infrastructure (valgrind/ASan/TSan), 5-language benchmark | Released |
 | **v4.111.0–v4.115.0** | Phase D/E (early) — self-hosted golden parity, panel hardening, native async I/O demos | Released |
-| **v4.116.0** | Phase E release 2 — documentation batch (README, SPEC, cookbook, guides) | **Current** |
-| **v4.120.0** | Phase F panel — v5 gate panel (attempt 2) | Planned |
+| **v4.116.0–v4.120.0** | Phase E/F — documentation, testing sweep (sanitizer CI + flaky audit + coverage), final cross-language benchmark, retrospective, v5 gate panel (attempt 2: Option B, continue) | Released |
+| **v4.121.0–v4.128.0** | Post-panel closeout arc — tests/lint hygiene, Qs.1 fix, dead-code sweep (−1,963 lines), Rt.1 enum unboxing (`enum_match` 1.77×), benchmark refresh, golden push (27 → 39/65), fixed-point refinement (proxy divergence −5.5%) | Released |
+| **v4.129.0** | Documentation + SPEC sync — §2.1 const, §3 renumbering, §27.1 TypeKind count, §28 stdlib surface, Appendix B pipeline; 29 examples verified | **Current** |
+| **v4.130.0** | Pre-panel prep — third flaky audit, valgrind + ASan golden sweeps, MEASUREMENTS.md | Planned |
+| **v4.131.0** | THE PANEL — v5 gate attempt 3 | Planned |
 
 See the full [ROADMAP](docs/roadmap/ROADMAP.md) for details.
 

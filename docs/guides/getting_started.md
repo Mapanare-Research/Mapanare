@@ -160,21 +160,24 @@ The golden test suite validates the self-hosted compiler end-to-end:
 python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 --run
 ```
 
-As of v4.111.0 the self-hosted compiler passes 26/64 golden tests
-cleanly; the remaining 38 are tracked across dockets Sh.1–Sh.9. For
-end-user programs that don't hit those features, both pipelines
-produce equivalent binaries.
+As of v4.128.0 the self-hosted compiler passes 39/65 golden tests
+through `test_native.py`; the remaining 26 fall into named docket
+buckets (see below). For end-user programs that don't hit those
+features, both pipelines produce equivalent binaries.
 
 ### What the self-hosted compiler doesn't do yet
 
 | Feature | Status | Use this path instead |
 |---|---|---|
 | `async`/`await`/`block_on` | docket Sh.4 | Python bootstrap |
-| Tensor primitives | docket Sh.6 | Python bootstrap (still experimental; see SPEC §7) |
-| `const` | docket Sh.5 | Module-level `let` |
-| 2 `lower_expr` crash cases | dockets Sh.1/Sh.2 | Python bootstrap |
+| Tensor primitives | docket Sh.6 | Python bootstrap (see SPEC §3.11) |
+| `const` (partial — parser recognition restored v4.126.0, semantic gaps remain in `mnc-stage1`) | docket Sh.5 | Python bootstrap or module-level `let` |
+| 10+ `__mn_str_starts_with` NULL-deref crashes | docket Sh.2 | Python bootstrap |
+| `lower_expr` SIGSEGV on `mnc_all.mn` self-compile | docket Sh.11 (opened v4.128.0) | Python bootstrap |
 
-Track these in `docs/roadmap/v4/v4.111.0/GOLDEN_FAILURES.md`.
+Per-test triage in `docs/roadmap/v4/v4.126.0/GOLDEN_TRIAGE.md`;
+each of the 26 failing tests is classified PASS / Sh.2 / Sh.4 /
+Sh.6 / etc.
 
 ---
 
