@@ -1,0 +1,1319 @@
+..................................F..................................... [  1%]
+........................................................................ [  2%]
+........FF...........FFF................................................ [  4%]
+........................................................................ [  5%]
+........................................................................ [  6%]
+............................sssssss....x.....x....xxx................... [  8%]
+........................................................................ [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 13%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 20%]
+........................................................................ [ 22%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 30%]
+........................................................ssssssssssssssss [ 31%]
+sssssssssssFFF........F.F....FFFF..sssssssssssssssssss......F......FFFF. [ 33%]
+........Fsssssssssssssssssssssssssssssssss.............................. [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 40%]
+........................................................................ [ 41%]
+........................................................................ [ 42%]
+........................................................................ [ 44%]
+......F................................................................. [ 45%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+..................................................................F..... [ 49%]
+........................................................................ [ 51%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 55%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+........F........................FF...................................s. [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 66%]
+........................................................................ [ 67%]
+......................................................................s. [ 68%]
+........................................................................ [ 70%]
+.......................................................................x [ 71%]
+........................................................................ [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 77%]
+...........................sssssssssssss................................ [ 78%]
+........................................................................ [ 80%]
+........................................................................ [ 81%]
+FFF...s................................................................. [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 85%]
+..................FF.................................................... [ 86%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+............................................F........................... [ 92%]
+.................................................................s.x.... [ 93%]
+...................................................FFF.F...FFF.......... [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+...................................                                      [100%]
+=================================== FAILURES ===================================
+________________________ test_struct_with_string_field _________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-uan/pytest-108/test_struct_with_string_field0')
+
+    def test_struct_with_string_field(tmp_path: Path) -> None:
+        """v4.32.0 Boa M2: a struct with a ``String`` field must auto-unwrap
+        ``_MnString`` to ``str`` when accessed via the generated property.
+    
+        Without this, the Python caller receives a raw ``_MnString`` for the
+        ``name`` field instead of a ``str``, requiring manual ``.to_str()``
+        that no Python user would know to call.
+        """
+        source = tmp_path / "personlib.mn"
+        source.write_text("""\
+    struct Person {
+        name: String,
+        age: Int
+    }
+    
+    fn make_person(name: String, age: Int) -> Person {
+        return new Person { name: name, age: age }
+    }
+    
+    fn main() {
+        let p = make_person("Ada", 42)
+        print(p.name)
+    }
+    """)
+        out_dir = _run_bind(source, tmp_path)
+        # Check the generated wrapper has a property accessor, not a raw field.
+        wrapper_src = (out_dir / "personlib.py").read_text()
+        assert "@property" in wrapper_src, "String field should generate a property accessor"
+        assert '("_name", _MnString)' in wrapper_src, "ctypes field should be prefixed _name"
+    
+        # Live round-trip: make_person returns a Person, access .name as str
+        wrapper = _load_wrapper(out_dir, "personlib")
+        p = wrapper.make_person("Ada", 42)
+>       assert isinstance(p.name, str), f"Expected str, got {type(p.name).__name__}"
+                          ^^^^^^
+
+tests/bind/test_python_binding.py:298: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/tmp/pytest-of-uan/pytest-108/test_struct_with_string_field0/bind_out/personlib.py:79: in name
+    return self._name.to_str()
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_bind_personlib._MnString object at 0x7fbeb7798750>
+
+    def to_str(self) -> str:
+        """Decode a Mapanare ``String`` value back to a Python ``str``."""
+        if not self.ptr or self.len <= 0:
+            return ""
+        raw = ctypes.string_at(self.ptr, self.len)
+>       return raw.decode("utf-8")
+               ^^^^^^^^^^^^^^^^^^^
+E       UnicodeDecodeError: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte
+
+/tmp/pytest-of-uan/pytest-108/test_struct_with_string_field0/bind_out/personlib.py:67: UnicodeDecodeError
+_________________ TestLLVMBasicCodegen.test_integer_arithmetic _________________
+
+self = <tests.e2e.test_e2e_llvm.TestLLVMBasicCodegen object at 0x7fbeb9ede690>
+
+    def test_integer_arithmetic(self) -> None:
+        source = textwrap.dedent("""\
+            fn add(a: Int, b: Int) -> Int {
+                return a + b
+            }
+            fn main() {
+                let x = add(10, 20)
+                print(x)
+            }
+        """)
+        ir = _to_llvm_ir(source)
+>       assert "add" in ir.lower()
+E       assert 'add' in '; moduleid = \'test\'\nsource_filename = "test"\ntarget datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i..., ptr %t3.a.4\n  call void @__mn_intern_destroy()\n  ret i64 0\n}\n\n\n!mapanare.version = !{!0}\n!0 = !{!"4.130.0"}\n'
+E        +  where '; moduleid = \'test\'\nsource_filename = "test"\ntarget datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i..., ptr %t3.a.4\n  call void @__mn_intern_destroy()\n  ret i64 0\n}\n\n\n!mapanare.version = !{!0}\n!0 = !{!"4.130.0"}\n' = <built-in method lower of str object at 0x2281bcf0>()
+E        +    where <built-in method lower of str object at 0x2281bcf0> = '; ModuleID = \'test\'\nsource_filename = "test"\ntarget datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i..., ptr %t3.a.4\n  call void @__mn_intern_destroy()\n  ret i64 0\n}\n\n\n!mapanare.version = !{!0}\n!0 = !{!"4.130.0"}\n'.lower
+
+tests/e2e/test_e2e_llvm.py:51: AssertionError
+__________________ TestLLVMBasicCodegen.test_float_arithmetic __________________
+
+self = <tests.e2e.test_e2e_llvm.TestLLVMBasicCodegen object at 0x7fbeb9e4a2a0>
+
+    def test_float_arithmetic(self) -> None:
+        source = textwrap.dedent("""\
+            fn mul(a: Float, b: Float) -> Float {
+                return a * b
+            }
+            fn main() {
+                let x = mul(2.5, 4.0)
+                print(x)
+            }
+        """)
+        ir = _to_llvm_ir(source)
+        assert "double" in ir
+>       assert "fmul" in ir
+E       assert 'fmul' in '; ModuleID = \'test\'\nsource_filename = "test"\ntarget datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i..., ptr %t3.a.4\n  call void @__mn_intern_destroy()\n  ret i64 0\n}\n\n\n!mapanare.version = !{!0}\n!0 = !{!"4.130.0"}\n'
+
+tests/e2e/test_e2e_llvm.py:66: AssertionError
+______________ TestLLVMMultipleFunctions.test_function_call_chain ______________
+
+self = <tests.e2e.test_e2e_llvm.TestLLVMMultipleFunctions object at 0x7fbeb9e4af60>
+
+    def test_function_call_chain(self) -> None:
+        source = textwrap.dedent("""\
+            fn double(x: Int) -> Int {
+                return x * 2
+            }
+            fn add_one(x: Int) -> Int {
+                return x + 1
+            }
+            fn main() {
+                let r = double(add_one(5))
+                print(r)
+            }
+        """)
+        ir = _to_llvm_ir(source)
+>       assert "double" in ir
+E       assert 'double' in '; ModuleID = \'test\'\nsource_filename = "test"\ntarget datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i..., ptr %t3.a.4\n  call void @__mn_intern_destroy()\n  ret i64 0\n}\n\n\n!mapanare.version = !{!0}\n!0 = !{!"4.130.0"}\n'
+
+tests/e2e/test_e2e_llvm.py:350: AssertionError
+________________ TestLLVMMultipleFunctions.test_many_parameters ________________
+
+self = <tests.e2e.test_e2e_llvm.TestLLVMMultipleFunctions object at 0x7fbeb9e486e0>
+
+    def test_many_parameters(self) -> None:
+        source = textwrap.dedent("""\
+            fn sum4(a: Int, b: Int, c: Int, d: Int) -> Int {
+                return a + b + c + d
+            }
+            fn main() {
+                print(sum4(1, 2, 3, 4))
+            }
+        """)
+        ir = _to_llvm_ir(source)
+>       assert "sum4" in ir
+E       assert 'sum4' in '; ModuleID = \'test\'\nsource_filename = "test"\ntarget datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i..., ptr %t5.a.4\n  call void @__mn_intern_destroy()\n  ret i64 0\n}\n\n\n!mapanare.version = !{!0}\n!0 = !{!"4.130.0"}\n'
+
+tests/e2e/test_e2e_llvm.py:363: AssertionError
+_________________ TestLLVMMultipleFunctions.test_void_function _________________
+
+self = <tests.e2e.test_e2e_llvm.TestLLVMMultipleFunctions object at 0x7fbeb9e48920>
+
+    def test_void_function(self) -> None:
+        source = textwrap.dedent("""\
+            fn say_hello() {
+                print("hi")
+            }
+            fn main() {
+                say_hello()
+            }
+        """)
+        ir = _to_llvm_ir(source)
+>       assert "say_hello" in ir
+E       assert 'say_hello' in '; ModuleID = \'test\'\nsource_filename = "test"\ntarget datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i...t\n_inl6_ret:\n  call void @__mn_intern_destroy()\n  ret i64 0\n}\n\n\n!mapanare.version = !{!0}\n!0 = !{!"4.130.0"}\n'
+
+tests/e2e/test_e2e_llvm.py:375: AssertionError
+___________________ TestCRuntimePlain.test_all_c_tests_pass ____________________
+
+self = <tests.native.test_c_hardening.TestCRuntimePlain object at 0x7fbeb87f88c0>
+tmp_path = PosixPath('/tmp/pytest-of-uan/pytest-108/test_all_c_tests_pass0')
+
+    def test_all_c_tests_pass(self, tmp_path: object) -> None:
+        result = _compile_and_run(str(tmp_path))
+        print(result.stdout)
+        if result.stderr:
+            print("STDERR:", result.stderr)
+>       assert result.returncode == 0, f"C tests failed:\n{result.stdout}\n{result.stderr}"
+E       AssertionError: C tests failed:
+E         === Mapanare C Runtime Tests ===
+E         
+E         [String Tests]
+E           test_str_from_cstr                                 [PASS]
+E           test_str_empty                                     [PASS]
+E           test_str_concat                                    [PASS]
+E           test_str_eq                                        [PASS]
+E           test_str_cmp                                       [PASS]
+E           test_str_substr                                    [PASS]
+E           test_str_starts_with                               [PASS]
+E           test_str_ends_with                                 [PASS]
+E           test_str_find                                      [PASS]
+E           test_str_char_at                                   [PASS]
+E           test_str_byte_at                                   [PASS]
+E           test_str_from_int                                  [PASS]
+E           test_str_from_null                                 [PASS]
+E           test_str_concat_empty                              [PASS]
+E           test_str_stress_alloc_free                         [PASS]
+E           test_str_stress_concat                             [PASS]
+E         
+E         [List Tests]
+E           test_list_new                                      [PASS]
+E           test_list_push_pop                                 [PASS]
+E           test_list_set                                      [PASS]
+E           test_list_oob                                      
+E         mapanare: list index 0 out of bounds (len=0)
+E         
+E       assert -6 == 0
+E        +  where -6 = CompletedProcess(args=['/tmp/pytest-of-uan/pytest-108/test_all_c_tests_pass0/test_c_runtime'], returncode=-6, stdout='...PASS]\n  test_list_oob                                      ', stderr='mapanare: list index 0 out of bounds (len=0)\n').returncode
+
+tests/native/test_c_hardening.py:96: AssertionError
+----------------------------- Captured stdout call -----------------------------
+=== Mapanare C Runtime Tests ===
+
+[String Tests]
+  test_str_from_cstr                                 [PASS]
+  test_str_empty                                     [PASS]
+  test_str_concat                                    [PASS]
+  test_str_eq                                        [PASS]
+  test_str_cmp                                       [PASS]
+  test_str_substr                                    [PASS]
+  test_str_starts_with                               [PASS]
+  test_str_ends_with                                 [PASS]
+  test_str_find                                      [PASS]
+  test_str_char_at                                   [PASS]
+  test_str_byte_at                                   [PASS]
+  test_str_from_int                                  [PASS]
+  test_str_from_null                                 [PASS]
+  test_str_concat_empty                              [PASS]
+  test_str_stress_alloc_free                         [PASS]
+  test_str_stress_concat                             [PASS]
+
+[List Tests]
+  test_list_new                                      [PASS]
+  test_list_push_pop                                 [PASS]
+  test_list_set                                      [PASS]
+  test_list_oob                                      
+STDERR: mapanare: list index 0 out of bounds (len=0)
+
+_____________________ TestCRuntimeASan.test_asan_no_errors _____________________
+
+self = <tests.native.test_c_hardening.TestCRuntimeASan object at 0x7fbeb87f8b90>
+tmp_path = PosixPath('/tmp/pytest-of-uan/pytest-108/test_asan_no_errors0')
+
+    def test_asan_no_errors(self, tmp_path: object) -> None:
+        result = _compile_and_run(
+            str(tmp_path),
+            extra_flags=["-fsanitize=address", "-fno-omit-frame-pointer"],
+            env_extra={"ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1"},
+            binary_suffix="_asan",
+        )
+        print(result.stdout)
+        if result.stderr:
+            print("STDERR:", result.stderr)
+>       assert (
+            result.returncode == 0
+        ), f"AddressSanitizer detected errors:\n{result.stdout}\n{result.stderr}"
+E       AssertionError: AddressSanitizer detected errors:
+E         === Mapanare C Runtime Tests ===
+E         
+E         [String Tests]
+E           test_str_from_cstr                                 [PASS]
+E           test_str_empty                                     [PASS]
+E           test_str_concat                                    [PASS]
+E           test_str_eq                                        [PASS]
+E           test_str_cmp                                       [PASS]
+E           test_str_substr                                    [PASS]
+E           test_str_starts_with                               [PASS]
+E           test_str_ends_with                                 [PASS]
+E           test_str_find                                      [PASS]
+E           test_str_char_at                                   [PASS]
+E           test_str_byte_at                                   [PASS]
+E           test_str_from_int                                  [PASS]
+E           test_str_from_null                                 [PASS]
+E           test_str_concat_empty                              [PASS]
+E           test_str_stress_alloc_free                         [PASS]
+E           test_str_stress_concat                             [PASS]
+E         
+E         [List Tests]
+E           test_list_new                                      [PASS]
+E           test_list_push_pop                                 [PASS]
+E           test_list_set                                      [PASS]
+E           test_list_oob                                      
+E         mapanare: list index 0 out of bounds (len=0)
+E         
+E       assert -6 == 0
+E        +  where -6 = CompletedProcess(args=['/tmp/pytest-of-uan/pytest-108/test_asan_no_errors0/test_c_runtime_asan'], returncode=-6, stdou...PASS]\n  test_list_oob                                      ', stderr='mapanare: list index 0 out of bounds (len=0)\n').returncode
+
+tests/native/test_c_hardening.py:115: AssertionError
+----------------------------- Captured stdout call -----------------------------
+=== Mapanare C Runtime Tests ===
+
+[String Tests]
+  test_str_from_cstr                                 [PASS]
+  test_str_empty                                     [PASS]
+  test_str_concat                                    [PASS]
+  test_str_eq                                        [PASS]
+  test_str_cmp                                       [PASS]
+  test_str_substr                                    [PASS]
+  test_str_starts_with                               [PASS]
+  test_str_ends_with                                 [PASS]
+  test_str_find                                      [PASS]
+  test_str_char_at                                   [PASS]
+  test_str_byte_at                                   [PASS]
+  test_str_from_int                                  [PASS]
+  test_str_from_null                                 [PASS]
+  test_str_concat_empty                              [PASS]
+  test_str_stress_alloc_free                         [PASS]
+  test_str_stress_concat                             [PASS]
+
+[List Tests]
+  test_list_new                                      [PASS]
+  test_list_push_pop                                 [PASS]
+  test_list_set                                      [PASS]
+  test_list_oob                                      
+STDERR: mapanare: list index 0 out of bounds (len=0)
+
+_____________________ TestCRuntimeTSan.test_tsan_no_races ______________________
+
+self = <tests.native.test_c_hardening.TestCRuntimeTSan object at 0x7fbeb87f8fe0>
+tmp_path = PosixPath('/tmp/pytest-of-uan/pytest-108/test_tsan_no_races0')
+
+    def test_tsan_no_races(self, tmp_path: object) -> None:
+        result = _compile_and_run(
+            str(tmp_path),
+            extra_flags=["-fsanitize=thread"],
+            env_extra={"TSAN_OPTIONS": "halt_on_error=1"},
+            binary_suffix="_tsan",
+            timeout=180,
+        )
+        print(result.stdout)
+        if result.stderr:
+            print("STDERR:", result.stderr)
+        # TSan exits with code 66 on race detection
+>       assert (
+            result.returncode == 0
+        ), f"ThreadSanitizer detected races:\n{result.stdout}\n{result.stderr}"
+E       AssertionError: ThreadSanitizer detected races:
+E         === Mapanare C Runtime Tests ===
+E         
+E         [String Tests]
+E           test_str_from_cstr                                 [PASS]
+E           test_str_empty                                     [PASS]
+E           test_str_concat                                    [PASS]
+E           test_str_eq                                        [PASS]
+E           test_str_cmp                                       [PASS]
+E           test_str_substr                                    [PASS]
+E           test_str_starts_with                               [PASS]
+E           test_str_ends_with                                 [PASS]
+E           test_str_find                                      [PASS]
+E           test_str_char_at                                   [PASS]
+E           test_str_byte_at                                   [PASS]
+E           test_str_from_int                                  [PASS]
+E           test_str_from_null                                 [PASS]
+E           test_str_concat_empty                              [PASS]
+E           test_str_stress_alloc_free                         [PASS]
+E           test_str_stress_concat                             [PASS]
+E         
+E         [List Tests]
+E           test_list_new                                      [PASS]
+E           test_list_push_pop                                 [PASS]
+E           test_list_set                                      [PASS]
+E           test_list_oob                                      
+E         mapanare: list index 0 out of bounds (len=0)
+E         
+E       assert -6 == 0
+E        +  where -6 = CompletedProcess(args=['/tmp/pytest-of-uan/pytest-108/test_tsan_no_races0/test_c_runtime_tsan'], returncode=-6, stdout...PASS]\n  test_list_oob                                      ', stderr='mapanare: list index 0 out of bounds (len=0)\n').returncode
+
+tests/native/test_c_hardening.py:137: AssertionError
+----------------------------- Captured stdout call -----------------------------
+=== Mapanare C Runtime Tests ===
+
+[String Tests]
+  test_str_from_cstr                                 [PASS]
+  test_str_empty                                     [PASS]
+  test_str_concat                                    [PASS]
+  test_str_eq                                        [PASS]
+  test_str_cmp                                       [PASS]
+  test_str_substr                                    [PASS]
+  test_str_starts_with                               [PASS]
+  test_str_ends_with                                 [PASS]
+  test_str_find                                      [PASS]
+  test_str_char_at                                   [PASS]
+  test_str_byte_at                                   [PASS]
+  test_str_from_int                                  [PASS]
+  test_str_from_null                                 [PASS]
+  test_str_concat_empty                              [PASS]
+  test_str_stress_alloc_free                         [PASS]
+  test_str_stress_concat                             [PASS]
+
+[List Tests]
+  test_list_new                                      [PASS]
+  test_list_push_pop                                 [PASS]
+  test_list_set                                      [PASS]
+  test_list_oob                                      
+STDERR: mapanare: list index 0 out of bounds (len=0)
+
+_________ TestDlopenGracefulFallback.test_pg_errmsg_on_invalid_handle __________
+
+self = <tests.native.test_db_dlopen.TestDlopenGracefulFallback object at 0x7fbeb87fa7e0>
+
+    def test_pg_errmsg_on_invalid_handle(self) -> None:
+        """__mn_pg_errmsg on invalid handle returns a fallback message."""
+        msg = _fn(self.lib, "__mn_pg_errmsg")(0)
+>       assert msg.len > 0, "Should return a non-empty fallback error message"
+E       AssertionError: Should return a non-empty fallback error message
+E       assert -9223372036854775789 > 0
+E        +  where -9223372036854775789 = <tests.native.test_db_dlopen.MnString object at 0x7fbeb9559ed0>.len
+
+tests/native/test_db_dlopen.py:253: AssertionError
+________ TestDlopenGracefulFallback.test_redis_errmsg_on_invalid_handle ________
+
+self = <tests.native.test_db_dlopen.TestDlopenGracefulFallback object at 0x7fbeb87faf60>
+
+    def test_redis_errmsg_on_invalid_handle(self) -> None:
+        """__mn_redis_errmsg on invalid handle returns a fallback message."""
+        msg = _fn(self.lib, "__mn_redis_errmsg")(0)
+>       assert msg.len > 0, "Should return a non-empty fallback error message"
+E       AssertionError: Should return a non-empty fallback error message
+E       assert -9223372036854775787 > 0
+E        +  where -9223372036854775787 = <tests.native.test_db_dlopen.MnString object at 0x7fbeb931c550>.len
+
+tests/native/test_db_dlopen.py:265: AssertionError
+____________ TestSQLite3Bindings.test_bind_str_parameterized_query _____________
+
+self = <tests.native.test_db_sqlite.TestSQLite3Bindings object at 0x7fbeb87f9130>
+
+    def test_bind_str_parameterized_query(self) -> None:
+        """__mn_sqlite3_bind_str parameterized query stores and retrieves text."""
+        handle = self._open_memory_db()
+    
+        create_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"CREATE TABLE names (id INTEGER PRIMARY KEY, name TEXT)"
+        )
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, create_sql) == SQLITE_OK
+    
+        # Insert with parameterized string
+        insert_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"INSERT INTO names (name) VALUES (?1)"
+        )
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, insert_sql)
+        assert stmt > 0
+    
+        name_val = getattr(self.lib, "__mn_str_from_cstr")(b"Mapanare")
+        rc = getattr(self.lib, "__mn_sqlite3_bind_str")(stmt, 1, name_val)
+        assert rc == SQLITE_OK
+    
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
+        assert rc == SQLITE_DONE
+    
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
+    
+        # Query back
+        select_sql = getattr(self.lib, "__mn_str_from_cstr")(b"SELECT name FROM names LIMIT 1")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, select_sql)
+        assert stmt > 0
+    
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
+        assert rc == SQLITE_ROW
+    
+        result = getattr(self.lib, "__mn_sqlite3_column_str")(stmt, 0)
+        result_bytes = _read_mnbytes(result)
+>       assert result_bytes == b"Mapanare"
+E       AssertionError: assert b'' == b'Mapanare'
+E         
+E         Use -v to get more diff
+
+tests/native/test_db_sqlite.py:306: AssertionError
+____________ TestSQLite3Bindings.test_column_count_and_column_name _____________
+
+self = <tests.native.test_db_sqlite.TestSQLite3Bindings object at 0x7fbeb87fbec0>
+
+    def test_column_count_and_column_name(self) -> None:
+        """__mn_sqlite3_column_count and __mn_sqlite3_column_name return correct metadata."""
+        handle = self._open_memory_db()
+    
+        create_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"CREATE TABLE meta (alpha TEXT, beta INTEGER, gamma REAL)"
+        )
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, create_sql) == SQLITE_OK
+    
+        # Insert a row so SELECT has results
+        insert_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"INSERT INTO meta VALUES ('a', 1, 2.5)"
+        )
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, insert_sql) == SQLITE_OK
+    
+        select_sql = getattr(self.lib, "__mn_str_from_cstr")(b"SELECT alpha, beta, gamma FROM meta")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, select_sql)
+        assert stmt > 0
+    
+        # Column count should be 3
+        count = getattr(self.lib, "__mn_sqlite3_column_count")(stmt)
+        assert count == 3
+    
+        # Step to first row so column names are available
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
+        assert rc == SQLITE_ROW
+    
+        # Check column names
+        col0 = getattr(self.lib, "__mn_sqlite3_column_name")(stmt, 0)
+        col0_str = _read_mnstring(col0)
+>       assert col0_str == "alpha"
+E       AssertionError: assert '' == 'alpha'
+E         
+E         - alpha
+
+tests/native/test_db_sqlite.py:341: AssertionError
+________________ TestSQLite3Bindings.test_errmsg_on_invalid_sql ________________
+
+self = <tests.native.test_db_sqlite.TestSQLite3Bindings object at 0x7fbeb88142c0>
+
+    def test_errmsg_on_invalid_sql(self) -> None:
+        """__mn_sqlite3_errmsg returns a meaningful error on invalid SQL."""
+        handle = self._open_memory_db()
+    
+        bad_sql = getattr(self.lib, "__mn_str_from_cstr")(b"NOT VALID SQL AT ALL ;;;")
+        rc = getattr(self.lib, "__mn_sqlite3_exec")(handle, bad_sql)
+        assert rc != SQLITE_OK, "Invalid SQL should not return SQLITE_OK"
+    
+        errmsg = getattr(self.lib, "__mn_sqlite3_errmsg")(handle)
+>       assert errmsg.len > 0, "Error message should be non-empty"
+E       AssertionError: Error message should be non-empty
+E       assert -9223372036854775784 > 0
+E        +  where -9223372036854775784 = <tests.native.test_db_sqlite.MnString object at 0x7fbeb89c96d0>.len
+
+tests/native/test_db_sqlite.py:363: AssertionError
+_______ TestSQLite3Bindings.test_sql_injection_with_parameterized_query ________
+
+self = <tests.native.test_db_sqlite.TestSQLite3Bindings object at 0x7fbeb8814680>
+
+    def test_sql_injection_with_parameterized_query(self) -> None:
+        """SQL injection attempt with parameterized query fails safely.
+    
+        The injected payload is treated as a literal string value, not executed as SQL.
+        """
+        handle = self._open_memory_db()
+    
+        create_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"CREATE TABLE safe (id INTEGER PRIMARY KEY, input TEXT)"
+        )
+        assert getattr(self.lib, "__mn_sqlite3_exec")(handle, create_sql) == SQLITE_OK
+    
+        # Attempt SQL injection via parameterized query
+        insert_sql = getattr(self.lib, "__mn_str_from_cstr")(
+            b"INSERT INTO safe (input) VALUES (?1)"
+        )
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, insert_sql)
+        assert stmt > 0
+    
+        # The injection payload: this should be stored as literal text, not executed
+        injection = getattr(self.lib, "__mn_str_from_cstr")(b"'; DROP TABLE safe; --")
+        rc = getattr(self.lib, "__mn_sqlite3_bind_str")(stmt, 1, injection)
+        assert rc == SQLITE_OK
+    
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
+        assert rc == SQLITE_DONE
+        getattr(self.lib, "__mn_sqlite3_finalize")(stmt)
+    
+        # Verify the table still exists and the injection payload is stored as text
+        select_sql = getattr(self.lib, "__mn_str_from_cstr")(b"SELECT input FROM safe LIMIT 1")
+        stmt = getattr(self.lib, "__mn_sqlite3_prepare")(handle, select_sql)
+        assert stmt > 0, "Table 'safe' should still exist (injection did not drop it)"
+    
+        rc = getattr(self.lib, "__mn_sqlite3_step")(stmt)
+        assert rc == SQLITE_ROW
+    
+        result = getattr(self.lib, "__mn_sqlite3_column_str")(stmt, 0)
+        result_bytes = _read_mnbytes(result)
+>       assert result_bytes == b"'; DROP TABLE safe; --"
+E       assert b'' == b"'; DROP TABLE safe; --"
+E         
+E         Use -v to get more diff
+
+tests/native/test_db_sqlite.py:411: AssertionError
+_____________ TestDirCreateRemove.test_create_recursive_directory ______________
+
+self = <tests.native.test_fs_extended.TestDirCreateRemove object at 0x7fbeb883ecc0>
+
+    def test_create_recursive_directory(self) -> None:
+        """__mn_dir_create with recursive=1 creates nested directories."""
+        dpath = os.path.join(self.tmp, "a", "b", "c")
+        path_s = _mn_str(self.lib, dpath)
+    
+        rc = getattr(self.lib, "__mn_dir_create")(path_s, 1)
+>       assert rc == 0
+E       assert -1 == 0
+
+tests/native/test_fs_extended.py:232: AssertionError
+___________________ TestTmpfilePath.test_returns_valid_path ____________________
+
+self = <tests.native.test_fs_extended.TestTmpfilePath object at 0x7fbeb883fe90>
+
+    def test_returns_valid_path(self) -> None:
+        """__mn_tmpfile_path returns a non-empty path string."""
+        result = getattr(self.lib, "__mn_tmpfile_path")()
+>       assert result.len > 0, "tmpfile_path should return a non-empty string"
+E       AssertionError: tmpfile_path should return a non-empty string
+E       assert -9223372036854775790 > 0
+E        +  where -9223372036854775790 = <tests.native.test_fs_extended.MnString object at 0x7fbeb88c16d0>.len
+
+tests/native/test_fs_extended.py:337: AssertionError
+______________________ TestTmpfilePath.test_unique_paths _______________________
+
+self = <tests.native.test_fs_extended.TestTmpfilePath object at 0x7fbeb883ff20>
+
+    def test_unique_paths(self) -> None:
+        """__mn_tmpfile_path returns unique paths on consecutive calls."""
+        paths = []
+        for _ in range(5):
+            result = getattr(self.lib, "__mn_tmpfile_path")()
+            path_str = _read_mnstring(result)
+            paths.append(path_str)
+    
+        # All paths should be unique
+>       assert len(set(paths)) == len(paths), "Temp file paths should be unique"
+E       AssertionError: Temp file paths should be unique
+E       assert 1 == 5
+E        +  where 1 = len({''})
+E        +    where {''} = set(['', '', '', '', ''])
+E        +  and   5 = len(['', '', '', '', ''])
+
+tests/native/test_fs_extended.py:357: AssertionError
+___________________ TestRealpath.test_resolves_absolute_path ___________________
+
+self = <tests.native.test_fs_extended.TestRealpath object at 0x7fbeb883f140>
+
+    def test_resolves_absolute_path(self) -> None:
+        """__mn_realpath resolves a path to its canonical form."""
+        fpath = os.path.join(self.tmp, "real.txt")
+        with open(fpath, "w") as f:
+            f.write("test")
+    
+        path_s = _mn_str(self.lib, fpath)
+        result = getattr(self.lib, "__mn_realpath")(path_s)
+        resolved = _read_mnstring(result)
+>       assert len(resolved) > 0
+E       AssertionError: assert 0 > 0
+E        +  where 0 = len('')
+
+tests/native/test_fs_extended.py:383: AssertionError
+___________________ TestRealpath.test_resolves_relative_path ___________________
+
+self = <tests.native.test_fs_extended.TestRealpath object at 0x7fbeb883eb10>
+
+    def test_resolves_relative_path(self) -> None:
+        """__mn_realpath resolves '.' to an absolute path."""
+        dot_s = _mn_str(self.lib, ".")
+        result = getattr(self.lib, "__mn_realpath")(dot_s)
+        resolved = _read_mnstring(result)
+>       assert os.path.isabs(resolved), f"Expected absolute path, got: {resolved}"
+E       AssertionError: Expected absolute path, got: 
+E       assert False
+E        +  where False = <function isabs at 0x7fbebc0f4a40>('')
+E        +    where <function isabs at 0x7fbebc0f4a40> = <module 'posixpath' (frozen)>.isabs
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/native/test_fs_extended.py:393: AssertionError
+___________ TestMemoryStressPython.test_loop_with_concat_has_cleanup ___________
+
+self = <tests.native.test_memory_stress.TestMemoryStressPython object at 0x7fbeb885a990>
+
+    def test_loop_with_concat_has_cleanup(self) -> None:
+        """A loop concatenating strings should have cleanup in the IR."""
+        from mapanare.ast_nodes import (
+            Block,
+            CallExpr,
+            ExprStmt,
+            FnDef,
+            ForLoop,
+            Identifier,
+            IntLiteral,
+            LetBinding,
+            NamedType,
+            Program,
+            RangeExpr,
+            StringLiteral,
+        )
+        from mapanare.emit_llvm_text import LLVMTextEmitter
+        from mapanare.lower import lower as build_mir
+    
+        fn = FnDef(
+            name="stress",
+            params=[],
+            return_type=NamedType(name="Void"),
+            body=Block(
+                stmts=[
+                    LetBinding(
+                        name="s",
+                        mutable=True,
+                        type_annotation=None,
+                        value=StringLiteral(value=""),
+                    ),
+                    ForLoop(
+                        var_name="i",
+                        iterable=RangeExpr(
+                            start=IntLiteral(value=0),
+                            end=IntLiteral(value=1000),
+                            inclusive=False,
+                        ),
+                        body=Block(
+                            stmts=[
+                                ExprStmt(
+                                    expr=CallExpr(
+                                        callee=Identifier(name="print"),
+                                        args=[Identifier(name="i")],
+                                    )
+                                ),
+                            ]
+                        ),
+                    ),
+                ]
+            ),
+        )
+    
+        mir_module = build_mir(Program(definitions=[fn]), module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_text = emitter.emit(mir_module)
+    
+        # Should have arena management
+>       assert "mn_arena_create" in ir_text
+E       assert 'mn_arena_create' in '; ModuleID = \'test\'\nsource_filename = "test"\ntarget datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i...tr %l.23)\n  store i1 %c.24, ptr %range_free8.a.25\n  ret void\n}\n\n\n!mapanare.version = !{!0}\n!0 = !{!"4.130.0"}\n'
+
+tests/native/test_memory_stress.py:192: AssertionError
+_____ TestUserAgentMatchesVersion.test_user_agent_contains_current_version _____
+
+self = <tests.runtime.test_user_agent.TestUserAgentMatchesVersion object at 0x7fbeb855b530>
+
+    def test_user_agent_contains_current_version(self) -> None:
+        version = _current_version()
+        lines = _strings_from_archive()
+        ua_lines = [ln for ln in lines if "User-Agent:" in ln and "Mapanare/" in ln]
+        assert ua_lines, (
+            "no User-Agent line found in libmapanare_rt.a — "
+            "did mapanare_io.c stop including the string?"
+        )
+        # There may be multiple strings if the archive has been rebuilt
+        # with a different VERSION since last clean; the current version
+        # must appear at least once.
+        expected = f"Mapanare/{version}"
+>       assert any(
+            expected in ln for ln in ua_lines
+        ), f"User-Agent did not include {expected!r}. Found lines:\n" + "\n".join(
+            f"  {ln}" for ln in ua_lines
+        )
+E       AssertionError: User-Agent did not include 'Mapanare/4.130.0'. Found lines:
+E           User-Agent: Mapanare/4.113.0
+E       assert False
+E        +  where False = any(<generator object TestUserAgentMatchesVersion.test_user_agent_contains_current_version.<locals>.<genexpr> at 0x7fbeb4187e00>)
+
+tests/runtime/test_user_agent.py:61: AssertionError
+_______ TestMainMnPipeline.test_mnc_stage1_version_matches_version_file ________
+
+self = <test_main_mn.TestMainMnPipeline object at 0x7fbeb845ecf0>
+
+    @pytest.mark.skipif(
+        not MNC_STAGE1.exists(),
+        reason="mnc-stage1 not built; run scripts/build_stage1.py first",
+    )
+    def test_mnc_stage1_version_matches_version_file(self) -> None:
+        """Built ``mnc-stage1`` must print the live VERSION from ``mnc version``.
+    
+        This is the real regression test: it runs the binary and asserts
+        the output. If this fails, either the build-time substitution is
+        broken or the placeholder didn't land in the IR.
+        """
+        expected_version = VERSION_FILE.read_text(encoding="utf-8").strip()
+        result = subprocess.run(
+            [str(MNC_STAGE1), "version"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"mnc-stage1 version failed:\n"
+            f"  stdout: {result.stdout}\n"
+            f"  stderr: {result.stderr}"
+        )
+        expected_line = f"mapanare {expected_version}"
+>       assert expected_line in result.stdout, (
+            f"Expected {expected_line!r} in mnc-stage1 output.\n"
+            f"Got: {result.stdout!r}\n"
+            f"VERSION file: {expected_version!r}"
+        )
+E       AssertionError: Expected 'mapanare 4.130.0' in mnc-stage1 output.
+E         Got: 'mapanare 4.128.0\n'
+E         VERSION file: '4.130.0'
+E       assert 'mapanare 4.130.0' in 'mapanare 4.128.0\n'
+E        +  where 'mapanare 4.128.0\n' = CompletedProcess(args=['/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1', 'version'], returncode=0, stdout='mapanare 4.128.0\n', stderr='').stdout
+
+tests/self_hosted/test_main_mn.py:144: AssertionError
+_________________ TestLLVMCompilation.test_arithmetic_compiles _________________
+
+self = <tests.spec.test_spec_compliance.TestLLVMCompilation object at 0x7fbeb8265190>
+
+    def test_arithmetic_compiles(self) -> None:
+        ir = _compile_ok(textwrap.dedent("""\
+            fn add(a: Int, b: Int) -> Int {
+                return a + b
+            }
+            fn main() {
+                let x = add(1, 2)
+                print(str(x))
+            }
+        """))
+>       assert "add" in ir
+E       assert 'add' in '; ModuleID = \'spec_test\'\nsource_filename = "spec_test"\ntarget datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:6...drop.skip.10:\n  call void @__mn_intern_destroy()\n  ret i64 0\n}\n\n\n!mapanare.version = !{!0}\n!0 = !{!"4.130.0"}\n'
+
+tests/spec/test_spec_compliance.py:843: AssertionError
+________________ TestSpecVersionAndStatus.test_version_is_1_0_0 ________________
+
+self = <tests.spec.test_spec_crossref.TestSpecVersionAndStatus object at 0x7fbeb827ae70>
+
+    def test_version_is_1_0_0(self) -> None:
+        text = _spec_text()
+>       assert "**Version:** 1.0.0" in text
+E       AssertionError: assert '**Version:** 1.0.0' in '# Mapanare Language Specification\n\n**Version:** 4.129.0\n**Status:** Live — synced to the v4.129.0 cut (2026-04-15)...T)\n\n| Code | Description |\n|---|---|\n| `MN-T0001` | Test discovery failure |\n| `MN-T0002` | Benchmark failure |\n'
+
+tests/spec/test_spec_crossref.py:221: AssertionError
+________________ TestSpecVersionAndStatus.test_status_is_final _________________
+
+self = <tests.spec.test_spec_crossref.TestSpecVersionAndStatus object at 0x7fbeb829b5c0>
+
+    def test_status_is_final(self) -> None:
+        text = _spec_text()
+>       assert "1.0 Final" in text
+E       AssertionError: assert '1.0 Final' in '# Mapanare Language Specification\n\n**Version:** 4.129.0\n**Status:** Live — synced to the v4.129.0 cut (2026-04-15)...T)\n\n| Code | Description |\n|---|---|\n| `MN-T0001` | Test discovery failure |\n| `MN-T0002` | Benchmark failure |\n'
+
+tests/spec/test_spec_crossref.py:225: AssertionError
+_________________ TestToolsRunLocally.test_black_check_passes __________________
+
+self = <tests.test_ci.TestToolsRunLocally object at 0x7fbeb7c79e20>
+
+    def test_black_check_passes(self) -> None:
+        result = subprocess.run(
+            ["black", "--check", "."],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+>       assert result.returncode == 0, f"black --check failed:\n{result.stderr}"
+E       AssertionError: black --check failed:
+E         Warning: Python 3.12 cannot parse code formatted for Python 3.14. To fix this: run Black with Python 3.14, set --target-version to py312, or use --fast to skip the safety check. Black's safety check verifies equivalence by parsing the AST, which fails when the running Python is older than the target version.
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/async/01_sequential_chain.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/async/02_fanout.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/optimizer/agent_fanout.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/optimizer/fib_recursive.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/optimizer/string_concat.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/async/03_io_bound.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/async/05_backpressure.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/async/04_mixed_cpu_io.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/system/closure_capture.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/optimizer/matmul_naive.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/system/struct_alloc.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/system/list_ops.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/optimizer/quicksort.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/system/enum_match.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/system/compile_self.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/integration/test_golden_pipeline.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/llvm/test_tensor_indexing.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/llvm/test_tensor_broadcast.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/lsp/rename.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/scripts/check_asan_baseline.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/scripts/check_valgrind_baseline.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/self_hosted/test_c_emitter_deleted.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/llvm/test_tensor_literal.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/docs/test_docgen.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/integration/test_pipeline_hardening.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/parser/test_tensor_indexing.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/compute_deltas.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/lsp/test_rename.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/lsp/test_find_references.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/run_extra_bench.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/semantic/test_const.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/parser/test_implicit_main.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/lsp/test_completion.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/parser/test_async_await.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/scripts/integration_report.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/self_hosted/test_error_cascade_self_hosted.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/lsp/completion.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/self_hosted/test_semantic_wiring.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/semantic/test_tensor_indexing.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/stdlib/ai/test_llm_types.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/semantic/test_tensor_broadcast.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/playground/test_playground.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/test_runner.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/semantic/test_async_semantics.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/async/run_async.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/optimizer/run_baseline.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/run_final.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/stdlib/ai/test_llm_offline.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/interpolation/test_interpolation.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/lsp/test_workspace_index.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/lsp/workspace.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/test_runner/test_test_runner.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/pattern_matching.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/types.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/lsp/server.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/semantic/test_pattern_matching.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/linter.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/parser/test_parser.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/lsp/analysis.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/parser.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/semantic.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/lower.py
+E         would reformat /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/emit_llvm_text.py
+E         
+E         Oh no! 💥 💔 💥
+E         63 files would be reformatted, 284 files would be left unchanged.
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['black', '--check', '.'], returncode=1, stdout='', stderr="Warning: Python 3.12 cannot parse co...anare/mapanare/emit_llvm_text.py\n\nOh no! 💥 💔 💥\n63 files would be reformatted, 284 files would be left unchanged.\n").returncode
+
+tests/test_ci.py:127: AssertionError
+__________________ TestToolsRunLocally.test_ruff_check_passes __________________
+
+self = <tests.test_ci.TestToolsRunLocally object at 0x7fbeb7c7a0f0>
+
+    def test_ruff_check_passes(self) -> None:
+        result = subprocess.run(
+            ["ruff", "check", "."],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+>       assert result.returncode == 0, f"ruff check failed:\n{result.stderr}"
+E       AssertionError: ruff check failed:
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['ruff', 'check', '.'], returncode=1, stdout='I001 [*] Import block is un-sorted or un-formatted...n[*] 104 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).\n', stderr='').returncode
+
+tests/test_ci.py:136: AssertionError
+_____________________ TestToolsRunLocally.test_mypy_passes _____________________
+
+self = <tests.test_ci.TestToolsRunLocally object at 0x7fbeb7c7a420>
+
+    def test_mypy_passes(self) -> None:
+        result = subprocess.run(
+            ["mypy", "mapanare/", "runtime/"],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+>       assert result.returncode == 0, f"mypy failed:\n{result.stdout}"
+E       AssertionError: mypy failed:
+E         mapanare/mir_opt.py:2058: error: Argument 1 to "append" of "list" has incompatible type "tuple[str | Any, Value | Any]"; expected "Value"  [arg-type]
+E         mapanare/emit_llvm_text.py:538: error: Name "SourceSpan" is not defined  [name-defined]
+E         mapanare/emit_llvm_text.py:666: error: Non-overlapping container check (element type: "int", container item type: "str")  [comparison-overlap]
+E         mapanare/emit_llvm_text.py:2495: error: Name "out" already defined on line 2383  [no-redef]
+E         mapanare/semantic.py:653: error: Incompatible types in assignment (expression has type "Expr", variable has type "int")  [assignment]
+E         mapanare/semantic.py:654: error: Argument 1 to "_infer_expr" of "SemanticChecker" has incompatible type "int"; expected "Expr"  [arg-type]
+E         mapanare/semantic.py:1116: error: List item 0 has incompatible type "object"; expected "TypeContext"  [list-item]
+E         mapanare/semantic.py:1124: error: Argument 2 to "build_witness_for_switch" has incompatible type "object"; expected "TypeContext"  [arg-type]
+E         mapanare/semantic.py:1171: error: Dict entry 0 has incompatible type "str": "list[object]"; expected "str": "list[TypeContext]"  [dict-item]
+E         mapanare/semantic.py:1180: error: Dict entry 0 has incompatible type "str": "list[object]"; expected "str": "list[TypeContext]"  [dict-item]
+E         mapanare/semantic.py:1180: error: Dict entry 1 has incompatible type "str": "list[object]"; expected "str": "list[TypeContext]"  [dict-item]
+E         mapanare/semantic.py:1195: error: List comprehension has incompatible type List[object]; expected List[TypeContext]  [misc]
+E         mapanare/semantic.py:1273: error: Incompatible types in assignment (expression has type "Scope | None", variable has type "Scope")  [assignment]
+E         mapanare/semantic.py:1403: error: Argument 3 to "getattr" has incompatible type "Span"; expected "ASTNode"  [arg-type]
+E         mapanare/semantic.py:2247: error: Unused "type: ignore" comment  [unused-ignore]
+E         mapanare/lower.py:859: error: Argument 1 to "_type_params_used_in_signature" of "MIRLowerer" has incompatible type "FnDef | AsyncFnDef"; expected "FnDef"  [arg-type]
+E         mapanare/lower.py:861: error: Incompatible types in assignment (expression has type "FnDef | AsyncFnDef", target has type "FnDef")  [assignment]
+E         mapanare/lower.py:908: error: Argument 1 to "_type_params_used_in_signature" of "MIRLowerer" has incompatible type "AsyncFnDef"; expected "FnDef"  [arg-type]
+E         mapanare/lower.py:2764: error: Missing type parameters for generic type "list"  [type-arg]
+E         mapanare/lower.py:3450: error: Item "None" of "BasicBlock | None" has no attribute "label"  [union-attr]
+E         mapanare/lower.py:3453: error: Argument 1 to "append" of "list" has incompatible type "tuple[str, Value | None]"; expected "tuple[str, Value]"  [arg-type]
+E         mapanare/lsp/workspace.py:217: error: "MethodCallExpr" has no attribute "receiver"  [attr-defined]
+E         mapanare/lsp/workspace.py:221: error: "FieldAccessExpr" has no attribute "receiver"  [attr-defined]
+E         mapanare/lsp/workspace.py:336: error: "ModuleLetDef" has no attribute "public"  [attr-defined]
+E         mapanare/lsp/rename.py:57: error: Missing type parameters for generic type "dict"  [type-arg]
+E         mapanare/lsp/rename.py:62: error: Missing type parameters for generic type "dict"  [type-arg]
+E         mapanare/lsp/rename.py:76: error: Missing type parameters for generic type "dict"  [type-arg]
+E         mapanare/lsp/rename.py:82: error: "object" has no attribute "line"  [attr-defined]
+E         mapanare/lsp/rename.py:82: error: "object" has no attribute "column"  [attr-defined]
+E         mapanare/lsp/rename.py:84: error: "object" has no attribute "end_line"  [attr-defined]
+E         mapanare/lsp/rename.py:84: error: "object" has no attribute "line"  [attr-defined]
+E         mapanare/lsp/rename.py:85: error: "object" has no attribute "end_column"  [attr-defined]
+E         mapanare/lsp/rename.py:85: error: "object" has no attribute "column"  [attr-defined]
+E         mapanare/lsp/server.py:403: error: Name "lsp.PrepareRenameResult_Type1" is not defined  [name-defined]
+E         mapanare/lsp/server.py:419: error: Module has no attribute "PrepareRenameResult_Type1"  [attr-defined]
+E         mapanare/lsp/server.py:489: error: Incompatible types in assignment (expression has type "CompletionItem", variable has type "CompletionCandidate")  [assignment]
+E         Found 36 errors in 7 files (checked 52 source files)
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['mypy', 'mapanare/', 'runtime/'], returncode=1, stdout='mapanare/mir_opt.py:2058: error: Argume...able has type "CompletionCandidate")  [assignment]\nFound 36 errors in 7 files (checked 52 source files)\n', stderr='').returncode
+
+tests/test_ci.py:145: AssertionError
+_____ test_relative_links_valid[docs/roadmap/v4/v4.114.0/DOCKET_AUDIT.md] ______
+
+md_file = PosixPath('/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.114.0/DOCKET_AUDIT.md')
+
+    @pytest.mark.parametrize(
+        "md_file",
+        MD_FILES,
+        ids=[str(f.relative_to(REPO_ROOT)) for f in MD_FILES],
+    )
+    def test_relative_links_valid(md_file: Path) -> None:
+        """All relative links in docs should point to existing files or directories."""
+        links = _extract_relative_links(md_file)
+        # Skip template files with placeholder links (NNNN, XXXX, etc.)
+        if "TEMPLATE" in md_file.name.upper():
+            pytest.skip("Template file with placeholder links")
+        broken = []
+        for line_no, text, target in links:
+            # Skip image badges, shields.io, and other known external patterns
+            if target.endswith((".svg", ".png", ".jpg", ".gif")):
+                continue
+            # Skip .reviews/ links — code review archives are not committed to git
+            if ".reviews/" in target:
+                continue
+            # Resolve relative to the markdown file's directory
+            resolved = (md_file.parent / target).resolve()
+            if not resolved.exists():
+                # Also try from repo root
+                alt = (REPO_ROOT / target).resolve()
+                if not alt.exists():
+                    # Also try from docs root (common in translated README files)
+                    docs_alt = (DOCS_DIR / target).resolve()
+                    if not docs_alt.exists():
+                        broken.append(f"  line {line_no}: [{text}]({target})")
+        if broken:
+>           pytest.fail(f"Broken links in {md_file.relative_to(REPO_ROOT)}:\n" + "\n".join(broken))
+E           Failed: Broken links in docs/roadmap/v4/v4.114.0/DOCKET_AUDIT.md:
+E             line 189: [8](handle)
+
+tests/test_doc_links.py:82: Failed
+_____ test_relative_links_valid[docs/roadmap/v4/v4.114.0/MEASUREMENTS.md] ______
+
+md_file = PosixPath('/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.114.0/MEASUREMENTS.md')
+
+    @pytest.mark.parametrize(
+        "md_file",
+        MD_FILES,
+        ids=[str(f.relative_to(REPO_ROOT)) for f in MD_FILES],
+    )
+    def test_relative_links_valid(md_file: Path) -> None:
+        """All relative links in docs should point to existing files or directories."""
+        links = _extract_relative_links(md_file)
+        # Skip template files with placeholder links (NNNN, XXXX, etc.)
+        if "TEMPLATE" in md_file.name.upper():
+            pytest.skip("Template file with placeholder links")
+        broken = []
+        for line_no, text, target in links:
+            # Skip image badges, shields.io, and other known external patterns
+            if target.endswith((".svg", ".png", ".jpg", ".gif")):
+                continue
+            # Skip .reviews/ links — code review archives are not committed to git
+            if ".reviews/" in target:
+                continue
+            # Resolve relative to the markdown file's directory
+            resolved = (md_file.parent / target).resolve()
+            if not resolved.exists():
+                # Also try from repo root
+                alt = (REPO_ROOT / target).resolve()
+                if not alt.exists():
+                    # Also try from docs root (common in translated README files)
+                    docs_alt = (DOCS_DIR / target).resolve()
+                    if not docs_alt.exists():
+                        broken.append(f"  line {line_no}: [{text}]({target})")
+        if broken:
+>           pytest.fail(f"Broken links in {md_file.relative_to(REPO_ROOT)}:\n" + "\n".join(broken))
+E           Failed: Broken links in docs/roadmap/v4/v4.114.0/MEASUREMENTS.md:
+E             line 133: [8](handle)
+
+tests/test_doc_links.py:82: Failed
+__________ test_relative_links_valid[docs/roadmap/v4/v4.80.0/PLAN.md] __________
+
+md_file = PosixPath('/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.80.0/PLAN.md')
+
+    @pytest.mark.parametrize(
+        "md_file",
+        MD_FILES,
+        ids=[str(f.relative_to(REPO_ROOT)) for f in MD_FILES],
+    )
+    def test_relative_links_valid(md_file: Path) -> None:
+        """All relative links in docs should point to existing files or directories."""
+        links = _extract_relative_links(md_file)
+        # Skip template files with placeholder links (NNNN, XXXX, etc.)
+        if "TEMPLATE" in md_file.name.upper():
+            pytest.skip("Template file with placeholder links")
+        broken = []
+        for line_no, text, target in links:
+            # Skip image badges, shields.io, and other known external patterns
+            if target.endswith((".svg", ".png", ".jpg", ".gif")):
+                continue
+            # Skip .reviews/ links — code review archives are not committed to git
+            if ".reviews/" in target:
+                continue
+            # Resolve relative to the markdown file's directory
+            resolved = (md_file.parent / target).resolve()
+            if not resolved.exists():
+                # Also try from repo root
+                alt = (REPO_ROOT / target).resolve()
+                if not alt.exists():
+                    # Also try from docs root (common in translated README files)
+                    docs_alt = (DOCS_DIR / target).resolve()
+                    if not docs_alt.exists():
+                        broken.append(f"  line {line_no}: [{text}]({target})")
+        if broken:
+>           pytest.fail(f"Broken links in {md_file.relative_to(REPO_ROOT)}:\n" + "\n".join(broken))
+E           Failed: Broken links in docs/roadmap/v4/v4.80.0/PLAN.md:
+E             line 84: [text](path)
+
+tests/test_doc_links.py:82: Failed
+_____________________ TestExecution.test_run_passing_tests _____________________
+
+self = <tests.test_runner.test_test_runner.TestExecution object at 0x7fbeb7986c30>
+
+    def test_run_passing_tests(self) -> None:
+        results = run_test_file(SAMPLE_FILE)
+        assert len(results) == 3
+>       assert all(r.passed for r in results)
+E       assert False
+E        +  where False = all(<generator object TestExecution.test_run_passing_tests.<locals>.<genexpr> at 0x7fbeb65a5300>)
+
+tests/test_runner/test_test_runner.py:119: AssertionError
+_____________________ TestExecution.test_run_failing_tests _____________________
+
+self = <tests.test_runner.test_test_runner.TestExecution object at 0x7fbeb7986ed0>
+
+    def test_run_failing_tests(self) -> None:
+        results = run_test_file(FAILING_FILE)
+        assert len(results) == 2
+        passed = [r for r in results if r.passed]
+        failed = [r for r in results if not r.passed]
+>       assert len(passed) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_runner/test_test_runner.py:127: AssertionError
+______________________ TestExecution.test_run_with_filter ______________________
+
+self = <tests.test_runner.test_test_runner.TestExecution object at 0x7fbeb7987200>
+
+    def test_run_with_filter(self) -> None:
+        results = run_test_file(SAMPLE_FILE, filter_pattern="test_add")
+        assert len(results) == 1
+        assert results[0].name == "test_add"
+>       assert results[0].passed
+E       assert False
+E        +  where False = TestResult(name='test_add', file='/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/test_runner/fixtures/sample_tests....1b): undefined reference to `main'\nclang: error: linker command failed with exit code 1 (use -v to see invocation)\n").passed
+
+tests/test_runner/test_test_runner.py:137: AssertionError
+____________________ TestExecution.test_run_tests_directory ____________________
+
+self = <tests.test_runner.test_test_runner.TestExecution object at 0x7fbeb7987860>
+
+    def test_run_tests_directory(self) -> None:
+        suite = run_tests(FIXTURES)
+        assert suite.total >= 5  # 3 passing + 2 mixed
+>       assert suite.passed >= 4
+E       assert 0 >= 4
+E        +  where 0 = TestSuite(results=[TestResult(name='test_pass', file='/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/test_runner/fi...n'\nclang: error: linker command failed with exit code 1 (use -v to see invocation)\n")], duration=0.29059388500172645).passed
+
+tests/test_runner/test_test_runner.py:147: AssertionError
+___________________________ TestCLI.test_cli_passing ___________________________
+
+self = <tests.test_runner.test_test_runner.TestCLI object at 0x7fbeb79870b0>
+
+    def test_cli_passing(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "mapanare.cli", "test", SAMPLE_FILE],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        )
+>       assert result.returncode == 0
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/usr/bin/python3', '-m', 'mapanare.cli', 'test', '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/...iled (3 total) in 0.19s\n", stderr='[dev mode] Using Python bootstrap compiler. For native speed: mnc run <file.mn>\n').returncode
+
+tests/test_runner/test_test_runner.py:205: AssertionError
+___________________________ TestCLI.test_cli_failing ___________________________
+
+self = <tests.test_runner.test_test_runner.TestCLI object at 0x7fbeb7986c60>
+
+    def test_cli_failing(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "mapanare.cli", "test", FAILING_FILE],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        )
+        assert result.returncode == 1
+>       assert "1 failed" in result.stdout
+E       assert '1 failed' in '  tests/test_runner/fixtures/failing_test.mn\n    FAIL  test_pass (0.0ms)\n           clang compile error: /usr/bin/l...and failed with exit code 1 (use -v to see invocation)\n           \n\nresult: 0 passed, 2 failed (2 total) in 0.18s\n'
+E        +  where '  tests/test_runner/fixtures/failing_test.mn\n    FAIL  test_pass (0.0ms)\n           clang compile error: /usr/bin/l...and failed with exit code 1 (use -v to see invocation)\n           \n\nresult: 0 passed, 2 failed (2 total) in 0.18s\n' = CompletedProcess(args=['/usr/bin/python3', '-m', 'mapanare.cli', 'test', '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/...iled (2 total) in 0.18s\n", stderr='[dev mode] Using Python bootstrap compiler. For native speed: mnc run <file.mn>\n').stdout
+
+tests/test_runner/test_test_runner.py:217: AssertionError
+___________________________ TestCLI.test_cli_filter ____________________________
+
+self = <tests.test_runner.test_test_runner.TestCLI object at 0x7fbeb7986600>
+
+    def test_cli_filter(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "mapanare.cli", "test", SAMPLE_FILE, "--filter", "test_add"],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        )
+>       assert result.returncode == 0
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/usr/bin/python3', '-m', 'mapanare.cli', 'test', '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/...iled (1 total) in 0.18s\n", stderr='[dev mode] Using Python bootstrap compiler. For native speed: mnc run <file.mn>\n').returncode
+
+tests/test_runner/test_test_runner.py:227: AssertionError
+=============================== warnings summary ===============================
+mapanare/test_runner.py:24
+  /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/test_runner.py:24: PytestCollectionWarning: cannot collect test class 'TestResult' because it has a __init__ constructor (from: tests/test_runner/test_test_runner.py)
+    @dataclass
+
+mapanare/test_runner.py:35
+  /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/test_runner.py:35: PytestCollectionWarning: cannot collect test class 'TestSuite' because it has a __init__ constructor (from: tests/test_runner/test_test_runner.py)
+    @dataclass
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/bind/test_python_binding.py::test_struct_with_string_field - Uni...
+FAILED tests/e2e/test_e2e_llvm.py::TestLLVMBasicCodegen::test_integer_arithmetic
+FAILED tests/e2e/test_e2e_llvm.py::TestLLVMBasicCodegen::test_float_arithmetic
+FAILED tests/e2e/test_e2e_llvm.py::TestLLVMMultipleFunctions::test_function_call_chain
+FAILED tests/e2e/test_e2e_llvm.py::TestLLVMMultipleFunctions::test_many_parameters
+FAILED tests/e2e/test_e2e_llvm.py::TestLLVMMultipleFunctions::test_void_function
+FAILED tests/native/test_c_hardening.py::TestCRuntimePlain::test_all_c_tests_pass
+FAILED tests/native/test_c_hardening.py::TestCRuntimeASan::test_asan_no_errors
+FAILED tests/native/test_c_hardening.py::TestCRuntimeTSan::test_tsan_no_races
+FAILED tests/native/test_db_dlopen.py::TestDlopenGracefulFallback::test_pg_errmsg_on_invalid_handle
+FAILED tests/native/test_db_dlopen.py::TestDlopenGracefulFallback::test_redis_errmsg_on_invalid_handle
+FAILED tests/native/test_db_sqlite.py::TestSQLite3Bindings::test_bind_str_parameterized_query
+FAILED tests/native/test_db_sqlite.py::TestSQLite3Bindings::test_column_count_and_column_name
+FAILED tests/native/test_db_sqlite.py::TestSQLite3Bindings::test_errmsg_on_invalid_sql
+FAILED tests/native/test_db_sqlite.py::TestSQLite3Bindings::test_sql_injection_with_parameterized_query
+FAILED tests/native/test_fs_extended.py::TestDirCreateRemove::test_create_recursive_directory
+FAILED tests/native/test_fs_extended.py::TestTmpfilePath::test_returns_valid_path
+FAILED tests/native/test_fs_extended.py::TestTmpfilePath::test_unique_paths
+FAILED tests/native/test_fs_extended.py::TestRealpath::test_resolves_absolute_path
+FAILED tests/native/test_fs_extended.py::TestRealpath::test_resolves_relative_path
+FAILED tests/native/test_memory_stress.py::TestMemoryStressPython::test_loop_with_concat_has_cleanup
+FAILED tests/runtime/test_user_agent.py::TestUserAgentMatchesVersion::test_user_agent_contains_current_version
+FAILED tests/self_hosted/test_main_mn.py::TestMainMnPipeline::test_mnc_stage1_version_matches_version_file
+FAILED tests/spec/test_spec_compliance.py::TestLLVMCompilation::test_arithmetic_compiles
+FAILED tests/spec/test_spec_crossref.py::TestSpecVersionAndStatus::test_version_is_1_0_0
+FAILED tests/spec/test_spec_crossref.py::TestSpecVersionAndStatus::test_status_is_final
+FAILED tests/test_ci.py::TestToolsRunLocally::test_black_check_passes - Asser...
+FAILED tests/test_ci.py::TestToolsRunLocally::test_ruff_check_passes - Assert...
+FAILED tests/test_ci.py::TestToolsRunLocally::test_mypy_passes - AssertionErr...
+FAILED tests/test_doc_links.py::test_relative_links_valid[docs/roadmap/v4/v4.114.0/DOCKET_AUDIT.md]
+FAILED tests/test_doc_links.py::test_relative_links_valid[docs/roadmap/v4/v4.114.0/MEASUREMENTS.md]
+FAILED tests/test_doc_links.py::test_relative_links_valid[docs/roadmap/v4/v4.80.0/PLAN.md]
+FAILED tests/test_runner/test_test_runner.py::TestExecution::test_run_passing_tests
+FAILED tests/test_runner/test_test_runner.py::TestExecution::test_run_failing_tests
+FAILED tests/test_runner/test_test_runner.py::TestExecution::test_run_with_filter
+FAILED tests/test_runner/test_test_runner.py::TestExecution::test_run_tests_directory
+FAILED tests/test_runner/test_test_runner.py::TestCLI::test_cli_passing - ass...
+FAILED tests/test_runner/test_test_runner.py::TestCLI::test_cli_failing - ass...
+FAILED tests/test_runner/test_test_runner.py::TestCLI::test_cli_filter - asse...
+39 failed, 5070 passed, 103 skipped, 7 xfailed, 2 warnings in 459.20s (0:07:39)
