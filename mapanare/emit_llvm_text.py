@@ -2572,11 +2572,41 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
-            # Replace source tracking with dest (they share the same data pointer;
-            # freeing both would double-free)
+            # v4.131.0 Sh.2 fix: only track dest as an owner when we are
+            # transferring ownership from src. If src is not tracked (it
+            # came from a field-get, enum-payload extract, or function
+            # parameter — all aliased sources), then dest is also an
+            # alias; it must not be tracked for drop glue. If dest was
+            # previously tracked (e.g., `let mut x: List = []` followed
+            # by `x = fe.param_types`), untrack it to prevent UAF on the
+            # aliased buffer. The original `[]` buffer leaks, but UAF is
+            # corrupted-memory, not a leak. See docs/roadmap/v4/v4.131.0.
             if i.src.name in self._list_vars:
+                # Ownership transfer: src was an owner, dest becomes the owner
                 self._list_vars.remove(i.src.name)
-            self._track_container(i.dest.name, "list")
+                self._track_container(i.dest.name, "list")
+            else:
+                # src is an alias; dest must not own this buffer either
+                if i.dest.name in self._list_vars:
+                    self._list_vars.remove(i.dest.name)
+        # v4.132.0 Sh.2 String-residual: mirror v4.131.0 LIST fix for STR.
+        # Sh.2 on Strings: a String extracted from a struct field or
+        # concat'd into a local then stored into an Instruction enum
+        # payload gets freed by drop glue on the local, invalidating
+        # every other alias the caller's data structure holds. Fix:
+        # only propagate tracking when src was a tracked owner. If src
+        # is an alias (field-get, enum-payload, param), dest must not
+        # be tracked either. See docs/roadmap/v4/v4.132.0.
+        if t == STR:
+            src_str_tracked = i.src.name in self._str_slots
+            if src_str_tracked:
+                # Ownership transfer: remap tracking slot src → dest
+                slot = self._str_slots.pop(i.src.name)
+                self._str_slots[i.dest.name] = slot
+            else:
+                # src is an alias; untrack dest if it was previously an owner
+                if i.dest.name in self._str_slots:
+                    self._str_slots.pop(i.dest.name)
         # Propagate container tracking for maps/signals/streams
         sk = i.src.ty.kind if i.src.ty else TypeKind.UNKNOWN
         if sk == TypeKind.MAP:
