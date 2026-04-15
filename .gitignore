@@ -92,3 +92,4 @@ docs/roadmap/MASTER_PROMPT.md.mnc_cache/
 docs/roadmap/*/*/culebra-*.json
 docs/roadmap/*/*/culebra-*.jsonl
 /.culebra
+.gitnexus
