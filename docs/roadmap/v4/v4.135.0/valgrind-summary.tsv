@@ -1,0 +1,66 @@
+test	rc	exit_code	definitely_lost	indirectly_lost	possibly_lost	still_reachable	error_types	class
+01_hello	0	0	22693	47433	0	0	none	WARNINGS_ONLY
+02_arithmetic	0	0	31622	50990	0	0	none	WARNINGS_ONLY
+03_function	0	0	39784	56494	0	0	none	WARNINGS_ONLY
+04_if_else	0	0	36309	54595	0	0	none	WARNINGS_ONLY
+05_for_loop	0	0	41258	60313	0	0	none	WARNINGS_ONLY
+06_struct	0	0	37814	54848	0	0	none	WARNINGS_ONLY
+07_enum_match	0	0	44940	70648	0	0	none	WARNINGS_ONLY
+08_list	0	0	38210	56809	0	0	none	WARNINGS_ONLY
+09_string_methods	0	0	33362	53524	0	0	none	WARNINGS_ONLY
+10_result	0	0	68595	77160	0	0	none	WARNINGS_ONLY
+11_closure	0	0	37285	59530	0	0	none	WARNINGS_ONLY
+12_while	0	0	36283	54565	0	0	none	WARNINGS_ONLY
+13_fib	0	0	43517	63770	0	0	none	WARNINGS_ONLY
+14_nested_struct	0	0	37965	54879	0	0	none	WARNINGS_ONLY
+15_multifunction	0	0	47507	64024	0	0	none	WARNINGS_ONLY
+16_string_escape	0	0	36590	53132	0	0	none	WARNINGS_ONLY
+17_option	0	0	83392	86511	0	0	none	WARNINGS_ONLY
+18_method_chain	0	0	41742	60019	0	0	none	WARNINGS_ONLY
+19_nested_match	0	0	68654	91495	0	0	none	WARNINGS_ONLY
+20_recursion	0	0	46747	65376	0	0	none	WARNINGS_ONLY
+21_list_ops	0	0	70277	86262	0	0	none	WARNINGS_ONLY
+22_string_builder	0	0	56549	71787	0	0	none	WARNINGS_ONLY
+23_multi_return	0	0	56662	67237	0	0	none	WARNINGS_ONLY
+24_enum_methods	0	0	62872	79854	0	0	none	WARNINGS_ONLY
+25_fizzbuzz	0	0	65468	76301	0	0	none	WARNINGS_ONLY
+26_generics	99	99	93107	97905	0	0	Conditional jump or move depends on uninitialised value	ERRORS
+27_impl	0	0	55329	68518	0	0	none	WARNINGS_ONLY
+28_traits	0	0	62193	70695	0	0	none	WARNINGS_ONLY
+29_generic_impl	99	99	66424	72992	0	0	Conditional jump or move depends on uninitialised value	ERRORS
+30_nested_generics	99	99	61085	69597	0	0	Conditional jump or move depends on uninitialised value	ERRORS
+31_generic_multi	99	99	89331	83204	0	0	Conditional jump or move depends on uninitialised value	ERRORS
+32_generic_enum	99	99	43843	55490	0	0	Invalid read of size 8	ERRORS
+33_break_continue	0	0	123735	140795	0	0	none	WARNINGS_ONLY
+34_file_io	0	0	67413	76708	0	0	none	WARNINGS_ONLY
+35_stdin	0	0	30483	49937	0	0	none	WARNINGS_ONLY
+36_crypto	0	0	47298	61669	0	0	none	WARNINGS_ONLY
+37_regex	0	0	46435	62209	0	0	none	WARNINGS_ONLY
+38_http	0	0	34309	51741	0	0	none	WARNINGS_ONLY
+39_gpu_detect	0	0	39054	55144	0	0	none	WARNINGS_ONLY
+40_gpu_tensor	0	0	81286	91409	0	0	none	WARNINGS_ONLY
+41_module_let	0	0	33281	51605	0	0	none	WARNINGS_ONLY
+42_module_let_string	0	0	34281	51695	0	0	none	WARNINGS_ONLY
+43_module_let_math	0	0	35713	52751	0	0	none	WARNINGS_ONLY
+45_ffi_bind	0	0	53602	68862	0	0	none	WARNINGS_ONLY
+47_try_operator	0	0	118554	106058	0	0	none	WARNINGS_ONLY
+48_match_nested_exhaustive	0	0	97251	94381	0	0	none	WARNINGS_ONLY
+49_match_guards	0	0	72991	78334	0	0	none	WARNINGS_ONLY
+49_tensor_literal	1	1	148897	57097	2786	36	none	WARNINGS_ONLY
+50_match_or_patterns	0	0	74056	88630	0	0	none	WARNINGS_ONLY
+50_tensor_indexing	1	1	99360	48744	1399	25	none	WARNINGS_ONLY
+51_match_guards_and_or	0	0	94736	90319	0	0	none	WARNINGS_ONLY
+51_tensor_broadcast	1	1	118821	52738	2532	36	none	WARNINGS_ONLY
+52_tensor_slicing	1	1	108688	49736	1529	33	none	WARNINGS_ONLY
+53_linear_regression	1	1	45454	42786	852	27	none	WARNINGS_ONLY
+54_const_basic	0	0	37450	53332	0	0	none	WARNINGS_ONLY
+55_async_basic	1	1	14169	36404	763	30	none	WARNINGS_ONLY
+56_async_await	1	1	17439	38384	763	30	none	WARNINGS_ONLY
+57_real_await	1	1	24919	55092	762	30	none	WARNINGS_ONLY
+58_async_file_io	1	1	21857	42321	765	30	none	WARNINGS_ONLY
+58_const_scope	0	0	51069	64783	0	0	none	WARNINGS_ONLY
+59_async_fanout	1	1	48570	69216	764	30	none	WARNINGS_ONLY
+62_list_output	0	0	87713	104861	0	0	none	WARNINGS_ONLY
+63_else_sino	0	0	94182	93339	0	0	none	WARNINGS_ONLY
+64_closure_typed	1	1	60341	57811	811	60	none	WARNINGS_ONLY
+65_list_int_indexing	0	0	65141	77593	0	0	none	WARNINGS_ONLY

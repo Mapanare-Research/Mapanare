@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: bash scripts/concat_self.sh
+// Do not edit — regenerate with: python scripts/concat_self.py
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -17210,4 +17210,3 @@ fn mn_main() {
         __mn_exit(1)
     }
 }
-
