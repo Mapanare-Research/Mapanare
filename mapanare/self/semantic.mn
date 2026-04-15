@@ -578,6 +578,10 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "ident" {
         let name: String = expr_ident_name(expr)
+        // v4.128.0 (Sh.8): bare `None` is a variant of Option. Mirrors
+        // mapanare/lower.py::_lower_identifier. Prevents "Undefined
+        // variable 'None'" at mnc_all.mn:3504 (`let mut guard: Option<Expr> = None`).
+        if name == "None" { return new_infer_result(make_type("Option"), st) }
         let result: Option<Symbol> = scope_lookup(st.scope, name)
         match result {
             Some(sym) => { return new_infer_result(sym.type_info, st) },

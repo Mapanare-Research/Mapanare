@@ -28,7 +28,11 @@ fn llvm_void() -> String {
 }
 
 fn llvm_string() -> String {
-    return "{ ptr, i64 }"
+    // v4.128.0: no inner space — matches Python emitter canonical form
+    // (`{ptr, i64}`). Previously `{ ptr, i64 }` with spaces; the difference
+    // propagated to every runtime declaration and was the dominant
+    // character-level divergence in the A bucket.
+    return "{ptr, i64}"
 }
 
 // ---------------------------------------------------------------------------
@@ -36,19 +40,19 @@ fn llvm_string() -> String {
 // ---------------------------------------------------------------------------
 
 fn llvm_option_type(inner: String) -> String {
-    return "{ i1, " + inner + " }"
+    return "{i1, " + inner + "}"
 }
 
 fn llvm_result_type(ok_ty: String, err_ty: String) -> String {
-    return "{ i1, { " + ok_ty + ", " + err_ty + " } }"
+    return "{i1, {" + ok_ty + ", " + err_ty + "}}"
 }
 
 fn llvm_tensor_type(elem_ty: String) -> String {
-    return "{ ptr, i64, ptr, i64 }"
+    return "{ptr, i64, ptr, i64}"
 }
 
 fn llvm_map_type() -> String {
-    return "{ ptr, i64 }"
+    return "{ptr, i64}"
 }
 
 fn llvm_ptr() -> String {
@@ -56,7 +60,7 @@ fn llvm_ptr() -> String {
 }
 
 fn llvm_list_rt() -> String {
-    return "{ ptr, i64, i64, i64, i64 }"
+    return "{ptr, i64, i64, i64, i64}"
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +95,7 @@ fn resolve_mir_type(t: MIRType) -> String {
     if t.kind == TK_AGENT() { return llvm_ptr() }
     if t.kind == TK_STRUCT() { return "%struct." + t.name }
     if t.kind == TK_ENUM() { return "%enum." + t.name }
-    if t.kind == TK_RANGE() { return "{ i64, i64 }" }
+    if t.kind == TK_RANGE() { return "{i64, i64}" }
     if t.kind == TK_FN() { return llvm_ptr() }
     if t.kind == TK_UNKNOWN() { return llvm_int() }
     return llvm_int()

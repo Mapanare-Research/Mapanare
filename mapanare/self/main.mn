@@ -332,7 +332,13 @@ fn compile(source: String, filename: String) -> CompileResult {
     }
 
     // Stage 6: emit LLVM IR from MIR
-    let ir_text: String = emit_mir_module(opt_module, filename)
+    // v4.128.0: strip path + extension to match Python CLI's
+    // `os.path.splitext(os.path.basename(filename))[0]` convention (mapanare/cli.py:183).
+    // Aligns ModuleID and source_filename with bootstrap output.
+    let base: String = basename_of(filename)
+    let ext: String = file_extension(base)
+    let stem: String = base.substr(0, len(base) - len(ext))
+    let ir_text: String = emit_mir_module(opt_module, stem)
     let no_errors: List<SemanticError> = []
     return new_compile_result(true, ir_text, no_errors)
 }

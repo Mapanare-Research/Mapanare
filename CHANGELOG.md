@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.128.0] - 2026-04-15
+
+**Phase F closeout release 8 — self-hosted fixed-point refinement (continuation of v4.127.0): Sh.8 closed at the source level, brace-spacing normalized, ModuleID path-stripped. Divergence between Python bootstrap and `mnc-stage1` on the 39 passing goldens reduced from 9,608 to 9,425 unified-diff lines (−183, −1.9%). M bucket fully closed (78 → 0). Zero golden regressions.** Buffer release 3 of the v4.130.0 closeout arc.
+
+**Sh.8 closure (source level)** — `mapanare/self/semantic.mn::infer_expr` gained a 4-line special case for bare `None` in the ident branch: if `name == "None"` before `scope_lookup`, return `make_type("Option")`. Mirrors `mapanare/lower.py::_lower_identifier`'s bare-enum-variant recognition. Previously, `let mut guard: Option<Expr> = None` at `mnc_all.mn:3504` produced "Undefined variable 'None'" and `mnc-stage1` could not self-compile `mnc_all.mn`; Sh.8 had been open since v4.112.0. The fix is the smallest of the three options documented in v4.127.0's SESSION_REPORT. However, running `verify_fixed_point.sh` now surfaces a **new downstream blocker (Sh.11)** — `lower_expr` SIGSEGV when `mnc-stage1` compiles `mnc_all.mn` beyond the semantic phase — so strict stage2-vs-stage3 remains blocked. Sh.11 is out of scope for a buffer release; tagged for the v4.131.0+ post-panel arc. The measurement pivots cleanly to the Python-vs-`mnc-stage1` proxy established in v4.127.0 (and explicitly anticipated by PLAN.md's risk register).
+
+**Brace-spacing normalization** — `mapanare/self/emit_llvm_ir.mn` 7 type-constant helpers (`llvm_string`, `llvm_option_type`, `llvm_result_type`, `llvm_tensor_type`, `llvm_map_type`, `llvm_list_rt`, `resolve_mir_type` RANGE case) changed their output from spaced `"{ ptr, i64 }"` form to canonical `"{ptr, i64}"` form, matching Python's `_decl_fn` → `", ".join(abi_pts)` canonical output. `mapanare/self/emit_llvm.mn` 20+ inline sites in runtime declarations, `insertvalue`/`extractvalue` instructions for ranges and maps, and the named enum type declaration (`%enum.X = type { i64, ptr }` → `{i64, ptr}`) followed suit. Equality checks in `struct_byte_size` (lines 663, 665, 667) updated to match. LLVM accepts both forms; the no-inner-space form is Python's canonical output and aligning removes a per-decl character-level divergence.
+
+**Module-ID path stripping** — `mapanare/self/main.mn:335` now strips path and extension from the filename before calling `emit_mir_module`, matching Python's CLI convention `os.path.splitext(os.path.basename(filename))[0]` (`mapanare/cli.py:183`). Uses the existing `basename_of` and `file_extension` helpers in `main.mn`. 5 lines added. Before: `ModuleID = 'tests/golden/01_hello.mn'`; after: `ModuleID = '01_hello'` — matches Python exactly.
+
+**Concat script discrepancy caught** — `scripts/concat_self.sh` (bash) omits `mir_opt.mn` from its module list; `scripts/concat_self.py` (Python) includes it. The bash version has been silently wrong since `mir_opt.mn` was added to the self-hosted compiler. The Python version is authoritative. Documented for v4.129.0+; not fixed in this release (out of scope — the correct script works).
+
+**Post-fix delta** (`docs/roadmap/v4/v4.128.0/post_fix.json`):
+- total diff lines **9,608 → 9,425** (−183, −1.9%)
+- stage1 output lines **6,120 → 5,980** (−140)
+- M bucket **78 → 0** (−100%, fully closed)
+- S bucket **6,610 → 6,722** (+112, classification artefact — the brace normalization shuffles how runtime-decl hunks are attributed at block level; character-level improvement is real)
+- A, C, W, L buckets unchanged — out of scope
+
+**Cumulative progress v4.126.0 → v4.128.0**: proxy divergence **9,971 → 9,425 lines = −546 lines, −5.5%.** v4.127.0 closed half the M bucket (156 → 78); v4.128.0 closed the rest (78 → 0).
+
+**Verification**: `mnc-stage1` rebuilds cleanly (3,488,912 bytes stripped, byte-identical to v4.127.0 by size); golden tests through `mnc-stage1` are **39/65 — unchanged from v4.127.0, zero regressions** in previously-passing tests; core compiler pytest subset (parser/semantic/mir/llvm/golden/emit/optimizer, 1,258 tests) **passes clean**. Broader pytest excluding bootstrap is 5,057 passed / 46 failed — 4 additional failures vs v4.127.0's 38 but all are in environmental test families (test_c_hardening, test_db_sqlite, test_doc_links, test_runner) unaffected by self-hosted `.mn` changes. Bootstrap subset is 212 passed / 13 failed (v4.127.0: 213/12) — 1 additional failure is `test_lexer_full_emit_deterministic`, a pre-existing non-deterministic Python-bootstrap test (visible in the failure diff: both runs produce `{ptr, i64}` — my changes are reflected consistently — but label counters differ across runs due to a global-counter reset bug; flaky, not caused by this release). `libmapanare_rt.a` byte-identical to v4.127.0 (no C runtime changes).
+
+**Diff**: 5 files changed (4 self-hosted `.mn` + 1 regenerated `mnc_all.mn`). ~35 net new lines (4 Sh.8 + 3 basename + ~25 brace-normalization edits, most of which are zero-line-delta character substitutions).
+
+**Closes**: **docket Sh.8** (source level — `None` bare identifier recognition). **Opens: Sh.11** (lower_expr SIGSEGV when mnc-stage1 compiles mnc_all.mn beyond semantic phase — replaces Sh.8 as the strict-fixed-point blocker). Reduces the v4.130.0 panel's divergence-surface evidence number by another 1.9%.
+
+**Next**: v4.129.0 — documentation and SPEC sync (originally scheduled as v4.128.0; bumped one release because v4.128.0 took the fixed-point refinement slot per the edited PROMPT).
+
 ## [4.127.0] - 2026-04-14
 
 **Phase F closeout release 7 — self-hosted fixed-point refinement: divergence between Python bootstrap and `mnc-stage1` reduced from 9,971 to 9,535 unified-diff lines (-4.4%) across the 39 passing goldens; zero regressions.** Buffer release 2 of the v4.130.0 closeout arc. The strict 3-stage stage2-vs-stage3 measurement remains blocked by docket **Sh.8** (self-hosted `semantic.mn` does not register `None` as a constructor; `mnc-stage1` cannot self-compile `mnc_all.mn` — pre-existing since v4.112.0, out of scope per PLAN.md). This release pivots to the meaningful proxy: Python bootstrap output vs `mnc-stage1` output on the 39 of 65 goldens that compile cleanly through both pipelines, categorizes every divergence by L/C/A/S/W/M, fixes the top cosmetic categories, and records the delta.

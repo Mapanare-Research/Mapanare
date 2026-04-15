@@ -4434,6 +4434,10 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "ident" {
         let name: String = expr_ident_name(expr)
+        // v4.128.0 (Sh.8): bare `None` is a variant of Option. Mirrors
+        // mapanare/lower.py::_lower_identifier. Prevents "Undefined
+        // variable 'None'" at mnc_all.mn:3504 (`let mut guard: Option<Expr> = None`).
+        if name == "None" { return new_infer_result(make_type("Option"), st) }
         let result: Option<Symbol> = scope_lookup(st.scope, name)
         match result {
             Some(sym) => { return new_infer_result(sym.type_info, st) },
@@ -11369,7 +11373,11 @@ fn llvm_void() -> String {
 }
 
 fn llvm_string() -> String {
-    return "{ ptr, i64 }"
+    // v4.128.0: no inner space — matches Python emitter canonical form
+    // (`{ptr, i64}`). Previously `{ ptr, i64 }` with spaces; the difference
+    // propagated to every runtime declaration and was the dominant
+    // character-level divergence in the A bucket.
+    return "{ptr, i64}"
 }
 
 // ---------------------------------------------------------------------------
@@ -11377,19 +11385,19 @@ fn llvm_string() -> String {
 // ---------------------------------------------------------------------------
 
 fn llvm_option_type(inner: String) -> String {
-    return "{ i1, " + inner + " }"
+    return "{i1, " + inner + "}"
 }
 
 fn llvm_result_type(ok_ty: String, err_ty: String) -> String {
-    return "{ i1, { " + ok_ty + ", " + err_ty + " } }"
+    return "{i1, {" + ok_ty + ", " + err_ty + "}}"
 }
 
 fn llvm_tensor_type(elem_ty: String) -> String {
-    return "{ ptr, i64, ptr, i64 }"
+    return "{ptr, i64, ptr, i64}"
 }
 
 fn llvm_map_type() -> String {
-    return "{ ptr, i64 }"
+    return "{ptr, i64}"
 }
 
 fn llvm_ptr() -> String {
@@ -11397,7 +11405,7 @@ fn llvm_ptr() -> String {
 }
 
 fn llvm_list_rt() -> String {
-    return "{ ptr, i64, i64, i64, i64 }"
+    return "{ptr, i64, i64, i64, i64}"
 }
 
 // ---------------------------------------------------------------------------
@@ -11432,7 +11440,7 @@ fn resolve_mir_type(t: MIRType) -> String {
     if t.kind == TK_AGENT() { return llvm_ptr() }
     if t.kind == TK_STRUCT() { return "%struct." + t.name }
     if t.kind == TK_ENUM() { return "%enum." + t.name }
-    if t.kind == TK_RANGE() { return "{ i64, i64 }" }
+    if t.kind == TK_RANGE() { return "{i64, i64}" }
     if t.kind == TK_FN() { return llvm_ptr() }
     if t.kind == TK_UNKNOWN() { return llvm_int() }
     return llvm_int()
@@ -13337,9 +13345,9 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_list_concat", llvm_list_rt(), "ptr, ptr")
 
     // Iterator runtime
-    s = declare_runtime_fn(s, "__iter_has_next", llvm_bool(), "{ i64, i64 }")
-    s = declare_runtime_fn(s, "__iter_next", llvm_int(), "{ i64, i64 }")
-    s = declare_runtime_fn(s, "__mn_range", "{ i64, i64 }", "i64, i64")
+    s = declare_runtime_fn(s, "__iter_has_next", llvm_bool(), "{i64, i64}")
+    s = declare_runtime_fn(s, "__iter_next", llvm_int(), "{i64, i64}")
+    s = declare_runtime_fn(s, "__mn_range", "{i64, i64}", "i64, i64")
     s = declare_runtime_fn(s, "__mn_range_free", "void", "ptr")
 
     // String methods
@@ -13524,22 +13532,22 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int {
     if resolved == "i8" { return 1 }
     if resolved == "ptr" { return 1 }
     if resolved == "void" { return 0 }
-    // String: { ptr, i64 } = 2 slots
-    if resolved == "{ ptr, i64 }" { return 2 }
-    // List: { ptr, i64, i64, i64, i64 } = 5 slots (data, len, cap, elem_size, managed)
-    if resolved == "{ ptr, i64, i64, i64, i64 }" { return 5 }
-    // Range: { i64, i64 } = 2 slots
-    if resolved == "{ i64, i64 }" { return 2 }
-    // Option: { i1, T } ≈ 2 slots minimum
+    // String: {ptr, i64} = 2 slots
+    if resolved == "{ptr, i64}" { return 2 }
+    // List: {ptr, i64, i64, i64, i64} = 5 slots (data, len, cap, elem_size, managed)
+    if resolved == "{ptr, i64, i64, i64, i64}" { return 5 }
+    // Range: {i64, i64} = 2 slots
+    if resolved == "{i64, i64}" { return 2 }
+    // Option: {i1, T} ≈ 2 slots minimum
     if ty.kind == TK_OPTION() {
         if len(ty.args) > 0 {
             return 1 + type_size_in_slots(st, ty.args[0])
         }
         return 2
     }
-    // Result: { i1, { T, E } }
+    // Result: {i1, {T, E}}
     if ty.kind == TK_RESULT() { return 4 }
-    // Map: { ptr, i64 } = 2 slots
+    // Map: {ptr, i64} = 2 slots
     if ty.kind == TK_MAP() { return 2 }
     // Enum: 1 (tag) + max_payload_slots.
     // If registered, look up; otherwise return 48 (conservative for recursive enums).
@@ -13613,7 +13621,7 @@ fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
     let mut s: EmitState = st
     s.enum_names.push(info.name)
     s.enum_infos.push(info)
-    s = emit_line(s, "%enum." + info.name + " = type { i64, ptr }")
+    s = emit_line(s, "%enum." + info.name + " = type {i64, ptr}")
     return s
 }
 
@@ -14083,7 +14091,7 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
 
     // String .len → extractvalue index 1, then mask off the is_heap
     // flag (v4.100.0 packs is_heap into bit 63 of the second eightbyte;
-    // the LLVM struct type is still { ptr, i64 } so LLVM hands back the
+    // the LLVM struct type is still {ptr, i64} so LLVM hands back the
     // raw word). The C runtime sees the bitfield directly and doesn't
     // need the mask; Mapanare-emitted IR has to apply it.
     if obj.ty.kind == TK_STRING() {
@@ -14764,9 +14772,9 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     let mut i: Int = 0
     for _ in 0..1000 {
         if i >= npairs {
-            // Store map pointer into result: { ptr, i64 } with ptr=map, i64=0
-            s = emit_line(s, "  " + dn + ".s0 =insertvalue { ptr, i64 } undef, ptr " + map_ptr + ", 0")
-            s = emit_line(s, "  " + dn + " = insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
+            // Store map pointer into result: {ptr, i64} with ptr=map, i64=0
+            s = emit_line(s, "  " + dn + ".s0 =insertvalue {ptr, i64} undef, ptr " + map_ptr + ", 0")
+            s = emit_line(s, "  " + dn + " = insertvalue {ptr, i64} " + dn + ".s0, i64 0, 1")
             return s
         }
         let pair: KVPair = pairs[i]
@@ -14787,8 +14795,8 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     }
 
     // Fallback: return empty map
-    s = emit_line(s, "  " + dn + ".s0 =insertvalue { ptr, i64 } undef, ptr " + map_ptr + ", 0")
-    s = emit_line(s, "  " + dn + " = insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
+    s = emit_line(s, "  " + dn + ".s0 =insertvalue {ptr, i64} undef, ptr " + map_ptr + ", 0")
+    s = emit_line(s, "  " + dn + " = insertvalue {ptr, i64} " + dn + ".s0, i64 0, 1")
     return s
 }
 
@@ -14806,7 +14814,7 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
     // Pointer-based enum: { i64 tag, ptr payload }.
     // 1. Malloc payload struct, store each field via GEP.
     // 2. Build {i64, ptr} with insertvalue.
-    // Use named type (%enum.X) for insertvalue, not inline { i64, ptr }
+    // Use named type (%enum.X) for insertvalue, not inline {i64, ptr}
     let enum_ty: String = resolve_mir_type(ty)
     if len(payload) > 0 {
         // Compute payload allocation size: sum field sizes
@@ -15451,8 +15459,8 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "__mn_range" {
         let mut s_rng: EmitState = st
         let tmp_rng: String = dn + ".tmp"
-        s_rng = emit_line(s_rng, "  " + tmp_rng + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
-        s_rng = emit_line(s_rng, "  " + dn + " = insertvalue { i64, i64 } " + tmp_rng + ", i64 " + args[1].name + ", 1")
+        s_rng = emit_line(s_rng, "  " + tmp_rng + " = insertvalue {i64, i64} undef, i64 " + args[0].name + ", 0")
+        s_rng = emit_line(s_rng, "  " + dn + " = insertvalue {i64, i64} " + tmp_rng + ", i64 " + args[1].name + ", 1")
         return s_rng
     }
     if fn_name == "__mn_range_inclusive" {
@@ -15460,20 +15468,20 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         let inc: String = dn + ".inc"
         let tmp_rngi: String = dn + ".tmp"
         s_rngi = emit_line(s_rngi, "  " + inc + " = add i64 " + args[1].name + ", 1")
-        s_rngi = emit_line(s_rngi, "  " + tmp_rngi + " = insertvalue { i64, i64 } undef, i64 " + args[0].name + ", 0")
-        s_rngi = emit_line(s_rngi, "  " + dn + " = insertvalue { i64, i64 } " + tmp_rngi + ", i64 " + inc + ", 1")
+        s_rngi = emit_line(s_rngi, "  " + tmp_rngi + " = insertvalue {i64, i64} undef, i64 " + args[0].name + ", 0")
+        s_rngi = emit_line(s_rngi, "  " + dn + " = insertvalue {i64, i64} " + tmp_rngi + ", i64 " + inc + ", 1")
         return s_rngi
     }
 
     // Range field extraction (counter-based for-loops)
     if fn_name == "__mn_range_start" {
         let mut s_rs: EmitState = st
-        s_rs = emit_line(s_rs, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 0")
+        s_rs = emit_line(s_rs, "  " + dn + " = extractvalue {i64, i64} " + args[0].name + ", 0")
         return s_rs
     }
     if fn_name == "__mn_range_end" {
         let mut s_re: EmitState = st
-        s_re = emit_line(s_re, "  " + dn + " = extractvalue { i64, i64 } " + args[0].name + ", 1")
+        s_re = emit_line(s_re, "  " + dn + " = extractvalue {i64, i64} " + args[0].name + ", 1")
         return s_re
     }
 
@@ -16719,7 +16727,13 @@ fn compile(source: String, filename: String) -> CompileResult {
     }
 
     // Stage 6: emit LLVM IR from MIR
-    let ir_text: String = emit_mir_module(opt_module, filename)
+    // v4.128.0: strip path + extension to match Python CLI's
+    // `os.path.splitext(os.path.basename(filename))[0]` convention (mapanare/cli.py:183).
+    // Aligns ModuleID and source_filename with bootstrap output.
+    let base: String = basename_of(filename)
+    let ext: String = file_extension(base)
+    let stem: String = base.substr(0, len(base) - len(ext))
+    let ir_text: String = emit_mir_module(opt_module, stem)
     let no_errors: List<SemanticError> = []
     return new_compile_result(true, ir_text, no_errors)
 }

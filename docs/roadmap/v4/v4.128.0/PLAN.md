@@ -1,90 +1,113 @@
-# Mapanare v4.128.0 — Documentation + SPEC Sync
+# Mapanare v4.128.0 — Self-Hosted Fixed-Point Refinement
 
-> **Buffer release 3.** Close documentation gaps before the v4.130.0
-> panel. SPEC.md audit against current implementation. Fix stale
-> sections. Verify all examples compile and run. Sync cookbook with
-> v4.120.0-v4.127.0 changes. Boa (DX reviewer) and Coral (language
-> design reviewer) both grade documentation currency.
+> **Buffer release 3.** Measure the stage2-vs-stage3 diff. Categorize
+> every divergence. Fix the cosmetic ones. Record the delta.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.127.0
 **Delta review:** No
 **Full panel:** No (deferred to v4.130.0)
 **Estimated work:** 1 sprint
-**Theme:** Sync documentation with reality. No new guides -- just make existing docs honest.
+**Theme:** Continue the fixed-point work from v4.127.0. Attempt strict
+stage2-vs-stage3 (Sh.8 closure) if cheap; otherwise continue the
+Python-vs-self-hosted proxy on the A/C buckets (next largest after the M
+bucket that v4.127.0 closed).
 
 ---
 
 ## Scope
 
-The language specification (`docs/SPEC.md`) and supporting documentation
-were last synced in v4.116.0. Since then, v4.120.0-v4.127.0 made
-significant changes: test hygiene sweep, DWARF warning, List<Int>
-indexing fix, dead-code sweep (optimizer.py + TBAA deletion), unboxed
-enum payloads, benchmark refresh, golden test push, and fixed-point
-refinement. Any SPEC section referencing deleted features (TBAA,
-deprecated optimizer passes) is now stale. Any example using pre-v4.122.0
-list indexing patterns may be incorrect.
+Fixed-point convergence is a key metric for the v4.130.0 panel. Cobra
+(ABI reviewer) asks: "Is the fixed-point real?" Rattler (LLVM reviewer)
+asks: "Is the IR correct across self-compilation stages?"
 
-This release audits SPEC.md section by section, fixes the most critical
-divergences, verifies all `examples/` programs, and ensures the cookbook
-reflects current behavior. Documentation precision, not documentation
-expansion.
+v4.127.0 reduced the Python-vs-`mnc-stage1` proxy divergence from 9,971
+to 9,535 unified-diff lines (-4.4%) by closing the **M bucket**
+(module-header metadata: TBAA removal, target datalayout/triple,
+version sync) and the whitespace-after-`=` builder family. The strict
+3-stage stage2-vs-stage3 measurement remains blocked by docket **Sh.8**
+(self-hosted `semantic.mn::infer_expr` fails on bare `None` — Python
+bootstrap special-cases it as a bare Option variant in
+`_lower_identifier`).
 
-## Phase 1 — SPEC.md audit
+This release:
 
-- [ ] Read SPEC.md end-to-end. For each section, check:
-  - Does the described behavior match the current implementation?
-  - Are referenced features still present (not deleted in v4.123.0 dead-code sweep)?
-  - Are code examples syntactically correct for the current grammar?
-  - Are type system descriptions current (especially after v4.124.0 enum unboxing)?
-- [ ] Mark each section as:
-  - **OK** — current and accurate
-  - **STALE** — references deleted features or outdated behavior
-  - **MISSING** — feature exists but is not documented
-  - **WRONG** — actively incorrect (describes behavior that does not match implementation)
-- [ ] Write `docs/roadmap/v4/v4.128.0/SPEC_AUDIT.md` with per-section status
+1. **Attempts Sh.8 closure** via a 3-line special-case in
+   `semantic.mn::infer_expr`'s `ident` branch (mirrors Python's
+   `_lower_identifier` behaviour). Smallest-scope of the three Sh.8
+   options documented in v4.127.0's SESSION_REPORT.
+2. **If Sh.8 closes**: measures strict stage2-vs-stage3, categorizes
+   the diff, fixes top 2 cosmetic categories, records delta.
+3. **If Sh.8 does not close**: reverts the fix, continues the
+   Python-vs-self-hosted proxy from v4.127.0, targets the A (attributes,
+   328 lines) and C (constants, 301 lines) buckets — next largest after
+   the M bucket that v4.127.0 closed.
 
-## Phase 2 — Fix critical SPEC divergences
+---
 
-- [ ] Fix all **WRONG** sections first (highest priority)
-- [ ] Fix **STALE** sections that reference deleted features:
-  - TBAA metadata (deleted in v4.123.0) — remove or update references
-  - Deprecated optimizer passes — update optimizer section
-  - Any references to `println` (deprecated since v3.x) — update to `print`
-- [ ] Fix **STALE** sections that reference outdated behavior:
-  - Enum representation (updated in v4.124.0 with unboxed payloads)
-  - List indexing (fixed in v4.122.0)
-- [ ] Add brief notes for **MISSING** sections (one paragraph each, not full documentation)
+## Phase 1 — Sh.8 closure attempt
 
-## Phase 3 — Verify examples
+- [ ] Add 3-line special case to `mapanare/self/semantic.mn::infer_expr`
+  ident branch: if `name == "None"` before `scope_lookup`, return
+  `make_type("Option")`. Matches Python `mapanare/lower.py::_lower_identifier`
+  behaviour.
+- [ ] Regenerate `mnc_all.mn` via `bash scripts/concat_self.sh`.
+- [ ] Rebuild `mnc-stage1` via `python3 scripts/build_stage1.py`.
+- [ ] Run `DIFF_THRESHOLD=999999 bash scripts/verify_fixed_point.sh --keep`.
+- [ ] If Stage 1 succeeds (stage2.ll emits, llvm-as validates) and
+  Stage 2 succeeds (mnc-stage2 builds, stage3.ll emits, llvm-as
+  validates): Sh.8 closed. Proceed to Phase 2.
+- [ ] If any stage fails: revert Sh.8 change, pivot to proxy on A/C
+  buckets per Phase 1-proxy.
 
-- [ ] Run all programs in `examples/` through the Python bootstrap:
-  ```bash
-  for f in examples/*.mn; do python -m mapanare run "$f"; done
-  ```
-- [ ] Run all programs in `examples/wasm/` through the WASM emitter:
-  ```bash
-  for f in examples/wasm/*.mn; do python -m mapanare emit-wasm "$f" -o /dev/null; done
-  ```
-- [ ] Record pass/fail for each example
-- [ ] Fix any broken examples (update syntax, fix imports, adjust for API changes)
+## Phase 1-proxy (fallback) — continue v4.127.0's proxy on A/C buckets
 
-## Phase 4 — Sync cookbook and guides
+- [ ] Re-run `scripts/measure_divergence.py` to confirm v4.127.0's
+  9,535-line baseline still holds on current HEAD.
+- [ ] Investigate the A bucket: which 328 lines of function/parameter
+  attribute differences are reducible? Likely candidates: attribute
+  order, `willreturn` placement.
+- [ ] Investigate the C bucket: which 301 lines of string-global
+  ordering / format are reducible? Likely candidates: self-hosted
+  pre-emits format strings unconditionally (`@.fmt_int`, `@.fmt_int_nl`,
+  `@.fmt_float`, `@.fmt_float_nl`, `@.newline`) even when no
+  `print(int)` call exists.
 
-- [ ] Check `docs/guides/` — are getting-started, cookbook, and tutorial examples current?
-- [ ] If any code examples use syntax or APIs changed in v4.120.0-v4.127.0, update them
-- [ ] Verify the getting-started guide works end-to-end (per Bo.2 from v4.121.0)
-- [ ] Check `docs/manifesto.md` — is the design philosophy still aligned with current direction?
+## Phase 2 — Strict stage2-vs-stage3 measurement (requires Sh.8 closed)
 
-## Phase 5 — LOW sweep + closeout
+- [ ] Line-level diff: `diff /tmp/stage2.ll /tmp/stage3.ll | wc -l`.
+- [ ] Function-level diff: `python3 scripts/ir_doctor.py diff-ir
+  /tmp/stage2.ll /tmp/stage3.ll` — counts divergent functions, ignores
+  label renumbering.
+- [ ] Record baseline in `docs/roadmap/v4/v4.128.0/STRICT_FP_BASELINE.md`.
 
-- [ ] `make test` — all green
-- [ ] `make lint` — all clean
-- [ ] `VERSION` bumped in final commit
-- [ ] `CHANGELOG.md [4.128.0]` entry
-- [ ] `SESSION_REPORT.md` written
+## Phase 3 — Categorize divergences
+
+- [ ] For the strict 3-stage case (or proxy if Phase 1 fell back),
+  classify each divergence into L / C / A / S / W / M buckets.
+- [ ] Identify top 2 categories by frequency.
+- [ ] Document in `STRICT_FP_BASELINE.md` (or continuation doc).
+
+## Phase 4 — Fix top 2 cosmetic categories
+
+- [ ] Apply fixes in `mapanare/self/emit_llvm.mn` and/or
+  `mapanare/self/emit_llvm_ir.mn`.
+- [ ] Re-run phase 2 measurement.
+- [ ] Record post-fix delta.
+
+## Phase 5 — Verify + ship
+
+- [ ] `python3 scripts/test_native.py --stage1 mapanare/self/mnc-stage1`
+  — verify no golden regressions vs v4.127.0's 39/65.
+- [ ] `make test` green (pytest excluding bootstrap; failure set
+  byte-identical to v4.127.0 HEAD baseline of 38 failed / 5,061 passed).
+- [ ] `make lint` — no new findings on touched files.
+- [ ] `CHANGELOG.md [4.128.0]` entry.
+- [ ] `SESSION_REPORT.md` written.
+- [ ] `VERSION` bumped in final commit (to 4.129.0).
+- [ ] Roadmap status updated: this PLAN's Status → DONE, v4/README.md
+  row, ROADMAP.md row, CLAUDE.md current version.
 
 ---
 
@@ -92,23 +115,27 @@ expansion.
 
 | # | Check | Evidence |
 |---|---|---|
-| 1 | SPEC.md audit complete (every section marked OK/STALE/MISSING/WRONG) | `SPEC_AUDIT.md` |
-| 2 | All WRONG sections fixed | commit diffs |
-| 3 | All STALE sections referencing deleted features updated | commit diffs |
-| 4 | All `examples/` programs compile and run | test log |
-| 5 | Cookbook / guides current with v4.120.0-v4.127.0 changes | commit diffs or "no changes needed" note |
-| 6 | `make test` green | CI logs |
-| 7 | Standard closeout clean | CHANGELOG + SESSION_REPORT + VERSION bump |
+| 1 | Sh.8 attempted (closed or explicitly deferred with reason) | commit diff + SESSION_REPORT section |
+| 2 | Fixed-point baseline measured (strict 3-stage OR proxy) | STRICT_FP_BASELINE.md (or proxy baseline) |
+| 3 | All divergences categorized (L/C/A/S/W/M) | STRICT_FP_BASELINE.md breakdown |
+| 4 | At least one cosmetic category reduced | commit diff + post-fix delta |
+| 5 | Post-fix delta measured and recorded | post_fix.json + SESSION_REPORT |
+| 6 | No regressions in golden tests (39/65 preserved) | `test_native.py` log |
+| 7 | Standard closeout clean (pytest + lint + CHANGELOG + SESSION_REPORT + VERSION) | CI logs |
 
 ---
 
 ## What this release does NOT do
 
-- **Write new guides or tutorials.** This is a sync release, not a content-creation release.
-- **Add new SPEC sections for unspecified features.** MISSING sections get a one-paragraph stub, not full documentation.
-- **Change compiler or runtime code.** All changes are in `docs/` and `examples/`. If an example is broken because of a compiler bug, file a docket item -- do not fix the compiler here.
 - **Run a panel.** Next panel is v4.130.0.
-- **Rewrite the manifesto.** Check for alignment; do not rewrite.
+- **Attempt the remaining S/A/C buckets in a single release.** v4.127.0
+  closed M; v4.128.0 targets A or C (one of two). S remains out of
+  scope — its size (7,000 lines) reflects systemic differences
+  (inline_small_functions on Python, runtime-decl emit-on-demand).
+- **Close docket Sh.1** (inline_small_functions in self-hosted). That's
+  a separate release's work.
+- **Rewrite the emitters.** All fixes are additive / substitutive at
+  existing emission sites.
 
 ---
 
@@ -116,13 +143,16 @@ expansion.
 
 | Risk | L | I | Mitigation |
 |---|---|---|---|
-| SPEC.md is very large and the audit takes the entire sprint | medium | medium | Prioritize WRONG and STALE over OK sections. Skip deep audit of sections known to be stable (e.g., lexer grammar, basic types). |
-| Multiple examples are broken and require compiler fixes | low | high | Document broken examples with docket IDs. Fix only examples that need documentation-level changes (syntax updates). |
-| SPEC sections reference features that are partially implemented | medium | low | Mark as STALE with a note about implementation status. Honest documentation. |
-| Cookbook has never been maintained and is entirely stale | medium | medium | If the cookbook is beyond repair, delete it and note its absence. An absent cookbook is better than a wrong one. |
+| Sh.8 fix breaks existing `none` lowercase handling | low | high | `none` goes through the same `expr_kind == "none_lit"` path (semantic.mn:577); the new `ident` special-case for "None" fires *before* `scope_lookup` so it only affects the uppercase bare-identifier path. `none` is lexed as `KW_NONE` → `Expr::NoneLit`, never hits the `ident` branch. |
+| Sh.8 closure surfaces new failures in stage2 or stage3 | medium | medium | Fall back to proxy on A/C buckets. v4.127.0's PLAN anticipated this; the proxy is a valid substitute. |
+| A or C bucket fix regresses a golden | medium | high | Run `test_native.py --stage1` after every change. Revert any change that drops the 39/65 count. |
+| mnc-stage2 teardown crash triggers false regression | low | low | `verify_fixed_point.sh:123-142` already handles the teardown-crash case documented at v4.29.0. |
 
 ---
 
 ## After v4.128.0
 
-v4.129.0 — pre-panel prep and third flaky audit. Final verification before the v4.130.0 panel. Sanitizer runs, 5x flaky audit, pre-panel audit document.
+v4.129.0 — documentation and SPEC sync (originally planned as v4.128.0;
+bumped one release because v4.128.0 took the fixed-point refinement
+slot per the edited PROMPT). Close documentation gaps before the
+v4.130.0 panel.
