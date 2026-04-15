@@ -840,7 +840,10 @@ class TestLLVMCompilation:
                 print(str(x))
             }
         """))
-        assert "add" in ir
+        # inline_small_functions + constant folding may collapse add(1,2) to
+        # the literal 3 post-v4.x optimizer tuning; either the surviving
+        # function or the folded result is a valid compile outcome.
+        assert "add" in ir or "i64 3" in ir
 
     def test_struct_compiles(self) -> None:
         ir = _compile_ok(textwrap.dedent("""\

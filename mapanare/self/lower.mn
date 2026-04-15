@@ -1302,6 +1302,21 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_identifier(st: LowerState, name: String) -> LowerResult {
+    // v4.134.0 Sh.12: bare `None` identifier. The lexer keyword
+    // `KW_NONE` only matches lowercase `none`/`nada`; capital `None`
+    // (used throughout self-hosted `.mn` sources) tokenizes as NAME
+    // and parses as Expr::Ident("None"). Without this branch we'd
+    // fall through to the "Unknown — emit placeholder" path below,
+    // producing a Const(mir_unknown, "") that emit_const refuses to
+    // materialise — leaving an undef SSA reference (%None<N>) that
+    // breaks llvm-as. Mirror the parser KW_NONE → Expr::NoneLit
+    // lowering at line 1196 so both spellings produce identical IR.
+    if name == "None" {
+        let r_none: LowerResult = make_value(st, mir_option(), "tnone")
+        let s_none: LowerState = emit_instr(r_none.state, Instruction::WrapNone(r_none.value, mir_option()))
+        return new_lower_result(r_none.value, s_none)
+    }
+
     // Check variable scope
     let var_opt: Option<Value> = lookup_var(st, name)
     match var_opt {

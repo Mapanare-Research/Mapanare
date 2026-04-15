@@ -36,11 +36,28 @@ _DB_C = os.path.join(_RUNTIME_DIR, "mapanare_db.c")
 # ---------------------------------------------------------------------------
 
 
+# v4.133.0 An.1: Mapanare String layout is {ptr, lenheap} where lenheap's
+# low 63 bits are the byte length and bit 63 is the is_heap flag (set by
+# the runtime on heap allocations so drop glue knows whether to free).
+# Treating `len` as a raw c_int64 made `assert msg.len > 0` fail on heap
+# strings because bit 63 flipped the signed read negative. Match the
+# layout used by `mapanare bind`'s generator and expose a masked `len`.
+_MN_STR_LEN_MASK = 0x7FFFFFFFFFFFFFFF
+
+
 class MnString(ctypes.Structure):
     _fields_ = [
         ("data", ctypes.c_char_p),
-        ("len", ctypes.c_int64),
+        ("_lenheap", ctypes.c_int64),  # low 63 bits = len; bit 63 = is_heap
     ]
+
+    @property
+    def len(self) -> int:  # noqa: A003
+        return self._lenheap & _MN_STR_LEN_MASK
+
+    @property
+    def is_heap(self) -> bool:
+        return bool((self._lenheap >> 63) & 1)
 
 
 # ---------------------------------------------------------------------------
