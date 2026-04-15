@@ -12,7 +12,7 @@
 
 Built after years of hitting Python's limits in AI-native, concurrent, and tensor-heavy software.
 
-Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler (38,000+ lines of `.mn`) compiles itself. Across 6 cross-language benchmarks Mapanare's geometric mean is **46× faster than Python**, **on par with Rust (1.00×)**, and **4.52× slower than C (gcc -O2)** — see [benchmarks/FINAL_REPORT_v4.130.md](benchmarks/FINAL_REPORT_v4.130.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
+Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler reaches a strict 3-stage fixed point (`stage2.ll == stage3.ll`, byte-identical) at v4.134.0 — the compiler really does compile itself. Across 6 cross-language benchmarks Mapanare's geometric mean is **42.6× faster than Python**, **1.12× of Rust (within noise)**, and **4.86× slower than C (gcc -O2)** — see [benchmarks/FINAL_REPORT_v4.136.md](benchmarks/FINAL_REPORT_v4.136.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
 
@@ -25,7 +25,7 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.129.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.0.0--rc1-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-4845+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
@@ -356,7 +356,7 @@ clang -O2 p.ll -o primes -lm         # LLVM IR → native binary
 
 Write your heavy compute in Mapanare, use it from Python, TypeScript, or Go — the compiler generates the bindings for you.
 
-> **Status (v4.129.0):** Binding generation is shipped as the
+> **Status (v5.0.0-rc1):** Binding generation is shipped as the
 > `mapanare bind` subcommand (Python, TypeScript, Go). Shared-library
 > output (`--lib` on `build`) is still planned for a future v4.x
 > release. Until then, build with `mapanare build <file>.mn` for
@@ -394,11 +394,12 @@ mapanare emit-wasm --binary hello.mn     # Emit WAT + compile to WASM
 
 Mapanare compiles to native code via LLVM. Across 6 correct-output
 workloads (compute, allocation, dispatch, string), Mapanare's geometric
-mean is **46× faster than Python**, **on par with Rust (1.00×)**,
-**2.1× slower than Go**, and **4.52× slower than C (gcc -O2)**.
+mean is **42.6× faster than Python**, **1.12× of Rust (within noise)**,
+**2.28× slower than Go**, and **4.86× slower than C (gcc -O2)**.
 The arena allocator beats Rust on small struct allocation; the v4.124.0
-unboxed-enum fix puts Mapanare ahead of Rust on enum-heavy dispatch. See
-[`benchmarks/FINAL_REPORT_v4.130.md`](benchmarks/FINAL_REPORT_v4.130.md)
+unboxed-enum fix puts Mapanare ahead of Rust on enum-heavy dispatch
+(`enum_match` 1.468 ms vs Rust 1.495 ms = 0.98× of Rust). See
+[`benchmarks/FINAL_REPORT_v4.136.md`](benchmarks/FINAL_REPORT_v4.136.md)
 for full methodology, per-benchmark ratios, memory + binary size tables,
 and honest caveats.
 
@@ -716,9 +717,15 @@ Requires Python 3.11+.
 | **v4.111.0–v4.115.0** | Phase D/E (early) — self-hosted golden parity, panel hardening, native async I/O demos | Released |
 | **v4.116.0–v4.120.0** | Phase E/F — documentation, testing sweep (sanitizer CI + flaky audit + coverage), final cross-language benchmark, retrospective, v5 gate panel (attempt 2: Option B, continue) | Released |
 | **v4.121.0–v4.128.0** | Post-panel closeout arc — tests/lint hygiene, Qs.1 fix, dead-code sweep (−1,963 lines), Rt.1 enum unboxing (`enum_match` 1.77×), benchmark refresh, golden push (27 → 39/65), fixed-point refinement (proxy divergence −5.5%) | Released |
-| **v4.129.0** | Documentation + SPEC sync — §2.1 const, §3 renumbering, §27.1 TypeKind count, §28 stdlib surface, Appendix B pipeline; 29 examples verified | **Current** |
-| **v4.130.0** | Pre-panel prep — third flaky audit, valgrind + ASan golden sweeps, MEASUREMENTS.md | Planned |
-| **v4.131.0** | THE PANEL — v5 gate attempt 3 | Planned |
+| **v4.129.0** | Documentation + SPEC sync — §2.1 const, §3 renumbering, §27.1 TypeKind count, §28 stdlib surface, Appendix B pipeline; 29 examples verified | Released |
+| **v4.130.0** | Pre-panel prep (1st) — 3rd flaky audit, valgrind + ASan golden sweeps, MEASUREMENTS.md draft | Released |
+| **v4.131.0** | Sh.2 fix arc release 1 (LIST branch) — goldens 39 → 53/65, valgrind ERRORS 31 → 14, ASan 23 → 9 | Released |
+| **v4.132.0** | Sh.2 fix arc release 2 (STRING branch) — valgrind ERRORS 14 → 5, ASan 9 → 0 (stretch); Sh.2 class closed | Released |
+| **v4.133.0** | An.1 test hygiene — 39 non-bootstrap pytest failures → 0 (stretch beat by 10); 11 fixes + 18 dockets | Released |
+| **v4.134.0** | **STRICT 3-STAGE FIXED POINT REACHED** — `stage2.ll == stage3.ll`, md5 `0c00…43b`, 108,397 lines byte-identical; Sh.11 closed by inheritance, Sh.12 fixed | Released |
+| **v4.135.0** | Pre-panel refresh (2nd) — 4th flaky audit (0 failures across 20 cumulative runs), fresh sanitizer sweeps, benchmark refresh, MEASUREMENTS.md FINAL | Released |
+| **v4.136.0** | THE PANEL — v5 gate attempt 3: aggregate 8.80/10, 0 NEEDS WORK → **Option C** | Released |
+| **v5.0.0-rc1** | First v5 candidate. Carry-forward: Ch.1 HIGH + Bo.4/Bo.5/Cb.5/Gr.2 MEDIUM for v5.0.0 final | **Current** |
 
 See the full [ROADMAP](docs/roadmap/ROADMAP.md) for details.
 
