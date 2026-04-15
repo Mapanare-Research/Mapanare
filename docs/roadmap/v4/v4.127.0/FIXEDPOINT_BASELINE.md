@@ -153,19 +153,68 @@ form has the space and matches the Python emitter.
 
 ## Phase 4 — Post-fix delta
 
-See `delta.json` for the full per-test breakdown.
+`baseline.json` (pre-fix) and `post_fix.json` (post-fix) hold the
+per-test breakdowns.
 
 ```text
-              before    after    delta
-diff lines    9,971     <TBD>    <TBD>
-S             7,000     <TBD>    <TBD>
-M               156     <TBD>    <TBD>
-A               328     <TBD>    <TBD>
-C               301     <TBD>    <TBD>
-fn-divergent     11       11      0      (Sh.1 — bootstrap inlines, out of scope)
+                     before    after    delta
+diff lines (total)    9,971    9,535    -436   ( -4.4% )
+stage1 lines (total)  6,393    6,120    -273   ( -4.3% )
+fn-set divergent         11       11       0   ( Sh.1 — out of scope )
+
+category breakdown
+  S (semantic)        7,000    6,610    -390
+  M (module hdr)        156       78     -78   ( -50% )
+  A (attributes)        328      328       0
+  C (constants)         301      301       0
+  W                       0        0       0
+  L                       0        0       0
 ```
 
-(Filled in after Phase 4 re-measurement.)
+**Reading the delta**:
+
+- **M bucket halved** (156 → 78): TBAA removal + datalayout/triple
+  alignment + version sync land cleanly in the module-header
+  classifier.
+- **S bucket -390 lines**: whitespace-after-`=` fix (25 builders + 12
+  inline call sites) is folded into S because the surrounding lines
+  in each diff block also differ in semantic ways. The character-level
+  improvement is visible (`%a.addr = alloca i64` instead of `%a.addr
+  =alloca i64` in every body), even though the block-level classifier
+  attributes the line-count reduction to the dominant non-whitespace
+  difference in the same block.
+- **A and C unchanged**: out of scope for this release.
+- **fn-set divergent unchanged at 11**: `inline_small_functions`
+  (Python) vs absent (self-hosted, Sh.1) is the systemic root cause.
+  Closing it requires fixing the pass that produced malformed MIR
+  when re-enabled at v4.111.0 — separate release.
+
+**Total: 4.4% diff reduction with zero golden regressions and zero
+new dockets opened.** This is the modest measurable progress the
+PLAN.md called for: not perfect convergence, but a documented,
+auditable shrink of the divergence surface.
+
+---
+
+## Per-test contribution to the diff (largest 8)
+
+From `post_fix.json`:
+
+```text
+test                            diff_lines    bootstrap_lines    stage1_lines
+59_async_fanout                      1,257                 99             818
+40_gpu_tensor (precompile)             920                 51             553
+50_match_or_patterns                   661                115             406
+57_real_await                          612                111             402
+56_async_await                         570                 86             388
+44_gpu_kernel (excluded — fail)         —                  —               —
+38_match                               408                 79             249
+12_dict                                360                 70             199
+```
+
+The largest contributors are async / pattern-match goldens — they
+have many user functions, each of which gets the full runtime-decl
+prologue from self-hosted (this is the S bucket).
 
 ---
 

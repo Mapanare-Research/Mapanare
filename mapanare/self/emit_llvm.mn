@@ -1021,14 +1021,14 @@ fn emit_cast(st: EmitState, dest: Value, src: Value, target_ty: MIRType) -> Emit
     // Int → Float
     if src.ty.kind == TK_INT() {
         if target_ty.kind == TK_FLOAT() {
-            s = emit_line(s, "  " + dn + " =sitofp i64 " + sn + " to double")
+            s = emit_line(s, "  " + dn + " = sitofp i64 " + sn + " to double")
             return s
         }
     }
     // Float → Int
     if src.ty.kind == TK_FLOAT() {
         if target_ty.kind == TK_INT() {
-            s = emit_line(s, "  " + dn + " =fptosi double " + sn + " to i64")
+            s = emit_line(s, "  " + dn + " = fptosi double " + sn + " to i64")
             return s
         }
     }
@@ -1064,9 +1064,9 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
             // List concatenation: alloca both sides, call __mn_list_concat
             let la_name: String = dn + ".la"
             let ra_name: String = dn + ".ra"
-            s = emit_line(s, "  " + la_name + " =alloca " + llvm_list_rt())
+            s = emit_line(s, "  " + la_name + " = alloca " + llvm_list_rt())
             s = emit_line(s, "  store " + llvm_list_rt() + " " + ln + ", ptr " + la_name)
-            s = emit_line(s, "  " + ra_name + " =alloca " + llvm_list_rt())
+            s = emit_line(s, "  " + ra_name + " = alloca " + llvm_list_rt())
             s = emit_line(s, "  store " + llvm_list_rt() + " " + rn + ", ptr " + ra_name)
             s = emit_line(s, emit_call_ir(dn, llvm_list_rt(), "__mn_list_concat", "ptr " + la_name + ", ptr " + ra_name))
         } else {
@@ -1417,7 +1417,7 @@ fn find_list_field_index(st: EmitState, struct_name: String, dest: Value) -> Str
 fn find_alloca_by_search(lines: List<String>, value_name: String) -> String {
     // Search FORWARD for "value_name =load TYPE, ptr %alloca"
     // Use the LAST match (most recent load of this value)
-    let search_pat: String = value_name + " =load"
+    let search_pat: String = value_name + " = load"
     let n: Int = len(lines)
     let mut result: String = ""
     let mut i: Int = 0
@@ -1892,7 +1892,7 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     // (v4.32.0 Phase 1.2 closes the arity mismatch flagged as a 7-cycle
     // carry-forward by Rattler at the v4.31.0 arc-end panel).
     let map_ptr: String = dn + ".mp"
-    s = emit_line(s, "  " + map_ptr + " =call ptr @__mn_map_new(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ", i64 " + val_tag + ")")
+    s = emit_line(s, "  " + map_ptr + " = call ptr @__mn_map_new(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ", i64 " + val_tag + ")")
 
     // Insert each pair
     let npairs: Int = len(pairs)
@@ -1901,7 +1901,7 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
         if i >= npairs {
             // Store map pointer into result: { ptr, i64 } with ptr=map, i64=0
             s = emit_line(s, "  " + dn + ".s0 =insertvalue { ptr, i64 } undef, ptr " + map_ptr + ", 0")
-            s = emit_line(s, "  " + dn + " =insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
+            s = emit_line(s, "  " + dn + " = insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
             return s
         }
         let pair: KVPair = pairs[i]
@@ -1910,11 +1910,11 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
         let v_ty: String = resolve_mir_type(pair.val.ty)
         // Alloca key, store, bitcast to ptr
         let ka: String = dn + ".k" + pi
-        s = emit_line(s, "  " + ka + " =alloca " + k_ty)
+        s = emit_line(s, "  " + ka + " = alloca " + k_ty)
         s = emit_line(s, "  store " + k_ty + " " + pair.key.name + ", ptr " + ka)
         // Alloca val, store, bitcast to ptr
         let va: String = dn + ".v" + pi
-        s = emit_line(s, "  " + va + " =alloca " + v_ty)
+        s = emit_line(s, "  " + va + " = alloca " + v_ty)
         s = emit_line(s, "  store " + v_ty + " " + pair.val.name + ", ptr " + va)
         // Call __mn_map_set(map, key_ptr, val_ptr)
         s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
@@ -1923,7 +1923,7 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
 
     // Fallback: return empty map
     s = emit_line(s, "  " + dn + ".s0 =insertvalue { ptr, i64 } undef, ptr " + map_ptr + ", 0")
-    s = emit_line(s, "  " + dn + " =insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
+    s = emit_line(s, "  " + dn + " = insertvalue { ptr, i64 } " + dn + ".s0, i64 0, 1")
     return s
 }
 
@@ -2928,7 +2928,7 @@ fn emit_builtin_int(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     let dn: String = dest.name
 
     if args[0].ty.kind == TK_FLOAT() {
-        s = emit_line(s, "  " + dn + " =fptosi double " + an + " to i64")
+        s = emit_line(s, "  " + dn + " = fptosi double " + an + " to i64")
     } else {
     if args[0].ty.kind == TK_INT() {
         return emit_copy(s, dest, args[0])
@@ -2945,7 +2945,7 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
     let dn: String = dest.name
 
     if args[0].ty.kind == TK_INT() {
-        s = emit_line(s, "  " + dn + " =sitofp i64 " + an + " to double")
+        s = emit_line(s, "  " + dn + " = sitofp i64 " + an + " to double")
     } else {
     if args[0].ty.kind == TK_FLOAT() {
         return emit_copy(s, dest, args[0])
@@ -3083,7 +3083,7 @@ fn emit_stream_op(st: EmitState, dest: Value, kind: StreamOpKind, source: Value,
     let mut s: EmitState = st
     let dn: String = dest.name
     // Stream operations are runtime-dispatched; minimal LLVM lowering
-    let s2: EmitState = emit_line(s, "  " + dn + " =bitcast ptr " + source.name + " to ptr")
+    let s2: EmitState = emit_line(s, "  " + dn + " = bitcast ptr " + source.name + " to ptr")
     return s2
 }
 
@@ -3382,8 +3382,14 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     let mut st: EmitState = new_emit_state(module_name)
 
     // Module header
+    // v4.127.0: target datalayout + triple match the Python bootstrap defaults
+    // from mapanare/targets.py::TARGET_X86_64_LINUX_GNU. LLVM uses the host
+    // target if these are absent, but emitting them explicitly aligns the
+    // self-hosted output with the bootstrap and removes a per-module diff.
     st = emit_line(st, "; ModuleID = '" + module_name + "'")
     st = emit_line(st, "source_filename = \"" + module_name + "\"")
+    st = emit_line(st, "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"")
+    st = emit_line(st, "target triple = \"x86_64-unknown-linux-gnu\"")
     st = emit_blank(st)
 
     // Format string constants
@@ -3502,22 +3508,19 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
             gi = gi + 1
         }
     }
-    // v4.97.0: TBAA metadata — type-based alias analysis descriptors.
-    // Matches Python bootstrap at emit_llvm_text.py:911-927.
-    // Declares a type hierarchy so LLVM can prove non-aliasing between
-    // int/float/ptr/bool accesses, enabling load/store reordering.
+    // v4.127.0: removed the TBAA tree (nodes !1–!9). It was declared but
+    // never attached to any load/store via `!tbaa !N`, confirmed 100% dead
+    // code by v4.109.0 forensics on the Python bootstrap. The Python
+    // emitter removed it in v4.123.0 (mapanare/emit_llvm_text.py:923-933);
+    // self-hosted now matches.
+    //
+    // The hardcoded version string is honest about its drift surface — the
+    // Python bootstrap reads VERSION at runtime; mnc-stage1 has no file I/O
+    // wired through the bootstrap-build path, so the value is bumped per
+    // release. The next bump moves with v4.128.0.
     st = emit_blank(st)
     st = emit_line(st, "!mapanare.version = !{!0}")
-    st = emit_line(st, "!0 = !{!\"4.97.0\"}")
-    st = emit_line(st, "!1 = !{!\"Mapanare TBAA\"}")
-    st = emit_line(st, "!2 = !{!\"int\", !1}")
-    st = emit_line(st, "!3 = !{!\"float\", !1}")
-    st = emit_line(st, "!4 = !{!\"ptr\", !1}")
-    st = emit_line(st, "!5 = !{!\"bool\", !1}")
-    st = emit_line(st, "!6 = !{!2, !2, i64 0}")
-    st = emit_line(st, "!7 = !{!3, !3, i64 0}")
-    st = emit_line(st, "!8 = !{!4, !4, i64 0}")
-    st = emit_line(st, "!9 = !{!5, !5, i64 0}")
+    st = emit_line(st, "!0 = !{!\"4.127.0\"}")
 
     // Join all lines into a single string
     return join("\n", st.lines)

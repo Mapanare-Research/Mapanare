@@ -7,7 +7,7 @@
 > delta. No expectation of perfect convergence -- just measurable
 > progress.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.126.0
 **Delta review:** No

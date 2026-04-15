@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.127.0] - 2026-04-14
+
+**Phase F closeout release 7 — self-hosted fixed-point refinement: divergence between Python bootstrap and `mnc-stage1` reduced from 9,971 to 9,535 unified-diff lines (-4.4%) across the 39 passing goldens; zero regressions.** Buffer release 2 of the v4.130.0 closeout arc. The strict 3-stage stage2-vs-stage3 measurement remains blocked by docket **Sh.8** (self-hosted `semantic.mn` does not register `None` as a constructor; `mnc-stage1` cannot self-compile `mnc_all.mn` — pre-existing since v4.112.0, out of scope per PLAN.md). This release pivots to the meaningful proxy: Python bootstrap output vs `mnc-stage1` output on the 39 of 65 goldens that compile cleanly through both pipelines, categorizes every divergence by L/C/A/S/W/M, fixes the top cosmetic categories, and records the delta.
+
+**Phase 1+2 baseline + categorization** (`docs/roadmap/v4/v4.127.0/FIXEDPOINT_BASELINE.md`, `baseline.json`). Total diff: **9,971 lines** across 39 tests; 11 of 39 have function-set divergence (Python bootstrap inlines small fns via `inline_small_functions` MIR pass, self-hosted does not — Sh.1 blocker). Bucket totals (block-level classifier on `difflib.SequenceMatcher.get_opcodes()` output): **S (semantic) 7,000 / A (attributes) 328 / C (constants) 301 / M (module hdr) 156 / L (labels) 0 / W (whitespace) 0**. The L/W zeros are an artefact of block-level classification — line-level whitespace divergences (e.g., `%x =alloca i64` instead of `%x = alloca i64`) bundle into S because the surrounding lines also differ.
+
+**Phase 3 cosmetic fixes** — three changes in two self-hosted files, ~30 lines net:
+
+- **`mapanare/self/emit_llvm.mn::emit_mir_module`**: removed the dead TBAA metadata tree (nodes `!1`–`!9`, 9 lines) — declared in the module footer but never attached to any load/store via `!tbaa !N`, confirmed 100% dead by v4.109.0 forensics on the Python bootstrap, removed from the Python emitter at v4.123.0. Self-hosted now matches Python: `!mapanare.version = !{!0}` + `!0 = !{!"4.127.0"}` only. Added explicit `target datalayout` and `target triple` after `source_filename` (matching `mapanare/targets.py::TARGET_X86_64_LINUX_GNU` defaults: `x86_64-unknown-linux-gnu` + the standard layout string). Bumped hardcoded version from stale `4.97.0` to current `4.127.0`.
+- **`mapanare/self/emit_llvm_ir.mn`**: 25 IR-builder functions (alloca, load, add, sub, mul, sdiv, srem, fadd, fsub, fmul, fdiv, frem, fneg, neg, not, icmp, fcmp, and_instr, or_instr, phi, call_ir, gep, insertvalue, extractvalue, bitcast) emitted `%x =foo` instead of the canonical `%x = foo`. LLVM accepts both (`=` is a token separator) but the bootstrap's canonical formatting has the space.
+- **`mapanare/self/emit_llvm.mn`**: 12 inline call sites in the lowerer that built IR strings directly (sitofp, fptosi, alloca, insertvalue, call, bitcast) had the same missing-space bug; fixed in the same regex pass. The `find_alloca_by_search` helper at `emit_llvm.mn:1420` searches for previously-emitted load instructions; its search pattern picked up the new format automatically.
+
+**Phase 4 post-fix delta** (`post_fix.json`): total diff **9,971 → 9,535 lines (-436, -4.4%)**; stage1 output **6,393 → 6,120 lines (-273)** from TBAA removal. Per bucket: M **156 → 78 (-50%)**, S **7,000 → 6,610 (-390)** (the whitespace fix lands here under block-level classification because surrounding lines also differ), A/C unchanged (out of scope). fn-set divergence count unchanged at 11 (Sh.1 is the systemic root cause; closing it requires fixing the `inline_small_functions` MIR pass that produced malformed MIR when re-enabled at v4.111.0 — separate release).
+
+**Sh.8 proxy framing**. PLAN.md explicitly anticipates the Sh.8 blocker: "All fixes are in the self-hosted compiler (`mapanare/self/*.mn`). The Python pipeline is the reference; the self-hosted compiler converges toward it." That framing makes the Python-vs-self-hosted measurement the right one even when 3-stage self-compilation is blocked. Sh.8 itself is not closed by this release — it remains tagged for the v4.131.0+ track.
+
+**Verification**: `mnc-stage1` rebuilds cleanly (3,488,912 bytes stripped, identical to v4.126.0); golden tests through `mnc-stage1` are **39/65 — unchanged from v4.126.0, zero regressions** in previously-passing tests; pytest (excluding bootstrap) is **5,061 passed / 38 failed / 103 skipped / 7 xfailed** — failure set is byte-identical to v4.126.0 HEAD baseline (sorted-FAILED diff is empty); `llvm-as` accepts post-fix IR; lint (`ruff` + `black`) clean on touched files; pre-existing baseline lint debt unchanged. `libmapanare_rt.a` byte-identical to v4.126.0 (no C runtime changes).
+
+**Diff**: 4 files changed (3 self-hosted + 1 new measurement script `scripts/measure_divergence.py`), ~30 net new lines in self-hosted code (–9 TBAA removal, +2 datalayout/triple, +37 whitespace patches that net to no line-count change but normalise output formatting).
+
+**Closes**: nothing on the docket-Sh list (Sh.1, Sh.2, Sh.4, Sh.5, Sh.6, Sh.7, Sh.8 all remain open). Reduces the v4.130.0 panel's divergence-surface evidence number by 4.4%.
+
+**Next**: v4.128.0 — documentation and SPEC sync per the v4.121.0 closeout PLAN.
+
 ## [4.126.0] - 2026-04-14
 
 **Phase F closeout release 6 — golden test push: 27 → 39 native (+12 passes through `mnc-stage1`).** First buffer release of the v4.130.0 closeout arc. Triages all 65 golden tests, fixes the easiest two failure classes (one parser bug closing 2 tests, one harness over-strictness closing 10 tests), documents the remaining 26 with reproducers and dispositions.

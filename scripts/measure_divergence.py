@@ -51,9 +51,7 @@ def compile_bootstrap(mn_file: pathlib.Path) -> tuple[str, str]:
 
 def compile_stage1(mn_file: pathlib.Path) -> tuple[str, str]:
     try:
-        result = subprocess.run(
-            [str(STAGE1), str(mn_file)], capture_output=True, timeout=30
-        )
+        result = subprocess.run([str(STAGE1), str(mn_file)], capture_output=True, timeout=30)
         if result.returncode != 0:
             return "", result.stderr.decode(errors="replace") or f"exit {result.returncode}"
         return result.stdout.decode(errors="replace"), ""
@@ -114,7 +112,13 @@ def classify(removed: list[str], added: list[str]) -> str:
         return "W"
 
     # Constant literal order / format. Look for @.global_* or private constant.
-    if "private constant" in blob_r or "private constant" in blob_a or "@.fmt_" in blob_r or "@.fmt_" in blob_a:
+    has_const = (
+        "private constant" in blob_r
+        or "private constant" in blob_a
+        or "@.fmt_" in blob_r
+        or "@.fmt_" in blob_a
+    )
+    if has_const:
         return "C"
 
     # Label / temp naming: if the line structure matches after replacing
@@ -183,8 +187,7 @@ def main() -> int:
             fn_divergent += 1
 
         diff_lines = sum(
-            1
-            for _ in difflib.unified_diff(b_ir.splitlines(), s_ir.splitlines(), lineterm="")
+            1 for _ in difflib.unified_diff(b_ir.splitlines(), s_ir.splitlines(), lineterm="")
         )
         total_lines_diff += diff_lines
 

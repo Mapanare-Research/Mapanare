@@ -1,0 +1,825 @@
+{
+  "passing_goldens": 39,
+  "total_bootstrap_lines": 3960,
+  "total_stage1_lines": 6120,
+  "total_diff_lines": 9535,
+  "fn_divergent_count": 11,
+  "category_totals": {
+    "L": 0,
+    "C": 301,
+    "A": 328,
+    "S": 6610,
+    "W": 0,
+    "M": 78
+  },
+  "per_test": [
+    {
+      "name": "01_hello",
+      "bootstrap_lines": 33,
+      "stage1_lines": 126,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 149,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 6,
+        "A": 0,
+        "S": 116,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "02_arithmetic",
+      "bootstrap_lines": 47,
+      "stage1_lines": 131,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 167,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 0,
+        "S": 125,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "03_function",
+      "bootstrap_lines": 51,
+      "stage1_lines": 141,
+      "bootstrap_fns": 1,
+      "stage1_fns": 2,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 181,
+      "missing_fns": [],
+      "extra_fns": [
+        "add"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 22,
+        "S": 107,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "04_if_else",
+      "bootstrap_lines": 37,
+      "stage1_lines": 143,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 167,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 7,
+        "A": 0,
+        "S": 126,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "05_for_loop",
+      "bootstrap_lines": 97,
+      "stage1_lines": 154,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 9,
+      "stage1_decls": 100,
+      "diff_lines": 235,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 0,
+        "S": 158,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "06_struct",
+      "bootstrap_lines": 62,
+      "stage1_lines": 136,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 187,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 0,
+        "S": 136,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "07_enum_match",
+      "bootstrap_lines": 68,
+      "stage1_lines": 149,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 201,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 7,
+        "A": 0,
+        "S": 148,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "08_list",
+      "bootstrap_lines": 104,
+      "stage1_lines": 158,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 9,
+      "stage1_decls": 100,
+      "diff_lines": 249,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 0,
+        "S": 186,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "09_string_methods",
+      "bootstrap_lines": 89,
+      "stage1_lines": 139,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 7,
+      "stage1_decls": 100,
+      "diff_lines": 218,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 7,
+        "A": 0,
+        "S": 166,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "10_result",
+      "bootstrap_lines": 143,
+      "stage1_lines": 184,
+      "bootstrap_fns": 2,
+      "stage1_fns": 2,
+      "bootstrap_decls": 3,
+      "stage1_decls": 100,
+      "diff_lines": 302,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 6,
+        "A": 0,
+        "S": 215,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "11_closure",
+      "bootstrap_lines": 103,
+      "stage1_lines": 144,
+      "bootstrap_fns": 2,
+      "stage1_fns": 2,
+      "bootstrap_decls": 6,
+      "stage1_decls": 100,
+      "diff_lines": 232,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 0,
+        "S": 186,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "12_while",
+      "bootstrap_lines": 78,
+      "stage1_lines": 140,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 202,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 0,
+        "S": 141,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "14_nested_struct",
+      "bootstrap_lines": 62,
+      "stage1_lines": 136,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 187,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 0,
+        "S": 136,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "15_multifunction",
+      "bootstrap_lines": 79,
+      "stage1_lines": 149,
+      "bootstrap_fns": 1,
+      "stage1_fns": 3,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 217,
+      "missing_fns": [],
+      "extra_fns": [
+        "double",
+        "triple"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 42,
+        "S": 107,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "16_string_escape",
+      "bootstrap_lines": 57,
+      "stage1_lines": 145,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 192,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 8,
+        "A": 0,
+        "S": 138,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "17_option",
+      "bootstrap_lines": 189,
+      "stage1_lines": 211,
+      "bootstrap_fns": 2,
+      "stage1_fns": 2,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 376,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 7,
+        "A": 0,
+        "S": 269,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "18_method_chain",
+      "bootstrap_lines": 125,
+      "stage1_lines": 156,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 9,
+      "stage1_decls": 100,
+      "diff_lines": 271,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 8,
+        "A": 0,
+        "S": 199,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "23_multi_return",
+      "bootstrap_lines": 109,
+      "stage1_lines": 160,
+      "bootstrap_fns": 1,
+      "stage1_fns": 2,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 258,
+      "missing_fns": [],
+      "extra_fns": [
+        "swap"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 60,
+        "S": 109,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "24_enum_methods",
+      "bootstrap_lines": 110,
+      "stage1_lines": 172,
+      "bootstrap_fns": 2,
+      "stage1_fns": 2,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 264,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 8,
+        "A": 0,
+        "S": 197,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "25_fizzbuzz",
+      "bootstrap_lines": 205,
+      "stage1_lines": 201,
+      "bootstrap_fns": 2,
+      "stage1_fns": 2,
+      "bootstrap_decls": 9,
+      "stage1_decls": 100,
+      "diff_lines": 378,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 8,
+        "A": 0,
+        "S": 262,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "26_generics",
+      "bootstrap_lines": 117,
+      "stage1_lines": 198,
+      "bootstrap_fns": 1,
+      "stage1_fns": 5,
+      "bootstrap_decls": 6,
+      "stage1_decls": 100,
+      "diff_lines": 304,
+      "missing_fns": [],
+      "extra_fns": [
+        "first__Int_Int",
+        "identity__Bool",
+        "identity__Int",
+        "identity__String"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 5,
+        "A": 72,
+        "S": 194,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "27_impl",
+      "bootstrap_lines": 69,
+      "stage1_lines": 159,
+      "bootstrap_fns": 1,
+      "stage1_fns": 3,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 215,
+      "missing_fns": [],
+      "extra_fns": [
+        "Counter_add",
+        "Counter_get"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 5,
+        "A": 37,
+        "S": 118,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "28_traits",
+      "bootstrap_lines": 74,
+      "stage1_lines": 164,
+      "bootstrap_fns": 1,
+      "stage1_fns": 3,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 225,
+      "missing_fns": [],
+      "extra_fns": [
+        "Vec2_magnitude",
+        "double__Int"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 5,
+        "A": 42,
+        "S": 120,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "30_nested_generics",
+      "bootstrap_lines": 116,
+      "stage1_lines": 166,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 269,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 63,
+        "A": 0,
+        "S": 140,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "32_generic_enum",
+      "bootstrap_lines": 40,
+      "stage1_lines": 143,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 170,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 26,
+        "A": 0,
+        "S": 110,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "34_file_io",
+      "bootstrap_lines": 237,
+      "stage1_lines": 194,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 12,
+      "stage1_decls": 100,
+      "diff_lines": 420,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 18,
+        "A": 0,
+        "S": 301,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "35_stdin",
+      "bootstrap_lines": 93,
+      "stage1_lines": 136,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 6,
+      "stage1_decls": 100,
+      "diff_lines": 219,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 7,
+        "A": 0,
+        "S": 171,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "36_crypto",
+      "bootstrap_lines": 148,
+      "stage1_lines": 155,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 8,
+      "stage1_decls": 100,
+      "diff_lines": 293,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 8,
+        "A": 0,
+        "S": 223,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "37_regex",
+      "bootstrap_lines": 164,
+      "stage1_lines": 176,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 9,
+      "stage1_decls": 100,
+      "diff_lines": 329,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 14,
+        "A": 0,
+        "S": 233,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "38_http",
+      "bootstrap_lines": 75,
+      "stage1_lines": 132,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 7,
+      "stage1_decls": 100,
+      "diff_lines": 197,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 6,
+        "A": 0,
+        "S": 153,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "39_gpu_detect",
+      "bootstrap_lines": 145,
+      "stage1_lines": 149,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 9,
+      "stage1_decls": 100,
+      "diff_lines": 277,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 8,
+        "A": 0,
+        "S": 214,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "41_module_let",
+      "bootstrap_lines": 46,
+      "stage1_lines": 131,
+      "bootstrap_fns": 1,
+      "stage1_fns": 2,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 164,
+      "missing_fns": [],
+      "extra_fns": [
+        "get_max"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 5,
+        "A": 16,
+        "S": 110,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "42_module_let_string",
+      "bootstrap_lines": 50,
+      "stage1_lines": 134,
+      "bootstrap_fns": 1,
+      "stage1_fns": 2,
+      "bootstrap_decls": 3,
+      "stage1_decls": 100,
+      "diff_lines": 173,
+      "missing_fns": [],
+      "extra_fns": [
+        "get_max"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 5,
+        "A": 12,
+        "S": 128,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "43_module_let_math",
+      "bootstrap_lines": 50,
+      "stage1_lines": 136,
+      "bootstrap_fns": 1,
+      "stage1_fns": 2,
+      "bootstrap_decls": 3,
+      "stage1_decls": 100,
+      "diff_lines": 175,
+      "missing_fns": [],
+      "extra_fns": [
+        "compute_threads"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 5,
+        "A": 12,
+        "S": 128,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "45_ffi_bind",
+      "bootstrap_lines": 99,
+      "stage1_lines": 163,
+      "bootstrap_fns": 2,
+      "stage1_fns": 3,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 242,
+      "missing_fns": [],
+      "extra_fns": [
+        "add"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 24,
+        "A": 0,
+        "S": 155,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "50_match_or_patterns",
+      "bootstrap_lines": 178,
+      "stage1_lines": 190,
+      "bootstrap_fns": 2,
+      "stage1_fns": 2,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 337,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 10,
+        "A": 0,
+        "S": 237,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "54_const_basic",
+      "bootstrap_lines": 87,
+      "stage1_lines": 132,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 5,
+      "stage1_decls": 100,
+      "diff_lines": 209,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 6,
+        "A": 0,
+        "S": 164,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "58_const_scope",
+      "bootstrap_lines": 62,
+      "stage1_lines": 167,
+      "bootstrap_fns": 1,
+      "stage1_fns": 2,
+      "bootstrap_decls": 2,
+      "stage1_decls": 100,
+      "diff_lines": 213,
+      "missing_fns": [],
+      "extra_fns": [
+        "check"
+      ],
+      "buckets": {
+        "L": 0,
+        "C": 9,
+        "A": 13,
+        "S": 139,
+        "W": 0,
+        "M": 2
+      }
+    },
+    {
+      "name": "65_list_int_indexing",
+      "bootstrap_lines": 262,
+      "stage1_lines": 220,
+      "bootstrap_fns": 1,
+      "stage1_fns": 1,
+      "bootstrap_decls": 9,
+      "stage1_decls": 100,
+      "diff_lines": 471,
+      "missing_fns": [],
+      "extra_fns": [],
+      "buckets": {
+        "L": 0,
+        "C": 0,
+        "A": 0,
+        "S": 345,
+        "W": 0,
+        "M": 2
+      }
+    }
+  ]
+}

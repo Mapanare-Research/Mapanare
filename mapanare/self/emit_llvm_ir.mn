@@ -102,7 +102,7 @@ fn resolve_mir_type(t: MIRType) -> String {
 // ---------------------------------------------------------------------------
 
 fn llvm_alloca(name: String, ty: String) -> String {
-    return "  " + name + " =alloca " + ty
+    return "  " + name + " = alloca " + ty
 }
 
 fn llvm_store(ty: String, value: String, ptr: String) -> String {
@@ -110,7 +110,7 @@ fn llvm_store(ty: String, value: String, ptr: String) -> String {
 }
 
 fn llvm_load(name: String, ty: String, ptr: String) -> String {
-    return "  " + name + " =load " + ty + ", ptr " + ptr
+    return "  " + name + " = load " + ty + ", ptr " + ptr
 }
 
 // v4.32.0 Phase 1.2: signed integer arithmetic emits `nsw` for parity
@@ -120,55 +120,55 @@ fn llvm_load(name: String, ty: String, ptr: String) -> String {
 // optimizations (InstCombine, LoopStrengthReduce, LoopVectorize).
 // Unsigned overflow is still fine because Mapanare's Int is signed i64.
 fn emit_add(name: String, ty: String, left: String, right: String) -> String {
-    return "  " + name + " =add nsw " + ty + " " + left + ", " + right
+    return "  " + name + " = add nsw " + ty + " " + left + ", " + right
 }
 
 fn emit_sub(name: String, ty: String, left: String, right: String) -> String {
-    return "  " + name + " =sub nsw " + ty + " " + left + ", " + right
+    return "  " + name + " = sub nsw " + ty + " " + left + ", " + right
 }
 
 fn emit_mul(name: String, ty: String, left: String, right: String) -> String {
-    return "  " + name + " =mul nsw " + ty + " " + left + ", " + right
+    return "  " + name + " = mul nsw " + ty + " " + left + ", " + right
 }
 
 fn emit_sdiv(name: String, ty: String, left: String, right: String) -> String {
-    return "  " + name + " =sdiv " + ty + " " + left + ", " + right
+    return "  " + name + " = sdiv " + ty + " " + left + ", " + right
 }
 
 fn emit_srem(name: String, ty: String, left: String, right: String) -> String {
-    return "  " + name + " =srem " + ty + " " + left + ", " + right
+    return "  " + name + " = srem " + ty + " " + left + ", " + right
 }
 
 fn emit_fadd(name: String, left: String, right: String) -> String {
-    return "  " + name + " =fadd double " + left + ", " + right
+    return "  " + name + " = fadd double " + left + ", " + right
 }
 
 fn emit_fsub(name: String, left: String, right: String) -> String {
-    return "  " + name + " =fsub double " + left + ", " + right
+    return "  " + name + " = fsub double " + left + ", " + right
 }
 
 fn emit_fmul(name: String, left: String, right: String) -> String {
-    return "  " + name + " =fmul double " + left + ", " + right
+    return "  " + name + " = fmul double " + left + ", " + right
 }
 
 fn emit_fdiv(name: String, left: String, right: String) -> String {
-    return "  " + name + " =fdiv double " + left + ", " + right
+    return "  " + name + " = fdiv double " + left + ", " + right
 }
 
 fn emit_frem(name: String, left: String, right: String) -> String {
-    return "  " + name + " =frem double " + left + ", " + right
+    return "  " + name + " = frem double " + left + ", " + right
 }
 
 fn emit_fneg(name: String, operand: String) -> String {
-    return "  " + name + " =fneg double " + operand
+    return "  " + name + " = fneg double " + operand
 }
 
 fn emit_neg(name: String, ty: String, operand: String) -> String {
-    return "  " + name + " =sub nsw " + ty + " 0, " + operand
+    return "  " + name + " = sub nsw " + ty + " 0, " + operand
 }
 
 fn emit_not(name: String, operand: String) -> String {
-    return "  " + name + " =xor i1 " + operand + ", true"
+    return "  " + name + " = xor i1 " + operand + ", true"
 }
 
 // ---------------------------------------------------------------------------
@@ -176,11 +176,11 @@ fn emit_not(name: String, operand: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_icmp(name: String, cmp: String, ty: String, left: String, right: String) -> String {
-    return "  " + name + " =icmp " + cmp + " " + ty + " " + left + ", " + right
+    return "  " + name + " = icmp " + cmp + " " + ty + " " + left + ", " + right
 }
 
 fn emit_fcmp(name: String, cmp: String, left: String, right: String) -> String {
-    return "  " + name + " =fcmp o" + cmp + " double " + left + ", " + right
+    return "  " + name + " = fcmp o" + cmp + " double " + left + ", " + right
 }
 
 // ---------------------------------------------------------------------------
@@ -188,11 +188,11 @@ fn emit_fcmp(name: String, cmp: String, left: String, right: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_and_instr(name: String, left: String, right: String) -> String {
-    return "  " + name + " =and i1 " + left + ", " + right
+    return "  " + name + " = and i1 " + left + ", " + right
 }
 
 fn emit_or_instr(name: String, left: String, right: String) -> String {
-    return "  " + name + " =or i1 " + left + ", " + right
+    return "  " + name + " = or i1 " + left + ", " + right
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +208,7 @@ fn emit_cbranch(cond: String, true_label: String, false_label: String) -> String
 }
 
 fn emit_phi_instr(name: String, ty: String, val1: String, bb1: String, val2: String, bb2: String) -> String {
-    return "  " + name + " =phi " + ty + " [ " + val1 + ", %" + bb1 + " ], [ " + val2 + ", %" + bb2 + " ]"
+    return "  " + name + " = phi " + ty + " [ " + val1 + ", %" + bb1 + " ], [ " + val2 + ", %" + bb2 + " ]"
 }
 
 fn emit_switch_hdr(subject: String, default_label: String) -> String {
@@ -224,7 +224,7 @@ fn emit_switch_case(value: String, label: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_call_ir(name: String, ret_ty: String, callee: String, args: String) -> String {
-    return "  " + name + " =call " + ret_ty + " @" + callee + "(" + args + ")"
+    return "  " + name + " = call " + ret_ty + " @" + callee + "(" + args + ")"
 }
 
 fn emit_call_void(callee: String, args: String) -> String {
@@ -244,17 +244,17 @@ fn emit_ret_void() -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_gep(name: String, ty: String, ptr: String, idx: String) -> String {
-    return "  " + name + " =getelementptr inbounds " + ty + ", ptr " + ptr + ", i64 0, i64 " + idx
+    return "  " + name + " = getelementptr inbounds " + ty + ", ptr " + ptr + ", i64 0, i64 " + idx
 }
 
 fn emit_insertvalue(name: String, struct_ty: String, agg: String, val: String, val_ty: String, idx: String) -> String {
-    return "  " + name + " =insertvalue " + struct_ty + " " + agg + ", " + val_ty + " " + val + ", " + idx
+    return "  " + name + " = insertvalue " + struct_ty + " " + agg + ", " + val_ty + " " + val + ", " + idx
 }
 
 fn emit_extractvalue(name: String, struct_ty: String, agg: String, idx: String) -> String {
-    return "  " + name + " =extractvalue " + struct_ty + " " + agg + ", " + idx
+    return "  " + name + " = extractvalue " + struct_ty + " " + agg + ", " + idx
 }
 
 fn emit_bitcast(name: String, src_ty: String, val: String, dst_ty: String) -> String {
-    return "  " + name + " =bitcast " + src_ty + " " + val + " to " + dst_ty
+    return "  " + name + " = bitcast " + src_ty + " " + val + " to " + dst_ty
 }
