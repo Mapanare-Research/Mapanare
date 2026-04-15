@@ -1,3 +1,10 @@
+// ====================================================================
+// Known issue (v4.129.0): this example does not currently compile.
+// Cause: multi-line list literal grammar limitation (docket Gr.1)
+// See docs/roadmap/v4/v4.129.0/EXAMPLES_REPORT.md for root cause and
+// docket reference.
+// ====================================================================
+
 // basic_stream.mn — Streaming LLM chat (post-hoc chunking)
 //
 // Prerequisites: Ollama running at http://localhost:11434

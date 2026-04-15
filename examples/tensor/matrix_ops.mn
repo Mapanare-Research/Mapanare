@@ -1,3 +1,10 @@
+// ====================================================================
+// Known issue (v4.129.0): this example does not currently compile.
+// Cause: multi-line tensor literal grammar limitation (docket Gr.1)
+// See docs/roadmap/v4/v4.129.0/EXAMPLES_REPORT.md for root cause and
+// docket reference.
+// ====================================================================
+
 // Tensor example: matrix creation and element access (v4.42.0 + v4.43.0)
 //
 // Demonstrates:

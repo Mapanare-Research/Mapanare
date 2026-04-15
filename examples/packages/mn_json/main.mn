@@ -1,3 +1,10 @@
+// ====================================================================
+// Known issue (v4.129.0): this example does not currently compile.
+// Cause: extern "Python" fn removed in v4.29.0 — use `mapanare bind --lang python`
+// See docs/roadmap/v4/v4.129.0/EXAMPLES_REPORT.md for root cause and
+// docket reference.
+// ====================================================================
+
 // JSON utilities for Mapanare via Python interop.
 
 extern "Python" fn json::loads(s: String) -> String
