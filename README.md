@@ -12,7 +12,7 @@
 
 Built after years of hitting Python's limits in AI-native, concurrent, and tensor-heavy software.
 
-Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler (38,000+ lines of `.mn`) compiles itself. Across 5 cross-language benchmarks Mapanare's geometric mean is **50× faster than Python**, **1.06× on par with Rust**, and **4.85× slower than C (gcc -O2)** — see [benchmarks/PHASE_C_RESULTS.md](benchmarks/PHASE_C_RESULTS.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
+Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler (38,000+ lines of `.mn`) compiles itself. Across 6 cross-language benchmarks Mapanare's geometric mean is **46× faster than Python**, **on par with Rust (1.00×)**, and **4.52× slower than C (gcc -O2)** — see [benchmarks/FINAL_REPORT_v4.130.md](benchmarks/FINAL_REPORT_v4.130.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
 
@@ -25,7 +25,7 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.116.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-4.125.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-4845+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
@@ -389,34 +389,40 @@ mapanare emit-wasm --binary hello.mn     # Emit WAT + compile to WASM
 
 ## Benchmarks
 
-Mapanare compiles to native code via LLVM. Across 5 correct-output
+Mapanare compiles to native code via LLVM. Across 6 correct-output
 workloads (compute, allocation, dispatch, string), Mapanare's geometric
-mean is **50× faster than Python**, **effectively tied with Rust
-(1.06×)**, **2.1× slower than Go**, and **4.85× slower than C (gcc -O2)**.
-The arena allocator beats Rust on small struct allocation. See
-[`benchmarks/PHASE_C_RESULTS.md`](benchmarks/PHASE_C_RESULTS.md) for full
-methodology, per-benchmark ratios, memory + binary size tables, and
-honest caveats.
+mean is **46× faster than Python**, **on par with Rust (1.00×)**,
+**2.1× slower than Go**, and **4.52× slower than C (gcc -O2)**.
+The arena allocator beats Rust on small struct allocation; the v4.124.0
+unboxed-enum fix puts Mapanare ahead of Rust on enum-heavy dispatch. See
+[`benchmarks/FINAL_REPORT_v4.130.md`](benchmarks/FINAL_REPORT_v4.130.md)
+for full methodology, per-benchmark ratios, memory + binary size tables,
+and honest caveats.
 
-### Performance (v4.110.0, LLVM -O2, median of 10 runs, ms)
+### Performance (v4.125.0, LLVM -O2, median of 10 runs, ms)
 
 | Benchmark | C (gcc) | Rust | Go | **Mapanare** | Python |
 |-----------|--------:|-----:|----:|-------------:|-------:|
-| fib_recursive       | 11.20 | 18.61 | 34.17 | **20.56** | 786.11 |
-| struct_alloc        |  0.60 |  1.77 |  0.02 |  **1.26** | 202.41 |
-| enum_match          |  0.14 |  1.93 |  0.20 |  **3.07** |  76.36 |
-| prime_sieve         |  2.02 |  3.43 |  2.09 |  **3.43** | 373.69 |
-| string_concat       |  0.07 |  1.28 | 31.67 |  **1.36** |   9.69 |
+| fib_recursive       | 11.06 | 17.32 | 33.67 | **20.16** | 803.41 |
+| quicksort           |  0.34 |  1.94 |  0.38 |  **2.39** |  80.13 |
+| struct_alloc        |  0.59 |  1.48 |  0.02 |  **1.20** | 204.40 |
+| enum_match          |  0.13 |  1.44 |  0.19 |  **1.31** |  78.61 |
+| prime_sieve         |  1.97 |  3.62 |  1.98 |  **3.62** | 362.42 |
+| string_concat       |  0.07 |  1.33 | 37.04 |  **1.27** |   9.31 |
 
 > WSL2 Ubuntu 24.04, LLVM 18.1.3, gcc 13.3.0, rustc 1.94.1, Go 1.22.5,
 > Python 3.12.3. `/usr/bin/time -v` for peak RSS, `time.perf_counter()` for
 > wall. Reproduce: `python3 benchmarks/cross_language/run_benchmarks.py --runs 10`
 
-**Headline moment (v4.108.0).** Auto-StringBuilder took `string_concat`
-from 94.57 ms to 1.36 ms — **70× faster**, **109× less memory**,
-**7× faster than Python**, **23× faster than Go**, nearly tied with Rust.
-One known correctness gap: `quicksort` fails a strict checksum check due
-to a `List<Int>` indexing bug (docket Qs.1, open for v4.111.0+).
+**Headline moment (v4.124.0).** Unboxed enum payloads took `enum_match`
+from 3.03 ms to 1.31 ms — **2.31× faster**, **2.2× less memory**,
+**0.91× of Rust** (Mapanare faster). Variants whose payloads fit in
+`{i64, i64, i64}` (Int / Float / Bool / pointer-sized fields, ≤ 2 fields
+per variant) skip `malloc` entirely on construction and the pointer
+chase on match. Earlier headline (v4.108.0): auto-StringBuilder took
+`string_concat` from 94.57 ms to 1.36 ms — **70× faster**, nearly tied
+with Rust. All 36 cross-language cells produce correct checksums; the
+v4.122.0 Qs.1 fix closed the last `List<Int>` indexing gap.
 
 ### Python Transpile Benchmarks (zero manual edits)
 

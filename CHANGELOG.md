@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.125.0] - 2026-04-14
+
+**Phase F closeout release 5 — benchmark refresh + 5-run flaky audit + docs (pre-panel evidence base for v4.130.0).** Pure measurement and documentation. Zero compiler/runtime code changes (5 version-string edits to `benchmarks/cross_language/run_benchmarks.py` for housekeeping only). The v4.130.0 panel's evidence base now exists.
+
+**Cross-language benchmark refresh** (`benchmarks/cross_language/v4.125.0-results.json`, 6 workloads × 6 language configs × 10 runs, identical hardware/toolchain to v4.118.0):
+
+- Mapanare geomean **3.07 → 2.66 ms** vs C gcc geomean **0.56 → 0.59 ms** = **5.46× → 4.52× slower than C gcc** (17% closing of the C gap).
+- **On par with Rust (1.00×, was 1.13×)**, **2.14× slower than Go**, **46× faster than Python (was 37×)**.
+- **`enum_match` is the v4.124.0 win materialising at the benchmark level**: 3.026 → **1.308 ms (2.31× speedup)** — Mapanare moves from 1.80× of Rust to **0.91× of Rust** (Mapanare faster). Memory peak 4,740 → 2,144 KB (2.2× reduction).
+- Other workloads within ±10% of v4.118.0 (jitter band; no regressions).
+- All 36 cross-language cells produce correct checksums.
+
+**Async benchmarks** (`benchmarks/async/v4.125.0-async.json`, 5 workloads × 3 language configs × 10 runs):
+
+- Mapanare geomean **2.13 → 1.95 ms** (within noise; no async runtime changes shipped in the closeout arc).
+- **45× faster than Python asyncio**, **1.55× slower than Go goroutines**.
+- All 5 checksums correct.
+
+**5-run flaky audit** (`docs/roadmap/v4/v4.125.0/FLAKY_AUDIT.md`):
+
+- pytest 5x sequential (excluding bootstrap), pairwise diff of sorted failure sets across all 4 adjacent pairs is **empty**. **Zero flaky tests.**
+- Failure set byte-identical to v4.124.0 HEAD baseline; the failures are pre-existing An.1 carry-forward, deterministic, on the v4.126.0+ track.
+
+### Added
+
+- `benchmarks/FINAL_REPORT_v4.130.md` — canonical v4.130.0 panel performance evidence. 7 numerical tables (wall / memory / binary / LOC / speedup vs C / progress / async), 6 ASCII per-workload position charts, methodology + reproducibility checklist. Supersedes `benchmarks/FINAL_REPORT_v4.120.md`.
+- `docs/roadmap/v4/v4.125.0/V5_READINESS.md` — closure walk against the v4.120.0 readiness ledger. **5 of 8 "would embarrass v5" items closed** (Rt.1, Qs.1, dead `optimizer.py`, TBAA, 22/22 deterministic test failures); 3 remain on the v5.x track (Sh.4-7 self-hosted gaps; Sh.8 fixed-point; package manager).
+- `docs/roadmap/v4/v4.125.0/FLAKY_AUDIT.md` — 5-run pytest log with pairwise diff verification.
+- `docs/roadmap/v4/v4.125.0/SESSION_REPORT.md` — release session notes.
+- `benchmarks/cross_language/v4.125.0-results.json` — raw per-run benchmark data.
+- `benchmarks/async/v4.125.0-async.json` — raw per-run async data.
+
+### Changed
+
+- `README.md` — version badge **4.116.0 → 4.125.0**; performance section headline **50× faster than Python / 1.06× of Rust / 4.85× of C gcc** updated to **46× faster than Python / on par with Rust (1.00×) / 4.52× of C gcc**; new v4.124.0 enum_match headline (2.31× faster, 2.2× less memory, 0.91× of Rust); benchmark table refreshed with v4.125.0 numbers; reference target switched from `PHASE_C_RESULTS.md` to `FINAL_REPORT_v4.130.md`.
+- `benchmarks/cross_language/run_benchmarks.py` — 5 hardcoded version-string edits (4.118.0 → 4.125.0). No logic changes.
+- `docs/roadmap/v4/README.md` — v4.125.0 row added.
+- `docs/roadmap/ROADMAP.md` — Where We Are header updated to v4.125.0; v4.124.0 archived.
+- `CLAUDE.md` — current-version section updated.
+
+### New dockets opened
+
+- **ABI.1** — by-value 24-byte struct return ABI on inline enums. Replaces the algorithmic half of Rt.1 (closed v4.124.0) with a smaller v5.x ABI follow-up. Documented as the residual ~10× gap to C gcc on `enum_match`. Closure path: SRet-aware calling-convention changes or LLVM-optimiser SROA-of-struct-return aggression. v5.x track.
+
+### Verification
+
+- `make test` (excluding bootstrap): **5054 passed / 39 failed / 103 skipped / 7 xfailed**, identical failure set across 5 sequential runs.
+- `libmapanare_rt.a` byte-identical to v4.124.0 (zero runtime changes).
+- `mnc-stage1` golden tests: **27/65** (unchanged from v4.124.0; zero regressions — the self-hosted path was untouched this release).
+
 ## [4.124.0] - 2026-04-14
 
 **Phase F closeout release 4 — Rt.1: unboxed enum payloads for

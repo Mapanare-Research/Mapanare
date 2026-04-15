@@ -8,7 +8,7 @@
 > 5-run flaky audit, publishes updated benchmarks, and updates all
 > documentation. No code changes. Pure measurement and documentation.
 
-**Status:** PLANNED
+**Status:** DONE (shipped 2026-04-14)
 **Breaking:** No
 **Prerequisite:** v4.124.0
 **Delta review:** No
