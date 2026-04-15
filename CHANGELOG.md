@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.129.0] - 2026-04-15
+
+**Phase F closeout release 9 — documentation and SPEC sync: 10 SPEC edits (6 WRONG + 4 STALE), 29 examples verified (16/29 compile), `scripts/concat_self.sh` latent bug fixed.** Buffer release 4 of the v4.131.0 closeout arc (v4.130.0 takes the pre-panel prep slot; v4.131.0 is the v5 gate panel attempt 3). Pure documentation and verification — no compiler, runtime, or self-hosted `.mn` code changed.
+
+**SPEC audit** (`docs/roadmap/v4/v4.129.0/SPEC_AUDIT.md`): targeted review of the 10 SPEC sections most affected by v4.117.0–v4.128.0 changes, plus a light version-reference scan of the full file. Classified every audited section as OK / STALE / WRONG with evidence. Result: 8 OK, 4 STALE, 6 WRONG.
+
+**SPEC fixes** (`docs/SPEC.md`, 11 edits, +115/−44 lines):
+- Header version `4.116.0` → `4.129.0`; sync discipline note refreshed
+- §2.1 `const` keyword note rewritten — the stale v4.27.0 note ("no `ConstDef` AST node, no immutability, no compile-time evaluation") was false on all three points since v4.55.0 (`ConstDef` exists at `mapanare/ast_nodes.py:789`, the semantic checker registers under `SymbolKind.CONST` and folds initializers, v4.126.0 restored self-hosted parser recognition). Note now documents the full non-linear history (v4.18.0 alias → v4.27.0 removal → v4.55.0 reintroduction) and current semantics
+- §2.1.1 master keyword-list row for `const`: "Parser-reserved; use module-level `let`" → "Compile-time constant: `const N: T = EXPR`"
+- §3.2 generic containers: added `Future<T>` row (TypeKind.FUTURE, v4.69.0) — previously missing from the table despite being described in §29.3
+- §3.6 duplicate heading fixed: Struct Types and Type Inference Rules were both labeled §3.6. Renumbered Struct Types → §3.7, Enum Types → §3.8, Option/Result → §3.9, Agent → §3.10, Tensor → §3.11, Type Aliases → §3.12, Function Types → §3.13. No existing cross-references required updating.
+- §6.3 closures: the example `(x: Int) => x + offset` contradicted the note that typed lambda params aren't supported. Parser verified to reject the typed form; example corrected to `(x) => x + offset`
+- §27.1 TypeKind count: "25 variants" → "29 variants (see `mapanare/types.py::TypeKind`)"
+- §28 standard library preamble: dropped the "(v0.9.0)" tag and "Seven native stdlib modules" claim; the 7-row legacy table replaced with a 10-row domain-grouped table that points at `stdlib/` as canonical (actual module count is 35+)
+- Appendix B pipeline diagram: removed "Python (legacy)" branch; added C Source → gcc/clang path
+- Appendix B "Python Transpiler (Legacy)" subsection replaced with "C Backend (v3.0.0+)" and "WebAssembly Backend (v2.0.0+)" subsections; blockquote preserves v4.58.0 emit_python_mir.py deletion as historical record
+- Appendix B MIR optimizer passes list: documented -O level gating, added v4.108.0 auto-StringBuilder pass, cross-referenced v4.109.0 `OPT_ROI_ANALYSIS.md` forensics
+
+All 45 `tests/test_spec.py` tests pass post-edit (test file asserts section names exist, not specific numbering — renumbering was safe).
+
+**Examples verification** (`docs/roadmap/v4/v4.129.0/EXAMPLES_REPORT.md`): ran `python3 -m mapanare check` against all 29 `.mn` files under `examples/`. Result: **16 PASS, 13 FAIL**. Failures fall into 5 categories:
+- 5 files: multi-line list/tensor literal (grammar limitation, pre-existing — docket **Gr.1** opened)
+- 3 files: `stdlib/gpu/{tensor,kernel}.mn` use `device.DeviceKind` as a qualified type reference in type position (grammar rejects — docket **Gr.2** opened; stdlib bug, blocks the experimental/gpu/ examples)
+- 2 files: `@Counter()` stale agent-spawn syntax (SPEC §9.3 specifies `spawn Name`)
+- 2 files: `extern "Python" fn` removed in v4.29.0 (≈150 releases ago)
+- 1 file: module-level `let mut` invisible to function bodies (docket **Sem.1** opened; minimal reproducer confirms)
+
+Per PROMPT.md Decision 2 ("document the failure; do not teach workarounds for bugs"), each failing example now carries a 5-line header comment citing the cause and pointing at `EXAMPLES_REPORT.md`. No example code was rewritten and no bugs were worked around.
+
+**Cookbook + guides sync**:
+- `docs/guides/getting_started.md`: refreshed §5 self-hosted compiler status — stale v4.111.0 snapshot ("26/64 passing, Sh.1-Sh.9 open") replaced with v4.128.0 reality ("39/65 passing, per-test triage in v4.126.0 GOLDEN_TRIAGE.md, Sh.11 opened v4.128.0 as the new fixed-point blocker"); corrected stale tensor cross-reference (§7 trait system → §3.11 tensor types after v4.129.0 renumbering); `const` docket row updated with v4.126.0 parser fix note.
+- `README.md`: version badge 4.125.0 → 4.129.0; "Drop Into Any Stack" status note rewritten (binding generation is shipped as `mapanare bind --lang {python,ts,go}`, not the claimed-as-planned `--bindings` flag); roadmap table "Current" marker moved to v4.129.0, added v4.117.0–v4.128.0 summary row and v4.130.0/v4.131.0 planned rows.
+- `docs/guides/async.md`, `docs/guides/debugging.md`, `docs/cookbook/async.md`: audited, content current, no edits.
+
+**Latent bug fix — `scripts/concat_self.sh`**: the bash module-concat script omitted `mir_opt.mn` from its `MODULES` array (flagged in the v4.128.0 SESSION_REPORT). Added `mir_opt.mn` between `emit_llvm_ir.mn` and `emit_llvm.mn` to match `scripts/concat_self.py`'s `MODULE_ORDER`. Verified post-fix: bash output body is byte-identical to Python output body (17,195 lines each); only the header comment differs (by design — each script names itself) plus one trailing newline.
+
+**Verification**: `tests/test_spec.py` (45 tests), `tests/test_readme.py`, `tests/test_python_emitter_deleted.py` → **83 passed**. No code change means no pytest regressions possible. `mnc-stage1` rebuild not required (no self-hosted source touched). `libmapanare_rt.a` byte-identical to v4.128.0.
+
+**New dockets opened**:
+- **Gr.1** — multi-line list/tensor literal grammar support (5 examples affected; low priority)
+- **Gr.2** — qualified type refs in type position (2 stdlib modules, 3 examples affected; medium priority)
+- **Sem.1** — module-level `let mut` scoping (1 example; low priority)
+
+**Dockets closed** (documentation side): the v4.120.0 panel's Boa and Coral documentation findings (SPEC currency, stdlib count, TypeKind count, Python-transpiler description) now match implementation.
+
+**Diff**: 20 files changed. Breakdown:
+- 1 compiler/runtime code file (`scripts/concat_self.sh`, +1 line)
+- 1 SPEC file (`docs/SPEC.md`, +115/−44)
+- 3 documentation files (README, guides/getting_started, CHANGELOG)
+- 13 examples/*.mn (header comments, no logic change)
+- 2 roadmap artifacts (PLAN.md rewrite + SPEC_AUDIT.md + EXAMPLES_REPORT.md, all under `docs/roadmap/v4/v4.129.0/`)
+- 1 SESSION_REPORT.md (this release)
+
+**Next**: v4.130.0 — pre-panel prep, third flaky audit (5× `make test` clean), valgrind + ASan sweeps on golden tests, `MEASUREMENTS.md` draft for v4.131.0. Was this release's original PLAN.md scope before PROMPT.md was edited per v4.128.0 SESSION_REPORT recommendation.
+
 ## [4.128.0] - 2026-04-15
 
 **Phase F closeout release 8 — self-hosted fixed-point refinement (continuation of v4.127.0): Sh.8 closed at the source level, brace-spacing normalized, ModuleID path-stripped. Divergence between Python bootstrap and `mnc-stage1` on the 39 passing goldens reduced from 9,608 to 9,425 unified-diff lines (−183, −1.9%). M bucket fully closed (78 → 0). Zero golden regressions.** Buffer release 3 of the v4.130.0 closeout arc.

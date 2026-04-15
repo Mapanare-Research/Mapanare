@@ -4,7 +4,7 @@
 > against reality. Fix stale sections. Verify examples. No new
 > content — just make existing documentation honest.
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.128.0
 **Delta review:** No
