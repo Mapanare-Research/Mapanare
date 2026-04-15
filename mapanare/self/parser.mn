@@ -377,6 +377,13 @@ fn is_definition_start(tt: String) -> Bool {
     if tt == "KW_IMPL" { return true }
     if tt == "KW_EXTERN" { return true }
     if tt == "KW_LET" { return true }
+    // v4.126.0: KW_CONST + KW_TRAIT were missing — module-level const
+    // and trait declarations were being misparsed as statements
+    // (silently consumed, no scope binding). Closes 54_const_basic and
+    // 58_const_scope golden tests; parse_definition already handles
+    // both keywords via parse_const_def / inline parse path.
+    if tt == "KW_CONST" { return true }
+    if tt == "KW_TRAIT" { return true }
     if tt == "AT" { return true }
     return false
 }

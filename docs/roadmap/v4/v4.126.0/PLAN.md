@@ -6,13 +6,14 @@
 > pass count higher. Starting from ~26/64 through mnc-stage1, the
 > target is 40/64+ by fixing the easiest failures first.
 
-**Status:** PLANNED
+**Status:** DONE
 **Breaking:** No
 **Prerequisite:** v4.125.0
 **Delta review:** No
 **Full panel:** No (deferred to v4.130.0)
 **Estimated work:** 1 sprint
 **Theme:** Low-hanging golden test fixes. Push 26 -> 40+ through mnc-stage1.
+**Result:** 27 -> 39 of 65 (+12). Target 40+ missed by 1 test. See SESSION_REPORT.md.
 
 ---
 
