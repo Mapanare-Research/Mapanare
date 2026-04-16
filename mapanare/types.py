@@ -307,7 +307,9 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "sb_to_string": STRING_TYPE,  # sb_to_string(sb) -> String (consumes builder)
     # Async/await builtins (v4.73.0+)
     "block_on": UNKNOWN_TYPE,  # block_on(Future<T>) -> T; type inferred from future
-    "spawn": TypeInfo(kind=TypeKind.FUTURE),  # v4.93.0: spawn async task for multi-threaded execution
+    "spawn": TypeInfo(
+        kind=TypeKind.FUTURE
+    ),  # v4.93.0: spawn async task for multi-threaded execution
     "__mn_file_read_async": TypeInfo(kind=TypeKind.FUTURE),  # v4.92.0: async file read
     # C runtime functions used by the self-hosted compiler driver (main.mn)
     "__mn_argc": INT_TYPE,
@@ -452,9 +454,7 @@ def validate_matmul_shapes(
     return None
 
 
-def broadcast_shape(
-    a: tuple[int, ...], b: tuple[int, ...]
-) -> tuple[int, ...] | None:
+def broadcast_shape(a: tuple[int, ...], b: tuple[int, ...]) -> tuple[int, ...] | None:
     """Compute the broadcast result shape using NumPy rules (v4.44.0).
 
     Aligns from trailing dimensions. Each dimension pair must be equal or
@@ -478,9 +478,7 @@ def broadcast_shape(
     return tuple(result)
 
 
-def broadcast_incompatible_dim(
-    a: tuple[int, ...], b: tuple[int, ...]
-) -> int | None:
+def broadcast_incompatible_dim(a: tuple[int, ...], b: tuple[int, ...]) -> int | None:
     """Return the 0-based dimension index (from trailing) where broadcasting fails.
 
     Used for rustc-quality diagnostics. Returns None if shapes are compatible.

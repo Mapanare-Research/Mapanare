@@ -16,16 +16,57 @@ from mapanare.lsp.workspace import ReferenceSite, SymbolDef, WorkspaceIndex
 _IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 # Mapanare keywords (cannot be used as symbol names)
-_KEYWORDS = frozenset({
-    "fn", "let", "mut", "if", "else", "match", "for", "while", "loop",
-    "return", "break", "continue", "struct", "enum", "trait", "impl",
-    "type", "import", "export", "pub", "agent", "pipe", "spawn", "sync",
-    "send", "signal", "stream", "true", "false", "in", "as", "self",
-    "extern", "async", "await", "try", "assert",
-    # Bilingual keywords
-    "pon", "si", "sino", "para", "mientras", "retorna", "tipo",
-    "importar", "exportar",
-})
+_KEYWORDS = frozenset(
+    {
+        "fn",
+        "let",
+        "mut",
+        "if",
+        "else",
+        "match",
+        "for",
+        "while",
+        "loop",
+        "return",
+        "break",
+        "continue",
+        "struct",
+        "enum",
+        "trait",
+        "impl",
+        "type",
+        "import",
+        "export",
+        "pub",
+        "agent",
+        "pipe",
+        "spawn",
+        "sync",
+        "send",
+        "signal",
+        "stream",
+        "true",
+        "false",
+        "in",
+        "as",
+        "self",
+        "extern",
+        "async",
+        "await",
+        "try",
+        "assert",
+        # Bilingual keywords
+        "pon",
+        "si",
+        "sino",
+        "para",
+        "mientras",
+        "retorna",
+        "tipo",
+        "importar",
+        "exportar",
+    }
+)
 
 
 def validate_rename(
@@ -72,9 +113,7 @@ def apply_rename(
     return changes
 
 
-def _add_edit(
-    changes: dict[str, list[dict]], path: Path, span: object, new_name: str
-) -> None:
+def _add_edit(changes: dict[str, list[dict]], path: Path, span: object, new_name: str) -> None:
     """Add a text edit to the changes map."""
     uri = f"file://{path}"
     edit = {

@@ -1,7 +1,9 @@
 """Benchmark 2: Quicksort — Python equivalent."""
 
+
 def lcg_next(seed):
     return (seed * 1103515245 + 12345) % 2147483648
+
 
 def partition(arr, lo, hi):
     pivot = arr[hi]
@@ -13,13 +15,16 @@ def partition(arr, lo, hi):
     arr[i], arr[hi] = arr[hi], arr[i]
     return i
 
+
 def qsort(arr, lo, hi):
     if lo < hi:
         p = partition(arr, lo, hi)
         qsort(arr, lo, p - 1)
         qsort(arr, p + 1, hi)
 
+
 import sys
+
 sys.setrecursionlimit(100000)
 
 arr = []

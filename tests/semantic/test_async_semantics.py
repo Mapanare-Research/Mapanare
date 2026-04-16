@@ -15,7 +15,6 @@ from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker
 from mapanare.types import TypeKind
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -102,7 +101,9 @@ class TestAwaitOutsideAsync:
             async fn some_future() -> Int { return 1 }
         """)
         errors = _check_errors(source)
-        assert any("only be used inside" in e for e in errors), f"Expected await-outside-async error, got: {errors}"
+        assert any(
+            "only be used inside" in e for e in errors
+        ), f"Expected await-outside-async error, got: {errors}"
 
     def test_await_in_async_fn_is_ok(self) -> None:
         """await in an async fn produces no error (for the await itself)."""
@@ -134,7 +135,9 @@ class TestAwaitOnNonFuture:
             }
         """)
         errors = _check_errors(source)
-        assert any("requires a Future" in e for e in errors), f"Expected Future error, got: {errors}"
+        assert any(
+            "requires a Future" in e for e in errors
+        ), f"Expected Future error, got: {errors}"
 
     def test_await_on_future_is_ok(self) -> None:
         """await on Future<Int> (from async fn call) produces no type error."""

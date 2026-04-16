@@ -1,5 +1,7 @@
 """Async benchmark 4: Mixed CPU + I/O simulation (Python asyncio baseline)."""
+
 import asyncio
+
 
 async def cpu_task(n: int) -> int:
     total = 0
@@ -7,8 +9,10 @@ async def cpu_task(n: int) -> int:
         total += i
     return total
 
+
 async def io_task(id: int) -> int:
     return id
+
 
 async def mixed() -> int:
     total = 0
@@ -19,9 +23,11 @@ async def mixed() -> int:
             total += await io_task(i)
     return total
 
+
 def main():
     result = asyncio.run(mixed())
     print(f"checksum = {result}")
+
 
 if __name__ == "__main__":
     main()

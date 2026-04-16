@@ -1,7 +1,9 @@
 """Benchmark: Compile-self proxy — Python equivalent."""
 
+
 def make_grid(w, h):
     return [(i * 7 + 13) % 256 for i in range(w * h)]
+
 
 def simulate_step(grid, w, h):
     s = 0
@@ -15,9 +17,12 @@ def simulate_step(grid, w, h):
             s += (center + north + south + east + west) // 5
     return s
 
+
 def fibonacci(n):
-    if n <= 1: return n
+    if n <= 1:
+        return n
     return fibonacci(n - 1) + fibonacci(n - 2)
+
 
 def collatz_steps(n):
     val, steps = n, 0
@@ -30,6 +35,7 @@ def collatz_steps(n):
         steps += 1
     return steps
 
+
 def main():
     w, h = 50, 50
     grid = make_grid(w, h)
@@ -37,6 +43,7 @@ def main():
     fib_result = fibonacci(25)
     collatz_sum = sum(collatz_steps(i) for i in range(1, 1001))
     print(f"checksum = {sim_result + fib_result + collatz_sum}")
+
 
 if __name__ == "__main__":
     main()

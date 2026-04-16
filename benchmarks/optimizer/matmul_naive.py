@@ -1,4 +1,5 @@
 """Benchmark 3: Naive matrix multiply — Python equivalent."""
+
 n = 64
 n2 = n * n
 a = [(i * 3 + 7) % 100 for i in range(n2)]

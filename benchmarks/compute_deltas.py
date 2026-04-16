@@ -33,8 +33,7 @@ v82_map = {e["benchmark"]: e["median_ms"] for e in v4_82["mapanare"] if e.get("o
 
 # v4.107.0 Mapanare lookup (same harness as v4.110.0)
 v107_map = {
-    e["benchmark"]: e["wall_median_ms"]
-    for e in v4_107["results"] if e["language"] == "Mapanare O2"
+    e["benchmark"]: e["wall_median_ms"] for e in v4_107["results"] if e["language"] == "Mapanare O2"
 }
 
 

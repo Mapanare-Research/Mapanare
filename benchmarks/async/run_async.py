@@ -53,7 +53,9 @@ def _find_tool(name: str) -> str | None:
     return None
 
 
-def _run_timed(cmd: list[str], timeout: int = 120, env: dict | None = None) -> tuple[float, str, int]:
+def _run_timed(
+    cmd: list[str], timeout: int = 120, env: dict | None = None
+) -> tuple[float, str, int]:
     """Run a command, return (wall_seconds, stdout, returncode)."""
     start = time.monotonic()
     try:
@@ -81,7 +83,9 @@ def compile_mn(mn_path: Path, out_dir: Path) -> Path | None:
     # emit-llvm
     r = subprocess.run(
         ["python3", "-m", "mapanare", "emit-llvm", str(mn_path), "-o", str(ll)],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     if r.returncode != 0:
         print(f"  FAIL emit: {r.stderr[:200]}")
@@ -94,7 +98,9 @@ def compile_mn(mn_path: Path, out_dir: Path) -> Path | None:
         return None
 
     # opt -O2
-    r = subprocess.run([tools["opt"], "-O2", str(bc), "-o", str(opt_bc)], capture_output=True, text=True)
+    r = subprocess.run(
+        [tools["opt"], "-O2", str(bc), "-o", str(opt_bc)], capture_output=True, text=True
+    )
     if r.returncode != 0:
         print(f"  FAIL opt: {r.stderr[:200]}")
         return None
@@ -102,7 +108,8 @@ def compile_mn(mn_path: Path, out_dir: Path) -> Path | None:
     # llc
     r = subprocess.run(
         [tools["llc"], "-filetype=obj", "-relocation-model=pic", str(opt_bc), "-o", str(obj)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if r.returncode != 0:
         print(f"  FAIL llc: {r.stderr[:200]}")
@@ -111,7 +118,8 @@ def compile_mn(mn_path: Path, out_dir: Path) -> Path | None:
     # link
     r = subprocess.run(
         [tools["clang"], str(obj), str(RUNTIME_LIB), "-lm", "-lpthread", "-ldl", "-o", str(binary)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if r.returncode != 0:
         print(f"  FAIL link: {r.stderr[:200]}")
@@ -132,10 +140,14 @@ def bench_mapanare(name: str, num_runs: int) -> list[dict]:
         td = Path(tmpdir)
         binary = compile_mn(mn_path, td)
         if binary is None:
-            results.append({
-                "benchmark": name, "language": "mapanare",
-                "status": "compile_fail", "median_ms": -1,
-            })
+            results.append(
+                {
+                    "benchmark": name,
+                    "language": "mapanare",
+                    "status": "compile_fail",
+                    "median_ms": -1,
+                }
+            )
             return results
 
         # Warmup
@@ -165,17 +177,19 @@ def bench_mapanare(name: str, num_runs: int) -> list[dict]:
         min_ms = min(times) if times else -1
         max_ms = max(times) if times else -1
 
-        results.append({
-            "benchmark": name,
-            "language": "mapanare",
-            "median_ms": round(median_ms, 2),
-            "min_ms": round(min_ms, 2),
-            "max_ms": round(max_ms, 2),
-            "runs": num_runs,
-            "output": output,
-            "correct": correct,
-            "status": "ok" if correct else "wrong_checksum",
-        })
+        results.append(
+            {
+                "benchmark": name,
+                "language": "mapanare",
+                "median_ms": round(median_ms, 2),
+                "min_ms": round(min_ms, 2),
+                "max_ms": round(max_ms, 2),
+                "runs": num_runs,
+                "output": output,
+                "correct": correct,
+                "status": "ok" if correct else "wrong_checksum",
+            }
+        )
         status = "OK" if correct else "FAIL"
         print(f"  {name} Mapanare: {median_ms:.1f}ms ({status})")
 
@@ -201,10 +215,14 @@ def bench_python(name: str, num_runs: int) -> list[dict]:
 
     median = statistics.median(times) if times else -1
     print(f"  {name} Python: {median:.1f}ms")
-    return [{
-        "benchmark": name, "language": "python",
-        "median_ms": round(median, 2), "output": output,
-    }]
+    return [
+        {
+            "benchmark": name,
+            "language": "python",
+            "median_ms": round(median, 2),
+            "output": output,
+        }
+    ]
 
 
 def bench_go(name: str, num_runs: int) -> list[dict]:
@@ -212,17 +230,28 @@ def bench_go(name: str, num_runs: int) -> list[dict]:
     go_path = BENCH_DIR / f"{name}.go"
     if not go_path.exists() or not shutil.which("go"):
         if go_path.exists():
-            return [{"benchmark": name, "language": "go", "median_ms": -1, "note": "go not installed"}]
+            return [
+                {"benchmark": name, "language": "go", "median_ms": -1, "note": "go not installed"}
+            ]
         return []
 
     with tempfile.TemporaryDirectory() as td:
         binary = Path(td) / name
         r = subprocess.run(
             ["go", "build", "-o", str(binary), str(go_path)],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         if r.returncode != 0:
-            return [{"benchmark": name, "language": "go", "median_ms": -1, "note": f"build fail: {r.stderr[:100]}"}]
+            return [
+                {
+                    "benchmark": name,
+                    "language": "go",
+                    "median_ms": -1,
+                    "note": f"build fail: {r.stderr[:100]}",
+                }
+            ]
 
         times = []
         output = ""
@@ -237,7 +266,9 @@ def bench_go(name: str, num_runs: int) -> list[dict]:
 
         median = statistics.median(times) if times else -1
         print(f"  {name} Go: {median:.1f}ms")
-        return [{"benchmark": name, "language": "go", "median_ms": round(median, 2), "output": output}]
+        return [
+            {"benchmark": name, "language": "go", "median_ms": round(median, 2), "output": output}
+        ]
 
 
 def main() -> None:

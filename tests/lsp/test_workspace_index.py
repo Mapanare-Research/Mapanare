@@ -23,19 +23,23 @@ def _make_workspace(files: dict[str, str]) -> tuple[Path, WorkspaceIndex]:
 
 class TestWorkspaceScan:
     def test_scan_root_finds_all_files(self) -> None:
-        _, ws = _make_workspace({
-            "main.mn": "fn main() { print(\"hello\") }",
-            "helpers.mn": "fn helper() -> Int { return 42 }",
-            "types.mn": "struct Point { x: Int, y: Int }",
-        })
+        _, ws = _make_workspace(
+            {
+                "main.mn": 'fn main() { print("hello") }',
+                "helpers.mn": "fn helper() -> Int { return 42 }",
+                "types.mn": "struct Point { x: Int, y: Int }",
+            }
+        )
         assert len(ws.files) == 3
 
     def test_scan_collects_top_level_symbols(self) -> None:
-        _, ws = _make_workspace({
-            "main.mn": "fn main() { print(\"hello\") }",
-            "helpers.mn": "pub fn helper() -> Int { return 42 }\nfn internal_fn() -> Int { return 1 }",
-            "types.mn": "struct Point { x: Int, y: Int }\nenum Color { Red, Green, Blue }",
-        })
+        _, ws = _make_workspace(
+            {
+                "main.mn": 'fn main() { print("hello") }',
+                "helpers.mn": "pub fn helper() -> Int { return 42 }\nfn internal_fn() -> Int { return 1 }",
+                "types.mn": "struct Point { x: Int, y: Int }\nenum Color { Red, Green, Blue }",
+            }
+        )
         all_syms = ws.all_symbols()
         names = {s.name for s in all_syms}
         assert "main" in names
@@ -46,9 +50,11 @@ class TestWorkspaceScan:
         assert len(all_syms) == 5
 
     def test_lookup_by_module_and_name(self) -> None:
-        _, ws = _make_workspace({
-            "helpers.mn": "pub fn helper() -> Int { return 42 }",
-        })
+        _, ws = _make_workspace(
+            {
+                "helpers.mn": "pub fn helper() -> Int { return 42 }",
+            }
+        )
         sym = ws.lookup("helpers", "helper")
         assert sym is not None
         assert sym.kind == "fn"
@@ -56,26 +62,32 @@ class TestWorkspaceScan:
         assert sym.visibility == "pub"
 
     def test_lookup_by_name_across_modules(self) -> None:
-        _, ws = _make_workspace({
-            "a.mn": "fn shared_name() -> Int { return 1 }",
-            "b.mn": "fn shared_name() -> Int { return 2 }",
-        })
+        _, ws = _make_workspace(
+            {
+                "a.mn": "fn shared_name() -> Int { return 1 }",
+                "b.mn": "fn shared_name() -> Int { return 2 }",
+            }
+        )
         results = ws.lookup_by_name("shared_name")
         assert len(results) == 2
 
     def test_lookup_nonexistent_returns_none(self) -> None:
-        _, ws = _make_workspace({
-            "main.mn": "fn main() { print(\"hello\") }",
-        })
+        _, ws = _make_workspace(
+            {
+                "main.mn": 'fn main() { print("hello") }',
+            }
+        )
         assert ws.lookup("main", "nonexistent") is None
         assert ws.lookup_by_name("nonexistent") == []
 
 
 class TestWorkspaceRebuild:
     def test_rebuild_file_replaces_old_symbols(self) -> None:
-        root, ws = _make_workspace({
-            "helpers.mn": "fn old_fn() -> Int { return 1 }",
-        })
+        root, ws = _make_workspace(
+            {
+                "helpers.mn": "fn old_fn() -> Int { return 1 }",
+            }
+        )
         assert ws.lookup("helpers", "old_fn") is not None
 
         # Rebuild with new content
@@ -86,9 +98,11 @@ class TestWorkspaceRebuild:
         assert ws.lookup("helpers", "new_fn") is not None
 
     def test_rebuild_file_removes_deleted_symbols(self) -> None:
-        root, ws = _make_workspace({
-            "helpers.mn": "fn old_fn() -> Int { return 1 }\nfn doomed() -> Int { return 0 }",
-        })
+        root, ws = _make_workspace(
+            {
+                "helpers.mn": "fn old_fn() -> Int { return 1 }\nfn doomed() -> Int { return 0 }",
+            }
+        )
         assert ws.lookup("helpers", "doomed") is not None
 
         # Rebuild without doomed
@@ -97,10 +111,12 @@ class TestWorkspaceRebuild:
         assert ws.lookup("helpers", "old_fn") is not None
 
     def test_handles_file_with_parse_errors(self) -> None:
-        _, ws = _make_workspace({
-            "broken.mn": "fn broken( { invalid syntax",
-            "good.mn": "fn good() -> Int { return 1 }",
-        })
+        _, ws = _make_workspace(
+            {
+                "broken.mn": "fn broken( { invalid syntax",
+                "good.mn": "fn good() -> Int { return 1 }",
+            }
+        )
         # Broken file should not crash the index
         assert ws.lookup("good", "good") is not None
         assert len(ws.files) == 2  # Both files tracked even if broken

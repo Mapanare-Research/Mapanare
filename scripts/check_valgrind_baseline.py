@@ -15,6 +15,7 @@ Compares a fresh valgrind summary TSV (produced by
 Usage:
     check_valgrind_baseline.py <fresh.tsv> <baseline.tsv>
 """
+
 from __future__ import annotations
 
 import sys

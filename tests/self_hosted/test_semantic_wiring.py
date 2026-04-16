@@ -13,9 +13,7 @@ import tempfile
 
 import pytest
 
-MNC_STAGE1 = os.path.join(
-    os.path.dirname(__file__), "..", "..", "mapanare", "self", "mnc-stage1"
-)
+MNC_STAGE1 = os.path.join(os.path.dirname(__file__), "..", "..", "mapanare", "self", "mnc-stage1")
 
 
 def _needs_stage1():
@@ -57,7 +55,7 @@ class TestAcceptsCorrectPrograms:
         result = _compile(
             "fn might_fail(ok: Bool) -> Result<Int, String> {\n"
             "  if ok { return Ok(42) }\n"
-            "  return Err(\"nope\")\n"
+            '  return Err("nope")\n'
             "}\n"
             "fn do_work() -> Result<Int, String> {\n"
             "  let v: Int = might_fail(true)?\n"
@@ -78,8 +76,8 @@ class TestAcceptsCorrectPrograms:
             "fn main() {\n"
             "  let x: Int = 42\n"
             "  match x {\n"
-            "    0 => { print(\"zero\") },\n"
-            "    _ => { print(\"other\") }\n"
+            '    0 => { print("zero") },\n'
+            '    _ => { print("other") }\n'
             "  }\n"
             "}\n"
         )
@@ -108,7 +106,7 @@ class TestRejectsBrokenPrograms:
         _needs_stage1()
 
     def test_type_mismatch_in_let(self):
-        result = _compile("fn main() {\n  let x: Int = \"hello\"\n}\n")
+        result = _compile('fn main() {\n  let x: Int = "hello"\n}\n')
         assert result.returncode == 1
         assert "Type mismatch" in result.stderr or "type mismatch" in result.stderr.lower()
 
@@ -148,6 +146,6 @@ class TestRejectsBrokenPrograms:
         assert "work" in result.stderr
 
     def test_if_condition_not_bool(self):
-        result = _compile("fn main() {\n  if 42 { print(\"yes\") }\n}\n")
+        result = _compile('fn main() {\n  if 42 { print("yes") }\n}\n')
         assert result.returncode == 1
         assert "Bool" in result.stderr

@@ -253,6 +253,7 @@ class Linter:
         elif isinstance(expr, IndexExpr):
             self._collect_names_expr(expr.object)
             from mapanare.ast_nodes import IndexItem
+
             for it in expr.indices:
                 if isinstance(it, IndexItem):
                     if it.expr:
@@ -349,6 +350,7 @@ class Linter:
             # arr[i] = val — mark arr as mutated
             self._collect_names_expr(expr.target.object)
             from mapanare.ast_nodes import IndexItem
+
             for it in expr.target.indices:
                 if isinstance(it, IndexItem):
                     if it.expr:

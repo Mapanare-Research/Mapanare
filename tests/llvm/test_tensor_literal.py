@@ -63,7 +63,9 @@ class TestTensorLiteralLLVM:
         assert "__mn_tensor_get_i64" in ir
 
     def test_tensor_shape_dim_builtin(self):
-        ir = _emit("fn main() { let a = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; print(str(tensor_shape_dim(a, 0))) }")
+        ir = _emit(
+            "fn main() { let a = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; print(str(tensor_shape_dim(a, 0))) }"
+        )
         assert "__mn_tensor_shape_dim" in ir
 
     def test_tensor_print_builtin(self):

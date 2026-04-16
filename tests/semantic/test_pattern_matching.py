@@ -42,10 +42,10 @@ from mapanare.pattern_matching import (
     specialize,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _int_lit(v: int) -> LiteralPattern:
     return LiteralPattern(value=IntLiteral(value=v))
@@ -117,42 +117,52 @@ def _enum_abc() -> TypeContext:
 class TestPatternClassification:
     def test_wildcard_is_wildcard(self):
         from mapanare.pattern_matching import _is_wildcard
+
         assert _is_wildcard(_wild())
 
     def test_ident_is_wildcard_without_variants(self):
         from mapanare.pattern_matching import _is_wildcard
+
         assert _is_wildcard(_ident("x"))
 
     def test_ident_is_not_wildcard_when_variant(self):
         from mapanare.pattern_matching import _is_wildcard
+
         assert not _is_wildcard(_ident("Some"), {"Some", "None"})
 
     def test_constructor_not_wildcard(self):
         from mapanare.pattern_matching import _is_wildcard
+
         assert not _is_wildcard(_ctor("Some", _wild()))
 
     def test_get_constructor_tag_for_ctor(self):
         from mapanare.pattern_matching import _get_constructor_tag
+
         assert _get_constructor_tag(_ctor("Some", _wild())) == "Some"
 
     def test_get_constructor_tag_for_literal(self):
         from mapanare.pattern_matching import _get_constructor_tag
+
         assert _get_constructor_tag(_int_lit(42)) == "42"
 
     def test_get_constructor_tag_for_wildcard_is_none(self):
         from mapanare.pattern_matching import _get_constructor_tag
+
         assert _get_constructor_tag(_wild()) is None
 
     def test_get_constructor_tag_for_variant_ident(self):
         from mapanare.pattern_matching import _get_constructor_tag
+
         assert _get_constructor_tag(_ident("A"), {"A", "B"}) == "A"
 
     def test_literal_tag_int(self):
         from mapanare.pattern_matching import _literal_tag
+
         assert _literal_tag(_int_lit(42).value) == "42"
 
     def test_literal_tag_bool(self):
         from mapanare.pattern_matching import _literal_tag
+
         # BoolLiteral.value is a Python bool; _literal_tag uses the
         # "true"/"false" check on BoolLiteral specifically
         tag_t = _literal_tag(_bool_lit(True).value)
@@ -162,14 +172,17 @@ class TestPatternClassification:
 
     def test_literal_tag_string(self):
         from mapanare.pattern_matching import _literal_tag
+
         assert _literal_tag(_str_lit("hello").value) == "hello"
 
     def test_literal_tag_float(self):
         from mapanare.pattern_matching import _literal_tag
+
         assert _literal_tag(_float_lit(3.14).value) == "3.14"
 
     def test_constructor_arity(self):
         from mapanare.pattern_matching import _constructor_arity
+
         assert _constructor_arity(_ctor("Some", _wild())) == 1
         assert _constructor_arity(_ctor("Pair", _wild(), _wild())) == 2
         assert _constructor_arity(_ctor("None")) == 0

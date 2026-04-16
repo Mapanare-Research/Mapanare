@@ -54,9 +54,9 @@ def test_emit_fails_on_unparseable_source(tmp_path):
     pr = full_pipeline(src, tmp_path)
 
     assert not pr.passed, "Pipeline must NOT pass on unparseable source"
-    assert "emit" in pr.errors, (
-        f"Expected 'emit' stage to capture the error, got errors={list(pr.errors.keys())}"
-    )
+    assert (
+        "emit" in pr.errors
+    ), f"Expected 'emit' stage to capture the error, got errors={list(pr.errors.keys())}"
     assert pr.errors["emit"], "Error message for 'emit' must be non-empty"
 
 
@@ -87,9 +87,9 @@ define i32 @main() {
     tool = _find_tool("llvm-as")
     result = _run([tool, str(ll), "-o", str(tmp_path / "broken.bc")])
 
-    assert result.returncode != 0, (
-        f"llvm-as accepted invalid IR — harness gate broken. stdout={result.stdout!r}"
-    )
+    assert (
+        result.returncode != 0
+    ), f"llvm-as accepted invalid IR — harness gate broken. stdout={result.stdout!r}"
     assert result.stderr, "llvm-as produced no stderr diagnostic on invalid IR"
 
 
@@ -162,10 +162,10 @@ def test_stdout_mismatch_does_not_silently_pass(tmp_path, monkeypatch):
     src = tmp_path / "test_stdout.mn"
     _write(
         src,
-        '''fn main() {
+        """fn main() {
     print("actual output")
 }
-''',
+""",
     )
 
     # Committed expected is WRONG on purpose
@@ -174,16 +174,12 @@ def test_stdout_mismatch_does_not_silently_pass(tmp_path, monkeypatch):
 
     pr = full_pipeline(src, tmp_path)
 
-    assert not pr.passed, (
-        "Harness silently passed a stdout mismatch — fail-loud regression"
-    )
-    assert "stdout" in pr.errors, (
-        f"Expected 'stdout' stage error, got errors={list(pr.errors.keys())}"
-    )
+    assert not pr.passed, "Harness silently passed a stdout mismatch — fail-loud regression"
+    assert (
+        "stdout" in pr.errors
+    ), f"Expected 'stdout' stage error, got errors={list(pr.errors.keys())}"
     err = pr.errors["stdout"]
-    assert "Expected:" in err and "Got:" in err, (
-        f"Harness diff message regressed: {err!r}"
-    )
+    assert "Expected:" in err and "Got:" in err, f"Harness diff message regressed: {err!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -202,10 +198,10 @@ def test_harness_accepts_hello_world(tmp_path, monkeypatch):
     src = tmp_path / "ok.mn"
     _write(
         src,
-        '''fn main() {
+        """fn main() {
     print("hello")
 }
-''',
+""",
     )
     _write(fake_expected / "ok.expected", "hello\n")
 

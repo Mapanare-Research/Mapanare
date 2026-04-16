@@ -679,6 +679,7 @@ class DocumentAnalysis:
         elif isinstance(expr, IndexExpr):
             self._visit_expr(expr.object)
             from mapanare.ast_nodes import IndexItem
+
             for it in expr.indices:
                 if isinstance(it, IndexItem):
                     if it.expr:

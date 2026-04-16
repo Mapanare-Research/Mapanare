@@ -188,9 +188,7 @@ def generate_report(results: list[dict], xml_path: Path) -> str:
 
 def main() -> None:
     xml_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("integration-results.xml")
-    out_path = (
-        Path(sys.argv[2]) if len(sys.argv) > 2 else Path("tests/integration/RESULTS.md")
-    )
+    out_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("tests/integration/RESULTS.md")
 
     if not xml_path.exists():
         print(f"error: {xml_path} not found", file=sys.stderr)

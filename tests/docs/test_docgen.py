@@ -54,6 +54,7 @@ class TestDocCommentParsing:
         errors = check(ast, filename="test.mn")
         assert len(errors) == 0
 
+
 class TestDocGenerator:
     """Test HTML doc generation from doc items."""
 

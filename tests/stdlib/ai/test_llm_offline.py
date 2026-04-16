@@ -15,7 +15,9 @@ class TestProviderBodyBuilders:
 
     OPENAI_FIXTURE = '{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"max_tokens":4096,"temperature":0.7,"stream":false}'
     ANTHROPIC_FIXTURE = '{"model":"claude-sonnet-4-20250514","system":"","messages":[{"role":"user","content":"hi"}],"max_tokens":4096,"temperature":0.7,"stream":false}'
-    OLLAMA_FIXTURE = '{"model":"llama3.2","messages":[{"role":"user","content":"hi"}],"stream":false}'
+    OLLAMA_FIXTURE = (
+        '{"model":"llama3.2","messages":[{"role":"user","content":"hi"}],"stream":false}'
+    )
 
     def test_provider_enum_variants(self):
         src = open("stdlib/ai/llm.mn").read()

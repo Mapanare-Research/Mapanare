@@ -91,21 +91,25 @@ def complete_import(prefix: str, workspace: WorkspaceIndex) -> list[CompletionCa
         module = entry.path.stem
         if module not in seen and module.startswith(prefix):
             seen.add(module)
-            candidates.append(CompletionCandidate(
-                label=module,
-                kind="module",
-                detail=f"Module ({len(entry.symbols)} symbols)",
-                sort_text=f"0_{module}",
-            ))
+            candidates.append(
+                CompletionCandidate(
+                    label=module,
+                    kind="module",
+                    detail=f"Module ({len(entry.symbols)} symbols)",
+                    sort_text=f"0_{module}",
+                )
+            )
 
     # Add stdlib hint
     if "stdlib".startswith(prefix) and "stdlib" not in seen:
-        candidates.append(CompletionCandidate(
-            label="stdlib",
-            kind="module",
-            detail="Standard library",
-            sort_text="0_stdlib",
-        ))
+        candidates.append(
+            CompletionCandidate(
+                label="stdlib",
+                kind="module",
+                detail="Standard library",
+                sort_text="0_stdlib",
+            )
+        )
 
     return candidates
 
@@ -116,23 +120,27 @@ def complete_type(workspace: WorkspaceIndex) -> list[CompletionCandidate]:
 
     # Builtin types (highest priority)
     for name, desc in _BUILTIN_TYPES:
-        candidates.append(CompletionCandidate(
-            label=name,
-            kind="type",
-            detail=desc,
-            sort_text=f"0_{name}",
-        ))
+        candidates.append(
+            CompletionCandidate(
+                label=name,
+                kind="type",
+                detail=desc,
+                sort_text=f"0_{name}",
+            )
+        )
 
     # User-defined types from workspace
     for sym in workspace.all_symbols():
         if sym.kind in ("struct", "enum", "trait", "type"):
-            candidates.append(CompletionCandidate(
-                label=sym.name,
-                kind=sym.kind,
-                detail=sym.detail or f"{sym.kind} {sym.name}",
-                documentation=f"Defined in `{sym.module}`",
-                sort_text=f"1_{sym.name}",
-            ))
+            candidates.append(
+                CompletionCandidate(
+                    label=sym.name,
+                    kind=sym.kind,
+                    detail=sym.detail or f"{sym.kind} {sym.name}",
+                    documentation=f"Defined in `{sym.module}`",
+                    sort_text=f"1_{sym.name}",
+                )
+            )
 
     return candidates
 
@@ -147,27 +155,51 @@ def complete_field_method(
     type_lower = receiver_type.lower()
     if type_lower.startswith("option"):
         for name, sig, doc in _OPTION_METHODS:
-            candidates.append(CompletionCandidate(
-                label=name, kind="method", detail=sig, documentation=doc,
-                insert_text=f"{name}($1)$0" if "fn(" in sig and sig.count(",") > 0 else f"{name}()",
-            ))
+            candidates.append(
+                CompletionCandidate(
+                    label=name,
+                    kind="method",
+                    detail=sig,
+                    documentation=doc,
+                    insert_text=(
+                        f"{name}($1)$0" if "fn(" in sig and sig.count(",") > 0 else f"{name}()"
+                    ),
+                )
+            )
     elif type_lower.startswith("result"):
         for name, sig, doc in _RESULT_METHODS:
-            candidates.append(CompletionCandidate(
-                label=name, kind="method", detail=sig, documentation=doc,
-                insert_text=f"{name}($1)$0" if "fn(" in sig and sig.count(",") > 0 else f"{name}()",
-            ))
+            candidates.append(
+                CompletionCandidate(
+                    label=name,
+                    kind="method",
+                    detail=sig,
+                    documentation=doc,
+                    insert_text=(
+                        f"{name}($1)$0" if "fn(" in sig and sig.count(",") > 0 else f"{name}()"
+                    ),
+                )
+            )
     elif type_lower.startswith("list"):
         for name, sig, doc in _LIST_METHODS:
-            candidates.append(CompletionCandidate(
-                label=name, kind="method", detail=sig, documentation=doc,
-                insert_text=f"{name}($1)$0" if "()" not in sig.split("->")[0] else f"{name}()",
-            ))
+            candidates.append(
+                CompletionCandidate(
+                    label=name,
+                    kind="method",
+                    detail=sig,
+                    documentation=doc,
+                    insert_text=f"{name}($1)$0" if "()" not in sig.split("->")[0] else f"{name}()",
+                )
+            )
     elif type_lower == "string":
         for name, sig, doc in _STRING_METHODS:
-            candidates.append(CompletionCandidate(
-                label=name, kind="method", detail=sig, documentation=doc,
-            ))
+            candidates.append(
+                CompletionCandidate(
+                    label=name,
+                    kind="method",
+                    detail=sig,
+                    documentation=doc,
+                )
+            )
 
     # User-defined struct fields
     for sym in workspace.all_symbols():
@@ -179,11 +211,13 @@ def complete_field_method(
                 for field_name in fields_str.split(","):
                     field_name = field_name.strip()
                     if field_name:
-                        candidates.append(CompletionCandidate(
-                            label=field_name,
-                            kind="field",
-                            detail=f"field of {receiver_type}",
-                        ))
+                        candidates.append(
+                            CompletionCandidate(
+                                label=field_name,
+                                kind="field",
+                                detail=f"field of {receiver_type}",
+                            )
+                        )
             break
 
     return candidates
@@ -199,29 +233,35 @@ def complete_identifiers(
     # Current module symbols first
     for sym in workspace.all_symbols():
         if sym.module == current_module:
-            candidates.append(CompletionCandidate(
-                label=sym.name,
-                kind=_sym_kind_to_completion(sym.kind),
-                detail=sym.detail or f"{sym.kind} {sym.name}",
-                sort_text=f"0_{sym.name}",
-            ))
+            candidates.append(
+                CompletionCandidate(
+                    label=sym.name,
+                    kind=_sym_kind_to_completion(sym.kind),
+                    detail=sym.detail or f"{sym.kind} {sym.name}",
+                    sort_text=f"0_{sym.name}",
+                )
+            )
         elif sym.visibility == "pub":
-            candidates.append(CompletionCandidate(
-                label=sym.name,
-                kind=_sym_kind_to_completion(sym.kind),
-                detail=sym.detail or f"{sym.kind} {sym.name}",
-                documentation=f"From `{sym.module}`",
-                sort_text=f"2_{sym.name}",
-            ))
+            candidates.append(
+                CompletionCandidate(
+                    label=sym.name,
+                    kind=_sym_kind_to_completion(sym.kind),
+                    detail=sym.detail or f"{sym.kind} {sym.name}",
+                    documentation=f"From `{sym.module}`",
+                    sort_text=f"2_{sym.name}",
+                )
+            )
 
     # Builtin functions
     for name in ("print", "len", "str", "int", "float", "Some", "Ok", "Err", "signal", "stream"):
-        candidates.append(CompletionCandidate(
-            label=name,
-            kind="function",
-            detail="builtin",
-            sort_text=f"3_{name}",
-        ))
+        candidates.append(
+            CompletionCandidate(
+                label=name,
+                kind="function",
+                detail="builtin",
+                sort_text=f"3_{name}",
+            )
+        )
 
     return candidates
 

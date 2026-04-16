@@ -184,8 +184,12 @@ def run_test_file(filepath: str, filter_pattern: str | None = None) -> list[Test
         compile_result = subprocess.run(clang_cmd, capture_output=True, text=True, timeout=60)
         if compile_result.returncode != 0:
             return [
-                TestResult(name=n, file=filepath, passed=False,
-                           error=f"clang compile error: {compile_result.stderr}")
+                TestResult(
+                    name=n,
+                    file=filepath,
+                    passed=False,
+                    error=f"clang compile error: {compile_result.stderr}",
+                )
                 for n in test_names
             ]
 

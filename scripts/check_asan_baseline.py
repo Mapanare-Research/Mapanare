@@ -13,6 +13,7 @@ Compares a fresh ASan summary TSV (produced by
 Usage:
     check_asan_baseline.py <fresh.tsv> <baseline.tsv>
 """
+
 from __future__ import annotations
 
 import sys

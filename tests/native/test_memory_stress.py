@@ -137,7 +137,7 @@ class TestMemoryStressPython:
             "`print(i)`, not a string concat — so the emitter correctly "
             "does not emit per-iteration arena cleanup, which makes the "
             "`mn_arena_create` assertion stale. Rewriting the fixture to "
-            "use an actual concat (`s = s + \"x\"`) requires touching "
+            'use an actual concat (`s = s + "x"`) requires touching '
             "the Python emitter's arena heuristic to verify it still "
             "triggers, which is out of scope for v4.133.0 hygiene. "
             "Reopen when Tm.1 lands — either rewrite the fixture and "

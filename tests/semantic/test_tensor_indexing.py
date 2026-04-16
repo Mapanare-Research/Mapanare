@@ -23,7 +23,9 @@ class TestTensorIndexingSemantics:
         assert len(c.errors) == 0
 
     def test_3d_index_no_error(self):
-        c = _check("let a = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]; let x = a[0, 1, 0]")
+        c = _check(
+            "let a = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]; let x = a[0, 1, 0]"
+        )
         assert len(c.errors) == 0
 
     def test_under_rank_is_error(self):

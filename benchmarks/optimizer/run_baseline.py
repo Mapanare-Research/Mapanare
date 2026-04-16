@@ -71,7 +71,9 @@ def compile_mn(mn_path: Path, opt_level: str, out_dir: Path) -> Path | None:
     # emit-llvm
     r = subprocess.run(
         ["python3", "-m", "mapanare", "emit-llvm", str(mn_path), "-o", str(ll)],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     if r.returncode != 0:
         print(f"  FAIL emit: {r.stderr[:100]}")
@@ -86,7 +88,8 @@ def compile_mn(mn_path: Path, opt_level: str, out_dir: Path) -> Path | None:
     # opt
     r = subprocess.run(
         [tools["opt"], f"-{opt_level}", str(bc), "-o", str(opt_bc)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if r.returncode != 0:
         print(f"  FAIL opt -{opt_level}: {r.stderr[:100]}")
@@ -95,7 +98,8 @@ def compile_mn(mn_path: Path, opt_level: str, out_dir: Path) -> Path | None:
     # llc
     r = subprocess.run(
         [tools["llc"], "-filetype=obj", "-relocation-model=pic", str(opt_bc), "-o", str(obj)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if r.returncode != 0:
         print(f"  FAIL llc: {r.stderr[:100]}")
@@ -104,7 +108,8 @@ def compile_mn(mn_path: Path, opt_level: str, out_dir: Path) -> Path | None:
     # link
     r = subprocess.run(
         [tools["clang"], str(obj), str(RUNTIME_LIB), "-lm", "-lpthread", "-ldl", "-o", str(binary)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if r.returncode != 0:
         print(f"  FAIL link: {r.stderr[:100]}")
@@ -126,10 +131,14 @@ def bench_one(name: str, num_runs: int) -> list[dict]:
             td = Path(tmpdir)
             binary = compile_mn(mn_path, opt, td)
             if binary is None:
-                results.append({
-                    "benchmark": name, "opt_level": opt,
-                    "status": "compile_fail", "median_ms": -1,
-                })
+                results.append(
+                    {
+                        "benchmark": name,
+                        "opt_level": opt,
+                        "status": "compile_fail",
+                        "median_ms": -1,
+                    }
+                )
                 continue
 
             # Warmup
@@ -155,17 +164,19 @@ def bench_one(name: str, num_runs: int) -> list[dict]:
             min_ms = min(times) if times else -1
             max_ms = max(times) if times else -1
 
-            results.append({
-                "benchmark": name,
-                "opt_level": opt,
-                "median_ms": round(median_ms, 2),
-                "min_ms": round(min_ms, 2),
-                "max_ms": round(max_ms, 2),
-                "runs": num_runs,
-                "output": output,
-                "correct": correct,
-                "status": "ok",
-            })
+            results.append(
+                {
+                    "benchmark": name,
+                    "opt_level": opt,
+                    "median_ms": round(median_ms, 2),
+                    "min_ms": round(min_ms, 2),
+                    "max_ms": round(max_ms, 2),
+                    "runs": num_runs,
+                    "output": output,
+                    "correct": correct,
+                    "status": "ok",
+                }
+            )
             status = "OK" if correct else "FAIL"
             print(f"  {name} -{opt}: {median_ms:.1f}ms ({status})")
 
@@ -189,10 +200,14 @@ def bench_cross_language(name: str, num_runs: int) -> list[dict]:
             times.sort()
             times = times[1:-1]
         median = statistics.median(times) if times else -1
-        results.append({
-            "benchmark": name, "language": "python",
-            "median_ms": round(median, 2), "output": output,
-        })
+        results.append(
+            {
+                "benchmark": name,
+                "language": "python",
+                "median_ms": round(median, 2),
+                "output": output,
+            }
+        )
         print(f"  {name} Python: {median:.1f}ms")
 
     # Go
@@ -202,7 +217,9 @@ def bench_cross_language(name: str, num_runs: int) -> list[dict]:
             binary = Path(td) / name
             r = subprocess.run(
                 ["go", "build", "-o", str(binary), str(go_path)],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             if r.returncode == 0:
                 times = []
@@ -215,13 +232,19 @@ def bench_cross_language(name: str, num_runs: int) -> list[dict]:
                     times.sort()
                     times = times[1:-1]
                 median = statistics.median(times) if times else -1
-                results.append({
-                    "benchmark": name, "language": "go",
-                    "median_ms": round(median, 2), "output": output,
-                })
+                results.append(
+                    {
+                        "benchmark": name,
+                        "language": "go",
+                        "median_ms": round(median, 2),
+                        "output": output,
+                    }
+                )
                 print(f"  {name} Go: {median:.1f}ms")
     elif go_path.exists():
-        results.append({"benchmark": name, "language": "go", "median_ms": -1, "note": "go not installed"})
+        results.append(
+            {"benchmark": name, "language": "go", "median_ms": -1, "note": "go not installed"}
+        )
 
     # Rust
     rs_path = BENCH_DIR / f"{name}.rs"
@@ -230,7 +253,9 @@ def bench_cross_language(name: str, num_runs: int) -> list[dict]:
             binary = Path(td) / name
             r = subprocess.run(
                 ["rustc", "-O", "-o", str(binary), str(rs_path)],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             if r.returncode == 0:
                 times = []
@@ -243,10 +268,14 @@ def bench_cross_language(name: str, num_runs: int) -> list[dict]:
                     times.sort()
                     times = times[1:-1]
                 median = statistics.median(times) if times else -1
-                results.append({
-                    "benchmark": name, "language": "rust",
-                    "median_ms": round(median, 2), "output": output,
-                })
+                results.append(
+                    {
+                        "benchmark": name,
+                        "language": "rust",
+                        "median_ms": round(median, 2),
+                        "output": output,
+                    }
+                )
                 print(f"  {name} Rust: {median:.1f}ms")
 
     return results

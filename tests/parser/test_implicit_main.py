@@ -127,4 +127,3 @@ class TestImplicitMain:
         assert p.definitions[0].name == "helper"
         assert isinstance(p.definitions[1], FnDef)
         assert p.definitions[1].name == "main"
-

@@ -75,8 +75,14 @@ def compile_mn(mn_path, outbin):
     emit = [sys.executable, "-m", "mapanare", "emit-llvm", str(mn_path), "-o", str(ll)]
     llc = [tools["llc"], "-filetype=obj", "-relocation-model=pic", str(opt_bc), "-o", str(obj)]
     link = [
-        tools["clang"], str(obj), str(RUNTIME_LIB),
-        "-lm", "-lpthread", "-ldl", "-o", str(outbin),
+        tools["clang"],
+        str(obj),
+        str(RUNTIME_LIB),
+        "-lm",
+        "-lpthread",
+        "-ldl",
+        "-o",
+        str(outbin),
     ]
     steps = [
         (emit, "emit"),
@@ -106,7 +112,8 @@ def measure(name, mn_path, expected, n_runs=10):
     }
     try:
         result["lines_of_code"] = sum(
-            1 for line in mn_path.read_text().splitlines()
+            1
+            for line in mn_path.read_text().splitlines()
             if line.strip() and not line.strip().startswith("//")
         )
     except Exception:
@@ -157,12 +164,18 @@ def main():
             line += f"  output={r.get('output_sample', '')[:40]}"
             print(line)
     outpath = ROOT / "benchmarks" / "v4.110.0-extra.json"
-    outpath.write_text(json.dumps({
-        "version": "4.110.0",
-        "date": time.strftime("%Y-%m-%d"),
-        "note": "matmul_naive + agent_fanout (needed for v4.82.0 cumulative delta)",
-        "results": results,
-    }, indent=2) + "\n")
+    outpath.write_text(
+        json.dumps(
+            {
+                "version": "4.110.0",
+                "date": time.strftime("%Y-%m-%d"),
+                "note": "matmul_naive + agent_fanout (needed for v4.82.0 cumulative delta)",
+                "results": results,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(f"\nSaved to {outpath}")
 
 

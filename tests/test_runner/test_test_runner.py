@@ -136,7 +136,6 @@ class TestExecution:
         assert len(results) == 3
         assert all(r.passed for r in results)
 
-
     @pytest.mark.skip(reason=_TR1_REASON)
     def test_run_failing_tests(self) -> None:
         results = run_test_file(FAILING_FILE)
@@ -256,5 +255,3 @@ class TestCLI:
         )
         assert result.returncode == 0
         assert "no tests found" in result.stdout
-
-

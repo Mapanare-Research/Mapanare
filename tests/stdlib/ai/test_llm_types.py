@@ -28,6 +28,7 @@ class TestLlmExamplesExist:
 
     def test_basic_chat_exists(self):
         import os
+
         assert os.path.exists("examples/ai/basic_chat.mn")
         with open("examples/ai/basic_chat.mn") as f:
             src = f.read()
@@ -35,6 +36,7 @@ class TestLlmExamplesExist:
 
     def test_basic_stream_exists(self):
         import os
+
         assert os.path.exists("examples/ai/basic_stream.mn")
         with open("examples/ai/basic_stream.mn") as f:
             src = f.read()

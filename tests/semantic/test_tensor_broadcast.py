@@ -48,7 +48,9 @@ class TestBroadcastShapeHelper:
 
 class TestTensorBroadcastSemantics:
     def test_same_shape_no_error(self):
-        c = _check("let a = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; let b = Tensor<Float>[[5.0, 6.0], [7.0, 8.0]]; let c = a + b")
+        c = _check(
+            "let a = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; let b = Tensor<Float>[[5.0, 6.0], [7.0, 8.0]]; let c = a + b"
+        )
         assert len(c.errors) == 0
 
     def test_incompatible_shapes_error(self):
@@ -77,7 +79,9 @@ class TestTensorBroadcastSemantics:
 
     def test_all_four_ops(self):
         for op in ["+", "-", "*", "/"]:
-            c = _check(f"let a = Tensor<Float>[1.0, 2.0]; let b = Tensor<Float>[3.0, 4.0]; let c = a {op} b")
+            c = _check(
+                f"let a = Tensor<Float>[1.0, 2.0]; let b = Tensor<Float>[3.0, 4.0]; let c = a {op} b"
+            )
             assert len(c.errors) == 0, f"op {op} failed: {c.errors}"
 
     def test_broadcast_compatible_rank_extension(self):

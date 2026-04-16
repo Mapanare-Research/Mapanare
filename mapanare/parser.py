@@ -820,10 +820,14 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         idx_items: list[IndexItem] = []
         for c in items[1:]:
             if isinstance(c, RangeExpr):
-                idx_items.append(IndexItem(
-                    kind="range", start=c.start, end=c.end,
-                    span=getattr(c, "span", Span()),
-                ))
+                idx_items.append(
+                    IndexItem(
+                        kind="range",
+                        start=c.start,
+                        end=c.end,
+                        span=getattr(c, "span", Span()),
+                    )
+                )
             elif isinstance(c, Identifier) and c.name == "_":
                 idx_items.append(IndexItem(kind="wildcard", span=getattr(c, "span", Span())))
             elif isinstance(c, Expr):
@@ -930,9 +934,7 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
                 # Skip Token/non-Expr items (commas, brackets)
 
         _walk(body, 0)
-        return TensorLiteral(
-            element_type=elem_type, shape=shape, elements=flat, span=span
-        )
+        return TensorLiteral(element_type=elem_type, shape=shape, elements=flat, span=span)
 
     def tensor_body(self, children: list[Any]) -> list[Any]:
         """Collect tensor body elements (mix of Expr and nested lists)."""
@@ -1143,7 +1145,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         if len(items) == 3:
             # pattern, guard_expr, body
             return MatchArm(
-                pattern=items[0], body=items[2], guard=items[1],
+                pattern=items[0],
+                body=items[2],
+                guard=items[1],
                 span=_span_from_children(children),
             )
         return MatchArm(pattern=items[0], body=items[1], span=_span_from_children(children))

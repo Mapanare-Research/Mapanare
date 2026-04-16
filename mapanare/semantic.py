@@ -593,23 +593,39 @@ class SemanticChecker:
                         for d, idx_item in enumerate(expr.indices):
                             if isinstance(idx_item, IndexItem):
                                 if idx_item.kind == "wildcard":
-                                    result_shape.append(obj_type.tensor_shape[d] if d < len(obj_type.tensor_shape) else 0)
+                                    result_shape.append(
+                                        obj_type.tensor_shape[d]
+                                        if d < len(obj_type.tensor_shape)
+                                        else 0
+                                    )
                                 elif idx_item.kind == "range":
-                                    s = idx_item.start.value if isinstance(idx_item.start, IntLiteral) else 0
-                                    e = idx_item.end.value if isinstance(idx_item.end, IntLiteral) else (obj_type.tensor_shape[d] if d < len(obj_type.tensor_shape) else 0)
+                                    s = (
+                                        idx_item.start.value
+                                        if isinstance(idx_item.start, IntLiteral)
+                                        else 0
+                                    )
+                                    e = (
+                                        idx_item.end.value
+                                        if isinstance(idx_item.end, IntLiteral)
+                                        else (
+                                            obj_type.tensor_shape[d]
+                                            if d < len(obj_type.tensor_shape)
+                                            else 0
+                                        )
+                                    )
                                     result_shape.append(max(0, e - s))
                                 else:
                                     pass  # scalar index removes dimension
                     return TypeInfo(
-                        kind=TypeKind.TENSOR, args=[elem],
+                        kind=TypeKind.TENSOR,
+                        args=[elem],
                         tensor_shape=tuple(result_shape) if result_shape else None,
                     )
                 return elem
             # List/Map: require single scalar index
             if n_idx > 1:
                 self._error(
-                    f"multi-index not supported for {obj_type.kind.name}; "
-                    f"use single index",
+                    f"multi-index not supported for {obj_type.kind.name}; " f"use single index",
                     expr,
                 )
             if obj_type.kind == TypeKind.LIST and obj_type.args:
@@ -1123,9 +1139,7 @@ class SemanticChecker:
         )
 
         ctx = self._semantic_type_context(subject_type)
-        rows = [
-            PatternRow(patterns=[arm.pattern], action_idx=i) for i, arm in enumerate(expr.arms)
-        ]
+        rows = [PatternRow(patterns=[arm.pattern], action_idx=i) for i, arm in enumerate(expr.arms)]
         matrix = PatternMatrix(rows=rows, type_contexts=[ctx])
         tree = build_decision_tree(matrix)
 
@@ -1411,15 +1425,12 @@ class SemanticChecker:
                 continue
             if inferred.kind not in (TypeKind.UNKNOWN, TypeKind.ANY, elem_ti.kind):
                 self._error(
-                    f"tensor element type mismatch: expected {elem_name}, "
-                    f"got {inferred}",
+                    f"tensor element type mismatch: expected {elem_name}, " f"got {inferred}",
                     getattr(e, "span", expr.span),
                 )
 
         shape_tuple = tuple(expr.shape) if expr.shape else None
-        return TypeInfo(
-            kind=TypeKind.TENSOR, args=[elem_ti], tensor_shape=shape_tuple
-        )
+        return TypeInfo(kind=TypeKind.TENSOR, args=[elem_ti], tensor_shape=shape_tuple)
 
     # -- Error propagation (`?` operator) ---------------------------------
 
@@ -1807,9 +1818,7 @@ class SemanticChecker:
         return None
 
     @staticmethod
-    def _fold_binop(
-        left: ConstantValue, op: str, right: ConstantValue
-    ) -> ConstantValue | None:
+    def _fold_binop(left: ConstantValue, op: str, right: ConstantValue) -> ConstantValue | None:
         try:
             if op == "+" and isinstance(left, str) and isinstance(right, str):
                 return left + right
@@ -1821,7 +1830,11 @@ class SemanticChecker:
                 if op == "*":
                     return left * right
                 if op == "/" and right != 0:
-                    return left // right if isinstance(left, int) and isinstance(right, int) else left / right
+                    return (
+                        left // right
+                        if isinstance(left, int) and isinstance(right, int)
+                        else left / right
+                    )
                 if op == "%" and right != 0:
                     return left % right
         except (OverflowError, ZeroDivisionError):

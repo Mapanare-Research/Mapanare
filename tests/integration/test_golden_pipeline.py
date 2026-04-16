@@ -59,6 +59,5 @@ def test_golden_pipeline(source, tmp_path, integration_stage):
         error_msg = errors.get(failed_stage, "no error captured")
 
         pytest.fail(
-            f"Pipeline stopped at '{stage}', failed at '{failed_stage}'.\n"
-            f"Error:\n{error_msg}"
+            f"Pipeline stopped at '{stage}', failed at '{failed_stage}'.\n" f"Error:\n{error_msg}"
         )

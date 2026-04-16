@@ -647,6 +647,7 @@ class TestCalls:
         assert len(e.indices) == 1
         # v4.45.0: IndexItem wraps scalar expressions
         from mapanare.ast_nodes import IndexItem
+
         assert isinstance(e.indices[0], IndexItem)
         assert e.indices[0].kind == "scalar"
 

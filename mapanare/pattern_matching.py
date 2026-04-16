@@ -263,9 +263,7 @@ def _is_all_wildcards(row: PatternRow, contexts: list[TypeContext]) -> bool:
     return True
 
 
-def _collect_constructors(
-    matrix: PatternMatrix, col: int
-) -> list[ConstructorInfo]:
+def _collect_constructors(matrix: PatternMatrix, col: int) -> list[ConstructorInfo]:
     """Collect all distinct constructor tags appearing in column ``col``."""
     seen: set[str] = set()
     result: list[ConstructorInfo] = []
@@ -368,9 +366,7 @@ def _build_fail_witness(matrix: PatternMatrix) -> Pattern:
     return WildcardPattern()
 
 
-def build_witness_for_switch(
-    switch: DTSwitch, ctx: TypeContext
-) -> Pattern | None:
+def build_witness_for_switch(switch: DTSwitch, ctx: TypeContext) -> Pattern | None:
     """Walk a DTSwitch to find a DTFail and reconstruct the missing pattern."""
     # Check each case's subtree for DTFail
     for tag, subtree in switch.cases:

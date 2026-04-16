@@ -28,11 +28,14 @@ class TestMultiIndexParsing:
         assert len(e.indices) == 3
 
     def test_variable_indices(self):
-        ast = parse("fn main() { let t = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; let i = 0; let j = 1; let x = t[i, j] }")
+        ast = parse(
+            "fn main() { let t = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; let i = 0; let j = 1; let x = t[i, j] }"
+        )
         idx = ast.definitions[0].body.stmts[3].value
         assert isinstance(idx, IndexExpr)
         assert len(idx.indices) == 2
         from mapanare.ast_nodes import IndexItem
+
         assert isinstance(idx.indices[0], IndexItem)
         assert idx.indices[0].kind == "scalar"
         assert isinstance(idx.indices[0].expr, Identifier)

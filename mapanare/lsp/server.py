@@ -129,7 +129,9 @@ def on_initialize(params: lsp.InitializeParams) -> lsp.InitializeResult:
         if root.is_dir():
             logger.info("Scanning workspace root: %s", root)
             _workspace.scan_root(root)
-            logger.info("Indexed %d files, %d symbols", len(_workspace.files), len(_workspace._by_name))
+            logger.info(
+                "Indexed %d files, %d symbols", len(_workspace.files), len(_workspace._by_name)
+            )
     elif params.root_path:
         root = Path(params.root_path)
         if root.is_dir():
@@ -287,7 +289,9 @@ def on_definition(
             return lsp.Location(
                 uri=sym_uri,
                 range=lsp.Range(
-                    start=lsp.Position(line=max(0, span.line - 1), character=max(0, span.column - 1)),
+                    start=lsp.Position(
+                        line=max(0, span.line - 1), character=max(0, span.column - 1)
+                    ),
                     end=lsp.Position(
                         line=max(0, (span.end_line or span.line) - 1),
                         character=max(0, (span.end_column or span.column) - 1),
@@ -314,16 +318,20 @@ def on_references(
 
     # Within-file references (existing v0.5.0)
     refs = analysis.references_at(line, col)
-    locations = [
-        lsp.Location(
-            uri=r.uri,
-            range=lsp.Range(
-                start=lsp.Position(line=r.line, character=r.column),
-                end=lsp.Position(line=r.end_line, character=r.end_column),
-            ),
-        )
-        for r in refs
-    ] if refs else []
+    locations = (
+        [
+            lsp.Location(
+                uri=r.uri,
+                range=lsp.Range(
+                    start=lsp.Position(line=r.line, character=r.column),
+                    end=lsp.Position(line=r.end_line, character=r.end_column),
+                ),
+            )
+            for r in refs
+        ]
+        if refs
+        else []
+    )
 
     # v4.38.0: cross-module references via workspace index
     symbol_name = analysis.symbol_name_at(line, col)
@@ -337,7 +345,9 @@ def on_references(
                 loc = lsp.Location(
                     uri=sym_uri,
                     range=lsp.Range(
-                        start=lsp.Position(line=max(0, span.line - 1), character=max(0, span.column - 1)),
+                        start=lsp.Position(
+                            line=max(0, span.line - 1), character=max(0, span.column - 1)
+                        ),
                         end=lsp.Position(
                             line=max(0, (span.end_line or span.line) - 1),
                             character=max(0, (span.end_column or span.column) - 1),
@@ -387,8 +397,12 @@ def on_rename(params: lsp.RenameParams) -> Optional[lsp.WorkspaceEdit]:
         changes[file_uri] = [
             lsp.TextEdit(
                 range=lsp.Range(
-                    start=lsp.Position(line=e["range"]["start"]["line"], character=e["range"]["start"]["character"]),
-                    end=lsp.Position(line=e["range"]["end"]["line"], character=e["range"]["end"]["character"]),
+                    start=lsp.Position(
+                        line=e["range"]["start"]["line"], character=e["range"]["start"]["character"]
+                    ),
+                    end=lsp.Position(
+                        line=e["range"]["end"]["line"], character=e["range"]["end"]["character"]
+                    ),
                 ),
                 new_text=e["newText"],
             )
@@ -465,7 +479,11 @@ def on_completion(
         elif context == "type":
             ws_candidates = complete_type(_workspace)
         elif context == "field":
-            receiver_type = analysis.receiver_type_at(line, col) if hasattr(analysis, "receiver_type_at") else ""
+            receiver_type = (
+                analysis.receiver_type_at(line, col)
+                if hasattr(analysis, "receiver_type_at")
+                else ""
+            )
             ws_candidates = complete_field_method(receiver_type or "", _workspace)
         else:
             ws_candidates = complete_identifiers(_workspace, current_module)
@@ -476,7 +494,11 @@ def on_completion(
                 label=c.label,
                 kind=kind,
                 detail=c.detail,
-                documentation=lsp.MarkupContent(kind=lsp.MarkupKind.Markdown, value=c.documentation) if c.documentation else None,
+                documentation=(
+                    lsp.MarkupContent(kind=lsp.MarkupKind.Markdown, value=c.documentation)
+                    if c.documentation
+                    else None
+                ),
                 sort_text=c.sort_text or None,
             )
             if c.insert_text:

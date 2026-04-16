@@ -204,12 +204,22 @@ def _collect_references(
             if expr.name in known_names:
                 for sym in index.lookup_by_name(expr.name):
                     if sym.path != path or sym.span != expr.span:
-                        refs.append(((sym.module, sym.name), ReferenceSite(path=path, span=expr.span, kind="read")))
+                        refs.append(
+                            (
+                                (sym.module, sym.name),
+                                ReferenceSite(path=path, span=expr.span, kind="read"),
+                            )
+                        )
                         break
         elif isinstance(expr, CallExpr):
             if isinstance(expr.callee, Identifier) and expr.callee.name in known_names:
                 for sym in index.lookup_by_name(expr.callee.name):
-                    refs.append(((sym.module, sym.name), ReferenceSite(path=path, span=expr.callee.span, kind="call")))
+                    refs.append(
+                        (
+                            (sym.module, sym.name),
+                            ReferenceSite(path=path, span=expr.callee.span, kind="call"),
+                        )
+                    )
                     break
             for arg in expr.args:
                 _walk_expr(arg)
@@ -236,14 +246,24 @@ def _collect_references(
         elif isinstance(expr, ConstructExpr):
             if expr.name in known_names:
                 for sym in index.lookup_by_name(expr.name):
-                    refs.append(((sym.module, sym.name), ReferenceSite(path=path, span=expr.span, kind="type_use")))
+                    refs.append(
+                        (
+                            (sym.module, sym.name),
+                            ReferenceSite(path=path, span=expr.span, kind="type_use"),
+                        )
+                    )
                     break
             for fi in expr.fields:
                 _walk_expr(fi.value)
         elif isinstance(expr, NamedType):
             if expr.name in known_names:
                 for sym in index.lookup_by_name(expr.name):
-                    refs.append(((sym.module, sym.name), ReferenceSite(path=path, span=expr.span, kind="type_use")))
+                    refs.append(
+                        (
+                            (sym.module, sym.name),
+                            ReferenceSite(path=path, span=expr.span, kind="type_use"),
+                        )
+                    )
                     break
 
     def _walk_block(block: Block) -> None:
@@ -274,67 +294,119 @@ def _collect_references(
     return refs
 
 
-def _extract_top_level_symbols(
-    program: Program, module_name: str, path: Path
-) -> list[SymbolDef]:
+def _extract_top_level_symbols(program: Program, module_name: str, path: Path) -> list[SymbolDef]:
     """Extract top-level symbol definitions from a parsed program."""
     symbols: list[SymbolDef] = []
 
     for defn in program.definitions:
         if isinstance(defn, FnDef):
             sig = _fn_sig(defn)
-            symbols.append(SymbolDef(
-                module=module_name, name=defn.name, kind="fn", path=path,
-                span=defn.span, visibility="pub" if defn.public else "internal",
-                detail=sig,
-            ))
+            symbols.append(
+                SymbolDef(
+                    module=module_name,
+                    name=defn.name,
+                    kind="fn",
+                    path=path,
+                    span=defn.span,
+                    visibility="pub" if defn.public else "internal",
+                    detail=sig,
+                )
+            )
         elif isinstance(defn, StructDef):
             fields = ", ".join(f.name for f in defn.fields) if defn.fields else ""
-            symbols.append(SymbolDef(
-                module=module_name, name=defn.name, kind="struct", path=path,
-                span=defn.span, visibility="pub" if defn.public else "internal",
-                detail=f"struct {defn.name} {{ {fields} }}",
-            ))
+            symbols.append(
+                SymbolDef(
+                    module=module_name,
+                    name=defn.name,
+                    kind="struct",
+                    path=path,
+                    span=defn.span,
+                    visibility="pub" if defn.public else "internal",
+                    detail=f"struct {defn.name} {{ {fields} }}",
+                )
+            )
         elif isinstance(defn, EnumDef):
             variants = ", ".join(v.name for v in defn.variants) if defn.variants else ""
-            symbols.append(SymbolDef(
-                module=module_name, name=defn.name, kind="enum", path=path,
-                span=defn.span, visibility="pub" if defn.public else "internal",
-                detail=f"enum {defn.name} {{ {variants} }}",
-            ))
+            symbols.append(
+                SymbolDef(
+                    module=module_name,
+                    name=defn.name,
+                    kind="enum",
+                    path=path,
+                    span=defn.span,
+                    visibility="pub" if defn.public else "internal",
+                    detail=f"enum {defn.name} {{ {variants} }}",
+                )
+            )
         elif isinstance(defn, TraitDef):
-            symbols.append(SymbolDef(
-                module=module_name, name=defn.name, kind="trait", path=path,
-                span=defn.span, visibility="pub" if defn.public else "internal",
-                detail=f"trait {defn.name}",
-            ))
+            symbols.append(
+                SymbolDef(
+                    module=module_name,
+                    name=defn.name,
+                    kind="trait",
+                    path=path,
+                    span=defn.span,
+                    visibility="pub" if defn.public else "internal",
+                    detail=f"trait {defn.name}",
+                )
+            )
         elif isinstance(defn, AgentDef):
-            symbols.append(SymbolDef(
-                module=module_name, name=defn.name, kind="agent", path=path,
-                span=defn.span, visibility="pub" if defn.public else "internal",
-                detail=f"agent {defn.name}",
-            ))
+            symbols.append(
+                SymbolDef(
+                    module=module_name,
+                    name=defn.name,
+                    kind="agent",
+                    path=path,
+                    span=defn.span,
+                    visibility="pub" if defn.public else "internal",
+                    detail=f"agent {defn.name}",
+                )
+            )
         elif isinstance(defn, PipeDef):
-            symbols.append(SymbolDef(
-                module=module_name, name=defn.name, kind="pipe", path=path,
-                span=defn.span, visibility="pub" if defn.public else "internal",
-                detail=f"pipe {defn.name}",
-            ))
+            symbols.append(
+                SymbolDef(
+                    module=module_name,
+                    name=defn.name,
+                    kind="pipe",
+                    path=path,
+                    span=defn.span,
+                    visibility="pub" if defn.public else "internal",
+                    detail=f"pipe {defn.name}",
+                )
+            )
         elif isinstance(defn, TypeAlias):
-            symbols.append(SymbolDef(
-                module=module_name, name=defn.name, kind="type", path=path,
-                span=defn.span, visibility="pub" if defn.public else "internal",
-            ))
+            symbols.append(
+                SymbolDef(
+                    module=module_name,
+                    name=defn.name,
+                    kind="type",
+                    path=path,
+                    span=defn.span,
+                    visibility="pub" if defn.public else "internal",
+                )
+            )
         elif isinstance(defn, ExternFnDef):
-            symbols.append(SymbolDef(
-                module=module_name, name=defn.name, kind="extern_fn", path=path,
-                span=defn.span, visibility="pub",
-            ))
+            symbols.append(
+                SymbolDef(
+                    module=module_name,
+                    name=defn.name,
+                    kind="extern_fn",
+                    path=path,
+                    span=defn.span,
+                    visibility="pub",
+                )
+            )
         elif isinstance(defn, ModuleLetDef):
-            symbols.append(SymbolDef(
-                module=module_name, name=defn.name, kind="let", path=path,
-                span=defn.span, visibility="pub" if defn.public else "internal",
-            ))
+            symbols.append(
+                SymbolDef(
+                    module=module_name,
+                    name=defn.name,
+                    kind="let",
+                    path=path,
+                    span=defn.span,
+                    visibility="pub" if defn.public else "internal",
+                )
+            )
 
     return symbols
 

@@ -581,7 +581,6 @@ class MIRLowerer:
 
         return is_terminator(self._block.instructions[-1])
 
-
     # -- Scope management --------------------------------------------------
 
     def _push_scope(self) -> None:
@@ -815,6 +814,7 @@ class MIRLowerer:
                     elif isinstance(actual, ConstDef):
                         # v4.55.0: const folding — evaluate constant expressions
                         from mapanare.semantic import SemanticChecker
+
                         folder = SemanticChecker.__new__(SemanticChecker)
                         folder._const_table = {}
                         for n, (t, v) in self._module_consts.items():
@@ -2204,10 +2204,7 @@ class MIRLowerer:
 
         props_str = ", ".join(props)
         req_str = ", ".join(required)
-        schema = (
-            f'{{"type": "object", "properties": {{{props_str}}}, '
-            f'"required": [{req_str}]}}'
-        )
+        schema = f'{{"type": "object", "properties": {{{props_str}}}, ' f'"required": [{req_str}]}}'
 
         dest = self._make_value(ty=mir_string())
         self._emit(Const(dest=dest, ty=mir_string(), value=schema))
@@ -2486,7 +2483,9 @@ class MIRLowerer:
         if obj.ty.kind == TypeKind.TENSOR and expr.method in (
             _TENSOR_REDUCTIONS_SCALAR | _TENSOR_REDUCTIONS_IDX
         ):
-            elem_ti = obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+            elem_ti = (
+                obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+            )
             ty_suffix = "i64" if elem_ti.kind == TypeKind.INT else "f64"
             fn_name = f"__mn_tensor_{expr.method}_{ty_suffix}"
             if expr.method in _TENSOR_REDUCTIONS_SCALAR:
@@ -2691,8 +2690,7 @@ class MIRLowerer:
 
         # Check for slicing (v4.45.0) — any range or wildcard item
         has_slice = any(
-            isinstance(it, IndexItem) and it.kind in ("range", "wildcard")
-            for it in expr.indices
+            isinstance(it, IndexItem) and it.kind in ("range", "wildcard") for it in expr.indices
         )
         if obj_kind == TypeKind.TENSOR and has_slice:
             return self._lower_tensor_slice(obj, expr.indices)
@@ -2725,7 +2723,9 @@ class MIRLowerer:
 
     def _lower_tensor_get(self, obj: Value, indices: list[Value]) -> Value:
         """Lower tensor[i, j, ...] to __mn_tensor_get_*_nd call (v4.43.0)."""
-        elem_ti = obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        elem_ti = (
+            obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        )
         elem_ty = MIRType(elem_ti)
         rank = len(indices)
 
@@ -2739,14 +2739,14 @@ class MIRLowerer:
         dest = self._make_value(ty=elem_ty, prefix="tget")
         rank_val = self._make_value(ty=mir_int(), prefix="trank")
         self._emit(Const(dest=rank_val, ty=mir_int(), value=str(rank)))
-        self._emit(
-            Call(dest=dest, fn_name=fn_name, args=[obj, rank_val] + indices)
-        )
+        self._emit(Call(dest=dest, fn_name=fn_name, args=[obj, rank_val] + indices))
         return dest
 
     def _lower_tensor_set(self, obj: Value, indices: list[Value], val: Value) -> None:
         """Lower tensor[i, j] = val to __mn_tensor_set_*_nd call (v4.43.0)."""
-        elem_ti = obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        elem_ti = (
+            obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        )
         rank = len(indices)
 
         if elem_ti.kind == TypeKind.INT:
@@ -2757,9 +2757,7 @@ class MIRLowerer:
         rank_val = self._make_value(ty=mir_int(), prefix="trank")
         self._emit(Const(dest=rank_val, ty=mir_int(), value=str(rank)))
         void_dest = self._make_value(ty=mir_void(), prefix="tset")
-        self._emit(
-            Call(dest=void_dest, fn_name=fn_name, args=[obj, rank_val] + indices + [val])
-        )
+        self._emit(Call(dest=void_dest, fn_name=fn_name, args=[obj, rank_val] + indices + [val]))
 
     def _lower_tensor_slice(self, obj: Value, items: list) -> Value:
         """Lower tensor[0..2, :] to __mn_tensor_slice call (v4.45.0)."""
@@ -2773,14 +2771,18 @@ class MIRLowerer:
         for d, it in enumerate(items):
             if isinstance(it, IndexItem):
                 if it.kind == "range":
-                    start_vals.append(self._lower_expr(it.start) if it.start else self._const_int(0))
+                    start_vals.append(
+                        self._lower_expr(it.start) if it.start else self._const_int(0)
+                    )
                     end_vals.append(self._lower_expr(it.end) if it.end else self._const_int(0))
                 elif it.kind == "wildcard":
                     start_vals.append(self._const_int(0))
                     # End = shape[d] — use tensor_shape_dim runtime call
                     dim_val = self._const_int(d)
                     shape_dest = self._make_value(ty=mir_int(), prefix="sdim")
-                    self._emit(Call(dest=shape_dest, fn_name="tensor_shape_dim", args=[obj, dim_val]))
+                    self._emit(
+                        Call(dest=shape_dest, fn_name="tensor_shape_dim", args=[obj, dim_val])
+                    )
                     end_vals.append(shape_dest)
                 else:  # scalar in slice context — treat as start..start+1
                     sv = self._lower_expr(it.expr) if it.expr else self._const_int(0)
@@ -2791,12 +2793,18 @@ class MIRLowerer:
                     end_vals.append(end_dest)
 
         # Build result tensor type
-        elem_ti = obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        elem_ti = (
+            obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        )
         result_ty = MIRType(TypeInfo(kind=TypeKind.TENSOR, args=[elem_ti]))
         dest = self._make_value(ty=result_ty, prefix="tslice")
         rank_val = self._const_int(rank)
         self._emit(
-            Call(dest=dest, fn_name="__mn_tensor_slice", args=[obj] + start_vals + end_vals + [rank_val])
+            Call(
+                dest=dest,
+                fn_name="__mn_tensor_slice",
+                args=[obj] + start_vals + end_vals + [rank_val],
+            )
         )
         return dest
 
@@ -2813,7 +2821,11 @@ class MIRLowerer:
 
         # Determine element type suffix
         tensor_val = lhs if lhs.ty.kind == TypeKind.TENSOR else rhs
-        elem_ti = tensor_val.ty.type_info.args[0] if tensor_val.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        elem_ti = (
+            tensor_val.ty.type_info.args[0]
+            if tensor_val.ty.type_info.args
+            else TypeInfo(kind=TypeKind.FLOAT)
+        )
         ty_suffix = "i64" if elem_ti.kind == TypeKind.INT else "f64"
 
         # Determine if tensor+tensor or tensor+scalar
@@ -3079,7 +3091,9 @@ class MIRLowerer:
             TypeInfo(kind=TypeKind.TENSOR, args=[elem_type.type_info], tensor_shape=shape_tuple)
         )
         dest = self._make_value(ty=tensor_ty)
-        self._emit(TensorInit(dest=dest, elem_type=elem_type, shape=list(expr.shape), elements=elements))
+        self._emit(
+            TensorInit(dest=dest, elem_type=elem_type, shape=list(expr.shape), elements=elements)
+        )
         return dest
 
     def _patch_list_elem_types_for_struct(
@@ -3257,6 +3271,7 @@ class MIRLowerer:
 
         if isinstance(expr.target, IndexExpr):
             from mapanare.ast_nodes import IndexItem as _II
+
             obj = self._lower_expr(expr.target.object)
             indices = []
             for it in expr.target.indices:
@@ -3415,7 +3430,9 @@ class MIRLowerer:
                 guard_val = self._lower_expr(arm.guard)
                 body_bb = self._new_block(self._fresh_block("guard_pass"))
                 fallback_bb = self._new_block(self._fresh_block("guard_fail"))
-                self._emit(Branch(cond=guard_val, true_block=body_bb.label, false_block=fallback_bb.label))
+                self._emit(
+                    Branch(cond=guard_val, true_block=body_bb.label, false_block=fallback_bb.label)
+                )
                 # Emit fallback: decision tree from remaining rows
                 self._set_block(fallback_bb)
                 remaining_rows = [
@@ -3446,9 +3463,7 @@ class MIRLowerer:
                 )
                 if is_void:
                     zty = arm_val.ty if arm_val is not None else mir_void()
-                    arm_results.append(
-                        (exit_bb.label, Value(name="zeroinitializer", ty=zty))
-                    )
+                    arm_results.append((exit_bb.label, Value(name="zeroinitializer", ty=zty)))
                 elif exit_bb is not None:
                     arm_results.append((exit_bb.label, arm_val))
             self._pop_scope()
@@ -3512,8 +3527,7 @@ class MIRLowerer:
 
         enum_name = ty.type_info.name
         if enum_name and (
-            kind == TypeKind.ENUM
-            or (kind == TypeKind.STRUCT and enum_name in self._enum_variants)
+            kind == TypeKind.ENUM or (kind == TypeKind.STRUCT and enum_name in self._enum_variants)
         ):
             variants = self._module.enums.get(enum_name, [])
             ctors: list[ConstructorInfo] = []
@@ -3634,9 +3648,7 @@ class MIRLowerer:
         if default_info is not None:
             subtree, def_bb = default_info
             self._set_block(def_bb)
-            new_col_values = (
-                col_values[: tree.column_idx] + col_values[tree.column_idx + 1 :]
-            )
+            new_col_values = col_values[: tree.column_idx] + col_values[tree.column_idx + 1 :]
             if isinstance(subtree, DTLeaf):
                 self._emit(Jump(target=action_blocks[subtree.action_idx].label))
             elif isinstance(subtree, DTFail):
@@ -3673,15 +3685,11 @@ class MIRLowerer:
                 if isinstance(arg_pat, (IdentPattern, ConstructorPattern)):
                     payload_ty = self._infer_payload_type(subject.ty, pat.name, j)
                     pfx = (
-                        arg_pat.name
-                        if isinstance(arg_pat, IdentPattern)
-                        else f"pay_{pat.name}_{j}"
+                        arg_pat.name if isinstance(arg_pat, IdentPattern) else f"pay_{pat.name}_{j}"
                     )
                     payload = self._make_value(ty=payload_ty, prefix=pfx)
                     self._emit(
-                        EnumPayload(
-                            dest=payload, enum_val=subject, variant=pat.name, payload_idx=j
-                        )
+                        EnumPayload(dest=payload, enum_val=subject, variant=pat.name, payload_idx=j)
                     )
                     if isinstance(arg_pat, IdentPattern):
                         self._define_var(arg_pat.name, payload)

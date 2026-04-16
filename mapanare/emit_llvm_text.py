@@ -615,7 +615,7 @@ class LLVMTextEmitter:
         filename = os.path.basename(path)
         mid = self._alloc_metadata_id()
         self._debug_metadata_lines.append(
-            f"!{mid} = !DIFile(filename: \"{filename}\", directory: \"{directory}\")"
+            f'!{mid} = !DIFile(filename: "{filename}", directory: "{directory}")'
         )
         self._debug_file_table[path] = mid
         return mid
@@ -638,7 +638,7 @@ class LLVMTextEmitter:
             return self._debug_type_cache[name]
         mid = self._alloc_metadata_id()
         self._debug_metadata_lines.append(
-            f"!{mid} = !DIBasicType(name: \"{name}\", size: {size}, encoding: {encoding})"
+            f'!{mid} = !DIBasicType(name: "{name}", size: {size}, encoding: {encoding})'
         )
         self._debug_type_cache[name] = mid
         return mid
@@ -679,9 +679,7 @@ class LLVMTextEmitter:
         types_mid = self._alloc_metadata_id()
         self._debug_metadata_lines.append(f"!{types_mid} = !{{{types_list}}}")
         mid = self._alloc_metadata_id()
-        self._debug_metadata_lines.append(
-            f"!{mid} = !DISubroutineType(types: !{types_mid})"
-        )
+        self._debug_metadata_lines.append(f"!{mid} = !DISubroutineType(types: !{types_mid})")
         self._debug_type_cache[cache_key] = mid
         return mid
 
@@ -761,7 +759,7 @@ class LLVMTextEmitter:
         arg_part = f", arg: {arg_index}" if arg_index > 0 else ""
         file_id = next(iter(self._debug_file_table.values()), 0)
         self._debug_metadata_lines.append(
-            f"!{mid} = !DILocalVariable(name: \"{name}\"{arg_part}, "
+            f'!{mid} = !DILocalVariable(name: "{name}"{arg_part}, '
             f"scope: !{scope_id}, file: !{file_id}, line: {line}, type: !{ty_id})"
         )
         return mid
@@ -774,8 +772,10 @@ class LLVMTextEmitter:
         if self._current_span and self._current_span.line > 0:
             file_id = next(iter(self._debug_file_table.values()), 0)
             loc_id = self._get_debug_location(
-                file_id, self._current_span.line, self._current_span.column,
-                self._current_subprogram_id
+                file_id,
+                self._current_span.line,
+                self._current_span.column,
+                self._current_subprogram_id,
             )
             loc_suffix = f", !dbg !{loc_id}"
         self._blk[self._cb].append(
@@ -797,15 +797,9 @@ class LLVMTextEmitter:
         dwarf_mid = self._alloc_metadata_id()
         di_mid = self._alloc_metadata_id()
         wchar_mid = self._alloc_metadata_id()
-        self._debug_metadata_lines.append(
-            f"!{dwarf_mid} = !{{i32 7, !\"Dwarf Version\", i32 5}}"
-        )
-        self._debug_metadata_lines.append(
-            f"!{di_mid} = !{{i32 2, !\"Debug Info Version\", i32 3}}"
-        )
-        self._debug_metadata_lines.append(
-            f"!{wchar_mid} = !{{i32 1, !\"wchar_size\", i32 4}}"
-        )
+        self._debug_metadata_lines.append(f'!{dwarf_mid} = !{{i32 7, !"Dwarf Version", i32 5}}')
+        self._debug_metadata_lines.append(f'!{di_mid} = !{{i32 2, !"Debug Info Version", i32 3}}')
+        self._debug_metadata_lines.append(f'!{wchar_mid} = !{{i32 1, !"wchar_size", i32 4}}')
         # Replace placeholders
         lines[2] = f"!llvm.module.flags = !{{!{dwarf_mid}, !{di_mid}, !{wchar_mid}}}"
         # All metadata nodes
@@ -901,8 +895,12 @@ class LLVMTextEmitter:
             self._decls.append("declare ptr @__mn_file_read_async({ptr, i64})")
         # 8b) debug intrinsic declarations (v4.65.0)
         if self._debug_enabled:
-            self._decls.append("declare void @llvm.dbg.declare(metadata, metadata, metadata) nounwind readnone")
-            self._decls.append("declare void @llvm.dbg.value(metadata, metadata, metadata) nounwind readnone")
+            self._decls.append(
+                "declare void @llvm.dbg.declare(metadata, metadata, metadata) nounwind readnone"
+            )
+            self._decls.append(
+                "declare void @llvm.dbg.value(metadata, metadata, metadata) nounwind readnone"
+            )
         # 9) assemble
         hdr = [
             f"; ModuleID = '{self._name}'",
@@ -2247,8 +2245,11 @@ class LLVMTextEmitter:
                 if alloca_ref:
                     ty_id = self._get_debug_type_for_mir(p.ty)
                     var_id = self._emit_debug_local_variable(
-                        p.name, ty_id, self._current_subprogram_id,
-                        fn.source_line or 1, arg_index=idx
+                        p.name,
+                        ty_id,
+                        self._current_subprogram_id,
+                        fn.source_line or 1,
+                        arg_index=idx,
                     )
                     file_id = next(iter(self._debug_file_table.values()), 0)
                     loc_id = self._get_debug_location(
@@ -2327,7 +2328,9 @@ class LLVMTextEmitter:
             sched_init = ""
             sched_destroy = ""
             if getattr(self, "_module_has_async", False):
-                sched_init = "  call void @__mn_coro_scheduler_init(i32 0)\n"  # 0 = auto-detect cores
+                sched_init = (
+                    "  call void @__mn_coro_scheduler_init(i32 0)\n"  # 0 = auto-detect cores
+                )
                 sched_destroy = "  call void @__mn_coro_scheduler_destroy()\n"
             if sched_init:
                 # Add scheduler init as first instruction in entry block
@@ -2432,7 +2435,9 @@ class LLVMTextEmitter:
                             rewritten.append(f"  store {ret_ty} {ret_val}, ptr {t}")
                             rvs = self._f("ret.val.slot")
                             rewritten.append(f"  store i8 1, ptr %future")
-                            rewritten.append(f"  {rvs} = getelementptr inbounds {{i8, ptr}}, ptr %future, i32 0, i32 1")
+                            rewritten.append(
+                                f"  {rvs} = getelementptr inbounds {{i8, ptr}}, ptr %future, i32 0, i32 1"
+                            )
                             rewritten.append(f"  store ptr {t}, ptr {rvs}")
                             rewritten.append(f"  br label %coro.final")
                         else:
@@ -2477,7 +2482,9 @@ class LLVMTextEmitter:
             # Coroutine epilogue blocks
             out.append("coro.final:")
             out.append("  %coro.final.save = call token @llvm.coro.save(ptr %coro.hdl)")
-            out.append("  %coro.final.susp = call i8 @llvm.coro.suspend(token %coro.final.save, i1 true)")
+            out.append(
+                "  %coro.final.susp = call i8 @llvm.coro.suspend(token %coro.final.save, i1 true)"
+            )
             out.append("  switch i8 %coro.final.susp, label %coro.ret [")
             out.append("    i8 0, label %coro.ret")
             out.append("    i8 1, label %coro.cleanup")
@@ -2492,7 +2499,10 @@ class LLVMTextEmitter:
             out.append("}")
         else:
             # Regular (non-async) function emission
-            out: list[str] = [f"define {lk}{abi_rt} @{fn.name}({ps}){fn_attrs}{dbg_ref} {{", "pre_entry:"]
+            out: list[str] = [
+                f"define {lk}{abi_rt} @{fn.name}({ps}){fn_attrs}{dbg_ref} {{",
+                "pre_entry:",
+            ]
             out.extend(self._ent)
             for p in fn.params:
                 ty = self._rty(p.ty)
@@ -2733,7 +2743,9 @@ class LLVMTextEmitter:
         vals = ", ".join(f"i64 {o}" for o in offsets)
         self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
         gep = self._f("offp")
-        self._L(f"{gep} = getelementptr inbounds [{len(offsets)} x i64], " f"ptr {name}, i64 0, i64 0")
+        self._L(
+            f"{gep} = getelementptr inbounds [{len(offsets)} x i64], " f"ptr {name}, i64 0, i64 0"
+        )
         return gep
 
     # --- Cast ---
@@ -3002,25 +3014,13 @@ class LLVMTextEmitter:
         # (string_concat_optimization) emits these calls to replace O(n²)
         # concat loops with amortized O(n) builder appends.
         if fn == "__mn_sb_new" and len(args) >= 1:
-            cv = (
-                args[0][0]
-                if args[0][1] == I64
-                else self._coerce(args[0][0], args[0][1], I64)
-            )
+            cv = args[0][0] if args[0][1] == I64 else self._coerce(args[0][0], args[0][1], I64)
             r = self._rt("__mn_sb_new", PTR, [I64], [(cv, I64)])
             self._put(i.dest, r, PTR)
             return
         if fn == "__mn_sb_append" and len(args) >= 2:
-            sbv = (
-                args[0][0]
-                if args[0][1] == PTR
-                else self._coerce(args[0][0], args[0][1], PTR)
-            )
-            sv = (
-                args[1][0]
-                if args[1][1] == STR
-                else self._coerce(args[1][0], args[1][1], STR)
-            )
+            sbv = args[0][0] if args[0][1] == PTR else self._coerce(args[0][0], args[0][1], PTR)
+            sv = args[1][0] if args[1][1] == STR else self._coerce(args[1][0], args[1][1], STR)
             self._rt(
                 "__mn_sb_append",
                 VOID,
@@ -3030,11 +3030,7 @@ class LLVMTextEmitter:
             self._put(i.dest, "0", I1)
             return
         if fn == "__mn_sb_finish" and len(args) >= 1:
-            sbv = (
-                args[0][0]
-                if args[0][1] == PTR
-                else self._coerce(args[0][0], args[0][1], PTR)
-            )
+            sbv = args[0][0] if args[0][1] == PTR else self._coerce(args[0][0], args[0][1], PTR)
             r = self._rt("__mn_sb_finish", STR, [PTR], [(sbv, PTR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
@@ -3422,7 +3418,9 @@ class LLVMTextEmitter:
             self._ensure(fn, ret_ty, [PTR, I64], va=True)
             idx_str = (", " + ", ".join(idx_parts)) if idx_parts else ""
             r = self._f("tget")
-            self._L(f"{r} = call {ret_ty} (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str})")
+            self._L(
+                f"{r} = call {ret_ty} (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str})"
+            )
             self._put(i.dest, r, ret_ty)
             return
         if fn in ("__mn_tensor_set_f64_nd", "__mn_tensor_set_i64_nd") and len(args) >= 3:
@@ -3431,25 +3429,36 @@ class LLVMTextEmitter:
             rank_v = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
             val_ty = DBL if "f64" in fn else I64
             # Last arg is the value; middle args are indices
-            val_v = self._coerce(args[-1][0], args[-1][1], val_ty) if args[-1][1] != val_ty else args[-1][0]
+            val_v = (
+                self._coerce(args[-1][0], args[-1][1], val_ty)
+                if args[-1][1] != val_ty
+                else args[-1][0]
+            )
             idx_parts = []
             for j in range(2, len(args) - 1):
                 iv = self._coerce(args[j][0], args[j][1], I64) if args[j][1] != I64 else args[j][0]
                 idx_parts.append(f"i64 {iv}")
             self._ensure(fn, VOID, [PTR, I64], va=True)
             idx_str = (", " + ", ".join(idx_parts)) if idx_parts else ""
-            self._L(f"call void (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str}, {val_ty} {val_v})")
+            self._L(
+                f"call void (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str}, {val_ty} {val_v})"
+            )
             return
 
         # Tensor reduction methods (v4.45.0)
         _TENSOR_REDUCE_F64 = {
-            "__mn_tensor_sum_f64": DBL, "__mn_tensor_mean_f64": DBL,
-            "__mn_tensor_max_f64": DBL, "__mn_tensor_min_f64": DBL,
-            "__mn_tensor_argmax_f64": I64, "__mn_tensor_argmin_f64": I64,
+            "__mn_tensor_sum_f64": DBL,
+            "__mn_tensor_mean_f64": DBL,
+            "__mn_tensor_max_f64": DBL,
+            "__mn_tensor_min_f64": DBL,
+            "__mn_tensor_argmax_f64": I64,
+            "__mn_tensor_argmin_f64": I64,
         }
         _TENSOR_REDUCE_I64 = {
-            "__mn_tensor_sum_i64": I64, "__mn_tensor_max_i64": I64,
-            "__mn_tensor_min_i64": I64, "__mn_tensor_argmax_i64": I64,
+            "__mn_tensor_sum_i64": I64,
+            "__mn_tensor_max_i64": I64,
+            "__mn_tensor_min_i64": I64,
+            "__mn_tensor_argmax_i64": I64,
             "__mn_tensor_argmin_i64": I64,
         }
         _ALL_TENSOR_REDUCE = {**_TENSOR_REDUCE_F64, **_TENSOR_REDUCE_I64}
@@ -3470,7 +3479,11 @@ class LLVMTextEmitter:
             t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
             # Last arg is rank
             rank_idx = len(args) - 1
-            rank_v = self._coerce(args[rank_idx][0], args[rank_idx][1], I64) if args[rank_idx][1] != I64 else args[rank_idx][0]
+            rank_v = (
+                self._coerce(args[rank_idx][0], args[rank_idx][1], I64)
+                if args[rank_idx][1] != I64
+                else args[rank_idx][0]
+            )
             ndim = (len(args) - 2) // 2  # (total - tensor - rank) / 2
             # Allocate stack arrays for starts and ends
             starts_arr = self._f("starts_arr")
@@ -3479,38 +3492,62 @@ class LLVMTextEmitter:
             self._L(f"{ends_arr} = alloca [{ndim} x i64]")
             # Store individual start/end values into the arrays
             for d in range(ndim):
-                s_val = self._coerce(args[1 + d][0], args[1 + d][1], I64) if args[1 + d][1] != I64 else args[1 + d][0]
-                e_val = self._coerce(args[1 + ndim + d][0], args[1 + ndim + d][1], I64) if args[1 + ndim + d][1] != I64 else args[1 + ndim + d][0]
+                s_val = (
+                    self._coerce(args[1 + d][0], args[1 + d][1], I64)
+                    if args[1 + d][1] != I64
+                    else args[1 + d][0]
+                )
+                e_val = (
+                    self._coerce(args[1 + ndim + d][0], args[1 + ndim + d][1], I64)
+                    if args[1 + ndim + d][1] != I64
+                    else args[1 + ndim + d][0]
+                )
                 s_gep = self._f("sgep")
                 e_gep = self._f("egep")
-                self._L(f"{s_gep} = getelementptr inbounds [{ndim} x i64], ptr {starts_arr}, i64 0, i64 {d}")
-                self._L(f"{e_gep} = getelementptr inbounds [{ndim} x i64], ptr {ends_arr}, i64 0, i64 {d}")
+                self._L(
+                    f"{s_gep} = getelementptr inbounds [{ndim} x i64], ptr {starts_arr}, i64 0, i64 {d}"
+                )
+                self._L(
+                    f"{e_gep} = getelementptr inbounds [{ndim} x i64], ptr {ends_arr}, i64 0, i64 {d}"
+                )
                 self._L(f"store i64 {s_val}, ptr {s_gep}")
                 self._L(f"store i64 {e_val}, ptr {e_gep}")
             self._ensure("__mn_tensor_slice", PTR, [PTR, PTR, PTR, I64])
             r = self._f("tslice")
-            self._L(f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, i64 {rank_v})")
+            self._L(
+                f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, i64 {rank_v})"
+            )
             self._tensor_vars.append(i.dest.name)
             self._put(i.dest, r, PTR)
             return
 
         # Tensor broadcast ops (v4.44.0) — tensor+tensor and tensor+scalar
         _TENSOR_BROADCAST_FNS = {
-            "__mn_tensor_add_broadcast_f64", "__mn_tensor_sub_broadcast_f64",
-            "__mn_tensor_mul_broadcast_f64", "__mn_tensor_div_broadcast_f64",
-            "__mn_tensor_add_broadcast_i64", "__mn_tensor_sub_broadcast_i64",
-            "__mn_tensor_mul_broadcast_i64", "__mn_tensor_div_broadcast_i64",
+            "__mn_tensor_add_broadcast_f64",
+            "__mn_tensor_sub_broadcast_f64",
+            "__mn_tensor_mul_broadcast_f64",
+            "__mn_tensor_div_broadcast_f64",
+            "__mn_tensor_add_broadcast_i64",
+            "__mn_tensor_sub_broadcast_i64",
+            "__mn_tensor_mul_broadcast_i64",
+            "__mn_tensor_div_broadcast_i64",
         }
         _TENSOR_SCALAR_FNS = {
-            "__mn_tensor_add_scalar_f64", "__mn_tensor_sub_scalar_f64",
-            "__mn_tensor_mul_scalar_f64", "__mn_tensor_div_scalar_f64",
-            "__mn_tensor_add_scalar_i64", "__mn_tensor_sub_scalar_i64",
-            "__mn_tensor_mul_scalar_i64", "__mn_tensor_div_scalar_i64",
+            "__mn_tensor_add_scalar_f64",
+            "__mn_tensor_sub_scalar_f64",
+            "__mn_tensor_mul_scalar_f64",
+            "__mn_tensor_div_scalar_f64",
+            "__mn_tensor_add_scalar_i64",
+            "__mn_tensor_sub_scalar_i64",
+            "__mn_tensor_mul_scalar_i64",
+            "__mn_tensor_div_scalar_i64",
         }
         # Reverse scalar: scalar op tensor[i] (v4.47.0)
         _TENSOR_RSCALAR_FNS = {
-            "__mn_tensor_rsub_scalar_f64", "__mn_tensor_rdiv_scalar_f64",
-            "__mn_tensor_rsub_scalar_i64", "__mn_tensor_rdiv_scalar_i64",
+            "__mn_tensor_rsub_scalar_f64",
+            "__mn_tensor_rdiv_scalar_f64",
+            "__mn_tensor_rsub_scalar_i64",
+            "__mn_tensor_rdiv_scalar_i64",
         }
         if fn in _TENSOR_BROADCAST_FNS and len(args) >= 2:
             a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
@@ -3524,7 +3561,11 @@ class LLVMTextEmitter:
         if fn in _TENSOR_SCALAR_FNS and len(args) >= 2:
             a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
             scalar_ty = DBL if "f64" in fn else I64
-            a1 = self._coerce(args[1][0], args[1][1], scalar_ty) if args[1][1] != scalar_ty else args[1][0]
+            a1 = (
+                self._coerce(args[1][0], args[1][1], scalar_ty)
+                if args[1][1] != scalar_ty
+                else args[1][0]
+            )
             self._ensure(fn, PTR, [PTR, scalar_ty])
             r = self._f("tscal")
             self._L(f"{r} = call noalias ptr @{fn}(ptr {a0}, {scalar_ty} {a1})")
@@ -3534,7 +3575,11 @@ class LLVMTextEmitter:
         # Reverse scalar: scalar op tensor (v4.47.0)
         if fn in _TENSOR_RSCALAR_FNS and len(args) >= 2:
             scalar_ty = DBL if "f64" in fn else I64
-            a0 = self._coerce(args[0][0], args[0][1], scalar_ty) if args[0][1] != scalar_ty else args[0][0]
+            a0 = (
+                self._coerce(args[0][0], args[0][1], scalar_ty)
+                if args[0][1] != scalar_ty
+                else args[0][0]
+            )
             a1 = self._coerce(args[1][0], args[1][1], PTR) if args[1][1] != PTR else args[1][0]
             self._ensure(fn, PTR, [scalar_ty, PTR])
             r = self._f("trscal")
@@ -4180,11 +4225,14 @@ class LLVMTextEmitter:
         shape_a = self._alloca(f"[{rank} x i64]", "tshape")
         for dim_idx, dim_val in enumerate(i.shape):
             gep = self._f("tsd")
-            self._L(f"{gep} = getelementptr inbounds [{rank} x i64], ptr {shape_a}, i64 0, i64 {dim_idx}")
+            self._L(
+                f"{gep} = getelementptr inbounds [{rank} x i64], ptr {shape_a}, i64 0, i64 {dim_idx}"
+            )
             self._L(f"store i64 {dim_val}, ptr {gep}")
 
         # Step 2: Determine element size
         from mapanare.types import TypeKind as TK
+
         elem_size = 8  # sizeof(double) or sizeof(int64_t)
 
         # Step 3: Call __mn_tensor_alloc
@@ -5333,7 +5381,9 @@ class LLVMTextEmitter:
             if hn in self._sigs:
                 hp = f"@{hn}"
             lines.append(f"  %name.{i} = alloca [1 x i8], align 1")
-            lines.append(f"  %np.{i} = getelementptr inbounds [1 x i8], ptr %name.{i}, i64 0, i64 0")
+            lines.append(
+                f"  %np.{i} = getelementptr inbounds [1 x i8], ptr %name.{i}, i64 0, i64 0"
+            )
             lines.append(
                 f"  %ag.{i} = call ptr @mapanare_agent_new(ptr %np.{i}, ptr {hp},"
                 f" ptr null, i32 256, i32 256)"

@@ -14,9 +14,7 @@ import tempfile
 
 import pytest
 
-MNC_STAGE1 = os.path.join(
-    os.path.dirname(__file__), "..", "..", "mapanare", "self", "mnc-stage1"
-)
+MNC_STAGE1 = os.path.join(os.path.dirname(__file__), "..", "..", "mapanare", "self", "mnc-stage1")
 
 
 def _needs_stage1():
@@ -79,67 +77,40 @@ class TestCascadeSuppression:
     def test_field_access_on_error_suppresses(self):
         """Field access on an error-typed value should not produce field errors."""
         result = _compile(
-            "fn main() {\n"
-            "  let x = bar()\n"
-            "  let y = x.name\n"
-            "  let z = y.len()\n"
-            "}\n"
+            "fn main() {\n" "  let x = bar()\n" "  let y = x.name\n" "  let z = y.len()\n" "}\n"
         )
         assert result.returncode == 1
         assert _error_count(result) == 1
 
     def test_method_call_on_error_suppresses(self):
         """Method call on an error-typed value should not produce method errors."""
-        result = _compile(
-            "fn main() {\n"
-            "  let x = baz()\n"
-            "  let y = x.to_upper()\n"
-            "}\n"
-        )
+        result = _compile("fn main() {\n" "  let x = baz()\n" "  let y = x.to_upper()\n" "}\n")
         assert result.returncode == 1
         assert _error_count(result) == 1
 
     def test_index_on_error_suppresses(self):
         """Index access on an error-typed value should not cascade."""
-        result = _compile(
-            "fn main() {\n"
-            "  let x = qux()\n"
-            "  let y = x[0]\n"
-            "}\n"
-        )
+        result = _compile("fn main() {\n" "  let x = qux()\n" "  let y = x[0]\n" "}\n")
         assert result.returncode == 1
         assert _error_count(result) == 1
 
     def test_let_type_mismatch_on_error_suppresses(self):
         """Let binding with error-typed initializer should not report type mismatch."""
-        result = _compile(
-            "fn main() {\n"
-            "  let x: Int = missing_fn()\n"
-            "}\n"
-        )
+        result = _compile("fn main() {\n" "  let x: Int = missing_fn()\n" "}\n")
         assert result.returncode == 1
         assert _error_count(result) == 1
         assert "missing_fn" in (result.stdout + result.stderr)
 
     def test_two_independent_errors_both_report(self):
         """Two independent errors should both be reported (not suppressed)."""
-        result = _compile(
-            "fn main() {\n"
-            "  let x = foo()\n"
-            "  let y = bar()\n"
-            "}\n"
-        )
+        result = _compile("fn main() {\n" "  let x = foo()\n" "  let y = bar()\n" "}\n")
         assert result.returncode == 1
         assert _error_count(result) == 2
 
     def test_correct_program_unaffected(self):
         """Correct programs still compile without errors."""
         result = _compile(
-            "fn main() {\n"
-            "  let x: Int = 42\n"
-            "  let y = x + 1\n"
-            "  print(str(y))\n"
-            "}\n"
+            "fn main() {\n" "  let x: Int = 42\n" "  let y = x + 1\n" "  print(str(y))\n" "}\n"
         )
         assert result.returncode == 0
         assert _error_count(result) == 0

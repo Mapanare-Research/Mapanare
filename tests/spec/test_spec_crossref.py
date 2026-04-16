@@ -226,16 +226,16 @@ class TestSpecVersionAndStatus:
     def test_version_matches_live_cut(self) -> None:
         text = _spec_text()
         # Header format: "**Version:** 4.<minor>.<patch>"
-        assert re.search(r"^\*\*Version:\*\*\s+4\.\d+\.\d+", text, re.M), (
-            "SPEC.md header must advertise a v4.x version"
-        )
+        assert re.search(
+            r"^\*\*Version:\*\*\s+4\.\d+\.\d+", text, re.M
+        ), "SPEC.md header must advertise a v4.x version"
 
     def test_status_is_live(self) -> None:
         text = _spec_text()
         # Header format: "**Status:** Live — synced to the v4.X.Y cut (YYYY-MM-DD)"
-        assert re.search(r"^\*\*Status:\*\*\s+Live", text, re.M), (
-            "SPEC.md status must be a 'Live' status reflecting the current cut"
-        )
+        assert re.search(
+            r"^\*\*Status:\*\*\s+Live", text, re.M
+        ), "SPEC.md status must be a 'Live' status reflecting the current cut"
 
     def test_not_working_draft(self) -> None:
         text = _spec_text()

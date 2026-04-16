@@ -132,8 +132,23 @@ def compile_mn(mn_path: Path, out_dir: Path) -> Path | None:
         (["python3", "-m", "mapanare", "emit-llvm", str(mn_path), "-o", str(ll)], "emit"),
         ([tools["llvm-as"], str(ll), "-o", str(bc)], "llvm-as"),
         ([tools["opt"], "-O2", str(bc), "-o", str(opt_bc)], "opt"),
-        ([tools["llc"], "-filetype=obj", "-relocation-model=pic", str(opt_bc), "-o", str(obj)], "llc"),
-        ([tools["clang"], str(obj), str(RUNTIME_LIB), "-lm", "-lpthread", "-ldl", "-o", str(binary)], "link"),
+        (
+            [tools["llc"], "-filetype=obj", "-relocation-model=pic", str(opt_bc), "-o", str(obj)],
+            "llc",
+        ),
+        (
+            [
+                tools["clang"],
+                str(obj),
+                str(RUNTIME_LIB),
+                "-lm",
+                "-lpthread",
+                "-ldl",
+                "-o",
+                str(binary),
+            ],
+            "link",
+        ),
     ]
     for cmd, stage in steps:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -150,7 +165,9 @@ def compile_rust(rs_path: Path, out_dir: Path) -> Path | None:
         return None
     r = subprocess.run(
         [rustc, "-O", str(rs_path), "-o", str(binary)],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     if r.returncode != 0:
         print(f"  FAIL rustc: {r.stderr[:120]}")
@@ -192,6 +209,7 @@ def get_binary_size(binary: Path) -> int:
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--only", type=str, default=None)
@@ -215,10 +233,14 @@ def main():
                 td = Path(tmpdir)
                 binary = compile_mn(mn_path, td)
                 if binary is None:
-                    all_results.append({
-                        "benchmark": name, "category": category,
-                        "status": "compile_fail", "median_ms": -1,
-                    })
+                    all_results.append(
+                        {
+                            "benchmark": name,
+                            "category": category,
+                            "status": "compile_fail",
+                            "median_ms": -1,
+                        }
+                    )
                     continue
 
                 median_ms, output, ok = bench_runs([str(binary)], args.runs)
@@ -229,16 +251,18 @@ def main():
                 status = "ok" if ok and correct else "fail"
                 print(f"  {name}: {median_ms:.1f}ms ({status}) [{output[:60]}]")
 
-                all_results.append({
-                    "benchmark": name,
-                    "category": category,
-                    "median_ms": median_ms,
-                    "output": output,
-                    "correct": correct,
-                    "status": status,
-                    "binary_size_bytes": bin_size,
-                    "source_lines": src_lines,
-                })
+                all_results.append(
+                    {
+                        "benchmark": name,
+                        "category": category,
+                        "median_ms": median_ms,
+                        "output": output,
+                        "correct": correct,
+                        "status": status,
+                        "binary_size_bytes": bin_size,
+                        "source_lines": src_lines,
+                    }
+                )
         print()
 
     # Cross-language
@@ -254,10 +278,14 @@ def main():
             if py_path and py_path.exists():
                 median_ms, output, ok = bench_runs(["python3", str(py_path)], args.runs)
                 print(f"  {name} (python): {median_ms:.1f}ms")
-                cross_results.append({
-                    "benchmark": name, "language": "python",
-                    "median_ms": median_ms, "output": output,
-                })
+                cross_results.append(
+                    {
+                        "benchmark": name,
+                        "language": "python",
+                        "median_ms": median_ms,
+                        "output": output,
+                    }
+                )
 
             # Rust
             rs_path = langs.get("rust")
@@ -268,10 +296,14 @@ def main():
                     if binary:
                         median_ms, output, ok = bench_runs([str(binary)], args.runs)
                         print(f"  {name} (rust): {median_ms:.1f}ms")
-                        cross_results.append({
-                            "benchmark": name, "language": "rust",
-                            "median_ms": median_ms, "output": output,
-                        })
+                        cross_results.append(
+                            {
+                                "benchmark": name,
+                                "language": "rust",
+                                "median_ms": median_ms,
+                                "output": output,
+                            }
+                        )
         print()
 
     # Save results

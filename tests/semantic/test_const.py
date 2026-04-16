@@ -24,22 +24,16 @@ class TestConstFolding:
         assert not errors
 
     def test_const_refers_to_another_const(self):
-        errors = _check(
-            "const N: Int = 10\nconst M: Int = N\nfn main() { print(str(M)) }\n"
-        )
+        errors = _check("const N: Int = 10\nconst M: Int = N\nfn main() { print(str(M)) }\n")
         assert not errors
 
     def test_const_binary_op_folds(self):
-        errors = _check(
-            "const N: Int = 10\nconst D: Int = N * 2\nfn main() { print(str(D)) }\n"
-        )
+        errors = _check("const N: Int = 10\nconst D: Int = N * 2\nfn main() { print(str(D)) }\n")
         assert not errors
 
     def test_const_non_constant_initializer_is_error(self):
         errors = _check(
-            "fn get_val() -> Int { return 42 }\n"
-            "const N: Int = get_val()\n"
-            "fn main() {}\n"
+            "fn get_val() -> Int { return 42 }\n" "const N: Int = get_val()\n" "fn main() {}\n"
         )
         assert len(errors) >= 1
         assert any("constant expression" in e.message for e in errors)
@@ -52,7 +46,5 @@ class TestConstImmutability:
         assert any("const" in e.message.lower() for e in errors)
 
     def test_const_used_as_value(self):
-        errors = _check(
-            "const N: Int = 42\nfn main() { let x: Int = N\n  print(str(x)) }\n"
-        )
+        errors = _check("const N: Int = 42\nfn main() { let x: Int = N\n  print(str(x)) }\n")
         assert not errors

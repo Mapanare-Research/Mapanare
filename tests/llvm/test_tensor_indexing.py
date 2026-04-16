@@ -26,7 +26,9 @@ class TestTensorIndexingLLVM:
         assert "__mn_tensor_get_f64_nd" in ir
 
     def test_3d_get_emits_call(self):
-        ir = _emit("fn main() { let a = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]; let x = a[0, 1, 0] }")
+        ir = _emit(
+            "fn main() { let a = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]; let x = a[0, 1, 0] }"
+        )
         assert "__mn_tensor_get_f64_nd" in ir
 
     def test_int_tensor_uses_i64_variant(self):
@@ -34,7 +36,9 @@ class TestTensorIndexingLLVM:
         assert "__mn_tensor_get_i64_nd" in ir
 
     def test_2d_set_emits_variadic_call(self):
-        ir = _emit("fn main() { let mut a = Tensor<Float>[[0.0, 0.0], [0.0, 0.0]]; a[0, 1] = 42.0 }")
+        ir = _emit(
+            "fn main() { let mut a = Tensor<Float>[[0.0, 0.0], [0.0, 0.0]]; a[0, 1] = 42.0 }"
+        )
         assert "__mn_tensor_set_f64_nd" in ir
 
     def test_list_single_index_no_regression(self):

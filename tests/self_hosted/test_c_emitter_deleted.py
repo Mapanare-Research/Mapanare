@@ -10,9 +10,7 @@ import os
 
 import pytest
 
-EMIT_C_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "mapanare", "self", "emit_c.mn"
-)
+EMIT_C_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "mapanare", "self", "emit_c.mn")
 
 
 def test_emit_c_mn_does_not_exist():
