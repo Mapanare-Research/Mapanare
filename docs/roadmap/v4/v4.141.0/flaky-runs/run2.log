@@ -1,0 +1,341 @@
+..................................s.................................................................................................................................................................................................................................................................................................................................................................sssssss....x.....x....xxx..............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................sssssssssssssssssssssssssss=== Mapanare C Runtime Tests ===
+
+[String Tests]
+  test_str_from_cstr                                 [PASS]
+  test_str_empty                                     [PASS]
+  test_str_concat                                    [PASS]
+  test_str_eq                                        [PASS]
+  test_str_cmp                                       [PASS]
+  test_str_substr                                    [PASS]
+  test_str_starts_with                               [PASS]
+  test_str_ends_with                                 [PASS]
+  test_str_find                                      [PASS]
+  test_str_char_at                                   [PASS]
+  test_str_byte_at                                   [PASS]
+  test_str_from_int                                  [PASS]
+  test_str_from_null                                 [PASS]
+  test_str_concat_empty                              [PASS]
+  test_str_stress_alloc_free                         [PASS]
+  test_str_stress_concat                             [PASS]
+
+[List Tests]
+  test_list_new                                      [PASS]
+  test_list_push_pop                                 [PASS]
+  test_list_set                                      [PASS]
+  test_list_oob                                      [PASS]
+  test_list_grow                                     [PASS]
+  test_list_clear                                    [PASS]
+  test_list_str                                      [PASS]
+  test_list_concat                                   [PASS]
+  test_list_stress                                   [PASS]
+
+[Arena Tests]
+  test_arena_basic                                   [PASS]
+  test_arena_large_alloc                             [PASS]
+  test_arena_zero_alloc                              [PASS]
+  test_arena_stress                                  [PASS]
+  test_agent_arena                                   [PASS]
+
+[Memory Tests]
+  test_alloc_free                                    [PASS]
+  test_realloc                                       [PASS]
+
+[Ring Buffer Tests]
+  test_ring_basic                                    [PASS]
+  test_ring_full                                     [PASS]
+  test_ring_wraparound                               [PASS]
+  test_ring_stress                                   [PASS]
+  test_ring_fill_drain_stress                        [PASS]
+
+[Backpressure Tests]
+  test_bp_basic                                      [PASS]
+  test_bp_stress                                     [PASS]
+
+[Thread Pool Tests]
+  test_pool_basic                                    [PASS]
+  test_pool_saturation                               [PASS]
+  test_pool_cpu_count                                [PASS]
+
+[Agent Tests]
+  test_agent_lifecycle                               [PASS]
+  test_agent_send_recv                               [PASS]
+  test_agent_pause_resume                            [PASS]
+  test_agent_failing_handler                         [PASS]
+  test_agent_metrics                                 [PASS]
+  test_agent_new_heap                                [PASS]
+
+[Registry Tests]
+  test_registry_basic                                [PASS]
+
+[File I/O Tests]
+  test_file_write_read                               [PASS]
+  test_file_read_nonexistent                         [PASS]
+
+[Graceful Shutdown Tests]
+  test_shutdown_init                                 [PASS]
+  test_shutdown_with_agents                          [PASS]
+
+[Map Tests]
+  test_map_new_free                                  [PASS]
+  test_map_set_get                                   [PASS]
+  test_map_overwrite                                 [PASS]
+  test_map_del                                       [PASS]
+  test_map_contains                                  [PASS]
+  test_map_len                                       [PASS]
+  test_map_iter                                      [PASS]
+  test_map_free_deep                                 [PASS]
+
+[Signal Tests]
+  test_signal_new_free                               [PASS]
+  test_signal_set_get                                [PASS]
+  test_signal_subscribe_unsubscribe                  [PASS]
+  test_signal_no_change_skip                         [PASS]
+
+[Stream Tests]
+  test_stream_from_list_collect                      [PASS]
+  test_stream_map                                    [PASS]
+  test_stream_filter                                 [PASS]
+  test_stream_free_chain                             [PASS]
+
+[MnValue (any) Tests]
+  test_any_box_int                                   [PASS]
+  test_any_box_float                                 [PASS]
+  test_any_box_bool                                  [PASS]
+  test_any_unbox_int                                 [PASS]
+  test_any_typename                                  [PASS]
+
+=== Results: 74/74 passed ===
+
+.=== Mapanare C Runtime Tests ===
+
+[String Tests]
+  test_str_from_cstr                                 [PASS]
+  test_str_empty                                     [PASS]
+  test_str_concat                                    [PASS]
+  test_str_eq                                        [PASS]
+  test_str_cmp                                       [PASS]
+  test_str_substr                                    [PASS]
+  test_str_starts_with                               [PASS]
+  test_str_ends_with                                 [PASS]
+  test_str_find                                      [PASS]
+  test_str_char_at                                   [PASS]
+  test_str_byte_at                                   [PASS]
+  test_str_from_int                                  [PASS]
+  test_str_from_null                                 [PASS]
+  test_str_concat_empty                              [PASS]
+  test_str_stress_alloc_free                         [PASS]
+  test_str_stress_concat                             [PASS]
+
+[List Tests]
+  test_list_new                                      [PASS]
+  test_list_push_pop                                 [PASS]
+  test_list_set                                      [PASS]
+  test_list_oob                                      [PASS]
+  test_list_grow                                     [PASS]
+  test_list_clear                                    [PASS]
+  test_list_str                                      [PASS]
+  test_list_concat                                   [PASS]
+  test_list_stress                                   [PASS]
+
+[Arena Tests]
+  test_arena_basic                                   [PASS]
+  test_arena_large_alloc                             [PASS]
+  test_arena_zero_alloc                              [PASS]
+  test_arena_stress                                  [PASS]
+  test_agent_arena                                   [PASS]
+
+[Memory Tests]
+  test_alloc_free                                    [PASS]
+  test_realloc                                       [PASS]
+
+[Ring Buffer Tests]
+  test_ring_basic                                    [PASS]
+  test_ring_full                                     [PASS]
+  test_ring_wraparound                               [PASS]
+  test_ring_stress                                   [PASS]
+  test_ring_fill_drain_stress                        [PASS]
+
+[Backpressure Tests]
+  test_bp_basic                                      [PASS]
+  test_bp_stress                                     [PASS]
+
+[Thread Pool Tests]
+  test_pool_basic                                    [PASS]
+  test_pool_saturation                               [PASS]
+  test_pool_cpu_count                                [PASS]
+
+[Agent Tests]
+  test_agent_lifecycle                               [PASS]
+  test_agent_send_recv                               [PASS]
+  test_agent_pause_resume                            [PASS]
+  test_agent_failing_handler                         [PASS]
+  test_agent_metrics                                 [PASS]
+  test_agent_new_heap                                [PASS]
+
+[Registry Tests]
+  test_registry_basic                                [PASS]
+
+[File I/O Tests]
+  test_file_write_read                               [PASS]
+  test_file_read_nonexistent                         [PASS]
+
+[Graceful Shutdown Tests]
+  test_shutdown_init                                 [PASS]
+  test_shutdown_with_agents                          [PASS]
+
+[Map Tests]
+  test_map_new_free                                  [PASS]
+  test_map_set_get                                   [PASS]
+  test_map_overwrite                                 [PASS]
+  test_map_del                                       [PASS]
+  test_map_contains                                  [PASS]
+  test_map_len                                       [PASS]
+  test_map_iter                                      [PASS]
+  test_map_free_deep                                 [PASS]
+
+[Signal Tests]
+  test_signal_new_free                               [PASS]
+  test_signal_set_get                                [PASS]
+  test_signal_subscribe_unsubscribe                  [PASS]
+  test_signal_no_change_skip                         [PASS]
+
+[Stream Tests]
+  test_stream_from_list_collect                      [PASS]
+  test_stream_map                                    [PASS]
+  test_stream_filter                                 [PASS]
+  test_stream_free_chain                             [PASS]
+
+[MnValue (any) Tests]
+  test_any_box_int                                   [PASS]
+  test_any_box_float                                 [PASS]
+  test_any_box_bool                                  [PASS]
+  test_any_unbox_int                                 [PASS]
+  test_any_typename                                  [PASS]
+
+=== Results: 74/74 passed ===
+
+.=== Mapanare C Runtime Tests ===
+
+[String Tests]
+  test_str_from_cstr                                 [PASS]
+  test_str_empty                                     [PASS]
+  test_str_concat                                    [PASS]
+  test_str_eq                                        [PASS]
+  test_str_cmp                                       [PASS]
+  test_str_substr                                    [PASS]
+  test_str_starts_with                               [PASS]
+  test_str_ends_with                                 [PASS]
+  test_str_find                                      [PASS]
+  test_str_char_at                                   [PASS]
+  test_str_byte_at                                   [PASS]
+  test_str_from_int                                  [PASS]
+  test_str_from_null                                 [PASS]
+  test_str_concat_empty                              [PASS]
+  test_str_stress_alloc_free                         [PASS]
+  test_str_stress_concat                             [PASS]
+
+[List Tests]
+  test_list_new                                      [PASS]
+  test_list_push_pop                                 [PASS]
+  test_list_set                                      [PASS]
+  test_list_oob                                      [PASS]
+  test_list_grow                                     [PASS]
+  test_list_clear                                    [PASS]
+  test_list_str                                      [PASS]
+  test_list_concat                                   [PASS]
+  test_list_stress                                   [PASS]
+
+[Arena Tests]
+  test_arena_basic                                   [PASS]
+  test_arena_large_alloc                             [PASS]
+  test_arena_zero_alloc                              [PASS]
+  test_arena_stress                                  [PASS]
+  test_agent_arena                                   [PASS]
+
+[Memory Tests]
+  test_alloc_free                                    [PASS]
+  test_realloc                                       [PASS]
+
+[Ring Buffer Tests]
+  test_ring_basic                                    [PASS]
+  test_ring_full                                     [PASS]
+  test_ring_wraparound                               [PASS]
+  test_ring_stress                                   [PASS]
+  test_ring_fill_drain_stress                        [PASS]
+
+[Backpressure Tests]
+  test_bp_basic                                      [PASS]
+  test_bp_stress                                     [PASS]
+
+[Thread Pool Tests]
+  test_pool_basic                                    [PASS]
+  test_pool_saturation                               [PASS]
+  test_pool_cpu_count                                [PASS]
+
+[Agent Tests]
+  test_agent_lifecycle                               [PASS]
+  test_agent_send_recv                               [PASS]
+  test_agent_pause_resume                            [PASS]
+  test_agent_failing_handler                         [PASS]
+  test_agent_metrics                                 [PASS]
+  test_agent_new_heap                                [PASS]
+
+[Registry Tests]
+  test_registry_basic                                [PASS]
+
+[File I/O Tests]
+  test_file_write_read                               [PASS]
+  test_file_read_nonexistent                         [PASS]
+
+[Graceful Shutdown Tests]
+  test_shutdown_init                                 [PASS]
+  test_shutdown_with_agents                          [PASS]
+
+[Map Tests]
+  test_map_new_free                                  [PASS]
+  test_map_set_get                                   [PASS]
+  test_map_overwrite                                 [PASS]
+  test_map_del                                       [PASS]
+  test_map_contains                                  [PASS]
+  test_map_len                                       [PASS]
+  test_map_iter                                      [PASS]
+  test_map_free_deep                                 [PASS]
+
+[Signal Tests]
+  test_signal_new_free                               [PASS]
+  test_signal_set_get                                [PASS]
+  test_signal_subscribe_unsubscribe                  [PASS]
+  test_signal_no_change_skip                         [PASS]
+
+[Stream Tests]
+  test_stream_from_list_collect                      [PASS]
+  test_stream_map                                    [PASS]
+  test_stream_filter                                 [PASS]
+  test_stream_free_chain                             [PASS]
+
+[MnValue (any) Tests]
+  test_any_box_int                                   [PASS]
+  test_any_box_float                                 [PASS]
+  test_any_box_bool                                  [PASS]
+  test_any_unbox_int                                 [PASS]
+  test_any_typename                                  [PASS]
+
+=== Results: 74/74 passed ===
+
+......................sssssssssssssssssss......s......ss...........ssssssssssssssssssssssssssssssssss...........................................................................................................................................................................................................................................................................................................................................................................................................  created /mnt/c/Users/Juan/AppData/Local/Temp/tmpx3tv5c8t/Dockerfile
+  created /mnt/c/Users/Juan/AppData/Local/Temp/tmpx3tv5c8t/docker-compose.yml
+  created /mnt/c/Users/Juan/AppData/Local/Temp/tmpx3tv5c8t/.dockerignore
+
+deploy: 3 file(s) generated in /mnt/c/Users/Juan/AppData/Local/Temp/tmpx3tv5c8t
+....................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................s.......................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................s................................................................................................................................................x...........................................................................................................................................................................................................................................................................................................................sssssssssssss......................................................................................................................................................................................s........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................x...............x....s.x.......................................................sss.s...sss.....................................................................................................................................................................................................................................................................
+=============================== warnings summary ===============================
+mapanare/test_runner.py:24
+  /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/test_runner.py:24: PytestCollectionWarning: cannot collect test class 'TestResult' because it has a __init__ constructor (from: tests/test_runner/test_test_runner.py)
+    @dataclass
+
+mapanare/test_runner.py:35
+  /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/test_runner.py:35: PytestCollectionWarning: cannot collect test class 'TestSuite' because it has a __init__ constructor (from: tests/test_runner/test_test_runner.py)
+    @dataclass
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5152 passed, 115 skipped, 9 xfailed, 2 warnings in 537.80s (0:08:57)

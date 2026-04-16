@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.141.0] - 2026-04-16
+
+**An.2 lint debt cleared + 5th flaky audit.** The repo-wide lint backlog from
+the v4.120.0 Anaconda panel is now closed. `make lint` exits 0 again, the
+local lint gate in `tests/test_ci.py` is live again, and the fifth cumulative
+full-suite flaky audit adds another five clean sequential runs to the evidence
+base.
+
+**Lint gate re-enabled.** `tests/test_ci.py::TestToolsRunLocally` is no longer
+skip-marked. Removing the skip exposed one stale import, so `tests/test_ci.py`
+dropped an unused `pytest` import. Full CI self-test file now passes:
+**16 passed** with `python3 -m pytest tests/test_ci.py -v -s`.
+
+**VERSION propagation sync.** The release branch already had `VERSION=4.141.0`,
+but the built runtime archive and `mnc-stage1` still advertised `4.140.0`.
+Rebuilt with `make build-rt` + `python3 scripts/build_stage1.py`; targeted
+regressions in `tests/runtime/test_user_agent.py` and
+`tests/self_hosted/test_main_mn.py` now pass. Tracked generated artifact diff:
+`mapanare/self/main.ll` version strings and metadata updated from `4.140.0` to
+`4.141.0`.
+
+**5th flaky audit** (`docs/roadmap/v4/v4.141.0/FLAKY_AUDIT.md`):
+5 sequential non-bootstrap pytest runs, **0 failures in every run**. Each run
+finished at **5152 passed / 115 skipped / 9 xfailed / 2 warnings**. Every
+sorted `FAILED` list is empty; every adjacent diff is empty. Total audit wall:
+**40m 36s**. Cumulative evidence across the five audits:
+**25 sequential runs, zero flaky findings**.
+
+**Verification.** `make lint` clean. Native golden harness baseline holds at
+**54/66** through `mnc-stage1`. Fixed-point check remains **NEAR FIXED POINT**
+at 109,872 lines with only the known version-metadata placeholder diff
+(`"4.141.0"` vs `"__MN_VERSION__"`). `libmapanare_rt.a` sha256:
+`4447cb2de8ab9ff4f112e6fbe782ab43807050fba37fdede40846ccfe854de21`.
+
+**Ledger state.** An.2 **CLOSED**. Net current ledger:
+63 opened since v4.99.0 -> **47 closed / 16 open**
+(`0 CRITICAL / 0 HIGH / 8 MEDIUM / 8 LOW`).
+
 ## [4.140.0] - 2026-04-16
 
 **Self-hosted emitter parity — Cb.5 + SE.1 + Cb.3.** Closes the enum ABI divergence Cobra flagged at the v4.136.0 panel. Python and self-hosted emitters now produce byte-identical enum ABIs and matching runtime behavior.
