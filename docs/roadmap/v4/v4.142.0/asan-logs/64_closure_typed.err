@@ -1,0 +1,3 @@
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/64_closure_typed.mn:0:0: error: Undefined variable 'a'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/64_closure_typed.mn:0:0: error: Undefined variable 'b'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/64_closure_typed.mn:0:0: error: Type mismatch: declared type <fn> but initial value is <fn>

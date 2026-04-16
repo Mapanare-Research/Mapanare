@@ -1,0 +1,36 @@
+parse error: expected RBRACKET but got COMMA
+parse error: expected RPAREN but got DEC_INT
+parse error: expected RPAREN but got RBRACKET
+parse error: expected RBRACKET but got COMMA
+parse error: expected RPAREN but got DEC_INT
+parse error: expected RPAREN but got RBRACKET
+parse error: expected RBRACKET but got COMMA
+parse error: expected RPAREN but got DEC_INT
+parse error: expected RPAREN but got RBRACKET
+parse error: expected RBRACKET but got COMMA
+parse error: expected RPAREN but got DEC_INT
+parse error: expected RPAREN but got RBRACKET
+parse error: expected RBRACKET but got COMMA
+parse error: expected RPAREN but got DEC_INT
+parse error: expected RPAREN but got RBRACKET
+parse error: expected RBRACKET but got COMMA
+parse error: expected RPAREN but got DEC_INT
+parse error: expected RPAREN but got RBRACKET
+parse error: expected RBRACKET but got COMMA
+parse error: expected RBRACKET but got COMMA
+parse error: expected RBRACKET but got COMMA
+parse error: expected RPAREN but got DEC_INT
+parse error: expected RPAREN but got RBRACKET
+parse error: expected RBRACKET but got COMMA
+parse error: expected RPAREN but got DEC_INT
+parse error: expected RPAREN but got RBRACKET
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Tensor'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Float'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Tensor'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Float'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Tensor'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Float'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Tensor'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Float'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Tensor'
+/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/50_tensor_indexing.mn:0:0: error: Undefined variable 'Int'

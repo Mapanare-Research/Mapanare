@@ -1,0 +1,121 @@
+{
+  "mapanare": [
+    {
+      "benchmark": "01_sequential_chain",
+      "language": "mapanare",
+      "median_ms": 5.79,
+      "min_ms": 5.64,
+      "max_ms": 6.11,
+      "runs": 10,
+      "output": "checksum = 5050",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "02_fanout",
+      "language": "mapanare",
+      "median_ms": 5.57,
+      "min_ms": 5.43,
+      "max_ms": 5.92,
+      "runs": 10,
+      "output": "checksum = 171700",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "03_io_bound",
+      "language": "mapanare",
+      "median_ms": 5.82,
+      "min_ms": 5.42,
+      "max_ms": 6.02,
+      "runs": 10,
+      "output": "checksum = 1000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "04_mixed_cpu_io",
+      "language": "mapanare",
+      "median_ms": 6.21,
+      "min_ms": 5.77,
+      "max_ms": 6.61,
+      "runs": 10,
+      "output": "checksum = 12000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "05_backpressure",
+      "language": "mapanare",
+      "median_ms": 5.7,
+      "min_ms": 5.48,
+      "max_ms": 6.11,
+      "runs": 10,
+      "output": "checksum = 2500",
+      "correct": true,
+      "status": "ok"
+    }
+  ],
+  "cross_language": [
+    {
+      "benchmark": "01_sequential_chain",
+      "language": "python",
+      "median_ms": 69.77,
+      "output": "checksum = 5050"
+    },
+    {
+      "benchmark": "01_sequential_chain",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    },
+    {
+      "benchmark": "02_fanout",
+      "language": "python",
+      "median_ms": 70.29,
+      "output": "checksum = 171700"
+    },
+    {
+      "benchmark": "02_fanout",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    },
+    {
+      "benchmark": "03_io_bound",
+      "language": "python",
+      "median_ms": 71.55,
+      "output": "checksum = 1000"
+    },
+    {
+      "benchmark": "03_io_bound",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    },
+    {
+      "benchmark": "04_mixed_cpu_io",
+      "language": "python",
+      "median_ms": 68.43,
+      "output": "checksum = 12000"
+    },
+    {
+      "benchmark": "04_mixed_cpu_io",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    },
+    {
+      "benchmark": "05_backpressure",
+      "language": "python",
+      "median_ms": 68.61,
+      "output": "checksum = 2500"
+    },
+    {
+      "benchmark": "05_backpressure",
+      "language": "go",
+      "median_ms": -1,
+      "note": "go not installed"
+    }
+  ]
+}

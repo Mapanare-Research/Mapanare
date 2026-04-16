@@ -88,23 +88,24 @@ fn build_internal_struct_list() -> List<StructEntry> {
     // and the emitter needs StructEntry's field info to generate correct
     // insertvalue indices for subsequent make_entry calls.
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
-    list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"]))
-    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"]))
+    list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"]))
+    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"]))
     list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
-    list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "arm_body_labels", "merge_label"]))
+    list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
     list.push(make_entry("FnEntry", ["name", "ret_type", "param_types"]))
     // StructEntry already registered first (above)
-    list.push(make_entry("VarInfo", ["name", "value", "mutable"]))
-    list.push(make_entry("StructFieldInfo", ["struct_name", "field_names", "field_types"]))
-    list.push(make_entry("EnumVariantNames", ["name", "variant_names"]))
-    list.push(make_entry("LambdaEntry", ["var_name", "body_name"]))
+    list.push(make_entry("VarInfo", ["name", "current", "mutable"]))
+    list.push(make_entry("StructFieldInfo", ["name", "field_names", "field_types"]))
+    list.push(make_entry("EnumVariantNames", ["enum_name", "variant_names"]))
+    list.push(make_entry("LambdaEntry", ["var_name", "fn_name"]))
     list.push(make_entry("ExternFnInfo", ["abi", "module_name", "fn_name", "param_types", "return_type"]))
     list.push(make_entry("VerifyError", ["fn_name", "block_name", "message"]))
-    list.push(make_entry("ImplEntry", ["key", "method_name"]))
+    list.push(make_entry("ImplEntry", ["key", "mir_name"]))
     list.push(make_entry("ImportInfo", ["path", "items"]))
-    list.push(make_entry("AgentInfo", ["name", "inputs", "outputs", "state_fields"]))
+    list.push(make_entry("ModuleConst", ["name", "type_name", "int_value", "str_value", "is_string"]))
+    list.push(make_entry("AgentInfo", ["name", "inputs", "outputs", "method_names"]))
     list.push(make_entry("PipeInfo", ["name", "stages"]))
     list.push(make_entry("MIRFunction", ["name", "params", "return_type", "blocks", "decorators", "is_public"]))
     list.push(make_entry("BasicBlock", ["label", "instructions"]))
@@ -129,40 +130,42 @@ fn register_internal_struct(st: EmitState, name: String, fields: List<String>) -
 
 fn register_all_internal_structs(st: EmitState) -> EmitState {
     let mut s: EmitState = st
-    // MIRModule: name, functions, structs, enums, extern_fns, agents, pipes, imports, trait_names
-    s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"])
-    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks
-    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"])
+    // MIRModule: name, functions, structs, enums, extern_fns, agents, pipes, imports, trait_names, consts
+    s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"])
+    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks, generic_fns, generic_structs, generic_enums, loop_header_label, loop_exit_label
+    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"])
     // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots
     s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots"])
     // LowerResult: value, state
     s = register_internal_struct(s, "LowerResult", ["value", "state"])
     // CompileResult: success, ir_text, errors
     s = register_internal_struct(s, "CompileResult", ["success", "ir_text", "errors"])
-    // MatchBuildResult: state, arm_labels, arm_indices, arm_body_labels, merge_label
-    s = register_internal_struct(s, "MatchBuildResult", ["state", "arm_labels", "arm_indices", "arm_body_labels", "merge_label"])
+    // MatchBuildResult: state, arm_labels, arm_indices, cases, default_label
+    s = register_internal_struct(s, "MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"])
     // FnEntry: name, ret_type, param_types
     s = register_internal_struct(s, "FnEntry", ["name", "ret_type", "param_types"])
     // StructEntry: name, field_names, field_types, llvm_type
     s = register_internal_struct(s, "StructEntry", ["name", "field_names", "field_types", "llvm_type"])
-    // VarInfo: name, value, mutable
-    s = register_internal_struct(s, "VarInfo", ["name", "value", "mutable"])
-    // StructFieldInfo: struct_name, field_names, field_types
-    s = register_internal_struct(s, "StructFieldInfo", ["struct_name", "field_names", "field_types"])
-    // EnumVariantNames: name, variant_names
-    s = register_internal_struct(s, "EnumVariantNames", ["name", "variant_names"])
-    // LambdaEntry: var_name, body_name
-    s = register_internal_struct(s, "LambdaEntry", ["var_name", "body_name"])
+    // VarInfo: name, current, mutable
+    s = register_internal_struct(s, "VarInfo", ["name", "current", "mutable"])
+    // StructFieldInfo: name, field_names, field_types
+    s = register_internal_struct(s, "StructFieldInfo", ["name", "field_names", "field_types"])
+    // EnumVariantNames: enum_name, variant_names
+    s = register_internal_struct(s, "EnumVariantNames", ["enum_name", "variant_names"])
+    // LambdaEntry: var_name, fn_name
+    s = register_internal_struct(s, "LambdaEntry", ["var_name", "fn_name"])
     // ExternFnInfo: abi, module_name, fn_name, param_types, return_type
     s = register_internal_struct(s, "ExternFnInfo", ["abi", "module_name", "fn_name", "param_types", "return_type"])
     // VerifyError: fn_name, block_name, message
     s = register_internal_struct(s, "VerifyError", ["fn_name", "block_name", "message"])
-    // ImplEntry: key, method_name
-    s = register_internal_struct(s, "ImplEntry", ["key", "method_name"])
+    // ImplEntry: key, mir_name
+    s = register_internal_struct(s, "ImplEntry", ["key", "mir_name"])
     // ImportInfo: path, items
     s = register_internal_struct(s, "ImportInfo", ["path", "items"])
-    // AgentInfo: name, inputs, outputs, state_fields
-    s = register_internal_struct(s, "AgentInfo", ["name", "inputs", "outputs", "state_fields"])
+    // ModuleConst: name, type_name, int_value, str_value, is_string
+    s = register_internal_struct(s, "ModuleConst", ["name", "type_name", "int_value", "str_value", "is_string"])
+    // AgentInfo: name, inputs, outputs, method_names
+    s = register_internal_struct(s, "AgentInfo", ["name", "inputs", "outputs", "method_names"])
     // PipeInfo: name, stages
     s = register_internal_struct(s, "PipeInfo", ["name", "stages"])
     // MIRFunction: name, params, return_type, blocks, decorators, is_public
@@ -3686,4 +3689,3 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     // Join all lines into a single string
     return join("\n", st.lines)
 }
-

@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.142.0] - 2026-04-16
+
+**Ge.1 closed + pre-panel refresh.** The last open valgrind docket from the
+v4.132.0 re-triage is now closed. Full sanitizer state is
+**valgrind 0 / 66 / 0** and **ASan 55 / 0 / 11**. The release also refreshes
+the full v4.143.0 panel evidence pack: fixed-point status, measurements,
+benchmark artifacts, readiness, and the pre-panel audit overlay.
+
+**Actual fix path, not the stale prompt path.** The prompt's suggested
+`fresh_tmp` / `MemsetZero` edit no longer matched the live self-hosted tree.
+The real closure came from two self-hosted fixes:
+`mapanare/self/emit_llvm.mn` + `mapanare/self/lower.mn` internal-struct
+metadata parity corrections, and a targeted ownership fix in
+`mapanare/self/lower.mn::try_monomorphize_enum` so moved specialized enum
+metadata is not freed before the emitter uses it.
+
+**Targeted Ge.1 verification.** The five formerly failing goldens
+`26_generics`, `29_generic_impl`, `30_nested_generics`,
+`31_generic_multi`, and `32_generic_enum` now all exit clean under
+valgrind. Full valgrind sweep: **66 WARNINGS_ONLY / 0 ERRORS**. Full ASan
+sweep: **55 CLEAN / 0 ASAN_ERROR / 11 CRASH_NO_ASAN**.
+
+**VERSION propagation sync.** The first full non-bootstrap pytest run
+surfaced one deterministic runtime VERSION drift in
+`tests/runtime/test_user_agent.py`. Rebuilding `libmapanare_rt.a` with
+`make build-rt` fixed it. Final verification:
+**5160 passed / 0 failed / 115 skipped / 9 xfailed / 2 warnings**
+outside bootstrap, **212 passed / 13 failed** in bootstrap, `make lint`
+clean, native golden baseline **54/66**, fixed-point still
+**NEAR FIXED POINT** with only the known version-placeholder diff.
+
+**Benchmarks refreshed.** Re-ran the harnesses with the real `--output`
+flag so the v4.142.0 artifacts are actual JSON. Cross-language geomean:
+**5.841 ms**. Async geomean: **5.817 ms**. Human-readable report:
+`benchmarks/FINAL_REPORT_v4.143.md`.
+
+**Ledger state.** Ge.1 **CLOSED**. Net current ledger:
+63 opened since v4.99.0 -> **48 closed / 15 open**
+(`0 CRITICAL / 0 HIGH / 8 MEDIUM / 7 LOW`).
+
 ## [4.141.0] - 2026-04-16
 
 **An.2 lint debt cleared + 5th flaky audit.** The repo-wide lint backlog from
