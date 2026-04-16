@@ -28,7 +28,6 @@ import subprocess
 import pytest
 
 from tests.integration.conftest import (
-    EXPECTED_DIR,
     _find_tool,
     _run,
     full_pipeline,

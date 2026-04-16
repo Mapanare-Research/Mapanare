@@ -4,8 +4,6 @@ import pytest
 
 from mapanare.parser import parse
 from mapanare.semantic import check
-from mapanare.lower import lower
-from mapanare.emit_llvm_text import LLVMTextEmitter
 
 
 def _compile_to_ir(src: str) -> str:
@@ -20,7 +18,8 @@ def _compile_to_ir(src: str) -> str:
     )
     if result.returncode != 0:
         # Fallback: write to temp file and compile
-        import tempfile, os
+        import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".mn", delete=False) as f:
             f.write(src)

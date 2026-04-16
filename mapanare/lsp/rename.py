@@ -5,12 +5,11 @@ Validates rename targets and builds WorkspaceEdit for atomic multi-file renames.
 
 from __future__ import annotations
 
-import keyword
 import re
 from pathlib import Path
 from typing import Optional
 
-from mapanare.lsp.workspace import ReferenceSite, SymbolDef, WorkspaceIndex
+from mapanare.lsp.workspace import SymbolDef, WorkspaceIndex
 
 # Valid Mapanare identifier: starts with letter/underscore, then alnum/underscore
 _IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")

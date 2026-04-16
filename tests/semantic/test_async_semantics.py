@@ -8,9 +8,6 @@ from __future__ import annotations
 
 import textwrap
 
-import pytest
-
-from mapanare.ast_nodes import AsyncFnDef, FnDef
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker
 from mapanare.types import TypeKind

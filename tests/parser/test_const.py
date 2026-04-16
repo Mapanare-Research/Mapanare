@@ -5,7 +5,7 @@ The file that v4.26.0's CHANGELOG claimed existed — now it does for real.
 
 from __future__ import annotations
 
-from mapanare.ast_nodes import ConstDef, IntLiteral, FloatLiteral, StringLiteral, NamedType
+from mapanare.ast_nodes import ConstDef, FloatLiteral, IntLiteral, NamedType, StringLiteral
 from mapanare.parser import parse
 
 
@@ -50,8 +50,9 @@ class TestConstParsing:
 
     def test_const_without_type_annotation_is_parse_error(self):
         """v4.55.0: const requires explicit type annotation."""
-        from mapanare.parser import ParseError
         import pytest
+
+        from mapanare.parser import ParseError
 
         with pytest.raises(ParseError):
             parse("const N = 100\nfn main() {}\n", filename="test.mn")

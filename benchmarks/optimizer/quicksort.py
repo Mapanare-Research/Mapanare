@@ -1,5 +1,7 @@
 """Benchmark 2: Quicksort — Python equivalent."""
 
+import sys
+
 
 def lcg_next(seed):
     return (seed * 1103515245 + 12345) % 2147483648
@@ -22,8 +24,6 @@ def qsort(arr, lo, hi):
         qsort(arr, lo, p - 1)
         qsort(arr, p + 1, hi)
 
-
-import sys
 
 sys.setrecursionlimit(100000)
 

@@ -15,9 +15,9 @@ from mapanare.mir import (
     AgentSync,
     Assert,
     AwaitSuspend,
-    BlockOn,
     BinOp,
     BinOpKind,
+    BlockOn,
     Branch,
     Call,
     Cast,
@@ -50,6 +50,7 @@ from mapanare.mir import (
     SignalInit,
     SignalSet,
     SignalSubscribe,
+    SourceSpan,
     StreamInit,
     StreamOp,
     StreamOpKind,
@@ -535,7 +536,7 @@ class LLVMTextEmitter:
         self._debug_metadata_lines: list[str] = []
         self._debug_subprogram_ids: dict[str, int] = {}
         self._debug_cu_id: int = -1
-        self._current_span: "SourceSpan | None" = None
+        self._current_span: SourceSpan | None = None
         self._current_subprogram_id: int = -1
         # dispatch
         self._disp: dict[type, Any] = {}
@@ -2386,22 +2387,22 @@ class LLVMTextEmitter:
             out: list[str] = [
                 f"define {lk}ptr @{fn.name}({ps}){fn_attrs}{coro_attr}{dbg_ref} {{",
                 "coro.entry:",
-                f"  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)",
-                f"  %coro.size = call i64 @llvm.coro.size.i64()",
-                f"  %coro.mem = call ptr @malloc(i64 %coro.size)",
-                f"  %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)",
-                f"  ; Allocate Future struct: {{i8 state, ptr payload}}",
-                f"  %future = call ptr @malloc(i64 16)",
-                f"  store i8 0, ptr %future",
-                f"  %future.hdl.slot = getelementptr inbounds {{i8, ptr}}, ptr %future, i32 0, i32 1",
-                f"  store ptr %coro.hdl, ptr %future.hdl.slot",
-                f"  ; Initial suspend",
-                f"  %coro.init.save = call token @llvm.coro.save(ptr %coro.hdl)",
-                f"  %coro.init.susp = call i8 @llvm.coro.suspend(token %coro.init.save, i1 false)",
-                f"  switch i8 %coro.init.susp, label %coro.ret [",
-                f"    i8 0, label %pre_entry",
-                f"    i8 1, label %coro.cleanup",
-                f"  ]",
+                "  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)",
+                "  %coro.size = call i64 @llvm.coro.size.i64()",
+                "  %coro.mem = call ptr @malloc(i64 %coro.size)",
+                "  %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)",
+                "  ; Allocate Future struct: {i8 state, ptr payload}",
+                "  %future = call ptr @malloc(i64 16)",
+                "  store i8 0, ptr %future",
+                "  %future.hdl.slot = getelementptr inbounds {i8, ptr}, ptr %future, i32 0, i32 1",
+                "  store ptr %coro.hdl, ptr %future.hdl.slot",
+                "  ; Initial suspend",
+                "  %coro.init.save = call token @llvm.coro.save(ptr %coro.hdl)",
+                "  %coro.init.susp = call i8 @llvm.coro.suspend(token %coro.init.save, i1 false)",
+                "  switch i8 %coro.init.susp, label %coro.ret [",
+                "    i8 0, label %pre_entry",
+                "    i8 1, label %coro.cleanup",
+                "  ]",
                 "",
                 "pre_entry:",
             ]
@@ -2434,17 +2435,17 @@ class LLVMTextEmitter:
                             rewritten.append(f"  {t} = call ptr @malloc(i64 8)")
                             rewritten.append(f"  store {ret_ty} {ret_val}, ptr {t}")
                             rvs = self._f("ret.val.slot")
-                            rewritten.append(f"  store i8 1, ptr %future")
+                            rewritten.append("  store i8 1, ptr %future")
                             rewritten.append(
-                                f"  {rvs} = getelementptr inbounds {{i8, ptr}}, ptr %future, i32 0, i32 1"
+                                f"  {rvs} = getelementptr inbounds {{i8, ptr}}, ptr %future, i32 0, i32 1"  # noqa: E501
                             )
                             rewritten.append(f"  store ptr {t}, ptr {rvs}")
-                            rewritten.append(f"  br label %coro.final")
+                            rewritten.append("  br label %coro.final")
                         else:
                             rewritten.append(line)
                     elif stripped == "ret void":
-                        rewritten.append(f"  store i8 1, ptr %future")
-                        rewritten.append(f"  br label %coro.final")
+                        rewritten.append("  store i8 1, ptr %future")
+                        rewritten.append("  br label %coro.final")
                     else:
                         rewritten.append(line)
                 out.extend(rewritten)
@@ -2464,18 +2465,18 @@ class LLVMTextEmitter:
                                 rewritten.append(f"  {t} = call ptr @malloc(i64 8)")
                                 rewritten.append(f"  store {ret_ty} {ret_val}, ptr {t}")
                                 rvs = self._f("ret.val.slot")
-                                rewritten.append(f"  store i8 1, ptr %future")
+                                rewritten.append("  store i8 1, ptr %future")
                                 rewritten.append(
                                     f"  {rvs} = getelementptr inbounds {{i8, ptr}},"
                                     f" ptr %future, i32 0, i32 1"
                                 )
                                 rewritten.append(f"  store ptr {t}, ptr {rvs}")
-                                rewritten.append(f"  br label %coro.final")
+                                rewritten.append("  br label %coro.final")
                             else:
                                 rewritten.append(line)
                         elif stripped == "ret void":
-                            rewritten.append(f"  store i8 1, ptr %future")
-                            rewritten.append(f"  br label %coro.final")
+                            rewritten.append("  store i8 1, ptr %future")
+                            rewritten.append("  br label %coro.final")
                         else:
                             rewritten.append(line)
                     out.extend(rewritten)
@@ -3441,7 +3442,7 @@ class LLVMTextEmitter:
             self._ensure(fn, VOID, [PTR, I64], va=True)
             idx_str = (", " + ", ".join(idx_parts)) if idx_parts else ""
             self._L(
-                f"call void (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str}, {val_ty} {val_v})"
+                f"call void (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str}, {val_ty} {val_v})"  # noqa: E501
             )
             return
 
@@ -3505,17 +3506,17 @@ class LLVMTextEmitter:
                 s_gep = self._f("sgep")
                 e_gep = self._f("egep")
                 self._L(
-                    f"{s_gep} = getelementptr inbounds [{ndim} x i64], ptr {starts_arr}, i64 0, i64 {d}"
+                    f"{s_gep} = getelementptr inbounds [{ndim} x i64], ptr {starts_arr}, i64 0, i64 {d}"  # noqa: E501
                 )
                 self._L(
-                    f"{e_gep} = getelementptr inbounds [{ndim} x i64], ptr {ends_arr}, i64 0, i64 {d}"
+                    f"{e_gep} = getelementptr inbounds [{ndim} x i64], ptr {ends_arr}, i64 0, i64 {d}"  # noqa: E501
                 )
                 self._L(f"store i64 {s_val}, ptr {s_gep}")
                 self._L(f"store i64 {e_val}, ptr {e_gep}")
             self._ensure("__mn_tensor_slice", PTR, [PTR, PTR, PTR, I64])
             r = self._f("tslice")
             self._L(
-                f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, i64 {rank_v})"
+                f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, i64 {rank_v})"  # noqa: E501
             )
             self._tensor_vars.append(i.dest.name)
             self._put(i.dest, r, PTR)
@@ -4226,7 +4227,7 @@ class LLVMTextEmitter:
         for dim_idx, dim_val in enumerate(i.shape):
             gep = self._f("tsd")
             self._L(
-                f"{gep} = getelementptr inbounds [{rank} x i64], ptr {shape_a}, i64 0, i64 {dim_idx}"
+                f"{gep} = getelementptr inbounds [{rank} x i64], ptr {shape_a}, i64 0, i64 {dim_idx}"  # noqa: E501
             )
             self._L(f"store i64 {dim_val}, ptr {gep}")
 
@@ -5063,8 +5064,8 @@ class LLVMTextEmitter:
             self._L(f"{susp_val} = call i8 @llvm.coro.suspend(token {save_tok}, i1 false)")
             self._L(f"switch i8 {susp_val}, label %coro.ret [")
             self._L(f"  i8 0, label %{resume_lbl}")
-            self._L(f"  i8 1, label %coro.cleanup")
-            self._L(f"]")
+            self._L("  i8 1, label %coro.cleanup")
+            self._L("]")
 
             # Resume: scheduler woke us up — future should be ready now
             self._blk[resume_lbl] = []
@@ -5148,7 +5149,7 @@ class LLVMTextEmitter:
             self._L(f"call void @__mn_coro_scheduler_register(ptr {hd})")
             # Run the scheduler — this drives ALL pending coroutines
             # including the one we just registered, until they all complete.
-            self._L(f"call void @__mn_coro_scheduler_run()")
+            self._L("call void @__mn_coro_scheduler_run()")
             self._L(f"br label %{done_lbl}")
         else:
             # ── Inline resume fallback ──

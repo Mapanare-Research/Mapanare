@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 EMIT_C_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "mapanare", "self", "emit_c.mn")
 
 

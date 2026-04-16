@@ -13,11 +13,9 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import statistics
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -293,7 +291,7 @@ def main() -> None:
         all_results["mapanare"].extend(results)
 
     if args.cross_language:
-        print(f"\n=== Cross-Language Comparison ===\n")
+        print("\n=== Cross-Language Comparison ===\n")
         for name in benchmarks:
             print(f"[{name}]")
             all_results["cross_language"].extend(bench_python(name, args.runs))

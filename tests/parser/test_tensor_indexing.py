@@ -1,8 +1,6 @@
 """Parser tests for tensor multi-index syntax (v4.43.0)."""
 
-import pytest
-
-from mapanare.ast_nodes import IndexExpr, IntLiteral, Identifier
+from mapanare.ast_nodes import Identifier, IndexExpr
 from mapanare.parser import parse
 
 
@@ -29,7 +27,8 @@ class TestMultiIndexParsing:
 
     def test_variable_indices(self):
         ast = parse(
-            "fn main() { let t = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; let i = 0; let j = 1; let x = t[i, j] }"
+            "fn main() { let t = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; "
+            "let i = 0; let j = 1; let x = t[i, j] }"
         )
         idx = ast.definitions[0].body.stmts[3].value
         assert isinstance(idx, IndexExpr)

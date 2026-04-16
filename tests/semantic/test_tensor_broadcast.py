@@ -1,7 +1,5 @@
 """Semantic tests for tensor broadcasting (v4.44.0)."""
 
-import pytest
-
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker
 from mapanare.types import broadcast_shape
@@ -49,22 +47,30 @@ class TestBroadcastShapeHelper:
 class TestTensorBroadcastSemantics:
     def test_same_shape_no_error(self):
         c = _check(
-            "let a = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; let b = Tensor<Float>[[5.0, 6.0], [7.0, 8.0]]; let c = a + b"
+            "let a = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; "
+            "let b = Tensor<Float>[[5.0, 6.0], [7.0, 8.0]]; "
+            "let c = a + b"
         )
         assert len(c.errors) == 0
 
     def test_incompatible_shapes_error(self):
         c = _check(
-            "let a = Tensor<Float>[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]; "
-            "let b = Tensor<Float>[[1.0, 2.0, 3.0, 4.0, 5.0], [6.0, 7.0, 8.0, 9.0, 10.0], [11.0, 12.0, 13.0, 14.0, 15.0]]; "
+            "let a = Tensor<Float>"
+            "[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]; "
+            "let b = Tensor<Float>"
+            "[[1.0, 2.0, 3.0, 4.0, 5.0], [6.0, 7.0, 8.0, 9.0, 10.0], "
+            "[11.0, 12.0, 13.0, 14.0, 15.0]]; "
             "let c = a + b"
         )
         assert any("not broadcast-compatible" in str(e) for e in c.errors)
 
     def test_error_names_dimension(self):
         c = _check(
-            "let a = Tensor<Float>[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]; "
-            "let b = Tensor<Float>[[1.0, 2.0, 3.0, 4.0, 5.0], [6.0, 7.0, 8.0, 9.0, 10.0], [11.0, 12.0, 13.0, 14.0, 15.0]]; "
+            "let a = Tensor<Float>"
+            "[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]; "
+            "let b = Tensor<Float>"
+            "[[1.0, 2.0, 3.0, 4.0, 5.0], [6.0, 7.0, 8.0, 9.0, 10.0], "
+            "[11.0, 12.0, 13.0, 14.0, 15.0]]; "
             "let c = a + b"
         )
         assert any("dimension" in str(e) for e in c.errors)
@@ -80,7 +86,9 @@ class TestTensorBroadcastSemantics:
     def test_all_four_ops(self):
         for op in ["+", "-", "*", "/"]:
             c = _check(
-                f"let a = Tensor<Float>[1.0, 2.0]; let b = Tensor<Float>[3.0, 4.0]; let c = a {op} b"
+                "let a = Tensor<Float>[1.0, 2.0]; "
+                "let b = Tensor<Float>[3.0, 4.0]; "
+                f"let c = a {op} b"
             )
             assert len(c.errors) == 0, f"op {op} failed: {c.errors}"
 

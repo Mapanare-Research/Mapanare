@@ -4,8 +4,6 @@ Verifies module compiles, types exist, vector math functions are defined,
 and the API surface matches expectations.
 """
 
-import pytest
-
 from mapanare.parser import parse
 from mapanare.semantic import check
 

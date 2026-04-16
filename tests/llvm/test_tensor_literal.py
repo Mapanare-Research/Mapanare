@@ -1,7 +1,5 @@
 """End-to-end LLVM emission tests for tensor literals (v4.42.0)."""
 
-import pytest
-
 from mapanare.emit_llvm_text import LLVMTextEmitter
 from mapanare.lower import lower
 from mapanare.parser import parse
@@ -64,7 +62,8 @@ class TestTensorLiteralLLVM:
 
     def test_tensor_shape_dim_builtin(self):
         ir = _emit(
-            "fn main() { let a = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; print(str(tensor_shape_dim(a, 0))) }"
+            "fn main() { let a = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]; "
+            "print(str(tensor_shape_dim(a, 0))) }"
         )
         assert "__mn_tensor_shape_dim" in ir
 

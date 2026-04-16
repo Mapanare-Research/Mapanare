@@ -52,7 +52,15 @@ class TestFindReferences:
         _, ws = _make_workspace(
             {
                 "types.mn": "enum Color { Red, Green, Blue }",
-                "main.mn": 'fn describe(c: Color) -> String {\n    match c {\n        Red => "r",\n        _ => "o"\n    }\n}\nfn main() { print(describe(Color::Red)) }',
+                "main.mn": (
+                    "fn describe(c: Color) -> String {\n"
+                    "    match c {\n"
+                    '        Red => "r",\n'
+                    '        _ => "o"\n'
+                    "    }\n"
+                    "}\n"
+                    "fn main() { print(describe(Color::Red)) }"
+                ),
             }
         )
         # Color should be referenced in main.mn

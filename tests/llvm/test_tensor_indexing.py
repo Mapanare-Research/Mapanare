@@ -1,7 +1,5 @@
 """LLVM emission tests for tensor indexing (v4.43.0)."""
 
-import pytest
-
 from mapanare.emit_llvm_text import LLVMTextEmitter
 from mapanare.lower import lower
 from mapanare.parser import parse
@@ -27,7 +25,9 @@ class TestTensorIndexingLLVM:
 
     def test_3d_get_emits_call(self):
         ir = _emit(
-            "fn main() { let a = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]; let x = a[0, 1, 0] }"
+            "fn main() { let a = Tensor<Float>"
+            "[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]; "
+            "let x = a[0, 1, 0] }"
         )
         assert "__mn_tensor_get_f64_nd" in ir
 

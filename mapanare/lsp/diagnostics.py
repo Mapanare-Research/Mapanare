@@ -93,7 +93,7 @@ def run_semantic_check(source: str, uri: str) -> list[lsp.Diagnostic]:
     diagnostics: list[lsp.Diagnostic] = []
 
     try:
-        from mapanare.parser import ParseError, parse
+        from mapanare.parser import parse
 
         program = parse(source, filename=uri)
     except Exception as e:

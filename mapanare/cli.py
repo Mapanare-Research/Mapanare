@@ -6,6 +6,7 @@ import argparse
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from mapanare.diagnostics import (
     Diagnostic,
@@ -19,8 +20,6 @@ from mapanare.modules import ModuleResolver
 from mapanare.parser import ParseError, parse, parse_recovering
 from mapanare.semantic import SemanticErrors, check_or_raise
 from mapanare.targets import get_target, host_target_name, list_targets
-
-from pathlib import Path
 
 _VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
 __version__ = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "unknown"

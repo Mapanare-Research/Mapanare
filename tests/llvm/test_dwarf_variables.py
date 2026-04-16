@@ -30,8 +30,8 @@ class TestParameterDebugInfo:
         ir = _emit_with_debug(
             "fn add(a: Int, b: Int) -> Int { return a + b }\nfn main() { add(1, 2) }"
         )
-        lines = [l for l in ir.split("\n") if "DILocalVariable" in l]
-        arg_lines = [l for l in lines if "arg:" in l]
+        lines = [line for line in ir.split("\n") if "DILocalVariable" in line]
+        arg_lines = [line for line in lines if "arg:" in line]
         assert len(arg_lines) >= 2, f"Expected >=2 params with arg:, got {len(arg_lines)}"
         assert "arg: 1" in arg_lines[0]
         assert "arg: 2" in arg_lines[1]

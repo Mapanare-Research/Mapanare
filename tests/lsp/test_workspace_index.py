@@ -36,7 +36,9 @@ class TestWorkspaceScan:
         _, ws = _make_workspace(
             {
                 "main.mn": 'fn main() { print("hello") }',
-                "helpers.mn": "pub fn helper() -> Int { return 42 }\nfn internal_fn() -> Int { return 1 }",
+                "helpers.mn": (
+                    "pub fn helper() -> Int { return 42 }\n" "fn internal_fn() -> Int { return 1 }"
+                ),
                 "types.mn": "struct Point { x: Int, y: Int }\nenum Color { Red, Green, Blue }",
             }
         )

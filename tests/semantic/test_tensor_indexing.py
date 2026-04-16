@@ -1,7 +1,5 @@
 """Semantic tests for tensor indexing (v4.43.0)."""
 
-import pytest
-
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker
 
@@ -24,7 +22,9 @@ class TestTensorIndexingSemantics:
 
     def test_3d_index_no_error(self):
         c = _check(
-            "let a = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]; let x = a[0, 1, 0]"
+            "let a = Tensor<Float>"
+            "[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]; "
+            "let x = a[0, 1, 0]"
         )
         assert len(c.errors) == 0
 

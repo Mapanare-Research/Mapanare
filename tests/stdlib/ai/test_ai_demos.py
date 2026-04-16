@@ -5,6 +5,7 @@ Ollama integration tests skip if Ollama is not available.
 """
 
 import os
+
 import pytest
 
 

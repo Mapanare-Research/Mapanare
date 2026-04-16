@@ -140,7 +140,11 @@ class TestFallbackCompletion:
     def test_fallback_offers_current_module_symbols(self) -> None:
         _, ws = _make_workspace(
             {
-                "main.mn": "fn foo() -> Int { return 1 }\nfn bar() -> Int { return 2 }\nfn main() { print(str(foo())) }",
+                "main.mn": (
+                    "fn foo() -> Int { return 1 }\n"
+                    "fn bar() -> Int { return 2 }\n"
+                    "fn main() { print(str(foo())) }"
+                ),
             }
         )
         candidates = complete_identifiers(ws, current_module="main")
@@ -164,7 +168,10 @@ class TestFallbackCompletion:
         _, ws = _make_workspace(
             {
                 "main.mn": 'fn main() { print("hello") }',
-                "helpers.mn": "pub fn public_fn() -> Int { return 1 }\nfn internal_fn() -> Int { return 2 }",
+                "helpers.mn": (
+                    "pub fn public_fn() -> Int { return 1 }\n"
+                    "fn internal_fn() -> Int { return 2 }"
+                ),
             }
         )
         candidates = complete_identifiers(ws, current_module="main")
@@ -176,7 +183,9 @@ class TestFallbackCompletion:
     def test_current_module_symbols_ranked_first(self) -> None:
         _, ws = _make_workspace(
             {
-                "main.mn": "fn local_fn() -> Int { return 1 }\nfn main() { print(str(local_fn())) }",
+                "main.mn": (
+                    "fn local_fn() -> Int { return 1 }\n" "fn main() { print(str(local_fn())) }"
+                ),
                 "helpers.mn": "pub fn remote_fn() -> Int { return 2 }",
             }
         )

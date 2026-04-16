@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from mapanare.ast_nodes import (
     ConstructorPattern,
-    IdentPattern,
     LiteralPattern,
     MatchArm,
     MatchExpr,

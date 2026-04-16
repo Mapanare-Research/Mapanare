@@ -3,7 +3,7 @@
 
 Usage:
     python scripts/integration_report.py integration-results.xml tests/integration/RESULTS.md
-    python scripts/integration_report.py  # defaults: integration-results.xml -> tests/integration/RESULTS.md
+    python scripts/integration_report.py  # defaults above
 """
 
 from __future__ import annotations
@@ -110,8 +110,8 @@ def generate_report(results: list[dict], xml_path: Path) -> str:
         "",
         "## Summary",
         "",
-        f"| Metric | Count |",
-        f"|--------|-------|",
+        "| Metric | Count |",
+        "|--------|-------|",
         f"| Total tests | {total} |",
         f"| **Passed (end-to-end)** | **{passed}** |",
         f"| Failed | {failed} |",

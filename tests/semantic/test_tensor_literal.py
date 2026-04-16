@@ -1,10 +1,7 @@
 """Semantic tests for tensor literal type checking (v4.42.0)."""
 
-import pytest
-
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker
-from mapanare.types import TypeKind
 
 
 def _check(src: str) -> SemanticChecker:

@@ -9,8 +9,6 @@ semantic checker integration (which is covered by test_match_exhaustive.py).
 
 from __future__ import annotations
 
-import pytest
-
 from mapanare.ast_nodes import (
     BoolLiteral,
     ConstructorPattern,

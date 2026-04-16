@@ -4,8 +4,6 @@ Verifies module compiles, chunking types exist, context building functions
 are defined, and the API surface matches expectations.
 """
 
-import pytest
-
 from mapanare.parser import parse
 from mapanare.semantic import check
 

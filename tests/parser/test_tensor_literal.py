@@ -2,7 +2,7 @@
 
 import pytest
 
-from mapanare.ast_nodes import TensorLiteral, FloatLiteral, IntLiteral, UnaryExpr
+from mapanare.ast_nodes import TensorLiteral, UnaryExpr
 from mapanare.parser import ParseError, parse
 
 
@@ -81,7 +81,10 @@ class TestTensorLiteralJaggedDetection:
 
 class TestTensorLiteralWithTypeAnnotation:
     def test_type_and_literal_coexist(self):
-        src = "fn main() { let a: Tensor<Float>[2, 3] = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]] }"
+        src = (
+            "fn main() { let a: Tensor<Float>[2, 3] = "
+            "Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]] }"
+        )
         ast = parse(src)
         t = ast.definitions[0].body.stmts[0].value
         assert isinstance(t, TensorLiteral)

@@ -3,12 +3,6 @@
 Tests the parsing logic with fixture responses. Does not call any API.
 """
 
-import pytest
-
-from mapanare.parser import parse
-from mapanare.semantic import check
-from mapanare.lower import lower
-
 
 class TestProviderBodyBuilders:
     """Provider-specific request body builders produce valid JSON."""

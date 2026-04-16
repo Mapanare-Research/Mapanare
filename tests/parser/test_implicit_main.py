@@ -14,7 +14,6 @@ from mapanare.ast_nodes import (
     CallExpr,
     ExprStmt,
     FnDef,
-    LetBinding,
     Program,
 )
 from mapanare.parser import ParseError, parse

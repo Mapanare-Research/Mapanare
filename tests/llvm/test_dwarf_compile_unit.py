@@ -63,7 +63,7 @@ fn add(a: Int, b: Int) -> Int { return a + b }
 fn main() { print(str(add(1, 2))) }
 """
         ir = _emit_with_debug(source)
-        subprograms = [l for l in ir.split("\n") if "!DISubprogram" in l]
+        subprograms = [line for line in ir.split("\n") if "!DISubprogram" in line]
         assert len(subprograms) >= 2, f"Expected >=2 subprograms, got {len(subprograms)}"
 
 

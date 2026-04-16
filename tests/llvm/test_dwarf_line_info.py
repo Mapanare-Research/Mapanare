@@ -38,7 +38,7 @@ class TestInstructionsHaveDbgAttachment:
 
     def test_store_instruction_has_dbg(self) -> None:
         ir = _emit_with_debug("fn main() { let x: Int = 42 }")
-        dbg_stores = [l for l in ir.split("\n") if "store" in l and "!dbg" in l]
+        dbg_stores = [line for line in ir.split("\n") if "store" in line and "!dbg" in line]
         assert len(dbg_stores) >= 1, "No store with !dbg found"
 
     def test_di_location_emitted(self) -> None:
@@ -54,7 +54,9 @@ class TestNoDebugNoAttachment:
         emitter = LLVMTextEmitter(module_name="test", debug=False)
         ir = emitter.emit(mir_module)
         instruction_lines = [
-            l for l in ir.split("\n") if l.strip().startswith(("%", "call", "store", "ret", "load"))
+            line
+            for line in ir.split("\n")
+            if line.strip().startswith(("%", "call", "store", "ret", "load"))
         ]
         for line in instruction_lines:
             assert "!dbg" not in line, f"!dbg found without -g: {line}"
@@ -67,5 +69,5 @@ fn add(a: Int, b: Int) -> Int { return a + b }
 fn main() { let x = add(1, 2) }
 """
         ir = _emit_with_debug(source)
-        locations = [l for l in ir.split("\n") if "!DILocation" in l]
+        locations = [line for line in ir.split("\n") if "!DILocation" in line]
         assert len(locations) >= 2, f"Expected >=2 DILocations, got {len(locations)}"

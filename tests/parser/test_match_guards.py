@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from mapanare.ast_nodes import BinaryExpr, IdentPattern, LiteralPattern, MatchArm, MatchExpr
+from mapanare.ast_nodes import BinaryExpr, IdentPattern, MatchArm, MatchExpr
 from mapanare.parser import parse
 
 

@@ -14,17 +14,16 @@ from mapanare.ast_nodes import (
     AgentDef,
     AssertStmt,
     AssignExpr,
-    AsyncFnDef,
     ASTNode,
+    AsyncFnDef,
     AwaitExpr,
-    ForAwaitLoop,
     BinaryExpr,
     Block,
     BoolLiteral,
     BreakStmt,
     CallExpr,
-    ConstDef,
     CharLiteral,
+    ConstDef,
     ConstructExpr,
     ContinueStmt,
     Definition,
@@ -40,6 +39,7 @@ from mapanare.ast_nodes import (
     FloatLiteral,
     FnDef,
     FnType,
+    ForAwaitLoop,
     ForLoop,
     GenericType,
     Identifier,
@@ -757,7 +757,6 @@ class SemanticChecker:
 
         # v4.69.0: Future<T> used in arithmetic → "did you forget to await?"
         if left.kind == TypeKind.FUTURE or right.kind == TypeKind.FUTURE:
-            future_side = "left" if left.kind == TypeKind.FUTURE else "right"
             future_type = left if left.kind == TypeKind.FUTURE else right
             inner = future_type.args[0].display_name if future_type.args else "T"
             self._error(
@@ -1404,7 +1403,6 @@ class SemanticChecker:
         2. The shape inferred from nesting matches the annotation (if present).
         3. Empty tensors (shape contains a zero dim) are allowed.
         """
-        from mapanare.types import resolve_shape_from_type
 
         # Resolve element type name to TypeInfo
         elem_name = getattr(expr.element_type, "name", "")

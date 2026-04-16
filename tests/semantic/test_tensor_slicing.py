@@ -1,7 +1,5 @@
 """Semantic tests for tensor slicing and reductions (v4.45.0)."""
 
-import pytest
-
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker
 

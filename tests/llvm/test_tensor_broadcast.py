@@ -1,7 +1,5 @@
 """LLVM emission tests for tensor broadcasting (v4.44.0)."""
 
-import pytest
-
 from mapanare.emit_llvm_text import LLVMTextEmitter
 from mapanare.lower import lower
 from mapanare.parser import parse

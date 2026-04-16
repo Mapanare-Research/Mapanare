@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import textwrap
 
-import pytest
-
-from mapanare.ast_nodes import ForAwaitLoop, AsyncFnDef
+from mapanare.ast_nodes import AsyncFnDef, ForAwaitLoop
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker
 

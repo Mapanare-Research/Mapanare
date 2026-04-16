@@ -15,16 +15,16 @@ from mapanare.ast_nodes import (
     AgentDef,
     AssertStmt,
     AssignExpr,
-    AsyncFnDef,
     ASTNode,
+    AsyncFnDef,
     AwaitExpr,
-    ForAwaitLoop,
     BinaryExpr,
     Block,
     BoolLiteral,
     BreakStmt,
     CallExpr,
     CharLiteral,
+    ConstDef,
     ConstructExpr,
     ConstructorPattern,
     ContinueStmt,
@@ -41,6 +41,7 @@ from mapanare.ast_nodes import (
     FloatLiteral,
     FnDef,
     FnType,
+    ForAwaitLoop,
     ForLoop,
     GenericType,
     Identifier,
@@ -56,9 +57,7 @@ from mapanare.ast_nodes import (
     ListLiteral,
     MapLiteral,
     MatchExpr,
-    TensorLiteral,
     MethodCallExpr,
-    ConstDef,
     ModuleLetDef,
     NamedType,
     NamespaceAccessExpr,
@@ -80,6 +79,7 @@ from mapanare.ast_nodes import (
     StringLiteral,
     StructDef,
     SyncExpr,
+    TensorLiteral,
     TraitDef,
     TypeExpr,
     UnaryExpr,
@@ -130,8 +130,8 @@ from mapanare.mir import (
     StreamOp,
     StreamOpKind,
     StructInit,
-    TensorInit,
     Switch,
+    TensorInit,
     UnaryOp,
     UnaryOpKind,
     Unwrap,
@@ -1385,7 +1385,6 @@ class MIRLowerer:
         is conceptually awaited. The AwaitSuspend MIR instruction handles
         the inline-resume of any async producer.
         """
-        from mapanare.mir import AwaitSuspend
 
         iterable = self._lower_expr(loop.iterable)
         elem_ty = self._infer_iterable_elem_type(iterable.ty)
@@ -2761,7 +2760,7 @@ class MIRLowerer:
 
     def _lower_tensor_slice(self, obj: Value, items: list) -> Value:
         """Lower tensor[0..2, :] to __mn_tensor_slice call (v4.45.0)."""
-        from mapanare.ast_nodes import IndexItem, IntLiteral
+        from mapanare.ast_nodes import IndexItem
 
         rank = len(items)
         # Build starts and ends arrays

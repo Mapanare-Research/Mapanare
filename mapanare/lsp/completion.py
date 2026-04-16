@@ -10,9 +10,8 @@ Provides completions in four contexts:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
-from mapanare.lsp.workspace import SymbolDef, WorkspaceIndex
+from mapanare.lsp.workspace import WorkspaceIndex
 
 # Builtin types offered in type context
 _BUILTIN_TYPES = [

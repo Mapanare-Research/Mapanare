@@ -1,7 +1,5 @@
 """Tests for stdlib/ai/llm.mn type definitions and compilation (v4.47.0)."""
 
-import pytest
-
 from mapanare.parser import parse
 from mapanare.semantic import check
 

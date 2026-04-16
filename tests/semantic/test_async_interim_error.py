@@ -9,9 +9,6 @@ from __future__ import annotations
 
 import textwrap
 
-import pytest
-
-from mapanare.ast_nodes import AsyncFnDef
 from mapanare.lower import lower
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker

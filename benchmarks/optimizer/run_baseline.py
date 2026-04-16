@@ -14,7 +14,6 @@ import json
 import shutil
 import statistics
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -303,7 +302,7 @@ def main() -> None:
         all_results["mapanare"].extend(results)
 
     if args.cross_language:
-        print(f"\n=== Cross-Language Comparison ===\n")
+        print("\n=== Cross-Language Comparison ===\n")
         for name in benchmarks:
             print(f"[{name}]")
             results = bench_cross_language(name, args.runs)
