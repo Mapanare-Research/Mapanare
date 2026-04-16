@@ -50,16 +50,18 @@ class TypeExpr(ASTNode):
 
 @dataclass
 class NamedType(TypeExpr):
-    """A simple named type like `Int`, `String`, `MyStruct`."""
+    """A named type like `Int`, `String`, `MyStruct`, or `mod.Type`."""
 
     name: str = ""
+    module_path: list[str] = field(default_factory=list)
 
 
 @dataclass
 class GenericType(TypeExpr):
-    """A generic type like `List<Int>`, `Map<String, Int>`."""
+    """A generic type like `List<Int>`, `mod.List<Int>`."""
 
     name: str = ""
+    module_path: list[str] = field(default_factory=list)
     args: list[TypeExpr] = field(default_factory=list)
 
 

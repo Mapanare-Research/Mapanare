@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.139.0] - 2026-04-15
+
+**SPEC + language close — Gr.2 / Sem.1 / §0 / Co.1 / Dr.1.** Empties Coral's carry-forward from the v4.136.0 panel. Three dockets closed, two SPEC edits. No runtime or codegen changes.
+
+**Gr.2** (MEDIUM → CLOSED). Grammar `named_type` and `generic_type` rules now accept `NAME (DOT NAME)*` for qualified type references in type position (e.g. `device.DeviceKind`). Unblocks `stdlib/gpu/tensor.mn:90` and `stdlib/gpu/kernel.mn:63`. AST `NamedType`/`GenericType` gain `module_path` field. Semantic checker validates module existence for qualified refs. Self-hosted `parser.mn` mirrored with `parse_generic_type_at` helper. 3 new parser tests + golden `66_qualified_type_ref.mn`.
+
+**Sem.1** (LOW → CLOSED). Module-level `let mut` rejected with diagnostic E420. SPEC §2.1 documents `let mut` as block-scoped. Three benchmarks wrapped in explicit `fn main()`.
+
+**Dr.1** (LOW → CLOSED). `emit_llvm.mn:3523` uses `__MN_VERSION__` placeholder. `scripts/build_stage1.py` substitutes from `VERSION` file across all self-hosted modules at build time (with try/finally restore). Removes the manual-bump drift class.
+
+**SPEC §0.** Deleted stale "legacy Python transpiler" line. Updated backend description to list all three backends (LLVM, C, WebAssembly). Version header bumped to 4.139.0.
+
+**Co.1.** SPEC Appendix B gains "Strict 3-stage fixed point (v4.134.0)" section with md5 provenance.
+
+**Ledger state.** 63 dockets → **43 closed (68%)** · 20 open: **0 CRITICAL · 0 HIGH · 9 MEDIUM · 11 LOW**. Coral's carry-forward emptied.
+
 ## [4.138.0] - 2026-04-15
 
 **Docs sweep — Bo.1–Bo.7 closed (Boa carry-forward).** Zero compiler or runtime source changes. Closes every Boa carry-forward from the v4.136.0 panel in one release.

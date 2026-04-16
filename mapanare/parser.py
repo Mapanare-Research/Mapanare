@@ -416,6 +416,12 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
                         span=child.span,
                     )
                 )
+            elif isinstance(child, LetBinding) and child.mutable:
+                raise ParseError(
+                    "E420: 'let mut' is block-scoped; "
+                    f"use 'const {child.name} = ...' at module scope, "
+                    "or wrap in fn main() for mutable state"
+                )
             elif isinstance(child, Stmt):
                 top_level_stmts.append(child)
             elif isinstance(child, Expr):
@@ -499,13 +505,22 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     # ------------------------------------------------------------------
 
     def named_type(self, children: list[Any]) -> NamedType:
-        return NamedType(name=str(children[0]), span=_span_from_children(children))
+        names = [str(c) for c in children if isinstance(c, Token) and c.type == "NAME"]
+        return NamedType(
+            name=names[-1],
+            module_path=names[:-1],
+            span=_span_from_children(children),
+        )
 
     def generic_type(self, children: list[Any]) -> GenericType:
-        items = _filter(children)
-        name = str(items[0])
-        args = [a for a in items[1:] if isinstance(a, TypeExpr)]
-        return GenericType(name=name, args=args, span=_span_from_children(children))
+        names = [str(c) for c in children if isinstance(c, Token) and c.type == "NAME"]
+        args = [a for a in children if isinstance(a, TypeExpr)]
+        return GenericType(
+            name=names[-1],
+            module_path=names[:-1],
+            args=args,
+            span=_span_from_children(children),
+        )
 
     def tensor_type(self, children: list[Any]) -> TensorType:
         items = _filter(children)

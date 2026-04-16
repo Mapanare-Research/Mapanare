@@ -22,21 +22,22 @@ gate attempt 3).
 | Audit backlog (An.\*) | **1** | **4** | 5 |
 | Runtime (Rt.\*, Ch.\*) | **2** | **2** | 4 |
 | Performance / ABI (ABI.1, Rt.1) | **1** | **1** | 2 |
-| Cosmetic / docs (Cb.\*, Co.\*, Bo.\*, Dr.\*) | **1** | **14** | 15 |
-| Grammar / semantic (Gr.\*, Sem.\*, Qs.1, TBAA.1) | **3** | **2** | 5 |
+| Cosmetic / docs (Cb.\*, Co.\*, Bo.\*, Dr.\*) | 0 | **15** | 15 |
+| Grammar / semantic (Gr.\*, Sem.\*, Qs.1, TBAA.1) | **1** | **4** | 5 |
 | Test-hygiene fallout (TR.1, Bn.1, Tm.1) | **3** | 0 | 3 |
 | Sanitizer findings (ASan.1, Vg.\*, Ge.1) | **1** | **8** | 9 |
 | Culebra / external | 0 | **1** | 1 |
-| **Total** | **23** | **40** | **63** |
+| **Total** | **20** | **43** | **63** |
 
-**Net ledger state (as of v4.138.0):** 63 dockets opened since v4.99.0 ·
-**40 closed** (63%) · 23 open. Of the 23 open: **0 CRITICAL · 0 HIGH ·
-10 MEDIUM · 13 LOW**. All open items are named, scoped, sized, and have
+**Net ledger state (as of v4.139.0):** 63 dockets opened since v4.99.0 ·
+**43 closed** (68%) · 20 open. Of the 20 open: **0 CRITICAL · 0 HIGH ·
+9 MEDIUM · 11 LOW**. All open items are named, scoped, sized, and have
 named fix vehicles where applicable. None produces incorrect code for a
 program the SPEC promises works.
 
 **v4.137.0 closed Ch.1** — the last HIGH-severity item on the ledger.
 **v4.138.0 closed Bo.1–Bo.7** — Boa's carry-forward ledger emptied.
+**v4.139.0 closed Gr.2 + Sem.1 + Dr.1** — Coral's carry-forward emptied.
 
 ---
 
@@ -117,10 +118,10 @@ program the SPEC promises works.
 | 11 | **Bo.5** — `mapanare --version` prints stale `2.0.1` instead of VERSION file | v4.136.0 panel (Boa) | LOW | **CLOSED** | v4.138.0 | `mapanare/cli.py` now reads `VERSION` file directly instead of `importlib.metadata`. Confirmed `mapanare --version` → `4.138.0`. |
 | 12 | **Bo.6** — `getting_started.md` stale golden count (39/65) and Sh.11 listed as open | v4.136.0 panel (Boa) | LOW | **CLOSED** | v4.138.0 | Updated to 53/65, Sh.11 removed (closed v4.134.0), Sh.2 removed (closed v4.132.0), fixed-point status added. |
 | 13 | **Bo.7** — Localized README description text outdated (no WASM, no fixed-point, no benchmarks) | v4.136.0 panel (Boa) | LOW | **CLOSED** | v4.138.0 | All 3 localized READMEs updated with fixed-point, benchmark numbers, WebAssembly mention. Executed alongside Bo.4. |
-| 14 | **Dr.1** — Self-hosted `!0 = !{!"4.127.0"}` frozen version metadata | v4.130.0 pre-panel audit | LOW | **OPEN** | — | Metadata housekeeping; v5.x |
+| 14 | **Dr.1** — Self-hosted `!0 = !{!"4.127.0"}` frozen version metadata | v4.130.0 pre-panel audit | LOW | **CLOSED** | v4.139.0 | `emit_llvm.mn` uses `__MN_VERSION__` placeholder; `build_stage1.py` substitutes from VERSION file at build time |
 | 15 | **Dr.2** — `libmapanare_rt.a` VERSION drift (5 bumps, v4.113.0 → v4.131.0 embedded) | v4.133.0 audit | LOW | **CLOSED** | v4.133.0 | `make build-rt` + `scripts/build_stage1.py` with fresh `-DMAPANARE_VERSION` |
 
-**Open Cb./Co./Bo./Dr. dockets: 1 (Dr.1; LOW, v5.x). All Bo.* CLOSED as of v4.138.0.**
+**Open Cb./Co./Bo./Dr. dockets: 0. All Bo.* CLOSED v4.138.0. Dr.1 CLOSED v4.139.0.**
 
 ---
 
@@ -131,10 +132,10 @@ program the SPEC promises works.
 | 1 | **Qs.1** — `List<Int>` indexing in argument position prints `<?>` | v4.107.0 | MEDIUM | **CLOSED** | v4.122.0 | One-line fix in `mapanare/lower.py::_lower_let`; regression suite `tests/golden/65_list_int_indexing.mn` + 5 IR-level invariants in `TestListIntIndexingQs1` |
 | 2 | **TBAA.1** — Type-based alias analysis metadata declared, never wired | v4.109.0 forensics | LOW | **CLOSED** | v4.123.0 (Python) + v4.127.0 (self-hosted) | Tree removed from `_emit_module`; confirmed 100% dead v4.109.0 |
 | 3 | **Gr.1** — Multi-line collection literal grammar support | v4.129.0 | LOW | **OPEN** | — | Blocks 5 examples |
-| 4 | **Gr.2** — Qualified type refs in type position | v4.129.0 | MEDIUM | **OPEN** | — | Blocks 2 stdlib modules + 3 examples |
-| 5 | **Sem.1** — Module-level `let mut` scoping | v4.129.0 | LOW | **OPEN** | — | Blocks 1 example |
+| 4 | **Gr.2** — Qualified type refs in type position | v4.129.0 | MEDIUM | **CLOSED** | v4.139.0 | Grammar `named_type`/`generic_type` accept `NAME (DOT NAME)*`; AST `module_path` field; semantic qualified resolution; self-hosted mirror; 3 parser tests + golden 66 |
+| 5 | **Sem.1** — Module-level `let mut` scoping | v4.129.0 | LOW | **CLOSED** | v4.139.0 | Parser rejects with E420 diagnostic; SPEC §2.1 documents block-scoping rule; 3 benchmarks wrapped in `fn main()` |
 
-**Open grammar/semantic dockets: 3 (1 MEDIUM, 2 LOW).**
+**Open grammar/semantic dockets: 1 (Gr.1; LOW).**
 
 ---
 

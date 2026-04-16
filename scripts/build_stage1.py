@@ -57,38 +57,48 @@ def build() -> pathlib.Path:
 
     ir_path = SELF_DIR / "main.ll"
 
+    # Dr.1 (v4.139.0): substitute __MN_VERSION__ in all self-hosted modules
+    # so the multi-module compiler sees the real version in emit_llvm.mn etc.
+    restored: dict[pathlib.Path, str] = {}
+    version = VERSION_FILE.read_text(encoding="utf-8").strip()
+    for mn_file in sorted(SELF_DIR.glob("*.mn")):
+        text = mn_file.read_text(encoding="utf-8")
+        if VERSION_PLACEHOLDER in text:
+            restored[mn_file] = text
+            mn_file.write_text(text.replace(VERSION_PLACEHOLDER, version), encoding="utf-8")
+
     if "--use-committed" in sys.argv:
-        # Use the committed main.ll directly (skip IR regeneration).
-        # This is used in CI when the text emitter has known codegen issues
-        # with complex enum types that prevent clean regeneration.
         print("[1/6] Using committed LLVM IR (--use-committed) ...")
         ir = ir_path.read_text(encoding="utf-8")
         print(f"  IR: {ir.count(chr(10))} lines ← {ir_path}")
+        for path, original in restored.items():
+            path.write_text(original, encoding="utf-8")
     else:
-        # 1. Generate LLVM IR
         print("[1/6] Generating LLVM IR from mapanare/self/*.mn ...")
         from mapanare.multi_module import compile_multi_module_mir
 
         source = (SELF_DIR / "main.mn").read_text(encoding="utf-8")
-        source = _substitute_version(source)
-        ir = compile_multi_module_mir(
-            root_source=source,
-            root_file=str(SELF_DIR / "main.mn"),
-            opt_level=2,
-            # Self-hosted .mn uses patterns the Python checker can't resolve
-            skip_check=True,
-        )
+        try:
+            ir = compile_multi_module_mir(
+                root_source=source,
+                root_file=str(SELF_DIR / "main.mn"),
+                opt_level=2,
+                skip_check=True,
+            )
+        finally:
+            for path, original in restored.items():
+                path.write_text(original, encoding="utf-8")
 
-        # 2. Post-process: make compile() and format_error() externally visible
-        print("[2/6] Post-processing IR (external linkage for entry points) ...")
-        # Remove 'internal' linkage from ALL function definitions.
-        # LLVM -O2 dead-code-eliminates internal functions it considers
-        # unreachable, but with sret calling conventions it sometimes
-        # misjudges reachability, stripping functions that ARE called.
-        ir = ir.replace("define internal ", "define ")
+    # 2. Post-process: make compile() and format_error() externally visible
+    print("[2/6] Post-processing IR (external linkage for entry points) ...")
+    # Remove 'internal' linkage from ALL function definitions.
+    # LLVM -O2 dead-code-eliminates internal functions it considers
+    # unreachable, but with sret calling conventions it sometimes
+    # misjudges reachability, stripping functions that ARE called.
+    ir = ir.replace("define internal ", "define ")
 
-        ir_path.write_text(ir, encoding="utf-8")
-        print(f"  IR: {ir.count(chr(10))} lines → {ir_path}")
+    ir_path.write_text(ir, encoding="utf-8")
+    print(f"  IR: {ir.count(chr(10))} lines → {ir_path}")
 
     # 3. Compile IR to object code
     print("[3/6] Compiling LLVM IR → object code ...")

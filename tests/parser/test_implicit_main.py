@@ -44,17 +44,10 @@ class TestImplicitMain:
     # ------------------------------------------------------------------
     # 2. Multiple top-level statements → synthetic main with all stmts
     # ------------------------------------------------------------------
-    def test_implicit_main_with_let(self) -> None:
+    def test_implicit_main_rejects_let_mut(self) -> None:
         src = "let mut x: Int = 42\nlet mut y: Int = x + 8\nprint(y)"
-        p = parse(src)
-        assert len(p.definitions) == 1
-        fn = p.definitions[0]
-        assert isinstance(fn, FnDef)
-        assert fn.name == "main"
-        assert len(fn.body.stmts) == 3
-        assert isinstance(fn.body.stmts[0], LetBinding)
-        assert isinstance(fn.body.stmts[1], LetBinding)
-        assert isinstance(fn.body.stmts[2], ExprStmt)
+        with pytest.raises(ParseError, match="E420"):
+            parse(src)
 
     # ------------------------------------------------------------------
     # 3. Helper fn + top-level stmt → helper first, synthetic main second

@@ -18,8 +18,6 @@ Last updated: v4.138.0.
 | Docket | Symptom | Workaround | Track |
 |---|---|---|---|
 | Gr.1 | multi-line list/tensor literals parse-error | put literal on one line; wrap in parens on next | v5.x |
-| Gr.2 | `type_expr` doesn't accept qualified names like `gpu.Device` | bare-import the type (`use gpu::Device`) then use `Device` | v4.139.0 |
-| Sem.1 | module-level `let mut` behaves inconsistently | use `const` for module-level immutables; `let mut` only in fn bodies | v4.139.0 |
 
 ## Runtime
 

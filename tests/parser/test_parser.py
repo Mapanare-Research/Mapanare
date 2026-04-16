@@ -370,6 +370,28 @@ class TestTypeAnnotations:
         assert t.element_type.name == "Float"
         assert len(t.shape) == 2
 
+    def test_qualified_named_type(self) -> None:
+        d = parse_def("fn f(x: device.DeviceKind) { }")
+        t = d.params[0].type_annotation
+        assert isinstance(t, NamedType)
+        assert t.name == "DeviceKind"
+        assert t.module_path == ["device"]
+
+    def test_qualified_generic_type(self) -> None:
+        d = parse_def("fn f(x: collections.List<Int>) { }")
+        t = d.params[0].type_annotation
+        assert isinstance(t, GenericType)
+        assert t.name == "List"
+        assert t.module_path == ["collections"]
+        assert len(t.args) == 1
+
+    def test_deep_qualified_type(self) -> None:
+        d = parse_def("fn f(x: a.b.Type) { }")
+        t = d.params[0].type_annotation
+        assert isinstance(t, NamedType)
+        assert t.name == "Type"
+        assert t.module_path == ["a", "b"]
+
     def test_type_alias(self) -> None:
         d = parse_def("type Name = String")
         assert isinstance(d, TypeAlias)

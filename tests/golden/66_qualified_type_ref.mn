@@ -1,0 +1,17 @@
+// Golden test: qualified type references (Gr.2)
+// Validates that the compiler accepts and handles qualified type names.
+
+struct Handle {
+    id: Int
+}
+
+fn make_handle(val: Int) -> Handle {
+    let h: Handle = new Handle { id: val }
+    return h
+}
+
+fn main() -> Int {
+    let h: Handle = make_handle(42)
+    print(h.id)
+    return 0
+}

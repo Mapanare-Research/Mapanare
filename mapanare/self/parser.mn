@@ -2350,11 +2350,18 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
     if tt == "KW_FN" { return parse_fn_type(tokens, pos, filename) }
 
     if tt == "NAME" {
-        let name: String = peek_value(tokens, pos)
-        if peek_type(tokens, pos + 1) == "LT" {
-            return parse_generic_type(tokens, pos, filename)
+        let mut name: String = peek_value(tokens, pos)
+        let mut p: Int = pos + 1
+        for _ in 0..10 {
+            if peek_type(tokens, p) != "DOT" { break }
+            if peek_type(tokens, p + 1) != "NAME" { break }
+            name = name + "." + peek_value(tokens, p + 1)
+            p = p + 2
         }
-        return new_type_result(TypeExpr::Named(name), pos + 1)
+        if peek_type(tokens, p) == "LT" {
+            return parse_generic_type_at(tokens, p, name, filename)
+        }
+        return new_type_result(TypeExpr::Named(name), p)
     }
 
     return new_type_result(TypeExpr::Named("Void"), pos + 1)
@@ -2362,7 +2369,11 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
 
 fn parse_generic_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult {
     let name: String = peek_value(tokens, pos)
-    let mut p: Int = pos + 1
+    return parse_generic_type_at(tokens, pos + 1, name, filename)
+}
+
+fn parse_generic_type_at(tokens: List<Token>, pos: Int, name: String, filename: String) -> TypeResult {
+    let mut p: Int = pos
     p = expect(tokens, p, "LT")
 
     let mut args: List<TypeExpr> = []

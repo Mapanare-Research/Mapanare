@@ -3514,13 +3514,12 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     // emitter removed it in v4.123.0 (mapanare/emit_llvm_text.py:923-933);
     // self-hosted now matches.
     //
-    // The hardcoded version string is honest about its drift surface — the
-    // Python bootstrap reads VERSION at runtime; mnc-stage1 has no file I/O
-    // wired through the bootstrap-build path, so the value is bumped per
-    // release. The next bump moves with v4.128.0.
+    // v4.139.0 (Dr.1): __MN_VERSION__ is a build-time placeholder substituted
+    // by scripts/build_stage1.py from the top-level VERSION file. Removes the
+    // manual-bump drift class that kept this string stale since v4.127.0.
     st = emit_blank(st)
     st = emit_line(st, "!mapanare.version = !{!0}")
-    st = emit_line(st, "!0 = !{!\"4.127.0\"}")
+    st = emit_line(st, "!0 = !{!\"__MN_VERSION__\"}")
 
     // Join all lines into a single string
     return join("\n", st.lines)

@@ -1,9 +1,9 @@
 # Mapanare Language Specification
 
-**Version:** 4.129.0
-**Status:** Live — synced to the v4.129.0 cut (2026-04-15)
+**Version:** 4.139.0
+**Status:** Live — synced to the v4.139.0 cut (2026-04-15)
 
-Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code. A legacy Python transpiler backend exists for reference and bootstrapping only.
+Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
 
 > **Spec sync discipline.** Each v4.x panel release fact-checks this
 > spec against the live grammar (`mapanare/mapanare.lark`), type
@@ -125,7 +125,7 @@ spelling.
 | Keyword | Description |
 |---|---|
 | `let` | Declare an immutable binding. Also used at module scope: a top-level `let NAME: Type = value` declares a module-level immutable value visible to every function in the module. |
-| `mut` | Declare a mutable variable binding: `let mut x = 0`. |
+| `mut` | Declare a mutable variable binding: `let mut x = 0`. `let mut` is block-scoped and is not permitted at module scope (use `const` for module-level immutables, or wrap in `fn main()` for mutable state). The parser rejects module-level `let mut` with diagnostic E420. |
 
 > **Note (v4.55.0, updated v4.129.0):** `const` is a Mapanare keyword.
 > Its history is non-linear: v4.18.0 introduced it as a parser alias
@@ -276,8 +276,7 @@ Keywords that currently only have an English spelling:
 
 Also reserved by both lexers: `async`, `await` (hard keywords since
 v4.68.0 / v4.72.0 — see §29 for the coroutine specification), `di`
-(Spanish print statement, §9), `const` (parser-reserved with no
-semantics — use module-level `let` instead, see the `const` note in
+(Spanish print statement, §9), `const` (compile-time constant — see the `const` note in
 the *Bindings and Mutability* subsection below), `input`, `output`, `Tensor`, `_`.
 
 The self-hosted lexer (`mapanare/self/lexer.mn`) treats both columns
@@ -2701,6 +2700,16 @@ The WASM emitter (`mapanare/emit_wasm.py`) translates MIR to
 WebAssembly text format (WAT). The `wasm_linker.py` module
 links multi-module WAT into a single `.wasm` for browser or WASI
 targets. See §24.
+
+### Strict 3-stage fixed point (v4.134.0)
+
+As of v4.134.0, the self-hosted compiler reaches a strict 3-stage
+byte-identical fixed point: `stage2.ll == stage3.ll`, md5
+`0c00ad07fee94f98bb350b359395843b`. Each stage produces exactly
+the same IR for the compiler's own source — the compiler compiles
+itself and produces identical output when compiled by its own output.
+See `docs/roadmap/v4/v4.135.0/FIXEDPOINT_STATUS.md` for full provenance
+and `scripts/verify_fixed_point.sh` to reproduce.
 
 ---
 

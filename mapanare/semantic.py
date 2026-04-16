@@ -412,6 +412,11 @@ class SemanticChecker:
         if te is None:
             return UNKNOWN_TYPE
         if isinstance(te, NamedType):
+            if te.module_path:
+                mod_sym = self.global_scope.lookup(te.module_path[0])
+                if mod_sym is None:
+                    self._error(f"unknown module '{te.module_path[0]}'", te)
+                return TypeInfo(kind=TypeKind.STRUCT, name=te.name)
             k = kind_from_name(te.name)
             if k != TypeKind.UNKNOWN:
                 return TypeInfo(kind=k)
@@ -433,6 +438,14 @@ class SemanticChecker:
             return TypeInfo(kind=TypeKind.STRUCT, name=te.name)
         if isinstance(te, GenericType):
             args = [self._resolve_type_expr(a) for a in te.args]
+            if te.module_path:
+                mod_sym = self.global_scope.lookup(te.module_path[0])
+                if mod_sym is None:
+                    self._error(f"unknown module '{te.module_path[0]}'", te)
+                k = kind_from_name(te.name)
+                if k != TypeKind.UNKNOWN:
+                    return TypeInfo(kind=k, args=args)
+                return TypeInfo(kind=TypeKind.STRUCT, name=te.name, args=args)
             from mapanare.types import BUILTIN_GENERIC_ARITY
 
             expected_arity = BUILTIN_GENERIC_ARITY.get(te.name)

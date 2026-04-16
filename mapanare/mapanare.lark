@@ -167,8 +167,8 @@ impl_def: KW_IMPL type_params NAME (LT type_expr (COMMA type_expr)* GT)? LBRACE 
           | generic_type
           | named_type
 
-named_type: NAME
-generic_type: NAME LT type_expr (COMMA type_expr)* GT
+named_type: NAME (DOT NAME)*
+generic_type: NAME (DOT NAME)* LT type_expr (COMMA type_expr)* GT
 tensor_type: KW_TENSOR LT type_expr GT LBRACKET expr (COMMA expr)* RBRACKET
 fn_type: KW_FN LPAREN (type_expr (COMMA type_expr)*)? RPAREN ARROW type_expr
 
