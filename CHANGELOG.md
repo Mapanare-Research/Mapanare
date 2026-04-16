@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.137.0] - 2026-04-15
+
+**Ch.1 CLOSED — `mapanare_agent_destroy` now `pthread_join`s before teardown.** Single-docket runtime-safety release. Four v4.136.0 reviewers named Ch.1 (Viper, Anaconda, Mamba, Coral); Viper held her memory-safety score at 9.0 (not higher) because of it. The three `tests/native/test_c_hardening.py` sanitizer classes (Plain / ASan / TSan) were skipped behind `_CH1_REASON` since v4.133.0; all three now pass.
+
+**Fix** (`runtime/native/mapanare_runtime.c` + `.h`, ~15 logic lines + 1 new atomic field). Added `mapanare_atomic_i32 needs_join` to `mapanare_agent_t`, set by `mapanare_agent_spawn` on `thread_create` success. New helper `atomic_exchange_i32` wraps `__atomic_exchange_n(ACQ_REL)`. `mapanare_agent_destroy` now signals `running = 0` + posts both semaphores, claims `needs_join` via atomic exchange, joins the worker if owed, *then* drains rings and tears down. `mapanare_agent_stop` uses the same claim pattern → stop is idempotent and stop+destroy is safe in either order. No public API change.
+
+**Test hygiene** (`tests/native/test_c_runtime.c`). `test_agent_metrics` passes pointer-as-token values `(void*)1..5` but relied on default `message_dtor = free` (added v4.78.0 CARRY_FORWARD #50) — the outbox drain called `free(1..5)` at destroy time. Added `agent.message_dtor = NULL;` after init to match the test's actual intent (tokens, not heap memory). Latent test-side issue that the Ch.1 skip had been masking.
+
+**Test un-skip** (`tests/native/test_c_hardening.py`). Removed `@pytest.mark.skip(reason=_CH1_REASON)` from `TestCRuntimePlain`, `TestCRuntimeASan`, `TestCRuntimeTSan`.
+
+**Verification.** Sanitizer: `TestCRuntimePlain::test_all_c_tests_pass PASSED`, `TestCRuntimeASan::test_asan_no_errors PASSED`, `TestCRuntimeTSan::test_tsan_no_races PASSED`. Non-bootstrap pytest **5,139 / 0** (was 5,136 / 0 pre-fix; +3 from Ch.1 un-skip). Bootstrap pytest 212 / 13 byte-identical. Goldens 53 / 65 byte-identical. Strict 3-stage fixed point holds: md5 `0c00ad07fee94f98bb350b359395843b` on both stage2.ll and stage3.ll, 108,397 lines, 0 diff. Valgrind 0 / 60 / 5 byte-identical (all 5 ERRORS are Ge.1 residuals). ASan 54 / 0 / 11 byte-identical. `libmapanare_rt.a` sha256 `1222c0561822f2acc478a63af9c003c6990d43be228aa8957e76a63d8c0cebad` (was `d896c83c…`, expected — runtime .c/.h changed). `mnc-stage1` stripped 3,480,720 bytes, sha256 `3f4e54e37dab96b0e06fc845a7040a2b9fd8ebec2480538c06613408b440183e`.
+
+**GitNexus impact pre-edit.** `gitnexus_impact({target: "mapanare_agent_destroy", direction: "upstream"})` → **risk LOW**, 0 direct callers in graph, 0 processes / 0 modules affected. Self-contained runtime internals as the v4.137.0 PLAN predicted.
+
+**Ledger state.** 58 dockets opened since v4.99.0 → **35 closed (60%)** · 23 open: **0 CRITICAL · 0 HIGH · 10 MEDIUM · 13 LOW**. Ch.1 was the last HIGH-severity open item. Zero runtime-safety work remains on the v5.0.0 critical path. Next target: v4.138.0 docs sweep (Bo.4 README version-badge drift + Bo.5 `mapanare --version` stale output).
+
+**Expected v4.143.0 panel impact** (from PLAN): Viper +0.3 (explicit 9.0-hold reason closed; TSan gate live), Anaconda +0.1 (v4.133.0 Ch.1 SKIP-docket reopened as pass), Mamba +0.05 (runtime sanitizer-clean depth). Full analysis in `docs/roadmap/v4/v4.137.0/SESSION_REPORT.md`.
+
 ## [5.0.0-rc1] - 2026-04-15
 
 **THE PANEL — v5 gate attempt 3: Option C. First v5 candidate in the project's history.** Seven-reviewer panel (Rattler / Viper / Anaconda / Cobra / Coral / Boa / Mamba) graded the v4.121.0–v4.135.0 15-release closeout arc against `docs/roadmap/v4/v4.135.0/MEASUREMENTS.md` canonical evidence. **Aggregate: 8.80/10. Grade distribution: 1 EXCEEDS (Mamba 9.0) / 6 MEETS / 0 NEEDS WORK.** Mechanical rule from `docs/roadmap/v4/v4.136.0/PLAN.md`: 8.5 ≤ aggregate < 9.0 AND 0 NEEDS WORK → **Option C — tag `v5.0.0-rc1`**. Attempt 1 (v4.99.0) aggregated 6.59; attempt 2 (v4.120.0) aggregated 8.21 with 1 NEEDS WORK; attempt 3 clears the rc1 gate with 0 NEEDS WORK and a +0.59 aggregate move across 15 releases.

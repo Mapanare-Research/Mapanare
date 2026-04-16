@@ -42,6 +42,9 @@ __attribute__((unused))
 static inline int32_t atomic_add_i32(mapanare_atomic_i32 *p, int32_t v) {
     return __atomic_fetch_add(p, v, __ATOMIC_ACQ_REL);
 }
+static inline int32_t atomic_exchange_i32(mapanare_atomic_i32 *p, int32_t v) {
+    return __atomic_exchange_n(p, v, __ATOMIC_ACQ_REL);
+}
 
 #ifdef _WIN32
 
@@ -586,6 +589,7 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
 
     atomic_store_i32(&agent->paused, 0);
     atomic_store_i32(&agent->running, 0);
+    atomic_store_i32(&agent->needs_join, 0);
     atomic_store_i64(&agent->messages_processed, 0);
     atomic_store_i64(&agent->total_latency_us, 0);
 
@@ -624,7 +628,14 @@ MAPANARE_EXPORT int mapanare_agent_spawn(mapanare_agent_t *agent) {
     atomic_store_i32(&agent->running, 1);
     int rc = mapanare_thread_create(&agent->thread, agent_thread_fn, agent);
     if (rc == 0) {
+        /* v4.137.0 (Ch.1): mark join as owed after successful thread
+         * create. Ordering: set AFTER create so a failed spawn leaves
+         * needs_join=0 and destroy() won't try to join an unstarted
+         * thread. */
+        atomic_store_i32(&agent->needs_join, 1);
         trace_emit(MAPANARE_TRACE_SPAWN, agent, NULL, 0);
+    } else {
+        atomic_store_i32(&agent->running, 0);
     }
     return rc;
 }
@@ -672,7 +683,12 @@ MAPANARE_EXPORT void mapanare_agent_stop(mapanare_agent_t *agent) {
     atomic_store_i32(&agent->paused, 0);  /* unblock if paused */
     mapanare_sem_post(&agent->inbox_ready);   /* wake agent thread */
     mapanare_sem_post(&agent->outbox_ready);  /* wake any blocking recv */
-    mapanare_thread_join(agent->thread);
+    /* v4.137.0 (Ch.1): only the caller that transitions needs_join
+     * from 1 → 0 performs the join. Makes stop() + destroy() safe to
+     * call in either order without double-joining. */
+    if (atomic_exchange_i32(&agent->needs_join, 0) == 1) {
+        mapanare_thread_join(agent->thread);
+    }
 }
 
 MAPANARE_EXPORT mapanare_agent_state_t mapanare_agent_get_state(mapanare_agent_t *agent) {
@@ -692,6 +708,20 @@ MAPANARE_EXPORT double mapanare_agent_avg_latency_us(mapanare_agent_t *agent) {
 
 MAPANARE_EXPORT void mapanare_agent_destroy(mapanare_agent_t *agent) {
     if (!agent) return;
+    /* v4.137.0 (Ch.1): quiesce the worker thread BEFORE freeing any
+     * resources it may still be touching. Prior to this, destroy()
+     * drained and freed the rings/semaphores while the worker could
+     * still be blocked in sem_wait or mid-loop — a UAF that TSan
+     * flagged ~100% and ASan flagged intermittently. The atomic
+     * exchange on needs_join ensures we join exactly once whether
+     * stop() was called earlier or not. */
+    atomic_store_i32(&agent->running, 0);
+    atomic_store_i32(&agent->paused, 0);
+    mapanare_sem_post(&agent->inbox_ready);
+    mapanare_sem_post(&agent->outbox_ready);
+    if (atomic_exchange_i32(&agent->needs_join, 0) == 1) {
+        mapanare_thread_join(agent->thread);
+    }
     /* v4.33.0 Phase 4.3 (Viper M5, 2nd cycle): drain inbox/outbox and
      * free remaining messages IF a destructor was provided. If
      * message_dtor is NULL, messages are discarded without freeing

@@ -29,11 +29,13 @@ gate attempt 3).
 | Culebra / external | 0 | **1** | 1 |
 | **Total** | **24** | **34** | **58** |
 
-**Net ledger state:** 58 dockets opened since v4.99.0 · **34 closed**
-(59%) · 24 open. Of the 24 open: **0 CRITICAL · 1 HIGH (Ch.1) · 10
-MEDIUM · 13 LOW**. All open items are named, scoped, sized, and have
+**Net ledger state (as of v4.137.0):** 58 dockets opened since v4.99.0 ·
+**35 closed** (60%) · 23 open. Of the 23 open: **0 CRITICAL · 0 HIGH ·
+10 MEDIUM · 13 LOW**. All open items are named, scoped, sized, and have
 named fix vehicles where applicable. None produces incorrect code for a
 program the SPEC promises works.
+
+**v4.137.0 closed Ch.1** — the last HIGH-severity item on the ledger.
 
 ---
 
@@ -81,9 +83,9 @@ program the SPEC promises works.
 | 1 | **Rt.1** — Boxed-enum payload overhead (enum_match 24× slower than C, 2× slower than Rust) | v4.120.0 panel | MEDIUM | **CLOSED** | v4.124.0 | `mapanare/emit_llvm_text.py` stores pointer-fits variants inline as `{i64, i64, ..., i64}` instead of `{i64, ptr}` + heap. 3.33 → 1.88 ms (1.77× speedup); 0.91× of Rust. Residual 2.3× to C → **ABI.1** (new docket). |
 | 2 | **Rt.2** — `__mn_dir_create` ignores `recursive` | v4.133.0 | LOW | **OPEN** | — | Runtime C fix; 1 test skip-docketed |
 | 3 | **Rt.3** — `__mn_tmpfile_path` is a template-string stub | v4.133.0 | LOW | **OPEN** | — | Runtime C fix; 2 tests skip-docketed |
-| 4 | **Ch.1** — `mapanare_agent_destroy` UAF before thread join (plain + ASan + TSan all fail) | v4.133.0 | **HIGH** | **OPEN** | — | Runtime-safety defect. 3 tests skip-docketed. **Only HIGH-severity open docket at v4.135.0.** v4.137.0+ runtime fix candidate. |
+| 4 | **Ch.1** — `mapanare_agent_destroy` UAF before thread join (plain + ASan + TSan all fail) | v4.133.0 | **HIGH** | **CLOSED** | v4.137.0 | `runtime/native/mapanare_runtime.c::mapanare_agent_destroy` now signals the worker via `running=0` + sem posts and atomically claims a one-shot `pthread_join` before tearing down rings/semaphores. `needs_join` flag on `mapanare_agent_t` makes stop()+destroy() idempotent. Test hygiene: `test_agent_metrics` clears `message_dtor` (fake-ptr tokens). All 3 sanitizer classes pass: Plain / ASan / TSan. See `docs/roadmap/v4/v4.137.0/SESSION_REPORT.md`. |
 
-**Open Rt./Ch. dockets: 3 (1 HIGH, 2 LOW).**
+**Open Rt./Ch. dockets: 2 (0 HIGH, 2 LOW).**
 
 ---
 

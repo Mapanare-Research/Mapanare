@@ -743,6 +743,11 @@ TEST(test_agent_failing_handler) {
 TEST(test_agent_metrics) {
     mapanare_agent_t agent;
     ASSERT_EQ(mapanare_agent_init(&agent, "metrics", echo_handler, NULL, 256, 256), 0);
+    /* v4.137.0 (Ch.1 test hygiene): this test uses pointer-as-token
+     * values (1..5) rather than heap allocations. The default dtor
+     * (free, set in v4.78.0 CARRY_FORWARD #50) would call free() on
+     * those tokens during destroy's outbox drain. NULL it here. */
+    agent.message_dtor = NULL;
     ASSERT_EQ(mapanare_agent_messages_processed(&agent), 0);
 
     ASSERT_EQ(mapanare_agent_spawn(&agent), 0);

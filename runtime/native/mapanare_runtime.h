@@ -227,6 +227,12 @@ typedef struct mapanare_agent {
     /* Internal */
     mapanare_thread_t        thread;
     mapanare_atomic_i32      running;           /* internal run flag */
+    /* v4.137.0 (Ch.1): track whether the worker thread must still be
+     * joined. Set to 1 by spawn() on success; claimed (1 → 0) by the
+     * first caller of stop() or destroy(). Ensures destroy() joins
+     * before freeing rings/semaphores even when stop() was skipped,
+     * and never double-joins when stop() was already called. */
+    mapanare_atomic_i32      needs_join;
 
     /* v4.33.0 Phase 4.3 (Viper M5, 2nd cycle): optional destructor for
      * in-flight messages. If non-NULL, mapanare_agent_destroy calls

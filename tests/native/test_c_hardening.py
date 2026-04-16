@@ -84,19 +84,6 @@ def _compile_and_run(
     return result
 
 
-_CH1_REASON = (
-    "docket Ch.1: tests/native/test_c_runtime.c::test_agent_metrics "
-    "triggers a use-after-free in mapanare_agent_destroy "
-    "(runtime/native/mapanare_runtime.c:704) — the agent worker thread "
-    "is still live when destroy() frees its state; tsan flags the race, "
-    "asan flags the UAF, plain build aborts on the invalid free. The "
-    "agent lifecycle teardown ordering is a runtime-side fix. Descoped "
-    "from v4.133.0 hygiene release (no runtime code changes permitted) "
-    "— reopen when Ch.1 lands (likely pthread_join before free)."
-)
-
-
-@pytest.mark.skip(reason=_CH1_REASON)
 @pytest.mark.skipif(_CC is None, reason="No C compiler available")
 class TestCRuntimePlain:
     """Compile and run the C test suite without sanitizers."""
@@ -110,7 +97,6 @@ class TestCRuntimePlain:
         assert "FAIL" not in result.stdout
 
 
-@pytest.mark.skip(reason=_CH1_REASON)
 @pytest.mark.skipif(_CC is None, reason="No C compiler available")
 @pytest.mark.skipif(not _IS_LINUX, reason="AddressSanitizer tests are Linux-only")
 class TestCRuntimeASan:
@@ -131,7 +117,6 @@ class TestCRuntimeASan:
         ), f"AddressSanitizer detected errors:\n{result.stdout}\n{result.stderr}"
 
 
-@pytest.mark.skip(reason=_CH1_REASON)
 @pytest.mark.skipif(_CC is None, reason="No C compiler available")
 @pytest.mark.skipif(not _IS_LINUX, reason="ThreadSanitizer tests are Linux-only")
 class TestCRuntimeTSan:
