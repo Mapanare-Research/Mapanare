@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.140.0] - 2026-04-16
+
+**Self-hosted emitter parity — Cb.5 + SE.1 + Cb.3.** Closes the enum ABI divergence Cobra flagged at the v4.136.0 panel. Python and self-hosted emitters now produce byte-identical enum ABIs and matching runtime behavior.
+
+**Cb.5** (MEDIUM → CLOSED). Ports `_enum_inline` from `mapanare/emit_llvm_text.py` to `mapanare/self/emit_llvm.mn`. `EmitState` gains `enum_inline_slots: List<Int>` field (parallel to `enum_names`/`enum_infos`). New helpers: `type_fits_inline_slot`, `is_enum_self_ref`, `compute_enum_inline_slots`, `lookup_enum_inline`, `enum_inline_type`, `pack_to_i64`, `unpack_from_i64`. Eligibility: ≤2 payload fields, each i64-packable (int/float/bool/ptr), no self-reference. `register_mir_enum` emits `%enum.X = type {i64, i64, ...}` for inline enums; `emit_enum_init` packs with `insertvalue` (no malloc); `emit_enum_payload` extracts+unpacks with `extractvalue` (no load). `benchmarks/system/enum_match.mn` produces matching `checksum = 52818168` under Python bootstrap and `mnc-stage1`.
+
+**SE.1** (LOW → CLOSED). `emit_llvm_text.py::_do_copy` for MAP/SIGNAL/STREAM now applies the Sh.2 ownership-transfer pattern (v4.131.0 LIST, v4.132.0 STR): only track dest as owner when src was a tracked owner; untrack dest if src is an alias. Drop-glue shapes (`__mn_map_free_deep`, `__mn_signal_free`, `__mn_stream_free_chain`) are structurally compatible with the LIST pattern.
+
+**Cb.3** (LOW → CLOSED). `docs/guides/getting_started.md` documents the `ulimit -s 65536` requirement for `mnc-stage2` on `mnc_all.mn`.
+
+**Metrics.** Pytest 5,128 / 0 (non-bootstrap); bootstrap 212 / 13 (baseline). Goldens 54/66 unchanged. All 3 enum goldens (07/24/32) pass. Fixed-point 1-line diff (Dr.1 version-metadata, within `DIFF_THRESHOLD=100`). `mnc-stage1` 3,566,736 bytes stripped. stage2.ll 109,872 lines. Ledger: 63 dockets, **46 closed (73%)**, 17 open (0 CRITICAL, 0 HIGH, 8 MEDIUM, 9 LOW).
+
 ## [4.139.0] - 2026-04-15
 
 **SPEC + language close — Gr.2 / Sem.1 / §0 / Co.1 / Dr.1.** Empties Coral's carry-forward from the v4.136.0 panel. Three dockets closed, two SPEC edits. No runtime or codegen changes.

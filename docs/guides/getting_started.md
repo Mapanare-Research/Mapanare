@@ -65,6 +65,14 @@ Running `mapanare build` or the self-hosted compiler requires:
 transpiles to C or Python-side LLVM emission) works natively on
 Windows but cannot self-host.
 
+**Stack limit for `mnc-stage2`**: compiling `mapanare/self/mnc_all.mn`
+through the stage2 binary requires a 64MB stack (v4.140.0 Cb.3). The
+fixed-point verification script raises the limit automatically with
+`ulimit -s 65536` at `scripts/verify_fixed_point.sh:58`. If you run
+`mnc-stage2` directly on `mnc_all.mn`, raise the stack limit first or
+you will see SIGSEGV (exit 139) with empty output. A lower limit
+crashes before reaching the emission phase.
+
 ---
 
 ## 2. Clone and Install

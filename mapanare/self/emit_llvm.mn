@@ -64,7 +64,8 @@ struct EmitState {
     str_globals: List<String>,
     current_ret_type: String,
     enum_names: List<String>,
-    enum_infos: List<EnumInfo>
+    enum_infos: List<EnumInfo>,
+    enum_inline_slots: List<Int>
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -77,7 +78,8 @@ fn new_emit_state(module_name: String) -> EmitState {
     let str_globals: List<String> = []
     let enum_names: List<String> = []
     let enum_infos: List<EnumInfo> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos }
+    let enum_inline_slots: List<Int> = []
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots }
 }
 
 fn build_internal_struct_list() -> List<StructEntry> {
@@ -88,7 +90,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"]))
     list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"]))
-    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos"]))
+    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
     list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "arm_body_labels", "merge_label"]))
@@ -131,8 +133,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"])
     // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks
     s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"])
-    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos
-    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos"])
+    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots
+    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots"])
     // LowerResult: value, state
     s = register_internal_struct(s, "LowerResult", ["value", "state"])
     // CompileResult: success, ir_text, errors
@@ -741,14 +743,93 @@ fn variant_payload_slots_max(st: EmitState, info: EnumInfo) -> Int {
     return mx
 }
 
+// v4.140.0 Cb.5: inline enum eligibility — mirrors Python _type_fits_inline_slot.
+fn type_fits_inline_slot(resolved: String) -> Bool {
+    if resolved == "i64" { return true }
+    if resolved == "double" { return true }
+    if resolved == "i1" { return true }
+    if resolved == "i8" { return true }
+    if resolved == "i16" { return true }
+    if resolved == "i32" { return true }
+    if resolved == "ptr" { return true }
+    return false
+}
+
+fn is_enum_self_ref(enum_name: String, ty: MIRType) -> Bool {
+    if ty.name == enum_name {
+        if ty.kind == TK_ENUM() || ty.kind == TK_STRUCT() { return true }
+    }
+    if ty.kind == TK_OPTION() {
+        if len(ty.args) > 0 {
+            if ty.args[0].name == enum_name { return true }
+        }
+    }
+    if ty.kind == TK_RESULT() {
+        let mut ai: Int = 0
+        for _ in 0..2 {
+            if ai < len(ty.args) {
+                if ty.args[ai].name == enum_name { return true }
+                ai = ai + 1
+            }
+        }
+    }
+    return false
+}
+
+// v4.140.0 Cb.5: compute inline slot count for an enum (0 = boxed).
+// Mirrors Python _compute_enum_inline_slots: every variant's payload
+// fields must be i64-packable, no self-reference, max 2 fields.
+fn compute_enum_inline_slots(st: EmitState, info: EnumInfo) -> Int {
+    let max_inline: Int = 2
+    let mut max_fields: Int = 0
+    let mut vi: Int = 0
+    for _ in 0..500 {
+        if vi >= len(info.variants) { return max_fields }
+        let variant: EnumVariantInfo = info.variants[vi]
+        let npt: Int = len(variant.payload_types)
+        if npt > max_inline { return 0 }
+        if npt > max_fields { max_fields = npt }
+        let mut fi: Int = 0
+        for _ in 0..100 {
+            if fi < npt {
+                if is_enum_self_ref(info.name, variant.payload_types[fi]) { return 0 }
+                let ft: String = resolve_mir_type(variant.payload_types[fi])
+                if !type_fits_inline_slot(ft) { return 0 }
+                fi = fi + 1
+            }
+        }
+        vi = vi + 1
+    }
+    return max_fields
+}
+
+fn lookup_enum_inline(st: EmitState, enum_name: String) -> Int {
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i >= len(st.enum_names) { return 0 }
+        if st.enum_names[i] == enum_name { return st.enum_inline_slots[i] }
+        i = i + 1
+    }
+    return 0
+}
+
+fn enum_inline_type(slots: Int) -> String {
+    let n: Int = max_int(slots, 1)
+    if n == 1 { return "{i64, i64}" }
+    return "{i64, i64, i64}"
+}
+
 fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState {
-    // Pointer-based enum: { i64 tag, ptr payload }.
-    // Matches the Python text emitter. Payload is heap-allocated.
-    // This handles recursive enums (Expr contains Expr) correctly.
     let mut s: EmitState = st
     s.enum_names.push(info.name)
     s.enum_infos.push(info)
-    s = emit_line(s, "%enum." + info.name + " = type {i64, ptr}")
+    let slots: Int = compute_enum_inline_slots(s, info)
+    s.enum_inline_slots.push(slots)
+    if slots > 0 {
+        s = emit_line(s, "%enum." + info.name + " = type " + enum_inline_type(slots))
+    } else {
+        s = emit_line(s, "%enum." + info.name + " = type {i64, ptr}")
+    }
     return s
 }
 
@@ -1931,24 +2012,88 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
 // EnumInit instruction
 // ---------------------------------------------------------------------------
 
+fn pack_to_i64(st: EmitState, val: String, ft: String, pk_name: String) -> EmitState {
+    let mut s: EmitState = st
+    if ft == "i64" { return s }
+    if ft == "double" {
+        s = emit_line(s, "  " + pk_name + " = bitcast double " + val + " to i64")
+        return next_ssa(s)
+    }
+    if ft == "i1" || ft == "i8" || ft == "i16" || ft == "i32" {
+        s = emit_line(s, "  " + pk_name + " = zext " + ft + " " + val + " to i64")
+        return next_ssa(s)
+    }
+    if ft == "ptr" {
+        s = emit_line(s, "  " + pk_name + " = ptrtoint ptr " + val + " to i64")
+        return next_ssa(s)
+    }
+    return s
+}
+
+fn unpack_from_i64(st: EmitState, val: String, ft: String, upk_name: String) -> EmitState {
+    let mut s: EmitState = st
+    if ft == "i64" { return s }
+    if ft == "double" {
+        s = emit_line(s, "  " + upk_name + " = bitcast i64 " + val + " to double")
+        return next_ssa(s)
+    }
+    if ft == "i1" || ft == "i8" || ft == "i16" || ft == "i32" {
+        s = emit_line(s, "  " + upk_name + " = trunc i64 " + val + " to " + ft)
+        return next_ssa(s)
+    }
+    if ft == "ptr" {
+        s = emit_line(s, "  " + upk_name + " = inttoptr i64 " + val + " to ptr")
+        return next_ssa(s)
+    }
+    return s
+}
+
 fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payload: List<Value>) -> EmitState {
     let mut s: EmitState = st
     let dn: String = dest.name
-
-    // Resolve variant tag index
     let tag_val: String = toString(resolve_variant_index(s, ty.name, variant))
-
-    // Pointer-based enum: { i64 tag, ptr payload }.
-    // 1. Malloc payload struct, store each field via GEP.
-    // 2. Build {i64, ptr} with insertvalue.
-    // Use named type (%enum.X) for insertvalue, not inline {i64, ptr}
     let enum_ty: String = resolve_mir_type(ty)
+    let inline_slots: Int = lookup_enum_inline(s, ty.name)
+
+    // v4.140.0 Cb.5: inline enum — pack payload fields into i64 slots.
+    // Use named enum type (%enum.X) for insertvalue so SSA type matches the
+    // declared function return / alloca types downstream.
+    if inline_slots > 0 {
+        let n_slots: Int = max_int(inline_slots, 1)
+        let mut cur: String = dn + ".ei0"
+        s = emit_line(s, "  " + cur + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
+        s = next_ssa(s)
+        let mut slot_i: Int = 0
+        for _ in 0..3 {
+            if slot_i < n_slots {
+                // Last slot writes to dn; earlier slots to temporaries.
+                let mut nxt: String = dn + ".ei" + toString(slot_i + 1)
+                if slot_i == n_slots - 1 { nxt = dn }
+                if slot_i < len(payload) {
+                    let p: Value = payload[slot_i]
+                    let ft: String = resolve_mir_type(p.ty)
+                    if ft == "i64" {
+                        s = emit_line(s, "  " + nxt + " = insertvalue " + enum_ty + " " + cur + ", i64 " + p.name + ", " + toString(slot_i + 1))
+                    } else {
+                        let pk: String = dn + ".pk" + toString(slot_i)
+                        s = pack_to_i64(s, p.name, ft, pk)
+                        s = emit_line(s, "  " + nxt + " = insertvalue " + enum_ty + " " + cur + ", i64 " + pk + ", " + toString(slot_i + 1))
+                    }
+                } else {
+                    s = emit_line(s, "  " + nxt + " = insertvalue " + enum_ty + " " + cur + ", i64 0, " + toString(slot_i + 1))
+                }
+                cur = nxt
+                slot_i = slot_i + 1
+            }
+        }
+        return s
+    }
+
+    // Boxed enum: { i64 tag, ptr payload } — existing path.
     if len(payload) > 0 {
-        // Compute payload allocation size: sum field sizes
         let alloc_size: String = toString(compute_payload_alloc_size(s, payload))
         let ep: String = dn + ".ep"
         s = emit_line(s, "  " + ep + " = call ptr @malloc(i64 " + alloc_size + ")")
-        // Store each payload field via byte-offset GEP
         let mut i: Int = 0
         let npayload: Int = len(payload)
         for _ in 0..100 {
@@ -1962,12 +2107,10 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
                 i = i + 1
             }
         }
-        // Build enum value using named type
         let ei1_pay: String = dn + ".ei1"
         s = emit_line(s, "  " + ei1_pay + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
         s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1_pay + ", ptr " + ep + ", 1")
     } else {
-        // No payload: null pointer
         let ei1_bare: String = dn + ".ei1"
         s = emit_line(s, "  " + ei1_bare + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
         s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1_bare + ", ptr null, 1")
@@ -2200,6 +2343,25 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         // Use destination type for load — avoids struct/enum name mismatches
         let inner_ty_opt: String = resolve_type(st, dest.ty)
         s = emit_line(s, "  " + dn + " = load " + inner_ty_opt + ", ptr " + ptr_name)
+        return s
+    }
+
+    // v4.140.0 Cb.5: inline enum — extract i64 slot and unpack.
+    let inline_slots_p: Int = lookup_enum_inline(s, val.ty.name)
+    if inline_slots_p > 0 {
+        let field_idx_i: Int = parse_field_index(variant)
+        let slot_idx_i: Int = field_idx_i + 1
+        let mut dest_ty_i: String = resolve_mir_type(dest.ty)
+        if dest_ty_i.starts_with("%struct.") {
+            if is_enum_type(s, dest.ty.name) { dest_ty_i = "%enum." + dest.ty.name }
+        }
+        let raw_i: String = dn + ".raw"
+        s = emit_line(s, "  " + raw_i + " = extractvalue " + enum_ty + " " + val.name + ", " + toString(slot_idx_i))
+        if dest_ty_i == "i64" {
+            s = emit_line(s, "  " + dn + " = add i64 0, " + raw_i)
+        } else {
+            s = unpack_from_i64(s, raw_i, dest_ty_i, dn)
+        }
         return s
     }
 

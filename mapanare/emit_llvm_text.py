@@ -2607,14 +2607,31 @@ class LLVMTextEmitter:
                 # src is an alias; untrack dest if it was previously an owner
                 if i.dest.name in self._str_slots:
                     self._str_slots.pop(i.dest.name)
-        # Propagate container tracking for maps/signals/streams
+        # v4.140.0 SE.1: mirror Sh.2 ownership-transfer for MAP/SIGNAL/STREAM.
+        # Same shape as LIST (v4.131.0): only track dest as owner when src was
+        # already tracked; if src is an alias, untrack dest to prevent UAF.
         sk = i.src.ty.kind if i.src.ty else TypeKind.UNKNOWN
         if sk == TypeKind.MAP:
-            self._track_container(i.dest.name, "map")
+            if i.src.name in self._map_vars:
+                self._map_vars.remove(i.src.name)
+                self._track_container(i.dest.name, "map")
+            else:
+                if i.dest.name in self._map_vars:
+                    self._map_vars.remove(i.dest.name)
         elif sk == TypeKind.SIGNAL:
-            self._track_container(i.dest.name, "signal")
+            if i.src.name in self._signal_vars:
+                self._signal_vars.remove(i.src.name)
+                self._track_container(i.dest.name, "signal")
+            else:
+                if i.dest.name in self._signal_vars:
+                    self._signal_vars.remove(i.dest.name)
         elif sk == TypeKind.STREAM:
-            self._track_container(i.dest.name, "stream")
+            if i.src.name in self._stream_vars:
+                self._stream_vars.remove(i.src.name)
+                self._track_container(i.dest.name, "stream")
+            else:
+                if i.dest.name in self._stream_vars:
+                    self._stream_vars.remove(i.dest.name)
         # List fields in struct copies share the same buffer (bitwise copy,
         # no refcount increment).  This is safe because mn_list_grow always
         # allocates a new buffer (never reallocs), so the shared old buffer
