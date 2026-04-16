@@ -12,7 +12,7 @@
 
 Construido tras años de toparse con los límites de Python en software AI-nativo, concurrente y tensor-pesado.
 
-Mapanare compila a binarios nativos vía LLVM y WebAssembly. El compilador auto-hospedado (15,000+ líneas de `.mn`) se compila a sí mismo hasta un punto fijo. Un transpilador de Python convierte archivos `.py` a binarios nativos 29-68x más rápido que CPython.
+Mapanare compila a binarios nativos vía LLVM y WebAssembly. El compilador auto-hospedado alcanza un punto fijo estricto de 3 etapas (`stage2.ll == stage3.ll`, byte-idéntico). En 6 benchmarks cross-language, Mapanare es **42.6× más rápido que Python**, **1.12× de Rust**, y **4.86× más lento que C (gcc -O2)** — ver [benchmarks/FINAL_REPORT_v4.136.md](../benchmarks/FINAL_REPORT_v4.136.md). Un transpilador de Python convierte archivos `.py` a binarios nativos 29-68x más rápido que CPython.
 
 [English](../README.md) | Español | [中文版](README.zh-CN.md) | [Português](README.pt.md)
 
@@ -25,8 +25,8 @@ Mapanare compila a binarios nativos vía LLVM y WebAssembly. El compilador auto-
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![Licencia](https://img.shields.io/badge/licencia-MIT-green.svg?style=flat-square)](../LICENSE)
-[![Version](https://img.shields.io/badge/version-4.31.0-blue.svg?style=flat-square)](../CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-4845_pasando-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-5.0.0--rc1-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-5139+_pasando-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>

@@ -20,12 +20,10 @@ from mapanare.parser import ParseError, parse, parse_recovering
 from mapanare.semantic import SemanticErrors, check_or_raise
 from mapanare.targets import get_target, host_target_name, list_targets
 
-try:
-    from importlib.metadata import version as _pkg_version
+from pathlib import Path
 
-    __version__ = _pkg_version("mapanare")
-except Exception:
-    __version__ = "0.0.0"
+_VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
+__version__ = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "unknown"
 
 
 def _read_source(path: str) -> str:

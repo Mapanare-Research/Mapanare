@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.138.0] - 2026-04-15
+
+**Docs sweep — Bo.1–Bo.7 closed (Boa carry-forward).** Zero compiler or runtime source changes. Closes every Boa carry-forward from the v4.136.0 panel in one release.
+
+**Bo.5** (`mapanare/cli.py`). `mapanare --version` now reads the `VERSION` file directly instead of `importlib.metadata` (which returned stale `2.0.1` from egg-info). The `VERSION` file is already the single source of truth for `pyproject.toml`; now the CLI matches.
+
+**Bo.6** (`docs/guides/getting_started.md`). Golden count updated `39/65` → `53/65`. Removed Sh.2 and Sh.11 from open-issues table (both closed). Added strict 3-stage fixed-point status.
+
+**Bo.2** (`docs/guides/getting_started.md`). Added native-mode prerequisites section with LLVM 17+/clang/opt/llc/llvm-as/lli tool table, version requirements, and Windows/WSL note.
+
+**Bo.4 + Bo.7** (`docs/README.es.md`, `.zh-CN.md`, `.pt.md`). Version badge `4.31.0` → `5.0.0-rc1`. Test badge `4845` → `5139+`. Description text updated with fixed-point, benchmark numbers (42.6× faster than Python, 1.12× of Rust, 4.86× slower than C), WebAssembly mention. WebAssembly shield badge added. Benchmark link → `FINAL_REPORT_v4.136.md`.
+
+**Bo.1** (`docs/known_issues.md`). New file listing all user-facing open items: self-hosted feature gaps (Sh.4/5/6/7/9a/9b), grammar (Gr.1/2, Sem.1), runtime (Rt.2/3), ecosystem (no package manager). Each entry has symptom, workaround, and tracking version.
+
+**Bo.3** (`docs/roadmap/v4/v4.120.0/STATISTICS.md`). Added header note directing readers to per-release MEASUREMENTS.md files and panel aggregates for post-v4.120.0 data.
+
+**VERSION propagation.** `libmapanare_rt.a` rebuilt with `MAPANARE_VERSION=4.138.0`. `mnc-stage1` rebuilt via `scripts/build_stage1.py`. Non-bootstrap pytest **5,142 / 0** (+3 from new `docs/known_issues.md` parametrized doc link tests). Goldens **53/65** byte-identical. Fixed-point unchanged (no compiler edits).
+
+**Ledger state.** 63 dockets opened since v4.99.0 → **40 closed (63%)** · 23 open: **0 CRITICAL · 0 HIGH · 10 MEDIUM · 13 LOW**. All Bo.* CLOSED. Session report: `docs/roadmap/v4/v4.138.0/SESSION_REPORT.md`. Next target: v4.139.0 (Gr.2 + Sem.1 grammar/semantic fixes).
+
 ## [4.137.0] - 2026-04-15
 
 **Ch.1 CLOSED — `mapanare_agent_destroy` now `pthread_join`s before teardown.** Single-docket runtime-safety release. Four v4.136.0 reviewers named Ch.1 (Viper, Anaconda, Mamba, Coral); Viper held her memory-safety score at 9.0 (not higher) because of it. The three `tests/native/test_c_hardening.py` sanitizer classes (Plain / ASan / TSan) were skipped behind `_CH1_REASON` since v4.133.0; all three now pass.

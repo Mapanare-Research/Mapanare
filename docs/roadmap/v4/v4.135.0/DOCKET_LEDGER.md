@@ -20,22 +20,23 @@ gate attempt 3).
 | Self-hosted bugs (Sh.\*) | **4** | **8** | 12 |
 | Self-hosted feature gaps (Sh.4/5/6/7/9a/9b/10) | **7** | 0 | 7 |
 | Audit backlog (An.\*) | **1** | **4** | 5 |
-| Runtime (Rt.\*, Ch.\*) | **3** | **1** | 4 |
+| Runtime (Rt.\*, Ch.\*) | **2** | **2** | 4 |
 | Performance / ABI (ABI.1, Rt.1) | **1** | **1** | 2 |
-| Cosmetic / docs (Cb.\*, Co.\*, Bo.\*, Dr.\*) | **1** | **9** | 10 |
+| Cosmetic / docs (Cb.\*, Co.\*, Bo.\*, Dr.\*) | **1** | **14** | 15 |
 | Grammar / semantic (Gr.\*, Sem.\*, Qs.1, TBAA.1) | **3** | **2** | 5 |
 | Test-hygiene fallout (TR.1, Bn.1, Tm.1) | **3** | 0 | 3 |
 | Sanitizer findings (ASan.1, Vg.\*, Ge.1) | **1** | **8** | 9 |
 | Culebra / external | 0 | **1** | 1 |
-| **Total** | **24** | **34** | **58** |
+| **Total** | **23** | **40** | **63** |
 
-**Net ledger state (as of v4.137.0):** 58 dockets opened since v4.99.0 ·
-**35 closed** (60%) · 23 open. Of the 23 open: **0 CRITICAL · 0 HIGH ·
+**Net ledger state (as of v4.138.0):** 63 dockets opened since v4.99.0 ·
+**40 closed** (63%) · 23 open. Of the 23 open: **0 CRITICAL · 0 HIGH ·
 10 MEDIUM · 13 LOW**. All open items are named, scoped, sized, and have
 named fix vehicles where applicable. None produces incorrect code for a
 program the SPEC promises works.
 
 **v4.137.0 closed Ch.1** — the last HIGH-severity item on the ledger.
+**v4.138.0 closed Bo.1–Bo.7** — Boa's carry-forward ledger emptied.
 
 ---
 
@@ -109,13 +110,17 @@ program the SPEC promises works.
 | 4 | **Co.2** — Struct-literal decision | v4.120.0 panel | LOW | **CLOSED** | v4.129.0 | SPEC §2.1 update; deferred to v5.x per design |
 | 5 | **Co.3** — Contract-programming decision | v4.120.0 panel | LOW | **CLOSED** | v4.129.0 | SPEC decision documented; v5.x scope |
 | 6 | **Co.4** — `const` real immutability enforcement decision | v4.120.0 panel | LOW | **CLOSED** | v4.129.0 | SPEC §2.1.1 reserved-keyword table + v5.x decision |
-| 7 | **Bo.1** — `docs/known_issues.md` refresh | v4.120.0 panel (Boa) | LOW | **CLOSED** | v4.129.0 | Doc updated in v4.129.0 sync |
-| 8 | **Bo.2** — Native-mode prereq documentation | v4.120.0 panel | LOW | **CLOSED** | v4.129.0 | `docs/getting-started.md` updated |
-| 9 | **Bo.3** — Pre-v3.33.0 panel footnote in ROADMAP | v4.120.0 panel | LOW | **CLOSED** | v4.129.0 | Roadmap Era READMEs v0-v4 finalized |
-| 10 | **Dr.1** — Self-hosted `!0 = !{!"4.127.0"}` frozen version metadata | v4.130.0 pre-panel audit | LOW | **OPEN** | — | Metadata housekeeping; v5.x |
-| 11 | **Dr.2** — `libmapanare_rt.a` VERSION drift (5 bumps, v4.113.0 → v4.131.0 embedded) | v4.133.0 audit | LOW | **CLOSED** | v4.133.0 | `make build-rt` + `scripts/build_stage1.py` with fresh `-DMAPANARE_VERSION` |
+| 7 | **Bo.1** — `docs/known_issues.md` refresh | v4.120.0 panel (Boa) | LOW | **CLOSED** | v4.129.0 → re-opened v4.136.0 → **v4.138.0** | v4.129.0 initial; v4.136.0 panel flagged incomplete (missing Sh.9a/9b, Rt.2/3, ecosystem). v4.138.0: full `docs/known_issues.md` with all user-facing dockets + workarounds. |
+| 8 | **Bo.2** — Native-mode prereq documentation | v4.120.0 panel | LOW | **CLOSED** | v4.129.0 → re-opened v4.136.0 → **v4.138.0** | v4.129.0 initial; v4.136.0 panel flagged missing LLVM tool table. v4.138.0: detailed prerequisites section in `docs/guides/getting_started.md` with tool/version/install columns. |
+| 9 | **Bo.3** — Pre-v3.33.0 panel footnote in ROADMAP | v4.120.0 panel | LOW | **CLOSED** | v4.129.0 → re-opened v4.136.0 → **v4.138.0** | v4.129.0 initial; v4.136.0 panel flagged STATISTICS.md merge note lost. v4.138.0: note added to `docs/roadmap/v4/v4.120.0/STATISTICS.md` header. |
+| 10 | **Bo.4** — Localized README version badge + benchmark drift | v4.136.0 panel (Boa) | LOW | **CLOSED** | v4.138.0 | `docs/README.es.md`, `.zh-CN.md`, `.pt.md` badges updated to `5.0.0-rc1`, benchmark numbers + FINAL_REPORT link synced. WebAssembly badge added. |
+| 11 | **Bo.5** — `mapanare --version` prints stale `2.0.1` instead of VERSION file | v4.136.0 panel (Boa) | LOW | **CLOSED** | v4.138.0 | `mapanare/cli.py` now reads `VERSION` file directly instead of `importlib.metadata`. Confirmed `mapanare --version` → `4.138.0`. |
+| 12 | **Bo.6** — `getting_started.md` stale golden count (39/65) and Sh.11 listed as open | v4.136.0 panel (Boa) | LOW | **CLOSED** | v4.138.0 | Updated to 53/65, Sh.11 removed (closed v4.134.0), Sh.2 removed (closed v4.132.0), fixed-point status added. |
+| 13 | **Bo.7** — Localized README description text outdated (no WASM, no fixed-point, no benchmarks) | v4.136.0 panel (Boa) | LOW | **CLOSED** | v4.138.0 | All 3 localized READMEs updated with fixed-point, benchmark numbers, WebAssembly mention. Executed alongside Bo.4. |
+| 14 | **Dr.1** — Self-hosted `!0 = !{!"4.127.0"}` frozen version metadata | v4.130.0 pre-panel audit | LOW | **OPEN** | — | Metadata housekeeping; v5.x |
+| 15 | **Dr.2** — `libmapanare_rt.a` VERSION drift (5 bumps, v4.113.0 → v4.131.0 embedded) | v4.133.0 audit | LOW | **CLOSED** | v4.133.0 | `make build-rt` + `scripts/build_stage1.py` with fresh `-DMAPANARE_VERSION` |
 
-**Open Cb./Co./Bo./Dr. dockets: 1 (Dr.1; LOW, v5.x).**
+**Open Cb./Co./Bo./Dr. dockets: 1 (Dr.1; LOW, v5.x). All Bo.* CLOSED as of v4.138.0.**
 
 ---
 

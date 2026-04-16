@@ -1,5 +1,11 @@
 # Mapanare v4.x — Compiled Statistics
 
+> **Note:** Pre-v3.33.0 statistics are preserved here for panel
+> continuity. Post-v4.120.0 measurements live in
+> `docs/roadmap/v4/vX.Y.0/MEASUREMENTS.md` per release. See
+> `.reviews/{v4.106.0,v4.114.0,v4.120.0,v4.136.0}/README.md` for
+> panel aggregates.
+
 > Hard numbers for the v4.120.0 panel. Every figure is traceable to a
 > command in this repository or a committed artefact. No
 > extrapolations, no projections. Methodology lives in the footer of

@@ -48,6 +48,23 @@ clang --version        # should print "clang version 18.x"
 llvm-as --version      # should print "LLVM version 18.x"
 ```
 
+### Native-mode prerequisites (LLVM backend)
+
+Running `mapanare build` or the self-hosted compiler requires:
+
+| Tool | Version | Install |
+|---|---|---|
+| LLVM | 17+ | `apt install llvm-17` / `brew install llvm` / Windows: WSL only |
+| clang | matches LLVM | ships with LLVM |
+| `opt`, `llc`, `llvm-as`, `lli` | matches LLVM | ships with LLVM |
+| `clang` on PATH | — | ensure `/usr/lib/llvm-17/bin` is on PATH |
+| `valgrind` (optional) | 3.19+ | for memory debugging |
+| Python | 3.11+ | for bootstrap only |
+
+**Windows users**: Native mode requires WSL2. Python bootstrap (which
+transpiles to C or Python-side LLVM emission) works natively on
+Windows but cannot self-host.
+
 ---
 
 ## 2. Clone and Install
@@ -160,10 +177,12 @@ The golden test suite validates the self-hosted compiler end-to-end:
 python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 --run
 ```
 
-As of v4.128.0 the self-hosted compiler passes 39/65 golden tests
-through `test_native.py`; the remaining 26 fall into named docket
-buckets (see below). For end-user programs that don't hit those
-features, both pipelines produce equivalent binaries.
+As of v4.135.0 the self-hosted compiler passes **53/65** golden tests
+through `test_native.py`. A strict 3-stage fixed point was reached at
+v4.134.0 (`stage2.ll == stage3.ll`, byte-identical) and holds through
+v4.138.0. The remaining 12 tests fall into named docket buckets (see
+below). For end-user programs that don't hit those features, both
+pipelines produce equivalent binaries.
 
 ### What the self-hosted compiler doesn't do yet
 
@@ -172,12 +191,10 @@ features, both pipelines produce equivalent binaries.
 | `async`/`await`/`block_on` | docket Sh.4 | Python bootstrap |
 | Tensor primitives | docket Sh.6 | Python bootstrap (see SPEC §3.11) |
 | `const` (partial — parser recognition restored v4.126.0, semantic gaps remain in `mnc-stage1`) | docket Sh.5 | Python bootstrap or module-level `let` |
-| 10+ `__mn_str_starts_with` NULL-deref crashes | docket Sh.2 | Python bootstrap |
-| `lower_expr` SIGSEGV on `mnc_all.mn` self-compile | docket Sh.11 (opened v4.128.0) | Python bootstrap |
+| Closure-typed function parameters | docket Sh.7 | Python bootstrap; use concrete fn types |
 
-Per-test triage in `docs/roadmap/v4/v4.126.0/GOLDEN_TRIAGE.md`;
-each of the 26 failing tests is classified PASS / Sh.2 / Sh.4 /
-Sh.6 / etc.
+See `docs/known_issues.md` for the full list of user-facing open
+items and workarounds.
 
 ---
 

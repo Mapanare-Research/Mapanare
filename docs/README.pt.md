@@ -10,7 +10,7 @@
 
 *Agentes. Sinais. Streams. Tensores. De primeira classe, nao frameworks.*
 
-Mapanare compila para Python (transpilador) e binarios nativos (LLVM), com um compilador auto-hospedado em desenvolvimento.
+Mapanare compila para binarios nativos via LLVM e WebAssembly. O compilador auto-hospedado alcanca um ponto fixo estrito de 3 estagios (`stage2.ll == stage3.ll`, byte-identico). Em 6 benchmarks cross-language, Mapanare e **42.6× mais rapido que Python**, **1.12× de Rust**, e **4.86× mais lento que C (gcc -O2)** — veja [benchmarks/FINAL_REPORT_v4.136.md](../benchmarks/FINAL_REPORT_v4.136.md). Um transpilador de Python converte arquivos `.py` em binarios nativos 29-68x mais rapidos que CPython.
 
 [English](../README.md) | [Espanol](README.es.md) | [中文版](README.zh-CN.md) | Portugues
 
@@ -18,12 +18,13 @@ Mapanare compila para Python (transpilador) e binarios nativos (LLVM), com um co
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![LLVM](https://img.shields.io/badge/LLVM-Backend_Nativo-262D3A?style=for-the-badge&logo=llvm&logoColor=white)
+![WebAssembly](https://img.shields.io/badge/WebAssembly-Backend-654FF0?style=for-the-badge&logo=webassembly&logoColor=white)
 ![Plataforma](https://img.shields.io/badge/Linux%20%7C%20macOS%20%7C%20Windows-grey?style=for-the-badge)
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![Licenca](https://img.shields.io/badge/licenca-MIT-green.svg?style=flat-square)](../LICENSE)
-[![Versao](https://img.shields.io/badge/versao-4.31.0-blue.svg?style=flat-square)](../CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-4845_passando-brightgreen.svg?style=flat-square)]()
+[![Versao](https://img.shields.io/badge/versao-5.0.0--rc1-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![Testes](https://img.shields.io/badge/testes-5139+_passando-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>

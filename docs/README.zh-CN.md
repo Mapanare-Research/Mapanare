@@ -10,7 +10,7 @@
 
 *代理。信号。流。张量。一等公民，而非框架。*
 
-Mapanare 编译为 Python（转译器）和原生二进制文件（LLVM），自托管编译器正在开发中。
+Mapanare 编译为原生二进制文件（LLVM）和 WebAssembly。自托管编译器在 v4.134.0 达到严格的3阶段不动点（`stage2.ll == stage3.ll`，字节相同）。在6项跨语言基准测试中，Mapanare 比 Python **快42.6倍**，与 Rust 持平（**1.12倍**），比 C (gcc -O2) **慢4.86倍** — 详见 [benchmarks/FINAL_REPORT_v4.136.md](../benchmarks/FINAL_REPORT_v4.136.md)。Python 转译器可将 `.py` 文件转换为比 CPython 快29-68倍的原生二进制。
 
 [English](../README.md) | [Español](README.es.md) | 中文版 | [Português](README.pt.md)
 
@@ -18,12 +18,13 @@ Mapanare 编译为 Python（转译器）和原生二进制文件（LLVM），自
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![LLVM](https://img.shields.io/badge/LLVM-原生后端-262D3A?style=for-the-badge&logo=llvm&logoColor=white)
+![WebAssembly](https://img.shields.io/badge/WebAssembly-后端-654FF0?style=for-the-badge&logo=webassembly&logoColor=white)
 ![平台](https://img.shields.io/badge/Linux%20%7C%20macOS%20%7C%20Windows-grey?style=for-the-badge)
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![许可证](https://img.shields.io/badge/许可证-MIT-green.svg?style=flat-square)](../LICENSE)
-[![版本](https://img.shields.io/badge/版本-4.31.0-blue.svg?style=flat-square)](../CHANGELOG.md)
-[![测试](https://img.shields.io/badge/测试-4845_通过-brightgreen.svg?style=flat-square)]()
+[![版本](https://img.shields.io/badge/版本-5.0.0--rc1-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![测试](https://img.shields.io/badge/测试-5139+_通过-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>
