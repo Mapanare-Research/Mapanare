@@ -2046,7 +2046,7 @@ def _clone_instruction(
         if isinstance(val, Value) and val.name:
             setattr(cloned, field_name, _clone_value(val, prefix, rename))
         elif isinstance(val, list):
-            new_list = []
+            new_list: list[Any] = []
             for item in val:
                 if isinstance(item, Value):
                     new_list.append(_clone_value(item, prefix, rename))

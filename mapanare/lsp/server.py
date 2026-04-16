@@ -414,7 +414,7 @@ def on_rename(params: lsp.RenameParams) -> Optional[lsp.WorkspaceEdit]:
 @server.feature(lsp.TEXT_DOCUMENT_PREPARE_RENAME)
 def on_prepare_rename(
     params: lsp.PrepareRenameParams,
-) -> Optional[lsp.PrepareRenameResult_Type1]:
+) -> Optional[lsp.PrepareRenamePlaceholder]:
     uri = params.text_document.uri
     analysis = _documents.get(uri)
     if not analysis:
@@ -430,7 +430,7 @@ def on_prepare_rename(
         return None
 
     # Return the range of the symbol under cursor
-    return lsp.PrepareRenameResult_Type1(
+    return lsp.PrepareRenamePlaceholder(
         range=lsp.Range(
             start=lsp.Position(line=params.position.line, character=params.position.character),
             end=lsp.Position(
@@ -508,14 +508,14 @@ def on_completion(
 
     # Also include within-file completions from analysis (existing v0.5.0)
     candidates = analysis.completions_at(line, col)
-    for c in candidates:
-        kind = _map_completion_kind(c.kind)
+    for analysis_item in candidates:
+        kind = _map_completion_kind(analysis_item.kind)
         items.append(
             lsp.CompletionItem(
-                label=c.label,
+                label=analysis_item.label,
                 kind=kind,
-                detail=c.detail,
-                documentation=c.documentation or None,
+                detail=analysis_item.detail,
+                documentation=analysis_item.documentation or None,
             )
         )
 

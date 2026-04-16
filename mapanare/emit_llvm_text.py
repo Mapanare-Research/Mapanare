@@ -664,7 +664,7 @@ class LLVMTextEmitter:
         type_refs = []
         # Return type (first element; None for void)
         rt = fn.return_type
-        if rt and rt.kind.value not in ("void", "Void"):
+        if rt and rt.kind != TypeKind.VOID:
             type_refs.append(f"!{self._get_debug_type_for_mir(rt)}")
         else:
             type_refs.append("null")
@@ -2500,7 +2500,7 @@ class LLVMTextEmitter:
             out.append("}")
         else:
             # Regular (non-async) function emission
-            out: list[str] = [
+            out = [
                 f"define {lk}{abi_rt} @{fn.name}({ps}){fn_attrs}{dbg_ref} {{",
                 "pre_entry:",
             ]

@@ -313,7 +313,7 @@ class MIRLowerer:
             imported_enum_defs or {}
         )
         # Generics monomorphization state
-        self._generic_fn_defs: dict[str, FnDef] = {}  # name → AST of generic fn
+        self._generic_fn_defs: dict[str, FnDef | AsyncFnDef] = {}  # name → AST of generic fn
         self._specialized_fns: set[str] = set()  # mangled names already lowered
         self._generic_struct_defs: dict[str, StructDef] = {}  # name → AST of generic struct
         self._generic_impl_defs: dict[str, ImplDef] = {}  # target → AST of generic impl
@@ -338,7 +338,7 @@ class MIRLowerer:
     # -- Generics monomorphization -----------------------------------------
 
     @staticmethod
-    def _type_params_used_in_signature(fn_def: FnDef) -> bool:
+    def _type_params_used_in_signature(fn_def: FnDef | AsyncFnDef) -> bool:
         """Return True if any of ``fn_def.type_params`` is referenced in the
         param annotations or return type.
 
@@ -384,7 +384,7 @@ class MIRLowerer:
         return f"{name}__{'_'.join(parts)}"
 
     def _infer_type_args(
-        self, fn_def: FnDef, arg_types: list[MIRType]
+        self, fn_def: FnDef | AsyncFnDef, arg_types: list[MIRType]
     ) -> dict[str, MIRType] | None:
         """Infer type parameter → concrete type mapping from call-site arguments."""
         subst: dict[str, MIRType] = {}
@@ -426,7 +426,9 @@ class MIRLowerer:
             return GenericType(name=te.name, args=new_args, span=te.span)
         return te
 
-    def _specialize_fn(self, fn_def: FnDef, subst: dict[str, MIRType]) -> FnDef:
+    def _specialize_fn(
+        self, fn_def: FnDef | AsyncFnDef, subst: dict[str, MIRType]
+    ) -> FnDef | AsyncFnDef:
         """Create a specialized copy of a generic function with concrete types.
 
         Uses dataclasses.replace() for a shallow copy, only deep-copying the
@@ -907,7 +909,7 @@ class MIRLowerer:
             # prelude/epilogue (coro.id, coro.begin, coro.end, cleanup).
             if actual.type_params and self._type_params_used_in_signature(actual):
                 return  # Generic async functions lowered on demand
-            mir_fn = self._lower_fn(actual)  # type: ignore[arg-type]
+            mir_fn = self._lower_fn(actual)
             mir_fn.is_async = True
         elif isinstance(actual, AgentDef):
             self._lower_agent(actual)
@@ -928,7 +930,7 @@ class MIRLowerer:
 
     # -- Function lowering -------------------------------------------------
 
-    def _lower_fn(self, fn_def: FnDef, name_prefix: str = "") -> MIRFunction:
+    def _lower_fn(self, fn_def: FnDef | AsyncFnDef, name_prefix: str = "") -> MIRFunction:
         """Lower a function definition to MIR."""
         fn_name = f"{name_prefix}{fn_def.name}" if name_prefix else fn_def.name
 
@@ -2758,7 +2760,7 @@ class MIRLowerer:
         void_dest = self._make_value(ty=mir_void(), prefix="tset")
         self._emit(Call(dest=void_dest, fn_name=fn_name, args=[obj, rank_val] + indices + [val]))
 
-    def _lower_tensor_slice(self, obj: Value, items: list) -> Value:
+    def _lower_tensor_slice(self, obj: Value, items: list[Any]) -> Value:
         """Lower tensor[0..2, :] to __mn_tensor_slice call (v4.45.0)."""
         from mapanare.ast_nodes import IndexItem
 
@@ -3453,6 +3455,7 @@ class MIRLowerer:
                 arm_val = self._lower_expr(arm.body)
             exit_bb = self._block
             if not self._block_terminated():
+                assert exit_bb is not None  # _block_terminated returns True when _block is None
                 self._emit(Jump(target=merge_bb.label))
                 # Mirror self-hosted: void/unknown → zeroinitializer (Rule 4)
                 is_void = (
@@ -3463,7 +3466,7 @@ class MIRLowerer:
                 if is_void:
                     zty = arm_val.ty if arm_val is not None else mir_void()
                     arm_results.append((exit_bb.label, Value(name="zeroinitializer", ty=zty)))
-                elif exit_bb is not None:
+                elif arm_val is not None:
                     arm_results.append((exit_bb.label, arm_val))
             self._pop_scope()
 

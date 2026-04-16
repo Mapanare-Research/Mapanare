@@ -222,11 +222,11 @@ def _collect_references(
             for arg in expr.args:
                 _walk_expr(arg)
         elif isinstance(expr, MethodCallExpr):
-            _walk_expr(expr.receiver)
+            _walk_expr(expr.object)
             for arg in expr.args:
                 _walk_expr(arg)
         elif isinstance(expr, FieldAccessExpr):
-            _walk_expr(expr.receiver)
+            _walk_expr(expr.object)
         elif isinstance(expr, IfExpr):
             _walk_expr(expr.condition)
             _walk_block(expr.then_block)
@@ -402,7 +402,7 @@ def _extract_top_level_symbols(program: Program, module_name: str, path: Path) -
                     kind="let",
                     path=path,
                     span=defn.span,
-                    visibility="pub" if defn.public else "internal",
+                    visibility="internal",
                 )
             )
 

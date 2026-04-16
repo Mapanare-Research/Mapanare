@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
+from mapanare.ast_nodes import Span
 from mapanare.lsp.workspace import SymbolDef, WorkspaceIndex
 
 # Valid Mapanare identifier: starts with letter/underscore, then alnum/underscore
@@ -94,12 +95,12 @@ def apply_rename(
     symbol: SymbolDef,
     new_name: str,
     workspace: WorkspaceIndex,
-) -> dict[str, list[dict]]:
+) -> dict[str, list[dict[str, Any]]]:
     """Build a WorkspaceEdit changes map for renaming a symbol.
 
     Returns: dict[uri, list[TextEdit]] where TextEdit = {"range": ..., "newText": ...}
     """
-    changes: dict[str, list[dict]] = {}
+    changes: dict[str, list[dict[str, Any]]] = {}
 
     # Add the definition site
     _add_edit(changes, symbol.path, symbol.span, new_name)
@@ -112,7 +113,9 @@ def apply_rename(
     return changes
 
 
-def _add_edit(changes: dict[str, list[dict]], path: Path, span: object, new_name: str) -> None:
+def _add_edit(
+    changes: dict[str, list[dict[str, Any]]], path: Path, span: Span, new_name: str
+) -> None:
     """Add a text edit to the changes map."""
     uri = f"file://{path}"
     edit = {

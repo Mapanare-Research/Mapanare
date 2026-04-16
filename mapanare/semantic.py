@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from mapanare.diagnostics import Diagnostic
     from mapanare.modules import ModuleExport, ModuleResolver
+    from mapanare.pattern_matching import TypeContext
 
 from mapanare.ast_nodes import (
     AgentDef,
@@ -679,8 +680,8 @@ class SemanticChecker:
         if isinstance(expr, ListLiteral):
             if expr.elements:
                 elem_type = self._infer_expr(expr.elements[0])
-                for e in expr.elements[1:]:
-                    self._infer_expr(e)
+                for list_elem in expr.elements[1:]:
+                    self._infer_expr(list_elem)
                 return TypeInfo(kind=TypeKind.LIST, args=[elem_type])
             return TypeInfo(kind=TypeKind.LIST, args=[UNKNOWN_TYPE])
         if isinstance(expr, TensorLiteral):
@@ -1166,7 +1167,7 @@ class SemanticChecker:
 
     _semantic_ctx_stack: set[str] | None = None
 
-    def _semantic_type_context(self, ty: TypeInfo) -> object:
+    def _semantic_type_context(self, ty: TypeInfo) -> TypeContext:
         """Build a TypeContext from a semantic TypeInfo for exhaustiveness checking."""
         from mapanare.pattern_matching import TypeContext
 
@@ -1184,7 +1185,7 @@ class SemanticChecker:
             if type_key:
                 self._semantic_ctx_stack.discard(type_key)
 
-    def _semantic_type_context_inner(self, ty: TypeInfo) -> object:
+    def _semantic_type_context_inner(self, ty: TypeInfo) -> TypeContext:
         from mapanare.pattern_matching import ConstructorInfo, TypeContext
 
         ctx = self._semantic_type_context
@@ -1289,7 +1290,7 @@ class SemanticChecker:
         """Check if a name refers to an enum variant in any visible enum."""
         # Walk all symbols looking for enums with a matching variant
         for scope in (self.current_scope, self.global_scope):
-            s = scope
+            s: Scope | None = scope
             while s is not None:
                 for sym in s.symbols.values():
                     if sym.kind == SymbolKind.ENUM and isinstance(sym.node, EnumDef):
@@ -1424,7 +1425,7 @@ class SemanticChecker:
             if inferred.kind not in (TypeKind.UNKNOWN, TypeKind.ANY, elem_ti.kind):
                 self._error(
                     f"tensor element type mismatch: expected {elem_name}, " f"got {inferred}",
-                    getattr(e, "span", expr.span),
+                    e if isinstance(e, ASTNode) else expr,
                 )
 
         shape_tuple = tuple(expr.shape) if expr.shape else None
@@ -2268,7 +2269,7 @@ class SemanticChecker:
         self._current_fn_return_type = saved_fn_return
         self._current_fn_name = saved_fn_name
 
-    def _check_async_fn(self, fn: AsyncFnDef) -> None:  # type: ignore[override]
+    def _check_async_fn(self, fn: AsyncFnDef) -> None:
         """v4.69.0: check an async fn body with async context active."""
         saved_in_async = self._in_async
         self._in_async = True
