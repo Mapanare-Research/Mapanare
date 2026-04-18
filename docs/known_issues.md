@@ -1,6 +1,6 @@
 # Known Issues — User-Facing
 
-Last updated: v4.138.0.
+Last updated: v4.143.0.
 
 ## Self-hosted compiler feature gaps
 
@@ -32,4 +32,4 @@ Last updated: v4.138.0.
 |---|---|---|---|
 | — | No package manager yet | pin `mapanare.toml` deps by git SHA | v5.x ecosystem |
 
-Last verified: v4.138.0 (2026-04-15).
+Last verified: v4.143.0 (2026-04-18).

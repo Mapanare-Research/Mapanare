@@ -24,7 +24,7 @@ Mapanare 编译为原生二进制文件（LLVM）和 WebAssembly。自托管编�
 
 [![许可证](https://img.shields.io/badge/许可证-MIT-green.svg?style=flat-square)](../LICENSE)
 [![版本](https://img.shields.io/badge/版本-5.0.0--rc1-blue.svg?style=flat-square)](../CHANGELOG.md)
-[![测试](https://img.shields.io/badge/测试-5139+_通过-brightgreen.svg?style=flat-square)]()
+[![测试](https://img.shields.io/badge/测试-5160+_通过-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>

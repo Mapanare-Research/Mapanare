@@ -1,7 +1,7 @@
 # Mapanare Language Specification
 
-**Version:** 4.139.0
-**Status:** Live — synced to the v4.139.0 cut (2026-04-15)
+**Version:** 4.143.0
+**Status:** Live — synced to the v4.143.0 cut (2026-04-18)
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
 
@@ -22,7 +22,7 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 ### Goals
 
 - **AI-native primitives.** Agents, signals, streams, and tensors are built into the language, not imported from libraries. AI workflows are expressible without external frameworks.
-- **Compiled.** Mapanare is always compiled. The production backend targets LLVM for native machine code. A legacy Python transpiler backend exists for bootstrapping.
+- **Compiled.** Mapanare is always compiled. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
 - **Simple, familiar syntax.** The syntax draws from Rust (enums, pattern matching), TypeScript (type annotations, generics), and Python (readability, minimal ceremony).
 - **Type-safe with inference.** Static types catch errors at compile time. Type inference reduces annotation burden -- you write types where they clarify, the compiler infers the rest.
 - **Concurrency via agents and message passing.** No raw threads, no shared mutable state. Agents are concurrent actors that communicate through typed channels.
@@ -34,9 +34,9 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 
 - **Not a general-purpose systems language.** Mapanare does not aim to replace C or Rust for kernel development, device drivers, or bare-metal programming.
 - **Not interpreted.** All Mapanare code is compiled before execution. An interactive REPL exists (`mapanare repl`) but it compiles each input before evaluating.
-- **No garbage collector in native mode.** The LLVM backend uses arena-based memory management with scope-level cleanup and tag-bit freeing for heap-allocated strings. The Python transpiler backend inherits Python's GC, but that is a transitional implementation detail.
+- **No garbage collector in native mode.** The LLVM backend uses arena-based memory management with scope-level cleanup and tag-bit freeing for heap-allocated strings.
 - **No OOP class hierarchies.** There are no classes, no inheritance, no `extends`. Use agents for concurrent behavior and structs for data.
-- **Not backwards-compatible with Python syntax.** Although the legacy backend transpiles to Python, Mapanare's syntax is its own. Valid Python is not valid Mapanare and vice versa.
+- **Not backwards-compatible with Python syntax.** Mapanare's syntax is its own: valid Python is not valid Mapanare and vice versa. (The legacy Python transpiler emitter `mapanare/emit_python_mir.py` was removed in v4.58.0; `mapanare bind --lang python` is the canonical Python-interop path via compiled `.so` + ctypes.)
 
 ---
 
@@ -918,10 +918,12 @@ The loop variable is immutable within the body. The iterable can be a `Range`, `
 Loops while a condition is true:
 
 ```mn
-let mut count = 0
-while count < 10 {
-    print("${count}")
-    count += 1
+fn main() {
+    let mut count = 0
+    while count < 10 {
+        print("${count}")
+        count += 1
+    }
 }
 ```
 
@@ -1409,15 +1411,17 @@ Signals are reactive primitives that hold a value and automatically propagate ch
 ### 10.2 Declaration
 
 ```mn
-// Mutable signal: can be set directly
-let mut count = signal(0)
+fn main() {
+    // Mutable signal: can be set directly
+    let mut count = signal(0)
 
-// Computed signal: derived from other signals, read-only
-let doubled = signal { count.value * 2 }
+    // Computed signal: derived from other signals, read-only
+    let doubled = signal { count.value * 2 }
 
-// Updating a signal
-count.value = 5
-print(doubled.value)   // prints 10
+    // Updating a signal
+    count.value = 5
+    print(doubled.value)   // prints 10
+}
 ```
 
 `signal(expr)` creates a mutable signal with an initial value. `signal { expr }` creates a computed signal that re-evaluates when its dependencies change.
@@ -1427,12 +1431,14 @@ print(doubled.value)   // prints 10
 The compiler tracks which signals are read during the evaluation of a computed signal. When any dependency changes, the computed signal is marked dirty and recomputed on next access (lazy) or immediately (eager, configurable).
 
 ```mn
-let mut a = signal(1)
-let mut b = signal(2)
-let sum = signal { a.value + b.value }
+fn main() {
+    let mut a = signal(1)
+    let mut b = signal(2)
+    let sum = signal { a.value + b.value }
 
-a.value = 10
-print(sum.value)   // prints 12
+    a.value = 10
+    print(sum.value)   // prints 12
+}
 ```
 
 ### 10.4 Subscribers
@@ -1787,15 +1793,18 @@ Link external libraries with the `--link-lib` flag:
 mapanare build program.mn --link-lib m -o program
 ```
 
-### 18.2 Python Interop (Legacy)
+### 18.2 Python Interop
 
-The legacy Python backend supports calling Python functions:
+> **Note.** `extern "Python" fn` syntax was removed in v4.29.0 (the lexer rejects any non-`"C"` extern ABI). The canonical Python-interop path is `mapanare bind --lang python`, which compiles `.mn` → `.so` and emits a `ctypes` wrapper callable from CPython with typed argtypes/restype.
 
-```mn
-extern "Python" fn json::loads(s: String) -> String
+```bash
+mapanare bind --lang python math_lib.mn -o math_lib.so
+# Python:
+#   from math_lib import add
+#   assert add(3, 4) == 7
 ```
 
-Python interop uses `extern "Python" fn module::name(params) -> RetType` to import and call Python functions with type-safe wrappers. Return type `Result<T, String>` wraps Python exceptions in `Err`. Use `--python-path` to add custom module search paths.
+See §18.1 for C FFI details and §18.3 for calling conventions. The generated wrappers use the C ABI; Python-side bindings are `ctypes.CDLL` loads of the compiled shared library.
 
 ### 18.3 Calling Conventions
 
@@ -2701,15 +2710,26 @@ WebAssembly text format (WAT). The `wasm_linker.py` module
 links multi-module WAT into a single `.wasm` for browser or WASI
 targets. See §24.
 
-### Strict 3-stage fixed point (v4.134.0)
+### 3-stage fixed point
 
-As of v4.134.0, the self-hosted compiler reaches a strict 3-stage
-byte-identical fixed point: `stage2.ll == stage3.ll`, md5
-`0c00ad07fee94f98bb350b359395843b`. Each stage produces exactly
-the same IR for the compiler's own source — the compiler compiles
-itself and produces identical output when compiled by its own output.
-See `docs/roadmap/v4/v4.135.0/FIXEDPOINT_STATUS.md` for full provenance
-and `scripts/verify_fixed_point.sh` to reproduce.
+The self-hosted compiler reaches a 3-stage fixed point: `stage2.ll`
+and `stage3.ll` are identical in every respect the compiler controls
+— same IR instructions, same block order, same metadata graph, same
+line count (109,872 lines at v4.142.0).
+
+- **v4.134.0:** strict byte-identical — stage2 and stage3 shared md5
+  `0c00ad07fee94f98bb350b359395843b`.
+- **v4.139.0–present (Dr.1):** *near fixed point* — the
+  `__MN_VERSION__` build-time substitution introduces a bounded
+  4-line version-metadata diff (`!"__MN_VERSION__"` vs `!"4.143.0"`),
+  so md5s differ by construction but the IR is otherwise identical.
+  Current md5s: `stage2.ll = 6d4963cdbe060ac1cee85eb58f2fa932`,
+  `stage3.ll = dddf64c3a77ed9236c82de517bc055d1` (v4.142.0).
+
+The 4-line diff is a build-time artifact, not semantic codegen drift.
+See `docs/roadmap/v4/v4.142.0/FIXEDPOINT_STATUS.md` for full provenance
+and `scripts/verify_fixed_point.sh` to reproduce. `DIFF_THRESHOLD=100`
+in the verifier script gates the acceptable bound.
 
 ---
 

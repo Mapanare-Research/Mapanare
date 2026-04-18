@@ -1,3 +1,4 @@
+use std::time::Instant;
 // Benchmark 2: Quicksort — Rust equivalent.
 fn lcg_next(seed: i64) -> i64 {
     (seed.wrapping_mul(1103515245).wrapping_add(12345)) % 2147483648
@@ -25,6 +26,8 @@ fn qsort(arr: &mut Vec<i64>, lo: i64, hi: i64) {
 }
 
 fn main() {
+    let __bench_t0 = Instant::now();
+
     let mut arr = Vec::new();
     let mut seed: i64 = 42;
     for _ in 0..10000 {
@@ -34,4 +37,9 @@ fn main() {
     qsort(&mut arr, 0, 9999);
     let checksum: i64 = arr[..10].iter().sum();
     println!("checksum = {}", checksum);
+    let __bench_dt = __bench_t0.elapsed().as_secs_f64();
+    println!("__BENCH_METRICS__");
+    println!("wall_time_s={}", __bench_dt);
+    println!("cpu_time_s={}", __bench_dt);
+    println!("peak_memory_kb=0");
 }

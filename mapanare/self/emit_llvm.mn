@@ -101,7 +101,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     list.push(make_entry("EnumVariantNames", ["enum_name", "variant_names"]))
     list.push(make_entry("LambdaEntry", ["var_name", "fn_name"]))
     list.push(make_entry("ExternFnInfo", ["abi", "module_name", "fn_name", "param_types", "return_type"]))
-    list.push(make_entry("VerifyError", ["fn_name", "block_name", "message"]))
+    list.push(make_entry("VerifyError", ["fn_name", "block_label", "message"]))
     list.push(make_entry("ImplEntry", ["key", "mir_name"]))
     list.push(make_entry("ImportInfo", ["path", "items"]))
     list.push(make_entry("ModuleConst", ["name", "type_name", "int_value", "str_value", "is_string"]))
@@ -109,7 +109,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     list.push(make_entry("PipeInfo", ["name", "stages"]))
     list.push(make_entry("MIRFunction", ["name", "params", "return_type", "blocks", "decorators", "is_public"]))
     list.push(make_entry("BasicBlock", ["label", "instructions"]))
-    list.push(make_entry("MIRType", ["kind", "name", "args"]))
+    list.push(make_entry("MIRType", ["name", "kind", "args"]))
     list.push(make_entry("Value", ["name", "ty"]))
     return list
 }
@@ -156,8 +156,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     s = register_internal_struct(s, "LambdaEntry", ["var_name", "fn_name"])
     // ExternFnInfo: abi, module_name, fn_name, param_types, return_type
     s = register_internal_struct(s, "ExternFnInfo", ["abi", "module_name", "fn_name", "param_types", "return_type"])
-    // VerifyError: fn_name, block_name, message
-    s = register_internal_struct(s, "VerifyError", ["fn_name", "block_name", "message"])
+    // VerifyError: fn_name, block_label, message
+    s = register_internal_struct(s, "VerifyError", ["fn_name", "block_label", "message"])
     // ImplEntry: key, mir_name
     s = register_internal_struct(s, "ImplEntry", ["key", "mir_name"])
     // ImportInfo: path, items
@@ -172,8 +172,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     s = register_internal_struct(s, "MIRFunction", ["name", "params", "return_type", "blocks", "decorators", "is_public"])
     // BasicBlock: label, instructions
     s = register_internal_struct(s, "BasicBlock", ["label", "instructions"])
-    // MIRType: kind, name, args
-    s = register_internal_struct(s, "MIRType", ["kind", "name", "args"])
+    // MIRType: name, kind, args
+    s = register_internal_struct(s, "MIRType", ["name", "kind", "args"])
     // Value: name, ty
     s = register_internal_struct(s, "Value", ["name", "ty"])
     return s

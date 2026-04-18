@@ -2096,6 +2096,14 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
         return Program(definitions=[result] if isinstance(result, Definition) else []), []
     except (UnexpectedCharacters, UnexpectedToken):
         pass  # Fall through to recovery
+    except ParseError as exc:
+        err = ParseError(
+            str(exc),
+            line=exc.line,
+            column=exc.column,
+            filename=filename,
+        )
+        return Program(), [err]
 
     # Split into top-level chunks and parse each independently
     chunks = _split_toplevel_chunks(source)
@@ -2162,6 +2170,17 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
                     _friendly_token_error(exc),
                     line=real_line,
                     column=column,
+                    filename=filename,
+                )
+            )
+        except ParseError as exc:
+            raw_line = getattr(exc, "line", 0) or 0
+            real_line = raw_line + line_offset - 1 if raw_line else 0
+            errors.append(
+                ParseError(
+                    str(exc),
+                    line=real_line,
+                    column=getattr(exc, "column", 0),
                     filename=filename,
                 )
             )

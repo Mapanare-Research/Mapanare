@@ -39,11 +39,11 @@ mapanare-lsp = "mapanare.lsp.server:main"
 
 [tool.black]
 line-length = 100
-extend-exclude = "bootstrap"
+extend-exclude = "bootstrap|tmp.*\\.py"
 
 [tool.ruff]
 line-length = 100
-exclude = ["bootstrap"]
+exclude = ["bootstrap", "tmp*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -58,7 +58,7 @@ select = ["E", "F", "W", "I"]
 [tool.mypy]
 strict = true
 ignore_missing_imports = true
-exclude = ["bootstrap"]
+exclude = ["bootstrap", "^tmp.*\\.py$"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,4 +1,4 @@
-// gpu/tensor.mn — GPU-Accelerated Tensor Operations for Mapanare
+// gpu/tensor.mn — GPU-Accelerated GpuTensor Operations for Mapanare
 //
 // Provides multi-dimensional tensor creation, element-wise arithmetic,
 // matrix multiplication, reductions, reshaping, and device transfer.
@@ -79,10 +79,10 @@ fn new_alloc_failed(msg: String) -> TensorError {
 }
 
 // ---------------------------------------------------------------------------
-// Tensor struct
+// GpuTensor struct
 // ---------------------------------------------------------------------------
 
-pub tipo Tensor {
+pub tipo GpuTensor {
     data: Int,
     shape: List<Int>,
     ndim: Int,
@@ -155,7 +155,7 @@ fn device_int(d: device.DeviceKind) -> Int {
 }
 
 /// Allocate a tensor with the given shape on the specified device.
-fn alloc_tensor(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, TensorError> {
+fn alloc_tensor(shape: List<Int>, dev: device.DeviceKind) -> Result<GpuTensor, TensorError> {
     si validate_shape(shape) == false {
         da Err(new_invalid_shape("invalid shape: " + shape_to_string(shape)))
     }
@@ -164,7 +164,7 @@ fn alloc_tensor(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, Tens
     si ptr == 0 {
         da Err(new_alloc_failed("failed to allocate tensor of size " + str(total)))
     }
-    pon t: Tensor = new Tensor { data: ptr, shape: shape, ndim: len(shape), size: total, device: dev }
+    pon t: GpuTensor = new GpuTensor { data: ptr, shape: shape, ndim: len(shape), size: total, device: dev }
     da Ok(t)
 }
 
@@ -174,8 +174,8 @@ fn alloc_tensor(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, Tens
 
 /// Create a tensor filled with zeros.
 @gpu
-pub fn zeros(shape: List<Int>) -> Result<Tensor, TensorError> {
-    pon result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+pub fn zeros(shape: List<Int>) -> Result<GpuTensor, TensorError> {
+    pon result: Result<GpuTensor, TensorError> = alloc_tensor(shape, device.CPU)
     match result {
         Ok(t) => {
             pon rc: Int = __mn_tensor_zeros(t.data, t.size, device_int(t.device))
@@ -191,8 +191,8 @@ pub fn zeros(shape: List<Int>) -> Result<Tensor, TensorError> {
 
 /// Create a tensor filled with ones.
 @gpu
-pub fn ones(shape: List<Int>) -> Result<Tensor, TensorError> {
-    pon result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+pub fn ones(shape: List<Int>) -> Result<GpuTensor, TensorError> {
+    pon result: Result<GpuTensor, TensorError> = alloc_tensor(shape, device.CPU)
     match result {
         Ok(t) => {
             pon rc: Int = __mn_tensor_ones(t.data, t.size, device_int(t.device))
@@ -208,8 +208,8 @@ pub fn ones(shape: List<Int>) -> Result<Tensor, TensorError> {
 
 /// Create a tensor filled with a constant value.
 @gpu
-pub fn full(shape: List<Int>, value: Float) -> Result<Tensor, TensorError> {
-    pon result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+pub fn full(shape: List<Int>, value: Float) -> Result<GpuTensor, TensorError> {
+    pon result: Result<GpuTensor, TensorError> = alloc_tensor(shape, device.CPU)
     match result {
         Ok(t) => {
             pon rc: Int = __mn_tensor_fill(t.data, t.size, value, device_int(t.device))
@@ -224,7 +224,7 @@ pub fn full(shape: List<Int>, value: Float) -> Result<Tensor, TensorError> {
 }
 
 /// Create a tensor from a flat list of floats and a shape.
-pub fn from_list(data: List<Float>, shape: List<Int>) -> Result<Tensor, TensorError> {
+pub fn from_list(data: List<Float>, shape: List<Int>) -> Result<GpuTensor, TensorError> {
     si validate_shape(shape) == false {
         da Err(new_invalid_shape("invalid shape: " + shape_to_string(shape)))
     }
@@ -232,7 +232,7 @@ pub fn from_list(data: List<Float>, shape: List<Int>) -> Result<Tensor, TensorEr
     si len(data) != total {
         da Err(new_shape_mismatch("data length " + str(len(data)) + " does not match shape " + shape_to_string(shape)))
     }
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(shape, device.CPU)
     match alloc_result {
         Ok(t) => {
             pon mut i: Int = 0
@@ -248,12 +248,12 @@ pub fn from_list(data: List<Float>, shape: List<Int>) -> Result<Tensor, TensorEr
 }
 
 /// Create an n x n identity matrix.
-pub fn identity(n: Int) -> Result<Tensor, TensorError> {
+pub fn identity(n: Int) -> Result<GpuTensor, TensorError> {
     si n <= 0 {
         da Err(new_invalid_shape("identity matrix size must be positive"))
     }
     pon shape: List<Int> = [n, n]
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(shape, device.CPU)
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(shape, device.CPU)
     match alloc_result {
         Ok(t) => {
             pon rc: Int = __mn_tensor_zeros(t.data, t.size, device_int(t.device))
@@ -275,8 +275,8 @@ pub fn identity(n: Int) -> Result<Tensor, TensorError> {
 
 /// Create a tensor of a given shape on a specific device.
 @gpu
-pub fn zeros_on(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, TensorError> {
-    pon result: Result<Tensor, TensorError> = alloc_tensor(shape, dev)
+pub fn zeros_on(shape: List<Int>, dev: device.DeviceKind) -> Result<GpuTensor, TensorError> {
+    pon result: Result<GpuTensor, TensorError> = alloc_tensor(shape, dev)
     match result {
         Ok(t) => {
             pon rc: Int = __mn_tensor_zeros(t.data, t.size, device_int(t.device))
@@ -296,11 +296,11 @@ pub fn zeros_on(shape: List<Int>, dev: device.DeviceKind) -> Result<Tensor, Tens
 
 /// Element-wise addition of two tensors.
 @gpu
-pub fn add(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
+pub fn add(a: GpuTensor, b: GpuTensor) -> Result<GpuTensor, TensorError> {
     si shapes_equal(a.shape, b.shape) == false {
         da Err(new_shape_mismatch("add: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
     }
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(a.shape, a.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_add(out.data, a.data, b.data, a.size, device_int(a.device))
@@ -316,11 +316,11 @@ pub fn add(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
 
 /// Element-wise subtraction of two tensors.
 @gpu
-pub fn sub(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
+pub fn sub(a: GpuTensor, b: GpuTensor) -> Result<GpuTensor, TensorError> {
     si shapes_equal(a.shape, b.shape) == false {
         da Err(new_shape_mismatch("sub: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
     }
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(a.shape, a.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_sub(out.data, a.data, b.data, a.size, device_int(a.device))
@@ -336,11 +336,11 @@ pub fn sub(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
 
 /// Element-wise multiplication of two tensors.
 @gpu
-pub fn mul(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
+pub fn mul(a: GpuTensor, b: GpuTensor) -> Result<GpuTensor, TensorError> {
     si shapes_equal(a.shape, b.shape) == false {
         da Err(new_shape_mismatch("mul: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
     }
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(a.shape, a.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_mul(out.data, a.data, b.data, a.size, device_int(a.device))
@@ -356,11 +356,11 @@ pub fn mul(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
 
 /// Element-wise division of two tensors.
 @gpu
-pub fn div(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
+pub fn div(a: GpuTensor, b: GpuTensor) -> Result<GpuTensor, TensorError> {
     si shapes_equal(a.shape, b.shape) == false {
         da Err(new_shape_mismatch("div: shape " + shape_to_string(a.shape) + " vs " + shape_to_string(b.shape)))
     }
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(a.shape, a.device)
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(a.shape, a.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_div(out.data, a.data, b.data, a.size, device_int(a.device))
@@ -376,8 +376,8 @@ pub fn div(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
 
 /// Scalar multiplication: multiply every element by a constant.
 @gpu
-pub fn scale(t: Tensor, scalar: Float) -> Result<Tensor, TensorError> {
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+pub fn scale(t: GpuTensor, scalar: Float) -> Result<GpuTensor, TensorError> {
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(t.shape, t.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_copy(out.data, t.data, t.size)
@@ -397,8 +397,8 @@ pub fn scale(t: Tensor, scalar: Float) -> Result<Tensor, TensorError> {
 
 /// Element-wise negation.
 @gpu
-pub fn negate(t: Tensor) -> Result<Tensor, TensorError> {
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+pub fn negate(t: GpuTensor) -> Result<GpuTensor, TensorError> {
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(t.shape, t.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_negate(out.data, t.data, t.size, device_int(t.device))
@@ -418,8 +418,8 @@ pub fn negate(t: Tensor) -> Result<Tensor, TensorError> {
 
 /// Element-wise absolute value.
 @gpu
-pub fn abs(t: Tensor) -> Result<Tensor, TensorError> {
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+pub fn abs(t: GpuTensor) -> Result<GpuTensor, TensorError> {
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(t.shape, t.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_abs(out.data, t.data, t.size, device_int(t.device))
@@ -435,8 +435,8 @@ pub fn abs(t: Tensor) -> Result<Tensor, TensorError> {
 
 /// Element-wise square root.
 @gpu
-pub fn sqrt(t: Tensor) -> Result<Tensor, TensorError> {
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+pub fn sqrt(t: GpuTensor) -> Result<GpuTensor, TensorError> {
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(t.shape, t.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_sqrt(out.data, t.data, t.size, device_int(t.device))
@@ -452,8 +452,8 @@ pub fn sqrt(t: Tensor) -> Result<Tensor, TensorError> {
 
 /// Element-wise exponential (e^x).
 @gpu
-pub fn exp(t: Tensor) -> Result<Tensor, TensorError> {
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+pub fn exp(t: GpuTensor) -> Result<GpuTensor, TensorError> {
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(t.shape, t.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_exp(out.data, t.data, t.size, device_int(t.device))
@@ -469,8 +469,8 @@ pub fn exp(t: Tensor) -> Result<Tensor, TensorError> {
 
 /// Element-wise natural logarithm.
 @gpu
-pub fn log(t: Tensor) -> Result<Tensor, TensorError> {
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+pub fn log(t: GpuTensor) -> Result<GpuTensor, TensorError> {
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(t.shape, t.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_log(out.data, t.data, t.size, device_int(t.device))
@@ -491,7 +491,7 @@ pub fn log(t: Tensor) -> Result<Tensor, TensorError> {
 /// Matrix multiplication of two 2D tensors.
 /// For a [M, K] * [K, N] operation, returns a [M, N] tensor.
 @gpu
-pub fn matmul(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
+pub fn matmul(a: GpuTensor, b: GpuTensor) -> Result<GpuTensor, TensorError> {
     si a.ndim != 2 {
         da Err(new_shape_mismatch("matmul: first operand must be 2D, got " + shape_to_string(a.shape)))
     }
@@ -506,7 +506,7 @@ pub fn matmul(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
         da Err(new_shape_mismatch("matmul: inner dimensions mismatch: " + str(k1) + " vs " + str(k2)))
     }
     pon out_shape: List<Int> = [m, n]
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(out_shape, a.device)
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(out_shape, a.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_matmul(out.data, a.data, b.data, m, k1, n, device_int(a.device))
@@ -522,7 +522,7 @@ pub fn matmul(a: Tensor, b: Tensor) -> Result<Tensor, TensorError> {
 
 /// Dot product of two 1D tensors (vectors).
 @gpu
-pub fn dot(a: Tensor, b: Tensor) -> Result<Float, TensorError> {
+pub fn dot(a: GpuTensor, b: GpuTensor) -> Result<Float, TensorError> {
     si a.ndim != 1 {
         da Err(new_shape_mismatch("dot: first operand must be 1D"))
     }
@@ -541,7 +541,7 @@ pub fn dot(a: Tensor, b: Tensor) -> Result<Float, TensorError> {
 // ---------------------------------------------------------------------------
 
 /// Reshape a tensor to a new shape (same total number of elements).
-pub fn reshape(t: Tensor, shape: List<Int>) -> Result<Tensor, TensorError> {
+pub fn reshape(t: GpuTensor, shape: List<Int>) -> Result<GpuTensor, TensorError> {
     si validate_shape(shape) == false {
         da Err(new_invalid_shape("invalid target shape: " + shape_to_string(shape)))
     }
@@ -550,20 +550,20 @@ pub fn reshape(t: Tensor, shape: List<Int>) -> Result<Tensor, TensorError> {
         da Err(new_shape_mismatch("reshape: size " + str(t.size) + " cannot reshape to " + shape_to_string(shape)))
     }
     // Reshape is a view operation — share data pointer, new shape metadata
-    pon reshaped: Tensor = new Tensor { data: t.data, shape: shape, ndim: len(shape), size: t.size, device: t.device }
+    pon reshaped: GpuTensor = new GpuTensor { data: t.data, shape: shape, ndim: len(shape), size: t.size, device: t.device }
     da Ok(reshaped)
 }
 
 /// Transpose a 2D matrix (swap rows and columns).
 @gpu
-pub fn transpose(t: Tensor) -> Result<Tensor, TensorError> {
+pub fn transpose(t: GpuTensor) -> Result<GpuTensor, TensorError> {
     si t.ndim != 2 {
         da Err(new_shape_mismatch("transpose: requires 2D tensor, got " + shape_to_string(t.shape)))
     }
     pon rows: Int = t.shape[0]
     pon cols: Int = t.shape[1]
     pon out_shape: List<Int> = [cols, rows]
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(out_shape, t.device)
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(out_shape, t.device)
     match alloc_result {
         Ok(out) => {
             // Manual transpose: out[j][i] = t[i][j]
@@ -592,26 +592,26 @@ pub fn transpose(t: Tensor) -> Result<Tensor, TensorError> {
 
 /// Sum of all elements in the tensor.
 @gpu
-pub fn sum(t: Tensor) -> Float {
+pub fn sum(t: GpuTensor) -> Float {
     da __mn_tensor_sum(t.data, t.size, device_int(t.device))
 }
 
 /// Mean of all elements in the tensor.
 @gpu
-pub fn mean(t: Tensor) -> Float {
+pub fn mean(t: GpuTensor) -> Float {
     pon s: Float = __mn_tensor_sum(t.data, t.size, device_int(t.device))
     da s / float(t.size)
 }
 
 /// Maximum element in the tensor.
 @gpu
-pub fn max(t: Tensor) -> Float {
+pub fn max(t: GpuTensor) -> Float {
     da __mn_tensor_max(t.data, t.size, device_int(t.device))
 }
 
 /// Minimum element in the tensor.
 @gpu
-pub fn min(t: Tensor) -> Float {
+pub fn min(t: GpuTensor) -> Float {
     da __mn_tensor_min(t.data, t.size, device_int(t.device))
 }
 
@@ -621,8 +621,8 @@ pub fn min(t: Tensor) -> Float {
 
 /// Move a tensor to a different device (e.g., CPU -> CUDA).
 @gpu
-pub fn to_device(t: Tensor, dev: device.DeviceKind) -> Result<Tensor, TensorError> {
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, dev)
+pub fn to_device(t: GpuTensor, dev: device.DeviceKind) -> Result<GpuTensor, TensorError> {
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(t.shape, dev)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_copy_to_device(out.data, t.data, t.size, device_int(dev), device_int(t.device))
@@ -641,7 +641,7 @@ pub fn to_device(t: Tensor, dev: device.DeviceKind) -> Result<Tensor, TensorErro
 // ---------------------------------------------------------------------------
 
 /// Get the value at a flat index.
-pub fn get(t: Tensor, index: Int) -> Result<Float, TensorError> {
+pub fn get(t: GpuTensor, index: Int) -> Result<Float, TensorError> {
     si index < 0 {
         da Err(new_index_oob("negative index: " + str(index)))
     }
@@ -653,7 +653,7 @@ pub fn get(t: Tensor, index: Int) -> Result<Float, TensorError> {
 }
 
 /// Set the value at a flat index (mutates in-place).
-pub fn set(t: Tensor, index: Int, value: Float) -> Result<Int, TensorError> {
+pub fn set(t: GpuTensor, index: Int, value: Float) -> Result<Int, TensorError> {
     si index < 0 {
         da Err(new_index_oob("negative index: " + str(index)))
     }
@@ -665,7 +665,7 @@ pub fn set(t: Tensor, index: Int, value: Float) -> Result<Int, TensorError> {
 }
 
 /// Check element-wise equality of two tensors.
-pub fn equal(a: Tensor, b: Tensor) -> Bool {
+pub fn equal(a: GpuTensor, b: GpuTensor) -> Bool {
     si shapes_equal(a.shape, b.shape) == false {
         da false
     }
@@ -674,7 +674,7 @@ pub fn equal(a: Tensor, b: Tensor) -> Bool {
 }
 
 /// Free the memory backing a tensor.
-pub fn free(t: Tensor) -> Result<Int, TensorError> {
+pub fn free(t: GpuTensor) -> Result<Int, TensorError> {
     pon rc: Int = __mn_tensor_free(t.data, device_int(t.device))
     si rc < 0 {
         da Err(new_device_error("failed to free tensor memory"))
@@ -683,8 +683,8 @@ pub fn free(t: Tensor) -> Result<Int, TensorError> {
 }
 
 /// Clone a tensor (deep copy to a new allocation).
-pub fn clone(t: Tensor) -> Result<Tensor, TensorError> {
-    pon alloc_result: Result<Tensor, TensorError> = alloc_tensor(t.shape, t.device)
+pub fn clone(t: GpuTensor) -> Result<GpuTensor, TensorError> {
+    pon alloc_result: Result<GpuTensor, TensorError> = alloc_tensor(t.shape, t.device)
     match alloc_result {
         Ok(out) => {
             pon rc: Int = __mn_tensor_copy(out.data, t.data, t.size)

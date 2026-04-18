@@ -1,3 +1,4 @@
+use std::time::Instant;
 // Benchmark: Enum matching — Rust equivalent.
 enum Shape {
     Circle(i64),
@@ -31,10 +32,17 @@ fn make_shape(i: i64) -> Shape {
 }
 
 fn main() {
+    let __bench_t0 = Instant::now();
+
     let mut total: i64 = 0;
     for i in 0..100_000i64 {
         let s = make_shape(i);
         total += area(&s);
     }
     println!("checksum = {}", total);
+    let __bench_dt = __bench_t0.elapsed().as_secs_f64();
+    println!("__BENCH_METRICS__");
+    println!("wall_time_s={}", __bench_dt);
+    println!("cpu_time_s={}", __bench_dt);
+    println!("peak_memory_kb=0");
 }

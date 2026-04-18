@@ -468,7 +468,18 @@ def run_python(spec: BenchSpec, n_runs: int) -> LangResult:
 
 
 def run_rust(spec: BenchSpec, n_runs: int) -> LangResult:
-    """Compile .rs with rustc -O, time externally (no __BENCH_METRICS__)."""
+    """Compile .rs with rustc -O, run the pre-built binary, parse
+    ``__BENCH_METRICS__`` for internal wall time.
+
+    **v4.143.0 (Bn.1):** Rust benchmarks emit ``__BENCH_METRICS__`` the same
+    way Go/C/Python do (``std::time::Instant::now().elapsed()`` around
+    ``main``'s body), so timing excludes subprocess spawn — matches
+    Go/C/Python methodology. Prior to v4.143.0 the Rust path was timed
+    externally via ``perf_counter()`` and accumulated a ~10 ms subprocess-
+    spawn + GNU-time floor, which pinned Rust medians at 9.5–11 ms on
+    short workloads and corrupted the v4.142.0 benchmark pack (Mamba's
+    Bn.1 finding at the v4.143.0 panel).
+    """
     result = LangResult(
         benchmark=spec.name,
         language="Rust -O",
@@ -495,9 +506,11 @@ def run_rust(spec: BenchSpec, n_runs: int) -> LangResult:
             return result
 
         result.binary_size_bytes = binary.stat().st_size
-        _run_external([str(binary)], timeout=60)
+        # Warmup: populates file caches and pre-resolves any dynamic
+        # linking cost. Not included in reported runs.
+        _run_with_metrics([str(binary)], timeout=60)
         for _ in range(n_runs):
-            result.runs.append(_run_external([str(binary)], timeout=60))
+            result.runs.append(_run_with_metrics([str(binary)], timeout=60))
 
     result.aggregate(spec.expected)
     return result

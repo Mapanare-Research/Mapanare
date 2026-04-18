@@ -26,7 +26,7 @@ Mapanare compila a binarios nativos vía LLVM y WebAssembly. El compilador auto-
 
 [![Licencia](https://img.shields.io/badge/licencia-MIT-green.svg?style=flat-square)](../LICENSE)
 [![Version](https://img.shields.io/badge/version-5.0.0--rc1-blue.svg?style=flat-square)](../CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-5139+_pasando-brightgreen.svg?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-5160+_pasando-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>

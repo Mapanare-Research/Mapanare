@@ -7,6 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.143.0] - 2026-04-18
+
+**Post-rc1 panel + documentation/ergonomics closeout.** Runs the
+v4.143.0 seven-reviewer panel against the v4.137.0 → v4.142.0 bridge
+arc (aggregate **8.86 / 10**, 3 EXCEEDS / 4 MEETS / 0 NEEDS WORK,
+mechanical rule → Option C: `v5.0.0-rc1` holds, clean v5.0.0 does not
+flip this cycle). Ships the fast-win half of the panel's
+action-item ledger.
+
+**Panel closures landing in this release.**
+- **Sp.1** (MEDIUM, Coral) — purged "legacy Python transpiler backend"
+  phrasing at `docs/SPEC.md:25,37,39`. Rewrote §18.2 "Python Interop
+  (Legacy)" to document the canonical `mapanare bind --lang python` path
+  instead of the grammar-disabled `extern "Python" fn` syntax.
+- **Co.1r** (LOW, Coral) — SPEC Appendix B "strict byte-identical fixed
+  point" wording updated to reflect the v4.139.0 Dr.1 transition to
+  *near fixed point* (bounded 4-line version-metadata diff from
+  `__MN_VERSION__` substitution). Matches `FIXEDPOINT_STATUS.md`.
+- **Sem.2** (LOW, Coral) — `mapanare/parser.py::parse_recovering` now
+  catches `ParseError` raised inside the Lark transformer. E420
+  (module-level `let mut`) now presents as a clean diagnostic frame
+  instead of an uncaught Python traceback.
+- **An.6** (MEDIUM, Anaconda) — `scripts/check_docs_drift.py` had been
+  failing CI for 4 consecutive releases without surfacing. Seven
+  module-level `let mut` code blocks in `docs/SPEC.md` (§4.3, §10.2,
+  §10.3) and `docs/reference.md` (Variables, While Loops, Lists,
+  Signals) wrapped in `fn main() { ... }`. Gate now **clean**
+  (142 blocks across 4 files).
+- **An.7** (LOW, Anaconda) — `scripts/check_silent_skips.py` extended
+  to resolve `reason=_FOO_REASON` identifier references and scan the
+  comment window above the constant definition. The v4.133.0 TR.1
+  pattern (7 markers using `_TR1_REASON`) now validates cleanly.
+- **An.8** (LOW, Anaconda) — `pyproject.toml` excludes `tmp*.py`
+  scratch files from black/ruff/mypy. Local dev no longer breaks
+  `make lint` on committed-clean trees.
+- **Bo.4-drift / Bo.6-drift / Bo.8 / Bo.10 / Bo.11** (LOW bundle, Boa) —
+  README Tests badge `4845+` → `5160+`; README main-blurb "strict
+  3-stage fixed point (`stage2.ll == stage3.ll`, byte-identical) at
+  v4.134.0" → accurate near-fixed-point wording; `docs/guides/getting_started.md`
+  test count `4,845+` → `5,160+` and golden count `53/65` → `54/66`;
+  `docs/known_issues.md` footer bumped to `v4.143.0 (2026-04-18)`; SPEC
+  header `Version: 4.139.0` → `4.143.0`.
+
+**Panel evidence.** Seven reviewer files at `.reviews/v4.143.0/`:
+Rattler 9.1, Viper 9.6 EXCEEDS, Anaconda 9.1, Cobra 9.0 EXCEEDS,
+Coral 8.5, Boa 9.0 EXCEEDS, Mamba 8.7. Panel summary at
+`.reviews/v4.143.0/README.md`.
+
+**Option-A bridge completed in this release (Bn.1 + Gr.3 + Reg.1).**
+All three of the post-rc1 panel's MEDIUM findings close:
+
+- **Bn.1** (Mamba) — Instrumented all 10 Rust cross-language
+  benchmarks with ``__BENCH_METRICS__`` emission (wall/cpu via
+  ``std::time::Instant``), matching the Go/C/Python methodology.
+  ``benchmarks/cross_language/run_benchmarks.py::run_rust`` now calls
+  ``_run_with_metrics`` instead of ``_run_external``. Live verification
+  shows ``enum_match`` Rust internal wall time at **0.43 ms** (was
+  pinned at ~10 ms by subprocess spawn + GNU-time overhead), and
+  ``string_concat`` at **0.09 ms** — aligns with expected workload
+  magnitudes and makes Rust numbers externally citable again.
+- **Gr.3** (Coral) — Renamed ``Tensor`` struct in
+  ``stdlib/gpu/tensor.mn`` and ``stdlib/gpu/kernel.mn`` to
+  ``GpuTensor`` (Coral's Option 2 closure path). Removes the
+  collision with the hard-reserved ``KW_TENSOR`` keyword when
+  ``Tensor`` appears as a user type name in generic position
+  (e.g. ``Result<Tensor, TensorError>``). 63 renames in tensor.mn,
+  3 in kernel.mn; ``TensorError`` preserved. The pre-existing
+  undefined-symbol errors in stdlib/gpu (missing ``__mn_tensor_*``
+  runtime declarations, missing ``new_alloc_failed`` constructor)
+  are *not* Gr.3 and remain open as stdlib-wiring items —
+  Gr.3-by-workaround is closed: the grammar collision is gone and
+  the files now parse past the ``Tensor<...>`` keyword chokepoint.
+- **Reg.1** (Rattler) — New CI gate
+  ``scripts/check_struct_registry.py`` cross-checks
+  ``mapanare/self/emit_llvm.mn::build_internal_struct_list`` and
+  ``register_all_internal_structs`` against every ``struct`` in
+  ``mapanare/self/*.mn``. Caught **3 real latent drifts** on first
+  run: ``MIRType`` field positions 0/1 swapped (``name``/``kind``)
+  in both registry sites; ``VerifyError`` field name
+  ``block_name`` ≠ source ``block_label`` in both sites. These are
+  the exact pattern that caused Ge.1; both are now fixed and the
+  gate is wired into CI (``.github/workflows/ci.yml``) and
+  ``tests/test_ci.py::TestToolsRunLocally`` so future drift fails
+  PR-time.
+
+**Remaining for a clean v5.0.0 (Option A).** One LOW docket stays on
+the ledger: **Cb.5-unit-tests** (integration-level checksum only; no
+dedicated inline-slot eligibility tests). Plus the v4.143.0 panel's
+other LOW polish bundle (Cb.6–Cb.10, Own.1, Mar.1). None block.
+
+**Verification.** `ruff check .` 0 errors. `black --check .` clean
+(347 unchanged). `mypy mapanare/ runtime/` 0 errors across 52 files.
+`python3 scripts/check_docs_drift.py` clean. `python3 scripts/check_silent_skips.py tests/`
+clean. `python3 -m pytest tests/parser/ tests/semantic/ tests/test_ci.py -q`:
+513 passed.
+
+**Ledger.** 63 opened since v4.99.0 → **58 closed (92 %)**, 5 open
+(0 CRITICAL, 0 HIGH, 0 MEDIUM, 5 LOW). **Zero MEDIUM remaining.** The
+Option-A bridge is empty: aggregate re-panel should plausibly clear
+9.0 now that Bn.1, Gr.3, Reg.1 are gone and the remaining items are
+all LOW polish.
+
 ## [4.142.0] - 2026-04-16
 
 **Ge.1 closed + pre-panel refresh.** The last open valgrind docket from the

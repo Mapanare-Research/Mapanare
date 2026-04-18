@@ -60,6 +60,14 @@ MARKER_RE = re.compile(
 # How many lines above a marker to scan for a tracking comment.
 COMMENT_CONTEXT = 5
 
+# Markers sometimes pass ``reason=_TR1_REASON`` — a module-level constant —
+# instead of an inline string. When that happens, the version marker may live
+# in the comment window above the *constant definition*, not the marker call
+# site. Match identifiers like ``_FOO_REASON`` / ``FOO_REASON`` passed as
+# ``reason=...``.
+REASON_IDENT_RE = re.compile(r"\breason\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\b")
+REASON_DEF_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[\(\"'rfbRFB]")
+
 
 def _marker_has_version(lines: list[str], start_idx: int) -> tuple[bool, str]:
     """Return (has_version, where) for the marker that starts at ``start_idx``.
@@ -128,16 +136,62 @@ def _marker_has_version(lines: list[str], start_idx: int) -> tuple[bool, str]:
                     body = "\n".join(lines[start_idx : end_idx + 1])
                     if VERSION_RE.search(body):
                         return True, "reason-or-args"
-                    # Check preceding comment window.
+                    # Check preceding comment window at the marker site.
                     lo = max(0, start_idx - COMMENT_CONTEXT)
                     for k in range(lo, start_idx):
                         stripped = lines[k].strip()
                         if stripped.startswith("#") and VERSION_RE.search(stripped):
                             return True, f"comment-above:L{k + 1}"
+                    # If the marker passes ``reason=_SOME_REASON``, resolve the
+                    # constant and scan its comment window too (An.7).
+                    ident_match = REASON_IDENT_RE.search(body)
+                    if ident_match:
+                        ident = ident_match.group(1)
+                        def_line = _find_definition(lines, ident)
+                        if def_line is not None:
+                            # Include assignment body (may be multi-line) and
+                            # the comment window above it.
+                            def_body_end = _balanced_end(lines, def_line)
+                            def_body = "\n".join(lines[def_line : def_body_end + 1])
+                            if VERSION_RE.search(def_body):
+                                return True, f"reason-const:L{def_line + 1}"
+                            def_lo = max(0, def_line - COMMENT_CONTEXT)
+                            for k in range(def_lo, def_line):
+                                stripped = lines[k].strip()
+                                if stripped.startswith("#") and VERSION_RE.search(stripped):
+                                    return True, f"reason-const-comment:L{k + 1}"
                     return False, ""
             j += 1
     # Never closed — treat as no version (caller reports it).
     return False, ""
+
+
+def _find_definition(lines: list[str], ident: str) -> int | None:
+    """Return the line index where ``ident`` is module-level-assigned, or None."""
+    for i, line in enumerate(lines):
+        m = REASON_DEF_RE.match(line)
+        if m and m.group(1) == ident:
+            return i
+    return None
+
+
+def _balanced_end(lines: list[str], start_idx: int) -> int:
+    """Return the line index where a parenthesized/string expression starting
+    at ``start_idx`` closes. Falls back to ``start_idx`` if no open paren."""
+    depth = 0
+    started = False
+    for i in range(start_idx, len(lines)):
+        for c in lines[i]:
+            if c == "(":
+                depth += 1
+                started = True
+            elif c == ")":
+                depth -= 1
+                if started and depth == 0:
+                    return i
+        if started and depth == 0:
+            return i
+    return start_idx
 
 
 def scan_file(path: Path) -> list[tuple[int, str, str]]:

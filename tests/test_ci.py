@@ -143,3 +143,18 @@ class TestToolsRunLocally:
             cwd=ROOT,
         )
         assert result.returncode == 0, f"mypy failed:\n{result.stdout}"
+
+    def test_struct_registry_gate_passes(self) -> None:
+        # v4.143.0 Reg.1: cross-check self-hosted emitter's internal struct
+        # registry against live struct defs. Opened after the Ge.1 panel
+        # finding that ~half the internal data flow had silent field-index
+        # drift masked by byte-identity fixed-point.
+        result = subprocess.run(
+            ["python3", "scripts/check_struct_registry.py"],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+        assert (
+            result.returncode == 0
+        ), f"check_struct_registry failed:\n{result.stdout}\n{result.stderr}"

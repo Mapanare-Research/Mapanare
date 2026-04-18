@@ -156,6 +156,34 @@ corresponding release CHANGELOG entries for detail.
 | P3 | AST-based `emit_llvm.py` (2,883 LOC) | v0.8.0 | v4.2.0 |
 | P4 | `_coerce_arg` 36-site raw memory reinterpretation | v4.0.0 | v4.2.0 |
 
+## Items resolved in v4.143.0 (post-rc1 panel fast-wins)
+
+| # | Item | First reported | Severity | Resolved in | Evidence |
+|---|------|----------------|----------|-------------|----------|
+| Sp.1 | SPEC "Python transpiler backend" ghost at lines 25, 37, 39, 1792 + §18.2 | v4.143.0 panel (Coral) | MEDIUM | v4.143.0 | Four ghost lines rewritten; §18.2 redirected to `mapanare bind --lang python` canonical path |
+| Co.1r | SPEC Appendix B "strict byte-identical" stale vs NEAR FIXED POINT | v4.143.0 panel (Coral) | LOW | v4.143.0 | Appendix B rewritten: v4.134.0 strict checkpoint + v4.139.0-present near-fixed-point with 4-line Dr.1 diff |
+| Sem.2 | E420 ParseError not caught by `parse_recovering` | v4.143.0 panel (Coral) | LOW | v4.143.0 | `except ParseError` at fast-path + chunk-path in `mapanare/parser.py`; verified clean frame at `python3 -m mapanare check` |
+| An.6 | `scripts/check_docs_drift.py` failing CI 4 consecutive releases | v4.143.0 panel (Anaconda) | MEDIUM | v4.143.0 | 7 module-level `let mut` blocks wrapped in `fn main()` across `docs/SPEC.md` + `docs/reference.md`; gate reports 142 blocks clean |
+| An.7 | `scripts/check_silent_skips.py` blind to `_TR1_REASON` named-constant pattern | v4.143.0 panel (Anaconda) | LOW | v4.143.0 | Gate extended to resolve `reason=_NAME` identifiers; scans constant body + comment window above definition |
+| An.8 | `tmp*.py` local scratch files break `make lint` | v4.143.0 panel (Anaconda) | LOW | v4.143.0 | Added to `tool.black.extend-exclude`, `tool.ruff.exclude`, `tool.mypy.exclude` in `pyproject.toml` |
+| Bo.4-drift | README Tests badge `4845+` while localized READMEs at `5139+` | v4.143.0 panel (Boa) | LOW | v4.143.0 | Bumped to `5160+` |
+| Bo.6-drift | `docs/guides/getting_started.md` test count `4,845+` and golden `53/65` | v4.143.0 panel (Boa) | LOW | v4.143.0 | Bumped to `5,160+` and `54/66`; fixed-point description updated to near-fixed-point |
+| Bo.8 | SPEC header `Version: 4.139.0` | v4.143.0 panel (Boa) | LOW | v4.143.0 | Bumped to `4.143.0 (2026-04-18)` |
+| Bo.10 | `docs/known_issues.md` footer `Last updated: v4.138.0` | v4.143.0 panel (Boa) | LOW | v4.143.0 | Bumped to `v4.143.0 (2026-04-18)` |
+| Bo.11 | README main-blurb "strict 3-stage fixed point … at v4.134.0" | v4.143.0 panel (Boa) | LOW | v4.143.0 | Updated to near-fixed-point wording (4-line version-metadata diff) |
+| Bn.1 | Cross-language benchmark harness spawn-tax corrupts Rust numbers | v4.143.0 panel (Mamba) | MEDIUM | v4.143.0 | All 10 Rust benches instrumented with `__BENCH_METRICS__` (`std::time::Instant` around `main`); `run_rust` uses `_run_with_metrics`; live-verified `enum_match` 0.43ms internal vs 10ms prior subprocess-pinned |
+| Gr.3 | `Tensor` keyword collides with user type in generic position | v4.143.0 panel (Coral) | MEDIUM | v4.143.0 | Coral's Option 2: renamed stdlib `Tensor` struct → `GpuTensor` in `stdlib/gpu/tensor.mn` (63×) + `kernel.mn` (3×); `TensorError` preserved |
+| Reg.1 | No CI gate for `build_internal_struct_list` drift (Ge.1 root cause pattern) | v4.143.0 panel (Rattler) | MEDIUM | v4.143.0 | New `scripts/check_struct_registry.py` (23/23 registry entries × 89 source structs cross-checked); caught 3 real latent drifts on first run (`MIRType` name/kind swap × 2 sites, `VerifyError` block_name → block_label × 2 sites); gate wired into `.github/workflows/ci.yml` + `tests/test_ci.py::TestToolsRunLocally` |
+| Mar.1 | README benchmark citation drift (v4.136 vs v4.143) | v4.143.0 panel (Coral) | LOW | v4.143.0 | Implicitly closed by Bn.1 — Rust numbers are externally citable again; Mar.1 becomes a regeneration task, not a blocker |
+
+## Items opened by v4.143.0 panel, still open (all LOW polish)
+
+| # | Item | First reported | Severity | Cycles | Status | Tracking |
+|---|------|----------------|----------|--------|--------|----------|
+| Cb.5-tests | `_enum_inline` has only integration-level checksum coverage | v4.143.0 panel (Rattler / Cobra) | LOW | 1 | OPEN | v5.0.0-final polish |
+| Cb.6–Cb.10 | Five LOW items from Cobra's v4.143.0 review | v4.143.0 panel (Cobra) | LOW each | 1 | OPEN | v5.0.0-final polish |
+| Own.1 | Self-hosted lowerer lacks compile-time move-semantics enforcement (Ge.1 class root pattern) | v4.143.0 panel (Viper) | LOW | 1 | OPEN | v5.x refactor |
+
 ---
 
 ## Update protocol

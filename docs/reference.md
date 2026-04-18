@@ -217,10 +217,12 @@ a @ b                          // matrix multiplication (tensors)
 Variables are declared with `let`. They are immutable by default.
 
 ```mn
-let x = 42                    // immutable, type inferred as Int
-let name: String = "Alice"    // immutable, explicitly typed
-let mut count = 0             // mutable
-count += 1                    // OK — count is mutable
+fn main() {
+    let x = 42                    // immutable, type inferred as Int
+    let name: String = "Alice"    // immutable, explicitly typed
+    let mut count = 0             // mutable
+    count += 1                    // OK — count is mutable
+}
 ```
 
 Type annotations are optional when the type can be inferred.
@@ -303,10 +305,12 @@ for item in items {
 ### While Loops
 
 ```mn
-let mut i = 0
-while i < 10 {
-    print(str(i))
-    i += 1
+fn main() {
+    let mut i = 0
+    while i < 10 {
+        print(str(i))
+        i += 1
+    }
 }
 ```
 
@@ -478,22 +482,24 @@ type StringResult = Result<String, String>
 ## Lists
 
 ```mn
-let items: List<Int> = [1, 2, 3]
-let empty: List<String> = []
+fn main() {
+    let items: List<Int> = [1, 2, 3]
+    let empty: List<String> = []
 
-// Access
-let first = items[0]
+    // Access
+    let first = items[0]
 
-// Methods
-let mut list: List<Int> = []
-list.push(10)
-list.push(20)
-let len = list.length()
-let popped = list.pop()
+    // Methods
+    let mut list: List<Int> = []
+    list.push(10)
+    list.push(20)
+    let len = list.length()
+    let popped = list.pop()
 
-// Iteration
-for item in items {
-    print(str(item))
+    // Iteration
+    for item in items {
+        print(str(item))
+    }
 }
 ```
 
@@ -669,15 +675,17 @@ agent MyAgent {
 Signals are reactive containers. Dependents recompute automatically when values change.
 
 ```mn
-// Mutable signal
-let mut count = signal(0)
+fn main() {
+    // Mutable signal
+    let mut count = signal(0)
 
-// Computed signal (read-only, auto-updates)
-let doubled = signal { count.value * 2 }
+    // Computed signal (read-only, auto-updates)
+    let doubled = signal { count.value * 2 }
 
-// Update
-count.value = 5
-print(str(doubled.value))    // 10
+    // Update
+    count.value = 5
+    print(str(doubled.value))    // 10
+}
 ```
 
 ### Batched Updates

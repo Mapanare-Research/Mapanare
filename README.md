@@ -12,7 +12,7 @@
 
 Built after years of hitting Python's limits in AI-native, concurrent, and tensor-heavy software.
 
-Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler reaches a strict 3-stage fixed point (`stage2.ll == stage3.ll`, byte-identical) at v4.134.0 — the compiler really does compile itself. Across 6 cross-language benchmarks Mapanare's geometric mean is **42.6× faster than Python**, **1.12× of Rust (within noise)**, and **4.86× slower than C (gcc -O2)** — see [benchmarks/FINAL_REPORT_v4.136.md](benchmarks/FINAL_REPORT_v4.136.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
+Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler reaches a 3-stage fixed point (`stage2.ll` ≈ `stage3.ll`, 4-line version-metadata diff only) — the compiler really does compile itself. Across 6 cross-language benchmarks Mapanare's geometric mean is **42.6× faster than Python**, **1.12× of Rust (within noise)**, and **4.86× slower than C (gcc -O2)** — see [benchmarks/FINAL_REPORT_v4.136.md](benchmarks/FINAL_REPORT_v4.136.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
 
@@ -26,7 +26,7 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![Version](https://img.shields.io/badge/version-5.0.0--rc1-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-4845+_passing-brightgreen.svg?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-5160+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -725,7 +725,14 @@ Requires Python 3.11+.
 | **v4.134.0** | **STRICT 3-STAGE FIXED POINT REACHED** — `stage2.ll == stage3.ll`, md5 `0c00…43b`, 108,397 lines byte-identical; Sh.11 closed by inheritance, Sh.12 fixed | Released |
 | **v4.135.0** | Pre-panel refresh (2nd) — 4th flaky audit (0 failures across 20 cumulative runs), fresh sanitizer sweeps, benchmark refresh, MEASUREMENTS.md FINAL | Released |
 | **v4.136.0** | THE PANEL — v5 gate attempt 3: aggregate 8.80/10, 0 NEEDS WORK → **Option C** | Released |
-| **v5.0.0-rc1** | First v5 candidate. Carry-forward: Ch.1 HIGH + Bo.4/Bo.5/Cb.5/Gr.2 MEDIUM for v5.0.0 final | **Current** |
+| **v5.0.0-rc1** | First v5 candidate. Carry-forward: Ch.1 HIGH + Bo.4/Bo.5/Cb.5/Gr.2 MEDIUM for v5.0.0 final | Released |
+| **v4.137.0** | Ch.1 closed — `mapanare_agent_destroy` one-shot `pthread_join` via atomic-exchange claim; 3 sanitizer classes un-skipped | Released |
+| **v4.138.0** | Docs sweep — Bo.1–Bo.7 closed (Boa carry-forward); `mapanare --version` reads VERSION file directly | Released |
+| **v4.139.0** | SPEC + language close — Gr.2 qualified type refs, Sem.1 E420 for module-level `let mut`, §0 / Co.1 / Dr.1 closed | Released |
+| **v4.140.0** | Self-hosted emitter parity — Cb.5 enum_inline ported to `mapanare/self/emit_llvm.mn` (byte-identical ABI); SE.1 MAP/SIGNAL/STREAM ownership-transfer; Cb.3 docs | Released |
+| **v4.141.0** | An.2 lint debt cleared (204 ruff + 65 black + 36 mypy → 0) + 5th flaky audit (25/25 sequential runs, 0 flaky) | Released |
+| **v4.142.0** | Ge.1 closed — valgrind 5 → 0 ERRORS; MEASUREMENTS.md finalised for v4.143.0 panel | Released |
+| **v4.143.0** | Post-rc1 panel (8.86/10) + fast-win closeout: Sp.1 + Co.1r + Sem.2 + An.6 + An.7 + An.8 + Bo.*-drift bundle | **Current** |
 
 See the full [ROADMAP](docs/roadmap/ROADMAP.md) for details.
 

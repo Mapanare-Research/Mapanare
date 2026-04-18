@@ -1,3 +1,4 @@
+use std::time::Instant;
 // Benchmark: Compile-self proxy — Rust equivalent.
 fn make_grid(w: usize, h: usize) -> Vec<i64> {
     (0..w * h).map(|i| ((i * 7 + 13) % 256) as i64).collect()
@@ -34,10 +35,17 @@ fn collatz_steps(n: i64) -> i64 {
 }
 
 fn main() {
+    let __bench_t0 = Instant::now();
+
     let (w, h) = (50usize, 50usize);
     let grid = make_grid(w, h);
     let sim_result: i64 = (0..10).map(|_| simulate_step(&grid, w, h)).sum();
     let fib_result = fibonacci(25);
     let collatz_sum: i64 = (1..=1000).map(collatz_steps).sum();
     println!("checksum = {}", sim_result + fib_result + collatz_sum);
+    let __bench_dt = __bench_t0.elapsed().as_secs_f64();
+    println!("__BENCH_METRICS__");
+    println!("wall_time_s={}", __bench_dt);
+    println!("cpu_time_s={}", __bench_dt);
+    println!("peak_memory_kb=0");
 }

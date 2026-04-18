@@ -119,6 +119,22 @@ jobs:
           set -e
           python3 scripts/check_no_hollow_features.py
 
+      # v4.143.0: internal-struct registry drift gate (Reg.1).
+      # Cross-checks ``mapanare/self/emit_llvm.mn::build_internal_struct_list``
+      # and ``register_all_internal_structs`` against the live struct
+      # definitions in ``mapanare/self/*.mn``. Prevents repeats of the
+      # Ge.1 class of silent metadata drift (v4.132.0 → v4.142.0) where
+      # MIRModule.consts, LowerState fields, MatchBuildResult, VarInfo,
+      # etc. were registered with stale or wrong field-name lists and
+      # byte-identity fixed-point checks masked the miscompile because
+      # both stages diverged the same way.
+      - name: Struct registry drift gate
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_struct_registry.py
+
       - name: Run tests
         run: pytest tests/ -v -n auto --durations=20
 
