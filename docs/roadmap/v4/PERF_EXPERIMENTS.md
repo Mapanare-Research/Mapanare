@@ -21,3 +21,29 @@ Running ledger of performance experiments. Each row is one E-release.
 | E8b | inline_small_functions re-enable (dormant since v4.111.0) | **DEAD END** | 0% | goldens 54/66 pass but llvm-as rejects stage2.ll (SSA name collision in parse_program — inliner rename bug, In.1) | `mapanare/self/mir_opt.mn:1250` comment update | v4.152.0 |
 | E8c | licm re-enable (dormant since v4.111.0) | **DEAD END** | 0% | goldens 54 → 51 (3 regressions: for_loop, list_ops, break_continue — duplicate defs from hoist_instruction, Li.1) | `mapanare/self/mir_opt.mn:1268` comment update | v4.152.0 |
 | E8d | escape_analysis re-enable (dormant since v4.111.0) | **DEAD END** | 0% | 0% (stage2.ll byte-identical — function is a stub that always returns input unchanged, Ea.1) | `mapanare/self/mir_opt.mn:1287` comment update | v4.152.0 |
+
+## v4.153.0 end-of-arc audit
+
+All 8 experiments (15 sub-levers including E6a/b/c/*, E7a/b/c,
+E8a/b/c/d) verified against live file:line references and RESULTS.md
+deltas at v4.153.0 HEAD.
+
+### Verified (15 rows)
+- E1 (enum_match): `emit_llvm_text.py` unified-return-block at lines 2190/2217/2651/4069; delta matches
+- E2 (fib): `emit_llvm_text.py` noundef at lines 2100-2104, pure-fn attrs; delta matches
+- E3 (noalias): `mir_opt.py` mark_noalias_params at line 2041 (~140 LOC); `mir.py` MIRParam.attrs at line 814; `emit_llvm_text.py` noalias emit; delta matches
+- E4 (string_concat): `mapanare_core.c` mn_sb_grow at line 488; `mn_bench_main.c` exists (51 lines); delta matches
+- E5 (ABI.1): `abi.py` exists (99 LOC); `emit_llvm_text.py` _use_sret at line 1235; delta matches
+- E6a (empty-wake): `mapanare_runtime.c` sem_post at lines 70/122/139; delta matches
+- E6b/E6c: NOT ATTEMPTED — correctly labeled
+- E6* (async threads): `mapanare_runtime.c` MAPANARE_ASYNC_THREADS at lines 1715-1721; delta matches
+- E7a (capacity audit): correctly labeled NO-OP
+- E7b (realloc): `mapanare_core.c` mn_list_grow at line 1073; delta matches
+- E7c (fast-path): `mapanare_core.c` __mn_list_push at line 1121; delta matches
+- E8a-d (dormant passes): `mir_opt.mn` v4.152.0 comments at lines 1238/1250/1268/1287; all 4 confirmed
+
+### Cosmetic drift (0 rows)
+None detected. All line numbers stable since ledger creation.
+
+### Material discrepancy (0 rows)
+None found.

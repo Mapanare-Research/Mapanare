@@ -12,7 +12,7 @@
 
 Built after years of hitting Python's limits in AI-native, concurrent, and tensor-heavy software.
 
-Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler reaches a 3-stage fixed point (`stage2.ll` ≈ `stage3.ll`, 4-line version-metadata diff only) — the compiler really does compile itself. Across 6 cross-language benchmarks Mapanare's geometric mean is **42.6× faster than Python**, **1.12× of Rust (within noise)**, and **4.86× slower than C (gcc -O2)** — see [benchmarks/FINAL_REPORT_v4.136.md](benchmarks/FINAL_REPORT_v4.136.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
+Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler reaches a 3-stage fixed point (`stage2.ll` ≈ `stage3.ll`, 4-line version-metadata diff only) — the compiler really does compile itself. Across 6 cross-language benchmarks Mapanare's geometric mean is **~168× faster than Python**, **1.17× of Rust**, and **on par with C (gcc -O2)** — see [benchmarks/FINAL_REPORT_v4.153.md](benchmarks/FINAL_REPORT_v4.153.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
 
@@ -26,7 +26,7 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![Version](https://img.shields.io/badge/version-5.0.0--rc1-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-5160+_passing-brightgreen.svg?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-5302+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -394,14 +394,13 @@ mapanare emit-wasm --binary hello.mn     # Emit WAT + compile to WASM
 
 Mapanare compiles to native code via LLVM. Across 6 correct-output
 workloads (compute, allocation, dispatch, string), Mapanare's geometric
-mean is **42.6× faster than Python**, **1.12× of Rust (within noise)**,
-**2.28× slower than Go**, and **4.86× slower than C (gcc -O2)**.
-The arena allocator beats Rust on small struct allocation; the v4.124.0
-unboxed-enum fix puts Mapanare ahead of Rust on enum-heavy dispatch
-(`enum_match` 1.468 ms vs Rust 1.495 ms = 0.98× of Rust). See
-[`benchmarks/FINAL_REPORT_v4.136.md`](benchmarks/FINAL_REPORT_v4.136.md)
-for full methodology, per-benchmark ratios, memory + binary size tables,
-and honest caveats.
+mean is **~168× faster than Python**, **1.17× of Rust**,
+**faster than Go (0.47×)**, and **on par with C gcc (0.96×)**.
+The v4.149.0 ABI.1 sret fix puts `struct_alloc` at 1.06× of Rust;
+enum dispatch is 0.56× of Rust (Mapanare faster). The v4.144.0-v4.152.0
+perf arc closed 80% of the Rust gap (5.83× → 1.17×). See
+[`benchmarks/FINAL_REPORT_v4.153.md`](benchmarks/FINAL_REPORT_v4.153.md)
+for full methodology, per-benchmark ratios, and arc trend data.
 
 ### Performance (v4.125.0, LLVM -O2, median of 10 runs, ms)
 

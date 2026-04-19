@@ -1,0 +1,14 @@
+=== Mapanare Async Benchmark Suite (20 runs per benchmark) ===
+
+[01_sequential_chain]
+  01_sequential_chain Mapanare: 2.5ms (OK)
+[02_fanout]
+  02_fanout Mapanare: 2.2ms (OK)
+[03_io_bound]
+  03_io_bound Mapanare: 2.2ms (OK)
+[04_mixed_cpu_io]
+  04_mixed_cpu_io Mapanare: 2.2ms (OK)
+[05_backpressure]
+  05_backpressure Mapanare: 1.9ms (OK)
+
+Results saved to benchmarks/async/v4.153.0-async.json

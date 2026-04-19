@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.153.0] - 2026-04-19
+
+**Pre-perf-panel refresh.** Zero code changes. Measurement-only release
+preparing evidence for v4.154.0 perf panel.
+
+- 6th flaky audit: 30 cumulative sequential pytest runs, 0 flaky
+- Cross-language benchmarks (20 runs): Mapanare/Rust geomean 1.17x
+  (was 5.83x at v4.144.0 — 80% gap closure across E1-E8 arc)
+- PERF_EXPERIMENTS.md end-of-arc audit: 15 sub-levers verified, 0 discrepancies
+- Pre-panel audit of 8 SESSION_REPORTs: 42/42 claims verified
+- MEASUREMENTS.md FINAL, FINAL_REPORT_v4.153.md, TREND_v4.144_v4.153.md
+- Sanitizers: valgrind 0/62/4, ASan 55/0/11
+- Fixed-point: NEAR (4 diff, version placeholder)
+
 ## [4.152.0] - 2026-04-19
 
 **E8: Dormant MIR passes re-evaluation — full dead end.** Eighth experiment

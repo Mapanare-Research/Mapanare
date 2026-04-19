@@ -7,6 +7,8 @@
 
 ---
 
+## Where We Are (v4.153.0 **Pre-perf-panel refresh.** Zero code changes. Measurement-only release preparing the v4.154.0 perf panel evidence pack. 6th flaky audit: **30 cumulative sequential runs, 0 flaky** (5302/0 per run). Cross-language benchmarks (20 runs): Mapanare/Rust geomean **1.17x** (was 5.83x at v4.144.0 — **80% gap closure**). Mapanare/C gcc **0.96x** (on par). Mapanare **~168x faster than Python**. PERF_EXPERIMENTS.md end-of-arc audit: 15 sub-levers verified, 0 discrepancies. Pre-panel audit: 42/42 SESSION_REPORT claims verified. Artifacts: MEASUREMENTS.md FINAL, FINAL_REPORT_v4.153.md, TREND_v4.144_v4.153.md. **Next: v4.154.0 — THE PERF PANEL.**)
+
 ## Where We Are (v4.147.0 **E3 dead end — parameter-level noalias via escape analysis.** Third experiment of the perf arc. New MIR pass `mark_noalias_params` (~134 LOC) with escape analysis. Dead end: LLVM `noalias` only applies to pointer-typed params; Mapanare passes List/String/Map as aggregates by value (under 64-byte byref threshold). Emitted IR byte-identical. Pass kept for future byref changes. **Quality**: 5251 passed / 0 failed; 54/66 goldens; sanitizer sweep clean. **Next: v4.148.0 E4 (string_concat).**)
 
 ## Where We Are (v4.145.0 **E1 closed — enum_match codegen WIN.** First experiment of the perf arc (v4.144.0 → v4.154.0). Unified-return-block optimization for inline-enum returns eliminates aggregate PHI after inlining → LLVM merges two switches into one. Optimized IR now structurally identical to Rust's. 10M measurement: 17.31 → 15.91 ms (8.4% improvement). ~30 LOC in `emit_llvm_text.py`. No ABI change. **Quality**: 5225 passed / 0 failed; 54/66 goldens; fixed-point within threshold. **Next: v4.146.0 E2 (fib_recursive).**)
