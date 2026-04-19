@@ -9,6 +9,7 @@ import os
 import struct as pystruct
 from typing import Any
 
+from mapanare.abi import classify_return  # v4.149.0 E5
 from mapanare.mir import (
     AgentSend,
     AgentSpawn,
@@ -1228,8 +1229,22 @@ class LLVMTextEmitter:
 
     @staticmethod
     def _use_byref(ty: str) -> bool:
-        """True if *ty* should use pointer passing (byref) for user functions."""
+        """True if *ty* should use pointer passing (byref) for user function arguments."""
         return ty.startswith("{") and ty.endswith("}") and _tsz(ty) > LLVMTextEmitter._BYREF_BYTES
+
+    def _use_sret(self, ty: str) -> bool:
+        """True if *ty* should use sret for return values on the current target.
+
+        v4.149.0 E5 / ABI.1: per-target classification replaces the
+        blanket ``_BYREF_BYTES`` threshold for return types.  Implements
+        System V AMD64 §3.2.3 (≤ 16 B → register), Win64 (1/2/4/8 B →
+        register), and AArch64 AAPCS64 (≤ 16 B → register).
+
+        Argument passing still uses ``_use_byref`` (64 B threshold).
+        """
+        if not (ty.startswith("{") and ty.endswith("}")):
+            return False
+        return classify_return(ty, _tsz(ty), self._triple).kind == "sret"
 
     def _decl_fn(self, nm: str, ret: str, pts: list[str], va: bool = False) -> None:
         if nm in self._declared:
@@ -2164,9 +2179,12 @@ class LLVMTextEmitter:
         # through mn_arena_alloc, so create/destroy was pure overhead.
         self._arena_ptr: str | None = None
 
-        # Determine which params use byref and if return uses sret
+        # Determine which params use byref and if return uses sret.
+        # v4.149.0 E5 / ABI.1: return-type sret decision uses per-target
+        # ABI classifier (classify_return) instead of the blanket 64-byte
+        # _use_byref threshold.  Argument byref still uses _use_byref.
         rt_orig = self._rty(fn.return_type)
-        self._fn_use_sret = self._use_byref(rt_orig) and fn.name != "main"
+        self._fn_use_sret = self._use_sret(rt_orig) and fn.name != "main"
         self._fn_sret_ty = rt_orig if self._fn_use_sret else ""
         self._fn_is_async: bool = fn.is_async  # v4.92.0: track for real suspend
         # v4.145.0 E1: unified return block for inline-enum returns.
@@ -3879,8 +3897,9 @@ class LLVMTextEmitter:
                 et = pts[j] if j < len(pts) else t
                 coerced.append((self._coerce(v, t, et) if t != et else v, et))
 
-            # Apply byref ABI: large struct args → pointer, large struct ret → sret
-            use_sret = self._use_byref(ret) and fn != "main"
+            # Apply byref ABI: large struct args → pointer, large struct ret → sret.
+            # v4.149.0 E5: return sret uses per-target classifier.
+            use_sret = self._use_sret(ret) and fn != "main"
             abi_args: list[tuple[str, str]] = []
             for v, t in coerced:
                 if self._use_byref(t):
@@ -3964,7 +3983,8 @@ class LLVMTextEmitter:
         for j, (v, t) in enumerate(args):
             et = pts_auto[j] if j < len(pts_auto) else t
             coerced2.append((self._coerce(v, t, et) if t != et else v, et))
-        use_sret2 = self._use_byref(ret_auto) and fn != "main"
+        # v4.149.0 E5: return sret uses per-target classifier.
+        use_sret2 = self._use_sret(ret_auto) and fn != "main"
         abi_args2: list[tuple[str, str]] = []
         for v, t in coerced2:
             if self._use_byref(t):

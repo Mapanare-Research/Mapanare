@@ -1,0 +1,2 @@
+0
+Baseline: 0 sret in golden test corpus (all aggregates ≤ 64B returned by value via _BYREF_BYTES=64 threshold)

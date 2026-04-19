@@ -176,6 +176,12 @@ corresponding release CHANGELOG entries for detail.
 | Reg.1 | No CI gate for `build_internal_struct_list` drift (Ge.1 root cause pattern) | v4.143.0 panel (Rattler) | MEDIUM | v4.143.0 | New `scripts/check_struct_registry.py` (23/23 registry entries × 89 source structs cross-checked); caught 3 real latent drifts on first run (`MIRType` name/kind swap × 2 sites, `VerifyError` block_name → block_label × 2 sites); gate wired into `.github/workflows/ci.yml` + `tests/test_ci.py::TestToolsRunLocally` |
 | Mar.1 | README benchmark citation drift (v4.136 vs v4.143) | v4.143.0 panel (Coral) | LOW | v4.143.0 | Implicitly closed by Bn.1 — Rust numbers are externally citable again; Mar.1 becomes a regeneration task, not a blocker |
 
+## Items resolved in v4.149.0 (perf arc E5)
+
+| # | Item | First reported | Severity | Resolved in | Evidence |
+|---|------|----------------|----------|-------------|----------|
+| ABI.1 | Register return for small aggregates per SysV/Win64/AAPCS64 | v4.125.0 benchmark refresh (re-flagged v4.136.0 panel, v4.143.0 panel) | LOW | v4.149.0 | New `mapanare/abi.py` classifier; 25 tests in `tests/llvm/test_abi_struct_return.py`; sret convention matches Clang on all three targets |
+
 ## Items opened by v4.143.0 panel, still open (all LOW polish)
 
 | # | Item | First reported | Severity | Cycles | Status | Tracking |

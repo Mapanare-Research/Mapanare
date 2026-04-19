@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.149.0] - 2026-04-19
+
+**E5: ABI.1 register return for small aggregates — WIN (correctness).** Fifth
+experiment of the perf arc. Closes ABI.1, the oldest open perf docket on the
+ledger (opened v4.125.0, flagged at v4.136.0 + v4.143.0 panels).
+
+New `mapanare/abi.py` classifier implements per-target return-value ABI rules:
+System V AMD64 §3.2.3 (≤ 16 bytes → register), Win64 x64 (1/2/4/8 bytes →
+register), AArch64 AAPCS64 (≤ 16 bytes → register). The emitter now matches
+Clang's convention — aggregates > 16 bytes on SysV use explicit `sret` in IR
+instead of by-value return.
+
+- **sret count**: 0 → 57 in golden corpus (the fix *adds* correct sret for
+  17-64 byte aggregates; the PLAN's "drops 60%" was based on a stale premise)
+- **Performance**: neutral (enum_match +0.6% within noise, no regression > 2%)
+- **Sanitizer**: 0 new ASan/valgrind findings
+- **Tests**: 25 new ABI tests in `tests/llvm/test_abi_struct_return.py`
+- **Quality**: 5286 passed / 0 failed; 54/66 goldens; fixed-point within threshold
+
 ## [4.148.0] - 2026-04-19
 
 **E4: string_concat amortized growth + benchmark methodology — WIN.** Fourth
