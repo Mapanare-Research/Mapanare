@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: bash scripts/concat_self.sh
+// Do not edit — regenerate with: python scripts/concat_self.py
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -4383,6 +4383,17 @@ fn check_logical_result(left: String, right: String) -> String {
 
 // ---------------------------------------------------------------------------
 // Type resolution — convert TypeExpr AST nodes to TypeInfo
+// ---------------------------------------------------------------------------
+// Cb.9a (v4.144.0): The Python semantic resolver at semantic.py:416-445
+// handles qualified type references (e.g., device.DeviceKind) via a
+// module_path list on NamedType/GenericType AST nodes. The self-hosted
+// AST uses a flattened string ("device.DeviceKind") in TypeExpr::Named,
+// so resolve_type_expr below passes the dotted name to make_type() as-is.
+// This works for struct fields (the name round-trips through the emitter)
+// but will silently mis-classify if someone does `match` on a qualified
+// enum. Full cross-module type resolution requires adding a module_path
+// field to TypeExpr and mirroring the Python resolver's import-scope
+// lookup. Tracked as Cb.9a for v5.x.
 // ---------------------------------------------------------------------------
 
 fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
@@ -9193,6 +9204,10 @@ fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value
                 let mut sf_lst: List<StructFieldInfo> = s.struct_fields
                 sf_lst.push(sfi)
                 s.struct_fields = sf_lst
+                // Cb.7 (v4.144.0): clear moved-ownership locals.
+                fields = []
+                field_names = []
+                field_types = []
 
                 // Monomorphize generic impl methods for this struct
                 s = monomorphize_impl_methods(s, struct_name, mangled, gs.type_params, concrete)
@@ -9387,6 +9402,12 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
                         let mut ev_lst: List<EnumVariantNames> = s.enum_variants
                         ev_lst.push(evn)
                         s.enum_variants = ev_lst
+                        // Ownership of the specialized enum metadata has moved
+                        // into the returned state. Clear the local list headers
+                        // so the function epilogue does not free the same
+                        // buffers while the emitter still needs them.
+                        new_variants = []
+                        new_variant_names = []
                     }
 
                     // Emit EnumInit with mangled type name
@@ -10038,30 +10059,30 @@ fn find_expr_alloca(st: LowerState, expr: Expr, obj_r: LowerResult) -> Value {
 }
 
 // Module mutation: extract list to local variable, push, reconstruct.
-// This avoids struct field push (GEP index issues) by using the
-// 9-field struct init which the parser now supports.
+// This avoids struct field push (GEP index issues) by rebuilding the
+// current MIRModule layout explicitly, including consts.
 fn module_push_struct(m: MIRModule, info: StructInfo) -> MIRModule {
     let mut lst: List<StructInfo> = m.structs
     lst.push(info)
-    return new MIRModule { name: m.name, functions: m.functions, structs: lst, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names }
+    return new MIRModule { name: m.name, functions: m.functions, structs: lst, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
 }
 
 fn module_push_enum(m: MIRModule, info: EnumInfo) -> MIRModule {
     let mut lst: List<EnumInfo> = m.enums
     lst.push(info)
-    return new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: lst, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names }
+    return new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: lst, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
 }
 
 fn module_push_function(m: MIRModule, f: MIRFunction) -> MIRModule {
     let mut lst: List<MIRFunction> = m.functions
     lst.push(f)
-    return new MIRModule { name: m.name, functions: lst, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names }
+    return new MIRModule { name: m.name, functions: lst, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
 }
 
 fn module_push_agent(m: MIRModule, info: AgentInfo) -> MIRModule {
     let mut lst: List<AgentInfo> = m.agents
     lst.push(info)
-    return new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: lst, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names }
+    return new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: lst, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
 }
 
 fn lower_arm_body(st: LowerState, body: MatchArmBody) -> LowerResult {
@@ -11367,7 +11388,6 @@ pub fn lower(program: Program, module_name: String) -> MIRModule {
 
     return st.module
 }
-
 
 // ===== emit_llvm_ir.mn =====
 // emit_llvm_ir.mn — LLVM IR type constants and instruction string builders.
@@ -12987,27 +13007,28 @@ fn build_internal_struct_list() -> List<StructEntry> {
     // and the emitter needs StructEntry's field info to generate correct
     // insertvalue indices for subsequent make_entry calls.
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
-    list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"]))
-    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"]))
+    list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"]))
+    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"]))
     list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
-    list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "arm_body_labels", "merge_label"]))
+    list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
     list.push(make_entry("FnEntry", ["name", "ret_type", "param_types"]))
     // StructEntry already registered first (above)
-    list.push(make_entry("VarInfo", ["name", "value", "mutable"]))
-    list.push(make_entry("StructFieldInfo", ["struct_name", "field_names", "field_types"]))
-    list.push(make_entry("EnumVariantNames", ["name", "variant_names"]))
-    list.push(make_entry("LambdaEntry", ["var_name", "body_name"]))
+    list.push(make_entry("VarInfo", ["name", "current", "mutable"]))
+    list.push(make_entry("StructFieldInfo", ["name", "field_names", "field_types"]))
+    list.push(make_entry("EnumVariantNames", ["enum_name", "variant_names"]))
+    list.push(make_entry("LambdaEntry", ["var_name", "fn_name"]))
     list.push(make_entry("ExternFnInfo", ["abi", "module_name", "fn_name", "param_types", "return_type"]))
-    list.push(make_entry("VerifyError", ["fn_name", "block_name", "message"]))
-    list.push(make_entry("ImplEntry", ["key", "method_name"]))
+    list.push(make_entry("VerifyError", ["fn_name", "block_label", "message"]))
+    list.push(make_entry("ImplEntry", ["key", "mir_name"]))
     list.push(make_entry("ImportInfo", ["path", "items"]))
-    list.push(make_entry("AgentInfo", ["name", "inputs", "outputs", "state_fields"]))
+    list.push(make_entry("ModuleConst", ["name", "type_name", "int_value", "str_value", "is_string"]))
+    list.push(make_entry("AgentInfo", ["name", "inputs", "outputs", "method_names"]))
     list.push(make_entry("PipeInfo", ["name", "stages"]))
     list.push(make_entry("MIRFunction", ["name", "params", "return_type", "blocks", "decorators", "is_public"]))
     list.push(make_entry("BasicBlock", ["label", "instructions"]))
-    list.push(make_entry("MIRType", ["kind", "name", "args"]))
+    list.push(make_entry("MIRType", ["name", "kind", "args"]))
     list.push(make_entry("Value", ["name", "ty"]))
     return list
 }
@@ -13028,48 +13049,50 @@ fn register_internal_struct(st: EmitState, name: String, fields: List<String>) -
 
 fn register_all_internal_structs(st: EmitState) -> EmitState {
     let mut s: EmitState = st
-    // MIRModule: name, functions, structs, enums, extern_fns, agents, pipes, imports, trait_names
-    s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names"])
-    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks
-    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks"])
+    // MIRModule: name, functions, structs, enums, extern_fns, agents, pipes, imports, trait_names, consts
+    s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"])
+    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks, generic_fns, generic_structs, generic_enums, loop_header_label, loop_exit_label
+    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"])
     // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots
     s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots"])
     // LowerResult: value, state
     s = register_internal_struct(s, "LowerResult", ["value", "state"])
     // CompileResult: success, ir_text, errors
     s = register_internal_struct(s, "CompileResult", ["success", "ir_text", "errors"])
-    // MatchBuildResult: state, arm_labels, arm_indices, arm_body_labels, merge_label
-    s = register_internal_struct(s, "MatchBuildResult", ["state", "arm_labels", "arm_indices", "arm_body_labels", "merge_label"])
+    // MatchBuildResult: state, arm_labels, arm_indices, cases, default_label
+    s = register_internal_struct(s, "MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"])
     // FnEntry: name, ret_type, param_types
     s = register_internal_struct(s, "FnEntry", ["name", "ret_type", "param_types"])
     // StructEntry: name, field_names, field_types, llvm_type
     s = register_internal_struct(s, "StructEntry", ["name", "field_names", "field_types", "llvm_type"])
-    // VarInfo: name, value, mutable
-    s = register_internal_struct(s, "VarInfo", ["name", "value", "mutable"])
-    // StructFieldInfo: struct_name, field_names, field_types
-    s = register_internal_struct(s, "StructFieldInfo", ["struct_name", "field_names", "field_types"])
-    // EnumVariantNames: name, variant_names
-    s = register_internal_struct(s, "EnumVariantNames", ["name", "variant_names"])
-    // LambdaEntry: var_name, body_name
-    s = register_internal_struct(s, "LambdaEntry", ["var_name", "body_name"])
+    // VarInfo: name, current, mutable
+    s = register_internal_struct(s, "VarInfo", ["name", "current", "mutable"])
+    // StructFieldInfo: name, field_names, field_types
+    s = register_internal_struct(s, "StructFieldInfo", ["name", "field_names", "field_types"])
+    // EnumVariantNames: enum_name, variant_names
+    s = register_internal_struct(s, "EnumVariantNames", ["enum_name", "variant_names"])
+    // LambdaEntry: var_name, fn_name
+    s = register_internal_struct(s, "LambdaEntry", ["var_name", "fn_name"])
     // ExternFnInfo: abi, module_name, fn_name, param_types, return_type
     s = register_internal_struct(s, "ExternFnInfo", ["abi", "module_name", "fn_name", "param_types", "return_type"])
-    // VerifyError: fn_name, block_name, message
-    s = register_internal_struct(s, "VerifyError", ["fn_name", "block_name", "message"])
-    // ImplEntry: key, method_name
-    s = register_internal_struct(s, "ImplEntry", ["key", "method_name"])
+    // VerifyError: fn_name, block_label, message
+    s = register_internal_struct(s, "VerifyError", ["fn_name", "block_label", "message"])
+    // ImplEntry: key, mir_name
+    s = register_internal_struct(s, "ImplEntry", ["key", "mir_name"])
     // ImportInfo: path, items
     s = register_internal_struct(s, "ImportInfo", ["path", "items"])
-    // AgentInfo: name, inputs, outputs, state_fields
-    s = register_internal_struct(s, "AgentInfo", ["name", "inputs", "outputs", "state_fields"])
+    // ModuleConst: name, type_name, int_value, str_value, is_string
+    s = register_internal_struct(s, "ModuleConst", ["name", "type_name", "int_value", "str_value", "is_string"])
+    // AgentInfo: name, inputs, outputs, method_names
+    s = register_internal_struct(s, "AgentInfo", ["name", "inputs", "outputs", "method_names"])
     // PipeInfo: name, stages
     s = register_internal_struct(s, "PipeInfo", ["name", "stages"])
     // MIRFunction: name, params, return_type, blocks, decorators, is_public
     s = register_internal_struct(s, "MIRFunction", ["name", "params", "return_type", "blocks", "decorators", "is_public"])
     // BasicBlock: label, instructions
     s = register_internal_struct(s, "BasicBlock", ["label", "instructions"])
-    // MIRType: kind, name, args
-    s = register_internal_struct(s, "MIRType", ["kind", "name", "args"])
+    // MIRType: name, kind, args
+    s = register_internal_struct(s, "MIRType", ["name", "kind", "args"])
     // Value: name, ty
     s = register_internal_struct(s, "Value", ["name", "ty"])
     return s
@@ -13644,6 +13667,12 @@ fn variant_payload_slots_max(st: EmitState, info: EnumInfo) -> Int {
 
 // v4.140.0 Cb.5: inline enum eligibility — mirrors Python _type_fits_inline_slot.
 fn type_fits_inline_slot(resolved: String) -> Bool {
+    // Cb.6 (v4.144.0): reject typed-pointer-legacy forms like "i64*".
+    // Mapanare's emitter uses opaque `ptr`; any trailing `*` is a bug
+    // in the caller or a stale type string from a legacy path.
+    if resolved.ends_with("*") {
+        return false
+    }
     if resolved == "i64" { return true }
     if resolved == "double" { return true }
     if resolved == "i1" { return true }
@@ -16586,7 +16615,6 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     return join("\n", st.lines)
 }
 
-
 // ===== main.mn =====
 // main.mn — Compiler driver for the Mapanare self-hosted compiler.
 // Wires the pipeline: source -> parse -> resolve imports -> lower -> emit_llvm -> LLVM IR.
@@ -17382,4 +17410,3 @@ fn mn_main() {
         __mn_exit(1)
     }
 }
-

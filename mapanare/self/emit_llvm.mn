@@ -748,6 +748,12 @@ fn variant_payload_slots_max(st: EmitState, info: EnumInfo) -> Int {
 
 // v4.140.0 Cb.5: inline enum eligibility — mirrors Python _type_fits_inline_slot.
 fn type_fits_inline_slot(resolved: String) -> Bool {
+    // Cb.6 (v4.144.0): reject typed-pointer-legacy forms like "i64*".
+    // Mapanare's emitter uses opaque `ptr`; any trailing `*` is a bug
+    // in the caller or a stale type string from a legacy path.
+    if resolved.ends_with("*") {
+        return false
+    }
     if resolved == "i64" { return true }
     if resolved == "double" { return true }
     if resolved == "i1" { return true }

@@ -1792,6 +1792,10 @@ fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value
                 let mut sf_lst: List<StructFieldInfo> = s.struct_fields
                 sf_lst.push(sfi)
                 s.struct_fields = sf_lst
+                // Cb.7 (v4.144.0): clear moved-ownership locals.
+                fields = []
+                field_names = []
+                field_types = []
 
                 // Monomorphize generic impl methods for this struct
                 s = monomorphize_impl_methods(s, struct_name, mangled, gs.type_params, concrete)
