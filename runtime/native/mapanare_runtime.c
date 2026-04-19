@@ -645,11 +645,22 @@ MAPANARE_EXPORT int mapanare_agent_send(mapanare_agent_t *agent, void *msg) {
      * the MPSC side of the ring (the ring itself is still lock-free on
      * the consumer side, which remains single-threaded). */
     mapanare_mutex_lock(&agent->inbox_producer_lock);
+    /* v4.150.0 (E6-A): snapshot ring emptiness before push. If the ring
+     * was non-empty, the worker is either dispatching or about to loop
+     * back to ring_pop — it will find our new item without a wake.
+     * Only post the semaphore when the ring was empty, meaning the
+     * worker is (or is about to be) parked in sem_wait. Safe because:
+     * (1) single-consumer ring — worker always retries ring_pop after
+     * dispatch before sem_wait, so it can't miss a pushed item;
+     * (2) spurious wakes are harmless — worker re-checks ring_pop. */
+    int was_empty = mapanare_ring_is_empty(&agent->inbox);
     int rc = mapanare_ring_push(&agent->inbox, msg);
     mapanare_mutex_unlock(&agent->inbox_producer_lock);
     if (rc == 0) {
         mapanare_bp_increment(&agent->bp);
-        mapanare_sem_post(&agent->inbox_ready);
+        if (was_empty) {
+            mapanare_sem_post(&agent->inbox_ready);
+        }
         trace_emit(MAPANARE_TRACE_SEND, agent, msg, 0);
     }
     return rc;
@@ -1700,7 +1711,20 @@ static void *mn_worker_loop(void *arg) {
 MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads) {
     memset(&mn_sched, 0, sizeof(mn_sched));
     uint32_t n = num_threads;
-    if (n == 0) n = (uint32_t)mapanare_cpu_count();
+    if (n == 0) {
+        /* v4.150.0 (E6): honour MAPANARE_ASYNC_THREADS env var. On
+         * high-core-count machines (32+ cores) the default of spawning
+         * one thread per core adds significant startup cost (~2 ms for
+         * 31 pthread_create calls) that dominates short-lived async
+         * programs. The env var lets users and benchmarks cap the pool
+         * without recompilation. */
+        const char *env = getenv("MAPANARE_ASYNC_THREADS");
+        if (env && env[0]) {
+            int v = atoi(env);
+            if (v > 0) n = (uint32_t)v;
+        }
+        if (n == 0) n = (uint32_t)mapanare_cpu_count();
+    }
     if (n > MN_MAX_WORKERS) n = MN_MAX_WORKERS;
     mn_sched.num_workers = n;
     __atomic_store_n(&mn_sched.running, 1, __ATOMIC_RELEASE);

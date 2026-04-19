@@ -1,0 +1,30 @@
+{
+  "version": "4.150.0-baseline",
+  "runs": 10,
+  "mapanare": {
+    "seq_chain": 2.3,
+    "fanout": 2.2,
+    "io_bound": 2.1,
+    "mixed_cpu": 2.4,
+    "backpressure": 2.4,
+    "geomean": 2.277
+  },
+  "go": {
+    "seq_chain": 1.3,
+    "fanout": 1.3,
+    "io_bound": 2.0,
+    "mixed_cpu": 1.3,
+    "backpressure": 1.0,
+    "geomean": 1.345
+  },
+  "ratio_vs_go": 1.69,
+  "python": {
+    "seq_chain": 91.3,
+    "fanout": 97.0,
+    "io_bound": 97.5,
+    "mixed_cpu": 114.7,
+    "backpressure": 92.9,
+    "geomean": 98.348
+  },
+  "ratio_vs_python": 43.2
+}

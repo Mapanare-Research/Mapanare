@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.150.0] - 2026-04-19
+
+**E6: Async scheduler thread pool sizing + agent empty-wake — WIN.** Sixth
+experiment of the perf arc. Target: close the 1.69x Go gap on async benchmarks.
+
+Key finding: async benchmarks use LLVM coroutines (`__mn_coro_scheduler_*`),
+not the agent runtime (`mapanare_agent_*`). The PLAN's three levers targeted
+the wrong code path. The real bottleneck is thread pool startup overhead: on a
+32-core machine, `__mn_coro_scheduler_init` creates 31 OS threads (~2.2 ms),
+dominating the ~2.3 ms benchmark total.
+
+- **New feature**: `MAPANARE_ASYNC_THREADS` environment variable controls
+  coroutine scheduler thread pool size, overriding the default of `cpu_count`
+- **Async geomean**: 2.28 → 1.14 ms with `MAPANARE_ASYNC_THREADS=2` (−50.1%)
+- **vs Go**: 1.69x → **0.85x** (Mapanare faster than Go with right pool size)
+- **Lever A** (empty-wake sem_post on agent send): applied, correct, NEUTRAL
+  on async geomean (async benchmarks don't use agent runtime)
+- **Lever B/C**: not attempted (wrong target)
+- **CPU geomean**: −0.9% (no regression)
+- **Sanitizer**: 0 new ASan/valgrind findings; TSan 3/3 pass
+- **Quality**: 5291 passed / 0 failed; 54/66 goldens; fixed-point within threshold
+
 ## [4.149.0] - 2026-04-19
 
 **E5: ABI.1 register return for small aggregates — WIN (correctness).** Fifth
