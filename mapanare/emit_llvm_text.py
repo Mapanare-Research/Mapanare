@@ -527,6 +527,8 @@ class LLVMTextEmitter:
         self._signal_vars: list[str] = []  # dest names for signal cleanup
         self._stream_vars: list[str] = []  # dest names for stream cleanup
         self._tensor_vars: list[str] = []  # dest names for tensor cleanup (v4.42.0)
+        # v4.146.0 E2: precomputed set of pure function names (module-level)
+        self._pure_fns: set[str] = set()
         # debug info (DWARF) — v4.62.0 infrastructure
         self._debug_enabled: bool = debug
         self._debug_metadata_counter: int = 0
@@ -856,6 +858,8 @@ class LLVMTextEmitter:
         # 4b) v4.92.0: determine module-level async flag + async fn names before emitting bodies
         self._module_has_async = any(f.is_async for f in mir.functions if f.blocks)
         self._async_fn_names: set[str] = {f.name for f in mir.functions if f.is_async and f.blocks}
+        # 4c) v4.146.0 E2: precompute pure function set (fixed-point)
+        self._pure_fns = self._compute_pure_fns(mir.functions)
         # 5) emit bodies
         fns: list[str] = []
         for f in mir.functions:
@@ -2078,6 +2082,60 @@ class LLVMTextEmitter:
                             return False
         return True
 
+    # v4.146.0 E2: scalar types eligible for `noundef` parameter attribute.
+    # Mapanare has no undef-valued scalar paths (it uses Option types),
+    # so `noundef` is sound for all Int / Bool / Float parameters.
+    _NOUNDEF_TYPES = frozenset({I64, I1, DBL})
+
+    def _compute_pure_fns(self, functions: list["MIRFunction"]) -> set[str]:
+        """Fixed-point computation of pure functions in a module.
+
+        A function is pure (``memory(none)``) if:
+        1. All parameters and return type are scalars (i64/i1/double) — no
+           pointers, structs, or sret.  This guarantees the function cannot
+           read or write caller-visible memory.
+        2. Every call in its body goes to itself (self-recursion) or to
+           another function already proven pure.
+
+        Uses Kildall-style iteration — converges in O(depth) rounds where
+        depth is the longest call chain between pure functions.
+        """
+        scalars = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL}
+        # Pre-filter: only functions with all-scalar signatures are candidates
+        candidates: set[str] = set()
+        for fn in functions:
+            if fn.name == "main" or fn.is_async or not fn.blocks:
+                continue
+            if fn.return_type.kind not in scalars and fn.return_type.kind != TypeKind.VOID:
+                continue
+            if all(p.ty.kind in scalars for p in fn.params):
+                candidates.add(fn.name)
+
+        pure: set[str] = set()
+        changed = True
+        while changed:
+            changed = False
+            for fn in functions:
+                if fn.name not in candidates or fn.name in pure:
+                    continue
+                is_pure = True
+                for bb in fn.blocks:
+                    for inst in bb.instructions:
+                        if isinstance(inst, Call):
+                            callee = inst.fn_name.lstrip("%")
+                            if callee == fn.name:
+                                continue  # self-recursion OK
+                            if callee in pure:
+                                continue  # call to known-pure OK
+                            is_pure = False
+                            break
+                    if not is_pure:
+                        break
+                if is_pure:
+                    pure.add(fn.name)
+                    changed = True
+        return pure
+
     # ── function emission ───────────────────────────────────────────
     def _emit_fn(self, fn: MIRFunction) -> str:
         self._c = 0
@@ -2391,7 +2449,11 @@ class LLVMTextEmitter:
             if p.name in self._fn_byref_params:
                 param_parts.append(f"ptr %{s}.byref")
             else:
-                param_parts.append(f"{ty} %{s}")
+                # v4.146.0 E2: `noundef` on scalar parameters.  Mapanare has
+                # no undef-valued scalar paths (Option types cover nullable),
+                # so this is sound for Int / Bool / Float.
+                nd = " noundef" if ty in self._NOUNDEF_TYPES else ""
+                param_parts.append(f"{ty}{nd} %{s}")
         ps = ", ".join(param_parts)
         abi_rt = "void" if self._fn_use_sret else rt
 
@@ -2401,7 +2463,13 @@ class LLVMTextEmitter:
         # v4.84.0: willreturn — all Mapanare functions terminate (infinite
         # recursion/loops are UB). This enables LICM to hoist calls out
         # of loops and DSE to eliminate dead stores before calls.
+        # v4.146.0 E2: pure functions additionally get `memory(none) nofree
+        # nosync` — tells LLVM no externally-visible memory effects, enabling
+        # earlier interprocedural optimizations.  Purity is precomputed via
+        # fixed-point iteration in ``_compute_pure_fns``.
         fn_attrs = " nounwind willreturn"
+        if fn.name in self._pure_fns:
+            fn_attrs = " nofree nosync nounwind willreturn memory(none)"
         # v4.70.0: presplitcoroutine attribute for async functions
         coro_attr = " presplitcoroutine" if fn.is_async else ""
         dbg_ref = ""
@@ -2528,8 +2596,11 @@ class LLVMTextEmitter:
             out.append("}")
         else:
             # Regular (non-async) function emission
+            # v4.146.0 E2: `noundef` on scalar return types — Mapanare
+            # functions always return well-defined values (no undef/poison).
+            ret_nd = "noundef " if (abi_rt in self._NOUNDEF_TYPES and fn.name != "main") else ""
             out = [
-                f"define {lk}{abi_rt} @{fn.name}({ps}){fn_attrs}{dbg_ref} {{",
+                f"define {lk}{ret_nd}{abi_rt} @{fn.name}({ps}){fn_attrs}{dbg_ref} {{",
                 "pre_entry:",
             ]
             out.extend(self._ent)

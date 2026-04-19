@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.146.0] - 2026-04-19
+
+**E2: fib_recursive calling convention — DEAD END.** Second experiment of
+the perf arc. Full IR audit of `fib(n)` vs Rust: optimized IR is
+structurally identical. LLVM already infers `memory(none)`, `fastcc`, and
+the accumulator tail-call transformation. The ~10% gap (1.11×) is
+subprocess-spawn overhead in the benchmark harness, not codegen quality.
+
+- v4.30.0 `nsw` claim **verified**: `add nsw` / `sub nsw` / `mul nsw`
+  emitted correctly on all signed integer arithmetic
+- Hygiene patch (kept, zero perf impact):
+  - `noundef` on scalar parameters (`Int`/`Bool`/`Float`)
+  - `memory(none) nofree nosync` on pure functions (all-scalar signatures,
+    no impure calls — fixed-point computation at module level)
+- ~52 logic lines in `mapanare/emit_llvm_text.py`
+- No ABI change; binary size unchanged (3,566,736 → 3,566,736 bytes)
+
+Quality: 5228 passed / 0 failed; 54/66 goldens; fixed-point within threshold.
+
 ## [4.145.0] - 2026-04-18
 
 **E1: enum_match codegen vs Rust — WIN.** First experiment of the perf
