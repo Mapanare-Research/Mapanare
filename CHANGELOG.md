@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.151.0] - 2026-04-19
+
+**E7: List allocator hot path — WIN.** Seventh experiment of the perf arc.
+Target: `__mn_list_push` throughput on the quicksort benchmark.
+
+- **E7a** (capacity doubling audit): **no-op** — already correct (`cap * 2`
+  with seed 8)
+- **E7b** (realloc for value-type lists): **WIN** — `mn_list_grow` uses
+  `realloc` on COW header base when `managed && elem_size <= 8`, letting
+  the allocator extend buffers in-place. Pointer-element lists keep the
+  original fresh-alloc path. No ABI change (uses existing `elem_size` field)
+- **E7c** (push fast-path restructure): **WIN** — `__builtin_expect` on
+  `data != NULL && len < cap` with inlined sole-owner COW check. Hot path
+  skips validation + `mn_list_detach` function call. Slow path preserves
+  all existing safety logic
+- **quicksort**: 1.187 → 1.102 ms (**−7.2%**), ratio 3.13× → **2.99× Rust**
+- **5% rule**: no non-target workload regresses > 2%
+- **Sanitizer**: 0 new ASan findings, 0 new valgrind findings
+- **Quality**: 5293 passed / 0 failed; 54/66 goldens; fixed-point within
+  threshold; check_struct_registry clean
+
 ## [4.150.0] - 2026-04-19
 
 **E6: Async scheduler thread pool sizing + agent empty-wake — WIN.** Sixth

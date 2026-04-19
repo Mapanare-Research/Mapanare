@@ -14,3 +14,6 @@ Running ledger of performance experiments. Each row is one E-release.
 | E6b | Agent runtime: inline small-message payload (tagged union in ring slot) | **NOT ATTEMPTED** | n/a | n/a — async benchmarks don't use agent runtime | — | v4.150.0 |
 | E6c | Agent runtime: spin-before-park (64 PAUSE iters before sem_wait) | **NOT ATTEMPTED** | n/a | n/a — async benchmarks don't use agent runtime | — | v4.150.0 |
 | E6* | Async scheduler: MAPANARE_ASYNC_THREADS env var (thread pool size control) | **WIN** | n/a | −50.1% async geomean (2.28 → 1.14 ms); Mapanare 0.85× Go with ASYNC_THREADS=2 | `runtime/native/mapanare_runtime.c` ~8 LOC | v4.150.0 |
+| E7a | list_push capacity doubling audit | **NO-OP** | n/a | n/a (already correct: `cap * 2` with seed 8) | — (audit only) | v4.151.0 |
+| E7b | list_push realloc for value-type lists (elem_size ≤ 8) | **WIN** | n/a | −7.2% quicksort (1.187 → 1.102 ms); ratio 3.13× → 2.99× Rust | `runtime/native/mapanare_core.c` ~15 LOC | v4.151.0 |
+| E7c | list_push fast-path restructure (__builtin_expect + inline sole-owner check) | **WIN** | n/a | combined with E7b; hot path skips validation+detach on common case | `runtime/native/mapanare_core.c` ~20 LOC | v4.151.0 |

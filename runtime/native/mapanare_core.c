@@ -1075,12 +1075,30 @@ static void mn_list_grow(MnList *list) {
     atomic_fetch_add_explicit(&mn_grow_count, 1, memory_order_relaxed);
 #endif
     int64_t new_cap = list->cap > 0 ? list->cap * 2 : MN_LIST_INITIAL_CAP;
-    /* Allocate a fresh buffer instead of realloc.  Struct copies may share
-     * the same data pointer (bitwise copy without refcount).  realloc would
-     * free the old pointer, invalidating the alias.  New + memcpy is safe:
-     * if sole owner we free old; if shared the alias keeps valid data. */
+    int64_t new_bytes = mn_checked_mul(new_cap, list->elem_size);
     char *old_data = list->data;
     int old_managed = list->managed;
+
+    /* E7-L2 (v4.151.0): realloc for value-type lists (elem_size <= 8).
+     * Post-Sh.2 (v4.131.0) ownership-transfer guarantees mean value-type
+     * elements have no pointer aliasing concern on grow.  mn_list_detach
+     * is called before grow, so refcount is always 1 here.  realloc lets
+     * the allocator extend in-place when possible, saving a memcpy.
+     * Pointer-element lists (elem_size > 8, e.g. String/struct) keep the
+     * original fresh-alloc + memcpy + free path. */
+    if (old_managed && list->elem_size <= 8 && old_data) {
+        char *base = old_data - MN_LIST_HEADER_SIZE;
+        char *new_base = (char *)__mn_realloc(base,
+            mn_checked_add(MN_LIST_HEADER_SIZE, new_bytes));
+        list->data = new_base + MN_LIST_HEADER_SIZE;
+        list->cap = new_cap;
+        return;
+    }
+
+    /* Fresh-alloc path: struct copies may share the same data pointer
+     * (bitwise copy without refcount).  realloc would free the old
+     * pointer, invalidating the alias.  New + memcpy is safe: if sole
+     * owner we free old; if shared the alias keeps valid data. */
     char *new_data = mn_list_alloc_buf(new_cap, list->elem_size);
     if (old_data && list->len > 0) {
         memcpy(new_data, old_data, (size_t)(list->len * list->elem_size));
@@ -1088,8 +1106,7 @@ static void mn_list_grow(MnList *list) {
     list->data = new_data;
     list->managed = 1;
     list->cap = new_cap;
-    /* Free the old buffer if we're the sole owner.  If shared (refcount > 1),
-     * decrement but don't free — the other copy still references it. */
+    /* Free the old buffer if we're the sole owner. */
     if (old_data && old_managed) {
         int64_t *rc = ((int64_t *)old_data) - 2;
         if (rc[0] == MN_COW_MAGIC) {
@@ -1102,14 +1119,33 @@ static void mn_list_grow(MnList *list) {
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
-    /* Validate list fields before any operation. Garbage from uninitialized
-     * struct fields (lambda/recursive lowering) must not cause huge allocs. */
+    /* E7-L3 (v4.151.0): fast path — valid sole-owner list with capacity.
+     * The common case in a hot loop: data is non-NULL, len < cap, managed
+     * buffer with refcount 1 (sole owner after prior detach or fresh alloc).
+     * Skip validation, COW detach, and grow. */
+    if (__builtin_expect(list->data != NULL && list->len < list->cap
+                         && list->elem_size > 0, 1)) {
+        /* Inline sole-owner check: if managed and shared, fall to slow path */
+        if (list->managed) {
+            int64_t *hdr = ((int64_t *)list->data) - 2;
+            if (hdr[0] == MN_COW_MAGIC
+                && __atomic_load_n(&hdr[1], __ATOMIC_ACQUIRE) > 1) {
+                goto slow_path;
+            }
+        }
+        memcpy(list->data + list->len * list->elem_size,
+               elem_ptr, (size_t)list->elem_size);
+        list->len++;
+        return;
+    }
+
+slow_path:
+    /* Full validation + first-push init + COW detach + grow */
     if (!list->data || list->cap <= 0 || list->elem_size <= 0
         || list->elem_size > 65536 || list->cap > 100000000
         || list->len < 0 || list->len > list->cap) {
 #ifndef NDEBUG
         if (list->data) {
-            /* Non-NULL data with corrupted fields — compiler bug, not first push */
             fprintf(stderr, "FATAL: __mn_list_push received corrupted list "
                     "(data=%p len=%lld cap=%lld esz=%lld)\n",
                     (void *)list->data, (long long)list->len,
@@ -1117,7 +1153,6 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
             abort();
         }
 #endif
-        /* First push to empty list — initialize buffer */
         if (list->data) {
             fprintf(stderr, "WARNING: __mn_list_push: reinitializing corrupted list (data=%p len=%lld cap=%lld elem=%lld)\n",
                     (void *)list->data, (long long)list->len, (long long)list->cap, (long long)list->elem_size);
