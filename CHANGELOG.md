@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.147.0] - 2026-04-19
+
+**E3: parameter-level noalias via escape analysis — DEAD END.** Third
+experiment of the perf arc. Target: quicksort/prime_sieve/struct_alloc.
+New MIR pass `mark_noalias_params` with conservative escape-analysis
+precision rules (6 escape criteria, 3 exclusion rules, 16 unit tests).
+
+**Dead end reason:** LLVM `noalias` only applies to pointer-typed (`ptr`)
+parameters. Mapanare passes `List<T>`, `String`, `Map<K,V>`, and small
+structs as LLVM aggregates by value (`{ptr, i64, i64, i64, i64}` for
+List, 40 bytes) because they are under the 64-byte byref threshold.
+No target benchmark function has a `ptr` user parameter. Emitted IR is
+byte-identical before and after the patch.
+
+- New `MIRParam.attrs` field for parameter-level metadata
+- `mark_noalias_params` escape analysis pass (~134 logic lines in
+  `mapanare/mir_opt.py`): identifies non-aliasing parameters, correctly
+  marks 1 param in quicksort corpus (partition.arr), 0 emitted as
+  `noalias` because List type is aggregate not pointer
+- Emitter hook in `mapanare/emit_llvm_text.py`: emits `noalias` on
+  byref and direct ptr params with `noalias_ok` metadata (~4 lines)
+- 16 precision tests in `tests/mir_opt/test_noalias_pass.py`
+- Pass is kept (zero risk) for future byref threshold changes (E5/ABI.1)
+- No ABI change; no performance impact; sanitizer sweep clean
+
+Quality: 5,251 passed / 0 failed; 54/66 goldens; fixed-point within threshold.
+
 ## [4.146.0] - 2026-04-19
 
 **E2: fib_recursive calling convention — DEAD END.** Second experiment of

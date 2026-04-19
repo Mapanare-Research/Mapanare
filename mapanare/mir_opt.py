@@ -1949,6 +1949,143 @@ def _accumulator_has_other_loop_uses(
 
 
 # ---------------------------------------------------------------------------
+# Parameter-level noalias (v4.147.0 E3 — escape-analysis-driven)
+# ---------------------------------------------------------------------------
+
+# Types that must NOT be marked noalias even if they pass escape analysis.
+# The runtime may internally share pointers on these paths.
+_NOALIAS_EXCLUDED_KINDS: frozenset[TypeKind] = frozenset(
+    {
+        TypeKind.SIGNAL,
+        TypeKind.STREAM,
+        TypeKind.AGENT,
+    }
+)
+
+
+def _param_escapes(param_name: str, fn: MIRFunction) -> bool:
+    """Return True if the parameter value escapes the function.
+
+    A parameter escapes if it is:
+    1. Returned from the function
+    2. Stored into a struct field, list, or map
+    3. Captured by a closure
+    4. Passed to an unknown/potentially-capturing function call
+    5. Sent to an agent
+    """
+    mir_name = f"%{param_name}"
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if isinstance(inst, Return) and inst.val is not None:
+                if inst.val.name == mir_name:
+                    return True
+            elif isinstance(inst, FieldSet):
+                if inst.val.name == mir_name:
+                    return True
+            elif isinstance(inst, IndexSet):
+                if inst.val.name == mir_name:
+                    return True
+            elif isinstance(inst, ListPush):
+                if inst.element.name == mir_name:
+                    return True
+            elif isinstance(inst, ClosureCreate):
+                if any(cap.name == mir_name for cap in inst.captures):
+                    return True
+            elif isinstance(inst, AgentSend):
+                if inst.val.name == mir_name:
+                    return True
+            elif isinstance(inst, AgentSpawn):
+                if any(arg.name == mir_name for arg in inst.args):
+                    return True
+            elif isinstance(inst, Call):
+                if inst.fn_name not in _NON_CAPTURING_FNS:
+                    if any(arg.name == mir_name for arg in inst.args):
+                        return True
+            elif isinstance(inst, ClosureCall):
+                if inst.closure.name == mir_name:
+                    return True
+                if any(arg.name == mir_name for arg in inst.args):
+                    return True
+    return False
+
+
+def _param_self_aliased_in_recursive_call(param_name: str, fn: MIRFunction) -> bool:
+    """Return True if the function is recursive and passes this param to itself."""
+    mir_name = f"%{param_name}"
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if isinstance(inst, Call) and inst.fn_name == fn.name:
+                if any(arg.name == mir_name for arg in inst.args):
+                    return True
+    return False
+
+
+def _call_sites_pass_distinct_args(
+    module: MIRModule, target_fn: MIRFunction, param_idx: int
+) -> bool:
+    """Return True if all call sites to target_fn pass distinct SSA values
+    for the parameter at param_idx vs all other noalias-candidate params."""
+    for fn in module.functions:
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, Call) and inst.fn_name == target_fn.name:
+                    if param_idx < len(inst.args):
+                        arg_name = inst.args[param_idx].name
+                        # Check no other arg at a different position shares this name
+                        for j, other_arg in enumerate(inst.args):
+                            if j != param_idx and other_arg.name == arg_name:
+                                return False
+    return True
+
+
+def mark_noalias_params(module: MIRModule) -> int:
+    """E3: mark non-aliasing pointer parameters so the emitter emits `noalias`.
+
+    Only marks parameters whose MIR type is a pointer-representable compound
+    type (List, Map, String, Struct, Enum, closure env) AND that pass all
+    escape-analysis precision rules. Parameters of Signal/Stream/Agent types
+    are excluded because the runtime may internally share pointers.
+
+    Returns the number of parameters marked.
+
+    See docs/roadmap/v4/v4.147.0/HYPOTHESIS.md for precision rules.
+    """
+    marked = 0
+    for fn in module.functions:
+        if fn.name == "main":
+            continue
+        for i, p in enumerate(fn.params):
+            # Skip scalar types (noalias is meaningless for non-pointers)
+            if p.ty.kind in (
+                TypeKind.INT,
+                TypeKind.FLOAT,
+                TypeKind.BOOL,
+                TypeKind.VOID,
+                TypeKind.UNKNOWN,
+            ):
+                continue
+            # Skip runtime-internal types that may share pointers
+            if p.ty.kind in _NOALIAS_EXCLUDED_KINDS:
+                continue
+            # Skip if already marked
+            if "noalias_ok" in p.attrs:
+                continue
+            # Check escape analysis
+            if _param_escapes(p.name, fn):
+                continue
+            # Check recursive self-aliasing
+            if _param_self_aliased_in_recursive_call(p.name, fn):
+                continue
+            # Check call-site distinctness
+            if not _call_sites_pass_distinct_args(module, fn, i):
+                continue
+            # All checks passed — mark for noalias
+            p.attrs.add("noalias_ok")
+            marked += 1
+    return marked
+
+
+# ---------------------------------------------------------------------------
 # Function inlining (v4.87.0)
 # ---------------------------------------------------------------------------
 
@@ -2304,5 +2441,8 @@ def optimize_module(
     # Module-level passes
     if level >= MIROptLevel.O2:
         dead_function_elimination(module, stats)
+        # v4.147.0 E3: mark non-aliasing pointer parameters for `noalias`
+        # emission. Runs after DFE so we don't analyze dead functions.
+        mark_noalias_params(module)
 
     return module, stats

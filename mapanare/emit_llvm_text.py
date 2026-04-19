@@ -2447,13 +2447,20 @@ class LLVMTextEmitter:
             ty = self._rty(p.ty)
             s = self._san(p.name)
             if p.name in self._fn_byref_params:
-                param_parts.append(f"ptr %{s}.byref")
+                # v4.147.0 E3: emit `noalias` on byref pointer params that
+                # passed escape analysis.  Only pointer-typed params can carry
+                # `noalias` in LLVM IR.
+                na = " noalias" if "noalias_ok" in p.attrs else ""
+                param_parts.append(f"ptr{na} %{s}.byref")
             else:
                 # v4.146.0 E2: `noundef` on scalar parameters.  Mapanare has
                 # no undef-valued scalar paths (Option types cover nullable),
                 # so this is sound for Int / Bool / Float.
                 nd = " noundef" if ty in self._NOUNDEF_TYPES else ""
-                param_parts.append(f"{ty}{nd} %{s}")
+                # v4.147.0 E3: `noalias` on direct ptr params (e.g. closure
+                # env pointers) that passed escape analysis.
+                na = " noalias" if (ty == PTR and "noalias_ok" in p.attrs) else ""
+                param_parts.append(f"{ty}{na}{nd} %{s}")
         ps = ", ".join(param_parts)
         abi_rt = "void" if self._fn_use_sret else rt
 

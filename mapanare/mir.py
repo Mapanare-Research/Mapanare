@@ -811,6 +811,7 @@ class MIRParam:
 
     name: str = ""
     ty: MIRType = field(default_factory=mir_unknown)
+    attrs: set[str] = field(default_factory=set)  # v4.147.0 E3: e.g. {"noalias_ok"}
 
 
 @dataclass(slots=True)
