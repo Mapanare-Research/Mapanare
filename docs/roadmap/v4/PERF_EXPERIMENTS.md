@@ -17,3 +17,7 @@ Running ledger of performance experiments. Each row is one E-release.
 | E7a | list_push capacity doubling audit | **NO-OP** | n/a | n/a (already correct: `cap * 2` with seed 8) | — (audit only) | v4.151.0 |
 | E7b | list_push realloc for value-type lists (elem_size ≤ 8) | **WIN** | n/a | −7.2% quicksort (1.187 → 1.102 ms); ratio 3.13× → 2.99× Rust | `runtime/native/mapanare_core.c` ~15 LOC | v4.151.0 |
 | E7c | list_push fast-path restructure (__builtin_expect + inline sole-owner check) | **WIN** | n/a | combined with E7b; hot path skips validation+detach on common case | `runtime/native/mapanare_core.c` ~20 LOC | v4.151.0 |
+| E8a | strength_reduce re-enable (dormant since v4.111.0) | **DEAD END** | 0% | 0% (golden IR byte-identical; pass finds 0 patterns) | `mapanare/self/mir_opt.mn:1238` comment update | v4.152.0 |
+| E8b | inline_small_functions re-enable (dormant since v4.111.0) | **DEAD END** | 0% | goldens 54/66 pass but llvm-as rejects stage2.ll (SSA name collision in parse_program — inliner rename bug, In.1) | `mapanare/self/mir_opt.mn:1250` comment update | v4.152.0 |
+| E8c | licm re-enable (dormant since v4.111.0) | **DEAD END** | 0% | goldens 54 → 51 (3 regressions: for_loop, list_ops, break_continue — duplicate defs from hoist_instruction, Li.1) | `mapanare/self/mir_opt.mn:1268` comment update | v4.152.0 |
+| E8d | escape_analysis re-enable (dormant since v4.111.0) | **DEAD END** | 0% | 0% (stage2.ll byte-identical — function is a stub that always returns input unchanged, Ea.1) | `mapanare/self/mir_opt.mn:1287` comment update | v4.152.0 |

@@ -1235,12 +1235,29 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
         // verifier rejects ("block has no instructions", "block does not end
         // with a terminator") on golden tests with user-defined functions
         // (03_function onward, 13 tests). Zero-ROI per v4.109.0.
+        // v4.152.0 re-evaluation: safe (no crash, 54/66 goldens hold), but
+        // still zero-ROI — pass runs, finds 0 mod-by-power-of-2 patterns in
+        // the self-hosted MIR, golden IR byte-identical, stage2.ll +1 line
+        // (the call itself). LLVM instcombine at -O2 covers this. Keep disabled.
+        // Note: Python mir_opt.py has strength_reduction enabled (line 2390);
+        // divergence is tolerable — self-hosted optimizer skip costs nothing.
         let f5: MIRFunction = f4
         // Pass 5: function inlining (v4.97.0) — disabled v4.111.0
         // Produces invalid MIR (blocks with corrupted instructions list) that
         // crashes lower__verify_block on golden tests containing function
         // calls. Mapanare's inliner duplicates v4.109.0's finding: LLVM's
         // own inliner subsumes this work at -O2.
+        // v4.152.0 re-evaluation: v4.111.0 verify_block crash is GONE (54/66
+        // goldens pass, build succeeds). BUT inliner still produces invalid IR
+        // on self-compilation: duplicate SSA name collision (%t4 defined twice
+        // in parse_program — inlined body prefixed correctly as _inl0_6_* but
+        // the destination where the inlined result is assigned back reuses the
+        // original %t4 name). llvm-as rejects stage2.ll at line 261. The bug
+        // is in rename_instructions (mir_opt.mn:700-766): it renames variables
+        // inside the inlined body but not the caller's destination register.
+        // Fixing this is In.1 scope (v5.x), not v4.152.0.
+        // Note: Python mir_opt.py has inline_small_functions enabled (line 2382);
+        // Python's inliner handles renaming differently and does not have this bug.
         let f6: MIRFunction = f5
         // Pass 6: LICM (v4.97.0) — disabled v4.111.0
         // block_successors crashes on non-empty instruction lists in some
@@ -1248,6 +1265,18 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
         // site). v4.109.0 optimizer ROI analysis confirmed mapanare-LICM has
         // zero instruction-level effect at -O2 — LLVM's licm pass runs later
         // and does the same work. Skipping the self-hosted pass costs nothing.
+        // v4.152.0 re-evaluation: block_successors crash is GONE (build
+        // succeeds). BUT LICM corrupts loop IR on 3 loop-heavy tests:
+        // 05_for_loop, 21_list_ops, 33_break_continue (54 → 51 goldens).
+        // The hoist_instruction function (mir_opt.mn:1040-1069) moves an
+        // instruction to the loop header but doesn't update the source
+        // block's instruction list correctly — the hoisted instruction remains
+        // in the original block and also appears in the header, producing
+        // duplicate definitions. The v4.105.0 crash was a symptom of this
+        // same root cause. Fixing is Li.1 scope (v5.x), not v4.152.0.
+        // Note: Python mir_opt.py also has licm DISABLED (line 2387: "LICM
+        // disabled — hoisting analysis needs loop-carried value tracking").
+        // Both sides agree. Parity holds.
         let f7: MIRFunction = f6
         // Pass 7: escape analysis (v4.97.0) — disabled v4.111.0
         // escape_analysis_function crashes at +0x3f3 offset on tests with
@@ -1255,6 +1284,16 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
         // etc.). The comment in the source says "future hook" — the pass is
         // scaffold, not production. Also noted as zero-ROI in v4.109.0 analysis
         // (TBAA metadata is dead code, same program). Disable to unblock goldens.
+        // v4.152.0 re-evaluation: +0x3f3 crash is GONE (Ge.1 closure fixed
+        // underlying struct-field bug). Pass runs safely, 54/66 goldens hold,
+        // stage2.ll byte-identical to baseline. BUT the function is still a
+        // stub — escape_analysis_function (mir_opt.mn:1177) always returns f
+        // unchanged ("future hook" comment, lines 1200-1204). It walks all
+        // functions to identify non-escaping allocations, then does nothing.
+        // The Python mir_opt.py version (escape_analysis_promotion, line 2395)
+        // actually modifies alloc_kind — the self-hosted version lacks this
+        // codegen path. Zero-ROI + negative compile-time delta. Keep disabled
+        // until the self-hosted emitter gains stack-promotion codegen (Ea.1).
         let f8: MIRFunction = f7
         new_fns.push(f8)
         i = i + 1

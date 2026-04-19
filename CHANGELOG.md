@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.152.0] - 2026-04-19
+
+**E8: Dormant MIR passes re-evaluation — full dead end.** Eighth experiment
+of the perf arc. Re-evaluated four MIR optimizer passes disabled at v4.111.0
+under current conditions (54/66 goldens, post-Sh.2/Ge.1 arcs).
+
+- **E8a** (strength_reduce): safe, zero-ROI — finds 0 patterns, LLVM
+  instcombine covers. Rolled back
+- **E8b** (inline_small_functions): v4.111.0 crash gone, but SSA name
+  collision on self-compilation (`%t4` defined twice). Opens In.1 (LOW).
+  Rolled back
+- **E8c** (licm): block_successors crash gone, but `hoist_instruction`
+  produces duplicate definitions — 3 golden regressions (for_loop,
+  list_ops, break_continue). Opens Li.1 (LOW). Rolled back
+- **E8d** (escape_analysis): +0x3f3 crash gone (Ge.1 fix), but function
+  is a stub (`return f` unchanged). Opens Ea.1 (LOW). Rolled back
+- All four `mir_opt.mn` comment blocks refreshed with v4.152.0 evidence
+- v4.109.0 rationale confirmed: LLVM -O2 subsumes all four passes
+- **Quality**: 5302 passed / 0 failed; 54/66 goldens; fixed-point NEAR;
+  valgrind 0/62/4; ASan 55/0/11
+
 ## [4.151.0] - 2026-04-19
 
 **E7: List allocator hot path — WIN.** Seventh experiment of the perf arc.
