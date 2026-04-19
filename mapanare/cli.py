@@ -665,10 +665,20 @@ def cmd_build(args: argparse.Namespace) -> None:
                 file=sys.stderr,
             )
     else:
+        # Host compilation: find runtime archive for linking
+        rt_dir = os.path.join(os.path.dirname(__file__), "..", "runtime", "native")
+        rt_archive = os.path.join(rt_dir, "libmapanare_rt.a")
+        rt_flags_unix: list[str] = []
+        rt_flags_msvc: list[str] = []
+        if os.path.isfile(rt_archive):
+            rt_flags_unix = [rt_archive, "-lm", "-lpthread"]
+        else:
+            rt_flags_unix = ["-lm", "-lpthread"]
+
         # Host compilation: try common linkers
         for linker_cmd in (
-            ["clang", obj_path, "-o", out_path] + link_flags_unix,
-            ["gcc", obj_path, "-o", out_path] + link_flags_unix,
+            ["clang", obj_path, "-o", out_path] + rt_flags_unix + link_flags_unix,
+            ["gcc", obj_path, "-o", out_path] + rt_flags_unix + link_flags_unix,
             [
                 "link.exe",
                 f"/OUT:{out_path}",
@@ -676,6 +686,7 @@ def cmd_build(args: argparse.Namespace) -> None:
                 "msvcrt.lib",
                 "legacy_stdio_definitions.lib",
             ]
+            + rt_flags_msvc
             + link_flags_msvc,
         ):
             import shutil

@@ -92,6 +92,27 @@ Read the full [manifesto](docs/manifesto.md).
 
 ---
 
+## Write Python, Compile Native
+
+Take your existing Python scripts and compile them to native binaries — **33x-239x faster**, zero changes:
+
+```bash
+mapanare build your_script.py -o your_script
+./your_script   # runs 33-239x faster
+```
+
+| Script | Python 3 | Mapanare (native) | Speedup |
+|---|---:|---:|---:|
+| numerical_compute (10M iterations) | 2,557 ms | 10.7 ms | **239x** |
+| collatz_explorer (5M range) | 30,636 ms | 446.8 ms | **69x** |
+| prime_sieve (2M range) | 3,832 ms | 108.8 ms | **35x** |
+| fibonacci(40) | 8,220 ms | 193.7 ms | **42x** |
+| primes (500K) | 995 ms | 30.6 ms | **33x** |
+
+Supports functions, loops, conditionals, arithmetic, type-annotated Python. See the [Python to Native guide](docs/guides/python_to_native.md) for supported features and limitations.
+
+---
+
 ## Install
 
 ### Linux / macOS

@@ -1,6 +1,6 @@
 # Known Issues — User-Facing
 
-Last updated: v4.143.0.
+Last updated: v4.155.0.
 
 ## Self-hosted compiler feature gaps
 
@@ -32,4 +32,22 @@ Last updated: v4.143.0.
 |---|---|---|---|
 | — | No package manager yet | pin `mapanare.toml` deps by git SHA | v5.x ecosystem |
 
-Last verified: v4.143.0 (2026-04-18).
+## Python transpiler (`mapanare build file.py`)
+
+The transpiler handles pure-compute Python (functions, loops, conditionals, arithmetic). Known limitations:
+
+| Feature | Status | Workaround |
+|---|---|---|
+| `import` statements | Not supported | Write self-contained scripts |
+| Classes with inheritance | Struct only, no inheritance | Flatten to functions |
+| `try`/`except` | Commented out | Use Result types in .mn |
+| `*args`, `**kwargs` | Not supported | Use explicit parameters |
+| List comprehensions | Not supported | Rewrite as `for` loop + `.append()` |
+| Generators / `yield` | Not supported | Use explicit loops |
+| `with` statements | Not supported | — |
+| C extensions (numpy, pandas) | Not supported | Use Dato (v5.x) |
+| Float formatting | May differ in last digits | Use integer outputs for exact match |
+
+**Best results with:** type-annotated functions, simple data types (int, float, bool, str), `for`/`while` loops, arithmetic.
+
+Last verified: v4.155.0 (2026-04-19).
