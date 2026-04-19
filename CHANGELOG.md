@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.145.0] - 2026-04-18
+
+**E1: enum_match codegen vs Rust — WIN.** First experiment of the perf
+arc (v4.144.0 → v4.154.0). Unified-return-block optimization for
+functions returning inline enums: merges all return points through a
+single result alloca, enabling LLVM SROA + mem2reg to decompose the
+intermediate `{i64,i64,i64}` aggregate PHI into separate scalar PHIs.
+After inlining, SimplifyCFG merges the make_shape and area dispatches
+into a single switch — structurally identical to Rust's output.
+
+- Optimized IR: 2 switches → 1 switch in the hot loop (88 → 55 lines)
+- 10M-iteration measurement: 17.31 → 15.91 ms (8.4% improvement)
+- Bonus: `sdiv i64 %x, 2` → `lshr i32 %x, 1` (LLVM proves non-neg via nuw nsw)
+- ~30 logic lines in `mapanare/emit_llvm_text.py`
+- No ABI change; enum layout byte-identical to v4.140.0 Cb.5
+
+Quality: 5225 passed / 0 failed; 54/66 goldens; fixed-point within threshold.
+
+## [4.144.0] - 2026-04-18
+
 ## [4.143.0] - 2026-04-18
 
 **Post-rc1 panel + documentation/ergonomics closeout.** Runs the

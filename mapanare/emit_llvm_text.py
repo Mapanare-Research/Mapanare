@@ -2111,6 +2111,23 @@ class LLVMTextEmitter:
         self._fn_use_sret = self._use_byref(rt_orig) and fn.name != "main"
         self._fn_sret_ty = rt_orig if self._fn_use_sret else ""
         self._fn_is_async: bool = fn.is_async  # v4.92.0: track for real suspend
+        # v4.145.0 E1: unified return block for inline-enum returns.
+        # Prevents aggregate PHI after inlining → enables LLVM to merge
+        # redundant switches (make_shape dispatch + area dispatch → one switch).
+        self._fn_unified_ret = False
+        self._fn_unified_ret_ty = ""
+        if (
+            not self._fn_use_sret
+            and fn.name != "main"
+            and not fn.is_async
+            and rt_orig != VOID
+            and fn.return_type
+            and fn.return_type.type_info
+        ):
+            ename = fn.return_type.type_info.name
+            if ename and self._enum_inline.get(ename, 0) > 0:
+                self._fn_unified_ret = True
+                self._fn_unified_ret_ty = rt_orig
         self._fn_byref_params: set[str] = set()
         for p in fn.params:
             ty = self._rty(p.ty)
@@ -2120,6 +2137,13 @@ class LLVMTextEmitter:
         # sret alloca (caller provides it, but we name it here for the callee)
         if self._fn_use_sret:
             self._sret_ptr = "%__sret__"
+
+        # v4.145.0 E1: unified-ret alloca
+        if self._fn_unified_ret:
+            self._ent.append(f"  %__ret_alloca = alloca {self._fn_unified_ret_ty}, align 8")
+            self._ent.append(
+                f"  store {self._fn_unified_ret_ty} zeroinitializer, ptr %__ret_alloca"
+            )
 
         # param allocas
         for p in fn.params:
@@ -2310,6 +2334,10 @@ class LLVMTextEmitter:
                         f"  store {self._fn_sret_ty} zeroinitializer," f" ptr {self._sret_ptr}"
                     )
                     ls.append("  ret void")
+                elif self._fn_unified_ret:
+                    urt = self._fn_unified_ret_ty
+                    ls.append(f"  store {urt} zeroinitializer, ptr %__ret_alloca")
+                    ls.append("  br label %__unified_ret")
                 else:
                     rt = self._rty(fn.return_type)
                     if rt == VOID:
@@ -2524,6 +2552,12 @@ class LLVMTextEmitter:
                 if lbl not in mir_labels:
                     out.append(f"{lbl}:")
                     out.extend(lines)
+            # v4.145.0 E1: emit unified return block
+            if self._fn_unified_ret:
+                urt = self._fn_unified_ret_ty
+                out.append("__unified_ret:")
+                out.append(f"  %__retval = load {urt}, ptr %__ret_alloca")
+                out.append(f"  ret {urt} %__retval")
             out.append("}")
         out.append("")
         return "\n".join(out)
@@ -3933,6 +3967,16 @@ class LLVMTextEmitter:
                 self._emit_arena_destroy()
                 self._L(f"store {self._fn_sret_ty} {v}, ptr {self._sret_ptr}")
                 self._L("ret void")
+            elif self._fn_unified_ret:
+                # v4.145.0 E1: store to unified-ret alloca + branch.
+                # After inlining, SROA decomposes the alloca into scalar PHIs,
+                # enabling SimplifyCFG to merge redundant enum switches.
+                urt = self._fn_unified_ret_ty
+                v = self._coerce(v, t, urt) if t != urt else v
+                self._emit_drop_glue(v, urt)
+                self._emit_arena_destroy()
+                self._L(f"store {urt} {v}, ptr %__ret_alloca")
+                self._L("br label %__unified_ret")
             else:
                 v = self._coerce(v, t, rt) if t != rt else v
                 self._emit_drop_glue(v, rt)
@@ -3943,6 +3987,10 @@ class LLVMTextEmitter:
             self._emit_arena_destroy()
             if self._fn_use_sret:
                 self._L("ret void")
+            elif self._fn_unified_ret:
+                urt = self._fn_unified_ret_ty
+                self._L(f"store {urt} zeroinitializer, ptr %__ret_alloca")
+                self._L("br label %__unified_ret")
             else:
                 self._L("ret void")
 
