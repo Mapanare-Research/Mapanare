@@ -8,66 +8,109 @@
 
 ## Version Configuration
 
-**TARGET VERSION:** `v4.114.0`
+**TARGET VERSION:** `v4.144.0` (or whatever the next panel release is)
 
-> **This is the Phase D close-out panel.** Mapanare v4.111.0-v4.113.0
-> is Phase D (self-hosted compiler maturity). v4.111.0 rebuilt
-> mnc-stage1 from the full self-hosted pipeline and ran all 64 golden
-> tests (21/64 → 26/64 after disabling 4 zero-ROI MIR passes).
-> v4.112.0 ran 3-stage fixed-point verification, classified
-> divergences, and closed docket #7 (byref size heuristic) with a
-> single-file fix in `mapanare/self/emit_llvm.mn` (`struct_byte_size`
-> + `is_byref_type_st` matching the Python bootstrap's `_tsz` at
-> `emit_llvm_text.py:141`). v4.113.0 closed the remaining three
-> v4.99.0 docket items: #8 (coroutine frame decoupled via named
-> `mn_coro_frame_prefix_t` struct), #10 (SPEC §2.1.1 Reserved
-> Keyword Master List — 42 entries, both lexers cross-referenced),
-> #11 (7 specific `mapanare: async runtime:` error messages across
-> 5 failure sites in the scheduler + `file_read_async`).
+> **This is v5-gate attempt 4.** Previous v5 gate attempts:
+> - Attempt 1, v4.99.0: aggregate **6.59/10**, Option B (fail). Opened
+>   the v4.100.0–v4.119.0 recovery arc.
+> - Attempt 2, v4.120.0: aggregate **8.21/10**, 1 NEEDS WORK (Anaconda),
+>   Option B (fail). Opened 17-item carry-forward.
+> - Attempt 3, v4.136.0: aggregate **8.80/10**, 0 NEEDS WORK, Option C
+>   → **`v5.0.0-rc1` tagged**. Opened Ch.1 HIGH + 4 MEDIUM carry-forward.
+> - Post-rc1 verification, v4.143.0: aggregate **8.86/10**, 3 EXCEEDS /
+>   4 MEETS / 0 NEEDS WORK, Option C (rc1 holds). The v4.137.0 →
+>   v4.142.0 bridge closed Ch.1, Bo.*, Gr.2/Sem.1/§0/Co.1/Dr.1, Cb.5/
+>   SE.1/Cb.3, An.2, Ge.1 (HIGH queue → 0, valgrind 5 ERRORS → 0).
+>   v4.143.0 itself closed the remaining panel-named MEDIUMs (Sp.1,
+>   An.6, Bn.1, Gr.3, Reg.1) plus LOW polish (Co.1r, Sem.2, An.7,
+>   An.8, Bo.*-drift).
 >
-> v4.114.0 is the Phase D panel: zero new features, full 7-reviewer
-> audit. After this panel: **11/11 items from the v4.99.0 docket are
-> either CLOSED or ACCEPTED.** If this panel returns aggregate >=8.5
-> with zero NEEDS WORK verdicts, Phase D closes and v4.115.0 opens
-> Phase E (polish / v5.0.0 prep). If not, v4.114.1 becomes a recovery
-> release addressing the findings before Phase E begins.
+> **State entering this panel (v4.143.0 shipped):**
+> - **0 CRITICAL / 0 HIGH / 0 MEDIUM / 5 LOW** on the ledger — zero
+>   MEDIUM for the first time since v4.99.0 opened the v5-gate series.
+> - All 7 reviewer domains paid down from the v4.136.0 rc1 panel.
+> - Reg.1 gate (`scripts/check_struct_registry.py`) caught 3 real
+>   latent drifts (`MIRType` field swap, `VerifyError` field name) on
+>   first run — precisely the pattern that produced Ge.1 and that
+>   byte-identity fixed-point masked. Gate now runs in CI.
+> - Bn.1 closed with live-verified internal wall times: `enum_match`
+>   0.43 ms (was 10 ms subprocess-spawn-pinned), `string_concat`
+>   0.09 ms, `fib_recursive` 17.3 ms. Rust numbers externally citable.
+> - Near-3-stage fixed point still holds: `stage2.ll` ≈ `stage3.ll`,
+>   109,872 lines, 4-line `__MN_VERSION__` diff (Dr.1 artifact).
+>
+> **Mechanical rule, applied verbatim:**
+> - Aggregate **≥ 9.0 AND 0 NEEDS WORK** → tag `v5.0.0` (Option A).
+> - Aggregate **8.5 ≤ x < 9.0 AND 0 NEEDS WORK** → `v5.0.0-rc1` holds
+>   or new `-rcN` tag (Option C).
+> - Aggregate **< 8.5 OR any NEEDS WORK** → open a v4.14N.0 recovery
+>   cycle (Option B).
+>
+> The transition from `v5.0.0-rc1` to a clean `v5.0.0` is the lead's
+> call, but the mechanical rule governs the *default*. If this panel
+> clears 9.0 with 0 NEEDS WORK, the clean `v5.0.0` tag fires; if it
+> lands 8.5–9.0, rc advances; if it regresses below 8.5 or any
+> reviewer returns NEEDS WORK, v5 is deferred again.
 
 Set the review output directory based on this version:
 
 ```
-.reviews/v4.36.0/
-  README.md              # Summary index with verdict table and action items
-  01-viper.md            # Rust reviewer
-  02-boa.md              # Python reviewer
-  03-cobra.md            # C++ reviewer
-  04-mamba.md            # C reviewer
-  05-anaconda.md         # GNU/GCC toolchain reviewer
-  06-rattler.md          # LLVM reviewer
-  07-coral.md            # Language design reviewer
-  culebra_summary.md         # Arc-end Culebra summary
-  culebra_baseline_delta.md  # Fixed/New/Remaining across the arc
-  arc_journal.jsonl          # Concatenated per-version journals
+.reviews/v4.144.0/        # or whatever the current target is
+  PRE_PANEL_AUDIT.md     # lead's own fact-check (must land before reviewers run)
+  README.md              # Summary index with verdict table, decision, action items
+  01-rattler.md          # LLVM / codegen
+  02-viper.md            # Memory safety
+  03-anaconda.md         # CI / testing / toolchain
+  04-cobra.md            # Bootstrap / self-hosted
+  05-coral.md            # Language design
+  06-boa.md              # Documentation / ergonomics
+  07-mamba.md            # C runtime / performance
+  V5_DECISION.md         # formal decision text if Option A / C fires
 ```
 
 Before starting, each reviewer MUST read:
 
-1. `.reviews/v4.31.0/README.md` — the previous panel (recovery arc close, 9.343/10).
-   All carry-forwards and action items from v4.31.0 must be cross-referenced.
-2. `.reviews/CARRY_FORWARD.md` — the canonical carry-forward queue.
-   Shows which items Arc 1 has closed and where.
-3. `.reviews/REVIEW_CADENCE.md` — the cadence policy. Every reviewer
-   should flag cadence-breaking scenarios they see in their lens.
-4. Every `docs/roadmap/v4/v4.3{2,3,4,5}.0/SESSION_REPORT.md` — the session
-   reports are the lead's claims about what each Arc 1 release shipped.
-   The panel's job is to verify those claims against the code.
-5. `.reviews/v4.36.0/PRE_PANEL_AUDIT.md` — the lead's own fact-check (18/18 claims PASS).
+1. `.reviews/v4.143.0/README.md` — the previous panel (post-rc1 panel
+   close, 8.86/10 aggregate, 0 NEEDS WORK, Option C). All
+   carry-forwards and action items from v4.143.0 must be
+   cross-referenced. Pay special attention to the 5 LOW polish items
+   still open (Cb.5-tests, Cb.6–Cb.10, Own.1) and whether any have
+   closed since.
+2. `.reviews/v4.136.0/README.md` — the rc1 gate panel for historical
+   baseline and the mechanical rule that applies at every gate.
+3. `.reviews/CARRY_FORWARD.md` — the canonical docket ledger.
+   63 opened since v4.99.0; current state should show ≥ 58 closed.
+4. `.reviews/REVIEW_CADENCE.md` — the cadence policy.
+5. Every `docs/roadmap/v4/v4.14{3,4,…}.0/SESSION_REPORT.md` —
+   the session reports are the lead's claims about what each post-
+   v4.143.0 release shipped. The panel's job is to verify those
+   claims against the code.
+6. The PRE_PANEL_AUDIT.md in *this panel's* directory — the lead's
+   own fact-check landed before the panel runs.
 
 Reviewers should note in their review whether previous-panel issues
 were **Fixed**, **Regressed**, **Still open**, or **Deferred with
-documented tracking**. The arc-end panel is specifically a
-verification panel — the lead has made 48+ claims across five
-releases, and the panel grades the fraction of those claims that
-actually hold.
+documented tracking**. The v5-gate panels are verification panels:
+the lead has made dozens of claims across the v4.137.0 → current
+arc, and the panel grades the fraction of those claims that
+actually hold *and* whether the quality envelope has moved.
+
+**Specifically this panel must answer:**
+
+- Is the aggregate ≥ 9.0? If so, Option A fires for clean `v5.0.0`.
+- Did any reviewer return NEEDS WORK? If so, Option B regardless of
+  aggregate.
+- Did Bn.1 stay closed — are the refreshed Rust numbers internally
+  consistent under a fresh `run_benchmarks.py --runs 10` run?
+- Did Gr.3 stay closed — does `stdlib/gpu/tensor.mn` parse past the
+  former `Tensor` collision point (even if unrelated stdlib-wiring
+  errors remain)?
+- Did Reg.1 stay closed — does `scripts/check_struct_registry.py`
+  still report zero drift? Did the gate fire on any new PRs?
+- Are the 5 LOW polish items (Cb.5-tests, Cb.6–Cb.10, Own.1) in the
+  same state, closed, or regressed?
+- Is the near-fixed-point still holding (4-line `__MN_VERSION__`
+  diff, not creeping beyond `DIFF_THRESHOLD=100`)?
 
 ---
 
