@@ -347,7 +347,16 @@ def _run_external(cmd: list[str], timeout: int = 120) -> SingleRun:
 
 
 def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
-    """Compile .mn to native via LLVM -O2 pipeline, run, time externally."""
+    """Compile .mn to native via LLVM -O2 pipeline, run, parse __BENCH_METRICS__.
+
+    v4.148.0 (E4): Links against mn_bench_main.c instead of mn_user_main.c so
+    the binary emits __BENCH_METRICS__ with internal wall time (clock_gettime).
+    This matches the Rust/Go/C methodology: timing excludes subprocess spawn.
+    Prior to v4.148.0, Mapanare used _run_external (perf_counter around
+    subprocess.run), which included ~1.2 ms of spawn overhead — pinning the
+    reported wall time at >= 1.2 ms regardless of actual compute and producing
+    a spurious 30x+ gap vs Rust on sub-millisecond workloads.
+    """
     result = LangResult(
         benchmark=spec.name,
         language="Mapanare O2",
@@ -364,6 +373,15 @@ def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
         result.error = f"missing runtime library: {RUNTIME_LIB}"
         return result
 
+    bench_main_c = BENCH_DIR / "mn_bench_main.c"
+    if not bench_main_c.exists():
+        result.error = f"missing benchmark wrapper: {bench_main_c}"
+        return result
+    objcopy = _find_tool("objcopy")
+    if not objcopy:
+        result.error = "objcopy not installed (needed for benchmark timing wrapper)"
+        return result
+
     with tempfile.TemporaryDirectory() as tmpdir:
         td = Path(tmpdir)
         name = spec.mn_path.stem
@@ -371,9 +389,20 @@ def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
         bc = td / f"{name}.bc"
         opt_bc = td / f"{name}.opt.bc"
         obj = td / f"{name}.o"
+        obj_renamed = td / f"{name}.renamed.o"
+        bench_main_obj = td / "mn_bench_main.o"
         binary = td / name
 
         emit_cmd = [sys.executable, "-m", "mapanare", "emit-llvm", str(spec.mn_path), "-o", str(ll)]
+        # Compile the benchmark timing wrapper
+        bench_main_cmd = [
+            tools["clang"],
+            "-O2",
+            "-c",
+            str(bench_main_c),
+            "-o",
+            str(bench_main_obj),
+        ]
         llc_cmd = [
             tools["llc"],
             "-filetype=obj",
@@ -382,9 +411,13 @@ def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
             "-o",
             str(obj),
         ]
+        # The Python bootstrap emitter generates main(), not mn_main().
+        # Rename main -> mn_main so mn_bench_main.c can wrap it with timing.
+        rename_cmd = [objcopy, "--redefine-sym", "main=mn_main", str(obj), str(obj_renamed)]
         link_cmd = [
             tools["clang"],
-            str(obj),
+            str(obj_renamed),
+            str(bench_main_obj),
             str(RUNTIME_LIB),
             "-lm",
             "-lpthread",
@@ -394,9 +427,11 @@ def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
         ]
         steps = [
             (emit_cmd, "emit"),
+            (bench_main_cmd, "bench_main"),
             ([tools["llvm-as"], str(ll), "-o", str(bc)], "llvm-as"),
             ([tools["opt"], "-O2", str(bc), "-o", str(opt_bc)], "opt"),
             (llc_cmd, "llc"),
+            (rename_cmd, "rename_main"),
             (link_cmd, "link"),
         ]
         for cmd, stage in steps:
@@ -407,9 +442,9 @@ def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
 
         result.binary_size_bytes = binary.stat().st_size
         # Warmup
-        _run_external([str(binary)], timeout=60)
+        _run_with_metrics([str(binary)], timeout=60)
         for _ in range(n_runs):
-            result.runs.append(_run_external([str(binary)], timeout=60))
+            result.runs.append(_run_with_metrics([str(binary)], timeout=60))
 
     result.aggregate(spec.expected)
     return result

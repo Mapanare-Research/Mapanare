@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.148.0] - 2026-04-19
+
+**E4: string_concat amortized growth + benchmark methodology — WIN.** Fourth
+experiment of the perf arc. Two changes close the string_concat gap:
+
+1. **Runtime fix:** `mn_sb_grow` in `mapanare_core.c` now uses `realloc`
+   instead of `calloc` + `memcpy` + `free`. Eliminates unnecessary
+   zero-initialization (~181 KB zeroed → 0) and enables in-place buffer
+   extension. `__mn_sb_create`/`__mn_sb_new` initial allocation changed
+   from `calloc` to `malloc`. `__mn_sb_to_string` shrink-to-fit changed
+   from `calloc+memcpy+free` to `realloc`. A/B test: **29.7% internal
+   speedup** (0.098 → 0.069 ms).
+
+2. **Benchmark methodology fix:** New `mn_bench_main.c` wrapper emits
+   `__BENCH_METRICS__` with internal wall time via `clock_gettime`,
+   matching the Rust/Go/C methodology. `run_benchmarks.py` links this
+   wrapper via `objcopy --redefine-sym main=mn_main` and parses internal
+   timing. Prior external timing included ~1.2 ms of subprocess spawn
+   overhead, producing a spurious 33× gap vs Rust on sub-millisecond
+   workloads.
+
+With corrected methodology: Mapanare `string_concat` = **0.077 ms** vs
+Rust **0.038 ms** = **2.04× Rust** (was reported as 33× before methodology
+fix). Full cross-language geomean Mapanare/Rust: **1.13×**.
+
+- No MnString ABI change (struct remains `{ptr, i64}`)
+- No emitter changes
+- No `_lenheap` / interning changes
+
+Quality: 5,254 passed / 0 failed; 54/66 goldens; fixed-point within threshold;
+ASan 0 new; valgrind 0 new (4 pre-existing Ge.1).
+
 ## [4.147.0] - 2026-04-19
 
 **E3: parameter-level noalias via escape analysis — DEAD END.** Third

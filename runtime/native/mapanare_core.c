@@ -478,7 +478,8 @@ MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
 MN_EXPORT MnStringBuilder __mn_sb_create(int64_t initial_cap) {
     MnStringBuilder sb;
     sb.cap = initial_cap > 0 ? initial_cap : 64;
-    sb.buf = (char *)__mn_alloc(sb.cap);
+    sb.buf = (char *)malloc((size_t)sb.cap);
+    if (!sb.buf) { fprintf(stderr, "mapanare: out of memory\n"); exit(1); }
     sb.buf[0] = '\0';
     sb.len = 0;
     return sb;
@@ -490,10 +491,17 @@ static void mn_sb_grow(MnStringBuilder *sb, int64_t needed) {
         new_cap = new_cap * 2;
         if (new_cap < 0) new_cap = needed; /* overflow guard */
     }
-    char *new_buf = (char *)__mn_alloc(new_cap);
-    if (sb->len > 0) memcpy(new_buf, sb->buf, (size_t)sb->len);
-    new_buf[sb->len] = '\0';
-    __mn_free(sb->buf);
+    /* v4.148.0 (E4): use realloc instead of calloc+memcpy+free.
+     * realloc can extend in-place (zero copies) and never zero-initializes.
+     * The old path used __mn_alloc (calloc), which zeroed the entire new
+     * buffer before immediately overwriting it with memcpy — accounting for
+     * ~2× wasted memory bandwidth on every growth event. */
+    char *new_buf = (char *)realloc(sb->buf, (size_t)new_cap);
+    if (!new_buf) {
+        fprintf(stderr, "mapanare: StringBuilder realloc failed (%lld bytes)\n",
+                (long long)new_cap);
+        exit(1);
+    }
     sb->buf = new_buf;
     sb->cap = new_cap;
 }
@@ -525,15 +533,15 @@ MN_EXPORT MnString __mn_sb_to_string(MnStringBuilder *sb) {
      * The StringBuilder is consumed (zeroed out). */
     MnString s;
     if (sb->len == 0) {
-        __mn_free(sb->buf);
+        free(sb->buf);
         s = __mn_str_empty();
     } else {
-        /* Realloc to exact size if significantly oversized. */
+        /* v4.148.0 (E4): use realloc for shrink-to-fit instead of
+         * calloc+memcpy+free. realloc may shrink in-place (zero copy). */
         if (sb->cap > sb->len * 2 + 1) {
-            char *tight = (char *)__mn_alloc(sb->len + 1);
-            memcpy(tight, sb->buf, (size_t)sb->len + 1);
-            __mn_free(sb->buf);
-            sb->buf = tight;
+            char *tight = (char *)realloc(sb->buf, (size_t)(sb->len + 1));
+            if (tight) sb->buf = tight;
+            /* If realloc fails on shrink, keep the oversized buffer — safe. */
         }
         s.data = sb->buf;
         s.len = (uint64_t)sb->len;
@@ -562,7 +570,8 @@ MN_EXPORT MnStringBuilder *__mn_sb_new(int64_t initial_cap) {
     MnStringBuilder *sb = (MnStringBuilder *)malloc(sizeof(MnStringBuilder));
     if (!sb) return NULL;
     sb->cap = initial_cap > 0 ? initial_cap : 64;
-    sb->buf = (char *)__mn_alloc(sb->cap);
+    sb->buf = (char *)malloc((size_t)sb->cap);
+    if (!sb->buf) { fprintf(stderr, "mapanare: out of memory\n"); exit(1); }
     sb->buf[0] = '\0';
     sb->len = 0;
     return sb;
