@@ -1,96 +1,16 @@
 {
   "mapanare": [
     {
-      "benchmark": "01_sequential_chain",
-      "language": "mapanare",
-      "status": "compile_fail",
-      "median_ms": -1
-    },
-    {
-      "benchmark": "02_fanout",
-      "language": "mapanare",
-      "status": "compile_fail",
-      "median_ms": -1
-    },
-    {
-      "benchmark": "03_io_bound",
-      "language": "mapanare",
-      "status": "compile_fail",
-      "median_ms": -1
-    },
-    {
-      "benchmark": "04_mixed_cpu_io",
-      "language": "mapanare",
-      "status": "compile_fail",
-      "median_ms": -1
-    },
-    {
       "benchmark": "05_backpressure",
       "language": "mapanare",
-      "status": "compile_fail",
-      "median_ms": -1
+      "median_ms": 1.32,
+      "min_ms": 1.19,
+      "max_ms": 1.44,
+      "runs": 20,
+      "output": "checksum = 2500",
+      "correct": true,
+      "status": "ok"
     }
   ],
-  "cross_language": [
-    {
-      "benchmark": "01_sequential_chain",
-      "language": "python",
-      "median_ms": 82.52,
-      "output": "checksum = 5050"
-    },
-    {
-      "benchmark": "01_sequential_chain",
-      "language": "go",
-      "median_ms": -1,
-      "note": "go not installed"
-    },
-    {
-      "benchmark": "02_fanout",
-      "language": "python",
-      "median_ms": 81.46,
-      "output": "checksum = 171700"
-    },
-    {
-      "benchmark": "02_fanout",
-      "language": "go",
-      "median_ms": -1,
-      "note": "go not installed"
-    },
-    {
-      "benchmark": "03_io_bound",
-      "language": "python",
-      "median_ms": 87.84,
-      "output": "checksum = 1000"
-    },
-    {
-      "benchmark": "03_io_bound",
-      "language": "go",
-      "median_ms": -1,
-      "note": "go not installed"
-    },
-    {
-      "benchmark": "04_mixed_cpu_io",
-      "language": "python",
-      "median_ms": 83.71,
-      "output": "checksum = 12000"
-    },
-    {
-      "benchmark": "04_mixed_cpu_io",
-      "language": "go",
-      "median_ms": -1,
-      "note": "go not installed"
-    },
-    {
-      "benchmark": "05_backpressure",
-      "language": "python",
-      "median_ms": 84.61,
-      "output": "checksum = 2500"
-    },
-    {
-      "benchmark": "05_backpressure",
-      "language": "go",
-      "median_ms": -1,
-      "note": "go not installed"
-    }
-  ]
+  "cross_language": []
 }

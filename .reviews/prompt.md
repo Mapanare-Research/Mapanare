@@ -8,9 +8,10 @@
 
 ## Version Configuration
 
-**TARGET VERSION:** `v4.144.0` (or whatever the next panel release is)
+**TARGET VERSION:** `v4.154.0`
+**PERF FOCUS:** yes (v4.144.0 -> v4.153.0 perf arc, 8 experiments, 15 sub-levers)
 
-> **This is v5-gate attempt 4.** Previous v5 gate attempts:
+> **This is the v5.1.0 perf-arc gate.** Previous v5 gate attempts:
 > - Attempt 1, v4.99.0: aggregate **6.59/10**, Option B (fail). Opened
 >   the v4.100.0–v4.119.0 recovery arc.
 > - Attempt 2, v4.120.0: aggregate **8.21/10**, 1 NEEDS WORK (Anaconda),
