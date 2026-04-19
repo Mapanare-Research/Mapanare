@@ -5,6 +5,13 @@
  * Mapanare programs link against.
  */
 
+/* Enable POSIX extensions (getline, pthread_rwlock, clock_gettime, etc.)
+ * even when compiled with -std=c11 (macOS CI, cross-platform). */
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
+#undef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "mapanare_core.h"
 #include "mapanare_platform.h"
 

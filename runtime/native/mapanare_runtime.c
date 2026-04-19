@@ -8,6 +8,13 @@
  *   Task 4: Native backpressure with atomic counters
  */
 
+/* Enable POSIX extensions (sigaction, nanosleep, clock_gettime, etc.)
+ * even when compiled with -std=c11 (macOS CI, cross-platform). */
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
+#undef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "mapanare_runtime.h"
 #include <stdlib.h>
 #include <string.h>
@@ -1457,16 +1464,16 @@ static int mn_deque_push(mn_ws_deque_t *d, mn_task_t task) {
     int64_t t = __atomic_load_n(&d->top, __ATOMIC_ACQUIRE);
     if (b - t >= MN_DEQUE_CAP) return -1; /* full */
     d->slots[b & (MN_DEQUE_CAP - 1)] = task;
-    __atomic_thread_fence(__ATOMIC_RELEASE);
-    __atomic_store_n(&d->bottom, b + 1, __ATOMIC_RELAXED);
+    /* Release fence folded into the store for TSan compatibility. */
+    __atomic_store_n(&d->bottom, b + 1, __ATOMIC_RELEASE);
     return 0;
 }
 
 /* Pop task (owner only). Returns 1 if got a task, 0 if empty. */
 static int mn_deque_pop(mn_ws_deque_t *d, mn_task_t *out) {
     int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_RELAXED) - 1;
-    __atomic_store_n(&d->bottom, b, __ATOMIC_RELAXED);
-    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    /* SEQ_CST store replaces RELAXED store + SEQ_CST fence (TSan compatible). */
+    __atomic_store_n(&d->bottom, b, __ATOMIC_SEQ_CST);
     int64_t t = __atomic_load_n(&d->top, __ATOMIC_RELAXED);
     if (t <= b) {
         *out = d->slots[b & (MN_DEQUE_CAP - 1)];
@@ -1489,8 +1496,8 @@ static int mn_deque_pop(mn_ws_deque_t *d, mn_task_t *out) {
 
 /* Steal task (any thread). Returns 1 if got a task, 0 if empty. */
 static int mn_deque_steal(mn_ws_deque_t *d, mn_task_t *out) {
-    int64_t t = __atomic_load_n(&d->top, __ATOMIC_ACQUIRE);
-    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    /* SEQ_CST load replaces ACQUIRE load + SEQ_CST fence (TSan compatible). */
+    int64_t t = __atomic_load_n(&d->top, __ATOMIC_SEQ_CST);
     int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_ACQUIRE);
     if (t >= b) return 0; /* empty */
     *out = d->slots[t & (MN_DEQUE_CAP - 1)];

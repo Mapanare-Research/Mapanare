@@ -13,8 +13,7 @@ from pathlib import Path
 
 from mapanare.ast_nodes import (
     ConstructExpr,
-    FnDef,
-    LetBinding,
+    ModuleLetDef,
 )
 from mapanare.emit_llvm_text import LLVMTextEmitter
 from mapanare.lower import lower as build_mir
@@ -32,30 +31,33 @@ class TestStructLiteralSyntax:
     """Verify `new Name { field: value }` struct construction syntax."""
 
     def test_parse_struct_literal(self) -> None:
+        # v4.155.0: module-level let now parses as ModuleLetDef (v4.139.0 Sem.1)
         prog = parse("let p = new Point { x: 1, y: 2 }", filename="test.mn")
         assert len(prog.definitions) == 1
-        main_fn = prog.definitions[0]
-        assert isinstance(main_fn, FnDef)
-        let_stmt = main_fn.body.stmts[0]
-        assert isinstance(let_stmt, LetBinding)
-        assert isinstance(let_stmt.value, ConstructExpr)
-        assert let_stmt.value.name == "Point"
-        assert len(let_stmt.value.fields) == 2
-        assert let_stmt.value.fields[0].name == "x"
-        assert let_stmt.value.fields[1].name == "y"
+        mod_let = prog.definitions[0]
+        assert isinstance(mod_let, ModuleLetDef)
+        assert isinstance(mod_let.value, ConstructExpr)
+        assert mod_let.value.name == "Point"
+        assert len(mod_let.value.fields) == 2
+        assert mod_let.value.fields[0].name == "x"
+        assert mod_let.value.fields[1].name == "y"
 
     def test_parse_struct_literal_trailing_comma(self) -> None:
         prog = parse("let p = new Point { x: 1, y: 2, }", filename="test.mn")
-        let_stmt = prog.definitions[0].body.stmts[0]
-        assert isinstance(let_stmt.value, ConstructExpr)
-        assert len(let_stmt.value.fields) == 2
+        # v4.155.0: module-level let → ModuleLetDef
+        mod_let = prog.definitions[0]
+        assert isinstance(mod_let, ModuleLetDef)
+        assert isinstance(mod_let.value, ConstructExpr)
+        assert len(mod_let.value.fields) == 2
 
     def test_parse_struct_literal_empty(self) -> None:
         prog = parse("let u = new Unit { }", filename="test.mn")
-        let_stmt = prog.definitions[0].body.stmts[0]
-        assert isinstance(let_stmt.value, ConstructExpr)
-        assert let_stmt.value.name == "Unit"
-        assert len(let_stmt.value.fields) == 0
+        # v4.155.0: module-level let → ModuleLetDef
+        mod_let = prog.definitions[0]
+        assert isinstance(mod_let, ModuleLetDef)
+        assert isinstance(mod_let.value, ConstructExpr)
+        assert mod_let.value.name == "Unit"
+        assert len(mod_let.value.fields) == 0
 
     def test_struct_literal_in_function(self) -> None:
         src = (
@@ -68,10 +70,12 @@ class TestStructLiteralSyntax:
     def test_struct_literal_nested(self) -> None:
         src = "let r = new Rect { origin: new Point { x: 0, y: 0 }, width: 10 }"
         prog = parse(src, filename="test.mn")
-        let_stmt = prog.definitions[0].body.stmts[0]
-        assert isinstance(let_stmt.value, ConstructExpr)
-        assert let_stmt.value.name == "Rect"
-        inner = let_stmt.value.fields[0].value
+        # v4.155.0: module-level let → ModuleLetDef
+        mod_let = prog.definitions[0]
+        assert isinstance(mod_let, ModuleLetDef)
+        assert isinstance(mod_let.value, ConstructExpr)
+        assert mod_let.value.name == "Rect"
+        inner = mod_let.value.fields[0].value
         assert isinstance(inner, ConstructExpr)
         assert inner.name == "Point"
 
@@ -208,10 +212,12 @@ class TestSelfHostedInterpolation:
         """Python bootstrap handles ${...} interpolation correctly."""
         from mapanare.ast_nodes import InterpString
 
+        # v4.155.0: module-level let → ModuleLetDef
         prog = parse('let s = "hello ${name}"', filename="test.mn")
-        let_stmt = prog.definitions[0].body.stmts[0]
-        assert isinstance(let_stmt.value, InterpString)
-        assert len(let_stmt.value.parts) == 2
+        mod_let = prog.definitions[0]
+        assert isinstance(mod_let, ModuleLetDef)
+        assert isinstance(mod_let.value, InterpString)
+        assert len(mod_let.value.parts) == 2
 
 
 # ---------------------------------------------------------------------------
