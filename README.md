@@ -10,9 +10,8 @@
 
 *Agents. Signals. Streams. Tensors. First-class, not frameworks.*
 
-Built after years of hitting Python's limits in AI-native, concurrent, and tensor-heavy software.
-
-Mapanare compiles to native binaries via LLVM and WebAssembly. The self-hosted compiler reaches a 3-stage fixed point (`stage2.ll` ≈ `stage3.ll`, 4-line version-metadata diff only) — the compiler really does compile itself. Across 6 cross-language benchmarks Mapanare's geometric mean is **~168× faster than Python**, **1.17× of Rust**, and **on par with C (gcc -O2)** — see [benchmarks/FINAL_REPORT_v4.153.md](benchmarks/FINAL_REPORT_v4.153.md). A Python transpiler converts `.py` files to native binaries 29-68x faster than CPython.
+Compiles to native binaries via LLVM and WebAssembly.
+**~168x faster than Python. On par with Rust and C.**
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
 
@@ -25,80 +24,56 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.0.0--rc1-blue.svg?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-5302+_passing-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-5.0.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-5534+_passing-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>
 
-[**Try it Online**](https://mapanare-research.github.io/mapanare/) · [**Getting Started**](docs/getting-started.md) · [Language Reference](docs/reference.md) · [Cookbook](docs/cookbook.md) · [Why Mapanare?](#why-mapanare) · [Install](#install) · [The Language](#the-language) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Architecture](#compiler-architecture) · [Roadmap](docs/roadmap/ROADMAP.md) · [Contributing](#contributing) · [Discord](https://discord.gg/5hpGBm3WXf)
+[**Website**](https://mapanare.dev) · [**Docs**](https://mapanare.dev/docs) · [**Download**](https://mapanare.dev/download) · [**Discord**](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
 ---
 
-## Why Mapanare?
+## Install
 
-Mapanare started with a self-taught teenager in Venezuela building a calculator in ActionScript 2 for math class. Fifteen years later, after ColdFusion, PHP, and especially Python, the case for a new language became unavoidable. Python was the language that stuck the longest, but years of building AI-native, concurrent, and data-heavy systems with it made the cracks impossible to ignore.
-
-Agents lived in frameworks. Reactive state lived in conventions. Streams were stitched together with libraries. Tensor mistakes showed up at runtime, sometimes after a long run was already underway. The compiler had no idea what kind of work the program was actually doing.
-
-Mapanare exists because those are language problems, not library problems.
-
-A familiar failure in today's stack looks like this:
-
-```python
-# Python / PyTorch
-x = torch.randn(32, 768)
-w = torch.randn(512, 256)
-y = x @ w  # fails at runtime after the job has already started
+```bash
+curl -fsSL https://mapanare.dev/install | bash
 ```
 
-```mn
-// Mapanare (experimental LLVM tensor backend)
-let x: Tensor<Float>[32, 768] = ...
-let w: Tensor<Float>[512, 256] = ...
-let y = x @ w    // compile error: incompatible tensor shapes
+```powershell
+# Windows (PowerShell)
+irm https://mapanare.dev/install.ps1 | iex
 ```
 
-That same idea drives the rest of the language. Mapanare makes these primitives **part of the language**:
+Or download binaries from [Releases](https://github.com/Mapanare-Research/Mapanare/releases).
 
-- **Agents** are as natural as functions — declare, spawn, send, and sync with dedicated syntax checked by the compiler
-- **Signals** replace callback hell with automatic dependency tracking
-- **Streams** compose with `|>` the way you think about data, with operator fusion built in
-- **Tensors** get compile-time shape validation in the experimental LLVM backend
-- **AI stdlib** — unified LLM chat (OpenAI/Anthropic/Ollama), structured extraction via compile-time JSON schema, vector embeddings, RAG chunking and retrieval
-- **No OOP** — structs, enums, and pattern matching instead of class hierarchies
+---
 
-### Hello AI
+## Hello World
 
 ```mn
-import ai::llm
-
 fn main() {
-    let config = ollama("llama3.2")
-    let result = ask(config, "What is Mapanare?")
-    match result {
-        Ok(answer) => print(answer),
-        Err(e) => print(error_message(e))
-    }
+    print("hello from mapanare")
 }
 ```
 
-No API key. Runs locally via Ollama. See the [AI cookbook chapter](docs/cookbook.md#building-an-ai-agent-in-mapanare) for structured extraction, embeddings, RAG, and agent patterns.
-
-Read the full [manifesto](docs/manifesto.md).
+```bash
+mapanare run hello.mn        # compile + run
+mapanare build hello.mn      # produce a native binary
+```
 
 ---
 
 ## Write Python, Compile Native
 
-Take your existing Python scripts and compile them to native binaries — **33x-239x faster**, zero changes:
+Take your existing Python scripts and compile them to native binaries:
 
 ```bash
 mapanare build your_script.py -o your_script
-./your_script   # runs 33-239x faster
+./your_script   # 33-239x faster
 ```
 
 | Script | Python 3 | Mapanare (native) | Speedup |
@@ -109,667 +84,85 @@ mapanare build your_script.py -o your_script
 | fibonacci(40) | 8,220 ms | 193.7 ms | **42x** |
 | primes (500K) | 995 ms | 30.6 ms | **33x** |
 
-Supports functions, loops, conditionals, arithmetic, type-annotated Python. See the [Python to Native guide](docs/guides/python_to_native.md) for supported features and limitations.
+[Python to Native guide](https://mapanare.dev/docs/guides/python-to-native)
 
 ---
 
-## Install
-
-### Linux / macOS
-
-```bash
-curl -fsSL https://mapanare.dev/install | bash
-```
-
-### Windows (PowerShell)
-
-```powershell
-irm https://mapanare.dev/install.ps1 | iex
-```
-
-### Manual Download
-
-Download the latest binary from [Releases](https://github.com/Mapanare-Research/Mapanare/releases).
-
-| Platform | Archive |
-|----------|---------|
-| Linux (x64) | `mapanare-linux-x64.tar.gz` |
-| macOS (Apple Silicon) | `mapanare-mac-arm64.tar.gz` |
-| Windows (x64) | `mapanare-win-x64.zip` |
-
-Extract and add `mapanare` to your PATH, then verify:
-
-```bash
-mapanare --version
-```
-
-### Install a Specific Version
-
-```bash
-curl -fsSL https://mapanare.dev/install | bash -s -- --version 4.0.0
-```
-
-### Version Manager (`mapanare-up`)
-
-Manage multiple Mapanare versions side-by-side, like pyenv:
-
-```bash
-mapanare-up install latest       # install latest version
-mapanare-up install 4.0.0        # install specific version
-mapanare-up list                 # show installed versions
-mapanare-up default 4.0.0        # set global default
-echo "4.0.0" > .mapanare-version # pin version per project
-```
-
-### Build from Source (No Python Required)
-
-The self-hosted compiler bootstraps from a checked-in seed binary.
-You only need `gcc`/`clang` and `llvm`:
-
-```bash
-git clone https://github.com/Mapanare-Research/Mapanare.git
-cd Mapanare
-bash scripts/build_from_seed.sh
-./mnc hello.mn       # compile a .mn file → LLVM IR on stdout
-```
-
-Python is only needed for the development toolchain (tests, linters, transpiler).
-
----
-
-## Feature Status
-
-What works today vs. what's planned.
-
-| Feature | LLVM Backend | WASM Backend | Python Backend | Status |
-|---------|:-:|:-:|:-:|--------|
-| Functions, closures, lambdas | Yes | Yes | Yes | Stable |
-| Structs, enums, pattern matching | Yes | Yes | Yes | Stable |
-| `if`/`else`, `for..in`, `while` | Yes | Yes | Yes | Stable |
-| Type inference, generics | Yes | Yes | Yes | Stable |
-| `Result`/`Option` | Yes | Yes | Yes | Stable |
-| `print` (`println` deprecated), `str`/`int`/`float`/`len` | Yes | Yes | Yes | Stable |
-| Lists: literals, indexing, `push`/`pop`/`length` | Yes | Yes | Yes | Stable |
-| String methods: `length`/`find`/`substring`/`contains`/`split`/`trim`/`replace`/... | Yes | Yes | Yes | Stable |
-| Dictionaries/Maps | Yes | Yes | Yes | Stable |
-| Traits (`trait`, `impl Trait for Type`) | Yes | Yes | Yes | Stable |
-| Module imports (`import`, `pub`, multi-file) | Yes | Yes | Yes | Stable |
-| Agents (spawn, channels, sync) | Yes | Yes | Yes | Stable |
-| Signals (reactive state, computed, batched) | Yes | Yes | Yes | Stable |
-| Streams + `\|>` pipe operator | Yes | Yes | Yes | Stable |
-| Pipes (multi-agent composition) | Yes | Yes | Yes | Stable |
-| Async / await (`async fn`, `await`, `block_on`) | Yes | No | No | New in v4.72.0 (native I/O demos in v4.115.0) |
-| Tensors (shape validation, `@` matmul) | No | No | No | Experimental |
-| GPU compute (8 builtins: detect, tensor ops) | Yes | No | No | Stable |
-| Python/PHP transpiler (`mapanare transpile`) | Yes | — | — | Stable |
-| WebAssembly output (WAT/WASM) | — | Yes | — | New in v2.0.0 |
-| WASI support (file I/O, env, clock) | — | Yes | — | New in v2.0.0 |
-| AI stdlib (LLM, embeddings, RAG) | Yes | No | No | New in v1.1.0 |
-| Data engine (Dato) | Yes | No | No | New in v1.2.0 |
-| Database drivers (SQLite, Postgres, Redis) | Yes | No | No | New in v1.2.0 |
-| Encoding (TOML, YAML) | Yes | No | No | New in v1.2.0 |
-| Filesystem stdlib | Yes | No | No | New in v1.2.0 |
-| Web crawler, vulnerability scanner, fuzzer | Yes | No | No | New in v1.3.0 |
-| HTTP server toolkit | Yes | No | No | New in v1.3.0 |
-| Cross-module LLVM compilation | Yes | — | Yes | Stable |
-| Mobile targets (iOS, Android) | Planned | — | — | Planned |
-
----
-
-## The Language
-
-### Basics
+## Language Features
 
 ```mn
-fn main() {
-    let name = "World"
-    print("Hello, " + name + "!")
-
-    let mut count = 0
-    while count < 5 {
-        print(str(count))
-        count += 1
-    }
-
-    for i in 0..5 {
-        print(str(i))
-    }
-}
-```
-
-### Structs, Enums & Pattern Matching
-
-No classes, no inheritance. Structs, enums, and pattern matching instead.
-
-```mn
-enum Shape {
-    Circle(Float),
-    Rect(Float, Float),
+// Agents — first-class concurrent actors
+agent Counter {
+    state count: Int = 0
+    on increment { count = count + 1 }
+    on get_count -> Int { return count }
 }
 
-fn area(s: Shape) -> Float {
-    match s {
-        Circle(r) => 3.14159 * r * r,
-        Rect(w, h) => w * h,
-    }
-}
-```
+// Signals — reactive state
+let temperature = signal(72.0)
+let alert = computed(() => temperature.get() > 100.0)
 
-### Error Handling
+// Streams — composable data pipelines
+let results = data_stream
+    |> filter((x) => x > 0)
+    |> map((x) => x * 2)
+    |> collect()
 
-```mn
-fn divide(a: Float, b: Float) -> Result<Float, String> {
-    if b == 0.0 {
-        return Err("division by zero")
-    }
-    return Ok(a / b)
+// Pattern matching
+match response {
+    Ok(data) => process(data),
+    Err(e) => print(e)
 }
 
-let value = divide(10.0, 3.0)?
+// AI stdlib
+import ai::llm
+let answer = ask(ollama("llama3.2"), "What is Mapanare?")
 ```
 
-### Lists & Strings
-
-```mn
-let mut items: List<Int> = []
-items.push(1)
-items.push(2)
-items.push(3)
-print(str(items.length()))    // 3
-print(str(items[0]))         // 1
-
-let s = "hello world"
-print(str(s.length()))       // 11
-print(s.substring(0, 5))    // hello
-```
-
-### Agents
-
-Concurrent actors with typed channels.
-
-```mn
-agent Greeter {
-    input name: String
-    output greeting: String
-
-    fn handle(name: String) -> String {
-        return "Hello, " + name + "!"
-    }
-}
-
-let greeter = spawn Greeter()
-greeter.name <- "World"
-let result = sync greeter.greeting
-print(result)
-```
-
-### Signals
-
-Reactive state with automatic dependency tracking.
-
-```mn
-let mut count = signal(0)
-let doubled = signal { count * 2 }
-```
-
-### Streams
-
-Async pipelines with the `|>` operator.
-
-```mn
-let data = stream([1, 2, 3, 4, 5])
-let result = data
-    |> filter(fn(x) { x > 2 })
-    |> map(fn(x) { x * 10 })
-```
-
-### Async / Await
-
-Cooperative coroutines via `async fn`, `await`, and `block_on`. Lowered to LLVM switched-resume coroutines. Real file and network I/O inside async pipelines as of v4.115.0.
-
-```mn
-async fn fetch(n: Int) -> Int {
-    return n * 2
-}
-
-async fn pipeline() -> Int {
-    let a: Int = await fetch(10)
-    let b: Int = await fetch(20)
-    return a + b
-}
-
-fn main() {
-    let total: Int = block_on(pipeline())
-    print(str(total))   // 60
-}
-```
-
-See the [async cookbook](docs/cookbook/async.md) and [async guide](docs/guides/async.md) for native compilation workflows, real file/HTTP examples, and current limitations.
-
-### GPU Compute
-
-GPU-accelerated tensor operations via 8 built-in functions. CUDA loaded dynamically via dlopen (no SDK required). Programs degrade gracefully to CPU when no GPU is available.
-
-```mn
-fn main() {
-    if gpu_available() {
-        print(gpu_device_name())
-        let a: List<Float> = [1.0, 2.0, 3.0]
-        let b: List<Float> = [4.0, 5.0, 6.0]
-        let result = gpu_tensor_add(a, b)
-        print(result)  // [5.0, 7.0, 9.0]
-    }
-}
-```
-
-### Python Transpiler
-
-Transpile Python files to Mapanare and compile to native binaries — 29-68x faster than Python, zero manual edits.
-
-```bash
-mapanare transpile primes.py          # Python → Mapanare
-mapanare emit-llvm primes.mn -o p.ll  # Mapanare → LLVM IR
-clang -O2 p.ll -o primes -lm         # LLVM IR → native binary
-./primes                               # 29-68x faster than Python
-```
-
-### Drop Into Any Stack (Planned)
-
-Write your heavy compute in Mapanare, use it from Python, TypeScript, or Go — the compiler generates the bindings for you.
-
-> **Status (v5.0.0-rc1):** Binding generation is shipped as the
-> `mapanare bind` subcommand (Python, TypeScript, Go). Shared-library
-> output (`--lib` on `build`) is still planned for a future v4.x
-> release. Until then, build with `mapanare build <file>.mn` for
-> native binaries.
-
-```bash
-mapanare build mylib.mn                      # compile to native binary
-mapanare bind mylib.mn --lang python -o mylib.pyi   # generate Python FFI binding
-mapanare bind mylib.mn --lang ts     -o mylib.d.ts  # generate TypeScript FFI binding
-mapanare bind mylib.mn --lang go     -o mylib.go    # generate Go FFI binding
-```
-
-```python
-# In your existing Python project — zero friction
-from mylib import gpu_matmul, count_primes
-
-result = gpu_matmul(a, b)       # runs native Mapanare code, 68x faster
-primes = count_primes(500_000)  # no rewrite needed, just import
-```
-
-The idea: you shouldn't have to rewrite your entire stack to get native performance. Write the hot path in Mapanare, compile to a shared object, and the compiler auto-generates typed stubs (`.pyi` for Python, `.d.ts` for TypeScript, Go wrappers) so your existing codebase imports it like any other library. GPU kernels, data pipelines, tensor math — all callable from Python with one `import`.
-
-### WebAssembly
-
-Compile Mapanare to WebAssembly for browser and server-side execution.
-
-```bash
-mapanare emit-wasm hello.mn              # Emit WAT
-mapanare emit-wasm --binary hello.mn     # Emit WAT + compile to WASM
-```
+Full language reference, tutorials, and cookbook at [mapanare.dev/docs](https://mapanare.dev/docs).
 
 ---
 
 ## Benchmarks
 
-Mapanare compiles to native code via LLVM. Across 6 correct-output
-workloads (compute, allocation, dispatch, string), Mapanare's geometric
-mean is **~168× faster than Python**, **1.17× of Rust**,
-**faster than Go (0.47×)**, and **on par with C gcc (0.96×)**.
-The v4.149.0 ABI.1 sret fix puts `struct_alloc` at 1.06× of Rust;
-enum dispatch is 0.56× of Rust (Mapanare faster). The v4.144.0-v4.152.0
-perf arc closed 80% of the Rust gap (5.83× → 1.17×). See
-[`benchmarks/FINAL_REPORT_v4.153.md`](benchmarks/FINAL_REPORT_v4.153.md)
-for full methodology, per-benchmark ratios, and arc trend data.
+Geometric mean across 6 cross-language benchmarks (median of 10 runs):
 
-### Performance (v4.125.0, LLVM -O2, median of 10 runs, ms)
+| | vs Python | vs Go | vs Rust | vs C (gcc) |
+|---|---:|---:|---:|---:|
+| **Mapanare** | **168x faster** | 0.85x (faster) | 1.17x | 0.96x |
 
-| Benchmark | C (gcc) | Rust | Go | **Mapanare** | Python |
-|-----------|--------:|-----:|----:|-------------:|-------:|
-| fib_recursive       | 11.06 | 17.32 | 33.67 | **20.16** | 803.41 |
-| quicksort           |  0.34 |  1.94 |  0.38 |  **2.39** |  80.13 |
-| struct_alloc        |  0.59 |  1.48 |  0.02 |  **1.20** | 204.40 |
-| enum_match          |  0.13 |  1.44 |  0.19 |  **1.31** |  78.61 |
-| prime_sieve         |  1.97 |  3.62 |  1.98 |  **3.62** | 362.42 |
-| string_concat       |  0.07 |  1.33 | 37.04 |  **1.27** |   9.31 |
+The self-hosted compiler compiles itself to a strict 3-stage fixed point.
+5,534 tests passing, zero flaky across 30 sequential runs.
 
-> WSL2 Ubuntu 24.04, LLVM 18.1.3, gcc 13.3.0, rustc 1.94.1, Go 1.22.5,
-> Python 3.12.3. `/usr/bin/time -v` for peak RSS, `time.perf_counter()` for
-> wall. Reproduce: `python3 benchmarks/cross_language/run_benchmarks.py --runs 10`
-
-**Headline moment (v4.124.0).** Unboxed enum payloads took `enum_match`
-from 3.03 ms to 1.31 ms — **2.31× faster**, **2.2× less memory**,
-**0.91× of Rust** (Mapanare faster). Variants whose payloads fit in
-`{i64, i64, i64}` (Int / Float / Bool / pointer-sized fields, ≤ 2 fields
-per variant) skip `malloc` entirely on construction and the pointer
-chase on match. Earlier headline (v4.108.0): auto-StringBuilder took
-`string_concat` from 94.57 ms to 1.36 ms — **70× faster**, nearly tied
-with Rust. All 36 cross-language cells produce correct checksums; the
-v4.122.0 Qs.1 fix closed the last `List<Int>` indexing gap.
-
-### Python Transpile Benchmarks (zero manual edits)
-
-| Benchmark | Python | Mapanare (native) | Speedup |
-|-----------|--------|-------------------|---------|
-| Fibonacci (recursive, n=40) | 7.230s | **0.174s** | **41x** |
-| Prime counting (500K) | 1.038s | **0.035s** | **29x** |
-| Collatz conjecture (1M) | 5.546s | **0.081s** | **68x** |
-
-> Pipeline: `mapanare transpile file.py` → `mapanare emit-llvm` → `clang -O2` → native binary. Types inferred from Python annotations.
-
-### Expressiveness (lines of code, lower is better)
-
-| Benchmark | Features Tested | Mapanare | Python | Go | Rust |
-|-----------|-----------------|----------|--------|----|------|
-| Fibonacci (recursive, n=35) | Functions, recursion | **8** | 12 | 18 | 23 |
-| Message Passing (10K msgs) | Agents, channels | **16** | 28 | 27 | 32 |
-| Stream Pipeline (1M items) | Stream primitives | **8** | 17 | 18 | 20 |
-| Matrix Multiply (100x100) | Nested loops, math | **12** | 21 | 37 | 33 |
-| Agent Pipeline (1K msgs) | Multi-stage agents, strings | **18** | 32 | 33 | 28 |
-
-> **Key takeaway:** The LLVM native backend delivers **22-68x** speedups over Python. The Python transpiler (`mapanare transpile`) achieves 29-68x on real-world algorithms with zero manual edits. Mapanare programs are consistently the shortest across all benchmarks.
-
-**Benchmark notes:**
-- **Fibonacci:** Tests pure computation speed. No I/O, no concurrency. Interpreted backend runs as Python; native backend compiles to LLVM IR.
-- **Message Passing:** Tests agent spawn/send/sync with 4 concurrent workers. Interpreted backend uses asyncio (single-threaded cooperative concurrency); native backend not yet wired (Phase 2.1).
-- **Stream Pipeline:** Tests `stream()`, `.map()`, `.filter()`, `.fold()` primitives with stream fusion. Does NOT test backpressure or hot streams.
-- **Matrix Multiply:** Tests nested loops and arithmetic. Uses constant initialization (`1.0 * 2.0`), not realistic matrix data — measures loop/arithmetic throughput only.
-- **Agent Pipeline:** Tests real-world pattern: 3-stage pipeline (parse -> validate -> transform) processing string messages. Measures agent communication overhead across pipeline stages.
-
-### Stream Pipelines (1M items, runtime microbenchmarks)
-
-| Pipeline | Throughput | Avg Latency |
-|----------|-----------|-------------|
-| `fold_sum` | **10.3M items/sec** | 0.10 us |
-| `take(1000)` | **6.3M items/sec** | 0.16 us |
-| `filter` | **4.2M items/sec** | 0.24 us |
-| `map` | **4.2M items/sec** | 0.24 us |
-| `map \| filter` | **2.6M items/sec** | 0.39 us |
-| `chained_maps(5)` | **1.7M items/sec** | 0.60 us |
-| `chained_maps(10)` | **1.2M items/sec** | 0.80 us |
-
-```bash
-make benchmark                       # run all benchmarks
-python -m benchmarks.cross_language.run_benchmarks     # cross-language comparison suite
-```
+[Full benchmark report](benchmarks/FINAL_REPORT_v4.153.md)
 
 ---
 
-## CLI
-
-```
-mapanare run <file>           Compile and run
-mapanare build <file>         Compile to native binary via LLVM
-mapanare jit <file>           JIT-compile and run natively
-mapanare check <file>         Type-check only
-mapanare compile <file>       Transpile to Python (deprecated)
-mapanare transpile <file>     Transpile Python/PHP to Mapanare
-mapanare emit-llvm <file>     Emit LLVM IR
-mapanare emit-wasm <file>     Emit WebAssembly (WAT/WASM)
-mapanare test [path]          Discover and run @test functions
-mapanare fmt <file>           Format source code
-mapanare lint <file>          Lint for code quality issues
-mapanare doc <file>           Generate HTML docs from doc comments
-mapanare deploy init          Scaffold Dockerfile and deploy config
-mapanare init [path]          Initialize a new project
-mapanare install <pkg>        Install a package
-mapanare publish [path]       Publish package to registry
-mapanare search <query>       Search package registry
-mapanare login                Authenticate with registry
-mapanare targets              List supported compilation targets
-```
-
-Options: `-O0` to `-O3` optimization levels, `-o <path>` output file, `--target <triple>` cross-compilation target, `--binary` (WASM binary output), `--trace` agent tracing, `--metrics :PORT` Prometheus metrics, `--filter` test filter. The `-g` / `--debug` flag is accepted for forward compatibility but is a no-op in v4.x (DWARF debug info emission is deferred to v5.x; see `docs/SPEC.md` §21.3).
-
----
-
-## Compiler Architecture
-
-```
-.mn source -> Lexer -> Parser -> AST -> Semantic Analysis -> MIR Lowering -> MIR Optimizer -> Emit
-                                                                                                 |
-                                                                              LLVM IR | WASM | Python (deprecated)
-                                                                                 |         |
-                                                                          Native Binary   WAT/WASM
-```
-
-| Stage | Details |
-|-------|---------|
-| **Lexer** | Lark-based tokenizer (18 keywords, 29 operators) |
-| **Parser** | LALR with precedence climbing |
-| **Semantic** | Type checking, scope analysis, builtins registry |
-| **MIR Lowering** | AST -> typed SSA intermediate representation with basic blocks |
-| **MIR Optimizer** | Constant folding, dead code elimination, copy propagation, block merging (`-O0` to `-O3`) |
-| **Emit LLVM** | MIR -> LLVM IR text generation with cross-compilation targets |
-| **Emit WASM** | MIR -> WebAssembly text format (WAT) with linear memory and JS bridge |
-| **Emit Python** | MIR -> Python (deprecated): agents map to asyncio, signals to reactive containers |
-
----
-
-## Runtime
-
-| Primitive | Capabilities |
-|-----------|-------------|
-| **Agents** | Lifecycle management, typed channels, supervision (restart/stop), backpressure, metrics |
-| **Signals** | Dependency graph with automatic recomputation, batched updates, change streams |
-| **Streams** | Async iterables with fusion, hot/cold semantics, backpressure strategies (buffer, drop, error) |
-| **Result/Option** | `Ok`/`Err`/`Some`/`None` with `?` operator support |
-| **Native C** | Lock-free SPSC ring buffers, per-core thread pool, atomic backpressure counters |
-| **GPU** | CUDA Driver API + Vulkan compute via `dlopen`, built-in tensor kernels (add/sub/mul/div/matmul) |
-
----
-
-## Standard Library
-
-| Module | Provides |
-|--------|----------|
-| `io` | File I/O agents, read/write helpers |
-| `fs` | Filesystem operations: read, write, walk, glob, metadata, temp files |
-| `http` | HTTP client/server agents, body parsing, cookies, sessions, rate limiting, SSE, templates |
-| `time` | Timers, intervals, debounce, throttle, stopwatch |
-| `math` | Constants, trig, statistics, linear algebra helpers |
-| `text` | Case conversion, search, split/join, slug, padding |
-| `log` | Structured logging with agent context, JSON/text output |
-| `pkg` | Project manifests, package install, registry publish |
-| `ai/llm` | LLM driver with provider abstraction (OpenAI, Anthropic, local), streaming, tool calls |
-| `ai/embedding` | Embedding provider with batching, caching, similarity search |
-| `ai/rag` | RAG pipeline with document chunking, vector store, retrieval |
-| `db/sql` | SQL query builder and execution |
-| `db/sqlite` | SQLite driver via native C runtime |
-| `db/postgres` | PostgreSQL driver via native C runtime |
-| `db/redis` | Redis client |
-| `db/kv` | Key-value store abstraction |
-| `db/pool` | Connection pooling |
-| `db/migrate` | Schema migration runner |
-| `encoding/toml` | TOML parser and serializer |
-| `encoding/yaml` | YAML parser and serializer |
-| `gpu/device` | GPU device detection and selection |
-| `gpu/kernel` | Kernel management and dispatch |
-| `gpu/tensor` | GPU-accelerated tensor operations |
-| `wasm/bridge` | JavaScript interop: imports, exports, DOM access, events |
-| `wasm/runtime` | WASI preview 1: file I/O, environment, clock, random |
-
-See the full [stdlib reference](docs/stdlib.md).
-
----
-
-## Ecosystem Packages
-
-| Package | Description |
-|---------|------------|
-| **Dato** (`dato/`) | DataFrame/data analysis engine — tables, aggregations, joins, null handling, reshape, CSV/JSON I/O |
-| **Crawl** (`crawl/`) | Web crawler with robots.txt, URL frontier, content extraction, persistence |
-| **Scan** (`scan/`) | Template-driven vulnerability scanner with fingerprinting and report generation |
-| **Fuzz** (`fuzz/`) | HTTP fuzzer with mutation engine and wordlist generation |
-
----
-
-## Editor Support
-
-### VS Code
-
-The VS Code extension lives in its own repository: [mapanare-vscode](https://github.com/Mapanare-Research/mapanare-vscode)
-
-- Syntax highlighting for `.mn` files
-- Code snippets (agent, pipe, fn, signal, stream)
-- LSP integration: hover, go-to-definition, find-references, diagnostics, autocomplete
-
-Install the LSP server: `mapanare-lsp`
-
----
-
-## AI Agent Skill
-
-Give your AI coding agent full fluency in Mapanare. One command — your agent knows every keyword, type, pattern, and CLI command.
-
-```bash
-npx skills add Mapanare-Research/skills
-```
-
-Works with **Claude Code**, **Cursor**, **Windsurf**, and any agent that supports the [skills](https://skills.sh) ecosystem.
-
-After installing, just ask your agent naturally:
-
-| Prompt | What your agent does |
-|--------|---------------------|
-| *"Create an agent that monitors sensor data"* | Writes an agent with typed channels, signals, and anomaly detection |
-| *"Build a data pipeline for sentiment analysis"* | Composes a multi-stage pipe with Fetcher |> Extractor |> Classifier |
-| *"Track metrics with reactive state"* | Uses `signal()`, `computed {}`, and `batch {}` for automatic propagation |
-| *"Matrix multiply with shape checking"* | Generates `Tensor<Float>[M, N]` with `@` operator — shapes verified at compile time |
-| *"Process logs in real time"* | Builds a stream pipeline with `filter`, `throttle`, and `for_each` |
-| *"Scaffold a new project"* | Runs `mapanare init`, knows all CLI flags and optimization levels |
-
-See [Mapanare-Research/skills](https://github.com/Mapanare-Research/skills) for full examples and manual install instructions.
-
----
-
-## Self-Hosted Compiler
-
-The compiler is written in Mapanare itself (`mapanare/self/`) — 15,000+ lines across 10 modules, plus 4 language transpilers:
-
-- `lexer.mn` — Tokenizer (575 lines)
-- `ast.mn` — AST definitions (781 lines)
-- `parser.mn` — Recursive descent parser (2,249 lines)
-- `semantic.mn` — Type checker (1,980 lines)
-- `lower.mn` + `lower_state.mn` — MIR lowering (4,189 lines)
-- `mir.mn` — MIR data structures (791 lines)
-- `emit_llvm.mn` + `emit_llvm_ir.mn` — LLVM IR emitter (3,672 lines)
-- `main.mn` — Compiler driver (805 lines)
-- `transpiler.mn` — Shared transpiler framework (596 lines)
-- `from_python.mn`, `from_php.mn`, `from_typescript.mn`, `from_go.mn` — Language transpilers (4,824 lines)
-
-Fixed-point self-compilation verified: stage4 == stage3. The seed binary bootstraps without Python.
-
----
-
-## Project Structure
-
-```
-mapanare/
-├── mapanare/              Compiler (lexer, parser, semantic, MIR, emit, optimizer, jit)
-│   ├── self/              Self-hosted .mn compiler sources
-│   └── lsp/               Language Server Protocol
-├── runtime/               Runtime (agents, signals, streams, result types)
-│   └── native/            Native C runtime (thread pool, ring buffers, GPU, DB)
-├── stdlib/                Standard library (io, fs, http, ai, db, encoding, gpu, wasm, ...)
-├── dato/                  Dato data engine (tables, aggregations, joins, I/O)
-├── crawl/                 Web crawler (URL parser, robots.txt, frontier, extraction)
-├── scan/                  Vulnerability scanner (templates, fingerprinting, reports)
-├── fuzz/                  HTTP fuzzer (mutation engine, wordlists)
-├── bootstrap/             Frozen Python compiler for bootstrapping
-├── playground/            Browser-based playground with WASM runtime
-├── tests/                 Test suite (4,845+ tests)
-├── benchmarks/            Performance benchmarks
-├── docs/                  Documentation
-│   ├── rfcs/              Language change proposals
-│   ├── roadmap/           Version roadmaps and plans
-│   └── SPEC.md            Language specification
-├── examples/              Example programs (GPU, WASM, ...)
-├── packaging/             Installers, version manager, build specs
-│   ├── install.sh         Linux/macOS installer (supports --version)
-│   ├── install.ps1        Windows installer
-│   ├── mapanare-up.sh     Version manager (Linux/macOS)
-│   ├── mapanare-up.ps1    Version manager (Windows)
-│   ├── mapanare-shim.sh   Version dispatch shim
-│   └── mapanare.spec      PyInstaller spec for binary builds
-
-```
-
----
-
-## Development
+## Build from Source
 
 ```bash
 git clone https://github.com/Mapanare-Research/Mapanare.git
 cd Mapanare
-make install        # pip install -e ".[dev]"
-make test           # pytest tests/ -v
-make lint           # ruff, black, mypy
-make fmt            # auto-format
-make benchmark      # run benchmarks
+bash scripts/build_from_seed.sh    # no Python needed
+./mnc hello.mn                     # outputs LLVM IR
 ```
 
-Requires Python 3.11+.
+For development (requires Python 3.11+):
 
----
-
-## Roadmap
-
-| Version | Theme | Status |
-|---------|-------|--------|
-| **v0.1.0** | Foundation — bootstrap compiler, dual backends, runtime, LSP, stdlib | Released |
-| **v0.2.0** | Self-Hosting — LLVM codegen, C runtime, self-hosted compiler (5,800 lines .mn) | Released |
-| **v0.3.0** | Depth Over Breadth — traits, modules, agent codegen, arena memory, 1,960+ tests | Released |
-| **v0.4.0** | Ready for the World — FFI, C runtime hardening, diagnostics, scope cleanup | Released |
-| **v0.5.0** | The Ecosystem — interpolation, linter, Python interop, playground, registry, docs | Released |
-| **v0.6.0** | Compiler Infrastructure — MIR pipeline, bootstrap frozen | Released |
-| **v0.7.0** | Self-Standing — self-hosting, observability, test runner, deployment | Released |
-| **v0.8.0** | Native Parity — LLVM backend completeness, C runtime expansion | Released |
-| **v1.0.0** | Stable — language spec frozen, backwards compatibility guarantees | Released |
-| **v1.1.0** | AI Native — LLM drivers, embeddings, RAG as stdlib | Released |
-| **v1.2.0** | Data & Storage — SQL drivers, Dato v1.0, YAML/TOML, filesystem | Released |
-| **v1.3.0** | Web & Security — crawler, vulnerability scanner, fuzzer, HTTP toolkit | Released |
-| **v2.0.0** | GPU & WASM — GPU compute (CUDA/Vulkan), WebAssembly backend, mobile targets | Released |
-| **v3.x** | Production Sprint — IO, networking, agents, real examples, package manager, GPU builtins | Released |
-| **v4.0.0–v4.76.0** | Language Maturity — recovery arcs, error handling, LSP, tensor completeness, AI stdlib, DWARF, coroutines | Released |
-| **v4.77.0–v4.110.0** | Phase A/B/C — correctness recovery (tagged-pointer UB, list indexing, async linking), debugging infrastructure (valgrind/ASan/TSan), 5-language benchmark | Released |
-| **v4.111.0–v4.115.0** | Phase D/E (early) — self-hosted golden parity, panel hardening, native async I/O demos | Released |
-| **v4.116.0–v4.120.0** | Phase E/F — documentation, testing sweep (sanitizer CI + flaky audit + coverage), final cross-language benchmark, retrospective, v5 gate panel (attempt 2: Option B, continue) | Released |
-| **v4.121.0–v4.128.0** | Post-panel closeout arc — tests/lint hygiene, Qs.1 fix, dead-code sweep (−1,963 lines), Rt.1 enum unboxing (`enum_match` 1.77×), benchmark refresh, golden push (27 → 39/65), fixed-point refinement (proxy divergence −5.5%) | Released |
-| **v4.129.0** | Documentation + SPEC sync — §2.1 const, §3 renumbering, §27.1 TypeKind count, §28 stdlib surface, Appendix B pipeline; 29 examples verified | Released |
-| **v4.130.0** | Pre-panel prep (1st) — 3rd flaky audit, valgrind + ASan golden sweeps, MEASUREMENTS.md draft | Released |
-| **v4.131.0** | Sh.2 fix arc release 1 (LIST branch) — goldens 39 → 53/65, valgrind ERRORS 31 → 14, ASan 23 → 9 | Released |
-| **v4.132.0** | Sh.2 fix arc release 2 (STRING branch) — valgrind ERRORS 14 → 5, ASan 9 → 0 (stretch); Sh.2 class closed | Released |
-| **v4.133.0** | An.1 test hygiene — 39 non-bootstrap pytest failures → 0 (stretch beat by 10); 11 fixes + 18 dockets | Released |
-| **v4.134.0** | **STRICT 3-STAGE FIXED POINT REACHED** — `stage2.ll == stage3.ll`, md5 `0c00…43b`, 108,397 lines byte-identical; Sh.11 closed by inheritance, Sh.12 fixed | Released |
-| **v4.135.0** | Pre-panel refresh (2nd) — 4th flaky audit (0 failures across 20 cumulative runs), fresh sanitizer sweeps, benchmark refresh, MEASUREMENTS.md FINAL | Released |
-| **v4.136.0** | THE PANEL — v5 gate attempt 3: aggregate 8.80/10, 0 NEEDS WORK → **Option C** | Released |
-| **v5.0.0-rc1** | First v5 candidate. Carry-forward: Ch.1 HIGH + Bo.4/Bo.5/Cb.5/Gr.2 MEDIUM for v5.0.0 final | Released |
-| **v4.137.0** | Ch.1 closed — `mapanare_agent_destroy` one-shot `pthread_join` via atomic-exchange claim; 3 sanitizer classes un-skipped | Released |
-| **v4.138.0** | Docs sweep — Bo.1–Bo.7 closed (Boa carry-forward); `mapanare --version` reads VERSION file directly | Released |
-| **v4.139.0** | SPEC + language close — Gr.2 qualified type refs, Sem.1 E420 for module-level `let mut`, §0 / Co.1 / Dr.1 closed | Released |
-| **v4.140.0** | Self-hosted emitter parity — Cb.5 enum_inline ported to `mapanare/self/emit_llvm.mn` (byte-identical ABI); SE.1 MAP/SIGNAL/STREAM ownership-transfer; Cb.3 docs | Released |
-| **v4.141.0** | An.2 lint debt cleared (204 ruff + 65 black + 36 mypy → 0) + 5th flaky audit (25/25 sequential runs, 0 flaky) | Released |
-| **v4.142.0** | Ge.1 closed — valgrind 5 → 0 ERRORS; MEASUREMENTS.md finalised for v4.143.0 panel | Released |
-| **v4.143.0** | Post-rc1 panel (8.86/10) + fast-win closeout: Sp.1 + Co.1r + Sem.2 + An.6 + An.7 + An.8 + Bo.*-drift bundle | **Current** |
-
-See the full [ROADMAP](docs/roadmap/ROADMAP.md) for details.
+```bash
+pip install -e ".[dev]"
+make test
+```
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Community standards and project
-processes live in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md),
-[GOVERNANCE.md](GOVERNANCE.md), and [SECURITY.md](SECURITY.md). Language
-changes require an [RFC](docs/rfcs/).
-
----
+See [CONTRIBUTING.md](CONTRIBUTING.md). Language changes require an [RFC](docs/rfcs/).
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE).
 
 ---
 
@@ -777,7 +170,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 **Mapanare** — The language AI deserves.
 
-[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues/new?template=feature_request.yml) · [Spec](docs/SPEC.md) · [Changelog](CHANGELOG.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
+[Report Bug](https://github.com/Mapanare-Research/Mapanare/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/Mapanare-Research/Mapanare/issues/new?template=feature_request.yml) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
 
 Made with care by [Juan Denis](https://juandenis.com)
 
