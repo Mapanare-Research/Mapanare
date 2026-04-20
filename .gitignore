@@ -94,3 +94,4 @@ docs/roadmap/*/*/culebra-*.jsonl
 /.culebra
 .gitnexus
 docs/roadmap/v4/v4.141.0/session.md
+*.png
