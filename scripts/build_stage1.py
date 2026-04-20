@@ -184,6 +184,12 @@ def build() -> pathlib.Path:
             "-lm",
             "-Wl,--stack,67108864",  # 64MB stack for deep recursion on Windows
         ]
+    elif sys.platform == "darwin":
+        link_flags = [
+            "-lm",
+            "-lpthread",
+            "-Wl,-stack_size,0x4000000",  # 64MB stack for deep recursion on macOS
+        ]
     else:
         link_flags = [
             "-no-pie",

@@ -7,10 +7,11 @@
 
 /* Enable POSIX + platform extensions even with -std=c11 or -Werror.
  * macOS: _DARWIN_C_SOURCE enables BSD types + POSIX + everything.
- * Linux: _POSIX_C_SOURCE + _DEFAULT_SOURCE for getline, realpath, etc. */
+ * Linux: _POSIX_C_SOURCE + _DEFAULT_SOURCE for getline, realpath, etc.
+ * Windows: no POSIX defines (would hide Win32 API in MinGW). */
 #ifdef __APPLE__
 #define _DARWIN_C_SOURCE
-#else
+#elif !defined(_WIN32)
 #if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
 #undef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
