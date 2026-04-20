@@ -25,6 +25,10 @@
 #ifndef _WIN32
 #include <unistd.h>
 #endif
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
 
 /* -----------------------------------------------------------------------
  * Platform atomic helpers (using GCC built-ins for portability)
@@ -198,6 +202,12 @@ MAPANARE_EXPORT uint32_t mapanare_cpu_count(void) {
     SYSTEM_INFO si;
     GetSystemInfo(&si);
     return (uint32_t)si.dwNumberOfProcessors;
+#elif defined(__APPLE__)
+    int mib[2] = {CTL_HW, HW_NCPU};
+    int ncpu = 1;
+    size_t len = sizeof(ncpu);
+    sysctl(mib, 2, &ncpu, &len, NULL, 0);
+    return (ncpu > 0) ? (uint32_t)ncpu : 1;
 #else
     long n = sysconf(_SC_NPROCESSORS_ONLN);
     return (n > 0) ? (uint32_t)n : 1;
