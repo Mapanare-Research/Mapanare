@@ -105,28 +105,16 @@ jobs:
 
             ## Downloads
 
-            ### Full CLI (compiler + transpiler + LSP + WASM)
+            | Platform | Full CLI | Native Compiler |
+            |:---------|:--------:|:---------------:|
+            | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) |
+            | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) |
+            | **Windows** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | — |
 
-            | Platform | Architecture | Download | Size |
-            |:---------|:-------------|:---------|:-----|
-            | Linux | x86_64 | [`mapanare-linux-x64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | — |
-            | macOS | Apple Silicon | [`mapanare-mac-arm64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | — |
-            | Windows | x86_64 | [`mapanare-win-x64.zip`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | — |
-
-            ### Native Compiler Only (~3 MB, no Python dependency)
-
-            | Platform | Architecture | Download | Size |
-            |:---------|:-------------|:---------|:-----|
-            | Linux | x86_64 | [`mnc-linux-x64`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) | — |
-            | macOS | Apple Silicon | [`mnc-darwin-arm64`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) | — |
-
-            <details>
-            <summary>Checksums (SHA-256)</summary>
-
-            [`SHA256SUMS.txt`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/SHA256SUMS.txt)
-            </details>
-
-            > Asset sizes are filled in automatically after the build pipeline completes.
+            > **Full CLI** includes the compiler, Python transpiler, LSP, and WASM backend.
+            > **Native Compiler** is a single ~3 MB binary with no dependencies.
+            >
+            > [SHA256 Checksums](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/SHA256SUMS.txt)
 
             ---
 
