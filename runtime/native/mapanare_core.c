@@ -24,16 +24,22 @@
 #include "mapanare_core.h"
 #include "mapanare_platform.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
+#endif
 #ifndef _WIN32
 #include <sys/wait.h>
 #endif

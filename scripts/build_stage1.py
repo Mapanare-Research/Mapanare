@@ -137,6 +137,12 @@ def build() -> pathlib.Path:
         (NATIVE_DIR / "mapanare_db.c", SELF_DIR / "mapanare_db.o"),
         (NATIVE_DIR / "mapanare_html.c", SELF_DIR / "mapanare_html.o"),
     ]
+    # macOS: compile Metal backend (Objective-C, provides GPU symbols)
+    if sys.platform == "darwin":
+        metal_src = NATIVE_DIR / "mapanare_metal.m"
+        metal_obj = SELF_DIR / "mapanare_metal.o"
+        if metal_src.exists():
+            runtime_sources.append((metal_src, metal_obj))
     asan_flags = ["-fsanitize=address", "-fno-omit-frame-pointer"] if "--asan" in sys.argv else []
     profile_flags = ["-DMN_PROFILE_MEM"] if "--profile-mem" in sys.argv else []
     # v4.31.0: propagate the VERSION file contents into a compile-time
@@ -160,6 +166,8 @@ def build() -> pathlib.Path:
     ] + version_flags
     for src, obj in runtime_sources:
         extra = profile_flags if src.name == "mapanare_core.c" else []
+        if src.suffix == ".m":
+            extra = extra + ["-fobjc-arc"]
         subprocess.run(
             c_base_flags + asan_flags + extra + [str(src), "-o", str(obj)],
             check=True,
@@ -188,6 +196,9 @@ def build() -> pathlib.Path:
         link_flags = [
             "-lm",
             "-lpthread",
+            "-framework", "Metal",
+            "-framework", "Foundation",
+            "-fobjc-arc",
             "-Wl,-stack_size,0x4000000",  # 64MB stack for deep recursion on macOS
         ]
     else:

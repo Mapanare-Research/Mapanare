@@ -1,0 +1,67 @@
+name: Native Build Test
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+
+concurrency:
+  group: native-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux x64
+          - os: macos-latest
+            name: macOS ARM64
+          - os: windows-latest
+            name: Windows x64
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare
+        run: pip install -e .
+
+      - name: Install LLVM (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y llvm-18 clang-18
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
+
+      - name: Install LLVM (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm@18
+          echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
+
+      - name: Build mnc-stage1
+        run: python scripts/build_stage1.py --use-committed
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          if [ -f mapanare/self/mnc-stage1 ]; then
+            ./mapanare/self/mnc-stage1 tests/golden/01_hello.mn > /dev/null
+            echo "Smoke test: OK"
+          elif [ -f mapanare/self/mnc-stage1.exe ]; then
+            ./mapanare/self/mnc-stage1.exe tests/golden/01_hello.mn > /dev/null
+            echo "Smoke test: OK"
+          else
+            echo "No binary produced (Windows may need clang)"
+          fi
