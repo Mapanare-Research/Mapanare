@@ -1442,8 +1442,10 @@ MN_EXPORT MnString __mn_list_str_get(MnList *list, int64_t i) {
 }
 
 /* -----------------------------------------------------------------------
- * File I/O
+ * File I/O (POSIX-only — Windows uses different APIs, stubbed for now)
  * ----------------------------------------------------------------------- */
+
+#ifndef _WIN32
 
 MN_EXPORT MnString __mn_file_read(MnString path, int64_t *ok) {
     *ok = 0;
@@ -1665,6 +1667,8 @@ MN_EXPORT MnList __mn_dir_list_strings(MnString path) {
     closedir(d);
     return list;
 }
+
+#endif /* !_WIN32 */
 
 /* -----------------------------------------------------------------------
  * MnMap — Robin Hood open-addressing hash table
@@ -2831,11 +2835,8 @@ MN_EXPORT MnString __mn_argv(int64_t index) {
     return __mn_str_from_cstr(g_argv[index]);
 }
 
-/** Read a file, returning its content. Returns empty string on error
- *  (Mapanare callers distinguish by checking ``len(result) > 0``).
- *  v4.100.0: the previous len=-1 sentinel no longer fits because ``len``
- *  is a 63-bit unsigned bitfield; empty/failure collapse into the same
- *  zero-length string, matching how every caller already checked it. */
+#ifndef _WIN32
+/** Read a file, returning its content. Returns empty string on error. */
 MN_EXPORT MnString __mn_file_read_or_empty(MnString path) {
     int64_t ok = 0;
     MnString result = __mn_file_read(path, &ok);
@@ -2844,6 +2845,7 @@ MN_EXPORT MnString __mn_file_read_or_empty(MnString path) {
     }
     return result;
 }
+#endif /* !_WIN32 */
 
 MN_EXPORT void __mn_exit(int64_t code) {
     exit((int)code);

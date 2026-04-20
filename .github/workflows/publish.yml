@@ -315,7 +315,12 @@ jobs:
 
       - name: Build mnc-stage1 via Python
         shell: bash
-        run: python scripts/build_stage1.py --use-committed
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            python scripts/build_stage1.py --use-committed
+          else
+            python scripts/build_stage1.py
+          fi
 
       - name: Self-compile to stage2 (native binary)
         shell: bash

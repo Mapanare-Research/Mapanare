@@ -51,7 +51,16 @@ jobs:
           echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
 
       - name: Build mnc-stage1
-        run: python scripts/build_stage1.py --use-committed
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            # Linux: use committed IR (same platform it was generated on)
+            python scripts/build_stage1.py --use-committed
+          else
+            # macOS/Windows: regenerate IR from Python bootstrap
+            # (committed IR has x86_64-linux ABI baked into struct layouts)
+            python scripts/build_stage1.py
+          fi
 
       - name: Smoke test
         shell: bash
