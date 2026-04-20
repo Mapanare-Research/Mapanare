@@ -97,6 +97,29 @@ def build() -> pathlib.Path:
     # misjudges reachability, stripping functions that ARE called.
     ir = ir.replace("define internal ", "define ")
 
+    # Fix target triple if building on a different platform than where
+    # the IR was committed (e.g., committed on Linux x86_64, building on macOS ARM64).
+    import platform
+
+    if sys.platform == "darwin":
+        arch = platform.machine()  # arm64 or x86_64
+        host_triple = f"{arch}-apple-macos"
+        ir = ir.replace(
+            'target triple = "x86_64-unknown-linux-gnu"',
+            f'target triple = "{host_triple}"',
+        )
+        # Also fix datalayout for ARM64
+        if arch == "arm64":
+            ir = ir.replace(
+                'target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"',
+                'target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128-Fn32"',
+            )
+    elif sys.platform == "win32":
+        ir = ir.replace(
+            'target triple = "x86_64-unknown-linux-gnu"',
+            'target triple = "x86_64-pc-windows-msvc"',
+        )
+
     ir_path.write_text(ir, encoding="utf-8")
     print(f"  IR: {ir.count(chr(10))} lines -> {ir_path}")
 
@@ -128,15 +151,20 @@ def build() -> pathlib.Path:
     # mnc-stage1 build. Previously they were orphaned — 1,942 lines of
     # runtime code that no CI job touched (v4.26.0 panel: Anaconda HIGH).
     print("[4/6] Compiling C runtime ...")
+    # Core modules needed by the native compiler on all platforms
     runtime_sources: list[tuple[pathlib.Path, pathlib.Path]] = [
         (NATIVE_DIR / "mapanare_core.c", SELF_DIR / "mapanare_core.o"),
-        (NATIVE_DIR / "mapanare_io.c", SELF_DIR / "mapanare_io.o"),
         (NATIVE_DIR / "mapanare_runtime.c", SELF_DIR / "mapanare_runtime.o"),
         (NATIVE_DIR / "mapanare_gpu.c", SELF_DIR / "mapanare_gpu.o"),
         (NATIVE_DIR / "mapanare_gpu_builtins.c", SELF_DIR / "mapanare_gpu_builtins.o"),
-        (NATIVE_DIR / "mapanare_db.c", SELF_DIR / "mapanare_db.o"),
-        (NATIVE_DIR / "mapanare_html.c", SELF_DIR / "mapanare_html.o"),
     ]
+    # These modules use POSIX-only APIs (opendir, dlopen, etc.) — skip on Windows
+    if sys.platform != "win32":
+        runtime_sources += [
+            (NATIVE_DIR / "mapanare_io.c", SELF_DIR / "mapanare_io.o"),
+            (NATIVE_DIR / "mapanare_db.c", SELF_DIR / "mapanare_db.o"),
+            (NATIVE_DIR / "mapanare_html.c", SELF_DIR / "mapanare_html.o"),
+        ]
     # macOS: compile Metal backend (Objective-C, provides GPU symbols)
     if sys.platform == "darwin":
         metal_src = NATIVE_DIR / "mapanare_metal.m"
