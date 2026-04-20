@@ -134,12 +134,12 @@ jobs:
 
             **Linux / macOS:**
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/packaging/install.sh | bash
+            curl -fsSL https://mapanare.dev/install | bash
             ```
 
             **Windows (PowerShell):**
             ```powershell
-            irm https://raw.githubusercontent.com/${{ github.repository }}/main/packaging/install.ps1 | iex
+            irm https://mapanare.dev/install.ps1 | iex
             ```
 
             **pip:**
