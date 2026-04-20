@@ -682,6 +682,11 @@ MN_HTML_EXPORT MnString __mn_env_get(MnString name) {
  * Find the position of "://" in the URL data.
  * Returns the index of ':', or -1 if not found.
  */
+/* URL functions compare int64_t indices against uint64_t MnString.len.
+ * Safe because len is a 63-bit bitfield (max INT64_MAX). */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 static int64_t find_scheme_sep(const char *data, int64_t len) {
     for (int64_t i = 0; i + 2 < len; i++) {
         if (data[i] == ':' && data[i + 1] == '/' && data[i + 2] == '/') {
@@ -797,3 +802,5 @@ MN_HTML_EXPORT MnString __mn_url_parse_path(MnString url) {
 
     return __mn_str_from_parts(data + path_start, path_end - path_start);
 }
+
+#pragma GCC diagnostic pop
