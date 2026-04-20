@@ -383,6 +383,11 @@ jobs:
         run: |
           curl https://wasmtime.dev/install.sh -sSf | bash
           echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+          # Fallback: some runner images install to a different path
+          if [ -d "$HOME/.wasmtime/bin" ]; then
+            export PATH="$HOME/.wasmtime/bin:$PATH"
+            wasmtime --version
+          fi
 
       - name: Install wabt (wat2wasm)
         run: |
@@ -418,6 +423,7 @@ jobs:
 
       - name: Run WASI examples on wasmtime
         run: |
+          export PATH="$HOME/.wasmtime/bin:$PATH"
           for f in examples/wasm/hello.mn examples/wasm/wasi_app.mn; do
             if [ -f "$f" ]; then
               echo "--- Running $f (wasm32-wasi) ---"
