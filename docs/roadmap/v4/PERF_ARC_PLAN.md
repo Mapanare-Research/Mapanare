@@ -198,24 +198,13 @@ that regresses any of them is rolled back, no exceptions.
 ## Per-release plan + prompt files
 
 - [v4.144.0/PLAN.md](v4.144.0/PLAN.md) — Panel + LOW polish
-- [v4.144.0/PROMPT.md](v4.144.0/PROMPT.md)
 - [v4.145.0/PLAN.md](v4.145.0/PLAN.md) — E1 `enum_match`
-- [v4.145.0/PROMPT.md](v4.145.0/PROMPT.md)
 - [v4.146.0/PLAN.md](v4.146.0/PLAN.md) — E2 `fib_recursive`
-- [v4.146.0/PROMPT.md](v4.146.0/PROMPT.md)
 - [v4.147.0/PLAN.md](v4.147.0/PLAN.md) — E3 `noalias` hot loops
-- [v4.147.0/PROMPT.md](v4.147.0/PROMPT.md)
 - [v4.148.0/PLAN.md](v4.148.0/PLAN.md) — E4 `string_concat`
-- [v4.148.0/PROMPT.md](v4.148.0/PROMPT.md)
 - [v4.149.0/PLAN.md](v4.149.0/PLAN.md) — E5 ABI.1 struct return
-- [v4.149.0/PROMPT.md](v4.149.0/PROMPT.md)
 - [v4.150.0/PLAN.md](v4.150.0/PLAN.md) — E6 async vs Go
-- [v4.150.0/PROMPT.md](v4.150.0/PROMPT.md)
 - [v4.151.0/PLAN.md](v4.151.0/PLAN.md) — E7 allocator
-- [v4.151.0/PROMPT.md](v4.151.0/PROMPT.md)
 - [v4.152.0/PLAN.md](v4.152.0/PLAN.md) — E8 LICM re-enable
-- [v4.152.0/PROMPT.md](v4.152.0/PROMPT.md)
 - [v4.153.0/PLAN.md](v4.153.0/PLAN.md) — Pre-panel refresh
-- [v4.153.0/PROMPT.md](v4.153.0/PROMPT.md)
 - [v4.154.0/PLAN.md](v4.154.0/PLAN.md) — THE PERF PANEL
-- [v4.154.0/PROMPT.md](v4.154.0/PROMPT.md)

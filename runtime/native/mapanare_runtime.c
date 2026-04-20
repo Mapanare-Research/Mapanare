@@ -8,11 +8,16 @@
  *   Task 4: Native backpressure with atomic counters
  */
 
-/* Enable POSIX extensions (sigaction, nanosleep, clock_gettime, etc.)
- * even when compiled with -std=c11 (macOS CI, cross-platform). */
+/* Enable POSIX + platform extensions even with -std=c11.
+ * macOS needs _DARWIN_C_SOURCE for BSD types in sys/sysctl.h;
+ * Linux needs _POSIX_C_SOURCE for sigaction, clock_gettime, etc. */
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE
+#else
 #if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
 #undef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
 #endif
 
 #include "mapanare_runtime.h"

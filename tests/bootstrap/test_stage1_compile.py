@@ -56,8 +56,13 @@ class TestStage1Compilation:
 
     def test_self_hosted_ir_verifies(self) -> None:
         """The generated LLVM IR passes LLVM's module verifier (via llvm-as)."""
+        import shutil
         import subprocess
         import tempfile
+
+        # v4.155.0: skip if llvm-as not installed (ci job doesn't install LLVM)
+        if not shutil.which("llvm-as"):
+            pytest.skip("llvm-as not found")
 
         source, filename = _read_self_hosted()
         llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
