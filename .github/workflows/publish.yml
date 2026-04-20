@@ -345,14 +345,14 @@ jobs:
                 mapanare/self/mnc_main.c \
                 -I runtime/native \
                 -o "${{ matrix.artifact }}" \
-                -lm -lpthread
+                -lm -lpthread -ldl
           fi
 
       - name: Smoke test native binary
         shell: bash
         run: |
           if [[ -f "${{ matrix.artifact }}" ]]; then
-            ./${{ matrix.artifact }} --version || echo "version check done"
+            ./${{ matrix.artifact }} --version
             echo "Native binary smoke test passed"
           else
             echo "No native binary produced (platform may not support it)"
