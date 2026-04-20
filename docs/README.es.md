@@ -1,20 +1,19 @@
 <div align="center">
 
-<img width="3200" height="1344" alt="MapanareDevTo" src="https://github.com/user-attachments/assets/99b80387-afd9-4b07-beb8-59a8f63f7ac7" />
+<img width="1280" height="640" alt="mapanare-repo" src="https://github.com/user-attachments/assets/176d26e7-0c42-49ef-99d2-b8192cd75e53" />
 
 # Mapanare
 
 **/mah-pah-NAH-reh/**
 
-**El lenguaje de programación AI-nativo.**
+**El lenguaje de programacion AI-nativo.**
 
-*Agentes. Señales. Streams. Tensores. De primera clase, no frameworks.*
+*Agentes. Senales. Streams. Tensores. De primera clase, no frameworks.*
 
-Construido tras años de toparse con los límites de Python en software AI-nativo, concurrente y tensor-pesado.
+Compila a binarios nativos via LLVM y WebAssembly.
+**~168x mas rapido que Python. A la par con Rust y C.**
 
-Mapanare compila a binarios nativos vía LLVM y WebAssembly. El compilador auto-hospedado alcanza un punto fijo estricto de 3 etapas (`stage2.ll == stage3.ll`, byte-idéntico). En 6 benchmarks cross-language, Mapanare es **42.6× más rápido que Python**, **1.12× de Rust**, y **4.86× más lento que C (gcc -O2)** — ver [benchmarks/FINAL_REPORT_v4.136.md](../benchmarks/FINAL_REPORT_v4.136.md). Un transpilador de Python convierte archivos `.py` a binarios nativos 29-68x más rápido que CPython.
-
-[English](../README.md) | Español | [中文版](README.zh-CN.md) | [Português](README.pt.md)
+[English](../README.md) | Espanol | [中文版](README.zh-CN.md) | [Portugues](README.pt.md)
 
 <br>
 
@@ -25,214 +24,103 @@ Mapanare compila a binarios nativos vía LLVM y WebAssembly. El compilador auto-
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![Licencia](https://img.shields.io/badge/licencia-MIT-green.svg?style=flat-square)](../LICENSE)
-[![Version](https://img.shields.io/badge/version-5.0.0--rc1-blue.svg?style=flat-square)](../CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-5160+_pasando-brightgreen.svg?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-5.0.0-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-5534+_pasando-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>
 
-[**Primeros Pasos**](getting-started.md) · [Por que Mapanare?](#por-que-mapanare) · [Instalar](#instalar) · [El Lenguaje](#el-lenguaje) · [Benchmarks](#benchmarks) · [CLI](#cli) · [Arquitectura](#arquitectura-del-compilador) · [Hoja de Ruta](roadmap/ROADMAP.md) · [Contribuir](#contribuir) · [Discord](https://discord.gg/5hpGBm3WXf)
+[**Sitio Web**](https://mapanare.dev) · [**Documentacion**](https://mapanare.dev/docs) · [**Descargas**](https://mapanare.dev/download) · [**Discord**](https://discord.gg/5hpGBm3WXf)
 
 </div>
 
 ---
 
-## Por que Mapanare?
-
-Todos los lenguajes principales tratan agentes, senales, streams y tensores como construcciones de biblioteca — una capa de abstraccion lejos del compilador. Eso significa sin verificacion de flujo de datos en tiempo de compilacion, sin chequeo estatico de formas de tensores, y sin garantias a nivel de lenguaje sobre paso de mensajes.
-
-Mapanare hace que estas primitivas sean **parte del lenguaje**:
-
-- **Agentes** son tan naturales como funciones — declarar, crear, enviar, recibir, todo con sintaxis dedicada verificada por el compilador
-- **Senales** reemplazan el callback hell con seguimiento automatico de dependencias
-- **Streams** se componen con `|>` de la forma en que piensas sobre datos, con fusion de operadores integrada
-- **Tensores** obtienen validacion de formas en tiempo de compilacion — errores de forma detectados antes de la ejecucion
-- **Sin POO** — structs, enums y pattern matching en lugar de jerarquias de clases
-
-Lee el [manifiesto](manifesto.md) completo.
-
----
-
 ## Instalar
-
-### Linux / macOS
 
 ```bash
 curl -fsSL https://mapanare.dev/install | bash
 ```
 
-### Windows (PowerShell)
-
 ```powershell
+# Windows (PowerShell)
 irm https://mapanare.dev/install.ps1 | iex
 ```
 
-### Descarga Manual
-
-Descarga el ultimo binario desde [Releases](https://github.com/Mapanare-Research/Mapanare/releases).
-
-| Plataforma | Archivo |
-|------------|---------|
-| Linux (x64) | `mapanare-linux-x64.tar.gz` |
-| macOS (Apple Silicon) | `mapanare-mac-arm64.tar.gz` |
-| Windows (x64) | `mapanare-win-x64.zip` |
-
-Extrae y agrega `mapanare` a tu PATH, luego verifica:
-
-```bash
-mapanare --version
-```
+O descarga binarios desde [Releases](https://github.com/Mapanare-Research/Mapanare/releases).
 
 ---
 
-## El Lenguaje
-
-### Basicos
+## Hola Mundo
 
 ```mn
 fn main() {
-    let name = "Mundo"
-    print("Hola, " + name + "!")
-
-    let mut count = 0
-    while count < 5 {
-        print(str(count))
-        count += 1
-    }
-
-    for i in 0..5 {
-        print(str(i))
-    }
+    print("hola desde mapanare")
 }
 ```
 
-### Structs, Enums y Pattern Matching
-
-Sin clases, sin herencia. Structs, enums y pattern matching en su lugar.
-
-```mn
-enum Forma {
-    Circulo(Float),
-    Rect(Float, Float),
-}
-
-fn area(s: Forma) -> Float {
-    match s {
-        Circulo(r) => 3.14159 * r * r,
-        Rect(w, h) => w * h,
-    }
-}
-```
-
-### Manejo de Errores
-
-```mn
-fn dividir(a: Float, b: Float) -> Result<Float, String> {
-    if b == 0.0 {
-        return Err("division por cero")
-    }
-    return Ok(a / b)
-}
-
-let valor = dividir(10.0, 3.0)?
-```
-
-### Agentes (Experimental)
-
-Actores concurrentes con canales tipados.
-
-```mn
-agent Saludador {
-    input nombre: String
-    output saludo: String
-
-    fn handle(nombre: String) -> String {
-        return "Hola, " + nombre + "!"
-    }
-}
-
-let saludador = spawn Saludador()
-saludador.nombre <- "Mundo"
-let resultado = sync saludador.saludo
-print(resultado)
-```
-
-### Senales (Experimental)
-
-Estado reactivo con seguimiento automatico de dependencias.
-
-```mn
-let mut count = signal(0)
-let doubled = signal { count * 2 }
-```
-
-### Streams (Experimental)
-
-Pipelines asincronos con el operador `|>`.
-
-```mn
-let datos = stream([1, 2, 3, 4, 5])
-let resultado = datos
-    |> filter(fn(x) { x > 2 })
-    |> map(fn(x) { x * 10 })
+```bash
+mapanare run hola.mn        # compilar + ejecutar
+mapanare build hola.mn      # producir un binario nativo
 ```
 
 ---
 
-## CLI
+## Escribe Python, Compila Nativo
 
+Toma tus scripts Python existentes y compilalos a binarios nativos:
+
+```bash
+mapanare build tu_script.py -o tu_script
+./tu_script   # 33-239x mas rapido
 ```
-mapanare run <archivo>       Compilar y ejecutar
-mapanare build <archivo>     Compilar a binario nativo via LLVM
-mapanare jit <archivo>       Compilar JIT y ejecutar nativamente
-mapanare check <archivo>     Solo verificar tipos
-mapanare compile <archivo>   Transpilar a Python
-mapanare emit-llvm <archivo> Emitir LLVM IR
-mapanare repl                Iniciar REPL interactivo
-mapanare fmt <archivo>       Formatear codigo fuente
-mapanare init [ruta]         Inicializar un nuevo proyecto
-mapanare install <paq>       Instalar un paquete (basado en git)
-mapanare targets             Listar objetivos de compilacion soportados
-```
+
+[Guia Python a Nativo](https://mapanare.dev/docs/guides/python-to-native)
 
 ---
 
-## Arquitectura del Compilador
+## Caracteristicas del Lenguaje
 
+```mn
+// Agentes — actores concurrentes de primera clase
+agent Contador {
+    state count: Int = 0
+    on incrementar { count = count + 1 }
+    on obtener_cuenta -> Int { return count }
+}
+
+// Senales — estado reactivo
+let temperatura = signal(72.0)
+let alerta = computed(() => temperatura.get() > 100.0)
+
+// Streams — pipelines de datos componibles
+let resultados = data_stream
+    |> filter((x) => x > 0)
+    |> map((x) => x * 2)
+    |> collect()
+
+// Pattern matching
+match respuesta {
+    Ok(datos) => procesar(datos),
+    Err(e) => print(e)
+}
+
+// AI stdlib
+import ai::llm
+let respuesta = ask(ollama("llama3.2"), "Que es Mapanare?")
 ```
-fuente .mn → Lexer → Parser → AST → Analisis Semantico → Optimizador → Emision
-                                                                          ↓
-                                                                   Python | LLVM IR
-                                                                          ↓
-                                                           Interprete | Binario Nativo
-```
 
----
-
-## Hoja de Ruta
-
-| Version | Tema | Estado |
-|---------|------|--------|
-| **v0.1.0** | Fundacion — compilador bootstrap, backends duales, runtime, LSP, stdlib | Lanzado |
-| **v0.2.0** | Auto-Hospedaje — codegen LLVM, runtime C, compilador auto-hospedado (5,800 lineas .mn) | Lanzado |
-| **v0.3.0** | Profundidad sobre Amplitud — traits, modulos, codegen de agentes, memoria arena, 1,960+ tests | Lanzado |
-| **v0.4.0** | Listo para el Mundo — FFI, endurecimiento runtime C, diagnosticos, limpieza de alcance | Siguiente |
-| **v0.5.0** | El Ecosistema — registro de paquetes, playground WASM, linter | Planeado |
-| **v1.0.0** | Estable — spec del lenguaje congelado, garantias de compatibilidad | Planeado |
-
-Ve la [hoja de ruta](roadmap/ROADMAP.md) completa para detalles.
+Referencia completa, tutoriales y recetario en [mapanare.dev/docs](https://mapanare.dev/docs).
 
 ---
 
 ## Contribuir
 
-Ve [CONTRIBUTING.md](../CONTRIBUTING.md). Los estandares de la comunidad y procesos del proyecto viven en [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md), [GOVERNANCE.md](../GOVERNANCE.md), y [SECURITY.md](../SECURITY.md). Cambios al lenguaje requieren un [RFC](rfcs/).
-
----
+Ve [CONTRIBUTING.md](../CONTRIBUTING.md). Cambios al lenguaje requieren un [RFC](rfcs/).
 
 ## Licencia
 
-Licencia MIT — ve [LICENSE](../LICENSE) para detalles.
+Licencia MIT — ve [LICENSE](../LICENSE).
 
 ---
 
@@ -240,7 +128,7 @@ Licencia MIT — ve [LICENSE](../LICENSE) para detalles.
 
 **Mapanare** — El lenguaje que la IA merece.
 
-[Reportar Bug](https://github.com/Mapanare-Research/Mapanare/issues/new?template=bug_report.yml) · [Solicitar Feature](https://github.com/Mapanare-Research/Mapanare/issues/new?template=feature_request.yml) · [Spec](SPEC.md) · [Changelog](../CHANGELOG.md) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
+[Reportar Bug](https://github.com/Mapanare-Research/Mapanare/issues/new?template=bug_report.yml) · [Solicitar Feature](https://github.com/Mapanare-Research/Mapanare/issues/new?template=feature_request.yml) · [Discord](https://discord.gg/5hpGBm3WXf) · [Twitter](https://x.com/mapanare)
 
 Hecho con cuidado por [Juan Denis](https://juandenis.com)
 
