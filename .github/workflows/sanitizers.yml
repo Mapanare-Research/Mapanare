@@ -149,7 +149,7 @@ jobs:
           mkdir -p /tmp/async
           for t in 55_async_basic 56_async_await 57_real_await; do
             python -m mapanare emit-llvm "tests/golden/$t.mn" -o "/tmp/async/$t.ll"
-            llc "/tmp/async/$t.ll" -o "/tmp/async/$t.s"
+            clang -S -O1 "/tmp/async/$t.ll" -o "/tmp/async/$t.s"
           done
 
       - name: Link async goldens against TSan runtime and run them
@@ -178,7 +178,7 @@ jobs:
           mkdir -p /tmp/async_demos
           for demo in async_file_io async_http_demo; do
             python -m mapanare emit-llvm "examples/${demo}.mn" -o "/tmp/async_demos/${demo}.ll"
-            llc "/tmp/async_demos/${demo}.ll" -o "/tmp/async_demos/${demo}.s"
+            clang -S -O1 "/tmp/async_demos/${demo}.ll" -o "/tmp/async_demos/${demo}.s"
             clang -O1 -g -fsanitize=thread -fno-omit-frame-pointer -no-pie \
                 "/tmp/async_demos/${demo}.s" /tmp/tsan_rt/libmapanare_rt_tsan.a \
                 -lm -lpthread -ldl -o "/tmp/async_demos/${demo}.bin"
