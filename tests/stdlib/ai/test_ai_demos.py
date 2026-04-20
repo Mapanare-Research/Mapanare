@@ -84,17 +84,18 @@ class TestReadmeAISection:
     """README.md has the AI narrative."""
 
     def test_hello_ai_snippet(self):
+        # v5.0.0: README simplified — AI example uses ollama in language features block
         src = open("README.md").read()
-        assert "Hello AI" in src
-        assert 'ollama("llama3.2")' in src
+        assert "ollama" in src
 
     def test_ai_stdlib_bullet(self):
         src = open("README.md").read()
-        assert "AI stdlib" in src
+        assert "AI stdlib" in src or "ai::llm" in src
 
     def test_cookbook_link(self):
+        # v5.0.0: detailed docs moved to mapanare.dev
         src = open("README.md").read()
-        assert "cookbook" in src.lower()
+        assert "cookbook" in src.lower() or "mapanare.dev/docs" in src
 
 
 class TestOllamaIntegration:
