@@ -90,11 +90,47 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.bump_version.outputs.new_version }}
-          name: v${{ steps.bump_version.outputs.new_version }}
+          name: Mapanare v${{ steps.bump_version.outputs.new_version }}
           body: |
-            ## Installation
+            > AI-native compiled language. First-class agents, signals, streams, tensors.
+            > Compiles to LLVM IR, C, and WebAssembly. **~168x faster than Python.**
 
-            ### Quick Install
+            ---
+
+            ## What's New
+
+            ${{ steps.fetch_pr.outputs.result != 'null' && fromJSON(steps.fetch_pr.outputs.result).body || 'See commit history for details.' }}
+
+            ---
+
+            ## Downloads
+
+            ### Full CLI (compiler + transpiler + LSP + WASM)
+
+            | Platform | Architecture | Download | Size |
+            |:---------|:-------------|:---------|:-----|
+            | Linux | x86_64 | [`mapanare-linux-x64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | — |
+            | macOS | Apple Silicon | [`mapanare-mac-arm64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | — |
+            | Windows | x86_64 | [`mapanare-win-x64.zip`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | — |
+
+            ### Native Compiler Only (~3 MB, no Python dependency)
+
+            | Platform | Architecture | Download | Size |
+            |:---------|:-------------|:---------|:-----|
+            | Linux | x86_64 | [`mnc-linux-x64`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) | — |
+            | macOS | Apple Silicon | [`mnc-darwin-arm64`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) | — |
+
+            <details>
+            <summary>Checksums (SHA-256)</summary>
+
+            [`SHA256SUMS.txt`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/SHA256SUMS.txt)
+            </details>
+
+            > Asset sizes are filled in automatically after the build pipeline completes.
+
+            ---
+
+            ## Quick Install
 
             **Linux / macOS:**
             ```bash
@@ -106,47 +142,36 @@ jobs:
             irm https://raw.githubusercontent.com/${{ github.repository }}/main/packaging/install.ps1 | iex
             ```
 
-            **pip (Python 3.11+):**
+            **pip:**
             ```bash
             pip install mapanare
             ```
 
-            ### Manual Download — Full CLI (includes transpiler, LSP, WASM)
-
-            | Platform | Download | Size |
-            |----------|----------|------|
-            | **Linux** (x64) | [`mapanare-linux-x64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | — |
-            | **macOS** (Apple Silicon) | [`mapanare-mac-arm64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | — |
-            | **Windows** (x64) | [`mapanare-win-x64.zip`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | — |
-
-            ### Native Compiler Only (~3 MB, no Python dependency)
-
-            | Platform | Download | Size |
-            |----------|----------|------|
-            | **Linux** (x64) | [`mnc-linux-x64`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) | — |
-            | **macOS** (Apple Silicon) | [`mnc-darwin-arm64`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) | — |
-
-            ### Checksums
-
-            [`SHA256SUMS.txt`](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/SHA256SUMS.txt) — verify integrity of all downloads.
-
-            > Downloads become available once the build pipeline completes (~15 min after release).
-
-            ### Verify Installation
+            **Verify:**
             ```bash
             mapanare --version
-            mapanare run hello.mn
             ```
 
             ---
 
-            ## Changes
-            ${{ steps.fetch_pr.outputs.result != 'null' && fromJSON(steps.fetch_pr.outputs.result).body || 'Version update' }}
+            ## Write Python, Compile Native
 
-            ## Details
+            ```bash
+            mapanare build your_script.py -o your_script
+            ./your_script   # 33-239x faster
+            ```
+
+            See [Python to Native guide](https://github.com/${{ github.repository }}/blob/main/docs/guides/python_to_native.md) for supported features.
+
+            ---
+
+            <details>
+            <summary>Release details</summary>
+
             - Version: `v${{ steps.bump_version.outputs.new_version }}`
+            - Commit: `${{ github.sha }}`
             ${{ steps.fetch_pr.outputs.result != 'null' && format('- PR: #{0} by @{1}', fromJSON(steps.fetch_pr.outputs.result).number, fromJSON(steps.fetch_pr.outputs.result).author) || '' }}
-            ${{ steps.fetch_pr.outputs.result != 'null' && format('- PR URL: {0}', fromJSON(steps.fetch_pr.outputs.result).url) || '' }}
+            </details>
           draft: false
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}
 
