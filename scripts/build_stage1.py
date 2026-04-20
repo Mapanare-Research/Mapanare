@@ -2,12 +2,12 @@
 """Build the Stage 1 self-hosted compiler binary (mnc-stage1).
 
 Pipeline:
-    1. Compile mapanare/self/*.mn (10 modules) → LLVM IR via Python bootstrap
+    1. Compile mapanare/self/*.mn (10 modules) -> LLVM IR via Python bootstrap
     2. Post-process IR: make compile() externally visible
-    3. Compile IR → native object code
+    3. Compile IR -> native object code
     4. Compile C runtime (mapanare_core.c + mapanare_io.c + mapanare_gpu.c)
     5. Compile C main wrapper (mnc_main.c)
-    6. Link: main wrapper + compiler object + C runtime → mnc-stage1
+    6. Link: main wrapper + compiler object + C runtime -> mnc-stage1
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ def build() -> pathlib.Path:
     if "--use-committed" in sys.argv:
         print("[1/6] Using committed LLVM IR (--use-committed) ...")
         ir = ir_path.read_text(encoding="utf-8")
-        print(f"  IR: {ir.count(chr(10))} lines ← {ir_path}")
+        print(f"  IR: {ir.count(chr(10))} lines <- {ir_path}")
         for path, original in restored.items():
             path.write_text(original, encoding="utf-8")
     else:
@@ -98,13 +98,13 @@ def build() -> pathlib.Path:
     ir = ir.replace("define internal ", "define ")
 
     ir_path.write_text(ir, encoding="utf-8")
-    print(f"  IR: {ir.count(chr(10))} lines → {ir_path}")
+    print(f"  IR: {ir.count(chr(10))} lines -> {ir_path}")
 
     # 3. Compile IR to object code
-    print("[3/6] Compiling LLVM IR → object code ...")
+    print("[3/6] Compiling LLVM IR -> object code ...")
     obj_path = SELF_DIR / "main.o"
 
-    # Prefer clang for IR→object compilation.  The text emitter generates
+    # Prefer clang for IR->object compilation.  The text emitter generates
     # UB-free alloca-based IR that is safe at all optimization levels.
     # -O2 produces a 6.7x smaller binary with ~30x faster compile times.
     import shutil
@@ -119,7 +119,7 @@ def build() -> pathlib.Path:
         check=True,
         capture_output=True,
     )
-    print(f"  Object: {obj_path.stat().st_size} bytes → {obj_path} (clang {opt_flag})")
+    print(f"  Object: {obj_path.stat().st_size} bytes -> {obj_path} (clang {opt_flag})")
 
     # 4. Compile C runtime
     # v4.29.0: ``mapanare_db.c`` (1,130 lines, SQLite/Postgres/Redis +
