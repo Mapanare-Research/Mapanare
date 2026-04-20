@@ -593,6 +593,12 @@ MN_EXPORT MnString __mn_sb_finish(MnStringBuilder *sb) {
     return s;
 }
 
+/* String functions compare int64_t indices against uint64_t len (63-bit
+ * bitfield). The comparison is safe because len ≤ INT64_MAX, but Apple Clang
+ * flags it with -Wsign-compare under -Wextra -Werror. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 MN_EXPORT MnString __mn_str_char_at(MnString s, int64_t i) {
     if (i < 0 || i >= s.len) {
         return __mn_str_empty();
@@ -825,6 +831,8 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
     r.is_heap = 1;
     return r;
 }
+
+#pragma GCC diagnostic pop
 
 /* str(true) / str(false) — return non-heap constants (never freed). */
 static const char s_true[]  = "true";
