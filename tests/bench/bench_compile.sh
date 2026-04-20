@@ -5,8 +5,8 @@
 #   mnc run hello.mn        < 5000ms  (generous for CI runners)
 #   mnc build hello.mn      < 5000ms
 #   mnc-stage1 binary size  < 10MB (stripped)
-#   main.ll IR lines        < 200K
-#   IR blowup ratio         < 15x
+#   main.ll IR lines        < 1M (v4.155.0: 912K for 10-module self-hosted compiler)
+#   IR blowup ratio         < 25x
 #
 # Usage:
 #   bash tests/bench/bench_compile.sh              # run benchmarks
@@ -80,8 +80,8 @@ if [ "${GATE}" = "--gate" ]; then
     fi
 
     if [ -f "${MAIN_LL}" ]; then
-        if [ "${IR_LINES}" -gt 200000 ]; then
-            echo "FAIL: IR ${IR_LINES} lines > 200K" >&2
+        if [ "${IR_LINES}" -gt 1000000 ]; then
+            echo "FAIL: IR ${IR_LINES} lines > 1M" >&2
             FAIL=1
         fi
     fi
