@@ -234,6 +234,12 @@ def build() -> pathlib.Path:
         link_flags = [
             "-lm",
             "-Wl,--stack,67108864",  # 64MB stack for deep recursion on Windows
+            # Alias __chkstk (emitted by clang for large stack frames) to
+            # MinGW's ___chkstk_ms. Without this the linker fails with
+            # "undefined reference to __chkstk" because clang targets the
+            # MSVC probe name but MinGW's libgcc only provides the _ms
+            # variant. Both have the same calling convention (size in rax).
+            "-Wl,--defsym=__chkstk=___chkstk_ms",
         ]
     elif sys.platform == "darwin":
         link_flags = [
