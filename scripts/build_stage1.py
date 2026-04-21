@@ -17,7 +17,12 @@ import pathlib
 import subprocess
 import sys
 
-CC = os.environ.get("CC", "gcc")
+import shutil as _shutil
+
+# Use the same compiler for C runtime and IR to avoid ABI mismatches.
+# On macOS, `gcc` is Apple Clang while LLVM IR is compiled with Homebrew
+# clang-18 — different ABIs cause struct layout corruption at runtime.
+CC = os.environ.get("CC", _shutil.which("clang") or "gcc")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SELF_DIR = ROOT / "mapanare" / "self"
