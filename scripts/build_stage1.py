@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil as _shutil
 import subprocess
 import sys
-
-import shutil as _shutil
 
 # Use the same compiler for C runtime and IR to avoid ABI mismatches.
 # On macOS, `gcc` is Apple Clang while LLVM IR is compiled with Homebrew
