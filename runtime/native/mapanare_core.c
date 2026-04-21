@@ -26,6 +26,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <io.h>      /* _access */
+#include <direct.h>  /* _mkdir, _rmdir */
 #endif
 
 #include <stdatomic.h>
@@ -1442,14 +1444,21 @@ MN_EXPORT MnString __mn_list_str_get(MnList *list, int64_t i) {
 }
 
 /* -----------------------------------------------------------------------
- * File I/O (POSIX-only — Windows uses different APIs, stubbed for now)
+ * File I/O — cross-platform
+ * Portable stdio (fopen/fread/...) works on both Windows and POSIX.
+ * Stat/access/mkdir/rmdir/realpath/opendir have per-platform branches.
  * ----------------------------------------------------------------------- */
 
-#ifndef _WIN32
+/* Helper: MnString → null-terminated C string (caller must __mn_free) */
+static char *mn_to_cstr(MnString s) {
+    char *c = (char *)__mn_alloc(s.len + 1);
+    memcpy(c, mn_untag(s.data), (size_t)s.len);
+    c[s.len] = '\0';
+    return c;
+}
 
 MN_EXPORT MnString __mn_file_read(MnString path, int64_t *ok) {
     *ok = 0;
-    /* Null-terminate the path for fopen */
     const char *path_data = mn_untag(path.data);
     char *cpath = (char *)__mn_alloc(path.len + 1);
     memcpy(cpath, path_data, (size_t)path.len);
@@ -1485,11 +1494,7 @@ MN_EXPORT MnString __mn_file_read(MnString path, int64_t *ok) {
 }
 
 MN_EXPORT int64_t __mn_file_write(MnString path, MnString content) {
-    const char *path_data = mn_untag(path.data);
-    char *cpath = (char *)__mn_alloc(path.len + 1);
-    memcpy(cpath, path_data, (size_t)path.len);
-    cpath[path.len] = '\0';
-
+    char *cpath = mn_to_cstr(path);
     FILE *f = fopen(cpath, "wb");
     __mn_free(cpath);
     if (!f) return -1;
@@ -1503,17 +1508,13 @@ MN_EXPORT int64_t __mn_file_write(MnString path, MnString content) {
     return 0;
 }
 
-/* Helper: MnString → null-terminated C string (caller must __mn_free) */
-static char *mn_to_cstr(MnString s) {
-    char *c = (char *)__mn_alloc(s.len + 1);
-    memcpy(c, mn_untag(s.data), (size_t)s.len);
-    c[s.len] = '\0';
-    return c;
-}
-
 MN_EXPORT int64_t __mn_file_exists(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    int exists = _access(cpath, 0) == 0;
+#else
     int exists = access(cpath, F_OK) == 0;
+#endif
     __mn_free(cpath);
     return exists ? 1 : 0;
 }
@@ -1527,24 +1528,53 @@ MN_EXPORT int64_t __mn_file_remove(MnString path) {
 
 MN_EXPORT int64_t __mn_file_size(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    int ok = GetFileAttributesExA(cpath, GetFileExInfoStandard, &info);
+    __mn_free(cpath);
+    if (!ok) return -1;
+    ULARGE_INTEGER sz;
+    sz.LowPart = info.nFileSizeLow;
+    sz.HighPart = info.nFileSizeHigh;
+    return (int64_t)sz.QuadPart;
+#else
     struct stat st;
     int rc = stat(cpath, &st);
     __mn_free(cpath);
     return rc == 0 ? (int64_t)st.st_size : -1;
+#endif
 }
 
 MN_EXPORT int64_t __mn_file_mtime(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    int ok = GetFileAttributesExA(cpath, GetFileExInfoStandard, &info);
+    __mn_free(cpath);
+    if (!ok) return -1;
+    /* FILETIME is 100ns intervals since 1601-01-01;
+     * Unix epoch 1970-01-01 is 116444736000000000 in those units. */
+    ULARGE_INTEGER ull;
+    ull.LowPart = info.ftLastWriteTime.dwLowDateTime;
+    ull.HighPart = info.ftLastWriteTime.dwHighDateTime;
+    return (int64_t)((ull.QuadPart - 116444736000000000ULL) / 10000000ULL);
+#else
     struct stat st;
     int rc = stat(cpath, &st);
     __mn_free(cpath);
     return rc == 0 ? (int64_t)st.st_mtime : -1;
+#endif
 }
 
 MN_EXPORT MnString __mn_realpath(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    char resolved[MAX_PATH];
+    char *rp = _fullpath(resolved, cpath, MAX_PATH);
+#else
     char resolved[4096];
     char *rp = realpath(cpath, resolved);
+#endif
     __mn_free(cpath);
     if (!rp) return __mn_str_empty();
     return __mn_str_from_cstr(rp);
@@ -1552,7 +1582,11 @@ MN_EXPORT MnString __mn_realpath(MnString path) {
 
 MN_EXPORT int64_t __mn_dir_create(MnString path, int64_t recursive) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    int rc = _mkdir(cpath);
+#else
     int rc = mkdir(cpath, 0755);
+#endif
     __mn_free(cpath);
     (void)recursive; /* TODO: recursive mkdir */
     return rc == 0 ? 0 : -1;
@@ -1560,7 +1594,11 @@ MN_EXPORT int64_t __mn_dir_create(MnString path, int64_t recursive) {
 
 MN_EXPORT int64_t __mn_dir_remove(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    int rc = _rmdir(cpath);
+#else
     int rc = rmdir(cpath);
+#endif
     __mn_free(cpath);
     return rc == 0 ? 0 : -1;
 }
@@ -1596,7 +1634,16 @@ MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst) {
 }
 
 MN_EXPORT MnString __mn_tmpfile_path(void) {
+#ifdef _WIN32
+    char tmpdir[MAX_PATH];
+    DWORD n = GetTempPathA(MAX_PATH, tmpdir);
+    if (n == 0 || n > MAX_PATH) return __mn_str_from_cstr("mn_tmp_XXXXXX");
+    char full[MAX_PATH];
+    snprintf(full, sizeof(full), "%smn_tmp_XXXXXX", tmpdir);
+    return __mn_str_from_cstr(full);
+#else
     return __mn_str_from_cstr("/tmp/mn_tmp_XXXXXX");
+#endif
 }
 
 MN_EXPORT MnString __mn_read_line(void) {
@@ -1652,6 +1699,30 @@ MN_EXPORT int64_t __mn_file_append(MnString path, MnString content) {
 MN_EXPORT MnList __mn_dir_list_strings(MnString path) {
     MnList list = __mn_list_new((int64_t)sizeof(MnString));
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    /* Append "\*" for FindFirstFile glob */
+    size_t plen = strlen(cpath);
+    char *pattern = (char *)__mn_alloc(plen + 3);
+    memcpy(pattern, cpath, plen);
+    pattern[plen] = '\\';
+    pattern[plen + 1] = '*';
+    pattern[plen + 2] = '\0';
+    __mn_free(cpath);
+
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = FindFirstFileA(pattern, &ffd);
+    __mn_free(pattern);
+    if (h == INVALID_HANDLE_VALUE) return list;
+    do {
+        const char *n = ffd.cFileName;
+        if (n[0] == '.' &&
+            (n[1] == '\0' || (n[1] == '.' && n[2] == '\0')))
+            continue;
+        MnString name = __mn_str_from_cstr(n);
+        __mn_list_push(&list, &name);
+    } while (FindNextFileA(h, &ffd));
+    FindClose(h);
+#else
     DIR *d = opendir(cpath);
     __mn_free(cpath);
     if (!d) return list;
@@ -1665,10 +1736,9 @@ MN_EXPORT MnList __mn_dir_list_strings(MnString path) {
         __mn_list_push(&list, &name);
     }
     closedir(d);
+#endif
     return list;
 }
-
-#endif /* !_WIN32 */
 
 /* -----------------------------------------------------------------------
  * MnMap — Robin Hood open-addressing hash table
@@ -2835,7 +2905,6 @@ MN_EXPORT MnString __mn_argv(int64_t index) {
     return __mn_str_from_cstr(g_argv[index]);
 }
 
-#ifndef _WIN32
 /** Read a file, returning its content. Returns empty string on error. */
 MN_EXPORT MnString __mn_file_read_or_empty(MnString path) {
     int64_t ok = 0;
@@ -2845,7 +2914,6 @@ MN_EXPORT MnString __mn_file_read_or_empty(MnString path) {
     }
     return result;
 }
-#endif /* !_WIN32 */
 
 MN_EXPORT void __mn_exit(int64_t code) {
     exit((int)code);
