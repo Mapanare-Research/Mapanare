@@ -284,9 +284,8 @@ jobs:
           - os: macos-latest
             artifact: mnc-darwin-arm64
             triple: aarch64-apple-macos
-          - os: windows-latest
-            artifact: mnc-win-x64.exe
-            triple: x86_64-pc-windows-msvc
+          # Windows native binary skipped — C runtime uses POSIX APIs
+          # and MinGW lacks __chkstk. Windows users get the PyInstaller CLI.
 
     runs-on: ${{ matrix.os }}
 
