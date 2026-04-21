@@ -112,6 +112,26 @@ static inline void mapanare_thread_join(mapanare_thread_t t) {
     WaitForSingleObject(t, INFINITE);
     CloseHandle(t);
 }
+static inline void mapanare_thread_detach(mapanare_thread_t t) {
+    CloseHandle(t);
+}
+
+typedef CONDITION_VARIABLE mapanare_cond_t;
+static inline void mapanare_cond_init(mapanare_cond_t *c) {
+    InitializeConditionVariable(c);
+}
+static inline void mapanare_cond_wait_ms(mapanare_cond_t *c, mapanare_mutex_t *m, int timeout_ms) {
+    SleepConditionVariableCS(c, m, (DWORD)timeout_ms);
+}
+static inline void mapanare_cond_signal(mapanare_cond_t *c) {
+    WakeConditionVariable(c);
+}
+static inline void mapanare_cond_broadcast(mapanare_cond_t *c) {
+    WakeAllConditionVariable(c);
+}
+static inline void mapanare_cond_destroy(mapanare_cond_t *c) {
+    (void)c; /* Windows CONDITION_VARIABLE needs no destroy */
+}
 
 #else /* POSIX */
 
@@ -179,6 +199,31 @@ static inline int mapanare_thread_create(mapanare_thread_t *t, void *(*fn)(void*
 }
 static inline void mapanare_thread_join(mapanare_thread_t t) {
     pthread_join(t, NULL);
+}
+static inline void mapanare_thread_detach(mapanare_thread_t t) {
+    pthread_detach(t);
+}
+
+typedef pthread_cond_t mapanare_cond_t;
+static inline void mapanare_cond_init(mapanare_cond_t *c) {
+    pthread_cond_init(c, NULL);
+}
+static inline void mapanare_cond_wait_ms(mapanare_cond_t *c, mapanare_mutex_t *m, int timeout_ms) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_ms / 1000;
+    ts.tv_nsec += (timeout_ms % 1000) * 1000000L;
+    if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+    pthread_cond_timedwait(c, m, &ts);
+}
+static inline void mapanare_cond_signal(mapanare_cond_t *c) {
+    pthread_cond_signal(c);
+}
+static inline void mapanare_cond_broadcast(mapanare_cond_t *c) {
+    pthread_cond_broadcast(c);
+}
+static inline void mapanare_cond_destroy(mapanare_cond_t *c) {
+    pthread_cond_destroy(c);
 }
 
 #endif
@@ -1530,44 +1575,44 @@ typedef struct {
     mn_task_t slots[MN_OVERFLOW_CAP];
     uint32_t  head;
     uint32_t  count;
-    pthread_mutex_t lock;
+    mapanare_mutex_t lock;
 } mn_overflow_queue_t;
 
 static void mn_overflow_init(mn_overflow_queue_t *q) {
     memset(q->slots, 0, sizeof(q->slots));
     q->head = 0;
     q->count = 0;
-    pthread_mutex_init(&q->lock, NULL);
+    mapanare_mutex_init(&q->lock);
 }
 
 static int mn_overflow_push(mn_overflow_queue_t *q, mn_task_t task) {
-    pthread_mutex_lock(&q->lock);
+    mapanare_mutex_lock(&q->lock);
     if (q->count >= MN_OVERFLOW_CAP) {
-        pthread_mutex_unlock(&q->lock);
+        mapanare_mutex_unlock(&q->lock);
         return -1;
     }
     uint32_t idx = (q->head + q->count) % MN_OVERFLOW_CAP;
     q->slots[idx] = task;
     q->count++;
-    pthread_mutex_unlock(&q->lock);
+    mapanare_mutex_unlock(&q->lock);
     return 0;
 }
 
 static int mn_overflow_pop(mn_overflow_queue_t *q, mn_task_t *out) {
-    pthread_mutex_lock(&q->lock);
+    mapanare_mutex_lock(&q->lock);
     if (q->count == 0) {
-        pthread_mutex_unlock(&q->lock);
+        mapanare_mutex_unlock(&q->lock);
         return 0;
     }
     *out = q->slots[q->head];
     q->head = (q->head + 1) % MN_OVERFLOW_CAP;
     q->count--;
-    pthread_mutex_unlock(&q->lock);
+    mapanare_mutex_unlock(&q->lock);
     return 1;
 }
 
 static void mn_overflow_destroy(mn_overflow_queue_t *q) {
-    pthread_mutex_destroy(&q->lock);
+    mapanare_mutex_destroy(&q->lock);
 }
 
 /* Check if a Future is Ready (state byte at offset 0 == 1). */
@@ -1624,15 +1669,15 @@ static inline void mn_coro_resume(void *handle) {
 
 typedef struct mn_mt_scheduler {
     mn_ws_deque_t      deques[MN_MAX_WORKERS];   /* per-worker deques         */
-    pthread_t          threads[MN_MAX_WORKERS];   /* worker thread handles     */
+    mapanare_thread_t  threads[MN_MAX_WORKERS];   /* worker thread handles     */
     uint32_t           num_workers;               /* N (1 = single-threaded)   */
     mn_overflow_queue_t overflow;                  /* global overflow queue     */
     mapanare_atomic_i32 active_tasks;             /* total tasks in system     */
     mapanare_atomic_i32 running;                  /* 1 = active, 0 = shutdown  */
-    pthread_mutex_t    wake_lock;                 /* protects condvar          */
-    pthread_cond_t     wake_cond;                 /* wake parked workers       */
-    pthread_mutex_t    done_lock;                 /* protects done condvar     */
-    pthread_cond_t     done_cond;                 /* signal block_on caller    */
+    mapanare_mutex_t   wake_lock;                 /* protects condvar          */
+    mapanare_cond_t    wake_cond;                 /* wake parked workers       */
+    mapanare_mutex_t   done_lock;                 /* protects done condvar     */
+    mapanare_cond_t    done_cond;                 /* signal block_on caller    */
 } mn_mt_scheduler_t;
 
 static mn_mt_scheduler_t mn_sched;
@@ -1678,9 +1723,9 @@ static void mn_process_task(mn_task_t *task, uint32_t worker_id) {
     if (mn_coro_is_done(task->handle)) {
         __atomic_fetch_sub(&mn_sched.active_tasks, 1, __ATOMIC_ACQ_REL);
         /* Signal block_on waiters. */
-        pthread_mutex_lock(&mn_sched.done_lock);
-        pthread_cond_broadcast(&mn_sched.done_cond);
-        pthread_mutex_unlock(&mn_sched.done_lock);
+        mapanare_mutex_lock(&mn_sched.done_lock);
+        mapanare_cond_broadcast(&mn_sched.done_cond);
+        mapanare_mutex_unlock(&mn_sched.done_lock);
     } else {
         /* Coroutine suspended again — re-enqueue. */
         if (mn_deque_push(&mn_sched.deques[worker_id], *task) != 0) {
@@ -1689,7 +1734,11 @@ static void mn_process_task(mn_task_t *task, uint32_t worker_id) {
     }
 }
 
+#ifdef _WIN32
+static DWORD WINAPI mn_worker_loop(LPVOID arg) {
+#else
 static void *mn_worker_loop(void *arg) {
+#endif
     uint32_t worker_id = (uint32_t)(uintptr_t)arg;
     uint32_t idle_spins = 0;
 
@@ -1706,26 +1755,23 @@ static void *mn_worker_loop(void *arg) {
             idle_spins++;
             if (idle_spins > 64) {
                 /* Park via condvar (no busy-wait). */
-                pthread_mutex_lock(&mn_sched.wake_lock);
+                mapanare_mutex_lock(&mn_sched.wake_lock);
                 /* Double-check under lock. */
                 if (__atomic_load_n(&mn_sched.running, __ATOMIC_ACQUIRE) &&
                     __atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) > 0) {
-                    struct timespec ts;
-                    clock_gettime(CLOCK_REALTIME, &ts);
-                    ts.tv_nsec += 1000000; /* 1ms timeout to re-check */
-                    if (ts.tv_nsec >= 1000000000) {
-                        ts.tv_sec++;
-                        ts.tv_nsec -= 1000000000;
-                    }
-                    pthread_cond_timedwait(&mn_sched.wake_cond,
-                                           &mn_sched.wake_lock, &ts);
+                    mapanare_cond_wait_ms(&mn_sched.wake_cond,
+                                          &mn_sched.wake_lock, 1);
                 }
-                pthread_mutex_unlock(&mn_sched.wake_lock);
+                mapanare_mutex_unlock(&mn_sched.wake_lock);
                 idle_spins = 0;
             }
         }
     }
+#ifdef _WIN32
+    return 0;
+#else
     return NULL;
+#endif
 }
 
 /* ── Public API (same symbols as v4.92.0) ── */
@@ -1751,10 +1797,10 @@ MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads) {
     mn_sched.num_workers = n;
     __atomic_store_n(&mn_sched.running, 1, __ATOMIC_RELEASE);
     __atomic_store_n(&mn_sched.active_tasks, 0, __ATOMIC_RELEASE);
-    pthread_mutex_init(&mn_sched.wake_lock, NULL);
-    pthread_cond_init(&mn_sched.wake_cond, NULL);
-    pthread_mutex_init(&mn_sched.done_lock, NULL);
-    pthread_cond_init(&mn_sched.done_cond, NULL);
+    mapanare_mutex_init(&mn_sched.wake_lock);
+    mapanare_cond_init(&mn_sched.wake_cond);
+    mapanare_mutex_init(&mn_sched.done_lock);
+    mapanare_cond_init(&mn_sched.done_cond);
     mn_overflow_init(&mn_sched.overflow);
     for (uint32_t i = 0; i < n; i++) {
         mn_deque_init(&mn_sched.deques[i]);
@@ -1772,8 +1818,8 @@ MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads) {
      * errno), so `RLIMIT_NPROC` exhaustion doesn't masquerade as a
      * generic hang. */
     for (uint32_t i = 1; i < n; i++) {
-        int rc = pthread_create(&mn_sched.threads[i], NULL, mn_worker_loop,
-                                (void *)(uintptr_t)i);
+        int rc = mapanare_thread_create(&mn_sched.threads[i], mn_worker_loop,
+                                        (void *)(uintptr_t)i);
         if (rc != 0) {
             fprintf(stderr,
                     "mapanare: async runtime: failed to spawn worker thread "
@@ -1829,9 +1875,9 @@ MN_EXPORT void __mn_coro_scheduler_register(void *handle) {
         }
     }
     /* Wake a parked worker. */
-    pthread_mutex_lock(&mn_sched.wake_lock);
-    pthread_cond_signal(&mn_sched.wake_cond);
-    pthread_mutex_unlock(&mn_sched.wake_lock);
+    mapanare_mutex_lock(&mn_sched.wake_lock);
+    mapanare_cond_signal(&mn_sched.wake_cond);
+    mapanare_mutex_unlock(&mn_sched.wake_lock);
 }
 
 MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr) {
@@ -1860,9 +1906,9 @@ MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr) {
         exit(1);
     }
     /* Wake a worker to check the newly-enqueued wait. */
-    pthread_mutex_lock(&mn_sched.wake_lock);
-    pthread_cond_signal(&mn_sched.wake_cond);
-    pthread_mutex_unlock(&mn_sched.wake_lock);
+    mapanare_mutex_lock(&mn_sched.wake_lock);
+    mapanare_cond_signal(&mn_sched.wake_cond);
+    mapanare_mutex_unlock(&mn_sched.wake_lock);
 }
 
 MN_EXPORT void __mn_coro_scheduler_run(void) {
@@ -1878,19 +1924,12 @@ MN_EXPORT void __mn_coro_scheduler_run(void) {
             idle_spins++;
             if (idle_spins > 100) {
                 /* Wait for a task to complete. */
-                pthread_mutex_lock(&mn_sched.done_lock);
+                mapanare_mutex_lock(&mn_sched.done_lock);
                 if (__atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) > 0) {
-                    struct timespec ts;
-                    clock_gettime(CLOCK_REALTIME, &ts);
-                    ts.tv_nsec += 1000000; /* 1ms */
-                    if (ts.tv_nsec >= 1000000000) {
-                        ts.tv_sec++;
-                        ts.tv_nsec -= 1000000000;
-                    }
-                    pthread_cond_timedwait(&mn_sched.done_cond,
-                                           &mn_sched.done_lock, &ts);
+                    mapanare_cond_wait_ms(&mn_sched.done_cond,
+                                          &mn_sched.done_lock, 1);
                 }
-                pthread_mutex_unlock(&mn_sched.done_lock);
+                mapanare_mutex_unlock(&mn_sched.done_lock);
                 idle_spins = 0;
             }
         }
@@ -1900,17 +1939,17 @@ MN_EXPORT void __mn_coro_scheduler_run(void) {
 MN_EXPORT void __mn_coro_scheduler_destroy(void) {
     __atomic_store_n(&mn_sched.running, 0, __ATOMIC_RELEASE);
     /* Wake all workers so they see the shutdown flag. */
-    pthread_mutex_lock(&mn_sched.wake_lock);
-    pthread_cond_broadcast(&mn_sched.wake_cond);
-    pthread_mutex_unlock(&mn_sched.wake_lock);
+    mapanare_mutex_lock(&mn_sched.wake_lock);
+    mapanare_cond_broadcast(&mn_sched.wake_cond);
+    mapanare_mutex_unlock(&mn_sched.wake_lock);
     /* Join worker threads (skip 0 — that's the caller). */
     for (uint32_t i = 1; i < mn_sched.num_workers; i++) {
-        pthread_join(mn_sched.threads[i], NULL);
+        mapanare_thread_join(mn_sched.threads[i]);
     }
-    pthread_mutex_destroy(&mn_sched.wake_lock);
-    pthread_cond_destroy(&mn_sched.wake_cond);
-    pthread_mutex_destroy(&mn_sched.done_lock);
-    pthread_cond_destroy(&mn_sched.done_cond);
+    mapanare_mutex_destroy(&mn_sched.wake_lock);
+    mapanare_cond_destroy(&mn_sched.wake_cond);
+    mapanare_mutex_destroy(&mn_sched.done_lock);
+    mapanare_cond_destroy(&mn_sched.done_cond);
     mn_overflow_destroy(&mn_sched.overflow);
 }
 
@@ -1932,7 +1971,11 @@ typedef struct {
     MnString path;      /* File path to read                       */
 } mn_async_read_ctx_t;
 
+#ifdef _WIN32
+static DWORD WINAPI mn_async_file_read_thread(LPVOID arg) {
+#else
 static void *mn_async_file_read_thread(void *arg) {
+#endif
     mn_async_read_ctx_t *ctx = (mn_async_read_ctx_t *)arg;
 
     /* Read the file synchronously. */
@@ -1955,7 +1998,11 @@ static void *mn_async_file_read_thread(void *arg) {
     __atomic_store_n((uint8_t *)ctx->future, 1, __ATOMIC_RELEASE);
 
     free(ctx);
+#ifdef _WIN32
+    return 0;
+#else
     return NULL;
+#endif
 }
 
 MN_EXPORT void *__mn_file_read_async(MnString path) {
@@ -1988,8 +2035,8 @@ MN_EXPORT void *__mn_file_read_async(MnString path) {
     ctx->future = future;
     ctx->path = path;
 
-    pthread_t thread;
-    int rc = pthread_create(&thread, NULL, mn_async_file_read_thread, ctx);
+    mapanare_thread_t thread;
+    int rc = mapanare_thread_create(&thread, mn_async_file_read_thread, ctx);
     if (rc != 0) {
         free(ctx);
         free(future);
@@ -2000,7 +2047,7 @@ MN_EXPORT void *__mn_file_read_async(MnString path) {
                 strerror(rc), rc);
         exit(1);
     }
-    pthread_detach(thread);
+    mapanare_thread_detach(thread);
 
     return future;
 }
