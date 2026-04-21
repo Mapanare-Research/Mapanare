@@ -240,6 +240,50 @@ jobs:
         shell: bash
         run: python runtime/native/build_native.py || echo "Native runtime build skipped (optional)"
 
+      # -------------------------------------------------------------------
+      # Windows only: vendor a portable MinGW toolchain (w64devkit) into
+      # the PyInstaller bundle so `mapanare run` / `mapanare build` work
+      # out of the box without a system gcc/clang. Pre-build
+      # libmapanare_rt.a with that same toolchain so users don't pay the
+      # runtime-compile cost on every invocation.
+      # -------------------------------------------------------------------
+      - name: Stage portable toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          W64DEVKIT_VERSION: "2.7.0"
+        run: |
+          set -euo pipefail
+          url="https://github.com/skeeto/w64devkit/releases/download/v${W64DEVKIT_VERSION}/w64devkit-x64-${W64DEVKIT_VERSION}.7z.exe"
+          mkdir -p .tmp-tc && cd .tmp-tc
+          curl -fL -o w64devkit.exe "$url"
+          # SFX 7z archive: -y auto-confirm, -o extract dir
+          ./w64devkit.exe -y -o.
+          mv w64devkit ../toolchain
+          cd ..
+          ls toolchain/bin/gcc.exe
+          ./toolchain/bin/gcc.exe --version
+
+      - name: Pre-build Windows runtime archive
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/toolchain/bin:$PATH"
+          mkdir -p toolchain/lib
+          cd runtime/native
+          gcc -c -O2 -I. mapanare_core.c   -o mapanare_rt_mapanare_core.o
+          gcc -c -O2 -I. mapanare_db.c     -o mapanare_rt_mapanare_db.o
+          gcc -c -O2 -I. mapanare_io.c     -o mapanare_rt_mapanare_io.o
+          gcc -c -O2 -I. mapanare_html.c   -o mapanare_rt_mapanare_html.o
+          gcc -c -O2 -I. mapanare_runtime.c -o mapanare_rt_mapanare_runtime.o
+          gcc -c -O2 -I. mapanare_gpu.c    -o mapanare_rt_mapanare_gpu.o
+          gcc -c -O2 -I. mapanare_gpu_builtins.c -o mapanare_rt_mapanare_gpu_builtins.o
+          ar rcs ../../toolchain/lib/libmapanare_rt.a \
+            mapanare_rt_*.o
+          rm -f mapanare_rt_*.o
+          ls -la ../../toolchain/lib/
+
       - name: Build CLI binary
         run: pyinstaller packaging/mapanare.spec --clean
 
@@ -252,6 +296,14 @@ jobs:
           fi
           "$BINARY" --version
           "$BINARY" --help
+          # On Windows, exercise the full compile+run path with the bundled
+          # toolchain so a broken release fails CI instead of end users.
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo 'fn main() { print("hello from smoke test") }' > smoke.mn
+            "$BINARY" run smoke.mn
+            "$BINARY" build smoke.mn -o smoke.exe
+            ./smoke.exe
+          fi
           echo "CLI smoke test passed"
 
       - name: Archive CLI binary

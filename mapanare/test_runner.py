@@ -177,11 +177,25 @@ def run_test_file(filepath: str, filter_pattern: str | None = None) -> list[Test
         exe_ext = ".exe" if sys.platform == "win32" else ""
         bin_path = ir_path.replace(".ll", exe_ext)
         rt_lib = _find_runtime_lib()
-        clang_cmd = ["clang", "-O2", ir_path, "-o", bin_path]
+
+        from mapanare.toolchain import detect_toolchain, invocation_env
+
+        tc = detect_toolchain()
+        clang_exe = tc.clang if tc else "clang"
+        clang_cmd = [clang_exe or "clang", "-O2", ir_path, "-o", bin_path]
         if rt_lib:
             clang_cmd.append(rt_lib)
-        clang_cmd.extend(["-lm", "-lpthread"])
-        compile_result = subprocess.run(clang_cmd, capture_output=True, text=True, timeout=60)
+        if tc is None or tc.needs_libm_flag:
+            clang_cmd.append("-lm")
+        if tc is None or tc.needs_pthread_flag:
+            clang_cmd.append("-lpthread")
+        compile_result = subprocess.run(
+            clang_cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=invocation_env(tc) if tc else None,
+        )
         if compile_result.returncode != 0:
             return [
                 TestResult(

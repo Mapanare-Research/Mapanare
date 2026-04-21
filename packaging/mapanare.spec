@@ -25,16 +25,26 @@ sep = os.sep
 # Paths are relative to this spec file; go up one level to reach repo root
 root = os.path.normpath(os.path.join(SPECPATH, '..'))
 
+# Optionally stage a portable C toolchain next to the exe. This is populated
+# by the publish.yml Windows job (w64devkit x64) before calling PyInstaller.
+# If the directory exists, ship it; otherwise the bundle relies on a system
+# gcc/clang being on PATH (consistent with Linux / macOS behavior).
+bundled_datas = [
+    (os.path.join(root, 'mapanare'), 'mapanare'),
+    (os.path.join(root, 'runtime'), 'runtime'),
+    (os.path.join(root, 'stdlib'), 'stdlib'),
+    (os.path.join(root, 'VERSION'), '.'),
+]
+
+toolchain_dir = os.path.join(root, 'toolchain')
+if os.path.isdir(toolchain_dir):
+    bundled_datas.append((toolchain_dir, 'toolchain'))
+
 a = Analysis(
     [os.path.join(root, 'packaging', 'pyinstaller-entry.py')],
     pathex=[root],
     binaries=[],
-    datas=[
-        (os.path.join(root, 'mapanare'), 'mapanare'),
-        (os.path.join(root, 'runtime'), 'runtime'),
-        (os.path.join(root, 'stdlib'), 'stdlib'),
-        (os.path.join(root, 'VERSION'), '.'),
-    ] + mapanare_metadata,
+    datas=bundled_datas + mapanare_metadata,
     hiddenimports=[
         'lark',
         'llvmlite',
