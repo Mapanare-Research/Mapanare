@@ -117,9 +117,13 @@ def build() -> pathlib.Path:
             mac_arm64_dl = 'target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128-Fn32"'
             ir = ir.replace(linux_x86_dl, mac_arm64_dl)
     elif sys.platform == "win32":
+        # Use the MinGW triple (x86_64-w64-mingw32) rather than the MSVC
+        # triple so clang emits ``___chkstk_ms`` stack probes, which MinGW's
+        # libgcc provides. The MSVC triple emits bare ``__chkstk`` which is
+        # only supplied by MSVC's CRT and fails to link against gcc/ld.
         ir = ir.replace(
             'target triple = "x86_64-unknown-linux-gnu"',
-            'target triple = "x86_64-pc-windows-msvc"',
+            'target triple = "x86_64-w64-mingw32"',
         )
 
     ir_path.write_text(ir, encoding="utf-8")
