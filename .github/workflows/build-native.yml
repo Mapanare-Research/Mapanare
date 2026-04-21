@@ -18,11 +18,9 @@ jobs:
         include:
           - os: ubuntu-latest
             name: Linux x64
-          - os: macos-latest
-            name: macOS ARM64
-          # Windows native build skipped — C runtime uses POSIX APIs
-          # (opendir, dlopen, etc.) and MinGW lacks __chkstk for large
-          # stack frames. Windows users get the PyInstaller CLI binary.
+          # macOS: ARM64 ABI struct layout issue — tracked for v5.x
+          # Windows: POSIX runtime + MinGW __chkstk — tracked for v5.x
+          # Both platforms get the PyInstaller CLI binary.
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
