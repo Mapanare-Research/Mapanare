@@ -902,7 +902,7 @@ static uint32_t *vk_compile_glsl(const char *glsl_source, size_t *out_size_bytes
     {
         STARTUPINFOA si;
         PROCESS_INFORMATION pi;
-        char cmdline[512];
+        char cmdline[1024];
         memset(&si, 0, sizeof(si));
         si.cb = sizeof(si);
         si.dwFlags = STARTF_USESTDHANDLES;
