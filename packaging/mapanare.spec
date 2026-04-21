@@ -63,6 +63,8 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+icon_path = os.path.join(root, 'packaging', 'mapanare.ico') if is_windows else None
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -74,6 +76,7 @@ exe = EXE(
     strip=do_strip,
     upx=do_upx,
     upx_exclude=[],
+    icon=icon_path,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,

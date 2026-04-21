@@ -711,10 +711,18 @@ def cmd_build(args: argparse.Namespace) -> None:
                 f"(e.g. Android NDK for android targets, Xcode for iOS)"
             )
         else:
-            print(
-                "note: no linker found (install clang, gcc, or MSVC build tools "
-                "to produce executables)"
-            )
+            if os.name == "nt":
+                print(
+                    "note: no linker found. install one of:\n"
+                    "  - w64devkit: https://github.com/skeeto/w64devkit/releases\n"
+                    "  - MSYS2:     https://www.msys2.org (install mingw-w64-x86_64-gcc)\n"
+                    "  - LLVM:      https://github.com/llvm/llvm-project/releases\n"
+                    "  - MSVC:      https://visualstudio.microsoft.com/visual-cpp-build-tools/"
+                )
+            else:
+                print(
+                    "note: no linker found (install clang or gcc to produce executables)"
+                )
 
 
 def cmd_emit_llvm(args: argparse.Namespace) -> None:
@@ -782,7 +790,8 @@ def _compile_to_c(
 
 
 def _run_c_source(c_source: str, source_file: str) -> None:
-    """Compile C source with gcc and run the resulting binary."""
+    """Compile C source with a C compiler and run the resulting binary."""
+    import shutil
     import tempfile
 
     # Find runtime headers
@@ -795,28 +804,68 @@ def _run_c_source(c_source: str, source_file: str) -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         c_path = os.path.join(tmpdir, "program.c")
-        bin_path = os.path.join(tmpdir, "program")
+        bin_ext = ".exe" if os.name == "nt" else ""
+        bin_path = os.path.join(tmpdir, "program" + bin_ext)
 
         with open(c_path, "w", encoding="utf-8") as f:
             f.write(c_source)
 
-        # Compile
-        gcc_cmd = [
-            "gcc",
-            "-O0",
-            "-Wall",
-            "-Wextra",
-            f"-I{runtime_dir}",
-            c_path,
-            runtime_c,
-            "-o",
-            bin_path,
-            "-lm",
-            "-lpthread",
+        # Try available C compilers in order
+        compilers = [
+            (
+                "gcc",
+                [
+                    "gcc", "-O0", "-Wall", "-Wextra",
+                    f"-I{runtime_dir}", c_path, runtime_c,
+                    "-o", bin_path, "-lm", "-lpthread",
+                ],
+            ),
+            (
+                "clang",
+                [
+                    "clang", "-O0", "-Wall", "-Wextra",
+                    f"-I{runtime_dir}", c_path, runtime_c,
+                    "-o", bin_path, "-lm", "-lpthread",
+                ],
+            ),
         ]
-        result = subprocess.run(gcc_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"error: gcc compilation failed:\n{result.stderr}", file=sys.stderr)
+
+        compiled = False
+        for name, cmd in compilers:
+            if shutil.which(name):
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    compiled = True
+                    break
+                else:
+                    print(f"error: {name} compilation failed:\n{result.stderr}", file=sys.stderr)
+                    sys.exit(1)
+
+        if not compiled:
+            print("error: no C compiler found", file=sys.stderr)
+            print("", file=sys.stderr)
+            if os.name == "nt":
+                print(
+                    "install one of the following to compile and run .mn files:",
+                    file=sys.stderr,
+                )
+                print("  - w64devkit: https://github.com/skeeto/w64devkit/releases", file=sys.stderr)
+                print("  - MSYS2:     https://www.msys2.org (install mingw-w64-x86_64-gcc)", file=sys.stderr)
+                print("  - LLVM:      https://github.com/llvm/llvm-project/releases", file=sys.stderr)
+            else:
+                print(
+                    "install gcc or clang to compile and run .mn files",
+                    file=sys.stderr,
+                )
+            print("", file=sys.stderr)
+            print(
+                "alternatively, use 'mapanare check' to type-check without compiling,",
+                file=sys.stderr,
+            )
+            print(
+                "or 'mapanare emit-llvm' / 'mapanare emit-c' to view generated code.",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         # Run
