@@ -1,0 +1,30 @@
+=== Run 1 @ 2026-04-16 01:30:26 ===
+wall_seconds=507
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5152 passed, 115 skipped, 9 xfailed, 2 warnings in 541.12s (0:09:01)
+
+=== Run 2 @ 2026-04-16 01:38:53 ===
+wall_seconds=505
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5152 passed, 115 skipped, 9 xfailed, 2 warnings in 537.80s (0:08:57)
+
+=== Run 3 @ 2026-04-16 01:47:18 ===
+wall_seconds=471
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5152 passed, 115 skipped, 9 xfailed, 2 warnings in 503.00s (0:08:23)
+
+=== Run 4 @ 2026-04-16 01:55:09 ===
+wall_seconds=473
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5152 passed, 115 skipped, 9 xfailed, 2 warnings in 502.05s (0:08:22)
+
+=== Run 5 @ 2026-04-16 02:03:02 ===
+wall_seconds=480
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5152 passed, 115 skipped, 9 xfailed, 2 warnings in 512.72s (0:08:32)
+

@@ -3,8 +3,11 @@ source_filename = "06_struct"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-declare {ptr, i64} @__mn_str_from_int(i64)
+declare {ptr, i64} @__mn_str_from_int(i64) nounwind willreturn
 declare void @__mn_str_println({ptr, i64})
+declare void @__mn_str_free({ptr, i64}) nounwind willreturn
+declare void @free(ptr) nounwind willreturn
+declare void @__mn_intern_destroy()
 
 define i64 @main() {
 pre_entry:
@@ -16,10 +19,12 @@ pre_entry:
   store {i64, i64} zeroinitializer, ptr %t2.a.6
   %t3.a.9 = alloca i64, align 8
   store i64 0, ptr %t3.a.9
-  %t4.a.12 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t4.a.12
-  %t5.a.14 = alloca i1, align 8
-  store i1 0, ptr %t5.a.14
+  %str_track.12 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.12
+  %t4.a.13 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t4.a.13
+  %t5.a.15 = alloca i1, align 8
+  store i1 0, ptr %t5.a.15
   br label %entry
 entry:
   store i64 3, ptr %t0.a.0
@@ -34,13 +39,23 @@ entry:
   store i64 %fv.8, ptr %t3.a.9
   %l.10 = load i64, ptr %t3.a.9
   %rt.11 = call {ptr, i64} @__mn_str_from_int(i64 %l.10)
-  store {ptr, i64} %rt.11, ptr %t4.a.12
-  %l.13 = load {ptr, i64}, ptr %t4.a.12
-  call void @__mn_str_println({ptr, i64} %l.13)
-  store i1 0, ptr %t5.a.14
+  store {ptr, i64} %rt.11, ptr %str_track.12
+  store {ptr, i64} %rt.11, ptr %t4.a.13
+  %l.14 = load {ptr, i64}, ptr %t4.a.13
+  call void @__mn_str_println({ptr, i64} %l.14)
+  store i1 0, ptr %t5.a.15
+  %drop.s.16 = load {ptr, i64}, ptr %str_track.12
+  %drop.p.17 = extractvalue {ptr, i64} %drop.s.16, 0
+  %drop.null.18 = icmp eq ptr %drop.p.17, null
+  br i1 %drop.null.18, label %drop.skip.19, label %drop.check.19
+drop.check.19:
+  call void @__mn_str_free({ptr, i64} %drop.s.16)
+  br label %drop.skip.19
+drop.skip.19:
+  call void @__mn_intern_destroy()
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.34.0"}

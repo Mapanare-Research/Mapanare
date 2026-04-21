@@ -1,0 +1,117 @@
+// ====================================================================
+// Known issue (v4.129.0): this example does not currently compile.
+// Cause: multi-line list literal grammar limitation (docket Gr.1)
+// See docs/roadmap/v4/v4.129.0/EXAMPLES_REPORT.md for root cause and
+// docket reference.
+// ====================================================================
+
+// rag_agent.mn — Retrieval-Augmented Generation agent
+//
+// This demo shows the full RAG pipeline in Mapanare:
+//   1. Load documents from sample_docs/
+//   2. Chunk them into passages
+//   3. Embed each chunk using Ollama
+//   4. Index embeddings in an in-memory vector store
+//   5. At query time: embed the query, search for top-k similar chunks,
+//      augment the prompt with context, ask the LLM
+//
+// Prerequisites:
+//   ollama serve
+//   ollama pull llama3.2
+//   ollama pull nomic-embed-text
+//
+// Run:
+//   mapanare run examples/ai/rag_agent.mn
+
+import ai::llm
+import ai::embedding
+import ai::rag
+
+// ── Document loading ────────────────────────────────────────────────
+//
+// In a real application you'd read from files. Here we inline the
+// sample corpus for portability.
+
+fn load_sample_docs() -> List<String> {
+    return [
+        "Mapanare agents are first-class concurrent primitives. An agent has typed input and output channels. You define an agent with the agent keyword, spawn it with spawn, send messages with <-, and receive with sync.",
+        "Signals in Mapanare provide reactive state management. A signal holds a value and automatically notifies subscribers when it changes. Computed signals derive their value from other signals and update lazily.",
+        "Streams are Mapanare's async data flow primitive. A stream produces values over time. Stream operators include map, filter, take, skip, collect, and fold. Streams support backpressure via bounded buffers.",
+        "Tensors in Mapanare are first-class typed arrays with compile-time shape verification. Operations include element-wise arithmetic with NumPy-style broadcasting, reductions, and range-based slicing.",
+        "Mapanare compiles to native binaries via LLVM IR. The self-hosted compiler is 15,000+ lines of Mapanare that compiles itself to a fixed point.",
+        "Error handling in Mapanare uses Result and Option types. The ? operator propagates errors automatically. Functions that can fail return Result.",
+        "Mapanare calls itself AI-native because agents, signals, streams, and tensors are language primitives, not library add-ons. The stdlib provides a unified LLM interface, structured extraction, vector embeddings, and RAG helpers.",
+        "Pattern matching in Mapanare uses the match keyword. You can match on enum variants, struct fields, literals, and wildcards. Guard clauses add conditions to patterns."
+    ]
+}
+
+// ── RAG Pipeline ────────────────────────────────────────────────────
+
+fn main() {
+    // Step 1: Load and chunk documents
+    let docs = load_sample_docs()
+    print("Loaded " + str(len(docs)) + " documents")
+
+    // Step 2: Set up embedding and LLM configs
+    let embed_config = ollama_embed("nomic-embed-text")
+    let llm_config = ollama("llama3.2")
+
+    // Step 3: Embed each document and build vector index
+    let mut store = new_store()
+    let mut i: Int = 0
+    while i < len(docs) {
+        let doc = docs[i]
+        let result = embed(embed_config, doc)
+        match result {
+            Ok(emb) => {
+                store_add(store, "doc_" + str(i), doc, emb.vector)
+                print("Embedded doc " + str(i) + " (" + str(emb.dimensions) + "d)")
+            },
+            Err(e) => {
+                print("Failed to embed doc " + str(i) + ": " + error_message(e))
+            }
+        }
+        i = i + 1
+    }
+    print("Index built: " + str(store_size(store)) + " entries\n")
+
+    // Step 4: Query the index
+    let query = "How does Mapanare handle errors?"
+    print("Query: " + query)
+
+    let query_result = embed(embed_config, query)
+    match query_result {
+        Ok(query_emb) => {
+            // Find top 3 similar chunks
+            let results = store_search(store, query_emb.vector, 3)
+
+            // Build context from retrieved chunks
+            let mut texts: List<String> = []
+            let mut j: Int = 0
+            while j < len(results) {
+                let r = results[j]
+                print("  [" + str(j) + "] score=" + str(r.score) + " " + r.text)
+                texts = texts + [r.text]
+                j = j + 1
+            }
+
+            // Augment prompt with retrieved context
+            let context = build_context_simple(texts)
+            let augmented = augment_prompt(query, context)
+
+            // Ask the LLM with context
+            print("\nAsking LLM with " + str(context.source_count) + " context chunks...")
+            let answer = chat(llm_config, [
+                system_msg("Answer based on the provided context. Be concise."),
+                user_msg(augmented)
+            ])
+            match answer {
+                Ok(resp) => print("\nAnswer: " + resp.content),
+                Err(e) => print("LLM error: " + error_message(e))
+            }
+        },
+        Err(e) => {
+            print("Failed to embed query: " + error_message(e))
+        }
+    }
+}

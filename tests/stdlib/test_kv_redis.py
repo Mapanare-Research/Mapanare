@@ -45,7 +45,7 @@ _REDIS_MN = (_STDLIB_DIR / "db" / "redis.mn").read_text(encoding="utf-8")
 
 def _compile_mir(source: str) -> str:
     """Compile via MIR-based LLVM emitter."""
-    return _compile_to_llvm_ir(source, "test_kv_redis.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test_kv_redis.mn")
 
 
 def _strip_imports(source: str) -> str:

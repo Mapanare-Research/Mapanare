@@ -267,7 +267,6 @@ async function initPyodide() {
     "types.py",
     "parser.py",
     "semantic.py",
-    "optimizer.py",
     "emit_python.py",
     "emit_wasm.py",
     "mir.py",
@@ -319,7 +318,6 @@ def _mn_compile_to_wasm(source):
     try:
         from mapanare.parser import parse, ParseError
         from mapanare.semantic import check_or_raise, SemanticErrors
-        from mapanare.optimizer import OptLevel, optimize
 
         # Parse
         try:
@@ -334,8 +332,7 @@ def _mn_compile_to_wasm(source):
             msgs = [f"Error (line {err.line}): {err.message}" for err in e.errors]
             return {"ok": False, "error": "\\n".join(msgs)}
 
-        # Optimize
-        ast, _ = optimize(ast, OptLevel.O1)
+        # Optimization happens at the MIR level inside the WASM emitter path.
 
         # Try WASM emitter (MIR-based path)
         try:
@@ -363,7 +360,6 @@ def _mn_compile_and_run(source):
     try:
         from mapanare.parser import parse, ParseError
         from mapanare.semantic import check_or_raise, SemanticErrors
-        from mapanare.optimizer import OptLevel, optimize
         from mapanare.emit_python import PythonEmitter
 
         try:
@@ -377,7 +373,6 @@ def _mn_compile_and_run(source):
             msgs = [f"Error (line {err.line}): {err.message}" for err in e.errors]
             return {"ok": False, "error": "\\n".join(msgs)}
 
-        ast, _ = optimize(ast, OptLevel.O0)
         emitter = PythonEmitter()
         python_code = emitter.emit(ast)
 

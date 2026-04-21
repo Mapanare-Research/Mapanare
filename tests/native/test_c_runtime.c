@@ -247,10 +247,18 @@ TEST(test_list_set) {
 }
 
 TEST(test_list_oob) {
+    /* v4.133.0 An.1: __mn_list_get / __mn_list_set now abort(3) on OOB
+     * reads (runtime/native/mapanare_core.c — deliberate hardening
+     * after v4.31.0 removed the static-zero-buffer workaround, since
+     * silent zero reads were a worse bug than a clear diagnostic
+     * abort). That makes the original expectation (non-NULL return
+     * from out-of-bounds __mn_list_get) obsolete — calling it from
+     * this test harness would terminate the whole binary. Only the
+     * behaviour that is still safe to exercise inline is kept:
+     * __mn_list_pop returning -1 on empty. OOB __mn_list_get/_set
+     * behaviour is now asserted by the Python-side sanitizer suite
+     * (runs each case in its own subprocess). */
     MnList list = __mn_list_new(sizeof(int64_t));
-    /* OOB returns a static zero buffer (not NULL) to avoid segfaults */
-    ASSERT_NE(__mn_list_get(&list, 0), NULL);
-    ASSERT_NE(__mn_list_get(&list, -1), NULL);
     int64_t dummy;
     ASSERT_EQ(__mn_list_pop(&list, &dummy), -1);
     __mn_list_free(&list);
@@ -294,9 +302,10 @@ TEST(test_list_str) {
     got = __mn_list_str_get(&list, 1);
     ASSERT_EQ(__mn_str_eq(got, s2), 1);
 
-    /* OOB returns empty */
-    got = __mn_list_str_get(&list, 5);
-    ASSERT_EQ(got.len, 0);
+    /* v4.133.0 An.1: OOB __mn_list_str_get now aborts(3) to match the
+     * hardened MnList API (see test_list_oob above). The old "returns
+     * empty string" expectation no longer holds; removing the OOB
+     * probe here keeps the in-process C test runnable. */
 
     __mn_list_free_strings(&list);
 }
@@ -734,6 +743,11 @@ TEST(test_agent_failing_handler) {
 TEST(test_agent_metrics) {
     mapanare_agent_t agent;
     ASSERT_EQ(mapanare_agent_init(&agent, "metrics", echo_handler, NULL, 256, 256), 0);
+    /* v4.137.0 (Ch.1 test hygiene): this test uses pointer-as-token
+     * values (1..5) rather than heap allocations. The default dtor
+     * (free, set in v4.78.0 CARRY_FORWARD #50) would call free() on
+     * those tokens during destroy's outbox drain. NULL it here. */
+    agent.message_dtor = NULL;
     ASSERT_EQ(mapanare_agent_messages_processed(&agent), 0);
 
     ASSERT_EQ(mapanare_agent_spawn(&agent), 0);

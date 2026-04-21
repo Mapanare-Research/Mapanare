@@ -7,19 +7,24 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from mapanare.diagnostics import Diagnostic
     from mapanare.modules import ModuleExport, ModuleResolver
+    from mapanare.pattern_matching import TypeContext
 
 from mapanare.ast_nodes import (
     AgentDef,
     AssertStmt,
     AssignExpr,
     ASTNode,
+    AsyncFnDef,
+    AwaitExpr,
     BinaryExpr,
     Block,
     BoolLiteral,
     BreakStmt,
     CallExpr,
     CharLiteral,
+    ConstDef,
     ConstructExpr,
     ContinueStmt,
     Definition,
@@ -35,6 +40,7 @@ from mapanare.ast_nodes import (
     FloatLiteral,
     FnDef,
     FnType,
+    ForAwaitLoop,
     ForLoop,
     GenericType,
     Identifier,
@@ -50,6 +56,7 @@ from mapanare.ast_nodes import (
     MapLiteral,
     MatchExpr,
     MethodCallExpr,
+    ModuleLetDef,
     NamedType,
     NamespaceAccessExpr,
     NoneLiteral,
@@ -69,6 +76,7 @@ from mapanare.ast_nodes import (
     StringLiteral,
     StructDef,
     SyncExpr,
+    TensorLiteral,
     TensorType,
     TraitDef,
     TypeAlias,
@@ -121,23 +129,59 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
-# Semantic error
+# Semantic error — thin record that now carries a real source range.
+#
+# v4.27.0 recovery: previously this record only stored a single (line, column)
+# point, so every semantic error underlined exactly one character regardless
+# of how wide the offending expression was (v4.26.0 panel CRITICAL #8 from
+# Anaconda). The representation is now range-aware: errors constructed via
+# ``SemanticChecker._error`` pick up the full ``Span`` from the AST node, and
+# ``cli._emit_semantic_errors`` renders them through ``diagnostics.py``'s
+# ``Diagnostic`` formatter so the underline matches the offending expression.
+#
+# The dataclass name and ``line``/``column``/``message``/``filename`` fields
+# are preserved so that external consumers (LSP, playground, tests,
+# test_runner) continue to work without a mass rename.
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
 class SemanticError:
-    """A single semantic error with source location."""
+    """A single semantic error with a real source range."""
 
     message: str
     line: int = 0
     column: int = 0
+    end_line: int = 0
+    end_column: int = 0
     filename: str = "<input>"
     severity: str = "error"
 
     def __str__(self) -> str:
         prefix = "warning" if self.severity == "warning" else "error"
         return f"{self.filename}:{self.line}:{self.column}: {prefix}: {self.message}"
+
+    def to_diagnostic(self) -> "Diagnostic":
+        """Render this error as a :class:`mapanare.diagnostics.Diagnostic`.
+
+        Routes through ``mapanare.diagnostics`` so the CLI error path uses the
+        same rustc-quality formatter as parser errors. If ``end_line`` or
+        ``end_column`` were not populated (legacy call sites), the renderer
+        falls back to a one-character span so behaviour is unchanged.
+        """
+        from mapanare.ast_nodes import Span
+        from mapanare.diagnostics import Diagnostic, Label, Severity
+
+        end_line = self.end_line if self.end_line > 0 else self.line
+        end_column = self.end_column if self.end_column > 0 else self.column + 1
+        span = Span(line=self.line, column=self.column, end_line=end_line, end_column=end_column)
+        severity = Severity.WARNING if self.severity == "warning" else Severity.ERROR
+        return Diagnostic(
+            severity=severity,
+            message=self.message,
+            filename=self.filename,
+            labels=[Label(span=span, primary=True)],
+        )
 
 
 class SemanticErrors(Exception):
@@ -172,6 +216,11 @@ class SymbolKind(StrEnum):
     PARAM = "param"
     TRAIT = "trait"
     MODULE = "module"
+    CONST = "const"
+
+
+# v4.55.0: compile-time constant values for const folding
+ConstantValue = int | float | bool | str
 
 
 @dataclass
@@ -183,6 +232,7 @@ class Symbol:
     type_info: TypeInfo = field(default_factory=lambda: UNKNOWN_TYPE)
     mutable: bool = False
     node: ASTNode | None = None
+    const_value: ConstantValue | None = None
 
 
 class Scope:
@@ -261,6 +311,15 @@ class SemanticChecker:
         self._trait_impls: set[tuple[str, str]] = set()
         # Type parameters of the current function (for generic type resolution)
         self._current_type_params: set[str] = set()
+        # v4.33.0: track enclosing function's return type for `?` operator
+        # type checking. Set by _check_fn, read by the ErrorPropExpr handler.
+        self._current_fn_return_type: TypeInfo | None = None
+        self._current_fn_name: str = ""
+        # v4.55.0: const folding table (name -> folded value)
+        self._const_table: dict[str, ConstantValue] = {}
+        # v4.69.0: track whether we're inside an async fn body.
+        # Set by _check_async_fn, read by the AwaitExpr handler.
+        self._in_async: bool = False
 
         # Register built-in traits
         for trait_name, methods in BUILTIN_TRAITS.items():
@@ -301,11 +360,15 @@ class SemanticChecker:
     # -- Error helpers --------------------------------------------------
 
     def _error(self, message: str, node: ASTNode) -> None:
+        # v4.27.0: capture the full AST span so diagnostics underline the
+        # offending expression instead of pointing at a single character.
         self.errors.append(
             SemanticError(
                 message=message,
                 line=node.span.line,
                 column=node.span.column,
+                end_line=node.span.end_line,
+                end_column=node.span.end_column,
                 filename=self.filename,
             )
         )
@@ -326,6 +389,8 @@ class SemanticChecker:
                 message=message,
                 line=node.span.line,
                 column=node.span.column,
+                end_line=node.span.end_line,
+                end_column=node.span.end_column,
                 filename=self.filename,
                 severity="warning",
             )
@@ -348,6 +413,11 @@ class SemanticChecker:
         if te is None:
             return UNKNOWN_TYPE
         if isinstance(te, NamedType):
+            if te.module_path:
+                mod_sym = self.global_scope.lookup(te.module_path[0])
+                if mod_sym is None:
+                    self._error(f"unknown module '{te.module_path[0]}'", te)
+                return TypeInfo(kind=TypeKind.STRUCT, name=te.name)
             k = kind_from_name(te.name)
             if k != TypeKind.UNKNOWN:
                 return TypeInfo(kind=k)
@@ -369,6 +439,14 @@ class SemanticChecker:
             return TypeInfo(kind=TypeKind.STRUCT, name=te.name)
         if isinstance(te, GenericType):
             args = [self._resolve_type_expr(a) for a in te.args]
+            if te.module_path:
+                mod_sym = self.global_scope.lookup(te.module_path[0])
+                if mod_sym is None:
+                    self._error(f"unknown module '{te.module_path[0]}'", te)
+                k = kind_from_name(te.name)
+                if k != TypeKind.UNKNOWN:
+                    return TypeInfo(kind=k, args=args)
+                return TypeInfo(kind=TypeKind.STRUCT, name=te.name, args=args)
             from mapanare.types import BUILTIN_GENERIC_ARITY
 
             expected_arity = BUILTIN_GENERIC_ARITY.get(te.name)
@@ -480,8 +558,77 @@ class SemanticChecker:
                             return self._resolve_type_expr(f.type_annotation)
             return UNKNOWN_TYPE
         if isinstance(expr, IndexExpr):
+            from mapanare.ast_nodes import IndexItem
+
             obj_type = self._infer_expr(expr.object)
-            self._infer_expr(expr.index)
+            has_slice = False
+            for idx_item in expr.indices:
+                if isinstance(idx_item, IndexItem):
+                    if idx_item.kind == "scalar" and idx_item.expr:
+                        self._infer_expr(idx_item.expr)
+                    elif idx_item.kind == "range":
+                        if idx_item.start:
+                            self._infer_expr(idx_item.start)
+                        if idx_item.end:
+                            self._infer_expr(idx_item.end)
+                        has_slice = True
+                    elif idx_item.kind == "wildcard":
+                        has_slice = True
+                elif isinstance(idx_item, Expr):
+                    self._infer_expr(idx_item)
+            n_idx = len(expr.indices)
+            # Tensor: rank match + slicing shape inference (v4.43.0 + v4.45.0)
+            if obj_type.kind == TypeKind.TENSOR:
+                rank = len(obj_type.tensor_shape) if obj_type.tensor_shape else None
+                if rank is not None and n_idx != rank:
+                    self._error(
+                        f"tensor index rank mismatch: got {n_idx} indices "
+                        f"for rank-{rank} tensor",
+                        expr,
+                    )
+                elem = obj_type.args[0] if obj_type.args else FLOAT_TYPE
+                if has_slice:
+                    # Slicing returns a tensor (view) — infer result shape
+                    result_shape: list[int] = []
+                    if obj_type.tensor_shape:
+                        for d, idx_item in enumerate(expr.indices):
+                            if isinstance(idx_item, IndexItem):
+                                if idx_item.kind == "wildcard":
+                                    result_shape.append(
+                                        obj_type.tensor_shape[d]
+                                        if d < len(obj_type.tensor_shape)
+                                        else 0
+                                    )
+                                elif idx_item.kind == "range":
+                                    s = (
+                                        idx_item.start.value
+                                        if isinstance(idx_item.start, IntLiteral)
+                                        else 0
+                                    )
+                                    e = (
+                                        idx_item.end.value
+                                        if isinstance(idx_item.end, IntLiteral)
+                                        else (
+                                            obj_type.tensor_shape[d]
+                                            if d < len(obj_type.tensor_shape)
+                                            else 0
+                                        )
+                                    )
+                                    result_shape.append(max(0, e - s))
+                                else:
+                                    pass  # scalar index removes dimension
+                    return TypeInfo(
+                        kind=TypeKind.TENSOR,
+                        args=[elem],
+                        tensor_shape=tuple(result_shape) if result_shape else None,
+                    )
+                return elem
+            # List/Map: require single scalar index
+            if n_idx > 1:
+                self._error(
+                    f"multi-index not supported for {obj_type.kind.name}; " f"use single index",
+                    expr,
+                )
             if obj_type.kind == TypeKind.LIST and obj_type.args:
                 return obj_type.args[0]
             if obj_type.kind == TypeKind.MAP and len(obj_type.args) >= 2:
@@ -500,19 +647,45 @@ class SemanticChecker:
         if isinstance(expr, SyncExpr):
             self._infer_expr(expr.expr)
             return UNKNOWN_TYPE
+        if isinstance(expr, AwaitExpr):
+            # v4.69.0: full await type checking.
+            # 1. Must be inside an async fn
+            if not self._in_async:
+                self._error(
+                    "'await' can only be used inside an 'async fn'",
+                    expr,
+                )
+                return UNKNOWN_TYPE
+            # 2. Operand must be Future<T>
+            inner_type = self._infer_expr(expr.expr)
+            if inner_type.kind == TypeKind.FUTURE:
+                # Extract T from Future<T>
+                if inner_type.args:
+                    return inner_type.args[0]
+                return UNKNOWN_TYPE
+            if inner_type.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED, TypeKind.ANY):
+                # Can't validate — allow through
+                return UNKNOWN_TYPE
+            # Operand is not Future<T> — error
+            self._error(
+                f"'await' requires a Future<T>, got {inner_type.display_name}",
+                expr,
+            )
+            return UNKNOWN_TYPE
         if isinstance(expr, SendExpr):
             self._check_send(expr)
             return VOID_TYPE
         if isinstance(expr, ErrorPropExpr):
-            self._infer_expr(expr.expr)
-            return UNKNOWN_TYPE
+            return self._check_error_prop(expr)
         if isinstance(expr, ListLiteral):
             if expr.elements:
                 elem_type = self._infer_expr(expr.elements[0])
-                for e in expr.elements[1:]:
-                    self._infer_expr(e)
+                for list_elem in expr.elements[1:]:
+                    self._infer_expr(list_elem)
                 return TypeInfo(kind=TypeKind.LIST, args=[elem_type])
             return TypeInfo(kind=TypeKind.LIST, args=[UNKNOWN_TYPE])
+        if isinstance(expr, TensorLiteral):
+            return self._check_tensor_literal(expr)
         if isinstance(expr, MapLiteral):
             if expr.entries:
                 key_type = self._infer_expr(expr.entries[0].key)
@@ -583,6 +756,17 @@ class SemanticChecker:
             if expr.op in logical_ops:
                 return BOOL_TYPE
 
+        # v4.69.0: Future<T> used in arithmetic → "did you forget to await?"
+        if left.kind == TypeKind.FUTURE or right.kind == TypeKind.FUTURE:
+            future_type = left if left.kind == TypeKind.FUTURE else right
+            inner = future_type.args[0].display_name if future_type.args else "T"
+            self._error(
+                f"Cannot use Future<{inner}> in '{expr.op}' operation — "
+                f"did you forget 'await'? Use 'await' to get the {inner} value.",
+                expr,
+            )
+            return UNKNOWN_TYPE
+
         if expr.op in arithmetic_ops:
             # Tensor element-wise ops: Tensor +/-/*// Tensor -> Tensor
             if left.kind == TypeKind.TENSOR or right.kind == TypeKind.TENSOR:
@@ -598,20 +782,42 @@ class SemanticChecker:
                         f"types {_type_display(left)} and {_type_display(right)}",
                         expr,
                     )
-                # Compile-time shape validation for element-wise ops
+                # Compile-time shape validation with broadcasting (v4.44.0)
+                from mapanare.types import broadcast_incompatible_dim, broadcast_shape
+
                 result_shape: tuple[int, ...] | None = None
                 if left.kind == TypeKind.TENSOR and right.kind == TypeKind.TENSOR:
                     if left.tensor_shape is not None and right.tensor_shape is not None:
-                        if left.tensor_shape != right.tensor_shape:
+                        bcast = broadcast_shape(left.tensor_shape, right.tensor_shape)
+                        if bcast is None:
+                            bad_dim = broadcast_incompatible_dim(
+                                left.tensor_shape, right.tensor_shape
+                            )
+                            dim_note = ""
+                            if bad_dim is not None:
+                                a_pad = (1,) * (
+                                    max(len(left.tensor_shape), len(right.tensor_shape))
+                                    - len(left.tensor_shape)
+                                ) + left.tensor_shape
+                                b_pad = (1,) * (
+                                    max(len(left.tensor_shape), len(right.tensor_shape))
+                                    - len(right.tensor_shape)
+                                ) + right.tensor_shape
+                                dim_note = (
+                                    f"; dimension {bad_dim} differs: "
+                                    f"{a_pad[bad_dim]} vs {b_pad[bad_dim]}"
+                                )
                             self._error(
-                                f"Shape mismatch for element-wise '{expr.op}': "
-                                f"{_type_display(left)} vs {_type_display(right)}",
+                                f"shapes {list(left.tensor_shape)} and "
+                                f"{list(right.tensor_shape)} are not "
+                                f"broadcast-compatible for '{expr.op}'"
+                                f"{dim_note}",
                                 expr,
                             )
                         else:
-                            result_shape = left.tensor_shape
+                            result_shape = bcast
                 elif left.kind == TypeKind.TENSOR:
-                    result_shape = left.tensor_shape
+                    result_shape = left.tensor_shape  # scalar broadcasts to tensor shape
                 else:
                     result_shape = right.tensor_shape
                 elem_type = (
@@ -761,6 +967,12 @@ class SemanticChecker:
                         TypeInfo(kind=TypeKind.STRUCT, name="JsonError"),
                     ],
                 )
+            if name == "__struct_meta":
+                if len(expr.type_args) != 1:
+                    self._error("__struct_meta expects exactly one type argument", expr)
+                if len(expr.args) != 0:
+                    self._error("__struct_meta takes no arguments", expr)
+                return STRING_TYPE
 
         if isinstance(expr.callee, Identifier):
             sym = self.current_scope.lookup(expr.callee.name)
@@ -842,7 +1054,12 @@ class SemanticChecker:
             if sym is None:
                 self._error(f"Undefined variable '{expr.target.name}'", expr.target)
                 return UNKNOWN_TYPE
-            if not sym.mutable:
+            if sym.kind == SymbolKind.CONST:
+                self._error(
+                    f"Cannot assign to const '{expr.target.name}'",
+                    expr.target,
+                )
+            elif not sym.mutable:
                 self._error(
                     f"Cannot assign to immutable variable '{expr.target.name}'",
                     expr.target,
@@ -889,6 +1106,11 @@ class SemanticChecker:
         for arm in expr.arms:
             self._push_scope()
             self._bind_pattern(arm.pattern, subject_type)
+            # v4.35.0: type-check optional guard (must be Bool)
+            if arm.guard is not None:
+                guard_type = self._infer_expr(arm.guard)
+                if guard_type.kind not in (TypeKind.BOOL, TypeKind.UNKNOWN):
+                    self._error("match guard must be a Bool expression", arm.guard)
             if isinstance(arm.body, Block):
                 self._check_block(arm.body)
             elif isinstance(arm.body, Expr):
@@ -901,53 +1123,119 @@ class SemanticChecker:
         return UNKNOWN_TYPE
 
     def _check_match_exhaustiveness(self, expr: MatchExpr, subject_type: TypeInfo) -> None:
-        """Error if a match on an enum type does not cover all variants."""
-        from mapanare.ast_nodes import ConstructorPattern, IdentPattern, WildcardPattern
+        """Error if a match is non-exhaustive; warn on unreachable arms.
 
-        if subject_type.kind != TypeKind.ENUM or not subject_type.name:
+        Uses Maranget decision-tree construction to detect missing patterns
+        and unreachable arms. See docs/roadmap/v4/v4.34.0/DESIGN.md §8.
+        """
+        from mapanare.pattern_matching import (
+            PatternMatrix,
+            PatternRow,
+            build_decision_tree,
+            build_witness_for_switch,
+            display_witness,
+            find_unreachable_arms,
+            has_any_fail,
+        )
+
+        ctx = self._semantic_type_context(subject_type)
+        rows = [PatternRow(patterns=[arm.pattern], action_idx=i) for i, arm in enumerate(expr.arms)]
+        matrix = PatternMatrix(rows=rows, type_contexts=[ctx])
+        tree = build_decision_tree(matrix)
+
+        # Check exhaustiveness
+        if has_any_fail(tree):
+            from mapanare.pattern_matching import DTSwitch
+
+            if isinstance(tree, DTSwitch):
+                witness = build_witness_for_switch(tree, ctx)
+                if witness is not None:
+                    wtext = display_witness(witness)
+                    self._error(
+                        f"non-exhaustive match: pattern `{wtext}` is not covered",
+                        expr,
+                    )
+                    return
+            # Fallback: generic message
+            self._error("non-exhaustive match expression", expr)
             return
 
-        # Look up the enum definition to get all variant names
-        sym = self.current_scope.lookup(subject_type.name)
-        if sym is None or sym.node is None or not isinstance(sym.node, EnumDef):
-            return
+        # Check for unreachable arms
+        unreachable = find_unreachable_arms(tree, len(expr.arms))
+        for arm_idx in sorted(unreachable):
+            self._warning(f"unreachable match arm (arm {arm_idx + 1})", expr.arms[arm_idx])
 
-        all_variants = {v.name for v in sym.node.variants}
+    _semantic_ctx_stack: set[str] | None = None
 
-        # Check for wildcard patterns — if any arm has a wildcard, the match
-        # is trivially exhaustive
-        has_wildcard = False
-        covered_variants: set[str] = set()
-        for arm in expr.arms:
-            if isinstance(arm.pattern, WildcardPattern):
-                has_wildcard = True
-                break
-            if isinstance(arm.pattern, ConstructorPattern):
-                covered_variants.add(arm.pattern.name)
-            elif isinstance(arm.pattern, IdentPattern):
-                if arm.pattern.name in all_variants:
-                    covered_variants.add(arm.pattern.name)
-                else:
-                    # Non-variant ident is a catch-all binding (like _ but named)
-                    has_wildcard = True
-                    break
+    def _semantic_type_context(self, ty: TypeInfo) -> TypeContext:
+        """Build a TypeContext from a semantic TypeInfo for exhaustiveness checking."""
+        from mapanare.pattern_matching import TypeContext
 
-        if has_wildcard:
-            return
+        # Cycle guard for recursive enum types (e.g., Expr containing Expr)
+        if self._semantic_ctx_stack is None:
+            self._semantic_ctx_stack = set()
+        type_key = ty.name or ""
+        if type_key and type_key in self._semantic_ctx_stack:
+            return TypeContext(is_closed=False)
+        if type_key:
+            self._semantic_ctx_stack.add(type_key)
+        try:
+            return self._semantic_type_context_inner(ty)
+        finally:
+            if type_key:
+                self._semantic_ctx_stack.discard(type_key)
 
-        missing = all_variants - covered_variants
-        if missing:
-            names = ", ".join(sorted(missing))
-            self._error(
-                f"Non-exhaustive match on '{subject_type.name}': " f"missing variant(s) {names}",
-                expr,
+    def _semantic_type_context_inner(self, ty: TypeInfo) -> TypeContext:
+        from mapanare.pattern_matching import ConstructorInfo, TypeContext
+
+        ctx = self._semantic_type_context
+
+        if ty.kind == TypeKind.OPTION:
+            some_sub = [ctx(ty.args[0])] if ty.args else []
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("Some", 1), ConstructorInfo("None", 0)],
+                sub_contexts={"Some": some_sub},
             )
+
+        if ty.kind == TypeKind.RESULT:
+            ok_sub = [ctx(ty.args[0])] if ty.args else []
+            err_sub = [ctx(ty.args[1])] if len(ty.args) >= 2 else []
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("Ok", 1), ConstructorInfo("Err", 1)],
+                sub_contexts={"Ok": ok_sub, "Err": err_sub},
+            )
+
+        if ty.kind == TypeKind.ENUM and ty.name:
+            sym = self.current_scope.lookup(ty.name)
+            if sym is None:
+                sym = self.global_scope.lookup(ty.name)
+            if sym is not None and sym.node is not None and isinstance(sym.node, EnumDef):
+                ctors: list[ConstructorInfo] = []
+                sub_ctxs: dict[str, list[TypeContext]] = {}
+                for variant in sym.node.variants:
+                    arity = len(variant.fields)
+                    ctors.append(ConstructorInfo(variant.name, arity))
+                    if arity > 0:
+                        field_types = [self._resolve_type_expr(f) for f in variant.fields]
+                        sub_ctxs[variant.name] = [ctx(ft) for ft in field_types]
+                return TypeContext(is_closed=True, all_constructors=ctors, sub_contexts=sub_ctxs)
+
+        if ty.kind == TypeKind.BOOL:
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("true", 0), ConstructorInfo("false", 0)],
+            )
+
+        return TypeContext(is_closed=False)
 
     def _bind_pattern(self, pattern: object, subject_type: TypeInfo | None = None) -> None:
         """Bind names introduced by a pattern into the current scope."""
         from mapanare.ast_nodes import (
             ConstructorPattern,
             IdentPattern,
+            OrPattern,
         )
 
         if isinstance(pattern, IdentPattern):
@@ -961,6 +1249,56 @@ class SemanticChecker:
             for i, arg in enumerate(pattern.args):
                 arg_type = field_types[i] if i < len(field_types) else None
                 self._bind_pattern(arg, arg_type)
+        elif isinstance(pattern, OrPattern):
+            # v4.35.0: verify all alternatives bind the same names, then bind
+            all_names = [self._collect_pattern_names(alt) for alt in pattern.alternatives]
+            ref = all_names[0]
+            for i, names in enumerate(all_names[1:], 1):
+                if names != ref:
+                    missing = ref - names
+                    extra = names - ref
+                    parts = []
+                    if missing:
+                        parts.append(f"missing {sorted(missing)}")
+                    if extra:
+                        parts.append(f"extra {sorted(extra)}")
+                    self._error(
+                        f"or-pattern alternatives must bind the same names: {'; '.join(parts)}",
+                        pattern.alternatives[i],
+                    )
+            # Bind from the first alternative (all have the same names)
+            self._bind_pattern(pattern.alternatives[0], subject_type)
+
+    def _collect_pattern_names(self, pattern: object) -> set[str]:
+        """Collect all variable names bound by a pattern (excludes enum variants)."""
+        from mapanare.ast_nodes import ConstructorPattern, IdentPattern, OrPattern
+
+        names: set[str] = set()
+        if isinstance(pattern, IdentPattern):
+            # Check if the name is an enum variant; if so, it's not a binding
+            if not self._is_enum_variant_name(pattern.name):
+                names.add(pattern.name)
+        elif isinstance(pattern, ConstructorPattern):
+            for arg in pattern.args:
+                names |= self._collect_pattern_names(arg)
+        elif isinstance(pattern, OrPattern):
+            if pattern.alternatives:
+                names = self._collect_pattern_names(pattern.alternatives[0])
+        return names
+
+    def _is_enum_variant_name(self, name: str) -> bool:
+        """Check if a name refers to an enum variant in any visible enum."""
+        # Walk all symbols looking for enums with a matching variant
+        for scope in (self.current_scope, self.global_scope):
+            s: Scope | None = scope
+            while s is not None:
+                for sym in s.symbols.values():
+                    if sym.kind == SymbolKind.ENUM and isinstance(sym.node, EnumDef):
+                        for v in sym.node.variants:
+                            if v.name == name:
+                                return True
+                s = s.parent
+        return False
 
     def _resolve_variant_fields(
         self, subject_type: TypeInfo | None, variant_name: str
@@ -1055,6 +1393,106 @@ class SemanticChecker:
             param_types=param_types,
             return_type=ret,
         )
+
+    # -- Tensor literal (v4.42.0) ------------------------------------------
+
+    def _check_tensor_literal(self, expr: TensorLiteral) -> TypeInfo:
+        """Type-check a tensor literal.
+
+        Rules:
+        1. Every element must be a scalar matching the declared element type.
+        2. The shape inferred from nesting matches the annotation (if present).
+        3. Empty tensors (shape contains a zero dim) are allowed.
+        """
+
+        # Resolve element type name to TypeInfo
+        elem_name = getattr(expr.element_type, "name", "")
+        if elem_name in ("Float", "float"):
+            elem_ti = FLOAT_TYPE
+        elif elem_name in ("Int", "int"):
+            elem_ti = INT_TYPE
+        elif elem_name in ("Bool", "bool"):
+            elem_ti = BOOL_TYPE
+        else:
+            elem_ti = FLOAT_TYPE  # default for unknown
+
+        # Type-check each element
+        for e in expr.elements:
+            inferred = self._infer_expr(e)
+            # Allow int-to-float promotion in tensor context
+            if elem_ti == FLOAT_TYPE and inferred.kind == TypeKind.INT:
+                continue
+            if inferred.kind not in (TypeKind.UNKNOWN, TypeKind.ANY, elem_ti.kind):
+                self._error(
+                    f"tensor element type mismatch: expected {elem_name}, " f"got {inferred}",
+                    e if isinstance(e, ASTNode) else expr,
+                )
+
+        shape_tuple = tuple(expr.shape) if expr.shape else None
+        return TypeInfo(kind=TypeKind.TENSOR, args=[elem_ti], tensor_shape=shape_tuple)
+
+    # -- Error propagation (`?` operator) ---------------------------------
+
+    def _check_error_prop(self, expr: ErrorPropExpr) -> TypeInfo:
+        """v4.33.0: type-check the `?` operator (error propagation).
+
+        Rules:
+        1. The inner expression must be Result<T, E> or Option<T>.
+        2. The enclosing function must return a compatible type.
+        3. On Result<T, E>: enclosing fn must return Result<_, E2> where
+           E is compatible with E2 (equality for now — no implicit From).
+        4. On Option<T>: enclosing fn must return Option<_>.
+        5. `?` outside a function body is a compile error.
+        """
+        inner_type = self._infer_expr(expr.expr)
+
+        # Check: must be inside a function
+        if self._current_fn_return_type is None:
+            self._error("`?` can only be used inside a function body", expr)
+            return UNKNOWN_TYPE
+
+        fn_ret = self._current_fn_return_type
+
+        # Case 1: Result<T, E>
+        if inner_type.kind == TypeKind.RESULT:
+            ok_type = inner_type.args[0] if inner_type.args else UNKNOWN_TYPE
+            if fn_ret.kind != TypeKind.RESULT:
+                self._error(
+                    f"`?` on a `Result` value requires the enclosing function "
+                    f"`{self._current_fn_name}` to return `Result<_, _>`, "
+                    f"but it returns `{fn_ret}`; use an explicit `match` instead",
+                    expr,
+                )
+                return UNKNOWN_TYPE
+            return ok_type
+
+        # Case 2: Option<T>
+        if inner_type.kind == TypeKind.OPTION:
+            inner_val_type = inner_type.args[0] if inner_type.args else UNKNOWN_TYPE
+            if fn_ret.kind != TypeKind.OPTION:
+                self._error(
+                    f"`?` on an `Option` value requires the enclosing function "
+                    f"`{self._current_fn_name}` to return `Option<_>`, "
+                    f"but it returns `{fn_ret}`; use `.unwrap_or(...)` or "
+                    f"an explicit `match` instead",
+                    expr,
+                )
+                return UNKNOWN_TYPE
+            return inner_val_type
+
+        # Case 3: unknown or unresolved — let it through for now so the
+        # lowerer can handle it. This is the graceful-degradation path
+        # for cases where type inference couldn't resolve the inner type.
+        if inner_type.kind == TypeKind.UNKNOWN:
+            return UNKNOWN_TYPE
+
+        # Case 4: any other type — not valid for `?`
+        self._error(
+            f"`?` requires `Result<_, _>` or `Option<_>`, got `{inner_type}`; "
+            f"the `?` operator only works on values that can be `Err` or `None`",
+            expr,
+        )
+        return UNKNOWN_TYPE
 
     # -- Spawn / Send ---------------------------------------------------
 
@@ -1235,6 +1673,19 @@ class SemanticChecker:
                 self._infer_expr(stmt.value)
         elif isinstance(stmt, ForLoop):
             self._check_for(stmt)
+        elif isinstance(stmt, ForAwaitLoop):
+            # v4.74.0: for await — must be inside async fn
+            if not self._in_async:
+                self._error("'for await' can only be used inside an 'async fn'", stmt)
+            # Check the iterable expression
+            self._infer_expr(stmt.iterable)
+            self._push_scope()
+            self.current_scope.define(
+                stmt.var_name,
+                Symbol(name=stmt.var_name, kind=SymbolKind.VARIABLE, type_info=UNKNOWN_TYPE),
+            )
+            self._check_block(stmt.body)
+            self._pop_scope()
         elif isinstance(stmt, WhileLoop):
             self._check_while(stmt)
         elif isinstance(stmt, SignalDecl):
@@ -1333,6 +1784,62 @@ class SemanticChecker:
             Symbol(name=decl.name, kind=SymbolKind.VARIABLE, type_info=stream_type),
         )
 
+    # -- Constant folding (v4.55.0) --------------------------------------
+
+    def _fold_constant(self, expr: Expr, depth: int = 0) -> ConstantValue | None:
+        """Evaluate an expression at compile time. Returns None if not foldable."""
+        if depth > 10:
+            return None
+        if isinstance(expr, IntLiteral):
+            return expr.value
+        if isinstance(expr, FloatLiteral):
+            return expr.value
+        if isinstance(expr, BoolLiteral):
+            return expr.value
+        if isinstance(expr, StringLiteral):
+            return expr.value
+        if isinstance(expr, Identifier):
+            return self._const_table.get(expr.name)
+        if isinstance(expr, BinaryExpr):
+            left = self._fold_constant(expr.left, depth + 1)
+            right = self._fold_constant(expr.right, depth + 1)
+            if left is None or right is None:
+                return None
+            return self._fold_binop(left, expr.op, right)
+        if isinstance(expr, UnaryExpr):
+            operand = self._fold_constant(expr.operand, depth + 1)
+            if operand is None:
+                return None
+            if expr.op == "-" and isinstance(operand, (int, float)):
+                return -operand
+            if expr.op == "!" and isinstance(operand, bool):
+                return not operand
+        return None
+
+    @staticmethod
+    def _fold_binop(left: ConstantValue, op: str, right: ConstantValue) -> ConstantValue | None:
+        try:
+            if op == "+" and isinstance(left, str) and isinstance(right, str):
+                return left + right
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                if op == "+":
+                    return left + right
+                if op == "-":
+                    return left - right
+                if op == "*":
+                    return left * right
+                if op == "/" and right != 0:
+                    return (
+                        left // right
+                        if isinstance(left, int) and isinstance(right, int)
+                        else left / right
+                    )
+                if op == "%" and right != 0:
+                    return left % right
+        except (OverflowError, ZeroDivisionError):
+            return None
+        return None
+
     # -- Definition registration (first pass) ---------------------------
 
     def _register_definitions(self, program: Program) -> None:
@@ -1352,6 +1859,26 @@ class SemanticChecker:
                 is_function=True,
                 param_types=param_types,
                 return_type=ret,
+            )
+            self.global_scope.define(
+                defn.name,
+                Symbol(name=defn.name, kind=SymbolKind.FUNCTION, type_info=fn_type, node=defn),
+            )
+        elif isinstance(defn, AsyncFnDef):
+            # v4.69.0: register async fn — return type wrapped in Future<T>.
+            # Calling an async fn returns Future<T>, not T directly.
+            saved_tp = self._current_type_params
+            self._current_type_params = set(defn.type_params) if defn.type_params else set()
+            param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
+            inner_ret = self._resolve_type_expr(defn.return_type)
+            self._current_type_params = saved_tp
+            # Wrap return type: async fn foo() -> T  =>  fn type returns Future<T>
+            future_ret = TypeInfo(kind=TypeKind.FUTURE, name="Future", args=[inner_ret])
+            fn_type = TypeInfo(
+                kind=TypeKind.FN,
+                is_function=True,
+                param_types=param_types,
+                return_type=future_ret,
             )
             self.global_scope.define(
                 defn.name,
@@ -1419,14 +1946,30 @@ class SemanticChecker:
                     ),
                 )
         elif isinstance(defn, ExternFnDef):
-            if defn.abi not in ("C", "Python"):
+            # v4.29.0: ``extern "Python" fn`` is removed. The feature was
+            # added in v0.5.0 as a convenience but broke silently when
+            # ``emit_python.py`` was deleted during the v4.2.0 emitter
+            # consolidation; the resulting 79 test xfails were not flagged
+            # until the v4.26.0 seven-reviewer panel. v4.27.0's
+            # ``mapanare bind --lang python`` ships a real, maintained FFI
+            # path (ctypes wrapper against the compiled ``.mn`` module),
+            # so ``extern "Python"`` is redundant. Path B from v4.29.0
+            # PLAN §2.1 deletes it.
+            if defn.abi == "Python":
                 self._error(
-                    f'Unsupported ABI \'{defn.abi}\'; only "C" and "Python" are supported', defn
+                    'extern "Python" fn was removed in v4.29.0. '
+                    "For Python interop, compile your Mapanare module "
+                    "normally and generate a Python binding with "
+                    "`mapanare bind --lang python <module.mn>`. "
+                    "The generated Python file imports a ctypes wrapper "
+                    "around the compiled .mn, which is type-checked and "
+                    "stays in sync with the Mapanare source.",
+                    defn,
                 )
-            if defn.abi == "Python" and not defn.module:
+            if defn.abi != "C":
                 self._error(
-                    'extern "Python" requires module qualifier: '
-                    'extern "Python" fn module::name(...)',
+                    f"Unsupported ABI '{defn.abi}'; only \"C\" is supported "
+                    "(use `mapanare bind --lang python` for Python interop)",
                     defn,
                 )
             param_types = [self._resolve_type_expr(p.type_annotation) for p in defn.params]
@@ -1474,6 +2017,42 @@ class SemanticChecker:
                 self._register_def(defn.definition)
         elif isinstance(defn, ImplDef):
             pass  # methods handled in second pass
+        elif isinstance(defn, ModuleLetDef):
+            ty = UNKNOWN_TYPE
+            if defn.type_name == "Int":
+                ty = TypeInfo(kind=TypeKind.INT)
+            elif defn.type_name == "Float":
+                ty = TypeInfo(kind=TypeKind.FLOAT)
+            elif defn.type_name == "Bool":
+                ty = TypeInfo(kind=TypeKind.BOOL)
+            elif defn.type_name == "String":
+                ty = TypeInfo(kind=TypeKind.STRING)
+            self.global_scope.define(
+                defn.name,
+                Symbol(name=defn.name, kind=SymbolKind.VARIABLE, type_info=ty, node=defn),
+            )
+        elif isinstance(defn, ConstDef):
+            # v4.55.0: real const — register with type, fold value, mark as const
+            ty = self._resolve_type_expr(defn.type_expr) if defn.type_expr else UNKNOWN_TYPE
+            folded = self._fold_constant(defn.value) if defn.value else None
+            if defn.value and folded is None:
+                self._error(
+                    "const initializer must be a constant expression "
+                    "(only literals, const references, and arithmetic on constants are allowed)",
+                    defn,
+                )
+            if folded is not None:
+                self._const_table[defn.name] = folded
+            self.global_scope.define(
+                defn.name,
+                Symbol(
+                    name=defn.name,
+                    kind=SymbolKind.CONST,
+                    type_info=ty,
+                    node=defn,
+                    const_value=folded,
+                ),
+            )
         elif isinstance(defn, DocComment):
             if defn.definition:
                 self._register_def(defn.definition)
@@ -1647,6 +2226,9 @@ class SemanticChecker:
     def _check_def(self, defn: Definition) -> None:
         if isinstance(defn, FnDef):
             self._check_fn(defn)
+        elif isinstance(defn, AsyncFnDef):
+            # v4.69.0: check body with async context active.
+            self._check_async_fn(defn)
         elif isinstance(defn, ExternFnDef):
             pass  # No body to check; registration handled in first pass
         elif isinstance(defn, AgentDef):
@@ -1669,6 +2251,11 @@ class SemanticChecker:
         self._check_decorators(fn)
         saved_type_params = self._current_type_params
         self._current_type_params = set(fn.type_params) if fn.type_params else set()
+        # v4.33.0: track the enclosing function's return type for `?` operator
+        saved_fn_return = self._current_fn_return_type
+        saved_fn_name = self._current_fn_name
+        self._current_fn_return_type = self._resolve_type_expr(fn.return_type)
+        self._current_fn_name = fn.name
         self._push_scope()
         for p in fn.params:
             pt = self._resolve_type_expr(p.type_annotation)
@@ -1679,6 +2266,15 @@ class SemanticChecker:
         self._check_block(fn.body)
         self._pop_scope()
         self._current_type_params = saved_type_params
+        self._current_fn_return_type = saved_fn_return
+        self._current_fn_name = saved_fn_name
+
+    def _check_async_fn(self, fn: AsyncFnDef) -> None:
+        """v4.69.0: check an async fn body with async context active."""
+        saved_in_async = self._in_async
+        self._in_async = True
+        self._check_fn(fn)  # type: ignore[arg-type]
+        self._in_async = saved_in_async
 
     def _check_decorators(self, defn: ASTNode) -> None:
         """Validate decorator annotations on a definition (Phase 5.2)."""

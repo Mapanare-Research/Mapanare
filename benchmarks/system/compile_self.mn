@@ -1,0 +1,122 @@
+// Benchmark: Compile-self proxy
+// A program with realistic features (structs, enums, functions,
+// loops, pattern matching) used as a compilation time target.
+
+struct Config {
+    width: Int,
+    height: Int
+}
+
+enum Direction {
+    North,
+    South,
+    East,
+    West
+}
+
+fn dir_dx(d: Direction) -> Int {
+    match d {
+        North => { da 0 },
+        South => { da 0 },
+        East => { da 1 },
+        West => { da -1 }
+    }
+}
+
+fn dir_dy(d: Direction) -> Int {
+    match d {
+        North => { da -1 },
+        South => { da 1 },
+        East => { da 0 },
+        West => { da 0 }
+    }
+}
+
+fn clamp(val: Int, lo: Int, hi: Int) -> Int {
+    si val < lo { da lo }
+    si val > hi { da hi }
+    da val
+}
+
+fn make_grid(w: Int, h: Int) -> List<Int> {
+    pon mut grid: List<Int> = []
+    pon mut i: Int = 0
+    pon total: Int = w * h
+    mien i < total {
+        grid.push((i * 7 + 13) % 256)
+        i = i + 1
+    }
+    da grid
+}
+
+fn grid_get(grid: List<Int>, x: Int, y: Int, w: Int) -> Int {
+    da grid[y * w + x]
+}
+
+fn simulate_step(grid: List<Int>, w: Int, h: Int) -> Int {
+    pon mut sum: Int = 0
+    pon mut y: Int = 1
+    mien y < h - 1 {
+        pon mut x: Int = 1
+        mien x < w - 1 {
+            pon center: Int = grid_get(grid, x, y, w)
+            pon north: Int = grid_get(grid, x, y - 1, w)
+            pon south: Int = grid_get(grid, x, y + 1, w)
+            pon east: Int = grid_get(grid, x + 1, y, w)
+            pon west: Int = grid_get(grid, x - 1, y, w)
+            pon avg: Int = (center + north + south + east + west) / 5
+            sum = sum + avg
+            x = x + 1
+        }
+        y = y + 1
+    }
+    da sum
+}
+
+fn fibonacci(n: Int) -> Int {
+    si n <= 1 { da n }
+    da fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+fn collatz_steps(n: Int) -> Int {
+    pon mut val: Int = n
+    pon mut steps: Int = 0
+    mien val != 1 {
+        pon rem: Int = val % 2
+        si rem == 0 {
+            val = val / 2
+        }
+        si rem != 0 {
+            val = val * 3 + 1
+        }
+        steps = steps + 1
+    }
+    da steps
+}
+
+fn main() {
+    // Part 1: grid simulation
+    pon w: Int = 50
+    pon h: Int = 50
+    pon grid: List<Int> = make_grid(w, h)
+    pon mut sim_result: Int = 0
+    pon mut s: Int = 0
+    mien s < 10 {
+        sim_result = sim_result + simulate_step(grid, w, h)
+        s = s + 1
+    }
+
+    // Part 2: fibonacci
+    pon fib_result: Int = fibonacci(25)
+
+    // Part 3: collatz
+    pon mut collatz_sum: Int = 0
+    pon mut i: Int = 1
+    mien i <= 1000 {
+        collatz_sum = collatz_sum + collatz_steps(i)
+        i = i + 1
+    }
+
+    pon checksum: Int = sim_result + fib_result + collatz_sum
+    print("checksum = " + str(checksum))
+}

@@ -6,6 +6,7 @@ every major grammar construct.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -214,15 +215,27 @@ class TestOperatorsCoverage:
 
 
 class TestSpecVersionAndStatus:
-    """SPEC.md must be at v1.0.0 Final."""
+    """SPEC.md header must match a current v4.x "Live" cut.
 
-    def test_version_is_1_0_0(self) -> None:
-        text = _spec_text()
-        assert "**Version:** 1.0.0" in text
+    v4.129.0 updated the SPEC header from "1.0.0 Final" to a per-release
+    versioned Live status to keep the spec in sync with the compiler
+    (An.1 hygiene, v4.133.0). The older "1.0 Final" assertion was
+    stale as of v4.129.0.
+    """
 
-    def test_status_is_final(self) -> None:
+    def test_version_matches_live_cut(self) -> None:
         text = _spec_text()
-        assert "1.0 Final" in text
+        # Header format: "**Version:** 4.<minor>.<patch>"
+        assert re.search(
+            r"^\*\*Version:\*\*\s+4\.\d+\.\d+", text, re.M
+        ), "SPEC.md header must advertise a v4.x version"
+
+    def test_status_is_live(self) -> None:
+        text = _spec_text()
+        # Header format: "**Status:** Live — synced to the v4.X.Y cut (YYYY-MM-DD)"
+        assert re.search(
+            r"^\*\*Status:\*\*\s+Live", text, re.M
+        ), "SPEC.md status must be a 'Live' status reflecting the current cut"
 
     def test_not_working_draft(self) -> None:
         text = _spec_text()

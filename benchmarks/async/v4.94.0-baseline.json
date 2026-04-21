@@ -1,0 +1,16 @@
+{
+  "mapanare": [
+    {
+      "benchmark": "05_backpressure",
+      "language": "mapanare",
+      "median_ms": 1.32,
+      "min_ms": 1.19,
+      "max_ms": 1.44,
+      "runs": 20,
+      "output": "checksum = 2500",
+      "correct": true,
+      "status": "ok"
+    }
+  ],
+  "cross_language": []
+}

@@ -142,7 +142,8 @@ class TestEmitLlvmMnCoverage:
         assert '"i1"' in emitter_source  # Bool
         assert '"i8"' in emitter_source  # Char
         assert '"void"' in emitter_source  # Void
-        assert '"{ ptr, i64 }"' in emitter_source  # String (opaque pointers)
+        # v4.155.0: brace-spacing normalized to {ptr, i64} in v4.128.0
+        assert '"{ptr, i64}"' in emitter_source or '"{ ptr, i64 }"' in emitter_source  # String
 
     def test_tensor_runtime_fns_listed(self, emitter_source: str) -> None:
         runtime_fns = [

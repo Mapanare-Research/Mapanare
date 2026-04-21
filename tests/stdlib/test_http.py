@@ -46,7 +46,7 @@ _HTTP_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "net" / "
 
 def _compile_mir(source: str) -> str:
     """Compile via MIR-based LLVM emitter."""
-    return _compile_to_llvm_ir(source, "test_http.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test_http.mn")
 
 
 def _http_source_with_main(main_body: str) -> str:

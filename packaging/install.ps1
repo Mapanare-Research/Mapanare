@@ -1,13 +1,26 @@
 # Mapanare Language Installer for Windows
-# Usage: irm https://raw.githubusercontent.com/Mapanare-Research/Mapanare/main/install.ps1 | iex
+# Usage:
+#   irm https://mapanare.dev/install.ps1 | iex
+#   $env:MAPANARE_VERSION = "v4.0.0"; irm https://mapanare.dev/install.ps1 | iex
+param(
+    [string]$Version = "",
+    [string]$InstallDir = ""
+)
 $ErrorActionPreference = "Stop"
 
 $Repo = "Mapanare-Research/Mapanare"
-$InstallDir = if ($env:MAPANARE_INSTALL_DIR) { $env:MAPANARE_INSTALL_DIR } else { "$env:LOCALAPPDATA\Mapanare\bin" }
+if (-not $InstallDir) {
+    $InstallDir = if ($env:MAPANARE_INSTALL_DIR) { $env:MAPANARE_INSTALL_DIR } else { "$env:LOCALAPPDATA\Mapanare\bin" }
+}
 $Artifact = "mapanare-win-x64.zip"
 
 # ---------- Resolve version ----------
-$Version = if ($env:MAPANARE_VERSION) { $env:MAPANARE_VERSION } else { "latest" }
+if (-not $Version) {
+    $Version = if ($env:MAPANARE_VERSION) { $env:MAPANARE_VERSION } else { "latest" }
+}
+if ($Version -ne "latest" -and $Version -notmatch "^v") {
+    $Version = "v$Version"
+}
 
 if ($Version -eq "latest") {
     Write-Host "Fetching latest release..."

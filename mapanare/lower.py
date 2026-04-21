@@ -16,12 +16,15 @@ from mapanare.ast_nodes import (
     AssertStmt,
     AssignExpr,
     ASTNode,
+    AsyncFnDef,
+    AwaitExpr,
     BinaryExpr,
     Block,
     BoolLiteral,
     BreakStmt,
     CallExpr,
     CharLiteral,
+    ConstDef,
     ConstructExpr,
     ConstructorPattern,
     ContinueStmt,
@@ -37,6 +40,8 @@ from mapanare.ast_nodes import (
     FieldAccessExpr,
     FloatLiteral,
     FnDef,
+    FnType,
+    ForAwaitLoop,
     ForLoop,
     GenericType,
     Identifier,
@@ -50,10 +55,10 @@ from mapanare.ast_nodes import (
     LambdaExpr,
     LetBinding,
     ListLiteral,
-    LiteralPattern,
     MapLiteral,
     MatchExpr,
     MethodCallExpr,
+    ModuleLetDef,
     NamedType,
     NamespaceAccessExpr,
     NoneLiteral,
@@ -74,11 +79,11 @@ from mapanare.ast_nodes import (
     StringLiteral,
     StructDef,
     SyncExpr,
+    TensorLiteral,
     TraitDef,
     TypeExpr,
     UnaryExpr,
     WhileLoop,
-    WildcardPattern,
 )
 from mapanare.mir import (
     AgentSend,
@@ -126,6 +131,7 @@ from mapanare.mir import (
     StreamOpKind,
     StructInit,
     Switch,
+    TensorInit,
     UnaryOp,
     UnaryOpKind,
     Unwrap,
@@ -209,6 +215,19 @@ def _resolve_type_expr(te: TypeExpr | None) -> MIRType:
         if k != TypeKind.UNKNOWN:
             return MIRType(TypeInfo(kind=k, args=args))
         return MIRType(TypeInfo(kind=TypeKind.STRUCT, name=te.name, args=args))
+    if isinstance(te, FnType):
+        # v4.103.0: closure type annotations (docket #5). Previously
+        # FnType was handled by the `return mir_unknown()` fallback,
+        # which left parameters declared with `fn(T) -> T` with a
+        # UNKNOWN MIRType. The lowerer then could not tell that
+        # `f(x)` inside `fn apply(f: fn(Int)->Int, x: Int)` should
+        # be an indirect call through the value; it lowered to a
+        # direct `@f(x)` call and linking failed. Resolve FnType to
+        # a MIRType with kind=FN so the call-lowering path sees a
+        # callable variable and emits a ClosureCall.
+        params = [_resolve_type_expr(p).type_info for p in te.param_types]
+        ret = _resolve_type_expr(te.return_type).type_info
+        return MIRType(TypeInfo(kind=TypeKind.FN, args=params + [ret]))
     return mir_unknown()
 
 
@@ -276,6 +295,8 @@ class MIRLowerer:
         self._fn_param_types: dict[str, list[MIRType]] = {}
         # Current source span — set by _lower_expr/_lower_stmt for debug info
         self._current_span: SourceSpan | None = None
+        # Module-level constants: name → (MIRType, literal value)
+        self._module_consts: dict[str, tuple[MIRType, Any]] = {}
         # Loop exit label stack for break statements
         self._loop_exit_stack: list[str] = []
         self._loop_header_stack: list[str] = []
@@ -292,10 +313,12 @@ class MIRLowerer:
             imported_enum_defs or {}
         )
         # Generics monomorphization state
-        self._generic_fn_defs: dict[str, FnDef] = {}  # name → AST of generic fn
+        self._generic_fn_defs: dict[str, FnDef | AsyncFnDef] = {}  # name → AST of generic fn
         self._specialized_fns: set[str] = set()  # mangled names already lowered
         self._generic_struct_defs: dict[str, StructDef] = {}  # name → AST of generic struct
         self._generic_impl_defs: dict[str, ImplDef] = {}  # target → AST of generic impl
+        # Cycle guard for recursive types in _match_type_context
+        self._match_ctx_stack: set[str] = set()
 
     # -- Name generation ---------------------------------------------------
 
@@ -314,6 +337,39 @@ class MIRLowerer:
 
     # -- Generics monomorphization -----------------------------------------
 
+    @staticmethod
+    def _type_params_used_in_signature(fn_def: FnDef | AsyncFnDef) -> bool:
+        """Return True if any of ``fn_def.type_params`` is referenced in the
+        param annotations or return type.
+
+        v4.121.0: a function declared as ``fn max<T: Ord>(a: Int, b: Int) -> Int``
+        has ``type_params=['T']`` even though ``T`` does not appear in the
+        signature. Without this check the function is unconditionally deferred
+        to on-demand monomorphization, but no caller ever supplies type
+        arguments (``T`` cannot be inferred from arg types — it isn't there)
+        so the function is silently dropped from MIR. Detecting the
+        unused-type-param case lets the lowerer emit a single canonical
+        instance rather than nothing at all.
+        """
+        if not fn_def.type_params:
+            return False
+        tp_set = set(fn_def.type_params)
+
+        def uses(te: TypeExpr | None) -> bool:
+            if te is None:
+                return False
+            if isinstance(te, NamedType):
+                return te.name in tp_set
+            if isinstance(te, GenericType):
+                return any(uses(a) for a in te.args)
+            if isinstance(te, FnType):
+                return uses(te.return_type) or any(uses(p) for p in te.param_types)
+            return False
+
+        if uses(fn_def.return_type):
+            return True
+        return any(uses(p.type_annotation) for p in fn_def.params)
+
     def _mangle_generic(self, name: str, type_args: list[MIRType]) -> str:
         """Produce a mangled name: identity + [Int] → identity__Int."""
         parts = []
@@ -328,7 +384,7 @@ class MIRLowerer:
         return f"{name}__{'_'.join(parts)}"
 
     def _infer_type_args(
-        self, fn_def: FnDef, arg_types: list[MIRType]
+        self, fn_def: FnDef | AsyncFnDef, arg_types: list[MIRType]
     ) -> dict[str, MIRType] | None:
         """Infer type parameter → concrete type mapping from call-site arguments."""
         subst: dict[str, MIRType] = {}
@@ -370,7 +426,9 @@ class MIRLowerer:
             return GenericType(name=te.name, args=new_args, span=te.span)
         return te
 
-    def _specialize_fn(self, fn_def: FnDef, subst: dict[str, MIRType]) -> FnDef:
+    def _specialize_fn(
+        self, fn_def: FnDef | AsyncFnDef, subst: dict[str, MIRType]
+    ) -> FnDef | AsyncFnDef:
         """Create a specialized copy of a generic function with concrete types.
 
         Uses dataclasses.replace() for a shallow copy, only deep-copying the
@@ -574,6 +632,7 @@ class MIRLowerer:
             "signal",
             "stream",
             "computed",
+            "block_on",
         }
         struct_names = set(self._struct_fields.keys())
         enum_names = set(self._enum_variants.keys())
@@ -733,6 +792,53 @@ class MIRLowerer:
             elif isinstance(actual, ImportDef):
                 self._module.imports.append((actual.path, actual.items))
 
+            elif isinstance(actual, (ModuleLetDef, ConstDef)):
+                val: int | float | str | None = None
+                ty = mir_int()
+                type_name = ""
+                if isinstance(actual, ConstDef):
+                    type_name = getattr(actual.type_expr, "name", "") if actual.type_expr else ""
+                else:
+                    type_name = actual.type_name
+                if actual.value is not None:
+                    if isinstance(actual.value, IntLiteral):
+                        val = actual.value.value
+                        ty = mir_int()
+                    elif isinstance(actual.value, StringLiteral):
+                        val = actual.value.value
+                        ty = mir_string()
+                    elif isinstance(actual.value, BoolLiteral):
+                        val = 1 if actual.value.value else 0
+                        ty = mir_bool()
+                    elif isinstance(actual.value, FloatLiteral):
+                        val = actual.value.value
+                        ty = mir_float()
+                    elif isinstance(actual, ConstDef):
+                        # v4.55.0: const folding — evaluate constant expressions
+                        from mapanare.semantic import SemanticChecker
+
+                        folder = SemanticChecker.__new__(SemanticChecker)
+                        folder._const_table = {}
+                        for n, (t, v) in self._module_consts.items():
+                            if v is not None:
+                                folder._const_table[n] = v
+                        folded = folder._fold_constant(actual.value)
+                        if folded is not None:
+                            if isinstance(folded, int):
+                                val = folded
+                                ty = mir_int()
+                            elif isinstance(folded, float):
+                                val = folded
+                                ty = mir_float()
+                            elif isinstance(folded, str):
+                                val = folded
+                                ty = mir_string()
+                            elif isinstance(folded, bool):
+                                val = 1 if folded else 0
+                                ty = mir_bool()
+                self._module_consts[actual.name] = (ty, val)
+                self._module.consts.append((actual.name, type_name, val))
+
             elif isinstance(actual, TraitDef):
                 self._module.trait_names.append(actual.name)
 
@@ -743,12 +849,21 @@ class MIRLowerer:
                         stages.append(s.name)
                 self._module.pipes[actual.name] = MIRPipeInfo(name=actual.name, stages=stages)
 
-            # Store generic function AST definitions for monomorphization
-            if isinstance(actual, FnDef) and actual.type_params:
+            # Store generic function AST definitions for monomorphization.
+            # v4.121.0: only register when at least one type parameter is
+            # actually used in the signature; otherwise the function is
+            # effectively monomorphic (degenerate case like
+            # ``fn max<T: Ord>(a: Int, b: Int) -> Int``) and is lowered
+            # directly by ``_lower_definition``.
+            if (
+                isinstance(actual, (FnDef, AsyncFnDef))
+                and actual.type_params
+                and self._type_params_used_in_signature(actual)
+            ):
                 self._generic_fn_defs[actual.name] = actual
 
             # Collect function return/param types for call-site type propagation
-            if isinstance(actual, FnDef):
+            if isinstance(actual, (FnDef, AsyncFnDef)):
                 if actual.return_type is not None:
                     self._fn_return_types[actual.name] = _resolve_type_expr(actual.return_type)
                 if actual.params:
@@ -785,9 +900,17 @@ class MIRLowerer:
                 return
 
         if isinstance(actual, FnDef):
-            if actual.type_params:
+            if actual.type_params and self._type_params_used_in_signature(actual):
                 return  # Generic functions lowered on demand via monomorphization
             self._lower_fn(actual)
+        elif isinstance(actual, AsyncFnDef):
+            # v4.70.0: lower async fn — same as regular fn but marks MIRFunction
+            # as is_async=True. The LLVM emitter wraps the body in the coroutine
+            # prelude/epilogue (coro.id, coro.begin, coro.end, cleanup).
+            if actual.type_params and self._type_params_used_in_signature(actual):
+                return  # Generic async functions lowered on demand
+            mir_fn = self._lower_fn(actual)
+            mir_fn.is_async = True
         elif isinstance(actual, AgentDef):
             self._lower_agent(actual)
         elif isinstance(actual, ImplDef):
@@ -807,7 +930,7 @@ class MIRLowerer:
 
     # -- Function lowering -------------------------------------------------
 
-    def _lower_fn(self, fn_def: FnDef, name_prefix: str = "") -> MIRFunction:
+    def _lower_fn(self, fn_def: FnDef | AsyncFnDef, name_prefix: str = "") -> MIRFunction:
         """Lower a function definition to MIR."""
         fn_name = f"{name_prefix}{fn_def.name}" if name_prefix else fn_def.name
 
@@ -956,15 +1079,13 @@ class MIRLowerer:
 
         self._module.functions.append(mir_fn)
 
-        # Register GPU kernel metadata for @cuda/@vulkan/@gpu decorated functions
-        for dec in decorators:
-            d = dec.lower()
-            if d in ("cuda", "vulkan", "gpu"):
-                raise NotImplementedError(
-                    "GPU code generation is not yet implemented. "
-                    "@cuda/@vulkan/@gpu decorators will be available in a future release."
-                )
-                break
+        # v4.27.0 Path B recovery: ``@cuda``/``@vulkan``/``@gpu`` decorators
+        # used to raise ``NotImplementedError`` here, which crashed the
+        # compiler on any decorated function. They were only ever cosmetic
+        # — GPU compute in Mapanare has always gone through the
+        # ``gpu_tensor_*`` runtime builtins (see ``runtime/native/mapanare_gpu*``),
+        # not a source-level decorator. The decorators are now rejected at
+        # parse-time via the ``decorated_def`` rule, so this loop is removed.
 
         # Restore state
         self._fn = prev_fn
@@ -1041,6 +1162,9 @@ class MIRLowerer:
             return None
         if isinstance(stmt, ForLoop):
             self._lower_for(stmt)
+            return None
+        if isinstance(stmt, ForAwaitLoop):
+            self._lower_for_await(stmt)
             return None
         if isinstance(stmt, WhileLoop):
             self._lower_while(stmt)
@@ -1137,6 +1261,12 @@ class MIRLowerer:
                         if isinstance(inst, ListInit) and inst.dest == val:
                             inst.elem_type = MIRType(declared.type_info.args[0])
                             break
+                # v4.122.0 (Qs.1): also lift the Value's type so downstream
+                # IndexGet / ListPush / len lowering sees the element type.
+                # Without this, `let arr: List<Int> = []; print(str(arr[0]))`
+                # reaches the LLVM emitter with `%arr.ty.args == [<unknown>]`
+                # and IndexGet emits a raw-pointer read instead of `load i64`.
+                val = Value(name=val.name, ty=declared)
         # When the expression type is unknown or lacks inner type args but a type
         # annotation is provided, use the annotation to preserve full type info.
         if let.type_annotation:
@@ -1241,6 +1371,55 @@ class MIRLowerer:
         if iterable.ty.kind == TypeKind.RANGE:
             free_dest = self._make_value(ty=mir_bool(), prefix="range_free")
             self._emit(Call(dest=free_dest, fn_name="__mn_range_free", args=[iterable]))
+
+    def _lower_for_await(self, loop: ForAwaitLoop) -> None:
+        """Lower a for-await loop: `for await x in stream { body }`.
+
+        Desugars to:
+            loop {
+                let next_future = __stream_next_async(stream)
+                let next_opt = await next_future
+                match next_opt { Some(x) => body, None => break }
+            }
+
+        For v4.74.0 simplicity, this lowers as a regular for loop over
+        the stream — the iteration protocol is the same, but each item
+        is conceptually awaited. The AwaitSuspend MIR instruction handles
+        the inline-resume of any async producer.
+        """
+
+        iterable = self._lower_expr(loop.iterable)
+        elem_ty = self._infer_iterable_elem_type(iterable.ty)
+
+        header = self._new_block(self._fresh_block("for_await_hdr"))
+        body = self._new_block(self._fresh_block("for_await_body"))
+        exit_bb = self._new_block(self._fresh_block("for_await_exit"))
+
+        if not self._block_terminated():
+            self._emit(Jump(target=header.label))
+
+        # Header: check if stream has next item
+        self._set_block(header)
+        has_next = self._make_value(ty=mir_bool(), prefix="aw_has")
+        self._emit(Call(dest=has_next, fn_name="__iter_has_next", args=[iterable]))
+        self._emit(Branch(cond=has_next, true_block=body.label, false_block=exit_bb.label))
+
+        # Body: get next item (conceptually awaited)
+        self._set_block(body)
+        next_val = self._make_value(ty=elem_ty, prefix="aw_next")
+        self._emit(Call(dest=next_val, fn_name="__iter_next", args=[iterable]))
+        self._define_var(loop.var_name, next_val)
+        self._push_scope()
+        self._loop_exit_stack.append(exit_bb.label)
+        self._loop_header_stack.append(header.label)
+        self._lower_block(loop.body)
+        self._loop_header_stack.pop()
+        self._loop_exit_stack.pop()
+        self._pop_scope()
+        if not self._block_terminated():
+            self._emit(Jump(target=header.label))
+
+        self._set_block(exit_bb)
 
     def _lower_while(self, loop: WhileLoop) -> None:
         """Lower a while loop to basic blocks.
@@ -1368,6 +1547,17 @@ class MIRLowerer:
         if isinstance(expr, SyncExpr):
             return self._lower_sync(expr)
 
+        if isinstance(expr, AwaitExpr):
+            # v4.72.0: real await lowering. Evaluates the inner expression
+            # (which returns a Future<T> ptr), then emits AwaitSuspend which
+            # the LLVM emitter translates to save/suspend/switch + extraction.
+            from mapanare.mir import AwaitSuspend
+
+            future_val = self._lower_expr(expr.expr)
+            dest = self._make_value(prefix="await")
+            self._emit(AwaitSuspend(dest=dest, future=future_val))
+            return dest
+
         if isinstance(expr, SendExpr):
             return self._lower_send(expr)
 
@@ -1376,6 +1566,9 @@ class MIRLowerer:
 
         if isinstance(expr, ListLiteral):
             return self._lower_list(expr)
+
+        if isinstance(expr, TensorLiteral):
+            return self._lower_tensor_literal(expr)
 
         if isinstance(expr, MapLiteral):
             return self._lower_map(expr)
@@ -1450,6 +1643,12 @@ class MIRLowerer:
         val = self._lookup_var(expr.name)
         if val is not None:
             return val
+        # Check if it's a module-level constant
+        if expr.name in self._module_consts:
+            ty, cval = self._module_consts[expr.name]
+            dest = self._make_value(ty=ty, prefix=expr.name)
+            self._emit(Const(dest=dest, ty=ty, value=cval))
+            return dest
         # Check if it's a bare enum variant (no payload)
         for enum_name, variant_names in self._enum_variants.items():
             if expr.name in variant_names:
@@ -1498,6 +1697,10 @@ class MIRLowerer:
             dest = self._make_value(ty=lhs.ty)
             self._emit(Call(dest=dest, fn_name=method, args=[lhs, rhs]))
             return dest
+
+        # Tensor broadcast dispatch (v4.44.0)
+        if lhs.ty.kind == TypeKind.TENSOR or rhs.ty.kind == TypeKind.TENSOR:
+            return self._lower_tensor_binop(expr.op, lhs, rhs)
 
         op = _BINOP_MAP.get(expr.op)
         if op is None:
@@ -1623,6 +1826,61 @@ class MIRLowerer:
                 return self._lower_encode_struct(expr, args[0])
             if fn_name == "decode_to" and len(args) == 1:
                 return self._lower_decode_to(expr, args[0])
+            if fn_name == "__struct_meta" and len(args) == 0:
+                return self._lower_struct_meta(expr)
+
+        # v4.73.0: block_on(future) — drive a future to completion
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "block_on":
+            from mapanare.mir import BlockOn
+
+            if len(args) != 1:
+                dest = self._make_value()
+                return dest
+            dest = self._make_value(prefix="block_on")
+            self._emit(BlockOn(dest=dest, future=args[0]))
+            return dest
+
+        # v4.93.0: spawn(async_call()) — enqueue for multi-threaded execution
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "spawn":
+            if len(args) != 1:
+                dest = self._make_value()
+                return dest
+            # spawn returns the Future handle (same as the async call result)
+            # The emitter will emit __mn_coro_spawn(handle) to register it.
+            dest = self._make_value(prefix="spawn")
+            self._emit(Call(dest=dest, fn_name="__mn_coro_spawn", args=[args[0]]))
+            return args[0]  # return the future, not the spawn result
+
+        # v4.95.0: StringBuilder builtins.
+        # v4.108.0: retargeted to the pointer-based runtime API
+        # (__mn_sb_new / __mn_sb_finish). The v4.95.0 lowering emitted
+        # __mn_sb_create which returns a 24-byte struct by value with
+        # sret ABI — the emitter's auto-declare path treated it as a
+        # plain ptr, producing calls that would fault or return garbage
+        # at runtime. stdlib/ai/llm.mn and embedding.mn were effectively
+        # broken since v4.95.0 because of this. The new pointer-based
+        # wrappers preserve the user-facing API while fixing the ABI.
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "sb_create":
+            # Optional initial capacity; default 64 bytes.
+            dest = self._make_value(prefix="sb")
+            cap_args: list[Value] = args[:1] if args else []
+            if not cap_args:
+                cap_val = self._make_value(prefix="sb_cap", ty=mir_int())
+                self._emit(Const(dest=cap_val, ty=mir_int(), value=64))
+                cap_args = [cap_val]
+            self._emit(Call(dest=dest, fn_name="__mn_sb_new", args=cap_args))
+            return dest
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "sb_append":
+            if len(args) >= 2:
+                dest = self._make_value(prefix="sb_app")
+                self._emit(Call(dest=dest, fn_name="__mn_sb_append", args=args[:2]))
+            return self._make_value()
+        if isinstance(expr.callee, Identifier) and expr.callee.name == "sb_to_string":
+            if len(args) >= 1:
+                dest = self._make_value(prefix="sb_str", ty=mir_string())
+                self._emit(Call(dest=dest, fn_name="__mn_sb_finish", args=args[:1]))
+                return dest
+            return self._make_value()
 
         # Monomorphize generic function calls
         if isinstance(expr.callee, Identifier):
@@ -1811,6 +2069,19 @@ class MIRLowerer:
                     self._emit(ClosureCall(dest=dest, closure=closure_val, args=args))
                     return dest
 
+            # v4.103.0: check if the name resolves to a variable whose
+            # type is a closure/function type. Parameters declared with
+            # `fn(T) -> T` annotations need indirect calls through the
+            # value, not direct calls by name — the v4.99.0 panel's
+            # docket #5 blocker. Without this, `return f(x)` inside
+            # `fn apply(f: fn(Int)->Int, x: Int) -> Int` was lowered
+            # to `call @f(x)` and linking failed with an undefined
+            # reference to `f`.
+            var_val = self._lookup_var(fn_name)
+            if var_val is not None and var_val.ty.kind == TypeKind.FN:
+                self._emit(ClosureCall(dest=dest, closure=var_val, args=args))
+                return dest
+
             # Resolve lambda variable names to actual function names
             resolved_name = self._lambda_vars.get(fn_name, fn_name)
             self._emit(Call(dest=dest, fn_name=resolved_name, args=args))
@@ -1896,6 +2167,49 @@ class MIRLowerer:
         final = self._make_value(ty=mir_string())
         self._emit(BinOp(dest=final, op=BinOpKind.ADD, lhs=result, rhs=close))
         return final
+
+    def _lower_struct_meta(self, expr: CallExpr) -> Value:
+        """Lower __struct_meta::<T>() — returns JSON schema string for struct T (v4.48.0)."""
+        type_arg = expr.type_args[0]
+        struct_name = type_arg.name if hasattr(type_arg, "name") else ""
+        fields = self._module.structs.get(struct_name, [])
+
+        # Map Mapanare types to JSON schema types
+        def _json_type(ftype: MIRType) -> str:
+            kind = ftype.type_info.kind
+            if kind == TypeKind.STRING:
+                return "string"
+            if kind == TypeKind.INT:
+                return "integer"
+            if kind == TypeKind.FLOAT:
+                return "number"
+            if kind == TypeKind.BOOL:
+                return "boolean"
+            if kind == TypeKind.LIST:
+                return "array"
+            if kind == TypeKind.OPTION:
+                # Optional fields: use the inner type
+                if ftype.type_info.args:
+                    return _json_type(MIRType(ftype.type_info.args[0]))
+                return "string"
+            return "string"
+
+        # Build JSON schema at compile time as a constant string
+        props: list[str] = []
+        required: list[str] = []
+        for fname, ftype in fields:
+            jtype = _json_type(ftype)
+            props.append(f'"{fname}": {{"type": "{jtype}"}}')
+            if ftype.type_info.kind != TypeKind.OPTION:
+                required.append(f'"{fname}"')
+
+        props_str = ", ".join(props)
+        req_str = ", ".join(required)
+        schema = f'{{"type": "object", "properties": {{{props_str}}}, ' f'"required": [{req_str}]}}'
+
+        dest = self._make_value(ty=mir_string())
+        self._emit(Const(dest=dest, ty=mir_string(), value=schema))
+        return dest
 
     def _encode_field_to_json(self, field_val: Value, ftype: MIRType) -> Value:
         """Generate MIR to convert a field value to its JSON string representation."""
@@ -2164,6 +2478,27 @@ class MIRLowerer:
             self._emit(SignalGet(dest=dest, signal=obj))
             return dest
 
+        # Tensor reduction methods (v4.45.0)
+        _TENSOR_REDUCTIONS_SCALAR = {"sum", "mean", "max", "min"}
+        _TENSOR_REDUCTIONS_IDX = {"argmax", "argmin"}
+        if obj.ty.kind == TypeKind.TENSOR and expr.method in (
+            _TENSOR_REDUCTIONS_SCALAR | _TENSOR_REDUCTIONS_IDX
+        ):
+            elem_ti = (
+                obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+            )
+            ty_suffix = "i64" if elem_ti.kind == TypeKind.INT else "f64"
+            fn_name = f"__mn_tensor_{expr.method}_{ty_suffix}"
+            if expr.method in _TENSOR_REDUCTIONS_SCALAR:
+                if elem_ti.kind == TypeKind.INT:
+                    dest = self._make_value(ty=mir_int())
+                else:
+                    dest = self._make_value(ty=mir_float())
+            else:
+                dest = self._make_value(ty=mir_int())
+            self._emit(Call(dest=dest, fn_name=fn_name, args=[obj]))
+            return dest
+
         # List .push() — emit ListPush instruction and update the variable binding
         if expr.method == "push" and args and obj.ty.kind in (TypeKind.LIST, TypeKind.UNKNOWN):
             # Use the same value as the source list for in-place mutation
@@ -2348,12 +2683,35 @@ class MIRLowerer:
         return dest
 
     def _lower_index(self, expr: IndexExpr) -> Value:
-        """Lower index access: `arr[i]`."""
+        """Lower index access: `arr[i]`, `tensor[i, j]`, or `tensor[0..2, :]` (v4.43–v4.45)."""
+        from mapanare.ast_nodes import IndexItem
+
         obj = self._lower_expr(expr.object)
-        index = self._lower_expr(expr.index)
-        # Infer element type from the container's type args
-        elem_ty = mir_unknown()
         obj_kind = obj.ty.kind
+
+        # Check for slicing (v4.45.0) — any range or wildcard item
+        has_slice = any(
+            isinstance(it, IndexItem) and it.kind in ("range", "wildcard") for it in expr.indices
+        )
+        if obj_kind == TypeKind.TENSOR and has_slice:
+            return self._lower_tensor_slice(obj, expr.indices)
+
+        # Scalar indices — extract Expr from IndexItem
+        scalar_exprs: list[Value] = []
+        for it in expr.indices:
+            if isinstance(it, IndexItem) and it.kind == "scalar" and it.expr:
+                scalar_exprs.append(self._lower_expr(it.expr))
+            elif isinstance(it, Expr):
+                scalar_exprs.append(self._lower_expr(it))
+        indices = scalar_exprs
+
+        # Tensor: emit Call to __mn_tensor_get_*_nd (v4.43.0)
+        if obj_kind == TypeKind.TENSOR:
+            return self._lower_tensor_get(obj, indices)
+
+        # List/Map/String: single-index via IndexGet
+        index = indices[0] if indices else self._make_value()
+        elem_ty = mir_unknown()
         if obj_kind == TypeKind.LIST and obj.ty.type_info.args:
             elem_ty = MIRType(obj.ty.type_info.args[0])
         elif obj_kind == TypeKind.MAP and len(obj.ty.type_info.args) >= 2:
@@ -2362,6 +2720,140 @@ class MIRLowerer:
             elem_ty = MIRType(type_info=TypeInfo(name="String", kind=TypeKind.STRING))
         dest = self._make_value(ty=elem_ty)
         self._emit(IndexGet(dest=dest, obj=obj, index=index))
+        return dest
+
+    def _lower_tensor_get(self, obj: Value, indices: list[Value]) -> Value:
+        """Lower tensor[i, j, ...] to __mn_tensor_get_*_nd call (v4.43.0)."""
+        elem_ti = (
+            obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        )
+        elem_ty = MIRType(elem_ti)
+        rank = len(indices)
+
+        # Determine which runtime function to call
+        if elem_ti.kind == TypeKind.INT:
+            fn_name = "__mn_tensor_get_i64_nd"
+        else:
+            fn_name = "__mn_tensor_get_f64_nd"
+
+        # Build index array Value — emit as consecutive stores
+        dest = self._make_value(ty=elem_ty, prefix="tget")
+        rank_val = self._make_value(ty=mir_int(), prefix="trank")
+        self._emit(Const(dest=rank_val, ty=mir_int(), value=str(rank)))
+        self._emit(Call(dest=dest, fn_name=fn_name, args=[obj, rank_val] + indices))
+        return dest
+
+    def _lower_tensor_set(self, obj: Value, indices: list[Value], val: Value) -> None:
+        """Lower tensor[i, j] = val to __mn_tensor_set_*_nd call (v4.43.0)."""
+        elem_ti = (
+            obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        )
+        rank = len(indices)
+
+        if elem_ti.kind == TypeKind.INT:
+            fn_name = "__mn_tensor_set_i64_nd"
+        else:
+            fn_name = "__mn_tensor_set_f64_nd"
+
+        rank_val = self._make_value(ty=mir_int(), prefix="trank")
+        self._emit(Const(dest=rank_val, ty=mir_int(), value=str(rank)))
+        void_dest = self._make_value(ty=mir_void(), prefix="tset")
+        self._emit(Call(dest=void_dest, fn_name=fn_name, args=[obj, rank_val] + indices + [val]))
+
+    def _lower_tensor_slice(self, obj: Value, items: list[Any]) -> Value:
+        """Lower tensor[0..2, :] to __mn_tensor_slice call (v4.45.0)."""
+        from mapanare.ast_nodes import IndexItem
+
+        rank = len(items)
+        # Build starts and ends arrays
+        start_vals: list[Value] = []
+        end_vals: list[Value] = []
+
+        for d, it in enumerate(items):
+            if isinstance(it, IndexItem):
+                if it.kind == "range":
+                    start_vals.append(
+                        self._lower_expr(it.start) if it.start else self._const_int(0)
+                    )
+                    end_vals.append(self._lower_expr(it.end) if it.end else self._const_int(0))
+                elif it.kind == "wildcard":
+                    start_vals.append(self._const_int(0))
+                    # End = shape[d] — use tensor_shape_dim runtime call
+                    dim_val = self._const_int(d)
+                    shape_dest = self._make_value(ty=mir_int(), prefix="sdim")
+                    self._emit(
+                        Call(dest=shape_dest, fn_name="tensor_shape_dim", args=[obj, dim_val])
+                    )
+                    end_vals.append(shape_dest)
+                else:  # scalar in slice context — treat as start..start+1
+                    sv = self._lower_expr(it.expr) if it.expr else self._const_int(0)
+                    start_vals.append(sv)
+                    one = self._const_int(1)
+                    end_dest = self._make_value(ty=mir_int(), prefix="send")
+                    self._emit(BinOp(dest=end_dest, op=BinOpKind.ADD, lhs=sv, rhs=one))
+                    end_vals.append(end_dest)
+
+        # Build result tensor type
+        elem_ti = (
+            obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+        )
+        result_ty = MIRType(TypeInfo(kind=TypeKind.TENSOR, args=[elem_ti]))
+        dest = self._make_value(ty=result_ty, prefix="tslice")
+        rank_val = self._const_int(rank)
+        self._emit(
+            Call(
+                dest=dest,
+                fn_name="__mn_tensor_slice",
+                args=[obj] + start_vals + end_vals + [rank_val],
+            )
+        )
+        return dest
+
+    def _const_int(self, val: int) -> Value:
+        """Emit a constant integer value."""
+        dest = self._make_value(ty=mir_int(), prefix="ci")
+        self._emit(Const(dest=dest, ty=mir_int(), value=str(val)))
+        return dest
+
+    def _lower_tensor_binop(self, op: str, lhs: Value, rhs: Value) -> Value:
+        """Lower tensor binary op to broadcast runtime call (v4.44.0)."""
+        _OP_SUFFIX = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+        op_suffix = _OP_SUFFIX.get(op, "add")
+
+        # Determine element type suffix
+        tensor_val = lhs if lhs.ty.kind == TypeKind.TENSOR else rhs
+        elem_ti = (
+            tensor_val.ty.type_info.args[0]
+            if tensor_val.ty.type_info.args
+            else TypeInfo(kind=TypeKind.FLOAT)
+        )
+        ty_suffix = "i64" if elem_ti.kind == TypeKind.INT else "f64"
+
+        # Determine if tensor+tensor or tensor+scalar
+        both_tensor = lhs.ty.kind == TypeKind.TENSOR and rhs.ty.kind == TypeKind.TENSOR
+        if both_tensor:
+            fn_name = f"__mn_tensor_{op_suffix}_broadcast_{ty_suffix}"
+            dest = self._make_value(ty=tensor_val.ty, prefix="tbop")
+            self._emit(Call(dest=dest, fn_name=fn_name, args=[lhs, rhs]))
+        else:
+            # tensor + scalar or scalar + tensor
+            if lhs.ty.kind == TypeKind.TENSOR:
+                # tensor op scalar — straightforward
+                fn_name = f"__mn_tensor_{op_suffix}_scalar_{ty_suffix}"
+                dest = self._make_value(ty=lhs.ty, prefix="tsop")
+                self._emit(Call(dest=dest, fn_name=fn_name, args=[lhs, rhs]))
+            else:
+                # scalar op tensor
+                if op in ("+", "*"):
+                    # Commutative — swap safely: tensor op scalar
+                    fn_name = f"__mn_tensor_{op_suffix}_scalar_{ty_suffix}"
+                    dest = self._make_value(ty=rhs.ty, prefix="tsop")
+                    self._emit(Call(dest=dest, fn_name=fn_name, args=[rhs, lhs]))
+                else:
+                    # Non-commutative (- /) — use reverse scalar fn (v4.47.0 fix)
+                    fn_name = f"__mn_tensor_r{op_suffix}_scalar_{ty_suffix}"
+                    dest = self._make_value(ty=rhs.ty, prefix="tsop")
+                    self._emit(Call(dest=dest, fn_name=fn_name, args=[lhs, rhs]))
         return dest
 
     def _lower_pipe(self, expr: PipeExpr) -> Value:
@@ -2420,15 +2912,36 @@ class MIRLowerer:
                 captures.append((var_name, var_val))
 
         if not captures:
-            # No captures — plain function reference (existing behavior)
+            # v4.103.0: no-capture lambdas used to be lowered as a
+            # plain function-pointer Const. That was fine when the
+            # lambda was only ever invoked directly (the call site
+            # looked up the function name in `_lambda_vars`), but it
+            # blocked docket #5: passing `double` to a parameter
+            # `f: fn(Int) -> Int`. Inside the callee, `f` has type
+            # FN in MIR — which must be a `{ptr, ptr}` closure struct
+            # for the indirect-call (ClosureCall) path to work. The
+            # no-capture lambda now always produces a ClosureCreate
+            # with an empty captures list; the emitter handles that
+            # case by emitting `{@fn_ptr, null}` inline. Direct calls
+            # still go through `_lambda_vars`, so nothing regresses.
+            env_param = _Param(name="__env_ptr")
+            modified_params = [env_param] + list(expr.params)
             fn_def = _FnDef(
                 name=lambda_name,
-                params=list(expr.params),
+                params=modified_params,
                 body=body_block,
             )
+            self._pending_captures = []
             self._lower_fn(fn_def)
             dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.FN)))
-            self._emit(Const(dest=dest, ty=MIRType(TypeInfo(kind=TypeKind.FN)), value=lambda_name))
+            self._emit(
+                ClosureCreate(
+                    dest=dest,
+                    fn_name=lambda_name,
+                    captures=[],
+                    capture_types=[],
+                )
+            )
             return dest
 
         # Has captures — create a closure
@@ -2551,6 +3064,37 @@ class MIRLowerer:
         list_ty = MIRType(TypeInfo(kind=TypeKind.LIST, args=[elem_type.type_info]))
         dest = self._make_value(ty=list_ty)
         self._emit(ListInit(dest=dest, elem_type=elem_type, elements=elements))
+        return dest
+
+    def _lower_tensor_literal(self, expr: TensorLiteral) -> Value:
+        """Lower a tensor literal (v4.42.0).
+
+        Emits a TensorInit instruction that the LLVM emitter translates to:
+          1. Stack-allocate shape array
+          2. Call __mn_tensor_alloc(rank, shape_ptr, elem_size)
+          3. Call __mn_tensor_store_f64/i64 for each element
+        """
+        elements = [self._lower_expr(e) for e in expr.elements]
+
+        # Determine element MIR type
+        elem_name = getattr(expr.element_type, "name", "")
+        if elem_name in ("Float", "float"):
+            elem_type = mir_float()
+        elif elem_name in ("Int", "int"):
+            elem_type = mir_int()
+        elif elem_name in ("Bool", "bool"):
+            elem_type = mir_bool()
+        else:
+            elem_type = mir_float()  # default
+
+        shape_tuple = tuple(expr.shape) if expr.shape else None
+        tensor_ty = MIRType(
+            TypeInfo(kind=TypeKind.TENSOR, args=[elem_type.type_info], tensor_shape=shape_tuple)
+        )
+        dest = self._make_value(ty=tensor_ty)
+        self._emit(
+            TensorInit(dest=dest, elem_type=elem_type, shape=list(expr.shape), elements=elements)
+        )
         return dest
 
     def _patch_list_elem_types_for_struct(
@@ -2727,8 +3271,20 @@ class MIRLowerer:
             return val
 
         if isinstance(expr.target, IndexExpr):
+            from mapanare.ast_nodes import IndexItem as _II
+
             obj = self._lower_expr(expr.target.object)
-            index = self._lower_expr(expr.target.index)
+            indices = []
+            for it in expr.target.indices:
+                if isinstance(it, _II) and it.kind == "scalar" and it.expr:
+                    indices.append(self._lower_expr(it.expr))
+                elif isinstance(it, Expr):
+                    indices.append(self._lower_expr(it))
+            # Tensor assignment: emit Call to __mn_tensor_set_*_nd (v4.43.0)
+            if obj.ty.kind == TypeKind.TENSOR:
+                self._lower_tensor_set(obj, indices, val)
+                return val
+            index = indices[0] if indices else self._make_value()
             self._emit(IndexSet(obj=obj, index=index, val=val))
             # Write back: if the list came from a struct field, the IndexSet
             # only modifies a local copy.  Emit FieldSet to persist the change.
@@ -2788,7 +3344,16 @@ class MIRLowerer:
             assert then_exit_bb is not None
             assert else_exit_bb is not None
             phi_ty = tv.ty
-            if self._fn and self._fn.return_type.kind != TypeKind.VOID:
+            # Only fall back to function return type when the then-value
+            # type is unknown/void — otherwise use the actual expression
+            # type.  The old unconditional override caused string
+            # if-expressions inside struct-returning functions to get the
+            # wrong PHI type (e.g., EmitState instead of String).
+            if (
+                phi_ty.kind in (TypeKind.VOID, TypeKind.UNKNOWN)
+                and self._fn
+                and self._fn.return_type.kind != TypeKind.VOID
+            ):
                 phi_ty = self._fn.return_type
             result = self._make_value(ty=phi_ty, prefix="if_result")
             self._emit(
@@ -2802,112 +3367,115 @@ class MIRLowerer:
             )
             return result
 
-        # Both branches terminated — merge block is unreachable but callers
-        # may reference the result.  Use the function's return type so the C
-        # emitter generates a correctly-sized variable.
-        ret_ty = self._fn.return_type if self._fn else mir_void()
-        result = self._make_value(ty=ret_ty, prefix="if_result")
-        self._emit(Const(dest=result, ty=ret_ty, value=None))
+        # Neither branch produced a value — this is a void if-statement.
+        # Use VOID type to match the self-hosted lowerer's convention, so
+        # match arm void detection treats the result correctly.
+        result = self._make_value(ty=mir_void(), prefix="if_result")
+        self._emit(Const(dest=result, ty=mir_void(), value=None))
         return result
 
+    # -- Match lowering (decision-tree, Maranget 2008) -----------------------
+
     def _lower_match(self, expr: MatchExpr) -> Value:
-        """Lower match expression to Switch + basic blocks.
+        """Lower match expression using decision-tree compilation.
 
-        Structure:
-            %subject = <lower subject>
-            %tag = enum_tag %subject
-            switch %tag [variant1 => arm1_bb, ...] default default_bb
-        arm_bb:
-            %payload = enum_payload %subject::Variant
-            <bind pattern vars>
-            %arm_val = <lower arm body>
-            jump merge_bb
-        merge_bb:
-            %result = phi [arm1_bb: %val1, arm2_bb: %val2, ...]
+        Builds a Maranget decision tree, then emits MIR blocks:
+        - Flat tree (single-level switch): Switch targets action blocks directly
+        - Nested tree: intermediate switch blocks for inner pattern splits
+        See docs/roadmap/v4/v4.34.0/DESIGN.md.
         """
+        from mapanare.pattern_matching import (
+            DTFail,
+            DTLeaf,
+            DTSwitch,
+            PatternMatrix,
+            PatternRow,
+            build_decision_tree,
+        )
+
         subject = self._lower_expr(expr.subject)
+        ctx = self._match_type_context(subject.ty)
 
+        rows = [PatternRow(patterns=[arm.pattern], action_idx=i) for i, arm in enumerate(expr.arms)]
+        matrix = PatternMatrix(rows=rows, type_contexts=[ctx])
+        tree = build_decision_tree(matrix)
+
+        # Create merge block and action blocks (one per arm)
         merge_bb = self._new_block(self._fresh_block("match_merge"))
+        action_blocks: list[BasicBlock] = []
+        for _ in expr.arms:
+            action_blocks.append(self._new_block(self._fresh_block("match_arm")))
 
-        # Create blocks for each arm
-        arm_blocks: list[BasicBlock] = []
-        for _arm in expr.arms:
-            arm_bb = self._new_block(self._fresh_block("match_arm"))
-            arm_blocks.append(arm_bb)
+        # Emit switch structure from the decision tree
+        if isinstance(tree, DTLeaf):
+            self._emit(Jump(target=action_blocks[tree.action_idx].label))
+        elif isinstance(tree, DTFail):
+            self._emit(Jump(target=merge_bb.label))
+        elif isinstance(tree, DTSwitch) and self._is_flat_switch(tree):
+            self._emit_flat_switch(tree, subject, action_blocks, merge_bb)
+        elif isinstance(tree, DTSwitch):
+            self._emit_nested_switch(tree, [subject], action_blocks, merge_bb)
 
-        # Build switch cases
-        cases: list[tuple[Any, str]] = []
-        default_block = merge_bb.label
-
-        for i, arm in enumerate(expr.arms):
-            pat = arm.pattern
-            if isinstance(pat, ConstructorPattern):
-                cases.append((pat.name, arm_blocks[i].label))
-            elif isinstance(pat, LiteralPattern):
-                lit_val = self._get_literal_value(pat.value)
-                cases.append((lit_val, arm_blocks[i].label))
-            elif isinstance(pat, IdentPattern) and self._is_enum_variant(pat.name, subject.ty):
-                # Bare enum variant name used as pattern (e.g., `Add => ...`)
-                cases.append((pat.name, arm_blocks[i].label))
-            elif isinstance(pat, (WildcardPattern, IdentPattern)):
-                default_block = arm_blocks[i].label
-            else:
-                default_block = arm_blocks[i].label
-
-        # Emit switch or branch
-        if cases:
-            # Preserve the subject's type on the tag so the LLVM emitter can
-            # resolve variant names to the correct enum (avoids collisions when
-            # multiple enums share variant names like "Call" or "Return").
-            tag = self._make_value(ty=subject.ty, prefix="tag")
-            self._emit(EnumTag(dest=tag, enum_val=subject))
-            self._emit(Switch(tag=tag, cases=cases, default_block=default_block))
-        elif arm_blocks:
-            # No enum patterns — jump to first arm
-            self._emit(Jump(target=arm_blocks[0].label))
-
-        # Lower each arm
+        # Lower each arm body.
+        # Mirror the self-hosted convention: void/unknown arm values are replaced
+        # with zeroinitializer sentinels. If ALL entries are zeroinitializer,
+        # skip the PHI and emit the unreachable merge pattern.
         arm_results: list[tuple[str, Value]] = []
         for i, arm in enumerate(expr.arms):
-            self._set_block(arm_blocks[i])
+            self._set_block(action_blocks[i])
             self._push_scope()
+            self._bind_match_arm(arm.pattern, subject)
 
-            # Bind pattern variables
-            pat = arm.pattern
-            if isinstance(pat, ConstructorPattern):
-                for j, arg_pat in enumerate(pat.args):
-                    if isinstance(arg_pat, IdentPattern):
-                        payload_ty = self._infer_payload_type(subject.ty, pat.name, j)
-                        payload = self._make_value(ty=payload_ty, prefix=arg_pat.name)
-                        self._emit(
-                            EnumPayload(
-                                dest=payload, enum_val=subject, variant=pat.name, payload_idx=j
-                            )
-                        )
-                        self._define_var(arg_pat.name, payload)
-            elif isinstance(pat, IdentPattern):
-                self._define_var(pat.name, subject)
+            # v4.35.0: guard fall-through — evaluate guard, branch on result
+            if arm.guard is not None:
+                guard_val = self._lower_expr(arm.guard)
+                body_bb = self._new_block(self._fresh_block("guard_pass"))
+                fallback_bb = self._new_block(self._fresh_block("guard_fail"))
+                self._emit(
+                    Branch(cond=guard_val, true_block=body_bb.label, false_block=fallback_bb.label)
+                )
+                # Emit fallback: decision tree from remaining rows
+                self._set_block(fallback_bb)
+                remaining_rows = [
+                    PatternRow(patterns=[expr.arms[j].pattern], action_idx=j)
+                    for j in range(i + 1, len(expr.arms))
+                ]
+                if remaining_rows:
+                    remaining_matrix = PatternMatrix(rows=remaining_rows, type_contexts=[ctx])
+                    remaining_tree = build_decision_tree(remaining_matrix)
+                    self._emit_decision_tree(remaining_tree, [subject], action_blocks, merge_bb)
+                else:
+                    self._emit(Jump(target=merge_bb.label))
+                # Continue body in the guard_pass block
+                self._set_block(body_bb)
 
-            # Lower arm body
             if isinstance(arm.body, Block):
                 arm_val = self._lower_block(arm.body)
             else:
                 arm_val = self._lower_expr(arm.body)
-
             exit_bb = self._block
             if not self._block_terminated():
+                assert exit_bb is not None  # _block_terminated returns True when _block is None
                 self._emit(Jump(target=merge_bb.label))
-
+                # Mirror self-hosted: void/unknown → zeroinitializer (Rule 4)
+                is_void = (
+                    arm_val is None
+                    or arm_val.ty.kind in (TypeKind.VOID, TypeKind.UNKNOWN)
+                    or arm_val.name == "%void"
+                )
+                if is_void:
+                    zty = arm_val.ty if arm_val is not None else mir_void()
+                    arm_results.append((exit_bb.label, Value(name="zeroinitializer", ty=zty)))
+                elif arm_val is not None:
+                    arm_results.append((exit_bb.label, arm_val))
             self._pop_scope()
 
-            if arm_val is not None and exit_bb is not None:
-                arm_results.append((exit_bb.label, arm_val))
-
-        # Merge block
+        # Merge block — mirrors self-hosted all_zero check.
         self._set_block(merge_bb)
-        if arm_results:
-            # Use the function's return type when the arm type doesn't match —
-            # this prevents the C emitter from generating undersized variables.
+
+        has_real_value = any(val.name != "zeroinitializer" for _, val in arm_results)
+
+        if arm_results and has_real_value:
             phi_ty = arm_results[0][1].ty
             if self._fn and self._fn.return_type.kind != TypeKind.VOID:
                 phi_ty = self._fn.return_type
@@ -2915,13 +3483,241 @@ class MIRLowerer:
             self._emit(Phi(dest=result, incoming=arm_results))
             return result
 
-        # All arms terminated — merge block is unreachable but callers may
-        # reference the result.  Use the function's return type so the C
-        # emitter generates a correctly-sized variable (not int64_t).
+        # All arms terminated or all void — unreachable merge
         ret_ty = self._fn.return_type if self._fn else mir_void()
         result = self._make_value(ty=ret_ty, prefix="match_result")
         self._emit(Const(dest=result, ty=ret_ty, value=None))
         return result
+
+    def _match_type_context(self, ty: MIRType) -> Any:
+        """Build a TypeContext for pattern matching from a MIR type."""
+        from mapanare.pattern_matching import TypeContext
+
+        kind = ty.kind
+        args = ty.type_info.args
+
+        # Cycle guard: recursive types (e.g., Expr with BinOp(Expr, Expr))
+        type_key = ty.type_info.name or ""
+        if type_key and type_key in self._match_ctx_stack:
+            return TypeContext(is_closed=False)
+        if type_key:
+            self._match_ctx_stack.add(type_key)
+        try:
+            return self._match_type_context_inner(ty, kind, args)
+        finally:
+            self._match_ctx_stack.discard(type_key)
+
+    def _match_type_context_inner(self, ty: MIRType, kind: TypeKind, args: list[Any]) -> Any:
+        from mapanare.pattern_matching import ConstructorInfo, TypeContext
+
+        if kind == TypeKind.OPTION:
+            some_sub = [self._match_type_context(MIRType(args[0]))] if args else []
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("Some", 1), ConstructorInfo("None", 0)],
+                sub_contexts={"Some": some_sub},
+            )
+
+        if kind == TypeKind.RESULT:
+            ok_sub = [self._match_type_context(MIRType(args[0]))] if args else []
+            err_sub = [self._match_type_context(MIRType(args[1]))] if len(args) >= 2 else []
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("Ok", 1), ConstructorInfo("Err", 1)],
+                sub_contexts={"Ok": ok_sub, "Err": err_sub},
+            )
+
+        enum_name = ty.type_info.name
+        if enum_name and (
+            kind == TypeKind.ENUM or (kind == TypeKind.STRUCT and enum_name in self._enum_variants)
+        ):
+            variants = self._module.enums.get(enum_name, [])
+            ctors: list[ConstructorInfo] = []
+            sub_ctxs: dict[str, list[TypeContext]] = {}
+            for vname, payload_types in variants:
+                arity = len(payload_types)
+                ctors.append(ConstructorInfo(vname, arity))
+                if arity > 0:
+                    sub_ctxs[vname] = [self._match_type_context(pt) for pt in payload_types]
+            return TypeContext(is_closed=True, all_constructors=ctors, sub_contexts=sub_ctxs)
+
+        if kind == TypeKind.BOOL:
+            return TypeContext(
+                is_closed=True,
+                all_constructors=[ConstructorInfo("true", 0), ConstructorInfo("false", 0)],
+            )
+
+        return TypeContext(is_closed=False)
+
+    @staticmethod
+    def _is_flat_switch(tree: Any) -> bool:
+        """True if the tree is single-level: all children are DTLeaf."""
+        from mapanare.pattern_matching import DTLeaf
+
+        for _, subtree in tree.cases:
+            if not isinstance(subtree, DTLeaf):
+                return False
+        if tree.default is not None and not isinstance(tree.default, DTLeaf):
+            return False
+        return True
+
+    def _emit_flat_switch(
+        self,
+        tree: Any,
+        subject: Value,
+        action_blocks: list[BasicBlock],
+        merge_bb: BasicBlock,
+    ) -> None:
+        """Emit a flat switch: Switch instruction targets action blocks directly."""
+        from mapanare.pattern_matching import DTLeaf
+
+        cases: list[tuple[Any, str]] = []
+        default_block = merge_bb.label
+
+        for tag, subtree in tree.cases:
+            assert isinstance(subtree, DTLeaf)
+            cases.append((tag, action_blocks[subtree.action_idx].label))
+
+        if tree.default is not None:
+            assert isinstance(tree.default, DTLeaf)
+            default_block = action_blocks[tree.default.action_idx].label
+
+        if cases:
+            tag_val = self._make_value(ty=subject.ty, prefix="tag")
+            self._emit(EnumTag(dest=tag_val, enum_val=subject))
+            self._emit(Switch(tag=tag_val, cases=cases, default_block=default_block))
+        elif action_blocks:
+            self._emit(Jump(target=action_blocks[0].label))
+
+    def _emit_nested_switch(
+        self,
+        tree: Any,
+        col_values: list[Value],
+        action_blocks: list[BasicBlock],
+        merge_bb: BasicBlock,
+    ) -> None:
+        """Emit a nested decision tree with intermediate switch blocks."""
+        from mapanare.pattern_matching import DTFail, DTLeaf, DTSwitch
+
+        col_val = col_values[tree.column_idx]
+
+        # Pre-create case blocks
+        case_block_info: list[tuple[str, Any, BasicBlock]] = []
+        switch_cases: list[tuple[Any, str]] = []
+        for tag, subtree in tree.cases:
+            case_bb = self._new_block(self._fresh_block(f"match_case_{tag}"))
+            switch_cases.append((tag, case_bb.label))
+            case_block_info.append((tag, subtree, case_bb))
+
+        # Default block
+        default_label = merge_bb.label
+        default_info: tuple[Any, BasicBlock] | None = None
+        if tree.default is not None:
+            default_bb = self._new_block(self._fresh_block("match_default"))
+            default_label = default_bb.label
+            default_info = (tree.default, default_bb)
+
+        # Emit tag extraction + switch in current block
+        tag_val = self._make_value(ty=col_val.ty, prefix="tag")
+        self._emit(EnumTag(dest=tag_val, enum_val=col_val))
+        self._emit(Switch(tag=tag_val, cases=switch_cases, default_block=default_label))
+
+        # Emit each case block
+        for tag, subtree, case_bb in case_block_info:
+            self._set_block(case_bb)
+
+            if isinstance(subtree, DTLeaf):
+                self._emit(Jump(target=action_blocks[subtree.action_idx].label))
+            elif isinstance(subtree, DTFail):
+                self._emit(Jump(target=merge_bb.label))
+            elif isinstance(subtree, DTSwitch):
+                # Extract payloads for sub-columns, then recurse
+                ctor_arity = self._ctor_arity(col_val.ty, tag)
+                sub_values: list[Value] = []
+                for j in range(ctor_arity):
+                    payload_ty = self._infer_payload_type(col_val.ty, tag, j)
+                    payload = self._make_value(ty=payload_ty, prefix=f"pay_{j}")
+                    self._emit(
+                        EnumPayload(dest=payload, enum_val=col_val, variant=tag, payload_idx=j)
+                    )
+                    sub_values.append(payload)
+                new_col_values = (
+                    col_values[: tree.column_idx] + sub_values + col_values[tree.column_idx + 1 :]
+                )
+                self._emit_nested_switch(subtree, new_col_values, action_blocks, merge_bb)
+
+        # Emit default block
+        if default_info is not None:
+            subtree, def_bb = default_info
+            self._set_block(def_bb)
+            new_col_values = col_values[: tree.column_idx] + col_values[tree.column_idx + 1 :]
+            if isinstance(subtree, DTLeaf):
+                self._emit(Jump(target=action_blocks[subtree.action_idx].label))
+            elif isinstance(subtree, DTFail):
+                self._emit(Jump(target=merge_bb.label))
+            elif isinstance(subtree, DTSwitch):
+                self._emit_nested_switch(subtree, new_col_values, action_blocks, merge_bb)
+
+    def _emit_decision_tree(
+        self,
+        tree: Any,
+        col_values: list[Value],
+        action_blocks: list[BasicBlock],
+        merge_bb: BasicBlock,
+    ) -> None:
+        """Emit code for a decision tree (v4.35.0 — used by guard fall-through)."""
+        from mapanare.pattern_matching import DTFail, DTLeaf, DTSwitch
+
+        if isinstance(tree, DTLeaf):
+            self._emit(Jump(target=action_blocks[tree.action_idx].label))
+        elif isinstance(tree, DTFail):
+            self._emit(Jump(target=merge_bb.label))
+        elif isinstance(tree, DTSwitch):
+            if self._is_flat_switch(tree):
+                self._emit_flat_switch(tree, col_values[0], action_blocks, merge_bb)
+            else:
+                self._emit_nested_switch(tree, col_values, action_blocks, merge_bb)
+
+    def _bind_match_arm(self, pat: Any, subject: Value) -> None:
+        """Bind pattern variables from a match arm, handling nested constructors."""
+        from mapanare.ast_nodes import OrPattern
+
+        if isinstance(pat, ConstructorPattern):
+            for j, arg_pat in enumerate(pat.args):
+                if isinstance(arg_pat, (IdentPattern, ConstructorPattern)):
+                    payload_ty = self._infer_payload_type(subject.ty, pat.name, j)
+                    pfx = (
+                        arg_pat.name if isinstance(arg_pat, IdentPattern) else f"pay_{pat.name}_{j}"
+                    )
+                    payload = self._make_value(ty=payload_ty, prefix=pfx)
+                    self._emit(
+                        EnumPayload(dest=payload, enum_val=subject, variant=pat.name, payload_idx=j)
+                    )
+                    if isinstance(arg_pat, IdentPattern):
+                        self._define_var(arg_pat.name, payload)
+                    else:
+                        # Nested constructor — recurse
+                        self._bind_match_arm(arg_pat, payload)
+        elif isinstance(pat, IdentPattern):
+            self._define_var(pat.name, subject)
+        elif isinstance(pat, OrPattern):
+            # v4.35.0: bind from first alternative (all have same names)
+            self._bind_match_arm(pat.alternatives[0], subject)
+
+    def _ctor_arity(self, ty: MIRType, tag: str) -> int:
+        """Get the arity of a constructor for a given type."""
+        kind = ty.kind
+        if kind == TypeKind.OPTION:
+            return 1 if tag == "Some" else 0
+        if kind == TypeKind.RESULT:
+            return 1
+        enum_name = ty.type_info.name
+        if enum_name:
+            variants = self._module.enums.get(enum_name, [])
+            for vname, payload_types in variants:
+                if vname == tag:
+                    return len(payload_types)
+        return 0
 
     def _lower_interp_string(self, expr: InterpString) -> Value:
         """Lower string interpolation."""
@@ -2939,27 +3735,6 @@ class MIRLowerer:
         dest = self._make_value(ty=mir_string())
         self._emit(InterpConcat(dest=dest, parts=parts))
         return dest
-
-    # -- Helpers -----------------------------------------------------------
-
-    def _is_enum_variant(self, name: str, subject_ty: MIRType | None = None) -> bool:
-        """Check if a name matches a known enum variant (local only for now)."""
-        for variant_names in self._enum_variants.values():
-            if name in variant_names:
-                return True
-        return False
-
-    def _get_literal_value(self, expr: Expr) -> Any:
-        """Extract the literal value from an expression (for switch cases)."""
-        if isinstance(expr, IntLiteral):
-            return expr.value
-        if isinstance(expr, FloatLiteral):
-            return expr.value
-        if isinstance(expr, BoolLiteral):
-            return expr.value
-        if isinstance(expr, StringLiteral):
-            return expr.value
-        return None
 
 
 # ---------------------------------------------------------------------------

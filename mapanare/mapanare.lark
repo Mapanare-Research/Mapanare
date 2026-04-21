@@ -27,8 +27,10 @@ start: (_nl* (definition | stmt))* _nl*
            | trait_def
            | impl_trait_def
            | impl_def
+           | const_def
+           | async_fn_def
 
-decorated_def: (decorator _nl*)+ (fn_def | agent_def | struct_def | enum_def | tipo_def)
+decorated_def: (decorator _nl*)+ (fn_def | async_fn_def | agent_def | struct_def | enum_def | tipo_def)
 decorator: AT NAME (LPAREN arg_list? RPAREN)?
 
 // Doc comments: /// lines before a definition are collected into a doc_comment node
@@ -53,8 +55,18 @@ export_names: NAME (COMMA NAME)* COMMA?
 
 fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
 
+// v4.68.0: ``async_fn_def`` restored (Arc 8). Backed by DESIGN.md
+// (v4.67.0). Lowering to LLVM coroutine intrinsics arrives at v4.70.0;
+// until then the lowerer emits a "under construction" diagnostic.
+async_fn_def: (KW_PUB | PLUS)? KW_ASYNC KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
+
 // FFI: extern "C" fn name(params) -> RetType
-// Python interop: extern "Python" fn module::name(params) -> RetType
+//
+// v4.29.0: ``extern "Python" fn`` was removed. The grammar still accepts
+// a module-qualified form (``extern "C" fn module::name``) for the lexer
+// layer but the semantic checker rejects any ABI other than "C" with a
+// message pointing to ``mapanare bind --lang python``. See
+// ``docs/roadmap/v4/v4.29.0/PLAN.md`` Phase 2.1 (Path B).
 extern_fn_def: KW_EXTERN STRING_LIT KW_FN NAME (DOUBLE_COLON NAME)? LPAREN param_list? RPAREN (ARROW type_expr)?
 
 type_params: LT type_param (COMMA type_param)* GT
@@ -155,8 +167,8 @@ impl_def: KW_IMPL type_params NAME (LT type_expr (COMMA type_expr)* GT)? LBRACE 
           | generic_type
           | named_type
 
-named_type: NAME
-generic_type: NAME LT type_expr (COMMA type_expr)* GT
+named_type: NAME (DOT NAME)*
+generic_type: NAME (DOT NAME)* LT type_expr (COMMA type_expr)* GT
 tensor_type: KW_TENSOR LT type_expr GT LBRACKET expr (COMMA expr)* RBRACKET
 fn_type: KW_FN LPAREN (type_expr (COMMA type_expr)*)? RPAREN ARROW type_expr
 
@@ -169,6 +181,7 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 
 ?stmt: let_stmt
      | for_stmt
+     | for_await_stmt
      | while_stmt
      | return_stmt
      | break_stmt
@@ -179,12 +192,17 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 
 
 let_stmt: KW_LET KW_MUT? NAME (COLON type_expr)? ASSIGN expr
+
+// v4.55.0: real const — distinct from let, requires type annotation + constant initializer
+const_def: KW_CONST NAME COLON type_expr ASSIGN expr
 return_stmt: KW_RETURN expr?
 break_stmt: KW_BREAK
 continue_stmt: KW_CONTINUE
 assert_stmt: KW_ASSERT expr (COMMA expr)?
 di_stmt: KW_DI expr
 for_stmt: KW_FOR NAME KW_IN expr block
+// v4.74.0: for await — async stream iteration. See DESIGN.md §3.6.
+for_await_stmt: KW_FOR KW_AWAIT NAME KW_IN expr block
 while_stmt: KW_WHILE expr block
 expr_stmt: expr
 
@@ -243,12 +261,13 @@ expr_stmt: expr
 ?unary_expr: postfix_expr
            | MINUS unary_expr -> neg_op
            | BANG unary_expr -> not_op
+           | KW_AWAIT unary_expr -> await_expr
 
 ?postfix_expr: atom_expr
              | postfix_expr LPAREN arg_list? RPAREN -> call_expr
              | postfix_expr DOT NAME LPAREN arg_list? RPAREN -> method_call_expr
              | postfix_expr DOT NAME -> field_access
-             | postfix_expr LBRACKET expr RBRACKET -> index_expr
+             | postfix_expr LBRACKET expr (COMMA expr)* RBRACKET -> index_expr
              | postfix_expr QUESTION -> error_prop
 
 arg_list: expr (COMMA expr)* COMMA?
@@ -262,6 +281,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | none_lit
           | spawn_expr
           | sync_expr
+// v4.30.0: ``await_expr`` removed (Path B — see rationale above).
           | signal_expr
           | stream_expr
           | if_expr
@@ -271,6 +291,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | namespace_access
           | self_expr
           | ident
+          | tensor_literal
           | list_lit
           | map_lit
           | paren_expr
@@ -299,6 +320,7 @@ namespace_access: NAME DOUBLE_COLON NAME
 
 spawn_expr: KW_SPAWN NAME LPAREN arg_list? RPAREN
 sync_expr: KW_SYNC postfix_expr
+// v4.30.0: ``await_expr`` rule removed (Path B — see rationale above).
 signal_expr: KW_SIGNAL LPAREN expr RPAREN -> signal_value
            | KW_SIGNAL block -> signal_computed
 
@@ -309,12 +331,17 @@ if_expr: KW_IF expr block (KW_ELSE block)? -> if_simple
 
 match_expr: KW_MATCH expr LBRACE _nl* match_arms _nl* RBRACE
 match_arms: (match_arm (COMMA _nl* match_arm)* COMMA?)?
-match_arm: pattern FAT_ARROW (expr | block)
+match_arm: pattern guard? FAT_ARROW (expr | block)
+guard: KW_IF assign_expr
 
-?pattern: wildcard_pattern
-        | constructor_pattern
-        | literal_pattern
-        | ident_pattern
+?pattern: or_pattern
+
+or_pattern: pattern_alt (BAR pattern_alt)*
+
+?pattern_alt: wildcard_pattern
+            | constructor_pattern
+            | literal_pattern
+            | ident_pattern
 
 wildcard_pattern: KW_WILDCARD
 constructor_pattern: NAME LPAREN (pattern (COMMA pattern)*)? RPAREN
@@ -322,6 +349,17 @@ literal_pattern: DEC_INT | FLOAT_LIT | STRING_LIT | KW_TRUE | KW_FALSE
 ident_pattern: NAME
 
 list_lit: LBRACKET (expr (COMMA expr)* COMMA?)? RBRACKET
+
+// Tensor literal: Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]
+// v4.42.0: tensor_atom excludes list_lit to avoid LALR ambiguity
+// with nested bracket syntax. Use parens for compound expressions:
+// Tensor<Float>[(1 + 2), 4, 5].
+tensor_literal: KW_TENSOR LT type_expr GT LBRACKET tensor_body RBRACKET
+tensor_body: tensor_elem (COMMA tensor_elem)* COMMA?
+?tensor_elem: LBRACKET tensor_body RBRACKET -> tensor_nested
+            | tensor_atom
+?tensor_atom: int_lit | float_lit | ident | paren_expr
+            | MINUS tensor_atom -> tensor_neg
 
 // Map literal: #{ key: value, ... }
 map_lit: MAP_OPEN (map_entry (COMMA map_entry)* COMMA?)? RBRACE
@@ -339,6 +377,7 @@ tuple_expr: LPAREN expr COMMA expr (COMMA expr)* RPAREN
 // Priority .2 ensures bilingual keywords beat the NAME regex.
 // ============================================================
 
+KW_CONST.2: /const(?![a-zA-Z0-9_])/
 KW_LET.2: /(?:let|pon)(?![a-zA-Z0-9_])/
 KW_MUT: "mut"
 KW_FN: "fn"
@@ -372,6 +411,12 @@ KW_NEW: "new"
 KW_ASSERT: "assert"
 KW_BREAK.2: /(?:break|sal)(?![a-zA-Z0-9_])/
 KW_CONTINUE.2: /(?:continue|sigue)(?![a-zA-Z0-9_])/
+// v4.68.0: KW_ASYNC / KW_AWAIT restored (Arc 8). Backed by
+// v4.67.0/DESIGN.md. ``async`` and ``await`` are reserved keywords
+// again. This is a breaking change from v4.30.0-v4.67.0 where they
+// were plain identifiers. LLVM coroutine lowering arrives at v4.70.0.
+KW_ASYNC.2: /async(?![a-zA-Z0-9_])/
+KW_AWAIT.2: /await(?![a-zA-Z0-9_])/
 KW_DI.2: /di(?![a-zA-Z0-9_])/
 ELLIPSIS: "..."
 

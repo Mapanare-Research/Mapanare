@@ -50,16 +50,18 @@ class TypeExpr(ASTNode):
 
 @dataclass
 class NamedType(TypeExpr):
-    """A simple named type like `Int`, `String`, `MyStruct`."""
+    """A named type like `Int`, `String`, `MyStruct`, or `mod.Type`."""
 
     name: str = ""
+    module_path: list[str] = field(default_factory=list)
 
 
 @dataclass
 class GenericType(TypeExpr):
-    """A generic type like `List<Int>`, `Map<String, Int>`."""
+    """A generic type like `List<Int>`, `mod.List<Int>`."""
 
     name: str = ""
+    module_path: list[str] = field(default_factory=list)
     args: list[TypeExpr] = field(default_factory=list)
 
 
@@ -202,11 +204,29 @@ class NamespaceAccessExpr(Expr):
 
 
 @dataclass
+class IndexItem(ASTNode):
+    """An item in a multi-index: scalar, range (N..M), or wildcard (:).
+
+    v4.45.0: Added for tensor slicing.
+    kind: "scalar" | "range" | "wildcard"
+    """
+
+    kind: str = "scalar"
+    expr: Expr | None = None  # scalar value
+    start: Expr | None = None  # range start
+    end: Expr | None = None  # range end
+
+
+@dataclass
 class IndexExpr(Expr):
-    """Index expression: `arr[i]`."""
+    """Index expression: `arr[i]`, `tensor[i, j]`, or `tensor[0..2, :]`.
+
+    v4.43.0: multi-index. v4.45.0: range and wildcard items.
+    indices: list of IndexItem (scalar wraps an Expr).
+    """
 
     object: Expr = field(default_factory=Expr)
-    index: Expr = field(default_factory=Expr)
+    indices: list[IndexItem] = field(default_factory=list)
 
 
 @dataclass
@@ -249,6 +269,23 @@ class SyncExpr(Expr):
     expr: Expr = field(default_factory=Expr)
 
 
+# v4.68.0: ``AwaitExpr`` restored (Arc 8). Backed by v4.67.0/DESIGN.md §3.
+# Lowering to LLVM coroutine intrinsics arrives at v4.70.0; until then
+# the lowerer emits a rustc-quality "under construction" diagnostic.
+
+
+@dataclass
+class AwaitExpr(Expr):
+    """Await expression: `await future_expr`.
+
+    Suspends the current coroutine until the operand Future<T> is ready.
+    Only valid inside ``async fn`` bodies (enforced at semantic time, v4.69.0).
+    See v4.67.0/DESIGN.md §3.2.
+    """
+
+    expr: Expr = field(default_factory=Expr)
+
+
 @dataclass
 class SendExpr(Expr):
     """Send expression: `agent.input <- value`."""
@@ -268,6 +305,19 @@ class ErrorPropExpr(Expr):
 class ListLiteral(Expr):
     """List literal: `[1, 2, 3]`."""
 
+    elements: list[Expr] = field(default_factory=list)
+
+
+@dataclass
+class TensorLiteral(Expr):
+    """Tensor literal: `Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]`.
+
+    v4.42.0: elements is flattened to row-major order by the parser.
+    shape is inferred from nesting depth + per-level element counts.
+    """
+
+    element_type: TypeExpr = field(default_factory=lambda: NamedType())
+    shape: list[int] = field(default_factory=list)
     elements: list[Expr] = field(default_factory=list)
 
 
@@ -413,6 +463,19 @@ class ForLoop(Stmt):
 
 
 @dataclass
+class ForAwaitLoop(Stmt):
+    """Async for loop: `for await x in stream { ... }`.
+
+    Desugars to a loop calling `await stream.next()` and matching
+    `Some(x)` / `None`. See v4.67.0/DESIGN.md §3.6.
+    """
+
+    var_name: str = ""
+    iterable: Expr = field(default_factory=Expr)
+    body: Block = field(default_factory=lambda: Block())
+
+
+@dataclass
 class WhileLoop(Stmt):
     """While loop: `while cond { ... }`."""
 
@@ -442,6 +505,7 @@ class MatchArm(ASTNode):
 
     pattern: Pattern = field(default_factory=lambda: Pattern())
     body: Expr | Block = field(default_factory=Expr)
+    guard: Expr | None = None
 
 
 @dataclass
@@ -489,6 +553,13 @@ class ConstructorPattern(Pattern):
     args: list[Pattern] = field(default_factory=list)
 
 
+@dataclass
+class OrPattern(Pattern):
+    """Or-pattern: matches if any alternative matches. `A | B | C`."""
+
+    alternatives: list[Pattern] = field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Definitions
 # ---------------------------------------------------------------------------
@@ -534,6 +605,25 @@ class Param(ASTNode):
 @dataclass
 class FnDef(Definition):
     """Function definition: `fn name(params) -> RetType { body }`."""
+
+    name: str = ""
+    public: bool = False
+    type_params: list[str] = field(default_factory=list)
+    params: list[Param] = field(default_factory=list)
+    return_type: TypeExpr | None = None
+    body: Block = field(default_factory=lambda: Block())
+    decorators: list[Decorator] = field(default_factory=list)
+    trait_bounds: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class AsyncFnDef(Definition):
+    """Async function definition: `async fn name(params) -> RetType { body }`.
+
+    The declared return type T is sugar for Future<T>. Lowering to LLVM
+    coroutine intrinsics arrives at v4.70.0; until then the lowerer emits
+    a rustc-quality "under construction" diagnostic. See v4.67.0/DESIGN.md §3.1.
+    """
 
     name: str = ""
     public: bool = False
@@ -686,6 +776,31 @@ class ExportDef(Definition):
 
     definition: Definition | None = None
     names: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ModuleLetDef(Definition):
+    """Module-level constant: `let NAME: TYPE = EXPR`."""
+
+    name: str = ""
+    type_name: str = ""
+    value: Expr | None = None
+
+
+@dataclass
+class ConstDef(Definition):
+    """v4.55.0: Real const definition — ``const NAME: TYPE = EXPR``.
+
+    Distinct from ``ModuleLetDef``:
+    - ``type_expr`` is the full ``TypeExpr`` (not collapsed to a string)
+    - Requires a compile-time constant initializer
+    - Immutability enforced by the semantic checker
+    - Can be used in tensor shape positions
+    """
+
+    name: str = ""
+    type_expr: TypeExpr | None = None  # full TypeExpr, not collapsed to .name
+    value: Expr | None = None
 
 
 @dataclass

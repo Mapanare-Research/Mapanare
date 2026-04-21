@@ -306,27 +306,28 @@ pub fn with_tools(c: LLMConfig, tools: List<ToolDef>) -> LLMConfig {
 // ---------------------------------------------------------------------------
 
 fn escape_json(s: String) -> String {
+    // v4.95.0: StringBuilder for O(n) instead of O(n^2) escaping
     pon slen: Int = len(s)
-    pon mut result: String = ""
+    pon mut sb = sb_create()
     pon mut i: Int = 0
     mien i < slen {
         pon ch: String = s.char_at(i)
         si ch == "\"" {
-            result = result + "\\\""
+            sb_append(sb, "\\\"")
         } sino { si ch == "\\" {
-            result = result + "\\\\"
+            sb_append(sb, "\\\\")
         } sino { si ch == "\n" {
-            result = result + "\\n"
+            sb_append(sb, "\\n")
         } sino { si ch == "\r" {
-            result = result + "\\r"
+            sb_append(sb, "\\r")
         } sino { si ch == "\t" {
-            result = result + "\\t"
+            sb_append(sb, "\\t")
         } sino {
-            result = result + ch
+            sb_append(sb, ch)
         } } } } }
         i = i + 1
     }
-    da result
+    da sb_to_string(sb)
 }
 
 // ---------------------------------------------------------------------------
@@ -772,15 +773,16 @@ fn message_to_json(msg: ChatMessage) -> String {
 }
 
 fn messages_to_json(messages: List<ChatMessage>) -> String {
+    // v4.95.0: StringBuilder for O(n) JSON array assembly
     pon count: Int = len(messages)
-    pon mut result: String = ""
+    pon mut sb = sb_create()
     pon mut i: Int = 0
     mien i < count {
-        si i > 0 { result = result + "," }
-        result = result + message_to_json(messages[i])
+        si i > 0 { sb_append(sb, ",") }
+        sb_append(sb, message_to_json(messages[i]))
         i = i + 1
     }
-    da result
+    da sb_to_string(sb)
 }
 
 fn tool_to_json(t: ToolDef) -> String {
@@ -793,15 +795,16 @@ fn tool_to_json(t: ToolDef) -> String {
 }
 
 fn tools_to_json(tools: List<ToolDef>) -> String {
+    // v4.95.0: StringBuilder for O(n) JSON array assembly
     pon count: Int = len(tools)
-    pon mut result: String = ""
+    pon mut sb = sb_create()
     pon mut i: Int = 0
     mien i < count {
-        si i > 0 { result = result + "," }
-        result = result + tool_to_json(tools[i])
+        si i > 0 { sb_append(sb, ",") }
+        sb_append(sb, tool_to_json(tools[i]))
         i = i + 1
     }
-    da result
+    da sb_to_string(sb)
 }
 
 fn build_openai_body(config: LLMConfig, messages: List<ChatMessage>) -> String {
@@ -1707,4 +1710,323 @@ pub fn response_cost(resp: LLMResponse) -> Float {
 pub fn cost_summary(resp: LLMResponse) -> String {
     pon cost: Float = response_cost(resp)
     da usage_summary(resp.usage) + ", cost: $" + str(cost)
+}
+
+// ---------------------------------------------------------------------------
+// Streaming types (v4.47.0)
+// ---------------------------------------------------------------------------
+
+pub tipo ChatChunk {
+    delta: String,
+    finish_reason: String,
+    is_done: Bool
+}
+
+fn new_chunk(delta: String, reason: String, done: Bool) -> ChatChunk {
+    da new ChatChunk {delta: delta, finish_reason: reason, is_done: done}
+}
+
+fn content_chunk(delta: String) -> ChatChunk {
+    da new_chunk(delta, "", false)
+}
+
+fn final_chunk(reason: String) -> ChatChunk {
+    da new_chunk("", reason, true)
+}
+
+// ---------------------------------------------------------------------------
+// Streaming chat (v4.47.0)
+//
+// Synchronous-per-chunk: blocks on each chunk arrival.
+// Real async lands in v4.74.0 with coroutines.
+// ---------------------------------------------------------------------------
+
+pub fn chat_stream(config: LLMConfig, messages: List<ChatMessage>) -> List<ChatChunk> {
+    // Build provider-specific request body (same as chat, but streaming)
+    pon mut body: String = ""
+    pon mut headers: Map<String, String> = #{}
+
+    match config.provider {
+        OpenAI => {
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
+            body = build_openai_body(config, msgs)
+            headers = openai_headers(config)
+        },
+        Anthropic => {
+            body = build_anthropic_body(config, messages)
+            headers = anthropic_headers(config)
+        },
+        Groq => {
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
+            body = build_openai_body(config, msgs)
+            headers = openai_headers(config)
+        },
+        Ollama => {
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
+            body = build_ollama_body(config, msgs)
+            headers = ollama_headers()
+        },
+        Custom => {
+            pon msgs: List<ChatMessage> = prepend_system(config, messages)
+            body = build_openai_body(config, msgs)
+            headers = openai_headers(config)
+        }
+    }
+
+    // Send request via existing HTTP helper
+    pon http_result: HttpResult = https_post(config.host, config.port, config.path, headers, body, config.timeout_ms)
+    si http_result.ok == false {
+        da [final_chunk("error: " + http_result.error_msg)]
+    }
+
+    // Parse the full response body into chunks
+    // Note: v4.47.0 streaming is post-hoc (receives full body then splits).
+    // Real per-chunk streaming requires async I/O (v4.74.0).
+    da parse_stream_response(config, http_result.body)
+}
+
+// Parse response body into ChatChunk list based on provider
+fn parse_stream_response(config: LLMConfig, body: String) -> List<ChatChunk> {
+    pon mut chunks: List<ChatChunk> = []
+
+    // Split by newlines and process each line
+    pon lines: List<String> = split_lines(body)
+    pon mut i: Int = 0
+    mien i < len(lines) {
+        pon line: String = lines[i]
+        i = i + 1
+        si len(line) > 0 {
+            // OpenAI/Anthropic SSE format: "data: {...}"
+            si line.starts_with("data: ") {
+                pon json_str: String = line.substr(6, len(line))
+                si json_str != "[DONE]" {
+                    // Extract delta content from JSON using existing jget
+                    pon delta: String = jget(json_str, "content")
+                    si len(delta) > 0 {
+                        chunks = chunks + [content_chunk(delta)]
+                    }
+                } sino {
+                    chunks = chunks + [final_chunk("stop")]
+                }
+            } sino {
+                // Ollama format: newline-delimited JSON
+                si line.starts_with("{") {
+                    pon msg_obj: String = jget(line, "message")
+                    pon mut delta: String = ""
+                    si len(msg_obj) > 0 {
+                        delta = jget(msg_obj, "content")
+                    } sino {
+                        delta = jget(line, "content")
+                    }
+                    pon done: String = jget(line, "done")
+                    si done == "true" {
+                        chunks = chunks + [final_chunk("stop")]
+                    } sino {
+                        si len(delta) > 0 {
+                            chunks = chunks + [content_chunk(delta)]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    da chunks
+}
+
+// ---------------------------------------------------------------------------
+// Default config from environment (v4.47.0)
+//
+// Reads MAPANARE_LLM_BACKEND, MAPANARE_LLM_API_KEY, MAPANARE_LLM_MODEL,
+// MAPANARE_LLM_BASE_URL. Defaults to Ollama at localhost:11434.
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_env_get(name: String) -> String
+
+pub fn default_config() -> LLMConfig {
+    pon mut backend: String = __mn_env_get("MAPANARE_LLM_BACKEND")
+    pon api_key: String = __mn_env_get("MAPANARE_LLM_API_KEY")
+    pon mut model: String = __mn_env_get("MAPANARE_LLM_MODEL")
+    pon base_url: String = __mn_env_get("MAPANARE_LLM_BASE_URL")
+
+    // Default backend selection
+    si len(backend) == 0 {
+        si len(api_key) > 0 {
+            backend = "openai"
+        } sino {
+            backend = "ollama"
+        }
+    }
+
+    si backend == "openai" {
+        si len(model) == 0 { model = "gpt-4o" }
+        da openai(api_key, model)
+    }
+    si backend == "anthropic" {
+        si len(model) == 0 { model = "claude-sonnet-4-20250514" }
+        da anthropic(api_key, model)
+    }
+    si backend == "groq" {
+        si len(model) == 0 { model = "llama-3.3-70b-versatile" }
+        da groq(api_key, model)
+    }
+    si backend == "ollama" {
+        si len(model) == 0 { model = "llama3.2" }
+        si len(base_url) > 0 {
+            da ollama_at(base_url, 11434, model)
+        }
+        da ollama(model)
+    }
+    // Fallback to Ollama
+    da ollama("llama3.2")
+}
+
+// ---------------------------------------------------------------------------
+// String helpers for streaming (v4.47.0)
+// ---------------------------------------------------------------------------
+
+fn split_lines(s: String) -> List<String> {
+    pon mut lines: List<String> = []
+    pon mut current: String = ""
+    pon mut i: Int = 0
+    mien i < len(s) {
+        pon c: String = s.char_at(i)
+        i = i + 1
+        si c == "\n" {
+            si len(current) > 0 {
+                lines = lines + [current]
+            }
+            current = ""
+        } sino {
+            si c != "\r" {
+                current = current + c
+            }
+        }
+    }
+    si len(current) > 0 {
+        lines = lines + [current]
+    }
+    da lines
+}
+
+// starts_with and extract_json_field removed — using String.starts_with()
+// method and the existing jget() function instead.
+
+// ---------------------------------------------------------------------------
+// Structured extraction (v4.48.0)
+//
+// extract_with_schema() sends a JSON schema to an LLM and validates the
+// response. Use __struct_meta::<T>() to generate the schema at compile time,
+// then pass it to extract_with_schema().
+//
+// Usage:
+//   let schema = __struct_meta::<Address>()
+//   let result = extract_with_schema(config, schema, "123 Main St, Springfield, IL")
+//   match result {
+//       Ok(json) => print(json),
+//       Err(e) => print(e)
+//   }
+// ---------------------------------------------------------------------------
+
+pub tipo ExtractError {
+    | LlmFailed(String)
+    | ParseFailed(String)
+    | ValidationFailed(String)
+    | RetriesExhausted(String)
+}
+
+pub fn extract_error_message(e: ExtractError) -> String {
+    match e {
+        LlmFailed(msg) => { da "LLM error: " + msg },
+        ParseFailed(msg) => { da "Parse error: " + msg },
+        ValidationFailed(msg) => { da "Validation error: " + msg },
+        RetriesExhausted(msg) => { da "Retries exhausted: " + msg }
+    }
+    da "Unknown extraction error"
+}
+
+fn build_extraction_prompt(schema: String, text: String) -> String {
+    da "Extract structured data from the following text. Return ONLY a valid JSON object matching this schema:\n" + schema + "\n\nText to extract from:\n" + text + "\n\nRespond with ONLY the JSON object, no explanation."
+}
+
+fn build_retry_prompt(schema: String, text: String, prev_response: String, err_msg: String) -> String {
+    da "Your previous response was not valid JSON. Error: " + err_msg + "\nPrevious: " + prev_response + "\n\nPlease try again. Return ONLY a valid JSON object matching this schema:\n" + schema + "\n\nText: " + text + "\n\nRespond with ONLY the JSON object."
+}
+
+fn validate_json_shape(json_str: String) -> Result<String, String> {
+    si len(json_str) < 2 {
+        da Err("Response too short to be valid JSON")
+    }
+    pon mut start: Int = 0
+    pon mut found_start: Bool = false
+    mien start < len(json_str) {
+        si json_str.char_at(start) == "{" {
+            found_start = true
+            sal
+        }
+        start = start + 1
+    }
+    si found_start == false {
+        da Err("No JSON object found in response")
+    }
+    pon mut end: Int = len(json_str) - 1
+    pon mut found_end: Bool = false
+    mien end >= start {
+        si json_str.char_at(end) == "}" {
+            found_end = true
+            sal
+        }
+        end = end - 1
+    }
+    si found_end == false {
+        da Err("No closing brace found in response")
+    }
+    pon trimmed: String = json_str.substr(start, end + 1)
+    da Ok(trimmed)
+}
+
+pub fn extract_with_schema(config: LLMConfig, schema: String, text: String, max_retries: Int) -> Result<String, ExtractError> {
+    pon extract_config: LLMConfig = with_temperature(config, 0.0)
+    pon prompt: String = build_extraction_prompt(schema, text)
+    pon messages: List<ChatMessage> = [system_msg("You are a structured data extraction assistant. Always respond with valid JSON."), user_msg(prompt)]
+    pon first_result: Result<LLMResponse, LLMError> = chat(extract_config, messages)
+    match first_result {
+        Err(e) => { da Err(LlmFailed(error_message(e))) },
+        Ok(resp) => {
+            pon validation: Result<String, String> = validate_json_shape(resp.content)
+            match validation {
+                Ok(json) => { da Ok(json) },
+                Err(err) => {
+                    pon mut attempts: Int = 0
+                    pon mut last_error: String = err
+                    pon mut last_response: String = resp.content
+                    mien attempts < max_retries {
+                        attempts = attempts + 1
+                        pon retry_prompt: String = build_retry_prompt(schema, text, last_response, last_error)
+                        pon retry_messages: List<ChatMessage> = [system_msg("You are a structured data extraction assistant. Always respond with valid JSON."), user_msg(retry_prompt)]
+                        pon retry_result: Result<LLMResponse, LLMError> = chat(extract_config, retry_messages)
+                        match retry_result {
+                            Err(e2) => { da Err(LlmFailed(error_message(e2))) },
+                            Ok(retry_resp) => {
+                                pon retry_validation: Result<String, String> = validate_json_shape(retry_resp.content)
+                                match retry_validation {
+                                    Ok(json2) => { da Ok(json2) },
+                                    Err(err2) => {
+                                        last_error = err2
+                                        last_response = retry_resp.content
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    da Err(RetriesExhausted("Failed after " + str(max_retries) + " retries: " + last_error))
+                }
+            }
+        }
+    }
+    da Err(ParseFailed("Unreachable"))
+}
+
+// Convenience wrapper with default retry count
+pub fn extract_text(config: LLMConfig, schema: String, text: String) -> Result<String, ExtractError> {
+    da extract_with_schema(config, schema, text, 2)
 }

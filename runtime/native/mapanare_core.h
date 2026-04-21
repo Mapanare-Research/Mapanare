@@ -26,17 +26,46 @@
 #endif
 
 /* -----------------------------------------------------------------------
- * MnString — matches LLVM layout { i8*, i64 }
+ * MnString — matches LLVM layout { ptr, i64 } (16 bytes, unchanged).
  *
- * The data pointer is heap-allocated (or points to a global constant).
- * Length does NOT include a null terminator, but we always allocate
- * one extra byte and null-terminate for C interop convenience.
+ * The data pointer points at an unmodified C string (heap-allocated or
+ * a .rodata/global literal). Length does NOT include a null terminator,
+ * but we always allocate one extra byte and null-terminate for C interop.
+ *
+ * v4.100.0: the heap-vs-constant flag no longer rides in the data
+ * pointer (the old ``mn_tag_heap`` scheme OR'd bit 0 into the pointer,
+ * producing a ``const char *`` that wasn't a valid pointer — LLVM at
+ * -O2 treated that as pointer-provenance UB and produced garbled
+ * output from mnc-stage1). It has been moved into a 1-bit field that
+ * shares the ``len`` storage word via C bitfields. The struct remains
+ * a single ``{ ptr, i64 }`` (two eightbytes) at the LLVM-IR / ABI
+ * level — same 16 bytes, same register-return path on SysV AMD64 and
+ * Win64. Only the C compiler sees the bitfield split, and it inserts
+ * the required mask-and-shift instructions automatically.
+ *
+ * Max string length is 2^63 − 1 bytes (8 EiB) — unlimited in practice.
+ *
+ * At the LLVM-IR level the second eightbyte is a plain i64 whose
+ * high bit is is_heap; Mapanare-generated code reading ``.len`` via
+ * ``extractvalue`` must mask bit 63 explicitly, since LLVM does not
+ * know about the bitfield layout. The Python bootstrap emitter routes
+ * ``.len`` through the ``__mn_str_len`` runtime helper, which reads
+ * the bitfield on the C side and therefore returns the masked length.
+ * The self-hosted emitter masks inline.
  * ----------------------------------------------------------------------- */
 
 typedef struct {
     const char *data;
-    int64_t     len;
+    uint64_t    len     : 63;  /* actual byte length, 0 .. 2^63 − 1 */
+    uint64_t    is_heap : 1;   /* 1 = heap-owned (freeable), 0 = constant */
 } MnString;
+
+/* Raw-layout constants for LLVM-IR emitters that read the second
+ * eightbyte directly and need to recover just the length. Kept here so
+ * the C side and the IR emitters stay in sync if the bitfield layout
+ * ever moves. */
+#define MN_STR_LEN_MASK   0x7FFFFFFFFFFFFFFFLL
+#define MN_STR_HEAP_BIT   ((int64_t)0x8000000000000000LL)
 
 /** Create a string from a C string (copies the data). */
 MN_EXPORT MnString __mn_str_from_cstr(const char *cstr);
@@ -49,6 +78,21 @@ MN_EXPORT MnString __mn_str_empty(void);
 
 /** Concatenate two strings. Returns a new heap-allocated string. */
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b);
+
+/* --- StringBuilder (v4.95.0) --- */
+typedef struct { char *buf; int64_t len; int64_t cap; } MnStringBuilder;
+MN_EXPORT MnStringBuilder __mn_sb_create(int64_t initial_cap);
+MN_EXPORT void __mn_sb_append(MnStringBuilder *sb, MnString s);
+MN_EXPORT void __mn_sb_append_char(MnStringBuilder *sb, char c);
+MN_EXPORT MnString __mn_sb_to_string(MnStringBuilder *sb);
+MN_EXPORT void __mn_sb_destroy(MnStringBuilder *sb);
+
+/* v4.108.0: pointer-based API for the MIR auto-StringBuilder pass.
+ * These thin wrappers let the emitter work with scalar pointers
+ * instead of the 24-byte `MnStringBuilder` struct-by-value return.
+ * See mapanare/mir_opt.py:string_concat_optimization. */
+MN_EXPORT MnStringBuilder *__mn_sb_new(int64_t initial_cap);
+MN_EXPORT MnString __mn_sb_finish(MnStringBuilder *sb);
 
 /** Get the character at index `i` as a single-character string.
  *  Returns empty string if out of bounds. */
@@ -309,6 +353,7 @@ typedef struct MnArenaBlock {
 typedef struct {
     MnArenaBlock *head;
     int64_t default_block_size;
+    volatile int lock;  /* v4.34.0: spinlock for thread safety */
 } MnArena;
 
 /** Create a new arena with the given default block size. */

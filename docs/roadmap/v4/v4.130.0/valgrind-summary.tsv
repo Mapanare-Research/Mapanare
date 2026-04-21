@@ -1,0 +1,66 @@
+test	rc	exit_code	definitely_lost	indirectly_lost	possibly_lost	still_reachable	error_types	class
+01_hello	0	0	22618	47364	0	0	none	WARNINGS_ONLY
+02_arithmetic	0	0	31552	50916	0	0	none	WARNINGS_ONLY
+03_function	0	0	39712	56278	0	0	none	WARNINGS_ONLY
+04_if_else	0	0	36236	54524	0	0	none	WARNINGS_ONLY
+05_for_loop	0	0	41186	60241	0	0	none	WARNINGS_ONLY
+06_struct	99	99	37740	54634	0	0	Invalid read of size 8	ERRORS
+07_enum_match	0	0	44870	70574	0	0	none	WARNINGS_ONLY
+08_list	99	99	38158	56573	0	0	Invalid read of size 8	ERRORS
+09_string_methods	0	0	33296	53446	0	0	none	WARNINGS_ONLY
+10_result	99	99	68521	76935	0	0	Invalid read of size 1|Invalid read of size 2	ERRORS
+11_closure	0	0	37212	59315	0	0	none	WARNINGS_ONLY
+12_while	0	0	36208	54496	0	0	none	WARNINGS_ONLY
+13_fib	99	99	43440	63559	0	0	Invalid read of size 8	ERRORS
+14_nested_struct	99	99	37898	54658	0	0	Invalid read of size 8	ERRORS
+15_multifunction	0	0	47440	63659	0	0	none	WARNINGS_ONLY
+16_string_escape	0	0	36523	53055	0	0	none	WARNINGS_ONLY
+17_option	0	0	83318	86283	0	0	none	WARNINGS_ONLY
+18_method_chain	0	0	41674	59943	0	0	none	WARNINGS_ONLY
+19_nested_match	99	99	68598	91240	0	0	Invalid read of size 1|Invalid read of size 2|Invalid read of size 8	ERRORS
+20_recursion	99	99	46676	65159	0	0	Invalid read of size 8	ERRORS
+21_list_ops	99	99	70237	85870	0	0	Invalid read of size 8	ERRORS
+22_string_builder	99	99	56483	71565	0	0	Invalid read of size 8	ERRORS
+23_multi_return	99	99	56607	66860	0	0	Invalid read of size 16|Invalid read of size 8	ERRORS
+24_enum_methods	99	99	62816	79622	0	0	Invalid read of size 8	ERRORS
+25_fizzbuzz	0	0	65396	76085	0	0	none	WARNINGS_ONLY
+26_generics	99	99	93035	97257	0	0	Conditional jump or move depends on uninitialised value	ERRORS
+27_impl	0	0	55285	67986	0	0	none	WARNINGS_ONLY
+28_traits	0	0	62132	70180	0	0	none	WARNINGS_ONLY
+29_generic_impl	99	99	66390	72594	0	0	Conditional jump or move depends on uninitialised value|Invalid read of size 8	ERRORS
+30_nested_generics	99	99	61020	69518	0	0	Conditional jump or move depends on uninitialised value	ERRORS
+31_generic_multi	99	99	89310	82649	0	0	Conditional jump or move depends on uninitialised value|Invalid read of size 8	ERRORS
+32_generic_enum	99	99	43775	55414	0	0	Invalid read of size 8	ERRORS
+33_break_continue	99	99	123709	140389	0	0	Invalid read of size 8	ERRORS
+34_file_io	0	0	67340	76637	0	0	none	WARNINGS_ONLY
+35_stdin	0	0	30408	49868	0	0	none	WARNINGS_ONLY
+36_crypto	0	0	47224	61599	0	0	none	WARNINGS_ONLY
+37_regex	0	0	46360	62140	0	0	none	WARNINGS_ONLY
+38_http	0	0	34233	51673	0	0	none	WARNINGS_ONLY
+39_gpu_detect	0	0	38984	55070	0	0	none	WARNINGS_ONLY
+40_gpu_tensor	99	99	81280	90983	0	0	Invalid read of size 8	ERRORS
+41_module_let	99	99	33211	51525	0	0	Invalid read of size 1|Invalid read of size 2	ERRORS
+42_module_let_string	99	99	34218	51604	0	0	Invalid read of size 1|Invalid read of size 2	ERRORS
+43_module_let_math	99	99	35648	52666	0	0	Invalid read of size 1|Invalid read of size 2	ERRORS
+45_ffi_bind	99	99	53530	68502	0	0	Invalid read of size 8	ERRORS
+47_try_operator	99	99	118486	105816	0	0	Invalid read of size 1|Invalid read of size 2|Invalid read of size 8	ERRORS
+48_match_nested_exhaustive	99	99	97218	93971	0	0	Invalid read of size 1|Invalid read of size 2|Invalid read of size 8	ERRORS
+49_match_guards	99	99	72887	78114	0	0	Invalid read of size 8	ERRORS
+49_tensor_literal	1	1	149289	54689	2786	36	none	WARNINGS_ONLY
+50_match_or_patterns	99	99	73970	88393	0	0	Invalid read of size 8	ERRORS
+50_tensor_indexing	1	1	99808	45992	1399	25	none	WARNINGS_ONLY
+51_match_guards_and_or	99	99	94635	90026	0	0	Invalid read of size 8	ERRORS
+51_tensor_broadcast	1	1	118949	51314	2532	36	none	WARNINGS_ONLY
+52_tensor_slicing	1	1	108840	48432	1529	33	none	WARNINGS_ONLY
+53_linear_regression	1	1	45390	42418	852	27	none	WARNINGS_ONLY
+54_const_basic	99	99	37381	53243	0	0	Invalid read of size 1|Invalid read of size 2	ERRORS
+55_async_basic	1	1	14025	36404	763	30	none	WARNINGS_ONLY
+56_async_await	1	1	17295	38384	763	30	none	WARNINGS_ONLY
+57_real_await	1	1	24775	55092	762	30	none	WARNINGS_ONLY
+58_async_file_io	1	1	21713	42321	765	30	none	WARNINGS_ONLY
+58_const_scope	99	99	51000	64560	0	0	Invalid read of size 1|Invalid read of size 2|Invalid read of size 8	ERRORS
+59_async_fanout	1	1	48426	69216	764	30	none	WARNINGS_ONLY
+62_list_output	99	99	87666	104332	0	0	Invalid read of size 8	ERRORS
+63_else_sino	99	99	94111	92978	0	0	Invalid read of size 8	ERRORS
+64_closure_typed	1	1	60197	57811	811	60	none	WARNINGS_ONLY
+65_list_int_indexing	0	0	65078	77512	0	0	none	WARNINGS_ONLY

@@ -12,6 +12,7 @@ Passes:
 - Dead function elimination: remove uncalled functions
 - Unreachable block elimination: remove blocks with no predecessors
 - Branch simplification: constant conditions become Jump
+- Function inlining: small functions (< 20 instr, not recursive) inlined at call site
 - Agent inlining: single-spawn agents become direct calls
 - Stream fusion: fuse adjacent StreamOp instructions
 """
@@ -26,6 +27,7 @@ from mapanare.mir import (
     AgentSend,
     AgentSpawn,
     AgentSync,
+    AllocKind,
     Assert,
     BasicBlock,
     BinOp,
@@ -36,6 +38,7 @@ from mapanare.mir import (
     ClosureCreate,
     Const,
     Copy,
+    EnumInit,
     FieldGet,
     FieldSet,
     IndexGet,
@@ -43,8 +46,11 @@ from mapanare.mir import (
     Instruction,
     InterpConcat,
     Jump,
+    ListInit,
     ListPush,
+    MapInit,
     MIRFunction,
+    MIRLoop,
     MIRModule,
     MIRType,
     Phi,
@@ -52,10 +58,20 @@ from mapanare.mir import (
     SignalComputed,
     StreamOp,
     StreamOpKind,
+    StructInit,
     Switch,
     UnaryOp,
     UnaryOpKind,
     Value,
+    WrapErr,
+    WrapNone,
+    WrapOk,
+    WrapSome,
+    is_terminator,
+    mir_any,
+    mir_int,
+    mir_string,
+    mir_void,
 )
 from mapanare.types import TypeInfo, TypeKind
 
@@ -92,6 +108,10 @@ class MIRPassStats:
     branches_simplified: int = 0
     agents_inlined: int = 0
     streams_fused: int = 0
+    functions_inlined: int = 0
+    licm_hoisted: int = 0
+    strength_reduced: int = 0
+    allocations_promoted: int = 0  # v4.89.0: heap-to-stack promotions
 
     @property
     def total_changes(self) -> int:
@@ -105,6 +125,10 @@ class MIRPassStats:
             + self.branches_simplified
             + self.agents_inlined
             + self.streams_fused
+            + self.functions_inlined
+            + self.licm_hoisted
+            + self.strength_reduced
+            + self.allocations_promoted
         )
 
 
@@ -669,31 +693,48 @@ def dead_code_elimination(fn: MIRFunction, stats: MIRPassStats) -> bool:
 
     Does not remove side-effecting instructions (calls, stores, terminators).
     Returns True if any changes were made.
-    """
-    # Collect all used value names
-    used_names: set[str] = set()
-    for bb in fn.blocks:
-        for inst in bb.instructions:
-            for use in _get_uses(inst):
-                used_names.add(use.name)
 
-    changed = False
-    for bb in fn.blocks:
-        new_insts: list[Instruction] = []
-        for inst in bb.instructions:
-            dest = _get_dest(inst)
-            if (
-                dest is not None
-                and dest.name
-                and dest.name not in used_names
-                and not inst.has_side_effects
-            ):
-                stats.dead_instructions_removed += 1
-                changed = True
-                continue
-            new_insts.append(inst)
-        bb.instructions = new_insts
-    return changed
+    v4.30.0 Phase 3.1 (convergence fix): internally iterates to a fixed
+    point instead of doing a single pass. A chain of N dependent dead
+    instructions used to need N *outer* fixpoint iterations to drain;
+    ``emit_llvm__emit_binop`` has >10 layers and was the sole function
+    that forced the outer loop past the 10-iteration cap. Draining the
+    chain in one call means DCE reports ``changed`` at most twice: once
+    when there is real work, once more to confirm the next pass did not
+    create anything new. The outer loop now reliably converges in ≤ 3
+    iterations on the whole self-hosted corpus.
+    """
+    total_changed = False
+    while True:
+        # Collect all used value names — must be recomputed each sweep
+        # because earlier sweeps removed instructions that contributed
+        # uses.
+        used_names: set[str] = set()
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                for use in _get_uses(inst):
+                    used_names.add(use.name)
+
+        sweep_changed = False
+        for bb in fn.blocks:
+            new_insts: list[Instruction] = []
+            for inst in bb.instructions:
+                dest = _get_dest(inst)
+                if (
+                    dest is not None
+                    and dest.name
+                    and dest.name not in used_names
+                    and not inst.has_side_effects
+                ):
+                    stats.dead_instructions_removed += 1
+                    sweep_changed = True
+                    continue
+                new_insts.append(inst)
+            bb.instructions = new_insts
+        if not sweep_changed:
+            break
+        total_changed = True
+    return total_changed
 
 
 # ---------------------------------------------------------------------------
@@ -706,6 +747,14 @@ def dead_function_elimination(module: MIRModule, stats: MIRPassStats) -> bool:
 
     Keeps `main` and public functions. Builds a call graph from Call instructions.
     Returns True if any changes were removed.
+
+    v4.30.0: agent methods (``method_names`` on every ``MIRAgentInfo``)
+    are considered alive because the LLVM text emitter generates a
+    ``__mn_handler_<AgentName>`` wrapper that dispatches to them after
+    optimization runs. Without this seed, DFE would eliminate e.g.
+    ``Doubler_handle`` before ``_emit_agent_wrap`` gets a chance to
+    reference it, and the agent dispatch wiring v4.30.0 adds would
+    fall back to the historical null-and-zero stub every time.
     """
     # Build set of all referenced function names
     called: set[str] = set()
@@ -726,6 +775,14 @@ def dead_function_elimination(module: MIRModule, stats: MIRPassStats) -> bool:
                     called.add(inst.fn_name)
                 elif isinstance(inst, SignalComputed) and inst.compute_fn:
                     called.add(inst.compute_fn)
+
+    # v4.30.0: seed agent method names. The handler wrapper emitted by
+    # ``emit_llvm_text.py`` references these by string name rather than
+    # by a ``Call`` instruction, so the static pass above cannot see
+    # them as reachable.
+    for agent_info in module.agents.values():
+        for method_name in getattr(agent_info, "method_names", ()):
+            called.add(method_name)
 
     # Also keep known entry points for the C bootstrap
     _ENTRY_POINTS = {"main", "compile_and_print", "compile", "version", "mn_main", "format_error"}
@@ -1096,47 +1153,1267 @@ def stream_fusion(fn: MIRFunction, stats: MIRPassStats) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Loop detection + LICM + strength reduction (v4.88.0)
+# ---------------------------------------------------------------------------
+
+
+def _build_cfg(fn: MIRFunction) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Build successor and predecessor maps from the function's CFG."""
+    succs: dict[str, list[str]] = {bb.label: [] for bb in fn.blocks}
+    preds: dict[str, list[str]] = {bb.label: [] for bb in fn.blocks}
+    for bb in fn.blocks:
+        term = bb.terminator
+        if isinstance(term, Jump):
+            succs[bb.label].append(term.target)
+            preds.setdefault(term.target, []).append(bb.label)
+        elif isinstance(term, Branch):
+            for t in (term.true_block, term.false_block):
+                if t not in succs[bb.label]:
+                    succs[bb.label].append(t)
+                preds.setdefault(t, []).append(bb.label)
+        elif isinstance(term, Switch):
+            targets = [lbl for _, lbl in term.cases]
+            if term.default_block:
+                targets.append(term.default_block)
+            for t in targets:
+                if t not in succs[bb.label]:
+                    succs[bb.label].append(t)
+                preds.setdefault(t, []).append(bb.label)
+    return succs, preds
+
+
+def compute_dominators(fn: MIRFunction) -> dict[str, set[str]]:
+    """Compute dominators using iterative dataflow. dom[B] = set of blocks dominating B."""
+    if not fn.blocks:
+        return {}
+    labels = [bb.label for bb in fn.blocks]
+    entry = labels[0]
+    _, preds = _build_cfg(fn)
+    all_labels = set(labels)
+
+    dom: dict[str, set[str]] = {}
+    dom[entry] = {entry}
+    for lbl in labels[1:]:
+        dom[lbl] = set(all_labels)
+
+    changed = True
+    while changed:
+        changed = False
+        for lbl in labels[1:]:
+            pred_list = preds.get(lbl, [])
+            if not pred_list:
+                new_dom = {lbl}
+            else:
+                new_dom = set.intersection(*(dom.get(p, all_labels) for p in pred_list))
+                new_dom = new_dom | {lbl}
+            if new_dom != dom[lbl]:
+                dom[lbl] = new_dom
+                changed = True
+    return dom
+
+
+def find_natural_loops(fn: MIRFunction) -> list[MIRLoop]:
+    """Find natural loops via back-edge detection on the dominator tree."""
+    if len(fn.blocks) < 2:
+        return []
+    dom = compute_dominators(fn)
+    succs, _ = _build_cfg(fn)
+    loops: list[MIRLoop] = []
+
+    # A back-edge is an edge N -> H where H dominates N
+    for bb in fn.blocks:
+        for succ in succs.get(bb.label, []):
+            if succ in dom.get(bb.label, set()):
+                # succ dominates bb.label — this is a back-edge to succ (the header)
+                header = succ
+                body = _compute_loop_body(header, bb.label, succs, fn)
+                loops.append(
+                    MIRLoop(
+                        header=header,
+                        body=body,
+                        back_edge=(bb.label, header),
+                    )
+                )
+    return loops
+
+
+def _compute_loop_body(
+    header: str, back_src: str, succs: dict[str, list[str]], fn: MIRFunction
+) -> set[str]:
+    """Compute the loop body: blocks reachable from back_src without going through header."""
+    body = {header, back_src}
+    if header == back_src:
+        return body
+    # Reverse walk from back_src to header
+    _, preds = _build_cfg(fn)
+    worklist = [back_src]
+    while worklist:
+        node = worklist.pop()
+        for pred in preds.get(node, []):
+            if pred not in body:
+                body.add(pred)
+                worklist.append(pred)
+    return body
+
+
+def _is_loop_invariant(inst: Instruction, loop_body: set[str], loop_defs: set[str]) -> bool:
+    """An instruction is loop-invariant if all its operands are defined outside the loop."""
+    # Side-effecting instructions are never invariant
+    if inst.has_side_effects:
+        return False
+    # Instructions with no dest (terminators) are not hoistable
+    dest = _get_dest(inst)
+    if dest is None:
+        return False
+    # Check all uses — they must be defined outside the loop
+    for use in _get_uses(inst):
+        if use.name in loop_defs:
+            return False
+    return True
+
+
+def licm(fn: MIRFunction, stats: MIRPassStats) -> bool:
+    """Loop-Invariant Code Motion: hoist pure loop-invariant instructions to preheader.
+
+    v4.88.0: conservative — only hoists instructions with all operands
+    defined outside the loop and no side effects.
+    """
+    loops = find_natural_loops(fn)
+    if not loops:
+        return False
+
+    block_map = fn.block_map()
+    changed = False
+
+    for loop in loops:
+        # Collect all definitions inside the loop
+        loop_defs: set[str] = set()
+        for lbl in loop.body:
+            bb = block_map.get(lbl)
+            if bb:
+                for inst in bb.instructions:
+                    d = _get_dest(inst)
+                    if d and d.name:
+                        loop_defs.add(d.name)
+
+        # Find invariant instructions in loop body (skip header — avoid moving
+        # phis and instructions already at the hoist target, which would cause
+        # the fixpoint loop to not converge).
+        to_hoist: list[tuple[str, Instruction]] = []
+        for lbl in loop.body:
+            if lbl == loop.header:
+                continue  # don't hoist FROM the header (idempotency)
+            bb = block_map.get(lbl)
+            if not bb:
+                continue
+            for inst in bb.instructions:
+                if _is_loop_invariant(inst, loop.body, loop_defs):
+                    to_hoist.append((lbl, inst))
+                    # Remove from loop_defs so dependent instructions may also become invariant
+                    d = _get_dest(inst)
+                    if d and d.name:
+                        loop_defs.discard(d.name)
+
+        if not to_hoist:
+            continue
+
+        # Find or create preheader — the block that jumps to the header
+        # For simplicity, insert hoisted instructions at the beginning of the header block
+        # (before any phi nodes). This is safe because the values are loop-invariant.
+        header_bb = block_map.get(loop.header)
+        if not header_bb:
+            continue
+
+        # Insert hoisted instructions at the start of the header (after phis)
+        phi_count = sum(1 for i in header_bb.instructions if isinstance(i, Phi))
+        for blk_lbl, inst in to_hoist:
+            # Remove from original block
+            src_bb = block_map.get(blk_lbl)
+            if src_bb and inst in src_bb.instructions:
+                src_bb.instructions.remove(inst)
+                # Insert at header after phis
+                header_bb.instructions.insert(phi_count, inst)
+                phi_count += 1
+                stats.licm_hoisted += 1
+                changed = True
+
+    return changed
+
+
+def strength_reduction(fn: MIRFunction, stats: MIRPassStats) -> bool:
+    """Replace expensive operations with cheaper equivalents.
+
+    v4.88.0:
+    - mul by power of 2 → shl (left shift)
+    - div by power of 2 → ashr (arithmetic right shift)
+    - mod by power of 2 → and (bitwise AND with mask)
+    """
+    changed = False
+    for bb in fn.blocks:
+        new_insts: list[Instruction] = []
+        for inst in bb.instructions:
+            if isinstance(inst, BinOp) and _is_power_of_two_binop(inst):
+                reduced = _reduce_power_of_two(inst)
+                if reduced is not None:
+                    new_insts.append(reduced)
+                    stats.strength_reduced += 1
+                    changed = True
+                    continue
+            new_insts.append(inst)
+        bb.instructions = new_insts
+    return changed
+
+
+def _is_power_of_two_const(val: Value) -> int | None:
+    """If val is a constant power-of-2 integer, return the exponent. Else None."""
+    name = val.name
+    if not name:
+        return None
+    # Constants in MIR are represented as literal names like "2", "4", "8" etc.
+    # after constant propagation, or as Value(name="2", ty=int)
+    try:
+        n = int(name)
+    except (ValueError, TypeError):
+        return None
+    if n > 0 and (n & (n - 1)) == 0:
+        # It's a power of 2; return log2
+        exp = 0
+        while (1 << exp) < n:
+            exp += 1
+        return exp
+    return None
+
+
+def _is_power_of_two_binop(inst: BinOp) -> bool:
+    """Check if one operand of a mul/div/mod is a power of 2."""
+    # Only reduce MOD (the only safe reduction without SHL in MIR)
+    if inst.op != BinOpKind.MOD:
+        return False
+    return _is_power_of_two_const(inst.rhs) is not None
+
+
+def _reduce_power_of_two(inst: BinOp) -> BinOp | None:
+    """Replace mul/div/mod by power of 2 with shift/and."""
+    exp = _is_power_of_two_const(inst.rhs)
+    if exp is None:
+        return None
+    shift_val = Value(name=str(exp), ty=inst.rhs.ty)
+    if inst.op == BinOpKind.MUL:
+        # x * 2^n → x << n (SHL)
+        return BinOp(dest=inst.dest, op=BinOpKind.AND, lhs=inst.lhs, rhs=shift_val)
+        # Note: MIR doesn't have SHL yet. Use BinOpKind.AND as placeholder.
+        # The LLVM emitter maps this to the actual shl instruction.
+        # TODO(v4.89.0): add BinOpKind.SHL to MIR
+    if inst.op == BinOpKind.DIV and exp > 0:
+        # x / 2^n → x >> n (ASHR) — only valid for positive x, but with nsw it's safe
+        return None  # conservative: skip div reduction without signed analysis
+    if inst.op == BinOpKind.MOD:
+        # x % 2^n → x & (2^n - 1)
+        mask_val = Value(name=str((1 << exp) - 1), ty=inst.rhs.ty)
+        return BinOp(dest=inst.dest, op=BinOpKind.AND, lhs=inst.lhs, rhs=mask_val)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Escape analysis + heap-to-stack promotion (v4.89.0)
+# ---------------------------------------------------------------------------
+
+# Instruction types that produce heap allocations.
+_ALLOC_TYPES = (
+    StructInit,
+    EnumInit,
+    WrapSome,
+    WrapNone,
+    WrapOk,
+    WrapErr,
+    ListInit,
+    MapInit,
+    InterpConcat,
+)
+
+# Runtime functions known to NOT capture their arguments.
+# Values passed only to these functions do not escape.
+_NON_CAPTURING_FNS: frozenset[str] = frozenset(
+    {
+        # I/O — reads the value, never stores it
+        "print",
+        "println",
+        "__mn_print",
+        "__mn_println",
+        "__mn_print_str",
+        "__mn_print_int",
+        "__mn_print_float",
+        "__mn_print_bool",
+        # Conversions — return a NEW value, don't store the argument
+        "len",
+        "__mn_str_len",
+        "__mn_list_len",
+        "__mn_map_len",
+        "str",
+        "int",
+        "float",
+        "__mn_str_from_int",
+        "__mn_str_from_float",
+        "__mn_str_from_bool",
+        "__mn_int_from_str",
+        "__mn_float_from_str",
+        # String operations — return new strings, don't capture inputs
+        "__mn_str_concat",
+        "__mn_str_eq",
+        "__mn_str_ne",
+        "__mn_str_lt",
+        "__mn_str_gt",
+        "__mn_str_le",
+        "__mn_str_ge",
+        "__mn_str_contains",
+        "__mn_str_starts_with",
+        "__mn_str_ends_with",
+        "__mn_str_to_upper",
+        "__mn_str_to_lower",
+        "__mn_str_trim",
+        "__mn_str_split",
+        "__mn_str_replace",
+        "__mn_str_substr",
+        "__mn_str_index_of",
+        "__mn_str_char_at",
+        # Comparison / hashing — pure read
+        "__mn_hash_string",
+        # Math
+        "__mn_pow",
+        "__mn_abs",
+        "__mn_min",
+        "__mn_max",
+        # Assertions
+        "__mn_assert",
+        "__mn_assert_msg",
+        # StringBuilder (v4.95.0)
+        "__mn_sb_create",
+        "__mn_sb_append",
+        "__mn_sb_append_char",
+        "__mn_sb_to_string",
+        "__mn_sb_destroy",
+        "__mn_sb_append_concat",
+    }
+)
+
+# Maximum allocation size (bytes) to promote to stack. Anything larger stays
+# on the heap to avoid stack overflow. 4 KB is conservative given the
+# default 8 MB Linux stack.
+_MAX_STACK_PROMOTION_BYTES = 4096
+
+
+def _is_alloc_instruction(inst: Instruction) -> bool:
+    """Return True if this instruction produces a heap allocation."""
+    return isinstance(inst, _ALLOC_TYPES)
+
+
+def _estimate_alloc_size(inst: Instruction) -> int:
+    """Estimate the byte size of the allocation produced by an instruction.
+
+    Conservative: returns a generous upper bound. If the size can't be
+    determined, returns MAX+1 to prevent promotion.
+    """
+    if isinstance(inst, StructInit):
+        # Each field is at most 16 bytes ({ptr, i64} for strings).
+        return len(inst.fields) * 16
+    if isinstance(inst, EnumInit):
+        # Tag (8) + max payload (each field ~16)
+        return 8 + len(inst.payload) * 16
+    if isinstance(inst, (WrapSome, WrapOk, WrapErr)):
+        # Tag (8) + value (16 max)
+        return 24
+    if isinstance(inst, WrapNone):
+        # Tag only
+        return 8
+    if isinstance(inst, ListInit):
+        # Header (24) + elements * 16
+        return 24 + len(inst.elements) * 16
+    if isinstance(inst, MapInit):
+        # Robin Hood hash table: header + buckets
+        return 64 + len(inst.pairs) * 32
+    if isinstance(inst, InterpConcat):
+        # String: {ptr, i64} = 16 bytes for the struct, buffer is dynamic.
+        # The struct itself is small; the data buffer is runtime-sized.
+        # We only promote the struct, not the buffer — so 16 is correct.
+        return 16
+    return _MAX_STACK_PROMOTION_BYTES + 1
+
+
+def analyze_escapes(fn: MIRFunction) -> set[str]:
+    """Analyze which allocation results escape the function.
+
+    Returns a set of value names whose allocations escape and CANNOT
+    be promoted to stack. An allocation escapes if any of 6 criteria
+    are met:
+
+    1. Returned from the function (via Return)
+    2. Stored into a struct field (via FieldSet where val is the alloc)
+    3. Stored into a list/map (via IndexSet, ListPush where element is the alloc)
+    4. Passed to an unknown/potentially-capturing function call
+    5. Captured by a closure (via ClosureCreate captures)
+    6. Sent to an agent (via AgentSend)
+
+    Values that flow through Copy or Phi are tracked transitively.
+    """
+    # Step 1: Find all allocation sites (value names produced by alloc instructions)
+    alloc_values: set[str] = set()
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if _is_alloc_instruction(inst):
+                dest = getattr(inst, "dest", None)
+                if dest and dest.name:
+                    alloc_values.add(dest.name)
+
+    if not alloc_values:
+        return set()
+
+    # Step 2: Build alias set — values that are copies/phis of alloc values.
+    # Iterate to fixed point because copies can chain.
+    aliases: dict[str, set[str]] = {}  # value_name -> set of alloc_value_names it aliases
+    for name in alloc_values:
+        aliases[name] = {name}
+
+    changed = True
+    while changed:
+        changed = False
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, Copy) and inst.src.name in aliases:
+                    dest_name = inst.dest.name
+                    if dest_name not in aliases:
+                        aliases[dest_name] = set(aliases[inst.src.name])
+                        changed = True
+                    else:
+                        before = len(aliases[dest_name])
+                        aliases[dest_name] |= aliases[inst.src.name]
+                        if len(aliases[dest_name]) > before:
+                            changed = True
+                elif isinstance(inst, Phi):
+                    # A phi merges values — if any incoming is an alloc alias,
+                    # the phi result aliases those allocations.
+                    merged: set[str] = set()
+                    for _, val in inst.incoming:
+                        if val.name in aliases:
+                            merged |= aliases[val.name]
+                    if merged:
+                        dest_name = inst.dest.name
+                        if dest_name not in aliases:
+                            aliases[dest_name] = merged
+                            changed = True
+                        else:
+                            before = len(aliases[dest_name])
+                            aliases[dest_name] |= merged
+                            if len(aliases[dest_name]) > before:
+                                changed = True
+
+    def _alloc_names_of(val_name: str) -> set[str]:
+        """Return the set of allocation value names that val_name may point to."""
+        return aliases.get(val_name, set())
+
+    # Step 3: Check escape criteria for each use site.
+    escaped: set[str] = set()
+
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            # Criterion 1: Returned
+            if isinstance(inst, Return) and inst.val is not None:
+                escaped |= _alloc_names_of(inst.val.name)
+
+            # Criterion 2: Stored into a struct field
+            elif isinstance(inst, FieldSet):
+                escaped |= _alloc_names_of(inst.val.name)
+
+            # Criterion 3: Stored into a list/map
+            elif isinstance(inst, IndexSet):
+                escaped |= _alloc_names_of(inst.val.name)
+            elif isinstance(inst, ListPush):
+                escaped |= _alloc_names_of(inst.element.name)
+
+            # Criterion 4: Passed to unknown/capturing function call
+            elif isinstance(inst, Call):
+                if inst.fn_name not in _NON_CAPTURING_FNS:
+                    for arg in inst.args:
+                        escaped |= _alloc_names_of(arg.name)
+            elif isinstance(inst, ClosureCall):
+                # Closure calls are always potentially-capturing (we don't
+                # know what the closure body does).
+                escaped |= _alloc_names_of(inst.closure.name)
+                for arg in inst.args:
+                    escaped |= _alloc_names_of(arg.name)
+
+            # Criterion 5: Captured by a closure
+            elif isinstance(inst, ClosureCreate):
+                for cap in inst.captures:
+                    escaped |= _alloc_names_of(cap.name)
+
+            # Criterion 6: Sent to an agent
+            elif isinstance(inst, AgentSend):
+                escaped |= _alloc_names_of(inst.val.name)
+            elif isinstance(inst, AgentSpawn):
+                for arg in inst.args:
+                    escaped |= _alloc_names_of(arg.name)
+
+    return escaped
+
+
+def escape_analysis_promotion(fn: MIRFunction, stats: MIRPassStats) -> bool:
+    """Promote non-escaping heap allocations to stack.
+
+    v4.89.0: identifies allocation-producing instructions whose results
+    never escape the function, and sets their alloc_kind to STACK.
+    The LLVM emitter uses this annotation to emit alloca instead of
+    calling the runtime allocator, and skips drop glue for promoted values.
+
+    Conservative: does NOT promote allocations in unbounded loops or
+    allocations exceeding 4 KB.
+    """
+    # Find natural loops to check for unbounded loop allocations.
+    loops = find_natural_loops(fn)
+    loop_body_blocks: set[str] = set()
+    for loop in loops:
+        loop_body_blocks |= loop.body
+
+    # Run escape analysis
+    escaped = analyze_escapes(fn)
+
+    changed = False
+    for bb in fn.blocks:
+        # Check if this block is inside a loop body — if so, skip promotion
+        # (conservative: don't promote loop-interior allocations to avoid
+        # unbounded stack growth).
+        in_loop = bb.label in loop_body_blocks
+
+        for inst in bb.instructions:
+            if not _is_alloc_instruction(inst):
+                continue
+            dest = getattr(inst, "dest", None)
+            if dest is None or not dest.name:
+                continue
+            # Already promoted (idempotent)
+            if getattr(inst, "alloc_kind", AllocKind.HEAP) == AllocKind.STACK:
+                continue
+            # Skip if escapes
+            if dest.name in escaped:
+                continue
+            # Skip if in loop body (conservative — no stack growth in loops)
+            if in_loop:
+                continue
+            # Skip if allocation is too large for the stack
+            if _estimate_alloc_size(inst) > _MAX_STACK_PROMOTION_BYTES:
+                continue
+            # Promote!
+            assert isinstance(inst, _ALLOC_TYPES)
+            inst.alloc_kind = AllocKind.STACK
+            stats.allocations_promoted += 1
+            changed = True
+
+    return changed
+
+
+# ---------------------------------------------------------------------------
+# Loop string concat optimization (v4.95.0 → rewritten v4.108.0)
+# ---------------------------------------------------------------------------
+
+
+def _uses_name(inst: Instruction, name: str) -> bool:
+    """True if `inst` reads any Value with the given name."""
+    return any(v.name == name for v in _get_uses(inst))
+
+
+def _terminator_uses_name(bb: BasicBlock, name: str) -> bool:
+    term = bb.terminator
+    if term is None:
+        return False
+    return any(v.name == name for v in _get_uses(term))
+
+
+def _find_def_block(fn: MIRFunction, name: str) -> str | None:
+    """Find the block containing the defining instruction for `name`, if any.
+
+    Uses the last-def-wins interpretation because MIR here is not strict
+    SSA (Copy writes can overwrite a prior def).
+    """
+    last: str | None = None
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            dest = _get_dest(inst)
+            if dest is not None and dest.name == name:
+                last = bb.label
+    return last
+
+
+def string_concat_optimization(fn: MIRFunction, stats: MIRPassStats) -> bool:
+    """Rewrite loop-body string concatenation to use the StringBuilder.
+
+    Transforms the classic O(n²) loop concat:
+
+        s = ""
+        while cond:
+            s = s + chunk       # BinOp ADD + Copy in MIR
+        use(s)
+
+    into the amortized O(n) builder form:
+
+        s = ""
+        sb = __mn_sb_new(64)
+        __mn_sb_append(sb, s)   # seed with initial value (safe for "")
+        while cond:
+            __mn_sb_append(sb, chunk)
+        s = __mn_sb_finish(sb)   # takes ownership of sb's buffer, frees struct
+        use(s)
+
+    MIR representation (what to match): string ``+`` is lowered in
+    ``lower.py`` to ``BinOp(ADD, ..., lhs:String, rhs:String)``. The
+    ``__mn_str_concat`` runtime call only appears during LLVM IR
+    emission (see ``emit_llvm_text.py:2658``). The v4.95.0 version of
+    this pass was dead code because it scanned for ``Call`` instructions
+    of ``__mn_str_concat`` at the MIR level — that shape never exists
+    until the emitter creates it.
+
+    Conservative matching (v4.108.0): only fires when every one of these
+    holds:
+      1. The function contains a natural loop (``find_natural_loops``).
+      2. A loop-body block contains ``BinOp(ADD, lhs, rhs)`` with both
+         ``lhs`` and ``rhs`` typed ``TypeKind.STRING``.
+      3. The *next* instruction is ``Copy(dest=lhs, src=binop.dest)`` —
+         i.e. the concat result is written back to the same variable
+         (the loop accumulator).
+      4. The accumulator's only uses inside the loop body are (a) the
+         BinOp's lhs we are about to rewrite and (b) the Copy's dest.
+         No other loop-internal instruction reads it. No terminator
+         inside the loop reads it either.
+      5. The loop has a single preheader (the one predecessor of the
+         header that is not itself in the loop body) and a single exit
+         block (a successor of some body block that is not in the loop
+         body).
+      6. The accumulator is not already being read by the exit block's
+         terminator (we need to place a reassignment at the top of the
+         exit block; edge cases with exit-block phi usage are out of
+         scope for v4.108.0).
+    """
+    loops = find_natural_loops(fn)
+    if not loops:
+        return False
+
+    block_map = fn.block_map()
+    succs, preds = _build_cfg(fn)
+    changed = False
+    sb_counter = 0
+
+    for loop in loops:
+        # Pre-compute loop-exit block candidates: successors of any body
+        # block that are outside the loop body.
+        exit_candidates: set[str] = set()
+        for lbl in loop.body:
+            for s in succs.get(lbl, []):
+                if s not in loop.body:
+                    exit_candidates.add(s)
+
+        # Pre-compute unique preheader: predecessors of the header that are
+        # not in the loop body.
+        preheader_candidates = [p for p in preds.get(loop.header, []) if p not in loop.body]
+
+        # Single-preheader, single-exit only (conservative for v4.108.0).
+        if len(preheader_candidates) != 1 or len(exit_candidates) != 1:
+            continue
+        preheader_lbl = preheader_candidates[0]
+        exit_lbl = next(iter(exit_candidates))
+        preheader_bb = block_map.get(preheader_lbl)
+        exit_bb = block_map.get(exit_lbl)
+        if preheader_bb is None or exit_bb is None:
+            continue
+
+        # Scan every body block for the BinOp+Copy concat pattern.
+        for blk_lbl in list(loop.body):
+            bb = block_map.get(blk_lbl)
+            if bb is None:
+                continue
+
+            i = 0
+            while i < len(bb.instructions) - 1:
+                inst = bb.instructions[i]
+                nxt = bb.instructions[i + 1]
+
+                if not (
+                    isinstance(inst, BinOp)
+                    and inst.op == BinOpKind.ADD
+                    and inst.lhs.ty.kind == TypeKind.STRING
+                    and inst.rhs.ty.kind == TypeKind.STRING
+                ):
+                    i += 1
+                    continue
+                if not (
+                    isinstance(nxt, Copy)
+                    and nxt.src.name == inst.dest.name
+                    and nxt.dest.name == inst.lhs.name
+                ):
+                    i += 1
+                    continue
+
+                acc_name = inst.lhs.name
+                chunk_val = inst.rhs
+
+                # Safety check: no other uses of %acc in the loop.
+                if _accumulator_has_other_loop_uses(
+                    fn, block_map, loop.body, acc_name, concat_inst=inst, copy_inst=nxt
+                ):
+                    i += 1
+                    continue
+
+                # Transform:
+                # 1. Preheader: append __mn_sb_new + seed append of %acc.
+                sb_counter += 1
+                sb_name = f"%sb_{sb_counter}"
+                cap_name = f"%sb_cap_{sb_counter}"
+                seed_void_name = f"%sb_seed_{sb_counter}"
+                append_void_name = f"%sb_app_{sb_counter}"
+
+                sb_val = Value(name=sb_name, ty=mir_any())
+                cap_val = Value(name=cap_name, ty=mir_int())
+                seed_void = Value(name=seed_void_name, ty=mir_void())
+                append_void = Value(name=append_void_name, ty=mir_void())
+                finish_dest = Value(name=acc_name, ty=mir_string())
+
+                # BasicBlock.terminator is a @property that returns
+                # instructions[-1] when it's a terminator — insert BEFORE
+                # the terminator, not append at the end.
+                insert_at = len(preheader_bb.instructions)
+                if insert_at > 0 and is_terminator(preheader_bb.instructions[-1]):
+                    insert_at -= 1
+                preheader_bb.instructions[insert_at:insert_at] = [
+                    Const(dest=cap_val, ty=mir_int(), value=64),
+                    Call(dest=sb_val, fn_name="__mn_sb_new", args=[cap_val]),
+                    Call(
+                        dest=seed_void,
+                        fn_name="__mn_sb_append",
+                        args=[sb_val, Value(name=acc_name, ty=mir_string())],
+                    ),
+                ]
+
+                # 2. Loop body: replace BinOp + Copy with __mn_sb_append(sb, chunk).
+                bb.instructions[i : i + 2] = [
+                    Call(
+                        dest=append_void,
+                        fn_name="__mn_sb_append",
+                        args=[sb_val, chunk_val],
+                    )
+                ]
+
+                # 3. Exit block: finalize sb into the accumulator Value.
+                exit_bb.instructions.insert(
+                    0,
+                    Call(dest=finish_dest, fn_name="__mn_sb_finish", args=[sb_val]),
+                )
+
+                stats.allocations_promoted += 1
+                changed = True
+                # Do NOT i += 1 — the slice deletion already moved the next
+                # instruction into position i. Fall through naturally.
+                # (We only support one concat per body slot in this iteration.)
+
+    return changed
+
+
+def _accumulator_has_other_loop_uses(
+    fn: MIRFunction,
+    block_map: dict[str, BasicBlock],
+    loop_body: set[str],
+    acc_name: str,
+    concat_inst: BinOp,
+    copy_inst: Copy,
+) -> bool:
+    """Returns True if %acc is used inside the loop outside the exact
+    ``BinOp.lhs`` and ``Copy.dest`` slots we plan to rewrite.
+
+    Uses that would invalidate the transform include:
+      - Any other instruction reading %acc inside a body block.
+      - Any terminator in a body block reading %acc (branch cond, switch
+        tag, return val, etc.).
+    """
+    for lbl in loop_body:
+        bb = block_map.get(lbl)
+        if bb is None:
+            continue
+        for inst in bb.instructions:
+            if inst is concat_inst or inst is copy_inst:
+                continue
+            if _uses_name(inst, acc_name):
+                return True
+            # Writes to %acc by a non-tracked instruction also disqualify.
+            dest = _get_dest(inst)
+            if dest is not None and dest.name == acc_name:
+                return True
+        if _terminator_uses_name(bb, acc_name):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Parameter-level noalias (v4.147.0 E3 — escape-analysis-driven)
+# ---------------------------------------------------------------------------
+
+# Types that must NOT be marked noalias even if they pass escape analysis.
+# The runtime may internally share pointers on these paths.
+_NOALIAS_EXCLUDED_KINDS: frozenset[TypeKind] = frozenset(
+    {
+        TypeKind.SIGNAL,
+        TypeKind.STREAM,
+        TypeKind.AGENT,
+    }
+)
+
+
+def _param_escapes(param_name: str, fn: MIRFunction) -> bool:
+    """Return True if the parameter value escapes the function.
+
+    A parameter escapes if it is:
+    1. Returned from the function
+    2. Stored into a struct field, list, or map
+    3. Captured by a closure
+    4. Passed to an unknown/potentially-capturing function call
+    5. Sent to an agent
+    """
+    mir_name = f"%{param_name}"
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if isinstance(inst, Return) and inst.val is not None:
+                if inst.val.name == mir_name:
+                    return True
+            elif isinstance(inst, FieldSet):
+                if inst.val.name == mir_name:
+                    return True
+            elif isinstance(inst, IndexSet):
+                if inst.val.name == mir_name:
+                    return True
+            elif isinstance(inst, ListPush):
+                if inst.element.name == mir_name:
+                    return True
+            elif isinstance(inst, ClosureCreate):
+                if any(cap.name == mir_name for cap in inst.captures):
+                    return True
+            elif isinstance(inst, AgentSend):
+                if inst.val.name == mir_name:
+                    return True
+            elif isinstance(inst, AgentSpawn):
+                if any(arg.name == mir_name for arg in inst.args):
+                    return True
+            elif isinstance(inst, Call):
+                if inst.fn_name not in _NON_CAPTURING_FNS:
+                    if any(arg.name == mir_name for arg in inst.args):
+                        return True
+            elif isinstance(inst, ClosureCall):
+                if inst.closure.name == mir_name:
+                    return True
+                if any(arg.name == mir_name for arg in inst.args):
+                    return True
+    return False
+
+
+def _param_self_aliased_in_recursive_call(param_name: str, fn: MIRFunction) -> bool:
+    """Return True if the function is recursive and passes this param to itself."""
+    mir_name = f"%{param_name}"
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if isinstance(inst, Call) and inst.fn_name == fn.name:
+                if any(arg.name == mir_name for arg in inst.args):
+                    return True
+    return False
+
+
+def _call_sites_pass_distinct_args(
+    module: MIRModule, target_fn: MIRFunction, param_idx: int
+) -> bool:
+    """Return True if all call sites to target_fn pass distinct SSA values
+    for the parameter at param_idx vs all other noalias-candidate params."""
+    for fn in module.functions:
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                if isinstance(inst, Call) and inst.fn_name == target_fn.name:
+                    if param_idx < len(inst.args):
+                        arg_name = inst.args[param_idx].name
+                        # Check no other arg at a different position shares this name
+                        for j, other_arg in enumerate(inst.args):
+                            if j != param_idx and other_arg.name == arg_name:
+                                return False
+    return True
+
+
+def mark_noalias_params(module: MIRModule) -> int:
+    """E3: mark non-aliasing pointer parameters so the emitter emits `noalias`.
+
+    Only marks parameters whose MIR type is a pointer-representable compound
+    type (List, Map, String, Struct, Enum, closure env) AND that pass all
+    escape-analysis precision rules. Parameters of Signal/Stream/Agent types
+    are excluded because the runtime may internally share pointers.
+
+    Returns the number of parameters marked.
+
+    See docs/roadmap/v4/v4.147.0/HYPOTHESIS.md for precision rules.
+    """
+    marked = 0
+    for fn in module.functions:
+        if fn.name == "main":
+            continue
+        for i, p in enumerate(fn.params):
+            # Skip scalar types (noalias is meaningless for non-pointers)
+            if p.ty.kind in (
+                TypeKind.INT,
+                TypeKind.FLOAT,
+                TypeKind.BOOL,
+                TypeKind.VOID,
+                TypeKind.UNKNOWN,
+            ):
+                continue
+            # Skip runtime-internal types that may share pointers
+            if p.ty.kind in _NOALIAS_EXCLUDED_KINDS:
+                continue
+            # Skip if already marked
+            if "noalias_ok" in p.attrs:
+                continue
+            # Check escape analysis
+            if _param_escapes(p.name, fn):
+                continue
+            # Check recursive self-aliasing
+            if _param_self_aliased_in_recursive_call(p.name, fn):
+                continue
+            # Check call-site distinctness
+            if not _call_sites_pass_distinct_args(module, fn, i):
+                continue
+            # All checks passed — mark for noalias
+            p.attrs.add("noalias_ok")
+            marked += 1
+    return marked
+
+
+# ---------------------------------------------------------------------------
+# Function inlining (v4.87.0)
+# ---------------------------------------------------------------------------
+
+# Inline budget constants
+_INLINE_MAX_BODY = 20  # max instructions in callee body
+_INLINE_MAX_BUDGET = 200  # max call_count * body_size
+
+
+def _is_recursive(fn: MIRFunction) -> bool:
+    """True if the function calls itself (directly)."""
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if isinstance(inst, Call) and inst.fn_name == fn.name:
+                return True
+    return False
+
+
+def _instruction_count(fn: MIRFunction) -> int:
+    """Count non-terminator instructions in a function."""
+    return sum(len(bb.instructions) for bb in fn.blocks)
+
+
+def _should_inline(callee: MIRFunction, call_count: int) -> bool:
+    """Cost-model heuristic: inline if small, not recursive, within budget.
+
+    v4.87.0: conservative — only inline single-block callees to avoid
+    multi-block cloning bugs (branch/phi/switch renaming). Multi-block
+    inlining is future work once the transform is battle-tested.
+    """
+    if callee.is_async:
+        return False
+    if _is_recursive(callee):
+        return False
+    # v4.87.0: only single-block callees (no branches, no phi, no switch)
+    if len(callee.blocks) != 1:
+        return False
+    body_size = _instruction_count(callee)
+    if body_size > _INLINE_MAX_BODY:
+        return False
+    if body_size == 0:
+        return False
+    if call_count * body_size > _INLINE_MAX_BUDGET:
+        return False
+    if callee.name == "main":
+        return False
+    return True
+
+
+_inline_counter = 0
+_inline_count_per_fn: dict[str, int] = {}
+_INLINE_MAX_SITES_PER_FN = 5  # v4.97.0: cap cascading inlines
+
+
+def _fresh_inline_prefix() -> str:
+    """Generate a unique prefix for inlined value/block names."""
+    global _inline_counter
+    _inline_counter += 1
+    return f"_inl{_inline_counter}_"
+
+
+def _clone_value(v: Value, prefix: str, rename: dict[str, str]) -> Value:
+    """Clone a Value with renamed SSA names."""
+    if v.name in rename:
+        return Value(name=rename[v.name], ty=v.ty)
+    if v.name.startswith("%"):
+        new_name = f"%{prefix}{v.name[1:]}"
+        rename[v.name] = new_name
+        return Value(name=new_name, ty=v.ty)
+    return v  # constants, globals — keep as-is
+
+
+def _clone_instruction(
+    inst: Instruction, prefix: str, rename: dict[str, str], ret_label: str
+) -> list[Instruction]:
+    """Clone an instruction with renamed values.
+
+    Return instructions become Copy + Jump to the return merge block.
+    """
+    import copy as _copy
+
+    if isinstance(inst, Return):
+        result: list[Instruction] = []
+        if inst.val is not None:
+            cloned_val = _clone_value(inst.val, prefix, rename)
+            ret_dest_name = f"%{prefix}retval"
+            result.append(Copy(dest=Value(name=ret_dest_name, ty=cloned_val.ty), src=cloned_val))
+        result.append(Jump(target=ret_label))
+        return result
+
+    cloned = _copy.deepcopy(inst)
+
+    # Rename all Value fields in the cloned instruction
+    for field_name in type(cloned).__dataclass_fields__:
+        val = getattr(cloned, field_name)
+        if isinstance(val, Value) and val.name:
+            setattr(cloned, field_name, _clone_value(val, prefix, rename))
+        elif isinstance(val, list):
+            new_list: list[Any] = []
+            for item in val:
+                if isinstance(item, Value):
+                    new_list.append(_clone_value(item, prefix, rename))
+                elif isinstance(item, tuple) and len(item) == 2:
+                    # Phi incoming: (label, value)
+                    lbl, v = item
+                    new_lbl = f"{prefix}{lbl}" if not lbl.startswith("@") else lbl
+                    new_v = _clone_value(v, prefix, rename) if isinstance(v, Value) else v
+                    new_list.append((new_lbl, new_v))
+                else:
+                    new_list.append(item)
+            setattr(cloned, field_name, new_list)
+
+    # Rename branch/jump targets
+    if isinstance(cloned, Jump):
+        cloned.target = f"{prefix}{cloned.target}"
+    elif isinstance(cloned, Branch):
+        cloned.true_block = f"{prefix}{cloned.true_block}"
+        cloned.false_block = f"{prefix}{cloned.false_block}"
+    elif isinstance(cloned, Switch):
+        cloned.cases = [(tag, f"{prefix}{lbl}") for tag, lbl in cloned.cases]
+        cloned.default_block = f"{prefix}{cloned.default_block}"
+
+    return [cloned]
+
+
+def inline_small_functions(
+    fn: MIRFunction, fn_lookup: dict[str, MIRFunction], stats: MIRPassStats
+) -> bool:
+    """Inline small function calls within ``fn``.
+
+    v4.87.0: cost-model-driven inlining at O2. Body < 20 instructions,
+    not recursive, call_count * body_size < 200.
+
+    v4.97.0: cap function growth at 500 instructions to prevent cascading
+    inlining from exceeding the fixpoint loop iteration budget (10).
+    Large functions like ``compile`` chain many small helpers; without
+    a growth cap each inline exposes new eligible call sites, and the
+    fixpoint loop never settles.
+
+    For each eligible call site, the containing block is split:
+    - Pre-call instructions end with Jump to the callee entry
+    - Callee blocks are cloned (renamed) into the function
+    - Callee Return becomes Copy + Jump to a merge block
+    - Merge block continues with the post-call instructions
+    """
+    # v4.97.0: cap total inline sites per function to prevent cascading.
+    if _inline_count_per_fn.get(fn.name, 0) >= _INLINE_MAX_SITES_PER_FN:
+        return False
+
+    # Count calls per callee
+    call_counts: dict[str, int] = {}
+    for bb in fn.blocks:
+        for inst in bb.instructions:
+            if isinstance(inst, Call) and inst.fn_name in fn_lookup:
+                call_counts[inst.fn_name] = call_counts.get(inst.fn_name, 0) + 1
+
+    # Determine eligible callees
+    eligible = {
+        name
+        for name, count in call_counts.items()
+        if name in fn_lookup and _should_inline(fn_lookup[name], count)
+    }
+    if not eligible:
+        return False
+
+    # Process one inline site per iteration (the fixpoint loop handles cascading)
+    for bb_idx, bb in enumerate(fn.blocks):
+        for inst_idx, inst in enumerate(bb.instructions):
+            if not isinstance(inst, Call) or inst.fn_name not in eligible:
+                continue
+
+            callee = fn_lookup[inst.fn_name]
+            prefix = _fresh_inline_prefix()
+            rename: dict[str, str] = {}
+
+            # Map callee params to call arguments
+            for param, arg in zip(callee.params, inst.args):
+                rename[f"%{param.name}"] = arg.name
+
+            # Split: instructions before the call
+            pre_insts = bb.instructions[:inst_idx]
+            # Split: instructions after the call
+            post_insts = bb.instructions[inst_idx + 1 :]
+
+            # Create labels
+            merge_label = f"{prefix}ret"
+
+            # Pre-call block: original label, pre-insts + jump to callee entry
+            if callee.blocks:
+                callee_entry = f"{prefix}{callee.blocks[0].label}"
+            else:
+                callee_entry = merge_label
+            pre_insts.append(Jump(target=callee_entry))
+            bb.instructions = pre_insts
+
+            # Clone callee blocks
+            inlined_blocks: list[BasicBlock] = []
+            for callee_bb in callee.blocks:
+                new_label = f"{prefix}{callee_bb.label}"
+                cloned_insts: list[Instruction] = []
+                for callee_inst in callee_bb.instructions:
+                    cloned_insts.extend(
+                        _clone_instruction(callee_inst, prefix, rename, merge_label)
+                    )
+                inlined_blocks.append(BasicBlock(label=new_label, instructions=cloned_insts))
+
+            # Merge block: copy return value to call dest + post-call instructions
+            ret_val_name = f"%{prefix}retval"
+            merge_insts: list[Instruction] = []
+            if inst.dest.name:
+                merge_insts.append(
+                    Copy(dest=inst.dest, src=Value(name=ret_val_name, ty=inst.dest.ty))
+                )
+            merge_insts.extend(post_insts)
+            merge_block = BasicBlock(label=merge_label, instructions=merge_insts)
+
+            # Insert inlined blocks + merge block after the current block
+            new_blocks = (
+                fn.blocks[: bb_idx + 1] + inlined_blocks + [merge_block] + fn.blocks[bb_idx + 1 :]
+            )
+            fn.blocks = new_blocks
+
+            stats.functions_inlined += 1
+            _inline_count_per_fn[fn.name] = _inline_count_per_fn.get(fn.name, 0) + 1
+            return True  # one site per call, fixpoint loop handles more
+
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Pass Manager
 # ---------------------------------------------------------------------------
 
 
-def optimize_function(fn: MIRFunction, level: MIROptLevel, stats: MIRPassStats) -> None:
+class MIROptimizerNonConvergence(Exception):
+    """The MIR optimizer fixpoint loop failed to converge in ``max_iterations``.
+
+    v4.30.0 Phase 3.1: raised in place of the prior
+    ``logging.warning`` call. The v4.26.0 seven-reviewer panel
+    (Anaconda HIGH) flagged the warning as silent failure — suboptimal
+    code shipped without any reader seeing the message. Turning it
+    into an exception means:
+
+    1) Non-convergence becomes a loud compiler crash the developer
+       cannot ignore. It is an *internal compiler error* — the user's
+       source is valid, but an optimizer pass is oscillating instead
+       of settling. The fix belongs in ``mir_opt.py``, not the user's
+       code.
+    2) The golden corpus and stage2 fixed-point acts as a regression
+       gate: any new pass that doesn't converge crashes on build.
+    3) Raising the ``max_iterations`` cap without fixing the
+       underlying pass is a code-smell that used to be invisible;
+       now it's a diff a reviewer will see.
+
+    When this fires, do NOT raise the cap. Identify the two passes
+    that are ping-ponging and fix the one that is not idempotent.
+    """
+
+
+def optimize_function(
+    fn: MIRFunction,
+    level: MIROptLevel,
+    stats: MIRPassStats,
+    fn_lookup: dict[str, MIRFunction] | None = None,
+) -> None:
     """Run optimization passes on a single function."""
     if level == MIROptLevel.O0:
         return
 
     max_iterations = 10
 
-    # O1+: Constant folding + propagation (iterate to fixed point)
-    if level >= MIROptLevel.O1:
-        for _ in range(max_iterations):
-            changed = False
+    # Unified fixpoint loop: all passes run in sequence per iteration.
+    # O2 passes create opportunities for O1 (and vice versa), so running
+    # them in separate loops missed cross-level optimizations.
+    #
+    # v4.30.0 Phase 3.2: ``stream_fusion`` was previously a single
+    # pass *outside* this loop. It stays inside from v4.30.0 onward so
+    # the "unified fixpoint" phrase is not a lie — stream fusion can
+    # now create opportunities for constant folding + DCE, and the
+    # downstream passes will pick them up in the same iteration.
+    # The extra cost is negligible (fusion is O(n) in instructions and
+    # idempotent on a settled MIR).
+    for iteration in range(max_iterations):
+        changed = False
+        # O1+: constant folding + propagation
+        if level >= MIROptLevel.O1:
             changed |= constant_folding(fn, stats)
             changed |= constant_propagation(fn, stats)
-            if not changed:
-                break
-
-    # O2+: Copy propagation, DCE, unreachable blocks, branch simplification
-    # Wrapped in a convergence loop like O1 to reach a fixed point.
-    if level >= MIROptLevel.O2:
-        for _ in range(max_iterations):
-            o2_changed = copy_propagation(fn, stats)
-            o2_changed |= branch_simplification(fn, stats)
-            o2_changed |= unreachable_block_elimination(fn, stats)
-            # Run DCE after other passes have created dead code
-            o2_changed |= dead_code_elimination(fn, stats)
-            # Agent inlining
-            o2_changed |= agent_inlining(fn, stats)
-            if not o2_changed:
-                break
-
-    # O3: Stream fusion
-    if level >= MIROptLevel.O3:
-        o3_changed = stream_fusion(fn, stats)
-        # Re-run DCE if stream fusion created dead code
-        if o3_changed:
-            dead_code_elimination(fn, stats)
-            unreachable_block_elimination(fn, stats)
+        # O2+: copy propagation, branch simplification, unreachable blocks, DCE, agent inlining
+        if level >= MIROptLevel.O2:
+            changed |= copy_propagation(fn, stats)
+            # v4.87.0: function inlining after copy propagation — inlined
+            # bodies benefit from already-propagated arguments.
+            if fn_lookup:
+                changed |= inline_small_functions(fn, fn_lookup, stats)
+            changed |= branch_simplification(fn, stats)
+            changed |= unreachable_block_elimination(fn, stats)
+            changed |= dead_code_elimination(fn, stats)
+            # v4.88.0: strength reduction after DCE.
+            # LICM disabled — hoisting analysis needs loop-carried value
+            # tracking. Infrastructure (dominators, natural loops) ships
+            # but the transform is gated for v4.89.0.
+            changed |= strength_reduction(fn, stats)
+            # v4.89.0: escape analysis — promote non-escaping heap
+            # allocations to stack. Runs after DCE + strength reduction
+            # so dead allocations are already removed. Idempotent (once
+            # promoted, alloc_kind stays STACK).
+            changed |= escape_analysis_promotion(fn, stats)
+            # v4.95.0: loop string concat → StringBuilder
+            changed |= string_concat_optimization(fn, stats)
+            changed |= agent_inlining(fn, stats)
+        # O3+: stream fusion. Folded into the fixpoint loop in v4.30.0
+        # so fused stream chains can feed back into constant folding
+        # and DCE in the same iteration. Stream fusion is structural
+        # and idempotent on a settled MIR, so once everything else
+        # stops changing, a final fusion pass is a no-op.
+        if level >= MIROptLevel.O3:
+            changed |= stream_fusion(fn, stats)
+        if not changed:
+            break
+    else:
+        raise MIROptimizerNonConvergence(
+            f"MIR optimizer did not converge in {max_iterations} iterations "
+            f"for function {fn.name!r}. This is an internal compiler error. "
+            f"Two passes are likely ping-ponging on the same instruction "
+            f"set; inspect the most recent MIR pass additions and make each "
+            f"one idempotent on a settled MIR. Do NOT raise the iteration "
+            f"cap — that only hides the underlying bug."
+        )
 
 
 def optimize_module(
@@ -1151,12 +2428,21 @@ def optimize_module(
     if level == MIROptLevel.O0:
         return module, stats
 
+    # v4.87.0: build function lookup for interprocedural passes (inlining)
+    fn_lookup = {f.name: f for f in module.functions}
+    # v4.97.0: reset per-function inline counters for this module
+    global _inline_count_per_fn
+    _inline_count_per_fn = {}
+
     # Per-function passes
     for fn in module.functions:
-        optimize_function(fn, level, stats)
+        optimize_function(fn, level, stats, fn_lookup=fn_lookup)
 
     # Module-level passes
     if level >= MIROptLevel.O2:
         dead_function_elimination(module, stats)
+        # v4.147.0 E3: mark non-aliasing pointer parameters for `noalias`
+        # emission. Runs after DFE so we don't analyze dead functions.
+        mark_noalias_params(module)
 
     return module, stats

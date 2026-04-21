@@ -1,0 +1,21 @@
+// Golden test: struct construction and field access
+// Cb.10 (v4.144.0): docstring rewritten to match actual test shape.
+// This test exercises struct definition, constructor, and field access —
+// it does NOT test qualified type references (dotted type names like
+// module.Type). Gr.2 qualified-type-ref parsing is covered by
+// tests/parser/test_*qualified*.
+
+struct Handle {
+    id: Int
+}
+
+fn make_handle(val: Int) -> Handle {
+    let h: Handle = new Handle { id: val }
+    return h
+}
+
+fn main() -> Int {
+    let h: Handle = make_handle(42)
+    print(h.id)
+    return 0
+}

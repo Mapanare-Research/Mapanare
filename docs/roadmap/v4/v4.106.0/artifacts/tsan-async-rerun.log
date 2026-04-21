@@ -1,0 +1,9 @@
+=== 55_async_basic ===
+42
+exit=0
+=== 56_async_await ===
+43
+exit=0
+=== 57_real_await ===
+110
+exit=0

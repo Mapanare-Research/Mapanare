@@ -592,33 +592,21 @@ def merge_mir_modules(base: MIRModule, additions: list[MIRModule]) -> None:
 
 
 def _emit_with_backend(
-    backend: str,
     module_name: str,
     target: Any,
     mir_module: MIRModule,
     debug: bool,
 ) -> str:
-    """Emit LLVM IR using the selected backend."""
-    if backend == "text":
-        from mapanare.emit_llvm_text import LLVMTextEmitter
+    """Emit LLVM IR using the text backend."""
+    from mapanare.emit_llvm_text import LLVMTextEmitter
 
-        emitter = LLVMTextEmitter(
-            module_name=module_name,
-            target_triple=target.triple,
-            data_layout=target.data_layout,
-            debug=debug,
-        )
-        return emitter.emit(mir_module)
-    from mapanare.emit_llvm_mir import LLVMMIREmitter
-
-    emitter_mir = LLVMMIREmitter(
+    emitter = LLVMTextEmitter(
         module_name=module_name,
         target_triple=target.triple,
         data_layout=target.data_layout,
         debug=debug,
     )
-    llvm_module = emitter_mir.emit(mir_module)
-    return str(llvm_module)
+    return emitter.emit(mir_module)
 
 
 def compile_multi_module_mir(
@@ -627,8 +615,8 @@ def compile_multi_module_mir(
     opt_level: int = 2,
     target_name: str | None = None,
     debug: bool = False,
-    emitter_backend: str = "text",
     skip_check: bool = False,
+    no_verify: bool = False,
 ) -> str:
     """Compile a root .mn file and all its imports into a single LLVM IR string.
 
@@ -673,8 +661,22 @@ def compile_multi_module_mir(
         )
         mir_opt_level = MIROptLevel(opt_level)
         mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+        if not no_verify:
+            from mapanare.mir import MIRVerifier
+
+            verify_errors = MIRVerifier().verify_module(mir_module)
+            if verify_errors:
+                import sys as _sys
+
+                print(
+                    "error: MIR verifier detected malformed IR before emission:",
+                    file=_sys.stderr,
+                )
+                for err in verify_errors:
+                    print(f"  {err}", file=_sys.stderr)
+                raise SystemExit(1)
         target = get_target(target_name)
-        return _emit_with_backend(emitter_backend, module_name, target, mir_module, debug)
+        return _emit_with_backend(module_name, target, mir_module, debug)
 
     # 3. Lower each dependency, rename symbols.
     #   Dependencies are in topological order, so when we lower module B that
@@ -853,6 +855,25 @@ def compile_multi_module_mir(
     mir_opt_level = MIROptLevel(opt_level)
     root_mir, _ = mir_optimize(root_mir, mir_opt_level)
 
+    # 7.5. Verify MIR structural correctness before emission.
+    # v4.27.0: closes the v4.5.0 CHANGELOG claim ("MIR verifier called before
+    # emission"). Prior to this, MIRVerifier had zero call sites in the
+    # compile pipeline.
+    if not no_verify:
+        from mapanare.mir import MIRVerifier
+
+        verify_errors = MIRVerifier().verify_module(root_mir)
+        if verify_errors:
+            import sys as _sys
+
+            print(
+                "error: MIR verifier detected malformed IR before emission:",
+                file=_sys.stderr,
+            )
+            for err in verify_errors:
+                print(f"  {err}", file=_sys.stderr)
+            raise SystemExit(1)
+
     # 8. Emit LLVM IR
     target = get_target(target_name)
-    return _emit_with_backend(emitter_backend, root_module_name, target, root_mir, debug)
+    return _emit_with_backend(root_module_name, target, root_mir, debug)

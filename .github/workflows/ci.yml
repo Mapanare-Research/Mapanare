@@ -38,8 +38,139 @@ jobs:
       - name: Type check (mypy)
         run: mypy mapanare/ runtime/
 
+      # v4.29.0: hollow-feature gate.
+      # The v4.18.0-v4.26.0 evolution arc shipped multiple features
+      # that lowered to ``raise NotImplementedError`` at runtime
+      # (``@gpu``, early ``await``, etc). This step fails the build
+      # the moment a ``raise NotImplementedError`` appears anywhere
+      # under ``mapanare/`` or ``runtime/`` outside the test tree.
+      # The rule is: if you need to write ``raise NotImplementedError``,
+      # the feature is not ready to merge. Use ``abc.abstractmethod``
+      # for intended-to-be-overridden stubs.
+      # v4.32.0 Phase 2.6 (Anaconda): `if: always()` on every gate step
+      # so a failure in gate 1 doesn't mask gates 2-5.
+      - name: Hollow-feature gate (no raise NotImplementedError)
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          HITS=$(git grep -l 'raise NotImplementedError' mapanare/ runtime/ | grep -v '^tests/' || true)
+          if [ -n "$HITS" ]; then
+            echo "ERROR: 'raise NotImplementedError' found in source files:"
+            echo "$HITS" | sed 's/^/  /'
+            echo ""
+            echo "If the feature is not ready to merge, do not merge it."
+            echo "If the class is an abstract base, use 'from abc import ABC, abstractmethod'"
+            echo "and decorate the method with '@abstractmethod' instead."
+            exit 1
+          fi
+          echo "hollow-feature gate: clean"
+
+      # v4.29.0: skip-without-tracking-comment gate.
+      # Every ``@pytest.mark.skip`` or ``pytest.mark.xfail`` in
+      # ``tests/`` must have a comment on an adjacent line naming the
+      # tracking version (e.g. "# v4.30.0: ..."). A silent skip is a
+      # test that does not exist — and the v4.18.0-v4.26.0 regression
+      # happened because 79 ``extern "Python" fn`` tests had been
+      # silently xfailed since v4.2.0.
+      - name: Silent-skip gate (every pytest skip has a tracking version)
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_silent_skips.py tests/
+
+      # v4.31.0: CHANGELOG honesty gate.
+      # Every CHANGELOG claim that names a file path or a runtime
+      # symbol must be verifiable in the source tree at commit time.
+      # The v4.26.0 panel flagged v4.18.0/v4.24.0/v4.25.0 CHANGELOG
+      # entries that referenced tests + symbols that did not exist.
+      - name: CHANGELOG honesty gate
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_changelog_honesty.py
+
+      # v4.31.0: docs drift gate.
+      # Every Mapanare code block in docs/SPEC.md, cookbook.md,
+      # reference.md, and getting-started.md must parse cleanly via
+      # the current grammar. Intentional-pseudocode blocks are opted
+      # out with ``<!-- pseudo -->``; negative examples use
+      # ``<!-- expect-error -->``.
+      - name: Docs drift gate
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_docs_drift.py
+
+      # v4.31.0: hollow-feature structural gate.
+      # Catches device decorators re-introduced into golden tests and
+      # AST expression classes that have no isinstance check in
+      # ``lower.py``. Subsumes the v4.29.0 ``raise NotImplementedError``
+      # gate as a sub-check so the pipeline runs both from a single
+      # script (but the standalone gate above is kept for defence in
+      # depth).
+      - name: Hollow-feature structural gate
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_no_hollow_features.py
+
+      # v4.143.0: internal-struct registry drift gate (Reg.1).
+      # Cross-checks ``mapanare/self/emit_llvm.mn::build_internal_struct_list``
+      # and ``register_all_internal_structs`` against the live struct
+      # definitions in ``mapanare/self/*.mn``. Prevents repeats of the
+      # Ge.1 class of silent metadata drift (v4.132.0 → v4.142.0) where
+      # MIRModule.consts, LowerState fields, MatchBuildResult, VarInfo,
+      # etc. were registered with stale or wrong field-name lists and
+      # byte-identity fixed-point checks masked the miscompile because
+      # both stages diverged the same way.
+      - name: Struct registry drift gate
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_struct_registry.py
+
       - name: Run tests
         run: pytest tests/ -v -n auto --durations=20
+
+  # ---------------------------------------------------------------------------
+  # v4.117.0 Phase 4 — informational coverage gate
+  # ---------------------------------------------------------------------------
+  # Runs pytest-cov on the core pipeline scope (parser/semantic/lower/MIR/
+  # emitter/lexer/ffi) and uploads the XML artifact. Does NOT gate on
+  # coverage thresholds — the tests/COVERAGE.md audit is the baseline,
+  # and a future release will flip this to gating once the numbers have
+  # stabilised across 5 releases.
+  coverage:
+    name: Coverage (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Mapanare with pytest-cov
+        run: pip install -e ".[dev]" pytest-cov
+      - name: Run coverage on core pipeline scope
+        run: |
+          pytest tests/llvm/ tests/lexer/ tests/parser/ tests/semantic/ \
+                 tests/mir/ tests/emit/ tests/ffi/ \
+                 --cov=mapanare --cov-report=xml --cov-report=term \
+                 --tb=no -q || true
+      - name: Upload coverage XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml-${{ github.sha }}
+          path: coverage.xml
+          retention-days: 30
+          if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
   # Self-hosted compiler: build mnc-stage1 and validate golden tests
@@ -65,7 +196,7 @@ jobs:
       - name: Build mnc-stage1 (from committed IR)
         run: python scripts/build_stage1.py --use-committed
 
-      - name: Run golden tests (33/33)
+      - name: Run golden tests (45/45)
         if: success()
         run: python scripts/ir_doctor.py golden
 
@@ -122,6 +253,96 @@ jobs:
             runtime/native/mapanare_gpu_builtins.c -o /tmp/mapanare_gpu_builtins.o
           ./test_c_runtime
 
+      # v4.29.0: orphaned runtime smoke tests. mapanare_db.c and
+      # mapanare_html.c were 1,942 lines of runtime code that no CI
+      # job touched until v4.29.0 (Anaconda HIGH, v4.26.0 panel). These
+      # smoke tests are the fuse: they call one symbol from each file
+      # so the linker MUST resolve mapanare_db.c / mapanare_html.c at
+      # build time. If a future edit re-orphans either file, this step
+      # fails to link and the CI job breaks loudly.
+      - name: Build runtime archive (Makefile path — all modules)
+        run: make build-rt
+
+      - name: Compile and run test_db_smoke
+        run: |
+          gcc -O2 -g -Wall -Wextra -pthread -I runtime/native \
+            tests/runtime/test_db_smoke.c \
+            runtime/native/libmapanare_rt.a \
+            -o /tmp/test_db_smoke -lm -lpthread -ldl
+          /tmp/test_db_smoke
+
+      - name: Compile and run test_html_smoke
+        run: |
+          gcc -O2 -g -Wall -Wextra -pthread -I runtime/native \
+            tests/runtime/test_html_smoke.c \
+            runtime/native/libmapanare_rt.a \
+            -o /tmp/test_html_smoke -lm -lpthread -ldl
+          /tmp/test_html_smoke
+
+      # v4.102.0: async native run. Before this release, no Mapanare
+      # async program had ever linked — the coroutine scheduler
+      # symbols (``__mn_coro_scheduler_*``) lived in the C runtime
+      # source but were never archived into ``libmapanare_rt.a``, and
+      # ``mn_coro_is_done`` checked the wrong frame offset, so any
+      # attempt to link and run crashed with a NULL-function-pointer
+      # call from ``mn_process_task``. This step proves the end-to-end
+      # pipeline: Python bootstrap emits the coroutine IR, clang links
+      # it against the runtime archive, and the resulting binary runs
+      # to completion with the expected output. Three async golden
+      # tests are exercised to catch pattern-specific regressions
+      # (basic return, single await, fan-out with multiple awaits).
+      - name: Install LLVM + clang (for async native run)
+        run: |
+          sudo apt-get install -y llvm-18 clang-18
+          sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+
+      - name: Setup Python for async native run
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare (for emit-llvm)
+        run: pip install -e ".[dev]"
+
+      - name: Compile + link + run async golden tests natively
+        run: |
+          set -e
+          # v5.0.0: 57_real_await does real HTTP (example.com) which can
+          # SIGSEGV on CI runners with restricted networking. Tested in
+          # the sanitizers workflow where crashes are handled gracefully.
+          for t in 55_async_basic 56_async_await; do
+            echo "--- $t ---"
+            python -m mapanare emit-llvm "tests/golden/$t.mn" -o "/tmp/$t.ll"
+            clang "/tmp/$t.ll" \
+              -L runtime/native -lmapanare_rt \
+              -lpthread -lm -ldl \
+              -o "/tmp/$t"
+            out=$(timeout 10 "/tmp/$t")
+            case "$t" in
+              55_async_basic) expected="42";;
+              56_async_await) expected="43";;
+            esac
+            if [ "$out" != "$expected" ]; then
+              echo "FAIL: $t expected '$expected' got '$out'"
+              exit 1
+            fi
+            echo "OK: $t -> $out"
+          done
+
+      - name: Verify Makefile RUNTIME_SOURCES vs runtime/native/*.c
+        run: make check-runtime-sources
+
+      # v4.32.0 Phase 2.1 (Boa M1): complementary gate to
+      # check-runtime-sources — fails if any binary artifact
+      # (.a / .o / .so / ELF / PE / Mach-O) is tracked in
+      # runtime/native/ or mapanare/self/ (except the frozen
+      # mnc-seed bootstrap binary). The v4.31.0 arc-end panel caught
+      # a committed libmapanare_rt.a carrying `__mn_list_oob_buf`
+      # after the source had removed it — this gate catches the next
+      # such regression at PR time.
+      - name: Verify no tracked binary artifacts
+        run: make check-no-tracked-binaries
+
       - name: Compile and run with AddressSanitizer
         run: |
           gcc -fsanitize=address -fno-omit-frame-pointer -g -Wall -Wextra -Werror -pthread \
@@ -162,6 +383,11 @@ jobs:
         run: |
           curl https://wasmtime.dev/install.sh -sSf | bash
           echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+          # Fallback: some runner images install to a different path
+          if [ -d "$HOME/.wasmtime/bin" ]; then
+            export PATH="$HOME/.wasmtime/bin:$PATH"
+            wasmtime --version
+          fi
 
       - name: Install wabt (wat2wasm)
         run: |
@@ -197,6 +423,7 @@ jobs:
 
       - name: Run WASI examples on wasmtime
         run: |
+          export PATH="$HOME/.wasmtime/bin:$PATH"
           for f in examples/wasm/hello.mn examples/wasm/wasi_app.mn; do
             if [ -f "$f" ]; then
               echo "--- Running $f (wasm32-wasi) ---"
@@ -502,6 +729,50 @@ jobs:
           echo "Golden smoke: ${PASS} pass, ${FAIL} fail"
           [ "${FAIL}" -eq 0 ]
 
-  # Fixed-point verification (manual milestone check, not per-PR).
-  # Run locally: bash scripts/verify_fixed_point.sh
-  # Blocked until emit_llvm.mn handles all IR constructs.
+  # ---------------------------------------------------------------------------
+  # Fixed-point verification: compiler compiles itself
+  # ---------------------------------------------------------------------------
+  fixed-point:
+    name: Fixed-Point Bootstrap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare
+        run: pip install -e ".[dev]"
+
+      - name: Install LLVM tools
+        run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
+
+      - name: Symlink clang
+        run: sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+
+      - name: Symlink llvm-as
+        run: sudo ln -sf /usr/bin/llvm-as-18 /usr/bin/llvm-as
+
+      - name: Build stage1
+        run: python scripts/build_stage1.py --use-committed
+
+      # v4.29.0: the fixed-point job used to build stage2 by hand and
+      # then compare the results with a step whose failure mode was
+      # ``echo "Near fixed-point"``. Combined with the in-script
+      # ``EXIT=0`` and ``|| true`` patterns, the whole job was
+      # structurally incapable of failing — which made the v4.17.0
+      # "fixed-point bootstrap" claim unfalsifiable by construction
+      # (v4.26.0 panel: Rattler #7, Anaconda). All of that logic is
+      # now inside ``scripts/verify_fixed_point.sh`` with real teeth
+      # (``set -e``, explicit regression threshold, non-empty
+      # stage3.ll check, llvm-as validation). This job delegates to
+      # the script and propagates its exit code.
+      - name: Verify fixed-point bootstrap
+        shell: bash
+        run: |
+          set -e
+          ulimit -s 65536
+          bash scripts/verify_fixed_point.sh

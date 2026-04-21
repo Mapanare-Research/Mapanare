@@ -1,10 +1,32 @@
 #!/usr/bin/env bash
 # Mapanare Language Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/Mapanare-Research/Mapanare/main/install.sh | bash
+# Usage:
+#   curl -fsSL https://mapanare.dev/install | bash
+#   curl -fsSL https://mapanare.dev/install | bash -s -- --version 4.0.0
+#   curl -fsSL https://mapanare.dev/install | bash -s -- --install-dir ~/.local/bin
 set -euo pipefail
 
 REPO="Mapanare-Research/Mapanare"
 INSTALL_DIR="${MAPANARE_INSTALL_DIR:-/usr/local/bin}"
+REQUESTED_VERSION=""
+
+# ---------- Parse arguments ----------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version)    REQUESTED_VERSION="$2"; shift 2 ;;
+    --install-dir) INSTALL_DIR="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: curl -fsSL https://mapanare.dev/install | bash -s -- [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --version VERSION    Install a specific version (e.g. 4.0.0)"
+      echo "  --install-dir DIR    Install to DIR (default: /usr/local/bin)"
+      echo "  --help               Show this help"
+      exit 0 ;;
+    *) echo "Unknown option: $1. Use --help for usage."; exit 1 ;;
+  esac
+done
+
 TMP_DIR="$(mktemp -d)"
 
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -29,7 +51,16 @@ esac
 ARTIFACT="mapanare-${PLATFORM}-${ARCH_TAG}.tar.gz"
 
 # ---------- Resolve version ----------
-VERSION="${MAPANARE_VERSION:-latest}"
+if [ -n "$REQUESTED_VERSION" ]; then
+  # Ensure v prefix
+  case "$REQUESTED_VERSION" in
+    v*) VERSION="$REQUESTED_VERSION" ;;
+    *)  VERSION="v${REQUESTED_VERSION}" ;;
+  esac
+else
+  VERSION="${MAPANARE_VERSION:-latest}"
+fi
+
 if [ "$VERSION" = "latest" ]; then
   echo "Fetching latest release..."
   VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')"
@@ -37,7 +68,7 @@ fi
 
 if [ -z "$VERSION" ]; then
   echo "Error: Could not determine latest version."
-  echo "Set MAPANARE_VERSION=vX.Y.Z to install a specific version."
+  echo "Set MAPANARE_VERSION=vX.Y.Z or use --version to install a specific version."
   exit 1
 fi
 
@@ -94,6 +125,41 @@ if [ -d "${TMP_DIR}/mapanare/_internal" ]; then
   fi
 fi
 
+# ---------- Install mapanare-up (version manager) ----------
+MAPANARE_HOME="${MAPANARE_HOME:-$HOME/.mapanare}"
+UP_DIR="$MAPANARE_HOME/bin"
+mkdir -p "$UP_DIR"
+
+echo "Installing version manager (mapanare-up)..."
+UP_URL="https://raw.githubusercontent.com/${REPO}/main/packaging/mapanare-up.sh"
+SHIM_URL="https://raw.githubusercontent.com/${REPO}/main/packaging/mapanare-shim.sh"
+
+curl -fsSL "$UP_URL" -o "$UP_DIR/mapanare-up" 2>/dev/null && chmod +x "$UP_DIR/mapanare-up" || true
+curl -fsSL "$SHIM_URL" -o "$UP_DIR/mapanare-shim" 2>/dev/null && chmod +x "$UP_DIR/mapanare-shim" || true
+
+# Store this version for mapanare-up tracking
+VER_CLEAN="$(echo "$VERSION" | sed 's/^v//')"
+DEST_DIR="$MAPANARE_HOME/versions/$VER_CLEAN"
+mkdir -p "$DEST_DIR"
+if [ -f "${INSTALL_DIR}/mapanare" ]; then
+  ln -sf "${INSTALL_DIR}/mapanare" "$DEST_DIR/mapanare" 2>/dev/null || true
+fi
+echo "$VER_CLEAN" > "$MAPANARE_HOME/default"
+
+# Add ~/.mapanare/bin to PATH if not already there
+SHELL_RC=""
+if [ -f "$HOME/.zshrc" ]; then
+  SHELL_RC="$HOME/.zshrc"
+elif [ -f "$HOME/.bashrc" ]; then
+  SHELL_RC="$HOME/.bashrc"
+fi
+
+if [ -n "$SHELL_RC" ] && ! grep -q 'mapanare/bin' "$SHELL_RC" 2>/dev/null; then
+  echo "" >> "$SHELL_RC"
+  echo '# Mapanare version manager' >> "$SHELL_RC"
+  echo 'export PATH="$HOME/.mapanare/bin:$PATH"' >> "$SHELL_RC"
+fi
+
 # ---------- Verify ----------
 echo ""
 if command -v mapanare &>/dev/null; then
@@ -107,6 +173,11 @@ if command -v mapanare &>/dev/null; then
   echo "  mapanare run main.mn       # compile & run"
   echo "  mapanare check main.mn     # type-check only"
   echo "  mapanare build main.mn     # native binary (requires LLVM)"
+  echo ""
+  echo "Version manager:"
+  echo "  mapanare-up list           # show installed versions"
+  echo "  mapanare-up install 4.0.0  # install a specific version"
+  echo "  mapanare-up default 4.0.0  # set global default"
 else
   echo "Installed to ${INSTALL_DIR}/mapanare"
   echo ""

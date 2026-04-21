@@ -558,6 +558,7 @@ Mapanare ships with native stdlib modules written in `.mn`. Import them and comp
 
 ### HTTP Client
 
+<!-- pseudo -->
 ```mn
 import net/http
 
@@ -573,6 +574,7 @@ fn main() {
 
 ### JSON Parsing
 
+<!-- pseudo -->
 ```mn
 import encoding/json
 
@@ -592,6 +594,7 @@ fn main() {
 
 ### CSV Processing
 
+<!-- pseudo -->
 ```mn
 import encoding/csv
 

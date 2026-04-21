@@ -1,0 +1,227 @@
+{
+  "main": {
+    "id": "ece52c70f8d02430",
+    "type": "split",
+    "children": [
+      {
+        "id": "797767e85387947f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b66106f6e7cad452",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Benchmarks/Benchmarks Overview.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Benchmarks Overview"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "7c08a97ae78fe000",
+    "type": "split",
+    "children": [
+      {
+        "id": "f45ca637b059cb96",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "9e19819bb42d84a2",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "06e64ccbecc3db91",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "0e2a61cc273560df",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "758051b1e86ab63d",
+    "type": "split",
+    "children": [
+      {
+        "id": "ba125c05120432c7",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "82c0366ce79cf374",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Benchmarks/Benchmarks Overview.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for Benchmarks Overview"
+            }
+          },
+          {
+            "id": "0ebd93094e59dc83",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Benchmarks/Benchmarks Overview.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from Benchmarks Overview"
+            }
+          },
+          {
+            "id": "b206538e88f875f2",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "e1d9b688adfe3fa4",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "7e54f0bd8b5f7d4a",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Benchmarks/Benchmarks Overview.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of Benchmarks Overview"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "9e19819bb42d84a2",
+  "lastOpenFiles": [
+    "Benchmarks/Benchmarks Overview.md.tmp.3241.1776214136296",
+    "Versions/v4.26.0.md",
+    "History/v4 Era - Production.md",
+    "Boa.md",
+    "Bugs/async-error-messages.md",
+    "Decisions/Architecture Decisions.md",
+    "Decisions/ADR-001 Bitfield vs int8 for is_heap.md",
+    "Bugs/version-string-stale.md",
+    "History/Timeline.md",
+    "Dashboard.md",
+    "Untitled.canvas",
+    "Untitled 1.canvas",
+    "Bugs/closure-type-annotations.md",
+    "Versions/v4.107.0.md",
+    "Versions/v4.107.0.md.tmp.3241.1776147718268",
+    "Versions/v4.106.0.md",
+    "Versions/v4.106.0.md.tmp.3241.1776147706336",
+    "Versions/v4.103.0.md",
+    "Versions/v4.103.0.md.tmp.3241.1776147693281",
+    "Versions/v4.102.0.md",
+    "Versions/v4.102.0.md.tmp.3241.1776147682348",
+    "Versions/v4.71.0.md",
+    "Versions/v4.71.0.md.tmp.3241.1776147670731",
+    "History/v4 Era - Production.md.tmp.3241.1776147668208",
+    "Bugs/byref-size-heuristic.md",
+    "Bugs/binary-corruption-disclosure.md",
+    "Versions/v4.67.0.md",
+    "Versions/v4.67.0.md.tmp.3241.1776147663270",
+    "Bugs/await-identity-lowering.md",
+    "Bugs/agent-inbox-mpsc-race.md",
+    "Benchmarks/Benchmarks Overview.md",
+    "Versions/v4.66.0.md",
+    "Versions/v4.66.0.md.tmp.3241.1776147653343",
+    "Versions/v4.61.0.md",
+    "Versions/v4.61.0.md.tmp.3241.1776147645875",
+    "Versions/v4.56.0.md",
+    "Versions/v4.56.0.md.tmp.3241.1776147638575",
+    "Versions/v4.51.0.md"
+  ]
+}

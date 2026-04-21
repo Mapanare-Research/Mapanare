@@ -20,6 +20,8 @@ Real-world examples and patterns for common tasks. Each recipe is a complete, ru
 12. [Calling Python Libraries](#12-calling-python-libraries)
 13. [Trait Polymorphism](#13-trait-polymorphism)
 14. [Command-Line Calculator](#14-command-line-calculator)
+15. [Tensor Operations: Linear Regression](#15-tensor-operations-linear-regression)
+16. [Async/Await](cookbook/async.md) (separate chapter)
 
 ---
 
@@ -108,12 +110,28 @@ fn main() {
 }
 ```
 
+**Bounds checking.** Reading or writing `list[i]` where `i < 0` or `i >= list.length()` is a hard abort, not a silent zero. The runtime
+prints `mapanare: list index N out of bounds (len=M)` on stderr and calls
+`abort()` at the call site. For defensive code, guard the access:
+
+```mn
+if i < list.length() && i >= 0 {
+    let x: Int = list[i]
+    // ...
+}
+```
+
+This replaces a v4.18.0–v4.31.0 era workaround where OOB reads silently
+returned zeros from a 4KB thread-local buffer — that workaround papered
+over upstream bugs and is gone as of v4.32.0 (Viper V2, arc-end panel).
+
 ---
 
 ## 4. Error Handling Pipeline
 
 Chaining operations that can fail using `Result<T, E>` and `?`.
 
+<!-- pseudo -->
 ```mn
 fn parse_number(s: String) -> Result<Int, String> {
     // Simulate parsing
@@ -207,6 +225,7 @@ fn main() {
 
 Model application states with enums and pattern matching.
 
+<!-- pseudo -->
 ```mn
 enum OrderStatus {
     Pending,
@@ -251,6 +270,7 @@ fn main() {
 
 Build reusable containers with generics.
 
+<!-- pseudo -->
 ```mn
 struct Stack<T> {
     items: List<T>,
@@ -431,6 +451,7 @@ hot: true
 
 Process sequences of data with composable operators.
 
+<!-- pseudo -->
 ```mn
 fn main() {
     let numbers = stream([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
@@ -464,45 +485,50 @@ fn main() {
 
 ---
 
-## 12. Calling Python Libraries
+## 12. Calling Python Libraries (via FFI bindings)
 
-Use `extern "Python"` to call any Python function.
+> **v4.29.0 note.** The old `extern "Python" fn` syntax was removed.
+> Python interop now goes through `mapanare bind --lang python`, which
+> generates a ctypes wrapper against your compiled `.mn` module. Read
+> top-to-bottom once and the pattern will feel identical to other FFI
+> bindings (TypeScript, Go, etc.).
 
-```mn
-extern "Python" fn math::sqrt(x: Float) -> Float
-extern "Python" fn math::floor(x: Float) -> Float
+**Step 1.** Write your Mapanare module and compile it to a shared
+library:
 
-fn distance(x1: Float, y1: Float, x2: Float, y2: Float) -> Float {
-    let dx = x2 - x1
-    let dy = y2 - y1
-    return math::sqrt(dx * dx + dy * dy)
-}
-
-fn main() {
-    let d = distance(0.0, 0.0, 3.0, 4.0)
-    print("distance: ${str(d)}")
-}
+```bash
+mapanare build --release --crate-type=cdylib math_utils.mn -o libmath_utils.so
 ```
 
-### With Error Handling
+**Step 2.** Generate the Python binding:
 
-```mn
-extern "Python" fn json::loads(s: String) -> Result<String, String>
-
-fn main() {
-    let valid = json::loads("{\"name\": \"Mapanare\"}")
-    match valid {
-        Ok(data) => print("parsed: ${data}"),
-        Err(e) => print("error: ${e}"),
-    }
-
-    let invalid = json::loads("not json")
-    match invalid {
-        Ok(data) => print("parsed: ${data}"),
-        Err(e) => print("parse error: ${e}"),
-    }
-}
+```bash
+mapanare bind --lang python math_utils.mn -o math_utils_py.py
 ```
+
+**Step 3.** Import and use from Python:
+
+```python
+from math_utils_py import distance
+
+d = distance(0.0, 0.0, 3.0, 4.0)
+print(f"distance: {d}")
+```
+
+### Calling Python from Mapanare
+
+The reverse direction — calling a Python library **from** Mapanare —
+is less common and is deliberately not a first-class feature in v4.x.
+If you need it, two options work today:
+
+1. **Write a thin C wrapper around CPython's embed API**, declare it
+   with `extern "C" fn ...`, and link against `libpython3`. This is the
+   supported escape hatch and uses the same `extern "C"` FFI path as
+   any other C library.
+2. **Invert the control flow**: make Mapanare the library and Python
+   the driver. This is almost always cleaner — type-safe Mapanare code
+   called from a Python script is more robust than type-erased Python
+   called from Mapanare.
 
 ---
 
@@ -559,6 +585,7 @@ fn main() {
 
 A small program combining parsing, error handling, and pattern matching.
 
+<!-- pseudo -->
 ```mn
 enum Op {
     Add,
@@ -614,6 +641,369 @@ error: division by zero
 
 ---
 
+## 15. Tensor Operations: Linear Regression
+
+Tensor creation, broadcasting, reductions, and slicing in a practical ML context.
+
+```mn
+fn main() {
+    // Training data: y = 2x + 1
+    let X = Tensor<Float>[1.0, 2.0, 3.0, 4.0, 5.0]
+    let y = Tensor<Float>[3.0, 5.0, 7.0, 9.0, 11.0]
+
+    // Initialize weights
+    let mut w = 0.0
+    let mut b = 0.0
+    let lr = 0.01
+    let n = 5.0
+
+    // Gradient descent
+    for epoch in 0..10 {
+        // Forward: pred = w * X + b (scalar broadcast)
+        let pred = X * w + b
+
+        // Error vector (element-wise subtraction)
+        let error = pred - y
+
+        // Gradients via reductions
+        let grad_w = (error * X).sum() * 2.0 / n
+        let grad_b = error.sum() * 2.0 / n
+
+        // Update
+        w = w - lr * grad_w
+        b = b - lr * grad_b
+    }
+
+    print("w = " + str(w))   // approaching 2.0
+    print("b = " + str(b))   // approaching 1.0
+    print("converging")
+
+    // Reductions
+    let t = Tensor<Float>[1.0, 4.0, 2.0, 5.0, 3.0]
+    print(str(t.sum()))       // 15.0
+    print(str(t.max()))       // 5.0
+    print(str(t.argmax()))    // 3
+
+    // Slicing (2D)
+    let m = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]
+    let top = m[0..2, _]
+    print(str(tensor_size(top)))
+}
+```
+
+This recipe demonstrates:
+- **Tensor literals** with `Tensor<Type>[...]` syntax
+- **Scalar broadcasting** (`X * w + b` broadcasts scalar across tensor)
+- **Element-wise operations** (`pred - y`, `error * X`)
+- **Reductions** (`.sum()`, `.max()`, `.argmax()`)
+- **2D slicing** with range and wildcard (`m[0..2, _]`)
+
+---
+
+## 16. AI: Chat with an LLM
+
+Talk to any LLM with a unified interface. Supports OpenAI, Anthropic, Groq, and Ollama.
+
+<!-- pseudo -->
+```mn
+import ai::llm
+
+fn main() {
+    // Ollama: no API key needed, runs locally
+    let config = llm.ollama("llama3.2")
+
+    let response = llm.chat(config, [
+        llm.system_msg("Be concise."),
+        llm.user_msg("What is 2 + 2?")
+    ])
+
+    match response {
+        Ok(r) => print(r.content),
+        Err(e) => print(llm.error_message(e))
+    }
+}
+```
+
+This recipe demonstrates:
+- **Unified LLM interface** across 5 providers via `llm.mn`
+- **Result-based error handling** (`Result<LLMResponse, LLMError>`)
+- **Message constructors** (`system_msg`, `user_msg`, `assistant_msg`)
+- **Environment config** via `llm.default_config()` + `MAPANARE_LLM_*` env vars
+
+---
+
+## 17. Embeddings: Semantic Search
+
+Generate vector embeddings and search by similarity.
+
+<!-- pseudo -->
+```mn
+import ai::embedding
+
+fn main() {
+    let config = ollama_embed("nomic-embed-text")
+    let r1 = embed(config, "Mapanare is a compiled language")
+    let r2 = embed(config, "Rust is a systems language")
+    let r3 = embed(config, "cats are cute animals")
+
+    match r1 {
+        Ok(e1) => {
+            // Cosine similarity: higher = more similar
+            let sim12 = cosine_similarity(e1.vector, r2.vector)
+            let sim13 = cosine_similarity(e1.vector, r3.vector)
+            print("lang vs lang: " + str(sim12))
+            print("lang vs cats: " + str(sim13))
+        },
+        Err(e) => print(error_message(e))
+    }
+}
+```
+
+This recipe demonstrates:
+- **Vector embeddings** via Ollama (no API key)
+- **Cosine similarity** for semantic comparison
+- Also available: `dot_product()`, `euclidean_distance()`, `normalize()`
+
+---
+
+## 18. RAG: Retrieval-Augmented Generation
+
+Chunk documents, embed them, search by query, augment LLM prompts.
+
+<!-- pseudo -->
+```mn
+import ai::rag
+import ai::embedding
+
+fn main() {
+    let chunks = chunk_by_sentences("Long document text here...", 200)
+    // Embed each chunk, store in vector index, search by query
+    let context = build_context_simple(["relevant chunk 1", "relevant chunk 2"])
+    let prompt = augment_prompt("What is the main topic?", context)
+    print(prompt)
+}
+```
+
+This recipe demonstrates:
+- **Sentence-aware chunking** (`chunk_by_sentences`, `chunk_by_paragraphs`)
+- **Context building** from retrieved chunks
+- **Prompt augmentation** for RAG-style Q&A
+- Also available: `chunk_documents()` for multi-document, `build_context_budgeted()` for token limits
+
+---
+
+## Building an AI Agent in Mapanare
+
+This chapter walks through building a complete AI application using Mapanare's stdlib AI modules. By the end, you'll have a retrieval-augmented generation (RAG) agent that answers questions from a document corpus.
+
+### Prerequisites
+
+Install Ollama and pull two models:
+
+```bash
+ollama serve
+ollama pull llama3.2           # Chat model
+ollama pull nomic-embed-text   # Embedding model
+```
+
+No API keys required. Everything runs locally.
+
+### Step 1: Talk to an LLM
+
+The simplest AI program in Mapanare is a single chat call:
+
+<!-- pseudo -->
+```mn
+import ai::llm
+
+fn main() {
+    let config = ollama("llama3.2")
+    let result = chat(config, [
+        system_msg("Be concise."),
+        user_msg("What is 2+2?")
+    ])
+    match result {
+        Ok(r) => print(r.content),
+        Err(e) => print(error_message(e))
+    }
+}
+```
+
+The `chat()` function works with OpenAI, Anthropic, Groq, and Ollama. Switch backends by changing the config constructor:
+
+<!-- pseudo -->
+```mn
+let openai_config = openai("sk-...", "gpt-4o")
+let claude_config = anthropic("sk-ant-...", "claude-sonnet-4-20250514")
+let local_config = ollama("llama3.2")
+```
+
+### Step 2: Structured Extraction
+
+Use `__struct_meta::<T>()` to extract typed data from unstructured text:
+
+<!-- pseudo -->
+```mn
+import ai::llm
+
+struct Address {
+    street: String,
+    city: String,
+    state: String,
+    zip: String,
+}
+
+fn main() {
+    let config = ollama("llama3.2")
+    let schema = __struct_meta::<Address>()
+    let result = extract_text(config, schema, "123 Main St, Springfield, IL 62701")
+    match result {
+        Ok(json) => print(json),
+        Err(e) => print(extract_error_message(e))
+    }
+}
+```
+
+The `__struct_meta::<T>()` builtin generates a JSON schema at compile time from the struct definition. The LLM is prompted to return JSON matching that schema. If the response is malformed, `extract_with_schema()` retries automatically (up to 2 times by default).
+
+### Step 3: Embed and Search
+
+Vector embeddings turn text into numbers that capture meaning. Similar texts have similar vectors.
+
+<!-- pseudo -->
+```mn
+import ai::embedding
+
+fn main() {
+    let config = ollama_embed("nomic-embed-text")
+
+    let r1 = embed(config, "Mapanare compiles to LLVM IR")
+    let r2 = embed(config, "Rust also uses LLVM")
+    let r3 = embed(config, "cats are fluffy")
+
+    // cosine_similarity: 1.0 = identical, 0.0 = unrelated
+    // r1 vs r2: high similarity (both about LLVM)
+    // r1 vs r3: low similarity (programming vs cats)
+}
+```
+
+The `VectorStore` provides in-memory top-k similarity search:
+
+<!-- pseudo -->
+```mn
+import ai::embedding
+
+fn main() {
+    let config = ollama_embed("nomic-embed-text")
+    let store = new_store()
+
+    // Add documents
+    let e1 = embed(config, "agents are concurrent")
+    store_add(store, "doc1", "agents are concurrent", e1.vector)
+
+    // Search
+    let q = embed(config, "how does concurrency work?")
+    let results = store_search(store, q.vector, 3)
+    // results[0] is the most similar document
+}
+```
+
+### Step 4: Chunk Documents for RAG
+
+Real documents are too long to embed as a single vector. Split them into passages first:
+
+<!-- pseudo -->
+```mn
+import ai::rag
+
+fn main() {
+    let text = "Long document text. Multiple sentences. Each one matters."
+    let chunks = chunk_by_sentences(text, 200)
+    // Each chunk is ~200 characters, split on sentence boundaries
+    // Also available: chunk_text (fixed-size), chunk_by_paragraphs
+}
+```
+
+### Step 5: The Full RAG Pipeline
+
+Combine everything: chunk documents, embed chunks, build an index, query with context, ask the LLM:
+
+<!-- pseudo -->
+```mn
+import ai::llm
+import ai::embedding
+import ai::rag
+
+fn main() {
+    let embed_config = ollama_embed("nomic-embed-text")
+    let llm_config = ollama("llama3.2")
+
+    // 1. Chunk and embed documents
+    let docs = ["Agents are concurrent...", "Signals are reactive..."]
+    let store = new_store()
+    // ... embed each doc, store_add to index ...
+
+    // 2. At query time: embed query, search, augment, ask
+    let query = "How do agents work?"
+    let q_emb = embed(embed_config, query)
+    let results = store_search(store, q_emb.vector, 3)
+
+    // 3. Build context from top results
+    let context = build_context_simple(["chunk1 text", "chunk2 text"])
+    let augmented = augment_prompt(query, context)
+
+    // 4. Ask LLM with context
+    let answer = chat(llm_config, [
+        system_msg("Answer based on the provided context."),
+        user_msg(augmented)
+    ])
+}
+```
+
+See `examples/ai/rag_agent.mn` for the complete, runnable version.
+
+### Step 6: Wrap It in an Agent
+
+Mapanare agents make it natural to build concurrent AI services:
+
+<!-- pseudo -->
+```mn
+agent QABot {
+    input question: String
+    output answer: String
+
+    fn handle(question: String) -> String {
+        // RAG pipeline here: embed, search, augment, chat
+        return "answer from LLM"
+    }
+}
+
+fn main() {
+    let bot = spawn QABot()
+    bot.question <- "What are signals?"
+    let response = sync bot.answer
+    print(response)
+    sync bot.stop()
+}
+```
+
+The agent handles concurrency, message queuing, and lifecycle automatically. You can spawn multiple agents for parallel multi-model queries, consensus voting, or pipeline architectures.
+
+### Summary
+
+The AI stdlib (`stdlib/ai/`) provides four modules:
+
+| Module | Purpose |
+|--------|---------|
+| `llm.mn` | Chat, streaming, structured extraction, retry, fallback, consensus |
+| `embedding.mn` | Vector embeddings, similarity search, vector store |
+| `rag.mn` | Chunking, context building, prompt augmentation |
+| `structured.mn` | Documentation for `__struct_meta::<T>()` and `extract_with_schema()` |
+
+Combined with first-class agents, signals, and streams, Mapanare makes AI applications feel like regular code instead of framework glue.
+
+---
+
 ## Tips and Patterns
 
 ### Prefer `Result` over Panics
@@ -627,6 +1017,46 @@ If a task can run independently, wrap it in an agent. Agents handle concurrency,
 ### Use Signals for Reactive State
 
 When multiple values depend on a source, use signals instead of manual update calls.
+
+### Match Guards for Conditional Patterns
+
+Use `if` guards to add conditions to match arms:
+
+```mn
+fn classify(n: Int) -> String {
+    match n {
+        x if x < 0 => "negative",
+        0 => "zero",
+        x if x > 0 && x < 10 => "small",
+        x if x >= 10 => "large",
+        _ => "other"
+    }
+}
+```
+
+### Or-Patterns for Variant Groups
+
+Use `|` to group patterns that share the same action:
+
+```mn
+match token {
+    Plus | Minus => "additive",
+    Star | Slash | Mod => "multiplicative",
+    _ => "other"
+}
+```
+
+### The `?` Operator for Error Propagation
+
+Use `?` to propagate errors concisely instead of nested match expressions:
+
+```mn
+fn load_config(path: String) -> Result<Config, String> {
+    let text = read_file(path)?
+    let parsed = parse_json(text)?
+    return Ok(parsed)
+}
+```
 
 ### Leverage the Pipe Operator
 

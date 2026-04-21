@@ -1,0 +1,70 @@
+Mapanare Golden Tests (64 tests, mode: compare)
+
+PASS 01_hello 3L->41L 2bb 9stk 772ms (1 fns) stg1:1fns 70ms
+PASS 02_arithmetic 4L->55L 4bb 25stk 6ms (1 fns) stg1:1fns 75ms
+FAIL 03_function 8L->59L 6bb 25stk 6ms (1 fns) stg1:FAIL
+PASS 04_if_else 8L->45L 4bb 9stk 6ms (1 fns) stg1:1fns 85ms
+FAIL 05_for_loop 7L->105L 7bb 75stk 6ms (1 fns) stg1:FAIL
+PASS 06_struct 9L->70L 4bb 49stk 6ms (1 fns) stg1:1fns 84ms
+PASS 07_enum_match 13L->76L 5bb 42stk 16ms (1 fns) stg1:1fns 72ms
+PASS 08_list 5L->112L 6bb 121stk 6ms (1 fns) stg1:1fns 77ms
+PASS 09_string_methods 5L->97L 6bb 51stk 4ms (1 fns) stg1:1fns 74ms
+PASS 10_result 14L->151L 10bb 147stk 6ms (2 fns) stg1:2fns 91ms
+FAIL 11_closure 5L->111L 8bb 89stk 5ms (1 fns) stg1:FAIL
+PASS 12_while 7L->86L 7bb 58stk 4ms (1 fns) stg1:1fns 85ms
+FAIL 13_fib 10L->121L 9bb 106stk 4ms (2 fns) stg1:FAIL
+PASS 14_nested_struct 9L->70L 4bb 49stk 5ms (1 fns) stg1:1fns 72ms
+FAIL 15_multifunction 12L->87L 10bb 50stk 6ms (1 fns) stg1:FAIL
+PASS 16_string_escape 8L->65L 2bb 27stk 8ms (1 fns) stg1:1fns 125ms
+PASS 17_option 19L->197L 15bb 173stk 8ms (2 fns) stg1:2fns 98ms
+PASS 18_method_chain 9L->133L 8bb 84stk 5ms (1 fns) stg1:1fns 81ms
+FAIL 19_nested_match 18L->208L 15bb 186stk 8ms (2 fns) stg1:FAIL
+FAIL 20_recursion 11L->139L 11bb 123stk 4ms (2 fns) stg1:FAIL
+FAIL 21_list_ops 15L->239L 13bb 277stk 5ms (2 fns) stg1:FAIL
+FAIL 22_string_builder 14L->159L 11bb 124stk 5ms (2 fns) stg1:FAIL
+FAIL 23_multi_return 15L->117L 8bb 98stk 6ms (1 fns) stg1:FAIL
+FAIL 24_enum_methods 20L->118L 8bb 82stk 5ms (2 fns) stg1:FAIL
+FAIL 25_fizzbuzz 18L->213L 20bb 166stk 6ms (2 fns) stg1:FAIL
+FAIL 26_generics 29L->125L 12bb 63stk 7ms (1 fns) stg1:FAIL
+FAIL 27_impl 21L->77L 6bb 50stk 6ms (1 fns) stg1:FAIL
+FAIL 28_traits 25L->82L 6bb 58stk 5ms (1 fns) stg1:FAIL
+FAIL 29_generic_impl 24L->89L 8bb 59stk 5ms (1 fns) stg1:FAIL
+PASS 30_nested_generics 20L->124L 2bb 117stk 5ms (1 fns) stg1:1fns 73ms
+FAIL 31_generic_multi 35L->129L 12bb 93stk 7ms (1 fns) stg1:FAIL
+PASS 32_generic_enum 16L->48L 2bb 18stk 5ms (1 fns) stg1:1fns 84ms
+FAIL 33_break_continue 58L->437L 36bb 446stk 8ms (5 fns) stg1:FAIL
+PASS 34_file_io 19L->245L 12bb 185stk 5ms (1 fns) stg1:1fns 71ms
+PASS 35_stdin 4L->101L 8bb 65stk 4ms (1 fns) stg1:1fns 73ms
+PASS 36_crypto 13L->156L 12bb 108stk 6ms (1 fns) stg1:1fns 105ms
+PASS 37_regex 10L->172L 8bb 109stk 5ms (1 fns) stg1:1fns 85ms
+PASS 38_http 5L->83L 6bb 49stk 5ms (1 fns) stg1:1fns 80ms
+PASS 39_gpu_detect 8L->153L 13bb 100stk 4ms (1 fns) stg1:1fns 102ms
+FAIL 40_gpu_tensor 18L->398L 25bb 478stk 7ms (1 fns) stg1:FAIL
+FAIL 41_module_let 13L->54L 4bb 18stk 4ms (1 fns) stg1:FAIL
+FAIL 42_module_let_string 19L->58L 4bb 18stk 4ms (1 fns) stg1:FAIL
+FAIL 43_module_let_math 19L->58L 4bb 18stk 4ms (1 fns) stg1:FAIL
+FAIL 45_ffi_bind 15L->107L 9bb 83stk 5ms (2 fns) stg1:FAIL
+FAIL 47_try_operator 32L->297L 23bb 279stk 7ms (4 fns) stg1:FAIL
+FAIL 48_match_nested_exhaustive 23L->346L 32bb 309stk 6ms (3 fns) stg1:FAIL
+FAIL 49_match_guards 16L->214L 16bb 169stk 6ms (2 fns) stg1:FAIL
+FAIL 49_tensor_literal 58L->744L 48bb 826stk 10ms (1 fns) stg1:FAIL
+FAIL 50_match_or_patterns 25L->186L 11bb 140stk 6ms (2 fns) stg1:FAIL
+FAIL 50_tensor_indexing 46L->687L 34bb 899stk 8ms (1 fns) stg1:FAIL
+FAIL 51_match_guards_and_or 17L->0L 0bb 0stk 4ms
+FAIL 51_tensor_broadcast 57L->632L 48bb 660stk 8ms (1 fns) stg1:FAIL
+FAIL 52_tensor_slicing 49L->668L 42bb 750stk 7ms (1 fns) stg1:FAIL
+FAIL 53_linear_regression 43L->399L 25bb 413stk 6ms (1 fns) stg1:FAIL
+FAIL 54_const_basic 12L->95L 6bb 59stk 5ms (1 fns) stg1:FAIL
+FAIL 55_async_basic 12L->143L 11bb 41stk 4ms (2 fns) stg1:FAIL
+FAIL 56_async_await 17L->232L 22bb 73stk 5ms (3 fns) stg1:FAIL
+FAIL 57_real_await 28L->401L 44bb 121stk 5ms (5 fns) stg1:FAIL
+FAIL 58_async_file_io 28L->318L 34bb 90stk 7ms (4 fns) stg1:FAIL
+FAIL 58_const_scope 21L->70L 10bb 18stk 6ms (1 fns) stg1:FAIL
+FAIL 59_async_fanout 63L->1024L 121bb 345stk 8ms (12 fns) stg1:FAIL
+FAIL 62_list_output 35L->304L 20bb 289stk 8ms (2 fns) stg1:FAIL
+FAIL 63_else_sino 40L->268L 20bb 250stk 7ms (3 fns) stg1:FAIL
+FAIL 64_closure_typed 25L->254L 22bb 260stk 8ms (1 fns) stg1:FAIL
+
+43 failed, 21 passed in 6.5s
+Benchmarks: tests/golden/BENCHMARKS-linux.md
+History: tests/golden/HISTORY.jsonl

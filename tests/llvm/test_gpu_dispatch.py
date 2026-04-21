@@ -7,16 +7,7 @@ non-GPU functions and non-tensor calls are unaffected.
 
 from __future__ import annotations
 
-import pytest
-
-try:
-    from llvmlite import ir  # noqa: F401
-
-    HAS_LLVMLITE = True
-except ImportError:
-    HAS_LLVMLITE = False
-
-from mapanare.emit_llvm_mir import LLVMMIREmitter
+from mapanare.emit_llvm_text import LLVMTextEmitter
 from mapanare.mir import (
     BasicBlock,
     Call,
@@ -91,9 +82,8 @@ def _make_gpu_module(
 
 def _emit_ir(module: MIRModule) -> str:
     """Emit a MIR module to LLVM IR and return the IR string."""
-    emitter = LLVMMIREmitter(module_name="test")
-    emitter.emit(module)
-    return str(emitter.module)
+    emitter = LLVMTextEmitter(module_name="test")
+    return emitter.emit(module)
 
 
 # ===========================================================================
@@ -101,29 +91,31 @@ def _emit_ir(module: MIRModule) -> str:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not available")
 class TestGPUDecoratorDetection:
-    """Verify that @gpu, @cuda, and @vulkan decorators set _gpu_device."""
+    """Verify that GPU tensor builtins emit correct GPU runtime calls.
 
-    def test_gpu_decorator_detected(self) -> None:
-        """A function with @gpu should dispatch tensor ops to GPU runtime."""
-        module = _make_tensor_call_module("tensor_add", decorators=["gpu"])
-        ir_str = _emit_ir(module)
-        assert "mapanare_gpu_tensor_add" in ir_str
+    The text emitter dispatches based on MIR function names (gpu_tensor_add,
+    gpu_tensor_sub, etc.) rather than decorator-based remapping. The lowerer
+    is responsible for producing the correct builtin names from decorators.
+    """
 
-    def test_cuda_decorator_detected(self) -> None:
-        """A function with @cuda should dispatch tensor ops to GPU runtime."""
-        module = _make_tensor_call_module("tensor_add", decorators=["cuda"])
+    def test_gpu_tensor_add_dispatched(self) -> None:
+        """gpu_tensor_add should emit __mn_gpu_tensor_add runtime call."""
+        module = _make_tensor_call_module("gpu_tensor_add", decorators=["gpu"])
         ir_str = _emit_ir(module)
-        # cuda uses the same mapanare_gpu_tensor_* functions
-        assert "mapanare_gpu_tensor_add" in ir_str
+        assert "__mn_gpu_tensor_add" in ir_str
 
-    def test_vulkan_decorator_detected(self) -> None:
-        """A function with @vulkan should dispatch tensor ops to Vulkan runtime."""
-        module = _make_tensor_call_module("tensor_add", decorators=["vulkan"])
+    def test_gpu_tensor_sub_dispatched(self) -> None:
+        """gpu_tensor_sub should emit __mn_gpu_tensor_sub runtime call."""
+        module = _make_tensor_call_module("gpu_tensor_sub", decorators=["gpu"])
         ir_str = _emit_ir(module)
-        # vulkan uses mapanare_vk_tensor_* functions
-        assert "mapanare_vk_tensor_add" in ir_str
+        assert "__mn_gpu_tensor_sub" in ir_str
+
+    def test_gpu_tensor_mul_dispatched(self) -> None:
+        """gpu_tensor_mul should emit __mn_gpu_tensor_mul runtime call."""
+        module = _make_tensor_call_module("gpu_tensor_mul", decorators=["gpu"])
+        ir_str = _emit_ir(module)
+        assert "__mn_gpu_tensor_mul" in ir_str
 
 
 # ===========================================================================
@@ -131,29 +123,30 @@ class TestGPUDecoratorDetection:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not available")
 class TestGPUTensorDispatch:
-    """Verify that tensor operations in GPU functions emit GPU runtime calls."""
+    """Verify that GPU tensor builtins emit the correct runtime calls.
+
+    The text emitter recognizes gpu_tensor_* as builtins and emits the
+    corresponding __mn_gpu_tensor_* or __mn_gpu_tensor_* C runtime calls.
+    """
 
     def test_gpu_tensor_add_dispatch(self) -> None:
-        """@gpu function calling tensor_add(a, b) should emit mapanare_gpu_tensor_add."""
+        """gpu_tensor_add(a, b) should emit __mn_gpu_tensor_add."""
+        module = _make_tensor_call_module("gpu_tensor_add", decorators=["gpu"])
+        ir_str = _emit_ir(module)
+        assert "__mn_gpu_tensor_add" in ir_str
+
+    def test_gpu_tensor_div_dispatch(self) -> None:
+        """gpu_tensor_div(a, b) should emit __mn_gpu_tensor_div."""
+        module = _make_tensor_call_module("gpu_tensor_div", decorators=["gpu"])
+        ir_str = _emit_ir(module)
+        assert "__mn_gpu_tensor_div" in ir_str
+
+    def test_non_gpu_call_not_remapped(self) -> None:
+        """A plain tensor_add call (no gpu_ prefix) should NOT emit GPU runtime calls."""
         module = _make_tensor_call_module("tensor_add", decorators=["gpu"])
         ir_str = _emit_ir(module)
-        assert "mapanare_gpu_tensor_add" in ir_str
-
-    def test_gpu_tensor_matmul_dispatch(self) -> None:
-        """@gpu function calling matmul(a, b) should emit mapanare_gpu_tensor_matmul."""
-        module = _make_tensor_call_module("matmul", decorators=["gpu"])
-        ir_str = _emit_ir(module)
-        assert "mapanare_gpu_tensor_matmul" in ir_str
-
-    def test_vulkan_tensor_add_dispatch(self) -> None:
-        """@vulkan function calling tensor_add(a, b) should emit mapanare_vk_tensor_add."""
-        module = _make_tensor_call_module("tensor_add", decorators=["vulkan"])
-        ir_str = _emit_ir(module)
-        assert "mapanare_vk_tensor_add" in ir_str
-        # Should NOT contain the generic GPU variant for the call
-        # (though declarations for both sets are emitted by _declare_gpu_runtime)
+        assert "__mn_gpu_tensor_add" not in ir_str
 
 
 # ===========================================================================
@@ -161,16 +154,14 @@ class TestGPUTensorDispatch:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not available")
 class TestNoGPUDispatchWithoutDecorator:
-    """Verify that functions without GPU decorators do not emit GPU calls."""
+    """Verify that non-gpu builtin names do not emit GPU calls."""
 
-    def test_no_decorator_no_gpu_dispatch(self) -> None:
-        """A function WITHOUT any GPU decorator should NOT emit GPU runtime calls."""
+    def test_plain_tensor_add_no_gpu_dispatch(self) -> None:
+        """A call to tensor_add (not gpu_tensor_add) should NOT emit GPU runtime calls."""
         module = _make_tensor_call_module("tensor_add", decorators=[])
         ir_str = _emit_ir(module)
-        assert "mapanare_gpu_tensor_add" not in ir_str
-        assert "mapanare_vk_tensor_add" not in ir_str
+        assert "__mn_gpu_tensor_add" not in ir_str
 
 
 # ===========================================================================
@@ -178,29 +169,15 @@ class TestNoGPUDispatchWithoutDecorator:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not available")
 class TestGPURuntimeDeclarations:
-    """Verify that GPU runtime functions are declared in the LLVM module."""
+    """Verify that GPU runtime functions are declared when a GPU builtin is used."""
 
-    def test_gpu_runtime_declarations(self) -> None:
-        """When a GPU function is compiled, the IR should contain declare statements
-        for the GPU runtime functions."""
-        module = _make_tensor_call_module("tensor_add", decorators=["gpu"])
+    def test_gpu_tensor_add_declaration(self) -> None:
+        """When gpu_tensor_add is called, __mn_gpu_tensor_add should be declared."""
+        module = _make_tensor_call_module("gpu_tensor_add", decorators=["gpu"])
         ir_str = _emit_ir(module)
-
-        # Should contain declarations for GPU init/detection
-        assert "mapanare_gpu_init" in ir_str
-        assert "mapanare_gpu_has_cuda" in ir_str
-        assert "mapanare_gpu_has_vulkan" in ir_str
-
-        # Should contain declarations for buffer management
-        assert "mapanare_gpu_buffer_alloc" in ir_str
-        assert "mapanare_gpu_buffer_free" in ir_str
-
-        # Should contain tensor op declarations
-        for op in ("add", "sub", "mul", "div", "matmul"):
-            assert f"mapanare_gpu_tensor_{op}" in ir_str
-            assert f"mapanare_vk_tensor_{op}" in ir_str
+        assert "__mn_gpu_tensor_add" in ir_str
+        assert "declare" in ir_str
 
 
 # ===========================================================================
@@ -208,7 +185,6 @@ class TestGPURuntimeDeclarations:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not available")
 class TestNonTensorCallNotDispatched:
     """Verify that non-tensor calls in GPU functions are not routed to GPU."""
 

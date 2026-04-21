@@ -252,7 +252,16 @@ class Linter:
             self._collect_names_expr(expr.object)
         elif isinstance(expr, IndexExpr):
             self._collect_names_expr(expr.object)
-            self._collect_names_expr(expr.index)
+            from mapanare.ast_nodes import IndexItem
+
+            for it in expr.indices:
+                if isinstance(it, IndexItem):
+                    if it.expr:
+                        self._collect_names_expr(it.expr)
+                    if it.start:
+                        self._collect_names_expr(it.start)
+                    if it.end:
+                        self._collect_names_expr(it.end)
         elif isinstance(expr, PipeExpr):
             self._collect_names_expr(expr.left)
             self._collect_names_expr(expr.right)
@@ -340,7 +349,16 @@ class Linter:
         elif isinstance(expr.target, IndexExpr):
             # arr[i] = val — mark arr as mutated
             self._collect_names_expr(expr.target.object)
-            self._collect_names_expr(expr.target.index)
+            from mapanare.ast_nodes import IndexItem
+
+            for it in expr.target.indices:
+                if isinstance(it, IndexItem):
+                    if it.expr:
+                        self._collect_names_expr(it.expr)
+                    if it.start:
+                        self._collect_names_expr(it.start)
+                    if it.end:
+                        self._collect_names_expr(it.end)
             if isinstance(expr.target.object, Identifier):
                 info = self._scope.lookup(expr.target.object.name)
                 if info is not None:

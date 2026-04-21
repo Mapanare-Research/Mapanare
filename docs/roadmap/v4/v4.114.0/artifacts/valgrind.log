@@ -1,0 +1,31 @@
+=== 55_async_basic ===
+==35724== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+=== 56_async_await ===
+==35776== 8 bytes in 1 blocks are indirectly lost in loss record 1 of 3
+==35776== 16 bytes in 1 blocks are indirectly lost in loss record 2 of 3
+==35776== 56 (32 direct, 24 indirect) bytes in 1 blocks are definitely lost in loss record 3 of 3
+==35776== LEAK SUMMARY:
+==35776==    definitely lost: 32 bytes in 1 blocks
+==35776==    indirectly lost: 24 bytes in 2 blocks
+==35776==      possibly lost: 0 bytes in 0 blocks
+==35776==    still reachable: 0 bytes in 0 blocks
+==35776== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+=== 57_real_await ===
+==35812== 8 bytes in 1 blocks are indirectly lost in loss record 1 of 9
+==35812== 8 bytes in 1 blocks are indirectly lost in loss record 2 of 9
+==35812== 8 bytes in 1 blocks are indirectly lost in loss record 3 of 9
+==35812== 16 bytes in 1 blocks are indirectly lost in loss record 4 of 9
+==35812== 16 bytes in 1 blocks are indirectly lost in loss record 5 of 9
+==35812== 16 bytes in 1 blocks are indirectly lost in loss record 6 of 9
+==35812== 56 (32 direct, 24 indirect) bytes in 1 blocks are definitely lost in loss record 7 of 9
+==35812== 56 (32 direct, 24 indirect) bytes in 1 blocks are definitely lost in loss record 8 of 9
+==35812== 56 (32 direct, 24 indirect) bytes in 1 blocks are definitely lost in loss record 9 of 9
+==35812== LEAK SUMMARY:
+==35812==    definitely lost: 96 bytes in 3 blocks
+==35812==    indirectly lost: 72 bytes in 6 blocks
+==35812==      possibly lost: 0 bytes in 0 blocks
+==35812==    still reachable: 0 bytes in 0 blocks
+==35812== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+

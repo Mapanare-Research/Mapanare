@@ -1,0 +1,13 @@
+// Golden test: module-level let constants.
+
+let MAX_SIZE: Int = 100
+let PI_APPROX: Int = 3
+
+fn get_max() -> Int {
+    return MAX_SIZE
+}
+
+fn main() {
+    print(get_max())
+    print(PI_APPROX)
+}

@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 
 from mapanare.ast_nodes import FnDef, ImplDef, TraitDef
-from mapanare.emit_python import PythonEmitter
+from mapanare.lower import lower as build_mir
 from mapanare.parser import parse
 from mapanare.semantic import SemanticChecker
 
 try:
-    from mapanare.emit_llvm import LLVMEmitter
+    from mapanare.emit_llvm_text import LLVMTextEmitter
 
     HAS_LLVM = True
 except ImportError:
@@ -361,56 +361,6 @@ class TestTraitSemantic:
 # ---------------------------------------------------------------------------
 
 
-class TestTraitPythonEmission:
-    """Test Python backend emission of traits."""
-
-    def test_trait_emits_protocol(self) -> None:
-        src = "trait Display {\n    fn to_string(self) -> String\n}\n"
-        p = parse(src)
-        emitter = PythonEmitter()
-        code = emitter.emit(p)
-        assert "from typing import Protocol" in code
-        assert "class Display(Protocol):" in code
-        assert "def to_string(self) -> str: ..." in code
-
-    def test_trait_with_params_emits_protocol(self) -> None:
-        src = "trait Eq {\n    fn eq(self, other: Int) -> Bool\n}\n"
-        p = parse(src)
-        emitter = PythonEmitter()
-        code = emitter.emit(p)
-        assert "class Eq(Protocol):" in code
-        assert "def eq(self, other: int) -> bool: ..." in code
-
-    def test_empty_trait_emits_pass(self) -> None:
-        src = "trait Marker {\n}\n"
-        p = parse(src)
-        emitter = PythonEmitter()
-        code = emitter.emit(p)
-        assert "class Marker(Protocol):" in code
-        assert "pass" in code
-
-    def test_trait_impl_methods_merged_into_struct(self) -> None:
-        src = (
-            "trait Display {\n"
-            "    fn to_string(self) -> String\n"
-            "}\n"
-            "struct Point {\n"
-            "    x: Float,\n"
-            "    y: Float\n"
-            "}\n"
-            "impl Display for Point {\n"
-            "    fn to_string(self) -> String {\n"
-            '        return "point"\n'
-            "    }\n"
-            "}\n"
-        )
-        p = parse(src)
-        emitter = PythonEmitter()
-        code = emitter.emit(p)
-        assert "class Point:" in code
-        assert "def to_string(self)" in code
-
-
 # ---------------------------------------------------------------------------
 # LLVM emission tests
 # ---------------------------------------------------------------------------
@@ -481,7 +431,7 @@ class TestBuiltinTraits:
         assert len(errors) == 0
 
 
-@pytest.mark.skipif(not HAS_LLVM, reason="llvmlite not installed")
+@pytest.mark.skipif(not HAS_LLVM, reason="emit_llvm_text not available")
 class TestTraitLLVMEmission:
     """Test LLVM backend emission of traits."""
 
@@ -489,9 +439,9 @@ class TestTraitLLVMEmission:
         """Trait definitions produce no LLVM code (type-level only)."""
         src = "trait Display {\n    fn to_string(self) -> String\n}\n"
         p = parse(src)
-        emitter = LLVMEmitter()
-        mod = emitter.emit_program(p)
-        llvm_ir = str(mod)
+        mir_module = build_mir(p, module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        llvm_ir = emitter.emit(mir_module)
         # No function should be generated for the trait itself
         assert "Display" not in llvm_ir or "define" not in llvm_ir
 
@@ -512,9 +462,9 @@ class TestTraitLLVMEmission:
             "}\n"
         )
         p = parse(src)
-        emitter = LLVMEmitter()
-        mod = emitter.emit_program(p)
-        llvm_ir = str(mod)
+        mir_module = build_mir(p, module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        llvm_ir = emitter.emit(mir_module)
         # Should have a function named Point_to_string
         assert "Point_to_string" in llvm_ir
 
@@ -529,8 +479,8 @@ class TestTraitLLVMEmission:
             "}\n"
         )
         p = parse(src)
-        emitter = LLVMEmitter()
-        mod = emitter.emit_program(p)
-        llvm_ir = str(mod)
+        mir_module = build_mir(p, module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        llvm_ir = emitter.emit(mir_module)
         assert "define" in llvm_ir
         assert "max" in llvm_ir

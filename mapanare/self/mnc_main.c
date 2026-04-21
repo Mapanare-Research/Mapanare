@@ -13,26 +13,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <signal.h>
 #ifndef _WIN32
-#include <execinfo.h>
-#include <unistd.h>
 #include <pthread.h>
 #endif
 
-static void crash_handler(int sig) {
-    fflush(stdout);
-#ifndef _WIN32
-    void *frames[64];
-    int n = backtrace(frames, 64);
-    fprintf(stderr, "\n[CRASH] Signal %d at:\n", sig);
-    backtrace_symbols_fd(frames, n, 2);
-    _exit(128 + sig);
-#else
-    fprintf(stderr, "\n[CRASH] Signal %d\n", sig);
-    exit(128 + sig);
-#endif
-}
+/* v4.105.0 Phase 4 — crash breadcrumbs.
+ * The legacy handler (pre-v4.105.0) called fprintf() and backtrace() from
+ * inside a signal handler, both async-signal-unsafe. Phase 3's TSan run
+ * flagged this across 29 crashing tests. The replacement lives in the
+ * runtime (runtime/native/mapanare_runtime.c) and is installed via
+ * __mn_install_crash_handler(). It uses only write(2) and hand-rolled
+ * formatters, then hands off to backtrace_symbols_fd (explicitly AS-safe
+ * per signal-safety(7)). */
+extern void __mn_install_crash_handler(void);
+extern void __mn_set_current_source(const char *filename, int32_t line);
+extern void __mn_set_current_phase(const char *phase);
 
 /* -----------------------------------------------------------------------
  * ABI types — must match the LLVM IR layout exactly
@@ -95,31 +90,50 @@ extern void mn_main(void);
 #define MNC_STACK_SIZE (32 * 1024 * 1024)
 
 #ifndef _WIN32
+/* Passed to compiler_thread so the breadcrumb lives on the same thread
+ * as the crash. Thread-locals in main() do not cross to the worker. */
+typedef struct {
+    const char *source_path;
+} compiler_thread_arg;
+
 static void *compiler_thread(void *arg) {
-    (void)arg;
+    compiler_thread_arg *ca = (compiler_thread_arg *)arg;
+    if (ca && ca->source_path) {
+        __mn_set_current_source(ca->source_path, 0);
+    }
+    __mn_set_current_phase("compile");
     mn_main();
+    __mn_set_current_phase("shutdown");
     return NULL;
 }
 #endif
 
 int main(int argc, char *argv[]) {
-    signal(SIGSEGV, crash_handler);
-    signal(SIGABRT, crash_handler);
+    __mn_install_crash_handler();
+    __mn_set_current_phase("startup");
+    if (argc > 1) {
+        /* argv[1] lives for the duration of the process, safe to stash. */
+        __mn_set_current_source(argv[1], 0);
+    }
     __mn_argv_init(argc, argv);
+    __mn_set_current_phase("pre-compile");
 
     /* Run mn_main() on a thread with a larger stack so the compiler
      * can handle self-compilation (13K+ lines) without ulimit. */
 #ifndef _WIN32
+    compiler_thread_arg ca = { .source_path = (argc > 1) ? argv[1] : NULL };
     pthread_t tid;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, MNC_STACK_SIZE);
-    if (pthread_create(&tid, &attr, compiler_thread, NULL) == 0) {
+    if (pthread_create(&tid, &attr, compiler_thread, &ca) == 0) {
         pthread_attr_destroy(&attr);
         pthread_join(tid, NULL);
     } else {
-        /* Fallback: run on main thread if thread creation fails */
+        /* Fallback: run on main thread if thread creation fails.
+         * Breadcrumb is already set on this thread from main() above. */
         pthread_attr_destroy(&attr);
+        __mn_set_current_phase("compile");
         mn_main();
     }
 #else

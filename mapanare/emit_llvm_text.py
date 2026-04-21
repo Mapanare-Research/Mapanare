@@ -1,7 +1,6 @@
-"""Text-based LLVM IR emitter — no llvmlite dependency.
+"""Text-based LLVM IR emitter.
 
 Generates alloca/load/store IR. clang mem2reg optimizes to SSA.
-This avoids llvmlite's codegen bugs with large struct values.
 """
 
 from __future__ import annotations
@@ -10,13 +9,16 @@ import os
 import struct as pystruct
 from typing import Any
 
+from mapanare.abi import classify_return  # v4.149.0 E5
 from mapanare.mir import (
     AgentSend,
     AgentSpawn,
     AgentSync,
     Assert,
+    AwaitSuspend,
     BinOp,
     BinOpKind,
+    BlockOn,
     Branch,
     Call,
     Cast,
@@ -49,11 +51,13 @@ from mapanare.mir import (
     SignalInit,
     SignalSet,
     SignalSubscribe,
+    SourceSpan,
     StreamInit,
     StreamOp,
     StreamOpKind,
     StructInit,
     Switch,
+    TensorInit,
     UnaryOp,
     UnaryOpKind,
     Unwrap,
@@ -211,20 +215,56 @@ def _struct_field0_type(sty: str) -> str:
 
 
 # ── Emitter ─────────────────────────────────────────────────────────
+#
+# v4.30.0 Phase 4.5: runtime fn attrs audit.
+#
+# This table maps every Mapanare runtime C function to the LLVM
+# attributes declared on its ``@mn_*`` declaration. The panel flagged
+# missing ``noalias`` / ``willreturn`` / ``nounwind`` as a 7-cycle
+# carry-forward (Rattler #7): allocators didn't advertise that their
+# return pointers don't alias, and pure readonly functions didn't
+# advertise that they always return. LLVM uses both to enable folds
+# and inlining.
+#
+# Attribute semantics (LLVM Language Reference):
+#   - ``nounwind``   — function does not raise C++ exceptions. All
+#                      Mapanare C runtime functions qualify.
+#   - ``willreturn`` — function eventually returns control to its
+#                      caller (no infinite loop, no ``exit``). Every
+#                      pure/read/allocation function qualifies.
+#   - ``readonly``   — function does not modify any memory the caller
+#                      can observe. Implies pure w.r.t. heap state.
+#   - ``noalias``    — when applied to the return value, the returned
+#                      pointer does not alias any pointer the caller
+#                      already held. True for every fresh-allocation
+#                      path (``__mn_alloc``, ``__mn_str_from_int``,
+#                      ``__mn_list_new``, etc.).
+#
+# The audit rule: every allocator gains ``noalias`` + ``willreturn``;
+# every ``readonly`` function gains ``willreturn``; every deterministic
+# C function keeps ``nounwind`` (exceptions only matter on C++ ABIs
+# which Mapanare does not cross).
 _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
-    # Read-only string functions
-    "__mn_str_len": {"nounwind", "readonly"},
-    "__mn_str_eq": {"nounwind", "readonly"},
-    "__mn_str_cmp": {"nounwind", "readonly"},
-    "__mn_str_hash": {"nounwind", "readonly"},
-    "__mn_list_len": {"nounwind", "readonly"},
-    "__mn_list_get": {"nounwind", "readonly"},
-    "__mn_map_len": {"nounwind", "readonly"},
-    "__mn_map_contains": {"nounwind", "readonly"},
-    # Allocation
-    "malloc": {"nounwind", "noalias"},
-    "__mn_alloc": {"nounwind", "noalias"},
-    # Cleanup
+    # Read-only string/collection queries.
+    # v4.30.0: added ``willreturn`` to every pure-read function — LLVM
+    # can then hoist and CSE the call freely.
+    "__mn_str_len": {"nounwind", "readonly", "willreturn"},
+    "__mn_str_eq": {"nounwind", "readonly", "willreturn"},
+    "__mn_str_cmp": {"nounwind", "readonly", "willreturn"},
+    "__mn_str_hash": {"nounwind", "readonly", "willreturn"},
+    "__mn_list_len": {"nounwind", "readonly", "willreturn"},
+    # v4.42.0: removed readonly+willreturn — __mn_list_get calls abort on
+    # OOB, so it is NOT pure and NOT guaranteed to return. Closes P1.
+    "__mn_list_get": {"nounwind"},
+    "__mn_map_len": {"nounwind", "readonly", "willreturn"},
+    "__mn_map_contains": {"nounwind", "readonly", "willreturn"},
+    # Allocators. v4.30.0: ``noalias`` on return + ``willreturn``.
+    # libc ``malloc`` is documented ``noalias`` by C11; every Mapanare
+    # ``__mn_*_new`` / ``__mn_str_from_*`` / ``__mn_*_concat`` wraps a
+    # fresh buffer and qualifies the same way.
+    "malloc": {"nounwind", "noalias", "willreturn"},
+    "__mn_alloc": {"nounwind", "noalias", "willreturn"},
+    # Cleanup — terminates, but frees memory so NOT readonly.
     "free": {"nounwind", "willreturn"},
     "__mn_str_free": {"nounwind", "willreturn"},
     "__mn_list_free": {"nounwind", "willreturn"},
@@ -234,71 +274,195 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_range_free": {"nounwind", "willreturn"},
     "__mn_signal_free": {"nounwind", "willreturn"},
     "__mn_map_free_deep": {"nounwind", "willreturn"},
-    # Mutation
-    "__mn_str_concat": {"nounwind"},
-    "__mn_str_from_int": {"nounwind"},
-    "__mn_str_from_float": {"nounwind"},
-    "__mn_str_from_bool": {"nounwind"},
+    # String-builder allocators — every one returns a fresh heap string.
+    "__mn_str_concat": {"nounwind", "noalias", "willreturn"},
+    "__mn_str_from_int": {"nounwind", "noalias", "willreturn"},
+    "__mn_str_from_float": {"nounwind", "noalias", "willreturn"},
+    "__mn_str_from_bool": {"nounwind", "noalias", "willreturn"},
+    # Mutation (no noalias — they write through a caller-owned pointer).
     "__mn_list_push": {"nounwind"},
     "__mn_list_set": {"nounwind"},
-    "__mn_list_new": {"nounwind"},
-    "__mn_list_concat": {"nounwind"},
+    # List/map allocators.
+    "__mn_list_new": {"nounwind", "noalias", "willreturn"},
+    "__mn_list_concat": {"nounwind", "noalias", "willreturn"},
     "__mn_map_set": {"nounwind"},
-    "__mn_map_new": {"nounwind"},
-    # Print
-    "__mn_print": {"nounwind"},
-    "__mn_println": {"nounwind"},
-    # Arena
-    "mn_arena_create": {"nounwind"},
-    "mn_arena_alloc": {"nounwind"},
-    "mn_arena_destroy": {"nounwind"},
-    # I/O (v3.41.0)
-    "__mn_read_line": {"nounwind"},
-    "__mn_file_append": {"nounwind"},
-    "__mn_dir_list_strings": {"nounwind"},
-    "__mn_file_exists": {"nounwind", "readonly"},
-    "__mn_file_remove": {"nounwind"},
-    "__mn_file_size": {"nounwind", "readonly"},
-    "__mn_file_mtime": {"nounwind", "readonly"},
-    "__mn_dir_create": {"nounwind"},
-    "__mn_dir_remove": {"nounwind"},
-    "__mn_file_rename": {"nounwind"},
-    "__mn_file_copy": {"nounwind"},
-    "__mn_realpath": {"nounwind"},
-    "__mn_tmpfile_path": {"nounwind"},
-    # Network, crypto, regex (v3.42.0)
-    "__mn_http_get": {"nounwind"},
-    "__mn_sha256_str": {"nounwind"},
-    "__mn_base64_encode_str": {"nounwind"},
-    "__mn_base64_decode_str": {"nounwind"},
-    "__mn_hmac_sha256_str": {"nounwind"},
-    "__mn_hex_encode_str": {"nounwind"},
-    "__mn_random_bytes_str": {"nounwind"},
-    "__mn_regex_compile_str": {"nounwind"},
-    "__mn_regex_exec_str": {"nounwind"},
-    "__mn_regex_replace_str": {"nounwind"},
-    "__mn_regex_free": {"nounwind"},
-    # GPU builtins (v3.46.0)
-    "__mn_gpu_available": {"nounwind"},
-    "__mn_gpu_device_name": {"nounwind"},
-    "__mn_gpu_device_memory": {"nounwind"},
-    "__mn_gpu_tensor_add": {"nounwind"},  # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_sub": {"nounwind"},  # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_mul": {"nounwind"},  # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_div": {"nounwind"},  # (ptr, ptr) -> LIST
-    "__mn_gpu_tensor_matmul": {"nounwind"},  # (ptr, ptr, i64, i64, i64) -> LIST
-    # Agent runtime (v3.43.0)
-    "mapanare_agent_new": {"nounwind"},
-    "mapanare_agent_spawn": {"nounwind"},
-    "mapanare_agent_send": {"nounwind"},
+    "__mn_map_new": {"nounwind", "noalias", "willreturn"},
+    # Print — writes to stdout (observable), so no readonly, but does
+    # terminate and never throws.
+    "__mn_print": {"nounwind", "willreturn"},
+    "__mn_println": {"nounwind", "willreturn"},
+    # Arena.
+    "mn_arena_create": {"nounwind", "noalias", "willreturn"},
+    "mn_arena_alloc": {"nounwind", "noalias", "willreturn"},
+    "mn_arena_destroy": {"nounwind", "willreturn"},
+    # I/O (v3.41.0). Terminates but observable; no readonly beyond
+    # the explicit ones below.
+    "__mn_read_line": {"nounwind", "willreturn"},
+    "__mn_file_append": {"nounwind", "willreturn"},
+    "__mn_dir_list_strings": {"nounwind", "willreturn"},
+    "__mn_file_exists": {"nounwind", "readonly", "willreturn"},
+    "__mn_file_remove": {"nounwind", "willreturn"},
+    "__mn_file_size": {"nounwind", "readonly", "willreturn"},
+    "__mn_file_mtime": {"nounwind", "readonly", "willreturn"},
+    "__mn_dir_create": {"nounwind", "willreturn"},
+    "__mn_dir_remove": {"nounwind", "willreturn"},
+    "__mn_file_rename": {"nounwind", "willreturn"},
+    "__mn_file_copy": {"nounwind", "willreturn"},
+    "__mn_realpath": {"nounwind", "willreturn"},
+    "__mn_tmpfile_path": {"nounwind", "noalias", "willreturn"},
+    # Network, crypto, regex (v3.42.0). The ``*_str`` wrappers all
+    # return freshly-allocated strings → noalias + willreturn.
+    "__mn_http_get": {"nounwind", "noalias", "willreturn"},
+    "__mn_sha256_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_base64_encode_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_base64_decode_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_hmac_sha256_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_hex_encode_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_random_bytes_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_regex_compile_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_regex_exec_str": {"nounwind", "willreturn"},
+    "__mn_regex_replace_str": {"nounwind", "noalias", "willreturn"},
+    "__mn_regex_free": {"nounwind", "willreturn"},
+    # GPU builtins (v3.46.0). v4.30.0: query/metadata paths terminate;
+    # tensor kernels return new lists → noalias + willreturn.
+    "__mn_gpu_available": {"nounwind", "readonly", "willreturn"},
+    "__mn_gpu_device_name": {"nounwind", "willreturn"},
+    "__mn_gpu_device_memory": {"nounwind", "readonly", "willreturn"},
+    "__mn_gpu_tensor_add": {"nounwind", "noalias", "willreturn"},
+    "__mn_gpu_tensor_sub": {"nounwind", "noalias", "willreturn"},
+    "__mn_gpu_tensor_mul": {"nounwind", "noalias", "willreturn"},
+    "__mn_gpu_tensor_div": {"nounwind", "noalias", "willreturn"},
+    "__mn_gpu_tensor_matmul": {"nounwind", "noalias", "willreturn"},
+    # Tensor literal runtime (v4.42.0). __mn_tensor_alloc returns a fresh
+    # heap tensor (noalias); store/free/get are mutation/query helpers.
+    "__mn_tensor_alloc": {"nounwind", "noalias", "willreturn"},
+    "__mn_tensor_free": {"nounwind", "willreturn"},
+    "__mn_tensor_store_f64": {"nounwind", "willreturn"},
+    "__mn_tensor_store_i64": {"nounwind", "willreturn"},
+    "__mn_tensor_get_f64": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_get_i64": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_rank": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_size": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_shape_dim": {"nounwind", "readonly", "willreturn"},
+    "__mn_tensor_print_f64": {"nounwind", "willreturn"},
+    # Tensor multi-dim indexing (v4.43.0). Bounds-check aborts on OOB,
+    # so NOT willreturn. The get variants are variadic (rank + indices).
+    "__mn_tensor_get_f64_nd": {"nounwind"},
+    "__mn_tensor_get_i64_nd": {"nounwind"},
+    "__mn_tensor_set_f64_nd": {"nounwind"},
+    "__mn_tensor_set_i64_nd": {"nounwind"},
+    # Tensor broadcast ops (v4.44.0). Return fresh tensors (noalias).
+    # Not willreturn — abort on incompatible shapes or alloc failure.
+    "__mn_tensor_add_broadcast_f64": {"nounwind", "noalias"},
+    "__mn_tensor_sub_broadcast_f64": {"nounwind", "noalias"},
+    "__mn_tensor_mul_broadcast_f64": {"nounwind", "noalias"},
+    "__mn_tensor_div_broadcast_f64": {"nounwind", "noalias"},
+    "__mn_tensor_add_broadcast_i64": {"nounwind", "noalias"},
+    "__mn_tensor_sub_broadcast_i64": {"nounwind", "noalias"},
+    "__mn_tensor_mul_broadcast_i64": {"nounwind", "noalias"},
+    "__mn_tensor_div_broadcast_i64": {"nounwind", "noalias"},
+    "__mn_tensor_add_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_sub_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_mul_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_div_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_add_scalar_i64": {"nounwind", "noalias"},
+    "__mn_tensor_sub_scalar_i64": {"nounwind", "noalias"},
+    "__mn_tensor_mul_scalar_i64": {"nounwind", "noalias"},
+    "__mn_tensor_div_scalar_i64": {"nounwind", "noalias"},
+    # Reverse scalar ops (v4.47.0): scalar op tensor[i] for non-commutative ops
+    "__mn_tensor_rsub_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_rdiv_scalar_f64": {"nounwind", "noalias"},
+    "__mn_tensor_rsub_scalar_i64": {"nounwind", "noalias"},
+    "__mn_tensor_rdiv_scalar_i64": {"nounwind", "noalias"},
+    # Tensor reductions (v4.45.0). Global reductions return scalars (no noalias).
+    # mean/max/min/argmax/argmin abort on empty tensor (not willreturn).
+    "__mn_tensor_sum_f64": {"nounwind"},
+    "__mn_tensor_mean_f64": {"nounwind"},
+    "__mn_tensor_max_f64": {"nounwind"},
+    "__mn_tensor_min_f64": {"nounwind"},
+    "__mn_tensor_argmax_f64": {"nounwind"},
+    "__mn_tensor_argmin_f64": {"nounwind"},
+    "__mn_tensor_sum_i64": {"nounwind"},
+    "__mn_tensor_max_i64": {"nounwind"},
+    "__mn_tensor_min_i64": {"nounwind"},
+    "__mn_tensor_argmax_i64": {"nounwind"},
+    "__mn_tensor_argmin_i64": {"nounwind"},
+    # Tensor slicing (v4.45.0). Returns fresh tensor (noalias).
+    "__mn_tensor_slice": {"nounwind", "noalias"},
+    # Agent runtime (v3.43.0). v4.30.0: ``agent_new`` returns a fresh
+    # heap agent handle (noalias); dispatch/send/recv do not.
+    "mapanare_agent_new": {"nounwind", "noalias", "willreturn"},
+    "mapanare_agent_spawn": {"nounwind", "willreturn"},
+    "mapanare_agent_send": {"nounwind", "willreturn"},
     "mapanare_agent_recv_blocking": {"nounwind"},
-    "mapanare_agent_stop": {"nounwind"},
-    "mapanare_agent_destroy": {"nounwind"},
+    "mapanare_agent_stop": {"nounwind", "willreturn"},
+    "mapanare_agent_destroy": {"nounwind", "willreturn"},
+    # Database runtime (v1.2.0; linked from v4.29.0)
+    # runtime/native/mapanare_db.c provides SQLite3, PostgreSQL, Redis,
+    # and extended filesystem ops. All third-party libraries (libsqlite3,
+    # libpq, libhiredis) are loaded lazily via dlopen; if a library is
+    # not installed, the corresponding function returns a graceful error
+    # without crashing.
+    "__mn_sqlite3_open": {"nounwind"},
+    "__mn_sqlite3_close": {"nounwind", "willreturn"},
+    "__mn_sqlite3_exec": {"nounwind"},
+    "__mn_sqlite3_prepare": {"nounwind"},
+    "__mn_sqlite3_bind_int": {"nounwind"},
+    "__mn_sqlite3_bind_float": {"nounwind"},
+    "__mn_sqlite3_bind_str": {"nounwind"},
+    "__mn_sqlite3_bind_null": {"nounwind"},
+    "__mn_sqlite3_step": {"nounwind"},
+    "__mn_sqlite3_column_int": {"nounwind", "readonly"},
+    "__mn_sqlite3_column_float": {"nounwind", "readonly"},
+    "__mn_sqlite3_column_str": {"nounwind"},
+    "__mn_sqlite3_column_type": {"nounwind", "readonly"},
+    "__mn_sqlite3_column_count": {"nounwind", "readonly"},
+    "__mn_sqlite3_column_name": {"nounwind"},
+    "__mn_sqlite3_finalize": {"nounwind", "willreturn"},
+    "__mn_sqlite3_errmsg": {"nounwind"},
+    "__mn_pg_connect": {"nounwind"},
+    "__mn_pg_close": {"nounwind", "willreturn"},
+    "__mn_pg_exec": {"nounwind"},
+    "__mn_pg_exec_params": {"nounwind"},
+    "__mn_pg_ntuples": {"nounwind", "readonly"},
+    "__mn_pg_nfields": {"nounwind", "readonly"},
+    "__mn_pg_getvalue": {"nounwind"},
+    "__mn_pg_fname": {"nounwind"},
+    "__mn_pg_status": {"nounwind", "readonly"},
+    "__mn_pg_errmsg": {"nounwind"},
+    "__mn_pg_clear": {"nounwind", "willreturn"},
+    "__mn_redis_connect": {"nounwind"},
+    "__mn_redis_command": {"nounwind"},
+    "__mn_redis_command_status": {"nounwind"},
+    "__mn_redis_close": {"nounwind", "willreturn"},
+    "__mn_redis_errmsg": {"nounwind"},
+    # HTML + time + env + url runtime (v4.29.0).
+    # runtime/native/mapanare_html.c provides an HTML parser, element
+    # queries, time helpers, env reads, and URL parsing. No third-party
+    # dependencies.
+    "__mn_html_parse": {"nounwind"},
+    "__mn_html_free": {"nounwind", "willreturn"},
+    "__mn_html_query": {"nounwind"},
+    "__mn_html_collection_len": {"nounwind", "readonly"},
+    "__mn_html_collection_get": {"nounwind"},
+    "__mn_html_element_tag": {"nounwind"},
+    "__mn_html_element_attr": {"nounwind"},
+    "__mn_html_element_text": {"nounwind"},
+    "__mn_html_element_html": {"nounwind"},
+    "__mn_html_collection_free": {"nounwind", "willreturn"},
+    "__mn_time_now_ms": {"nounwind"},
+    "__mn_time_now_unix": {"nounwind"},
+    "__mn_sleep_ms": {"nounwind"},
+    "__mn_env_get": {"nounwind"},
+    "__mn_url_parse_scheme": {"nounwind"},
+    "__mn_url_parse_host": {"nounwind"},
+    "__mn_url_parse_port": {"nounwind", "readonly"},
+    "__mn_url_parse_path": {"nounwind"},
 }
 
 
 class LLVMTextEmitter:
-    """Emit LLVM IR as text from a MIR module. No llvmlite dependency."""
+    """Emit LLVM IR as text from a MIR module."""
 
     def __init__(
         self,
@@ -318,6 +482,19 @@ class LLVMTextEmitter:
         self._struct_ty: dict[str, str] = {}
         self._enums: dict[str, tuple[dict[str, int], dict[str, list[MIRType]], dict[str, int]]] = {}
         self._boxed_enum: dict[str, set[tuple[str, int]]] = {}
+        # v4.124.0 Rt.1: inline slot count per registered enum.
+        #   0 = boxed (existing {i64, ptr} representation)
+        #   N ≥ 1 = inline {i64, i64, ..., i64} with N payload slots
+        # An enum qualifies for inline storage if every variant has at most
+        # N fields, each field is an 8-byte-or-smaller value packable into
+        # i64 (Int / Float / Bool / pointer), and no field is marked boxed
+        # for self-reference. Inline enums skip malloc on construction,
+        # skip the pointer chase on match, and have no drop-glue free.
+        # Cap: 2 slots (max 16 bytes of payload) per PLAN guidance —
+        # wider variants (3+ fields or heap-owned fields) stay boxed.
+        self._enum_inline: dict[str, int] = {}
+        # Maximum inline payload slots. Enums with more fields stay boxed.
+        self._MAX_INLINE_SLOTS = 2
         self._boxed_struct: dict[str, set[int]] = {}
         self._boxed_struct_mir: dict[str, dict[int, MIRType]] = {}
         self._struct_mir_types: dict[str, dict[int, MIRType]] = {}
@@ -350,6 +527,20 @@ class LLVMTextEmitter:
         self._map_vars: list[str] = []  # dest names for map cleanup
         self._signal_vars: list[str] = []  # dest names for signal cleanup
         self._stream_vars: list[str] = []  # dest names for stream cleanup
+        self._tensor_vars: list[str] = []  # dest names for tensor cleanup (v4.42.0)
+        # v4.146.0 E2: precomputed set of pure function names (module-level)
+        self._pure_fns: set[str] = set()
+        # debug info (DWARF) — v4.62.0 infrastructure
+        self._debug_enabled: bool = debug
+        self._debug_metadata_counter: int = 0
+        self._debug_file_table: dict[str, int] = {}
+        self._debug_location_cache: dict[tuple[int, int, int], int] = {}
+        self._debug_type_cache: dict[str, int] = {}
+        self._debug_metadata_lines: list[str] = []
+        self._debug_subprogram_ids: dict[str, int] = {}
+        self._debug_cu_id: int = -1
+        self._current_span: SourceSpan | None = None
+        self._current_subprogram_id: int = -1
         # dispatch
         self._disp: dict[type, Any] = {}
         self._init_disp()
@@ -373,6 +564,7 @@ class LLVMTextEmitter:
         d[FieldSet] = self._do_field_set
         d[ListInit] = self._do_list_init
         d[ListPush] = self._do_list_push
+        d[TensorInit] = self._do_tensor_init
         d[IndexGet] = self._do_idx_get
         d[IndexSet] = self._do_idx_set
         d[MapInit] = self._do_map_init
@@ -399,6 +591,225 @@ class LLVMTextEmitter:
         d[StreamInit] = self._do_stream_init
         d[StreamOp] = self._do_stream_op
         d[Assert] = self._do_assert
+        d[AwaitSuspend] = self._do_await_suspend
+        d[BlockOn] = self._do_block_on
+
+    # ── debug metadata helpers (v4.62.0) ─────────────────────────────
+
+    def _alloc_metadata_id(self) -> int:
+        """Return the next free metadata ID."""
+        mid = self._debug_metadata_counter
+        self._debug_metadata_counter += 1
+        return mid
+
+    def _emit_debug_metadata(self, content: str) -> str:
+        """Emit a metadata node and return its ``!N`` reference."""
+        mid = self._alloc_metadata_id()
+        ref = f"!{mid}"
+        self._debug_metadata_lines.append(f"{ref} = {content}")
+        return ref
+
+    def _get_debug_file(self, path: str) -> int:
+        """Return the metadata ID for a source file, creating if needed."""
+        if path in self._debug_file_table:
+            return self._debug_file_table[path]
+        import os
+
+        directory = os.path.dirname(path) or "."
+        filename = os.path.basename(path)
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f'!{mid} = !DIFile(filename: "{filename}", directory: "{directory}")'
+        )
+        self._debug_file_table[path] = mid
+        return mid
+
+    def _get_debug_location(self, file_id: int, line: int, col: int, scope_id: int) -> int:
+        """Return the metadata ID for a source location, creating if needed."""
+        key = (file_id, line, col)
+        if key in self._debug_location_cache:
+            return self._debug_location_cache[key]
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{mid} = !DILocation(line: {line}, column: {col}, scope: !{scope_id})"
+        )
+        self._debug_location_cache[key] = mid
+        return mid
+
+    def _get_debug_basic_type(self, name: str, size: int, encoding: str) -> int:
+        """Return metadata ID for a DWARF basic type, cached by name."""
+        if name in self._debug_type_cache:
+            return self._debug_type_cache[name]
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f'!{mid} = !DIBasicType(name: "{name}", size: {size}, encoding: {encoding})'
+        )
+        self._debug_type_cache[name] = mid
+        return mid
+
+    def _get_debug_type_for_mir(self, ty: MIRType) -> int:
+        """Map a MIR type to a DWARF basic type metadata ID."""
+        from mapanare.types import TypeKind
+
+        k = ty.kind
+        if k == TypeKind.INT:
+            return self._get_debug_basic_type("Int", 64, "DW_ATE_signed")
+        elif k == TypeKind.FLOAT:
+            return self._get_debug_basic_type("Float", 64, "DW_ATE_float")
+        elif k == TypeKind.BOOL:
+            return self._get_debug_basic_type("Bool", 8, "DW_ATE_boolean")
+        else:
+            # Placeholder for String, List, Map, etc. — treated as opaque ptr
+            return self._get_debug_basic_type("ptr", 64, "DW_ATE_address")
+
+    def _emit_debug_subroutine_type(self, fn: "MIRFunction") -> int:
+        """Emit a DISubroutineType for a function and return its metadata ID."""
+        type_refs = []
+        # Return type (first element; None for void)
+        rt = fn.return_type
+        if rt and rt.kind != TypeKind.VOID:
+            type_refs.append(f"!{self._get_debug_type_for_mir(rt)}")
+        else:
+            type_refs.append("null")
+        # Parameter types
+        for p in fn.params:
+            type_refs.append(f"!{self._get_debug_type_for_mir(p.ty)}")
+        types_list = ", ".join(type_refs)
+        # Cache by signature tuple
+        sig_key = tuple(type_refs)
+        cache_key = str(sig_key)
+        if cache_key in self._debug_type_cache:
+            return self._debug_type_cache[cache_key]
+        types_mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(f"!{types_mid} = !{{{types_list}}}")
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(f"!{mid} = !DISubroutineType(types: !{types_mid})")
+        self._debug_type_cache[cache_key] = mid
+        return mid
+
+    def _emit_debug_compile_unit(self, source_file: str) -> int:
+        """Emit a DICompileUnit and return its metadata ID."""
+        file_id = self._get_debug_file(source_file)
+        mid = self._alloc_metadata_id()
+        ver = self._version()
+        self._debug_metadata_lines.append(
+            f"!{mid} = distinct !DICompileUnit("
+            f"language: DW_LANG_C99, "
+            f"file: !{file_id}, "
+            f'producer: "Mapanare {ver}", '
+            f"isOptimized: true, "
+            f"runtimeVersion: 0, "
+            f"emissionKind: FullDebug)"
+        )
+        self._debug_cu_id = mid
+        return mid
+
+    def _emit_debug_subprogram(self, fn: "MIRFunction", source_file: str) -> int:
+        """Emit a DISubprogram for a function and return its metadata ID."""
+        file_id = self._get_debug_file(source_file)
+        line = fn.source_line if fn.source_line else 0
+        sr_type_id = self._emit_debug_subroutine_type(fn)
+        is_local = "true" if (not fn.is_public and fn.name != "main") else "false"
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{mid} = distinct !DISubprogram("
+            f'name: "{fn.name}", '
+            f'linkageName: "{fn.name}", '
+            f"scope: !{self._debug_cu_id}, "
+            f"file: !{file_id}, "
+            f"line: {line}, "
+            f"type: !{sr_type_id}, "
+            f"isLocal: {is_local}, "
+            f"isDefinition: true, "
+            f"scopeLine: {line}, "
+            f"spFlags: DISPFlagDefinition, "
+            f"unit: !{self._debug_cu_id})"
+        )
+        return mid
+
+    def _emit_debug_composite_type(self, name: str, fields: list[tuple[str, "MIRType"]]) -> int:
+        """Emit a DICompositeType for a struct and return its metadata ID."""
+        cache_key = f"struct:{name}"
+        if cache_key in self._debug_type_cache:
+            return self._debug_type_cache[cache_key]
+        members = []
+        offset = 0
+        for fname, fty in fields:
+            fty_id = self._get_debug_type_for_mir(fty)
+            size = 64  # all types are 64-bit in Mapanare's IR layout
+            mem_id = self._alloc_metadata_id()
+            self._debug_metadata_lines.append(
+                f"!{mem_id} = !DIDerivedType(tag: DW_TAG_member, "
+                f'name: "{fname}", size: {size}, offset: {offset}, '
+                f"baseType: !{fty_id})"
+            )
+            members.append(f"!{mem_id}")
+            offset += size
+        elems_id = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(f"!{elems_id} = !{{{', '.join(members)}}}")
+        mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(
+            f"!{mid} = !DICompositeType(tag: DW_TAG_structure_type, "
+            f'name: "{name}", size: {offset}, elements: !{elems_id})'
+        )
+        self._debug_type_cache[cache_key] = mid
+        return mid
+
+    def _emit_debug_local_variable(
+        self, name: str, ty_id: int, scope_id: int, line: int, arg_index: int = 0
+    ) -> int:
+        """Emit a DILocalVariable and return its metadata ID."""
+        mid = self._alloc_metadata_id()
+        arg_part = f", arg: {arg_index}" if arg_index > 0 else ""
+        file_id = next(iter(self._debug_file_table.values()), 0)
+        self._debug_metadata_lines.append(
+            f'!{mid} = !DILocalVariable(name: "{name}"{arg_part}, '
+            f"scope: !{scope_id}, file: !{file_id}, line: {line}, type: !{ty_id})"
+        )
+        return mid
+
+    def _emit_dbg_declare(self, alloca_ref: str, var_meta_id: int) -> None:
+        """Emit an llvm.dbg.declare call after an alloca."""
+        if not self._debug_enabled or self._current_subprogram_id < 0:
+            return
+        loc_suffix = ""
+        if self._current_span and self._current_span.line > 0:
+            file_id = next(iter(self._debug_file_table.values()), 0)
+            loc_id = self._get_debug_location(
+                file_id,
+                self._current_span.line,
+                self._current_span.column,
+                self._current_subprogram_id,
+            )
+            loc_suffix = f", !dbg !{loc_id}"
+        self._blk[self._cb].append(
+            f"  call void @llvm.dbg.declare(metadata ptr {alloca_ref}, "
+            f"metadata !{var_meta_id}, metadata !DIExpression()){loc_suffix}"
+        )
+
+    def _build_debug_metadata_section(self) -> list[str]:
+        """Build the module-level DWARF metadata section."""
+        if not self._debug_enabled or not hasattr(self, "_debug_cu_id"):
+            return []
+        lines = [
+            "",
+            f"!llvm.dbg.cu = !{{!{self._debug_cu_id}}}",
+            "!llvm.module.flags = !{!_mf_dwarf, !_mf_di, !_mf_wchar}",
+            "",
+        ]
+        # Module flags use named placeholders — resolve them
+        dwarf_mid = self._alloc_metadata_id()
+        di_mid = self._alloc_metadata_id()
+        wchar_mid = self._alloc_metadata_id()
+        self._debug_metadata_lines.append(f'!{dwarf_mid} = !{{i32 7, !"Dwarf Version", i32 5}}')
+        self._debug_metadata_lines.append(f'!{di_mid} = !{{i32 2, !"Debug Info Version", i32 3}}')
+        self._debug_metadata_lines.append(f'!{wchar_mid} = !{{i32 1, !"wchar_size", i32 4}}')
+        # Replace placeholders
+        lines[2] = f"!llvm.module.flags = !{{!{dwarf_mid}, !{di_mid}, !{wchar_mid}}}"
+        # All metadata nodes
+        lines.extend(self._debug_metadata_lines)
+        lines.append("")
+        return lines
 
     # ── public entry point ──────────────────────────────────────────
     def emit(self, mir: MIRModule) -> str:
@@ -417,27 +828,86 @@ class LLVMTextEmitter:
         for abi, mod, fn, pts, rt in mir.extern_fns:
             full = f"{mod}__{fn}" if mod else fn
             self._decl_fn(full, self._rty(rt), [self._rty(p) for p in pts])
+        # 2b) emit module-level constants
+        for cname, ctype, cval in mir.consts:
+            if isinstance(cval, str):
+                slen = len(cval)
+                self._globals.append(f'@{cname} = private constant [{slen} x i8] c"{cval}"')
+            elif isinstance(cval, int):
+                self._globals.append(f"@{cname} = private constant i64 {cval}")
+            elif isinstance(cval, float):
+                self._globals.append(f"@{cname} = private constant double {cval}")
         # 3) forward-declare MIR functions (strip % from names)
         for f in mir.functions:
             if f.name.startswith("%"):
                 f.name = f.name[1:]
+            # v4.92.0: async functions return ptr (Future handle), not their declared type
+            ret_ty = "ptr" if f.is_async else self._rty(f.return_type)
             self._sigs[f.name] = (
-                self._rty(f.return_type),
+                ret_ty,
                 [self._rty(p.ty) for p in f.params],
                 False,
             )
-        # 4) emit bodies
+        # 4) DWARF metadata (v4.63.0) — emit compile unit + subprograms BEFORE bodies
+        if self._debug_enabled:
+            source_file = getattr(mir, "source_file", self._name + ".mn")
+            self._emit_debug_compile_unit(source_file)
+            for f in mir.functions:
+                if f.blocks:
+                    sp_id = self._emit_debug_subprogram(f, source_file)
+                    self._debug_subprogram_ids[f.name] = sp_id
+        # 4b) v4.92.0: determine module-level async flag + async fn names before emitting bodies
+        self._module_has_async = any(f.is_async for f in mir.functions if f.blocks)
+        self._async_fn_names: set[str] = {f.name for f in mir.functions if f.is_async and f.blocks}
+        # 4c) v4.146.0 E2: precompute pure function set (fixed-point)
+        self._pure_fns = self._compute_pure_fns(mir.functions)
+        # 5) emit bodies
         fns: list[str] = []
         for f in mir.functions:
             if f.blocks:
                 fns.append(self._emit_fn(f))
-        # 5) agent wrappers
+        # 6) agent wrappers
         for aname, ainfo in mir.agents.items():
             fns.append(self._emit_agent_wrap(aname, ainfo))
-        # 6) pipe defs
+        # 7) pipe defs
         for pname, pinfo in mir.pipes.items():
             fns.append(self._emit_pipe(pname, pinfo))
-        # 7) assemble
+        # 8a) coroutine intrinsic declarations (v4.70.0)
+        self._module_has_async = any(f.is_async for f in mir.functions if f.blocks)
+        if self._module_has_async:
+            # Ensure malloc/free are declared for frame + future allocation
+            self._decl_fn("malloc", "ptr", ["i64"])
+            self._decl_fn("free", "void", ["ptr"])
+            self._decls.append("; -- coroutine intrinsics (v4.70.0) --")
+            self._decls.append("declare token @llvm.coro.id(i32, ptr, ptr, ptr)")
+            self._decls.append("declare i1 @llvm.coro.alloc(token)")
+            self._decls.append("declare i64 @llvm.coro.size.i64()")
+            self._decls.append("declare ptr @llvm.coro.begin(token, ptr)")
+            self._decls.append("declare i8 @llvm.coro.suspend(token, i1)")
+            self._decls.append("declare i1 @llvm.coro.end(ptr, i1, token)")
+            self._decls.append("declare ptr @llvm.coro.free(token, ptr)")
+            self._decls.append("declare void @llvm.coro.resume(ptr)")
+            self._decls.append("declare void @llvm.coro.destroy(ptr)")
+            self._decls.append("declare i1 @llvm.coro.done(ptr)")
+            self._decls.append("declare token @llvm.coro.save(ptr)")
+            # v4.93.0: multi-threaded work-stealing scheduler runtime declarations
+            self._decls.append("; -- coroutine scheduler (v4.93.0) --")
+            self._decls.append("declare void @__mn_coro_scheduler_init(i32)")
+            self._decls.append("declare void @__mn_coro_scheduler_register(ptr)")
+            self._decls.append("declare void @__mn_coro_register_wait(ptr, ptr)")
+            self._decls.append("declare void @__mn_coro_scheduler_run()")
+            self._decls.append("declare void @__mn_coro_scheduler_destroy()")
+            self._decls.append("declare void @__mn_coro_spawn(ptr)")
+            self._decls.append("declare ptr @__mn_file_read_async({ptr, i64})")
+        # 8b) debug intrinsic declarations (v4.65.0)
+        if self._debug_enabled:
+            self._decls.append(
+                "declare void @llvm.dbg.declare(metadata, metadata, metadata) nounwind readnone"
+            )
+            self._decls.append(
+                "declare void @llvm.dbg.value(metadata, metadata, metadata) nounwind readnone"
+            )
+        # 9) assemble
         hdr = [
             f"; ModuleID = '{self._name}'",
             f'source_filename = "{self._name}"',
@@ -446,7 +916,25 @@ class LLVMTextEmitter:
             "",
         ]
         ver = self._version()
-        tail = ["", "!mapanare.version = !{!0}", f'!0 = !{{!"{ver}"}}', ""]
+        if self._debug_enabled:
+            # Version metadata uses allocated IDs to avoid collision with debug IDs
+            ver_list_id = self._alloc_metadata_id()
+            ver_str_id = self._alloc_metadata_id()
+            self._debug_metadata_lines.append(f'!{ver_str_id} = !{{!"{ver}"}}')
+            tail = ["", f"!mapanare.version = !{{!{ver_list_id}}}"]
+            self._debug_metadata_lines.append(f"!{ver_list_id} = !{{!{ver_str_id}}}")
+            tail += self._build_debug_metadata_section()
+        else:
+            # Module version metadata. v4.123.0 removed the TBAA tree
+            # (nodes !1–!9) that used to live here: it was declared but
+            # never attached to any load/store, confirmed 100% dead by
+            # v4.109.0 forensics, and wiring it would not help at -O2.
+            tail = [
+                "",
+                "!mapanare.version = !{!0}",
+                f'!0 = !{{!"{ver}"}}',
+                "",
+            ]
         parts = hdr
         if self._globals:
             parts += self._globals + [""]
@@ -486,6 +974,9 @@ class LLVMTextEmitter:
         if k == TypeKind.STRUCT:
             return self._lookup_struct_or_enum(mt.type_info.name)
         if k == TypeKind.ENUM:
+            nm = mt.type_info.name
+            if nm:
+                return self._enum_ty(nm)
             return ENUM
         if k == TypeKind.OPTION:
             a = mt.type_info.args
@@ -498,6 +989,8 @@ class LLVMTextEmitter:
             return "{i1, {ptr, ptr}}"
         if k == TypeKind.ANY:
             return MN_VALUE
+        if k == TypeKind.TENSOR:
+            return PTR  # opaque pointer to mapanare_tensor_t
         if k in (TypeKind.AGENT, TypeKind.SIGNAL, TypeKind.STREAM, TypeKind.CHANNEL, TypeKind.FN):
             return PTR
         nm = mt.type_info.name
@@ -515,11 +1008,28 @@ class LLVMTextEmitter:
             if s.endswith("__" + nm):
                 return self._struct_ty[s]
         if nm in self._enums:
-            return ENUM
+            return self._enum_ty(nm)
         for e in self._enums:
             if e.endswith("__" + nm):
-                return ENUM
+                return self._enum_ty(e)
         return PTR
+
+    def _enum_ty(self, nm: str) -> str:
+        """LLVM struct type for a registered enum, inline or boxed.
+
+        Inline enums use `{i64, i64, ..., i64}` with one i64 tag slot
+        followed by N i64 payload slots, where N = _enum_inline[nm].
+        N == 0 variants (pure unit enums) get `{i64, i64}` to keep the
+        in-memory size consistent with single-payload enums — wider
+        allocation but it simplifies codegen / drop glue.
+        """
+        slots = self._enum_inline.get(nm, 0)
+        if slots == 0:
+            return ENUM
+        # Always emit at least one payload slot even for pure unit enums
+        # to keep the layout uniform and avoid a separate {i64} case.
+        n_slots = max(slots, 1)
+        return "{" + ", ".join(["i64"] * (1 + n_slots)) + "}"
 
     # ── registration ────────────────────────────────────────────────
     def _is_self_ref(self, parent: str, mt: MIRType) -> bool:
@@ -585,6 +1095,85 @@ class LLVMTextEmitter:
         self._enums[nm] = (tags, pays, sizes)
         if boxed:
             self._boxed_enum[nm] = boxed
+        # v4.124.0 Rt.1: decide inline slot count for this enum (0 =
+        # boxed). Qualification: every variant field is i64-packable
+        # (Int / Float / Bool / pointer); no field is marked boxed for
+        # self-reference; max variant field count ≤ _MAX_INLINE_SLOTS.
+        self._enum_inline[nm] = self._compute_enum_inline_slots(pays, boxed)
+
+    def _compute_enum_inline_slots(
+        self,
+        pays: dict[str, list[MIRType]],
+        boxed: set[tuple[str, int]],
+    ) -> int:
+        """Return inline slot count (0 = boxed, N ≥ 1 = inline with N payload slots)."""
+        if boxed:
+            return 0
+        max_fields = 0
+        for _vn, pts in pays.items():
+            if len(pts) > max_fields:
+                max_fields = len(pts)
+            for pt in pts:
+                ft = self._rty(pt)
+                if not self._type_fits_inline_slot(ft):
+                    return 0
+        if max_fields > self._MAX_INLINE_SLOTS:
+            return 0
+        return max_fields
+
+    @staticmethod
+    def _type_fits_inline_slot(ft: str) -> bool:
+        """True if *ft* is an 8-byte-or-smaller value storable in an i64 slot
+        via bitcast / zext / ptrtoint without information loss.
+
+        Int / Float (double) / Bool (i1) / opaque pointers qualify. String
+        ({ptr, i64}), List ({ptr, i64, i64}), Result/Option wrapper structs,
+        and user structs do not."""
+        if ft in ("i64", "double", "i1", "i8", "i16", "i32", "ptr"):
+            return True
+        if ft.endswith("*"):
+            return True
+        return False
+
+    def _pack_to_i64(self, val: str, ft: str) -> str:
+        """Convert *val* of LLVM type *ft* into an i64 suitable for an inline
+        enum payload slot. Reverse of _unpack_from_i64."""
+        if ft == "i64":
+            return val
+        if ft == "double":
+            r = self._f("pk")
+            self._L(f"{r} = bitcast double {val} to i64")
+            return r
+        if ft in ("i1", "i8", "i16", "i32"):
+            r = self._f("pk")
+            self._L(f"{r} = zext {ft} {val} to i64")
+            return r
+        if ft == "ptr" or ft.endswith("*"):
+            r = self._f("pk")
+            self._L(f"{r} = ptrtoint ptr {val} to i64")
+            return r
+        # Unsupported type — should have been filtered by
+        # _type_fits_inline_slot during registration.
+        return val
+
+    def _unpack_from_i64(self, val: str, ft: str) -> str:
+        """Reverse of _pack_to_i64: extract a value of LLVM type *ft* from an
+        i64 payload slot."""
+        if ft == "i64":
+            return val
+        if ft == "double":
+            r = self._f("upk")
+            self._L(f"{r} = bitcast i64 {val} to double")
+            return r
+        if ft in ("i1", "i8", "i16", "i32"):
+            r = self._f("upk")
+            self._L(f"{r} = trunc i64 {val} to {ft}")
+            return r
+        if ft == "ptr" or ft.endswith("*"):
+            r = self._f("upk")
+            self._L(f"{r} = inttoptr i64 {val} to ptr")
+            return r
+        return val
 
     def _res_enum(self, raw: str) -> str:
         if raw in self._enums:
@@ -640,8 +1229,22 @@ class LLVMTextEmitter:
 
     @staticmethod
     def _use_byref(ty: str) -> bool:
-        """True if *ty* should use pointer passing (byref) for user functions."""
+        """True if *ty* should use pointer passing (byref) for user function arguments."""
         return ty.startswith("{") and ty.endswith("}") and _tsz(ty) > LLVMTextEmitter._BYREF_BYTES
+
+    def _use_sret(self, ty: str) -> bool:
+        """True if *ty* should use sret for return values on the current target.
+
+        v4.149.0 E5 / ABI.1: per-target classification replaces the
+        blanket ``_BYREF_BYTES`` threshold for return types.  Implements
+        System V AMD64 §3.2.3 (≤ 16 B → register), Win64 (1/2/4/8 B →
+        register), and AArch64 AAPCS64 (≤ 16 B → register).
+
+        Argument passing still uses ``_use_byref`` (64 B threshold).
+        """
+        if not (ty.startswith("{") and ty.endswith("}")):
+            return False
+        return classify_return(ty, _tsz(ty), self._triple).kind == "sret"
 
     def _decl_fn(self, nm: str, ret: str, pts: list[str], va: bool = False) -> None:
         if nm in self._declared:
@@ -666,8 +1269,17 @@ class LLVMTextEmitter:
         if va:
             ps += ", ..." if ps else "..."
         attrs = _RUNTIME_FN_ATTRS.get(nm, set())
-        # noalias is a return attribute — must appear before the return type
-        ret_attrs = sorted(a for a in attrs if a == "noalias")
+        # v4.30.0 Phase 4.5: ``noalias`` is a return-value attribute and
+        # LLVM rejects it on any non-pointer return type. Several
+        # Mapanare runtime allocators return MnString (``{ptr, i64}``)
+        # or a list struct (``{ptr, i64, i64, i64, i64}``) rather than
+        # a raw ``ptr``; the attr table still lists ``noalias`` on
+        # those entries to document intent, but we strip it at the
+        # declaration site unless the function really returns ``ptr``.
+        # The large-struct sret rewrite above also drops the true
+        # return to ``void``; those paths never carry ``noalias``
+        # because the pointer comes in as a parameter, not out.
+        ret_attrs = sorted(a for a in attrs if a == "noalias" and abi_ret == "ptr")
         fn_attrs = sorted(a for a in attrs if a != "noalias")
         ret_prefix = " ".join(ret_attrs) + " " if ret_attrs else ""
         fn_suffix = " " + " ".join(fn_attrs) if fn_attrs else ""
@@ -691,6 +1303,14 @@ class LLVMTextEmitter:
         return a
 
     def _L(self, txt: str) -> None:  # noqa: N802
+        if self._debug_enabled and self._current_span and self._current_subprogram_id >= 0:
+            span = self._current_span
+            if span.line > 0:
+                file_id = next(iter(self._debug_file_table.values()), 0)
+                loc_id = self._get_debug_location(
+                    file_id, span.line, span.column, self._current_subprogram_id
+                )
+                txt = f"{txt}, !dbg !{loc_id}"
         self._blk[self._cb].append(f"  {txt}")
 
     @staticmethod
@@ -952,20 +1572,13 @@ class LLVMTextEmitter:
                 self._stream_vars.append(dest_name)
 
     def _emit_drop_glue(self, ret_val: str | None, ret_ty: str) -> None:
-        """Emit cleanup code before a return instruction.
+        """Dispatch per-resource cleanup before a return instruction.
 
-        For each tracked string, loads the {ptr, i64} value, extracts the data
-        pointer, and frees it unless it's the same pointer being returned.
+        v4.32.0 Phase 2.2 (Cobra Issue #12, 10th cycle): extracted from
+        ~300 lines of inline loops into per-kind helpers. Byte-identity
+        preserving for main.ll — the order of ``self._ensure`` and
+        ``self._L`` calls is unchanged.
         """
-        # Conservative safety: when returning a struct or enum type, local
-        # resources may have been moved into the return value via constructors
-        # or enum inits.  Without ownership tracking, skip ALL cleanup for
-        # struct returns.  Functions returning void/int/bool still get cleanup.
-        # List fields in structs share buffers safely (mn_list_grow never
-        # reallocs), so the leaked buffers from skipped cleanup are bounded.
-        skip_struct_ret = ret_ty.startswith("{") and ret_ty not in (VOID, I1, I64, DBL)
-        if skip_struct_ret:
-            return
         has_any = (
             (self._local_strings)
             or (self._local_closures)
@@ -974,14 +1587,52 @@ class LLVMTextEmitter:
             or self._map_vars
             or self._signal_vars
             or self._stream_vars
+            or self._tensor_vars
         )
         if not has_any:
             return
+        # v4.78.0: removed blanket early return that skipped ALL drop glue
+        # for struct returns containing ptr fields (CARRY_FORWARD #49, 8
+        # cycles). _emit_drop_glue_collect_ret_ptrs now extracts every
+        # escaping pointer from the return value, and the per-kind helpers
+        # compare against ret_ptr_fields before freeing — so the blanket
+        # bail is no longer needed.
 
         self._ensure("__mn_str_free", VOID, [STR])
+        ret_str_ptrs, ret_list_ptrs, ret_env, ret_ptr_fields = (
+            self._emit_drop_glue_collect_ret_ptrs(ret_val, ret_ty)
+        )
 
+        self._emit_drop_glue_strings(ret_str_ptrs, ret_ptr_fields)
+        self._ensure("free", VOID, [PTR])
+        self._emit_drop_glue_closures(ret_env, ret_ptr_fields)
+        self._emit_drop_glue_boxed(ret_ptr_fields)
+        if self._list_vars:
+            self._ensure("__mn_list_free", VOID, ["ptr"])
+        self._emit_drop_glue_lists(ret_list_ptrs, ret_ptr_fields)
+        if self._map_vars:
+            self._ensure("__mn_map_free_deep", VOID, [PTR])
+        self._emit_drop_glue_maps()
+        if self._signal_vars:
+            self._ensure("__mn_signal_free", VOID, [PTR])
+        self._emit_drop_glue_signals()
+        if self._stream_vars:
+            self._ensure("__mn_stream_free_chain", VOID, [PTR])
+        self._emit_drop_glue_streams()
+        if self._tensor_vars:
+            self._ensure("__mn_tensor_free", VOID, [PTR])
+        self._emit_drop_glue_tensors(ret_val, ret_ty)
+
+    def _emit_drop_glue_collect_ret_ptrs(
+        self, ret_val: str | None, ret_ty: str
+    ) -> tuple[list[str], list[str], str | None, list[str]]:
+        """Extract every pointer that will escape via the return value.
+
+        Returns ``(ret_str_ptrs, ret_list_ptrs, ret_env, ret_ptr_fields)``.
+        The per-resource drop helpers use these lists to skip freeing
+        pointers the function is about to return.
+        """
         # Extract returned string's data pointer (to avoid freeing it)
-        ret_ptr: str | None = None
         ret_str_ptrs: list[str] = []
         if ret_val and ret_ty == STR:
             ret_ptr = self._f("ret.ptr")
@@ -1001,7 +1652,6 @@ class LLVMTextEmitter:
                         ret_str_ptrs.append(sp_ret)
 
         # Extract returned list's data pointer (to avoid freeing it)
-        ret_list_ptr: str | None = None
         ret_list_ptrs: list[str] = []
         if ret_val and ret_ty == LIST:
             ret_list_ptr = self._f("ret.lp")
@@ -1031,10 +1681,31 @@ class LLVMTextEmitter:
         # Walk the return type recursively and extractvalue every ptr-typed leaf.
         # Always extract when we have param list fields or list vars to compare.
         ret_ptr_fields: list[str] = []
-        need_ret_ptrs = self._local_boxed or self._local_strings or self._list_vars
+        need_ret_ptrs = (
+            self._local_boxed or self._local_strings or self._local_closures or self._list_vars
+        )
         if ret_val and ret_ty.startswith("{") and need_ret_ptrs:
             self._extract_ret_ptrs(ret_val, ret_ty, ret_ptr_fields)
 
+        return ret_str_ptrs, ret_list_ptrs, ret_env, ret_ptr_fields
+
+    # ------------------------------------------------------------------
+    # v4.32.0 Phase 2.2 — per-resource drop-glue helpers
+    # ------------------------------------------------------------------
+    # Each helper is the verbatim body of the inline for-loop it
+    # replaces. Extracted from _emit_drop_glue (formerly ~300 lines) per
+    # Cobra Issue #12 (10th cycle). Keeping them as methods on the
+    # emitter class preserves access to self._f, self._L, self._blk,
+    # self._cb, self._c, and self._local_* / self._*_vars.
+
+    def _emit_drop_glue_strings(self, ret_str_ptrs: list[str], ret_ptr_fields: list[str]) -> None:
+        """Drop-loop for tracked local strings.
+
+        For each slot in self._local_strings, loads the {ptr, i64}
+        value, checks the data pointer against any string pointers the
+        function is returning (ret_str_ptrs + ret_ptr_fields), and
+        calls __mn_str_free unless the pointer would alias.
+        """
         for slot in self._local_strings:
             sv = self._f("drop.s")
             self._L(f"{sv} = load {{ptr, i64}}, ptr {slot}")
@@ -1068,7 +1739,14 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        self._ensure("free", VOID, [PTR])
+    def _emit_drop_glue_closures(self, ret_env: str | None, ret_ptr_fields: list[str]) -> None:
+        """Drop-loop for tracked local closure environments.
+
+        For each closure slot, loads the {fn_ptr, env_ptr} pair and
+        free's the env pointer unless it aliases a returned pointer
+        (ret_env for direct closure returns, ret_ptr_fields for
+        closures embedded in struct returns).
+        """
         for slot in self._local_closures:
             cv = self._f("drop.c")
             self._L(f"{cv} = load {{ptr, ptr}}, ptr {slot}")
@@ -1083,20 +1761,55 @@ class LLVMTextEmitter:
 
             self._blk[free_lbl] = []
             self._cb = free_lbl
+            # Compare closure env against returned pointers (ret_env for direct
+            # closure return, ret_ptr_fields for closures embedded in structs).
+            all_env_ptrs = list(ret_ptr_fields)
             if ret_env:
+                all_env_ptrs.append(ret_env)
+            for renv in all_env_ptrs:
                 same = self._f("drop.csame")
-                self._L(f"{same} = icmp eq ptr {ep}, {ret_env}")
-                do_free_lbl = f"drop.cfree.{self._c}"
+                self._L(f"{same} = icmp eq ptr {ep}, {renv}")
+                next_check = f"drop.cnext.{self._c}"
                 self._c += 1
-                self._L(f"br i1 {same}, label %{skip_lbl}, label %{do_free_lbl}")
-                self._blk[do_free_lbl] = []
-                self._cb = do_free_lbl
+                self._L(f"br i1 {same}, label %{skip_lbl}, label %{next_check}")
+                self._blk[next_check] = []
+                self._cb = next_check
             self._L(f"call void @free(ptr {ep})")
             self._L(f"br label %{skip_lbl}")
 
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
+    def _emit_drop_glue_boxed(self, ret_ptr_fields: list[str]) -> None:
+        """Drop-loop for tracked local boxed enum payloads.
+
+        For each boxed slot, loads the raw ptr and frees it unless it
+        aliases any returned pointer (ret_ptr_fields).
+
+        v4.103.0: conservative skip when the return value exposes any
+        pointer at any nesting level. A boxed enum payload can embed
+        other boxed pointers inside its heap storage, and
+        `_extract_ret_ptrs` only walks LLVM-level struct values — it
+        does not dereference pointers. So a box nested inside another
+        box does not appear in `ret_ptr_fields`, and drop-glue freed
+        it while it was still referenced from the returned enum.
+        Observed as self-hosted parser's `parse_if_expr` building an
+        inner `ElseBlock` whose box the drop-glue pass freed before
+        the outer If was fully constructed — the allocator reused
+        that address for the outer `ElseBlock`, and the nested if/
+        else check in `semantic.check_else_clause` walked the aliased
+        tree forever.
+
+        Any function whose return value contains a pointer is
+        potentially carrying a box. We skip all boxed drops for such
+        functions. Boxes fall through to process exit — acceptable
+        for a short-lived compiler binary. A principled fix requires
+        type-aware deep-pointer walking at return sites and is
+        scoped to a future release.
+        """
+        if ret_ptr_fields and self._local_boxed:
+            # Potential box escape through returned pointer. Skip.
+            return
         for slot in self._local_boxed:
             bp = self._f("drop.bp")
             self._L(f"{bp} = load ptr, ptr {slot}")
@@ -1124,9 +1837,16 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        # List cleanup — load from the variable's alloca (gets final post-push value)
-        if self._list_vars:
-            self._ensure("__mn_list_free", VOID, ["ptr"])
+    def _emit_drop_glue_lists(self, ret_list_ptrs: list[str], ret_ptr_fields: list[str]) -> None:
+        """Drop-loop for tracked list variables.
+
+        For each list_var, resolves the alloca, loads the list struct,
+        extracts the data pointer, and calls __mn_list_free unless the
+        pointer aliases a returned list pointer (ret_list_ptrs +
+        ret_ptr_fields). Variables that cannot be resolved via
+        self._alloc are silently skipped (matches pre-extraction
+        behavior).
+        """
         for var_name in self._list_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -1167,14 +1887,14 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        # NOTE: struct parameter list field cleanup removed.  Without list
-        # cloning on struct copy, shared buffers are safe (mn_list_grow
-        # allocates new instead of realloc).  The old buffers leak on grow
-        # but that's bounded to O(log n) per list (geometric doubling).
+    def _emit_drop_glue_maps(self) -> None:
+        """Drop-loop for tracked map variables.
 
-        # Map cleanup
-        if self._map_vars:
-            self._ensure("__mn_map_free_deep", VOID, [PTR])
+        For each map_var, resolves the alloca, loads the ptr, and
+        calls __mn_map_free_deep unconditionally (no aliasing check —
+        maps do not participate in the return-pointer escape analysis
+        today).
+        """
         for var_name in self._map_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -1201,9 +1921,12 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        # Signal cleanup
-        if self._signal_vars:
-            self._ensure("__mn_signal_free", VOID, [PTR])
+    def _emit_drop_glue_signals(self) -> None:
+        """Drop-loop for tracked signal variables.
+
+        For each signal_var, resolves the alloca, loads the ptr, and
+        calls __mn_signal_free.
+        """
         for var_name in self._signal_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -1230,9 +1953,13 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-        # Stream cleanup
-        if self._stream_vars:
-            self._ensure("__mn_stream_free_chain", VOID, [PTR])
+    def _emit_drop_glue_streams(self) -> None:
+        """Drop-loop for tracked stream variables.
+
+        For each stream_var, resolves the alloca, loads the ptr, and
+        calls __mn_stream_free_chain (which walks the fusion chain and
+        frees every link).
+        """
         for var_name in self._stream_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -1254,6 +1981,47 @@ class LLVMTextEmitter:
             self._blk[free_lbl] = []
             self._cb = free_lbl
             self._L(f"call void @__mn_stream_free_chain(ptr {sp})")
+            self._L(f"br label %{skip_lbl}")
+
+            self._blk[skip_lbl] = []
+            self._cb = skip_lbl
+
+    def _emit_drop_glue_tensors(self, ret_val: str | None, ret_ty: str) -> None:
+        """Drop-loop for tracked tensor variables (v4.42.0).
+
+        For each tensor_var, resolves the alloca, loads the ptr, and
+        calls __mn_tensor_free unless the pointer is being returned.
+        """
+        for var_name in self._tensor_vars:
+            alloc_info = None
+            for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
+                if k in self._alloc:
+                    alloc_info = self._alloc[k]
+                    break
+            if alloc_info is None:
+                continue
+            addr, _ = alloc_info
+            tp = self._f("drop.tens")
+            self._L(f"{tp} = load ptr, ptr {addr}")
+            tn = self._f("drop.tensnull")
+            self._L(f"{tn} = icmp eq ptr {tp}, null")
+            skip_lbl = f"drop.tensskip.{self._c}"
+            free_lbl = f"drop.tensfree.{self._c}"
+            self._c += 1
+
+            # Check if this tensor is the return value
+            if ret_val and ret_ty == PTR:
+                eq = self._f("drop.tensret")
+                self._L(f"{eq} = icmp eq ptr {tp}, {ret_val}")
+                or_skip = self._f("drop.tensor")
+                self._L(f"{or_skip} = or i1 {tn}, {eq}")
+                self._L(f"br i1 {or_skip}, label %{skip_lbl}, label %{free_lbl}")
+            else:
+                self._L(f"br i1 {tn}, label %{skip_lbl}, label %{free_lbl}")
+
+            self._blk[free_lbl] = []
+            self._cb = free_lbl
+            self._L(f"call void @__mn_tensor_free(ptr {tp})")
             self._L(f"br label %{skip_lbl}")
 
             self._blk[skip_lbl] = []
@@ -1329,6 +2097,60 @@ class LLVMTextEmitter:
                             return False
         return True
 
+    # v4.146.0 E2: scalar types eligible for `noundef` parameter attribute.
+    # Mapanare has no undef-valued scalar paths (it uses Option types),
+    # so `noundef` is sound for all Int / Bool / Float parameters.
+    _NOUNDEF_TYPES = frozenset({I64, I1, DBL})
+
+    def _compute_pure_fns(self, functions: list["MIRFunction"]) -> set[str]:
+        """Fixed-point computation of pure functions in a module.
+
+        A function is pure (``memory(none)``) if:
+        1. All parameters and return type are scalars (i64/i1/double) — no
+           pointers, structs, or sret.  This guarantees the function cannot
+           read or write caller-visible memory.
+        2. Every call in its body goes to itself (self-recursion) or to
+           another function already proven pure.
+
+        Uses Kildall-style iteration — converges in O(depth) rounds where
+        depth is the longest call chain between pure functions.
+        """
+        scalars = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL}
+        # Pre-filter: only functions with all-scalar signatures are candidates
+        candidates: set[str] = set()
+        for fn in functions:
+            if fn.name == "main" or fn.is_async or not fn.blocks:
+                continue
+            if fn.return_type.kind not in scalars and fn.return_type.kind != TypeKind.VOID:
+                continue
+            if all(p.ty.kind in scalars for p in fn.params):
+                candidates.add(fn.name)
+
+        pure: set[str] = set()
+        changed = True
+        while changed:
+            changed = False
+            for fn in functions:
+                if fn.name not in candidates or fn.name in pure:
+                    continue
+                is_pure = True
+                for bb in fn.blocks:
+                    for inst in bb.instructions:
+                        if isinstance(inst, Call):
+                            callee = inst.fn_name.lstrip("%")
+                            if callee == fn.name:
+                                continue  # self-recursion OK
+                            if callee in pure:
+                                continue  # call to known-pure OK
+                            is_pure = False
+                            break
+                    if not is_pure:
+                        break
+                if is_pure:
+                    pure.add(fn.name)
+                    changed = True
+        return pure
+
     # ── function emission ───────────────────────────────────────────
     def _emit_fn(self, fn: MIRFunction) -> str:
         self._c = 0
@@ -1339,6 +2161,7 @@ class LLVMTextEmitter:
         self._dphi = []
         self._lroots = {}
         self._fn = fn
+        self._current_subprogram_id = self._debug_subprogram_ids.get(fn.name, -1)
         self._local_strings = []
         self._str_slots = {}
         self._last_tracked_str_slot = None
@@ -1350,16 +2173,37 @@ class LLVMTextEmitter:
         self._map_vars = []
         self._signal_vars = []
         self._stream_vars = []
+        self._tensor_vars = []
 
         # Per-function arena — disabled: text emitter never routes allocations
         # through mn_arena_alloc, so create/destroy was pure overhead.
-        # Arena allocation is properly implemented in emit_llvm_mir.py.
         self._arena_ptr: str | None = None
 
-        # Determine which params use byref and if return uses sret
+        # Determine which params use byref and if return uses sret.
+        # v4.149.0 E5 / ABI.1: return-type sret decision uses per-target
+        # ABI classifier (classify_return) instead of the blanket 64-byte
+        # _use_byref threshold.  Argument byref still uses _use_byref.
         rt_orig = self._rty(fn.return_type)
-        self._fn_use_sret = self._use_byref(rt_orig) and fn.name != "main"
+        self._fn_use_sret = self._use_sret(rt_orig) and fn.name != "main"
         self._fn_sret_ty = rt_orig if self._fn_use_sret else ""
+        self._fn_is_async: bool = fn.is_async  # v4.92.0: track for real suspend
+        # v4.145.0 E1: unified return block for inline-enum returns.
+        # Prevents aggregate PHI after inlining → enables LLVM to merge
+        # redundant switches (make_shape dispatch + area dispatch → one switch).
+        self._fn_unified_ret = False
+        self._fn_unified_ret_ty = ""
+        if (
+            not self._fn_use_sret
+            and fn.name != "main"
+            and not fn.is_async
+            and rt_orig != VOID
+            and fn.return_type
+            and fn.return_type.type_info
+        ):
+            ename = fn.return_type.type_info.name
+            if ename and self._enum_inline.get(ename, 0) > 0:
+                self._fn_unified_ret = True
+                self._fn_unified_ret_ty = rt_orig
         self._fn_byref_params: set[str] = set()
         for p in fn.params:
             ty = self._rty(p.ty)
@@ -1369,6 +2213,13 @@ class LLVMTextEmitter:
         # sret alloca (caller provides it, but we name it here for the callee)
         if self._fn_use_sret:
             self._sret_ptr = "%__sret__"
+
+        # v4.145.0 E1: unified-ret alloca
+        if self._fn_unified_ret:
+            self._ent.append(f"  %__ret_alloca = alloca {self._fn_unified_ret_ty}, align 8")
+            self._ent.append(
+                f"  store {self._fn_unified_ret_ty} zeroinitializer, ptr %__ret_alloca"
+            )
 
         # param allocas
         for p in fn.params:
@@ -1483,6 +2334,33 @@ class LLVMTextEmitter:
                 self._ent.append(f"  {a} = alloca {ty}, align 8")
                 self._ent.append(f"  store {ty} {_zero(ty)}, ptr {a}")
 
+        # emit dbg.declare for parameters (v4.65.0)
+        if self._debug_enabled and self._current_subprogram_id >= 0:
+            for idx, p in enumerate(fn.params, 1):
+                sname = self._san(p.name)
+                alloca_ref = None
+                for k in (p.name, sname, f"%{sname}"):
+                    if k in self._alloc:
+                        alloca_ref = self._alloc[k][0]
+                        break
+                if alloca_ref:
+                    ty_id = self._get_debug_type_for_mir(p.ty)
+                    var_id = self._emit_debug_local_variable(
+                        p.name,
+                        ty_id,
+                        self._current_subprogram_id,
+                        fn.source_line or 1,
+                        arg_index=idx,
+                    )
+                    file_id = next(iter(self._debug_file_table.values()), 0)
+                    loc_id = self._get_debug_location(
+                        file_id, fn.source_line or 1, 0, self._current_subprogram_id
+                    )
+                    self._ent.append(
+                        f"  call void @llvm.dbg.declare(metadata ptr {alloca_ref}, "
+                        f"metadata !{var_id}, metadata !DIExpression()), !dbg !{loc_id}"
+                    )
+
         # emit blocks
         for bb in fn.blocks:
             self._cb = bb.label
@@ -1490,6 +2368,7 @@ class LLVMTextEmitter:
             for inst in bb.instructions:
                 if isinstance(inst, Phi):
                     continue
+                self._current_span = getattr(inst, "span", None)
                 h = self._disp.get(type(inst))
                 if h:
                     h(inst)
@@ -1531,6 +2410,10 @@ class LLVMTextEmitter:
                         f"  store {self._fn_sret_ty} zeroinitializer," f" ptr {self._sret_ptr}"
                     )
                     ls.append("  ret void")
+                elif self._fn_unified_ret:
+                    urt = self._fn_unified_ret_ty
+                    ls.append(f"  store {urt} zeroinitializer, ptr %__ret_alloca")
+                    ls.append("  br label %__unified_ret")
                 else:
                     rt = self._rty(fn.return_type)
                     if rt == VOID:
@@ -1544,57 +2427,240 @@ class LLVMTextEmitter:
         if fn.name == "main" and rt == VOID:
             rt = I64
             # patch any "ret void" to "ret i64 0" in all blocks
+            # and insert program epilogue (intern table cleanup)
+            self._ensure("__mn_intern_destroy", VOID, [])
+            # v4.92.0: coroutine scheduler init at main entry
+            sched_init = ""
+            sched_destroy = ""
+            if getattr(self, "_module_has_async", False):
+                sched_init = (
+                    "  call void @__mn_coro_scheduler_init(i32 0)\n"  # 0 = auto-detect cores
+                )
+                sched_destroy = "  call void @__mn_coro_scheduler_destroy()\n"
+            if sched_init:
+                # Add scheduler init as first instruction in entry block
+                first_lbl = fn.blocks[0].label if fn.blocks else None
+                if first_lbl and first_lbl in self._blk:
+                    self._blk[first_lbl].insert(0, sched_init.rstrip())
             for lbl in self._blk:
                 for idx, ln in enumerate(self._blk[lbl]):
-                    if ln.strip() == "ret void":
-                        self._blk[lbl][idx] = "  ret i64 0"
+                    stripped = ln.strip()
+                    if stripped == "ret void" or stripped.startswith("ret void, !dbg"):
+                        # Preserve any !dbg attachment
+                        dbg = ""
+                        if ", !dbg" in stripped:
+                            dbg = ", " + stripped.split(", ", 1)[1]
+                        self._blk[lbl][idx] = (
+                            f"{sched_destroy}"
+                            f"  call void @__mn_intern_destroy(){dbg}\n  ret i64 0{dbg}"
+                        )
 
         # Build param list with byref/sret ABI adjustments
         param_parts: list[str] = []
         if self._fn_use_sret:
-            param_parts.append(f"ptr sret({self._fn_sret_ty}) {self._sret_ptr}")
+            # v4.84.0: noalias on sret — the caller-allocated return slot
+            # does not alias any other pointer the function can observe.
+            param_parts.append(f"ptr noalias sret({self._fn_sret_ty}) {self._sret_ptr}")
         for p in fn.params:
             ty = self._rty(p.ty)
             s = self._san(p.name)
             if p.name in self._fn_byref_params:
-                param_parts.append(f"ptr %{s}.byref")
+                # v4.147.0 E3: emit `noalias` on byref pointer params that
+                # passed escape analysis.  Only pointer-typed params can carry
+                # `noalias` in LLVM IR.
+                na = " noalias" if "noalias_ok" in p.attrs else ""
+                param_parts.append(f"ptr{na} %{s}.byref")
             else:
-                param_parts.append(f"{ty} %{s}")
+                # v4.146.0 E2: `noundef` on scalar parameters.  Mapanare has
+                # no undef-valued scalar paths (Option types cover nullable),
+                # so this is sound for Int / Bool / Float.
+                nd = " noundef" if ty in self._NOUNDEF_TYPES else ""
+                # v4.147.0 E3: `noalias` on direct ptr params (e.g. closure
+                # env pointers) that passed escape analysis.
+                na = " noalias" if (ty == PTR and "noalias_ok" in p.attrs) else ""
+                param_parts.append(f"{ty}{na}{nd} %{s}")
         ps = ", ".join(param_parts)
         abi_rt = "void" if self._fn_use_sret else rt
 
         lk = "internal " if (not fn.is_public and fn.name != "main") else ""
-        out: list[str] = [f"define {lk}{abi_rt} @{fn.name}({ps}) {{", "pre_entry:"]
-        out.extend(self._ent)
-        # Store params into allocas (byref params get memcpy from pointer)
-        for p in fn.params:
-            ty = self._rty(p.ty)
-            s = self._san(p.name)
-            if p.name in self._fn_byref_params:
-                # Load from byref pointer into the local zeroed alloca
-                tmp = self._f("bp")
-                out.append(f"  {tmp} = load {ty}, ptr %{s}.byref")
-                out.append(f"  store {ty} {tmp}, ptr %{s}.addr")
-            else:
-                out.append(f"  store {ty} %{s}, ptr %{s}.addr")
-        if fn.blocks:
-            out.append(f"  br label %{fn.blocks[0].label}")
-        mir_labels = {bb.label for bb in fn.blocks}
-        for bb in fn.blocks:
-            out.append(f"{bb.label}:")
-            out.extend(self._blk[bb.label])
-        # Emit drop glue blocks (drop.skip.*, drop.check.*, drop.free.*, etc.)
-        for lbl, lines in self._blk.items():
-            if lbl not in mir_labels:
-                out.append(f"{lbl}:")
-                out.extend(lines)
-        out.append("}")
+        # v4.83.0: nounwind on all user-defined functions — Mapanare has no
+        # exception mechanism, so LLVM can assume no unwind paths.
+        # v4.84.0: willreturn — all Mapanare functions terminate (infinite
+        # recursion/loops are UB). This enables LICM to hoist calls out
+        # of loops and DSE to eliminate dead stores before calls.
+        # v4.146.0 E2: pure functions additionally get `memory(none) nofree
+        # nosync` — tells LLVM no externally-visible memory effects, enabling
+        # earlier interprocedural optimizations.  Purity is precomputed via
+        # fixed-point iteration in ``_compute_pure_fns``.
+        fn_attrs = " nounwind willreturn"
+        if fn.name in self._pure_fns:
+            fn_attrs = " nofree nosync nounwind willreturn memory(none)"
+        # v4.70.0: presplitcoroutine attribute for async functions
+        coro_attr = " presplitcoroutine" if fn.is_async else ""
+        dbg_ref = ""
+        if self._debug_enabled and fn.name in self._debug_subprogram_ids:
+            dbg_ref = f" !dbg !{self._debug_subprogram_ids[fn.name]}"
+
+        if fn.is_async:
+            # v4.70.0: Async function — emit coroutine prelude wrapper.
+            # The function returns ptr (the Future handle) regardless of the
+            # declared return type. The actual return value goes into the Future.
+            out: list[str] = [
+                f"define {lk}ptr @{fn.name}({ps}){fn_attrs}{coro_attr}{dbg_ref} {{",
+                "coro.entry:",
+                "  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)",
+                "  %coro.size = call i64 @llvm.coro.size.i64()",
+                "  %coro.mem = call ptr @malloc(i64 %coro.size)",
+                "  %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)",
+                "  ; Allocate Future struct: {i8 state, ptr payload}",
+                "  %future = call ptr @malloc(i64 16)",
+                "  store i8 0, ptr %future",
+                "  %future.hdl.slot = getelementptr inbounds {i8, ptr}, ptr %future, i32 0, i32 1",
+                "  store ptr %coro.hdl, ptr %future.hdl.slot",
+                "  ; Initial suspend",
+                "  %coro.init.save = call token @llvm.coro.save(ptr %coro.hdl)",
+                "  %coro.init.susp = call i8 @llvm.coro.suspend(token %coro.init.save, i1 false)",
+                "  switch i8 %coro.init.susp, label %coro.ret [",
+                "    i8 0, label %pre_entry",
+                "    i8 1, label %coro.cleanup",
+                "  ]",
+                "",
+                "pre_entry:",
+            ]
+            out.extend(self._ent)
+            for p in fn.params:
+                ty = self._rty(p.ty)
+                s = self._san(p.name)
+                if p.name in self._fn_byref_params:
+                    tmp = self._f("bp")
+                    out.append(f"  {tmp} = load {ty}, ptr %{s}.byref")
+                    out.append(f"  store {ty} {tmp}, ptr %{s}.addr")
+                else:
+                    out.append(f"  store {ty} %{s}, ptr %{s}.addr")
+            if fn.blocks:
+                out.append(f"  br label %{fn.blocks[0].label}")
+            mir_labels = {bb.label for bb in fn.blocks}
+            for bb in fn.blocks:
+                out.append(f"{bb.label}:")
+                # Rewrite "ret <ty> <val>" to store into Future + final suspend
+                rewritten = []
+                for line in self._blk[bb.label]:
+                    stripped = line.strip()
+                    if stripped.startswith("ret ") and not stripped.startswith("ret void"):
+                        # Extract the return value and type
+                        parts = stripped.split(" ", 2)
+                        if len(parts) >= 3:
+                            ret_ty = parts[1]
+                            ret_val = parts[2].split(",")[0]  # strip !dbg suffix
+                            t = self._f("ret.box")
+                            rewritten.append(f"  {t} = call ptr @malloc(i64 8)")
+                            rewritten.append(f"  store {ret_ty} {ret_val}, ptr {t}")
+                            rvs = self._f("ret.val.slot")
+                            rewritten.append("  store i8 1, ptr %future")
+                            rewritten.append(
+                                f"  {rvs} = getelementptr inbounds {{i8, ptr}}, ptr %future, i32 0, i32 1"  # noqa: E501
+                            )
+                            rewritten.append(f"  store ptr {t}, ptr {rvs}")
+                            rewritten.append("  br label %coro.final")
+                        else:
+                            rewritten.append(line)
+                    elif stripped == "ret void":
+                        rewritten.append("  store i8 1, ptr %future")
+                        rewritten.append("  br label %coro.final")
+                    else:
+                        rewritten.append(line)
+                out.extend(rewritten)
+            # Emit drop glue + await blocks (also rewrite ret instructions)
+            for lbl, lines in self._blk.items():
+                if lbl not in mir_labels:
+                    out.append(f"{lbl}:")
+                    rewritten = []
+                    for line in lines:
+                        stripped = line.strip()
+                        if stripped.startswith("ret ") and not stripped.startswith("ret void"):
+                            parts = stripped.split(" ", 2)
+                            if len(parts) >= 3:
+                                ret_ty = parts[1]
+                                ret_val = parts[2].split(",")[0]
+                                t = self._f("ret.box")
+                                rewritten.append(f"  {t} = call ptr @malloc(i64 8)")
+                                rewritten.append(f"  store {ret_ty} {ret_val}, ptr {t}")
+                                rvs = self._f("ret.val.slot")
+                                rewritten.append("  store i8 1, ptr %future")
+                                rewritten.append(
+                                    f"  {rvs} = getelementptr inbounds {{i8, ptr}},"
+                                    f" ptr %future, i32 0, i32 1"
+                                )
+                                rewritten.append(f"  store ptr {t}, ptr {rvs}")
+                                rewritten.append("  br label %coro.final")
+                            else:
+                                rewritten.append(line)
+                        elif stripped == "ret void":
+                            rewritten.append("  store i8 1, ptr %future")
+                            rewritten.append("  br label %coro.final")
+                        else:
+                            rewritten.append(line)
+                    out.extend(rewritten)
+            # Coroutine epilogue blocks
+            out.append("coro.final:")
+            out.append("  %coro.final.save = call token @llvm.coro.save(ptr %coro.hdl)")
+            out.append(
+                "  %coro.final.susp = call i8 @llvm.coro.suspend(token %coro.final.save, i1 true)"
+            )
+            out.append("  switch i8 %coro.final.susp, label %coro.ret [")
+            out.append("    i8 0, label %coro.ret")
+            out.append("    i8 1, label %coro.cleanup")
+            out.append("  ]")
+            out.append("coro.cleanup:")
+            out.append("  %coro.mem.free = call ptr @llvm.coro.free(token %coro.id, ptr %coro.hdl)")
+            out.append("  call void @free(ptr %coro.mem.free)")
+            out.append("  br label %coro.ret")
+            out.append("coro.ret:")
+            out.append("  call i1 @llvm.coro.end(ptr %coro.hdl, i1 false, token none)")
+            out.append("  ret ptr %future")
+            out.append("}")
+        else:
+            # Regular (non-async) function emission
+            # v4.146.0 E2: `noundef` on scalar return types — Mapanare
+            # functions always return well-defined values (no undef/poison).
+            ret_nd = "noundef " if (abi_rt in self._NOUNDEF_TYPES and fn.name != "main") else ""
+            out = [
+                f"define {lk}{ret_nd}{abi_rt} @{fn.name}({ps}){fn_attrs}{dbg_ref} {{",
+                "pre_entry:",
+            ]
+            out.extend(self._ent)
+            for p in fn.params:
+                ty = self._rty(p.ty)
+                s = self._san(p.name)
+                if p.name in self._fn_byref_params:
+                    tmp = self._f("bp")
+                    out.append(f"  {tmp} = load {ty}, ptr %{s}.byref")
+                    out.append(f"  store {ty} {tmp}, ptr %{s}.addr")
+                else:
+                    out.append(f"  store {ty} %{s}, ptr %{s}.addr")
+            if fn.blocks:
+                out.append(f"  br label %{fn.blocks[0].label}")
+            mir_labels = {bb.label for bb in fn.blocks}
+            for bb in fn.blocks:
+                out.append(f"{bb.label}:")
+                out.extend(self._blk[bb.label])
+            for lbl, lines in self._blk.items():
+                if lbl not in mir_labels:
+                    out.append(f"{lbl}:")
+                    out.extend(lines)
+            # v4.145.0 E1: emit unified return block
+            if self._fn_unified_ret:
+                urt = self._fn_unified_ret_ty
+                out.append("__unified_ret:")
+                out.append(f"  %__retval = load {urt}, ptr %__ret_alloca")
+                out.append(f"  ret {urt} %__retval")
+            out.append("}")
         out.append("")
         return "\n".join(out)
 
     @staticmethod
     def _is_term(line: str) -> bool:
-        s = line.strip()
+        s = line.split(", !dbg")[0].strip() if ", !dbg" in line else line.strip()
         return (
             s.startswith("ret ")
             or s.startswith("br ")
@@ -1647,19 +2713,66 @@ class LLVMTextEmitter:
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
             self._lroots[i.dest.name] = root
-            # Replace source tracking with dest (they share the same data pointer;
-            # freeing both would double-free)
+            # v4.131.0 Sh.2 fix: only track dest as an owner when we are
+            # transferring ownership from src. If src is not tracked (it
+            # came from a field-get, enum-payload extract, or function
+            # parameter — all aliased sources), then dest is also an
+            # alias; it must not be tracked for drop glue. If dest was
+            # previously tracked (e.g., `let mut x: List = []` followed
+            # by `x = fe.param_types`), untrack it to prevent UAF on the
+            # aliased buffer. The original `[]` buffer leaks, but UAF is
+            # corrupted-memory, not a leak. See docs/roadmap/v4/v4.131.0.
             if i.src.name in self._list_vars:
+                # Ownership transfer: src was an owner, dest becomes the owner
                 self._list_vars.remove(i.src.name)
-            self._track_container(i.dest.name, "list")
-        # Propagate container tracking for maps/signals/streams
+                self._track_container(i.dest.name, "list")
+            else:
+                # src is an alias; dest must not own this buffer either
+                if i.dest.name in self._list_vars:
+                    self._list_vars.remove(i.dest.name)
+        # v4.132.0 Sh.2 String-residual: mirror v4.131.0 LIST fix for STR.
+        # Sh.2 on Strings: a String extracted from a struct field or
+        # concat'd into a local then stored into an Instruction enum
+        # payload gets freed by drop glue on the local, invalidating
+        # every other alias the caller's data structure holds. Fix:
+        # only propagate tracking when src was a tracked owner. If src
+        # is an alias (field-get, enum-payload, param), dest must not
+        # be tracked either. See docs/roadmap/v4/v4.132.0.
+        if t == STR:
+            src_str_tracked = i.src.name in self._str_slots
+            if src_str_tracked:
+                # Ownership transfer: remap tracking slot src → dest
+                slot = self._str_slots.pop(i.src.name)
+                self._str_slots[i.dest.name] = slot
+            else:
+                # src is an alias; untrack dest if it was previously an owner
+                if i.dest.name in self._str_slots:
+                    self._str_slots.pop(i.dest.name)
+        # v4.140.0 SE.1: mirror Sh.2 ownership-transfer for MAP/SIGNAL/STREAM.
+        # Same shape as LIST (v4.131.0): only track dest as owner when src was
+        # already tracked; if src is an alias, untrack dest to prevent UAF.
         sk = i.src.ty.kind if i.src.ty else TypeKind.UNKNOWN
         if sk == TypeKind.MAP:
-            self._track_container(i.dest.name, "map")
+            if i.src.name in self._map_vars:
+                self._map_vars.remove(i.src.name)
+                self._track_container(i.dest.name, "map")
+            else:
+                if i.dest.name in self._map_vars:
+                    self._map_vars.remove(i.dest.name)
         elif sk == TypeKind.SIGNAL:
-            self._track_container(i.dest.name, "signal")
+            if i.src.name in self._signal_vars:
+                self._signal_vars.remove(i.src.name)
+                self._track_container(i.dest.name, "signal")
+            else:
+                if i.dest.name in self._signal_vars:
+                    self._signal_vars.remove(i.dest.name)
         elif sk == TypeKind.STREAM:
-            self._track_container(i.dest.name, "stream")
+            if i.src.name in self._stream_vars:
+                self._stream_vars.remove(i.src.name)
+                self._track_container(i.dest.name, "stream")
+            else:
+                if i.dest.name in self._stream_vars:
+                    self._stream_vars.remove(i.dest.name)
         # List fields in struct copies share the same buffer (bitwise copy,
         # no refcount increment).  This is safe because mn_list_grow always
         # allocates a new buffer (never reallocs), so the shared old buffer
@@ -1761,7 +2874,9 @@ class LLVMTextEmitter:
         vals = ", ".join(f"i64 {o}" for o in offsets)
         self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
         gep = self._f("offp")
-        self._L(f"{gep} = getelementptr [{len(offsets)} x i64], " f"ptr {name}, i64 0, i64 0")
+        self._L(
+            f"{gep} = getelementptr inbounds [{len(offsets)} x i64], " f"ptr {name}, i64 0, i64 0"
+        )
         return gep
 
     # --- Cast ---
@@ -2009,6 +3124,15 @@ class LLVMTextEmitter:
                 ea = self._alloca(et, "pea")
                 self._L(f"store {et} {ev}, ptr {ea}")
                 ep = ea  # opaque ptr, no bitcast
+                # v4.101.0 + v4.103.0: move semantics — the element is
+                # now owned by the list; zero its tracking slot so
+                # drop glue does not free it. See _do_list_push.
+                if elem_val.name in self._list_vars:
+                    self._list_vars.remove(elem_val.name)
+                root_e = self._lroots.get(elem_val.name)
+                if root_e and root_e in self._list_vars:
+                    self._list_vars.remove(root_e)
+                self._move_resource(elem_val.name)
                 self._ensure("__mn_list_push", VOID, ["ptr", PTR])
                 self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
                 self._put(i.dest, "0", I1)  # push returns void
@@ -2016,6 +3140,32 @@ class LLVMTextEmitter:
 
         args = [(self._get(a)) for a in i.args]  # [(val, ty)]
         self._san(i.dest.name)
+
+        # v4.108.0: StringBuilder pointer-based API. The MIR auto-loop pass
+        # (string_concat_optimization) emits these calls to replace O(n²)
+        # concat loops with amortized O(n) builder appends.
+        if fn == "__mn_sb_new" and len(args) >= 1:
+            cv = args[0][0] if args[0][1] == I64 else self._coerce(args[0][0], args[0][1], I64)
+            r = self._rt("__mn_sb_new", PTR, [I64], [(cv, I64)])
+            self._put(i.dest, r, PTR)
+            return
+        if fn == "__mn_sb_append" and len(args) >= 2:
+            sbv = args[0][0] if args[0][1] == PTR else self._coerce(args[0][0], args[0][1], PTR)
+            sv = args[1][0] if args[1][1] == STR else self._coerce(args[1][0], args[1][1], STR)
+            self._rt(
+                "__mn_sb_append",
+                VOID,
+                [PTR, STR],
+                [(sbv, PTR), (sv, STR)],
+            )
+            self._put(i.dest, "0", I1)
+            return
+        if fn == "__mn_sb_finish" and len(args) >= 1:
+            sbv = args[0][0] if args[0][1] == PTR else self._coerce(args[0][0], args[0][1], PTR)
+            r = self._rt("__mn_sb_finish", STR, [PTR], [(sbv, PTR)])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
 
         # print / println (both add newline; println is a deprecated alias)
         if fn in ("println", "print"):
@@ -2351,6 +3501,224 @@ class LLVMTextEmitter:
             self._put(i.dest, r, LIST)
             return
 
+        # Tensor builtins (v4.42.0)
+        if fn == "tensor_rank" and len(args) >= 1:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            r = self._rt("__mn_tensor_rank", I64, [PTR], [(a0, PTR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "tensor_size" and len(args) >= 1:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            r = self._rt("__mn_tensor_size", I64, [PTR], [(a0, PTR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "tensor_get_f64" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            r = self._rt("__mn_tensor_get_f64", DBL, [PTR, I64], [(a0, PTR), (a1, I64)])
+            self._put(i.dest, r, DBL)
+            return
+        if fn == "tensor_get_i64" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            r = self._rt("__mn_tensor_get_i64", I64, [PTR, I64], [(a0, PTR), (a1, I64)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "tensor_shape_dim" and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            r = self._rt("__mn_tensor_shape_dim", I64, [PTR, I64], [(a0, PTR), (a1, I64)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "tensor_print" and len(args) >= 1:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            self._ensure("__mn_tensor_print_f64", VOID, [PTR])
+            self._L(f"call void @__mn_tensor_print_f64(ptr {a0})")
+            return
+
+        # Tensor multi-dim get/set (v4.43.0) — variadic runtime calls
+        if fn in ("__mn_tensor_get_f64_nd", "__mn_tensor_get_i64_nd") and len(args) >= 2:
+            # args = [(tensor_ptr, ty), (rank, ty), (idx0, ty), (idx1, ty), ...]
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            rank_v = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            idx_parts = []
+            for j in range(2, len(args)):
+                iv = self._coerce(args[j][0], args[j][1], I64) if args[j][1] != I64 else args[j][0]
+                idx_parts.append(f"i64 {iv}")
+            ret_ty = DBL if "f64" in fn else I64
+            self._ensure(fn, ret_ty, [PTR, I64], va=True)
+            idx_str = (", " + ", ".join(idx_parts)) if idx_parts else ""
+            r = self._f("tget")
+            self._L(
+                f"{r} = call {ret_ty} (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str})"
+            )
+            self._put(i.dest, r, ret_ty)
+            return
+        if fn in ("__mn_tensor_set_f64_nd", "__mn_tensor_set_i64_nd") and len(args) >= 3:
+            # args = [(tensor_ptr, ty), (rank, ty), (idx0, ty), ..., (val, ty)]
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            rank_v = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            val_ty = DBL if "f64" in fn else I64
+            # Last arg is the value; middle args are indices
+            val_v = (
+                self._coerce(args[-1][0], args[-1][1], val_ty)
+                if args[-1][1] != val_ty
+                else args[-1][0]
+            )
+            idx_parts = []
+            for j in range(2, len(args) - 1):
+                iv = self._coerce(args[j][0], args[j][1], I64) if args[j][1] != I64 else args[j][0]
+                idx_parts.append(f"i64 {iv}")
+            self._ensure(fn, VOID, [PTR, I64], va=True)
+            idx_str = (", " + ", ".join(idx_parts)) if idx_parts else ""
+            self._L(
+                f"call void (ptr, i64, ...) @{fn}(ptr {t_ptr}, i64 {rank_v}{idx_str}, {val_ty} {val_v})"  # noqa: E501
+            )
+            return
+
+        # Tensor reduction methods (v4.45.0)
+        _TENSOR_REDUCE_F64 = {
+            "__mn_tensor_sum_f64": DBL,
+            "__mn_tensor_mean_f64": DBL,
+            "__mn_tensor_max_f64": DBL,
+            "__mn_tensor_min_f64": DBL,
+            "__mn_tensor_argmax_f64": I64,
+            "__mn_tensor_argmin_f64": I64,
+        }
+        _TENSOR_REDUCE_I64 = {
+            "__mn_tensor_sum_i64": I64,
+            "__mn_tensor_max_i64": I64,
+            "__mn_tensor_min_i64": I64,
+            "__mn_tensor_argmax_i64": I64,
+            "__mn_tensor_argmin_i64": I64,
+        }
+        _ALL_TENSOR_REDUCE = {**_TENSOR_REDUCE_F64, **_TENSOR_REDUCE_I64}
+        if fn in _ALL_TENSOR_REDUCE and len(args) >= 1:
+            ret = _ALL_TENSOR_REDUCE[fn]
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            self._ensure(fn, ret, [PTR])
+            r = self._f("tred")
+            self._L(f"{r} = call {ret} @{fn}(ptr {a0})")
+            self._put(i.dest, r, ret)
+            return
+
+        # Tensor slice (v4.45.0)
+        # Lowerer passes flat args: [tensor, s0, s1, ..., e0, e1, ..., rank]
+        # C runtime expects: (ptr tensor, ptr starts_array, ptr ends_array, i64 rank)
+        # We pack the individual i64 values into stack-allocated arrays.
+        if fn == "__mn_tensor_slice" and len(args) >= 3:
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            # Last arg is rank
+            rank_idx = len(args) - 1
+            rank_v = (
+                self._coerce(args[rank_idx][0], args[rank_idx][1], I64)
+                if args[rank_idx][1] != I64
+                else args[rank_idx][0]
+            )
+            ndim = (len(args) - 2) // 2  # (total - tensor - rank) / 2
+            # Allocate stack arrays for starts and ends
+            starts_arr = self._f("starts_arr")
+            ends_arr = self._f("ends_arr")
+            self._L(f"{starts_arr} = alloca [{ndim} x i64]")
+            self._L(f"{ends_arr} = alloca [{ndim} x i64]")
+            # Store individual start/end values into the arrays
+            for d in range(ndim):
+                s_val = (
+                    self._coerce(args[1 + d][0], args[1 + d][1], I64)
+                    if args[1 + d][1] != I64
+                    else args[1 + d][0]
+                )
+                e_val = (
+                    self._coerce(args[1 + ndim + d][0], args[1 + ndim + d][1], I64)
+                    if args[1 + ndim + d][1] != I64
+                    else args[1 + ndim + d][0]
+                )
+                s_gep = self._f("sgep")
+                e_gep = self._f("egep")
+                self._L(
+                    f"{s_gep} = getelementptr inbounds [{ndim} x i64], ptr {starts_arr}, i64 0, i64 {d}"  # noqa: E501
+                )
+                self._L(
+                    f"{e_gep} = getelementptr inbounds [{ndim} x i64], ptr {ends_arr}, i64 0, i64 {d}"  # noqa: E501
+                )
+                self._L(f"store i64 {s_val}, ptr {s_gep}")
+                self._L(f"store i64 {e_val}, ptr {e_gep}")
+            self._ensure("__mn_tensor_slice", PTR, [PTR, PTR, PTR, I64])
+            r = self._f("tslice")
+            self._L(
+                f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, i64 {rank_v})"  # noqa: E501
+            )
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+
+        # Tensor broadcast ops (v4.44.0) — tensor+tensor and tensor+scalar
+        _TENSOR_BROADCAST_FNS = {
+            "__mn_tensor_add_broadcast_f64",
+            "__mn_tensor_sub_broadcast_f64",
+            "__mn_tensor_mul_broadcast_f64",
+            "__mn_tensor_div_broadcast_f64",
+            "__mn_tensor_add_broadcast_i64",
+            "__mn_tensor_sub_broadcast_i64",
+            "__mn_tensor_mul_broadcast_i64",
+            "__mn_tensor_div_broadcast_i64",
+        }
+        _TENSOR_SCALAR_FNS = {
+            "__mn_tensor_add_scalar_f64",
+            "__mn_tensor_sub_scalar_f64",
+            "__mn_tensor_mul_scalar_f64",
+            "__mn_tensor_div_scalar_f64",
+            "__mn_tensor_add_scalar_i64",
+            "__mn_tensor_sub_scalar_i64",
+            "__mn_tensor_mul_scalar_i64",
+            "__mn_tensor_div_scalar_i64",
+        }
+        # Reverse scalar: scalar op tensor[i] (v4.47.0)
+        _TENSOR_RSCALAR_FNS = {
+            "__mn_tensor_rsub_scalar_f64",
+            "__mn_tensor_rdiv_scalar_f64",
+            "__mn_tensor_rsub_scalar_i64",
+            "__mn_tensor_rdiv_scalar_i64",
+        }
+        if fn in _TENSOR_BROADCAST_FNS and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            a1 = self._coerce(args[1][0], args[1][1], PTR) if args[1][1] != PTR else args[1][0]
+            self._ensure(fn, PTR, [PTR, PTR])
+            r = self._f("tbcast")
+            self._L(f"{r} = call noalias ptr @{fn}(ptr {a0}, ptr {a1})")
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+        if fn in _TENSOR_SCALAR_FNS and len(args) >= 2:
+            a0 = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            scalar_ty = DBL if "f64" in fn else I64
+            a1 = (
+                self._coerce(args[1][0], args[1][1], scalar_ty)
+                if args[1][1] != scalar_ty
+                else args[1][0]
+            )
+            self._ensure(fn, PTR, [PTR, scalar_ty])
+            r = self._f("tscal")
+            self._L(f"{r} = call noalias ptr @{fn}(ptr {a0}, {scalar_ty} {a1})")
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+        # Reverse scalar: scalar op tensor (v4.47.0)
+        if fn in _TENSOR_RSCALAR_FNS and len(args) >= 2:
+            scalar_ty = DBL if "f64" in fn else I64
+            a0 = (
+                self._coerce(args[0][0], args[0][1], scalar_ty)
+                if args[0][1] != scalar_ty
+                else args[0][0]
+            )
+            a1 = self._coerce(args[1][0], args[1][1], PTR) if args[1][1] != PTR else args[1][0]
+            self._ensure(fn, PTR, [scalar_ty, PTR])
+            r = self._f("trscal")
+            self._L(f"{r} = call noalias ptr @{fn}({scalar_ty} {a0}, ptr {a1})")
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+
         # join
         if fn == "join" and len(i.args) >= 2:
             sep = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
@@ -2500,12 +3868,26 @@ class LLVMTextEmitter:
         # Move semantics: when a resource (list, string, boxed) is passed as
         # an argument to a user-defined function, transfer ownership so drop
         # glue won't free it.
+        # v4.103.0: also walk _lroots so a list passed via a loaded
+        # temp (e.g. new_block(span, stmts) where `stmts` was loaded
+        # into a fresh SSA before the call) still drops its root
+        # alloca from _list_vars. Without this, parse_block-style
+        # `return new_block(..., stmts)` left `stmts` tracked and the
+        # drop-glue pass freed its buffer out from under the returned
+        # Block — the inner else clause in nested if/else then
+        # aliased the outer else body, sending the semantic checker
+        # into infinite recursion on nested if/else.
         for j, (v, t) in enumerate(args):
             if j < len(i.args):
                 src_name = i.args[j].name
                 if t == LIST and src_name in self._list_vars:
                     self._list_vars.remove(src_name)
+                root_s = self._lroots.get(src_name)
+                if root_s and root_s in self._list_vars:
+                    self._list_vars.remove(root_s)
                 self._move_resource(src_name)
+                if root_s and root_s != src_name:
+                    self._move_resource(root_s)
 
         # User function
         if fn in self._sigs:
@@ -2515,8 +3897,9 @@ class LLVMTextEmitter:
                 et = pts[j] if j < len(pts) else t
                 coerced.append((self._coerce(v, t, et) if t != et else v, et))
 
-            # Apply byref ABI: large struct args → pointer, large struct ret → sret
-            use_sret = self._use_byref(ret) and fn != "main"
+            # Apply byref ABI: large struct args → pointer, large struct ret → sret.
+            # v4.149.0 E5: return sret uses per-target classifier.
+            use_sret = self._use_sret(ret) and fn != "main"
             abi_args: list[tuple[str, str]] = []
             for v, t in coerced:
                 if self._use_byref(t):
@@ -2600,7 +3983,8 @@ class LLVMTextEmitter:
         for j, (v, t) in enumerate(args):
             et = pts_auto[j] if j < len(pts_auto) else t
             coerced2.append((self._coerce(v, t, et) if t != et else v, et))
-        use_sret2 = self._use_byref(ret_auto) and fn != "main"
+        # v4.149.0 E5: return sret uses per-target classifier.
+        use_sret2 = self._use_sret(ret_auto) and fn != "main"
         abi_args2: list[tuple[str, str]] = []
         for v, t in coerced2:
             if self._use_byref(t):
@@ -2633,11 +4017,15 @@ class LLVMTextEmitter:
     def _do_extern(self, i: ExternCall) -> None:
         args = [self._get(a) for a in i.args]
         # Move semantics for arguments (same as _do_call)
+        # v4.103.0: walk _lroots too (see _do_call).
         for j, (v, t) in enumerate(args):
             if j < len(i.args):
                 src_name = i.args[j].name
                 if t == LIST and src_name in self._list_vars:
                     self._list_vars.remove(src_name)
+                root_s = self._lroots.get(src_name)
+                if root_s and root_s in self._list_vars:
+                    self._list_vars.remove(root_s)
                 self._move_resource(src_name)
         full = f"{i.module}__{i.fn_name}" if i.module else i.fn_name
         if full not in self._sigs:
@@ -2677,6 +4065,16 @@ class LLVMTextEmitter:
                 self._emit_arena_destroy()
                 self._L(f"store {self._fn_sret_ty} {v}, ptr {self._sret_ptr}")
                 self._L("ret void")
+            elif self._fn_unified_ret:
+                # v4.145.0 E1: store to unified-ret alloca + branch.
+                # After inlining, SROA decomposes the alloca into scalar PHIs,
+                # enabling SimplifyCFG to merge redundant enum switches.
+                urt = self._fn_unified_ret_ty
+                v = self._coerce(v, t, urt) if t != urt else v
+                self._emit_drop_glue(v, urt)
+                self._emit_arena_destroy()
+                self._L(f"store {urt} {v}, ptr %__ret_alloca")
+                self._L("br label %__unified_ret")
             else:
                 v = self._coerce(v, t, rt) if t != rt else v
                 self._emit_drop_glue(v, rt)
@@ -2687,6 +4085,10 @@ class LLVMTextEmitter:
             self._emit_arena_destroy()
             if self._fn_use_sret:
                 self._L("ret void")
+            elif self._fn_unified_ret:
+                urt = self._fn_unified_ret_ty
+                self._L(f"store {urt} zeroinitializer, ptr %__ret_alloca")
+                self._L("br label %__unified_ret")
             else:
                 self._L("ret void")
 
@@ -2758,6 +4160,29 @@ class LLVMTextEmitter:
                 nxt = self._f("si")
                 self._L(f"{nxt} = insertvalue {sty} {cur}, {t} {v}, {idx}")
                 cur = nxt
+                # v4.101.0: move semantics — the field value is now
+                # owned by the struct. Zero its tracking slot so drop
+                # glue does not free the buffer the struct now holds a
+                # pointer to. Mirrors the fix in _do_list_push (see
+                # its comment for the root-cause rationale).
+                #
+                # v4.103.0: also drop the value from _list_vars so the
+                # list drop-glue pass skips it. The original v4.101.0
+                # fix covered strings and boxed enums (`_str_slots`,
+                # `_boxed_slots`) but left list tracking untouched.
+                # Parser code like ``new Block { stmts: stmts }`` lost
+                # its List<Stmt> buffer at parse_block's return,
+                # aliasing every nested block's stmts into whatever
+                # the allocator reused that address for — observed
+                # as the self-hosted semantic checker infinite-
+                # recursing on nested if/else because the inner else
+                # clause aliased the outer else body.
+                if fval.name in self._list_vars:
+                    self._list_vars.remove(fval.name)
+                root_fv = self._lroots.get(fval.name)
+                if root_fv and root_fv in self._list_vars:
+                    self._list_vars.remove(root_fv)
+                self._move_resource(fval.name)
             self._put(i.dest, cur, sty)
         else:
             # unknown struct
@@ -2868,6 +4293,15 @@ class LLVMTextEmitter:
                 if vt != ft:
                     vv = self._coerce(vv, vt, ft)
                 self._L(f"store {ft} {vv}, ptr {fp}")
+            # v4.101.0: move semantics for the stored value (see
+            # _do_list_push / _do_struct_init for the rationale).
+            # v4.103.0: also drop from _list_vars (see _do_struct_init).
+            if i.val.name in self._list_vars:
+                self._list_vars.remove(i.val.name)
+            root_v = self._lroots.get(i.val.name)
+            if root_v and root_v in self._list_vars:
+                self._list_vars.remove(root_v)
+            self._move_resource(i.val.name)
             return
         # fallback: insertvalue
         ov, ot = self._get(i.obj)
@@ -2879,6 +4313,13 @@ class LLVMTextEmitter:
             r = self._f("iv")
             self._L(f"{r} = insertvalue {ot} {ov}, {ft} {vv}, {idx}")
             self._put(i.obj, r, ot)
+            # v4.101.0 + v4.103.0: move semantics for the stored value.
+            if i.val.name in self._list_vars:
+                self._list_vars.remove(i.val.name)
+            root_v2 = self._lroots.get(i.val.name)
+            if root_v2 and root_v2 in self._list_vars:
+                self._list_vars.remove(root_v2)
+            self._move_resource(i.val.name)
 
     # --- ListInit ---
     def _do_list_init(self, i: ListInit) -> None:
@@ -2900,11 +4341,72 @@ class LLVMTextEmitter:
                 self._L(f"store {et} {ev}, ptr {ea}")
                 ep = self._f("ep")
                 ep = ea  # opaque ptr, no bitcast
+                # v4.101.0 + v4.103.0: move element ownership into the
+                # list so drop glue does not free the backing buffer
+                # (see _do_list_push for the full rationale).
+                if elem.name in self._list_vars:
+                    self._list_vars.remove(elem.name)
+                root_e = self._lroots.get(elem.name)
+                if root_e and root_e in self._list_vars:
+                    self._list_vars.remove(root_e)
+                self._move_resource(elem.name)
                 self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
             r = self._f("ll")
             self._L(f"{r} = load {LIST}, ptr {la}")
             lv = r
         self._put(i.dest, lv, LIST)
+
+    # --- TensorInit (v4.42.0) ---
+    def _do_tensor_init(self, i: TensorInit) -> None:
+        """Emit LLVM IR for a tensor literal.
+
+        1. Stack-allocate shape array: [N x i64]
+        2. Store each shape dimension
+        3. Call __mn_tensor_alloc(rank, shape_ptr, elem_size)
+        4. Call __mn_tensor_store_f64/i64 for each element
+        """
+        rank = len(i.shape)
+        elem_kind = i.elem_type.kind
+
+        # Step 1: Allocate shape array on stack
+        shape_a = self._alloca(f"[{rank} x i64]", "tshape")
+        for dim_idx, dim_val in enumerate(i.shape):
+            gep = self._f("tsd")
+            self._L(
+                f"{gep} = getelementptr inbounds [{rank} x i64], ptr {shape_a}, i64 0, i64 {dim_idx}"  # noqa: E501
+            )
+            self._L(f"store i64 {dim_val}, ptr {gep}")
+
+        # Step 2: Determine element size
+        from mapanare.types import TypeKind as TK
+
+        elem_size = 8  # sizeof(double) or sizeof(int64_t)
+
+        # Step 3: Call __mn_tensor_alloc
+        self._ensure("__mn_tensor_alloc", PTR, [I64, PTR, I64])
+        tp = self._f("tp")
+        self._L(
+            f"{tp} = call noalias ptr @__mn_tensor_alloc("
+            f"i64 {rank}, ptr {shape_a}, i64 {elem_size})"
+        )
+
+        # Step 4: Store each element
+        if elem_kind in (TK.INT, TK.BOOL):
+            store_fn = "__mn_tensor_store_i64"
+            store_ty = I64
+        else:
+            store_fn = "__mn_tensor_store_f64"
+            store_ty = DBL
+        self._ensure(store_fn, VOID, [PTR, I64, store_ty])
+
+        for j, elem in enumerate(i.elements):
+            ev, et = self._get(elem)
+            cv = self._coerce(ev, et, store_ty) if et != store_ty else ev
+            self._L(f"call void @{store_fn}(ptr {tp}, i64 {j}, {store_ty} {cv})")
+
+        # Track for drop glue
+        self._tensor_vars.append(i.dest.name)
+        self._put(i.dest, tp, PTR)
 
     # --- ListPush ---
     def _do_list_push(self, i: ListPush) -> None:
@@ -2921,6 +4423,24 @@ class LLVMTextEmitter:
             ea = self._alloca(et, "ea")
             self._L(f"store {et} {ev}, ptr {ea}")
             ep = ea  # opaque ptr, no bitcast
+            # v4.101.0: move semantics — the element's ownership is
+            # transferred to the list. Zero out the element's tracking
+            # slot so drop glue does not free a buffer the list now
+            # owns a pointer to. Without this, heap-allocated strings
+            # pushed into a List<String> get use-after-freed at
+            # function return; readers of the list later see garbage
+            # where the first bytes of each pushed string should be.
+            # (Root cause for the self-hosted emitter's 16-byte
+            # garbage prefix on every `declare` line of mnc-stage1's
+            # output.)
+            # v4.103.0: also drop from _list_vars so list drop-glue
+            # doesn't free pushed-list buffers (List<List<T>> case).
+            if i.element.name in self._list_vars:
+                self._list_vars.remove(i.element.name)
+            root_e = self._lroots.get(i.element.name)
+            if root_e and root_e in self._list_vars:
+                self._list_vars.remove(root_e)
+            self._move_resource(i.element.name)
             self._ensure("__mn_list_push", VOID, ["ptr", PTR])
             # Use the SOURCE alloca directly for push (not a copy)
             if t != LIST:
@@ -2951,6 +4471,14 @@ class LLVMTextEmitter:
             ea = self._alloca(et, "ea")
             self._L(f"store {et} {ev}, ptr {ea}")
             ep = ea  # opaque ptr, no bitcast
+            # v4.101.0 + v4.103.0 (see _do_list_push main path above):
+            # move the element into the list so drop glue does not free it.
+            if i.element.name in self._list_vars:
+                self._list_vars.remove(i.element.name)
+            root_e = self._lroots.get(i.element.name)
+            if root_e and root_e in self._list_vars:
+                self._list_vars.remove(root_e)
+            self._move_resource(i.element.name)
             self._ensure("__mn_list_push", VOID, ["ptr", PTR])
             self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
             r = self._f("ul")
@@ -3057,6 +4585,39 @@ class LLVMTextEmitter:
             tag = tags.get(i.variant, 0)
             boxed = self._boxed_enum.get(en, set())
             ptypes = pays.get(i.variant, [])
+            # v4.124.0 Rt.1: inline representation — no malloc, no drop
+            # glue. Each payload field is packed into its own i64 slot
+            # (Int direct; Float bitcast; Bool/small-int zext; pointer
+            # ptrtoint). Unused slots store 0.
+            inline_slots = self._enum_inline.get(en, 0)
+            if inline_slots > 0:
+                enum_ty = self._enum_ty(en)
+                n_slots = max(inline_slots, 1)
+                packed: list[str] = []
+                for j in range(n_slots):
+                    if j < len(ptypes) and j < len(i.payload):
+                        pval = i.payload[j]
+                        ft = self._rty(ptypes[j])
+                        if pval.name in self._list_vars:
+                            self._list_vars.remove(pval.name)
+                        self._move_resource(pval.name)
+                        root_name = self._lroots.get(pval.name)
+                        if root_name and root_name in self._list_vars:
+                            self._list_vars.remove(root_name)
+                        v, t = self._get(pval)
+                        if t != ft:
+                            v = self._coerce(v, t, ft)
+                        packed.append(self._pack_to_i64(v, ft))
+                    else:
+                        packed.append("0")
+                cur = self._f("ei")
+                self._L(f"{cur} = insertvalue {enum_ty} undef, i64 {tag}, 0")
+                for j, iv in enumerate(packed):
+                    nxt = self._f("ei")
+                    self._L(f"{nxt} = insertvalue {enum_ty} {cur}, i64 {iv}, {j + 1}")
+                    cur = nxt
+                self._put(i.dest, cur, enum_ty)
+                return
             # Build payload struct type
             pflds: list[str] = []
             for j, pt in enumerate(ptypes):
@@ -3158,6 +4719,23 @@ class LLVMTextEmitter:
             boxed = self._boxed_enum.get(en, set())
             if not ptypes:
                 self._put(i.dest, "0", I1)
+                return
+            # v4.124.0 Rt.1: inline extraction — extract i64 from the
+            # relevant payload slot and unpack to the field type (no
+            # pointer chase, no load).
+            if self._enum_inline.get(en, 0) > 0:
+                inline_ty = self._enum_ty(en)
+                ev, et = self._get(i.enum_val)
+                if self._is_ptr(et):
+                    ev = self._coerce(ev, et, inline_ty)
+                    et = inline_ty
+                idx = i.payload_idx if len(ptypes) > 1 else 0
+                slot_idx = idx + 1  # tag occupies slot 0
+                raw = self._f("pr")
+                self._L(f"{raw} = extractvalue {et} {ev}, {slot_idx}")
+                ft = self._rty(ptypes[idx])
+                val = self._unpack_from_i64(raw, ft)
+                self._put(i.dest, val, ft)
                 return
             ev, et = self._get(i.enum_val)
             if self._is_ptr(et):
@@ -3566,6 +5144,203 @@ class LLVMTextEmitter:
             return r
         return "null"
 
+    # --- Coroutine await (v4.73.0 — inline resume) ---
+
+    def _do_await_suspend(self, i: AwaitSuspend) -> None:
+        """Emit await expression with real coroutine suspension or inline-resume.
+
+        v4.92.0: inside an async function, emits a real coro.save +
+        coro.suspend + switch that yields control back to the scheduler.
+        The scheduler resumes us when the awaited future becomes Ready.
+
+        In non-async context (should not happen — semantic checker
+        prevents this), falls back to inline-resume for safety.
+        """
+        fv, _ft = self._get(i.future)
+        n = self._c
+        self._c += 1
+
+        if self._fn_is_async:
+            # ── Real suspension (v4.92.0) ──
+            # First, resume the inner coroutine once to start it (it begins
+            # at its initial suspend point and needs one resume to enter its body).
+            drive_lbl = f"await.drive.{n}"
+            check_lbl = f"await.check.{n}"
+            suspend_lbl = f"await.suspend.{n}"
+            resume_lbl = f"await.resume.{n}"
+            ready_lbl = f"await.ready.{n}"
+
+            # Check if future is already ready (fast path)
+            st_ptr = self._f("aw.st.ptr")
+            st_val = self._f("aw.st")
+            is_rdy = self._f("aw.rdy")
+            self._L(f"{st_ptr} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 0")
+            self._L(f"{st_val} = load i8, ptr {st_ptr}")
+            self._L(f"{is_rdy} = icmp eq i8 {st_val}, 1")
+            self._L(f"br i1 {is_rdy}, label %{ready_lbl}, label %{drive_lbl}")
+
+            # Drive: resume the inner coroutine once, then check again
+            self._blk[drive_lbl] = []
+            self._cb = drive_lbl
+            hdl_ptr = self._f("aw.hdl.ptr")
+            hdl = self._f("aw.hdl")
+            self._L(f"{hdl_ptr} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+            self._L(f"{hdl} = load ptr, ptr {hdl_ptr}")
+            self._L(f"call void @llvm.coro.resume(ptr {hdl})")
+            self._L(f"br label %{check_lbl}")
+
+            # Check: is the future ready after driving?
+            self._blk[check_lbl] = []
+            self._cb = check_lbl
+            st2 = self._f("aw.st2")
+            rdy2 = self._f("aw.rdy2")
+            self._L(f"{st2} = load i8, ptr {st_ptr}")
+            self._L(f"{rdy2} = icmp eq i8 {st2}, 1")
+            self._L(f"br i1 {rdy2}, label %{ready_lbl}, label %{suspend_lbl}")
+
+            # Suspend: register wait and yield to scheduler
+            self._blk[suspend_lbl] = []
+            self._cb = suspend_lbl
+            # Register that our coroutine is waiting on this future
+            self._L(f"call void @__mn_coro_register_wait(ptr %coro.hdl, ptr {fv})")
+            # Save + suspend the outer coroutine
+            save_tok = self._f("aw.save")
+            susp_val = self._f("aw.susp")
+            self._L(f"{save_tok} = call token @llvm.coro.save(ptr %coro.hdl)")
+            self._L(f"{susp_val} = call i8 @llvm.coro.suspend(token {save_tok}, i1 false)")
+            self._L(f"switch i8 {susp_val}, label %coro.ret [")
+            self._L(f"  i8 0, label %{resume_lbl}")
+            self._L("  i8 1, label %coro.cleanup")
+            self._L("]")
+
+            # Resume: scheduler woke us up — future should be ready now
+            self._blk[resume_lbl] = []
+            self._cb = resume_lbl
+            self._L(f"br label %{ready_lbl}")
+
+            # Ready: extract value from future
+            self._blk[ready_lbl] = []
+            self._cb = ready_lbl
+            val_ptr = self._f("aw.val.ptr")
+            val_box = self._f("aw.val.box")
+            val_raw = self._f("aw.val")
+            self._L(f"{val_ptr} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+            self._L(f"{val_box} = load ptr, ptr {val_ptr}")
+            self._L(f"{val_raw} = load i64, ptr {val_box}")
+            self._put(i.dest, val_raw, "i64")
+        else:
+            # ── Inline-resume fallback (non-async context) ──
+            # Should not normally happen (semantic checker rejects await
+            # outside async fn), but kept for robustness.
+            check_lbl = f"await.check.{n}"
+            drive_lbl = f"await.drive.{n}"
+            ready_lbl = f"await.ready.{n}"
+
+            st_ptr = self._f("aw.st.ptr")
+            st_val = self._f("aw.st")
+            is_rdy = self._f("aw.rdy")
+            self._L(f"{st_ptr} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 0")
+            self._L(f"{st_val} = load i8, ptr {st_ptr}")
+            self._L(f"{is_rdy} = icmp eq i8 {st_val}, 1")
+            self._L(f"br i1 {is_rdy}, label %{ready_lbl}, label %{drive_lbl}")
+
+            self._blk[drive_lbl] = []
+            self._cb = drive_lbl
+            hdl_ptr = self._f("aw.hdl.ptr")
+            hdl = self._f("aw.hdl")
+            self._L(f"{hdl_ptr} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+            self._L(f"{hdl} = load ptr, ptr {hdl_ptr}")
+            self._L(f"call void @llvm.coro.resume(ptr {hdl})")
+            self._L(f"br label %{check_lbl}")
+
+            self._blk[check_lbl] = []
+            self._cb = check_lbl
+            st2 = self._f("aw.st2")
+            rdy2 = self._f("aw.rdy2")
+            self._L(f"{st2} = load i8, ptr {st_ptr}")
+            self._L(f"{rdy2} = icmp eq i8 {st2}, 1")
+            self._L(f"br i1 {rdy2}, label %{ready_lbl}, label %{drive_lbl}")
+
+            self._blk[ready_lbl] = []
+            self._cb = ready_lbl
+            val_ptr = self._f("aw.val.ptr")
+            val_box = self._f("aw.val.box")
+            val_raw = self._f("aw.val")
+            self._L(f"{val_ptr} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+            self._L(f"{val_box} = load ptr, ptr {val_ptr}")
+            self._L(f"{val_raw} = load i64, ptr {val_box}")
+            self._put(i.dest, val_raw, "i64")
+
+    def _do_block_on(self, i: BlockOn) -> None:
+        """Emit block_on(future): drive coroutine to completion, extract result.
+
+        v4.92.0: registers the coroutine with the scheduler and calls
+        __mn_coro_scheduler_run() to drive all pending coroutines.
+        Falls back to inline resume loop if no scheduler is available
+        (module without async functions — shouldn't happen in practice).
+        """
+        fv, _ft = self._get(i.future)
+        n = self._c
+        self._c += 1
+        done_lbl = f"block_on.done.{n}"
+
+        if getattr(self, "_module_has_async", False):
+            # ── Scheduler-driven block_on (v4.92.0) ──
+            # Extract handle from future and register with scheduler
+            hp = self._f("bo.hdl.ptr")
+            hd = self._f("bo.hdl")
+            self._L(f"{hp} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+            self._L(f"{hd} = load ptr, ptr {hp}")
+            # Register the coroutine; scheduler will resume it
+            self._L(f"call void @__mn_coro_scheduler_register(ptr {hd})")
+            # Run the scheduler — this drives ALL pending coroutines
+            # including the one we just registered, until they all complete.
+            self._L("call void @__mn_coro_scheduler_run()")
+            self._L(f"br label %{done_lbl}")
+        else:
+            # ── Inline resume fallback ──
+            loop_lbl = f"block_on.loop.{n}"
+            hp = self._f("bo.hdl.ptr")
+            hd = self._f("bo.hdl")
+            self._L(f"{hp} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+            self._L(f"{hd} = load ptr, ptr {hp}")
+            self._L(f"br label %{loop_lbl}")
+
+            self._blk[loop_lbl] = []
+            self._cb = loop_lbl
+            self._L(f"call void @llvm.coro.resume(ptr {hd})")
+            dn = self._f("bo.done")
+            self._L(f"{dn} = call i1 @llvm.coro.done(ptr {hd})")
+            self._L(f"br i1 {dn}, label %{done_lbl}, label %{loop_lbl}")
+
+        # Done — extract value, destroy, free.
+        # v4.102.0: the coroutine's final-suspend path overwrites
+        # ``future.payload`` (slot 1 of the {i8, ptr} Future) with the
+        # boxed return value — so after scheduler_run completes, that
+        # slot no longer holds the coroutine handle. The old code
+        # reloaded slot 1 a second time for llvm.coro.destroy, which
+        # handed the destroy intrinsic a pointer to an 8-byte malloc'd
+        # int and segfaulted at destroy_fn. Reuse the ``hd`` loaded
+        # before scheduler_run — that's the real handle.
+        self._blk[done_lbl] = []
+        self._cb = done_lbl
+        vp = self._f("bo.val.ptr")
+        vb = self._f("bo.val.box")
+        vr = self._f("bo.val")
+        self._L(f"{vp} = getelementptr inbounds {{i8, ptr}}, ptr {fv}, i32 0, i32 1")
+        self._L(f"{vb} = load ptr, ptr {vp}")
+        self._L(f"{vr} = load i64, ptr {vb}")
+        # Destroy coroutine frame + free future and box. ``hd`` was
+        # loaded above (before scheduler_run / resume loop) and still
+        # points to the coroutine frame — safe to pass to
+        # llvm.coro.destroy. The destroy intrinsic lowers to
+        # handle[8](handle) — the destroy_fn pointer, still valid
+        # after the resume-fn slot was nulled on final suspend.
+        self._L(f"call void @llvm.coro.destroy(ptr {hd})")
+        self._L(f"call void @free(ptr {vb})")
+        self._L(f"call void @free(ptr {fv})")
+        self._put(i.dest, vr, "i64")
+
     # --- Assert ---
     def _do_assert(self, i: Assert) -> None:
         cv, ct = self._get(i.cond)
@@ -3591,11 +5366,137 @@ class LLVMTextEmitter:
 
     # ── agent handler wrapper ───────────────────────────────────────
     def _emit_agent_wrap(self, agent_name: str, info: Any) -> str:
+        """Generate the per-agent ``__mn_handler_<name>`` thunk.
+
+        v4.30.0 Phase 2: previously this was a no-op stub — it stored
+        ``null`` into ``*out_msg`` and returned ``0``, which meant
+        spawned agents received messages from the runtime worker but
+        produced no reply, the outbox was never pushed, and
+        ``sync a.reply`` deadlocked or returned garbage (v4.26.0 panel:
+        Rattler #3 HIGH). The stub shipped for nine releases because
+        grammar-level agents parse and the scheduler path runs —
+        nothing *crashed*, so nobody noticed the dispatch path was
+        dead.
+
+        The real wrapper:
+
+        1. Finds the agent's ``handle`` method in ``info.method_names``
+           (convention: ``{agent_name}_handle``, built by
+           ``lower._lower_agent``).
+        2. Looks up its MIR signature — the single input type is the
+           agent's ``input`` channel payload, the return type is the
+           ``output`` channel payload.
+        3. Loads the caller-stored input value from ``msg`` (``msg`` is
+           a ``ptr`` to an alloca the sender wrote via
+           ``_do_agent_send``).
+        4. Calls the user's handle function.
+        5. ``malloc``'s a stable buffer sized for the output type,
+           stores the result there, writes the buffer pointer into
+           ``*out_msg``, and returns ``0``. The buffer leaks per
+           message — a leak is the right trade-off here because the
+           receiver side (``_do_agent_sync``) loads the value directly
+           from the buffer and has no ownership story. Free-on-receive
+           is a v5.x arena-reuse item, not a v4.30.0 recovery item.
+        6. Signals ABI errors (missing ``handle``, sret disagreements)
+           by falling back to the historical null-and-zero stub so the
+           compile keeps moving; every fallback is logged in
+           ``self._agent_wrap_fallbacks`` for the session report.
+
+        Large (>8-byte) return types use the LLVM ``sret`` ABI: the
+        caller allocates, we pass the buffer as the sret arg, and the
+        function returns ``void``. We mirror that convention by
+        allocating ``result_buf`` *first* and passing it as the sret
+        parameter; for scalar returns we capture the return value and
+        ``store`` into the buffer manually.
+        """
         hn = f"__mn_handler_{agent_name}"
+        # The wrapper's own signature is fixed by the runtime ABI.
         self._sigs[hn] = (I32, [PTR, PTR, "ptr"], False)
+
+        # 1. Find the handle method. Convention: ``{agent_name}_handle``.
+        method_names = getattr(info, "method_names", None) or []
+        handle_fn: str | None = None
+        for mn_name in method_names:
+            if mn_name == f"{agent_name}_handle" or mn_name.endswith("_handle"):
+                handle_fn = mn_name
+                break
+        if handle_fn is None:
+            return self._emit_agent_wrap_fallback(
+                hn, agent_name, reason="no handle method in method_names"
+            )
+
+        sig = self._sigs.get(handle_fn)
+        if sig is None:
+            return self._emit_agent_wrap_fallback(
+                hn, agent_name, reason=f"{handle_fn} signature not registered"
+            )
+        ret_ty, param_tys, _is_va = sig
+        if len(param_tys) != 1:
+            # The agent handle method convention is (input) -> output.
+            # If lowering produced a different shape (e.g. because of
+            # ``self`` threading), fall back rather than guess.
+            return self._emit_agent_wrap_fallback(
+                hn,
+                agent_name,
+                reason=f"{handle_fn} has {len(param_tys)} params, expected 1",
+            )
+        in_ty = param_tys[0]
+
+        large_ret = self._is_large_struct(ret_ty)
+        ret_sz = max(_tsz(ret_ty), 1)  # malloc(0) is implementation-defined
+
+        # Ensure malloc is available to the wrapper.
+        self._ensure("malloc", PTR, [I64])
+
+        lines: list[str] = [
+            f"define i32 @{hn}(ptr %agent_data, ptr %msg, ptr %out_msg) {{",
+            "entry:",
+            f"  ; v4.30.0 wired dispatch → {handle_fn}({in_ty}) -> {ret_ty}",
+            # Load the input value from %msg.
+            f"  %in_val = load {in_ty}, ptr %msg",
+            # Allocate a heap buffer for the reply.
+            f"  %result_buf = call ptr @malloc(i64 {ret_sz})",
+        ]
+
+        if ret_ty == "void":
+            # Void-returning handle: just invoke, store null into out.
+            lines.append(f"  call void @{handle_fn}({in_ty} %in_val)")
+            lines.append("  store ptr null, ptr %out_msg")
+        elif large_ret:
+            # sret ABI: function returns void, first arg is the sret
+            # buffer. %result_buf is already the right shape.
+            lines.append(
+                f"  call void @{handle_fn}(ptr sret({ret_ty}) %result_buf, {in_ty} %in_val)"
+            )
+            lines.append("  store ptr %result_buf, ptr %out_msg")
+        else:
+            # Scalar return: capture it and store through the buffer.
+            lines.append(f"  %ret_val = call {ret_ty} @{handle_fn}({in_ty} %in_val)")
+            lines.append(f"  store {ret_ty} %ret_val, ptr %result_buf")
+            lines.append("  store ptr %result_buf, ptr %out_msg")
+
+        lines.append("  ret i32 0")
+        lines.append("}")
+        lines.append("")
+        return "\n".join(lines)
+
+    def _emit_agent_wrap_fallback(self, hn: str, agent_name: str, reason: str) -> str:
+        """Emit the historical null-and-zero stub and record the reason.
+
+        Used when ``_emit_agent_wrap`` cannot find a usable ``handle``
+        method. Keeps the build moving — the old stub is what shipped
+        through v4.29.0 — and logs the reason so the session report
+        can show which agents (if any) fell back. On the golden corpus
+        the list should be empty; a non-empty list is a signal that
+        the lowering contract drifted.
+        """
+        if not hasattr(self, "_agent_wrap_fallbacks"):
+            self._agent_wrap_fallbacks: list[tuple[str, str]] = []
+        self._agent_wrap_fallbacks.append((agent_name, reason))
         out = [
             f"define i32 @{hn}(ptr %agent_data, ptr %msg, ptr %out_msg) {{",
             "entry:",
+            f"  ; v4.30.0 fallback stub — {reason}",
             "  store ptr null, ptr %out_msg",
             "  ret i32 0",
             "}",
@@ -3627,7 +5528,9 @@ class LLVMTextEmitter:
             if hn in self._sigs:
                 hp = f"@{hn}"
             lines.append(f"  %name.{i} = alloca [1 x i8], align 1")
-            lines.append(f"  %np.{i} = getelementptr [1 x i8], ptr %name.{i}, i64 0, i64 0")
+            lines.append(
+                f"  %np.{i} = getelementptr inbounds [1 x i8], ptr %name.{i}, i64 0, i64 0"
+            )
             lines.append(
                 f"  %ag.{i} = call ptr @mapanare_agent_new(ptr %np.{i}, ptr {hp},"
                 f" ptr null, i32 256, i32 256)"

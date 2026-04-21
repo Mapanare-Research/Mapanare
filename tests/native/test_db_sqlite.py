@@ -48,11 +48,28 @@ SQLITE_TEXT = 3
 # ---------------------------------------------------------------------------
 
 
+# v4.133.0 An.1: Mapanare String layout is {ptr, lenheap} where lenheap's
+# low 63 bits are the byte length and bit 63 is the is_heap flag (set by
+# the runtime for heap-allocated strings so drop glue knows to free them).
+# A raw c_int64 `len` read returns a negative signed value on heap strings
+# because bit 63 flips the sign, which made `s.len <= 0` short-circuit
+# every helper to the empty string on legitimate heap returns.
+_MN_STR_LEN_MASK = 0x7FFFFFFFFFFFFFFF
+
+
 class MnString(ctypes.Structure):
     _fields_ = [
         ("data", ctypes.c_void_p),
-        ("len", ctypes.c_int64),
+        ("_lenheap", ctypes.c_int64),  # low 63 bits = len; bit 63 = is_heap
     ]
+
+    @property
+    def len(self) -> int:  # noqa: A003
+        return self._lenheap & _MN_STR_LEN_MASK
+
+    @property
+    def is_heap(self) -> bool:
+        return bool((self._lenheap >> 63) & 1)
 
 
 def _read_mnstring(s: MnString) -> str:

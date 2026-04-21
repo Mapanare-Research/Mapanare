@@ -396,7 +396,12 @@ class PythonTranslator:
             name = node.func.id
             # Map Python builtins to Mapanare equivalents
             if name == "print":
-                return f"print({args})"
+                if len(node.args) <= 1:
+                    return f"print({args})"
+                # Multi-arg print: join with spaces via str() conversion
+                parts = [f"str({self._translate_expr(a)})" for a in node.args]
+                joined = ' + " " + '.join(parts)
+                return f"print({joined})"
             if name == "len":
                 return f"len({args})"
             if name == "str":
@@ -545,6 +550,79 @@ class PythonTranslator:
                 f"(line {getattr(node, 'lineno', '?')})"
             )
 
+    def _infer_param_types(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, str]:
+        """Infer parameter types from function body usage when annotations are missing."""
+        inferred: dict[str, str] = {}
+        # Only infer for params that lack annotations
+        unannotated = {a.arg for a in node.args.args if a.arg != "self" and not a.annotation}
+        if not unannotated:
+            return inferred
+
+        for child in ast.walk(node):
+            if isinstance(child, (ast.BinOp, ast.AugAssign)):
+                # Arithmetic with a param → Int or Float
+                operands = []
+                if isinstance(child, ast.BinOp):
+                    operands = [child.left, child.right]
+                else:
+                    operands = [child.target, child.value]
+                for op in operands:
+                    if isinstance(op, ast.Name) and op.id in unannotated and op.id not in inferred:
+                        # Check what it interacts with
+                        other = [o for o in operands if o is not op]
+                        if other and isinstance(other[0], ast.Constant):
+                            if isinstance(other[0].value, float):
+                                inferred[op.id] = "Float"
+                            elif isinstance(other[0].value, int):
+                                inferred[op.id] = "Int"
+                            else:
+                                inferred[op.id] = "Int"
+                        else:
+                            inferred[op.id] = "Int"
+            elif isinstance(child, ast.Compare):
+                # Comparison with int literal → Int
+                all_operands = [child.left] + child.comparators
+                for op in all_operands:
+                    if isinstance(op, ast.Name) and op.id in unannotated and op.id not in inferred:
+                        inferred[op.id] = "Int"
+
+        # Default remaining unannotated to Int (most common in pure-compute Python)
+        for p in unannotated:
+            if p not in inferred:
+                inferred[p] = "Int"
+
+        # Build type context: annotated + inferred params
+        all_param_types: dict[str, str] = {}
+        for a in node.args.args:
+            if a.arg != "self":
+                if a.annotation:
+                    all_param_types[a.arg] = self._translate_type(a.annotation)
+                elif a.arg in inferred:
+                    all_param_types[a.arg] = inferred[a.arg]
+
+        # Infer return type from body if not annotated
+        if not node.returns:
+            for child in ast.walk(node):
+                if isinstance(child, ast.Return) and child.value is not None:
+                    ret = self._infer_type_from_value(child.value)
+                    if ret == "any" and isinstance(child.value, ast.Name):
+                        ret = all_param_types.get(child.value.id, "any")
+                    if ret == "any" and isinstance(child.value, ast.BinOp):
+                        # Arithmetic expression → infer from operands
+                        for op in (child.value.left, child.value.right):
+                            if isinstance(op, ast.Name) and op.id in all_param_types:
+                                ret = all_param_types[op.id]
+                                break
+                            if isinstance(op, ast.Call) and isinstance(op.func, ast.Name):
+                                if op.func.id in self._func_return_types:
+                                    ret = self._func_return_types[op.func.id]
+                                    break
+                    if ret != "any":
+                        self._func_return_types[node.name] = ret
+                        break
+
+        return inferred
+
     def _translate_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         """Translate a Python function definition."""
         name = node.name
@@ -556,8 +634,13 @@ class PythonTranslator:
             self._emit(f"// skipped dunder method: {name}")
             return
 
-        params = self._translate_params(node.args)
+        inferred_types = self._infer_param_types(node)
+        params = self._translate_params(node.args, inferred_types)
         ret_type = self._translate_type(node.returns)
+
+        # Use body-inferred return type if annotation is missing
+        if ret_type in ("any", "Void") and name in self._func_return_types:
+            ret_type = self._func_return_types[name]
 
         # Track return type for call-site type inference
         if ret_type not in ("any", "Void"):
@@ -570,7 +653,7 @@ class PythonTranslator:
         self._emit("}")
         self._emit_raw("")
 
-    def _translate_params(self, args: ast.arguments) -> str:
+    def _translate_params(self, args: ast.arguments, inferred: dict[str, str] | None = None) -> str:
         """Translate function parameters."""
         params: list[str] = []
         for arg in args.args:
@@ -579,10 +662,12 @@ class PythonTranslator:
                     params.append("self")
                 continue
             ann_type = self._translate_type(arg.annotation)
+            if ann_type == "any" and inferred and arg.arg in inferred:
+                ann_type = inferred[arg.arg]
             if ann_type != "any":
                 params.append(f"{arg.arg}: {ann_type}")
             else:
-                params.append(arg.arg)
+                params.append(f"{arg.arg}: Int")
         return ", ".join(params)
 
     def _translate_return(self, node: ast.Return) -> None:

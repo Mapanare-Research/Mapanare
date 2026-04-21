@@ -1,0 +1,65 @@
+test	boot_lines	stg1_lines	boot_defines	stg1_defines	class	note
+01_hello	41	132	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+02_arithmetic	55	137	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+03_function	59	0	1	0	MISSING	stage1 failed: 
+04_if_else	45	149	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+05_for_loop	105	0	1	0	MISSING	stage1 failed: error: MIR verifier detected malformed IR before emission:
+06_struct	70	142	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+07_enum_match	76	154	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+08_list	112	164	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+09_string_methods	97	145	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+10_result	151	189	2	2	SEMANTIC	define signatures differ (boot=2 stg1=2)
+11_closure	111	0	2	0	MISSING	stage1 failed: 
+12_while	86	146	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+13_fib	121	0	2	0	MISSING	stage1 failed: 
+14_nested_struct	70	142	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+15_multifunction	87	0	1	0	MISSING	stage1 failed: 
+16_string_escape	65	151	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+17_option	197	215	2	2	SEMANTIC	define signatures differ (boot=2 stg1=2)
+18_method_chain	133	162	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+19_nested_match	208	0	2	0	MISSING	stage1 failed: 
+20_recursion	139	0	2	0	MISSING	stage1 failed: 
+21_list_ops	239	0	2	0	MISSING	stage1 failed: 
+22_string_builder	159	0	2	0	MISSING	stage1 failed: error: MIR verifier detected malformed IR before emission:
+23_multi_return	117	0	1	0	MISSING	stage1 failed: 
+24_enum_methods	118	0	2	0	MISSING	stage1 failed: 
+25_fizzbuzz	213	0	2	0	MISSING	stage1 failed: error: MIR verifier detected malformed IR before emission:
+26_generics	125	0	1	0	MISSING	stage1 failed: 
+27_impl	77	0	1	0	MISSING	stage1 failed: 
+28_traits	82	0	1	0	MISSING	stage1 failed: 
+29_generic_impl	89	0	1	0	MISSING	stage1 failed: 
+30_nested_generics	124	172	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+31_generic_multi	129	0	1	0	MISSING	stage1 failed: 
+32_generic_enum	48	149	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+33_break_continue	437	0	5	0	MISSING	stage1 failed: 
+34_file_io	245	200	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+35_stdin	101	142	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+36_crypto	156	161	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+37_regex	172	182	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+38_http	83	138	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+39_gpu_detect	153	155	1	1	SEMANTIC	define signatures differ (boot=1 stg1=1)
+40_gpu_tensor	398	0	1	0	MISSING	stage1 failed: 
+41_module_let	54	0	1	0	MISSING	stage1 failed: 
+42_module_let_string	58	0	1	0	MISSING	stage1 failed: 
+43_module_let_math	58	0	1	0	MISSING	stage1 failed: 
+45_ffi_bind	107	0	2	0	MISSING	stage1 failed: 
+47_try_operator	297	0	4	0	MISSING	stage1 failed: 
+48_match_nested_exhaustive	346	0	3	0	MISSING	stage1 failed: 
+49_match_guards	214	0	2	0	MISSING	stage1 failed: 
+49_tensor_literal	744	0	1	0	MISSING	stage1 failed: tests/golden/49_tensor_literal.mn:0:0: error: Undefined vari
+50_match_or_patterns	186	0	2	0	MISSING	stage1 failed: 
+50_tensor_indexing	687	0	1	0	MISSING	stage1 failed: parse error: expected RBRACKET but got COMMA
+51_match_guards_and_or	-	-	-	-	BOTH_FAIL	both bootstrap and stage1 fail
+51_tensor_broadcast	632	0	1	0	MISSING	stage1 failed: tests/golden/51_tensor_broadcast.mn:0:0: error: Undefined va
+52_tensor_slicing	668	0	1	0	MISSING	stage1 failed: parse error: expected RBRACKET but got COMMA
+53_linear_regression	399	0	1	0	MISSING	stage1 failed: tests/golden/53_linear_regression.mn:0:0: error: Undefined v
+54_const_basic	95	0	1	0	MISSING	stage1 failed: tests/golden/54_const_basic.mn:0:0: error: Undefined variabl
+55_async_basic	143	0	2	0	MISSING	stage1 failed: tests/golden/55_async_basic.mn:0:0: error: Undefined functio
+56_async_await	232	0	3	0	MISSING	stage1 failed: tests/golden/56_async_await.mn:0:0: error: Undefined functio
+57_real_await	401	0	5	0	MISSING	stage1 failed: tests/golden/57_real_await.mn:0:0: error: Undefined function
+58_async_file_io	318	0	4	0	MISSING	stage1 failed: tests/golden/58_async_file_io.mn:0:0: error: Undefined funct
+58_const_scope	70	0	1	0	MISSING	stage1 failed: tests/golden/58_const_scope.mn:0:0: error: Undefined variabl
+59_async_fanout	1024	0	12	0	MISSING	stage1 failed: tests/golden/59_async_fanout.mn:0:0: error: Undefined functi
+62_list_output	304	0	2	0	MISSING	stage1 failed: 
+63_else_sino	268	0	3	0	MISSING	stage1 failed: 
+64_closure_typed	254	0	4	0	MISSING	stage1 failed: tests/golden/64_closure_typed.mn:0:0: error: Undefined varia

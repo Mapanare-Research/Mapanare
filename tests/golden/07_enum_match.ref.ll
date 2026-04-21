@@ -3,10 +3,11 @@ source_filename = "07_enum_match"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-@.str.0 = private constant [5 x i8] c"green", align 2
-@.str.1 = private constant [5 x i8] c"other", align 2
+@.str.0 = private constant [5 x i8] c"green", align 8
+@.str.1 = private constant [5 x i8] c"other", align 8
 
 declare void @__mn_str_println({ptr, i64})
+declare void @__mn_intern_destroy()
 
 define i64 @main() {
 pre_entry:
@@ -39,6 +40,7 @@ entry:
     i64 1, label %match_arm1
   ]
 match_merge0:
+  call void @__mn_intern_destroy()
   ret i64 0
 match_arm1:
   %sp.9 = getelementptr inbounds [5 x i8], ptr @.str.0, i64 0, i64 0
@@ -62,4 +64,4 @@ match_arm2:
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.34.0"}

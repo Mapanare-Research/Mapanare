@@ -1,0 +1,61 @@
+=================================================================
+==10967==ERROR: AddressSanitizer: heap-use-after-free on address 0x50d000003ac0 at pc 0x00000087f2e5 bp 0x7fa3826d8a90 sp 0x7fa3826d8a88
+READ of size 8 at 0x50d000003ac0 thread T1
+    #0 0x87f2e4 in mn_list_rc /mnt/c/Users/Juan/Documents/GitHub/Mapanare/runtime/native/mapanare_core.c:976:9
+    #1 0x87f2e4 in __mn_list_free /mnt/c/Users/Juan/Documents/GitHub/Mapanare/runtime/native/mapanare_core.c:1192:23
+    #2 0x863a83 in emit_llvm__emit_mir_call (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x863a83) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+
+0x50d000003ac0 is located 0 bytes inside of 144-byte region [0x50d000003ac0,0x50d000003b50)
+freed by thread T1 here:
+    #0 0x4d71ca in free (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x4d71ca) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+    #1 0x87f284 in __mn_free /mnt/c/Users/Juan/Documents/GitHub/Mapanare/runtime/native/mapanare_core.c:109:5
+    #2 0x87f284 in __mn_list_free /mnt/c/Users/Juan/Documents/GitHub/Mapanare/runtime/native/mapanare_core.c:1196:17
+    #3 0x863a83 in emit_llvm__emit_mir_call (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x863a83) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+
+previously allocated by thread T1 here:
+    #0 0x4d764d in calloc (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x4d764d) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+    #1 0x87e867 in __mn_alloc /mnt/c/Users/Juan/Documents/GitHub/Mapanare/runtime/native/mapanare_core.c:83:17
+    #2 0x87e867 in mn_list_alloc_buf /mnt/c/Users/Juan/Documents/GitHub/Mapanare/runtime/native/mapanare_core.c:993:25
+    #3 0x87e3d1 in __mn_list_push /mnt/c/Users/Juan/Documents/GitHub/Mapanare/runtime/native/mapanare_core.c:1095:22
+    #4 0x872f28 in emit_llvm__emit_mir_function (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x872f28) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+
+Thread T1 created by T0 here:
+    #0 0x4bcdd5 in pthread_create (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x4bcdd5) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+    #1 0x515b37 in main /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:117:9
+    #2 0x7fa384d421c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #3 0x7fa384d4228a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #4 0x43c614 in _start (/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1-asan+0x43c614) (BuildId: b157ec7e72ff2164cb5120088e064fce044de577)
+
+SUMMARY: AddressSanitizer: heap-use-after-free /mnt/c/Users/Juan/Documents/GitHub/Mapanare/runtime/native/mapanare_core.c:976:9 in mn_list_rc
+Shadow bytes around the buggy address:
+  0x50d000003800: 00 00 fa fa fa fa fa fa fa fa 00 00 00 00 00 00
+  0x50d000003880: 00 00 00 00 00 00 00 00 00 00 00 00 fa fa fa fa
+  0x50d000003900: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+  0x50d000003980: fd fd fd fd fd fd fa fa fa fa fa fa fa fa 00 00
+  0x50d000003a00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x50d000003a80: fa fa fa fa fa fa fa fa[fd]fd fd fd fd fd fd fd
+  0x50d000003b00: fd fd fd fd fd fd fd fd fd fd fa fa fa fa fa fa
+  0x50d000003b80: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x50d000003c00: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x50d000003c80: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x50d000003d00: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==10967==ABORTING

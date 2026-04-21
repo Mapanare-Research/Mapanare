@@ -1,0 +1,121 @@
+{
+  "mapanare": [
+    {
+      "benchmark": "01_sequential_chain",
+      "language": "mapanare",
+      "median_ms": 1.95,
+      "min_ms": 1.86,
+      "max_ms": 2.01,
+      "runs": 10,
+      "output": "checksum = 5050",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "02_fanout",
+      "language": "mapanare",
+      "median_ms": 2.04,
+      "min_ms": 1.81,
+      "max_ms": 2.29,
+      "runs": 10,
+      "output": "checksum = 171700",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "03_io_bound",
+      "language": "mapanare",
+      "median_ms": 1.91,
+      "min_ms": 1.84,
+      "max_ms": 2.1,
+      "runs": 10,
+      "output": "checksum = 1000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "04_mixed_cpu_io",
+      "language": "mapanare",
+      "median_ms": 1.84,
+      "min_ms": 1.69,
+      "max_ms": 2.04,
+      "runs": 10,
+      "output": "checksum = 12000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "05_backpressure",
+      "language": "mapanare",
+      "median_ms": 2.0,
+      "min_ms": 1.85,
+      "max_ms": 2.48,
+      "runs": 10,
+      "output": "checksum = 2500",
+      "correct": true,
+      "status": "ok"
+    }
+  ],
+  "cross_language": [
+    {
+      "benchmark": "01_sequential_chain",
+      "language": "python",
+      "median_ms": 87.21,
+      "output": "checksum = 5050"
+    },
+    {
+      "benchmark": "01_sequential_chain",
+      "language": "go",
+      "median_ms": 1.11,
+      "output": "checksum = 5050"
+    },
+    {
+      "benchmark": "02_fanout",
+      "language": "python",
+      "median_ms": 92.91,
+      "output": "checksum = 171700"
+    },
+    {
+      "benchmark": "02_fanout",
+      "language": "go",
+      "median_ms": 1.64,
+      "output": "checksum = 171700"
+    },
+    {
+      "benchmark": "03_io_bound",
+      "language": "python",
+      "median_ms": 89.11,
+      "output": "checksum = 1000"
+    },
+    {
+      "benchmark": "03_io_bound",
+      "language": "go",
+      "median_ms": 1.4,
+      "output": "checksum = 1000"
+    },
+    {
+      "benchmark": "04_mixed_cpu_io",
+      "language": "python",
+      "median_ms": 86.15,
+      "output": "checksum = 12000"
+    },
+    {
+      "benchmark": "04_mixed_cpu_io",
+      "language": "go",
+      "median_ms": 1.23,
+      "output": "checksum = 12000"
+    },
+    {
+      "benchmark": "05_backpressure",
+      "language": "python",
+      "median_ms": 86.33,
+      "output": "checksum = 2500"
+    },
+    {
+      "benchmark": "05_backpressure",
+      "language": "go",
+      "median_ms": 1.04,
+      "output": "checksum = 2500"
+    }
+  ]
+}

@@ -1,19 +1,31 @@
-"""emit_c.py — MIR to C emitter for Mapanare (v3.46.0).
+"""emit_c.py — MIR to C emitter for Mapanare.
 
-Emits portable C99 from the MIR (Mid-level IR).  This backend eliminates
-the PHI nodes, SSA renaming, and block-terminator discipline that plague
-the LLVM IR emitter.  A ``break`` in C is just ``break``.  An ``if/else``
-is just ``if/else``.
+Emits portable C99 from the MIR (mid-level IR). The C backend is
+reachable from the CLI as ``mapanare emit-c <file.mn>`` and from the
+default ``mapanare run`` path (which goes through C rather than LLVM
+when ``--release`` is not set).
+
+Why a C backend: the LLVM text emitter is the performance path, but
+the C emitter eliminates PHI nodes, SSA renaming, and block-terminator
+discipline — a ``break`` in C is just ``break``, an ``if/else`` is
+just ``if/else``. That makes the C emitter the easier place to audit
+lowering bugs, and the right fallback for platforms without a working
+LLVM toolchain.
 
 Generated code links against the C runtime (``mapanare_core.h``,
-``mapanare_runtime.h``) which provides strings, lists, maps, agents,
+``mapanare_runtime.h``, and the v4.29.0-wired ``mapanare_db.h`` +
+``mapanare_html.h``) which provides strings, lists, maps, agents,
 signals, streams, and memory management.
+
+v4.31.0 doc sweep: earlier drafts of this docstring were pinned to
+v3.46.0 (27 versions behind). Mamba flagged it in the v4.26.0 panel.
+If you edit this file, please also refresh the docstring so future
+readers don't have to guess which release the description describes.
 
 Usage::
 
-    from mapanare.emit_c import CEmitter
-    emitter = CEmitter()
-    c_source = emitter.emit(mir_module)
+    from mapanare.emit_c import emit_c
+    c_source = emit_c(mir_module, debug=False)
 """
 
 from __future__ import annotations

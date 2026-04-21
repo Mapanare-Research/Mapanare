@@ -33,22 +33,25 @@ agent Transformer {
     }
 }
 
-let parser = spawn Parser()
-let validator = spawn Validator()
-let transformer = spawn Transformer()
+fn main() -> Int {
+    let parser = spawn Parser()
+    let validator = spawn Validator()
+    let transformer = spawn Transformer()
 
-let mut total: Int = 0
-for i in 0..1000 {
-    let msg: String = "message_payload_data_" + str(i)
-    parser.raw <- msg
-    let parsed = sync parser.parsed
-    validator.value <- parsed
-    let valid = sync validator.valid
-    transformer.value <- valid
-    let result = sync transformer.result
-    total += result
+    let mut total: Int = 0
+    for i in 0..1000 {
+        let msg: String = "message_payload_data_" + str(i)
+        parser.raw <- msg
+        let parsed = sync parser.parsed
+        validator.value <- parsed
+        let valid = sync validator.valid
+        transformer.value <- valid
+        let result = sync transformer.result
+        total += result
+    }
+    print(total)
+    sync parser.stop()
+    sync validator.stop()
+    sync transformer.stop()
+    return 0
 }
-print(total)
-sync parser.stop()
-sync validator.stop()
-sync transformer.stop()

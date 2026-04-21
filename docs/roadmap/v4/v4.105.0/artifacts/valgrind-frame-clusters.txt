@@ -1,0 +1,20 @@
+# Valgrind top-frame error clustering across 36 ERROR tests
+
+     14 mir_opt__block_successors
+     12 __mn_list_free
+     11 emit_llvm__emit_mir_call
+      6 mir_opt__escape_analysis_function
+      6 lower__verify_block
+      6 emit_llvm__emit_mir_basic_block
+      5 bcmp
+      4 memmove
+      4 lower_state__fresh_tmp
+      4 lower__lower_list
+      4 lower__lookup_struct_field_type
+      3 emit_llvm_ir__resolve_mir_type
+      2 lower__monomorphize_impl_methods
+      2 lower__lower_let
+      1 lower__lower_call_by_name
+      1 emit_llvm__resolve_variant_index
+      1 __mn_str_eq
+      1 ____strtol_l_internal

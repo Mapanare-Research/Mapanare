@@ -1,3 +1,10 @@
+// ====================================================================
+// Known issue (v4.129.0): this example does not currently compile.
+// Cause: stale '@Counter()' spawn syntax (SPEC §9.3 says 'spawn Name')
+// See docs/roadmap/v4/v4.129.0/EXAMPLES_REPORT.md for root cause and
+// docket reference.
+// ====================================================================
+
 // examples/mobile/ios/app.mn
 //
 // Compile:

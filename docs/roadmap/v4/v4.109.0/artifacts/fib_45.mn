@@ -1,0 +1,9 @@
+// fib(45): ~120x more work than fib(35) -- tests hint impact at scale
+fn fib(n: Int) -> Int {
+    si n <= 1 { da n }
+    da fib(n - 1) + fib(n - 2)
+}
+fn main() {
+    pon r: Int = fib(45)
+    print("fib(45) = " + str(r))
+}

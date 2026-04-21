@@ -41,7 +41,7 @@ _WS_MN = (_STDLIB / "net" / "websocket.mn").read_text(encoding="utf-8")
 
 
 def _compile_mir(source: str) -> str:
-    return _compile_to_llvm_ir(source, "test_integration.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test_integration.mn")
 
 
 def _with_main(modules: str, main_body: str) -> str:

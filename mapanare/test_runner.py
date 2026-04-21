@@ -104,7 +104,7 @@ def _compile_test_to_llvm(source: str, filename: str, test_names: list[str]) -> 
 
     Test functions are marked public so the JIT engine can resolve them by name.
     """
-    from mapanare.emit_llvm_mir import LLVMMIREmitter
+    from mapanare.emit_llvm_text import LLVMTextEmitter
     from mapanare.lower import lower as build_mir
     from mapanare.mir_opt import MIROptLevel
     from mapanare.mir_opt import optimize_module as mir_optimize
@@ -124,71 +124,27 @@ def _compile_test_to_llvm(source: str, filename: str, test_names: list[str]) -> 
         if fn.name in test_name_set:
             fn.is_public = True
 
-    emitter = LLVMMIREmitter()
-    llvm_module = emitter.emit(mir_module)
-    return str(llvm_module)
+    emitter = LLVMTextEmitter(module_name=module_name)
+    return emitter.emit(mir_module)
 
 
-# Subprocess harness script template.  The subprocess loads the LLVM IR from a
-# temp file, JIT-compiles it, and calls the named test function.  On success it
-# prints a JSON result line; on assertion failure (exit(1) from compiled code)
-# the process exits with code 1 and stderr carries the assertion message.
-_JIT_HARNESS = """\
-import ctypes, json, sys, time
-import llvmlite.binding as llvm
-
-try:
-    llvm.initialize()
-except RuntimeError:
-    pass  # llvmlite >= 0.46 auto-initializes
-llvm.initialize_native_target()
-llvm.initialize_native_asmprinter()
-
-ir_path = sys.argv[1]
-fn_name = sys.argv[2]
-
-with open(ir_path, encoding="utf-8") as f:
-    llvm_ir = f.read()
-
-target = llvm.Target.from_default_triple()
-tm = target.create_target_machine(opt=2)
-mod = llvm.parse_assembly(llvm_ir)
-mod.triple = tm.triple
-mod.data_layout = str(tm.target_data)
-mod.verify()
-
-if hasattr(llvm, "create_pass_manager_builder"):
-    pmb = llvm.create_pass_manager_builder()
-    pmb.opt_level = 2
-    pm = llvm.create_module_pass_manager()
-    pmb.populate(pm)
-    pm.run(mod)
-elif hasattr(llvm, "create_pass_builder"):
-    pto = llvm.PipelineTuningOptions()
-    pto.speed_level = 2
-    pb = llvm.create_pass_builder(tm, pto)
-    mpm = pb.getModulePassManager()
-    mpm.run(mod, pb)
-
-engine = llvm.create_mcjit_compiler(mod, tm)
-engine.finalize_object()
-engine.run_static_constructors()
-
-t0 = time.perf_counter()
-ptr = engine.get_function_address(fn_name)
-if ptr == 0:
-    print(json.dumps({"passed": False, "error": f"function '{fn_name}' not found"}))
-    sys.exit(0)
-
-cfunc = ctypes.CFUNCTYPE(None)(ptr)
-cfunc()
-dur = time.perf_counter() - t0
-print(json.dumps({"passed": True, "duration": dur}))
-"""
+def _find_runtime_lib() -> str | None:
+    """Locate the native runtime shared/static library for linking."""
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(this_dir, "..", "runtime", "native"),
+        os.path.join(this_dir, "runtime", "native"),
+    ]
+    for d in candidates:
+        for name in ("libmapanare_core.a", "libmapanare_core.so", "libmapanare_core.dll"):
+            path = os.path.join(d, name)
+            if os.path.isfile(path):
+                return os.path.abspath(path)
+    return None
 
 
 def run_test_file(filepath: str, filter_pattern: str | None = None) -> list[TestResult]:
-    """Run all @test functions in a single .mn file via LLVM JIT.
+    """Run all @test functions in a single .mn file via clang AOT compilation.
 
     Each test function is executed in a separate subprocess so that assertion
     failures (which call exit(1) in compiled code) do not kill the runner.
@@ -211,21 +167,38 @@ def run_test_file(filepath: str, filter_pattern: str | None = None) -> list[Test
             for n in test_names
         ]
 
-    # Write LLVM IR and harness script to temp files
+    # Write LLVM IR to a temp file, compile to binary with clang, then run
     ir_fd, ir_path = tempfile.mkstemp(suffix=".ll", prefix="mn_test_")
-    harness_fd, harness_path = tempfile.mkstemp(suffix=".py", prefix="mn_harness_")
     try:
         with os.fdopen(ir_fd, "w", encoding="utf-8") as f:
             f.write(llvm_ir)
-        with os.fdopen(harness_fd, "w", encoding="utf-8") as f:
-            f.write(_JIT_HARNESS)
+
+        # Compile LLVM IR to a native binary
+        exe_ext = ".exe" if sys.platform == "win32" else ""
+        bin_path = ir_path.replace(".ll", exe_ext)
+        rt_lib = _find_runtime_lib()
+        clang_cmd = ["clang", "-O2", ir_path, "-o", bin_path]
+        if rt_lib:
+            clang_cmd.append(rt_lib)
+        clang_cmd.extend(["-lm", "-lpthread"])
+        compile_result = subprocess.run(clang_cmd, capture_output=True, text=True, timeout=60)
+        if compile_result.returncode != 0:
+            return [
+                TestResult(
+                    name=n,
+                    file=filepath,
+                    passed=False,
+                    error=f"clang compile error: {compile_result.stderr}",
+                )
+                for n in test_names
+            ]
 
         results: list[TestResult] = []
         for name in test_names:
             t0 = time.perf_counter()
             try:
                 proc = subprocess.run(
-                    [sys.executable, harness_path, ir_path, name],
+                    [bin_path],
                     capture_output=True,
                     text=True,
                     timeout=60,
@@ -289,7 +262,8 @@ def run_test_file(filepath: str, filter_pattern: str | None = None) -> list[Test
         return results
     finally:
         os.unlink(ir_path)
-        os.unlink(harness_path)
+        if os.path.exists(bin_path):
+            os.unlink(bin_path)
 
 
 def run_tests(path: str = ".", filter_pattern: str | None = None) -> TestSuite:

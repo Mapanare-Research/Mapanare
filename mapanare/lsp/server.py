@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 from typing import Optional
+from urllib.parse import unquote, urlparse
 
 from lsprotocol import types as lsp
 from pygls.lsp.server import LanguageServer
@@ -14,6 +16,8 @@ from mapanare.lsp.analysis import (
     analyze_document,
     invalidate_document,
 )
+from mapanare.lsp.diagnostics import run_semantic_check
+from mapanare.lsp.workspace import WorkspaceIndex
 
 logger = logging.getLogger("mapanare-lsp")
 
@@ -25,6 +29,41 @@ _documents: dict[str, DocumentAnalysis] = {}
 _sources: dict[str, str] = {}
 # Diagnostics with fix info: uri -> list of (lsp.Diagnostic, LspDiagnostic) pairs
 _fixable_diagnostics: dict[str, list[tuple[lsp.Diagnostic, object]]] = {}
+# v4.37.0: workspace-wide symbol index for cross-module go-to-def
+_workspace = WorkspaceIndex()
+# v4.40.0: debounce timers for diagnostic streaming
+_debounce_timers: dict[str, object] = {}  # uri -> timer handle
+_DEBOUNCE_MS = 300
+
+
+def _uri_to_path(uri: str) -> Optional[Path]:
+    """Convert a file URI to a Path, or None if not a file URI."""
+    parsed = urlparse(uri)
+    if parsed.scheme == "file":
+        return Path(unquote(parsed.path))
+    return None
+
+
+def _rebuild_workspace_file(uri: str, source: str) -> None:
+    """Incrementally update the workspace index for a saved file."""
+    path = _uri_to_path(uri)
+    if path and path.suffix == ".mn":
+        _workspace.rebuild_file(path, source=source)
+
+
+def _run_and_publish_semantic_diagnostics(uri: str, source: str) -> None:
+    """v4.40.0: run semantic check and publish diagnostics via LSP push."""
+    diagnostics = run_semantic_check(source, uri)
+    server.text_document_publish_diagnostics(
+        lsp.PublishDiagnosticsParams(uri=uri, diagnostics=diagnostics)
+    )
+
+
+def _debounced_recheck(uri: str) -> None:
+    """v4.40.0: debounced re-check — called after 300ms idle on didChange."""
+    source = _sources.get(uri, "")
+    if source:
+        _run_and_publish_semantic_diagnostics(uri, source)
 
 
 def _analyze_and_publish(uri: str, source: str) -> None:
@@ -83,6 +122,21 @@ def _analyze_and_publish(uri: str, source: str) -> None:
 
 @server.feature(lsp.INITIALIZE)
 def on_initialize(params: lsp.InitializeParams) -> lsp.InitializeResult:
+    # v4.37.0: scan workspace root to build cross-module symbol index
+    if params.root_uri:
+        parsed = urlparse(params.root_uri)
+        root = Path(unquote(parsed.path))
+        if root.is_dir():
+            logger.info("Scanning workspace root: %s", root)
+            _workspace.scan_root(root)
+            logger.info(
+                "Indexed %d files, %d symbols", len(_workspace.files), len(_workspace._by_name)
+            )
+    elif params.root_path:
+        root = Path(params.root_path)
+        if root.is_dir():
+            _workspace.scan_root(root)
+
     return lsp.InitializeResult(
         capabilities=lsp.ServerCapabilities(
             text_document_sync=lsp.TextDocumentSyncOptions(
@@ -97,6 +151,7 @@ def on_initialize(params: lsp.InitializeParams) -> lsp.InitializeResult:
                 trigger_characters=[".", ":", "<"],
                 resolve_provider=False,
             ),
+            rename_provider=lsp.RenameOptions(prepare_provider=True),
             code_action_provider=lsp.CodeActionOptions(
                 code_action_kinds=[
                     lsp.CodeActionKind.QuickFix,
@@ -123,7 +178,18 @@ def on_change(params: lsp.DidChangeTextDocumentParams) -> None:
     uri = params.text_document.uri
     if params.content_changes:
         source = params.content_changes[-1].text
+        _sources[uri] = source
         _analyze_and_publish(uri, source)
+        # v4.40.0: debounced semantic re-check
+        import threading
+
+        old_timer = _debounce_timers.pop(uri, None)
+        if old_timer is not None and hasattr(old_timer, "cancel"):
+            old_timer.cancel()
+        timer = threading.Timer(_DEBOUNCE_MS / 1000.0, _debounced_recheck, args=[uri])
+        timer.daemon = True
+        _debounce_timers[uri] = timer
+        timer.start()
 
 
 @server.feature(lsp.TEXT_DOCUMENT_DID_SAVE)
@@ -131,6 +197,10 @@ def on_save(params: lsp.DidSaveTextDocumentParams) -> None:
     uri = params.text_document.uri
     if params.text:
         _analyze_and_publish(uri, params.text)
+        # v4.37.0: incrementally update workspace index on save
+        _rebuild_workspace_file(uri, params.text)
+        # v4.40.0: immediate semantic re-check on save (no debounce)
+        _run_and_publish_semantic_diagnostics(uri, params.text)
 
 
 @server.feature(lsp.TEXT_DOCUMENT_DID_CLOSE)
@@ -155,7 +225,23 @@ def on_hover(params: lsp.HoverParams) -> Optional[lsp.Hover]:
 
     line = params.position.line
     col = params.position.character
+
+    # Try within-file hover first
     content = analysis.hover_at(line, col)
+
+    # v4.37.0: fall back to workspace index for cross-module symbols
+    if not content and _workspace._by_name:
+        symbol_name = analysis.symbol_name_at(line, col)
+        if symbol_name:
+            matches = _workspace.lookup_by_name(symbol_name)
+            if matches:
+                sym = matches[0]
+                parts = [f"```mn\n{sym.detail or f'{sym.kind} {sym.name}'}\n```"]
+                if sym.doc_comment:
+                    parts.append(sym.doc_comment)
+                parts.append(f"*Defined in `{sym.module}`*")
+                content = "\n\n".join(parts)
+
     if content:
         return lsp.Hover(
             contents=lsp.MarkupContent(
@@ -180,6 +266,8 @@ def on_definition(
 
     line = params.position.line
     col = params.position.character
+
+    # Try within-file resolution first (existing v0.5.0 behavior)
     loc = analysis.definition_at(line, col)
     if loc:
         return lsp.Location(
@@ -189,6 +277,27 @@ def on_definition(
                 end=lsp.Position(line=loc.end_line, character=loc.end_column),
             ),
         )
+
+    # v4.37.0: cross-module resolution via workspace index
+    symbol_name = analysis.symbol_name_at(line, col)
+    if symbol_name and _workspace._by_name:
+        matches = _workspace.lookup_by_name(symbol_name)
+        if matches:
+            sym = matches[0]
+            sym_uri = sym.path.as_uri() if hasattr(sym.path, "as_uri") else f"file://{sym.path}"
+            span = sym.span
+            return lsp.Location(
+                uri=sym_uri,
+                range=lsp.Range(
+                    start=lsp.Position(
+                        line=max(0, span.line - 1), character=max(0, span.column - 1)
+                    ),
+                    end=lsp.Position(
+                        line=max(0, (span.end_line or span.line) - 1),
+                        character=max(0, (span.end_column or span.column) - 1),
+                    ),
+                ),
+            )
     return None
 
 
@@ -206,20 +315,131 @@ def on_references(
 
     line = params.position.line
     col = params.position.character
+
+    # Within-file references (existing v0.5.0)
     refs = analysis.references_at(line, col)
-    if not refs:
+    locations = (
+        [
+            lsp.Location(
+                uri=r.uri,
+                range=lsp.Range(
+                    start=lsp.Position(line=r.line, character=r.column),
+                    end=lsp.Position(line=r.end_line, character=r.end_column),
+                ),
+            )
+            for r in refs
+        ]
+        if refs
+        else []
+    )
+
+    # v4.38.0: cross-module references via workspace index
+    symbol_name = analysis.symbol_name_at(line, col)
+    if symbol_name and _workspace.refs_by_symbol:
+        for sym in _workspace.lookup_by_name(symbol_name):
+            include_decl = params.context.include_declaration if params.context else False
+            sites = _workspace.find_references(sym.module, sym.name, include_decl)
+            for site in sites:
+                sym_uri = f"file://{site.path}"
+                span = site.span
+                loc = lsp.Location(
+                    uri=sym_uri,
+                    range=lsp.Range(
+                        start=lsp.Position(
+                            line=max(0, span.line - 1), character=max(0, span.column - 1)
+                        ),
+                        end=lsp.Position(
+                            line=max(0, (span.end_line or span.line) - 1),
+                            character=max(0, (span.end_column or span.column) - 1),
+                        ),
+                    ),
+                )
+                locations.append(loc)
+            break  # Use first matching symbol
+
+    return locations if locations else None
+
+
+# -- Completion --------------------------------------------------------------
+
+
+# -- Rename (v4.38.0) --------------------------------------------------------
+
+
+@server.feature(lsp.TEXT_DOCUMENT_RENAME)
+def on_rename(params: lsp.RenameParams) -> Optional[lsp.WorkspaceEdit]:
+    from mapanare.lsp.rename import apply_rename, validate_rename
+
+    uri = params.text_document.uri
+    analysis = _documents.get(uri)
+    if not analysis:
         return None
 
-    return [
-        lsp.Location(
-            uri=r.uri,
-            range=lsp.Range(
-                start=lsp.Position(line=r.line, character=r.column),
-                end=lsp.Position(line=r.end_line, character=r.end_column),
+    symbol_name = analysis.symbol_name_at(params.position.line, params.position.character)
+    if not symbol_name:
+        return None
+
+    # Find the symbol in the workspace index
+    matches = _workspace.lookup_by_name(symbol_name) if _workspace._by_name else []
+    if not matches:
+        return None
+
+    sym = matches[0]
+    error = validate_rename(sym, params.new_name, _workspace)
+    if error:
+        logger.warning("Rename rejected: %s", error)
+        return None
+
+    changes_raw = apply_rename(sym, params.new_name, _workspace)
+    # Convert to LSP WorkspaceEdit
+    changes: dict[str, list[lsp.TextEdit]] = {}
+    for file_uri, edits in changes_raw.items():
+        changes[file_uri] = [
+            lsp.TextEdit(
+                range=lsp.Range(
+                    start=lsp.Position(
+                        line=e["range"]["start"]["line"], character=e["range"]["start"]["character"]
+                    ),
+                    end=lsp.Position(
+                        line=e["range"]["end"]["line"], character=e["range"]["end"]["character"]
+                    ),
+                ),
+                new_text=e["newText"],
+            )
+            for e in edits
+        ]
+    return lsp.WorkspaceEdit(changes=changes)
+
+
+@server.feature(lsp.TEXT_DOCUMENT_PREPARE_RENAME)
+def on_prepare_rename(
+    params: lsp.PrepareRenameParams,
+) -> Optional[lsp.PrepareRenamePlaceholder]:
+    uri = params.text_document.uri
+    analysis = _documents.get(uri)
+    if not analysis:
+        return None
+
+    symbol_name = analysis.symbol_name_at(params.position.line, params.position.character)
+    if not symbol_name:
+        return None
+
+    # Verify the symbol exists in the workspace index
+    matches = _workspace.lookup_by_name(symbol_name) if _workspace._by_name else []
+    if not matches:
+        return None
+
+    # Return the range of the symbol under cursor
+    return lsp.PrepareRenamePlaceholder(
+        range=lsp.Range(
+            start=lsp.Position(line=params.position.line, character=params.position.character),
+            end=lsp.Position(
+                line=params.position.line,
+                character=params.position.character + len(symbol_name),
             ),
-        )
-        for r in refs
-    ]
+        ),
+        placeholder=symbol_name,
+    )
 
 
 # -- Completion --------------------------------------------------------------
@@ -236,17 +456,66 @@ def on_completion(
 
     line = params.position.line
     col = params.position.character
-    candidates = analysis.completions_at(line, col)
 
+    # v4.39.0: context-aware completion via workspace index
     items: list[lsp.CompletionItem] = []
-    for c in candidates:
-        kind = _map_completion_kind(c.kind)
-        items.append(
-            lsp.CompletionItem(
+
+    if _workspace._by_name:
+        from mapanare.lsp.completion import (
+            complete_field_method,
+            complete_identifiers,
+            complete_import,
+            complete_type,
+        )
+
+        source = _sources.get(uri, "")
+        context = _detect_completion_context(source, line, col)
+        current_module = Path(urlparse(uri).path).stem if uri else ""
+
+        ws_candidates = []
+        if context == "import":
+            prefix = _extract_import_prefix(source, line, col)
+            ws_candidates = complete_import(prefix, _workspace)
+        elif context == "type":
+            ws_candidates = complete_type(_workspace)
+        elif context == "field":
+            receiver_type = (
+                analysis.receiver_type_at(line, col)
+                if hasattr(analysis, "receiver_type_at")
+                else ""
+            )
+            ws_candidates = complete_field_method(receiver_type or "", _workspace)
+        else:
+            ws_candidates = complete_identifiers(_workspace, current_module)
+
+        for c in ws_candidates:
+            kind = _map_completion_kind(c.kind)
+            item = lsp.CompletionItem(
                 label=c.label,
                 kind=kind,
                 detail=c.detail,
-                documentation=c.documentation or None,
+                documentation=(
+                    lsp.MarkupContent(kind=lsp.MarkupKind.Markdown, value=c.documentation)
+                    if c.documentation
+                    else None
+                ),
+                sort_text=c.sort_text or None,
+            )
+            if c.insert_text:
+                item.insert_text = c.insert_text
+                item.insert_text_format = lsp.InsertTextFormat.Snippet
+            items.append(item)
+
+    # Also include within-file completions from analysis (existing v0.5.0)
+    candidates = analysis.completions_at(line, col)
+    for analysis_item in candidates:
+        kind = _map_completion_kind(analysis_item.kind)
+        items.append(
+            lsp.CompletionItem(
+                label=analysis_item.label,
+                kind=kind,
+                detail=analysis_item.detail,
+                documentation=analysis_item.documentation or None,
             )
         )
 
@@ -375,6 +644,46 @@ def on_formatting(
             new_text=formatted,
         )
     ]
+
+
+def _detect_completion_context(source: str, line: int, col: int) -> str:
+    """Detect the completion context from source text and cursor position.
+
+    Returns: "import", "type", "field", or "identifier" (fallback).
+    """
+    lines = source.split("\n")
+    if line >= len(lines):
+        return "identifier"
+    text = lines[line][:col]
+
+    # After "import " → import completion
+    stripped = text.lstrip()
+    if stripped.startswith("import ") or stripped.startswith("importar "):
+        return "import"
+
+    # After "." → field/method completion
+    if text.rstrip().endswith("."):
+        return "field"
+
+    # After ":" in type position (let x: |, fn foo(x: |), -> |)
+    # Simple heuristic: last non-space char before cursor is ':'
+    before = text.rstrip()
+    if before.endswith(":") or before.endswith("->"):
+        return "type"
+
+    return "identifier"
+
+
+def _extract_import_prefix(source: str, line: int, col: int) -> str:
+    """Extract the import path prefix being typed."""
+    lines = source.split("\n")
+    if line >= len(lines):
+        return ""
+    text = lines[line][:col]
+    for keyword in ("import ", "importar "):
+        if keyword in text:
+            return text.split(keyword, 1)[1].strip()
+    return ""
 
 
 def _map_completion_kind(kind: str) -> lsp.CompletionItemKind:

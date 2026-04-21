@@ -1,0 +1,29 @@
+// Example Mapanare library for FFI binding generation.
+// Run: mapanare bind --lang python examples/bind/math_lib.mn
+
+struct Point {
+    x: Float,
+    y: Float
+}
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+fn add(a: Int, b: Int) -> Int {
+    return a + b
+}
+
+fn multiply(a: Float, b: Float) -> Float {
+    return a * b
+}
+
+fn greet(name: String) -> String {
+    return "Hello, " + name
+}
+
+fn main() {
+    print(add(3, 4))
+}

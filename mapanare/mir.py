@@ -30,6 +30,23 @@ from typing import Any
 from mapanare.types import UNKNOWN_TYPE, TypeInfo, TypeKind
 
 # ---------------------------------------------------------------------------
+# Allocation kind (v4.89.0 — escape analysis)
+# ---------------------------------------------------------------------------
+
+
+class AllocKind(Enum):
+    """Where an allocation lives after escape analysis.
+
+    HEAP: default — allocated via the arena / runtime allocator.
+    STACK: promoted — the value never escapes the function, so it can
+           live on the stack (alloca) instead of the heap.
+    """
+
+    HEAP = auto()
+    STACK = auto()
+
+
+# ---------------------------------------------------------------------------
 # MIR Types — thin wrappers around TypeInfo for the IR layer
 # ---------------------------------------------------------------------------
 
@@ -259,6 +276,7 @@ class StructInit(Instruction):
     dest: Value = field(default_factory=Value)
     struct_type: MIRType = field(default_factory=mir_unknown)
     fields: list[tuple[str, Value]] = field(default_factory=list)  # (field_name, value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -289,6 +307,21 @@ class ListInit(Instruction):
 
     dest: Value = field(default_factory=Value)
     elem_type: MIRType = field(default_factory=mir_unknown)
+    elements: list[Value] = field(default_factory=list)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
+
+
+@dataclass(slots=True)
+class TensorInit(Instruction):
+    """Construct a tensor literal (v4.42.0).
+
+    Allocates a tensor with the given shape and stores elements row-major.
+    The emitter translates this to __mn_tensor_alloc + __mn_tensor_store_* calls.
+    """
+
+    dest: Value = field(default_factory=Value)
+    elem_type: MIRType = field(default_factory=mir_unknown)
+    shape: list[int] = field(default_factory=list)
     elements: list[Value] = field(default_factory=list)
 
 
@@ -339,6 +372,7 @@ class MapInit(Instruction):
     key_type: MIRType = field(default_factory=mir_unknown)
     val_type: MIRType = field(default_factory=mir_unknown)
     pairs: list[tuple[Value, Value]] = field(default_factory=list)  # (key, value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 # --- Enum / Tagged Union ---
@@ -352,6 +386,7 @@ class EnumInit(Instruction):
     enum_type: MIRType = field(default_factory=mir_unknown)
     variant: str = ""
     payload: list[Value] = field(default_factory=list)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -381,6 +416,7 @@ class WrapSome(Instruction):
 
     dest: Value = field(default_factory=Value)
     val: Value = field(default_factory=Value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -389,6 +425,7 @@ class WrapNone(Instruction):
 
     dest: Value = field(default_factory=Value)
     ty: MIRType = field(default_factory=mir_unknown)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -397,6 +434,7 @@ class WrapOk(Instruction):
 
     dest: Value = field(default_factory=Value)
     val: Value = field(default_factory=Value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -405,6 +443,7 @@ class WrapErr(Instruction):
 
     dest: Value = field(default_factory=Value)
     val: Value = field(default_factory=Value)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 @dataclass(slots=True)
@@ -659,6 +698,7 @@ class InterpConcat(Instruction):
 
     dest: Value = field(default_factory=Value)
     parts: list[Value] = field(default_factory=list)
+    alloc_kind: AllocKind = AllocKind.HEAP  # v4.89.0: escape analysis promotion
 
 
 # --- Assert ---
@@ -676,6 +716,35 @@ class Assert(Instruction):
     @property
     def has_side_effects(self) -> bool:
         return True
+
+
+# --- Coroutine (v4.72.0) ---
+
+
+@dataclass(slots=True)
+class AwaitSuspend(Instruction):
+    """Await suspension point: suspends the coroutine until the future is ready.
+
+    The `future` operand is a Future<T> value (ptr to {i8, ptr} struct).
+    The `dest` receives the extracted T value when the future is Ready.
+    The LLVM emitter translates this to coro.save + coro.suspend + switch +
+    a fast-path readiness check. See v4.67.0/DESIGN.md §4.6.2.
+    """
+
+    dest: Value = field(default_factory=Value)
+    future: Value = field(default_factory=Value)  # Future<T> ptr
+
+
+@dataclass(slots=True)
+class BlockOn(Instruction):
+    """block_on(future): drive a future to completion from non-async context.
+
+    Resumes the coroutine behind the future until done, extracts the result,
+    destroys the frame, frees the future. See v4.67.0/DESIGN.md §5.
+    """
+
+    dest: Value = field(default_factory=Value)
+    future: Value = field(default_factory=Value)
 
 
 # --- Phi ---
@@ -742,6 +811,7 @@ class MIRParam:
 
     name: str = ""
     ty: MIRType = field(default_factory=mir_unknown)
+    attrs: set[str] = field(default_factory=set)  # v4.147.0 E3: e.g. {"noalias_ok"}
 
 
 @dataclass(slots=True)
@@ -754,6 +824,7 @@ class MIRFunction:
     blocks: list[BasicBlock] = field(default_factory=list)
     decorators: list[str] = field(default_factory=list)  # metadata from AST decorators
     is_public: bool = False
+    is_async: bool = False  # v4.70.0: coroutine — emit presplitcoroutine + coro prelude
     source_line: int = 0  # Source line where this function is defined
     source_file: str = ""  # Source file name
 
@@ -764,6 +835,27 @@ class MIRFunction:
     def block_map(self) -> dict[str, BasicBlock]:
         """Return a label -> block mapping."""
         return {bb.label: bb for bb in self.blocks}
+
+
+# ---------------------------------------------------------------------------
+# Loop (v4.88.0)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MIRLoop:
+    """A natural loop in the CFG.
+
+    header: the loop entry block (target of the back-edge)
+    body: set of block labels that form the loop body (includes header)
+    back_edge: (source_label, header_label)
+    preheader: label of the preheader block (created by LICM if needed)
+    """
+
+    header: str = ""
+    body: set[str] = field(default_factory=set)
+    back_edge: tuple[str, str] = ("", "")
+    preheader: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -826,6 +918,7 @@ class MIRModule:
     gpu_kernels: dict[str, MIRGpuKernel] = field(default_factory=dict)  # fn_name -> kernel meta
     imports: list[tuple[list[str], list[str]]] = field(default_factory=list)  # (path, items)
     trait_names: list[str] = field(default_factory=list)
+    consts: list[tuple[str, str, Any]] = field(default_factory=list)  # (name, type_name, value)
 
     def get_function(self, name: str) -> MIRFunction | None:
         for fn in self.functions:

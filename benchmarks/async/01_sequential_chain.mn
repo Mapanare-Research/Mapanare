@@ -1,0 +1,25 @@
+// Async benchmark 1: Sequential await chain (v4.94.0)
+// Measures overhead of suspend/resume for a linear chain of awaits.
+// Each step depends on the previous — no parallelism possible.
+// This is the worst case for a multi-threaded scheduler (pure overhead).
+// Expected output: checksum = 5050
+
+async fn step(n: Int) -> Int {
+    return n
+}
+
+async fn chain() -> Int {
+    let mut total = 0
+    let mut i = 1
+    while i <= 100 {
+        let v = await step(i)
+        total = total + v
+        i = i + 1
+    }
+    return total
+}
+
+fn main() {
+    let result = block_on(chain())
+    print("checksum = " + str(result))
+}

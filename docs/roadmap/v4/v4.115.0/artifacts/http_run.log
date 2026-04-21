@@ -1,0 +1,47 @@
+v4.115.0 — examples/async_http_demo.mn native run evidence
+==========================================================
+
+Date: 2026-04-14
+
+## Compile + link
+
+  $ python3 -m mapanare emit-llvm examples/async_http_demo.mn -o /tmp/ahd.ll
+  $ llvm-as /tmp/ahd.ll -o /dev/null        # no output — valid
+  $ clang /tmp/ahd.ll -L runtime/native -lmapanare_rt -lpthread -lm -ldl -o /tmp/async_http_demo
+
+## Run
+
+  $ rm -f /tmp/async_http_demo_summary.txt
+  $ /tmp/async_http_demo
+  fetched bytes=540
+  pipeline   bytes=540 marker=1
+  summary file path: /tmp/async_http_demo_summary.txt
+
+  $ cat /tmp/async_http_demo_summary.txt
+  bytes=540 marker=1
+
+## What this proves
+
+1. http_get() builtin lowers to __mn_http_get in libmapanare_rt.a,
+   which makes a real TCP connection to example.com (port 80) and
+   returns 540 bytes — the Example Domain page.
+2. The async pipeline (body_bytes → has_marker → write_summary)
+   runs over the fetched body through block_on.
+3. has_marker correctly detects "Example Domain" substring
+   (marker=1).
+4. write_summary writes 19 bytes to /tmp/async_http_demo_summary.txt
+   from inside an awaited async fn — real disk I/O from inside an
+   async pipeline.
+
+## Behaviour on network failure
+
+If the sandbox blocks outbound TCP, http_get returns an empty
+String. The program prints "network unreachable: http_get
+returned empty String" and exits with code 0 (not a crash) —
+deterministic in CI.
+
+## Follow-ups
+
+Same Sh.9 workarounds apply: fetch synchronously before block_on,
+fold write's return into the pipeline's encoding so DCE does not
+eliminate the side-effecting call.

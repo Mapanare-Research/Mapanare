@@ -1,0 +1,1 @@
+Error handling in Mapanare uses Result and Option types. `Result<T, E>` represents success or failure. `Option<T>` represents a value that may be absent. Both support pattern matching with `match`. The `?` operator propagates errors automatically. Functions that can fail return Result; functions that may return nothing return Option.

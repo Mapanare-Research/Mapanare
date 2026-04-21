@@ -78,6 +78,7 @@ enum Expr {
     FieldAccess(Expr, String),
     NamespaceAccess(String, String),
     Index(Expr, Expr),
+    TensorIndex(Expr, List<Expr>),
     Pipe(Expr, Expr),
     Range(Expr, Expr, Bool),
     Lambda(List<Param>, LambdaBody),
@@ -86,6 +87,7 @@ enum Expr {
     Send(Expr, Expr),
     ErrorProp(Expr),
     ListLit(List<Expr>),
+    TensorLit(List<Expr>, List<Int>),
     MapLit(List<MapEntry>),
     Construct(String, List<FieldInit>),
     SomeWrap(Expr),
@@ -94,7 +96,8 @@ enum Expr {
     SignalVal(Expr, Bool),
     Assign(Expr, String, Expr),
     If(Expr, Block, Option<ElseClause>),
-    Match(Expr, List<MatchArm>)
+    Match(Expr, List<MatchArm>),
+    Await(Expr)
 }
 
 // ---------------------------------------------------------------------------
@@ -127,13 +130,15 @@ enum Pattern {
     Wildcard,
     IdentPat(String),
     LiteralPat(Expr),
-    ConstructorPat(String, List<Pattern>)
+    ConstructorPat(String, List<Pattern>),
+    OrPat(List<Pattern>)
 }
 
 struct MatchArm {
     span: Span,
     pattern: Pattern,
-    body: MatchArmBody
+    body: MatchArmBody,
+    guard: Option<Expr>
 }
 
 enum MatchArmBody {
@@ -149,6 +154,11 @@ struct Decorator {
     span: Span,
     name: String,
     args: List<Expr>
+}
+
+fn new_decorator(name: String) -> Decorator {
+    let args: List<Expr> = []
+    return new Decorator { span: new_span(0, 0, 0, 0), name: name, args: args }
 }
 
 struct Param {
@@ -243,7 +253,9 @@ enum Definition {
     ImportDef(List<String>, List<String>),
     ExportDef(Option<Definition>, List<String>),
     ExternFnDef(String, String, List<Param>, Option<TypeExpr>),
-    TraitDef(String, List<FnDefData>)
+    TraitDef(String, List<FnDefData>),
+    LetDef(String, String, Expr),
+    ConstDef(String, TypeExpr, Expr)
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +325,7 @@ pub fn expr_kind(e: Expr) -> String {
         FieldAccess(_, _) => { return "field_access" },
         NamespaceAccess(_, _) => { return "namespace_access" },
         Index(_, _) => { return "index" },
+        TensorIndex(_, _) => { return "tensor_index" },
         Pipe(_, _) => { return "pipe" },
         Range(_, _, _) => { return "range" },
         Lambda(_, _) => { return "lambda" },
@@ -321,6 +334,7 @@ pub fn expr_kind(e: Expr) -> String {
         Send(_, _) => { return "send" },
         ErrorProp(_) => { return "error_prop" },
         ListLit(_) => { return "list_lit" },
+        TensorLit(_, _) => { return "tensor_lit" },
         MapLit(_) => { return "map_lit" },
         Construct(_, _) => { return "construct" },
         SomeWrap(_) => { return "some_wrap" },
@@ -329,7 +343,8 @@ pub fn expr_kind(e: Expr) -> String {
         SignalVal(_, _) => { return "signal_val" },
         Assign(_, _, _) => { return "assign" },
         If(_, _, _) => { return "if" },
-        Match(_, _) => { return "match" }
+        Match(_, _) => { return "match" },
+        Await(_) => { return "await" }
     }
 }
 
@@ -457,6 +472,11 @@ pub fn expr_sync_inner(e: Expr) -> Expr {
     match e { Sync(x) => { return x }, _ => { return Expr::NoneLit } }
 }
 
+// Await
+pub fn expr_await_inner(e: Expr) -> Expr {
+    match e { Await(x) => { return x }, _ => { return Expr::NoneLit } }
+}
+
 // Send
 pub fn expr_send_target(e: Expr) -> Expr {
     match e { Send(t, _) => { return t }, _ => { return Expr::NoneLit } }
@@ -473,6 +493,13 @@ pub fn expr_errorprop_inner(e: Expr) -> Expr {
 // ListLit
 pub fn expr_list_elements(e: Expr) -> List<Expr> {
     match e { ListLit(l) => { return l }, _ => { let empty: List<Expr> = []; return empty } }
+}
+// TensorLit (v4.42.0)
+pub fn expr_tensor_elements(e: Expr) -> List<Expr> {
+    match e { TensorLit(l, _) => { return l }, _ => { let empty: List<Expr> = []; return empty } }
+}
+pub fn expr_tensor_shape(e: Expr) -> List<Int> {
+    match e { TensorLit(_, s) => { return s }, _ => { let empty: List<Int> = []; return empty } }
 }
 pub fn expr_map_entries(e: Expr) -> List<MapEntry> {
     match e { MapLit(m) => { return m }, _ => { let empty: List<MapEntry> = []; return empty } }
@@ -629,7 +656,9 @@ pub fn def_kind(d: Definition) -> String {
         ImportDef(_, _) => { return "import_def" },
         ExportDef(_, _) => { return "export_def" },
         ExternFnDef(_, _, _, _) => { return "extern_fn_def" },
-        TraitDef(_, _) => { return "trait_def" }
+        TraitDef(_, _) => { return "trait_def" },
+        LetDef(_, _, _) => { return "let_def" },
+        ConstDef(_, _, _) => { return "const_def" }
     }
 }
 
@@ -693,6 +722,26 @@ pub fn def_trait_name(d: Definition) -> String {
 pub fn def_trait_methods(d: Definition) -> List<FnDefData> {
     match d { TraitDef(_, m) => { return m }, _ => { let empty: List<FnDefData> = []; return empty } }
 }
+pub fn def_let_name(d: Definition) -> String {
+    match d { LetDef(n, _, _) => { return n }, _ => { return "" } }
+}
+pub fn def_let_type(d: Definition) -> String {
+    match d { LetDef(_, t, _) => { return t }, _ => { return "" } }
+}
+pub fn def_let_value(d: Definition) -> Expr {
+    match d { LetDef(_, _, v) => { return v }, _ => { return Expr::IntLit(0) } }
+}
+
+// v4.55.0: ConstDef accessors
+pub fn def_const_name(d: Definition) -> String {
+    match d { ConstDef(n, _, _) => { return n }, _ => { return "" } }
+}
+pub fn def_const_type_expr(d: Definition) -> TypeExpr {
+    match d { ConstDef(_, te, _) => { return te }, _ => { return TypeExpr::Named("") } }
+}
+pub fn def_const_value(d: Definition) -> Expr {
+    match d { ConstDef(_, _, v) => { return v }, _ => { return Expr::IntLit(0) } }
+}
 
 // ---- TypeExpr kind + accessors --------------------------------------------
 
@@ -729,7 +778,8 @@ pub fn pattern_kind(p: Pattern) -> String {
         Wildcard => { return "wildcard" },
         IdentPat(_) => { return "ident" },
         LiteralPat(_) => { return "literal" },
-        ConstructorPat(_, _) => { return "constructor" }
+        ConstructorPat(_, _) => { return "constructor" },
+        OrPat(_) => { return "or" }
     }
 }
 
@@ -744,6 +794,9 @@ pub fn pattern_ctor_name(p: Pattern) -> String {
 }
 pub fn pattern_ctor_args(p: Pattern) -> List<Pattern> {
     match p { ConstructorPat(_, a) => { return a }, _ => { let empty: List<Pattern> = []; return empty } }
+}
+pub fn pattern_or_alts(p: Pattern) -> List<Pattern> {
+    match p { OrPat(alts) => { return alts }, _ => { let empty: List<Pattern> = []; return empty } }
 }
 
 // ---- MatchArmBody kind + accessors ----------------------------------------

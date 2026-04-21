@@ -382,11 +382,11 @@ fn lower_resolve_type_expr(te: TypeExpr) -> MIRType {
             let mut i: Int = 0
             for _ in 0..100 {
                 if i >= len(args) {
-                    let kind: String = kind_from_name(name)
-                    if kind != "unknown" {
+                    let kind: Int = kind_from_name(name)
+                    if kind != TK_UNKNOWN() {
                         return new_mir_type_with_args(name, kind, resolved_args)
                     }
-                    return new_mir_type_with_args(name, "struct", resolved_args)
+                    return new_mir_type_with_args(name, TK_STRUCT(), resolved_args)
                 }
                 let arg: TypeExpr = args[i]
                 let resolved: MIRType = lower_resolve_type_expr(arg)
@@ -444,23 +444,23 @@ fn resolve_type_name_checked(st: LowerState, name: String) -> MIRType {
     return mir_struct(name)
 }
 
-fn kind_from_name(name: String) -> String {
-    if name == "Int" { return "int" }
-    if name == "Float" { return "float" }
-    if name == "Bool" { return "bool" }
-    if name == "String" { return "string" }
-    if name == "Char" { return "string" }
-    if name == "Void" { return "void" }
-    if name == "Option" { return "option" }
-    if name == "Result" { return "result" }
-    if name == "List" { return "list" }
-    if name == "Map" { return "map" }
-    if name == "Signal" { return "signal" }
-    if name == "Stream" { return "stream" }
-    if name == "Agent" { return "agent" }
-    if name == "Tensor" { return "tensor" }
-    if name == "Range" { return "range" }
-    return "unknown"
+fn kind_from_name(name: String) -> Int {
+    if name == "Int" { return TK_INT() }
+    if name == "Float" { return TK_FLOAT() }
+    if name == "Bool" { return TK_BOOL() }
+    if name == "String" { return TK_STRING() }
+    if name == "Char" { return TK_STRING() }
+    if name == "Void" { return TK_VOID() }
+    if name == "Option" { return TK_OPTION() }
+    if name == "Result" { return TK_RESULT() }
+    if name == "List" { return TK_LIST() }
+    if name == "Map" { return TK_MAP() }
+    if name == "Signal" { return TK_SIGNAL() }
+    if name == "Stream" { return TK_STREAM() }
+    if name == "Agent" { return TK_AGENT() }
+    if name == "Tensor" { return TK_TENSOR() }
+    if name == "Range" { return TK_RANGE() }
+    return TK_UNKNOWN()
 }
 
 fn lower_resolve_type_opt(te: Option<TypeExpr>) -> MIRType {
@@ -502,8 +502,8 @@ fn lower_resolve_type_checked(st: LowerState, te: TypeExpr) -> MIRType {
             // Use recursion instead of for-loop to avoid the alloca aliasing bug
             let init_args: List<MIRType> = []
             let resolved_args: List<MIRType> = resolve_generic_args_rec(st, args, 0, init_args)
-            let kind: String = kind_from_name(name)
-            if kind != "unknown" {
+            let kind: Int = kind_from_name(name)
+            if kind != TK_UNKNOWN() {
                 return new_mir_type_with_args(name, kind, resolved_args)
             }
             let checked: MIRType = resolve_type_name_checked(st, name)
@@ -574,15 +574,15 @@ fn is_comparison_binop(op: BinOpKind) -> Bool {
     }
 }
 
-fn kind_to_type_name(kind: String) -> String {
-    if kind == "int" { return "Int" }
-    if kind == "float" { return "Float" }
-    if kind == "bool" { return "Bool" }
-    if kind == "string" { return "String" }
-    if kind == "char" { return "Char" }
-    if kind == "void" { return "Void" }
-    if kind == "list" { return "List" }
-    if kind == "map" { return "Map" }
+fn kind_to_type_name(kind: Int) -> String {
+    if kind == TK_INT() { return "Int" }
+    if kind == TK_FLOAT() { return "Float" }
+    if kind == TK_BOOL() { return "Bool" }
+    if kind == TK_STRING() { return "String" }
+    if kind == TK_CHAR() { return "Char" }
+    if kind == TK_VOID() { return "Void" }
+    if kind == TK_LIST() { return "List" }
+    if kind == TK_MAP() { return "Map" }
     return "Int"
 }
 

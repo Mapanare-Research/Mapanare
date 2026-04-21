@@ -1,0 +1,78 @@
+v4.115.0 — examples/async_file_io.mn native run evidence
+========================================================
+
+Date: 2026-04-14
+Host: Linux 5.15.167.4-microsoft-standard-WSL2, x86_64
+
+## Compile (Python bootstrap → LLVM IR)
+
+  $ python3 -m mapanare emit-llvm examples/async_file_io.mn -o /tmp/afi.ll
+  emitted examples/async_file_io.mn -> /tmp/afi.ll (target: x86_64-unknown-linux-gnu)
+
+## IR validation
+
+  $ llvm-as /tmp/afi.ll -o /dev/null
+  (no output — IR is valid)
+
+## Link (clang + libmapanare_rt.a)
+
+  $ clang /tmp/afi.ll -L runtime/native -lmapanare_rt -lpthread -lm -ldl -o /tmp/async_file_io
+  warning: overriding the module target triple with x86_64-pc-linux-gnu [-Woverride-module]
+  1 warning generated.
+
+## Run (-O0)
+
+  $ rm -f /tmp/async_file_io_input.txt /tmp/async_file_io_output.txt
+  $ /tmp/async_file_io
+  async pipeline: lines=3 words=10
+  summary file:   lines=3 words=10
+
+  $ cat /tmp/async_file_io_input.txt
+  hello async world
+  mapanare compiles to native
+  file io works
+
+  $ cat /tmp/async_file_io_output.txt
+  lines=3 words=10
+
+## Run (-O2)
+
+  $ clang -O2 /tmp/afi.ll -L runtime/native -lmapanare_rt -lpthread -lm -ldl -o /tmp/async_file_io_o2
+  $ rm -f /tmp/async_file_io_input.txt /tmp/async_file_io_output.txt
+  $ /tmp/async_file_io_o2
+  async pipeline: lines=3 words=10
+  summary file:   lines=3 words=10
+
+  $ cat /tmp/async_file_io_output.txt
+  lines=3 words=10
+
+## What the demo proves
+
+1. Async fn + await + block_on wire up and execute inside a native
+   binary (golden tests 55-57 already proved this for compute).
+2. Real file I/O happens from inside an async pipeline —
+   __mn_file_read_or_empty is called after block_on starts, and
+   __mn_file_write is called from inside an await chain.
+3. The input file is written, read back, processed asynchronously,
+   and the output file is written — all in a single native binary
+   run with no Python involvement at runtime.
+4. Both -O0 and -O2 produce correct output.
+
+## What the demo does NOT claim
+
+1. Non-blocking file I/O. The C runtime calls are synchronous;
+   async fn provides the coroutine structure, not preemption.
+   Decision 1 default ("wrap synchronous") per PROMPT.md.
+2. Real await on file-read Future. __mn_file_read_async exists in
+   the runtime but has never been invoked from Mapanare source
+   (the emitter does not lower the String-returning-Future path
+   cleanly — Sh.9).
+
+## Emitter limitations surfaced (filed as Sh.9)
+
+1. `await` on a String-returning async fn produces invalid IR.
+2. DCE drops the await whose return value is unused, silently
+   eliminating the side-effecting C call inside.
+
+Both worked around in the example; both should be fixed in a
+future release.

@@ -1,0 +1,17 @@
+// Golden test: async fn with await (v4.75.0)
+// Tests that await drives inner coroutines and chains results.
+// Expected output: 43
+
+async fn inner() -> Int {
+    return 42
+}
+
+async fn outer() -> Int {
+    let x = await inner()
+    return x + 1
+}
+
+fn main() {
+    let result = block_on(outer())
+    print(str(result))
+}

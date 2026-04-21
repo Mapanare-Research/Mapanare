@@ -57,12 +57,12 @@ The reviewers and their focus areas:
 
 | # | File | Reviewer | Primary files to read |
 |---|------|----------|-----------------------|
-| 1 | `01-viper.md` | Viper (Rust/Safety) | `types.py`, `semantic.py`, `mir.py`, `emit_llvm_mir.py`, `runtime/native/*.c`, `MEMORY_MODEL.md` |
+| 1 | `01-viper.md` | Viper (Rust/Safety) | `types.py`, `semantic.py`, `mir.py`, `emit_llvm_text.py`, `runtime/native/*.c`, `MEMORY_MODEL.md` |
 | 2 | `02-boa.md` | Boa (Python/Ergonomics) | `cli.py`, `diagnostics.py`, `emit_python_mir.py`, `test_runner.py`, `runtime/*.py`, tutorials |
-| 3 | `03-cobra.md` | Cobra (C++/Compilation) | `mir.py`, `mir_builder.py`, `lower.py`, `mir_opt.py`, `optimizer.py`, `emit_llvm_mir.py` |
-| 4 | `04-mamba.md` | Mamba (C/Runtime) | `runtime/native/*.c`, `runtime/native/*.h`, `emit_llvm_mir.py` (runtime calls) |
+| 3 | `03-cobra.md` | Cobra (C++/Compilation) | `mir.py`, `mir_builder.py`, `lower.py`, `mir_opt.py`, `optimizer.py`, `emit_llvm_text.py` |
+| 4 | `04-mamba.md` | Mamba (C/Runtime) | `runtime/native/*.c`, `runtime/native/*.h`, `emit_llvm_text.py` (runtime calls) |
 | 5 | `05-anaconda.md` | Anaconda (Toolchain) | `Makefile`, `.github/workflows/*`, `scripts/*`, `mir.py` (verifier), CI configs |
-| 6 | `06-rattler.md` | Rattler (LLVM/Codegen) | `emit_llvm_mir.py`, `emit_llvm.py`, `tests/llvm/*`, `tests/golden/*`, emitted IR samples |
+| 6 | `06-rattler.md` | Rattler (LLVM/Codegen) | `emit_llvm_text.py`, `tests/llvm/*`, `tests/golden/*`, emitted IR samples |
 | 7 | `07-coral.md` | Coral (Language Design) | `SPEC.md`, `mapanare.lark`, `ast_nodes.py`, `types.py`, `semantic.py`, `self/*.mn` |
 
 ### 6. Write the summary

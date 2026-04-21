@@ -3,12 +3,13 @@ source_filename = "24_enum_methods"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-@.str.0 = private constant [0 x i8] c"", align 2
-@.str.1 = private constant [3 x i8] c"red", align 2
-@.str.2 = private constant [5 x i8] c"green", align 2
-@.str.3 = private constant [4 x i8] c"blue", align 2
+@.str.0 = private constant [0 x i8] c"", align 8
+@.str.1 = private constant [3 x i8] c"red", align 8
+@.str.2 = private constant [5 x i8] c"green", align 8
+@.str.3 = private constant [4 x i8] c"blue", align 8
 
 declare void @__mn_str_println({ptr, i64})
+declare void @__mn_intern_destroy()
 
 define internal {ptr, i64} @color_name({i64, ptr} %c) {
 pre_entry:
@@ -99,9 +100,10 @@ entry:
   %l.14 = load {ptr, i64}, ptr %t4.a.13
   call void @__mn_str_println({ptr, i64} %l.14)
   store i1 0, ptr %t5.a.15
+  call void @__mn_intern_destroy()
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"3.14.0"}
+!0 = !{!"4.34.0"}

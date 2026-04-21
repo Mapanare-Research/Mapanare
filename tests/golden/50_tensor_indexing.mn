@@ -1,0 +1,46 @@
+// Golden test: tensor multi-dimensional indexing (v4.43.0)
+//
+// Tests read and write via t[i, j] syntax with bounds checking.
+
+fn main() {
+    // 2-D read
+    let a = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    print(str(a[0, 0]))
+    print(str(a[0, 2]))
+    print(str(a[1, 0]))
+    print(str(a[1, 2]))
+
+    // 1-D read
+    let b = Tensor<Float>[10.0, 20.0, 30.0]
+    print(str(b[0]))
+    print(str(b[2]))
+
+    // 3-D read
+    let c = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]]
+    print(str(c[0, 0, 0]))
+    print(str(c[1, 1, 1]))
+
+    // Write + read back
+    let mut d = Tensor<Float>[[0.0, 0.0], [0.0, 0.0]]
+    d[0, 0] = 42.0
+    d[1, 1] = 99.0
+    print(str(d[0, 0]))
+    print(str(d[1, 1]))
+
+    // Integer tensor
+    let e = Tensor<Int>[100, 200, 300]
+    print(str(e[1]))
+}
+
+// Expected output:
+// 1
+// 3
+// 4
+// 6
+// 10
+// 30
+// 1
+// 8
+// 42
+// 99
+// 200

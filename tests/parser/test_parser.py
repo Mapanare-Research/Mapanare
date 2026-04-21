@@ -370,6 +370,28 @@ class TestTypeAnnotations:
         assert t.element_type.name == "Float"
         assert len(t.shape) == 2
 
+    def test_qualified_named_type(self) -> None:
+        d = parse_def("fn f(x: device.DeviceKind) { }")
+        t = d.params[0].type_annotation
+        assert isinstance(t, NamedType)
+        assert t.name == "DeviceKind"
+        assert t.module_path == ["device"]
+
+    def test_qualified_generic_type(self) -> None:
+        d = parse_def("fn f(x: collections.List<Int>) { }")
+        t = d.params[0].type_annotation
+        assert isinstance(t, GenericType)
+        assert t.name == "List"
+        assert t.module_path == ["collections"]
+        assert len(t.args) == 1
+
+    def test_deep_qualified_type(self) -> None:
+        d = parse_def("fn f(x: a.b.Type) { }")
+        t = d.params[0].type_annotation
+        assert isinstance(t, NamedType)
+        assert t.name == "Type"
+        assert t.module_path == ["a", "b"]
+
     def test_type_alias(self) -> None:
         d = parse_def("type Name = String")
         assert isinstance(d, TypeAlias)
@@ -622,7 +644,12 @@ class TestCalls:
     def test_index_expr(self) -> None:
         e = parse_expr("arr[0]")
         assert isinstance(e, IndexExpr)
-        assert isinstance(e.index, IntLiteral)
+        assert len(e.indices) == 1
+        # v4.45.0: IndexItem wraps scalar expressions
+        from mapanare.ast_nodes import IndexItem
+
+        assert isinstance(e.indices[0], IndexItem)
+        assert e.indices[0].kind == "scalar"
 
     def test_chained_calls(self) -> None:
         e = parse_expr("a.b().c()")

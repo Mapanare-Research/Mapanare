@@ -44,7 +44,7 @@ _FS_MN = (Path(__file__).resolve().parent.parent.parent / "stdlib" / "fs.mn").re
 
 def _compile_mir(source: str) -> str:
     """Compile via MIR-based LLVM emitter."""
-    return _compile_to_llvm_ir(source, "test_fs.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test_fs.mn")
 
 
 def _fs_source_with_main(main_body: str) -> str:

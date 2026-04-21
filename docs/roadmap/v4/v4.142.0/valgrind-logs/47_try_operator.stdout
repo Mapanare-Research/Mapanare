@@ -1,0 +1,249 @@
+; ModuleID = '47_try_operator'
+source_filename = "47_try_operator"
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+
+@.newline = private constant [2 x i8] c"\0A\00", align 2
+@.fmt_int = private constant [4 x i8] c"%ld\00", align 2
+@.fmt_int_nl = private constant [5 x i8] c"%ld\0A\00", align 2
+@.fmt_float = private constant [4 x i8] c"%lf\00", align 2
+@.fmt_float_nl = private constant [5 x i8] c"%lf\0A\00", align 2
+
+declare {ptr, i64} @__mn_str_concat({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare i64 @__mn_str_eq({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_str_cmp({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_str_len({ptr, i64}) nounwind readonly willreturn
+declare {ptr, i64} @__mn_str_char_at({ptr, i64}, i64)
+declare i64 @__mn_str_byte_at({ptr, i64}, i64) nounwind readonly willreturn
+declare {ptr, i64} @__mn_str_substr({ptr, i64}, i64, i64) nounwind willreturn
+declare {ptr, i64} @__mn_str_from_int(i64) nounwind willreturn
+declare {ptr, i64} @__mn_str_from_bool(i64) nounwind willreturn
+declare {ptr, i64} @__mn_str_from_float(double) nounwind willreturn
+declare i64 @__mn_str_to_int({ptr, i64}) nounwind readonly willreturn
+declare double @__mn_str_to_float({ptr, i64}) nounwind readonly willreturn
+declare void @__mn_str_println({ptr, i64}) nounwind willreturn
+declare void @__mn_str_print({ptr, i64}) nounwind willreturn
+declare i1 @__mn_str_starts_with({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare i1 @__mn_str_ends_with({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_str_find({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare {ptr, i64} @__mn_str_join({ptr, i64}, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_list_new(i64) nounwind willreturn
+declare void @__mn_list_push(ptr, ptr) nounwind
+declare ptr @__mn_list_get(ptr, i64) nounwind readonly willreturn
+declare i64 @__mn_list_len(ptr) nounwind readonly willreturn
+declare void @__mn_list_set(ptr, i64, ptr) nounwind
+declare {ptr, i64, i64, i64, i64} @__mn_list_concat(ptr, ptr) nounwind willreturn
+declare i1 @__iter_has_next({i64, i64}) nounwind readonly willreturn
+declare i64 @__iter_next({i64, i64}) nounwind
+declare {i64, i64} @__mn_range(i64, i64) nounwind readonly willreturn
+declare void @__mn_range_free(ptr) nounwind willreturn
+declare {ptr, i64} @__mn_str_to_upper({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_str_to_lower({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_str_replace({ptr, i64}, {ptr, i64}, {ptr, i64}) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_str_split({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_str_trim({ptr, i64}) nounwind willreturn
+declare i1 @__mn_str_contains({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare void @__mn_panic({ptr, i64})
+declare void @__mn_exit(i64)
+declare i64 @__mn_argc()
+declare {ptr, i64} @__mn_argv(i64)
+declare {ptr, i64} @__mn_file_read_or_empty({ptr, i64})
+declare i64 @__mn_file_write({ptr, i64}, {ptr, i64})
+declare i64 @__mn_system({ptr, i64})
+declare void @__mn_str_eprint({ptr, i64}) nounwind willreturn
+declare void @__mn_str_eprintln({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_str_chr(i64) nounwind willreturn
+declare i64 @__mn_str_ord({ptr, i64}) nounwind readonly willreturn
+declare noalias ptr @__mn_map_new(i64, i64, i64, i64) nounwind willreturn
+declare void @__mn_map_set(ptr, ptr, ptr) nounwind
+declare ptr @__mn_map_get(ptr, ptr) nounwind
+declare i64 @__mn_map_len(ptr) nounwind readonly willreturn
+declare i64 @__mn_map_contains(ptr, ptr) nounwind readonly willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_map_keys(ptr) nounwind willreturn
+declare noalias ptr @malloc(i64) nounwind willreturn
+declare i32 @printf(ptr, ...)
+declare noalias ptr @__mapanare_tensor_add(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_tensor_sub(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_tensor_mul(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_tensor_div(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_matmul(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_tensor_alloc(i64, i64*, i64) nounwind willreturn
+declare void @__mapanare_tensor_free(ptr) nounwind willreturn
+declare i1 @__mapanare_tensor_shape_eq(ptr, ptr) nounwind readonly willreturn
+declare ptr @__mapanare_detect_gpus()
+declare ptr @__mn_agent_spawn(ptr, ptr) nounwind willreturn
+declare void @__mn_agent_send(ptr, ptr, ptr) nounwind willreturn
+declare ptr @__mn_agent_sync(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mn_signal_new(ptr) nounwind willreturn
+declare ptr @__mn_signal_get(ptr) nounwind
+declare void @__mn_signal_set(ptr, ptr) nounwind willreturn
+declare {ptr, i64} @__mn_read_line() nounwind willreturn
+declare i64 @__mn_file_append({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare i64 @__mn_file_exists({ptr, i64}) nounwind readonly willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_dir_list_strings({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_http_get({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_sha256_str({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_base64_encode_str({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_base64_decode_str({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_hmac_sha256_str({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_hex_encode_str({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_random_bytes_str(i64) nounwind willreturn
+declare i64 @__mn_regex_compile_str({ptr, i64}) nounwind willreturn
+declare i64 @__mn_regex_exec_str(i64, {ptr, i64}, i64) nounwind willreturn
+declare {ptr, i64} @__mn_regex_replace_str(i64, {ptr, i64}, {ptr, i64}, i64) nounwind willreturn
+declare i64 @__mn_regex_free(i64) nounwind willreturn
+declare i64 @__mn_file_remove({ptr, i64}) nounwind willreturn
+declare i64 @__mn_file_size({ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_file_mtime({ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_dir_create({ptr, i64}) nounwind willreturn
+declare i64 @__mn_dir_remove({ptr, i64}) nounwind willreturn
+declare i64 @__mn_file_rename({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare i64 @__mn_file_copy({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_realpath({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_tmpfile_path() nounwind willreturn
+declare i64 @__mn_gpu_available() nounwind readonly willreturn
+declare {ptr, i64} @__mn_gpu_device_name() nounwind willreturn
+declare i64 @__mn_gpu_device_memory() nounwind readonly willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_add(ptr, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_sub(ptr, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_mul(ptr, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_div(ptr, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_matmul(ptr, ptr, i64, i64, i64) nounwind willreturn
+
+define {i1, {i64, {ptr, i64}}} @might_fail(i1 %ok) nounwind willreturn {
+entry:
+  %ok.addr = alloca i1
+  store i1 %ok, ptr %ok.addr
+  %ok_val0 = load i1, ptr %ok.addr
+  br i1 %ok_val0, label %if_then0, label %if_else1
+if_then0:
+  %t1 = add i64 0, 42
+  %t2.tag = insertvalue {i1, {i64, {ptr, i64}}} undef, i1 1, 0
+  %t2.inner = insertvalue { i64, {ptr, i64} } undef, i64 %t1, 0
+  %t2 = insertvalue {i1, {i64, {ptr, i64}}} %t2.tag, { i64, {ptr, i64} } %t2.inner, 1
+  ret {i1, {i64, {ptr, i64}}} %t2
+if_else1:
+  br label %if_merge2
+if_merge2:
+  %t4.ptr = getelementptr inbounds [6 x i8], ptr @str.0, i64 0, i64 0
+  %t4.s1 = insertvalue {ptr, i64} undef, ptr %t4.ptr, 0
+  %t4 = insertvalue {ptr, i64} %t4.s1, i64 6, 1
+  %t5.tag = insertvalue {i1, {i64, {ptr, i64}}} undef, i1 0, 0
+  %t5.inner = insertvalue { i64, {ptr, i64} } undef, {ptr, i64} %t4, 1
+  %t5 = insertvalue {i1, {i64, {ptr, i64}}} %t5.tag, { i64, {ptr, i64} } %t5.inner, 1
+  ret {i1, {i64, {ptr, i64}}} %t5
+}
+
+define {i1, {i64, {ptr, i64}}} @do_work() nounwind willreturn {
+entry:
+  %t0 = add i1 0, 1
+  %t1 = call {i1, {i64, {ptr, i64}}} @might_fail(i1 %t0)
+  %tag2.raw = extractvalue {i1, {i64, {ptr, i64}}} %t1, 0
+  %tag2 = zext i1 %tag2.raw to i64
+  br i1 %tag2, label %prop_ok0, label %prop_err1
+prop_err1:
+  ret {i1, {i64, {ptr, i64}}} %t1
+prop_ok0:
+  %t3 = extractvalue {i1, {i64, {ptr, i64}}} %t1, 1
+  %v4.addr = alloca i64
+  store i64 %t3, ptr %v4.addr
+  %v_val5 = load i64, ptr %v4.addr
+  %t6 = add i64 0, 8
+  %t7 = add nsw i64 %v_val5, 8
+  %t8.tag = insertvalue {i1, {i64, {ptr, i64}}} undef, i1 1, 0
+  %t8.inner = insertvalue { i64, {ptr, i64} } undef, i64 %t7, 0
+  %t8 = insertvalue {i1, {i64, {ptr, i64}}} %t8.tag, { i64, {ptr, i64} } %t8.inner, 1
+  ret {i1, {i64, {ptr, i64}}} %t8
+}
+
+define {i1, {i64, {ptr, i64}}} @do_work_fail() nounwind willreturn {
+entry:
+  %t0 = add i1 0, 0
+  %t1 = call {i1, {i64, {ptr, i64}}} @might_fail(i1 %t0)
+  %tag2.raw = extractvalue {i1, {i64, {ptr, i64}}} %t1, 0
+  %tag2 = zext i1 %tag2.raw to i64
+  br i1 %tag2, label %prop_ok0, label %prop_err1
+prop_err1:
+  ret {i1, {i64, {ptr, i64}}} %t1
+prop_ok0:
+  %t3 = extractvalue {i1, {i64, {ptr, i64}}} %t1, 1
+  %v4.addr = alloca i64
+  store i64 %t3, ptr %v4.addr
+  %v_val5 = load i64, ptr %v4.addr
+  %t6 = add i64 0, 8
+  %t7 = add nsw i64 %v_val5, 8
+  %t8.tag = insertvalue {i1, {i64, {ptr, i64}}} undef, i1 1, 0
+  %t8.inner = insertvalue { i64, {ptr, i64} } undef, i64 %t7, 0
+  %t8 = insertvalue {i1, {i64, {ptr, i64}}} %t8.tag, { i64, {ptr, i64} } %t8.inner, 1
+  ret {i1, {i64, {ptr, i64}}} %t8
+}
+
+define i32 @main() nounwind willreturn {
+entry:
+  %t0 = call {i1, {i64, {ptr, i64}}} @do_work()
+  %r11.addr = alloca {i1, {i64, {ptr, i64}}}
+  store {i1, {i64, {ptr, i64}}} %t0, ptr %r11.addr
+  %r1_val2 = load {i1, {i64, {ptr, i64}}}, ptr %r11.addr
+  %tag3.raw = extractvalue {i1, {i64, {ptr, i64}}} %r1_val2, 0
+  %tag3 = zext i1 %tag3.raw to i64
+  switch i64 %tag3, label %match_merge0 [
+    i64 1, label %match_arm1
+    i64 0, label %match_arm2
+  ]
+match_arm1:
+  %v4.inner = extractvalue {i1, {i64, {ptr, i64}}} %r1_val2, 1
+  %v4 = extractvalue { i64, {ptr, i64} } %v4.inner, 0
+  %v5.addr = alloca i64
+  store i64 %v4, ptr %v5.addr
+  %v_val6 = load i64, ptr %v5.addr
+  %t7 = call {ptr, i64} @__mn_str_from_int(i64 %v_val6)
+  call void @__mn_str_println({ptr, i64} %t7)
+  br label %match_merge0
+match_arm2:
+  %e9.inner = extractvalue {i1, {i64, {ptr, i64}}} %r1_val2, 1
+  %e9 = extractvalue { i64, {ptr, i64} } %e9.inner, 1
+  %e10.addr = alloca {ptr, i64}
+  store {ptr, i64} %e9, ptr %e10.addr
+  %e_val11 = load {ptr, i64}, ptr %e10.addr
+  call void @__mn_str_println({ptr, i64} %e_val11)
+  br label %match_merge0
+match_merge0:
+  %match_result13.dummy = alloca void
+  %match_result13 = load void, ptr %match_result13.dummy
+  %t14 = call {i1, {i64, {ptr, i64}}} @do_work_fail()
+  %r215.addr = alloca {i1, {i64, {ptr, i64}}}
+  store {i1, {i64, {ptr, i64}}} %t14, ptr %r215.addr
+  %r2_val16 = load {i1, {i64, {ptr, i64}}}, ptr %r215.addr
+  %tag17.raw = extractvalue {i1, {i64, {ptr, i64}}} %r2_val16, 0
+  %tag17 = zext i1 %tag17.raw to i64
+  switch i64 %tag17, label %match_merge3 [
+    i64 1, label %match_arm4
+    i64 0, label %match_arm5
+  ]
+match_arm4:
+  %v18.inner = extractvalue {i1, {i64, {ptr, i64}}} %r2_val16, 1
+  %v18 = extractvalue { i64, {ptr, i64} } %v18.inner, 0
+  %v19.addr = alloca i64
+  store i64 %v18, ptr %v19.addr
+  %v_val20 = load i64, ptr %v19.addr
+  %t21 = call {ptr, i64} @__mn_str_from_int(i64 %v_val20)
+  call void @__mn_str_println({ptr, i64} %t21)
+  br label %match_merge3
+match_arm5:
+  %e23.inner = extractvalue {i1, {i64, {ptr, i64}}} %r2_val16, 1
+  %e23 = extractvalue { i64, {ptr, i64} } %e23.inner, 1
+  %e24.addr = alloca {ptr, i64}
+  store {ptr, i64} %e23, ptr %e24.addr
+  %e_val25 = load {ptr, i64}, ptr %e24.addr
+  call void @__mn_str_println({ptr, i64} %e_val25)
+  br label %match_merge3
+match_merge3:
+  %match_result27.dummy = alloca void
+  %match_result27 = load void, ptr %match_result27.dummy
+  ret i32 zeroinitializer
+}
+
+@str.0 = private constant [6 x i8] c"failed", align 2
+
+!mapanare.version = !{!0}
+!0 = !{!"4.142.0"}

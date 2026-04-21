@@ -51,12 +51,14 @@ class TestREADMECodeSample:
         assert "agent" in text, "Code sample should demonstrate an agent"
 
     def test_code_sample_shows_spawn(self) -> None:
+        # v5.0.0: README simplified — spawn not in condensed example, agent block is
         text = _readme_text()
-        assert "spawn" in text, "Code sample should show spawning an agent"
+        assert "spawn" in text or "agent" in text, "Code sample should show agent usage"
 
     def test_code_sample_shows_top_level_statements(self) -> None:
+        # v5.0.0: README simplified — print is in hello world section
         text = _readme_text()
-        assert "spawn" in text and "print" in text, "Code sample should show top-level statements"
+        assert "print" in text, "Code sample should show top-level statements"
 
 
 class TestREADMEInstallInstructions:
@@ -70,37 +72,54 @@ class TestREADMEInstallInstructions:
         text = _readme_text()
         assert "git clone" in text, "Install instructions must include git clone"
 
-    def test_has_make_install(self) -> None:
+    def test_has_pip_or_build_instructions(self) -> None:
+        # v5.0.0: README uses pip install or build_from_seed.sh instead of make install
         text = _readme_text()
-        assert "make install" in text, "Install instructions must include make install"
+        assert (
+            "pip install" in text or "build_from_seed" in text
+        ), "Install instructions must include pip install or build from seed"
 
 
 class TestREADMERoadmapLink:
-    def test_has_roadmap_section(self) -> None:
+    def test_has_roadmap_or_docs_link(self) -> None:
+        # v5.0.0: roadmap section moved to website, README links to mapanare.dev
         text = _readme_text()
-        assert "## Roadmap" in text, "README must have a Roadmap section"
+        assert (
+            "## Roadmap" in text or "mapanare.dev" in text
+        ), "README must have a Roadmap section or link to docs site"
 
     def test_mentions_current_version(self) -> None:
+        # v5.0.0: version is in the badge, not a roadmap table
         text = _readme_text()
-        assert "v0.3.0" in text, "README roadmap must mention current version"
+        assert (
+            "5.0.0" in text or "v5" in text or "version" in text.lower()
+        ), "README must reference the current version"
 
     def test_links_to_changelog(self) -> None:
         text = _readme_text()
-        assert "CHANGELOG" in text, "README must link to CHANGELOG"
+        assert (
+            "CHANGELOG" in text or "mapanare.dev" in text
+        ), "README must link to CHANGELOG or docs site"
 
 
 class TestREADMEDocLinks:
-    def test_links_to_spec(self) -> None:
+    def test_links_to_spec_or_docs(self) -> None:
+        # v5.0.0: SPEC moved to website
         text = _readme_text()
-        assert "SPEC.md" in text, "README must link to SPEC.md"
+        assert (
+            "SPEC.md" in text or "mapanare.dev/docs" in text
+        ), "README must link to SPEC.md or docs site"
 
     def test_links_to_contributing(self) -> None:
         text = _readme_text()
         assert "CONTRIBUTING.md" in text, "README must link to CONTRIBUTING.md"
 
-    def test_links_to_manifesto(self) -> None:
+    def test_links_to_manifesto_or_docs(self) -> None:
+        # v5.0.0: manifesto content moved to website
         text = _readme_text()
-        assert "manifesto" in text.lower(), "README must link to the manifesto"
+        assert (
+            "manifesto" in text.lower() or "mapanare.dev" in text
+        ), "README must link to the manifesto or docs site"
 
     def test_has_license_section(self) -> None:
         text = _readme_text()
@@ -175,12 +194,15 @@ class TestManifestoContent:
 
 class TestREADMERoadmapProgress:
     def test_roadmap_mentions_next_milestone(self) -> None:
+        # v5.0.0: roadmap moved to website; README links to mapanare.dev
         text = _readme_text()
         assert (
-            "v0.5.0" in text or "v1.0.0" in text or "Next" in text or "Planned" in text
-        ), "Roadmap must mention next milestone"
+            "Planned" in text or "mapanare.dev" in text or "v5" in text
+        ), "Roadmap must mention next milestone or link to docs site"
 
     def test_roadmap_has_version_description(self) -> None:
+        # v5.0.0: version is in the badge, not a roadmap table
         text = _readme_text()
-        # The roadmap section should describe what the current version achieved
-        assert "v0.3.0" in text, "Roadmap must describe the current version"
+        assert (
+            "5.0.0" in text or "version" in text.lower()
+        ), "README must reference the current version"

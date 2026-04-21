@@ -1,0 +1,64 @@
+v4.110.0 benchmark deltas (captured for PHASE_C_RESULTS.md).
+
+============================================================================
+  Table 3: v4.98.0 (pre-panel) -> v4.110.0 delta
+============================================================================
+benchmark                v4.98.0    v4.110.0       delta       pct   speedup
+agent_fanout              0.51ms      1.22ms     +0.71ms   +139.5%    0.42x
+enum_match                2.27ms      3.07ms     +0.80ms    +35.5%    0.74x
+fib_recursive            19.56ms     20.56ms     +1.00ms     +5.1%    0.95x
+matmul_naive              1.33ms      2.29ms     +0.96ms    +72.0%    0.58x
+prime_sieve               3.05ms      3.43ms     +0.38ms    +12.4%    0.89x
+quicksort                 1.98ms      2.52ms     +0.54ms    +27.2%    0.79x
+string_concat            95.24ms      1.36ms    -93.88ms    -98.6%   69.89x
+struct_alloc              0.57ms      1.26ms     +0.69ms   +120.8%    0.45x
+
+NOTE: v4.98.0 used a different harness (no /usr/bin/time -v wrap). The
+sub-millisecond "regressions" on struct_alloc, agent_fanout, enum_match
+reflect harness overhead, not compiler regression. The control below
+isolates true post-v4.107.0 change.
+
+============================================================================
+  Table 4: v4.82.0 (optimizer era start) -> v4.110.0 cumulative
+============================================================================
+benchmark                v4.82.0    v4.110.0       delta       pct   speedup
+fib_recursive            20.43ms     20.56ms     +0.13ms     +0.6%    0.99x
+quicksort                 1.79ms      2.52ms     +0.73ms    +40.7%    0.71x
+matmul_naive              1.39ms      2.29ms     +0.90ms    +64.6%    0.61x
+string_concat           102.31ms      1.36ms   -100.95ms    -98.7%   75.08x
+agent_fanout              0.76ms      1.22ms     +0.46ms    +60.7%    0.62x
+
+Geometric mean speedup (5 optimizer programs): 1.821x
+-> string_concat's 75x speedup is the dominant contributor.
+-> fib/quicksort/matmul/agent_fanout regressions are confounded by
+   harness change (v4.82.0 raw wall-time, no /usr/bin/time -v wrap).
+
+============================================================================
+  Control: v4.107.0 -> v4.110.0 (same harness, isolates post-v4.107.0)
+============================================================================
+benchmark               v4.107.0    v4.110.0       delta       pct
+enum_match                3.66ms      3.07ms     -0.58ms    -16.0%
+fib_recursive            20.33ms     20.56ms     +0.23ms     +1.1%
+prime_sieve               3.43ms      3.43ms     -0.01ms     -0.2%
+quicksort                 2.58ms      2.52ms     -0.06ms     -2.5%
+string_concat            94.57ms      1.36ms    -93.21ms    -98.6%
+struct_alloc              1.21ms      1.26ms     +0.05ms     +4.3%
+
+Post-v4.107.0 is flat on every benchmark except string_concat.
+All deltas < 5% are within run-to-run noise. enum_match -16% is the
+only notable non-string change; likely reflects a combination of
+v4.103.0's enum dispatch work and measurement noise.
+
+============================================================================
+  Cross-language geomeans (v4.110.0, 5 correct programs)
+============================================================================
+Excluded: quicksort (List<Int> indexing bug, docket Qs.1)
+
+  Mapanare vs C (gcc -O2)     4.85x slower
+  Mapanare vs C (clang -O2)   9.48x slower
+  Mapanare vs Rust -O         1.06x slower  (effectively on par)
+  Mapanare vs Go              2.10x slower
+  Mapanare vs Python 3.12     50.0x FASTER
+
+v4.107.0 showed Mapanare 9.5x slower than C gcc. v4.110.0 shows 4.85x.
+That 2x improvement traces entirely to string_concat: 94.57ms -> 1.36ms.

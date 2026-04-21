@@ -191,6 +191,16 @@ typedef struct mapanare_agent {
     /* Message queues */
     mapanare_ring_buffer_t   inbox;            /* incoming messages   */
     mapanare_ring_buffer_t   outbox;           /* outgoing messages   */
+    /* v4.28.0: the ring itself is SPSC but ``mapanare_agent_send`` is
+     * called from any thread that has a handle to the agent, so the
+     * producer side is MPSC in practice (v4.26.0 panel: Viper H5).
+     * ``inbox_producer_lock`` serializes the producer side so no two
+     * senders race on ``head`` / slot writes. The thread pool's
+     * ``queue_lock`` already follows the same SPSC→MPSC-via-mutex pattern
+     * (see ``mapanare_thread_pool_t``). A bounded-MPSC structure (Vyukov)
+     * is the future perf improvement; for v4.28.0 correctness is what
+     * the panel asked for. */
+    mapanare_mutex_t         inbox_producer_lock;
     mapanare_backpressure_t  bp;               /* backpressure for inbox */
     mapanare_semaphore_t     inbox_ready;      /* signalled on inbox push  */
     mapanare_semaphore_t     outbox_ready;     /* signalled on outbox push */
@@ -217,6 +227,21 @@ typedef struct mapanare_agent {
     /* Internal */
     mapanare_thread_t        thread;
     mapanare_atomic_i32      running;           /* internal run flag */
+    /* v4.137.0 (Ch.1): track whether the worker thread must still be
+     * joined. Set to 1 by spawn() on success; claimed (1 → 0) by the
+     * first caller of stop() or destroy(). Ensures destroy() joins
+     * before freeing rings/semaphores even when stop() was skipped,
+     * and never double-joins when stop() was already called. */
+    mapanare_atomic_i32      needs_join;
+
+    /* v4.33.0 Phase 4.3 (Viper M5, 2nd cycle): optional destructor for
+     * in-flight messages. If non-NULL, mapanare_agent_destroy calls
+     * message_dtor(msg) for every message still in the inbox/outbox
+     * before discarding it. Set by the compiler's agent wrapper at
+     * spawn time when the message type is heap-allocated. NULL means
+     * "caller owns lifetime" (backwards-compatible with all existing
+     * agents). */
+    void (*message_dtor)(void *msg);
 } mapanare_agent_t;
 
 /** Initialise an agent.  Does NOT start it — call mapanare_agent_spawn(). */
@@ -559,5 +584,46 @@ MAPANARE_EXPORT mapanare_thread_pool_t *mapanare_ensure_pool(void);
 
 /** Destroy the global lazy-initialized thread pool (call at shutdown). */
 MAPANARE_EXPORT void mapanare_pool_destroy_global(void);
+
+/* -----------------------------------------------------------------------
+ * Multi-threaded work-stealing coroutine scheduler (v4.93.0)
+ *
+ * N worker threads, each with a Chase-Lev work-stealing deque.
+ * When idle, threads steal from random peers. N=1 backward
+ * compatible with the v4.92.0 single-threaded model.
+ * ----------------------------------------------------------------------- */
+
+/** Initialize the scheduler with N worker threads (0 = auto-detect cores). */
+MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads);
+
+/** Register a coroutine handle with the scheduler (enqueue for execution). */
+MN_EXPORT void __mn_coro_scheduler_register(void *handle);
+
+/** Register that a coroutine handle is waiting on a specific future. */
+MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr);
+
+/** Run the scheduler until all coroutines complete. */
+MN_EXPORT void __mn_coro_scheduler_run(void);
+
+/** Destroy the global coroutine scheduler (call at shutdown). */
+MN_EXPORT void __mn_coro_scheduler_destroy(void);
+
+/** Spawn a coroutine for multi-threaded execution (v4.93.0). */
+MN_EXPORT void __mn_coro_spawn(void *handle);
+
+/** Async file read: returns a Future<String> immediately, reads on a thread. */
+MN_EXPORT void *__mn_file_read_async(MnString path);
+
+/* v4.105.0 Phase 4 — crash breadcrumbs (async-signal-safe).
+ *
+ * The compiler driver (or the self-hosted compiler itself, in a later
+ * release) calls __mn_set_current_source / __mn_set_current_phase to
+ * leave a thread-local trail. On SIGSEGV / SIGABRT / SIGBUS / SIGFPE /
+ * SIGILL, the handler installed by __mn_install_crash_handler prints
+ * "[CRASH] <signame> during <phase> at <file>:<line>" and a backtrace,
+ * using only async-signal-safe primitives. */
+MN_EXPORT void __mn_set_current_source(const char *filename, int32_t line);
+MN_EXPORT void __mn_set_current_phase(const char *phase);
+MN_EXPORT void __mn_install_crash_handler(void);
 
 #endif /* MAPANARE_RUNTIME_H */

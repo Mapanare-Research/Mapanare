@@ -35,6 +35,7 @@ struct Parser {
 
 fn is_skip_token(tok_type: String) -> Bool {
     if tok_type == "KW_FN" { return true }
+    if tok_type == "KW_ASYNC" { return true }
     if tok_type == "KW_LET" { return true }
     if tok_type == "KW_AGENT" { return true }
     if tok_type == "KW_PIPE" { return true }
@@ -237,8 +238,8 @@ fn new_enum_variant(name: String, fields: List<TypeExpr>) -> EnumVariant {
     return new EnumVariant { span: new_span(0, 0, 0, 0), name: name, fields: fields }
 }
 
-fn new_match_arm(pattern: Pattern, body: MatchArmBody) -> MatchArm {
-    return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body }
+fn new_match_arm(pattern: Pattern, body: MatchArmBody, guard: Option<Expr>) -> MatchArm {
+    return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body, guard: guard }
 }
 
 fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData {
@@ -367,6 +368,7 @@ fn is_definition_start(tt: String) -> Bool {
     if tt == "KW_EXPORT" { return true }
     if tt == "KW_PUB" { return true }
     if tt == "KW_FN" { return true }
+    if tt == "KW_ASYNC" { return true }
     if tt == "KW_STRUCT" { return true }
     if tt == "KW_ENUM" { return true }
     if tt == "KW_AGENT" { return true }
@@ -374,6 +376,14 @@ fn is_definition_start(tt: String) -> Bool {
     if tt == "KW_TYPE" { return true }
     if tt == "KW_IMPL" { return true }
     if tt == "KW_EXTERN" { return true }
+    if tt == "KW_LET" { return true }
+    // v4.126.0: KW_CONST + KW_TRAIT were missing — module-level const
+    // and trait declarations were being misparsed as statements
+    // (silently consumed, no scope binding). Closes 54_const_basic and
+    // 58_const_scope golden tests; parse_definition already handles
+    // both keywords via parse_const_def / inline parse path.
+    if tt == "KW_CONST" { return true }
+    if tt == "KW_TRAIT" { return true }
     if tt == "AT" { return true }
     return false
 }
@@ -457,12 +467,23 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     if tt == "KW_PUB" {
         let next_tt: String = peek_type(tokens, pos + 1)
         if next_tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
+        // v4.68.0: ``KW_ASYNC`` dispatch restored (Arc 8).
+        if next_tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
         if next_tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
         if next_tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
         if next_tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
         if next_tt == "KW_PIPE" { return parse_pipe_def(tokens, pos, filename) }
     }
+    // v4.68.0: ``KW_ASYNC`` top-level dispatch restored (Arc 8).
+    if tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
     if tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
+    // v4.78.0 (CARRY_FORWARD A10b): const handled early — the compiled
+    // binary has a codegen issue where checks late in long if-chains are
+    // unreachable. Placed right after KW_FN which is known to work.
+    if tt == "KW_CONST" { return parse_const_def(tokens, pos, filename) }
+    if tt == "NAME" {
+        if peek_value(tokens, pos) == "const" { return parse_const_def(tokens, pos, filename) }
+    }
     if tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
     if tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
     if tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
@@ -506,6 +527,8 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
     }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
+    if tt == "KW_LET" { return parse_module_let(tokens, pos, filename) }
+    if tt == "KW_CONST" { return parse_const_def(tokens, pos, filename) }
     if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
 
     // Fallback: skip unknown token
@@ -542,8 +565,62 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     return new_def_result(Definition::ImportDef(path, trail_items), p)
 }
 
+// v4.55.0: const definition parsing
+fn parse_const_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    // v4.78.0 (CARRY_FORWARD A10b): emit LetDef instead of ConstDef so
+    // that const symbols use the same scope registration path as let
+    // definitions. ConstDef (the last enum variant) has a codegen issue
+    // in the compiled binary where its tag is unreachable in switch
+    // statements. Emitting LetDef makes consts visible in fn bodies.
+    let mut p: Int = pos + 1
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+    // Optional type annotation: ": TYPE"
+    let mut type_name: String = ""
+    if peek_type(tokens, p) == "COLON" {
+        p = p + 1
+        type_name = peek_value(tokens, p)
+        p = p + 1
+    }
+    // Expect "="
+    if peek_type(tokens, p) == "ASSIGN" { p = p + 1 }
+    // Parse value expression
+    let er: ExprResult = parse_expr(tokens, p, filename)
+    p = er.pos
+    p = skip_semis(tokens, p)
+    return new_def_result(Definition::LetDef(name, type_name, er.expr), p)
+}
+
 // ---------------------------------------------------------------------------
 // Extern "C" function declaration
+// ---------------------------------------------------------------------------
+
+fn parse_module_let(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+    // let NAME: TYPE = EXPR
+    let mut p: Int = pos + 1
+    // Skip optional 'mut' (module-level let is always immutable, but tolerate it)
+    if peek_type(tokens, p) == "KW_MUT" { p = p + 1 }
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+    // Optional type annotation: ": TYPE"
+    let mut type_name: String = ""
+    if peek_type(tokens, p) == "COLON" {
+        p = p + 1
+        type_name = peek_value(tokens, p)
+        p = p + 1
+    }
+    // Expect "="
+    if peek_type(tokens, p) == "ASSIGN" {
+        p = p + 1
+    }
+    // Parse value expression
+    let er: ExprResult = parse_expr(tokens, p, filename)
+    p = er.pos
+    // Skip optional semicolons/newlines
+    p = skip_semis(tokens, p)
+    return new_def_result(Definition::LetDef(name, type_name, er.expr), p)
+}
+
 // ---------------------------------------------------------------------------
 
 fn parse_extern_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
@@ -634,9 +711,16 @@ fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
 fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
     let mut p: Int = pos
     let mut is_pub: Bool = false
+    // v4.68.0: ``is_async`` activated — the lexer emits ``KW_ASYNC`` again.
+    let mut is_async: Bool = false
 
     if peek_type(tokens, p) == "KW_PUB" {
         is_pub = true
+        p = p + 1
+    }
+    // v4.68.0: check for ``async fn`` (KW_ASYNC before KW_FN).
+    if peek_type(tokens, p) == "KW_ASYNC" {
+        is_async = true
         p = p + 1
     }
     p = expect(tokens, p, "KW_FN")
@@ -653,7 +737,7 @@ fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
         for _ in 0..20 {
             if peek_type(tokens, p) != "COMMA" {
                 p = expect(tokens, p, "GT")
-                return parse_fn_params(tokens, p, filename, name, is_pub, type_params)
+                return parse_fn_params(tokens, p, filename, name, is_pub, type_params, is_async)
             }
             p = p + 1
             type_params.push(peek_value(tokens, p))
@@ -662,10 +746,10 @@ fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
         p = expect(tokens, p, "GT")
     }
 
-    return parse_fn_params(tokens, p, filename, name, is_pub, type_params)
+    return parse_fn_params(tokens, p, filename, name, is_pub, type_params, is_async)
 }
 
-fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> DefResult {
+fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, is_async: Bool) -> DefResult {
     let mut p: Int = pos
     p = expect(tokens, p, "LPAREN")
     let mut params: List<Param> = []
@@ -678,12 +762,12 @@ fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String
         for _ in 0..50 {
             if peek_type(tokens, p) != "COMMA" {
                 p = expect(tokens, p, "RPAREN")
-                return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params)
+                return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params, is_async)
             }
             p = p + 1
             if peek_type(tokens, p) == "RPAREN" {
                 p = p + 1
-                return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params)
+                return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params, is_async)
             }
             let pr2: ParamResult = parse_param(tokens, p, filename)
             params.push(pr2.param)
@@ -692,10 +776,10 @@ fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String
     }
     p = expect(tokens, p, "RPAREN")
 
-    return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params)
+    return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params, is_async)
 }
 
-fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, params: List<Param>) -> DefResult {
+fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, params: List<Param>, is_async: Bool) -> DefResult {
     let mut p: Int = pos
 
     let mut ret_type: Option<TypeExpr> = none
@@ -709,7 +793,10 @@ fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, 
     let br: BlockResult = parse_block(tokens, p, filename)
     p = br.pos
 
-    let decorators: List<Decorator> = []
+    let mut decorators: List<Decorator> = []
+    if is_async {
+        decorators.push(new_decorator("async"))
+    }
     let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, br.block, decorators)
     return new_def_result(Definition::FnDef(fd), p)
 }
@@ -1541,6 +1628,11 @@ fn parse_unary(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
         let r_not: ExprResult = parse_unary(tokens, pos + 1, filename)
         return new_expr_result(Expr::Unary("!", r_not.expr), r_not.pos)
     }
+    // v4.68.0: ``KW_AWAIT`` restored (Arc 8). See v4.67.0/DESIGN.md §3.2.
+    if tt == "KW_AWAIT" {
+        let r_await: ExprResult = parse_unary(tokens, pos + 1, filename)
+        return new_expr_result(Expr::Await(r_await.expr), r_await.pos)
+    }
 
     return parse_postfix(tokens, pos, filename)
 }
@@ -1860,6 +1952,16 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     // Signal expression
     if tt == "KW_SIGNAL" { return parse_signal_expr(tokens, pos, filename) }
 
+    // Tensor literal: Tensor<Type>[elements]  (v4.42.0)
+    if tt == "KW_TENSOR" {
+        if pos + 1 < len(tokens) {
+            let next_tt: String = tokens[pos + 1].tok_type
+            if next_tt == "LT" {
+                return parse_tensor_lit(tokens, pos, filename)
+            }
+        }
+    }
+
     // Map literal: #{ key: val, ... }
     if tt == "MAP_OPEN" { return parse_map_lit(tokens, pos, filename) }
 
@@ -1956,16 +2058,26 @@ fn parse_match_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
 fn parse_match_arm_item(tokens: List<Token>, pos: Int, filename: String) -> MatchArmResult {
     let pr: PatternResult = parse_pattern(tokens, pos, filename)
     let mut p: Int = pr.pos
+
+    // v4.35.0: optional guard — `if <expr>` before `=>`
+    let mut guard: Option<Expr> = None
+    if peek_type(tokens, p) == "KW_IF" {
+        p = p + 1
+        let gr: ExprResult = parse_expr(tokens, p, filename, 0)
+        guard = Some(gr.expr)
+        p = gr.pos
+    }
+
     p = expect(tokens, p, "FAT_ARROW")
 
     if peek_type(tokens, p) == "LBRACE" {
         let br: BlockResult = parse_block(tokens, p, filename)
-        let arm_blk: MatchArm = new_match_arm(pr.pattern, MatchArmBody::BlockBody(br.block))
+        let arm_blk: MatchArm = new_match_arm(pr.pattern, MatchArmBody::BlockBody(br.block), guard)
         return new_match_arm_result(arm_blk, br.pos)
     }
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
-    let arm_expr: MatchArm = new_match_arm(pr.pattern, MatchArmBody::ExprBody(er.expr))
+    let arm_expr: MatchArm = new_match_arm(pr.pattern, MatchArmBody::ExprBody(er.expr), guard)
     return new_match_arm_result(arm_expr, er.pos)
 }
 
@@ -1974,6 +2086,26 @@ fn parse_match_arm_item(tokens: List<Token>, pos: Int, filename: String) -> Matc
 // ---------------------------------------------------------------------------
 
 fn parse_pattern(tokens: List<Token>, pos: Int, filename: String) -> PatternResult {
+    // v4.35.0: parse or-patterns — `pattern_alt (| pattern_alt)*`
+    let first: PatternResult = parse_pattern_alt(tokens, pos, filename)
+    let mut p: Int = first.pos
+    if peek_type(tokens, p) != "BAR" {
+        return first
+    }
+    let mut alts: List<Pattern> = [first.pattern]
+    for _ in 0..20 {
+        if peek_type(tokens, p) != "BAR" {
+            return new_pattern_result(Pattern::OrPat(alts), p)
+        }
+        p = p + 1
+        let next: PatternResult = parse_pattern_alt(tokens, p, filename)
+        alts.push(next.pattern)
+        p = next.pos
+    }
+    return new_pattern_result(Pattern::OrPat(alts), p)
+}
+
+fn parse_pattern_alt(tokens: List<Token>, pos: Int, filename: String) -> PatternResult {
     let tt: String = peek_type(tokens, pos)
     let val: String = peek_value(tokens, pos)
 
@@ -2151,6 +2283,33 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
 }
 
 // ---------------------------------------------------------------------------
+// Tensor literal: Tensor<Type>[elements] (v4.42.0)
+// Parses Tensor<Type>[...] by consuming the type prefix, then delegating
+// to parse_list_lit for the body. Returns TensorLit with flat elements and
+// shape [n] (1D). For nD, the Python bootstrap handles nesting; the
+// self-hosted mirror handles 1D for now (sufficient for golden tests).
+// ---------------------------------------------------------------------------
+
+fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+    let mut p: Int = pos + 1
+    p = expect(tokens, p, "LT")
+    let mut depth: Int = 1
+    for _ in 0..100 {
+        if depth > 0 {
+            let tt: String = peek_type(tokens, p)
+            if tt == "LT" { depth = depth + 1 }
+            if tt == "GT" { depth = depth - 1 }
+            p = p + 1
+        }
+    }
+    // Now at [elements]
+    let list_result: ExprResult = parse_list_lit(tokens, p, filename)
+    let elems: List<Expr> = expr_list_elements(list_result.expr)
+    let shape: List<Int> = [len(elems)]
+    return new_expr_result(Expr::TensorLit(elems, shape), list_result.pos)
+}
+
+// ---------------------------------------------------------------------------
 // Parenthesized expression
 // ---------------------------------------------------------------------------
 
@@ -2191,11 +2350,18 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
     if tt == "KW_FN" { return parse_fn_type(tokens, pos, filename) }
 
     if tt == "NAME" {
-        let name: String = peek_value(tokens, pos)
-        if peek_type(tokens, pos + 1) == "LT" {
-            return parse_generic_type(tokens, pos, filename)
+        let mut name: String = peek_value(tokens, pos)
+        let mut p: Int = pos + 1
+        for _ in 0..10 {
+            if peek_type(tokens, p) != "DOT" { break }
+            if peek_type(tokens, p + 1) != "NAME" { break }
+            name = name + "." + peek_value(tokens, p + 1)
+            p = p + 2
         }
-        return new_type_result(TypeExpr::Named(name), pos + 1)
+        if peek_type(tokens, p) == "LT" {
+            return parse_generic_type_at(tokens, p, name, filename)
+        }
+        return new_type_result(TypeExpr::Named(name), p)
     }
 
     return new_type_result(TypeExpr::Named("Void"), pos + 1)
@@ -2203,7 +2369,11 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
 
 fn parse_generic_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult {
     let name: String = peek_value(tokens, pos)
-    let mut p: Int = pos + 1
+    return parse_generic_type_at(tokens, pos + 1, name, filename)
+}
+
+fn parse_generic_type_at(tokens: List<Token>, pos: Int, name: String, filename: String) -> TypeResult {
+    let mut p: Int = pos
     p = expect(tokens, p, "LT")
 
     let mut args: List<TypeExpr> = []

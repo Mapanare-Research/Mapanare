@@ -307,15 +307,16 @@ pub fn vector_mean(vectors: List<List<Float>>) -> List<Float> {
 // ---------------------------------------------------------------------------
 
 fn escape_json(s: String) -> String {
+    // v4.95.0: StringBuilder for O(n) escaping
     pon slen: Int = len(s)
-    pon mut result: String = ""
+    pon mut sb = sb_create()
     pon mut i: Int = 0
     mien i < slen {
         pon ch: String = s.char_at(i)
-        si ch == "\"" { result = result + "\\\"" } sino { si ch == "\\" { result = result + "\\\\" } sino { si ch == "\n" { result = result + "\\n" } sino { si ch == "\r" { result = result + "\\r" } sino { si ch == "\t" { result = result + "\\t" } sino { result = result + ch } } } } }
+        si ch == "\"" { sb_append(sb, "\\\"") } sino { si ch == "\\" { sb_append(sb, "\\\\") } sino { si ch == "\n" { sb_append(sb, "\\n") } sino { si ch == "\r" { sb_append(sb, "\\r") } sino { si ch == "\t" { sb_append(sb, "\\t") } sino { sb_append(sb, ch) } } } } }
         i = i + 1
     }
-    da result
+    da sb_to_string(sb)
 }
 
 fn skip_ws(text: String, pos: Int, slen: Int) -> Int {

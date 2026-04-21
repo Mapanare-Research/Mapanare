@@ -1,0 +1,72 @@
+==============================================================================
+  CROSS-LANGUAGE BENCHMARK SUITE (v4.125.0) -- 20 runs per config
+==============================================================================
+
+  gcc      /usr/bin/gcc
+  clang    /usr/bin/clang
+  rustc    /home/uan/.cargo/bin/rustc
+  go       /home/uan/go/bin/go
+  python   /usr/bin/python3
+
+[fib_recursive]
+  C (gcc -O2)      wall=  10.281ms  mem=   1852KB  bin=  15.8KB  loc= 14  [ok]
+  C (clang -O2)    wall=  17.559ms  mem=   1852KB  bin=  15.8KB  loc= 14  [ok]
+  Rust -O          wall=  17.207ms  mem=   2316KB  bin=3894.6KB  loc= 11  [ok]
+  Go               wall=  30.321ms  mem=   2472KB  bin=1878.8KB  loc= 23  [ok]
+  Mapanare O2      wall=  14.630ms  mem=   2224KB  bin=  62.5KB  loc=  8  [ok]
+  Python 3.12      wall= 741.442ms  mem=  12644KB  bin=N/A  loc=  9  [ok]
+
+[quicksort]
+  C (gcc -O2)      wall=   0.327ms  mem=   1924KB  bin=  15.9KB  loc= 46  [ok]
+  C (clang -O2)    wall=   0.322ms  mem=   1928KB  bin=  15.9KB  loc= 46  [ok]
+  Rust -O          wall=   0.371ms  mem=   2400KB  bin=3896.2KB  loc= 36  [ok]
+  Go               wall=   0.374ms  mem=   2568KB  bin=1879.7KB  loc= 49  [ok]
+  Mapanare O2      wall=   1.038ms  mem=   2320KB  bin=  62.5KB  loc= 46  [ok]
+  Python 3.12      wall=  76.558ms  mem=  13968KB  bin=N/A  loc= 27  [ok]
+
+[struct_alloc]
+  C (gcc -O2)      wall=   0.551ms  mem=   1852KB  bin=  15.9KB  loc= 27  [ok]
+  C (clang -O2)    wall=   0.016ms  mem=   1848KB  bin=  15.8KB  loc= 27  [ok]
+  Rust -O          wall=   0.017ms  mem=   2308KB  bin=3894.5KB  loc= 15  [ok]
+  Go               wall=   0.019ms  mem=   2456KB  bin=1879.0KB  loc= 27  [ok]
+  Mapanare O2      wall=   0.018ms  mem=   2268KB  bin=  62.5KB  loc= 19  [ok]
+  Python 3.12      wall= 198.314ms  mem=  15008KB  bin=N/A  loc= 15  [ok]
+
+[enum_match]
+  C (gcc -O2)      wall=   0.124ms  mem=   1852KB  bin=  15.8KB  loc= 55  [ok]
+  C (clang -O2)    wall=   0.135ms  mem=   1848KB  bin=  15.8KB  loc= 55  [ok]
+  Rust -O          wall=   0.278ms  mem=   2312KB  bin=3895.0KB  loc= 39  [ok]
+  Go               wall=   0.186ms  mem=   2460KB  bin=1879.1KB  loc= 58  [ok]
+  Mapanare O2      wall=   0.157ms  mem=   2224KB  bin=  62.5KB  loc= 37  [ok]
+  Python 3.12      wall=  71.923ms  mem=  12744KB  bin=N/A  loc= 35  [ok]
+
+[prime_sieve]
+  C (gcc -O2)      wall=   1.891ms  mem=   1848KB  bin=  15.8KB  loc= 24  [ok]
+  C (clang -O2)    wall=   1.672ms  mem=   1848KB  bin=  15.8KB  loc= 24  [ok]
+  Rust -O          wall=   1.685ms  mem=   2312KB  bin=3894.7KB  loc= 23  [ok]
+  Go               wall=   1.907ms  mem=   2440KB  bin=1879.6KB  loc= 41  [ok]
+  Mapanare O2      wall=   1.952ms  mem=   2272KB  bin=  62.5KB  loc= 22  [ok]
+  Python 3.12      wall= 354.992ms  mem=  12656KB  bin=N/A  loc= 22  [ok]
+
+[string_concat]
+  C (gcc -O2)      wall=   0.069ms  mem=   1896KB  bin=  15.9KB  loc= 25  [ok]
+  C (clang -O2)    wall=   0.053ms  mem=   1896KB  bin=  15.9KB  loc= 25  [ok]
+  Rust -O          wall=   0.040ms  mem=   2372KB  bin=3894.9KB  loc= 10  [ok]
+  Go               wall=  47.308ms  mem=  11072KB  bin=1878.9KB  loc= 20  [ok]
+  Mapanare O2      wall=   0.076ms  mem=   2324KB  bin=  62.5KB  loc=  9  [ok]
+  Python 3.12      wall=   8.963ms  mem=  12812KB  bin=N/A  loc=  5  [ok]
+
+==============================================================================
+  SUMMARY TABLE (median wall time, ms)
+==============================================================================
+
+| Benchmark       | C (gcc -O2) | C (clang -O2) | Rust -O | Go | Mapanare O2 | Python 3.12 |
+|---|---|---|---|---|---|---|
+| fib_recursive   | 10.281 ms | 17.559 ms | 17.207 ms | 30.321 ms | 14.630 ms | 741.442 ms |
+| quicksort       | 0.327 ms | 0.322 ms | 0.371 ms | 0.374 ms | 1.038 ms | 76.558 ms |
+| struct_alloc    | 0.551 ms | 0.016 ms | 0.017 ms | 0.019 ms | 0.018 ms | 198.314 ms |
+| enum_match      | 0.124 ms | 0.135 ms | 0.278 ms | 0.186 ms | 0.157 ms | 71.923 ms |
+| prime_sieve     | 1.891 ms | 1.672 ms | 1.685 ms | 1.907 ms | 1.952 ms | 354.992 ms |
+| string_concat   | 0.069 ms | 0.053 ms | 0.040 ms | 47.308 ms | 0.076 ms | 8.963 ms |
+
+Results saved to benchmarks/cross_language/v4.153.0-results.json

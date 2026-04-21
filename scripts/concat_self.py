@@ -23,6 +23,7 @@ MODULE_ORDER = [
     "lower_state.mn",
     "lower.mn",
     "emit_llvm_ir.mn",
+    "mir_opt.mn",
     "emit_llvm.mn",
     # Transpiler modules excluded: they define clashing symbols (new_token,
     # PyToken) and are not needed for core compiler operation — the compile

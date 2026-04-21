@@ -6,8 +6,8 @@ import argparse
 import os
 import subprocess
 import sys
+from pathlib import Path
 
-from mapanare.ast_nodes import Program
 from mapanare.diagnostics import (
     Diagnostic,
     Label,
@@ -15,18 +15,14 @@ from mapanare.diagnostics import (
     format_diagnostic,
     format_summary,
 )
+from mapanare.mir_opt import MIROptLevel as OptLevel
 from mapanare.modules import ModuleResolver
-from mapanare.optimizer import OptLevel, optimize
 from mapanare.parser import ParseError, parse, parse_recovering
 from mapanare.semantic import SemanticErrors, check_or_raise
 from mapanare.targets import get_target, host_target_name, list_targets
 
-try:
-    from importlib.metadata import version as _pkg_version
-
-    __version__ = _pkg_version("mapanare")
-except Exception:
-    __version__ = "0.0.0"
+_VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
+__version__ = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "unknown"
 
 
 def _read_source(path: str) -> str:
@@ -80,20 +76,14 @@ def _emit_parse_error(e: ParseError, source: str, filename: str) -> None:
 
 
 def _emit_semantic_errors(e: SemanticErrors, source: str) -> None:
-    """Print semantic errors as colorized diagnostics."""
-    from mapanare.ast_nodes import Span
+    """Print semantic errors as colorized diagnostics.
 
-    diagnostics: list[Diagnostic] = []
-    for err in e.errors:
-        span = Span(line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1)
-        diagnostics.append(
-            Diagnostic(
-                severity=Severity.ERROR,
-                message=err.message,
-                filename=err.filename,
-                labels=[Label(span=span, primary=True)],
-            )
-        )
+    v4.27.0: routes every ``SemanticError`` through its ``to_diagnostic()``
+    helper so the underline matches the offending expression's full span
+    instead of always pointing at a single character. Closes v4.26.0 panel
+    CRITICAL #8 (Anaconda).
+    """
+    diagnostics: list[Diagnostic] = [err.to_diagnostic() for err in e.errors]
     for diag in diagnostics:
         print(format_diagnostic(diag, source), file=sys.stderr)
     summary = format_summary(diagnostics)
@@ -106,41 +96,30 @@ def _parse_opt_level(args: argparse.Namespace) -> OptLevel:
     return OptLevel(getattr(args, "opt_level", 2))
 
 
-def _compile_source(
-    source: str,
-    filename: str,
-    opt_level: OptLevel = OptLevel.O2,
-    resolver: ModuleResolver | None = None,
-    python_path: list[str] | None = None,
-    use_mir: bool = True,
-) -> str:
-    """Parse, check, optimize, and emit Python from Mapanare source. Returns Python code.
+def _verify_mir_or_exit(mir_module: object, no_verify: bool) -> None:
+    """Run the MIR verifier unless the caller explicitly bypassed it.
 
-    .. deprecated:: 2.0.0
-        This function uses the legacy Python transpiler backend. New code should
-        use ``_compile_to_llvm_ir`` + ``jit_compile_and_run`` instead. Kept for
-        ``cmd_compile``, REPL, and test compatibility.
+    The verifier checks block terminators, branch targets, phi placement, and
+    SSA definition uniqueness. This is the v4.27.0 wiring that closes the
+    v4.5.0 CHANGELOG claim: prior to this, ``MIRVerifier`` was defined but had
+    zero call sites in the compile pipeline.
     """
-    ast = parse(source, filename=filename)
-    check_or_raise(ast, filename=filename, resolver=resolver)
+    if no_verify:
+        return
+    from mapanare.mir import MIRModule, MIRVerifier
 
-    if use_mir:
-        from mapanare.emit_python_mir import PythonMIREmitter
-        from mapanare.lower import lower as build_mir
-        from mapanare.mir_opt import MIROptLevel
-        from mapanare.mir_opt import optimize_module as mir_optimize
-
-        mir_module = build_mir(ast, module_name=os.path.splitext(os.path.basename(filename))[0])
-        mir_opt_level = MIROptLevel(opt_level.value)
-        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
-        emitter = PythonMIREmitter(python_path=python_path)
-        return emitter.emit(mir_module)
-
-    from mapanare.emit_python import PythonEmitter
-
-    ast, stats = optimize(ast, opt_level)
-    py_emitter = PythonEmitter(python_path=python_path)
-    return py_emitter.emit(ast)
+    assert isinstance(mir_module, MIRModule)
+    errors = MIRVerifier().verify_module(mir_module)
+    if errors:
+        print("error: MIR verifier detected malformed IR before emission:", file=sys.stderr)
+        for err in errors:
+            print(f"  {err}", file=sys.stderr)
+        print(
+            "hint: pass --no-verify to bypass (debugging only); the crash this "
+            "prevents is usually easier to diagnose than the LLVM error it would cause.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 def _compile_to_llvm_ir(
@@ -149,197 +128,108 @@ def _compile_to_llvm_ir(
     opt_level: OptLevel = OptLevel.O2,
     target_name: str | None = None,
     resolver: ModuleResolver | None = None,
-    use_mir: bool = True,
     debug: bool = False,
     werror: bool = False,
-    emitter_backend: str = "text",
     skip_check: bool = False,
+    no_verify: bool = False,
+    ffi_mode: bool = False,
 ) -> str:
     """Parse, check, optimize, and emit LLVM IR from Mapanare source.
 
-    When the source contains ``import`` statements and ``use_mir=True``,
-    automatically uses multi-module compilation to resolve and link all
-    imported modules into a single LLVM IR module.
+    When the source contains ``import`` statements, automatically uses
+    multi-module compilation to resolve and link all imported modules
+    into a single LLVM IR module.
 
-    *emitter_backend* selects the LLVM emitter: ``"llvmlite"`` (default)
-    or ``"text"`` (pure-text, no llvmlite dependency).
+    When ``ffi_mode`` is True, every non-underscore, non-``main`` top-level
+    function is treated as if it were declared ``pub``. That single change
+    flows through the pipeline: the MIR dead-function pass (``mir_opt.py``)
+    keeps them, and the LLVM emitter gives them external linkage. This
+    replaces the v4.25.0 ``.replace("define internal ", "define ")`` text
+    hack, which stripped ``internal`` linkage from **every** function in the
+    module regardless of whether the user intended to export it.
     """
     ast = parse(source, filename=filename)
 
-    # Check for imports — if present and using MIR, use multi-module pipeline
-    if use_mir:
-        from mapanare.ast_nodes import ImportDef
+    from mapanare.ast_nodes import FnDef, ImportDef
 
-        has_imports = any(isinstance(d, ImportDef) for d in ast.definitions)
-        if has_imports:
-            from mapanare.multi_module import compile_multi_module_mir
+    if ffi_mode:
+        for defn in ast.definitions:
+            if isinstance(defn, FnDef) and defn.name != "main" and not defn.name.startswith("_"):
+                defn.public = True
 
-            return compile_multi_module_mir(
-                root_source=source,
-                root_file=filename,
-                opt_level=opt_level.value,
-                target_name=target_name,
-                debug=debug,
-                emitter_backend=emitter_backend,
-                skip_check=skip_check,
-            )
+    has_imports = any(isinstance(d, ImportDef) for d in ast.definitions)
+    if has_imports:
+        from mapanare.multi_module import compile_multi_module_mir
+
+        return compile_multi_module_mir(
+            root_source=source,
+            root_file=filename,
+            opt_level=opt_level.value,
+            target_name=target_name,
+            debug=debug,
+            skip_check=skip_check,
+            no_verify=no_verify,
+        )
     if not skip_check:
         check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
 
-    if use_mir:
-        from mapanare.lower import lower as build_mir
-        from mapanare.mir_opt import MIROptLevel
-        from mapanare.mir_opt import optimize_module as mir_optimize
+    from mapanare.lower import lower as build_mir
+    from mapanare.mir_opt import MIROptLevel
+    from mapanare.mir_opt import optimize_module as mir_optimize
 
-        module_name = os.path.splitext(os.path.basename(filename))[0]
-        source_file = os.path.basename(filename)
-        source_dir = os.path.dirname(os.path.abspath(filename))
-        mir_module = build_mir(
-            ast,
-            module_name=module_name,
-            source_file=source_file,
-            source_directory=source_dir,
-        )
-        mir_opt_level = MIROptLevel(opt_level.value)
-        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
-        target = get_target(target_name)
-
-        if emitter_backend == "text":
-            from mapanare.emit_llvm_text import LLVMTextEmitter
-
-            emitter = LLVMTextEmitter(
-                module_name=module_name,
-                target_triple=target.triple,
-                data_layout=target.data_layout,
-                debug=debug,
-            )
-            return emitter.emit(mir_module)
-
-        from mapanare.emit_llvm_mir import LLVMMIREmitter
-
-        emitter_mir = LLVMMIREmitter(
-            module_name=module_name,
-            target_triple=target.triple,
-            data_layout=target.data_layout,
-            debug=debug,
-        )
-        llvm_module = emitter_mir.emit(mir_module)
-        return str(llvm_module)
-
-    from mapanare.emit_llvm import LLVMEmitter
-
-    ast, stats = optimize(ast, opt_level)
+    module_name = os.path.splitext(os.path.basename(filename))[0]
+    source_file = os.path.basename(filename)
+    source_dir = os.path.dirname(os.path.abspath(filename))
+    mir_module = build_mir(
+        ast,
+        module_name=module_name,
+        source_file=source_file,
+        source_directory=source_dir,
+    )
+    mir_opt_level = MIROptLevel(opt_level.value)
+    mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+    _verify_mir_or_exit(mir_module, no_verify)
     target = get_target(target_name)
-    llvm_emitter = LLVMEmitter(
-        module_name=os.path.splitext(os.path.basename(filename))[0],
+
+    from mapanare.emit_llvm_text import LLVMTextEmitter
+
+    emitter = LLVMTextEmitter(
+        module_name=module_name,
         target_triple=target.triple,
         data_layout=target.data_layout,
+        debug=debug,
     )
-    module = llvm_emitter.emit_program(ast)
-    return str(module)
+    return emitter.emit(mir_module)
 
 
-def _compile_multi_module_llvm(
+def _compile_multi_module_text(
     source_files: list[str],
     opt_level: OptLevel = OptLevel.O2,
     target_name: str | None = None,
     skip_check: bool = False,
+    no_verify: bool = False,
 ) -> str:
     """Compile multiple .mn files into a single linked LLVM IR module.
 
-    Resolves imports between modules and combines all LLVM IR into one module.
-    Link order matters: dependencies must be listed before dependents.
+    Uses the first file as root and treats the rest as dependencies via
+    the MIR-based multi-module pipeline.
     """
-    from mapanare.emit_llvm import LLVMEmitter
-    from mapanare.targets import get_target
+    if not source_files:
+        raise ValueError("no source files provided")
 
-    target = get_target(target_name)
-    resolver = ModuleResolver()
+    root_file = source_files[0]
+    root_source = _read_source(root_file)
 
-    # First pass: parse and check all files, building the resolver cache
-    parsed: list[tuple[str, Program]] = []
-    for filepath in source_files:
-        source = _read_source(filepath)
-        ast = parse(source, filename=filepath)
-        if not skip_check:
-            check_or_raise(ast, filename=filepath, resolver=resolver)
-        parsed.append((filepath, ast))
+    from mapanare.multi_module import compile_multi_module_mir
 
-    # Second pass: emit all modules into a single LLVM emitter
-    combined_emitter = LLVMEmitter(
-        module_name="mapanare_linked",
-        target_triple=target.triple,
-        data_layout=target.data_layout,
+    return compile_multi_module_mir(
+        root_source=root_source,
+        root_file=root_file,
+        opt_level=opt_level.value,
+        target_name=target_name,
+        skip_check=skip_check,
+        no_verify=no_verify,
     )
-
-    for filepath, ast in parsed:
-        combined_emitter.emit_program(ast, resolver=resolver)
-
-    return str(combined_emitter.module)
-
-
-def cmd_compile(args: argparse.Namespace) -> None:
-    """Compile an .mn source file to Python."""
-    import warnings
-
-    warnings.warn(
-        "The 'compile' subcommand targets the deprecated Python backend. "
-        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead.",
-        DeprecationWarning,
-        stacklevel=1,
-    )
-    print(
-        "warning: 'mapanare compile' targets the deprecated Python backend. "
-        "Use 'mapanare build' (LLVM) or 'mapanare emit-wasm' instead.",
-        file=sys.stderr,
-    )
-    source = _read_source(args.source)
-    opt_level = _parse_opt_level(args)
-    python_path: list[str] = getattr(args, "python_path", None) or []
-    use_mir = not getattr(args, "no_mir", False)
-    resolver = ModuleResolver()
-    try:
-        python_code = _compile_source(
-            source,
-            args.source,
-            opt_level=opt_level,
-            resolver=resolver,
-            python_path=python_path,
-            use_mir=use_mir,
-        )
-    except ParseError as e:
-        _emit_parse_error(e, source, args.source)
-        sys.exit(1)
-    except SemanticErrors as e:
-        _emit_semantic_errors(e, source)
-        sys.exit(1)
-
-    out_path = args.o or args.source.replace(".mn", ".py")
-    out_dir = os.path.dirname(os.path.abspath(out_path))
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(python_code)
-    print(f"compiled {args.source} -> {out_path}")
-
-    # Also compile any resolved imported modules
-    _compile_resolved_modules(resolver, opt_level, out_dir)
-
-
-def _compile_resolved_modules(resolver: ModuleResolver, opt_level: OptLevel, out_dir: str) -> None:
-    """Compile all resolved imported modules to Python in the output directory."""
-    for filepath, module in resolver.all_modules():
-        mod_name = os.path.splitext(os.path.basename(filepath))[0]
-        mod_out = os.path.join(out_dir, mod_name + ".py")
-        if os.path.abspath(mod_out) == os.path.abspath(filepath.replace(".mn", ".py")):
-            # Already compiled as the main file
-            continue
-        from mapanare.emit_python import PythonEmitter as _PyEmit
-
-        ast, _ = optimize(module.program, opt_level)
-        emitter = _PyEmit()
-        code = emitter.emit(ast)
-        with open(mod_out, "w", encoding="utf-8") as f:
-            f.write(code)
-        print(f"  compiled module {mod_name} -> {mod_out}")
 
 
 def cmd_check(args: argparse.Namespace) -> None:
@@ -373,37 +263,16 @@ def cmd_check(args: argparse.Namespace) -> None:
 
         sem_errors = check(ast, filename=args.source, resolver=resolver)
         for err in sem_errors:
-            from mapanare.ast_nodes import Span
-
-            # With --werror, promote warnings to errors; otherwise still show them
+            # v4.27.0: use the real span carried by SemanticError via
+            # to_diagnostic(). --werror promotes warnings to errors.
+            diag = err.to_diagnostic()
             is_warning = err.severity == "warning"
             if is_warning and not werror:
-                span = Span(
-                    line=err.line,
-                    column=err.column,
-                    end_line=err.line,
-                    end_column=err.column + 1,
-                )
-                all_diagnostics.append(
-                    Diagnostic(
-                        severity=Severity.WARNING,
-                        message=err.message,
-                        filename=err.filename,
-                        labels=[Label(span=span, primary=True)],
-                    )
-                )
+                all_diagnostics.append(diag)
                 continue
-            span = Span(
-                line=err.line, column=err.column, end_line=err.line, end_column=err.column + 1
-            )
-            all_diagnostics.append(
-                Diagnostic(
-                    severity=Severity.ERROR,
-                    message=err.message,
-                    filename=err.filename,
-                    labels=[Label(span=span, primary=True)],
-                )
-            )
+            if is_warning and werror:
+                diag.severity = Severity.ERROR
+            all_diagnostics.append(diag)
 
     if all_diagnostics:
         for diag in all_diagnostics:
@@ -417,13 +286,7 @@ def cmd_check(args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
-    """Compile and run an .mn source file.
-
-    Default backend: C (emit C → gcc → run).
-    Use ``--release`` for LLVM JIT (requires llvmlite).
-    """
-    release = getattr(args, "release", False)
-
+    """Compile and run an .mn source file via the C backend (emit C → gcc → run)."""
     # Enable tracing if --trace is passed
     trace_mode = getattr(args, "trace", None)
     if trace_mode:
@@ -448,114 +311,21 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    debug = getattr(args, "debug", False)
+    debug = _resolve_debug(args)
 
-    if not release:
-        # --- C backend (default) ---
-        try:
-            c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
-        except ParseError as e:
-            _emit_parse_error(e, source, args.source)
-            sys.exit(1)
-        except SemanticErrors as e:
-            _emit_semantic_errors(e, source)
-            sys.exit(1)
-        except ValueError as e:
-            print(f"error: {e}", file=sys.stderr)
-            sys.exit(1)
-
-        _run_c_source(c_source, args.source)
-        return
-
-    # --- LLVM backend (--release) ---
-    use_mir = not getattr(args, "no_mir", False)
-    resolver = ModuleResolver()
     try:
-        llvm_ir = _compile_to_llvm_ir(
-            source,
-            args.source,
-            opt_level=opt_level,
-            resolver=resolver,
-            use_mir=use_mir,
-            debug=debug,
-        )
+        c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
     except SemanticErrors as e:
         _emit_semantic_errors(e, source)
         sys.exit(1)
-    except ImportError:
-        print(
-            "error: LLVM backend requires llvmlite. " "Install with: pip install mapanare[llvm]",
-            file=sys.stderr,
-        )
-        sys.exit(1)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    from mapanare.jit import jit_compile_and_run
-
-    jit_compile_and_run(llvm_ir, opt_level=opt_level.value)
-
-
-def cmd_repl(args: argparse.Namespace) -> None:
-    """Start an interactive Mapanare REPL."""
-    opt_level = _parse_opt_level(args)
-    namespace: dict[str, object] = {"__name__": "__repl__"}
-    # Accumulated definitions to re-emit with each evaluation
-    definitions: list[str] = []
-
-    print(f"Mapanare {__version__} REPL — type 'exit' or Ctrl+D to quit")
-
-    while True:
-        try:
-            line = input("mn> ")
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-
-        text = line.strip()
-        if not text:
-            continue
-        if text in ("exit", "quit"):
-            break
-
-        # Multi-line: collect until braces balance
-        brace_depth = text.count("{") - text.count("}")
-        while brace_depth > 0:
-            try:
-                continuation = input("... ")
-            except (EOFError, KeyboardInterrupt):
-                print()
-                break
-            text += "\n" + continuation
-            brace_depth += continuation.count("{") - continuation.count("}")
-
-        # Try compiling as a top-level definition or statement
-        try:
-            python_code = _compile_source(text, "<repl>", opt_level=opt_level)
-        except ParseError as e:
-            print(f"parse error: {e}")
-            continue
-        except SemanticErrors as e:
-            for err in e.errors:
-                print(f"error: {err.message}")
-            continue
-
-        # Track function/struct/enum definitions for persistence
-        is_def = text.lstrip().startswith(("fn ", "pub fn ", "struct ", "enum ", "agent ", "pipe "))
-        if is_def:
-            definitions.append(text)
-
-        try:
-            code = compile(python_code, "<repl>", "exec")
-            exec(code, namespace)
-        except SystemExit:
-            break
-        except Exception as exc:
-            print(f"runtime error ({type(exc).__name__}): {exc}")
+    _run_c_source(c_source, args.source)
 
 
 def cmd_fmt(args: argparse.Namespace) -> None:
@@ -747,58 +517,12 @@ def cmd_login(args: argparse.Namespace) -> None:
     sys.exit(1)
 
 
-def cmd_jit(args: argparse.Namespace) -> None:
-    """JIT-compile an .mn source file via LLVM and execute natively."""
-    source = _read_source(args.source)
-    opt_level = _parse_opt_level(args)
-    use_mir = not getattr(args, "no_mir", False)
-    debug = getattr(args, "debug", False)
-    resolver = ModuleResolver()
-    try:
-        llvm_ir = _compile_to_llvm_ir(
-            source,
-            args.source,
-            opt_level=opt_level,
-            resolver=resolver,
-            use_mir=use_mir,
-            debug=debug,
-        )
-    except ParseError as e:
-        _emit_parse_error(e, source, args.source)
-        sys.exit(1)
-    except SemanticErrors as e:
-        _emit_semantic_errors(e, source)
-        sys.exit(1)
-    except ValueError as e:
-        print(f"error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    from mapanare.jit import jit_compile_and_run
-
-    bench = getattr(args, "bench", False)
-    if bench:
-        import time
-
-        wall0 = time.perf_counter()
-        cpu0 = time.process_time()
-        jit_compile_and_run(llvm_ir, opt_level=opt_level.value)
-        wall1 = time.perf_counter() - wall0
-        cpu1 = time.process_time() - cpu0
-        print("__BENCH_METRICS__")
-        print(f"wall_time_s={round(wall1, 6)}")
-        print(f"cpu_time_s={round(cpu1, 6)}")
-        print("peak_memory_kb=0")
-    else:
-        jit_compile_and_run(llvm_ir, opt_level=opt_level.value)
-
-
 def cmd_build(args: argparse.Namespace) -> None:
     """Compile an .mn source file to a native binary via LLVM."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
-    use_mir = not getattr(args, "no_mir", False)
-    debug = getattr(args, "debug", False)
+    debug = _resolve_debug(args)
     stdlib_path: str | None = getattr(args, "stdlib_path", None)
     search_paths = [stdlib_path] if stdlib_path else None
     resolver = ModuleResolver(search_paths=search_paths)
@@ -810,9 +534,9 @@ def cmd_build(args: argparse.Namespace) -> None:
             opt_level=opt_level,
             target_name=target_name,
             resolver=resolver,
-            use_mir=use_mir,
             debug=debug,
             werror=werror,
+            no_verify=_resolve_no_verify(args),
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -824,16 +548,34 @@ def cmd_build(args: argparse.Namespace) -> None:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    from mapanare.jit import jit_compile_to_object
+    import tempfile
 
-    obj_bytes = jit_compile_to_object(llvm_ir, opt_level=opt_level.value)
-
-    # Write object file to a temporary location (not the final output path)
+    # Write LLVM IR to a temp file, then compile to object via clang
     base = os.path.splitext(args.source)[0]
     obj_ext = ".obj" if os.name == "nt" else ".o"
     obj_path = base + obj_ext
-    with open(obj_path, "wb") as f:
-        f.write(obj_bytes)
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".ll", delete=False, encoding="utf-8"
+    ) as ll_file:
+        ll_file.write(llvm_ir)
+        ll_path = ll_file.name
+
+    try:
+        clang_cmd = [
+            "clang",
+            "-c",
+            f"-O{opt_level.value}",
+            ll_path,
+            "-o",
+            obj_path,
+        ]
+        result = subprocess.run(clang_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"error: clang failed:\n{result.stderr}", file=sys.stderr)
+            sys.exit(1)
+    finally:
+        os.unlink(ll_path)
 
     # Collect --link-lib flags as -l<lib> / <lib>.lib for linker
     link_libs: list[str] = getattr(args, "link_lib", None) or []
@@ -923,10 +665,20 @@ def cmd_build(args: argparse.Namespace) -> None:
                 file=sys.stderr,
             )
     else:
+        # Host compilation: find runtime archive for linking
+        rt_dir = os.path.join(os.path.dirname(__file__), "..", "runtime", "native")
+        rt_archive = os.path.join(rt_dir, "libmapanare_rt.a")
+        rt_flags_unix: list[str] = []
+        rt_flags_msvc: list[str] = []
+        if os.path.isfile(rt_archive):
+            rt_flags_unix = [rt_archive, "-lm", "-lpthread"]
+        else:
+            rt_flags_unix = ["-lm", "-lpthread"]
+
         # Host compilation: try common linkers
         for linker_cmd in (
-            ["clang", obj_path, "-o", out_path] + link_flags_unix,
-            ["gcc", obj_path, "-o", out_path] + link_flags_unix,
+            ["clang", obj_path, "-o", out_path] + rt_flags_unix + link_flags_unix,
+            ["gcc", obj_path, "-o", out_path] + rt_flags_unix + link_flags_unix,
             [
                 "link.exe",
                 f"/OUT:{out_path}",
@@ -934,6 +686,7 @@ def cmd_build(args: argparse.Namespace) -> None:
                 "msvcrt.lib",
                 "legacy_stdio_definitions.lib",
             ]
+            + rt_flags_msvc
             + link_flags_msvc,
         ):
             import shutil
@@ -969,17 +722,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
-    use_mir = not getattr(args, "no_mir", False)
-    debug = getattr(args, "debug", False)
-    emitter_backend = getattr(args, "emitter", "llvmlite")
-    if emitter_backend == "llvmlite":
-        import warnings
-
-        warnings.warn(
-            "The llvmlite emitter is deprecated. Use the default text emitter instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+    debug = _resolve_debug(args)
     resolver = ModuleResolver()
     try:
         llvm_ir = _compile_to_llvm_ir(
@@ -988,9 +731,8 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
             opt_level=opt_level,
             target_name=target_name,
             resolver=resolver,
-            use_mir=use_mir,
             debug=debug,
-            emitter_backend=emitter_backend,
+            no_verify=_resolve_no_verify(args),
         )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
@@ -1086,7 +828,7 @@ def cmd_emit_c(args: argparse.Namespace) -> None:
     """Emit C source for an .mn source file."""
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    debug = getattr(args, "debug", False)
+    debug = _resolve_debug(args)
     try:
         c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
     except ParseError as e:
@@ -1114,17 +856,13 @@ def cmd_emit_mir(args: argparse.Namespace) -> None:
 
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    legacy = getattr(args, "legacy_optimizer", False)
     resolver = ModuleResolver()
     try:
         ast = parse(source, filename=args.source)
         check_or_raise(ast, filename=args.source, resolver=resolver)
-        if legacy:
-            ast, _ = optimize(ast, opt_level)
         mir_module = build_mir(ast, module_name=os.path.splitext(os.path.basename(args.source))[0])
-        if not legacy:
-            mir_opt_level = MIROptLevel(opt_level.value)
-            mir_module, _ = mir_optimize(mir_module, mir_opt_level)
+        mir_opt_level = MIROptLevel(opt_level.value)
+        mir_module, _ = mir_optimize(mir_module, mir_opt_level)
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
@@ -1329,10 +1067,15 @@ def cmd_build_multi(args: argparse.Namespace) -> None:
     source_files = args.sources
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
-    skip_check = getattr(args, "no_check", False)
+    skip_check = _resolve_no_check(args)
+    no_verify = _resolve_no_verify(args)
     try:
-        llvm_ir = _compile_multi_module_llvm(
-            source_files, opt_level=opt_level, target_name=target_name, skip_check=skip_check
+        llvm_ir = _compile_multi_module_text(
+            source_files,
+            opt_level=opt_level,
+            target_name=target_name,
+            skip_check=skip_check,
+            no_verify=no_verify,
         )
     except ParseError as e:
         print(f"parse error: {e}", file=sys.stderr)
@@ -1402,6 +1145,100 @@ def cmd_deploy(args: argparse.Namespace) -> None:
         for path in created:
             print(f"  created {path}")
         print(f"\ndeploy: {len(created)} file(s) generated in {os.path.abspath(project_dir)}")
+
+
+def cmd_bind(args: argparse.Namespace) -> None:
+    """Generate FFI bindings from .mn source.
+
+    Compiles .mn → .so shared library and generates a language wrapper
+    (Python ctypes, TypeScript .d.ts, or Go cgo) alongside it.
+    """
+    path = args.source
+    if not os.path.isfile(path):
+        print(f"error: file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(path, encoding="utf-8") as f:
+        source = f.read()
+
+    from mapanare.bind import generate_bindings
+
+    module_name = os.path.splitext(os.path.basename(path))[0]
+
+    # Determine output directory
+    out_dir = args.o if args.o else "."
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Step 1: Generate language wrapper
+    wrapper = generate_bindings(source, lang=args.lang, module_name=module_name)
+    ext = {"python": ".py", "ts": ".d.ts", "go": ".go"}.get(args.lang, ".py")
+    wrapper_path = os.path.join(out_dir, f"{module_name}{ext}")
+    with open(wrapper_path, "w", encoding="utf-8") as f:
+        f.write(wrapper)
+    print(f"Generated {args.lang} wrapper: {wrapper_path}")
+
+    # Step 2: Compile .mn → .ll → .o → .so
+    #
+    # v4.27.0 recovery: ``ffi_mode=True`` marks every bindable function as
+    # public before lowering, which flows through DCE and emitter linkage so
+    # the .so exports every surface-area function (not just ``main``'s
+    # transitive callees). The old ``ll_text.replace("define internal ",
+    # "define ")`` sledgehammer — which stripped ``internal`` linkage from
+    # **every** function in the module — has been removed.
+    try:
+        llvm_ir = _compile_to_llvm_ir(
+            source, path, no_verify=_resolve_no_verify(args), ffi_mode=True
+        )
+        # Rename @main to @mn_main so it doesn't conflict with C main
+        import re
+
+        llvm_ir = re.sub(
+            r"define (.*?)@main\(",
+            r"define \1@mn_main(",
+            llvm_ir,
+        )
+
+        ll_path = os.path.join(out_dir, f"{module_name}.ll")
+        with open(ll_path, "w", encoding="utf-8") as f:
+            f.write(llvm_ir)
+
+        obj_path = os.path.join(out_dir, f"{module_name}.o")
+        so_path = os.path.join(out_dir, f"lib{module_name}.so")
+
+        # Compile IR → object
+        import subprocess
+
+        result = subprocess.run(
+            ["clang", "-c", "-fPIC", "-O2", ll_path, "-o", obj_path],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"warning: clang failed: {result.stderr.strip()}", file=sys.stderr)
+            return
+
+        # Find runtime archive
+        rt_dir = os.path.join(os.path.dirname(__file__), "..", "runtime", "native")
+        rt_archive = os.path.join(rt_dir, "libmapanare_rt.a")
+
+        # Link as shared library. Try with runtime first, fall back to without.
+        link_cmd = ["gcc", "-shared", "-o", so_path, obj_path]
+        if os.path.isfile(rt_archive):
+            link_cmd_rt = link_cmd + [rt_archive, "-lm", "-lpthread"]
+            result = subprocess.run(link_cmd_rt, capture_output=True, text=True)
+            if result.returncode == 0:
+                print(f"Compiled shared library: {so_path}")
+                return
+            # Runtime not -fPIC compatible — link without it (works for pure functions)
+        link_cmd.extend(["-lm", "-lpthread"])
+        result = subprocess.run(link_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"warning: linker failed: {result.stderr.strip()}", file=sys.stderr)
+            return
+
+        print(f"Compiled shared library: {so_path}")
+    except Exception as e:
+        print(f"warning: .so compilation skipped: {e}", file=sys.stderr)
 
 
 def cmd_transpile(args: argparse.Namespace) -> None:
@@ -1491,25 +1328,39 @@ def _format_mapanare(source: str) -> str:
     return "\n".join(result)
 
 
-def _add_mir_flag(parser: argparse.ArgumentParser) -> None:
-    """Add --no-mir flag to disable MIR pipeline (use legacy AST path)."""
-    parser.add_argument(
-        "--no-mir",
-        action="store_true",
-        default=False,
-        help="Use legacy AST-based pipeline instead of MIR",
-    )
-
-
 def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
-    """Add -g/--debug flag to emit DWARF debug info."""
+    """Add -g/--debug flag for DWARF debug info emission (v4.62.0+)."""
     parser.add_argument(
         "-g",
         "--debug",
         action="store_true",
         default=False,
-        help="Emit DWARF debug info for source-level debugging",
+        help="Emit DWARF debug info in the generated IR/binary.",
     )
+
+
+def _resolve_debug(args: argparse.Namespace) -> bool:
+    """Return ``True`` if the ``-g`` / ``--debug`` flag was passed.
+
+    v4.121.0: DWARF debug info emission is deferred to the v5.x line
+    (see ``docs/SPEC.md`` §21.3). The ``-g`` / ``--debug`` flag is still
+    accepted for forward compatibility with scripts and IDEs, but it is
+    a no-op — the emitter does not produce DWARF metadata. Every use of
+    the flag prints a stderr warning naming v5.x as the tracking
+    version, so the no-op behaviour is loud rather than silent.
+
+    The v4.62.0–v4.120.0 comment claiming the flag enabled debug
+    metadata was aspirational; no such emission was ever wired up. The
+    v4.29.0 stderr warning is restored here.
+    """
+    debug = bool(getattr(args, "debug", False))
+    if debug:
+        print(
+            "warning: -g / --debug is a no-op; DWARF debug info "
+            "emission is deferred to v5.x (see SPEC §21.3)",
+            file=sys.stderr,
+        )
+    return debug
 
 
 def _add_edition_flag(parser: argparse.ArgumentParser) -> None:
@@ -1520,6 +1371,56 @@ def _add_edition_flag(parser: argparse.ArgumentParser) -> None:
         default="2026",
         help="Language edition (default: 2026)",
     )
+
+
+def _add_no_verify_flag(parser: argparse.ArgumentParser) -> None:
+    """Add --no-verify escape hatch that bypasses the MIR verifier.
+
+    v4.27.0: the MIR verifier runs before emission by default. This flag
+    skips it for debugging the verifier itself. A warning is printed to
+    stderr when used because bypassing the verifier typically turns an
+    interpretable MIR-level error into a cryptic LLVM codegen crash.
+    """
+    parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        default=False,
+        help="Skip MIR structural verification before LLVM emission (debugging only)",
+    )
+
+
+def _resolve_no_verify(args: argparse.Namespace) -> bool:
+    """Return no_verify from argparse and warn on stderr if it was set."""
+    value = bool(getattr(args, "no_verify", False))
+    if value:
+        print(
+            "warning: --no-verify skips MIR structural checks; crashes below "
+            "are almost certainly malformed IR the verifier would have caught.",
+            file=sys.stderr,
+        )
+    return value
+
+
+def _resolve_no_check(args: argparse.Namespace) -> bool:
+    """Return ``skip_check`` from argparse and warn on stderr if it was set.
+
+    v4.29.0: ``--no-check`` previously bypassed semantic analysis silently,
+    which is exactly the kind of "looks fine, diagnostics hidden" problem
+    that let the v4.18.0–v4.26.0 hollow-features arc ship. The flag remains
+    the canonical escape hatch for bootstrapping self-hosted ``.mn`` modules
+    that intentionally use not-yet-checked constructs, but every use now
+    logs a loud warning to stderr so another developer reading CI logs can
+    see when diagnostics were suppressed.
+    """
+    value = bool(getattr(args, "no_check", False))
+    if value:
+        print(
+            "warning: --no-check bypasses semantic analysis; "
+            "type errors, undefined symbols, and trait violations "
+            "will NOT be reported.",
+            file=sys.stderr,
+        )
+    return value
 
 
 def _add_opt_level_args(parser: argparse.ArgumentParser) -> None:
@@ -1570,23 +1471,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # compile
-    p_compile = subparsers.add_parser(
-        "compile", help="[DEPRECATED] Compile .mn source to Python (use 'build' or 'emit-wasm')"
-    )
-    p_compile.add_argument("source", help="Path to .mn source file")
-    p_compile.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
-    p_compile.add_argument(
-        "--python-path",
-        metavar="DIR",
-        action="append",
-        help='Add directory to Python module search path (for extern "Python" interop)',
-    )
-    _add_opt_level_args(p_compile)
-    _add_mir_flag(p_compile)
-    _add_edition_flag(p_compile)
-    p_compile.set_defaults(func=cmd_compile)
-
     # check
     p_check = subparsers.add_parser("check", help="Type-check .mn source")
     p_check.add_argument("source", help="Path to .mn source file")
@@ -1623,22 +1507,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Start Prometheus metrics endpoint (default :9090)",
     )
-    p_run.add_argument(
-        "--release",
-        action="store_true",
-        default=False,
-        help="Use LLVM backend (requires llvmlite). Default: C backend via gcc.",
-    )
     _add_opt_level_args(p_run)
-    _add_mir_flag(p_run)
     _add_debug_flag(p_run)
     _add_edition_flag(p_run)
+    _add_no_verify_flag(p_run)
     p_run.set_defaults(func=cmd_run)
-
-    # repl
-    p_repl = subparsers.add_parser("repl", help="Start interactive REPL")
-    _add_opt_level_args(p_repl)
-    p_repl.set_defaults(func=cmd_repl)
 
     # fmt
     p_fmt = subparsers.add_parser("fmt", help="Format .mn source")
@@ -1717,15 +1590,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_login = subparsers.add_parser("login", help="Authenticate with the Mapanare package registry")
     p_login.set_defaults(func=cmd_login)
 
-    # jit
-    p_jit = subparsers.add_parser("jit", help="JIT-compile and run .mn source natively via LLVM")
-    p_jit.add_argument("source", help="Path to .mn source file")
-    p_jit.add_argument("--bench", action="store_true", help="Output benchmark metrics")
-    _add_opt_level_args(p_jit)
-    _add_mir_flag(p_jit)
-    _add_debug_flag(p_jit)
-    p_jit.set_defaults(func=cmd_jit)
-
     # build
     p_build = subparsers.add_parser("build", help="Compile .mn source to native binary")
     p_build.add_argument("source", help="Path to .mn source file")
@@ -1761,9 +1625,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Produce a shared library (.so/.dylib/.dll) instead of an executable",
     )
     _add_opt_level_args(p_build)
-    _add_mir_flag(p_build)
     _add_debug_flag(p_build)
     _add_edition_flag(p_build)
+    _add_no_verify_flag(p_build)
     p_build.set_defaults(func=cmd_build)
 
     # emit-llvm
@@ -1776,16 +1640,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target triple (e.g. x86_64-linux-gnu, aarch64-apple-macos, x86_64-windows-msvc)",
         default=None,
     )
-    p_emit_llvm.add_argument(
-        "--emitter",
-        choices=["text", "llvmlite"],
-        default="text",
-        help="LLVM emitter backend: text (default, no llvmlite dependency) or llvmlite (legacy)",
-    )
     _add_opt_level_args(p_emit_llvm)
-    _add_mir_flag(p_emit_llvm)
     _add_debug_flag(p_emit_llvm)
     _add_edition_flag(p_emit_llvm)
+    _add_no_verify_flag(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
 
     # emit-c
@@ -1801,12 +1659,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_emit_mir = subparsers.add_parser("emit-mir", help="Emit MIR (mid-level IR) for .mn source")
     p_emit_mir.add_argument("source", help="Path to .mn source file")
     p_emit_mir.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
-    p_emit_mir.add_argument(
-        "--legacy-optimizer",
-        action="store_true",
-        default=False,
-        help="Use the legacy AST-based optimizer instead of MIR optimizer",
-    )
     _add_opt_level_args(p_emit_mir)
     p_emit_mir.set_defaults(func=cmd_emit_mir)
 
@@ -1901,6 +1753,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip semantic checking (for bootstrapping self-hosted modules)",
     )
     _add_opt_level_args(p_build_multi)
+    _add_no_verify_flag(p_build_multi)
     p_build_multi.set_defaults(func=cmd_build_multi)
 
     # targets
@@ -1950,6 +1803,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_transpile.add_argument("source", help="Path to .py or .php source file")
     p_transpile.add_argument("-o", metavar="OUTPUT", help="Output .mn file path", default=None)
     p_transpile.set_defaults(func=cmd_transpile)
+
+    # bind — generate FFI bindings
+    p_bind = subparsers.add_parser(
+        "bind", help="Generate FFI bindings from .mn source (Python, TypeScript, Go)"
+    )
+    p_bind.add_argument("source", help="Path to .mn source file")
+    p_bind.add_argument(
+        "--lang",
+        required=True,
+        choices=["python", "ts", "go"],
+        help="Target language for bindings",
+    )
+    p_bind.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
+    _add_no_verify_flag(p_bind)
+    p_bind.set_defaults(func=cmd_bind)
 
     return parser
 

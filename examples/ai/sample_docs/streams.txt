@@ -1,0 +1,1 @@
+Streams are Mapanare's async data flow primitive. A stream produces values over time. Stream operators include map, filter, take, skip, collect, and fold. Streams support backpressure via bounded buffers. You iterate a stream with `for chunk in stream { ... }`. Streams compose with agents for pipeline architectures.

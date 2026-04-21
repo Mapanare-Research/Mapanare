@@ -1,0 +1,6 @@
+
+[CRASH] SIGSEGV during compile at tests/golden/03_function.mn
+./mapanare/self/mnc-stage1[0x731d53]
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)[0x7f314b7e1330]
+./mapanare/self/mnc-stage1(mir_opt__block_successors+0xc1)[0x689a01]
+

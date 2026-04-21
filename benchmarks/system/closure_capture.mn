@@ -1,0 +1,20 @@
+// Benchmark: Closure-like pattern
+// Create 10,000 value triples, accumulate results.
+// Tests struct creation + field access overhead at scale.
+
+fn compute(a: Int, b: Int, c: Int, x: Int) -> Int {
+    da x + a + b + c
+}
+
+fn main() {
+    pon mut sum: Int = 0
+    pon mut i: Int = 0
+    mien i < 10000 {
+        pon a: Int = i
+        pon b: Int = i * 2
+        pon c: Int = i * 3
+        sum = sum + compute(a, b, c, i)
+        i = i + 1
+    }
+    print("checksum = " + str(sum))
+}

@@ -7,6 +7,7 @@
  */
 
 #include "mapanare_html.h"
+#include "mapanare_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,19 +46,11 @@
  * from constant strings. We must untag before reading.
  * ======================================================================= */
 
-/** Extract a null-terminated C string from MnString. Caller must free. */
-static char *mnstr_to_cstr(MnString s) {
-    const char *data = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
-    char *cstr = (char *)malloc((size_t)s.len + 1);
-    if (!cstr) return NULL;
-    if (s.len > 0) memcpy(cstr, data, (size_t)s.len);
-    cstr[s.len] = '\0';
-    return cstr;
-}
+/* v4.32.0 Phase 2.3: mnstr_to_cstr is now in mapanare_internal.h */
 
 /** Get untagged pointer to MnString data (no copy, no null terminator guarantee). */
 static const char *mnstr_data(MnString s) {
-    return (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
+    return s.data;
 }
 
 /* =======================================================================
@@ -67,11 +60,9 @@ static const char *mnstr_data(MnString s) {
  * Handle = array index + 1 (so 0 means "invalid/error").
  * ======================================================================= */
 
-#define MN_MAX_HANDLES 256
-
-typedef struct {
-    void *ptrs[MN_MAX_HANDLES];
-} MnHandleTable;
+/* v4.32.0: MnHandleTable and MN_MAX_HANDLES are now in
+ * mapanare_internal.h. The local handle_alloc/get/free functions
+ * below use 1-based handles (return index+1, access h-1). */
 
 static int64_t handle_alloc(MnHandleTable *t, void *ptr) {
     for (int i = 0; i < MN_MAX_HANDLES; i++) {
@@ -659,14 +650,10 @@ MN_HTML_EXPORT int64_t __mn_time_now_unix(void) {
     return (int64_t)time(NULL);
 }
 
-MN_HTML_EXPORT void __mn_sleep_ms(int64_t ms) {
-    if (ms <= 0) return;
-#ifdef _WIN32
-    Sleep((DWORD)ms);
-#else
-    usleep((useconds_t)(ms * 1000));
-#endif
-}
+/* v4.29.0: ``__mn_sleep_ms`` is defined in ``mapanare_core.c``. When
+ * ``mapanare_html.c`` was orphaned, a duplicate definition drifted
+ * into this file. Removed in favour of the core implementation; the
+ * runtime exports only one symbol. */
 
 /* =======================================================================
  * 3. Environment Variables
@@ -695,6 +682,11 @@ MN_HTML_EXPORT MnString __mn_env_get(MnString name) {
  * Find the position of "://" in the URL data.
  * Returns the index of ':', or -1 if not found.
  */
+/* URL functions compare int64_t indices against uint64_t MnString.len.
+ * Safe because len is a 63-bit bitfield (max INT64_MAX). */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 static int64_t find_scheme_sep(const char *data, int64_t len) {
     for (int64_t i = 0; i + 2 < len; i++) {
         if (data[i] == ':' && data[i + 1] == '/' && data[i + 2] == '/') {
@@ -810,3 +802,5 @@ MN_HTML_EXPORT MnString __mn_url_parse_path(MnString url) {
 
     return __mn_str_from_parts(data + path_start, path_end - path_start);
 }
+
+#pragma GCC diagnostic pop

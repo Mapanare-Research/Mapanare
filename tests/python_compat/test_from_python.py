@@ -28,7 +28,7 @@ def add(a, b):
     return a + b
 """
         mn = translate_to_mn(src, "<test>")
-        assert "fn add(a, b)" in mn
+        assert "fn add(a: Int, b: Int)" in mn
         assert "return (a + b)" in mn
 
     def test_function_int_params(self) -> None:

@@ -1,0 +1,193 @@
+; ModuleID = '34_file_io'
+source_filename = "34_file_io"
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+
+@.newline = private constant [2 x i8] c"\0A\00", align 2
+@.fmt_int = private constant [4 x i8] c"%ld\00", align 2
+@.fmt_int_nl = private constant [5 x i8] c"%ld\0A\00", align 2
+@.fmt_float = private constant [4 x i8] c"%lf\00", align 2
+@.fmt_float_nl = private constant [5 x i8] c"%lf\0A\00", align 2
+
+declare {ptr, i64} @__mn_str_concat({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare i64 @__mn_str_eq({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_str_cmp({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_str_len({ptr, i64}) nounwind readonly willreturn
+declare {ptr, i64} @__mn_str_char_at({ptr, i64}, i64)
+declare i64 @__mn_str_byte_at({ptr, i64}, i64) nounwind readonly willreturn
+declare {ptr, i64} @__mn_str_substr({ptr, i64}, i64, i64) nounwind willreturn
+declare {ptr, i64} @__mn_str_from_int(i64) nounwind willreturn
+declare {ptr, i64} @__mn_str_from_bool(i64) nounwind willreturn
+declare {ptr, i64} @__mn_str_from_float(double) nounwind willreturn
+declare i64 @__mn_str_to_int({ptr, i64}) nounwind readonly willreturn
+declare double @__mn_str_to_float({ptr, i64}) nounwind readonly willreturn
+declare void @__mn_str_println({ptr, i64}) nounwind willreturn
+declare void @__mn_str_print({ptr, i64}) nounwind willreturn
+declare i1 @__mn_str_starts_with({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare i1 @__mn_str_ends_with({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_str_find({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare {ptr, i64} @__mn_str_join({ptr, i64}, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_list_new(i64) nounwind willreturn
+declare void @__mn_list_push(ptr, ptr) nounwind
+declare ptr @__mn_list_get(ptr, i64) nounwind readonly willreturn
+declare i64 @__mn_list_len(ptr) nounwind readonly willreturn
+declare void @__mn_list_set(ptr, i64, ptr) nounwind
+declare {ptr, i64, i64, i64, i64} @__mn_list_concat(ptr, ptr) nounwind willreturn
+declare i1 @__iter_has_next({i64, i64}) nounwind readonly willreturn
+declare i64 @__iter_next({i64, i64}) nounwind
+declare {i64, i64} @__mn_range(i64, i64) nounwind readonly willreturn
+declare void @__mn_range_free(ptr) nounwind willreturn
+declare {ptr, i64} @__mn_str_to_upper({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_str_to_lower({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_str_replace({ptr, i64}, {ptr, i64}, {ptr, i64}) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_str_split({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_str_trim({ptr, i64}) nounwind willreturn
+declare i1 @__mn_str_contains({ptr, i64}, {ptr, i64}) nounwind readonly willreturn
+declare void @__mn_panic({ptr, i64})
+declare void @__mn_exit(i64)
+declare i64 @__mn_argc()
+declare {ptr, i64} @__mn_argv(i64)
+declare {ptr, i64} @__mn_file_read_or_empty({ptr, i64})
+declare i64 @__mn_file_write({ptr, i64}, {ptr, i64})
+declare i64 @__mn_system({ptr, i64})
+declare void @__mn_str_eprint({ptr, i64}) nounwind willreturn
+declare void @__mn_str_eprintln({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_str_chr(i64) nounwind willreturn
+declare i64 @__mn_str_ord({ptr, i64}) nounwind readonly willreturn
+declare noalias ptr @__mn_map_new(i64, i64, i64, i64) nounwind willreturn
+declare void @__mn_map_set(ptr, ptr, ptr) nounwind
+declare ptr @__mn_map_get(ptr, ptr) nounwind
+declare i64 @__mn_map_len(ptr) nounwind readonly willreturn
+declare i64 @__mn_map_contains(ptr, ptr) nounwind readonly willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_map_keys(ptr) nounwind willreturn
+declare noalias ptr @malloc(i64) nounwind willreturn
+declare i32 @printf(ptr, ...)
+declare noalias ptr @__mapanare_tensor_add(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_tensor_sub(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_tensor_mul(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_tensor_div(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_matmul(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mapanare_tensor_alloc(i64, i64*, i64) nounwind willreturn
+declare void @__mapanare_tensor_free(ptr) nounwind willreturn
+declare i1 @__mapanare_tensor_shape_eq(ptr, ptr) nounwind readonly willreturn
+declare ptr @__mapanare_detect_gpus()
+declare ptr @__mn_agent_spawn(ptr, ptr) nounwind willreturn
+declare void @__mn_agent_send(ptr, ptr, ptr) nounwind willreturn
+declare ptr @__mn_agent_sync(ptr, ptr) nounwind willreturn
+declare noalias ptr @__mn_signal_new(ptr) nounwind willreturn
+declare ptr @__mn_signal_get(ptr) nounwind
+declare void @__mn_signal_set(ptr, ptr) nounwind willreturn
+declare {ptr, i64} @__mn_read_line() nounwind willreturn
+declare i64 @__mn_file_append({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare i64 @__mn_file_exists({ptr, i64}) nounwind readonly willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_dir_list_strings({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_http_get({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_sha256_str({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_base64_encode_str({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_base64_decode_str({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_hmac_sha256_str({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_hex_encode_str({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_random_bytes_str(i64) nounwind willreturn
+declare i64 @__mn_regex_compile_str({ptr, i64}) nounwind willreturn
+declare i64 @__mn_regex_exec_str(i64, {ptr, i64}, i64) nounwind willreturn
+declare {ptr, i64} @__mn_regex_replace_str(i64, {ptr, i64}, {ptr, i64}, i64) nounwind willreturn
+declare i64 @__mn_regex_free(i64) nounwind willreturn
+declare i64 @__mn_file_remove({ptr, i64}) nounwind willreturn
+declare i64 @__mn_file_size({ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_file_mtime({ptr, i64}) nounwind readonly willreturn
+declare i64 @__mn_dir_create({ptr, i64}) nounwind willreturn
+declare i64 @__mn_dir_remove({ptr, i64}) nounwind willreturn
+declare i64 @__mn_file_rename({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare i64 @__mn_file_copy({ptr, i64}, {ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_realpath({ptr, i64}) nounwind willreturn
+declare {ptr, i64} @__mn_tmpfile_path() nounwind willreturn
+declare i64 @__mn_gpu_available() nounwind readonly willreturn
+declare {ptr, i64} @__mn_gpu_device_name() nounwind willreturn
+declare i64 @__mn_gpu_device_memory() nounwind readonly willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_add(ptr, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_sub(ptr, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_mul(ptr, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_div(ptr, ptr) nounwind willreturn
+declare {ptr, i64, i64, i64, i64} @__mn_gpu_tensor_matmul(ptr, ptr, i64, i64, i64) nounwind willreturn
+
+define i32 @main() nounwind willreturn {
+entry:
+  %t0.ptr = getelementptr inbounds [19 x i8], ptr @str.0, i64 0, i64 0
+  %t0.s1 = insertvalue {ptr, i64} undef, ptr %t0.ptr, 0
+  %t0 = insertvalue {ptr, i64} %t0.s1, i64 19, 1
+  %t1.ptr = getelementptr inbounds [11 x i8], ptr @str.1, i64 0, i64 0
+  %t1.s1 = insertvalue {ptr, i64} undef, ptr %t1.ptr, 0
+  %t1 = insertvalue {ptr, i64} %t1.s1, i64 11, 1
+  call void @__mn_file_write({ptr, i64} %t0, {ptr, i64} %t1)
+  %t3.ptr = getelementptr inbounds [19 x i8], ptr @str.2, i64 0, i64 0
+  %t3.s1 = insertvalue {ptr, i64} undef, ptr %t3.ptr, 0
+  %t3 = insertvalue {ptr, i64} %t3.s1, i64 19, 1
+  %t4 = call {ptr, i64} @__mn_file_read_or_empty({ptr, i64} %t3)
+  %content5.addr = alloca {ptr, i64}
+  store {ptr, i64} %t4, ptr %content5.addr
+  %content_val6 = load {ptr, i64}, ptr %content5.addr
+  call void @__mn_str_println({ptr, i64} %content_val6)
+  %t8.ptr = getelementptr inbounds [19 x i8], ptr @str.3, i64 0, i64 0
+  %t8.s1 = insertvalue {ptr, i64} undef, ptr %t8.ptr, 0
+  %t8 = insertvalue {ptr, i64} %t8.s1, i64 19, 1
+  %t9.ptr = getelementptr inbounds [9 x i8], ptr @str.4, i64 0, i64 0
+  %t9.s1 = insertvalue {ptr, i64} undef, ptr %t9.ptr, 0
+  %t9 = insertvalue {ptr, i64} %t9.s1, i64 9, 1
+  call void @__mn_file_append({ptr, i64} %t8, {ptr, i64} %t9)
+  %t11.ptr = getelementptr inbounds [19 x i8], ptr @str.5, i64 0, i64 0
+  %t11.s1 = insertvalue {ptr, i64} undef, ptr %t11.ptr, 0
+  %t11 = insertvalue {ptr, i64} %t11.s1, i64 19, 1
+  %t12 = call {ptr, i64} @__mn_file_read_or_empty({ptr, i64} %t11)
+  %content213.addr = alloca {ptr, i64}
+  store {ptr, i64} %t12, ptr %content213.addr
+  %content2_val14 = load {ptr, i64}, ptr %content213.addr
+  call void @__mn_str_println({ptr, i64} %content2_val14)
+  %t16.ptr = getelementptr inbounds [19 x i8], ptr @str.6, i64 0, i64 0
+  %t16.s1 = insertvalue {ptr, i64} undef, ptr %t16.ptr, 0
+  %t16 = insertvalue {ptr, i64} %t16.s1, i64 19, 1
+  %fe_raw0 = call i64 @__mn_file_exists({ptr, i64} %t16)
+  %t17 = icmp ne i64 %fe_raw0, 0
+  %ex18.addr = alloca i1
+  store i1 %t17, ptr %ex18.addr
+  %ex_val19 = load i1, ptr %ex18.addr
+  %zb1 = zext i1 %ex_val19 to i64
+  %t20 = call {ptr, i64} @__mn_str_from_bool(i64 %zb1)
+  call void @__mn_str_println({ptr, i64} %t20)
+  %t22.ptr = getelementptr inbounds [26 x i8], ptr @str.7, i64 0, i64 0
+  %t22.s1 = insertvalue {ptr, i64} undef, ptr %t22.ptr, 0
+  %t22 = insertvalue {ptr, i64} %t22.s1, i64 26, 1
+  %fe_raw2 = call i64 @__mn_file_exists({ptr, i64} %t22)
+  %t23 = icmp ne i64 %fe_raw2, 0
+  %no24.addr = alloca i1
+  store i1 %t23, ptr %no24.addr
+  %no_val25 = load i1, ptr %no24.addr
+  %zb3 = zext i1 %no_val25 to i64
+  %t26 = call {ptr, i64} @__mn_str_from_bool(i64 %zb3)
+  call void @__mn_str_println({ptr, i64} %t26)
+  %t28.ptr = getelementptr inbounds [4 x i8], ptr @str.8, i64 0, i64 0
+  %t28.s1 = insertvalue {ptr, i64} undef, ptr %t28.ptr, 0
+  %t28 = insertvalue {ptr, i64} %t28.s1, i64 4, 1
+  %t29 = call {ptr, i64, i64, i64, i64} @__mn_dir_list_strings({ptr, i64} %t28)
+  %files30.addr = alloca {ptr, i64, i64, i64, i64}
+  store {ptr, i64, i64, i64, i64} %t29, ptr %files30.addr
+  %files_val31 = load {ptr, i64, i64, i64, i64}, ptr %files30.addr
+  %t32.lp = alloca {ptr, i64, i64, i64, i64}
+  store {ptr, i64, i64, i64, i64} %files_val31, ptr %t32.lp
+  %t32 = call i64 @__mn_list_len(ptr %t32.lp)
+  %t33 = call {ptr, i64} @__mn_str_from_int(i64 %t32)
+  call void @__mn_str_println({ptr, i64} %t33)
+  ret i32 zeroinitializer
+}
+
+@str.0 = private constant [19 x i8] c"/tmp/mn_test_34.txt", align 2
+@str.1 = private constant [11 x i8] c"hello world", align 2
+@str.2 = private constant [19 x i8] c"/tmp/mn_test_34.txt", align 2
+@str.3 = private constant [19 x i8] c"/tmp/mn_test_34.txt", align 2
+@str.4 = private constant [9 x i8] c" appended", align 2
+@str.5 = private constant [19 x i8] c"/tmp/mn_test_34.txt", align 2
+@str.6 = private constant [19 x i8] c"/tmp/mn_test_34.txt", align 2
+@str.7 = private constant [26 x i8] c"/tmp/mn_nonexistent_34.txt", align 2
+@str.8 = private constant [4 x i8] c"/tmp", align 2
+
+!mapanare.version = !{!0}
+!0 = !{!"4.142.0"}

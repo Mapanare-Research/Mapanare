@@ -1,0 +1,32 @@
+// Golden test: ? operator (error propagation)
+// Tests Result<T, E> early-return via `?` — both Ok and Err paths.
+
+fn might_fail(ok: Bool) -> Result<Int, String> {
+    if ok {
+        return Ok(42)
+    }
+    return Err("failed")
+}
+
+fn do_work() -> Result<Int, String> {
+    let v: Int = might_fail(true)?
+    return Ok(v + 8)
+}
+
+fn do_work_fail() -> Result<Int, String> {
+    let v: Int = might_fail(false)?
+    return Ok(v + 8)
+}
+
+fn main() {
+    let r1: Result<Int, String> = do_work()
+    match r1 {
+        Ok(v) => { print(str(v)) },
+        Err(e) => { print(e) }
+    }
+    let r2: Result<Int, String> = do_work_fail()
+    match r2 {
+        Ok(v) => { print(str(v)) },
+        Err(e) => { print(e) }
+    }
+}

@@ -199,6 +199,7 @@ x /= 2        // divide-assign
 
 ### Special Operators
 
+<!-- pseudo -->
 ```mn
 data |> transform |> format    // pipe: left-to-right data flow
 agent.input <- value           // send: message to agent channel
@@ -216,10 +217,12 @@ a @ b                          // matrix multiplication (tensors)
 Variables are declared with `let`. They are immutable by default.
 
 ```mn
-let x = 42                    // immutable, type inferred as Int
-let name: String = "Alice"    // immutable, explicitly typed
-let mut count = 0             // mutable
-count += 1                    // OK — count is mutable
+fn main() {
+    let x = 42                    // immutable, type inferred as Int
+    let name: String = "Alice"    // immutable, explicitly typed
+    let mut count = 0             // mutable
+    count += 1                    // OK — count is mutable
+}
 ```
 
 Type annotations are optional when the type can be inferred.
@@ -302,10 +305,12 @@ for item in items {
 ### While Loops
 
 ```mn
-let mut i = 0
-while i < 10 {
-    print(str(i))
-    i += 1
+fn main() {
+    let mut i = 0
+    while i < 10 {
+        print(str(i))
+        i += 1
+    }
 }
 ```
 
@@ -315,6 +320,7 @@ while i < 10 {
 
 `match` destructures values. All arms must be exhaustive for enums.
 
+<!-- pseudo -->
 ```mn
 match value {
     1 => print("one"),
@@ -325,6 +331,7 @@ match value {
 
 ### Enum Matching
 
+<!-- pseudo -->
 ```mn
 enum Shape {
     Circle(Float),
@@ -341,6 +348,7 @@ fn describe(s: Shape) -> String {
 
 ### Option and Result Matching
 
+<!-- pseudo -->
 ```mn
 match maybe_value {
     Some(v) => print("got ${str(v)}"),
@@ -474,22 +482,24 @@ type StringResult = Result<String, String>
 ## Lists
 
 ```mn
-let items: List<Int> = [1, 2, 3]
-let empty: List<String> = []
+fn main() {
+    let items: List<Int> = [1, 2, 3]
+    let empty: List<String> = []
 
-// Access
-let first = items[0]
+    // Access
+    let first = items[0]
 
-// Methods
-let mut list: List<Int> = []
-list.push(10)
-list.push(20)
-let len = list.length()
-let popped = list.pop()
+    // Methods
+    let mut list: List<Int> = []
+    list.push(10)
+    list.push(20)
+    let len = list.length()
+    let popped = list.pop()
 
-// Iteration
-for item in items {
-    print(str(item))
+    // Iteration
+    for item in items {
+        print(str(item))
+    }
 }
 ```
 
@@ -561,6 +571,7 @@ let text = """
 
 Represents a value that may or may not be present. Replaces null.
 
+<!-- pseudo -->
 ```mn
 let x: Option<Int> = Some(42)
 let y: Option<Int> = none
@@ -664,19 +675,22 @@ agent MyAgent {
 Signals are reactive containers. Dependents recompute automatically when values change.
 
 ```mn
-// Mutable signal
-let mut count = signal(0)
+fn main() {
+    // Mutable signal
+    let mut count = signal(0)
 
-// Computed signal (read-only, auto-updates)
-let doubled = signal { count.value * 2 }
+    // Computed signal (read-only, auto-updates)
+    let doubled = signal { count.value * 2 }
 
-// Update
-count.value = 5
-print(str(doubled.value))    // 10
+    // Update
+    count.value = 5
+    print(str(doubled.value))    // 10
+}
 ```
 
 ### Batched Updates
 
+<!-- pseudo -->
 ```mn
 batch {
     x.value = 10
@@ -691,6 +705,7 @@ batch {
 
 Streams are async iterables with composable operators.
 
+<!-- pseudo -->
 ```mn
 let s = stream([1, 2, 3, 4, 5])
 
@@ -758,6 +773,7 @@ pipe ClassifyText {
 
 Tensors have compile-time shape verification.
 
+<!-- pseudo -->
 ```mn
 let v: Tensor<Float>[3] = [1.0, 2.0, 3.0]
 let m: Tensor<Float>[2, 3] = [[1.0, 2.0, 3.0],
@@ -776,10 +792,11 @@ let z = x + y    // COMPILE ERROR: shape mismatch [3] vs [4]
 
 ### Tensor Creation
 
+<!-- pseudo -->
 ```mn
-let z = Tensor.zeros<Float>(3, 3)      // 3x3 zero tensor
-let o = Tensor.ones<Float>(4)          // length-4 ones vector
-let t = Tensor.from_list([1.0, 2.0])   // from list literal
+let z = Tensor.zeros<Float>(3, 3)      // 3x3 zero tensor (planned)
+let o = Tensor.ones<Float>(4)          // length-4 ones vector (planned)
+let t = Tensor.from_list([1.0, 2.0])   // from list literal (planned)
 ```
 
 ### Tensor Operations
@@ -787,8 +804,12 @@ let t = Tensor.from_list([1.0, 2.0])   // from list literal
 | Category | Operations | Syntax |
 |----------|-----------|--------|
 | Arithmetic | add, sub, mul, div | `a + b`, `a - b`, `a * b`, `a / b` |
-| Matrix | matmul, dot, transpose | `a @ b`, `a.dot(b)`, `a.transpose()` |
+| Scalar broadcast | scalar + tensor | `a * 2.0`, `a + 1.0` |
+| Matrix | matmul | `a @ b` |
 | Reductions | sum, mean, max, min | `t.sum()`, `t.mean()`, `t.max()`, `t.min()` |
+| Arg reductions | argmax, argmin | `t.argmax()`, `t.argmin()` |
+| Slicing | range, wildcard | `t[1..3]`, `t[0..2, _]` |
+| Indexing | multi-dim get/set | `t[i, j]`, `t[i, j] = val` |
 
 ### Tensor Metadata
 
@@ -801,6 +822,7 @@ let t = Tensor.from_list([1.0, 2.0])   // from list literal
 
 ### GPU Device Transfer
 
+<!-- pseudo -->
 ```mn
 let cpu_tensor: Tensor<Float>[1024] = Tensor.ones<Float>(1024)
 let gpu_tensor = cpu_tensor.to_device("cuda")   // CPU -> GPU
@@ -832,6 +854,7 @@ pub fn square(x: Int) -> Int {
 
 ### Importing
 
+<!-- pseudo -->
 ```mn
 // Import entire module
 import math_utils
@@ -842,6 +865,7 @@ import utils::{foo, bar}
 
 ### Exporting
 
+<!-- pseudo -->
 ```mn
 // Re-export a definition
 export fn public_api() -> Int {
@@ -871,18 +895,29 @@ mapanare build program.mn --link-lib m    # links libm
 
 ### Python Interop
 
-```mn
-extern "Python" fn math::sqrt(x: Float) -> Float
-extern "Python" fn json::loads(s: String) -> Result<String, String>
-```
-
-Use `--python-path` to add module search paths:
+**v4.29.0 removal.** The `extern "Python" fn` syntax was removed. Python
+interop now goes through `mapanare bind --lang python`, which generates
+a ctypes wrapper around a compiled `.mn` shared library:
 
 ```bash
-mapanare run program.mn --python-path ./mymodules
+mapanare build --release --crate-type=cdylib math_utils.mn -o libmath_utils.so
+mapanare bind --lang python math_utils.mn -o math_utils_py.py
 ```
 
-Python exceptions are wrapped in `Result<T, String>` when the return type is `Result`.
+```python
+# Python driver
+from math_utils_py import sqrt, distance
+print(distance(0.0, 0.0, 3.0, 4.0))
+```
+
+Why the change: `extern "Python" fn` was added in v0.5.0 as a convenience
+but broke silently when the AST-based Python emitter was deleted in
+v4.2.0. Seventy-nine tests in `tests/ffi/test_python_interop.py` had
+been `pytest.mark.xfail`'d since then, which the v4.26.0 seven-reviewer
+panel flagged as a core hollow-feature case. `mapanare bind --lang python`
+has been shipping since v4.25.0 / v4.27.0 and offers the same ergonomics
+with real type-safety (the binding is generated from the compiled
+module's signatures, not from hand-written declarations).
 
 ---
 
@@ -890,6 +925,7 @@ Python exceptions are wrapped in `Result<T, String>` when the return type is `Re
 
 Decorators annotate definitions with metadata.
 
+<!-- pseudo -->
 ```mn
 @allow(W001)
 fn unused_var_ok() {
@@ -936,6 +972,7 @@ GPU backends are loaded at runtime via `dlopen` -- no compile-time SDK installat
 
 Lambda expressions use `=>` syntax.
 
+<!-- pseudo -->
 ```mn
 // Single parameter
 let double = (x) => x * 2

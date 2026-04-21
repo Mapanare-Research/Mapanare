@@ -45,7 +45,7 @@ _WS_MN = (
 
 def _compile_mir(source: str) -> str:
     """Compile via MIR-based LLVM emitter."""
-    return _compile_to_llvm_ir(source, "test_websocket.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test_websocket.mn")
 
 
 def _ws_source_with_main(main_body: str) -> str:

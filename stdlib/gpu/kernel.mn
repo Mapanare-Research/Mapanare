@@ -164,7 +164,7 @@ pub fn from_spirv(name: String, spirv: List<Int>) -> Result<Kernel, KernelError>
 // ---------------------------------------------------------------------------
 
 /// Launch a compiled kernel with the given grid/block configuration and tensor arguments.
-pub fn launch(kernel: Kernel, grid: List<Int>, block: List<Int>, args: List<tensor.Tensor>) -> Result<Int, KernelError> {
+pub fn launch(kernel: Kernel, grid: List<Int>, block: List<Int>, args: List<tensor.GpuTensor>) -> Result<Int, KernelError> {
     si kernel.compiled == false {
         da Err(new_launch_failed("kernel '" + kernel.name + "' is not compiled"))
     }
@@ -184,7 +184,7 @@ pub fn launch(kernel: Kernel, grid: List<Int>, block: List<Int>, args: List<tens
     // Set each tensor argument
     pon mut i: Int = 0
     mien i < args_count {
-        pon t: tensor.Tensor = args[i]
+        pon t: tensor.GpuTensor = args[i]
         pon rc: Int = __mn_kernel_set_arg_tensor(args_ptr, i, t.data, t.size)
         si rc < 0 {
             __mn_kernel_free_args(args_ptr)
@@ -204,7 +204,7 @@ pub fn launch(kernel: Kernel, grid: List<Int>, block: List<Int>, args: List<tens
 }
 
 /// Launch a kernel using a LaunchConfig struct.
-pub fn launch_with_config(kernel: Kernel, config: LaunchConfig, args: List<tensor.Tensor>) -> Result<Int, KernelError> {
+pub fn launch_with_config(kernel: Kernel, config: LaunchConfig, args: List<tensor.GpuTensor>) -> Result<Int, KernelError> {
     da launch(kernel, config.grid, config.block, args)
 }
 

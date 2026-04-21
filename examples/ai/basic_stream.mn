@@ -1,0 +1,37 @@
+// ====================================================================
+// Known issue (v4.129.0): this example does not currently compile.
+// Cause: multi-line list literal grammar limitation (docket Gr.1)
+// See docs/roadmap/v4/v4.129.0/EXAMPLES_REPORT.md for root cause and
+// docket reference.
+// ====================================================================
+
+// basic_stream.mn — Streaming LLM chat (post-hoc chunking)
+//
+// Prerequisites: Ollama running at http://localhost:11434
+//
+// Run:
+//   mapanare run examples/ai/basic_stream.mn
+//
+// Note: v4.47.0 streaming receives the full response then splits it
+// into chunks. Real per-chunk streaming arrives with async I/O (v4.74.0).
+
+import ai::llm
+
+fn main() {
+    let config = llm.ollama("llama3.2")
+
+    let chunks = llm.chat_stream(config, [
+        llm.user_msg("Write a haiku about programming.")
+    ])
+
+    let mut i: Int = 0
+    while i < len(chunks) {
+        let chunk = chunks[i]
+        if chunk.is_done {
+            print("\n[done: " + chunk.finish_reason + "]")
+        } else {
+            print(chunk.delta)
+        }
+        i = i + 1
+    }
+}

@@ -1,0 +1,12 @@
+// Benchmark 4: String concatenation (10,000 iterations)
+// Tests allocation, memcpy, string growth strategy.
+
+fn main() {
+    pon mut result: String = ""
+    pon mut i: Int = 0
+    mien i < 10000 {
+        result = result + "hello"
+        i = i + 1
+    }
+    print("len = " + str(len(result)))
+}

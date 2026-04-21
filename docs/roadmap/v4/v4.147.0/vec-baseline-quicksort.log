@@ -1,0 +1,5 @@
+remark: <unknown>:0:0: loop not vectorized: control flow cannot be substituted for a select
+remark: <unknown>:0:0: loop not vectorized: value that could not be identified as reduction is used outside the loop
+remark: <unknown>:0:0: loop not vectorized: instruction cannot be vectorized
+remark: <unknown>:0:0: loop not vectorized: value that could not be identified as reduction is used outside the loop
+remark: <unknown>:0:0: loop not vectorized: instruction cannot be vectorized

@@ -38,7 +38,7 @@ _CSV_MN = (
 
 
 def _compile_mir(source: str) -> str:
-    return _compile_to_llvm_ir(source, "test_csv.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test_csv.mn")
 
 
 def _csv_with_main(main_body: str) -> str:

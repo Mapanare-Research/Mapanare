@@ -678,7 +678,16 @@ class DocumentAnalysis:
             self._visit_expr(expr.object)
         elif isinstance(expr, IndexExpr):
             self._visit_expr(expr.object)
-            self._visit_expr(expr.index)
+            from mapanare.ast_nodes import IndexItem
+
+            for it in expr.indices:
+                if isinstance(it, IndexItem):
+                    if it.expr:
+                        self._visit_expr(it.expr)
+                    if it.start:
+                        self._visit_expr(it.start)
+                    if it.end:
+                        self._visit_expr(it.end)
         elif isinstance(expr, PipeExpr):
             self._visit_expr(expr.left)
             self._visit_expr(expr.right)
@@ -752,6 +761,10 @@ class DocumentAnalysis:
             if word in BUILTIN_GENERIC_TYPES:
                 return f"```mapanare\ntype {word}<T>\n```"
         return None
+
+    def symbol_name_at(self, line: int, col: int) -> Optional[str]:
+        """Public accessor for the symbol name at cursor (v4.37.0 cross-module)."""
+        return self._symbol_name_at(line, col)
 
     # -- Go to definition ----------------------------------------------------
 

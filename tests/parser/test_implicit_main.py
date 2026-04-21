@@ -14,10 +14,8 @@ from mapanare.ast_nodes import (
     CallExpr,
     ExprStmt,
     FnDef,
-    LetBinding,
     Program,
 )
-from mapanare.emit_python import PythonEmitter
 from mapanare.parser import ParseError, parse
 
 # ===================================================================
@@ -45,17 +43,10 @@ class TestImplicitMain:
     # ------------------------------------------------------------------
     # 2. Multiple top-level statements → synthetic main with all stmts
     # ------------------------------------------------------------------
-    def test_implicit_main_with_let(self) -> None:
-        src = "let x: Int = 42\nlet y: Int = x + 8\nprint(y)"
-        p = parse(src)
-        assert len(p.definitions) == 1
-        fn = p.definitions[0]
-        assert isinstance(fn, FnDef)
-        assert fn.name == "main"
-        assert len(fn.body.stmts) == 3
-        assert isinstance(fn.body.stmts[0], LetBinding)
-        assert isinstance(fn.body.stmts[1], LetBinding)
-        assert isinstance(fn.body.stmts[2], ExprStmt)
+    def test_implicit_main_rejects_let_mut(self) -> None:
+        src = "let mut x: Int = 42\nlet mut y: Int = x + 8\nprint(y)"
+        with pytest.raises(ParseError, match="E420"):
+            parse(src)
 
     # ------------------------------------------------------------------
     # 3. Helper fn + top-level stmt → helper first, synthetic main second
@@ -135,26 +126,3 @@ class TestImplicitMain:
         assert p.definitions[0].name == "helper"
         assert isinstance(p.definitions[1], FnDef)
         assert p.definitions[1].name == "main"
-
-    # ------------------------------------------------------------------
-    # 10. PythonEmitter: implicit main → sync def main (no async needed)
-    # ------------------------------------------------------------------
-    def test_emit_python_implicit_main(self) -> None:
-        p = parse('print("hello")')
-        emitter = PythonEmitter()
-        output = emitter.emit(p)
-        assert "def main()" in output
-        assert "main()" in output
-        # No async needed for a simple print
-        assert "async def main()" not in output
-        assert "asyncio.run" not in output
-
-    # ------------------------------------------------------------------
-    # 11. PythonEmitter: library (no main) → no asyncio.run
-    # ------------------------------------------------------------------
-    def test_emit_python_no_main_guard_for_library(self) -> None:
-        src = "fn helper() -> Int {\n    return 42\n}"
-        p = parse(src)
-        emitter = PythonEmitter()
-        output = emitter.emit(p)
-        assert "asyncio.run(main())" not in output

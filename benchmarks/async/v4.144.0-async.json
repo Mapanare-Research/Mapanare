@@ -1,0 +1,60 @@
+{
+  "mapanare": [
+    {
+      "benchmark": "01_sequential_chain",
+      "language": "mapanare",
+      "median_ms": 2.64,
+      "min_ms": 2.46,
+      "max_ms": 3.04,
+      "runs": 10,
+      "output": "checksum = 5050",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "02_fanout",
+      "language": "mapanare",
+      "median_ms": 1.96,
+      "min_ms": 1.9,
+      "max_ms": 2.08,
+      "runs": 10,
+      "output": "checksum = 171700",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "03_io_bound",
+      "language": "mapanare",
+      "median_ms": 2.13,
+      "min_ms": 1.88,
+      "max_ms": 2.51,
+      "runs": 10,
+      "output": "checksum = 1000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "04_mixed_cpu_io",
+      "language": "mapanare",
+      "median_ms": 2.34,
+      "min_ms": 2.3,
+      "max_ms": 2.6,
+      "runs": 10,
+      "output": "checksum = 12000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "05_backpressure",
+      "language": "mapanare",
+      "median_ms": 2.25,
+      "min_ms": 2.02,
+      "max_ms": 2.58,
+      "runs": 10,
+      "output": "checksum = 2500",
+      "correct": true,
+      "status": "ok"
+    }
+  ],
+  "cross_language": []
+}

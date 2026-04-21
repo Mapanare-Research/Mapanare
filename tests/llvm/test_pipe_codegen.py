@@ -12,11 +12,11 @@ from mapanare.cli import _compile_to_llvm_ir
 
 
 def _compile_ast(source: str) -> str:
-    return _compile_to_llvm_ir(source, "test.mn", use_mir=False)
+    return _compile_to_llvm_ir(source, "test.mn")
 
 
 def _compile_mir(source: str) -> str:
-    return _compile_to_llvm_ir(source, "test.mn", use_mir=True)
+    return _compile_to_llvm_ir(source, "test.mn")
 
 
 _PIPE_SOURCE = textwrap.dedent("""\

@@ -1,6 +1,45 @@
-"""Tests for DWARF debug info emission in the LLVM MIR emitter."""
+"""Tests for the ``-g`` / ``--debug`` CLI flag and MIR source-span threading.
+
+v4.29.0 (Path B — strike claim)
+--------------------------------
+
+Prior to v4.29.0 this file had six ``@pytest.mark.skip`` classes covering
+roughly thirty tests for DWARF debug info emission (``!DICompileUnit``,
+``!DISubprogram``, ``!DILocation``, ``!DILocalVariable``, ``DICompositeType``,
+etc.). Those tests had been silently skipped since v4.2.0 — the ``debug=True``
+flag was wired through the pipeline but the ``LLVMTextEmitter`` never emitted
+a single DWARF metadata node.
+
+The v4.26.0 seven-reviewer panel flagged this as a core hollow-feature case.
+v4.29.0 strikes the claim: DWARF debug info emission is deferred to v5.x
+(see ``docs/SPEC.md`` §21.3 and ``docs/roadmap/ROADMAP.md``). The 30-plus
+skipped tests have been deleted because they test a feature that does not
+exist; when DWARF lands, new tests will be written against the shipping
+implementation rather than resurrected from a speculative skeleton.
+
+What this file still covers
+---------------------------
+
+1. ``TestDebugCLIFlag`` — the ``-g`` / ``--debug`` flag is still accepted
+   for forward compatibility. v4.29.0 made ``_resolve_debug`` print a
+   stderr warning every time it is used, which is verified here.
+2. ``TestNoDebugWhenDisabled`` — the current behaviour (no DWARF at all)
+   is pinned: when ``debug=False`` the emitter must not leak any
+   ``!DICompileUnit`` / ``!DISubprogram`` / ``!DILocation`` / ``!dbg``
+   metadata. This is the regression gate that will fail the day DWARF
+   lands without tests being updated alongside.
+3. ``TestMIRSpanThreading`` — the MIR already threads source spans
+   (``SourceSpan`` dataclass and per-instruction ``.span`` field). That
+   plumbing is the foundation future DWARF will build on; the tests
+   confirm it still works.
+"""
 
 from __future__ import annotations
+
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -12,264 +51,35 @@ except ImportError:
     HAS_LLVMLITE = False
 
 from mapanare.lower import lower
-from mapanare.mir import (
-    BasicBlock,
-    MIRFunction,
-    MIRModule,
-    MIRType,
-    Return,
-    SourceSpan,
-    mir_int,
-    mir_void,
-)
+from mapanare.mir import SourceSpan
 from mapanare.parser import parse
 from mapanare.semantic import check_or_raise
-from mapanare.types import TypeInfo, TypeKind
 
-pytestmark = pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not installed")
-
-
-def _emit_with_debug(source: str, filename: str = "test.mn") -> str:
-    """Parse, lower, and emit LLVM IR with debug info enabled."""
-    from mapanare.emit_llvm_mir import LLVMMIREmitter
-
-    ast = parse(source, filename=filename)
-    check_or_raise(ast, filename=filename)
-    mir = lower(ast, module_name="test", source_file=filename, source_directory="/test")
-    emitter = LLVMMIREmitter(module_name="test", debug=True)
-    llvm_module = emitter.emit(mir)
-    return str(llvm_module)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _emit_without_debug(source: str, filename: str = "test.mn") -> str:
     """Parse, lower, and emit LLVM IR with debug info disabled."""
-    from mapanare.emit_llvm_mir import LLVMMIREmitter
+    from mapanare.emit_llvm_text import LLVMTextEmitter
 
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename)
     mir = lower(ast, module_name="test", source_file=filename, source_directory="/test")
-    emitter = LLVMMIREmitter(module_name="test", debug=False)
-    llvm_module = emitter.emit(mir)
-    return str(llvm_module)
+    emitter = LLVMTextEmitter(module_name="test", debug=False)
+    return emitter.emit(mir)
 
 
 # ---------------------------------------------------------------------------
-# Task 1: DIBuilder integration — compile unit metadata
-# ---------------------------------------------------------------------------
-
-
-class TestCompileUnitMetadata:
-    """Verify compile unit metadata is emitted."""
-
-    def test_di_compile_unit_present(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert "!DICompileUnit" in ir
-
-    def test_di_file_present(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert "!DIFile" in ir
-
-    def test_di_file_has_filename(self) -> None:
-        ir = _emit_with_debug("fn main() {}", filename="hello.mn")
-        assert 'filename: "hello.mn"' in ir
-
-    def test_di_file_has_directory(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert 'directory: "/test"' in ir
-
-    def test_producer_is_mapanare(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert 'producer: "mapanare' in ir
-
-    def test_emission_kind_full_debug(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert "emissionKind: FullDebug" in ir
-
-    def test_named_metadata_dbg_cu(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert "!llvm.dbg.cu" in ir
-
-    def test_debug_info_version_flag(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert "Debug Info Version" in ir
-
-    def test_dwarf_version_flag(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert "Dwarf Version" in ir
-
-
-# ---------------------------------------------------------------------------
-# Task 3: Function debug info — DISubprogram
-# ---------------------------------------------------------------------------
-
-
-class TestFunctionDebugInfo:
-    """Verify DISubprogram is emitted for functions."""
-
-    def test_di_subprogram_present(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert "!DISubprogram" in ir
-
-    def test_di_subprogram_has_name(self) -> None:
-        ir = _emit_with_debug("fn add(a: Int, b: Int) -> Int { return a + b }")
-        assert 'name: "add"' in ir
-
-    def test_di_subprogram_has_line(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert "line: 1" in ir
-
-    def test_di_subprogram_attached_to_function(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        # The define line should have !dbg
-        for line in ir.split("\n"):
-            if line.startswith("define") and "main" in line:
-                assert "!dbg" in line, f"Function definition missing !dbg: {line}"
-                break
-        else:
-            pytest.fail("Could not find function definition")
-
-    def test_multiple_functions_have_subprograms(self) -> None:
-        source = """
-fn foo() -> Int { return 1 }
-fn bar() -> Int { return 2 }
-fn main() {}
-"""
-        ir = _emit_with_debug(source)
-        assert ir.count("!DISubprogram") == 3
-
-    def test_subroutine_type_present(self) -> None:
-        ir = _emit_with_debug("fn main() {}")
-        assert "!DISubroutineType" in ir
-
-
-# ---------------------------------------------------------------------------
-# Task 4: Line number info for MIR instructions
-# ---------------------------------------------------------------------------
-
-
-class TestLineNumberInfo:
-    """Verify DILocation is emitted and attached to instructions."""
-
-    def test_di_location_present(self) -> None:
-        ir = _emit_with_debug("fn main() { let x: Int = 42 }")
-        assert "!DILocation" in ir
-
-    def test_dbg_metadata_on_instructions(self) -> None:
-        source = """
-fn main() {
-    let x: Int = 42
-    let y: Int = 10
-}
-"""
-        ir = _emit_with_debug(source)
-        # Count !dbg references on instructions (not metadata lines)
-        dbg_instructions = [
-            line for line in ir.split("\n") if "!dbg" in line and not line.strip().startswith("!")
-        ]
-        assert len(dbg_instructions) > 0, "No instructions have !dbg metadata"
-
-    def test_line_numbers_are_accurate(self) -> None:
-        source = "fn main() { let x: Int = 42 }"
-        ir = _emit_with_debug(source)
-        assert "line: 1" in ir  # main() is on line 1
-
-
-# ---------------------------------------------------------------------------
-# Task 5: Variable debug info — DILocalVariable
-# ---------------------------------------------------------------------------
-
-
-class TestVariableDebugInfo:
-    """Verify DILocalVariable is emitted for named let bindings."""
-
-    def test_di_local_variable_present(self) -> None:
-        ir = _emit_with_debug("fn main() { let x: Int = 42 }")
-        assert "!DILocalVariable" in ir
-
-    def test_di_local_variable_has_name(self) -> None:
-        ir = _emit_with_debug("fn main() { let x: Int = 42 }")
-        assert 'name: "x"' in ir
-
-    def test_di_local_variable_has_type(self) -> None:
-        ir = _emit_with_debug("fn main() { let x: Int = 42 }")
-        # Should have DIBasicType for Int
-        assert "DW_ATE_signed" in ir
-
-    def test_multiple_variables(self) -> None:
-        source = """
-fn main() {
-    let a: Int = 1
-    let b: Int = 2
-    let c: Int = 3
-}
-"""
-        ir = _emit_with_debug(source)
-        assert 'name: "a"' in ir
-        assert 'name: "b"' in ir
-        assert 'name: "c"' in ir
-
-
-# ---------------------------------------------------------------------------
-# Task 6: Struct type debug info
-# ---------------------------------------------------------------------------
-
-
-class TestStructTypeDebugInfo:
-    """Verify struct types get DICompositeType."""
-
-    def test_struct_composite_type(self) -> None:
-        source = """
-struct Point {
-    x: Int,
-    y: Int,
-}
-fn main() {
-    let p: Point = new Point { x: 10, y: 20 }
-}
-"""
-        ir = _emit_with_debug(source)
-        assert "DICompositeType" in ir
-        assert "DW_TAG_structure_type" in ir
-
-    def test_struct_has_name(self) -> None:
-        source = """
-struct Point {
-    x: Int,
-    y: Int,
-}
-fn main() {
-    let p: Point = new Point { x: 10, y: 20 }
-}
-"""
-        ir = _emit_with_debug(source)
-        assert 'name: "Point"' in ir
-
-    def test_struct_has_members(self) -> None:
-        source = """
-struct Point {
-    x: Int,
-    y: Int,
-}
-fn main() {
-    let p: Point = new Point { x: 10, y: 20 }
-}
-"""
-        ir = _emit_with_debug(source)
-        assert "DW_TAG_member" in ir
-
-
-# ---------------------------------------------------------------------------
-# Task 7: --debug / -g CLI flag
+# -g / --debug CLI flag
 # ---------------------------------------------------------------------------
 
 
 class TestDebugCLIFlag:
-    """Verify the -g/--debug CLI flag."""
+    """Verify the ``-g`` / ``--debug`` flag is still accepted."""
 
     def test_debug_flag_exists(self) -> None:
-        """The -g flag should be accepted by build, emit-llvm, and jit."""
+        """The ``-g`` flag must be accepted by the argparse parser."""
 
-        # Just check the argument parser accepts -g
         import argparse
 
         from mapanare.cli import _add_debug_flag
@@ -300,13 +110,59 @@ class TestDebugCLIFlag:
         assert ns.debug is False
 
 
+class TestDebugFlagDeferred:
+    """v4.29.0: using ``-g`` prints a stderr warning naming v5.x."""
+
+    def _run_with_g(self) -> subprocess.CompletedProcess[str]:
+        fd = tempfile.NamedTemporaryFile(mode="w", suffix=".mn", delete=False, encoding="utf-8")
+        fd.write('fn main() {\n    print("hello")\n}\n')
+        fd.close()
+        out = tempfile.NamedTemporaryFile(suffix=".ll", delete=False).name
+        return subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "mapanare.cli",
+                "emit-llvm",
+                fd.name,
+                "-o",
+                out,
+                "-g",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(_PROJECT_ROOT),
+        )
+
+    def test_warning_mentions_noop(self) -> None:
+        result = self._run_with_g()
+        assert "no-op" in result.stderr.lower()
+
+    def test_warning_names_tracking_version(self) -> None:
+        """The warning must say where the real feature is tracked."""
+        result = self._run_with_g()
+        assert "v5" in result.stderr.lower()
+
+    def test_warning_written_to_stderr_not_stdout(self) -> None:
+        result = self._run_with_g()
+        assert "debug" in result.stderr.lower()
+        # stdout can be empty or contain the IR; the warning must not leak
+        # into it (would corrupt piped output).
+        assert "debug info" not in result.stdout.lower()
+
+
 # ---------------------------------------------------------------------------
-# Task 9: No debug info when disabled
+# Regression gate: no DWARF metadata when debug is off
 # ---------------------------------------------------------------------------
 
 
 class TestNoDebugWhenDisabled:
-    """Verify no debug metadata when debug is off."""
+    """The emitter must not leak DWARF metadata without ``-g``.
+
+    This is the regression gate: the day DWARF emission lands, whoever
+    wires it in will trip this test, which forces them to update the
+    file rather than silently enable DWARF for every build.
+    """
 
     def test_no_di_compile_unit(self) -> None:
         ir = _emit_without_debug("fn main() {}")
@@ -329,12 +185,12 @@ class TestNoDebugWhenDisabled:
 
 
 # ---------------------------------------------------------------------------
-# MIR-level span tests
+# MIR source-span threading (foundation for future DWARF)
 # ---------------------------------------------------------------------------
 
 
 class TestMIRSpanThreading:
-    """Verify AST spans are preserved in MIR instructions."""
+    """Verify AST spans are preserved through MIR lowering."""
 
     def test_source_span_on_module(self) -> None:
         ast = parse("fn main() {}", filename="test.mn")
@@ -357,7 +213,6 @@ class TestMIRSpanThreading:
         check_or_raise(ast, filename="test.mn")
         mir = lower(ast, module_name="test", source_file="test.mn")
         fn = mir.functions[0]
-        # At least some instructions should have spans
         has_span = any(inst.span is not None for bb in fn.blocks for inst in bb.instructions)
         assert has_span, "No instructions have source spans"
 
@@ -369,94 +224,13 @@ class TestMIRSpanThreading:
         assert span.end_column == 20
 
 
-# ---------------------------------------------------------------------------
-# Direct emitter tests with manually constructed MIR
-# ---------------------------------------------------------------------------
-
-
-class TestDirectEmitterDebug:
-    """Test DWARF emission with manually constructed MIR modules."""
-
-    def test_empty_module_with_debug(self) -> None:
-        from mapanare.emit_llvm_mir import LLVMMIREmitter
-
-        mir = MIRModule(name="empty", source_file="empty.mn", source_directory=".")
-        emitter = LLVMMIREmitter(module_name="empty", debug=True)
-        llvm_mod = emitter.emit(mir)
-        ir_str = str(llvm_mod)
-        assert "!DICompileUnit" in ir_str
-        assert "!DIFile" in ir_str
-
-    def test_function_with_span(self) -> None:
-        from mapanare.emit_llvm_mir import LLVMMIREmitter
-
-        fn = MIRFunction(
-            name="my_fn",
-            params=[],
-            return_type=mir_void(),
-            blocks=[
-                BasicBlock(
-                    label="entry",
-                    instructions=[
-                        Return(val=None, span=SourceSpan(line=5, column=1)),
-                    ],
-                )
-            ],
-            source_line=3,
-            source_file="manual.mn",
-        )
-        mir = MIRModule(
-            name="manual",
-            source_file="manual.mn",
-            source_directory="/manual",
-            functions=[fn],
-        )
-        emitter = LLVMMIREmitter(module_name="manual", debug=True)
-        llvm_mod = emitter.emit(mir)
-        ir_str = str(llvm_mod)
-        assert 'name: "my_fn"' in ir_str
-        assert "line: 3" in ir_str
-        assert "!DILocation" in ir_str
-
-    def test_di_basic_types(self) -> None:
-        from mapanare.emit_llvm_mir import LLVMMIREmitter
-
-        mir = MIRModule(name="types", source_file="types.mn", source_directory=".")
-        emitter = LLVMMIREmitter(module_name="types", debug=True)
-        emitter.emit(mir)
-
-        # Test type creation
-        di_int = emitter._get_di_type(mir_int())
-        assert di_int is not None
-
-        from mapanare.mir import mir_bool, mir_float
-
-        di_float = emitter._get_di_type(mir_float())
-        assert di_float is not None
-
-        di_bool = emitter._get_di_type(mir_bool())
-        assert di_bool is not None
-
-        # Void should return None
-        di_void = emitter._get_di_type(mir_void())
-        assert di_void is None
-
-    def test_struct_debug_type(self) -> None:
-        from mapanare.emit_llvm_mir import LLVMMIREmitter
-
-        mir = MIRModule(
-            name="struct_test",
-            source_file="s.mn",
-            source_directory=".",
-            structs={"Vec2": [("x", mir_int()), ("y", mir_int())]},
-        )
-        emitter = LLVMMIREmitter(module_name="struct_test", debug=True)
-        emitter.emit(mir)
-
-        struct_type = MIRType(TypeInfo(kind=TypeKind.STRUCT, name="Vec2"))
-        di_struct = emitter._get_di_type(struct_type)
-        assert di_struct is not None
-
-        ir_str = str(emitter.module)
-        assert "DW_TAG_structure_type" in ir_str
-        assert 'name: "Vec2"' in ir_str
+# ``pytest`` and ``HAS_LLVMLITE`` are retained for backward compatibility
+# with other modules that may import from this file in the future.
+__all__ = [
+    "HAS_LLVMLITE",
+    "TestDebugCLIFlag",
+    "TestDebugFlagDeferred",
+    "TestNoDebugWhenDisabled",
+    "TestMIRSpanThreading",
+]
+_unused = pytest  # keep the import used

@@ -43,6 +43,24 @@ fn unknown_type() -> TypeInfo {
     return make_type("<unknown>")
 }
 
+// v4.53.0: UNRESOLVED/ERROR split (A8)
+fn error_type() -> TypeInfo {
+    return make_type("<error>")
+}
+
+fn type_is_error(ti: TypeInfo) -> Bool {
+    return ti.name == "<error>"
+}
+
+// Returns true for <unknown>, <unresolved>, or <error> — any type where
+// downstream checks should be skipped (either "not yet known" or "already broken").
+fn type_should_skip(name: String) -> Bool {
+    if name == "<unknown>" { return true }
+    if name == "<unresolved>" { return true }
+    if name == "<error>" { return true }
+    return false
+}
+
 fn int_type() -> TypeInfo {
     return make_type("Int")
 }
@@ -304,7 +322,9 @@ struct SemState {
     errors: List<SemanticError>,
     scope: Scope,
     filename: String,
-    current_span: Span
+    current_span: Span,
+    current_fn_return: TypeInfo,
+    current_fn_name: String
 }
 
 struct InferResult {
@@ -320,7 +340,7 @@ fn new_sem_state(filename: String) -> SemState {
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
     let zero_span: Span = make_span(0, 0, 0, 0)
-    return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span }
+    return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "" }
 }
 
 fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult {
@@ -339,7 +359,7 @@ fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState {
     let err: SemanticError = new_semantic_error(msg, line, col, st.filename)
     let mut errs: List<SemanticError> = st.errors
     errs.push(err)
-    return new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span }
+    return new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
 }
 
 fn add_error_here(st: SemState, msg: String) -> SemState {
@@ -356,14 +376,14 @@ fn add_error_msg(st: SemState, msg: String) -> SemState {
 
 fn push_scope(st: SemState) -> SemState {
     let child: Scope = new_scope(Some(st.scope))
-    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span }
+    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
     return new_st
 }
 
 fn pop_scope(st: SemState) -> SemState {
     match st.scope.parent {
         Some(parent) => {
-            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span }
+            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
             return new_st
         },
         _ => { return st }
@@ -371,22 +391,39 @@ fn pop_scope(st: SemState) -> SemState {
 }
 
 fn set_span(st: SemState, span: Span) -> SemState {
-    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span }
+    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
 }
 
 fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState {
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
-    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span }
+    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
     return new_st
+}
+
+fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState {
+    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name }
 }
 
 // ---------------------------------------------------------------------------
 // Type compatibility checking
 // ---------------------------------------------------------------------------
 
+fn is_type_param(name: String) -> Bool {
+    // Single uppercase letter (T, A, B, ...) or <builtin> are type parameters
+    if name == "<builtin>" { return true }
+    if len(name) == 1 {
+        let c: Int = name.byte_at(0)
+        if c >= 65 && c <= 90 { return true }
+    }
+    return false
+}
+
 fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
-    if a.name == "<unknown>" { return true }
-    if b.name == "<unknown>" { return true }
+    // v4.53.0: skip check for unknown/unresolved/error types
+    if type_should_skip(a.name) { return true }
+    if type_should_skip(b.name) { return true }
+    if is_type_param(a.name) { return true }
+    if is_type_param(b.name) { return true }
     if a.is_function {
         if b.is_function {
             // Compare param counts
@@ -421,7 +458,7 @@ fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
 fn is_numeric_type(name: String) -> Bool {
     if name == "Int" { return true }
     if name == "Float" { return true }
-    if name == "<unknown>" { return true }
+    if type_should_skip(name) { return true }
     return false
 }
 
@@ -430,7 +467,7 @@ fn is_arithmetic_operand(name: String) -> Bool {
     if name == "Float" { return true }
     if name == "String" { return true }
     if name == "Tensor" { return true }
-    if name == "<unknown>" { return true }
+    if type_should_skip(name) { return true }
     return false
 }
 
@@ -479,6 +516,17 @@ fn check_logical_result(left: String, right: String) -> String {
 
 // ---------------------------------------------------------------------------
 // Type resolution — convert TypeExpr AST nodes to TypeInfo
+// ---------------------------------------------------------------------------
+// Cb.9a (v4.144.0): The Python semantic resolver at semantic.py:416-445
+// handles qualified type references (e.g., device.DeviceKind) via a
+// module_path list on NamedType/GenericType AST nodes. The self-hosted
+// AST uses a flattened string ("device.DeviceKind") in TypeExpr::Named,
+// so resolve_type_expr below passes the dotted name to make_type() as-is.
+// This works for struct fields (the name round-trips through the emitter)
+// but will silently mis-classify if someone does `match` on a qualified
+// enum. Full cross-module type resolution requires adding a module_path
+// field to TypeExpr and mirroring the Python resolver's import-scope
+// lookup. Tracked as Cb.9a for v5.x.
 // ---------------------------------------------------------------------------
 
 fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
@@ -541,12 +589,16 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "ident" {
         let name: String = expr_ident_name(expr)
+        // v4.128.0 (Sh.8): bare `None` is a variant of Option. Mirrors
+        // mapanare/lower.py::_lower_identifier. Prevents "Undefined
+        // variable 'None'" at mnc_all.mn:3504 (`let mut guard: Option<Expr> = None`).
+        if name == "None" { return new_infer_result(make_type("Option"), st) }
         let result: Option<Symbol> = scope_lookup(st.scope, name)
         match result {
             Some(sym) => { return new_infer_result(sym.type_info, st) },
             _ => {
                 let st_ident_err: SemState = add_error_here(st, "Undefined variable '" + name + "'")
-                return new_infer_result(unknown_type(), st_ident_err)
+                return new_infer_result(error_type(), st_ident_err)
             }
         }
     }
@@ -557,6 +609,8 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "method_call" {
         let obj_r: InferResult = infer_expr(st, expr_method_obj(expr))
+        // v4.53.0: cascade suppression — ERROR receiver propagates
+        if type_is_error(obj_r.type_info) { return new_infer_result(error_type(), obj_r.st) }
         let mut st_method: SemState = obj_r.st
         let args: List<Expr> = expr_method_args(expr)
         let mut i_method: Int = 0
@@ -572,6 +626,8 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "field_access" {
         let obj_r_field: InferResult = infer_expr(st, expr_field_obj(expr))
+        // v4.53.0: cascade suppression — ERROR receiver propagates
+        if type_is_error(obj_r_field.type_info) { return new_infer_result(error_type(), obj_r_field.st) }
         return new_infer_result(unknown_type(), obj_r_field.st)
     }
 
@@ -581,6 +637,11 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "index" {
         let obj_r_idx: InferResult = infer_expr(st, expr_index_obj(expr))
+        // v4.53.0: cascade suppression — ERROR receiver propagates
+        if type_is_error(obj_r_idx.type_info) {
+            let idx_r_skip: InferResult = infer_expr(obj_r_idx.st, expr_index_idx(expr))
+            return new_infer_result(error_type(), idx_r_skip.st)
+        }
         let idx_r: InferResult = infer_expr(obj_r_idx.st, expr_index_idx(expr))
         // List<T>[i] -> T
         if obj_r_idx.type_info.name == "List" {
@@ -615,7 +676,37 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
 
     if ek == "error_prop" {
         let ir_errprop: InferResult = infer_expr(st, expr_errorprop_inner(expr))
-        return new_infer_result(unknown_type(), ir_errprop.st)
+        // v4.53.0: cascade suppression — ERROR inner propagates without new error
+        if type_is_error(ir_errprop.type_info) { return new_infer_result(error_type(), ir_errprop.st) }
+        let mut st_ep: SemState = ir_errprop.st
+        let inner_name: String = ir_errprop.type_info.name
+        // v4.52.0: validate ? operator (D1 fix)
+        if !type_should_skip(inner_name) {
+            if inner_name != "Result" {
+                if inner_name != "Option" {
+                    st_ep = add_error_here(st_ep, "`?` requires `Result` or `Option`, got `" + inner_name + "`")
+                    return new_infer_result(error_type(), st_ep)
+                }
+            }
+        }
+        // Check enclosing function returns compatible type
+        if inner_name == "Result" {
+            if !type_should_skip(st_ep.current_fn_return.name) {
+                if st_ep.current_fn_return.name != "Result" {
+                    st_ep = add_error_here(st_ep, "`?` on a `Result` value requires the enclosing function `" + st_ep.current_fn_name + "` to return `Result`")
+                    return new_infer_result(error_type(), st_ep)
+                }
+            }
+        }
+        if inner_name == "Option" {
+            if !type_should_skip(st_ep.current_fn_return.name) {
+                if st_ep.current_fn_return.name != "Option" {
+                    st_ep = add_error_here(st_ep, "`?` on an `Option` value requires the enclosing function `" + st_ep.current_fn_name + "` to return `Option`")
+                    return new_infer_result(error_type(), st_ep)
+                }
+            }
+        }
+        return new_infer_result(unknown_type(), st_ep)
     }
 
     if ek == "list_lit" {
@@ -640,6 +731,25 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
         }
         let empty_args: List<TypeInfo> = []
         return new_infer_result(make_generic_type("List", empty_args), st)
+    }
+
+    // Tensor literal (v4.42.0)
+    if ek == "tensor_lit" {
+        let elements: List<Expr> = expr_tensor_elements(expr)
+        let mut st_tens: SemState = st
+        let mut i_tens: Int = 0
+        for _ in 0..2000 {
+            if i_tens >= len(elements) {
+                let args_tens: List<TypeInfo> = []
+                return new_infer_result(make_generic_type("Tensor", args_tens), st_tens)
+            }
+            let elem_t: Expr = elements[i_tens]
+            let er_tens: InferResult = infer_expr(st_tens, elem_t)
+            st_tens = er_tens.st
+            i_tens = i_tens + 1
+        }
+        let args2_t: List<TypeInfo> = []
+        return new_infer_result(make_generic_type("Tensor", args2_t), st_tens)
     }
 
     if ek == "construct" {
@@ -698,6 +808,9 @@ fn check_binary_expr(st: SemState, left: Expr, op: String, right: Expr) -> Infer
     let lt: String = lr.type_info.name
     let rt: String = rr.type_info.name
     let st2: SemState = rr.st
+    // v4.53.0: cascade suppression — ERROR on either side propagates
+    if lt == "<error>" { return new_infer_result(error_type(), st2) }
+    if rt == "<error>" { return new_infer_result(error_type(), st2) }
 
     // Arithmetic operators
     if op == "+" { return check_arithmetic_binary(st2, lt, rt, op, lr.type_info, rr.type_info) }
@@ -727,7 +840,7 @@ fn check_binary_expr(st: SemState, left: Expr, op: String, right: Expr) -> Infer
 fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult {
     // Tensor element-wise operations
     if lt == "Tensor" {
-        if rt != "<unknown>" {
+        if !type_should_skip(rt) {
             if rt != "Tensor" {
                 if rt != "Int" {
                     if rt != "Float" {
@@ -740,7 +853,7 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
         return new_infer_result(make_type("Tensor"), st)
     }
     if rt == "Tensor" {
-        if lt != "<unknown>" {
+        if !type_should_skip(lt) {
             if lt != "Int" {
                 if lt != "Float" {
                     let st_tensor_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for " + lt + " and Tensor")
@@ -752,22 +865,22 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
     }
 
     // Non-tensor arithmetic
-    if lt != "<unknown>" {
+    if !type_should_skip(lt) {
         if lt != "Int" {
             if lt != "Float" {
                 if lt != "String" {
                     let st_arith_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
-                    return new_infer_result(unknown_type(), st_arith_lt)
+                    return new_infer_result(error_type(), st_arith_lt)
                 }
             }
         }
     }
-    if rt != "<unknown>" {
+    if !type_should_skip(rt) {
         if rt != "Int" {
             if rt != "Float" {
                 if rt != "String" {
                     let st_arith_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
-                    return new_infer_result(unknown_type(), st_arith_rt)
+                    return new_infer_result(error_type(), st_arith_rt)
                 }
             }
         }
@@ -779,12 +892,12 @@ fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, lef
 
 fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> InferResult {
     let mut st2: SemState = st
-    if lt != "<unknown>" {
+    if !type_should_skip(lt) {
         if lt != "Bool" {
             st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + lt)
         }
     }
-    if rt != "<unknown>" {
+    if !type_should_skip(rt) {
         if rt != "Bool" {
             st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + rt)
         }
@@ -794,12 +907,12 @@ fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> Inf
 
 fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult {
     let mut st2: SemState = st
-    if lt != "<unknown>" {
+    if !type_should_skip(lt) {
         if lt != "Tensor" {
             st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + lt)
         }
     }
-    if rt != "<unknown>" {
+    if !type_should_skip(rt) {
         if rt != "Tensor" {
             st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + rt)
         }
@@ -822,13 +935,15 @@ fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, 
 fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
     let or: InferResult = infer_expr(st, operand)
     let ot: String = or.type_info.name
+    // v4.53.0: cascade suppression
+    if ot == "<error>" { return new_infer_result(error_type(), or.st) }
 
     if op == "-" {
-        if ot != "<unknown>" {
+        if !type_should_skip(ot) {
             if ot != "Int" {
                 if ot != "Float" {
                     let st_neg: SemState = add_error_here(or.st, "Unary '-' not supported for type " + ot)
-                    return new_infer_result(or.type_info, st_neg)
+                    return new_infer_result(error_type(), st_neg)
                 }
             }
         }
@@ -836,10 +951,10 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
     }
 
     if op == "!" {
-        if ot != "<unknown>" {
+        if !type_should_skip(ot) {
             if ot != "Bool" {
                 let st_not: SemState = add_error_here(or.st, "Unary '!' requires Bool, got " + ot)
-                return new_infer_result(bool_type(), st_not)
+                return new_infer_result(error_type(), st_not)
             }
         }
         return new_infer_result(bool_type(), or.st)
@@ -903,11 +1018,13 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
             },
             _ => {
                 let st_undef: SemState = add_error_here(st, "Undefined function '" + name + "'")
-                return new_infer_result(unknown_type(), st_undef)
+                return new_infer_result(error_type(), st_undef)
             }
         }
     }
     let cr: InferResult = infer_expr(st, callee)
+    // v4.53.0: cascade suppression — ERROR callee propagates
+    if type_is_error(cr.type_info) { return new_infer_result(error_type(), cr.st) }
     return new_infer_result(unknown_type(), cr.st)
 }
 
@@ -927,8 +1044,9 @@ fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> Inf
                 if sym.mutable == false {
                     st_assign = add_error_here(st_assign, "Cannot assign to immutable variable '" + name + "'")
                 }
-                if sym.type_info.name != "<unknown>" {
-                    if vr.type_info.name != "<unknown>" {
+                // v4.53.0: skip type check if either side is error/unknown
+                if !type_should_skip(sym.type_info.name) {
+                    if !type_should_skip(vr.type_info.name) {
                         if types_compatible(sym.type_info, vr.type_info) == false {
                             st_assign = add_error_here(st_assign, "Type mismatch in assignment to '" + name + "'")
                         }
@@ -955,7 +1073,8 @@ fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Optio
     let cr: InferResult = infer_expr(st, cond)
     let mut st2: SemState = cr.st
 
-    if cr.type_info.name != "<unknown>" {
+    // v4.53.0: skip check for unknown/error types
+    if !type_should_skip(cr.type_info.name) {
         if cr.type_info.name != "Bool" {
             st2 = add_error_here(st2, "If condition must be Bool, got " + cr.type_info.name)
         }
@@ -1000,7 +1119,22 @@ fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferR
         let arm: MatchArm = arms[i]
         let arm_st: SemState = push_scope(st2)
         let bound_st: SemState = bind_pattern(arm_st, arm.pattern)
-        let after_arm: SemState = check_match_arm_body(bound_st, arm.body)
+        // v4.35.0: type-check optional guard (must be Bool)
+        // v4.52.0: actually enforce Bool type (D2 fix)
+        let mut guarded_st: SemState = bound_st
+        match arm.guard {
+            Some(g) => {
+                let gr: InferResult = infer_expr(bound_st, g)
+                guarded_st = gr.st
+                if !type_should_skip(gr.type_info.name) {
+                    if gr.type_info.name != "Bool" {
+                        guarded_st = add_error_here(guarded_st, "match guard must be a Bool expression, got " + gr.type_info.name)
+                    }
+                }
+            },
+            None => {}
+        }
+        let after_arm: SemState = check_match_arm_body(guarded_st, arm.body)
         st2 = pop_scope(after_arm)
         i = i + 1
     }
@@ -1035,6 +1169,13 @@ fn bind_pattern(st: SemState, pat: Pattern) -> SemState {
             i = i + 1
         }
         return st2
+    }
+    // v4.35.0: or-patterns — bind from first alternative (all have same names)
+    if pk == "or" {
+        let alts: List<Pattern> = pattern_or_alts(pat)
+        if len(alts) > 0 {
+            return bind_pattern(st, alts[0])
+        }
     }
     return st
 }
@@ -1096,7 +1237,7 @@ fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult {
             },
             _ => {
                 let st_err: SemState = add_error_here(st, "Undefined agent '" + name + "'")
-                return new_infer_result(unknown_type(), st_err)
+                return new_infer_result(error_type(), st_err)
             }
         }
     }
@@ -1143,8 +1284,8 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
                     if sym.type_info.is_function {
                         if len(sym.type_info.param_types) > 0 {
                             let expected: TypeInfo = sym.type_info.param_types[0]
-                            if expected.name != "<unknown>" {
-                                if lr.type_info.name != "<unknown>" {
+                            if !type_should_skip(expected.name) {
+                                if !type_should_skip(lr.type_info.name) {
                                     if types_compatible(expected, lr.type_info) == false {
                                         let st3_mismatch: SemState = add_error_here(st2, "Pipe type mismatch: piped to '" + name + "'")
                                         match sym.type_info.return_type {
@@ -1168,7 +1309,7 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
             },
             _ => {
                 let st3_undef: SemState = add_error_here(st2, "Undefined function '" + name + "'")
-                return new_infer_result(unknown_type(), st3_undef)
+                return new_infer_result(error_type(), st3_undef)
             }
         }
     }
@@ -1219,7 +1360,14 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState {
     }
     if sk == "while" {
         let wr: InferResult = infer_expr(st, stmt_while_cond(stmt))
-        let inner: SemState = push_scope(wr.st)
+        let mut st_while: SemState = wr.st
+        // v4.52.0: while condition must be Bool (D3 fix)
+        if !type_should_skip(wr.type_info.name) {
+            if wr.type_info.name != "Bool" {
+                st_while = add_error_here(st_while, "While condition must be Bool, got " + wr.type_info.name)
+            }
+        }
+        let inner: SemState = push_scope(st_while)
         let after: SemState = check_block(inner, stmt_while_body(stmt))
         return pop_scope(after)
     }
@@ -1248,8 +1396,9 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
     let mut st2: SemState = vr.st
 
     // Check annotation matches value type
-    if ann_type.name != "<unknown>" {
-        if vr.type_info.name != "<unknown>" {
+    // v4.53.0: skip if either side is unknown/error (cascade suppression)
+    if !type_should_skip(ann_type.name) {
+        if !type_should_skip(vr.type_info.name) {
             if types_compatible(ann_type, vr.type_info) == false {
                 st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name)
             }
@@ -1258,7 +1407,7 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
 
     // Use annotation if available, otherwise inferred
     let resolved: TypeInfo = ann_type
-    if ann_type.name == "<unknown>" {
+    if type_should_skip(ann_type.name) {
         let resolved2: TypeInfo = vr.type_info
         let sym: Symbol = new_symbol(name, "variable", resolved2, mutable)
         return define_in_scope(st2, name, sym)
@@ -1298,7 +1447,7 @@ fn check_signal_decl(st: SemState, name: String, mutable: Bool, type_ann: Option
     let vr: InferResult = infer_expr(st, value)
     let ann_type: TypeInfo = resolve_type_opt(type_ann)
     let resolved: TypeInfo = ann_type
-    if ann_type.name == "<unknown>" {
+    if type_should_skip(ann_type.name) {
         let resolved2: TypeInfo = vr.type_info
         let mut args: List<TypeInfo> = []
         args.push(resolved2)
@@ -1317,7 +1466,7 @@ fn check_stream_decl(st: SemState, name: String, type_ann: Option<TypeExpr>, val
     let vr: InferResult = infer_expr(st, value)
     let ann_type: TypeInfo = resolve_type_opt(type_ann)
     let resolved: TypeInfo = ann_type
-    if ann_type.name == "<unknown>" {
+    if type_should_skip(ann_type.name) {
         let resolved2: TypeInfo = vr.type_info
         let args: List<TypeInfo> = []
         let stream_type: TypeInfo = make_generic_type("Stream", args)
@@ -1348,6 +1497,16 @@ fn register_definitions(st: SemState, program: Program) -> SemState {
 
 fn register_def(st: SemState, def: Definition) -> SemState {
     let dk: String = def_kind(def)
+    // v4.78.0 (CARRY_FORWARD A10b): handle const_def early, before the
+    // long if-chain, to work around a codegen issue where later branches
+    // are unreachable in the compiled binary.
+    if dk == "const_def" {
+        let cn: String = def_const_name(def)
+        let cte: TypeExpr = def_const_type_expr(def)
+        let cty: TypeInfo = resolve_type_expr(cte)
+        let csym: Symbol = new_symbol(cn, "variable", cty, false)
+        return define_in_scope(st, cn, csym)
+    }
     if dk == "fn_def" {
         let data: FnDefData = def_fn_data(def)
         let mut params: List<TypeInfo> = []
@@ -1377,7 +1536,13 @@ fn register_def(st: SemState, def: Definition) -> SemState {
     if dk == "struct_def" {
         let data: StructDefData = def_struct_data(def)
         let sym_struct: Symbol = new_symbol(data.name, "struct", make_type(data.name), false)
-        return define_in_scope(st, data.name, sym_struct)
+        let mut st2: SemState = define_in_scope(st, data.name, sym_struct)
+        // Register __new_StructName constructor function
+        let ctor_name: String = "__new_" + data.name
+        let ctor_type: TypeInfo = make_builtin_fn_type(make_type(data.name))
+        let ctor_sym: Symbol = new_symbol(ctor_name, "function", ctor_type, false)
+        st2 = define_in_scope(st2, ctor_name, ctor_sym)
+        return st2
     }
     if dk == "enum_def" {
         let data: EnumDefData = def_enum_data(def)
@@ -1448,6 +1613,18 @@ fn register_def(st: SemState, def: Definition) -> SemState {
         }
         return st2_trait
     }
+    if dk == "let_def" {
+        let let_name: String = def_let_name(def)
+        let let_type_name: String = def_let_type(def)
+        let mut let_ty: TypeInfo = unknown_type()
+        if let_type_name == "Int" { let_ty = int_type() }
+        if let_type_name == "Float" { let_ty = float_type() }
+        if let_type_name == "Bool" { let_ty = bool_type() }
+        if let_type_name == "String" { let_ty = string_type() }
+        let sym_let: Symbol = new_symbol(let_name, "variable", let_ty, false)
+        return define_in_scope(st, let_name, sym_let)
+    }
+    // const_def handled at top of function (v4.78.0, CARRY_FORWARD A10b)
     // impl_def — methods handled in second pass
     return st
 }
@@ -1490,7 +1667,9 @@ fn check_def(st: SemState, def: Definition) -> SemState {
 
 fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
     let inner: SemState = push_scope(set_span(st, data.span))
-    let mut st2: SemState = inner
+    // v4.52.0: set function context for ? operator validation
+    let ret_type: TypeInfo = resolve_type_opt(data.return_type)
+    let mut st2: SemState = set_fn_context(inner, data.name, ret_type)
 
     // Register parameters
     let mut pi: Int = 0
@@ -1852,6 +2031,35 @@ fn register_builtins(st: SemState) -> SemState {
     st2 = define_in_scope(st2, "gpu_tensor_div", gpu_tdiv_sym)
     let gpu_tmat_sym: Symbol = new_symbol("gpu_tensor_matmul", "function", make_builtin_fn_type(make_type("List")), false)
     st2 = define_in_scope(st2, "gpu_tensor_matmul", gpu_tmat_sym)
+
+    // String methods (lowered from .method() calls to function calls)
+    let sw_sym: Symbol = new_symbol("starts_with", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "starts_with", sw_sym)
+    let ew_sym: Symbol = new_symbol("ends_with", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "ends_with", ew_sym)
+    let find_sym: Symbol = new_symbol("find", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "find", find_sym)
+    let contains_sym2: Symbol = new_symbol("contains", "function", make_builtin_fn_type(make_type("Bool")), false)
+    st2 = define_in_scope(st2, "contains", contains_sym2)
+    let substr_sym: Symbol = new_symbol("substr", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "substr", substr_sym)
+    let charat_sym: Symbol = new_symbol("char_at", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "char_at", charat_sym)
+    let byteat_sym: Symbol = new_symbol("byte_at", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "byte_at", byteat_sym)
+    let trim_sym: Symbol = new_symbol("trim", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "trim", trim_sym)
+    let toupper_sym: Symbol = new_symbol("to_upper", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "to_upper", toupper_sym)
+    let tolower_sym: Symbol = new_symbol("to_lower", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "to_lower", tolower_sym)
+    let replace_sym: Symbol = new_symbol("replace", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "replace", replace_sym)
+    let split_sym: Symbol = new_symbol("split", "function", make_builtin_fn_type(make_type("List")), false)
+    st2 = define_in_scope(st2, "split", split_sym)
+    // List methods
+    let push_sym: Symbol = new_symbol("push", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "push", push_sym)
 
     return st2
 }

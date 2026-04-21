@@ -14,7 +14,7 @@ from mapanare.ast_nodes import (
     LetBinding,
     StringLiteral,
 )
-from mapanare.emit_python import PythonEmitter
+from mapanare.lower import lower as build_mir
 from mapanare.parser import parse
 from mapanare.semantic import check
 
@@ -235,59 +235,6 @@ fn main() {
 
 
 # ---------------------------------------------------------------------------
-# Python emitter tests
-# ---------------------------------------------------------------------------
-
-
-class TestPythonEmitInterpolation:
-    """Test that the Python emitter generates correct f-strings."""
-
-    def test_simple_fstring(self) -> None:
-        source = """
-fn main() {
-    let name = "world"
-    print("Hello, ${name}!")
-}
-"""
-        prog = parse(source)
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
-        assert 'f"Hello, {name}!"' in code
-
-    def test_expr_fstring(self) -> None:
-        source = """
-fn main() {
-    let a = 1
-    let b = 2
-    print("sum: ${a + b}")
-}
-"""
-        prog = parse(source)
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
-        assert 'f"sum: {' in code
-
-    def test_no_interp_stays_repr(self) -> None:
-        source = """
-fn main() {
-    let x = "hello world"
-}
-"""
-        prog = parse(source)
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
-        assert "'hello world'" in code or '"hello world"' in code
-        assert "f'" not in code and 'f"' not in code
-
-    def test_multi_line_string_emit(self) -> None:
-        source = 'fn main() { let x = """line1\\nline2""" }'
-        prog = parse(source)
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
-        assert "line1" in code
-
-
-# ---------------------------------------------------------------------------
 # LLVM emitter tests
 # ---------------------------------------------------------------------------
 
@@ -298,9 +245,9 @@ class TestLLVMEmitInterpolation:
     def test_interp_emits_concat(self) -> None:
         """InterpString should generate __mn_str_concat calls in LLVM IR."""
         try:
-            from mapanare.emit_llvm import LLVMEmitter
+            from mapanare.emit_llvm_text import LLVMTextEmitter
         except ImportError:
-            pytest.skip("llvmlite not installed")
+            pytest.skip("emit_llvm_text not available")
 
         source = """
 fn main() {
@@ -309,18 +256,18 @@ fn main() {
 }
 """
         prog = parse(source)
-        emitter = LLVMEmitter()
-        module = emitter.emit_program(prog)
-        ir_code = str(module)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_code = emitter.emit(mir_module)
         # Should contain str_concat for joining interpolation parts
         assert "__mn_str_concat" in ir_code
 
     def test_plain_string_no_extra_concat(self) -> None:
         """A plain string without interpolation should NOT generate concat."""
         try:
-            from mapanare.emit_llvm import LLVMEmitter
+            from mapanare.emit_llvm_text import LLVMTextEmitter
         except ImportError:
-            pytest.skip("llvmlite not installed")
+            pytest.skip("emit_llvm_text not available")
 
         source = """
 fn main() {
@@ -328,60 +275,12 @@ fn main() {
 }
 """
         prog = parse(source)
-        emitter = LLVMEmitter()
-        module = emitter.emit_program(prog)
-        ir_code = str(module)
+        mir_module = build_mir(prog, module_name="test")
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_code = emitter.emit(mir_module)
         assert "__mn_str_concat" not in ir_code
 
 
 # ---------------------------------------------------------------------------
 # E2E tests
 # ---------------------------------------------------------------------------
-
-
-class TestE2EInterpolation:
-    """End-to-end tests: parse → semantic → emit → execute."""
-
-    def test_e2e_interpolation_python(self) -> None:
-        source = """
-fn main() {
-    let name = "Mapanare"
-    print("Hello, ${name}!")
-}
-"""
-        prog = parse(source)
-        errors = check(prog)
-        assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
-        assert 'f"Hello, {name}!"' in code
-
-    def test_e2e_multi_interpolation(self) -> None:
-        source = """
-fn main() {
-    let first = "Ada"
-    let last = "Lovelace"
-    print("${first} ${last}")
-}
-"""
-        prog = parse(source)
-        errors = check(prog)
-        assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
-        assert 'f"{first} {last}"' in code
-
-    def test_e2e_nested_expr(self) -> None:
-        source = """
-fn main() {
-    let x: Int = 10
-    let y: Int = 20
-    print("result: ${x + y}")
-}
-"""
-        prog = parse(source)
-        errors = check(prog)
-        assert len(errors) == 0
-        emitter = PythonEmitter()
-        code = emitter.emit(prog)
-        assert 'f"result: {' in code

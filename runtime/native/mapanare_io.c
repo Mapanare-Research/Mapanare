@@ -3,6 +3,16 @@
  *
  * Implements TCP networking, TLS (OpenSSL), extended file I/O, and
  * cross-platform event loop multiplexing.
+ *
+ * v4.31.0: MAPANARE_VERSION is now set at build time from the repo
+ * VERSION file. The Python bootstrap (scripts/build_stage1.py) and
+ * the Makefile both pass ``-DMAPANARE_VERSION="\"X.Y.Z\""`` so the
+ * User-Agent string below is regenerated on every build. The fallback
+ * ``"unknown"`` only fires if someone compiles a ``.c`` file outside
+ * the canonical build path; that is visible in the User-Agent header
+ * and easy to spot in HTTP logs. The v4.26.0 panel (Mamba, Viper)
+ * flagged the hardcoded ``Mapanare/3.42`` string as 5+ minor versions
+ * stale; wiring it to the macro closes the carry-forward.
  */
 
 #include "mapanare_io.h"
@@ -11,6 +21,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+
+#ifndef MAPANARE_VERSION
+/* Fallback when compiled outside the canonical build path. Visible
+ * in the User-Agent header so the wrong path is caught in the logs. */
+#define MAPANARE_VERSION "unknown"
+#endif
 
 /* =======================================================================
  * Platform-specific includes and helpers
@@ -70,35 +86,45 @@
  * 1. TCP Networking
  * ======================================================================= */
 
-static int s_net_initialized = 0;
-
-MN_IO_EXPORT int64_t __mn_net_init(void) {
-    if (s_net_initialized) return 0;
+/* v4.35.0: thread-safe net init via pthread_once / InitOnceExecuteOnce.
+ * Closes LOW carry-forward (s_net_initialized, 5th cycle). */
+static int s_net_init_result = 0;
 #ifdef _WIN32
+static INIT_ONCE s_net_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK net_init_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-        return -1;
+        s_net_init_result = -1;
     }
+    return TRUE;
+}
+#else
+#include <pthread.h>
+static pthread_once_t s_net_once = PTHREAD_ONCE_INIT;
+static void net_init_impl(void) {
+    /* No-op on POSIX — sockets work without init. */
+    s_net_init_result = 0;
+}
 #endif
-    s_net_initialized = 1;
-    return 0;
+
+MN_IO_EXPORT int64_t __mn_net_init(void) {
+#ifdef _WIN32
+    InitOnceExecuteOnce(&s_net_once, net_init_cb, NULL, NULL);
+#else
+    pthread_once(&s_net_once, net_init_impl);
+#endif
+    return s_net_init_result;
 }
 
 MN_IO_EXPORT void __mn_net_cleanup(void) {
 #ifdef _WIN32
-    if (s_net_initialized) {
-        WSACleanup();
-        s_net_initialized = 0;
-    }
-#else
-    s_net_initialized = 0;
+    WSACleanup();
 #endif
 }
 
 MN_IO_EXPORT int64_t __mn_tcp_connect(const char *host, int64_t port) {
-    if (!s_net_initialized) {
-        if (__mn_net_init() < 0) return -1;
-    }
+    if (__mn_net_init() < 0) return -1;
 
     struct addrinfo hints, *res = NULL, *rp;
     memset(&hints, 0, sizeof(hints));
@@ -131,9 +157,7 @@ MN_IO_EXPORT int64_t __mn_tcp_connect(const char *host, int64_t port) {
 }
 
 MN_IO_EXPORT int64_t __mn_tcp_listen(const char *host, int64_t port, int64_t backlog) {
-    if (!s_net_initialized) {
-        if (__mn_net_init() < 0) return -1;
-    }
+    if (__mn_net_init() < 0) return -1;
 
     struct addrinfo hints, *res = NULL;
     memset(&hints, 0, sizeof(hints));
@@ -297,14 +321,9 @@ static struct {
     fn_SSL_CTX_set_default_verify_paths SSL_CTX_set_default_verify_paths;
 } s_ssl = {0};
 
-/* Internal: load OpenSSL dynamically (thread-safe via atomic flag) */
-static int ssl_load_library(void) {
-    if (__atomic_load_n(&s_ssl.loaded, __ATOMIC_ACQUIRE))
-        return s_ssl.available ? 0 : -1;
-    int expected = 0;
-    if (!__atomic_compare_exchange_n(&s_ssl.loaded, &expected, 1, 0,
-                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
-        return s_ssl.available ? 0 : -1;
+/* v4.35.0: thread-safe SSL init via pthread_once / InitOnceExecuteOnce.
+ * Replaces atomic CAS pattern. Closes LOW carry-forward (ssl_load_library, 3rd cycle). */
+static void ssl_load_library_impl(void) {
     s_ssl.available = 0;
 
 #ifdef _WIN32
@@ -314,7 +333,7 @@ static int ssl_load_library(void) {
     s_ssl.libcrypto = LoadLibraryA("libcrypto-3-x64.dll");
     if (!s_ssl.libcrypto) s_ssl.libcrypto = LoadLibraryA("libcrypto-1_1-x64.dll");
     if (!s_ssl.libcrypto) s_ssl.libcrypto = LoadLibraryA("libeay32.dll");
-    if (!s_ssl.libssl || !s_ssl.libcrypto) return -1;
+    if (!s_ssl.libssl || !s_ssl.libcrypto) return;
 
     #define SSL_SYM(name) s_ssl.name = (fn_##name)GetProcAddress(s_ssl.libssl, #name)
     #define CRYPTO_SYM(name) s_ssl.name = (fn_##name)GetProcAddress(s_ssl.libcrypto, #name)
@@ -334,7 +353,7 @@ static int ssl_load_library(void) {
     if (!s_ssl.libcrypto) s_ssl.libcrypto = dlopen("libcrypto.dylib", RTLD_NOW);
     #endif
 
-    if (!s_ssl.libssl || !s_ssl.libcrypto) return -1;
+    if (!s_ssl.libssl || !s_ssl.libcrypto) return;
 
     #define SSL_SYM(name) s_ssl.name = (fn_##name)dlsym(s_ssl.libssl, #name)
     #define CRYPTO_SYM(name) s_ssl.name = (fn_##name)dlsym(s_ssl.libcrypto, #name)
@@ -361,11 +380,31 @@ static int ssl_load_library(void) {
         !s_ssl.SSL_new || !s_ssl.SSL_free || !s_ssl.SSL_set_fd ||
         !s_ssl.SSL_connect || !s_ssl.SSL_read || !s_ssl.SSL_write ||
         !s_ssl.SSL_shutdown || !s_ssl.SSL_ctrl) {
-        return -1;
+        return;
     }
 
     s_ssl.available = 1;
-    return 0;
+    s_ssl.loaded = 1;
+}
+
+#ifdef _WIN32
+static INIT_ONCE s_ssl_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK ssl_load_library_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    ssl_load_library_impl();
+    return TRUE;
+}
+#else
+static pthread_once_t s_ssl_once = PTHREAD_ONCE_INIT;
+#endif
+
+static int ssl_load_library(void) {
+#ifdef _WIN32
+    InitOnceExecuteOnce(&s_ssl_once, ssl_load_library_cb, NULL, NULL);
+#else
+    pthread_once(&s_ssl_once, ssl_load_library_impl);
+#endif
+    return s_ssl.available ? 0 : -1;
 }
 
 /* TLS context wrapper — holds SSL* and SSL_CTX* together */
@@ -852,18 +891,14 @@ MN_IO_EXPORT void __mn_event_loop_free(MnEventLoop *loop) {
  * TCP/TLS API. Uses mn_untag() from mapanare_core.h for pointer safety.
  * ======================================================================= */
 
-#include "mapanare_core.h"
-
-/* Utility: extract a null-terminated C string from MnString.
- * Caller must free the result. */
-static char *mnstr_to_cstr(MnString s) {
-    const char *data = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
-    char *cstr = (char *)malloc((size_t)s.len + 1);
-    if (!cstr) return NULL;
-    memcpy(cstr, data, (size_t)s.len);
-    cstr[s.len] = '\0';
-    return cstr;
-}
+/* v4.32.0 Phase 2.3 (Mamba H3, 6th cycle): the local mnstr_to_cstr
+ * that lived here since v1.2.0 had no ``len < 0`` guard — if
+ * ``__mn_file_read_or_empty`` returned its ``-1`` sentinel, the
+ * ``memcpy`` at the old line 879 would wrap ``(size_t)-1`` and crash.
+ * Replaced by the canonical ``static inline`` definition in
+ * ``mapanare_internal.h`` which guards ``len < 0``, ``data == NULL``,
+ * and ``len == 0``. */
+#include "mapanare_internal.h"
 
 MN_IO_EXPORT int64_t __mn_tcp_connect_str(MnString host, int64_t port) {
     char *chost = mnstr_to_cstr(host);
@@ -874,8 +909,9 @@ MN_IO_EXPORT int64_t __mn_tcp_connect_str(MnString host, int64_t port) {
 }
 
 MN_IO_EXPORT int64_t __mn_tcp_send_str(int64_t fd, MnString data) {
-    const char *buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
-    return __mn_tcp_send(fd, buf, data.len);
+    /* v4.100.0: data.data is now always a valid pointer (no more
+     * tagged-pointer bit-0 hack). */
+    return __mn_tcp_send(fd, data.data, (int64_t)data.len);
 }
 
 MN_IO_EXPORT MnString __mn_tcp_recv_str(int64_t fd, int64_t max_len) {
@@ -909,7 +945,7 @@ MN_IO_EXPORT int64_t __mn_tls_connect_str(int64_t fd, MnString hostname) {
 
 MN_IO_EXPORT int64_t __mn_tls_write_str(int64_t tls_ctx, MnString data) {
     void *ctx = (void *)(uintptr_t)tls_ctx;
-    const char *buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *buf = data.data;
     return __mn_tls_write(ctx, buf, data.len);
 }
 
@@ -1035,7 +1071,7 @@ static MnString evp_hash(MnString data, void *(*md_fn)(void), int digest_len) {
     unsigned char md[64]; /* big enough for SHA-512 */
     unsigned int md_len = 0;
 
-    const char *buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *buf = data.data;
 
     if (s_evp.EVP_DigestInit_ex(ctx, md_fn(), NULL) != 1 ||
         s_evp.EVP_DigestUpdate(ctx, buf, (size_t)data.len) != 1 ||
@@ -1068,8 +1104,8 @@ MN_IO_EXPORT MnString __mn_sha512_str(MnString data) {
 MN_IO_EXPORT MnString __mn_hmac_sha256_str(MnString key, MnString data) {
     if (evp_load() < 0 || !s_evp.HMAC) return __mn_str_empty();
 
-    const char *key_buf = (const char *)((uintptr_t)key.data & ~(uintptr_t)1);
-    const char *data_buf = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *key_buf = key.data;
+    const char *data_buf = data.data;
 
     unsigned char md[32];
     unsigned int md_len = 0;
@@ -1085,7 +1121,7 @@ MN_IO_EXPORT MnString __mn_hmac_sha256_str(MnString key, MnString data) {
 /* --- Hex encode/decode (pure C) --- */
 
 MN_IO_EXPORT MnString __mn_hex_encode_str(MnString data) {
-    const unsigned char *src = (const unsigned char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const unsigned char *src = (const unsigned char *)data.data;
     int64_t slen = data.len;
     int64_t olen = slen * 2;
     char *out = (char *)malloc((size_t)olen + 1);
@@ -1104,7 +1140,7 @@ MN_IO_EXPORT MnString __mn_hex_encode_str(MnString data) {
 }
 
 MN_IO_EXPORT MnString __mn_hex_decode_str(MnString data) {
-    const char *src = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *src = data.data;
     int64_t slen = data.len;
     if (slen % 2 != 0) return __mn_str_empty();
 
@@ -1139,7 +1175,7 @@ static const char b64_table[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 MN_IO_EXPORT MnString __mn_base64_encode_str(MnString data) {
-    const unsigned char *src = (const unsigned char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const unsigned char *src = (const unsigned char *)data.data;
     int64_t slen = data.len;
     int64_t olen = 4 * ((slen + 2) / 3);
     char *out = (char *)malloc((size_t)olen + 1);
@@ -1179,7 +1215,7 @@ static int b64_decode_char(char c) {
 }
 
 MN_IO_EXPORT MnString __mn_base64_decode_str(MnString data) {
-    const char *src = (const char *)((uintptr_t)data.data & ~(uintptr_t)1);
+    const char *src = data.data;
     int64_t slen = data.len;
     if (slen == 0 || slen % 4 != 0) return __mn_str_empty();
 
@@ -1214,22 +1250,30 @@ MN_IO_EXPORT MnString __mn_base64_decode_str(MnString data) {
 
 /* --- Random bytes --- */
 
+/* v4.35.0: thread-safe BCrypt init via InitOnceExecuteOnce.
+ * Closes LOW carry-forward (s_bcrypt, 3rd cycle). */
+#ifdef _WIN32
+typedef long (WINAPI *fn_BCryptGenRandom)(void*, unsigned char*, unsigned long, unsigned long);
+static HMODULE s_bcrypt = NULL;
+static fn_BCryptGenRandom s_bcrypt_gen = NULL;
+static INIT_ONCE s_bcrypt_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK bcrypt_init_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    s_bcrypt = LoadLibraryA("bcrypt.dll");
+    if (s_bcrypt) {
+        s_bcrypt_gen = (fn_BCryptGenRandom)GetProcAddress(s_bcrypt, "BCryptGenRandom");
+    }
+    return TRUE;
+}
+#endif
+
 MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n) {
     if (n <= 0) return __mn_str_empty();
     char *buf = (char *)malloc((size_t)n);
     if (!buf) return __mn_str_empty();
 
 #ifdef _WIN32
-    /* Use BCryptGenRandom (Vista+) — cached HMODULE to avoid leak */
-    typedef long (WINAPI *fn_BCryptGenRandom)(void*, unsigned char*, unsigned long, unsigned long);
-    static HMODULE s_bcrypt = NULL;
-    static fn_BCryptGenRandom s_bcrypt_gen = NULL;
-    if (!s_bcrypt) {
-        s_bcrypt = LoadLibraryA("bcrypt.dll");
-        if (s_bcrypt) {
-            s_bcrypt_gen = (fn_BCryptGenRandom)GetProcAddress(s_bcrypt, "BCryptGenRandom");
-        }
-    }
+    InitOnceExecuteOnce(&s_bcrypt_once, bcrypt_init_cb, NULL, NULL);
     if (s_bcrypt_gen && s_bcrypt_gen(NULL, (unsigned char *)buf, (unsigned long)n, 2 /*BCRYPT_USE_SYSTEM_PREFERRED_RNG*/) == 0) {
         MnString result = __mn_str_from_parts(buf, n);
         free(buf);
@@ -1372,7 +1416,7 @@ typedef struct {
 MN_IO_EXPORT int64_t __mn_regex_compile_str(MnString pattern) {
     if (pcre2_load() < 0) return 0;
 
-    const char *pat = (const char *)((uintptr_t)pattern.data & ~(uintptr_t)1);
+    const char *pat = pattern.data;
 
     MnRegexHandle *h = (MnRegexHandle *)calloc(1, sizeof(MnRegexHandle));
     if (!h) return 0;
@@ -1402,7 +1446,7 @@ MN_IO_EXPORT int64_t __mn_regex_exec_str(int64_t handle, MnString subject, int64
     MnRegexHandle *h = (MnRegexHandle *)(uintptr_t)handle;
     if (!h->code) return -1;
 
-    const char *subj = (const char *)((uintptr_t)subject.data & ~(uintptr_t)1);
+    const char *subj = subject.data;
 
     h->rc = s_pcre2.match(
         h->code,
@@ -1434,7 +1478,7 @@ MN_IO_EXPORT MnString __mn_regex_group_str(int64_t handle, MnString subject, int
     size_t end   = h->ovector[2 * group_idx + 1];
     if (start == MN_PCRE2_UNSET || end == MN_PCRE2_UNSET) return __mn_str_empty();
 
-    const char *subj = (const char *)((uintptr_t)subject.data & ~(uintptr_t)1);
+    const char *subj = subject.data;
     return __mn_str_from_parts(subj + start, (int64_t)(end - start));
 }
 
@@ -1480,8 +1524,8 @@ MN_IO_EXPORT MnString __mn_regex_replace_str(int64_t handle, MnString subject,
     /* If substitute function not available, return subject unchanged */
     if (!s_pcre2.substitute) return subject;
 
-    const char *subj = (const char *)((uintptr_t)subject.data & ~(uintptr_t)1);
-    const char *repl = (const char *)((uintptr_t)replacement.data & ~(uintptr_t)1);
+    const char *subj = subject.data;
+    const char *repl = replacement.data;
 
     uint32_t opts = MN_PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
     if (replace_all) opts |= MN_PCRE2_SUBSTITUTE_GLOBAL;
@@ -1607,10 +1651,12 @@ MN_IO_EXPORT MnString __mn_http_get(MnString url) {
         if (!tls_ctx) { __mn_tcp_close(fd); return __mn_str_empty(); }
     }
 
-    /* Build and send HTTP request */
+    /* Build and send HTTP request. v4.31.0: User-Agent is wired to
+     * the build-time MAPANARE_VERSION macro (see VERSION file). */
     char request[4096];
     snprintf(request, sizeof(request),
-             "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nUser-Agent: Mapanare/3.42\r\n\r\n",
+             "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
+             "User-Agent: Mapanare/" MAPANARE_VERSION "\r\n\r\n",
              path, host);
     size_t reqlen = strlen(request);
 

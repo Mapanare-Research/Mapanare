@@ -1,0 +1,170 @@
+{
+  "mapanare": [
+    {
+      "benchmark": "fib_recursive",
+      "opt_level": "O0",
+      "median_ms": 56.95,
+      "min_ms": 53.52,
+      "max_ms": 57.0,
+      "runs": 5,
+      "output": "fib(35) = 9227465",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "fib_recursive",
+      "opt_level": "O1",
+      "median_ms": 19.73,
+      "min_ms": 19.65,
+      "max_ms": 19.79,
+      "runs": 5,
+      "output": "fib(35) = 9227465",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "fib_recursive",
+      "opt_level": "O2",
+      "median_ms": 20.43,
+      "min_ms": 20.1,
+      "max_ms": 20.57,
+      "runs": 5,
+      "output": "fib(35) = 9227465",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "quicksort",
+      "opt_level": "O0",
+      "median_ms": 2.26,
+      "min_ms": 2.2,
+      "max_ms": 2.31,
+      "runs": 5,
+      "output": "checksum = 1396211322266280",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "quicksort",
+      "opt_level": "O1",
+      "median_ms": 1.91,
+      "min_ms": 1.9,
+      "max_ms": 1.92,
+      "runs": 5,
+      "output": "checksum = 1402947607347880",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "quicksort",
+      "opt_level": "O2",
+      "median_ms": 1.79,
+      "min_ms": 1.77,
+      "max_ms": 1.87,
+      "runs": 5,
+      "output": "checksum = 1403869743882920",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "matmul_naive",
+      "opt_level": "O0",
+      "median_ms": 2.12,
+      "min_ms": 2.07,
+      "max_ms": 2.14,
+      "runs": 5,
+      "output": "checksum = 377291403403184",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "matmul_naive",
+      "opt_level": "O1",
+      "median_ms": 1.28,
+      "min_ms": 1.28,
+      "max_ms": 1.32,
+      "runs": 5,
+      "output": "checksum = 376750935760816",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "matmul_naive",
+      "opt_level": "O2",
+      "median_ms": 1.39,
+      "min_ms": 1.38,
+      "max_ms": 1.43,
+      "runs": 5,
+      "output": "checksum = 378257175961520",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "string_concat",
+      "opt_level": "O0",
+      "median_ms": 91.9,
+      "min_ms": 91.46,
+      "max_ms": 94.19,
+      "runs": 5,
+      "output": "len = 50000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "string_concat",
+      "opt_level": "O1",
+      "median_ms": 99.07,
+      "min_ms": 96.74,
+      "max_ms": 102.23,
+      "runs": 5,
+      "output": "len = 50000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "string_concat",
+      "opt_level": "O2",
+      "median_ms": 102.31,
+      "min_ms": 101.48,
+      "max_ms": 103.25,
+      "runs": 5,
+      "output": "len = 50000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "opt_level": "O0",
+      "median_ms": 0.79,
+      "min_ms": 0.76,
+      "max_ms": 0.82,
+      "runs": 5,
+      "output": "total = 27472500",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "opt_level": "O1",
+      "median_ms": 0.58,
+      "min_ms": 0.57,
+      "max_ms": 0.59,
+      "runs": 5,
+      "output": "total = 27472500",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "agent_fanout",
+      "opt_level": "O2",
+      "median_ms": 0.76,
+      "min_ms": 0.73,
+      "max_ms": 0.8,
+      "runs": 5,
+      "output": "total = 27472500",
+      "correct": true,
+      "status": "ok"
+    }
+  ],
+  "cross_language": []
+}

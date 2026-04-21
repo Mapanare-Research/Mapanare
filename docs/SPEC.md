@@ -1,9 +1,19 @@
 # Mapanare Language Specification
 
-**Version:** 1.0.0
-**Status:** 1.0 Final
+**Version:** 4.143.0
+**Status:** Live — synced to the v4.143.0 cut (2026-04-18)
 
-Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code. A legacy Python transpiler backend exists for reference and bootstrapping only.
+Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
+
+> **Spec sync discipline.** Each v4.x panel release fact-checks this
+> spec against the live grammar (`mapanare/mapanare.lark`), type
+> system (`mapanare/types.py`), and self-hosted lexer
+> (`mapanare/self/lexer.mn`). The v4.129.0 documentation sync re-audits
+> §2.1 (keywords + bilingual master list), §2.1.1 (master keyword
+> table), §3 (type system), §6.3 (closures), §27.1 (stability count),
+> §28 (stdlib), and Appendix B (compilation pipeline) against the
+> v4.117.0–v4.128.0 changes. If you discover drift, open a
+> documentation issue against the specific section number.
 
 ---
 
@@ -12,7 +22,7 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 ### Goals
 
 - **AI-native primitives.** Agents, signals, streams, and tensors are built into the language, not imported from libraries. AI workflows are expressible without external frameworks.
-- **Compiled.** Mapanare is always compiled. The production backend targets LLVM for native machine code. A legacy Python transpiler backend exists for bootstrapping.
+- **Compiled.** Mapanare is always compiled. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
 - **Simple, familiar syntax.** The syntax draws from Rust (enums, pattern matching), TypeScript (type annotations, generics), and Python (readability, minimal ceremony).
 - **Type-safe with inference.** Static types catch errors at compile time. Type inference reduces annotation burden -- you write types where they clarify, the compiler infers the rest.
 - **Concurrency via agents and message passing.** No raw threads, no shared mutable state. Agents are concurrent actors that communicate through typed channels.
@@ -24,9 +34,9 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 
 - **Not a general-purpose systems language.** Mapanare does not aim to replace C or Rust for kernel development, device drivers, or bare-metal programming.
 - **Not interpreted.** All Mapanare code is compiled before execution. An interactive REPL exists (`mapanare repl`) but it compiles each input before evaluating.
-- **No garbage collector in native mode.** The LLVM backend uses arena-based memory management with scope-level cleanup and tag-bit freeing for heap-allocated strings. The Python transpiler backend inherits Python's GC, but that is a transitional implementation detail.
+- **No garbage collector in native mode.** The LLVM backend uses arena-based memory management with scope-level cleanup and tag-bit freeing for heap-allocated strings.
 - **No OOP class hierarchies.** There are no classes, no inheritance, no `extends`. Use agents for concurrent behavior and structs for data.
-- **Not backwards-compatible with Python syntax.** Although the legacy backend transpiles to Python, Mapanare's syntax is its own. Valid Python is not valid Mapanare and vice versa.
+- **Not backwards-compatible with Python syntax.** Mapanare's syntax is its own: valid Python is not valid Mapanare and vice versa. (The legacy Python transpiler emitter `mapanare/emit_python_mir.py` was removed in v4.58.0; `mapanare bind --lang python` is the canonical Python-interop path via compiled `.so` + ctypes.)
 
 ---
 
@@ -34,14 +44,116 @@ Mapanare is an AI-native compiled programming language where agents, signals, st
 
 ### 2.1 Keywords
 
-The following identifiers are reserved as keywords and cannot be used as variable or function names.
+The following identifiers are reserved as keywords and cannot be used
+as variable, function, struct, enum, or type names. Attempting to do so
+is a parse error (`MN-P-006: unexpected token`) — for example
+`let sino = 42` fails because `sino` is the Spanish form of `else`.
+All keywords are case-sensitive and match only whole-word tokens
+(`ifcount` is a valid identifier; `if` is not).
+
+Every keyword listed below is hard-reserved in both lexers: the
+Python bootstrap grammar at `mapanare/mapanare.lark:380-427` and the
+self-hosted lexer at `mapanare/self/lexer.mn:59-177`
+(`is_keyword` and `keyword_token_type`). The two lists are kept in
+lock-step. Section 2.1.1 gives the authoritative alphabetical master
+list; sections 2.1.2 onward group the same keywords by role for
+readability. Tokens reserved for *future* use but not currently
+tokenized live in Appendix C.
+
+#### 2.1.1 Reserved Keyword Master List
+
+Every token in the following table is reserved by both lexers and
+cannot appear as an identifier. Bilingual pairs are grouped on the
+same row; multi-alias keywords (`trait`/`modo`/`way`) list every
+spelling.
+
+| English | Spanish / alias | Category | AST role |
+|---|---|---|---|
+| `agent` | — | Declarations | Define an agent |
+| `assert` | — | Control flow | Boolean assertion |
+| `async` | — | Concurrency | Mark a function as a coroutine (see §29) |
+| `await` | — | Concurrency | Suspend until a `Future` resolves (see §29) |
+| `break` | `sal` | Control flow | Exit innermost loop |
+| `const` | — | Bindings | Compile-time constant: `const N: T = EXPR`; requires a type annotation and a constant-foldable initializer (see §2.1 note) |
+| `continue` | `sigue` | Control flow | Skip to next loop iteration |
+| — | `da` | Functions | Spanish form of `return` |
+| — | `di` | Statements | Print statement: `di expr` lowers to `print(expr)` |
+| `else` | `sino` | Control flow | Alternative branch |
+| `en` | — | Control flow | Spanish form of `in` |
+| `enum` | — | Declarations | Algebraic data type |
+| `export` | — | Modules | Re-export declaration |
+| `extern` | — | Functions | FFI declaration |
+| `false` | — | Literals | Boolean literal |
+| `fn` | — | Functions | Function declaration |
+| `for` | `cada` | Control flow | For-in loop |
+| `if` | `si` | Control flow | Conditional branch |
+| `impl` | — | Declarations | Method implementation block |
+| `import` | `usa` | Modules | Module import |
+| `in` | `en` | Control flow | For-loop iterable keyword |
+| `input` | — | Agents | Channel declaration inside `agent` block |
+| `let` | `pon` | Bindings | Immutable binding |
+| `match` | — | Control flow | Pattern matching expression |
+| `mut` | — | Bindings | Mutable binding modifier |
+| `new` | — | Declarations | Struct construction |
+| `none` | `nada` | Literals | `Option<T>::None` |
+| `output` | — | Agents | Channel declaration inside `agent` block |
+| `pipe` | — | Declarations | Pipeline declaration |
+| `pub` | — | Visibility | Public visibility modifier |
+| `return` | `da` | Functions | Return from function |
+| `self` | `yo` | Functions | Method receiver |
+| `signal` | — | Declarations | Reactive signal declaration |
+| `spawn` | — | Concurrency | Agent spawn |
+| `stream` | — | Declarations | Stream declaration |
+| `struct` | — | Declarations | Struct declaration |
+| `sync` | — | Concurrency | Agent/stream synchronization |
+| `Tensor` | — | Types | Tensor type constructor (§7) |
+| `trait` | `modo`, `way` | Declarations | Trait declaration |
+| `true` | — | Literals | Boolean literal |
+| `type` | `tipo` | Declarations | Type alias |
+| `while` | `mien` | Control flow | While loop |
+| `_` | — | Patterns | Wildcard pattern |
+
+> **Cross-reference audit (v4.113.0).** Every row above has been
+> checked against both lexer sources as of the v4.113.0 cut. If a
+> future change adds or removes a keyword in one lexer, this table
+> and the other lexer must be updated together; a mismatch is a
+> bootstrap-breaking bug. The audit procedure is recorded in
+> `docs/roadmap/v4/v4.113.0/artifacts/keyword-audit.md`.
 
 #### Bindings and Mutability
 
 | Keyword | Description |
 |---|---|
-| `let` | Declare an immutable variable binding. |
-| `mut` | Declare a mutable variable binding: `let mut x = 0`. |
+| `let` | Declare an immutable binding. Also used at module scope: a top-level `let NAME: Type = value` declares a module-level immutable value visible to every function in the module. |
+| `mut` | Declare a mutable variable binding: `let mut x = 0`. `let mut` is block-scoped and is not permitted at module scope (use `const` for module-level immutables, or wrap in `fn main()` for mutable state). The parser rejects module-level `let mut` with diagnostic E420. |
+
+> **Note (v4.55.0, updated v4.129.0):** `const` is a Mapanare keyword.
+> Its history is non-linear: v4.18.0 introduced it as a parser alias
+> for module-level `let` with no additional semantics; v4.27.0
+> removed that alias during post-review recovery because the feature
+> was a shell; v4.55.0 reintroduced it as a real definition form
+> (`ConstDef` in `mapanare/ast_nodes.py`, `const_def` rule in
+> `mapanare/mapanare.lark`) with distinct semantics from module-level
+> `let`:
+>
+> - Requires a type annotation and a constant-foldable initializer
+>   (literals, other `const` references, and arithmetic on
+>   constants). Non-constant initializers are rejected at compile
+>   time with a diagnostic.
+> - Registered under `SymbolKind.CONST` in the semantic checker,
+>   distinct from `VARIABLE`; immutability is enforced.
+> - Usable in tensor-shape positions, where `let`-bound values are
+>   not.
+>
+> ```mn
+> const MAX_RETRIES: Int = 3
+> const TAU: Float = 2.0 * 3.141592653589793
+> ```
+>
+> v4.126.0 fixed `is_definition_start` in the self-hosted parser
+> (`mapanare/self/parser.mn`) to recognize `KW_CONST` at module
+> scope; goldens `54_const_basic` and `58_const_scope` pass through
+> both Python bootstrap and `mnc-stage1`.
 
 #### Functions and Definitions
 
@@ -118,9 +230,62 @@ These identifiers are keywords only in specific grammar positions:
 | `input` | Inside `agent` blocks — declares an input channel. |
 | `output` | Inside `agent` blocks — declares an output channel. |
 | `Tensor` | Type expressions — the tensor type constructor. |
-| `di` | Bilingual alias for `let` (Spanish: "di" = "say/declare"). |
 | `any` | Type expressions — the dynamic type. |
 | `_` | Pattern matching — wildcard pattern. |
+
+#### Bilingual Keywords
+
+> **v4.31.0 correction.** Earlier drafts listed `di` in the Contextual
+> Keywords table with the description *"Bilingual alias for `let`"*.
+> That was wrong on both counts. `di` is a **statement keyword** (not
+> contextual — it is reserved unconditionally in every grammar
+> position), and it is a **print alias**, not a `let` alias. It
+> lowers through `di_stmt` to a `PrintStmt` in `parser.py:606`. The
+> table below is the canonical bilingual keyword list — every
+> English keyword with a Spanish alias is listed alongside its
+> counterpart. Coral flagged the `di` mislabel five review cycles
+> before v4.31.0; this release closes the carry-forward.
+
+Mapanare supports a Spanish-language keyword layer in parallel with
+the English layer. Both spellings lower to the same AST node, so a
+single program can mix them. The table is exhaustive:
+
+| English | Spanish | Role |
+|---|---|---|
+| `let` | `pon` | Local binding (`let x = 1` ≡ `pon x = 1`) |
+| `return` | `da` | Return from a function |
+| `self` | `yo` | Method receiver |
+| `if` | `si` | Conditional branch |
+| `else` | `sino` | Alternative branch |
+| `for` | `cada` | For-loop |
+| `while` | `mien` | While-loop |
+| `in` | `en` | For-loop iterable binding |
+| `type` | `tipo` | Type alias / tagged record |
+| `trait` | `modo` | Trait declaration (also `way`) |
+| `import` | `usa` | Module import |
+| `none` | `nada` | `None` literal |
+| `break` | `sal` | Loop break |
+| `continue` | `sigue` | Loop continue |
+| `print(...)` | `di <expr>` | Print expression (statement form) |
+
+Keywords that currently only have an English spelling:
+
+`fn`, `pub`, `agent`, `spawn`, `sync`, `signal`, `stream`, `pipe`,
+`match`, `struct`, `enum`, `impl`, `export`, `extern`, `true`,
+`false`, `new`, `input`, `output`, `assert`.
+
+Also reserved by both lexers: `async`, `await` (hard keywords since
+v4.68.0 / v4.72.0 — see §29 for the coroutine specification), `di`
+(Spanish print statement, §9), `const` (compile-time constant — see the `const` note in
+the *Bindings and Mutability* subsection below), `input`, `output`, `Tensor`, `_`.
+
+The self-hosted lexer (`mapanare/self/lexer.mn`) treats both columns
+as keywords. The Python bootstrap lexer is defined in
+`mapanare/mapanare.lark` — each bilingual alias appears as a second
+pattern on the same terminal (e.g. `KW_RETURN.2: /(?:return|da)(?![a-zA-Z0-9_])/`).
+Section 2.1.1 above is the authoritative master list — whenever a
+keyword is added or removed, both lexers, §2.1.1, and Appendix C
+must be updated in the same commit.
 
 ### 2.2 Operators
 
@@ -266,6 +431,7 @@ let absent: Option<Int> = none
 
 ### 2.4 Comments
 
+<!-- pseudo -->
 ```mn
 // Single-line comment
 
@@ -309,6 +475,7 @@ Identifiers start with a letter or underscore, followed by letters, digits, or u
 | `Stream<T>` | `STREAM` | Asynchronous iterable producing values of type `T` over time. Supports backpressure. |
 | `Channel<T>` | `CHANNEL` | Typed, bounded message channel for inter-agent communication. Carries values of type `T`. |
 | `Tensor<T>[shape]` | `TENSOR` | N-dimensional array with element type `T` and compile-time verified shape. Example: `Tensor<Float>[3, 3]` is a 3x3 matrix of floats. |
+| `Future<T>` | `FUTURE` | The pending result of an `async fn` call; resolved by `await` (inside another async context) or `block_on` (from synchronous code). Added v4.69.0; see §29. |
 
 ### 3.3 Compound / User-Defined Types
 
@@ -419,7 +586,7 @@ Mapanare uses local type inference. The compiler infers types from the immediate
 - The condition in `if`, `while`, and `assert` must be `Bool`.
 - The `?` operator requires the enclosing function to return `Result` or `Option`.
 
-### 3.6 Struct Types
+### 3.7 Struct Types
 
 Structs are product types -- named collections of fields.
 
@@ -461,10 +628,11 @@ struct Pair<A, B> {
 }
 ```
 
-### 3.7 Enum Types (Algebraic Data Types)
+### 3.8 Enum Types (Algebraic Data Types)
 
 Enums are sum types -- tagged unions where each variant can carry different data.
 
+<!-- pseudo -->
 ```mn
 enum Shape {
     Circle(Float),
@@ -509,12 +677,13 @@ enum Either<A, B> {
 }
 ```
 
-### 3.8 Option and Result Types
+### 3.9 Option and Result Types
 
 #### Option<T>
 
 `Option<T>` represents a value that may or may not be present. It replaces null pointers.
 
+<!-- pseudo -->
 ```mn
 let x: Option<Int> = Some(42)
 let y: Option<Int> = none
@@ -539,6 +708,7 @@ match x {
 
 `Result<T, E>` represents an operation that can succeed with `Ok(value)` or fail with `Err(error)`. It is the primary error-handling mechanism.
 
+<!-- pseudo -->
 ```mn
 fn parse_int(s: String) -> Result<Int, String> {
     // ...
@@ -566,7 +736,7 @@ fn process(s: String) -> Result<Int, String> {
 
 When `?` is applied to a `Result`, it unwraps `Ok(v)` for the expression's value or returns `Err(e)` from the enclosing function. The enclosing function must return a compatible `Result` type.
 
-### 3.9 Agent Types
+### 3.10 Agent Types
 
 Agents have typed input and output channels that form their public interface.
 
@@ -586,17 +756,35 @@ agent Counter {
 
 When you `spawn` an agent, the returned handle exposes the input and output channels with their declared types. See section 9 (Agent Model) for full semantics.
 
-### 3.10 Tensor Types
+### 3.11 Tensor Types
 
-> **Status:** Tensor types are specified but not yet implemented in any backend. The syntax, type checking, and shape verification described below represent the target design. See the roadmap for implementation status.
+> **Status:** Stable on LLVM backend. Tensor literals (v4.42.0), multi-dimensional indexing with bounds checking (v4.43.0), NumPy-style broadcasting (v4.44.0), reductions and slicing (v4.45.0). GPU-accelerated when CUDA/Vulkan available; CPU fallback otherwise.
 
-Tensors have their element type and shape verified at compile time.
+Tensors have their element type and shape verified at compile time. Tensor literals use the `Tensor<Type>[elements]` syntax with nested brackets for multi-dimensional data:
+
+<!-- pseudo -->
+```mn
+let v: Tensor<Float>[3] = Tensor<Float>[1.0, 2.0, 3.0]           // 1D vector
+let m: Tensor<Float>[2, 3] = Tensor<Float>[[1.0, 2.0, 3.0],      // 2D matrix
+                                            [4.0, 5.0, 6.0]]
+let t: Tensor<Int>[2, 2, 2] = Tensor<Int>[[[1, 2], [3, 4]],      // 3D tensor
+                                           [[5, 6], [7, 8]]]
+```
+
+The parser infers the shape from nesting depth and per-level element counts. Jagged arrays (sibling sub-arrays with different lengths) are rejected at parse time with a diagnostic message. Elements must be scalars — nested tensor composition is not supported.
+
+Tensor elements are accessed via multi-dimensional indexing (v4.43.0):
 
 ```mn
-let v: Tensor<Float>[3] = [1.0, 2.0, 3.0]         // 1D vector, 3 elements
-let m: Tensor<Float>[2, 3] = [[1.0, 2.0, 3.0],     // 2D matrix, 2x3
-                               [4.0, 5.0, 6.0]]
+let m = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+let x: Float = m[1, 2]    // 6.0 — row 1, column 2
+m[0, 0] = 99.0            // write element
+
+let v = Tensor<Int>[10, 20, 30]
+let y: Int = v[1]          // 20 — single index for 1-D
 ```
+
+The number of indices must equal the tensor's rank; under-rank and over-rank indexing are compile errors. Bounds are checked at runtime — out-of-bounds access aborts with a diagnostic message showing the offending index and tensor shape.
 
 Shape mismatches are compile-time errors:
 
@@ -606,15 +794,57 @@ let b: Tensor<Float>[4] = [1.0, 2.0, 3.0, 4.0]
 let c = a + b   // COMPILE ERROR: shape mismatch [3] vs [4]
 ```
 
+Binary operations follow NumPy-style broadcasting rules (v4.44.0). Dimensions are compared right-to-left; a dimension pair is compatible if both are equal or one is 1. Shorter shapes are left-padded with 1s:
+
+```mn
+let a = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]   // [2, 3]
+let b = Tensor<Float>[10.0, 20.0, 30.0]                      // [3]
+let c = a + b       // Broadcast: [2, 3] + [3] -> [2, 3]
+
+let d = a * 2.0     // Scalar broadcast: [2, 3] * scalar -> [2, 3]
+```
+
+Incompatible shapes produce a compile-time error with the offending dimension:
+
+```mn
+let x = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]   // [2, 3]
+let y = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]                // [2, 2]
+let z = x + y   // COMPILE ERROR: shapes [2, 3] and [2, 2] are not
+                 //   broadcast-compatible; dimension 1 differs: 3 vs 2
+```
+
 Matrix multiplication verifies dimensional compatibility:
 
+<!-- pseudo -->
 ```mn
 let a: Tensor<Float>[2, 3] = ...
 let b: Tensor<Float>[3, 4] = ...
 let c = a @ b   // Result: Tensor<Float>[2, 4] -- inner dimensions must match
 ```
 
-### 3.11 Type Aliases
+Tensors support global reduction methods (v4.45.0):
+
+```mn
+let t = Tensor<Float>[1.0, 4.0, 2.0, 5.0, 3.0]
+let s = t.sum()      // 15.0
+let m = t.mean()     // 3.0
+let hi = t.max()     // 5.0
+let lo = t.min()     // 1.0
+let imax = t.argmax()  // 3 (index of max element)
+let imin = t.argmin()  // 0 (index of min element)
+```
+
+Tensor slicing extracts sub-tensors using range (`N..M`) and wildcard (`_`) syntax (v4.45.0). Slicing returns a copy:
+
+```mn
+let v = Tensor<Float>[10.0, 20.0, 30.0, 40.0, 50.0]
+let s = v[1..3]   // Tensor<Float>[20.0, 30.0]
+
+let m = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]
+let rows = m[0..2, _]   // First two rows, all columns -> [2, 3]
+```
+
+### 3.12 Type Aliases
 
 ```mn
 type Name = String
@@ -624,7 +854,7 @@ type Callback = fn(Int) -> Bool
 
 Type aliases are transparent -- the alias name and the underlying type are interchangeable.
 
-### 3.12 Function Types
+### 3.13 Function Types
 
 Function types describe the signature of a callable value (function pointer or closure):
 
@@ -688,10 +918,12 @@ The loop variable is immutable within the body. The iterable can be a `Range`, `
 Loops while a condition is true:
 
 ```mn
-let mut count = 0
-while count < 10 {
-    print("${count}")
-    count += 1
+fn main() {
+    let mut count = 0
+    while count < 10 {
+        print("${count}")
+        count += 1
+    }
 }
 ```
 
@@ -725,6 +957,7 @@ fn double(x: Int) -> Int {
 
 Pattern matching dispatches on the structure of a value. See section 5 (Pattern Matching) for full details.
 
+<!-- pseudo -->
 ```mn
 match value {
     Some(x) => print("got ${x}"),
@@ -750,6 +983,7 @@ The optional second argument is an error message expression (typically a string)
 
 ### 5.1 Syntax
 
+<!-- pseudo -->
 ```mn
 match expr {
     pattern1 => expr_or_block,
@@ -773,6 +1007,7 @@ Match arms are separated by commas. Each arm consists of a pattern, `=>`, and ei
 
 Enum variants are destructured by their constructor pattern:
 
+<!-- pseudo -->
 ```mn
 enum Expr {
     Num(Int),
@@ -787,6 +1022,7 @@ match expr {
 
 Nested destructuring is supported:
 
+<!-- pseudo -->
 ```mn
 match result {
     Ok(Some(v)) => print("got ${v}"),
@@ -806,16 +1042,68 @@ The compiler checks that match expressions are exhaustive:
 
 A missing arm is a compile-time error.
 
-### 5.5 Match as Expression
+### 5.5 Match Guards
+
+A match arm can have an optional `if` guard between the pattern and `=>`:
+
+<!-- pseudo -->
+```mn
+match n {
+    x if x < 0 => "negative",
+    0 => "zero",
+    x if x > 0 => "positive",
+    _ => "unreachable"
+}
+```
+
+The guard expression must evaluate to `Bool`. If the guard is `false`, the match falls through to the next arm. Guards can reference names bound by the pattern (e.g., `Some(x) if x > 0`).
+
+Guards do not affect exhaustiveness checking: a guarded arm's pattern counts toward coverage regardless of the guard's truth value.
+
+### 5.6 Or-Patterns
+
+A pattern can be a disjunction of alternatives separated by `|`:
+
+<!-- pseudo -->
+```mn
+match token {
+    Plus | Minus => "additive",
+    Star | Slash | Mod => "multiplicative",
+    Eof => "end",
+    _ => "other"
+}
+```
+
+All alternatives in an or-pattern must bind the same set of variable names. (The current implementation checks name-set equality only; type compatibility across alternatives is not yet enforced.) An or-pattern expands coverage: `A | B` covers both `A` and `B`.
+
+Or-patterns can be combined with guards: `A | B if cond => body`. The guard applies to the whole arm (all alternatives), not to individual alternatives.
+
+### 5.7 Match as Expression
 
 When all arms produce a value, `match` is an expression:
 
+<!-- pseudo -->
 ```mn
 let name = match status {
     Ok(v) => v.name,
     Err(_) => "unknown",
 }
 ```
+
+### 5.8 The `?` Operator (Error Propagation)
+
+The `?` operator propagates errors from `Result<T, E>` and unwraps `Option<T>`:
+
+<!-- pseudo -->
+```mn
+fn parse_config(path: String) -> Result<Config, String> {
+    let text = read_file(path)?
+    let config = parse(text)?
+    return Ok(config)
+}
+```
+
+When applied to a `Result`, `?` returns the `Ok` value or early-returns the `Err`. When applied to an `Option`, `?` returns the `Some` value or early-returns `None`. The enclosing function must return a compatible `Result` or `Option` type.
 
 ---
 
@@ -869,10 +1157,11 @@ Note: Lambda parameter types are inferred from context. Type annotations on lamb
 
 Closures capture variables from the enclosing scope:
 
+<!-- pseudo -->
 ```mn
 let offset = 10
-let add_offset = (x: Int) => x + offset
-print(add_offset(5))  // prints 15
+let add_offset = (x) => x + offset
+print(str(add_offset(5)))  // prints 15
 ```
 
 **Implementation:** Closures with free variables are compiled as a pair: `{function_pointer, environment_struct_pointer}`. The environment struct contains the captured variables. Variables are captured by value (copy).
@@ -1122,15 +1411,17 @@ Signals are reactive primitives that hold a value and automatically propagate ch
 ### 10.2 Declaration
 
 ```mn
-// Mutable signal: can be set directly
-let mut count = signal(0)
+fn main() {
+    // Mutable signal: can be set directly
+    let mut count = signal(0)
 
-// Computed signal: derived from other signals, read-only
-let doubled = signal { count.value * 2 }
+    // Computed signal: derived from other signals, read-only
+    let doubled = signal { count.value * 2 }
 
-// Updating a signal
-count.value = 5
-print(doubled.value)   // prints 10
+    // Updating a signal
+    count.value = 5
+    print(doubled.value)   // prints 10
+}
 ```
 
 `signal(expr)` creates a mutable signal with an initial value. `signal { expr }` creates a computed signal that re-evaluates when its dependencies change.
@@ -1140,18 +1431,21 @@ print(doubled.value)   // prints 10
 The compiler tracks which signals are read during the evaluation of a computed signal. When any dependency changes, the computed signal is marked dirty and recomputed on next access (lazy) or immediately (eager, configurable).
 
 ```mn
-let mut a = signal(1)
-let mut b = signal(2)
-let sum = signal { a.value + b.value }
+fn main() {
+    let mut a = signal(1)
+    let mut b = signal(2)
+    let sum = signal { a.value + b.value }
 
-a.value = 10
-print(sum.value)   // prints 12
+    a.value = 10
+    print(sum.value)   // prints 12
+}
 ```
 
 ### 10.4 Subscribers
 
 Signals support subscriptions for side effects on change:
 
+<!-- pseudo -->
 ```mn
 let mut temperature = signal(20.0)
 
@@ -1167,6 +1461,7 @@ temperature.subscribe((t) => {
 
 Multiple signal updates within a `batch` block are coalesced into a single recomputation pass, avoiding intermediate recalculations:
 
+<!-- pseudo -->
 ```mn
 batch {
     x.value = 10
@@ -1221,6 +1516,7 @@ Streams support a rich set of composable operators. These can be chained with th
 | `debounce(ms)` | Emit only after a quiet period. |
 | `collect()` | Collect all elements into a `List`. |
 
+<!-- pseudo -->
 ```mn
 let result = numbers
     |> Stream::filter((n) => n % 2 == 0)
@@ -1497,15 +1793,18 @@ Link external libraries with the `--link-lib` flag:
 mapanare build program.mn --link-lib m -o program
 ```
 
-### 18.2 Python Interop (Legacy)
+### 18.2 Python Interop
 
-The legacy Python backend supports calling Python functions:
+> **Note.** `extern "Python" fn` syntax was removed in v4.29.0 (the lexer rejects any non-`"C"` extern ABI). The canonical Python-interop path is `mapanare bind --lang python`, which compiles `.mn` → `.so` and emits a `ctypes` wrapper callable from CPython with typed argtypes/restype.
 
-```mn
-extern "Python" fn json::loads(s: String) -> String
+```bash
+mapanare bind --lang python math_lib.mn -o math_lib.so
+# Python:
+#   from math_lib import add
+#   assert add(3, 4) == 7
 ```
 
-Python interop uses `extern "Python" fn module::name(params) -> RetType` to import and call Python functions with type-safe wrappers. Return type `Result<T, String>` wraps Python exceptions in `Err`. Use `--python-path` to add custom module search paths.
+See §18.1 for C FFI details and §18.3 for calling conventions. The generated wrappers use the C ABI; Python-side bindings are `ctypes.CDLL` loads of the compiled shared library.
 
 ### 18.3 Calling Conventions
 
@@ -1649,22 +1948,32 @@ Exposed metrics:
 | `mapanare_agent_stops_total` | Counter | Total agents stopped |
 | `mapanare_agent_handle_duration_seconds` | Histogram | Message handling latency |
 
-### 21.3 Debug Info (DWARF)
+### 21.3 Debug Info (DWARF) — **deferred to v5.x**
 
-Native binaries compiled with `-g` / `--debug` include DWARF debug information for source-level debugging with `gdb` or `lldb`:
-
-```bash
-mapanare build -g program.mn -o program
-lldb ./program
-```
-
-Debug info includes:
-
-- Compile unit metadata (source file, producer)
-- Function debug info (name, file, line, scope)
-- Line number mapping from MIR instructions to source locations
-- Variable debug info (names, types, locations)
-- Struct type debug info (member layout)
+> **v4.29.0 correction.** Earlier drafts of this section claimed that binaries
+> compiled with `-g` / `--debug` contain DWARF debug metadata. That claim was
+> aspirational: the MIR already threads `SourceSpan` per instruction, but
+> `LLVMTextEmitter` never emitted a single `!DICompileUnit`, `!DISubprogram`,
+> `!DILocation`, `!DILocalVariable`, or `DICompositeType` node. Thirty-plus
+> tests in `tests/llvm/test_dwarf_debug_info.py` had been silently
+> `pytest.mark.skip`'d since v4.2.0, and the v4.26.0 seven-reviewer panel
+> (Rattler #4) flagged it as a core hollow-feature case.
+>
+> The claim is hereby struck. DWARF debug info emission is deferred to the
+> v5.x line. Until it lands:
+>
+> - The `-g` / `--debug` flag is still accepted (for forward compatibility
+>   with scripts and IDEs that pass it unconditionally).
+> - Every use of the flag prints a loud stderr warning naming v5.x as the
+>   tracking version. The emitted IR/binary contains no DWARF metadata.
+> - Source-level debuggers (`gdb`, `lldb`) will show only machine-level
+>   frames for Mapanare programs. Stack traces from the C runtime are
+>   fully symbolic (the C runtime is built with `-g` by default).
+>
+> When v5.x picks this up, it will build on the existing `SourceSpan`
+> infrastructure; see `tests/llvm/test_dwarf_debug_info.py` for the
+> regression gate that currently pins "no DWARF metadata" so the next
+> implementation cannot land silently.
 
 ---
 
@@ -1762,17 +2071,23 @@ All tensor operations fall back to CPU when no GPU is available. No code changes
 
 Built-in PTX kernels for CUDA cover `add`, `sub`, `mul`, `div`, `matmul` at float64 precision.
 
-### 23.3 Future: @gpu Decorator
+### 23.3 Note: @gpu Decorator (reserved, no semantics)
 
-> **Status:** The `@gpu` decorator syntax is specified but not yet connected to codegen. The decorator, PTX embedding, and kernel dispatch infrastructure exist in `emit_llvm_mir.py` and `mapanare_gpu.c`. Enabling this path requires porting GPU dispatch to the text emitter. Use `gpu_*` builtins for GPU compute in the current release.
-
-```mn
-// Planned syntax — not yet functional
-@gpu
-fn vector_add(a: Tensor<Float>[1024], b: Tensor<Float>[1024]) -> Tensor<Float>[1024] {
-    return a + b
-}
-```
+> **Status (v4.27.0):** The `@gpu` / `@cuda` / `@vulkan` decorators are
+> accepted by the parser as ordinary decorator attributes but have **no
+> compiler behaviour**: no kernel extraction, no PTX/SPIR-V emission, no
+> dispatch routing. GPU compute in Mapanare goes through the
+> `gpu_tensor_*` runtime builtins (see §23.1/23.2), which are the
+> supported surface for CUDA and Vulkan. The `lower.py` handler that
+> previously raised `NotImplementedError` when one of these decorators
+> was encountered was removed in v4.27.0 as part of the post-review
+> recovery — the decorator was never wired to the runtime and claiming it
+> was "auto-kernel extraction" misled users.
+>
+> The decorator names remain reserved. A future release may revive them
+> as the user-facing entry point to the runtime kernel infrastructure,
+> but doing so will require an AST-level extractor and a real end-to-end
+> pytest — not a parser alias.
 
 ---
 
@@ -1971,7 +2286,7 @@ Starting with v1.0.0, the following are frozen and will not change without an RF
 
 - **Syntax:** All grammar rules defined in this specification.
 - **Semantics:** Type checking rules, operator behavior, control flow semantics.
-- **Type system:** All 25 TypeKind variants and their behavior.
+- **Type system:** All 29 TypeKind variants and their behavior (see `mapanare/types.py::TypeKind`).
 - **Builtin functions:** Names, signatures, and behavior of all builtin functions.
 - **String methods:** All 15 methods and their signatures.
 - **Agent model:** Spawn, send, sync semantics, lifecycle states.
@@ -2000,19 +2315,33 @@ Any change to a frozen area requires:
 
 ---
 
-## 28. Standard Library (v0.9.0)
+## 28. Standard Library
 
-Seven native stdlib modules written in `.mn`, compiled via LLVM:
+The standard library is written in Mapanare (`.mn`) and compiled via
+LLVM. Modules live under `stdlib/` and are organized by domain. The
+following sub-sections document public APIs for the modules with
+stable, published surfaces. For the canonical list of shipped
+modules, see the `stdlib/` directory.
 
-| Module | Path | Description |
+**Domains currently covered:**
+
+| Domain | Path prefix | Representative modules |
 |---|---|---|
-| JSON | `encoding/json.mn` | Recursive descent JSON parser/serializer |
-| CSV | `encoding/csv.mn` | RFC 4180 CSV parser/writer |
-| HTTP Client | `net/http.mn` | HTTP/1.1 client on C runtime TCP/TLS |
-| HTTP Server | `net/http/server.mn` | HTTP server with routing and middleware |
-| WebSocket | `net/websocket.mn` | RFC 6455 WebSocket client and server |
-| Crypto | `crypto.mn` | SHA-1, SHA-256, HMAC, Base64, random bytes, JWT |
-| Regex | `text/regex.mn` | PCRE2-based regular expressions |
+| Encoding | `encoding/` | `json`, `csv`, `toml`, `yaml` |
+| Networking | `net/` | `http` (client), `http/server`, `websocket`, `http/session`, `http/sse` |
+| Crypto | `crypto.mn` | SHA-1, SHA-256, HMAC, Base64, random, JWT |
+| Text | `text/` | `regex` (PCRE2), `string_utils`, `text` |
+| Database | `db/` | `sqlite`, `postgres`, `redis`, `embedded_kv`, `migrate`, `pool` |
+| AI | `ai/` | `llm`, `embedding`, `rag`, `structured` |
+| GPU | `gpu/` | `device`, `kernel`, `tensor` |
+| Filesystem / system | `fs.mn`, `time.mn`, `log.mn`, `math.mn` | |
+| Testing | `test/runner.mn` | built-in `@test` runner |
+| WASM | `wasm/bridge.mn` | JS-interop bridge for the WASM backend |
+
+The per-module subsections that follow describe the public API for
+the most widely-used modules. New modules added after v4.129.0 should
+be added to `stdlib/` and, if their API is intended as stable, get
+a subsection here.
 
 ### JSON Module (`encoding/json`)
 
@@ -2071,6 +2400,127 @@ Functions: SHA-1, SHA-256, HMAC, Base64 encode/decode, random bytes, JWT helpers
 ### Regex (`text/regex`)
 
 Functions: `regex_match`, `regex_search`, `regex_replace`, `regex_split`. Character classes, quantifiers, capture groups via PCRE2 FFI.
+
+---
+
+## 29. Futures and Async/Await
+
+> **v4.72.0-v4.76.0 (Arc 9).** Async/await was implemented across arcs 8 and 9
+> using LLVM switched-resume coroutines. See the [Coroutine Design Document](roadmap/v4/v4.67.0/DESIGN.md)
+> for the full implementation spec. This section defines the user-visible semantics.
+>
+> **v4.115.0 status update.** Native file I/O and network I/O inside
+> async pipelines were demonstrated end-to-end in
+> `examples/async_file_io.mn` and `examples/async_http_demo.mn`. The
+> async model is **cooperative, not preemptive**: async fns yield only
+> at `await` points; synchronous runtime calls (`__mn_file_write`,
+> `http_get`) block the current worker for their duration. Full
+> non-blocking suspension is a v5.x target. The self-hosted compiler
+> (`mnc-stage1`) does not yet lower async — async programs currently
+> compile through the Python bootstrap's `emit-llvm` pipeline and link
+> against `libmapanare_rt.a` for a native binary (docket Sh.4).
+
+### 29.1 `async fn` -- Asynchronous Function Declaration
+
+An `async fn` declares a function that can suspend and resume:
+
+```mn
+async fn fetch_data(url: String) -> String {
+    let response = await http_get(url)
+    return response.body
+}
+```
+
+Semantics:
+
+- The declared return type `T` is sugar for `Future<T>`. Calling an `async fn` does **not** execute the body -- it creates a suspended coroutine and returns a `Future<T>` handle immediately.
+- The body executes when the returned future is driven by `await` (from another async context) or `block_on` (from synchronous code).
+- An `async fn` may contain zero or more `await` expressions. An `async fn` with zero `await` points is valid -- it completes on first resume (single-step coroutine).
+- `async fn` can call non-async functions freely. Non-async functions cannot use `await`.
+
+### 29.2 `await expr` -- Suspension Point
+
+```mn
+let result = await some_async_fn(args)
+```
+
+`await` suspends the current coroutine until the operand future is ready.
+
+- The operand must have type `Future<U>`. Type error otherwise.
+- If the future is already `Ready`, the value is extracted immediately without suspending.
+- If the future is `Pending`, the current coroutine suspends. The scheduler resumes it when the awaited future becomes `Ready`.
+- The expression evaluates to type `U`.
+- `await` is only valid inside `async fn` bodies. Using `await` outside an async context is a semantic error.
+
+### 29.3 `Future<T>` -- The Future Type
+
+`Future<T>` is a built-in generic type representing a value that may not be available yet.
+
+**States:**
+
+| State | Value | Meaning |
+|-------|-------|---------|
+| `Pending` | 0 | The coroutine has not yet produced a value. |
+| `Ready` | 1 | The value is available. |
+
+**LLVM representation:**
+
+```llvm
+%Future = type { i8, ptr }
+; field 0: state (0 = Pending, 1 = Ready)
+; field 1: payload pointer
+;   Pending: ptr to the coroutine handle (for scheduler resume)
+;   Ready:   ptr to the result value (heap-allocated T)
+```
+
+All `Future<T>` have the same LLVM type (`{i8, ptr}`) regardless of `T`, enabling a uniform scheduler queue.
+
+**User-visible operations:**
+
+| Operation | Context | Description |
+|-----------|---------|-------------|
+| `await future` | async fn body | Suspend until ready, extract `T` |
+| `block_on(future)` | sync fn body | Run event loop until ready, return `T` |
+
+No explicit `.poll()`, `.cancel()`, or `.then()` in v4.x. The scheduler is the sole driver.
+
+### 29.4 `block_on(future)` -- Synchronous Driver
+
+`block_on` is a built-in function that bridges synchronous and asynchronous code:
+
+```mn
+fn main() {
+    let result: Int = block_on(compute())
+}
+```
+
+- Drives the event loop until the given future resolves.
+- Returns the unwrapped value of type `T`.
+- May only be called from synchronous functions. Calling `block_on` from inside an `async fn` will deadlock (the event loop is already running).
+
+### 29.5 Coroutine Lifecycle
+
+1. **Creation.** Calling an `async fn` allocates a coroutine frame on the heap and returns a `Future<T>` in `Pending` state.
+2. **First resume.** The scheduler (or `block_on`) calls `llvm.coro.resume` on the coroutine handle. Execution begins at the function entry point.
+3. **Suspension.** At each `await` point, if the operand future is `Pending`, the coroutine saves its state and returns to the scheduler.
+4. **Resumption.** When the awaited future becomes `Ready`, the scheduler resumes the suspended coroutine. Execution continues after the `await` expression.
+5. **Completion.** When the coroutine reaches a `return` statement (or the end of the body), it stores the result, transitions the future to `Ready`, and destroys the coroutine frame.
+
+### 29.6 Memory Model
+
+- **Frame allocation.** Each coroutine frame is heap-allocated via `malloc`. LLVM's CoroElide pass may promote this to a stack allocation when the future's lifetime is bounded by the caller.
+- **Spilled variables.** Values whose definitions and uses span a suspension point are stored in the coroutine frame. The LLVM CoroSplit pass handles this automatically.
+- **Result allocation.** The result value is heap-allocated when the future becomes `Ready`. The caller frees it after extracting the value via `await` or `block_on`.
+- **Destruction.** `llvm.coro.destroy` is called when the future is consumed or goes out of scope. This runs the coroutine's cleanup path and frees the frame.
+
+### 29.7 Interaction with Other Primitives
+
+| Primitive | Interaction |
+|-----------|-------------|
+| Agents | Agents run on their own threads. `async fn` runs within the caller's event loop. No implicit agent spawning. |
+| Signals | Signal reads inside `async fn` are synchronous (no suspension). |
+| Streams | `for await` iterates over an async stream, suspending between elements — *planned (v5.x)*. The `for await` grammar is not yet tokenized; today, iterate synchronously over a `Stream<T>` and `await` individual async-fn calls inside the loop body. |
+| Closures | Closures may capture variables from the enclosing `async fn`. Captured values that cross suspension points are spilled into the coroutine frame. |
 
 ---
 
@@ -2169,8 +2619,8 @@ The Mapanare compiler uses a multi-stage pipeline with an intermediate represent
 
 ```
 .mn source --> Lexer --> Parser --> AST --> Semantic Analysis --> MIR Lowering --> MIR Optimizer --> Emitter
-                                                                                                    |--> Python (legacy)
                                                                                                     |--> LLVM IR --> Native Binary
+                                                                                                    |--> C Source  --> gcc/clang --> Native Binary
                                                                                                     +--> WebAssembly (WAT/WASM)
 ```
 
@@ -2202,50 +2652,113 @@ MIR is a typed, SSA-based intermediate representation that sits between the AST 
 | **Closures** | `ClosureCreate`, `ClosureCall`, `EnvLoad` |
 | **Strings** | `InterpConcat` |
 
-**MIR optimizer passes (applied at -O1 and above):**
+**MIR optimizer passes:**
+
+Optimization level (`-O0` through `-O3`) gates which passes run.
+`-O0` runs no passes; `-O2` is the default for `build`. See
+`mapanare/mir_opt.py` for the canonical pass list.
+
+Always-on (at `-O1` and above):
 
 - Constant folding and propagation
 - Dead code elimination
 - Copy propagation
 - Basic block merging
 - Unreachable block removal
+- Auto-StringBuilder rewrite for loop-accumulated string concat
+  (v4.108.0)
 
-### Python Transpiler (Legacy)
+Higher-level passes exist in `mir_opt.py` (strength reduction, small-
+function inlining, LICM, escape analysis, string-concat rewrite).
+Some are enabled only in the Python bootstrap and were disabled in
+the self-hosted compiler at v4.111.0 as zero-ROI; see
+`docs/roadmap/v4/v4.109.0/OPT_ROI_ANALYSIS.md` for the forensics.
+LLVM's own optimization pipeline handles most lowering-friendly
+rewrites at `-O2`.
 
-The Python emitter translates MIR to Python source code. This backend is legacy — kept for reference and bootstrapping only. It is not the target for new features.
+> **Note (v4.58.0):** A Python source emitter
+> (`mapanare/emit_python_mir.py`) existed historically as a
+> legacy transpiler target. It was removed in v4.58.0. A
+> regression test at `tests/test_python_emitter_deleted.py`
+> prevents reintroduction.
 
 ### LLVM Native Backend
 
-The LLVM emitter translates MIR to LLVM IR, producing native machine code. This is the production backend.
+The LLVM emitter (`mapanare/emit_llvm_text.py`) translates MIR to
+LLVM IR, producing native machine code. This is the production
+backend.
 
 - Agent spawn/send/sync codegen backed by the C runtime thread pool and ring buffers.
 - Compile-time tensor shape verification (element-wise ops and matmul via runtime calls).
-- Arena-based memory management with tag-bit string freeing (no garbage collector).
+- Arena-based memory management with `MnString` bitfield heap tagging (no garbage collector; v4.100.0 removed the older tagged-pointer UB).
 - Ahead-of-time compilation for deployment.
 - Cross-compilation to Linux x64, macOS ARM64, Windows x64.
+
+### C Backend (v3.0.0+)
+
+The C emitter (`mapanare/emit_c.py`) translates MIR to portable C
+source. `gcc` or `clang` then produces the native binary. The C
+backend is a fallback when the LLVM toolchain is unavailable and
+the primary path for platforms where the LLVM IR → object-code
+route is unreliable. It shares the runtime (`libmapanare_rt.a`)
+with the LLVM backend.
+
+### WebAssembly Backend (v2.0.0+)
+
+The WASM emitter (`mapanare/emit_wasm.py`) translates MIR to
+WebAssembly text format (WAT). The `wasm_linker.py` module
+links multi-module WAT into a single `.wasm` for browser or WASI
+targets. See §24.
+
+### 3-stage fixed point
+
+The self-hosted compiler reaches a 3-stage fixed point: `stage2.ll`
+and `stage3.ll` are identical in every respect the compiler controls
+— same IR instructions, same block order, same metadata graph, same
+line count (109,872 lines at v4.142.0).
+
+- **v4.134.0:** strict byte-identical — stage2 and stage3 shared md5
+  `0c00ad07fee94f98bb350b359395843b`.
+- **v4.139.0–present (Dr.1):** *near fixed point* — the
+  `__MN_VERSION__` build-time substitution introduces a bounded
+  4-line version-metadata diff (`!"__MN_VERSION__"` vs `!"4.143.0"`),
+  so md5s differ by construction but the IR is otherwise identical.
+  Current md5s: `stage2.ll = 6d4963cdbe060ac1cee85eb58f2fa932`,
+  `stage3.ll = dddf64c3a77ed9236c82de517bc055d1` (v4.142.0).
+
+The 4-line diff is a build-time artifact, not semantic codegen drift.
+See `docs/roadmap/v4/v4.142.0/FIXEDPOINT_STATUS.md` for full provenance
+and `scripts/verify_fixed_point.sh` to reproduce. `DIFF_THRESHOLD=100`
+in the verifier script gates the acceptable bound.
 
 ---
 
 ## Appendix C: Reserved Keywords
 
-The following identifiers are reserved for future use and cannot be used as variable or function names, even though they have no current semantics:
+This appendix lists identifiers reserved *for future use*. They are
+not currently tokenized by either lexer but are treated as reserved
+by convention so that future language changes will not break existing
+code. For the complete list of identifiers that are **already**
+tokenized and enforced as keywords today, see §2.1.1
+*Reserved Keyword Master List*.
+
+> **v4.72.0-v4.76.0 update:** `async` and `await` are now real keywords
+> with full LLVM coroutine lowering (switched-resume ABI). See section
+> 29 for the specification. They are no longer listed in the reserved
+> table below.
 
 | Reserved | Potential Future Use |
 |---|---|
-| `async` | Asynchronous function declaration |
-| `await` | Asynchronous expression |
 | `yield` | Generator / coroutine yield |
 | `macro` | Compile-time macro system |
 | `where` | Generic constraint clauses |
 | `use` | Path shortening |
 | `as` | Type casting / import renaming |
-| `const` | Compile-time constants |
 | `static` | Module-level mutable state |
 | `unsafe` | Escape hatch for memory safety |
 | `move` | Explicit ownership transfer |
 | `ref` | Reference binding in patterns |
 | `loop` | Infinite loop construct |
-| `continue` | Skip to next loop iteration |
 | `super` | Parent module reference |
 | `crate` | Root module reference |
 | `mod` | Module declaration |

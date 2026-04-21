@@ -1,0 +1,21 @@
+// Golden test: const scope in function bodies (v4.78.0, CARRY_FORWARD A10b)
+// Verifies that module-level const symbols are visible inside fn bodies.
+
+const MAX: Int = 100
+
+fn check(x: Int) -> Bool {
+    return x < MAX
+}
+
+fn main() {
+    si check(50) {
+        print("true")
+    } sino {
+        print("false")
+    }
+    si check(150) {
+        print("true")
+    } sino {
+        print("false")
+    }
+}

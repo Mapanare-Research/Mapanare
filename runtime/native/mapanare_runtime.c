@@ -8,14 +8,31 @@
  *   Task 4: Native backpressure with atomic counters
  */
 
+/* Enable POSIX + platform extensions even with -std=c11.
+ * macOS needs _DARWIN_C_SOURCE for BSD types in sys/sysctl.h;
+ * Linux needs _POSIX_C_SOURCE for sigaction, clock_gettime, etc. */
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE
+#else
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
+#undef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
 #include "mapanare_runtime.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <signal.h>
+#include <errno.h>
 
 #ifndef _WIN32
 #include <unistd.h>
+#endif
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #endif
 
 /* -----------------------------------------------------------------------
@@ -40,6 +57,9 @@ static inline void atomic_store_i32(mapanare_atomic_i32 *p, int32_t v) {
 __attribute__((unused))
 static inline int32_t atomic_add_i32(mapanare_atomic_i32 *p, int32_t v) {
     return __atomic_fetch_add(p, v, __ATOMIC_ACQ_REL);
+}
+static inline int32_t atomic_exchange_i32(mapanare_atomic_i32 *p, int32_t v) {
+    return __atomic_exchange_n(p, v, __ATOMIC_ACQ_REL);
 }
 
 #ifdef _WIN32
@@ -91,6 +111,26 @@ static inline int mapanare_thread_create(mapanare_thread_t *t, DWORD (WINAPI *fn
 static inline void mapanare_thread_join(mapanare_thread_t t) {
     WaitForSingleObject(t, INFINITE);
     CloseHandle(t);
+}
+static inline void mapanare_thread_detach(mapanare_thread_t t) {
+    CloseHandle(t);
+}
+
+typedef CONDITION_VARIABLE mapanare_cond_t;
+static inline void mapanare_cond_init(mapanare_cond_t *c) {
+    InitializeConditionVariable(c);
+}
+static inline void mapanare_cond_wait_ms(mapanare_cond_t *c, mapanare_mutex_t *m, int timeout_ms) {
+    SleepConditionVariableCS(c, m, (DWORD)timeout_ms);
+}
+static inline void mapanare_cond_signal(mapanare_cond_t *c) {
+    WakeConditionVariable(c);
+}
+static inline void mapanare_cond_broadcast(mapanare_cond_t *c) {
+    WakeAllConditionVariable(c);
+}
+static inline void mapanare_cond_destroy(mapanare_cond_t *c) {
+    (void)c; /* Windows CONDITION_VARIABLE needs no destroy */
 }
 
 #else /* POSIX */
@@ -160,6 +200,31 @@ static inline int mapanare_thread_create(mapanare_thread_t *t, void *(*fn)(void*
 static inline void mapanare_thread_join(mapanare_thread_t t) {
     pthread_join(t, NULL);
 }
+static inline void mapanare_thread_detach(mapanare_thread_t t) {
+    pthread_detach(t);
+}
+
+typedef pthread_cond_t mapanare_cond_t;
+static inline void mapanare_cond_init(mapanare_cond_t *c) {
+    pthread_cond_init(c, NULL);
+}
+static inline void mapanare_cond_wait_ms(mapanare_cond_t *c, mapanare_mutex_t *m, int timeout_ms) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_ms / 1000;
+    ts.tv_nsec += (timeout_ms % 1000) * 1000000L;
+    if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+    pthread_cond_timedwait(c, m, &ts);
+}
+static inline void mapanare_cond_signal(mapanare_cond_t *c) {
+    pthread_cond_signal(c);
+}
+static inline void mapanare_cond_broadcast(mapanare_cond_t *c) {
+    pthread_cond_broadcast(c);
+}
+static inline void mapanare_cond_destroy(mapanare_cond_t *c) {
+    pthread_cond_destroy(c);
+}
 
 #endif
 
@@ -187,6 +252,12 @@ MAPANARE_EXPORT uint32_t mapanare_cpu_count(void) {
     SYSTEM_INFO si;
     GetSystemInfo(&si);
     return (uint32_t)si.dwNumberOfProcessors;
+#elif defined(__APPLE__)
+    int mib[2] = {CTL_HW, HW_NCPU};
+    int ncpu = 1;
+    size_t len = sizeof(ncpu);
+    sysctl(mib, 2, &ncpu, &len, NULL, 0);
+    return (ncpu > 0) ? (uint32_t)ncpu : 1;
 #else
     long n = sysconf(_SC_NPROCESSORS_ONLN);
     return (n > 0) ? (uint32_t)n : 1;
@@ -585,6 +656,7 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
 
     atomic_store_i32(&agent->paused, 0);
     atomic_store_i32(&agent->running, 0);
+    atomic_store_i32(&agent->needs_join, 0);
     atomic_store_i64(&agent->messages_processed, 0);
     atomic_store_i64(&agent->total_latency_us, 0);
 
@@ -597,10 +669,22 @@ MAPANARE_EXPORT int mapanare_agent_init(mapanare_agent_t *agent, const char *nam
         return -1;
     }
 
+    /* v4.28.0: serialize the producer side of the inbox so concurrent
+     * ``mapanare_agent_send`` calls do not race on ``head`` / slot writes. */
+    mapanare_mutex_init(&agent->inbox_producer_lock);
+
     mapanare_bp_init(&agent->bp, (int64_t)agent->inbox.capacity);
 
     mapanare_sem_init(&agent->inbox_ready, 0);
     mapanare_sem_init(&agent->outbox_ready, 0);
+
+    /* v4.78.0 (CARRY_FORWARD #50): default message_dtor to free() so
+     * in-flight messages are freed on agent destroy.  Previously
+     * message_dtor was NULL after memset, so the drain loop in
+     * mapanare_agent_destroy silently leaked every unconsumed payload.
+     * Agents needing custom destructors can override after init. */
+    agent->message_dtor = free;
+
     return 0;
 }
 
@@ -611,16 +695,39 @@ MAPANARE_EXPORT int mapanare_agent_spawn(mapanare_agent_t *agent) {
     atomic_store_i32(&agent->running, 1);
     int rc = mapanare_thread_create(&agent->thread, agent_thread_fn, agent);
     if (rc == 0) {
+        /* v4.137.0 (Ch.1): mark join as owed after successful thread
+         * create. Ordering: set AFTER create so a failed spawn leaves
+         * needs_join=0 and destroy() won't try to join an unstarted
+         * thread. */
+        atomic_store_i32(&agent->needs_join, 1);
         trace_emit(MAPANARE_TRACE_SPAWN, agent, NULL, 0);
+    } else {
+        atomic_store_i32(&agent->running, 0);
     }
     return rc;
 }
 
 MAPANARE_EXPORT int mapanare_agent_send(mapanare_agent_t *agent, void *msg) {
+    /* v4.28.0: take the producer lock so concurrent sends serialize on
+     * the MPSC side of the ring (the ring itself is still lock-free on
+     * the consumer side, which remains single-threaded). */
+    mapanare_mutex_lock(&agent->inbox_producer_lock);
+    /* v4.150.0 (E6-A): snapshot ring emptiness before push. If the ring
+     * was non-empty, the worker is either dispatching or about to loop
+     * back to ring_pop — it will find our new item without a wake.
+     * Only post the semaphore when the ring was empty, meaning the
+     * worker is (or is about to be) parked in sem_wait. Safe because:
+     * (1) single-consumer ring — worker always retries ring_pop after
+     * dispatch before sem_wait, so it can't miss a pushed item;
+     * (2) spurious wakes are harmless — worker re-checks ring_pop. */
+    int was_empty = mapanare_ring_is_empty(&agent->inbox);
     int rc = mapanare_ring_push(&agent->inbox, msg);
+    mapanare_mutex_unlock(&agent->inbox_producer_lock);
     if (rc == 0) {
         mapanare_bp_increment(&agent->bp);
-        mapanare_sem_post(&agent->inbox_ready);
+        if (was_empty) {
+            mapanare_sem_post(&agent->inbox_ready);
+        }
         trace_emit(MAPANARE_TRACE_SEND, agent, msg, 0);
     }
     return rc;
@@ -654,7 +761,12 @@ MAPANARE_EXPORT void mapanare_agent_stop(mapanare_agent_t *agent) {
     atomic_store_i32(&agent->paused, 0);  /* unblock if paused */
     mapanare_sem_post(&agent->inbox_ready);   /* wake agent thread */
     mapanare_sem_post(&agent->outbox_ready);  /* wake any blocking recv */
-    mapanare_thread_join(agent->thread);
+    /* v4.137.0 (Ch.1): only the caller that transitions needs_join
+     * from 1 → 0 performs the join. Makes stop() + destroy() safe to
+     * call in either order without double-joining. */
+    if (atomic_exchange_i32(&agent->needs_join, 0) == 1) {
+        mapanare_thread_join(agent->thread);
+    }
 }
 
 MAPANARE_EXPORT mapanare_agent_state_t mapanare_agent_get_state(mapanare_agent_t *agent) {
@@ -673,16 +785,41 @@ MAPANARE_EXPORT double mapanare_agent_avg_latency_us(mapanare_agent_t *agent) {
 }
 
 MAPANARE_EXPORT void mapanare_agent_destroy(mapanare_agent_t *agent) {
-    /* Drain inbox/outbox — discard remaining messages.
-     * Messages are void* and may not be heap-allocated,
-     * so we cannot free them here. Callers own message lifetime. */
+    if (!agent) return;
+    /* v4.137.0 (Ch.1): quiesce the worker thread BEFORE freeing any
+     * resources it may still be touching. Prior to this, destroy()
+     * drained and freed the rings/semaphores while the worker could
+     * still be blocked in sem_wait or mid-loop — a UAF that TSan
+     * flagged ~100% and ASan flagged intermittently. The atomic
+     * exchange on needs_join ensures we join exactly once whether
+     * stop() was called earlier or not. */
+    atomic_store_i32(&agent->running, 0);
+    atomic_store_i32(&agent->paused, 0);
+    mapanare_sem_post(&agent->inbox_ready);
+    mapanare_sem_post(&agent->outbox_ready);
+    if (atomic_exchange_i32(&agent->needs_join, 0) == 1) {
+        mapanare_thread_join(agent->thread);
+    }
+    /* v4.33.0 Phase 4.3 (Viper M5, 2nd cycle): drain inbox/outbox and
+     * free remaining messages IF a destructor was provided. If
+     * message_dtor is NULL, messages are discarded without freeing
+     * (backwards-compatible — caller owns lifetime). */
     void *msg = NULL;
-    while (mapanare_ring_pop(&agent->inbox, &msg) == 0) { (void)msg; }
-    while (mapanare_ring_pop(&agent->outbox, &msg) == 0) { (void)msg; }
+    while (mapanare_ring_pop(&agent->inbox, &msg) == 0) {
+        if (agent->message_dtor && msg) agent->message_dtor(msg);
+    }
+    while (mapanare_ring_pop(&agent->outbox, &msg) == 0) {
+        if (agent->message_dtor && msg) agent->message_dtor(msg);
+    }
     mapanare_ring_destroy(&agent->inbox);
     mapanare_ring_destroy(&agent->outbox);
+    /* v4.28.0: destroy the MPSC producer lock added in agent_init. */
+    mapanare_mutex_destroy(&agent->inbox_producer_lock);
     mapanare_sem_destroy(&agent->inbox_ready);
     mapanare_sem_destroy(&agent->outbox_ready);
+    /* Note: caller is responsible for freeing the agent struct if heap-allocated.
+     * The emitter calls free(agent) after destroy for agents created with
+     * mapanare_agent_new(). Stack-allocated agents (via init) must not be freed. */
 }
 
 MAPANARE_EXPORT mapanare_agent_t *mapanare_agent_new(const char *name,
@@ -793,6 +930,12 @@ MAPANARE_EXPORT uint32_t mapanare_registry_count(mapanare_agent_registry_t *reg)
 }
 
 MAPANARE_EXPORT void mapanare_registry_destroy(mapanare_agent_registry_t *reg) {
+    if (!reg) return;
+    /* Clear agent pointers (caller owns agent lifetime). */
+    for (uint32_t i = 0; i < reg->count; i++) {
+        reg->agents[i] = NULL;
+    }
+    reg->count = 0;
     mapanare_mutex_destroy(&reg->lock);
 }
 
@@ -1341,3 +1484,699 @@ MAPANARE_EXPORT void mapanare_memory_stats(mapanare_memory_stats_t *out) {
      * intern stats are available; add arena/agent aggregation when a global
      * registry is introduced. */
 }
+
+/* =======================================================================
+ * Multi-threaded work-stealing coroutine scheduler (v4.93.0)
+ *
+ * Replaces the v4.92.0 single-threaded scheduler. N worker threads,
+ * each with a Chase-Lev work-stealing deque. When a thread has no
+ * local work it steals from a random peer. Global overflow queue
+ * catches tasks when a local deque is full.
+ *
+ * API preserves the __mn_coro_scheduler_* symbols for backward compat.
+ * N=1 behaves identically to the v4.92.0 single-threaded scheduler.
+ * ======================================================================= */
+
+/* Chase-Lev work-stealing deque (bounded, power-of-2 size).
+ * Owner pushes/pops from bottom, stealers CAS from top.            */
+#define MN_DEQUE_CAP 1024  /* slots per worker, must be power of 2 */
+
+typedef struct {
+    void *handle;           /* coroutine handle (ptr from coro.begin)    */
+    void *awaited_future;   /* Future* being awaited, or NULL            */
+} mn_task_t;
+
+typedef struct {
+    mn_task_t        slots[MN_DEQUE_CAP];
+    mapanare_atomic_i64 bottom;  /* owner index (push/pop) */
+    mapanare_atomic_i64 top;     /* stealer index          */
+} mn_ws_deque_t;
+
+static void mn_deque_init(mn_ws_deque_t *d) {
+    memset(d->slots, 0, sizeof(d->slots));
+    __atomic_store_n(&d->bottom, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&d->top, 0, __ATOMIC_RELAXED);
+}
+
+/* Push task (owner only). Returns 0 on success, -1 if full. */
+static int mn_deque_push(mn_ws_deque_t *d, mn_task_t task) {
+    int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_RELAXED);
+    int64_t t = __atomic_load_n(&d->top, __ATOMIC_ACQUIRE);
+    if (b - t >= MN_DEQUE_CAP) return -1; /* full */
+    d->slots[b & (MN_DEQUE_CAP - 1)] = task;
+    /* Release fence folded into the store for TSan compatibility. */
+    __atomic_store_n(&d->bottom, b + 1, __ATOMIC_RELEASE);
+    return 0;
+}
+
+/* Pop task (owner only). Returns 1 if got a task, 0 if empty. */
+static int mn_deque_pop(mn_ws_deque_t *d, mn_task_t *out) {
+    int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_RELAXED) - 1;
+    /* SEQ_CST store replaces RELAXED store + SEQ_CST fence (TSan compatible). */
+    __atomic_store_n(&d->bottom, b, __ATOMIC_SEQ_CST);
+    int64_t t = __atomic_load_n(&d->top, __ATOMIC_RELAXED);
+    if (t <= b) {
+        *out = d->slots[b & (MN_DEQUE_CAP - 1)];
+        if (t == b) {
+            /* Last element — race with stealers. */
+            if (!__atomic_compare_exchange_n(&d->top, &t, t + 1,
+                    /*weak=*/0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED)) {
+                /* Lost race — deque is empty. */
+                __atomic_store_n(&d->bottom, t + 1, __ATOMIC_RELAXED);
+                return 0;
+            }
+            __atomic_store_n(&d->bottom, t + 1, __ATOMIC_RELAXED);
+        }
+        return 1;
+    }
+    /* Empty. */
+    __atomic_store_n(&d->bottom, t, __ATOMIC_RELAXED);
+    return 0;
+}
+
+/* Steal task (any thread). Returns 1 if got a task, 0 if empty. */
+static int mn_deque_steal(mn_ws_deque_t *d, mn_task_t *out) {
+    /* SEQ_CST load replaces ACQUIRE load + SEQ_CST fence (TSan compatible). */
+    int64_t t = __atomic_load_n(&d->top, __ATOMIC_SEQ_CST);
+    int64_t b = __atomic_load_n(&d->bottom, __ATOMIC_ACQUIRE);
+    if (t >= b) return 0; /* empty */
+    *out = d->slots[t & (MN_DEQUE_CAP - 1)];
+    if (!__atomic_compare_exchange_n(&d->top, &t, t + 1,
+            /*weak=*/0, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED)) {
+        return 0; /* lost race */
+    }
+    return 1;
+}
+
+/* Global overflow queue (mutex-protected, for when local deque is full). */
+#define MN_OVERFLOW_CAP 4096
+
+typedef struct {
+    mn_task_t slots[MN_OVERFLOW_CAP];
+    uint32_t  head;
+    uint32_t  count;
+    mapanare_mutex_t lock;
+} mn_overflow_queue_t;
+
+static void mn_overflow_init(mn_overflow_queue_t *q) {
+    memset(q->slots, 0, sizeof(q->slots));
+    q->head = 0;
+    q->count = 0;
+    mapanare_mutex_init(&q->lock);
+}
+
+static int mn_overflow_push(mn_overflow_queue_t *q, mn_task_t task) {
+    mapanare_mutex_lock(&q->lock);
+    if (q->count >= MN_OVERFLOW_CAP) {
+        mapanare_mutex_unlock(&q->lock);
+        return -1;
+    }
+    uint32_t idx = (q->head + q->count) % MN_OVERFLOW_CAP;
+    q->slots[idx] = task;
+    q->count++;
+    mapanare_mutex_unlock(&q->lock);
+    return 0;
+}
+
+static int mn_overflow_pop(mn_overflow_queue_t *q, mn_task_t *out) {
+    mapanare_mutex_lock(&q->lock);
+    if (q->count == 0) {
+        mapanare_mutex_unlock(&q->lock);
+        return 0;
+    }
+    *out = q->slots[q->head];
+    q->head = (q->head + 1) % MN_OVERFLOW_CAP;
+    q->count--;
+    mapanare_mutex_unlock(&q->lock);
+    return 1;
+}
+
+static void mn_overflow_destroy(mn_overflow_queue_t *q) {
+    mapanare_mutex_destroy(&q->lock);
+}
+
+/* Check if a Future is Ready (state byte at offset 0 == 1). */
+static inline int mn_future_is_ready(void *future_ptr) {
+    if (!future_ptr) return 1; /* NULL future = ready (no await) */
+    return __atomic_load_n((uint8_t *)future_ptr, __ATOMIC_ACQUIRE) == 1;
+}
+
+/* ── LLVM coroutine frame ABI (switched-resume lowering) ──
+ *
+ * v4.113.0 (docket #8): replaces the prior pattern of casting the
+ * coroutine handle directly to `void **` and indexing by hand. The
+ * LLVM switched-resume coroutine ABI places two function pointers at
+ * the head of every coroutine frame:
+ *
+ *   offset 0 = resume_fn  (NULL-nulled by the coroutine splitter on
+ *                          final suspend — this is what
+ *                          `llvm.coro.done(handle)` lowers to)
+ *   offset 8 = destroy_fn (still valid after final suspend; used by
+ *                          `llvm.coro.destroy`)
+ *
+ * Both slots are pointer-sized and follow the host ABI's pointer
+ * alignment. Everything after this prefix is opaque user state laid
+ * out by the coroutine splitter — we must never peek into it from C.
+ *
+ * By expressing the prefix as a named struct we get:
+ *   - one compile-time-checked place to update if the ABI ever moves
+ *   - self-documenting field access (`frame->resume_fn` reads better
+ *     than `*(void **)handle`)
+ *   - a single definition grep-able by reviewers — no magic offsets,
+ *     no hand-rolled casts scattered through the scheduler. */
+typedef struct mn_coro_frame_prefix {
+    void (*resume_fn)(void *handle);   /* NULL ⇒ coroutine completed */
+    void (*destroy_fn)(void *handle);  /* frees the coroutine frame  */
+} mn_coro_frame_prefix_t;
+
+/* Check if a coroutine has reached its final suspend. Equivalent to
+ * `llvm.coro.done(handle)` in the LLVM switched-resume lowering: the
+ * splitter nulls the resume_fn slot when the coroutine returns. */
+static inline int mn_coro_is_done(void *handle) {
+    const mn_coro_frame_prefix_t *frame = (const mn_coro_frame_prefix_t *)handle;
+    return frame->resume_fn == NULL;
+}
+
+/* Resume a suspended coroutine by calling its LLVM-emitted resume_fn. */
+static inline void mn_coro_resume(void *handle) {
+    mn_coro_frame_prefix_t *frame = (mn_coro_frame_prefix_t *)handle;
+    frame->resume_fn(handle);
+}
+
+/* ── Multi-threaded scheduler ── */
+
+#define MN_MAX_WORKERS 64
+
+typedef struct mn_mt_scheduler {
+    mn_ws_deque_t      deques[MN_MAX_WORKERS];   /* per-worker deques         */
+    mapanare_thread_t  threads[MN_MAX_WORKERS];   /* worker thread handles     */
+    uint32_t           num_workers;               /* N (1 = single-threaded)   */
+    mn_overflow_queue_t overflow;                  /* global overflow queue     */
+    mapanare_atomic_i32 active_tasks;             /* total tasks in system     */
+    mapanare_atomic_i32 running;                  /* 1 = active, 0 = shutdown  */
+    mapanare_mutex_t   wake_lock;                 /* protects condvar          */
+    mapanare_cond_t    wake_cond;                 /* wake parked workers       */
+    mapanare_mutex_t   done_lock;                 /* protects done condvar     */
+    mapanare_cond_t    done_cond;                 /* signal block_on caller    */
+} mn_mt_scheduler_t;
+
+static mn_mt_scheduler_t mn_sched;
+
+/* Try to get a task: local pop, then overflow, then steal from peers. */
+static int mn_worker_get_task(uint32_t worker_id, mn_task_t *out) {
+    /* 1. Pop from own deque. */
+    if (mn_deque_pop(&mn_sched.deques[worker_id], out))
+        return 1;
+    /* 2. Pop from global overflow. */
+    if (mn_overflow_pop(&mn_sched.overflow, out))
+        return 1;
+    /* 3. Steal from random peer. */
+    uint32_t n = mn_sched.num_workers;
+    if (n <= 1) return 0;
+    /* Simple linear scan starting from random offset. */
+    uint32_t start = (worker_id + 1) % n;
+    for (uint32_t i = 0; i < n - 1; i++) {
+        uint32_t victim = (start + i) % n;
+        if (mn_deque_steal(&mn_sched.deques[victim], out))
+            return 1;
+    }
+    return 0;
+}
+
+/* Process a single task: check readiness, resume, detect completion. */
+static void mn_process_task(mn_task_t *task, uint32_t worker_id) {
+    /* If awaiting a future that isn't ready, re-enqueue. */
+    if (task->awaited_future && !mn_future_is_ready(task->awaited_future)) {
+        mn_deque_push(&mn_sched.deques[worker_id], *task);
+        return;
+    }
+
+    /* Resume the coroutine. */
+    mn_coro_resume(task->handle);
+
+    /* If the awaited future is now ready, clear the wait. */
+    if (task->awaited_future && mn_future_is_ready(task->awaited_future)) {
+        task->awaited_future = NULL;
+    }
+
+    /* Check if coroutine completed. */
+    if (mn_coro_is_done(task->handle)) {
+        __atomic_fetch_sub(&mn_sched.active_tasks, 1, __ATOMIC_ACQ_REL);
+        /* Signal block_on waiters. */
+        mapanare_mutex_lock(&mn_sched.done_lock);
+        mapanare_cond_broadcast(&mn_sched.done_cond);
+        mapanare_mutex_unlock(&mn_sched.done_lock);
+    } else {
+        /* Coroutine suspended again — re-enqueue. */
+        if (mn_deque_push(&mn_sched.deques[worker_id], *task) != 0) {
+            mn_overflow_push(&mn_sched.overflow, *task);
+        }
+    }
+}
+
+#ifdef _WIN32
+static DWORD WINAPI mn_worker_loop(LPVOID arg) {
+#else
+static void *mn_worker_loop(void *arg) {
+#endif
+    uint32_t worker_id = (uint32_t)(uintptr_t)arg;
+    uint32_t idle_spins = 0;
+
+    while (__atomic_load_n(&mn_sched.running, __ATOMIC_ACQUIRE)) {
+        mn_task_t task;
+        if (mn_worker_get_task(worker_id, &task)) {
+            mn_process_task(&task, worker_id);
+            idle_spins = 0;
+        } else {
+            /* No work available. */
+            if (__atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) == 0) {
+                break; /* All tasks complete. */
+            }
+            idle_spins++;
+            if (idle_spins > 64) {
+                /* Park via condvar (no busy-wait). */
+                mapanare_mutex_lock(&mn_sched.wake_lock);
+                /* Double-check under lock. */
+                if (__atomic_load_n(&mn_sched.running, __ATOMIC_ACQUIRE) &&
+                    __atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) > 0) {
+                    mapanare_cond_wait_ms(&mn_sched.wake_cond,
+                                          &mn_sched.wake_lock, 1);
+                }
+                mapanare_mutex_unlock(&mn_sched.wake_lock);
+                idle_spins = 0;
+            }
+        }
+    }
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+/* ── Public API (same symbols as v4.92.0) ── */
+
+MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads) {
+    memset(&mn_sched, 0, sizeof(mn_sched));
+    uint32_t n = num_threads;
+    if (n == 0) {
+        /* v4.150.0 (E6): honour MAPANARE_ASYNC_THREADS env var. On
+         * high-core-count machines (32+ cores) the default of spawning
+         * one thread per core adds significant startup cost (~2 ms for
+         * 31 pthread_create calls) that dominates short-lived async
+         * programs. The env var lets users and benchmarks cap the pool
+         * without recompilation. */
+        const char *env = getenv("MAPANARE_ASYNC_THREADS");
+        if (env && env[0]) {
+            int v = atoi(env);
+            if (v > 0) n = (uint32_t)v;
+        }
+        if (n == 0) n = (uint32_t)mapanare_cpu_count();
+    }
+    if (n > MN_MAX_WORKERS) n = MN_MAX_WORKERS;
+    mn_sched.num_workers = n;
+    __atomic_store_n(&mn_sched.running, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&mn_sched.active_tasks, 0, __ATOMIC_RELEASE);
+    mapanare_mutex_init(&mn_sched.wake_lock);
+    mapanare_cond_init(&mn_sched.wake_cond);
+    mapanare_mutex_init(&mn_sched.done_lock);
+    mapanare_cond_init(&mn_sched.done_cond);
+    mn_overflow_init(&mn_sched.overflow);
+    for (uint32_t i = 0; i < n; i++) {
+        mn_deque_init(&mn_sched.deques[i]);
+    }
+    /* Start worker threads (skip thread 0 — the caller thread acts as worker 0
+     * during block_on, which avoids deadlock when block_on is called from main).
+     *
+     * v4.113.0 (docket #11): pthread_create can fail with EAGAIN when the
+     * per-user thread limit is exceeded, or ENOMEM / EPERM in rarer cases.
+     * Prior to v4.113.0 the return value was silently dropped — the
+     * scheduler would report `num_workers = N` while having only
+     * `num_workers - k` live threads, making every task-steal look idle
+     * and stalling the whole program. Bail with a specific message that
+     * names what failed (thread N of M) and why (strerror on the real
+     * errno), so `RLIMIT_NPROC` exhaustion doesn't masquerade as a
+     * generic hang. */
+    for (uint32_t i = 1; i < n; i++) {
+        int rc = mapanare_thread_create(&mn_sched.threads[i], mn_worker_loop,
+                                        (void *)(uintptr_t)i);
+        if (rc != 0) {
+            fprintf(stderr,
+                    "mapanare: async runtime: failed to spawn worker thread "
+                    "%u of %u: %s (errno %d). Likely causes: "
+                    "RLIMIT_NPROC exhausted, or ENOMEM at pthread stack "
+                    "allocation. Try lowering MAPANARE_ASYNC_THREADS or "
+                    "raising `ulimit -u`.\n",
+                    i, n, strerror(rc), rc);
+            exit(1);
+        }
+    }
+}
+
+MN_EXPORT void __mn_coro_scheduler_register(void *handle) {
+    /* v4.113.0 (docket #11): refuse to enqueue a coroutine before
+     * __mn_coro_scheduler_init has run. Pre-v4.113.0 the scheduler
+     * would silently push into a zero-initialised deque (num_workers=0)
+     * and __mn_coro_scheduler_run would spin forever waiting for
+     * active_tasks to drain. Emit a specific message naming the
+     * missing call so the user knows which init to add. */
+    if (mn_sched.num_workers == 0) {
+        fprintf(stderr,
+                "mapanare: async runtime: cannot spawn task — scheduler "
+                "not initialised. The main() emitted by the compiler "
+                "should call __mn_coro_scheduler_init() before any "
+                "async function runs; if this message appeared, the "
+                "emitter (mapanare/emit_llvm_text.py) dropped that "
+                "call for the current entry point.\n");
+        exit(1);
+    }
+    mn_task_t task = { .handle = handle, .awaited_future = NULL };
+    __atomic_fetch_add(&mn_sched.active_tasks, 1, __ATOMIC_ACQ_REL);
+    /* Push to worker 0's deque (caller is main thread = worker 0).
+     *
+     * v4.113.0 (docket #11): both the per-worker deque and the global
+     * overflow queue are bounded; if both are full the task must not
+     * be silently dropped (previously we did, and the scheduler would
+     * deadlock waiting on a task the scheduler never actually held).
+     * Undo the active_tasks bump, name which queue refused the push,
+     * and bail. This path is rare but when it triggers silent drop
+     * was spectacularly hard to diagnose. */
+    if (mn_deque_push(&mn_sched.deques[0], task) != 0) {
+        if (mn_overflow_push(&mn_sched.overflow, task) != 0) {
+            __atomic_fetch_sub(&mn_sched.active_tasks, 1, __ATOMIC_ACQ_REL);
+            fprintf(stderr,
+                    "mapanare: async runtime: failed to spawn task — both "
+                    "worker-0 deque (cap=%u) and global overflow queue "
+                    "(cap=%u) are full. Too many concurrent spawn() calls "
+                    "without await points; the scheduler cannot drain. "
+                    "Rewrite to spawn in batches or add an await.\n",
+                    (unsigned)MN_DEQUE_CAP, (unsigned)MN_OVERFLOW_CAP);
+            exit(1);
+        }
+    }
+    /* Wake a parked worker. */
+    mapanare_mutex_lock(&mn_sched.wake_lock);
+    mapanare_cond_signal(&mn_sched.wake_cond);
+    mapanare_mutex_unlock(&mn_sched.wake_lock);
+}
+
+MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr) {
+    /* The coroutine is about to suspend. We need to associate the future
+     * with it so the scheduler knows when to resume. Since the coroutine
+     * is mid-execution on the current worker, we create a task entry
+     * that will be picked up on the next scheduling round. */
+    mn_task_t task = { .handle = handle, .awaited_future = future_ptr };
+    /* Push to worker 0's deque. In the multi-threaded model, the actual
+     * worker ID should be passed, but for simplicity we use the overflow
+     * queue which any worker can drain.
+     *
+     * v4.113.0 (docket #11): same silent-drop concern as
+     * __mn_coro_scheduler_register, but this one is worse — the
+     * coroutine is SUSPENDED waiting for a future that will never be
+     * resumed. Report the awaited future's address and bail so the
+     * user sees a specific "await lost its resumer" failure instead
+     * of a hang. */
+    if (mn_overflow_push(&mn_sched.overflow, task) != 0) {
+        fprintf(stderr,
+                "mapanare: async runtime: cannot register await — global "
+                "overflow queue (cap=%u) is full. Coroutine at %p is "
+                "awaiting Future at %p; without a resumer slot it will "
+                "never wake. Rewrite to limit concurrent awaits.\n",
+                (unsigned)MN_OVERFLOW_CAP, handle, future_ptr);
+        exit(1);
+    }
+    /* Wake a worker to check the newly-enqueued wait. */
+    mapanare_mutex_lock(&mn_sched.wake_lock);
+    mapanare_cond_signal(&mn_sched.wake_cond);
+    mapanare_mutex_unlock(&mn_sched.wake_lock);
+}
+
+MN_EXPORT void __mn_coro_scheduler_run(void) {
+    /* The calling thread (main/worker 0) participates as a worker while
+     * waiting for all tasks to complete. This avoids deadlock. */
+    uint32_t idle_spins = 0;
+    while (__atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) > 0) {
+        mn_task_t task;
+        if (mn_worker_get_task(0, &task)) {
+            mn_process_task(&task, 0);
+            idle_spins = 0;
+        } else {
+            idle_spins++;
+            if (idle_spins > 100) {
+                /* Wait for a task to complete. */
+                mapanare_mutex_lock(&mn_sched.done_lock);
+                if (__atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) > 0) {
+                    mapanare_cond_wait_ms(&mn_sched.done_cond,
+                                          &mn_sched.done_lock, 1);
+                }
+                mapanare_mutex_unlock(&mn_sched.done_lock);
+                idle_spins = 0;
+            }
+        }
+    }
+}
+
+MN_EXPORT void __mn_coro_scheduler_destroy(void) {
+    __atomic_store_n(&mn_sched.running, 0, __ATOMIC_RELEASE);
+    /* Wake all workers so they see the shutdown flag. */
+    mapanare_mutex_lock(&mn_sched.wake_lock);
+    mapanare_cond_broadcast(&mn_sched.wake_cond);
+    mapanare_mutex_unlock(&mn_sched.wake_lock);
+    /* Join worker threads (skip 0 — that's the caller). */
+    for (uint32_t i = 1; i < mn_sched.num_workers; i++) {
+        mapanare_thread_join(mn_sched.threads[i]);
+    }
+    mapanare_mutex_destroy(&mn_sched.wake_lock);
+    mapanare_cond_destroy(&mn_sched.wake_cond);
+    mapanare_mutex_destroy(&mn_sched.done_lock);
+    mapanare_cond_destroy(&mn_sched.done_cond);
+    mn_overflow_destroy(&mn_sched.overflow);
+}
+
+/* v4.93.0: spawn() — enqueue a coroutine for multi-threaded execution. */
+MN_EXPORT void __mn_coro_spawn(void *handle) {
+    __mn_coro_scheduler_register(handle);
+}
+
+/* -----------------------------------------------------------------------
+ * Async file I/O (v4.92.0)
+ *
+ * mapanare_file_read_async(): spawns a thread to read a file, returns
+ * a Future<String> immediately. The thread reads the file synchronously
+ * and sets the future to Ready when done.
+ * ----------------------------------------------------------------------- */
+
+typedef struct {
+    void    *future;    /* Future {i8, ptr} — shared with caller  */
+    MnString path;      /* File path to read                       */
+} mn_async_read_ctx_t;
+
+#ifdef _WIN32
+static DWORD WINAPI mn_async_file_read_thread(LPVOID arg) {
+#else
+static void *mn_async_file_read_thread(void *arg) {
+#endif
+    mn_async_read_ctx_t *ctx = (mn_async_read_ctx_t *)arg;
+
+    /* Read the file synchronously. */
+    int64_t ok = 0;
+    extern MnString __mn_file_read(MnString path, int64_t *ok);
+    MnString content = __mn_file_read(ctx->path, &ok);
+
+    /* Allocate result box (i64-sized for uniform extraction). */
+    void *box = malloc(sizeof(MnString));
+    *(MnString *)box = content;
+
+    /* Store into future: payload = box, then state = Ready.
+     * The store order matters: payload first, then state,
+     * with a release fence so the scheduler sees both. */
+    void **payload_slot = (void **)((uint8_t *)ctx->future + sizeof(uint8_t));
+    /* On 64-bit, the {i8, ptr} layout may have padding.
+     * Match the LLVM GEP: field 1 is at offset 8 (i8 + 7 padding). */
+    payload_slot = (void **)((uint8_t *)ctx->future + 8);
+    *payload_slot = box;
+    __atomic_store_n((uint8_t *)ctx->future, 1, __ATOMIC_RELEASE);
+
+    free(ctx);
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+MN_EXPORT void *__mn_file_read_async(MnString path) {
+    /* Allocate a Future {i8 state, ptr payload}.
+     *
+     * v4.113.0 (docket #11): calloc / malloc / pthread_create all
+     * check on the happy path; each failure mode gets a specific
+     * message naming WHAT we were trying to allocate (Future vs.
+     * context) and which errno came back. Previously a failure here
+     * produced either a SIGSEGV (from dereferencing NULL future /
+     * ctx) or a silent hang (detached thread never started, Future
+     * state byte never set to Ready). */
+    void *future = calloc(1, 16);  /* 16 bytes = {i8, padding[7], ptr} */
+    if (!future) {
+        fprintf(stderr,
+                "mapanare: async runtime: cannot start file_read_async "
+                "— out of memory allocating Future (16 bytes).\n");
+        exit(1);
+    }
+
+    mn_async_read_ctx_t *ctx = (mn_async_read_ctx_t *)malloc(sizeof(*ctx));
+    if (!ctx) {
+        free(future);
+        fprintf(stderr,
+                "mapanare: async runtime: cannot start file_read_async "
+                "— out of memory allocating reader context (%zu bytes).\n",
+                sizeof(*ctx));
+        exit(1);
+    }
+    ctx->future = future;
+    ctx->path = path;
+
+    mapanare_thread_t thread;
+    int rc = mapanare_thread_create(&thread, mn_async_file_read_thread, ctx);
+    if (rc != 0) {
+        free(ctx);
+        free(future);
+        fprintf(stderr,
+                "mapanare: async runtime: failed to spawn file-read "
+                "thread: %s (errno %d). The Future would never resolve; "
+                "aborting rather than hanging the caller.\n",
+                strerror(rc), rc);
+        exit(1);
+    }
+    mapanare_thread_detach(thread);
+
+    return future;
+}
+
+/* -----------------------------------------------------------------------
+ * v4.105.0 Phase 4 — crash breadcrumbs (async-signal-safe)
+ *
+ * The compiler driver sets a thread-local "current source" pointer as it
+ * descends through the compile pipeline. On SIGSEGV/SIGABRT/SIGBUS, the
+ * signal handler prints this pointer alongside the signal number using
+ * only async-signal-safe primitives (write(2), hand-rolled int format,
+ * backtrace_symbols_fd which is explicitly AS-safe).
+ *
+ * Why this exists: v4.105.0 Phase 3's TSan run showed the previous
+ * crash_handler (mnc_main.c:23-34 pre-v4.105.0) called fprintf() and
+ * backtrace() which triggers malloc via ld.so — UB inside a signal.
+ * ----------------------------------------------------------------------- */
+
+#ifndef _WIN32
+#include <execinfo.h>
+
+/* Thread-local breadcrumb: last-observed source location.
+ * Both fields are set by __mn_set_current_source; the handler reads them. */
+static __thread const char *mn_current_file  = NULL;
+static __thread int32_t     mn_current_line  = 0;
+static __thread const char *mn_current_phase = NULL;  /* e.g., "parse", "lower", "emit" */
+
+/* Set file:line breadcrumb. The compiler driver calls this as it
+ * opens a file or enters a function. Must be inlined-free and cheap. */
+MN_EXPORT void __mn_set_current_source(const char *filename, int32_t line) {
+    mn_current_file = filename;
+    mn_current_line = line;
+}
+
+MN_EXPORT void __mn_set_current_phase(const char *phase) {
+    mn_current_phase = phase;
+}
+
+/* AS-safe unsigned decimal print. Writes to fd 2. */
+static void mn_as_write_uint(int fd, uint64_t v) {
+    char buf[24];
+    int i = 23;
+    buf[i--] = 0;
+    if (v == 0) { buf[i--] = '0'; }
+    while (v > 0) { buf[i--] = (char)('0' + (v % 10)); v /= 10; }
+    (void)!write(fd, buf + i + 1, 23 - i - 1);
+}
+
+/* AS-safe signed decimal print. */
+static void mn_as_write_int(int fd, int64_t v) {
+    if (v < 0) { (void)!write(fd, "-", 1); v = -v; }
+    mn_as_write_uint(fd, (uint64_t)v);
+}
+
+static void mn_as_write_cstr(int fd, const char *s) {
+    if (!s) return;
+    size_t n = 0;
+    while (s[n] && n < 4096) n++;
+    (void)!write(fd, s, n);
+}
+
+static void mn_as_write_sig_name(int fd, int sig) {
+    const char *n = NULL;
+    switch (sig) {
+        case SIGSEGV: n = "SIGSEGV"; break;
+        case SIGABRT: n = "SIGABRT"; break;
+        case SIGBUS:  n = "SIGBUS";  break;
+        case SIGFPE:  n = "SIGFPE";  break;
+        case SIGILL:  n = "SIGILL";  break;
+        case SIGPIPE: n = "SIGPIPE"; break;
+        default: break;
+    }
+    if (n) mn_as_write_cstr(fd, n);
+    else { mn_as_write_cstr(fd, "signal "); mn_as_write_int(fd, sig); }
+}
+
+/* The signal handler. Async-signal-safe: no malloc, no stdio, no locks. */
+static void mn_crashdiag_handler(int sig) {
+    const int fd = 2;  /* stderr */
+
+    (void)!write(fd, "\n[CRASH] ", 9);
+    mn_as_write_sig_name(fd, sig);
+
+    if (mn_current_phase) {
+        (void)!write(fd, " during ", 8);
+        mn_as_write_cstr(fd, mn_current_phase);
+    }
+    if (mn_current_file) {
+        (void)!write(fd, " at ", 4);
+        mn_as_write_cstr(fd, mn_current_file);
+        if (mn_current_line > 0) {
+            (void)!write(fd, ":", 1);
+            mn_as_write_int(fd, mn_current_line);
+        }
+    }
+    (void)!write(fd, "\n", 1);
+
+    /* backtrace_symbols_fd is explicitly listed in signal-safety(7) as
+     * async-signal-safe. backtrace() itself triggers a lazy ld.so load
+     * on first invocation; that *is* unsafe but only the first time.
+     * Accept this trade-off: the alternative is no backtrace at all. */
+    void *frames[32];
+    int n = backtrace(frames, 32);
+    backtrace_symbols_fd(frames, n, fd);
+    (void)!write(fd, "\n", 1);
+
+    _exit(128 + sig);
+}
+
+/* Install the handler on SIGSEGV/SIGABRT/SIGBUS/SIGFPE/SIGILL.
+ * Uses sigaction (not signal) for portable semantics.
+ * Called once from mnc_main.c before any compiler work. */
+MN_EXPORT void __mn_install_crash_handler(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = mn_crashdiag_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESETHAND;  /* let a second crash abort cleanly */
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGBUS,  &sa, NULL);
+    sigaction(SIGFPE,  &sa, NULL);
+    sigaction(SIGILL,  &sa, NULL);
+}
+
+#else  /* _WIN32 */
+MN_EXPORT void __mn_set_current_source(const char *filename, int32_t line) {
+    (void)filename; (void)line;
+}
+MN_EXPORT void __mn_set_current_phase(const char *phase) { (void)phase; }
+MN_EXPORT void __mn_install_crash_handler(void) { }
+#endif

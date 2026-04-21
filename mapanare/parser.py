@@ -15,12 +15,15 @@ from mapanare.ast_nodes import (
     AssertStmt,
     AssignExpr,
     ASTNode,
+    AsyncFnDef,
+    AwaitExpr,
     BinaryExpr,
     Block,
     BoolLiteral,
     BreakStmt,
     CallExpr,
     CharLiteral,
+    ConstDef,
     ConstructExpr,
     ConstructorPattern,
     ContinueStmt,
@@ -39,6 +42,7 @@ from mapanare.ast_nodes import (
     FloatLiteral,
     FnDef,
     FnType,
+    ForAwaitLoop,
     ForLoop,
     GenericType,
     Identifier,
@@ -47,6 +51,7 @@ from mapanare.ast_nodes import (
     ImplDef,
     ImportDef,
     IndexExpr,
+    IndexItem,
     InterpString,
     IntLiteral,
     LambdaExpr,
@@ -58,9 +63,11 @@ from mapanare.ast_nodes import (
     MatchArm,
     MatchExpr,
     MethodCallExpr,
+    ModuleLetDef,
     NamedType,
     NamespaceAccessExpr,
     NoneLiteral,
+    OrPattern,
     Param,
     PipeDef,
     PipeExpr,
@@ -77,6 +84,7 @@ from mapanare.ast_nodes import (
     StructDef,
     StructField,
     SyncExpr,
+    TensorLiteral,
     TensorType,
     TraitDef,
     TraitMethod,
@@ -395,6 +403,25 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         for child in children:
             if isinstance(child, Definition):
                 definitions.append(child)
+            elif isinstance(child, LetBinding) and not child.mutable:
+                # Top-level immutable let → module constant
+                type_name = ""
+                if child.type_annotation is not None:
+                    type_name = getattr(child.type_annotation, "name", "")
+                definitions.append(
+                    ModuleLetDef(
+                        name=child.name,
+                        type_name=type_name,
+                        value=child.value,
+                        span=child.span,
+                    )
+                )
+            elif isinstance(child, LetBinding) and child.mutable:
+                raise ParseError(
+                    "E420: 'let mut' is block-scoped; "
+                    f"use 'const {child.name} = ...' at module scope, "
+                    "or wrap in fn main() for mutable state"
+                )
             elif isinstance(child, Stmt):
                 top_level_stmts.append(child)
             elif isinstance(child, Expr):
@@ -478,13 +505,22 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     # ------------------------------------------------------------------
 
     def named_type(self, children: list[Any]) -> NamedType:
-        return NamedType(name=str(children[0]), span=_span_from_children(children))
+        names = [str(c) for c in children if isinstance(c, Token) and c.type == "NAME"]
+        return NamedType(
+            name=names[-1],
+            module_path=names[:-1],
+            span=_span_from_children(children),
+        )
 
     def generic_type(self, children: list[Any]) -> GenericType:
-        items = _filter(children)
-        name = str(items[0])
-        args = [a for a in items[1:] if isinstance(a, TypeExpr)]
-        return GenericType(name=name, args=args, span=_span_from_children(children))
+        names = [str(c) for c in children if isinstance(c, Token) and c.type == "NAME"]
+        args = [a for a in children if isinstance(a, TypeExpr)]
+        return GenericType(
+            name=names[-1],
+            module_path=names[:-1],
+            args=args,
+            span=_span_from_children(children),
+        )
 
     def tensor_type(self, children: list[Any]) -> TensorType:
         items = _filter(children)
@@ -572,6 +608,19 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             span=_span_from_children(children),
         )
 
+    def const_def(self, children: list[Any]) -> ConstDef:
+        """v4.55.0: ``const NAME: TYPE = EXPR`` — real const definition."""
+        items = _filter(children)
+        name = str(items[0])
+        type_expr = items[1]  # full TypeExpr, not collapsed to .name
+        value = items[2]
+        return ConstDef(
+            name=name,
+            type_expr=type_expr,
+            value=value,
+            span=_span_from_children(children),
+        )
+
     def return_stmt(self, children: list[Any]) -> ReturnStmt:
         items = _filter(children)
         value = items[0] if items else None
@@ -599,6 +648,15 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         iterable = items[1]
         body = items[2]
         return ForLoop(
+            var_name=name, iterable=iterable, body=body, span=_span_from_children(children)
+        )
+
+    def for_await_stmt(self, children: list[Any]) -> ForAwaitLoop:
+        items = _filter(children)
+        name = str(items[0])
+        iterable = items[1]
+        body = items[2]
+        return ForAwaitLoop(
             var_name=name, iterable=iterable, body=body, span=_span_from_children(children)
         )
 
@@ -757,7 +815,24 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def index_expr(self, children: list[Any]) -> IndexExpr:
         items = _filter(children)
-        return IndexExpr(object=items[0], index=items[1], span=_span_from_children(children))
+        # items[0] is the object; items[1:] are Expr
+        # v4.45.0: detect RangeExpr → IndexItem("range"), Identifier("_") → IndexItem("wildcard")
+        idx_items: list[IndexItem] = []
+        for c in items[1:]:
+            if isinstance(c, RangeExpr):
+                idx_items.append(
+                    IndexItem(
+                        kind="range",
+                        start=c.start,
+                        end=c.end,
+                        span=getattr(c, "span", Span()),
+                    )
+                )
+            elif isinstance(c, Identifier) and c.name == "_":
+                idx_items.append(IndexItem(kind="wildcard", span=getattr(c, "span", Span())))
+            elif isinstance(c, Expr):
+                idx_items.append(IndexItem(kind="scalar", expr=c, span=getattr(c, "span", Span())))
+        return IndexExpr(object=items[0], indices=idx_items, span=_span_from_children(children))
 
     def error_prop(self, children: list[Any]) -> ErrorPropExpr:
         items = _filter(children)
@@ -819,6 +894,64 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             elements=[c for c in children if isinstance(c, Expr)],
             span=_span_from_children(children),
         )
+
+    # ------------------------------------------------------------------
+    # Tensor literal (v4.42.0)
+    # ------------------------------------------------------------------
+
+    def tensor_literal(self, children: list[Any]) -> TensorLiteral:
+        """Transform a tensor literal: Tensor<Type>[body].
+
+        Walks the nested body tree, flattens elements to row-major order,
+        infers shape from nesting depth + per-level counts, and detects
+        jagged arrays (sibling sub-arrays with different lengths).
+        """
+        items = _filter(children)
+        elem_type = items[0]  # TypeExpr from the <Type> part
+        # items[1] is the tensor_body result — a list of Expr (1D) or list-of-lists (nD)
+        body = items[1] if len(items) > 1 and isinstance(items[1], list) else []
+
+        shape: list[int] = []
+        flat: list[Expr] = []
+        span = _span_from_children(children)
+
+        def _walk(nodes: list[Any], depth: int) -> None:
+            """Recursively walk tensor body, flattening and tracking shape."""
+            if depth >= len(shape):
+                shape.append(len(nodes))
+            elif shape[depth] != len(nodes):
+                raise ParseError(
+                    f"tensor literal shape mismatch at depth {depth}: "
+                    f"expected {shape[depth]} elements, got {len(nodes)}",
+                    line=span.line,
+                    column=span.column,
+                )
+            for node in nodes:
+                if isinstance(node, list):
+                    _walk(node, depth + 1)
+                elif isinstance(node, Expr):
+                    flat.append(node)
+                # Skip Token/non-Expr items (commas, brackets)
+
+        _walk(body, 0)
+        return TensorLiteral(element_type=elem_type, shape=shape, elements=flat, span=span)
+
+    def tensor_body(self, children: list[Any]) -> list[Any]:
+        """Collect tensor body elements (mix of Expr and nested lists)."""
+        return [c for c in children if isinstance(c, (Expr, list))]
+
+    def tensor_nested(self, children: list[Any]) -> list[Any]:
+        """A nested [tensor_body] returns the body's list."""
+        for c in children:
+            if isinstance(c, list):
+                return c
+        return []
+
+    def tensor_neg(self, children: list[Any]) -> UnaryExpr:
+        """Negated tensor element: -expr."""
+        items = _filter(children)
+        operand = items[0] if items else Expr()
+        return UnaryExpr(op="-", operand=operand, span=_span_from_children(children))
 
     def map_lit(self, children: list[Any]) -> MapLiteral:
         return MapLiteral(
@@ -891,7 +1024,7 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             result.span = _span_from_children(children)
             return result
         # Attach decorators to the definition
-        if isinstance(defn, (FnDef, AgentDef)):
+        if isinstance(defn, (FnDef, AsyncFnDef, AgentDef)):
             defn.decorators = decorators
         defn.span = _span_from_children(children)
         return defn
@@ -933,6 +1066,11 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
     def sync_expr(self, children: list[Any]) -> SyncExpr:
         items = _filter(children)
         return SyncExpr(expr=items[0], span=_span_from_children(children))
+
+    # v4.68.0: ``await_expr`` restored (Arc 8). See v4.67.0/DESIGN.md §3.2.
+    def await_expr(self, children: list[Any]) -> AwaitExpr:
+        items = _filter(children)
+        return AwaitExpr(expr=items[0], span=_span_from_children(children))
 
     def signal_value(self, children: list[Any]) -> SignalExpr:
         items = _filter(children)
@@ -1004,11 +1142,29 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def match_arm(self, children: list[Any]) -> MatchArm:
         items = _filter(children)
+        if len(items) == 3:
+            # pattern, guard_expr, body
+            return MatchArm(
+                pattern=items[0],
+                body=items[2],
+                guard=items[1],
+                span=_span_from_children(children),
+            )
         return MatchArm(pattern=items[0], body=items[1], span=_span_from_children(children))
+
+    def guard(self, children: list[Any]) -> Any:
+        items = _filter(children)
+        return items[0]
 
     # ------------------------------------------------------------------
     # Patterns
     # ------------------------------------------------------------------
+
+    def or_pattern(self, children: list[Any]) -> Any:
+        items = _filter(children)
+        if len(items) == 1:
+            return items[0]
+        return OrPattern(alternatives=items, span=_span_from_children(children))
 
     def wildcard_pattern(self, children: list[Any]) -> WildcardPattern:
         return WildcardPattern(span=_span_from_children(children))
@@ -1079,6 +1235,61 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             idx += 1
         body = items[idx] if idx < len(items) else Block()
         return FnDef(
+            name=name,
+            public=public,
+            type_params=type_params,
+            params=params,
+            return_type=return_type,
+            body=body,
+            trait_bounds=trait_bounds,
+            span=_span_from_children(children),
+        )
+
+    # ------------------------------------------------------------------
+    # Async function definition (v4.68.0, Arc 8)
+    # ------------------------------------------------------------------
+
+    def async_fn_def(self, children: list[Any]) -> AsyncFnDef:
+        public = _has_pub_prefix(children)
+        items = _filter(children)
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_PUB":
+            idx += 1
+        # Skip past KW_ASYNC (already consumed by grammar, filtered by _filter
+        # only if it's in _SKIP — it won't be since it's a keyword token)
+        if isinstance(items[idx], Token) and items[idx].type == "KW_ASYNC":
+            idx += 1
+        name = str(items[idx])
+        idx += 1
+        type_params: list[str] = []
+        trait_bounds: dict[str, str] = {}
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and items[idx]
+            and isinstance(items[idx][0], (str, TypeParam))
+        ):
+            raw_tps = items[idx]
+            if raw_tps and isinstance(raw_tps[0], TypeParam):
+                type_params = [tp.name for tp in raw_tps]
+                trait_bounds = {tp.name: tp.bound for tp in raw_tps if tp.bound}
+            else:
+                type_params = raw_tps
+            idx += 1
+        params: list[Param] = []
+        if (
+            idx < len(items)
+            and isinstance(items[idx], list)
+            and (not items[idx] or isinstance(items[idx][0], Param))
+        ):
+            params = items[idx]
+            idx += 1
+        return_type: TypeExpr | None = None
+        if idx < len(items) and isinstance(items[idx], TypeExpr):
+            return_type = items[idx]
+            idx += 1
+        body = items[idx] if idx < len(items) else Block()
+        return AsyncFnDef(
             name=name,
             public=public,
             type_params=type_params,
@@ -1885,6 +2096,14 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
         return Program(definitions=[result] if isinstance(result, Definition) else []), []
     except (UnexpectedCharacters, UnexpectedToken):
         pass  # Fall through to recovery
+    except ParseError as exc:
+        err = ParseError(
+            str(exc),
+            line=exc.line,
+            column=exc.column,
+            filename=filename,
+        )
+        return Program(), [err]
 
     # Split into top-level chunks and parse each independently
     chunks = _split_toplevel_chunks(source)
@@ -1951,6 +2170,17 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
                     _friendly_token_error(exc),
                     line=real_line,
                     column=column,
+                    filename=filename,
+                )
+            )
+        except ParseError as exc:
+            raw_line = getattr(exc, "line", 0) or 0
+            real_line = raw_line + line_offset - 1 if raw_line else 0
+            errors.append(
+                ParseError(
+                    str(exc),
+                    line=real_line,
+                    column=getattr(exc, "column", 0),
                     filename=filename,
                 )
             )

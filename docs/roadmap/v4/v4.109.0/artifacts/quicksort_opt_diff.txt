@@ -1,0 +1,114 @@
+1c1
+< ; ModuleID = '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.109.0/artifacts/quicksort.bc'
+---
+> ; ModuleID = '/mnt/c/Users/Juan/Documents/GitHub/Mapanare/docs/roadmap/v4/v4.109.0/artifacts/quicksort_stripped.bc'
+8,9c8
+< ; Function Attrs: nounwind
+< declare ptr @__mn_list_get(ptr, i64) local_unnamed_addr #0
+---
+> declare ptr @__mn_list_get(ptr, i64) local_unnamed_addr
+11,12c10
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64, i64, i64, i64 } @__mn_list_new(i64) local_unnamed_addr #1
+---
+> declare { ptr, i64, i64, i64, i64 } @__mn_list_new(i64) local_unnamed_addr
+14,15c12
+< ; Function Attrs: nounwind
+< declare void @__mn_list_push(ptr, ptr) local_unnamed_addr #0
+---
+> declare void @__mn_list_push(ptr, ptr) local_unnamed_addr
+17,18c14
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64 } @__mn_str_from_int(i64) local_unnamed_addr #1
+---
+> declare { ptr, i64 } @__mn_str_from_int(i64) local_unnamed_addr
+20,21c16
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare { ptr, i64 } @__mn_str_concat({ ptr, i64 }, { ptr, i64 }) local_unnamed_addr #1
+---
+> declare { ptr, i64 } @__mn_str_concat({ ptr, i64 }, { ptr, i64 }) local_unnamed_addr
+25,26c20
+< ; Function Attrs: mustprogress nounwind willreturn
+< declare void @__mn_str_free({ ptr, i64 }) local_unnamed_addr #1
+---
+> declare void @__mn_str_free({ ptr, i64 }) local_unnamed_addr
+30,31c24
+< ; Function Attrs: mustprogress nounwind willreturn
+< define internal fastcc void @qsort({ ptr, i64, i64, i64, i64 } %arr, i64 %lo, i64 %hi) unnamed_addr #1 {
+---
+> define internal fastcc void @qsort({ ptr, i64, i64, i64, i64 } %arr, i64 %lo, i64 %hi) unnamed_addr {
+137c130
+<   %i.74.i = add nsw i64 %i.a.7.0101.i, 1
+---
+>   %i.74.i = add i64 %i.a.7.0101.i, 1
+201c194
+<   %i.13 = add nsw i64 %i.a.7.1.i, -1
+---
+>   %i.13 = add i64 %i.a.7.1.i, -1
+203c196
+<   %i.22 = add nsw i64 %i.a.7.1.i, 1
+---
+>   %i.22 = add i64 %i.a.7.1.i, 1
+211,212c204
+< ; Function Attrs: mustprogress nounwind willreturn
+< define noundef i64 @main() local_unnamed_addr #1 {
+---
+> define noundef i64 @main() local_unnamed_addr {
+278c270
+<   %i.72.1 = add nsw i64 %p2i.71, %p2i.71.1
+---
+>   %i.72.1 = add i64 %p2i.71, %p2i.71.1
+286c278
+<   %i.72.2 = add nsw i64 %i.72.1, %p2i.71.2
+---
+>   %i.72.2 = add i64 %i.72.1, %p2i.71.2
+294c286
+<   %i.72.3 = add nsw i64 %i.72.2, %p2i.71.3
+---
+>   %i.72.3 = add i64 %i.72.2, %p2i.71.3
+302c294
+<   %i.72.4 = add nsw i64 %i.72.3, %p2i.71.4
+---
+>   %i.72.4 = add i64 %i.72.3, %p2i.71.4
+310c302
+<   %i.72.5 = add nsw i64 %i.72.4, %p2i.71.5
+---
+>   %i.72.5 = add i64 %i.72.4, %p2i.71.5
+318c310
+<   %i.72.6 = add nsw i64 %i.72.5, %p2i.71.6
+---
+>   %i.72.6 = add i64 %i.72.5, %p2i.71.6
+326c318
+<   %i.72.7 = add nsw i64 %i.72.6, %p2i.71.7
+---
+>   %i.72.7 = add i64 %i.72.6, %p2i.71.7
+334c326
+<   %i.72.8 = add nsw i64 %i.72.7, %p2i.71.8
+---
+>   %i.72.8 = add i64 %i.72.7, %p2i.71.8
+342c334
+<   %i.72.9 = add nsw i64 %i.72.8, %p2i.71.9
+---
+>   %i.72.9 = add i64 %i.72.8, %p2i.71.9
+347c339
+<   call void @__mn_str_println({ ptr, i64 } %rt.91) #0
+---
+>   call void @__mn_str_println({ ptr, i64 } %rt.91)
+364c356
+<   call void @__mn_intern_destroy() #0
+---
+>   call void @__mn_intern_destroy()
+369c361
+< declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture) #2
+---
+> declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture) #0
+372c364
+< declare void @llvm.lifetime.end.p0(i64 immarg, ptr nocapture) #2
+---
+> declare void @llvm.lifetime.end.p0(i64 immarg, ptr nocapture) #0
+374,376c366
+< attributes #0 = { nounwind }
+< attributes #1 = { mustprogress nounwind willreturn }
+< attributes #2 = { nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
+---
+> attributes #0 = { nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }

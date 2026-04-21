@@ -1,0 +1,2749 @@
+==11863== Memcheck, a memory error detector
+==11863== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==11863== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==11863== Command: /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1 /mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/02_arithmetic.mn -o docs/roadmap/v4/v4.142.0/valgrind-logs/02_arithmetic.ll
+==11863== 
+==11863== 
+==11863== HEAP SUMMARY:
+==11863==     in use at exit: 83,032 bytes in 622 blocks
+==11863==   total heap usage: 1,473 allocs, 851 frees, 138,102 bytes allocated
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 1 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7768F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 2 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7772F: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 3 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A77B5F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x3: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 4 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A77BFF: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x3: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 5 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A77C9F: ???
+==11863==    by 0x8000000000000002: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x3: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 6 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A77D3F: ???
+==11863==    by 0x8000000000000003: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x3: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 7 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7837F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 8 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7841F: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 9 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A784BF: ???
+==11863==    by 0x8000000000000002: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 10 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7869F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x8: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x8: ???
+==11863==    by 0x13: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 11 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7896F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xB: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xB: ???
+==11863==    by 0x16: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 12 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A78A0F: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xB: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xB: ???
+==11863==    by 0x16: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 13 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A78AAF: ???
+==11863==    by 0x8000000000000002: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xB: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xB: ???
+==11863==    by 0x16: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 14 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42002C: lexer__scan_number (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7926F: ???
+==11863==    by 0x6A73257: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A7917F: ???
+==11863==    by 0x8000000000000000: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 15 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42002C: lexer__scan_number (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A795DF: ???
+==11863==    by 0x6A73257: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A794EF: ???
+==11863==    by 0x8000000000000000: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 16 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42002C: lexer__scan_number (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7994F: ???
+==11863==    by 0x6A73257: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A7985F: ???
+==11863==    by 0x8000000000000000: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 17 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A79C6F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2A: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 18 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A79D0F: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2A: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 19 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A79DAF: ???
+==11863==    by 0x8000000000000002: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2A: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 20 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A79E4F: ???
+==11863==    by 0x8000000000000003: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2A: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 21 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A79EEF: ???
+==11863==    by 0x8000000000000004: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2A: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 22 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7A9BF: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xA: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xA: ???
+==11863==    by 0x30: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 23 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7AA5F: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xA: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xA: ???
+==11863==    by 0x30: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 24 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7AAFF: ???
+==11863==    by 0x8000000000000002: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xA: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xA: ???
+==11863==    by 0x30: ???
+==11863== 
+==11863== 2 bytes in 1 blocks are definitely lost in loss record 25 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7AD7F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xE: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xE: ???
+==11863==    by 0x34: ???
+==11863== 
+==11863== 3 bytes in 1 blocks are indirectly lost in loss record 26 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7768F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863== 
+==11863== 3 bytes in 1 blocks are definitely lost in loss record 27 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A77B5F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x3: ???
+==11863== 
+==11863== 3 bytes in 1 blocks are definitely lost in loss record 28 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7837F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 3 bytes in 1 blocks are definitely lost in loss record 29 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7896F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xB: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xB: ???
+==11863==    by 0x16: ???
+==11863== 
+==11863== 3 bytes in 1 blocks are definitely lost in loss record 30 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A79C6F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2A: ???
+==11863== 
+==11863== 3 bytes in 1 blocks are definitely lost in loss record 31 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7A9BF: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xA: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xA: ???
+==11863==    by 0x30: ???
+==11863== 
+==11863== 4 bytes in 1 blocks are indirectly lost in loss record 32 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7841F: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 4 bytes in 1 blocks are indirectly lost in loss record 33 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A78A0F: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xB: ???
+==11863==    by 0x1: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xB: ???
+==11863==    by 0x16: ???
+==11863== 
+==11863== 4 bytes in 1 blocks are indirectly lost in loss record 34 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7AA5F: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0xA: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0xA: ???
+==11863==    by 0x30: ???
+==11863== 
+==11863== 4 bytes in 2 blocks are indirectly lost in loss record 35 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x75156F: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 4 bytes in 1 blocks are definitely lost in loss record 36 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A77BFF: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x3: ???
+==11863== 
+==11863== 4 bytes in 1 blocks are definitely lost in loss record 37 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A79D0F: ???
+==11863==    by 0x8000000000000001: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2A: ???
+==11863== 
+==11863== 4 bytes in 1 blocks are definitely lost in loss record 38 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x413E5E: file_extension (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x800000000000000F: ???
+==11863== 
+==11863== 4 bytes in 2 blocks are definitely lost in loss record 39 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x413E27: file_extension (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x800000000000000F: ???
+==11863== 
+==11863== 5 bytes in 1 blocks are indirectly lost in loss record 40 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A77C9F: ???
+==11863==    by 0x8000000000000002: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x3: ???
+==11863== 
+==11863== 5 bytes in 1 blocks are indirectly lost in loss record 41 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4D0E08: lower__lower_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 5 bytes in 1 blocks are definitely lost in loss record 42 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A79DAF: ???
+==11863==    by 0x8000000000000002: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2A: ???
+==11863== 
+==11863== 6 bytes in 1 blocks are indirectly lost in loss record 43 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A79E4F: ???
+==11863==    by 0x8000000000000003: ???
+==11863==    by 0x6A733D7: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2: ???
+==11863==    by 0x6A7751F: ???
+==11863==    by 0x8000000000000000: ???
+==11863==    by 0x4: ???
+==11863==    by 0x2A: ???
+==11863== 
+==11863== 6 bytes in 3 blocks are indirectly lost in loss record 44 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x420082: lexer__scan_number (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x75156F: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A73257: ???
+==11863== 
+==11863== 6 bytes in 1 blocks are definitely lost in loss record 45 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x569FC9: lower__lower_identifier (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 6 bytes in 3 blocks are definitely lost in loss record 46 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42002C: lexer__scan_number (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x75156F: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A73257: ???
+==11863== 
+==11863== 7 bytes in 1 blocks are indirectly lost in loss record 47 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x731408: emit_llvm__emit_mir_function (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 9 bytes in 1 blocks are indirectly lost in loss record 48 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4EBB92: lower__lower_let (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863== 
+==11863== 10 bytes in 1 blocks are indirectly lost in loss record 49 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4B7AAB: lower__register_definition (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 11 bytes in 1 blocks are definitely lost in loss record 50 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x414BE5: dedup_definitions (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 12 bytes in 1 blocks are indirectly lost in loss record 51 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4B7A63: lower__register_definition (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 12 bytes in 1 blocks are definitely lost in loss record 52 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x72397C: emit_llvm__emit_builtin_tostring (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 12 bytes in 6 blocks are definitely lost in loss record 53 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA94: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x75156F: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 14 bytes in 1 blocks are indirectly lost in loss record 54 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68C5B4: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A94D4F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 14 bytes in 1 blocks are definitely lost in loss record 55 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x416CF9: compile (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are indirectly lost in loss record 56 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x43689C: parser__parse_type_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3F: ???
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are indirectly lost in loss record 57 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x42F15E: parser__parse_stmt (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are indirectly lost in loss record 58 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A891: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9260F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are indirectly lost in loss record 59 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68AA80: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9272F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are indirectly lost in loss record 60 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68C3F9: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A94C2F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 61 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FF75: lexer__scan_number (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7903F: ???
+==11863==    by 0x6A73257: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 62 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FF75: lexer__scan_number (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A793AF: ???
+==11863==    by 0x6A73257: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 63 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FF75: lexer__scan_number (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7971F: ???
+==11863==    by 0x6A73257: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 64 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x423BE0: parser__parse (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 65 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42308E: parser__skip_semis (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x751AE7: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x5: ???
+==11863==    by 0x751AEF: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 66 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42EB95: parser__parse_block (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 67 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42308E: parser__skip_semis (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 68 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4306E0: parser__parse_postfix (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xA: ???
+==11863==    by 0x6A7B36F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 69 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4306E0: parser__parse_postfix (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xC: ???
+==11863==    by 0x6A7B45F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 70 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4306E0: parser__parse_postfix (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xE: ???
+==11863==    by 0x6A7B54F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 71 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42FA6B: parser__parse_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 72 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42308E: parser__skip_semis (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7B27F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 73 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4306E0: parser__parse_postfix (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863==    by 0x6A7B9DF: ???
+==11863==    by 0x5: ???
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x3F: ???
+==11863==    by 0x6A7B40F: ???
+==11863==    by 0x1101: ???
+==11863==    by 0x580053FF: ??? (in /usr/libexec/valgrind/memcheck-amd64-linux)
+==11863==    by 0xF: ???
+==11863==    by 0x6A7B7EF: ???
+==11863==    by 0x1101: ???
+==11863==    by 0x580053FF: ??? (in /usr/libexec/valgrind/memcheck-amd64-linux)
+==11863==    by 0xF: ???
+==11863==    by 0x739F8C: __mn_str_eq (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x423484: parser__tok_to_binop (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 74 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4306E0: parser__parse_postfix (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x11: ???
+==11863==    by 0x6A7BA7F: ???
+==11863==    by 0x5: ???
+==11863==    by 0x6A7B59F: ???
+==11863==    by 0x1101: ???
+==11863==    by 0x580053FF: ??? (in /usr/libexec/valgrind/memcheck-amd64-linux)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 75 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4306E0: parser__parse_postfix (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x13: ???
+==11863==    by 0x6A7BB1F: ???
+==11863==    by 0x5: ???
+==11863==    by 0x483AAFF: ???
+==11863==    by 0xAF0FBCF8: ???
+==11863==    by 0x48695DF: ??? (in /usr/lib/x86_64-linux-gnu/libc.so.6)
+==11863==    by 0x486822F: ??? (in /usr/lib/x86_64-linux-gnu/libc.so.6)
+==11863==    by 0x487BDBF: ??? (in /usr/lib/x86_64-linux-gnu/libc.so.6)
+==11863==    by 0x6A71C4F: ???
+==11863==    by 0x400A8C8: do_lookup_x (dl-lookup.c:432)
+==11863==    by 0x768: ???
+==11863==    by 0x487BDBF: ??? (in /usr/lib/x86_64-linux-gnu/libc.so.6)
+==11863==    by 0x483AAFF: ???
+==11863==    by 0x6A71C17: ???
+==11863==    by 0x6A71C13: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 76 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42FA6B: parser__parse_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x40392DF: ??? (in /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2)
+==11863==    by 0x5: ???
+==11863==    by 0x6A7BB1F: ???
+==11863==    by 0x3F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 77 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42FA6B: parser__parse_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x16: ???
+==11863==    by 0x8: ???
+==11863==    by 0x6A7BD2F: ???
+==11863==    by 0x3F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 78 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42FA6B: parser__parse_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x16: ???
+==11863==    by 0x8: ???
+==11863==    by 0x6A7BF5F: ???
+==11863==    by 0x3F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 79 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42308E: parser__skip_semis (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7B98F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 80 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42308E: parser__skip_semis (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7B1DF: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 81 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4139FD: dir_of_path (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 82 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x414E82: resolve_imports (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A73667: ???
+==11863==    by 0x16: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 83 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41550C: resolve_imports (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A73667: ???
+==11863==    by 0x16: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 84 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x476A0C: semantic__register_definitions (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 85 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x477C10: semantic__register_def (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 86 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x47E7FC: semantic__check_definitions (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A89F8F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 87 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x481BB2: semantic__check_fn_body (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 88 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x46E208: semantic__check_block (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 89 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4A77A5: lower__register_declarations_pass1 (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 90 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4ABE65: lower__register_declarations_pass2 (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 91 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4C49B5: lower__lower_definitions (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 92 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4CC82E: lower__build_mir_params (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 93 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4CD083: lower__collect_decorator_names (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 94 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4CD999: lower__bind_fn_params (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 95 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4DE353: lower__lower_block_stmts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 96 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4A02FF: lower_state__lookup_var (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 97 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68642A: mir_opt__optimize_mir (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A8E33F: ???
+==11863==    by 0x8000000000000048: ???
+==11863==    by 0x6A74317: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 98 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x679203: mir_opt__constant_fold_function (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x87: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 99 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x678D3F: mir_opt__constant_fold_block (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 100 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6796B2: mir_opt__find_const (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x37: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 101 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x675FE1: lower__verify_module (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 102 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6764B5: lower__verify_function (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 103 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x413CD8: basename_of (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863==    by 0x6A7619F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 104 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x413DE5: file_extension (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x800000000000000F: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 105 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68FD63: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 106 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68FF7D: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x75C4AF: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 107 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x691886: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 108 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69FEBB: emit_llvm__is_enum_type (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x7F: ???
+==11863==    by 0xF: ???
+==11863==    by 0x750E5F: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863== 
+==11863== 16 bytes in 1 blocks are definitely lost in loss record 109 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69FEBB: emit_llvm__is_enum_type (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x7: ???
+==11863== 
+==11863== 16 bytes in 8 blocks are definitely lost in loss record 110 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA6B: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x75156F: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 17 bytes in 1 blocks are indirectly lost in loss record 111 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68BDD6: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9489F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 17 bytes in 1 blocks are definitely lost in loss record 112 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x413D6B: basename_of (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863==    by 0x6A7619F: ???
+==11863==    by 0x48: ???
+==11863== 
+==11863== 18 bytes in 1 blocks are indirectly lost in loss record 113 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A12F: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 18 bytes in 1 blocks are indirectly lost in loss record 114 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B5EF: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9358F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 18 bytes in 1 blocks are indirectly lost in loss record 115 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68BC12: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9476F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 19 bytes in 1 blocks are indirectly lost in loss record 116 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B7B3: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A936BF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 19 bytes in 1 blocks are indirectly lost in loss record 117 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68C20A: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A94AFF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 20 bytes in 1 blocks are indirectly lost in loss record 118 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A2B7: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 20 bytes in 1 blocks are indirectly lost in loss record 119 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68AFF7: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A931FF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 20 bytes in 1 blocks are indirectly lost in loss record 120 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B42B: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9345F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 20 bytes in 1 blocks are indirectly lost in loss record 121 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B9F8: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A937EF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 20 bytes in 1 blocks are indirectly lost in loss record 122 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68C046: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x5: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A949CF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 21 bytes in 1 blocks are indirectly lost in loss record 123 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B23C: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9332F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 21 bytes in 1 blocks are definitely lost in loss record 124 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x690193: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x75C4AF: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863== 
+==11863== 21 bytes in 1 blocks are definitely lost in loss record 125 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x699EC7: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 22 bytes in 1 blocks are indirectly lost in loss record 126 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A46A: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 127 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68F738: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x75C4AF: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 128 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68F97B: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 129 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69112C: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 130 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6913B0: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 131 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x691631: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x75C4AF: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 132 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6934EB: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 133 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x693953: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 134 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69456C: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 135 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x697FC6: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 136 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69911F: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 137 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69BA6E: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 23 bytes in 1 blocks are definitely lost in loss record 138 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69BF8E: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 24 bytes in 1 blocks are indirectly lost in loss record 139 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68AC6F: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A92F9F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 24 bytes in 1 blocks are indirectly lost in loss record 140 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7B5C: emit_llvm__emit_mir_by_kind (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 24 bytes in 3 blocks are indirectly lost in loss record 141 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x432B31: parser__parse_atom (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 24 bytes in 12 blocks are definitely lost in loss record 142 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x420FFD: lexer__scan_op (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1102: ???
+==11863==    by 0x6A73417: ???
+==11863== 
+==11863== 25 bytes in 1 blocks are indirectly lost in loss record 143 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A6A2: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A924DF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 25 bytes in 1 blocks are indirectly lost in loss record 144 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68AE33: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A930CF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 25 bytes in 1 blocks are indirectly lost in loss record 145 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x687A64: emit_llvm_ir__emit_mul (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 26 bytes in 1 blocks are indirectly lost in loss record 146 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x7272FD: emit_llvm__emit_mir_return (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 27 bytes in 1 blocks are indirectly lost in loss record 147 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x687744: emit_llvm_ir__emit_add (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 29 bytes in 1 blocks are indirectly lost in loss record 148 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x7351D9: emit_llvm__emit_mir_module (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 30 bytes in 1 blocks are indirectly lost in loss record 149 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6D7ECF: emit_llvm__emit_store (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 32 bytes in 2 blocks are indirectly lost in loss record 150 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x42FDB5: parser__parse_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 32 bytes in 2 blocks are indirectly lost in loss record 151 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x42FDDE: parser__parse_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 32 bytes in 2 blocks are indirectly lost in loss record 152 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x431081: parser__parse_call_args (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 32 bytes in 2 blocks are definitely lost in loss record 153 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42FA6B: parser__parse_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 32 bytes in 2 blocks are definitely lost in loss record 154 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x430E1A: parser__parse_call_args (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 32 bytes in 2 blocks are definitely lost in loss record 155 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x458FB5: semantic__check_call_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 32 bytes in 2 blocks are definitely lost in loss record 156 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6C7171: emit_llvm__is_name_in_byref (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 32 bytes in 2 blocks are definitely lost in loss record 157 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69FEBB: emit_llvm__is_enum_type (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 32 bytes in 16 blocks are definitely lost in loss record 158 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x413A46: dir_of_path (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 32 bytes in 16 blocks are definitely lost in loss record 159 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x413D28: basename_of (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863==    by 0x6A7619F: ???
+==11863==    by 0x48: ???
+==11863== 
+==11863== 33 bytes in 1 blocks are definitely lost in loss record 160 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69A43B: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 34 bytes in 1 blocks are indirectly lost in loss record 161 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73528C: emit_llvm__emit_mir_module (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 35 bytes in 1 blocks are indirectly lost in loss record 162 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6D6CEA: emit_llvm__emit_load (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 35 bytes in 1 blocks are definitely lost in loss record 163 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x69326A: emit_llvm__declare_all_runtime (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863==    by 0x3: ???
+==11863==    by 0x75C4AF: ??? (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 36 bytes in 8 blocks are indirectly lost in loss record 164 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x499D82: lower_state__fresh_tmp (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xFFFFFFFFFFFF: ???
+==11863== 
+==11863== 38 bytes in 1 blocks are indirectly lost in loss record 165 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x6AA106F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 41 bytes in 1 blocks are indirectly lost in loss record 166 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73121D: emit_llvm__emit_mir_function (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 46 bytes in 1 blocks are indirectly lost in loss record 167 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x720187: emit_llvm__emit_builtin_print (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 48 bytes in 3 blocks are indirectly lost in loss record 168 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x433542: parser__parse_atom (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 48 bytes in 3 blocks are definitely lost in loss record 169 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x679822: mir_opt__find_const_ty (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 48 bytes in 3 blocks are definitely lost in loss record 170 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6796B2: mir_opt__find_const (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A8F76F: ???
+==11863== 
+==11863== 54 bytes in 1 blocks are indirectly lost in loss record 171 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x9: ???
+==11863==    by 0x6A950DF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 56 bytes in 1 blocks are indirectly lost in loss record 172 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x478338: semantic__register_def (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 56 bytes in 1 blocks are indirectly lost in loss record 173 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x688BB5: emit_llvm_ir__emit_call_ir (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 56 bytes in 1 blocks are definitely lost in loss record 174 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x415B0F: compile (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 56 bytes in 1 blocks are definitely lost in loss record 175 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48A783: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 56 bytes in 1 blocks are definitely lost in loss record 176 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x497FC2: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 56 bytes in 1 blocks are definitely lost in loss record 177 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4739F7: semantic__check_let_stmt (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 58 bytes in 1 blocks are definitely lost in loss record 178 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x413A7B: dir_of_path (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 60 bytes in 1 blocks are definitely lost in loss record 179 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73B923: __mn_file_read (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73DCA7: __mn_file_read_or_empty (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x418E28: mn_main (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4989A63: clone (clone.S:100)
+==11863== 
+==11863== 63 bytes in 3 blocks are indirectly lost in loss record 180 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6B0353: emit_llvm__emit_const (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x8000000000000002: ???
+==11863== 
+==11863== 64 bytes in 1 blocks are indirectly lost in loss record 181 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x42F454: parser__parse_let_stmt (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 64 bytes in 2 blocks are indirectly lost in loss record 182 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x42FDA6: parser__parse_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 66 bytes in 2 blocks are indirectly lost in loss record 183 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863==    by 0x6A9A0EF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 74 bytes in 1 blocks are indirectly lost in loss record 184 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739732: __mn_str_from_cstr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x418B0A: mn_main (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4989A63: clone (clone.S:100)
+==11863== 
+==11863== 74 bytes in 1 blocks are indirectly lost in loss record 185 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x18: ???
+==11863==    by 0x6A9677F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 75 bytes in 1 blocks are indirectly lost in loss record 186 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x5: ???
+==11863==    by 0x6A9677F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 78 bytes in 1 blocks are indirectly lost in loss record 187 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x6AA106F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 80 bytes in 1 blocks are indirectly lost in loss record 188 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x9: ???
+==11863== 
+==11863== 80 bytes in 1 blocks are definitely lost in loss record 189 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4D319E: lower__lower_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 80 bytes in 5 blocks are definitely lost in loss record 190 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4380F6: semantic__scope_lookup (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 88 bytes in 1 blocks are indirectly lost in loss record 191 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4D4C82: lower__lower_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 88 bytes in 44 blocks are definitely lost in loss record 192 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42244E: lexer__tokenize (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 91 bytes in 2 blocks are indirectly lost in loss record 193 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x9: ???
+==11863==    by 0x6A9A0EF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 96 bytes in 2 blocks are indirectly lost in loss record 194 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x431074: parser__parse_call_args (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 128 bytes in 8 blocks are definitely lost in loss record 195 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x73DDF9: __mn_range (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x41FA11: lexer__scan_ident (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 136 bytes in 1 blocks are indirectly lost in loss record 196 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x5AF094: lower__lower_call_by_name (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 136 bytes in 1 blocks are indirectly lost in loss record 197 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x5A9099: lower__lower_call_by_name (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 198 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x42ED12: parser__parse_block (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7B22F: ???
+==11863==    by 0xE: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 199 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4EBBA5: lower__lower_let (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 200 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x689693: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 201 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A21B: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 202 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A3A3: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 203 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A576: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 204 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A7BB: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A924DF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 205 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A9AA: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9260F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 206 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68AB99: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9272F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 207 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68AD88: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A92F9F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 208 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68AF4C: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A930CF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 209 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B110: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A931FF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 210 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B355: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9332F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 211 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B544: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9345F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 212 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B708: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9358F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 213 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68B8CC: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A936BF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 214 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68BB11: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A937EF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 215 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68BD2B: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9476F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 216 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68BEEF: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A9489F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 217 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68C15F: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x5: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A949CF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 218 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68C323: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A94AFF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are indirectly lost in loss record 219 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68C50C: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A94C2F: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are definitely lost in loss record 220 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x415634: resolve_imports (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A73667: ???
+==11863==    by 0x16: ???
+==11863== 
+==11863== 144 bytes in 1 blocks are definitely lost in loss record 221 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x414B11: dedup_definitions (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 145 bytes in 4 blocks are indirectly lost in loss record 222 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73980B: __mn_str_from_parts (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x6A9A0EF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 152 bytes in 2 blocks are indirectly lost in loss record 223 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x6A9A0EF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 160 bytes in 1 blocks are indirectly lost in loss record 224 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4EE789: lower__lower_let (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863== 
+==11863== 160 bytes in 1 blocks are indirectly lost in loss record 225 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x56AB10: lower__lower_identifier (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 226 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48A53F: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 227 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48A5C0: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 228 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48A846: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 229 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48A8CF: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 230 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48AB24: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 231 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48ABAD: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 232 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48AE02: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 233 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48AE8B: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 234 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48B0E0: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 235 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48B169: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 236 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48B3C7: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 237 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48B47C: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 238 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48B732: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 239 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48B7F7: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 240 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48BAEF: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 241 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48BBB4: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 242 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48BEAC: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 243 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48BF71: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 244 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48C269: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 245 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48C32E: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 246 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48C626: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 247 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48C6EB: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 248 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48C9E3: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 249 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48CAA8: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 250 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48CD9E: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 251 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48CE63: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 252 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48D157: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 253 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48D21C: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 254 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48D510: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 255 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48D5D5: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 256 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48D8C9: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 257 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48D98E: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 258 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48DC82: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 259 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48DD47: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 260 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48E03B: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 261 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48E100: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 262 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48E3F4: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 263 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48E4B9: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 264 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48E7AD: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 265 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48E872: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 266 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48EB66: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 267 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48EC2B: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 268 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48EF1F: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 269 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48EFE4: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 270 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48F2D8: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 271 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48F39D: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 272 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48F691: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 273 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48F756: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 274 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48FA4A: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 275 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48FB0F: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 276 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48FE03: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 277 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x48FEC8: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 278 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4901BC: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 279 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x490281: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 280 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x490575: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 281 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49063A: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 282 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x490930: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 283 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4909F5: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 284 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x490CED: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 285 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x490DB2: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 286 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4910A8: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 287 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49116D: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 288 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x491461: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 289 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x491526: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 290 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49181A: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 291 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4918DF: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 292 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x491BD3: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 293 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x491C98: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 294 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x491F8C: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 295 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x492051: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 296 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x492345: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 297 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49240A: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 298 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4926FE: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 299 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4927C3: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 300 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x492AB9: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 301 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x492B7E: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 302 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x492E74: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 303 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x492F39: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 304 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49322F: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 305 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4932F4: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 306 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4935EA: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 307 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4936AF: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 308 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4939A5: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 309 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x493A6A: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 310 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x493D62: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 311 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x493E27: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 312 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49411F: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 313 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4941E4: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 314 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4944DC: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 315 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4945A1: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 316 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x494899: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 317 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49495E: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 318 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x494C56: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 319 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x494D1B: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 320 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x495013: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 321 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4950D8: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 322 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4953D0: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 323 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x495495: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 324 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49578B: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 325 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x495850: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 326 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x495B46: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 327 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x495C0B: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 328 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x495F01: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 329 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x495FC6: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 330 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4962BA: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 331 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49637F: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 332 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x496673: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 333 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x496738: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 334 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x496A2C: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 335 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x496AF1: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 336 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x496DE5: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 337 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x496EAA: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 338 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49719E: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 339 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x497263: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 340 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x497557: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 341 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x49761C: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 342 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x497911: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 343 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4979D6: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 344 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x497CCC: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 345 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x497D91: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 346 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x43B12D: semantic__resolve_type_opt (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 347 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x478114: semantic__register_def (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are indirectly lost in loss record 348 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x43A0E3: semantic__resolve_type_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are definitely lost in loss record 349 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x415BCF: compile (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 168 bytes in 1 blocks are definitely lost in loss record 350 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x43B12D: semantic__resolve_type_opt (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x9F: ???
+==11863== 
+==11863== 170 bytes in 2 blocks are indirectly lost in loss record 351 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x1: ???
+==11863==    by 0x6A9677F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 172 bytes in 3 blocks are indirectly lost in loss record 352 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863==    by 0x6A9677F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 187 bytes in 3 blocks are indirectly lost in loss record 353 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863==    by 0x6AA106F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 218 (144 direct, 74 indirect) bytes in 1 blocks are definitely lost in loss record 354 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x414DD2: resolve_imports (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A73667: ???
+==11863==    by 0x16: ???
+==11863== 
+==11863== 250 bytes in 3 blocks are indirectly lost in loss record 355 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x18: ???
+==11863==    by 0x6A9A0EF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 272 bytes in 1 blocks are indirectly lost in loss record 356 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x42797A: parser__parse_fn_body (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 272 bytes in 1 blocks are indirectly lost in loss record 357 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x49D84D: lower_state__emit_instr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x7: ???
+==11863==    by 0x37: ???
+==11863== 
+==11863== 272 bytes in 1 blocks are indirectly lost in loss record 358 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x67B5A8: mir_opt__const_prop_function (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 272 bytes in 1 blocks are indirectly lost in loss record 359 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6899B0: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 272 bytes in 1 blocks are indirectly lost in loss record 360 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68A061: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 272 bytes in 1 blocks are definitely lost in loss record 361 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x678E74: mir_opt__constant_fold_block (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 277 bytes in 4 blocks are indirectly lost in loss record 362 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x6A9677F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 284 bytes in 5 blocks are indirectly lost in loss record 363 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3: ???
+==11863==    by 0x6A9A0EF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 288 bytes in 2 blocks are indirectly lost in loss record 364 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x430E0E: parser__parse_call_args (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A7A08F: ???
+==11863==    by 0x16: ???
+==11863==    by 0x1F: ???
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 294 (272 direct, 22 indirect) bytes in 1 blocks are definitely lost in loss record 365 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4B7B1D: lower__register_definition (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 300 bytes in 4 blocks are indirectly lost in loss record 366 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x6A950DF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 336 bytes in 2 blocks are definitely lost in loss record 367 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x45284C: semantic__check_arithmetic_binary (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 344 bytes in 5 blocks are indirectly lost in loss record 368 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x9: ???
+==11863==    by 0x6A9677F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 427 bytes in 6 blocks are indirectly lost in loss record 369 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x9: ???
+==11863==    by 0x6A9A0EF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 464 bytes in 1 blocks are indirectly lost in loss record 370 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4D216C: lower__lower_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 464 bytes in 1 blocks are indirectly lost in loss record 371 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x67B6BB: mir_opt__const_prop_function (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 464 bytes in 1 blocks are definitely lost in loss record 372 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x679376: mir_opt__constant_fold_function (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 480 bytes in 3 blocks are indirectly lost in loss record 373 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x542A8C: lower__lower_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 488 bytes in 8 blocks are indirectly lost in loss record 374 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x6A9A0EF: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 504 bytes in 3 blocks are definitely lost in loss record 375 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x43B6E8: semantic__infer_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 512 bytes in 2 blocks are indirectly lost in loss record 376 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x579274: lower__lower_binary (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 512 bytes in 2 blocks are indirectly lost in loss record 377 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x67A4D8: mir_opt__propagate_in_instruction (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 528 bytes in 1 blocks are indirectly lost in loss record 378 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x689DCA: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0xF: ???
+==11863== 
+==11863== 532 bytes in 6 blocks are indirectly lost in loss record 379 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x18: ???
+==11863==    by 0x6AA106F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 592 bytes in 1 blocks are definitely lost in loss record 380 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x7378BC: emit_llvm__emit_mir_module (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x3F: ???
+==11863== 
+==11863== 848 bytes in 1 blocks are definitely lost in loss record 381 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4EF755: lower__lower_let (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 851 bytes in 12 blocks are indirectly lost in loss record 382 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x9: ???
+==11863==    by 0x6AA106F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 1,272 (144 direct, 1,128 indirect) bytes in 1 blocks are definitely lost in loss record 383 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x423E21: parser__parse (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 1,312 bytes in 2 blocks are indirectly lost in loss record 384 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x5816CE: lower__lower_call (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 1,534 bytes in 23 blocks are indirectly lost in loss record 385 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x739C2E: __mn_str_concat (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68DA16: emit_llvm__declare_runtime_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x2: ???
+==11863==    by 0x6AA106F: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 1,784 (1,616 direct, 168 indirect) bytes in 1 blocks are definitely lost in loss record 386 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4739C5: semantic__check_let_stmt (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 2,100 (2,064 direct, 36 indirect) bytes in 1 blocks are definitely lost in loss record 387 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4229EF: lexer__tokenize (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 2,592 bytes in 2 blocks are definitely lost in loss record 388 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4596D6: semantic__check_call_expr (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 2,928 (1,680 direct, 1,248 indirect) bytes in 1 blocks are definitely lost in loss record 389 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x686A39: mir_opt__optimize_mir (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x6A8E33F: ???
+==11863==    by 0x8000000000000048: ???
+==11863==    by 0x6A74317: ???
+==11863== 
+==11863== 5,594 (1,680 direct, 3,914 indirect) bytes in 1 blocks are definitely lost in loss record 390 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AD5A: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4D61DE: lower__lower_fn (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 7,610 bytes in 1 blocks are definitely lost in loss record 391 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AB78: __mn_str_join (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73899A: emit_llvm__emit_mir_module (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x11: ???
+==11863== 
+==11863== 7,940 (3,600 direct, 4,340 indirect) bytes in 1 blocks are definitely lost in loss record 392 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x68BA7C: emit_llvm__build_internal_struct_list (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x4: ???
+==11863==    by 0x7: ???
+==11863==    by 0x6A937EF: ???
+==11863==    by 0x7: ???
+==11863==    by 0xF: ???
+==11863== 
+==11863== 11,224 (4,112 direct, 7,112 indirect) bytes in 1 blocks are definitely lost in loss record 393 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x738918: emit_llvm__emit_mir_module (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x18: ???
+==11863== 
+==11863== 12,816 bytes in 1 blocks are indirectly lost in loss record 394 of 395
+==11863==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x739049: __mn_alloc (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x73AE1F: __mn_list_push (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863==    by 0x491B08: semantic__register_builtins (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== 33,424 (56 direct, 33,368 indirect) bytes in 1 blocks are definitely lost in loss record 395 of 395
+==11863==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==11863==    by 0x4819CA: semantic__check_fn_body (in /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1)
+==11863== 
+==11863== LEAK SUMMARY:
+==11863==    definitely lost: 31,622 bytes in 273 blocks
+==11863==    indirectly lost: 51,410 bytes in 349 blocks
+==11863==      possibly lost: 0 bytes in 0 blocks
+==11863==    still reachable: 0 bytes in 0 blocks
+==11863==         suppressed: 0 bytes in 0 blocks
+==11863== 
+==11863== For lists of detected and suppressed errors, rerun with: -s
+==11863== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

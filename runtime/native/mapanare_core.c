@@ -5,18 +5,43 @@
  * Mapanare programs link against.
  */
 
+/* Enable POSIX + platform extensions even with -std=c11 or -Werror.
+ * macOS: _DARWIN_C_SOURCE enables BSD types + POSIX + everything.
+ * Linux: _POSIX_C_SOURCE + _DEFAULT_SOURCE for getline, realpath, etc.
+ * Windows: no POSIX defines (would hide Win32 API in MinGW). */
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE
+#elif !defined(_WIN32)
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
+#undef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE 1
+#endif
+#endif
+
 #include "mapanare_core.h"
 #include "mapanare_platform.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>      /* _access */
+#include <direct.h>  /* _mkdir, _rmdir */
+#endif
+
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
+#endif
 #ifndef _WIN32
 #include <sys/wait.h>
 #endif
@@ -27,30 +52,30 @@
 
 /* --- Memory profiling counters (compile with -DMN_PROFILE_MEM to enable) --- */
 #ifdef MN_PROFILE_MEM
-static int64_t mn_alloc_count = 0;
-static int64_t mn_alloc_bytes = 0;
-static int64_t mn_alloc_peak  = 0;   /* high-water mark of live bytes */
-static int64_t mn_alloc_live  = 0;   /* current live bytes (alloc - free) */
-static int64_t mn_concat_count = 0;
-static int64_t mn_concat_bytes = 0;
-static int64_t mn_clone_count = 0;
-static int64_t mn_grow_count  = 0;
-static int64_t mn_listbuf_count = 0;
-static int64_t mn_listbuf_bytes = 0;
+static _Atomic int64_t mn_alloc_count = 0;
+static _Atomic int64_t mn_alloc_bytes = 0;
+static _Atomic int64_t mn_alloc_peak  = 0;   /* high-water mark of live bytes */
+static _Atomic int64_t mn_alloc_live  = 0;   /* current live bytes (alloc - free) */
+static _Atomic int64_t mn_concat_count = 0;
+static _Atomic int64_t mn_concat_bytes = 0;
+static _Atomic int64_t mn_clone_count = 0;
+static _Atomic int64_t mn_grow_count  = 0;
+static _Atomic int64_t mn_listbuf_count = 0;
+static _Atomic int64_t mn_listbuf_bytes = 0;
 
 static void mn_profile_report(void) {
     fprintf(stderr, "\n=== MN MEMORY PROFILE ===\n");
     fprintf(stderr, "alloc:    %lld calls, %lld MB total\n",
-            (long long)mn_alloc_count, (long long)(mn_alloc_bytes / (1024*1024)));
+            (long long)atomic_load(&mn_alloc_count), (long long)(atomic_load(&mn_alloc_bytes) / (1024*1024)));
     fprintf(stderr, "peak:     %lld MB live\n",
-            (long long)(mn_alloc_peak / (1024*1024)));
+            (long long)(atomic_load(&mn_alloc_peak) / (1024*1024)));
     fprintf(stderr, "listbuf:  %lld calls, %lld MB total\n",
-            (long long)mn_listbuf_count, (long long)(mn_listbuf_bytes / (1024*1024)));
-    fprintf(stderr, "grow:     %lld calls\n", (long long)mn_grow_count);
-    fprintf(stderr, "clone:    %lld calls\n", (long long)mn_clone_count);
+            (long long)atomic_load(&mn_listbuf_count), (long long)(atomic_load(&mn_listbuf_bytes) / (1024*1024)));
+    fprintf(stderr, "grow:     %lld calls\n", (long long)atomic_load(&mn_grow_count));
+    fprintf(stderr, "clone:    %lld calls\n", (long long)atomic_load(&mn_clone_count));
     fprintf(stderr, "detach:   (see cow_detaches counter)\n");
     fprintf(stderr, "concat:   %lld calls, %lld MB total\n",
-            (long long)mn_concat_count, (long long)(mn_concat_bytes / (1024*1024)));
+            (long long)atomic_load(&mn_concat_count), (long long)(atomic_load(&mn_concat_bytes) / (1024*1024)));
     fprintf(stderr, "=========================\n");
 }
 static int mn_profile_init_done = 0;
@@ -60,8 +85,17 @@ static void mn_profile_init(void) {
         atexit(mn_profile_report);
     }
 }
-#define MN_PROFILE_ALLOC(sz) do { mn_profile_init(); mn_alloc_count++; mn_alloc_bytes += (sz); mn_alloc_live += (sz); if (mn_alloc_live > mn_alloc_peak) mn_alloc_peak = mn_alloc_live; } while(0)
-#define MN_PROFILE_FREE(sz) do { mn_alloc_live -= (sz); } while(0)
+#define MN_PROFILE_ALLOC(sz) do { \
+    mn_profile_init(); \
+    atomic_fetch_add_explicit(&mn_alloc_count, 1, memory_order_relaxed); \
+    atomic_fetch_add_explicit(&mn_alloc_bytes, (int64_t)(sz), memory_order_relaxed); \
+    int64_t _live = atomic_fetch_add_explicit(&mn_alloc_live, (int64_t)(sz), memory_order_relaxed) + (int64_t)(sz); \
+    int64_t _peak = atomic_load_explicit(&mn_alloc_peak, memory_order_relaxed); \
+    while (_live > _peak && !atomic_compare_exchange_weak_explicit(&mn_alloc_peak, &_peak, _live, memory_order_relaxed, memory_order_relaxed)) {} \
+} while(0)
+#define MN_PROFILE_FREE(sz) do { \
+    atomic_fetch_sub_explicit(&mn_alloc_live, (int64_t)(sz), memory_order_relaxed); \
+} while(0)
 #else
 #define MN_PROFILE_ALLOC(sz) ((void)0)
 #define MN_PROFILE_FREE(sz)  ((void)0)
@@ -91,6 +125,17 @@ MN_EXPORT void *__mn_realloc(void *ptr, int64_t new_size) {
 }
 
 MN_EXPORT void __mn_free(void *ptr) {
+    /* v4.34.0: wire MN_PROFILE_FREE so mn_alloc_live tracks currently-live
+     * bytes instead of growing monotonically.  We don't know the exact size
+     * of the allocation here (libc doesn't expose it portably), so we pass 0.
+     * To get accurate live tracking, callers should use __mn_free_sized. */
+    (void)ptr;  /* suppress unused-when-profiling-disabled warning */
+    free(ptr);
+}
+
+MN_EXPORT void __mn_free_sized(void *ptr, int64_t size) {
+    MN_PROFILE_FREE(size);
+    (void)size;  /* suppress warning when profiling disabled */
     free(ptr);
 }
 
@@ -137,27 +182,17 @@ int64_t mn_checked_add(int64_t a, int64_t b) {
 }
 
 /* -----------------------------------------------------------------------
- * Tag-bit helpers for heap vs constant string distinction.
+ * v4.100.0: the tagged-pointer scheme has been removed. The heap flag
+ * now lives in the ``is_heap`` bitfield on MnString (see mapanare_core.h).
  *
- * We use the lowest bit of the data pointer as a tag:
- *   0 = constant (points to .rodata or static global) — do NOT free
- *   1 = heap-allocated via __mn_alloc            — safe to free
- *
- * All calloc/malloc returns are at least 8-byte aligned, so the lowest
- * bit is always 0. We set it to 1 after allocation.
+ * ``mn_untag`` used to mask bit 0 off the data pointer; it now trivially
+ * returns the pointer unchanged, but is kept as a macro so the mechanical
+ * diff across this file is small. The construction helpers (``mn_tag_heap``
+ * and ``mn_is_heap``) are gone — callers set ``s.is_heap = 1`` / check
+ * ``s.is_heap`` directly.
  * ----------------------------------------------------------------------- */
 
-static inline const char *mn_tag_heap(const char *ptr) {
-    return (const char *)((uintptr_t)ptr | 1);
-}
-
-static inline int mn_is_heap(const char *ptr) {
-    return (int)((uintptr_t)ptr & 1);
-}
-
-static inline const char *mn_untag(const char *ptr) {
-    return (const char *)((uintptr_t)ptr & ~(uintptr_t)1);
-}
+#define mn_untag(ptr) (ptr)
 
 /* -----------------------------------------------------------------------
  * Arena Allocator
@@ -187,7 +222,18 @@ MN_EXPORT MnArena *mn_arena_create(int64_t block_size) {
     }
     arena->default_block_size = block_size;
     arena->head = mn_arena_block_new(block_size);
+    arena->lock = 0;
     return arena;
+}
+
+/* v4.34.0: spinlock for thread-safe arena allocation */
+static inline void arena_lock(MnArena *arena) {
+    while (__sync_lock_test_and_set(&arena->lock, 1)) {
+        /* spin — arenas are fast, contention is rare */
+    }
+}
+static inline void arena_unlock(MnArena *arena) {
+    __sync_lock_release(&arena->lock);
 }
 
 MN_EXPORT void *mn_arena_alloc(MnArena *arena, int64_t size) {
@@ -195,6 +241,7 @@ MN_EXPORT void *mn_arena_alloc(MnArena *arena, int64_t size) {
     /* Align to 8 bytes */
     size = (size + 7) & ~(int64_t)7;
 
+    arena_lock(arena);
     MnArenaBlock *blk = arena->head;
     if (blk->used + size > blk->size) {
         /* Need a new block — at least big enough for this allocation */
@@ -207,6 +254,7 @@ MN_EXPORT void *mn_arena_alloc(MnArena *arena, int64_t size) {
     }
     void *ptr = blk->data + blk->used;
     blk->used += size;
+    arena_unlock(arena);
     return ptr;
 }
 
@@ -244,12 +292,22 @@ static int            s_intern_sealed = 0;    /* 1 after first use — cap is lo
 
 /* Thread safety for the intern table */
 #ifdef _WIN32
+/*
+ * v4.28.0: swapped the ``InterlockedCompareExchange`` double-check pattern
+ * for ``InitOnceExecuteOnce`` (same fix as ``mn_signal_mutex`` above).
+ * The CAS pattern was flagged by Cobra #5 in the v4.26.0 panel — the
+ * Windows memory model does not guarantee the ``InitializeCriticalSection``
+ * write is visible to a thread that observed the flag transition.
+ */
 static CRITICAL_SECTION s_intern_cs;
-static volatile LONG s_intern_cs_init = 0;
+static INIT_ONCE s_intern_cs_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK s_intern_cs_init_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    InitializeCriticalSection(&s_intern_cs);
+    return TRUE;
+}
 static void intern_lock(void) {
-    if (InterlockedCompareExchange(&s_intern_cs_init, 1, 0) == 0) {
-        InitializeCriticalSection(&s_intern_cs);
-    }
+    InitOnceExecuteOnce(&s_intern_cs_once, s_intern_cs_init_cb, NULL, NULL);
     EnterCriticalSection(&s_intern_cs);
 }
 static void intern_unlock(void) { LeaveCriticalSection(&s_intern_cs); }
@@ -296,7 +354,7 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
     intern_ensure_table();
     if (!s_intern_table) { intern_unlock(); return s; }
 
-    const char *raw = (const char *)((uintptr_t)s.data & ~(uintptr_t)1);
+    const char *raw = s.data;
     uint64_t h = intern_hash(raw, s.len);
     size_t mask = s_intern_tbl_sz - 1;
     size_t idx = (size_t)(h & mask);
@@ -307,7 +365,7 @@ MN_EXPORT MnString __mn_str_intern(MnString s) {
         MnInternEntry *e = &s_intern_table[pos];
         if (!e->occupied) break;
         if (e->hash == h && e->str.len == s.len) {
-            const char *eraw = (const char *)((uintptr_t)e->str.data & ~(uintptr_t)1);
+            const char *eraw = e->str.data;
             if (memcmp(eraw, raw, (size_t)s.len) == 0) {
                 intern_unlock();
                 return e->str;  /* deduplicated */
@@ -372,14 +430,16 @@ MN_EXPORT MnString __mn_str_from_cstr(const char *cstr) {
     if (!cstr) {
         s.data = "";
         s.len = 0;
+        s.is_heap = 0;
         return s;
     }
     int64_t len = (int64_t)strlen(cstr);
     char *buf = (char *)__mn_alloc(len + 1);
     memcpy(buf, cstr, (size_t)len);
     buf[len] = '\0';
-    s.data = mn_tag_heap(buf);
-    s.len = len;
+    s.data = buf;
+    s.len = (uint64_t)len;
+    s.is_heap = 1;
     return s;
 }
 
@@ -388,13 +448,15 @@ MN_EXPORT MnString __mn_str_from_parts(const char *data, int64_t len) {
     if (!data || len <= 0) {
         s.data = "";
         s.len = 0;
+        s.is_heap = 0;
         return s;
     }
     char *buf = (char *)__mn_alloc(len + 1);
     memcpy(buf, data, (size_t)len);
     buf[len] = '\0';
-    s.data = mn_tag_heap(buf);
-    s.len = len;
+    s.data = buf;
+    s.len = (uint64_t)len;
+    s.is_heap = 1;
     return s;
 }
 
@@ -402,29 +464,154 @@ MN_EXPORT MnString __mn_str_empty(void) {
     MnString s;
     s.data = "";
     s.len = 0;
+    s.is_heap = 0;
     return s;
 }
 
 MN_EXPORT MnString __mn_str_concat(MnString a, MnString b) {
     if (a.len <= 0 && b.len <= 0) return __mn_str_empty();
-    if (a.len <= 0) return __mn_str_from_parts(mn_untag(b.data), b.len);
-    if (b.len <= 0) return __mn_str_from_parts(mn_untag(a.data), a.len);
-    const char *a_data = mn_untag(a.data);
-    const char *b_data = mn_untag(b.data);
-    int64_t total = mn_checked_add(a.len, b.len);
+    if (a.len <= 0) return __mn_str_from_parts(b.data, (int64_t)b.len);
+    if (b.len <= 0) return __mn_str_from_parts(a.data, (int64_t)a.len);
+    const char *a_data = a.data;
+    const char *b_data = b.data;
+    int64_t total = mn_checked_add((int64_t)a.len, (int64_t)b.len);
 #ifdef MN_PROFILE_MEM
-    mn_concat_count++;
-    mn_concat_bytes += total + 1;
+    atomic_fetch_add_explicit(&mn_concat_count, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&mn_concat_bytes, (int64_t)(total + 1), memory_order_relaxed);
 #endif
     char *buf = (char *)__mn_alloc(total + 1);
     if (a.len > 0) memcpy(buf, a_data, (size_t)a.len);
     if (b.len > 0) memcpy(buf + a.len, b_data, (size_t)b.len);
     buf[total] = '\0';
     MnString s;
-    s.data = mn_tag_heap(buf);
-    s.len = total;
+    s.data = buf;
+    s.len = (uint64_t)total;
+    s.is_heap = 1;
     return s;
 }
+
+/* =======================================================================
+ * StringBuilder (v4.95.0) — amortized O(1) string append
+ *
+ * Replaces the O(n^2) pattern of repeated __mn_str_concat in loops.
+ * Exponential growth (2x) with initial capacity 64 bytes.
+ * ======================================================================= */
+
+/* MnStringBuilder is defined in mapanare_core.h */
+
+MN_EXPORT MnStringBuilder __mn_sb_create(int64_t initial_cap) {
+    MnStringBuilder sb;
+    sb.cap = initial_cap > 0 ? initial_cap : 64;
+    sb.buf = (char *)malloc((size_t)sb.cap);
+    if (!sb.buf) { fprintf(stderr, "mapanare: out of memory\n"); exit(1); }
+    sb.buf[0] = '\0';
+    sb.len = 0;
+    return sb;
+}
+
+static void mn_sb_grow(MnStringBuilder *sb, int64_t needed) {
+    int64_t new_cap = sb->cap;
+    while (new_cap < needed) {
+        new_cap = new_cap * 2;
+        if (new_cap < 0) new_cap = needed; /* overflow guard */
+    }
+    /* v4.148.0 (E4): use realloc instead of calloc+memcpy+free.
+     * realloc can extend in-place (zero copies) and never zero-initializes.
+     * The old path used __mn_alloc (calloc), which zeroed the entire new
+     * buffer before immediately overwriting it with memcpy — accounting for
+     * ~2× wasted memory bandwidth on every growth event. */
+    char *new_buf = (char *)realloc(sb->buf, (size_t)new_cap);
+    if (!new_buf) {
+        fprintf(stderr, "mapanare: StringBuilder realloc failed (%lld bytes)\n",
+                (long long)new_cap);
+        exit(1);
+    }
+    sb->buf = new_buf;
+    sb->cap = new_cap;
+}
+
+MN_EXPORT void __mn_sb_append(MnStringBuilder *sb, MnString s) {
+    if (s.len <= 0) return;
+    const char *data = mn_untag(s.data);
+    int64_t needed = sb->len + s.len + 1;
+    if (needed > sb->cap) {
+        mn_sb_grow(sb, needed);
+    }
+    memcpy(sb->buf + sb->len, data, (size_t)s.len);
+    sb->len += s.len;
+    sb->buf[sb->len] = '\0';
+}
+
+MN_EXPORT void __mn_sb_append_char(MnStringBuilder *sb, char c) {
+    int64_t needed = sb->len + 2;
+    if (needed > sb->cap) {
+        mn_sb_grow(sb, needed);
+    }
+    sb->buf[sb->len] = c;
+    sb->len++;
+    sb->buf[sb->len] = '\0';
+}
+
+MN_EXPORT MnString __mn_sb_to_string(MnStringBuilder *sb) {
+    /* Transfer ownership: the buffer becomes the string's data.
+     * The StringBuilder is consumed (zeroed out). */
+    MnString s;
+    if (sb->len == 0) {
+        free(sb->buf);
+        s = __mn_str_empty();
+    } else {
+        /* v4.148.0 (E4): use realloc for shrink-to-fit instead of
+         * calloc+memcpy+free. realloc may shrink in-place (zero copy). */
+        if (sb->cap > sb->len * 2 + 1) {
+            char *tight = (char *)realloc(sb->buf, (size_t)(sb->len + 1));
+            if (tight) sb->buf = tight;
+            /* If realloc fails on shrink, keep the oversized buffer — safe. */
+        }
+        s.data = sb->buf;
+        s.len = (uint64_t)sb->len;
+        s.is_heap = 1;
+    }
+    sb->buf = NULL;
+    sb->len = 0;
+    sb->cap = 0;
+    return s;
+}
+
+MN_EXPORT void __mn_sb_destroy(MnStringBuilder *sb) {
+    if (sb->buf) __mn_free(sb->buf);
+    sb->buf = NULL;
+    sb->len = 0;
+    sb->cap = 0;
+}
+
+/* v4.108.0: pointer-based API.
+ * `__mn_sb_new` allocates both the struct and the initial buffer on the
+ * heap so that subsequent calls work with a single scalar pointer
+ * (simpler ABI for the MIR emitter). `__mn_sb_finish` consumes the
+ * builder — transfers ownership of the buffer to the returned
+ * `MnString` and frees the struct. */
+MN_EXPORT MnStringBuilder *__mn_sb_new(int64_t initial_cap) {
+    MnStringBuilder *sb = (MnStringBuilder *)malloc(sizeof(MnStringBuilder));
+    if (!sb) return NULL;
+    sb->cap = initial_cap > 0 ? initial_cap : 64;
+    sb->buf = (char *)malloc((size_t)sb->cap);
+    if (!sb->buf) { fprintf(stderr, "mapanare: out of memory\n"); exit(1); }
+    sb->buf[0] = '\0';
+    sb->len = 0;
+    return sb;
+}
+
+MN_EXPORT MnString __mn_sb_finish(MnStringBuilder *sb) {
+    MnString s = __mn_sb_to_string(sb);  /* zeros out sb, transfers buf */
+    free(sb);                            /* free the struct itself */
+    return s;
+}
+
+/* String functions compare int64_t indices against uint64_t len (63-bit
+ * bitfield). The comparison is safe because len ≤ INT64_MAX, but Apple Clang
+ * flags it with -Wsign-compare under -Wextra -Werror. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 
 MN_EXPORT MnString __mn_str_char_at(MnString s, int64_t i) {
     if (i < 0 || i >= s.len) {
@@ -590,14 +777,15 @@ MN_EXPORT MnString __mn_str_to_upper(MnString s) {
     }
     buf[s.len] = '\0';
     MnString r;
-    r.data = mn_tag_heap(buf);
+    r.data = buf;
     r.len = s.len;
+    r.is_heap = 1;
     return r;
 }
 
 MN_EXPORT MnString __mn_str_to_lower(MnString s) {
     if (s.len == 0) return __mn_str_empty();
-    const char *data = mn_untag(s.data);
+    const char *data = s.data;
     char *buf = (char *)__mn_alloc(s.len + 1);
     for (int64_t i = 0; i < s.len; i++) {
         char c = data[i];
@@ -605,8 +793,9 @@ MN_EXPORT MnString __mn_str_to_lower(MnString s) {
     }
     buf[s.len] = '\0';
     MnString r;
-    r.data = mn_tag_heap(buf);
+    r.data = buf;
     r.len = s.len;
+    r.is_heap = 1;
     return r;
 }
 
@@ -651,19 +840,75 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
     buf[new_len] = '\0';
 
     MnString r;
-    r.data = mn_tag_heap(buf);
-    r.len = new_len;
+    r.data = buf;
+    r.len = (uint64_t)new_len;
+    r.is_heap = 1;
     return r;
 }
 
+#pragma GCC diagnostic pop
+
+/* str(true) / str(false) — return non-heap constants (never freed). */
+static const char s_true[]  = "true";
+static const char s_false[] = "false";
+
 MN_EXPORT MnString __mn_str_from_bool(int64_t value) {
-    /* Return heap-allocated copies so the tag bit system works correctly.
-     * Static string literals have no alignment guarantee and may have bit 0
-     * set, which mn_is_heap() would misidentify as heap-allocated. */
-    return __mn_str_from_cstr(value ? "true" : "false");
+    MnString s;
+    if (value) { s.data = s_true;  s.len = 4; }
+    else       { s.data = s_false; s.len = 5; }
+    s.is_heap = 0;  /* static storage — drop glue must not free */
+    return s;
 }
 
+/* str(N) for -128..127 — pre-initialized cache (zero allocation). */
+#define SMALL_INT_MIN (-128)
+#define SMALL_INT_MAX  127
+#define SMALL_INT_RANGE (SMALL_INT_MAX - SMALL_INT_MIN + 1)
+
+static char   s_int_bufs[SMALL_INT_RANGE][8]; /* max "-128\0" = 5 chars */
+static MnString s_int_cache[SMALL_INT_RANGE];
+
+/*
+ * v4.28.0: same pattern as ``mn_init_tag_strings`` — the ``int init`` flag
+ * was racy. Switched to the canonical once-init primitive for each platform.
+ */
+#ifdef _WIN32
+static INIT_ONCE s_int_cache_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK init_small_int_cache_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    for (int i = 0; i < SMALL_INT_RANGE; i++) {
+        int val = SMALL_INT_MIN + i;
+        int n = snprintf(s_int_bufs[i], sizeof(s_int_bufs[i]), "%d", val);
+        s_int_cache[i].data    = s_int_bufs[i]; /* static storage */
+        s_int_cache[i].len     = (uint64_t)n;
+        s_int_cache[i].is_heap = 0;
+    }
+    return TRUE;
+}
+static void init_small_int_cache(void) {
+    InitOnceExecuteOnce(&s_int_cache_once, init_small_int_cache_cb, NULL, NULL);
+}
+#else
+static pthread_once_t s_int_cache_once = PTHREAD_ONCE_INIT;
+static void init_small_int_cache_impl(void) {
+    for (int i = 0; i < SMALL_INT_RANGE; i++) {
+        int val = SMALL_INT_MIN + i;
+        int n = snprintf(s_int_bufs[i], sizeof(s_int_bufs[i]), "%d", val);
+        s_int_cache[i].data    = s_int_bufs[i]; /* static storage */
+        s_int_cache[i].len     = (uint64_t)n;
+        s_int_cache[i].is_heap = 0;
+    }
+}
+static void init_small_int_cache(void) {
+    pthread_once(&s_int_cache_once, init_small_int_cache_impl);
+}
+#endif
+
 MN_EXPORT MnString __mn_str_from_int(int64_t value) {
+    if (value >= SMALL_INT_MIN && value <= SMALL_INT_MAX) {
+        init_small_int_cache();
+        return s_int_cache[(int)(value - SMALL_INT_MIN)];
+    }
     char buf[32];
     int n = snprintf(buf, sizeof(buf), "%lld", (long long)value);
     return __mn_str_from_parts(buf, (int64_t)n);
@@ -694,14 +939,14 @@ MN_EXPORT double __mn_str_to_float(MnString s) {
 }
 
 MN_EXPORT void __mn_str_free(MnString s) {
-    if (s.data && mn_is_heap(s.data)) {
-        __mn_free((void *)mn_untag(s.data));
+    if (s.data && s.is_heap) {
+        __mn_free((void *)s.data);
     }
 }
 
 MN_EXPORT void __mn_str_print(MnString s) {
     if (s.len > 0) {
-        fwrite(mn_untag(s.data), 1, (size_t)s.len, stdout);
+        fwrite(s.data, 1, (size_t)s.len, stdout);
     }
 }
 
@@ -764,8 +1009,9 @@ MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {
     buf[total] = '\0';
 
     MnString r;
-    r.data = mn_tag_heap(buf);
-    r.len = total;
+    r.data = buf;
+    r.len = (uint64_t)total;
+    r.is_heap = 1;
     return r;
 }
 
@@ -804,8 +1050,8 @@ static int mn_list_has_magic(MnList *list) {
 static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
     int64_t data_bytes = mn_checked_mul(cap, elem_size);
 #ifdef MN_PROFILE_MEM
-    mn_listbuf_count++;
-    mn_listbuf_bytes += MN_LIST_HEADER_SIZE + data_bytes;
+    atomic_fetch_add_explicit(&mn_listbuf_count, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&mn_listbuf_bytes, (int64_t)(MN_LIST_HEADER_SIZE + data_bytes), memory_order_relaxed);
 #endif
     char *raw = (char *)__mn_alloc(mn_checked_add(MN_LIST_HEADER_SIZE, data_bytes));
     int64_t *header = (int64_t *)raw;
@@ -815,9 +1061,9 @@ static char *mn_list_alloc_buf(int64_t cap, int64_t elem_size) {
 }
 
 static int mn_list_is_managed(MnList *list);
-static int64_t cow_shares = 0;
-static int64_t cow_fallbacks = 0;
-static int64_t cow_detaches = 0;
+static _Atomic int64_t cow_shares = 0;
+static _Atomic int64_t cow_fallbacks = 0;
+static _Atomic int64_t cow_detaches = 0;
 
 /* Detach: if refcount > 1, allocate a private copy of the data.
  * Also handles lists that were zero-initialized (data == NULL). */
@@ -832,8 +1078,9 @@ static void mn_list_detach(MnList *list) {
     }
     if (!mn_list_is_managed(list)) return;  /* unmanaged buffer — nothing to detach */
     int64_t *rc = mn_list_rc(list);
+    if (!rc) return;  /* corrupted magic — treat as sole owner */
     if (__atomic_load_n(rc, __ATOMIC_ACQUIRE) <= 1) return;  /* sole owner, no detach needed */
-    cow_detaches++;
+    atomic_fetch_add_explicit(&cow_detaches, 1, memory_order_relaxed);
     /* Shared — make a private copy */
     __atomic_fetch_sub(rc, 1, __ATOMIC_ACQ_REL);  /* decrement original's refcount */
     int64_t cap = list->cap > 0 ? list->cap : MN_LIST_INITIAL_CAP;
@@ -857,15 +1104,33 @@ MN_EXPORT MnList __mn_list_new(int64_t elem_size) {
 
 static void mn_list_grow(MnList *list) {
 #ifdef MN_PROFILE_MEM
-    mn_grow_count++;
+    atomic_fetch_add_explicit(&mn_grow_count, 1, memory_order_relaxed);
 #endif
     int64_t new_cap = list->cap > 0 ? list->cap * 2 : MN_LIST_INITIAL_CAP;
-    /* Allocate a fresh buffer instead of realloc.  Struct copies may share
-     * the same data pointer (bitwise copy without refcount).  realloc would
-     * free the old pointer, invalidating the alias.  New + memcpy is safe:
-     * if sole owner we free old; if shared the alias keeps valid data. */
+    int64_t new_bytes = mn_checked_mul(new_cap, list->elem_size);
     char *old_data = list->data;
     int old_managed = list->managed;
+
+    /* E7-L2 (v4.151.0): realloc for value-type lists (elem_size <= 8).
+     * Post-Sh.2 (v4.131.0) ownership-transfer guarantees mean value-type
+     * elements have no pointer aliasing concern on grow.  mn_list_detach
+     * is called before grow, so refcount is always 1 here.  realloc lets
+     * the allocator extend in-place when possible, saving a memcpy.
+     * Pointer-element lists (elem_size > 8, e.g. String/struct) keep the
+     * original fresh-alloc + memcpy + free path. */
+    if (old_managed && list->elem_size <= 8 && old_data) {
+        char *base = old_data - MN_LIST_HEADER_SIZE;
+        char *new_base = (char *)__mn_realloc(base,
+            mn_checked_add(MN_LIST_HEADER_SIZE, new_bytes));
+        list->data = new_base + MN_LIST_HEADER_SIZE;
+        list->cap = new_cap;
+        return;
+    }
+
+    /* Fresh-alloc path: struct copies may share the same data pointer
+     * (bitwise copy without refcount).  realloc would free the old
+     * pointer, invalidating the alias.  New + memcpy is safe: if sole
+     * owner we free old; if shared the alias keeps valid data. */
     char *new_data = mn_list_alloc_buf(new_cap, list->elem_size);
     if (old_data && list->len > 0) {
         memcpy(new_data, old_data, (size_t)(list->len * list->elem_size));
@@ -873,8 +1138,7 @@ static void mn_list_grow(MnList *list) {
     list->data = new_data;
     list->managed = 1;
     list->cap = new_cap;
-    /* Free the old buffer if we're the sole owner.  If shared (refcount > 1),
-     * decrement but don't free — the other copy still references it. */
+    /* Free the old buffer if we're the sole owner. */
     if (old_data && old_managed) {
         int64_t *rc = ((int64_t *)old_data) - 2;
         if (rc[0] == MN_COW_MAGIC) {
@@ -887,14 +1151,33 @@ static void mn_list_grow(MnList *list) {
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
-    /* Validate list fields before any operation. Garbage from uninitialized
-     * struct fields (lambda/recursive lowering) must not cause huge allocs. */
+    /* E7-L3 (v4.151.0): fast path — valid sole-owner list with capacity.
+     * The common case in a hot loop: data is non-NULL, len < cap, managed
+     * buffer with refcount 1 (sole owner after prior detach or fresh alloc).
+     * Skip validation, COW detach, and grow. */
+    if (__builtin_expect(list->data != NULL && list->len < list->cap
+                         && list->elem_size > 0, 1)) {
+        /* Inline sole-owner check: if managed and shared, fall to slow path */
+        if (list->managed) {
+            int64_t *hdr = ((int64_t *)list->data) - 2;
+            if (hdr[0] == MN_COW_MAGIC
+                && __atomic_load_n(&hdr[1], __ATOMIC_ACQUIRE) > 1) {
+                goto slow_path;
+            }
+        }
+        memcpy(list->data + list->len * list->elem_size,
+               elem_ptr, (size_t)list->elem_size);
+        list->len++;
+        return;
+    }
+
+slow_path:
+    /* Full validation + first-push init + COW detach + grow */
     if (!list->data || list->cap <= 0 || list->elem_size <= 0
         || list->elem_size > 65536 || list->cap > 100000000
         || list->len < 0 || list->len > list->cap) {
 #ifndef NDEBUG
         if (list->data) {
-            /* Non-NULL data with corrupted fields — compiler bug, not first push */
             fprintf(stderr, "FATAL: __mn_list_push received corrupted list "
                     "(data=%p len=%lld cap=%lld esz=%lld)\n",
                     (void *)list->data, (long long)list->len,
@@ -902,7 +1185,6 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
             abort();
         }
 #endif
-        /* First push to empty list — initialize buffer */
         if (list->data) {
             fprintf(stderr, "WARNING: __mn_list_push: reinitializing corrupted list (data=%p len=%lld cap=%lld elem=%lld)\n",
                     (void *)list->data, (long long)list->len, (long long)list->cap, (long long)list->elem_size);
@@ -924,21 +1206,45 @@ MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
 }
 
 
-/* Static zero buffer for out-of-bounds list access.  The self-hosted compiler
-   has a Python-lowerer bug where `break` inside `if` inside `for` is dropped,
-   causing loops to access list elements past the end.  Returning a zeroed
-   buffer instead of NULL prevents segfaults — the caller reads zeros and
-   the loop eventually exits when the outer for-counter expires. */
-static _Thread_local char __mn_list_oob_buf[4096] = {0};
-
+/* v4.31.0: the old ``__mn_list_oob_buf`` 4KB thread-local
+ * zero-buffer workaround was removed. It papered over a Python
+ * lowerer bug where ``break`` inside ``if`` inside ``for`` was
+ * silently dropped, letting loops walk past ``list->len`` and
+ * read stale memory. That bug was fixed in v4.14.0
+ * (``tests/llvm/test_break_nested.py::test_break_in_if_in_for``
+ * is the regression gate), but the workaround and its comment
+ * survived two cleanup passes — Mamba flagged it in the v4.26.0
+ * panel.
+ *
+ * v4.32.0: when v4.31.0 removed the workaround, __mn_list_get
+ * began returning NULL on OOB — but the Python emitter at
+ * ``emit_llvm_text.py:3101-3108`` unconditionally dereferences
+ * the returned pointer. Viper V2 (arc-end panel) flagged this
+ * as a segfault window: any program path that used to silently
+ * read zeros now segfaults at a non-deterministic location.
+ * The fix is to abort loudly AT THE RUNTIME CALL SITE — a
+ * predictable crash with a diagnostic message, instead of a
+ * pointer-deref segfault in emitted code. Silent zero reads
+ * were a bug; NULL-deref segfaults were a worse bug; abort()
+ * with a clear message is the right answer. */
 MN_EXPORT void *__mn_list_get(MnList *list, int64_t i) {
-    if (i < 0 || i >= list->len) return __mn_list_oob_buf;
+    if (i < 0 || i >= list->len) {
+        fprintf(stderr,
+                "mapanare: list index %ld out of bounds (len=%ld)\n",
+                (long)i, (long)list->len);
+        abort();
+    }
     void *result = list->data + i * list->elem_size;
     return result;
 }
 
 MN_EXPORT void __mn_list_set(MnList *list, int64_t i, const void *elem_ptr) {
-    if (i < 0 || i >= list->len) return;
+    if (i < 0 || i >= list->len) {
+        fprintf(stderr,
+                "mapanare: list index %ld out of bounds (len=%ld)\n",
+                (long)i, (long)list->len);
+        abort();
+    }
     mn_list_detach(list);  /* COW: ensure sole ownership */
     memcpy(list->data + i * list->elem_size,
            elem_ptr, (size_t)list->elem_size);
@@ -1010,7 +1316,7 @@ MN_EXPORT void __mn_cow_stats(void) {
 
 MN_EXPORT MnList __mn_list_clone(MnList *src) {
 #ifdef MN_PROFILE_MEM
-    mn_clone_count++;
+    atomic_fetch_add_explicit(&mn_clone_count, 1, memory_order_relaxed);
 #endif
     /* If the buffer is a managed COW buffer, share it (O(1)).
      * Otherwise, just copy the header (no allocation). */
@@ -1027,7 +1333,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
         dst.cap = src->cap;
         dst.data = src->data;
         dst.managed = src->managed;
-        cow_fallbacks++;
+        atomic_fetch_add_explicit(&cow_fallbacks, 1, memory_order_relaxed);
         return dst;
     }
     if (mn_list_has_magic(src)) {
@@ -1038,7 +1344,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
             dst.data = src->data;
             dst.managed = 1;
             __atomic_fetch_add(rc, 1, __ATOMIC_RELAXED);
-            cow_shares++;
+            atomic_fetch_add_explicit(&cow_shares, 1, memory_order_relaxed);
             return dst;
         }
     }
@@ -1052,7 +1358,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
             dst.cap = src->cap;
             dst.data = src->data;
             dst.managed = src->managed;
-            cow_fallbacks++;
+            atomic_fetch_add_explicit(&cow_fallbacks, 1, memory_order_relaxed);
             return dst;
         }
         dst.cap = src->cap;
@@ -1062,7 +1368,7 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
             memcpy(dst.data, src->data, (size_t)(src->len * src->elem_size));
         }
     }
-    cow_fallbacks++;
+    atomic_fetch_add_explicit(&cow_fallbacks, 1, memory_order_relaxed);
     return dst;
 }
 
@@ -1138,12 +1444,21 @@ MN_EXPORT MnString __mn_list_str_get(MnList *list, int64_t i) {
 }
 
 /* -----------------------------------------------------------------------
- * File I/O
+ * File I/O — cross-platform
+ * Portable stdio (fopen/fread/...) works on both Windows and POSIX.
+ * Stat/access/mkdir/rmdir/realpath/opendir have per-platform branches.
  * ----------------------------------------------------------------------- */
+
+/* Helper: MnString → null-terminated C string (caller must __mn_free) */
+static char *mn_to_cstr(MnString s) {
+    char *c = (char *)__mn_alloc(s.len + 1);
+    memcpy(c, mn_untag(s.data), (size_t)s.len);
+    c[s.len] = '\0';
+    return c;
+}
 
 MN_EXPORT MnString __mn_file_read(MnString path, int64_t *ok) {
     *ok = 0;
-    /* Null-terminate the path for fopen */
     const char *path_data = mn_untag(path.data);
     char *cpath = (char *)__mn_alloc(path.len + 1);
     memcpy(cpath, path_data, (size_t)path.len);
@@ -1171,18 +1486,15 @@ MN_EXPORT MnString __mn_file_read(MnString path, int64_t *ok) {
     buf[read] = '\0';
 
     MnString s;
-    s.data = mn_tag_heap(buf);
-    s.len = (int64_t)read;
+    s.data = buf;
+    s.len = (uint64_t)read;
+    s.is_heap = 1;
     *ok = 1;
     return s;
 }
 
 MN_EXPORT int64_t __mn_file_write(MnString path, MnString content) {
-    const char *path_data = mn_untag(path.data);
-    char *cpath = (char *)__mn_alloc(path.len + 1);
-    memcpy(cpath, path_data, (size_t)path.len);
-    cpath[path.len] = '\0';
-
+    char *cpath = mn_to_cstr(path);
     FILE *f = fopen(cpath, "wb");
     __mn_free(cpath);
     if (!f) return -1;
@@ -1196,17 +1508,13 @@ MN_EXPORT int64_t __mn_file_write(MnString path, MnString content) {
     return 0;
 }
 
-/* Helper: MnString → null-terminated C string (caller must __mn_free) */
-static char *mn_to_cstr(MnString s) {
-    char *c = (char *)__mn_alloc(s.len + 1);
-    memcpy(c, mn_untag(s.data), (size_t)s.len);
-    c[s.len] = '\0';
-    return c;
-}
-
 MN_EXPORT int64_t __mn_file_exists(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    int exists = _access(cpath, 0) == 0;
+#else
     int exists = access(cpath, F_OK) == 0;
+#endif
     __mn_free(cpath);
     return exists ? 1 : 0;
 }
@@ -1220,24 +1528,53 @@ MN_EXPORT int64_t __mn_file_remove(MnString path) {
 
 MN_EXPORT int64_t __mn_file_size(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    int ok = GetFileAttributesExA(cpath, GetFileExInfoStandard, &info);
+    __mn_free(cpath);
+    if (!ok) return -1;
+    ULARGE_INTEGER sz;
+    sz.LowPart = info.nFileSizeLow;
+    sz.HighPart = info.nFileSizeHigh;
+    return (int64_t)sz.QuadPart;
+#else
     struct stat st;
     int rc = stat(cpath, &st);
     __mn_free(cpath);
     return rc == 0 ? (int64_t)st.st_size : -1;
+#endif
 }
 
 MN_EXPORT int64_t __mn_file_mtime(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    int ok = GetFileAttributesExA(cpath, GetFileExInfoStandard, &info);
+    __mn_free(cpath);
+    if (!ok) return -1;
+    /* FILETIME is 100ns intervals since 1601-01-01;
+     * Unix epoch 1970-01-01 is 116444736000000000 in those units. */
+    ULARGE_INTEGER ull;
+    ull.LowPart = info.ftLastWriteTime.dwLowDateTime;
+    ull.HighPart = info.ftLastWriteTime.dwHighDateTime;
+    return (int64_t)((ull.QuadPart - 116444736000000000ULL) / 10000000ULL);
+#else
     struct stat st;
     int rc = stat(cpath, &st);
     __mn_free(cpath);
     return rc == 0 ? (int64_t)st.st_mtime : -1;
+#endif
 }
 
 MN_EXPORT MnString __mn_realpath(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    char resolved[MAX_PATH];
+    char *rp = _fullpath(resolved, cpath, MAX_PATH);
+#else
     char resolved[4096];
     char *rp = realpath(cpath, resolved);
+#endif
     __mn_free(cpath);
     if (!rp) return __mn_str_empty();
     return __mn_str_from_cstr(rp);
@@ -1245,7 +1582,11 @@ MN_EXPORT MnString __mn_realpath(MnString path) {
 
 MN_EXPORT int64_t __mn_dir_create(MnString path, int64_t recursive) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    int rc = _mkdir(cpath);
+#else
     int rc = mkdir(cpath, 0755);
+#endif
     __mn_free(cpath);
     (void)recursive; /* TODO: recursive mkdir */
     return rc == 0 ? 0 : -1;
@@ -1253,7 +1594,11 @@ MN_EXPORT int64_t __mn_dir_create(MnString path, int64_t recursive) {
 
 MN_EXPORT int64_t __mn_dir_remove(MnString path) {
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    int rc = _rmdir(cpath);
+#else
     int rc = rmdir(cpath);
+#endif
     __mn_free(cpath);
     return rc == 0 ? 0 : -1;
 }
@@ -1289,16 +1634,54 @@ MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst) {
 }
 
 MN_EXPORT MnString __mn_tmpfile_path(void) {
+#ifdef _WIN32
+    /* GetTempPathA writes up to MAX_PATH bytes including NUL. Append a 13-byte
+     * suffix; allocate enough room so gcc's -Wformat-truncation is satisfied. */
+    char tmpdir[MAX_PATH];
+    DWORD n = GetTempPathA(MAX_PATH, tmpdir);
+    if (n == 0 || n > MAX_PATH) return __mn_str_from_cstr("mn_tmp_XXXXXX");
+    char full[MAX_PATH + 16];
+    snprintf(full, sizeof(full), "%smn_tmp_XXXXXX", tmpdir);
+    return __mn_str_from_cstr(full);
+#else
     return __mn_str_from_cstr("/tmp/mn_tmp_XXXXXX");
+#endif
 }
 
 MN_EXPORT MnString __mn_read_line(void) {
-    char buf[4096];
-    if (!fgets(buf, sizeof(buf), stdin)) return __mn_str_empty();
-    size_t len = strlen(buf);
+    /* v4.34.0: use getline(3) on POSIX for arbitrarily long lines instead
+     * of the old 4KB fgets buffer that silently truncated long input. */
+#if defined(_POSIX_C_SOURCE) || defined(__linux__) || defined(__APPLE__)
+    char *line = NULL;
+    size_t cap = 0;
+    ssize_t n = getline(&line, &cap, stdin);
+    if (n < 0) { free(line); return __mn_str_empty(); }
+    /* Strip trailing newline/carriage-return */
+    while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) n--;
+    line[n] = '\0';
+    MnString result = __mn_str_from_cstr(line);
+    free(line);
+    return result;
+#else
+    /* Windows fallback: loop fgets until we read a full line */
+    size_t cap = 4096, len = 0;
+    char *buf = (char *)malloc(cap);
+    if (!buf) return __mn_str_empty();
+    while (fgets(buf + len, (int)(cap - len), stdin)) {
+        len += strlen(buf + len);
+        if (len > 0 && buf[len - 1] == '\n') break;
+        cap *= 2;
+        char *tmp = (char *)realloc(buf, cap);
+        if (!tmp) break;
+        buf = tmp;
+    }
+    if (len == 0) { free(buf); return __mn_str_empty(); }
     if (len > 0 && buf[len - 1] == '\n') buf[--len] = '\0';
     if (len > 0 && buf[len - 1] == '\r') buf[--len] = '\0';
-    return __mn_str_from_cstr(buf);
+    MnString result = __mn_str_from_cstr(buf);
+    free(buf);
+    return result;
+#endif
 }
 
 MN_EXPORT int64_t __mn_file_append(MnString path, MnString content) {
@@ -1318,6 +1701,30 @@ MN_EXPORT int64_t __mn_file_append(MnString path, MnString content) {
 MN_EXPORT MnList __mn_dir_list_strings(MnString path) {
     MnList list = __mn_list_new((int64_t)sizeof(MnString));
     char *cpath = mn_to_cstr(path);
+#ifdef _WIN32
+    /* Append "\*" for FindFirstFile glob */
+    size_t plen = strlen(cpath);
+    char *pattern = (char *)__mn_alloc(plen + 3);
+    memcpy(pattern, cpath, plen);
+    pattern[plen] = '\\';
+    pattern[plen + 1] = '*';
+    pattern[plen + 2] = '\0';
+    __mn_free(cpath);
+
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = FindFirstFileA(pattern, &ffd);
+    __mn_free(pattern);
+    if (h == INVALID_HANDLE_VALUE) return list;
+    do {
+        const char *n = ffd.cFileName;
+        if (n[0] == '.' &&
+            (n[1] == '\0' || (n[1] == '.' && n[2] == '\0')))
+            continue;
+        MnString name = __mn_str_from_cstr(n);
+        __mn_list_push(&list, &name);
+    } while (FindNextFileA(h, &ffd));
+    FindClose(h);
+#else
     DIR *d = opendir(cpath);
     __mn_free(cpath);
     if (!d) return list;
@@ -1331,6 +1738,7 @@ MN_EXPORT MnList __mn_dir_list_strings(MnString path) {
         __mn_list_push(&list, &name);
     }
     closedir(d);
+#endif
     return list;
 }
 
@@ -1772,19 +2180,55 @@ static int64_t    mn_signal_batch_pending_len = 0;
 
 #ifdef _WIN32
 #include <windows.h>
+/*
+ * v4.28.0: replaced the prior ``InterlockedCompareExchange`` /
+ * ``volatile LONG`` double-checked-locking pattern (flagged by Cobra #5 in
+ * the v4.26.0 panel — the Windows memory model does not guarantee that the
+ * ``InitializeCriticalSection`` write is visible to a thread that observed
+ * the flag transition) with ``InitOnceExecuteOnce``, which is the
+ * canonical Windows one-shot initializer and provides the right release /
+ * acquire barriers on flag + payload. Do not reintroduce the CAS pattern
+ * here: the panel explicitly called it out.
+ */
 static CRITICAL_SECTION mn_signal_mutex;
-static volatile LONG mn_signal_mutex_initialized = 0;
-static void mn_signal_ensure_mutex(void) {
-    if (InterlockedCompareExchange(&mn_signal_mutex_initialized, 1, 0) == 0) {
-        InitializeCriticalSection(&mn_signal_mutex);
-    }
+static INIT_ONCE mn_signal_mutex_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK mn_signal_mutex_init_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    InitializeCriticalSection(&mn_signal_mutex);
+    return TRUE;
+}
+static inline void mn_signal_ensure_mutex(void) {
+    InitOnceExecuteOnce(&mn_signal_mutex_once, mn_signal_mutex_init_cb, NULL, NULL);
 }
 static inline void mn_signal_lock(void)   { mn_signal_ensure_mutex(); EnterCriticalSection(&mn_signal_mutex); }
 static inline void mn_signal_unlock(void) { LeaveCriticalSection(&mn_signal_mutex); }
 #else
 #include <pthread.h>
-static pthread_mutex_t mn_signal_mutex = PTHREAD_MUTEX_INITIALIZER;
-static inline void mn_signal_lock(void)   { pthread_mutex_lock(&mn_signal_mutex); }
+/* v4.32.0 Phase 2.5 (Viper M2): the signal mutex must be RECURSIVE because
+ * mn_signal_recompute now acquires the lock, and compute_fn may call
+ * __mn_signal_get → __mn_signal_subscribe → mn_signal_lock again (a
+ * standard reactive-graph pattern: reading a dependency while evaluating
+ * a computed signal). Windows CRITICAL_SECTION is always recursive; on
+ * POSIX we must explicitly set PTHREAD_MUTEX_RECURSIVE.
+ *
+ * Lock ordering: topological / depth-first. mn_signal_propagate holds
+ * the lock for a snapshot, releases it, then recomputes each subscriber
+ * (which re-acquires). Because recompute may call __mn_signal_get on
+ * dependency signals that are already evaluated (not dirty), the
+ * recursive mutex handles the nesting without deadlock. */
+static pthread_mutex_t mn_signal_mutex;
+static pthread_once_t mn_signal_mutex_once_flag = PTHREAD_ONCE_INIT;
+static void mn_signal_mutex_init(void) {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&mn_signal_mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+}
+static inline void mn_signal_lock(void)   {
+    pthread_once(&mn_signal_mutex_once_flag, mn_signal_mutex_init);
+    pthread_mutex_lock(&mn_signal_mutex);
+}
 static inline void mn_signal_unlock(void) { pthread_mutex_unlock(&mn_signal_mutex); }
 #endif
 
@@ -1848,16 +2292,36 @@ MN_EXPORT void __mn_signal_set(MnSignal *signal, const void *value) {
     /* Don't allow setting computed signals */
     if (signal->compute_fn != NULL) return;
 
+    /*
+     * v4.28.0: the memcmp / dtor / memcpy trio used to run OUTSIDE the lock,
+     * racing any concurrent ``__mn_signal_set`` on the same signal (v4.26.0
+     * panel: Viper H5, Mamba H1). Now the entire value-mutation critical
+     * section runs under ``mn_signal_mutex``: readers that hold the lock
+     * observe either the full old value or the full new value, never a
+     * torn intermediate. Propagation is still called outside the lock so
+     * that callbacks that call back into ``__mn_signal_set`` (a common
+     * reactive pattern) do not deadlock.
+     */
+    mn_signal_lock();
+
     /* Check if value actually changed (memcmp) */
-    if (signal->val_size > 0 && memcmp(signal->value, value, (size_t)signal->val_size) == 0) {
+    int changed = 1;
+    if (signal->val_size > 0
+        && memcmp(signal->value, value, (size_t)signal->val_size) == 0) {
+        changed = 0;
+    }
+
+    if (!changed) {
+        mn_signal_unlock();
         return;  /* No change, skip propagation */
     }
 
-    /* Call destructor on old value before overwriting */
+    /* Call destructor on old value before overwriting — still under lock
+     * because the destructor reads ``signal->value`` and a concurrent set
+     * could otherwise free the same pointer twice. */
     if (signal->dtor) signal->dtor(signal->value);
     memcpy(signal->value, value, (size_t)signal->val_size);
 
-    mn_signal_lock();
     if (mn_signal_batch_depth > 0) {
         /* Defer propagation: add to pending list */
         if (mn_signal_batch_pending_len >= MN_SIGNAL_MAX_PENDING) {
@@ -1914,8 +2378,16 @@ MN_EXPORT MnSignal *__mn_signal_computed(
     return sig;
 }
 
+/* v4.32.0 Phase 2.5 (Viper M2): mn_signal_recompute now runs under
+ * the signal mutex. This closes the race where a reader on another
+ * thread sees a half-written ``signal->value`` during a concurrent
+ * propagation-triggered recompute. The lock is recursive so
+ * compute_fn can safely call __mn_signal_get (which acquires the
+ * same mutex via mn_signal_lock). */
 static void mn_signal_recompute(MnSignal *signal) {
     if (signal->compute_fn == NULL) return;
+
+    mn_signal_lock();
 
     /* Push tracking context */
     MnSignal *prev_context = mn_signal_tracking_context;
@@ -1926,6 +2398,8 @@ static void mn_signal_recompute(MnSignal *signal) {
 
     /* Pop tracking context */
     mn_signal_tracking_context = prev_context;
+
+    mn_signal_unlock();
 }
 
 /* --- Subscribe / Unsubscribe --- */
@@ -1978,7 +2452,24 @@ MN_EXPORT void __mn_signal_on_change(MnSignal *signal, MnSignalCallback cb, void
 
 /* --- Propagation (topological, depth-first) --- */
 
+/* v4.33.0 Phase 4.1 (Viper, 8th cycle): depth limit for the recursive
+ * propagation DFS. A pathological computed-signal chain overflows the
+ * stack without a bound. 1024 is generous — real-world reactive graphs
+ * are typically < 20 deep. */
+#define MN_SIGNAL_PROPAGATE_MAX_DEPTH 1024
+static _Thread_local int64_t mn_signal_propagate_depth = 0;
+
 static void mn_signal_propagate(MnSignal *signal) {
+    if (mn_signal_propagate_depth >= MN_SIGNAL_PROPAGATE_MAX_DEPTH) {
+        fprintf(stderr,
+                "mapanare: signal propagation depth %ld exceeds max %d "
+                "— likely a cycle in the computed-signal graph\n",
+                (long)mn_signal_propagate_depth,
+                MN_SIGNAL_PROPAGATE_MAX_DEPTH);
+        abort();
+    }
+    mn_signal_propagate_depth++;
+
     /* Snapshot subscriber list under the lock so realloc in subscribe
      * cannot invalidate our iteration pointer. */
     mn_signal_lock();
@@ -2012,6 +2503,8 @@ static void mn_signal_propagate(MnSignal *signal) {
     for (int64_t i = 0; i < signal->cb_len; i++) {
         signal->callbacks[i].fn(signal->value, signal->callbacks[i].user_data);
     }
+
+    mn_signal_propagate_depth--;
 }
 
 /* --- Batching --- */
@@ -2051,23 +2544,37 @@ MN_EXPORT void __mn_signal_batch_end(void) {
 
 MN_EXPORT void __mn_signal_free(MnSignal *signal) {
     if (!signal) return;
-    /* Unsubscribe from dependencies */
-    for (int64_t i = 0; i < signal->dep_len; i++) {
-        __mn_signal_unsubscribe(signal->dependencies[i], signal);
+
+    /* Acquire lock, detach arrays, release lock. Then free outside lock
+     * to avoid holding the mutex during deallocation. */
+    MnSignal **deps = NULL;
+    int64_t dep_len = 0;
+    MnSignal **subs = NULL;
+    MnSignal **cbs = NULL;
+
+    mn_signal_lock();
+    /* Unsubscribe from dependencies while holding the lock. */
+    deps = signal->dependencies;
+    dep_len = signal->dep_len;
+    for (int64_t i = 0; i < dep_len; i++) {
+        __mn_signal_unsubscribe(deps[i], signal);
     }
-    if (signal->dependencies) __mn_free(signal->dependencies);
     signal->dependencies = NULL;
     signal->dep_len = 0;
 
-    if (signal->subscribers) __mn_free(signal->subscribers);
-    /* Null out subscriber pointers to prevent dangling references */
+    subs = signal->subscribers;
     signal->subscribers = NULL;
     signal->sub_len = 0;
 
-    if (signal->callbacks) __mn_free(signal->callbacks);
-    /* Null out callback pointers to prevent dangling references */
+    cbs = (MnSignal **)signal->callbacks;
     signal->callbacks = NULL;
     signal->cb_len = 0;
+    mn_signal_unlock();
+
+    /* Free arrays outside the lock. */
+    if (deps) __mn_free(deps);
+    if (subs) __mn_free(subs);
+    if (cbs) __mn_free(cbs);
 
     if (signal->value) {
         if (signal->dtor) signal->dtor(signal->value);
@@ -2361,6 +2868,10 @@ MN_EXPORT void __mn_stream_free(MnStream *stream) {
     } else if (stream->state) {
         __mn_free(stream->state);
     }
+    /* Free closure environment if present (v4.3.0). */
+    if (stream->user_data) {
+        __mn_free(stream->user_data);
+    }
     __mn_free(stream);
 }
 
@@ -2396,16 +2907,12 @@ MN_EXPORT MnString __mn_argv(int64_t index) {
     return __mn_str_from_cstr(g_argv[index]);
 }
 
-/** Read a file, returning its content. Returns empty string on error.
- *  Unlike __mn_file_read which uses a pointer param, this returns a
- *  sentinel (empty string with len == -1) on failure so Mapanare code
- *  can call it without pointer types. */
+/** Read a file, returning its content. Returns empty string on error. */
 MN_EXPORT MnString __mn_file_read_or_empty(MnString path) {
     int64_t ok = 0;
     MnString result = __mn_file_read(path, &ok);
     if (!ok) {
-        MnString empty = { "", -1 };  /* len == -1 signals failure */
-        return empty;
+        return __mn_str_empty();
     }
     return result;
 }
@@ -2502,6 +3009,31 @@ typedef struct {
 
 static MnTypeRegEntry mn_type_reg[MN_TYPEREG_CAP];
 
+/*
+ * v4.28.0: the type registry used to be an unlocked global hash table
+ * (v4.26.0 panel: Viper H5). Under concurrent ``__mn_type_registry_put``
+ * calls, two threads could scribble on the same entry mid-probe. Reads
+ * were racing with writes too. This rwlock lets many readers proceed in
+ * parallel while serialising writers — the common case in the self-hosted
+ * compiler is many lookups vs. rare inserts during module lowering, so a
+ * reader-writer lock is the right primitive.
+ *
+ * Windows has no ``pthread_rwlock_t``; SRWLOCK is the native equivalent.
+ */
+#ifdef _WIN32
+static SRWLOCK mn_typereg_lock = SRWLOCK_INIT;
+static inline void mn_typereg_read_lock(void)    { AcquireSRWLockShared(&mn_typereg_lock); }
+static inline void mn_typereg_read_unlock(void)  { ReleaseSRWLockShared(&mn_typereg_lock); }
+static inline void mn_typereg_write_lock(void)   { AcquireSRWLockExclusive(&mn_typereg_lock); }
+static inline void mn_typereg_write_unlock(void) { ReleaseSRWLockExclusive(&mn_typereg_lock); }
+#else
+static pthread_rwlock_t mn_typereg_lock = PTHREAD_RWLOCK_INITIALIZER;
+static inline void mn_typereg_read_lock(void)    { pthread_rwlock_rdlock(&mn_typereg_lock); }
+static inline void mn_typereg_read_unlock(void)  { pthread_rwlock_unlock(&mn_typereg_lock); }
+static inline void mn_typereg_write_lock(void)   { pthread_rwlock_wrlock(&mn_typereg_lock); }
+static inline void mn_typereg_write_unlock(void) { pthread_rwlock_unlock(&mn_typereg_lock); }
+#endif
+
 static uint32_t mn_typereg_hash(const char *s, int64_t len) {
     uint32_t h = 5381;
     for (int64_t i = 0; i < len; i++)
@@ -2515,6 +3047,7 @@ MN_EXPORT void __mn_type_registry_put(MnString fn_name, MnString kind, MnString 
     int64_t flen = fn_name.len > 255 ? 255 : fn_name.len;
     uint32_t idx = mn_typereg_hash(fdata, fn_name.len) % MN_TYPEREG_CAP;
 
+    mn_typereg_write_lock();
     for (int probe = 0; probe < MN_TYPEREG_CAP; probe++) {
         uint32_t i = (idx + probe) % MN_TYPEREG_CAP;
         if (!mn_type_reg[i].occupied ||
@@ -2538,42 +3071,65 @@ MN_EXPORT void __mn_type_registry_put(MnString fn_name, MnString kind, MnString 
             mn_type_reg[i].type_name[tlen] = '\0';
 
             mn_type_reg[i].occupied = 1;
+            mn_typereg_write_unlock();
             return;
         }
     }
+    mn_typereg_write_unlock();
 }
 
-static MnTypeRegEntry *mn_typereg_find(MnString fn_name) {
-    if (fn_name.len <= 0 || fn_name.data == NULL) return NULL;
+/* Caller must hold the read lock. Populates *out_kind / *out_type_name
+ * with a snapshot-on-success so readers can release the lock before
+ * allocating a Mapanare string from the buffers. */
+static int mn_typereg_snapshot(MnString fn_name,
+                                char *out_kind, size_t kind_cap,
+                                char *out_type_name, size_t type_cap) {
+    if (fn_name.len <= 0 || fn_name.data == NULL) return 0;
     const char *fdata = mn_untag(fn_name.data);
     uint32_t idx = mn_typereg_hash(fdata, fn_name.len) % MN_TYPEREG_CAP;
 
     for (int probe = 0; probe < MN_TYPEREG_CAP; probe++) {
         uint32_t i = (idx + probe) % MN_TYPEREG_CAP;
-        if (!mn_type_reg[i].occupied) return NULL;
+        if (!mn_type_reg[i].occupied) return 0;
         int64_t flen = fn_name.len > 255 ? 255 : fn_name.len;
         if (mn_type_reg[i].fn_name[flen] == '\0' &&
             memcmp(mn_type_reg[i].fn_name, fdata, (size_t)flen) == 0) {
-            return &mn_type_reg[i];
+            if (out_kind && kind_cap > 0) {
+                strncpy(out_kind, mn_type_reg[i].kind, kind_cap - 1);
+                out_kind[kind_cap - 1] = '\0';
+            }
+            if (out_type_name && type_cap > 0) {
+                strncpy(out_type_name, mn_type_reg[i].type_name, type_cap - 1);
+                out_type_name[type_cap - 1] = '\0';
+            }
+            return 1;
         }
     }
-    return NULL;
+    return 0;
 }
 
 MN_EXPORT MnString __mn_type_registry_get_kind(MnString fn_name) {
-    MnTypeRegEntry *e = mn_typereg_find(fn_name);
-    if (e) return __mn_str_from_cstr(e->kind);
+    char kind_buf[64] = {0};
+    mn_typereg_read_lock();
+    int found = mn_typereg_snapshot(fn_name, kind_buf, sizeof(kind_buf), NULL, 0);
+    mn_typereg_read_unlock();
+    if (found) return __mn_str_from_cstr(kind_buf);
     return __mn_str_empty();
 }
 
 MN_EXPORT MnString __mn_type_registry_get_name(MnString fn_name) {
-    MnTypeRegEntry *e = mn_typereg_find(fn_name);
-    if (e) return __mn_str_from_cstr(e->type_name);
+    char name_buf[256] = {0};
+    mn_typereg_read_lock();
+    int found = mn_typereg_snapshot(fn_name, NULL, 0, name_buf, sizeof(name_buf));
+    mn_typereg_read_unlock();
+    if (found) return __mn_str_from_cstr(name_buf);
     return __mn_str_empty();
 }
 
 MN_EXPORT void __mn_type_registry_clear(void) {
+    mn_typereg_write_lock();
     memset(mn_type_reg, 0, sizeof(mn_type_reg));
+    mn_typereg_write_unlock();
 }
 
 /* -----------------------------------------------------------------------
@@ -2665,15 +3221,40 @@ static const char *mn_tag_names[] = {
 #define MN_TAG_COUNT (int)(sizeof(mn_tag_names) / sizeof(mn_tag_names[0]))
 static MnString mn_tag_strings[12];
 static MnString mn_tag_unknown;
-static int mn_tag_strings_init = 0;
 
-static void mn_init_tag_strings(void) {
-    if (mn_tag_strings_init) return;
+/*
+ * v4.28.0: ``mn_init_tag_strings`` used to be a hand-rolled "if (init)
+ * return; ...; init = 1" guard — the classic racy double-check without a
+ * memory barrier or mutex. Two concurrent callers could both run the
+ * init loop and scribble on ``mn_tag_strings[]`` at the same time. The
+ * v4.26.0 panel (Mamba) flagged this as the **7th** cycle carry-forward:
+ * the fix has been on the wishlist for seven review cycles without
+ * landing. It lands now, on the canonical primitive for each platform:
+ * ``pthread_once`` on POSIX, ``InitOnceExecuteOnce`` on Windows.
+ */
+#ifdef _WIN32
+static INIT_ONCE mn_tag_strings_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK mn_init_tag_strings_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
     for (int i = 0; i < MN_TAG_COUNT; i++)
         mn_tag_strings[i] = __mn_str_from_cstr(mn_tag_names[i]);
     mn_tag_unknown = __mn_str_from_cstr("Unknown");
-    mn_tag_strings_init = 1;
+    return TRUE;
 }
+static void mn_init_tag_strings(void) {
+    InitOnceExecuteOnce(&mn_tag_strings_once, mn_init_tag_strings_cb, NULL, NULL);
+}
+#else
+static pthread_once_t mn_tag_strings_once = PTHREAD_ONCE_INIT;
+static void mn_init_tag_strings_impl(void) {
+    for (int i = 0; i < MN_TAG_COUNT; i++)
+        mn_tag_strings[i] = __mn_str_from_cstr(mn_tag_names[i]);
+    mn_tag_unknown = __mn_str_from_cstr("Unknown");
+}
+static void mn_init_tag_strings(void) {
+    pthread_once(&mn_tag_strings_once, mn_init_tag_strings_impl);
+}
+#endif
 
 MN_EXPORT MnString __mn_any_typename(MnValue v) {
     mn_init_tag_strings();

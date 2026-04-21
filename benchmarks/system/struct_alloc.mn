@@ -1,0 +1,25 @@
+// Benchmark: Struct allocation
+// Allocate 100,000 small structs, accumulate field values.
+// Tests arena allocator throughput.
+
+struct Point {
+    x: Int,
+    y: Int,
+    z: Int
+}
+
+fn make_point(i: Int) -> Point {
+    pon p: Point = new Point { x: i, y: i * 2, z: i * 3 }
+    da p
+}
+
+fn main() {
+    pon mut sum: Int = 0
+    pon mut i: Int = 0
+    mien i < 100000 {
+        pon p: Point = make_point(i)
+        sum = sum + p.x + p.y + p.z
+        i = i + 1
+    }
+    print("checksum = " + str(sum))
+}

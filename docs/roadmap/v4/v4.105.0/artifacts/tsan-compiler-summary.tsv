@@ -1,0 +1,65 @@
+test	exit	tsan_warnings	class
+01_hello	0	0	CLEAN
+02_arithmetic	0	0	CLEAN
+03_function	N/A	9	signal-unsafe call inside of a signal 
+04_if_else	0	0	CLEAN
+05_for_loop	N/A	9	signal-unsafe call inside of a signal 
+06_struct	0	0	CLEAN
+07_enum_match	0	0	CLEAN
+08_list	N/A	9	signal-unsafe call inside of a signal 
+09_string_methods	0	0	CLEAN
+10_result	0	0	CLEAN
+11_closure	N/A	9	signal-unsafe call inside of a signal 
+12_while	N/A	9	signal-unsafe call inside of a signal 
+13_fib	N/A	5	heap-use-after-free 
+14_nested_struct	0	0	CLEAN
+15_multifunction	N/A	9	signal-unsafe call inside of a signal 
+16_string_escape	0	0	CLEAN
+17_option	0	0	CLEAN
+18_method_chain	0	0	CLEAN
+19_nested_match	N/A	5	heap-use-after-free 
+20_recursion	N/A	5	heap-use-after-free 
+21_list_ops	N/A	9	signal-unsafe call inside of a signal 
+22_string_builder	nonzero	0	COMPILER_FAIL_NO_TSAN
+23_multi_return	N/A	9	signal-unsafe call inside of a signal 
+24_enum_methods	N/A	5	heap-use-after-free 
+25_fizzbuzz	N/A	9	signal-unsafe call inside of a signal 
+26_generics	N/A	9	signal-unsafe call inside of a signal 
+27_impl	N/A	9	signal-unsafe call inside of a signal 
+28_traits	N/A	9	signal-unsafe call inside of a signal 
+29_generic_impl	N/A	9	signal-unsafe call inside of a signal 
+30_nested_generics	0	0	CLEAN
+31_generic_multi	N/A	9	signal-unsafe call inside of a signal 
+32_generic_enum	0	0	CLEAN
+33_break_continue	N/A	9	signal-unsafe call inside of a signal 
+34_file_io	0	0	CLEAN
+35_stdin	0	0	CLEAN
+36_crypto	0	0	CLEAN
+37_regex	0	0	CLEAN
+38_http	0	0	CLEAN
+39_gpu_detect	0	0	CLEAN
+40_gpu_tensor	0	0	CLEAN
+41_module_let	N/A	9	signal-unsafe call inside of a signal 
+42_module_let_string	N/A	9	signal-unsafe call inside of a signal 
+43_module_let_math	N/A	9	signal-unsafe call inside of a signal 
+45_ffi_bind	N/A	9	signal-unsafe call inside of a signal 
+47_try_operator	N/A	5	heap-use-after-free 
+48_match_nested_exhaustive	N/A	9	heap-use-after-free 
+49_match_guards	N/A	5	heap-use-after-free 
+49_tensor_literal	nonzero	0	COMPILER_FAIL_NO_TSAN
+50_match_or_patterns	N/A	5	heap-use-after-free 
+50_tensor_indexing	nonzero	0	COMPILER_FAIL_NO_TSAN
+51_match_guards_and_or	nonzero	0	COMPILER_FAIL_NO_TSAN
+51_tensor_broadcast	nonzero	0	COMPILER_FAIL_NO_TSAN
+52_tensor_slicing	nonzero	0	COMPILER_FAIL_NO_TSAN
+53_linear_regression	nonzero	0	COMPILER_FAIL_NO_TSAN
+54_const_basic	nonzero	0	COMPILER_FAIL_NO_TSAN
+55_async_basic	nonzero	0	COMPILER_FAIL_NO_TSAN
+56_async_await	nonzero	0	COMPILER_FAIL_NO_TSAN
+57_real_await	nonzero	0	COMPILER_FAIL_NO_TSAN
+58_async_file_io	nonzero	0	COMPILER_FAIL_NO_TSAN
+58_const_scope	nonzero	0	COMPILER_FAIL_NO_TSAN
+59_async_fanout	nonzero	0	COMPILER_FAIL_NO_TSAN
+62_list_output	N/A	9	signal-unsafe call inside of a signal 
+63_else_sino	N/A	5	heap-use-after-free 
+64_closure_typed	nonzero	0	COMPILER_FAIL_NO_TSAN

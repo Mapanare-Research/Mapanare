@@ -1,0 +1,69 @@
+{
+  "name": "mapanare",
+  "displayName": "Mapanare",
+  "description": "Language support for Mapanare — AI-native compiled language with agents, signals, streams, and tensors.",
+  "version": "0.6.0",
+  "publisher": "mapanare-research",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "mapanare",
+    "agents",
+    "signals",
+    "streams",
+    "compiled"
+  ],
+  "activationEvents": [
+    "onLanguage:mapanare"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "mapanare",
+        "aliases": [
+          "Mapanare",
+          "mn"
+        ],
+        "extensions": [
+          ".mn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "configuration": {
+      "title": "Mapanare",
+      "properties": {
+        "mapanare.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Mapanare LSP server. If empty, uses `mapanare lsp` from PATH."
+        },
+        "mapanare.lsp.trace": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace level for LSP communication."
+        }
+      }
+    }
+  },
+  "capabilities": {
+    "textDocument": {
+      "hover": true,
+      "definition": true,
+      "references": true,
+      "rename": true,
+      "completion": true,
+      "publishDiagnostics": true
+    }
+  }
+}

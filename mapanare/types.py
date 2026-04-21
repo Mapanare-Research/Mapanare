@@ -40,6 +40,7 @@ class TypeKind(Enum):
     STREAM = auto()
     CHANNEL = auto()
     TENSOR = auto()
+    FUTURE = auto()  # v4.69.0: Future<T> — coroutine result type
 
     # Compound / user-defined
     FN = auto()
@@ -54,7 +55,9 @@ class TypeKind(Enum):
     TYPE_VAR = auto()
     RANGE = auto()
     ANY = auto()
-    UNKNOWN = auto()
+    UNKNOWN = auto()  # deprecated alias for UNRESOLVED
+    UNRESOLVED = auto()  # inference pending — will be resolved later
+    ERROR = auto()  # inference failed — must produce diagnostic
     BUILTIN_FN = auto()
 
 
@@ -78,6 +81,7 @@ _NAME_TO_KIND: dict[str, TypeKind] = {
     "Stream": TypeKind.STREAM,
     "Channel": TypeKind.CHANNEL,
     "Tensor": TypeKind.TENSOR,
+    "Future": TypeKind.FUTURE,
     "Range": TypeKind.RANGE,
     "any": TypeKind.ANY,
 }
@@ -86,6 +90,8 @@ _NAME_TO_KIND: dict[str, TypeKind] = {
 _KIND_TO_NAME: dict[TypeKind, str] = {v: k for k, v in _NAME_TO_KIND.items()}
 _KIND_TO_NAME[TypeKind.FN] = "fn"
 _KIND_TO_NAME[TypeKind.UNKNOWN] = "<unknown>"
+_KIND_TO_NAME[TypeKind.UNRESOLVED] = "<unresolved>"
+_KIND_TO_NAME[TypeKind.ERROR] = "<error>"
 _KIND_TO_NAME[TypeKind.BUILTIN_FN] = "<builtin>"
 _KIND_TO_NAME[TypeKind.STRUCT] = "struct"
 _KIND_TO_NAME[TypeKind.ENUM] = "enum"
@@ -123,7 +129,9 @@ class TypeInfo:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TypeInfo):
             return NotImplemented
-        if self.kind == TypeKind.UNKNOWN or other.kind == TypeKind.UNKNOWN:
+        if self.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED, TypeKind.ERROR):
+            return False
+        if other.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED, TypeKind.ERROR):
             return False
         if self.is_function and other.is_function:
             return (
@@ -166,11 +174,16 @@ class TypeInfo:
         return _KIND_TO_NAME.get(self.kind, "<unknown>")
 
     def is_compatible_with(self, other: "TypeInfo") -> bool:
-        """Permissive matching: UNKNOWN is compatible with anything (recursive).
-        Use for inference contexts where UNKNOWN means 'not yet resolved'.
-        Use __eq__ for strict equality.
+        """Permissive matching for inference contexts.
+
+        UNKNOWN/UNRESOLVED is compatible with anything (not yet resolved).
+        ERROR is compatible with nothing (forces error propagation).
         """
-        if self.kind == TypeKind.UNKNOWN or other.kind == TypeKind.UNKNOWN:
+        if self.kind == TypeKind.ERROR or other.kind == TypeKind.ERROR:
+            return False
+        if self.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED):
+            return True
+        if other.kind in (TypeKind.UNKNOWN, TypeKind.UNRESOLVED):
             return True
         # Dynamic `any` type is compatible with everything (gradual typing)
         if self.kind == TypeKind.ANY or other.kind == TypeKind.ANY:
@@ -217,7 +230,9 @@ _USER_DEFINED_KINDS = frozenset(
 # Canonical type singletons
 # ---------------------------------------------------------------------------
 
-UNKNOWN_TYPE = TypeInfo(kind=TypeKind.UNKNOWN)
+UNKNOWN_TYPE = TypeInfo(kind=TypeKind.UNKNOWN)  # deprecated, use UNRESOLVED_TYPE
+UNRESOLVED_TYPE = TypeInfo(kind=TypeKind.UNRESOLVED)
+ERROR_TYPE = TypeInfo(kind=TypeKind.ERROR)
 INT_TYPE = TypeInfo(kind=TypeKind.INT)
 FLOAT_TYPE = TypeInfo(kind=TypeKind.FLOAT)
 BOOL_TYPE = TypeInfo(kind=TypeKind.BOOL)
@@ -239,7 +254,7 @@ PRIMITIVE_KINDS = frozenset(
 )
 
 BUILTIN_GENERIC_TYPES = frozenset(
-    {"Option", "Result", "List", "Map", "Signal", "Stream", "Channel", "Tensor"}
+    {"Option", "Result", "List", "Map", "Signal", "Stream", "Channel", "Tensor", "Future"}
 )
 
 BUILTIN_GENERIC_ARITY: dict[str, int] = {
@@ -251,6 +266,7 @@ BUILTIN_GENERIC_ARITY: dict[str, int] = {
     "Stream": 1,
     "Tensor": 1,
     "Channel": 1,
+    "Future": 1,
 }
 
 BUILTIN_GENERIC_KINDS = frozenset(
@@ -263,6 +279,7 @@ BUILTIN_GENERIC_KINDS = frozenset(
         TypeKind.STREAM,
         TypeKind.CHANNEL,
         TypeKind.TENSOR,
+        TypeKind.FUTURE,
     }
 )
 
@@ -284,6 +301,16 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "chr": STRING_TYPE,
     "join": STRING_TYPE,
     "typeof": STRING_TYPE,
+    # StringBuilder builtins (v4.95.0)
+    "sb_create": UNKNOWN_TYPE,  # sb_create() -> StringBuilder
+    "sb_append": VOID_TYPE,  # sb_append(sb, str) -> void
+    "sb_to_string": STRING_TYPE,  # sb_to_string(sb) -> String (consumes builder)
+    # Async/await builtins (v4.73.0+)
+    "block_on": UNKNOWN_TYPE,  # block_on(Future<T>) -> T; type inferred from future
+    "spawn": TypeInfo(
+        kind=TypeKind.FUTURE
+    ),  # v4.93.0: spawn async task for multi-threaded execution
+    "__mn_file_read_async": TypeInfo(kind=TypeKind.FUTURE),  # v4.92.0: async file read
     # C runtime functions used by the self-hosted compiler driver (main.mn)
     "__mn_argc": INT_TYPE,
     "__mn_argv": STRING_TYPE,
@@ -319,6 +346,13 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "gpu_tensor_mul": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
     "gpu_tensor_div": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
     "gpu_tensor_matmul": TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.FLOAT)]),
+    # Tensor builtins (v4.42.0)
+    "tensor_rank": INT_TYPE,
+    "tensor_size": INT_TYPE,
+    "tensor_get_f64": TypeInfo(kind=TypeKind.FLOAT),
+    "tensor_get_i64": INT_TYPE,
+    "tensor_shape_dim": INT_TYPE,
+    "tensor_print": VOID_TYPE,
 }
 
 # Builtin call name mapping (Mapanare name -> Python name) for emit_python.py
@@ -417,6 +451,45 @@ def validate_matmul_shapes(
         if a_shape[0] == b_shape[0]:
             return (b_shape[1],)
         return None
+    return None
+
+
+def broadcast_shape(a: tuple[int, ...], b: tuple[int, ...]) -> tuple[int, ...] | None:
+    """Compute the broadcast result shape using NumPy rules (v4.44.0).
+
+    Aligns from trailing dimensions. Each dimension pair must be equal or
+    one of them must be 1. The shorter shape is left-padded with 1s.
+    Returns None if shapes are not broadcast-compatible.
+    """
+    max_rank = max(len(a), len(b))
+    a_padded = (1,) * (max_rank - len(a)) + a
+    b_padded = (1,) * (max_rank - len(b)) + b
+
+    result: list[int] = []
+    for ai, bi in zip(a_padded, b_padded):
+        if ai == bi:
+            result.append(ai)
+        elif ai == 1:
+            result.append(bi)
+        elif bi == 1:
+            result.append(ai)
+        else:
+            return None  # incompatible
+    return tuple(result)
+
+
+def broadcast_incompatible_dim(a: tuple[int, ...], b: tuple[int, ...]) -> int | None:
+    """Return the 0-based dimension index (from trailing) where broadcasting fails.
+
+    Used for rustc-quality diagnostics. Returns None if shapes are compatible.
+    """
+    max_rank = max(len(a), len(b))
+    a_padded = (1,) * (max_rank - len(a)) + a
+    b_padded = (1,) * (max_rank - len(b)) + b
+
+    for i, (ai, bi) in enumerate(zip(a_padded, b_padded)):
+        if ai != bi and ai != 1 and bi != 1:
+            return i
     return None
 
 

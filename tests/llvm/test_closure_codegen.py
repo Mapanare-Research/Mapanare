@@ -11,16 +11,7 @@ Tests verify:
 
 from __future__ import annotations
 
-import pytest
-
-try:
-    from llvmlite import ir  # noqa: F401
-
-    HAS_LLVMLITE = True
-except ImportError:
-    HAS_LLVMLITE = False
-
-from mapanare.emit_llvm_mir import LLVMMIREmitter
+from mapanare.emit_llvm_text import LLVMTextEmitter
 from mapanare.mir import (
     BasicBlock,
     BinOp,
@@ -190,16 +181,14 @@ class TestClosureMIRPrinting:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not installed")
 class TestClosureLLVMEmission:
     """Closure MIR instructions emit correct LLVM IR."""
 
     def test_closure_create_emits_alloc_and_store(self):
         """ClosureCreate should allocate env via arena and store captures into env struct."""
         module = _make_closure_module()
-        emitter = LLVMMIREmitter(module_name="test_closure")
-        llvm_module = emitter.emit(module)
-        ir_str = str(llvm_module)
+        emitter = LLVMTextEmitter(module_name="test_closure")
+        ir_str = emitter.emit(module)
 
         # Should declare mn_arena_alloc (arena-based allocation for closure env)
         assert "mn_arena_alloc" in ir_str or "malloc" in ir_str or "__mn_alloc" in ir_str
@@ -211,21 +200,20 @@ class TestClosureLLVMEmission:
     def test_closure_call_emits_indirect_call(self):
         """ClosureCall should extract fn_ptr and env_ptr and call indirectly."""
         module = _make_closure_module()
-        emitter = LLVMMIREmitter(module_name="test_closure")
-        llvm_module = emitter.emit(module)
-        ir_str = str(llvm_module)
+        emitter = LLVMTextEmitter(module_name="test_closure")
+        ir_str = emitter.emit(module)
 
         # Should have extractvalue for fn_ptr and env_ptr
         assert "extractvalue" in ir_str
-        # Should have bitcast for function pointer
-        assert "bitcast" in ir_str
+        # Text emitter uses opaque pointers (ptr), so no bitcast needed;
+        # verify the indirect call is present instead
+        assert "call" in ir_str
 
     def test_env_load_emits_gep_and_load(self):
         """EnvLoad should emit GEP + load from the environment struct."""
         module = _make_closure_module()
-        emitter = LLVMMIREmitter(module_name="test_closure")
-        llvm_module = emitter.emit(module)
-        ir_str = str(llvm_module)
+        emitter = LLVMTextEmitter(module_name="test_closure")
+        ir_str = emitter.emit(module)
 
         # The lambda function should have GEP + load for env access
         assert "getelementptr" in ir_str
@@ -278,9 +266,8 @@ class TestClosureLLVMEmission:
         )
 
         module = MIRModule(name="test_multi_cap", functions=[main_fn, lambda_fn])
-        emitter = LLVMMIREmitter(module_name="test_multi_cap")
-        llvm_module = emitter.emit(module)
-        ir_str = str(llvm_module)
+        emitter = LLVMTextEmitter(module_name="test_multi_cap")
+        ir_str = emitter.emit(module)
 
         assert "mn_arena_alloc" in ir_str or "malloc" in ir_str or "__mn_alloc" in ir_str
         assert "lambda_multi" in ir_str
@@ -387,8 +374,17 @@ class TestClosureLowering:
         lowerer = MIRLowerer()
         return lowerer.lower(program, module_name="test")
 
-    def test_lambda_no_capture_emits_const(self):
-        """A lambda with no captures should emit a Const FN reference."""
+    def test_lambda_no_capture_emits_closure_create(self):
+        """A no-capture lambda emits ClosureCreate with empty captures.
+
+        v4.103.0 changed this from Const-FN to ClosureCreate so the
+        same representation works whether the lambda is called
+        directly or passed through a parameter annotated with
+        ``fn(T) -> T`` (docket #5). The indirect-call path
+        (ClosureCall) expects a ``{ptr, ptr}`` struct; the emitter's
+        ClosureCreate path handles the empty-captures case by
+        emitting ``{@fn_ptr, null}`` inline.
+        """
         source = """
 fn main() -> Int {
     let f = (x) => x + 1
@@ -398,12 +394,12 @@ fn main() -> Int {
         module = self._lower_source(source)
         main_fn = module.get_function("main")
         assert main_fn is not None
-        # Should have a Const instruction with a lambda name
+        # Should have a ClosureCreate with an empty captures list
         insts = [
             inst
             for bb in main_fn.blocks
             for inst in bb.instructions
-            if isinstance(inst, Const) and inst.ty.kind == TypeKind.FN
+            if isinstance(inst, ClosureCreate) and not inst.captures
         ]
         assert len(insts) >= 1
 
@@ -501,7 +497,6 @@ fn main() -> Int {
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not installed")
 class TestClosureE2E:
     """End-to-end: Mapanare source → MIR → LLVM IR."""
 
@@ -512,9 +507,8 @@ class TestClosureE2E:
         program = parse(source)
         lowerer = MIRLowerer()
         mir_module = lowerer.lower(program, module_name="test")
-        emitter = LLVMMIREmitter(module_name="test")
-        llvm_module = emitter.emit(mir_module)
-        return str(llvm_module)
+        emitter = LLVMTextEmitter(module_name="test")
+        return emitter.emit(mir_module)
 
     def test_simple_capture_produces_valid_ir(self):
         """A simple closure capture should produce valid LLVM IR."""

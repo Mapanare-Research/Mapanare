@@ -1,3 +1,10 @@
+// ====================================================================
+// Known issue (v4.129.0): this example does not currently compile.
+// Cause: stdlib/gpu/tensor.mn qualified-type-ref in type position (docket Gr.2)
+// See docs/roadmap/v4/v4.129.0/EXAMPLES_REPORT.md for root cause and
+// docket reference.
+// ====================================================================
+
 // GPU Tensor Benchmark
 // Compares CPU vs GPU performance for tensor operations
 //

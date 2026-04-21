@@ -10,48 +10,92 @@
 
 struct MIRType {
     name: String,
-    kind: String,
+    kind: Int,
     args: List<MIRType>
 }
 
-fn new_mir_type(name: String, kind: String) -> MIRType {
+// MIRType kind constants — integer tags (no string comparisons)
+pub fn TK_INT() -> Int { return 0 }
+pub fn TK_FLOAT() -> Int { return 1 }
+pub fn TK_BOOL() -> Int { return 2 }
+pub fn TK_STRING() -> Int { return 3 }
+pub fn TK_VOID() -> Int { return 4 }
+pub fn TK_LIST() -> Int { return 5 }
+pub fn TK_MAP() -> Int { return 6 }
+pub fn TK_OPTION() -> Int { return 7 }
+pub fn TK_RESULT() -> Int { return 8 }
+pub fn TK_ENUM() -> Int { return 9 }
+pub fn TK_STRUCT() -> Int { return 10 }
+pub fn TK_FN() -> Int { return 11 }
+pub fn TK_SIGNAL() -> Int { return 12 }
+pub fn TK_UNKNOWN() -> Int { return 13 }
+pub fn TK_CHAR() -> Int { return 14 }
+pub fn TK_AGENT() -> Int { return 15 }
+pub fn TK_RANGE() -> Int { return 16 }
+pub fn TK_STREAM() -> Int { return 17 }
+pub fn TK_TENSOR() -> Int { return 18 }
+pub fn TK_PTR() -> Int { return 19 }
+
+// Convert kind tag to string name (for emit_llvm_ir and diagnostics)
+pub fn tk_name(k: Int) -> String {
+    if k == 0 { return "int" }
+    if k == 1 { return "float" }
+    if k == 2 { return "bool" }
+    if k == 3 { return "string" }
+    if k == 4 { return "void" }
+    if k == 5 { return "list" }
+    if k == 6 { return "map" }
+    if k == 7 { return "option" }
+    if k == 8 { return "result" }
+    if k == 9 { return "enum" }
+    if k == 10 { return "struct" }
+    if k == 11 { return "fn" }
+    if k == 12 { return "signal" }
+    if k == 13 { return "unknown" }
+    if k == 14 { return "char" }
+    if k == 15 { return "agent" }
+    if k == 16 { return "range" }
+    return "unknown"
+}
+
+fn new_mir_type(name: String, kind: Int) -> MIRType {
     let args: List<MIRType> = []
     return new MIRType { name: name, kind: kind, args: args }
 }
 
-fn new_mir_type_with_args(name: String, kind: String, args: List<MIRType>) -> MIRType {
+fn new_mir_type_with_args(name: String, kind: Int, args: List<MIRType>) -> MIRType {
     return new MIRType { name: name, kind: kind, args: args }
 }
 
-fn mir_int() -> MIRType { return new_mir_type("Int", "int") }
-fn mir_float() -> MIRType { return new_mir_type("Float", "float") }
-fn mir_bool() -> MIRType { return new_mir_type("Bool", "bool") }
-fn mir_string() -> MIRType { return new_mir_type("String", "string") }
-fn mir_void() -> MIRType { return new_mir_type("Void", "void") }
-fn mir_unknown() -> MIRType { return new_mir_type("<unknown>", "unknown") }
-fn mir_option() -> MIRType { return new_mir_type("Option", "option") }
+fn mir_int() -> MIRType { return new_mir_type("Int", TK_INT()) }
+fn mir_float() -> MIRType { return new_mir_type("Float", TK_FLOAT()) }
+fn mir_bool() -> MIRType { return new_mir_type("Bool", TK_BOOL()) }
+fn mir_string() -> MIRType { return new_mir_type("String", TK_STRING()) }
+fn mir_void() -> MIRType { return new_mir_type("Void", TK_VOID()) }
+fn mir_unknown() -> MIRType { return new_mir_type("<unknown>", TK_UNKNOWN()) }
+fn mir_option() -> MIRType { return new_mir_type("Option", TK_OPTION()) }
 fn mir_option_of(inner: MIRType) -> MIRType {
-    let mut t: MIRType = new_mir_type("Option", "option")
+    let mut t: MIRType = new_mir_type("Option", TK_OPTION())
     t.args.push(inner)
     return t
 }
-fn mir_result() -> MIRType { return new_mir_type("Result", "result") }
-fn mir_list() -> MIRType { return new_mir_type("List", "list") }
-fn mir_map() -> MIRType { return new_mir_type("Map", "map") }
-fn mir_signal() -> MIRType { return new_mir_type("Signal", "signal") }
-fn mir_range() -> MIRType { return new_mir_type("Range", "range") }
-fn mir_fn_type() -> MIRType { return new_mir_type("<fn>", "fn") }
+fn mir_result() -> MIRType { return new_mir_type("Result", TK_RESULT()) }
+fn mir_list() -> MIRType { return new_mir_type("List", TK_LIST()) }
+fn mir_map() -> MIRType { return new_mir_type("Map", TK_MAP()) }
+fn mir_signal() -> MIRType { return new_mir_type("Signal", TK_SIGNAL()) }
+fn mir_range() -> MIRType { return new_mir_type("Range", TK_RANGE()) }
+fn mir_fn_type() -> MIRType { return new_mir_type("<fn>", TK_FN()) }
 
 fn mir_struct(name: String) -> MIRType {
-    return new_mir_type(name, "struct")
+    return new_mir_type(name, TK_STRUCT())
 }
 
 fn mir_enum(name: String) -> MIRType {
-    return new_mir_type(name, "enum")
+    return new_mir_type(name, TK_ENUM())
 }
 
 fn mir_agent(name: String) -> MIRType {
-    return new_mir_type(name, "agent")
+    return new_mir_type(name, TK_AGENT())
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +186,7 @@ enum Instruction {
     FieldGet(Value, Value, String),
     FieldSet(Value, String, Value),
     ListInit(Value, MIRType, List<Value>),
+    TensorInit(Value, MIRType, List<Int>, List<Value>),
     IndexGet(Value, Value, Value),
     IndexSet(Value, Value, Value),
     Alloca(Value, MIRType),
@@ -310,6 +355,22 @@ fn new_import_info(path: List<String>, items: List<String>) -> ImportInfo {
     return new ImportInfo { path: path, items: items }
 }
 
+struct ModuleConst {
+    name: String,
+    type_name: String,
+    int_value: Int,
+    str_value: String,
+    is_string: Bool
+}
+
+fn new_module_const_int(name: String, type_name: String, value: Int) -> ModuleConst {
+    return new ModuleConst { name: name, type_name: type_name, int_value: value, str_value: "", is_string: false }
+}
+
+fn new_module_const_str(name: String, type_name: String, value: String) -> ModuleConst {
+    return new ModuleConst { name: name, type_name: type_name, int_value: 0, str_value: value, is_string: true }
+}
+
 struct MIRModule {
     name: String,
     functions: List<MIRFunction>,
@@ -319,7 +380,8 @@ struct MIRModule {
     agents: List<AgentInfo>,
     pipes: List<PipeInfo>,
     imports: List<ImportInfo>,
-    trait_names: List<String>
+    trait_names: List<String>,
+    consts: List<ModuleConst>
 }
 
 fn new_mir_module(name: String) -> MIRModule {
@@ -331,7 +393,8 @@ fn new_mir_module(name: String) -> MIRModule {
     let pipes: List<PipeInfo> = []
     let imports: List<ImportInfo> = []
     let trait_names: List<String> = []
-    return new MIRModule { name: name, functions: functions, structs: structs, enums: enums, extern_fns: extern_fns, agents: agents, pipes: pipes, imports: imports, trait_names: trait_names }
+    let consts: List<ModuleConst> = []
+    return new MIRModule { name: name, functions: functions, structs: structs, enums: enums, extern_fns: extern_fns, agents: agents, pipes: pipes, imports: imports, trait_names: trait_names, consts: consts }
 }
 
 // ---------------------------------------------------------------------------
@@ -448,6 +511,7 @@ pub fn instr_kind(i: Instruction) -> String {
         FieldGet(_, _, _) => { return "field_get" },
         FieldSet(_, _, _) => { return "field_set" },
         ListInit(_, _, _) => { return "list_init" },
+        TensorInit(_, _, _, _) => { return "tensor_init" },
         IndexGet(_, _, _) => { return "index_get" },
         IndexSet(_, _, _) => { return "index_set" },
         Alloca(_, _) => { return "alloca" },
@@ -494,6 +558,7 @@ pub fn instr_dest(i: Instruction) -> Value {
         StructInit(d, _, _) => { return d },
         FieldGet(d, _, _) => { return d },
         ListInit(d, _, _) => { return d },
+        TensorInit(d, _, _, _) => { return d },
         IndexGet(d, _, _) => { return d },
         Alloca(d, _) => { return d },
         Load(d, _) => { return d },
@@ -591,6 +656,17 @@ pub fn instr_list_type(i: Instruction) -> MIRType {
 }
 pub fn instr_list_elements(i: Instruction) -> List<Value> {
     match i { ListInit(_, _, e) => { return e }, _ => { let empty: List<Value> = []; return empty } }
+}
+
+// TensorInit (v4.42.0)
+pub fn instr_tensor_type(i: Instruction) -> MIRType {
+    match i { TensorInit(_, t, _, _) => { return t }, _ => { return mir_void() } }
+}
+pub fn instr_tensor_shape(i: Instruction) -> List<Int> {
+    match i { TensorInit(_, _, s, _) => { return s }, _ => { let empty: List<Int> = []; return empty } }
+}
+pub fn instr_tensor_elements(i: Instruction) -> List<Value> {
+    match i { TensorInit(_, _, _, e) => { return e }, _ => { let empty: List<Value> = []; return empty } }
 }
 
 // IndexGet

@@ -7,13 +7,8 @@ match what the compiler actually supports.
 from __future__ import annotations
 
 import pathlib
-import subprocess
-import sys
 import textwrap
 
-import pytest
-
-from mapanare.cli import _compile_source, cmd_repl
 from mapanare.parser import parse
 
 ROOT = pathlib.Path(__file__).parents[2]
@@ -22,24 +17,6 @@ ROOT = pathlib.Path(__file__).parents[2]
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
-
-
-def _compiles_to_python(source: str) -> str:
-    """Compile Mapanare source to Python, return Python code."""
-    return _compile_source(source, "<test>")
-
-
-def _compiles_and_runs(source: str) -> str:
-    """Compile and run, returning stdout."""
-    python_code = _compile_source(source, "<test>")
-    result = subprocess.run(
-        [sys.executable, "-c", python_code],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    assert result.returncode == 0, f"Runtime error: {result.stderr}"
-    return result.stdout.strip()
 
 
 def _parses(source: str) -> bool:
@@ -56,107 +33,6 @@ def _parses(source: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-class TestFeatureTableAccuracy:
-    """Verify every entry in README feature status table is accurate."""
-
-    def test_functions_closures_lambdas(self) -> None:
-        """Functions, closures, lambdas: Yes/Yes/Stable."""
-        out = _compiles_and_runs(textwrap.dedent("""\
-            fn add(a: Int, b: Int) -> Int { return a + b }
-            fn main() {
-                let f = (x) => x * 2
-                print(add(1, 2))
-                print(f(5))
-            }
-        """))
-        assert "3" in out
-        assert "10" in out
-
-    def test_structs_enums_match(self) -> None:
-        """Structs, enums, pattern matching: Yes/Yes/Stable."""
-        out = _compiles_and_runs(textwrap.dedent("""\
-            enum Shape {
-                Circle(Float),
-                Rect(Float, Float)
-            }
-
-            fn main() {
-                let s = Shape_Circle(3.0)
-                match s {
-                    Shape_Circle(r) => { print("circle") },
-                    Shape_Rect(w, h) => { print("rect") },
-                    _ => { print("other") }
-                }
-            }
-        """))
-        assert "circle" in out
-
-    @pytest.mark.xfail(
-        reason="Python MIR emitter is deprecated; emits __mn_range_free call without defining it",
-        strict=True,
-    )
-    def test_control_flow(self) -> None:
-        """if/else, for..in, while: Yes/Yes/Stable."""
-        out = _compiles_and_runs(textwrap.dedent("""\
-            fn main() {
-                if true { print("yes") } else { print("no") }
-                for i in 0..3 { print(str(i)) }
-                let mut c = 0
-                while c < 2 { c += 1 }
-                print(str(c))
-            }
-        """))
-        assert "yes" in out
-        assert "2" in out
-
-    def test_result_option(self) -> None:
-        """Result/Option + ? operator: Yes/Partial/Stable."""
-        out = _compiles_and_runs(textwrap.dedent("""\
-            fn main() {
-                let x: Option<Int> = Some(42)
-                match x {
-                    Some(v) => { print(str(v)) },
-                    None => { print("none") }
-                }
-            }
-        """))
-        assert "42" in out
-
-    def test_lists(self) -> None:
-        """Lists: Yes/Partial/Stable."""
-        out = _compiles_and_runs(textwrap.dedent("""\
-            fn main() {
-                let mut items: List<Int> = []
-                items.push(1)
-                items.push(2)
-                print(str(items.length()))
-                print(str(items[0]))
-            }
-        """))
-        assert "2" in out
-        assert "1" in out
-
-
-# ---------------------------------------------------------------------------
-# Task 2: REPL exists and is functional
-# ---------------------------------------------------------------------------
-
-
-class TestREPLExists:
-    """Verify REPL is implemented (was listed as 'Planned')."""
-
-    def test_repl_command_exists(self) -> None:
-        """cmd_repl function exists in cli.py."""
-        assert callable(cmd_repl)
-
-    def test_repl_registered_in_argparser(self) -> None:
-        """'repl' subcommand is registered in the CLI."""
-        from mapanare.cli import build_parser
-
-        parser = build_parser()
-        assert "repl" in parser._subparsers._group_actions[0].choices
-
-
 # ---------------------------------------------------------------------------
 # Task 3: Maps/Dicts exist (were listed as 'Planned')
 # ---------------------------------------------------------------------------
@@ -170,13 +46,16 @@ class TestMapsExist:
         assert _parses('let m = #{"a": 1, "b": 2}')
 
     def test_map_literal_compiles(self) -> None:
-        """Map literal compiles to Python."""
-        code = _compiles_to_python(textwrap.dedent("""\
+        """Map literal compiles (parser + semantic)."""
+        from mapanare.semantic import check_or_raise
+
+        source = textwrap.dedent("""\
             fn main() {
                 let m = #{"a": 1, "b": 2}
             }
-        """))
-        assert "m" in code
+        """)
+        ast = parse(source, filename="<test>")
+        check_or_raise(ast, filename="<test>")
 
     def test_map_in_ast_nodes(self) -> None:
         """MapLiteral and MapEntry exist in AST."""

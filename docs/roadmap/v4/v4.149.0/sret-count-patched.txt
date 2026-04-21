@@ -1,0 +1,7 @@
+57
+Patched: 57 sret in golden test corpus (was 0). Per-target ABI classifier applied.
+Affected tests:
+  10_result: 7 sret (Result<Int,String> = 32B)
+  47_try_operator: 25 sret (Result types)
+  48_match_nested_exhaustive: 11 sret (nested enums)
+  62_list_output: 14 sret (Result types)

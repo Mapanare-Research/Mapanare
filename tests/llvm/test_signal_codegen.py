@@ -11,16 +11,7 @@ Tests verify:
 
 from __future__ import annotations
 
-import pytest
-
-try:
-    from llvmlite import ir  # noqa: F401
-
-    HAS_LLVMLITE = True
-except ImportError:
-    HAS_LLVMLITE = False
-
-from mapanare.emit_llvm_mir import LLVMMIREmitter
+from mapanare.emit_llvm_text import LLVMTextEmitter
 from mapanare.mir import (
     BasicBlock,
     Const,
@@ -128,7 +119,6 @@ class TestSignalMIRPrinting:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not installed")
 class TestSignalLLVMEmission:
     """SignalInit/Get/Set emit correct LLVM IR with C runtime calls."""
 
@@ -144,9 +134,8 @@ class TestSignalLLVMEmission:
                 ),
             ]
         )
-        emitter = LLVMMIREmitter(module_name="test")
-        llvm_mod = emitter.emit(module)
-        ir_str = str(llvm_mod)
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_str = emitter.emit(module)
         assert "__mn_signal_new" in ir_str
 
     def test_signal_get_emits_runtime_call(self):
@@ -162,9 +151,8 @@ class TestSignalLLVMEmission:
                 SignalGet(dest=_mir_val("val"), signal=_signal_val("sig")),
             ]
         )
-        emitter = LLVMMIREmitter(module_name="test")
-        llvm_mod = emitter.emit(module)
-        ir_str = str(llvm_mod)
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_str = emitter.emit(module)
         assert "__mn_signal_get" in ir_str
 
     def test_signal_set_emits_runtime_call(self):
@@ -181,9 +169,8 @@ class TestSignalLLVMEmission:
                 SignalSet(signal=_signal_val("sig"), val=_mir_val("new_val")),
             ]
         )
-        emitter = LLVMMIREmitter(module_name="test")
-        llvm_mod = emitter.emit(module)
-        ir_str = str(llvm_mod)
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_str = emitter.emit(module)
         assert "__mn_signal_set" in ir_str
 
     def test_signal_computed_emits_runtime_call(self):
@@ -204,9 +191,8 @@ class TestSignalLLVMEmission:
                 ),
             ]
         )
-        emitter = LLVMMIREmitter(module_name="test")
-        llvm_mod = emitter.emit(module)
-        ir_str = str(llvm_mod)
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_str = emitter.emit(module)
         assert "__mn_signal_computed" in ir_str
 
     def test_signal_subscribe_emits_runtime_call(self):
@@ -228,9 +214,8 @@ class TestSignalLLVMEmission:
                 SignalSubscribe(signal=_signal_val("a"), subscriber=_signal_val("b")),
             ]
         )
-        emitter = LLVMMIREmitter(module_name="test")
-        llvm_mod = emitter.emit(module)
-        ir_str = str(llvm_mod)
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_str = emitter.emit(module)
         assert "__mn_signal_subscribe" in ir_str
 
     def test_signal_init_get_set_complete_ir(self):
@@ -249,9 +234,8 @@ class TestSignalLLVMEmission:
                 SignalGet(dest=_mir_val("r2"), signal=_signal_val("s")),
             ]
         )
-        emitter = LLVMMIREmitter(module_name="test")
-        llvm_mod = emitter.emit(module)
-        ir_str = str(llvm_mod)
+        emitter = LLVMTextEmitter(module_name="test")
+        ir_str = emitter.emit(module)
         # Should have all three runtime calls
         assert "__mn_signal_new" in ir_str
         assert "__mn_signal_get" in ir_str

@@ -29,12 +29,35 @@ def _collect_md_files() -> list[Path]:
     return sorted(DOCS_DIR.rglob("*.md"))
 
 
+def _strip_code_spans(line: str) -> str:
+    """Remove inline `...` backtick spans so link-regex doesn't match code."""
+    # Greedy-enough: drop every backtick-delimited span on the line
+    return re.sub(r"`[^`\n]*`", "", line)
+
+
 def _extract_relative_links(md_file: Path) -> list[tuple[int, str, str]]:
-    """Extract (line_number, link_text, link_target) for relative links."""
+    """Extract (line_number, link_text, link_target) for relative links.
+
+    Skips fenced code blocks (```) and inline code spans (`...`) so
+    that `[text](path)` inside code samples is not treated as a link
+    (An.1 hygiene, v4.133.0 — docket fix for the 3 false positives
+    in v4.114.0 DOCKET_AUDIT.md, v4.114.0 MEASUREMENTS.md, v4.80.0
+    PLAN.md, all of which cited code-block examples containing
+    parenthesised identifiers that looked like markdown links).
+    """
     results = []
     text = md_file.read_text(encoding="utf-8", errors="replace")
+    in_fence = False
     for i, line in enumerate(text.splitlines(), 1):
-        for match in _LINK_RE.finditer(line):
+        stripped = line.lstrip()
+        # Toggle fenced code block on ``` or ~~~ openers/closers
+        if stripped.startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        scan = _strip_code_spans(line)
+        for match in _LINK_RE.finditer(scan):
             target = match.group(2)
             # Skip external URLs, anchors, and mailto
             if target.startswith(("http://", "https://", "#", "mailto:")):
@@ -93,8 +116,8 @@ def test_spec_exists() -> None:
 
 
 def test_plan_exists() -> None:
-    """The v2.0.0 plan should exist."""
-    assert (DOCS_DIR / "roadmap" / "v2.0.0" / "PLAN.md").is_file()
+    """The v2.0.0 plan should exist (under era subdirectory)."""
+    assert (DOCS_DIR / "roadmap" / "v2" / "v2.0.0" / "PLAN.md").is_file()
 
 
 def test_example_dirs_exist() -> None:
