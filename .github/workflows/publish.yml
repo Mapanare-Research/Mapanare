@@ -402,7 +402,8 @@ jobs:
         run: |
           if [[ -f /tmp/assets/SHA256SUMS.txt ]]; then
             gh release upload "v${{ needs.release.outputs.new_version }}" \
-              /tmp/assets/SHA256SUMS.txt --clobber
+              /tmp/assets/SHA256SUMS.txt --clobber \
+              -R "${{ github.repository }}"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
