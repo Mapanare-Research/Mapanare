@@ -143,8 +143,17 @@ def build() -> pathlib.Path:
         print("error: clang not found. Install LLVM/clang to compile IR to object code.")
         sys.exit(1)
     opt_flag = "-O2"
+    clang_extra: list[str] = []
+    if sys.platform == "win32":
+        # Disable stack probing on Windows. Clang normally emits ``__chkstk``
+        # calls for functions with large stack frames; that symbol is only
+        # provided by MSVC's CRT, not by MinGW's libgcc, which instead
+        # supplies ``___chkstk_ms``. We already reserve a 64 MB linker stack
+        # (``-Wl,--stack,67108864``), so the probes are redundant and
+        # skipping them lets MinGW's ld link the IR object cleanly.
+        clang_extra.append("-mno-stack-arg-probe")
     subprocess.run(
-        [clang_bin, "-c", opt_flag, str(ir_path), "-o", str(obj_path)],
+        [clang_bin, "-c", opt_flag, *clang_extra, str(ir_path), "-o", str(obj_path)],
         check=True,
         capture_output=True,
     )
