@@ -110,10 +110,12 @@ def build() -> pathlib.Path:
         )
         # Also fix datalayout for ARM64
         if arch == "arm64":
-            ir = ir.replace(
-                'target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"',
-                'target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128-Fn32"',
+            linux_x86_dl = (
+                'target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64'
+                '-i64:64-i128:128-f80:128-n8:16:32:64-S128"'
             )
+            mac_arm64_dl = 'target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128-Fn32"'
+            ir = ir.replace(linux_x86_dl, mac_arm64_dl)
     elif sys.platform == "win32":
         ir = ir.replace(
             'target triple = "x86_64-unknown-linux-gnu"',
@@ -224,8 +226,10 @@ def build() -> pathlib.Path:
         link_flags = [
             "-lm",
             "-lpthread",
-            "-framework", "Metal",
-            "-framework", "Foundation",
+            "-framework",
+            "Metal",
+            "-framework",
+            "Foundation",
             "-fobjc-arc",
             "-Wl,-stack_size,0x4000000",  # 64MB stack for deep recursion on macOS
         ]

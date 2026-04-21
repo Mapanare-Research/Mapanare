@@ -1635,10 +1635,12 @@ MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst) {
 
 MN_EXPORT MnString __mn_tmpfile_path(void) {
 #ifdef _WIN32
+    /* GetTempPathA writes up to MAX_PATH bytes including NUL. Append a 13-byte
+     * suffix; allocate enough room so gcc's -Wformat-truncation is satisfied. */
     char tmpdir[MAX_PATH];
     DWORD n = GetTempPathA(MAX_PATH, tmpdir);
     if (n == 0 || n > MAX_PATH) return __mn_str_from_cstr("mn_tmp_XXXXXX");
-    char full[MAX_PATH];
+    char full[MAX_PATH + 16];
     snprintf(full, sizeof(full), "%smn_tmp_XXXXXX", tmpdir);
     return __mn_str_from_cstr(full);
 #else
