@@ -58,7 +58,8 @@ class TestListPushLLVM:
         """)
         ir_text = _to_llvm_ir_mir(source)
         assert "__mn_list_push" in ir_text
-        assert "__mn_list_get" in ir_text
+        # v5.1.0 Perf.1: List<Int> uses inline GEP, not __mn_list_get
+        assert "getelementptr inbounds i64" in ir_text
 
     def test_push_in_loop(self) -> None:
         source = textwrap.dedent("""\

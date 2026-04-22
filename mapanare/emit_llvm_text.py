@@ -458,6 +458,8 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_url_parse_host": {"nounwind"},
     "__mn_url_parse_port": {"nounwind", "readonly"},
     "__mn_url_parse_path": {"nounwind"},
+    # v5.1.0 Perf.1: inline list access emits bounds-check trap via abort().
+    "abort": {"nounwind", "noreturn"},
 }
 
 
@@ -4498,15 +4500,54 @@ class LLVMTextEmitter:
             la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {ov}, ptr {la}")
             iv = self._coerce(iv, it, I64) if it != I64 else iv
-            raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)])
             ety = self._rty(i.dest.ty)
-            if ety == PTR:
-                self._put(i.dest, raw, PTR)
-            else:
-                tp = raw  # opaque ptr, no bitcast
-                r = self._f("el")
-                self._L(f"{r} = load {ety}, ptr {tp}")
+            # v5.1.0 Perf.1: inline list access for 8-byte value-type elements.
+            # Replaces opaque call @__mn_list_get with GEP+load so LLVM can
+            # see through to the backing buffer (enables SROA, vectorization,
+            # loop hoisting). Gate: elem size == 8 covers List<Int>, List<Float>,
+            # List<Ptr>. String (16B), Bool (1B), structs → slow path.
+            if _tsz(ety) == 8:
+                # Inline bounds check (unsigned covers negative indices)
+                lenp = self._f("lg.lenp")
+                self._L(f"{lenp} = getelementptr inbounds {LIST}, ptr {la}, i32 0, i32 1")
+                ln = self._f("lg.len")
+                self._L(f"{ln} = load i64, ptr {lenp}")
+                oob = self._f("lg.oob")
+                self._L(f"{oob} = icmp uge i64 {iv}, {ln}")
+                trap_lbl = f"lg.trap.{self._c}"
+                ok_lbl = f"lg.ok.{self._c}"
+                self._c += 1
+                self._L(f"br i1 {oob}, label %{trap_lbl}, label %{ok_lbl}")
+                # Trap block
+                self._blk[trap_lbl] = []
+                self._cb = trap_lbl
+                self._ensure("abort", VOID, [])
+                self._L("call void @abort()")
+                self._L("unreachable")
+                # Fast path: inline GEP + load
+                self._blk[ok_lbl] = []
+                self._cb = ok_lbl
+                dp = self._f("lg.dp")
+                self._L(f"{dp} = getelementptr inbounds {LIST}, ptr {la}, i32 0, i32 0")
+                data = self._f("lg.data")
+                self._L(f"{data} = load ptr, ptr {dp}")
+                ep = self._f("lg.ep")
+                self._L(f"{ep} = getelementptr inbounds i64, ptr {data}, i64 {iv}")
+                r = self._f("lg.v")
+                self._L(f"{r} = load {ety}, ptr {ep}")
                 self._put(i.dest, r, ety)
+            else:
+                # Slow path: opaque call for String, Bool, structs, etc.
+                raw = self._rt(
+                    "__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)]
+                )
+                if ety == PTR:
+                    self._put(i.dest, raw, PTR)
+                else:
+                    tp = raw  # opaque ptr, no bitcast
+                    r = self._f("el")
+                    self._L(f"{r} = load {ety}, ptr {tp}")
+                    self._put(i.dest, r, ety)
         elif ok == TypeKind.STRING:
             r = self._rt("__mn_str_byte_at", I64, [STR, I64], [(ov, ot), (iv, it)])
             self._put(i.dest, r, I64)
@@ -4531,9 +4572,43 @@ class LLVMTextEmitter:
         if i.obj.ty.kind == TypeKind.LIST:
             la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {ov}, ptr {la}")
-            raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, it)])
-            tp = raw  # opaque ptr, no bitcast
-            self._L(f"store {vt} {vv}, ptr {tp}")
+            iv = self._coerce(iv, it, I64) if it != I64 else iv
+            # v5.1.0 Perf.1: inline list store for 8-byte value-type elements.
+            if _tsz(vt) == 8:
+                # Inline bounds check
+                lenp = self._f("ls.lenp")
+                self._L(f"{lenp} = getelementptr inbounds {LIST}, ptr {la}, i32 0, i32 1")
+                ln = self._f("ls.len")
+                self._L(f"{ln} = load i64, ptr {lenp}")
+                oob = self._f("ls.oob")
+                self._L(f"{oob} = icmp uge i64 {iv}, {ln}")
+                trap_lbl = f"ls.trap.{self._c}"
+                ok_lbl = f"ls.ok.{self._c}"
+                self._c += 1
+                self._L(f"br i1 {oob}, label %{trap_lbl}, label %{ok_lbl}")
+                # Trap block
+                self._blk[trap_lbl] = []
+                self._cb = trap_lbl
+                self._ensure("abort", VOID, [])
+                self._L("call void @abort()")
+                self._L("unreachable")
+                # Fast path: inline GEP + store
+                self._blk[ok_lbl] = []
+                self._cb = ok_lbl
+                dp = self._f("ls.dp")
+                self._L(f"{dp} = getelementptr inbounds {LIST}, ptr {la}, i32 0, i32 0")
+                data = self._f("ls.data")
+                self._L(f"{data} = load ptr, ptr {dp}")
+                ep = self._f("ls.ep")
+                self._L(f"{ep} = getelementptr inbounds i64, ptr {data}, i64 {iv}")
+                self._L(f"store {vt} {vv}, ptr {ep}")
+            else:
+                # Slow path: opaque call for String, structs, etc.
+                raw = self._rt(
+                    "__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)]
+                )
+                tp = raw  # opaque ptr, no bitcast
+                self._L(f"store {vt} {vv}, ptr {tp}")
         elif i.obj.ty.kind == TypeKind.MAP:
             ka = self._alloca(it, "ka")
             self._L(f"store {it} {iv}, ptr {ka}")
