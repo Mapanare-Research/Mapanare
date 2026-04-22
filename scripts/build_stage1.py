@@ -233,7 +233,8 @@ def build() -> pathlib.Path:
 
     # 6. Link
     print("[6/6] Linking mnc-stage1 ...")
-    binary = SELF_DIR / "mnc-stage1"
+    binary_name = "mnc-stage1.exe" if sys.platform == "win32" else "mnc-stage1"
+    binary = SELF_DIR / binary_name
     if sys.platform == "win32":
         link_flags = [
             "-lm",
