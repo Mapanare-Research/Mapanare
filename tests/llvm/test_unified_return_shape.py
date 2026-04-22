@@ -95,8 +95,7 @@ def test_make_shape_uses_sret() -> None:
     assert m, "@make_shape not found in emitted IR"
     sig = m.group(0)
     assert "sret(" in sig, (
-        f"@make_shape signature lost sret pointer — Rt.1/Cb.15 regression. "
-        f"Signature was: {sig}"
+        f"@make_shape signature lost sret pointer — Rt.1/Cb.15 regression. " f"Signature was: {sig}"
     )
 
 

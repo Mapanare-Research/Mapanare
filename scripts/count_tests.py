@@ -15,6 +15,7 @@ Usage:
     python scripts/count_tests.py --by-dir     # group by top-level dir
     python scripts/count_tests.py --path tests/parser  # scope a subtree
 """
+
 from __future__ import annotations
 
 import argparse

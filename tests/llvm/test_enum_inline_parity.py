@@ -47,15 +47,11 @@ def test_self_hosted_rejects_typed_pointer_slot() -> None:
 
     # The rejection clause must be present and reachable (not commented out).
     lines = [ln.strip() for ln in body.splitlines()]
-    has_endswith_star = any(
-        'ends_with("*")' in ln and not ln.startswith("//") for ln in lines
-    )
-    has_return_false = any(
-        ln == "return false" and not ln.startswith("//") for ln in lines
-    )
+    has_endswith_star = any('ends_with("*")' in ln and not ln.startswith("//") for ln in lines)
+    has_return_false = any(ln == "return false" and not ln.startswith("//") for ln in lines)
     assert has_endswith_star, (
         "type_fits_inline_slot no longer guards against typed-pointer "
-        "(Cb.6 regression). Expected a `resolved.ends_with(\"*\")` check."
+        '(Cb.6 regression). Expected a `resolved.ends_with("*")` check.'
     )
     assert has_return_false, (
         "type_fits_inline_slot has the ends_with check but no "

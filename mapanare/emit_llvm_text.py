@@ -4338,9 +4338,7 @@ class LLVMTextEmitter:
         # Use a safe upper bound (256) for empty lists with unknown element type
         # so that any struct element fits, matching the self-hosted emitter's
         # 384 heuristic.
-        if not i.elements and esz <= 8 and i.elem_type.kind in (
-            TypeKind.UNKNOWN,
-        ):
+        if not i.elements and esz <= 8 and i.elem_type.kind in (TypeKind.UNKNOWN,):
             esz = 256
         lv = self._rt("__mn_list_new", LIST, [I64], [(str(esz), I64)], "ln")
         self._track_container(i.dest.name, "list")
@@ -4549,9 +4547,7 @@ class LLVMTextEmitter:
                 self._put(i.dest, r, ety)
             else:
                 # Slow path: opaque call for String, Bool, structs, etc.
-                raw = self._rt(
-                    "__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)]
-                )
+                raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)])
                 if ety == PTR:
                     self._put(i.dest, raw, PTR)
                 else:
@@ -4615,9 +4611,7 @@ class LLVMTextEmitter:
                 self._L(f"store {vt} {vv}, ptr {ep}")
             else:
                 # Slow path: opaque call for String, structs, etc.
-                raw = self._rt(
-                    "__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)]
-                )
+                raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)])
                 tp = raw  # opaque ptr, no bitcast
                 self._L(f"store {vt} {vv}, ptr {tp}")
         elif i.obj.ty.kind == TypeKind.MAP:
