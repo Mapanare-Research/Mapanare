@@ -1670,7 +1670,10 @@ static inline void mn_coro_resume(void *handle) {
 typedef struct mn_mt_scheduler {
     mn_ws_deque_t      deques[MN_MAX_WORKERS];   /* per-worker deques         */
     mapanare_thread_t  threads[MN_MAX_WORKERS];   /* worker thread handles     */
-    uint32_t           num_workers;               /* N (1 = single-threaded)   */
+    uint32_t           worker_cap;                /* max workers (env/cpu)     */
+    mapanare_atomic_i32 live_workers;             /* spawned threads alive     */
+    int                spawned[MN_MAX_WORKERS];   /* 1 = thread was created    */
+    mapanare_atomic_i32 worker_exited[MN_MAX_WORKERS]; /* 1 = thread exited   */
     mn_overflow_queue_t overflow;                  /* global overflow queue     */
     mapanare_atomic_i32 active_tasks;             /* total tasks in system     */
     mapanare_atomic_i32 running;                  /* 1 = active, 0 = shutdown  */
@@ -1678,6 +1681,7 @@ typedef struct mn_mt_scheduler {
     mapanare_cond_t    wake_cond;                 /* wake parked workers       */
     mapanare_mutex_t   done_lock;                 /* protects done condvar     */
     mapanare_cond_t    done_cond;                 /* signal block_on caller    */
+    mapanare_mutex_t   spawn_lock;                /* protects spawn/exit       */
 } mn_mt_scheduler_t;
 
 static mn_mt_scheduler_t mn_sched;
@@ -1691,7 +1695,7 @@ static int mn_worker_get_task(uint32_t worker_id, mn_task_t *out) {
     if (mn_overflow_pop(&mn_sched.overflow, out))
         return 1;
     /* 3. Steal from random peer. */
-    uint32_t n = mn_sched.num_workers;
+    uint32_t n = mn_sched.worker_cap;
     if (n <= 1) return 0;
     /* Simple linear scan starting from random offset. */
     uint32_t start = (worker_id + 1) % n;
@@ -1741,12 +1745,14 @@ static void *mn_worker_loop(void *arg) {
 #endif
     uint32_t worker_id = (uint32_t)(uintptr_t)arg;
     uint32_t idle_spins = 0;
+    int64_t last_work_us = mapanare_time_us();
 
     while (__atomic_load_n(&mn_sched.running, __ATOMIC_ACQUIRE)) {
         mn_task_t task;
         if (mn_worker_get_task(worker_id, &task)) {
             mn_process_task(&task, worker_id);
             idle_spins = 0;
+            last_work_us = mapanare_time_us();
         } else {
             /* No work available. */
             if (__atomic_load_n(&mn_sched.active_tasks, __ATOMIC_ACQUIRE) == 0) {
@@ -1764,9 +1770,32 @@ static void *mn_worker_loop(void *arg) {
                 }
                 mapanare_mutex_unlock(&mn_sched.wake_lock);
                 idle_spins = 0;
+
+                /* v5.1.4 (Perf.2): idle exit — if no work for 100ms and
+                 * pool has > 2 workers total (live_workers > 1 since
+                 * worker 0 is the caller), exit this thread to reclaim
+                 * the OS thread. Uses spawn_lock for race-safe mutation
+                 * of live_workers + worker_exited. */
+                int64_t idle_ms = (mapanare_time_us() - last_work_us) / 1000;
+                if (idle_ms > 100) {
+                    int did_exit = 0;
+                    mapanare_mutex_lock(&mn_sched.spawn_lock);
+                    if (__atomic_load_n(&mn_sched.live_workers,
+                                        __ATOMIC_RELAXED) > 1) {
+                        __atomic_fetch_sub(&mn_sched.live_workers, 1,
+                                           __ATOMIC_ACQ_REL);
+                        __atomic_store_n(
+                            &mn_sched.worker_exited[worker_id], 1,
+                            __ATOMIC_RELEASE);
+                        did_exit = 1;
+                    }
+                    mapanare_mutex_unlock(&mn_sched.spawn_lock);
+                    if (did_exit) goto worker_exit;
+                }
             }
         }
     }
+worker_exit:
 #ifdef _WIN32
     return 0;
 #else
@@ -1774,50 +1803,87 @@ static void *mn_worker_loop(void *arg) {
 #endif
 }
 
+/* v5.1.4 (Perf.2): find a reusable worker slot. Must be called under
+ * spawn_lock. Tries exited slots first (join + reuse), then unused slots.
+ * Returns slot index (1..worker_cap-1) or -1 if pool is full. */
+static int mn_find_worker_slot(void) {
+    /* First: find an exited slot — join the old thread and reuse. */
+    for (uint32_t i = 1; i < mn_sched.worker_cap; i++) {
+        if (mn_sched.spawned[i] &&
+            __atomic_load_n(&mn_sched.worker_exited[i], __ATOMIC_ACQUIRE)) {
+            mapanare_thread_join(mn_sched.threads[i]);
+            mn_sched.spawned[i] = 0;
+            __atomic_store_n(&mn_sched.worker_exited[i], 0, __ATOMIC_RELEASE);
+            return (int)i;
+        }
+    }
+    /* Then: find a never-used slot. */
+    for (uint32_t i = 1; i < mn_sched.worker_cap; i++) {
+        if (!mn_sched.spawned[i])
+            return (int)i;
+    }
+    return -1;
+}
+
+/* v5.1.4 (Perf.2): spawn a single worker thread. Must be called under
+ * spawn_lock. Returns 0 on success, -1 if no slot or pthread_create fails. */
+static int mn_spawn_worker_locked(void) {
+    int slot = mn_find_worker_slot();
+    if (slot < 0) return -1;
+    mn_sched.spawned[slot] = 1;
+    int rc = mapanare_thread_create(&mn_sched.threads[slot], mn_worker_loop,
+                                    (void *)(uintptr_t)slot);
+    if (rc != 0) {
+        mn_sched.spawned[slot] = 0;
+        return -1;
+    }
+    __atomic_fetch_add(&mn_sched.live_workers, 1, __ATOMIC_ACQ_REL);
+    return 0;
+}
+
 /* ── Public API (same symbols as v4.92.0) ── */
 
 MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads) {
     memset(&mn_sched, 0, sizeof(mn_sched));
-    uint32_t n = num_threads;
-    if (n == 0) {
-        /* v4.150.0 (E6): honour MAPANARE_ASYNC_THREADS env var. On
-         * high-core-count machines (32+ cores) the default of spawning
-         * one thread per core adds significant startup cost (~2 ms for
-         * 31 pthread_create calls) that dominates short-lived async
-         * programs. The env var lets users and benchmarks cap the pool
-         * without recompilation. */
+    uint32_t cap = num_threads;
+    if (cap == 0) {
+        /* v4.150.0 (E6): honour MAPANARE_ASYNC_THREADS env var, preserved
+         * as an override for power users and benchmark harnesses.
+         * v5.1.4 (Perf.2): the default no longer spawns all threads
+         * eagerly — see lazy spawn below — so the env var is optional,
+         * not required for good default performance. */
         const char *env = getenv("MAPANARE_ASYNC_THREADS");
         if (env && env[0]) {
             int v = atoi(env);
-            if (v > 0) n = (uint32_t)v;
+            if (v > 0) cap = (uint32_t)v;
         }
-        if (n == 0) n = (uint32_t)mapanare_cpu_count();
+        if (cap == 0) cap = (uint32_t)mapanare_cpu_count();
     }
-    if (n > MN_MAX_WORKERS) n = MN_MAX_WORKERS;
-    mn_sched.num_workers = n;
+    if (cap > MN_MAX_WORKERS) cap = MN_MAX_WORKERS;
+    mn_sched.worker_cap = cap;
     __atomic_store_n(&mn_sched.running, 1, __ATOMIC_RELEASE);
     __atomic_store_n(&mn_sched.active_tasks, 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&mn_sched.live_workers, 0, __ATOMIC_RELEASE);
     mapanare_mutex_init(&mn_sched.wake_lock);
     mapanare_cond_init(&mn_sched.wake_cond);
     mapanare_mutex_init(&mn_sched.done_lock);
     mapanare_cond_init(&mn_sched.done_cond);
+    mapanare_mutex_init(&mn_sched.spawn_lock);
     mn_overflow_init(&mn_sched.overflow);
-    for (uint32_t i = 0; i < n; i++) {
+    for (uint32_t i = 0; i < cap; i++) {
         mn_deque_init(&mn_sched.deques[i]);
     }
-    /* Start worker threads (skip thread 0 — the caller thread acts as worker 0
-     * during block_on, which avoids deadlock when block_on is called from main).
+    /* v5.1.4 (Perf.2): pre-create only the first worker thread eagerly.
+     * Worker 0 is the caller (main thread, participates during block_on).
+     * Pre-creating worker 1 gives us 2 workers — enough for the common
+     * case and matching the MAPANARE_ASYNC_THREADS=2 performance that
+     * produced the 0.85x Go headline. Additional workers are spawned
+     * lazily in __mn_coro_scheduler_register when queue pressure rises.
      *
-     * v4.113.0 (docket #11): pthread_create can fail with EAGAIN when the
-     * per-user thread limit is exceeded, or ENOMEM / EPERM in rarer cases.
-     * Prior to v4.113.0 the return value was silently dropped — the
-     * scheduler would report `num_workers = N` while having only
-     * `num_workers - k` live threads, making every task-steal look idle
-     * and stalling the whole program. Bail with a specific message that
-     * names what failed (thread N of M) and why (strerror on the real
-     * errno), so `RLIMIT_NPROC` exhaustion doesn't masquerade as a
-     * generic hang. */
-    for (uint32_t i = 1; i < n; i++) {
+     * v4.113.0 (docket #11): pthread_create failure reporting preserved. */
+    uint32_t prime = (cap >= 2) ? 1 : (cap > 1 ? cap - 1 : 0);
+    for (uint32_t i = 1; i <= prime; i++) {
+        mn_sched.spawned[i] = 1;
         int rc = mapanare_thread_create(&mn_sched.threads[i], mn_worker_loop,
                                         (void *)(uintptr_t)i);
         if (rc != 0) {
@@ -1827,20 +1893,21 @@ MN_EXPORT void __mn_coro_scheduler_init(uint32_t num_threads) {
                     "RLIMIT_NPROC exhausted, or ENOMEM at pthread stack "
                     "allocation. Try lowering MAPANARE_ASYNC_THREADS or "
                     "raising `ulimit -u`.\n",
-                    i, n, strerror(rc), rc);
+                    i, cap, strerror(rc), rc);
             exit(1);
         }
+        __atomic_fetch_add(&mn_sched.live_workers, 1, __ATOMIC_ACQ_REL);
     }
 }
 
 MN_EXPORT void __mn_coro_scheduler_register(void *handle) {
     /* v4.113.0 (docket #11): refuse to enqueue a coroutine before
      * __mn_coro_scheduler_init has run. Pre-v4.113.0 the scheduler
-     * would silently push into a zero-initialised deque (num_workers=0)
+     * would silently push into a zero-initialised deque (worker_cap=0)
      * and __mn_coro_scheduler_run would spin forever waiting for
      * active_tasks to drain. Emit a specific message naming the
      * missing call so the user knows which init to add. */
-    if (mn_sched.num_workers == 0) {
+    if (mn_sched.worker_cap == 0) {
         fprintf(stderr,
                 "mapanare: async runtime: cannot spawn task — scheduler "
                 "not initialised. The main() emitted by the compiler "
@@ -1878,6 +1945,23 @@ MN_EXPORT void __mn_coro_scheduler_register(void *handle) {
     mapanare_mutex_lock(&mn_sched.wake_lock);
     mapanare_cond_signal(&mn_sched.wake_cond);
     mapanare_mutex_unlock(&mn_sched.wake_lock);
+
+    /* v5.1.4 (Perf.2): lazy spawn — grow the pool when pending tasks
+     * exceed workers x 8 and we haven't hit the cap. This amortises
+     * pthread_create cost over many task submissions instead of paying
+     * it all at init time. */
+    int32_t tasks = __atomic_load_n(&mn_sched.active_tasks, __ATOMIC_RELAXED);
+    int32_t workers = __atomic_load_n(&mn_sched.live_workers,
+                                      __ATOMIC_RELAXED) + 1;
+    if (tasks > workers * 8 && workers < (int32_t)mn_sched.worker_cap) {
+        mapanare_mutex_lock(&mn_sched.spawn_lock);
+        int32_t cur = __atomic_load_n(&mn_sched.live_workers,
+                                      __ATOMIC_RELAXED) + 1;
+        if (cur < (int32_t)mn_sched.worker_cap) {
+            mn_spawn_worker_locked();
+        }
+        mapanare_mutex_unlock(&mn_sched.spawn_lock);
+    }
 }
 
 MN_EXPORT void __mn_coro_register_wait(void *handle, void *future_ptr) {
@@ -1942,14 +2026,20 @@ MN_EXPORT void __mn_coro_scheduler_destroy(void) {
     mapanare_mutex_lock(&mn_sched.wake_lock);
     mapanare_cond_broadcast(&mn_sched.wake_cond);
     mapanare_mutex_unlock(&mn_sched.wake_lock);
-    /* Join worker threads (skip 0 — that's the caller). */
-    for (uint32_t i = 1; i < mn_sched.num_workers; i++) {
-        mapanare_thread_join(mn_sched.threads[i]);
+    /* v5.1.4 (Perf.2): join only threads that were actually spawned.
+     * Workers that idle-exited are already terminated — pthread_join
+     * returns immediately for them. Workers still running will exit
+     * their loop (running=0) and then join completes. */
+    for (uint32_t i = 1; i < mn_sched.worker_cap; i++) {
+        if (mn_sched.spawned[i]) {
+            mapanare_thread_join(mn_sched.threads[i]);
+        }
     }
     mapanare_mutex_destroy(&mn_sched.wake_lock);
     mapanare_cond_destroy(&mn_sched.wake_cond);
     mapanare_mutex_destroy(&mn_sched.done_lock);
     mapanare_cond_destroy(&mn_sched.done_cond);
+    mapanare_mutex_destroy(&mn_sched.spawn_lock);
     mn_overflow_destroy(&mn_sched.overflow);
 }
 

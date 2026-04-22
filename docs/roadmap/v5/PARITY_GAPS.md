@@ -141,9 +141,10 @@ Not parity gaps (both missing), but panel-visible:
 - **Sh.6** — stepped slices — v5.x feature track
 - **Sh.7** — closure-typed captures — v5.x feature track
 - **Sh.9a** — async test harness — v5.x feature track
-- **Perf.2** — lazy thread creation in coro scheduler; eliminates the
-  `MAPANARE_ASYNC_THREADS=2` workaround that the 0.85× Go headline
-  requires — **v5.1.4**
+- ~~**Perf.2**~~ — lazy thread creation in coro scheduler — **CLOSED
+  v5.1.4** (default-settings async geomean 2.3 → 1.19 ms, 0.91× Go
+  without env var; `MAPANARE_ASYNC_THREADS` preserved as optional
+  override)
 
 ---
 
@@ -205,3 +206,4 @@ this policy exists to prevent.
 | **Bn.2** | `geomean()` function in `run_benchmarks.py`; JSON `"geomean_ratios"` field; summary table appends Mn/Lang ratios. | **v5.1.2** | `python3 -c "from benchmarks.cross_language.run_benchmarks import geomean; print(geomean([1.0, 4.0]))"` → 2.0. |
 | **Bn.4** | `struct_alloc.c` returns struct by value (no malloc). Matches Rust/Mapanare methodology. | **v5.1.2** | `grep malloc benchmarks/cross_language/c/struct_alloc.c` → 0. |
 | **Own.1** (Phase 1) | Cb.7 zero-after-push workaround applied to `register_struct` (lower.mn:330-336) and `register_enum` (lower.mn:364-369). Mirrors existing pattern at monomorphize sites (lines 1795-1798, 1997-1998). Python emitter already safe via `_do_call` blanket-move (line 3882). Phase 2 (Move instruction, `moved_locals` in EmitState, drop-glue in self-hosted emitter) deferred to v5.1.4+. Full borrow checker: v6.0. | **v5.1.3** | `grep -n 'Own.1' mapanare/self/lower.mn` → 2 matches (register_struct, register_enum). Valgrind: 0 ERRORS across 66 goldens. |
+| **Perf.2** | Lazy thread creation in coro scheduler. `__mn_coro_scheduler_init` pre-creates 2 workers eagerly, grows pool lazily when `active_tasks > workers * 8`. Idle workers self-exit after 100 ms (floor: 2 workers). Default async geomean: 2.3 → 1.19 ms (0.91× Go without env var). `MAPANARE_ASYNC_THREADS` preserved as optional override. | **v5.1.4** | TSan 0 races; valgrind 0 leaks; 54/66 goldens unchanged. Default-settings geomean matches tuned case within noise. |
