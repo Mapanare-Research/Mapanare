@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: python scripts/concat_self.py
+// Do not edit — regenerate with: bash scripts/concat_self.sh
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -13497,6 +13497,8 @@ fn get_fn_attrs(name: String) -> String {
     // -- Iterator --
     if name == "__iter_has_next" { return " nounwind readonly willreturn" }
     if name == "__iter_next" { return " nounwind" }
+    // v5.1.0 Perf.1: inline list access emits bounds-check trap via abort()
+    if name == "abort" { return " noreturn nounwind" }
     return ""
 }
 
@@ -13544,6 +13546,9 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_split", llvm_list_rt(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_trim", llvm_string(), llvm_string())
     s = declare_runtime_fn(s, "__mn_str_contains", llvm_bool(), llvm_string() + ", " + llvm_string())
+
+    // v5.1.0 Perf.1: abort for inline list bounds-check trap
+    s = declare_runtime_fn(s, "abort", "void", "")
 
     // Panic / process
     s = declare_runtime_fn(s, "__mn_panic", "void", llvm_string())
@@ -14749,8 +14754,16 @@ fn llvm_type_size(ty: String) -> Int {
     if ty == llvm_string() { return 16 }
     // List = {ptr, i64, i64, i64, i64} = 40 (data, len, cap, elem_size, managed)
     if ty == llvm_list_rt() { return 40 }
-    // Enums: now always {i64, ptr} = 16 bytes
-    if ty.starts_with("%enum.") { return 16 }
+    // v5.0.6 Rt.4: enum layouts depend on inline slot count:
+    //   boxed        {i64, ptr}        = 16 bytes
+    //   1-slot inline {i64, i64}       = 16 bytes
+    //   2-slot inline {i64, i64, i64}  = 24 bytes  (Rt.1 v4.124.0)
+    // llvm_type_size cannot see EmitState, so return the safe upper
+    // bound (24) for any %enum.*. Callers use this for alloca/malloc
+    // sizing; over-allocating by up to 8B is safe, under-allocating is
+    // a latent heap overflow. The prior "always 16" hardcode + comment
+    // became actively false once Rt.1 landed.
+    if ty.starts_with("%enum.") { return 24 }
     // Structs: use field_count * 32 as safe upper bound.
     // This is used for malloc allocation, so must be >= actual size.
     if ty.starts_with("%struct.") { return 256 }
@@ -14940,24 +14953,48 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
         return s
     }
 
-    // List indexing → list_get (needs pointer; alloca+store the list value)
+    // List indexing
     let lt: String = llvm_list_rt()
     let tmp: String = dn + ".lp"
     s = emit_line(s, "  " + tmp + " = alloca " + lt)
     s = emit_line(s, "  store " + lt + " " + obj.name + ", " + "ptr " + tmp)
 
-    // If dest type is known, load from the ptr returned by list_get
     let dest_ty: String = resolve_type(st, dest.ty)
-    if dest_ty != llvm_int() && dest_ty != "ptr" && dest_ty != "void" {
+
+    // v5.1.0 Perf.1: inline list access for 8-byte value-type elements.
+    // Replaces opaque call @__mn_list_get with GEP+load so LLVM can see
+    // through to the backing buffer (enables SROA, vectorization, hoisting).
+    if dest_ty == "i64" || dest_ty == "double" || dest_ty == "ptr" {
+        let cnt_lg: String = toString(s.counter)
+        s.counter = s.counter + 1
+        // Inline bounds check (unsigned covers negative indices)
+        let lenp: String = "%lg.lenp." + cnt_lg
+        s = emit_line(s, "  " + lenp + " = getelementptr inbounds " + lt + ", ptr " + tmp + ", i32 0, i32 1")
+        let ln: String = "%lg.len." + cnt_lg
+        s = emit_line(s, "  " + ln + " = load i64, ptr " + lenp)
+        let oob: String = "%lg.oob." + cnt_lg
+        s = emit_line(s, "  " + oob + " = icmp uge i64 " + idx.name + ", " + ln)
+        let trap_lbl: String = "lg.trap." + cnt_lg
+        let ok_lbl: String = "lg.ok." + cnt_lg
+        s = emit_line(s, "  br i1 " + oob + ", label %" + trap_lbl + ", label %" + ok_lbl)
+        // Trap block
+        s = emit_line(s, trap_lbl + ":")
+        s = emit_line(s, "  call void @abort()")
+        s = emit_line(s, "  unreachable")
+        // Fast path: inline GEP + load
+        s = emit_line(s, ok_lbl + ":")
+        let dp: String = "%lg.dp." + cnt_lg
+        s = emit_line(s, "  " + dp + " = getelementptr inbounds " + lt + ", ptr " + tmp + ", i32 0, i32 0")
+        let data: String = "%lg.data." + cnt_lg
+        s = emit_line(s, "  " + data + " = load ptr, ptr " + dp)
+        let ep: String = "%lg.ep." + cnt_lg
+        s = emit_line(s, "  " + ep + " = getelementptr inbounds i64, ptr " + data + ", i64 " + idx.name)
+        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + ep)
+    } else {
+        // Slow path: opaque call for String, Bool, structs, etc.
         let raw: String = dn + ".raw"
         s = emit_line(s, emit_call_ir(raw, "ptr", "__mn_list_get", "ptr " + tmp + ", i64 " + idx.name))
-        // Opaque pointers: load directly from ptr, no bitcast needed
         s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + raw)
-    } else {
-        // list_get returns ptr to element. Load the element value.
-        let raw2: String = dn + ".raw"
-        s = emit_line(s, emit_call_ir(raw2, "ptr", "__mn_list_get", "ptr " + tmp + ", i64 " + idx.name))
-        s = emit_line(s, "  " + dn + " = load i64, ptr " + raw2)
     }
     return s
 }
@@ -15001,29 +15038,65 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
         return s
     }
 
-    // List index set (original path)
-    // Alloca element, store value
-    let ea: String = "%set_ea" + cnt
-    s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
-    s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
-
-    if list_ref.contains(".addr") {
-        // obj is an alloca pointer — load, call, write back
-        let tmp_addr: String = "%set_tmp" + cnt
-        s = emit_line(s, "  " + tmp_addr + " = alloca " + llvm_list_rt())
-        let ld: String = "%set_ld" + cnt
-        s = emit_line(s, "  " + ld + " = load " + llvm_list_rt() + ", ptr " + list_ref)
-        s = emit_line(s, "  store " + llvm_list_rt() + " " + ld + ", ptr " + tmp_addr)
-        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_addr + ", i64 " + idx_name + ", ptr " + ea))
-        let wb: String = "%set_wb" + cnt
-        s = emit_line(s, "  " + wb + " = load " + llvm_list_rt() + ", ptr " + tmp_addr)
-        s = emit_line(s, "  store " + llvm_list_rt() + " " + wb + ", ptr " + list_ref)
+    // v5.1.0 Perf.1: inline list store for 8-byte value-type elements.
+    let lt: String = llvm_list_rt()
+    if elem_ty == "i64" || elem_ty == "double" || elem_ty == "ptr" {
+        // Build temp alloca for list value
+        let la: String = "%ls.la" + cnt
+        if list_ref.contains(".addr") {
+            let ld: String = "%ls.ld" + cnt
+            s = emit_line(s, "  " + la + " = alloca " + lt)
+            s = emit_line(s, "  " + ld + " = load " + lt + ", ptr " + list_ref)
+            s = emit_line(s, "  store " + lt + " " + ld + ", ptr " + la)
+        } else {
+            s = emit_line(s, "  " + la + " = alloca " + lt)
+            s = emit_line(s, "  store " + lt + " " + list_ref + ", ptr " + la)
+        }
+        // Inline bounds check
+        let lenp: String = "%ls.lenp." + cnt
+        s = emit_line(s, "  " + lenp + " = getelementptr inbounds " + lt + ", ptr " + la + ", i32 0, i32 1")
+        let ln: String = "%ls.len." + cnt
+        s = emit_line(s, "  " + ln + " = load i64, ptr " + lenp)
+        let oob: String = "%ls.oob." + cnt
+        s = emit_line(s, "  " + oob + " = icmp uge i64 " + idx_name + ", " + ln)
+        let trap_lbl: String = "ls.trap." + cnt
+        let ok_lbl: String = "ls.ok." + cnt
+        s = emit_line(s, "  br i1 " + oob + ", label %" + trap_lbl + ", label %" + ok_lbl)
+        // Trap block
+        s = emit_line(s, trap_lbl + ":")
+        s = emit_line(s, "  call void @abort()")
+        s = emit_line(s, "  unreachable")
+        // Fast path: inline GEP + store
+        s = emit_line(s, ok_lbl + ":")
+        let dp: String = "%ls.dp." + cnt
+        s = emit_line(s, "  " + dp + " = getelementptr inbounds " + lt + ", ptr " + la + ", i32 0, i32 0")
+        let data: String = "%ls.data." + cnt
+        s = emit_line(s, "  " + data + " = load ptr, ptr " + dp)
+        let ep: String = "%ls.ep." + cnt
+        s = emit_line(s, "  " + ep + " = getelementptr inbounds i64, ptr " + data + ", i64 " + idx_name)
+        s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ep)
     } else {
-        // obj is a loaded value — store to temp alloca first
-        let tmp_val: String = "%set_tmp" + cnt
-        s = emit_line(s, "  " + tmp_val + " = alloca " + llvm_list_rt())
-        s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + tmp_val)
-        s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_val + ", i64 " + idx_name + ", ptr " + ea))
+        // Slow path: opaque call for String, structs, etc.
+        let ea: String = "%set_ea" + cnt
+        s = emit_line(s, "  " + ea + " = alloca " + elem_ty)
+        s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ea)
+
+        if list_ref.contains(".addr") {
+            let tmp_addr: String = "%set_tmp" + cnt
+            s = emit_line(s, "  " + tmp_addr + " = alloca " + lt)
+            let ld: String = "%set_ld" + cnt
+            s = emit_line(s, "  " + ld + " = load " + lt + ", ptr " + list_ref)
+            s = emit_line(s, "  store " + lt + " " + ld + ", ptr " + tmp_addr)
+            s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_addr + ", i64 " + idx_name + ", ptr " + ea))
+            let wb: String = "%set_wb" + cnt
+            s = emit_line(s, "  " + wb + " = load " + lt + ", ptr " + tmp_addr)
+            s = emit_line(s, "  store " + lt + " " + wb + ", ptr " + list_ref)
+        } else {
+            let tmp_val: String = "%set_tmp" + cnt
+            s = emit_line(s, "  " + tmp_val + " = alloca " + lt)
+            s = emit_line(s, "  store " + lt + " " + list_ref + ", ptr " + tmp_val)
+            s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_val + ", i64 " + idx_name + ", ptr " + ea))
+        }
     }
     return s
 }
@@ -17599,3 +17672,4 @@ fn mn_main() {
         __mn_exit(1)
     }
 }
+
