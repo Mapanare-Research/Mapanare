@@ -109,7 +109,7 @@ jobs:
             |:---------|:--------:|:---------------:|
             | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) |
             | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) |
-            | **Windows** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | — |
+            | **Windows** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-win-x64.exe) |
 
             > **Full CLI** includes the compiler, Python transpiler, LSP, and WASM backend.
             > **Native Compiler** is a single ~3 MB binary with no dependencies.
@@ -333,8 +333,11 @@ jobs:
           - os: ubuntu-latest
             artifact: mnc-linux-x64
             triple: x86_64-linux-gnu
-          # macOS/Windows native binaries tracked for v5.x.
-          # Both platforms get the full CLI via PyInstaller.
+          - os: windows-latest
+            artifact: mnc-win-x64.exe
+            triple: x86_64-w64-mingw32
+          # macOS native binary tracked for v5.x.
+          # macOS gets the full CLI via PyInstaller.
 
     runs-on: ${{ matrix.os }}
 
@@ -361,11 +364,43 @@ jobs:
             echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
           fi
 
+      # -------------------------------------------------------------------
+      # Windows only: vendor a portable MinGW toolchain (w64devkit) so the
+      # Windows native-compiler job has gcc/clang without installing LLVM
+      # system-wide. Mirrors the build-cli job's toolchain staging.
+      # -------------------------------------------------------------------
+      - name: Stage portable toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          W64DEVKIT_VERSION: "2.7.0"
+        run: |
+          set -euo pipefail
+          url="https://github.com/skeeto/w64devkit/releases/download/v${W64DEVKIT_VERSION}/w64devkit-x64-${W64DEVKIT_VERSION}.7z.exe"
+          mkdir -p .tmp-tc && cd .tmp-tc
+          curl -fL -o w64devkit.exe "$url"
+          ./w64devkit.exe -y -o.
+          mv w64devkit ../toolchain
+          cd ..
+          ls toolchain/bin/gcc.exe
+          ./toolchain/bin/gcc.exe --version
+
       - name: Build mnc-stage1 via Python
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             python scripts/build_stage1.py --use-committed
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            # scripts/build_stage1.py has full Windows support since v4.159.0
+            # (MinGW triple, -mno-stack-arg-probe, __chkstk=___chkstk_ms alias,
+            # -Wl,--stack,67108864, POSIX-module skip list). It just needs
+            # gcc + clang on PATH — the bundled w64devkit provides both.
+            export PATH="$PWD/toolchain/bin:$PATH"
+            gcc --version
+            clang --version
+            python scripts/build_stage1.py
+            cp mapanare/self/mnc-stage1.exe "${{ matrix.artifact }}"
+            ls -la "${{ matrix.artifact }}"
           else
             python scripts/build_stage1.py
           fi
@@ -374,7 +409,8 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            echo "Skipping native build on Windows (needs clang cross-setup)"
+            echo "Windows: shipping stage1 binary as ${{ matrix.artifact }}"
+            echo "(stage2 self-compile on Windows tracked for v5.1)"
           else
             ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
             clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o
@@ -406,6 +442,12 @@ jobs:
         run: |
           if [[ -f "${{ matrix.artifact }}" ]]; then
             ./${{ matrix.artifact }} --version
+            # Compile a trivial .mn end-to-end to catch any missing-symbol
+            # link errors the --version path alone wouldn't exercise.
+            echo 'fn main() { print("hello from mnc smoke") }' > mnc_smoke.mn
+            ./${{ matrix.artifact }} mnc_smoke.mn > mnc_smoke.ll
+            head -5 mnc_smoke.ll
+            rm -f mnc_smoke.mn mnc_smoke.ll
             echo "Native binary smoke test passed"
           else
             echo "No native binary produced (platform may not support it)"
