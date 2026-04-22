@@ -3106,20 +3106,23 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
             result.push(new_phi_entry(else_lbl, else_val))
         }
     }
-    // If one arm has value but other is void, add zeroinitializer for the void arm
+    // If one arm has value but other is void, add undef for the void arm.
+    // Ge.1r: zeroinitializer is a concrete all-zeros value that LLVM -O2
+    // propagates through struct fields, corrupting list elem_size to 0.
+    // undef means "don't care" and is safe for dead PHI branches.
     if len(result) == 1 {
         let r0_pe: PhiEntry = result[0]
         let r0_val: Value = r0_pe.val
         let r0_ty: MIRType = r0_val.ty
         if then_ok {
             if !then_non_void {
-                let zero_v_then: Value = new_value("zeroinitializer", r0_ty)
+                let zero_v_then: Value = new_value("undef", r0_ty)
                 result.push(new_phi_entry(then_lbl, zero_v_then))
             }
         }
         if else_ok {
             if !else_non_void {
-                let zero_v_else: Value = new_value("zeroinitializer", r0_ty)
+                let zero_v_else: Value = new_value("undef", r0_ty)
                 result.push(new_phi_entry(else_lbl, zero_v_else))
             }
         }
@@ -3328,9 +3331,13 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     if only_then {
         let mut ents_then: List<PhiEntry> = []
         ents_then.push(new_phi_entry(then_exit_label, then_val))
-        // Only include else branch if it's not terminated (reaches merge)
+        // Only include else branch if it's not terminated (reaches merge).
+        // Use "undef" (not "zeroinitializer") for the missing-value branch:
+        // zeroinitializer is a concrete all-zeros value that LLVM -O2 propagates
+        // through struct fields, corrupting list elem_size to 0 (Ge.1r).
+        // undef means "don't care" — LLVM can fold it without injecting zeros.
         if !else_terminated {
-            let zero_v_t: Value = new_value("zeroinitializer", then_val.ty)
+            let zero_v_t: Value = new_value("undef", then_val.ty)
             ents_then.push(new_phi_entry(else_exit_label, zero_v_t))
         }
         let rr_then: LowerResult = make_value(s, then_val.ty, "if_result")
@@ -3340,9 +3347,10 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     }
     if only_else {
         let mut ents_else: List<PhiEntry> = []
-        // Only include then branch if it's not terminated (reaches merge)
+        // Only include then branch if it's not terminated (reaches merge).
+        // Use "undef" for the same reason as the only_then case (Ge.1r).
         if !then_terminated {
-            let zero_v_e: Value = new_value("zeroinitializer", else_val.ty)
+            let zero_v_e: Value = new_value("undef", else_val.ty)
             ents_else.push(new_phi_entry(then_exit_label, zero_v_e))
         }
         ents_else.push(new_phi_entry(else_exit_label, else_val))
@@ -3553,11 +3561,12 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             // Jump to merge if not terminated
             if !arm_terminated {
                 s = emit_instr(s, Instruction::Jump(merge_label))
-                // Track arm result for phi (include all arms that reach merge)
-                // Use zeroinitializer for void/unknown results to avoid referencing %void
+                // Track arm result for phi (include all arms that reach merge).
+                // Ge.1r: use undef (not zeroinitializer) for void/unknown results —
+                // zeroinitializer propagates zeros through struct fields at -O2.
                 let arm_kind: Int = arm_val_r.value.ty.kind
                 if arm_kind == TK_VOID() || arm_kind == TK_UNKNOWN() || arm_val_r.value.name == "%void" {
-                    let zero_arm: Value = new_value("zeroinitializer", arm_val_r.value.ty)
+                    let zero_arm: Value = new_value("undef", arm_val_r.value.ty)
                     let pe_zero: PhiEntry = new_phi_entry(exit_label, zero_arm)
                     arm_results.push(pe_zero)
                 } else {
@@ -3575,26 +3584,26 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     s = add_block(s, merge_label)
     let merge_idx: Int = s.current_block_idx
 
-    // Add zeroinitializer entry for switch default→merge path
+    // Add undef entry for switch default→merge path (Ge.1r: not zeroinitializer)
     if default_label == merge_label && len(arm_results) > 0 {
         let entry_label: String = get_block_label(s, match_entry_idx)
         let first_pe: PhiEntry = arm_results[0]
         let first_val: Value = first_pe.val
         let zero_ty: MIRType = first_val.ty
-        let zero_def: Value = new_value("zeroinitializer", zero_ty)
+        let zero_def: Value = new_value("undef", zero_ty)
         let def_pe: PhiEntry = new_phi_entry(entry_label, zero_def)
         arm_results.push(def_pe)
     }
 
     // Merge block
     s = set_block(s, merge_idx)
-    // Skip PHI when all arm results are zeroinitializer (dead match result)
+    // Skip PHI when all arm results are undef (dead match result)
     let mut all_zero: Bool = true
     if len(arm_results) > 0 {
         let mut zi: Int = 0
         for _ in 0..500 {
             if zi < len(arm_results) {
-                if arm_results[zi].val.name != "zeroinitializer" { all_zero = false }
+                if arm_results[zi].val.name != "undef" && arm_results[zi].val.name != "zeroinitializer" { all_zero = false }
                 zi = zi + 1
             }
         }

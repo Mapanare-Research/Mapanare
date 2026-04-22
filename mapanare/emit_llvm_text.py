@@ -4331,6 +4331,17 @@ class LLVMTextEmitter:
             if et != PTR:
                 ety = et
         esz = _tsz(ety)
+        # Ge.1r: when the element type is unknown (empty [] without type context),
+        # _rty returns "ptr" and _tsz returns 8.  This is wrong for lists that
+        # may hold structs — LLVM's DSE can propagate the too-small elem_size
+        # backwards into the original list variable at -O2, causing heap overreads.
+        # Use a safe upper bound (256) for empty lists with unknown element type
+        # so that any struct element fits, matching the self-hosted emitter's
+        # 384 heuristic.
+        if not i.elements and esz <= 8 and i.elem_type.kind in (
+            TypeKind.UNKNOWN,
+        ):
+            esz = 256
         lv = self._rt("__mn_list_new", LIST, [I64], [(str(esz), I64)], "ln")
         self._track_container(i.dest.name, "list")
         if i.elements:

@@ -1189,7 +1189,15 @@ slow_path:
             fprintf(stderr, "WARNING: __mn_list_push: reinitializing corrupted list (data=%p len=%lld cap=%lld elem=%lld)\n",
                     (void *)list->data, (long long)list->len, (long long)list->cap, (long long)list->elem_size);
         }
-        if (list->elem_size <= 0 || list->elem_size > 65536) list->elem_size = 8;
+        /* Ge.1r (v5.1.1): when elem_size is invalid, use 256 as a safe upper
+         * bound instead of 8.  LLVM -O2 can propagate zeroinitializer through
+         * struct fields when promoting allocas to SSA, zeroing the elem_size
+         * of lists inside large value-typed structs (LowerState, MIRModule).
+         * The old fallback of 8 caused 80-byte (16+8*8) buffer allocations
+         * that were too small for struct-typed list elements, producing heap
+         * overreads in register_mir_struct.  256 accommodates any Mapanare
+         * struct without wasting memory (initial alloc = 16+8*256 = 2064). */
+        if (list->elem_size <= 0 || list->elem_size > 65536) list->elem_size = 256;
         list->data = mn_list_alloc_buf(MN_LIST_INITIAL_CAP, list->elem_size);
         list->cap = MN_LIST_INITIAL_CAP;
         list->len = 0;
