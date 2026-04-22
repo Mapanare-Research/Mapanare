@@ -411,8 +411,33 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            echo "Windows: shipping stage1 binary as ${{ matrix.artifact }}"
-            echo "(stage2 self-compile on Windows tracked for v5.1)"
+            export PATH="$PWD/toolchain/bin:$PATH"
+            ./mapanare/self/mnc-stage1.exe mapanare/self/mnc_all.mn > stage2.ll
+            clang --target=x86_64-w64-mingw32 -c -O2 -mno-stack-arg-probe \
+              stage2.ll -o stage2.o
+            clang --target=x86_64-w64-mingw32 -O2 stage2.o \
+              runtime/native/mapanare_core.c \
+              runtime/native/mapanare_runtime.c \
+              runtime/native/mapanare_gpu.c \
+              runtime/native/mapanare_gpu_builtins.c \
+              mapanare/self/mnc_main.c \
+              -I runtime/native \
+              -o "${{ matrix.artifact }}" \
+              -lm \
+              -Wl,--stack,67108864 \
+              -Wl,--defsym=__chkstk=___chkstk_ms
+            ls -la "${{ matrix.artifact }}"
+            ./toolchain/bin/strip.exe "${{ matrix.artifact }}"
+            # Fixed-point verification: stage2 compiling itself
+            ./"${{ matrix.artifact }}" mapanare/self/mnc_all.mn > stage3.ll
+            diff stage2.ll stage3.ll | head -20 || true
+            # Accept Dr.1 version-placeholder diff (~4 lines); anything
+            # materially larger indicates a real fixed-point drift.
+            if [[ $(diff stage2.ll stage3.ll | grep -c '^[<>]') -gt 10 ]]; then
+              echo "FATAL: Windows fixed-point drift > 10 lines"
+              exit 1
+            fi
+            echo "Windows fixed point OK"
           else
             ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
             clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o
