@@ -85,7 +85,7 @@ but Viper v4.154.0 resurfaced these:
 
 | ID | Symptom | Scope | Target |
 |---|---|---|---|
-| **Ge.1r** | 4 valgrind ERRORS on goldens 26/29/30/31 — "Invalid read of size 16|8" in generics monomorphization | Same root-cause class as Own.1; was asymptomatic at v4.142.0-v4.144.0; resurfaced due to binary-layout shift | v5.1.1 opportunistic |
+| ~~**Ge.1r**~~ | ~~4 valgrind ERRORS on goldens 26/29/30/31 — "Invalid read of size 16|8" in generics monomorphization~~ Zero-init fix in `try_monomorphize_enum` / `try_monomorphize_struct` at v5.1.1. Valgrind sweep at v5.3.0 confirms 0 ERRORS on all 4 goldens. | ~~Same root-cause class as Own.1~~ | ~~**v5.1.1 CLOSED**~~ |
 | ~~Own.1~~ | ~~`register_struct` / `register_enum` latent UAFs~~ Phase 1 closed: Cb.7 zero-after-push workaround applied at both sites. Phase 2 (Move instruction + drop-glue in self-hosted emitter) deferred to v5.1.4+. General borrow checker: v6.0. | ~~Specific UAF class: CLOSED. General ceiling: OPEN~~ | ~~**v5.1.3** Phase 1~~ |
 
 ### Benchmark reporting (Mamba v4.154.0)
@@ -207,3 +207,4 @@ this policy exists to prevent.
 | **Bn.4** | `struct_alloc.c` returns struct by value (no malloc). Matches Rust/Mapanare methodology. | **v5.1.2** | `grep malloc benchmarks/cross_language/c/struct_alloc.c` → 0. |
 | **Own.1** (Phase 1) | Cb.7 zero-after-push workaround applied to `register_struct` (lower.mn:330-336) and `register_enum` (lower.mn:364-369). Mirrors existing pattern at monomorphize sites (lines 1795-1798, 1997-1998). Python emitter already safe via `_do_call` blanket-move (line 3882). Phase 2 (Move instruction, `moved_locals` in EmitState, drop-glue in self-hosted emitter) deferred to v5.1.4+. Full borrow checker: v6.0. | **v5.1.3** | `grep -n 'Own.1' mapanare/self/lower.mn` → 2 matches (register_struct, register_enum). Valgrind: 0 ERRORS across 66 goldens. |
 | **Perf.2** | Lazy thread creation in coro scheduler. `__mn_coro_scheduler_init` pre-creates 2 workers eagerly, grows pool lazily when `active_tasks > workers * 8`. Idle workers self-exit after 100 ms (floor: 2 workers). Default async geomean: 2.3 → 1.19 ms (0.91× Go without env var). `MAPANARE_ASYNC_THREADS` preserved as optional override. | **v5.1.4** | TSan 0 races; valgrind 0 leaks; 54/66 goldens unchanged. Default-settings geomean matches tuned case within noise. |
+| **Ge.1r** | 4 valgrind ERRORS on generics goldens 26/29/30/31 ("Invalid read of size 16|8") eliminated by zero-init fix in `try_monomorphize_enum` / `try_monomorphize_struct`. Extends v4.142.0 partial Ge.1 closure with explicit aggregate field initialization after monomorphic allocation. | **v5.1.1** | Valgrind sweep at v5.3.0: 0 ERRORS on goldens 26/29/30/31. 62 WARNINGS_ONLY, 2 ERRORS (GPU feature-gap tests only). |
