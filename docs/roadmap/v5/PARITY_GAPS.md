@@ -50,7 +50,7 @@ comment to match reality.
 | ~~Cb.9a~~ | ~~`module_path` field on TypeExpr~~ | ~~`bare_type_name()` + resolve_type_expr classification~~ | ~~Cobra v4.144.0+v4.154.0~~ | ~~**v5.0.5 CLOSED**~~ |
 | ~~Gr.2~~ | ~~`named_type (DOT NAME)*` in grammar~~ | ~~Bootstrap grammar synced~~ | ~~Coral v4.136.0~~ | ~~**v5.0.5 CLOSED**~~ |
 | ~~Rt.4~~ | ~~Correct enum size~~ | ~~`llvm_type_size` returns safe upper bound 24 for all `%enum.*`; comment documents the three layouts~~ | ~~Rattler v4.154.0~~ | ~~**v5.0.6 CLOSED**~~ |
-| Own.1 | (neither) | (neither) — no move semantics in the language at all | Viper all panels (28 releases) | **v5.1.3** Phase 1 (register_struct / register_enum); v6.0 full borrow checker |
+| Own.1 | `_do_call` blanket-move (line 3882) + `_move_resource` + `_emit_drop_glue` | (neither) — no drop-glue, no move tracking, no ownership slots in EmitState | Viper all panels (28 releases) | **v5.1.3** Phase 1 CLOSED (Cb.7 workaround at register_struct / register_enum); Phase 2 (Move instruction + drop-glue for self-hosted) v5.1.4+; full borrow checker v6.0 |
 
 ### Optimizer (MIR passes)
 
@@ -86,7 +86,7 @@ but Viper v4.154.0 resurfaced these:
 | ID | Symptom | Scope | Target |
 |---|---|---|---|
 | **Ge.1r** | 4 valgrind ERRORS on goldens 26/29/30/31 — "Invalid read of size 16|8" in generics monomorphization | Same root-cause class as Own.1; was asymptomatic at v4.142.0-v4.144.0; resurfaced due to binary-layout shift | v5.1.1 opportunistic |
-| Own.1 | `register_struct` / `register_enum` latent UAFs; no move semantics | Language-level ceiling | v5.x feature track |
+| ~~Own.1~~ | ~~`register_struct` / `register_enum` latent UAFs~~ Phase 1 closed: Cb.7 zero-after-push workaround applied at both sites. Phase 2 (Move instruction + drop-glue in self-hosted emitter) deferred to v5.1.4+. General borrow checker: v6.0. | ~~Specific UAF class: CLOSED. General ceiling: OPEN~~ | ~~**v5.1.3** Phase 1~~ |
 
 ### Benchmark reporting (Mamba v4.154.0)
 
@@ -204,3 +204,4 @@ this policy exists to prevent.
 | **Ea.1** | Escape analysis: self-hosted stub replaced with full `check_escape` analysis. Python `escape_analysis_promotion` sets `alloc_kind=STACK`. Self-hosted Instruction enum lacks alloc_kind field (codegen annotation deferred to v5.2+). | **v5.1.2** | `pytest tests/mir_opt/test_escape_analysis.py -v` → 7 passed. |
 | **Bn.2** | `geomean()` function in `run_benchmarks.py`; JSON `"geomean_ratios"` field; summary table appends Mn/Lang ratios. | **v5.1.2** | `python3 -c "from benchmarks.cross_language.run_benchmarks import geomean; print(geomean([1.0, 4.0]))"` → 2.0. |
 | **Bn.4** | `struct_alloc.c` returns struct by value (no malloc). Matches Rust/Mapanare methodology. | **v5.1.2** | `grep malloc benchmarks/cross_language/c/struct_alloc.c` → 0. |
+| **Own.1** (Phase 1) | Cb.7 zero-after-push workaround applied to `register_struct` (lower.mn:330-336) and `register_enum` (lower.mn:364-369). Mirrors existing pattern at monomorphize sites (lines 1795-1798, 1997-1998). Python emitter already safe via `_do_call` blanket-move (line 3882). Phase 2 (Move instruction, `moved_locals` in EmitState, drop-glue in self-hosted emitter) deferred to v5.1.4+. Full borrow checker: v6.0. | **v5.1.3** | `grep -n 'Own.1' mapanare/self/lower.mn` → 2 matches (register_struct, register_enum). Valgrind: 0 ERRORS across 66 goldens. |
