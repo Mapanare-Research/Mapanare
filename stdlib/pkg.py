@@ -58,6 +58,7 @@ class MapanareManifest:
     description: str = ""
     authors: list[str] = field(default_factory=list)
     license: str = ""
+    repository: str = ""
     mapanare_version: str = ">=0.2.0"
     dependencies: dict[str, Dependency] = field(default_factory=dict)
     dev_dependencies: dict[str, Dependency] = field(default_factory=dict)
@@ -76,6 +77,8 @@ class MapanareManifest:
             lines.append(f"authors = [{author_list}]")
         if self.license:
             lines.append(f'license = "{self.license}"')
+        if self.repository:
+            lines.append(f'repository = "{self.repository}"')
         lines.append(f'mapanare_version = "{self.mapanare_version}"')
         lines.append(f'entry = "{self.entry}"')
 
@@ -233,6 +236,7 @@ def parse_manifest(content: str) -> MapanareManifest:
         description=pkg.get("description", ""),
         authors=authors_raw,
         license=pkg.get("license", ""),
+        repository=pkg.get("repository", ""),
         mapanare_version=pkg.get("mapanare_version", ">=0.2.0"),
         dependencies=deps,
         dev_dependencies=dev_deps,
@@ -351,7 +355,7 @@ def save_lockfile(lockfile: LockFile, project_dir: str) -> None:
 # mapa install <package> (git-based stub)
 # ---------------------------------------------------------------------------
 
-MAPANARE_PACKAGES_DIR = "mapanare_packages"
+MAPANARE_PACKAGES_DIR = "mn_modules"
 
 
 def _default_git_url(package_name: str) -> str:
@@ -384,6 +388,29 @@ def _get_git_commit(repo_dir: str) -> str:
         return result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown"
+
+
+def install_all(project_dir: str) -> list[LockedDependency]:
+    """Install all dependencies from mapanare.toml.
+
+    Reads [dependencies] from mapanare.toml and installs each one.
+    Returns list of locked dependencies.
+    """
+    manifest = load_manifest(project_dir)
+    if not manifest.dependencies:
+        return []
+
+    results: list[LockedDependency] = []
+    for dep_name, dep in manifest.dependencies.items():
+        locked = install_package(
+            package_name=dep_name,
+            project_dir=project_dir,
+            git_url=dep.git,
+            branch=dep.branch,
+            version=dep.version,
+        )
+        results.append(locked)
+    return results
 
 
 def install_package(
@@ -425,11 +452,12 @@ def _install_from_git(
     branch: str | None,
     version: str,
 ) -> LockedDependency:
-    """Install a package by cloning its git repo into mapanare_packages/."""
+    """Install a package by cloning its git repo into mn_modules/."""
     packages_dir = os.path.join(project_dir, MAPANARE_PACKAGES_DIR)
     os.makedirs(packages_dir, exist_ok=True)
 
-    pkg_dir = os.path.join(packages_dir, package_name)
+    version_label = version if version != "*" else "latest"
+    pkg_dir = os.path.join(packages_dir, f"{package_name}-{version_label}")
     url = git_url or _default_git_url(package_name)
     effective_branch = branch or "main"
 
@@ -504,9 +532,12 @@ def _update_manifest_and_lock(
 
 def uninstall_package(package_name: str, project_dir: str) -> None:
     """Remove an installed package."""
-    pkg_dir = os.path.join(project_dir, MAPANARE_PACKAGES_DIR, package_name)
-    if os.path.isdir(pkg_dir):
-        shutil.rmtree(pkg_dir)
+    # Remove any versioned directory matching this package name
+    packages_dir = os.path.join(project_dir, MAPANARE_PACKAGES_DIR)
+    if os.path.isdir(packages_dir):
+        for entry in os.listdir(packages_dir):
+            if entry == package_name or entry.startswith(f"{package_name}-"):
+                shutil.rmtree(os.path.join(packages_dir, entry))
 
     # Update manifest
     manifest_path = os.path.join(project_dir, "mapanare.toml")
@@ -531,7 +562,7 @@ class PackageError(Exception):
 # Registry configuration
 # ---------------------------------------------------------------------------
 
-REGISTRY_URL = os.environ.get("MAPANARE_REGISTRY_URL", "https://mapanare.dev")
+REGISTRY_URL = os.environ.get("MAPANARE_REGISTRY_URL", "https://registry.mapanare.dev")
 TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".mapanare", "token")
 
 
@@ -570,7 +601,7 @@ def _build_tarball(project_dir: str) -> bytes:
             # Skip hidden dirs, mapanare_packages, __pycache__, etc.
             rel_root = os.path.relpath(root, project_dir)
             if any(
-                part.startswith(".") or part in ("mapanare_packages", "__pycache__", "node_modules")
+                part.startswith(".") or part in ("mn_modules", "mapanare_packages", "__pycache__", "node_modules")
                 for part in rel_root.split(os.sep)
             ):
                 if rel_root != ".":
@@ -605,19 +636,41 @@ def publish_package(project_dir: str, token: str | None = None) -> dict[str, str
 
     tarball_data = _build_tarball(project_dir)
 
-    # Multipart upload
+    # Multipart upload with metadata fields
     boundary = "----MapanarePublish"
     filename = f"{manifest.name}-{manifest.version}.tar.gz"
-    header = (
+    parts: list[bytes] = []
+
+    # Metadata fields
+    for field_name, field_value in [
+        ("name", manifest.name),
+        ("version", manifest.version),
+        ("description", manifest.description),
+        ("license", manifest.license),
+        ("repository", manifest.repository),
+        ("entry", manifest.entry),
+        ("dependencies", json.dumps({
+            dep_name: dep.version for dep_name, dep in manifest.dependencies.items()
+        })),
+    ]:
+        parts.append((
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"\r\n\r\n'
+            f"{field_value}\r\n"
+        ).encode("utf-8"))
+
+    # Tarball file
+    parts.append((
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
         f"Content-Type: application/gzip\r\n\r\n"
-    )
-    body = header.encode("utf-8")
-    body += tarball_data
-    body += f"\r\n--{boundary}--\r\n".encode("utf-8")
+    ).encode("utf-8"))
+    parts.append(tarball_data)
+    parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
 
-    url = f"{REGISTRY_URL}/api/packages"
+    body = b"".join(parts)
+
+    url = f"{REGISTRY_URL}/v1/packages"
     req = urllib.request.Request(
         url,
         data=body,
@@ -659,7 +712,7 @@ def search_packages(
     params = urllib.parse.urlencode(
         {"q": query, "keyword": keyword, "page": page, "per_page": per_page}
     )
-    url = f"{REGISTRY_URL}/api/packages?{params}"
+    url = f"{REGISTRY_URL}/v1/search?{params}"
 
     try:
         req = urllib.request.Request(url, method="GET")
@@ -686,7 +739,7 @@ def _install_from_registry(
     import urllib.request
 
     # First, get package info to find available versions
-    url = f"{REGISTRY_URL}/api/packages/{urllib.parse.quote(package_name)}"
+    url = f"{REGISTRY_URL}/v1/packages/{urllib.parse.quote(package_name)}"
     try:
         req = urllib.request.Request(url, method="GET")
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -709,18 +762,28 @@ def _install_from_registry(
         return None
 
     # Download the tarball
-    dl_url = f"{REGISTRY_URL}/api/packages/{urllib.parse.quote(package_name)}/{best}/download"
+    dl_url = f"{REGISTRY_URL}/v1/packages/{urllib.parse.quote(package_name)}/{best}/tar"
+    expected_sha256 = ""
     try:
         req = urllib.request.Request(dl_url, method="GET")
         with urllib.request.urlopen(req, timeout=60) as resp:
             tarball_data = resp.read()
+            expected_sha256 = resp.headers.get("X-Checksum-Sha256", "")
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
         raise PackageError(f"failed to download {package_name}@{best}: {e}") from e
 
-    # Extract to mapanare_packages/<name>/
+    # Verify SHA256 checksum (supply-chain baseline)
+    actual_sha256 = hashlib.sha256(tarball_data).hexdigest()
+    if expected_sha256 and actual_sha256 != expected_sha256:
+        raise PackageError(
+            f"SHA256 mismatch for {package_name}@{best}: "
+            f"expected {expected_sha256}, got {actual_sha256}"
+        )
+
+    # Extract to mn_modules/<name>-<version>/
     packages_dir = os.path.join(project_dir, MAPANARE_PACKAGES_DIR)
     os.makedirs(packages_dir, exist_ok=True)
-    pkg_dir = os.path.join(packages_dir, package_name)
+    pkg_dir = os.path.join(packages_dir, f"{package_name}-{best}")
 
     if os.path.isdir(pkg_dir):
         shutil.rmtree(pkg_dir)
@@ -734,12 +797,12 @@ def _install_from_registry(
         tar.extractall(pkg_dir, filter="data")
 
     integrity = _compute_integrity(pkg_dir)
-    checksum = f"sha256:{hashlib.sha256(tarball_data).hexdigest()}"
+    checksum = f"sha256:{actual_sha256}"
 
     return LockedDependency(
         name=package_name,
         version=best,
-        git=f"{REGISTRY_URL}/api/packages/{package_name}/{best}/download",
+        git=f"{REGISTRY_URL}/v1/packages/{package_name}/{best}/tar",
         commit=checksum,
         integrity=integrity,
     )

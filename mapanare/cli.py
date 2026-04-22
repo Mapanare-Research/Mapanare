@@ -357,18 +357,41 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 
 def cmd_install(args: argparse.Namespace) -> None:
-    """Install a package from a git repository."""
-    from stdlib.pkg import PackageError, install_package
+    """Install a package from the Mapanare registry (or git fallback)."""
+    from stdlib.pkg import PackageError, install_all, install_package
 
     project_dir = "."
+    package_arg = getattr(args, "package", None)
+
+    # No argument: install all deps from mapanare.toml
+    if not package_arg:
+        try:
+            results = install_all(project_dir)
+            if not results:
+                print("no dependencies in mapanare.toml")
+                return
+            for locked in results:
+                print(f"installed {locked.name} @ {locked.version}")
+        except PackageError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    # Parse name@version syntax
+    pkg_name = package_arg
+    version = "*"
+    if "@" in package_arg:
+        pkg_name, version = package_arg.rsplit("@", 1)
+
     try:
         locked = install_package(
-            package_name=args.package,
+            package_name=pkg_name,
             project_dir=project_dir,
-            git_url=args.git,
-            branch=args.branch,
+            git_url=getattr(args, "git", None),
+            branch=getattr(args, "branch", None),
+            version=version,
         )
-        print(f"installed {locked.name} @ {locked.commit[:8]}")
+        print(f"installed {locked.name} @ {locked.version}")
     except PackageError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1711,9 +1734,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     # install
-    p_install = subparsers.add_parser("install", help="Install a Mapanare package (git-based)")
-    p_install.add_argument("package", help="Package name to install")
-    p_install.add_argument("--git", default=None, help="Git repository URL")
+    p_install = subparsers.add_parser(
+        "install", help="Install packages from registry (or all deps from mapanare.toml)"
+    )
+    p_install.add_argument(
+        "package", nargs="?", default=None,
+        help="Package to install (e.g. foo or foo@1.2.3). Omit to install all deps.",
+    )
+    p_install.add_argument("--git", default=None, help="Git repository URL (fallback)")
     p_install.add_argument("--branch", default=None, help="Git branch (default: main)")
     p_install.set_defaults(func=cmd_install)
 
