@@ -562,7 +562,7 @@ class PackageError(Exception):
 # Registry configuration
 # ---------------------------------------------------------------------------
 
-REGISTRY_URL = os.environ.get("MAPANARE_REGISTRY_URL", "https://registry.mapanare.dev")
+REGISTRY_URL = os.environ.get("MAPANARE_REGISTRY_URL", "https://mapanare.dev")
 TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".mapanare", "token")
 
 
@@ -670,7 +670,7 @@ def publish_package(project_dir: str, token: str | None = None) -> dict[str, str
 
     body = b"".join(parts)
 
-    url = f"{REGISTRY_URL}/v1/packages"
+    url = f"{REGISTRY_URL}/api/packages"
     req = urllib.request.Request(
         url,
         data=body,
@@ -712,7 +712,7 @@ def search_packages(
     params = urllib.parse.urlencode(
         {"q": query, "keyword": keyword, "page": page, "per_page": per_page}
     )
-    url = f"{REGISTRY_URL}/v1/search?{params}"
+    url = f"{REGISTRY_URL}/api/packages?{params}"
 
     try:
         req = urllib.request.Request(url, method="GET")
@@ -739,7 +739,7 @@ def _install_from_registry(
     import urllib.request
 
     # First, get package info to find available versions
-    url = f"{REGISTRY_URL}/v1/packages/{urllib.parse.quote(package_name)}"
+    url = f"{REGISTRY_URL}/api/packages/{urllib.parse.quote(package_name)}"
     try:
         req = urllib.request.Request(url, method="GET")
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -761,23 +761,28 @@ def _install_from_registry(
     if not best:
         return None
 
+    # Get expected checksum from metadata
+    expected_checksum = ""
+    for v in pkg_info["versions"]:
+        if v["version"] == best:
+            expected_checksum = v.get("checksum", "")
+            break
+
     # Download the tarball
-    dl_url = f"{REGISTRY_URL}/v1/packages/{urllib.parse.quote(package_name)}/{best}/tar"
-    expected_sha256 = ""
+    dl_url = f"{REGISTRY_URL}/api/packages/{urllib.parse.quote(package_name)}/{best}/download"
     try:
         req = urllib.request.Request(dl_url, method="GET")
         with urllib.request.urlopen(req, timeout=60) as resp:
             tarball_data = resp.read()
-            expected_sha256 = resp.headers.get("X-Checksum-Sha256", "")
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
         raise PackageError(f"failed to download {package_name}@{best}: {e}") from e
 
     # Verify SHA256 checksum (supply-chain baseline)
-    actual_sha256 = hashlib.sha256(tarball_data).hexdigest()
-    if expected_sha256 and actual_sha256 != expected_sha256:
+    actual_checksum = f"sha256:{hashlib.sha256(tarball_data).hexdigest()}"
+    if expected_checksum and actual_checksum != expected_checksum:
         raise PackageError(
             f"SHA256 mismatch for {package_name}@{best}: "
-            f"expected {expected_sha256}, got {actual_sha256}"
+            f"expected {expected_checksum}, got {actual_checksum}"
         )
 
     # Extract to mn_modules/<name>-<version>/
@@ -797,13 +802,12 @@ def _install_from_registry(
         tar.extractall(pkg_dir, filter="data")
 
     integrity = _compute_integrity(pkg_dir)
-    checksum = f"sha256:{actual_sha256}"
 
     return LockedDependency(
         name=package_name,
         version=best,
-        git=f"{REGISTRY_URL}/v1/packages/{package_name}/{best}/tar",
-        commit=checksum,
+        git=f"{REGISTRY_URL}/api/packages/{package_name}/{best}/download",
+        commit=actual_checksum,
         integrity=integrity,
     )
 

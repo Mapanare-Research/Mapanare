@@ -15,27 +15,23 @@ the last open item on V5_READINESS.md (package registry infrastructure).
 
 ### Session 1 — Registry backend
 
-Created `registry/` with Cloudflare Workers + R2 backend:
+Backend already exists at `mapanare-website/registry.py` (FastAPI + PostgreSQL/SQLite),
+deployed to `mapanare.dev`. No new backend created — the existing one already provides:
 
-- **Source**: `registry/src/index.ts` (~350 lines)
-- **Config**: `registry/wrangler.toml`, `registry/package.json`, `registry/tsconfig.json`
-- **API endpoints**:
-  - `GET /v1/packages` — list all packages
-  - `GET /v1/packages/:name` — package metadata + versions
-  - `GET /v1/packages/:name/:version` — single version info
-  - `GET /v1/packages/:name/:version/tar` — download tarball (R2)
-  - `POST /v1/packages` — publish (auth required, multipart/form-data)
-  - `GET /v1/search?q=...` — substring search
-- **Auth**: GitHub OAuth flow (`/auth/github`, `/auth/callback`, `/auth/poll`)
-- **Security**: Bearer tokens in KV, IP rate limiting (60 req/min), team-only publishing
-- **Deploy target**: `registry.mapanare.dev`
+- **API endpoints** at `/api/packages`:
+  - `POST /api/packages` — publish (auth required)
+  - `GET /api/packages` — search (query, keyword, pagination)
+  - `GET /api/packages/{name}` — package metadata + versions
+  - `GET /api/packages/{name}/{ver}` — version info
+  - `GET /api/packages/{name}/{ver}/download` — download tarball
+  - `DELETE /api/packages/{name}/{ver}` — yank (auth required)
+  - `GET /api/stats` — registry statistics
+- **Auth**: GitHub OAuth (`/auth/github`, `/auth/callback`, `/auth/poll`) + web login
+- **Storage**: PostgreSQL in production (Render), SQLite locally
 
 ### Sessions 2-3 — Client CLI updates
 
 Updated `stdlib/pkg.py`:
-
-- `REGISTRY_URL` → `https://registry.mapanare.dev`
-- API paths → `/v1/packages` (was `/api/packages`)
 - Install directory → `mn_modules/<name>-<version>/` (was `mapanare_packages/<name>/`)
 - SHA-256 verification on every tarball download
 - `repository` field added to `MapanareManifest`
@@ -71,20 +67,14 @@ All 51 tests pass.
 - `ROADMAP.md` entry added
 - `CLAUDE.md` entry added
 - `docs/guides/packages.md` — user-facing guide (publish, install, schema, lockfile, auth)
-- `registry/README.md` — backend setup + API reference
 
 ## Files changed
 
 | File | Change |
 |------|--------|
 | `VERSION` | `5.1.4` → `5.2.0` |
-| `stdlib/pkg.py` | Registry URL, API paths, install dir, SHA-256 verify, repository field, install_all, multipart fix |
+| `stdlib/pkg.py` | Install dir, SHA-256 verify, repository field, install_all, multipart fix |
 | `mapanare/cli.py` | `@version` parsing, no-arg install, optional package arg, help text |
-| `registry/src/index.ts` | New — Worker backend |
-| `registry/wrangler.toml` | New — Worker config |
-| `registry/package.json` | New — Worker deps |
-| `registry/tsconfig.json` | New — TS config |
-| `registry/README.md` | New — Backend docs |
 | `tests/registry/__init__.py` | New |
 | `tests/registry/test_mapanare_toml_parsing.py` | New — 17 tests |
 | `tests/registry/test_lockfile.py` | New — 14 tests |
@@ -92,6 +82,8 @@ All 51 tests pass.
 | `docs/guides/packages.md` | New — User guide |
 | `docs/roadmap/ROADMAP.md` | v5.2.0 entry |
 | `CLAUDE.md` | v5.2.0 entry |
+| `README.md` | Version badge 5.0.6 → 5.2.0 |
+| `docs/README.es.md` | Version badge 5.0.6 → 5.2.0 |
 
 ## Deferred to v5.3+
 

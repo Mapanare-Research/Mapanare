@@ -1,7 +1,7 @@
 # Package Management
 
 Mapanare has a built-in package manager backed by the
-[Mapanare Package Registry](https://registry.mapanare.dev).
+[Mapanare Package Registry](https://mapanare.dev).
 
 ## Quick start
 
@@ -96,7 +96,7 @@ The lockfile records exactly which versions were installed:
     {
       "name": "json",
       "version": "1.0.0",
-      "git": "https://registry.mapanare.dev/v1/packages/json/1.0.0/tar",
+      "git": "https://mapanare.dev/api/packages/json/1.0.0/download",
       "commit": "sha256:abc123...",
       "integrity": "sha256:def456..."
     }
@@ -139,7 +139,7 @@ The publish command:
 1. Reads `mapanare.toml` for package metadata
 2. Builds a `.tar.gz` archive of your project
 3. Computes SHA-256 checksum
-4. Uploads to `registry.mapanare.dev`
+4. Uploads to `mapanare.dev`
 
 ### What gets published
 
@@ -169,20 +169,20 @@ This creates a `mapanare.toml` and `main.mn` scaffold.
 
 ## Registry API
 
-The registry is at `https://registry.mapanare.dev` with these endpoints:
+The registry is at `https://mapanare.dev` with these endpoints:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/packages` | List all packages |
-| `GET` | `/v1/packages/:name` | Package info + versions |
-| `GET` | `/v1/packages/:name/:version` | Version details |
-| `GET` | `/v1/packages/:name/:version/tar` | Download tarball |
-| `POST` | `/v1/packages` | Publish (auth required) |
-| `GET` | `/v1/search?q=...` | Search packages |
+| `GET` | `/api/packages` | List all packages |
+| `GET` | `/api/packages/:name` | Package info + versions |
+| `GET` | `/api/packages/:name/:version` | Version details |
+| `GET` | `/api/packages/:name/:version/download` | Download tarball |
+| `POST` | `/api/packages` | Publish (auth required) |
+| `GET` | `/api/packages?q=...` | Search packages |
 
 ## Environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `MAPANARE_REGISTRY_URL` | Override registry URL (default: `https://registry.mapanare.dev`) |
+| `MAPANARE_REGISTRY_URL` | Override registry base URL (default: `https://mapanare.dev`) |
 | `MAPANARE_TOKEN` | API token (alternative to `~/.mapanare/token`) |

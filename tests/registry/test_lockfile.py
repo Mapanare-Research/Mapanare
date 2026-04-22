@@ -28,14 +28,14 @@ class TestLockFile:
             LockedDependency(
                 name="dato",
                 version="1.0.0",
-                git="https://registry.mapanare.dev/v1/packages/dato/1.0.0/tar",
+                git="https://mapanare.dev/api/packages/dato/1.0.0/tar",
                 commit="sha256:abc123",
                 integrity="sha256:def456",
             ),
             LockedDependency(
                 name="json",
                 version="0.2.1",
-                git="https://registry.mapanare.dev/v1/packages/json/0.2.1/tar",
+                git="https://mapanare.dev/api/packages/json/0.2.1/tar",
                 commit="sha256:789abc",
                 integrity="sha256:012def",
             ),

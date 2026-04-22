@@ -204,7 +204,7 @@ class TestRegistryURL:
 
     def test_default_registry_url(self) -> None:
         from stdlib.pkg import REGISTRY_URL
-        assert "registry.mapanare.dev" in REGISTRY_URL
+        assert "mapanare.dev" in REGISTRY_URL
 
     def test_install_dir_is_mn_modules(self) -> None:
         from stdlib.pkg import MAPANARE_PACKAGES_DIR
