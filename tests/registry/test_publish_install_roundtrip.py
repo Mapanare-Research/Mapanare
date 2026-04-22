@@ -1,27 +1,19 @@
 """Tests for publish + install round-trip using local stubs."""
 
-import hashlib
 import io
-import json
 import os
 import tarfile
 import tempfile
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from stdlib.pkg import (
     MapanareManifest,
-    PackageError,
     _build_tarball,
     _compute_integrity,
     _resolve_best_local,
     _satisfies_constraint,
     _version_tuple,
     install_all,
-    install_package,
-    load_lockfile,
-    load_manifest,
     save_manifest,
 )
 
@@ -176,9 +168,7 @@ class TestInstallAll:
 
     @patch("stdlib.pkg._install_from_registry")
     @patch("stdlib.pkg._install_from_git")
-    def test_installs_each_dep(
-        self, mock_git: MagicMock, mock_registry: MagicMock
-    ) -> None:
+    def test_installs_each_dep(self, mock_git: MagicMock, mock_registry: MagicMock) -> None:
         from stdlib.pkg import Dependency, LockedDependency
 
         # Registry returns None (not found), falls back to git
@@ -204,8 +194,10 @@ class TestRegistryURL:
 
     def test_default_registry_url(self) -> None:
         from stdlib.pkg import REGISTRY_URL
+
         assert "mapanare.dev" in REGISTRY_URL
 
     def test_install_dir_is_mn_modules(self) -> None:
         from stdlib.pkg import MAPANARE_PACKAGES_DIR
+
         assert MAPANARE_PACKAGES_DIR == "mn_modules"

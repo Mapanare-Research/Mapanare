@@ -601,7 +601,8 @@ def _build_tarball(project_dir: str) -> bytes:
             # Skip hidden dirs, mapanare_packages, __pycache__, etc.
             rel_root = os.path.relpath(root, project_dir)
             if any(
-                part.startswith(".") or part in ("mn_modules", "mapanare_packages", "__pycache__", "node_modules")
+                part.startswith(".")
+                or part in ("mn_modules", "mapanare_packages", "__pycache__", "node_modules")
                 for part in rel_root.split(os.sep)
             ):
                 if rel_root != ".":
@@ -649,22 +650,27 @@ def publish_package(project_dir: str, token: str | None = None) -> dict[str, str
         ("license", manifest.license),
         ("repository", manifest.repository),
         ("entry", manifest.entry),
-        ("dependencies", json.dumps({
-            dep_name: dep.version for dep_name, dep in manifest.dependencies.items()
-        })),
+        (
+            "dependencies",
+            json.dumps({dep_name: dep.version for dep_name, dep in manifest.dependencies.items()}),
+        ),
     ]:
-        parts.append((
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="{field_name}"\r\n\r\n'
-            f"{field_value}\r\n"
-        ).encode("utf-8"))
+        parts.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{field_name}"\r\n\r\n'
+                f"{field_value}\r\n"
+            ).encode("utf-8")
+        )
 
     # Tarball file
-    parts.append((
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
-        f"Content-Type: application/gzip\r\n\r\n"
-    ).encode("utf-8"))
+    parts.append(
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            f"Content-Type: application/gzip\r\n\r\n"
+        ).encode("utf-8")
+    )
     parts.append(tarball_data)
     parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
 

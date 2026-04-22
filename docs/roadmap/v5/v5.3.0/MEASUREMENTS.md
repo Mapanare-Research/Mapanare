@@ -40,9 +40,21 @@
 
 ### 1.2 Flaky audit (5x sequential)
 
-**[PENDING — audit in progress]**
+```
+Run 1: 8 failed, 5445 passed in 538s
+Run 2: 8 failed, 5446 passed in 505s
+Run 3: 8 failed, 5447 passed in 490s
+Run 4: 8 failed, 5447 passed in 493s
+Run 5: 8 failed, 5452 passed in 484s
 
-Expected: same 8 deterministic failures across all 5 runs, 0 flaky.
+Pairwise diffs: 4/4 IDENTICAL failure sets
+Flaky count: 0
+```
+
+**0 flaky across 5 sequential runs.** Same 8 deterministic failures
+in every run. Pass count varies 5445–5452 (normal parametrized test
+generation noise). Cumulative across all audits (v4.117.0 through
+v5.3.0): **35 sequential runs, 0 flaky.**
 
 ### 1.3 Registry tests
 

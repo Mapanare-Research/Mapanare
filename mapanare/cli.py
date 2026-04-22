@@ -1738,7 +1738,9 @@ def build_parser() -> argparse.ArgumentParser:
         "install", help="Install packages from registry (or all deps from mapanare.toml)"
     )
     p_install.add_argument(
-        "package", nargs="?", default=None,
+        "package",
+        nargs="?",
+        default=None,
         help="Package to install (e.g. foo or foo@1.2.3). Omit to install all deps.",
     )
     p_install.add_argument("--git", default=None, help="Git repository URL (fallback)")
