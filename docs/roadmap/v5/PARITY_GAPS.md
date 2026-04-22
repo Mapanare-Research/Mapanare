@@ -40,8 +40,8 @@ ABI classifier uses those sizes for sret decisions.
 | ID | Python has | Self-hosted has | Panel | Target |
 |---|---|---|---|---|
 | ~~Cb.15~~ | ~~`abi.py` + `_use_sret` per-target classifier~~ | ~~`abi.mn` + `use_sret_return`~~ | ~~Cobra v4.154.0~~ | ~~**v5.0.4 CLOSED**~~ |
-| Cb.9a | `module_path` field on TypeExpr | Missing in `semantic.mn:520-529` | Cobra v4.144.0+v4.154.0 | v5.0.5 |
-| Gr.2 | `named_type (DOT NAME)*` in grammar | Grammar only — parser built qualified types by hand | Coral v4.136.0 | v5.0.5 |
+| ~~Cb.9a~~ | ~~`module_path` field on TypeExpr~~ | ~~`bare_type_name()` + resolve_type_expr classification~~ | ~~Cobra v4.144.0+v4.154.0~~ | ~~**v5.0.5 CLOSED**~~ |
+| ~~Gr.2~~ | ~~`named_type (DOT NAME)*` in grammar~~ | ~~Bootstrap grammar synced~~ | ~~Coral v4.136.0~~ | ~~**v5.0.5 CLOSED**~~ |
 | **Rt.4** | Correct enum size (compute from type def) | Hardcoded `return 16` at `emit_llvm.mn:1646` (should be ≥24 after Rt.1); comment lies | Rattler v4.154.0 | **v5.0.6** — **MEDIUM (latent heap overflow after v5.0.4)** |
 | Own.1 | (neither) | (neither) — no move semantics in the language at all | Viper all panels (28 releases) | **v5.1.3** Phase 1 (register_struct / register_enum); v6.0 full borrow checker |
 
@@ -181,4 +181,6 @@ this policy exists to prevent.
 | ID | What | Closed | Verification |
 |---|---|---|---|
 | **Cb.15** | ABI.1 sret classifier ported to self-hosted (`abi.mn` + `emit_llvm.mn::use_sret_return`). stage2.ll sret count 2,263 → 4,112. SysV 16B threshold replaces 64B for returns. | **v5.0.4** | `grep -c 'sret\|classify_return\|_use_sret' mapanare/self/emit_llvm.mn` → 12; `grep -c 'abi_classify' mapanare/self/abi.mn` → 2. Fixed-point NEAR (4 diff, Dr.1 only). Sanitizers: 0 new. |
+| **Cb.9a** | Qualified type refs: `bare_type_name()` helper in `semantic.mn` extracts last component from dotted names for primitive/builtin classification. `resolve_type_expr` uses bare name for `is_primitive_type` / `is_builtin_generic`, preserves full dotted name in TypeInfo for emitter. | **v5.0.5** | `grep -c 'bare_type_name' mapanare/self/semantic.mn` → 4. 12 parser tests in `tests/parser/test_qualified_types.py`. |
+| **Gr.2** | Bootstrap grammar synced: `bootstrap/mapanare.lark` `named_type` / `generic_type` accept `NAME (DOT NAME)*`, matching main grammar (done v4.139.0). | **v5.0.5** | `grep 'DOT NAME' bootstrap/mapanare.lark` → 2 rules. 12 parser tests. |
 | Cb.5 / Rt.1 | `_enum_inline` ported to self-hosted `emit_llvm.mn` | **v4.140.0** | — |

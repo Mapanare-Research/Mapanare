@@ -517,33 +517,53 @@ fn check_logical_result(left: String, right: String) -> String {
 // ---------------------------------------------------------------------------
 // Type resolution — convert TypeExpr AST nodes to TypeInfo
 // ---------------------------------------------------------------------------
-// Cb.9a (v4.144.0): The Python semantic resolver at semantic.py:416-445
-// handles qualified type references (e.g., device.DeviceKind) via a
-// module_path list on NamedType/GenericType AST nodes. The self-hosted
-// AST uses a flattened string ("device.DeviceKind") in TypeExpr::Named,
-// so resolve_type_expr below passes the dotted name to make_type() as-is.
-// This works for struct fields (the name round-trips through the emitter)
-// but will silently mis-classify if someone does `match` on a qualified
-// enum. Full cross-module type resolution requires adding a module_path
-// field to TypeExpr and mirroring the Python resolver's import-scope
-// lookup. Tracked as Cb.9a for v5.x.
+// Cb.9a CLOSED (v5.0.5): Qualified type references (e.g., "device.DeviceKind")
+// are stored as dotted strings in TypeExpr::Named by the self-hosted parser.
+// bare_type_name() extracts the last component for primitive/builtin
+// classification; the full dotted name is preserved in TypeInfo for emitter
+// round-tripping. Mirrors Python semantic.py:416-420 (module_path lookup +
+// bare-name TypeInfo). See also Gr.2 (grammar accepts NAME (DOT NAME)*
+// since v4.139.0).
 // ---------------------------------------------------------------------------
+
+fn bare_type_name(name: String) -> String {
+    let mut last_dot: Int = 0 - 1
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= len(name) { break }
+        let ch: String = name.substr(i, 1)
+        if ch == "." { last_dot = i }
+        i = i + 1
+    }
+    if last_dot < 0 { return name }
+    return name.substr(last_dot + 1, len(name) - last_dot - 1)
+}
 
 fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
     let tek: String = type_expr_kind(te)
-    if tek == "named" { return make_type(type_expr_name(te)) }
+    if tek == "named" {
+        let name: String = type_expr_name(te)
+        let bare: String = bare_type_name(name)
+        if is_primitive_type(bare) { return make_type(bare) }
+        return make_type(name)
+    }
     if tek == "generic" {
         let name: String = type_expr_name(te)
+        let bare: String = bare_type_name(name)
         let args: List<TypeExpr> = type_expr_args(te)
         let mut resolved: List<TypeInfo> = []
         let mut i: Int = 0
         for _ in 0..200 {
-            if i >= len(args) { return make_generic_type(name, resolved) }
+            if i >= len(args) {
+                if is_builtin_generic(bare) { return make_generic_type(bare, resolved) }
+                return make_generic_type(name, resolved)
+            }
             let arg: TypeExpr = args[i]
             let rt: TypeInfo = resolve_type_expr(arg)
             resolved.push(rt)
             i = i + 1
         }
+        if is_builtin_generic(bare) { return make_generic_type(bare, resolved) }
         return make_generic_type(name, resolved)
     }
     if tek == "fn" {

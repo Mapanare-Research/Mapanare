@@ -9,7 +9,7 @@
 > resolution can't follow the dot. This release closes both in one
 > pass.
 
-**Status:** PLANNED (skeleton)
+**Status:** SHIPPED
 **Breaking:** No
 **Prerequisite:** v5.0.4 shipped
 **Estimated work:** 1 session (~1 hour)

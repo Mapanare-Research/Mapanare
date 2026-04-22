@@ -8,6 +8,8 @@ Mapanare is an AI-native compiled programming language with first-class agents, 
 
 ## Current Version & Roadmap
 
+- **v5.0.5** (shipped) — **Gr.2 + Cb.9a — qualified type refs in type position.** Bootstrap grammar (`bootstrap/mapanare.lark`) synced: `named_type` / `generic_type` accept `NAME (DOT NAME)*`, matching main grammar (v4.139.0). Self-hosted `semantic.mn` gains `bare_type_name()` helper — extracts last component from dotted type names for primitive/builtin classification in `resolve_type_expr`; full dotted name preserved in TypeInfo for emitter round-tripping. `stdlib/gpu/tensor.mn` and `kernel.mn` already use `device.DeviceKind` directly (no workaround aliases needed). 12 parser tests in `tests/parser/test_qualified_types.py`. Closes Gr.2 (Coral v4.136.0, 19 releases open) and Cb.9a (Cobra v4.144.0+v4.154.0). PARITY_GAPS.md moves both to Historical. See `docs/roadmap/v5/v5.0.5/`.
+- **v5.0.4** (shipped) — **ABI.1 sret classifier ported to self-hosted.** Cb.15 closed. See `docs/roadmap/v5/v5.0.4/`.
 - **v5.0.3** (planned) — **macOS Intel native binary.** Adds `mnc-darwin-x64` — fourth native compiler binary. `macos-13` runner is x86_64 (`macos-latest` moved to ARM64 in late 2024). No compiler or runtime source changes. See `docs/roadmap/v5/v5.0.3/`.
 - **v5.0.2** (planned) — **Reactive patch.** Fix `.exe` suffix in `scripts/build_stage1.py:236` — MinGW produces `mnc-stage1.exe` but the script referenced `mnc-stage1`, causing `FileNotFoundError` on `binary.stat()`. One line added, one changed. Pre-emptive fix before first Windows `build-native` CI run. See `docs/roadmap/v5/v5.0.2/`.
 - **v5.0.1** (planned) — **Windows, natively.** First Windows-native compiler binary. `mnc-win-x64.exe` now ships alongside `mnc-linux-x64` in the GitHub Release. Zero compiler or runtime source changes. The Windows workarounds in `scripts/build_stage1.py` (MinGW triple `x86_64-w64-mingw32`, `-mno-stack-arg-probe`, `-Wl,--defsym=__chkstk=___chkstk_ms`, `-Wl,--stack,67108864`, POSIX-module skip list for `mapanare_io.c`/`mapanare_db.c`/`mapanare_html.c`) have existed since v4.157–v4.159 but were never exercised in CI — commit `04560b0` ("skip Windows native build — POSIX runtime + MinGW __chkstk") pre-dated the very commits that closed those blockers. This release flips the `build-native` matrix entry on for `windows-latest`, vendors w64devkit v2.7.0 the same way `build-cli` already does, runs `scripts/build_stage1.py` with the bundled gcc/clang on PATH, and ships the stage1 binary as `mnc-win-x64.exe`. Smoke test compiles a trivial `.mn` end-to-end (not just `--version`) to catch dangling external symbols. Release body's Windows row now links to the native binary (was `—`). Windows users no longer need WSL to get native Mapanare performance. Stage2 self-compile on Windows and macOS native binary both tracked for v5.1. See `docs/roadmap/v5/v5.0.1/`.
@@ -499,7 +501,7 @@ These are invocable via `/skill-name` in Claude Code:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (25917 symbols, 59194 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (26261 symbols, 59521 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
