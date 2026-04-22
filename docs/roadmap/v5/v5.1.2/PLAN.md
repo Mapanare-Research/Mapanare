@@ -12,7 +12,7 @@
 > field — third cycle), and **Bn.4** (C benchmark asymmetry); these
 > are small, unrelated fixes opportunistically bundled.
 
-**Status:** PLANNED (skeleton)
+**Status:** SHIPPED (4/6 dockets closed; Li.1 OPEN — deferred to v5.2)
 **Breaking:** No (pure optimization; output semantics unchanged)
 **Prerequisite:** v5.1.1 shipped
 **Estimated work:** 2-4 sessions

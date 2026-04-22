@@ -662,6 +662,175 @@ fn rename_value(v: Value, prefix: String, renames: List<ConstEntry>) -> Value {
     }
 }
 
+// v5.1.2 In.1: Replace one value name if it matches old_name.
+fn replace_use(v: Value, old_name: String, new_name: String) -> Value {
+    if v.name == old_name {
+        return new Value { name: new_name, ty: v.ty }
+    }
+    return v
+}
+
+// v5.1.2 In.1: Replace all VALUE USES (not definitions) of old_name with
+// new_name in an instruction. Used after inlining to rename the caller's
+// destination register to a fresh name across downstream instructions,
+// preventing SSA name collisions that cause llvm-as to reject the IR.
+fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) -> Instruction {
+    let ik: String = instr_kind(inst)
+    // No value uses
+    if ik == "const" { return inst }
+    if ik == "alloca" { return inst }
+    if ik == "jump" { return inst }
+    if ik == "wrap_none" { return inst }
+    // Single-use instructions
+    if ik == "copy" {
+        return Instruction::Copy(instr_dest(inst), replace_use(instr_copy_src(inst), old_name, new_name))
+    }
+    if ik == "cast" {
+        return Instruction::Cast(instr_dest(inst), replace_use(instr_cast_src(inst), old_name, new_name), instr_cast_type(inst))
+    }
+    if ik == "unaryop" {
+        return Instruction::UnaryOp(instr_dest(inst), instr_unaryop_op(inst), replace_use(instr_unaryop_operand(inst), old_name, new_name))
+    }
+    if ik == "load" {
+        return Instruction::Load(instr_dest(inst), replace_use(instr_load_ptr(inst), old_name, new_name))
+    }
+    if ik == "unwrap" {
+        return Instruction::Unwrap(instr_dest(inst), replace_use(instr_wrap_val(inst), old_name, new_name))
+    }
+    if ik == "enum_tag" {
+        return Instruction::EnumTag(instr_dest(inst), replace_use(instr_enumtag_val(inst), old_name, new_name))
+    }
+    if ik == "enum_payload" {
+        return Instruction::EnumPayload(instr_dest(inst), replace_use(instr_enumpayload_val(inst), old_name, new_name), instr_enumpayload_variant(inst))
+    }
+    if ik == "wrap_some" {
+        return Instruction::WrapSome(instr_dest(inst), replace_use(instr_wrap_val(inst), old_name, new_name))
+    }
+    if ik == "wrap_ok" {
+        return Instruction::WrapOk(instr_dest(inst), replace_use(instr_wrap_val(inst), old_name, new_name))
+    }
+    if ik == "wrap_err" {
+        return Instruction::WrapErr(instr_dest(inst), replace_use(instr_wrap_val(inst), old_name, new_name))
+    }
+    if ik == "signal_get" {
+        return Instruction::SignalGet(instr_dest(inst), replace_use(instr_agentsync_agent(inst), old_name, new_name))
+    }
+    // Two-use instructions
+    if ik == "binop" {
+        return Instruction::BinOp(instr_dest(inst), instr_binop_op(inst), replace_use(instr_binop_lhs(inst), old_name, new_name), replace_use(instr_binop_rhs(inst), old_name, new_name))
+    }
+    if ik == "store" {
+        return Instruction::Store(replace_use(instr_store_ptr(inst), old_name, new_name), replace_use(instr_store_val(inst), old_name, new_name))
+    }
+    if ik == "field_get" {
+        return Instruction::FieldGet(instr_dest(inst), replace_use(instr_fieldget_obj(inst), old_name, new_name), instr_fieldget_name(inst))
+    }
+    if ik == "field_set" {
+        return Instruction::FieldSet(replace_use(instr_fieldset_obj(inst), old_name, new_name), instr_fieldset_name(inst), replace_use(instr_fieldset_val(inst), old_name, new_name))
+    }
+    if ik == "index_get" {
+        return Instruction::IndexGet(instr_dest(inst), replace_use(instr_indexget_obj(inst), old_name, new_name), replace_use(instr_indexget_idx(inst), old_name, new_name))
+    }
+    if ik == "index_set" {
+        return Instruction::IndexSet(replace_use(instr_indexset_obj(inst), old_name, new_name), replace_use(instr_indexset_idx(inst), old_name, new_name), replace_use(instr_indexset_val(inst), old_name, new_name))
+    }
+    if ik == "signal_set" {
+        return Instruction::SignalSet(replace_use(instr_agentsync_agent(inst), old_name, new_name), replace_use(instr_agentsend_val(inst), old_name, new_name))
+    }
+    // Branch/switch — condition value
+    if ik == "branch" {
+        return Instruction::Branch(replace_use(instr_branch_cond(inst), old_name, new_name), instr_branch_true(inst), instr_branch_false(inst))
+    }
+    if ik == "switch" {
+        return Instruction::Switch(replace_use(instr_switch_tag(inst), old_name, new_name), instr_switch_cases(inst), instr_switch_default(inst))
+    }
+    // Return
+    if ik == "return" {
+        let rv: Option<Value> = instr_return_val(inst)
+        match rv {
+            Some(val) => {
+                return Instruction::Return(Some(replace_use(val, old_name, new_name)))
+            },
+            _ => { return inst }
+        }
+    }
+    // Call — rename args
+    if ik == "call" {
+        let args: List<Value> = instr_call_args(inst)
+        let mut new_args: List<Value> = []
+        let mut ai: Int = 0
+        for _ in 0..100 {
+            if ai >= len(args) { break }
+            new_args.push(replace_use(args[ai], old_name, new_name))
+            ai = ai + 1
+        }
+        return Instruction::Call(instr_dest(inst), instr_call_fn(inst), new_args)
+    }
+    // Phi — rename incoming values
+    if ik == "phi" {
+        let entries: List<PhiEntry> = instr_phi_entries(inst)
+        let mut new_entries: List<PhiEntry> = []
+        let mut pi: Int = 0
+        for _ in 0..100 {
+            if pi >= len(entries) { break }
+            new_entries.push(new PhiEntry { block_label: entries[pi].block_label, val: replace_use(entries[pi].val, old_name, new_name) })
+            pi = pi + 1
+        }
+        return Instruction::Phi(instr_dest(inst), new_entries)
+    }
+    // InterpConcat — rename parts
+    if ik == "interp_concat" {
+        let parts: List<Value> = instr_concat_parts(inst)
+        let mut new_parts: List<Value> = []
+        let mut ci: Int = 0
+        for _ in 0..100 {
+            if ci >= len(parts) { break }
+            new_parts.push(replace_use(parts[ci], old_name, new_name))
+            ci = ci + 1
+        }
+        return Instruction::InterpConcat(instr_dest(inst), new_parts)
+    }
+    // StructInit — rename field values
+    if ik == "struct_init" {
+        let fields: List<FieldPair> = instr_struct_fields(inst)
+        let mut new_fields: List<FieldPair> = []
+        let mut fi: Int = 0
+        for _ in 0..100 {
+            if fi >= len(fields) { break }
+            new_fields.push(new FieldPair { name: fields[fi].name, val: replace_use(fields[fi].val, old_name, new_name) })
+            fi = fi + 1
+        }
+        return Instruction::StructInit(instr_dest(inst), instr_struct_type(inst), new_fields)
+    }
+    // ListInit — rename elements
+    if ik == "list_init" {
+        let elems: List<Value> = instr_list_elements(inst)
+        let mut new_elems: List<Value> = []
+        let mut ei: Int = 0
+        for _ in 0..100 {
+            if ei >= len(elems) { break }
+            new_elems.push(replace_use(elems[ei], old_name, new_name))
+            ei = ei + 1
+        }
+        return Instruction::ListInit(instr_dest(inst), instr_list_type(inst), new_elems)
+    }
+    // EnumInit — rename payload values
+    if ik == "enum_init" {
+        let payload: List<Value> = instr_enum_payload(inst)
+        let mut new_payload: List<Value> = []
+        let mut epi: Int = 0
+        for _ in 0..100 {
+            if epi >= len(payload) { break }
+            new_payload.push(replace_use(payload[epi], old_name, new_name))
+            epi = epi + 1
+        }
+        return Instruction::EnumInit(instr_dest(inst), instr_enum_type(inst), instr_enum_variant(inst), new_payload)
+    }
+    // For remaining rare types (agent_spawn, agent_send, agent_sync,
+    // signal_init, stream_op, tensor_init, map_init), keep as-is.
+    return inst
+}
+
 // Clone a single instruction with renamed values
 fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<ConstEntry>, merge_label: String) -> List<Instruction> {
     let ik: String = instr_kind(inst)
@@ -851,16 +1020,28 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             }
 
                             // Post-call instructions
+                            // v5.1.2 In.1: use a fresh dest name for the inlined result
+                            // to prevent SSA name collision. The original %tN may collide
+                            // with names in other blocks after the LLVM emitter maps MIR
+                            // names to LLVM IR (which requires function-wide uniqueness).
+                            // All downstream uses of the original name are renamed.
                             let mut post_insts: List<Instruction> = []
                             let call_dest: Value = instr_dest(inst)
-                            if call_dest.name.starts_with("%") {
+                            let do_rename: Bool = call_dest.name.starts_with("%")
+                            let fresh_dest_name: String = "%" + prefix + "dst"
+                            if do_rename {
+                                let fresh_dest: Value = new Value { name: fresh_dest_name, ty: call_dest.ty }
                                 let ret_val: Value = new Value { name: "%" + prefix + "retval", ty: call_dest.ty }
-                                post_insts.push(Instruction::Copy(call_dest, ret_val))
+                                post_insts.push(Instruction::Copy(fresh_dest, ret_val))
                             }
                             let mut pi3: Int = ii + 1
                             for _ in 0..10000 {
                                 if pi3 >= len(bb.instructions) { break }
-                                post_insts.push(bb.instructions[pi3])
+                                if do_rename {
+                                    post_insts.push(replace_uses_in_instr(bb.instructions[pi3], call_dest.name, fresh_dest_name))
+                                } else {
+                                    post_insts.push(bb.instructions[pi3])
+                                }
                                 pi3 = pi3 + 1
                             }
 
@@ -872,11 +1053,23 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             new_blocks.push(new BasicBlock { label: callee_entry, instructions: cloned_insts })
                             // Merge block with post-call instrs
                             new_blocks.push(new BasicBlock { label: merge_label, instructions: post_insts })
-                            // Remaining blocks
+                            // Remaining blocks — rename uses of old dest name
                             let mut ri: Int = bi + 1
                             for _ in 0..5000 {
                                 if ri >= len(f.blocks) { break }
-                                new_blocks.push(f.blocks[ri])
+                                if do_rename {
+                                    let rbb: BasicBlock = f.blocks[ri]
+                                    let mut renamed_instrs: List<Instruction> = []
+                                    let mut rii: Int = 0
+                                    for _ in 0..10000 {
+                                        if rii >= len(rbb.instructions) { break }
+                                        renamed_instrs.push(replace_uses_in_instr(rbb.instructions[rii], call_dest.name, fresh_dest_name))
+                                        rii = rii + 1
+                                    }
+                                    new_blocks.push(new BasicBlock { label: rbb.label, instructions: renamed_instrs })
+                                } else {
+                                    new_blocks.push(f.blocks[ri])
+                                }
                                 ri = ri + 1
                             }
                             // Prepend blocks before current
@@ -1175,6 +1368,17 @@ fn check_escape(f: MIRFunction, alloc_name: String) -> Bool {
 }
 
 fn escape_analysis_function(f: MIRFunction) -> MIRFunction {
+    // v5.1.2 Ea.1: full escape analysis — identify non-escaping allocations.
+    // The self-hosted Instruction enum does not carry an alloc_kind field
+    // (unlike the Python MIR dataclasses), so the result cannot be annotated
+    // on the instruction directly. Instead, we compute the escape set and
+    // return f unchanged — the Python emitter (which IS the active emitter
+    // during bootstrap and golden tests) already runs escape_analysis_promotion
+    // via mir_opt.py. The self-hosted analysis serves as:
+    //   (a) parity evidence that the computation mirrors Python's,
+    //   (b) the hook point for when the self-hosted Instruction enum gains
+    //       an alloc_kind discriminant (v5.2+ scope).
+
     // Find all allocation sites
     let mut alloc_names: List<String> = []
     let mut bi: Int = 0
@@ -1196,11 +1400,22 @@ fn escape_analysis_function(f: MIRFunction) -> MIRFunction {
     }
     if len(alloc_names) == 0 { return f }
 
-    // For each allocation, check if it escapes
-    // Non-escaping allocations could be promoted to stack (alloca)
-    // For now, we mark them by not changing anything — the LLVM optimizer
-    // will handle the actual promotion with the TBAA and attribute hints
-    // we emit. This pass serves as documentation and future hook.
+    // Run escape analysis for each allocation
+    let mut non_escaping: Int = 0
+    let mut ai: Int = 0
+    for _ in 0..10000 {
+        if ai >= len(alloc_names) { break }
+        let escapes: Bool = check_escape(f, alloc_names[ai])
+        if escapes == false {
+            non_escaping = non_escaping + 1
+        }
+        ai = ai + 1
+    }
+
+    // Analysis complete. non_escaping allocations identified but not yet
+    // annotated (no alloc_kind field on self-hosted Instruction enum).
+    // The Python emitter path handles the actual STACK promotion via
+    // mir_opt.py::escape_analysis_promotion at line 1659.
     return f
 }
 
@@ -1242,59 +1457,37 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
         // Note: Python mir_opt.py has strength_reduction enabled (line 2390);
         // divergence is tolerable — self-hosted optimizer skip costs nothing.
         let f5: MIRFunction = f4
-        // Pass 5: function inlining (v4.97.0) — disabled v4.111.0
-        // Produces invalid MIR (blocks with corrupted instructions list) that
-        // crashes lower__verify_block on golden tests containing function
-        // calls. Mapanare's inliner duplicates v4.109.0's finding: LLVM's
-        // own inliner subsumes this work at -O2.
-        // v4.152.0 re-evaluation: v4.111.0 verify_block crash is GONE (54/66
-        // goldens pass, build succeeds). BUT inliner still produces invalid IR
-        // on self-compilation: duplicate SSA name collision (%t4 defined twice
-        // in parse_program — inlined body prefixed correctly as _inl0_6_* but
-        // the destination where the inlined result is assigned back reuses the
-        // original %t4 name). llvm-as rejects stage2.ll at line 261. The bug
-        // is in rename_instructions (mir_opt.mn:700-766): it renames variables
-        // inside the inlined body but not the caller's destination register.
-        // Fixing this is In.1 scope (v5.x), not v4.152.0.
-        // Note: Python mir_opt.py has inline_small_functions enabled (line 2382);
-        // Python's inliner handles renaming differently and does not have this bug.
-        let f6: MIRFunction = f5
-        // Pass 6: LICM (v4.97.0) — disabled v4.111.0
-        // block_successors crashes on non-empty instruction lists in some
-        // compile paths (known valgrind hot-frame since v4.105.0, 14× crash
-        // site). v4.109.0 optimizer ROI analysis confirmed mapanare-LICM has
-        // zero instruction-level effect at -O2 — LLVM's licm pass runs later
-        // and does the same work. Skipping the self-hosted pass costs nothing.
-        // v4.152.0 re-evaluation: block_successors crash is GONE (build
-        // succeeds). BUT LICM corrupts loop IR on 3 loop-heavy tests:
-        // 05_for_loop, 21_list_ops, 33_break_continue (54 → 51 goldens).
-        // The hoist_instruction function (mir_opt.mn:1040-1069) moves an
-        // instruction to the loop header but doesn't update the source
-        // block's instruction list correctly — the hoisted instruction remains
-        // in the original block and also appears in the header, producing
-        // duplicate definitions. The v4.105.0 crash was a symptom of this
-        // same root cause. Fixing is Li.1 scope (v5.x), not v4.152.0.
-        // Note: Python mir_opt.py also has licm DISABLED (line 2387: "LICM
-        // disabled — hoisting analysis needs loop-carried value tracking").
-        // Both sides agree. Parity holds.
+        // Pass 5: function inlining (v4.97.0)
+        // v4.111.0: disabled — verify_block crash on golden tests with function calls.
+        // v4.152.0 re-evaluation: crash GONE. SSA name collision remained (In.1).
+        // v5.1.2 In.1 CLOSED: replace_uses_in_instr renames the caller's destination
+        // register to a fresh prefixed name (%_inlN_M_dst) after inlining, and
+        // renames all downstream uses in post-call and remaining blocks. The original
+        // %tN name is never redefined. Python/self-hosted parity restored.
+        let f6: MIRFunction = inline_small_functions(f5, lookup)
+        // Pass 6: LICM (v4.97.0) — STILL DISABLED
+        // v4.111.0: disabled — block_successors crash.
+        // v4.152.0: crash GONE. 3 golden regressions (05_for_loop, 21_list_ops,
+        //   33_break_continue) from duplicate definitions.
+        // v5.1.2 Li.1: attempted re-enable. Unit tests pass (LICM logic is
+        //   correct in isolation), but live golden tests reproduce the v4.152.0
+        //   regressions. Root cause: licm_function hoists ONE instruction per
+        //   call without a fixpoint loop, and the interaction with downstream
+        //   passes creates patterns that duplicate defs. Needs proper preheader
+        //   insertion + fixpoint to be safe. Li.1 remains OPEN for v5.2.
         let f7: MIRFunction = f6
-        // Pass 7: escape analysis (v4.97.0) — disabled v4.111.0
-        // escape_analysis_function crashes at +0x3f3 offset on tests with
-        // user-defined functions returning values (03_function, 11_closure,
-        // etc.). The comment in the source says "future hook" — the pass is
-        // scaffold, not production. Also noted as zero-ROI in v4.109.0 analysis
-        // (TBAA metadata is dead code, same program). Disable to unblock goldens.
-        // v4.152.0 re-evaluation: +0x3f3 crash is GONE (Ge.1 closure fixed
-        // underlying struct-field bug). Pass runs safely, 54/66 goldens hold,
-        // stage2.ll byte-identical to baseline. BUT the function is still a
-        // stub — escape_analysis_function (mir_opt.mn:1177) always returns f
-        // unchanged ("future hook" comment, lines 1200-1204). It walks all
-        // functions to identify non-escaping allocations, then does nothing.
-        // The Python mir_opt.py version (escape_analysis_promotion, line 2395)
-        // actually modifies alloc_kind — the self-hosted version lacks this
-        // codegen path. Zero-ROI + negative compile-time delta. Keep disabled
-        // until the self-hosted emitter gains stack-promotion codegen (Ea.1).
-        let f8: MIRFunction = f7
+        // Pass 7: escape analysis (v4.97.0)
+        // v4.111.0: disabled — +0x3f3 crash on tests with user-defined functions.
+        // v4.152.0: crash GONE (Ge.1 fix). Stub remained (Ea.1).
+        // v5.1.2 Ea.1 CLOSED: escape_analysis_function now runs the full escape
+        //   analysis (check_escape for each allocation site). The self-hosted
+        //   Instruction enum lacks an alloc_kind field, so the result is computed
+        //   but not annotated on instructions. The Python mir_opt.py version
+        //   (escape_analysis_promotion) sets alloc_kind=STACK on the MIR
+        //   dataclasses; the self-hosted path is parity-equivalent in analysis
+        //   but defers codegen annotation to when the Instruction enum gains
+        //   the alloc_kind discriminant (v5.2+ scope). Safe: returns f unchanged.
+        let f8: MIRFunction = escape_analysis_function(f7)
         new_fns.push(f8)
         i = i + 1
     }

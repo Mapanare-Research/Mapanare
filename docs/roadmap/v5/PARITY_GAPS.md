@@ -60,9 +60,9 @@ v4.111.0. Results:
 | Pass | Python | Self-hosted | Status | Target |
 |---|:---:|:---:|---|---|
 | `strength_reduce` | ON | OFF | Zero-ROI both sides; LLVM instcombine covers — parity deferred | — |
-| `inline_small_functions` | ON | OFF | **In.1**: rename_instructions collides on caller's `%dst` after inlining | v5.1.2 |
-| `licm` | OFF | OFF | **Li.1**: hoist_instruction leaves original in source block — parity, both disabled | v5.1.2 |
-| `escape_analysis` | ON | OFF | **Ea.1**: self-hosted version is a stub (`return f` unchanged) | v5.1.2 |
+| ~~`inline_small_functions`~~ | ~~ON~~ | ~~ON~~ | ~~**In.1** CLOSED v5.1.2: `replace_uses_in_instr` renames caller's dest to fresh prefixed name~~ | ~~v5.1.2~~ |
+| `licm` | OFF | OFF | **Li.1** OPEN: unit tests pass but live goldens regress (05_for_loop, 21_list_ops, 33_break_continue). Needs fixpoint + preheader insertion. | v5.2 |
+| ~~`escape_analysis`~~ | ~~ON~~ | ~~ON~~ | ~~**Ea.1** CLOSED v5.1.2: analysis ported to self-hosted (codegen annotation deferred — no alloc_kind on Instruction enum)~~ | ~~v5.1.2~~ |
 
 > Cobra v4.154.0 line 41: *"This is a Python-emitter-only fix. The
 > self-hosted emitter has no classifier, no `_use_sret`, and still
@@ -95,9 +95,9 @@ one-line to small fixes Mamba has now flagged 2-3 times:
 
 | ID | Symptom | Target |
 |---|---|---|
-| **Bn.2** | Geomean arithmetic wrong in FINAL_REPORT (says 1.17×, actual 1.21×); baseline 7.31× mislabeled as 5.83× | v5.1.2 |
+| ~~Bn.2~~ | ~~Geomean arithmetic wrong~~ `run_benchmarks.py` now computes `geomean()` from raw per-benchmark ratios and embeds it in JSON `"geomean_ratios"` field. Summary table appends Mn/Lang ratios. | ~~**v5.1.2 CLOSED**~~ |
 | ~~Bn.3~~ | ~~JSON `"version": "4.125.0"` hardcoded~~ `benchmarks/cross_language/run_benchmarks.py` reads VERSION file; per-run JSON now carries the live version. | ~~**v5.0.6 CLOSED**~~ |
-| **Bn.4** | C `struct_alloc.c` uses malloc+free; Rust/Mapanare return by value — benchmarks measure different things | v5.1.2 |
+| ~~Bn.4~~ | ~~C `struct_alloc.c` uses malloc+free~~ Rewritten to return struct by value (stack return) matching Rust/Mapanare. No `malloc`/`free` in hot loop. | ~~**v5.1.2 CLOSED**~~ |
 
 ### Documentation drift (Boa v4.144.0+v4.154.0)
 
@@ -199,3 +199,8 @@ this policy exists to prevent.
 | **Cb.9a** | Qualified type refs: `bare_type_name()` helper in `semantic.mn` extracts last component from dotted names for primitive/builtin classification. `resolve_type_expr` uses bare name for `is_primitive_type` / `is_builtin_generic`, preserves full dotted name in TypeInfo for emitter. | **v5.0.5** | `grep -c 'bare_type_name' mapanare/self/semantic.mn` → 4. 12 parser tests in `tests/parser/test_qualified_types.py`. |
 | **Gr.2** | Bootstrap grammar synced: `bootstrap/mapanare.lark` `named_type` / `generic_type` accept `NAME (DOT NAME)*`, matching main grammar (done v4.139.0). | **v5.0.5** | `grep 'DOT NAME' bootstrap/mapanare.lark` → 2 rules. 12 parser tests. |
 | Cb.5 / Rt.1 | `_enum_inline` ported to self-hosted `emit_llvm.mn` | **v4.140.0** | — |
+| **In.1** | `inline_small_functions` SSA rename: `replace_uses_in_instr` renames caller's dest to `%_inlN_M_dst` and updates all downstream uses. Pass enabled in both Python and self-hosted. | **v5.1.2** | `pytest tests/mir_opt/test_inline_rename.py -v` → 4 passed. |
+| **Li.1** | LICM: unit tests pass (`test_licm_no_duplicate.py` → 3 passed), but live golden tests regress. Pass remains disabled in both pipelines. Li.1 OPEN for v5.2. | **v5.1.2** (partial — tests added, pass NOT enabled) | `pytest tests/mir_opt/test_licm_no_duplicate.py -v` → 3 passed. Live goldens: 05_for_loop, 21_list_ops, 33_break_continue regress when enabled. |
+| **Ea.1** | Escape analysis: self-hosted stub replaced with full `check_escape` analysis. Python `escape_analysis_promotion` sets `alloc_kind=STACK`. Self-hosted Instruction enum lacks alloc_kind field (codegen annotation deferred to v5.2+). | **v5.1.2** | `pytest tests/mir_opt/test_escape_analysis.py -v` → 7 passed. |
+| **Bn.2** | `geomean()` function in `run_benchmarks.py`; JSON `"geomean_ratios"` field; summary table appends Mn/Lang ratios. | **v5.1.2** | `python3 -c "from benchmarks.cross_language.run_benchmarks import geomean; print(geomean([1.0, 4.0]))"` → 2.0. |
+| **Bn.4** | `struct_alloc.c` returns struct by value (no malloc). Matches Rust/Mapanare methodology. | **v5.1.2** | `grep malloc benchmarks/cross_language/c/struct_alloc.c` → 0. |

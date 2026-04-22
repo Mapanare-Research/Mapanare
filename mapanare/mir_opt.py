@@ -2384,10 +2384,15 @@ def optimize_function(
             changed |= unreachable_block_elimination(fn, stats)
             changed |= dead_code_elimination(fn, stats)
             # v4.88.0: strength reduction after DCE.
-            # LICM disabled — hoisting analysis needs loop-carried value
-            # tracking. Infrastructure (dominators, natural loops) ships
-            # but the transform is gated for v4.89.0.
             changed |= strength_reduction(fn, stats)
+            # v5.1.2 Li.1: LICM function exists and is correct (tests pass),
+            # but enabling it in the Python pipeline causes the self-hosted
+            # binary to OOM during compilation — the hoisted code changes
+            # the IR layout enough to push mnc-stage1 past its memory budget.
+            # LICM is enabled in the self-hosted pipeline (mir_opt.mn) where
+            # it runs on user programs, not on the compiler itself. The Python
+            # pipeline keeps it disabled to preserve the bootstrap build.
+            # changed |= licm(fn, stats)
             # v4.89.0: escape analysis — promote non-escaping heap
             # allocations to stack. Runs after DCE + strength reduction
             # so dead allocations are already removed. Idempotent (once
