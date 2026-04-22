@@ -7,10 +7,11 @@
 > closes them in one sitting. No new features. No compiler source
 > changes beyond replacing stale constants.
 
-**Status:** PLANNED (skeleton)
+**Status:** SHIPPED (2026-04-21)
 **Breaking:** No
 **Prerequisite:** v5.0.5 shipped
 **Estimated work:** 1 session (~90 min — these are all 1-30 minute fixes)
+**Session report:** `SESSION_REPORT.md`
 
 ---
 

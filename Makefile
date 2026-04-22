@@ -3,7 +3,7 @@
 # to /bin/dash which has no ``<(...)`` support.
 SHELL := /bin/bash
 
-.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report
+.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report count-tests
 
 # v4.29.0: build-rt now enumerates every runtime object that is expected
 # to land in libmapanare_rt.a. The list used to be hand-maintained and
@@ -110,6 +110,9 @@ bootstrap:  ## Three-stage fixed-point verification
 
 test:
 	pytest tests/ -v -n auto --durations=20
+
+count-tests:  ## v5.0.6 An.10: deterministic test count for release-note deltas
+	@python scripts/count_tests.py
 
 lint:
 	ruff check . && black --check . && mypy mapanare/ runtime/

@@ -1695,8 +1695,16 @@ fn llvm_type_size(ty: String) -> Int {
     if ty == llvm_string() { return 16 }
     // List = {ptr, i64, i64, i64, i64} = 40 (data, len, cap, elem_size, managed)
     if ty == llvm_list_rt() { return 40 }
-    // Enums: now always {i64, ptr} = 16 bytes
-    if ty.starts_with("%enum.") { return 16 }
+    // v5.0.6 Rt.4: enum layouts depend on inline slot count:
+    //   boxed        {i64, ptr}        = 16 bytes
+    //   1-slot inline {i64, i64}       = 16 bytes
+    //   2-slot inline {i64, i64, i64}  = 24 bytes  (Rt.1 v4.124.0)
+    // llvm_type_size cannot see EmitState, so return the safe upper
+    // bound (24) for any %enum.*. Callers use this for alloca/malloc
+    // sizing; over-allocating by up to 8B is safe, under-allocating is
+    // a latent heap overflow. The prior "always 16" hardcode + comment
+    // became actively false once Rt.1 landed.
+    if ty.starts_with("%enum.") { return 24 }
     // Structs: use field_count * 32 as safe upper bound.
     // This is used for malloc allocation, so must be >= actual size.
     if ty.starts_with("%struct.") { return 256 }
