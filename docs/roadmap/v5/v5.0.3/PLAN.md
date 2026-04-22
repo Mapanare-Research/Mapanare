@@ -5,7 +5,7 @@
 > users (still ~30% of developers at time of writing) fall back to
 > the Python bootstrap bundle. This release closes that gap.
 
-**Status:** PLANNED (skeleton)
+**Status:** IN PROGRESS
 **Breaking:** No
 **Prerequisite:** v5.0.2 shipped
 **Estimated work:** 1 session (~1 hour) — GitHub Actions' macOS-13

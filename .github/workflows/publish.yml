@@ -109,6 +109,7 @@ jobs:
             |:---------|:--------:|:---------------:|
             | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) |
             | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) |
+            | **macOS** Intel | — | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-x64) |
             | **Windows** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-win-x64.exe) |
 
             > **Full CLI** includes the compiler, Python transpiler, LSP, and WASM backend.
@@ -336,8 +337,9 @@ jobs:
           - os: windows-latest
             artifact: mnc-win-x64.exe
             triple: x86_64-w64-mingw32
-          # macOS native binary tracked for v5.x.
-          # macOS gets the full CLI via PyInstaller.
+          - os: macos-13
+            artifact: mnc-darwin-x64
+            triple: x86_64-apple-darwin
 
     runs-on: ${{ matrix.os }}
 

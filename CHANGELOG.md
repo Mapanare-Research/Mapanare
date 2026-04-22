@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.3] - 2026-04-21
+
+**macOS Intel native binary.** Adds `mnc-darwin-x64` to the GitHub Release.
+
+- Add `macos-13` (x86_64) entry to `build-native` CI matrix
+- `scripts/build_stage1.py` already handles macOS — ARM64 datalayout
+  substitution is gated on `platform.machine() == "arm64"`
+- Release body gains "macOS Intel" row with native binary download
+- No compiler or runtime source changes
+
 ## [4.153.0] - 2026-04-19
 
 **Pre-perf-panel refresh.** Zero code changes. Measurement-only release
