@@ -8,7 +8,7 @@
 >
 > This is the "speed boost we only did for one."
 
-**Status:** PLANNED (skeleton)
+**Status:** SHIPPED
 **Breaking:** No (ABI-level — matches clang's convention on 17-64B
 aggregates; existing code using these ABIs only via Python bootstrap
 gains the optimization)

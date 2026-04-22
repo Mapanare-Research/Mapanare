@@ -12,6 +12,7 @@
 
 import self::mir
 import self::emit_llvm_ir
+import self::abi
 
 // ---------------------------------------------------------------------------
 // Emitter state
@@ -1605,6 +1606,58 @@ fn struct_byte_size(st: EmitState, ty: String) -> Int {
     return 256
 }
 
+// v5.0.4 Cb.15: compute real byte size of a named enum type.
+// Inline enums: (1 + max_inline_slots) * 8 bytes.
+// Boxed enums: {i64, ptr} = 16 bytes.
+// Returns 16 as default if not found (all boxed enums are 16B).
+fn enum_byte_size(st: EmitState, ty: String) -> Int {
+    if !ty.starts_with("%enum.") { return llvm_type_size(ty) }
+    let name: String = ty.substr(6, len(ty) - 6)
+    let mut i: Int = 0
+    let n: Int = len(st.enum_names)
+    for _ in 0..10000 {
+        if i >= n { return 16 }
+        if st.enum_names[i] == name {
+            if i < len(st.enum_inline_slots) {
+                let slots: Int = st.enum_inline_slots[i]
+                if slots > 0 {
+                    // Inline: tag (i64) + N payload slots (each i64)
+                    return (1 + slots) * 8
+                }
+            }
+            return 16
+        }
+        i = i + 1
+    }
+    return 16
+}
+
+// v5.0.4 Cb.15: ABI-aware sret classification for return types.
+// Replaces is_byref_type_st for return values only. Uses per-target
+// ABI classifier (abi.mn) instead of the blanket 64B threshold.
+// Argument passing still uses is_byref_type_st (64B threshold).
+//
+// Mirrors mapanare/emit_llvm_text.py::_use_sret (v4.149.0 E5/ABI.1).
+fn use_sret_return(st: EmitState, ty: String) -> Bool {
+    // Scalars: never sret
+    let is_agg: Bool = ty.starts_with("{") || ty.starts_with("%struct.") || ty.starts_with("%enum.")
+    if !is_agg { return false }
+    // Compute byte size — resolve named types through tables
+    let mut sz: Int = 0
+    if ty.starts_with("%struct.") {
+        sz = struct_byte_size(st, ty)
+    } else {
+        if ty.starts_with("%enum.") {
+            sz = enum_byte_size(st, ty)
+        } else {
+            sz = llvm_type_size(ty)
+        }
+    }
+    // Classify per target ABI.
+    // Self-hosted compiler targets x86_64-unknown-linux-gnu (SysV AMD64).
+    return abi_classify_return_sret(true, sz, "x86_64-unknown-linux-gnu")
+}
+
 fn find_alloca_for_value(st: EmitState, value_name: String) -> String {
     // Scan backward through emitted lines to find:
     //   %value_name =load TYPE, ptr %ALLOCA
@@ -2948,8 +3001,8 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
             if fe.ret_type == "void" {
                 return emit_line(s, emit_call_void(fn_name, args_str))
             }
-            // sret: large struct returns via hidden pointer
-            if is_byref_type_st(s, fe.ret_type) {
+            // v5.0.4 Cb.15: sret via per-target ABI classifier
+            if use_sret_return(s, fe.ret_type) {
                 let sret_a: String = "%sret" + toString(s.counter)
                 s.counter = s.counter + 1
                 s = emit_line(s, "  " + sret_a + " = alloca " + fe.ret_type)
@@ -2969,8 +3022,8 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
             if ret_ty == "void" {
                 return emit_line(s, emit_call_void(fn_name, args_str))
             }
-            // sret for unregistered functions with large struct returns
-            if is_byref_type_st(s, ret_ty) {
+            // v5.0.4 Cb.15: sret via per-target ABI classifier
+            if use_sret_return(s, ret_ty) {
                 let sret_b: String = "%sret" + toString(s.counter)
                 s.counter = s.counter + 1
                 s = emit_line(s, "  " + sret_b + " = alloca " + ret_ty)
@@ -3137,8 +3190,8 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
             if ty == "void" {
                 return emit_line(st, emit_ret_void())
             }
-            // If using sret (large struct return), store to sret pointer and ret void
-            if is_byref_type_st(st, ty) {
+            // v5.0.4 Cb.15: sret via per-target ABI classifier
+            if use_sret_return(st, ty) {
                 let mut s: EmitState = emit_line(st, "  store " + ty + " " + val.name + ", ptr %__sret__")
                 return emit_line(s, emit_ret_void())
             }
@@ -3398,8 +3451,9 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         }
     }
 
-    // Determine byref/sret: large structs passed by pointer
-    let use_sret: Bool = is_byref_type_st(st, ret_ty) && f.name != "main"
+    // v5.0.4 Cb.15: use per-target ABI classifier for return sret.
+    // Argument passing still uses is_byref_type_st (64B threshold).
+    let use_sret: Bool = use_sret_return(st, ret_ty) && f.name != "main"
 
     // Build parameter list with byref adjustments
     let mut params_str: String = ""

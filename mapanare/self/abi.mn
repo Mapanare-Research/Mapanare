@@ -1,0 +1,75 @@
+// abi.mn — ABI return-convention classifier for the self-hosted compiler.
+// Ported from mapanare/abi.py at v5.0.4 (Cb.15).
+//
+// Pure classification logic — no EmitState dependency.
+// The emitter wrapper use_sret_return() in emit_llvm.mn resolves type
+// sizes via the struct/enum tables, then calls abi_classify_return_sret().
+//
+// Reference: mapanare/abi.py (Python, 99 LOC). This file must produce
+// byte-identical classifications on every type in
+// tests/llvm/test_abi_struct_return.py.
+//
+// v5.0.4 — closes Cb.15 (ABI.1 sret classifier is Python-only).
+
+// ---------------------------------------------------------------------------
+// Per-target classifiers
+// ---------------------------------------------------------------------------
+
+// System V AMD64 ABI §3.2.3 return classification.
+//
+// Aggregates <= 16 bytes whose eightbyte chunks are all INTEGER class
+// return in rax + rdx. Larger aggregates use sret.
+//
+// Mapanare aggregates contain only integer-class fields (i64, i32, i8,
+// i1, ptr), so every eightbyte classifies as INTEGER and the 16-byte
+// size threshold is the only check needed.
+fn abi_sysv_use_sret(total_size: Int) -> Bool {
+    if total_size <= 16 { return false }
+    return true
+}
+
+// Win64 x64 calling convention return classification.
+//
+// Only aggregates of exactly 1, 2, 4, or 8 bytes can be returned in
+// rax. All other sizes use sret (hidden first parameter in rcx).
+fn abi_win64_use_sret(total_size: Int) -> Bool {
+    if total_size == 1 { return false }
+    if total_size == 2 { return false }
+    if total_size == 4 { return false }
+    if total_size == 8 { return false }
+    return true
+}
+
+// AArch64 AAPCS64 return classification.
+//
+// Aggregates <= 16 bytes return in x0 / x1. Larger aggregates use the
+// indirect result register x8 (equivalent to sret).
+fn abi_aapcs64_use_sret(total_size: Int) -> Bool {
+    if total_size <= 16 { return false }
+    return true
+}
+
+// ---------------------------------------------------------------------------
+// Unified classifier
+// ---------------------------------------------------------------------------
+
+// Classify whether a return type of the given byte size should use sret.
+//
+// Parameters:
+//   is_aggregate — true if the type is a struct, enum, or inline aggregate
+//                  (starts with "{", "%struct.", or "%enum.")
+//   total_size   — ABI byte size of the type
+//   target       — target triple string (e.g. "x86_64-unknown-linux-gnu")
+//
+// Returns true if sret is needed, false if the value fits in registers.
+fn abi_classify_return_sret(is_aggregate: Bool, total_size: Int, target: String) -> Bool {
+    // Scalars always return in a register.
+    if !is_aggregate { return false }
+    if total_size == 0 { return false }
+
+    // Dispatch by target triple — mirrors abi.py::classify_return.
+    if target.contains("windows") { return abi_win64_use_sret(total_size) }
+    if target.starts_with("aarch64") { return abi_aapcs64_use_sret(total_size) }
+    // Default: System V AMD64
+    return abi_sysv_use_sret(total_size)
+}

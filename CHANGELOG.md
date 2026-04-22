@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.4] - 2026-04-21
+
+**Cb.15 closed: ABI classifier ported to self-hosted.** The v4.149.0
+per-target sret classifier (`abi.py`) now lives in Mapanare as
+`mapanare/self/abi.mn` (75 LOC) with SysV, Win64, and AArch64
+classifiers.
+
+- New `abi.mn`: `abi_sysv_use_sret`, `abi_win64_use_sret`,
+  `abi_aapcs64_use_sret`, `abi_classify_return_sret`
+- `emit_llvm.mn`: `use_sret_return` replaces `is_byref_type_st` at 4
+  return-type sret decision sites; argument passing unchanged (64B threshold)
+- stage2.ll sret count: 2,263 → 4,112 (+1,849)
+- 60 List-returning functions correctly moved from by-value to sret
+- Golden tests: 54/66 (unchanged), fixed-point: NEAR (4 diff, Dr.1)
+- Sanitizers: 0 new valgrind ERRORS, 0 new ASan findings
+
 ## [5.0.3] - 2026-04-21
 
 **macOS Intel native binary.** Adds `mnc-darwin-x64` to the GitHub Release.

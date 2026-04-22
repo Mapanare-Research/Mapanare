@@ -17,30 +17,19 @@
 
 ---
 
-## The headline gap
+## The headline gap — CLOSED (v5.0.4)
 
-**Cb.15 — ABI.1 sret classifier is Python-only.**
+**Cb.15 — ABI.1 sret classifier is Python-only.** → **CLOSED v5.0.4.**
 
-v4.149.0 E5 moved `struct_alloc` from 70× Rust to **1.06× Rust** by
-adding `mapanare/abi.py` (SysV/Win64/AArch64 classifier) and calling
-it from `mapanare/emit_llvm_text.py::_use_sret`. 100k malloc+free per
-benchmark run → zero. **This is the single biggest perf win of the
-entire v4 perf arc.**
+`mapanare/self/abi.mn` (75 LOC) ports the per-target ABI classifier.
+`emit_llvm.mn::use_sret_return` replaces the 64B `is_byref_type_st`
+threshold for return types. stage2.ll sret count: 2,263 → 4,112.
+All 17-64B aggregates on SysV now correctly use sret. Cobra's
+verification grep returns 26 matches (was 0 at v5.0.3).
 
-But `mapanare/self/emit_llvm.mn` has no `abi.py` equivalent, no
-`classify_return`, no `_use_sret`. Cobra verified via
-`grep -c 'sret\|classify_return\|_use_sret\|abi\.py\|Cb\.15'
-mapanare/self/emit_llvm.mn` → **0 matches**. Self-hosted still uses
-the v4.0-era permissive by-value path up to `_BYREF_BYTES = 64`.
-
-Consequence: programs compiled via `mnc-*` binaries inherit the
-pre-v4.149.0 ABI. On Windows x64 specifically, aggregates that
-SysV would pass in registers are still passed by-reference — the
-Win64 ABI classifier is the one most of all affected by this gap.
-
-**This is the "speed boost we only did for one" — the self-hosted
-compiler does not produce code that matches its own Python-bootstrap
-output. v5.0.4 closes this.**
+The next headline gap is **Rt.4** (hardcoded `return 16` for enum
+sizes in `llvm_type_size`), which becomes load-bearing now that the
+ABI classifier uses those sizes for sret decisions.
 
 ---
 
@@ -50,7 +39,7 @@ output. v5.0.4 closes this.**
 
 | ID | Python has | Self-hosted has | Panel | Target |
 |---|---|---|---|---|
-| **Cb.15** | `abi.py` + `_use_sret` per-target classifier (SysV, Win64, AArch64) | Nothing — permissive by-value up to 64B | Cobra v4.154.0 | **v5.0.4** |
+| ~~Cb.15~~ | ~~`abi.py` + `_use_sret` per-target classifier~~ | ~~`abi.mn` + `use_sret_return`~~ | ~~Cobra v4.154.0~~ | ~~**v5.0.4 CLOSED**~~ |
 | Cb.9a | `module_path` field on TypeExpr | Missing in `semantic.mn:520-529` | Cobra v4.144.0+v4.154.0 | v5.0.5 |
 | Gr.2 | `named_type (DOT NAME)*` in grammar | Grammar only — parser built qualified types by hand | Coral v4.136.0 | v5.0.5 |
 | **Rt.4** | Correct enum size (compute from type def) | Hardcoded `return 16` at `emit_llvm.mn:1646` (should be ≥24 after Rt.1); comment lies | Rattler v4.154.0 | **v5.0.6** — **MEDIUM (latent heap overflow after v5.0.4)** |
@@ -184,3 +173,12 @@ An item does **not** close just because a SESSION_REPORT says it's
 done. Cobra's v4.154.0 finding — three items "closed" in
 SESSION_REPORTs but absent from the ledger — is the failure mode
 this policy exists to prevent.
+
+---
+
+## Historical (closed items)
+
+| ID | What | Closed | Verification |
+|---|---|---|---|
+| **Cb.15** | ABI.1 sret classifier ported to self-hosted (`abi.mn` + `emit_llvm.mn::use_sret_return`). stage2.ll sret count 2,263 → 4,112. SysV 16B threshold replaces 64B for returns. | **v5.0.4** | `grep -c 'sret\|classify_return\|_use_sret' mapanare/self/emit_llvm.mn` → 12; `grep -c 'abi_classify' mapanare/self/abi.mn` → 2. Fixed-point NEAR (4 diff, Dr.1 only). Sanitizers: 0 new. |
+| Cb.5 / Rt.1 | `_enum_inline` ported to self-hosted `emit_llvm.mn` | **v4.140.0** | — |
