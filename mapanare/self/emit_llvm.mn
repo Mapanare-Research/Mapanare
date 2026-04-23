@@ -502,6 +502,16 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_find", llvm_int(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_join", llvm_string(), llvm_string() + ", ptr")
 
+    // v5.4.1 Own.1 Phase 2 — drop-glue free entry points. Required by
+    // emit_drop_glue_strings / _lists / _boxed once owner lists are
+    // populated by emit_track_string / _boxed / _closure (see Phase
+    // 3.x). __mn_str_free / __mn_list_free are heap-aware (skip
+    // is_heap=0); free is the libc allocator the closure-env path
+    // routes through.
+    s = declare_runtime_fn(s, "__mn_str_free", "void", llvm_string())
+    s = declare_runtime_fn(s, "__mn_list_free", "void", "ptr")
+    s = declare_runtime_fn(s, "free", "void", "ptr")
+
     // List runtime
     s = declare_runtime_fn(s, "__mn_list_new", llvm_list_rt(), "i64")
     s = declare_runtime_fn(s, "__mn_list_push", "void", "ptr, ptr")
@@ -1059,6 +1069,11 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         let s1_name: String = dn + ".s1"
         s = emit_line(s, emit_insertvalue(s1_name, llvm_string(), "undef", ptr_name, "ptr", "0"))
         s = emit_line(s, emit_insertvalue(dn, llvm_string(), s1_name, toString(slen), "i64", "1"))
+        // v5.4.1 — track the literal in a shadow slot. The slot's data
+        // ptr points at .rodata so __mn_str_free(is_heap=0) no-ops, but
+        // tracking gives drop-glue a uniform path and lets escape
+        // detection alias-skip when the literal is the returned value.
+        s = emit_track_string(s, dn)
         return s
     }
 
