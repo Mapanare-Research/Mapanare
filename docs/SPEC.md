@@ -1,7 +1,7 @@
 # Mapanare Language Specification
 
-**Version:** 4.143.0
-**Status:** Live — synced to the v4.143.0 cut (2026-04-18)
+**Version:** 5.3.3
+**Status:** Live — synced to the v5.3.3 cut (2026-04-22)
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
 
@@ -2521,6 +2521,205 @@ fn main() {
 | Signals | Signal reads inside `async fn` are synchronous (no suspension). |
 | Streams | `for await` iterates over an async stream, suspending between elements — *planned (v5.x)*. The `for await` grammar is not yet tokenized; today, iterate synchronously over a `Stream<T>` and `await` individual async-fn calls inside the loop body. |
 | Closures | Closures may capture variables from the enclosing `async fn`. Captured values that cross suspension points are spilled into the coroutine frame. |
+
+---
+
+## 30. Package Management
+
+Mapanare ships a first-class package manager as part of the standard
+toolchain. This section is normative: it defines the manifest schema,
+install semantics, lockfile format, version-constraint grammar, and
+registry protocol that a conforming Mapanare distribution MUST
+implement. The user-facing guide lives at `docs/guides/packages.md`;
+the reference implementation is `stdlib/pkg.py`.
+
+### 30.1 `mapanare.toml` Manifest
+
+Every Mapanare project is identified by a `mapanare.toml` file at its
+root. The file is TOML (v1.0) with the following tables.
+
+**`[package]` table** — project metadata.
+
+| Field | Required | Type | Meaning |
+|---|---|---|---|
+| `name` | yes | String | Package name. Lowercase, alphanumeric + hyphens (`[a-z0-9][a-z0-9-]*`). |
+| `version` | yes | String | Semver 2.0.0 version (`MAJOR.MINOR.PATCH`). |
+| `description` | no | String | One-line summary. |
+| `license` | no | String | SPDX license identifier. |
+| `repository` | no | String | Source repository URL. |
+| `authors` | no | List\<String\> | Author names or `"Name <email>"` entries. |
+| `entry` | no | String | Entry-point `.mn` file. Default: `"main.mn"`. |
+| `mapanare_version` | no | String | Semver constraint on the toolchain. Default: `">=0.2.0"`. |
+
+**`[dependencies]` table** — runtime dependencies. Each entry is
+`name = <spec>` where `<spec>` is either a constraint string (e.g.
+`"^1.0.0"`) or an inline table `{ version = "...", git = "...",
+branch = "..." }` for git-backed dependencies.
+
+**`[dev-dependencies]` table** — same shape as `[dependencies]`, but
+installed only when running tests or local development targets.
+
+Example:
+
+```toml
+[package]
+name = "myapp"
+version = "0.1.0"
+description = "Example"
+license = "MIT"
+entry = "main.mn"
+
+[dependencies]
+json = "^1.0.0"
+http-server = { version = "~2.0.0" }
+
+[dev-dependencies]
+mn_test = "*"
+```
+
+Unknown keys MUST be ignored, not rejected, to permit forward
+compatibility with future extensions.
+
+### 30.2 Version Constraints
+
+Dependency specifications use a subset of the semver-range syntax:
+
+| Syntax | Meaning |
+|---|---|
+| `^X.Y.Z` | Compatible: `>= X.Y.Z, < (X+1).0.0` (when `X>0`). |
+| `~X.Y.Z` | Patch-only: `>= X.Y.Z, < X.(Y+1).0`. |
+| `>=X.Y.Z` | Minimum version. |
+| `>=X.Y.Z,<A.B.C` | Range. |
+| `X.Y.Z` | Exact (pinned). |
+| `*` | Any published version. |
+
+Resolution strategy is **greedy latest-satisfying**: for each direct
+dependency, the resolver selects the highest published version that
+satisfies the constraint. There is no SAT solver. Transitive
+dependency resolution is deferred; in v5.3.x, a package's
+`[dependencies]` table is read but nested resolution across the
+full graph is **not guaranteed** — projects that require it must
+flatten dependencies manually or wait for a future spec revision.
+
+If two constraints in the same manifest select incompatible versions
+for the same package, installation MUST fail with a diagnostic.
+
+### 30.3 `mapanare install` Semantics
+
+The command `mapanare install [<name>[@<version>]]` performs:
+
+1. **Manifest load.** Parse `mapanare.toml` at the working directory.
+   Error if absent (unless a name argument was provided).
+2. **Lock consultation.** If `mapanare.lock` exists and is consistent
+   with the manifest, use the pinned versions recorded there. The
+   lockfile is authoritative over the manifest when both are present.
+3. **Resolution.** For each unresolved dependency, query the registry
+   for the highest version satisfying the constraint (§30.2).
+4. **Download.** Fetch the `.tar.gz` archive from the registry's
+   download endpoint (§30.5).
+5. **Integrity check.** Compute SHA-256 of the archive bytes. Compare
+   against the `integrity` field returned by the registry. On
+   mismatch, abort with no files written.
+6. **Extract.** Unpack into `mn_modules/<name>-<version>/`. Existing
+   directories for the same `<name>-<version>` are replaced
+   atomically (write-then-rename).
+7. **Lock update.** Write resolved versions and integrity hashes to
+   `mapanare.lock`.
+
+**Install-time scripts are not supported.** Packages MUST NOT execute
+arbitrary code during install. The installer only unpacks files and
+writes the lockfile.
+
+**Side effects are confined to** the current project directory
+(`mn_modules/`, `mapanare.lock`) and `~/.mapanare/cache/` for
+downloaded archives.
+
+### 30.4 `mapanare.lock` Lockfile
+
+The lockfile is JSON with the following shape:
+
+```json
+{
+  "lockfile_version": 1,
+  "packages": [
+    {
+      "name": "json",
+      "version": "1.0.0",
+      "git": "https://mapanare.dev/api/packages/json/1.0.0/download",
+      "commit": "sha256:abc123...",
+      "integrity": "sha256:def456..."
+    }
+  ]
+}
+```
+
+**Fields:**
+
+| Field | Required | Meaning |
+|---|---|---|
+| `lockfile_version` | yes | Format version. Current: `1`. |
+| `packages` | yes | Array of locked entries. |
+| `packages[].name` | yes | Package name. |
+| `packages[].version` | yes | Resolved version (exact). |
+| `packages[].git` | yes | Download URL used at install time. |
+| `packages[].commit` | yes | Archive content hash (SHA-256). |
+| `packages[].integrity` | yes | Subresource-Integrity-style hash. |
+
+The lockfile SHOULD be committed to version control. When present,
+subsequent `mapanare install` invocations MUST reproduce the same
+resolution (subject to the registry still serving the pinned
+versions). A lockfile whose `lockfile_version` is higher than the
+installer supports MUST cause the install to abort with a diagnostic
+rather than silently downgrade.
+
+### 30.5 Registry API
+
+The default registry is `https://mapanare.dev`. The base URL is
+overridable via the `MAPANARE_REGISTRY_URL` environment variable.
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/api/packages` | none | List all packages (paginated). |
+| `GET` | `/api/packages?q=<term>` | none | Search by name/keyword. |
+| `GET` | `/api/packages/{name}` | none | Package metadata + version list. |
+| `GET` | `/api/packages/{name}/{version}` | none | Version details + integrity hash. |
+| `GET` | `/api/packages/{name}/{version}/download` | none | Download `.tar.gz` archive. |
+| `POST` | `/api/packages` | token | Publish a new version. |
+
+**Authentication.** Publish requests carry a bearer token obtained
+via GitHub OAuth (`mapanare login`) or provided inline
+(`--token <value>` / `MAPANARE_TOKEN` env var). Tokens are stored at
+`~/.mapanare/token`.
+
+**Publish payload.** A `.tar.gz` archive containing `mapanare.toml`,
+all `.mn` source files, and `README.md` / `LICENSE` if present.
+Excluded: `mn_modules/`, hidden directories, `__pycache__/`,
+`node_modules/`.
+
+**Idempotency.** Publishing the same `(name, version)` twice MUST
+be rejected by the registry. New versions bump semver per the
+publisher's chosen level (`--minor`, `--major`, default `--patch`).
+
+### 30.6 Security Model
+
+- **SHA-256 integrity** on every download; mismatches abort install.
+- **No install-time code execution.** Packages declare data and
+  sources, not build actions.
+- **Sandboxed module path.** Installed packages live under
+  `mn_modules/` relative to the project root; resolution never
+  escapes this directory.
+- **Token storage.** Tokens are stored with user-only permissions
+  (`0600`) under `~/.mapanare/`. They are never written to
+  `mapanare.toml` or `mapanare.lock`.
+
+### 30.7 Out of Scope for v5.x
+
+The following are not specified by v5.3.3 and remain open for a
+future revision: full transitive resolution with conflict detection,
+version yanking, private registries, vendoring, cryptographic
+signatures beyond SHA-256, and offline-first mirror support.
+Implementations MAY experiment with these but MUST NOT rely on
+them in documented behavior.
 
 ---
 

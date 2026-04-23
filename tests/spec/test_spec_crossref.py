@@ -215,20 +215,21 @@ class TestOperatorsCoverage:
 
 
 class TestSpecVersionAndStatus:
-    """SPEC.md header must match a current v4.x "Live" cut.
+    """SPEC.md header must match a current "Live" cut.
 
     v4.129.0 updated the SPEC header from "1.0.0 Final" to a per-release
     versioned Live status to keep the spec in sync with the compiler
-    (An.1 hygiene, v4.133.0). The older "1.0 Final" assertion was
-    stale as of v4.129.0.
+    (An.1 hygiene, v4.133.0). v5.3.3 bumped the header from 4.143.0 to
+    track the current release (27-release staleness closed per Coral's
+    v5.3.0 carry-forward).
     """
 
     def test_version_matches_live_cut(self) -> None:
         text = _spec_text()
-        # Header format: "**Version:** 4.<minor>.<patch>"
+        # Header format: "**Version:** <major>.<minor>.<patch>"
         assert re.search(
-            r"^\*\*Version:\*\*\s+4\.\d+\.\d+", text, re.M
-        ), "SPEC.md header must advertise a v4.x version"
+            r"^\*\*Version:\*\*\s+\d+\.\d+\.\d+", text, re.M
+        ), "SPEC.md header must advertise a semver version"
 
     def test_status_is_live(self) -> None:
         text = _spec_text()

@@ -18,6 +18,12 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.3.3** (shipped) — **SPEC + docs polish.** Zero compiler
+  changes. SPEC §30 Package Management (manifest, install, lock,
+  constraints, registry API). SPEC header 4.143.0 → 5.3.3 (27-release
+  staleness closed). `examples/signals/counter.mn` signal demo. All
+  three Coral LOW carry-forwards closed. Closeout arc complete.
+  See `docs/roadmap/v5/v5.3.3/`.
 - **v5.3.2** (shipped) — **In.1-stage2 — restore fixed-point
   (clone_instr_for_inline).** Extends the inliner's definition cloner
   from 10 to all 38 Instruction variants. stage2 llvm-as OK. 54/66
@@ -34,21 +40,18 @@ Most recent releases (last 6). Full history at
 - **v5.1.4** (shipped) — **Perf.2 — lazy thread creation in coro
   scheduler.** Default-settings async geomean 2.3 → 1.19 ms (0.91× Go
   without env var). See `docs/roadmap/v5/v5.1.4/`.
-- **v5.1.3** (shipped) — **Own.1 Phase 1 — drop-glue skip on ownership
-  transfer.** Closes Viper's 28-panel carry-forward (specific sites).
-  Phase 2 deferred to v5.5.0. See `docs/roadmap/v5/v5.1.3/`.
 
 ### Planned / in-progress
 
-- **v5.3.3** — SPEC + docs polish. Last before v5.4.0 re-panel.
-- **v5.4.0** — **RE-PANEL** (target 9.5+).
-- **v5.5.0** — **Own.1 Phase 2 — self-hosted drop-glue.** Close Sh.2
+- **v5.4.0** — **Own.1 Phase 2 — self-hosted drop-glue.** Close Sh.2
   (11 failing goldens) → 65/66.
-- **v5.6.0** — **Sh.4 — self-hosted async.** `block_on`/`await` +
+- **v5.5.0** — **Sh.4 — self-hosted async.** `block_on`/`await` +
   coroutine lowering.
-- **v5.7.0** — **Sh.6 — self-hosted tensor.** `Tensor`/`Float` types
+- **v5.6.0** — **Sh.6 — self-hosted tensor.** `Tensor`/`Float` types
   + nested-array literal parser.
-- **v5.8.0** — **Sh.7 + or-pattern fix — 66/66.**
+- **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
+- **v5.7.1** — SPEC + docs polish (pre-panel).
+- **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
 
 See `docs/roadmap/v5/CLOSEOUT_ARC.md` and
 `docs/roadmap/v5/PARITY_GAPS.md`.
@@ -134,7 +137,7 @@ regressions.
 
 **Current baseline:** 54/66. The 12 gap: Sh.2 (11), Sh.4 (5),
 Sh.6 (5), Sh.7 (1), bootstrap-also-fails (1). Closure tracked
-across v5.5.0–v5.8.0.
+across v5.4.0–v5.7.0.
 
 ## Code Style
 
