@@ -18,6 +18,27 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.4.1** (shipped) — **Own.1 Phase 2 — make v5.4.0 drop-glue
+  actually fire.** Populates v5.4.0's dormant owner lists with the
+  shadow-slot architecture ported from Python. Three new `EmitState`
+  fields (`entry_prelude_lines`, `entry_block_body`,
+  `in_entry_block`) buffer the function body while `emit_track_*`
+  can fire from any basic block; prelude flushes into the entry
+  block at function close. Owner lists populated at `emit_mir_call`
+  dispatch (runtime + user String returns), `emit_binop +` (String
+  concat), `emit_interp_concat` (intermediates), `emit_list_init`
+  (allocas hoisted + zero-init so they dominate all drop-glue
+  loads). Drop-glue revised with per-slot `icmp eq ptr` +
+  multi-block branch to skip frees that would alias the returned
+  value (scalar String / List / ptr). Aggregate returns (struct /
+  enum / Option / Result) conservatively skip all drops — UAF-safe,
+  leaks until v5.4.2. Runtime free declarations landed. String
+  literals intentionally NOT tracked (Python omits; rodata, is_heap=0
+  no-ops, tracking each would explode IR quadratically). Goldens
+  54/66; valgrind 0 new ERRORS; ASan 55 CLEAN / 11 CRASH_NO_ASAN
+  unchanged; narrow leak test (`greet()`) reports 0 leaks under
+  `detect_leaks=1`. stage2.ll 165k lines (+33% vs baseline, within
+  R3 budget); stage2 `llvm-as` OK. See `docs/roadmap/v5/v5.4.1/`.
 - **v5.4.0** (shipped) — **Own.1 Phase 2 — self-hosted drop-glue
   infrastructure.** Phase 0 baseline revealed all 11 Sh.2 tests
   already pass; release rescoped from "close 11 Sh.2 goldens" to
@@ -45,27 +66,9 @@ Most recent releases (last 6). Full history at
 - **v5.3.0** (shipped) — **THE PANEL — 9.30/10, Option A.** Seven
   reviewers grading v5.0.1–v5.2.0 arc. 5 EXCEEDS / 2 MEETS / 0 NEEDS
   WORK. See `docs/roadmap/v5/v5.3.0/`.
-- **v5.2.0** (shipped) — **Package Registry MVP.** `mapanare install
-  foo@1.2.3` + `mapanare publish`. Backend at
-  `mapanare.dev/api/packages`. See `docs/roadmap/v5/v5.2.0/`.
 
 ### Planned / in-progress
 
-- **v5.4.1** — **Own.1 Phase 2 — make v5.4.0 helpers actually fire.**
-  Port the shadow-slot architecture from Python
-  (`_track_string` / `_track_boxed` / `_track_closure`) — each
-  String concat / assignment allocates a fresh `{ptr, i64}` tracking
-  slot in the entry block so reassignment leaks are captured by
-  snapshot. Add return-escape detection via `extractvalue`-based
-  ret-ptr comparison (port `_emit_drop_glue_collect_ret_ptrs`), so
-  drop-glue skips any slot aliasing the returned value. Instrument
-  ~6-8 emit sites (`emit_const` String literal, `emit_mir_call`
-  String-returning runtime + user calls, `emit_copy`,
-  `emit_interp_concat`, `emit_enum_payload`, `emit_closure_create`,
-  `emit_list_init_checked`). Blanket Move emission in
-  `lower.mn::lower_call_by_name`; runtime free declarations in
-  `declare_all_runtime`. Goldens stay 54/66. ASan leak detection NOT
-  enabled this release. Plan: `docs/roadmap/v5/v5.4.1/`.
 - **v5.4.2** — **ASan leak-detection gate.** Flip `detect_leaks=1`
   across all 66 goldens via new `scripts/run_asan_leak_goldens.sh`
   (compiles + links + executes each golden under LSan). Classify
