@@ -1031,7 +1031,7 @@ static int64_t stream_is_even_fn(const void *elem, void *ud) {
 }
 
 TEST(test_stream_from_list_collect) {
-    MnList list = {0};
+    MnList list = __mn_list_new(sizeof(int64_t));
     for (int64_t i = 1; i <= 3; i++) __mn_list_push(&list, &i);
     MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
     ASSERT_NE(s, NULL);
@@ -1045,7 +1045,7 @@ TEST(test_stream_from_list_collect) {
 }
 
 TEST(test_stream_map) {
-    MnList list = {0};
+    MnList list = __mn_list_new(sizeof(int64_t));
     for (int64_t i = 1; i <= 3; i++) __mn_list_push(&list, &i);
     MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
     MnStream *mapped = __mn_stream_map(s, stream_double_fn, NULL, sizeof(int64_t));
@@ -1060,7 +1060,7 @@ TEST(test_stream_map) {
 }
 
 TEST(test_stream_filter) {
-    MnList list = {0};
+    MnList list = __mn_list_new(sizeof(int64_t));
     for (int64_t i = 1; i <= 5; i++) __mn_list_push(&list, &i);
     MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
     MnStream *filtered = __mn_stream_filter(s, stream_is_even_fn, NULL);
@@ -1074,7 +1074,7 @@ TEST(test_stream_filter) {
 }
 
 TEST(test_stream_free_chain) {
-    MnList list = {0};
+    MnList list = __mn_list_new(sizeof(int64_t));
     for (int64_t i = 1; i <= 3; i++) __mn_list_push(&list, &i);
     MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
     MnStream *mapped = __mn_stream_map(s, stream_double_fn, NULL, sizeof(int64_t));

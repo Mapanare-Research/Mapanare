@@ -1,6 +1,6 @@
 # Known Issues — User-Facing
 
-Last updated: v4.155.0.
+Last updated: v5.3.1.
 
 ## Self-hosted compiler feature gaps
 
@@ -28,9 +28,9 @@ Last updated: v4.155.0.
 
 ## Ecosystem
 
-| Docket | Symptom | Workaround | Track |
-|---|---|---|---|
-| — | No package manager yet | pin `mapanare.toml` deps by git SHA | v5.x ecosystem |
+**Package registry (v5.2.0+):** `mapanare install <pkg>@<ver>` and
+`mapanare publish` are available. Team-only publishing for MVP;
+open publishing tracked for v5.3+. See `docs/guides/packages.md`.
 
 ## Python transpiler (`mapanare build file.py`)
 
@@ -50,4 +50,4 @@ The transpiler handles pure-compute Python (functions, loops, conditionals, arit
 
 **Best results with:** type-annotated functions, simple data types (int, float, bool, str), `for`/`while` loops, arithmetic.
 
-Last verified: v4.155.0 (2026-04-19).
+Last verified: v5.3.1 (2026-04-22).

@@ -40,6 +40,7 @@ venv/
 .DS_Store
 Thumbs.db
 prompt.md
+PROMPT.md
 1prompt.md
 error.log
 .pr/

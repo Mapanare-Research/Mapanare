@@ -123,9 +123,11 @@ def test_post_opt_single_switch_in_hot_loop() -> None:
 
     # `main` is the hot loop. After inlining make_shape and area into it,
     # the body should contain a single switch (the merged dispatch).
+    # LLVM 17 produces 1 switch; LLVM 18+ may fold further to 0.
+    # Both are correct E1 outcomes — the optimization succeeds either way.
     main_fn = _extract_function(optimized, "main")
     switch_count = len(re.findall(r"^\s*switch\s+i64\s", main_fn, re.MULTILINE))
-    assert switch_count == 1, (
-        f"@main hot loop has {switch_count} switches post-O2, expected 1. "
-        f"E1 fold-two-switches-into-one regressed."
+    assert switch_count <= 1, (
+        f"@main hot loop has {switch_count} switches post-O2, "
+        f"expected 0 or 1. E1 fold-two-switches-into-one regressed."
     )
