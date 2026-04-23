@@ -51,12 +51,29 @@ Most recent releases (last 6). Full history at
 
 ### Planned / in-progress
 
-- **v5.4.1** — **Own.1 Phase 2 completion.** Owner-list population in
-  emit_alloca / emit_copy / emit_wrap_* / emit_list_init /
-  emit_closure_create; blanket Move emission in
+- **v5.4.1** — **Own.1 Phase 2 — make v5.4.0 helpers actually fire.**
+  Port the shadow-slot architecture from Python
+  (`_track_string` / `_track_boxed` / `_track_closure`) — each
+  String concat / assignment allocates a fresh `{ptr, i64}` tracking
+  slot in the entry block so reassignment leaks are captured by
+  snapshot. Add return-escape detection via `extractvalue`-based
+  ret-ptr comparison (port `_emit_drop_glue_collect_ret_ptrs`), so
+  drop-glue skips any slot aliasing the returned value. Instrument
+  ~6-8 emit sites (`emit_const` String literal, `emit_mir_call`
+  String-returning runtime + user calls, `emit_copy`,
+  `emit_interp_concat`, `emit_enum_payload`, `emit_closure_create`,
+  `emit_list_init_checked`). Blanket Move emission in
   `lower.mn::lower_call_by_name`; runtime free declarations in
-  `declare_all_runtime`. Lands the end-to-end drop-glue path and
-  exercises the sanitizer HARD GATE.
+  `declare_all_runtime`. Goldens stay 54/66. ASan leak detection NOT
+  enabled this release. Plan: `docs/roadmap/v5/v5.4.1/`.
+- **v5.4.2** — **ASan leak-detection gate.** Flip `detect_leaks=1`
+  across all 66 goldens via new `scripts/run_asan_leak_goldens.sh`
+  (compiles + links + executes each golden under LSan). Classify
+  findings, fix compiler-introduced leaks, document
+  runtime-intentional leaks in `scripts/asan_leak_suppressions.txt`
+  with ledger-docket comments, add `make leak-check` + CI gate. Own.1
+  Phase 2 row moves to "functional + leak-clean + CI-gated". Plan:
+  `docs/roadmap/v5/v5.4.2/`.
 - **v5.5.0** — **Sh.4 — self-hosted async.** `block_on`/`await` +
   coroutine lowering.
 - **v5.6.0** — **Sh.6 — self-hosted tensor.** `Tensor`/`Float` types
@@ -317,7 +334,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (26948 symbols, 60665 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (26965 symbols, 60700 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
