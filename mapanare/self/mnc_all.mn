@@ -15507,6 +15507,13 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let alloca_name: String = dn + ".addr"
     s = emit_line(s, llvm_alloca(alloca_name, llvm_list_rt()))
     s = emit_line(s, llvm_store(llvm_list_rt(), list_name, alloca_name))
+    // v5.4.1 Phase 3.7 — register the list's alloca for drop-glue.
+    // emit_drop_glue_lists emits __mn_list_free(ptr %<name>) at every
+    // ret using this name, with Phase-4 escape detection skipping the
+    // returned slot. Strip leading '%' so the helper's "%" + name
+    // produces a valid alloca reference.
+    let list_owned_name: String = ret_val_base(alloca_name)
+    s.list_owned.push(list_owned_name)
 
     // Push each element
     let mut i: Int = 0
@@ -17263,6 +17270,11 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
         if i < nparts {
             let tmp: String = dn + ".c" + toString(i)
             s = emit_line(s, emit_call_ir(tmp, llvm_string(), "__mn_str_concat", llvm_string() + " " + acc + ", " + llvm_string() + " " + parts[i].name))
+            // v5.4.1 Phase 3.4 — each __mn_str_concat result is a fresh
+            // heap allocation. Track each intermediate so drop-glue
+            // frees them; escape detection (Phase 4) skips the final
+            // when it leaves via the return value.
+            s = emit_track_string(s, tmp)
             acc = tmp
             i = i + 1
         }
