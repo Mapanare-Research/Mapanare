@@ -17078,6 +17078,15 @@ fn emit_track_string(st: EmitState, val_name: String) -> EmitState {
     // Entry-block prelude: alloca + zero-init.
     s.entry_prelude_lines.push("  " + slot + " = alloca {ptr, i64}, align 8")
     s.entry_prelude_lines.push("  store {ptr, i64} zeroinitializer, ptr " + slot)
+    // v5.4.3 — Rt.03 fix: inside a loop body, free the slot's prior
+    // contents before overwriting. Zero-init + __mn_str_free null-
+    // tolerant: first iteration no-ops. Outside loops, unchanged.
+    if s.loop_depth > 0 {
+        let prev_tmp: String = "%prev.str." + toString(s.counter)
+        s.counter = s.counter + 1
+        s = emit_line(s, "  " + prev_tmp + " = load {ptr, i64}, ptr " + slot)
+        s = emit_line(s, "  call void @__mn_str_free({ptr, i64} " + prev_tmp + ")")
+    }
     // Current emission point: snapshot the value into the slot.
     s = emit_line(s, "  store {ptr, i64} " + val_name + ", ptr " + slot)
     s.str_owned.push(slot_base)
@@ -17092,6 +17101,13 @@ fn emit_track_boxed(st: EmitState, ptr_val: String) -> EmitState {
     let slot: String = "%" + slot_base
     s.entry_prelude_lines.push("  " + slot + " = alloca ptr, align 8")
     s.entry_prelude_lines.push("  store ptr null, ptr " + slot)
+    // v5.4.3 — free-before-store in loop bodies. @free tolerates null.
+    if s.loop_depth > 0 {
+        let prev_tmp: String = "%prev.box." + toString(s.counter)
+        s.counter = s.counter + 1
+        s = emit_line(s, "  " + prev_tmp + " = load ptr, ptr " + slot)
+        s = emit_line(s, "  call void @free(ptr " + prev_tmp + ")")
+    }
     s = emit_line(s, "  store ptr " + ptr_val + ", ptr " + slot)
     s.boxed_owned.push(slot_base)
     return s

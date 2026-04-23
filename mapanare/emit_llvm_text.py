@@ -1545,6 +1545,11 @@ class LLVMTextEmitter:
         slot = self._f("str_track")
         self._ent.append(f"  {slot} = alloca {{ptr, i64}}, align 8")
         self._ent.append(f"  store {{ptr, i64}} zeroinitializer, ptr {slot}")
+        # v5.4.3 — Rt.03: free-before-store inside loop bodies.
+        if self._loop_depth > 0:
+            prev = self._f("prev_str")
+            self._L(f"{prev} = load {{ptr, i64}}, ptr {slot}")
+            self._L(f"call void @__mn_str_free({{ptr, i64}} {prev})")
         self._L(f"store {{ptr, i64}} {val}, ptr {slot}")
         self._local_strings.append(slot)
         self._last_tracked_str_slot = slot
@@ -1554,6 +1559,13 @@ class LLVMTextEmitter:
         slot = self._f("clos_track")
         self._ent.append(f"  {slot} = alloca {{ptr, ptr}}, align 8")
         self._ent.append(f"  store {{ptr, ptr}} zeroinitializer, ptr {slot}")
+        # v5.4.3 — free the env ptr only; fn ptr is code, no free.
+        if self._loop_depth > 0:
+            prev = self._f("prev_clos")
+            env_prev = self._f("prev_clos_env")
+            self._L(f"{prev} = load {{ptr, ptr}}, ptr {slot}")
+            self._L(f"{env_prev} = extractvalue {{ptr, ptr}} {prev}, 1")
+            self._L(f"call void @free(ptr {env_prev})")
         self._L(f"store {{ptr, ptr}} {val}, ptr {slot}")
         self._local_closures.append(slot)
 
@@ -1562,6 +1574,11 @@ class LLVMTextEmitter:
         slot = self._f("box_track")
         self._ent.append(f"  {slot} = alloca ptr, align 8")
         self._ent.append(f"  store ptr null, ptr {slot}")
+        # v5.4.3 — free-before-store inside loop bodies. @free(null) no-ops.
+        if self._loop_depth > 0:
+            prev = self._f("prev_box")
+            self._L(f"{prev} = load ptr, ptr {slot}")
+            self._L(f"call void @free(ptr {prev})")
         self._L(f"store ptr {ptr_val}, ptr {slot}")
         self._local_boxed.append(slot)
         self._last_tracked_boxed_slot = slot
