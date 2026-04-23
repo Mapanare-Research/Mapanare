@@ -75,15 +75,14 @@ struct EmitState {
     moved_locals: List<String>,
     // v5.4.1 — entry-block prelude for tracking-slot allocas.
     // emit_track_string / _boxed / _closure can fire from any basic
-    // block (e.g., a String concat inside a loop body), so we
-    // accumulate alloca + zero-init lines here for the whole function
-    // and flush at function close. Mirrors emit_llvm_text.py self._ent.
+    // block, so we accumulate alloca + zero-init lines here for the
+    // whole function and flush at function close. Mirrors
+    // emit_llvm_text.py self._ent.
     entry_prelude_lines: List<String>,
-    // v5.4.1 — buffered body of the current function (everything
-    // emitted between the entry block label and the closing '}').
-    // While in_function_body is true, emit_line redirects here so the
-    // prelude can be spliced ahead of the body — placing the tracking
-    // allocas at the top of the entry block per LLVM ABI.
+    // v5.4.1 — buffered body of the current function. While
+    // in_entry_block is true, emit_line redirects here so the prelude
+    // can be spliced ahead of the body, placing tracking allocas at
+    // the top of the entry block per LLVM ABI.
     entry_block_body: List<String>,
     in_entry_block: Bool
 }
