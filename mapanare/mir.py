@@ -758,6 +758,21 @@ class Phi(Instruction):
     incoming: list[tuple[str, Value]] = field(default_factory=list)  # (block_label, value)
 
 
+# --- Move (v5.4.0 Own.1 Phase 2) ---
+
+
+@dataclass(slots=True)
+class Move(Instruction):
+    """Ownership transfer marker.
+
+    Emitted by the lowerer before Call instructions to mark arguments as
+    moved. The emitter adds value.name to moved_locals and skips it
+    during drop-glue. No dest: Move is a marker, not a value producer.
+    """
+
+    value: Value = field(default_factory=Value)
+
+
 # ---------------------------------------------------------------------------
 # Terminator check helpers
 # ---------------------------------------------------------------------------

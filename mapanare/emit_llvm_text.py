@@ -44,6 +44,7 @@ from mapanare.mir import (
     MIRModule,
     MIRPipeInfo,
     MIRType,
+    Move,
     Phi,
     Return,
     SignalComputed,
@@ -595,6 +596,7 @@ class LLVMTextEmitter:
         d[Assert] = self._do_assert
         d[AwaitSuspend] = self._do_await_suspend
         d[BlockOn] = self._do_block_on
+        d[Move] = self._do_move
 
     # ── debug metadata helpers (v4.62.0) ─────────────────────────────
 
@@ -1391,6 +1393,13 @@ class LLVMTextEmitter:
         if name in self._boxed_slots:
             slot = self._boxed_slots.pop(name)
             self._L(f"store ptr null, ptr {slot}")
+
+    def _do_move(self, i: Move) -> None:
+        # v5.4.0 Own.1 Phase 2 — Move marker from the lowerer. Route to
+        # _move_resource so the Python emitter recognizes explicit
+        # ownership transfers emitted by the self-hosted-style lowerer.
+        # _do_call's blanket-move remains the primary path for most calls.
+        self._move_resource(i.value.name)
 
     def _coerce(self, val: str, fr: str, to: str) -> str:
         if fr == to:

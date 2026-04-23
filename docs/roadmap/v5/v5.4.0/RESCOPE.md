@@ -41,18 +41,31 @@ to:
 
 ## Revised exit criteria
 
-1. Goldens stay at 54/66 (no regressions)
-2. All 11 previously-Sh.2 tests remain PASS / exit 0 / ASan-CLEAN
-3. Valgrind 0 new ERRORS across 66 goldens
-4. ASan 0 new ASAN_ERROR across 66 goldens
-5. Fixed-point holds NEAR or STRICT
-6. `llvm-as` accepts stage2.ll without error
-7. Non-bootstrap pytest 0 failures
-8. `make lint` clean
-9. `PARITY_GAPS.md` moves Own.1 Phase 2 to Historical with note that
-   Sh.2 closed silently pre-release; this release is the infrastructure
-   that prevents Sh.2 recurrence
-10. `SESSION_REPORT.md` documents the discovered-already-closed state
+Based on captured v5.3.3-baseline numbers:
+
+| Metric | Baseline | v5.4.0 target |
+|---|---|---|
+| Goldens | 54/66 PASS | ≥ 54/66 (no regressions) |
+| 11 Sh.2 tests (per v4.126.0 triage) | 11 PASS / exit 0 / ASan-CLEAN | preserve all three |
+| Valgrind | 66 WARNINGS_ONLY, 0 ERRORS | 0 new ERRORS |
+| ASan | 55 CLEAN, 11 CRASH_NO_ASAN | 55 CLEAN preserved; ≤ 11 CRASH_NO_ASAN |
+| Fixed-point | stage2 `llvm-as` OK, stage3 empty (Ve.1) | preserve (not a gate this release) |
+| `llvm-as` on stage2 | OK | OK |
+| Non-bootstrap pytest | 0 failures | 0 failures |
+| `make lint` | clean | clean |
+| `PARITY_GAPS.md` | Own.1 Phase 2 open | Own.1 Phase 2 → Historical with Sh.2-already-closed note |
+| `SESSION_REPORT.md` | — | documents discovered-already-closed state |
+
+**Note on fixed-point:** v5.3.2 SESSION_REPORT acknowledges stage3.ll is
+empty because the stage2 binary's MIR verifier rejects empty
+match-arm blocks in `expr_kind` (Ve.1 LOW docket). CLAUDE.md's "NEAR"
+description is inaccurate. v5.4.0 does not attempt to fix Ve.1 —
+preserving the baseline (stage2 llvm-as OK) is the gate.
+
+**The 11 CRASH_NO_ASAN tests are NOT the Sh.2 tests** — they are the
+currently-failing 5 Sh.4 async + 5 Sh.6 tensor + 1 Sh.7 closure_typed.
+mnc-stage1 exits non-zero when compiling them because the feature
+isn't implemented, not because of a memory bug.
 
 ## What the 12 remaining failures actually are
 

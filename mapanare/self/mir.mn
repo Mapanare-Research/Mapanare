@@ -223,7 +223,9 @@ enum Instruction {
     // Strings
     InterpConcat(Value, List<Value>),
     // SSA
-    Phi(Value, List<PhiEntry>)
+    Phi(Value, List<PhiEntry>),
+    // v5.4.0 Own.1 Phase 2 — ownership transfer marker (no dest)
+    Move(Value)
 }
 
 // ---------------------------------------------------------------------------
@@ -539,7 +541,8 @@ pub fn instr_kind(i: Instruction) -> String {
         SignalSet(_, _) => { return "signal_set" },
         StreamOp(_, _, _, _) => { return "stream_op" },
         InterpConcat(_, _) => { return "interp_concat" },
-        Phi(_, _) => { return "phi" }
+        Phi(_, _) => { return "phi" },
+        Move(_) => { return "move" }
     }
 }
 
@@ -864,4 +867,9 @@ pub fn instr_concat_parts(i: Instruction) -> List<Value> {
 // Phi
 pub fn instr_phi_entries(i: Instruction) -> List<PhiEntry> {
     match i { Phi(_, e) => { return e }, _ => { let empty: List<PhiEntry> = []; return empty } }
+}
+
+// Move (v5.4.0 Own.1 Phase 2)
+pub fn instr_move_val(i: Instruction) -> Value {
+    match i { Move(v) => { return v }, _ => { return void_value() } }
 }
