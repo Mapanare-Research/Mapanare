@@ -84,7 +84,14 @@ struct EmitState {
     // can be spliced ahead of the body, placing tracking allocas at
     // the top of the entry block per LLVM ABI.
     entry_block_body: List<String>,
-    in_entry_block: Bool
+    in_entry_block: Bool,
+    // v5.4.3 — nested-loop depth at the current emission point.
+    // Pushed when emit_mir_basic_block enters a block whose label
+    // starts with for_body / while_body / mapfor_body; popped when the
+    // block's instructions finish. emit_track_string / _boxed /
+    // _closure consult this to prepend free-before-store to tracking
+    // stores inside loops, preventing the Rt.03 leak pattern.
+    loop_depth: Int
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -104,7 +111,7 @@ fn new_emit_state(module_name: String) -> EmitState {
     let moved_locals: List<String> = []
     let entry_prelude_lines: List<String> = []
     let entry_block_body: List<String> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false }
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0 }
 }
 
 fn build_internal_struct_list() -> List<StructEntry> {
@@ -115,7 +122,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"]))
     list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"]))
-    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block"]))
+    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
     list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
@@ -159,8 +166,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"])
     // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks, generic_fns, generic_structs, generic_enums, loop_header_label, loop_exit_label
     s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"])
-    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, moved_locals, entry_prelude_lines, entry_block_body, in_entry_block
-    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block"])
+    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, moved_locals, entry_prelude_lines, entry_block_body, in_entry_block, loop_depth
+    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth"])
     // LowerResult: value, state
     s = register_internal_struct(s, "LowerResult", ["value", "state"])
     // CompileResult: success, ir_text, errors
@@ -3933,13 +3940,27 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
 
 fn emit_mir_basic_block(st: EmitState, bb: BasicBlock) -> EmitState {
     let mut s: EmitState = emit_line(st, bb.label + ":")
+    // v5.4.3 — enter loop body. Lowerer emits block labels with
+    // "for_body" / "while_body" / "mapfor_body" prefixes; inside those
+    // blocks, emit_track_string / _boxed / _closure free prior slot
+    // contents before storing (the shadow slot otherwise leaks every
+    // iteration after the first). Matched pop before returning.
+    let mut bumped: Bool = false
+    if bb.label.starts_with("for_body") || bb.label.starts_with("while_body") || bb.label.starts_with("mapfor_body") {
+        s.loop_depth = s.loop_depth + 1
+        bumped = true
+    }
     let mut i: Int = 0
     for _ in 0..2000 {
-        if i >= len(bb.instructions) { return s }
+        if i >= len(bb.instructions) {
+            if bumped { s.loop_depth = s.loop_depth - 1 }
+            return s
+        }
         let inst: Instruction = bb.instructions[i]
         s = emit_mir_instruction(s, inst)
         i = i + 1
     }
+    if bumped { s.loop_depth = s.loop_depth - 1 }
     return s
 }
 
@@ -4018,6 +4039,9 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     s.entry_prelude_lines = fresh_prelude
     s.entry_block_body = fresh_body
     s.in_entry_block = false
+    // v5.4.3 — reset loop depth per function; nested-loop tracking is
+    // keyed on block-label prefix inside emit_mir_basic_block.
+    s.loop_depth = 0
 
     // Emit function header
     let fn_name: String = strip_percent(f.name)

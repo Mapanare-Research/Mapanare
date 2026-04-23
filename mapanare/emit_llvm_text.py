@@ -531,6 +531,10 @@ class LLVMTextEmitter:
         self._signal_vars: list[str] = []  # dest names for signal cleanup
         self._stream_vars: list[str] = []  # dest names for stream cleanup
         self._tensor_vars: list[str] = []  # dest names for tensor cleanup (v4.42.0)
+        # v5.4.3 — nested-loop depth for free-before-store in _track_*.
+        # Pushed when iterating a block whose label starts with
+        # for_body / while_body / mapfor_body; popped after.
+        self._loop_depth: int = 0
         # v4.146.0 E2: precomputed set of pure function names (module-level)
         self._pure_fns: set[str] = set()
         # debug info (DWARF) — v4.62.0 infrastructure
@@ -2185,6 +2189,7 @@ class LLVMTextEmitter:
         self._signal_vars = []
         self._stream_vars = []
         self._tensor_vars = []
+        self._loop_depth = 0
 
         # Per-function arena — disabled: text emitter never routes allocations
         # through mn_arena_alloc, so create/destroy was pure overhead.
@@ -2376,6 +2381,12 @@ class LLVMTextEmitter:
         for bb in fn.blocks:
             self._cb = bb.label
             self._blk[bb.label] = []
+            # v5.4.3 — track loop-body nesting so _track_string /
+            # _track_boxed / _track_closure prepend a free-before-store
+            # when their call site is inside a for/while body.
+            bumped = bb.label.startswith(("for_body", "while_body", "mapfor_body"))
+            if bumped:
+                self._loop_depth += 1
             for inst in bb.instructions:
                 if isinstance(inst, Phi):
                     continue
@@ -2383,6 +2394,8 @@ class LLVMTextEmitter:
                 h = self._disp.get(type(inst))
                 if h:
                     h(inst)
+            if bumped:
+                self._loop_depth -= 1
 
         # deferred phi stores
         for addr, ty, incoming in self._dphi:
