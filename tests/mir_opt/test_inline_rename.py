@@ -15,11 +15,16 @@ from mapanare.mir import (
     Call,
     Const,
     Copy,
+    EnumPayload,
+    EnumTag,
+    FieldGet,
+    IndexGet,
     Jump,
     MIRFunction,
     MIRParam,
     MIRType,
     Return,
+    StructInit,
     Value,
     mir_int,
 )
@@ -236,3 +241,225 @@ def test_inlining_cap():
             break
 
     assert total_inlined <= 5, f"Expected at most 5 inlines, got {total_inlined}"
+
+
+# --- v5.3.2 tests: previously-unhandled instruction variants ---
+
+
+def _struct_ty() -> MIRType:
+    return mir_int()  # Type details don't matter for inline rename tests
+
+
+def _make_fieldget_fn(name: str) -> MIRFunction:
+    """A one-block function that reads a struct field and returns it."""
+    return MIRFunction(
+        name=name,
+        params=[MIRParam(name="s", ty=_struct_ty())],
+        return_type=mir_int(),
+        blocks=[
+            BasicBlock(
+                label="entry",
+                instructions=[
+                    FieldGet(dest=_v("%t0"), obj=_v("%s"), field_name="line"),
+                    Return(val=_v("%t0")),
+                ],
+            )
+        ],
+    )
+
+
+def test_fieldget_no_duplicate_defs():
+    """v5.3.2: FieldGet destination must be renamed during inlining."""
+    callee = _make_fieldget_fn("get_line")
+    caller = MIRFunction(
+        name="caller",
+        params=[MIRParam(name="span", ty=_struct_ty())],
+        return_type=mir_int(),
+        blocks=[
+            BasicBlock(
+                label="entry",
+                instructions=[
+                    Call(dest=_v("%t0"), fn_name="get_line", args=[_v("%span")]),
+                    Return(val=_v("%t0")),
+                ],
+            )
+        ],
+    )
+    fn_lookup = {"get_line": callee}
+    stats = MIRPassStats()
+    changed = inline_small_functions(caller, fn_lookup, stats)
+    assert changed
+    dests = _collect_dests(caller)
+    seen: set[str] = set()
+    for d in dests:
+        assert (
+            d not in seen
+        ), f"SSA name {d!r} defined twice after FieldGet inlining. All dests: {dests}"
+        seen.add(d)
+
+
+def test_structinit_no_duplicate_defs():
+    """v5.3.2: StructInit destination must be renamed during inlining."""
+    callee = MIRFunction(
+        name="make_point",
+        params=[MIRParam(name="x", ty=mir_int()), MIRParam(name="y", ty=mir_int())],
+        return_type=_struct_ty(),
+        blocks=[
+            BasicBlock(
+                label="entry",
+                instructions=[
+                    StructInit(
+                        dest=_v("%t0"),
+                        struct_type=_struct_ty(),
+                        fields=[("x", _v("%x")), ("y", _v("%y"))],
+                    ),
+                    Return(val=_v("%t0")),
+                ],
+            )
+        ],
+    )
+    caller = MIRFunction(
+        name="caller",
+        params=[],
+        return_type=_struct_ty(),
+        blocks=[
+            BasicBlock(
+                label="entry",
+                instructions=[
+                    Const(dest=_v("%a"), ty=mir_int(), value="1"),
+                    Const(dest=_v("%b"), ty=mir_int(), value="2"),
+                    Call(dest=_v("%t0"), fn_name="make_point", args=[_v("%a"), _v("%b")]),
+                    Return(val=_v("%t0")),
+                ],
+            )
+        ],
+    )
+    fn_lookup = {"make_point": callee}
+    stats = MIRPassStats()
+    changed = inline_small_functions(caller, fn_lookup, stats)
+    assert changed
+    dests = _collect_dests(caller)
+    seen: set[str] = set()
+    for d in dests:
+        assert (
+            d not in seen
+        ), f"SSA name {d!r} defined twice after StructInit inlining. All dests: {dests}"
+        seen.add(d)
+
+
+def test_indexget_no_duplicate_defs():
+    """v5.3.2: IndexGet destination must be renamed during inlining."""
+    callee = MIRFunction(
+        name="first_elem",
+        params=[MIRParam(name="arr", ty=mir_int())],
+        return_type=mir_int(),
+        blocks=[
+            BasicBlock(
+                label="entry",
+                instructions=[
+                    Const(dest=_v("%idx"), ty=mir_int(), value="0"),
+                    IndexGet(dest=_v("%t0"), obj=_v("%arr"), index=_v("%idx")),
+                    Return(val=_v("%t0")),
+                ],
+            )
+        ],
+    )
+    caller = MIRFunction(
+        name="caller",
+        params=[MIRParam(name="list", ty=mir_int())],
+        return_type=mir_int(),
+        blocks=[
+            BasicBlock(
+                label="entry",
+                instructions=[
+                    Call(dest=_v("%t0"), fn_name="first_elem", args=[_v("%list")]),
+                    Return(val=_v("%t0")),
+                ],
+            )
+        ],
+    )
+    fn_lookup = {"first_elem": callee}
+    stats = MIRPassStats()
+    changed = inline_small_functions(caller, fn_lookup, stats)
+    assert changed
+    dests = _collect_dests(caller)
+    seen: set[str] = set()
+    for d in dests:
+        assert (
+            d not in seen
+        ), f"SSA name {d!r} defined twice after IndexGet inlining. All dests: {dests}"
+        seen.add(d)
+
+
+def test_enumtag_payload_no_duplicate_defs():
+    """v5.3.2: EnumTag/EnumPayload destinations must be renamed during inlining."""
+    callee = MIRFunction(
+        name="get_tag",
+        params=[MIRParam(name="e", ty=mir_int())],
+        return_type=mir_int(),
+        blocks=[
+            BasicBlock(
+                label="entry",
+                instructions=[
+                    EnumTag(dest=_v("%t0"), enum_val=_v("%e")),
+                    EnumPayload(dest=_v("%t1"), enum_val=_v("%e"), variant="Some"),
+                    Return(val=_v("%t0")),
+                ],
+            )
+        ],
+    )
+    caller = MIRFunction(
+        name="caller",
+        params=[MIRParam(name="val", ty=mir_int())],
+        return_type=mir_int(),
+        blocks=[
+            BasicBlock(
+                label="entry",
+                instructions=[
+                    Call(dest=_v("%t0"), fn_name="get_tag", args=[_v("%val")]),
+                    Return(val=_v("%t0")),
+                ],
+            )
+        ],
+    )
+    fn_lookup = {"get_tag": callee}
+    stats = MIRPassStats()
+    changed = inline_small_functions(caller, fn_lookup, stats)
+    assert changed
+    dests = _collect_dests(caller)
+    seen: set[str] = set()
+    for d in dests:
+        assert (
+            d not in seen
+        ), f"SSA name {d!r} defined twice after EnumTag/Payload inlining. All dests: {dests}"
+        seen.add(d)
+
+
+def test_param_count_mismatch_does_not_crash():
+    """v5.3.2: Calls where arg count != param count must not crash.
+
+    The self-hosted inliner (mir_opt.mn) skips these; the Python inliner
+    may still inline them but must not crash. This tests robustness.
+    """
+    # Callee has 1 param, but call passes 2 args (simulates name collision)
+    callee = _make_small_fn("overloaded")
+    caller = MIRFunction(
+        name="caller",
+        params=[],
+        return_type=mir_int(),
+        blocks=[
+            BasicBlock(
+                label="entry",
+                instructions=[
+                    Const(dest=_v("%a"), ty=mir_int(), value="1"),
+                    Const(dest=_v("%b"), ty=mir_int(), value="2"),
+                    Call(dest=_v("%t0"), fn_name="overloaded", args=[_v("%a"), _v("%b")]),
+                    Return(val=_v("%t0")),
+                ],
+            )
+        ],
+    )
+    fn_lookup = {"overloaded": callee}
+    stats = MIRPassStats()
+    # Must not raise — whether it inlines or skips is implementation-defined
+    inline_small_functions(caller, fn_lookup, stats)

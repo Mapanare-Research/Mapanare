@@ -929,9 +929,325 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         return result
     }
 
-    // For any other instruction kind, keep as-is (conservative)
+    // FieldGet — dest + obj (the v5.3.2 crash site)
+    if ik == "field_get" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_obj: Value = rename_value(instr_fieldget_obj(inst), prefix, renames)
+        result.push(Instruction::FieldGet(new_dest, new_obj, instr_fieldget_name(inst)))
+        return result
+    }
+
+    // FieldSet — no dest (void)
+    if ik == "field_set" {
+        let new_obj: Value = rename_value(instr_fieldset_obj(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_fieldset_val(inst), prefix, renames)
+        result.push(Instruction::FieldSet(new_obj, instr_fieldset_name(inst), new_val))
+        return result
+    }
+
+    // StructInit — dest + list of FieldPair
+    if ik == "struct_init" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let fields: List<FieldPair> = instr_struct_fields(inst)
+        let mut new_fields: List<FieldPair> = []
+        let mut fi2: Int = 0
+        for _ in 0..100 {
+            if fi2 >= len(fields) { break }
+            new_fields.push(new FieldPair { name: fields[fi2].name, val: rename_value(fields[fi2].val, prefix, renames) })
+            fi2 = fi2 + 1
+        }
+        result.push(Instruction::StructInit(new_dest, instr_struct_type(inst), new_fields))
+        return result
+    }
+
+    // ListInit — dest + list of Value
+    if ik == "list_init" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let elems: List<Value> = instr_list_elements(inst)
+        let mut new_elems: List<Value> = []
+        let mut ei2: Int = 0
+        for _ in 0..100 {
+            if ei2 >= len(elems) { break }
+            new_elems.push(rename_value(elems[ei2], prefix, renames))
+            ei2 = ei2 + 1
+        }
+        result.push(Instruction::ListInit(new_dest, instr_list_type(inst), new_elems))
+        return result
+    }
+
+    // TensorInit — dest + shape (ints, keep) + list of Value
+    if ik == "tensor_init" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let t_elems: List<Value> = instr_tensor_elements(inst)
+        let mut new_t_elems: List<Value> = []
+        let mut ti2: Int = 0
+        for _ in 0..100 {
+            if ti2 >= len(t_elems) { break }
+            new_t_elems.push(rename_value(t_elems[ti2], prefix, renames))
+            ti2 = ti2 + 1
+        }
+        result.push(Instruction::TensorInit(new_dest, instr_tensor_type(inst), instr_tensor_shape(inst), new_t_elems))
+        return result
+    }
+
+    // IndexGet — dest + obj + idx
+    if ik == "index_get" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_obj: Value = rename_value(instr_indexget_obj(inst), prefix, renames)
+        let new_idx: Value = rename_value(instr_indexget_idx(inst), prefix, renames)
+        result.push(Instruction::IndexGet(new_dest, new_obj, new_idx))
+        return result
+    }
+
+    // IndexSet — no dest (void)
+    if ik == "index_set" {
+        let new_obj: Value = rename_value(instr_indexset_obj(inst), prefix, renames)
+        let new_idx: Value = rename_value(instr_indexset_idx(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_indexset_val(inst), prefix, renames)
+        result.push(Instruction::IndexSet(new_obj, new_idx, new_val))
+        return result
+    }
+
+    // MapInit — dest + key_type + val_type + list of KVPair
+    if ik == "map_init" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let pairs: List<KVPair> = instr_map_pairs(inst)
+        let mut new_pairs: List<KVPair> = []
+        let mut mi2: Int = 0
+        for _ in 0..100 {
+            if mi2 >= len(pairs) { break }
+            new_pairs.push(new KVPair { key: rename_value(pairs[mi2].key, prefix, renames), val: rename_value(pairs[mi2].val, prefix, renames) })
+            mi2 = mi2 + 1
+        }
+        result.push(Instruction::MapInit(new_dest, instr_map_key_type(inst), instr_map_val_type(inst), new_pairs))
+        return result
+    }
+
+    // EnumInit — dest + type + variant + list of Value
+    if ik == "enum_init" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let payload: List<Value> = instr_enum_payload(inst)
+        let mut new_payload: List<Value> = []
+        let mut epi2: Int = 0
+        for _ in 0..100 {
+            if epi2 >= len(payload) { break }
+            new_payload.push(rename_value(payload[epi2], prefix, renames))
+            epi2 = epi2 + 1
+        }
+        result.push(Instruction::EnumInit(new_dest, instr_enum_type(inst), instr_enum_variant(inst), new_payload))
+        return result
+    }
+
+    // EnumTag — dest + val
+    if ik == "enum_tag" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_enumtag_val(inst), prefix, renames)
+        result.push(Instruction::EnumTag(new_dest, new_val))
+        return result
+    }
+
+    // EnumPayload — dest + val + variant
+    if ik == "enum_payload" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_enumpayload_val(inst), prefix, renames)
+        result.push(Instruction::EnumPayload(new_dest, new_val, instr_enumpayload_variant(inst)))
+        return result
+    }
+
+    // WrapSome — dest + val
+    if ik == "wrap_some" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_wrap_val(inst), prefix, renames)
+        result.push(Instruction::WrapSome(new_dest, new_val))
+        return result
+    }
+
+    // WrapNone — dest + type (no value operand)
+    if ik == "wrap_none" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        result.push(Instruction::WrapNone(new_dest, instr_wrapnone_type(inst)))
+        return result
+    }
+
+    // WrapOk — dest + val
+    if ik == "wrap_ok" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_wrap_val(inst), prefix, renames)
+        result.push(Instruction::WrapOk(new_dest, new_val))
+        return result
+    }
+
+    // WrapErr — dest + val
+    if ik == "wrap_err" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_wrap_val(inst), prefix, renames)
+        result.push(Instruction::WrapErr(new_dest, new_val))
+        return result
+    }
+
+    // Unwrap — dest + val
+    if ik == "unwrap" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_wrap_val(inst), prefix, renames)
+        result.push(Instruction::Unwrap(new_dest, new_val))
+        return result
+    }
+
+    // InterpConcat — dest + list of Value
+    if ik == "interp_concat" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let parts: List<Value> = instr_concat_parts(inst)
+        let mut new_parts: List<Value> = []
+        let mut ci2: Int = 0
+        for _ in 0..100 {
+            if ci2 >= len(parts) { break }
+            new_parts.push(rename_value(parts[ci2], prefix, renames))
+            ci2 = ci2 + 1
+        }
+        result.push(Instruction::InterpConcat(new_dest, new_parts))
+        return result
+    }
+
+    // Phi — dest + list of PhiEntry
+    if ik == "phi" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let entries: List<PhiEntry> = instr_phi_entries(inst)
+        let mut new_entries: List<PhiEntry> = []
+        let mut pi4: Int = 0
+        for _ in 0..100 {
+            if pi4 >= len(entries) { break }
+            new_entries.push(new PhiEntry { block_label: prefix + entries[pi4].block_label, val: rename_value(entries[pi4].val, prefix, renames) })
+            pi4 = pi4 + 1
+        }
+        result.push(Instruction::Phi(new_dest, new_entries))
+        return result
+    }
+
+    // AgentSpawn — dest + type + list of Value
+    if ik == "agent_spawn" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let a_args: List<Value> = instr_agent_args(inst)
+        let mut new_a_args: List<Value> = []
+        let mut ai2: Int = 0
+        for _ in 0..100 {
+            if ai2 >= len(a_args) { break }
+            new_a_args.push(rename_value(a_args[ai2], prefix, renames))
+            ai2 = ai2 + 1
+        }
+        result.push(Instruction::AgentSpawn(new_dest, instr_agent_type(inst), new_a_args))
+        return result
+    }
+
+    // AgentSend — no dest (void): agent + channel + val
+    if ik == "agent_send" {
+        let new_agent: Value = rename_value(instr_agentsend_agent(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_agentsend_val(inst), prefix, renames)
+        result.push(Instruction::AgentSend(new_agent, instr_agentsend_channel(inst), new_val))
+        return result
+    }
+
+    // AgentSync — dest + agent + channel
+    if ik == "agent_sync" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_agent: Value = rename_value(instr_agentsync_agent(inst), prefix, renames)
+        result.push(Instruction::AgentSync(new_dest, new_agent, instr_agentsync_channel(inst)))
+        return result
+    }
+
+    // SignalInit — dest + type + val
+    if ik == "signal_init" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_signal_val(inst), prefix, renames)
+        result.push(Instruction::SignalInit(new_dest, instr_signal_type(inst), new_val))
+        return result
+    }
+
+    // SignalGet — dest + sig
+    if ik == "signal_get" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_sig: Value = rename_value(instr_signalget_sig(inst), prefix, renames)
+        result.push(Instruction::SignalGet(new_dest, new_sig))
+        return result
+    }
+
+    // SignalSet — no dest (void): sig + val
+    if ik == "signal_set" {
+        let new_sig: Value = rename_value(instr_signalset_sig(inst), prefix, renames)
+        let new_val: Value = rename_value(instr_signalset_val(inst), prefix, renames)
+        result.push(Instruction::SignalSet(new_sig, new_val))
+        return result
+    }
+
+    // StreamOp — dest + kind + source + list of Value
+    if ik == "stream_op" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_src: Value = rename_value(instr_streamop_source(inst), prefix, renames)
+        let s_args: List<Value> = instr_streamop_args(inst)
+        let mut new_s_args: List<Value> = []
+        let mut si2: Int = 0
+        for _ in 0..100 {
+            if si2 >= len(s_args) { break }
+            new_s_args.push(rename_value(s_args[si2], prefix, renames))
+            si2 = si2 + 1
+        }
+        result.push(Instruction::StreamOp(new_dest, instr_streamop_kind(inst), new_src, new_s_args))
+        return result
+    }
+
+    // Jump — rename block label
+    if ik == "jump" {
+        result.push(Instruction::Jump(prefix + instr_jump_target(inst)))
+        return result
+    }
+
+    // Branch — rename condition + block labels
+    if ik == "branch" {
+        let new_cond: Value = rename_value(instr_branch_cond(inst), prefix, renames)
+        result.push(Instruction::Branch(new_cond, prefix + instr_branch_true(inst), prefix + instr_branch_false(inst)))
+        return result
+    }
+
+    // Switch — rename tag + case/default labels
+    if ik == "switch" {
+        let new_tag: Value = rename_value(instr_switch_tag(inst), prefix, renames)
+        let cases: List<SwitchCase> = instr_switch_cases(inst)
+        let mut new_cases: List<SwitchCase> = []
+        let mut sci: Int = 0
+        for _ in 0..100 {
+            if sci >= len(cases) { break }
+            new_cases.push(new SwitchCase { tag_value: cases[sci].tag_value, block_label: prefix + cases[sci].block_label })
+            sci = sci + 1
+        }
+        result.push(Instruction::Switch(new_tag, new_cases, prefix + instr_switch_default(inst)))
+        return result
+    }
+
+    // Fallthrough: any future variant added to Instruction — keep as-is
     result.push(inst)
     return result
+}
+
+// Rename PHI predecessor labels: old_label → new_label
+fn rename_phi_pred(inst: Instruction, old_label: String, new_label: String) -> Instruction {
+    if instr_kind(inst) != "phi" { return inst }
+    let entries: List<PhiEntry> = instr_phi_entries(inst)
+    let mut new_entries: List<PhiEntry> = []
+    let mut changed: Bool = false
+    let mut i: Int = 0
+    for _ in 0..100 {
+        if i >= len(entries) { break }
+        if entries[i].block_label == old_label {
+            new_entries.push(new PhiEntry { block_label: new_label, val: entries[i].val })
+            changed = true
+        } else {
+            new_entries.push(entries[i])
+        }
+        i = i + 1
+    }
+    if changed {
+        return Instruction::Phi(instr_dest(inst), new_entries)
+    }
+    return inst
 }
 
 fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFunction {
@@ -975,13 +1291,17 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                     let callee_opt2: Option<MIRFunction> = find_fn_by_name(lookup, callee_name)
                     match callee_opt2 {
                         Some(callee) => {
+                            // Safety: skip if arg count != param count (name collision)
+                            let call_args_pre: List<Value> = instr_call_args(inst)
+                            if len(call_args_pre) == len(callee.params) {
+
                             // Use block index + instruction index for unique prefix
                             let prefix: String = "_inl" + toString(bi) + "_" + toString(ii) + "_"
                             let merge_label: String = prefix + "ret"
 
                             // Build rename map: callee params → call arguments
                             let mut renames: List<ConstEntry> = []
-                            let call_args: List<Value> = instr_call_args(inst)
+                            let call_args: List<Value> = call_args_pre
                             let mut pi2: Int = 0
                             for _ in 0..100 {
                                 if pi2 >= len(callee.params) { break }
@@ -1054,22 +1374,25 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             // Merge block with post-call instrs
                             new_blocks.push(new BasicBlock { label: merge_label, instructions: post_insts })
                             // Remaining blocks — rename uses of old dest name
+                            // and fix PHI predecessors (bb.label → merge_label)
+                            let orig_label: String = bb.label
                             let mut ri: Int = bi + 1
                             for _ in 0..5000 {
                                 if ri >= len(f.blocks) { break }
-                                if do_rename {
-                                    let rbb: BasicBlock = f.blocks[ri]
-                                    let mut renamed_instrs: List<Instruction> = []
-                                    let mut rii: Int = 0
-                                    for _ in 0..10000 {
-                                        if rii >= len(rbb.instructions) { break }
-                                        renamed_instrs.push(replace_uses_in_instr(rbb.instructions[rii], call_dest.name, fresh_dest_name))
-                                        rii = rii + 1
+                                let rbb: BasicBlock = f.blocks[ri]
+                                let mut renamed_instrs: List<Instruction> = []
+                                let mut rii: Int = 0
+                                for _ in 0..10000 {
+                                    if rii >= len(rbb.instructions) { break }
+                                    let mut rinst: Instruction = rbb.instructions[rii]
+                                    if do_rename {
+                                        rinst = replace_uses_in_instr(rinst, call_dest.name, fresh_dest_name)
                                     }
-                                    new_blocks.push(new BasicBlock { label: rbb.label, instructions: renamed_instrs })
-                                } else {
-                                    new_blocks.push(f.blocks[ri])
+                                    rinst = rename_phi_pred(rinst, orig_label, merge_label)
+                                    renamed_instrs.push(rinst)
+                                    rii = rii + 1
                                 }
+                                new_blocks.push(new BasicBlock { label: rbb.label, instructions: renamed_instrs })
                                 ri = ri + 1
                             }
                             // Prepend blocks before current
@@ -1088,6 +1411,7 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             }
 
                             return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: final_blocks, decorators: f.decorators, is_public: f.is_public }
+                            } // end param-count guard
                         },
                         _ => {}
                     }
