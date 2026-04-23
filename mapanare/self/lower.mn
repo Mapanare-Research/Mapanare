@@ -1277,21 +1277,27 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
         let r_some: LowerResult = lower_expr(st, inner)
         let dr_some: LowerResult = make_value(r_some.state, mir_option(), "t")
         let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, r_some.value))
-        return new_lower_result(dr_some.value, s_some)
+        // v5.4.4 — wrapper takes ownership of the payload.
+        let s_some2: LowerState = emit_instr(s_some, Instruction::Move(r_some.value))
+        return new_lower_result(dr_some.value, s_some2)
     }
     if ek == "ok_wrap" {
         let inner: Expr = expr_wrap_inner(expr)
         let r_ok: LowerResult = lower_expr(st, inner)
         let dr_ok: LowerResult = make_value(r_ok.state, mir_result(), "t")
         let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, r_ok.value))
-        return new_lower_result(dr_ok.value, s_ok)
+        // v5.4.4 — Ok wrapper owns its payload.
+        let s_ok2: LowerState = emit_instr(s_ok, Instruction::Move(r_ok.value))
+        return new_lower_result(dr_ok.value, s_ok2)
     }
     if ek == "err_wrap" {
         let inner: Expr = expr_wrap_inner(expr)
         let r_err: LowerResult = lower_expr(st, inner)
         let dr_err: LowerResult = make_value(r_err.state, mir_result(), "t")
         let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, r_err.value))
-        return new_lower_result(dr_err.value, s_err)
+        // v5.4.4 — Err wrapper owns its payload.
+        let s_err2: LowerState = emit_instr(s_err, Instruction::Move(r_err.value))
+        return new_lower_result(dr_err.value, s_err2)
     }
     if ek == "signal_val" {
         return lower_signal_expr(st, expr_signal_inner(expr))
@@ -1514,7 +1520,9 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
             let enum_ty: MIRType = mir_enum(ns)
             let dr_evar: LowerResult = make_value(s, enum_ty, "t")
             let ns_evar: LowerState = emit_instr(dr_evar.state, Instruction::EnumInit(dr_evar.value, enum_ty, member, args))
-            return new_lower_result(dr_evar.value, ns_evar)
+            // v5.4.4 — enum variant owns its payload values.
+            let ns_evar2: LowerState = emit_move_vals(ns_evar, args)
+            return new_lower_result(dr_evar.value, ns_evar2)
         }
         // For struct statics like Program::start(defs), try bare function
         // name first (the function is `start`, not `Program_start`).
@@ -1825,7 +1833,9 @@ fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value
             let struct_ty: MIRType = mir_struct(mangled)
             let dr: LowerResult = make_value(s, struct_ty, "t")
             let s2: LowerState = emit_instr(dr.state, Instruction::StructInit(dr.value, struct_ty, init_pairs))
-            return new_lower_result(dr.value, s2)
+            // v5.4.4 — StructInit takes ownership of each field value.
+            let s3: LowerState = emit_move_fields(s2, init_pairs)
+            return new_lower_result(dr.value, s3)
         },
         _ => { return new_lower_result(void_value(), st) }
     }
@@ -2015,7 +2025,9 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
                     let enum_ty: MIRType = mir_enum(mangled)
                     let dr_enum: LowerResult = make_value(s, enum_ty, "t")
                     let s2: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, variant_name, args))
-                    return new_lower_result(dr_enum.value, s2)
+                    // v5.4.4 — enum variant takes ownership of each arg.
+                    let s3: LowerState = emit_move_vals(s2, args)
+                    return new_lower_result(dr_enum.value, s3)
                 },
                 _ => { return new_lower_result(void_value(), st) }
             }
@@ -2104,7 +2116,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         if len(args) == 1 {
             let dr_some: LowerResult = make_value(st, mir_option(), "t")
             let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, args[0]))
-            return new_lower_result(dr_some.value, s_some)
+            // v5.4.4 — Some wrapper takes ownership.
+            let s_some2: LowerState = emit_instr(s_some, Instruction::Move(args[0]))
+            return new_lower_result(dr_some.value, s_some2)
         }
     }
     if fn_name == "Ok" {
@@ -2121,7 +2135,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             }
             let dr_ok: LowerResult = make_value(st, res_ty_ok, "t")
             let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, args[0]))
-            return new_lower_result(dr_ok.value, s_ok)
+            // v5.4.4 — Ok wrapper takes ownership.
+            let s_ok2: LowerState = emit_instr(s_ok, Instruction::Move(args[0]))
+            return new_lower_result(dr_ok.value, s_ok2)
         }
     }
     if fn_name == "Err" {
@@ -2137,7 +2153,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             }
             let dr_err: LowerResult = make_value(st, res_ty_err, "t")
             let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, args[0]))
-            return new_lower_result(dr_err.value, s_err)
+            // v5.4.4 — Err wrapper takes ownership.
+            let s_err2: LowerState = emit_instr(s_err, Instruction::Move(args[0]))
+            return new_lower_result(dr_err.value, s_err2)
         }
     }
 
@@ -2165,7 +2183,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             }
             let dr_new: LowerResult = make_value(st, struct_ty, "t")
             let s_new: LowerState = emit_instr(dr_new.state, Instruction::StructInit(dr_new.value, struct_ty, field_pairs))
-            return new_lower_result(dr_new.value, s_new)
+            // v5.4.4 — StructInit takes ownership of each field value.
+            let s_new2: LowerState = emit_move_fields(s_new, field_pairs)
+            return new_lower_result(dr_new.value, s_new2)
         }
     }
 
@@ -2181,7 +2201,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let enum_ty: MIRType = mir_enum(enum_name)
         let dr_enum: LowerResult = make_value(st, enum_ty, "t")
         let s_enum: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, fn_name, args))
-        return new_lower_result(dr_enum.value, s_enum)
+        // v5.4.4 — enum variant takes ownership of payload args.
+        let s_enum2: LowerState = emit_move_vals(s_enum, args)
+        return new_lower_result(dr_enum.value, s_enum2)
     }
 
     // Check if it's a struct constructor (use if instead of match to avoid
@@ -2204,7 +2226,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         }
         let dr_ctor: LowerResult = make_value(st, struct_ty, "t")
         let s_ctor: LowerState = emit_instr(dr_ctor.state, Instruction::StructInit(dr_ctor.value, struct_ty, field_pairs))
-        return new_lower_result(dr_ctor.value, s_ctor)
+        // v5.4.4 — StructInit takes ownership of each field value.
+        let s_ctor2: LowerState = emit_move_fields(s_ctor, field_pairs)
+        return new_lower_result(dr_ctor.value, s_ctor2)
     }
 
     // Resolve lambda variable names to actual function names
@@ -2417,6 +2441,48 @@ fn lookup_impl_method(st: LowerState, key: String) -> Option<String> {
     return none
 }
 
+// v5.4.4 Own.1 Phase 2 — Move-emission helpers.
+// emit_move_vals / emit_move_fields append one Move instruction per
+// input value. Used after list.push, map_set, struct_init, enum_init,
+// and Option/Result wrappers so the emitter's drop glue can see that
+// the resource's ownership transferred into the container.
+fn emit_move_vals(st: LowerState, vals: List<Value>) -> LowerState {
+    let mut s: LowerState = st
+    let n: Int = len(vals)
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= n { return s }
+        s = emit_instr(s, Instruction::Move(vals[i]))
+        i = i + 1
+    }
+    return s
+}
+
+fn emit_move_fields(st: LowerState, fields: List<FieldPair>) -> LowerState {
+    let mut s: LowerState = st
+    let n: Int = len(fields)
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= n { return s }
+        s = emit_instr(s, Instruction::Move(fields[i].val))
+        i = i + 1
+    }
+    return s
+}
+
+fn emit_move_kvpairs(st: LowerState, pairs: List<KVPair>) -> LowerState {
+    let mut s: LowerState = st
+    let n: Int = len(pairs)
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= n { return s }
+        s = emit_instr(s, Instruction::Move(pairs[i].key))
+        s = emit_instr(s, Instruction::Move(pairs[i].val))
+        i = i + 1
+    }
+    return s
+}
+
 fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: List<Expr>) -> LowerResult {
     let mut s: LowerState = st
     // Lower the element
@@ -2432,7 +2498,10 @@ fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: L
     all_args.push(arg_r.value)
     let dest_r: LowerResult = make_value(s, mir_void(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "push", all_args))
-    return new_lower_result(dest_r.value, new_s)
+    // v5.4.4 — list.push copies the element into the list buffer; the
+    // container owns it now. Drop glue must skip the caller's slot.
+    let moved_s: LowerState = emit_instr(new_s, Instruction::Move(arg_r.value))
+    return new_lower_result(dest_r.value, moved_s)
 }
 
 fn find_list_alloca(st: LowerState, obj: Expr, obj_r: LowerResult) -> Value {
@@ -2974,7 +3043,9 @@ fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult {
     }
     let dest_r: LowerResult = make_value(s, mir_map(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::MapInit(dest_r.value, key_ty, val_ty, pairs))
-    return new_lower_result(dest_r.value, new_s)
+    // v5.4.4 — map owns each key/value pair.
+    let moved_s: LowerState = emit_move_kvpairs(new_s, pairs)
+    return new_lower_result(dest_r.value, moved_s)
 }
 
 // ---------------------------------------------------------------------------
@@ -3003,6 +3074,8 @@ fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -
     let struct_ty: MIRType = mir_struct(name)
     let dest_r: LowerResult = make_value(s, struct_ty, "t")
     s = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__new_" + name, vals))
+    // v5.4.4 — struct literal takes ownership of each field expression.
+    s = emit_move_vals(s, vals)
     return new_lower_result(dest_r.value, s)
 }
 
@@ -3082,6 +3155,10 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
         let obj_r_idx: LowerResult = lower_expr(s, expr_index_obj(target))
         let idx_r: LowerResult = lower_expr(obj_r_idx.state, expr_index_idx(target))
         s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r_idx.value, idx_r.value, val_r.value))
+        // v5.4.4 — map_set / list_set memcpy key+val into the container;
+        // ownership transfers. Emit Move so drop glue skips the slot.
+        s = emit_instr(s, Instruction::Move(idx_r.value))
+        s = emit_instr(s, Instruction::Move(val_r.value))
         return new_lower_result(val_r.value, s)
     }
     return new_lower_result(val_r.value, s)
