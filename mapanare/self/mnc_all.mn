@@ -13674,16 +13674,17 @@ struct EmitState {
     list_owned: List<String>,
     boxed_owned: List<String>,
     moved_locals: List<String>,
-    // v5.4.1 — entry-block prelude for tracking-slot allocas. Lines
-    // queued by emit_track_string / _boxed / _closure are accumulated
-    // here while the entry block is emitting, then flushed into the
-    // entry block in correct order (allocas first per LLVM ABI).
-    // Mirrors mapanare/emit_llvm_text.py self._ent.
+    // v5.4.1 — entry-block prelude for tracking-slot allocas.
+    // emit_track_string / _boxed / _closure can fire from any basic
+    // block (e.g., a String concat inside a loop body), so we
+    // accumulate alloca + zero-init lines here for the whole function
+    // and flush at function close. Mirrors emit_llvm_text.py self._ent.
     entry_prelude_lines: List<String>,
-    // v5.4.1 — buffered body of the current function's entry block.
-    // While in_entry_block is true, emit_line redirects here instead
-    // of pushing directly to st.lines so the prelude can be flushed
-    // ahead of the buffered body at end-of-entry-block.
+    // v5.4.1 — buffered body of the current function (everything
+    // emitted between the entry block label and the closing '}').
+    // While in_function_body is true, emit_line redirects here so the
+    // prelude can be spliced ahead of the body — placing the tracking
+    // allocas at the top of the entry block per LLVM ABI.
     entry_block_body: List<String>,
     in_entry_block: Bool
 }
@@ -14684,11 +14685,14 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
         let s1_name: String = dn + ".s1"
         s = emit_line(s, emit_insertvalue(s1_name, llvm_string(), "undef", ptr_name, "ptr", "0"))
         s = emit_line(s, emit_insertvalue(dn, llvm_string(), s1_name, toString(slen), "i64", "1"))
-        // v5.4.1 — track the literal in a shadow slot. The slot's data
-        // ptr points at .rodata so __mn_str_free(is_heap=0) no-ops, but
-        // tracking gives drop-glue a uniform path and lets escape
-        // detection alias-skip when the literal is the returned value.
-        s = emit_track_string(s, dn)
+        // v5.4.1 note: do NOT track String literal Consts. Their data
+        // ptr points at .rodata so __mn_str_free is_heap=0 no-ops on
+        // them, but tracking each literal explodes stage2.ll
+        // quadratically (e.g. get_fn_attrs has ~225 returns × ~225
+        // literals → every ret emits drop-glue for every tracked
+        // literal, producing ~250k drop-glue lines in one function).
+        // Python's _mkstr omits tracking for the same reason. Heap
+        // allocations from runtime calls (Phase 3.2) ARE tracked.
         return s
     }
 
@@ -14832,6 +14836,10 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     if op_str == "add" {
         if is_string {
             s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_concat", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            // v5.4.1 Phase 4 — binop "+" on Strings lowers to a direct
+            // emit_call_ir, bypassing the call-dispatch hook in Phase
+            // 3.2. Track the heap-allocated concat result here.
+            s = emit_track_string(s, dn)
         } else if lhs.ty.kind == TK_LIST() {
             // List concatenation: alloca both sides, call __mn_list_concat
             let la_name: String = dn + ".la"
@@ -15503,15 +15511,16 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     if elem_sz < 384 { elem_sz = 384 }
     s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz)))
 
-    // Alloca for push
+    // v5.4.1 Phase 3.7 — hoist the alloca to the entry-block prelude
+    // so it dominates drop-glue loads at every function exit, even
+    // when emit_list_init is invoked from a conditional sub-block.
+    // Zero-init the storage so __mn_list_free's null-data-ptr check
+    // no-ops if the init store was bypassed by control flow.
     let alloca_name: String = dn + ".addr"
-    s = emit_line(s, llvm_alloca(alloca_name, llvm_list_rt()))
+    s.entry_prelude_lines.push("  " + alloca_name + " = alloca " + llvm_list_rt() + ", align 8")
+    s.entry_prelude_lines.push("  store " + llvm_list_rt() + " zeroinitializer, ptr " + alloca_name)
+    // The init store stays at the original emission point.
     s = emit_line(s, llvm_store(llvm_list_rt(), list_name, alloca_name))
-    // v5.4.1 Phase 3.7 — register the list's alloca for drop-glue.
-    // emit_drop_glue_lists emits __mn_list_free(ptr %<name>) at every
-    // ret using this name, with Phase-4 escape detection skipping the
-    // returned slot. Strip leading '%' so the helper's "%" + name
-    // produces a valid alloca reference.
     let list_owned_name: String = ret_val_base(alloca_name)
     s.list_owned.push(list_owned_name)
 
@@ -17040,76 +17049,180 @@ fn emit_track_closure(st: EmitState, val_name: String) -> EmitState {
     return emit_track_boxed(s, env_tmp)
 }
 
-fn emit_drop_glue_strings(st: EmitState, ret_base: String) -> EmitState {
+// ---------------------------------------------------------------------------
+// v5.4.1 Phase 4 — return-escape detection
+// ---------------------------------------------------------------------------
+// emit_drop_glue_strings / _lists / _boxed each take a "ret_data_ptr"
+// SSA name. When non-empty, the helper emits a per-slot icmp + br
+// pattern that skips the free if the slot's loaded data pointer
+// aliases the returned pointer. When empty (void return, scalar
+// non-resource return, or aggregate return with conservative skip),
+// the slot is freed unconditionally.
+//
+// Mirrors mapanare/emit_llvm_text.py::_emit_drop_glue_strings/_lists/
+// _boxed (lines 1712–1849), with one structural simplification:
+// branches inline into the same function body (Mapanare's emitter
+// already uses inline label emission for bounds-check traps; same
+// pattern applies here).
+
+fn emit_drop_glue_strings(st: EmitState, ret_str_ptr: String) -> EmitState {
     let mut s: EmitState = st
     let n: Int = len(s.str_owned)
     let mut i: Int = 0
+    let has_ret: Bool = (len(ret_str_ptr) > 0)
     for _ in 0..1024 {
         if i >= n { return s }
         let name: String = s.str_owned[i]
         let is_moved: Bool = list_has_string(s.moved_locals, name)
-        let is_ret: Bool = (name == ret_base)
-        if !is_moved && !is_ret {
-            let tmp: String = "%drop.s" + toString(s.counter)
+        if !is_moved {
+            let cnt: Int = s.counter
             s.counter = s.counter + 1
-            s = emit_line(s, "  " + tmp + " = load {ptr, i64}, ptr %" + name)
-            s = emit_line(s, "  call void @__mn_str_free({ptr, i64} " + tmp + ")")
+            let svtmp: String = "%drop.s" + toString(cnt)
+            s = emit_line(s, "  " + svtmp + " = load {ptr, i64}, ptr %" + name)
+            if has_ret {
+                let sptmp: String = "%drop.p" + toString(cnt)
+                let same: String = "%drop.same" + toString(cnt)
+                let free_lbl: String = "drop.free." + toString(cnt)
+                let skip_lbl: String = "drop.skip." + toString(cnt)
+                s = emit_line(s, "  " + sptmp + " = extractvalue {ptr, i64} " + svtmp + ", 0")
+                s = emit_line(s, "  " + same + " = icmp eq ptr " + sptmp + ", " + ret_str_ptr)
+                s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
+                s = emit_line(s, free_lbl + ":")
+                s = emit_line(s, "  call void @__mn_str_free({ptr, i64} " + svtmp + ")")
+                s = emit_line(s, "  br label %" + skip_lbl)
+                s = emit_line(s, skip_lbl + ":")
+            } else {
+                s = emit_line(s, "  call void @__mn_str_free({ptr, i64} " + svtmp + ")")
+            }
         }
         i = i + 1
     }
     return s
 }
 
-fn emit_drop_glue_lists(st: EmitState, ret_base: String) -> EmitState {
+fn emit_drop_glue_lists(st: EmitState, ret_list_ptr: String) -> EmitState {
     let mut s: EmitState = st
     let n: Int = len(s.list_owned)
     let mut i: Int = 0
+    let has_ret: Bool = (len(ret_list_ptr) > 0)
     for _ in 0..1024 {
         if i >= n { return s }
         let name: String = s.list_owned[i]
         let is_moved: Bool = list_has_string(s.moved_locals, name)
-        let is_ret: Bool = (name == ret_base)
-        if !is_moved && !is_ret {
-            // __mn_list_free takes a MnList* — pass the alloca address directly.
-            s = emit_line(s, "  call void @__mn_list_free(ptr %" + name + ")")
+        if !is_moved {
+            if has_ret {
+                let cnt: Int = s.counter
+                s.counter = s.counter + 1
+                let lvtmp: String = "%drop.lv" + toString(cnt)
+                let lptmp: String = "%drop.lp" + toString(cnt)
+                let same: String = "%drop.lsame" + toString(cnt)
+                let free_lbl: String = "drop.lfree." + toString(cnt)
+                let skip_lbl: String = "drop.lskip." + toString(cnt)
+                // Load list value from alloca, extract data ptr, compare.
+                s = emit_line(s, "  " + lvtmp + " = load " + llvm_list_rt() + ", ptr %" + name)
+                s = emit_line(s, "  " + lptmp + " = extractvalue " + llvm_list_rt() + " " + lvtmp + ", 0")
+                s = emit_line(s, "  " + same + " = icmp eq ptr " + lptmp + ", " + ret_list_ptr)
+                s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
+                s = emit_line(s, free_lbl + ":")
+                s = emit_line(s, "  call void @__mn_list_free(ptr %" + name + ")")
+                s = emit_line(s, "  br label %" + skip_lbl)
+                s = emit_line(s, skip_lbl + ":")
+            } else {
+                s = emit_line(s, "  call void @__mn_list_free(ptr %" + name + ")")
+            }
         }
         i = i + 1
     }
     return s
 }
 
-fn emit_drop_glue_boxed(st: EmitState, ret_base: String) -> EmitState {
+fn emit_drop_glue_boxed(st: EmitState, ret_box_ptr: String) -> EmitState {
     let mut s: EmitState = st
     let n: Int = len(s.boxed_owned)
     let mut i: Int = 0
+    let has_ret: Bool = (len(ret_box_ptr) > 0)
     for _ in 0..1024 {
         if i >= n { return s }
         let name: String = s.boxed_owned[i]
         let is_moved: Bool = list_has_string(s.moved_locals, name)
-        let is_ret: Bool = (name == ret_base)
-        if !is_moved && !is_ret {
-            let tmp: String = "%drop.b" + toString(s.counter)
+        if !is_moved {
+            let cnt: Int = s.counter
             s.counter = s.counter + 1
+            let tmp: String = "%drop.b" + toString(cnt)
             s = emit_line(s, "  " + tmp + " = load ptr, ptr %" + name)
-            s = emit_line(s, "  call void @free(ptr " + tmp + ")")
+            if has_ret {
+                let same: String = "%drop.bsame" + toString(cnt)
+                let free_lbl: String = "drop.bfree." + toString(cnt)
+                let skip_lbl: String = "drop.bskip." + toString(cnt)
+                s = emit_line(s, "  " + same + " = icmp eq ptr " + tmp + ", " + ret_box_ptr)
+                s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
+                s = emit_line(s, free_lbl + ":")
+                s = emit_line(s, "  call void @free(ptr " + tmp + ")")
+                s = emit_line(s, "  br label %" + skip_lbl)
+                s = emit_line(s, skip_lbl + ":")
+            } else {
+                s = emit_line(s, "  call void @free(ptr " + tmp + ")")
+            }
         }
         i = i + 1
     }
     return s
 }
 
+fn ret_ty_is_aggregate(ret_ty: String) -> Bool {
+    if ret_ty.starts_with("%struct.") { return true }
+    if ret_ty.starts_with("%enum.") { return true }
+    // Anonymous structs (Option/Result inner types): "{i1, ptr}" etc.
+    // String "{ptr, i64}" is technically a literal struct but is a
+    // String value — handle separately above.
+    if ret_ty.starts_with("{") && ret_ty != llvm_string() && ret_ty != llvm_list_rt() {
+        return true
+    }
+    return false
+}
+
 fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
-    // Fast path: no owners means nothing to drop.  This release ships with
-    // the owner lists empty by design; the helpers still exist so v5.4.1
-    // can populate them without changing the call-site wiring.
+    // Fast path: no owners means nothing to drop.
     if len(st.str_owned) == 0 && len(st.list_owned) == 0 && len(st.boxed_owned) == 0 {
         return st
     }
-    let base: String = ret_val_base(ret_val)
+
+    // Aggregate returns (structs / enums / Option / Result): conservative
+    // skip-all. Without a recursive struct-field walk we cannot prove
+    // any tracked slot doesn't alias a returned pointer field, so we
+    // accept the leak rather than risk UAF. v5.4.2 may add the walk.
+    if ret_ty_is_aggregate(ret_ty) {
+        return st
+    }
+
     let mut s: EmitState = st
-    s = emit_drop_glue_strings(s, base)
-    s = emit_drop_glue_lists(s, base)
-    s = emit_drop_glue_boxed(s, base)
+    let mut ret_str_ptr: String = ""
+    let mut ret_list_ptr: String = ""
+    let mut ret_box_ptr: String = ""
+
+    // Scalar String return: extract the data ptr once for slot-by-slot
+    // comparison in emit_drop_glue_strings.
+    if ret_ty == llvm_string() && len(ret_val) > 0 {
+        let cnt: Int = s.counter
+        s.counter = s.counter + 1
+        ret_str_ptr = "%ret.sp" + toString(cnt)
+        s = emit_line(s, "  " + ret_str_ptr + " = extractvalue {ptr, i64} " + ret_val + ", 0")
+    }
+    // Scalar List return.
+    if ret_ty == llvm_list_rt() && len(ret_val) > 0 {
+        let cnt: Int = s.counter
+        s.counter = s.counter + 1
+        ret_list_ptr = "%ret.lp" + toString(cnt)
+        s = emit_line(s, "  " + ret_list_ptr + " = extractvalue " + llvm_list_rt() + " " + ret_val + ", 0")
+    }
+    // Scalar ptr return: the returned value IS the box pointer.
+    if ret_ty == "ptr" && len(ret_val) > 0 {
+        ret_box_ptr = ret_val
+    }
+
+    s = emit_drop_glue_strings(s, ret_str_ptr)
+    s = emit_drop_glue_lists(s, ret_list_ptr)
+    s = emit_drop_glue_boxed(s, ret_box_ptr)
     return s
 }
 
@@ -17474,11 +17587,12 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     if nblks > 0 {
         let bb0: BasicBlock = f.blocks[0]
         s = emit_line(s, bb0.label + ":")
-        // v5.4.1 — redirect emit_line to entry_block_body until end of
-        // entry block so we can splice the tracking-slot prelude in
-        // front of the body. emit_track_string / _boxed / _closure
-        // append alloca + zero-init lines to s.entry_prelude_lines and
-        // a store line via emit_line (which lands in the buffer).
+        // v5.4.1 — redirect emit_line to entry_block_body for the rest
+        // of the function so we can splice the tracking-slot prelude
+        // in front of the body. emit_track_string / _boxed / _closure
+        // can fire from any block (e.g., a concat in a loop body), so
+        // the redirect must remain on through every basic block, not
+        // just the entry block. Flushed at function close before '}'.
         s.in_entry_block = true
         // Emit byref loads: for each byref param, alloca + load from ptr + store
         let mut pi3: Int = 0
@@ -17529,33 +17643,40 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
                 ii = ii + 1
             }
         }
-        // v5.4.1 — close entry-block buffering. Flush prelude (allocas)
-        // ahead of the buffered body lines so allocas live at the top
-        // of the entry block per LLVM ABI.
-        s.in_entry_block = false
-        let mut pk2: Int = 0
-        let npre2: Int = len(s.entry_prelude_lines)
-        for _ in 0..4096 {
-            if pk2 >= npre2 { break }
-            s.lines.push(s.entry_prelude_lines[pk2])
-            pk2 = pk2 + 1
-        }
-        let mut bk: Int = 0
-        let nbody: Int = len(s.entry_block_body)
-        for _ in 0..32768 {
-            if bk >= nbody { break }
-            s.lines.push(s.entry_block_body[bk])
-            bk = bk + 1
-        }
     }
 
-    // Remaining blocks (index 1..nblks-1)
+    // Remaining blocks (index 1..nblks-1) — still inside the function-
+    // body buffer, so any emit_track_* calls from these blocks land
+    // their alloca lines in entry_prelude_lines for the entry-block
+    // splice below.
     let mut bi: Int = 1
     for _ in 0..2000 {
         if bi < nblks {
             let bb: BasicBlock = f.blocks[bi]
             s = emit_mir_basic_block(s, bb)
             bi = bi + 1
+        }
+    }
+
+    // v5.4.1 — close function-body buffering. Drain prelude (entry-
+    // block allocas) into st.lines, then the body. The result IR has
+    // tracking allocas at the top of the entry block followed by all
+    // user instructions and trailing blocks, in correct LLVM order.
+    if nblks > 0 {
+        s.in_entry_block = false
+        let mut pk2: Int = 0
+        let npre2: Int = len(s.entry_prelude_lines)
+        for _ in 0..8192 {
+            if pk2 >= npre2 { break }
+            s.lines.push(s.entry_prelude_lines[pk2])
+            pk2 = pk2 + 1
+        }
+        let mut bk: Int = 0
+        let nbody: Int = len(s.entry_block_body)
+        for _ in 0..65536 {
+            if bk >= nbody { break }
+            s.lines.push(s.entry_block_body[bk])
+            bk = bk + 1
         }
     }
 
