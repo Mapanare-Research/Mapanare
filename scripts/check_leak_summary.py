@@ -22,6 +22,7 @@ which likely masked a real leak).
 Usage:
     python3 scripts/check_leak_summary.py [RUN_TSV] [BASELINE_TSV]
 """
+
 from __future__ import annotations
 
 import csv
@@ -30,9 +31,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_RUN = pathlib.Path("/tmp/asan-leak/asan-leak-summary.tsv")
-DEFAULT_BASELINE = (
-    ROOT / "docs/roadmap/v5/v5.4.2/baseline/asan-leak-baseline.tsv"
-)
+DEFAULT_BASELINE = ROOT / "docs/roadmap/v5/v5.4.2/baseline/asan-leak-baseline.tsv"
 
 
 def load_tsv(path: pathlib.Path) -> dict[str, dict[str, str]]:
@@ -46,12 +45,8 @@ def load_tsv(path: pathlib.Path) -> dict[str, dict[str, str]]:
 
 
 def main() -> int:
-    run_path = pathlib.Path(
-        sys.argv[1] if len(sys.argv) > 1 else DEFAULT_RUN
-    )
-    baseline_path = pathlib.Path(
-        sys.argv[2] if len(sys.argv) > 2 else DEFAULT_BASELINE
-    )
+    run_path = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_RUN)
+    baseline_path = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else DEFAULT_BASELINE)
 
     run = load_tsv(run_path)
     baseline = load_tsv(baseline_path)
@@ -85,38 +80,29 @@ def main() -> int:
 
         if cls == "RUN_FAIL":
             regressions.append(
-                f"  RUN_FAIL: {name} — run harness couldn't execute "
-                "(masked leak check)"
+                f"  RUN_FAIL: {name} — run harness couldn't execute " "(masked leak check)"
             )
             continue
 
         # Regression: was CLEAN, now LEAK.
         if base_cls == "CLEAN" and cls == "LEAK":
             regressions.append(
-                f"  REGRESSED CLEAN→LEAK: {name} "
-                f"({leaks} leaks, {row.get('leak_bytes')} bytes)"
+                f"  REGRESSED CLEAN→LEAK: {name} " f"({leaks} leaks, {row.get('leak_bytes')} bytes)"
             )
             continue
 
         # Regression: was LEAK N, now LEAK > N.
         if base_cls == "LEAK" and cls == "LEAK" and leaks > base_leaks:
-            regressions.append(
-                f"  WORSENED LEAK: {name} "
-                f"({base_leaks} → {leaks} leaks)"
-            )
+            regressions.append(f"  WORSENED LEAK: {name} " f"({base_leaks} → {leaks} leaks)")
             continue
 
         # Improvement: was LEAK, now CLEAN.
         if base_cls == "LEAK" and cls == "CLEAN":
-            improvements.append(
-                f"  FIXED: {name} (baseline: {base_leaks} leaks)"
-            )
+            improvements.append(f"  FIXED: {name} (baseline: {base_leaks} leaks)")
 
         # Improvement: was LEAK N, now LEAK < N.
         if base_cls == "LEAK" and cls == "LEAK" and leaks < base_leaks:
-            improvements.append(
-                f"  IMPROVED: {name} ({base_leaks} → {leaks} leaks)"
-            )
+            improvements.append(f"  IMPROVED: {name} ({base_leaks} → {leaks} leaks)")
 
     # Check for goldens in baseline but missing from run.
     for name in sorted(set(baseline) - set(run)):
@@ -143,10 +129,7 @@ def main() -> int:
         for line in regressions:
             print(line)
         print()
-        print(
-            f"  {len(regressions)} regression(s) — "
-            "leak-check gate rejects this run."
-        )
+        print(f"  {len(regressions)} regression(s) — " "leak-check gate rejects this run.")
         return 1
 
     print("=== PASS: no leak regressions vs baseline ===")
