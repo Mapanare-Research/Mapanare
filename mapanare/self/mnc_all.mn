@@ -14571,7 +14571,8 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
     if kind == "unwrap" { return emit_unwrap(st, instr_dest(inst), instr_wrap_val(inst)) }
     if kind == "call" {
         let call_dest: Value = instr_dest(inst)
-        let mut s_call: EmitState = emit_mir_call(st, call_dest, instr_call_fn(inst), instr_call_args(inst))
+        let call_fn_name: String = instr_call_fn(inst)
+        let mut s_call: EmitState = emit_mir_call(st, call_dest, call_fn_name, instr_call_args(inst))
         // v5.4.1 Phase 3.2 — track String results from runtime + user
         // calls. emit_mir_call has many branches but they all leave
         // dest in dn (the call's SSA result); a single post-call hook
@@ -14579,7 +14580,16 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         // user fns returning String, and so on. emit_track_string is
         // safe to call on values backed by .rodata (literal pass-
         // through) — __mn_str_free is_heap-aware.
-        if call_dest.ty.kind == TK_STRING() {
+        //
+        // v5.4.2 Phase 3.1 — fallback for builtins whose MIR dest falls
+        // through to mir_unknown() in lower_call_by_name (no specific
+        // handler + no __ret__fn_name in lambda_vars). is_string_returning_
+        // builtin matches the subset of semantic.mn::builtin_return_type
+        // where return == "String" but lower.mn doesn't type-tag the dest.
+        // Without this fallback, read_file / sha256 / regex_replace /
+        // http_get / base64_* / hmac_sha256 / hex_encode / random_bytes
+        // / gpu_device_name / read_line / join / typeof all leak.
+        if call_dest.ty.kind == TK_STRING() || is_string_returning_builtin(call_fn_name) {
             s_call = emit_track_string(s_call, call_dest.name)
         }
         return s_call
@@ -16990,6 +17000,42 @@ fn ret_val_base(ret_val: String) -> String {
     if len(ret_val) == 0 { return "" }
     if ret_val.substr(0, 1) == "%" { return ret_val.substr(1, len(ret_val) - 1) }
     return ret_val
+}
+
+// ---------------------------------------------------------------------------
+// v5.4.2 Phase 3.1 — String-returning builtin recognition
+// ---------------------------------------------------------------------------
+// Phase 3.2's hook (emit_mir_by_kind "call" branch) predicates tracking
+// on `dest.ty.kind == TK_STRING()`, but the lowerer's generic call path
+// at lower.mn:2258 defaults to mir_unknown() when __ret__fn_name isn't
+// registered in lambda_vars — which is the case for all builtins not
+// specially cased in lower_call_by_name (read_file, sha256, regex_replace,
+// http_get, and friends). The IR is emitted with the correct llvm_string()
+// return type because emit_mir_call dispatches by fn_name, but the MIR
+// dest is typed TK_UNKNOWN, so Phase 3.2 skips tracking and the heap
+// String leaks at function exit.
+//
+// This helper returns true for the Mapanare-level builtin names whose
+// return type is String per mapanare/self/semantic.mn::builtin_return_type.
+// It intentionally omits `str` / `toString` / `chr` / `__mn_argv` etc.
+// because those ARE explicitly typed in lower_call_by_name and Phase 3.2
+// picks them up directly.
+
+fn is_string_returning_builtin(fn_name: String) -> Bool {
+    if fn_name == "read_line" { return true }
+    if fn_name == "read_file" { return true }
+    if fn_name == "http_get" { return true }
+    if fn_name == "sha256" { return true }
+    if fn_name == "base64_encode" { return true }
+    if fn_name == "base64_decode" { return true }
+    if fn_name == "hmac_sha256" { return true }
+    if fn_name == "hex_encode" { return true }
+    if fn_name == "random_bytes" { return true }
+    if fn_name == "regex_replace" { return true }
+    if fn_name == "gpu_device_name" { return true }
+    if fn_name == "join" { return true }
+    if fn_name == "typeof" { return true }
+    return false
 }
 
 // ---------------------------------------------------------------------------
