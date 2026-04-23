@@ -18,6 +18,27 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.4.3** (shipped) — **Own.1 Phase 2 — close Rt.03 (loop-
+  reassignment leaks).** Adds `EmitState.loop_depth: Int` (19th field,
+  Reg.1 gate 24 → 25 clean) with matched push/pop around `for_body` /
+  `while_body` / `mapfor_body` label emission in `emit_mir_basic_block`;
+  Python `LLVMTextEmitter._loop_depth` + `_emit_fn` reset + push/pop
+  around `for bb in fn.blocks` provide parity. `emit_track_string` /
+  `_boxed` / `_closure` (self-hosted) + `_track_string` / `_track_boxed`
+  / `_track_closure` (Python) prepend a `load {slot_ty}, slot` +
+  `@__mn_str_free` / `@free` before the store when `loop_depth > 0`;
+  outside loops the emission is byte-identical to v5.4.2. Zero-init in
+  the entry-block prelude + null-tolerant runtime free fns make the
+  first-iteration free a no-op. Closes Rt.03: 22_string_builder 6 objs
+  / 19 B → CLEAN; baseline TSV refreshed; regression back to leaking
+  now fails CI. D3 UAF risk (aliased copies + reassignment) did not
+  materialize on the current corpus — UAF sweep byte-identical (55
+  CLEAN / 0 ASAN_ERROR / 11 CRASH_NO_ASAN). Goldens 54/66 preserved;
+  valgrind 66 WARNINGS_ONLY / 0 ERRORS preserved; leak sweep 45 CLEAN /
+  3 LEAK (baseline-gated) / 11 COMPILE_FAIL / 7 LINK_FAIL / 0
+  regressions. stage2.ll 169280 lines (+0.19% vs v5.4.2); `llvm-as`
+  OK. `docs/known_issues.md` Rt.03 row flipped to CLOSED. See
+  `docs/roadmap/v5/v5.4.3/`.
 - **v5.4.2** (shipped) — **Own.1 Phase 2 — ASan leak-detection
   gate.** Flips `detect_leaks=1` across all 66 goldens via new
   `scripts/run_asan_leak_goldens.sh` (compile with `mnc-stage1`, `llc`
@@ -77,25 +98,19 @@ Most recent releases (last 6). Full history at
   staleness closed). `examples/signals/counter.mn` signal demo. All
   three Coral LOW carry-forwards closed. Closeout arc complete.
   See `docs/roadmap/v5/v5.3.3/`.
-- **v5.3.1** (shipped) — **Quick-win closeout.** Lint GREEN, stream-C
-  tests fixed, docs accurate. 5 MEDIUM + 3 LOW closures. No compiler
-  source changes. See `docs/roadmap/v5/v5.3.1/`.
 - **v5.3.0** (shipped) — **THE PANEL — 9.30/10, Option A.** Seven
   reviewers grading v5.0.1–v5.2.0 arc. 5 EXCEEDS / 2 MEETS / 0 NEEDS
   WORK. See `docs/roadmap/v5/v5.3.0/`.
 
 ### Planned / in-progress
 
-- **v5.4.3** — **Close Rt.03 + Rt.04.** Loop-scoped free-before-store
-  in `emit_track_string` (activates only when the emit site is inside
-  a for/while body, keyed on a new `loop_depth` field in `EmitState`)
-  closes Rt.03 (22_string_builder loop-reassignment). One-level
-  struct-field walk drop glue (extract every ptr-typed field from
-  struct-return aggregates, add to per-resource ret-ptr comparison
-  lists) closes Rt.04 (62_list_output struct-return intermediates),
-  removes v5.4.1 Phase 4's conservative skip-all-drops guard. Both
-  verified against the baseline gate — fixes land as improvements
-  that the checker prompts to refresh.
+- **v5.4.4** — **Close Rt.04.** One-level struct-field walk in
+  drop-glue: extract every ptr-typed field from struct-return
+  aggregates and add each to the per-resource ret-ptr comparison
+  lists; removes v5.4.1 Phase 4's conservative skip-all-drops guard
+  so 62_list_output's struct-return intermediates no longer leak.
+  Verified against the refreshed baseline as an improvement the
+  checker prompts to lock in.
 - **v5.5.0** — **Sh.4 — self-hosted async.** `block_on`/`await` +
   coroutine lowering.
 - **v5.6.0** — **Sh.6 — self-hosted tensor.** `Tensor`/`Float` types
