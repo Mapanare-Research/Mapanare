@@ -1,55 +1,55 @@
-# Mapanare v5.7.0 — "Sh.6: Self-Hosted Tensor"
+# Mapanare v5.7.0 — "Sh.7 + B: Closure-Typed + Or-Pattern Fix — 66/66"
 
-> **Port `Tensor` / `Float` types and nested-array literal parsing
-> from Python bootstrap to `mapanare/self/`.** Closes Sh.6 (5 failing
-> native goldens). The tensor surface (literals, indexing,
-> broadcasting, reductions, slicing) is stable since v4.45.0 on the
-> Python side; the self-hosted compiler frontend is missing it.
+> **Close the last 2 failing goldens.** Sh.7 (closure-typed parameters
+> in self-hosted `semantic.mn`/`lower.mn`) + B (bootstrap-also-fails
+> `51_match_guards_and_or` or-pattern binding-set check). Drives native
+> goldens to **66/66** — first time in project history.
 
 **Status:** PLANNED
-**Breaking:** No (tensor surface unchanged; self-hosted compiler
-gains support for already-spec'd syntax)
-**Prerequisite:** v5.6.0 shipped (Sh.4 async closed)
-**Estimated work:** 3–4 sessions (~7–10 hours). Largest of the v5.6–
-v5.8 feature-parity arc because it touches lexer + parser.
-**Owner docket:** Sh.6 (opened v4.111.0; "v5.x feature track" since
-PARITY_GAPS.md:141)
+**Breaking:** No
+**Prerequisite:** v5.6.0 shipped (Sh.6 tensor closed; v5.4.0–v5.6.0
+closed Sh.2/Sh.4/Sh.6 respectively)
+**Estimated work:** 1–2 sessions (~3–5 hours). Smallest of the
+feature-parity arc.
+**Owner dockets:** Sh.7 (opened v4.111.0) + B (opened v4.104.0)
 
 ---
 
 ## Why this release exists
 
-### The failing goldens
+### The two remaining goldens
 
-Per `docs/roadmap/v4/v4.126.0/GOLDEN_TRIAGE.md`:
+From `docs/roadmap/v4/v4.126.0/GOLDEN_TRIAGE.md`:
+
+**Sh.7 — closure-typed (1 test):**
 
 | Test | Error |
 |---|---|
-| `49_tensor_literal` | `Undefined function 'tensor_rank'`, `Undefined variable 'Tensor'` |
-| `50_tensor_indexing` | `parse error: expected RPAREN but got RBRACKET` (nested-array `[[1,2],[3,4]]`) |
-| `51_tensor_broadcast` | `Undefined variable 'Tensor'`, `Undefined variable 'Float'` |
-| `52_tensor_slicing` | `Undefined variable 'Float'`, `Undefined variable 'Tensor'` |
-| `53_linear_regression` | `Undefined variable 'Tensor'` |
+| `64_closure_typed` | `Undefined variable 'a'`, `Type mismatch: declared type <fn> but initial value is <fn>` |
 
-Three distinct gaps in the self-hosted compiler:
+Root cause: self-hosted `semantic.mn` and `lower.mn` don't resolve
+closure-capture parameters. Python fix landed v4.103.0 (dockets #4,
+#5) and has not been mirrored.
 
-1. **Grammar:** `parser.mn` doesn't recognize nested-array literal
-   syntax `[[1,2],[3,4]]` as a tensor literal.
-2. **Semantic:** `semantic.mn` doesn't register `Tensor` or `Float`
-   as types, and doesn't register tensor builtins (`tensor_rank`,
-   `tensor_shape`, `tensor_reshape`, etc.).
-3. **Lowering:** `lower.mn` doesn't lower `TensorLit` AST nodes to
-   MIR `TensorInit` instructions.
+**B — bootstrap-also-fails (1 test):**
 
-The Python bootstrap handles all three since v4.45.0. The C runtime
-has `__mn_tensor_*` functions complete.
+| Test | Error |
+|---|---|
+| `51_match_guards_and_or` | `or-pattern alternatives must bind the same names: extra ['None']` |
 
-### Sizing
+Root cause: Python bootstrap's semantic check rejects a valid pattern.
+The harness can't establish a reference IR for a test the bootstrap
+itself rejects. Fixing this is a *Python*-side fix, not a self-hosted
+port.
 
-Tensor is the largest feature gap of the v5.6–v5.8 arc. The Python
-lowerer has ~500 LOC of tensor-specific handling; `emit_llvm_text.py`
-has ~400 LOC of tensor emission. Porting faithfully is a
-multi-session task.
+### What 66/66 means
+
+First release in Mapanare's history where `mnc-stage1` passes every
+golden test. Closes the final parity gap between Python bootstrap and
+self-hosted compiler for the golden corpus. Does NOT mean the
+self-hosted compiler is feature-complete — LICM (Li.1), some runtime
+deprecations, and v6.0-era work remain. But for the specific test
+corpus that defines "self-hosting," we'll be at 100%.
 
 ---
 
@@ -57,161 +57,148 @@ multi-session task.
 
 ### What ships
 
-#### 7.0a — Nested-array literal in grammar (lexer + parser)
+#### 8.0a — Sh.7: closure-typed parameters
 
-`mapanare/self/lexer.mn` — verify `LBRACKET`/`RBRACKET` tokens
-already exist (they do, for lists). No lexer changes expected.
+Two parts:
 
-`mapanare/self/parser.mn` — tensor literals are disambiguated from
-list literals by content:
-- `[1, 2, 3]` — 1D tensor or list (context-dependent)
-- `[[1,2],[3,4]]` — 2D tensor literal
-- `[[[1]]]` — 3D tensor literal
-
-Python bootstrap disambiguates via type annotation (`let t: Tensor<F>
-= [...]`) or via semantic-check post-pass. Mirror whichever Python
-does. If Python type-annotates to disambiguate, the parser produces
-a generic `ListLit` node and semantic converts based on declared
-type. If Python has a parser-level `TensorLit` node, port it.
+**Python reference** (`mapanare/lower.py` + `mapanare/semantic.py`):
+the v4.103.0 fix resolved closure-capture parameters — when a closure
+is passed as a function argument and then invoked, the callee must
+know the closure's captured-env type signature to generate correct
+env-pointer loads. Grep:
 
 ```bash
-# Reference check
-grep -n "TensorLit\|nested_list\|parse_tensor" mapanare/parser.py
-grep -n "TensorLit" mapanare/self/ast.mn
+grep -n "closure.*param\|capture.*param\|ClosureParam" mapanare/semantic.py \
+  mapanare/lower.py
 ```
 
-Expected: self-hosted `ast.mn` already has `TensorLit` node (since
-the Python-side feature pre-dates the v4.45.0 self-hosted arc start).
-If so, just port the parser rule.
+**Self-hosted port** (`mapanare/self/semantic.mn` +
+`mapanare/self/lower.mn`): mirror the resolution pattern. Estimated
+~80 LOC total.
 
-#### 7.0b — Register `Tensor` / `Float` types
+#### 8.0b — B: or-pattern binding-set fix
 
-`mapanare/self/semantic.mn::register_builtins` — add:
+The failing case is syntactically:
 
 ```mapanare
-s = register_builtin_type(s, "Tensor", TypeKind::TENSOR)
-s = register_builtin_type(s, "Float", TypeKind::FLOAT)
-
-// Tensor builtins
-s = register_builtin_fn(s, "tensor_rank",    fn_type(tensor_t, int_t))
-s = register_builtin_fn(s, "tensor_shape",   fn_type(tensor_t, list_int_t))
-s = register_builtin_fn(s, "tensor_reshape", ...)
-s = register_builtin_fn(s, "tensor_slice",   ...)
-// ... mirror semantic.py
+match opt {
+    Some(x) | None => { ... }
+    _ => { ... }
+}
 ```
 
-#### 7.0c — Lower tensor expressions
+The Python check at `mapanare/semantic.py` (grep for `or-pattern
+alternatives must bind the same names`) is too strict. It flags the
+binding-set mismatch `{x}` vs `{}` as an error when the correct
+behavior is: an or-pattern is valid only if it binds the **same**
+names, but the fix is making the diagnostic apply correctly — the
+specific `51_match_guards_and_or.mn` case has a guard condition that
+the current check is confused by.
 
-`mapanare/self/lower.mn` — new handlers:
+Grep:
 
-- `lower_tensor_lit(s, data)` → MIR `TensorInit` instruction
-- `lower_tensor_index(s, data)` → MIR tensor-index call
-- `lower_tensor_method(s, data)` → dispatch `reshape`, `slice`, etc.
-
-Use Python `lower.py::_lower_tensor_*` as the spec.
-
-#### 7.0d — Emit tensor intrinsics
-
-`mapanare/self/emit_llvm.mn::declare_all_runtime` — declare the
-`__mn_tensor_*` family:
-
-```mapanare
-s = declare_runtime_fn(s, "__mn_tensor_create", ptr_t, "i64, ptr, i64, ptr")
-s = declare_runtime_fn(s, "__mn_tensor_rank", int_t, "ptr")
-s = declare_runtime_fn(s, "__mn_tensor_shape", ptr_t, "ptr")
-s = declare_runtime_fn(s, "__mn_tensor_reshape", ptr_t, "ptr, ptr, i64")
-s = declare_runtime_fn(s, "__mn_tensor_index", ptr_t, "ptr, ptr, i64")
-// ... and more
+```bash
+grep -n "or-pattern\|or_pattern" mapanare/semantic.py
+cat tests/golden/51_match_guards_and_or.mn
 ```
 
-`emit_instr` dispatch — add `tensor_init` handler emitting
-`__mn_tensor_create` call with shape + flat-data pointer.
+**Python-side fix.** After fixing, re-generate the reference IR:
+
+```bash
+python3 scripts/test_native.py --bless --filter 51_match_guards_and_or
+```
+
+Then mirror the fix into `mapanare/self/semantic.mn` if the
+self-hosted compiler has the same overly-strict check (likely yes,
+since self-hosted was ported from Python).
+
+#### 8.0c — Celebrate
+
+A 66/66 badge in README. Post-release note somewhere visible.
 
 **Expected LOC:**
 
 | File | ~LOC |
 |---|---:|
-| `parser.mn` — tensor literal rule | ~80 |
-| `semantic.mn` — type + builtin registration | ~80 |
-| `lower.mn` — tensor handlers | ~250 |
-| `emit_llvm.mn` — runtime declarations + emission | ~180 |
-| **Total** | **~590** |
+| `mapanare/semantic.py` — or-pattern check | ~15 |
+| `mapanare/lower.py` — closure-typed resolution (if not already complete) | ~30 |
+| `mapanare/self/semantic.mn` — mirror both fixes | ~70 |
+| `mapanare/self/lower.mn` — closure-typed resolution | ~50 |
+| **Total** | **~165** |
 
 ### What does NOT ship
 
-- **Tensor reshape** (if still "not yet on LLVM" per CLAUDE.md). If
-  Python doesn't support it, self-hosted doesn't either.
-- **Mutable views / stepped slices.** Python-side deferred per
-  CLAUDE.md; stays deferred.
-- **GPU tensor dispatch.** `stdlib/gpu/tensor.mn` uses
-  `@gpu`/`@cuda`/`@vulkan` decorators already ported — no new work.
-- **New tensor syntax.** Everything spec'd already.
+- **New closure features.** Only the parity fix.
+- **New pattern-matching features.** Only the or-pattern check fix.
+- **LICM (Li.1).** Deferred per CLOSEOUT_ARC.md.
+- **Own.1 Phase 3 / full borrow checker.** v6.0 scope.
 
 ---
 
 ## Exit criteria
 
-1. 5 Sh.6 goldens compile via `mnc-stage1` without error.
-2. Compiled IR passes `llvm-as`.
-3. Compiled + lli-executed output matches Python bootstrap for all 5.
-4. 15+ parser tests for nested-array literal syntax.
-5. Strict 3-stage fixed-point holds.
-6. Non-bootstrap pytest 0 failures.
-7. `make lint` clean.
-8. `PARITY_GAPS.md` moves Sh.6 to Historical.
+1. **66/66 native goldens** via `mnc-stage1`.
+2. `51_match_guards_and_or` passes both bootstrap and mnc-stage1.
+3. `64_closure_typed` passes mnc-stage1.
+4. Strict 3-stage fixed-point holds.
+5. Non-bootstrap pytest 0 failures (down from "byte-identical failure
+   set" to actually 0).
+6. `make lint` clean.
+7. `PARITY_GAPS.md` moves Sh.7 to Historical; or-pattern fix listed
+   in release notes.
+8. README goldens badge updated to 66/66.
 
 ---
 
 ## Design decisions
 
-### D1 — Mirror Python's disambiguation
+### D1 — Python fix first, then self-hosted mirror
 
-Whatever Python uses to distinguish `[1,2,3]` as list vs tensor,
-self-hosted copies. Type annotation is most likely
-(`let x: Tensor<Int> = [1,2,3]`). Parser produces `ListLit`; semantic
-rewrites to `TensorLit` based on declared type.
+The B (or-pattern) fix touches `mapanare/semantic.py`. The
+self-hosted mirror may pre-date the broken check — verify before
+editing. If yes, mirror. If no, only Python changes.
 
-### D2 — Float vs Int tensor elements
+### D2 — Closure-typed port follows v4.103.0 pattern
 
-Python `Tensor<Float>` and `Tensor<Int>` have different runtime
-storage (f64 vs i64 arrays). Self-hosted emitter must produce the
-correct `__mn_tensor_create` arguments (element-size + elem-type tag).
-Cross-reference `mapanare_tensor.c` for the expected constants.
+v4.103.0 dockets #4 and #5 documented the Python fix. Mirror both
+directly to self-hosted.
 
-### D3 — No new MIR instruction unless Python has one
+### D3 — Re-bless the 51 reference
 
-If Python lowers `t.reshape(shape)` to `Call("tensor_reshape", [t,
-shape])`, self-hosted does the same. Only add new MIR kinds if the
-Python side has them.
+After fixing Python semantic, the reference IR for
+`51_match_guards_and_or` changes. Re-run
+`scripts/test_native.py --bless --filter 51_match_guards_and_or`.
 
 ### D4 — Tests
 
-Reuse the 5 Sh.6 goldens. Add a dedicated parser test file
-`tests/parser/test_tensor_literals.py` with 15+ cases: 1D, 2D, 3D,
-mixed numeric types, empty dim, malformed (parse error recovery).
+- Existing goldens 51 + 64 cover the fixes.
+- Add a parser+semantic test `tests/semantic/test_or_pattern_guards.py`
+  with 5+ cases proving the check accepts valid patterns and still
+  rejects binding-set mismatches.
+- Add a semantic test for closure-typed params:
+  `tests/semantic/test_closure_typed_params.py` with 3+ cases.
 
 ---
 
 ## Risks
 
-- **R1 — Parser precedence collision with list literal.** Making
-  `[[1,2],[3,4]]` parse as nested-list-of-lists is straightforward;
-  the question is whether semantic can always disambiguate. If not,
-  add a `TensorLit` AST node with parser fallback.
-- **R2 — Float ABI.** `Tensor<Float>` boxed vs unboxed storage
-  depends on element size. Mirror Python exactly.
-- **R3 — Fixed-point breaks** as new emission enters stage2.ll.
-  Mitigation: verify after every helper.
-- **R4 — Runtime signature drift.** `__mn_tensor_*` is stable since
-  v4.45.0; low risk. Double-check in `runtime/native/mapanare_tensor.c`.
+- **R1 — Python or-pattern fix is non-trivial.** The check might be
+  load-bearing for other tests. Verify full pytest 0 failures after
+  the fix.
+- **R2 — Fixed-point breaks.** New emission in semantic for
+  closure-typed. Mitigation: `verify_fixed_point.sh --keep`.
+- **R3 — 51's new reference IR may be unstable.** If Python's fix
+  produces IR that's not byte-equal across runs, the harness will
+  keep failing. Test `test_native.py --bless` stability first.
 
 ---
 
 ## What NOT to do
 
-- Do not add tensor reshape/view/slice features if Python bootstrap
-  doesn't already have them.
-- Do not touch `runtime/native/mapanare_tensor.c`. It's complete.
-- Do not invent MIR instructions without checking Python.
-- Do not skip the 15-test parser test file — tensor grammar
-  regressions are easy to introduce and hard to debug later.
+- Do not add new pattern-matching syntax or semantics.
+- Do not "improve" the or-pattern check beyond fixing the 51 case.
+  Minimal surgical fix.
+- Do not defer the README 66/66 update — the badge is the
+  human-visible signal that the closure arc completed.
+- Do not amend the v5.5.0/v5.6.0/v5.7.0 plans retroactively. This
+  release stands on its own.

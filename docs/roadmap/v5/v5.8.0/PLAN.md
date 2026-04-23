@@ -1,204 +1,49 @@
-# Mapanare v5.8.0 — "Sh.7 + B: Closure-Typed + Or-Pattern Fix — 66/66"
-
-> **Close the last 2 failing goldens.** Sh.7 (closure-typed parameters
-> in self-hosted `semantic.mn`/`lower.mn`) + B (bootstrap-also-fails
-> `51_match_guards_and_or` or-pattern binding-set check). Drives native
-> goldens to **66/66** — first time in project history.
+# v5.8.0 — Re-panel (target 9.7+)
 
 **Status:** PLANNED
 **Breaking:** No
-**Prerequisite:** v5.7.0 shipped (Sh.6 tensor closed; v5.5.0–v5.7.0
-closed Sh.2/Sh.4/Sh.6 respectively)
-**Estimated work:** 1–2 sessions (~3–5 hours). Smallest of the
-feature-parity arc.
-**Owner dockets:** Sh.7 (opened v4.111.0) + B (opened v4.104.0)
+**Prerequisite:** v5.7.1 shipped (SPEC + docs polish after 66/66)
+**Estimated work:** 1 session (measurement + review)
 
 ---
 
-## Why this release exists
+## Goal
 
-### The two remaining goldens
+Re-panel after the full v5.4.0–v5.7.1 feature + polish arc. Same
+seven reviewers, same mechanical rule. Target: aggregate >= 9.7.
 
-From `docs/roadmap/v4/v4.126.0/GOLDEN_TRIAGE.md`:
+Unlike the original v5.4.0 plan (which would have panelled after only
+the v5.3.x closeout arc), this panel sees the complete picture: all
+Sh.* feature gaps closed, 66/66 goldens, Own.1 Phase 2 landed, and a
+fresh SPEC + docs polish pass. Every reviewer's ceiling objection
+should be resolved.
 
-**Sh.7 — closure-typed (1 test):**
+## Expected score recovery
 
-| Test | Error |
-|---|---|
-| `64_closure_typed` | `Undefined variable 'a'`, `Type mismatch: declared type <fn> but initial value is <fn>` |
+| Reviewer | v5.3.0 | Expected v5.8.0 | Delta | Driver |
+|----------|--------|-----------------|-------|--------|
+| Rattler | 9.3 | 9.7–9.8 | +0.4–0.5 | 66/66 goldens, In.1-stage2 fix, closure + or-pattern fixed |
+| Viper | 9.7 | 9.8–9.9 | +0.1–0.2 | Own.1 Phase 2 closes 28-panel carry-forward |
+| Anaconda | 8.9 | 9.5–9.7 | +0.6–0.8 | Lint GREEN, stream fixed, 66/66 goldens, async + tensor tests |
+| Cobra | 8.8 | 9.5–9.7 | +0.7–0.9 | Fixed-point restored, all Sh.* closed, full self-hosted parity |
+| Coral | 9.4 | 9.6–9.8 | +0.2–0.4 | SPEC-pkg, signal demo, tensor + async spec'd + implemented |
+| Boa | 9.4 | 9.6–9.7 | +0.2–0.3 | Bo.15/16/17 cleared, 66/66 badge, complete docs refresh |
+| Mamba | 9.6 | 9.7–9.8 | +0.1–0.2 | Stream-C fix, async parity, drop-glue stable |
+| **Aggregate** | **9.30** | **9.65–9.75** | **+0.35–0.45** | — |
 
-Root cause: self-hosted `semantic.mn` and `lower.mn` don't resolve
-closure-capture parameters. Python fix landed v4.103.0 (dockets #4,
-#5) and has not been mirrored.
+## Why features-first, panel-last
 
-**B — bootstrap-also-fails (1 test):**
+The v5.3.x closeout arc cleared all 5 MEDIUM carry-forwards, but the
+reviewers would still flag the Sh.* feature gaps (Sh.2/Sh.4/Sh.6/Sh.7)
+and the 54/66 golden ceiling. Panelling at 9.5 then doing 4 more
+feature releases then panelling again is two panels for one arc.
+Shipping features first (v5.4.0–v5.7.0) and polishing (v5.7.1) before
+the single panel maximizes the score delta and eliminates every known
+ceiling objection in one pass.
 
-| Test | Error |
-|---|---|
-| `51_match_guards_and_or` | `or-pattern alternatives must bind the same names: extra ['None']` |
+## Closeout arc precedent
 
-Root cause: Python bootstrap's semantic check rejects a valid pattern.
-The harness can't establish a reference IR for a test the bootstrap
-itself rejects. Fixing this is a *Python*-side fix, not a self-hosted
-port.
-
-### What 66/66 means
-
-First release in Mapanare's history where `mnc-stage1` passes every
-golden test. Closes the final parity gap between Python bootstrap and
-self-hosted compiler for the golden corpus. Does NOT mean the
-self-hosted compiler is feature-complete — LICM (Li.1), some runtime
-deprecations, and v6.0-era work remain. But for the specific test
-corpus that defines "self-hosting," we'll be at 100%.
-
----
-
-## Scope
-
-### What ships
-
-#### 8.0a — Sh.7: closure-typed parameters
-
-Two parts:
-
-**Python reference** (`mapanare/lower.py` + `mapanare/semantic.py`):
-the v4.103.0 fix resolved closure-capture parameters — when a closure
-is passed as a function argument and then invoked, the callee must
-know the closure's captured-env type signature to generate correct
-env-pointer loads. Grep:
-
-```bash
-grep -n "closure.*param\|capture.*param\|ClosureParam" mapanare/semantic.py \
-  mapanare/lower.py
-```
-
-**Self-hosted port** (`mapanare/self/semantic.mn` +
-`mapanare/self/lower.mn`): mirror the resolution pattern. Estimated
-~80 LOC total.
-
-#### 8.0b — B: or-pattern binding-set fix
-
-The failing case is syntactically:
-
-```mapanare
-match opt {
-    Some(x) | None => { ... }
-    _ => { ... }
-}
-```
-
-The Python check at `mapanare/semantic.py` (grep for `or-pattern
-alternatives must bind the same names`) is too strict. It flags the
-binding-set mismatch `{x}` vs `{}` as an error when the correct
-behavior is: an or-pattern is valid only if it binds the **same**
-names, but the fix is making the diagnostic apply correctly — the
-specific `51_match_guards_and_or.mn` case has a guard condition that
-the current check is confused by.
-
-Grep:
-
-```bash
-grep -n "or-pattern\|or_pattern" mapanare/semantic.py
-cat tests/golden/51_match_guards_and_or.mn
-```
-
-**Python-side fix.** After fixing, re-generate the reference IR:
-
-```bash
-python3 scripts/test_native.py --bless --filter 51_match_guards_and_or
-```
-
-Then mirror the fix into `mapanare/self/semantic.mn` if the
-self-hosted compiler has the same overly-strict check (likely yes,
-since self-hosted was ported from Python).
-
-#### 8.0c — Celebrate
-
-A 66/66 badge in README. Post-release note somewhere visible.
-
-**Expected LOC:**
-
-| File | ~LOC |
-|---|---:|
-| `mapanare/semantic.py` — or-pattern check | ~15 |
-| `mapanare/lower.py` — closure-typed resolution (if not already complete) | ~30 |
-| `mapanare/self/semantic.mn` — mirror both fixes | ~70 |
-| `mapanare/self/lower.mn` — closure-typed resolution | ~50 |
-| **Total** | **~165** |
-
-### What does NOT ship
-
-- **New closure features.** Only the parity fix.
-- **New pattern-matching features.** Only the or-pattern check fix.
-- **LICM (Li.1).** Deferred per CLOSEOUT_ARC.md.
-- **Own.1 Phase 3 / full borrow checker.** v6.0 scope.
-
----
-
-## Exit criteria
-
-1. **66/66 native goldens** via `mnc-stage1`.
-2. `51_match_guards_and_or` passes both bootstrap and mnc-stage1.
-3. `64_closure_typed` passes mnc-stage1.
-4. Strict 3-stage fixed-point holds.
-5. Non-bootstrap pytest 0 failures (down from "byte-identical failure
-   set" to actually 0).
-6. `make lint` clean.
-7. `PARITY_GAPS.md` moves Sh.7 to Historical; or-pattern fix listed
-   in release notes.
-8. README goldens badge updated to 66/66.
-
----
-
-## Design decisions
-
-### D1 — Python fix first, then self-hosted mirror
-
-The B (or-pattern) fix touches `mapanare/semantic.py`. The
-self-hosted mirror may pre-date the broken check — verify before
-editing. If yes, mirror. If no, only Python changes.
-
-### D2 — Closure-typed port follows v4.103.0 pattern
-
-v4.103.0 dockets #4 and #5 documented the Python fix. Mirror both
-directly to self-hosted.
-
-### D3 — Re-bless the 51 reference
-
-After fixing Python semantic, the reference IR for
-`51_match_guards_and_or` changes. Re-run
-`scripts/test_native.py --bless --filter 51_match_guards_and_or`.
-
-### D4 — Tests
-
-- Existing goldens 51 + 64 cover the fixes.
-- Add a parser+semantic test `tests/semantic/test_or_pattern_guards.py`
-  with 5+ cases proving the check accepts valid patterns and still
-  rejects binding-set mismatches.
-- Add a semantic test for closure-typed params:
-  `tests/semantic/test_closure_typed_params.py` with 3+ cases.
-
----
-
-## Risks
-
-- **R1 — Python or-pattern fix is non-trivial.** The check might be
-  load-bearing for other tests. Verify full pytest 0 failures after
-  the fix.
-- **R2 — Fixed-point breaks.** New emission in semantic for
-  closure-typed. Mitigation: `verify_fixed_point.sh --keep`.
-- **R3 — 51's new reference IR may be unstable.** If Python's fix
-  produces IR that's not byte-equal across runs, the harness will
-  keep failing. Test `test_native.py --bless` stability first.
-
----
-
-## What NOT to do
-
-- Do not add new pattern-matching syntax or semantics.
-- Do not "improve" the or-pattern check beyond fixing the 51 case.
-  Minimal surgical fix.
-- Do not defer the README 66/66 update — the badge is the
-  human-visible signal that the closure arc completed.
-- Do not amend the v5.5.0/v5.6.0/v5.7.0 plans retroactively. This
-  release stands on its own.
+The v4.121.0–v4.135.0 closeout arc (15 releases) pushed the aggregate
+from 8.21 (v4.120.0, Option B) to 8.80 (v4.136.0, Option C). The
+current arc is 7 releases (v5.3.1–v5.7.1) but covers both closeout
+AND feature-parity, targeting a larger delta.

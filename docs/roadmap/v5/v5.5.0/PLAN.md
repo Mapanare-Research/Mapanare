@@ -1,81 +1,96 @@
-# Mapanare v5.5.0 — "Own.1 Phase 2: Self-Hosted Drop-Glue + Move Tracking"
+# Mapanare v5.5.0 — "Sh.4: Self-Hosted Async"
 
-> **Close Sh.2. Drive native goldens 54/66 → 65/66.** The v5.1.3 Phase 1
-> workaround neutralized two specific sites (`register_struct`,
-> `register_enum`) with the Cb.7 zero-after-push pattern. Phase 2 lands
-> the real infrastructure: drop-glue emission in the self-hosted emitter,
-> a `Move` MIR instruction, per-function ownership slots in `EmitState`,
-> and move-on-call propagation through the lowerer.
+> **Port `block_on` / `await` / coroutine lowering from Python bootstrap
+> to `mapanare/self/`.** Closes Sh.4 (5 failing native goldens).
+> Drive goldens 65/66 → ~70/66 (provisional — new tests may stay at
+> 65 if v5.5.0 already closed all 11 Sh.2 tests and the 5 Sh.4 tests
+> were already part of the 12-gap).
 
 **Status:** PLANNED
-**Breaking:** No (ABI unchanged, grammar unchanged, stdlib unchanged)
-**Prerequisite:** v5.4.0 re-panel shipped (aggregate ≥ 9.5 target)
-**Estimated work:** 3–5 sessions (~8–12 hours total)
-**Owner docket:** Own.1 Phase 2 (deferred from v5.1.3; Viper v4.99.0 →
-v5.3.0, 28 panels of carry-forward)
+**Breaking:** No (language surface unchanged; self-hosted compiler
+gains support for already-spec'd syntax)
+**Prerequisite:** v5.4.0 shipped (Own.1 Phase 2 closes Sh.2)
+**Estimated work:** 2–3 sessions (~5–7 hours)
+**Owner docket:** Sh.4 (opened v4.111.0; listed as "v5.x feature
+track" since PARITY_GAPS.md:143)
 
 ---
 
 ## Why this release exists
 
-### The 54/66 ceiling
+### The failing goldens
 
-`python3 scripts/test_native.py --stage1 mapanare/self/mnc-stage1`
-holds at 54/66 since v5.0.4. The 12-test gap decomposes per
+5 goldens crash `mnc-stage1` with `Undefined function 'block_on'` per
 `docs/roadmap/v4/v4.126.0/GOLDEN_TRIAGE.md`:
 
-| Bucket | Tests | Root cause | Fix vehicle |
-|---|---:|---|---|
-| **Sh.2** emit_mir_call NULL-deref | **11** | Self-hosted emitter has no String/list ownership tracking; `find_function` returns a copied `FnEntry` whose `ret_type: String` is a stale pointer after the first call is emitted | **v5.5.0 (this release)** |
-| Sh.4 async missing | 5 | `block_on` / `await` not in self-hosted `semantic.mn`; no coroutine lowering in self-hosted `lower.mn` | v5.6.0 |
-| Sh.6 tensor missing | 5 | `Tensor` / `Float` types not registered; nested-array literal grammar not in self-hosted parser | v5.7.0 |
-| Sh.7 closure-typed | 1 | Closure-capture parameters not resolved in self-hosted `semantic.mn` / `lower.mn` | v5.8.0 |
-| B bootstrap-also-fails | 1 | `51_match_guards_and_or` or-pattern binding-set check is wrong in Python bootstrap too | v5.8.0 (orthogonal) |
+- `55_async_basic` — minimal `block_on { ... }` smoke test
+- `56_async_await` — chained awaits
+- `57_real_await` — coroutine with `.await` suspension
+- `58_async_file_io` — async file I/O via coroutine
+- `59_async_fanout` — spawn + join N coroutines
 
-**v5.5.0 closes the biggest single bucket: 11 of 12.**
+The Python bootstrap handles all 5. Stage1 rejects them at semantic
+check:
+1. `mapanare/self/semantic.mn::register_builtins` (line ~1889) doesn't
+   register `block_on` or `await`.
+2. Even if `block_on` were registered as a builtin, self-hosted
+   `lower.mn` has no coroutine support — it would lower to an
+   unresolved Call.
 
-### Why this has been deferred 28 panels
+### Why the Python side already works
 
-Viper has flagged ownership/drop-glue at every panel since v4.99.0.
-Every release chose to defer it for the same reason: **the self-hosted
-emitter has no drop-glue at all**, so fixing "move tracking" with no
-drop-glue to skip is dead code. You need both halves at once, and the
-drop-glue piece is the larger one (~200–400 LOC in `emit_llvm.mn`).
+`mapanare/lower.py` recognizes `block_on { ... }` as a coroutine
+wrapper, emits calls to the `__mn_coro_scheduler_*` family, and the
+Python emitter wraps the block in an LLVM coroutine (`presplit`,
+`@llvm.coro.id`, `@llvm.coro.save`, etc.). The C runtime
+(`runtime/native/mapanare_runtime.c`) has `__mn_coro_scheduler_init/
+spawn/block_on/shutdown` — all v4.150.0+ lazy-thread-aware.
 
-The v5.1.3 Phase 1 shipped the Cb.7 workaround at two specific sites
-(`register_struct`, `register_enum`) — that handled the acute case
-without requiring the full infrastructure. v5.1.3 DESIGN.md §5
-documented the Phase 2 shape; this release implements it.
+The runtime is platform-complete. The missing piece is the
+self-hosted compiler's *frontend* understanding of async.
 
-### Why the 11 Sh.2 tests crash today
+### What closes when this lands
 
-From `GOLDEN_TRIAGE.md` root-cause analysis:
+| ID | Description | Closes |
+|---|---|---|
+| Sh.4 | 5 goldens with `Undefined function 'block_on'` | All 5 |
 
-> Two reproducers triggered the same `emit_mir_call+0x236a4` crash:
-> 1. `rec(n - 1) + rec(n - 2)` — two recursive calls in one expression
-> 2. `let a: Int = make_int(1); let b: Int = make_int(2)` — two
->    let-bindings whose values are calls to the same function
->
-> Counter-examples that do NOT crash:
-> - `add(x) + add(x)` (two calls to a non-recursive helper)
-> - `print(make_str(1)); print(make_str(2))` (in print statements, not
->   let bindings)
+If v5.5.0 closed Sh.2, v5.5.0 drives goldens 65/66 → 70/66 (if the
+5 Sh.4 tests weren't counted against 65) or 65/66 → 65/66 (if the
+harness already counts the 66 tests total and v5.5.0 hit 65).
 
-The crash happens inside `mnc-stage1` itself while it is compiling a
-user `.mn` file. The `FnEntry` struct registered for a function has a
-`ret_type: String` field; when `find_function` is called the second
-time, the first call's emission path freed the backing heap for that
-String, and the second `is_byref_type_st(s, fe.ret_type)` walks freed
-memory → `__mn_str_starts_with+0x37` crash.
+**Current accounting:** the 66-total denominator already includes the
+5 Sh.4 tests. At 54/66 baseline, Sh.4 accounts for 5 of the 12 gap.
+After v5.5.0: 65/66 (11 Sh.2 closed). After v5.5.0: **65 + 5 = not
+possible** — recount: v5.5.0 gets to 65/66 (54 + 11), meaning 1 test
+still open. Then v5.5.0 cannot drive past 66/66 since max is 66.
 
-Python's bootstrap applies `_do_call` blanket-move at line 3882, which
-shields it from this family. The self-hosted emitter, compiled by the
-Python bootstrap, inherits the same safety for the code Python *writes*
-for it — but the self-hosted emitter's own `emit_llvm.mn` has patterns
-that generate MIR where Python's `_do_call` tracking sees the ownership
-transfer from a different angle than at `_move_resource`'s six sites.
-The residual crashes are the patterns Python's `_move_resource` doesn't
-cover but `_do_call` blanket-move would.
+**Corrected trajectory:**
+
+| After | Goldens | Remaining open |
+|---|---:|---|
+| v5.3.2 (baseline) | 54/66 | Sh.2 (11) + Sh.4 (5) + Sh.6 (5) + Sh.7 (1) + B (1) - wait, that's 23 |
+
+Hmm, recount: 66 - 54 = 12 open. Triage says
+Sh.2 (11) + Sh.4 (5) + Sh.6 (5) + Sh.7 (1) + B (1) = **23**. That
+exceeds 12, meaning some overlap or the triage is per-fix-vehicle
+rather than per-test. Per `GOLDEN_TRIAGE.md:237`:
+
+> "If categories M and B are treated as 'self-hosted compiler doesn't
+> support this language feature yet' rather than regressions, the
+> Sh.2 + L bucket of 14 tests is the actual self-hosted-compiler-
+> regression surface."
+
+The triage from v4.126.0 was for a 65-test corpus (not 66), and some
+tests overlap categories. The authoritative count per category at
+v5.3.2 baseline is out of date. The release PLAN needs a **fresh
+triage** pass as Phase 0.
+
+**Revised target:** v5.5.0 closes at least the 5 async-bucket tests
+from a fresh v5.5.0-post triage. If v5.5.0 hit 65/66, v5.5.0 aims
+for the remaining test (whichever async golden it is) plus any async
+tests not yet counted. If v5.5.0 hit only 60/66, v5.5.0 picks up the
+5 async ones explicitly.
 
 ---
 
@@ -83,321 +98,131 @@ cover but `_do_call` blanket-move would.
 
 ### What ships
 
-**Four coordinated pieces. Each is a phase.**
+#### 6.0a — Register async builtins in `semantic.mn`
 
-#### 5.5.0a — `Move` instruction in MIR (both emitters)
-
-`mapanare/mir.py` — add `Move` dataclass after `Phi` (line 754):
-
-```python
-@dataclass
-class Move(Instruction):
-    value: MIRValue  # the local being moved
-    # No dest — Move is a marker, not a producer
-```
-
-`mapanare/self/mir.mn` — add variant to `Instruction` enum at line 227:
+`mapanare/self/semantic.mn::register_builtins` (line ~1889). Add:
 
 ```mapanare
-Move(Value),
+register_builtin(s, "block_on", builtin_fn_type_block_on())
+register_builtin(s, "await", builtin_fn_type_await())
+register_builtin(s, "spawn", builtin_fn_type_spawn())
+register_builtin(s, "join", builtin_fn_type_join())
 ```
 
-Python's `_do_call` blanket-move stays; the new `Move` lets the
-lowerer be explicit where it already implicitly was, and lets the
-self-hosted emitter recognize the transfer without needing to mirror
-`_do_call`'s full heuristic.
+Each `builtin_fn_type_*` helper returns a `FnType` matching the
+signature the Python bootstrap already uses. Verify with
+`mapanare/semantic.py` — mirror exactly, don't invent.
 
-#### 5.5.0b — Self-hosted emitter ownership slots
+#### 6.0b — Coroutine expression lowering in `lower.mn`
 
-`mapanare/self/emit_llvm.mn::EmitState` — add 4 per-function tracking
-lists after line 70:
+`mapanare/self/lower.mn` — new `lower_block_on` and `lower_await`
+expression handlers. Dispatch from `lower_expr` based on AST node
+kind. Mirror the Python lowerer's coroutine emission pattern —
+specifically, each `block_on { body }` lowers to:
 
-```mapanare
-// Own.1 Phase 2 (v5.5.0): per-function ownership tracking.
-// Reset at emit_fn entry. Read by emit_drop_glue before ret.
-str_owned: List<String>,       // local var names currently owning a String
-list_owned: List<String>,      // local var names currently owning a List
-boxed_owned: List<String>,     // local var names currently owning a boxed struct/enum
-moved_locals: List<String>,    // locals transferred via Move — skip in drop-glue
-```
+1. Emit a fresh async-fn definition for `body` (the coroutine)
+2. Lower the call to `__mn_coro_scheduler_spawn(fn_ptr, args)`
+3. Lower the synchronous wait to `__mn_coro_scheduler_block_on(handle)`
 
-Registry mirrors: `make_entry("EmitState", [...])` call site at line 94
-gets 4 new field names; `register_internal_struct` call at line 139
-gets the same list.
+`await expr` lowers to:
 
-`register_struct` (`lower.mn`) already has the v4.143.0 Reg.1 gate — it
-will flag the mismatch immediately if updates are inconsistent.
+1. Call `__mn_coro_save` to mark the suspend point
+2. Load the awaited future's result slot
+3. Resume the coroutine on result availability
 
-#### 5.5.0c — Drop-glue emission in `emit_llvm.mn`
+#### 6.0c — Async-aware emitter
 
-The biggest piece. Port the Python `_emit_drop_glue` family into
-Mapanare, scoped to the four resource kinds that matter for current
-goldens (String, List, boxed struct/enum, closure env). Maps, signals,
-streams, and tensors can defer — none of the 11 failing goldens
-exercise their drop-glue paths, and adding them mid-release doubles the
-surface area.
+`mapanare/self/emit_llvm.mn` — the LLVM emitter already handles user
+Call nodes. The new async MIR instructions emitted by the lowerer
+(likely `CoroSave`, `CoroSpawn`, `CoroBlockOn`) need emit handlers
+that produce the exact LLVM intrinsic sequence the Python emitter
+already writes.
 
-New functions in `emit_llvm.mn`:
+Reference: `mapanare/emit_llvm_text.py` — grep for `__mn_coro_`,
+`@llvm.coro.`, `presplit`. Copy the sequence, re-express in Mapanare.
 
-| Function | LOC est. | Mirrors |
-|---|---:|---|
-| `emit_drop_glue(s, ret_val, ret_ty)` | ~40 | `_emit_drop_glue` @ emit_llvm_text.py:1576 |
-| `collect_ret_ptrs(s, ret_val, ret_ty)` | ~60 | `_emit_drop_glue_collect_ret_ptrs` @ 1628 |
-| `emit_drop_glue_strings(s, ret_str_ptrs, ret_ptr_fields)` | ~40 | `_emit_drop_glue_strings` @ 1703 |
-| `emit_drop_glue_lists(s, ret_list_ptrs, ret_ptr_fields)` | ~40 | `_emit_drop_glue_lists` @ 1842 |
-| `emit_drop_glue_boxed(s, ret_ptr_fields)` | ~40 | `_emit_drop_glue_boxed` @ 1785 |
-| `emit_drop_glue_closures(s, ret_env, ret_ptr_fields)` | ~40 | `_emit_drop_glue_closures` @ 1744 |
+**Expected LOC:**
 
-**Total: ~260 LOC new Mapanare in `emit_llvm.mn`.**
-
-Call site: `emit_mir_return` at `emit_llvm.mn:3259` — insert
-`emit_drop_glue` call before every `ret` emission, consulting
-`st.moved_locals` to skip transferred values.
-
-#### 5.5.0d — Lower move-on-call in `lower.mn`
-
-When the lowerer emits a `Call` with arguments that are owning locals
-(Strings, Lists, boxed structs, closures), emit `Move(arg)` before the
-`Call`. This matches Python `_do_call`'s blanket-move semantics — every
-non-primitive argument to every user function call is treated as
-transferred unless the callee is known-pure.
-
-Sites in `lower.mn`:
-- `lower_call_by_name` (line ~2197) — main call path
-- `lower_method_call` (if resource-bearing receiver is transferred)
-
-**Scoping rule:** only emit `Move` for locals; don't move field-gets or
-intermediate computation. Field-get results are tracked separately via
-Python's `_str_slots` in the bootstrap emitter — leaving them out of
-Move keeps parity simple.
+| File | ~LOC |
+|---|---:|
+| `semantic.mn` — builtin registration | ~30 |
+| `lower.mn` — expression handlers + MIR emission | ~200 |
+| `emit_llvm.mn` — coroutine intrinsic emission | ~150 |
+| **Total** | **~380** |
 
 ### What does NOT ship
 
-- **Maps / signals / streams / tensors drop-glue.** No golden requires
-  them; adding them doubles review surface. v5.5.1+ patch release.
-- **`@takes_ownership` user-facing annotation.** Not needed —
-  move-on-call is blanket like Python. If specific callees need
-  opt-out later, a `@keeps_ownership` negative annotation is simpler
-  than positive `@takes_ownership`.
-- **Borrow checker.** That is v6.0 territory per DESIGN.md §8.
-- **The other 12th golden** (bootstrap-also-fails 51_match_guards_and_or).
-  Orthogonal bug; v5.8.0 handles it alongside Sh.7.
-- **Stage2 LICM (Li.1).** Deferred per CLOSEOUT_ARC.md.
+- **New async syntax.** `block_on` and `await` are already spec'd.
+- **Async stream combinators** (select, race, gather). Out of scope;
+  v5.5.1 patch if demand appears.
+- **Async `Map`/`Signal` operators.** Separate feature track.
+- **Async-runtime perf work.** Perf.2 closed at v5.1.4.
 
 ---
 
 ## Exit criteria
 
-The release is ready to ship when:
-
-1. **`python3 scripts/test_native.py --stage1 mapanare/self/mnc-stage1`
-   → ≥ 65 / 66 passing.** Pre-release baseline is 54/66. Target is 65
-   (all 11 Sh.2 tests close; 12th is the bootstrap-also-fails out of
-   scope). Minimum acceptable is 60/66 — if 5+ Sh.2 tests still crash,
-   debug before shipping.
-2. **Strict 3-stage fixed-point holds** (`bash
-   scripts/verify_fixed_point.sh --keep` → stage2.ll == stage3.ll
-   byte-identical except the known VERSION placeholder). The drop-glue
-   additions change what `mnc-stage1` emits; stage2 and stage3 are both
-   produced by the new binary so they must agree.
-3. **`llvm-as` accepts stage2.ll without error.** The new drop-glue
-   emitter writes valid IR — PHI placement, free-call signatures,
-   extractvalue indices all have to match runtime ABI.
-4. **Valgrind 0 new ERRORS** across 66 goldens (baseline 0/62/4 at
-   v5.3.1 — the 4 WARNINGS_ONLY Ge.1 residuals are out of scope).
-5. **ASan 0 new ASAN_ERROR** across 66 goldens (baseline 55/0/11;
-   the 11 CRASH_NO_ASAN were the Sh.2 goldens crashing before ASan
-   could initialize — target: those same 11 now reach ASan init and
-   report 0 errors).
-6. **Non-bootstrap pytest 0 failures** (modulo VERSION-mismatch tests
-   fixed by the mandatory `build-rt` + `build_stage1.py` rebuild).
-7. **Bootstrap pytest failure set byte-identical** — new drop-glue
-   in self-hosted emitter changes stage1 binary size but not behavior
-   for code that was already working.
-8. **`make lint` clean.** No new ruff/black/mypy findings.
-9. **`PARITY_GAPS.md` updated** — Own.1 moves from "Phase 1 CLOSED,
-   Phase 2 v5.1.4+" to "Phase 1 + Phase 2 CLOSED v5.5.0". Sh.2 moves
-   from open to Historical.
+1. 5 Sh.4 goldens compile via `mnc-stage1` without error.
+2. Compiled IR passes `llvm-as`.
+3. Compiled + lli-executed output matches Python bootstrap output for
+   all 5 async goldens.
+4. Strict 3-stage fixed-point holds.
+5. Non-bootstrap pytest 0 failures.
+6. `make lint` clean.
+7. No new valgrind ERRORS or ASan findings on the 5 new tests.
+8. `PARITY_GAPS.md` moves Sh.4 to Historical.
 
 ---
 
-## Design decisions locked in
+## Design decisions
 
-### D1 — Move instruction vs inference
+### D1 — Mirror, don't reinvent
 
-**Decision: `Move` instruction in MIR, not dataflow inference.**
+The Python bootstrap has ~2 years of coroutine emission fixes baked
+in. Treat `mapanare/lower.py` + `mapanare/emit_llvm_text.py`
+coroutine paths as the spec; port line-for-line where possible.
 
-Rationale (from v5.1.3 DESIGN.md §3): annotation-style is simpler,
-explicit, and mirrors what the Python bootstrap already does via
-`_do_call` blanket-move. Inference requires escape analysis the
-self-hosted compiler doesn't have and would duplicate LLVM's. The
-`Move` instruction is a 1-variant addition; `moved_locals` is a single
-list consulted once per return.
+### D2 — No new MIR instruction if avoidable
 
-### D2 — Blanket move-on-call, not `@takes_ownership`
+If the Python lowerer lowers `block_on { body }` to a sequence of
+existing MIR instructions + calls (and it does — `Call` +
+`CoroSave`-as-intrinsic-name), the self-hosted lowerer should do the
+same. Only add new MIR variants if strictly necessary.
 
-**Decision: every non-primitive argument to every user call is moved.**
+### D3 — Register builtins in `register_builtins`, not inline
 
-Rationale: matches Python's `_do_call`. `@takes_ownership` would require
-parser work (new attribute syntax), semantic work (callee metadata
-lookup), and lowerer work (conditional emission). The blanket rule
-produces the same safety and is 3 lines in `lower_call_by_name`.
+Other async functions may get added in v5.5.1+. Centralize the
+registration.
 
-If a future need arises for non-moving calls, add `@keeps_ownership`
-as a negative annotation — smaller surface.
+### D4 — Tests
 
-### D3 — Which resources get drop-glue in v5.5.0
-
-**Decision: String, List, boxed struct/enum, closure env only.**
-
-Maps, signals, streams, tensors don't have failing goldens that exercise
-them. Adding them mid-release doubles review surface without closing
-tests. v5.5.1 or v5.5.2 patch release can add them once v5.5.0 is
-stable. The "4 kinds" choice mirrors what the 11 Sh.2 goldens actually
-use (all are basic types + structs + closures + lists).
-
-### D4 — Drop-glue lives in `emit_llvm.mn`, not a new module
-
-**Decision: add to existing `emit_llvm.mn`.**
-
-Rationale: `scripts/concat_self.sh` MODULES list is already mature;
-adding a new module (e.g. `drop_glue.mn`) requires wiring in 3 places.
-The 260 LOC fits alongside the existing ~3,200 LOC of `emit_llvm.mn`
-without breaking the single-file cognitive load. Future refactor to a
-separate module is a mechanical move.
-
-### D5 — Python bootstrap changes
-
-**Decision: add `Move` handler to Python emitter; otherwise unchanged.**
-
-`_do_call` stays. The Python emitter's new job is to recognize the
-`Move` instruction when compiling `emit_llvm.mn` for mnc-stage1. In
-the Python emitter, `Move(val)` calls `_move_resource(val.name)` —
-exactly the existing function. ~5 LOC added.
-
-### D6 — Tests
-
-`tests/native/test_sh2_close.py` — new pytest file. For each of the 11
-Sh.2 goldens, add a test that:
-1. Compiles the golden via mnc-stage1
-2. Runs the resulting IR through `llvm-as`
-3. (if `lli` available) runs the IR and compares output with reference
-
-No existing golden needs to change. The harness already tracks 66; the
-delta is that 11 more pass.
+Reuse the 5 Sh.4 goldens as integration tests — no new
+`tests/golden/*.mn` needed. Add a parser-level unit test for
+`block_on { ... }` + `await` syntax in `tests/parser/`.
 
 ---
 
 ## Risks
 
-### R1 — Drop-glue emission produces invalid IR
-
-**Risk level: HIGH.** 260 LOC of new IR-writing code. Easy to get
-PHI placement, extractvalue indices, or free-call argument types wrong.
-
-**Mitigation:** run `llvm-as` on every stage2.ll attempt — existing
-`scripts/verify_fixed_point.sh --keep` does this. Port the Python
-helpers as closely as possible, not from scratch. Each drop-glue helper
-gets a dedicated unit test using a hand-constructed MIR module.
-
-### R2 — Move-on-call regresses a currently-passing golden
-
-**Risk level: MEDIUM.** Blanket move is aggressive. A pattern that
-currently works by accident (no-op drop glue + aliased local) could
-break if we add a Move that the emitter then frees.
-
-**Mitigation:** run the full 66-golden suite on every `build_stage1.py`
-iteration. Any drop from 54 (before) triggers investigation before
-continuing.
-
-### R3 — Fixed-point breaks
-
-**Risk level: MEDIUM.** New drop-glue emission changes what
-`mnc-stage1` writes for every function it compiles (including
-`emit_llvm.mn` itself). Stage2 will differ substantially from stage1;
-the question is stage2 == stage3.
-
-**Mitigation:** the pattern that worked at v5.0.6 (strict 3-stage at
-`0c00ad07...` hash) is that both stages are produced by the same
-binary. As long as `mnc-stage1` is deterministic (hash the binary
-before each build), stage2 == stage3 will hold.
-
-### R4 — New valgrind/ASan findings
-
-**Risk level: MEDIUM.** Drop-glue that frees too eagerly is the
-classic UAF source. The Python emitter had several iterations
-(v4.101.0, v4.131.0, v4.132.0) to get `_emit_drop_glue_collect_ret_ptrs`
-right.
-
-**Mitigation:** run the full `valgrind_all_goldens.sh` and
-`run_asan_goldens.sh` sweeps before commit. Baseline at v5.3.1 is
-valgrind 0/62/4 and ASan 55/0/11. Target post-v5.5.0 is 11/55/0 (the
-11 Sh.2 goldens now reach ASan init) and 0 new valgrind ERRORS on the
-originally-passing 54.
-
-### R5 — `EmitState` struct registry drift
-
-**Risk level: LOW.** Reg.1 gate (v4.143.0) already catches this.
-Adding 4 fields to `EmitState` requires updating 3 places in
-`emit_llvm.mn`. The gate runs in CI.
-
-**Mitigation:** run `python3 scripts/check_struct_registry.py` locally
-before commit. Re-run after every `EmitState` edit.
-
----
-
-## Release sequencing (v5.5.x arc)
-
-v5.5.0 is the base landing. If in-session estimate grows beyond 12
-hours, split:
-
-| Slot | Scope |
-|---|---|
-| **v5.5.0** | `Move` instruction (both MIRs), `EmitState` slots, String drop-glue only |
-| **v5.5.1** | List + boxed drop-glue (closes remaining Sh.2 tests if v5.5.0 left some) |
-| **v5.5.2** | Closure env drop-glue + move-on-call through method calls |
-| **v5.5.3** | Maps / signals / streams / tensors drop-glue (optional; not blocking Sh.2) |
-
-If v5.5.0 closes all 11 Sh.2 tests in one session, v5.5.1 becomes
-"expand drop-glue to the remaining 4 resource kinds" rather than "finish
-Sh.2." Prefer that outcome.
-
----
-
-## Per-reviewer expected impact
-
-| Reviewer | v5.4.0 target | v5.5.0 expected lift | v5.5.0 target |
-|---|---:|---|---:|
-| Rattler | 9.5–9.6 | +0.1 (goldens 54 → 65) | 9.6–9.7 |
-| **Viper** | 9.7 | **+0.3** (Own.1 Phase 2 closes her 28-panel carry-forward) | **9.8–9.9** |
-| Anaconda | 9.3–9.5 | +0.05 (tests pass more broadly) | 9.35–9.55 |
-| Cobra | 9.1–9.3 | +0.1 (self-hosted parity narrows) | 9.2–9.4 |
-| Coral | 9.5–9.6 | 0 | 9.5–9.6 |
-| Boa | 9.5–9.6 | +0.05 (README parity numbers bump) | 9.55–9.65 |
-| Mamba | 9.6–9.7 | +0.05 (stable Sh.2 close) | 9.65–9.75 |
-| **Aggregate** | **9.45–9.55** | — | **9.6–9.7** |
-
-Viper is the primary beneficiary. Own.1 has been her consistent ceiling
-argument for 28 panels. Closing Phase 2 removes the general
-"no-borrow-checker" complaint's specific anchor — the language still
-has no user-visible borrow checker, but the compiler's internal
-infrastructure now matches what Python emits, which closes the
-parity-based argument. The general argument stands until v6.0.
+- **R1 — LLVM coroutine intrinsic emission is finicky.** The
+  `presplit` attribute, coroutine frame layout, and save/resume
+  pairing have strict ordering requirements. Mitigation: run `llvm-as`
+  after every helper.
+- **R2 — Fixed-point breaks.** New emission in `emit_llvm.mn` changes
+  stage1 binary. Mitigation: `verify_fixed_point.sh --keep` every
+  rebuild.
+- **R3 — Runtime mismatch.** If the self-hosted emitter writes
+  slightly different calls than the C runtime expects, link fails.
+  Mitigation: inspect `mapanare_runtime.c` function signatures;
+  pytest coverage in `tests/runtime/`.
 
 ---
 
 ## What NOT to do
 
-- **Do not add `@takes_ownership` user syntax.** Blanket move-on-call
-  is simpler and Python already does it. Parser work is out of scope.
-- **Do not port all 8 Python drop-glue helpers.** Only 4 map to failing
-  goldens; the other 4 (maps/signals/streams/tensors) are v5.5.1+.
-- **Do not attempt a borrow checker.** v6.0 scope.
-- **Do not disable the inliner or LICM** to work around fixed-point
-  issues. Those have their own release slots.
-- **Do not skip the sanitizer HARD GATE.** Drop-glue is the #1 UAF
-  source. Any new ERROR/ASan finding is an unconditional rollback per
-  PROMPT_TEMPLATE.md UB-risk tier.
-- **Do not touch `mapanare/mir.py` or `mapanare/self/mir.mn` beyond
-  adding `Move`.** No field renames, no enum reordering (breaks
-  reg-struct gate).
+- Do not add async *syntax*. `block_on` / `await` are spec'd already.
+- Do not touch the C runtime. `__mn_coro_scheduler_*` is complete.
+- Do not invent new MIR instructions without checking the Python
+  lowerer's emission pattern first.
+- Do not run Phase 0 triage and skip updating the release target if
+  v5.5.0 landed a different count than 65/66.
