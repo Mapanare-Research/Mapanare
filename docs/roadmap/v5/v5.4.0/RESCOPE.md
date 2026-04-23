@@ -92,3 +92,26 @@ from 35+ releases ago.
   vulnerable to the same class of bug.
 
 Rescope approved by user 2026-04-23.
+
+## Deferred to v5.4.1
+
+With owner-list population deferred (see above), three follow-on tasks
+fall out with it:
+
+1. **Owner-list population.** Track local String / List / boxed allocations
+   in `st.str_owned` / `list_owned` / `boxed_owned` when resource-bearing
+   locals are emitted (emit_alloca, emit_copy, emit_wrap_some, emit_list_init,
+   emit_closure_create, etc.).
+2. **Lowerer Move emission.** Add blanket-move at the top of
+   `mapanare/self/lower.mn::lower_call_by_name` so every Call argument
+   gets an explicit `Move(arg)` ahead of the `Call`.  Python's `_do_call`
+   already does blanket-move at the emitter level, so the Python
+   lowerer does not need this change.
+3. **Runtime free declarations.** When owner lists are populated, the
+   self-hosted emitter will emit `call void @__mn_str_free`, `@__mn_list_free`,
+   and `@free` — add `declare_runtime_fn` calls in `declare_all_runtime`
+   so user-program IR contains matching `declare` lines.
+
+These three must land together so the sanitizer HARD GATE can
+meaningfully test the end-to-end drop-glue path.  Shipping any one of
+them alone offers no correctness benefit and burns a release slot.

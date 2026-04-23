@@ -14552,11 +14552,21 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
     if kind == "stream_op" { return emit_stream_op(st, instr_dest(inst), instr_streamop_kind(inst), instr_streamop_source(inst), instr_streamop_args(inst)) }
     if kind == "interp_concat" { return emit_interp_concat(st, instr_dest(inst), instr_concat_parts(inst)) }
     if kind == "phi" { return emit_mir_phi(st, instr_dest(inst), instr_phi_entries(inst)) }
-    // v5.4.0 Own.1 Phase 2 — Move is a marker-only instruction.  Phase 4
-    // replaces this stub with moved_locals bookkeeping + owner-list
-    // clearing; for now it is a no-op so the kind dispatch does not hit
-    // the unknown-kind error path.
-    if kind == "move" { return st }
+    if kind == "move" {
+        // v5.4.0 Own.1 Phase 2 — record an explicit ownership transfer.
+        // Push the stripped local name onto st.moved_locals so
+        // emit_drop_glue skips it.  Idempotent: duplicates are ignored.
+        // Lowerer Move emission is deferred to v5.4.1 (see RESCOPE.md);
+        // this handler is symmetric with the Python _do_move stub
+        // installed in Phase 1 and ready to consume lowerer output.
+        let mv_val: Value = instr_move_val(inst)
+        let stripped: String = ret_val_base(mv_val.name)
+        if stripped == "" { return st }
+        if list_has_string(st.moved_locals, stripped) { return st }
+        let mut s: EmitState = st
+        s.moved_locals.push(stripped)
+        return s
+    }
     __mn_str_eprint("ERROR: unknown MIR instruction kind: ")
     __mn_str_eprint(kind)
     __mn_str_eprint("\n")
