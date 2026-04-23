@@ -2342,6 +2342,15 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
                 i = i + 1
             }
         }
+        // v5.4.2 Phase 3.2 — track the payload box for drop glue. The
+        // box is malloc'd here and owned by this frame; caller is the
+        // sole owner after return. Aggregate-return escape guard in
+        // emit_drop_glue already suppresses drops when the enum escapes
+        // as an aggregate return value (see v5.4.1 Phase 4), so this
+        // tracking is UAF-safe and closes the 50_match_or_patterns leak:
+        //   fn main() { print(category(Token::Ident("x"))) }
+        // where the box is consumed locally and never escapes.
+        s = emit_track_boxed(s, ep)
         let ei1_pay: String = dn + ".ei1"
         s = emit_line(s, "  " + ei1_pay + " = insertvalue " + enum_ty + " undef, i64 " + tag_val + ", 0")
         s = emit_line(s, "  " + dn + " = insertvalue " + enum_ty + " " + ei1_pay + ", ptr " + ep + ", 1")
