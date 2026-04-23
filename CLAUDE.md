@@ -18,6 +18,17 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.4.0** (shipped) — **Own.1 Phase 2 — self-hosted drop-glue
+  infrastructure.** Phase 0 baseline revealed all 11 Sh.2 tests
+  already pass; release rescoped from "close 11 Sh.2 goldens" to
+  "memory-correctness infrastructure, 0 new goldens". Ships: `Move`
+  MIR variant (both emitters), four ownership slots in `EmitState`,
+  three drop-glue helpers + `emit_drop_glue` dispatcher wired into
+  `emit_mir_return`, Python `_do_move` routing to `_move_resource`,
+  self-hosted `"move"` kind populating `moved_locals`. Goldens
+  54/66 preserved; valgrind + ASan byte-identical to baseline.
+  Owner-list population + lowerer Move emission + runtime free
+  declarations deferred to v5.4.1. See `docs/roadmap/v5/v5.4.0/`.
 - **v5.3.3** (shipped) — **SPEC + docs polish.** Zero compiler
   changes. SPEC §30 Package Management (manifest, install, lock,
   constraints, registry API). SPEC header 4.143.0 → 5.3.3 (27-release
@@ -37,14 +48,15 @@ Most recent releases (last 6). Full history at
 - **v5.2.0** (shipped) — **Package Registry MVP.** `mapanare install
   foo@1.2.3` + `mapanare publish`. Backend at
   `mapanare.dev/api/packages`. See `docs/roadmap/v5/v5.2.0/`.
-- **v5.1.4** (shipped) — **Perf.2 — lazy thread creation in coro
-  scheduler.** Default-settings async geomean 2.3 → 1.19 ms (0.91× Go
-  without env var). See `docs/roadmap/v5/v5.1.4/`.
 
 ### Planned / in-progress
 
-- **v5.4.0** — **Own.1 Phase 2 — self-hosted drop-glue.** Close Sh.2
-  (11 failing goldens) → 65/66.
+- **v5.4.1** — **Own.1 Phase 2 completion.** Owner-list population in
+  emit_alloca / emit_copy / emit_wrap_* / emit_list_init /
+  emit_closure_create; blanket Move emission in
+  `lower.mn::lower_call_by_name`; runtime free declarations in
+  `declare_all_runtime`. Lands the end-to-end drop-glue path and
+  exercises the sanitizer HARD GATE.
 - **v5.5.0** — **Sh.4 — self-hosted async.** `block_on`/`await` +
   coroutine lowering.
 - **v5.6.0** — **Sh.6 — self-hosted tensor.** `Tensor`/`Float` types
@@ -305,64 +317,101 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (26476 symbols, 59978 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (26948 symbols, 60665 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
-> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` first.
+> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** `gitnexus_impact({target: "symbolName", direction: "upstream"})`.
-- **MUST run `gitnexus_detect_changes()` before committing.**
-- **MUST warn the user** if impact returns HIGH or CRITICAL risk.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` instead of grep.
-- For full symbol context, use `gitnexus_context({name: "symbolName"})`.
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
 
 ## When Debugging
 
-1. `gitnexus_query({query: "<error or symptom>"})`
-2. `gitnexus_context({name: "<suspect function>"})`
-3. `READ gitnexus://repo/Mapanare/process/{processName}`
-4. Regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})`
+1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
+2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
+3. `READ gitnexus://repo/Mapanare/process/{processName}` — trace the full execution flow step by step
+4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
 
 ## When Refactoring
 
-- **Renaming:** MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first.
-- **Extracting/Splitting:** MUST run `gitnexus_context` + `gitnexus_impact` before moving code.
-- After any refactor: `gitnexus_detect_changes({scope: "all"})`.
+- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
+- **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
+- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
 
 ## Never Do
 
-- NEVER edit a function without `gitnexus_impact`.
-- NEVER ignore HIGH/CRITICAL risk warnings.
-- NEVER rename with find-and-replace — use `gitnexus_rename`.
-- NEVER commit without `gitnexus_detect_changes`.
+- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
+- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+
+## Tools Quick Reference
+
+| Tool | When to use | Command |
+|------|-------------|---------|
+| `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
+| `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
+| `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
+| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
+| `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
+| `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
 
 ## Impact Risk Levels
 
 | Depth | Meaning | Action |
-|---|---|---|
-| d=1 | WILL BREAK | MUST update |
-| d=2 | LIKELY AFFECTED | Should test |
-| d=3 | MAY NEED TESTING | Test if critical |
+|-------|---------|--------|
+| d=1 | WILL BREAK — direct callers/importers | MUST update these |
+| d=2 | LIKELY AFFECTED — indirect deps | Should test |
+| d=3 | MAY NEED TESTING — transitive | Test if critical path |
 
-## Keep Index Fresh After Commit
+## Resources
+
+| Resource | Use for |
+|----------|---------|
+| `gitnexus://repo/Mapanare/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/Mapanare/clusters` | All functional areas |
+| `gitnexus://repo/Mapanare/processes` | All execution flows |
+| `gitnexus://repo/Mapanare/process/{name}` | Step-by-step execution trace |
+
+## Self-Check Before Finishing
+
+Before completing any code modification task, verify:
+1. `gitnexus_impact` was run for all modified symbols
+2. No HIGH/CRITICAL risk warnings were ignored
+3. `gitnexus_detect_changes()` confirms changes match expected scope
+4. All d=1 (WILL BREAK) dependents were updated
+
+## Keeping the Index Fresh
+
+After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
 
 ```bash
-npx gitnexus analyze                # fresh (deletes embeddings)
-npx gitnexus analyze --embeddings   # preserve embeddings
+npx gitnexus analyze
 ```
 
-A PostToolUse hook handles this automatically after `git commit`/`git merge`.
+If the index previously included embeddings, preserve them by adding `--embeddings`:
 
-## Skill Files
+```bash
+npx gitnexus analyze --embeddings
+```
 
-| Task | Skill |
-|------|-------|
-| Architecture questions | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Bug tracing | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools + schema | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| CLI (index, wiki) | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.embeddings` field shows the count (0 means no embeddings). **Running analyze without `--embeddings` will delete any previously generated embeddings.**
+
+> Claude Code users: A PostToolUse hook handles this automatically after `git commit` and `git merge`.
+
+## CLI
+
+| Task | Read this skill file |
+|------|---------------------|
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
