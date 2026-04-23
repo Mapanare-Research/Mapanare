@@ -3347,6 +3347,62 @@ fn ret_val_base(ret_val: String) -> String {
     return ret_val
 }
 
+// ---------------------------------------------------------------------------
+// v5.4.1 Phase 2 — shadow-slot tracking helpers
+// ---------------------------------------------------------------------------
+// Mirrors mapanare/emit_llvm_text.py::_track_string / _track_boxed /
+// _track_closure (lines 1538–1566). Each helper allocates a tracking
+// slot in the entry-block prelude (alloca + zero-init), stores the
+// passed value into the slot at the current emission point, and
+// records the slot's bare name in st.str_owned / st.boxed_owned for
+// emit_drop_glue to consult before every ret.
+//
+// Reassignment to the same source variable is captured by allocating
+// a fresh slot per call — the prior snapshot still lives in its own
+// slot, so drop-glue frees both. __mn_str_free / @free tolerate null,
+// so the zero-init is safe even when the slot is never stored to.
+
+fn emit_track_string(st: EmitState, val_name: String) -> EmitState {
+    let mut s: EmitState = st
+    let idx: Int = s.counter
+    s.counter = s.counter + 1
+    let slot_base: String = "str_track." + toString(idx)
+    let slot: String = "%" + slot_base
+    // Entry-block prelude: alloca + zero-init.
+    s.entry_prelude_lines.push("  " + slot + " = alloca {ptr, i64}, align 8")
+    s.entry_prelude_lines.push("  store {ptr, i64} zeroinitializer, ptr " + slot)
+    // Current emission point: snapshot the value into the slot.
+    s = emit_line(s, "  store {ptr, i64} " + val_name + ", ptr " + slot)
+    s.str_owned.push(slot_base)
+    return s
+}
+
+fn emit_track_boxed(st: EmitState, ptr_val: String) -> EmitState {
+    let mut s: EmitState = st
+    let idx: Int = s.counter
+    s.counter = s.counter + 1
+    let slot_base: String = "box_track." + toString(idx)
+    let slot: String = "%" + slot_base
+    s.entry_prelude_lines.push("  " + slot + " = alloca ptr, align 8")
+    s.entry_prelude_lines.push("  store ptr null, ptr " + slot)
+    s = emit_line(s, "  store ptr " + ptr_val + ", ptr " + slot)
+    s.boxed_owned.push(slot_base)
+    return s
+}
+
+fn emit_track_closure(st: EmitState, val_name: String) -> EmitState {
+    // Closure values are {ptr, ptr} (fn_ptr, env_ptr). We track the
+    // env_ptr only — the fn_ptr is a code pointer that never needs
+    // freeing. Extract idx=1 then route through the boxed-slot path so
+    // the existing free(ptr) drop-glue handler picks it up.
+    let mut s: EmitState = st
+    let env_idx: Int = s.counter
+    s.counter = s.counter + 1
+    let env_tmp: String = "%clos.env." + toString(env_idx)
+    s = emit_line(s, "  " + env_tmp + " = extractvalue {ptr, ptr} " + val_name + ", 1")
+    return emit_track_boxed(s, env_tmp)
+}
+
 fn emit_drop_glue_strings(st: EmitState, ret_base: String) -> EmitState {
     let mut s: EmitState = st
     let n: Int = len(s.str_owned)
