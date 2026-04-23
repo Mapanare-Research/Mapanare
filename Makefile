@@ -3,7 +3,7 @@
 # to /bin/dash which has no ``<(...)`` support.
 SHELL := /bin/bash
 
-.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report count-tests
+.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report count-tests leak-check
 
 # v4.29.0: build-rt now enumerates every runtime object that is expected
 # to land in libmapanare_rt.a. The list used to be hand-maintained and
@@ -134,3 +134,7 @@ benchmark-report:
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	rm -rf .mypy_cache .pytest_cache *.egg-info dist build
+
+leak-check:  ## v5.4.2: compile+link+run every golden under LSan, gate against baseline
+	@bash scripts/run_asan_leak_goldens.sh
+	@python3 scripts/check_leak_summary.py

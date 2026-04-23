@@ -1,13 +1,30 @@
-# ASan leak-detection suppressions for Mapanare golden sweep.
+# LeakSanitizer suppressions for Mapanare golden sweep.
 #
 # v5.4.2 adds compile+link+execute-under-LSan (`detect_leaks=1`)
 # across all 66 goldens via scripts/run_asan_leak_goldens.sh.
-# Entries below mask leaks that are intentional/known, not bugs.
+# Entries below use LSan's `leak:<frame>` match syntax and are loaded
+# via LSAN_OPTIONS=suppressions=... (NOT ASAN_OPTIONS — ASan's own
+# suppression format only accepts interceptor_* entries).
 #
 # Every entry MUST:
-#   1. Cite a ledger docket (e.g. Rt.NN) in a leading comment.
+#   1. Cite a ledger docket (Rt.NN) in a leading comment.
 #   2. Explain *why* the leak is intentional.
 #   3. Have a matching row in docs/known_issues.md.
 #
 # Suppression count is capped at 10; audit monthly.
+# Runtime leaks that LSan CAN'T symbolize (e.g., Mesa/ICD loaders
+# behind `<unknown module>` frames) go through the baseline-comparison
+# gate in scripts/check_leak_summary.py instead of this file.
+#
 # See docs/roadmap/v5/v5.4.2/PLAN.md §5.4.2b.
+
+# --------------------------------------------------------------------
+# Rt.01 — CUDA driver cuInit process-lifetime state (260 bytes/call)
+# --------------------------------------------------------------------
+# Why: libcuda.so.1 allocates internal driver state on the first
+# cuInit() call (driver handle, device list, mutex pool). The CUDA
+# runtime exposes no teardown API — the allocation is tied to the
+# process and reclaimed by the kernel at exit. Mapanare cannot free it.
+# How to apply: 39_gpu_detect / 40_gpu_tensor call gpu_available()
+# which bottoms out in mapanare_gpu_init → cuInit.
+leak:mapanare_gpu_init

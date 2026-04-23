@@ -52,7 +52,12 @@ mkdir -p "$OUTDIR"
 # Compiled-binary-under-LSan options. detect_leaks=1 is the whole
 # point of this sweep. halt_on_error=0 so a UAF in one golden
 # doesn't abort before LSan's exit-time leak check runs.
-ASAN_RUN="detect_leaks=1:leak_check_at_exit=1:halt_on_error=0:symbolize=1:suppressions=$SUPPRESSIONS"
+#
+# Suppressions must go through LSAN_OPTIONS — AddressSanitizer's
+# own suppression list only accepts interceptor_name / interceptor_via_fun /
+# interceptor_via_lib. `leak:<frame>` entries are LeakSanitizer's format.
+ASAN_RUN="detect_leaks=1:leak_check_at_exit=1:halt_on_error=0:symbolize=1"
+LSAN_RUN="suppressions=$SUPPRESSIONS:print_suppressions=0"
 
 echo -e "test\tcompile_rc\trun_rc\tleak_count\tleak_bytes\tfirst_frame\tclass" > "$TSV"
 
@@ -96,7 +101,8 @@ for mn in "$ROOT"/tests/golden/*.mn; do
   fi
 
   # Step 4: run under LSan (empty stdin, 30 s budget)
-  ASAN_OPTIONS="$ASAN_RUN" timeout 30 "$EXE" < /dev/null > "$ROUT" 2> "$RERR"
+  ASAN_OPTIONS="$ASAN_RUN" LSAN_OPTIONS="$LSAN_RUN" \
+    timeout 30 "$EXE" < /dev/null > "$ROUT" 2> "$RERR"
   rrc=$?
 
   # Parse LSan findings from stderr.
