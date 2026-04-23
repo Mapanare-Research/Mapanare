@@ -13673,7 +13673,19 @@ struct EmitState {
     str_owned: List<String>,
     list_owned: List<String>,
     boxed_owned: List<String>,
-    moved_locals: List<String>
+    moved_locals: List<String>,
+    // v5.4.1 — entry-block prelude for tracking-slot allocas. Lines
+    // queued by emit_track_string / _boxed / _closure are accumulated
+    // here while the entry block is emitting, then flushed into the
+    // entry block in correct order (allocas first per LLVM ABI).
+    // Mirrors mapanare/emit_llvm_text.py self._ent.
+    entry_prelude_lines: List<String>,
+    // v5.4.1 — buffered body of the current function's entry block.
+    // While in_entry_block is true, emit_line redirects here instead
+    // of pushing directly to st.lines so the prelude can be flushed
+    // ahead of the buffered body at end-of-entry-block.
+    entry_block_body: List<String>,
+    in_entry_block: Bool
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -13691,7 +13703,9 @@ fn new_emit_state(module_name: String) -> EmitState {
     let list_owned: List<String> = []
     let boxed_owned: List<String> = []
     let moved_locals: List<String> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, moved_locals: moved_locals }
+    let entry_prelude_lines: List<String> = []
+    let entry_block_body: List<String> = []
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false }
 }
 
 fn build_internal_struct_list() -> List<StructEntry> {
@@ -13702,7 +13716,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"]))
     list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"]))
-    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals"]))
+    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
     list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
@@ -13746,8 +13760,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"])
     // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks, generic_fns, generic_structs, generic_enums, loop_header_label, loop_exit_label
     s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"])
-    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, moved_locals
-    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals"])
+    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, moved_locals, entry_prelude_lines, entry_block_body, in_entry_block
+    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block"])
     // LowerResult: value, state
     s = register_internal_struct(s, "LowerResult", ["value", "state"])
     // CompileResult: success, ir_text, errors
@@ -13805,7 +13819,14 @@ fn emit_fresh_tmp(st: EmitState, prefix: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_line(st: EmitState, line: String) -> EmitState {
-    st.lines.push(line)
+    // v5.4.1 — entry-block emission is buffered so the prelude
+    // (tracking-slot allocas queued by emit_track_string / _boxed /
+    // _closure) can be flushed in front of it before pushing to lines.
+    if st.in_entry_block {
+        st.entry_block_body.push(line)
+    } else {
+        st.lines.push(line)
+    }
     return st
 }
 
@@ -17325,10 +17346,15 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     let fresh_list_owned: List<String> = []
     let fresh_boxed_owned: List<String> = []
     let fresh_moved_locals: List<String> = []
+    let fresh_prelude: List<String> = []
+    let fresh_body: List<String> = []
     s.str_owned = fresh_str_owned
     s.list_owned = fresh_list_owned
     s.boxed_owned = fresh_boxed_owned
     s.moved_locals = fresh_moved_locals
+    s.entry_prelude_lines = fresh_prelude
+    s.entry_block_body = fresh_body
+    s.in_entry_block = false
 
     // Emit function header
     let fn_name: String = strip_percent(f.name)
@@ -17351,6 +17377,12 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     if nblks > 0 {
         let bb0: BasicBlock = f.blocks[0]
         s = emit_line(s, bb0.label + ":")
+        // v5.4.1 — redirect emit_line to entry_block_body until end of
+        // entry block so we can splice the tracking-slot prelude in
+        // front of the body. emit_track_string / _boxed / _closure
+        // append alloca + zero-init lines to s.entry_prelude_lines and
+        // a store line via emit_line (which lands in the buffer).
+        s.in_entry_block = true
         // Emit byref loads: for each byref param, alloca + load from ptr + store
         let mut pi3: Int = 0
         let nfparams3: Int = len(f.params)
@@ -17399,6 +17431,24 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
                 }
                 ii = ii + 1
             }
+        }
+        // v5.4.1 — close entry-block buffering. Flush prelude (allocas)
+        // ahead of the buffered body lines so allocas live at the top
+        // of the entry block per LLVM ABI.
+        s.in_entry_block = false
+        let mut pk2: Int = 0
+        let npre2: Int = len(s.entry_prelude_lines)
+        for _ in 0..4096 {
+            if pk2 >= npre2 { break }
+            s.lines.push(s.entry_prelude_lines[pk2])
+            pk2 = pk2 + 1
+        }
+        let mut bk: Int = 0
+        let nbody: Int = len(s.entry_block_body)
+        for _ in 0..32768 {
+            if bk >= nbody { break }
+            s.lines.push(s.entry_block_body[bk])
+            bk = bk + 1
         }
     }
 
