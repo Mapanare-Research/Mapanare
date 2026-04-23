@@ -527,6 +527,14 @@ class LLVMTextEmitter:
         self._boxed_slots: dict[str, str] = {}  # dest var name → boxed tracking slot
         self._last_tracked_boxed_slot: str | None = None
         self._list_vars: list[str] = []  # dest names for list cleanup
+        # v5.4.4 Own.1 Phase 2 — parallel SSA-source arrays aligned with
+        # _local_strings / _local_boxed / _list_vars. Populated by the
+        # trackers with the bare SSA source name so drop glue can
+        # consult _moved_locals when the lowerer emits Move(src).
+        self._local_strings_source: list[str] = []
+        self._local_boxed_source: list[str] = []
+        self._list_vars_source: list[str] = []
+        self._moved_locals: set[str] = set()
         self._map_vars: list[str] = []  # dest names for map cleanup
         self._signal_vars: list[str] = []  # dest names for signal cleanup
         self._stream_vars: list[str] = []  # dest names for stream cleanup
@@ -1397,6 +1405,10 @@ class LLVMTextEmitter:
         if name in self._boxed_slots:
             slot = self._boxed_slots.pop(name)
             self._L(f"store ptr null, ptr {slot}")
+        # v5.4.4 — record the move in _moved_locals so drop glue skips
+        # any tracked slot whose source aliases this name, even when
+        # _str_slots / _boxed_slots didn't wire the slot at track time.
+        self._moved_locals.add(name.lstrip("%"))
 
     def _do_move(self, i: Move) -> None:
         # v5.4.0 Own.1 Phase 2 — Move marker from the lowerer. Route to
@@ -1552,6 +1564,8 @@ class LLVMTextEmitter:
             self._L(f"call void @__mn_str_free({{ptr, i64}} {prev})")
         self._L(f"store {{ptr, i64}} {val}, ptr {slot}")
         self._local_strings.append(slot)
+        # v5.4.4 — parallel source array aligned with _local_strings.
+        self._local_strings_source.append(val.lstrip("%"))
         self._last_tracked_str_slot = slot
 
     def _track_closure(self, val: str) -> None:
@@ -1581,6 +1595,8 @@ class LLVMTextEmitter:
             self._L(f"call void @free(ptr {prev})")
         self._L(f"store ptr {ptr_val}, ptr {slot}")
         self._local_boxed.append(slot)
+        # v5.4.4 — parallel source array aligned with _local_boxed.
+        self._local_boxed_source.append(ptr_val.lstrip("%"))
         self._last_tracked_boxed_slot = slot
 
     def _track_container(self, dest_name: str, container_type: str) -> None:
@@ -1593,6 +1609,8 @@ class LLVMTextEmitter:
         if container_type == "list":
             if dest_name not in self._list_vars:
                 self._list_vars.append(dest_name)
+                # v5.4.4 — parallel source array aligned with _list_vars.
+                self._list_vars_source.append(dest_name.lstrip("%"))
         elif container_type == "map":
             if dest_name not in self._map_vars:
                 self._map_vars.append(dest_name)
@@ -2207,6 +2225,11 @@ class LLVMTextEmitter:
         self._stream_vars = []
         self._tensor_vars = []
         self._loop_depth = 0
+        # v5.4.4 — reset parallel SSA-source arrays + moved_locals set.
+        self._local_strings_source = []
+        self._local_boxed_source = []
+        self._list_vars_source = []
+        self._moved_locals = set()
 
         # Per-function arena — disabled: text emitter never routes allocations
         # through mn_arena_alloc, so create/destroy was pure overhead.

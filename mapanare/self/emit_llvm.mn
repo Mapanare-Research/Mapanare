@@ -91,7 +91,16 @@ struct EmitState {
     // block's instructions finish. emit_track_string / _boxed /
     // _closure consult this to prepend free-before-store to tracking
     // stores inside loops, preventing the Rt.03 leak pattern.
-    loop_depth: Int
+    loop_depth: Int,
+    // v5.4.4 Own.1 Phase 2 — slot-to-source parallel arrays.
+    // Each tracking slot is allocated for a specific SSA source name
+    // (e.g. "t14"). The lowerer emits Move(t14) when the resource
+    // transfers ownership; drop glue matches the slot's recorded
+    // source against moved_locals to skip the free. Indexes align
+    // with str_owned / list_owned / boxed_owned respectively.
+    str_owned_source: List<String>,
+    list_owned_source: List<String>,
+    boxed_owned_source: List<String>
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -111,7 +120,10 @@ fn new_emit_state(module_name: String) -> EmitState {
     let moved_locals: List<String> = []
     let entry_prelude_lines: List<String> = []
     let entry_block_body: List<String> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0 }
+    let str_owned_source: List<String> = []
+    let list_owned_source: List<String> = []
+    let boxed_owned_source: List<String> = []
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0, str_owned_source: str_owned_source, list_owned_source: list_owned_source, boxed_owned_source: boxed_owned_source }
 }
 
 fn build_internal_struct_list() -> List<StructEntry> {
@@ -122,7 +134,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"]))
     list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"]))
-    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth"]))
+    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
     list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
@@ -166,8 +178,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"])
     // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks, generic_fns, generic_structs, generic_enums, loop_header_label, loop_exit_label
     s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"])
-    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, moved_locals, entry_prelude_lines, entry_block_body, in_entry_block, loop_depth
-    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth"])
+    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, moved_locals, entry_prelude_lines, entry_block_body, in_entry_block, loop_depth, str_owned_source, list_owned_source, boxed_owned_source
+    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source"])
     // LowerResult: value, state
     s = register_internal_struct(s, "LowerResult", ["value", "state"])
     // CompileResult: success, ir_text, errors
@@ -1938,6 +1950,9 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     s = emit_line(s, llvm_store(llvm_list_rt(), list_name, alloca_name))
     let list_owned_name: String = ret_val_base(alloca_name)
     s.list_owned.push(list_owned_name)
+    // v5.4.4 — parallel source: record the bare list-var name (e.g.
+    // "t10") so drop glue can match Move(t10) from the lowerer.
+    s.list_owned_source.push(ret_val_base(dn))
 
     // Push each element
     let mut i: Int = 0
@@ -3489,6 +3504,9 @@ fn emit_track_string(st: EmitState, val_name: String) -> EmitState {
     // Current emission point: snapshot the value into the slot.
     s = emit_line(s, "  store {ptr, i64} " + val_name + ", ptr " + slot)
     s.str_owned.push(slot_base)
+    // v5.4.4 — record the SSA source name in parallel so drop glue
+    // can consult moved_locals when the lowerer emits Move(val_name).
+    s.str_owned_source.push(ret_val_base(val_name))
     return s
 }
 
@@ -3509,6 +3527,8 @@ fn emit_track_boxed(st: EmitState, ptr_val: String) -> EmitState {
     }
     s = emit_line(s, "  store ptr " + ptr_val + ", ptr " + slot)
     s.boxed_owned.push(slot_base)
+    // v5.4.4 — record the boxed source SSA name for moved_locals match.
+    s.boxed_owned_source.push(ret_val_base(ptr_val))
     return s
 }
 
@@ -4058,6 +4078,13 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     // v5.4.3 — reset loop depth per function; nested-loop tracking is
     // keyed on block-label prefix inside emit_mir_basic_block.
     s.loop_depth = 0
+    // v5.4.4 — reset parallel source arrays alongside owner lists.
+    let fresh_str_src: List<String> = []
+    let fresh_list_src: List<String> = []
+    let fresh_boxed_src: List<String> = []
+    s.str_owned_source = fresh_str_src
+    s.list_owned_source = fresh_list_src
+    s.boxed_owned_source = fresh_boxed_src
 
     // Emit function header
     let fn_name: String = strip_percent(f.name)
