@@ -3271,34 +3271,157 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
 // Return instruction
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// v5.4.0 Own.1 Phase 2 — Drop-glue emission
+// ---------------------------------------------------------------------------
+// Mirrors the Python _emit_drop_glue family (emit_llvm_text.py:1585+).
+// Four per-resource helpers are called from emit_drop_glue, which is invoked
+// by emit_mir_return before each `ret` instruction.  The helpers iterate
+// st.str_owned / list_owned / boxed_owned, skip any local in st.moved_locals
+// or whose name aliases the returned value, and emit the runtime free call.
+//
+// Phase 3 scope (this release): helpers are callable and correct when the
+// owner lists are populated; tracker population (pushing names to
+// str_owned / list_owned / boxed_owned when resource-bearing locals are
+// emitted) is deferred to v5.4.1+.  With the lists empty, every helper is a
+// no-op loop — stage2.ll is byte-identical except for the version placeholder
+// and the lowerer-side Move markers from Phase 4.
+//
+// Simplifications vs Python:
+//   - No multi-block null-check branch — __mn_str_free / __mn_list_free
+//     already handle null data at the runtime layer.
+//   - No ret-ptr alias detection — a local whose name matches ret_val_base
+//     is skipped directly.  (Python builds ret_str_ptrs / ret_list_ptrs /
+//     ret_ptr_fields so aliases through struct return values can also skip;
+//     when tracker population lands in v5.4.1 we will revisit.)
+
+fn list_has_string(lst: List<String>, name: String) -> Bool {
+    let n: Int = len(lst)
+    let mut i: Int = 0
+    for _ in 0..1024 {
+        if i >= n { return false }
+        if lst[i] == name { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn ret_val_base(ret_val: String) -> String {
+    // Strip a leading '%' so we can compare against the local name stored
+    // in st.str_owned / list_owned / boxed_owned.  For non-local returns
+    // (constants, SSA temps without a named local) this yields a string
+    // that cannot match a local name anyway.
+    if len(ret_val) == 0 { return "" }
+    if ret_val.substr(0, 1) == "%" { return ret_val.substr(1, len(ret_val) - 1) }
+    return ret_val
+}
+
+fn emit_drop_glue_strings(st: EmitState, ret_base: String) -> EmitState {
+    let mut s: EmitState = st
+    let n: Int = len(s.str_owned)
+    let mut i: Int = 0
+    for _ in 0..1024 {
+        if i >= n { return s }
+        let name: String = s.str_owned[i]
+        let is_moved: Bool = list_has_string(s.moved_locals, name)
+        let is_ret: Bool = (name == ret_base)
+        if !is_moved && !is_ret {
+            let tmp: String = "%drop.s" + toString(s.counter)
+            s.counter = s.counter + 1
+            s = emit_line(s, "  " + tmp + " = load {ptr, i64}, ptr %" + name)
+            s = emit_line(s, "  call void @__mn_str_free({ptr, i64} " + tmp + ")")
+        }
+        i = i + 1
+    }
+    return s
+}
+
+fn emit_drop_glue_lists(st: EmitState, ret_base: String) -> EmitState {
+    let mut s: EmitState = st
+    let n: Int = len(s.list_owned)
+    let mut i: Int = 0
+    for _ in 0..1024 {
+        if i >= n { return s }
+        let name: String = s.list_owned[i]
+        let is_moved: Bool = list_has_string(s.moved_locals, name)
+        let is_ret: Bool = (name == ret_base)
+        if !is_moved && !is_ret {
+            // __mn_list_free takes a MnList* — pass the alloca address directly.
+            s = emit_line(s, "  call void @__mn_list_free(ptr %" + name + ")")
+        }
+        i = i + 1
+    }
+    return s
+}
+
+fn emit_drop_glue_boxed(st: EmitState, ret_base: String) -> EmitState {
+    let mut s: EmitState = st
+    let n: Int = len(s.boxed_owned)
+    let mut i: Int = 0
+    for _ in 0..1024 {
+        if i >= n { return s }
+        let name: String = s.boxed_owned[i]
+        let is_moved: Bool = list_has_string(s.moved_locals, name)
+        let is_ret: Bool = (name == ret_base)
+        if !is_moved && !is_ret {
+            let tmp: String = "%drop.b" + toString(s.counter)
+            s.counter = s.counter + 1
+            s = emit_line(s, "  " + tmp + " = load ptr, ptr %" + name)
+            s = emit_line(s, "  call void @free(ptr " + tmp + ")")
+        }
+        i = i + 1
+    }
+    return s
+}
+
+fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
+    // Fast path: no owners means nothing to drop.  This release ships with
+    // the owner lists empty by design; the helpers still exist so v5.4.1
+    // can populate them without changing the call-site wiring.
+    if len(st.str_owned) == 0 && len(st.list_owned) == 0 && len(st.boxed_owned) == 0 {
+        return st
+    }
+    let base: String = ret_val_base(ret_val)
+    let mut s: EmitState = st
+    s = emit_drop_glue_strings(s, base)
+    s = emit_drop_glue_lists(s, base)
+    s = emit_drop_glue_boxed(s, base)
+    return s
+}
+
 fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
     match val_opt {
         Some(val) => {
             let ty: String = st.current_ret_type
             if ty == "void" {
-                return emit_line(st, emit_ret_void())
+                let mut sv: EmitState = emit_drop_glue(st, "", ty)
+                return emit_line(sv, emit_ret_void())
             }
             // v5.0.4 Cb.15: sret via per-target ABI classifier
             if use_sret_return(st, ty) {
-                let mut s: EmitState = emit_line(st, "  store " + ty + " " + val.name + ", ptr %__sret__")
+                let mut s0: EmitState = emit_drop_glue(st, val.name, ty)
+                let mut s: EmitState = emit_line(s0, "  store " + ty + " " + val.name + ", ptr %__sret__")
                 return emit_line(s, emit_ret_void())
             }
             // main() returns i32 but Mapanare Int is i64 — truncate
             if ty == "i32" {
+                let mut s1: EmitState = emit_drop_glue(st, val.name, ty)
                 let trunc_name: String = val.name + ".trunc"
-                let mut s: EmitState = emit_line(st, "  " + trunc_name + " = trunc i64 " + val.name + " to i32")
+                let mut s: EmitState = emit_line(s1, "  " + trunc_name + " = trunc i64 " + val.name + " to i32")
                 return emit_line(s, emit_ret("i32", trunc_name))
             }
-            return emit_line(st, emit_ret(ty, val.name))
+            let mut s2: EmitState = emit_drop_glue(st, val.name, ty)
+            return emit_line(s2, emit_ret(ty, val.name))
         },
         _ => {
             // For non-void functions, emit zeroinitializer return (dead code from
             // match arms that all terminate). For void functions, emit ret void.
             let ret_ty: String = st.current_ret_type
+            let mut sv2: EmitState = emit_drop_glue(st, "", ret_ty)
             if ret_ty != "void" {
-                return emit_line(st, "  ret " + ret_ty + " zeroinitializer")
+                return emit_line(sv2, "  ret " + ret_ty + " zeroinitializer")
             }
-            return emit_line(st, emit_ret_void())
+            return emit_line(sv2, emit_ret_void())
         }
     }
 }
