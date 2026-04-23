@@ -27,7 +27,7 @@ Last updated: v5.4.2.
 | Rt.3 | `tmpfile_path` returns literal `/tmp/mn_tmp_XXXXXX` without calling `mkstemp` | use `io_tmpfile()` which returns a real handle | v5.x |
 | Rt.01 | `gpu_available()` on a CUDA-capable host leaks 260 B of libcuda driver state per process (one-shot init, reclaimed by kernel at exit) | no action required — suppressed in `scripts/asan_leak_suppressions.txt` | n/a (third-party) |
 | Rt.02 | Vulkan / Mesa ICD loader retains ~50 KB of per-process state after `vkDestroyInstance`; `vkDestroyInstance` does not release it | no action required — baseline-gated in `scripts/check_leak_summary.py` (frames show as `<unknown module>`, not symbolic-suppressable) | n/a (third-party) |
-| Rt.03 | Loop-reassignment of a tracked String in a single emit site leaves prior heap values unreachable (e.g. `result = result + s` inside `for`). Baseline: 22_string_builder leaks 6 objs / 19 B. | avoid mutating the same String across loop iterations; build in a List<String> and `join` once | v5.4.3+ |
+| Rt.03 | **CLOSED v5.4.3** — free-before-store in `emit_track_string` / `_boxed` / `_closure` when `loop_depth > 0` (both emitters). 22_string_builder transitions LEAK → CLEAN under LSan; baseline refreshed. | n/a | CLOSED v5.4.3 |
 | Rt.04 | Struct-returning functions with intermediate String concats leak those intermediates — v5.4.1's aggregate-return guard conservatively skips ALL drops to avoid UAF on escaped fields. Baseline: 62_list_output leaks 9 objs / 141 B. | extract intermediate concats into let-bindings outside the struct-returning function's body | v5.4.3+ |
 
 ## Ecosystem
