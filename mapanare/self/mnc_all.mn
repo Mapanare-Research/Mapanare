@@ -14569,7 +14569,21 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
     if kind == "wrap_ok" { return emit_wrap_ok(st, instr_dest(inst), instr_wrap_val(inst)) }
     if kind == "wrap_err" { return emit_wrap_err(st, instr_dest(inst), instr_wrap_val(inst)) }
     if kind == "unwrap" { return emit_unwrap(st, instr_dest(inst), instr_wrap_val(inst)) }
-    if kind == "call" { return emit_mir_call(st, instr_dest(inst), instr_call_fn(inst), instr_call_args(inst)) }
+    if kind == "call" {
+        let call_dest: Value = instr_dest(inst)
+        let mut s_call: EmitState = emit_mir_call(st, call_dest, instr_call_fn(inst), instr_call_args(inst))
+        // v5.4.1 Phase 3.2 — track String results from runtime + user
+        // calls. emit_mir_call has many branches but they all leave
+        // dest in dn (the call's SSA result); a single post-call hook
+        // here covers __mn_str_concat, __mn_str_from_int, substr,
+        // user fns returning String, and so on. emit_track_string is
+        // safe to call on values backed by .rodata (literal pass-
+        // through) — __mn_str_free is_heap-aware.
+        if call_dest.ty.kind == TK_STRING() {
+            s_call = emit_track_string(s_call, call_dest.name)
+        }
+        return s_call
+    }
     if kind == "return" { return emit_mir_return(st, instr_return_val(inst)) }
     if kind == "jump" { return emit_line(st, emit_br(instr_jump_target(inst))) }
     if kind == "branch" { return emit_mir_branch(st, inst) }
