@@ -56,9 +56,33 @@
 | SPEC-pkg | Close | v5.3.3 |
 | Demo gap (signals) | Close | v5.3.3 |
 | Li.1 | Defer to v5.x | — |
-| Own.1 P2 | Defer to v5.x / v6.0 | — |
-| Sh.4/5/6/7 | Defer to v5.x feature track | — |
+| Own.1 P2 | Close | **v5.5.0** (self-hosted drop-glue) |
+| Sh.2 | Close | **v5.5.0** (closes with Own.1 P2) |
+| Sh.4 | Close | **v5.6.0** (self-hosted async) |
+| Sh.5 | Defer to v5.x feature track | — |
+| Sh.6 | Close | **v5.7.0** (self-hosted tensor) |
+| Sh.7 | Close | **v5.8.0** (with or-pattern fix — 66/66) |
 | Gr.1 | Defer | — |
+
+---
+
+## Post-arc: v5.5–v5.8 goldens-to-66 sequel
+
+The v5.3.x closeout + v5.4.0 re-panel arc targets the panel score
+ceiling. A second arc (v5.5.0–v5.8.0) targets the **native goldens
+ceiling** — currently stuck at 54/66 since v5.0.4.
+
+| Release | Theme | Closes | Goldens |
+|---------|-------|--------|---------|
+| **v5.5.0** | Own.1 Phase 2 — self-hosted drop-glue | Sh.2 (11 tests) | 54 → 65 |
+| **v5.6.0** | Self-hosted async | Sh.4 (5 tests) | (already in 65) |
+| **v5.7.0** | Self-hosted tensor | Sh.6 (5 tests) | (already in 65) |
+| **v5.8.0** | Closure-typed + or-pattern fix | Sh.7 + B (2 tests) | 65 → **66/66** |
+
+Note on accounting: the 12-test gap at v5.3.2 includes overlaps
+across Sh.2/Sh.4/Sh.6/Sh.7/B buckets from the v4.126.0 triage. A
+fresh triage pass at v5.5.0 Phase 0 re-anchors the trajectory. See
+each release's PLAN.md for details.
 
 ---
 
