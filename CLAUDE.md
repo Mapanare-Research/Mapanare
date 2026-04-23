@@ -18,6 +18,27 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.4.2** (shipped) — **Own.1 Phase 2 — ASan leak-detection
+  gate.** Flips `detect_leaks=1` across all 66 goldens via new
+  `scripts/run_asan_leak_goldens.sh` (compile with `mnc-stage1`, `llc`
+  to object, link with `libmapanare_rt.a` under `-fsanitize=address`,
+  run under LSan). First sweep revealed 5 leak classes; 2 fixed by
+  extending Phase 3.2's tracking hook with `is_string_returning_
+  builtin(fn_name)` (13 Mapanare-level builtins whose MIR dest
+  defaults to `mir_unknown()` in lower.mn's generic call path — 4
+  goldens, 9 objs / 202 B) and adding `emit_track_boxed(ep)` in
+  `emit_enum_init`'s boxed-payload branch (1 golden / 16 B).
+  Suppressions (`scripts/asan_leak_suppressions.txt`, LSan format via
+  `LSAN_OPTIONS`) trim libcuda cuInit; Mesa/Vulkan loader
+  (`<unknown module>`) + loop-reassignment + struct-return
+  intermediates are baseline-gated in `scripts/check_leak_summary.py`
+  with PLAN.md §D3 / §D4 deferrals to v5.4.3. `make leak-check` +
+  `.github/workflows/sanitizers.yml` leak-check job ratify the sweep
+  as a merge gate. Goldens 54/66 preserved; UAF sweep 55/11
+  preserved; valgrind 0 ERRORS preserved; leak sweep 44 CLEAN / 4
+  LEAK (baseline-gated) / 11 COMPILE_FAIL / 7 LINK_FAIL / 0
+  regressions. stage2.ll 168k lines (+1.8%); `llvm-as` OK. See
+  `docs/roadmap/v5/v5.4.2/`.
 - **v5.4.1** (shipped) — **Own.1 Phase 2 — make v5.4.0 drop-glue
   actually fire.** Populates v5.4.0's dormant owner lists with the
   shadow-slot architecture ported from Python. Three new `EmitState`
@@ -56,10 +77,6 @@ Most recent releases (last 6). Full history at
   staleness closed). `examples/signals/counter.mn` signal demo. All
   three Coral LOW carry-forwards closed. Closeout arc complete.
   See `docs/roadmap/v5/v5.3.3/`.
-- **v5.3.2** (shipped) — **In.1-stage2 — restore fixed-point
-  (clone_instr_for_inline).** Extends the inliner's definition cloner
-  from 10 to all 38 Instruction variants. stage2 llvm-as OK. 54/66
-  goldens. Opens Ve.1 LOW. See `docs/roadmap/v5/v5.3.2/`.
 - **v5.3.1** (shipped) — **Quick-win closeout.** Lint GREEN, stream-C
   tests fixed, docs accurate. 5 MEDIUM + 3 LOW closures. No compiler
   source changes. See `docs/roadmap/v5/v5.3.1/`.
@@ -69,14 +86,16 @@ Most recent releases (last 6). Full history at
 
 ### Planned / in-progress
 
-- **v5.4.2** — **ASan leak-detection gate.** Flip `detect_leaks=1`
-  across all 66 goldens via new `scripts/run_asan_leak_goldens.sh`
-  (compiles + links + executes each golden under LSan). Classify
-  findings, fix compiler-introduced leaks, document
-  runtime-intentional leaks in `scripts/asan_leak_suppressions.txt`
-  with ledger-docket comments, add `make leak-check` + CI gate. Own.1
-  Phase 2 row moves to "functional + leak-clean + CI-gated". Plan:
-  `docs/roadmap/v5/v5.4.2/`.
+- **v5.4.3** — **Close Rt.03 + Rt.04.** Loop-scoped free-before-store
+  in `emit_track_string` (activates only when the emit site is inside
+  a for/while body, keyed on a new `loop_depth` field in `EmitState`)
+  closes Rt.03 (22_string_builder loop-reassignment). One-level
+  struct-field walk drop glue (extract every ptr-typed field from
+  struct-return aggregates, add to per-resource ret-ptr comparison
+  lists) closes Rt.04 (62_list_output struct-return intermediates),
+  removes v5.4.1 Phase 4's conservative skip-all-drops guard. Both
+  verified against the baseline gate — fixes land as improvements
+  that the checker prompts to refresh.
 - **v5.5.0** — **Sh.4 — self-hosted async.** `block_on`/`await` +
   coroutine lowering.
 - **v5.6.0** — **Sh.6 — self-hosted tensor.** `Tensor`/`Float` types
@@ -337,7 +356,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27032 symbols, 60748 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27046 symbols, 60779 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
