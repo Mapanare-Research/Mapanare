@@ -17239,28 +17239,48 @@ fn emit_track_closure(st: EmitState, val_name: String) -> EmitState {
 // already uses inline label emission for bounds-check traps; same
 // pattern applies here).
 
-fn emit_drop_glue_strings(st: EmitState, ret_str_ptr: String) -> EmitState {
+fn emit_drop_glue_strings(st: EmitState, ret_str_ptrs: List<String>) -> EmitState {
     let mut s: EmitState = st
     let n: Int = len(s.str_owned)
+    let ns: Int = len(s.str_owned_source)
+    let nret: Int = len(ret_str_ptrs)
     let mut i: Int = 0
-    let has_ret: Bool = (len(ret_str_ptr) > 0)
     for _ in 0..1024 {
         if i >= n { return s }
         let name: String = s.str_owned[i]
-        let is_moved: Bool = list_has_string(s.moved_locals, name)
+        // v5.4.4 — consult str_owned_source[i] instead of the slot name.
+        // The lowerer emits Move(val) on the SSA source; drop glue skips
+        // the slot when its source is in moved_locals.
+        let mut source: String = ""
+        if i < ns { source = s.str_owned_source[i] }
+        let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
         if !is_moved {
             let cnt: Int = s.counter
             s.counter = s.counter + 1
             let svtmp: String = "%drop.s" + toString(cnt)
             s = emit_line(s, "  " + svtmp + " = load {ptr, i64}, ptr %" + name)
-            if has_ret {
+            if nret > 0 {
                 let sptmp: String = "%drop.p" + toString(cnt)
-                let same: String = "%drop.same" + toString(cnt)
-                let free_lbl: String = "drop.free." + toString(cnt)
-                let skip_lbl: String = "drop.skip." + toString(cnt)
                 s = emit_line(s, "  " + sptmp + " = extractvalue {ptr, i64} " + svtmp + ", 0")
-                s = emit_line(s, "  " + same + " = icmp eq ptr " + sptmp + ", " + ret_str_ptr)
-                s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
+                let skip_lbl: String = "drop.skip." + toString(cnt)
+                let free_lbl: String = "drop.free." + toString(cnt)
+                // Chained compares: each ret ptr gets its own check; any
+                // match branches to skip. Final fallthrough calls free.
+                let mut ri: Int = 0
+                for _ in 0..256 {
+                    if ri >= nret { continue }
+                    let rp: String = ret_str_ptrs[ri]
+                    let same: String = "%drop.same." + toString(cnt) + "." + toString(ri)
+                    let next_lbl: String = "drop.snext." + toString(cnt) + "." + toString(ri)
+                    s = emit_line(s, "  " + same + " = icmp eq ptr " + sptmp + ", " + rp)
+                    if ri == nret - 1 {
+                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
+                    } else {
+                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + next_lbl)
+                        s = emit_line(s, next_lbl + ":")
+                    }
+                    ri = ri + 1
+                }
                 s = emit_line(s, free_lbl + ":")
                 s = emit_line(s, "  call void @__mn_str_free({ptr, i64} " + svtmp + ")")
                 s = emit_line(s, "  br label %" + skip_lbl)
@@ -17274,29 +17294,44 @@ fn emit_drop_glue_strings(st: EmitState, ret_str_ptr: String) -> EmitState {
     return s
 }
 
-fn emit_drop_glue_lists(st: EmitState, ret_list_ptr: String) -> EmitState {
+fn emit_drop_glue_lists(st: EmitState, ret_list_ptrs: List<String>) -> EmitState {
     let mut s: EmitState = st
     let n: Int = len(s.list_owned)
+    let ns: Int = len(s.list_owned_source)
+    let nret: Int = len(ret_list_ptrs)
     let mut i: Int = 0
-    let has_ret: Bool = (len(ret_list_ptr) > 0)
     for _ in 0..1024 {
         if i >= n { return s }
         let name: String = s.list_owned[i]
-        let is_moved: Bool = list_has_string(s.moved_locals, name)
+        // v5.4.4 — consult list_owned_source[i] parallel array.
+        let mut source: String = ""
+        if i < ns { source = s.list_owned_source[i] }
+        let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
         if !is_moved {
-            if has_ret {
+            if nret > 0 {
                 let cnt: Int = s.counter
                 s.counter = s.counter + 1
                 let lvtmp: String = "%drop.lv" + toString(cnt)
                 let lptmp: String = "%drop.lp" + toString(cnt)
-                let same: String = "%drop.lsame" + toString(cnt)
                 let free_lbl: String = "drop.lfree." + toString(cnt)
                 let skip_lbl: String = "drop.lskip." + toString(cnt)
-                // Load list value from alloca, extract data ptr, compare.
                 s = emit_line(s, "  " + lvtmp + " = load " + llvm_list_rt() + ", ptr %" + name)
                 s = emit_line(s, "  " + lptmp + " = extractvalue " + llvm_list_rt() + " " + lvtmp + ", 0")
-                s = emit_line(s, "  " + same + " = icmp eq ptr " + lptmp + ", " + ret_list_ptr)
-                s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
+                let mut ri: Int = 0
+                for _ in 0..256 {
+                    if ri >= nret { continue }
+                    let rp: String = ret_list_ptrs[ri]
+                    let same: String = "%drop.lsame." + toString(cnt) + "." + toString(ri)
+                    let next_lbl: String = "drop.lnext." + toString(cnt) + "." + toString(ri)
+                    s = emit_line(s, "  " + same + " = icmp eq ptr " + lptmp + ", " + rp)
+                    if ri == nret - 1 {
+                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
+                    } else {
+                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + next_lbl)
+                        s = emit_line(s, next_lbl + ":")
+                    }
+                    ri = ri + 1
+                }
                 s = emit_line(s, free_lbl + ":")
                 s = emit_line(s, "  call void @__mn_list_free(ptr %" + name + ")")
                 s = emit_line(s, "  br label %" + skip_lbl)
@@ -17310,26 +17345,42 @@ fn emit_drop_glue_lists(st: EmitState, ret_list_ptr: String) -> EmitState {
     return s
 }
 
-fn emit_drop_glue_boxed(st: EmitState, ret_box_ptr: String) -> EmitState {
+fn emit_drop_glue_boxed(st: EmitState, ret_box_ptrs: List<String>) -> EmitState {
     let mut s: EmitState = st
     let n: Int = len(s.boxed_owned)
+    let ns: Int = len(s.boxed_owned_source)
+    let nret: Int = len(ret_box_ptrs)
     let mut i: Int = 0
-    let has_ret: Bool = (len(ret_box_ptr) > 0)
     for _ in 0..1024 {
         if i >= n { return s }
         let name: String = s.boxed_owned[i]
-        let is_moved: Bool = list_has_string(s.moved_locals, name)
+        // v5.4.4 — consult boxed_owned_source[i] parallel array.
+        let mut source: String = ""
+        if i < ns { source = s.boxed_owned_source[i] }
+        let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
         if !is_moved {
             let cnt: Int = s.counter
             s.counter = s.counter + 1
             let tmp: String = "%drop.b" + toString(cnt)
             s = emit_line(s, "  " + tmp + " = load ptr, ptr %" + name)
-            if has_ret {
-                let same: String = "%drop.bsame" + toString(cnt)
+            if nret > 0 {
                 let free_lbl: String = "drop.bfree." + toString(cnt)
                 let skip_lbl: String = "drop.bskip." + toString(cnt)
-                s = emit_line(s, "  " + same + " = icmp eq ptr " + tmp + ", " + ret_box_ptr)
-                s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
+                let mut ri: Int = 0
+                for _ in 0..256 {
+                    if ri >= nret { continue }
+                    let rp: String = ret_box_ptrs[ri]
+                    let same: String = "%drop.bsame." + toString(cnt) + "." + toString(ri)
+                    let next_lbl: String = "drop.bnext." + toString(cnt) + "." + toString(ri)
+                    s = emit_line(s, "  " + same + " = icmp eq ptr " + tmp + ", " + rp)
+                    if ri == nret - 1 {
+                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
+                    } else {
+                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + next_lbl)
+                        s = emit_line(s, next_lbl + ":")
+                    }
+                    ri = ri + 1
+                }
                 s = emit_line(s, free_lbl + ":")
                 s = emit_line(s, "  call void @free(ptr " + tmp + ")")
                 s = emit_line(s, "  br label %" + skip_lbl)
@@ -17344,7 +17395,11 @@ fn emit_drop_glue_boxed(st: EmitState, ret_box_ptr: String) -> EmitState {
 }
 
 fn ret_ty_is_aggregate(ret_ty: String) -> Bool {
-    if ret_ty.starts_with("%struct.") { return true }
+    // v5.4.4 — %struct.* returns are no longer conservatively skipped.
+    // Drop glue walks the struct fields and extracts each escaping ptr/
+    // String/List, so tracked slots that alias an escaping field pointer
+    // are skipped while unescaped intermediates are freed. Combined with
+    // lowerer Move emission, this closes Rt.04 for the common cases.
     if ret_ty.starts_with("%enum.") { return true }
     // Anonymous structs (Option/Result inner types): "{i1, ptr}" etc.
     // String "{ptr, i64}" is technically a literal struct but is a
@@ -17361,42 +17416,86 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
         return st
     }
 
-    // Aggregate returns (structs / enums / Option / Result): conservative
-    // skip-all. Without a recursive struct-field walk we cannot prove
-    // any tracked slot doesn't alias a returned pointer field, so we
-    // accept the leak rather than risk UAF. v5.4.2 may add the walk.
+    // Conservative skip for enum / option / result / anonymous struct
+    // returns. %struct.* is handled below via one-level field walk.
     if ret_ty_is_aggregate(ret_ty) {
         return st
     }
 
     let mut s: EmitState = st
-    let mut ret_str_ptr: String = ""
-    let mut ret_list_ptr: String = ""
-    let mut ret_box_ptr: String = ""
+    let mut ret_str_ptrs: List<String> = []
+    let mut ret_list_ptrs: List<String> = []
+    let mut ret_box_ptrs: List<String> = []
 
-    // Scalar String return: extract the data ptr once for slot-by-slot
-    // comparison in emit_drop_glue_strings.
+    // Scalar String return: extract the data ptr once.
     if ret_ty == llvm_string() && len(ret_val) > 0 {
         let cnt: Int = s.counter
         s.counter = s.counter + 1
-        ret_str_ptr = "%ret.sp" + toString(cnt)
-        s = emit_line(s, "  " + ret_str_ptr + " = extractvalue {ptr, i64} " + ret_val + ", 0")
+        let p: String = "%ret.sp" + toString(cnt)
+        s = emit_line(s, "  " + p + " = extractvalue {ptr, i64} " + ret_val + ", 0")
+        ret_str_ptrs.push(p)
     }
     // Scalar List return.
     if ret_ty == llvm_list_rt() && len(ret_val) > 0 {
         let cnt: Int = s.counter
         s.counter = s.counter + 1
-        ret_list_ptr = "%ret.lp" + toString(cnt)
-        s = emit_line(s, "  " + ret_list_ptr + " = extractvalue " + llvm_list_rt() + " " + ret_val + ", 0")
+        let p: String = "%ret.lp" + toString(cnt)
+        s = emit_line(s, "  " + p + " = extractvalue " + llvm_list_rt() + " " + ret_val + ", 0")
+        ret_list_ptrs.push(p)
     }
-    // Scalar ptr return: the returned value IS the box pointer.
+    // Scalar ptr return.
     if ret_ty == "ptr" && len(ret_val) > 0 {
-        ret_box_ptr = ret_val
+        ret_box_ptrs.push(ret_val)
     }
 
-    s = emit_drop_glue_strings(s, ret_str_ptr)
-    s = emit_drop_glue_lists(s, ret_list_ptr)
-    s = emit_drop_glue_boxed(s, ret_box_ptr)
+    // v5.4.4 — %struct.* return: walk one level of fields and extract
+    // every String / List / ptr field into the corresponding ret-ptr
+    // list. Combined with lowerer Move emission, the drop-glue per-
+    // resource helpers can skip tracked slots that alias an escaping
+    // field while freeing unescaped intermediates.
+    if ret_ty.starts_with("%struct.") && len(ret_val) > 0 {
+        let sname: String = ret_ty.substr(8, len(ret_ty) - 8)
+        let sopt: Option<StructEntry> = find_struct_entry(s, sname)
+        match sopt {
+            Some(sent) => {
+                let nf: Int = len(sent.field_types)
+                let mut fi: Int = 0
+                for _ in 0..500 {
+                    if fi >= nf { continue }
+                    let ft: String = sent.field_types[fi]
+                    if ft == llvm_string() {
+                        let cnt: Int = s.counter
+                        s.counter = s.counter + 1
+                        let fval: String = "%ret.ssf" + toString(cnt)
+                        let fp: String = "%ret.ssp" + toString(cnt)
+                        s = emit_line(s, "  " + fval + " = extractvalue " + ret_ty + " " + ret_val + ", " + toString(fi))
+                        s = emit_line(s, "  " + fp + " = extractvalue {ptr, i64} " + fval + ", 0")
+                        ret_str_ptrs.push(fp)
+                    } else if ft == llvm_list_rt() {
+                        let cnt: Int = s.counter
+                        s.counter = s.counter + 1
+                        let fval: String = "%ret.slf" + toString(cnt)
+                        let fp: String = "%ret.slp" + toString(cnt)
+                        s = emit_line(s, "  " + fval + " = extractvalue " + ret_ty + " " + ret_val + ", " + toString(fi))
+                        s = emit_line(s, "  " + fp + " = extractvalue " + llvm_list_rt() + " " + fval + ", 0")
+                        ret_list_ptrs.push(fp)
+                    } else if ft == "ptr" {
+                        let cnt: Int = s.counter
+                        s.counter = s.counter + 1
+                        let fp: String = "%ret.sbp" + toString(cnt)
+                        s = emit_line(s, "  " + fp + " = extractvalue " + ret_ty + " " + ret_val + ", " + toString(fi))
+                        ret_box_ptrs.push(fp)
+                    }
+                    fi = fi + 1
+                }
+            },
+            _ => {}
+        }
+    }
+
+    s = emit_drop_glue_strings(s, ret_str_ptrs)
+    s = emit_drop_glue_lists(s, ret_list_ptrs)
+    s = emit_drop_glue_boxed(s, ret_box_ptrs)
     return s
 }
 
