@@ -1,0 +1,13 @@
+# ASan leak-detection suppressions for Mapanare golden sweep.
+#
+# v5.4.2 adds compile+link+execute-under-LSan (`detect_leaks=1`)
+# across all 66 goldens via scripts/run_asan_leak_goldens.sh.
+# Entries below mask leaks that are intentional/known, not bugs.
+#
+# Every entry MUST:
+#   1. Cite a ledger docket (e.g. Rt.NN) in a leading comment.
+#   2. Explain *why* the leak is intentional.
+#   3. Have a matching row in docs/known_issues.md.
+#
+# Suppression count is capped at 10; audit monthly.
+# See docs/roadmap/v5/v5.4.2/PLAN.md §5.4.2b.
