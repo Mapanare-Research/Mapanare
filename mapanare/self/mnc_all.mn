@@ -17239,6 +17239,38 @@ fn emit_track_closure(st: EmitState, val_name: String) -> EmitState {
 // already uses inline label emission for bounds-check traps; same
 // pattern applies here).
 
+// v5.4.4 — Drop-glue OR-reduction helper.
+// Emits: store i1 false to an entry-prelude alloca; per ret-ptr icmp +
+// load acc + or + store; final load; br to skip_lbl/free_lbl.
+// Extracted from the per-resource drop-glue helpers so the inner while
+// loop is a top-level call rather than a deeply nested for-in-if inside
+// the outer slot-iteration loop. The bootstrap emitter truncates output
+// on the previous deep-nest pattern (observed at slot 25867 of
+// emit_mir_call in stage2.ll); a top-level-call factoring avoids it.
+fn emit_or_reduce_ret_match(st: EmitState, slot_ptr: String, ret_ptrs: List<String>, cnt: Int, prefix: String, skip_lbl: String, free_lbl: String) -> EmitState {
+    let mut s: EmitState = st
+    let nret: Int = len(ret_ptrs)
+    let acc: String = "%drop." + prefix + "macc." + toString(cnt)
+    s.entry_prelude_lines.push("  " + acc + " = alloca i1, align 1")
+    s = emit_line(s, "  store i1 false, ptr " + acc)
+    let mut ri: Int = 0
+    while ri < nret {
+        let rp: String = ret_ptrs[ri]
+        let same: String = "%drop." + prefix + "same." + toString(cnt) + "." + toString(ri)
+        let cur: String = "%drop." + prefix + "cur." + toString(cnt) + "." + toString(ri)
+        let comb: String = "%drop." + prefix + "comb." + toString(cnt) + "." + toString(ri)
+        s = emit_line(s, "  " + same + " = icmp eq ptr " + slot_ptr + ", " + rp)
+        s = emit_line(s, "  " + cur + " = load i1, ptr " + acc)
+        s = emit_line(s, "  " + comb + " = or i1 " + cur + ", " + same)
+        s = emit_line(s, "  store i1 " + comb + ", ptr " + acc)
+        ri = ri + 1
+    }
+    let final_match: String = "%drop." + prefix + "final." + toString(cnt)
+    s = emit_line(s, "  " + final_match + " = load i1, ptr " + acc)
+    s = emit_line(s, "  br i1 " + final_match + ", label %" + skip_lbl + ", label %" + free_lbl)
+    return s
+}
+
 fn emit_drop_glue_strings(st: EmitState, ret_str_ptrs: List<String>) -> EmitState {
     let mut s: EmitState = st
     let n: Int = len(s.str_owned)
@@ -17249,8 +17281,6 @@ fn emit_drop_glue_strings(st: EmitState, ret_str_ptrs: List<String>) -> EmitStat
         if i >= n { return s }
         let name: String = s.str_owned[i]
         // v5.4.4 — consult str_owned_source[i] instead of the slot name.
-        // The lowerer emits Move(val) on the SSA source; drop glue skips
-        // the slot when its source is in moved_locals.
         let mut source: String = ""
         if i < ns { source = s.str_owned_source[i] }
         let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
@@ -17264,23 +17294,7 @@ fn emit_drop_glue_strings(st: EmitState, ret_str_ptrs: List<String>) -> EmitStat
                 s = emit_line(s, "  " + sptmp + " = extractvalue {ptr, i64} " + svtmp + ", 0")
                 let skip_lbl: String = "drop.skip." + toString(cnt)
                 let free_lbl: String = "drop.free." + toString(cnt)
-                // Chained compares: each ret ptr gets its own check; any
-                // match branches to skip. Final fallthrough calls free.
-                let mut ri: Int = 0
-                for _ in 0..256 {
-                    if ri >= nret { continue }
-                    let rp: String = ret_str_ptrs[ri]
-                    let same: String = "%drop.same." + toString(cnt) + "." + toString(ri)
-                    let next_lbl: String = "drop.snext." + toString(cnt) + "." + toString(ri)
-                    s = emit_line(s, "  " + same + " = icmp eq ptr " + sptmp + ", " + rp)
-                    if ri == nret - 1 {
-                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
-                    } else {
-                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + next_lbl)
-                        s = emit_line(s, next_lbl + ":")
-                    }
-                    ri = ri + 1
-                }
+                s = emit_or_reduce_ret_match(s, sptmp, ret_str_ptrs, cnt, "s", skip_lbl, free_lbl)
                 s = emit_line(s, free_lbl + ":")
                 s = emit_line(s, "  call void @__mn_str_free({ptr, i64} " + svtmp + ")")
                 s = emit_line(s, "  br label %" + skip_lbl)
@@ -17303,7 +17317,6 @@ fn emit_drop_glue_lists(st: EmitState, ret_list_ptrs: List<String>) -> EmitState
     for _ in 0..1024 {
         if i >= n { return s }
         let name: String = s.list_owned[i]
-        // v5.4.4 — consult list_owned_source[i] parallel array.
         let mut source: String = ""
         if i < ns { source = s.list_owned_source[i] }
         let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
@@ -17317,21 +17330,7 @@ fn emit_drop_glue_lists(st: EmitState, ret_list_ptrs: List<String>) -> EmitState
                 let skip_lbl: String = "drop.lskip." + toString(cnt)
                 s = emit_line(s, "  " + lvtmp + " = load " + llvm_list_rt() + ", ptr %" + name)
                 s = emit_line(s, "  " + lptmp + " = extractvalue " + llvm_list_rt() + " " + lvtmp + ", 0")
-                let mut ri: Int = 0
-                for _ in 0..256 {
-                    if ri >= nret { continue }
-                    let rp: String = ret_list_ptrs[ri]
-                    let same: String = "%drop.lsame." + toString(cnt) + "." + toString(ri)
-                    let next_lbl: String = "drop.lnext." + toString(cnt) + "." + toString(ri)
-                    s = emit_line(s, "  " + same + " = icmp eq ptr " + lptmp + ", " + rp)
-                    if ri == nret - 1 {
-                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
-                    } else {
-                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + next_lbl)
-                        s = emit_line(s, next_lbl + ":")
-                    }
-                    ri = ri + 1
-                }
+                s = emit_or_reduce_ret_match(s, lptmp, ret_list_ptrs, cnt, "l", skip_lbl, free_lbl)
                 s = emit_line(s, free_lbl + ":")
                 s = emit_line(s, "  call void @__mn_list_free(ptr %" + name + ")")
                 s = emit_line(s, "  br label %" + skip_lbl)
@@ -17354,7 +17353,6 @@ fn emit_drop_glue_boxed(st: EmitState, ret_box_ptrs: List<String>) -> EmitState 
     for _ in 0..1024 {
         if i >= n { return s }
         let name: String = s.boxed_owned[i]
-        // v5.4.4 — consult boxed_owned_source[i] parallel array.
         let mut source: String = ""
         if i < ns { source = s.boxed_owned_source[i] }
         let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
@@ -17366,21 +17364,7 @@ fn emit_drop_glue_boxed(st: EmitState, ret_box_ptrs: List<String>) -> EmitState 
             if nret > 0 {
                 let free_lbl: String = "drop.bfree." + toString(cnt)
                 let skip_lbl: String = "drop.bskip." + toString(cnt)
-                let mut ri: Int = 0
-                for _ in 0..256 {
-                    if ri >= nret { continue }
-                    let rp: String = ret_box_ptrs[ri]
-                    let same: String = "%drop.bsame." + toString(cnt) + "." + toString(ri)
-                    let next_lbl: String = "drop.bnext." + toString(cnt) + "." + toString(ri)
-                    s = emit_line(s, "  " + same + " = icmp eq ptr " + tmp + ", " + rp)
-                    if ri == nret - 1 {
-                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + free_lbl)
-                    } else {
-                        s = emit_line(s, "  br i1 " + same + ", label %" + skip_lbl + ", label %" + next_lbl)
-                        s = emit_line(s, next_lbl + ":")
-                    }
-                    ri = ri + 1
-                }
+                s = emit_or_reduce_ret_match(s, tmp, ret_box_ptrs, cnt, "b", skip_lbl, free_lbl)
                 s = emit_line(s, free_lbl + ":")
                 s = emit_line(s, "  call void @free(ptr " + tmp + ")")
                 s = emit_line(s, "  br label %" + skip_lbl)
@@ -17395,11 +17379,14 @@ fn emit_drop_glue_boxed(st: EmitState, ret_box_ptrs: List<String>) -> EmitState 
 }
 
 fn ret_ty_is_aggregate(ret_ty: String) -> Bool {
-    // v5.4.4 — %struct.* returns are no longer conservatively skipped.
-    // Drop glue walks the struct fields and extracts each escaping ptr/
-    // String/List, so tracked slots that alias an escaping field pointer
-    // are skipped while unescaped intermediates are freed. Combined with
-    // lowerer Move emission, this closes Rt.04 for the common cases.
+    // v5.4.4 RESCOPE — %struct.* returns remain conservatively skipped.
+    // Phase 3 attempted to open the guard with a one-level field walk,
+    // but the resulting stage2.ll expansion (~5× from drop-glue
+    // extractvalue chains on EmitState's 22 fields) triggered stage2
+    // runtime instability (segfault before stage3 emission) that did
+    // not appear on any golden. v5.4.5+ will reopen the guard once the
+    // field walk is gated on function size or struct-complexity.
+    if ret_ty.starts_with("%struct.") { return true }
     if ret_ty.starts_with("%enum.") { return true }
     // Anonymous structs (Option/Result inner types): "{i1, ptr}" etc.
     // String "{ptr, i64}" is technically a literal struct but is a
@@ -17460,8 +17447,7 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
             Some(sent) => {
                 let nf: Int = len(sent.field_types)
                 let mut fi: Int = 0
-                for _ in 0..500 {
-                    if fi >= nf { continue }
+                while fi < nf {
                     let ft: String = sent.field_types[fi]
                     if ft == llvm_string() {
                         let cnt: Int = s.counter
@@ -17963,14 +17949,20 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         s.in_entry_block = false
         let mut pk2: Int = 0
         let npre2: Int = len(s.entry_prelude_lines)
-        for _ in 0..8192 {
+        // v5.4.4 — bumped prelude flush cap (emit_mir_call's drop glue
+        // adds ~50 alloca lines on top of tracking-slot allocas).
+        for _ in 0..65536 {
             if pk2 >= npre2 { break }
             s.lines.push(s.entry_prelude_lines[pk2])
             pk2 = pk2 + 1
         }
         let mut bk: Int = 0
         let nbody: Int = len(s.entry_block_body)
-        for _ in 0..65536 {
+        // v5.4.4 — bumped body flush cap from 65536 to 1M to cover
+        // functions whose drop glue (structs with multi-ret-ptr
+        // extraction) produces >65k body lines — observed at
+        // emit_mir_call in stage2.ll with ~66k lines.
+        for _ in 0..1000000 {
             if bk >= nbody { break }
             s.lines.push(s.entry_block_body[bk])
             bk = bk + 1
