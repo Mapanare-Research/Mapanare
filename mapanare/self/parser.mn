@@ -2283,30 +2283,82 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
 }
 
 // ---------------------------------------------------------------------------
-// Tensor literal: Tensor<Type>[elements] (v4.42.0)
-// Parses Tensor<Type>[...] by consuming the type prefix, then delegating
-// to parse_list_lit for the body. Returns TensorLit with flat elements and
-// shape [n] (1D). For nD, the Python bootstrap handles nesting; the
-// self-hosted mirror handles 1D for now (sufficient for golden tests).
+// Tensor literal: Tensor<Type>[elements] (v4.42.0, v5.6.0 nested-array)
+// Parses Tensor<Type>[...] with full nested-array support for 2D/3D/etc.:
+//   Tensor<Float>[1.0, 2.0]                   -- shape [2]
+//   Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]     -- shape [2,2]
+//   Tensor<Float>[[[1.0]]]                    -- shape [1,1,1]
+// Shape is inferred from nesting depth; elements are flattened row-major
+// into the returned Expr::TensorLit. Mirrors mapanare/parser.py::
+// tensor_literal + _walk (v4.42.0).
 // ---------------------------------------------------------------------------
 
+struct TensorWalk {
+    pos: Int,
+    flat: List<Expr>,
+    shape: List<Int>
+}
+
+// Walks the content of a single `[...]` tensor body at the given nesting
+// depth. `pos` points at the first token AFTER the opening LBRACKET. On
+// return, `pos` points at the token AFTER the matching RBRACKET. Each call
+// returns its own flat/shape accumulated at this sub-tree; the caller
+// merges them into the outer tree.
+fn parse_tensor_body(tokens: List<Token>, pos: Int, filename: String, depth: Int, in_flat: List<Expr>, in_shape: List<Int>) -> TensorWalk {
+    let mut p: Int = pos
+    let mut flat: List<Expr> = in_flat
+    let mut shape: List<Int> = in_shape
+    let mut count: Int = 0
+    for _ in 0..100000 {
+        let tt: String = peek_type(tokens, p)
+        if tt == "RBRACKET" {
+            // Record shape[depth] on first visit. (Validation of matching
+            // sibling lengths is deferred to the semantic pass — parser
+            // trusts the user like Python's _walk does for jagged arrays.)
+            if depth >= len(shape) {
+                shape.push(count)
+            }
+            return new TensorWalk { pos: p + 1, flat: flat, shape: shape }
+        }
+        if count > 0 {
+            p = expect(tokens, p, "COMMA")
+            // Trailing comma tolerance
+            if peek_type(tokens, p) == "RBRACKET" {
+                if depth >= len(shape) {
+                    shape.push(count)
+                }
+                return new TensorWalk { pos: p + 1, flat: flat, shape: shape }
+            }
+        }
+        let elem_tt: String = peek_type(tokens, p)
+        if elem_tt == "LBRACKET" {
+            let sub: TensorWalk = parse_tensor_body(tokens, p + 1, filename, depth + 1, flat, shape)
+            p = sub.pos
+            flat = sub.flat
+            shape = sub.shape
+        } else {
+            let er: ExprResult = parse_expr(tokens, p, filename, 0)
+            flat.push(er.expr)
+            p = er.pos
+        }
+        count = count + 1
+    }
+    return new TensorWalk { pos: p, flat: flat, shape: shape }
+}
+
 fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+    // pos points at KW_TENSOR
     let mut p: Int = pos + 1
     p = expect(tokens, p, "LT")
-    let mut depth: Int = 1
-    for _ in 0..100 {
-        if depth > 0 {
-            let tt: String = peek_type(tokens, p)
-            if tt == "LT" { depth = depth + 1 }
-            if tt == "GT" { depth = depth - 1 }
-            p = p + 1
-        }
-    }
-    // Now at [elements]
-    let list_result: ExprResult = parse_list_lit(tokens, p, filename)
-    let elems: List<Expr> = expr_list_elements(list_result.expr)
-    let shape: List<Int> = [len(elems)]
-    return new_expr_result(Expr::TensorLit(elems, shape), list_result.pos)
+    let tr: TypeResult = parse_type_expr(tokens, p, filename)
+    p = tr.pos
+    p = expect(tokens, p, "GT")
+    p = expect(tokens, p, "LBRACKET")
+
+    let init_flat: List<Expr> = []
+    let init_shape: List<Int> = []
+    let walk: TensorWalk = parse_tensor_body(tokens, p, filename, 0, init_flat, init_shape)
+    return new_expr_result(Expr::TensorLit(walk.flat, walk.shape), walk.pos)
 }
 
 // ---------------------------------------------------------------------------
@@ -2349,7 +2401,10 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
 
     if tt == "KW_FN" { return parse_fn_type(tokens, pos, filename) }
 
-    if tt == "NAME" {
+    // v5.6.0 (Sh.6): KW_TENSOR treated as a type name in type position, so
+    // `let x: Tensor<Int>` still parses (Tensor became a keyword to
+    // disambiguate tensor literals). The token value is still "Tensor".
+    if tt == "NAME" || tt == "KW_TENSOR" {
         let mut name: String = peek_value(tokens, pos)
         let mut p: Int = pos + 1
         for _ in 0..10 {
