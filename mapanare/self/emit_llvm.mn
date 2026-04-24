@@ -1433,6 +1433,18 @@ fn emit_list_init_checked(st: EmitState, inst: Instruction) -> EmitState {
     let dest: Value = instr_dest(inst)
     let elem_ty: MIRType = instr_list_type(inst)
     let elements: List<Value> = instr_list_elements(inst)
+    // v5.6.7 Ve.2 fix — when dest is definitively `TK_LIST` (set by
+    // `make_value(s, mir_list(), "t")` in `lower_list_typed`), skip
+    // the struct-reinterpretation heuristics below. They were added
+    // to handle cases where the lowerer mis-typed a struct literal as
+    // a list init, but they misfire for correctly-typed
+    // `List<SomeStruct>` literals (where elem_ty.name matches a
+    // registered struct) — the whole ListInit gets dropped and
+    // replaced with a broken struct_init, leaving the list dest
+    // undefined at every use site.
+    if dest.ty.kind == TK_LIST() {
+        return emit_list_init(st, dest, elem_ty, elements)
+    }
     let struct_check: Option<StructEntry> = find_struct_entry(st, dest.ty.name)
     let struct_check2: Option<StructEntry> = find_struct_entry(st, elem_ty.name)
     match struct_check {

@@ -18,6 +18,45 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.7** (shipped) — **Ve.2 PARTIAL — lowerer empty-list
+  elem_ty propagation + list_init dispatch fix.** Empty-list
+  element type now propagates from `let` annotations: `let xs:
+  List<String> = []` produces MIR with
+  `elem_ty.kind=TK_STRUCT / name=String` instead of `TK_UNKNOWN
+  / ""`. New `lower_list_typed(st, elements, hint)` helper
+  accepts an explicit element-type hint; `lower_list` becomes a
+  one-line wrapper delegating with `mir_unknown()` for backward
+  compatibility. New `extract_list_elem_ty(st, te)` unwraps
+  `Generic("List", [inner])` → inner MIRType; new
+  `lower_let_list_hint(st, value, type_ann)` gates the pattern
+  check. `lower_let` routes through `lower_list_typed` when the
+  pattern matches — otherwise falls through to the generic
+  `lower_expr` path. **Key collateral fix**:
+  `emit_list_init_checked`'s struct-reinterpretation heuristic
+  misfired on correctly-typed `List<Struct>` literals — when
+  elem_ty.name matched a registered struct name, the heuristic
+  dropped the ListInit and emitted a broken struct_init instead,
+  leaving `%tN` undefined at every use site (`llvm-as` rejected
+  with "use of undefined value"). Short-circuited when
+  `dest.ty.kind == TK_LIST()` — the destination is definitively
+  a list, so the struct-init path doesn't apply. Metrics:
+  **`__mn_list_new(i64 384)` hardcoded fallback 387 → 18 sites
+  (−95%)**; dynamic GEP-trick sizing 49 → ~400 sites (+8×);
+  stage2.ll 207,616 lines (+0.28% vs v5.6.5, well within
+  budget); `llvm-as` clean; goldens 64/66 preserved; ASan on
+  full `mnc_all.mn` reports 0 heap-buffer-overflow; `make lint`
+  clean; `check_struct_registry.py` 23/23/91 clean. **What NOT
+  closed** — non-empty stage3.ll. The stage2 runtime OOM
+  symptom (`__mn_str_concat` in `llvm_alloca` receives a
+  garbage-length String) persists, same failure mode as v5.6.5
+  but with narrower blast radius (only lists not routed through
+  `lower_let` still hit the 384 floor). Tracked as new **Ve.3**
+  in `docs/known_issues.md`; scoped for v5.6.8. Residual 18 ×
+  384-byte floor sites come from empty-list literals in
+  contexts that don't route through `lower_let` (struct field
+  defaults, call arguments, return expressions) — v5.6.9+ scope
+  after Ve.3 closure. See
+  `docs/roadmap/v5/v5.6.7/SESSION_REPORT.md`.
 - **v5.6.5** (shipped) — **Ve.1 primary fix + GEP-trick sizing
   refactor.** Root-causes the `parse_fn_body` heap-buffer-overflow
   (open since v5.4.4) NOT to the parser but to
@@ -824,18 +863,23 @@ Most recent releases (last 6). Full history at
   while skipping the 24-field `%struct.EmitState` that caused
   v5.4.4's 5× stage2.ll explosion. Closes the last known
   Mapanare-side leak. See `docs/roadmap/v5/v5.6.6/PLAN.md`.
-- **v5.6.7** — **Ve.2 close — lowerer empty-list elem_ty
-  propagation, stage3 restored.** `let xs: List<String> = []`
-  currently lowers to MIR with `elem_ty.kind=TK_UNKNOWN` — the
-  type annotation on the `let` declaration is dropped. Fix is in
-  `lower.mn::ListInit` (or the `let`-stmt lowering path): when the
-  RHS is an empty list and the LHS has a type annotation, thread
-  the annotation's element type into MIR. Once landed, remove
-  v5.6.5's 384-byte `emit_list_init` fallback floor and confirm
-  `verify_fixed_point.sh` produces non-empty stage3.ll. Should also
-  close the runtime OOM in `mnc-stage2` on non-trivial programs
-  (`__mn_str_concat` reading corrupted size) — hypothesized same
-  root cause.
+- **v5.6.8** — **Ve.3 close — stage2 runtime OOM.** stage2 OOMs on
+  non-trivial programs with a garbage-size request from
+  `__mn_str_concat` in `llvm_alloca`. Stack: `__mn_alloc(bad_size)
+  → __mn_str_concat → llvm_alloca → emit_mir_by_kind`. Persists
+  since v5.4.4 (masked first by parse_fn_body crash, then by
+  384-byte list floor). Plan: valgrind/ASan trace of stage2 on
+  `p1.mn` to identify exact corrupted read; likely a MIR Value's
+  `name: String` read from the wrong offset OR a List<Struct>
+  elem_size inconsistency between writer and reader. Once closed,
+  `verify_fixed_point.sh` should produce non-empty stage3.ll.
+- **v5.6.9+** — **Ve.2 residuals — remove 384-byte list floor.**
+  The 18 remaining 384-byte fallback sites come from empty-list
+  literals in contexts that don't route through `lower_let`:
+  struct field defaults, call arguments, return expressions.
+  Thread type hints down each lowerer entry point; remove the
+  floor from `emit_list_init`'s hybrid path once zero hardcoded
+  sites remain.
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
@@ -922,7 +966,7 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.5):** 64/66. The 2 gap:
+**Current baseline (v5.6.7):** 64/66. The 2 gap:
 `51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
 `64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
 v5.7.0 for 66/66.
@@ -1093,7 +1137,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27727 symbols, 61497 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27750 symbols, 61516 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

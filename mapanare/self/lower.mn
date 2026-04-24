@@ -743,7 +743,23 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
     // This flag is used later to decide whether to re-wrap with typed WrapNone.
     let mut is_none_literal: Bool = false
     if expr_kind(value) == "none_lit" { is_none_literal = true }
-    let r: LowerResult = lower_expr(st, value)
+
+    // v5.6.7 Ve.2 fix — empty-list elem_ty propagation. When lowering
+    // `let xs: List<T> = []`, the default path `lower_expr → lower_list`
+    // can't see the type annotation and emits MIR with
+    // `elem_ty.kind=TK_UNKNOWN`. Downstream, `resolve_mir_type` maps
+    // UNKNOWN to "i64" and `emit_list_init` allocates 8-byte slots for
+    // lists whose elements are 16-byte Strings, 48-byte Params, etc. —
+    // silent corruption previously masked by a 384-byte floor. Fix:
+    // when value is a list literal AND type_ann is `Generic("List", [T])`,
+    // route through `lower_list_typed` so the emitter sees the
+    // annotation's element type on `Instruction::ListInit`.
+    let hint_elem: MIRType = lower_let_list_hint(st, value, type_ann)
+    let r: LowerResult = if hint_elem.kind != TK_UNKNOWN() {
+            lower_list_typed(st, expr_list_elements(value), hint_elem)
+        } else {
+            lower_expr(st, value)
+        }
     let mut s: LowerState = r.state
 
     // Update lambda registration: lower_lambda left var_name empty
@@ -3331,6 +3347,20 @@ fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
+    return lower_list_typed(st, elements, mir_unknown())
+}
+
+// v5.6.7 Ve.2 fix — explicit-element-type variant for lowering list
+// literals. When the context provides an element-type hint (e.g.
+// `let xs: List<String> = []` from `lower_let`, pattern-match on
+// `Generic("List", [inner])`), use it instead of the default
+// `mir_unknown()` fallback when the literal is empty. Otherwise the
+// emitter sees `elem_ty.kind=TK_UNKNOWN → resolve_mir_type returns
+// "i64"`, and allocates 8-byte slots for lists that actually hold
+// 16-byte Strings / 48-byte Params / variable-size structs — the
+// exact root cause of the stage2 runtime corruption that had been
+// masked by the 384-byte floor in `emit_list_init`.
+fn lower_list_typed(st: LowerState, elements: List<Expr>, hinted_elem_ty: MIRType) -> LowerResult {
     // Touch st to force materialization before any list operations.
     // Without this, clang -O0 may leave the LowerState in stale registers
     // from the caller's sret return, causing corruption in subsequent ops.
@@ -3347,14 +3377,51 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
         }
     }
 
+    // Prefer the element type inferred from the first element (concrete,
+    // post-lower). Fall back to the caller's hint (from the `let`
+    // annotation). Last resort: mir_unknown() — safe because downstream
+    // emit_list_init keeps a 384-byte floor for unknown/scalar fallback.
     let mut elem_type: MIRType = mir_unknown()
     if len(vals) > 0 {
         let first_v: Value = vals[0]
         elem_type = first_v.ty
+    } else {
+        if hinted_elem_ty.kind != TK_UNKNOWN() {
+            elem_type = hinted_elem_ty
+        }
     }
     let dest_r: LowerResult = make_value(s, mir_list(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
     return new_lower_result(dest_r.value, new_s)
+}
+
+// v5.6.7 Ve.2 helper — unwrap `List<T>` type annotation to T (as MIRType).
+// Returns `mir_unknown()` for any type expression that isn't a
+// recognized list generic; callers use the UNKNOWN sentinel to mean
+// "no hint available".
+fn extract_list_elem_ty(st: LowerState, te: TypeExpr) -> MIRType {
+    match te {
+        Generic(name, args) => {
+            if name == "List" && len(args) >= 1 {
+                return lower_resolve_type_checked(st, args[0])
+            }
+            return mir_unknown()
+        },
+        _ => { return mir_unknown() }
+    }
+}
+
+// v5.6.7 Ve.2 helper — resolve a `let x: List<T> = []` pattern to its
+// element type hint for `lower_list_typed`. Returns mir_unknown() when
+// the pattern doesn't apply (value isn't a list literal, or type_ann
+// isn't `List<T>`), letting the caller fall through to the default
+// path.
+fn lower_let_list_hint(st: LowerState, value: Expr, type_ann: Option<TypeExpr>) -> MIRType {
+    if expr_kind(value) != "list_lit" { return mir_unknown() }
+    match type_ann {
+        Some(te) => { return extract_list_elem_ty(st, te) },
+        _ => { return mir_unknown() }
+    }
 }
 
 // ---------------------------------------------------------------------------
