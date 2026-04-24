@@ -1671,10 +1671,24 @@ fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
             } else {
                 if tt == "LBRACKET" {
                     p = p + 1
-                    let idx_r: ExprResult = parse_expr(tokens, p, filename, 0)
-                    p = idx_r.pos
+                    let first_r: ExprResult = parse_expr(tokens, p, filename, 0)
+                    p = first_r.pos
+                    let mut indices: List<Expr> = []
+                    indices.push(first_r.expr)
+                    for _ in 0..128 {
+                        if peek_type(tokens, p) == "COMMA" {
+                            p = p + 1
+                            let nxt_r: ExprResult = parse_expr(tokens, p, filename, 0)
+                            p = nxt_r.pos
+                            indices.push(nxt_r.expr)
+                        }
+                    }
                     p = expect(tokens, p, "RBRACKET")
-                    left = Expr::Index(left, idx_r.expr)
+                    if len(indices) == 1 {
+                        left = Expr::Index(left, indices[0])
+                    } else {
+                        left = Expr::TensorIndex(left, indices)
+                    }
                 } else {
                     if tt == "QUESTION" {
                         p = p + 1

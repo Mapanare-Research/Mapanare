@@ -693,6 +693,34 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
         return new_infer_result(unknown_type(), idx_r.st)
     }
 
+    // v5.6.1 Sh.6 Phase 2 — multi-dim tensor indexing `a[i, j]`. Walk the
+    // object + all indices for side-effect inference (pushes diagnostics);
+    // element type is Tensor<T>'s T, defaulting to Float when unknown.
+    if ek == "tensor_index" {
+        let ti_obj_r: InferResult = infer_expr(st, expr_ti_obj(expr))
+        let mut st_ti: SemState = ti_obj_r.st
+        let ti_idxs: List<Expr> = expr_ti_indices(expr)
+        let mut ki: Int = 0
+        let n_idx: Int = len(ti_idxs)
+        for _ in 0..128 {
+            if ki < n_idx {
+                let ixr: InferResult = infer_expr(st_ti, ti_idxs[ki])
+                st_ti = ixr.st
+                ki = ki + 1
+            }
+        }
+        if type_is_error(ti_obj_r.type_info) {
+            return new_infer_result(error_type(), st_ti)
+        }
+        if ti_obj_r.type_info.name == "Tensor" {
+            if len(ti_obj_r.type_info.args) > 0 {
+                return new_infer_result(ti_obj_r.type_info.args[0], st_ti)
+            }
+            return new_infer_result(make_type("Float"), st_ti)
+        }
+        return new_infer_result(unknown_type(), st_ti)
+    }
+
     if ek == "pipe" { return check_pipe_expr(st, expr_pipe_left(expr), expr_pipe_right(expr)) }
 
     if ek == "range" {

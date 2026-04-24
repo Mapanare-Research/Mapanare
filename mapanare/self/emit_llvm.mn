@@ -489,6 +489,12 @@ fn get_fn_attrs(name: String) -> String {
     if name == "__mn_tensor_size" { return " nounwind readonly willreturn" }
     if name == "__mn_tensor_shape_dim" { return " nounwind readonly willreturn" }
     if name == "__mn_tensor_print_f64" { return " nounwind willreturn" }
+    // v5.6.1 Sh.6 Phase 2 — variadic nd getters/setters; nounwind only,
+    // no `readonly` because LLVM varargs intrinsics are conservative.
+    if name == "__mn_tensor_get_f64_nd" { return " nounwind" }
+    if name == "__mn_tensor_get_i64_nd" { return " nounwind" }
+    if name == "__mn_tensor_set_f64_nd" { return " nounwind" }
+    if name == "__mn_tensor_set_i64_nd" { return " nounwind" }
     // -- Agent runtime (v3.43.0) --
     if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
     if name == "mapanare_agent_send" { return " nounwind willreturn" }
@@ -626,6 +632,14 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_tensor_size", "i64", "ptr")
     s = declare_runtime_fn(s, "__mn_tensor_shape_dim", "i64", "ptr, i64")
     s = declare_runtime_fn(s, "__mn_tensor_print_f64", "void", "ptr")
+
+    // v5.6.1 Sh.6 Phase 2: variadic nd get/set for multi-dim indexing.
+    // `...` at the tail of the params string emits as LLVM varargs; call
+    // sites use the explicit function-type prefix form below.
+    s = declare_runtime_fn(s, "__mn_tensor_get_f64_nd", "double", "ptr, i64, ...")
+    s = declare_runtime_fn(s, "__mn_tensor_get_i64_nd", "i64", "ptr, i64, ...")
+    s = declare_runtime_fn(s, "__mn_tensor_set_f64_nd", "void", "ptr, i64, ...")
+    s = declare_runtime_fn(s, "__mn_tensor_set_i64_nd", "void", "ptr, i64, ...")
 
     // Agent runtime
     s = declare_runtime_fn(s, "__mn_agent_spawn", "ptr", "ptr, ptr")
@@ -3289,6 +3303,68 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "tensor_print" {
         let as_tp: String = "ptr " + args[0].name
         return emit_line(st, emit_call_void("__mn_tensor_print_f64", as_tp))
+    }
+
+    // v5.6.1 Sh.6 Phase 2 — variadic tensor_*_nd calls. LLVM requires the
+    // explicit function-type prefix `(ptr, i64, ...)` when calling a
+    // varargs fn. args layout: [tensor, rank, i0, i1, ...] for get;
+    // [tensor, rank, i0, ..., val] for set (val comes last, as a non-
+    // variadic-style arg typed as double/i64).
+    if fn_name == "__mn_tensor_get_f64_nd" {
+        let nargs_g: Int = len(args)
+        let mut inner_g: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        let mut j_g: Int = 2
+        for _ in 0..128 {
+            if j_g < nargs_g {
+                inner_g = inner_g + ", i64 " + args[j_g].name
+                j_g = j_g + 1
+            }
+        }
+        return emit_line(st, "  " + dn + " = call double (ptr, i64, ...) @__mn_tensor_get_f64_nd(" + inner_g + ")")
+    }
+    if fn_name == "__mn_tensor_get_i64_nd" {
+        let nargs_gi: Int = len(args)
+        let mut inner_gi: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        let mut j_gi: Int = 2
+        for _ in 0..128 {
+            if j_gi < nargs_gi {
+                inner_gi = inner_gi + ", i64 " + args[j_gi].name
+                j_gi = j_gi + 1
+            }
+        }
+        return emit_line(st, "  " + dn + " = call i64 (ptr, i64, ...) @__mn_tensor_get_i64_nd(" + inner_gi + ")")
+    }
+    if fn_name == "__mn_tensor_set_f64_nd" {
+        let nargs_s: Int = len(args)
+        let mut inner_s: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        let mut j_s: Int = 2
+        let last_s: Int = nargs_s - 1
+        for _ in 0..128 {
+            if j_s < last_s {
+                inner_s = inner_s + ", i64 " + args[j_s].name
+                j_s = j_s + 1
+            }
+        }
+        if nargs_s >= 3 {
+            inner_s = inner_s + ", double " + args[last_s].name
+        }
+        return emit_line(st, "  call void (ptr, i64, ...) @__mn_tensor_set_f64_nd(" + inner_s + ")")
+    }
+    if fn_name == "__mn_tensor_set_i64_nd" {
+        let nargs_si: Int = len(args)
+        let mut inner_si: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        let mut j_si: Int = 2
+        let last_si: Int = nargs_si - 1
+        for _ in 0..128 {
+            if j_si < last_si {
+                inner_si = inner_si + ", i64 " + args[j_si].name
+                j_si = j_si + 1
+            }
+        }
+        if nargs_si >= 3 {
+            inner_si = inner_si + ", i64 " + args[last_si].name
+        }
+        return emit_line(st, "  call void (ptr, i64, ...) @__mn_tensor_set_i64_nd(" + inner_si + ")")
     }
 
     // Map iteration helpers

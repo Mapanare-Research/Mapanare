@@ -18,6 +18,70 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.1** (shipped) — **Sh.6 Phase 2 — multi-dim tensor
+  indexing (`a[i, j]`) + golden 50 closed end-to-end.** Second
+  Sh.6 release; first where golden 50 runs byte-identical to the
+  Python bootstrap (output `1 3 4 6 10 30 1 8 42 99 200`). Parser:
+  `parse_postfix`'s `LBRACKET` branch rewritten from single-expr
+  body into a bounded `COMMA` accumulator yielding `List<Expr>`;
+  count==1 keeps `Expr::Index(left, idx)` so list / map / string
+  single-subscript are byte-identical, count>=2 emits
+  `Expr::TensorIndex(left, indices)` (AST variant pre-existed at
+  `ast.mn:81` but was never wired). New accessors
+  `expr_ti_obj` / `expr_ti_indices` in `ast.mn`. Semantic:
+  `infer_expr` gains a `"tensor_index"` branch — walks operand +
+  all indices for side-effect diagnostics; element type pulled
+  from `Tensor<T>`'s T, defaulting to Float when unknown
+  (mirrors Python `_lower_tensor_get` fallback). MIR: new
+  `mir_tensor_of(elem)` helper attaches element type via
+  `MIRType.args`; `resolve_mir_type` unchanged — TK_TENSOR still
+  resolves to `ptr`, args inspected only at lower-time.
+  `lower_tensor`'s result value now carries
+  `mir_tensor_of(elem_type)` so `let`-bound tensors propagate
+  Float/Int through to any later `a[i, j]` dispatch. Lower: new
+  `lower_tensor_index_get(obj, indices)` emits
+  `Call(__mn_tensor_get_{f64,i64}_nd, [obj, rank, i0, i1, ...])`
+  (matches `lower.py::_lower_tensor_get` at 2750–2786);
+  `lower_expr` gains a `"tensor_index"` dispatch; assignment target
+  path gets a parallel `"tensor_index"` branch that lowers
+  `d[i, j] = val` to `Call(__mn_tensor_set_{f64,i64}_nd, [obj,
+  rank, i0, ..., val])` — no intermediate `IndexSet` MIR since the
+  runtime owns tensor storage. Single-subscript-on-tensor
+  foot-gun: `lower_index` gained a TK_TENSOR short-circuit so
+  `b[0]` on a tensor routes to the same `_nd` runtime as multi-dim
+  — without it the count==1 path fell through to list-shaped
+  `IndexGet` and `llvm-as` rejected the `{ptr, i64, i64, i64, i64}`
+  store against a bare tensor `ptr`. Emit: 4 new variadic runtime
+  declarations `__mn_tensor_{get,set}_{f64,i64}_nd(ptr, i64, ...)`
+  via `declare_runtime_fn` (the `...` in the params string passes
+  through unchanged to valid LLVM varargs IR); 4 new
+  `runtime_fn_attrs` rows (` nounwind` only — varargs intrinsics
+  are conservative). 4 new branches in `emit_mir_call` each
+  emitting the explicit function-type prefix form
+  `call <ret> (ptr, i64, ...) @<fn>(<args>)` required by LLVM for
+  varargs call-sites (mirrors `emit_llvm_text.py:3604-3641`); set
+  path appends the value (`double` or `i64`) after the variadic
+  index tail. **Closes golden 50_tensor_indexing end-to-end** —
+  v5.6.0 counted 50 as PASS via function-name parity but the IR
+  was incomplete; v5.6.1 is the first release where 50 actually
+  executes. stage2.ll 199,883 lines (+1.0% vs v5.6.0) / 908
+  defines, llvm-as clean, self-hosting preserved. 11 new parser
+  tests in `tests/parser/test_tensor_multi_index.py` covering
+  1D/2D/3D reads, Int tensor reads, assignment, single-subscript
+  preservation for list/string/map, and chained `a[i][j]`.
+  Non-bootstrap pytest 5549 passed (+19 vs v5.6.0 after `make
+  build-rt` for the VERSION macro bump); `make lint` clean;
+  `check_struct_registry.py` clean. Valgrind on 50: 5 tensor
+  allocations leak at exit — pre-existing pattern (golden 49 under
+  v5.6.0 leaks 5 tensor allocs identically), not a v5.6.1
+  regression; tensor-lifetime drop glue is Own.1 follow-up scope.
+  Ve.1 stage3 segfault persists (same signature as v5.6.0 —
+  not a v5.6.1 regression). Goldens harness 63/66 preserved at
+  the count level but golden 50 promoted from function-match
+  parity to genuine correctness (49 + 50 now both truly pass).
+  What's next: v5.6.2 broadcast (golden 51), v5.6.3 slicing +
+  reductions (goldens 52/53), v5.7.0 closure + or-pattern
+  (golden 64). See `docs/roadmap/v5/v5.6.1/SESSION_REPORT.md`.
 - **v5.6.0** (shipped) — **Sh.6 Phase 1 — tensor literal parser +
   golden 49 closed.** First self-hosted tensor release. Grammar:
   `"Tensor"` becomes `KW_TENSOR` in `lexer.mn`; `parse_tensor_lit`
@@ -462,9 +526,6 @@ Most recent releases (last 6). Full history at
   >M tracked slots). Diagnose and remediate the Ve.1 regression
   introduced in v5.4.4 (mnc-stage2 segfault during lex of
   mnc_all.mn).
-- **v5.6.1** — **Sh.6 Phase 2 — multi-dim indexing (golden 50).**
-  `a[i,j]` / `a[i,j,k]` via existing `__mn_tensor_get_{f64,i64}_nd`
-  variadic runtime + write path `d[i,j] = val`.
 - **v5.6.2** — **Sh.6 Phase 3 — broadcast (golden 51).** Tensor-
   tensor and tensor-scalar binops via `__mn_tensor_{add,sub,mul,
   div}_broadcast_{f64,i64}` and `_scalar_` family.

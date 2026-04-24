@@ -83,6 +83,15 @@ fn mir_result() -> MIRType { return new_mir_type("Result", TK_RESULT()) }
 fn mir_list() -> MIRType { return new_mir_type("List", TK_LIST()) }
 // v5.6.0 Sh.6: tensor values travel as ptr through the LLVM backend.
 fn mir_tensor() -> MIRType { return new_mir_type("Tensor", TK_TENSOR()) }
+// v5.6.1 Sh.6 Phase 2: carry the tensor element type so multi-dim index
+// lowering can pick between __mn_tensor_get_f64_nd and _i64_nd. Resolves
+// to the same `ptr` at the LLVM layer — args are inspected only by
+// lowering, not by resolve_mir_type.
+fn mir_tensor_of(elem: MIRType) -> MIRType {
+    let mut t: MIRType = new_mir_type("Tensor", TK_TENSOR())
+    t.args.push(elem)
+    return t
+}
 fn mir_map() -> MIRType { return new_mir_type("Map", TK_MAP()) }
 fn mir_signal() -> MIRType { return new_mir_type("Signal", TK_SIGNAL()) }
 fn mir_range() -> MIRType { return new_mir_type("Range", TK_RANGE()) }

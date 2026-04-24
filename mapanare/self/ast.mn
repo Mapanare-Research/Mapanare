@@ -432,6 +432,17 @@ pub fn expr_index_idx(e: Expr) -> Expr {
     match e { Index(_, x) => { return x }, _ => { return Expr::NoneLit } }
 }
 
+// TensorIndex (v5.6.1 — multi-dim subscript `a[i, j]`)
+pub fn expr_ti_obj(e: Expr) -> Expr {
+    match e { TensorIndex(o, _) => { return o }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_ti_indices(e: Expr) -> List<Expr> {
+    match e {
+        TensorIndex(_, xs) => { return xs },
+        _ => { let empty: List<Expr> = []; return empty }
+    }
+}
+
 // Pipe
 pub fn expr_pipe_left(e: Expr) -> Expr {
     match e { Pipe(l, _) => { return l }, _ => { return Expr::NoneLit } }

@@ -1235,6 +1235,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     if ek == "index" {
         return lower_index(st, expr_index_obj(expr), expr_index_idx(expr))
     }
+    if ek == "tensor_index" {
+        return lower_tensor_index_get(st, expr_ti_obj(expr), expr_ti_indices(expr))
+    }
     if ek == "pipe" {
         return lower_pipe(st, expr_pipe_left(expr), expr_pipe_right(expr))
     }
@@ -2675,6 +2678,38 @@ fn lower_namespace_access(st: LowerState, ns: String, member: String) -> LowerRe
 
 fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
     let obj_r: LowerResult = lower_expr(st, obj)
+
+    // v5.6.1 Sh.6 Phase 2 — single-subscript on tensor (`b[0]`) routes
+    // through the same __mn_tensor_get_*_nd runtime as multi-dim,
+    // matching mapanare/lower.py::_lower_index.
+    if obj_r.value.ty.kind == TK_TENSOR() {
+        let mut one_idx: List<Expr> = []
+        one_idx.push(idx)
+        let obj_name_e: Expr = Expr::NoneLit
+        let idx_r_ti: LowerResult = lower_expr(obj_r.state, idx)
+        let mut s_ti: LowerState = idx_r_ti.state
+
+        let elem_kind_ti: Int = tensor_elem_kind_of(obj_r.value)
+        let mut fn_name_ti: String = "__mn_tensor_get_f64_nd"
+        let mut elem_ty_ti: MIRType = mir_float()
+        if elem_kind_ti == TK_INT() {
+            fn_name_ti = "__mn_tensor_get_i64_nd"
+            elem_ty_ti = mir_int()
+        }
+
+        let rank_r_ti: LowerResult = make_value(s_ti, mir_int(), "trank")
+        s_ti = emit_instr(rank_r_ti.state, Instruction::Const(rank_r_ti.value, mir_int(), "1"))
+
+        let mut all_args_ti: List<Value> = []
+        all_args_ti.push(obj_r.value)
+        all_args_ti.push(rank_r_ti.value)
+        all_args_ti.push(idx_r_ti.value)
+
+        let dest_r_ti: LowerResult = make_value(s_ti, elem_ty_ti, "tget")
+        let s_out: LowerState = emit_instr(dest_r_ti.state, Instruction::Call(dest_r_ti.value, fn_name_ti, all_args_ti))
+        return new_lower_result(dest_r_ti.value, s_out)
+    }
+
     let idx_r: LowerResult = lower_expr(obj_r.state, idx)
 
     // For string indexing, result is a string (char_at)
@@ -2695,6 +2730,64 @@ fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
 
     let dest_r: LowerResult = make_value(idx_r.state, elem_ty, "t")
     let s: LowerState = emit_instr(dest_r.state, Instruction::IndexGet(dest_r.value, obj_r.value, idx_r.value))
+    return new_lower_result(dest_r.value, s)
+}
+
+// v5.6.1 Sh.6 Phase 2 — `a[i, j]` / `a[i, j, k]` lowered as a variadic
+// Call to __mn_tensor_get_{f64,i64}_nd. Element type is pulled from the
+// tensor value's MIR type args (populated by lower_tensor); defaults to
+// Float when unknown, matching Python's _lower_tensor_get fallback.
+fn tensor_elem_kind_of(v: Value) -> Int {
+    if v.ty.kind == TK_TENSOR() {
+        if len(v.ty.args) > 0 {
+            return v.ty.args[0].kind
+        }
+    }
+    return TK_FLOAT()
+}
+
+fn lower_tensor_index_get(st: LowerState, obj: Expr, indices: List<Expr>) -> LowerResult {
+    let obj_r: LowerResult = lower_expr(st, obj)
+    let mut s: LowerState = obj_r.state
+
+    let mut idx_vals: List<Value> = []
+    let mut i: Int = 0
+    let nidx: Int = len(indices)
+    for _ in 0..128 {
+        if i < nidx {
+            let ir: LowerResult = lower_expr(s, indices[i])
+            s = ir.state
+            idx_vals.push(ir.value)
+            i = i + 1
+        }
+    }
+
+    let elem_kind: Int = tensor_elem_kind_of(obj_r.value)
+    let mut fn_name: String = "__mn_tensor_get_f64_nd"
+    let mut elem_ty: MIRType = mir_float()
+    if elem_kind == TK_INT() {
+        fn_name = "__mn_tensor_get_i64_nd"
+        elem_ty = mir_int()
+    }
+
+    // rank constant
+    let rank_r: LowerResult = make_value(s, mir_int(), "trank")
+    s = emit_instr(rank_r.state, Instruction::Const(rank_r.value, mir_int(), toString(nidx)))
+
+    // build args: [tensor, rank, i0, i1, ...]
+    let mut all_args: List<Value> = []
+    all_args.push(obj_r.value)
+    all_args.push(rank_r.value)
+    let mut k: Int = 0
+    for _ in 0..128 {
+        if k < nidx {
+            all_args.push(idx_vals[k])
+            k = k + 1
+        }
+    }
+
+    let dest_r: LowerResult = make_value(s, elem_ty, "tget")
+    s = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, all_args))
     return new_lower_result(dest_r.value, s)
 }
 
@@ -3067,7 +3160,9 @@ fn lower_tensor(st: LowerState, elements: List<Expr>, shape: List<Int>) -> Lower
     // arg type of every __mn_tensor_* builtin. Without this the var slot
     // alloca'd for `let a = <tensor>` becomes i64 and llvm-as rejects the
     // ptr/i64 store mismatch.
-    let dest_r: LowerResult = make_value(s, mir_tensor(), "t")
+    // v5.6.1 Sh.6 Phase 2: carry elem_type so `a[i, j]` can dispatch between
+    // __mn_tensor_get_f64_nd and _i64_nd. resolve_mir_type still returns ptr.
+    let dest_r: LowerResult = make_value(s, mir_tensor_of(elem_type), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::TensorInit(dest_r.value, elem_type, shape, vals))
     return new_lower_result(dest_r.value, new_s)
 }
@@ -3217,6 +3312,52 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
         // ownership transfers. Emit Move so drop glue skips the slot.
         s = emit_instr(s, Instruction::Move(idx_r.value))
         s = emit_instr(s, Instruction::Move(val_r.value))
+        return new_lower_result(val_r.value, s)
+    }
+    // v5.6.1 Sh.6 Phase 2 — `d[i, j] = val` for Tensor assignment. Lower as
+    // a direct Call to __mn_tensor_set_{f64,i64}_nd (variadic); skip
+    // IndexSet since the runtime owns the tensor storage.
+    if tk == "tensor_index" {
+        let ti_obj: Expr = expr_ti_obj(target)
+        let ti_idxs: List<Expr> = expr_ti_indices(target)
+        let obj_r_ti: LowerResult = lower_expr(s, ti_obj)
+        s = obj_r_ti.state
+
+        let mut ti_idx_vals: List<Value> = []
+        let mut ii: Int = 0
+        let nti: Int = len(ti_idxs)
+        for _ in 0..128 {
+            if ii < nti {
+                let ir_ti: LowerResult = lower_expr(s, ti_idxs[ii])
+                s = ir_ti.state
+                ti_idx_vals.push(ir_ti.value)
+                ii = ii + 1
+            }
+        }
+
+        let elem_kind_ti: Int = tensor_elem_kind_of(obj_r_ti.value)
+        let mut fn_name_ti: String = "__mn_tensor_set_f64_nd"
+        if elem_kind_ti == TK_INT() {
+            fn_name_ti = "__mn_tensor_set_i64_nd"
+        }
+
+        let rank_r_ti: LowerResult = make_value(s, mir_int(), "trank")
+        s = emit_instr(rank_r_ti.state, Instruction::Const(rank_r_ti.value, mir_int(), toString(nti)))
+
+        let mut all_args_ti: List<Value> = []
+        all_args_ti.push(obj_r_ti.value)
+        all_args_ti.push(rank_r_ti.value)
+        let mut kk: Int = 0
+        for _ in 0..128 {
+            if kk < nti {
+                all_args_ti.push(ti_idx_vals[kk])
+                kk = kk + 1
+            }
+        }
+        all_args_ti.push(val_r.value)
+
+        let void_dest_ti: LowerResult = make_value(s, mir_void(), "tset")
+        s = emit_instr(void_dest_ti.state, Instruction::Call(void_dest_ti.value, fn_name_ti, all_args_ti))
         return new_lower_result(val_r.value, s)
     }
     return new_lower_result(val_r.value, s)
