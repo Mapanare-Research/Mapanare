@@ -382,6 +382,8 @@ fn get_fn_ret_prefix(name: String) -> String {
     if name == "__mn_tensor_rdiv_scalar_f64" { return "noalias " }
     if name == "__mn_tensor_rsub_scalar_i64" { return "noalias " }
     if name == "__mn_tensor_rdiv_scalar_i64" { return "noalias " }
+    // v5.6.3 Sh.6 Phase 4 — slice returns a fresh heap tensor (noalias).
+    if name == "__mn_tensor_slice" { return "noalias " }
     return ""
 }
 
@@ -541,6 +543,20 @@ fn get_fn_attrs(name: String) -> String {
     if name == "__mn_tensor_rdiv_scalar_f64" { return " nounwind" }
     if name == "__mn_tensor_rsub_scalar_i64" { return " nounwind" }
     if name == "__mn_tensor_rdiv_scalar_i64" { return " nounwind" }
+    // v5.6.3 Sh.6 Phase 4 — reductions are readonly (pure over tensor data);
+    // slice returns a new tensor (nounwind + noalias via ret prefix).
+    if name == "__mn_tensor_sum_f64" { return " nounwind readonly" }
+    if name == "__mn_tensor_mean_f64" { return " nounwind readonly" }
+    if name == "__mn_tensor_max_f64" { return " nounwind readonly" }
+    if name == "__mn_tensor_min_f64" { return " nounwind readonly" }
+    if name == "__mn_tensor_argmax_f64" { return " nounwind readonly" }
+    if name == "__mn_tensor_argmin_f64" { return " nounwind readonly" }
+    if name == "__mn_tensor_sum_i64" { return " nounwind readonly" }
+    if name == "__mn_tensor_max_i64" { return " nounwind readonly" }
+    if name == "__mn_tensor_min_i64" { return " nounwind readonly" }
+    if name == "__mn_tensor_argmax_i64" { return " nounwind readonly" }
+    if name == "__mn_tensor_argmin_i64" { return " nounwind readonly" }
+    if name == "__mn_tensor_slice" { return " nounwind" }
     // -- Agent runtime (v3.43.0) --
     if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
     if name == "mapanare_agent_send" { return " nounwind willreturn" }
@@ -709,6 +725,27 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_tensor_rdiv_scalar_f64", "ptr", "double, ptr")
     s = declare_runtime_fn(s, "__mn_tensor_rsub_scalar_i64", "ptr", "i64, ptr")
     s = declare_runtime_fn(s, "__mn_tensor_rdiv_scalar_i64", "ptr", "i64, ptr")
+
+    // v5.6.3 Sh.6 Phase 4 — 6 reductions × 2 element types (- no mean_i64,
+    // + 5 argmax/argmin always-i64 variants) = 11 runtime fns. All take a
+    // single tensor ptr and return a scalar.
+    s = declare_runtime_fn(s, "__mn_tensor_sum_f64", "double", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_mean_f64", "double", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_max_f64", "double", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_min_f64", "double", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_argmax_f64", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_argmin_f64", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_sum_i64", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_max_i64", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_min_i64", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_argmax_i64", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_argmin_i64", "i64", "ptr")
+
+    // v5.6.3 Sh.6 Phase 4 — tensor slice: runtime signature is
+    // (ptr tensor, ptr starts, ptr ends, i64 rank). Self-hosted lowerer
+    // passes flat args [tensor, s0..., e0..., rank]; emit_mir_call
+    // repackages into stack allocated arrays before the call.
+    s = declare_runtime_fn(s, "__mn_tensor_slice", "ptr", "ptr, ptr, ptr, i64")
 
     // Agent runtime
     s = declare_runtime_fn(s, "__mn_agent_spawn", "ptr", "ptr, ptr")
@@ -3419,6 +3456,50 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         }
         return emit_line(st, "  call void (ptr, i64, ...) @__mn_tensor_set_f64_nd(" + inner_s + ")")
     }
+    // v5.6.3 Sh.6 Phase 4 — `__mn_tensor_slice` special case. Lowerer passes
+    // flat args [tensor, s0, s1, ..., e0, e1, ..., rank]; the runtime
+    // expects (ptr tensor, ptr starts_arr, ptr ends_arr, i64 rank). We
+    // alloca two [ndim x i64] arrays, store each start/end value via
+    // getelementptr + store, then call the runtime with the array ptrs.
+    // Mirrors emit_llvm_text.py:3669-3717.
+    if fn_name == "__mn_tensor_slice" {
+        let nargs_sl: Int = len(args)
+        let rank_idx_sl: Int = nargs_sl - 1
+        let ndim_sl: Int = (nargs_sl - 2) / 2
+        let cnt_sl: String = toString(st.counter)
+        let mut s_sl: EmitState = st
+        s_sl.counter = s_sl.counter + 1
+
+        let starts_arr: String = "%starts_arr" + cnt_sl
+        let ends_arr: String = "%ends_arr" + cnt_sl
+        let arr_ty: String = "[" + toString(ndim_sl) + " x i64]"
+        s_sl = emit_line(s_sl, "  " + starts_arr + " = alloca " + arr_ty)
+        s_sl = emit_line(s_sl, "  " + ends_arr + " = alloca " + arr_ty)
+
+        let mut d_sl: Int = 0
+        for _ in 0..128 {
+            if d_sl < ndim_sl {
+                let d_str: String = toString(d_sl)
+                let cnt_d: String = toString(s_sl.counter)
+                s_sl.counter = s_sl.counter + 1
+                let s_gep: String = "%sgep" + cnt_d
+                let e_gep: String = "%egep" + cnt_d
+                s_sl = emit_line(s_sl, "  " + s_gep + " = getelementptr inbounds " + arr_ty + ", ptr " + starts_arr + ", i64 0, i64 " + d_str)
+                s_sl = emit_line(s_sl, "  " + e_gep + " = getelementptr inbounds " + arr_ty + ", ptr " + ends_arr + ", i64 0, i64 " + d_str)
+                let s_val_name: String = args[1 + d_sl].name
+                let e_val_name: String = args[1 + ndim_sl + d_sl].name
+                s_sl = emit_line(s_sl, "  store i64 " + s_val_name + ", ptr " + s_gep)
+                s_sl = emit_line(s_sl, "  store i64 " + e_val_name + ", ptr " + e_gep)
+                d_sl = d_sl + 1
+            }
+        }
+
+        let t_name_sl: String = args[0].name
+        let rank_name_sl: String = args[rank_idx_sl].name
+        s_sl = emit_line(s_sl, "  " + dn + " = call noalias ptr @__mn_tensor_slice(ptr " + t_name_sl + ", ptr " + starts_arr + ", ptr " + ends_arr + ", i64 " + rank_name_sl + ")")
+        return s_sl
+    }
+
     if fn_name == "__mn_tensor_set_i64_nd" {
         let nargs_si: Int = len(args)
         let mut inner_si: String = "ptr " + args[0].name + ", i64 " + args[1].name
