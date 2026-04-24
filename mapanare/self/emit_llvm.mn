@@ -4112,6 +4112,70 @@ fn emit_track_closure(st: EmitState, val_name: String) -> EmitState {
     return emit_track_boxed(s, env_tmp)
 }
 
+// v5.6.4 Own.1 Phase 3 — Rt.06 tensor tracking.
+// Mirrors emit_track_boxed structurally — tensor values are a single
+// ptr (from __mn_tensor_alloc / _slice / broadcast / scalar / rscalar
+// fns). Free function is __mn_tensor_free (void, null-tolerant per
+// runtime/native/mapanare_runtime.c::mapanare_tensor_free).
+//
+// The loop-depth branch is load-bearing for 53_linear_regression:
+// 10 epochs × ~4 fresh tensors per iter via `X * w + b`, `pred - y`,
+// `error * X` — without intra-loop free-before-store, 40 tensors
+// leak even with drop-glue at return. With it, each iteration's
+// 4 live slots collapse via overwrite.
+fn emit_track_tensor(st: EmitState, ptr_val: String) -> EmitState {
+    let mut s: EmitState = st
+    let idx: Int = s.counter
+    s.counter = s.counter + 1
+    let slot_base: String = "tens_track." + toString(idx)
+    let slot: String = "%" + slot_base
+    s.entry_prelude_lines.push("  " + slot + " = alloca ptr, align 8")
+    s.entry_prelude_lines.push("  store ptr null, ptr " + slot)
+    if s.loop_depth > 0 {
+        let prev_tmp: String = "%prev.tens." + toString(s.counter)
+        s.counter = s.counter + 1
+        s = emit_line(s, "  " + prev_tmp + " = load ptr, ptr " + slot)
+        s = emit_line(s, "  call void @__mn_tensor_free(ptr " + prev_tmp + ")")
+    }
+    s = emit_line(s, "  store ptr " + ptr_val + ", ptr " + slot)
+    s.tensor_owned.push(slot_base)
+    s.tensor_owned_source.push(ret_val_base(ptr_val))
+    return s
+}
+
+// v5.6.4 — predicate for runtime fns that return a freshly-allocated
+// tensor `ptr` (i.e. every call site that needs emit_track_tensor).
+// Used by the generic call path in emit_mir_call to attach tracking
+// without duplicating the 20 tensor-binop emission branches. Must
+// stay in sync with the explicit injection sites (emit_tensor_init
+// and the __mn_tensor_slice special case): every fn listed here is
+// tracked, every tracked call site is for a fn in this list.
+fn is_tensor_allocating_fn(fn_name: String) -> Bool {
+    if fn_name == "__mn_tensor_alloc" { return true }
+    if fn_name == "__mn_tensor_slice" { return true }
+    if fn_name == "__mn_tensor_add_broadcast_f64" { return true }
+    if fn_name == "__mn_tensor_sub_broadcast_f64" { return true }
+    if fn_name == "__mn_tensor_mul_broadcast_f64" { return true }
+    if fn_name == "__mn_tensor_div_broadcast_f64" { return true }
+    if fn_name == "__mn_tensor_add_broadcast_i64" { return true }
+    if fn_name == "__mn_tensor_sub_broadcast_i64" { return true }
+    if fn_name == "__mn_tensor_mul_broadcast_i64" { return true }
+    if fn_name == "__mn_tensor_div_broadcast_i64" { return true }
+    if fn_name == "__mn_tensor_add_scalar_f64" { return true }
+    if fn_name == "__mn_tensor_sub_scalar_f64" { return true }
+    if fn_name == "__mn_tensor_mul_scalar_f64" { return true }
+    if fn_name == "__mn_tensor_div_scalar_f64" { return true }
+    if fn_name == "__mn_tensor_add_scalar_i64" { return true }
+    if fn_name == "__mn_tensor_sub_scalar_i64" { return true }
+    if fn_name == "__mn_tensor_mul_scalar_i64" { return true }
+    if fn_name == "__mn_tensor_div_scalar_i64" { return true }
+    if fn_name == "__mn_tensor_rsub_scalar_f64" { return true }
+    if fn_name == "__mn_tensor_rdiv_scalar_f64" { return true }
+    if fn_name == "__mn_tensor_rsub_scalar_i64" { return true }
+    if fn_name == "__mn_tensor_rdiv_scalar_i64" { return true }
+    return false
+}
+
 // ---------------------------------------------------------------------------
 // v5.4.1 Phase 4 — return-escape detection
 // ---------------------------------------------------------------------------
