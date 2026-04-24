@@ -14561,13 +14561,24 @@ fn new_struct_entry(name: String, fields: List<String>, types: List<String>, ty:
 }
 
 fn lookup_struct_field_types(st: EmitState, name: String) -> List<String> {
+    // v5.6.5 Ve.1 fix: register_internal_struct pushes entries with empty
+    // field_types (field NAMES only, for find_field_index's index-0-bug
+    // fallback). The real MIR registration pushes full entries later via
+    // register_mir_struct. A forward match-first-entry search finds the
+    // empty internal entry (e.g., for Value, MIRType, EmitState, LowerState)
+    // instead of the real one — callers would then see a 0-length field list
+    // and misbehave (compute_payload_alloc_size would fall back to the
+    // 256 upper-bound, under-allocating FnDefData's 264 bytes, etc.).
+    // Skip empty entries so the real later-registered entry wins.
     let mut i: Int = 0
     let nstructs: Int = len(st.structs)
     for _ in 0..10000 {
         if i < nstructs {
             let entry: StructEntry = st.structs[i]
             if entry.name == name {
-                return entry.field_types
+                if len(entry.field_types) > 0 {
+                    return entry.field_types
+                }
             }
             i = i + 1
         }
@@ -16800,6 +16811,42 @@ fn llvm_aggregate_size(ty: String) -> Int {
     return len(parts) * 8
 }
 
+// v5.6.5 Ve.1 fix — state-aware ABI byte size.
+// llvm_type_size returns a hardcoded 256 for any %struct.* (safe upper
+// bound in theory, but false for FnDefData = 264 bytes → malloc(256) +
+// store %struct.FnDefData writes 8 B past the block). This helper
+// resolves %struct.X through the registered struct table and sums
+// field sizes recursively, padding each field to 8-byte alignment
+// (safe for all Mapanare struct layouts — every aggregate contains at
+// least one ptr/i64 field and so has align 8).
+fn llvm_sizeof_st(st: EmitState, ty: String) -> Int {
+    if ty.starts_with("%struct.") {
+        let sname: String = ty.substr(8, len(ty) - 8)
+        let ftypes: List<String> = lookup_struct_field_types(st, sname)
+        let nf: Int = len(ftypes)
+        if nf == 0 {
+            // Unknown struct (forward reference or only an internal
+            // empty-field_types entry registered) — fall back to the
+            // legacy upper bound so we never alloc too little.
+            // Self-referential fields are rewritten to `ptr` in
+            // register_mir_struct, so recursion always terminates.
+            return 256
+        }
+        let mut total: Int = 0
+        let mut i: Int = 0
+        for _ in 0..500 {
+            if i >= nf { return total }
+            let mut fsz: Int = llvm_sizeof_st(st, ftypes[i])
+            let rem: Int = fsz % 8
+            if rem != 0 { fsz = fsz + (8 - rem) }
+            total = total + fsz
+            i = i + 1
+        }
+        return total
+    }
+    return llvm_type_size(ty)
+}
+
 fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitState {
     let mut s: EmitState = st
     if len(args) >= 2 {
@@ -16889,18 +16936,36 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let mut s: EmitState = st
     let dn: String = dest.name
 
-    // Create empty list. Use 64 bytes as default element size — this covers
-    // all types (i64=8, String=16, List=32, structs≤64). The C runtime
-    // uses elem_size for memcpy in push; oversizing wastes memory but
-    // prevents truncation crashes.
+    // v5.6.5 Ve.1 fix — use GEP-trick for known element types, floor
+    // at 384 for UNKNOWN/i64 fallback. The floor was previously
+    // unconditional (see comment below) because the lowerer frequently
+    // emits `List<Unknown>` MIR for empty-list literals whose element
+    // type hasn't propagated yet — e.g. `def_fn_data`'s `_ =>` arm
+    // builds `let e: List<String> = []` which lowers to elem_ty kind=
+    // TK_UNKNOWN → resolve_mir_type returns "i64" → GEP-trick would
+    // compute 8 bytes and truncate String elements. Defer exact sizing
+    // to LLVM only when elem_ty is known-structured (struct/enum/list/
+    // string); otherwise stay on the 384-byte safe floor.
+    //
+    // NOTE: 384 is wasteful (~24× overhead for 16B Strings) but correct
+    // until the lowerer propagates list-element types through empty-
+    // literal lowering — scope for a dedicated v5.6.6+ micro-release.
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
-    let mut elem_sz: Int = llvm_type_size(elem_llvm_ty)
-    // Minimum 384: covers all enums (max: Definition≈264) and structs (max: ~256).
-    // Empty lists default to unknown (i64, size 8) — the floor ensures they
-    // still work correctly when populated with large elements later.
-    if elem_sz < 384 { elem_sz = 384 }
-    s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz)))
+    let mut use_gep_trick: Bool = false
+    if elem_llvm_ty.starts_with("%struct.") { use_gep_trick = true }
+    if elem_llvm_ty.starts_with("%enum.") { use_gep_trick = true }
+    if elem_llvm_ty.starts_with("{") { use_gep_trick = true }
+    if use_gep_trick {
+        let elem_sz: String = dn + ".elem.sz"
+        s = emit_line(s, "  " + elem_sz + " = ptrtoint ptr getelementptr (" + elem_llvm_ty + ", ptr null, i32 1) to i64")
+        s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + elem_sz))
+    } else {
+        // Fallback: 384 covers any scalar element + unknown-type safety.
+        let mut elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
+        if elem_sz_n < 384 { elem_sz_n = 384 }
+        s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
+    }
 
     // v5.4.1 Phase 3.7 — hoist the alloca to the entry-block prelude
     // so it dominates drop-glue loads at every function exit, even
@@ -17311,19 +17376,37 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
     }
 
     // Boxed enum: { i64 tag, ptr payload } — existing path.
+    //
+    // v5.6.5 Ve.1 fix — defer sizing + offsets to LLVM via the GEP-trick
+    // and typed GEPs. Matches Python's `_do_enum_init` at
+    // emit_llvm_text.py:4770-4809: build an inline payload struct type,
+    // ask LLVM for its ABI size via `ptrtoint ptr gep (<psty>, null, i32 1)`,
+    // and address fields with `getelementptr <psty>, ptr, i32 0, i32 <idx>`.
+    // LLVM's DataLayout resolves both at link time — no hand-computed
+    // sizes, no "safe upper bound" hacks. Prior approach used hardcoded
+    // 256-byte fallbacks for any `%struct.*` (caused FnDefData's 8-byte
+    // overflow at parse_fn_body) and hand-summed field offsets that
+    // diverged from LLVM's actual layout.
     if len(payload) > 0 {
-        let alloc_size: String = toString(compute_payload_alloc_size(s, payload))
+        let payload_ty: String = build_payload_type_from_values(s, payload)
         let ep: String = dn + ".ep"
-        s = emit_line(s, "  " + ep + " = call ptr @malloc(i64 " + alloc_size + ")")
+        let sz: String = dn + ".sz"
+        s = emit_line(s, "  " + sz + " = ptrtoint ptr getelementptr (" + payload_ty + ", ptr null, i32 1) to i64")
+        s = emit_line(s, "  " + ep + " = call ptr @malloc(i64 " + sz + ")")
         let mut i: Int = 0
         let npayload: Int = len(payload)
         for _ in 0..100 {
             if i < npayload {
                 let p: Value = payload[i]
-                let pty: String = resolve_mir_type(p.ty)
+                let mut pty: String = resolve_mir_type(p.ty)
+                // struct→enum rewrite (MIR may have kind:"struct" for enums)
+                if pty.starts_with("%struct.") {
+                    if is_enum_type(s, p.ty.name) {
+                        pty = "%enum." + p.ty.name
+                    }
+                }
                 let ef: String = dn + ".ef" + toString(i)
-                let offset: String = toString(compute_field_offset(s, payload, i))
-                s = emit_line(s, "  " + ef + " = getelementptr inbounds i8, ptr " + ep + ", i64 " + offset)
+                s = emit_line(s, "  " + ef + " = getelementptr inbounds " + payload_ty + ", ptr " + ep + ", i32 0, i32 " + toString(i))
                 s = emit_line(s, "  store " + pty + " " + p.name + ", ptr " + ef)
                 i = i + 1
             }
@@ -17348,13 +17431,98 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
     return s
 }
 
+// v5.6.5 Ve.1 fix — build an inline LLVM struct type from a payload
+// value list. Used by emit_enum_init so LLVM's DataLayout computes
+// both the allocation size and per-field offsets correctly — matches
+// Python's `psty = "{" + ", ".join(pflds) + "}"` in _do_enum_init.
+fn build_payload_type_from_values(st: EmitState, payload: List<Value>) -> String {
+    let mut result: String = "{ "
+    let mut i: Int = 0
+    let n: Int = len(payload)
+    for _ in 0..100 {
+        if i >= n {
+            return result + " }"
+        }
+        let mut pty: String = resolve_mir_type(payload[i].ty)
+        if pty.starts_with("%struct.") {
+            if is_enum_type(st, payload[i].ty.name) {
+                pty = "%enum." + payload[i].ty.name
+            }
+        }
+        if i > 0 {
+            result = result + ", " + pty
+        } else {
+            result = result + pty
+        }
+        i = i + 1
+    }
+    return result + " }"
+}
+
+// v5.6.5 Ve.1 fix — counterpart to build_payload_type_from_values,
+// but resolves payload types from the enum registry (for extraction
+// sites where we have a variant name rather than a value list).
+// Returns "{ }" if the variant is unknown.
+fn build_payload_type_from_variant(st: EmitState, enum_name: String, variant_name: String) -> String {
+    let mut ei: Int = 0
+    let nenums: Int = len(st.enum_infos)
+    for _ in 0..500 {
+        if ei >= nenums { return "{ }" }
+        let info: EnumInfo = st.enum_infos[ei]
+        if info.name == enum_name {
+            let mut vi: Int = 0
+            let nvar: Int = len(info.variants)
+            for _ in 0..500 {
+                if vi >= nvar { return "{ }" }
+                if info.variants[vi].name == variant_name {
+                    let types: List<MIRType> = info.variants[vi].payload_types
+                    let mut result: String = "{ "
+                    let mut fi: Int = 0
+                    let nfty: Int = len(types)
+                    for _ in 0..100 {
+                        if fi >= nfty {
+                            return result + " }"
+                        }
+                        let mut pty: String = resolve_mir_type(types[fi])
+                        if pty.starts_with("%struct.") {
+                            if is_enum_type(st, types[fi].name) {
+                                pty = "%enum." + types[fi].name
+                            }
+                        }
+                        if fi > 0 {
+                            result = result + ", " + pty
+                        } else {
+                            result = result + pty
+                        }
+                        fi = fi + 1
+                    }
+                    return result + " }"
+                }
+                vi = vi + 1
+            }
+        }
+        ei = ei + 1
+    }
+    return "{ }"
+}
+
 fn compute_payload_alloc_size(st: EmitState, payload: List<Value>) -> Int {
     let mut total: Int = 0
     let mut i: Int = 0
     for _ in 0..100 {
         if i >= len(payload) { return total }
-        let pty: String = resolve_mir_type(payload[i].ty)
-        total = total + llvm_type_size(pty)
+        let mut pty: String = resolve_mir_type(payload[i].ty)
+        // Same struct→enum rewrite as compute_field_offset — ensures
+        // the size used here matches the field offsets below.
+        if pty.starts_with("%struct.") {
+            if is_enum_type(st, payload[i].ty.name) {
+                pty = "%enum." + payload[i].ty.name
+            }
+        }
+        let mut psz: Int = llvm_sizeof_st(st, pty)
+        let rem: Int = psz % 8
+        if rem != 0 { psz = psz + (8 - rem) }
+        total = total + psz
         i = i + 1
     }
     return total
@@ -17372,7 +17540,10 @@ fn compute_field_offset(st: EmitState, payload: List<Value>, field_idx: Int) -> 
                 pty = "%enum." + payload[i].ty.name
             }
         }
-        offset = offset + llvm_type_size(pty)
+        let mut fsz: Int = llvm_sizeof_st(st, pty)
+        let rem: Int = fsz % 8
+        if rem != 0 { fsz = fsz + (8 - rem) }
+        offset = offset + fsz
         i = i + 1
     }
     return offset
@@ -17454,7 +17625,8 @@ fn compute_payload_offset(st: EmitState, enum_name: String, variant_name: String
     return 0
 }
 
-// Sum llvm_type_size for fields 0..count-1
+// Sum llvm_sizeof_st for fields 0..count-1 (v5.6.5 Ve.1: state-aware
+// sizing so %struct.* resolves to the real registered size).
 fn sum_field_sizes(st: EmitState, types: List<MIRType>, count: Int) -> Int {
     let mut total: Int = 0
     let mut i: Int = 0
@@ -17468,7 +17640,10 @@ fn sum_field_sizes(st: EmitState, types: List<MIRType>, count: Int) -> Int {
                 pty = "%enum." + tname
             }
         }
-        total = total + llvm_type_size(pty)
+        let mut fsz: Int = llvm_sizeof_st(st, pty)
+        let rem: Int = fsz % 8
+        if rem != 0 { fsz = fsz + (8 - rem) }
+        total = total + fsz
         i = i + 1
     }
     return total
@@ -17496,13 +17671,18 @@ fn compute_variant_field_offset(st: EmitState, enum_name: String, variant_with_i
                 if vi >= len(info.variants) { return 0 }
                 if info.variants[vi].name == variant_name {
                     // Sum sizes of fields 0..field_idx-1
+                    // v5.6.5 Ve.1: state-aware sizing so %struct.* resolves
+                    // to the real registered size (not the 256 fallback).
                     let mut offset: Int = 0
                     let mut fi: Int = 0
                     for _ in 0..100 {
                         if fi >= field_idx { return offset }
                         if fi >= len(info.variants[vi].payload_types) { return offset }
                         let fty: String = resolve_mir_type(info.variants[vi].payload_types[fi])
-                        offset = offset + llvm_type_size(fty)
+                        let mut fsz: Int = llvm_sizeof_st(st, fty)
+                        let rem: Int = fsz % 8
+                        if rem != 0 { fsz = fsz + (8 - rem) }
+                        offset = offset + fsz
                         fi = fi + 1
                     }
                     return offset
@@ -17614,12 +17794,17 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
     let field_idx: Int = parse_field_index(variant)
 
     if field_idx > 0 {
-        // Compute byte offset: look up variant's payload types and sum sizes
-        // of fields 0..field_idx-1.
+        // v5.6.5 Ve.1 fix — defer field-offset computation to LLVM via
+        // a typed GEP. Matches Python's extraction path at
+        // emit_llvm_text.py:4894-4898: build the inline payload struct
+        // type from the variant's registered payload_types, then GEP
+        // into field `field_idx` with element index. LLVM's DataLayout
+        // resolves the byte offset at link time — guaranteed consistent
+        // with the typed GEP used at emit_enum_init's storage site.
         let stripped_name: String = strip_colon_suffix(variant)
-        let offset: Int = compute_payload_offset(s, val.ty.name, stripped_name, field_idx)
+        let payload_ty: String = build_payload_type_from_variant(s, val.ty.name, stripped_name)
         let pf: String = dn + ".pf"
-        s = emit_line(s, "  " + pf + " = getelementptr inbounds i8, ptr " + pr + ", i64 " + toString(offset))
+        s = emit_line(s, "  " + pf + " = getelementptr inbounds " + payload_ty + ", ptr " + pr + ", i32 0, i32 " + toString(field_idx))
         s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pf)
     } else {
         s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + pr)

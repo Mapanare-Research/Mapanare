@@ -1,0 +1,78 @@
+=================================================================
+==26553==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x511000012700 at pc 0x0000004d6fa0 bp 0x7f2ef8ced350 sp 0x7f2ef8cecb08
+READ of size 264 at 0x511000012700 thread T1
+    #0 0x4d6f9f in memmove (/tmp/mnc-stage2-asan+0x4d6f9f) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #1 0x5184b9 in def_fn_data (/tmp/mnc-stage2-asan+0x5184b9) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #2 0x94965e in definition_name (/tmp/mnc-stage2-asan+0x94965e) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #3 0x949c1b in has_later_def (/tmp/mnc-stage2-asan+0x949c1b) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #4 0x949e8b in dedup_definitions (/tmp/mnc-stage2-asan+0x949e8b) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #5 0x94a658 in resolve_imports (/tmp/mnc-stage2-asan+0x94a658) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #6 0x94a373 in resolve_imports (/tmp/mnc-stage2-asan+0x94a373) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #7 0x94a902 in compile (/tmp/mnc-stage2-asan+0x94a902) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #8 0x94e6e8 in mn_main (/tmp/mnc-stage2-asan+0x94e6e8) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #9 0x516cd8 in compiler_thread /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:105:5
+    #10 0x4d5f5c in asan_thread_start(void*) asan_interceptors.cpp.o
+
+0x511000012700 is located 0 bytes after 256-byte region [0x511000012600,0x511000012700)
+allocated by thread T1 here:
+    #0 0x4d8473 in malloc (/tmp/mnc-stage2-asan+0x4d8473) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #1 0x521bf4 in parse_fn_body (/tmp/mnc-stage2-asan+0x521bf4) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #2 0x5215d3 in parse_fn_params (/tmp/mnc-stage2-asan+0x5215d3) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #3 0x52146f in parse_fn_def (/tmp/mnc-stage2-asan+0x52146f) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #4 0x51f55c in parse_definition (/tmp/mnc-stage2-asan+0x51f55c) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #5 0x51ed87 in parse (/tmp/mnc-stage2-asan+0x51ed87) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #6 0x94a2e4 in resolve_imports (/tmp/mnc-stage2-asan+0x94a2e4) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #7 0x94a902 in compile (/tmp/mnc-stage2-asan+0x94a902) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #8 0x94e6e8 in mn_main (/tmp/mnc-stage2-asan+0x94e6e8) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #9 0x516cd8 in compiler_thread /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:105:5
+    #10 0x4d5f5c in asan_thread_start(void*) asan_interceptors.cpp.o
+
+Thread T1 created by T0 here:
+    #0 0x4bdde5 in pthread_create (/tmp/mnc-stage2-asan+0x4bdde5) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+    #1 0x516bc1 in main /mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc_main.c:129:9
+    #2 0x7f2efb5061c9 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #3 0x7f2efb50628a in __libc_start_main csu/../csu/libc-start.c:360:3
+    #4 0x43d624 in _start (/tmp/mnc-stage2-asan+0x43d624) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow (/tmp/mnc-stage2-asan+0x4d6f9f) (BuildId: ff6aa9e2f9792edbfc3e545e379021df415f2cb9) in memmove
+Shadow bytes around the buggy address:
+  0x511000012480: fa fa fa fa fa fa fa fa 00 00 00 00 00 00 00 00
+  0x511000012500: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x511000012580: 00 00 00 00 00 00 00 00 fa fa fa fa fa fa fa fa
+  0x511000012600: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x511000012680: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x511000012700:[fa]fa fa fa fa fa fa fa 00 00 00 00 00 00 00 00
+  0x511000012780: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x511000012800: 00 00 00 00 00 00 00 00 fa fa fa fa fa fa fa fa
+  0x511000012880: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x511000012900: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x511000012980: fa fa fa fa fa fa fa fa 00 00 00 00 00 00 00 00
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+
+[CRASH] SIGSEGV during compile at mapanare/self/lower.mn
+/tmp/mnc-stage2-asan(___interceptor_backtrace+0x4a)[0x481f3a]
+/tmp/mnc-stage2-asan[0x96cd35]
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)[0x7f2efb521330]
+/tmp/mnc-stage2-asan[0x4599a5]
+/tmp/mnc-stage2-asan(___interceptor_bcmp+0x51)[0x45a2e1]
+/tmp/mnc-stage2-asan(__mn_str_starts_with+0x2d)[0x950a7d]
+/tmp/mnc-stage2-asan(escape_analysis_function+0x2b2)[0x76d2c2]
+

@@ -18,6 +18,60 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.5** (shipped) — **Ve.1 primary fix + GEP-trick sizing
+  refactor.** Root-causes the `parse_fn_body` heap-buffer-overflow
+  (open since v5.4.4) NOT to the parser but to
+  `llvm_type_size`'s hardcoded `256`-byte fallback for any
+  `%struct.*` type. `FnDefData` is 264 bytes; every
+  `Definition::FnDef(fd)` boxing overflowed by 8. Rather than patch
+  FnDefData alone, this release rewrites the emission pipeline to
+  defer ABI computation to LLVM's DataLayout via the GEP-trick
+  (`ptrtoint ptr getelementptr (%T, ptr null, i32 1) to i64`) + typed
+  field GEPs — the pattern Clang uses for opaque-size emission
+  (see LLVM LangRef "Getelementptr", rustc `struct_gep`). Matches
+  Python's `_do_enum_init` at `emit_llvm_text.py:4770-4809`.
+  `emit_enum_init` + `emit_enum_payload` rewritten to build inline
+  payload struct types and use typed GEPs for field offsets — LLVM
+  computes both sizes and offsets at link time, no hand-rolled
+  sizing. Two new helpers: `build_payload_type_from_values(st,
+  payload)` and `build_payload_type_from_variant(st, enum_name,
+  variant_name)`. Also fixes `lookup_struct_field_types` to skip
+  empty `register_internal_struct` entries (which were shadowing
+  real MIR entries for Value, MIRType, EmitState, LowerState — my
+  original investigation thought these were the root cause but they
+  turned out to be a separate, compounding bug). Adds new
+  state-aware `llvm_sizeof_st(st, ty)` as a recursive registry-
+  resolving size calculator for non-GEP fallback paths
+  (`compute_payload_alloc_size`, `compute_field_offset`,
+  `sum_field_sizes`, `compute_variant_field_offset`).
+  `emit_list_init` gets a hybrid: GEP-trick for known element types
+  (`%struct.*`, `%enum.*`, `{...}`), 384-byte floor for
+  unknown/scalar. Metrics: stage2.ll **435 hardcoded malloc sites →
+  2** (99.5% elimination); 72 dynamic GEP-trick sites → 505 (+7×);
+  stage2.ll 207,039 lines (+0.78% vs v5.6.4's 205,446, within ±1%
+  budget); `llvm-as` clean; goldens 64/66 preserved; ASan on full
+  `mnc_all.mn` reports **0 heap-buffer-overflow errors** (was
+  154,355 errors / 42 contexts at v5.6.4). `make lint` clean;
+  `check_struct_registry.py` 23/23/91 clean; non-bootstrap pytest
+  clean. Research-backed: reviewed LLVM DataLayout docs,
+  `rustc_codegen_llvm/src/builder.rs` (struct_gep), Clang
+  `ASTContext::getTypeInfoImpl`, Go `cmd/compile/internal/types/size.go`
+  — the GEP-trick is the idiomatic choice for self-hosting
+  compilers without their own layout engine. **What's NOT closed
+  this release:** non-empty stage3.ll. Removing the 384-byte list
+  floor exposed a pre-existing lowerer bug — `let xs: List<String>
+  = []` lowers to MIR with `elem_ty.kind=TK_UNKNOWN`, which
+  `resolve_mir_type` maps to `"i64"` → lists allocated with 8-byte
+  element slots instead of the type's actual size. The 384-byte
+  floor had been masking this across Span/Block/String/Param/
+  Decorator/Stmt/FnDefData lists since v4.x (at ~24× memory
+  overhead). **Tracked as new Ve.2 in `docs/known_issues.md`;
+  scheduled for v5.6.7** as a focused lowerer-side fix (~1 session).
+  After v5.6.7 lands, the 384 floor can be removed and the fixed-
+  point test should produce non-empty stage3.ll. What NOT shipped:
+  Ve.2 fix (deferred to v5.6.7 by user approval); Rt.04 work
+  (still v5.6.6); Sh.7 (still v5.7.0). See
+  `docs/roadmap/v5/v5.6.5/SESSION_REPORT.md`.
 - **v5.6.4** (shipped) — **Own.1 Phase 3 — Rt.06 tensor drop-glue
   CLOSED.** Ports Python's `_tensor_vars` / `_emit_drop_glue_tensors`
   pair to the self-hosted emitter. Two new `EmitState` fields
@@ -763,14 +817,6 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
-- **v5.6.5** — **Ve.1 fix — parser list-growth surgery, stage3
-  restored.** `parse_fn_body` writes 8 B past a 256-byte malloc'd
-  block; `mnc-stage2` SIGSEGVs before emitting any stage3.ll. v5.5.7
-  valgrind investigation localised the root cause; v5.6.5 does the
-  ASan-symbolic trace + surgical fix (runtime `__mn_list_push` grow
-  path, parser direct-write, or hand-rolled buffer — whichever
-  Phase 1 reveals). Validates via non-empty `verify_fixed_point.sh`
-  stage3.ll. See `docs/roadmap/v5/v5.6.5/PLAN.md`.
 - **v5.6.6** — **Rt.04 close — `%struct.*` guard-lift with size
   gate.** Re-lifts v5.4.4's reverted one-level struct-field walk,
   gated by `ret_ty_is_aggregate` on ≤8 fields AND ≤50 tracked
@@ -778,6 +824,18 @@ Most recent releases (last 6). Full history at
   while skipping the 24-field `%struct.EmitState` that caused
   v5.4.4's 5× stage2.ll explosion. Closes the last known
   Mapanare-side leak. See `docs/roadmap/v5/v5.6.6/PLAN.md`.
+- **v5.6.7** — **Ve.2 close — lowerer empty-list elem_ty
+  propagation, stage3 restored.** `let xs: List<String> = []`
+  currently lowers to MIR with `elem_ty.kind=TK_UNKNOWN` — the
+  type annotation on the `let` declaration is dropped. Fix is in
+  `lower.mn::ListInit` (or the `let`-stmt lowering path): when the
+  RHS is an empty list and the LHS has a type annotation, thread
+  the annotation's element type into MIR. Once landed, remove
+  v5.6.5's 384-byte `emit_list_init` fallback floor and confirm
+  `verify_fixed_point.sh` produces non-empty stage3.ll. Should also
+  close the runtime OOM in `mnc-stage2` on non-trivial programs
+  (`__mn_str_concat` reading corrupted size) — hypothesized same
+  root cause.
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
@@ -864,7 +922,7 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.4):** 64/66. The 2 gap:
+**Current baseline (v5.6.5):** 64/66. The 2 gap:
 `51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
 `64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
 v5.7.0 for 66/66.
@@ -1035,7 +1093,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27694 symbols, 61461 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27727 symbols, 61497 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

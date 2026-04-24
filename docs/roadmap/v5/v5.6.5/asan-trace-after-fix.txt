@@ -1,0 +1,10 @@
+
+[CRASH] SIGSEGV during compile at mapanare/self/lower.mn
+/tmp/mnc-stage2-asan(___interceptor_backtrace+0x4a)[0x481f3a]
+/tmp/mnc-stage2-asan[0x96df15]
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)[0x7fce87db2330]
+/tmp/mnc-stage2-asan[0x4599a5]
+/tmp/mnc-stage2-asan(___interceptor_bcmp+0x51)[0x45a2e1]
+/tmp/mnc-stage2-asan(__mn_str_starts_with+0x2d)[0x951c5d]
+/tmp/mnc-stage2-asan(escape_analysis_function+0x2b2)[0x76c022]
+
