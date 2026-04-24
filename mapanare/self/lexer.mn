@@ -180,6 +180,10 @@ fn keyword_token_type(name: String) -> String {
     // v5.6.0 (Sh.6): Tensor becomes a keyword so `Tensor<T>[...]` literal
     // syntax can be disambiguated from `NAME LT` expressions.
     if name == "Tensor" { return "KW_TENSOR" }
+    // v5.6.3 (Sh.6 Phase 4): standalone `_` lexes as UNDERSCORE so the
+    // parser can route it to wildcard in subscripts (`a[0..2, _]`).
+    // `_foo`, `__bar`, `_1` stay NAME — only exact `_` becomes UNDERSCORE.
+    if name == "_" { return "UNDERSCORE" }
     return "NAME"
 }
 
