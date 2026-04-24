@@ -4510,7 +4510,7 @@ fn ret_ty_is_aggregate(ret_ty: String) -> Bool {
 
 fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
     // Fast path: no owners means nothing to drop.
-    if len(st.str_owned) == 0 && len(st.list_owned) == 0 && len(st.boxed_owned) == 0 {
+    if len(st.str_owned) == 0 && len(st.list_owned) == 0 && len(st.boxed_owned) == 0 && len(st.tensor_owned) == 0 {
         return st
     }
 
@@ -4524,6 +4524,10 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
     let mut ret_str_ptrs: List<String> = []
     let mut ret_list_ptrs: List<String> = []
     let mut ret_box_ptrs: List<String> = []
+    // v5.6.4 Rt.06 — tensor escape list. Populated in parallel with
+    // ret_box_ptrs for scalar ptr returns and %struct.* ptr fields
+    // (see PLAN §D4 for why dual-push is safe).
+    let mut ret_tensor_ptrs: List<String> = []
 
     // Scalar String return: extract the data ptr once.
     if ret_ty == llvm_string() && len(ret_val) > 0 {
@@ -4541,9 +4545,12 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
         s = emit_line(s, "  " + p + " = extractvalue " + llvm_list_rt() + " " + ret_val + ", 0")
         ret_list_ptrs.push(p)
     }
-    // Scalar ptr return.
+    // Scalar ptr return — could be a boxed enum payload or a tensor.
+    // Push to both lists; each per-resource helper alias-checks its
+    // own slot list, so the non-matching list is a no-op.
     if ret_ty == "ptr" && len(ret_val) > 0 {
         ret_box_ptrs.push(ret_val)
+        ret_tensor_ptrs.push(ret_val)
     }
 
     // v5.4.4 — %struct.* return: walk one level of fields and extract
@@ -4581,7 +4588,11 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
                         s.counter = s.counter + 1
                         let fp: String = "%ret.sbp" + toString(cnt)
                         s = emit_line(s, "  " + fp + " = extractvalue " + ret_ty + " " + ret_val + ", " + toString(fi))
+                        // v5.6.4 Rt.06 — ptr field could be a tensor
+                        // inside a struct return; dual-push same SSA
+                        // to both escape lists.
                         ret_box_ptrs.push(fp)
+                        ret_tensor_ptrs.push(fp)
                     }
                     fi = fi + 1
                 }
@@ -4593,6 +4604,7 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
     s = emit_drop_glue_strings(s, ret_str_ptrs)
     s = emit_drop_glue_lists(s, ret_list_ptrs)
     s = emit_drop_glue_boxed(s, ret_box_ptrs)
+    s = emit_drop_glue_tensors(s, ret_tensor_ptrs)
     return s
 }
 
