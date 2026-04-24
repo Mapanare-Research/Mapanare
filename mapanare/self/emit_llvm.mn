@@ -360,6 +360,28 @@ fn get_fn_ret_prefix(name: String) -> String {
     if name == "__mapanare_tensor_mul" { return "noalias " }
     if name == "__mapanare_tensor_div" { return "noalias " }
     if name == "__mapanare_matmul" { return "noalias " }
+    // v5.6.2 Sh.6 Phase 3 — broadcast / scalar / reverse-scalar binops
+    // return a fresh heap-allocated tensor pointer (noalias).
+    if name == "__mn_tensor_add_broadcast_f64" { return "noalias " }
+    if name == "__mn_tensor_sub_broadcast_f64" { return "noalias " }
+    if name == "__mn_tensor_mul_broadcast_f64" { return "noalias " }
+    if name == "__mn_tensor_div_broadcast_f64" { return "noalias " }
+    if name == "__mn_tensor_add_broadcast_i64" { return "noalias " }
+    if name == "__mn_tensor_sub_broadcast_i64" { return "noalias " }
+    if name == "__mn_tensor_mul_broadcast_i64" { return "noalias " }
+    if name == "__mn_tensor_div_broadcast_i64" { return "noalias " }
+    if name == "__mn_tensor_add_scalar_f64" { return "noalias " }
+    if name == "__mn_tensor_sub_scalar_f64" { return "noalias " }
+    if name == "__mn_tensor_mul_scalar_f64" { return "noalias " }
+    if name == "__mn_tensor_div_scalar_f64" { return "noalias " }
+    if name == "__mn_tensor_add_scalar_i64" { return "noalias " }
+    if name == "__mn_tensor_sub_scalar_i64" { return "noalias " }
+    if name == "__mn_tensor_mul_scalar_i64" { return "noalias " }
+    if name == "__mn_tensor_div_scalar_i64" { return "noalias " }
+    if name == "__mn_tensor_rsub_scalar_f64" { return "noalias " }
+    if name == "__mn_tensor_rdiv_scalar_f64" { return "noalias " }
+    if name == "__mn_tensor_rsub_scalar_i64" { return "noalias " }
+    if name == "__mn_tensor_rdiv_scalar_i64" { return "noalias " }
     return ""
 }
 
@@ -495,6 +517,30 @@ fn get_fn_attrs(name: String) -> String {
     if name == "__mn_tensor_get_i64_nd" { return " nounwind" }
     if name == "__mn_tensor_set_f64_nd" { return " nounwind" }
     if name == "__mn_tensor_set_i64_nd" { return " nounwind" }
+    // v5.6.2 Sh.6 Phase 3 — broadcast / scalar / reverse-scalar binops
+    // (mirrors emit_llvm_text.py:357-377). `noalias` is emitted as a
+    // return-value prefix by get_fn_ret_prefix; the fn-attr suffix is
+    // just `nounwind`.
+    if name == "__mn_tensor_add_broadcast_f64" { return " nounwind" }
+    if name == "__mn_tensor_sub_broadcast_f64" { return " nounwind" }
+    if name == "__mn_tensor_mul_broadcast_f64" { return " nounwind" }
+    if name == "__mn_tensor_div_broadcast_f64" { return " nounwind" }
+    if name == "__mn_tensor_add_broadcast_i64" { return " nounwind" }
+    if name == "__mn_tensor_sub_broadcast_i64" { return " nounwind" }
+    if name == "__mn_tensor_mul_broadcast_i64" { return " nounwind" }
+    if name == "__mn_tensor_div_broadcast_i64" { return " nounwind" }
+    if name == "__mn_tensor_add_scalar_f64" { return " nounwind" }
+    if name == "__mn_tensor_sub_scalar_f64" { return " nounwind" }
+    if name == "__mn_tensor_mul_scalar_f64" { return " nounwind" }
+    if name == "__mn_tensor_div_scalar_f64" { return " nounwind" }
+    if name == "__mn_tensor_add_scalar_i64" { return " nounwind" }
+    if name == "__mn_tensor_sub_scalar_i64" { return " nounwind" }
+    if name == "__mn_tensor_mul_scalar_i64" { return " nounwind" }
+    if name == "__mn_tensor_div_scalar_i64" { return " nounwind" }
+    if name == "__mn_tensor_rsub_scalar_f64" { return " nounwind" }
+    if name == "__mn_tensor_rdiv_scalar_f64" { return " nounwind" }
+    if name == "__mn_tensor_rsub_scalar_i64" { return " nounwind" }
+    if name == "__mn_tensor_rdiv_scalar_i64" { return " nounwind" }
     // -- Agent runtime (v3.43.0) --
     if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
     if name == "mapanare_agent_send" { return " nounwind willreturn" }
@@ -640,6 +686,29 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_tensor_get_i64_nd", "i64", "ptr, i64, ...")
     s = declare_runtime_fn(s, "__mn_tensor_set_f64_nd", "void", "ptr, i64, ...")
     s = declare_runtime_fn(s, "__mn_tensor_set_i64_nd", "void", "ptr, i64, ...")
+
+    // v5.6.2 Sh.6 Phase 3: broadcast / scalar / reverse-scalar binops.
+    // Reverse-scalar fns take (scalar, tensor) — see emit_llvm_text.py:3781.
+    s = declare_runtime_fn(s, "__mn_tensor_add_broadcast_f64", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_sub_broadcast_f64", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_mul_broadcast_f64", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_div_broadcast_f64", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_add_broadcast_i64", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_sub_broadcast_i64", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_mul_broadcast_i64", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_div_broadcast_i64", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_add_scalar_f64", "ptr", "ptr, double")
+    s = declare_runtime_fn(s, "__mn_tensor_sub_scalar_f64", "ptr", "ptr, double")
+    s = declare_runtime_fn(s, "__mn_tensor_mul_scalar_f64", "ptr", "ptr, double")
+    s = declare_runtime_fn(s, "__mn_tensor_div_scalar_f64", "ptr", "ptr, double")
+    s = declare_runtime_fn(s, "__mn_tensor_add_scalar_i64", "ptr", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_sub_scalar_i64", "ptr", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_mul_scalar_i64", "ptr", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_div_scalar_i64", "ptr", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_rsub_scalar_f64", "ptr", "double, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_rdiv_scalar_f64", "ptr", "double, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_rsub_scalar_i64", "ptr", "i64, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_rdiv_scalar_i64", "ptr", "i64, ptr")
 
     // Agent runtime
     s = declare_runtime_fn(s, "__mn_agent_spawn", "ptr", "ptr, ptr")

@@ -18,6 +18,69 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.2** (shipped) — **Sh.6 Phase 3 — tensor broadcast +
+  scalar binops (+/-/*//), golden 51 closed end-to-end.** First
+  release where `51_tensor_broadcast` runs byte-identical to the
+  Python bootstrap (output `11 44 9 36 10 10 101 104 2 8 11 33`);
+  v5.6.1 and earlier registered PASS only at function-match parity
+  while emitting `llvm-as`-broken IR (`%t14 = add nsw i64 %ptr1,
+  %ptr2` type mismatch — `lower_binary` fell through to the generic
+  integer-add arm because no tensor branch existed). Semantic:
+  no edits — `check_arithmetic_binary` at `semantic.mn:915` already
+  routed `Tensor⊕Tensor/Int/Float` to `make_type("Tensor")`; element-
+  type args flow through MIR `Value.ty.args` populated by
+  `mir_tensor_of` in v5.6.0's `lower_tensor`. Lower: new
+  `lower_tensor_binop` helper in `lower.mn` (+40 LOC) mirrors Python
+  `lower.py::_lower_tensor_binop` (2843-2882). Dispatch in
+  `lower_binary` above the `binop_from_str` fallthrough: both-tensor
+  → `__mn_tensor_{op}_broadcast_{i64|f64}(lhs, rhs)`; tensor-scalar
+  → `__mn_tensor_{op}_scalar_{ty}(lhs, rhs)`; scalar-tensor
+  commutative (`+`, `*`) → `__mn_tensor_{op}_scalar_{ty}(rhs, lhs)`
+  (swap to hit forward-scalar fn); scalar-tensor non-commutative
+  (`-`, `/`) → `__mn_tensor_r{op}_scalar_{ty}(lhs, rhs)` (scalar
+  first — matches `emit_llvm_text.py:3781`). Dest value typed
+  `tensor_val.ty` so chained `((a + b) * c)` propagates element
+  type through repeated dispatch. Helpers `tensor_op_suffix` (4-way
+  `+/-/*//` → `add/sub/mul/div` map) and `is_tensor_value` (thin
+  `TK_TENSOR` check) added alongside. Emit: 20 new runtime
+  declarations in `declare_all_runtime` — 8 broadcast (`ptr, ptr →
+  ptr`), 8 scalar (`ptr, double/i64 → ptr`), 4 reverse scalar
+  (`double/i64, ptr → ptr`). Attr split fixed latent design gotcha:
+  LLVM rejects `noalias` as a function attribute — it's a
+  return-value prefix. Python splits at `emit_llvm_text.py:1298`;
+  the self-hosted emitter's `declare_runtime_fn` already had the
+  `if ret == "ptr"` guard for `get_fn_ret_prefix`, so 20 `"noalias "`
+  entries went into the prefix fn and 20 `" nounwind"` entries went
+  into the `get_fn_attrs` fn (the initial attempt using `" nounwind
+  noalias"` in the fn-attr slot tripped `llvm-as: this attribute
+  does not apply to functions`). Call-site routing unchanged —
+  `emit_mir_call`'s generic `find_function` fallback picks up the
+  declared `FnEntry` and emits through `emit_call_ir` with registered
+  param types. Runtime untouched: all 20 `__mn_tensor_*_{broadcast,
+  scalar,r*}_{f64,i64}` fns already shipped in
+  `runtime/native/mapanare_gpu_builtins.c:549-720` (v4.44.0 +
+  v4.47.0 rsub/rdiv add). Goldens harness 63/66 preserved at the
+  count level but golden 51 flipped from function-match-PASS-but-
+  broken-IR to actually-correct-and-PASS — same qualitative jump
+  v5.6.1 made for golden 50. stage2.ll 201,442 lines (+0.78% vs
+  v5.6.1) / 920 defines (+12), `llvm-as` clean, self-hosting
+  preserved (mnc_all.mn has no tensor binops so the dispatch never
+  fires during stage2 emission but the 20 decls are emitted
+  unconditionally). Non-bootstrap pytest 5550 passed (+1 vs
+  v5.6.1); `make lint` clean; `check_struct_registry.py` clean
+  (23/23/89). Valgrind: 0 ERRORS / 66 WARNINGS_ONLY. ASan: 0
+  ASAN_ERROR / 60 CLEAN / 6 CRASH_NO_ASAN (6 are Python-bootstrap
+  C-backend compile failures on tensor builtins, not LLVM-path
+  sanitizer issues). LSan on golden 51: 24 leaks / 672 B from
+  `mapanare_tensor_alloc` — baseline-gated (base class COMPILE_FAIL
+  → now LEAK is a forward step per `check_leak_summary.py`'s rules;
+  mirrors the v5.6.0 → v5.6.1 pattern for goldens 49 / 50). Added
+  Rt.06 row to `docs/known_issues.md` scoping tensor drop-glue
+  (`emit_track_tensor` hook) to v5.6.4+. Ve.1 stage3 segfault
+  persists (pre-existing from v5.4.4, not a v5.6.2 regression).
+  What's next: v5.6.3 reductions + slicing (goldens 52/53), v5.6.4+
+  Rt.06 drop-glue, v5.7.0 closure + or-pattern. See
+  `docs/roadmap/v5/v5.6.2/SESSION_REPORT.md`.
 - **v5.6.1** (shipped) — **Sh.6 Phase 2 — multi-dim tensor
   indexing (`a[i, j]`) + golden 50 closed end-to-end.** Second
   Sh.6 release; first where golden 50 runs byte-identical to the
@@ -526,12 +589,12 @@ Most recent releases (last 6). Full history at
   >M tracked slots). Diagnose and remediate the Ve.1 regression
   introduced in v5.4.4 (mnc-stage2 segfault during lex of
   mnc_all.mn).
-- **v5.6.2** — **Sh.6 Phase 3 — broadcast (golden 51).** Tensor-
-  tensor and tensor-scalar binops via `__mn_tensor_{add,sub,mul,
-  div}_broadcast_{f64,i64}` and `_scalar_` family.
 - **v5.6.3** — **Sh.6 Phase 4 — slicing + reductions (goldens
   52/53).** `.sum()/.mean()/.max()/.min()/.argmax()/.argmin()`
   method dispatch, range slice `a[0..2]`, wildcard `a[_]`.
+- **v5.6.4+** — **Own.1 Phase 3 — Rt.06 tensor drop-glue.**
+  `emit_track_tensor` hook + `__mn_tensor_free` at scope exit.
+  Closes LSan leaks on 49/50/51 tensor goldens.
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
