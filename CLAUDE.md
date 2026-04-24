@@ -18,6 +18,93 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.4** (shipped) — **Own.1 Phase 3 — Rt.06 tensor drop-glue
+  CLOSED.** Ports Python's `_tensor_vars` / `_emit_drop_glue_tensors`
+  pair to the self-hosted emitter. Two new `EmitState` fields
+  (`tensor_owned: List<String>` + `tensor_owned_source: List<String>`)
+  parallel to the existing str/list/boxed triples — field-list
+  parity gate clean at 23/23/91 (no new struct, `EmitState` +2
+  fields). `emit_track_tensor` helper structurally parallel to
+  `emit_track_boxed`: entry-block prelude slot alloca + null zero-
+  init, store of tensor ptr post-alloc-emit, push onto
+  `tensor_owned` / `_source` lists. Loop-depth free-before-store
+  branch (v5.4.3 parity): when `st.loop_depth > 0`, prepend
+  `load ptr, slot` + `call void @__mn_tensor_free(ptr %prev.tens.N)`
+  before the store. Load-bearing for `53_linear_regression`'s 10-
+  epoch loop × ~4 fresh tensors per iteration — without the pre-
+  store free, 40+ tensors leak per run even with drop-glue at
+  return. Null-tolerant `__mn_tensor_free` in C runtime
+  (`if (!t) return`) makes first-iter a no-op. Dispatch: new
+  `is_tensor_allocating_fn(fn_name)` predicate enumerating 22
+  runtime fns (1 alloc + 1 slice + 8 broadcast +/- */÷ × f64/i64
+  + 8 scalar + 4 reverse-scalar rsub/rdiv × f64/i64). Design call
+  (PLAN §D2): post-emit injection in the generic
+  `emit_mir_call` `Some(fe)` + `_` success branches, guarded on
+  the predicate — v5.6.2 shipped correct IR for all 20 binop fns
+  via the generic `find_function` + `emit_call_ir` path, so
+  adding 20 dedicated branches (~160 LOC) just to attach a
+  tracking call would duplicate validated emit logic. Direct
+  injection at the two special-case sites: `emit_tensor_init`
+  after the `__mn_tensor_alloc` emit line, and the
+  `__mn_tensor_slice` branch (v5.6.3) after its final emit line.
+  `emit_drop_glue_tensors(st, ret_tensor_ptrs)` helper
+  structurally parallel to `emit_drop_glue_boxed`: `ptr` slot
+  type, SSA prefix `t` (`%drop.tv.N` / `drop.tfree.N` /
+  `drop.tskip.N` / `%drop.tmacc.N` / `%drop.tsame.N.K`), free fn
+  `__mn_tensor_free`, shared `emit_or_reduce_ret_match` with
+  `prefix="t"`. `emit_drop_glue_destroy` (v5.5.7 async cleanup)
+  extended with a fourth unconditional tensor loop — SSA prefix
+  `%drop.d.t.N` distinct from normal-exit siblings and
+  destroy-path `%drop.d.{s,l,b}.N`. `emit_drop_glue` dispatcher:
+  fast-path guard at `:4445` extended to include `len(tensor_owned)`;
+  fourth `ret_tensor_ptrs: List<String>` list at `:4462`; dual-
+  push at the two ptr escape sites (scalar ptr return and
+  `%struct.*` one-level ptr-field walk) pushes the same SSA into
+  both `ret_box_ptrs` and `ret_tensor_ptrs` — each per-resource
+  helper alias-checks its own slot list, so the over-approximation
+  is symmetric and safe (PLAN §D4): a tensor ret-val legitimately
+  in both lists short-circuits both drops on the matching helper
+  and the non-matching helper's slot list doesn't alias the ptr
+  anyway, so no missed-free. Symmetric for boxed returns. Tail
+  `s = emit_drop_glue_tensors(s, ret_tensor_ptrs)` after the
+  existing boxed helper. Per-site verification on golden 52: 24
+  tens_track slots, 6 `__mn_tensor_free` calls; golden 53: 28
+  tens_track, 10 frees, 8 `prev.tens.*` loads inside the epoch
+  loop. All 5 tensor goldens produce byte-identical v5.6.3
+  output — track/free ratio ~1:4 because most slots get consumed
+  inline (literals stored into list elements; binop intermediates
+  immediately fed into the next binop). LSan sweep 50 CLEAN / 3
+  LEAK (baseline) / 1 COMPILE_FAIL / 12 LINK_FAIL / 0 regressions
+  — all 5 tensor goldens report 0 objs / 0 B. Baseline TSV at
+  `docs/roadmap/v5/v5.4.2/baseline/asan-leak-baseline.tsv` flipped
+  49/50/51/52/53 from COMPILE_FAIL-era to CLEAN, tightening the
+  gate from "these goldens may leak" to "no tensor may leak at
+  function exit." 39_gpu_detect / 40_gpu_tensor baseline refreshed
+  from 3/49655 → 5/50212 to absorb WSL libvulkan.so.1 version
+  drift (all 5 leak frames in libcuda / libvulkan, zero Mapanare
+  code — environmental, orthogonal to Rt.06). Harness 64/66
+  preserved (same 2 fails as v5.6.3: 51_match_guards_and_or B,
+  64_closure_typed Sh.7). stage2.ll 205,446 lines (+1,148 vs
+  v5.6.3's 204,298, +0.56% — well under the 2% PLAN §R3 budget)
+  / 934 defines (+3: the three new helpers). llvm-as clean.
+  Self-hosting preserved — mnc_all.mn has zero tensor calls, so
+  the 4 new emit sites don't fire during stage2 emission but the
+  12 runtime decls from v5.6.3 still get emitted plus the new
+  tracking slots for the 3 new fns cost nothing. Valgrind 66
+  WARNINGS_ONLY / 0 ERRORS preserved. ASan UAF 60 CLEAN / 6
+  CRASH_NO_ASAN / 0 ASAN_ERROR preserved (same 6 bootstrap-
+  C-backend failures on tensor builtins, orthogonal to LLVM path).
+  Ve.1 persists (pre-existing from v5.4.4 — stage2 still segfaults
+  compiling mnc_all.mn; same signature; not a v5.6.4 regression).
+  Non-bootstrap pytest clean; `make lint` clean;
+  `check_struct_registry.py` 23/23/91 clean. `known_issues.md`
+  Rt.06 row flipped to **CLOSED v5.6.4**. `PARITY_GAPS.md` adds
+  Own.1 Phase 3 row under memory-safety residuals. What NOT
+  shipped: tensor move-on-assign (v6.0 borrow-checker); inter-
+  procedural tensor-lifetime analysis; Ve.1 fix. What's next:
+  v5.6.5+ close Rt.04 + diagnose Ve.1; v5.7.0 Sh.7 closure + B
+  or-pattern → 66/66; v5.7.1 SPEC docs polish; v5.8.0 RE-PANEL.
+  See `docs/roadmap/v5/v5.6.4/SESSION_REPORT.md`.
 - **v5.6.3** (shipped) — **Sh.6 Phase 4 — tensor slicing +
   reductions; Sh.6 CLOSED.** Final Sh.6 release. Closes
   `52_tensor_slicing` end-to-end (first time the golden actually
@@ -682,9 +769,6 @@ Most recent releases (last 6). Full history at
   >M tracked slots). Diagnose and remediate the Ve.1 regression
   introduced in v5.4.4 (mnc-stage2 segfault during lex of
   mnc_all.mn).
-- **v5.6.4+** — **Own.1 Phase 3 — Rt.06 tensor drop-glue.**
-  `emit_track_tensor` hook + `__mn_tensor_free` at scope exit.
-  Closes LSan leaks on 49/50/51/52/53 tensor goldens.
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
@@ -771,7 +855,7 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.3):** 64/66. The 2 gap:
+**Current baseline (v5.6.4):** 64/66. The 2 gap:
 `51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
 `64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
 v5.7.0 for 66/66.

@@ -1,6 +1,6 @@
 # Known Issues — User-Facing
 
-Last updated: v5.6.3.
+Last updated: v5.6.4.
 
 ## Self-hosted compiler feature gaps
 
@@ -31,7 +31,7 @@ Last updated: v5.6.3.
 | Rt.04 | v5.4.4 landed lowerer Move emission + drop-glue `moved_locals` check via slot-source parallel arrays in both emitters (infrastructure). Attempted one-level `%struct.*` field walk + guard opening caused stage2 runtime instability (mnc-stage2 segfault before stage3 emission); walk and guard-lift were rescoped — `%struct.*` returns remain conservatively skipped. 62_list_output still LEAK 9 objs / 141 B. v5.4.5+ will re-lift the guard once the walk is gated on function size. | extract intermediate concats into let-bindings outside the struct-returning function's body | v5.4.5+ |
 | Rt.05 | **CLOSED v5.5.7** — AwaitSuspend inner-coroutine leak. v5.5.5 emitted no `coro.destroy` + `free` in `aw.ready.N` because `%aw.hdl.N` was loaded only on the `aw.drive.N` edge and did not dominate fast-path / scheduler-resume entries; this leaked 56 B per inner await across 56/57/58/59 (~10 leaks in 59_async_fanout). v5.5.7 hoists the `getelementptr + load ptr` of the inner handle into the entry BB before the fast-path branch, so `%aw.hdl.N` dominates all three entries to `aw.ready.N`. Cleanup mirrors v5.5.6's BlockOn (`coro.destroy + free(box) + free(future)`). All 5 Sh.4 goldens now valgrind-clean (e.g., 59 = 36 allocs / 36 frees / 0 lost), ASan-clean, LSan-clean, TSan-clean. | n/a | CLOSED v5.5.7 |
 | Ve.1 | Open since v5.4.4 — `mnc-stage2 mnc_all.mn` SIGSEGVs before stage3.ll emission; stage2.ll itself is `llvm-as` clean. v5.5.7 root-caused via valgrind on the smallest crashing input (`lower.mn`): `parse_fn_body` writes 8 B 0-bytes-past a 256-byte malloc'd block (likely a `List<X>` with a 32-entry default capacity that doesn't realloc on push). 154,355 errors / 42 contexts. Predates async work. Fix is parser/list-growth surgery (~1 session) — see `docs/roadmap/v5/v5.5.7/VE1_INVESTIGATION.md`. | use `mnc-stage1` for self-host work; `verify_fixed_point.sh` will fail at Stage 2 | v5.5.7.1 / v5.7.x |
-| Rt.06 | Tensor-lifetime drop-glue gap — `__mn_tensor_alloc` / `__mn_tensor_slice` results from tensor literals (49), multi-dim indexing allocations (50), binop broadcast/scalar/rscalar runtime fns (51), slicing (52), and linear-regression reductions (53) are not freed at scope exit. Self-hosted emitter has no `emit_track_tensor` hook. Baseline-gated — `check_leak_summary.py` tolerates the LEAK class for these goldens (inherited from COMPILE_FAIL pre-v5.6.x). | n/a — scoped as Own.1 follow-up | v5.6.4+ (Sh.6 closed v5.6.3) |
+| Rt.06 | **CLOSED v5.6.4** — tensor drop-glue ported. Self-hosted emitter gains `EmitState.tensor_owned` + `tensor_owned_source` lists, `emit_track_tensor` helper (with v5.4.3 loop-depth free-before-store parity), and `emit_drop_glue_tensors` helper wired into `emit_drop_glue` at return edges. 22 tensor-allocating runtime fns tracked via `is_tensor_allocating_fn` predicate (1 alloc + 1 slice + 20 binop fns). Full LSan sweep across all 5 tensor goldens reports 0 objs / 0 B; baseline TSV flipped from LEAK-allowed to CLEAN-required so future tensor-allocation patterns that skip tracking now fail CI. | n/a | CLOSED v5.6.4 |
 
 ## Ecosystem
 
