@@ -12513,6 +12513,18 @@ fn should_inline(callee: MIRFunction, call_count: Int) -> Bool {
     if len(callee.blocks) != 1 { return false }
     if is_recursive(callee) { return false }
     if callee.name == "main" { return false }
+    // v5.5.4 Sh.4 Phase 1: never inline async fns. In v5.5.4+ the
+    // emitter wraps every async fn with coroutine scaffolding
+    // (presplitcoroutine attr + coro.id/begin prologue + future
+    // alloc + initial suspend + ret→future.payload rewrite + coro.
+    // final/cleanup/ret epilogue). Inlining that body into a non-
+    // async caller would splice coroutine intrinsics into a
+    // non-presplit function — LLVM's CoroSplit pass wouldn't run
+    // and the IR would be malformed. Safe to reject categorically
+    // because async fns are called via BlockOn or AwaitSuspend
+    // (which handle the future extraction), never invoked as a
+    // plain call whose result is used directly.
+    if fn_is_async(callee) { return false }
     let body_size: Int = instruction_count(callee)
     if body_size == 0 { return false }
     if body_size > 20 { return false }
@@ -14851,30 +14863,75 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         s.moved_locals.push(stripped)
         return s
     }
-    // v5.5.2 Sh.4 Phase 3 (Option A) — synchronous async stubs.
-    // Option A: async fns are NOT wrapped in a coroutine frame yet —
-    // they stay as regular fns returning their declared type (Int, etc.)
-    // That means the "future" operand to AwaitSuspend / BlockOn is
-    // already the final T value, not a Future<T> ptr. We therefore
-    // emit a copy: dest = future.  This produces valid llvm-as-clean
-    // IR and executes correctly for the 5 Sh.4 goldens (55-59), which
-    // all use `return <const>` async fns with no real suspension
-    // points.  v5.5.3+ will ship the full presplit-coroutine wrapping
-    // (async fn prologue + ret→future.payload rewrite + coro.final
-    // epilogue) at which point these handlers re-emit to consume a
-    // real {i8, ptr} future — resume/suspend/switch for await,
-    // scheduler_register/run/destroy for block_on.
+    // v5.5.4 Sh.4 Phase 2 — real coroutine drive.
+    // Async fns now return `ptr %future` from their initial suspend
+    // (see emit_mir_function).  BlockOn and AwaitSuspend must drive
+    // the suspended coroutine to its final suspend, then extract the
+    // boxed return value from the future.payload slot.
+    //
+    // v5.5.4 is SYNCHRONOUS — the caller inline-resumes the coroutine
+    // rather than registering it with the scheduler.  That's fine for
+    // the 5 Sh.4 goldens (no real I/O, no cross-thread fanout) and
+    // matches how LLVM's CoroElide optimizes trivially-inlinable
+    // coroutines.  v5.5.6 adds the scheduler-driven path for
+    // concurrency-aware programs.
+    //
+    // Critical (v4.102.0 foot-gun, emit_llvm_text.py:5459): the
+    // future.payload slot initially holds the coroutine handle (set
+    // during async fn prologue) but after the coroutine reaches its
+    // final suspend, the slot is overwritten with the result-box
+    // pointer.  Load the handle ONCE before coro.resume and reuse it
+    // for coro.destroy — never reload slot 1 for the handle after
+    // resume.
     if kind == "await_suspend" {
         let aw_dest: Value = instr_dest(inst)
         let aw_fut: Value = instr_await_suspend_future(inst)
-        let mut s_aw: EmitState = emit_line(st, "  ; v5.5.2 await_suspend (Option A: synchronous, async fns not yet presplit-wrapped)")
-        return emit_copy(s_aw, aw_dest, aw_fut)
+        let n: Int = st.counter
+        let mut s_aw: EmitState = st
+        s_aw.counter = n + 1
+        let tag: String = toString(n)
+        s_aw = emit_line(s_aw, "  ; v5.5.4 await_suspend " + tag + " — synchronous resume+extract")
+        let hp: String = "%aw.hdl.ptr." + tag
+        let hd: String = "%aw.hdl." + tag
+        let vp: String = "%aw.val.ptr." + tag
+        let vb: String = "%aw.val.box." + tag
+        let vr: String = "%aw.val." + tag
+        s_aw = emit_line(s_aw, "  " + hp + " = getelementptr inbounds {i8, ptr}, ptr " + aw_fut.name + ", i32 0, i32 1")
+        s_aw = emit_line(s_aw, "  " + hd + " = load ptr, ptr " + hp)
+        s_aw = emit_line(s_aw, "  call void @llvm.coro.resume(ptr " + hd + ")")
+        s_aw = emit_line(s_aw, "  " + vp + " = getelementptr inbounds {i8, ptr}, ptr " + aw_fut.name + ", i32 0, i32 1")
+        s_aw = emit_line(s_aw, "  " + vb + " = load ptr, ptr " + vp)
+        s_aw = emit_line(s_aw, "  " + vr + " = load i64, ptr " + vb)
+        s_aw = emit_line(s_aw, "  " + aw_dest.name + " = add i64 0, " + vr)
+        s_aw = emit_line(s_aw, "  call void @llvm.coro.destroy(ptr " + hd + ")")
+        s_aw = emit_line(s_aw, "  call void @free(ptr " + vb + ")")
+        s_aw = emit_line(s_aw, "  call void @free(ptr " + aw_fut.name + ")")
+        return s_aw
     }
     if kind == "block_on" {
         let bo_dest: Value = instr_dest(inst)
         let bo_fut: Value = instr_block_on_future(inst)
-        let mut s_bo: EmitState = emit_line(st, "  ; v5.5.2 block_on (Option A: synchronous, async fns not yet presplit-wrapped)")
-        return emit_copy(s_bo, bo_dest, bo_fut)
+        let n: Int = st.counter
+        let mut s_bo: EmitState = st
+        s_bo.counter = n + 1
+        let tag: String = toString(n)
+        s_bo = emit_line(s_bo, "  ; v5.5.4 block_on " + tag + " — synchronous resume+extract")
+        let hp: String = "%bo.hdl.ptr." + tag
+        let hd: String = "%bo.hdl." + tag
+        let vp: String = "%bo.val.ptr." + tag
+        let vb: String = "%bo.val.box." + tag
+        let vr: String = "%bo.val." + tag
+        s_bo = emit_line(s_bo, "  " + hp + " = getelementptr inbounds {i8, ptr}, ptr " + bo_fut.name + ", i32 0, i32 1")
+        s_bo = emit_line(s_bo, "  " + hd + " = load ptr, ptr " + hp)
+        s_bo = emit_line(s_bo, "  call void @llvm.coro.resume(ptr " + hd + ")")
+        s_bo = emit_line(s_bo, "  " + vp + " = getelementptr inbounds {i8, ptr}, ptr " + bo_fut.name + ", i32 0, i32 1")
+        s_bo = emit_line(s_bo, "  " + vb + " = load ptr, ptr " + vp)
+        s_bo = emit_line(s_bo, "  " + vr + " = load i64, ptr " + vb)
+        s_bo = emit_line(s_bo, "  " + bo_dest.name + " = add i64 0, " + vr)
+        s_bo = emit_line(s_bo, "  call void @llvm.coro.destroy(ptr " + hd + ")")
+        s_bo = emit_line(s_bo, "  call void @free(ptr " + vb + ")")
+        s_bo = emit_line(s_bo, "  call void @free(ptr " + bo_fut.name + ")")
+        return s_bo
     }
     __mn_str_eprint("ERROR: unknown MIR instruction kind: ")
     __mn_str_eprint(kind)
@@ -17647,6 +17704,27 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
     match val_opt {
         Some(val) => {
             let ty: String = st.current_ret_type
+            // v5.5.4 Sh.4 Phase 2 — async fn ret rewrite. The
+            // current_ret_type was set to "ASYNC_PTR:" + inner_ty by
+            // emit_mir_function when entering an async fn. Instead of
+            // emitting `ret <ty> <val>`, we box the value, mark the
+            // Future as Ready, store the box into the payload slot,
+            // and branch to %coro.final (the shared epilogue block).
+            // Mirrors emit_llvm_text.py:2613–2628.
+            if ty.starts_with("ASYNC_PTR:") {
+                let inner_ty: String = ty.substr(10, len(ty) - 10)
+                let mut sa: EmitState = emit_drop_glue(st, val.name, inner_ty)
+                let n: Int = sa.counter
+                sa.counter = n + 1
+                let box_name: String = "%ret.box." + toString(n)
+                let slot_name: String = "%ret.val.slot." + toString(n)
+                sa = emit_line(sa, "  " + box_name + " = call ptr @malloc(i64 8)")
+                sa = emit_line(sa, "  store " + inner_ty + " " + val.name + ", ptr " + box_name)
+                sa = emit_line(sa, "  store i8 1, ptr %future")
+                sa = emit_line(sa, "  " + slot_name + " = getelementptr inbounds {i8, ptr}, ptr %future, i32 0, i32 1")
+                sa = emit_line(sa, "  store ptr " + box_name + ", ptr " + slot_name)
+                return emit_line(sa, "  br label %coro.final")
+            }
             if ty == "void" {
                 let mut sv: EmitState = emit_drop_glue(st, "", ty)
                 return emit_line(sv, emit_ret_void())
@@ -17671,6 +17749,14 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
             // For non-void functions, emit zeroinitializer return (dead code from
             // match arms that all terminate). For void functions, emit ret void.
             let ret_ty: String = st.current_ret_type
+            // v5.5.4 Sh.4 Phase 2 — async fn ret void rewrite.
+            // No value to box; just mark the Future as Ready (null
+            // payload) and branch to the epilogue.
+            if ret_ty.starts_with("ASYNC_PTR:") {
+                let mut svn: EmitState = emit_drop_glue(st, "", "void")
+                svn = emit_line(svn, "  store i8 1, ptr %future")
+                return emit_line(svn, "  br label %coro.final")
+            }
             let mut sv2: EmitState = emit_drop_glue(st, "", ret_ty)
             if ret_ty != "void" {
                 return emit_line(sv2, "  ret " + ret_ty + " zeroinitializer")
@@ -17935,9 +18021,19 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         }
     }
 
+    // v5.5.4 Sh.4 Phase 2 — async fn detection. When true, the
+    // emitter wraps the function body in a presplit-coroutine frame:
+    // coro.entry prologue + initial suspend + rewrite each ret to
+    // store-into-future.payload + br %coro.final + append coro.final
+    // / coro.cleanup / coro.ret epilogue. ret_ty stays the ORIGINAL
+    // declared type T (used for box allocation in emit_mir_return);
+    // abi_ret below becomes "ptr" (the Future<T> handle).
+    let is_async: Bool = fn_is_async(f)
+
     // v5.0.4 Cb.15: use per-target ABI classifier for return sret.
     // Argument passing still uses is_byref_type_st (64B threshold).
-    let use_sret: Bool = use_sret_return(st, ret_ty) && f.name != "main"
+    // v5.5.4: async fns never use sret (always return ptr directly).
+    let use_sret: Bool = use_sret_return(st, ret_ty) && f.name != "main" && !is_async
 
     // Build parameter list with byref adjustments
     let mut params_str: String = ""
@@ -17966,15 +18062,29 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         }
     }
 
-    // Register function (with original types for caller resolution)
-    let entry: FnEntry = new_fn_entry(f.name, ret_ty, param_types)
+    // Register function (with original types for caller resolution).
+    // v5.5.4 Sh.4 Phase 2: async fns register with ret_type="ptr" so
+    // callers emit `call ptr @foo()` — matching the ABI that the
+    // coroutine prologue actually returns (a Future<T> handle). The
+    // per-instance ret_ty variable stays the original T and is used
+    // locally for box allocation inside emit_mir_return.
+    // find_function searches backwards, so this entry overrides the
+    // forward-declare entry at emit_mir_module.
+    let mut reg_ret_ty: String = ret_ty
+    if is_async { reg_ret_ty = "ptr" }
+    let entry: FnEntry = new_fn_entry(f.name, reg_ret_ty, param_types)
     let mut s: EmitState = st
     s.functions.push(entry)
 
     // Track current function's return type and sret flag
-    // main() uses i32 return (C ABI) for clean exit codes
+    // main() uses i32 return (C ABI) for clean exit codes.
+    // v5.5.4 Sh.4 Phase 2: async fns flag via an "ASYNC_PTR:" prefix
+    // so emit_mir_return can branch to the ret-rewrite path while
+    // still knowing the inner T for box allocation.
     if f.name == "main" {
         s.current_ret_type = "i32"
+    } else if is_async {
+        s.current_ret_type = "ASYNC_PTR:" + ret_ty
     } else {
         s.current_ret_type = ret_ty
     }
@@ -18015,10 +18125,52 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     if use_sret { abi_ret = "void" }
     // main() returns i32 (C ABI) instead of void for clean exit codes
     if fn_name == "main" { abi_ret = "i32" }
+    // v5.5.4 Sh.4 Phase 2 — async fn ABI: return type is always the
+    // Future handle (ptr), regardless of declared T.  The actual
+    // result is carried inside the Future struct (set in emit_mir_return).
+    let mut coro_attr: String = ""
+    if is_async {
+        abi_ret = "ptr"
+        coro_attr = " presplitcoroutine"
+    }
     // v4.97.0: nounwind willreturn on all user-defined functions.
     // Mapanare has no exceptions (nounwind) and all functions terminate (willreturn).
     // Matches Python bootstrap at emit_llvm_text.py:2239-2244.
-    s = emit_line(s, visibility + " " + abi_ret + " @" + fn_name + "(" + params_str + ") nounwind willreturn {")
+    s = emit_line(s, visibility + " " + abi_ret + " @" + fn_name + "(" + params_str + ") nounwind willreturn" + coro_attr + " {")
+
+    // v5.5.4 Sh.4 Phase 2 — async fn coroutine prologue.
+    // Emitted as a synthetic `coro.entry:` block that runs before
+    // the user's entry block. It sets up the coroutine frame, the
+    // Future struct that will be returned immediately (at initial
+    // suspend), and switches into either %pre_entry (normal resume)
+    // or %coro.cleanup (caller destroys the coroutine before it
+    // completes). pre_entry is a trampoline to the MIR's first basic
+    // block; this avoids having to reshuffle parameter stores that
+    // the lowerer already placed inside the MIR entry.  Mirrors
+    // mapanare/emit_llvm_text.py:2572–2605.
+    if is_async {
+        s = emit_line(s, "coro.entry:")
+        s = emit_line(s, "  %coro.id = call token @llvm.coro.id(i32 0, ptr null, ptr null, ptr null)")
+        s = emit_line(s, "  %coro.size = call i64 @llvm.coro.size.i64()")
+        s = emit_line(s, "  %coro.mem = call ptr @malloc(i64 %coro.size)")
+        s = emit_line(s, "  %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)")
+        s = emit_line(s, "  %future = call ptr @malloc(i64 16)")
+        s = emit_line(s, "  store i8 0, ptr %future")
+        s = emit_line(s, "  %future.hdl.slot = getelementptr inbounds {i8, ptr}, ptr %future, i32 0, i32 1")
+        s = emit_line(s, "  store ptr %coro.hdl, ptr %future.hdl.slot")
+        s = emit_line(s, "  %coro.init.save = call token @llvm.coro.save(ptr %coro.hdl)")
+        s = emit_line(s, "  %coro.init.susp = call i8 @llvm.coro.suspend(token %coro.init.save, i1 false)")
+        s = emit_line(s, "  switch i8 %coro.init.susp, label %coro.ret [")
+        s = emit_line(s, "    i8 0, label %pre_entry")
+        s = emit_line(s, "    i8 1, label %coro.cleanup")
+        s = emit_line(s, "  ]")
+        s = emit_line(s, "pre_entry:")
+        if len(f.blocks) > 0 {
+            s = emit_line(s, "  br label %" + f.blocks[0].label)
+        } else {
+            s = emit_line(s, "  br label %coro.final")
+        }
+    }
 
     // Emit basic blocks — entry block gets byref param fixup.
     // Extracted from single loop to avoid return-in-for and else-branch bugs.
@@ -18127,6 +18279,31 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         }
     }
 
+    // v5.5.4 Sh.4 Phase 2 — async fn coroutine epilogue.
+    // Three trailing blocks: coro.final (final suspend — keeps the
+    // frame alive so the caller can read the Future's result),
+    // coro.cleanup (frees the frame memory), coro.ret (ends the
+    // coroutine and returns the Future handle).  All `ret` in the
+    // user body were rewritten by emit_mir_return to `br %coro.final`
+    // + box-payload store; this trio is their landing pad. Mirrors
+    // mapanare/emit_llvm_text.py:2669–2685.
+    if is_async {
+        s = emit_line(s, "coro.final:")
+        s = emit_line(s, "  %coro.final.save = call token @llvm.coro.save(ptr %coro.hdl)")
+        s = emit_line(s, "  %coro.final.susp = call i8 @llvm.coro.suspend(token %coro.final.save, i1 true)")
+        s = emit_line(s, "  switch i8 %coro.final.susp, label %coro.ret [")
+        s = emit_line(s, "    i8 0, label %coro.ret")
+        s = emit_line(s, "    i8 1, label %coro.cleanup")
+        s = emit_line(s, "  ]")
+        s = emit_line(s, "coro.cleanup:")
+        s = emit_line(s, "  %coro.mem.free = call ptr @llvm.coro.free(token %coro.id, ptr %coro.hdl)")
+        s = emit_line(s, "  call void @free(ptr %coro.mem.free)")
+        s = emit_line(s, "  br label %coro.ret")
+        s = emit_line(s, "coro.ret:")
+        s = emit_line(s, "  call i1 @llvm.coro.end(ptr %coro.hdl, i1 false, token none)")
+        s = emit_line(s, "  ret ptr %future")
+    }
+
     s = emit_line(s, "}")
     return emit_blank(s)
 }
@@ -18231,7 +18408,14 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     for _ in 0..5000 {
         if dix < nmodfns {
             let f_decl: MIRFunction = module.functions[dix]
-            let ret_ty: String = resolve_mir_type(f_decl.return_type)
+            // v5.5.4 Sh.4 Phase 2 — async fns have ABI return type
+            // ptr (Future<T> handle) regardless of declared T. The
+            // caller's BlockOn/AwaitSuspend handlers consume the ptr
+            // and extract the inner T via GEP + load.
+            let mut ret_ty: String = resolve_mir_type(f_decl.return_type)
+            if fn_is_async(f_decl) {
+                ret_ty = "ptr"
+            }
             let mut fparams: String = ""
             let mut fpi: Int = 0
             let nfwdparams: Int = len(f_decl.params)

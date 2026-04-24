@@ -18,6 +18,38 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.5.4** (shipped) — **Sh.4 Option B Phase 1 — real LLVM
+  coroutines.** First real-coroutine release. Ships
+  `presplitcoroutine` + full `@llvm.coro.id/begin/save/
+  suspend/end` pipeline on async fns. `opt -O1` runs
+  CoroSplit and produces `@foo.resume` + `@foo.destroy` split
+  functions (verified). All 5 Sh.4 goldens execute correctly
+  through the real LLVM coroutine ABI: 55→42, 56→43, 57→110,
+  58→done, 59→220. Phase 0 empirical findings: (Q2) `llc
+  -O2` alone crashes on coro intrinsics — `opt -O1 in.ll |
+  llc -O2` pipeline required; (Q3) Ve.1 stage3 regression is
+  orthogonal to async, stage2.ll remains llvm-as clean.
+  Changes: `mir_opt.mn::should_inline` skips async fns (+9
+  LOC); `emit_llvm.mn` (+~190 LOC) adds `is_async` gate to
+  `emit_mir_function` (ptr return + presplitcoroutine attr +
+  coro.entry prologue + pre_entry trampoline + coro.final/
+  cleanup/ret epilogue), `emit_mir_return` rewrites `ret
+  <ty> <val>` to box-payload store + `br %coro.final` via a
+  `"ASYNC_PTR:"` prefix on `current_ret_type`, and
+  `emit_mir_by_kind` replaces Option A's copy-based
+  AwaitSuspend/BlockOn with real `llvm.coro.resume` + GEP +
+  load + `llvm.coro.destroy` + free (bundled together
+  because async fns now return `ptr` not the declared T).
+  FnEntry registration bumped to ret_type="ptr" for async in
+  both forward-declare and per-function sites. v4.102.0
+  handle-reload foot-gun respected: handle loaded once pre-
+  resume, reused for coro.destroy. Goldens 59/66 preserved;
+  stage2.ll 194,052 lines / 906 defines, llvm-as clean;
+  valgrind 0 errors on 55. Scheduler still declared but
+  unused — v5.5.5 adds scheduler-driven await, v5.5.6 adds
+  scheduler-driven block_on + main lifecycle. Risks R1-R7
+  from DESIGN.md §6 all mitigated or deferred appropriately.
+  See `docs/roadmap/v5/v5.5.4/SESSION_REPORT.md`.
 - **v5.5.3** (shipped) — **Self-hosted coroutine emission
   design (docs-only).** Zero code changes. Ships one 480-line
   `DESIGN.md` that (1) re-validates v4.67.0 DESIGN.md against

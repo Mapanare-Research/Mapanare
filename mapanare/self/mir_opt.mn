@@ -581,6 +581,18 @@ fn should_inline(callee: MIRFunction, call_count: Int) -> Bool {
     if len(callee.blocks) != 1 { return false }
     if is_recursive(callee) { return false }
     if callee.name == "main" { return false }
+    // v5.5.4 Sh.4 Phase 1: never inline async fns. In v5.5.4+ the
+    // emitter wraps every async fn with coroutine scaffolding
+    // (presplitcoroutine attr + coro.id/begin prologue + future
+    // alloc + initial suspend + ret→future.payload rewrite + coro.
+    // final/cleanup/ret epilogue). Inlining that body into a non-
+    // async caller would splice coroutine intrinsics into a
+    // non-presplit function — LLVM's CoroSplit pass wouldn't run
+    // and the IR would be malformed. Safe to reject categorically
+    // because async fns are called via BlockOn or AwaitSuspend
+    // (which handle the future extraction), never invoked as a
+    // plain call whose result is used directly.
+    if fn_is_async(callee) { return false }
     let body_size: Int = instruction_count(callee)
     if body_size == 0 { return false }
     if body_size > 20 { return false }
