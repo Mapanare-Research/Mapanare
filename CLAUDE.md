@@ -763,12 +763,21 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
-- **v5.4.5** — **Close Rt.04 + fix Ve.1 regression.** Re-lift the
-  `%struct.*` aggregate-return guard with a size gate (skip field
-  walk when struct has >N fields, or when the calling function has
-  >M tracked slots). Diagnose and remediate the Ve.1 regression
-  introduced in v5.4.4 (mnc-stage2 segfault during lex of
-  mnc_all.mn).
+- **v5.6.5** — **Ve.1 fix — parser list-growth surgery, stage3
+  restored.** `parse_fn_body` writes 8 B past a 256-byte malloc'd
+  block; `mnc-stage2` SIGSEGVs before emitting any stage3.ll. v5.5.7
+  valgrind investigation localised the root cause; v5.6.5 does the
+  ASan-symbolic trace + surgical fix (runtime `__mn_list_push` grow
+  path, parser direct-write, or hand-rolled buffer — whichever
+  Phase 1 reveals). Validates via non-empty `verify_fixed_point.sh`
+  stage3.ll. See `docs/roadmap/v5/v5.6.5/PLAN.md`.
+- **v5.6.6** — **Rt.04 close — `%struct.*` guard-lift with size
+  gate.** Re-lifts v5.4.4's reverted one-level struct-field walk,
+  gated by `ret_ty_is_aggregate` on ≤8 fields AND ≤50 tracked
+  ownership slots. Walks the 2-field `%struct.St` in 62_list_output
+  while skipping the 24-field `%struct.EmitState` that caused
+  v5.4.4's 5× stage2.ll explosion. Closes the last known
+  Mapanare-side leak. See `docs/roadmap/v5/v5.6.6/PLAN.md`.
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
@@ -1026,7 +1035,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27648 symbols, 61416 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27694 symbols, 61461 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
