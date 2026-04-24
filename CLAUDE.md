@@ -18,6 +18,31 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.5.1** (shipped) — **Sh.4 Phase 2 — MIR variants +
+  lowerer.** Adds `AwaitSuspend(Value, Value)` + `BlockOn(Value,
+  Value)` to `mir.mn::Instruction`, matching string-tag
+  dispatch branches (`"await_suspend"` / `"block_on"`) in
+  `instr_kind` + `instr_dest`, plus accessors for the future
+  operand. New helper `fn_is_async(f: MIRFunction) -> Bool`
+  scans the existing `decorators` list for `"async"` —
+  non-invasive, no struct-layout change, no Reg.1 registry
+  bump. The parser already stashes `async fn` as a `"async"`
+  decorator (`parser.mn:797–798`); the helper is the
+  authoritative check the v5.5.2 emitter will use to wrap the
+  function body in a coroutine frame. `lower.mn` now emits
+  `Instruction::AwaitSuspend(dest, inner)` for `await expr`
+  (was a silent pass-through previously) and
+  `Instruction::BlockOn(dest, args[0])` for `block_on(future)`
+  (before monomorphization; mirrors `lower.py:1836–1845`).
+  `emit_llvm.mn` gets stub handlers for both kinds that emit a
+  comment line — prevents the `ERROR: unknown MIR instruction
+  kind` stderr spam while keeping IR text stable and
+  inspectable. Stub IR references undefined SSA names for
+  dest; `llvm-as` still rejects — that's v5.5.2's fix.
+  Goldens harness 59/66 unchanged (v5.5.0 already bumped it).
+  Self-hosting preserved: stage1 compiles `mnc_all.mn` →
+  191,802-line stage2.ll / 908 defines / 0 stderr. 7 FAIL
+  unchanged. See `docs/roadmap/v5/v5.5.1/`.
 - **v5.5.0** (shipped) — **Sh.4 Phase 1 — async builtin semantic
   registration.** Micro-release split: the original monolithic
   v5.5.0 plan (builtins + lower + emit + close Sh.4) re-scoped

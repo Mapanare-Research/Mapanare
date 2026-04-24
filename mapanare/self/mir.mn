@@ -225,7 +225,15 @@ enum Instruction {
     // SSA
     Phi(Value, List<PhiEntry>),
     // v5.4.0 Own.1 Phase 2 — ownership transfer marker (no dest)
-    Move(Value)
+    Move(Value),
+    // v5.5.1 Sh.4 Phase 2 — coroutine suspension + block-on wait.
+    // AwaitSuspend(dest, future): inside an async fn, suspend until the
+    // future is ready, then extract T. The emitter (v5.5.2) lowers to
+    // coro.save + coro.suspend + switch + fast-path readiness check.
+    // BlockOn(dest, future): outside an async fn (e.g. main), drive the
+    // coroutine to completion via __mn_coro_scheduler_run, then extract T.
+    AwaitSuspend(Value, Value),
+    BlockOn(Value, Value)
 }
 
 // ---------------------------------------------------------------------------
@@ -542,7 +550,9 @@ pub fn instr_kind(i: Instruction) -> String {
         StreamOp(_, _, _, _) => { return "stream_op" },
         InterpConcat(_, _) => { return "interp_concat" },
         Phi(_, _) => { return "phi" },
-        Move(_) => { return "move" }
+        Move(_) => { return "move" },
+        AwaitSuspend(_, _) => { return "await_suspend" },
+        BlockOn(_, _) => { return "block_on" }
     }
 }
 
@@ -582,6 +592,8 @@ pub fn instr_dest(i: Instruction) -> Value {
         StreamOp(d, _, _, _) => { return d },
         InterpConcat(d, _) => { return d },
         Phi(d, _) => { return d },
+        AwaitSuspend(d, _) => { return d },
+        BlockOn(d, _) => { return d },
         _ => { return void_value() }
     }
 }
@@ -872,4 +884,27 @@ pub fn instr_phi_entries(i: Instruction) -> List<PhiEntry> {
 // Move (v5.4.0 Own.1 Phase 2)
 pub fn instr_move_val(i: Instruction) -> Value {
     match i { Move(v) => { return v }, _ => { return void_value() } }
+}
+
+// AwaitSuspend / BlockOn (v5.5.1 Sh.4 Phase 2)
+pub fn instr_await_suspend_future(i: Instruction) -> Value {
+    match i { AwaitSuspend(_, f) => { return f }, _ => { return void_value() } }
+}
+pub fn instr_block_on_future(i: Instruction) -> Value {
+    match i { BlockOn(_, f) => { return f }, _ => { return void_value() } }
+}
+
+// v5.5.1 Sh.4 Phase 2: scan the function's decorators for "async".
+// The parser stashes `async fn` as a decorator per parser.mn:797-798;
+// this is the authoritative check for "is this a coroutine function"
+// that the emitter will use in v5.5.2 when wrapping the function body
+// with coro.id/coro.begin/initial-suspend.
+pub fn fn_is_async(f: MIRFunction) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..512 {
+        if i >= len(f.decorators) { return false }
+        if f.decorators[i] == "async" { return true }
+        i = i + 1
+    }
+    return false
 }

@@ -1251,8 +1251,13 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
         return lower_sync(st, expr_sync_inner(expr))
     }
     if ek == "await" {
-        // Single-threaded await: just evaluate the inner expression inline
-        return lower_expr(st, expr_await_inner(expr))
+        // v5.5.1 Sh.4 Phase 2: emit AwaitSuspend MIR so the v5.5.2
+        // emitter can wrap this in coro.save + coro.suspend + switch.
+        // The inner expression evaluates to a Future<T>; dest receives T.
+        let inner_r: LowerResult = lower_expr(st, expr_await_inner(expr))
+        let dr_aw: LowerResult = make_value(inner_r.state, mir_unknown(), "t")
+        let s_aw: LowerState = emit_instr(dr_aw.state, Instruction::AwaitSuspend(dr_aw.value, inner_r.value))
+        return new_lower_result(dr_aw.value, s_aw)
     }
     if ek == "send" {
         return lower_send(st, expr_send_target(expr), expr_send_value(expr))
@@ -2037,6 +2042,19 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
 }
 
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    // v5.5.1 Sh.4 Phase 2: block_on(future) — drive a coroutine to
+    // completion from non-async context (e.g. main). Emit BlockOn MIR
+    // so the v5.5.2 emitter can lower to scheduler_register +
+    // scheduler_run + coro.destroy + value extraction.  Checked before
+    // monomorphization: block_on is a builtin, not a user-defined fn.
+    if fn_name == "block_on" {
+        if len(args) == 1 {
+            let dr_bo: LowerResult = make_value(st, mir_unknown(), "t")
+            let s_bo: LowerState = emit_instr(dr_bo.state, Instruction::BlockOn(dr_bo.value, args[0]))
+            return new_lower_result(dr_bo.value, s_bo)
+        }
+    }
+
     // Monomorphize generic function calls
     let mono_r: LowerResult = try_monomorphize_call(st, fn_name, args)
     if mono_r.value.name != "%void" { return mono_r }
