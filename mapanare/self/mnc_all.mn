@@ -18877,6 +18877,54 @@ fn emit_drop_glue_boxed(st: EmitState, ret_box_ptrs: List<String>) -> EmitState 
     return s
 }
 
+// v5.6.4 — tensor drop-glue (Rt.06).
+//
+// Mirrors emit_drop_glue_boxed: single `ptr` slot type, but calls
+// __mn_tensor_free instead of @free. Runtime C guard at
+// runtime/native/mapanare_gpu_builtins.c handles null (`if (!t) return`)
+// — safe to call on the zero-initialised first-iter slot value.
+//
+// When ret_tensor_ptrs is non-empty, emit the same icmp-eq-or chain
+// as the string / list / boxed helpers and short-circuit frees that
+// alias the escaping return value. Over-approximates per PLAN §D4:
+// the same ptr also lands in ret_box_ptrs, but each helper matches
+// against its own slot list, so there is no double-free on the
+// matching helper and no missed-free on the non-matching one
+// (slots in the other list simply don't overlap).
+fn emit_drop_glue_tensors(st: EmitState, ret_tensor_ptrs: List<String>) -> EmitState {
+    let mut s: EmitState = st
+    let n: Int = len(s.tensor_owned)
+    let ns: Int = len(s.tensor_owned_source)
+    let nret: Int = len(ret_tensor_ptrs)
+    let mut i: Int = 0
+    for _ in 0..1024 {
+        if i >= n { return s }
+        let name: String = s.tensor_owned[i]
+        let mut source: String = ""
+        if i < ns { source = s.tensor_owned_source[i] }
+        let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
+        if !is_moved {
+            let cnt: Int = s.counter
+            s.counter = s.counter + 1
+            let tvtmp: String = "%drop.tv" + toString(cnt)
+            s = emit_line(s, "  " + tvtmp + " = load ptr, ptr %" + name)
+            if nret > 0 {
+                let free_lbl: String = "drop.tfree." + toString(cnt)
+                let skip_lbl: String = "drop.tskip." + toString(cnt)
+                s = emit_or_reduce_ret_match(s, tvtmp, ret_tensor_ptrs, cnt, "t", skip_lbl, free_lbl)
+                s = emit_line(s, free_lbl + ":")
+                s = emit_line(s, "  call void @__mn_tensor_free(ptr " + tvtmp + ")")
+                s = emit_line(s, "  br label %" + skip_lbl)
+                s = emit_line(s, skip_lbl + ":")
+            } else {
+                s = emit_line(s, "  call void @__mn_tensor_free(ptr " + tvtmp + ")")
+            }
+        }
+        i = i + 1
+    }
+    return s
+}
+
 // v5.5.7 — destroy-path drop-glue for coroutines.
 //
 // Called from coro.cleanup before `coro.free` when the scheduler
@@ -18948,6 +18996,26 @@ fn emit_drop_glue_destroy(st: EmitState) -> EmitState {
             s = emit_line(s, "  call void @free(ptr " + btmp + ")")
         }
         k = k + 1
+    }
+    // Tensors (v5.6.4 Rt.06). Parallel to the three loops above;
+    // __mn_tensor_free is null-tolerant so loading a never-written
+    // slot is a no-op.
+    let nt: Int = len(s.tensor_owned)
+    let mut m: Int = 0
+    for _ in 0..1024 {
+        if m >= nt { break }
+        let tname: String = s.tensor_owned[m]
+        let mut tsource: String = ""
+        if m < len(s.tensor_owned_source) { tsource = s.tensor_owned_source[m] }
+        let t_is_moved: Bool = (len(tsource) > 0) && list_has_string(s.moved_locals, tsource)
+        if !t_is_moved {
+            let cnt3: Int = s.counter
+            s.counter = s.counter + 1
+            let ttmp: String = "%drop.d.t" + toString(cnt3)
+            s = emit_line(s, "  " + ttmp + " = load ptr, ptr %" + tname)
+            s = emit_line(s, "  call void @__mn_tensor_free(ptr " + ttmp + ")")
+        }
+        m = m + 1
     }
     return s
 }
