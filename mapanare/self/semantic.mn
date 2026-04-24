@@ -721,6 +721,47 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
         return new_infer_result(unknown_type(), st_ti)
     }
 
+    // v5.6.3 Sh.6 Phase 4 — tensor slicing `a[1..3, _]`. Walk the object
+    // and every item's expression(s) for diagnostics. Result type is
+    // Tensor<T> (same as input — rank is preserved/reduced at runtime,
+    // not compile-time). Mirrors mapanare/semantic.py's TensorSlice arm.
+    if ek == "tensor_slice" {
+        let sl_obj_r: InferResult = infer_expr(st, expr_slice_obj(expr))
+        let mut st_sl: SemState = sl_obj_r.st
+        let sl_items: List<IndexItem> = expr_slice_items(expr)
+        let mut sl_i: Int = 0
+        let n_items: Int = len(sl_items)
+        for _ in 0..128 {
+            if sl_i < n_items {
+                let it: IndexItem = sl_items[sl_i]
+                if it.kind == "scalar" {
+                    let scr: InferResult = infer_expr(st_sl, it.expr)
+                    st_sl = scr.st
+                }
+                if it.kind == "range" {
+                    let rs_kind: String = expr_kind(it.start)
+                    if rs_kind != "none_lit" {
+                        let rsr: InferResult = infer_expr(st_sl, it.start)
+                        st_sl = rsr.st
+                    }
+                    let re_kind: String = expr_kind(it.end)
+                    if re_kind != "none_lit" {
+                        let rer: InferResult = infer_expr(st_sl, it.end)
+                        st_sl = rer.st
+                    }
+                }
+                sl_i = sl_i + 1
+            }
+        }
+        if type_is_error(sl_obj_r.type_info) {
+            return new_infer_result(error_type(), st_sl)
+        }
+        if sl_obj_r.type_info.name == "Tensor" {
+            return new_infer_result(sl_obj_r.type_info, st_sl)
+        }
+        return new_infer_result(unknown_type(), st_sl)
+    }
+
     if ek == "pipe" { return check_pipe_expr(st, expr_pipe_left(expr), expr_pipe_right(expr)) }
 
     if ek == "range" {
