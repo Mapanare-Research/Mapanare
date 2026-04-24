@@ -72,7 +72,8 @@ class TestWildcardSubscript:
 
     def test_wildcard_with_scalar_2d(self):
         _parses(
-            "let d = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]\n" "let col = d[_, 0]\nprint(str(col[0]))"
+            "let d = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]\n"
+            "let col = d[_, 0]\nprint(str(col[0]))"
         )
 
 
@@ -86,9 +87,7 @@ class TestScalarPreserved:
         _parses("let a = Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]\n" "print(str(a[1, 1]))")
 
     def test_three_scalars_tensor(self):
-        _parses(
-            "let a = Tensor<Float>[[[1.0, 2.0]], [[3.0, 4.0]]]\n" "print(str(a[1, 0, 0]))"
-        )
+        _parses("let a = Tensor<Float>[[[1.0, 2.0]], [[3.0, 4.0]]]\n" "print(str(a[1, 0, 0]))")
 
 
 class TestMixedItems:
