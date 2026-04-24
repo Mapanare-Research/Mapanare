@@ -54,12 +54,12 @@ test	compile_rc	run_rc	leak_count	leak_bytes	first_frame	class
 52_tensor_slicing	0	0	0	0	-	CLEAN
 53_linear_regression	0	0	0	0	-	CLEAN
 54_const_basic	0	0	0	0	-	CLEAN
-55_async_basic	1	-	-	-	-	COMPILE_FAIL
-56_async_await	1	-	-	-	-	COMPILE_FAIL
-57_real_await	1	-	-	-	-	COMPILE_FAIL
-58_async_file_io	1	-	-	-	-	COMPILE_FAIL
+55_async_basic	0	-	-	-	llc	LINK_FAIL
+56_async_await	0	-	-	-	llc	LINK_FAIL
+57_real_await	0	-	-	-	llc	LINK_FAIL
+58_async_file_io	0	-	-	-	llc	LINK_FAIL
 58_const_scope	0	0	0	0	-	CLEAN
-59_async_fanout	1	-	-	-	-	COMPILE_FAIL
+59_async_fanout	0	-	-	-	llc	LINK_FAIL
 62_list_output	0	0	9	141	__mn_alloc	LEAK
 63_else_sino	0	0	0	0	-	CLEAN
 64_closure_typed	1	-	-	-	-	COMPILE_FAIL
