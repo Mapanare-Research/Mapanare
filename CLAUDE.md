@@ -18,6 +18,30 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.5.3** (shipped) — **Self-hosted coroutine emission
+  design (docs-only).** Zero code changes. Ships one 480-line
+  `DESIGN.md` that (1) re-validates v4.67.0 DESIGN.md against
+  v5.5.x context, (2) surveys how Rust / Go / C++20 / Zig
+  handle async and confirms LLVM switched-resume coroutines
+  remain the correct choice, (3) maps the 6 remaining
+  emitter-side gaps between v5.5.2's synchronous Option A
+  stubs and full Python-parity coroutine emission, (4)
+  specifies implementation phases v5.5.4 (inliner gate + async
+  fn structural rewrite, ~155 LOC) → v5.5.5 (AwaitSuspend,
+  ~90 LOC) → v5.5.6 (BlockOn + main scheduler lifecycle,
+  ~80 LOC) → v5.5.7 (sanitizer hardening) → v5.5.8 (spawn +
+  join + multi-fanout golden) → v5.5.9 (PARITY_GAPS.md Sh.4
+  Historical + docs). User directive: "no cheap shit that
+  bites us later" — Option A silently degrades any async fn
+  with real I/O to single-threaded blocking. v5.5.4+ ships
+  the real thing: `presplitcoroutine` attribute + full
+  `@llvm.coro.id/size/begin/save/suspend/end` pipeline +
+  `{i8 state, ptr payload}` Future struct + real scheduler
+  drive via the existing C runtime API (which has been
+  complete and TSan-clean since v5.1.4 — no runtime work
+  needed). Risk register flags drop-glue × coroutine cleanup
+  as HIGH; Ve.1 (stage3 segfault) noted as adjacent concern.
+  Goldens 59/66 unchanged. See `docs/roadmap/v5/v5.5.3/`.
 - **v5.5.2** (shipped) — **Sh.4 Phase 3 (Option A) — synchronous
   async emission.** Ships coroutine intrinsic + scheduler
   runtime declarations (17 decls total: 6 `__mn_coro_scheduler_*`
@@ -465,7 +489,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27160 symbols, 60866 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27221 symbols, 60933 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
