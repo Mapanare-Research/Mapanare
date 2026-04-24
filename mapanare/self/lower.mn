@@ -1238,6 +1238,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     if ek == "tensor_index" {
         return lower_tensor_index_get(st, expr_ti_obj(expr), expr_ti_indices(expr))
     }
+    if ek == "tensor_slice" {
+        return lower_tensor_slice(st, expr_slice_obj(expr), expr_slice_items(expr))
+    }
     if ek == "pipe" {
         return lower_pipe(st, expr_pipe_left(expr), expr_pipe_right(expr))
     }
@@ -2515,6 +2518,27 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
         return lower_push_method(s, obj, obj_r, arg_exprs)
     }
 
+    // v5.6.3 Sh.6 Phase 4 — tensor reduction methods
+    // `a.sum()/.mean()/.max()/.min()/.argmax()/.argmin()` route to the
+    // `__mn_tensor_{method}_{f64,i64}` runtime family. mean always goes
+    // to the f64 variant (no _i64 runtime). Mirrors
+    // mapanare/lower.py::_lower_method_call:2503-2522.
+    if is_tensor_reduction_method(method) {
+        if obj_r.value.ty.kind == TK_TENSOR() {
+            let elem_kind_red: Int = tensor_elem_kind_of(obj_r.value)
+            let mut ty_suffix: String = "f64"
+            if elem_kind_red == TK_INT() { ty_suffix = "i64" }
+            if method == "mean" { ty_suffix = "f64" }
+            let red_fn: String = "__mn_tensor_" + method + "_" + ty_suffix
+            let red_ret_ty: MIRType = tensor_reduction_ret_ty(method, elem_kind_red)
+            let red_dest: LowerResult = make_value(s, red_ret_ty, "tred")
+            let mut red_args: List<Value> = []
+            red_args.push(obj_r.value)
+            let s_red: LowerState = emit_instr(red_dest.state, Instruction::Call(red_dest.value, red_fn, red_args))
+            return new_lower_result(red_dest.value, s_red)
+        }
+    }
+
     // Build arg list: [obj_value, arg_values...]
     let mut all_args: List<Value> = []
     all_args.push(obj_r.value)
@@ -2817,6 +2841,29 @@ fn tensor_elem_kind_of(v: Value) -> Int {
     return TK_FLOAT()
 }
 
+// v5.6.3 Sh.6 Phase 4 — helpers for tensor reduction method dispatch.
+fn is_tensor_reduction_method(m: String) -> Bool {
+    if m == "sum" { return true }
+    if m == "mean" { return true }
+    if m == "max" { return true }
+    if m == "min" { return true }
+    if m == "argmax" { return true }
+    if m == "argmin" { return true }
+    return false
+}
+
+// Return type for a tensor reduction method on element kind `elem_kind`:
+//   sum/max/min → element type (Int or Float)
+//   mean        → always Float (no i64 mean runtime)
+//   argmax/argmin → Int
+fn tensor_reduction_ret_ty(method: String, elem_kind: Int) -> MIRType {
+    if method == "argmax" { return mir_int() }
+    if method == "argmin" { return mir_int() }
+    if method == "mean" { return mir_float() }
+    if elem_kind == TK_INT() { return mir_int() }
+    return mir_float()
+}
+
 fn lower_tensor_index_get(st: LowerState, obj: Expr, indices: List<Expr>) -> LowerResult {
     let obj_r: LowerResult = lower_expr(st, obj)
     let mut s: LowerState = obj_r.state
@@ -2860,6 +2907,113 @@ fn lower_tensor_index_get(st: LowerState, obj: Expr, indices: List<Expr>) -> Low
     let dest_r: LowerResult = make_value(s, elem_ty, "tget")
     s = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, all_args))
     return new_lower_result(dest_r.value, s)
+}
+
+// v5.6.3 Sh.6 Phase 4 — `a[1..3, _]` lowers to a Call to __mn_tensor_slice
+// with flat args `[tensor, s0, s1, ..., e0, e1, ..., rank]`. The emitter
+// special-cases __mn_tensor_slice to repackage the flat args into two
+// stack-allocated [rank × i64] arrays before calling the runtime.
+// Mirrors mapanare/lower.py::_lower_tensor_slice:2788-2835.
+fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> LowerResult {
+    let obj_r: LowerResult = lower_expr(st, obj)
+    let mut s: LowerState = obj_r.state
+
+    let rank: Int = len(items)
+    let mut starts: List<Value> = []
+    let mut ends: List<Value> = []
+
+    let mut d: Int = 0
+    for _ in 0..128 {
+        if d < rank {
+            let it: IndexItem = items[d]
+            if it.kind == "range" {
+                // start
+                let sv: LowerResult = make_value(s, mir_int(), "ci")
+                s = sv.state
+                if expr_kind(it.start) == "none_lit" {
+                    s = emit_instr(s, Instruction::Const(sv.value, mir_int(), "0"))
+                    starts.push(sv.value)
+                } else {
+                    let start_r: LowerResult = lower_expr(s, it.start)
+                    s = start_r.state
+                    starts.push(start_r.value)
+                }
+                // end
+                if expr_kind(it.end) == "none_lit" {
+                    let ev: LowerResult = make_value(s, mir_int(), "ci")
+                    s = emit_instr(ev.state, Instruction::Const(ev.value, mir_int(), "0"))
+                    ends.push(ev.value)
+                } else {
+                    let end_r: LowerResult = lower_expr(s, it.end)
+                    s = end_r.state
+                    ends.push(end_r.value)
+                }
+            } else {
+                if it.kind == "wildcard" {
+                    // start = 0
+                    let sv_w: LowerResult = make_value(s, mir_int(), "ci")
+                    s = emit_instr(sv_w.state, Instruction::Const(sv_w.value, mir_int(), "0"))
+                    starts.push(sv_w.value)
+                    // end = tensor_shape_dim(obj, d)
+                    let dv: LowerResult = make_value(s, mir_int(), "ci")
+                    s = emit_instr(dv.state, Instruction::Const(dv.value, mir_int(), toString(d)))
+                    let shape_dest: LowerResult = make_value(s, mir_int(), "sdim")
+                    s = shape_dest.state
+                    let mut shape_args: List<Value> = []
+                    shape_args.push(obj_r.value)
+                    shape_args.push(dv.value)
+                    s = emit_instr(s, Instruction::Call(shape_dest.value, "tensor_shape_dim", shape_args))
+                    ends.push(shape_dest.value)
+                } else {
+                    // scalar in slice context — treat as [k, k+1]
+                    let scalar_r: LowerResult = lower_expr(s, it.expr)
+                    s = scalar_r.state
+                    starts.push(scalar_r.value)
+                    let one_r: LowerResult = make_value(s, mir_int(), "ci")
+                    s = emit_instr(one_r.state, Instruction::Const(one_r.value, mir_int(), "1"))
+                    let end_d: LowerResult = make_value(s, mir_int(), "send")
+                    s = emit_instr(end_d.state, Instruction::BinOp(end_d.value, BinOpKind::Add, scalar_r.value, one_r.value))
+                    ends.push(end_d.value)
+                }
+            }
+            d = d + 1
+        }
+    }
+
+    // rank constant
+    let rank_r: LowerResult = make_value(s, mir_int(), "trank")
+    s = emit_instr(rank_r.state, Instruction::Const(rank_r.value, mir_int(), toString(rank)))
+
+    // Result type = Tensor<T> (same element type as obj)
+    let elem_kind_sl: Int = tensor_elem_kind_of(obj_r.value)
+    let mut elem_ty_sl: MIRType = mir_float()
+    if elem_kind_sl == TK_INT() { elem_ty_sl = mir_int() }
+    let res_ty: MIRType = mir_tensor_of(elem_ty_sl)
+
+    let dest_sl: LowerResult = make_value(s, res_ty, "tslice")
+    s = dest_sl.state
+
+    // Flat args: [obj, s0, s1, ..., e0, e1, ..., rank]
+    let mut all_args: List<Value> = []
+    all_args.push(obj_r.value)
+    let mut a_i: Int = 0
+    for _ in 0..128 {
+        if a_i < rank {
+            all_args.push(starts[a_i])
+            a_i = a_i + 1
+        }
+    }
+    let mut b_i: Int = 0
+    for _ in 0..128 {
+        if b_i < rank {
+            all_args.push(ends[b_i])
+            b_i = b_i + 1
+        }
+    }
+    all_args.push(rank_r.value)
+
+    s = emit_instr(s, Instruction::Call(dest_sl.value, "__mn_tensor_slice", all_args))
+    return new_lower_result(dest_sl.value, s)
 }
 
 // ---------------------------------------------------------------------------
