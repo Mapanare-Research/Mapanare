@@ -138,7 +138,15 @@ Not parity gaps (both missing), but panel-visible:
 
 - **Sh.4** — tensor reshape — v5.x feature track
 - **Sh.5** — mutable views — v5.x feature track
-- **Sh.6** — stepped slices — v5.x feature track
+- ~~**Sh.6**~~ — ~~tensor literals / indexing / broadcast / slicing /
+  reductions in self-hosted~~ — **CLOSED v5.6.3** (phases 1-4 closed
+  across v5.6.0 / v5.6.1 / v5.6.2 / v5.6.3). All 5 tensor goldens
+  (49/50/51/52/53) run byte-identical to expected output through
+  `mnc-stage1 → llc → clang`. Grep verification:
+  `grep -l "lower_tensor_slice\|tensor_reduction" mapanare/self/lower.mn`
+  returns `mapanare/self/lower.mn`. Stepped slicing (`a[::2]`) and
+  tensor reshape / mutable views remain out of scope — tracked
+  separately as v5.x / v6.0 feature work.
 - **Sh.7** — closure-typed captures — v5.x feature track
 - **Sh.9a** — async test harness — v5.x feature track
 - ~~**Perf.2**~~ — lazy thread creation in coro scheduler — **CLOSED

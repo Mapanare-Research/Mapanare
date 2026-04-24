@@ -18,6 +18,99 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.3** (shipped) — **Sh.6 Phase 4 — tensor slicing +
+  reductions; Sh.6 CLOSED.** Final Sh.6 release. Closes
+  `52_tensor_slicing` end-to-end (first time the golden actually
+  runs byte-identical to the expected output — it was previously
+  a parse-error FAIL because `_` lexed as `NAME` and `a[0..2, _]`
+  produced `error: Undefined variable '_'`) and promotes
+  `53_linear_regression` from PASS-by-function-match to truly
+  runtime-correct (`.sum()` on a tensor previously routed to a
+  generic `call i64 @sum(ptr)` with `llvm-as` rejecting the i64-
+  vs-double type mismatch at `%t47 = fmul double %t45, %t46`).
+  Lexer: `keyword_token_type` in `lexer.mn:186` gains
+  `if name == "_" { return "UNDERSCORE" }` — one-line change;
+  `_foo` / `__bar` / `_1` keep their NAME token type since
+  `scan_ident` collects `[_a-zA-Z0-9]+` and the check is exact-
+  match. Consumer sites need zero edits — `parse_let_stmt` (1449),
+  `parse_for_stmt` (1488), `parse_pattern_alt` (2126) all use
+  `peek_value` which returns the string `"_"` regardless of token
+  type, so throwaway bindings / wildcard patterns continue to
+  parse. AST: new `IndexItem { kind: String, expr: Expr, start:
+  Expr, end: Expr }` struct (kind ∈ scalar/range/wildcard; NoneLit
+  marks unused fields), three constructors, and new
+  `Expr::TensorSlice(Expr, List<IndexItem>)` variant with
+  `expr_slice_obj` / `expr_slice_items` accessors. Parser: new
+  `parse_index_item` helper in `parser.mn` classifies each
+  subscript item with `parse_expr` invoked at `min_prec=7` so the
+  binop loop's `..` handler (prec 6) short-circuits and we
+  classify the item ourselves. 4 forms: UNDERSCORE → wildcard;
+  RANGE prefix → `NoneLit..end`; expression with trailing RANGE →
+  `start..` (if COMMA/RBRACKET next) or `start..end`; else scalar.
+  LBRACKET branch in `parse_postfix` rewritten: items → `Expr::Index`
+  (1 scalar) / `Expr::TensorIndex` (≥2 scalars) / `Expr::TensorSlice`
+  (any non-scalar). 11 parser tests in
+  `tests/parser/test_tensor_slice_wildcard.py`. Semantic:
+  `infer_expr` gains a `"tensor_slice"` arm — walks items for
+  diagnostic emission; result type is `sl_obj_r.type_info`
+  (Tensor<T> preserved — rank tracking is a runtime concern).
+  **Gotcha caught during rebuild:** initial loop variable `si`
+  collided with the Spanish `si` keyword (lexer.mn:141 returns
+  KW_IF); Python bootstrap parser saw `if si < n_items` as `if if
+  < n_items`. Renamed to `sl_i` — `si` remains a valid if-keyword.
+  Lower: three new helpers next to `tensor_elem_kind_of`
+  (`lower.mn:2811`) — `is_tensor_reduction_method` (6-string lookup
+  over sum/mean/max/min/argmax/argmin), `tensor_reduction_ret_ty`
+  (argmax/argmin → Int, mean → Float always, sum/max/min → element-
+  aware), `lower_tensor_slice` (~100 LOC: per-item start/end build;
+  wildcard → `[0, tensor_shape_dim(obj, d)]`; scalar → `[k, k+1]`
+  via BinOp::Add). `lower_method_call` gains reduction dispatch
+  prepended after the `push` special case: guards on
+  `obj.ty.kind == TK_TENSOR()`, builds
+  `__mn_tensor_{method}_{f64,i64}`, forces `_f64` for mean.
+  `lower_expr` routes `"tensor_slice"` to `lower_tensor_slice`.
+  Flat-arg layout for slice: `[obj, s0, s1, ..., e0, e1, ..., rank]`
+  matches Python's `lower.py::_lower_tensor_slice:2788-2835`. Emit:
+  12 new `declare_runtime_fn` calls in `declare_all_runtime` — 11
+  reductions + `__mn_tensor_slice` (`ptr, ptr, ptr, i64`). Reduction
+  `get_fn_attrs` rows are `" nounwind readonly"` (pure over tensor
+  data); slice is `" nounwind"` + `"noalias "` return-prefix (fresh
+  heap). `emit_mir_call` special-case for `__mn_tensor_slice`
+  (inserted before `__mn_tensor_set_i64_nd` block) unpacks the flat-
+  arg layout into two `[ndim × i64]` allocas via gep+store, then
+  emits `call noalias ptr @__mn_tensor_slice(ptr tensor, ptr
+  starts_arr, ptr ends_arr, i64 rank)` — byte-identical to
+  `emit_llvm_text.py:3669-3717`. `__mn_tensor_shape_dim` already
+  declared at line 679 (v5.6.0). All 6 reduction fns +
+  `__mn_tensor_slice` ship in
+  `runtime/native/mapanare_gpu_builtins.c:647-753`; no runtime
+  edits. Harness: 63/66 → **64/66** (52 closes; 53 was already
+  PASS-by-function-match, now also runtime-correct). **Sh.6 now
+  completely closed** — all 5 tensor goldens (49 literal, 50
+  indexing, 51 broadcast, 52 slicing, 53 linear regression) run
+  byte-identical to expected output. Golden 52 output: `15 3 5 1 4
+  0 60 30 1 2 20 30 2 6`. Golden 53 output: `w = 1.96879 / b =
+  0.560177 / converging` matches `w = <approaching 2.0>` / `b =
+  <approaching 1.0>` / `converging`. stage2.ll 204,298 lines
+  (+1.42% vs v5.6.2) / 931 defines (+11), `llvm-as` clean, self-
+  hosting preserved (mnc_all.mn doesn't use the slice/reduction
+  paths, so the 12 decls are emitted unconditionally but no call
+  sites fire during stage2 emission). Non-bootstrap pytest 5564
+  passed (+14 vs v5.6.2 — 11 new parser tests plus collateral from
+  the VERSION macro bump); `make lint` clean;
+  `check_struct_registry.py` 23/23/91 (+2 vs v5.6.2's 89 —
+  `IndexItem` + `IndexItemResult`). ASan 0 ASAN_ERROR / 60 CLEAN /
+  6 CRASH_NO_ASAN (same 6 as v5.6.2 — Python-bootstrap C-backend
+  compile failures on tensor builtins, orthogonal to LLVM path).
+  Ve.1 stage3 segfault persists (pre-existing from v5.4.4, not a
+  v5.6.3 regression). Rt.06 tensor drop-glue gap now formally
+  covers goldens 49/50/51/**52**/53 — emit_track_tensor hook
+  remains v5.6.4+ scope. PARITY_GAPS.md: Sh.6 row flipped to
+  CLOSED with v5.6.3 closure reference. known_issues.md: Sh.6 row
+  also marked CLOSED v5.6.3. What's next: v5.6.4+ Rt.06 drop-
+  glue, v5.7.0 Sh.7 closure + B or-pattern (closes 51/64 for
+  66/66), v5.7.1 SPEC docs polish, v5.8.0 RE-PANEL. See
+  `docs/roadmap/v5/v5.6.3/SESSION_REPORT.md`.
 - **v5.6.2** (shipped) — **Sh.6 Phase 3 — tensor broadcast +
   scalar binops (+/-/*//), golden 51 closed end-to-end.** First
   release where `51_tensor_broadcast` runs byte-identical to the
@@ -589,12 +682,9 @@ Most recent releases (last 6). Full history at
   >M tracked slots). Diagnose and remediate the Ve.1 regression
   introduced in v5.4.4 (mnc-stage2 segfault during lex of
   mnc_all.mn).
-- **v5.6.3** — **Sh.6 Phase 4 — slicing + reductions (goldens
-  52/53).** `.sum()/.mean()/.max()/.min()/.argmax()/.argmin()`
-  method dispatch, range slice `a[0..2]`, wildcard `a[_]`.
 - **v5.6.4+** — **Own.1 Phase 3 — Rt.06 tensor drop-glue.**
   `emit_track_tensor` hook + `__mn_tensor_free` at scope exit.
-  Closes LSan leaks on 49/50/51 tensor goldens.
+  Closes LSan leaks on 49/50/51/52/53 tensor goldens.
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
@@ -681,9 +771,10 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline:** 54/66. The 12 gap: Sh.2 (11), Sh.4 (5),
-Sh.6 (5), Sh.7 (1), bootstrap-also-fails (1). Closure tracked
-across v5.4.0–v5.7.0.
+**Current baseline (v5.6.3):** 64/66. The 2 gap:
+`51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
+`64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
+v5.7.0 for 66/66.
 
 ## Code Style
 
