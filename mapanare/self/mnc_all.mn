@@ -14973,25 +14973,52 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         return s_aw
     }
     if kind == "block_on" {
+        // v5.5.6 Sh.4 Phase 3 — scheduler-driven BlockOn. Replaces
+        // v5.5.4's inline llvm.coro.resume drive. Mirrors the
+        // scheduler-driven path of emit_llvm_text.py:5429-5441 (the
+        // `_module_has_async` branch of `_do_block_on`). The
+        // synchronous fallback is unreachable here because BlockOn is
+        // only lowered inside modules that already contain async fns;
+        // `module_has_async` is therefore true for every main that
+        // reaches this emitter.
+        //
+        // The scheduler runs the caller thread as worker 0 and drives
+        // any additional pre-spawned workers (v5.1.4 lazy-spawn policy)
+        // until `active_tasks == 0`. When it returns, the registered
+        // coroutine's final-suspend path has written `future.state=1`
+        // and stored the boxed payload into future.payload. v4.102.0's
+        // handle-reload foot-gun still applies: slot 1 of the Future
+        // is now the RESULT BOX, not the coroutine handle, so we keep
+        // `%bo.hdl.<tag>` (loaded BEFORE register) around for
+        // llvm.coro.destroy.
         let bo_dest: Value = instr_dest(inst)
         let bo_fut: Value = instr_block_on_future(inst)
         let n: Int = st.counter
         let mut s_bo: EmitState = st
         s_bo.counter = n + 1
         let tag: String = toString(n)
-        s_bo = emit_line(s_bo, "  ; v5.5.4 block_on " + tag + " — synchronous resume+extract")
+        s_bo = emit_line(s_bo, "  ; v5.5.6 block_on " + tag + " — scheduler-driven")
         let hp: String = "%bo.hdl.ptr." + tag
         let hd: String = "%bo.hdl." + tag
         let vp: String = "%bo.val.ptr." + tag
         let vb: String = "%bo.val.box." + tag
         let vr: String = "%bo.val." + tag
+        // Load the handle BEFORE register: scheduler_run overwrites
+        // future.payload with the result box, so re-reading slot 1
+        // afterwards would hand coro.destroy an 8-byte malloc'd int
+        // and segfault.
         s_bo = emit_line(s_bo, "  " + hp + " = getelementptr inbounds {i8, ptr}, ptr " + bo_fut.name + ", i32 0, i32 1")
         s_bo = emit_line(s_bo, "  " + hd + " = load ptr, ptr " + hp)
-        s_bo = emit_line(s_bo, "  call void @llvm.coro.resume(ptr " + hd + ")")
+        // Register + run — drains active_tasks to 0 and participates
+        // as worker 0 alongside any lazily-spawned worker threads.
+        s_bo = emit_line(s_bo, "  call void @__mn_coro_scheduler_register(ptr " + hd + ")")
+        s_bo = emit_line(s_bo, "  call void @__mn_coro_scheduler_run()")
+        // Extract result: payload slot now holds the boxed T.
         s_bo = emit_line(s_bo, "  " + vp + " = getelementptr inbounds {i8, ptr}, ptr " + bo_fut.name + ", i32 0, i32 1")
         s_bo = emit_line(s_bo, "  " + vb + " = load ptr, ptr " + vp)
         s_bo = emit_line(s_bo, "  " + vr + " = load i64, ptr " + vb)
         s_bo = emit_line(s_bo, "  " + bo_dest.name + " = add i64 0, " + vr)
+        // Cleanup — reuse `hd` loaded above (slot 1 is clobbered now).
         s_bo = emit_line(s_bo, "  call void @llvm.coro.destroy(ptr " + hd + ")")
         s_bo = emit_line(s_bo, "  call void @free(ptr " + vb + ")")
         s_bo = emit_line(s_bo, "  call void @free(ptr " + bo_fut.name + ")")
@@ -17806,6 +17833,19 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
                 let mut s: EmitState = emit_line(s1, "  " + trunc_name + " = trunc i64 " + val.name + " to i32")
                 return emit_line(s, emit_ret("i32", trunc_name))
             }
+            // v5.5.6 Sh.4 Phase 3: async-aware main — prepend
+            // `call void @__mn_coro_scheduler_destroy()` so worker
+            // threads are joined and mutexes / overflow queue freed
+            // before the C ABI-level `ret i32`. Parallel to the
+            // "i32" branch above. Drop-glue fires first (already the
+            // pattern); destroy is idempotent per v5.1.4 runtime.
+            if ty == "i32_async" {
+                let mut sa2: EmitState = emit_drop_glue(st, val.name, "i32")
+                sa2 = emit_line(sa2, "  call void @__mn_coro_scheduler_destroy()")
+                let trunc_name_a: String = val.name + ".trunc"
+                let mut sa3: EmitState = emit_line(sa2, "  " + trunc_name_a + " = trunc i64 " + val.name + " to i32")
+                return emit_line(sa3, emit_ret("i32", trunc_name_a))
+            }
             let mut s2: EmitState = emit_drop_glue(st, val.name, ty)
             return emit_line(s2, emit_ret(ty, val.name))
         },
@@ -17820,6 +17860,14 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState {
                 let mut svn: EmitState = emit_drop_glue(st, "", "void")
                 svn = emit_line(svn, "  store i8 1, ptr %future")
                 return emit_line(svn, "  br label %coro.final")
+            }
+            // v5.5.6 Sh.4 Phase 3: dead-code fallback for async-aware
+            // main (mirror of the value-carrying path above). Every
+            // main exit must hit scheduler_destroy before the i32 ret.
+            if ret_ty == "i32_async" {
+                let mut svna: EmitState = emit_drop_glue(st, "", "i32")
+                svna = emit_line(svna, "  call void @__mn_coro_scheduler_destroy()")
+                return emit_line(svna, "  ret i32 0")
             }
             let mut sv2: EmitState = emit_drop_glue(st, "", ret_ty)
             if ret_ty != "void" {
@@ -18075,7 +18123,21 @@ fn emit_mir_basic_block(st: EmitState, bb: BasicBlock) -> EmitState {
 // MIR function emission
 // ---------------------------------------------------------------------------
 
-fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
+// v5.5.6 Sh.4 Phase 3 — does any function in the module carry the
+// `async` decorator?  Gates main's scheduler_init / scheduler_destroy
+// injection and (via caller) the scheduler-driven BlockOn pattern.
+// Free helper to avoid a Reg.1 EmitState struct bump.
+fn module_has_async(module: MIRModule) -> Bool {
+    let mut i: Int = 0
+    for _ in 0..5000 {
+        if i >= len(module.functions) { return false }
+        if fn_is_async(module.functions[i]) { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitState {
     // Resolve return type
     let mut ret_ty: String = resolve_mir_type(f.return_type)
     if ret_ty.starts_with("%struct.") {
@@ -18145,8 +18207,17 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
     // v5.5.4 Sh.4 Phase 2: async fns flag via an "ASYNC_PTR:" prefix
     // so emit_mir_return can branch to the ret-rewrite path while
     // still knowing the inner T for box allocation.
+    // v5.5.6 Sh.4 Phase 3: when the module contains async fns, main
+    // uses the "i32_async" sentinel so emit_mir_return can prepend
+    // `call void @__mn_coro_scheduler_destroy()` before the truncate
+    // + ret. Parallel to the ASYNC_PTR: pattern.
+    let main_module_has_async: Bool = f.name == "main" && module_has_async(module)
     if f.name == "main" {
-        s.current_ret_type = "i32"
+        if main_module_has_async {
+            s.current_ret_type = "i32_async"
+        } else {
+            s.current_ret_type = "i32"
+        }
     } else if is_async {
         s.current_ret_type = "ASYNC_PTR:" + ret_ty
     } else {
@@ -18251,6 +18322,15 @@ fn emit_mir_function(st: EmitState, f: MIRFunction) -> EmitState {
         // the redirect must remain on through every basic block, not
         // just the entry block. Flushed at function close before '}'.
         s.in_entry_block = true
+        // v5.5.6 Sh.4 Phase 3: for async-aware main, emit
+        // `call void @__mn_coro_scheduler_init(i32 0)` as the FIRST
+        // buffered body line so every subsequent BlockOn sees an
+        // initialised scheduler. 0 = auto-detect cores (respects
+        // MAPANARE_ASYNC_THREADS env var inside the runtime). Mirrors
+        // mapanare/emit_llvm_text.py:2500-2508.
+        if main_module_has_async {
+            s = emit_line(s, "  call void @__mn_coro_scheduler_init(i32 0)")
+        }
         // Emit byref loads: for each byref param, alloca + load from ptr + store
         let mut pi3: Int = 0
         let nfparams3: Int = len(f.params)
@@ -18516,7 +18596,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
         if fi < total_fns {
             let f_emit: MIRFunction = module.functions[fi]
             if len(f_emit.blocks) > 0 {
-                st = emit_mir_function(st, f_emit)
+                st = emit_mir_function(st, f_emit, module)
             }
             fi = fi + 1
         }

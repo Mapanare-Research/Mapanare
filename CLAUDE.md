@@ -18,6 +18,55 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.5.6** (shipped) — **Sh.4 Option B Phase 3 —
+  scheduler-driven BlockOn + main lifecycle.** Replaces
+  v5.5.4's synchronous `llvm.coro.resume` drive inside
+  `BlockOn` with the real
+  `__mn_coro_scheduler_register` + `__mn_coro_scheduler_run`
+  pattern (mirrors `emit_llvm_text.py:5429-5441`). Injects
+  `__mn_coro_scheduler_init(i32 0)` as the first buffered
+  body line of async-aware main and
+  `__mn_coro_scheduler_destroy()` before every main `ret`
+  via a new `"i32_async"` `current_ret_type` sentinel
+  (parallel to v5.5.4's `ASYNC_PTR:` pattern). Gated on a
+  new free helper `module_has_async(module)` added to
+  `emit_llvm.mn` instead of bumping the EmitState struct
+  registry; threaded into `emit_mir_function` via a new
+  `module: MIRModule` param (one call site updated in
+  `emit_mir_module`). v4.102.0 handle-reload foot-gun
+  preserved: `%bo.hdl.N` loaded BEFORE `scheduler_register`
+  because the coroutine's final-suspend path overwrites
+  slot 1 of the Future with the result box, so re-reading
+  it afterwards would hand `coro.destroy` an 8-byte malloc'd
+  int and segfault. **First release with real
+  multi-threaded concurrency.** Combined with v5.5.5's
+  scheduler-driven AwaitSuspend, all 5 Sh.4 goldens execute
+  via the full Python-parity pipeline: 55→42, 56→43, 57→110,
+  58→done, 59→220. `strace -f -e trace=clone3` on
+  59_async_fanout shows 1 worker thread spawned for
+  `MAPANARE_ASYNC_THREADS ≥ 2` (v5.1.4 lazy-spawn policy:
+  `prime=1` pre-spawn + caller as worker 0; the
+  `tasks > workers*8` lazy-spawn gate doesn't trigger on
+  fast-completing tasks, so N≥3 doesn't produce more clones
+  — stricter threading gate deferred to v5.5.8's
+  `60_async_multi_fanout`). Valgrind 0 errors / 0 leaks on
+  55_async_basic (5 allocs / 5 frees) — a STRICT improvement
+  over v5.5.4 (which leaked `future` and `coro.mem`).
+  `emit_llvm.mn` +60/−15 LOC. stage2.ll 194,799 lines
+  (+0.13% vs v5.5.5) / 907 defines (+1 = `module_has_async`),
+  `llvm-as` clean, self-hosting preserved (mnc_all.mn has no
+  async decorators, so the helper returns false and no
+  scheduler hooks emit into stage2). Goldens 59/66
+  preserved; non-bootstrap pytest 5508 passed (after
+  `make build-rt` to bump the VERSION macro in
+  `libmapanare_rt.a`); bootstrap pytest 225 passed;
+  `make lint` clean. Risks R1–R5 from PLAN.md all mitigated
+  or not-observed. Runtime unchanged —
+  `__mn_coro_scheduler_*` API complete since v5.1.4. What's
+  next: v5.5.7 TSan/ASan sweep + Ve.1 investigation +
+  coroutine-destroy drop-glue; v5.5.8 spawn/join +
+  multi-fanout golden; v5.5.9 PARITY_GAPS.md Sh.4 →
+  Historical. See `docs/roadmap/v5/v5.5.6/SESSION_REPORT.md`.
 - **v5.5.5** (shipped) — **Sh.4 Option B Phase 2 —
   scheduler-driven AwaitSuspend.** Replaces v5.5.4's
   synchronous `llvm.coro.resume` drive inside
