@@ -81,6 +81,8 @@ fn mir_option_of(inner: MIRType) -> MIRType {
 }
 fn mir_result() -> MIRType { return new_mir_type("Result", TK_RESULT()) }
 fn mir_list() -> MIRType { return new_mir_type("List", TK_LIST()) }
+// v5.6.0 Sh.6: tensor values travel as ptr through the LLVM backend.
+fn mir_tensor() -> MIRType { return new_mir_type("Tensor", TK_TENSOR()) }
 fn mir_map() -> MIRType { return new_mir_type("Map", TK_MAP()) }
 fn mir_signal() -> MIRType { return new_mir_type("Signal", TK_SIGNAL()) }
 fn mir_range() -> MIRType { return new_mir_type("Range", TK_RANGE()) }

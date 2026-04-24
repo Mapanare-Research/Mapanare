@@ -478,6 +478,17 @@ fn get_fn_attrs(name: String) -> String {
     if name == "__mapanare_matmul" { return " nounwind willreturn" }
     if name == "__mapanare_tensor_alloc" { return " nounwind willreturn" }
     if name == "__mapanare_tensor_shape_eq" { return " nounwind readonly willreturn" }
+    // v5.6.0 Sh.6 __mn_tensor_* attrs (mirrors emit_llvm_text.py RUNTIME_ATTRS).
+    if name == "__mn_tensor_alloc" { return " nounwind willreturn" }
+    if name == "__mn_tensor_free" { return " nounwind willreturn" }
+    if name == "__mn_tensor_store_f64" { return " nounwind willreturn" }
+    if name == "__mn_tensor_store_i64" { return " nounwind willreturn" }
+    if name == "__mn_tensor_get_f64" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_get_i64" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_rank" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_size" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_shape_dim" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_print_f64" { return " nounwind willreturn" }
     // -- Agent runtime (v3.43.0) --
     if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
     if name == "mapanare_agent_send" { return " nounwind willreturn" }
@@ -600,6 +611,21 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mapanare_tensor_free", "void", "ptr")
     s = declare_runtime_fn(s, "__mapanare_tensor_shape_eq", "i1", "ptr, ptr")
     s = declare_runtime_fn(s, "__mapanare_detect_gpus", "ptr", "")
+
+    // v5.6.0 Sh.6: __mn_tensor_* — the full tensor-literal + builtin
+    // runtime surface implemented in runtime/native/mapanare_gpu_builtins.c.
+    // Mirrors the RUNTIME_ATTRS entries in mapanare/emit_llvm_text.py:
+    // 337-398. Declared unconditionally; linker drops unused.
+    s = declare_runtime_fn(s, "__mn_tensor_alloc", "ptr", "i64, ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_free", "void", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_store_f64", "void", "ptr, i64, double")
+    s = declare_runtime_fn(s, "__mn_tensor_store_i64", "void", "ptr, i64, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_get_f64", "double", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_get_i64", "i64", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_rank", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_size", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_shape_dim", "i64", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_print_f64", "void", "ptr")
 
     // Agent runtime
     s = declare_runtime_fn(s, "__mn_agent_spawn", "ptr", "ptr, ptr")
@@ -1283,14 +1309,78 @@ fn emit_list_init_checked(st: EmitState, inst: Instruction) -> EmitState {
 // ---------------------------------------------------------------------------
 
 fn emit_tensor_init(st: EmitState, inst: Instruction) -> EmitState {
-    // v4.42.0: Stub — tensor literals in self-hosted code emit as null ptr.
-    // Full emission (shape alloca + alloc + stores) mirrors the Python emitter
-    // but is deferred to v4.43.0 when tensor indexing needs it end-to-end.
-    // The golden tests compile via the Python bootstrap, not mnc-stage1.
+    // v5.6.0 Sh.6: Full tensor literal emission, mirroring
+    // emit_llvm_text.py::_do_tensor_init (v4.42.0).
+    //   1. Stack-allocate [rank x i64] shape array
+    //   2. Store each shape dimension
+    //   3. Call __mn_tensor_alloc(rank, shape_ptr, elem_size) -> dest
+    //   4. For each element: __mn_tensor_store_{f64,i64}(dest, idx, elem)
+    // Element type is inferred from the first lowered element's MIRType
+    // (see lower.mn::lower_tensor). Int/Bool -> i64 storage; everything
+    // else -> f64 (consistent with the tensor element types the goldens
+    // actually exercise).
     let dest: Value = instr_dest(inst)
+    let elem_type: MIRType = instr_tensor_type(inst)
+    let shape: List<Int> = instr_tensor_shape(inst)
+    let elements: List<Value> = instr_tensor_elements(inst)
     let mut s: EmitState = st
     let dn: String = dest.name
-    s = emit_line(s, "  " + dn + " = inttoptr i64 0 to ptr")
+    let rank: Int = len(shape)
+    let rank_str: String = toString(rank)
+    let shape_arr_ty: String = "[" + rank_str + " x i64]"
+
+    // Step 1: alloca shape array. Lives in entry-block prelude so it
+    // dominates the alloc call regardless of control flow.
+    let shape_a: String = dn + ".shape"
+    s.entry_prelude_lines.push("  " + shape_a + " = alloca " + shape_arr_ty + ", align 8")
+
+    // Step 2: store each dim value. Stays at emission point.
+    let mut i_dim: Int = 0
+    for _ in 0..32 {
+        if i_dim >= rank { break }
+        let gep: String = dn + ".sd" + toString(i_dim)
+        s = emit_line(s, "  " + gep + " = getelementptr inbounds " + shape_arr_ty + ", ptr " + shape_a + ", i64 0, i64 " + toString(i_dim))
+        s = emit_line(s, "  store i64 " + toString(shape[i_dim]) + ", ptr " + gep)
+        i_dim = i_dim + 1
+    }
+
+    // Step 3: pick store fn + ty based on element type.
+    let mut store_fn: String = "__mn_tensor_store_f64"
+    let mut store_ty: String = "double"
+    if elem_type.kind == TK_INT() {
+        store_fn = "__mn_tensor_store_i64"
+        store_ty = "i64"
+    }
+    if elem_type.kind == TK_BOOL() {
+        store_fn = "__mn_tensor_store_i64"
+        store_ty = "i64"
+    }
+
+    // Step 4: call __mn_tensor_alloc. Element size is always 8 (double
+    // or int64). Result becomes dest directly — no tracking needed for
+    // now; drop glue for tensor values is deferred to a follow-up.
+    s = emit_line(s, "  " + dn + " = call noalias ptr @__mn_tensor_alloc(i64 " + rank_str + ", ptr " + shape_a + ", i64 8)")
+
+    // Step 5: store each element. Elements are lowered to their own SSA
+    // names; types match elem_type by construction in lower_tensor.
+    let mut j: Int = 0
+    for _ in 0..100000 {
+        if j >= len(elements) { break }
+        let elem: Value = elements[j]
+        // Note: "en" is a Mapanare keyword (Spanish "in"), so use `elem_val`
+        // for the SSA name — identifiers that collide with keywords cause
+        // `let en: String` bindings to silently infer as <unknown>/Option
+        // downstream, triggering "String + Option" binop errors during
+        // self-compilation.
+        let elem_val: String = elem.name
+        // If the element is a constant from parse but its MIR type doesn't
+        // match store_ty, coerce. UnaryExpr(-, FloatLit) arrives as Float
+        // already from semantic inference, so coercion is rare. Keep the
+        // simple happy path first; sitofp/fptosi deferred to v5.6.1 if
+        // broadcast/mixed literals hit the edge case.
+        s = emit_line(s, "  call void @" + store_fn + "(ptr " + dn + ", i64 " + toString(j) + ", " + store_ty + " " + elem_val + ")")
+        j = j + 1
+    }
     return s
 }
 
@@ -3169,6 +3259,36 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         let as_gm: String = "ptr " + gma + ", ptr " + gmb + ", i64 " + args[2].name + ", i64 " + args[3].name + ", i64 " + args[4].name
         s_gm = emit_line(s_gm, emit_call_ir(dn, llvm_list_rt(), "__mn_gpu_tensor_matmul", as_gm))
         return s_gm
+    }
+
+    // v5.6.0 Sh.6 — tensor builtins routed to __mn_tensor_* runtime.
+    // Tensor values travel as ptr in the self-hosted emitter (MIR kind
+    // TENSOR currently resolves through the unknown fallthrough to i64 in
+    // resolve_mir_type; the alloc call and these builtins all treat the
+    // dest / arg as ptr). Mirrors emit_llvm_text.py:3568-3601.
+    if fn_name == "tensor_rank" {
+        let as_tr: String = "ptr " + args[0].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_rank", as_tr))
+    }
+    if fn_name == "tensor_size" {
+        let as_ts: String = "ptr " + args[0].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_size", as_ts))
+    }
+    if fn_name == "tensor_get_f64" {
+        let as_tgf: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        return emit_line(st, emit_call_ir(dn, "double", "__mn_tensor_get_f64", as_tgf))
+    }
+    if fn_name == "tensor_get_i64" {
+        let as_tgi: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_get_i64", as_tgi))
+    }
+    if fn_name == "tensor_shape_dim" {
+        let as_tsd: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_shape_dim", as_tsd))
+    }
+    if fn_name == "tensor_print" {
+        let as_tp: String = "ptr " + args[0].name
+        return emit_line(st, emit_call_void("__mn_tensor_print_f64", as_tp))
     }
 
     // Map iteration helpers

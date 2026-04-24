@@ -98,6 +98,9 @@ fn resolve_mir_type(t: MIRType) -> String {
     if t.kind == TK_RANGE() { return "{i64, i64}" }
     if t.kind == TK_FN() { return llvm_ptr() }
     if t.kind == TK_UNKNOWN() { return llvm_int() }
+    // v5.6.0 Sh.6: tensor values travel as opaque pointer (__mn_tensor_alloc
+    // returns ptr; all __mn_tensor_* builtins accept ptr).
+    if t.kind == TK_TENSOR() { return llvm_ptr() }
     return llvm_int()
 }
 

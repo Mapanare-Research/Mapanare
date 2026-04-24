@@ -2291,63 +2291,45 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
 // Shape is inferred from nesting depth; elements are flattened row-major
 // into the returned Expr::TensorLit. Mirrors mapanare/parser.py::
 // tensor_literal + _walk (v4.42.0).
+//
+// Implementation notes:
+// - Iterative depth-stack walk rather than a recursive helper (the earlier
+//   recursive version lost List<Expr> .push mutations across the function-
+//   boundary return path).
+// - Index-assignment into List<Int> inside an if-else chain that lives in
+//   a self-compilation path triggers a pre-existing inliner/PHI bug in the
+//   self-hosted emitter (emit_index_set's `ls.ok.N` blocks become the real
+//   predecessor but the enclosing if_result PHI still references the if-
+//   block label). To sidestep: _tensor_set_shape / _tensor_inc_count wrap
+//   the list writes in their own single-block helpers, isolating the
+//   `ls.ok.N` blocks from the caller's CFG.
 // ---------------------------------------------------------------------------
 
-struct TensorWalk {
-    pos: Int,
-    flat: List<Expr>,
-    shape: List<Int>
+fn _tensor_pad_list(list: List<Int>, min_len: Int) -> List<Int> {
+    let mut out: List<Int> = list
+    for _ in 0..64 {
+        if len(out) > min_len { break }
+        out.push(0)
+    }
+    return out
 }
 
-// Walks the content of a single `[...]` tensor body at the given nesting
-// depth. `pos` points at the first token AFTER the opening LBRACKET. On
-// return, `pos` points at the token AFTER the matching RBRACKET. Each call
-// returns its own flat/shape accumulated at this sub-tree; the caller
-// merges them into the outer tree.
-fn parse_tensor_body(tokens: List<Token>, pos: Int, filename: String, depth: Int, in_flat: List<Expr>, in_shape: List<Int>) -> TensorWalk {
-    let mut p: Int = pos
-    let mut flat: List<Expr> = in_flat
-    let mut shape: List<Int> = in_shape
-    let mut count: Int = 0
-    for _ in 0..100000 {
-        let tt: String = peek_type(tokens, p)
-        if tt == "RBRACKET" {
-            // Record shape[depth] on first visit. (Validation of matching
-            // sibling lengths is deferred to the semantic pass — parser
-            // trusts the user like Python's _walk does for jagged arrays.)
-            if depth >= len(shape) {
-                shape.push(count)
-            }
-            return new TensorWalk { pos: p + 1, flat: flat, shape: shape }
-        }
-        if count > 0 {
-            p = expect(tokens, p, "COMMA")
-            // Trailing comma tolerance
-            if peek_type(tokens, p) == "RBRACKET" {
-                if depth >= len(shape) {
-                    shape.push(count)
-                }
-                return new TensorWalk { pos: p + 1, flat: flat, shape: shape }
-            }
-        }
-        let elem_tt: String = peek_type(tokens, p)
-        if elem_tt == "LBRACKET" {
-            let sub: TensorWalk = parse_tensor_body(tokens, p + 1, filename, depth + 1, flat, shape)
-            p = sub.pos
-            flat = sub.flat
-            shape = sub.shape
-        } else {
-            let er: ExprResult = parse_expr(tokens, p, filename, 0)
-            flat.push(er.expr)
-            p = er.pos
-        }
-        count = count + 1
-    }
-    return new TensorWalk { pos: p, flat: flat, shape: shape }
+fn _tensor_set_at(list: List<Int>, idx: Int, val: Int) -> List<Int> {
+    let mut out: List<Int> = list
+    out[idx] = val
+    return out
+}
+
+fn _tensor_inc_at(list: List<Int>, idx: Int) -> List<Int> {
+    let mut out: List<Int> = list
+    out[idx] = list[idx] + 1
+    return out
 }
 
 fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
-    // pos points at KW_TENSOR
+    // pos points at KW_TENSOR. Consume Tensor < T > [ — we are at the first
+    // token INSIDE the outermost literal body once parse_tensor_lit returns
+    // control to its body loop.
     let mut p: Int = pos + 1
     p = expect(tokens, p, "LT")
     let tr: TypeResult = parse_type_expr(tokens, p, filename)
@@ -2355,10 +2337,41 @@ fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
     p = expect(tokens, p, "GT")
     p = expect(tokens, p, "LBRACKET")
 
-    let init_flat: List<Expr> = []
-    let init_shape: List<Int> = []
-    let walk: TensorWalk = parse_tensor_body(tokens, p, filename, 0, init_flat, init_shape)
-    return new_expr_result(Expr::TensorLit(walk.flat, walk.shape), walk.pos)
+    // depth = current nesting level (0 = outermost). counts[d] counts
+    // siblings seen so far at depth d. shape[d] is finalized when we close
+    // depth d via RBRACKET.
+    let mut flat: List<Expr> = []
+    let mut shape: List<Int> = []
+    let mut counts: List<Int> = []
+    counts.push(0)
+    let mut depth: Int = 0
+
+    for _ in 0..1000000 {
+        let tt: String = peek_type(tokens, p)
+        if tt == "RBRACKET" {
+            shape = _tensor_pad_list(shape, depth)
+            shape = _tensor_set_at(shape, depth, counts[depth])
+            p = p + 1
+            if depth == 0 {
+                return new_expr_result(Expr::TensorLit(flat, shape), p)
+            }
+            depth = depth - 1
+            counts = _tensor_inc_at(counts, depth)
+        } else if tt == "COMMA" {
+            p = p + 1
+        } else if tt == "LBRACKET" {
+            depth = depth + 1
+            counts = _tensor_pad_list(counts, depth)
+            counts = _tensor_set_at(counts, depth, 0)
+            p = p + 1
+        } else {
+            let er: ExprResult = parse_expr(tokens, p, filename, 0)
+            flat.push(er.expr)
+            counts = _tensor_inc_at(counts, depth)
+            p = er.pos
+        }
+    }
+    return new_expr_result(Expr::TensorLit(flat, shape), p)
 }
 
 // ---------------------------------------------------------------------------

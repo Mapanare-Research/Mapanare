@@ -972,6 +972,10 @@ fn is_keyword(name: String) -> Bool {
     // v4.68.0: "async" / "await" restored (Arc 8). See v4.67.0/DESIGN.md.
     if name == "async" { return true }
     if name == "await" { return true }
+    // v5.6.0 (Sh.6): "Tensor" keyword enables Tensor<T>[...] literal syntax.
+    // Python grammar has `KW_TENSOR: "Tensor"` (mapanare.lark:426); mirror here
+    // so parse_tensor_lit's `tt == "KW_TENSOR"` check actually fires.
+    if name == "Tensor" { return true }
     return false
 }
 
@@ -1032,6 +1036,9 @@ fn keyword_token_type(name: String) -> String {
     // v4.68.0: "async" / "await" restored (Arc 8). See v4.67.0/DESIGN.md.
     if name == "async" { return "KW_ASYNC" }
     if name == "await" { return "KW_AWAIT" }
+    // v5.6.0 (Sh.6): Tensor becomes a keyword so `Tensor<T>[...]` literal
+    // syntax can be disambiguated from `NAME LT` expressions.
+    if name == "Tensor" { return "KW_TENSOR" }
     return "NAME"
 }
 
@@ -3724,30 +3731,95 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
 }
 
 // ---------------------------------------------------------------------------
-// Tensor literal: Tensor<Type>[elements] (v4.42.0)
-// Parses Tensor<Type>[...] by consuming the type prefix, then delegating
-// to parse_list_lit for the body. Returns TensorLit with flat elements and
-// shape [n] (1D). For nD, the Python bootstrap handles nesting; the
-// self-hosted mirror handles 1D for now (sufficient for golden tests).
+// Tensor literal: Tensor<Type>[elements] (v4.42.0, v5.6.0 nested-array)
+// Parses Tensor<Type>[...] with full nested-array support for 2D/3D/etc.:
+//   Tensor<Float>[1.0, 2.0]                   -- shape [2]
+//   Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]     -- shape [2,2]
+//   Tensor<Float>[[[1.0]]]                    -- shape [1,1,1]
+// Shape is inferred from nesting depth; elements are flattened row-major
+// into the returned Expr::TensorLit. Mirrors mapanare/parser.py::
+// tensor_literal + _walk (v4.42.0).
+//
+// Implementation notes:
+// - Iterative depth-stack walk rather than a recursive helper (the earlier
+//   recursive version lost List<Expr> .push mutations across the function-
+//   boundary return path).
+// - Index-assignment into List<Int> inside an if-else chain that lives in
+//   a self-compilation path triggers a pre-existing inliner/PHI bug in the
+//   self-hosted emitter (emit_index_set's `ls.ok.N` blocks become the real
+//   predecessor but the enclosing if_result PHI still references the if-
+//   block label). To sidestep: _tensor_set_shape / _tensor_inc_count wrap
+//   the list writes in their own single-block helpers, isolating the
+//   `ls.ok.N` blocks from the caller's CFG.
 // ---------------------------------------------------------------------------
 
+fn _tensor_pad_list(list: List<Int>, min_len: Int) -> List<Int> {
+    let mut out: List<Int> = list
+    for _ in 0..64 {
+        if len(out) > min_len { break }
+        out.push(0)
+    }
+    return out
+}
+
+fn _tensor_set_at(list: List<Int>, idx: Int, val: Int) -> List<Int> {
+    let mut out: List<Int> = list
+    out[idx] = val
+    return out
+}
+
+fn _tensor_inc_at(list: List<Int>, idx: Int) -> List<Int> {
+    let mut out: List<Int> = list
+    out[idx] = list[idx] + 1
+    return out
+}
+
 fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+    // pos points at KW_TENSOR. Consume Tensor < T > [ — we are at the first
+    // token INSIDE the outermost literal body once parse_tensor_lit returns
+    // control to its body loop.
     let mut p: Int = pos + 1
     p = expect(tokens, p, "LT")
-    let mut depth: Int = 1
-    for _ in 0..100 {
-        if depth > 0 {
-            let tt: String = peek_type(tokens, p)
-            if tt == "LT" { depth = depth + 1 }
-            if tt == "GT" { depth = depth - 1 }
+    let tr: TypeResult = parse_type_expr(tokens, p, filename)
+    p = tr.pos
+    p = expect(tokens, p, "GT")
+    p = expect(tokens, p, "LBRACKET")
+
+    // depth = current nesting level (0 = outermost). counts[d] counts
+    // siblings seen so far at depth d. shape[d] is finalized when we close
+    // depth d via RBRACKET.
+    let mut flat: List<Expr> = []
+    let mut shape: List<Int> = []
+    let mut counts: List<Int> = []
+    counts.push(0)
+    let mut depth: Int = 0
+
+    for _ in 0..1000000 {
+        let tt: String = peek_type(tokens, p)
+        if tt == "RBRACKET" {
+            shape = _tensor_pad_list(shape, depth)
+            shape = _tensor_set_at(shape, depth, counts[depth])
             p = p + 1
+            if depth == 0 {
+                return new_expr_result(Expr::TensorLit(flat, shape), p)
+            }
+            depth = depth - 1
+            counts = _tensor_inc_at(counts, depth)
+        } else if tt == "COMMA" {
+            p = p + 1
+        } else if tt == "LBRACKET" {
+            depth = depth + 1
+            counts = _tensor_pad_list(counts, depth)
+            counts = _tensor_set_at(counts, depth, 0)
+            p = p + 1
+        } else {
+            let er: ExprResult = parse_expr(tokens, p, filename, 0)
+            flat.push(er.expr)
+            counts = _tensor_inc_at(counts, depth)
+            p = er.pos
         }
     }
-    // Now at [elements]
-    let list_result: ExprResult = parse_list_lit(tokens, p, filename)
-    let elems: List<Expr> = expr_list_elements(list_result.expr)
-    let shape: List<Int> = [len(elems)]
-    return new_expr_result(Expr::TensorLit(elems, shape), list_result.pos)
+    return new_expr_result(Expr::TensorLit(flat, shape), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -3790,7 +3862,10 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
 
     if tt == "KW_FN" { return parse_fn_type(tokens, pos, filename) }
 
-    if tt == "NAME" {
+    // v5.6.0 (Sh.6): KW_TENSOR treated as a type name in type position, so
+    // `let x: Tensor<Int>` still parses (Tensor became a keyword to
+    // disambiguate tensor literals). The token value is still "Tensor".
+    if tt == "NAME" || tt == "KW_TENSOR" {
         let mut name: String = peek_value(tokens, pos)
         let mut p: Int = pos + 1
         for _ in 0..10 {
@@ -4056,6 +4131,13 @@ fn is_builtin_function(name: String) -> Bool {
     // to completion; return type is T of the awaited Future<T>, inferred
     // from the call site (we use <unknown> so downstream type checks skip).
     if name == "block_on" { return true }
+    // Tensor builtins (v5.6.0 Sh.6 — mirrors mapanare/types.py:349-355).
+    if name == "tensor_rank" { return true }
+    if name == "tensor_size" { return true }
+    if name == "tensor_get_f64" { return true }
+    if name == "tensor_get_i64" { return true }
+    if name == "tensor_shape_dim" { return true }
+    if name == "tensor_print" { return true }
     return false
 }
 
@@ -4104,6 +4186,13 @@ fn builtin_return_type(name: String) -> String {
     if name == "gpu_tensor_matmul" { return "List" }
     // Async (v5.5.0 Sh.4): block_on returns the awaited T; type-inferred.
     if name == "block_on" { return "<unknown>" }
+    // Tensor builtins (v5.6.0 Sh.6 — mirrors mapanare/types.py:349-355).
+    if name == "tensor_rank" { return "Int" }
+    if name == "tensor_size" { return "Int" }
+    if name == "tensor_get_f64" { return "Float" }
+    if name == "tensor_get_i64" { return "Int" }
+    if name == "tensor_shape_dim" { return "Int" }
+    if name == "tensor_print" { return "Void" }
     return "Void"
 }
 
@@ -5967,6 +6056,21 @@ fn register_builtins(st: SemState) -> SemState {
     let blockon_sym: Symbol = new_symbol("block_on", "function", make_builtin_fn_type(unknown_type()), false)
     st2 = define_in_scope(st2, "block_on", blockon_sym)
 
+    // Tensor builtins (v5.6.0 Sh.6). Mirrors mapanare/types.py:349-355 and
+    // is_builtin_function/builtin_return_type above.
+    let trank_sym: Symbol = new_symbol("tensor_rank", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_rank", trank_sym)
+    let tsize_sym: Symbol = new_symbol("tensor_size", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_size", tsize_sym)
+    let tgetf_sym: Symbol = new_symbol("tensor_get_f64", "function", make_builtin_fn_type(make_type("Float")), false)
+    st2 = define_in_scope(st2, "tensor_get_f64", tgetf_sym)
+    let tgeti_sym: Symbol = new_symbol("tensor_get_i64", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_get_i64", tgeti_sym)
+    let tsdim_sym: Symbol = new_symbol("tensor_shape_dim", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_shape_dim", tsdim_sym)
+    let tprint_sym: Symbol = new_symbol("tensor_print", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "tensor_print", tprint_sym)
+
     return st2
 }
 
@@ -6077,6 +6181,8 @@ fn mir_option_of(inner: MIRType) -> MIRType {
 }
 fn mir_result() -> MIRType { return new_mir_type("Result", TK_RESULT()) }
 fn mir_list() -> MIRType { return new_mir_type("List", TK_LIST()) }
+// v5.6.0 Sh.6: tensor values travel as ptr through the LLVM backend.
+fn mir_tensor() -> MIRType { return new_mir_type("Tensor", TK_TENSOR()) }
 fn mir_map() -> MIRType { return new_mir_type("Map", TK_MAP()) }
 fn mir_signal() -> MIRType { return new_mir_type("Signal", TK_SIGNAL()) }
 fn mir_range() -> MIRType { return new_mir_type("Range", TK_RANGE()) }
@@ -9612,6 +9718,41 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let s_epr: LowerState = emit_instr(dr_epr.state, Instruction::Call(dr_epr.value, fn_name, args))
         return new_lower_result(dr_epr.value, s_epr)
     }
+    // v5.6.0 Sh.6 — tensor builtin return types. Without these the default
+    // mir_unknown resolves to i64 and emit_builtin_tostring would route
+    // `str(tensor_get_f64(...))` through __mn_str_from_int with a double
+    // arg (type mismatch). tensor_get_f64 must travel as Float.
+    if fn_name == "tensor_rank" {
+        let dr_tr: LowerResult = make_value(st, mir_int(), "t")
+        let s_tr: LowerState = emit_instr(dr_tr.state, Instruction::Call(dr_tr.value, fn_name, args))
+        return new_lower_result(dr_tr.value, s_tr)
+    }
+    if fn_name == "tensor_size" {
+        let dr_ts: LowerResult = make_value(st, mir_int(), "t")
+        let s_ts: LowerState = emit_instr(dr_ts.state, Instruction::Call(dr_ts.value, fn_name, args))
+        return new_lower_result(dr_ts.value, s_ts)
+    }
+    if fn_name == "tensor_get_f64" {
+        let dr_tgf: LowerResult = make_value(st, mir_float(), "t")
+        let s_tgf: LowerState = emit_instr(dr_tgf.state, Instruction::Call(dr_tgf.value, fn_name, args))
+        return new_lower_result(dr_tgf.value, s_tgf)
+    }
+    if fn_name == "tensor_get_i64" {
+        let dr_tgi: LowerResult = make_value(st, mir_int(), "t")
+        let s_tgi: LowerState = emit_instr(dr_tgi.state, Instruction::Call(dr_tgi.value, fn_name, args))
+        return new_lower_result(dr_tgi.value, s_tgi)
+    }
+    if fn_name == "tensor_shape_dim" {
+        let dr_tsd: LowerResult = make_value(st, mir_int(), "t")
+        let s_tsd: LowerState = emit_instr(dr_tsd.state, Instruction::Call(dr_tsd.value, fn_name, args))
+        return new_lower_result(dr_tsd.value, s_tsd)
+    }
+    if fn_name == "tensor_print" {
+        let dr_tp: LowerResult = make_value(st, mir_void(), "t")
+        let s_tp: LowerState = emit_instr(dr_tp.state, Instruction::Call(dr_tp.value, fn_name, args))
+        return new_lower_result(dr_tp.value, s_tp)
+    }
+
     if fn_name == "chr" {
         let dr_chr: LowerResult = make_value(st, mir_string(), "t")
         let s_chr: LowerState = emit_instr(dr_chr.state, Instruction::Call(dr_chr.value, "chr", args))
@@ -10521,7 +10662,12 @@ fn lower_tensor(st: LowerState, elements: List<Expr>, shape: List<Int>) -> Lower
         let first_v: Value = vals[0]
         elem_type = first_v.ty
     }
-    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+    // v5.6.0 Sh.6: tensor value is typed as TENSOR so emit_llvm.mn resolves
+    // it as llvm_ptr() — matches the ret type of __mn_tensor_alloc and the
+    // arg type of every __mn_tensor_* builtin. Without this the var slot
+    // alloca'd for `let a = <tensor>` becomes i64 and llvm-as rejects the
+    // ptr/i64 store mismatch.
+    let dest_r: LowerResult = make_value(s, mir_tensor(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::TensorInit(dest_r.value, elem_type, shape, vals))
     return new_lower_result(dest_r.value, new_s)
 }
@@ -11688,6 +11834,9 @@ fn resolve_mir_type(t: MIRType) -> String {
     if t.kind == TK_RANGE() { return "{i64, i64}" }
     if t.kind == TK_FN() { return llvm_ptr() }
     if t.kind == TK_UNKNOWN() { return llvm_int() }
+    // v5.6.0 Sh.6: tensor values travel as opaque pointer (__mn_tensor_alloc
+    // returns ptr; all __mn_tensor_* builtins accept ptr).
+    if t.kind == TK_TENSOR() { return llvm_ptr() }
     return llvm_int()
 }
 
@@ -14271,6 +14420,17 @@ fn get_fn_attrs(name: String) -> String {
     if name == "__mapanare_matmul" { return " nounwind willreturn" }
     if name == "__mapanare_tensor_alloc" { return " nounwind willreturn" }
     if name == "__mapanare_tensor_shape_eq" { return " nounwind readonly willreturn" }
+    // v5.6.0 Sh.6 __mn_tensor_* attrs (mirrors emit_llvm_text.py RUNTIME_ATTRS).
+    if name == "__mn_tensor_alloc" { return " nounwind willreturn" }
+    if name == "__mn_tensor_free" { return " nounwind willreturn" }
+    if name == "__mn_tensor_store_f64" { return " nounwind willreturn" }
+    if name == "__mn_tensor_store_i64" { return " nounwind willreturn" }
+    if name == "__mn_tensor_get_f64" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_get_i64" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_rank" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_size" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_shape_dim" { return " nounwind readonly willreturn" }
+    if name == "__mn_tensor_print_f64" { return " nounwind willreturn" }
     // -- Agent runtime (v3.43.0) --
     if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
     if name == "mapanare_agent_send" { return " nounwind willreturn" }
@@ -14393,6 +14553,21 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mapanare_tensor_free", "void", "ptr")
     s = declare_runtime_fn(s, "__mapanare_tensor_shape_eq", "i1", "ptr, ptr")
     s = declare_runtime_fn(s, "__mapanare_detect_gpus", "ptr", "")
+
+    // v5.6.0 Sh.6: __mn_tensor_* — the full tensor-literal + builtin
+    // runtime surface implemented in runtime/native/mapanare_gpu_builtins.c.
+    // Mirrors the RUNTIME_ATTRS entries in mapanare/emit_llvm_text.py:
+    // 337-398. Declared unconditionally; linker drops unused.
+    s = declare_runtime_fn(s, "__mn_tensor_alloc", "ptr", "i64, ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_free", "void", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_store_f64", "void", "ptr, i64, double")
+    s = declare_runtime_fn(s, "__mn_tensor_store_i64", "void", "ptr, i64, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_get_f64", "double", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_get_i64", "i64", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_rank", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_size", "i64", "ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_shape_dim", "i64", "ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_print_f64", "void", "ptr")
 
     // Agent runtime
     s = declare_runtime_fn(s, "__mn_agent_spawn", "ptr", "ptr, ptr")
@@ -15076,14 +15251,78 @@ fn emit_list_init_checked(st: EmitState, inst: Instruction) -> EmitState {
 // ---------------------------------------------------------------------------
 
 fn emit_tensor_init(st: EmitState, inst: Instruction) -> EmitState {
-    // v4.42.0: Stub — tensor literals in self-hosted code emit as null ptr.
-    // Full emission (shape alloca + alloc + stores) mirrors the Python emitter
-    // but is deferred to v4.43.0 when tensor indexing needs it end-to-end.
-    // The golden tests compile via the Python bootstrap, not mnc-stage1.
+    // v5.6.0 Sh.6: Full tensor literal emission, mirroring
+    // emit_llvm_text.py::_do_tensor_init (v4.42.0).
+    //   1. Stack-allocate [rank x i64] shape array
+    //   2. Store each shape dimension
+    //   3. Call __mn_tensor_alloc(rank, shape_ptr, elem_size) -> dest
+    //   4. For each element: __mn_tensor_store_{f64,i64}(dest, idx, elem)
+    // Element type is inferred from the first lowered element's MIRType
+    // (see lower.mn::lower_tensor). Int/Bool -> i64 storage; everything
+    // else -> f64 (consistent with the tensor element types the goldens
+    // actually exercise).
     let dest: Value = instr_dest(inst)
+    let elem_type: MIRType = instr_tensor_type(inst)
+    let shape: List<Int> = instr_tensor_shape(inst)
+    let elements: List<Value> = instr_tensor_elements(inst)
     let mut s: EmitState = st
     let dn: String = dest.name
-    s = emit_line(s, "  " + dn + " = inttoptr i64 0 to ptr")
+    let rank: Int = len(shape)
+    let rank_str: String = toString(rank)
+    let shape_arr_ty: String = "[" + rank_str + " x i64]"
+
+    // Step 1: alloca shape array. Lives in entry-block prelude so it
+    // dominates the alloc call regardless of control flow.
+    let shape_a: String = dn + ".shape"
+    s.entry_prelude_lines.push("  " + shape_a + " = alloca " + shape_arr_ty + ", align 8")
+
+    // Step 2: store each dim value. Stays at emission point.
+    let mut i_dim: Int = 0
+    for _ in 0..32 {
+        if i_dim >= rank { break }
+        let gep: String = dn + ".sd" + toString(i_dim)
+        s = emit_line(s, "  " + gep + " = getelementptr inbounds " + shape_arr_ty + ", ptr " + shape_a + ", i64 0, i64 " + toString(i_dim))
+        s = emit_line(s, "  store i64 " + toString(shape[i_dim]) + ", ptr " + gep)
+        i_dim = i_dim + 1
+    }
+
+    // Step 3: pick store fn + ty based on element type.
+    let mut store_fn: String = "__mn_tensor_store_f64"
+    let mut store_ty: String = "double"
+    if elem_type.kind == TK_INT() {
+        store_fn = "__mn_tensor_store_i64"
+        store_ty = "i64"
+    }
+    if elem_type.kind == TK_BOOL() {
+        store_fn = "__mn_tensor_store_i64"
+        store_ty = "i64"
+    }
+
+    // Step 4: call __mn_tensor_alloc. Element size is always 8 (double
+    // or int64). Result becomes dest directly — no tracking needed for
+    // now; drop glue for tensor values is deferred to a follow-up.
+    s = emit_line(s, "  " + dn + " = call noalias ptr @__mn_tensor_alloc(i64 " + rank_str + ", ptr " + shape_a + ", i64 8)")
+
+    // Step 5: store each element. Elements are lowered to their own SSA
+    // names; types match elem_type by construction in lower_tensor.
+    let mut j: Int = 0
+    for _ in 0..100000 {
+        if j >= len(elements) { break }
+        let elem: Value = elements[j]
+        // Note: "en" is a Mapanare keyword (Spanish "in"), so use `elem_val`
+        // for the SSA name — identifiers that collide with keywords cause
+        // `let en: String` bindings to silently infer as <unknown>/Option
+        // downstream, triggering "String + Option" binop errors during
+        // self-compilation.
+        let elem_val: String = elem.name
+        // If the element is a constant from parse but its MIR type doesn't
+        // match store_ty, coerce. UnaryExpr(-, FloatLit) arrives as Float
+        // already from semantic inference, so coercion is rare. Keep the
+        // simple happy path first; sitofp/fptosi deferred to v5.6.1 if
+        // broadcast/mixed literals hit the edge case.
+        s = emit_line(s, "  call void @" + store_fn + "(ptr " + dn + ", i64 " + toString(j) + ", " + store_ty + " " + elem_val + ")")
+        j = j + 1
+    }
     return s
 }
 
@@ -16962,6 +17201,36 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         let as_gm: String = "ptr " + gma + ", ptr " + gmb + ", i64 " + args[2].name + ", i64 " + args[3].name + ", i64 " + args[4].name
         s_gm = emit_line(s_gm, emit_call_ir(dn, llvm_list_rt(), "__mn_gpu_tensor_matmul", as_gm))
         return s_gm
+    }
+
+    // v5.6.0 Sh.6 — tensor builtins routed to __mn_tensor_* runtime.
+    // Tensor values travel as ptr in the self-hosted emitter (MIR kind
+    // TENSOR currently resolves through the unknown fallthrough to i64 in
+    // resolve_mir_type; the alloc call and these builtins all treat the
+    // dest / arg as ptr). Mirrors emit_llvm_text.py:3568-3601.
+    if fn_name == "tensor_rank" {
+        let as_tr: String = "ptr " + args[0].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_rank", as_tr))
+    }
+    if fn_name == "tensor_size" {
+        let as_ts: String = "ptr " + args[0].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_size", as_ts))
+    }
+    if fn_name == "tensor_get_f64" {
+        let as_tgf: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        return emit_line(st, emit_call_ir(dn, "double", "__mn_tensor_get_f64", as_tgf))
+    }
+    if fn_name == "tensor_get_i64" {
+        let as_tgi: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_get_i64", as_tgi))
+    }
+    if fn_name == "tensor_shape_dim" {
+        let as_tsd: String = "ptr " + args[0].name + ", i64 " + args[1].name
+        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_shape_dim", as_tsd))
+    }
+    if fn_name == "tensor_print" {
+        let as_tp: String = "ptr " + args[0].name
+        return emit_line(st, emit_call_void("__mn_tensor_print_f64", as_tp))
     }
 
     // Map iteration helpers

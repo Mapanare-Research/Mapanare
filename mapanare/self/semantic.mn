@@ -189,6 +189,13 @@ fn is_builtin_function(name: String) -> Bool {
     // to completion; return type is T of the awaited Future<T>, inferred
     // from the call site (we use <unknown> so downstream type checks skip).
     if name == "block_on" { return true }
+    // Tensor builtins (v5.6.0 Sh.6 — mirrors mapanare/types.py:349-355).
+    if name == "tensor_rank" { return true }
+    if name == "tensor_size" { return true }
+    if name == "tensor_get_f64" { return true }
+    if name == "tensor_get_i64" { return true }
+    if name == "tensor_shape_dim" { return true }
+    if name == "tensor_print" { return true }
     return false
 }
 
@@ -237,6 +244,13 @@ fn builtin_return_type(name: String) -> String {
     if name == "gpu_tensor_matmul" { return "List" }
     // Async (v5.5.0 Sh.4): block_on returns the awaited T; type-inferred.
     if name == "block_on" { return "<unknown>" }
+    // Tensor builtins (v5.6.0 Sh.6 — mirrors mapanare/types.py:349-355).
+    if name == "tensor_rank" { return "Int" }
+    if name == "tensor_size" { return "Int" }
+    if name == "tensor_get_f64" { return "Float" }
+    if name == "tensor_get_i64" { return "Int" }
+    if name == "tensor_shape_dim" { return "Int" }
+    if name == "tensor_print" { return "Void" }
     return "Void"
 }
 
@@ -2099,6 +2113,21 @@ fn register_builtins(st: SemState) -> SemState {
     // register <unknown> so the type system skips downstream checks.
     let blockon_sym: Symbol = new_symbol("block_on", "function", make_builtin_fn_type(unknown_type()), false)
     st2 = define_in_scope(st2, "block_on", blockon_sym)
+
+    // Tensor builtins (v5.6.0 Sh.6). Mirrors mapanare/types.py:349-355 and
+    // is_builtin_function/builtin_return_type above.
+    let trank_sym: Symbol = new_symbol("tensor_rank", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_rank", trank_sym)
+    let tsize_sym: Symbol = new_symbol("tensor_size", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_size", tsize_sym)
+    let tgetf_sym: Symbol = new_symbol("tensor_get_f64", "function", make_builtin_fn_type(make_type("Float")), false)
+    st2 = define_in_scope(st2, "tensor_get_f64", tgetf_sym)
+    let tgeti_sym: Symbol = new_symbol("tensor_get_i64", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_get_i64", tgeti_sym)
+    let tsdim_sym: Symbol = new_symbol("tensor_shape_dim", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_shape_dim", tsdim_sym)
+    let tprint_sym: Symbol = new_symbol("tensor_print", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "tensor_print", tprint_sym)
 
     return st2
 }

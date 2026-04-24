@@ -2118,6 +2118,41 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let s_epr: LowerState = emit_instr(dr_epr.state, Instruction::Call(dr_epr.value, fn_name, args))
         return new_lower_result(dr_epr.value, s_epr)
     }
+    // v5.6.0 Sh.6 — tensor builtin return types. Without these the default
+    // mir_unknown resolves to i64 and emit_builtin_tostring would route
+    // `str(tensor_get_f64(...))` through __mn_str_from_int with a double
+    // arg (type mismatch). tensor_get_f64 must travel as Float.
+    if fn_name == "tensor_rank" {
+        let dr_tr: LowerResult = make_value(st, mir_int(), "t")
+        let s_tr: LowerState = emit_instr(dr_tr.state, Instruction::Call(dr_tr.value, fn_name, args))
+        return new_lower_result(dr_tr.value, s_tr)
+    }
+    if fn_name == "tensor_size" {
+        let dr_ts: LowerResult = make_value(st, mir_int(), "t")
+        let s_ts: LowerState = emit_instr(dr_ts.state, Instruction::Call(dr_ts.value, fn_name, args))
+        return new_lower_result(dr_ts.value, s_ts)
+    }
+    if fn_name == "tensor_get_f64" {
+        let dr_tgf: LowerResult = make_value(st, mir_float(), "t")
+        let s_tgf: LowerState = emit_instr(dr_tgf.state, Instruction::Call(dr_tgf.value, fn_name, args))
+        return new_lower_result(dr_tgf.value, s_tgf)
+    }
+    if fn_name == "tensor_get_i64" {
+        let dr_tgi: LowerResult = make_value(st, mir_int(), "t")
+        let s_tgi: LowerState = emit_instr(dr_tgi.state, Instruction::Call(dr_tgi.value, fn_name, args))
+        return new_lower_result(dr_tgi.value, s_tgi)
+    }
+    if fn_name == "tensor_shape_dim" {
+        let dr_tsd: LowerResult = make_value(st, mir_int(), "t")
+        let s_tsd: LowerState = emit_instr(dr_tsd.state, Instruction::Call(dr_tsd.value, fn_name, args))
+        return new_lower_result(dr_tsd.value, s_tsd)
+    }
+    if fn_name == "tensor_print" {
+        let dr_tp: LowerResult = make_value(st, mir_void(), "t")
+        let s_tp: LowerState = emit_instr(dr_tp.state, Instruction::Call(dr_tp.value, fn_name, args))
+        return new_lower_result(dr_tp.value, s_tp)
+    }
+
     if fn_name == "chr" {
         let dr_chr: LowerResult = make_value(st, mir_string(), "t")
         let s_chr: LowerState = emit_instr(dr_chr.state, Instruction::Call(dr_chr.value, "chr", args))
@@ -3027,7 +3062,12 @@ fn lower_tensor(st: LowerState, elements: List<Expr>, shape: List<Int>) -> Lower
         let first_v: Value = vals[0]
         elem_type = first_v.ty
     }
-    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+    // v5.6.0 Sh.6: tensor value is typed as TENSOR so emit_llvm.mn resolves
+    // it as llvm_ptr() — matches the ret type of __mn_tensor_alloc and the
+    // arg type of every __mn_tensor_* builtin. Without this the var slot
+    // alloca'd for `let a = <tensor>` becomes i64 and llvm-as rejects the
+    // ptr/i64 store mismatch.
+    let dest_r: LowerResult = make_value(s, mir_tensor(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::TensorInit(dest_r.value, elem_type, shape, vals))
     return new_lower_result(dest_r.value, new_s)
 }
