@@ -1692,6 +1692,12 @@ struct MatchArmResult {
     pos: Int
 }
 
+// v5.6.3 Sh.6 Phase 4 — subscript item parser result.
+struct IndexItemResult {
+    item: IndexItem,
+    pos: Int
+}
+
 // ---------------------------------------------------------------------------
 // Constructor functions — populate result structs positionally
 // ---------------------------------------------------------------------------
@@ -3175,23 +3181,30 @@ fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
             } else {
                 if tt == "LBRACKET" {
                     p = p + 1
-                    let first_r: ExprResult = parse_expr(tokens, p, filename, 0)
-                    p = first_r.pos
-                    let mut indices: List<Expr> = []
-                    indices.push(first_r.expr)
+                    let mut items: List<IndexItem> = []
+                    let first_ii: IndexItemResult = parse_index_item(tokens, p, filename)
+                    p = first_ii.pos
+                    items.push(first_ii.item)
                     for _ in 0..128 {
                         if peek_type(tokens, p) == "COMMA" {
                             p = p + 1
-                            let nxt_r: ExprResult = parse_expr(tokens, p, filename, 0)
-                            p = nxt_r.pos
-                            indices.push(nxt_r.expr)
+                            let nxt_ii: IndexItemResult = parse_index_item(tokens, p, filename)
+                            p = nxt_ii.pos
+                            items.push(nxt_ii.item)
                         }
                     }
                     p = expect(tokens, p, "RBRACKET")
-                    if len(indices) == 1 {
-                        left = Expr::Index(left, indices[0])
+                    // Route to Index (1 scalar), TensorIndex (≥2 scalars), or
+                    // TensorSlice (any non-scalar item). v5.6.3 Sh.6 Phase 4.
+                    let has_nonscalar: Bool = any_nonscalar_item(items)
+                    if has_nonscalar {
+                        left = Expr::TensorSlice(left, items)
                     } else {
-                        left = Expr::TensorIndex(left, indices)
+                        if len(items) == 1 {
+                            left = Expr::Index(left, items[0].expr)
+                        } else {
+                            left = Expr::TensorIndex(left, scalar_exprs_of(items))
+                        }
                     }
                 } else {
                     if tt == "QUESTION" {
@@ -3206,6 +3219,68 @@ fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
     }
 
     return new_expr_result(left, p)
+}
+
+// v5.6.3 Sh.6 Phase 4 — parse one subscript item (scalar / range / wildcard).
+//
+// Forms:
+//   _              → wildcard (Expr::TensorSlice IndexItem kind="wildcard")
+//   ..end          → range, open start (NoneLit..end)
+//   start..        → range, open end   (start..NoneLit)   — detects COMMA/RBRACKET
+//   start..end     → range
+//   expr           → scalar
+//
+// The expression parser normally eats `..` as a binary range operator
+// (precedence 6). We pass min_prec=7 so parse_expr stops before `..` and
+// we can classify the item ourselves.
+fn parse_index_item(tokens: List<Token>, pos: Int, filename: String) -> IndexItemResult {
+    if peek_type(tokens, pos) == "UNDERSCORE" {
+        return new IndexItemResult { item: wildcard_index_item(), pos: pos + 1 }
+    }
+    if peek_type(tokens, pos) == "RANGE" {
+        // `..end` — open start
+        let end_r: ExprResult = parse_expr(tokens, pos + 1, filename, 7)
+        return new IndexItemResult { item: range_index_item(Expr::NoneLit, end_r.expr), pos: end_r.pos }
+    }
+    let first: ExprResult = parse_expr(tokens, pos, filename, 7)
+    if peek_type(tokens, first.pos) == "RANGE" {
+        let after_dd: Int = first.pos + 1
+        let close: String = peek_type(tokens, after_dd)
+        if close == "COMMA" {
+            return new IndexItemResult { item: range_index_item(first.expr, Expr::NoneLit), pos: after_dd }
+        }
+        if close == "RBRACKET" {
+            return new IndexItemResult { item: range_index_item(first.expr, Expr::NoneLit), pos: after_dd }
+        }
+        let end_r: ExprResult = parse_expr(tokens, after_dd, filename, 7)
+        return new IndexItemResult { item: range_index_item(first.expr, end_r.expr), pos: end_r.pos }
+    }
+    return new IndexItemResult { item: scalar_index_item(first.expr), pos: first.pos }
+}
+
+fn any_nonscalar_item(items: List<IndexItem>) -> Bool {
+    let mut i: Int = 0
+    let n: Int = len(items)
+    for _ in 0..128 {
+        if i < n {
+            if items[i].kind != "scalar" { return true }
+            i = i + 1
+        }
+    }
+    return false
+}
+
+fn scalar_exprs_of(items: List<IndexItem>) -> List<Expr> {
+    let mut out: List<Expr> = []
+    let mut i: Int = 0
+    let n: Int = len(items)
+    for _ in 0..128 {
+        if i < n {
+            out.push(items[i].expr)
+            i = i + 1
+        }
+    }
+    return out
 }
 
 fn parse_call_args(tokens: List<Token>, pos: Int, filename: String, callee: Expr) -> ExprResult {
