@@ -1488,9 +1488,11 @@ fn emit_tensor_init(st: EmitState, inst: Instruction) -> EmitState {
     }
 
     // Step 4: call __mn_tensor_alloc. Element size is always 8 (double
-    // or int64). Result becomes dest directly — no tracking needed for
-    // now; drop glue for tensor values is deferred to a follow-up.
+    // or int64). v5.6.4 Rt.06 — result is tracked for drop-glue;
+    // emit_drop_glue emits __mn_tensor_free on non-moved, non-returned
+    // slots at every ret edge.
     s = emit_line(s, "  " + dn + " = call noalias ptr @__mn_tensor_alloc(i64 " + rank_str + ", ptr " + shape_a + ", i64 8)")
+    s = emit_track_tensor(s, dn)
 
     // Step 5: store each element. Elements are lowered to their own SSA
     // names; types match elem_type by construction in lower_tensor.
@@ -3508,6 +3510,8 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         let t_name_sl: String = args[0].name
         let rank_name_sl: String = args[rank_idx_sl].name
         s_sl = emit_line(s_sl, "  " + dn + " = call noalias ptr @__mn_tensor_slice(ptr " + t_name_sl + ", ptr " + starts_arr + ", ptr " + ends_arr + ", i64 " + rank_name_sl + ")")
+        // v5.6.4 Rt.06 — track the fresh tensor for drop-glue.
+        s_sl = emit_track_tensor(s_sl, dn)
         return s_sl
     }
 
@@ -3786,6 +3790,13 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                 return s
             }
             s = emit_line(s, emit_call_ir(dn, fe.ret_type, fn_name, args_str))
+            // v5.6.4 Rt.06 — attach tensor drop-glue tracking for the
+            // 20 tensor binop runtime fns (broadcast / scalar / rscalar).
+            // The non-Some arm (below) mirrors this injection for fns
+            // not present in st.functions.
+            if is_tensor_allocating_fn(fn_name) {
+                s = emit_track_tensor(s, dn)
+            }
             return s
         },
         _ => {
@@ -3807,6 +3818,10 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                 return s
             }
             s = emit_line(s, emit_call_ir(dn, ret_ty, fn_name, args_str))
+            // v5.6.4 Rt.06 — tensor tracking for non-FnEntry-registered calls.
+            if is_tensor_allocating_fn(fn_name) {
+                s = emit_track_tensor(s, dn)
+            }
             return s
         }
     }
