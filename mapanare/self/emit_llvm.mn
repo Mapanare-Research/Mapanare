@@ -1091,28 +1091,92 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
     // for coro.destroy — never reload slot 1 for the handle after
     // resume.
     if kind == "await_suspend" {
+        // v5.5.5: scheduler-driven AwaitSuspend. Replaces v5.5.4's
+        // synchronous llvm.coro.resume drive with the real
+        // save/suspend/switch pattern mirroring
+        // emit_llvm_text.py:5305-5372 (the _fn_is_async branch).
+        //
+        // 6-block layout emitted inline (entry is the current BB):
+        //   entry   -> fast-path: load future.state, goto ready if already 1
+        //   aw.drive.N  -> load handle, coro.resume once, goto check
+        //   aw.check.N  -> re-load state, goto ready or suspend
+        //   aw.suspend.N -> register_wait + coro.save + coro.suspend + switch
+        //   aw.resume.N -> scheduler woke us, fall through to ready
+        //   aw.ready.N  -> load payload, extract value, destroy inner, free
+        //
+        // AwaitSuspend is only emitted inside async fns (semantic guard),
+        // so %coro.hdl, coro.ret, coro.cleanup are always defined by
+        // v5.5.4's emit_mir_function prologue/epilogue.
         let aw_dest: Value = instr_dest(inst)
         let aw_fut: Value = instr_await_suspend_future(inst)
         let n: Int = st.counter
         let mut s_aw: EmitState = st
         s_aw.counter = n + 1
         let tag: String = toString(n)
-        s_aw = emit_line(s_aw, "  ; v5.5.4 await_suspend " + tag + " — synchronous resume+extract")
+        let drive_lbl: String = "aw.drive." + tag
+        let check_lbl: String = "aw.check." + tag
+        let susp_lbl: String = "aw.suspend." + tag
+        let res_lbl: String = "aw.resume." + tag
+        let rdy_lbl: String = "aw.ready." + tag
+        let sp: String = "%aw.st.ptr." + tag
+        let sv: String = "%aw.st." + tag
+        let rd: String = "%aw.rdy." + tag
         let hp: String = "%aw.hdl.ptr." + tag
         let hd: String = "%aw.hdl." + tag
+        let s2: String = "%aw.st2." + tag
+        let rd2: String = "%aw.rdy2." + tag
+        let sav: String = "%aw.save." + tag
+        let sus: String = "%aw.susp." + tag
         let vp: String = "%aw.val.ptr." + tag
         let vb: String = "%aw.val.box." + tag
         let vr: String = "%aw.val." + tag
+
+        s_aw = emit_line(s_aw, "  ; v5.5.5 await_suspend " + tag + " — scheduler-driven suspend")
+        // Fast-path: check if future is already Ready.
+        s_aw = emit_line(s_aw, "  " + sp + " = getelementptr inbounds {i8, ptr}, ptr " + aw_fut.name + ", i32 0, i32 0")
+        s_aw = emit_line(s_aw, "  " + sv + " = load i8, ptr " + sp)
+        s_aw = emit_line(s_aw, "  " + rd + " = icmp eq i8 " + sv + ", 1")
+        s_aw = emit_line(s_aw, "  br i1 " + rd + ", label %" + rdy_lbl + ", label %" + drive_lbl)
+
+        // aw.drive.N — load handle, resume once, go to check.
+        s_aw = emit_line(s_aw, drive_lbl + ":")
         s_aw = emit_line(s_aw, "  " + hp + " = getelementptr inbounds {i8, ptr}, ptr " + aw_fut.name + ", i32 0, i32 1")
         s_aw = emit_line(s_aw, "  " + hd + " = load ptr, ptr " + hp)
         s_aw = emit_line(s_aw, "  call void @llvm.coro.resume(ptr " + hd + ")")
+        s_aw = emit_line(s_aw, "  br label %" + check_lbl)
+
+        // aw.check.N — re-check readiness after driving.
+        s_aw = emit_line(s_aw, check_lbl + ":")
+        s_aw = emit_line(s_aw, "  " + s2 + " = load i8, ptr " + sp)
+        s_aw = emit_line(s_aw, "  " + rd2 + " = icmp eq i8 " + s2 + ", 1")
+        s_aw = emit_line(s_aw, "  br i1 " + rd2 + ", label %" + rdy_lbl + ", label %" + susp_lbl)
+
+        // aw.suspend.N — register wait, save, suspend outer, switch.
+        s_aw = emit_line(s_aw, susp_lbl + ":")
+        s_aw = emit_line(s_aw, "  call void @__mn_coro_register_wait(ptr %coro.hdl, ptr " + aw_fut.name + ")")
+        s_aw = emit_line(s_aw, "  " + sav + " = call token @llvm.coro.save(ptr %coro.hdl)")
+        s_aw = emit_line(s_aw, "  " + sus + " = call i8 @llvm.coro.suspend(token " + sav + ", i1 false)")
+        s_aw = emit_line(s_aw, "  switch i8 " + sus + ", label %coro.ret [")
+        s_aw = emit_line(s_aw, "    i8 0, label %" + res_lbl)
+        s_aw = emit_line(s_aw, "    i8 1, label %coro.cleanup")
+        s_aw = emit_line(s_aw, "  ]")
+
+        // aw.resume.N — scheduler resumed us.
+        s_aw = emit_line(s_aw, res_lbl + ":")
+        s_aw = emit_line(s_aw, "  br label %" + rdy_lbl)
+
+        // aw.ready.N — future is Ready, extract payload.
+        // Mirrors Python reference (emit_llvm_text.py:5363-5372): no
+        // coro.destroy + no free here. Those are structurally unsafe
+        // at this point because %aw.hdl.N (loaded only on the drive
+        // edge) does not dominate the fast-path or scheduler-resume
+        // entries. Leak is preferred over dominance violation;
+        // v5.5.7 sanitizer hardening revisits cleanup.
+        s_aw = emit_line(s_aw, rdy_lbl + ":")
         s_aw = emit_line(s_aw, "  " + vp + " = getelementptr inbounds {i8, ptr}, ptr " + aw_fut.name + ", i32 0, i32 1")
         s_aw = emit_line(s_aw, "  " + vb + " = load ptr, ptr " + vp)
         s_aw = emit_line(s_aw, "  " + vr + " = load i64, ptr " + vb)
         s_aw = emit_line(s_aw, "  " + aw_dest.name + " = add i64 0, " + vr)
-        s_aw = emit_line(s_aw, "  call void @llvm.coro.destroy(ptr " + hd + ")")
-        s_aw = emit_line(s_aw, "  call void @free(ptr " + vb + ")")
-        s_aw = emit_line(s_aw, "  call void @free(ptr " + aw_fut.name + ")")
         return s_aw
     }
     if kind == "block_on" {

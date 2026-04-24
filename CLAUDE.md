@@ -18,6 +18,49 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.5.5** (shipped) — **Sh.4 Option B Phase 2 —
+  scheduler-driven AwaitSuspend.** Replaces v5.5.4's
+  synchronous `llvm.coro.resume` drive inside
+  `AwaitSuspend` with the real 6-block save/suspend/switch
+  pattern mirroring `emit_llvm_text.py:5305-5372`. Fast-path
+  readiness check → `aw.drive.N` (coro.resume inner once) →
+  `aw.check.N` (re-check state) → `aw.suspend.N`
+  (`__mn_coro_register_wait` + `llvm.coro.save` +
+  `llvm.coro.suspend` + switch to `coro.ret`/`aw.resume.N`/
+  `coro.cleanup`) → `aw.resume.N` → `aw.ready.N` (payload
+  extract). All SSA names prefixed `aw.*.N` via `st.counter`.
+  `emit_llvm.mn` `await_suspend` branch: +80 / −15 LOC.
+  Post-opt CoroSplit now produces **outer** resume/destroy
+  split pairs for every async fn with awaits: 56 ships
+  `@outer.resume`/`@outer.destroy`, 57 ships
+  `@fanout.resume`/`@fanout.destroy`, 58 ships
+  `@process.resume`/`@process.destroy`, 59 ships
+  `@fanout.resume`/`@fanout.destroy` — proving the outer
+  coroutines really do have suspension points now (v5.5.4
+  elided them because every resume was synchronous). PLAN.md
+  §R5 predicted the 5 Sh.4 goldens might hang; reality —
+  they all still execute correctly (55→42, 56→43, 57→110,
+  58→done, 59→220) because the check-after-drive fast-path
+  short-circuits: Sh.4 async fns return constants with no real
+  I/O, so `future.state==1` is already true when `aw.check.N`
+  runs, and control never reaches `aw.suspend.N` /
+  `register_wait` / `coro.suspend` at runtime. CoroSplit
+  still generates the suspend edge; it just never fires.
+  Extended fast-path + no coro.destroy + no free in
+  `aw.ready.N` matches the Python reference (structurally
+  necessary: `%aw.hdl.N` is defined only on the drive edge,
+  so it does not dominate ready from the fast-path or
+  scheduler-resume edges — leak preferred over dominance
+  violation). stage2.ll 194,553 lines (+501 vs v5.5.4, +0.26%)
+  / 906 defines, llvm-as clean. Goldens 59/66 preserved;
+  `make lint` clean; non-bootstrap pytest 5507 passed (after
+  rebuilding `libmapanare_rt.a` for the version macro bump);
+  bootstrap pytest 225 passed. BlockOn scheduler integration +
+  `__mn_coro_scheduler_init` in main deferred to v5.5.6 —
+  that's the release where the suspend path actually becomes
+  load-bearing for non-trivial async programs. Risks R1-R5
+  from PLAN.md all mitigated or observed-not-realized. See
+  `docs/roadmap/v5/v5.5.5/SESSION_REPORT.md`.
 - **v5.5.4** (shipped) — **Sh.4 Option B Phase 1 — real LLVM
   coroutines.** First real-coroutine release. Ships
   `presplitcoroutine` + full `@llvm.coro.id/begin/save/
@@ -521,7 +564,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27221 symbols, 60933 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27379 symbols, 61077 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
