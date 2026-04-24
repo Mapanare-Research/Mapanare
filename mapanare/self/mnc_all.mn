@@ -14924,17 +14924,27 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         let vb: String = "%aw.val.box." + tag
         let vr: String = "%aw.val." + tag
 
-        s_aw = emit_line(s_aw, "  ; v5.5.5 await_suspend " + tag + " — scheduler-driven suspend")
+        s_aw = emit_line(s_aw, "  ; v5.5.7 await_suspend " + tag + " — scheduler-driven suspend + cleanup")
+        // v5.5.7 — hoist the inner-handle load into the entry BB
+        // (BEFORE the fast-path branch) so %aw.hdl.N dominates every
+        // edge into aw.ready.N (fast-path, drive→check→ready, and
+        // scheduler-resume→ready). Required to call coro.destroy +
+        // free in aw.ready.N without violating SSA dominance.
+        // The inner coroutine has already initialised future.handle
+        // by the time we reach AwaitSuspend (initial-suspend path of
+        // the inner's coro.entry stored %coro.hdl into slot 1), so
+        // the load is well-defined.
+        s_aw = emit_line(s_aw, "  " + hp + " = getelementptr inbounds {i8, ptr}, ptr " + aw_fut.name + ", i32 0, i32 1")
+        s_aw = emit_line(s_aw, "  " + hd + " = load ptr, ptr " + hp)
         // Fast-path: check if future is already Ready.
         s_aw = emit_line(s_aw, "  " + sp + " = getelementptr inbounds {i8, ptr}, ptr " + aw_fut.name + ", i32 0, i32 0")
         s_aw = emit_line(s_aw, "  " + sv + " = load i8, ptr " + sp)
         s_aw = emit_line(s_aw, "  " + rd + " = icmp eq i8 " + sv + ", 1")
         s_aw = emit_line(s_aw, "  br i1 " + rd + ", label %" + rdy_lbl + ", label %" + drive_lbl)
 
-        // aw.drive.N — load handle, resume once, go to check.
+        // aw.drive.N — resume once, go to check. Handle was already
+        // loaded in entry (hoisted v5.5.7); reuse %aw.hdl.N here.
         s_aw = emit_line(s_aw, drive_lbl + ":")
-        s_aw = emit_line(s_aw, "  " + hp + " = getelementptr inbounds {i8, ptr}, ptr " + aw_fut.name + ", i32 0, i32 1")
-        s_aw = emit_line(s_aw, "  " + hd + " = load ptr, ptr " + hp)
         s_aw = emit_line(s_aw, "  call void @llvm.coro.resume(ptr " + hd + ")")
         s_aw = emit_line(s_aw, "  br label %" + check_lbl)
 
@@ -14958,18 +14968,27 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         s_aw = emit_line(s_aw, res_lbl + ":")
         s_aw = emit_line(s_aw, "  br label %" + rdy_lbl)
 
-        // aw.ready.N — future is Ready, extract payload.
-        // Mirrors Python reference (emit_llvm_text.py:5363-5372): no
-        // coro.destroy + no free here. Those are structurally unsafe
-        // at this point because %aw.hdl.N (loaded only on the drive
-        // edge) does not dominate the fast-path or scheduler-resume
-        // entries. Leak is preferred over dominance violation;
-        // v5.5.7 sanitizer hardening revisits cleanup.
+        // aw.ready.N — future is Ready, extract payload + destroy.
+        // v5.5.7: with %aw.hdl.N hoisted to entry (above), it now
+        // dominates this block from all three predecessors — the
+        // fast-path branch, aw.check.N→ready, and aw.resume.N→ready.
+        // Safe to call coro.destroy + free without an SSA
+        // dominance violation.
+        //
+        // Mirrors v5.5.6's BlockOn cleanup. v4.102.0 foot-gun
+        // applies: %aw.hdl.N was loaded BEFORE any potential
+        // scheduler_run drive (in the entry BB), so the slot-1
+        // clobber that scheduler_run performs (overwriting the
+        // handle with the result box) is irrelevant — we still
+        // hold the original handle in %aw.hdl.N.
         s_aw = emit_line(s_aw, rdy_lbl + ":")
         s_aw = emit_line(s_aw, "  " + vp + " = getelementptr inbounds {i8, ptr}, ptr " + aw_fut.name + ", i32 0, i32 1")
         s_aw = emit_line(s_aw, "  " + vb + " = load ptr, ptr " + vp)
         s_aw = emit_line(s_aw, "  " + vr + " = load i64, ptr " + vb)
         s_aw = emit_line(s_aw, "  " + aw_dest.name + " = add i64 0, " + vr)
+        s_aw = emit_line(s_aw, "  call void @llvm.coro.destroy(ptr " + hd + ")")
+        s_aw = emit_line(s_aw, "  call void @free(ptr " + vb + ")")
+        s_aw = emit_line(s_aw, "  call void @free(ptr " + aw_fut.name + ")")
         return s_aw
     }
     if kind == "block_on" {
@@ -17684,6 +17703,81 @@ fn emit_drop_glue_boxed(st: EmitState, ret_box_ptrs: List<String>) -> EmitState 
     return s
 }
 
+// v5.5.7 — destroy-path drop-glue for coroutines.
+//
+// Called from coro.cleanup before `coro.free` when the scheduler
+// destroys an async fn frame at a suspend point. Iterates the
+// usual owner lists unconditionally (no ret_val filter — there is
+// no return value on this path) but still consults moved_locals so
+// owners that were moved/consumed pre-suspend don't get
+// double-freed.
+//
+// Tracking-slot allocas live in the entry-block prelude (v5.4.1)
+// and are zero-initialised before any user instruction, so loads
+// from them at coro.cleanup are well-defined even if the slot was
+// never written. The runtime free helpers (__mn_str_free,
+// __mn_list_free, free) are null-tolerant per v5.4.1 design, so
+// loading a never-written slot just no-ops.
+//
+// SSA-name prefix is `%drop.d.*.N` (`d` = destroy) so it cannot
+// collide with the `%drop.s|l|b.N` names produced by the normal-
+// exit drop-glue helpers above.
+fn emit_drop_glue_destroy(st: EmitState) -> EmitState {
+    let mut s: EmitState = st
+    // Strings
+    let ns: Int = len(s.str_owned)
+    let nss: Int = len(s.str_owned_source)
+    let mut i: Int = 0
+    for _ in 0..1024 {
+        if i >= ns { break }
+        let name: String = s.str_owned[i]
+        let mut source: String = ""
+        if i < nss { source = s.str_owned_source[i] }
+        let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
+        if !is_moved {
+            let cnt: Int = s.counter
+            s.counter = s.counter + 1
+            let svtmp: String = "%drop.d.s" + toString(cnt)
+            s = emit_line(s, "  " + svtmp + " = load {ptr, i64}, ptr %" + name)
+            s = emit_line(s, "  call void @__mn_str_free({ptr, i64} " + svtmp + ")")
+        }
+        i = i + 1
+    }
+    // Lists
+    let nl: Int = len(s.list_owned)
+    let mut j: Int = 0
+    for _ in 0..1024 {
+        if j >= nl { break }
+        let lname: String = s.list_owned[j]
+        let mut lsource: String = ""
+        if j < len(s.list_owned_source) { lsource = s.list_owned_source[j] }
+        let l_is_moved: Bool = (len(lsource) > 0) && list_has_string(s.moved_locals, lsource)
+        if !l_is_moved {
+            s = emit_line(s, "  call void @__mn_list_free(ptr %" + lname + ")")
+        }
+        j = j + 1
+    }
+    // Boxed
+    let nb: Int = len(s.boxed_owned)
+    let mut k: Int = 0
+    for _ in 0..1024 {
+        if k >= nb { break }
+        let bname: String = s.boxed_owned[k]
+        let mut bsource: String = ""
+        if k < len(s.boxed_owned_source) { bsource = s.boxed_owned_source[k] }
+        let b_is_moved: Bool = (len(bsource) > 0) && list_has_string(s.moved_locals, bsource)
+        if !b_is_moved {
+            let cnt2: Int = s.counter
+            s.counter = s.counter + 1
+            let btmp: String = "%drop.d.b" + toString(cnt2)
+            s = emit_line(s, "  " + btmp + " = load ptr, ptr %" + bname)
+            s = emit_line(s, "  call void @free(ptr " + btmp + ")")
+        }
+        k = k + 1
+    }
+    return s
+}
+
 fn ret_ty_is_aggregate(ret_ty: String) -> Bool {
     // v5.4.4 RESCOPE — %struct.* returns remain conservatively skipped.
     // Phase 3 attempted to open the guard with a one-level field walk,
@@ -18440,6 +18534,13 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
         s = emit_line(s, "    i8 1, label %coro.cleanup")
         s = emit_line(s, "  ]")
         s = emit_line(s, "coro.cleanup:")
+        // v5.5.7 — destroy-path drop-glue: free String/List/boxed
+        // locals tracked in this fn before the frame is freed.
+        // No-op for the 5 Sh.4 goldens (their async fns hold no
+        // heap-allocated locals) but the correct foundation for
+        // future real-I/O async programs that allocate inside the
+        // coroutine frame and may be cancelled mid-flight.
+        s = emit_drop_glue_destroy(s)
         s = emit_line(s, "  %coro.mem.free = call ptr @llvm.coro.free(token %coro.id, ptr %coro.hdl)")
         s = emit_line(s, "  call void @free(ptr %coro.mem.free)")
         s = emit_line(s, "  br label %coro.ret")

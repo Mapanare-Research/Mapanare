@@ -18,6 +18,60 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.5.7** (shipped) — **Sanitizer + fixed-point
+  hardening.** Stabilization release for the v5.5.4–v5.5.6
+  async coroutine pipeline. Two emit_llvm.mn changes (+93 /
+  −19 LOC) plus a Ve.1 root-cause investigation. **Closes
+  Rt.05 (the v5.5.5-deferred AwaitSuspend inner-coroutine
+  leak)** by hoisting `%aw.hdl.ptr.N` GEP + `%aw.hdl.N` load
+  from the `aw.drive.N` edge into the entry BB *before* the
+  fast-path readiness branch. Now `%aw.hdl.N` dominates all
+  three entries to `aw.ready.N` (fast-path direct,
+  drive→check→ready, scheduler-resume→ready) so the cleanup
+  trio is SSA-legal: `coro.destroy(%aw.hdl.N) +
+  free(%aw.val.box.N) + free(%aw_fut)`. v4.102.0 foot-gun
+  unaffected — handle is loaded *before* any scheduler
+  activity, so the slot-1 clobber from the inner's
+  final-suspend is irrelevant. **Adds destroy-path drop-glue
+  helper** `emit_drop_glue_destroy(st)` — iterates
+  `str_owned`/`list_owned`/`boxed_owned` unconditionally
+  (still consults `moved_locals`) and wires into
+  `coro.cleanup` before `llvm.coro.free`. No-op for the 5
+  Sh.4 goldens (no heap-allocated locals in their async fns)
+  but the correct foundation for future real-I/O async
+  programs that may be cancelled mid-flight. SSA prefix
+  `%drop.d.*.N` distinct from normal-exit `%drop.s|l|b.N`.
+  **Full sanitizer matrix on 5 Sh.4 goldens:** valgrind 0
+  errors / 0 leaks (e.g., 59_async_fanout = 36 allocs / 36
+  frees / 0 in use at exit), ASan 0 errors, LSan 0 leaks,
+  TSan 0 races on 56/57/58/59 under
+  `MAPANARE_ASYNC_THREADS=4`. Compiler-side: valgrind 60
+  CLEAN / 6 WARNINGS_ONLY / 0 ERRORS (vs 36 ERRORS baseline
+  — every one closed); ASan 60 CLEAN / 6 CRASH_NO_ASAN
+  (stage1-FAIL goldens) / 0 ASAN_ERROR; LSan 0 regressions
+  vs v5.4.2 baseline. **Ve.1 root-caused but deferred:**
+  valgrind on smallest crashing input (`lower.mn`,
+  3.6K LOC; `mir.mn` 1.0K LOC does not crash) shows
+  `parse_fn_body` writes 8 B 0-bytes-past a 256-byte
+  malloc'd block — 154,355 errors / 42 contexts. 256 = 32 ×
+  8 strongly implicates a `List<X>` default-capacity buffer
+  whose realloc-on-push path is broken or bypassed. Predates
+  async work; fix needs parser/list-growth surgery (~1
+  session) — out of v5.5.7 scope. Tracked as
+  `docs/known_issues.md` Ve.1; see
+  `docs/roadmap/v5/v5.5.7/VE1_INVESTIGATION.md` for full
+  forensics. stage2.ll 195,348 lines (+0.28% vs v5.5.6) /
+  908 defines (+1 = `emit_drop_glue_destroy`), llvm-as
+  clean, self-hosting preserved. Goldens harness 59/66
+  preserved; non-bootstrap pytest 5511 passed (+3 vs v5.5.6
+  — leak closures unblocked tests); bootstrap pytest 225
+  passed; `make lint` clean. Risks R1–R4 from PLAN.md all
+  mitigated or accepted-per-plan. Runtime unchanged. What's
+  next: v5.5.7.1 Ve.1 fix (tractable, bounded); v5.5.8
+  spawn/join + 60_async_multi_fanout golden (queue-pressure
+  workload to exercise lazy-spawn); v5.5.9 PARITY_GAPS.md
+  Sh.4 → Historical. See
+  `docs/roadmap/v5/v5.5.7/SESSION_REPORT.md`.
 - **v5.5.6** (shipped) — **Sh.4 Option B Phase 3 —
   scheduler-driven BlockOn + main lifecycle.** Replaces
   v5.5.4's synchronous `llvm.coro.resume` drive inside
@@ -613,7 +667,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27389 symbols, 61093 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27409 symbols, 61113 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
