@@ -18,6 +18,31 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.4.4** (shipped) — **Own.1 Phase 2 — Move-aware drop-glue
+  infrastructure; guard-lift deferred.** Three new `EmitState`
+  fields (`str_owned_source`, `list_owned_source`, `boxed_owned_source`)
+  parallel to the existing owner lists, carrying the bare SSA source
+  name the slot was allocated for; registry 22/22 clean. Python
+  mirror: `_local_strings_source` / `_local_boxed_source` /
+  `_list_vars_source` lists + `_moved_locals: set[str]`. Lowerer Move
+  emission in both `lower.mn` and `lower.py`: `Move(val)` fires after
+  every resource-consuming op (list.push, map/list IndexSet,
+  StructInit per field, EnumInit per payload, Some / Ok / Err, and
+  MapInit literals). Drop-glue helpers rewritten to accept
+  `List<String>` of ret-ptrs; `is_moved` check consults the parallel
+  source array. Also fixes a latent `emit_fn` flush cap of 65536 that
+  silently truncated large functions' drop-glue tail (raised to 1M).
+  Guard-lift for `%struct.*` returns was implemented (one-level field
+  walk extracting each escaping String/List/ptr) and reverted: the
+  ~40 extractvalue lines per `%struct.EmitState`-returning call site
+  inflated stage2.ll by 5× and triggered mnc-stage2 runtime segfault
+  during lex of mnc_all.mn. v5.4.5+ re-lifts with a size gate.
+  62_list_output stays LEAK; baseline unchanged from v5.4.3. Goldens
+  54/66, UAF 55/11/0, valgrind 0 new ERRORS — all preserved.
+  **Ve.1 regressed:** stage2.ll `llvm-as` OK but mnc-stage2 segfaults
+  before stage3 emission (previously crashed on teardown with non-
+  empty stage3). Not remediated this release. See
+  `docs/roadmap/v5/v5.4.4/`.
 - **v5.4.3** (shipped) — **Own.1 Phase 2 — close Rt.03 (loop-
   reassignment leaks).** Adds `EmitState.loop_depth: Int` (19th field,
   Reg.1 gate 24 → 25 clean) with matched push/pop around `for_body` /
@@ -98,19 +123,14 @@ Most recent releases (last 6). Full history at
   staleness closed). `examples/signals/counter.mn` signal demo. All
   three Coral LOW carry-forwards closed. Closeout arc complete.
   See `docs/roadmap/v5/v5.3.3/`.
-- **v5.3.0** (shipped) — **THE PANEL — 9.30/10, Option A.** Seven
-  reviewers grading v5.0.1–v5.2.0 arc. 5 EXCEEDS / 2 MEETS / 0 NEEDS
-  WORK. See `docs/roadmap/v5/v5.3.0/`.
-
 ### Planned / in-progress
 
-- **v5.4.4** — **Close Rt.04.** One-level struct-field walk in
-  drop-glue: extract every ptr-typed field from struct-return
-  aggregates and add each to the per-resource ret-ptr comparison
-  lists; removes v5.4.1 Phase 4's conservative skip-all-drops guard
-  so 62_list_output's struct-return intermediates no longer leak.
-  Verified against the refreshed baseline as an improvement the
-  checker prompts to lock in.
+- **v5.4.5** — **Close Rt.04 + fix Ve.1 regression.** Re-lift the
+  `%struct.*` aggregate-return guard with a size gate (skip field
+  walk when struct has >N fields, or when the calling function has
+  >M tracked slots). Diagnose and remediate the Ve.1 regression
+  introduced in v5.4.4 (mnc-stage2 segfault during lex of
+  mnc_all.mn).
 - **v5.5.0** — **Sh.4 — self-hosted async.** `block_on`/`await` +
   coroutine lowering.
 - **v5.6.0** — **Sh.6 — self-hosted tensor.** `Tensor`/`Float` types
@@ -371,7 +391,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27069 symbols, 60798 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27160 symbols, 60866 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
