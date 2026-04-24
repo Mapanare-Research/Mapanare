@@ -18,6 +18,31 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.5.0** (shipped) — **Sh.4 Phase 1 — async builtin semantic
+  registration.** Micro-release split: the original monolithic
+  v5.5.0 plan (builtins + lower + emit + close Sh.4) re-scoped
+  into v5.5.0 / v5.5.1 / v5.5.2. This release only touches
+  `mapanare/self/semantic.mn` (+17 lines, 3 edits): adds
+  `block_on` to `is_builtin_function`, `builtin_return_type`
+  (returns `<unknown>` — type-inferred from the awaited
+  `Future<T>`), and `register_builtins`; plus an explicit
+  `"await"` case in `infer_expr` that recurses into the inner
+  expression so errors inside `await foo()` are caught. 5 Sh.4
+  goldens (55_async_basic through 59_async_fanout) advance past
+  `mnc-stage1`'s semantic check and emit LLVM IR; the IR still
+  contains an undeclared `call i64 @block_on(...)` and would
+  fail `llvm-as` / not link. `scripts/test_native.py` compares
+  stage1 against the Python bootstrap by function-count /
+  function-name set (not IR validity, per v4.126.0 relaxation),
+  so the harness PASS count flips **54/66 → 59/66** even though
+  execution correctness is pending. `spawn` / `join` builtins
+  deferred — the 5 goldens don't use them. 7 failures remain
+  (Sh.6 × 5 tensor, Sh.7 × 1 closure, B × 1 bootstrap-fail);
+  no regressions in the previously-passing 54. `v5.5.1` adds
+  `BlockOn` / `AwaitSuspend` MIR variants + lowerer + Fn.is_async
+  propagation; `v5.5.2` adds emitter coroutine intrinsic
+  emission, scheduler init, and closes Sh.4 with sanitizer
+  sweeps. See `docs/roadmap/v5/v5.5.0/`.
 - **v5.4.4** (shipped) — **Own.1 Phase 2 — Move-aware drop-glue
   infrastructure; guard-lift deferred.** Three new `EmitState`
   fields (`str_owned_source`, `list_owned_source`, `boxed_owned_source`)

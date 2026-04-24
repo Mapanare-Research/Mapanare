@@ -185,6 +185,10 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "gpu_tensor_mul" { return true }
     if name == "gpu_tensor_div" { return true }
     if name == "gpu_tensor_matmul" { return true }
+    // Async builtins (v5.5.0 Sh.4): block_on(future) drives a coroutine
+    // to completion; return type is T of the awaited Future<T>, inferred
+    // from the call site (we use <unknown> so downstream type checks skip).
+    if name == "block_on" { return true }
     return false
 }
 
@@ -231,6 +235,8 @@ fn builtin_return_type(name: String) -> String {
     if name == "gpu_tensor_mul" { return "List" }
     if name == "gpu_tensor_div" { return "List" }
     if name == "gpu_tensor_matmul" { return "List" }
+    // Async (v5.5.0 Sh.4): block_on returns the awaited T; type-inferred.
+    if name == "block_on" { return "<unknown>" }
     return "Void"
 }
 
@@ -814,6 +820,13 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
     if ek == "assign" { return check_assign_expr(st, expr_assign_target(expr), expr_assign_op(expr), expr_assign_value(expr)) }
     if ek == "if" { return check_if_expr(st, expr_if_cond(expr), expr_if_then(expr), expr_if_else(expr)) }
     if ek == "match" { return check_match_expr(st, expr_match_subject(expr), expr_match_arms(expr)) }
+
+    // v5.5.0 Sh.4: `await expr` — recurse into inner so errors inside are
+    // caught; the awaited T is inferred at lower-level once Future<T> lands.
+    if ek == "await" {
+        let ir_await: InferResult = infer_expr(st, expr_await_inner(expr))
+        return new_infer_result(unknown_type(), ir_await.st)
+    }
 
     return new_infer_result(unknown_type(), st)
 }
@@ -2080,6 +2093,12 @@ fn register_builtins(st: SemState) -> SemState {
     // List methods
     let push_sym: Symbol = new_symbol("push", "function", make_builtin_fn_type(void_type()), false)
     st2 = define_in_scope(st2, "push", push_sym)
+
+    // Async builtins (v5.5.0 Sh.4): block_on(future) -> T. The return
+    // type is inferred from the awaited Future<T> at the call site; we
+    // register <unknown> so the type system skips downstream checks.
+    let blockon_sym: Symbol = new_symbol("block_on", "function", make_builtin_fn_type(unknown_type()), false)
+    st2 = define_in_scope(st2, "block_on", blockon_sym)
 
     return st2
 }
