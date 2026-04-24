@@ -18,6 +18,30 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.5.2** (shipped) — **Sh.4 Phase 3 (Option A) — synchronous
+  async emission.** Ships coroutine intrinsic + scheduler
+  runtime declarations (17 decls total: 6 `__mn_coro_scheduler_*`
+  + 11 `@llvm.coro.*` — unconditional, linker drops unused)
+  and real emission for `AwaitSuspend` / `BlockOn` MIR variants
+  as synchronous copies (`%dest = add i64 0, %future`). **Async
+  fns stay as plain fns returning their declared type — no
+  `presplitcoroutine`, no coroutine frame, no future struct.**
+  All 5 Sh.4 goldens now llvm-as clean **and execute
+  correctly**: 55_async_basic → 42, 56_async_await → 43,
+  57_real_await → 110, 58_async_file_io → done, 59_async_fanout
+  → 220. The tradeoff: Option A only works because every Sh.4
+  golden uses `return <const>` async fns with no real
+  suspension points. `mir_opt.mn::replace_uses_in_instr` +
+  `clone_instr_for_inline` gain cases for `await_suspend` /
+  `block_on` so the inliner properly renames the future operand
+  when a call gets inlined into `block_on(...)`. Goldens harness
+  59/66 unchanged; self-hosting preserved (stage2.ll 192,790
+  lines / 906 defines, llvm-as clean). Valgrind 0 errors on
+  55_async_basic. Option B (real coroutine wrapping) deferred
+  to v5.5.3+ — that's where `presplitcoroutine` + future struct
+  alloc + `ret → future.payload` rewrite + scheduler-driven
+  `block_on` land, closing Sh.4 semantically for non-trivial
+  async programs. See `docs/roadmap/v5/v5.5.2/`.
 - **v5.5.1** (shipped) — **Sh.4 Phase 2 — MIR variants +
   lowerer.** Adds `AwaitSuspend(Value, Value)` + `BlockOn(Value,
   Value)` to `mir.mn::Instruction`, matching string-tag

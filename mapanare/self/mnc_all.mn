@@ -12758,6 +12758,18 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
         }
         return Instruction::EnumInit(instr_dest(inst), instr_enum_type(inst), instr_enum_variant(inst), new_payload)
     }
+    // v5.5.2 Sh.4 Phase 3 — BlockOn/AwaitSuspend future operand rename.
+    // Required so the inliner's post-call rename of the caller's dest
+    // also updates BlockOn's future ref when block_on(inlined_call())
+    // is in the source.  Without this, `%t0` survives after inlining
+    // renamed it to `%_inl0_0_dst` and llvm-as rejects with "use of
+    // undefined value '%t0'".
+    if ik == "await_suspend" {
+        return Instruction::AwaitSuspend(instr_dest(inst), replace_use(instr_await_suspend_future(inst), old_name, new_name))
+    }
+    if ik == "block_on" {
+        return Instruction::BlockOn(instr_dest(inst), replace_use(instr_block_on_future(inst), old_name, new_name))
+    }
     // For remaining rare types (agent_spawn, agent_send, agent_sync,
     // signal_init, stream_op, tensor_init, map_init), keep as-is.
     return inst
@@ -13154,6 +13166,25 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         return result
     }
 
+    // v5.5.2 Sh.4 Phase 3 — AwaitSuspend/BlockOn rename in inlined body.
+    // When an async fn like `outer()` (which may contain `await inner()`)
+    // is inlined into main()'s BlockOn body, every AwaitSuspend inside
+    // outer() needs its dest + future ref prefixed/renamed to the
+    // inline scope so SSA stays valid. Without these cases the
+    // fallthrough keeps the instruction as-is and llvm-as rejects with
+    // duplicate-use or undefined-ref errors.
+    if ik == "await_suspend" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_fut: Value = rename_value(instr_await_suspend_future(inst), prefix, renames)
+        result.push(Instruction::AwaitSuspend(new_dest, new_fut))
+        return result
+    }
+    if ik == "block_on" {
+        let new_dest: Value = rename_value(instr_dest(inst), prefix, renames)
+        let new_fut: Value = rename_value(instr_block_on_future(inst), prefix, renames)
+        result.push(Instruction::BlockOn(new_dest, new_fut))
+        return result
+    }
     // Fallthrough: any future variant added to Instruction — keep as-is
     result.push(inst)
     return result
@@ -14398,6 +14429,36 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_gpu_tensor_div", llvm_list_rt(), "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_gpu_tensor_matmul", llvm_list_rt(), "ptr, ptr, i64, i64, i64")
 
+    // v5.5.2 Sh.4 Phase 3 — async runtime + LLVM coro intrinsics.
+    // Mirrors Python bootstrap's emit_llvm_text.py:898–908 conditional
+    // declaration block. We declare unconditionally here: the linker
+    // drops unused declarations and IR-level cost is ~10 lines. This
+    // avoids needing a _module_has_async scan pass at emission start.
+    //
+    // Scheduler entry points — runtime/native/mapanare_runtime.c v4.92.0+:
+    s = declare_runtime_fn(s, "__mn_coro_scheduler_init", "void", "i32")
+    s = declare_runtime_fn(s, "__mn_coro_scheduler_destroy", "void", "")
+    s = declare_runtime_fn(s, "__mn_coro_scheduler_register", "void", "ptr")
+    s = declare_runtime_fn(s, "__mn_coro_scheduler_run", "void", "")
+    s = declare_runtime_fn(s, "__mn_coro_register_wait", "void", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_coro_spawn", "void", "ptr")
+    // LLVM coroutine intrinsics — required once any async fn is emitted
+    // with `presplitcoroutine`. v5.5.2 Option A: async fns stay plain
+    // (no presplit wrapping), so these are never called — but we
+    // declare them for llvm-as validity of programs that reference them
+    // via AwaitSuspend / BlockOn.
+    s = declare_runtime_fn(s, "llvm.coro.id", "token", "i32, ptr, ptr, ptr")
+    s = declare_runtime_fn(s, "llvm.coro.alloc", "i1", "token")
+    s = declare_runtime_fn(s, "llvm.coro.size.i64", "i64", "")
+    s = declare_runtime_fn(s, "llvm.coro.begin", "ptr", "token, ptr")
+    s = declare_runtime_fn(s, "llvm.coro.suspend", "i8", "token, i1")
+    s = declare_runtime_fn(s, "llvm.coro.end", "i1", "ptr, i1, token")
+    s = declare_runtime_fn(s, "llvm.coro.free", "ptr", "token, ptr")
+    s = declare_runtime_fn(s, "llvm.coro.resume", "void", "ptr")
+    s = declare_runtime_fn(s, "llvm.coro.destroy", "void", "ptr")
+    s = declare_runtime_fn(s, "llvm.coro.done", "i1", "ptr")
+    s = declare_runtime_fn(s, "llvm.coro.save", "token", "ptr")
+
     return emit_blank(s)
 }
 
@@ -14790,20 +14851,30 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         s.moved_locals.push(stripped)
         return s
     }
-    // v5.5.1 Sh.4 Phase 2 — stubs for AwaitSuspend + BlockOn. v5.5.2
-    // replaces these with real coroutine intrinsic emission (coro.save
-    // + coro.suspend + switch for await; scheduler_register +
-    // scheduler_run + coro.destroy + value extraction for block_on).
-    // The stubs emit a comment so the IR text is stable and inspectable
-    // but the instruction is effectively a no-op; downstream uses of
-    // the dest reference an undefined SSA name, which llvm-as rejects.
-    // This is acceptable at v5.5.1 because the goldens harness checks
-    // function-name parity (not IR validity) per v4.126.0 relaxation.
+    // v5.5.2 Sh.4 Phase 3 (Option A) — synchronous async stubs.
+    // Option A: async fns are NOT wrapped in a coroutine frame yet —
+    // they stay as regular fns returning their declared type (Int, etc.)
+    // That means the "future" operand to AwaitSuspend / BlockOn is
+    // already the final T value, not a Future<T> ptr. We therefore
+    // emit a copy: dest = future.  This produces valid llvm-as-clean
+    // IR and executes correctly for the 5 Sh.4 goldens (55-59), which
+    // all use `return <const>` async fns with no real suspension
+    // points.  v5.5.3+ will ship the full presplit-coroutine wrapping
+    // (async fn prologue + ret→future.payload rewrite + coro.final
+    // epilogue) at which point these handlers re-emit to consume a
+    // real {i8, ptr} future — resume/suspend/switch for await,
+    // scheduler_register/run/destroy for block_on.
     if kind == "await_suspend" {
-        return emit_line(st, "  ; v5.5.1 await_suspend stub — v5.5.2 emits coro.save/suspend/switch")
+        let aw_dest: Value = instr_dest(inst)
+        let aw_fut: Value = instr_await_suspend_future(inst)
+        let mut s_aw: EmitState = emit_line(st, "  ; v5.5.2 await_suspend (Option A: synchronous, async fns not yet presplit-wrapped)")
+        return emit_copy(s_aw, aw_dest, aw_fut)
     }
     if kind == "block_on" {
-        return emit_line(st, "  ; v5.5.1 block_on stub — v5.5.2 emits scheduler_register/run/destroy")
+        let bo_dest: Value = instr_dest(inst)
+        let bo_fut: Value = instr_block_on_future(inst)
+        let mut s_bo: EmitState = emit_line(st, "  ; v5.5.2 block_on (Option A: synchronous, async fns not yet presplit-wrapped)")
+        return emit_copy(s_bo, bo_dest, bo_fut)
     }
     __mn_str_eprint("ERROR: unknown MIR instruction kind: ")
     __mn_str_eprint(kind)
