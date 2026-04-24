@@ -18,6 +18,61 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.0** (shipped) — **Sh.6 Phase 1 — tensor literal parser +
+  golden 49 closed.** First self-hosted tensor release. Grammar:
+  `"Tensor"` becomes `KW_TENSOR` in `lexer.mn`; `parse_tensor_lit`
+  rewritten from a 1D-only body shim into an iterative depth-stack
+  walker supporting 2D/3D/… nested arrays
+  `Tensor<T>[[1,2],[3,4]]` with row-major flattening + shape
+  inference (mirrors `parser.py::tensor_literal + _walk`).
+  Semantic: registers `tensor_rank/size/get_f64/get_i64/
+  shape_dim/print` in `is_builtin_function` / `builtin_return_type`
+  / `register_builtins` with correct Int/Float/Void ret types.
+  Lowering: `lower_tensor` dest typed as `mir_tensor()` (was
+  `mir_unknown()` → i64, causing ptr/i64 store mismatch);
+  `lower_call_by_name` gets 6 tensor-builtin return-type branches
+  so `str(tensor_get_f64(...))` routes through
+  `__mn_str_from_float` not `_from_int`. Emission: declares the
+  `__mn_tensor_*` runtime family (alloc, free, store_{f64,i64},
+  get_{f64,i64}, rank, size, shape_dim, print_f64) with matching
+  `runtime_fn_attrs`; `emit_tensor_init` rewritten from
+  `inttoptr 0` stub to full `alloca [rank × i64] shape + store
+  dims + __mn_tensor_alloc + __mn_tensor_store_*` pipeline; tensor
+  builtins routed in `emit_mir_call` to their `__mn_tensor_*`
+  equivalents. New MIR helper `mir_tensor()`;
+  `resolve_mir_type(TK_TENSOR) → llvm_ptr()`. **Closes golden
+  49_tensor_literal end-to-end** (mnc-stage1 compiles → llvm-as
+  clean → lli output byte-identical to Python bootstrap:
+  `1 3 1 3 2 6 1 6 2 3 3 8 1 8 3 20 -1 -2.5`). Goldens 50/51/52/53
+  still fail — closing them needs multi-dim indexing (`a[i,j]`),
+  tensor binops/broadcast, reduction methods (`.sum()`), range
+  slicing (`a[0..2,_]`) — deferred to v5.6.1+. Two foot-guns caught
+  in development: (1) `en` is a Mapanare keyword (Spanish "in")
+  so `let en: String` binds as `<unknown>` and triggers spurious
+  `"String + Option"` binop errors during self-compilation — fix:
+  use `elem_val`/`elem_name` locally; (2) inline `list[i] = val`
+  writes (emit_index_set's `ls.trap.N`/`ls.ok.N` blocks) disturb
+  PHI predecessors in the enclosing function — pre-existing
+  self-hosted-emitter bug latent until this release's nested-array
+  walker triggered it; workaround wraps the list writes in three
+  single-block helpers (`_tensor_pad_list` / `_tensor_set_at` /
+  `_tensor_inc_at` in `parser.mn`) so the new blocks live inside
+  the helper's CFG. Root-cause fix deferred. 18 new parser tests
+  in `tests/parser/test_tensor_literals.py` covering 1D/2D/3D,
+  Float/Int, trailing commas, negated elements, deep nesting,
+  type annotations. stage2.ll 197,883 lines (+1.3% vs v5.5.7) /
+  908 defines, llvm-as clean, self-hosting preserved;
+  non-bootstrap pytest 5530 passed (after `make build-rt` for the
+  VERSION macro bump); bootstrap pytest 225 passed; `make lint`
+  clean; `check_struct_registry.py` clean. Ve.1 stage3 segfault
+  persists (pre-existing from v5.5.7, confirmed by testing
+  v5.5.7's own binary against its own source — same crash); not a
+  v5.6.0 regression. Goldens harness 59/66 → 63/66 (function-match
+  parity; genuine correctness close for 49 only). What's next:
+  v5.6.1 multi-dim indexing (golden 50), v5.6.2 broadcast (golden
+  51), v5.6.3 slicing + reductions (goldens 52/53), v5.7.0 closure
+  + or-pattern (goldens 51/64). See
+  `docs/roadmap/v5/v5.6.0/SESSION_REPORT.md`.
 - **v5.5.7** (shipped) — **Sanitizer + fixed-point
   hardening.** Stabilization release for the v5.5.4–v5.5.6
   async coroutine pipeline. Two emit_llvm.mn changes (+93 /
@@ -407,10 +462,15 @@ Most recent releases (last 6). Full history at
   >M tracked slots). Diagnose and remediate the Ve.1 regression
   introduced in v5.4.4 (mnc-stage2 segfault during lex of
   mnc_all.mn).
-- **v5.5.0** — **Sh.4 — self-hosted async.** `block_on`/`await` +
-  coroutine lowering.
-- **v5.6.0** — **Sh.6 — self-hosted tensor.** `Tensor`/`Float` types
-  + nested-array literal parser.
+- **v5.6.1** — **Sh.6 Phase 2 — multi-dim indexing (golden 50).**
+  `a[i,j]` / `a[i,j,k]` via existing `__mn_tensor_get_{f64,i64}_nd`
+  variadic runtime + write path `d[i,j] = val`.
+- **v5.6.2** — **Sh.6 Phase 3 — broadcast (golden 51).** Tensor-
+  tensor and tensor-scalar binops via `__mn_tensor_{add,sub,mul,
+  div}_broadcast_{f64,i64}` and `_scalar_` family.
+- **v5.6.3** — **Sh.6 Phase 4 — slicing + reductions (goldens
+  52/53).** `.sum()/.mean()/.max()/.min()/.argmax()/.argmin()`
+  method dispatch, range slice `a[0..2]`, wildcard `a[_]`.
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.

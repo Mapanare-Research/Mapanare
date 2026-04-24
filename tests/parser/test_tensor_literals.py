@@ -42,7 +42,7 @@ def _compile(src: str) -> tuple[int, str, str]:
 def _parses(src: str) -> tuple[str, str]:
     """Compile `src` as a main-wrapped program. Assert no parse error and
     return the (stdout, stderr) streams for further inspection."""
-    rc, out, err = _compile(f"fn main() {{ {src}\nprint(\"ok\") }}")
+    rc, out, err = _compile(f'fn main() {{ {src}\nprint("ok") }}')
     # Parse errors are printed before any semantic errors; if neither a parse
     # error nor a tensor-specific semantic-level "Undefined function" shows
     # up, the syntax was accepted.
@@ -93,15 +93,10 @@ class TestTensorLiteral2D:
 
 class TestTensorLiteral3D:
     def test_3d_float(self):
-        _parses(
-            "let a = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], "
-            "[[5.0, 6.0], [7.0, 8.0]]]"
-        )
+        _parses("let a = Tensor<Float>[[[1.0, 2.0], [3.0, 4.0]], " "[[5.0, 6.0], [7.0, 8.0]]]")
 
     def test_3d_int(self):
-        _parses(
-            "let a = Tensor<Int>[[[1, 2], [3, 4]], [[5, 6], [7, 8]]]"
-        )
+        _parses("let a = Tensor<Int>[[[1, 2], [3, 4]], [[5, 6], [7, 8]]]")
 
     def test_3d_singleton(self):
         _parses("let a = Tensor<Float>[[[42.0]]]")
@@ -127,6 +122,4 @@ class TestTensorLiteralRegression:
         assert "expected RBRACKET but got COMMA" not in (out + err)
 
     def test_deep_nesting(self):
-        _parses(
-            "let a = Tensor<Int>[[[[1]]]]"
-        )
+        _parses("let a = Tensor<Int>[[[[1]]]]")
