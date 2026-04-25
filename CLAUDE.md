@@ -18,6 +18,110 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.9** (shipped) — **Ve.3 ROOT CAUSE CLOSED; new
+  Ve.4 opened.** Closes the v5.6.4-era stage2 runtime
+  OOM/SIGSEGV at its source: `emit_drop_glue` for `List<Enum>`
+  returns unconditionally freed every tracked heap-boxed
+  payload via `@free(ptr)`, leaving dangling pointers in the
+  returned list. `mir_opt::clone_instr_for_inline` returns
+  `List<Instruction>` where Instruction is `%enum.Instruction
+  = type {i64, ptr}` — `{tag, heap_box_ptr}` pairs whose
+  payload_ptr IS one of the freed boxes. The single-level
+  alias check in `drop_glue_boxed` compares against
+  `ret_box_ptrs` (empty for list returns), so all boxes get
+  freed. Caller dereferences dangling payloads via
+  `instr_dest(inst)` and reads garbage Value names →
+  `__mn_str_concat → llvm_alloca → __mn_alloc(garbage_size)`
+  OOM. v5.6.8's "third Alloca" finding was the first
+  inliner-cloned Alloca (`%_inl0_2_a.addr` from `add()`
+  inlined into `main()`). Direct-lowerer Allocas returned via
+  LowerState (a struct, conservatively skipped by
+  `ret_ty_is_aggregate`) survived; inliner-cloned ones
+  returned via `clone_instr_for_inline`'s List<Instruction>
+  didn't. Same multi-level aliasing class as v5.6.6 Rt.04
+  (List<String> nested in returned struct, 2 levels deep);
+  fix matches v5.6.6's RESCOPE pattern — 25 LOC in
+  `emit_llvm.mn:4763`: skip drops conservatively when
+  `ret_ty == llvm_list_rt() && len(boxed_owned) > 0`. Cost:
+  intermediate boxes NOT in returned list leak; accepted per
+  v5.6.6 precedent (UAF prevention > leak prevention).
+  Multi-level alias analysis is v6.0 borrow-checker scope.
+  **Verification on reproducer**: `mnc-stage2 /tmp/p1.mn` was
+  0-line OOM since v5.6.4 → now **215 lines `llvm-as` clean
+  RC=0**. Trace instrumented at 4 points
+  (`lower.mn::bind_fn_params`,
+  `mir_opt::clone_instr_for_inline` Alloca branch,
+  `emit_mir_by_kind` dispatch, `emit_alloca`) confirmed
+  corruption first appears between clone_inst's push and
+  dispatch's `instr_dest(inst)` read — incompatible with the
+  v5.6.8 PLAN's hypotheses E (rename_value bug) or F (Value
+  layout divergence). Hypothesis G (noalias on byref) hand-
+  patched independently and ruled out (still OOMs with same
+  signature). The fix path was identified by inspecting
+  `clone_instr_for_inline`'s exit IR in stage2.ll — 48 calls
+  to `@free(ptr)` with no `icmp eq ptr` aliasing checks.
+  **What v5.6.9 does NOT close**: full self-compile fixed-
+  point. `mnc-stage2 mnc_all.mn` segfaults at a stack address
+  under default 8 MB stack; with `ulimit -s unlimited` the
+  MIR verifier surfaces a SEPARATE pre-existing bug — empty
+  BasicBlocks in match-arm lowering of the self-hosted
+  compiled compiler, e.g. `expr_kind::match_arm2: block has
+  no instructions`. Reproduces on the **original v5.6.8
+  binary** with the same error on a 2-arm match test program
+  — confirming v5.6.8's mnc_all.mn SIGSEGV was THIS bug
+  surfacing as stack overflow, not Ve.3 itself. Goldens
+  never tested stage2 binary on user code, so this stayed
+  latent for releases. Tracked as new **Ve.4** in
+  `docs/known_issues.md` for v5.6.10. Hypothesis: an MIR
+  pass post-lowering (likely `dead_block_elim_function` or
+  interaction with `inline_small_functions`) drops
+  instructions from match arms whose body is a single tail
+  expression. Broadening the v5.6.9 Ve.3 fix to also gate on
+  `len(str_owned) > 0` reproduces the SAME match-arm error
+  on programs as small as a 2-arm enum match — Ve.4 is
+  independent of the fix's breadth. **Culebra honest
+  assessment**: PLAN scoped culebra as primary diagnostic.
+  In practice culebra v2.4.0 (a Windows PE32+ binary running
+  through WSL interop) needed Windows-style paths (initial
+  WSL-style paths hung silently for several minutes),
+  `triage --brief` took **7m37s** on 207k-line stage2.ll
+  (the `summary` subcommand never completed in 5+ minutes),
+  and the loud `return-type-divergence` signal class (37
+  critical hits) was a false positive flagging all
+  aggregate-return runtime declarations (`__mn_str_concat`,
+  `__mn_str_substr`, `__mn_list_new`, etc.) as if
+  cross-stage divergent. The actual root cause was found via
+  `__mn_str_eprint` instrumentation across 4 points + one
+  `should_inline → return false` confirmation — total
+  ~8 min including builds. Culebra's contribution:
+  confirmed `function-count-drop` (940 hits) and
+  `return-type-divergence` (37 hits) signal classes existed;
+  let me skip Hypothesis F's deep investigation. v5.6.10+
+  recommendations in SESSION_REPORT §Culebra: build a
+  Linux-native binary; profile `triage` on 200k+ line IR;
+  narrow the `return-type-divergence` template to confirmed
+  cross-stage mismatches; add a drop-glue/lifetime template
+  class. Metrics: stage2.ll **207,619 → 201,743 lines
+  (−2.83%)**, `llvm-as` clean (reduction comes from skipping
+  ~5,876 lines of drop-glue extracts/free calls in ~12
+  list-returning functions); `mnc-stage1` 6,270,112 bytes
+  identical strip-pruned size; goldens **64/66 preserved**
+  (same 2 fails: 51_match_guards_and_or B + 64_closure_typed
+  Sh.7); ASan UAF sweep 0 errors / 65 CLEAN / 1
+  CRASH_NO_ASAN baseline; valgrind 0 errors / 66
+  WARNINGS_ONLY; LSan baseline gate PASS (no leak
+  regressions, 62_list_output unchanged at 9 / 141 B per
+  Rt.04 v5.6.6 RESCOPE); non-bootstrap pytest 5584 passed;
+  `make lint` clean; `check_struct_registry.py` 23/23/91
+  clean. `known_issues.md` Ve.3 row → CLOSED v5.6.9; Ve.4
+  row added. The closeout arc v5.6.5 (Ve.1) → v5.6.6 (Rt.04
+  RESCOPED) → v5.6.7 (Ve.2 PARTIAL) → v5.6.8 (Ve.3
+  investigation) → **v5.6.9 (Ve.3 CLOSED; Ve.4 OPENED)**
+  continues with v5.6.10 (Ve.4 close + revisit
+  struct_byte_size patch); v5.7.0 (Sh.7 + B or-pattern →
+  66/66); v5.7.1 (SPEC docs polish); v5.8.0 (RE-PANEL).
+  See `docs/roadmap/v5/v5.6.9/SESSION_REPORT.md` for the
+  full trace, hypothesis matrix, and culebra retrospective.
 - **v5.6.8** (shipped) — **Ve.3 INVESTIGATION-ONLY — stage2
   runtime OOM hypothesis space narrowed; bug NOT closed.**
   Documentation/investigation release; source code unchanged
@@ -952,24 +1056,31 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
-- **v5.6.9+** — **Ve.3 close — stage2 runtime OOM.** v5.6.8
-  investigation narrowed the failure to the **third** Alloca emitted
-  for `p1.mn`: `dest.name` (Value's field 0) reads as uninitialised
-  memory while `dest.ty` reads correctly. Hypothesis A and D from
-  v5.6.8's PLAN ruled out; experimental `struct_byte_size` patch
-  fixes ABI sizing but does NOT close the OOM. Active hypotheses:
-  (i) `mir_opt::clone_instr_for_inline`'s Alloca branch produces
-  corrupt dest.name during inlining; (ii) field-0 boundary in
-  stage1-emitted IR has a layout interaction the Python emitter
-  avoids (Python emits `noalias` on byref params + inline aggregate
-  types throughout; self-hosted emitter does not — pre-existing
-  divergence). v5.6.9 instruments emit_alloca/emit_load/emit_store
-  with `__mn_str_eprint` of dest.name, rebuilds stage1+stage2, and
-  determines whether corruption is at the LOWERER level (MIR
-  itself has bad dest) or the EMITTER level (dest is loaded from
-  a bad alloca slot). See `docs/roadmap/v5/v5.6.8/SESSION_REPORT.md`
-  for the full hypothesis matrix.
-- **v5.6.9+** — **Ve.2 residuals — remove 384-byte list floor.**
+- **v5.6.10** — **Ve.4 close — match-arm verifier error.**
+  v5.6.9 closed Ve.3 (drop-glue UAF on `List<Enum>` returns)
+  and surfaced Ve.4: in the self-hosted compiled lowerer,
+  match-arm lowering produces empty BasicBlocks for arms whose
+  body is a single tail expression — the MIR verifier rejects
+  with `<fn>::match_arm<N>: block has no instructions`.
+  Reproduces on a 2-arm enum match (`/tmp/p3.mn`) AND on the
+  original v5.6.8 binary, confirming Ve.4 is pre-existing
+  (was masked by Ve.3's OOM). Default 8 MB stack causes a
+  SIGSEGV at a stack address before the verifier fires;
+  `ulimit -s unlimited` lets it surface cleanly. Python-built
+  stage1 lowers correctly (goldens 64/66 pass), so the bug is
+  in how stage1 compiled the self-hosted lowerer's
+  match-arm-handling code into stage2.ll. Hypothesis: a pass
+  post-lowering (likely `dead_block_elim_function` or
+  interaction with `inline_small_functions`) drops
+  instructions from match arms whose body is a single tail
+  expression. v5.6.10 instruments lower.mn's match-arm
+  emission + the post-lower passes to identify which pass
+  empties the arm. After Ve.4 closes, mnc_all.mn → stage3.ll
+  produces non-empty IR and `verify_fixed_point.sh` can be
+  re-evaluated. v5.6.10 also revisits the v5.6.8
+  `struct_byte_size` patch to determine whether its 7% IR
+  growth is load-bearing post-Ve.4.
+- **v5.6.11+** — **Ve.2 residuals — remove 384-byte list floor.**
   The 18 remaining 384-byte fallback sites come from empty-list
   literals in contexts that don't route through `lower_let`:
   struct field defaults, call arguments, return expressions.
@@ -1062,7 +1173,7 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.8):** 64/66. The 2 gap:
+**Current baseline (v5.6.9):** 64/66. The 2 gap:
 `51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
 `64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
 v5.7.0 for 66/66.

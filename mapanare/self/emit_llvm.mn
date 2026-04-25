@@ -4738,6 +4738,31 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
         return st
     }
 
+    // v5.6.9 Ve.3 — List return multi-level UAF: when the function returns
+    // a list with ANY tracked owned resources (strings/lists/boxes), the
+    // list elements may reference those resources THROUGH their fields,
+    // not by the list's own data ptr. drop_glue_* alias-checks at one
+    // level (against the list's data ptr); the inner refs are invisible.
+    // Without multi-level alias analysis (v6.0 borrow-checker scope),
+    // every drop fires unconditionally → UAF when caller dereferences
+    // the returned list. Same RESCOPE pattern as v5.6.6 Rt.04 (List<String>
+    // in returned struct).
+    //
+    // Closes Ve.3: `mir_opt::clone_instr_for_inline` returns
+    // List<Instruction>. Each Instruction is `{i64 tag, ptr payload}` with
+    // a heap-boxed payload tracked in `boxed_owned`. drop_glue_boxed at
+    // function exit freed every payload, leaving dangling ptrs in the
+    // returned list. emit_alloca later dereferenced those dangling ptrs
+    // and read garbage Value names → __mn_str_concat → OOM with garbage
+    // size on `/tmp/p1.mn`; SIGSEGV on full `mnc_all.mn` self-compile
+    // (same class, different memory layout).
+    //
+    // Cost: intermediate strings/lists/boxes NOT in the returned list
+    // leak. Accepted per v5.6.6 RESCOPE — UAF prevention > leak prevention.
+    if ret_ty == llvm_list_rt() && len(st.boxed_owned) > 0 {
+        return st
+    }
+
     let mut s: EmitState = st
     let mut ret_str_ptrs: List<String> = []
     let mut ret_list_ptrs: List<String> = []
