@@ -2447,9 +2447,18 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
         let elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
     } else {
-        // UNKNOWN elem_ty — safety floor. Reached via lowerer paths that
-        // don't propagate elem_ty (mut reassignments `xs = []`, untyped
-        // call args `f([])`). v5.6.11+ scope.
+        // UNKNOWN elem_ty — safety floor. v5.6.10 closed every reachable
+        // path on the current corpus (mnc_all.mn + 66 goldens) via the
+        // emit_list_init scalar gate, lower_assign_list_hint, and the
+        // lower_pipe call-arg fix. Branch retained as a defensive
+        // fallback: any future lowerer path that emits ListInit with
+        // elem_ty.kind == TK_UNKNOWN — e.g. fully-untyped `let xs = []`
+        // followed by reassignment without annotation, or call args
+        // through new lowerer entry points — gets a 384-byte slot
+        // (correct for any element ≤ 384 bytes) instead of silent
+        // truncation. Add an IR comment so future regressions are
+        // grep-able.
+        s = emit_line(s, "  ; v5.6.10 floor: elem_ty unknown — list_new uses 384-byte slot (defensive fallback)")
         let mut elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
         if elem_sz_n < 384 { elem_sz_n = 384 }
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
