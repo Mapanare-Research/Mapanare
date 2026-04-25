@@ -2417,20 +2417,20 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let mut s: EmitState = st
     let dn: String = dest.name
 
-    // v5.6.5 Ve.1 fix — use GEP-trick for known element types, floor
-    // at 384 for UNKNOWN/i64 fallback. The floor was previously
-    // unconditional (see comment below) because the lowerer frequently
-    // emits `List<Unknown>` MIR for empty-list literals whose element
-    // type hasn't propagated yet — e.g. `def_fn_data`'s `_ =>` arm
-    // builds `let e: List<String> = []` which lowers to elem_ty kind=
-    // TK_UNKNOWN → resolve_mir_type returns "i64" → GEP-trick would
-    // compute 8 bytes and truncate String elements. Defer exact sizing
-    // to LLVM only when elem_ty is known-structured (struct/enum/list/
-    // string); otherwise stay on the 384-byte safe floor.
+    // v5.6.5 Ve.1 fix — use GEP-trick for known aggregate element types
+    // (%struct./%enum./inline {...}). v5.6.10 Ve.2 residual: previously
+    // *all* non-aggregate elements (Int, Float, Bool, ptr, String) hit
+    // an unconditional 384-byte floor — wasteful (~48× for i64) and a
+    // primary residual after v5.6.7's lower_let_list_hint. v5.6.10
+    // gates the floor on `elem_ty.kind == TK_UNKNOWN()`: known scalars
+    // use their exact LLVM type size, only the unknown-elem fallback
+    // (mut reassignment / call arg paths that don't propagate elem_ty)
+    // keeps the safety floor.
     //
-    // NOTE: 384 is wasteful (~24× overhead for 16B Strings) but correct
-    // until the lowerer propagates list-element types through empty-
-    // literal lowering — scope for a dedicated v5.6.6+ micro-release.
+    // The 384-byte floor remains because `resolve_mir_type(UNKNOWN)`
+    // returns "i64" — indistinguishable from `Int` at the LLVM string
+    // level. Using kind avoids the silent truncation that v5.6.5's
+    // 256-byte fallback caused for FnDefData (264 B; v5.6.5 Ve.1).
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut use_gep_trick: Bool = false
@@ -2441,8 +2441,15 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
         let elem_sz: String = dn + ".elem.sz"
         s = emit_line(s, "  " + elem_sz + " = ptrtoint ptr getelementptr (" + elem_llvm_ty + ", ptr null, i32 1) to i64")
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + elem_sz))
+    } else if elem_ty.kind != TK_UNKNOWN() {
+        // v5.6.10 — known scalar elem_ty (Int, Float, Bool, ptr, etc.).
+        // Use the exact LLVM type size; no floor needed.
+        let elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
+        s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
     } else {
-        // Fallback: 384 covers any scalar element + unknown-type safety.
+        // UNKNOWN elem_ty — safety floor. Reached via lowerer paths that
+        // don't propagate elem_ty (mut reassignments `xs = []`, untyped
+        // call args `f([])`). v5.6.11+ scope.
         let mut elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
         if elem_sz_n < 384 { elem_sz_n = 384 }
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))

@@ -3067,7 +3067,11 @@ fn lower_pipe(st: LowerState, left: Expr, right: Expr) -> LowerResult {
 
     let rk: String = expr_kind(right)
     if rk == "ident" {
-        return lower_pipe_call(arg_r, expr_ident_name(right), [])
+        // v5.6.10 — bind via typed let so the empty extras list flows
+        // through `lower_let_list_hint` and gets a known elem_ty
+        // (Expr is an enum → GEP-trick path in emit_list_init).
+        let empty_extras: List<Expr> = []
+        return lower_pipe_call(arg_r, expr_ident_name(right), empty_extras)
     }
     if rk == "call" {
         return lower_pipe_with_call(arg_r, expr_call_callee(right), expr_call_args(right))
@@ -3539,8 +3543,41 @@ fn lower_signal_expr(st: LowerState, inner: Expr) -> LowerResult {
 // Assignment lowering
 // ---------------------------------------------------------------------------
 
+// v5.6.10 Ve.2 residual helper — return the element-type hint for an
+// assignment of `[]` to a `mut` typed `List<T>` variable. Mirrors the
+// v5.6.7 `lower_let_list_hint` pattern but pulls the hint from the
+// variable's alloca type instead of an explicit annotation. Returns
+// `mir_unknown()` whenever the hint cannot be recovered, letting the
+// caller fall through to `lower_expr` and the 384-byte safety floor in
+// `emit_list_init`.
+fn lower_assign_list_hint(st: LowerState, target: Expr, value: Expr) -> MIRType {
+    if expr_kind(value) != "list_lit" { return mir_unknown() }
+    if expr_kind(target) != "ident" { return mir_unknown() }
+    let tname: String = expr_ident_name(target)
+    let opt_addr: Option<Value> = lookup_var(st, tname)
+    match opt_addr {
+        Some(addr) => {
+            if addr.ty.kind == TK_LIST() && len(addr.ty.args) > 0 {
+                return addr.ty.args[0]
+            }
+            return mir_unknown()
+        },
+        _ => { return mir_unknown() }
+    }
+}
+
 fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerResult {
-    let val_r: LowerResult = lower_expr(st, value)
+    // v5.6.10 — empty-list reassignment elem_ty hint. Same pattern as
+    // v5.6.7's `lower_let`: route `xs = []` through `lower_list_typed`
+    // when the variable's alloca carries a `List<T>` type. Without
+    // this, the RHS lowers via `lower_list → lower_list_typed(... mir_unknown())`
+    // and `emit_list_init` falls through to the 384-byte safety floor.
+    let hint_elem_asgn: MIRType = lower_assign_list_hint(st, target, value)
+    let val_r: LowerResult = if hint_elem_asgn.kind != TK_UNKNOWN() {
+            lower_list_typed(st, expr_list_elements(value), hint_elem_asgn)
+        } else {
+            lower_expr(st, value)
+        }
     let mut s: LowerState = val_r.state
 
     let tk: String = expr_kind(target)

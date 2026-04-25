@@ -10890,7 +10890,11 @@ fn lower_pipe(st: LowerState, left: Expr, right: Expr) -> LowerResult {
 
     let rk: String = expr_kind(right)
     if rk == "ident" {
-        return lower_pipe_call(arg_r, expr_ident_name(right), [])
+        // v5.6.10 — bind via typed let so the empty extras list flows
+        // through `lower_let_list_hint` and gets a known elem_ty
+        // (Expr is an enum → GEP-trick path in emit_list_init).
+        let empty_extras: List<Expr> = []
+        return lower_pipe_call(arg_r, expr_ident_name(right), empty_extras)
     }
     if rk == "call" {
         return lower_pipe_with_call(arg_r, expr_call_callee(right), expr_call_args(right))
@@ -11362,8 +11366,41 @@ fn lower_signal_expr(st: LowerState, inner: Expr) -> LowerResult {
 // Assignment lowering
 // ---------------------------------------------------------------------------
 
+// v5.6.10 Ve.2 residual helper — return the element-type hint for an
+// assignment of `[]` to a `mut` typed `List<T>` variable. Mirrors the
+// v5.6.7 `lower_let_list_hint` pattern but pulls the hint from the
+// variable's alloca type instead of an explicit annotation. Returns
+// `mir_unknown()` whenever the hint cannot be recovered, letting the
+// caller fall through to `lower_expr` and the 384-byte safety floor in
+// `emit_list_init`.
+fn lower_assign_list_hint(st: LowerState, target: Expr, value: Expr) -> MIRType {
+    if expr_kind(value) != "list_lit" { return mir_unknown() }
+    if expr_kind(target) != "ident" { return mir_unknown() }
+    let tname: String = expr_ident_name(target)
+    let opt_addr: Option<Value> = lookup_var(st, tname)
+    match opt_addr {
+        Some(addr) => {
+            if addr.ty.kind == TK_LIST() && len(addr.ty.args) > 0 {
+                return addr.ty.args[0]
+            }
+            return mir_unknown()
+        },
+        _ => { return mir_unknown() }
+    }
+}
+
 fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerResult {
-    let val_r: LowerResult = lower_expr(st, value)
+    // v5.6.10 — empty-list reassignment elem_ty hint. Same pattern as
+    // v5.6.7's `lower_let`: route `xs = []` through `lower_list_typed`
+    // when the variable's alloca carries a `List<T>` type. Without
+    // this, the RHS lowers via `lower_list → lower_list_typed(... mir_unknown())`
+    // and `emit_list_init` falls through to the 384-byte safety floor.
+    let hint_elem_asgn: MIRType = lower_assign_list_hint(st, target, value)
+    let val_r: LowerResult = if hint_elem_asgn.kind != TK_UNKNOWN() {
+            lower_list_typed(st, expr_list_elements(value), hint_elem_asgn)
+        } else {
+            lower_expr(st, value)
+        }
     let mut s: LowerState = val_r.state
 
     let tk: String = expr_kind(target)
@@ -17015,20 +17052,20 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let mut s: EmitState = st
     let dn: String = dest.name
 
-    // v5.6.5 Ve.1 fix — use GEP-trick for known element types, floor
-    // at 384 for UNKNOWN/i64 fallback. The floor was previously
-    // unconditional (see comment below) because the lowerer frequently
-    // emits `List<Unknown>` MIR for empty-list literals whose element
-    // type hasn't propagated yet — e.g. `def_fn_data`'s `_ =>` arm
-    // builds `let e: List<String> = []` which lowers to elem_ty kind=
-    // TK_UNKNOWN → resolve_mir_type returns "i64" → GEP-trick would
-    // compute 8 bytes and truncate String elements. Defer exact sizing
-    // to LLVM only when elem_ty is known-structured (struct/enum/list/
-    // string); otherwise stay on the 384-byte safe floor.
+    // v5.6.5 Ve.1 fix — use GEP-trick for known aggregate element types
+    // (%struct./%enum./inline {...}). v5.6.10 Ve.2 residual: previously
+    // *all* non-aggregate elements (Int, Float, Bool, ptr, String) hit
+    // an unconditional 384-byte floor — wasteful (~48× for i64) and a
+    // primary residual after v5.6.7's lower_let_list_hint. v5.6.10
+    // gates the floor on `elem_ty.kind == TK_UNKNOWN()`: known scalars
+    // use their exact LLVM type size, only the unknown-elem fallback
+    // (mut reassignment / call arg paths that don't propagate elem_ty)
+    // keeps the safety floor.
     //
-    // NOTE: 384 is wasteful (~24× overhead for 16B Strings) but correct
-    // until the lowerer propagates list-element types through empty-
-    // literal lowering — scope for a dedicated v5.6.6+ micro-release.
+    // The 384-byte floor remains because `resolve_mir_type(UNKNOWN)`
+    // returns "i64" — indistinguishable from `Int` at the LLVM string
+    // level. Using kind avoids the silent truncation that v5.6.5's
+    // 256-byte fallback caused for FnDefData (264 B; v5.6.5 Ve.1).
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut use_gep_trick: Bool = false
@@ -17039,8 +17076,15 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
         let elem_sz: String = dn + ".elem.sz"
         s = emit_line(s, "  " + elem_sz + " = ptrtoint ptr getelementptr (" + elem_llvm_ty + ", ptr null, i32 1) to i64")
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + elem_sz))
+    } else if elem_ty.kind != TK_UNKNOWN() {
+        // v5.6.10 — known scalar elem_ty (Int, Float, Bool, ptr, etc.).
+        // Use the exact LLVM type size; no floor needed.
+        let elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
+        s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
     } else {
-        // Fallback: 384 covers any scalar element + unknown-type safety.
+        // UNKNOWN elem_ty — safety floor. Reached via lowerer paths that
+        // don't propagate elem_ty (mut reassignments `xs = []`, untyped
+        // call args `f([])`). v5.6.11+ scope.
         let mut elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
         if elem_sz_n < 384 { elem_sz_n = 384 }
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
