@@ -18,6 +18,66 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.8** (shipped) — **Ve.3 INVESTIGATION-ONLY — stage2
+  runtime OOM hypothesis space narrowed; bug NOT closed.**
+  Documentation/investigation release; source code unchanged
+  vs v5.6.7. The PLAN scoped Ve.3 closure for v5.6.8;
+  empirical work showed the bug is deeper than the four
+  enumerated hypotheses. **What was found:** `mnc-stage2`
+  OOMs in `__mn_str_concat ← llvm_alloca ← emit_mir_by_kind`
+  on the **third** `Instruction::Alloca` emitted for `p1.mn`
+  — the first two (param slots `%a.addr`/`%b.addr` for `add`'s
+  parameters) emit correctly; the third's `dest.name`
+  (Value's field 0) is read as uninitialised memory while
+  `dest.ty` (field 1, kind=TK_INT, name="Int") reads correctly
+  on all three calls. `len(dest.name)` returns
+  non-deterministic huge values across runs. Hypothesis A
+  (payload-type builder divergence) ruled out by IR
+  inspection — both `build_payload_type_from_values` and
+  `build_payload_type_from_variant` produce
+  `{ %struct.Value, %struct.MIRType }` for `Instruction::Alloca`.
+  Hypothesis D (Python emitter bug) ruled out by
+  `mnc-stage1-fromself` reproducing the OOM. **Adjacent finding:**
+  `struct_byte_size` undercounts `%struct.Value` at 24 bytes (true
+  size 80) — `llvm_aggregate_size` counts ALL commas in the inline
+  llvm_type, including those inside nested aggregates, AND
+  `register_internal_struct` pushes stub entries with
+  llvm_type="%struct.X" (named form) that the forward search
+  finds first. An experimental patch (delegate `struct_byte_size`
+  to `llvm_sizeof_st`, which uses `lookup_struct_field_types`'s
+  recursive resolution) gives correct sizes (Value→80, MIRType→64,
+  EmitState→752) and triggers sret/byref correctly. With patch:
+  stage2.ll grew 207,619 → 222,628 lines (+7.2%), llvm-as clean,
+  goldens 64/66 preserved — but **dest.name is still corrupt on
+  the third call, OOM persists**. Patch reverted; bug unrelated
+  to ABI sizing. **Adjacent divergence noted but not load-bearing:**
+  Python's emit_llvm_text.py adds `noalias` to byref struct
+  parameters (`ptr noalias %dest.byref`); the self-hosted emitter
+  does not. Pre-existing pattern, not a v5.6.x regression — but
+  candidate to revisit if other v5.6.9+ paths fail. Active
+  hypothesis for v5.6.9+: the inliner
+  (`mir_opt::clone_instr_for_inline`'s Alloca branch) or lowerer
+  produces the third Alloca with corrupt dest.name; OR Value's
+  field-0 boundary in stage1-emitted IR has a layout interaction
+  (named vs inline aggregate types, missing noalias) that the
+  Python emitter avoids. Per "no cheap shit" directive: shipping
+  the partial struct_byte_size fix would inflate stage2.ll 7%
+  for no observable benefit and obscure the v5.6.9+ debugging
+  surface. Metrics: `mnc-stage1` 6,270,128 bytes (rebuilt from
+  unchanged source, identical to v5.6.7 strip-pruned size);
+  stage2.ll 207,619 lines (no change vs v5.6.7); goldens 64/66
+  preserved; `make lint` clean; `check_struct_registry.py`
+  23/23/91 clean; valgrind/ASan/LSan baselines unchanged (no
+  source changes to gate). Ve.3 row in `docs/known_issues.md`
+  updated with full hypothesis matrix; Track field bumped to
+  v5.6.9+. See `docs/roadmap/v5/v5.6.8/SESSION_REPORT.md` for
+  the full investigation log including reproducer trace, gdb
+  + asan + eprint instrumentation outputs, and per-hypothesis
+  rule-out evidence. Pattern follows v5.6.6's "Rt.04 attempted
+  + RESCOPED" — honest scoping over premature closure. What
+  ships: VERSION bump + investigation docs + this CLAUDE.md
+  entry. What does NOT ship: Ve.3 fix; non-empty stage3.ll;
+  the experimental struct_byte_size patch.
 - **v5.6.6** (shipped — post-v5.6.7 in git history; holds its
   planned slot in the version sequence) — **Rt.04 attempted +
   RESCOPED — single-level walk insufficient.** Empirically
@@ -892,16 +952,23 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
-- **v5.6.8** — **Ve.3 close — stage2 runtime OOM.** stage2 OOMs on
-  non-trivial programs with a garbage-size request from
-  `__mn_str_concat` in `llvm_alloca`. Stack: `__mn_alloc(bad_size)
-  → __mn_str_concat → llvm_alloca → emit_mir_by_kind`. Persists
-  since v5.4.4 (masked first by parse_fn_body crash, then by
-  384-byte list floor). Plan: valgrind/ASan trace of stage2 on
-  `p1.mn` to identify exact corrupted read; likely a MIR Value's
-  `name: String` read from the wrong offset OR a List<Struct>
-  elem_size inconsistency between writer and reader. Once closed,
-  `verify_fixed_point.sh` should produce non-empty stage3.ll.
+- **v5.6.9+** — **Ve.3 close — stage2 runtime OOM.** v5.6.8
+  investigation narrowed the failure to the **third** Alloca emitted
+  for `p1.mn`: `dest.name` (Value's field 0) reads as uninitialised
+  memory while `dest.ty` reads correctly. Hypothesis A and D from
+  v5.6.8's PLAN ruled out; experimental `struct_byte_size` patch
+  fixes ABI sizing but does NOT close the OOM. Active hypotheses:
+  (i) `mir_opt::clone_instr_for_inline`'s Alloca branch produces
+  corrupt dest.name during inlining; (ii) field-0 boundary in
+  stage1-emitted IR has a layout interaction the Python emitter
+  avoids (Python emits `noalias` on byref params + inline aggregate
+  types throughout; self-hosted emitter does not — pre-existing
+  divergence). v5.6.9 instruments emit_alloca/emit_load/emit_store
+  with `__mn_str_eprint` of dest.name, rebuilds stage1+stage2, and
+  determines whether corruption is at the LOWERER level (MIR
+  itself has bad dest) or the EMITTER level (dest is loaded from
+  a bad alloca slot). See `docs/roadmap/v5/v5.6.8/SESSION_REPORT.md`
+  for the full hypothesis matrix.
 - **v5.6.9+** — **Ve.2 residuals — remove 384-byte list floor.**
   The 18 remaining 384-byte fallback sites come from empty-list
   literals in contexts that don't route through `lower_let`:
@@ -995,7 +1062,7 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.6):** 64/66. The 2 gap:
+**Current baseline (v5.6.8):** 64/66. The 2 gap:
 `51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
 `64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
 v5.7.0 for 66/66.
@@ -1166,7 +1233,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27769 symbols, 61529 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27766 symbols, 61546 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
