@@ -18,6 +18,88 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.10** (shipped) — **Self-host hardening — Ve.2
+  partial closure 18 → 7 sites; struct_byte_size hardened;
+  culebra baseline frozen; new Lk.1 opened.** Three bundled
+  hardening items closing the v5.6.x arc. **Ve.2 residuals**:
+  `lower_assign_list_hint(st, target, value)` ports v5.6.7's
+  `lower_let_list_hint` pattern to assignment, threading the
+  variable's alloca elem_ty into `lower_list_typed` for
+  `xs = []` reassignments — closes 10 sites in `register_struct`
+  ×3, `register_enum` ×2, `try_monomorphize_struct` ×3,
+  `try_monomorphize_enum` ×2. Plus 1 site closed via a typed
+  `let empty_extras: List<Expr> = []` binding in `lower_pipe`'s
+  `ident` arm. Net 11 sites closed; 7 remain (`List<Int>`
+  empty-let bodies in 6 functions). An `emit_list_init` scalar
+  gate (use `llvm_type_size` directly when `elem_ty.kind !=
+  TK_UNKNOWN()`) was attempted to close all 7 residuals but
+  REVERTED after surfacing **Lk.1** (alloca-aliasing leak in
+  inline list-get/push pattern): drop-glue tracks the ListInit
+  destination alloca (`%t0.addr`) but mutating pushes write
+  back to a separate var-binding alloca (`%arr1.addr`); at
+  function exit, `__mn_list_free(ptr %t0.addr)` is a no-op
+  while the buffer at `%arr1.addr` is never freed. The same
+  code path was present at v5.6.9 baseline but masked by the
+  384-byte floor — at elem_size=384 the buffer is 3088 B and
+  LSan's "still reachable" heuristic finds a stack pointer
+  aliasing into the larger region; at elem_size=8 the 80-B
+  buffer escapes that aliasing and the leak surfaces. Lk.1 is
+  same shape as Rt.04 (multi-level alias); fix needs
+  alloca-aliasing tracking in drop-glue, not a sizing change
+  — v6.0 borrow-checker scope. **`struct_byte_size` patch**:
+  re-applies v5.6.8's deferred patch (1-LOC body change to
+  `return llvm_sizeof_st(st, ty)`) now that Ve.3 is closed.
+  Replaces the legacy `llvm_aggregate_size(entry.llvm_type)`
+  walk — which counts ALL commas including those inside nested
+  aggregates like `{ptr, i64}` — with the v5.6.5-introduced
+  recursive resolver that uses `lookup_struct_field_types`
+  (skipping empty-fields stub entries from
+  `register_internal_struct`) and 8-byte aligns each field.
+  Result: correct sizes (Value 24 → 80; MIRType 24 → 64;
+  EmitState 152 → 752). Downstream `use_sret_return` and
+  `is_byref_type_st` now classify functions correctly — more
+  functions with > 16-byte returns switch to sret. stage2.ll
+  grows 201,743 → 216,932 lines (+7.46%, within the v5.6.10
+  PROMPT 8% budget); growth driver is more sret prologues +
+  post-call extracts, not real complexity. Per PROMPT D2 the
+  patch is gated on full sanitizer + golden + fixed-point
+  gates passing post-Ve.3 — verified clean (initial Phase 2
+  run flagged LSan regression but was actually the scalar
+  gate, not struct_byte_size; re-applied post-revert showed
+  all gates green). **Culebra baseline frozen**: 5 root
+  causes, 15755 findings, 2 critical (`function-count-drop`=941,
+  `return-type-divergence`=37) — same critical pattern as
+  v5.6.9 (940 + 37). No NEW critical findings (PROMPT exit
+  criterion #13 met). The +4340 finding delta vs v5.6.9
+  reflects stage2.ll's +7.5% growth — text-pattern templates
+  match more text in a larger IR, not real regressions.
+  Artifacts at `docs/roadmap/v5/v5.6.10/culebra/` (triage,
+  progress, compare, audit, strings, check, baseline-delta);
+  journal at `docs/roadmap/v5/v5.6.10/culebra-journal.jsonl`
+  with 5 milestone entries. Metrics: stage2.ll 216,932 lines
+  / `llvm-as` clean; goldens **64/66 preserved** (same 2
+  pre-existing fails: 51 B, 64 Sh.7); ASan UAF 65 CLEAN /
+  0 ASAN_ERROR / 1 CRASH_NO_ASAN; valgrind 0 ERRORS /
+  66 WARNINGS_ONLY; LSan baseline gate **PASS** (no
+  regressions vs v5.4.2 baseline; 50 CLEAN / 3 LEAK = same
+  39_gpu_detect, 40_gpu_tensor, 62_list_output as v5.6.9);
+  non-bootstrap pytest **5590 passed**, 116 skipped, 9
+  xfailed; `make lint` clean; `check_struct_registry.py`
+  23/23/91 clean. `known_issues.md` Ve.2 row updated to
+  PARTIAL v5.6.10 with Lk.1 dependency; new Lk.1 row added.
+  PROMPT directive followed: "if any sanitizer regresses,
+  REVERT" (the scalar gate was reverted; the
+  `lower_assign_list_hint` and `lower_pipe` fixes shipped
+  clean). The closeout arc v5.6.5 (Ve.1) → v5.6.6 (Rt.04
+  RESCOPED) → v5.6.7 (Ve.2 PARTIAL) → v5.6.8 (Ve.3
+  investigation) → v5.6.9 (Ve.3 CLOSED; Ve.4 OPENED) →
+  **v5.6.10 (Ve.2 FURTHER PARTIAL + struct_byte_size +
+  culebra)** continues with v5.6.11 (Ve.4 close); v5.7.0
+  (Sh.7 + B or-pattern → 66/66); v5.7.1 (SPEC docs polish);
+  v5.8.0 (RE-PANEL); v6.0 (borrow checker → Lk.1 + Rt.04).
+  See `docs/roadmap/v5/v5.6.10/SESSION_REPORT.md` for the
+  full trace, including the Lk.1 investigation and the
+  Phase 1B revert decision.
 - **v5.6.9** (shipped) — **Ve.3 ROOT CAUSE CLOSED; new
   Ve.4 opened.** Closes the v5.6.4-era stage2 runtime
   OOM/SIGSEGV at its source: `emit_drop_glue` for `List<Enum>`
@@ -1056,7 +1138,7 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
-- **v5.6.10** — **Ve.4 close — match-arm verifier error.**
+- **v5.6.11** — **Ve.4 close — match-arm verifier error.**
   v5.6.9 closed Ve.3 (drop-glue UAF on `List<Enum>` returns)
   and surfaced Ve.4: in the self-hosted compiled lowerer,
   match-arm lowering produces empty BasicBlocks for arms whose
@@ -1073,23 +1155,21 @@ Most recent releases (last 6). Full history at
   post-lowering (likely `dead_block_elim_function` or
   interaction with `inline_small_functions`) drops
   instructions from match arms whose body is a single tail
-  expression. v5.6.10 instruments lower.mn's match-arm
-  emission + the post-lower passes to identify which pass
-  empties the arm. After Ve.4 closes, mnc_all.mn → stage3.ll
+  expression. After Ve.4 closes, mnc_all.mn → stage3.ll
   produces non-empty IR and `verify_fixed_point.sh` can be
-  re-evaluated. v5.6.10 also revisits the v5.6.8
-  `struct_byte_size` patch to determine whether its 7% IR
-  growth is load-bearing post-Ve.4.
-- **v5.6.11+** — **Ve.2 residuals — remove 384-byte list floor.**
-  The 18 remaining 384-byte fallback sites come from empty-list
-  literals in contexts that don't route through `lower_let`:
-  struct field defaults, call arguments, return expressions.
-  Thread type hints down each lowerer entry point; remove the
-  floor from `emit_list_init`'s hybrid path once zero hardcoded
-  sites remain.
+  re-evaluated. v5.6.10 was rescoped to bundle Ve.2 residuals
+  + struct_byte_size + culebra baseline ahead of Ve.4 closure
+  (which depends on instrumenting MIR passes — orthogonal to
+  the bundled hardening items).
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
+- **v6.0** — Borrow checker / multi-level alias analysis. Closes
+  Lk.1 (alloca-aliasing in inline list-get/push, opened
+  v5.6.10) and Rt.04 (multi-level drop-glue alias analysis,
+  rescoped v5.6.6). Once Lk.1 closes, the v5.6.10 emit_list_init
+  scalar gate can be re-applied to eliminate the 7 remaining
+  `__mn_list_new(i64 384)` sites without surfacing leaks.
 
 See `docs/roadmap/v5/CLOSEOUT_ARC.md` and
 `docs/roadmap/v5/PARITY_GAPS.md`.
@@ -1173,7 +1253,7 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.9):** 64/66. The 2 gap:
+**Current baseline (v5.6.10):** 64/66. The 2 gap:
 `51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
 `64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
 v5.7.0 for 66/66.
@@ -1344,7 +1424,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27766 symbols, 61546 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27927 symbols, 61685 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
