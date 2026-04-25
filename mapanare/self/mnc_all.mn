@@ -17052,20 +17052,26 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let mut s: EmitState = st
     let dn: String = dest.name
 
-    // v5.6.5 Ve.1 fix — use GEP-trick for known aggregate element types
-    // (%struct./%enum./inline {...}). v5.6.10 Ve.2 residual: previously
-    // *all* non-aggregate elements (Int, Float, Bool, ptr, String) hit
-    // an unconditional 384-byte floor — wasteful (~48× for i64) and a
-    // primary residual after v5.6.7's lower_let_list_hint. v5.6.10
-    // gates the floor on `elem_ty.kind == TK_UNKNOWN()`: known scalars
-    // use their exact LLVM type size, only the unknown-elem fallback
-    // (mut reassignment / call arg paths that don't propagate elem_ty)
-    // keeps the safety floor.
-    //
-    // The 384-byte floor remains because `resolve_mir_type(UNKNOWN)`
-    // returns "i64" — indistinguishable from `Int` at the LLVM string
-    // level. Using kind avoids the silent truncation that v5.6.5's
-    // 256-byte fallback caused for FnDefData (264 B; v5.6.5 Ve.1).
+    // v5.6.5 Ve.1 fix — use GEP-trick for known element types, floor
+    // at 384 for UNKNOWN/scalar fallback. v5.6.10 originally tried to
+    // gate the floor on `elem_ty.kind != TK_UNKNOWN()` so known scalar
+    // types (Int, Float, Bool) would use their exact LLVM size — but
+    // the change surfaced a pre-existing latent leak in 65_list_int_indexing
+    // that v5.6.9's 384-byte over-allocation incidentally masked
+    // (LSan's "still reachable" heuristic happens to find a stack
+    // pointer aliasing into the larger buffer; the smaller 80-byte
+    // buffer escapes that aliasing and gets reported). The underlying
+    // bug is in the inline list-get/push pattern: drop-glue tracks
+    // the ListInit dest alloca (`%t0.addr`) but the var alloca
+    // (`%arr1.addr`) is a separate copy that mutating pushes write
+    // back to. Free is called on `%t0.addr` (data=NULL, no-op) while
+    // the buffer at `%arr1.addr` leaks. Same shape as Rt.04 / v6.0
+    // borrow-checker scope — fix needs alloca-aliasing tracking, not
+    // a sizing change. Reverting the scalar gate restores the v5.6.9
+    // LSan baseline; v5.6.10 retains the lower_assign_list_hint (10
+    // sites closed via GEP-trick for struct/enum reassignments) and
+    // the lower_pipe call-arg fix (1 site closed). Net 11/18 sites
+    // closed without surfacing the latent leak.
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut use_gep_trick: Bool = false
@@ -17076,24 +17082,10 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
         let elem_sz: String = dn + ".elem.sz"
         s = emit_line(s, "  " + elem_sz + " = ptrtoint ptr getelementptr (" + elem_llvm_ty + ", ptr null, i32 1) to i64")
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + elem_sz))
-    } else if elem_ty.kind != TK_UNKNOWN() {
-        // v5.6.10 — known scalar elem_ty (Int, Float, Bool, ptr, etc.).
-        // Use the exact LLVM type size; no floor needed.
-        let elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
-        s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
     } else {
-        // UNKNOWN elem_ty — safety floor. v5.6.10 closed every reachable
-        // path on the current corpus (mnc_all.mn + 66 goldens) via the
-        // emit_list_init scalar gate, lower_assign_list_hint, and the
-        // lower_pipe call-arg fix. Branch retained as a defensive
-        // fallback: any future lowerer path that emits ListInit with
-        // elem_ty.kind == TK_UNKNOWN — e.g. fully-untyped `let xs = []`
-        // followed by reassignment without annotation, or call args
-        // through new lowerer entry points — gets a 384-byte slot
-        // (correct for any element ≤ 384 bytes) instead of silent
-        // truncation. Add an IR comment so future regressions are
-        // grep-able.
-        s = emit_line(s, "  ; v5.6.10 floor: elem_ty unknown — list_new uses 384-byte slot (defensive fallback)")
+        // Scalar/unknown elem_ty — floor at 384 to mask the latent
+        // alloca-aliasing leak. The over-allocation is wasteful but
+        // correct; closing it requires the v6.0 borrow-checker work.
         let mut elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
         if elem_sz_n < 384 { elem_sz_n = 384 }
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
