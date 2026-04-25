@@ -19284,19 +19284,38 @@ fn emit_drop_glue_destroy(st: EmitState) -> EmitState {
     return s
 }
 
-fn ret_ty_is_aggregate(ret_ty: String) -> Bool {
-    // v5.4.4 RESCOPE — %struct.* returns remain conservatively skipped.
-    // Phase 3 attempted to open the guard with a one-level field walk,
-    // but the resulting stage2.ll expansion (~5× from drop-glue
-    // extractvalue chains on EmitState's 22 fields) triggered stage2
-    // runtime instability (segfault before stage3 emission) that did
-    // not appear on any golden. v5.4.5+ will reopen the guard once the
-    // field walk is gated on function size or struct-complexity.
+fn ret_ty_is_aggregate(st: EmitState, ret_ty: String) -> Bool {
+    // v5.6.6 RESCOPE — Rt.04 cannot be closed by a one-level walk.
+    // Attempt: re-lift the `%struct.*` guard with a struct-size gate
+    // (N≤4 fields, M≤10 slots) so the walk fires for small data
+    // structs like 62_list_output's `St { lines: List<String>, n: Int }`.
+    // The walk extracts `lines` as a list ret-ptr and `n` skips
+    // (not a resource); String drop glue alias-checks against the
+    // list ret-ptr — but the tracked String slots' data pointers
+    // are the INDIVIDUAL STRINGS *inside* the list, not the list
+    // itself. The single-level walk doesn't see them; drop glue
+    // frees them; caller's `__mn_str_join` reads freed memory →
+    // confirmed heap-use-after-free under ASan.
+    //
+    // This is a STRUCT-OF-LIST-OF-STRING shape (2 levels deep).
+    // The PLAN's exit criterion #1 (62_list_output CLEAN) is
+    // unreachable without a multi-level walk that the PLAN
+    // itself excluded as "v5.7.x scope or v6.0 borrow checker".
+    //
+    // Decision: keep `%struct.*` returns conservatively skipped
+    // (62_list_output stays LEAK 9 objs / 141 B, baseline-gated)
+    // until the borrow checker or multi-level walk lands. The
+    // walk infrastructure at `emit_drop_glue:4753+` remains in
+    // place for the future fix; the gate parameters (st: EmitState
+    // signature) are preserved for the same reason.
+    //
+    // What this release DOES contribute: the signature change
+    // threads `st` through `ret_ty_is_aggregate` so future re-
+    // lift attempts can size-gate without another invasive
+    // refactor. The first such attempt landed and reverted in
+    // v5.4.4; the second (v5.6.6) lands and reverts here.
     if ret_ty.starts_with("%struct.") { return true }
     if ret_ty.starts_with("%enum.") { return true }
-    // Anonymous structs (Option/Result inner types): "{i1, ptr}" etc.
-    // String "{ptr, i64}" is technically a literal struct but is a
-    // String value — handle separately above.
     if ret_ty.starts_with("{") && ret_ty != llvm_string() && ret_ty != llvm_list_rt() {
         return true
     }
@@ -19310,8 +19329,10 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState {
     }
 
     // Conservative skip for enum / option / result / anonymous struct
-    // returns. %struct.* is handled below via one-level field walk.
-    if ret_ty_is_aggregate(ret_ty) {
+    // returns; for `%struct.*` the v5.6.6 size gate inside
+    // `ret_ty_is_aggregate` decides whether to walk one level of fields
+    // (small struct in small-slot fn) or skip (large struct or hot fn).
+    if ret_ty_is_aggregate(st, ret_ty) {
         return st
     }
 

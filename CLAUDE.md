@@ -18,6 +18,42 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.6** (shipped — post-v5.6.7 in git history; holds its
+  planned slot in the version sequence) — **Rt.04 attempted +
+  RESCOPED — single-level walk insufficient.** Empirically
+  verifies that closing the 62_list_output leak (9 objs / 141 B)
+  via a one-level `%struct.*` field walk is impossible: the
+  resource lives at struct→list→string (depth 2), and the walk
+  only sees depth 1. ASan reproduces a heap-use-after-free at
+  every gate threshold attempted: N=8/M=50 (+10.3% stage2.ll
+  growth, over PLAN's 3% budget); N=4/M=20 (+3.67%); N=4/M=10
+  (+2.39%, under budget but UAF is real). Drop glue extracts the
+  returned `List<String>` field as a list-alias but doesn't
+  descend into the list to alias its String elements; the
+  separately-tracked String slots whose data lives inside that
+  list get freed prematurely → caller's `__mn_str_join` reads
+  freed memory. Confirmed by ASan with full stack:
+  `__mn_str_free → emit_drop_glue_strings`, then
+  `memcpy → __mn_str_join → main`. The PLAN expected `St`'s 2
+  fields to pass any gate above 2 — it did, but the leak's
+  resource is at depth 2 inside that struct, not at the struct
+  level. **What ships:** the `ret_ty_is_aggregate(ret_ty) →
+  ret_ty_is_aggregate(st, ret_ty)` signature change, plumbing
+  state through the one call site; gate body reverts to v5.4.4's
+  conservative skip after empirical UAF verification at all three
+  thresholds. **What does NOT ship:** 62_list_output leak fix
+  (stays 9 objs / 141 B, baseline-gated); multi-level walk (v6.0
+  borrow-checker scope); the actual gate logic. Metrics:
+  stage2.ll 207,619 lines (effectively unchanged vs v5.6.7's
+  207,616, 0% growth); `llvm-as` clean; goldens 64/66 preserved;
+  `make lint` clean; `check_struct_registry.py` 23/23/91; ASan on
+  `mnc_all.mn` 0 heap-buffer-overflow. Honest scoping per user
+  "no cheap shit" directive — a UAF would be much worse than a
+  documented leak. The v5.4.4 → v5.6.6 history shows the cost of
+  single-level alias analysis on a language with non-refcounted
+  leaf strings; the structural answer is ownership at the type
+  level (borrow checker), scoped to v6.0. See
+  `docs/roadmap/v5/v5.6.6/SESSION_REPORT.md`.
 - **v5.6.7** (shipped) — **Ve.2 PARTIAL — lowerer empty-list
   elem_ty propagation + list_init dispatch fix.** Empty-list
   element type now propagates from `let` annotations: `let xs:
@@ -856,13 +892,6 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
-- **v5.6.6** — **Rt.04 close — `%struct.*` guard-lift with size
-  gate.** Re-lifts v5.4.4's reverted one-level struct-field walk,
-  gated by `ret_ty_is_aggregate` on ≤8 fields AND ≤50 tracked
-  ownership slots. Walks the 2-field `%struct.St` in 62_list_output
-  while skipping the 24-field `%struct.EmitState` that caused
-  v5.4.4's 5× stage2.ll explosion. Closes the last known
-  Mapanare-side leak. See `docs/roadmap/v5/v5.6.6/PLAN.md`.
 - **v5.6.8** — **Ve.3 close — stage2 runtime OOM.** stage2 OOMs on
   non-trivial programs with a garbage-size request from
   `__mn_str_concat` in `llvm_alloca`. Stack: `__mn_alloc(bad_size)
@@ -966,7 +995,7 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.7):** 64/66. The 2 gap:
+**Current baseline (v5.6.6):** 64/66. The 2 gap:
 `51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
 `64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
 v5.7.0 for 66/66.
@@ -1137,7 +1166,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27750 symbols, 61516 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27769 symbols, 61529 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
