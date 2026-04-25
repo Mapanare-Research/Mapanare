@@ -2156,26 +2156,26 @@ fn is_byref_type(ty: String) -> Bool {
 // Returns 256 as a safe upper bound if the struct is not registered
 // (e.g. forward reference before registration, opaque type).
 fn struct_byte_size(st: EmitState, ty: String) -> Int {
-    // Strip "%struct." prefix
-    if !ty.starts_with("%struct.") { return llvm_type_size(ty) }
-    let name: String = ty.substr(8, len(ty) - 8)
-    // Look up registered struct entry
-    let mut i: Int = 0
-    let nstructs: Int = len(st.structs)
-    for _ in 0..10000 {
-        if i >= nstructs { return 256 }
-        let entry: StructEntry = st.structs[i]
-        if entry.name == name {
-            // entry.llvm_type is the inline "{ f0, f1, ... }" form.
-            // llvm_aggregate_size counts comma-separated fields × 8
-            // bytes each — adequate for Mapanare's 64-bit types
-            // (i64, ptr, double are all 8 bytes; String = {ptr,i64} =
-            // 16 bytes = 2 fields × 8).
-            return llvm_aggregate_size(entry.llvm_type)
-        }
-        i = i + 1
-    }
-    return 256
+    // v5.6.10 — delegate to llvm_sizeof_st for correct recursive sizing.
+    //
+    // Prior body walked the struct table via llvm_aggregate_size which
+    // counts ALL commas in entry.llvm_type — including those inside
+    // nested aggregates like `{ptr, i64}` (a String field) — yielding
+    // wrong totals (e.g. Value = 24 instead of 80; the registry stub
+    // entries pushed by register_internal_struct also shadowed real
+    // entries with named "%struct.X" form). v5.6.8 documented the bug
+    // and tested this delegation against Ve.3; the patch was reverted
+    // because it didn't close Ve.3. v5.6.10 re-applies it post-Ve.3:
+    // llvm_sizeof_st uses lookup_struct_field_types which skips
+    // empty-fields stub entries (v5.6.5 fix) and recursively resolves
+    // each field at its real LLVM size, then 8-byte aligns each field.
+    //
+    // Cost: stage2.ll grows ~7% from corrected sret/byref classification
+    // (more functions hit the > 16-byte threshold and switch to sret).
+    // v5.6.10/PLAN.md §D2 conditions the patch on green sanitizers and
+    // a preserved fixed-point — verified post-Ve.3 in the v5.6.10
+    // session report.
+    return llvm_sizeof_st(st, ty)
 }
 
 // v5.0.4 Cb.15: compute real byte size of a named enum type.
