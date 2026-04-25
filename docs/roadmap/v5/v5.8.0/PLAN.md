@@ -2,7 +2,8 @@
 
 **Status:** PLANNED
 **Breaking:** No
-**Prerequisite:** v5.7.1 shipped (SPEC + docs polish after 66/66)
+**Prerequisite:** v5.7.1 shipped (SPEC + docs polish after 66/66;
+culebra clean baseline + arc-journal aggregated)
 **Estimated work:** 1 session (measurement + review)
 
 ---
@@ -17,6 +18,13 @@ the v5.3.x closeout arc), this panel sees the complete picture: all
 Sh.* feature gaps closed, 66/66 goldens, Own.1 Phase 2 landed, and a
 fresh SPEC + docs polish pass. Every reviewer's ceiling objection
 should be resolved.
+
+**New for this panel: culebra-driven evidence**. Every reviewer
+gets `docs/roadmap/v5/v5.7.1/culebra/baseline-end.json` plus
+`arc-journal.jsonl` (the v5.6.9 → v5.7.1 milestone log) as
+structured input. Replaces the per-reviewer "go grep stage2.ll
+yourself" pattern from earlier panels and gives Rattler / Cobra /
+Anaconda a single source of truth.
 
 ## Expected score recovery
 
@@ -47,3 +55,28 @@ The v4.121.0–v4.135.0 closeout arc (15 releases) pushed the aggregate
 from 8.21 (v4.120.0, Option B) to 8.80 (v4.136.0, Option C). The
 current arc is 7 releases (v5.3.1–v5.7.1) but covers both closeout
 AND feature-parity, targeting a larger delta.
+
+## Culebra inputs for the panel
+
+Every reviewer gets the same packet:
+
+| Artifact | Source | What it shows |
+|---|---|---|
+| `baseline-end.json` | `docs/roadmap/v5/v5.7.1/culebra/` | Final stage2.ll snapshot — counts of all template matches, function metrics |
+| `triage.md` | same | Grouped findings by root cause; FP-suppressed |
+| `health-{Value,MIRType,EmitState,LowerState,Instruction}.txt` | same | PHI zeroinit / type-pun / null-load checks for the most-touched structs |
+| `fixedpoint.md` | same | Stage1→stage2→stage3 cycle stabilization evidence |
+| `arc-journal.jsonl` | same | Every milestone / fix / analysis from v5.6.9 → v5.7.1 |
+| `baseline-delta-from-v5.6.10.md` | `docs/roadmap/v5/v5.7.1/culebra/` | Quantified IR-shape changes from the closure work |
+
+Per-reviewer focus:
+
+| Reviewer | Primary culebra input |
+|---|---|
+| Rattler (LLVM) | `triage.md`, `baseline-delta`, `health-*` |
+| Cobra (C++/ABI) | `baseline-end.json` (sret/byref counts), `health-Value`, `health-MIRType` |
+| Mamba (C runtime) | `arc-journal.jsonl` (drop-glue + tracking discipline) |
+| Viper (memory safety) | `health-*`, `triage.md` (UAF / leak templates), LSan baselines |
+| Anaconda (toolchain) | `fixedpoint.md`, `baseline-delta`, CI integration |
+| Coral (SPEC) | `arc-journal.jsonl` (feature additions match SPEC §s) |
+| Boa (docs) | `docs/guides/culebra.md` published in v5.7.1 |
