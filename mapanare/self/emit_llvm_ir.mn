@@ -231,10 +231,18 @@ fn emit_switch_case(value: String, label: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_call_ir(name: String, ret_ty: String, callee: String, args: String) -> String {
+    // v5.7.0 Sh.7: callees starting with `%` are SSA values (indirect
+    // call through a closure-typed local) — emit without `@` prefix.
+    if callee.starts_with("%") {
+        return "  " + name + " = call " + ret_ty + " " + callee + "(" + args + ")"
+    }
     return "  " + name + " = call " + ret_ty + " @" + callee + "(" + args + ")"
 }
 
 fn emit_call_void(callee: String, args: String) -> String {
+    if callee.starts_with("%") {
+        return "  call void " + callee + "(" + args + ")"
+    }
     return "  call void @" + callee + "(" + args + ")"
 }
 

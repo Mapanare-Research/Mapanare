@@ -3074,11 +3074,28 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
             p = p + 1
             let body: ExprResult = parse_expr(tokens, p, filename, 0)
             // Extract lambda params from the left-hand side expression.
-            // (n) => ... parses as Ident("n") on the left of =>
+            //   (n) => ...        parses as Ident("n")
+            //   (a, b) => ...     parses as ListLit([Ident("a"), Ident("b")])
+            //                     (parse_paren_expr collects comma-separated
+            //                     elements into a ListLit)
+            // v5.7.0 Sh.7: ListLit case was previously skipped, leaving
+            // multi-param lambdas with zero params and undefined-variable
+            // errors when their bodies referenced a, b, ...
             let mut params: List<Param> = []
             match left {
                 Ident(name) => {
                     params.push(new_param(name, none))
+                },
+                ListLit(elems) => {
+                    let mut li: Int = 0
+                    for _ in 0..32 {
+                        if li >= len(elems) { break }
+                        let elem: Expr = elems[li]
+                        if expr_kind(elem) == "ident" {
+                            params.push(new_param(expr_ident_name(elem), none))
+                        }
+                        li = li + 1
+                    }
                 },
                 _ => {}
             }
@@ -10278,6 +10295,27 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         return new_lower_result(dr_ctor.value, s_ctor2)
     }
 
+    // v5.7.0 Sh.7: indirect call through a fn-typed local variable.
+    // Mirrors mapanare/lower.py::_lower_call (v4.103.0 docket #5). When
+    // an identifier resolves to a parameter/binding annotated
+    // `fn(T) -> T`, the alloca's MIR type has kind TK_FN. Load the
+    // value and emit a Call whose fn_name is the loaded SSA name —
+    // emit_call_ir / emit_call_void recognise the leading `%` and
+    // emit `call <ret_ty> %fn(<args>)` rather than `call ... @<name>`.
+    let var_lookup: Option<Value> = lookup_var(st, fn_name)
+    match var_lookup {
+        Some(addr_v) => {
+            if addr_v.ty.kind == TK_FN() {
+                let load_r: LowerResult = make_value(st, addr_v.ty, fn_name + "_val")
+                let load_s: LowerState = emit_instr(load_r.state, Instruction::Load(load_r.value, addr_v))
+                let dr_ind: LowerResult = make_value(load_s, mir_unknown(), "t")
+                let s_ind: LowerState = emit_instr(dr_ind.state, Instruction::Call(dr_ind.value, load_r.value.name, args))
+                return new_lower_result(dr_ind.value, s_ind)
+            }
+        },
+        _ => {}
+    }
+
     // Resolve lambda variable names to actual function names
     let resolved: String = unwrap_or_default(find_lambda(st, fn_name), fn_name)
 
@@ -11088,8 +11126,17 @@ fn count_actual_lambdas(st: LowerState) -> Int {
 }
 
 fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
+    // v5.7.0 Sh.7: name lambdas after the tmp_counter at creation time
+    // (matching mapanare/lower.py::_lower_lambda which calls
+    // self._fresh_tmp("lambda")). The harness compares function-name
+    // sets; without this, bootstrap (lambdaN where N matches main's
+    // tmp_counter) and stage1 (lambdaK from a separate
+    // count_actual_lambdas counter) diverged on names like
+    // 64_closure_typed.mn — bootstrap emitted lambda0/2/4 while
+    // stage1 emitted lambda1/2/3, failing the function-name parity
+    // check.
     let name_r: LowerResult = fresh_tmp(st, "lambda")
-    let lambda_name: String = "lambda" + toString(count_actual_lambdas(st) + 1)
+    let lambda_name: String = name_r.value.name.substr(1, len(name_r.value.name) - 1)
 
     let body_block: Block = lambda_body_to_block(body)
 
@@ -12839,10 +12886,18 @@ fn emit_switch_case(value: String, label: String) -> String {
 // ---------------------------------------------------------------------------
 
 fn emit_call_ir(name: String, ret_ty: String, callee: String, args: String) -> String {
+    // v5.7.0 Sh.7: callees starting with `%` are SSA values (indirect
+    // call through a closure-typed local) — emit without `@` prefix.
+    if callee.starts_with("%") {
+        return "  " + name + " = call " + ret_ty + " " + callee + "(" + args + ")"
+    }
     return "  " + name + " = call " + ret_ty + " @" + callee + "(" + args + ")"
 }
 
 fn emit_call_void(callee: String, args: String) -> String {
+    if callee.starts_with("%") {
+        return "  call void " + callee + "(" + args + ")"
+    }
     return "  call void @" + callee + "(" + args + ")"
 }
 
@@ -13719,7 +13774,7 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
             _ => { return inst }
         }
     }
-    // Call — rename args
+    // Call — rename args (and fn_name when it's an indirect-call SSA value)
     if ik == "call" {
         let args: List<Value> = instr_call_args(inst)
         let mut new_args: List<Value> = []
@@ -13729,7 +13784,12 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
             new_args.push(replace_use(args[ai], old_name, new_name))
             ai = ai + 1
         }
-        return Instruction::Call(instr_dest(inst), instr_call_fn(inst), new_args)
+        // v5.7.0 Sh.7: indirect calls store the loaded SSA name as fn_name
+        // (e.g. "%f_val0"). When the caller's dest is renamed downstream,
+        // the indirect call's fn_name must follow.
+        let mut new_fn: String = instr_call_fn(inst)
+        if new_fn == old_name { new_fn = new_name }
+        return Instruction::Call(instr_dest(inst), new_fn, new_args)
     }
     // Phi — rename incoming values
     if ik == "phi" {
@@ -13863,7 +13923,20 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
             new_args.push(rename_value(args[ai], prefix, renames))
             ai = ai + 1
         }
-        result.push(Instruction::Call(new_dest, instr_call_fn(inst), new_args))
+        // v5.7.0 Sh.7: indirect calls have fn_name == "%localval" and
+        // must be renamed alongside other SSA values; direct calls
+        // (`@some_fn`) keep their bare-symbol name unchanged.
+        let fn_str: String = instr_call_fn(inst)
+        let mut new_fn_str: String = fn_str
+        if fn_str.starts_with("%") {
+            let bare: String = fn_str.substr(1, len(fn_str) - 1)
+            let rn_opt: Option<String> = find_const(renames, fn_str)
+            match rn_opt {
+                Some(rn) => { new_fn_str = rn },
+                _ => { new_fn_str = "%" + prefix + bare }
+            }
+        }
+        result.push(Instruction::Call(new_dest, new_fn_str, new_args))
         return result
     }
 

@@ -766,7 +766,7 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
             _ => { return inst }
         }
     }
-    // Call — rename args
+    // Call — rename args (and fn_name when it's an indirect-call SSA value)
     if ik == "call" {
         let args: List<Value> = instr_call_args(inst)
         let mut new_args: List<Value> = []
@@ -776,7 +776,12 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
             new_args.push(replace_use(args[ai], old_name, new_name))
             ai = ai + 1
         }
-        return Instruction::Call(instr_dest(inst), instr_call_fn(inst), new_args)
+        // v5.7.0 Sh.7: indirect calls store the loaded SSA name as fn_name
+        // (e.g. "%f_val0"). When the caller's dest is renamed downstream,
+        // the indirect call's fn_name must follow.
+        let mut new_fn: String = instr_call_fn(inst)
+        if new_fn == old_name { new_fn = new_name }
+        return Instruction::Call(instr_dest(inst), new_fn, new_args)
     }
     // Phi — rename incoming values
     if ik == "phi" {
@@ -910,7 +915,20 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
             new_args.push(rename_value(args[ai], prefix, renames))
             ai = ai + 1
         }
-        result.push(Instruction::Call(new_dest, instr_call_fn(inst), new_args))
+        // v5.7.0 Sh.7: indirect calls have fn_name == "%localval" and
+        // must be renamed alongside other SSA values; direct calls
+        // (`@some_fn`) keep their bare-symbol name unchanged.
+        let fn_str: String = instr_call_fn(inst)
+        let mut new_fn_str: String = fn_str
+        if fn_str.starts_with("%") {
+            let bare: String = fn_str.substr(1, len(fn_str) - 1)
+            let rn_opt: Option<String> = find_const(renames, fn_str)
+            match rn_opt {
+                Some(rn) => { new_fn_str = rn },
+                _ => { new_fn_str = "%" + prefix + bare }
+            }
+        }
+        result.push(Instruction::Call(new_dest, new_fn_str, new_args))
         return result
     }
 

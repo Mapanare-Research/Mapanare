@@ -1570,11 +1570,28 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
             p = p + 1
             let body: ExprResult = parse_expr(tokens, p, filename, 0)
             // Extract lambda params from the left-hand side expression.
-            // (n) => ... parses as Ident("n") on the left of =>
+            //   (n) => ...        parses as Ident("n")
+            //   (a, b) => ...     parses as ListLit([Ident("a"), Ident("b")])
+            //                     (parse_paren_expr collects comma-separated
+            //                     elements into a ListLit)
+            // v5.7.0 Sh.7: ListLit case was previously skipped, leaving
+            // multi-param lambdas with zero params and undefined-variable
+            // errors when their bodies referenced a, b, ...
             let mut params: List<Param> = []
             match left {
                 Ident(name) => {
                     params.push(new_param(name, none))
+                },
+                ListLit(elems) => {
+                    let mut li: Int = 0
+                    for _ in 0..32 {
+                        if li >= len(elems) { break }
+                        let elem: Expr = elems[li]
+                        if expr_kind(elem) == "ident" {
+                            params.push(new_param(expr_ident_name(elem), none))
+                        }
+                        li = li + 1
+                    }
                 },
                 _ => {}
             }

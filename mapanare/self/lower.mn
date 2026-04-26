@@ -2455,6 +2455,27 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         return new_lower_result(dr_ctor.value, s_ctor2)
     }
 
+    // v5.7.0 Sh.7: indirect call through a fn-typed local variable.
+    // Mirrors mapanare/lower.py::_lower_call (v4.103.0 docket #5). When
+    // an identifier resolves to a parameter/binding annotated
+    // `fn(T) -> T`, the alloca's MIR type has kind TK_FN. Load the
+    // value and emit a Call whose fn_name is the loaded SSA name —
+    // emit_call_ir / emit_call_void recognise the leading `%` and
+    // emit `call <ret_ty> %fn(<args>)` rather than `call ... @<name>`.
+    let var_lookup: Option<Value> = lookup_var(st, fn_name)
+    match var_lookup {
+        Some(addr_v) => {
+            if addr_v.ty.kind == TK_FN() {
+                let load_r: LowerResult = make_value(st, addr_v.ty, fn_name + "_val")
+                let load_s: LowerState = emit_instr(load_r.state, Instruction::Load(load_r.value, addr_v))
+                let dr_ind: LowerResult = make_value(load_s, mir_unknown(), "t")
+                let s_ind: LowerState = emit_instr(dr_ind.state, Instruction::Call(dr_ind.value, load_r.value.name, args))
+                return new_lower_result(dr_ind.value, s_ind)
+            }
+        },
+        _ => {}
+    }
+
     // Resolve lambda variable names to actual function names
     let resolved: String = unwrap_or_default(find_lambda(st, fn_name), fn_name)
 
@@ -3265,8 +3286,17 @@ fn count_actual_lambdas(st: LowerState) -> Int {
 }
 
 fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
+    // v5.7.0 Sh.7: name lambdas after the tmp_counter at creation time
+    // (matching mapanare/lower.py::_lower_lambda which calls
+    // self._fresh_tmp("lambda")). The harness compares function-name
+    // sets; without this, bootstrap (lambdaN where N matches main's
+    // tmp_counter) and stage1 (lambdaK from a separate
+    // count_actual_lambdas counter) diverged on names like
+    // 64_closure_typed.mn — bootstrap emitted lambda0/2/4 while
+    // stage1 emitted lambda1/2/3, failing the function-name parity
+    // check.
     let name_r: LowerResult = fresh_tmp(st, "lambda")
-    let lambda_name: String = "lambda" + toString(count_actual_lambdas(st) + 1)
+    let lambda_name: String = name_r.value.name.substr(1, len(name_r.value.name) - 1)
 
     let body_block: Block = lambda_body_to_block(body)
 
