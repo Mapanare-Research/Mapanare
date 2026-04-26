@@ -2417,26 +2417,24 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let mut s: EmitState = st
     let dn: String = dest.name
 
-    // v5.6.5 Ve.1 fix — use GEP-trick for known element types, floor
-    // at 384 for UNKNOWN/scalar fallback. v5.6.10 originally tried to
-    // gate the floor on `elem_ty.kind != TK_UNKNOWN()` so known scalar
-    // types (Int, Float, Bool) would use their exact LLVM size — but
-    // the change surfaced a pre-existing latent leak in 65_list_int_indexing
-    // that v5.6.9's 384-byte over-allocation incidentally masked
-    // (LSan's "still reachable" heuristic happens to find a stack
-    // pointer aliasing into the larger buffer; the smaller 80-byte
-    // buffer escapes that aliasing and gets reported). The underlying
-    // bug is in the inline list-get/push pattern: drop-glue tracks
-    // the ListInit dest alloca (`%t0.addr`) but the var alloca
-    // (`%arr1.addr`) is a separate copy that mutating pushes write
-    // back to. Free is called on `%t0.addr` (data=NULL, no-op) while
-    // the buffer at `%arr1.addr` leaks. Same shape as Rt.04 / v6.0
-    // borrow-checker scope — fix needs alloca-aliasing tracking, not
-    // a sizing change. Reverting the scalar gate restores the v5.6.9
-    // LSan baseline; v5.6.10 retains the lower_assign_list_hint (10
-    // sites closed via GEP-trick for struct/enum reassignments) and
-    // the lower_pipe call-arg fix (1 site closed). Net 11/18 sites
-    // closed without surfacing the latent leak.
+    // v5.6.5 Ve.1 fix — use GEP-trick for known aggregate element
+    // types so LLVM's DataLayout computes the exact size at link time.
+    //
+    // v5.6.12 Lk.1 fix — scalar gate. With Lk.1 closed via destination
+    // passing in lower_let (lower.mn::lower_let_list_hint path), the
+    // 384-byte floor is no longer needed to mask the alloca-aliasing
+    // leak. Use the actual LLVM type size for known scalar elem_ty
+    // (Int=8, Float=8, Bool=8, ptr=8). The floor is retained ONLY for
+    // genuinely-unknown elem_ty.kind, where we can't see the type at
+    // emit time and a defensive over-allocation is cheaper than a
+    // miscompile.
+    //
+    // Why this is safe now (not at v5.6.10): Lk.1's leak was never
+    // about element sizing — it was about ListInit and the let-binding
+    // pointing at different allocas. v5.6.12's destination passing
+    // unifies them. Mutating pushes write to the same alloca that
+    // drop-glue frees. The scalar gate just stops over-allocating
+    // ~376 bytes of dead stack space per List<scalar>.
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut use_gep_trick: Bool = false
@@ -2448,11 +2446,14 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
         s = emit_line(s, "  " + elem_sz + " = ptrtoint ptr getelementptr (" + elem_llvm_ty + ", ptr null, i32 1) to i64")
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + elem_sz))
     } else {
-        // Scalar/unknown elem_ty — floor at 384 to mask the latent
-        // alloca-aliasing leak. The over-allocation is wasteful but
-        // correct; closing it requires the v6.0 borrow-checker work.
         let mut elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
-        if elem_sz_n < 384 { elem_sz_n = 384 }
+        if elem_ty.kind == TK_UNKNOWN() {
+            // Genuinely unknown elem_ty — keep a defensive 384-byte
+            // floor. Investigation candidate for v5.6.13: every UNKNOWN
+            // here is a potential lowerer-side gap (let lower_let_list_hint
+            // failed to propagate the type).
+            if elem_sz_n < 384 { elem_sz_n = 384 }
+        }
         s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
     }
 

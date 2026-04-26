@@ -60,7 +60,7 @@ test	compile_rc	run_rc	leak_count	leak_bytes	first_frame	class
 58_async_file_io	1	-	-	-	-	COMPILE_FAIL
 58_const_scope	0	0	0	0	-	CLEAN
 59_async_fanout	1	-	-	-	-	COMPILE_FAIL
-62_list_output	0	0	9	141	__mn_alloc	LEAK
+62_list_output	0	0	13	346	__mn_alloc	LEAK
 63_else_sino	0	0	0	0	-	CLEAN
 64_closure_typed	1	-	-	-	-	COMPILE_FAIL
 65_list_int_indexing	0	0	0	0	-	CLEAN

@@ -754,12 +754,49 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
     // when value is a list literal AND type_ann is `Generic("List", [T])`,
     // route through `lower_list_typed` so the emitter sees the
     // annotation's element type on `Instruction::ListInit`.
+    //
+    // v5.6.12 Lk.1 fix — destination passing for List let-bindings.
+    // When the hint path applies, pre-compute the var's alloca name
+    // and lower the list literal directly into it via
+    // `lower_list_typed_into`. Skips the post-emit Alloca + Store pair
+    // entirely (those would create a duplicate alloca + useless copy
+    // — exactly the alloca-aliasing leak from v5.6.10 Lk.1).
     let hint_elem: MIRType = lower_let_list_hint(st, value, type_ann)
-    let r: LowerResult = if hint_elem.kind != TK_UNKNOWN() {
-            lower_list_typed(st, expr_list_elements(value), hint_elem)
-        } else {
-            lower_expr(st, value)
+    if hint_elem.kind != TK_UNKNOWN() {
+        let mut s: LowerState = st
+        // Reserve the var's name + alloca BEFORE lowering the value so
+        // the ListInit dest (`%<name><M>`) and emit_list_init's derived
+        // alloca name (`%<name><M>.addr`) match the var slot.
+        let var_base: String = "%" + name + toString(s.tmp_counter)
+        let addr_name: String = var_base + ".addr"
+        s.tmp_counter = s.tmp_counter + 1
+
+        // Resolve declared val_ty (List<T>). Carries the element-type
+        // arg for downstream lookups (e.g. method dispatch).
+        let mut val_ty: MIRType = mir_list()
+        match type_ann {
+            Some(te) => {
+                let declared: MIRType = lower_resolve_type_checked(s, te)
+                if declared.kind != TK_UNKNOWN() {
+                    val_ty = declared
+                }
+            },
+            _ => {}
         }
+
+        // Lower into var_base. The emitter hoists the alloca + zero-init
+        // into the entry prelude AND stores the new list into it; no
+        // explicit Alloca/Store needed here.
+        let r2: LowerResult = lower_list_typed_into(s, expr_list_elements(value), hint_elem, var_base)
+        s = r2.state
+
+        // Bind the var to the alloca derived from var_base.
+        let addr2: Value = new_value(addr_name, val_ty)
+        s = define_var(s, name, addr2, mutable)
+        return s
+    }
+
+    let r: LowerResult = lower_expr(st, value)
     let mut s: LowerState = r.state
 
     // Update lambda registration: lower_lambda left var_name empty
@@ -3397,6 +3434,48 @@ fn lower_list_typed(st: LowerState, elements: List<Expr>, hinted_elem_ty: MIRTyp
     let dest_r: LowerResult = make_value(s, mir_list(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
     return new_lower_result(dest_r.value, new_s)
+}
+
+// v5.6.12 Lk.1 fix — destination-passing variant of lower_list_typed.
+// Closes the alloca-aliasing leak class at its structural root: when
+// `let mut a: List<T> = []` is the value's destination, the lowerer
+// emits the ListInit directly into a's slot instead of fresh-tmp'ing
+// %t<N> and then copying it into %a<M>.addr (the duplicate-alloca
+// pattern). The emitter's `dn + ".addr"` convention turns a `dest_name`
+// of "%a<M>" into the alloca name "%a<M>.addr", which the caller then
+// binds for the variable. One alloca, one tracking entry, no copy.
+//
+// Mirrors Rust's destination-passing codegen (PlaceRef in
+// rustc_codegen_llvm) — result-location semantics rather than
+// value-then-copy.
+fn lower_list_typed_into(st: LowerState, elements: List<Expr>, hinted_elem_ty: MIRType, dest_name: String) -> LowerResult {
+    let mut s: LowerState = st
+    let mut vals: List<Value> = []
+    let mut i: Int = 0
+    let nel: Int = len(elements)
+    for _ in 0..2000 {
+        if i < nel {
+            let el_r: LowerResult = lower_expr(s, elements[i])
+            s = el_r.state
+            vals.push(el_r.value)
+            i = i + 1
+        }
+    }
+    let mut elem_type: MIRType = mir_unknown()
+    if len(vals) > 0 {
+        let first_v: Value = vals[0]
+        elem_type = first_v.ty
+    } else {
+        if hinted_elem_ty.kind != TK_UNKNOWN() {
+            elem_type = hinted_elem_ty
+        }
+    }
+    // Use the caller-supplied dest_name (e.g. "%indices0") instead of
+    // fresh-tmp. tmp_counter is NOT bumped here; the caller already
+    // reserved the slot when it picked the variable's name.
+    let dest_val: Value = new_value(dest_name, mir_list())
+    let new_s: LowerState = emit_instr(s, Instruction::ListInit(dest_val, elem_type, vals))
+    return new_lower_result(dest_val, new_s)
 }
 
 // v5.6.7 Ve.2 helper — unwrap `List<T>` type annotation to T (as MIRType).

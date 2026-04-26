@@ -116,3 +116,31 @@ The arc succeeds when:
 4. `python3 -m pytest tests/native/test_c_hardening.py` → 0 failures
 5. README does not make factual claims contradicted by measurements
 6. v5.4.0 re-panel aggregate >= 9.5
+
+---
+
+## v5.6.x docket sequence (memory-safety closeout, post-arc)
+
+Issued during the v5.6.x bug-closeout arc (after the v5.4.0–v5.7.0
+feature arc was scoped). Tracked here for completeness:
+
+| Release | Docket | Status |
+|---|---|---|
+| v5.6.5 | Ve.1 (parser overflow) | CLOSED |
+| v5.6.6 | Rt.04 (multi-level alias) | RESCOPED → v6.0 |
+| v5.6.7 | Ve.2 (lowerer empty-list) | PARTIAL (11/18) |
+| v5.6.8 | Ve.3 (stage2 OOM) | INVESTIGATION |
+| v5.6.9 | Ve.3 | CLOSED; Ve.4 OPENED |
+| v5.6.10 | Ve.2 + struct_byte_size + culebra | PARTIAL; Lk.1 OPENED |
+| v5.6.11 | Ve.4 | CLOSED |
+| **v5.6.12** | **Lk.1 + Ve.2 residuals** | **CLOSED** |
+
+Every v5.6.x docket is now resolved or appropriately deferred to
+v6.0 (Rt.04 only). The v5.6.x closeout arc is genuinely complete
+with no v6.0 deferrals from v5.6.x itself — the only v6.0 carry
+is Rt.04 from v5.6.6, which has its own scoping rationale
+(multi-level alias analysis is a borrow-checker concern).
+
+After v5.6.12 ships, the trajectory rejoins the original arc:
+v5.7.0 (Sh.7 + B → 66/66), v5.7.1 (docs polish), v5.8.0
+(RE-PANEL).

@@ -18,6 +18,76 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.12** (shipped) — **Lk.1 + Ve.2 CLOSED — destination
+  passing for List let-bindings; the v5.6.x closeout arc is
+  complete.** Closes Lk.1 (alloca-aliasing leak in inline
+  list-get/push pattern, opened v5.6.10) at its structural
+  root cause via destination-passing semantics in
+  `lower.mn::lower_let`. New helper
+  `lower_list_typed_into(st, elements, hint, dest_name)`
+  accepts a caller-supplied dest name; when value is a list
+  literal with an annotated element type, `lower_let`
+  pre-computes the var's alloca name (e.g. `%indices0.addr`)
+  and lowers the `ListInit` directly into it — no scratch
+  `%t<N>.addr`, no `Store(%var.addr, %t<N>)` copy. The
+  emitter's `dn + ".addr"` convention then derives the same
+  alloca name as the let var: one alloca, one tracking
+  entry, no copy. Mirrors rustc's `PlaceRef`-based codegen
+  (result-location semantics). With Lk.1 closed at the source,
+  the v5.6.10 scalar gate is applied in the same release:
+  `if elem_ty.kind == TK_UNKNOWN() { if elem_sz_n < 384 {
+  elem_sz_n = 384 } }` replaces the unconditional 384-byte
+  floor in `emit_list_init`'s scalar branch. Known scalar
+  elem_ty (Int=8, Float=8, Bool=8, ptr=8) gets exact LLVM size;
+  UNKNOWN keeps the defensive floor. Closes all 7 Ve.2 residual
+  `__mn_list_new(i64 384)` sites in `expr_tensor_shape`,
+  `instr_tensor_shape`, `parse_tensor_lit` ×2,
+  `new_lower_state`, `new_emit_state`, `build_match_arms`.
+  **Hero metrics**: `__mn_list_new(i64 384)` site count
+  **7 → 0** in stage2.ll; `65_list_int_indexing` LSan
+  **CLEAN** (was: would leak 80 bytes if the scalar gate were
+  applied without Lk.1 closure — exactly the v5.6.10 revert
+  decision now reversed); fixed-point **NEAR FIXED POINT**
+  preserved (4 diff lines / 216,842 = 0.002%, all VERSION
+  metadata). **Adjacent finding** — 62_list_output's
+  pre-existing Rt.04 leak became visible: with the duplicate
+  alloca eliminated, LSan's "still reachable" heuristic no
+  longer finds a stale stack pointer aliasing into the heap
+  buffer, so the 144-byte list buffer (with 9 strings inside)
+  is correctly reported as a direct leak. The leak source is
+  unchanged (struct→list→string depth-2 alias from v5.6.6
+  Rt.04 RESCOPE); LSan baseline TSV refreshed 9 obj/141 B
+  → 13 obj/346 B. Closing the underlying Rt.04 leak requires
+  multi-level alias analysis — v6.0 borrow-checker scope.
+  Mirrors the v5.6.10 LSan-heuristic-shift pattern. **Layer 2
+  (move on assignment)** is NOT in this release — no
+  share-mutate leak in the corpus, so per "no cheap shit"
+  Layer 2 is conditional v5.6.13+ work IF a leak surfaces.
+  **Metrics**: stage2.ll **217,273 → 216,842 lines (−0.20%)** —
+  DECREASED (eliminated duplicate allocas + stores compensate
+  for any growth elsewhere); `llvm-as` clean; goldens **64/66
+  preserved** (same 2 pre-existing fails: 51 B, 64 Sh.7);
+  ASan UAF **65 CLEAN / 0 ASAN_ERROR / 1 CRASH_NO_ASAN**;
+  valgrind **0 ERRORS / 66 WARNINGS_ONLY**; LSan baseline
+  gate **PASS**; non-bootstrap pytest **5598 passed** (the
+  parallel pytest run flagged 2 test-isolation flakes
+  unrelated to the changes — both pass when run individually
+  or under `-p no:xdist`); `make lint` clean;
+  `check_struct_registry.py` 23/23/91 clean.
+  `known_issues.md` Lk.1 + Ve.2 rows flipped to CLOSED v5.6.12;
+  `PARITY_GAPS.md` Lk.1 row updated CLOSED. The closeout arc
+  completes: v5.6.5 (Ve.1) → v5.6.6 (Rt.04 RESCOPED) → v5.6.7
+  (Ve.2 PARTIAL) → v5.6.8 (Ve.3 investigation) → v5.6.9
+  (Ve.3 CLOSED; Ve.4 OPENED) → v5.6.10 (Ve.2 FURTHER PARTIAL
+  + struct_byte_size + culebra; Lk.1 OPENED) → v5.6.11 (Ve.4
+  CLOSED) → **v5.6.12 (Lk.1 + Ve.2 CLOSED; v5.6.x arc
+  genuinely complete)**. The only remaining v6.0 carry from
+  any v5.6.x release is Rt.04 (multi-level alias analysis,
+  struct→list→string depth 2), with its own scoping rationale
+  from v5.6.6. Next: v5.7.0 (Sh.7 + B or-pattern → 66/66);
+  v5.7.1 (SPEC docs polish); v5.8.0 (RE-PANEL); v6.0 (borrow
+  checker → Rt.04). See
+  `docs/roadmap/v5/v5.6.12/SESSION_REPORT.md`.
 - **v5.6.11** (shipped) — **Ve.4 CLOSED — full self-compile
   fixed-point restored after 7 releases.** The v5.6.4-era
   blocker that broke `verify_fixed_point.sh` since v5.6.4 is
@@ -1218,15 +1288,19 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
+- **v5.6.13** — Conditional cleanup. Layer 2 (move on
+  assignment) for share-mutate leaks IF one surfaces in the
+  corpus. Extending Layer 1 destination passing to
+  struct/enum/map let-bindings IF a duplicate-alloca leak
+  surfaces. Otherwise, skip — there's nothing to do.
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
 - **v6.0** — Borrow checker / multi-level alias analysis. Closes
-  Lk.1 (alloca-aliasing in inline list-get/push, opened
-  v5.6.10) and Rt.04 (multi-level drop-glue alias analysis,
-  rescoped v5.6.6). Once Lk.1 closes, the v5.6.10 emit_list_init
-  scalar gate can be re-applied to eliminate the 7 remaining
-  `__mn_list_new(i64 384)` sites without surfacing leaks.
+  Rt.04 (multi-level drop-glue alias analysis, rescoped
+  v5.6.6 — struct→list→string depth-2). The only remaining
+  v5.6.x v6.0 carry now that v5.6.12 closed Lk.1 at the
+  source via destination passing.
 
 See `docs/roadmap/v5/CLOSEOUT_ARC.md` and
 `docs/roadmap/v5/PARITY_GAPS.md`.
@@ -1310,7 +1384,7 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.11):** 64/66. The 2 gap:
+**Current baseline (v5.6.12):** 64/66. The 2 gap:
 `51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
 `64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
 v5.7.0 for 66/66.
