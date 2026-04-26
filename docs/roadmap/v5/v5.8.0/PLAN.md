@@ -2,8 +2,7 @@
 
 **Status:** PLANNED
 **Breaking:** No
-**Prerequisite:** v5.7.1 shipped (SPEC + docs polish after 66/66;
-culebra clean baseline + arc-journal aggregated)
+**Prerequisite:** v5.7.1 shipped (SPEC + docs polish after 66/66)
 **Estimated work:** 1 session (measurement + review)
 
 ---
@@ -18,13 +17,6 @@ the v5.3.x closeout arc), this panel sees the complete picture: all
 Sh.* feature gaps closed, 66/66 goldens, Own.1 Phase 2 landed, and a
 fresh SPEC + docs polish pass. Every reviewer's ceiling objection
 should be resolved.
-
-**New for this panel: culebra-driven evidence**. Every reviewer
-gets `docs/roadmap/v5/v5.7.1/culebra/baseline-end.json` plus
-`arc-journal.jsonl` (the v5.6.9 → v5.7.1 milestone log) as
-structured input. Replaces the per-reviewer "go grep stage2.ll
-yourself" pattern from earlier panels and gives Rattler / Cobra /
-Anaconda a single source of truth.
 
 ## Expected score recovery
 
@@ -56,27 +48,20 @@ from 8.21 (v4.120.0, Option B) to 8.80 (v4.136.0, Option C). The
 current arc is 7 releases (v5.3.1–v5.7.1) but covers both closeout
 AND feature-parity, targeting a larger delta.
 
-## Culebra inputs for the panel
+## Reviewer evidence
 
-Every reviewer gets the same packet:
+Every reviewer gets `MEASUREMENTS.md` (v5.8.0), their prior
+review, and `PARITY_GAPS.md` as primary inputs. Supplementary
+material — including the v5.7.1 culebra baseline + arc-journal —
+lives at `docs/roadmap/v5/v5.7.1/culebra/` for reviewers who want
+to verify FP-shape preservation. v5.8.0 has zero source drift vs
+v5.7.1, so re-running culebra would produce byte-identical
+artifacts; we don't.
 
-| Artifact | Source | What it shows |
-|---|---|---|
-| `baseline-end.json` | `docs/roadmap/v5/v5.7.1/culebra/` | Final stage2.ll snapshot — counts of all template matches, function metrics |
-| `triage.md` | same | Grouped findings by root cause; FP-suppressed |
-| `health-{Value,MIRType,EmitState,LowerState,Instruction}.txt` | same | PHI zeroinit / type-pun / null-load checks for the most-touched structs |
-| `fixedpoint.md` | same | Stage1→stage2→stage3 cycle stabilization evidence |
-| `arc-journal.jsonl` | same | Every milestone / fix / analysis from v5.6.9 → v5.7.1 |
-| `baseline-delta-from-v5.6.10.md` | `docs/roadmap/v5/v5.7.1/culebra/` | Quantified IR-shape changes from the closure work |
-
-Per-reviewer focus:
-
-| Reviewer | Primary culebra input |
-|---|---|
-| Rattler (LLVM) | `triage.md`, `baseline-delta`, `health-*` |
-| Cobra (C++/ABI) | `baseline-end.json` (sret/byref counts), `health-Value`, `health-MIRType` |
-| Mamba (C runtime) | `arc-journal.jsonl` (drop-glue + tracking discipline) |
-| Viper (memory safety) | `health-*`, `triage.md` (UAF / leak templates), LSan baselines |
-| Anaconda (toolchain) | `fixedpoint.md`, `baseline-delta`, CI integration |
-| Coral (SPEC) | `arc-journal.jsonl` (feature additions match SPEC §s) |
-| Boa (docs) | `docs/guides/culebra.md` published in v5.7.1 |
+Culebra v2.4.0 cannot fully parse function bodies on Mapanare's
+217k-line stage2.ll (its structural commands report "0 functions
+parsed") and the two "critical" findings on the corpus are
+documented false positives — `function-count-drop` and
+`return-type-divergence`. See `docs/guides/culebra.md` §3.
+Reviewers should treat the baseline as a "did the FP shape
+change?" sanity check, not as primary correctness signal.

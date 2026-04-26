@@ -18,6 +18,76 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.8.0** (shipped) — **RE-PANEL — aggregate 9.66 / 10,
+  Option A.** Seven-reviewer review of the v5.3.1 → v5.7.1
+  arc (9 releases, all 5 v5.3.0 panel MEDIUMs closed, 4 Sh.*
+  feature gaps closed, Own.1 P2 closed, fixed-point restored,
+  goldens 54/66 → 66/66). **Zero compiler / runtime source
+  changes** — `git diff v5.7.0..HEAD -- mapanare/ runtime/`
+  returns 0 lines. Pure review release; reproduces v5.7.1
+  binary at the new VERSION embed. **Per-reviewer (v5.2.0 →
+  v5.8.0):** Rattler 9.3 → **9.8 (+0.5)** — In.1-stage2
+  closed, fixed-point NEAR, Sh.4/6/7+B closed, 39 cloner
+  instr-kind handlers verified at HEAD. Viper 9.7 → **9.9
+  (+0.2)** — Own.1 P2 (28-panel item) closed at structural
+  root cause across v5.4.0–v5.4.4 + v5.6.4; Ve.1/2/3/4+Lk.1
+  all closed; Rt.04 correctly RESCOPED to v6.0 borrow
+  checker. Anaconda 8.9 → **9.6 (+0.7)** — lint trio GREEN,
+  pytest 8 fails → 0, 5x flaky audit clean, 66 new
+  feature-coverage tests, C hardening 3/3 PASS. Cobra 8.8 →
+  **9.6 (+0.8)** — fixed-point BROKEN → NEAR restored
+  (217,879 == 217,879 lines, 4-line VERSION-only diff), all
+  4 Sh.* + B closed, PARITY_GAPS.md ledger discipline holds
+  across nine releases. Coral 9.4 → **9.6 (+0.2)** — SPEC
+  §30 Package Management added v5.3.3, SPEC header
+  4.143.0 → 5.7.1 closing a 27-release staleness window,
+  demo gap closed (signal counter at v5.3.3), tensor + async
+  + closure-typed + or-pattern all SPEC'd. Boa 9.4 → **9.4
+  (+0.0, preserved)** — all 4 v5.2.0 carry-forwards
+  (Bo.15/16/17/14r) closed at v5.3.1; new
+  `docs/guides/culebra.md` 247-line contributor guide;
+  localized README parity sustained; **flagged 1 NEW MEDIUM
+  (Bo.18)**: README internal contradiction at lines 147-149
+  (lead-in says "restoration tracked at v5.3.2" while
+  feature subsection correctly says NEAR). Same shape as the
+  original Bo.15 but smaller blast radius. Mamba 9.6 →
+  **9.7 (+0.1)** — Stream-C closed v5.3.1; async coroutine
+  pipeline (v5.5.4–v5.5.7) ships full LLVM-coro ABI +
+  scheduler-driven Suspend/BlockOn/main lifecycle with
+  TSan/ASan/LSan clean; Mn/Rust geomean **1.17× → 1.003×**
+  (essentially parity, first time); Mn/Python **168× →
+  328.6×** (~2× faster). **Aggregate 9.30 → 9.66 (+0.36)
+  — highest aggregate in project panel history**, exceeding
+  v4.154.0 (9.37) and v5.2.0 (9.30). Score trajectory: 6.59
+  → 7.87 → 8.21 → 8.21 → 8.80 → 8.86 → 9.21 → 9.37 → 9.30 →
+  **9.66**. Per-release lift density 0.040 lift/release
+  vs v4.114→v4.136's 0.027 lift/release. **Decision rule
+  applied: Option A — v5.8.0 is a clean production
+  release** (aggregate ≥ 9.0 AND 0 NEEDS WORK; both gates
+  clear). 1 new MEDIUM (Bo.18) and 4 new LOW
+  (Bo.19/Bo.20/Bo.14r2/Pe.1) carry forward as v5.8.x
+  hygiene work; none block. v6.0 carry list intentional and
+  small: Rt.04 (multi-level alias), Li.1 (LICM), borrow
+  checker as the structural framework for both. **What does
+  NOT ship in v5.8.0:** compiler edits; new tests; SPEC
+  changes; benchmarks methodology changes (Mn/Rust 1.003× +
+  Mn/Python 328.6× delivered through v5.7.1). What ships:
+  VERSION 5.7.1 → 5.8.0; rebuilt mnc-stage1 with new
+  VERSION embed; MEASUREMENTS.md (canonical evidence,
+  reviewers cite this); 7 reviewer files in
+  `.reviews/v5.7.1/`; V5_DECISION.md + README.md panel
+  summary; PARITY_AUDIT.md (29/29 Historical items verified,
+  all Open items scoped); SESSION_REPORT.md; v5.8.0 git
+  tag. **Metrics**: stage2.ll 217,879 lines preserved (zero
+  source drift); goldens 66/66 preserved; fixed-point NEAR
+  preserved; non-bootstrap pytest 5,618-5,620 passed / 0
+  failed (5x flaky audit, 0 flaky); ASan/TSan/LSan/valgrind
+  baselines unchanged; lint clean; Reg.1 gate 23/23/91
+  clean. Next: v5.8.x docs micro-release for Bo.18 if user
+  decides to ship it standalone; v6.0 (borrow checker —
+  Rt.04 + Li.1 + general ownership). See
+  `docs/roadmap/v5/v5.8.0/SESSION_REPORT.md` and
+  `.reviews/v5.7.1/V5_DECISION.md`.
 - **v5.7.1** (shipped) — **SPEC + docs polish, pre-panel.**
   Zero compiler edits. SPEC bumped 5.3.3 → 5.7.1 (closing a
   27-release staleness window): §3.11 Tensor Types credits
@@ -1727,7 +1797,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (28149 symbols, 61918 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (28238 symbols, 61996 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
