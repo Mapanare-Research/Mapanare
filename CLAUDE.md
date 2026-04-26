@@ -18,6 +18,71 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.13** (shipped) — **Layer 1 cleanup — destination
+  passing extended to struct let-bindings; v5.6.x arc remains
+  complete.** Optional cleanup release per v5.6.13 PLAN's
+  decision tree (v5.6.12 sanitizer matrix all clean → user
+  chose "Ship Layer 1 ext only" path). Extends v5.6.12's
+  destination-passing pattern from List let-bindings to
+  **Struct** let-bindings, eliminating the duplicate `.si`
+  scratch alloca that `emit_struct_init` /
+  `emit_struct_init_from_values` created for every struct
+  constructor call. New helper
+  `lower_struct_new_into(st, struct_name, arg_exprs, dest_name)`
+  parallel to v5.6.12's `lower_list_typed_into`. The parser
+  encodes `let foo: Foo = new Foo {...}` as
+  `Call(Ident("__new_Foo"), [val1, val2, ...])` (see
+  parser.mn::parse_struct_construct); `lower_call_by_name`
+  unwraps `__new_X` calls into `Instruction::StructInit` with
+  a fresh-tmp dest. For let-bindings, `lower_let` detects this
+  pattern up front and routes through `lower_struct_new_into`,
+  pre-computing the var's binding name `%foo<N>` and skipping
+  its own post-emit `Alloca` + `Store` entirely. The emit-side
+  `dn + ".si"` → `dn + ".addr"` rename in `emit_struct_init`
+  and `emit_struct_init_from_values` means the renamed scratch
+  IS the let's binding alloca for destination-passed dests —
+  one alloca instead of (.si scratch + .addr binding) and one
+  fewer load+store at the let boundary. **Hero metric**:
+  `.si = alloca` site count in stage2.ll **240 → 0**. Net
+  struct allocas **2,206 → 2,113 (−93)** (eliminating the .si
+  scratch entirely). **What does NOT ship**: Layer 1 extension
+  to enum + map let-bindings (SKIPPED after empirical analysis
+  — `emit_enum_init` and `emit_map_init` produce purely
+  register insertvalue chains with no `.si`-equivalent scratch
+  alloca; destination passing yields net-zero IR savings for
+  those, just shifts the Store from lower_let into the emit
+  function). Layer 2 (move-on-assignment) NOT shipped — PLAN
+  §D3 gated on observed share-mutate leak; v5.6.12 sanitizer
+  sweep surfaced none. Per "no cheap shit": Layer 2 stays
+  conditional v5.6.14+ work IF a leak surfaces. **Metrics**:
+  stage2.ll **216,842 → 217,268 lines (+0.20%)** — modest
+  growth from the new helper's ~80 LOC of self-hosted source
+  emitting non-struct allocas (~157 net new) that slightly
+  outweigh the 93-net struct alloca savings; well within the
+  PROMPT 1% budget. `llvm-as` clean; goldens **64/66
+  preserved** (same 2 pre-existing fails: 51 B, 64 Sh.7);
+  fixed-point **NEAR FIXED POINT** (4 diff lines / 217,268 =
+  0.002%, all VERSION metadata, identical structural result
+  to v5.6.12); ASan UAF **65 CLEAN / 0 ASAN_ERROR /
+  1 CRASH_NO_ASAN**; valgrind **0 ERRORS /
+  66 WARNINGS_ONLY**; LSan baseline gate **PASS** (no
+  regressions vs v5.4.2 baseline; same 3 LEAKs as v5.6.12:
+  39_gpu_detect, 40_gpu_tensor, 62_list_output);
+  non-bootstrap pytest 0 failures; `make lint` clean;
+  `check_struct_registry.py` 23/23/91 clean. No
+  `known_issues.md` edits required (preventive cleanup, no
+  new or closed dockets — this is structural hygiene, not a
+  bug fix). The v5.6.x closeout arc remains complete; the
+  only v6.0 carry is Rt.04 (multi-level alias analysis,
+  struct→list→string depth-2) from v5.6.6. Decision-tree
+  result: v5.6.12 sanitizer matrix all clean; no NEW
+  share-mutate leak (the 62_list_output baseline was
+  pre-existing Rt.04 already deferred to v6.0); user chose
+  "Ship Layer 1 ext only" per PLAN §"Decision tree" —
+  preventive cleanup with no observable bug pressure. Next:
+  v5.7.0 (Sh.7 + B or-pattern → 66/66); v5.7.1 (SPEC docs
+  polish); v5.8.0 (RE-PANEL); v6.0 (borrow checker → Rt.04).
+  See `docs/roadmap/v5/v5.6.13/SESSION_REPORT.md`.
 - **v5.6.12** (shipped) — **Lk.1 + Ve.2 CLOSED — destination
   passing for List let-bindings; the v5.6.x closeout arc is
   complete.** Closes Lk.1 (alloca-aliasing leak in inline

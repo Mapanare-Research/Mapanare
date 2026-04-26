@@ -1859,9 +1859,18 @@ fn emit_struct_init(st: EmitState, dest: Value, ty: MIRType, fields: List<FieldP
         }
     }
     // Copy the final insertvalue result to dest via alloca/store/load
-    // (aggregate types cannot use `add 0` identity)
+    // (aggregate types cannot use `add 0` identity).
+    //
+    // v5.6.13 — scratch alloca renamed `.si` → `.addr` so that the
+    // destination-passing path in `lower_let` (struct branch) lands
+    // its binding alloca on the SAME name the emitter materializes
+    // here. When dn is a v5.6.13 destination-passed name (e.g.
+    // "%foo3"), `dn + ".addr"` IS the let-binding's alloca; for
+    // tmp-prefixed dests (e.g. "%t<N>") this is just a rename of
+    // the v5.6.12 scratch with no behavioral change (downstream
+    // SROA elides it).
     if nfields > 0 {
-        let cpy_a: String = dn + ".si"
+        let cpy_a: String = dn + ".addr"
         s = emit_line(s, "  " + cpy_a + " = alloca " + struct_ty)
         s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + "ptr " + cpy_a)
         s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + "ptr " + cpy_a)
@@ -2049,9 +2058,13 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
             i = i + 1
         }
     }
-    // Copy the final insertvalue result to dest
+    // Copy the final insertvalue result to dest.
+    //
+    // v5.6.13 — scratch alloca renamed `.si` → `.addr` to align with
+    // emit_struct_init above. See that function's comment for the
+    // destination-passing rationale.
     if nfields > 0 {
-        let cpy_a: String = dn + ".si"
+        let cpy_a: String = dn + ".addr"
         s = emit_line(s, "  " + cpy_a + " = alloca " + struct_ty)
         s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + "ptr " + cpy_a)
         s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + "ptr " + cpy_a)

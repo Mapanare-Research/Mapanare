@@ -133,7 +133,8 @@ feature arc was scoped). Tracked here for completeness:
 | v5.6.9 | Ve.3 | CLOSED; Ve.4 OPENED |
 | v5.6.10 | Ve.2 + struct_byte_size + culebra | PARTIAL; Lk.1 OPENED |
 | v5.6.11 | Ve.4 | CLOSED |
-| **v5.6.12** | **Lk.1 + Ve.2 residuals** | **CLOSED** |
+| v5.6.12 | Lk.1 + Ve.2 residuals | CLOSED |
+| **v5.6.13** | **Layer 1 cleanup → struct lets** | **OPTIONAL — SHIPPED** |
 
 Every v5.6.x docket is now resolved or appropriately deferred to
 v6.0 (Rt.04 only). The v5.6.x closeout arc is genuinely complete
@@ -141,6 +142,17 @@ with no v6.0 deferrals from v5.6.x itself — the only v6.0 carry
 is Rt.04 from v5.6.6, which has its own scoping rationale
 (multi-level alias analysis is a borrow-checker concern).
 
-After v5.6.12 ships, the trajectory rejoins the original arc:
+v5.6.13 ships an optional Layer 1 cleanup: extends v5.6.12's
+destination-passing pattern from List let-bindings to Struct
+let-bindings (eliminates the `.si` scratch alloca in
+`emit_struct_init` / `emit_struct_init_from_values`). Enum +
+Map skipped after empirical analysis confirmed no
+`.si`-equivalent scratch pattern exists for those types.
+240 `.si` sites → 0; 93 net struct allocas saved; stage2.ll
++0.20% (the new lower_struct_new_into helper's source code
+slightly outweighs the alloca savings). No behavioral change;
+preventive cleanup only.
+
+After v5.6.13 ships, the trajectory rejoins the original arc:
 v5.7.0 (Sh.7 + B → 66/66), v5.7.1 (docs polish), v5.8.0
 (RE-PANEL).

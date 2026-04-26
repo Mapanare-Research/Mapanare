@@ -8619,6 +8619,47 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
         return s
     }
 
+    // v5.6.13 Layer 1 extension — destination passing for struct
+    // let-bindings. The parser encodes `let foo: Foo = new Foo {...}`
+    // as `Call(Ident("__new_Foo"), [val1, val2, ...])` — see
+    // parser.mn::parse_struct_construct. lower_call_by_name unwraps
+    // this into `Instruction::StructInit` with a fresh-tmp dest. For
+    // a let-binding, route through lower_struct_new_into and use the
+    // var's alloca name directly so the emitter's renamed `.addr`
+    // scratch (was `.si` pre-v5.6.13) for `%foo<N>` produces
+    // `%foo<N>.addr` — the let's binding alloca itself. One alloca
+    // instead of (.addr scratch + .addr binding) and one fewer
+    // load+store at the let boundary. Same mechanism as v5.6.12's
+    // list path; no observable leak in the corpus drives this change
+    // (preventive cleanup only).
+    if expr_kind(value) == "call" {
+        let callee_v: Expr = expr_call_callee(value)
+        if expr_kind(callee_v) == "ident" {
+            let callee_name_v: String = expr_ident_name(callee_v)
+            if callee_name_v.starts_with("__new_") {
+                let struct_name_v: String = callee_name_v.substr(6, len(callee_name_v) - 6)
+                // Only non-generic registered structs go through the fast
+                // path. Generics need try_monomorphize_struct in
+                // lower_call_by_name; let those fall through to the
+                // existing path.
+                if is_struct_name(st, struct_name_v) {
+                    let mut s: LowerState = st
+                    let var_base: String = "%" + name + toString(s.tmp_counter)
+                    let addr_name: String = var_base + ".addr"
+                    s.tmp_counter = s.tmp_counter + 1
+
+                    let r2: LowerResult = lower_struct_new_into(s, struct_name_v, expr_call_args(value), var_base)
+                    s = r2.state
+
+                    let struct_ty: MIRType = mir_struct(struct_name_v)
+                    let addr2: Value = new_value(addr_name, struct_ty)
+                    s = define_var(s, name, addr2, mutable)
+                    return s
+                }
+            }
+        }
+    }
+
     let r: LowerResult = lower_expr(st, value)
     let mut s: LowerState = r.state
 
@@ -11428,6 +11469,65 @@ fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -
     // v5.4.4 — struct literal takes ownership of each field expression.
     s = emit_move_vals(s, vals)
     return new_lower_result(dest_r.value, s)
+}
+
+// v5.6.13 Layer 1 extension — destination-passing variant of
+// `__new_<Struct>` constructor lowering, mirroring v5.6.12's
+// lower_list_typed_into. Used by lower_let when the value is a
+// struct constructor. Pairs each positional arg with the struct's
+// declared field name (matching lower_call_by_name's __new_ branch
+// at line ~2374), then emits `Instruction::StructInit` with a
+// caller-supplied dest_name instead of a fresh tmp. The emitter's
+// renamed `.addr` scratch (see emit_struct_init / emit_struct_init
+// _from_values) then materializes `%<dest_name>.addr` — which IS
+// the let's binding alloca, eliminating the duplicate alloca + the
+// load+store dance at the let boundary.
+//
+// Mirrors Rust's destination-passing codegen (PlaceRef in
+// rustc_codegen_llvm) for non-list aggregate types.
+fn lower_struct_new_into(st: LowerState, struct_name: String, arg_exprs: List<Expr>, dest_name: String) -> LowerResult {
+    let mut s: LowerState = st
+
+    // Lower each constructor argument (parallel to lower_call's arg
+    // pre-lowering at line ~1644).
+    let mut args: List<Value> = []
+    let mut i: Int = 0
+    let nae: Int = len(arg_exprs)
+    for _ in 0..500 {
+        if i < nae {
+            let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
+            s = arg_r.state
+            args.push(arg_r.value)
+            i = i + 1
+        }
+    }
+
+    // Pair positional args with declared field names — same logic
+    // as lower_call_by_name's __new_ branch at line ~2380.
+    let field_names: List<String> = get_struct_field_names(s, struct_name)
+    let struct_ty: MIRType = mir_struct(struct_name)
+    let mut field_pairs: List<FieldPair> = []
+    let mut fi: Int = 0
+    let nfn: Int = len(field_names)
+    let na: Int = len(args)
+    for _ in 0..500 {
+        if fi < nfn {
+            if fi < na {
+                let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
+                field_pairs.push(fp)
+                fi = fi + 1
+            }
+        }
+    }
+
+    // Use caller-supplied dest_name (e.g. "%foo3") instead of
+    // fresh-tmp. tmp_counter is NOT bumped here; the caller already
+    // reserved the slot when it picked the variable's name.
+    let dest_val: Value = new_value(dest_name, struct_ty)
+    s = emit_instr(s, Instruction::StructInit(dest_val, struct_ty, field_pairs))
+    // v5.4.4 — StructInit takes ownership of each field value.
+    s = emit_move_fields(s, field_pairs)
+    return new_lower_result(dest_val, s)
 }
 
 // ---------------------------------------------------------------------------
@@ -16573,9 +16673,18 @@ fn emit_struct_init(st: EmitState, dest: Value, ty: MIRType, fields: List<FieldP
         }
     }
     // Copy the final insertvalue result to dest via alloca/store/load
-    // (aggregate types cannot use `add 0` identity)
+    // (aggregate types cannot use `add 0` identity).
+    //
+    // v5.6.13 — scratch alloca renamed `.si` → `.addr` so that the
+    // destination-passing path in `lower_let` (struct branch) lands
+    // its binding alloca on the SAME name the emitter materializes
+    // here. When dn is a v5.6.13 destination-passed name (e.g.
+    // "%foo3"), `dn + ".addr"` IS the let-binding's alloca; for
+    // tmp-prefixed dests (e.g. "%t<N>") this is just a rename of
+    // the v5.6.12 scratch with no behavioral change (downstream
+    // SROA elides it).
     if nfields > 0 {
-        let cpy_a: String = dn + ".si"
+        let cpy_a: String = dn + ".addr"
         s = emit_line(s, "  " + cpy_a + " = alloca " + struct_ty)
         s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + "ptr " + cpy_a)
         s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + "ptr " + cpy_a)
@@ -16763,9 +16872,13 @@ fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values:
             i = i + 1
         }
     }
-    // Copy the final insertvalue result to dest
+    // Copy the final insertvalue result to dest.
+    //
+    // v5.6.13 — scratch alloca renamed `.si` → `.addr` to align with
+    // emit_struct_init above. See that function's comment for the
+    // destination-passing rationale.
     if nfields > 0 {
-        let cpy_a: String = dn + ".si"
+        let cpy_a: String = dn + ".addr"
         s = emit_line(s, "  " + cpy_a + " = alloca " + struct_ty)
         s = emit_line(s, "  store " + struct_ty + " " + agg + ", " + "ptr " + cpy_a)
         s = emit_line(s, "  " + dn + " = load " + struct_ty + ", " + "ptr " + cpy_a)
