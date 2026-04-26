@@ -607,9 +607,7 @@ def run_test(
                     diffs.append(f"missing: {missing}")
                     r.compare_ok = False
                 if len(s1_lambdas) < len(bs_lambdas):
-                    diffs.append(
-                        f"lambdas: stage1={len(s1_lambdas)} < bootstrap={len(bs_lambdas)}"
-                    )
+                    diffs.append(f"lambdas: stage1={len(s1_lambdas)} < bootstrap={len(bs_lambdas)}")
                     r.compare_ok = False
                 r.compare_diff = "; ".join(diffs)
 

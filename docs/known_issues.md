@@ -1,6 +1,6 @@
 # Known Issues — User-Facing
 
-Last updated: v5.6.12 (Lk.1 + Ve.2 CLOSED — destination passing for List let-bindings in lower_let; the 384-byte floor branch is now unreachable for known scalar elem_ty; `__mn_list_new(i64 384)` site count 7 → 0; the v5.6.x closeout arc is complete).
+Last updated: v5.7.0 (Sh.7 CLOSED + or-pattern B fix — first 66/66 in project history. Self-hosted parser handles multi-param lambdas; lower routes fn-typed identifier calls through indirect-call SSA; emit_call_ir recognises `%`-prefixed callees; Python or-pattern check + identifier `None` resolution).
 
 ## Self-hosted compiler feature gaps
 
@@ -9,7 +9,7 @@ Last updated: v5.6.12 (Lk.1 + Ve.2 CLOSED — destination passing for List let-b
 | Sh.4 | async code compiles through Python bootstrap only | use Python bootstrap for async programs | v5.x |
 | Sh.5 | `const` in function bodies partially supported in self-hosted | use `let` in fn bodies; `const` works at module level | v5.x |
 | ~~Sh.6~~ | ~~tensor literals not yet in self-hosted emitter~~ **CLOSED v5.6.3** — tensor literals (v5.6.0), multi-dim indexing (v5.6.1), broadcast binops (v5.6.2), slicing + reductions (v5.6.3). All 5 tensor goldens 49/50/51/52/53 run byte-identical to expected output through `mnc-stage1 → llc → clang`. | n/a | CLOSED v5.6.3 |
-| Sh.7 | closure-typed function parameters: self-hosted declines | use concrete fn types | v5.x |
+| ~~Sh.7~~ | ~~closure-typed function parameters: self-hosted declines~~ **CLOSED v5.7.0** — `parser.mn` extracts multi-param lambdas from `(a, b) => ...` (was: only single Ident); `lower.mn` lowers calls through fn-typed locals via indirect-call SSA name; `emit_llvm_ir.mn::emit_call_ir` recognises `%`-prefixed callees; `mir_opt.mn` renames Call's fn_name during inlining. Goldens 65/66 → 66/66. | n/a | CLOSED v5.7.0 |
 | Sh.9a | async emitter bug: see `docs/guides/async.md` for workaround | documented workaround in async guide | v5.x |
 | Sh.9b | async emitter bug #2: see `docs/guides/async.md` | documented workaround in async guide | v5.x |
 

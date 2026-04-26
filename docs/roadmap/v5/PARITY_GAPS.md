@@ -150,7 +150,13 @@ Not parity gaps (both missing), but panel-visible:
   returns `mapanare/self/lower.mn`. Stepped slicing (`a[::2]`) and
   tensor reshape / mutable views remain out of scope — tracked
   separately as v5.x / v6.0 feature work.
-- **Sh.7** — closure-typed captures — v5.x feature track
+- ~~**Sh.7**~~ — ~~closure-typed parameters — v5.x feature track~~ —
+  **CLOSED v5.7.0**. Self-hosted `parser.mn` now extracts multi-param
+  lambdas from `(a, b) => ...` (was: only single Ident); `lower.mn`
+  routes calls through fn-typed locals via indirect-call SSA name;
+  `emit_llvm_ir.mn::emit_call_ir` recognises `%`-prefixed callees;
+  `mir_opt.mn` renames Call's fn_name during inlining. Goldens
+  **65/66 → 66/66 — first time in project history**.
 - **Sh.9a** — async test harness — v5.x feature track
 - ~~**Perf.2**~~ — lazy thread creation in coro scheduler — **CLOSED
   v5.1.4** (default-settings async geomean 2.3 → 1.19 ms, 0.91× Go

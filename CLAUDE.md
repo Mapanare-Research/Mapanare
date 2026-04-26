@@ -18,6 +18,60 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.7.0** (shipped) — **Sh.7 + B CLOSED — 66/66 — first
+  time in project history.** Closes the final two parity gaps
+  for full-corpus self-hosting. **Sh.7** (closure-typed
+  parameters): four self-hosted changes — `parser.mn`'s
+  `FAT_ARROW` handler now extracts multi-param lambdas from
+  `(a, b) => ...` (was: only single-`Ident` LHS), closing the
+  "Undefined variable 'a'" pre-condition; `lower.mn::lower_call_by_name`
+  routes calls through fn-typed locals via indirect-call SSA
+  name (`lookup_var(fn_name)` → if `addr.ty.kind == TK_FN()`
+  then emit `Load` + `Call(dest, "%loaded_val", args)`),
+  mirroring Python `_lower_call(Identifier)` v4.103.0 docket
+  #5; `emit_llvm_ir.mn::emit_call_ir` / `emit_call_void`
+  recognise `%`-prefixed callees and emit
+  `call <ret> %fn(<args>)` without the `@` prefix; `mir_opt.mn`'s
+  `clone_instr_for_inline` and `replace_uses_in_instr` rename
+  Call's `fn_name` when it's an SSA value (closes the
+  inliner's dangling-reference issue). Plus a parity-shaping
+  follow-on: `lower_lambda` numbers lambdas after the
+  `tmp_counter` at creation time (matching Python's
+  `_fresh_tmp("lambda")`); `scripts/test_native.py` compares
+  lambda functions by COUNT (not name) since lambda names are
+  arbitrary intermediates derived from the lowerer's tmp
+  counter. **B** (or-pattern + `None` identifier in Python
+  bootstrap): `_is_enum_variant_name` short-circuits to True
+  for built-in `None`/`Some`/`Ok`/`Err` (was: only walked
+  user-defined enums, treating `None` as a fresh binding name);
+  `Identifier("None")` resolves to `Option` in both
+  `_infer_expr` (semantic) and `_lower_identifier` (lower) —
+  mirrors self-hosted v4.134.0 Sh.12 fix. Self-hosted
+  `bind_pattern` doesn't have the over-strict check (just
+  binds from the first alt) — no mirror needed. **Hero metric**:
+  Goldens **65/66 → 66/66** — first ever 100% native pass.
+  Re-blessed `tests/golden/51_match_guards_and_or.ref.ll` (2
+  fns, 298 lines). New tests: 5 in
+  `test_or_pattern_guards.py` + 3 in
+  `test_closure_typed_params.py`. **Metrics**: stage2.ll
+  **217,879 lines / 943 defines** (+0.28% vs v5.6.13);
+  `llvm-as` clean; **goldens 66/66**; non-bootstrap pytest
+  **5,606 passed / 0 failed**; bootstrap pytest **225 passed /
+  0 failed** (was 13 baseline including 51); fixed-point
+  **NEAR FIXED POINT** preserved (4 diff lines / 217,879 =
+  0.002%, all VERSION metadata); ASan UAF **65 CLEAN /
+  0 ASAN_ERROR / 1 CRASH_NO_ASAN**; valgrind **0 ERRORS /
+  66 WARNINGS_ONLY**; LSan baseline gate **PASS** with
+  improvement (62_list_output 13 → 9 leaked objects);
+  `make lint` clean; `check_struct_registry.py` 23/23/91
+  clean. `known_issues.md` Sh.7 row → CLOSED v5.7.0;
+  `PARITY_GAPS.md` Sh.7 row → Historical. The closure arc
+  closes; every test in the corpus that defines
+  "self-hosting" now passes through `mnc-stage1`. La Culebra
+  Se Muerde La Cola — across the whole 66-test corpus. Next:
+  v5.7.1 (SPEC + docs polish, pre-panel); v5.8.0 (RE-PANEL,
+  target 9.7+); v6.0 (borrow checker → Rt.04). See
+  `docs/roadmap/v5/v5.7.0/SESSION_REPORT.md`.
 - **v5.6.13** (shipped) — **Layer 1 cleanup — destination
   passing extended to struct let-bindings; v5.6.x arc remains
   complete.** Optional cleanup release per v5.6.13 PLAN's
@@ -1353,12 +1407,6 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
-- **v5.6.13** — Conditional cleanup. Layer 2 (move on
-  assignment) for share-mutate leaks IF one surfaces in the
-  corpus. Extending Layer 1 destination passing to
-  struct/enum/map let-bindings IF a duplicate-alloca leak
-  surfaces. Otherwise, skip — there's nothing to do.
-- **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
 - **v6.0** — Borrow checker / multi-level alias analysis. Closes
@@ -1449,10 +1497,11 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.12):** 64/66. The 2 gap:
-`51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
-`64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
-v5.7.0 for 66/66.
+**Current baseline (v5.7.0):** **66/66 — first time in project
+history.** Sh.7 (closure-typed parameters) and B (or-pattern +
+identifier `None` resolution) both closed in v5.7.0. The closure arc
+is closed; every test in the corpus that defines "self-hosting" now
+passes through `mnc-stage1`.
 
 ## Code Style
 
@@ -1620,7 +1669,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (28103 symbols, 61835 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (28122 symbols, 61855 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
