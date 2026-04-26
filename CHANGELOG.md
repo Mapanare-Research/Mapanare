@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.8.2] - 2026-04-26
+
+### Fixed
+
+- **Tc.1** — Windows: `mapanare build` now prefers the bundled
+  PyInstaller toolchain over a system MinGW on PATH. Previously,
+  any system gcc at `C:/mingw64` would shadow the bundled w64devkit
+  + `libmapanare_rt.a`, producing an `undefined reference to
+  __mn_str_println` link error.
+- **Tc.2** — Windows: `scripts/build_stage1.py` now prefers `gcc`
+  over `clang` when resolving the C compiler. System LLVM clang on
+  Windows defaults to the MSVC target, where MSVC's UCRT marks
+  `fopen`/`strncpy` as deprecated, blowing up `-Werror` in the
+  runtime build. w64devkit's MinGW gcc has clean headers.
+- Sync README badges (en / es / pt / zh-CN) to 5.8.2.
+
+### Notes
+
+Linux and macOS behavior is unchanged. Both fixes guard on
+`sys.platform == "win32"` or only fire when a bundled toolchain is
+present, which today only ships on Windows release builds.
+
 ## [5.8.1] - 2026-04-26
 
 ### Added

@@ -22,7 +22,16 @@ import tempfile
 # Use the same compiler for C runtime and IR to avoid ABI mismatches.
 # On macOS, `gcc` is Apple Clang while LLVM IR is compiled with Homebrew
 # clang-18 — different ABIs cause struct layout corruption at runtime.
-CC = os.environ.get("CC", _shutil.which("clang") or "gcc")
+#
+# Prefer gcc on Windows: system LLVM clang there defaults to the
+# x86_64-pc-windows-msvc target, where MSVC's UCRT marks fopen and
+# strncpy as deprecated and -Werror blows up. w64devkit's MinGW gcc
+# has clean headers. On macOS / Linux keep clang first to avoid the
+# Apple-Clang vs Homebrew-clang ABI mismatch documented above.
+if sys.platform == "win32":
+    CC = os.environ.get("CC", _shutil.which("gcc") or _shutil.which("clang") or "gcc")
+else:
+    CC = os.environ.get("CC", _shutil.which("clang") or "gcc")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SELF_DIR = ROOT / "mapanare" / "self"

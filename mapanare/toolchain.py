@@ -193,25 +193,19 @@ def detect_toolchain() -> Toolchain | None:
     """Locate a usable C toolchain.
 
     Order:
-      1. System PATH (``gcc`` then ``clang``).
-      2. Bundled ``toolchain/`` alongside the Mapanare install.
+      1. Bundled ``toolchain/`` alongside the Mapanare install.
+      2. System PATH (``gcc`` then ``clang``).
       3. Well-known install roots (winget, scoop, msys2, chocolatey, LLVM).
+
+    The bundled toolchain comes first so a stray system MinGW on PATH
+    cannot shadow the w64devkit + ``libmapanare_rt.a`` we ship next to
+    the PyInstaller bundle. Without bundled-wins, an end user with
+    ``C:/mingw64`` on PATH would link against a gcc that has no
+    runtime archive, producing ``undefined reference to __mn_str_*``.
 
     Returns ``None`` if nothing works. Callers should print install guidance.
     """
-    # 1. System PATH
-    for name in ("gcc", "clang"):
-        found = shutil.which(name)
-        if found and _probe_compiler(found):
-            return Toolchain(
-                name=name,
-                compiler=found,
-                clang=_clang_sibling(found, name),
-                bin_dir=None,
-                rt_archive=None,
-            )
-
-    # 2. Bundled toolchain
+    # 1. Bundled toolchain
     root = _bundle_root()
     if root is not None:
         bundle_bin = str(root / "toolchain" / "bin")
@@ -225,6 +219,18 @@ def detect_toolchain() -> Toolchain | None:
                 clang=_clang_sibling(path, name),
                 bin_dir=bundle_bin,
                 rt_archive=str(rt) if rt.is_file() else None,
+            )
+
+    # 2. System PATH
+    for name in ("gcc", "clang"):
+        found = shutil.which(name)
+        if found and _probe_compiler(found):
+            return Toolchain(
+                name=name,
+                compiler=found,
+                clang=_clang_sibling(found, name),
+                bin_dir=None,
+                rt_archive=None,
             )
 
     # 3. Known install roots (Windows-only)
