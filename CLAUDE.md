@@ -18,6 +18,64 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.7.1** (shipped) — **SPEC + docs polish, pre-panel.**
+  Zero compiler edits. SPEC bumped 5.3.3 → 5.7.1 (closing a
+  27-release staleness window): §3.11 Tensor Types credits
+  v5.6.0–v5.6.4 self-hosted parity + Rt.06 drop-glue closure;
+  §5.6 Or-Patterns gets a v5.7.0 (B) note; §6.3 Closures gains
+  a "Closure-Typed Parameters" subsection with the v5.7.0
+  (Sh.7) callout; §29 Async appends a v5.5.4–v5.5.7 (Sh.4)
+  status block; Appendix B 3-stage fixed point refreshed
+  with v5.6.4–v5.6.10 regression window + v5.6.11 NEAR
+  restoration + v5.7.0 66/66 milestone, plus a new "Native
+  goldens" subsection. README.md + es/pt/zh-CN: version
+  badge bumped 5.7.0 → 5.7.1; new "Native compiler — what
+  `mnc-stage1` ships" subsection per language listing
+  tensors / async / closure-typed params / or-patterns /
+  drop-glue. `docs/known_issues.md` pruned of all v5.4.0–v5.7.0
+  closures (Sh.4/6/7, B, Ve.1/2/3/4, Rt.03/05/06, Lk.1) into
+  a "Closed since v5.4.0" narrative block beneath the active
+  table. `docs/roadmap/v5/PARITY_GAPS.md`: Sh.4 dual-namespace
+  disambiguated; Historical entries added for Sh.4 (async),
+  Sh.6 tensor, Sh.7 closure-typed, B (or-pattern) with full
+  closure traces. **Culebra clean baseline** at
+  `docs/roadmap/v5/v5.7.1/culebra/`: triage-brief
+  (`5 root causes, 15829 findings: 2 critical, 3 high` —
+  same FP shape as v5.6.10), full triage, progress, audit
+  (`OK No pathologies found`), strings
+  (`OK All 6398 string constants have correct byte counts`),
+  llvm-as check (VALID), 5 per-struct health checks (Value,
+  MIRType, EmitState, LowerState, Instruction — all clean),
+  baseline-end.json (3.3 MB / 15,829 findings serialized as
+  v5.8.0 panel anchor), baseline-delta-from-v5.6.10.md
+  (narrative delta with line-count breakdown by intermediate
+  release: v5.6.11 +341 / v5.6.12 −431 / v5.6.13 +426 / v5.7.0
+  +611 / v5.7.1 +0), summary.md (human-readable
+  cross-reference). **arc-journal.jsonl** aggregates v5.6.9 +
+  v5.6.10 + v5.7.0 culebra journals → 189 entries as panel
+  input. New **`docs/guides/culebra.md`** — 6-section
+  contributor guide for the culebra workflow Mapanare uses
+  (what culebra is, daily commands, false-positive policy,
+  per-release journal, panel input, cross-reference). WSL
+  interop gotcha (Windows binary needs Windows paths) and
+  performance notes (`triage --brief` fast, full `triage` ~7-8
+  min on 217k IR) documented inline. CLAUDE.md Skills table
+  cross-references the new guide. **No NEW critical findings**
+  vs the v5.6.10 anchor; both critical findings
+  (`function-count-drop`, `return-type-divergence`) are the
+  documented false-positive class. Closeout arc: every v5.4.0–v5.7.0
+  feature surface is now SPEC-described; every closed docket
+  is in the right "Historical" home; v5.8.0 panel reviewers
+  get a structured artifact instead of a narrative to hunt
+  through. **Metrics**: stage2.ll **217,879 lines** preserved
+  (no compiler edits); goldens **66/66** preserved; fixed-point
+  **NEAR** preserved; ASan / valgrind / LSan baselines
+  unchanged (no source edits to gate). What does NOT ship:
+  compiler edits; new tests; grammar/SPEC semantics changes;
+  version-tag promotion (awaits user approval per
+  `feedback_v5_tag_timing.md`). Next: v5.8.0 RE-PANEL (target
+  9.7+); v6.0 (borrow checker → Rt.04). See
+  `docs/roadmap/v5/v5.7.1/SESSION_REPORT.md`.
 - **v5.7.0** (shipped) — **Sh.7 + B CLOSED — 66/66 — first
   time in project history.** Closes the final two parity gaps
   for full-corpus self-hosting. **Sh.7** (closure-typed
@@ -1407,7 +1465,6 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
-- **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
 - **v6.0** — Borrow checker / multi-level alias analysis. Closes
   Rt.04 (multi-level drop-glue alias analysis, rescoped
@@ -1497,11 +1554,12 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.7.0):** **66/66 — first time in project
-history.** Sh.7 (closure-typed parameters) and B (or-pattern +
-identifier `None` resolution) both closed in v5.7.0. The closure arc
-is closed; every test in the corpus that defines "self-hosting" now
-passes through `mnc-stage1`.
+**Current baseline (v5.7.1):** **66/66 — preserved.** Sh.7
+(closure-typed parameters) and B (or-pattern + identifier `None`
+resolution) both closed in v5.7.0; v5.7.1 is a docs/polish release
+with no compiler edits. The closure arc is closed; every test in
+the corpus that defines "self-hosting" now passes through
+`mnc-stage1`.
 
 ## Code Style
 
@@ -1664,12 +1722,12 @@ GitHub Actions on push/PR to `dev`:
 | `/create-pr` | PR title + description from commits |
 | `/simplify` | Review + fix changed code |
 | `/autoresearch` | Autonomous experiment loop |
-| `/culebra-scan` | Culebra v2.0.0 — 49 templates (41 IR + 8 C) |
+| `/culebra-scan` | Culebra v2.4.0 — 49+ templates (ABI / IR / Binary / Bootstrap / C). Workflow guide: `docs/guides/culebra.md` |
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (28122 symbols, 61855 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (28149 symbols, 61918 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

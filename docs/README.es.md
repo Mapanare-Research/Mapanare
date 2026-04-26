@@ -24,7 +24,7 @@ Compila a binarios nativos via LLVM y WebAssembly.
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![Licencia](https://img.shields.io/badge/licencia-MIT-green.svg?style=flat-square)](../LICENSE)
-[![Version](https://img.shields.io/badge/version-5.7.0-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.7.1-blue.svg?style=flat-square)](../CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-5800+_pasando-brightgreen.svg?style=flat-square)]()
 [![Goldens](https://img.shields.io/badge/goldens-66%2F66-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
@@ -112,6 +112,18 @@ let respuesta = ask(ollama("llama3.2"), "Que es Mapanare?")
 ```
 
 Referencia completa, tutoriales y recetario en [mapanare.dev/docs](https://mapanare.dev/docs).
+
+### Compilador nativo — lo que envia `mnc-stage1`
+
+El compilador auto-hospedado corre el corpus completo de v5.7.0 (66/66 goldens nativos):
+
+- **Tensores** — literales, indexacion multi-dim, broadcasting estilo NumPy, slicing, reducciones (sum / mean / max / min / argmax / argmin).
+- **Async / await / `block_on`** — corrutinas LLVM reales (`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`) con suspension dirigida por el scheduler.
+- **Parametros tipo cierre** — `fn apply(f: fn(Int) -> Int, x: Int)` lowereado a traves de SSA de llamada indirecta.
+- **Pattern matching con or-patterns y guards** — `Plus | Minus if cond => body` sobre variantes enum y constructores incorporados (`None` / `Some` / `Ok` / `Err`).
+- **Drop-glue para ownership** — lifetimes de string / list / boxed / tensor rastreados en rutas de retorno y bucles; valgrind / ASan / LSan / TSan todos limpios en el corpus.
+
+Punto fijo auto-hospedado de 3 etapas: NEAR (diferencia de 4 lineas de metadata VERSION sobre un stage2.ll de 217k lineas).
 
 ---
 

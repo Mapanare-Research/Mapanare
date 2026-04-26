@@ -1,0 +1,4 @@
+culebra Struct health check: Value in C:\Users\Juan\Documents\GitHub\Mapanare\stage2_v5.7.1.ll
+
+
+  ✓ No struct health issues found for Value

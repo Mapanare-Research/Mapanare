@@ -1,19 +1,32 @@
 # Mapanare Language Specification
 
-**Version:** 5.3.3
-**Status:** Live — synced to the v5.3.3 cut (2026-04-22)
+**Version:** 5.7.1
+**Status:** Live — synced to the v5.7.1 cut (2026-04-26)
+
+> **v5.7.1 — pre-panel polish.** SPEC reflects the v5.4.0–v5.7.0
+> arc: native goldens **66/66** (first time in project history,
+> v5.7.0); self-hosted parity for tensor literals + multi-dim
+> indexing + broadcast + slicing + reductions (v5.6.0–v5.6.3);
+> async / `await` / `block_on` via real LLVM coroutines in the
+> self-hosted emitter (v5.5.4–v5.5.7); closure-typed function
+> parameters (v5.7.0 Sh.7); or-pattern + identifier `None`
+> resolution (v5.7.0 B); drop-glue ownership tracking for
+> string / list / boxed / tensor (v5.4.0–v5.6.4); self-host
+> 3-stage fixed-point restored to NEAR (v5.6.11). See
+> `docs/roadmap/v5/CLOSEOUT_ARC.md` for the complete arc trace.
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
 
-> **Spec sync discipline.** Each v4.x panel release fact-checks this
-> spec against the live grammar (`mapanare/mapanare.lark`), type
-> system (`mapanare/types.py`), and self-hosted lexer
-> (`mapanare/self/lexer.mn`). The v4.129.0 documentation sync re-audits
-> §2.1 (keywords + bilingual master list), §2.1.1 (master keyword
-> table), §3 (type system), §6.3 (closures), §27.1 (stability count),
-> §28 (stdlib), and Appendix B (compilation pipeline) against the
-> v4.117.0–v4.128.0 changes. If you discover drift, open a
-> documentation issue against the specific section number.
+> **Spec sync discipline.** Each release fact-checks this spec
+> against the live grammar (`mapanare/mapanare.lark`), type system
+> (`mapanare/types.py`), and self-hosted lexer
+> (`mapanare/self/lexer.mn`). The v5.7.1 sync re-audits §2.1
+> (keywords + bilingual master list), §3 (type system), §3.11
+> (tensors), §5.6 (or-patterns), §6.3 (closures), §27.1 (stability
+> count), §28 (stdlib), §29 (async), and Appendix B (compilation
+> pipeline) against the v5.4.0–v5.7.0 changes. If you discover
+> drift, open a documentation issue against the specific section
+> number.
 
 ---
 
@@ -758,7 +771,18 @@ When you `spawn` an agent, the returned handle exposes the input and output chan
 
 ### 3.11 Tensor Types
 
-> **Status:** Stable on LLVM backend. Tensor literals (v4.42.0), multi-dimensional indexing with bounds checking (v4.43.0), NumPy-style broadcasting (v4.44.0), reductions and slicing (v4.45.0). GPU-accelerated when CUDA/Vulkan available; CPU fallback otherwise.
+> **Status:** Stable on LLVM backend, in both the Python bootstrap
+> and the self-hosted emitter (parity closed v5.6.0–v5.6.3, Sh.6).
+> Tensor literals (v4.42.0; self-hosted v5.6.0), multi-dimensional
+> indexing with bounds checking (v4.43.0; self-hosted v5.6.1),
+> NumPy-style broadcasting (v4.44.0; self-hosted v5.6.2),
+> reductions and slicing (v4.45.0; self-hosted v5.6.3).
+> Drop-glue ownership tracking for tensor allocations
+> (`emit_track_tensor`) closed v5.6.4 (Rt.06). All 5 tensor
+> goldens (49/50/51/52/53) compile through `mnc-stage1` and
+> produce byte-identical output to the Python bootstrap.
+> GPU-accelerated when CUDA/Vulkan available; CPU fallback
+> otherwise.
 
 Tensors have their element type and shape verified at compile time. Tensor literals use the `Tensor<Type>[elements]` syntax with nested brackets for multi-dimensional data:
 
@@ -1078,6 +1102,17 @@ All alternatives in an or-pattern must bind the same set of variable names. (The
 
 Or-patterns can be combined with guards: `A | B if cond => body`. The guard applies to the whole arm (all alternatives), not to individual alternatives.
 
+> **v5.7.0 (B closure).** The Python bootstrap's
+> `_is_enum_variant_name` originally treated built-in `None` /
+> `Some` / `Ok` / `Err` as fresh binding names rather than enum
+> variants when checking or-pattern binding-set equality. The fix
+> short-circuits these names to enum-variant resolution and
+> resolves `Identifier("None")` to `Option` in both `_infer_expr`
+> and `_lower_identifier`. This closes the last bootstrap gap
+> for or-patterns over built-in variants and was the second of
+> two v5.7.0 fixes that delivered the first 66/66 golden run
+> in project history.
+
 ### 5.7 Match as Expression
 
 When all arms produce a value, `match` is an expression:
@@ -1167,6 +1202,41 @@ print(str(add_offset(5)))  // prints 15
 **Implementation:** Closures with free variables are compiled as a pair: `{function_pointer, environment_struct_pointer}`. The environment struct contains the captured variables. Variables are captured by value (copy).
 
 Closures without free variables are compiled as plain function pointers with no environment overhead.
+
+#### Closure-Typed Parameters
+
+Functions can accept closures (and named functions) as parameters
+using function-type annotations:
+
+```mn
+fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+    return f(x)
+}
+
+let double = (x) => x * 2
+let result = apply(double, 5)   // 10
+```
+
+> **v5.7.0 (Sh.7 closure).** Closure-typed function parameters
+> are now supported in the self-hosted emitter, closing the
+> final parity gap with the Python bootstrap. Four self-hosted
+> changes shipped in v5.7.0:
+>
+> 1. `parser.mn`'s `FAT_ARROW` handler extracts multi-parameter
+>    lambdas from `(a, b) => ...` syntax (was: only single
+>    `Ident` left-hand side).
+> 2. `lower.mn::lower_call_by_name` routes calls through fn-typed
+>    locals via an indirect-call SSA name — when a callee
+>    resolves to a function-typed binding, the lowerer emits
+>    `Load` + `Call(dest, "%loaded_val", args)` rather than a
+>    direct `@callee` reference.
+> 3. `emit_llvm_ir.mn::emit_call_ir` / `emit_call_void`
+>    recognise `%`-prefixed callees and emit `call <ret> %fn(...)`
+>    without the `@` prefix.
+> 4. `mir_opt.mn`'s `clone_instr_for_inline` and
+>    `replace_uses_in_instr` rename `Call.fn_name` when it is
+>    an SSA value (closes the inliner's dangling-reference
+>    issue when fn-typed locals are inlined).
 
 ### 6.4 Decorators
 
@@ -2415,10 +2485,20 @@ Functions: `regex_match`, `regex_search`, `regex_replace`, `regex_split`. Charac
 > async model is **cooperative, not preemptive**: async fns yield only
 > at `await` points; synchronous runtime calls (`__mn_file_write`,
 > `http_get`) block the current worker for their duration. Full
-> non-blocking suspension is a v5.x target. The self-hosted compiler
-> (`mnc-stage1`) does not yet lower async — async programs currently
-> compile through the Python bootstrap's `emit-llvm` pipeline and link
-> against `libmapanare_rt.a` for a native binary (docket Sh.4).
+> non-blocking suspension is a v5.x target.
+>
+> **v5.5.4–v5.5.7 update (Sh.4 closure).** The self-hosted emitter
+> now ships full LLVM-coroutine lowering for async fns:
+> `presplitcoroutine` attribute + the
+> `@llvm.coro.id/begin/save/suspend/end` pipeline (v5.5.4),
+> scheduler-driven `AwaitSuspend` (v5.5.5), scheduler-driven
+> `BlockOn` + main lifecycle (v5.5.6), and sanitizer-clean
+> drop-glue / fixed-point hardening (v5.5.7). All 5 Sh.4 goldens
+> (55_async_basic through 59_async_fanout) compile through
+> `mnc-stage1` and execute correctly through the real LLVM
+> coroutine ABI; valgrind / ASan / LSan / TSan all clean on
+> the corpus. The Python bootstrap remains the canonical
+> reference; both pipelines now match.
 
 ### 29.1 `async fn` -- Asynchronous Function Declaration
 
@@ -2914,21 +2994,46 @@ targets. See §24.
 The self-hosted compiler reaches a 3-stage fixed point: `stage2.ll`
 and `stage3.ll` are identical in every respect the compiler controls
 — same IR instructions, same block order, same metadata graph, same
-line count (109,872 lines at v4.142.0).
+line count.
 
 - **v4.134.0:** strict byte-identical — stage2 and stage3 shared md5
   `0c00ad07fee94f98bb350b359395843b`.
 - **v4.139.0–present (Dr.1):** *near fixed point* — the
   `__MN_VERSION__` build-time substitution introduces a bounded
-  4-line version-metadata diff (`!"__MN_VERSION__"` vs `!"4.143.0"`),
-  so md5s differ by construction but the IR is otherwise identical.
-  Current md5s: `stage2.ll = 6d4963cdbe060ac1cee85eb58f2fa932`,
-  `stage3.ll = dddf64c3a77ed9236c82de517bc055d1` (v4.142.0).
+  4-line version-metadata diff (`!"__MN_VERSION__"` vs the live
+  version), so md5s differ by construction but the IR is otherwise
+  identical.
+- **v5.6.4–v5.6.10 (regression window):** stage3.ll regressed to
+  empty / segfault under several v5.6.x emitter changes; tracked
+  as Ve.1 / Ve.3 / Ve.4 in `docs/known_issues.md`.
+- **v5.6.11 (Ve.4 CLOSED):** full self-compile fixed-point
+  restored to **NEAR** (4 diff lines / 217,273 = 0.002%, all
+  VERSION metadata). Restoration delivered by 14 LOC across
+  `emit_index_get` / `emit_index_set` — load `list.elem_size`
+  at runtime and stride GEP by `idx * elem_size` instead of a
+  constant 8-byte stride. SROA still elides the runtime load
+  for known-constant elem_size.
+- **v5.7.0 (66/66 goldens):** stage2.ll = 217,879 lines /
+  943 defines; fixed-point preserved at NEAR; goldens harness
+  reaches **66/66 — first time in project history** with the
+  Sh.7 closure (closure-typed parameters) and the B closure
+  (or-pattern + identifier `None`).
 
 The 4-line diff is a build-time artifact, not semantic codegen drift.
-See `docs/roadmap/v4/v4.142.0/FIXEDPOINT_STATUS.md` for full provenance
-and `scripts/verify_fixed_point.sh` to reproduce. `DIFF_THRESHOLD=100`
-in the verifier script gates the acceptable bound.
+See `docs/roadmap/v4/v4.142.0/FIXEDPOINT_STATUS.md` and
+`docs/roadmap/v5/v5.6.11/SESSION_REPORT.md` for full provenance.
+`scripts/verify_fixed_point.sh` reproduces the result.
+`DIFF_THRESHOLD=100` in the verifier script gates the acceptable
+bound.
+
+### Native goldens
+
+The native goldens harness (`scripts/test_native.py`) compares
+`mnc-stage1` output against the Python bootstrap on a corpus of
+66 representative programs. Current pass rate: **66/66 (v5.7.0)**.
+This is the first 100% native pass in project history and closes
+the v4.x → v5.x parity arc; every test in the corpus that defines
+"self-hosting" now passes through `mnc-stage1`.
 
 ---
 
