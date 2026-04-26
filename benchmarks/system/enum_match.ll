@@ -1,14 +1,14 @@
 ; ModuleID = 'enum_match'
 source_filename = "enum_match"
-target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
-target triple = "x86_64-unknown-linux-gnu"
+target datalayout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-w64-windows-gnu"
 
 @.str.0 = private constant [11 x i8] c"checksum = ", align 8
 
-declare {ptr, i64} @__mn_str_from_int(i64) nounwind willreturn
-declare {ptr, i64} @__mn_str_concat({ptr, i64}, {ptr, i64}) nounwind willreturn
-declare void @__mn_str_println({ptr, i64})
-declare void @__mn_str_free({ptr, i64}) nounwind willreturn
+declare void @__mn_str_from_int(ptr sret({ptr, i64}), i64) nounwind willreturn
+declare void @__mn_str_concat(ptr sret({ptr, i64}), ptr, ptr) nounwind willreturn
+declare void @__mn_str_println(ptr)
+declare void @__mn_str_free(ptr) nounwind willreturn
 declare void @free(ptr) nounwind willreturn
 declare void @__mn_intern_destroy()
 
@@ -444,16 +444,21 @@ pre_entry:
   store i64 0, ptr %t8.a.28
   %t9.a.33 = alloca {ptr, i64}, align 8
   store {ptr, i64} zeroinitializer, ptr %t9.a.33
-  %str_track.36 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %str_track.36
-  %t10.a.37 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t10.a.37
-  %str_track.41 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %str_track.41
-  %t11.a.42 = alloca {ptr, i64}, align 8
-  store {ptr, i64} zeroinitializer, ptr %t11.a.42
-  %t12.a.44 = alloca i1, align 8
-  store i1 0, ptr %t12.a.44
+  %sret.35 = alloca {ptr, i64}, align 8
+  %str_track.37 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.37
+  %t10.a.38 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t10.a.38
+  %sarg.41 = alloca {ptr, i64}, align 8
+  %sarg.42 = alloca {ptr, i64}, align 8
+  %sret.43 = alloca {ptr, i64}, align 8
+  %str_track.45 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %str_track.45
+  %t11.a.46 = alloca {ptr, i64}, align 8
+  store {ptr, i64} zeroinitializer, ptr %t11.a.46
+  %sarg.48 = alloca {ptr, i64}, align 8
+  %t12.a.49 = alloca i1, align 8
+  store i1 0, ptr %t12.a.49
   br label %entry
 entry:
   store i64 0, ptr %t0.a.0
@@ -500,37 +505,42 @@ while_exit2:
   %s.32 = insertvalue {ptr, i64} %s.31, i64 11, 1
   store {ptr, i64} %s.32, ptr %t9.a.33
   %l.34 = load i64, ptr %total.a.2
-  %rt.35 = call {ptr, i64} @__mn_str_from_int(i64 %l.34)
-  store {ptr, i64} %rt.35, ptr %str_track.36
-  store {ptr, i64} %rt.35, ptr %t10.a.37
-  %l.38 = load {ptr, i64}, ptr %t9.a.33
-  %l.39 = load {ptr, i64}, ptr %t10.a.37
-  %rt.40 = call {ptr, i64} @__mn_str_concat({ptr, i64} %l.38, {ptr, i64} %l.39)
-  store {ptr, i64} %rt.40, ptr %str_track.41
-  store {ptr, i64} %rt.40, ptr %t11.a.42
-  %l.43 = load {ptr, i64}, ptr %t11.a.42
-  call void @__mn_str_println({ptr, i64} %l.43)
-  store i1 0, ptr %t12.a.44
-  %drop.s.45 = load {ptr, i64}, ptr %str_track.36
-  %drop.p.46 = extractvalue {ptr, i64} %drop.s.45, 0
-  %drop.null.47 = icmp eq ptr %drop.p.46, null
-  br i1 %drop.null.47, label %drop.skip.48, label %drop.check.48
-drop.check.48:
-  call void @__mn_str_free({ptr, i64} %drop.s.45)
-  br label %drop.skip.48
-drop.skip.48:
-  %drop.s.49 = load {ptr, i64}, ptr %str_track.41
-  %drop.p.50 = extractvalue {ptr, i64} %drop.s.49, 0
-  %drop.null.51 = icmp eq ptr %drop.p.50, null
-  br i1 %drop.null.51, label %drop.skip.52, label %drop.check.52
-drop.check.52:
-  call void @__mn_str_free({ptr, i64} %drop.s.49)
-  br label %drop.skip.52
-drop.skip.52:
+  call void @__mn_str_from_int(ptr sret({ptr, i64}) %sret.35, i64 %l.34)
+  %rt.36 = load {ptr, i64}, ptr %sret.35
+  store {ptr, i64} %rt.36, ptr %str_track.37
+  store {ptr, i64} %rt.36, ptr %t10.a.38
+  %l.39 = load {ptr, i64}, ptr %t9.a.33
+  %l.40 = load {ptr, i64}, ptr %t10.a.38
+  store {ptr, i64} %l.39, ptr %sarg.41
+  store {ptr, i64} %l.40, ptr %sarg.42
+  call void @__mn_str_concat(ptr sret({ptr, i64}) %sret.43, ptr %sarg.41, ptr %sarg.42)
+  %rt.44 = load {ptr, i64}, ptr %sret.43
+  store {ptr, i64} %rt.44, ptr %str_track.45
+  store {ptr, i64} %rt.44, ptr %t11.a.46
+  %l.47 = load {ptr, i64}, ptr %t11.a.46
+  store {ptr, i64} %l.47, ptr %sarg.48
+  call void @__mn_str_println(ptr %sarg.48)
+  store i1 0, ptr %t12.a.49
+  %drop.s.50 = load {ptr, i64}, ptr %str_track.37
+  %drop.p.51 = extractvalue {ptr, i64} %drop.s.50, 0
+  %drop.null.52 = icmp eq ptr %drop.p.51, null
+  br i1 %drop.null.52, label %drop.skip.53, label %drop.check.53
+drop.check.53:
+  call void @__mn_str_free({ptr, i64} %drop.s.50)
+  br label %drop.skip.53
+drop.skip.53:
+  %drop.s.54 = load {ptr, i64}, ptr %str_track.45
+  %drop.p.55 = extractvalue {ptr, i64} %drop.s.54, 0
+  %drop.null.56 = icmp eq ptr %drop.p.55, null
+  br i1 %drop.null.56, label %drop.skip.57, label %drop.check.57
+drop.check.57:
+  call void @__mn_str_free({ptr, i64} %drop.s.54)
+  br label %drop.skip.57
+drop.skip.57:
   call void @__mn_intern_destroy()
   ret i64 0
 }
 
 
 !mapanare.version = !{!0}
-!0 = !{!"5.8.0"}
+!0 = !{!"5.8.2"}
