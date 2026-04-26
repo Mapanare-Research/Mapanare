@@ -135,6 +135,24 @@ jobs:
           set -e
           python3 scripts/check_struct_registry.py
 
+      # Build the native runtime archive and self-hosted compiler
+      # (mnc-stage1) before pytest. Many tests under tests/parser/,
+      # tests/self_hosted/, tests/llvm/, tests/bootstrap/ shell out
+      # to mapanare/self/mnc-stage1; with the binary no longer
+      # tracked in git, every CI run must produce it from source.
+      - name: Install LLVM + clang (for mnc-stage1 build)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y llvm-18 clang-18
+          sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+          sudo ln -sf /usr/bin/llvm-as-18 /usr/bin/llvm-as
+
+      - name: Build runtime archive (libmapanare_rt.a)
+        run: make build-rt
+
+      - name: Build mnc-stage1 (self-hosted compiler)
+        run: python scripts/build_stage1.py
+
       - name: Run tests
         run: pytest tests/ -v -n auto --durations=20
 
@@ -193,8 +211,8 @@ jobs:
       - name: Install LLVM tools
         run: sudo apt-get update -qq && sudo apt-get install -y llvm-18 clang-18
 
-      - name: Build mnc-stage1 (from committed IR)
-        run: python scripts/build_stage1.py --use-committed
+      - name: Build mnc-stage1 (regenerate IR from .mn sources)
+        run: python scripts/build_stage1.py
 
       - name: Run golden tests (45/45)
         if: success()
@@ -757,7 +775,7 @@ jobs:
         run: sudo ln -sf /usr/bin/llvm-as-18 /usr/bin/llvm-as
 
       - name: Build stage1
-        run: python scripts/build_stage1.py --use-committed
+        run: python scripts/build_stage1.py
 
       # v4.29.0: the fixed-point job used to build stage2 by hand and
       # then compare the results with a step whose failure mode was
