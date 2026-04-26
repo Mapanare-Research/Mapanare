@@ -95,6 +95,9 @@ mapanare/self/mnc-stage3*
 # "lie waiting to happen".
 mapanare/self/stage2.ll
 mapanare/self/stage3.ll
+# main.ll is the concatenated stage1 source emitted by build_stage1.py;
+# regenerable on every build, was committed at >100MB and broke push.
+mapanare/self/main.ll
 tmp*.py
 .culebra-journal.jsonl
 .culebra-baseline.json
