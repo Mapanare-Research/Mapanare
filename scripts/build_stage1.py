@@ -204,12 +204,16 @@ def build() -> pathlib.Path:
     # stale (Mamba, v4.26.0 panel).
     version_str = VERSION_FILE.read_text(encoding="utf-8").strip()
     version_flags = [f'-DMAPANARE_VERSION="{version_str}"']
+    # v5.8.x: ``-fPIC`` is rejected by clang targeting
+    # ``x86_64-pc-windows-msvc`` (Windows PE/COFF code is position-
+    # independent by default). Omit it on win32 builds.
+    pic_flag = [] if sys.platform == "win32" else ["-fPIC"]
     c_base_flags = [
         CC,
         "-c",
         "-O2",
         "-g",
-        "-fPIC",
+        *pic_flag,
         "-Wall",
         "-Wextra",
         "-Werror",
