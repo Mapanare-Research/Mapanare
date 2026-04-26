@@ -18,6 +18,86 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.6.11** (shipped) — **Ve.4 CLOSED — full self-compile
+  fixed-point restored after 7 releases.** The v5.6.4-era
+  blocker that broke `verify_fixed_point.sh` since v5.6.4 is
+  closed; the full self-compile cycle now produces stage2.ll
+  == stage3.ll within tolerance (NEAR FIXED POINT, 0.002%
+  diff = VERSION metadata only). Root cause: `emit_index_get`
+  / `emit_index_set` inline fast paths for i64/double/ptr
+  element types emitted `getelementptr inbounds i64, ptr
+  %data, i64 %idx` (a constant 8-byte stride), while
+  `__mn_list_push` writes used the runtime `elem_size` field
+  from the list struct (= 384 for the 7 Ve.2 residual
+  `List<Int> = []` floor sites). Specifically `build_match_arms`
+  allocated `indices` with `__mn_list_new(i64 384)`; the
+  second push wrote 8 bytes of i64 + 376 bytes of stack
+  spillage at byte offset 384, while the inline-GEP-i64 read
+  at byte offset 8 returned the FIRST push's intra-buffer
+  spillage (a heap-pointer-shaped Int garbage value).
+  Caller's `set_block(s, garbage)` then made `emit_instr`'s
+  `idx < len(fn_blocks)` bounds check silently no-op every
+  instruction in the second match arm. `apply::match_arm2:
+  block has no instructions` was the visible verifier error.
+  **Fix**: 14 LOC across two symmetric emit sites
+  (`emit_index_get` line ~2570, `emit_index_set` line
+  ~2655) — load `list.elem_size` (struct field 3) at runtime,
+  compute `offset = idx * elem_size`, then `getelementptr
+  inbounds i8, ptr %data, i64 %offset`. SROA elides the
+  runtime load when elem_size is a known constant; for the
+  7 floor sites it correctly produces a 384-byte stride
+  matching the push. **Hero metric**: `verify_fixed_point.sh`
+  reaches NEAR (4 diff lines / 217,273 = 0.002%) for the
+  first time since v5.6.4 — `mnc-stage2 mnc_all.mn` now
+  produces non-empty stage3.ll byte-identical to stage2.ll
+  (modulo VERSION). Reproducer (`/tmp/p3.mn`, 2-arm enum
+  match) was 0 lines + verifier error; now 225 lines
+  `llvm-as`-clean IR (binary correctly outputs `8` for
+  `apply(Op::Add, 5, 3)`). **Investigation** followed
+  v5.6.9's "eprint over culebra" lesson: 5 strategically
+  -placed `__mn_str_eprint` traces inside `build_match_arms`
+  and the optimizer pipeline isolated the failure mode in
+  one rebuild cycle. The opt-time `ve4_dump_match_arms`
+  helper showed `match_arm2 ninstrs=0` at p0-input
+  (immediately after lowering) — ruled out all optimizer
+  passes, focused investigation on the lower-time list
+  construction. The build-end trace confirmed
+  `indices[1]=garbage` was already corrupt inside
+  `build_match_arms`. Per-iteration field-2 trace showed
+  `s.current_block_idx=2` was correct right before the push
+  but garbage immediately after — the bug was in the push,
+  not the read. IR inspection of stage2.ll exposed the
+  `__mn_list_new(i64 384)` allocation and the elem_size
+  mismatch in the inline-GEP-i64 read pattern. **Per PROMPT
+  D2** ("Fix at the precise location, not broadly"): the
+  read-side fix is the smallest change that closes Ve.4
+  without surfacing or closing Lk.1 (allocations remain at
+  elem_size=384 for the 7 residual sites; only the
+  read/write strides are made consistent). The principled
+  fix (Ve.2 closure + Lk.1 closure + drop the floor
+  entirely) is v6.0 borrow-checker scope. **Metrics**:
+  stage2.ll **216,932 → 217,273 lines (+0.16%)**, well
+  within the 3% PROMPT budget; `llvm-as` clean; goldens
+  **64/66 preserved** (same 2 pre-existing fails: 51 B, 64
+  Sh.7); ASan UAF **65 CLEAN / 0 ASAN_ERROR / 1
+  CRASH_NO_ASAN**; valgrind **0 ERRORS / 66
+  WARNINGS_ONLY**; LSan baseline gate **PASS** (no
+  regressions vs v5.4.2 baseline; same 3 LEAKs as v5.6.10:
+  39_gpu_detect, 40_gpu_tensor, 62_list_output);
+  non-bootstrap pytest **5593 passed**, 116 skipped, 9
+  xfailed; `make lint` clean; `check_struct_registry.py`
+  23/23/91 clean. `known_issues.md` Ve.4 row flipped to
+  CLOSED v5.6.11. The closeout arc completes:
+  v5.6.5 (Ve.1) → v5.6.6 (Rt.04 RESCOPED) → v5.6.7 (Ve.2
+  PARTIAL) → v5.6.8 (Ve.3 investigation) → v5.6.9 (Ve.3
+  CLOSED; Ve.4 OPENED) → v5.6.10 (Ve.2 FURTHER PARTIAL +
+  struct_byte_size + culebra; Lk.1 OPENED) → **v5.6.11
+  (Ve.4 CLOSED; full self-compile fixed-point restored)**.
+  All v5.6.x dockets resolved or appropriately deferred.
+  Next: v5.7.0 (Sh.7 + B or-pattern → 66/66); v5.7.1
+  (SPEC docs polish); v5.8.0 (RE-PANEL); v6.0 (borrow
+  checker → Lk.1 + Rt.04). See
+  `docs/roadmap/v5/v5.6.11/SESSION_REPORT.md`.
 - **v5.6.10** (shipped) — **Self-host hardening — Ve.2
   partial closure 18 → 7 sites; struct_byte_size hardened;
   culebra baseline frozen; new Lk.1 opened.** Three bundled
@@ -1138,29 +1218,6 @@ Most recent releases (last 6). Full history at
   See `docs/roadmap/v5/v5.3.3/`.
 ### Planned / in-progress
 
-- **v5.6.11** — **Ve.4 close — match-arm verifier error.**
-  v5.6.9 closed Ve.3 (drop-glue UAF on `List<Enum>` returns)
-  and surfaced Ve.4: in the self-hosted compiled lowerer,
-  match-arm lowering produces empty BasicBlocks for arms whose
-  body is a single tail expression — the MIR verifier rejects
-  with `<fn>::match_arm<N>: block has no instructions`.
-  Reproduces on a 2-arm enum match (`/tmp/p3.mn`) AND on the
-  original v5.6.8 binary, confirming Ve.4 is pre-existing
-  (was masked by Ve.3's OOM). Default 8 MB stack causes a
-  SIGSEGV at a stack address before the verifier fires;
-  `ulimit -s unlimited` lets it surface cleanly. Python-built
-  stage1 lowers correctly (goldens 64/66 pass), so the bug is
-  in how stage1 compiled the self-hosted lowerer's
-  match-arm-handling code into stage2.ll. Hypothesis: a pass
-  post-lowering (likely `dead_block_elim_function` or
-  interaction with `inline_small_functions`) drops
-  instructions from match arms whose body is a single tail
-  expression. After Ve.4 closes, mnc_all.mn → stage3.ll
-  produces non-empty IR and `verify_fixed_point.sh` can be
-  re-evaluated. v5.6.10 was rescoped to bundle Ve.2 residuals
-  + struct_byte_size + culebra baseline ahead of Ve.4 closure
-  (which depends on instrumenting MIR passes — orthogonal to
-  the bundled hardening items).
 - **v5.7.0** — **Sh.7 + or-pattern fix — 66/66.**
 - **v5.7.1** — SPEC + docs polish (pre-panel).
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
@@ -1253,7 +1310,7 @@ Workflow:
 Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
 regressions.
 
-**Current baseline (v5.6.10):** 64/66. The 2 gap:
+**Current baseline (v5.6.11):** 64/66. The 2 gap:
 `51_match_guards_and_or` (B — bootstrap-also-fails or-pattern) and
 `64_closure_typed` (Sh.7 — closure-typed captures). Both closed at
 v5.7.0 for 66/66.
@@ -1424,7 +1481,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (27927 symbols, 61685 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (27995 symbols, 61753 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

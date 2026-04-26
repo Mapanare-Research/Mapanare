@@ -2573,8 +2573,22 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
         s = emit_line(s, "  " + dp + " = getelementptr inbounds " + lt + ", ptr " + tmp + ", i32 0, i32 0")
         let data: String = "%lg.data." + cnt_lg
         s = emit_line(s, "  " + data + " = load ptr, ptr " + dp)
+        // v5.6.11 Ve.4 — use runtime elem_size for the offset, not a constant
+        // i64 stride. The 7 Ve.2 residual sites (`build_match_arms` and 5
+        // others) allocate `List<Int> = []` with elem_size=384 (Lk.1 floor);
+        // `__mn_list_push` writes at idx * 384 while a constant-stride GEP
+        // would read at idx * 8 — mismatch produces garbage reads of
+        // intra-buffer spillage. Loading elem_size from list field 3 makes
+        // the read consistent with the push regardless of allocator stride.
+        // SROA still elides this when elem_size is a known constant 8.
+        let eszp: String = "%lg.eszp." + cnt_lg
+        s = emit_line(s, "  " + eszp + " = getelementptr inbounds " + lt + ", ptr " + tmp + ", i32 0, i32 3")
+        let esz: String = "%lg.esz." + cnt_lg
+        s = emit_line(s, "  " + esz + " = load i64, ptr " + eszp)
+        let off: String = "%lg.off." + cnt_lg
+        s = emit_line(s, "  " + off + " = mul i64 " + idx.name + ", " + esz)
         let ep: String = "%lg.ep." + cnt_lg
-        s = emit_line(s, "  " + ep + " = getelementptr inbounds i64, ptr " + data + ", i64 " + idx.name)
+        s = emit_line(s, "  " + ep + " = getelementptr inbounds i8, ptr " + data + ", i64 " + off)
         s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + ep)
     } else {
         // Slow path: opaque call for String, Bool, structs, etc.
@@ -2658,8 +2672,19 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
         s = emit_line(s, "  " + dp + " = getelementptr inbounds " + lt + ", ptr " + la + ", i32 0, i32 0")
         let data: String = "%ls.data." + cnt
         s = emit_line(s, "  " + data + " = load ptr, ptr " + dp)
+        // v5.6.11 Ve.4 — symmetric to emit_index_get: use runtime elem_size
+        // for offset so the store stride matches `__mn_list_push`'s runtime
+        // stride. See emit_index_get site for the full reasoning; without
+        // this, `arr[i] = v` on a List<Int> allocated with the 384-byte
+        // floor writes at offset i*8 while pushes write at offset i*384.
+        let eszp: String = "%ls.eszp." + cnt
+        s = emit_line(s, "  " + eszp + " = getelementptr inbounds " + lt + ", ptr " + la + ", i32 0, i32 3")
+        let esz: String = "%ls.esz." + cnt
+        s = emit_line(s, "  " + esz + " = load i64, ptr " + eszp)
+        let off: String = "%ls.off." + cnt
+        s = emit_line(s, "  " + off + " = mul i64 " + idx_name + ", " + esz)
         let ep: String = "%ls.ep." + cnt
-        s = emit_line(s, "  " + ep + " = getelementptr inbounds i64, ptr " + data + ", i64 " + idx_name)
+        s = emit_line(s, "  " + ep + " = getelementptr inbounds i8, ptr " + data + ", i64 " + off)
         s = emit_line(s, "  store " + elem_ty + " " + elem_name + ", ptr " + ep)
     } else {
         // Slow path: opaque call for String, structs, etc.
