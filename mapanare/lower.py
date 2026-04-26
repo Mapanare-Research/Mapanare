@@ -1644,6 +1644,14 @@ class MIRLowerer:
 
     def _lower_identifier(self, expr: Identifier) -> Value:
         """Lower an identifier reference."""
+        # v5.7.0: bare `None` identifier — KW_NONE only matches
+        # lowercase `none`/`nada`. Mirror self-hosted lower.mn:1438
+        # (v4.134.0 Sh.12) so capital `None` produces a NoneLit IR.
+        if expr.name == "None":
+            ty = MIRType(TypeInfo(kind=TypeKind.OPTION))
+            dest = self._make_value(ty=ty)
+            self._emit(WrapNone(dest=dest, ty=ty))
+            return dest
         val = self._lookup_var(expr.name)
         if val is not None:
             return val

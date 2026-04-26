@@ -497,6 +497,13 @@ class SemanticChecker:
         if isinstance(expr, NoneLiteral):
             return TypeInfo(kind=TypeKind.OPTION)
         if isinstance(expr, Identifier):
+            # v5.7.0: bare `None` identifier. KW_NONE only matches
+            # lowercase `none`/`nada`; capital `None` tokenizes as NAME
+            # and parses as Identifier("None"). Mirror self-hosted
+            # `lower_identifier` (lower.mn:1438, v4.134.0 Sh.12) so
+            # both spellings resolve to Option<T>.
+            if expr.name == "None":
+                return TypeInfo(kind=TypeKind.OPTION)
             sym = self.current_scope.lookup(expr.name)
             if sym is None:
                 self._error(f"Undefined variable '{expr.name}'", expr)
@@ -1288,6 +1295,12 @@ class SemanticChecker:
 
     def _is_enum_variant_name(self, name: str) -> bool:
         """Check if a name refers to an enum variant in any visible enum."""
+        # v5.7.0: built-in Option/Result variants are not user-defined
+        # enum symbols; recognize them here so or-pattern binding-set
+        # checks treat `None` (and `Some`/`Ok`/`Err` if ever nullary)
+        # as variant references rather than fresh bindings.
+        if name in ("None", "Some", "Ok", "Err"):
+            return True
         # Walk all symbols looking for enums with a matching variant
         for scope in (self.current_scope, self.global_scope):
             s: Scope | None = scope
