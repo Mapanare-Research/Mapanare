@@ -24,7 +24,7 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.7.1-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.8.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-5800+_passing-brightgreen.svg?style=flat-square)]()
 [![Goldens](https://img.shields.io/badge/goldens-66%2F66-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
@@ -144,10 +144,11 @@ Geometric mean across 6 cross-language benchmarks (median of 10 runs):
 |---|---:|---:|---:|---:|
 | **Mapanare** | **168x faster** | 0.85x (faster) | 1.17x | 0.96x |
 
-The self-hosted compiler compiles itself (3-stage fixed point reached at
-v4.134.0; temporarily regressed at v5.1.2 from In.1 inliner re-enable;
-restoration tracked at v5.3.2). 5,720+ tests passing, zero flaky across
-30 sequential runs.
+The self-hosted compiler compiles itself (3-stage fixed point reached
+at v4.134.0; temporarily regressed at v5.1.2 from In.1 inliner
+re-enable; restored to NEAR at v5.6.11, preserved through v5.8.0 —
+4-line VERSION-metadata diff over a 217k-line stage2.ll). 5,720+
+tests passing, zero flaky across 30 sequential runs.
 
 [Full benchmark report](benchmarks/FINAL_REPORT_v4.153.md)
 

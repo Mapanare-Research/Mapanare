@@ -8,7 +8,7 @@
 > and SROA. Target: geomean 1.00× Rust across the cross-language
 > corpus.
 
-**Status:** PLANNED (skeleton)
+**Status:** SHIPPED (see SESSION_REPORT.md and RESULTS.md)
 **Breaking:** No (internal codegen change; ABI-preserving)
 **Prerequisite:** v5.0.5 shipped
 **Estimated work:** 2-3 sessions

@@ -135,7 +135,7 @@ bash scripts/verify_fixed_point.sh --keep        # Keep intermediate IR for debu
 
 ---
 
-## Culebra v2.0.0
+## Culebra v2.4.0
 
 Compiler diagnostics for LLVM IR AND C source (Rust, installed in WSL).
 49+ YAML templates across ABI, IR, Binary, Bootstrap, C categories.

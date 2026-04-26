@@ -57,13 +57,18 @@ RESULTS_FILE = BENCH_DIR / f"v{MAPANARE_VERSION}-results.json"
 def geomean(ratios: list[float]) -> float:
     """Geometric mean of positive ratios.
 
+    Returns ``math.nan`` for empty input or any non-positive ratio —
+    the geometric mean is undefined for those cases, and a 0.0
+    sentinel would silently read as "infinitely fast" in benchmark
+    summaries.
+
     >>> geomean([1.0, 4.0])
     2.0
     >>> round(geomean([0.5, 2.0, 8.0]), 6)
     2.0
     """
     if not ratios or any(r <= 0 for r in ratios):
-        return 0.0
+        return math.nan
     return math.exp(sum(math.log(r) for r in ratios) / len(ratios))
 
 

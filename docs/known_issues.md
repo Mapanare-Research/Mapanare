@@ -81,4 +81,4 @@ The transpiler handles pure-compute Python (functions, loops, conditionals, arit
 
 **Best results with:** type-annotated functions, simple data types (int, float, bool, str), `for`/`while` loops, arithmetic.
 
-Last verified: v5.3.1 (2026-04-22).
+Last verified: v5.7.1 (2026-04-26).
