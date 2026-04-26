@@ -52,14 +52,10 @@ jobs:
       - name: Build mnc-stage1
         shell: bash
         run: |
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            # Linux: use committed IR (same platform it was generated on)
-            python scripts/build_stage1.py --use-committed
-          else
-            # macOS/Windows: regenerate IR from Python bootstrap
-            # (committed IR has x86_64-linux ABI baked into struct layouts)
-            python scripts/build_stage1.py
-          fi
+          # main.ll is regenerated from .mn sources on every build.
+          # The committed-IR shortcut is gone (untracked in commit
+          # 3b5262e); --use-committed would now fail with ENOENT.
+          python scripts/build_stage1.py
 
       - name: Smoke test
         shell: bash

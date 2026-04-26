@@ -391,7 +391,7 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            python scripts/build_stage1.py --use-committed
+            python scripts/build_stage1.py
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
             # scripts/build_stage1.py has full Windows support since v4.159.0
             # (MinGW triple, -mno-stack-arg-probe, __chkstk=___chkstk_ms alias,
