@@ -137,6 +137,44 @@ identical IR; the only change is the C-side function body shape.
 - ruff: clean.
 - mypy: 54 source files, no issues found.
 
+### Post-commit CI fixup (commit 2)
+
+The first commit (d12ae71) caught a regression in
+`tests/native/test_c_runtime.c` only at CI time — that test file
+calls `__mn_str_free(MnString)` from C source, which no longer
+compiles after the signature switch. Fix lands in a follow-up
+commit:
+
+- New `static inline void __mn_str_free_v(MnString)` in
+  `runtime/native/mapanare_core.h`, wrapping the decomposed
+  exported call. Zero-symbol cost (static inline).
+- 36 calls in `tests/native/test_c_runtime.c` rewritten via
+  word-boundary regex from `__mn_str_free(X)` to
+  `__mn_str_free_v(X)`. No semantic change — still tests the
+  same MnString-by-value free path, just routed through the
+  header convenience.
+
+Verified locally on Linux (WSL Ubuntu):
+
+- Plain build (CI line 261): `gcc -O2 -g -Wall -Wextra -Werror
+  -pthread tests/native/test_c_runtime.c
+  runtime/native/mapanare_core.c
+  runtime/native/mapanare_runtime.c -o test_c_runtime` → exit 0,
+  **74/74 tests passed**.
+- ASan build (CI line 367+): `gcc … -fsanitize=address` → exit
+  0, **74/74 tests passed** under
+  `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1`.
+- TSan build (CI line 376+): `gcc … -fsanitize=thread` → exit 0,
+  **74/74 tests passed** under
+  `TSAN_OPTIONS=halt_on_error=1`.
+
+Plus full re-verification on both platforms:
+
+- Windows: mnc-stage1.exe rebuild → `mapanare 5.8.3` → mnc_all.mn
+  → 217,879 lines. ✓
+- Linux: mnc-stage1 rebuild → `verify_fixed_point.sh` → NEAR
+  FIXED POINT, 4 diff lines (VERSION-only). ✓
+
 ## What does NOT ship in v5.8.3
 
 - **Wb.2 fix.** Self-hosted emit_llvm.mn target awareness — port the

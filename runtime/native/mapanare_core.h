@@ -171,6 +171,17 @@ MN_EXPORT double __mn_str_to_float(MnString s);
  *  on both Win64 (rcx, rdx) and SysV AMD64 (rdi, rsi). */
 MN_EXPORT void __mn_str_free(const char *data, int64_t len_with_heap_bit);
 
+/** v5.8.3 Wb.1: convenience wrapper for C-side callers that have an
+ *  ``MnString`` by value and don't want to spell out the bitfield
+ *  reinterpretation themselves. Forwards to the decomposed-args
+ *  ``__mn_str_free``. ``static inline`` so it adds no symbol and
+ *  costs nothing at -O2. */
+static inline void __mn_str_free_v(MnString s) {
+    int64_t len_bits = (s.is_heap ? MN_STR_HEAP_BIT : (int64_t)0)
+                     | (int64_t)s.len;
+    __mn_str_free(s.data, len_bits);
+}
+
 /** Print a string to stdout (no newline). */
 MN_EXPORT void __mn_str_print(MnString s);
 
