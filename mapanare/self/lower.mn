@@ -2295,6 +2295,17 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let s_hw: LowerState = emit_instr(dr_hw.state, Instruction::Call(dr_hw.value, fn_name, args))
         return new_lower_result(dr_hw.value, s_hw)
     }
+    // v5.8.6 We.1: refined (is_windows, arch_bits) pair. Both return Int.
+    if fn_name == "__mn_host_is_windows" {
+        let dr_hwn: LowerResult = make_value(st, mir_int(), "t")
+        let s_hwn: LowerState = emit_instr(dr_hwn.state, Instruction::Call(dr_hwn.value, fn_name, args))
+        return new_lower_result(dr_hwn.value, s_hwn)
+    }
+    if fn_name == "__mn_host_arch_bits" {
+        let dr_hab: LowerResult = make_value(st, mir_int(), "t")
+        let s_hab: LowerState = emit_instr(dr_hab.state, Instruction::Call(dr_hab.value, fn_name, args))
+        return new_lower_result(dr_hab.value, s_hab)
+    }
     // v5.6.0 Sh.6 — tensor builtin return types. Without these the default
     // mir_unknown resolves to i64 and emit_builtin_tostring would route
     // `str(tensor_get_f64(...))` through __mn_str_from_int with a double

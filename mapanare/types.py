@@ -323,6 +323,13 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     # v5.8.4 Wb.2: host-detect — returns 1 on Win64, 0 elsewhere. Used
     # by the self-hosted emitter's emit_mir_module to set is_win64.
     "__mn_host_is_win64": INT_TYPE,
+    # v5.8.6 We.1: refined (is_windows, arch_bits) pair. Replaces the
+    # ambiguous __mn_host_is_win64 for the v5.8.6+ self-hosted ABI
+    # dispatch — the latter conflated "is Windows" with "use Win64
+    # ABI rules" because it reads `_WIN32` (defined for both Win32
+    # and Win64).
+    "__mn_host_is_windows": INT_TYPE,
+    "__mn_host_arch_bits": INT_TYPE,
     # High-level I/O builtins (v3.41.0)
     "read_line": STRING_TYPE,
     "read_file": STRING_TYPE,

@@ -77,6 +77,26 @@ TARGET_X86_64_WINDOWS_MSVC = Target(
     linker="link.exe",
 )
 
+# v5.8.6 We.1: 32-bit Windows MinGW. Closes the latent ABI gap left
+# by v5.8.4 — `__mn_host_is_win64()` reads `_WIN32` (defined for both
+# Win32 and Win64), so cross-compiling to i686 silently triggered
+# Win64 sret rules (incorrect for i686 cdecl). The new (is_windows,
+# arch_bits) pair lets the emitter dispatch correctly. Datalayout:
+# 32-bit pointers (p:32:32), m:x x86 mangling, S32 stack alignment,
+# no f80:128 (i686 lacks 128-bit f80 alignment).
+TARGET_I686_WINDOWS_GNU = Target(
+    triple="i686-w64-windows-gnu",
+    data_layout=(
+        "e-m:x-p:32:32-p270:32:32-p271:32:32-p272:64:64-"
+        "i64:64-i128:128-f80:32-n8:16:32-a:0:32-S32"
+    ),
+    description="Windows x86 / i686 (MinGW/GNU)",
+    obj_ext=".o",
+    exe_ext=".exe",
+    lib_ext=".dll",
+    linker="i686-w64-mingw32-gcc",
+)
+
 TARGET_WASM32 = Target(
     triple="wasm32-unknown-unknown",
     data_layout="e-m:e-p:32:32-i64:64-n32:64-S128",
@@ -135,6 +155,7 @@ TARGETS: dict[str, Target] = {
     "aarch64-apple-macos": TARGET_AARCH64_APPLE_MACOS,
     "x86_64-windows-msvc": TARGET_X86_64_WINDOWS_MSVC,
     "x86_64-windows-gnu": TARGET_X86_64_WINDOWS_GNU,
+    "i686-windows-gnu": TARGET_I686_WINDOWS_GNU,
     "wasm32": TARGET_WASM32,
     "wasm32-wasi": TARGET_WASM32_WASI,
     "aarch64-apple-ios": TARGET_AARCH64_APPLE_IOS,

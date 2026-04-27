@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.8.6] - 2026-04-27
+
+### Added
+
+- **We.1** — Closed the Win32 / `i686-w64-mingw32` ABI gap left
+  latent by v5.8.4's Wb.2 closure. The self-hosted emitter now
+  dispatches a 3-way ABI: SysV / AAPCS64 (default), Win64 sret/
+  sarg (`x86_64-w64-mingw32`), or i686 cdecl sret/byval
+  (`i686-w64-mingw32`). The Python bootstrap emitter mirrors.
+  Two new C-runtime exports replace the misleadingly-named
+  v5.8.4 `__mn_host_is_win64` (which read `_WIN32`, defined for
+  both 32-bit and 64-bit Windows): `__mn_host_is_windows()` +
+  `__mn_host_arch_bits()`. The old export is preserved as a
+  deprecated alias for source-compat with v5.8.5 stage1 binaries.
+  `EmitState` field rename `is_win64: Bool` →
+  `is_windows: Bool` + `win_arch: Int`; helpers
+  `use_win64_abi(st)` and `use_i686_abi(st)` encapsulate the
+  3-way dispatch. New `i686_rewrite_decl_params`,
+  `i686_sarg_rewrite_args`, `i686_sarg_advance_state` parallel
+  the existing Win64 helpers but emit `byval(<orig>) align 4`
+  decoration on aggregate args (load-bearing for i686 cdecl —
+  without it LLVM's i686 backend silently truncates `{ptr, i64}`
+  returns to 8 bytes, dropping the high i64 half). New
+  `abi_i686_cdecl_use_sret` classifier with `> 8 B → sret`
+  threshold (vs Win64's stricter `not in {1, 2, 4, 8} → sret`,
+  vs SysV's `> 16 B → sret`). New `i686-windows-gnu` target name
+  in `mapanare/targets.py`. Phase 0 empirical probing with
+  `i686-w64-mingw32-gcc 13` and `clang-18` ground-truthed every
+  threshold value before code was written; full assembly traces
+  in `docs/roadmap/v5/v5.8.6/SESSION_REPORT.md` §Phase 0.
+
+### Fixed
+
+- **Bb.2** — Bootstrap: refreshed `bootstrap/seed/linux-x86_64/mnc`
+  for the v5.8.6 source. Mandatory because the v5.8.5 seed
+  binary's hardcoded builtin list rejects calls to the new
+  `__mn_host_is_windows` / `__mn_host_arch_bits` exports — same
+  shape as the v5.8.4 → v5.8.5 break, addressed the same way.
+  New seed 6,573,216 bytes (was 6,433,952; +2.2%) /
+  sha256 `a902f14d279345eef2db5e78234133a9b2bfb2f6a438984f913d94cf7bb417b0`.
+- **Datalayout-not-target-aware bug from v5.8.4** — emit_llvm.mn
+  switched the `target triple` per-host but kept emitting the
+  Linux/SysV `target datalayout` regardless. LLVM's x86_64
+  backend was forgiving but it was wrong on paper. v5.8.6 emits
+  the correct datalayout per target (Win64 `m:w` mangling, Win32
+  `m:x` ILP32 with `S32` stack alignment).
+
+### Metrics
+
+- Goldens **66/66** preserved.
+- Stage2.ll: 219,955 → 222,095 lines (+0.97%).
+- Fixed-point: NEAR (4-line VERSION-only diff).
+- `llvm-as` clean.
+- `make lint` clean (black, ruff, mypy).
+- `check_struct_registry.py` clean (Reg.1 25 EmitState fields,
+  was 24).
+- `pytest tests/` non-bootstrap: 2,372 passed, 84 skipped.
+- `bash scripts/build_from_seed.sh`: stage1 IR == stage2 IR
+  (222,095 lines, strict fixed point).
+- ABI smoke test: i686 IR + C runtime link clean to PE32 .exe;
+  caller assembly correctly copies all 16 bytes of struct to
+  argument area at call site (exact i686 cdecl convention).
+- Build pipeline `i686-w64-mingw32-gcc` cross-compile of
+  `mnc-stage1.exe` is **not** shipped this release —
+  `build_stage1.py` only knows the x86_64 mingw triple. Deferred
+  until real demand surfaces. The IR-emission correctness this
+  release closes is verified empirically; CI integration is
+  straightforward but out of scope.
+
 ## [5.8.5] - 2026-04-27
 
 ### Fixed

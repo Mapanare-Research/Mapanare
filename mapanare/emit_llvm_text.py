@@ -1223,8 +1223,51 @@ class LLVMTextEmitter:
 
     # ── declaration helpers ─────────────────────────────────────────
     @property
-    def _win64(self) -> bool:
+    def _is_windows(self) -> bool:
+        """v5.8.6 We.1: any Windows target (i686 or x86_64).
+
+        Replaces the v5.8.4 single-flag ``_win64`` semantic, which
+        conflated "Windows host" with "use Win64 ABI rules" because
+        ``_win64`` returned True for any triple containing ``windows``
+        — including ``i686-w64-windows-gnu``. Win32 (cdecl) and Win64
+        have different return-size thresholds and different aggregate-
+        arg conventions, so the dispatch needs to know both pieces.
+        """
         return "windows" in self._triple
+
+    @property
+    def _win_arch_bits(self) -> int:
+        """v5.8.6 We.1: pointer-width of the target triple in bits.
+
+        32 for ``i686-*`` / ``i386-*``, 64 otherwise. The two-bit pair
+        ``(_is_windows, _win_arch_bits)`` selects the ABI dispatch
+        path: (True, 64) → Win64 sret/sarg, (True, 32) → i686 cdecl
+        sret/byval, (False, *) → SysV / AAPCS64 by-value.
+        """
+        if self._triple.startswith("i686") or self._triple.startswith("i386"):
+            return 32
+        return 64
+
+    @property
+    def _use_win64_abi(self) -> bool:
+        """v5.8.6 We.1: True iff Win64 sret/sarg ABI rules apply."""
+        return self._is_windows and self._win_arch_bits == 64
+
+    @property
+    def _use_i686_abi(self) -> bool:
+        """v5.8.6 We.1: True iff i686 cdecl sret/byval ABI rules apply."""
+        return self._is_windows and self._win_arch_bits == 32
+
+    @property
+    def _win64(self) -> bool:
+        """v5.8.4 deprecated alias — kept for in-file source compat.
+
+        Now means "use Win64 ABI rules" (was previously "Windows
+        host"); for code paths that actually want the latter, use
+        ``_is_windows``. Reads as a property so existing call sites
+        don't need source rewrites within emit_llvm_text.py.
+        """
+        return self._use_win64_abi
 
     @staticmethod
     def _is_ptr(ty: str) -> bool:
@@ -1268,11 +1311,24 @@ class LLVMTextEmitter:
         self._declared.add(nm)
         self._sigs[nm] = (ret, pts, va)
 
-        if self._win64:
+        if self._use_win64_abi:
             # Win64 ABI: large structs passed by pointer, returned via sret
             abi_pts = ["ptr" if self._is_large_struct(t) else t for t in pts]
             if self._is_large_struct(ret):
                 sret = f"ptr sret({ret})"
+                abi_pts = [sret] + abi_pts
+                abi_ret = "void"
+            else:
+                abi_ret = ret
+        elif self._use_i686_abi:
+            # v5.8.6 We.1: i686 cdecl — large structs (> 8 B) need
+            # the `byval(<orig>) align 4` attribute so LLVM's i686
+            # backend lowers them as caller-pushes-by-value, matching
+            # gcc/clang's C ABI for ``MnString``-shaped runtime fns.
+            # Returns > 8 B use the same sret-with-`align 8` shape.
+            abi_pts = [f"ptr byval({t}) align 4" if self._is_large_struct(t) else t for t in pts]
+            if self._is_large_struct(ret):
+                sret = f"ptr sret({ret}) align 8"
                 abi_pts = [sret] + abi_pts
                 abi_ret = "void"
             else:
@@ -1509,7 +1565,7 @@ class LLVMTextEmitter:
             et = pts[i] if i < len(pts) else t
             coerced.append((self._coerce(v, t, et) if t != et else v, et))
 
-        if self._win64:
+        if self._use_win64_abi:
             # Win64 ABI: pass large structs by pointer, return via sret
             abi_args: list[tuple[str, str]] = []
             for v, t in coerced:
@@ -1536,6 +1592,40 @@ class LLVMTextEmitter:
                 return ""
             r = self._f(nm or "rt")
             self._L(f"{r} = call {ret} @{fn}({a_str})")
+            return r
+
+        if self._use_i686_abi:
+            # v5.8.6 We.1: i686 cdecl — same alloca-and-pass mechanic
+            # as Win64, but the call-site argument carries the
+            # ``byval(<orig>) align 4`` attribute so LLVM's i686
+            # backend lowers it as caller-pushes-by-value (matching
+            # gcc/clang's C ABI). Return > 8 B uses the same sret
+            # ``align 8`` shape Win64 uses.
+            abi_args_i: list[tuple[str, str]] = []
+            for v, t in coerced:
+                if self._is_large_struct(t):
+                    a = self._alloca(t, "sarg")
+                    self._L(f"store {t} {v}, ptr {a}")
+                    abi_args_i.append((a, f"ptr byval({t}) align 4"))
+                else:
+                    abi_args_i.append((v, t))
+
+            if self._is_large_struct(ret):
+                sret_a_i = self._alloca(ret, nm or "sret")
+                sret_arg_i = f"ptr sret({ret}) align 8 {sret_a_i}"
+                rest_i = ", ".join(f"{t} {v}" for v, t in abi_args_i)
+                a_str_i = f"{sret_arg_i}, {rest_i}" if rest_i else sret_arg_i
+                self._L(f"call void @{fn}({a_str_i})")
+                r = self._f(nm or "rt")
+                self._L(f"{r} = load {ret}, ptr {sret_a_i}")
+                return r
+
+            a_str_i = ", ".join(f"{t} {v}" for v, t in abi_args_i)
+            if ret == VOID:
+                self._L(f"call void @{fn}({a_str_i})")
+                return ""
+            r = self._f(nm or "rt")
+            self._L(f"{r} = call {ret} @{fn}({a_str_i})")
             return r
 
         a = ", ".join(f"{t} {v}" for v, t in coerced)
@@ -3406,6 +3496,19 @@ class LLVMTextEmitter:
         # also emits the correct `call i64 @__mn_host_is_win64()`.
         if fn == "__mn_host_is_win64":
             r = self._rt("__mn_host_is_win64", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
+        # v5.8.6 We.1: refined (is_windows, arch_bits) pair. Both
+        # return Int. The self-hosted emitter calls these in
+        # emit_mir_module to dispatch a 3-way ABI (SysV / Win64 /
+        # i686 cdecl); the Python bootstrap also routes them so the
+        # stage1 build of mnc_all.mn references the new exports.
+        if fn == "__mn_host_is_windows":
+            r = self._rt("__mn_host_is_windows", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_host_arch_bits":
+            r = self._rt("__mn_host_arch_bits", I64, [], [])
             self._put(i.dest, r, I64)
             return
 

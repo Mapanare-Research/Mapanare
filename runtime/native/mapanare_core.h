@@ -705,13 +705,34 @@ MN_EXPORT int64_t __mn_system(MnString command);
 MN_EXPORT void __mn_panic(MnString message);
 
 /** v5.8.4 Wb.2: returns 1 if the running host is Win64, 0 otherwise.
- *  Used by the self-hosted emit_llvm.mn ABI classifier to choose
- *  between SysV-style aggregate returns and Win64 sret. Mirrors the
- *  Python emit_llvm_text.py self._win64 logic, which reads from the
- *  LLVMTextEmitter target_triple constructor arg. The self-hosted
- *  emitter has no equivalent constructor arg today; this runtime
- *  call is the OS-1 detection mechanism (see v5.8.4 PLAN.md). */
+ *  Kept for source-compat with v5.8.4–v5.8.5 self-hosted emitter
+ *  builds. The v5.8.6 We.1 closure of the i686 latent gap supersedes
+ *  this with the (is_windows, arch_bits) pair below; new code should
+ *  use those. The export remains so a v5.8.5-vintage stage1 binary
+ *  can still find its host-detection symbol when self-compiling
+ *  against a v5.8.6+ runtime. */
 MN_EXPORT int64_t __mn_host_is_win64(void);
+
+/** v5.8.6 We.1: returns 1 if the running host is any Windows
+ *  (32-bit or 64-bit), 0 otherwise. Pair with __mn_host_arch_bits
+ *  to disambiguate Win32 (i686) from Win64 (x86_64). The v5.8.4
+ *  __mn_host_is_win64 export confused "is Windows" with "use Win64
+ *  ABI rules" — `_WIN32` is defined for both Win32 and Win64
+ *  toolchains, so `is_win64` returned 1 even on i686-w64-mingw32.
+ *  Used by the self-hosted emit_llvm.mn ABI classifier together
+ *  with __mn_host_arch_bits to choose between Win64 sret/sarg,
+ *  i686 cdecl sret/byval, and SysV by-value emission. */
+MN_EXPORT int64_t __mn_host_is_windows(void);
+
+/** v5.8.6 We.1: returns the host's pointer/architecture width in
+ *  bits (32 or 64) — i.e. ILP32 vs LP64/LLP64. On i686 / armv7
+ *  / 32-bit POSIX returns 32; on x86_64 / aarch64 / 64-bit Windows
+ *  returns 64. Defaults to 64 on unknown architectures (matches the
+ *  v5.8.5 baseline assumption — no 32-bit-non-x86 targets ship
+ *  today). Read in concert with __mn_host_is_windows: ABI dispatch
+ *  is (is_windows && arch_bits == 64) → Win64, (is_windows &&
+ *  arch_bits == 32) → i686 cdecl, otherwise SysV / AAPCS64. */
+MN_EXPORT int64_t __mn_host_arch_bits(void);
 
 /* -----------------------------------------------------------------------
  * Range Iterator — used by `for i in start..end` loops

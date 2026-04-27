@@ -49,6 +49,18 @@ fn abi_aapcs64_use_sret(total_size: Int) -> Bool {
     return true
 }
 
+// v5.8.6 We.1: i686-w64-mingw32 / i386 cdecl return classification.
+//
+// Aggregates <= 8 bytes return in EAX:EDX register pair. Anything
+// larger takes the sret hidden-first-arg path. Empirical probe with
+// i686-w64-mingw32-gcc 13 confirms: struct sizes 12 / 16 / 24 / 64 /
+// 80 all use sret; size 8 uses register pair. See SESSION_REPORT
+// §Phase 0 for the assembly trace.
+fn abi_i686_cdecl_use_sret(total_size: Int) -> Bool {
+    if total_size <= 8 { return false }
+    return true
+}
+
 // ---------------------------------------------------------------------------
 // Unified classifier
 // ---------------------------------------------------------------------------
@@ -68,6 +80,13 @@ fn abi_classify_return_sret(is_aggregate: Bool, total_size: Int, target: String)
     if total_size == 0 { return false }
 
     // Dispatch by target triple — mirrors abi.py::classify_return.
+    // v5.8.6 We.1: i686 must come BEFORE the generic "windows" branch
+    // because i686-w64-windows-gnu / i686-pc-windows-gnu would
+    // otherwise route to Win64 rules. i686 cdecl uses a > 8 B sret
+    // threshold, identical in shape to Win64 but at a different
+    // boundary (Win64: only 1/2/4/8 B in regs; i686: any size <= 8).
+    if target.starts_with("i686") { return abi_i686_cdecl_use_sret(total_size) }
+    if target.starts_with("i386") { return abi_i686_cdecl_use_sret(total_size) }
     if target.contains("windows") { return abi_win64_use_sret(total_size) }
     if target.starts_with("aarch64") { return abi_aapcs64_use_sret(total_size) }
     // Default: System V AMD64

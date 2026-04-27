@@ -1,6 +1,6 @@
 # Known Issues — User-Facing
 
-Last updated: v5.8.4 (Windows release-pipeline closeout complete. v5.8.0 RE-PANEL aggregate 9.66/10. v5.8.1 → v5.8.2 closed two Windows build walls in succession, Tc.1 + Tc.2; v5.8.3 closed Wb.1 by switching `__mn_str_free`'s C signature to decomposed args; v5.8.4 closes Wb.2 by porting the v5.0.4 / Cb.15 ABI classifier from `mapanare/emit_llvm_text.py` to `mapanare/self/emit_llvm.mn` via a new `EmitState.is_win64` field set from a new `__mn_host_is_win64()` runtime export. ~37 runtime-fn declarations now emit Win64 sret on Windows; aggregate args use the sarg ptr pattern. Windows self-compile + fixed-point cycle re-enabled in publish.yml. Wa.1 (CI wasmtime install drift) also fixed via a pinned bytecodealliance/wasmtime release.).
+Last updated: v5.8.6 (We.1 closure — i686-w64-mingw32 ABI support. v5.8.4's Wb.2 left a latent gap: `__mn_host_is_win64()` reads `_WIN32` (defined for both Win32 and Win64), so a contributor cross-compiling to `i686-w64-mingw32` would silently get Win64 sret/sarg ABI rules applied to a target whose C ABI requires `byval(<T>) align 4` on aggregate args and a stricter `> 8 B → sret` return threshold. v5.8.6 dispatches a 3-way ABI: SysV / AAPCS64 (default), Win64 sret/sarg, or i686 cdecl sret/byval. New paired exports `__mn_host_is_windows()` + `__mn_host_arch_bits()` replace the misleading-named v5.8.4 single export (kept as deprecated alias). EmitState `is_win64: Bool` → `is_windows: Bool` + `win_arch: Int`. Pre-existing v5.8.4 datalayout-not-target-aware bug fixed in passing. Bb.2 seed refresh shipped (mandatory; the v5.8.5 seed knows only `__mn_host_is_win64`). Goldens 66/66 preserved; fixed-point NEAR; pytest 2,372 passed.).
 
 ## Self-hosted compiler feature gaps
 
@@ -10,6 +10,7 @@ Last updated: v5.8.4 (Windows release-pipeline closeout complete. v5.8.0 RE-PANE
 | Sh.9a | async emitter bug: see `docs/guides/async.md` for workaround | documented workaround in async guide | v5.x |
 | Sh.9b | async emitter bug #2: see `docs/guides/async.md` | documented workaround in async guide | v5.x |
 | ~~Wb.2~~ | ~~Self-hosted emit_llvm.mn hardcodes SysV ABI at line 2243~~ | — | **CLOSED v5.8.4** (port complete; aggregate-returning runtime fns emit Win64 sret on Windows; aggregate args use the sarg ptr pattern; Windows fixed-point holds within the same Dr.1 tolerance as Linux) |
+| ~~We.1~~ | ~~v5.8.4 `__mn_host_is_win64()` reads `_WIN32` (defined for both Win32 and Win64), so cross-compiling to `i686-w64-mingw32` silently triggers Win64 sret/sarg ABI rules — wrong for i686 cdecl which needs `byval(<T>) align 4` on aggregate args and a stricter `> 8 B → sret` return threshold.~~ | Use `x86_64-w64-mingw32` (the only Windows target Mapanare actually shipped through v5.8.5) | **CLOSED v5.8.6** (3-way ABI dispatch SysV / Win64 / i686; new paired exports `__mn_host_is_windows()` + `__mn_host_arch_bits()`; EmitState `is_win64` → `is_windows + win_arch`; Bb.2 seed refresh) |
 
 > **v5.4.0 → v5.7.0 closures** (moved out of the active table; full
 > traces in their per-release SESSION_REPORTs):

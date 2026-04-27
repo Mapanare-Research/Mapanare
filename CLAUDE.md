@@ -18,6 +18,76 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.8.6** (shipped) — **We.1 closure — i686-w64-mingw32
+  ABI support.** Closes the latent ABI gap left by v5.8.4's
+  Wb.2: `__mn_host_is_win64()` reads `_WIN32` (defined for
+  both 32-bit and 64-bit Windows builds), so a contributor
+  cross-compiling to `i686-w64-mingw32` would silently get
+  Win64 sret/sarg ABI rules applied to a target whose C ABI
+  requires `byval(<T>) align 4` on aggregate args and a
+  stricter `> 8 B → sret` return threshold. **Phase 0 empirical
+  probing** with `i686-w64-mingw32-gcc 13` and
+  `clang-18 --target=i686-w64-windows-gnu` ground-truthed the
+  i686 cdecl ABI table BEFORE writing code; decisive finding —
+  Mapanare's existing emit shape (`{ptr, i64}` aggregate
+  return, no `byval` on args) silently miscompiles on i686
+  via `llc`-clean IR that drops the high 4 bytes of `i64`
+  fields when LLVM's i686 backend packs the 12-byte struct
+  into eax:edx (8 B). Worse than a crash. The emitter now
+  dispatches a 3-way ABI: SysV / AAPCS64 (default), Win64
+  sret/sarg (`x86_64-w64-mingw32`), or i686 cdecl sret/byval
+  (`i686-w64-mingw32`). Both `mapanare/self/emit_llvm.mn` and
+  the Python bootstrap `emit_llvm_text.py` mirror. **Refined
+  host detection.** `__mn_host_is_win64()` kept as a
+  deprecated alias (so v5.8.5 stage1 binaries still link).
+  Two new exports: `__mn_host_is_windows()` (1 on any Windows
+  host; reads `_WIN32`) + `__mn_host_arch_bits()` (32 / 64
+  per pointer width). **EmitState rename.** `is_win64: Bool`
+  → `is_windows: Bool` + `win_arch: Int` (Reg.1 24 → 25
+  fields). Two helpers `use_win64_abi(st)` + `use_i686_abi(st)`
+  encapsulate the dispatch — every existing `if st.is_win64`
+  site migrates; parallel `if use_i686_abi(st)` branches add
+  the i686 path. Three new self-hosted helpers parallel the
+  Win64 ones: `i686_rewrite_decl_params` decorates aggregate-
+  by-value param types with `ptr byval(<orig>) align 4`;
+  `i686_sarg_rewrite_args` + `i686_sarg_advance_state`
+  emit alloca + store + pass-as-byval-ptr at call sites
+  (alloca uses `align 4` — i686 stack alignment vs Win64's
+  `align 8`). New classifier `abi_i686_cdecl_use_sret` (≤ 8
+  → register, > 8 → sret). New target `i686-windows-gnu` in
+  `mapanare/targets.py`. **Pre-existing v5.8.4 datalayout-
+  not-target-aware bug fixed in passing**: emit_llvm.mn
+  switched the `target triple` per-host but kept emitting the
+  Linux/SysV `target datalayout` regardless; LLVM's x86_64
+  backend was forgiving but it was wrong on paper. v5.8.6
+  emits the correct datalayout per target (Win64 `m:w`
+  mangling, Win32 `m:x` ILP32 with `S32` stack alignment).
+  **Bb.2 seed refresh** (mandatory; v5.8.5 seed knows only
+  `__mn_host_is_win64`, rejects calls to the new exports
+  with the same shape as the v5.8.4 → v5.8.5 break). New
+  seed 6,573,216 B (was 6,433,952; +2.2%) / sha256
+  `a902f14d279345eef2db5e78234133a9b2bfb2f6a438984f913d94cf7bb417b0`.
+  `bash scripts/build_from_seed.sh` runs end-to-end clean;
+  stage1 IR == stage2 IR (222,095 lines, strict fixed
+  point in the no-Python pipeline). **Metrics**: stage2.ll
+  219,955 → 222,095 lines (+0.97%); `llvm-as` clean;
+  goldens **66/66** preserved; non-bootstrap pytest **2,372
+  passed**; fixed-point NEAR (4 lines, VERSION-only); `make
+  lint` clean (black, ruff, mypy); `check_struct_registry.py`
+  clean. **End-to-end ABI smoke test** (i686 IR + C runtime
+  link to PE32 .exe, no Wine32): caller assembly correctly
+  copies all 16 bytes of struct to argument area before the
+  call — exact i686 cdecl convention. What does NOT ship:
+  `build_stage1.py` i686 cross-compile mode (deferred until
+  real demand surfaces; the IR-emission correctness this
+  release closes is the load-bearing piece, CI integration
+  is straightforward but out of scope); a runtime audit for
+  32-bit pointer assumptions (one warning observed at
+  `mapanare_core.c:351` in a `unsigned long` shift —
+  pre-existing, not addressed here); a new i686 CI job. Next:
+  v5.8.7+ minor cleanup if surface latents emerge; v6.0
+  borrow checker (Rt.04). See
+  `docs/roadmap/v5/v5.8.6/SESSION_REPORT.md`.
 - **v5.8.5** (shipped) — **Bb.1 closure — bootstrap seed
   refresh.** Pure seed-refresh release; **zero source-code
   changes** to `mapanare/`, `runtime/`, `mapanare/self/`. Fixes

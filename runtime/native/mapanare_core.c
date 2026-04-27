@@ -2980,15 +2980,48 @@ MN_EXPORT void __mn_panic(MnString message) {
 }
 
 /* v5.8.4 Wb.2: Host detection for self-hosted ABI classifier.
- * The self-hosted emitter (mapanare/self/emit_llvm.mn) calls this
- * to set its EmitState.is_win64 field, which gates Win64 sret
- * emission for ~37 aggregate-returning runtime functions. See
- * docs/roadmap/v5/v5.8.4/PLAN.md §"OS-1 detection mechanism". */
+ * Originally returned "is Win64" but actually reads `_WIN32`, which
+ * is defined for *both* 32-bit and 64-bit Windows builds. v5.8.6
+ * We.1 closes that latent gap by introducing __mn_host_is_windows
+ * + __mn_host_arch_bits below; this export is preserved unchanged
+ * for source-compat with v5.8.4–v5.8.5 stage1 binaries that look
+ * for the symbol by its old name during self-compile. */
 MN_EXPORT int64_t __mn_host_is_win64(void) {
 #ifdef _WIN32
     return 1;
 #else
     return 0;
+#endif
+}
+
+/* v5.8.6 We.1: returns 1 on any Windows host (Win32 or Win64), 0
+ * elsewhere. Replaces the misleading-named __mn_host_is_win64 for
+ * the (is_windows, arch_bits) pair the v5.8.6+ self-hosted emitter
+ * uses to disambiguate Win64 sret/sarg from i686 cdecl sret/byval.
+ * `_WIN32` is the canonical "any Windows" macro per Microsoft and
+ * MinGW conventions — defined for both i686-w64-mingw32 and
+ * x86_64-w64-mingw32. */
+MN_EXPORT int64_t __mn_host_is_windows(void) {
+#ifdef _WIN32
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+/* v5.8.6 We.1: returns 32 on ILP32 hosts (i686, armv7, etc.) and
+ * 64 on LP64/LLP64 hosts (x86_64, aarch64, Win64). Default 64 on
+ * unknown architectures so non-Windows callers still see a sane
+ * value. Used by the self-hosted ABI classifier to choose between
+ * Win64 (arch_bits == 64 && is_windows), i686 cdecl (arch_bits ==
+ * 32 && is_windows), and SysV / AAPCS64 (! is_windows). */
+MN_EXPORT int64_t __mn_host_arch_bits(void) {
+#if defined(_WIN64) || defined(__x86_64__) || defined(__aarch64__) || defined(__powerpc64__)
+    return 64;
+#elif defined(__i386__) || defined(_M_IX86) || defined(__arm__)
+    return 32;
+#else
+    return 64;
 #endif
 }
 

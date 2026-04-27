@@ -121,14 +121,21 @@ struct EmitState {
     boxed_owned_source: List<String>,
     // v5.6.4 — parallel source-SSA list for tensor_owned.
     tensor_owned_source: List<String>,
-    // v5.8.4 Wb.2: host target detection (OS-1 mechanism). When true,
-    // declare_runtime_fn / runtime call sites emit Win64 sret-style ABI
-    // for aggregate returns; aggregate args use the sarg ptr pattern.
-    // When false (default; SysV / AArch64), emit aggregate-return-by-value
-    // and aggregate-arg-by-value as today. Set in compile() from
-    // __mn_host_is_win64() so the *running* compiler emits IR for its
-    // own host. Mirrors mapanare/emit_llvm_text.py self._win64.
-    is_win64: Bool
+    // v5.8.6 We.1: host target detection (OS-1 mechanism, refined).
+    // Replaces the v5.8.4 single `is_win64` flag — that name claimed
+    // to mean "Win64" but was set whenever `_WIN32` was defined,
+    // which is true for *both* i686-w64-mingw32 (32-bit cdecl) and
+    // x86_64-w64-mingw32 (64-bit Win64). Splitting into a Windows
+    // gate plus an explicit pointer-width field lets the emitter
+    // dispatch a 3-way: SysV/AAPCS64 (default), Win64 sret/sarg
+    // (is_windows && win_arch == 64), or i686 cdecl sret/byval
+    // (is_windows && win_arch == 32). Use the helpers
+    // `use_win64_abi(st)` / `use_i686_abi(st)` instead of reading
+    // these fields directly. Set in emit_mir_module from
+    // __mn_host_is_windows() + __mn_host_arch_bits() so the
+    // *running* compiler emits IR for its own host.
+    is_windows: Bool,
+    win_arch: Int
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -153,7 +160,7 @@ fn new_emit_state(module_name: String) -> EmitState {
     let list_owned_source: List<String> = []
     let boxed_owned_source: List<String> = []
     let tensor_owned_source: List<String> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, tensor_owned: tensor_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0, str_owned_source: str_owned_source, list_owned_source: list_owned_source, boxed_owned_source: boxed_owned_source, tensor_owned_source: tensor_owned_source, is_win64: false }
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, tensor_owned: tensor_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0, str_owned_source: str_owned_source, list_owned_source: list_owned_source, boxed_owned_source: boxed_owned_source, tensor_owned_source: tensor_owned_source, is_windows: false, win_arch: 0 }
 }
 
 fn build_internal_struct_list() -> List<StructEntry> {
@@ -164,7 +171,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"]))
     list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"]))
-    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "is_win64"]))
+    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "is_windows", "win_arch"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
     list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
@@ -208,8 +215,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"])
     // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks, generic_fns, generic_structs, generic_enums, loop_header_label, loop_exit_label
     s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"])
-    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, tensor_owned, moved_locals, entry_prelude_lines, entry_block_body, in_entry_block, loop_depth, str_owned_source, list_owned_source, boxed_owned_source, tensor_owned_source
-    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "is_win64"])
+    // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, tensor_owned, moved_locals, entry_prelude_lines, entry_block_body, in_entry_block, loop_depth, str_owned_source, list_owned_source, boxed_owned_source, tensor_owned_source, is_windows, win_arch
+    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "is_windows", "win_arch"])
     // LowerResult: value, state
     s = register_internal_struct(s, "LowerResult", ["value", "state"])
     // CompileResult: success, ir_text, errors
@@ -367,21 +374,28 @@ fn declare_runtime_fn(st: EmitState, name: String, ret: String, params: String) 
         ret_prefix = get_fn_ret_prefix(name)
     }
     let suffix: String = get_fn_attrs(name)
-    // v5.8.4 Wb.2: on Win64, aggregate-by-value parameters > 8 bytes are
-    // ABI-rewritten to ptr (sarg pattern at call site); aggregate returns
-    // > 8 bytes become void with a sret hidden first arg. Mirrors Python
-    // emit_llvm_text._decl_fn at line 1271. We're conservative — same shape
-    // as Python — so stage1 (Python-emitted) and stage2 (self-emitted) IR
-    // declarations match on Windows.
-    if st.is_win64 {
+    // v5.8.4 Wb.2 + v5.8.6 We.1: 3-way ABI dispatch.
+    //
+    //   Win64: aggregate-by-value params > 8 B → bare `ptr` (sarg
+    //   pattern at call site); aggregate returns > 8 B → `void` with
+    //   a `ptr sret(<orig>)` hidden first arg. Mirrors Python
+    //   emit_llvm_text._decl_fn line 1271.
+    //
+    //   i686 cdecl: aggregate-by-value params > 8 B → `ptr byval(<orig>)
+    //   align 4` (LLVM i686 backend lowers this as caller-pushes-by-
+    //   value); aggregate returns > 8 B → same sret pattern as Win64.
+    //   Empirical probe (i686-w64-mingw32-gcc 13) confirms structs
+    //   sized 12 / 16 / 24 / 64 / 80 take this path; size 8 returns
+    //   in EAX:EDX register pair without rewriting.
+    //
+    //   SysV / AAPCS64: by-value as today, no rewriting.
+    if use_win64_abi(st) {
         let abi_params: String = win64_rewrite_decl_params(params)
         let mut abi_ret: String = ret
         let mut prefix_args: String = ""
         if is_large_aggregate(ret) {
             abi_ret = "void"
             prefix_args = "ptr sret(" + ret + ")"
-            // noalias prefix only applies to ptr returns; sret converts to
-            // void return, so drop the noalias prefix on Win64.
             ret_prefix = ""
         }
         let mut combined: String = abi_params
@@ -393,6 +407,25 @@ fn declare_runtime_fn(st: EmitState, name: String, ret: String, params: String) 
         }
         let line_w: String = "declare " + ret_prefix + abi_ret + " @" + name + "(" + combined + ")" + suffix
         return emit_line(st, line_w)
+    }
+    if use_i686_abi(st) {
+        let abi_params_i: String = i686_rewrite_decl_params(params)
+        let mut abi_ret_i: String = ret
+        let mut prefix_args_i: String = ""
+        if is_large_aggregate(ret) {
+            abi_ret_i = "void"
+            prefix_args_i = "ptr sret(" + ret + ") align 8"
+            ret_prefix = ""
+        }
+        let mut combined_i: String = abi_params_i
+        if len(prefix_args_i) > 0 {
+            combined_i = prefix_args_i
+            if len(abi_params_i) > 0 {
+                combined_i = prefix_args_i + ", " + abi_params_i
+            }
+        }
+        let line_i: String = "declare " + ret_prefix + abi_ret_i + " @" + name + "(" + combined_i + ")" + suffix
+        return emit_line(st, line_i)
     }
     let line: String = "declare " + ret_prefix + ret + " @" + name + "(" + params + ")" + suffix
     return emit_line(st, line)
@@ -457,6 +490,146 @@ fn is_large_aggregate(ty: String) -> Bool {
     return llvm_type_size(ty) > 8
 }
 
+// v5.8.6 We.1: ABI-mode dispatch helpers. Replace the v5.8.4 single
+// `st.is_win64` boolean — that flag conflated "is Windows" with "use
+// Win64 ABI rules" because its source `__mn_host_is_win64()` actually
+// reads `_WIN32` (defined for both 32-bit and 64-bit Windows). Now
+// the running compiler reads `__mn_host_is_windows()` +
+// `__mn_host_arch_bits()` and these two helpers gate the three
+// distinct ABI paths the emitter supports.
+//
+//   use_win64_abi(st) — Win64: aggregate args > 8 B alloca'd to ptr
+//   (sarg pattern); aggregate returns > 8 B use sret void prefix.
+//
+//   use_i686_abi(st) — i686 cdecl: aggregate args > 8 B alloca'd
+//   then passed as `ptr byval(<orig>) align 4`; aggregate returns
+//   > 8 B use the same sret void prefix as Win64. Stack alignment
+//   on i686 is 4 B (vs Win64's 16 B), so alloca + byval both use
+//   align 4 to match clang's i686-w64-windows-gnu emission.
+//
+//   Default (neither): SysV / AAPCS64 — pass and return aggregates
+//   by value as today.
+fn use_win64_abi(st: EmitState) -> Bool {
+    if !st.is_windows { return false }
+    if st.win_arch != 64 { return false }
+    return true
+}
+
+fn use_i686_abi(st: EmitState) -> Bool {
+    if !st.is_windows { return false }
+    if st.win_arch != 32 { return false }
+    return true
+}
+
+// v5.8.6 We.1: rewrites a comma-separated declaration param list for
+// the i686 cdecl ABI. Aggregate-by-value param types > 8 bytes get
+// the `byval` attribute decoration so LLVM's i686 backend lowers
+// them as stack-pushed-by-value (matching gcc/clang's C ABI for
+// MnString-shaped runtime fns). Caller pushes the entire struct on
+// the stack; callee reads from positive %ebp offsets. Mirrors clang
+// --target=i686-w64-windows-gnu emission for `void f(MnString s)`.
+fn i686_rewrite_decl_params(params: String) -> String {
+    let mut out: String = params
+    // Order matters — replace the longest first so substrings don't
+    // partially match. Each aggregate-by-value type gets the
+    // `ptr byval(<orig>) align 4` decoration.
+    out = replace_all_str(out, "{ptr, i64, i64, i64, i64}", "ptr byval({ptr, i64, i64, i64, i64}) align 4")
+    out = replace_all_str(out, "{ptr, i64, i64, i64}", "ptr byval({ptr, i64, i64, i64}) align 4")
+    out = replace_all_str(out, "{ptr, i64, ptr, i64}", "ptr byval({ptr, i64, ptr, i64}) align 4")
+    out = replace_all_str(out, "{ptr, i64}", "ptr byval({ptr, i64}) align 4")
+    out = replace_all_str(out, "{i64, i64}", "ptr byval({i64, i64}) align 4")
+    out = replace_all_str(out, "{i1, ptr}", "ptr byval({i1, ptr}) align 4")
+    return out
+}
+
+// v5.8.6 We.1: like win64_sarg_rewrite_args but emits the byval-
+// decorated form. Win64 expects callers to push a *pointer* to the
+// caller-allocated struct; i686 cdecl expects callers to push the
+// *struct contents* on the stack. The IR-level difference is the
+// `byval(<agg_ty>) align 4` decoration on the pointer pass — LLVM's
+// i686 backend reads this and generates the stack-push lowering.
+// Pre-conditions identical to win64_sarg_rewrite_args; caller MUST
+// follow with i686_sarg_advance_state on the same args_text + agg_ty
+// to keep counter / alloca / store emission in sync.
+fn i686_sarg_rewrite_args(args_text: String, agg_ty: String, st: EmitState) -> String {
+    let aty_len: Int = len(agg_ty)
+    if aty_len == 0 { return args_text }
+    let h_len: Int = len(args_text)
+    if h_len == 0 { return args_text }
+    let mut out: String = ""
+    let mut start: Int = 0
+    let mut i: Int = 0
+    let mut sarg_n: Int = st.counter
+    for _ in 0..1000 {
+        if i + aty_len > h_len { break }
+        let head: String = args_text.substr(i, aty_len)
+        if head == agg_ty {
+            let mut j: Int = i + aty_len
+            if j < h_len && args_text.substr(j, 1) == " " { j = j + 1 }
+            let mut k: Int = j
+            for _ in 0..1000 {
+                if k >= h_len { break }
+                let c: String = args_text.substr(k, 1)
+                if c == "," { break }
+                k = k + 1
+            }
+            out = out + args_text.substr(start, i - start)
+            out = out + "ptr byval(" + agg_ty + ") align 4 %sarg." + toString(sarg_n)
+            sarg_n = sarg_n + 1
+            i = k
+            start = k
+        } else {
+            i = i + 1
+        }
+    }
+    if start < h_len {
+        out = out + args_text.substr(start, h_len - start)
+    }
+    return out
+}
+
+// v5.8.6 We.1: emits the alloca + store sarg-prelude lines for each
+// occurrence of `agg_ty` in `args_text` for i686 cdecl. Mechanically
+// identical to win64_sarg_advance_state except `align 4` on the
+// alloca — i686's stack pointer alignment is 4 B, and clang's
+// i686-w64-windows-gnu emission uses align 4 for stack-pushed
+// aggregates regardless of contained field types (i64s included).
+// Bumps `st.counter` once per occurrence; counter values must match
+// those consumed by i686_sarg_rewrite_args on the same input.
+fn i686_sarg_advance_state(st: EmitState, args_text: String, agg_ty: String) -> EmitState {
+    let aty_len: Int = len(agg_ty)
+    if aty_len == 0 { return st }
+    let h_len: Int = len(args_text)
+    if h_len == 0 { return st }
+    let mut s: EmitState = st
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i + aty_len > h_len { break }
+        let head: String = args_text.substr(i, aty_len)
+        if head == agg_ty {
+            let mut j: Int = i + aty_len
+            if j < h_len && args_text.substr(j, 1) == " " { j = j + 1 }
+            let mut k: Int = j
+            for _ in 0..1000 {
+                if k >= h_len { break }
+                let c: String = args_text.substr(k, 1)
+                if c == "," { break }
+                k = k + 1
+            }
+            let aval: String = ws_trim(args_text.substr(j, k - j))
+            let sarg_n: Int = s.counter
+            s.counter = s.counter + 1
+            let slot: String = "%sarg." + toString(sarg_n)
+            s = emit_line(s, "  " + slot + " = alloca " + agg_ty + ", align 4")
+            s = emit_line(s, "  store " + agg_ty + " " + aval + ", ptr " + slot)
+            i = k
+        } else {
+            i = i + 1
+        }
+    }
+    return s
+}
+
 // Manual whitespace trimming. The self-hosted lowerer doesn't yet
 // translate `.trim()` method calls to `__mn_str_trim` runtime fn, so
 // our helpers spell trimming out manually rather than rely on the
@@ -500,57 +673,108 @@ fn ws_trim(s: String) -> String {
 //      sarg alloca/store entries (one per occurrence), then
 //   2) Replace the textual occurrence with "ptr %sarg.N".
 fn emit_rt_call(st: EmitState, dn: String, ret_ty: String, fn_name: String, args_text: String) -> EmitState {
-    if !st.is_win64 {
-        return emit_line(st, emit_call_ir(dn, ret_ty, fn_name, args_text))
-    }
-    let mut s: EmitState = st
-    let mut new_args: String = args_text
-    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, i64, i64, i64}", s)
-    s = win64_sarg_advance_state(s, args_text, "{ptr, i64, i64, i64, i64}")
-    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, ptr, i64}", s)
-    s = win64_sarg_advance_state(s, args_text, "{ptr, i64, ptr, i64}")
-    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64}", s)
-    s = win64_sarg_advance_state(s, args_text, "{ptr, i64}")
-    new_args = win64_sarg_rewrite_args(new_args, "{i64, i64}", s)
-    s = win64_sarg_advance_state(s, args_text, "{i64, i64}")
-    new_args = win64_sarg_rewrite_args(new_args, "{i1, ptr}", s)
-    s = win64_sarg_advance_state(s, args_text, "{i1, ptr}")
-    if is_large_aggregate(ret_ty) {
-        let sret_n: Int = s.counter
-        s.counter = s.counter + 1
-        let sret_slot: String = "%sret." + toString(sret_n)
-        s = emit_line(s, "  " + sret_slot + " = alloca " + ret_ty + ", align 8")
-        let sret_arg: String = "ptr sret(" + ret_ty + ") " + sret_slot
-        let mut combined: String = sret_arg
-        if len(new_args) > 0 {
-            combined = sret_arg + ", " + new_args
+    if use_win64_abi(st) {
+        let mut s: EmitState = st
+        let mut new_args: String = args_text
+        new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, i64, i64, i64}", s)
+        s = win64_sarg_advance_state(s, args_text, "{ptr, i64, i64, i64, i64}")
+        new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, ptr, i64}", s)
+        s = win64_sarg_advance_state(s, args_text, "{ptr, i64, ptr, i64}")
+        new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64}", s)
+        s = win64_sarg_advance_state(s, args_text, "{ptr, i64}")
+        new_args = win64_sarg_rewrite_args(new_args, "{i64, i64}", s)
+        s = win64_sarg_advance_state(s, args_text, "{i64, i64}")
+        new_args = win64_sarg_rewrite_args(new_args, "{i1, ptr}", s)
+        s = win64_sarg_advance_state(s, args_text, "{i1, ptr}")
+        if is_large_aggregate(ret_ty) {
+            let sret_n: Int = s.counter
+            s.counter = s.counter + 1
+            let sret_slot: String = "%sret." + toString(sret_n)
+            s = emit_line(s, "  " + sret_slot + " = alloca " + ret_ty + ", align 8")
+            let sret_arg: String = "ptr sret(" + ret_ty + ") " + sret_slot
+            let mut combined: String = sret_arg
+            if len(new_args) > 0 {
+                combined = sret_arg + ", " + new_args
+            }
+            s = emit_line(s, "  call void @" + fn_name + "(" + combined + ")")
+            s = emit_line(s, "  " + dn + " = load " + ret_ty + ", ptr " + sret_slot)
+            return s
         }
-        s = emit_line(s, "  call void @" + fn_name + "(" + combined + ")")
-        s = emit_line(s, "  " + dn + " = load " + ret_ty + ", ptr " + sret_slot)
-        return s
+        return emit_line(s, emit_call_ir(dn, ret_ty, fn_name, new_args))
     }
-    return emit_line(s, emit_call_ir(dn, ret_ty, fn_name, new_args))
+    if use_i686_abi(st) {
+        let mut s2: EmitState = st
+        let mut new_args2: String = args_text
+        // v5.8.6 We.1: same enumeration order as Win64 — replace
+        // longest aggregate strings first to avoid substring overlap.
+        // i686 emits `ptr byval(<orig>) align 4 %sarg.N` instead of
+        // bare `ptr %sarg.N`, but the alloca + store + counter
+        // mechanics are identical. align 4 on the alloca matches
+        // i686 stack-alignment conventions and clang's i686 emission.
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{ptr, i64, i64, i64, i64}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{ptr, i64, i64, i64, i64}")
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{ptr, i64, ptr, i64}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{ptr, i64, ptr, i64}")
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{ptr, i64}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{ptr, i64}")
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{i64, i64}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{i64, i64}")
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{i1, ptr}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{i1, ptr}")
+        if is_large_aggregate(ret_ty) {
+            let sret_n2: Int = s2.counter
+            s2.counter = s2.counter + 1
+            let sret_slot2: String = "%sret." + toString(sret_n2)
+            s2 = emit_line(s2, "  " + sret_slot2 + " = alloca " + ret_ty + ", align 8")
+            let sret_arg2: String = "ptr sret(" + ret_ty + ") align 8 " + sret_slot2
+            let mut combined2: String = sret_arg2
+            if len(new_args2) > 0 {
+                combined2 = sret_arg2 + ", " + new_args2
+            }
+            s2 = emit_line(s2, "  call void @" + fn_name + "(" + combined2 + ")")
+            s2 = emit_line(s2, "  " + dn + " = load " + ret_ty + ", ptr " + sret_slot2)
+            return s2
+        }
+        return emit_line(s2, emit_call_ir(dn, ret_ty, fn_name, new_args2))
+    }
+    return emit_line(st, emit_call_ir(dn, ret_ty, fn_name, args_text))
 }
 
-// v5.8.4 Wb.2: void variant — same arg-rewrite logic, no return value
-// to load. Ret is implicitly "void".
+// v5.8.4 Wb.2 + v5.8.6 We.1: void variant — same arg-rewrite logic,
+// no return value to load. Ret is implicitly "void". 3-way dispatch
+// parallels emit_rt_call.
 fn emit_rt_call_void(st: EmitState, fn_name: String, args_text: String) -> EmitState {
-    if !st.is_win64 {
-        return emit_line(st, emit_call_void(fn_name, args_text))
+    if use_win64_abi(st) {
+        let mut s: EmitState = st
+        let mut new_args: String = args_text
+        new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, i64, i64, i64}", s)
+        s = win64_sarg_advance_state(s, args_text, "{ptr, i64, i64, i64, i64}")
+        new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, ptr, i64}", s)
+        s = win64_sarg_advance_state(s, args_text, "{ptr, i64, ptr, i64}")
+        new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64}", s)
+        s = win64_sarg_advance_state(s, args_text, "{ptr, i64}")
+        new_args = win64_sarg_rewrite_args(new_args, "{i64, i64}", s)
+        s = win64_sarg_advance_state(s, args_text, "{i64, i64}")
+        new_args = win64_sarg_rewrite_args(new_args, "{i1, ptr}", s)
+        s = win64_sarg_advance_state(s, args_text, "{i1, ptr}")
+        return emit_line(s, emit_call_void(fn_name, new_args))
     }
-    let mut s: EmitState = st
-    let mut new_args: String = args_text
-    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, i64, i64, i64}", s)
-    s = win64_sarg_advance_state(s, args_text, "{ptr, i64, i64, i64, i64}")
-    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, ptr, i64}", s)
-    s = win64_sarg_advance_state(s, args_text, "{ptr, i64, ptr, i64}")
-    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64}", s)
-    s = win64_sarg_advance_state(s, args_text, "{ptr, i64}")
-    new_args = win64_sarg_rewrite_args(new_args, "{i64, i64}", s)
-    s = win64_sarg_advance_state(s, args_text, "{i64, i64}")
-    new_args = win64_sarg_rewrite_args(new_args, "{i1, ptr}", s)
-    s = win64_sarg_advance_state(s, args_text, "{i1, ptr}")
-    return emit_line(s, emit_call_void(fn_name, new_args))
+    if use_i686_abi(st) {
+        let mut s2: EmitState = st
+        let mut new_args2: String = args_text
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{ptr, i64, i64, i64, i64}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{ptr, i64, i64, i64, i64}")
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{ptr, i64, ptr, i64}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{ptr, i64, ptr, i64}")
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{ptr, i64}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{ptr, i64}")
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{i64, i64}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{i64, i64}")
+        new_args2 = i686_sarg_rewrite_args(new_args2, "{i1, ptr}", s2)
+        s2 = i686_sarg_advance_state(s2, args_text, "{i1, ptr}")
+        return emit_line(s2, emit_call_void(fn_name, new_args2))
+    }
+    return emit_line(st, emit_call_void(fn_name, args_text))
 }
 
 // Helper: scans `args_text` for occurrences of `agg_ty` followed by
@@ -949,7 +1173,15 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
     // v5.8.4 Wb.2: host-detect for ABI classifier OS-1 mechanism.
+    // Kept declared so v5.8.5-vintage stage1 binaries and any
+    // Mapanare-level code that calls __mn_host_is_win64 directly
+    // continues to link.
     s = declare_runtime_fn(s, "__mn_host_is_win64", "i64", "")
+    // v5.8.6 We.1: refined host detection — the (is_windows,
+    // arch_bits) pair lets the emitter dispatch a 3-way ABI
+    // (Win64 sret/sarg vs i686 cdecl sret/byval vs SysV by-value).
+    s = declare_runtime_fn(s, "__mn_host_is_windows", "i64", "")
+    s = declare_runtime_fn(s, "__mn_host_arch_bits", "i64", "")
 
     // chr/ord
     s = declare_runtime_fn(s, "__mn_str_chr", llvm_string(), "i64")
@@ -2522,12 +2754,17 @@ fn use_sret_return(st: EmitState, ty: String) -> Bool {
         }
     }
     // Classify per target ABI.
-    // v5.8.4 Wb.2: previously hardcoded SysV. Now host-aware via
-    // EmitState.is_win64 (set in emit_mir_module from
-    // __mn_host_is_win64()), mirroring Python's _use_sret which
-    // reads from self._triple.
-    if st.is_win64 {
+    // v5.8.4 Wb.2 + v5.8.6 We.1: host-aware via EmitState's
+    // is_windows + win_arch fields (set in emit_mir_module from
+    // __mn_host_is_windows() + __mn_host_arch_bits()). Mirrors the
+    // Python emitter's self._use_sret which dispatches off
+    // self._triple. The 3-way dispatch lets i686-w64-mingw32 use
+    // its > 8 B sret threshold instead of inheriting Win64 rules.
+    if use_win64_abi(st) {
         return abi_classify_return_sret(true, sz, "x86_64-w64-windows-gnu")
+    }
+    if use_i686_abi(st) {
+        return abi_classify_return_sret(true, sz, "i686-w64-windows-gnu")
     }
     return abi_classify_return_sret(true, sz, "x86_64-unknown-linux-gnu")
 }
@@ -5879,12 +6116,19 @@ fn str_join(sep: String, parts: List<String>) -> String {
 
 pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     let mut st: EmitState = new_emit_state(module_name)
-    // v5.8.4 Wb.2: detect host before any IR is emitted. The is_win64
-    // flag gates target-aware ABI choices in declare_runtime_fn and the
-    // runtime call-site emitters. OS-1 mechanism per v5.8.4 PLAN.md.
-    let host_w64: Int = __mn_host_is_win64()
-    if host_w64 != 0 {
-        st.is_win64 = true
+    // v5.8.4 Wb.2 + v5.8.6 We.1: detect host before any IR is
+    // emitted. The (is_windows, win_arch) pair gates a 3-way ABI
+    // dispatch in declare_runtime_fn / emit_rt_call / use_sret_return:
+    //   is_windows && win_arch == 64 → Win64 sret/sarg
+    //   is_windows && win_arch == 32 → i686 cdecl sret/byval
+    //   !is_windows                  → SysV / AAPCS64 by-value
+    // OS-1 detection mechanism per v5.8.4 PLAN.md, refined in
+    // v5.8.6 PLAN.md to disambiguate the 32-bit Windows case.
+    let host_win: Int = __mn_host_is_windows()
+    let host_bits: Int = __mn_host_arch_bits()
+    if host_win != 0 {
+        st.is_windows = true
+        st.win_arch = host_bits
     }
 
     // Module header
@@ -5892,15 +6136,25 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     // from mapanare/targets.py::TARGET_X86_64_LINUX_GNU. LLVM uses the host
     // target if these are absent, but emitting them explicitly aligns the
     // self-hosted output with the bootstrap and removes a per-module diff.
-    // v5.8.4 Wb.2: triple is host-aware. Linux/Darwin emit SysV; Windows
-    // emits the Win64 mingw triple to match clang --target=x86_64-w64-mingw32.
+    // v5.8.4 Wb.2 + v5.8.6 We.1: triple AND datalayout are now host-
+    // aware (the v5.8.4 release fixed only the triple — datalayout
+    // continued to emit the Linux/SysV layout on Windows builds, a
+    // latent bug LLVM was forgiving about). Linux/Darwin → SysV;
+    // Win64 → mingw x86_64 layout; Win32 → mingw i686 layout
+    // (32-bit pointers, m:x mangling, S32 stack alignment).
     st = emit_line(st, "; ModuleID = '" + module_name + "'")
     st = emit_line(st, "source_filename = \"" + module_name + "\"")
-    st = emit_line(st, "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"")
+    let mut layout_line: String = "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\""
     let mut triple_line: String = "target triple = \"x86_64-unknown-linux-gnu\""
-    if st.is_win64 {
+    if use_win64_abi(st) {
+        layout_line = "target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\""
         triple_line = "target triple = \"x86_64-w64-windows-gnu\""
     }
+    if use_i686_abi(st) {
+        layout_line = "target datalayout = \"e-m:x-p:32:32-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:32-n8:16:32-a:0:32-S32\""
+        triple_line = "target triple = \"i686-w64-windows-gnu\""
+    }
+    st = emit_line(st, layout_line)
     st = emit_line(st, triple_line)
     st = emit_blank(st)
 
