@@ -9,11 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.8.7] - 2026-04-27
 
-### Added
-
-### Changed
-
 ### Fixed
+
+- **Target-count tests** — `tests/targets/test_targets.py` and
+  `tests/targets/test_wasm_targets.py` asserted `len(TARGETS) == 9`,
+  but v5.8.6's `i686-windows-gnu` target brought the count to 10.
+  Bumped the assertions and refreshed the docstring on
+  `test_total_target_count` to "5 desktop + 2 WASM + 3 mobile".
+- **Changelog honesty checker** — v5.8.6's bullet
+  `` `bash scripts/build_from_seed.sh`: stage1 IR == stage2 IR ``
+  put a shell command and a path inside one backtick, which
+  `scripts/check_changelog_honesty.py` interpreted as a single
+  missing path. Split the command from the path.
+- **macOS publish workflow runner** — `macos-13` (Intel) is on
+  GitHub's deprecation runway and was hanging in the runner
+  queue indefinitely. Switched the `build-native` matrix to
+  `macos-latest`. The Intel row in the release-notes table now
+  points to "Build from source" instead of a binary that wasn't
+  being built.
+
+### Notes
+
+- **Da.0 — macOS arm64 native binary deferred to v5.8.8.** The
+  initial `macos-latest` build surfaced a real ABI bug
+  (`__mn_list_push received corrupted list` during
+  self-compile of `mnc_all.mn`). Root cause: the Python
+  bootstrap emits IR with the SysV/Linux triple and ABI, then
+  text-patches the triple+datalayout to Apple AArch64 — but the
+  function signatures keep SysV's aggregate-passing decisions
+  baked in. Apple Silicon Mac users build from source for
+  v5.8.7; Da.1 in v5.8.8 will plumb the host triple through to
+  the emitter so `abi.py::_classify_aapcs64` runs at
+  IR-emission time. See `docs/roadmap/v5/v5.8.7/PLAN.md`.
 
 ## [5.8.6] - 2026-04-27
 
