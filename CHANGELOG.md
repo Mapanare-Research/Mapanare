@@ -64,8 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_struct_registry.py` clean (Reg.1 25 EmitState fields,
   was 24).
 - `pytest tests/` non-bootstrap: 2,372 passed, 84 skipped.
-- `bash scripts/build_from_seed.sh`: stage1 IR == stage2 IR
-  (222,095 lines, strict fixed point).
+- End-to-end no-Python bootstrap via `scripts/build_from_seed.sh`:
+  stage1 IR == stage2 IR (222,095 lines, strict fixed point).
 - ABI smoke test: i686 IR + C runtime link clean to PE32 .exe;
   caller assembly correctly copies all 16 bytes of struct to
   argument area at call site (exact i686 cdecl convention).

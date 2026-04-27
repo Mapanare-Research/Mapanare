@@ -434,5 +434,5 @@ class TestTargetResolution:
         assert names == sorted(names)
 
     def test_total_target_count(self) -> None:
-        """v2.0.0 should have 9 targets: 4 desktop + 2 WASM + 3 mobile."""
-        assert len(TARGETS) == 9
+        """v5.8.6 has 10 targets: 5 desktop (incl. i686-windows-gnu) + 2 WASM + 3 mobile."""
+        assert len(TARGETS) == 10
