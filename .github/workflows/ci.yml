@@ -398,14 +398,23 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Install wasmtime
+        # v5.8.4 Wa.1: replace `curl wasmtime.dev/install.sh | bash`
+        # plus `if -d` silent-skip with a pinned download from
+        # github.com/bytecodealliance/wasmtime/releases. The previous
+        # form silently passed when the install path drifted (post-v32
+        # release shape change) and the next `wasmtime` invocation then
+        # failed with `command not found`. Pinning fails fast on
+        # regression.
+        env:
+          WASMTIME_VERSION: "v34.0.2"
         run: |
-          curl https://wasmtime.dev/install.sh -sSf | bash
-          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
-          # Fallback: some runner images install to a different path
-          if [ -d "$HOME/.wasmtime/bin" ]; then
-            export PATH="$HOME/.wasmtime/bin:$PATH"
-            wasmtime --version
-          fi
+          set -euo pipefail
+          ver="${WASMTIME_VERSION}"
+          base="https://github.com/bytecodealliance/wasmtime/releases/download"
+          tarball="wasmtime-${ver}-x86_64-linux.tar.xz"
+          curl -sSfL "${base}/${ver}/${tarball}" | tar xJ -C /tmp
+          sudo mv "/tmp/wasmtime-${ver}-x86_64-linux/wasmtime" /usr/local/bin/
+          wasmtime --version  # fail fast if missing
 
       - name: Install wabt (wat2wasm)
         run: |
@@ -441,7 +450,8 @@ jobs:
 
       - name: Run WASI examples on wasmtime
         run: |
-          export PATH="$HOME/.wasmtime/bin:$PATH"
+          # wasmtime now lives in /usr/local/bin via the pinned install
+          # step above. No additional PATH override needed.
           for f in examples/wasm/hello.mn examples/wasm/wasi_app.mn; do
             if [ -f "$f" ]; then
               echo "--- Running $f (wasm32-wasi) ---"

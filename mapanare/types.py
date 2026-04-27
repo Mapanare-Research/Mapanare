@@ -320,6 +320,9 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "__mn_str_eprintln": VOID_TYPE,
     "__mn_system": INT_TYPE,
     "__mn_file_write": VOID_TYPE,
+    # v5.8.4 Wb.2: host-detect — returns 1 on Win64, 0 elsewhere. Used
+    # by the self-hosted emitter's emit_mir_module to set is_win64.
+    "__mn_host_is_win64": INT_TYPE,
     # High-level I/O builtins (v3.41.0)
     "read_line": STRING_TYPE,
     "read_file": STRING_TYPE,

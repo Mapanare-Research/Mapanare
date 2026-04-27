@@ -1923,6 +1923,8 @@ class MIRLowerer:
             "__mn_exit": mir_void(),
             "__mn_str_eprint": mir_void(),
             "__mn_str_eprintln": mir_void(),
+            # v5.8.4 Wb.2: host-detect for self-hosted ABI classifier.
+            "__mn_host_is_win64": mir_int(),
         }
         _call_ret_ty = mir_unknown()
         if isinstance(expr.callee, Identifier):

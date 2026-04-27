@@ -411,43 +411,79 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            # v5.8.3 Wb.2: self-compile-to-stage2 carry-forward to v5.8.4.
-            # Wb.1 (drop-glue ABI mismatch in mnc-stage1.exe) closed in
-            # v5.8.3 by switching `__mn_str_free` to a decomposed C
-            # signature. mnc-stage1.exe now compiles `mnc_all.mn` to a
-            # full 217k-line stage2.ll on Windows. Building a stage2
-            # native binary from that IR uncovered Wb.2: the self-hosted
-            # emitter (mapanare/self/emit_llvm.mn:2243) hardcodes the
-            # SysV ABI classifier, so stage2.ll declares ~37 runtime
-            # functions with aggregate returns instead of Win64 sret.
-            # The resulting mnc-stage2 binary crashes inside `__mn_argv`
-            # the same way pre-Wb.1 mnc-stage1 crashed inside
-            # `__mn_str_free` — same H1 ABI-shape mismatch, but now on
-            # the return side and across many more functions. Closing
-            # this needs the v5.0.4 Cb.15 ABI-classifier port to
-            # mapanare/self/emit_llvm.mn (Z path in v5.8.3 PLAN's
-            # decision matrix). Scoped to v5.8.4 Wb.2 with a proper
-            # PLAN; carrying forward as documented in
-            # docs/known_issues.md.
-            #
-            # For v5.8.3 the Windows artifact is mnc-stage1.exe itself
-            # (Python-bootstrap-emitter-built, ABI-correct, smoke-tested
-            # below). Functionally identical to a working mnc-stage2 for
-            # end users — a Python-bootstrap-built compiler still
-            # compiles user .mn files; it just isn't validated by
-            # self-compilation on Windows yet. Linux + macOS continue
-            # to run the full self-compile cycle.
+            # v5.8.4 Wb.2 closed: the self-hosted emit_llvm.mn is now
+            # target-aware. mnc-stage1.exe on Windows emits Win64
+            # sret-style aggregate-return declarations and call sites
+            # for the ~37 runtime fns that previously diverged from
+            # gcc's Win64 C ABI. Self-compile-to-stage2 cycle re-enabled.
             export PATH="$PWD/toolchain/bin:$PATH"
-            echo "v5.8.3 Wb.2: skipping Windows self-compile-to-stage2."
-            echo "Artifact ${{ matrix.artifact }} is the mnc-stage1.exe"
-            echo "from the previous step (Python-bootstrap-emitted)."
+            # Wb.1.dx instrumentation (paid forward from v5.8.3 PROMPT
+            # Phase 4): if any step crashes, capture a backtrace before
+            # the job exits so we don't have to re-trigger CI to
+            # diagnose. Cheap; no-op on success.
+            set +e
+            ./mapanare/self/mnc-stage1.exe mapanare/self/mnc_all.mn > stage2.ll
+            rc=$?
+            set -e
+            if [[ $rc -ne 0 ]]; then
+              echo "=== Wb.1.dx: mnc-stage1.exe exited $rc; capturing diagnostics ==="
+              if command -v gdb >/dev/null; then
+                gdb -batch \
+                  -ex 'set args mapanare/self/mnc_all.mn' \
+                  -ex 'run' -ex 'bt 30' \
+                  ./mapanare/self/mnc-stage1.exe || true
+              fi
+              exit $rc
+            fi
+            clang --target=x86_64-w64-mingw32 -c -O2 -mno-stack-arg-probe \
+              stage2.ll -o stage2.o
+            # Stage2 self-compile of mnc_all.mn needs a generous stack
+            # because the self-hosted compiler's recursive descent path
+            # plus the v5.8.4 sarg/sret allocas push beyond the v5.8.2
+            # 64 MB cushion. 256 MB is the next power-of-two and matches
+            # what we verified locally.
+            gcc -O2 stage2.o \
+              runtime/native/mapanare_core.c \
+              runtime/native/mapanare_runtime.c \
+              runtime/native/mapanare_gpu.c \
+              runtime/native/mapanare_gpu_builtins.c \
+              mapanare/self/mnc_main.c \
+              -I runtime/native \
+              -o "${{ matrix.artifact }}" \
+              -lm \
+              -Wl,--stack,268435456 \
+              -Wl,--defsym=__chkstk=___chkstk_ms
             ls -la "${{ matrix.artifact }}"
-            # Wb.1.dx (paid forward): when v5.8.4 closes Wb.2 and
-            # re-enables the self-compile cycle below, wrap the
-            # ./${{ matrix.artifact }} mnc_all.mn invocation with
-            #   gdb -batch -ex run -ex 'bt 30' ./${{ matrix.artifact }}
-            # on non-zero exit so future Windows runtime crashes
-            # self-diagnose in CI logs without re-triggering the run.
+            # Strip in place to keep the artifact small for releases.
+            ./toolchain/bin/strip.exe "${{ matrix.artifact }}" || true
+            # Wb.1.dx wrap for the stage2 binary running mnc_all.mn —
+            # this is where Wb.2 used to manifest as a hard SIGSEGV.
+            set +e
+            ./"${{ matrix.artifact }}" mapanare/self/mnc_all.mn > stage3.ll
+            rc=$?
+            set -e
+            if [[ $rc -ne 0 ]]; then
+              echo "=== Wb.1.dx: mnc-stage2 exited $rc; capturing diagnostics ==="
+              if command -v gdb >/dev/null; then
+                gdb -batch -ex run -ex 'bt 30' \
+                  --args ./"${{ matrix.artifact }}" mapanare/self/mnc_all.mn || true
+              fi
+              exit $rc
+            fi
+            # Fixed-point gate. The non-VERSION drift threshold mirrors
+            # the Linux/macOS Dr.1 baseline: a strict 4-line VERSION-
+            # only diff would be best, but until the self-hosted
+            # compiler substitutes __MN_VERSION__ we tolerate up to 10
+            # lines (same threshold the v5.8.4 PLAN exit criterion
+            # uses).
+            diff_count=$(diff stage2.ll stage3.ll | grep -c '^[<>]' || true)
+            echo "Windows fixed-point diff: $diff_count lines"
+            if [[ $diff_count -gt 10 ]]; then
+              echo "FATAL: Windows fixed-point drift > 10 lines"
+              diff stage2.ll stage3.ll | head -40 || true
+              exit 1
+            fi
+            echo "Windows fixed point OK (<= 10-line VERSION-only drift)"
           else
             ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
             clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.8.4] - 2026-04-27
+
+### Fixed
+
+- **Wb.2** — Windows: `mapanare/self/emit_llvm.mn` is now target-aware.
+  v5.8.3 closed Wb.1 in the C runtime's `__mn_str_free` arg ABI;
+  v5.8.4 closes Wb.2 in the self-hosted emitter's return ABI. Ports
+  the v5.0.4 / Cb.15 ABI classifier from
+  `mapanare/emit_llvm_text.py` to the self-hosted emitter via a new
+  `EmitState.is_win64` field, set from a new
+  `__mn_host_is_win64()` C-runtime export reading `_WIN32`. On
+  Windows builds, ~37 runtime-fn declarations switch from aggregate
+  returns (`declare {ptr, i64} @F(...)`) to Win64 sret
+  (`declare void @F(ptr sret({ptr, i64}), ...)`), and aggregate
+  args at call sites are rewritten to the sarg ptr pattern
+  (alloca + store + ptr). `mnc-win-x64.exe` artifact is now the
+  genuine self-built mnc-stage2 (not the v5.8.3 mnc-stage1.exe
+  carry-forward). Windows self-compile + fixed-point cycle
+  re-enabled in `publish.yml` with paid-forward Wb.1.dx
+  gdb-on-failure instrumentation. Linux + macOS unchanged.
+- **Wa.1** — CI: `ci.yml` WASM Cross-Compilation install no longer
+  silently skips on `wasmtime.dev/install.sh` path drift. Replaced
+  the curl-pipe-bash + `if -d` guard with a pinned download from
+  `github.com/bytecodealliance/wasmtime/releases` to
+  `/usr/local/bin/wasmtime`. Fails fast on regression.
+
+### Notes
+
+v5.8.4 closes the Windows release-pipeline arc that started at
+v5.8.0. From now on, `dev`-branch CI on Windows runs the same
+self-host validation as Linux + macOS. v5.8.3's Wb.2 row in
+`docs/known_issues.md` flips to CLOSED.
+
 ## [5.8.3] - 2026-04-26
 
 ### Fixed

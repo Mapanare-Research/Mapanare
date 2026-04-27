@@ -3400,6 +3400,14 @@ class LLVMTextEmitter:
             r = self._rt("__mn_system", I64, [STR], [(a, STR)])
             self._put(i.dest, r, I64)
             return
+        # v5.8.4 Wb.2: host detection — returns 1 on Win64, 0 elsewhere.
+        # The self-hosted emitter calls this in emit_mir_module to pick
+        # SysV vs Win64 ABI. Registering here so the Python bootstrap
+        # also emits the correct `call i64 @__mn_host_is_win64()`.
+        if fn == "__mn_host_is_win64":
+            r = self._rt("__mn_host_is_win64", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
 
         # High-level I/O builtins (v3.41.0)
         if fn == "read_line":

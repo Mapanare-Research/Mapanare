@@ -120,7 +120,15 @@ struct EmitState {
     list_owned_source: List<String>,
     boxed_owned_source: List<String>,
     // v5.6.4 — parallel source-SSA list for tensor_owned.
-    tensor_owned_source: List<String>
+    tensor_owned_source: List<String>,
+    // v5.8.4 Wb.2: host target detection (OS-1 mechanism). When true,
+    // declare_runtime_fn / runtime call sites emit Win64 sret-style ABI
+    // for aggregate returns; aggregate args use the sarg ptr pattern.
+    // When false (default; SysV / AArch64), emit aggregate-return-by-value
+    // and aggregate-arg-by-value as today. Set in compile() from
+    // __mn_host_is_win64() so the *running* compiler emits IR for its
+    // own host. Mirrors mapanare/emit_llvm_text.py self._win64.
+    is_win64: Bool
 }
 
 fn new_emit_state(module_name: String) -> EmitState {
@@ -145,7 +153,7 @@ fn new_emit_state(module_name: String) -> EmitState {
     let list_owned_source: List<String> = []
     let boxed_owned_source: List<String> = []
     let tensor_owned_source: List<String> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, tensor_owned: tensor_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0, str_owned_source: str_owned_source, list_owned_source: list_owned_source, boxed_owned_source: boxed_owned_source, tensor_owned_source: tensor_owned_source }
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, tensor_owned: tensor_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0, str_owned_source: str_owned_source, list_owned_source: list_owned_source, boxed_owned_source: boxed_owned_source, tensor_owned_source: tensor_owned_source, is_win64: false }
 }
 
 fn build_internal_struct_list() -> List<StructEntry> {
@@ -156,7 +164,7 @@ fn build_internal_struct_list() -> List<StructEntry> {
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"]))
     list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"]))
-    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source"]))
+    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "is_win64"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
     list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
@@ -201,7 +209,7 @@ fn register_all_internal_structs(st: EmitState) -> EmitState {
     // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks, generic_fns, generic_structs, generic_enums, loop_header_label, loop_exit_label
     s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label"])
     // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, tensor_owned, moved_locals, entry_prelude_lines, entry_block_body, in_entry_block, loop_depth, str_owned_source, list_owned_source, boxed_owned_source, tensor_owned_source
-    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source"])
+    s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "is_win64"])
     // LowerResult: value, state
     s = register_internal_struct(s, "LowerResult", ["value", "state"])
     // CompileResult: success, ir_text, errors
@@ -359,8 +367,281 @@ fn declare_runtime_fn(st: EmitState, name: String, ret: String, params: String) 
         ret_prefix = get_fn_ret_prefix(name)
     }
     let suffix: String = get_fn_attrs(name)
+    // v5.8.4 Wb.2: on Win64, aggregate-by-value parameters > 8 bytes are
+    // ABI-rewritten to ptr (sarg pattern at call site); aggregate returns
+    // > 8 bytes become void with a sret hidden first arg. Mirrors Python
+    // emit_llvm_text._decl_fn at line 1271. We're conservative — same shape
+    // as Python — so stage1 (Python-emitted) and stage2 (self-emitted) IR
+    // declarations match on Windows.
+    if st.is_win64 {
+        let abi_params: String = win64_rewrite_decl_params(params)
+        let mut abi_ret: String = ret
+        let mut prefix_args: String = ""
+        if is_large_aggregate(ret) {
+            abi_ret = "void"
+            prefix_args = "ptr sret(" + ret + ")"
+            // noalias prefix only applies to ptr returns; sret converts to
+            // void return, so drop the noalias prefix on Win64.
+            ret_prefix = ""
+        }
+        let mut combined: String = abi_params
+        if len(prefix_args) > 0 {
+            combined = prefix_args
+            if len(abi_params) > 0 {
+                combined = prefix_args + ", " + abi_params
+            }
+        }
+        let line_w: String = "declare " + ret_prefix + abi_ret + " @" + name + "(" + combined + ")" + suffix
+        return emit_line(st, line_w)
+    }
     let line: String = "declare " + ret_prefix + ret + " @" + name + "(" + params + ")" + suffix
     return emit_line(st, line)
+}
+
+// v5.8.4 Wb.2: rewrites a comma-separated declaration param list for
+// the Win64 ABI. Aggregate-by-value param types > 8 bytes (e.g.
+// "{ptr, i64}", "{ptr, i64, i64, i64, i64}") become "ptr"; scalar
+// params are unchanged. The runtime fn declarations are well-formed
+// and known — their param strings are constant string literals built
+// out of the llvm_string()/llvm_list_rt() helpers. We do textual
+// rewrites on those exact known forms (rather than a general parser)
+// because the brace-depth tracker has a Mapanare-side build-time bug
+// that produced corrupted strings on this codepath. Listing the
+// concrete prefixes is bounded and enumerable.
+fn win64_rewrite_decl_params(params: String) -> String {
+    let mut out: String = params
+    // Replace each occurrence of an aggregate-by-value type with `ptr`.
+    // Order matters — replace the longest first so substrings don't
+    // partially match.
+    out = replace_all_str(out, "{ptr, i64, i64, i64, i64}", "ptr")
+    out = replace_all_str(out, "{ptr, i64, i64, i64}", "ptr")
+    out = replace_all_str(out, "{ptr, i64, ptr, i64}", "ptr")
+    out = replace_all_str(out, "{ptr, i64}", "ptr")
+    out = replace_all_str(out, "{i64, i64}", "ptr")
+    out = replace_all_str(out, "{i1, ptr}", "ptr")
+    return out
+}
+
+// Simple non-overlapping string replacer: finds every occurrence of
+// `needle` in `haystack` and replaces with `repl`. Pure Mapanare-side
+// implementation — no runtime help needed.
+fn replace_all_str(haystack: String, needle: String, repl: String) -> String {
+    let nlen: Int = len(needle)
+    if nlen == 0 { return haystack }
+    let mut out: String = ""
+    let mut start: Int = 0
+    let hlen: Int = len(haystack)
+    let mut i: Int = 0
+    for _ in 0..10000 {
+        if i + nlen > hlen { break }
+        let candidate: String = haystack.substr(i, nlen)
+        if candidate == needle {
+            out = out + haystack.substr(start, i - start) + repl
+            i = i + nlen
+            start = i
+        } else {
+            i = i + 1
+        }
+    }
+    if start < hlen {
+        out = out + haystack.substr(start, hlen - start)
+    }
+    return out
+}
+
+// True iff `ty` is an aggregate value > 8 bytes — the Win64 threshold
+// for sret/sarg lowering. Mirrors Python emit_llvm_text._is_large_struct.
+fn is_large_aggregate(ty: String) -> Bool {
+    if !ty.starts_with("{") { return false }
+    if !ty.ends_with("}") { return false }
+    return llvm_type_size(ty) > 8
+}
+
+// Manual whitespace trimming. The self-hosted lowerer doesn't yet
+// translate `.trim()` method calls to `__mn_str_trim` runtime fn, so
+// our helpers spell trimming out manually rather than rely on the
+// String method.
+fn ws_trim(s: String) -> String {
+    let n: Int = len(s)
+    if n == 0 { return s }
+    let mut start: Int = 0
+    for _ in 0..10000 {
+        if start >= n { break }
+        let c0: String = s.substr(start, 1)
+        if c0 != " " && c0 != "\t" { break }
+        start = start + 1
+    }
+    let mut end: Int = n
+    for _ in 0..10000 {
+        if end <= start { break }
+        let c1: String = s.substr(end - 1, 1)
+        if c1 != " " && c1 != "\t" { break }
+        end = end - 1
+    }
+    if start == 0 && end == n { return s }
+    return s.substr(start, end - start)
+}
+
+// v5.8.4 Wb.2: emit a runtime function call with target-aware ABI
+// handling. On non-Win64, identical to
+//   emit_line(st, emit_call_ir(dn, ret_ty, fn_name, args_text)).
+// On Win64, aggregate-by-value args > 8 bytes are rewritten to sarg
+// (alloca + store + ptr) and aggregate returns > 8 bytes use sret
+// (alloca + call void with hidden ptr + load). Mirrors Python
+// emit_llvm_text._rt at line 1502.
+//
+// Args text format (caller-built):
+//   "i64 5"
+//   "{ptr, i64} %x, i64 5"
+//   "{ptr, i64} %x, {ptr, i64} %y"
+//   etc.
+// We rewrite aggregate args in two passes:
+//   1) For each known aggregate type literal that appears, generate
+//      sarg alloca/store entries (one per occurrence), then
+//   2) Replace the textual occurrence with "ptr %sarg.N".
+fn emit_rt_call(st: EmitState, dn: String, ret_ty: String, fn_name: String, args_text: String) -> EmitState {
+    if !st.is_win64 {
+        return emit_line(st, emit_call_ir(dn, ret_ty, fn_name, args_text))
+    }
+    let mut s: EmitState = st
+    let mut new_args: String = args_text
+    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, i64, i64, i64}", s)
+    s = win64_sarg_advance_state(s, args_text, "{ptr, i64, i64, i64, i64}")
+    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, ptr, i64}", s)
+    s = win64_sarg_advance_state(s, args_text, "{ptr, i64, ptr, i64}")
+    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64}", s)
+    s = win64_sarg_advance_state(s, args_text, "{ptr, i64}")
+    new_args = win64_sarg_rewrite_args(new_args, "{i64, i64}", s)
+    s = win64_sarg_advance_state(s, args_text, "{i64, i64}")
+    new_args = win64_sarg_rewrite_args(new_args, "{i1, ptr}", s)
+    s = win64_sarg_advance_state(s, args_text, "{i1, ptr}")
+    if is_large_aggregate(ret_ty) {
+        let sret_n: Int = s.counter
+        s.counter = s.counter + 1
+        let sret_slot: String = "%sret." + toString(sret_n)
+        s = emit_line(s, "  " + sret_slot + " = alloca " + ret_ty + ", align 8")
+        let sret_arg: String = "ptr sret(" + ret_ty + ") " + sret_slot
+        let mut combined: String = sret_arg
+        if len(new_args) > 0 {
+            combined = sret_arg + ", " + new_args
+        }
+        s = emit_line(s, "  call void @" + fn_name + "(" + combined + ")")
+        s = emit_line(s, "  " + dn + " = load " + ret_ty + ", ptr " + sret_slot)
+        return s
+    }
+    return emit_line(s, emit_call_ir(dn, ret_ty, fn_name, new_args))
+}
+
+// v5.8.4 Wb.2: void variant — same arg-rewrite logic, no return value
+// to load. Ret is implicitly "void".
+fn emit_rt_call_void(st: EmitState, fn_name: String, args_text: String) -> EmitState {
+    if !st.is_win64 {
+        return emit_line(st, emit_call_void(fn_name, args_text))
+    }
+    let mut s: EmitState = st
+    let mut new_args: String = args_text
+    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, i64, i64, i64}", s)
+    s = win64_sarg_advance_state(s, args_text, "{ptr, i64, i64, i64, i64}")
+    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64, ptr, i64}", s)
+    s = win64_sarg_advance_state(s, args_text, "{ptr, i64, ptr, i64}")
+    new_args = win64_sarg_rewrite_args(new_args, "{ptr, i64}", s)
+    s = win64_sarg_advance_state(s, args_text, "{ptr, i64}")
+    new_args = win64_sarg_rewrite_args(new_args, "{i64, i64}", s)
+    s = win64_sarg_advance_state(s, args_text, "{i64, i64}")
+    new_args = win64_sarg_rewrite_args(new_args, "{i1, ptr}", s)
+    s = win64_sarg_advance_state(s, args_text, "{i1, ptr}")
+    return emit_line(s, emit_call_void(fn_name, new_args))
+}
+
+// Helper: scans `args_text` for occurrences of `agg_ty` followed by
+// " <value>". For each, replaces the pair with "ptr %sarg.N" using
+// fresh counters from `st.counter`. Returns rewritten text.
+//
+// Caveat: this function does NOT mutate `st` — it must NOT be called
+// in isolation. The caller MUST follow with win64_sarg_advance_state
+// using the same args_text and agg_ty so subsequent counters / emits
+// stay consistent. We split the work this way because Mapanare's
+// build-time emitter has trouble with mutual return-position passing
+// of a struct + string from a single helper (binary corruption seen
+// in a more general parser). The two-helper pattern uses only string
+// concatenation and integer arithmetic which is well-tested.
+fn win64_sarg_rewrite_args(args_text: String, agg_ty: String, st: EmitState) -> String {
+    let aty_len: Int = len(agg_ty)
+    if aty_len == 0 { return args_text }
+    let h_len: Int = len(args_text)
+    if h_len == 0 { return args_text }
+    let mut out: String = ""
+    let mut start: Int = 0
+    let mut i: Int = 0
+    let mut sarg_n: Int = st.counter
+    for _ in 0..1000 {
+        if i + aty_len > h_len { break }
+        let head: String = args_text.substr(i, aty_len)
+        if head == agg_ty {
+            // After the type, expect " <value>" where <value> ends at
+            // ',' or end-of-string.
+            let mut j: Int = i + aty_len
+            // Skip the leading space (LLVM IR convention "{ty} %v").
+            if j < h_len && args_text.substr(j, 1) == " " { j = j + 1 }
+            let mut k: Int = j
+            for _ in 0..1000 {
+                if k >= h_len { break }
+                let c: String = args_text.substr(k, 1)
+                if c == "," { break }
+                k = k + 1
+            }
+            // Append [start, i), then "ptr %sarg.N", then advance.
+            out = out + args_text.substr(start, i - start)
+            out = out + "ptr %sarg." + toString(sarg_n)
+            sarg_n = sarg_n + 1
+            i = k
+            start = k
+        } else {
+            i = i + 1
+        }
+    }
+    if start < h_len {
+        out = out + args_text.substr(start, h_len - start)
+    }
+    return out
+}
+
+// Helper: emits the alloca + store sarg-prelude lines for each
+// occurrence of `agg_ty` in `args_text`, mirroring the rewrite done
+// by win64_sarg_rewrite_args. Bumps `st.counter` once per occurrence.
+fn win64_sarg_advance_state(st: EmitState, args_text: String, agg_ty: String) -> EmitState {
+    let aty_len: Int = len(agg_ty)
+    if aty_len == 0 { return st }
+    let h_len: Int = len(args_text)
+    if h_len == 0 { return st }
+    let mut s: EmitState = st
+    let mut i: Int = 0
+    for _ in 0..1000 {
+        if i + aty_len > h_len { break }
+        let head: String = args_text.substr(i, aty_len)
+        if head == agg_ty {
+            // Extract the value name immediately following.
+            let mut j: Int = i + aty_len
+            if j < h_len && args_text.substr(j, 1) == " " { j = j + 1 }
+            let mut k: Int = j
+            for _ in 0..1000 {
+                if k >= h_len { break }
+                let c: String = args_text.substr(k, 1)
+                if c == "," { break }
+                k = k + 1
+            }
+            let aval: String = ws_trim(args_text.substr(j, k - j))
+            let sarg_n: Int = s.counter
+            s.counter = s.counter + 1
+            let slot: String = "%sarg." + toString(sarg_n)
+            s = emit_line(s, "  " + slot + " = alloca " + agg_ty + ", align 8")
+            s = emit_line(s, "  store " + agg_ty + " " + aval + ", ptr " + slot)
+            i = k
+        } else {
+            i = i + 1
+        }
+    }
+    return s
 }
 
 // Return-value attribute prefix. Only ``noalias`` qualifies, and only
@@ -667,6 +948,8 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_system", "i64", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
+    // v5.8.4 Wb.2: host-detect for ABI classifier OS-1 mechanism.
+    s = declare_runtime_fn(s, "__mn_host_is_win64", "i64", "")
 
     // chr/ord
     s = declare_runtime_fn(s, "__mn_str_chr", llvm_string(), "i64")
@@ -1718,7 +2001,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
 
     if op_str == "add" {
         if is_string {
-            s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_concat", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_concat", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn)
             // v5.4.1 Phase 4 — binop "+" on Strings lowers to a direct
             // emit_call_ir, bypassing the call-dispatch hook in Phase
             // 3.2. Track the heap-allocated concat result here.
@@ -1731,7 +2014,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
             s = emit_line(s, "  store " + llvm_list_rt() + " " + ln + ", ptr " + la_name)
             s = emit_line(s, "  " + ra_name + " = alloca " + llvm_list_rt())
             s = emit_line(s, "  store " + llvm_list_rt() + " " + rn + ", ptr " + ra_name)
-            s = emit_line(s, emit_call_ir(dn, llvm_list_rt(), "__mn_list_concat", "ptr " + la_name + ", ptr " + ra_name))
+            s = emit_rt_call(s, dn, llvm_list_rt(), "__mn_list_concat", "ptr " + la_name + ", ptr " + ra_name)
         } else {
             if is_float { s = emit_line(s, emit_fadd(dn, ln, rn)) } else { s = emit_line(s, emit_add(dn, llvm_int(), ln, rn)) }
         }
@@ -1746,7 +2029,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     } else if op_str == "eq" {
         if is_string {
             let eq_raw_eq: String = dn + ".sr"
-            s = emit_line(s, emit_call_ir(eq_raw_eq, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_rt_call(s, eq_raw_eq, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn)
             s = emit_line(s, emit_icmp(dn, "ne", llvm_int(), eq_raw_eq, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "eq", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "eq", cmp_ty, ln, rn)) }
@@ -1754,7 +2037,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     } else if op_str == "ne" {
         if is_string {
             let eq_raw_ne: String = dn + ".sr"
-            s = emit_line(s, emit_call_ir(eq_raw_ne, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_rt_call(s, eq_raw_ne, llvm_int(), "__mn_str_eq", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn)
             s = emit_line(s, emit_icmp(dn, "eq", llvm_int(), eq_raw_ne, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "ne", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "ne", cmp_ty, ln, rn)) }
@@ -1762,7 +2045,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     } else if op_str == "lt" {
         if is_string {
             let cmp_r_lt: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r_lt, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_rt_call(s, cmp_r_lt, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn)
             s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), cmp_r_lt, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "lt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "slt", llvm_int(), ln, rn)) }
@@ -1770,7 +2053,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     } else if op_str == "gt" {
         if is_string {
             let cmp_r_gt: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r_gt, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_rt_call(s, cmp_r_gt, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn)
             s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), cmp_r_gt, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "gt", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sgt", llvm_int(), ln, rn)) }
@@ -1778,7 +2061,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     } else if op_str == "le" {
         if is_string {
             let cmp_r_le: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r_le, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_rt_call(s, cmp_r_le, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn)
             s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), cmp_r_le, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "le", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sle", llvm_int(), ln, rn)) }
@@ -1786,7 +2069,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     } else if op_str == "ge" {
         if is_string {
             let cmp_r_ge: String = dn + ".sc"
-            s = emit_line(s, emit_call_ir(cmp_r_ge, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn))
+            s = emit_rt_call(s, cmp_r_ge, llvm_int(), "__mn_str_cmp", llvm_string() + " " + ln + ", " + llvm_string() + " " + rn)
             s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), cmp_r_ge, "0"))
         } else {
             if is_float { s = emit_line(s, emit_fcmp(dn, "ge", ln, rn)) } else { s = emit_line(s, emit_icmp(dn, "sge", llvm_int(), ln, rn)) }
@@ -1913,7 +2196,7 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
             let tmp: String = dn + ".lp"
             s = emit_line(s, "  " + tmp + " = alloca " + lt)
             s = emit_line(s, "  store " + lt + " " + on + ", " + "ptr " + tmp)
-            s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", "ptr " + tmp))
+            s = emit_rt_call(s, dn, llvm_int(), "__mn_list_len", "ptr " + tmp)
             return s
         }
         // List methods (push, etc.) — pass object through
@@ -2239,7 +2522,13 @@ fn use_sret_return(st: EmitState, ty: String) -> Bool {
         }
     }
     // Classify per target ABI.
-    // Self-hosted compiler targets x86_64-unknown-linux-gnu (SysV AMD64).
+    // v5.8.4 Wb.2: previously hardcoded SysV. Now host-aware via
+    // EmitState.is_win64 (set in emit_mir_module from
+    // __mn_host_is_win64()), mirroring Python's _use_sret which
+    // reads from self._triple.
+    if st.is_win64 {
+        return abi_classify_return_sret(true, sz, "x86_64-w64-windows-gnu")
+    }
     return abi_classify_return_sret(true, sz, "x86_64-unknown-linux-gnu")
 }
 
@@ -2399,7 +2688,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
             s = emit_line(s, "  " + ld_sf + " = load " + llvm_list_rt() + ", ptr " + gep)
             s = emit_line(s, "  store " + llvm_list_rt() + " " + ld_sf + ", ptr " + tmp_sf)
             // Push to temp
-            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp_sf + ", ptr " + ea))
+            s = emit_rt_call_void(s, "__mn_list_push", "ptr " + tmp_sf + ", ptr " + ea)
             // Write back to struct field
             let wb_sf: String = "%push_wb" + cnt
             s = emit_line(s, "  " + wb_sf + " = load " + llvm_list_rt() + ", ptr " + tmp_sf)
@@ -2411,7 +2700,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
             let ld_sa: String = "%push_ld" + cnt
             s = emit_line(s, "  " + ld_sa + " = load " + llvm_list_rt() + ", ptr " + list_ref)
             s = emit_line(s, "  store " + llvm_list_rt() + " " + ld_sa + ", ptr " + tmp_sa)
-            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + tmp_sa + ", ptr " + ea))
+            s = emit_rt_call_void(s, "__mn_list_push", "ptr " + tmp_sa + ", ptr " + ea)
             let wb_sa: String = "%push_wb" + cnt
             s = emit_line(s, "  " + wb_sa + " = load " + llvm_list_rt() + ", ptr " + tmp_sa)
             s = emit_line(s, "  store " + llvm_list_rt() + " " + wb_sa + ", ptr " + list_ref)
@@ -2420,7 +2709,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
             let la: String = "%push_la" + cnt
             s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
             s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + la)
-            s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + la + ", ptr " + ea))
+            s = emit_rt_call_void(s, "__mn_list_push", "ptr " + la + ", ptr " + ea)
         }
     }
     return s
@@ -2457,7 +2746,7 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     if use_gep_trick {
         let elem_sz: String = dn + ".elem.sz"
         s = emit_line(s, "  " + elem_sz + " = ptrtoint ptr getelementptr (" + elem_llvm_ty + ", ptr null, i32 1) to i64")
-        s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + elem_sz))
+        s = emit_rt_call(s, list_name, llvm_list_rt(), "__mn_list_new", "i64 " + elem_sz)
     } else {
         let mut elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
         if elem_ty.kind == TK_UNKNOWN() {
@@ -2467,7 +2756,7 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
             // failed to propagate the type).
             if elem_sz_n < 384 { elem_sz_n = 384 }
         }
-        s = emit_line(s, emit_call_ir(list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n)))
+        s = emit_rt_call(s, list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n))
     }
 
     // v5.4.1 Phase 3.7 — hoist the alloca to the entry-block prelude
@@ -2502,7 +2791,7 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
         s = emit_line(s, llvm_store(ety, elem.name, elem_alloca))
         let cast_name: String = dn + ".c" + toString(i)
         s = emit_line(s, emit_bitcast(cast_name, ety + "*", elem_alloca, "ptr"))
-        s = emit_line(s, emit_call_void("__mn_list_push", "ptr " + alloca_name + ", ptr " + cast_name))
+        s = emit_rt_call_void(s, "__mn_list_push", "ptr " + alloca_name + ", ptr " + cast_name)
         i = i + 1
     }
     return s
@@ -2518,7 +2807,7 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
 
     // String indexing → char_at
     if obj.ty.kind == TK_STRING() {
-        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_char_at", llvm_string() + " " + obj.name + ", i64 " + idx.name))
+        s = emit_rt_call(s, dn, llvm_string(), "__mn_str_char_at", llvm_string() + " " + obj.name + ", i64 " + idx.name)
         return s
     }
 
@@ -2607,7 +2896,7 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
     } else {
         // Slow path: opaque call for String, Bool, structs, etc.
         let raw: String = dn + ".raw"
-        s = emit_line(s, emit_call_ir(raw, "ptr", "__mn_list_get", "ptr " + tmp + ", i64 " + idx.name))
+        s = emit_rt_call(s, raw, "ptr", "__mn_list_get", "ptr " + tmp + ", i64 " + idx.name)
         s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + raw)
     }
     return s
@@ -2643,11 +2932,11 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
             s = emit_line(s, "  " + map_ld + " = load " + llvm_map_type() + ", ptr " + list_ref)
             let map_ptr: String = "%set_mptr" + cnt
             s = emit_line(s, "  " + map_ptr + " = extractvalue " + llvm_map_type() + " " + map_ld + ", 0")
-            s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
+            s = emit_rt_call_void(s, "__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va)
         } else {
             let map_ptr: String = "%set_mptr" + cnt
             s = emit_line(s, "  " + map_ptr + " = extractvalue " + llvm_map_type() + " " + list_ref + ", 0")
-            s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
+            s = emit_rt_call_void(s, "__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va)
         }
         return s
     }
@@ -2712,7 +3001,7 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
             let ld: String = "%set_ld" + cnt
             s = emit_line(s, "  " + ld + " = load " + lt + ", ptr " + list_ref)
             s = emit_line(s, "  store " + lt + " " + ld + ", ptr " + tmp_addr)
-            s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_addr + ", i64 " + idx_name + ", ptr " + ea))
+            s = emit_rt_call_void(s, "__mn_list_set", "ptr " + tmp_addr + ", i64 " + idx_name + ", ptr " + ea)
             let wb: String = "%set_wb" + cnt
             s = emit_line(s, "  " + wb + " = load " + lt + ", ptr " + tmp_addr)
             s = emit_line(s, "  store " + lt + " " + wb + ", ptr " + list_ref)
@@ -2720,7 +3009,7 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
             let tmp_val: String = "%set_tmp" + cnt
             s = emit_line(s, "  " + tmp_val + " = alloca " + lt)
             s = emit_line(s, "  store " + lt + " " + list_ref + ", ptr " + tmp_val)
-            s = emit_line(s, emit_call_void("__mn_list_set", "ptr " + tmp_val + ", i64 " + idx_name + ", ptr " + ea))
+            s = emit_rt_call_void(s, "__mn_list_set", "ptr " + tmp_val + ", i64 " + idx_name + ", ptr " + ea)
         }
     }
     return s
@@ -2812,7 +3101,7 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
         s = emit_line(s, "  " + va + " = alloca " + v_ty)
         s = emit_line(s, "  store " + v_ty + " " + pair.val.name + ", ptr " + va)
         // Call __mn_map_set(map, key_ptr, val_ptr)
-        s = emit_line(s, emit_call_void("__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va))
+        s = emit_rt_call_void(s, "__mn_map_set", "ptr " + map_ptr + ", ptr " + ka + ", ptr " + va)
         i = i + 1
     }
 
@@ -3469,55 +3758,55 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
 
     // Runtime: process + file I/O
     if fn_name == "__mn_argc" {
-        return emit_line(st, emit_call_ir(dn, "i64", "__mn_argc", ""))
+        return emit_rt_call(st, dn, "i64", "__mn_argc", "")
     }
     if fn_name == "__mn_argv" {
         let as_argv: String = "i64 " + args[0].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_argv", as_argv))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_argv", as_argv)
     }
     if fn_name == "__mn_file_read_or_empty" {
         let as_fr: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_file_read_or_empty", as_fr))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_file_read_or_empty", as_fr)
     }
     if fn_name == "__mn_exit" {
-        return emit_line(st, emit_call_void("__mn_exit", "i64 " + args[0].name))
+        return emit_rt_call_void(st, "__mn_exit", "i64 " + args[0].name)
     }
     if fn_name == "__mn_file_write" {
         let as_fw: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        return emit_line(st, emit_call_ir(dn, "i64", "__mn_file_write", as_fw))
+        return emit_rt_call(st, dn, "i64", "__mn_file_write", as_fw)
     }
     if fn_name == "__mn_system" {
         let as_sys: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, "i64", "__mn_system", as_sys))
+        return emit_rt_call(st, dn, "i64", "__mn_system", as_sys)
     }
     if fn_name == "__mn_str_eprint" {
         let as_epr: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_void("__mn_str_eprint", as_epr))
+        return emit_rt_call_void(st, "__mn_str_eprint", as_epr)
     }
 
     // chr/ord builtins
     if fn_name == "chr" {
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_str_chr", "i64 " + args[0].name))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_str_chr", "i64 " + args[0].name)
     }
     if fn_name == "ord" {
-        return emit_line(st, emit_call_ir(dn, "i64", "__mn_str_ord", llvm_string() + " " + args[0].name))
+        return emit_rt_call(st, dn, "i64", "__mn_str_ord", llvm_string() + " " + args[0].name)
     }
 
     // I/O builtins (v3.41.0)
     if fn_name == "read_line" {
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_read_line", ""))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_read_line", "")
     }
     if fn_name == "read_file" {
         let as_rf: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_file_read_or_empty", as_rf))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_file_read_or_empty", as_rf)
     }
     if fn_name == "write_file" {
         let as_wf: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        return emit_line(st, emit_call_void("__mn_file_write", as_wf))
+        return emit_rt_call_void(st, "__mn_file_write", as_wf)
     }
     if fn_name == "append_file" {
         let as_af: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        return emit_line(st, emit_call_void("__mn_file_append", as_af))
+        return emit_rt_call_void(st, "__mn_file_append", as_af)
     }
     if fn_name == "file_exists" {
         let as_fe: String = llvm_string() + " " + args[0].name
@@ -3531,35 +3820,35 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     }
     if fn_name == "list_dir" {
         let as_ld: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, llvm_list_rt(), "__mn_dir_list_strings", as_ld))
+        return emit_rt_call(st, dn, llvm_list_rt(), "__mn_dir_list_strings", as_ld)
     }
     // Network/crypto/regex builtins (v3.42.0)
     if fn_name == "http_get" {
         let as_hg: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_http_get", as_hg))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_http_get", as_hg)
     }
     if fn_name == "sha256" {
         let as_sh: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_sha256_str", as_sh))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_sha256_str", as_sh)
     }
     if fn_name == "base64_encode" {
         let as_be: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_base64_encode_str", as_be))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_base64_encode_str", as_be)
     }
     if fn_name == "base64_decode" {
         let as_bd: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_base64_decode_str", as_bd))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_base64_decode_str", as_bd)
     }
     if fn_name == "hmac_sha256" {
         let as_hm: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_hmac_sha256_str", as_hm))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_hmac_sha256_str", as_hm)
     }
     if fn_name == "hex_encode" {
         let as_he: String = llvm_string() + " " + args[0].name
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_hex_encode_str", as_he))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_hex_encode_str", as_he)
     }
     if fn_name == "random_bytes" {
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_random_bytes_str", "i64 " + args[0].name))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_random_bytes_str", "i64 " + args[0].name)
     }
     if fn_name == "regex_match" {
         // compile + exec + free pattern (matches Python emitter)
@@ -3599,10 +3888,10 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return s_ga
     }
     if fn_name == "gpu_device_name" {
-        return emit_line(st, emit_call_ir(dn, llvm_string(), "__mn_gpu_device_name", ""))
+        return emit_rt_call(st, dn, llvm_string(), "__mn_gpu_device_name", "")
     }
     if fn_name == "gpu_device_memory" {
-        return emit_line(st, emit_call_ir(dn, "i64", "__mn_gpu_device_memory", ""))
+        return emit_rt_call(st, dn, "i64", "__mn_gpu_device_memory", "")
     }
     if fn_name == "gpu_tensor_add" || fn_name == "gpu_tensor_sub" || fn_name == "gpu_tensor_mul" || fn_name == "gpu_tensor_div" {
         // C runtime takes MnList* (ptr), so alloca+store to pass by pointer
@@ -3620,7 +3909,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         if fn_name == "gpu_tensor_mul" { rt_name = "__mn_gpu_tensor_mul" }
         if fn_name == "gpu_tensor_div" { rt_name = "__mn_gpu_tensor_div" }
         let as_gt: String = "ptr " + pa + ", ptr " + pb
-        s_gt = emit_line(s_gt, emit_call_ir(dn, llvm_list_rt(), rt_name, as_gt))
+        s_gt = emit_rt_call(s_gt, dn, llvm_list_rt(), rt_name, as_gt)
         return s_gt
     }
     if fn_name == "gpu_tensor_matmul" {
@@ -3634,7 +3923,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         s_gm = emit_line(s_gm, "  store " + llvm_list_rt() + " " + args[0].name + ", ptr " + gma)
         s_gm = emit_line(s_gm, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + gmb)
         let as_gm: String = "ptr " + gma + ", ptr " + gmb + ", i64 " + args[2].name + ", i64 " + args[3].name + ", i64 " + args[4].name
-        s_gm = emit_line(s_gm, emit_call_ir(dn, llvm_list_rt(), "__mn_gpu_tensor_matmul", as_gm))
+        s_gm = emit_rt_call(s_gm, dn, llvm_list_rt(), "__mn_gpu_tensor_matmul", as_gm)
         return s_gm
     }
 
@@ -3645,27 +3934,27 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     // dest / arg as ptr). Mirrors emit_llvm_text.py:3568-3601.
     if fn_name == "tensor_rank" {
         let as_tr: String = "ptr " + args[0].name
-        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_rank", as_tr))
+        return emit_rt_call(st, dn, "i64", "__mn_tensor_rank", as_tr)
     }
     if fn_name == "tensor_size" {
         let as_ts: String = "ptr " + args[0].name
-        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_size", as_ts))
+        return emit_rt_call(st, dn, "i64", "__mn_tensor_size", as_ts)
     }
     if fn_name == "tensor_get_f64" {
         let as_tgf: String = "ptr " + args[0].name + ", i64 " + args[1].name
-        return emit_line(st, emit_call_ir(dn, "double", "__mn_tensor_get_f64", as_tgf))
+        return emit_rt_call(st, dn, "double", "__mn_tensor_get_f64", as_tgf)
     }
     if fn_name == "tensor_get_i64" {
         let as_tgi: String = "ptr " + args[0].name + ", i64 " + args[1].name
-        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_get_i64", as_tgi))
+        return emit_rt_call(st, dn, "i64", "__mn_tensor_get_i64", as_tgi)
     }
     if fn_name == "tensor_shape_dim" {
         let as_tsd: String = "ptr " + args[0].name + ", i64 " + args[1].name
-        return emit_line(st, emit_call_ir(dn, "i64", "__mn_tensor_shape_dim", as_tsd))
+        return emit_rt_call(st, dn, "i64", "__mn_tensor_shape_dim", as_tsd)
     }
     if fn_name == "tensor_print" {
         let as_tp: String = "ptr " + args[0].name
-        return emit_line(st, emit_call_void("__mn_tensor_print_f64", as_tp))
+        return emit_rt_call_void(st, "__mn_tensor_print_f64", as_tp)
     }
 
     // v5.6.1 Sh.6 Phase 2 — variadic tensor_*_nd calls. LLVM requires the
@@ -3784,7 +4073,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         s_mk.counter = s_mk.counter + 1
         let mptr: String = "%mk_ptr" + cnt_mk
         s_mk = emit_line(s_mk, "  " + mptr + " = extractvalue " + llvm_map_type() + " " + args[0].name + ", 0")
-        s_mk = emit_line(s_mk, emit_call_ir(dn, llvm_list_rt(), "__mn_map_keys", "ptr " + mptr))
+        s_mk = emit_rt_call(s_mk, dn, llvm_list_rt(), "__mn_map_keys", "ptr " + mptr)
         return s_mk
     }
     if fn_name == "__list_get_string" {
@@ -3859,25 +4148,25 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "split" {
         let mut s_split: EmitState = st
         let as_split: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        s_split = emit_line(s_split, emit_call_ir(dn, llvm_list_rt(), "__mn_str_split", as_split))
+        s_split = emit_rt_call(s_split, dn, llvm_list_rt(), "__mn_str_split", as_split)
         return s_split
     }
     if fn_name == "contains" {
         let mut s_cont: EmitState = st
         let as_cont: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        s_cont = emit_line(s_cont, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", as_cont))
+        s_cont = emit_rt_call(s_cont, dn, llvm_bool(), "__mn_str_contains", as_cont)
         return s_cont
     }
     if fn_name == "replace" {
         let mut s_repl: EmitState = st
         let as_repl: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name
-        s_repl = emit_line(s_repl, emit_call_ir(dn, llvm_string(), "__mn_str_replace", as_repl))
+        s_repl = emit_rt_call(s_repl, dn, llvm_string(), "__mn_str_replace", as_repl)
         return s_repl
     }
     if fn_name == "byte_at" {
         let mut s_ba: EmitState = st
         let as_ba: String = llvm_string() + " " + args[0].name + ", i64 " + args[1].name
-        s_ba = emit_line(s_ba, emit_call_ir(dn, llvm_int(), "__mn_str_byte_at", as_ba))
+        s_ba = emit_rt_call(s_ba, dn, llvm_int(), "__mn_str_byte_at", as_ba)
         return s_ba
     }
     // join(sep, list) → String via C runtime. List passed by pointer.
@@ -3888,7 +4177,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         s_join = emit_line(s_join, "  " + la + " = alloca " + llvm_list_rt())
         s_join = emit_line(s_join, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + la)
         let as_join: String = llvm_string() + " " + args[0].name + ", ptr " + la
-        s_join = emit_line(s_join, emit_call_ir(dn, llvm_string(), "__mn_str_join", as_join))
+        s_join = emit_rt_call(s_join, dn, llvm_string(), "__mn_str_join", as_join)
         return s_join
     }
 
@@ -3915,42 +4204,42 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         if first_arg.ty.kind == TK_STRING() {
             let s0: String = first_arg.name
             if fn_name == "contains" {
-                s = emit_line(s, emit_call_ir(dn, llvm_bool(), "__mn_str_contains", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name))
+                s = emit_rt_call(s, dn, llvm_bool(), "__mn_str_contains", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name)
                 return s
             }
             if fn_name == "starts_with" {
-                s = emit_line(s, emit_call_ir(dn, llvm_bool(), "__mn_str_starts_with", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name))
+                s = emit_rt_call(s, dn, llvm_bool(), "__mn_str_starts_with", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name)
                 return s
             }
             if fn_name == "ends_with" {
-                s = emit_line(s, emit_call_ir(dn, llvm_bool(), "__mn_str_ends_with", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name))
+                s = emit_rt_call(s, dn, llvm_bool(), "__mn_str_ends_with", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name)
                 return s
             }
             if fn_name == "find" {
-                s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_find", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name))
+                s = emit_rt_call(s, dn, llvm_int(), "__mn_str_find", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name)
                 return s
             }
             if fn_name == "char_at" {
-                s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_char_at", llvm_string() + " " + s0 + ", i64 " + args[1].name))
+                s = emit_rt_call(s, dn, llvm_string(), "__mn_str_char_at", llvm_string() + " " + s0 + ", i64 " + args[1].name)
                 return s
             }
             if fn_name == "substr" {
                 if len(args) >= 3 {
-                    s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_substr", llvm_string() + " " + s0 + ", i64 " + args[1].name + ", i64 " + args[2].name))
+                    s = emit_rt_call(s, dn, llvm_string(), "__mn_str_substr", llvm_string() + " " + s0 + ", i64 " + args[1].name + ", i64 " + args[2].name)
                     return s
                 }
             }
             if fn_name == "to_upper" {
-                s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_to_upper", llvm_string() + " " + s0))
+                s = emit_rt_call(s, dn, llvm_string(), "__mn_str_to_upper", llvm_string() + " " + s0)
                 return s
             }
             if fn_name == "to_lower" {
-                s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_to_lower", llvm_string() + " " + s0))
+                s = emit_rt_call(s, dn, llvm_string(), "__mn_str_to_lower", llvm_string() + " " + s0)
                 return s
             }
             if fn_name == "replace" {
                 if len(args) >= 3 {
-                    s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_replace", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name))
+                    s = emit_rt_call(s, dn, llvm_string(), "__mn_str_replace", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name)
                     return s
                 }
             }
@@ -4078,14 +4367,14 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
 fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
     // print() in Mapanare adds a newline (like Python's print)
     if len(args) == 0 {
-        return emit_line(st, emit_call_void("printf", "ptr @.newline"))
+        return emit_rt_call_void(st, "printf", "ptr @.newline")
     }
     let arg: Value = args[0]
     let mut s: EmitState = st
     let an: String = arg.name
 
     if arg.ty.kind == TK_STRING() {
-        return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
+        return emit_rt_call_void(s, "__mn_str_println", llvm_string() + " " + an)
     }
     if arg.ty.kind == TK_FLOAT() {
         return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_float_nl, double " + an + ")")
@@ -4106,14 +4395,14 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState {
 
 fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState {
     if len(args) == 0 {
-        return emit_line(st, emit_call_void("printf", "ptr @.newline"))
+        return emit_rt_call_void(st, "printf", "ptr @.newline")
     }
     let arg: Value = args[0]
     let mut s: EmitState = st
     let an: String = arg.name
 
     if arg.ty.kind == TK_STRING() {
-        return emit_line(s, emit_call_void("__mn_str_println", llvm_string() + " " + an))
+        return emit_rt_call_void(s, "__mn_str_println", llvm_string() + " " + an)
     }
     if arg.ty.kind == TK_FLOAT() {
         return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_float_nl, double " + an + ")")
@@ -4139,14 +4428,14 @@ fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     let dn: String = dest.name
 
     if args[0].ty.kind == TK_STRING() {
-        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_len", llvm_string() + " " + an))
+        s = emit_rt_call(s, dn, llvm_int(), "__mn_str_len", llvm_string() + " " + an)
     } else {
         // __mn_list_len expects a pointer; alloca+store the list value first
         let tmp: String = dn + ".lp"
         let lt: String = llvm_list_rt()
         s = emit_line(s, "  " + tmp + " = alloca " + lt)
         s = emit_line(s, "  store " + lt + " " + an + ", " + "ptr " + tmp)
-        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_list_len", "ptr " + tmp))
+        s = emit_rt_call(s, dn, llvm_int(), "__mn_list_len", "ptr " + tmp)
     }
     return s
 }
@@ -4165,12 +4454,12 @@ fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitS
         s.counter = s.counter + 1
         let zext_b: String = "%zb" + cnt_zb
         s = emit_line(s, "  " + zext_b + " = zext i1 " + an + " to i64")
-        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_from_bool", "i64 " + zext_b))
+        s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_bool", "i64 " + zext_b)
     } else {
     if args[0].ty.kind == TK_FLOAT() {
-        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_from_float", "double " + an))
+        s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_float", "double " + an)
     } else {
-        s = emit_line(s, emit_call_ir(dn, llvm_string(), "__mn_str_from_int", "i64 " + an))
+        s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_int", "i64 " + an)
     }}
     return s
 }
@@ -4187,7 +4476,7 @@ fn emit_builtin_int(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     if args[0].ty.kind == TK_INT() {
         return emit_copy(s, dest, args[0])
     } else {
-        s = emit_line(s, emit_call_ir(dn, llvm_int(), "__mn_str_to_int", llvm_string() + " " + an))
+        s = emit_rt_call(s, dn, llvm_int(), "__mn_str_to_int", llvm_string() + " " + an)
     }}
     return s
 }
@@ -4204,7 +4493,7 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
     if args[0].ty.kind == TK_FLOAT() {
         return emit_copy(s, dest, args[0])
     } else {
-        s = emit_line(s, emit_call_ir(dn, llvm_float(), "__mn_str_to_float", llvm_string() + " " + an))
+        s = emit_rt_call(s, dn, llvm_float(), "__mn_str_to_float", llvm_string() + " " + an)
     }}
     return s
 }
@@ -5035,17 +5324,17 @@ fn emit_agent_spawn(st: EmitState, dest: Value, ty: MIRType, args: List<Value>) 
     let dn: String = dest.name
     let mut s: EmitState = st
     // Call agent spawn runtime function
-    s = emit_line(s, emit_call_ir(dn, "ptr", "__mn_agent_spawn", "ptr null, ptr null"))
+    s = emit_rt_call(s, dn, "ptr", "__mn_agent_spawn", "ptr null, ptr null")
     return s
 }
 
 fn emit_agent_send(st: EmitState, ag: Value, channel: String, val: Value) -> EmitState {
-    return emit_line(st, emit_call_void("__mn_agent_send", "ptr " + ag.name + ", ptr null, ptr null"))
+    return emit_rt_call_void(st, "__mn_agent_send", "ptr " + ag.name + ", ptr null, ptr null")
 }
 
 fn emit_agent_sync(st: EmitState, dest: Value, ag: Value, channel: String) -> EmitState {
     let dn: String = dest.name
-    let s2: EmitState = emit_line(st, emit_call_ir(dn, "ptr", "__mn_agent_sync", "ptr " + ag.name + ", ptr null"))
+    let s2: EmitState = emit_rt_call(st, dn, "ptr", "__mn_agent_sync", "ptr " + ag.name + ", ptr null")
     return s2
 }
 
@@ -5055,18 +5344,18 @@ fn emit_agent_sync(st: EmitState, dest: Value, ag: Value, channel: String) -> Em
 
 fn emit_signal_init(st: EmitState, dest: Value, ty: MIRType, val: Value) -> EmitState {
     let dn: String = dest.name
-    let s2: EmitState = emit_line(st, emit_call_ir(dn, "ptr", "__mn_signal_new", "ptr null"))
+    let s2: EmitState = emit_rt_call(st, dn, "ptr", "__mn_signal_new", "ptr null")
     return s2
 }
 
 fn emit_signal_get(st: EmitState, dest: Value, sig: Value) -> EmitState {
     let dn: String = dest.name
-    let s2: EmitState = emit_line(st, emit_call_ir(dn, "ptr", "__mn_signal_get", "ptr " + sig.name))
+    let s2: EmitState = emit_rt_call(st, dn, "ptr", "__mn_signal_get", "ptr " + sig.name)
     return s2
 }
 
 fn emit_signal_set(st: EmitState, sig: Value, val: Value) -> EmitState {
-    return emit_line(st, emit_call_void("__mn_signal_set", "ptr " + sig.name + ", ptr null"))
+    return emit_rt_call_void(st, "__mn_signal_set", "ptr " + sig.name + ", ptr null")
 }
 
 // ---------------------------------------------------------------------------
@@ -5104,7 +5393,7 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
     for _ in 0..500 {
         if i < nparts {
             let tmp: String = dn + ".c" + toString(i)
-            s = emit_line(s, emit_call_ir(tmp, llvm_string(), "__mn_str_concat", llvm_string() + " " + acc + ", " + llvm_string() + " " + parts[i].name))
+            s = emit_rt_call(s, tmp, llvm_string(), "__mn_str_concat", llvm_string() + " " + acc + ", " + llvm_string() + " " + parts[i].name)
             // v5.4.1 Phase 3.4 — each __mn_str_concat result is a fresh
             // heap allocation. Track each intermediate so drop-glue
             // frees them; escape detection (Phase 4) skips the final
@@ -5590,16 +5879,29 @@ fn str_join(sep: String, parts: List<String>) -> String {
 
 pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
     let mut st: EmitState = new_emit_state(module_name)
+    // v5.8.4 Wb.2: detect host before any IR is emitted. The is_win64
+    // flag gates target-aware ABI choices in declare_runtime_fn and the
+    // runtime call-site emitters. OS-1 mechanism per v5.8.4 PLAN.md.
+    let host_w64: Int = __mn_host_is_win64()
+    if host_w64 != 0 {
+        st.is_win64 = true
+    }
 
     // Module header
     // v4.127.0: target datalayout + triple match the Python bootstrap defaults
     // from mapanare/targets.py::TARGET_X86_64_LINUX_GNU. LLVM uses the host
     // target if these are absent, but emitting them explicitly aligns the
     // self-hosted output with the bootstrap and removes a per-module diff.
+    // v5.8.4 Wb.2: triple is host-aware. Linux/Darwin emit SysV; Windows
+    // emits the Win64 mingw triple to match clang --target=x86_64-w64-mingw32.
     st = emit_line(st, "; ModuleID = '" + module_name + "'")
     st = emit_line(st, "source_filename = \"" + module_name + "\"")
     st = emit_line(st, "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"")
-    st = emit_line(st, "target triple = \"x86_64-unknown-linux-gnu\"")
+    let mut triple_line: String = "target triple = \"x86_64-unknown-linux-gnu\""
+    if st.is_win64 {
+        triple_line = "target triple = \"x86_64-w64-windows-gnu\""
+    }
+    st = emit_line(st, triple_line)
     st = emit_blank(st)
 
     // Format string constants

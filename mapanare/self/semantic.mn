@@ -159,6 +159,8 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "__mn_str_eprintln" { return true }
     if name == "__mn_system" { return true }
     if name == "__mn_file_write" { return true }
+    // v5.8.4 Wb.2: host-detect (returns 1 on Windows, 0 elsewhere).
+    if name == "__mn_host_is_win64" { return true }
     // High-level I/O builtins (v3.41.0)
     if name == "read_line" { return true }
     if name == "read_file" { return true }
@@ -2095,6 +2097,9 @@ fn register_builtins(st: SemState) -> SemState {
     st2 = define_in_scope(st2, "__mn_system", system_sym)
     let fwrite_sym: Symbol = new_symbol("__mn_file_write", "function", make_builtin_fn_type(void_type()), false)
     st2 = define_in_scope(st2, "__mn_file_write", fwrite_sym)
+    // v5.8.4 Wb.2: host-detect for OS-1 detection mechanism.
+    let hostwin_sym: Symbol = new_symbol("__mn_host_is_win64", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_host_is_win64", hostwin_sym)
 
     // High-level I/O builtins (v3.41.0)
     let readline_sym: Symbol = new_symbol("read_line", "function", make_builtin_fn_type(string_type()), false)

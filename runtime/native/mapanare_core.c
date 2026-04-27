@@ -2979,6 +2979,19 @@ MN_EXPORT void __mn_panic(MnString message) {
     exit(1);
 }
 
+/* v5.8.4 Wb.2: Host detection for self-hosted ABI classifier.
+ * The self-hosted emitter (mapanare/self/emit_llvm.mn) calls this
+ * to set its EmitState.is_win64 field, which gates Win64 sret
+ * emission for ~37 aggregate-returning runtime functions. See
+ * docs/roadmap/v5/v5.8.4/PLAN.md §"OS-1 detection mechanism". */
+MN_EXPORT int64_t __mn_host_is_win64(void) {
+#ifdef _WIN32
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 /* -----------------------------------------------------------------------
  * Range Iterator
  *

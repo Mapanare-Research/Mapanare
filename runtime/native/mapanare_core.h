@@ -704,6 +704,15 @@ MN_EXPORT int64_t __mn_system(MnString command);
 /** Print an error and exit with code 1. */
 MN_EXPORT void __mn_panic(MnString message);
 
+/** v5.8.4 Wb.2: returns 1 if the running host is Win64, 0 otherwise.
+ *  Used by the self-hosted emit_llvm.mn ABI classifier to choose
+ *  between SysV-style aggregate returns and Win64 sret. Mirrors the
+ *  Python emit_llvm_text.py self._win64 logic, which reads from the
+ *  LLVMTextEmitter target_triple constructor arg. The self-hosted
+ *  emitter has no equivalent constructor arg today; this runtime
+ *  call is the OS-1 detection mechanism (see v5.8.4 PLAN.md). */
+MN_EXPORT int64_t __mn_host_is_win64(void);
+
 /* -----------------------------------------------------------------------
  * Range Iterator — used by `for i in start..end` loops
  * ----------------------------------------------------------------------- */

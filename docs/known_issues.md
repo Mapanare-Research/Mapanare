@@ -1,6 +1,6 @@
 # Known Issues — User-Facing
 
-Last updated: v5.8.3 (Windows release-pipeline closeout. v5.8.0 RE-PANEL aggregate 9.66/10. v5.8.1 → v5.8.2 closed two Windows build walls in succession, Tc.1 + Tc.2; v5.8.3 closes Wb.1 — Windows runtime SIGSEGV at every drop-glue free — by switching `__mn_str_free`'s C signature to decomposed args, which match LLVM's IR-level aggregate-by-value lowering on both ABIs. Surfaced Wb.2 underneath: self-hosted emit_llvm.mn hardcodes SysV ABI, so Windows self-built stage2 still mismatches.).
+Last updated: v5.8.4 (Windows release-pipeline closeout complete. v5.8.0 RE-PANEL aggregate 9.66/10. v5.8.1 → v5.8.2 closed two Windows build walls in succession, Tc.1 + Tc.2; v5.8.3 closed Wb.1 by switching `__mn_str_free`'s C signature to decomposed args; v5.8.4 closes Wb.2 by porting the v5.0.4 / Cb.15 ABI classifier from `mapanare/emit_llvm_text.py` to `mapanare/self/emit_llvm.mn` via a new `EmitState.is_win64` field set from a new `__mn_host_is_win64()` runtime export. ~37 runtime-fn declarations now emit Win64 sret on Windows; aggregate args use the sarg ptr pattern. Windows self-compile + fixed-point cycle re-enabled in publish.yml. Wa.1 (CI wasmtime install drift) also fixed via a pinned bytecodealliance/wasmtime release.).
 
 ## Self-hosted compiler feature gaps
 
@@ -9,7 +9,7 @@ Last updated: v5.8.3 (Windows release-pipeline closeout. v5.8.0 RE-PANEL aggrega
 | Sh.5 | `const` in function bodies partially supported in self-hosted | use `let` in fn bodies; `const` works at module level | v5.x |
 | Sh.9a | async emitter bug: see `docs/guides/async.md` for workaround | documented workaround in async guide | v5.x |
 | Sh.9b | async emitter bug #2: see `docs/guides/async.md` | documented workaround in async guide | v5.x |
-| Wb.2 | Self-hosted emit_llvm.mn hardcodes SysV ABI at line 2243 (`abi_classify_return_sret(true, sz, "x86_64-unknown-linux-gnu")`); ~37 runtime fn declarations in stage2.ll use aggregate returns instead of Win64 sret. mnc-stage2 built from this stage2.ll on Windows crashes inside `__mn_argv` (and any other 16-byte-aggregate-returning runtime fn) — same H1 ABI shape as v5.8.3 Wb.1, but on the return side and across many functions. v5.8.3 ships mnc-stage1.exe as the Windows artifact (Python-bootstrap-emitter-built; ABI-correct via the v4.149.0 / v5.0.4 Cb.15 target-aware classifier). | use the shipped Windows binary; it's a working compiler — internally it's mnc-stage1 not mnc-stage2 yet | v5.8.4 (port v5.0.4 Cb.15 ABI classifier from `mapanare/emit_llvm_text.py` to `mapanare/self/emit_llvm.mn`) |
+| ~~Wb.2~~ | ~~Self-hosted emit_llvm.mn hardcodes SysV ABI at line 2243~~ | — | **CLOSED v5.8.4** (port complete; aggregate-returning runtime fns emit Win64 sret on Windows; aggregate args use the sarg ptr pattern; Windows fixed-point holds within the same Dr.1 tolerance as Linux) |
 
 > **v5.4.0 → v5.7.0 closures** (moved out of the active table; full
 > traces in their per-release SESSION_REPORTs):
