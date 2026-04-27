@@ -18,6 +18,103 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.8.5** (shipped) — **Bb.1 closure — bootstrap seed
+  refresh.** Pure seed-refresh release; **zero source-code
+  changes** to `mapanare/`, `runtime/`, `mapanare/self/`. Fixes
+  the v5.8.4 CI break in both "Bootstrap (No Python)" and
+  "Bootstrap from Seed (No Python)" jobs at "[1/4] Stage 1: seed
+  compiles source → stage1 IR" with exit code 1. Root cause:
+  v5.8.4's Wb.2 closure introduced one **real** Mapanare-level
+  call to a new C-runtime export
+  (`__mn_host_is_win64()` at `runtime/native/mapanare_core.c:2987`,
+  reading `_WIN32`) inside
+  `mapanare/self/emit_llvm.mn::emit_mir_module` (and the
+  concatenated copy at `mnc_all.mn:20783`):
+  `let host_w64: Int = __mn_host_is_win64()` /
+  `if host_w64 != 0 { st.is_win64 = true }`. The seed binary in
+  `bootstrap/seed/linux-x86_64/mnc` was the v4.155.0 strip from
+  April 19 — its semantic pass had a hardcoded
+  `is_builtin_function` list that predates the new export, so the
+  call was rejected with `Undefined function '__mn_host_is_win64'`.
+  Other `__mn_*` symbols in source survive because they appear
+  only inside emitted IR text strings (the seed sees them as
+  ordinary string literals, no semantic-pass call check); this
+  one is the first real Mapanare-level call site of a new builtin
+  added since v4.155.0. The build script swallows stderr at
+  `scripts/build_from_seed.sh:68` (`2>/dev/null`); CI surfaces
+  only "Process completed with exit code 1." Fix follows
+  `bootstrap/seed/README.md` §"Updating the Seed" (the same
+  pattern the seed has been refreshed at v3.4.0, v3.6.0, v3.38.0,
+  v4.155.0): clean Python bootstrap → strip → sha256 update.
+  **Three workarounds investigated and rejected** before falling
+  back to the documented refresh: (1) `extern "C" fn
+  __mn_host_is_win64() -> Int` declaration in `mnc_all.mn` — the
+  seed parser accepts the syntax but its semantic pass still
+  rejects the call site (extern fn lookup runs after the builtin
+  gate, empirically verified on WSL); (2) hardcode `is_win64 =
+  false` in `emit_mir_module` — defeats v5.8.4's Wb.2 closure
+  entirely, regresses `mnc-stage2.exe` to v5.8.2 broken state;
+  (3) reach the host via existing builtin (env var, etc.) — same
+  structural problem since every syscall-shaped builtin has been
+  added since v4.155.0. Procedure (verified clean on WSL Linux
+  x86_64): `python3 scripts/build_stage1.py` (~5 min) →
+  `strip -o bootstrap/seed/linux-x86_64/mnc
+  mapanare/self/mnc-stage1` → `cd bootstrap/seed/linux-x86_64 &&
+  sha256sum mnc > mnc.sha256`. End-to-end no-Python bootstrap
+  (`bash scripts/build_from_seed.sh`) reports
+  Stage 1 IR **219,955 lines** (vs old seed's 132,791) → Stage
+  1 binary 5,003,240 bytes → Stage 2 IR **219,955 lines**
+  (strict-fixed-point smoke signal: identical binary sizes for
+  stage1+stage2) → Validation OK → Smoke test OK. `--verify`
+  reports **55 pass, 11 fail** (over the script's 45-pass
+  ratchet at `build_from_seed.sh:147-149`); 11 failures are
+  pre-existing self-hosted-emitter `llvm-as`-strictness gaps
+  where the verify path pipes IR through bare `llvm-as` without
+  runtime archive linkage. Canonical golden harness
+  (`scripts/test_native.py`) confirms **66/66 preserved** —
+  this is the gate that matters for source correctness.
+  Fixed-point regression (`scripts/verify_fixed_point.sh`)
+  reports **NEAR FIXED POINT, 4 diff lines / 219,955 = 0.002%**,
+  all VERSION metadata (`!"5.8.4"` vs `!"__MN_VERSION__"`),
+  identical shape to v5.7.1+ baseline. Old seed metrics:
+  3,583,120 bytes / sha256 `bf5a82c1...`; new seed:
+  6,433,952 bytes (+80%; mnc_all.mn grew 132,791 → 219,955
+  lines = +66% across the ~50 minor releases since the prior
+  refresh) / sha256
+  `7c2897f09af8db4042633124e44ca12d948cee77b89150e05735c5121493d749`.
+  `make lint` clean; `check_struct_registry.py` 25/25/91 clean
+  (no source edits). Risks R1-R6 from PLAN.md all mitigated or
+  not realized: R1 seed bloat is design-accepted (the
+  Go/Rust/OCaml comparison from `bootstrap/seed/README.md`
+  rationalizes periodic seed growth); R2 strip determinism
+  verified by sha256 round-trip; R3 no golden regression
+  (the 11 verify failures are stable across the v5.x arc); R4
+  fixed-point holds; R5 Win64 path untouched (the Windows
+  pipeline uses Python bootstrap, independent of the Linux
+  seed; v5.8.4's Wb.2 closure is structurally untouched); R6 no
+  effect on macOS (still no seed there per
+  `bootstrap/seed/README.md:24` long-standing TODO). What ships:
+  refreshed seed binary + sha256, VERSION 5.8.4 → 5.8.5, README
+  + 3 localized + CHANGELOG + this CLAUDE.md entry,
+  `docs/roadmap/v5/v5.8.5/PLAN.md` + SESSION_REPORT.md, golden
+  benchmark / history files refreshed by the harness run. What
+  does NOT ship: compiler / lowerer / runtime source changes;
+  Win32 (i686) ABI work (deferred to v5.8.6 PLAN + PROMPT
+  only); additional platform seeds; verify-gate threshold
+  tightening; Windows artifact regeneration (independent
+  pipeline). Win32 follow-up rationale: `__mn_host_is_win64`
+  reads `_WIN32` (defined for **both** 32-bit and 64-bit
+  Windows), so a 32-bit MinGW build (`i686-w64-mingw32`)
+  triggers `is_win64=true` even though i686 ABI rules differ
+  from x86_64 (sret/byref thresholds, calling conventions,
+  struct returns). Mapanare's actual release target is
+  `x86_64-w64-mingw32` (Win64), so this is fine in practice but
+  is a latent-correctness gap if anyone cross-compiles for
+  i686 — quantified and scoped in `docs/roadmap/v5/v5.8.6/PLAN.md`.
+  Next: v5.8.6 (Win32 ABI plan + prompt; planning artifact only,
+  no implementation); v6.0 (borrow checker — Rt.04 + Li.1 +
+  general ownership). See
+  `docs/roadmap/v5/v5.8.5/SESSION_REPORT.md`.
 - **v5.8.0** (shipped) — **RE-PANEL — aggregate 9.66 / 10,
   Option A.** Seven-reviewer review of the v5.3.1 → v5.7.1
   arc (9 releases, all 5 v5.3.0 panel MEDIUMs closed, 4 Sh.*

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.8.5] - 2026-04-27
+
+### Fixed
+
+- **Bb.1** — Bootstrap: refresh `bootstrap/seed/linux-x86_64/mnc`
+  so the no-Python bootstrap CI jobs pass after v5.8.4. The seed
+  was the v4.155.0 strip from April 19; v5.8.4 added a real
+  Mapanare-level call to `__mn_host_is_win64()` (a new C-runtime
+  export) inside `mapanare/self/emit_llvm.mn::emit_mir_module`
+  that the seed's pre-v5.8.4 builtin list rejected with
+  "Undefined function". The build script swallows stderr via
+  `2>/dev/null`, so CI surfaced only "Process completed with exit
+  code 1" at "[1/4] Stage 1: seed compiles source → stage1 IR".
+  Refresh procedure follows `bootstrap/seed/README.md`
+  §"Updating the Seed": clean Python bootstrap → strip → sha256
+  update. New seed: 6,433,952 bytes; new sha256
+  `7c2897f0...1493d749`. Both "Bootstrap (No Python)" and
+  "Bootstrap from Seed (No Python)" CI jobs unblocked.
+
+### Notes
+
+Pure seed-refresh release; **zero source-code changes** to
+`mapanare/`, `runtime/`, `mapanare/self/`. Goldens 66/66
+preserved (canonical harness); fixed-point holds NEAR (4 lines
+of VERSION metadata diff over 219,955 lines = 0.002%); `make
+lint` clean. Win32 (i686) ABI gap surfaced in the v5.8.4 review
+is deferred to v5.8.6 (PLAN + PROMPT only) and a future
+implementation release; see
+`docs/roadmap/v5/v5.8.6/PLAN.md`.
+
 ## [5.8.4] - 2026-04-27
 
 ### Fixed
