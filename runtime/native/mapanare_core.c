@@ -194,6 +194,18 @@ int64_t mn_checked_add(int64_t a, int64_t b) {
 
 #define mn_untag(ptr) (ptr)
 
+/* v5.8.3 Wb.1: internal C-side MnString-by-value free. The exported
+ * `__mn_str_free` switched to decomposed (data, len_with_heap_bit) args
+ * for Win64-ABI compatibility (see commentary at the export site).
+ * Internal callers in this file pass a whole MnString, so they go
+ * through this static helper. Defined here near the top so it's in
+ * scope for every caller below. */
+static inline void mn_str_free_value(MnString s) {
+    if (s.data && s.is_heap) {
+        __mn_free((void *)s.data);
+    }
+}
+
 /* -----------------------------------------------------------------------
  * Arena Allocator
  * ----------------------------------------------------------------------- */
@@ -410,7 +422,7 @@ MN_EXPORT void __mn_intern_destroy(void) {
     if (!s_intern_table) return;
     for (size_t i = 0; i < s_intern_tbl_sz; i++) {
         if (s_intern_table[i].occupied) {
-            __mn_str_free(s_intern_table[i].str);
+            mn_str_free_value(s_intern_table[i].str);
         }
     }
     free(s_intern_table);
@@ -938,9 +950,18 @@ MN_EXPORT double __mn_str_to_float(MnString s) {
     return strtod(data, NULL);
 }
 
-MN_EXPORT void __mn_str_free(MnString s) {
-    if (s.data && s.is_heap) {
-        __mn_free((void *)s.data);
+/* v5.8.3 Wb.1: __mn_str_free takes decomposed (data, len_with_heap_bit)
+ * instead of MnString by value. Win64 ABI passes 16-byte structs by
+ * hidden pointer in %rcx, but LLVM lowers IR-level `{ptr, i64}`
+ * aggregate args by decomposing into two registers — same shape as
+ * SysV. The mismatch made every drop-glue free crash on Windows.
+ * Decomposed args match what LLVM's aggregate lowering produces on
+ * both ABIs (rdi+rsi on SysV, rcx+rdx on Win64). The internal-C-caller
+ * convenience is preserved via the static `mn_str_free_value` helper
+ * (forward-declared earlier in this file). */
+MN_EXPORT void __mn_str_free(const char *data, int64_t len_with_heap_bit) {
+    if (data && (len_with_heap_bit & MN_STR_HEAP_BIT)) {
+        __mn_free((void *)data);
     }
 }
 
@@ -1430,7 +1451,7 @@ MN_EXPORT void __mn_list_free_strings(MnList *list) {
     /* Free each contained MnString before freeing the list buffer. */
     for (int64_t i = 0; i < list->len; i++) {
         MnString *sp = (MnString *)(list->data + i * list->elem_size);
-        __mn_str_free(*sp);
+        mn_str_free_value(*sp);
     }
     __mn_list_free(list);
 }
@@ -2126,12 +2147,12 @@ MN_EXPORT void __mn_map_free_deep(MnMap *map) {
             /* Free string keys */
             if (map->key_type == MN_MAP_KEY_STR) {
                 MnString *key = (MnString *)(bucket + 2);
-                __mn_str_free(*key);
+                mn_str_free_value(*key);
             }
             /* Free string values using explicit val_type tag */
             if (map->val_type == MN_MAP_VAL_STR) {
                 MnString *val = (MnString *)(bucket + 2 + map->key_size);
-                __mn_str_free(*val);
+                mn_str_free_value(*val);
             }
         }
         __mn_free(map->buckets);

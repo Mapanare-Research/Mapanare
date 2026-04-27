@@ -1,0 +1,40 @@
+[New Thread 67320.0x11afc]
+
+Thread 1 received signal SIGSEGV, Segmentation fault.
+0x00007ff7e62a01d0 in mnc-stage1!.mn_str_free ()
+#0  0x00007ff7e62a01d0 in mnc-stage1!.mn_str_free ()
+#1  0x00007ff7e5cc543c in ?? ()
+#2  0x00000000043fbe90 in ?? ()
+#3  0x0000000000000000 in ?? ()
+rax            0x43fbe90           71286416
+rbx            0x80000000000d8c89  -9223372036853887863
+rcx            0x0                 0
+rdx            0x0                 0
+rsi            0x8000000000000001  -9223372036854775807
+rdi            0x1                 1
+rbp            0x0                 0x0
+rsp            0x43fbc98           0x43fbc98
+r8             0x8540080           139722880
+r9             0x43fbe90           71286416
+r10            0x5                 5
+r11            0x43fbb90           71285648
+r12            0x86d6a90           141388432
+r13            0x0                 0
+r14            0x80000000000d8c89  -9223372036853887863
+r15            0x0                 0
+rip            0x7ff7e62a01d0      0x7ff7e62a01d0 <mnc-stage1!.mn_str_free>
+eflags         0x10202             [ IF RF ]
+cs             0x33                51
+ss             0x2b                43
+ds             0x2b                43
+es             0x2b                43
+fs             0x53                83
+gs             0x2b                43
+=> 0x7ff7e62a01d0 <mnc-stage1!__mn_str_free>:	mov    (%rcx),%rdx
+   0x7ff7e62a01d3 <mnc-stage1!__mn_str_free+3>:	mov    0x8(%rcx),%rax
+   0x7ff7e62a01d7 <mnc-stage1!__mn_str_free+7>:	test   %rdx,%rdx
+   0x7ff7e62a01da <mnc-stage1!__mn_str_free+10>:	je     0x7ff7e62a01e4 <mnc-stage1!__mn_str_free+20>
+   0x7ff7e62a01dc <mnc-stage1!__mn_str_free+12>:	shr    $0x38,%rax
+   0x7ff7e62a01e0 <mnc-stage1!__mn_str_free+16>:	test   %al,%al
+   0x7ff7e62a01e2 <mnc-stage1!__mn_str_free+18>:	js     0x7ff7e62a01e8 <mnc-stage1!__mn_str_free+24>
+   0x7ff7e62a01e4 <mnc-stage1!__mn_str_free+20>:	ret

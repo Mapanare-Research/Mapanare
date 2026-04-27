@@ -160,8 +160,16 @@ MN_EXPORT int64_t __mn_str_to_int(MnString s);
 MN_EXPORT double __mn_str_to_float(MnString s);
 
 /** Free a heap-allocated string. No-op for constant strings.
- *  Uses tag bit (LSB of data pointer) to distinguish heap from constant. */
-MN_EXPORT void __mn_str_free(MnString s);
+ *  Uses the high bit of `len_with_heap_bit` (== ``MN_STR_HEAP_BIT``)
+ *  to distinguish heap from constant.
+ *
+ *  v5.8.3 Wb.1: takes decomposed (data, len_with_heap_bit) instead of
+ *  ``MnString`` by value. Win64's 16-byte-by-value ABI rule (hidden
+ *  pointer in %rcx) does not match what LLVM emits at IR-level for an
+ *  aggregate-by-value argument (decomposed into two registers, %rcx +
+ *  %rdx). The decomposed C signature matches LLVM's aggregate lowering
+ *  on both Win64 (rcx, rdx) and SysV AMD64 (rdi, rsi). */
+MN_EXPORT void __mn_str_free(const char *data, int64_t len_with_heap_bit);
 
 /** Print a string to stdout (no newline). */
 MN_EXPORT void __mn_str_print(MnString s);

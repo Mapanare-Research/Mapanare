@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.8.3] - 2026-04-26
+
+### Fixed
+
+- **Wb.1** — Windows: `mnc-stage1.exe` no longer segfaults at every
+  drop-glue free site. Root cause: the C runtime's
+  `void __mn_str_free(MnString s)` (16-byte struct by value) was
+  compiled with the Win64 ABI for 16-byte aggregates — caller passes
+  a hidden pointer in `%rcx`, callee dereferences. But LLVM lowers
+  IR-level `{ptr, i64}` aggregate-by-value args by **decomposing
+  into two registers** (rdi+rsi on SysV, rcx+rdx on Win64), not by
+  hidden pointer. SysV happened to agree by coincidence (its 16-byte
+  C ABI is also two-register decomposed for integer/pointer fields);
+  Win64 didn't. Every IR call site of `__mn_str_free` put the data
+  pointer in `%rcx` and the length in `%rdx`, but the C function
+  read `(%rcx)` (treating `%rcx` as a struct address) and
+  segfaulted. v5.8.3 closes Wb.1 by switching `__mn_str_free`'s
+  exported C signature to **decomposed args**:
+  `void __mn_str_free(const char *data, int64_t len_with_heap_bit)`.
+  Decomposed args match exactly what LLVM's aggregate lowering
+  produces on both ABIs (rdi+rsi on SysV, rcx+rdx on Win64) — no
+  emitter changes required, no per-target conditionals. Internal C
+  callers go through a new static `mn_str_free_value(MnString)`
+  helper to preserve their by-value convenience. Minimal patch:
+  `runtime/native/mapanare_core.c` (~25 LOC) and a matching header
+  declaration. mnc-stage1.exe now compiles `mnc_all.mn` to a full
+  217,879-line stage2.ll on Windows — same line count as v5.7.1
+  on Linux.
+
+### Notes
+
+v5.8.2 closed two Windows build walls in succession (Tc.1 + Tc.2);
+v5.8.3 closes the runtime wall behind them. Wb.2 (self-hosted
+`mapanare/self/emit_llvm.mn` hardcodes the SysV ABI classifier at
+line 2243; stage2.ll declares ~37 runtime fns with aggregate
+returns instead of Win64 sret) was uncovered once mnc-stage1.exe
+started actually running on Windows. mnc-stage2 built from that
+stage2.ll on Windows crashes inside `__mn_argv` — same H1 ABI
+shape as Wb.1, but on the return side and across many functions.
+Wb.2 is a v5.0.4 Cb.15 / v4.149.0 ABI-classifier port from
+`mapanare/emit_llvm_text.py` to `mapanare/self/emit_llvm.mn` —
+substantial change, scoped to v5.8.4 with its own PLAN. For
+v5.8.3, the Windows artifact `mnc-win-x64.exe` is mnc-stage1.exe
+itself (Python-bootstrap-emitter-built; ABI-correct via the
+target-aware Python classifier). Functionally identical to a
+working mnc-stage2 for end users — a Python-bootstrap-built
+compiler still compiles user .mn files; it just isn't validated
+by Windows self-compilation yet. Linux + macOS continue to run
+the full self-compile + fixed-point cycle and remain green.
+
+- Sync README badges (en / es / pt / zh-CN) to 5.8.3.
+
 ## [5.8.2] - 2026-04-26
 
 ### Fixed
