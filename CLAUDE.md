@@ -18,6 +18,25 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.9.0** (shipped) — **DX.* — native CLI hygiene.** Closes the
+  six user-visible CLI gaps surfaced by the v5.8.7 Windows install
+  probe: `mnc --help` works (DX.1); `mnc version` no longer leaks
+  `__MN_VERSION__` (DX.2 — structural fix: new `__mn_version_string()`
+  C-runtime export replaces the v4.28.0 placeholder + build_stage1.py
+  substitution dance, same shape as v5.8.6 We.1); missing-clang prints
+  platform-specific install instructions and surfaces clang stderr
+  (DX.3); `mnc cache stats` / `cache clean` work on Windows via new
+  native `__mn_dir_count_files` / `__mn_dir_total_size` /
+  `__mn_dir_remove_recursive` exports + `__mn_dev_null_redirect()`
+  shim that sweeps every `2>/dev/null` literal (DX.4); install.ps1 +
+  install.sh ship `mnc` alongside `mapanare` and getting-started
+  uses `mnc` consistently (DX.6 + DX.7). DX.5 (default-command
+  change) deferred to v5.9.1. Bb.3 seed refresh shipped. **Strict
+  3-stage fixed-point restored** (225,831 lines / 0 diff) — first
+  since v4.139.0 — as a side effect of the IR-metadata node now
+  calling `__mn_version_string()` at runtime. Goldens 66/66; 36 new
+  pytest tests; `make lint` clean. See
+  `docs/roadmap/v5/v5.9.0/SESSION_REPORT.md`.
 - **v5.8.6** (shipped) — **We.1 closure — i686-w64-mingw32 ABI
   support.** 3-way ABI dispatch in the emitter (SysV/AAPCS64,
   Win64 sret/sarg, i686 cdecl sret/byval); fixes silent miscompile

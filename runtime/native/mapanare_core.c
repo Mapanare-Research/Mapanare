@@ -1632,6 +1632,251 @@ MN_EXPORT int64_t __mn_dir_remove(MnString path) {
     return rc == 0 ? 0 : -1;
 }
 
+/* v5.9.0 DX.4: recursive helpers for the native cache-stats / cache-clean
+ * surface in mapanare/self/main.mn. Pre-v5.9.0 those subcommands shelled
+ * out to ``rm -rf`` / ``find ... | wc -l`` / ``du -sh`` — POSIX-only and
+ * silently broken on Windows where __mn_system invokes cmd.exe. The
+ * ``-d was unexpected at this time`` error reported by Windows users at
+ * v5.8.7 was cmd.exe's reaction to bash's ``[ -d ... ]`` test. These
+ * three exports make the code path platform-agnostic. */
+static int64_t mn_dir_walk_size_(const char *cpath) {
+    int64_t total = 0;
+#ifdef _WIN32
+    size_t plen = strlen(cpath);
+    char *pattern = (char *)__mn_alloc(plen + 3);
+    memcpy(pattern, cpath, plen);
+    pattern[plen] = '\\';
+    pattern[plen + 1] = '*';
+    pattern[plen + 2] = '\0';
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = FindFirstFileA(pattern, &ffd);
+    __mn_free(pattern);
+    if (h == INVALID_HANDLE_VALUE) return total;
+    do {
+        const char *n = ffd.cFileName;
+        if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        size_t nlen = strlen(n);
+        char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+        memcpy(child, cpath, plen);
+        child[plen] = '\\';
+        memcpy(child + plen + 1, n, nlen);
+        child[plen + 1 + nlen] = '\0';
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            total += mn_dir_walk_size_(child);
+        } else {
+            ULARGE_INTEGER sz;
+            sz.LowPart = ffd.nFileSizeLow;
+            sz.HighPart = ffd.nFileSizeHigh;
+            total += (int64_t)sz.QuadPart;
+        }
+        __mn_free(child);
+    } while (FindNextFileA(h, &ffd));
+    FindClose(h);
+#else
+    DIR *d = opendir(cpath);
+    if (!d) return total;
+    size_t plen = strlen(cpath);
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        const char *n = ent->d_name;
+        if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        size_t nlen = strlen(n);
+        char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+        memcpy(child, cpath, plen);
+        child[plen] = '/';
+        memcpy(child + plen + 1, n, nlen);
+        child[plen + 1 + nlen] = '\0';
+        struct stat st;
+        if (stat(child, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                total += mn_dir_walk_size_(child);
+            } else {
+                total += (int64_t)st.st_size;
+            }
+        }
+        __mn_free(child);
+    }
+    closedir(d);
+#endif
+    return total;
+}
+
+static int64_t mn_dir_walk_count_(const char *cpath) {
+    int64_t count = 0;
+#ifdef _WIN32
+    size_t plen = strlen(cpath);
+    char *pattern = (char *)__mn_alloc(plen + 3);
+    memcpy(pattern, cpath, plen);
+    pattern[plen] = '\\';
+    pattern[plen + 1] = '*';
+    pattern[plen + 2] = '\0';
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = FindFirstFileA(pattern, &ffd);
+    __mn_free(pattern);
+    if (h == INVALID_HANDLE_VALUE) return count;
+    do {
+        const char *n = ffd.cFileName;
+        if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        size_t nlen = strlen(n);
+        char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+        memcpy(child, cpath, plen);
+        child[plen] = '\\';
+        memcpy(child + plen + 1, n, nlen);
+        child[plen + 1 + nlen] = '\0';
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            count += mn_dir_walk_count_(child);
+        } else {
+            count += 1;
+        }
+        __mn_free(child);
+    } while (FindNextFileA(h, &ffd));
+    FindClose(h);
+#else
+    DIR *d = opendir(cpath);
+    if (!d) return count;
+    size_t plen = strlen(cpath);
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        const char *n = ent->d_name;
+        if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        size_t nlen = strlen(n);
+        char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+        memcpy(child, cpath, plen);
+        child[plen] = '/';
+        memcpy(child + plen + 1, n, nlen);
+        child[plen + 1 + nlen] = '\0';
+        struct stat st;
+        if (stat(child, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                count += mn_dir_walk_count_(child);
+            } else {
+                count += 1;
+            }
+        }
+        __mn_free(child);
+    }
+    closedir(d);
+#endif
+    return count;
+}
+
+static int mn_dir_remove_recursive_(const char *cpath) {
+#ifdef _WIN32
+    size_t plen = strlen(cpath);
+    char *pattern = (char *)__mn_alloc(plen + 3);
+    memcpy(pattern, cpath, plen);
+    pattern[plen] = '\\';
+    pattern[plen + 1] = '*';
+    pattern[plen + 2] = '\0';
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = FindFirstFileA(pattern, &ffd);
+    __mn_free(pattern);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            const char *n = ffd.cFileName;
+            if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+            size_t nlen = strlen(n);
+            char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+            memcpy(child, cpath, plen);
+            child[plen] = '\\';
+            memcpy(child + plen + 1, n, nlen);
+            child[plen + 1 + nlen] = '\0';
+            if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                mn_dir_remove_recursive_(child);
+            } else {
+                remove(child);
+            }
+            __mn_free(child);
+        } while (FindNextFileA(h, &ffd));
+        FindClose(h);
+    }
+    return _rmdir(cpath);
+#else
+    DIR *d = opendir(cpath);
+    if (d) {
+        size_t plen = strlen(cpath);
+        struct dirent *ent;
+        while ((ent = readdir(d)) != NULL) {
+            const char *n = ent->d_name;
+            if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+            size_t nlen = strlen(n);
+            char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+            memcpy(child, cpath, plen);
+            child[plen] = '/';
+            memcpy(child + plen + 1, n, nlen);
+            child[plen + 1 + nlen] = '\0';
+            struct stat st;
+            if (lstat(child, &st) == 0) {
+                if (S_ISDIR(st.st_mode)) {
+                    mn_dir_remove_recursive_(child);
+                } else {
+                    remove(child);
+                }
+            }
+            __mn_free(child);
+        }
+        closedir(d);
+    }
+    return rmdir(cpath);
+#endif
+}
+
+MN_EXPORT int64_t __mn_dir_remove_recursive(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int rc = mn_dir_remove_recursive_(cpath);
+    __mn_free(cpath);
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_dir_count_files(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int64_t r = mn_dir_walk_count_(cpath);
+    __mn_free(cpath);
+    return r;
+}
+
+MN_EXPORT int64_t __mn_dir_total_size(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int64_t r = mn_dir_walk_size_(cpath);
+    __mn_free(cpath);
+    return r;
+}
+
+/* v5.9.0 DX.4: dev-null redirect string for use in __mn_system command
+ * concatenation. cmd.exe rejects ``2>/dev/null`` with "The system cannot
+ * find the path specified" — every existing ``2>/dev/null`` in main.mn
+ * pre-v5.9.0 was a latent Windows breakage. */
+MN_EXPORT MnString __mn_dev_null_redirect(void) {
+#ifdef _WIN32
+    return __mn_str_from_cstr(" 2>NUL");
+#else
+    return __mn_str_from_cstr(" 2>/dev/null");
+#endif
+}
+
+/* v5.9.0 DX.3: platform-portable temp path for capturing clang stderr.
+ * The ``run`` / ``build`` / ``test`` / ``compile`` paths in main.mn used
+ * to swallow clang stderr via ``2>/dev/null``; on a clang failure the
+ * user got bare ``error: clang failed`` with no diagnostic. The new
+ * surface redirects to this path and reprints contents on non-zero
+ * exit. ``/tmp`` doesn't exist on Windows, so resolve %TEMP% there. */
+MN_EXPORT MnString __mn_clang_err_path(void) {
+#ifdef _WIN32
+    static char buf[1024];
+    static int set = 0;
+    if (!set) {
+        const char *t = getenv("TEMP");
+        if (!t || !*t) t = getenv("TMP");
+        if (!t || !*t) t = "C:\\Windows\\Temp";
+        snprintf(buf, sizeof(buf), "%s\\mnc_clang_err.txt", t);
+        set = 1;
+    }
+    return __mn_str_from_cstr(buf);
+#else
+    return __mn_str_from_cstr("/tmp/.mnc_clang_err");
+#endif
+}
+
 MN_EXPORT int64_t __mn_file_rename(MnString old_path, MnString new_path) {
     char *cold = mn_to_cstr(old_path);
     char *cnew = mn_to_cstr(new_path);
@@ -3023,6 +3268,21 @@ MN_EXPORT int64_t __mn_host_arch_bits(void) {
 #else
     return 64;
 #endif
+}
+
+/* v5.9.0 DX.2: build-time-baked version constant. The build pipeline
+ * passes -DMAPANARE_VERSION="\"X.Y.Z\"" sourced from the top-level
+ * VERSION file when compiling this TU. Replaces the __MN_VERSION__
+ * source-tree placeholder + scripts/build_stage1.py:_substitute_version()
+ * dance that produced two known stale-version bugs across project
+ * history (v4.28.0 forensics, v5.8.7 Windows install). Mirrors v5.8.6
+ * We.1's host detection pattern. */
+#ifndef MAPANARE_VERSION
+#define MAPANARE_VERSION "unknown"
+#endif
+
+MN_EXPORT MnString __mn_version_string(void) {
+    return __mn_str_from_cstr(MAPANARE_VERSION);
 }
 
 /* -----------------------------------------------------------------------

@@ -108,9 +108,13 @@ echo "Installing to ${INSTALL_DIR}..."
 if [ "$NEEDS_SUDO" = true ]; then
   sudo cp -f "${TMP_DIR}/mapanare/mapanare" "${INSTALL_DIR}/mapanare"
   sudo chmod +x "${INSTALL_DIR}/mapanare"
+  # v5.9.0 DX.6: alias mnc -> mapanare so the name in the docs and the
+  # name in the install both work. PyInstaller doesn't look at argv[0].
+  sudo ln -sf "${INSTALL_DIR}/mapanare" "${INSTALL_DIR}/mnc" 2>/dev/null || true
 else
   cp -f "${TMP_DIR}/mapanare/mapanare" "${INSTALL_DIR}/mapanare"
   chmod +x "${INSTALL_DIR}/mapanare"
+  ln -sf "${INSTALL_DIR}/mapanare" "${INSTALL_DIR}/mnc" 2>/dev/null || true
 fi
 
 # Copy supporting files (shared libs, etc.) if the dist has them
@@ -162,17 +166,19 @@ fi
 
 # ---------- Verify ----------
 echo ""
-if command -v mapanare &>/dev/null; then
+if command -v mnc &>/dev/null; then
   echo "Installed successfully!"
   echo ""
-  mapanare --version
+  mnc --version
   echo ""
   echo "Get started:"
-  echo "  mapanare init myproject"
+  echo "  mnc init myproject"
   echo "  cd myproject"
-  echo "  mapanare run main.mn       # compile & run"
-  echo "  mapanare check main.mn     # type-check only"
-  echo "  mapanare build main.mn     # native binary (requires LLVM)"
+  echo "  mnc run main.mn       # compile and run"
+  echo "  mnc build main.mn     # build native binary"
+  echo "  mnc --help            # see all commands"
+  echo ""
+  echo "(\`mapanare\` is also installed as an alias for \`mnc\`.)"
   echo ""
   echo "Version manager:"
   echo "  mapanare-up list           # show installed versions"

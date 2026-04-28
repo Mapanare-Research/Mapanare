@@ -17,7 +17,6 @@ import pathlib
 import shutil as _shutil
 import subprocess
 import sys
-import tempfile
 
 # Use the same compiler for C runtime and IR to avoid ABI mismatches.
 # On macOS, `gcc` is Apple Clang while LLVM IR is compiled with Homebrew
@@ -38,45 +37,12 @@ SELF_DIR = ROOT / "mapanare" / "self"
 NATIVE_DIR = ROOT / "runtime" / "native"
 VERSION_FILE = ROOT / "VERSION"
 
-# v4.28.0: build-time placeholder in ``mapanare/self/main.mn`` that the
-# build substitutes from the top-level ``VERSION`` file. Prior to this,
-# the self-hosted ``version()`` function returned a hardcoded string that
-# became 19 minor versions stale because the manual bump step was dropped
-# at v4.8.0. See ``docs/roadmap/v4/v4.28.0/FORENSICS.md``.
-VERSION_PLACEHOLDER = "__MN_VERSION__"
-
-
-def _substitute_version(source: str) -> str:
-    """Replace the ``__MN_VERSION__`` placeholder with the live VERSION contents.
-
-    Called on the self-hosted source text before it reaches the compiler.
-    The placeholder must occur; a missing placeholder is a build error so
-    that no future edit can silently unwire the substitution.
-    """
-    if VERSION_PLACEHOLDER not in source:
-        raise SystemExit(
-            f"error: {VERSION_PLACEHOLDER!r} placeholder not found in self-hosted "
-            "source. Re-add it to mapanare/self/main.mn:version() — see "
-            "docs/roadmap/v4/v4.28.0/FORENSICS.md for why this matters."
-        )
-    version = VERSION_FILE.read_text(encoding="utf-8").strip()
-    if not version:
-        raise SystemExit(f"error: {VERSION_FILE} is empty")
-    return source.replace(VERSION_PLACEHOLDER, version)
-
 
 def build() -> pathlib.Path:
     """Build mnc-stage1 and return its path."""
     print("=== Stage 1: Building self-hosted compiler ===")
 
     ir_path = SELF_DIR / "main.ll"
-
-    # v5.0.6 Dr.1-mutation: compile from a tempdir copy of SELF_DIR so the
-    # source tree is never mutated. Prior pattern substituted __MN_VERSION__
-    # in-place under try/finally — if the restore itself crashed (e.g. due
-    # to a killed process during a long build) the tree was left corrupt.
-    # The tempdir pattern makes substitution purely local, auto-cleaned.
-    version = VERSION_FILE.read_text(encoding="utf-8").strip()
 
     if "--use-committed" in sys.argv:
         print("[1/6] Using committed LLVM IR (--use-committed) ...")
@@ -86,26 +52,20 @@ def build() -> pathlib.Path:
         print("[1/6] Generating LLVM IR from mapanare/self/*.mn ...")
         from mapanare.multi_module import compile_multi_module_mir
 
-        with tempfile.TemporaryDirectory(prefix="mn_build_") as td:
-            build_src = pathlib.Path(td)
-            # Mirror every .mn file into the tempdir, substituting the
-            # version placeholder on the way in. The multi-module resolver
-            # walks imports relative to `root_file`, so keeping everything
-            # in a single flat tempdir mirrors SELF_DIR's layout exactly.
-            for mn_file in sorted(SELF_DIR.glob("*.mn")):
-                text = mn_file.read_text(encoding="utf-8")
-                (build_src / mn_file.name).write_text(
-                    text.replace(VERSION_PLACEHOLDER, version),
-                    encoding="utf-8",
-                )
-            root_file = build_src / "main.mn"
-            source = root_file.read_text(encoding="utf-8")
-            ir = compile_multi_module_mir(
-                root_source=source,
-                root_file=str(root_file),
-                opt_level=2,
-                skip_check=True,
-            )
+        # v5.9.0 DX.2: compile directly from SELF_DIR. Pre-v5.9.0 this step
+        # mirrored SELF_DIR into a tempdir to substitute the __MN_VERSION__
+        # placeholder safely (v5.0.6 Dr.1-mutation). The placeholder is
+        # gone — version is now baked into the C runtime via the
+        # MAPANARE_VERSION define and read at runtime through
+        # __mn_version_string() — so the tempdir step is unnecessary.
+        root_file = SELF_DIR / "main.mn"
+        source = root_file.read_text(encoding="utf-8")
+        ir = compile_multi_module_mir(
+            root_source=source,
+            root_file=str(root_file),
+            opt_level=2,
+            skip_check=True,
+        )
 
     # 2. Post-process: make compile() and format_error() externally visible
     print("[2/6] Post-processing IR (external linkage for entry points) ...")

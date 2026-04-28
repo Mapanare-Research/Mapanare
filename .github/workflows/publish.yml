@@ -272,14 +272,17 @@ jobs:
           set -euo pipefail
           export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p toolchain/lib
+          # v5.9.0 DX.2: bake VERSION into runtime objects so __mn_version_string()
+          # and the User-Agent in mapanare_io.c return the right string.
+          VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
           cd runtime/native
-          gcc -c -O2 -I. mapanare_core.c   -o mapanare_rt_mapanare_core.o
-          gcc -c -O2 -I. mapanare_db.c     -o mapanare_rt_mapanare_db.o
-          gcc -c -O2 -I. mapanare_io.c     -o mapanare_rt_mapanare_io.o
-          gcc -c -O2 -I. mapanare_html.c   -o mapanare_rt_mapanare_html.o
-          gcc -c -O2 -I. mapanare_runtime.c -o mapanare_rt_mapanare_runtime.o
-          gcc -c -O2 -I. mapanare_gpu.c    -o mapanare_rt_mapanare_gpu.o
-          gcc -c -O2 -I. mapanare_gpu_builtins.c -o mapanare_rt_mapanare_gpu_builtins.o
+          gcc -c -O2 -I. $VERSION_FLAG mapanare_core.c   -o mapanare_rt_mapanare_core.o
+          gcc -c -O2 -I. $VERSION_FLAG mapanare_db.c     -o mapanare_rt_mapanare_db.o
+          gcc -c -O2 -I. $VERSION_FLAG mapanare_io.c     -o mapanare_rt_mapanare_io.o
+          gcc -c -O2 -I. $VERSION_FLAG mapanare_html.c   -o mapanare_rt_mapanare_html.o
+          gcc -c -O2 -I. $VERSION_FLAG mapanare_runtime.c -o mapanare_rt_mapanare_runtime.o
+          gcc -c -O2 -I. $VERSION_FLAG mapanare_gpu.c    -o mapanare_rt_mapanare_gpu.o
+          gcc -c -O2 -I. $VERSION_FLAG mapanare_gpu_builtins.c -o mapanare_rt_mapanare_gpu_builtins.o
           ar rcs ../../toolchain/lib/libmapanare_rt.a \
             mapanare_rt_*.o
           rm -f mapanare_rt_*.o
@@ -447,7 +450,9 @@ jobs:
             # plus the v5.8.4 sarg/sret allocas push beyond the v5.8.2
             # 64 MB cushion. 256 MB is the next power-of-two and matches
             # what we verified locally.
+            VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
             gcc -O2 stage2.o \
+              $VERSION_FLAG \
               runtime/native/mapanare_core.c \
               runtime/native/mapanare_runtime.c \
               runtime/native/mapanare_gpu.c \
@@ -500,7 +505,9 @@ jobs:
             ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
             clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o
             clang -c -O2 -fobjc-arc runtime/native/mapanare_metal.m -o /tmp/mapanare_metal.o
+            VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
             clang -O2 /tmp/stage2.o \
+              $VERSION_FLAG \
               runtime/native/mapanare_core.c \
               runtime/native/mapanare_runtime.c \
               runtime/native/mapanare_gpu.c \
@@ -521,7 +528,9 @@ jobs:
           else
             ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
             clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o
+            VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
             clang -O2 /tmp/stage2.o \
+              $VERSION_FLAG \
               runtime/native/mapanare_core.c \
               runtime/native/mapanare_io.c \
               runtime/native/mapanare_runtime.c \
@@ -533,6 +542,7 @@ jobs:
               -lm -lpthread -ldl \
               -Wl,-z,stack-size=67108864 2>/dev/null \
               || clang -O2 /tmp/stage2.o \
+                $VERSION_FLAG \
                 runtime/native/mapanare_core.c \
                 runtime/native/mapanare_io.c \
                 runtime/native/mapanare_runtime.c \

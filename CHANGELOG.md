@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.9.0] - 2026-04-27
+
+### DX.* — Native CLI hygiene (closes Windows-install findings)
+
+Closes the user-visible CLI gaps surfaced by the v5.8.7 Windows install
+probe. Six dockets, all in the dispatch + install layer; zero compiler
+internals. After v5.9.0:
+
+- `mnc --help` / `-h` / `help` print actual usage instead of
+  `error: cannot read file '--help'`. Per-subcommand help works via
+  both `mnc help <sub>` and `mnc <sub> --help`.
+- `mnc version` prints `mapanare 5.9.0` instead of the literal
+  `mapanare __MN_VERSION__`. Source-tree placeholder dance replaced
+  with a build-time-baked C-runtime export
+  (`__mn_version_string()`) — same shape as v5.8.6 We.1's
+  host-detection exports. Bb.3 seed refresh.
+- `mnc cache stats` and `mnc cache clean` work on Windows. Replaced
+  the POSIX-only shell-out (`if [ -d ... ]; find | wc -l; du -sh`)
+  with new native runtime helpers
+  (`__mn_dir_count_files`, `__mn_dir_total_size`,
+  `__mn_dir_remove_recursive`). Pre-v5.9.0 Windows users hit
+  `-d was unexpected at this time` (cmd.exe's reaction to bash's
+  `[ -d ... ]` test).
+- Missing-clang failures print platform-specific install instructions
+  (`winget install LLVM.LLVM` on Windows, `brew install llvm` on macOS,
+  `apt install clang` on Linux) instead of the bare
+  `error: clang failed`. clang's stderr is no longer swallowed via
+  `2>/dev/null`; on non-zero exit the captured stderr text is
+  reprinted so the user sees the real diagnostic.
+- `install.ps1` and `install.sh` install the `mnc` name alongside
+  `mapanare` (PyInstaller doesn't read argv[0]; the alias is
+  transparent). Getting-started message uses `mnc init` / `mnc run` /
+  `mnc build`. Drops the `requires LLVM` parenthetical now that DX.3
+  surfaces a clean install path on miss.
+
+Deferred to v5.9.1: DX.5 (default-command behavior change). The only
+breaking change in the bunch; v5.9.0 stays additive-only and reversible.
+
+### Added
+
+- **C runtime exports**:
+  - `__mn_version_string() -> MnString` — build-time-baked version
+    constant (`-DMAPANARE_VERSION` at C-compile time).
+  - `__mn_dir_count_files(path) -> int64_t` — recursive file count.
+  - `__mn_dir_total_size(path) -> int64_t` — recursive byte-size sum.
+  - `__mn_dir_remove_recursive(path) -> int64_t` — recursive rmdir.
+  - `__mn_dev_null_redirect() -> MnString` — returns ` 2>/dev/null`
+    on POSIX, ` 2>NUL` on Windows.
+  - `__mn_clang_err_path() -> MnString` — platform-portable temp path
+    for capturing clang stderr.
+- **`tests/test_cli_help.py`** — smoke tests for `--help`, `-h`,
+  `help <sub>`, `<sub> --help`, `version` (asserts no
+  `__MN_VERSION__` leak).
+- `-DMAPANARE_VERSION` flag wired into every clang/gcc invocation
+  that compiles `runtime/native/mapanare_core.c` in
+  `.github/workflows/publish.yml` (5 sites: Windows pre-build runtime
+  archive + Win/macOS/Linux/Linux-fallback stage2 link). Pre-v5.9.0
+  these sites compiled `mapanare_core.c` without the flag, so the
+  shipped native binary's `__mn_version_string()` would have returned
+  `"unknown"` if v5.9.0 hadn't also wired the flag everywhere.
+
+### Removed
+
+- `scripts/build_stage1.py::_substitute_version()` and the
+  `VERSION_PLACEHOLDER = "__MN_VERSION__"` constant. The tempdir-mirror
+  step (v5.0.6 Dr.1-mutation) is gone too — the source tree is no
+  longer mutated because there's nothing to substitute. `build_stage1.py`
+  compiles directly from `mapanare/self/`.
+- `__MN_VERSION__` literal in `mapanare/self/main.mn:version()` and
+  `mapanare/self/emit_llvm.mn::emit_metadata_node` — both now call
+  `__mn_version_string()` at runtime.
+
+### Changed
+
+- **Bootstrap seed refreshed (Bb.3)**. Same break shape as v5.8.5
+  (Bb.1) and v5.8.6 (Bb.2): the new builtin call to
+  `__mn_version_string()` doesn't exist in the v5.8.8 seed; a fresh
+  build of `bootstrap/seed/linux-x86_64/mnc` is required for
+  `bash scripts/build_from_seed.sh` to succeed.
+- **Strict 3-stage fixed-point restored** (Linux x86_64). 225,831
+  lines, 0 diff. Pre-v5.9.0, every release since v4.140.0 carried a
+  4-line VERSION-only diff because the IR-metadata node embedded the
+  literal `!"__MN_VERSION__"` in stage2 (unsubstituted in the
+  self-hosted path) vs the substituted live version in stage3. DX.2's
+  structural fix has both stages call `__mn_version_string()` at
+  runtime, so they embed the same C-runtime-baked constant. First
+  strict fixed-point since v4.139.0.
+
 ## [5.8.8] - 2026-04-27
 
 ### Fixed

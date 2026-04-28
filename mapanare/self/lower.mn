@@ -2306,6 +2306,42 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let s_hab: LowerState = emit_instr(dr_hab.state, Instruction::Call(dr_hab.value, fn_name, args))
         return new_lower_result(dr_hab.value, s_hab)
     }
+    // v5.9.0 DX.2 / DX.3 / DX.4: native CLI hygiene exports.
+    if fn_name == "__mn_version_string" {
+        let dr_vs: LowerResult = make_value(st, mir_string(), "t")
+        let s_vs: LowerState = emit_instr(dr_vs.state, Instruction::Call(dr_vs.value, fn_name, args))
+        return new_lower_result(dr_vs.value, s_vs)
+    }
+    if fn_name == "__mn_dev_null_redirect" {
+        let dr_dn: LowerResult = make_value(st, mir_string(), "t")
+        let s_dn: LowerState = emit_instr(dr_dn.state, Instruction::Call(dr_dn.value, fn_name, args))
+        return new_lower_result(dr_dn.value, s_dn)
+    }
+    if fn_name == "__mn_clang_err_path" {
+        let dr_ce: LowerResult = make_value(st, mir_string(), "t")
+        let s_ce: LowerState = emit_instr(dr_ce.state, Instruction::Call(dr_ce.value, fn_name, args))
+        return new_lower_result(dr_ce.value, s_ce)
+    }
+    if fn_name == "__mn_dir_count_files" {
+        let dr_dcf: LowerResult = make_value(st, mir_int(), "t")
+        let s_dcf: LowerState = emit_instr(dr_dcf.state, Instruction::Call(dr_dcf.value, fn_name, args))
+        return new_lower_result(dr_dcf.value, s_dcf)
+    }
+    if fn_name == "__mn_dir_total_size" {
+        let dr_dts: LowerResult = make_value(st, mir_int(), "t")
+        let s_dts: LowerState = emit_instr(dr_dts.state, Instruction::Call(dr_dts.value, fn_name, args))
+        return new_lower_result(dr_dts.value, s_dts)
+    }
+    if fn_name == "__mn_dir_remove_recursive" {
+        let dr_drr: LowerResult = make_value(st, mir_int(), "t")
+        let s_drr: LowerState = emit_instr(dr_drr.state, Instruction::Call(dr_drr.value, fn_name, args))
+        return new_lower_result(dr_drr.value, s_drr)
+    }
+    if fn_name == "__mn_file_exists" {
+        let dr_fe: LowerResult = make_value(st, mir_int(), "t")
+        let s_fe: LowerState = emit_instr(dr_fe.state, Instruction::Call(dr_fe.value, fn_name, args))
+        return new_lower_result(dr_fe.value, s_fe)
+    }
     // v5.6.0 Sh.6 — tensor builtin return types. Without these the default
     // mir_unknown resolves to i64 and emit_builtin_tostring would route
     // `str(tensor_get_f64(...))` through __mn_str_from_int with a double

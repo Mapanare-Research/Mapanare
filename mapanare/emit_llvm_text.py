@@ -3555,6 +3555,43 @@ class LLVMTextEmitter:
             r = self._rt("__mn_host_arch_bits", I64, [], [])
             self._put(i.dest, r, I64)
             return
+        # v5.9.0 DX.2: build-time-baked version string. Replaces the
+        # __MN_VERSION__ source-tree placeholder; both the version()
+        # surface and the IR metadata node call this at runtime.
+        if fn == "__mn_version_string":
+            r = self._rt("__mn_version_string", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        # v5.9.0 DX.4: native cache stats / clean / dev-null shim.
+        # Replaces the POSIX-only ``__mn_system("if [ -d ... ]")``
+        # shell-out at the cache-stats site; pre-v5.9.0 this errored
+        # out on Windows with ``-d was unexpected at this time``.
+        if fn == "__mn_dev_null_redirect":
+            r = self._rt("__mn_dev_null_redirect", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "__mn_clang_err_path":
+            r = self._rt("__mn_clang_err_path", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "__mn_dir_count_files" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_dir_count_files", I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_dir_total_size" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_dir_total_size", I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_dir_remove_recursive" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_dir_remove_recursive", I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
 
         # High-level I/O builtins (v3.41.0)
         if fn == "read_line":

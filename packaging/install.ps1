@@ -73,6 +73,17 @@ if (-not (Test-Path $InstallDir)) {
 
 Copy-Item -Path "$TmpDir\mapanare\*" -Destination $InstallDir -Recurse -Force
 
+# v5.9.0 DX.6: alias mapanare.exe -> mnc.exe so users can invoke either
+# name. Pre-v5.9.0 the docs and the binary disagreed: README + native
+# CLI used `mnc`, install.ps1 + bundle used `mapanare`. Both names now
+# point to the same PyInstaller-bundled Python CLI; PyInstaller doesn't
+# look at argv[0] for command parsing, so the alias is transparent.
+$MapanareBin = Join-Path $InstallDir "mapanare.exe"
+$MncBin = Join-Path $InstallDir "mnc.exe"
+if ((Test-Path $MapanareBin) -and -not (Test-Path $MncBin)) {
+    Copy-Item -Path $MapanareBin -Destination $MncBin -Force
+}
+
 # ---------- Add to PATH ----------
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($UserPath -notlike "*$InstallDir*") {
@@ -83,22 +94,22 @@ if ($UserPath -notlike "*$InstallDir*") {
 
 # ---------- Verify ----------
 Write-Host ""
-$MapanareBin = Join-Path $InstallDir "mapanare.exe"
-if (Test-Path $MapanareBin) {
+if (Test-Path $MncBin) {
     Write-Host "Installed successfully!" -ForegroundColor Green
     Write-Host ""
-    & $MapanareBin --version
+    & $MncBin --version
     Write-Host ""
     Write-Host "Get started:"
-    Write-Host "  mapanare init myproject"
+    Write-Host "  mnc init myproject"
     Write-Host "  cd myproject"
-    Write-Host "  mapanare run main.mn       # compile & run"
-    Write-Host "  mapanare check main.mn     # type-check only"
-    Write-Host "  mapanare build main.mn     # native binary (requires LLVM)"
+    Write-Host "  mnc run main.mn       # compile and run"
+    Write-Host "  mnc build main.mn     # build native binary"
+    Write-Host "  mnc --help            # see all commands"
     Write-Host ""
+    Write-Host "(``mapanare`` is also installed as an alias for ``mnc``.)"
     Write-Host "You may need to restart your terminal for PATH changes to take effect."
 } else {
-    Write-Host "Error: Installation failed - binary not found at $MapanareBin" -ForegroundColor Red
+    Write-Host "Error: Installation failed - binary not found at $MncBin" -ForegroundColor Red
     exit 1
 }
 

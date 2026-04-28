@@ -28,13 +28,157 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // version — return the compiler version string
 // ---------------------------------------------------------------------------
 
-// v4.28.0: the literal ``__MN_VERSION__`` is a build-time placeholder that
-// ``scripts/build_stage1.py`` rewrites from the top-level ``VERSION`` file
-// before compiling the self-hosted sources. Prior to this release, the
-// version was hardcoded and became 19 minor versions stale. See
-// ``docs/roadmap/v4/v4.28.0/FORENSICS.md`` for the full history.
+// v5.9.0 DX.2: version comes from ``__mn_version_string()``, a C-runtime
+// export baked at C-compile time via ``-DMAPANARE_VERSION``. Replaces the
+// v4.28.0 ``__MN_VERSION__`` source-tree placeholder + build-time
+// substitution dance. The structural fix closes a class of staleness bugs
+// (v4.28.0 forensics: 19 minors stale; v5.8.7 Windows publish: placeholder
+// shipped as the literal). Mirrors the v5.8.6 We.1 host-detection pattern.
 fn version() -> String {
-    return "mapanare __MN_VERSION__"
+    return "mapanare " + __mn_version_string()
+}
+
+// v5.9.0 DX.1: --help / -h / help / help <sub> / <sub> --help all print
+// usage. Pre-v5.9.0 these flags fell through the default-IR-emit branch
+// and surfaced as ``error: cannot read file '--help'`` — every new user
+// hit it.
+fn print_help_text() {
+    print("mapanare " + __mn_version_string() + " - native compiler")
+    print("")
+    print("Usage:")
+    print("  mnc <file.mn>             compile to LLVM IR (default)")
+    print("  mnc run <file.mn>         compile and execute")
+    print("  mnc build <file.mn|dir>   build native binary [-o output]")
+    print("  mnc compile <file>        transpile + build (.py/.php/.ts/.go)")
+    print("  mnc test <file.mn>        compile, link, run, report pass/fail")
+    print("  mnc cache <stats|clean>   inspect or clear build cache")
+    print("  mnc version               print version")
+    print("  mnc --help                show this help")
+    print("")
+    print("For per-subcommand help: mnc help <subcommand>")
+    print("Docs: https://mapanare.dev/docs")
+}
+
+// v5.9.0 DX.3: probe clang once per invocation. Pre-v5.9.0 a missing
+// clang (the default state on most Windows boxes) surfaced as bare
+// ``error: clang failed`` with no install hint. The probe runs cold in
+// <10 ms and replaces every ``error: clang failed`` site with a
+// platform-aware install-instructions block.
+fn check_clang_available() -> Bool {
+    if __mn_host_is_windows() != 0 {
+        let rw: Int = __mn_system("clang --version > NUL 2>NUL")
+        return rw == 0
+    }
+    let r: Int = __mn_system("clang --version > /dev/null 2>/dev/null")
+    return r == 0
+}
+
+fn print_clang_install_help() {
+    __mn_str_eprint("error: clang not found.\n")
+    __mn_str_eprint("Mapanare needs clang to compile to native binaries.\n")
+    __mn_str_eprint("Install LLVM and try again:\n")
+    if __mn_host_is_windows() != 0 {
+        __mn_str_eprint("  winget install LLVM.LLVM\n")
+        __mn_str_eprint("  (or download from https://llvm.org/builds)\n")
+    } else {
+        __mn_str_eprint("  macOS: brew install llvm  (or xcode-select --install)\n")
+        __mn_str_eprint("  Linux: apt install clang  (or your distro's equivalent)\n")
+        __mn_str_eprint("  See https://llvm.org/builds for direct downloads.\n")
+    }
+}
+
+// v5.9.0 DX.3: when clang is found but exits non-zero, surface its
+// stderr (which we previously swallowed via ``2>/dev/null``) so the
+// user can see the real error instead of a bare "clang failed".
+fn report_clang_failure() {
+    let err_path: String = __mn_clang_err_path()
+    let stderr_text: String = __mn_file_read_or_empty(err_path)
+    __mn_str_eprint("error: clang failed:\n")
+    if len(stderr_text) > 0 {
+        __mn_str_eprint(stderr_text)
+        if !stderr_text.ends_with("\n") {
+            __mn_str_eprint("\n")
+        }
+    }
+}
+
+// v5.9.0 DX.3: stderr-capture suffix for shell-out clang invocations.
+// Replaces ``2>/dev/null`` (stderr swallowed) with ``2><platform-temp>``
+// so report_clang_failure() can read the real diagnostic.
+fn clang_stderr_redirect() -> String {
+    return " 2>" + __mn_clang_err_path()
+}
+
+// v5.9.0 DX.4: pretty-print a byte count. Mirrors ``du -sh`` output
+// shape so the cache-stats user-facing surface looks unchanged.
+fn format_bytes(n: Int) -> String {
+    if n < 1024 {
+        return str(n) + "B"
+    }
+    if n < 1048576 {
+        let kb: Int = n / 1024
+        return str(kb) + "K"
+    }
+    if n < 1073741824 {
+        let mb: Int = n / 1048576
+        return str(mb) + "M"
+    }
+    let gb: Int = n / 1073741824
+    return str(gb) + "G"
+}
+
+fn count_lines(s: String) -> Int {
+    let n: Int = len(s)
+    let mut count: Int = 0
+    let mut i: Int = 0
+    for _ in 0..1000000 {
+        if i >= n { break }
+        if s.substr(i, 1) == "\n" {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+fn print_subcommand_help(cmd: String) {
+    if cmd == "build" {
+        print("Usage: mnc build <file.mn|dir> [-o output] [--release|--debug|--small]")
+        print("")
+        print("Compile to native executable. Defaults to a.out.")
+        print("Flags:")
+        print("  -o <path>     output path (default: a.out)")
+        print("  --release     -O2 + LTO + strip")
+        print("  --debug       -O0, no strip")
+        print("  --small       -Os + LTO + strip")
+        return
+    }
+    if cmd == "run" {
+        print("Usage: mnc run <file.mn> [args...]")
+        print("")
+        print("Compile and execute. Args after <file.mn> are forwarded to the program.")
+        return
+    }
+    if cmd == "test" {
+        print("Usage: mnc test <file.mn>")
+        print("")
+        print("Compile, link, run; print PASS or FAIL with reason.")
+        return
+    }
+    if cmd == "cache" {
+        print("Usage: mnc cache <stats|clean>")
+        print("")
+        print("  stats   show cache directory size and module count")
+        print("  clean   delete the cache directory")
+        return
+    }
+    if cmd == "compile" {
+        print("Usage: mnc compile <file> [-o output]")
+        print("")
+        print("Transpile + build. Supported: .mn, .py, .php, .ts, .go")
+        return
+    }
+    print_help_text()
 }
 
 // ---------------------------------------------------------------------------
@@ -387,10 +531,11 @@ fn rename_main(ir: String) -> String {
 // Link an object file with the Mapanare runtime.
 // Tries precompiled libmapanare_rt.a first, falls back to C source.
 fn link_with_runtime(obj_path: String, out_path: String) -> Int {
-    let link_pre: String = "gcc " + obj_path + " runtime/native/libmapanare_rt.a -o " + out_path + " -no-pie -rdynamic -lm -lpthread 2>/dev/null"
+    let null_r: String = __mn_dev_null_redirect()
+    let link_pre: String = "gcc " + obj_path + " runtime/native/libmapanare_rt.a -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
     let r: Int = __mn_system(link_pre)
     if r == 0 { return 0 }
-    let link_src: String = "gcc " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + " -no-pie -rdynamic -lm -lpthread 2>/dev/null"
+    let link_src: String = "gcc " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
     return __mn_system(link_src)
 }
 
@@ -400,6 +545,12 @@ fn run_test(filename: String) {
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
         __mn_str_eprint(" (cannot read file)\n")
+        __mn_exit(1)
+    }
+    // v5.9.0 DX.3: probe clang before any work so the failure mode is
+    // an install-instructions message instead of an opaque "FAIL ... clang failed".
+    if !check_clang_available() {
+        print_clang_install_help()
         __mn_exit(1)
     }
     let cr: CompileResult = compile(source, filename)
@@ -412,12 +563,15 @@ fn run_test(filename: String) {
     // Rename @main → @mn_main so the C wrapper provides the real main()
     __mn_file_write("/tmp/mnc_test.ll", rename_main(cr.ir_text))
 
-    // Compile IR -> object
-    let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_test.ll -o /tmp/mnc_test.o 2>/dev/null")
+    // Compile IR -> object. v5.9.0 DX.3: stderr captured to a temp path
+    // so report_clang_failure() can show the real error instead of the
+    // pre-v5.9.0 swallowed-via-2>/dev/null behavior.
+    let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_test.ll -o /tmp/mnc_test.o" + clang_stderr_redirect())
     if r1 != 0 {
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
-        __mn_str_eprint(" (clang failed)\n")
+        __mn_str_eprint("\n")
+        report_clang_failure()
         __mn_exit(1)
     }
 
@@ -449,8 +603,14 @@ fn run_test(filename: String) {
 // ---------------------------------------------------------------------------
 
 fn run_build(filename: String) {
-    // Check if argument is a directory (try reading it as file — empty = dir or missing)
+    // v5.9.0 DX.3: probe clang up front for the single-file path. The
+    // directory path delegates to mnc-build.sh which has its own
+    // toolchain detection.
     let ext: String = file_extension(filename)
+    if len(ext) > 0 && !check_clang_available() {
+        print_clang_install_help()
+        __mn_exit(1)
+    }
 
     // Directory build: delegate to mnc-build.sh for incremental compilation
     if len(ext) == 0 {
@@ -521,11 +681,13 @@ fn run_build(filename: String) {
     // Rename @main → @mn_main so the C wrapper provides the real main()
     __mn_file_write("/tmp/mnc_build.ll", rename_main(cr.ir_text))
 
-    // Compile with selected optimization level
-    let clang_cmd: String = "clang -c " + opt_flag + " /tmp/mnc_build.ll -o /tmp/mnc_build.o 2>/dev/null"
+    // Compile with selected optimization level. v5.9.0 DX.3: clang stderr
+    // captured to a temp file so report_clang_failure() can surface the
+    // real diagnostic instead of bare "clang failed".
+    let clang_cmd: String = "clang -c " + opt_flag + " /tmp/mnc_build.ll -o /tmp/mnc_build.o" + clang_stderr_redirect()
     let r1: Int = __mn_system(clang_cmd)
     if r1 != 0 {
-        __mn_str_eprint("error: clang failed\n")
+        report_clang_failure()
         __mn_exit(1)
     }
 
@@ -533,7 +695,7 @@ fn run_build(filename: String) {
     let r2: Int = link_with_runtime("/tmp/mnc_build.o", out_name)
     // Strip if release/small mode
     if len(strip_flag) > 0 {
-        let strip_cmd: String = "strip " + out_name + " 2>/dev/null"
+        let strip_cmd: String = "strip " + out_name + __mn_dev_null_redirect()
         __mn_system(strip_cmd)
     }
     if r2 != 0 {
@@ -556,6 +718,12 @@ fn run_program(filename: String) {
         __mn_str_eprint("'\n")
         __mn_exit(1)
     }
+    // v5.9.0 DX.3: probe clang first; saves the user a wasted compile cycle
+    // when the real fix is "install LLVM".
+    if !check_clang_available() {
+        print_clang_install_help()
+        __mn_exit(1)
+    }
     let cr: CompileResult = compile(source, filename)
     if !cr.success {
         __mn_str_eprint("error: compile failed\n")
@@ -564,13 +732,13 @@ fn run_program(filename: String) {
     __mn_file_write("/tmp/mnc_run.ll", rename_main(cr.ir_text))
 
     // Single-step compile+link via clang (faster than separate clang + gcc)
-    let compile_cmd: String = "clang -O0 /tmp/mnc_run.ll runtime/native/libmapanare_rt.a -o /tmp/mnc_run -lm -lpthread 2>/dev/null"
+    let compile_cmd: String = "clang -O0 /tmp/mnc_run.ll runtime/native/libmapanare_rt.a -o /tmp/mnc_run -lm -lpthread" + clang_stderr_redirect()
     let r1: Int = __mn_system(compile_cmd)
     if r1 != 0 {
         // Fall back to two-step compile+link
-        let r1b: Int = __mn_system("clang -c -O0 /tmp/mnc_run.ll -o /tmp/mnc_run.o 2>/dev/null")
+        let r1b: Int = __mn_system("clang -c -O0 /tmp/mnc_run.ll -o /tmp/mnc_run.o" + clang_stderr_redirect())
         if r1b != 0 {
-            __mn_str_eprint("error: clang failed\n")
+            report_clang_failure()
             __mn_exit(1)
         }
         let r2: Int = link_with_runtime("/tmp/mnc_run.o", "/tmp/mnc_run")
@@ -610,6 +778,12 @@ fn run_compile(filename: String) {
         __mn_str_eprint("'\n")
         __mn_exit(1)
     }
+    // v5.9.0 DX.3: probe clang up front. compile applies to both the .mn
+    // and the foreign-source paths; both ultimately invoke clang.
+    if !check_clang_available() {
+        print_clang_install_help()
+        __mn_exit(1)
+    }
 
     let ext: String = file_extension(filename)
 
@@ -628,9 +802,9 @@ fn run_compile(filename: String) {
             }
         }
         __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr.ir_text))
-        let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o 2>/dev/null")
+        let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
         if r1 != 0 {
-            __mn_str_eprint("error: clang failed\n")
+            report_clang_failure()
             __mn_exit(1)
         }
         let r2: Int = link_with_runtime("/tmp/mnc_compile.o", out_name)
@@ -656,7 +830,7 @@ fn run_compile(filename: String) {
     }
 
     // Transpile to .mn via the Python CLI (mapanare transpile <file> -o /tmp/mnc_transpiled.mn)
-    let transpile_cmd: String = "mapanare transpile " + filename + " -o /tmp/mnc_transpiled.mn 2>/dev/null"
+    let transpile_cmd: String = "mapanare transpile " + filename + " -o /tmp/mnc_transpiled.mn" + __mn_dev_null_redirect()
     let rt: Int = __mn_system(transpile_cmd)
     if rt != 0 {
         __mn_str_eprint("error: transpilation failed for '")
@@ -687,9 +861,9 @@ fn run_compile(filename: String) {
     }
 
     __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr2.ir_text))
-    let r3: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o 2>/dev/null")
+    let r3: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
     if r3 != 0 {
-        __mn_str_eprint("error: clang failed\n")
+        report_clang_failure()
         __mn_exit(1)
     }
     let r4: Int = link_with_runtime("/tmp/mnc_compile.o", out_name2)
@@ -716,9 +890,28 @@ fn mn_main() {
         __mn_str_eprint("       mnc compile <file> [-o output]\n")
         __mn_str_eprint("       mnc cache <stats|clean>\n")
         __mn_str_eprint("       mnc version\n")
+        __mn_str_eprint("       mnc --help              (or 'mnc help <subcommand>')\n")
         __mn_exit(1)
     }
     let arg1: String = __mn_argv(1)
+
+    // v5.9.0 DX.1: help dispatch — pre-v5.9.0 these fell through and
+    // surfaced as ``error: cannot read file '--help'``.
+    if arg1 == "--help" || arg1 == "-h" || arg1 == "help" {
+        if __mn_argc() >= 3 {
+            print_subcommand_help(__mn_argv(2))
+        } else {
+            print_help_text()
+        }
+        return
+    }
+
+    // Per-subcommand help: ``mnc <sub> --help`` prints just that sub's
+    // usage. Cheaper than threading a flag through each run_* helper.
+    if __mn_argc() >= 3 && __mn_argv(2) == "--help" {
+        print_subcommand_help(arg1)
+        return
+    }
 
     // Subcommands
     if arg1 == "test" {
@@ -751,14 +944,40 @@ fn mn_main() {
             __mn_exit(1)
         }
         let cache_cmd: String = __mn_argv(2)
+        // v5.9.0 DX.4: native rewrite. Pre-v5.9.0 both branches shelled
+        // out to POSIX-only commands (``rm -rf`` / ``find ... | wc -l`` /
+        // bash ``[ -d ... ]``); on Windows __mn_system invokes cmd.exe
+        // and surfaced ``-d was unexpected at this time``. The runtime
+        // helpers __mn_dir_remove_recursive / __mn_dir_count_files /
+        // __mn_dir_total_size are platform-aware.
         if cache_cmd == "clean" {
-            let rc: Int = __mn_system("rm -rf .mnc_cache && echo 'Cache cleared.'")
-            if rc != 0 { __mn_exit(rc) }
+            if __mn_file_exists(".mnc_cache") == 0 {
+                print("No cache to clear.")
+                return
+            }
+            let rc: Int = __mn_dir_remove_recursive(".mnc_cache")
+            if rc == 0 {
+                print("Cache cleared.")
+            } else {
+                __mn_str_eprint("error: failed to remove .mnc_cache\n")
+                __mn_exit(1)
+            }
             return
         }
         if cache_cmd == "stats" {
-            let rs: Int = __mn_system("if [ -d .mnc_cache ]; then echo \"Cache: .mnc_cache/\"; echo \"  Files: $(find .mnc_cache -type f | wc -l)\"; echo \"  Size: $(du -sh .mnc_cache | cut -f1)\"; if [ -f .mnc_cache/manifest.txt ]; then echo \"  Modules: $(wc -l < .mnc_cache/manifest.txt)\"; fi; else echo 'No cache (run mnc build <dir> first)'; fi")
-            if rs != 0 { __mn_exit(rs) }
+            if __mn_file_exists(".mnc_cache") == 0 {
+                print("No cache (run mnc build <dir> first)")
+                return
+            }
+            let count: Int = __mn_dir_count_files(".mnc_cache")
+            let total: Int = __mn_dir_total_size(".mnc_cache")
+            print("Cache: .mnc_cache/")
+            print("  Files: " + str(count))
+            print("  Size: " + format_bytes(total))
+            if __mn_file_exists(".mnc_cache/manifest.txt") != 0 {
+                let manifest: String = __mn_file_read_or_empty(".mnc_cache/manifest.txt")
+                print("  Modules: " + str(count_lines(manifest)))
+            }
             return
         }
         __mn_str_eprint("unknown cache command: ")
