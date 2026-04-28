@@ -83,7 +83,7 @@ Ship a professional Windows distribution model:
 | **Wk.3** | HIGH | Replace `w64devkit` staging in `build-cli` with a curated LLVM-MinGW/UCRT SDK subset that contains clang/lld plus the Windows target headers, startup objects, import libs, and CRT libs needed for generated C/LLVM output. | 3-5h |
 | **Wk.4** | HIGH | Produce a true minimal Windows ZIP before any SDK is staged. Target `< 25 MB`; alarm at `> 40 MB`. | 1h |
 | **Wk.5** | HIGH | Produce a default SDK Windows ZIP that works on a clean machine. Target `< 150 MB`; hard alarm at `> 180 MB`. | 1-2h |
-| **Wk.6** | MEDIUM | Add a published-ZIP smoke job that strips `PATH`, `LIB`, and `INCLUDE`, extracts the SDK ZIP, and runs `mnc run`, `mnc build`, and `mnc test`. | 1-2h |
+| **Wk.6** | MEDIUM | Add a published-ZIP smoke job that strips `PATH`, `LIB`, and `INCLUDE`, extracts the SDK ZIP, and runs `mnc run`, `mnc build`, and the built executable. `mnc test` remains TR.1-blocked until the test runner emits a synthetic `main`. | 1-2h |
 | **Wk.7** | MEDIUM | Update `packaging/install.ps1`, `packaging/mapanare-up.ps1`, release table copy, and README wording so "minimal" vs "SDK" is honest. Keep `MAPANARE_NO_BUNDLED_LLVM=1` as a compatibility alias. | 1-2h |
 | **Wk.8** | MEDIUM | Add focused tests for bundled SDK detection and no-toolchain minimal selection. | 1-2h |
 
@@ -258,8 +258,12 @@ Then:
 .\out\mapanare\mnc.exe run hello.mn
 .\out\mapanare\mnc.exe build hello.mn -o hello.exe
 .\hello.exe
-.\out\mapanare\mnc.exe test smoke_tests.mn
 ```
+
+`mnc test smoke_tests.mn` is intentionally excluded from Wk.6 until
+TR.1 lands. The Python test runner currently compiles `@test` functions
+without a synthetic `main`, so Windows LLVM-MinGW links fail with an
+undefined `WinMain` and Linux links fail with an undefined `main`.
 
 Size checks:
 
@@ -364,4 +368,3 @@ requires a system toolchain or `mapanare-up install-toolchain`.
 | Wk.R5 | Existing users/scripts expect `mapanare-win-x64.zip`. | Keep it as a compatibility alias to SDK for v5.12.0; installer defaults unchanged. |
 | Wk.R6 | License attribution is incomplete after switching SDK source. | Update `THIRD-PARTY-LICENSES.md`; copy upstream license files into the SDK directory. |
 | Wk.R7 | C backend paths still assume gcc. | `Toolchain.compiler` can be clang; tests must cover clang-only bundled SDK. |
-
