@@ -24,7 +24,7 @@ $UseBundledLlvm = $true
 if ($env:MAPANARE_NO_BUNDLED_LLVM -in @("1", "true", "yes", "TRUE", "YES")) {
     $UseBundledLlvm = $false
 }
-$Artifact = if ($UseBundledLlvm) { "mapanare-win-x64.zip" } else { "mapanare-win-x64-minimal.zip" }
+$LegacyArtifact = if ($UseBundledLlvm) { "mapanare-win-x64.zip" } else { "mapanare-win-x64-minimal.zip" }
 
 # ---------- Resolve version ----------
 if (-not $Version) {
@@ -46,7 +46,28 @@ if ($Version -eq "latest") {
     }
 }
 
+# v5.11.0 Pk.1: artifact filenames now include the version
+# (mapanare-5.11.0-win-x64.zip). Strip the leading ``v`` because the
+# git tag uses ``v5.11.0`` but the VERSION file / filename use
+# ``5.11.0`` (PLAN Decision 3). Probe the versioned name first; fall
+# back to the legacy unversioned name for releases <= v5.10.0 (which
+# don't have a versioned asset) and for the 2-release alias soak
+# window (drop the fallback in v5.13.0).
+$VersionTag = $Version -replace '^v', ''
+$VersionedArtifact = if ($UseBundledLlvm) {
+    "mapanare-${VersionTag}-win-x64.zip"
+} else {
+    "mapanare-${VersionTag}-win-x64-minimal.zip"
+}
+$Artifact = $VersionedArtifact
 $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$Artifact"
+try {
+    Invoke-WebRequest -Uri $DownloadUrl -Method Head -UseBasicParsing -ErrorAction Stop | Out-Null
+} catch {
+    Write-Host "  Versioned asset not found; falling back to legacy name $LegacyArtifact" -ForegroundColor Yellow
+    $Artifact = $LegacyArtifact
+    $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$Artifact"
+}
 
 # ---------- Download & install ----------
 $LlvmStatus = if ($UseBundledLlvm) { "bundled (no separate install needed)" } else { "NOT bundled — clang required separately" }

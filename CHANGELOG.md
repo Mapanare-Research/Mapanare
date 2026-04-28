@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.0] - 2026-04-28
+
+### Added
+
+- **Pk.1 — versioned release-artifact filenames.** Every artifact
+  produced by `.github/workflows/publish.yml` now carries the version
+  in its filename (`mapanare-5.11.0-linux-x64.tar.gz`,
+  `mapanare-5.11.0-mac-arm64.tar.gz`,
+  `mapanare-5.11.0-win-x64.zip`,
+  `mapanare-5.11.0-win-x64-minimal.zip`,
+  `mnc-5.11.0-linux-x64`, `mnc-5.11.0-darwin-arm64`,
+  `mnc-5.11.0-win-x64.exe`). Driven by the VERSION file. Locally-
+  saved copies of two different releases no longer collide on the
+  same filename. Per PLAN Decision 3 the version segment carries no
+  leading `v` (matches the VERSION file convention).
+- **Pk.1 legacy alias window.** Each versioned upload is paired with
+  a copy at the legacy unversioned name (`mapanare-win-x64.zip`,
+  `mnc-linux-x64`, etc.) for the 2-release soak window per PLAN
+  Decision 1. Blog-post install scripts that hardcoded the
+  unversioned URL keep resolving. Drop the alias in v5.13.0.
+- **Pk.1 install-script versioned probe.** `packaging/install.ps1`
+  and `packaging/install.sh` now compute the versioned artifact
+  name from the resolved version and probe it via HEAD before
+  download, falling back to the legacy unversioned name on 404.
+  Covers two cases: (1) installing v5.11.0+ → versioned path
+  succeeds; (2) installing v5.10.0 from a v5.11.0 install script →
+  versioned 404, legacy succeeds.
+- **Pk.1 smoke-job hardening.** The `windows-bundled-llvm-smoke`
+  job downloads the **versioned** ZIP so a missing-versioned-asset
+  upload failure trips the smoke gate before checksums run.
+
+### Changed
+
+- **Pk.1 release-notes table.** Headline links in the GitHub
+  Release body now point at the versioned URLs. The legacy
+  unversioned URLs continue to work via the alias upload (see
+  above).
+
+### Removed
+
+- **Pk.2 — v5.9.1 implicit-run deprecation note dropped.** The
+  one-line stderr hint on the bare `mnc <file.mn>` path
+  (`note: 'mnc <file.mn>' now runs the program; use 'mnc emit-llvm'
+  for IR output`) was a soak-window concession for downstream CI
+  scripts that piped `mnc file.mn > out.ll`. v5.9.1 PLAN scheduled
+  removal at v5.11.0; v5.10.0 carried the note as the second
+  release of the soak window. Now silent.
+  `tests/test_cli_default.py` inverted the note-presence test to
+  `test_default_silent_after_v5_11_0`.
+
+### Decisions documented
+
+- **Pk.3 — PyInstaller→native bundle swap deferred.** Native `mnc`
+  covers 7 of `mapanare`'s 25 subcommands. Missing high-priority
+  surface: `lsp`, `fmt`, `init`, `check`, `lint`. Missing medium-
+  priority emit/transpile/bind/doc surface. Missing registry +
+  deploy commands. Swapping the Windows ZIP's PyInstaller layer
+  for a native-only bundle would silently break the LSP plugin
+  flow, the `mnc init myproject` getting-started call in
+  install.ps1, and the WASM CI lane. Re-evaluate when Mc.* (mnc
+  parity) docket closes — Mc.1 `mnc lsp`, Mc.2 `mnc fmt`, Mc.3
+  `mnc init`, Mc.4 `mnc check`, Mc.5 `mnc emit-wasm`. Full audit:
+  `docs/roadmap/v5/v5.11.0/MNC_PARITY_GAPS.md`.
+- **Pk.4 — macOS / Linux LLVM bundling stays deferred.** Three
+  reasons from the v5.10.0 PLAN Decision 4 still hold: system
+  clang is canonical via `xcode-select --install` and `apt install
+  clang`; a static Linux LLVM bundle with libstdc++ is ~300 MB
+  vs the Windows ZIP's 95 MB; no demand signal from v5.10.0. Re-
+  open if a demand signal emerges. Closeout doc:
+  `docs/roadmap/v5/v5.11.0/SESSION_REPORT.md` "What did NOT ship".
+
+### Notes
+
+- Compiler internals untouched. Zero changes to parser, semantic
+  checker, MIR, lowerer, optimizer, or the LLVM/C/WASM emitters.
+  v5.11.0 is packaging hygiene + post-bundle cleanup.
+- **No bootstrap seed refresh.** Zero new C-runtime exports —
+  first release in 5+ to skip Bb.*. The v5.10.0 seed at
+  `bootstrap/seed/linux-x86_64/mnc` resolves all referenced
+  symbols through the v5.11.0 build.
+- **Strict 3-stage fixed-point preserved.** The v5.9.0 milestone,
+  held through v5.9.1 / v5.9.2 / v5.10.0 / v5.11.0.
+- Goldens 66/66 byte-identical (13.1s on WSL Ubuntu).
+
+### Validation
+
+- `make lint` clean.
+- WSL Ubuntu: `scripts/build_stage1.py` ran clean, goldens 66/66,
+  `scripts/verify_fixed_point.sh` strict (0 diff),
+  `scripts/build_from_seed.sh` end-to-end clean with the existing
+  v5.10.0 seed (no refresh).
+- `scripts/check_changelog_honesty.py` clean.
+
 ## [5.10.0] - 2026-04-28
 
 ### Added

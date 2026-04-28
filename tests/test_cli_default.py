@@ -41,9 +41,12 @@ def test_default_runs_program(hello_mn_path: Path) -> None:
 
 
 @pytest.mark.skipif(not MNC.exists(), reason="mnc-stage1 not built")
-def test_default_prints_deprecation_note(hello_mn_path: Path) -> None:
+def test_default_silent_after_v5_11_0(hello_mn_path: Path) -> None:
+    """v5.11.0 Pk.2: the v5.9.1 implicit-run deprecation note was removed
+    after the v5.10.0 soak window."""
     r = subprocess.run([str(MNC), str(hello_mn_path)], capture_output=True, text=True)
-    assert "now runs the program" in r.stderr or "implicit 'run'" in r.stderr
+    assert "now runs the program" not in r.stderr
+    assert "implicit 'run'" not in r.stderr
 
 
 @pytest.mark.skipif(not MNC.exists(), reason="mnc-stage1 not built")

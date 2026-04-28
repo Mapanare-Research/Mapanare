@@ -107,10 +107,10 @@ jobs:
 
             | Platform | Full CLI | Native Compiler |
             |:---------|:--------:|:---------------:|
-            | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) |
-            | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) |
+            | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-linux-x64) |
+            | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-darwin-arm64) |
             | **macOS** Intel | — | Build from source ([instructions](https://github.com/${{ github.repository }}#building-from-source)) |
-            | **Windows** x86_64 | [Download (~95 MB, bundled LLVM)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) · [Minimal (~10 MB)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64-minimal.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-win-x64.exe) |
+            | **Windows** x86_64 | [Download (~95 MB, bundled LLVM)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-win-x64.zip) · [Minimal (~10 MB)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-win-x64-minimal.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-win-x64.exe) |
 
             > **Full CLI** includes the compiler, Python transpiler, LSP, and WASM backend.
             > **Native Compiler** is a single ~3 MB binary with no dependencies.
@@ -349,12 +349,17 @@ jobs:
       # Archive minimal variant FIRST — opt-out users
       # (MAPANARE_NO_BUNDLED_LLVM=1 in install.ps1) download this ZIP,
       # which is the pre-v5.10.0 PyInstaller bundle with no bundled LLVM.
+      # v5.11.0 Pk.1: also produce a versioned copy. Legacy unversioned
+      # name kept as a 2-release alias so blog-post install scripts that
+      # hardcoded the URL keep resolving.
       - name: Archive minimal CLI bundle (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           cd dist
-          7z a mapanare-win-x64-minimal.zip mapanare/
+          V="${{ needs.release.outputs.new_version }}"
+          7z a "mapanare-${V}-win-x64-minimal.zip" mapanare/
+          cp "mapanare-${V}-win-x64-minimal.zip" mapanare-win-x64-minimal.zip
 
       - name: Stage bundled LLVM into PyInstaller dir (Windows)
         if: runner.os == 'Windows'
@@ -391,26 +396,48 @@ jobs:
             cp docs/THIRD-PARTY-LICENSES.md dist/mapanare/THIRD-PARTY-LICENSES.md
           fi
 
+      # v5.11.0 Pk.1: produce a versioned archive (e.g.
+      # mapanare-5.11.0-linux-x64.tar.gz) plus a copy at the legacy
+      # unversioned name so existing install scripts keep working
+      # through the 2-release soak window (drop legacy in v5.13.0).
       - name: Archive CLI binary
         shell: bash
         run: |
           cd dist
-          ${{ matrix.archive_cmd }} "${{ matrix.archive_name }}" mapanare/
+          V="${{ needs.release.outputs.new_version }}"
+          # Compute versioned archive name by inserting -${V} after the
+          # 'mapanare' prefix in matrix.archive_name. The matrix entry
+          # already encodes platform/extension; we only inject the
+          # version segment. Examples:
+          #   mapanare-linux-x64.tar.gz -> mapanare-5.11.0-linux-x64.tar.gz
+          #   mapanare-mac-arm64.tar.gz -> mapanare-5.11.0-mac-arm64.tar.gz
+          #   mapanare-win-x64.zip      -> mapanare-5.11.0-win-x64.zip
+          VERSIONED_NAME="${{ matrix.archive_name }}"
+          VERSIONED_NAME="${VERSIONED_NAME/mapanare-/mapanare-${V}-}"
+          ${{ matrix.archive_cmd }} "$VERSIONED_NAME" mapanare/
+          cp "$VERSIONED_NAME" "${{ matrix.archive_name }}"
+          ls -la "$VERSIONED_NAME" "${{ matrix.archive_name }}"
+          # Stash the computed name for the upload step.
+          echo "VERSIONED_ARCHIVE=$VERSIONED_NAME" >> "$GITHUB_ENV"
 
       - name: Upload CLI archive to GitHub Release
         shell: bash
         run: |
           gh release upload "v${{ needs.release.outputs.new_version }}" \
+            "dist/${{ env.VERSIONED_ARCHIVE }}" \
             "dist/${{ matrix.archive_name }}" \
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # v5.11.0 Pk.1: upload both versioned + legacy minimal ZIP.
       - name: Upload minimal Windows ZIP to GitHub Release
         if: runner.os == 'Windows'
         shell: bash
         run: |
+          V="${{ needs.release.outputs.new_version }}"
           gh release upload "v${{ needs.release.outputs.new_version }}" \
+            "dist/mapanare-${V}-win-x64-minimal.zip" \
             dist/mapanare-win-x64-minimal.zip \
             --clobber
         env:
@@ -667,12 +694,33 @@ jobs:
             echo "No native binary produced (platform may not support it)"
           fi
 
+      # v5.11.0 Pk.1: also produce a versioned copy of the native
+      # compiler binary. Legacy unversioned name kept as a 2-release
+      # alias (drop in v5.13.0).
+      - name: Stage versioned native binary
+        shell: bash
+        run: |
+          if [[ -f "${{ matrix.artifact }}" ]]; then
+            V="${{ needs.release.outputs.new_version }}"
+            # Inject -${V} after the 'mnc' prefix:
+            #   mnc-linux-x64       -> mnc-5.11.0-linux-x64
+            #   mnc-darwin-arm64    -> mnc-5.11.0-darwin-arm64
+            #   mnc-win-x64.exe     -> mnc-5.11.0-win-x64.exe
+            VERSIONED_NAME="${{ matrix.artifact }}"
+            VERSIONED_NAME="${VERSIONED_NAME/mnc-/mnc-${V}-}"
+            cp "${{ matrix.artifact }}" "$VERSIONED_NAME"
+            ls -la "$VERSIONED_NAME" "${{ matrix.artifact }}"
+            echo "VERSIONED_NATIVE=$VERSIONED_NAME" >> "$GITHUB_ENV"
+          fi
+
       - name: Upload native binary to release
         shell: bash
         run: |
           if [[ -f "${{ matrix.artifact }}" ]]; then
             gh release upload "v${{ needs.release.outputs.new_version }}" \
-              "${{ matrix.artifact }}" --clobber
+              "${{ env.VERSIONED_NATIVE }}" \
+              "${{ matrix.artifact }}" \
+              --clobber
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -691,15 +739,20 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
+      # v5.11.0 Pk.1: download the versioned ZIP so a missing-versioned-
+      # asset failure trips the smoke job (rather than silently falling
+      # back to the legacy alias). Legacy name still uploaded by
+      # build-cli for blog-post install-script users.
       - name: Download published bundled ZIP
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download "v${{ needs.release.outputs.new_version }}" `
-            -p mapanare-win-x64.zip -O mapanare.zip
+          $V = "${{ needs.release.outputs.new_version }}"
+          $Asset = "mapanare-${V}-win-x64.zip"
+          gh release download "v${V}" -p "$Asset" -O mapanare.zip
           if (-not (Test-Path mapanare.zip)) {
-            throw "mapanare-win-x64.zip not found in release"
+            throw "$Asset not found in release"
           }
           $size_mb = [math]::Round((Get-Item mapanare.zip).Length / 1MB, 1)
           Write-Host "ZIP size: $size_mb MB"

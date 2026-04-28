@@ -22487,12 +22487,11 @@ fn mn_main() {
 
     // v5.9.1 DX.5: implicit run is the default for .mn files. Pre-v5.9.1
     // the default was IR emission; that path moved to `mnc emit-llvm`.
-    // The stderr note is a one-release deprecation hint for downstream
-    // CI scripts that pipe `mnc file.mn > out.ll`. Removed in v5.11.0.
+    // v5.11.0 Pk.2: removed the one-release stderr deprecation hint that
+    // v5.9.1 / v5.10.0 carried for downstream CI scripts.
     let filename: String = arg1
     let ext_check: String = file_extension(filename)
     if ext_check == ".mn" {
-        __mn_str_eprint("note: 'mnc <file.mn>' now runs the program; use 'mnc emit-llvm' for IR output\n")
         run_program(filename)
         return
     }

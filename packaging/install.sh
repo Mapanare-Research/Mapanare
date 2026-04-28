@@ -48,7 +48,7 @@ case "$ARCH" in
   *)               echo "Error: Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-ARTIFACT="mapanare-${PLATFORM}-${ARCH_TAG}.tar.gz"
+LEGACY_ARTIFACT="mapanare-${PLATFORM}-${ARCH_TAG}.tar.gz"
 
 # ---------- Resolve version ----------
 if [ -n "$REQUESTED_VERSION" ]; then
@@ -72,7 +72,25 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARTIFACT}"
+# v5.11.0 Pk.1: artifact filenames now include the version. Strip the
+# leading ``v`` because the git tag uses ``v5.11.0`` but the VERSION
+# file / filename use ``5.11.0`` (PLAN Decision 3). Probe the versioned
+# name first; fall back to the legacy unversioned name for releases
+# <= v5.10.0 and for the 2-release alias soak window (drop the
+# fallback in v5.13.0).
+VERSION_TAG="${VERSION#v}"
+VERSIONED_ARTIFACT="mapanare-${VERSION_TAG}-${PLATFORM}-${ARCH_TAG}.tar.gz"
+DOWNLOAD_URL_VERSIONED="https://github.com/${REPO}/releases/download/${VERSION}/${VERSIONED_ARTIFACT}"
+DOWNLOAD_URL_LEGACY="https://github.com/${REPO}/releases/download/${VERSION}/${LEGACY_ARTIFACT}"
+
+if curl -fsI "$DOWNLOAD_URL_VERSIONED" >/dev/null 2>&1; then
+  ARTIFACT="$VERSIONED_ARTIFACT"
+  DOWNLOAD_URL="$DOWNLOAD_URL_VERSIONED"
+else
+  echo "  Versioned asset not found; falling back to legacy name ${LEGACY_ARTIFACT}"
+  ARTIFACT="$LEGACY_ARTIFACT"
+  DOWNLOAD_URL="$DOWNLOAD_URL_LEGACY"
+fi
 
 # ---------- Download & install ----------
 echo ""

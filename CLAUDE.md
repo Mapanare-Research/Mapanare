@@ -18,6 +18,32 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.11.0** (shipped) — **Pk.* — packaging hygiene + post-bundle
+  cleanup.** Three deferred-from-v5.10.0 cleanups, zero compiler
+  internals. **Pk.1**: release-artifact filenames now include the
+  version (`mapanare-5.11.0-win-x64.zip`, `mnc-5.11.0-linux-x64`,
+  etc.), driven by the VERSION file. install.ps1 / install.sh probe
+  the versioned name first, fall back to legacy unversioned for
+  pre-v5.11 releases and for the 2-release alias soak window (drop
+  legacy in v5.13.0). `windows-bundled-llvm-smoke` job downloads
+  the versioned ZIP so a missing-versioned-asset upload trips the
+  smoke gate. **Pk.2**: drops the v5.9.1 `mnc <file.mn>`
+  (implicit-run) deprecation stderr line; the v5.9.1 PLAN scheduled
+  removal at v5.11.0 and v5.10.0 carried it as the soak-window
+  concession. `tests/test_cli_default.py::test_default_prints_
+  deprecation_note` inverted to `test_default_silent_after_v5_11_0`.
+  **Pk.3** (evaluate-only): native `mnc` covers 7 of `mapanare`'s
+  25 subcommands. PyInstaller→native bundle swap **deferred** to
+  v5.12.x+ behind Mc.\* (mnc parity) — Mc.1 `mnc lsp`, Mc.2
+  `mnc fmt`, Mc.3 `mnc init`, Mc.4 `mnc check`, Mc.5 `mnc emit-wasm`.
+  See `docs/roadmap/v5/v5.11.0/MNC_PARITY_GAPS.md`. **Pk.4**
+  (closeout-doc): macOS/Linux LLVM bundling stays deferred —
+  system clang remains canonical, static Linux LLVM with libstdc++
+  is ~300 MB, no demand signal. NO seed refresh required (zero
+  new C-runtime exports — first release in 5+ to skip Bb.\*).
+  **Strict 3-stage fixed-point preserved** (226,603 lines / 0 diff,
+  the v5.9.0 milestone held since v5.9.0). Goldens 66/66;
+  `make lint` clean. See `docs/roadmap/v5/v5.11.0/SESSION_REPORT.md`.
 - **v5.10.0** (shipped) — **Win.1b — bundled LLVM toolchain in
   Windows release ZIP.** Closes the "missing clang" pain on Windows
   surfaced by the v5.8.7 install probe. v5.9.0 DX.3 made the failure
@@ -38,9 +64,8 @@ Most recent releases (last 6). Full history at
   **Win.1b.G**: `windows-bundled-llvm-smoke` CI job validates the
   published ZIP end-to-end with PATH stripped. Linux/macOS
   artifacts unchanged (PLAN Decision 4 — those platforms have
-  system clang; closeout in v5.11.0 Pk.4). **Bb.4 seed refresh
-  required** (new `__mn_executable_dir` export); deferred to WSL
-  follow-up. Compiler internals untouched; packaging-only release.
+  system clang; closeout in v5.11.0 Pk.4). Compiler internals
+  untouched; packaging-only release.
   See `docs/roadmap/v5/v5.10.0/SESSION_REPORT.md`.
 - **v5.9.2** (shipped) — **hygiene — pre-existing test regex +
   stale README line.** Two pre-existing fixes carried over from
@@ -106,13 +131,6 @@ Most recent releases (last 6). Full history at
   stage2.ll 222,095 lines, strict fixed point in no-Python pipeline.
   Goldens 66/66; pytest 2,372 passed. See
   `docs/roadmap/v5/v5.8.6/SESSION_REPORT.md`.
-- **v5.8.5** (shipped) — **Bb.1 closure — bootstrap seed refresh.**
-  Pure seed refresh; zero source changes. Fixes v5.8.4 CI break:
-  v5.8.4 added a real Mapanare-level call to `__mn_host_is_win64()`
-  but the seed (v4.155.0) predates the export. Refresh per
-  `bootstrap/seed/README.md` §"Updating the Seed". New seed 6.43 MB;
-  goldens 66/66 preserved. See
-  `docs/roadmap/v5/v5.8.5/SESSION_REPORT.md`.
 > Older release notes elided. See `docs/roadmap/ROADMAP.md` for the
 > full ledger and `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` for any
 > specific release.
