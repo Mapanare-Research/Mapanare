@@ -62,10 +62,23 @@ if ($CompilerRt) {
 }
 
 # License — Apache 2.0 with LLVM Exception requires LICENSE.TXT
-# alongside redistributed binaries. Missing this is a license violation.
+# alongside redistributed binaries. Missing this is a license
+# violation.
+#
+# The official LLVM-18.1.8-win64.exe NSIS installer does NOT ship
+# a top-level LICENSE.TXT (only sub-component LICENSEs under
+# include/llvm/Support/, which are not the project-level Apache
+# 2.0 + LLVM Exception text). The CI workflow that prepares
+# $LlvmDir downloads LICENSE.TXT separately from the
+# llvm-project source tree at the same pinned tag and writes it
+# to $LlvmDir/LICENSE.TXT — see .github/workflows/publish.yml's
+# "Ensure LLVM LICENSE.TXT is present" step.
 $LicenseSrc = Join-Path $LlvmDir "LICENSE.TXT"
 if (-not (Test-Path $LicenseSrc)) {
-    throw "LICENSE.TXT missing in $LlvmDir — required for Apache 2.0 + LLVM Exception compliance"
+    Write-Host "Tree dump for diagnosis (top-level + 2 levels):"
+    Get-ChildItem -Path $LlvmDir -Depth 2 -ErrorAction SilentlyContinue |
+        ForEach-Object { Write-Host "  $($_.FullName)" }
+    throw "LICENSE.TXT missing in $LlvmDir — required for Apache 2.0 + LLVM Exception compliance. The publish.yml workflow's 'Ensure LLVM LICENSE.TXT is present' step should curl it from llvm-project; check that step's logs."
 }
 Copy-Item $LicenseSrc -Destination (Join-Path $OutDir "LICENSE.TXT")
 

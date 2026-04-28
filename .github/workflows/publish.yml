@@ -346,6 +346,39 @@ jobs:
           rm llvm.exe
           ls LLVM/bin/clang.exe
 
+      # The LLVM-${VER}-win64.exe NSIS installer does NOT ship a
+      # top-level LICENSE.TXT — only sub-component LICENSE files
+      # under include/llvm/Support/ (which are not the project-level
+      # Apache 2.0 + LLVM Exception text required for redistribution).
+      # Pull the canonical LICENSE.TXT directly from the llvm-project
+      # source tree at the same pinned tag. ~12 KB; unconditional
+      # (runs on cache hit too) so cache state can't leave us without
+      # the file.
+      - name: Ensure LLVM LICENSE.TXT is present
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          LLVM_VERSION: "18.1.8"
+        run: |
+          set -euo pipefail
+          license_path=".tmp-llvm/LLVM/LICENSE.TXT"
+          if [[ -s "$license_path" ]]; then
+            echo "LICENSE.TXT already present (size: $(wc -c < "$license_path") bytes)"
+            exit 0
+          fi
+          license_url="https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-${LLVM_VERSION}/llvm/LICENSE.TXT"
+          curl -fL -o "$license_path" "$license_url"
+          # Sanity check: the Apache 2.0 + LLVM Exception file is
+          # ~12 KB; anything smaller than 8 KB is suspicious (sub-
+          # component LICENSE or HTML 404 page).
+          size=$(wc -c < "$license_path")
+          if [[ $size -lt 8000 ]]; then
+            echo "FATAL: LICENSE.TXT download too small ($size bytes); expected ~12 KB"
+            head -20 "$license_path" || true
+            exit 1
+          fi
+          echo "LICENSE.TXT downloaded ($size bytes) from $license_url"
+
       # Archive minimal variant FIRST — opt-out users
       # (MAPANARE_NO_BUNDLED_LLVM=1 in install.ps1) download this ZIP,
       # which is the pre-v5.10.0 PyInstaller bundle with no bundled LLVM.
@@ -558,8 +591,11 @@ jobs:
             if [[ $rc -ne 0 ]]; then
               echo "=== Wb.1.dx: mnc-stage1.exe exited $rc; capturing diagnostics ==="
               if command -v gdb >/dev/null; then
+                # gdb args mirror the failing invocation above (the
+                # explicit `emit-llvm` subcommand is required after
+                # v5.9.1 DX.5 made bare `mnc <file.mn>` run-by-default).
                 gdb -batch \
-                  -ex 'set args mapanare/self/mnc_all.mn' \
+                  -ex 'set args emit-llvm mapanare/self/mnc_all.mn' \
                   -ex 'run' -ex 'bt 30' \
                   ./mapanare/self/mnc-stage1.exe || true
               fi
@@ -590,15 +626,23 @@ jobs:
             ./toolchain/bin/strip.exe "${{ matrix.artifact }}" || true
             # Wb.1.dx wrap for the stage2 binary running mnc_all.mn —
             # this is where Wb.2 used to manifest as a hard SIGSEGV.
+            # v5.9.1 DX.5 / v5.10.0 Bb.4: explicit `emit-llvm` subcommand.
+            # Without it, `mnc <file.mn>` would compile + run mnc_all.mn
+            # (the compiler) and then attempt to invoke the resulting
+            # binary with no args — pre-v5.11.0 builds papered over this
+            # because the deprecation note path still emitted IR; v5.11.0
+            # Pk.2 dropped that fallback so the run-by-default dispatch
+            # is now hit literally. Manifests as garbage `size_t` from a
+            # path-string to `__mn_alloc` (e.g. "...M\eranb..." → OOM).
             set +e
-            ./"${{ matrix.artifact }}" mapanare/self/mnc_all.mn > stage3.ll
+            ./"${{ matrix.artifact }}" emit-llvm mapanare/self/mnc_all.mn > stage3.ll
             rc=$?
             set -e
             if [[ $rc -ne 0 ]]; then
               echo "=== Wb.1.dx: mnc-stage2 exited $rc; capturing diagnostics ==="
               if command -v gdb >/dev/null; then
                 gdb -batch -ex run -ex 'bt 30' \
-                  --args ./"${{ matrix.artifact }}" mapanare/self/mnc_all.mn || true
+                  --args ./"${{ matrix.artifact }}" emit-llvm mapanare/self/mnc_all.mn || true
               fi
               exit $rc
             fi
