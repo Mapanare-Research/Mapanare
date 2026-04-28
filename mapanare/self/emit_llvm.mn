@@ -1239,6 +1239,10 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     s = declare_runtime_fn(s, "__mn_dir_remove_recursive", "i64", llvm_string())
     // v5.9.0 DX.3: platform-portable temp path for clang stderr capture.
     s = declare_runtime_fn(s, "__mn_clang_err_path", llvm_string(), "")
+    // v5.10.0 Win.1b.D: directory of the running binary. find_clang()
+    // in main.mn calls this to locate a bundled LLVM toolchain at
+    // <exe_dir>/llvm/clang(.exe) before falling back to PATH clang.
+    s = declare_runtime_fn(s, "__mn_executable_dir", llvm_string(), "")
 
     // chr/ord
     s = declare_runtime_fn(s, "__mn_str_chr", llvm_string(), "i64")

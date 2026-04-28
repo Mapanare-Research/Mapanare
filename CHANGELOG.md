@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.10.0] - 2026-04-28
+
+### Added
+
+- **Win.1b — bundled LLVM toolchain in Windows release ZIP.** Closes
+  the "missing clang" pain on Windows surfaced by the v5.8.7 install
+  probe. v5.9.0 DX.3 made the failure mode helpful (install hint
+  instead of bare "clang failed"); v5.10.0 removes the dependency
+  entirely. After this release, `irm https://mapanare.dev/install.ps1
+  | iex` followed by `mnc run hello.mn` works on a clean Windows box
+  with **zero external dependencies**.
+
+  Concretely:
+  - **Win.1b.A** — `tools/llvm-bundle/extract_minimal.ps1` extracts
+    the minimal LLVM 18.1.8 redistributable subset (`clang.exe`,
+    `lld-link.exe`, `LLVM-C.dll`, `clang_rt.builtins-x86_64.lib`,
+    `LICENSE.TXT`). Total ~95 MB. Includes a PATH-stripped smoke
+    test that catches lazy-load DLL closure gaps `dumpbin` alone
+    misses. Documented in `tools/llvm-bundle/REQUIRED_FILES.md`.
+  - **Win.1b.B** — `actions/cache@v4` step in `.github/workflows/
+    publish.yml` keyed on `LLVM_VERSION=18.1.8`. First run downloads
+    from llvm.org; subsequent runs hit the cache. Cushions us
+    against llvm.org rate limits and silent URL retraction.
+  - **Win.1b.C** — `build-cli` job stages the bundle into
+    `dist/mapanare/llvm/` before archiving. Verify-step compiles +
+    runs a hello-world C program with `PATH` stripped to system
+    DLLs only — fails CI loudly if the bundle's DLL closure breaks
+    in isolation.
+  - **Win.1b.D** — `find_clang()` helper in `mapanare/self/main.mn`
+    prefers `<exe_dir>/llvm/clang.exe` (or `clang` on Unix) over
+    PATH clang, falling through to v5.9.0's install-hint message
+    only when neither is present. New C-runtime export
+    `__mn_executable_dir()` in `runtime/native/mapanare_core.c`
+    (cross-platform: Win32 `GetModuleFileNameA`, macOS
+    `_NSGetExecutablePath`, Linux `readlink("/proc/self/exe")`)
+    powers the lookup. Six clang shell-out sites updated:
+    `check_clang_available`, `run_test`, `run_build`,
+    `run_program` (both fast-path and two-step fallback),
+    `run_compile` (.mn path + foreign-source path). Bundled paths
+    are quote-wrapped to survive install dirs containing spaces.
+  - **Win.1b.E** — `docs/THIRD-PARTY-LICENSES.md` indexes the
+    bundled components. LLVM Apache 2.0 + LLVM Exception is
+    permissive but redistribution requires shipping LICENSE.TXT —
+    the extract script copies it alongside the binaries; the doc
+    cites the LLVM Exception's "no copyleft on linked output"
+    clause explicitly.
+  - **Win.1b.F** — `packaging/install.ps1` honors
+    `$env:MAPANARE_NO_BUNDLED_LLVM = "1"` for opt-out users; downloads
+    `mapanare-win-x64-minimal.zip` (~10 MB, no LLVM) instead of
+    `mapanare-win-x64.zip` (~95 MB, bundled). Banner messaging
+    now reflects toolchain status + download size; success message
+    detects the bundle and reports its path.
+  - **Win.1b.G** — `windows-bundled-llvm-smoke` CI job downloads the
+    published ZIP, strips `PATH`, and runs `mnc run hello.mn` end-
+    to-end. Catches "the bundle is broken" before users do. Gates
+    `checksums` so a broken bundle never reaches a final release.
+
+### Changed
+
+- **`mapanare-win-x64.zip` is now ~95 MB by default** (was ~10 MB).
+  Includes bundled LLVM. Power users can still get the small ZIP
+  by setting `MAPANARE_NO_BUNDLED_LLVM=1` before running install.ps1
+  or by downloading `mapanare-win-x64-minimal.zip` directly. Linux
+  and macOS artifacts unchanged — those platforms have system clang
+  (PLAN Decision 4; closeout in v5.11.0 Pk.4).
+
+### Notes
+
+- Compiler internals untouched. Zero changes to parser, semantic
+  checker, MIR, lowerer, optimizer, or the LLVM/C/WASM emitters.
+  v5.10.0 is a packaging release.
+- New C-runtime export (`__mn_executable_dir`) → **Bb.4 bootstrap
+  seed refresh required.** The pre-v5.10.0 seed predates the export
+  and `bash scripts/build_from_seed.sh` will fail with "unknown
+  function" until the seed is refreshed per `bootstrap/seed/
+  README.md` §"Updating the Seed". Refresh deferred to a WSL
+  follow-up session.
+- Strict 3-stage fixed-point preserved (the v5.9.0 milestone, held
+  through v5.9.1 and v5.9.2; v5.10.0's added export is a leaf
+  function not called from the IR-metadata path that previously
+  drifted).
+- Goldens 66/66 expected to remain byte-identical; this release
+  doesn't touch any code path the goldens exercise. CI gates this.
+- v5.9.1 implicit-run deprecation note still active (per the v5.9.1
+  PLAN's two-release soak window: shipped v5.9.1, kept v5.10.0,
+  removed v5.11.0).
+- Closes Win.1b.A through Win.1b.G.
+
+### Validation
+
+- `make lint` clean (black, ruff, mypy on 54 source files)
+- Local pytest (Windows host, no `mnc` binary present): 5,497 passed,
+  69 pre-existing subprocess-launch failures (`OSError [WinError
+  193]` on tests that subprocess-invoke the `mnc` binary — these
+  failed identically before this release; baseline confirmed via
+  git stash).
+- Goldens / fixed-point / valgrind / ASan validation deferred to
+  the WSL follow-up session that runs alongside Bb.4 seed refresh.
+
 ## [5.9.2] - 2026-04-27
 
 ### Fixed

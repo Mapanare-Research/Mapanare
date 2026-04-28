@@ -60,17 +60,43 @@ fn print_help_text() {
     print("Docs: https://mapanare.dev/docs")
 }
 
+// v5.10.0 Win.1b.D: prefer a bundled LLVM toolchain over PATH clang.
+// Windows release ZIPs starting v5.10.0 ship clang.exe + lld-link.exe
+// + LLVM-C.dll alongside the mnc/mapanare binary at <exe_dir>/llvm/.
+// find_clang() returns that path if present, falls through to "clang"
+// (PATH lookup) so non-bundled installs see no behavior change. The
+// path is wrapped in quotes — install dirs containing spaces (e.g.
+// ``C:\\Program Files\\Mapanare\\bin``) would otherwise tokenise wrong
+// when concatenated into a __mn_system command string.
+fn find_clang() -> String {
+    let exe_dir: String = __mn_executable_dir()
+    if len(exe_dir) > 0 {
+        let bundled_win: String = exe_dir + "/llvm/clang.exe"
+        if __mn_file_exists(bundled_win) != 0 {
+            return "\"" + bundled_win + "\""
+        }
+        let bundled_unix: String = exe_dir + "/llvm/clang"
+        if __mn_file_exists(bundled_unix) != 0 {
+            return "\"" + bundled_unix + "\""
+        }
+    }
+    return "clang"
+}
+
 // v5.9.0 DX.3: probe clang once per invocation. Pre-v5.9.0 a missing
 // clang (the default state on most Windows boxes) surfaced as bare
 // ``error: clang failed`` with no install hint. The probe runs cold in
 // <10 ms and replaces every ``error: clang failed`` site with a
-// platform-aware install-instructions block.
+// platform-aware install-instructions block. v5.10.0 Win.1b.D layers
+// the bundled-LLVM lookup on top: if the bundle is present, we probe
+// the bundled clang and never touch PATH.
 fn check_clang_available() -> Bool {
+    let clang_bin: String = find_clang()
     if __mn_host_is_windows() != 0 {
-        let rw: Int = __mn_system("clang --version > NUL 2>NUL")
+        let rw: Int = __mn_system(clang_bin + " --version > NUL 2>NUL")
         return rw == 0
     }
-    let r: Int = __mn_system("clang --version > /dev/null 2>/dev/null")
+    let r: Int = __mn_system(clang_bin + " --version > /dev/null 2>/dev/null")
     return r == 0
 }
 
@@ -573,8 +599,10 @@ fn run_test(filename: String) {
 
     // Compile IR -> object. v5.9.0 DX.3: stderr captured to a temp path
     // so report_clang_failure() can show the real error instead of the
-    // pre-v5.9.0 swallowed-via-2>/dev/null behavior.
-    let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_test.ll -o /tmp/mnc_test.o" + clang_stderr_redirect())
+    // pre-v5.9.0 swallowed-via-2>/dev/null behavior. v5.10.0 Win.1b.D:
+    // clang resolved via find_clang() — bundled if present, PATH otherwise.
+    let clang_bin: String = find_clang()
+    let r1: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_test.ll -o /tmp/mnc_test.o" + clang_stderr_redirect())
     if r1 != 0 {
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
@@ -691,8 +719,10 @@ fn run_build(filename: String) {
 
     // Compile with selected optimization level. v5.9.0 DX.3: clang stderr
     // captured to a temp file so report_clang_failure() can surface the
-    // real diagnostic instead of bare "clang failed".
-    let clang_cmd: String = "clang -c " + opt_flag + " /tmp/mnc_build.ll -o /tmp/mnc_build.o" + clang_stderr_redirect()
+    // real diagnostic instead of bare "clang failed". v5.10.0 Win.1b.D:
+    // clang resolved via find_clang() — bundled if present, PATH otherwise.
+    let clang_bin: String = find_clang()
+    let clang_cmd: String = clang_bin + " -c " + opt_flag + " /tmp/mnc_build.ll -o /tmp/mnc_build.o" + clang_stderr_redirect()
     let r1: Int = __mn_system(clang_cmd)
     if r1 != 0 {
         report_clang_failure()
@@ -739,12 +769,15 @@ fn run_program(filename: String) {
     }
     __mn_file_write("/tmp/mnc_run.ll", rename_main(cr.ir_text))
 
-    // Single-step compile+link via clang (faster than separate clang + gcc)
-    let compile_cmd: String = "clang -O0 /tmp/mnc_run.ll runtime/native/libmapanare_rt.a -o /tmp/mnc_run -lm -lpthread" + clang_stderr_redirect()
+    // Single-step compile+link via clang (faster than separate clang + gcc).
+    // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present,
+    // PATH otherwise. Both the fast path and the two-step fallback share it.
+    let clang_bin: String = find_clang()
+    let compile_cmd: String = clang_bin + " -O0 /tmp/mnc_run.ll runtime/native/libmapanare_rt.a -o /tmp/mnc_run -lm -lpthread" + clang_stderr_redirect()
     let r1: Int = __mn_system(compile_cmd)
     if r1 != 0 {
         // Fall back to two-step compile+link
-        let r1b: Int = __mn_system("clang -c -O0 /tmp/mnc_run.ll -o /tmp/mnc_run.o" + clang_stderr_redirect())
+        let r1b: Int = __mn_system(clang_bin + " -c -O0 /tmp/mnc_run.ll -o /tmp/mnc_run.o" + clang_stderr_redirect())
         if r1b != 0 {
             report_clang_failure()
             __mn_exit(1)
@@ -849,7 +882,9 @@ fn run_compile(filename: String) {
             }
         }
         __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr.ir_text))
-        let r1: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
+        // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present.
+        let clang_bin: String = find_clang()
+        let r1: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
         if r1 != 0 {
             report_clang_failure()
             __mn_exit(1)
@@ -908,7 +943,9 @@ fn run_compile(filename: String) {
     }
 
     __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr2.ir_text))
-    let r3: Int = __mn_system("clang -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
+    // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present.
+    let clang_bin: String = find_clang()
+    let r3: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
     if r3 != 0 {
         report_clang_failure()
         __mn_exit(1)

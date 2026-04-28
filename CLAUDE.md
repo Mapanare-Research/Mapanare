@@ -18,6 +18,30 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.10.0** (shipped) — **Win.1b — bundled LLVM toolchain in
+  Windows release ZIP.** Closes the "missing clang" pain on Windows
+  surfaced by the v5.8.7 install probe. v5.9.0 DX.3 made the failure
+  mode helpful (install hint instead of bare "clang failed");
+  v5.10.0 removes the dependency entirely. Default
+  `mapanare-win-x64.zip` grows from ~10 MB to ~95 MB by bundling
+  LLVM 18.1.8's minimal redistributable subset (clang.exe +
+  lld-link.exe + LLVM-C.dll + compiler-rt + LICENSE.TXT) into
+  `mapanare/llvm/`. **Win.1b.A**: `tools/llvm-bundle/
+  extract_minimal.ps1` + `REQUIRED_FILES.md`; PATH-stripped smoke
+  test. **Win.1b.B/C**: `actions/cache@v4` LLVM step + bundle staging
+  in `build-cli` job. **Win.1b.D**: new `__mn_executable_dir()`
+  C-runtime export + `find_clang()` helper in `mapanare/self/main.mn`
+  + 6 clang shell-out sites updated. **Win.1b.E**:
+  `docs/THIRD-PARTY-LICENSES.md` (Apache 2.0 + LLVM Exception).
+  **Win.1b.F**: `install.ps1` honors `MAPANARE_NO_BUNDLED_LLVM=1`
+  for opt-out users → `mapanare-win-x64-minimal.zip` (~10 MB).
+  **Win.1b.G**: `windows-bundled-llvm-smoke` CI job validates the
+  published ZIP end-to-end with PATH stripped. Linux/macOS
+  artifacts unchanged (PLAN Decision 4 — those platforms have
+  system clang; closeout in v5.11.0 Pk.4). **Bb.4 seed refresh
+  required** (new `__mn_executable_dir` export); deferred to WSL
+  follow-up. Compiler internals untouched; packaging-only release.
+  See `docs/roadmap/v5/v5.10.0/SESSION_REPORT.md`.
 - **v5.9.2** (shipped) — **hygiene — pre-existing test regex +
   stale README line.** Two pre-existing fixes carried over from
   v5.9.1 that didn't fit the DX.5 dispatch scope. Test + docs only;
@@ -89,43 +113,6 @@ Most recent releases (last 6). Full history at
   `bootstrap/seed/README.md` §"Updating the Seed". New seed 6.43 MB;
   goldens 66/66 preserved. See
   `docs/roadmap/v5/v5.8.5/SESSION_REPORT.md`.
-- **v5.8.0** (shipped) — **RE-PANEL — aggregate 9.66/10, Option A.**
-  Seven-reviewer review of the v5.3.1 → v5.7.1 arc (9 releases). All
-  5 v5.3.0 panel MEDIUMs closed; 4 Sh.* feature gaps closed; Own.1
-  P2 closed; fixed-point restored; goldens 54 → 66/66. Zero compiler
-  source changes. Aggregate 9.30 → 9.66 (highest in project history).
-  Decision: Option A — clean production release. 1 new MEDIUM
-  (Bo.18) + 4 LOW carry forward as v5.8.x hygiene. v6.0 carries:
-  Rt.04, Li.1, borrow checker. See
-  `docs/roadmap/v5/v5.8.0/SESSION_REPORT.md` and
-  `.reviews/v5.7.1/V5_DECISION.md`.
-- **v5.7.1** (shipped) — **SPEC + docs polish, pre-panel.** Zero
-  compiler edits. SPEC bumped 5.3.3 → 5.7.1 (closes 27-release
-  staleness): tensor types, or-patterns, closure-typed params, async
-  status block, fixed-point appendix. README + es/pt/zh-CN updated.
-  `docs/known_issues.md` pruned (Sh.4/6/7, B, Ve.*, Rt.03/05/06,
-  Lk.1 → "Closed since v5.4.0"). New `docs/guides/culebra.md` (247-
-  line contributor guide). Culebra clean baseline at
-  `docs/roadmap/v5/v5.7.1/culebra/`. See
-  `docs/roadmap/v5/v5.7.1/SESSION_REPORT.md`.
-- **v5.7.0** (shipped) — **Sh.7 + B CLOSED — 66/66 — first time.**
-  Closes the final two parity gaps for full-corpus self-hosting.
-  Sh.7 (closure-typed parameters): parser multi-param lambda
-  extraction, lowerer indirect-call SSA routing, emitter `%`-prefix
-  callee handling, inliner Call-fn_name renaming. B (or-pattern +
-  `None` identifier): `_is_enum_variant_name` short-circuits builtins;
-  `Identifier("None")` resolves to `Option`. Goldens 65/66 → 66/66.
-  See `docs/roadmap/v5/v5.7.0/SESSION_REPORT.md`.
-- **v5.6.13** (shipped) — **Layer 1 cleanup — destination passing
-  extended to struct let-bindings.** Optional cleanup release.
-  Extends v5.6.12's destination-passing pattern from List let-
-  bindings to Struct let-bindings via `lower_struct_new_into`,
-  eliminating the duplicate `.si` scratch alloca. Hero metric:
-  `.si = alloca` site count 240 → 0; struct allocas −93. Layer 2
-  (move-on-assignment) NOT shipped — gated on observed share-mutate
-  leak; sweep clean. See
-  `docs/roadmap/v5/v5.6.13/SESSION_REPORT.md`.
-
 > Older release notes elided. See `docs/roadmap/ROADMAP.md` for the
 > full ledger and `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` for any
 > specific release.

@@ -2,6 +2,12 @@
 # Usage:
 #   irm https://mapanare.dev/install.ps1 | iex
 #   $env:MAPANARE_VERSION = "v4.0.0"; irm https://mapanare.dev/install.ps1 | iex
+#
+# v5.10.0 Win.1b.F: Windows installs default to a bundled-LLVM ZIP
+# (~95 MB) so ``mnc run`` works with zero external dependencies. Set
+# $env:MAPANARE_NO_BUNDLED_LLVM = "1" before invoking to download the
+# minimal ~10 MB ZIP instead — useful when the user already has clang
+# on PATH (e.g. a winget install of LLVM.LLVM).
 param(
     [string]$Version = "",
     [string]$InstallDir = ""
@@ -12,7 +18,13 @@ $Repo = "Mapanare-Research/Mapanare"
 if (-not $InstallDir) {
     $InstallDir = if ($env:MAPANARE_INSTALL_DIR) { $env:MAPANARE_INSTALL_DIR } else { "$env:LOCALAPPDATA\Mapanare\bin" }
 }
-$Artifact = "mapanare-win-x64.zip"
+
+# v5.10.0 Win.1b.F: bundled-LLVM artifact selection.
+$UseBundledLlvm = $true
+if ($env:MAPANARE_NO_BUNDLED_LLVM -in @("1", "true", "yes", "TRUE", "YES")) {
+    $UseBundledLlvm = $false
+}
+$Artifact = if ($UseBundledLlvm) { "mapanare-win-x64.zip" } else { "mapanare-win-x64-minimal.zip" }
 
 # ---------- Resolve version ----------
 if (-not $Version) {
@@ -37,11 +49,15 @@ if ($Version -eq "latest") {
 $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$Artifact"
 
 # ---------- Download & install ----------
+$LlvmStatus = if ($UseBundledLlvm) { "bundled (no separate install needed)" } else { "NOT bundled — clang required separately" }
+$DownloadSize = if ($UseBundledLlvm) { "~95 MB (Mapanare + bundled LLVM)" } else { "~10 MB (Mapanare only)" }
 Write-Host ""
 Write-Host "  Mapanare Language Installer" -ForegroundColor Cyan
-Write-Host "  Version:  $Version"
-Write-Host "  Platform: windows-x64"
-Write-Host "  Target:   $InstallDir"
+Write-Host "  Version:   $Version"
+Write-Host "  Platform:  windows-x64"
+Write-Host "  Target:    $InstallDir"
+Write-Host "  Toolchain: $LlvmStatus"
+Write-Host "  Download:  $DownloadSize"
 Write-Host ""
 
 $TmpDir = Join-Path $env:TEMP "mapanare-install-$(Get-Random)"
@@ -98,6 +114,19 @@ if (Test-Path $MncBin) {
     Write-Host "Installed successfully!" -ForegroundColor Green
     Write-Host ""
     & $MncBin --version
+    Write-Host ""
+
+    # v5.10.0 Win.1b.F: detect the bundled LLVM toolchain so the user
+    # knows whether ``mnc run`` will work out of the box. find_clang()
+    # in mnc itself looks for $InstallDir\llvm\clang.exe — keep this
+    # detection in sync with that path.
+    $LlvmBundle = Join-Path $InstallDir "llvm\clang.exe"
+    if (Test-Path $LlvmBundle) {
+        Write-Host "Bundled LLVM toolchain ready: $LlvmBundle"
+    } else {
+        Write-Host "No bundled LLVM. Install clang separately if ``mnc run`` reports it missing:" -ForegroundColor Yellow
+        Write-Host "  winget install LLVM.LLVM"
+    }
     Write-Host ""
     Write-Host "Get started:"
     Write-Host "  mnc init myproject"

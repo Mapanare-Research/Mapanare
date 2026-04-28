@@ -2342,6 +2342,12 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let s_fe: LowerState = emit_instr(dr_fe.state, Instruction::Call(dr_fe.value, fn_name, args))
         return new_lower_result(dr_fe.value, s_fe)
     }
+    // v5.10.0 Win.1b.D: directory of running binary, used by find_clang().
+    if fn_name == "__mn_executable_dir" {
+        let dr_ed: LowerResult = make_value(st, mir_string(), "t")
+        let s_ed: LowerState = emit_instr(dr_ed.state, Instruction::Call(dr_ed.value, fn_name, args))
+        return new_lower_result(dr_ed.value, s_ed)
+    }
     // v5.6.0 Sh.6 — tensor builtin return types. Without these the default
     // mir_unknown resolves to i64 and emit_builtin_tostring would route
     // `str(tensor_get_f64(...))` through __mn_str_from_int with a double

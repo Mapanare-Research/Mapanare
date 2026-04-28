@@ -30,6 +30,10 @@
 #include <direct.h>  /* _mkdir, _rmdir */
 #endif
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>  /* _NSGetExecutablePath for __mn_executable_dir */
+#endif
+
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -1875,6 +1879,48 @@ MN_EXPORT MnString __mn_clang_err_path(void) {
 #else
     return __mn_str_from_cstr("/tmp/.mnc_clang_err");
 #endif
+}
+
+/* v5.10.0 Win.1b.D: directory containing the running binary. find_clang()
+ * in main.mn uses this to prefer a bundled LLVM toolchain at
+ * `<exe_dir>/llvm/clang(.exe)` over PATH clang. Returns an empty string
+ * if the lookup fails — the caller falls through to PATH. Result is
+ * cached after the first call (deterministic per process). */
+MN_EXPORT MnString __mn_executable_dir(void) {
+    static char path[4096];
+    static int initialized = 0;
+    if (initialized) return __mn_str_from_cstr(path);
+    initialized = 1;
+
+#ifdef _WIN32
+    DWORD n = GetModuleFileNameA(NULL, path, sizeof(path));
+    if (n == 0 || n >= sizeof(path)) {
+        path[0] = '\0';
+        return __mn_str_empty();
+    }
+#elif defined(__APPLE__)
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) != 0) {
+        path[0] = '\0';
+        return __mn_str_empty();
+    }
+#else
+    ssize_t n = readlink("/proc/self/exe", path, sizeof(path) - 1);
+    if (n <= 0) {
+        path[0] = '\0';
+        return __mn_str_empty();
+    }
+    path[n] = '\0';
+#endif
+
+    /* Strip the trailing basename to get the directory. */
+    char *slash = strrchr(path, '/');
+#ifdef _WIN32
+    char *bslash = strrchr(path, '\\');
+    if (bslash > slash) slash = bslash;
+#endif
+    if (slash) *slash = '\0';
+    return __mn_str_from_cstr(path);
 }
 
 MN_EXPORT int64_t __mn_file_rename(MnString old_path, MnString new_path) {

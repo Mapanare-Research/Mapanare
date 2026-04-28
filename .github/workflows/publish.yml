@@ -110,10 +110,12 @@ jobs:
             | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) |
             | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) |
             | **macOS** Intel | — | Build from source ([instructions](https://github.com/${{ github.repository }}#building-from-source)) |
-            | **Windows** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-win-x64.exe) |
+            | **Windows** x86_64 | [Download (~95 MB, bundled LLVM)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) · [Minimal (~10 MB)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64-minimal.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-win-x64.exe) |
 
             > **Full CLI** includes the compiler, Python transpiler, LSP, and WASM backend.
             > **Native Compiler** is a single ~3 MB binary with no dependencies.
+            >
+            > **Windows users:** the default download bundles a minimal LLVM toolchain (clang + lld-link) so `mnc run` works with zero external installs. Power users with their own LLVM can use the **Minimal** variant (set `MAPANARE_NO_BUNDLED_LLVM=1` before `install.ps1` to download it automatically).
             >
             > [SHA256 Checksums](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/SHA256SUMS.txt)
 
@@ -310,6 +312,85 @@ jobs:
           fi
           echo "CLI smoke test passed"
 
+      # -------------------------------------------------------------------
+      # v5.10.0 Win.1b — bundle minimal LLVM (clang.exe + lld-link.exe +
+      # LLVM-C.dll + compiler-rt + LICENSE.TXT) into the Windows release
+      # so users get a working ``mnc run`` with zero external deps. Pinned
+      # to LLVM 18.1.8. Linux/macOS users have system clang; bundling
+      # there adds bytes without solving real pain (v5.10.0 PLAN
+      # Decision 4 — deferred).
+      # -------------------------------------------------------------------
+      - name: Cache LLVM redist bundle (Windows)
+        id: llvm-cache
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        env:
+          LLVM_VERSION: "18.1.8"
+        with:
+          path: .tmp-llvm
+          key: llvm-redist-${{ env.LLVM_VERSION }}-win64
+
+      - name: Download + extract LLVM (cache miss)
+        if: runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          LLVM_VERSION: "18.1.8"
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp-llvm && cd .tmp-llvm
+          url="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/LLVM-${LLVM_VERSION}-win64.exe"
+          curl -fL -o llvm.exe "$url"
+          # The .exe is a 7zip self-extracting installer. GitHub-hosted
+          # windows-latest runners ship 7z preinstalled.
+          7z x llvm.exe -oLLVM
+          rm llvm.exe
+          ls LLVM/bin/clang.exe
+
+      # Archive minimal variant FIRST — opt-out users
+      # (MAPANARE_NO_BUNDLED_LLVM=1 in install.ps1) download this ZIP,
+      # which is the pre-v5.10.0 PyInstaller bundle with no bundled LLVM.
+      - name: Archive minimal CLI bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd dist
+          7z a mapanare-win-x64-minimal.zip mapanare/
+
+      - name: Stage bundled LLVM into PyInstaller dir (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./tools/llvm-bundle/extract_minimal.ps1 `
+              -LlvmDir .tmp-llvm/LLVM `
+              -OutDir dist/mapanare/llvm
+
+      - name: Verify bundled clang runs (PATH stripped)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & ./dist/mapanare/llvm/clang.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "Bundled clang.exe smoke failed" }
+          # Compile + run a hello-world with PATH stripped so missing
+          # DLLs surface here, not on user installs.
+          $env:PATH = "C:\Windows\System32;C:\Windows"
+          'int main(void){return 0;}' | Set-Content -Path bundled_smoke.c -Encoding ASCII
+          & ./dist/mapanare/llvm/clang.exe bundled_smoke.c -o bundled_smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw "Bundled clang compile smoke failed" }
+          & ./bundled_smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw "Bundled binary execution failed" }
+          Remove-Item bundled_smoke.c, bundled_smoke.exe
+
+      # Stage THIRD-PARTY-LICENSES.md inside the bundle so users can
+      # read what was redistributed without going to the repo. The doc
+      # itself is checked into ``docs/`` (Phase 5).
+      - name: Stage third-party license docs (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          if [[ -f docs/THIRD-PARTY-LICENSES.md ]]; then
+            cp docs/THIRD-PARTY-LICENSES.md dist/mapanare/THIRD-PARTY-LICENSES.md
+          fi
+
       - name: Archive CLI binary
         shell: bash
         run: |
@@ -321,6 +402,16 @@ jobs:
         run: |
           gh release upload "v${{ needs.release.outputs.new_version }}" \
             "dist/${{ matrix.archive_name }}" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload minimal Windows ZIP to GitHub Release
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          gh release upload "v${{ needs.release.outputs.new_version }}" \
+            dist/mapanare-win-x64-minimal.zip \
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -581,10 +672,58 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # =========================================================================
-  # 5. Generate SHA256 checksums for all release artifacts
+  # 5. v5.10.0 Win.1b.G: smoke-test the published bundled-LLVM ZIP end-
+  # to-end with PATH stripped — catches "the bundle is broken" before
+  # users do. Runs against the draft release after build-cli uploads.
+  # =========================================================================
+  windows-bundled-llvm-smoke:
+    needs: [release, build-cli]
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download published bundled ZIP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "v${{ needs.release.outputs.new_version }}" `
+            -p mapanare-win-x64.zip -O mapanare.zip
+          if (-not (Test-Path mapanare.zip)) {
+            throw "mapanare-win-x64.zip not found in release"
+          }
+          $size_mb = [math]::Round((Get-Item mapanare.zip).Length / 1MB, 1)
+          Write-Host "ZIP size: $size_mb MB"
+          if ($size_mb -gt 150) {
+            throw "Bundle exceeds 150 MB alarm threshold ($size_mb MB)"
+          }
+
+      - name: Extract + smoke (PATH stripped)
+        shell: pwsh
+        run: |
+          Expand-Archive mapanare.zip -DestinationPath out
+          # Strip user PATH so the bundled clang is the ONLY clang
+          # available — any miss surfaces here, not on user installs.
+          $env:PATH = "C:\Windows\System32;C:\Windows"
+          @"
+          fn main() {
+              print("hello from bundled-llvm smoke")
+          }
+          "@ | Out-File hello.mn -Encoding ASCII
+          & ./out/mapanare/mnc.exe run hello.mn
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled smoke failed (exit $LASTEXITCODE)"
+          }
+          Write-Host "Bundled-LLVM smoke: OK"
+
+  # =========================================================================
+  # 6. Generate SHA256 checksums for all release artifacts
   # =========================================================================
   checksums:
-    needs: [release, build-cli, build-native]
+    needs: [release, build-cli, build-native, windows-bundled-llvm-smoke]
     runs-on: ubuntu-latest
 
     steps:
@@ -620,7 +759,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # =========================================================================
-  # 6. Update release body with actual asset sizes
+  # 7. Update release body with actual asset sizes
   # =========================================================================
   update-release:
     needs: [release, build-cli, build-native, checksums]

@@ -3577,6 +3577,15 @@ class LLVMTextEmitter:
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
+        # v5.10.0 Win.1b.D: directory containing the running binary.
+        # find_clang() in main.mn uses this to locate a bundled LLVM
+        # toolchain at <exe_dir>/llvm/clang(.exe) before falling back
+        # to PATH clang.
+        if fn == "__mn_executable_dir":
+            r = self._rt("__mn_executable_dir", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
         if fn == "__mn_dir_count_files" and args:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_dir_count_files", I64, [STR], [(a, STR)])
