@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.2] - 2026-04-28
+
+### Fixed
+
+- **Pk.1.dx — Windows release pipeline LICENSE.TXT provisioning.**
+  The `LLVM-18.1.8-win64.exe` NSIS installer does not ship a top-
+  level `LICENSE.TXT` (only sub-component license files under
+  `include/llvm/Support/` that are not the project-level Apache 2.0
+  + LLVM Exception text required for redistribution).
+  `tools/llvm-bundle/extract_minimal.ps1` therefore failed at
+  `Run #43 build-cli (windows-latest)` with
+  `LICENSE.TXT missing in .tmp-llvm/LLVM`. Added a new workflow
+  step in `.github/workflows/publish.yml` —
+  `Ensure LLVM LICENSE.TXT is present` — that curls the canonical
+  LICENSE.TXT directly from
+  `https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-18.1.8/llvm/LICENSE.TXT`
+  (~12 KB; pinned to the same `LLVM_VERSION` as the installer)
+  and writes it to `.tmp-llvm/LLVM/LICENSE.TXT`. Step is
+  unconditional (runs on cache hit too) so cache state cannot
+  leave the file missing. >8 KB sanity-check guards against HTML
+  404 pages or truncated downloads. `extract_minimal.ps1` now
+  emits a tree-dump diagnostic on the (now-impossible) failure
+  path and points the reader at the workflow step.
+- **Pk.2.dx — Windows stage2→stage3 self-validate missed the v5.9.1
+  `emit-llvm` migration; v5.11.0 Pk.2 exposed it.** `publish.yml`
+  line 594 (now 638) invoked
+  `./mnc-stage2 mapanare/self/mnc_all.mn > stage3.ll` without the
+  `emit-llvm` subcommand. After v5.9.1 DX.5's BREAKING change made
+  bare `mnc <file.mn>` compile-and-run by default, that invocation
+  *compiled* `mnc_all.mn` and *executed* the resulting compiler
+  binary with no args; the no-args dispatch then read garbage
+  path-string bytes (e.g. `0x614d5c6572616e62` ≈ `bnare\Ma…`
+  decoded little-endian) as a `size_t` to `__mn_alloc`, surfacing
+  as `out of memory (requested 7011361785666170466 bytes)`. The
+  v5.9.1/v5.10.0 migration patched the stage1 invocations on all
+  three platforms (Windows/macOS/Linux) but missed the
+  Windows-only stage2→stage3 fixed-point validate. v5.11.0 Pk.2's
+  removal of the implicit-run deprecation note exposed the latent
+  miss because the deprecation path no longer mediated the
+  failure. Added `emit-llvm` to the failing site (`publish.yml:638`)
+  and to its paired `gdb` diagnostic re-run (`publish.yml:645`);
+  also fixed the stage1-crash gdb args at line 598 for
+  consistency. In-line comment added so the next packaging change
+  cannot re-introduce the bug.
+
+### Changed
+
+- All four README version badges bumped from `5.8.7` to `5.11.2`:
+  English `version-5.11.2`, Spanish `version-5.11.2`, Portuguese
+  `versao-5.11.2`, Chinese `版本-5.11.2`. Closes Bo.21 (HIGH) from
+  the v5.11.0 panel (`.reviews/v5.11.0/06-boa.md`) — front-door
+  version-metadata drift across the v5.9.x → v5.11.0 arc; the
+  Portuguese and Chinese badges use localized label keys
+  (`versao-`, `版本-`) which are easy to miss with a `version-`-
+  shaped grep.
+
 ## [5.11.0] - 2026-04-28
 
 ### Added
@@ -7151,7 +7207,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.8.7...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.2...HEAD
+[5.11.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.0...v5.11.2
 [5.8.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.8.6...v5.8.7
 [5.8.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.8.0...v5.8.1
 [4.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.24.0...v4.25.0
