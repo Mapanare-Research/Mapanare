@@ -112,3 +112,9 @@ docs/roadmap/*/*/culebra-*.jsonl
 .gitnexus
 docs/roadmap/v4/v4.141.0/session.md
 *.png
+/.venv-mac
+# v5.8.8: benchmark IR is regenerated from `benchmarks/**/*.mn` on
+# every run — no need to commit the artifact. Mirrors the
+# `tests/golden/*.ll` (ignored, except `*.ref.ll`) and
+# `mapanare/self/{main,stage2,stage3}.ll` patterns above.
+benchmarks/**/*.ll
