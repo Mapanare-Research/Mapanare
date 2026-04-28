@@ -94,10 +94,17 @@ Get-ChildItem $OutDir | ForEach-Object {
     Write-Host ("  {0,-40} {1,8} KB" -f $_.Name, $kb)
 }
 
+# Note: this measures only the LLVM minimal subset bundled into
+# $OutDir (clang.exe + lld-link.exe + LLVM-C.dll + compiler-rt +
+# LICENSE.TXT). Expected ~95 MB. The full Windows release ZIP is
+# larger because it ALSO ships dist/mapanare/toolchain/ (w64devkit
+# gcc, ~150 MB) until Mc.6 teaches mapanare/toolchain.py to find
+# bundled LLVM clang. See publish.yml's windows-bundled-llvm-smoke
+# job for the user-facing ZIP size threshold.
 if ($size_mb -gt 150) {
-    Write-Warning "Bundle exceeds 150 MB alarm threshold (target 100 MB)"
+    Write-Warning "LLVM minimal subset exceeds 150 MB alarm threshold (target 100 MB)"
 } elseif ($size_mb -gt 100) {
-    Write-Warning "Bundle exceeds 100 MB target (alarm 150 MB)"
+    Write-Warning "LLVM minimal subset exceeds 100 MB target (alarm 150 MB)"
 }
 
 # ---------------------------------------------------------------------

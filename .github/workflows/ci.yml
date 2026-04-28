@@ -92,6 +92,18 @@ jobs:
           set -e
           python3 scripts/check_changelog_honesty.py
 
+      # v5.11.2 Pk.2.dx follow-up: workflow-shape lint.
+      # Catches the bare-`mnc <file>.mn > out.ll` bug class statically
+      # in <1s — pre-fix this required two failed Windows publish runs
+      # (~10-20 min each) to surface. Opt-out: `<!-- no-check-shape -->`
+      # on the same line as the intentional implicit-run.
+      - name: Workflow-shape lint
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_workflow_shapes.py
+
       # v4.31.0: docs drift gate.
       # Every Mapanare code block in docs/SPEC.md, cookbook.md,
       # reference.md, and getting-started.md must parse cleanly via

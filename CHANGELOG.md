@@ -55,6 +55,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Pk.4.dx — `scripts/check_workflow_shapes.py` static linter for
+  `.github/workflows/*.yml`.** Catches the implicit-run-with-IR-redirect
+  bug class (the Pk.2.dx shape — bare mnc invocation on a Mapanare
+  source file with stdout redirected to an LLVM IR file) in <1 second. Pre-fix, this required
+  two failed Windows publish runs (~10-20 minutes each) to surface.
+  Wired into `ci.yml` immediately after the CHANGELOG honesty gate
+  and before any build steps. Opt-out: `<!-- no-check-shape -->` on
+  the same line as the intentional implicit-run. Self-test verified:
+  the linter would have caught both Pk.2.dx misses (`publish.yml`
+  line 594 and 733) on the first push.
+- **Pk.5.dx — `scripts/bump_version.py` — single-shot version bump
+  across every release-relevant surface.** Replaces the manual sweep
+  that had three label-key variants for the README badge across four
+  locales (`version-` / `versao-` / `版本-`); v5.11.2 burned an
+  iteration on the `versao-` and `版本-` variants being missed by a
+  `version-`-shaped grep. Updates `VERSION`, all four README badges,
+  and the `CHANGELOG.md` section + comparison links in one shot.
+  Refuses non-forward bumps without `--force`. Idempotent. The
+  `bump-version` slash command now points at this script as the
+  source of truth.
+- **Pk.3.dx — Windows-bundled-LLVM smoke threshold raised from 150
+  MB to 350 MB pending Mc.6 closure.** The smoke job's `> 150 MB`
+  threshold was aspirational from v5.10.0's Win.1b SESSION_REPORT
+  (claimed "95 MB ZIP"); the actual Windows release ZIP has been
+  ~255 MB since v5.10.0 shipped because the bundle double-ships
+  C toolchains: `dist/mapanare/toolchain/` (w64devkit gcc, ~150 MB)
+  for the PyInstaller-bundled `mapanare.exe` Python CLI, plus
+  `dist/mapanare/llvm/` (~95 MB) for the native `mnc.exe`. The
+  v5.10.0 Win.1b arc only updated the native CLI's `find_clang()`
+  in `mapanare/self/main.mn` — the Python CLI's
+  `mapanare/toolchain.py` still looks for `toolchain/bin/gcc.exe`
+  and is unaware of the bundled LLVM. Closing this requires
+  teaching `toolchain.py` to discover `llvm/bin/clang.exe` first,
+  then dropping `toolchain_dir` from `packaging/mapanare.spec`.
+  Tracked as Mc.6 against the v5.11.0 panel's Mc.\* docket.
+  Threshold tightens back to 150 MB once Mc.6 closes.
 - All four README version badges bumped from `5.8.7` to `5.11.2`:
   English `version-5.11.2`, Spanish `version-5.11.2`, Portuguese
   `versao-5.11.2`, Chinese `版本-5.11.2`. Closes the Bo.21 HIGH
