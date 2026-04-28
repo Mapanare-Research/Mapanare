@@ -4,50 +4,46 @@ This Mapanare distribution may bundle software from third parties.
 Their licenses are summarized below; the full license texts are
 shipped alongside the binaries inside each release artifact.
 
-## LLVM Project (Windows release only)
+## LLVM-MinGW SDK (Windows SDK release only)
 
 **Components bundled:**
 
-- `clang.exe` — IR compiler + linker driver
-- `lld-link.exe` — Microsoft-style linker
-- `LLVM-C.dll` — core LLVM library
-- `clang_rt.builtins-x86_64.lib` — compiler-rt builtins
+- LLVM/Clang compiler driver and support DLLs
+- `ld.lld.exe`, `llvm-ar.exe`, `llvm-ranlib.exe`, `llvm-strip.exe`
+- MinGW-w64/UCRT Windows headers, startup objects, import libraries,
+  and runtime libraries
+- compiler-rt builtins for `x86_64-w64-mingw32`
+- `libmapanare_rt.a`, built from Mapanare's native runtime sources
+  during release packaging
 
-**Bundle location inside ZIP:** `mapanare/llvm/`
+**Bundle location inside ZIP:** `mapanare/sdk/`
 
-**Version:** 18.1.8
+**Version:** LLVM-MinGW `20260421` with LLVM `22.1.4`, UCRT x86_64
+target.
 
-**License:** Apache License 2.0 with LLVM Exception
+**Licenses:**
 
-**License text:** see `mapanare/llvm/LICENSE.TXT` (shipped inside the
-ZIP); upstream copy at
-<https://github.com/llvm/llvm-project/blob/llvmorg-18.1.8/LICENSE.TXT>.
+- LLVM Project components: Apache License 2.0 with LLVM Exception.
+- MinGW-w64 runtime/import libraries and headers: see the upstream
+  MinGW-w64 license texts shipped under
+  `mapanare/sdk/x86_64-w64-mingw32/share/mingw32/`.
+- winpthreads runtime components: see the upstream winpthreads license
+  text in the same SDK license directory.
 
-The LLVM project is © the LLVM contributors. Mapanare redistributes
-compiled binaries of clang, lld-link, and their required runtime
-libraries **unmodified**, as permitted by the Apache 2.0 with LLVM
-Exception license. No source modifications are made.
+**License text:** see `mapanare/sdk/LICENSE.TXT` and
+`mapanare/sdk/x86_64-w64-mingw32/share/mingw32/COPYING*` inside the
+Windows SDK ZIP. Upstream source and license references:
 
-The LLVM Exception explicitly permits combining LLVM's *output*
-(compiled object files / linked binaries) with non-Apache-licensed
-code without copyleft propagation. **Mapanare-emitted binaries that
-pass through clang and lld-link are NOT subject to LLVM's license.**
+- <https://github.com/mstorsjo/llvm-mingw/releases/tag/20260421>
+- <https://github.com/mstorsjo/llvm-mingw>
+- <https://github.com/llvm/llvm-project/tree/llvmorg-22.1.4>
+- <https://github.com/mingw-w64/mingw-w64>
 
-For the source code of LLVM components, see:
-<https://github.com/llvm/llvm-project/tree/llvmorg-18.1.8>
-
-## w64devkit (Windows release only)
-
-**Components bundled:** MinGW-w64 gcc, binutils, GNU runtime
-libraries (libgcc, libstdc++, libwinpthread).
-
-**Bundle location:** flattened into the PyInstaller bundle so
-`mapanare run` / `mapanare build` work out of the box on Windows.
-
-**License:** the GCC runtime exception applies to programs compiled
-with the bundled gcc — Mapanare-emitted binaries are not subject to
-GPL copyleft. See <https://github.com/skeeto/w64devkit> for the
-upstream license text.
+Mapanare redistributes the LLVM-MinGW SDK files unmodified except for
+selecting a smaller x86_64/UCRT subset for the release ZIP. The LLVM
+Exception permits combining LLVM's output with non-Apache-licensed code
+without copyleft propagation. Mapanare-emitted binaries that pass
+through clang/lld are not subject to LLVM's license.
 
 ## Mapanare itself
 

@@ -137,6 +137,15 @@ Most recent releases (last 6). Full history at
 
 ### Planned / in-progress
 
+- **v5.12.0** — **Mc.6 / Wk.* — Windows SDK split.** Default
+  Windows installs move to `mapanare-${V}-win-x64-sdk.zip`, which
+  bundles one curated LLVM-MinGW/UCRT x86_64 SDK under `sdk/` so
+  clean-machine `mnc run` / `mnc build` keep working. The opt-in
+  `mapanare-${V}-win-x64-minimal.zip` is app-only and requires a
+  user/system compiler. `MAPANARE_NO_BUNDLED_TOOLCHAIN=1` and legacy
+  `MAPANARE_NO_BUNDLED_LLVM=1` select minimal. `toolchain/` must not
+  appear in v5.12.0 Windows release ZIPs. See
+  `docs/roadmap/v5/v5.12.0/WINDOWS_TOOLCHAIN_AUDIT.md`.
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
 - **v6.0** — Borrow checker / multi-level alias analysis. Closes
   Rt.04 (multi-level drop-glue alias analysis, rescoped
@@ -399,7 +408,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (28912 symbols, 62763 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (28951 symbols, 62785 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

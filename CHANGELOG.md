@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Mc.6 / Wk.* - Windows SDK split.** Windows release packaging now
+  produces a true minimal ZIP before any compiler SDK is staged, then
+  adds one curated LLVM-MinGW/UCRT x86_64 SDK under `mapanare/sdk/`
+  for the default clean-machine artifact. The canonical SDK artifact is
+  `mapanare-${V}-win-x64-sdk.zip`; `mapanare-${V}-win-x64.zip` and
+  `mapanare-win-x64.zip` remain compatibility aliases to the SDK ZIP.
+  No v5.12.0 Windows artifact ships `toolchain/`.
+- `mapanare/toolchain.py` now detects bundled `sdk/bin/clang.exe` and
+  `llvm/bin/clang.exe` before PATH/system probes, while preserving
+  legacy `toolchain/bin/gcc.exe` as the last bundled fallback. Bundled
+  `libmapanare_rt.a` is detected under `sdk/lib/mapanare/`.
+- Windows installers default to the SDK artifact. Both
+  `MAPANARE_NO_BUNDLED_TOOLCHAIN=1` and the legacy
+  `MAPANARE_NO_BUNDLED_LLVM=1` select the app-only minimal artifact.
+
+### Added
+
+- `docs/roadmap/v5/v5.12.0/WINDOWS_TOOLCHAIN_AUDIT.md` documents the
+  v5.11.2 asset sizes, why Python's 40 MB installer is not the right
+  SDK target, the pinned LLVM-MinGW `20260421` source, required SDK
+  subset, and size gates.
+- `tools/llvm-mingw-bundle/extract_sdk.ps1` stages the curated SDK
+  subset and smoke-tests clang with PATH/LIB/INCLUDE stripped.
+
 ## [5.11.2] - 2026-04-28
 
 ### Fixed

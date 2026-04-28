@@ -25,20 +25,15 @@ sep = os.sep
 # Paths are relative to this spec file; go up one level to reach repo root
 root = os.path.normpath(os.path.join(SPECPATH, '..'))
 
-# Optionally stage a portable C toolchain next to the exe. This is populated
-# by the publish.yml Windows job (w64devkit x64) before calling PyInstaller.
-# If the directory exists, ship it; otherwise the bundle relies on a system
-# gcc/clang being on PATH (consistent with Linux / macOS behavior).
+# Do not let PyInstaller auto-capture repo/toolchain/. Windows SDK payloads
+# are staged after the minimal ZIP is archived, so the opt-in minimal artifact
+# remains app-only and release ZIPs do not double-ship compiler stacks.
 bundled_datas = [
     (os.path.join(root, 'mapanare'), 'mapanare'),
     (os.path.join(root, 'runtime'), 'runtime'),
     (os.path.join(root, 'stdlib'), 'stdlib'),
     (os.path.join(root, 'VERSION'), '.'),
 ]
-
-toolchain_dir = os.path.join(root, 'toolchain')
-if os.path.isdir(toolchain_dir):
-    bundled_datas.append((toolchain_dir, 'toolchain'))
 
 a = Analysis(
     [os.path.join(root, 'packaging', 'pyinstaller-entry.py')],

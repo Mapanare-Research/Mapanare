@@ -110,12 +110,12 @@ jobs:
             | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-linux-x64) |
             | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-darwin-arm64) |
             | **macOS** Intel | — | Build from source ([instructions](https://github.com/${{ github.repository }}#building-from-source)) |
-            | **Windows** x86_64 | [Download (~95 MB, bundled LLVM)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-win-x64.zip) · [Minimal (~10 MB)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-win-x64-minimal.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-win-x64.exe) |
+            | **Windows** x86_64 | [SDK](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-win-x64-sdk.zip) · [Minimal](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-win-x64-minimal.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-win-x64.exe) |
 
             > **Full CLI** includes the compiler, Python transpiler, LSP, and WASM backend.
             > **Native Compiler** is a single ~3 MB binary with no dependencies.
             >
-            > **Windows users:** the default download bundles a minimal LLVM toolchain (clang + lld-link) so `mnc run` works with zero external installs. Power users with their own LLVM can use the **Minimal** variant (set `MAPANARE_NO_BUNDLED_LLVM=1` before `install.ps1` to download it automatically).
+            > **Windows users:** the default SDK download bundles a curated LLVM-MinGW/UCRT compiler SDK so `mnc run` and `mnc build` work with zero external installs. Power users with their own compiler can use the **Minimal** variant (set `MAPANARE_NO_BUNDLED_TOOLCHAIN=1` or the legacy `MAPANARE_NO_BUNDLED_LLVM=1` before `install.ps1` to download it automatically).
             >
             > [SHA256 Checksums](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/SHA256SUMS.txt)
 
@@ -243,55 +243,14 @@ jobs:
         shell: bash
         run: python runtime/native/build_native.py || echo "Native runtime build skipped (optional)"
 
-      # -------------------------------------------------------------------
-      # Windows only: vendor a portable MinGW toolchain (w64devkit) into
-      # the PyInstaller bundle so `mapanare run` / `mapanare build` work
-      # out of the box without a system gcc/clang. Pre-build
-      # libmapanare_rt.a with that same toolchain so users don't pay the
-      # runtime-compile cost on every invocation.
-      # -------------------------------------------------------------------
-      - name: Stage portable toolchain (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          W64DEVKIT_VERSION: "2.7.0"
-        run: |
-          set -euo pipefail
-          url="https://github.com/skeeto/w64devkit/releases/download/v${W64DEVKIT_VERSION}/w64devkit-x64-${W64DEVKIT_VERSION}.7z.exe"
-          mkdir -p .tmp-tc && cd .tmp-tc
-          curl -fL -o w64devkit.exe "$url"
-          # SFX 7z archive: -y auto-confirm, -o extract dir
-          ./w64devkit.exe -y -o.
-          mv w64devkit ../toolchain
-          cd ..
-          ls toolchain/bin/gcc.exe
-          ./toolchain/bin/gcc.exe --version
-
-      - name: Pre-build Windows runtime archive
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$PWD/toolchain/bin:$PATH"
-          mkdir -p toolchain/lib
-          # v5.9.0 DX.2: bake VERSION into runtime objects so __mn_version_string()
-          # and the User-Agent in mapanare_io.c return the right string.
-          VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
-          cd runtime/native
-          gcc -c -O2 -I. $VERSION_FLAG mapanare_core.c   -o mapanare_rt_mapanare_core.o
-          gcc -c -O2 -I. $VERSION_FLAG mapanare_db.c     -o mapanare_rt_mapanare_db.o
-          gcc -c -O2 -I. $VERSION_FLAG mapanare_io.c     -o mapanare_rt_mapanare_io.o
-          gcc -c -O2 -I. $VERSION_FLAG mapanare_html.c   -o mapanare_rt_mapanare_html.o
-          gcc -c -O2 -I. $VERSION_FLAG mapanare_runtime.c -o mapanare_rt_mapanare_runtime.o
-          gcc -c -O2 -I. $VERSION_FLAG mapanare_gpu.c    -o mapanare_rt_mapanare_gpu.o
-          gcc -c -O2 -I. $VERSION_FLAG mapanare_gpu_builtins.c -o mapanare_rt_mapanare_gpu_builtins.o
-          ar rcs ../../toolchain/lib/libmapanare_rt.a \
-            mapanare_rt_*.o
-          rm -f mapanare_rt_*.o
-          ls -la ../../toolchain/lib/
-
       - name: Build CLI binary
         run: pyinstaller packaging/mapanare.spec --clean
+
+      - name: Stage mnc alias in Windows CLI bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item dist/mapanare/mapanare.exe dist/mapanare/mnc.exe -Force
 
       - name: Smoke test CLI binary
         shell: bash
@@ -302,121 +261,117 @@ jobs:
           fi
           "$BINARY" --version
           "$BINARY" --help
-          # On Windows, exercise the full compile+run path with the bundled
-          # toolchain so a broken release fails CI instead of end users.
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            echo 'fn main() { print("hello from smoke test") }' > smoke.mn
-            "$BINARY" run smoke.mn
-            "$BINARY" build smoke.mn -o smoke.exe
-            ./smoke.exe
-          fi
           echo "CLI smoke test passed"
 
       # -------------------------------------------------------------------
-      # v5.10.0 Win.1b — bundle minimal LLVM (clang.exe + lld-link.exe +
-      # LLVM-C.dll + compiler-rt + LICENSE.TXT) into the Windows release
-      # so users get a working ``mnc run`` with zero external deps. Pinned
-      # to LLVM 18.1.8. Linux/macOS users have system clang; bundling
-      # there adds bytes without solving real pain (v5.10.0 PLAN
-      # Decision 4 — deferred).
+      # v5.12.0 Wk.* - archive the true minimal Windows ZIP before any SDK
+      # payload is staged. Then add one curated LLVM-MinGW/UCRT SDK under
+      # dist/mapanare/sdk/ and archive the default SDK ZIP.
       # -------------------------------------------------------------------
-      - name: Cache LLVM redist bundle (Windows)
-        id: llvm-cache
-        if: runner.os == 'Windows'
-        uses: actions/cache@v4
-        env:
-          LLVM_VERSION: "18.1.8"
-        with:
-          path: .tmp-llvm
-          key: llvm-redist-${{ env.LLVM_VERSION }}-win64
-
-      - name: Download + extract LLVM (cache miss)
-        if: runner.os == 'Windows' && steps.llvm-cache.outputs.cache-hit != 'true'
-        shell: bash
-        env:
-          LLVM_VERSION: "18.1.8"
-        run: |
-          set -euo pipefail
-          mkdir -p .tmp-llvm && cd .tmp-llvm
-          url="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/LLVM-${LLVM_VERSION}-win64.exe"
-          curl -fL -o llvm.exe "$url"
-          # The .exe is a 7zip self-extracting installer. GitHub-hosted
-          # windows-latest runners ship 7z preinstalled.
-          7z x llvm.exe -oLLVM
-          rm llvm.exe
-          ls LLVM/bin/clang.exe
-
-      # The LLVM-${VER}-win64.exe NSIS installer does NOT ship a
-      # top-level LICENSE.TXT — only sub-component LICENSE files
-      # under include/llvm/Support/ (which are not the project-level
-      # Apache 2.0 + LLVM Exception text required for redistribution).
-      # Pull the canonical LICENSE.TXT directly from the llvm-project
-      # source tree at the same pinned tag. ~12 KB; unconditional
-      # (runs on cache hit too) so cache state can't leave us without
-      # the file.
-      - name: Ensure LLVM LICENSE.TXT is present
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          LLVM_VERSION: "18.1.8"
-        run: |
-          set -euo pipefail
-          license_path=".tmp-llvm/LLVM/LICENSE.TXT"
-          if [[ -s "$license_path" ]]; then
-            echo "LICENSE.TXT already present (size: $(wc -c < "$license_path") bytes)"
-            exit 0
-          fi
-          license_url="https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-${LLVM_VERSION}/llvm/LICENSE.TXT"
-          curl -fL -o "$license_path" "$license_url"
-          # Sanity check: the Apache 2.0 + LLVM Exception file is
-          # ~12 KB; anything smaller than 8 KB is suspicious (sub-
-          # component LICENSE or HTML 404 page).
-          size=$(wc -c < "$license_path")
-          if [[ $size -lt 8000 ]]; then
-            echo "FATAL: LICENSE.TXT download too small ($size bytes); expected ~12 KB"
-            head -20 "$license_path" || true
-            exit 1
-          fi
-          echo "LICENSE.TXT downloaded ($size bytes) from $license_url"
-
-      # Archive minimal variant FIRST — opt-out users
-      # (MAPANARE_NO_BUNDLED_LLVM=1 in install.ps1) download this ZIP,
-      # which is the pre-v5.10.0 PyInstaller bundle with no bundled LLVM.
-      # v5.11.0 Pk.1: also produce a versioned copy. Legacy unversioned
-      # name kept as a 2-release alias so blog-post install scripts that
-      # hardcoded the URL keep resolving.
       - name: Archive minimal CLI bundle (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
+          set -euo pipefail
           cd dist
           V="${{ needs.release.outputs.new_version }}"
+          for forbidden in toolchain sdk llvm; do
+            if [[ -d "mapanare/$forbidden" ]]; then
+              echo "FATAL: minimal ZIP must not contain $forbidden/"
+              exit 1
+            fi
+          done
           7z a "mapanare-${V}-win-x64-minimal.zip" mapanare/
           cp "mapanare-${V}-win-x64-minimal.zip" mapanare-win-x64-minimal.zip
+          export ZIP="mapanare-${V}-win-x64-minimal.zip"
+          python -c "import os, sys; mb=round(os.path.getsize(os.environ['ZIP'])/1024/1024,1); print(f'Minimal ZIP size: {mb} MB'); sys.exit(1 if mb > 40 else 0)"
 
-      - name: Stage bundled LLVM into PyInstaller dir (Windows)
+      - name: Cache LLVM-MinGW SDK (Windows)
+        id: llvm-mingw-cache
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        env:
+          LLVM_MINGW_VERSION: "20260421"
+        with:
+          path: .tmp-llvm-mingw
+          key: llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-ucrt-x86_64
+
+      - name: Download + extract LLVM-MinGW SDK (cache miss)
+        if: runner.os == 'Windows' && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          LLVM_MINGW_VERSION: "20260421"
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp-llvm-mingw
+          cd .tmp-llvm-mingw
+          url="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-x86_64.zip"
+          curl -fL -o llvm-mingw.zip "$url"
+          7z x llvm-mingw.zip
+          rm llvm-mingw.zip
+          ls "llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-x86_64/bin/clang.exe"
+
+      - name: Stage LLVM-MinGW SDK into PyInstaller dir (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          ./tools/llvm-bundle/extract_minimal.ps1 `
-              -LlvmDir .tmp-llvm/LLVM `
-              -OutDir dist/mapanare/llvm
+          ./tools/llvm-mingw-bundle/extract_sdk.ps1 `
+              -LlvmMingwDir .tmp-llvm-mingw/llvm-mingw-20260421-ucrt-x86_64 `
+              -OutDir dist/mapanare/sdk
 
-      - name: Verify bundled clang runs (PATH stripped)
+      - name: Pre-build Windows runtime archive with SDK
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_BIN="$PWD/dist/mapanare/sdk/bin"
+          mkdir -p dist/mapanare/sdk/lib/mapanare
+          VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
+          cd runtime/native
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_core.c   -o mapanare_rt_mapanare_core.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_db.c     -o mapanare_rt_mapanare_db.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_io.c     -o mapanare_rt_mapanare_io.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_html.c   -o mapanare_rt_mapanare_html.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_runtime.c -o mapanare_rt_mapanare_runtime.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_gpu.c    -o mapanare_rt_mapanare_gpu.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_gpu_builtins.c -o mapanare_rt_mapanare_gpu_builtins.o
+          "$SDK_BIN/llvm-ar.exe" rcs "$GITHUB_WORKSPACE/dist/mapanare/sdk/lib/mapanare/libmapanare_rt.a" \
+            mapanare_rt_*.o
+          rm -f mapanare_rt_*.o
+          ls -la "$GITHUB_WORKSPACE/dist/mapanare/sdk/lib/mapanare/"
+
+      - name: Clean Windows SDK smoke before archiving
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & ./dist/mapanare/llvm/clang.exe --version
-          if ($LASTEXITCODE -ne 0) { throw "Bundled clang.exe smoke failed" }
-          # Compile + run a hello-world with PATH stripped so missing
-          # DLLs surface here, not on user installs.
+          if (Test-Path dist/mapanare/toolchain) {
+            throw "toolchain/ must not be staged into the v5.12.0 Windows CLI bundle"
+          }
           $env:PATH = "C:\Windows\System32;C:\Windows"
-          'int main(void){return 0;}' | Set-Content -Path bundled_smoke.c -Encoding ASCII
-          & ./dist/mapanare/llvm/clang.exe bundled_smoke.c -o bundled_smoke.exe
-          if ($LASTEXITCODE -ne 0) { throw "Bundled clang compile smoke failed" }
-          & ./bundled_smoke.exe
-          if ($LASTEXITCODE -ne 0) { throw "Bundled binary execution failed" }
-          Remove-Item bundled_smoke.c, bundled_smoke.exe
+          Remove-Item Env:LIB -ErrorAction SilentlyContinue
+          Remove-Item Env:INCLUDE -ErrorAction SilentlyContinue
+          Remove-Item Env:CC -ErrorAction SilentlyContinue
+          Remove-Item Env:CXX -ErrorAction SilentlyContinue
+          @"
+          fn main() {
+              print("hello from clean Windows SDK smoke")
+          }
+          "@ | Out-File hello.mn -Encoding ASCII
+          & ./dist/mapanare/mnc.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version failed" }
+          & ./dist/mapanare/mnc.exe run hello.mn
+          if ($LASTEXITCODE -ne 0) { throw "run failed" }
+          & ./dist/mapanare/mnc.exe build hello.mn -o hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+          & ./hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "built exe failed" }
+          @"
+          @test fn smoke_passes() {
+              assert true
+          }
+          "@ | Out-File smoke_tests.mn -Encoding ASCII
+          & ./dist/mapanare/mnc.exe test smoke_tests.mn
+          if ($LASTEXITCODE -ne 0) { throw "test command failed" }
 
       # Stage THIRD-PARTY-LICENSES.md inside the bundle so users can
       # read what was redistributed without going to the repo. The doc
@@ -429,11 +384,34 @@ jobs:
             cp docs/THIRD-PARTY-LICENSES.md dist/mapanare/THIRD-PARTY-LICENSES.md
           fi
 
+      - name: Archive SDK CLI bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          V="${{ needs.release.outputs.new_version }}"
+          if [[ -d mapanare/toolchain ]]; then
+            echo "FATAL: toolchain/ must not be shipped after Wk.*"
+            exit 1
+          fi
+          if [[ ! -f mapanare/sdk/bin/clang.exe ]]; then
+            echo "FATAL: SDK ZIP missing sdk/bin/clang.exe"
+            exit 1
+          fi
+          7z a "mapanare-${V}-win-x64-sdk.zip" mapanare/
+          cp "mapanare-${V}-win-x64-sdk.zip" "mapanare-${V}-win-x64.zip"
+          cp "mapanare-${V}-win-x64-sdk.zip" mapanare-win-x64.zip
+          export SDK_ZIP="mapanare-${V}-win-x64-sdk.zip"
+          python -c "import os, sys; mb=round(os.path.getsize(os.environ['SDK_ZIP'])/1024/1024,1); print(f'SDK ZIP size: {mb} MB'); sys.exit(1 if mb > 180 else 0)"
+          python -c "import os; mb=round(os.path.getsize(os.environ['SDK_ZIP'])/1024/1024,1); print('WARNING: SDK ZIP exceeds 150 MB target ({0} MB)'.format(mb)) if mb > 150 else None"
+
       # v5.11.0 Pk.1: produce a versioned archive (e.g.
       # mapanare-5.11.0-linux-x64.tar.gz) plus a copy at the legacy
       # unversioned name so existing install scripts keep working
       # through the 2-release soak window (drop legacy in v5.13.0).
       - name: Archive CLI binary
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cd dist
@@ -454,11 +432,25 @@ jobs:
           echo "VERSIONED_ARCHIVE=$VERSIONED_NAME" >> "$GITHUB_ENV"
 
       - name: Upload CLI archive to GitHub Release
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           gh release upload "v${{ needs.release.outputs.new_version }}" \
             "dist/${{ env.VERSIONED_ARCHIVE }}" \
             "dist/${{ matrix.archive_name }}" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SDK Windows ZIP to GitHub Release
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          V="${{ needs.release.outputs.new_version }}"
+          gh release upload "v${{ needs.release.outputs.new_version }}" \
+            "dist/mapanare-${V}-win-x64-sdk.zip" \
+            "dist/mapanare-${V}-win-x64.zip" \
+            dist/mapanare-win-x64.zip \
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -776,11 +768,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # =========================================================================
-  # 5. v5.10.0 Win.1b.G: smoke-test the published bundled-LLVM ZIP end-
-  # to-end with PATH stripped — catches "the bundle is broken" before
-  # users do. Runs against the draft release after build-cli uploads.
+  # 5. Smoke-test the published Windows SDK ZIP end-to-end with PATH,
+  # LIB, and INCLUDE stripped. This catches clean-machine SDK failures
+  # before users do.
   # =========================================================================
-  windows-bundled-llvm-smoke:
+  windows-sdk-smoke:
     needs: [release, build-cli]
     runs-on: windows-latest
 
@@ -789,70 +781,68 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      # v5.11.0 Pk.1: download the versioned ZIP so a missing-versioned-
-      # asset failure trips the smoke job (rather than silently falling
-      # back to the legacy alias). Legacy name still uploaded by
-      # build-cli for blog-post install-script users.
-      - name: Download published bundled ZIP
+      - name: Download published SDK ZIP
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $V = "${{ needs.release.outputs.new_version }}"
-          $Asset = "mapanare-${V}-win-x64.zip"
+          $Asset = "mapanare-${V}-win-x64-sdk.zip"
           gh release download "v${V}" -p "$Asset" -O mapanare.zip
           if (-not (Test-Path mapanare.zip)) {
             throw "$Asset not found in release"
           }
           $size_mb = [math]::Round((Get-Item mapanare.zip).Length / 1MB, 1)
-          Write-Host "ZIP size: $size_mb MB"
-          # v5.11.2 Pk.3.dx: realistic threshold pending the v5.12.x
-          # Mc.* closure of toolchain.py's bundled-LLVM discovery.
-          # The Windows ZIP currently double-ships compilers:
-          #   - dist/mapanare/toolchain/  (w64devkit, ~150 MB) — used by
-          #     the PyInstaller-bundled `mapanare.exe` Python CLI; its
-          #     toolchain.py looks for `toolchain/bin/gcc.exe`.
-          #   - dist/mapanare/llvm/  (~95 MB) — used by the native
-          #     `mnc.exe` via `find_clang()` in main.mn (v5.10.0 Win.1b).
-          # Win.1b only updated the native CLI; the Python CLI is still
-          # gcc/w64devkit-only. Closing this requires teaching
-          # mapanare/toolchain.py to discover `llvm/bin/clang.exe`
-          # first, then dropping `toolchain_dir` from packaging/
-          # mapanare.spec. Tracked as the Mc.6 follow-up to the v5.11.0
-          # panel's Mc.* (mnc parity) docket. v5.11.0's claimed "95 MB"
-          # ZIP was aspirational — the actual size has been ~255 MB
-          # since v5.10.0 shipped. Threshold 350 MB gives margin until
-          # Mc.6 closes; tighten back to 150 MB at that point.
-          if ($size_mb -gt 350) {
-            throw "Bundle exceeds 350 MB alarm threshold ($size_mb MB)"
+          Write-Host "SDK ZIP size: $size_mb MB"
+          if ($size_mb -gt 180) {
+            throw "SDK ZIP exceeds 180 MB hard gate ($size_mb MB)"
           }
           if ($size_mb -gt 150) {
-            Write-Warning "Bundle exceeds 150 MB target ($size_mb MB) — Mc.6 (drop w64devkit once toolchain.py finds bundled LLVM) will restore the target."
+            Write-Warning "SDK ZIP exceeds 150 MB target ($size_mb MB)"
           }
 
       - name: Extract + smoke (PATH stripped)
         shell: pwsh
         run: |
           Expand-Archive mapanare.zip -DestinationPath out
-          # Strip user PATH so the bundled clang is the ONLY clang
-          # available — any miss surfaces here, not on user installs.
+          if (Test-Path out\mapanare\toolchain) {
+            throw "toolchain/ must not be shipped after Wk.*"
+          }
+          if (-not (Test-Path out\mapanare\sdk\bin\clang.exe)) {
+            throw "SDK ZIP missing sdk\bin\clang.exe"
+          }
           $env:PATH = "C:\Windows\System32;C:\Windows"
+          Remove-Item Env:LIB -ErrorAction SilentlyContinue
+          Remove-Item Env:INCLUDE -ErrorAction SilentlyContinue
+          Remove-Item Env:CC -ErrorAction SilentlyContinue
+          Remove-Item Env:CXX -ErrorAction SilentlyContinue
           @"
           fn main() {
-              print("hello from bundled-llvm smoke")
+              print("hello from clean Windows smoke")
           }
           "@ | Out-File hello.mn -Encoding ASCII
+          & ./out/mapanare/mnc.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version failed" }
           & ./out/mapanare/mnc.exe run hello.mn
-          if ($LASTEXITCODE -ne 0) {
-            throw "Bundled smoke failed (exit $LASTEXITCODE)"
+          if ($LASTEXITCODE -ne 0) { throw "run failed" }
+          & ./out/mapanare/mnc.exe build hello.mn -o hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+          & ./hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "built exe failed" }
+          @"
+          @test fn smoke_passes() {
+              assert true
           }
-          Write-Host "Bundled-LLVM smoke: OK"
+          "@ | Out-File smoke_tests.mn -Encoding ASCII
+          & ./out/mapanare/mnc.exe test smoke_tests.mn
+          if ($LASTEXITCODE -ne 0) { throw "test command failed" }
+          Write-Host "Windows SDK smoke: OK"
 
   # =========================================================================
   # 6. Generate SHA256 checksums for all release artifacts
   # =========================================================================
   checksums:
-    needs: [release, build-cli, build-native, windows-bundled-llvm-smoke]
+    needs: [release, build-cli, build-native, windows-sdk-smoke]
     runs-on: ubuntu-latest
 
     steps:

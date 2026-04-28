@@ -3,11 +3,11 @@
 #   irm https://mapanare.dev/install.ps1 | iex
 #   $env:MAPANARE_VERSION = "v4.0.0"; irm https://mapanare.dev/install.ps1 | iex
 #
-# v5.10.0 Win.1b.F: Windows installs default to a bundled-LLVM ZIP
-# (~95 MB) so ``mnc run`` works with zero external dependencies. Set
+# v5.12.0 Wk.*: Windows installs default to the SDK ZIP so `mnc run`
+# and `mnc build` work on clean machines. Set either
+# $env:MAPANARE_NO_BUNDLED_TOOLCHAIN = "1" or the legacy
 # $env:MAPANARE_NO_BUNDLED_LLVM = "1" before invoking to download the
-# minimal ~10 MB ZIP instead — useful when the user already has clang
-# on PATH (e.g. a winget install of LLVM.LLVM).
+# app-only minimal ZIP instead.
 param(
     [string]$Version = "",
     [string]$InstallDir = ""
@@ -19,12 +19,14 @@ if (-not $InstallDir) {
     $InstallDir = if ($env:MAPANARE_INSTALL_DIR) { $env:MAPANARE_INSTALL_DIR } else { "$env:LOCALAPPDATA\Mapanare\bin" }
 }
 
-# v5.10.0 Win.1b.F: bundled-LLVM artifact selection.
-$UseBundledLlvm = $true
+# v5.12.0 Wk.*: bundled SDK artifact selection.
+$UseBundledToolchain = $true
 if ($env:MAPANARE_NO_BUNDLED_LLVM -in @("1", "true", "yes", "TRUE", "YES")) {
-    $UseBundledLlvm = $false
+    $UseBundledToolchain = $false
 }
-$LegacyArtifact = if ($UseBundledLlvm) { "mapanare-win-x64.zip" } else { "mapanare-win-x64-minimal.zip" }
+if ($env:MAPANARE_NO_BUNDLED_TOOLCHAIN -in @("1", "true", "yes", "TRUE", "YES")) {
+    $UseBundledToolchain = $false
+}
 
 # ---------- Resolve version ----------
 if (-not $Version) {
@@ -46,38 +48,51 @@ if ($Version -eq "latest") {
     }
 }
 
-# v5.11.0 Pk.1: artifact filenames now include the version
-# (mapanare-5.11.0-win-x64.zip). Strip the leading ``v`` because the
-# git tag uses ``v5.11.0`` but the VERSION file / filename use
-# ``5.11.0`` (PLAN Decision 3). Probe the versioned name first; fall
-# back to the legacy unversioned name for releases <= v5.10.0 (which
-# don't have a versioned asset) and for the 2-release alias soak
-# window (drop the fallback in v5.13.0).
+# v5.11.0 Pk.1: artifact filenames include the version. v5.12.0 adds
+# the canonical SDK name and keeps mapanare-${VersionTag}-win-x64.zip
+# plus mapanare-win-x64.zip as compatibility aliases for old scripts and
+# old releases.
 $VersionTag = $Version -replace '^v', ''
-$VersionedArtifact = if ($UseBundledLlvm) {
-    "mapanare-${VersionTag}-win-x64.zip"
+$CandidateArtifacts = if ($UseBundledToolchain) {
+    @(
+        "mapanare-${VersionTag}-win-x64-sdk.zip",
+        "mapanare-${VersionTag}-win-x64.zip",
+        "mapanare-win-x64.zip"
+    )
 } else {
-    "mapanare-${VersionTag}-win-x64-minimal.zip"
+    @(
+        "mapanare-${VersionTag}-win-x64-minimal.zip",
+        "mapanare-win-x64-minimal.zip"
+    )
 }
-$Artifact = $VersionedArtifact
-$DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$Artifact"
-try {
-    Invoke-WebRequest -Uri $DownloadUrl -Method Head -UseBasicParsing -ErrorAction Stop | Out-Null
-} catch {
-    Write-Host "  Versioned asset not found; falling back to legacy name $LegacyArtifact" -ForegroundColor Yellow
-    $Artifact = $LegacyArtifact
-    $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$Artifact"
+
+$Artifact = $null
+$DownloadUrl = $null
+foreach ($candidate in $CandidateArtifacts) {
+    $candidateUrl = "https://github.com/$Repo/releases/download/$Version/$candidate"
+    try {
+        Invoke-WebRequest -Uri $candidateUrl -Method Head -UseBasicParsing -ErrorAction Stop | Out-Null
+        $Artifact = $candidate
+        $DownloadUrl = $candidateUrl
+        break
+    } catch {
+        Write-Host "  Asset not found: $candidate" -ForegroundColor Yellow
+    }
+}
+if (-not $Artifact) {
+    Write-Host "Error: no compatible Windows artifact found for $Version." -ForegroundColor Red
+    exit 1
 }
 
 # ---------- Download & install ----------
-$LlvmStatus = if ($UseBundledLlvm) { "bundled (no separate install needed)" } else { "NOT bundled — clang required separately" }
-$DownloadSize = if ($UseBundledLlvm) { "~95 MB (Mapanare + bundled LLVM)" } else { "~10 MB (Mapanare only)" }
+$ToolchainStatus = if ($UseBundledToolchain) { "Windows SDK bundled (no separate install needed)" } else { "NOT bundled - clang/gcc required separately" }
+$DownloadSize = if ($UseBundledToolchain) { "SDK ZIP (Mapanare + Windows SDK, target <150 MB)" } else { "Minimal ZIP (Mapanare only, target <25 MB)" }
 Write-Host ""
 Write-Host "  Mapanare Language Installer" -ForegroundColor Cyan
 Write-Host "  Version:   $Version"
 Write-Host "  Platform:  windows-x64"
 Write-Host "  Target:    $InstallDir"
-Write-Host "  Toolchain: $LlvmStatus"
+Write-Host "  Toolchain: $ToolchainStatus"
 Write-Host "  Download:  $DownloadSize"
 Write-Host ""
 
@@ -137,16 +152,20 @@ if (Test-Path $MncBin) {
     & $MncBin --version
     Write-Host ""
 
-    # v5.10.0 Win.1b.F: detect the bundled LLVM toolchain so the user
-    # knows whether ``mnc run`` will work out of the box. find_clang()
-    # in mnc itself looks for $InstallDir\llvm\clang.exe — keep this
-    # detection in sync with that path.
-    $LlvmBundle = Join-Path $InstallDir "llvm\clang.exe"
-    if (Test-Path $LlvmBundle) {
-        Write-Host "Bundled LLVM toolchain ready: $LlvmBundle"
+    $BundledCompiler = @(
+        (Join-Path $InstallDir "sdk\bin\clang.exe"),
+        (Join-Path $InstallDir "llvm\bin\clang.exe"),
+        (Join-Path $InstallDir "llvm\clang.exe")
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($BundledCompiler) {
+        if ($BundledCompiler -like "*\sdk\bin\clang.exe") {
+            Write-Host "Bundled Windows SDK ready: $BundledCompiler"
+        } else {
+            Write-Host "Bundled LLVM toolchain ready: $BundledCompiler"
+        }
     } else {
-        Write-Host "No bundled LLVM. Install clang separately if ``mnc run`` reports it missing:" -ForegroundColor Yellow
-        Write-Host "  winget install LLVM.LLVM"
+        Write-Host "No bundled Windows SDK. Install a compiler separately if ``mnc run`` reports it missing:" -ForegroundColor Yellow
+        Write-Host "  winget install MartinStorsjo.LLVM-MinGW.UCRT"
     }
     Write-Host ""
     Write-Host "Get started:"

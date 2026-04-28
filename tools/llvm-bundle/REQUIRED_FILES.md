@@ -1,4 +1,9 @@
-# LLVM Bundle — Required Files
+# Legacy LLVM Bundle - Required Files
+
+> v5.12.0 replaces this official LLVM-only bundle with the
+> LLVM-MinGW/UCRT SDK subset documented in
+> `tools/llvm-mingw-bundle/REQUIRED_FILES.md`. This file is kept as
+> historical reference for the v5.10.0/v5.11.x official LLVM subset.
 
 Mapanare's Windows release bundles a minimal LLVM redistributable
 into `<install>/bin/llvm/` so users get a working `mnc run` without

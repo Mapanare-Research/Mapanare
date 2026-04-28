@@ -1,9 +1,10 @@
 """Host-toolchain discovery for `mapanare run` / `mapanare build`.
 
-On Windows the PyInstaller bundle may ship a portable MinGW toolchain under
-``<install>/toolchain/bin/gcc.exe`` (w64devkit) and a pre-built runtime archive
-under ``<install>/toolchain/lib/libmapanare_rt.a``. When neither a bundled
-toolchain nor a system gcc/clang is on PATH, we fall back to well-known install
+On Windows the PyInstaller bundle may ship a curated compiler SDK under
+``<install>/sdk/`` (preferred) or ``<install>/llvm/`` (legacy naming). Older
+bundles used ``<install>/toolchain/`` for w64devkit; keep that layout as a
+fallback so old installs and local tests still work. When neither a bundled
+SDK nor a system gcc/clang is on PATH, we fall back to well-known install
 locations left by common package managers (winget, scoop, chocolatey).
 
 On Linux and macOS the helpers just look at PATH — nothing is bundled.
@@ -45,7 +46,7 @@ class Toolchain:
 
 
 def _bundle_root() -> Path | None:
-    """Return the directory that holds the optional bundled ``toolchain/``.
+    """Return the directory that holds an optional bundled Windows SDK.
 
     Three situations:
       1. Running from a PyInstaller one-dir bundle: files live next to the exe.
@@ -57,18 +58,46 @@ def _bundle_root() -> Path | None:
     # Running from a PyInstaller bundle
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).resolve().parent
-        if (exe_dir / "toolchain").is_dir():
+        if _has_bundled_sdk_root(exe_dir):
             return exe_dir
         # one-file build: _MEIPASS holds the extracted datas
         meipass = getattr(sys, "_MEIPASS", None)
-        if meipass and (Path(meipass) / "toolchain").is_dir():
+        if meipass and _has_bundled_sdk_root(Path(meipass)):
             return Path(meipass)
+        return None
 
     # Source install: repo-root/toolchain/ if someone staged one
     pkg_root = Path(__file__).resolve().parent.parent
     if (pkg_root / "toolchain").is_dir():
         return pkg_root
 
+    return None
+
+
+def _bundled_sdk_candidates(root: Path) -> list[Path]:
+    """Candidate bundled compiler SDK bin directories, preferred first."""
+    return [
+        root / "sdk" / "bin",
+        root / "llvm" / "bin",
+        root / "toolchain" / "bin",
+    ]
+
+
+def _has_bundled_sdk_root(root: Path) -> bool:
+    """Return True if root looks like a PyInstaller directory with an SDK."""
+    return any(candidate.is_dir() for candidate in _bundled_sdk_candidates(root))
+
+
+def _runtime_archive_for(root: Path, bin_dir: Path) -> Path | None:
+    """Return the bundled libmapanare runtime archive for a SDK bin dir."""
+    sdk_root = bin_dir.parent
+    candidates = [
+        sdk_root / "lib" / "mapanare" / "libmapanare_rt.a",
+        sdk_root / "lib" / "libmapanare_rt.a",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
     return None
 
 
@@ -156,15 +185,29 @@ def _probe_compiler(path: str) -> bool:
         return False
 
 
-def _search_dir_for_compiler(bin_dir: str) -> tuple[str, str] | None:
-    """Return (name, absolute_path) if a runnable gcc or clang lives in bin_dir."""
+def _compiler_filenames(name: str) -> list[str]:
+    """Return platform-preferred executable filenames for a compiler name."""
+    suffixes = [".exe", ""] if os.name == "nt" else ["", ".exe"]
+    out: list[str] = []
+    for suffix in suffixes:
+        filename = name + suffix
+        if filename not in out:
+            out.append(filename)
+    return out
+
+
+def _search_dir_for_compiler(
+    bin_dir: str,
+    names: tuple[str, ...] = ("gcc", "clang"),
+) -> tuple[str, str] | None:
+    """Return (name, absolute_path) if a runnable compiler lives in bin_dir."""
     if not os.path.isdir(bin_dir):
         return None
-    ext = ".exe" if os.name == "nt" else ""
-    for name in ("gcc", "clang"):
-        candidate = os.path.join(bin_dir, name + ext)
-        if os.path.isfile(candidate) and _probe_compiler(candidate):
-            return (name, candidate)
+    for name in names:
+        for filename in _compiler_filenames(name):
+            candidate = os.path.join(bin_dir, filename)
+            if os.path.isfile(candidate) and _probe_compiler(candidate):
+                return (name, candidate)
     return None
 
 
@@ -178,10 +221,10 @@ def _clang_sibling(compiler_path: str, compiler_name: str) -> str | None:
     if compiler_name == "clang":
         return compiler_path
     bin_dir = os.path.dirname(compiler_path)
-    ext = ".exe" if os.name == "nt" else ""
-    cand = os.path.join(bin_dir, "clang" + ext)
-    if os.path.isfile(cand) and _probe_compiler(cand):
-        return cand
+    for filename in _compiler_filenames("clang"):
+        cand = os.path.join(bin_dir, filename)
+        if os.path.isfile(cand) and _probe_compiler(cand):
+            return cand
     # Search PATH as a last resort.
     fallback = shutil.which("clang")
     if fallback and _probe_compiler(fallback):
@@ -193,32 +236,37 @@ def detect_toolchain() -> Toolchain | None:
     """Locate a usable C toolchain.
 
     Order:
-      1. Bundled ``toolchain/`` alongside the Mapanare install.
+      1. Bundled ``sdk/`` or ``llvm/`` alongside the Mapanare install.
+         Legacy ``toolchain/`` is kept as the last bundled fallback.
       2. System PATH (``gcc`` then ``clang``).
       3. Well-known install roots (winget, scoop, msys2, chocolatey, LLVM).
 
-    The bundled toolchain comes first so a stray system MinGW on PATH
-    cannot shadow the w64devkit + ``libmapanare_rt.a`` we ship next to
-    the PyInstaller bundle. Without bundled-wins, an end user with
-    ``C:/mingw64`` on PATH would link against a gcc that has no
-    runtime archive, producing ``undefined reference to __mn_str_*``.
+    The bundled SDK comes first so a stray system MinGW on PATH cannot shadow
+    the curated compiler + ``libmapanare_rt.a`` we ship next to the
+    PyInstaller bundle. Without bundled-wins, an end user with ``C:/mingw64``
+    on PATH could link against a compiler that has no runtime archive,
+    producing ``undefined reference to __mn_str_*``.
 
     Returns ``None`` if nothing works. Callers should print install guidance.
     """
     # 1. Bundled toolchain
     root = _bundle_root()
     if root is not None:
-        bundle_bin = str(root / "toolchain" / "bin")
-        hit = _search_dir_for_compiler(bundle_bin)
-        if hit:
+        for sdk_bin in _bundled_sdk_candidates(root):
+            bundle_bin = str(sdk_bin)
+            # SDK bundles should use clang. Legacy toolchain/ may only have gcc.
+            names = ("clang", "gcc") if sdk_bin.parent.name != "toolchain" else ("gcc", "clang")
+            hit = _search_dir_for_compiler(bundle_bin, names=names)
+            if not hit:
+                continue
             name, path = hit
-            rt = root / "toolchain" / "lib" / "libmapanare_rt.a"
+            rt = _runtime_archive_for(root, sdk_bin)
             return Toolchain(
                 name=name,
                 compiler=path,
                 clang=_clang_sibling(path, name),
                 bin_dir=bundle_bin,
-                rt_archive=str(rt) if rt.is_file() else None,
+                rt_archive=str(rt) if rt else None,
             )
 
     # 2. System PATH

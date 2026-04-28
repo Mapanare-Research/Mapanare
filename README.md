@@ -45,15 +45,17 @@ curl -fsSL https://mapanare.dev/install | bash
 ```
 
 ```powershell
-# Windows (PowerShell) — includes a bundled LLVM toolchain by default
-# (~95 MB), so `mnc run` works with no separate install.
+# Windows (PowerShell) - includes a bundled Windows SDK by default,
+# so `mnc run` and `mnc build` work with no separate install.
 irm https://mapanare.dev/install.ps1 | iex
 
-# Want the small ZIP and bring your own clang? Set the env var first:
+# Want the minimal ZIP and bring your own clang/gcc? Set either env var first:
+$env:MAPANARE_NO_BUNDLED_TOOLCHAIN = "1"; irm https://mapanare.dev/install.ps1 | iex
+# Legacy alias also works:
 $env:MAPANARE_NO_BUNDLED_LLVM = "1"; irm https://mapanare.dev/install.ps1 | iex
 ```
 
-Or download binaries from [Releases](https://github.com/Mapanare-Research/Mapanare/releases). See [`docs/THIRD-PARTY-LICENSES.md`](docs/THIRD-PARTY-LICENSES.md) for the bundled-LLVM license.
+Or download binaries from [Releases](https://github.com/Mapanare-Research/Mapanare/releases). Use the Windows SDK ZIP for clean-machine native builds or the minimal ZIP when you already have a compiler. See [`docs/THIRD-PARTY-LICENSES.md`](docs/THIRD-PARTY-LICENSES.md) for bundled SDK licenses.
 
 ---
 

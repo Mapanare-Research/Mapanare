@@ -1,5 +1,8 @@
 # tools/llvm-bundle/extract_minimal.ps1
 #
+# Legacy v5.10.0/v5.11.x official LLVM-only subset extractor. v5.12.0
+# Windows SDK releases use tools/llvm-mingw-bundle/extract_sdk.ps1.
+#
 # v5.10.0 Win.1b — extract the minimal LLVM redistributable subset
 # Mapanare's Windows release ships at <install>/bin/llvm/. Pinned to
 # LLVM 18.1.8.
