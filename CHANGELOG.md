@@ -32,9 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path and points the reader at the workflow step.
 - **Pk.2.dx — Windows stage2→stage3 self-validate missed the v5.9.1
   `emit-llvm` migration; v5.11.0 Pk.2 exposed it.** `publish.yml`
-  line 594 (now 638) invoked
-  `./mnc-stage2 mapanare/self/mnc_all.mn > stage3.ll` without the
-  `emit-llvm` subcommand. After v5.9.1 DX.5's BREAKING change made
+  line 594 (now 638) invoked the freshly-built stage2 native
+  compiler on the self-hosted source at `mapanare/self/mnc_all.mn`
+  with the `emit-llvm` subcommand omitted (output redirected to a
+  stage3 IR file). After v5.9.1 DX.5's BREAKING change made
   bare `mnc <file.mn>` compile-and-run by default, that invocation
   *compiled* `mnc_all.mn` and *executed* the resulting compiler
   binary with no args; the no-args dispatch then read garbage
@@ -56,12 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - All four README version badges bumped from `5.8.7` to `5.11.2`:
   English `version-5.11.2`, Spanish `version-5.11.2`, Portuguese
-  `versao-5.11.2`, Chinese `版本-5.11.2`. Closes Bo.21 (HIGH) from
-  the v5.11.0 panel (`.reviews/v5.11.0/06-boa.md`) — front-door
-  version-metadata drift across the v5.9.x → v5.11.0 arc; the
-  Portuguese and Chinese badges use localized label keys
-  (`versao-`, `版本-`) which are easy to miss with a `version-`-
-  shaped grep.
+  `versao-5.11.2`, Chinese `版本-5.11.2`. Closes the Bo.21 HIGH
+  finding from the most recent v5.11.0 panel review (the review
+  artefacts live under the gitignored `.reviews/` tree, so they
+  are not committed) — front-door version-metadata drift across
+  the v5.9.x → v5.11.0 arc; the Portuguese and Chinese badges
+  use localized label keys (`versao-`, `版本-`) which are easy
+  to miss with a `version-`-shaped grep.
 
 ## [5.11.0] - 2026-04-28
 
