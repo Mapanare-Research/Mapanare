@@ -15,9 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the "missing clang" pain on Windows surfaced by the v5.8.7 install
   probe. v5.9.0 DX.3 made the failure mode helpful (install hint
   instead of bare "clang failed"); v5.10.0 removes the dependency
-  entirely. After this release, `irm https://mapanare.dev/install.ps1
-  | iex` followed by `mnc run hello.mn` works on a clean Windows box
-  with **zero external dependencies**.
+  entirely. After this release, the install one-liner followed by
+  `mnc run` of any Mapanare program works on a clean Windows box with
+  **zero external dependencies**.
 
   Concretely:
   - **Win.1b.A** — `tools/llvm-bundle/extract_minimal.ps1` extracts
@@ -60,9 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     now reflects toolchain status + download size; success message
     detects the bundle and reports its path.
   - **Win.1b.G** — `windows-bundled-llvm-smoke` CI job downloads the
-    published ZIP, strips `PATH`, and runs `mnc run hello.mn` end-
-    to-end. Catches "the bundle is broken" before users do. Gates
-    `checksums` so a broken bundle never reaches a final release.
+    published ZIP, strips `PATH`, and runs the bundled `mnc` end-to-end
+    against a hello-world program. Catches "the bundle is broken"
+    before users do. Gates `checksums` so a broken bundle never
+    reaches a final release.
 
 ### Changed
 
@@ -89,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subcommand. Worked for pre-v5.9.1 seeds where the default was
   emit-IR. The v5.9.1 PLAN updated lines 95 / 122 but missed 68;
   surfaced when v5.10.0's Bb.4 refreshed the seed past v5.9.1
-  behavior. New seed treated `mnc mnc_all.mn` as "compile and
+  behavior. New seed treated bare `mnc <file>` as "compile and
   run" instead of "emit IR" → script died at step 1. Added
   `emit-llvm` subcommand to the seed invocation.
 
@@ -120,9 +121,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   193]` on tests that subprocess-invoke the `mnc` binary — these
   failed identically before this release; baseline confirmed via
   git stash).
-- WSL Ubuntu: `python3 scripts/build_stage1.py` clean, goldens 66/66
-  pass, `verify_fixed_point.sh` strict (0 diff at 226,560 lines),
-  `build_from_seed.sh` end-to-end clean with the refreshed seed.
+- WSL Ubuntu: `scripts/build_stage1.py` ran clean, goldens 66/66
+  pass, `scripts/verify_fixed_point.sh` strict (0 diff at 226,560
+  lines), `scripts/build_from_seed.sh` end-to-end clean with the
+  refreshed seed.
 
 ## [5.9.2] - 2026-04-27
 

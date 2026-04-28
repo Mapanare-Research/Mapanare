@@ -669,7 +669,13 @@ jobs:
 
       - name: Self-compile mnc_all.mn (Da.2)
         run: |
-          ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
+          # v5.9.1 DX.5 / v5.10.0 Bb.4: explicit `emit-llvm` subcommand.
+          # Pre-v5.9.1 the bare ``mnc <file.mn>`` defaulted to emit IR;
+          # v5.9.1+ defaults to run. v5.10.0's seed refresh propagated
+          # the new behavior here — without the explicit subcommand the
+          # stage1 binary attempts to RUN mnc_all.mn (the compiler) and
+          # llvm-as fails on the run-output instead of compiled IR.
+          ./mapanare/self/mnc-stage1 emit-llvm mapanare/self/mnc_all.mn > /tmp/stage2.ll
           echo "stage2.ll: $(wc -l < /tmp/stage2.ll) lines"
           test -s /tmp/stage2.ll
 
@@ -767,7 +773,10 @@ jobs:
 
       - name: Validate output (compile hello → llvm-as)
         run: |
-          ./mnc tests/golden/01_hello.mn > /tmp/hello.ll
+          # v5.9.1 DX.5 / v5.10.0 Bb.4: explicit `emit-llvm` subcommand
+          # required. v5.10.0's refreshed seed defaults to run-program
+          # for bare `mnc <file.mn>`.
+          ./mnc emit-llvm tests/golden/01_hello.mn > /tmp/hello.ll
           llvm-as /tmp/hello.ll -o /dev/null
           echo "Bootstrap compiler produces valid IR"
 
@@ -776,7 +785,8 @@ jobs:
           PASS=0; FAIL=0
           for mn in tests/golden/01_hello.mn tests/golden/02_arithmetic.mn tests/golden/03_functions.mn; do
             if [ -f "$mn" ]; then
-              if ./mnc "$mn" | llvm-as -o /dev/null 2>/dev/null; then
+              # v5.9.1 DX.5 / v5.10.0 Bb.4: explicit emit-llvm subcommand.
+              if ./mnc emit-llvm "$mn" | llvm-as -o /dev/null 2>/dev/null; then
                 PASS=$((PASS + 1))
               else
                 FAIL=$((FAIL + 1))
