@@ -427,6 +427,29 @@ fn declare_runtime_fn(st: EmitState, name: String, ret: String, params: String) 
         let line_i: String = "declare " + ret_prefix + abi_ret_i + " @" + name + "(" + combined_i + ")" + suffix
         return emit_line(st, line_i)
     }
+    // v5.8.8 Da.1: SysV / AAPCS64 default — > 16 B aggregate returns
+    // must use sret. SysV's "memory class" rule (AMD64 §3.2.3) and
+    // AAPCS64's x8 indirect-result rule both lower a 40-byte struct
+    // return via a hidden first-arg pointer. LLVM's x86_64 backend
+    // *silently* rewrites first-class aggregate returns to sret-style
+    // memory return, so the old `declare {ptr, i64, ...} @fn()` shape
+    // worked on Linux by accident; LLVM's arm64 backend does not have
+    // an equivalent rewrite, so the same IR miscompiles on Apple
+    // Silicon. Emitting the canonical sret form on both targets
+    // matches what clang produces from C and produces equivalent
+    // machine code via either backend. See
+    // docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md.
+    let ret_size: Int = llvm_type_size(ret)
+    if is_large_aggregate(ret) && ret_size > 16 {
+        let abi_ret_d: String = "void"
+        let prefix_d: String = "ptr sret(" + ret + ") align 8"
+        let mut combined_d: String = prefix_d
+        if len(params) > 0 {
+            combined_d = prefix_d + ", " + params
+        }
+        let line_d: String = "declare " + abi_ret_d + " @" + name + "(" + combined_d + ")" + suffix
+        return emit_line(st, line_d)
+    }
     let line: String = "declare " + ret_prefix + ret + " @" + name + "(" + params + ")" + suffix
     return emit_line(st, line)
 }
@@ -736,6 +759,25 @@ fn emit_rt_call(st: EmitState, dn: String, ret_ty: String, fn_name: String, args
             return s2
         }
         return emit_line(s2, emit_call_ir(dn, ret_ty, fn_name, new_args2))
+    }
+    // v5.8.8 Da.1: SysV / AAPCS64 default — sret call shape for
+    // > 16 B aggregate returns. Mirrors declare_runtime_fn's default
+    // sret declaration. Caller alloca + sret call + load.
+    let ret_sz_d: Int = llvm_type_size(ret_ty)
+    if is_large_aggregate(ret_ty) && ret_sz_d > 16 {
+        let mut s_d: EmitState = st
+        let sret_n_d: Int = s_d.counter
+        s_d.counter = s_d.counter + 1
+        let sret_slot_d: String = "%sret." + toString(sret_n_d)
+        s_d = emit_line(s_d, "  " + sret_slot_d + " = alloca " + ret_ty + ", align 8")
+        let sret_arg_d: String = "ptr sret(" + ret_ty + ") align 8 " + sret_slot_d
+        let mut combined_d: String = sret_arg_d
+        if len(args_text) > 0 {
+            combined_d = sret_arg_d + ", " + args_text
+        }
+        s_d = emit_line(s_d, "  call void @" + fn_name + "(" + combined_d + ")")
+        s_d = emit_line(s_d, "  " + dn + " = load " + ret_ty + ", ptr " + sret_slot_d)
+        return s_d
     }
     return emit_line(st, emit_call_ir(dn, ret_ty, fn_name, args_text))
 }

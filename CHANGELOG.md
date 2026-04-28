@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.8.8] - 2026-04-27
+
+### Fixed
+
+- **Apple AArch64 (AAPCS64) return-ABI bug** (Da.1) — `__mn_list_new`
+  and `__mn_str_split` declarations and call sites in both emitters
+  (`mapanare/emit_llvm_text.py` + `mapanare/self/emit_llvm.mn`) now use
+  canonical sret form (`declare void @fn(ptr sret(...) align 8, ...)`)
+  on all SysV / AAPCS64 default-path targets. Previously these were
+  declared as first-class aggregate returns
+  (`{ptr, i64, i64, i64, i64} @fn(...)`); LLVM's x86_64 backend
+  silently rewrote them to sret-style per AMD64 §3.2.3 "memory class",
+  but LLVM's arm64 backend lowered them literally as register-tuple
+  return (x0..x4), while the C runtime returns via x8 indirect per
+  AAPCS64. The mismatch produced `FATAL: __mn_list_push received
+  corrupted list (data=0x40 ...)` SIGABRT during `mnc-stage1`
+  self-compile of `mapanare/self/mnc_all.mn` on the macos-latest runner.
+  Empirical probe with clang ground-truth IR + arm64 assembly
+  comparison documented in
+  `docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md`.
+- **`scripts/build_stage1.py` post-emit triple/datalayout text-patch
+  removed** — a 24-line workaround that searched the emitted IR for
+  `target triple = "x86_64-unknown-linux-gnu"` and replaced it with
+  `aarch64-apple-macos` / `x86_64-w64-mingw32` after emission. The
+  natural `compile_multi_module_mir(target_name=host_target_name())`
+  plumbing already resolves the host target and writes the correct
+  triple + datalayout into the IR; the text-patch was redundant and
+  masked the v5.8.7 macOS arm64 ABI bug because the function
+  signatures (where the bug actually lived) retained their
+  SysV-shaped first-class aggregate returns regardless of the
+  patched triple.
+
+### Added
+
+- **macOS self-compile CI gate** (Da.2) —
+  `.github/workflows/ci.yml::macos` now builds `mnc-stage1` via the
+  `scripts/build_stage1.py` Python bootstrap, self-compiles
+  `mapanare/self/mnc_all.mn` through it, and validates the resulting
+  IR with `llvm-as`. Mirrors the Win64/i686 self-compile gates added
+  in v5.8.4 / v5.8.6. Without this, the v5.8.7 SIGABRT would have
+  stayed latent until the next publish run.
+- **macOS arm64 native compiler binary** (Da.3) —
+  `publish.yml::build-native` matrix re-adds the `macos-latest`
+  entry. The release-notes table's Apple Silicon "Native Compiler"
+  column points to a Download link
+  (`mnc-darwin-arm64`) again — flipped from "Build from source" that
+  was the v5.8.7 Da.0 deferral. macOS-specific build path links the
+  Metal + Foundation frameworks (for the Metal GPU backend) and uses
+  ld64's `-Wl,-stack_size,0x4000000` syntax instead of GNU ld's
+  `-Wl,-z,stack-size`.
+
+### Notes
+
+- **NO bootstrap seed refresh required.** Per the v5.8.8 PLAN
+  Decision 1 Option B recommendation, dispatch is target-agnostic at
+  the IR-shape level — both emitters now always emit canonical sret
+  form for > 16 B aggregate returns on all SysV / AAPCS64 default-path
+  targets. No new C-runtime export, no new Mapanare-level call site,
+  the v5.8.6 seed accepts the v5.8.8 source unchanged.
+- **Linux x86_64 IR shape changes**, but produces equivalent machine
+  code. The new sret form matches what `clang` emits from the
+  equivalent C source. The old first-class aggregate form worked on
+  Linux only because LLVM's x86_64 backend has the silent rewrite to
+  sret-style memory return; emitting sret directly removes a latent
+  fragility.
+- **Mac strict-NEAR fixed-point achieved.** stage2.ll == stage3.ll
+  within 4 lines (all VERSION-only metadata diff). Same shape as the
+  v5.8.5+ Linux baseline. Goldens 66/66 preserved on Mac; non-bootstrap
+  pytest 1,349 passed.
+- **Phase 0 empirical probe** by user on Apple Silicon Mac
+  (M2 Pro, macOS 26.3, Homebrew clang/llc-18, Apple Clang 17). The
+  v5.8.8 PLAN's hypothesis (parameter-by-value AAPCS64 vs SysV
+  divergence) was REFINED — the bug is in returns, not parameters.
+  PHASE_0_FINDINGS.md §8 documents the implementation surface
+  difference; the param-divergence is a real latent gap deferred to
+  v5.8.9 if it ever surfaces (no Mapanare-emitted call currently
+  passes a > 16 B aggregate by value across the C-runtime ABI
+  boundary).
+
 ## [5.8.7] - 2026-04-27
 
 ### Fixed

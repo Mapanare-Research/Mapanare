@@ -115,34 +115,16 @@ def build() -> pathlib.Path:
     # misjudges reachability, stripping functions that ARE called.
     ir = ir.replace("define internal ", "define ")
 
-    # Fix target triple if building on a different platform than where
-    # the IR was committed (e.g., committed on Linux x86_64, building on macOS ARM64).
-    import platform
-
-    if sys.platform == "darwin":
-        arch = platform.machine()  # arm64 or x86_64
-        host_triple = f"{arch}-apple-macos"
-        ir = ir.replace(
-            'target triple = "x86_64-unknown-linux-gnu"',
-            f'target triple = "{host_triple}"',
-        )
-        # Also fix datalayout for ARM64
-        if arch == "arm64":
-            linux_x86_dl = (
-                'target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64'
-                '-i64:64-i128:128-f80:128-n8:16:32:64-S128"'
-            )
-            mac_arm64_dl = 'target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128-Fn32"'
-            ir = ir.replace(linux_x86_dl, mac_arm64_dl)
-    elif sys.platform == "win32":
-        # Use the MinGW triple (x86_64-w64-mingw32) rather than the MSVC
-        # triple so clang emits ``___chkstk_ms`` stack probes, which MinGW's
-        # libgcc provides. The MSVC triple emits bare ``__chkstk`` which is
-        # only supplied by MSVC's CRT and fails to link against gcc/ld.
-        ir = ir.replace(
-            'target triple = "x86_64-unknown-linux-gnu"',
-            'target triple = "x86_64-w64-mingw32"',
-        )
+    # v5.8.8 Da.1: triple + datalayout are now plumbed through
+    # ``compile_multi_module_mir(target_name=None)`` —
+    # ``get_target(host_target_name())`` resolves the host target and
+    # the emitter writes correct ``target triple`` + ``target
+    # datalayout`` lines directly into the IR. The previous post-emit
+    # text-patch (Linux→Apple/Windows triple replacement) was a hack
+    # on top of an emit pipeline that already supports per-target
+    # emission; removing it eliminates a structural inconsistency
+    # that masked the v5.8.7 macOS arm64 ABI bug. See
+    # docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md.
 
     ir_path.write_text(ir, encoding="utf-8")
     print(f"  IR: {ir.count(chr(10))} lines -> {ir_path}")

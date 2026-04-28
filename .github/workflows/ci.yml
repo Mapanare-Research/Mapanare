@@ -648,6 +648,36 @@ jobs:
           file mapanare_metal.o
           echo "Metal backend compiled"
 
+      # v5.8.8 Da.2: macOS arm64 self-compile gate. Without this, an
+      # AAPCS64 ABI regression in the emitter (like the v5.8.7 SIGABRT
+      # caused by first-class aggregate returns mismatching x8 indirect
+      # at the C-runtime boundary) stays latent until publish.yml runs,
+      # which only happens on tagged releases. This job exercises the
+      # exact path that broke in publish run #41 and validates the
+      # output IR with llvm-as. See
+      # docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md.
+      - name: Install LLVM 18 (for llvm-as)
+        run: |
+          brew install llvm@18
+          echo "/opt/homebrew/opt/llvm@18/bin" >> "$GITHUB_PATH"
+
+      - name: Build mnc-stage1 on Apple Silicon (Da.1)
+        run: |
+          python scripts/build_stage1.py
+          file mapanare/self/mnc-stage1
+          ./mapanare/self/mnc-stage1 --version || true
+
+      - name: Self-compile mnc_all.mn (Da.2)
+        run: |
+          ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
+          echo "stage2.ll: $(wc -l < /tmp/stage2.ll) lines"
+          test -s /tmp/stage2.ll
+
+      - name: Validate stage2.ll with llvm-as
+        run: |
+          llvm-as /tmp/stage2.ll -o /dev/null
+          echo "stage2.ll llvm-as: OK"
+
       - name: Cross-compile C runtime for iOS (aarch64-apple-ios)
         run: |
           IOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)

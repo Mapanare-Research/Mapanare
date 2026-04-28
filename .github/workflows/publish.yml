@@ -108,7 +108,7 @@ jobs:
             | Platform | Full CLI | Native Compiler |
             |:---------|:--------:|:---------------:|
             | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) |
-            | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | Build from source ([instructions](https://github.com/${{ github.repository }}#building-from-source)) |
+            | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) |
             | **macOS** Intel | — | Build from source ([instructions](https://github.com/${{ github.repository }}#building-from-source)) |
             | **Windows** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-win-x64.exe) |
 
@@ -337,6 +337,14 @@ jobs:
           - os: windows-latest
             artifact: mnc-win-x64.exe
             triple: x86_64-w64-mingw32
+          # v5.8.8 Da.3: re-add Apple Silicon native binary. v5.8.7 had
+          # to defer this when the macos-13 → macos-latest runner switch
+          # surfaced the AAPCS64 ABI bug (Da.1, closed v5.8.8). The Da.2
+          # CI gate now exercises the same self-compile path on every
+          # PR, so an ABI regression cannot reach this job silently.
+          - os: macos-latest
+            artifact: mnc-darwin-arm64
+            triple: aarch64-apple-darwin
 
     runs-on: ${{ matrix.os }}
 
@@ -481,6 +489,35 @@ jobs:
               exit 1
             fi
             echo "Windows fixed point OK (<= 10-line VERSION-only drift)"
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            # v5.8.8 Da.3: macOS arm64 build path. Differs from Linux on
+            # three points: (1) link Metal/Foundation frameworks because
+            # mapanare_gpu.c dispatches to the Objective-C Metal backend
+            # via mapanare_metal.m; (2) use ld64's -Wl,-stack_size,...
+            # syntax (GNU ld -z stack-size= is rejected); (3) include
+            # mapanare_io / mapanare_db / mapanare_html (POSIX modules
+            # that ship in the Mac binary, unlike Windows).
+            ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
+            clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o
+            clang -c -O2 -fobjc-arc runtime/native/mapanare_metal.m -o /tmp/mapanare_metal.o
+            clang -O2 /tmp/stage2.o \
+              runtime/native/mapanare_core.c \
+              runtime/native/mapanare_runtime.c \
+              runtime/native/mapanare_gpu.c \
+              runtime/native/mapanare_gpu_builtins.c \
+              runtime/native/mapanare_io.c \
+              runtime/native/mapanare_db.c \
+              runtime/native/mapanare_html.c \
+              /tmp/mapanare_metal.o \
+              mapanare/self/mnc_main.c \
+              -I runtime/native \
+              -o "${{ matrix.artifact }}" \
+              -lm -lpthread \
+              -framework Metal -framework Foundation -fobjc-arc \
+              -Wl,-stack_size,0x4000000
+            ls -la "${{ matrix.artifact }}"
+            file "${{ matrix.artifact }}"
+            strip "${{ matrix.artifact }}" || true
           else
             ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
             clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o

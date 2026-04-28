@@ -1259,6 +1259,22 @@ class LLVMTextEmitter:
         return self._is_windows and self._win_arch_bits == 32
 
     @property
+    def _use_apple_aarch64_abi(self) -> bool:
+        """v5.8.8 Da.1: True iff Apple AArch64 (AAPCS64-Apple) sret rules apply.
+
+        LLVM's arm64 backend lowers ``define {ptr, i64, ...} @fn()`` (a
+        first-class aggregate return) as register-tuple return (x0..xN),
+        but the C runtime returns > 16 B aggregates via x8 indirect per
+        AAPCS64. The mismatch produces silent miscompilation: caller
+        reads x0..xN and gets uninitialised register state. SysV-x86_64
+        is forgiving (LLVM's x86_64 backend silently rewrites first-class
+        aggregate return → sret-style memory return per AMD64 §3.2.3
+        memory class); arm64 is not. See
+        ``docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md``.
+        """
+        return self._triple.startswith("aarch64-apple")
+
+    @property
     def _win64(self) -> bool:
         """v5.8.4 deprecated alias — kept for in-file source compat.
 
@@ -1333,6 +1349,21 @@ class LLVMTextEmitter:
                 abi_ret = "void"
             else:
                 abi_ret = ret
+        elif self._use_sret(ret):
+            # v5.8.8 Da.1: SysV / AAPCS64 default — > 16 B aggregate
+            # returns must use sret. SysV's "memory class" rule
+            # (AMD64 §3.2.3) and AAPCS64's x8 indirect-result rule
+            # both lower a > 16 B struct return via a hidden first-arg
+            # pointer. LLVM's x86_64 backend silently rewrites
+            # first-class aggregate returns to sret-style memory
+            # return, so the old shape worked on Linux by accident;
+            # LLVM's arm64 backend does not, so the same IR
+            # miscompiles on Apple Silicon. Emit the canonical sret
+            # form unconditionally — matches clang's lowering on both
+            # targets and produces equivalent machine code. See
+            # docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md.
+            abi_pts = [f"ptr sret({ret}) align 8"] + list(pts)
+            abi_ret = "void"
         else:
             abi_pts = list(pts)
             abi_ret = ret
@@ -1626,6 +1657,19 @@ class LLVMTextEmitter:
                 return ""
             r = self._f(nm or "rt")
             self._L(f"{r} = call {ret} @{fn}({a_str_i})")
+            return r
+
+        if self._use_sret(ret):
+            # v5.8.8 Da.1: SysV / AAPCS64 default — sret call shape
+            # for > 16 B aggregate returns. Mirrors _decl_fn's default
+            # sret declaration. Caller alloca + sret call + load.
+            sret_a = self._alloca(ret, nm or "sret")
+            sret_arg = f"ptr sret({ret}) align 8 {sret_a}"
+            rest = ", ".join(f"{t} {v}" for v, t in coerced)
+            a_str = f"{sret_arg}, {rest}" if rest else sret_arg
+            self._L(f"call void @{fn}({a_str})")
+            r = self._f(nm or "rt")
+            self._L(f"{r} = load {ret}, ptr {sret_a}")
             return r
 
         a = ", ".join(f"{t} {v}" for v, t in coerced)
