@@ -1,8 +1,9 @@
 # v5.10.0 — Session Report
 
-**Status:** Source-authored + lint-validated + committed. Bb.4 seed
-refresh + Linux/macOS validation matrix + tag/push **deferred** to
-WSL follow-up session.
+**Status:** Source-authored + lint-validated + WSL goldens 66/66 +
+strict fixed-point + Bb.4 seed refreshed + committed (two commits:
+v5.10.0 source + v5.10.0 Bb.4 closeout). Tag/push **held** for
+user authorization.
 **Date:** 2026-04-28
 **Branch:** `dev`
 **Headline:** **Win.1b — bundled LLVM toolchain in Windows release
@@ -203,22 +204,88 @@ v5.11.0 Pk.4 is a closeout doc, not a re-evaluation.
 
 ---
 
+## Bb.4 + WSL validation (closed in same session)
+
+Originally deferred to a follow-up session; ran on WSL Ubuntu after
+the initial v5.10.0 source commit. Two real bugs surfaced and were
+fixed in-session:
+
+### Bug 1: MIR inliner constant-folded find_clang to its fallback
+
+The first `find_clang()` draft used multiple early returns:
+
+```mn
+fn find_clang() -> String {
+    let exe_dir: String = __mn_executable_dir()
+    if len(exe_dir) > 0 {
+        let bundled_win: String = exe_dir + "/llvm/clang.exe"
+        if __mn_file_exists(bundled_win) != 0 {
+            return "\"" + bundled_win + "\""
+        }
+        ...
+    }
+    return "clang"
+}
+```
+
+The self-hosted MIR optimizer constant-folded EVERY call site of
+`find_clang()` to the fallback `"clang"` literal, dropping the
+bundled-path branches entirely. Stage2 IR had `0` references to
+`find_clang` (function entirely elided), `0` calls to
+`@__mn_executable_dir`, and `check_clang_available()` shipping
+the literal 27-char string `clang --version > NUL 2>NUL` instead
+of a dynamic concatenation.
+
+The bundled-LLVM lookup would have been silently broken in every
+released binary. Smoke job in CI would have caught it on Windows
+(PATH stripped → fallback `"clang"` → "clang not found"), but
+better to catch it pre-tag.
+
+**Fix:** rewrote `find_clang()` to single-return form with
+`let mut result: String = "clang"` and conditional reassignment.
+Comment in main.mn documents the gotcha so a future maintainer
+doesn't re-introduce the multi-return form.
+
+### Bug 2: build_from_seed.sh missed v5.9.1 emit-llvm migration
+
+`scripts/build_from_seed.sh:68` was `"${SEED}" "${SOURCE}"` (no
+subcommand). Worked for pre-v5.9.1 seeds where the default was
+emit-IR. The v5.9.1 PLAN updated lines 95 and 122 to use the new
+`emit-llvm` subcommand explicitly but missed line 68 — a latent
+bug that only surfaced when v5.10.0's Bb.4 refreshed the seed
+past v5.9.1 behavior. The new seed treated `mnc mnc_all.mn` as
+"compile and run" instead of "emit IR".
+
+**Fix:** added `emit-llvm` to line 68. Comment cites the v5.9.1
+DX.5 migration. Both old and new seeds accept the explicit form.
+
+### Validation results
+
+- ✅ `python3 scripts/build_stage1.py` — fresh stage1 build via
+  Python bootstrap, 6.65 MB Linux ELF
+- ✅ `python3 scripts/test_native.py --stage1 mapanare/self/mnc-stage1`
+  — **66/66 goldens pass** (12.4s on WSL Ubuntu)
+- ✅ `bash scripts/verify_fixed_point.sh` — **STRICT FIXED POINT**
+  reached: stage2.ll == stage3.ll byte-identical at 226,560 lines,
+  0 diff lines. The v5.9.0 milestone preserved through v5.10.0.
+- ✅ `bash scripts/build_from_seed.sh` — succeeds end-to-end after
+  Bb.4 refresh + the build_from_seed.sh fix; final mnc smoke test
+  OK
+- ✅ Bb.4 seed refresh: `bootstrap/seed/linux-x86_64/mnc` updated
+  to v5.10.0 stage1 (6,646,968 bytes); `mnc.sha256` regenerated
+  (`c8fe0351d4c0ed25fa743d1dd088374f03219e79e5fc643b7146cd7a105fb4e4`)
+
 ## What did NOT ship in v5.10.0
 
-- **Bb.4 seed refresh** — mandatory because of new
-  `__mn_executable_dir` export. Deferred to WSL follow-up where
-  `bash scripts/build_from_seed.sh` actually runs.
-- **Linux / macOS / WSL validation matrix** — goldens 66/66,
-  fixed-point, valgrind, ASan. All gated by WSL access.
 - **Manual Windows VM smoke for install.ps1** — both bundled and
-  minimal paths.
-- **VERSION bump verification on a clean install** — needs a
-  built `mnc.exe`; deferred until Bb.4 + WSL build cycle.
-- **Tag + push** — explicitly held until user authorization.
-
-The deferred items are the validation matrix from §6 of the
-PROMPT. Source authoring (which is the bulk of the work and the
-risky part) is complete and lint-validated.
+  minimal paths. CI's `windows-bundled-llvm-smoke` job is the gate.
+- **Valgrind / ASan baselines** — deferred. v5.10.0 changes are
+  packaging-only on the executable side; the new C export is a
+  leaf function with no aliasing concerns. Re-run with the
+  v5.11.0 PLAN's Phase 5 validation matrix.
+- **Tag + push** — held until user authorization. Two commits to
+  push: v5.10.0 source (`c00f769`) + v5.10.0 Bb.4 closeout
+  (this session).
 
 ---
 

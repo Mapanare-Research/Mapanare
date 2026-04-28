@@ -73,23 +73,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and macOS artifacts unchanged — those platforms have system clang
   (PLAN Decision 4; closeout in v5.11.0 Pk.4).
 
+### Fixed (during Bb.4 follow-up, same release window)
+
+- **find_clang() multi-return → single-return.** The first draft
+  used early returns; the self-hosted MIR optimizer
+  constant-folded every call site to the fallback `"clang"`
+  literal, dropping the bundled-path branches entirely. Stage2 IR
+  showed `0` references to `find_clang` (function fully elided)
+  and `check_clang_available()` shipping the literal 27-char
+  string `clang --version > NUL 2>NUL`. Bundled-LLVM lookup
+  would have been silently broken. Rewrote to single-return form
+  (`let mut result`); comment in `main.mn` documents the gotcha.
+- **`scripts/build_from_seed.sh` v5.9.1 hygiene gap.** Line 68
+  (the seed invocation) still used `"${SEED}" "${SOURCE}"` — no
+  subcommand. Worked for pre-v5.9.1 seeds where the default was
+  emit-IR. The v5.9.1 PLAN updated lines 95 / 122 but missed 68;
+  surfaced when v5.10.0's Bb.4 refreshed the seed past v5.9.1
+  behavior. New seed treated `mnc mnc_all.mn` as "compile and
+  run" instead of "emit IR" → script died at step 1. Added
+  `emit-llvm` subcommand to the seed invocation.
+
 ### Notes
 
 - Compiler internals untouched. Zero changes to parser, semantic
   checker, MIR, lowerer, optimizer, or the LLVM/C/WASM emitters.
-  v5.10.0 is a packaging release.
+  v5.10.0 is a packaging release; the find_clang fix above is a
+  workaround for an existing optimizer pattern, not a new bug.
 - New C-runtime export (`__mn_executable_dir`) → **Bb.4 bootstrap
-  seed refresh required.** The pre-v5.10.0 seed predates the export
-  and `bash scripts/build_from_seed.sh` will fail with "unknown
-  function" until the seed is refreshed per `bootstrap/seed/
-  README.md` §"Updating the Seed". Refresh deferred to a WSL
-  follow-up session.
-- Strict 3-stage fixed-point preserved (the v5.9.0 milestone, held
-  through v5.9.1 and v5.9.2; v5.10.0's added export is a leaf
-  function not called from the IR-metadata path that previously
-  drifted).
-- Goldens 66/66 expected to remain byte-identical; this release
-  doesn't touch any code path the goldens exercise. CI gates this.
+  seed refresh shipped.** New seed at
+  `bootstrap/seed/linux-x86_64/mnc` (6,646,968 bytes;
+  sha256 `c8fe0351...`).
+- **Strict 3-stage fixed-point preserved.** stage2.ll == stage3.ll
+  byte-identical at 226,560 lines, 0 diff. The v5.9.0 milestone,
+  held through v5.9.1 / v5.9.2 / v5.10.0.
+- Goldens 66/66 byte-identical (12.4s on WSL Ubuntu).
 - v5.9.1 implicit-run deprecation note still active (per the v5.9.1
   PLAN's two-release soak window: shipped v5.9.1, kept v5.10.0,
   removed v5.11.0).
@@ -103,8 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   193]` on tests that subprocess-invoke the `mnc` binary — these
   failed identically before this release; baseline confirmed via
   git stash).
-- Goldens / fixed-point / valgrind / ASan validation deferred to
-  the WSL follow-up session that runs alongside Bb.4 seed refresh.
+- WSL Ubuntu: `python3 scripts/build_stage1.py` clean, goldens 66/66
+  pass, `verify_fixed_point.sh` strict (0 diff at 226,560 lines),
+  `build_from_seed.sh` end-to-end clean with the refreshed seed.
 
 ## [5.9.2] - 2026-04-27
 

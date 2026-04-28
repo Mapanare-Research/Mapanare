@@ -68,19 +68,26 @@ fn print_help_text() {
 // path is wrapped in quotes — install dirs containing spaces (e.g.
 // ``C:\\Program Files\\Mapanare\\bin``) would otherwise tokenise wrong
 // when concatenated into a __mn_system command string.
+//
+// Single-return structure (``let mut result``) is deliberate: during
+// v5.10.0 fixed-point validation, the MIR inliner constant-folded an
+// earlier multi-return draft of this function to the fallback
+// ``"clang"`` literal at every call site, dropping the bundled-path
+// branches entirely. The single-return form keeps the conditional
+// logic intact through inlining + dead-code elimination.
 fn find_clang() -> String {
+    let mut result: String = "clang"
     let exe_dir: String = __mn_executable_dir()
-    if len(exe_dir) > 0 {
-        let bundled_win: String = exe_dir + "/llvm/clang.exe"
-        if __mn_file_exists(bundled_win) != 0 {
-            return "\"" + bundled_win + "\""
-        }
+    let bundled_win: String = exe_dir + "/llvm/clang.exe"
+    if __mn_file_exists(bundled_win) != 0 {
+        result = "\"" + bundled_win + "\""
+    } else {
         let bundled_unix: String = exe_dir + "/llvm/clang"
         if __mn_file_exists(bundled_unix) != 0 {
-            return "\"" + bundled_unix + "\""
+            result = "\"" + bundled_unix + "\""
         }
     }
-    return "clang"
+    return result
 }
 
 // v5.9.0 DX.3: probe clang once per invocation. Pre-v5.9.0 a missing

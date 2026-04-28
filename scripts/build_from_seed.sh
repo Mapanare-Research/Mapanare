@@ -62,10 +62,16 @@ if [ -f "${SHA_FILE}" ] && command -v sha256sum >/dev/null 2>&1; then
 fi
 
 # --- Stage 1: seed → stage1 ---
+# v5.9.1 DX.5: explicit `emit-llvm` subcommand. Pre-v5.9.1 the seed
+# treated bare ``mnc <file.mn>`` as emit-IR; v5.9.1+ seeds default to
+# run-program and would attempt to execute mnc_all.mn instead. The
+# v5.9.1 PLAN updated lines 95 / 122 below; this line was missed and
+# only surfaced when v5.10.0's Bb.4 refreshed the seed past v5.9.1
+# behavior. Both old and new seeds accept the explicit subcommand.
 echo ""
 echo "[1/4] Stage 1: seed compiles source → stage1 IR"
 STAGE1_LL="/tmp/mapanare_stage1.ll"
-"${SEED}" "${SOURCE}" > "${STAGE1_LL}" 2>/dev/null
+"${SEED}" emit-llvm "${SOURCE}" > "${STAGE1_LL}" 2>/dev/null
 echo "  IR: $(wc -l < "${STAGE1_LL}") lines"
 
 # Remove 'internal' linkage (LLVM -O2 may strip needed functions)
