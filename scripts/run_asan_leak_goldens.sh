@@ -77,7 +77,7 @@ for mn in "$ROOT"/tests/golden/*.mn; do
 
   # Step 1: compile .mn -> .ll (plain stage1, not asan — we don't
   # care about the compiler's own leaks in this sweep)
-  timeout 60 "$STAGE1" "$mn" > "$LL" 2> "$CERR"
+  timeout 60 "$STAGE1" emit-llvm "$mn" > "$LL" 2> "$CERR"
   crc=$?
   if [ $crc -ne 0 ] || [ ! -s "$LL" ]; then
     echo -e "$t\t$crc\t-\t-\t-\t-\tCOMPILE_FAIL" >> "$TSV"

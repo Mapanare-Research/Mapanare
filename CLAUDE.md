@@ -18,6 +18,22 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.9.1** (shipped) — **DX.5 — `mnc <file.mn>` defaults to run
+  (BREAKING).** Empties the v5.8.7 Windows install probe DX.* docket
+  list (DX.1–DX.7 all closed). Single behavior change; dispatch-layer
+  only. Pre-v5.9.1 `mnc hello.mn` dumped LLVM IR to stdout (useful
+  for compiler devs, hostile first impression for newcomers); v5.9.1+
+  compiles + runs the program. New `mnc emit-llvm <file.mn>
+  [-o output]` subcommand keeps the IR-emission path verbatim,
+  parallel to the Python CLI's `mapanare emit-llvm`. Non-`.mn` files
+  error with a migration hint pointing at `mnc emit-llvm` (raw IR)
+  or `mnc compile` (transpilation). One-line stderr deprecation note
+  on the implicit-run path; removed in v5.11.0 (v5.10.0 keeps it as
+  a soak window for downstream CI scripts). NO seed refresh required
+  (no new builtin call sites). **Strict 3-stage fixed-point
+  preserved** (the v5.9.0 milestone). Goldens 66/66; new
+  `tests/test_cli_default.py` 6/6 pass; `make lint` clean. See
+  `docs/roadmap/v5/v5.9.1/SESSION_REPORT.md`.
 - **v5.9.0** (shipped) — **DX.* — native CLI hygiene.** Closes the
   six user-visible CLI gaps surfaced by the v5.8.7 Windows install
   probe: `mnc --help` works (DX.1); `mnc version` no longer leaks
@@ -359,7 +375,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (28414 symbols, 62201 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (28659 symbols, 62461 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

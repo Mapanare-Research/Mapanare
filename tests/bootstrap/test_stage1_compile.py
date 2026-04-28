@@ -204,7 +204,7 @@ class TestStage1BasicFunctionality:
         src = tmp_path / "test_mnc_hello.mn"
         src.write_text('fn main() {\n    println("Hello")\n}\n', encoding="utf-8")
         result = subprocess.run(
-            [str(MNC_STAGE1), str(src)],
+            [str(MNC_STAGE1), "emit-llvm", str(src)],
             capture_output=True,
             timeout=30,
         )
@@ -219,7 +219,7 @@ class TestStage1BasicFunctionality:
             encoding="utf-8",
         )
         result = subprocess.run(
-            [str(MNC_STAGE1), str(src)],
+            [str(MNC_STAGE1), "emit-llvm", str(src)],
             capture_output=True,
             timeout=30,
         )
@@ -239,7 +239,7 @@ class TestStage1BasicFunctionality:
             encoding="utf-8",
         )
         result = subprocess.run(
-            [str(MNC_STAGE1), str(src)],
+            [str(MNC_STAGE1), "emit-llvm", str(src)],
             capture_output=True,
             timeout=30,
         )
@@ -278,7 +278,7 @@ class TestStage1LLVMEmission:
         src = tmp_path / "test_mnc_ir.mn"
         src.write_text('fn main() {\n    println("test")\n}\n', encoding="utf-8")
         result = subprocess.run(
-            [str(MNC_STAGE1), str(src)],
+            [str(MNC_STAGE1), "emit-llvm", str(src)],
             capture_output=True,
             timeout=30,
         )
@@ -293,7 +293,7 @@ class TestStage1LLVMEmission:
         src = tmp_path / "test_mnc_corruption.mn"
         src.write_text('fn main() {\n    println("hello")\n}\n', encoding="utf-8")
         result = subprocess.run(
-            [str(MNC_STAGE1), str(src)],
+            [str(MNC_STAGE1), "emit-llvm", str(src)],
             capture_output=True,
             timeout=30,
         )

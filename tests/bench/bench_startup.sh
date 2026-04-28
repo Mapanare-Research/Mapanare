@@ -27,12 +27,13 @@ fi
 
 echo "=== Startup Benchmarks ==="
 
-# --- mnc <file> (emit IR only) ---
+# --- mnc emit-llvm <file> (emit IR only) ---
+# v5.9.1 DX.5: explicit `emit-llvm` subcommand; default is now implicit-run.
 START=$(date +%s%3N 2>/dev/null || python3 -c "import time; print(int(time.time()*1000))")
-"${MNC}" "${HELLO}" > /dev/null 2>&1
+"${MNC}" emit-llvm "${HELLO}" > /dev/null 2>&1
 END=$(date +%s%3N 2>/dev/null || python3 -c "import time; print(int(time.time()*1000))")
 EMIT_MS=$((END - START))
-echo "  mnc <file> (emit IR):  ${EMIT_MS}ms"
+echo "  mnc emit-llvm <file>:  ${EMIT_MS}ms"
 
 # --- mnc run (compile + link + execute) ---
 START=$(date +%s%3N 2>/dev/null || python3 -c "import time; print(int(time.time()*1000))")

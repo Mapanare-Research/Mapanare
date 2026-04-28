@@ -42,7 +42,7 @@ for mn in $ROOT/tests/golden/*.mn; do
       --show-leak-kinds=all \
       --track-origins=yes \
       --num-callers=20 \
-      $STAGE1 $mn -o $OUTDIR/${t}.ll \
+      $STAGE1 emit-llvm $mn -o $OUTDIR/${t}.ll \
       > $OUTDIR/${t}.stdout 2> $LOG
   rc=$?
 

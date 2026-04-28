@@ -195,8 +195,9 @@ for mod in "${ORDER[@]}"; do
     # Compile module
     MOD_START=$SECONDS
 
-    # Use mnc to compile to IR
-    if "${MNC}" "$f" > "${ll_cache}" 2>/dev/null; then
+    # Use mnc to compile to IR (v5.9.1 DX.5: explicit `emit-llvm` subcommand;
+    # default is now implicit-run).
+    if "${MNC}" emit-llvm "$f" > "${ll_cache}" 2>/dev/null; then
         # Rename @main if present
         sed -i 's/@main(/@mn_main(/g' "${ll_cache}"
 

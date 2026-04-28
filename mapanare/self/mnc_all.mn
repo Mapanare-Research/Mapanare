@@ -21399,7 +21399,8 @@ fn print_help_text() {
     print("mapanare " + __mn_version_string() + " - native compiler")
     print("")
     print("Usage:")
-    print("  mnc <file.mn>             compile to LLVM IR (default)")
+    print("  mnc <file.mn>             compile and run (default)")
+    print("  mnc emit-llvm <file.mn>   compile to LLVM IR [-o output]")
     print("  mnc run <file.mn>         compile and execute")
     print("  mnc build <file.mn|dir>   build native binary [-o output]")
     print("  mnc compile <file>        transpile + build (.py/.php/.ts/.go)")
@@ -21529,6 +21530,13 @@ fn print_subcommand_help(cmd: String) {
         print("Usage: mnc compile <file> [-o output]")
         print("")
         print("Transpile + build. Supported: .mn, .py, .php, .ts, .go")
+        return
+    }
+    if cmd == "emit-llvm" {
+        print("Usage: mnc emit-llvm <file.mn> [-o output]")
+        print("")
+        print("Compile to LLVM IR. Without -o, prints to stdout.")
+        print("With -o <path>, writes to file.")
         return
     }
     print_help_text()
@@ -22118,6 +22126,45 @@ fn run_program(filename: String) {
 }
 
 // ---------------------------------------------------------------------------
+// emit-llvm — compile to LLVM IR, print to stdout or write to file with -o.
+// v5.9.1 DX.5: lifted out of mn_main's default fall-through. Pre-v5.9.1
+// `mnc <file.mn>` emitted IR; v5.9.1 makes that path implicit-run and
+// moves IR-emission behind this explicit subcommand.
+// ---------------------------------------------------------------------------
+
+fn run_emit_llvm(filename: String) {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) <= 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let cr: CompileResult = compile(source, filename)
+    if !cr.success {
+        for i in 0..len(cr.errors) {
+            let err: SemanticError = cr.errors[i]
+            __mn_str_eprint(format_error(err))
+            __mn_str_eprint("\n")
+        }
+        __mn_exit(1)
+    }
+    // Optional `-o <path>`: write IR to file instead of stdout.
+    let mut out_path: String = ""
+    if __mn_argc() >= 5 {
+        let flag: String = __mn_argv(3)
+        if flag == "-o" {
+            out_path = __mn_argv(4)
+        }
+    }
+    if len(out_path) > 0 {
+        __mn_file_write(out_path, cr.ir_text)
+    } else {
+        print(cr.ir_text)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // compile — transpile foreign source (.py/.php/.ts/.go) then compile to native.
 // For non-.mn files, shells out to the transpiler binary (mnc-transpile) or
 // falls back to the Python CLI for transpilation, then compiles the .mn output.
@@ -22236,7 +22283,8 @@ fn run_compile(filename: String) {
 
 fn mn_main() {
     if __mn_argc() < 2 {
-        __mn_str_eprint("usage: mnc <file.mn>\n")
+        __mn_str_eprint("usage: mnc <file.mn>           (compile and run)\n")
+        __mn_str_eprint("       mnc emit-llvm <file.mn> (compile to IR)\n")
         __mn_str_eprint("       mnc test <file.mn>\n")
         __mn_str_eprint("       mnc build <file.mn|dir> [-o output] [--timing]\n")
         __mn_str_eprint("       mnc run <file.mn> [args...]\n")
@@ -22338,6 +22386,14 @@ fn mn_main() {
         __mn_str_eprint("\n")
         __mn_exit(1)
     }
+    if arg1 == "emit-llvm" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc emit-llvm <file.mn> [-o output]\n")
+            __mn_exit(1)
+        }
+        run_emit_llvm(__mn_argv(2))
+        return
+    }
     if arg1 == "compile" {
         if __mn_argc() < 3 {
             __mn_str_eprint("usage: mnc compile <file> [-o output]\n")
@@ -22351,25 +22407,24 @@ fn mn_main() {
         return
     }
 
-    // Default: compile to IR
+    // v5.9.1 DX.5: implicit run is the default for .mn files. Pre-v5.9.1
+    // the default was IR emission; that path moved to `mnc emit-llvm`.
+    // The stderr note is a one-release deprecation hint for downstream
+    // CI scripts that pipe `mnc file.mn > out.ll`. Removed in v5.11.0.
     let filename: String = arg1
-    let source: String = __mn_file_read_or_empty(filename)
-    if len(source) <= 0 {
-        __mn_str_eprint("error: cannot read file '")
-        __mn_str_eprint(filename)
-        __mn_str_eprint("'\n")
-        __mn_exit(1)
+    let ext_check: String = file_extension(filename)
+    if ext_check == ".mn" {
+        __mn_str_eprint("note: 'mnc <file.mn>' now runs the program; use 'mnc emit-llvm' for IR output\n")
+        run_program(filename)
+        return
     }
-    let cr: CompileResult = compile(source, filename)
-    if cr.success {
-        print(cr.ir_text)
-    } else {
-        for i in 0..len(cr.errors) {
-            let err: SemanticError = cr.errors[i]
-            __mn_str_eprint(format_error(err))
-            __mn_str_eprint("\n")
-        }
-        __mn_exit(1)
-    }
+
+    // Non-.mn files: error with migration hint pointing at the right surface.
+    __mn_str_eprint("error: '")
+    __mn_str_eprint(filename)
+    __mn_str_eprint("' is not a .mn file.\n")
+    __mn_str_eprint("       Use 'mnc emit-llvm <file>' for raw IR emission, or\n")
+    __mn_str_eprint("       'mnc compile <file>' for transpilation (.py/.php/.ts/.go).\n")
+    __mn_exit(1)
 }
 

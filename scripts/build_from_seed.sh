@@ -90,7 +90,9 @@ echo "  Binary: ${STAGE1_BIN} ($(wc -c < "${STAGE1_BIN}") bytes)"
 echo ""
 echo "[3/4] Stage 2: stage1 compiles source → stage2 IR"
 STAGE2_LL="/tmp/mapanare_stage2.ll"
-"${STAGE1_BIN}" "${SOURCE}" > "${STAGE2_LL}" 2>/dev/null
+# v5.9.1 DX.5: explicit `emit-llvm` subcommand. The stage1 binary built
+# above is from v5.9.1+ source; default is now implicit-run.
+"${STAGE1_BIN}" emit-llvm "${SOURCE}" > "${STAGE2_LL}" 2>/dev/null
 echo "  IR: $(wc -l < "${STAGE2_LL}") lines"
 
 # Validate IR
@@ -113,7 +115,11 @@ if [ "${1:-}" != "--keep" ] && [ -z "${KEEP}" ]; then
 fi
 
 # --- Smoke test ---
-if "${OUTPUT}" "${ROOT}/tests/golden/01_hello.mn" 2>/dev/null | grep -q "define"; then
+# v5.9.1 DX.5: explicit `emit-llvm` subcommand. The output binary is from
+# v5.9.1+ source; default is now implicit-run (which would compile + execute
+# the .mn file instead of printing IR), so the IR-emission grep needs the
+# explicit subcommand.
+if "${OUTPUT}" emit-llvm "${ROOT}/tests/golden/01_hello.mn" 2>/dev/null | grep -q "define"; then
     echo "  Smoke test: OK"
 else
     echo "  WARNING: smoke test failed" >&2
@@ -121,7 +127,8 @@ fi
 
 echo ""
 echo "=== Success: ${OUTPUT} ==="
-echo "  Usage: ./mnc <file.mn>  (outputs LLVM IR to stdout)"
+echo "  Usage: ./mnc <file.mn>           (compile and run, default)"
+echo "         ./mnc emit-llvm <file.mn> (compile to LLVM IR)"
 
 # --- Verify golden tests ---
 if [ "${1:-}" = "--verify" ]; then

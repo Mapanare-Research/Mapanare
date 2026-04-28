@@ -160,8 +160,15 @@ tests passing, zero flaky across 30 sequential runs.
 git clone https://github.com/Mapanare-Research/Mapanare.git
 cd Mapanare
 bash scripts/build_from_seed.sh    # no Python needed
-./mnc hello.mn                     # outputs LLVM IR
+./mnc hello.mn                     # compile and run (default)
+./mnc emit-llvm hello.mn           # compile to LLVM IR
 ```
+
+> **v5.9.1 BREAKING:** `mnc <file.mn>` now compiles and runs the
+> program. The IR-emission path moved to `mnc emit-llvm <file.mn>`
+> (`-o <path>` writes to file). CI scripts that piped
+> `mnc file.mn > out.ll` should switch to
+> `mnc emit-llvm file.mn -o out.ll`.
 
 For development (requires Python 3.11+):
 

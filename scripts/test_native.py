@@ -344,9 +344,11 @@ def compile_bootstrap(mn_file: pathlib.Path) -> tuple[str, str]:
 
 
 def compile_stage1(mn_file: pathlib.Path, stage1: pathlib.Path) -> tuple[str, str]:
+    # v5.9.1 DX.5: explicit `emit-llvm` subcommand. Pre-v5.9.1 `mnc <file.mn>`
+    # emitted IR to stdout; v5.9.1 makes that path implicit-run.
     try:
         result = subprocess.run(
-            [str(stage1), str(mn_file)],
+            [str(stage1), "emit-llvm", str(mn_file)],
             capture_output=True,
             timeout=30,
         )

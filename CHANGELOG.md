@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.9.1] - 2026-04-27
+
+### Changed (BREAKING)
+
+- **`mnc <file.mn>` now runs the program** (DX.5). Pre-v5.9.1 the
+  default was LLVM IR emission to stdout. The IR-emission path moves
+  to `mnc emit-llvm <file.mn>` (parallel to the Python CLI's
+  `mapanare emit-llvm` subcommand).
+
+  **Migration.** A CI script that did:
+  ```
+  mnc file.mn > out.ll
+  ```
+  must change to:
+  ```
+  mnc emit-llvm file.mn -o out.ll
+  ```
+  (or `mnc emit-llvm file.mn > out.ll` — `mnc emit-llvm` prints to
+  stdout when `-o` is omitted, so the stdout-redirect pattern still
+  works after the subcommand rename).
+
+  **Deprecation timeline.** v5.9.1 prints a one-line stderr note on
+  every implicit-run invocation: `note: 'mnc <file.mn>' now runs the
+  program; use 'mnc emit-llvm' for IR output`. The note is removed
+  in v5.11.0; v5.10.0 keeps it. The note is on stderr, so it does
+  not pollute `> out.ll` redirections — but if a CI script also pipes
+  stderr (`2>&1`), expect one extra log line per build for two
+  releases.
+
+  **Non-`.mn` files.** Pre-v5.9.1 `mnc file.txt` would silently try
+  to compile any file. v5.9.1+ errors with a hint pointing at
+  `mnc emit-llvm` (raw IR) or `mnc compile` (transpilation —
+  `.py` / `.php` / `.ts` / `.go`).
+
+### Added
+
+- `mnc emit-llvm <file.mn> [-o output]` — explicit IR emission.
+  Without `-o`, prints to stdout. With `-o <path>`, writes to file.
+  `mnc help emit-llvm` and `mnc emit-llvm --help` both print the
+  per-subcommand help block.
+- `tests/test_cli_default.py` — 6 tests covering the new default
+  (`.mn` files run; deprecation note prints), the `emit-llvm`
+  subcommand (stdout + `-o` paths), the non-`.mn` error path, and
+  the help-text surface.
+
+### Notes
+
+- Dispatch-layer only. Zero changes to the parser, semantic checker,
+  MIR, lowerer, optimizer, or emitters — same scope discipline as
+  v5.9.0.
+- No bootstrap seed refresh — v5.9.1 adds no new builtin call sites;
+  the v5.9.0 seed compiles v5.9.1 source unchanged.
+- Strict 3-stage fixed-point preserved (the v5.9.0 milestone).
+- Goldens 66/66 byte-identical; `make lint` clean;
+  `tests/test_cli_help.py` 20/20 pass; `tests/test_cli_default.py`
+  6/6 pass.
+
 ## [5.9.0] - 2026-04-27
 
 ### DX.* — Native CLI hygiene (closes Windows-install findings)

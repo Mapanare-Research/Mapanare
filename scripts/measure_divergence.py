@@ -51,7 +51,9 @@ def compile_bootstrap(mn_file: pathlib.Path) -> tuple[str, str]:
 
 def compile_stage1(mn_file: pathlib.Path) -> tuple[str, str]:
     try:
-        result = subprocess.run([str(STAGE1), str(mn_file)], capture_output=True, timeout=30)
+        result = subprocess.run(
+            [str(STAGE1), "emit-llvm", str(mn_file)], capture_output=True, timeout=30
+        )
         if result.returncode != 0:
             return "", result.stderr.decode(errors="replace") or f"exit {result.returncode}"
         return result.stdout.decode(errors="replace"), ""
