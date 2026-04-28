@@ -100,7 +100,7 @@ The Track A workaround per `docs/roadmap/v5/v5.8.7/PROMPT.md`
    `macos-latest / mnc-darwin-arm64 / aarch64-apple-darwin` row.
    Matrix is now Linux x86_64 + Windows x86_64 only.
 2. **`publish.yml` release-notes table.** Apple Silicon row
-   downgraded to "Build from source ([instructions](...))",
+   downgraded to `Build from source (instructions link)`,
    mirroring the Intel row. The Full CLI link (built by the
    separate `build-cli` job on `macos-latest`, which works
    correctly) is preserved — only the Native Compiler column

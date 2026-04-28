@@ -63,9 +63,20 @@ build-rt: check-runtime-sources  ## Pre-compile C runtime into static library (f
 		echo "  gcc -O2 -fPIC -DMAPANARE_VERSION=\"\\\"$(MAPANARE_VERSION)\\\"\" -c runtime/native/$$src -o $$obj"; \
 		gcc -O2 -fPIC '-DMAPANARE_VERSION="$(MAPANARE_VERSION)"' -c -I runtime/native runtime/native/$$src -o $$obj || exit 1; \
 	done
+	@# v5.8.8: macOS needs mapanare_metal.m (Objective-C, Metal backend)
+	@# in the archive too — mapanare_gpu.c's __APPLE__-guarded code path
+	@# references mapanare_metal_available() / mapanare_metal_init() from
+	@# mapanare_metal.m. Without this, the macOS integration tests
+	@# (tests/integration/test_golden_pipeline.py for tensor goldens
+	@# 49-53) fail to link with "Undefined symbols for architecture
+	@# arm64". The .m file only compiles on Darwin; gated by uname.
+	@if [ "$$(uname -s)" = "Darwin" ]; then \
+		echo "  clang -O2 -fPIC -fobjc-arc -c runtime/native/mapanare_metal.m -o /tmp/mapanare_rt_mapanare_metal.o"; \
+		clang -O2 -fPIC -fobjc-arc '-DMAPANARE_VERSION="$(MAPANARE_VERSION)"' -c -I runtime/native runtime/native/mapanare_metal.m -o /tmp/mapanare_rt_mapanare_metal.o || exit 1; \
+	fi
 	@ar rcs runtime/native/libmapanare_rt.a /tmp/mapanare_rt_*.o
 	@rm -f /tmp/mapanare_rt_*.o
-	@echo "Built runtime/native/libmapanare_rt.a ($(words $(RUNTIME_SOURCES)) modules, -fPIC, MAPANARE_VERSION=$(MAPANARE_VERSION))"
+	@echo "Built runtime/native/libmapanare_rt.a ($(words $(RUNTIME_SOURCES)) modules + Metal on Darwin, -fPIC, MAPANARE_VERSION=$(MAPANARE_VERSION))"
 
 check-runtime-sources:  ## v4.29.0: fail if runtime/native/*.c drifts from RUNTIME_SOURCES
 	@ACTUAL=$$(ls runtime/native/*.c | xargs -n1 basename | sort); \
