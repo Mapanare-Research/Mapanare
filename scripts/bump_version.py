@@ -95,8 +95,7 @@ def _semver_tuple(v: str) -> tuple[int, int, int]:
 def _check_increasing(old: str, new: str) -> None:
     if _semver_tuple(new) <= _semver_tuple(old):
         raise SystemExit(
-            f"refusing to bump non-forward: {old} -> {new}. "
-            f"Use --force if you really mean it."
+            f"refusing to bump non-forward: {old} -> {new}. " f"Use --force if you really mean it."
         )
 
 
@@ -162,8 +161,7 @@ def _bump_changelog(
             text = text.replace(unreleased_marker_alt, unreleased_marker)
         else:
             raise SystemExit(
-                "CHANGELOG.md: cannot find ``## [Unreleased]`` header; "
-                "manual fix required"
+                "CHANGELOG.md: cannot find ``## [Unreleased]`` header; " "manual fix required"
             )
     new_section = CHANGELOG_NEW_SECTION.format(new=new, date=date)
     # Avoid double-insertion if the script is rerun.
@@ -198,8 +196,7 @@ def _bump_changelog(
         new_link = f"[{new}]: {url_base}/compare/v{old}...v{new}"
         if f"[{new}]:" in text:
             warnings.append(
-                f"CHANGELOG.md already has a comparison link for [{new}]; "
-                "not re-inserting"
+                f"CHANGELOG.md already has a comparison link for [{new}]; " "not re-inserting"
             )
         else:
             text = text.replace(
