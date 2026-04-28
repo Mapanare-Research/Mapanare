@@ -72,7 +72,8 @@ echo "  stage1: $(wc -c < "$STAGE1") bytes"
 
 # Stage 1: stage1 → stage2.ll
 echo -e "${YELLOW}[Stage 1] stage1 compiles mnc_all.mn → stage2.ll${NC}"
-"$STAGE1" "$SOURCE" > /tmp/stage2.ll
+# v5.9.1 DX.5: explicit `emit-llvm` subcommand (default is now implicit-run).
+"$STAGE1" emit-llvm "$SOURCE" > /tmp/stage2.ll
 STAGE2_LINES=$(wc -l < /tmp/stage2.ll)
 echo "  stage2.ll: ${STAGE2_LINES} lines"
 
@@ -121,7 +122,8 @@ echo -e "${YELLOW}[Stage 2] stage2 compiles mnc_all.mn → stage3.ll${NC}"
 # Instead we validate the *output* and record the exit code as a
 # known-issue note. v4.30.0 closes the crash itself.
 set +e
-/tmp/mnc-stage2 "$SOURCE" > /tmp/stage3.ll 2>/tmp/stage2_stderr.log
+# v5.9.1 DX.5: explicit `emit-llvm` subcommand.
+/tmp/mnc-stage2 emit-llvm "$SOURCE" > /tmp/stage3.ll 2>/tmp/stage2_stderr.log
 STAGE2_RC=$?
 set -e
 if [ "$STAGE2_RC" -ne 0 ]; then

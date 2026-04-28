@@ -48,6 +48,14 @@ def classify_return(ir_ty: str, total_size: int, triple: str) -> ReturnABI:
     if total_size == 0:
         return _REG
 
+    # v5.8.6 We.1: i686-w64-windows-gnu / i686-pc-windows-gnu — Win32
+    # cdecl. Must be checked before the generic "windows" branch
+    # because that branch matches any triple containing "windows" and
+    # would route i686 to Win64 rules. Empirical probe (see
+    # docs/roadmap/v5/v5.8.6/SESSION_REPORT.md §Phase 0): structs > 8 B
+    # use sret hidden first arg; ≤ 8 B return in EAX:EDX register pair.
+    if triple.startswith("i686") or triple.startswith("i386"):
+        return _classify_i686_cdecl(total_size)
     if "windows" in triple:
         return _classify_win64(total_size)
     if triple.startswith("aarch64"):
@@ -95,5 +103,20 @@ def _classify_aapcs64(total_size: int) -> ReturnABI:
     use the indirect result register ``x8`` (equivalent to sret).
     """
     if total_size <= 16:
+        return _REG
+    return _SRET
+
+
+def _classify_i686_cdecl(total_size: int) -> ReturnABI:
+    """i686-w64-mingw32 / i386 System V cdecl return classification.
+
+    Aggregates ≤ 8 bytes return in EAX (and EDX for the high half of an
+    8-byte struct).  Anything larger uses a hidden-first-arg sret
+    pointer, caller-allocated and pushed before the rest of the args.
+    Empirical probe with i686-w64-mingw32-gcc 13 confirms structs of
+    sizes 12 / 16 / 24 / 64 / 80 all take the sret path; struct of
+    size 8 returns via eax:edx register pair (see v5.8.6 SESSION_REPORT).
+    """
+    if total_size <= 8:
         return _REG
     return _SRET

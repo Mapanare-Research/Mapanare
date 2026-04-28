@@ -7,6 +7,920 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.13.0] - 2026-04-28
+
+### Added
+
+### Changed
+
+### Fixed
+
+
+### Changed
+
+- **Mc.6 / Wk.* - Windows SDK split.** Windows release packaging now
+  produces a true minimal ZIP before any compiler SDK is staged, then
+  adds one curated LLVM-MinGW/UCRT x86_64 SDK under `mapanare/sdk/`
+  for the default clean-machine artifact. The canonical SDK artifact is
+  `mapanare-${V}-win-x64-sdk.zip`; `mapanare-${V}-win-x64.zip` and
+  `mapanare-win-x64.zip` remain compatibility aliases to the SDK ZIP.
+  No v5.12.0 Windows artifact ships `toolchain/`.
+- `mapanare/toolchain.py` now detects bundled `sdk/bin/clang.exe` and
+  `llvm/bin/clang.exe` before PATH/system probes, while preserving
+  legacy `toolchain/bin/gcc.exe` as the last bundled fallback. Bundled
+  `libmapanare_rt.a` is detected under `sdk/lib/mapanare/`.
+- Windows installers default to the SDK artifact. Both
+  `MAPANARE_NO_BUNDLED_TOOLCHAIN=1` and the legacy
+  `MAPANARE_NO_BUNDLED_LLVM=1` select the app-only minimal artifact.
+
+### Added
+
+- `docs/roadmap/v5/v5.12.0/WINDOWS_TOOLCHAIN_AUDIT.md` documents the
+  v5.11.2 asset sizes, why Python's 40 MB installer is not the right
+  SDK target, the pinned LLVM-MinGW `20260421` source, required SDK
+  subset, and size gates.
+- `tools/llvm-mingw-bundle/extract_sdk.ps1` stages the curated SDK
+  subset and smoke-tests clang with PATH/LIB/INCLUDE stripped.
+
+## [5.11.2] - 2026-04-28
+
+### Fixed
+
+- **Pk.1.dx — Windows release pipeline LICENSE.TXT provisioning.**
+  The `LLVM-18.1.8-win64.exe` NSIS installer does not ship a top-
+  level `LICENSE.TXT` (only sub-component license files under
+  `include/llvm/Support/` that are not the project-level Apache 2.0
+  + LLVM Exception text required for redistribution).
+  `tools/llvm-bundle/extract_minimal.ps1` therefore failed at
+  `Run #43 build-cli (windows-latest)` with
+  `LICENSE.TXT missing in .tmp-llvm/LLVM`. Added a new workflow
+  step in `.github/workflows/publish.yml` —
+  `Ensure LLVM LICENSE.TXT is present` — that curls the canonical
+  LICENSE.TXT directly from
+  `https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-18.1.8/llvm/LICENSE.TXT`
+  (~12 KB; pinned to the same `LLVM_VERSION` as the installer)
+  and writes it to `.tmp-llvm/LLVM/LICENSE.TXT`. Step is
+  unconditional (runs on cache hit too) so cache state cannot
+  leave the file missing. >8 KB sanity-check guards against HTML
+  404 pages or truncated downloads. `extract_minimal.ps1` now
+  emits a tree-dump diagnostic on the (now-impossible) failure
+  path and points the reader at the workflow step.
+- **Pk.2.dx — Windows stage2→stage3 self-validate missed the v5.9.1
+  `emit-llvm` migration; v5.11.0 Pk.2 exposed it.** `publish.yml`
+  line 594 (now 638) invoked the freshly-built stage2 native
+  compiler on the self-hosted source at `mapanare/self/mnc_all.mn`
+  with the `emit-llvm` subcommand omitted (output redirected to a
+  stage3 IR file). After v5.9.1 DX.5's BREAKING change made
+  bare `mnc <file.mn>` compile-and-run by default, that invocation
+  *compiled* `mnc_all.mn` and *executed* the resulting compiler
+  binary with no args; the no-args dispatch then read garbage
+  path-string bytes (e.g. `0x614d5c6572616e62` ≈ `bnare\Ma…`
+  decoded little-endian) as a `size_t` to `__mn_alloc`, surfacing
+  as `out of memory (requested 7011361785666170466 bytes)`. The
+  v5.9.1/v5.10.0 migration patched the stage1 invocations on all
+  three platforms (Windows/macOS/Linux) but missed the
+  Windows-only stage2→stage3 fixed-point validate. v5.11.0 Pk.2's
+  removal of the implicit-run deprecation note exposed the latent
+  miss because the deprecation path no longer mediated the
+  failure. Added `emit-llvm` to the failing site (`publish.yml:638`)
+  and to its paired `gdb` diagnostic re-run (`publish.yml:645`);
+  also fixed the stage1-crash gdb args at line 598 for
+  consistency. In-line comment added so the next packaging change
+  cannot re-introduce the bug.
+
+### Changed
+
+- **Pk.4.dx — `scripts/check_workflow_shapes.py` static linter for
+  `.github/workflows/*.yml`.** Catches the implicit-run-with-IR-redirect
+  bug class (the Pk.2.dx shape — bare mnc invocation on a Mapanare
+  source file with stdout redirected to an LLVM IR file) in <1 second. Pre-fix, this required
+  two failed Windows publish runs (~10-20 minutes each) to surface.
+  Wired into `ci.yml` immediately after the CHANGELOG honesty gate
+  and before any build steps. Opt-out: `<!-- no-check-shape -->` on
+  the same line as the intentional implicit-run. Self-test verified:
+  the linter would have caught both Pk.2.dx misses (`publish.yml`
+  line 594 and 733) on the first push.
+- **Pk.5.dx — `scripts/bump_version.py` — single-shot version bump
+  across every release-relevant surface.** Replaces the manual sweep
+  that had three label-key variants for the README badge across four
+  locales (`version-` / `versao-` / `版本-`); v5.11.2 burned an
+  iteration on the `versao-` and `版本-` variants being missed by a
+  `version-`-shaped grep. Updates `VERSION`, all four README badges,
+  and the `CHANGELOG.md` section + comparison links in one shot.
+  Refuses non-forward bumps without `--force`. Idempotent. The
+  `bump-version` slash command now points at this script as the
+  source of truth.
+- **Pk.3.dx — Windows-bundled-LLVM smoke threshold raised from 150
+  MB to 350 MB pending Mc.6 closure.** The smoke job's `> 150 MB`
+  threshold was aspirational from v5.10.0's Win.1b SESSION_REPORT
+  (claimed "95 MB ZIP"); the actual Windows release ZIP has been
+  ~255 MB since v5.10.0 shipped because the bundle double-ships
+  C toolchains: `dist/mapanare/toolchain/` (w64devkit gcc, ~150 MB)
+  for the PyInstaller-bundled `mapanare.exe` Python CLI, plus
+  `dist/mapanare/llvm/` (~95 MB) for the native `mnc.exe`. The
+  v5.10.0 Win.1b arc only updated the native CLI's `find_clang()`
+  in `mapanare/self/main.mn` — the Python CLI's
+  `mapanare/toolchain.py` still looks for `toolchain/bin/gcc.exe`
+  and is unaware of the bundled LLVM. Closing this requires
+  teaching `toolchain.py` to discover `llvm/bin/clang.exe` first,
+  then dropping `toolchain_dir` from `packaging/mapanare.spec`.
+  Tracked as Mc.6 against the v5.11.0 panel's Mc.\* docket.
+  Threshold tightens back to 150 MB once Mc.6 closes.
+- All four README version badges bumped from `5.8.7` to `5.11.2`:
+  English `version-5.11.2`, Spanish `version-5.11.2`, Portuguese
+  `versao-5.11.2`, Chinese `版本-5.11.2`. Closes the Bo.21 HIGH
+  finding from the most recent v5.11.0 panel review (the review
+  artefacts live under the gitignored `.reviews/` tree, so they
+  are not committed) — front-door version-metadata drift across
+  the v5.9.x → v5.11.0 arc; the Portuguese and Chinese badges
+  use localized label keys (`versao-`, `版本-`) which are easy
+  to miss with a `version-`-shaped grep.
+
+## [5.11.0] - 2026-04-28
+
+### Added
+
+- **Pk.1 — versioned release-artifact filenames.** Every artifact
+  produced by `.github/workflows/publish.yml` now carries the version
+  in its filename (`mapanare-5.11.0-linux-x64.tar.gz`,
+  `mapanare-5.11.0-mac-arm64.tar.gz`,
+  `mapanare-5.11.0-win-x64.zip`,
+  `mapanare-5.11.0-win-x64-minimal.zip`,
+  `mnc-5.11.0-linux-x64`, `mnc-5.11.0-darwin-arm64`,
+  `mnc-5.11.0-win-x64.exe`). Driven by the VERSION file. Locally-
+  saved copies of two different releases no longer collide on the
+  same filename. Per PLAN Decision 3 the version segment carries no
+  leading `v` (matches the VERSION file convention).
+- **Pk.1 legacy alias window.** Each versioned upload is paired with
+  a copy at the legacy unversioned name (`mapanare-win-x64.zip`,
+  `mnc-linux-x64`, etc.) for the 2-release soak window per PLAN
+  Decision 1. Blog-post install scripts that hardcoded the
+  unversioned URL keep resolving. Drop the alias in v5.13.0.
+- **Pk.1 install-script versioned probe.** `packaging/install.ps1`
+  and `packaging/install.sh` now compute the versioned artifact
+  name from the resolved version and probe it via HEAD before
+  download, falling back to the legacy unversioned name on 404.
+  Covers two cases: (1) installing v5.11.0+ → versioned path
+  succeeds; (2) installing v5.10.0 from a v5.11.0 install script →
+  versioned 404, legacy succeeds.
+- **Pk.1 smoke-job hardening.** The `windows-bundled-llvm-smoke`
+  job downloads the **versioned** ZIP so a missing-versioned-asset
+  upload failure trips the smoke gate before checksums run.
+
+### Changed
+
+- **Pk.1 release-notes table.** Headline links in the GitHub
+  Release body now point at the versioned URLs. The legacy
+  unversioned URLs continue to work via the alias upload (see
+  above).
+
+### Removed
+
+- **Pk.2 — v5.9.1 implicit-run deprecation note dropped.** The
+  one-line stderr hint on the bare `mnc <file.mn>` path
+  (`note: 'mnc <file.mn>' now runs the program; use 'mnc emit-llvm'
+  for IR output`) was a soak-window concession for downstream CI
+  scripts that piped `mnc file.mn > out.ll`. v5.9.1 PLAN scheduled
+  removal at v5.11.0; v5.10.0 carried the note as the second
+  release of the soak window. Now silent.
+  `tests/test_cli_default.py` inverted the note-presence test to
+  `test_default_silent_after_v5_11_0`.
+
+### Decisions documented
+
+- **Pk.3 — PyInstaller→native bundle swap deferred.** Native `mnc`
+  covers 7 of `mapanare`'s 25 subcommands. Missing high-priority
+  surface: `lsp`, `fmt`, `init`, `check`, `lint`. Missing medium-
+  priority emit/transpile/bind/doc surface. Missing registry +
+  deploy commands. Swapping the Windows ZIP's PyInstaller layer
+  for a native-only bundle would silently break the LSP plugin
+  flow, the `mnc init myproject` getting-started call in
+  install.ps1, and the WASM CI lane. Re-evaluate when Mc.* (mnc
+  parity) docket closes — Mc.1 `mnc lsp`, Mc.2 `mnc fmt`, Mc.3
+  `mnc init`, Mc.4 `mnc check`, Mc.5 `mnc emit-wasm`. Full audit:
+  `docs/roadmap/v5/v5.11.0/MNC_PARITY_GAPS.md`.
+- **Pk.4 — macOS / Linux LLVM bundling stays deferred.** Three
+  reasons from the v5.10.0 PLAN Decision 4 still hold: system
+  clang is canonical via `xcode-select --install` and `apt install
+  clang`; a static Linux LLVM bundle with libstdc++ is ~300 MB
+  vs the Windows ZIP's 95 MB; no demand signal from v5.10.0. Re-
+  open if a demand signal emerges. Closeout doc:
+  `docs/roadmap/v5/v5.11.0/SESSION_REPORT.md` "What did NOT ship".
+
+### Notes
+
+- Compiler internals untouched. Zero changes to parser, semantic
+  checker, MIR, lowerer, optimizer, or the LLVM/C/WASM emitters.
+  v5.11.0 is packaging hygiene + post-bundle cleanup.
+- **No bootstrap seed refresh.** Zero new C-runtime exports —
+  first release in 5+ to skip Bb.*. The v5.10.0 seed at
+  `bootstrap/seed/linux-x86_64/mnc` resolves all referenced
+  symbols through the v5.11.0 build.
+- **Strict 3-stage fixed-point preserved.** The v5.9.0 milestone,
+  held through v5.9.1 / v5.9.2 / v5.10.0 / v5.11.0.
+- Goldens 66/66 byte-identical (13.1s on WSL Ubuntu).
+
+### Validation
+
+- `make lint` clean.
+- WSL Ubuntu: `scripts/build_stage1.py` ran clean, goldens 66/66,
+  `scripts/verify_fixed_point.sh` strict (0 diff),
+  `scripts/build_from_seed.sh` end-to-end clean with the existing
+  v5.10.0 seed (no refresh).
+- `scripts/check_changelog_honesty.py` clean.
+
+## [5.10.0] - 2026-04-28
+
+### Added
+
+- **Win.1b — bundled LLVM toolchain in Windows release ZIP.** Closes
+  the "missing clang" pain on Windows surfaced by the v5.8.7 install
+  probe. v5.9.0 DX.3 made the failure mode helpful (install hint
+  instead of bare "clang failed"); v5.10.0 removes the dependency
+  entirely. After this release, the install one-liner followed by
+  `mnc run` of any Mapanare program works on a clean Windows box with
+  **zero external dependencies**.
+
+  Concretely:
+  - **Win.1b.A** — `tools/llvm-bundle/extract_minimal.ps1` extracts
+    the minimal LLVM 18.1.8 redistributable subset (`clang.exe`,
+    `lld-link.exe`, `LLVM-C.dll`, `clang_rt.builtins-x86_64.lib`,
+    `LICENSE.TXT`). Total ~95 MB. Includes a PATH-stripped smoke
+    test that catches lazy-load DLL closure gaps `dumpbin` alone
+    misses. Documented in `tools/llvm-bundle/REQUIRED_FILES.md`.
+  - **Win.1b.B** — `actions/cache@v4` step in `.github/workflows/
+    publish.yml` keyed on `LLVM_VERSION=18.1.8`. First run downloads
+    from llvm.org; subsequent runs hit the cache. Cushions us
+    against llvm.org rate limits and silent URL retraction.
+  - **Win.1b.C** — `build-cli` job stages the bundle into
+    `dist/mapanare/llvm/` before archiving. Verify-step compiles +
+    runs a hello-world C program with `PATH` stripped to system
+    DLLs only — fails CI loudly if the bundle's DLL closure breaks
+    in isolation.
+  - **Win.1b.D** — `find_clang()` helper in `mapanare/self/main.mn`
+    prefers `<exe_dir>/llvm/clang.exe` (or `clang` on Unix) over
+    PATH clang, falling through to v5.9.0's install-hint message
+    only when neither is present. New C-runtime export
+    `__mn_executable_dir()` in `runtime/native/mapanare_core.c`
+    (cross-platform: Win32 `GetModuleFileNameA`, macOS
+    `_NSGetExecutablePath`, Linux `readlink("/proc/self/exe")`)
+    powers the lookup. Six clang shell-out sites updated:
+    `check_clang_available`, `run_test`, `run_build`,
+    `run_program` (both fast-path and two-step fallback),
+    `run_compile` (.mn path + foreign-source path). Bundled paths
+    are quote-wrapped to survive install dirs containing spaces.
+  - **Win.1b.E** — `docs/THIRD-PARTY-LICENSES.md` indexes the
+    bundled components. LLVM Apache 2.0 + LLVM Exception is
+    permissive but redistribution requires shipping LICENSE.TXT —
+    the extract script copies it alongside the binaries; the doc
+    cites the LLVM Exception's "no copyleft on linked output"
+    clause explicitly.
+  - **Win.1b.F** — `packaging/install.ps1` honors
+    `$env:MAPANARE_NO_BUNDLED_LLVM = "1"` for opt-out users; downloads
+    `mapanare-win-x64-minimal.zip` (~10 MB, no LLVM) instead of
+    `mapanare-win-x64.zip` (~95 MB, bundled). Banner messaging
+    now reflects toolchain status + download size; success message
+    detects the bundle and reports its path.
+  - **Win.1b.G** — `windows-bundled-llvm-smoke` CI job downloads the
+    published ZIP, strips `PATH`, and runs the bundled `mnc` end-to-end
+    against a hello-world program. Catches "the bundle is broken"
+    before users do. Gates `checksums` so a broken bundle never
+    reaches a final release.
+
+### Changed
+
+- **`mapanare-win-x64.zip` is now ~95 MB by default** (was ~10 MB).
+  Includes bundled LLVM. Power users can still get the small ZIP
+  by setting `MAPANARE_NO_BUNDLED_LLVM=1` before running install.ps1
+  or by downloading `mapanare-win-x64-minimal.zip` directly. Linux
+  and macOS artifacts unchanged — those platforms have system clang
+  (PLAN Decision 4; closeout in v5.11.0 Pk.4).
+
+### Fixed (during Bb.4 follow-up, same release window)
+
+- **find_clang() multi-return → single-return.** The first draft
+  used early returns; the self-hosted MIR optimizer
+  constant-folded every call site to the fallback `"clang"`
+  literal, dropping the bundled-path branches entirely. Stage2 IR
+  showed `0` references to `find_clang` (function fully elided)
+  and `check_clang_available()` shipping the literal 27-char
+  string `clang --version > NUL 2>NUL`. Bundled-LLVM lookup
+  would have been silently broken. Rewrote to single-return form
+  (`let mut result`); comment in `main.mn` documents the gotcha.
+- **`scripts/build_from_seed.sh` v5.9.1 hygiene gap.** Line 68
+  (the seed invocation) still used `"${SEED}" "${SOURCE}"` — no
+  subcommand. Worked for pre-v5.9.1 seeds where the default was
+  emit-IR. The v5.9.1 PLAN updated lines 95 / 122 but missed 68;
+  surfaced when v5.10.0's Bb.4 refreshed the seed past v5.9.1
+  behavior. New seed treated bare `mnc <file>` as "compile and
+  run" instead of "emit IR" → script died at step 1. Added
+  `emit-llvm` subcommand to the seed invocation.
+- **CI workflow `emit-llvm` migration carried over from
+  build_from_seed.sh.** Five additional sites in `.github/workflows/`
+  (ci.yml + publish.yml) had the same v5.9.1 hygiene gap — bare
+  `mnc-stage1` invocations on `mnc_all.mn` relying on the old
+  emit-IR default. All updated to use the explicit subcommand.
+  Surfaced as
+  hard CI failures on the first v5.10.0 push (build_from_seed,
+  Self-compile mnc_all.mn Da.2, macOS/iOS Cross-Compilation jobs).
+- **v5.9.1 diagnostic-suppression bug at 5 run-mode sites.**
+  Pre-this-fix, `run_test` / `run_build` / `run_program` /
+  `run_compile` (.mn + foreign) all printed only "error: compile
+  failed" then exited, hiding the semantic-error details that
+  `run_emit_llvm` correctly iterated via `cr.errors`. CI's
+  `tests/self_hosted/test_semantic_wiring.py::TestRejectsBrokenPrograms`
+  caught this — broken-program tests checking stderr for
+  "Undefined function" / "Type mismatch" / "immutable" /
+  "Result" / "Bool" found only the generic message. New
+  `print_compile_errors(cr)` helper iterates the diagnostics; all
+  5 sites now call it. The trailing "error: compile failed"
+  marker line was also removed (matches `run_emit_llvm`
+  convention) so `_error_count`-style cascade tests don't
+  double-count it. Latent v5.9.1 hygiene gap; surfaced here
+  because the v5.10.0 Bb.4 seed refresh made the new run-mode
+  behavior canonical.
+- **CHANGELOG-honesty false positives.** Three backtick-quoted
+  command invocations (run-style strings combining a binary name
+  with a file path inside the same backtick pair) tripped the path
+  regex in `scripts/check_changelog_honesty.py` — the checker
+  treated them as missing file paths. Rephrased to drop the
+  embedded filenames so the regex no longer matches.
+
+### Notes
+
+- Compiler internals untouched. Zero changes to parser, semantic
+  checker, MIR, lowerer, optimizer, or the LLVM/C/WASM emitters.
+  v5.10.0 is a packaging release; the find_clang fix above is a
+  workaround for an existing optimizer pattern, not a new bug.
+- New C-runtime export (`__mn_executable_dir`) + `print_compile_errors`
+  helper added to main.mn → **Bb.4 bootstrap seed refresh shipped**
+  (twice — once for the Bb.4 closeout commit, once after the
+  diagnostic-suppression fix).
+- **Strict 3-stage fixed-point preserved.** stage2.ll == stage3.ll
+  byte-identical at 226,608 lines, 0 diff. The v5.9.0 milestone,
+  held through v5.9.1 / v5.9.2 / v5.10.0.
+- Goldens 66/66 byte-identical (12.4s on WSL Ubuntu).
+- v5.9.1 implicit-run deprecation note still active (per the v5.9.1
+  PLAN's two-release soak window: shipped v5.9.1, kept v5.10.0,
+  removed v5.11.0).
+- Closes Win.1b.A through Win.1b.G.
+
+### Validation
+
+- `make lint` clean (black, ruff, mypy on 54 source files)
+- Local pytest (Windows host, no `mnc` binary present): 5,497 passed,
+  69 pre-existing subprocess-launch failures (`OSError [WinError
+  193]` on tests that subprocess-invoke the `mnc` binary — these
+  failed identically before this release; baseline confirmed via
+  git stash).
+- WSL Ubuntu: `scripts/build_stage1.py` ran clean, goldens 66/66
+  pass, `scripts/verify_fixed_point.sh` strict (0 diff at 226,560
+  lines), `scripts/build_from_seed.sh` end-to-end clean with the
+  refreshed seed.
+
+## [5.9.2] - 2026-04-27
+
+### Fixed
+
+- **Tg.1** — `tests/bootstrap/test_stage1_compile.py` quoted-declare
+  regex tightened. The pre-v5.9.2 pattern used `[^"]+` for the
+  captured group, which matches across newlines, allowing a latent
+  cross-construct match that captured `', align 8\n@.str.NNNN = ...']`
+  as a "function name" and reported it as an unresolved cross-module
+  ref. Reproduced on v5.9.0 HEAD with `@.str.3025`; v5.9.1 HEAD with
+  `@.str.3042` — string-table drift confirms the bug tracks compiler
+  output rather than the regex itself. New regex anchors at
+  start-of-line (`^` + `re.MULTILINE`) and rejects newline in two
+  places (`[^@\n]*` and `[^"\n]+`). Both call sites
+  (`test_no_unresolved_enum_constructors`,
+  `test_cross_module_references_resolved`) now use the shared
+  `_extract_quoted_declares` helper. New `TestRegexHelper` with 3
+  cases guards the failure shape.
+
+### Changed
+
+- **Dn.1** — `README.md` self-host fixed-point status line. Stale
+  `NEAR (4-line VERSION-metadata diff over a 217k-line stage2.ll)`
+  reflected the v5.6.x → v5.8.x state. v5.9.0 closed the
+  VERSION-metadata diff at the source (DX.2 — `__mn_version_string()`
+  C-runtime export replaces the `__MN_VERSION__` placeholder),
+  restoring strict 3-stage fixed-point for the first time since
+  v4.139.0. v5.9.1 preserved it. README now reads
+  `STRICT (stage2.ll == stage3.ll byte-identical at 226k lines;
+  restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata
+  diff at the source).`
+
+### Notes
+
+- Test + docs only. Zero changes to parser, semantic checker, MIR,
+  lowerer, optimizer, emitters, dispatch layer, or runtime.
+- No bootstrap seed refresh.
+- Strict 3-stage fixed-point preserved (the v5.9.0 milestone, held
+  through v5.9.1).
+- Goldens 66/66 byte-identical; `make lint` clean;
+  `tests/bootstrap/test_stage1_compile.py` 20/20 pass (was 19/20 at
+  v5.9.1 HEAD; 3 new `TestRegexHelper` cases shipped here).
+- Closes Tg.1, Dn.1.
+
+## [5.9.1] - 2026-04-27
+
+### Changed (BREAKING)
+
+- **`mnc <file.mn>` now runs the program** (DX.5). Pre-v5.9.1 the
+  default was LLVM IR emission to stdout. The IR-emission path moves
+  to `mnc emit-llvm <file.mn>` (parallel to the Python CLI's
+  `mapanare emit-llvm` subcommand).
+
+  **Migration.** A CI script that did:
+  ```
+  mnc file.mn > out.ll
+  ```
+  must change to:
+  ```
+  mnc emit-llvm file.mn -o out.ll
+  ```
+  (or `mnc emit-llvm file.mn > out.ll` — `mnc emit-llvm` prints to
+  stdout when `-o` is omitted, so the stdout-redirect pattern still
+  works after the subcommand rename).
+
+  **Deprecation timeline.** v5.9.1 prints a one-line stderr note on
+  every implicit-run invocation: `note: 'mnc <file.mn>' now runs the
+  program; use 'mnc emit-llvm' for IR output`. The note is removed
+  in v5.11.0; v5.10.0 keeps it. The note is on stderr, so it does
+  not pollute `> out.ll` redirections — but if a CI script also pipes
+  stderr (`2>&1`), expect one extra log line per build for two
+  releases.
+
+  **Non-`.mn` files.** Pre-v5.9.1 `mnc file.txt` would silently try
+  to compile any file. v5.9.1+ errors with a hint pointing at
+  `mnc emit-llvm` (raw IR) or `mnc compile` (transpilation —
+  `.py` / `.php` / `.ts` / `.go`).
+
+### Added
+
+- `mnc emit-llvm <file.mn> [-o output]` — explicit IR emission.
+  Without `-o`, prints to stdout. With `-o <path>`, writes to file.
+  `mnc help emit-llvm` and `mnc emit-llvm --help` both print the
+  per-subcommand help block.
+- `tests/test_cli_default.py` — 6 tests covering the new default
+  (`.mn` files run; deprecation note prints), the `emit-llvm`
+  subcommand (stdout + `-o` paths), the non-`.mn` error path, and
+  the help-text surface.
+
+### Notes
+
+- Dispatch-layer only. Zero changes to the parser, semantic checker,
+  MIR, lowerer, optimizer, or emitters — same scope discipline as
+  v5.9.0.
+- No bootstrap seed refresh — v5.9.1 adds no new builtin call sites;
+  the v5.9.0 seed compiles v5.9.1 source unchanged.
+- Strict 3-stage fixed-point preserved (the v5.9.0 milestone).
+- Goldens 66/66 byte-identical; `make lint` clean;
+  `tests/test_cli_help.py` 20/20 pass; `tests/test_cli_default.py`
+  6/6 pass.
+
+## [5.9.0] - 2026-04-27
+
+### DX.* — Native CLI hygiene (closes Windows-install findings)
+
+Closes the user-visible CLI gaps surfaced by the v5.8.7 Windows install
+probe. Six dockets, all in the dispatch + install layer; zero compiler
+internals. After v5.9.0:
+
+- `mnc --help` / `-h` / `help` print actual usage instead of
+  `error: cannot read file '--help'`. Per-subcommand help works via
+  both `mnc help <sub>` and `mnc <sub> --help`.
+- `mnc version` prints `mapanare 5.9.0` instead of the literal
+  `mapanare __MN_VERSION__`. Source-tree placeholder dance replaced
+  with a build-time-baked C-runtime export
+  (`__mn_version_string()`) — same shape as v5.8.6 We.1's
+  host-detection exports. Bb.3 seed refresh.
+- `mnc cache stats` and `mnc cache clean` work on Windows. Replaced
+  the POSIX-only shell-out (`if [ -d ... ]; find | wc -l; du -sh`)
+  with new native runtime helpers
+  (`__mn_dir_count_files`, `__mn_dir_total_size`,
+  `__mn_dir_remove_recursive`). Pre-v5.9.0 Windows users hit
+  `-d was unexpected at this time` (cmd.exe's reaction to bash's
+  `[ -d ... ]` test).
+- Missing-clang failures print platform-specific install instructions
+  (`winget install LLVM.LLVM` on Windows, `brew install llvm` on macOS,
+  `apt install clang` on Linux) instead of the bare
+  `error: clang failed`. clang's stderr is no longer swallowed via
+  `2>/dev/null`; on non-zero exit the captured stderr text is
+  reprinted so the user sees the real diagnostic.
+- `install.ps1` and `install.sh` install the `mnc` name alongside
+  `mapanare` (PyInstaller doesn't read argv[0]; the alias is
+  transparent). Getting-started message uses `mnc init` / `mnc run` /
+  `mnc build`. Drops the `requires LLVM` parenthetical now that DX.3
+  surfaces a clean install path on miss.
+
+Deferred to v5.9.1: DX.5 (default-command behavior change). The only
+breaking change in the bunch; v5.9.0 stays additive-only and reversible.
+
+### Added
+
+- **C runtime exports**:
+  - `__mn_version_string() -> MnString` — build-time-baked version
+    constant (`-DMAPANARE_VERSION` at C-compile time).
+  - `__mn_dir_count_files(path) -> int64_t` — recursive file count.
+  - `__mn_dir_total_size(path) -> int64_t` — recursive byte-size sum.
+  - `__mn_dir_remove_recursive(path) -> int64_t` — recursive rmdir.
+  - `__mn_dev_null_redirect() -> MnString` — returns ` 2>/dev/null`
+    on POSIX, ` 2>NUL` on Windows.
+  - `__mn_clang_err_path() -> MnString` — platform-portable temp path
+    for capturing clang stderr.
+- **`tests/test_cli_help.py`** — smoke tests for `--help`, `-h`,
+  `help <sub>`, `<sub> --help`, `version` (asserts no
+  `__MN_VERSION__` leak).
+- `-DMAPANARE_VERSION` flag wired into every clang/gcc invocation
+  that compiles `runtime/native/mapanare_core.c` in
+  `.github/workflows/publish.yml` (5 sites: Windows pre-build runtime
+  archive + Win/macOS/Linux/Linux-fallback stage2 link). Pre-v5.9.0
+  these sites compiled `mapanare_core.c` without the flag, so the
+  shipped native binary's `__mn_version_string()` would have returned
+  `"unknown"` if v5.9.0 hadn't also wired the flag everywhere.
+
+### Removed
+
+- `scripts/build_stage1.py::_substitute_version()` and the
+  `VERSION_PLACEHOLDER = "__MN_VERSION__"` constant. The tempdir-mirror
+  step (v5.0.6 Dr.1-mutation) is gone too — the source tree is no
+  longer mutated because there's nothing to substitute. `build_stage1.py`
+  compiles directly from `mapanare/self/`.
+- `__MN_VERSION__` literal in `mapanare/self/main.mn:version()` and
+  `mapanare/self/emit_llvm.mn::emit_metadata_node` — both now call
+  `__mn_version_string()` at runtime.
+
+### Changed
+
+- **Bootstrap seed refreshed (Bb.3)**. Same break shape as v5.8.5
+  (Bb.1) and v5.8.6 (Bb.2): the new builtin call to
+  `__mn_version_string()` doesn't exist in the v5.8.8 seed; a fresh
+  build of `bootstrap/seed/linux-x86_64/mnc` is required for
+  `bash scripts/build_from_seed.sh` to succeed.
+- **Strict 3-stage fixed-point restored** (Linux x86_64). 225,831
+  lines, 0 diff. Pre-v5.9.0, every release since v4.140.0 carried a
+  4-line VERSION-only diff because the IR-metadata node embedded the
+  literal `!"__MN_VERSION__"` in stage2 (unsubstituted in the
+  self-hosted path) vs the substituted live version in stage3. DX.2's
+  structural fix has both stages call `__mn_version_string()` at
+  runtime, so they embed the same C-runtime-baked constant. First
+  strict fixed-point since v4.139.0.
+
+## [5.8.8] - 2026-04-27
+
+### Fixed
+
+- **Apple AArch64 (AAPCS64) return-ABI bug** (Da.1) — `__mn_list_new`
+  and `__mn_str_split` declarations and call sites in both emitters
+  (`mapanare/emit_llvm_text.py` + `mapanare/self/emit_llvm.mn`) now use
+  canonical sret form (`declare void @fn(ptr sret(...) align 8, ...)`)
+  on all SysV / AAPCS64 default-path targets. Previously these were
+  declared as first-class aggregate returns
+  (`{ptr, i64, i64, i64, i64} @fn(...)`); LLVM's x86_64 backend
+  silently rewrote them to sret-style per AMD64 §3.2.3 "memory class",
+  but LLVM's arm64 backend lowered them literally as register-tuple
+  return (x0..x4), while the C runtime returns via x8 indirect per
+  AAPCS64. The mismatch produced `FATAL: __mn_list_push received
+  corrupted list (data=0x40 ...)` SIGABRT during `mnc-stage1`
+  self-compile of `mapanare/self/mnc_all.mn` on the macos-latest runner.
+  Empirical probe with clang ground-truth IR + arm64 assembly
+  comparison documented in
+  `docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md`.
+- **`scripts/build_stage1.py` post-emit triple/datalayout text-patch
+  removed** — a 24-line workaround that searched the emitted IR for
+  `target triple = "x86_64-unknown-linux-gnu"` and replaced it with
+  `aarch64-apple-macos` / `x86_64-w64-mingw32` after emission. The
+  natural `compile_multi_module_mir(target_name=host_target_name())`
+  plumbing already resolves the host target and writes the correct
+  triple + datalayout into the IR; the text-patch was redundant and
+  masked the v5.8.7 macOS arm64 ABI bug because the function
+  signatures (where the bug actually lived) retained their
+  SysV-shaped first-class aggregate returns regardless of the
+  patched triple.
+
+### Added
+
+- **macOS self-compile CI gate** (Da.2) —
+  `.github/workflows/ci.yml::macos` now builds `mnc-stage1` via the
+  `scripts/build_stage1.py` Python bootstrap, self-compiles
+  `mapanare/self/mnc_all.mn` through it, and validates the resulting
+  IR with `llvm-as`. Mirrors the Win64/i686 self-compile gates added
+  in v5.8.4 / v5.8.6. Without this, the v5.8.7 SIGABRT would have
+  stayed latent until the next publish run.
+- **macOS arm64 native compiler binary** (Da.3) —
+  `publish.yml::build-native` matrix re-adds the `macos-latest`
+  entry. The release-notes table's Apple Silicon "Native Compiler"
+  column points to a Download link
+  (`mnc-darwin-arm64`) again — flipped from "Build from source" that
+  was the v5.8.7 Da.0 deferral. macOS-specific build path links the
+  Metal + Foundation frameworks (for the Metal GPU backend) and uses
+  ld64's `-Wl,-stack_size,0x4000000` syntax instead of GNU ld's
+  `-Wl,-z,stack-size`.
+
+### Notes
+
+- **NO bootstrap seed refresh required.** Per the v5.8.8 PLAN
+  Decision 1 Option B recommendation, dispatch is target-agnostic at
+  the IR-shape level — both emitters now always emit canonical sret
+  form for > 16 B aggregate returns on all SysV / AAPCS64 default-path
+  targets. No new C-runtime export, no new Mapanare-level call site,
+  the v5.8.6 seed accepts the v5.8.8 source unchanged.
+- **Linux x86_64 IR shape changes**, but produces equivalent machine
+  code. The new sret form matches what `clang` emits from the
+  equivalent C source. The old first-class aggregate form worked on
+  Linux only because LLVM's x86_64 backend has the silent rewrite to
+  sret-style memory return; emitting sret directly removes a latent
+  fragility.
+- **Mac strict-NEAR fixed-point achieved.** stage2.ll == stage3.ll
+  within 4 lines (all VERSION-only metadata diff). Same shape as the
+  v5.8.5+ Linux baseline. Goldens 66/66 preserved on Mac; non-bootstrap
+  pytest 1,349 passed.
+- **Phase 0 empirical probe** by user on Apple Silicon Mac
+  (M2 Pro, macOS 26.3, Homebrew clang/llc-18, Apple Clang 17). The
+  v5.8.8 PLAN's hypothesis (parameter-by-value AAPCS64 vs SysV
+  divergence) was REFINED — the bug is in returns, not parameters.
+  PHASE_0_FINDINGS.md §8 documents the implementation surface
+  difference; the param-divergence is a real latent gap deferred to
+  v5.8.9 if it ever surfaces (no Mapanare-emitted call currently
+  passes a > 16 B aggregate by value across the C-runtime ABI
+  boundary).
+
+## [5.8.7] - 2026-04-27
+
+### Fixed
+
+- **Target-count tests** — `tests/targets/test_targets.py` and
+  `tests/targets/test_wasm_targets.py` asserted `len(TARGETS) == 9`,
+  but v5.8.6's `i686-windows-gnu` target brought the count to 10.
+  Bumped the assertions and refreshed the docstring on
+  `test_total_target_count` to "5 desktop + 2 WASM + 3 mobile".
+- **Changelog honesty checker** — v5.8.6's bullet
+  `` `bash scripts/build_from_seed.sh`: stage1 IR == stage2 IR ``
+  put a shell command and a path inside one backtick, which
+  `scripts/check_changelog_honesty.py` interpreted as a single
+  missing path. Split the command from the path.
+- **macOS publish workflow runner** — `macos-13` (Intel) is on
+  GitHub's deprecation runway and was hanging in the runner
+  queue indefinitely. Switched the `build-native` matrix to
+  `macos-latest`. The Intel row in the release-notes table now
+  points to "Build from source" instead of a binary that wasn't
+  being built.
+
+### Notes
+
+- **Da.0 — macOS arm64 native binary deferred to v5.8.8.** The
+  initial `macos-latest` build surfaced a real ABI bug
+  (`__mn_list_push received corrupted list` during
+  self-compile of `mnc_all.mn`). Root cause: the Python
+  bootstrap emits IR with the SysV/Linux triple and ABI, then
+  text-patches the triple+datalayout to Apple AArch64 — but the
+  function signatures keep SysV's aggregate-passing decisions
+  baked in. Apple Silicon Mac users build from source for
+  v5.8.7; Da.1 in v5.8.8 will plumb the host triple through to
+  the emitter so `abi.py::_classify_aapcs64` runs at
+  IR-emission time. See `docs/roadmap/v5/v5.8.7/PLAN.md`.
+
+## [5.8.6] - 2026-04-27
+
+### Added
+
+- **We.1** — Closed the Win32 / `i686-w64-mingw32` ABI gap left
+  latent by v5.8.4's Wb.2 closure. The self-hosted emitter now
+  dispatches a 3-way ABI: SysV / AAPCS64 (default), Win64 sret/
+  sarg (`x86_64-w64-mingw32`), or i686 cdecl sret/byval
+  (`i686-w64-mingw32`). The Python bootstrap emitter mirrors.
+  Two new C-runtime exports replace the misleadingly-named
+  v5.8.4 `__mn_host_is_win64` (which read `_WIN32`, defined for
+  both 32-bit and 64-bit Windows): `__mn_host_is_windows()` +
+  `__mn_host_arch_bits()`. The old export is preserved as a
+  deprecated alias for source-compat with v5.8.5 stage1 binaries.
+  `EmitState` field rename `is_win64: Bool` →
+  `is_windows: Bool` + `win_arch: Int`; helpers
+  `use_win64_abi(st)` and `use_i686_abi(st)` encapsulate the
+  3-way dispatch. New `i686_rewrite_decl_params`,
+  `i686_sarg_rewrite_args`, `i686_sarg_advance_state` parallel
+  the existing Win64 helpers but emit `byval(<orig>) align 4`
+  decoration on aggregate args (load-bearing for i686 cdecl —
+  without it LLVM's i686 backend silently truncates `{ptr, i64}`
+  returns to 8 bytes, dropping the high i64 half). New
+  `abi_i686_cdecl_use_sret` classifier with `> 8 B → sret`
+  threshold (vs Win64's stricter `not in {1, 2, 4, 8} → sret`,
+  vs SysV's `> 16 B → sret`). New `i686-windows-gnu` target name
+  in `mapanare/targets.py`. Phase 0 empirical probing with
+  `i686-w64-mingw32-gcc 13` and `clang-18` ground-truthed every
+  threshold value before code was written; full assembly traces
+  in `docs/roadmap/v5/v5.8.6/SESSION_REPORT.md` §Phase 0.
+
+### Fixed
+
+- **Bb.2** — Bootstrap: refreshed `bootstrap/seed/linux-x86_64/mnc`
+  for the v5.8.6 source. Mandatory because the v5.8.5 seed
+  binary's hardcoded builtin list rejects calls to the new
+  `__mn_host_is_windows` / `__mn_host_arch_bits` exports — same
+  shape as the v5.8.4 → v5.8.5 break, addressed the same way.
+  New seed 6,573,216 bytes (was 6,433,952; +2.2%) /
+  sha256 `a902f14d279345eef2db5e78234133a9b2bfb2f6a438984f913d94cf7bb417b0`.
+- **Datalayout-not-target-aware bug from v5.8.4** — emit_llvm.mn
+  switched the `target triple` per-host but kept emitting the
+  Linux/SysV `target datalayout` regardless. LLVM's x86_64
+  backend was forgiving but it was wrong on paper. v5.8.6 emits
+  the correct datalayout per target (Win64 `m:w` mangling, Win32
+  `m:x` ILP32 with `S32` stack alignment).
+
+### Metrics
+
+- Goldens **66/66** preserved.
+- Stage2.ll: 219,955 → 222,095 lines (+0.97%).
+- Fixed-point: NEAR (4-line VERSION-only diff).
+- `llvm-as` clean.
+- `make lint` clean (black, ruff, mypy).
+- `check_struct_registry.py` clean (Reg.1 25 EmitState fields,
+  was 24).
+- `pytest tests/` non-bootstrap: 2,372 passed, 84 skipped.
+- End-to-end no-Python bootstrap via `scripts/build_from_seed.sh`:
+  stage1 IR == stage2 IR (222,095 lines, strict fixed point).
+- ABI smoke test: i686 IR + C runtime link clean to PE32 .exe;
+  caller assembly correctly copies all 16 bytes of struct to
+  argument area at call site (exact i686 cdecl convention).
+- Build pipeline `i686-w64-mingw32-gcc` cross-compile of
+  `mnc-stage1.exe` is **not** shipped this release —
+  `build_stage1.py` only knows the x86_64 mingw triple. Deferred
+  until real demand surfaces. The IR-emission correctness this
+  release closes is verified empirically; CI integration is
+  straightforward but out of scope.
+
+## [5.8.5] - 2026-04-27
+
+### Fixed
+
+- **Bb.1** — Bootstrap: refresh `bootstrap/seed/linux-x86_64/mnc`
+  so the no-Python bootstrap CI jobs pass after v5.8.4. The seed
+  was the v4.155.0 strip from April 19; v5.8.4 added a real
+  Mapanare-level call to `__mn_host_is_win64()` (a new C-runtime
+  export) inside `mapanare/self/emit_llvm.mn::emit_mir_module`
+  that the seed's pre-v5.8.4 builtin list rejected with
+  "Undefined function". The build script swallows stderr via
+  `2>/dev/null`, so CI surfaced only "Process completed with exit
+  code 1" at "[1/4] Stage 1: seed compiles source → stage1 IR".
+  Refresh procedure follows `bootstrap/seed/README.md`
+  §"Updating the Seed": clean Python bootstrap → strip → sha256
+  update. New seed: 6,433,952 bytes; new sha256
+  `7c2897f0...1493d749`. Both "Bootstrap (No Python)" and
+  "Bootstrap from Seed (No Python)" CI jobs unblocked.
+
+### Notes
+
+Pure seed-refresh release; **zero source-code changes** to
+`mapanare/`, `runtime/`, `mapanare/self/`. Goldens 66/66
+preserved (canonical harness); fixed-point holds NEAR (4 lines
+of VERSION metadata diff over 219,955 lines = 0.002%); `make
+lint` clean. Win32 (i686) ABI gap surfaced in the v5.8.4 review
+is deferred to v5.8.6 (PLAN + PROMPT only) and a future
+implementation release; see
+`docs/roadmap/v5/v5.8.6/PLAN.md`.
+
+## [5.8.4] - 2026-04-27
+
+### Fixed
+
+- **Wb.2** — Windows: `mapanare/self/emit_llvm.mn` is now target-aware.
+  v5.8.3 closed Wb.1 in the C runtime's `__mn_str_free` arg ABI;
+  v5.8.4 closes Wb.2 in the self-hosted emitter's return ABI. Ports
+  the v5.0.4 / Cb.15 ABI classifier from
+  `mapanare/emit_llvm_text.py` to the self-hosted emitter via a new
+  `EmitState.is_win64` field, set from a new
+  `__mn_host_is_win64()` C-runtime export reading `_WIN32`. On
+  Windows builds, ~37 runtime-fn declarations switch from aggregate
+  returns (`declare {ptr, i64} @F(...)`) to Win64 sret
+  (`declare void @F(ptr sret({ptr, i64}), ...)`), and aggregate
+  args at call sites are rewritten to the sarg ptr pattern
+  (alloca + store + ptr). `mnc-win-x64.exe` artifact is now the
+  genuine self-built mnc-stage2 (not the v5.8.3 mnc-stage1.exe
+  carry-forward). Windows self-compile + fixed-point cycle
+  re-enabled in `publish.yml` with paid-forward Wb.1.dx
+  gdb-on-failure instrumentation. Linux + macOS unchanged.
+- **Wa.1** — CI: `ci.yml` WASM Cross-Compilation install no longer
+  silently skips on `wasmtime.dev/install.sh` path drift. Replaced
+  the curl-pipe-bash + `if -d` guard with a pinned download from
+  `github.com/bytecodealliance/wasmtime/releases` to
+  `/usr/local/bin/wasmtime`. Fails fast on regression.
+
+### Notes
+
+v5.8.4 closes the Windows release-pipeline arc that started at
+v5.8.0. From now on, `dev`-branch CI on Windows runs the same
+self-host validation as Linux + macOS. v5.8.3's Wb.2 row in
+`docs/known_issues.md` flips to CLOSED.
+
+## [5.8.3] - 2026-04-26
+
+### Fixed
+
+- **Wb.1** — Windows: `mnc-stage1.exe` no longer segfaults at every
+  drop-glue free site. Root cause: the C runtime's
+  `void __mn_str_free(MnString s)` (16-byte struct by value) was
+  compiled with the Win64 ABI for 16-byte aggregates — caller passes
+  a hidden pointer in `%rcx`, callee dereferences. But LLVM lowers
+  IR-level `{ptr, i64}` aggregate-by-value args by **decomposing
+  into two registers** (rdi+rsi on SysV, rcx+rdx on Win64), not by
+  hidden pointer. SysV happened to agree by coincidence (its 16-byte
+  C ABI is also two-register decomposed for integer/pointer fields);
+  Win64 didn't. Every IR call site of `__mn_str_free` put the data
+  pointer in `%rcx` and the length in `%rdx`, but the C function
+  read `(%rcx)` (treating `%rcx` as a struct address) and
+  segfaulted. v5.8.3 closes Wb.1 by switching `__mn_str_free`'s
+  exported C signature to **decomposed args**:
+  `void __mn_str_free(const char *data, int64_t len_with_heap_bit)`.
+  Decomposed args match exactly what LLVM's aggregate lowering
+  produces on both ABIs (rdi+rsi on SysV, rcx+rdx on Win64) — no
+  emitter changes required, no per-target conditionals. Internal C
+  callers go through a new static `mn_str_free_value(MnString)`
+  helper to preserve their by-value convenience. Minimal patch:
+  `runtime/native/mapanare_core.c` (~25 LOC) and a matching header
+  declaration. mnc-stage1.exe now compiles `mnc_all.mn` to a full
+  217,879-line stage2.ll on Windows — same line count as v5.7.1
+  on Linux.
+
+### Notes
+
+v5.8.2 closed two Windows build walls in succession (Tc.1 + Tc.2);
+v5.8.3 closes the runtime wall behind them. Wb.2 (self-hosted
+`mapanare/self/emit_llvm.mn` hardcodes the SysV ABI classifier at
+line 2243; stage2.ll declares ~37 runtime fns with aggregate
+returns instead of Win64 sret) was uncovered once mnc-stage1.exe
+started actually running on Windows. mnc-stage2 built from that
+stage2.ll on Windows crashes inside `__mn_argv` — same H1 ABI
+shape as Wb.1, but on the return side and across many functions.
+Wb.2 is a v5.0.4 Cb.15 / v4.149.0 ABI-classifier port from
+`mapanare/emit_llvm_text.py` to `mapanare/self/emit_llvm.mn` —
+substantial change, scoped to v5.8.4 with its own PLAN. For
+v5.8.3, the Windows artifact `mnc-win-x64.exe` is mnc-stage1.exe
+itself (Python-bootstrap-emitter-built; ABI-correct via the
+target-aware Python classifier). Functionally identical to a
+working mnc-stage2 for end users — a Python-bootstrap-built
+compiler still compiles user .mn files; it just isn't validated
+by Windows self-compilation yet. Linux + macOS continue to run
+the full self-compile + fixed-point cycle and remain green.
+
+- Sync README badges (en / es / pt / zh-CN) to 5.8.3.
+
+## [5.8.2] - 2026-04-26
+
+### Fixed
+
+- **Tc.1** — Windows: `mapanare build` now prefers the bundled
+  PyInstaller toolchain over a system MinGW on PATH. Previously,
+  any system gcc at `C:/mingw64` would shadow the bundled w64devkit
+  + `libmapanare_rt.a`, producing an `undefined reference to
+  __mn_str_println` link error.
+- **Tc.2** — Windows: `scripts/build_stage1.py` now prefers `gcc`
+  over `clang` when resolving the C compiler. System LLVM clang on
+  Windows defaults to the MSVC target, where MSVC's UCRT marks
+  `fopen`/`strncpy` as deprecated, blowing up `-Werror` in the
+  runtime build. w64devkit's MinGW gcc has clean headers.
+- Sync README badges (en / es / pt / zh-CN) to 5.8.2.
+
+### Notes
+
+Linux and macOS behavior is unchanged. Both fixes guard on
+`sys.platform == "win32"` or only fire when a bundled toolchain is
+present, which today only ships on Windows release builds.
+
+## [5.8.1] - 2026-04-26
+
+### Added
+
+### Changed
+
+### Fixed
+
+## [5.0.4] - 2026-04-21
+
+**Cb.15 closed: ABI classifier ported to self-hosted.** The v4.149.0
+per-target sret classifier (`abi.py`) now lives in Mapanare as
+`mapanare/self/abi.mn` (75 LOC) with SysV, Win64, and AArch64
+classifiers.
+
+- New `abi.mn`: `abi_sysv_use_sret`, `abi_win64_use_sret`,
+  `abi_aapcs64_use_sret`, `abi_classify_return_sret`
+- `emit_llvm.mn`: `use_sret_return` replaces `is_byref_type_st` at 4
+  return-type sret decision sites; argument passing unchanged (64B threshold)
+- stage2.ll sret count: 2,263 → 4,112 (+1,849)
+- 60 List-returning functions correctly moved from by-value to sret
+- Golden tests: 54/66 (unchanged), fixed-point: NEAR (4 diff, Dr.1)
+- Sanitizers: 0 new valgrind ERRORS, 0 new ASan findings
+
+## [5.0.3] - 2026-04-21
+
+**macOS Intel native binary.** Adds `mnc-darwin-x64` to the GitHub Release.
+
+- Add `macos-13` (x86_64) entry to `build-native` CI matrix
+- `scripts/build_stage1.py` already handles macOS — ARM64 datalayout
+  substitution is gated on `platform.machine() == "arm64"`
+- Release body gains "macOS Intel" row with native binary download
+- No compiler or runtime source changes
+
 ## [4.153.0] - 2026-04-19
 
 **Pre-perf-panel refresh.** Zero code changes. Measurement-only release
@@ -6366,7 +7280,11 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v4.25.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.13.0...HEAD
+[5.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.2...v5.13.0
+[5.11.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.0...v5.11.2
+[5.8.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.8.6...v5.8.7
+[5.8.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.8.0...v5.8.1
 [4.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.24.0...v4.25.0
 [4.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.23.0...v4.24.0
 [4.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v4.22.0...v4.23.0

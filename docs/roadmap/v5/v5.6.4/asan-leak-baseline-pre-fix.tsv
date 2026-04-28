@@ -1,0 +1,5 @@
+49_tensor_literal	0	0	9	248	mapanare_tensor_alloc	LEAK
+50_tensor_indexing	0	0	12	392	mapanare_tensor_alloc	LEAK
+51_tensor_broadcast	0	0	24	672	mapanare_tensor_alloc	LEAK
+52_tensor_slicing	0	0	15	416	mapanare_tensor_alloc	LEAK
+53_linear_regression	0	0	123	3608	mapanare_tensor_alloc	LEAK

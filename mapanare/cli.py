@@ -357,18 +357,41 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 
 def cmd_install(args: argparse.Namespace) -> None:
-    """Install a package from a git repository."""
-    from stdlib.pkg import PackageError, install_package
+    """Install a package from the Mapanare registry (or git fallback)."""
+    from stdlib.pkg import PackageError, install_all, install_package
 
     project_dir = "."
+    package_arg = getattr(args, "package", None)
+
+    # No argument: install all deps from mapanare.toml
+    if not package_arg:
+        try:
+            results = install_all(project_dir)
+            if not results:
+                print("no dependencies in mapanare.toml")
+                return
+            for locked in results:
+                print(f"installed {locked.name} @ {locked.version}")
+        except PackageError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    # Parse name@version syntax
+    pkg_name = package_arg
+    version = "*"
+    if "@" in package_arg:
+        pkg_name, version = package_arg.rsplit("@", 1)
+
     try:
         locked = install_package(
-            package_name=args.package,
+            package_name=pkg_name,
             project_dir=project_dir,
-            git_url=args.git,
-            branch=args.branch,
+            git_url=getattr(args, "git", None),
+            branch=getattr(args, "branch", None),
+            version=version,
         )
-        print(f"installed {locked.name} @ {locked.commit[:8]}")
+        print(f"installed {locked.name} @ {locked.version}")
     except PackageError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -518,7 +541,11 @@ def cmd_login(args: argparse.Namespace) -> None:
 
 
 def cmd_build(args: argparse.Namespace) -> None:
-    """Compile an .mn source file to a native binary via LLVM."""
+    """Compile an .mn source file to a native binary.
+
+    Preferred path: emit LLVM IR → clang -c → link. Falls back to C source
+    → gcc when no clang is available (e.g. w64devkit-only bundle on Windows).
+    """
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
@@ -527,55 +554,138 @@ def cmd_build(args: argparse.Namespace) -> None:
     search_paths = [stdlib_path] if stdlib_path else None
     resolver = ModuleResolver(search_paths=search_paths)
     werror = getattr(args, "werror", False)
-    try:
-        llvm_ir = _compile_to_llvm_ir(
-            source,
-            args.source,
-            opt_level=opt_level,
-            target_name=target_name,
-            resolver=resolver,
-            debug=debug,
-            werror=werror,
-            no_verify=_resolve_no_verify(args),
-        )
-    except ParseError as e:
-        _emit_parse_error(e, source, args.source)
-        sys.exit(1)
-    except SemanticErrors as e:
-        _emit_semantic_errors(e, source)
-        sys.exit(1)
-    except ValueError as e:
-        print(f"error: {e}", file=sys.stderr)
-        sys.exit(1)
 
     import tempfile
 
-    # Write LLVM IR to a temp file, then compile to object via clang
+    from mapanare.toolchain import (
+        detect_toolchain,
+        install_instructions,
+        invocation_env,
+    )
+
+    host_tc = detect_toolchain()
+    clang_exe = host_tc.clang if host_tc else None
+
+    # Cross-compiling always needs an LLVM toolchain capable of -target.
+    target_name = getattr(args, "target", None)
+    is_cross_target = target_name is not None and target_name != host_target_name()
+
     base = os.path.splitext(args.source)[0]
     obj_ext = ".obj" if os.name == "nt" else ".o"
     obj_path = base + obj_ext
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".ll", delete=False, encoding="utf-8"
-    ) as ll_file:
-        ll_file.write(llvm_ir)
-        ll_path = ll_file.name
-
-    try:
-        clang_cmd = [
-            "clang",
-            "-c",
-            f"-O{opt_level.value}",
-            ll_path,
-            "-o",
-            obj_path,
-        ]
-        result = subprocess.run(clang_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"error: clang failed:\n{result.stderr}", file=sys.stderr)
+    if clang_exe or is_cross_target:
+        # LLVM path: emit IR, compile via clang.
+        try:
+            llvm_ir = _compile_to_llvm_ir(
+                source,
+                args.source,
+                opt_level=opt_level,
+                target_name=target_name,
+                resolver=resolver,
+                debug=debug,
+                werror=werror,
+                no_verify=_resolve_no_verify(args),
+            )
+        except ParseError as e:
+            _emit_parse_error(e, source, args.source)
             sys.exit(1)
-    finally:
-        os.unlink(ll_path)
+        except SemanticErrors as e:
+            _emit_semantic_errors(e, source)
+            sys.exit(1)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".ll", delete=False, encoding="utf-8"
+        ) as ll_file:
+            ll_file.write(llvm_ir)
+            ll_path = ll_file.name
+
+        try:
+            if not clang_exe:
+                print(
+                    "error: clang not found (required for cross-compilation to "
+                    f"'{target_name}')",
+                    file=sys.stderr,
+                )
+                print("", file=sys.stderr)
+                print(install_instructions(), file=sys.stderr)
+                sys.exit(1)
+            clang_cmd = [
+                clang_exe,
+                "-c",
+                f"-O{opt_level.value}",
+                ll_path,
+                "-o",
+                obj_path,
+            ]
+            result = subprocess.run(
+                clang_cmd,
+                capture_output=True,
+                text=True,
+                env=invocation_env(host_tc) if host_tc else None,
+            )
+            if result.returncode != 0:
+                print(f"error: clang failed:\n{result.stderr}", file=sys.stderr)
+                sys.exit(1)
+        finally:
+            os.unlink(ll_path)
+    else:
+        # No clang — fall back to the C backend with host gcc.
+        if host_tc is None:
+            print("error: no C compiler found", file=sys.stderr)
+            print("", file=sys.stderr)
+            print(install_instructions(), file=sys.stderr)
+            sys.exit(1)
+        try:
+            c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
+        except ParseError as e:
+            _emit_parse_error(e, source, args.source)
+            sys.exit(1)
+        except SemanticErrors as e:
+            _emit_semantic_errors(e, source)
+            sys.exit(1)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".c", delete=False, encoding="utf-8"
+        ) as c_file:
+            c_file.write(c_source)
+            c_path_tmp = c_file.name
+
+        runtime_dir = _runtime_native_dir()
+        runtime_c = os.path.join(runtime_dir, "mapanare_core.c")
+        try:
+            gcc_cmd = [
+                host_tc.compiler,
+                "-c",
+                f"-O{opt_level.value}",
+                f"-I{runtime_dir}",
+                c_path_tmp,
+                "-o",
+                obj_path,
+            ]
+            result = subprocess.run(
+                gcc_cmd,
+                capture_output=True,
+                text=True,
+                env=invocation_env(host_tc),
+            )
+            if result.returncode != 0:
+                print(
+                    f"error: {host_tc.name} compilation failed:\n{result.stderr}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            # Stash runtime path on host_tc so the link step below folds it in.
+            # (pre-built archive wins if present, else we link mapanare_core.c fresh.)
+            args._cbackend_runtime_c = runtime_c
+        finally:
+            os.unlink(c_path_tmp)
 
     # Collect --link-lib flags as -l<lib> / <lib>.lib for linker
     link_libs: list[str] = getattr(args, "link_lib", None) or []
@@ -666,42 +776,95 @@ def cmd_build(args: argparse.Namespace) -> None:
             )
     else:
         # Host compilation: find runtime archive for linking
-        rt_dir = os.path.join(os.path.dirname(__file__), "..", "runtime", "native")
-        rt_archive = os.path.join(rt_dir, "libmapanare_rt.a")
         rt_flags_unix: list[str] = []
         rt_flags_msvc: list[str] = []
-        if os.path.isfile(rt_archive):
-            rt_flags_unix = [rt_archive, "-lm", "-lpthread"]
-        else:
-            rt_flags_unix = ["-lm", "-lpthread"]
 
-        # Host compilation: try common linkers
-        for linker_cmd in (
-            ["clang", obj_path, "-o", out_path] + rt_flags_unix + link_flags_unix,
-            ["gcc", obj_path, "-o", out_path] + rt_flags_unix + link_flags_unix,
-            [
-                "link.exe",
-                f"/OUT:{out_path}",
-                obj_path,
-                "msvcrt.lib",
-                "legacy_stdio_definitions.lib",
-            ]
-            + rt_flags_msvc
-            + link_flags_msvc,
-        ):
-            import shutil
+        # Prefer the toolchain's shipped runtime archive (CI builds one per
+        # platform). Fall back to the in-tree libmapanare_rt.a only on non-
+        # Windows — the checked-in archive is ELF x86_64 and unusable from
+        # MinGW on Windows.
+        rt_archive: str | None = None
+        if host_tc and host_tc.rt_archive and os.path.isfile(host_tc.rt_archive):
+            rt_archive = host_tc.rt_archive
+        elif os.name != "nt":
+            cand = os.path.join(_runtime_native_dir(), "libmapanare_rt.a")
+            if os.path.isfile(cand):
+                rt_archive = cand
 
-            if shutil.which(linker_cmd[0]):
-                result = subprocess.run(linker_cmd, capture_output=True, text=True)
-                if result.returncode == 0:
-                    linked = True
-                    print(f"built {args.source} -> {out_path}")
-                    break
-                else:
-                    print(
-                        f"link warning ({linker_cmd[0]}): {result.stderr[:200]}",
-                        file=sys.stderr,
-                    )
+        rt_flags_unix = [rt_archive] if rt_archive else []
+        # C-backend fallback path: if no pre-built archive, compile & link
+        # mapanare_core.c alongside the user's object file.
+        cbackend_rt = getattr(args, "_cbackend_runtime_c", None)
+        if not rt_archive and cbackend_rt and os.path.isfile(cbackend_rt):
+            rt_flags_unix = [cbackend_rt]
+        if host_tc is None or host_tc.needs_libm_flag:
+            rt_flags_unix.append("-lm")
+        if host_tc is None or host_tc.needs_pthread_flag:
+            rt_flags_unix.append("-lpthread")
+
+        host_env = invocation_env(host_tc) if host_tc else None
+
+        # Preferred compilers: use the detected toolchain first, then common fallbacks.
+        preferred = []
+        if host_tc is not None:
+            preferred.append(host_tc.compiler)
+            if host_tc.clang and host_tc.clang != host_tc.compiler:
+                preferred.append(host_tc.clang)
+        # Always include these so that users with a partial install still link.
+        for fallback in ("clang", "gcc"):
+            if fallback not in preferred:
+                preferred.append(fallback)
+
+        import shutil
+
+        # When the C-backend fallback kicked in, mapanare_core.c is added to
+        # the link line and needs the runtime include path.
+        extra_include: list[str] = []
+        if cbackend_rt:
+            extra_include = [f"-I{_runtime_native_dir()}"]
+
+        attempts: list[list[str]] = []
+        for linker in preferred:
+            attempts.append(
+                [linker]
+                + extra_include
+                + [obj_path, "-o", out_path]
+                + rt_flags_unix
+                + link_flags_unix
+            )
+        # MSVC path: only consider when a real MSVC toolchain is on PATH
+        # (detected via cl.exe). Skipping otherwise avoids collisions with
+        # Git Bash's coreutils `link.exe`, which accepts unrelated flags.
+        if os.name == "nt" and shutil.which("cl.exe") is not None:
+            attempts.append(
+                [
+                    "link.exe",
+                    f"/OUT:{out_path}",
+                    obj_path,
+                    "msvcrt.lib",
+                    "legacy_stdio_definitions.lib",
+                ]
+                + rt_flags_msvc
+                + link_flags_msvc
+            )
+
+        for linker_cmd in attempts:
+            exe = linker_cmd[0]
+            resolved = exe if os.path.isabs(exe) else shutil.which(exe)
+            if not resolved:
+                continue
+            if not os.path.isabs(exe):
+                linker_cmd[0] = resolved
+            result = subprocess.run(linker_cmd, capture_output=True, text=True, env=host_env)
+            if result.returncode == 0:
+                linked = True
+                print(f"built {args.source} -> {out_path}")
+                break
+            else:
+                print(
+                    f"link warning ({os.path.basename(resolved)}): {result.stderr[:200]}",
+                    file=sys.stderr,
+                )
 
     if not linked:
         print(f"compiled {args.source} -> {obj_path} (object file)")
@@ -711,10 +874,16 @@ def cmd_build(args: argparse.Namespace) -> None:
                 f"(e.g. Android NDK for android targets, Xcode for iOS)"
             )
         else:
-            print(
-                "note: no linker found (install clang, gcc, or MSVC build tools "
-                "to produce executables)"
-            )
+            if os.name == "nt":
+                print(
+                    "note: no linker found. install one of:\n"
+                    "  - w64devkit: https://github.com/skeeto/w64devkit/releases\n"
+                    "  - MSYS2:     https://www.msys2.org (install mingw-w64-x86_64-gcc)\n"
+                    "  - LLVM:      https://github.com/llvm/llvm-project/releases\n"
+                    "  - MSVC:      https://visualstudio.microsoft.com/visual-cpp-build-tools/"
+                )
+            else:
+                print("note: no linker found (install clang or gcc to produce executables)")
 
 
 def cmd_emit_llvm(args: argparse.Namespace) -> None:
@@ -781,42 +950,82 @@ def _compile_to_c(
     return emit_c(mir_module, debug=debug)
 
 
+def _runtime_native_dir() -> str:
+    """Locate the ``runtime/native`` directory.
+
+    When running from a PyInstaller one-dir bundle the data is staged alongside
+    the exe; in dev / editable installs it lives one level up from the package.
+    Falls back to a CWD-relative path so users running from the repo still work.
+    """
+    # PyInstaller one-file bundle
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        cand = os.path.join(meipass, "runtime", "native")
+        if os.path.isdir(cand):
+            return cand
+
+    # PyInstaller one-dir or source install
+    pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cand = os.path.join(pkg_root, "runtime", "native")
+    if os.path.isdir(cand):
+        return cand
+
+    # Last resort: CWD
+    return os.path.join("runtime", "native")
+
+
 def _run_c_source(c_source: str, source_file: str) -> None:
-    """Compile C source with gcc and run the resulting binary."""
+    """Compile C source with a C compiler and run the resulting binary."""
     import tempfile
 
-    # Find runtime headers
-    runtime_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "runtime", "native")
-    if not os.path.isdir(runtime_dir):
-        # Fallback: try relative to CWD
-        runtime_dir = os.path.join("runtime", "native")
+    from mapanare.toolchain import (
+        detect_toolchain,
+        install_instructions,
+        invocation_env,
+    )
 
+    # Find runtime headers + source
+    runtime_dir = _runtime_native_dir()
     runtime_c = os.path.join(runtime_dir, "mapanare_core.c")
+
+    tc = detect_toolchain()
+    if tc is None:
+        print("error: no C compiler found", file=sys.stderr)
+        print("", file=sys.stderr)
+        print(install_instructions(), file=sys.stderr)
+        sys.exit(1)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         c_path = os.path.join(tmpdir, "program.c")
-        bin_path = os.path.join(tmpdir, "program")
+        bin_ext = ".exe" if os.name == "nt" else ""
+        bin_path = os.path.join(tmpdir, "program" + bin_ext)
 
         with open(c_path, "w", encoding="utf-8") as f:
             f.write(c_source)
 
-        # Compile
-        gcc_cmd = [
-            "gcc",
+        cmd = [
+            tc.compiler,
             "-O0",
             "-Wall",
             "-Wextra",
             f"-I{runtime_dir}",
             c_path,
-            runtime_c,
-            "-o",
-            bin_path,
-            "-lm",
-            "-lpthread",
         ]
-        result = subprocess.run(gcc_cmd, capture_output=True, text=True)
+        # Prefer pre-built runtime archive when the bundle shipped one;
+        # otherwise compile mapanare_core.c from source alongside the user program.
+        if tc.rt_archive:
+            cmd.append(tc.rt_archive)
+        else:
+            cmd.append(runtime_c)
+        cmd += ["-o", bin_path]
+        if tc.needs_libm_flag:
+            cmd.append("-lm")
+        if tc.needs_pthread_flag:
+            cmd.append("-lpthread")
+
+        result = subprocess.run(cmd, capture_output=True, text=True, env=invocation_env(tc))
         if result.returncode != 0:
-            print(f"error: gcc compilation failed:\n{result.stderr}", file=sys.stderr)
+            print(f"error: {tc.name} compilation failed:\n{result.stderr}", file=sys.stderr)
             sys.exit(1)
 
         # Run
@@ -1525,9 +1734,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     # install
-    p_install = subparsers.add_parser("install", help="Install a Mapanare package (git-based)")
-    p_install.add_argument("package", help="Package name to install")
-    p_install.add_argument("--git", default=None, help="Git repository URL")
+    p_install = subparsers.add_parser(
+        "install", help="Install packages from registry (or all deps from mapanare.toml)"
+    )
+    p_install.add_argument(
+        "package",
+        nargs="?",
+        default=None,
+        help="Package to install (e.g. foo or foo@1.2.3). Omit to install all deps.",
+    )
+    p_install.add_argument("--git", default=None, help="Git repository URL (fallback)")
     p_install.add_argument("--branch", default=None, help="Git branch (default: main)")
     p_install.set_defaults(func=cmd_install)
 

@@ -1,0 +1,4 @@
+# Known false positives — see .claude/skills/culebra-scan/SKILL.md
+missing-typedef
+c-memcpy-size-mismatch
+break-inside-nested-control

@@ -30,6 +30,49 @@ function Resolve-Latest {
 
 function Strip-V { param([string]$v) return $v -replace '^v', '' }
 function Ensure-V { param([string]$v) if ($v -match '^v') { return $v } else { return "v$v" } }
+function Use-BundledToolchain {
+    if ($env:MAPANARE_NO_BUNDLED_LLVM -in @("1", "true", "yes", "TRUE", "YES")) {
+        return $false
+    }
+    if ($env:MAPANARE_NO_BUNDLED_TOOLCHAIN -in @("1", "true", "yes", "TRUE", "YES")) {
+        return $false
+    }
+    return $true
+}
+
+function Resolve-WindowsArtifact {
+    param([string]$verClean, [string]$verTag)
+
+    $useBundled = Use-BundledToolchain
+    $candidates = if ($useBundled) {
+        @(
+            "mapanare-${verClean}-win-x64-sdk.zip",
+            "mapanare-${verClean}-win-x64.zip",
+            "mapanare-win-x64.zip"
+        )
+    } else {
+        @(
+            "mapanare-${verClean}-win-x64-minimal.zip",
+            "mapanare-win-x64-minimal.zip"
+        )
+    }
+
+    foreach ($candidate in $candidates) {
+        $candidateUrl = "https://github.com/$Repo/releases/download/$verTag/$candidate"
+        try {
+            Invoke-WebRequest -Uri $candidateUrl -Method Head -UseBasicParsing -ErrorAction Stop | Out-Null
+            return @{
+                Artifact = $candidate
+                Url = $candidateUrl
+                Bundled = $useBundled
+            }
+        } catch {
+            Write-Host "  Asset not found: $candidate" -ForegroundColor Yellow
+        }
+    }
+
+    throw "No compatible Windows artifact found for $verTag"
+}
 
 function Cmd-Install {
     param([string]$ver)
@@ -49,13 +92,16 @@ function Cmd-Install {
         return
     }
 
-    $artifact = "mapanare-win-x64.zip"
-    $url = "https://github.com/$Repo/releases/download/$verTag/$artifact"
+    $resolved = Resolve-WindowsArtifact $verClean $verTag
+    $artifact = $resolved.Artifact
+    $url = $resolved.Url
+    $toolchainStatus = if ($resolved.Bundled) { "Windows SDK bundled" } else { "minimal - compiler required separately" }
 
     Write-Host ""
     Write-Host "  mapanare-up install" -ForegroundColor Cyan
     Write-Host "  Version:  $verClean"
     Write-Host "  Platform: windows-x64"
+    Write-Host "  Toolchain: $toolchainStatus"
     Write-Host ""
 
     $tmp = Join-Path $env:TEMP "mapanare-up-$(Get-Random)"
@@ -70,6 +116,9 @@ function Cmd-Install {
 
         New-Item -ItemType Directory -Path $dest -Force | Out-Null
         Copy-Item -Path "$tmp\mapanare\*" -Destination $dest -Recurse -Force
+        if ((Test-Path "$dest\mapanare.exe") -and -not (Test-Path "$dest\mnc.exe")) {
+            Copy-Item -Path "$dest\mapanare.exe" -Destination "$dest\mnc.exe" -Force
+        }
 
         if (-not (Test-Path $DefaultFile)) {
             Set-Content -Path $DefaultFile -Value $verClean

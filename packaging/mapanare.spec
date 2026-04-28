@@ -25,16 +25,21 @@ sep = os.sep
 # Paths are relative to this spec file; go up one level to reach repo root
 root = os.path.normpath(os.path.join(SPECPATH, '..'))
 
+# Do not let PyInstaller auto-capture repo/toolchain/. Windows SDK payloads
+# are staged after the minimal ZIP is archived, so the opt-in minimal artifact
+# remains app-only and release ZIPs do not double-ship compiler stacks.
+bundled_datas = [
+    (os.path.join(root, 'mapanare'), 'mapanare'),
+    (os.path.join(root, 'runtime'), 'runtime'),
+    (os.path.join(root, 'stdlib'), 'stdlib'),
+    (os.path.join(root, 'VERSION'), '.'),
+]
+
 a = Analysis(
     [os.path.join(root, 'packaging', 'pyinstaller-entry.py')],
     pathex=[root],
     binaries=[],
-    datas=[
-        (os.path.join(root, 'mapanare'), 'mapanare'),
-        (os.path.join(root, 'runtime'), 'runtime'),
-        (os.path.join(root, 'stdlib'), 'stdlib'),
-        (os.path.join(root, 'VERSION'), '.'),
-    ] + mapanare_metadata,
+    datas=bundled_datas + mapanare_metadata,
     hiddenimports=[
         'lark',
         'llvmlite',
@@ -63,6 +68,8 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+icon_path = os.path.join(root, 'packaging', 'mapanare.ico') if is_windows else None
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -74,6 +81,7 @@ exe = EXE(
     strip=do_strip,
     upx=do_upx,
     upx_exclude=[],
+    icon=icon_path,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,

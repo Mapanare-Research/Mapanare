@@ -107,12 +107,15 @@ jobs:
 
             | Platform | Full CLI | Native Compiler |
             |:---------|:--------:|:---------------:|
-            | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-linux-x64) |
-            | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-darwin-arm64) |
-            | **Windows** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-win-x64.zip) | — |
+            | **Linux** x86_64 | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-linux-x64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-linux-x64) |
+            | **macOS** Apple Silicon | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-mac-arm64.tar.gz) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-darwin-arm64) |
+            | **macOS** Intel | — | Build from source ([instructions](https://github.com/${{ github.repository }}#building-from-source)) |
+            | **Windows** x86_64 | [SDK](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-win-x64-sdk.zip) · [Minimal](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mapanare-${{ steps.bump_version.outputs.new_version }}-win-x64-minimal.zip) | [Download](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/mnc-${{ steps.bump_version.outputs.new_version }}-win-x64.exe) |
 
             > **Full CLI** includes the compiler, Python transpiler, LSP, and WASM backend.
             > **Native Compiler** is a single ~3 MB binary with no dependencies.
+            >
+            > **Windows users:** the default SDK download bundles a curated LLVM-MinGW/UCRT compiler SDK so `mnc run` and `mnc build` work with zero external installs. Power users with their own compiler can use the **Minimal** variant (set `MAPANARE_NO_BUNDLED_TOOLCHAIN=1` or the legacy `MAPANARE_NO_BUNDLED_LLVM=1` before `install.ps1` to download it automatically).
             >
             > [SHA256 Checksums](https://github.com/${{ github.repository }}/releases/download/v${{ steps.bump_version.outputs.new_version }}/SHA256SUMS.txt)
 
@@ -189,6 +192,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
 
   # =========================================================================
   # 3. Build CLI binary with PyInstaller (3 platforms)
@@ -243,6 +247,12 @@ jobs:
       - name: Build CLI binary
         run: pyinstaller packaging/mapanare.spec --clean
 
+      - name: Stage mnc alias in Windows CLI bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item dist/mapanare/mapanare.exe dist/mapanare/mnc.exe -Force
+
       - name: Smoke test CLI binary
         shell: bash
         run: |
@@ -254,17 +264,203 @@ jobs:
           "$BINARY" --help
           echo "CLI smoke test passed"
 
+      # -------------------------------------------------------------------
+      # v5.12.0 Wk.* - archive the true minimal Windows ZIP before any SDK
+      # payload is staged. Then add one curated LLVM-MinGW/UCRT SDK under
+      # dist/mapanare/sdk/ and archive the default SDK ZIP.
+      # -------------------------------------------------------------------
+      - name: Archive minimal CLI bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          V="${{ needs.release.outputs.new_version }}"
+          for forbidden in toolchain sdk llvm; do
+            if [[ -d "mapanare/$forbidden" ]]; then
+              echo "FATAL: minimal ZIP must not contain $forbidden/"
+              exit 1
+            fi
+          done
+          7z a "mapanare-${V}-win-x64-minimal.zip" mapanare/
+          cp "mapanare-${V}-win-x64-minimal.zip" mapanare-win-x64-minimal.zip
+          export ZIP="mapanare-${V}-win-x64-minimal.zip"
+          python -c "import os, sys; mb=round(os.path.getsize(os.environ['ZIP'])/1024/1024,1); print(f'Minimal ZIP size: {mb} MB'); sys.exit(1 if mb > 40 else 0)"
+
+      - name: Cache LLVM-MinGW SDK (Windows)
+        id: llvm-mingw-cache
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        env:
+          LLVM_MINGW_VERSION: "20260421"
+        with:
+          path: .tmp-llvm-mingw
+          key: llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-ucrt-x86_64
+
+      - name: Download + extract LLVM-MinGW SDK (cache miss)
+        if: runner.os == 'Windows' && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          LLVM_MINGW_VERSION: "20260421"
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp-llvm-mingw
+          cd .tmp-llvm-mingw
+          url="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-x86_64.zip"
+          curl -fL -o llvm-mingw.zip "$url"
+          7z x llvm-mingw.zip
+          rm llvm-mingw.zip
+          ls "llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-x86_64/bin/clang.exe"
+
+      - name: Stage LLVM-MinGW SDK into PyInstaller dir (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./tools/llvm-mingw-bundle/extract_sdk.ps1 `
+              -LlvmMingwDir .tmp-llvm-mingw/llvm-mingw-20260421-ucrt-x86_64 `
+              -OutDir dist/mapanare/sdk
+
+      - name: Pre-build Windows runtime archive with SDK
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_BIN="$PWD/dist/mapanare/sdk/bin"
+          mkdir -p dist/mapanare/sdk/lib/mapanare
+          VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
+          cd runtime/native
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_core.c   -o mapanare_rt_mapanare_core.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_db.c     -o mapanare_rt_mapanare_db.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_io.c     -o mapanare_rt_mapanare_io.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_html.c   -o mapanare_rt_mapanare_html.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_runtime.c -o mapanare_rt_mapanare_runtime.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_gpu.c    -o mapanare_rt_mapanare_gpu.o
+          "$SDK_BIN/clang.exe" -c -O2 -I. $VERSION_FLAG mapanare_gpu_builtins.c -o mapanare_rt_mapanare_gpu_builtins.o
+          "$SDK_BIN/llvm-ar.exe" rcs "$GITHUB_WORKSPACE/dist/mapanare/sdk/lib/mapanare/libmapanare_rt.a" \
+            mapanare_rt_*.o
+          rm -f mapanare_rt_*.o
+          ls -la "$GITHUB_WORKSPACE/dist/mapanare/sdk/lib/mapanare/"
+
+      - name: Clean Windows SDK smoke before archiving
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path dist/mapanare/toolchain) {
+            throw "toolchain/ must not be staged into the v5.12.0 Windows CLI bundle"
+          }
+          $env:PATH = "C:\Windows\System32;C:\Windows"
+          Remove-Item Env:LIB -ErrorAction SilentlyContinue
+          Remove-Item Env:INCLUDE -ErrorAction SilentlyContinue
+          Remove-Item Env:CC -ErrorAction SilentlyContinue
+          Remove-Item Env:CXX -ErrorAction SilentlyContinue
+          @"
+          fn main() {
+              print("hello from clean Windows SDK smoke")
+          }
+          "@ | Out-File hello.mn -Encoding ASCII
+          & ./dist/mapanare/mnc.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version failed" }
+          & ./dist/mapanare/mnc.exe run hello.mn
+          if ($LASTEXITCODE -ne 0) { throw "run failed" }
+          & ./dist/mapanare/mnc.exe build hello.mn -o hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+          & ./hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "built exe failed" }
+          # `mnc test` remains covered by TR.1 and currently lacks a
+          # synthetic main entry point. Keep this smoke focused on the
+          # clean-Windows SDK contract: version, run, build, execute.
+
+      # Stage THIRD-PARTY-LICENSES.md inside the bundle so users can
+      # read what was redistributed without going to the repo. The doc
+      # itself is checked into ``docs/`` (Phase 5).
+      - name: Stage third-party license docs (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          if [[ -f docs/THIRD-PARTY-LICENSES.md ]]; then
+            cp docs/THIRD-PARTY-LICENSES.md dist/mapanare/THIRD-PARTY-LICENSES.md
+          fi
+
+      - name: Archive SDK CLI bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          V="${{ needs.release.outputs.new_version }}"
+          if [[ -d mapanare/toolchain ]]; then
+            echo "FATAL: toolchain/ must not be shipped after Wk.*"
+            exit 1
+          fi
+          if [[ ! -f mapanare/sdk/bin/clang.exe ]]; then
+            echo "FATAL: SDK ZIP missing sdk/bin/clang.exe"
+            exit 1
+          fi
+          7z a "mapanare-${V}-win-x64-sdk.zip" mapanare/
+          cp "mapanare-${V}-win-x64-sdk.zip" "mapanare-${V}-win-x64.zip"
+          cp "mapanare-${V}-win-x64-sdk.zip" mapanare-win-x64.zip
+          export SDK_ZIP="mapanare-${V}-win-x64-sdk.zip"
+          python -c "import os, sys; mb=round(os.path.getsize(os.environ['SDK_ZIP'])/1024/1024,1); print(f'SDK ZIP size: {mb} MB'); sys.exit(1 if mb > 180 else 0)"
+          python -c "import os; mb=round(os.path.getsize(os.environ['SDK_ZIP'])/1024/1024,1); print('WARNING: SDK ZIP exceeds 150 MB target ({0} MB)'.format(mb)) if mb > 150 else None"
+
+      # v5.11.0 Pk.1: produce a versioned archive (e.g.
+      # mapanare-5.11.0-linux-x64.tar.gz) plus a copy at the legacy
+      # unversioned name so existing install scripts keep working
+      # through the 2-release soak window (drop legacy in v5.13.0).
       - name: Archive CLI binary
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cd dist
-          ${{ matrix.archive_cmd }} "${{ matrix.archive_name }}" mapanare/
+          V="${{ needs.release.outputs.new_version }}"
+          # Compute versioned archive name by inserting -${V} after the
+          # 'mapanare' prefix in matrix.archive_name. The matrix entry
+          # already encodes platform/extension; we only inject the
+          # version segment. Examples:
+          #   mapanare-linux-x64.tar.gz -> mapanare-5.11.0-linux-x64.tar.gz
+          #   mapanare-mac-arm64.tar.gz -> mapanare-5.11.0-mac-arm64.tar.gz
+          #   mapanare-win-x64.zip      -> mapanare-5.11.0-win-x64.zip
+          VERSIONED_NAME="${{ matrix.archive_name }}"
+          VERSIONED_NAME="${VERSIONED_NAME/mapanare-/mapanare-${V}-}"
+          ${{ matrix.archive_cmd }} "$VERSIONED_NAME" mapanare/
+          cp "$VERSIONED_NAME" "${{ matrix.archive_name }}"
+          ls -la "$VERSIONED_NAME" "${{ matrix.archive_name }}"
+          # Stash the computed name for the upload step.
+          echo "VERSIONED_ARCHIVE=$VERSIONED_NAME" >> "$GITHUB_ENV"
 
       - name: Upload CLI archive to GitHub Release
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           gh release upload "v${{ needs.release.outputs.new_version }}" \
+            "dist/${{ env.VERSIONED_ARCHIVE }}" \
             "dist/${{ matrix.archive_name }}" \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SDK Windows ZIP to GitHub Release
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          V="${{ needs.release.outputs.new_version }}"
+          gh release upload "v${{ needs.release.outputs.new_version }}" \
+            "dist/mapanare-${V}-win-x64-sdk.zip" \
+            "dist/mapanare-${V}-win-x64.zip" \
+            dist/mapanare-win-x64.zip \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # v5.11.0 Pk.1: upload both versioned + legacy minimal ZIP.
+      - name: Upload minimal Windows ZIP to GitHub Release
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          V="${{ needs.release.outputs.new_version }}"
+          gh release upload "v${{ needs.release.outputs.new_version }}" \
+            "dist/mapanare-${V}-win-x64-minimal.zip" \
+            dist/mapanare-win-x64-minimal.zip \
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -281,8 +477,17 @@ jobs:
           - os: ubuntu-latest
             artifact: mnc-linux-x64
             triple: x86_64-linux-gnu
-          # macOS/Windows native binaries tracked for v5.x.
-          # Both platforms get the full CLI via PyInstaller.
+          - os: windows-latest
+            artifact: mnc-win-x64.exe
+            triple: x86_64-w64-mingw32
+          # v5.8.8 Da.3: re-add Apple Silicon native binary. v5.8.7 had
+          # to defer this when the macos-13 → macos-latest runner switch
+          # surfaced the AAPCS64 ABI bug (Da.1, closed v5.8.8). The Da.2
+          # CI gate now exercises the same self-compile path on every
+          # PR, so an ABI regression cannot reach this job silently.
+          - os: macos-latest
+            artifact: mnc-darwin-arm64
+            triple: aarch64-apple-darwin
 
     runs-on: ${{ matrix.os }}
 
@@ -309,11 +514,43 @@ jobs:
             echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
           fi
 
+      # -------------------------------------------------------------------
+      # Windows only: vendor a portable MinGW toolchain (w64devkit) so the
+      # Windows native-compiler job has gcc/clang without installing LLVM
+      # system-wide. Mirrors the build-cli job's toolchain staging.
+      # -------------------------------------------------------------------
+      - name: Stage portable toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          W64DEVKIT_VERSION: "2.7.0"
+        run: |
+          set -euo pipefail
+          url="https://github.com/skeeto/w64devkit/releases/download/v${W64DEVKIT_VERSION}/w64devkit-x64-${W64DEVKIT_VERSION}.7z.exe"
+          mkdir -p .tmp-tc && cd .tmp-tc
+          curl -fL -o w64devkit.exe "$url"
+          ./w64devkit.exe -y -o.
+          mv w64devkit ../toolchain
+          cd ..
+          ls toolchain/bin/gcc.exe
+          ./toolchain/bin/gcc.exe --version
+
       - name: Build mnc-stage1 via Python
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            python scripts/build_stage1.py --use-committed
+            python scripts/build_stage1.py
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            # scripts/build_stage1.py has full Windows support since v4.159.0
+            # (MinGW triple, -mno-stack-arg-probe, __chkstk=___chkstk_ms alias,
+            # -Wl,--stack,67108864, POSIX-module skip list). It just needs
+            # gcc + clang on PATH — the bundled w64devkit provides both.
+            export PATH="$PWD/toolchain/bin:$PATH"
+            gcc --version
+            clang --version
+            python scripts/build_stage1.py
+            cp mapanare/self/mnc-stage1.exe "${{ matrix.artifact }}"
+            ls -la "${{ matrix.artifact }}"
           else
             python scripts/build_stage1.py
           fi
@@ -322,11 +559,135 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            echo "Skipping native build on Windows (needs clang cross-setup)"
-          else
-            ./mapanare/self/mnc-stage1 mapanare/self/mnc_all.mn > /tmp/stage2.ll
+            # v5.8.4 Wb.2 closed: the self-hosted emit_llvm.mn is now
+            # target-aware. mnc-stage1.exe on Windows emits Win64
+            # sret-style aggregate-return declarations and call sites
+            # for the ~37 runtime fns that previously diverged from
+            # gcc's Win64 C ABI. Self-compile-to-stage2 cycle re-enabled.
+            export PATH="$PWD/toolchain/bin:$PATH"
+            # Wb.1.dx instrumentation (paid forward from v5.8.3 PROMPT
+            # Phase 4): if any step crashes, capture a backtrace before
+            # the job exits so we don't have to re-trigger CI to
+            # diagnose. Cheap; no-op on success.
+            set +e
+            # v5.9.1 DX.5 / v5.10.0 Bb.4: explicit `emit-llvm` subcommand.
+            # The v5.10.0 seed refresh propagated the new run-by-default
+            # behavior to mnc-stage1.exe; bare `mnc <file>` would attempt
+            # to RUN mnc_all.mn (the compiler) instead of emit IR.
+            ./mapanare/self/mnc-stage1.exe emit-llvm mapanare/self/mnc_all.mn > stage2.ll
+            rc=$?
+            set -e
+            if [[ $rc -ne 0 ]]; then
+              echo "=== Wb.1.dx: mnc-stage1.exe exited $rc; capturing diagnostics ==="
+              if command -v gdb >/dev/null; then
+                # gdb args mirror the failing invocation above (the
+                # explicit `emit-llvm` subcommand is required after
+                # v5.9.1 DX.5 made bare `mnc <file.mn>` run-by-default).
+                gdb -batch \
+                  -ex 'set args emit-llvm mapanare/self/mnc_all.mn' \
+                  -ex 'run' -ex 'bt 30' \
+                  ./mapanare/self/mnc-stage1.exe || true
+              fi
+              exit $rc
+            fi
+            clang --target=x86_64-w64-mingw32 -c -O2 -mno-stack-arg-probe \
+              stage2.ll -o stage2.o
+            # Stage2 self-compile of mnc_all.mn needs a generous stack
+            # because the self-hosted compiler's recursive descent path
+            # plus the v5.8.4 sarg/sret allocas push beyond the v5.8.2
+            # 64 MB cushion. 256 MB is the next power-of-two and matches
+            # what we verified locally.
+            VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
+            gcc -O2 stage2.o \
+              $VERSION_FLAG \
+              runtime/native/mapanare_core.c \
+              runtime/native/mapanare_runtime.c \
+              runtime/native/mapanare_gpu.c \
+              runtime/native/mapanare_gpu_builtins.c \
+              mapanare/self/mnc_main.c \
+              -I runtime/native \
+              -o "${{ matrix.artifact }}" \
+              -lm \
+              -Wl,--stack,268435456 \
+              -Wl,--defsym=__chkstk=___chkstk_ms
+            ls -la "${{ matrix.artifact }}"
+            # Strip in place to keep the artifact small for releases.
+            ./toolchain/bin/strip.exe "${{ matrix.artifact }}" || true
+            # Wb.1.dx wrap for the stage2 binary running mnc_all.mn —
+            # this is where Wb.2 used to manifest as a hard SIGSEGV.
+            # v5.9.1 DX.5 / v5.10.0 Bb.4: explicit `emit-llvm` subcommand.
+            # Without it, `mnc <file.mn>` would compile + run mnc_all.mn
+            # (the compiler) and then attempt to invoke the resulting
+            # binary with no args — pre-v5.11.0 builds papered over this
+            # because the deprecation note path still emitted IR; v5.11.0
+            # Pk.2 dropped that fallback so the run-by-default dispatch
+            # is now hit literally. Manifests as garbage `size_t` from a
+            # path-string to `__mn_alloc` (e.g. "...M\eranb..." → OOM).
+            set +e
+            ./"${{ matrix.artifact }}" emit-llvm mapanare/self/mnc_all.mn > stage3.ll
+            rc=$?
+            set -e
+            if [[ $rc -ne 0 ]]; then
+              echo "=== Wb.1.dx: mnc-stage2 exited $rc; capturing diagnostics ==="
+              if command -v gdb >/dev/null; then
+                gdb -batch -ex run -ex 'bt 30' \
+                  --args ./"${{ matrix.artifact }}" emit-llvm mapanare/self/mnc_all.mn || true
+              fi
+              exit $rc
+            fi
+            # Fixed-point gate. The non-VERSION drift threshold mirrors
+            # the Linux/macOS Dr.1 baseline: a strict 4-line VERSION-
+            # only diff would be best, but until the self-hosted
+            # compiler substitutes __MN_VERSION__ we tolerate up to 10
+            # lines (same threshold the v5.8.4 PLAN exit criterion
+            # uses).
+            diff_count=$(diff stage2.ll stage3.ll | grep -c '^[<>]' || true)
+            echo "Windows fixed-point diff: $diff_count lines"
+            if [[ $diff_count -gt 10 ]]; then
+              echo "FATAL: Windows fixed-point drift > 10 lines"
+              diff stage2.ll stage3.ll | head -40 || true
+              exit 1
+            fi
+            echo "Windows fixed point OK (<= 10-line VERSION-only drift)"
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            # v5.8.8 Da.3: macOS arm64 build path. Differs from Linux on
+            # three points: (1) link Metal/Foundation frameworks because
+            # mapanare_gpu.c dispatches to the Objective-C Metal backend
+            # via mapanare_metal.m; (2) use ld64's -Wl,-stack_size,...
+            # syntax (GNU ld -z stack-size= is rejected); (3) include
+            # mapanare_io / mapanare_db / mapanare_html (POSIX modules
+            # that ship in the Mac binary, unlike Windows).
+            # v5.9.1 DX.5 / v5.10.0 Bb.4: explicit `emit-llvm` subcommand.
+            ./mapanare/self/mnc-stage1 emit-llvm mapanare/self/mnc_all.mn > /tmp/stage2.ll
             clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o
+            clang -c -O2 -fobjc-arc runtime/native/mapanare_metal.m -o /tmp/mapanare_metal.o
+            VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
             clang -O2 /tmp/stage2.o \
+              $VERSION_FLAG \
+              runtime/native/mapanare_core.c \
+              runtime/native/mapanare_runtime.c \
+              runtime/native/mapanare_gpu.c \
+              runtime/native/mapanare_gpu_builtins.c \
+              runtime/native/mapanare_io.c \
+              runtime/native/mapanare_db.c \
+              runtime/native/mapanare_html.c \
+              /tmp/mapanare_metal.o \
+              mapanare/self/mnc_main.c \
+              -I runtime/native \
+              -o "${{ matrix.artifact }}" \
+              -lm -lpthread \
+              -framework Metal -framework Foundation -fobjc-arc \
+              -Wl,-stack_size,0x4000000
+            ls -la "${{ matrix.artifact }}"
+            file "${{ matrix.artifact }}"
+            strip "${{ matrix.artifact }}" || true
+          else
+            # v5.9.1 DX.5 / v5.10.0 Bb.4: explicit `emit-llvm` subcommand.
+            ./mapanare/self/mnc-stage1 emit-llvm mapanare/self/mnc_all.mn > /tmp/stage2.ll
+            clang -c -O2 /tmp/stage2.ll -o /tmp/stage2.o
+            VERSION_FLAG="-DMAPANARE_VERSION=\"$(cat VERSION | tr -d '[:space:]')\""
+            clang -O2 /tmp/stage2.o \
+              $VERSION_FLAG \
               runtime/native/mapanare_core.c \
               runtime/native/mapanare_io.c \
               runtime/native/mapanare_runtime.c \
@@ -338,6 +699,7 @@ jobs:
               -lm -lpthread -ldl \
               -Wl,-z,stack-size=67108864 2>/dev/null \
               || clang -O2 /tmp/stage2.o \
+                $VERSION_FLAG \
                 runtime/native/mapanare_core.c \
                 runtime/native/mapanare_io.c \
                 runtime/native/mapanare_runtime.c \
@@ -354,9 +716,40 @@ jobs:
         run: |
           if [[ -f "${{ matrix.artifact }}" ]]; then
             ./${{ matrix.artifact }} --version
+            # Compile a trivial .mn end-to-end to catch any missing-symbol
+            # link errors the --version path alone wouldn't exercise.
+            # v5.9.1 DX.5: bare `mnc <file.mn>` now compiles + runs; we
+            # want IR emission, so use the explicit `emit-llvm`
+            # subcommand. Same root cause as the v5.11.2 Pk.2.dx fix
+            # for the stage2→stage3 self-validate. (Manifested as
+            # "out of memory (requested 7011361785666170466 bytes)" —
+            # garbage path-string bytes interpreted as a size_t.)
+            echo 'fn main() { print("hello from mnc smoke") }' > mnc_smoke.mn
+            ./${{ matrix.artifact }} emit-llvm mnc_smoke.mn > mnc_smoke.ll
+            head -5 mnc_smoke.ll
+            rm -f mnc_smoke.mn mnc_smoke.ll
             echo "Native binary smoke test passed"
           else
             echo "No native binary produced (platform may not support it)"
+          fi
+
+      # v5.11.0 Pk.1: also produce a versioned copy of the native
+      # compiler binary. Legacy unversioned name kept as a 2-release
+      # alias (drop in v5.13.0).
+      - name: Stage versioned native binary
+        shell: bash
+        run: |
+          if [[ -f "${{ matrix.artifact }}" ]]; then
+            V="${{ needs.release.outputs.new_version }}"
+            # Inject -${V} after the 'mnc' prefix:
+            #   mnc-linux-x64       -> mnc-5.11.0-linux-x64
+            #   mnc-darwin-arm64    -> mnc-5.11.0-darwin-arm64
+            #   mnc-win-x64.exe     -> mnc-5.11.0-win-x64.exe
+            VERSIONED_NAME="${{ matrix.artifact }}"
+            VERSIONED_NAME="${VERSIONED_NAME/mnc-/mnc-${V}-}"
+            cp "${{ matrix.artifact }}" "$VERSIONED_NAME"
+            ls -la "$VERSIONED_NAME" "${{ matrix.artifact }}"
+            echo "VERSIONED_NATIVE=$VERSIONED_NAME" >> "$GITHUB_ENV"
           fi
 
       - name: Upload native binary to release
@@ -364,16 +757,82 @@ jobs:
         run: |
           if [[ -f "${{ matrix.artifact }}" ]]; then
             gh release upload "v${{ needs.release.outputs.new_version }}" \
-              "${{ matrix.artifact }}" --clobber
+              "${{ env.VERSIONED_NATIVE }}" \
+              "${{ matrix.artifact }}" \
+              --clobber
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # =========================================================================
-  # 5. Generate SHA256 checksums for all release artifacts
+  # 5. Smoke-test the published Windows SDK ZIP end-to-end with PATH,
+  # LIB, and INCLUDE stripped. This catches clean-machine SDK failures
+  # before users do.
+  # =========================================================================
+  windows-sdk-smoke:
+    needs: [release, build-cli]
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download published SDK ZIP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $V = "${{ needs.release.outputs.new_version }}"
+          $Asset = "mapanare-${V}-win-x64-sdk.zip"
+          gh release download "v${V}" -p "$Asset" -O mapanare.zip
+          if (-not (Test-Path mapanare.zip)) {
+            throw "$Asset not found in release"
+          }
+          $size_mb = [math]::Round((Get-Item mapanare.zip).Length / 1MB, 1)
+          Write-Host "SDK ZIP size: $size_mb MB"
+          if ($size_mb -gt 180) {
+            throw "SDK ZIP exceeds 180 MB hard gate ($size_mb MB)"
+          }
+          if ($size_mb -gt 150) {
+            Write-Warning "SDK ZIP exceeds 150 MB target ($size_mb MB)"
+          }
+
+      - name: Extract + smoke (PATH stripped)
+        shell: pwsh
+        run: |
+          Expand-Archive mapanare.zip -DestinationPath out
+          if (Test-Path out\mapanare\toolchain) {
+            throw "toolchain/ must not be shipped after Wk.*"
+          }
+          if (-not (Test-Path out\mapanare\sdk\bin\clang.exe)) {
+            throw "SDK ZIP missing sdk\bin\clang.exe"
+          }
+          $env:PATH = "C:\Windows\System32;C:\Windows"
+          Remove-Item Env:LIB -ErrorAction SilentlyContinue
+          Remove-Item Env:INCLUDE -ErrorAction SilentlyContinue
+          Remove-Item Env:CC -ErrorAction SilentlyContinue
+          Remove-Item Env:CXX -ErrorAction SilentlyContinue
+          @"
+          fn main() {
+              print("hello from clean Windows smoke")
+          }
+          "@ | Out-File hello.mn -Encoding ASCII
+          & ./out/mapanare/mnc.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version failed" }
+          & ./out/mapanare/mnc.exe run hello.mn
+          if ($LASTEXITCODE -ne 0) { throw "run failed" }
+          & ./out/mapanare/mnc.exe build hello.mn -o hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+          & ./hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "built exe failed" }
+          Write-Host "Windows SDK smoke: OK"
+
+  # =========================================================================
+  # 6. Generate SHA256 checksums for all release artifacts
   # =========================================================================
   checksums:
-    needs: [release, build-cli, build-native]
+    needs: [release, build-cli, build-native, windows-sdk-smoke]
     runs-on: ubuntu-latest
 
     steps:
@@ -409,7 +868,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # =========================================================================
-  # 6. Update release body with actual asset sizes
+  # 7. Update release body with actual asset sizes
   # =========================================================================
   update-release:
     needs: [release, build-cli, build-native, checksums]

@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* =======================================================================
  * Platform-specific includes
@@ -30,7 +31,6 @@
 
 #else /* POSIX */
   #include <unistd.h>
-  #include <time.h>
   #include <dlfcn.h>
 
   #define mn_dlopen(name)       dlopen(name, RTLD_LAZY)

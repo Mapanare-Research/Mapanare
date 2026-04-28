@@ -188,6 +188,12 @@ struct MatchArmResult {
     pos: Int
 }
 
+// v5.6.3 Sh.6 Phase 4 — subscript item parser result.
+struct IndexItemResult {
+    item: IndexItem,
+    pos: Int
+}
+
 // ---------------------------------------------------------------------------
 // Constructor functions — populate result structs positionally
 // ---------------------------------------------------------------------------
@@ -1564,11 +1570,28 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
             p = p + 1
             let body: ExprResult = parse_expr(tokens, p, filename, 0)
             // Extract lambda params from the left-hand side expression.
-            // (n) => ... parses as Ident("n") on the left of =>
+            //   (n) => ...        parses as Ident("n")
+            //   (a, b) => ...     parses as ListLit([Ident("a"), Ident("b")])
+            //                     (parse_paren_expr collects comma-separated
+            //                     elements into a ListLit)
+            // v5.7.0 Sh.7: ListLit case was previously skipped, leaving
+            // multi-param lambdas with zero params and undefined-variable
+            // errors when their bodies referenced a, b, ...
             let mut params: List<Param> = []
             match left {
                 Ident(name) => {
                     params.push(new_param(name, none))
+                },
+                ListLit(elems) => {
+                    let mut li: Int = 0
+                    for _ in 0..32 {
+                        if li >= len(elems) { break }
+                        let elem: Expr = elems[li]
+                        if expr_kind(elem) == "ident" {
+                            params.push(new_param(expr_ident_name(elem), none))
+                        }
+                        li = li + 1
+                    }
                 },
                 _ => {}
             }
@@ -1671,10 +1694,31 @@ fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
             } else {
                 if tt == "LBRACKET" {
                     p = p + 1
-                    let idx_r: ExprResult = parse_expr(tokens, p, filename, 0)
-                    p = idx_r.pos
+                    let mut items: List<IndexItem> = []
+                    let first_ii: IndexItemResult = parse_index_item(tokens, p, filename)
+                    p = first_ii.pos
+                    items.push(first_ii.item)
+                    for _ in 0..128 {
+                        if peek_type(tokens, p) == "COMMA" {
+                            p = p + 1
+                            let nxt_ii: IndexItemResult = parse_index_item(tokens, p, filename)
+                            p = nxt_ii.pos
+                            items.push(nxt_ii.item)
+                        }
+                    }
                     p = expect(tokens, p, "RBRACKET")
-                    left = Expr::Index(left, idx_r.expr)
+                    // Route to Index (1 scalar), TensorIndex (≥2 scalars), or
+                    // TensorSlice (any non-scalar item). v5.6.3 Sh.6 Phase 4.
+                    let has_nonscalar: Bool = any_nonscalar_item(items)
+                    if has_nonscalar {
+                        left = Expr::TensorSlice(left, items)
+                    } else {
+                        if len(items) == 1 {
+                            left = Expr::Index(left, items[0].expr)
+                        } else {
+                            left = Expr::TensorIndex(left, scalar_exprs_of(items))
+                        }
+                    }
                 } else {
                     if tt == "QUESTION" {
                         p = p + 1
@@ -1688,6 +1732,68 @@ fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
     }
 
     return new_expr_result(left, p)
+}
+
+// v5.6.3 Sh.6 Phase 4 — parse one subscript item (scalar / range / wildcard).
+//
+// Forms:
+//   _              → wildcard (Expr::TensorSlice IndexItem kind="wildcard")
+//   ..end          → range, open start (NoneLit..end)
+//   start..        → range, open end   (start..NoneLit)   — detects COMMA/RBRACKET
+//   start..end     → range
+//   expr           → scalar
+//
+// The expression parser normally eats `..` as a binary range operator
+// (precedence 6). We pass min_prec=7 so parse_expr stops before `..` and
+// we can classify the item ourselves.
+fn parse_index_item(tokens: List<Token>, pos: Int, filename: String) -> IndexItemResult {
+    if peek_type(tokens, pos) == "UNDERSCORE" {
+        return new IndexItemResult { item: wildcard_index_item(), pos: pos + 1 }
+    }
+    if peek_type(tokens, pos) == "RANGE" {
+        // `..end` — open start
+        let end_r: ExprResult = parse_expr(tokens, pos + 1, filename, 7)
+        return new IndexItemResult { item: range_index_item(Expr::NoneLit, end_r.expr), pos: end_r.pos }
+    }
+    let first: ExprResult = parse_expr(tokens, pos, filename, 7)
+    if peek_type(tokens, first.pos) == "RANGE" {
+        let after_dd: Int = first.pos + 1
+        let close: String = peek_type(tokens, after_dd)
+        if close == "COMMA" {
+            return new IndexItemResult { item: range_index_item(first.expr, Expr::NoneLit), pos: after_dd }
+        }
+        if close == "RBRACKET" {
+            return new IndexItemResult { item: range_index_item(first.expr, Expr::NoneLit), pos: after_dd }
+        }
+        let end_r: ExprResult = parse_expr(tokens, after_dd, filename, 7)
+        return new IndexItemResult { item: range_index_item(first.expr, end_r.expr), pos: end_r.pos }
+    }
+    return new IndexItemResult { item: scalar_index_item(first.expr), pos: first.pos }
+}
+
+fn any_nonscalar_item(items: List<IndexItem>) -> Bool {
+    let mut i: Int = 0
+    let n: Int = len(items)
+    for _ in 0..128 {
+        if i < n {
+            if items[i].kind != "scalar" { return true }
+            i = i + 1
+        }
+    }
+    return false
+}
+
+fn scalar_exprs_of(items: List<IndexItem>) -> List<Expr> {
+    let mut out: List<Expr> = []
+    let mut i: Int = 0
+    let n: Int = len(items)
+    for _ in 0..128 {
+        if i < n {
+            out.push(items[i].expr)
+            i = i + 1
+        }
+    }
+    return out
 }
 
 fn parse_call_args(tokens: List<Token>, pos: Int, filename: String, callee: Expr) -> ExprResult {
@@ -2283,30 +2389,95 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
 }
 
 // ---------------------------------------------------------------------------
-// Tensor literal: Tensor<Type>[elements] (v4.42.0)
-// Parses Tensor<Type>[...] by consuming the type prefix, then delegating
-// to parse_list_lit for the body. Returns TensorLit with flat elements and
-// shape [n] (1D). For nD, the Python bootstrap handles nesting; the
-// self-hosted mirror handles 1D for now (sufficient for golden tests).
+// Tensor literal: Tensor<Type>[elements] (v4.42.0, v5.6.0 nested-array)
+// Parses Tensor<Type>[...] with full nested-array support for 2D/3D/etc.:
+//   Tensor<Float>[1.0, 2.0]                   -- shape [2]
+//   Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]     -- shape [2,2]
+//   Tensor<Float>[[[1.0]]]                    -- shape [1,1,1]
+// Shape is inferred from nesting depth; elements are flattened row-major
+// into the returned Expr::TensorLit. Mirrors mapanare/parser.py::
+// tensor_literal + _walk (v4.42.0).
+//
+// Implementation notes:
+// - Iterative depth-stack walk rather than a recursive helper (the earlier
+//   recursive version lost List<Expr> .push mutations across the function-
+//   boundary return path).
+// - Index-assignment into List<Int> inside an if-else chain that lives in
+//   a self-compilation path triggers a pre-existing inliner/PHI bug in the
+//   self-hosted emitter (emit_index_set's `ls.ok.N` blocks become the real
+//   predecessor but the enclosing if_result PHI still references the if-
+//   block label). To sidestep: _tensor_set_shape / _tensor_inc_count wrap
+//   the list writes in their own single-block helpers, isolating the
+//   `ls.ok.N` blocks from the caller's CFG.
 // ---------------------------------------------------------------------------
 
+fn _tensor_pad_list(list: List<Int>, min_len: Int) -> List<Int> {
+    let mut out: List<Int> = list
+    for _ in 0..64 {
+        if len(out) > min_len { break }
+        out.push(0)
+    }
+    return out
+}
+
+fn _tensor_set_at(list: List<Int>, idx: Int, val: Int) -> List<Int> {
+    let mut out: List<Int> = list
+    out[idx] = val
+    return out
+}
+
+fn _tensor_inc_at(list: List<Int>, idx: Int) -> List<Int> {
+    let mut out: List<Int> = list
+    out[idx] = list[idx] + 1
+    return out
+}
+
 fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+    // pos points at KW_TENSOR. Consume Tensor < T > [ — we are at the first
+    // token INSIDE the outermost literal body once parse_tensor_lit returns
+    // control to its body loop.
     let mut p: Int = pos + 1
     p = expect(tokens, p, "LT")
-    let mut depth: Int = 1
-    for _ in 0..100 {
-        if depth > 0 {
-            let tt: String = peek_type(tokens, p)
-            if tt == "LT" { depth = depth + 1 }
-            if tt == "GT" { depth = depth - 1 }
+    let tr: TypeResult = parse_type_expr(tokens, p, filename)
+    p = tr.pos
+    p = expect(tokens, p, "GT")
+    p = expect(tokens, p, "LBRACKET")
+
+    // depth = current nesting level (0 = outermost). counts[d] counts
+    // siblings seen so far at depth d. shape[d] is finalized when we close
+    // depth d via RBRACKET.
+    let mut flat: List<Expr> = []
+    let mut shape: List<Int> = []
+    let mut counts: List<Int> = []
+    counts.push(0)
+    let mut depth: Int = 0
+
+    for _ in 0..1000000 {
+        let tt: String = peek_type(tokens, p)
+        if tt == "RBRACKET" {
+            shape = _tensor_pad_list(shape, depth)
+            shape = _tensor_set_at(shape, depth, counts[depth])
             p = p + 1
+            if depth == 0 {
+                return new_expr_result(Expr::TensorLit(flat, shape), p)
+            }
+            depth = depth - 1
+            counts = _tensor_inc_at(counts, depth)
+        } else if tt == "COMMA" {
+            p = p + 1
+        } else if tt == "LBRACKET" {
+            depth = depth + 1
+            counts = _tensor_pad_list(counts, depth)
+            counts = _tensor_set_at(counts, depth, 0)
+            p = p + 1
+        } else {
+            let er: ExprResult = parse_expr(tokens, p, filename, 0)
+            flat.push(er.expr)
+            counts = _tensor_inc_at(counts, depth)
+            p = er.pos
         }
     }
-    // Now at [elements]
-    let list_result: ExprResult = parse_list_lit(tokens, p, filename)
-    let elems: List<Expr> = expr_list_elements(list_result.expr)
-    let shape: List<Int> = [len(elems)]
-    return new_expr_result(Expr::TensorLit(elems, shape), list_result.pos)
+    return new_expr_result(Expr::TensorLit(flat, shape), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -2349,7 +2520,10 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
 
     if tt == "KW_FN" { return parse_fn_type(tokens, pos, filename) }
 
-    if tt == "NAME" {
+    // v5.6.0 (Sh.6): KW_TENSOR treated as a type name in type position, so
+    // `let x: Tensor<Int>` still parses (Tensor became a keyword to
+    // disambiguate tensor literals). The token value is still "Tensor".
+    if tt == "NAME" || tt == "KW_TENSOR" {
         let mut name: String = peek_value(tokens, pos)
         let mut p: Int = pos + 1
         for _ in 0..10 {

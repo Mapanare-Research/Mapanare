@@ -1,19 +1,32 @@
 # Mapanare Language Specification
 
-**Version:** 4.143.0
-**Status:** Live — synced to the v4.143.0 cut (2026-04-18)
+**Version:** 5.7.1
+**Status:** Live — synced to the v5.7.1 cut (2026-04-26)
+
+> **v5.7.1 — pre-panel polish.** SPEC reflects the v5.4.0–v5.7.0
+> arc: native goldens **66/66** (first time in project history,
+> v5.7.0); self-hosted parity for tensor literals + multi-dim
+> indexing + broadcast + slicing + reductions (v5.6.0–v5.6.3);
+> async / `await` / `block_on` via real LLVM coroutines in the
+> self-hosted emitter (v5.5.4–v5.5.7); closure-typed function
+> parameters (v5.7.0 Sh.7); or-pattern + identifier `None`
+> resolution (v5.7.0 B); drop-glue ownership tracking for
+> string / list / boxed / tensor (v5.4.0–v5.6.4); self-host
+> 3-stage fixed-point restored to NEAR (v5.6.11). See
+> `docs/roadmap/v5/CLOSEOUT_ARC.md` for the complete arc trace.
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
 
-> **Spec sync discipline.** Each v4.x panel release fact-checks this
-> spec against the live grammar (`mapanare/mapanare.lark`), type
-> system (`mapanare/types.py`), and self-hosted lexer
-> (`mapanare/self/lexer.mn`). The v4.129.0 documentation sync re-audits
-> §2.1 (keywords + bilingual master list), §2.1.1 (master keyword
-> table), §3 (type system), §6.3 (closures), §27.1 (stability count),
-> §28 (stdlib), and Appendix B (compilation pipeline) against the
-> v4.117.0–v4.128.0 changes. If you discover drift, open a
-> documentation issue against the specific section number.
+> **Spec sync discipline.** Each release fact-checks this spec
+> against the live grammar (`mapanare/mapanare.lark`), type system
+> (`mapanare/types.py`), and self-hosted lexer
+> (`mapanare/self/lexer.mn`). The v5.7.1 sync re-audits §2.1
+> (keywords + bilingual master list), §3 (type system), §3.11
+> (tensors), §5.6 (or-patterns), §6.3 (closures), §27.1 (stability
+> count), §28 (stdlib), §29 (async), and Appendix B (compilation
+> pipeline) against the v5.4.0–v5.7.0 changes. If you discover
+> drift, open a documentation issue against the specific section
+> number.
 
 ---
 
@@ -758,7 +771,18 @@ When you `spawn` an agent, the returned handle exposes the input and output chan
 
 ### 3.11 Tensor Types
 
-> **Status:** Stable on LLVM backend. Tensor literals (v4.42.0), multi-dimensional indexing with bounds checking (v4.43.0), NumPy-style broadcasting (v4.44.0), reductions and slicing (v4.45.0). GPU-accelerated when CUDA/Vulkan available; CPU fallback otherwise.
+> **Status:** Stable on LLVM backend, in both the Python bootstrap
+> and the self-hosted emitter (parity closed v5.6.0–v5.6.3, Sh.6).
+> Tensor literals (v4.42.0; self-hosted v5.6.0), multi-dimensional
+> indexing with bounds checking (v4.43.0; self-hosted v5.6.1),
+> NumPy-style broadcasting (v4.44.0; self-hosted v5.6.2),
+> reductions and slicing (v4.45.0; self-hosted v5.6.3).
+> Drop-glue ownership tracking for tensor allocations
+> (`emit_track_tensor`) closed v5.6.4 (Rt.06). All 5 tensor
+> goldens (49/50/51/52/53) compile through `mnc-stage1` and
+> produce byte-identical output to the Python bootstrap.
+> GPU-accelerated when CUDA/Vulkan available; CPU fallback
+> otherwise.
 
 Tensors have their element type and shape verified at compile time. Tensor literals use the `Tensor<Type>[elements]` syntax with nested brackets for multi-dimensional data:
 
@@ -1078,6 +1102,17 @@ All alternatives in an or-pattern must bind the same set of variable names. (The
 
 Or-patterns can be combined with guards: `A | B if cond => body`. The guard applies to the whole arm (all alternatives), not to individual alternatives.
 
+> **v5.7.0 (B closure).** The Python bootstrap's
+> `_is_enum_variant_name` originally treated built-in `None` /
+> `Some` / `Ok` / `Err` as fresh binding names rather than enum
+> variants when checking or-pattern binding-set equality. The fix
+> short-circuits these names to enum-variant resolution and
+> resolves `Identifier("None")` to `Option` in both `_infer_expr`
+> and `_lower_identifier`. This closes the last bootstrap gap
+> for or-patterns over built-in variants and was the second of
+> two v5.7.0 fixes that delivered the first 66/66 golden run
+> in project history.
+
 ### 5.7 Match as Expression
 
 When all arms produce a value, `match` is an expression:
@@ -1167,6 +1202,41 @@ print(str(add_offset(5)))  // prints 15
 **Implementation:** Closures with free variables are compiled as a pair: `{function_pointer, environment_struct_pointer}`. The environment struct contains the captured variables. Variables are captured by value (copy).
 
 Closures without free variables are compiled as plain function pointers with no environment overhead.
+
+#### Closure-Typed Parameters
+
+Functions can accept closures (and named functions) as parameters
+using function-type annotations:
+
+```mn
+fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+    return f(x)
+}
+
+let double = (x) => x * 2
+let result = apply(double, 5)   // 10
+```
+
+> **v5.7.0 (Sh.7 closure).** Closure-typed function parameters
+> are now supported in the self-hosted emitter, closing the
+> final parity gap with the Python bootstrap. Four self-hosted
+> changes shipped in v5.7.0:
+>
+> 1. `parser.mn`'s `FAT_ARROW` handler extracts multi-parameter
+>    lambdas from `(a, b) => ...` syntax (was: only single
+>    `Ident` left-hand side).
+> 2. `lower.mn::lower_call_by_name` routes calls through fn-typed
+>    locals via an indirect-call SSA name — when a callee
+>    resolves to a function-typed binding, the lowerer emits
+>    `Load` + `Call(dest, "%loaded_val", args)` rather than a
+>    direct `@callee` reference.
+> 3. `emit_llvm_ir.mn::emit_call_ir` / `emit_call_void`
+>    recognise `%`-prefixed callees and emit `call <ret> %fn(...)`
+>    without the `@` prefix.
+> 4. `mir_opt.mn`'s `clone_instr_for_inline` and
+>    `replace_uses_in_instr` rename `Call.fn_name` when it is
+>    an SSA value (closes the inliner's dangling-reference
+>    issue when fn-typed locals are inlined).
 
 ### 6.4 Decorators
 
@@ -2415,10 +2485,20 @@ Functions: `regex_match`, `regex_search`, `regex_replace`, `regex_split`. Charac
 > async model is **cooperative, not preemptive**: async fns yield only
 > at `await` points; synchronous runtime calls (`__mn_file_write`,
 > `http_get`) block the current worker for their duration. Full
-> non-blocking suspension is a v5.x target. The self-hosted compiler
-> (`mnc-stage1`) does not yet lower async — async programs currently
-> compile through the Python bootstrap's `emit-llvm` pipeline and link
-> against `libmapanare_rt.a` for a native binary (docket Sh.4).
+> non-blocking suspension is a v5.x target.
+>
+> **v5.5.4–v5.5.7 update (Sh.4 closure).** The self-hosted emitter
+> now ships full LLVM-coroutine lowering for async fns:
+> `presplitcoroutine` attribute + the
+> `@llvm.coro.id/begin/save/suspend/end` pipeline (v5.5.4),
+> scheduler-driven `AwaitSuspend` (v5.5.5), scheduler-driven
+> `BlockOn` + main lifecycle (v5.5.6), and sanitizer-clean
+> drop-glue / fixed-point hardening (v5.5.7). All 5 Sh.4 goldens
+> (55_async_basic through 59_async_fanout) compile through
+> `mnc-stage1` and execute correctly through the real LLVM
+> coroutine ABI; valgrind / ASan / LSan / TSan all clean on
+> the corpus. The Python bootstrap remains the canonical
+> reference; both pipelines now match.
 
 ### 29.1 `async fn` -- Asynchronous Function Declaration
 
@@ -2521,6 +2601,205 @@ fn main() {
 | Signals | Signal reads inside `async fn` are synchronous (no suspension). |
 | Streams | `for await` iterates over an async stream, suspending between elements — *planned (v5.x)*. The `for await` grammar is not yet tokenized; today, iterate synchronously over a `Stream<T>` and `await` individual async-fn calls inside the loop body. |
 | Closures | Closures may capture variables from the enclosing `async fn`. Captured values that cross suspension points are spilled into the coroutine frame. |
+
+---
+
+## 30. Package Management
+
+Mapanare ships a first-class package manager as part of the standard
+toolchain. This section is normative: it defines the manifest schema,
+install semantics, lockfile format, version-constraint grammar, and
+registry protocol that a conforming Mapanare distribution MUST
+implement. The user-facing guide lives at `docs/guides/packages.md`;
+the reference implementation is `stdlib/pkg.py`.
+
+### 30.1 `mapanare.toml` Manifest
+
+Every Mapanare project is identified by a `mapanare.toml` file at its
+root. The file is TOML (v1.0) with the following tables.
+
+**`[package]` table** — project metadata.
+
+| Field | Required | Type | Meaning |
+|---|---|---|---|
+| `name` | yes | String | Package name. Lowercase, alphanumeric + hyphens (`[a-z0-9][a-z0-9-]*`). |
+| `version` | yes | String | Semver 2.0.0 version (`MAJOR.MINOR.PATCH`). |
+| `description` | no | String | One-line summary. |
+| `license` | no | String | SPDX license identifier. |
+| `repository` | no | String | Source repository URL. |
+| `authors` | no | List\<String\> | Author names or `"Name <email>"` entries. |
+| `entry` | no | String | Entry-point `.mn` file. Default: `"main.mn"`. |
+| `mapanare_version` | no | String | Semver constraint on the toolchain. Default: `">=0.2.0"`. |
+
+**`[dependencies]` table** — runtime dependencies. Each entry is
+`name = <spec>` where `<spec>` is either a constraint string (e.g.
+`"^1.0.0"`) or an inline table `{ version = "...", git = "...",
+branch = "..." }` for git-backed dependencies.
+
+**`[dev-dependencies]` table** — same shape as `[dependencies]`, but
+installed only when running tests or local development targets.
+
+Example:
+
+```toml
+[package]
+name = "myapp"
+version = "0.1.0"
+description = "Example"
+license = "MIT"
+entry = "main.mn"
+
+[dependencies]
+json = "^1.0.0"
+http-server = { version = "~2.0.0" }
+
+[dev-dependencies]
+mn_test = "*"
+```
+
+Unknown keys MUST be ignored, not rejected, to permit forward
+compatibility with future extensions.
+
+### 30.2 Version Constraints
+
+Dependency specifications use a subset of the semver-range syntax:
+
+| Syntax | Meaning |
+|---|---|
+| `^X.Y.Z` | Compatible: `>= X.Y.Z, < (X+1).0.0` (when `X>0`). |
+| `~X.Y.Z` | Patch-only: `>= X.Y.Z, < X.(Y+1).0`. |
+| `>=X.Y.Z` | Minimum version. |
+| `>=X.Y.Z,<A.B.C` | Range. |
+| `X.Y.Z` | Exact (pinned). |
+| `*` | Any published version. |
+
+Resolution strategy is **greedy latest-satisfying**: for each direct
+dependency, the resolver selects the highest published version that
+satisfies the constraint. There is no SAT solver. Transitive
+dependency resolution is deferred; in v5.3.x, a package's
+`[dependencies]` table is read but nested resolution across the
+full graph is **not guaranteed** — projects that require it must
+flatten dependencies manually or wait for a future spec revision.
+
+If two constraints in the same manifest select incompatible versions
+for the same package, installation MUST fail with a diagnostic.
+
+### 30.3 `mapanare install` Semantics
+
+The command `mapanare install [<name>[@<version>]]` performs:
+
+1. **Manifest load.** Parse `mapanare.toml` at the working directory.
+   Error if absent (unless a name argument was provided).
+2. **Lock consultation.** If `mapanare.lock` exists and is consistent
+   with the manifest, use the pinned versions recorded there. The
+   lockfile is authoritative over the manifest when both are present.
+3. **Resolution.** For each unresolved dependency, query the registry
+   for the highest version satisfying the constraint (§30.2).
+4. **Download.** Fetch the `.tar.gz` archive from the registry's
+   download endpoint (§30.5).
+5. **Integrity check.** Compute SHA-256 of the archive bytes. Compare
+   against the `integrity` field returned by the registry. On
+   mismatch, abort with no files written.
+6. **Extract.** Unpack into `mn_modules/<name>-<version>/`. Existing
+   directories for the same `<name>-<version>` are replaced
+   atomically (write-then-rename).
+7. **Lock update.** Write resolved versions and integrity hashes to
+   `mapanare.lock`.
+
+**Install-time scripts are not supported.** Packages MUST NOT execute
+arbitrary code during install. The installer only unpacks files and
+writes the lockfile.
+
+**Side effects are confined to** the current project directory
+(`mn_modules/`, `mapanare.lock`) and `~/.mapanare/cache/` for
+downloaded archives.
+
+### 30.4 `mapanare.lock` Lockfile
+
+The lockfile is JSON with the following shape:
+
+```json
+{
+  "lockfile_version": 1,
+  "packages": [
+    {
+      "name": "json",
+      "version": "1.0.0",
+      "git": "https://mapanare.dev/api/packages/json/1.0.0/download",
+      "commit": "sha256:abc123...",
+      "integrity": "sha256:def456..."
+    }
+  ]
+}
+```
+
+**Fields:**
+
+| Field | Required | Meaning |
+|---|---|---|
+| `lockfile_version` | yes | Format version. Current: `1`. |
+| `packages` | yes | Array of locked entries. |
+| `packages[].name` | yes | Package name. |
+| `packages[].version` | yes | Resolved version (exact). |
+| `packages[].git` | yes | Download URL used at install time. |
+| `packages[].commit` | yes | Archive content hash (SHA-256). |
+| `packages[].integrity` | yes | Subresource-Integrity-style hash. |
+
+The lockfile SHOULD be committed to version control. When present,
+subsequent `mapanare install` invocations MUST reproduce the same
+resolution (subject to the registry still serving the pinned
+versions). A lockfile whose `lockfile_version` is higher than the
+installer supports MUST cause the install to abort with a diagnostic
+rather than silently downgrade.
+
+### 30.5 Registry API
+
+The default registry is `https://mapanare.dev`. The base URL is
+overridable via the `MAPANARE_REGISTRY_URL` environment variable.
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/api/packages` | none | List all packages (paginated). |
+| `GET` | `/api/packages?q=<term>` | none | Search by name/keyword. |
+| `GET` | `/api/packages/{name}` | none | Package metadata + version list. |
+| `GET` | `/api/packages/{name}/{version}` | none | Version details + integrity hash. |
+| `GET` | `/api/packages/{name}/{version}/download` | none | Download `.tar.gz` archive. |
+| `POST` | `/api/packages` | token | Publish a new version. |
+
+**Authentication.** Publish requests carry a bearer token obtained
+via GitHub OAuth (`mapanare login`) or provided inline
+(`--token <value>` / `MAPANARE_TOKEN` env var). Tokens are stored at
+`~/.mapanare/token`.
+
+**Publish payload.** A `.tar.gz` archive containing `mapanare.toml`,
+all `.mn` source files, and `README.md` / `LICENSE` if present.
+Excluded: `mn_modules/`, hidden directories, `__pycache__/`,
+`node_modules/`.
+
+**Idempotency.** Publishing the same `(name, version)` twice MUST
+be rejected by the registry. New versions bump semver per the
+publisher's chosen level (`--minor`, `--major`, default `--patch`).
+
+### 30.6 Security Model
+
+- **SHA-256 integrity** on every download; mismatches abort install.
+- **No install-time code execution.** Packages declare data and
+  sources, not build actions.
+- **Sandboxed module path.** Installed packages live under
+  `mn_modules/` relative to the project root; resolution never
+  escapes this directory.
+- **Token storage.** Tokens are stored with user-only permissions
+  (`0600`) under `~/.mapanare/`. They are never written to
+  `mapanare.toml` or `mapanare.lock`.
+
+### 30.7 Out of Scope for v5.x
+
+The following are not specified by v5.3.3 and remain open for a
+future revision: full transitive resolution with conflict detection,
+version yanking, private registries, vendoring, cryptographic
+signatures beyond SHA-256, and offline-first mirror support.
+Implementations MAY experiment with these but MUST NOT rely on
+them in documented behavior.
 
 ---
 
@@ -2715,21 +2994,46 @@ targets. See §24.
 The self-hosted compiler reaches a 3-stage fixed point: `stage2.ll`
 and `stage3.ll` are identical in every respect the compiler controls
 — same IR instructions, same block order, same metadata graph, same
-line count (109,872 lines at v4.142.0).
+line count.
 
 - **v4.134.0:** strict byte-identical — stage2 and stage3 shared md5
   `0c00ad07fee94f98bb350b359395843b`.
 - **v4.139.0–present (Dr.1):** *near fixed point* — the
   `__MN_VERSION__` build-time substitution introduces a bounded
-  4-line version-metadata diff (`!"__MN_VERSION__"` vs `!"4.143.0"`),
-  so md5s differ by construction but the IR is otherwise identical.
-  Current md5s: `stage2.ll = 6d4963cdbe060ac1cee85eb58f2fa932`,
-  `stage3.ll = dddf64c3a77ed9236c82de517bc055d1` (v4.142.0).
+  4-line version-metadata diff (`!"__MN_VERSION__"` vs the live
+  version), so md5s differ by construction but the IR is otherwise
+  identical.
+- **v5.6.4–v5.6.10 (regression window):** stage3.ll regressed to
+  empty / segfault under several v5.6.x emitter changes; tracked
+  as Ve.1 / Ve.3 / Ve.4 in `docs/known_issues.md`.
+- **v5.6.11 (Ve.4 CLOSED):** full self-compile fixed-point
+  restored to **NEAR** (4 diff lines / 217,273 = 0.002%, all
+  VERSION metadata). Restoration delivered by 14 LOC across
+  `emit_index_get` / `emit_index_set` — load `list.elem_size`
+  at runtime and stride GEP by `idx * elem_size` instead of a
+  constant 8-byte stride. SROA still elides the runtime load
+  for known-constant elem_size.
+- **v5.7.0 (66/66 goldens):** stage2.ll = 217,879 lines /
+  943 defines; fixed-point preserved at NEAR; goldens harness
+  reaches **66/66 — first time in project history** with the
+  Sh.7 closure (closure-typed parameters) and the B closure
+  (or-pattern + identifier `None`).
 
 The 4-line diff is a build-time artifact, not semantic codegen drift.
-See `docs/roadmap/v4/v4.142.0/FIXEDPOINT_STATUS.md` for full provenance
-and `scripts/verify_fixed_point.sh` to reproduce. `DIFF_THRESHOLD=100`
-in the verifier script gates the acceptable bound.
+See `docs/roadmap/v4/v4.142.0/FIXEDPOINT_STATUS.md` and
+`docs/roadmap/v5/v5.6.11/SESSION_REPORT.md` for full provenance.
+`scripts/verify_fixed_point.sh` reproduces the result.
+`DIFF_THRESHOLD=100` in the verifier script gates the acceptable
+bound.
+
+### Native goldens
+
+The native goldens harness (`scripts/test_native.py`) compares
+`mnc-stage1` output against the Python bootstrap on a corpus of
+66 representative programs. Current pass rate: **66/66 (v5.7.0)**.
+This is the first 100% native pass in project history and closes
+the v4.x → v5.x parity arc; every test in the corpus that defines
+"self-hosting" now passes through `mnc-stage1`.
 
 ---
 

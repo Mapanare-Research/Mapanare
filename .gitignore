@@ -40,6 +40,7 @@ venv/
 .DS_Store
 Thumbs.db
 prompt.md
+PROMPT.md
 1prompt.md
 error.log
 .pr/
@@ -67,6 +68,19 @@ runtime/native/*.o
 # tree.
 runtime/native/*.a
 runtime/native/libmapanare_rt.a
+
+# Vendored portable toolchain (w64devkit) — downloaded by CI into toolchain/
+# before PyInstaller runs, or by developers for local release-bundle testing.
+# Never commit; this is ~200MB and platform-specific.
+/toolchain/
+/.tmp-tc/
+/.tmp-toolchain-dl/
+/.tmp-llvm/
+/.tmp_probe.py
+/tmp_smoke_*.mn
+/tmp_smoke_*.py
+/tmp_smoke_*.exe
+/tmp_smoke_*.obj
 mapanare/self/*.o
 mapanare/self/mnc-stage1
 mapanare/self/mnc-stage1.exe
@@ -82,6 +96,9 @@ mapanare/self/mnc-stage3*
 # "lie waiting to happen".
 mapanare/self/stage2.ll
 mapanare/self/stage3.ll
+# main.ll is the concatenated stage1 source emitted by build_stage1.py;
+# regenerable on every build, was committed at >100MB and broke push.
+mapanare/self/main.ll
 tmp*.py
 .culebra-journal.jsonl
 .culebra-baseline.json
@@ -95,3 +112,9 @@ docs/roadmap/*/*/culebra-*.jsonl
 .gitnexus
 docs/roadmap/v4/v4.141.0/session.md
 *.png
+/.venv-mac
+# v5.8.8: benchmark IR is regenerated from `benchmarks/**/*.mn` on
+# every run — no need to commit the artifact. Mirrors the
+# `tests/golden/*.ll` (ignored, except `*.ref.ll`) and
+# `mapanare/self/{main,stage2,stage3}.ll` patterns above.
+benchmarks/**/*.ll

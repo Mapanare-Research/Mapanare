@@ -48,7 +48,7 @@ case "$ARCH" in
   *)               echo "Error: Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
-ARTIFACT="mapanare-${PLATFORM}-${ARCH_TAG}.tar.gz"
+LEGACY_ARTIFACT="mapanare-${PLATFORM}-${ARCH_TAG}.tar.gz"
 
 # ---------- Resolve version ----------
 if [ -n "$REQUESTED_VERSION" ]; then
@@ -72,7 +72,25 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARTIFACT}"
+# v5.11.0 Pk.1: artifact filenames now include the version. Strip the
+# leading ``v`` because the git tag uses ``v5.11.0`` but the VERSION
+# file / filename use ``5.11.0`` (PLAN Decision 3). Probe the versioned
+# name first; fall back to the legacy unversioned name for releases
+# <= v5.10.0 and for the 2-release alias soak window (drop the
+# fallback in v5.13.0).
+VERSION_TAG="${VERSION#v}"
+VERSIONED_ARTIFACT="mapanare-${VERSION_TAG}-${PLATFORM}-${ARCH_TAG}.tar.gz"
+DOWNLOAD_URL_VERSIONED="https://github.com/${REPO}/releases/download/${VERSION}/${VERSIONED_ARTIFACT}"
+DOWNLOAD_URL_LEGACY="https://github.com/${REPO}/releases/download/${VERSION}/${LEGACY_ARTIFACT}"
+
+if curl -fsI "$DOWNLOAD_URL_VERSIONED" >/dev/null 2>&1; then
+  ARTIFACT="$VERSIONED_ARTIFACT"
+  DOWNLOAD_URL="$DOWNLOAD_URL_VERSIONED"
+else
+  echo "  Versioned asset not found; falling back to legacy name ${LEGACY_ARTIFACT}"
+  ARTIFACT="$LEGACY_ARTIFACT"
+  DOWNLOAD_URL="$DOWNLOAD_URL_LEGACY"
+fi
 
 # ---------- Download & install ----------
 echo ""
@@ -108,9 +126,13 @@ echo "Installing to ${INSTALL_DIR}..."
 if [ "$NEEDS_SUDO" = true ]; then
   sudo cp -f "${TMP_DIR}/mapanare/mapanare" "${INSTALL_DIR}/mapanare"
   sudo chmod +x "${INSTALL_DIR}/mapanare"
+  # v5.9.0 DX.6: alias mnc -> mapanare so the name in the docs and the
+  # name in the install both work. PyInstaller doesn't look at argv[0].
+  sudo ln -sf "${INSTALL_DIR}/mapanare" "${INSTALL_DIR}/mnc" 2>/dev/null || true
 else
   cp -f "${TMP_DIR}/mapanare/mapanare" "${INSTALL_DIR}/mapanare"
   chmod +x "${INSTALL_DIR}/mapanare"
+  ln -sf "${INSTALL_DIR}/mapanare" "${INSTALL_DIR}/mnc" 2>/dev/null || true
 fi
 
 # Copy supporting files (shared libs, etc.) if the dist has them
@@ -162,17 +184,19 @@ fi
 
 # ---------- Verify ----------
 echo ""
-if command -v mapanare &>/dev/null; then
+if command -v mnc &>/dev/null; then
   echo "Installed successfully!"
   echo ""
-  mapanare --version
+  mnc --version
   echo ""
   echo "Get started:"
-  echo "  mapanare init myproject"
+  echo "  mnc init myproject"
   echo "  cd myproject"
-  echo "  mapanare run main.mn       # compile & run"
-  echo "  mapanare check main.mn     # type-check only"
-  echo "  mapanare build main.mn     # native binary (requires LLVM)"
+  echo "  mnc run main.mn       # compile and run"
+  echo "  mnc build main.mn     # build native binary"
+  echo "  mnc --help            # see all commands"
+  echo ""
+  echo "(\`mapanare\` is also installed as an alias for \`mnc\`.)"
   echo ""
   echo "Version manager:"
   echo "  mapanare-up list           # show installed versions"

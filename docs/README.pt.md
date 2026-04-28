@@ -24,8 +24,9 @@ Compila para binarios nativos via LLVM e WebAssembly.
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![Licenca](https://img.shields.io/badge/licenca-MIT-green.svg?style=flat-square)](../LICENSE)
-[![Versao](https://img.shields.io/badge/versao-5.0.0-blue.svg?style=flat-square)](../CHANGELOG.md)
-[![Testes](https://img.shields.io/badge/testes-5534+_passando-brightgreen.svg?style=flat-square)]()
+[![Versao](https://img.shields.io/badge/versao-5.13.0-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![Testes](https://img.shields.io/badge/testes-5800+_passando-brightgreen.svg?style=flat-square)]()
+[![Goldens](https://img.shields.io/badge/goldens-66%2F66-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
 <br>
@@ -111,6 +112,18 @@ let resposta = ask(ollama("llama3.2"), "O que e Mapanare?")
 ```
 
 Referencia completa, tutoriais e receitas em [mapanare.dev/docs](https://mapanare.dev/docs).
+
+### Compilador nativo — o que `mnc-stage1` entrega
+
+O compilador auto-hospedado roda o corpus completo da v5.7.0 (66/66 goldens nativos):
+
+- **Tensores** — literais, indexacao multi-dim, broadcasting estilo NumPy, slicing, reducoes (sum / mean / max / min / argmax / argmin).
+- **Async / await / `block_on`** — coroutines LLVM reais (`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`) com suspensao dirigida pelo scheduler.
+- **Parametros tipo closure** — `fn apply(f: fn(Int) -> Int, x: Int)` rebaixado via SSA de chamada indireta.
+- **Pattern matching com or-patterns e guards** — `Plus | Minus if cond => body` sobre variantes enum e construtores embutidos (`None` / `Some` / `Ok` / `Err`).
+- **Drop-glue de ownership** — lifetimes de string / list / boxed / tensor rastreados em caminhos de retorno e laços; valgrind / ASan / LSan / TSan todos limpos no corpus.
+
+Ponto fixo auto-hospedado de 3 estagios: NEAR (diferenca de 4 linhas de metadata VERSION num stage2.ll de 217k linhas).
 
 ---
 

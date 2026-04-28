@@ -1,0 +1,16 @@
+[0;33m=== Three-Stage Fixed Point Verification ===[0m
+
+[0;33m[Stage 0] Using existing stage1: mapanare/self/mnc-stage1[0m
+  stage1: 6270112 bytes
+[0;33m[Stage 1] stage1 compiles mnc_all.mn → stage2.ll[0m
+  stage2.ll: 207619 lines
+  llvm-as: [0;32mOK[0m
+  Building mnc-stage2... [0;32mOK[0m (4492248 bytes)
+[0;33m[Stage 2] stage2 compiles mnc_all.mn → stage3.ll[0m
+scripts/verify_fixed_point.sh: line 124: 62359 Segmentation fault      (core dumped) /tmp/mnc-stage2 "$SOURCE" > /tmp/stage3.ll 2> /tmp/stage2_stderr.log
+[0;33m  note: mnc-stage2 exited with code 139[0m
+  (teardown crash is a known issue tracked for v4.30.0; the script
+   still validates that stage3.ll is non-empty and llvm-valid below)
+  stage3.ll: 0 lines
+[0;31m  stage3.ll is empty — stage2 produced no output[0m
+  This is a real failure (not a known-teardown issue).

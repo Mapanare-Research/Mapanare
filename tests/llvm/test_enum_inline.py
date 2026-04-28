@@ -325,7 +325,7 @@ class TestEnumInlineABIParity:
             pytest.skip("mnc-stage1 not built")
         bench = ROOT / "benchmarks" / "system" / "enum_match.mn"
         result = subprocess.run(
-            [str(stage1), str(bench)],
+            [str(stage1), "emit-llvm", str(bench)],
             capture_output=True,
             text=True,
             timeout=30,
@@ -345,7 +345,7 @@ class TestEnumInlineABIParity:
 
         # Self-hosted emitter
         result = subprocess.run(
-            [str(stage1), str(bench)],
+            [str(stage1), "emit-llvm", str(bench)],
             capture_output=True,
             text=True,
             timeout=30,

@@ -741,7 +741,7 @@ def stage1_compile(mn_path: str | pathlib.Path, stage1_bin: str | pathlib.Path) 
 
     try:
         r = subprocess.run(
-            [str(stage1_bin), str(mn_path)],
+            [str(stage1_bin), "emit-llvm", str(mn_path)],
             capture_output=True,
             text=True,
             timeout=120,
@@ -1356,7 +1356,7 @@ def _diagnose_compile_fail(stage1: pathlib.Path, mn_path: pathlib.Path) -> dict:
     info: dict = {"type": "compile_fail", "file": mn_path.name}
     try:
         r = subprocess.run(
-            [str(stage1), str(mn_path)],
+            [str(stage1), "emit-llvm", str(mn_path)],
             capture_output=True,
             text=True,
             timeout=30,
@@ -1616,7 +1616,7 @@ def cmd_stage2(args: argparse.Namespace) -> int:
 
         try:
             proc = subprocess.run(
-                [str(stage1), str(mn_path)],
+                [str(stage1), "emit-llvm", str(mn_path)],
                 capture_output=True,
                 text=True,
                 timeout=timeout_s,
@@ -1654,7 +1654,7 @@ def cmd_stage2(args: argparse.Namespace) -> int:
     if all_mn.exists():
         try:
             proc = subprocess.run(
-                [str(stage1), str(all_mn)],
+                [str(stage1), "emit-llvm", str(all_mn)],
                 capture_output=True,
                 text=True,
                 timeout=timeout_s * 4,
@@ -2013,7 +2013,7 @@ def cmd_selftest(args: argparse.Namespace) -> int:
     t0 = _time.monotonic()
     try:
         r = subprocess.run(
-            [str(stage1), str(mnc_all)],
+            [str(stage1), "emit-llvm", str(mnc_all)],
             capture_output=True,
             text=True,
             timeout=300,
@@ -2712,7 +2712,7 @@ def cmd_xray(args: argparse.Namespace) -> int:
     print("1. Compiling mnc_all.mn through stage1...", end=" ", flush=True)
     try:
         r = subprocess.run(
-            [str(stage1), str(all_mn)],
+            [str(stage1), "emit-llvm", str(all_mn)],
             capture_output=True,
             text=True,
             timeout=timeout_s * 4,

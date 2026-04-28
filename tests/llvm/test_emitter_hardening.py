@@ -177,7 +177,8 @@ class TestListAccumulationReassign:
         """)
         ir_text = _to_ir(source)
         assert "__mn_list_push" in ir_text
-        assert "__mn_list_get" in ir_text
+        # v5.1.0 Perf.1: List<Int> indexing is now inline GEP, not __mn_list_get
+        assert "getelementptr inbounds i64" in ir_text
 
 
 # ===========================================================================
@@ -206,9 +207,9 @@ class TestListIntIndexingQs1:
             }
         """)
         ir_text = _to_ir(source)
-        # __mn_list_get must be called to fetch the element pointer.
-        assert "__mn_list_get" in ir_text
-        # The element pointer must be dereferenced as i64 (not left as ptr).
+        # v5.1.0 Perf.1: List<Int> indexing is now inline GEP, not __mn_list_get
+        assert "getelementptr inbounds i64" in ir_text
+        # The element must be dereferenced as i64 (not left as ptr).
         assert "load i64, ptr" in ir_text
         # The fallback "<?>" string must NOT appear — that means str()
         # saw an UNKNOWN-typed argument, which is the pre-fix symptom.
@@ -229,7 +230,8 @@ class TestListIntIndexingQs1:
             }
         """)
         ir_text = _to_ir(source)
-        assert "__mn_list_get" in ir_text
+        # v5.1.0 Perf.1: List<Int> indexing is now inline GEP
+        assert "getelementptr inbounds i64" in ir_text
         assert "load i64, ptr" in ir_text
         # No ptrtoint should bridge an IndexGet result to an Int argument
         # passed to __mn_str_from_int. Pre-fix had `%p2i = ptrtoint ptr %el
@@ -250,7 +252,8 @@ class TestListIntIndexingQs1:
             }
         """)
         ir_text = _to_ir(source)
-        assert "__mn_list_get" in ir_text
+        # v5.1.0 Perf.1: List<Int> indexing is now inline GEP
+        assert "getelementptr inbounds i64" in ir_text
         # Two i64 loads (one per index), then an add on i64 operands.
         assert ir_text.count("load i64, ptr") >= 2
         assert "add nsw i64" in ir_text or "add i64" in ir_text
@@ -271,7 +274,8 @@ class TestListIntIndexingQs1:
             }
         """)
         ir_text = _to_ir(source)
-        assert "__mn_list_get" in ir_text
+        # v5.1.0 Perf.1: List<Float> (8-byte elem) also uses inline GEP
+        assert "getelementptr inbounds i64" in ir_text
         assert "load double, ptr" in ir_text
         assert '"<?>"' not in ir_text
 

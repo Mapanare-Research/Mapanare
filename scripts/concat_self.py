@@ -23,6 +23,7 @@ MODULE_ORDER = [
     "lower_state.mn",
     "lower.mn",
     "emit_llvm_ir.mn",
+    "abi.mn",
     "mir_opt.mn",
     "emit_llvm.mn",
     # Transpiler modules excluded: they define clashing symbols (new_token,

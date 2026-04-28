@@ -160,8 +160,27 @@ MN_EXPORT int64_t __mn_str_to_int(MnString s);
 MN_EXPORT double __mn_str_to_float(MnString s);
 
 /** Free a heap-allocated string. No-op for constant strings.
- *  Uses tag bit (LSB of data pointer) to distinguish heap from constant. */
-MN_EXPORT void __mn_str_free(MnString s);
+ *  Uses the high bit of `len_with_heap_bit` (== ``MN_STR_HEAP_BIT``)
+ *  to distinguish heap from constant.
+ *
+ *  v5.8.3 Wb.1: takes decomposed (data, len_with_heap_bit) instead of
+ *  ``MnString`` by value. Win64's 16-byte-by-value ABI rule (hidden
+ *  pointer in %rcx) does not match what LLVM emits at IR-level for an
+ *  aggregate-by-value argument (decomposed into two registers, %rcx +
+ *  %rdx). The decomposed C signature matches LLVM's aggregate lowering
+ *  on both Win64 (rcx, rdx) and SysV AMD64 (rdi, rsi). */
+MN_EXPORT void __mn_str_free(const char *data, int64_t len_with_heap_bit);
+
+/** v5.8.3 Wb.1: convenience wrapper for C-side callers that have an
+ *  ``MnString`` by value and don't want to spell out the bitfield
+ *  reinterpretation themselves. Forwards to the decomposed-args
+ *  ``__mn_str_free``. ``static inline`` so it adds no symbol and
+ *  costs nothing at -O2. */
+static inline void __mn_str_free_v(MnString s) {
+    int64_t len_bits = (s.is_heap ? MN_STR_HEAP_BIT : (int64_t)0)
+                     | (int64_t)s.len;
+    __mn_str_free(s.data, len_bits);
+}
 
 /** Print a string to stdout (no newline). */
 MN_EXPORT void __mn_str_print(MnString s);
@@ -684,6 +703,36 @@ MN_EXPORT int64_t __mn_system(MnString command);
 
 /** Print an error and exit with code 1. */
 MN_EXPORT void __mn_panic(MnString message);
+
+/** v5.8.4 Wb.2: returns 1 if the running host is Win64, 0 otherwise.
+ *  Kept for source-compat with v5.8.4–v5.8.5 self-hosted emitter
+ *  builds. The v5.8.6 We.1 closure of the i686 latent gap supersedes
+ *  this with the (is_windows, arch_bits) pair below; new code should
+ *  use those. The export remains so a v5.8.5-vintage stage1 binary
+ *  can still find its host-detection symbol when self-compiling
+ *  against a v5.8.6+ runtime. */
+MN_EXPORT int64_t __mn_host_is_win64(void);
+
+/** v5.8.6 We.1: returns 1 if the running host is any Windows
+ *  (32-bit or 64-bit), 0 otherwise. Pair with __mn_host_arch_bits
+ *  to disambiguate Win32 (i686) from Win64 (x86_64). The v5.8.4
+ *  __mn_host_is_win64 export confused "is Windows" with "use Win64
+ *  ABI rules" — `_WIN32` is defined for both Win32 and Win64
+ *  toolchains, so `is_win64` returned 1 even on i686-w64-mingw32.
+ *  Used by the self-hosted emit_llvm.mn ABI classifier together
+ *  with __mn_host_arch_bits to choose between Win64 sret/sarg,
+ *  i686 cdecl sret/byval, and SysV by-value emission. */
+MN_EXPORT int64_t __mn_host_is_windows(void);
+
+/** v5.8.6 We.1: returns the host's pointer/architecture width in
+ *  bits (32 or 64) — i.e. ILP32 vs LP64/LLP64. On i686 / armv7
+ *  / 32-bit POSIX returns 32; on x86_64 / aarch64 / 64-bit Windows
+ *  returns 64. Defaults to 64 on unknown architectures (matches the
+ *  v5.8.5 baseline assumption — no 32-bit-non-x86 targets ship
+ *  today). Read in concert with __mn_host_is_windows: ABI dispatch
+ *  is (is_windows && arch_bits == 64) → Win64, (is_windows &&
+ *  arch_bits == 32) → i686 cdecl, otherwise SysV / AAPCS64. */
+MN_EXPORT int64_t __mn_host_arch_bits(void);
 
 /* -----------------------------------------------------------------------
  * Range Iterator — used by `for i in start..end` loops

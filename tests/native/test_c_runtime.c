@@ -72,7 +72,7 @@ static int tests_failed = 0;
 TEST(test_str_from_cstr) {
     MnString s = __mn_str_from_cstr("hello");
     ASSERT_EQ(s.len, 5);
-    __mn_str_free(s);
+    __mn_str_free_v(s);
 }
 
 TEST(test_str_empty) {
@@ -85,9 +85,9 @@ TEST(test_str_concat) {
     MnString b = __mn_str_from_cstr(" world");
     MnString c = __mn_str_concat(a, b);
     ASSERT_EQ(c.len, 11);
-    __mn_str_free(a);
-    __mn_str_free(b);
-    __mn_str_free(c);
+    __mn_str_free_v(a);
+    __mn_str_free_v(b);
+    __mn_str_free_v(c);
 }
 
 TEST(test_str_eq) {
@@ -96,9 +96,9 @@ TEST(test_str_eq) {
     MnString c = __mn_str_from_cstr("def");
     ASSERT_EQ(__mn_str_eq(a, b), 1);
     ASSERT_EQ(__mn_str_eq(a, c), 0);
-    __mn_str_free(a);
-    __mn_str_free(b);
-    __mn_str_free(c);
+    __mn_str_free_v(a);
+    __mn_str_free_v(b);
+    __mn_str_free_v(c);
 }
 
 TEST(test_str_cmp) {
@@ -107,8 +107,8 @@ TEST(test_str_cmp) {
     ASSERT((__mn_str_cmp(a, b) < 0));
     ASSERT((__mn_str_cmp(b, a) > 0));
     ASSERT_EQ(__mn_str_cmp(a, a), 0);
-    __mn_str_free(a);
-    __mn_str_free(b);
+    __mn_str_free_v(a);
+    __mn_str_free_v(b);
 }
 
 TEST(test_str_substr) {
@@ -116,9 +116,9 @@ TEST(test_str_substr) {
     MnString sub = __mn_str_substr(s, 0, 5);
     MnString expected = __mn_str_from_cstr("hello");
     ASSERT_EQ(__mn_str_eq(sub, expected), 1);
-    __mn_str_free(s);
-    __mn_str_free(sub);
-    __mn_str_free(expected);
+    __mn_str_free_v(s);
+    __mn_str_free_v(sub);
+    __mn_str_free_v(expected);
 }
 
 TEST(test_str_starts_with) {
@@ -127,25 +127,25 @@ TEST(test_str_starts_with) {
     MnString bad = __mn_str_from_cstr("world");
     ASSERT_EQ(__mn_str_starts_with(s, prefix), 1);
     ASSERT_EQ(__mn_str_starts_with(s, bad), 0);
-    __mn_str_free(s);
-    __mn_str_free(prefix);
-    __mn_str_free(bad);
+    __mn_str_free_v(s);
+    __mn_str_free_v(prefix);
+    __mn_str_free_v(bad);
 }
 
 TEST(test_str_ends_with) {
     MnString s = __mn_str_from_cstr("hello world");
     MnString suffix = __mn_str_from_cstr("world");
     ASSERT_EQ(__mn_str_ends_with(s, suffix), 1);
-    __mn_str_free(s);
-    __mn_str_free(suffix);
+    __mn_str_free_v(s);
+    __mn_str_free_v(suffix);
 }
 
 TEST(test_str_find) {
     MnString s = __mn_str_from_cstr("hello world");
     MnString needle = __mn_str_from_cstr("world");
     ASSERT_EQ(__mn_str_find(s, needle), 6);
-    __mn_str_free(s);
-    __mn_str_free(needle);
+    __mn_str_free_v(s);
+    __mn_str_free_v(needle);
 }
 
 TEST(test_str_char_at) {
@@ -153,9 +153,9 @@ TEST(test_str_char_at) {
     MnString c = __mn_str_char_at(s, 1);
     MnString expected = __mn_str_from_cstr("b");
     ASSERT_EQ(__mn_str_eq(c, expected), 1);
-    __mn_str_free(s);
-    __mn_str_free(c);
-    __mn_str_free(expected);
+    __mn_str_free_v(s);
+    __mn_str_free_v(c);
+    __mn_str_free_v(expected);
 }
 
 TEST(test_str_byte_at) {
@@ -163,15 +163,15 @@ TEST(test_str_byte_at) {
     ASSERT_EQ(__mn_str_byte_at(s, 0), 'a');
     ASSERT_EQ(__mn_str_byte_at(s, 1), 'b');
     ASSERT_EQ(__mn_str_byte_at(s, 3), -1);  /* out of bounds */
-    __mn_str_free(s);
+    __mn_str_free_v(s);
 }
 
 TEST(test_str_from_int) {
     MnString s = __mn_str_from_int(42);
     MnString expected = __mn_str_from_cstr("42");
     ASSERT_EQ(__mn_str_eq(s, expected), 1);
-    __mn_str_free(s);
-    __mn_str_free(expected);
+    __mn_str_free_v(s);
+    __mn_str_free_v(expected);
 }
 
 TEST(test_str_from_null) {
@@ -184,15 +184,15 @@ TEST(test_str_concat_empty) {
     MnString b = __mn_str_empty();
     MnString c = __mn_str_concat(a, b);
     ASSERT_EQ(__mn_str_eq(a, c), 1);
-    __mn_str_free(a);
-    __mn_str_free(c);
+    __mn_str_free_v(a);
+    __mn_str_free_v(c);
 }
 
 TEST(test_str_stress_alloc_free) {
     /* Allocate and free 100K strings */
     for (int i = 0; i < 100000; i++) {
         MnString s = __mn_str_from_cstr("stress test string data");
-        __mn_str_free(s);
+        __mn_str_free_v(s);
     }
 }
 
@@ -202,10 +202,10 @@ TEST(test_str_stress_concat) {
     MnString b = __mn_str_from_cstr(" world");
     for (int i = 0; i < 50000; i++) {
         MnString c = __mn_str_concat(a, b);
-        __mn_str_free(c);
+        __mn_str_free_v(c);
     }
-    __mn_str_free(a);
-    __mn_str_free(b);
+    __mn_str_free_v(a);
+    __mn_str_free_v(b);
 }
 
 /* -----------------------------------------------------------------------
@@ -822,9 +822,9 @@ TEST(test_file_write_read) {
     ASSERT_EQ(ok, 1);
     ASSERT_EQ(__mn_str_eq(read_back, content), 1);
 
-    __mn_str_free(path);
-    __mn_str_free(content);
-    __mn_str_free(read_back);
+    __mn_str_free_v(path);
+    __mn_str_free_v(content);
+    __mn_str_free_v(read_back);
 
     /* Clean up temp file */
     remove("_test_tmp_file.txt");
@@ -836,7 +836,7 @@ TEST(test_file_read_nonexistent) {
     MnString result = __mn_file_read(path, &ok);
     ASSERT_EQ(ok, 0);
     ASSERT_EQ(result.len, 0);
-    __mn_str_free(path);
+    __mn_str_free_v(path);
 }
 
 /* -----------------------------------------------------------------------
@@ -1031,7 +1031,7 @@ static int64_t stream_is_even_fn(const void *elem, void *ud) {
 }
 
 TEST(test_stream_from_list_collect) {
-    MnList list = {0};
+    MnList list = __mn_list_new(sizeof(int64_t));
     for (int64_t i = 1; i <= 3; i++) __mn_list_push(&list, &i);
     MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
     ASSERT_NE(s, NULL);
@@ -1045,7 +1045,7 @@ TEST(test_stream_from_list_collect) {
 }
 
 TEST(test_stream_map) {
-    MnList list = {0};
+    MnList list = __mn_list_new(sizeof(int64_t));
     for (int64_t i = 1; i <= 3; i++) __mn_list_push(&list, &i);
     MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
     MnStream *mapped = __mn_stream_map(s, stream_double_fn, NULL, sizeof(int64_t));
@@ -1060,7 +1060,7 @@ TEST(test_stream_map) {
 }
 
 TEST(test_stream_filter) {
-    MnList list = {0};
+    MnList list = __mn_list_new(sizeof(int64_t));
     for (int64_t i = 1; i <= 5; i++) __mn_list_push(&list, &i);
     MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
     MnStream *filtered = __mn_stream_filter(s, stream_is_even_fn, NULL);
@@ -1074,7 +1074,7 @@ TEST(test_stream_filter) {
 }
 
 TEST(test_stream_free_chain) {
-    MnList list = {0};
+    MnList list = __mn_list_new(sizeof(int64_t));
     for (int64_t i = 1; i <= 3; i++) __mn_list_push(&list, &i);
     MnStream *s = __mn_stream_from_list(&list, sizeof(int64_t));
     MnStream *mapped = __mn_stream_map(s, stream_double_fn, NULL, sizeof(int64_t));
@@ -1113,7 +1113,7 @@ TEST(test_any_typename) {
     MnString name = __mn_any_typename(v);
     MnString expected = __mn_str_from_cstr("Int");
     ASSERT_EQ(__mn_str_eq(name, expected), 1);
-    __mn_str_free(expected);
+    __mn_str_free_v(expected);
     /* name is now a static constant — no free needed */
 }
 

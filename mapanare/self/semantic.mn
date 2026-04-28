@@ -159,6 +159,23 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "__mn_str_eprintln" { return true }
     if name == "__mn_system" { return true }
     if name == "__mn_file_write" { return true }
+    // v5.8.4 Wb.2: host-detect (returns 1 on Windows, 0 elsewhere).
+    if name == "__mn_host_is_win64" { return true }
+    // v5.8.6 We.1: refined host-detect — splits Windows-detection
+    // from arch-bits so the emitter can disambiguate Win32 (i686)
+    // from Win64 (x86_64) without rerunning a flawed `_WIN32` check.
+    if name == "__mn_host_is_windows" { return true }
+    if name == "__mn_host_arch_bits" { return true }
+    // v5.9.0 DX.2 / DX.3 / DX.4: native CLI hygiene exports.
+    if name == "__mn_version_string" { return true }
+    if name == "__mn_dev_null_redirect" { return true }
+    if name == "__mn_clang_err_path" { return true }
+    if name == "__mn_dir_count_files" { return true }
+    if name == "__mn_dir_total_size" { return true }
+    if name == "__mn_dir_remove_recursive" { return true }
+    if name == "__mn_file_exists" { return true }
+    // v5.10.0 Win.1b.D: bundled-toolchain lookup support.
+    if name == "__mn_executable_dir" { return true }
     // High-level I/O builtins (v3.41.0)
     if name == "read_line" { return true }
     if name == "read_file" { return true }
@@ -185,6 +202,17 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "gpu_tensor_mul" { return true }
     if name == "gpu_tensor_div" { return true }
     if name == "gpu_tensor_matmul" { return true }
+    // Async builtins (v5.5.0 Sh.4): block_on(future) drives a coroutine
+    // to completion; return type is T of the awaited Future<T>, inferred
+    // from the call site (we use <unknown> so downstream type checks skip).
+    if name == "block_on" { return true }
+    // Tensor builtins (v5.6.0 Sh.6 — mirrors mapanare/types.py:349-355).
+    if name == "tensor_rank" { return true }
+    if name == "tensor_size" { return true }
+    if name == "tensor_get_f64" { return true }
+    if name == "tensor_get_i64" { return true }
+    if name == "tensor_shape_dim" { return true }
+    if name == "tensor_print" { return true }
     return false
 }
 
@@ -231,6 +259,15 @@ fn builtin_return_type(name: String) -> String {
     if name == "gpu_tensor_mul" { return "List" }
     if name == "gpu_tensor_div" { return "List" }
     if name == "gpu_tensor_matmul" { return "List" }
+    // Async (v5.5.0 Sh.4): block_on returns the awaited T; type-inferred.
+    if name == "block_on" { return "<unknown>" }
+    // Tensor builtins (v5.6.0 Sh.6 — mirrors mapanare/types.py:349-355).
+    if name == "tensor_rank" { return "Int" }
+    if name == "tensor_size" { return "Int" }
+    if name == "tensor_get_f64" { return "Float" }
+    if name == "tensor_get_i64" { return "Int" }
+    if name == "tensor_shape_dim" { return "Int" }
+    if name == "tensor_print" { return "Void" }
     return "Void"
 }
 
@@ -517,33 +554,53 @@ fn check_logical_result(left: String, right: String) -> String {
 // ---------------------------------------------------------------------------
 // Type resolution — convert TypeExpr AST nodes to TypeInfo
 // ---------------------------------------------------------------------------
-// Cb.9a (v4.144.0): The Python semantic resolver at semantic.py:416-445
-// handles qualified type references (e.g., device.DeviceKind) via a
-// module_path list on NamedType/GenericType AST nodes. The self-hosted
-// AST uses a flattened string ("device.DeviceKind") in TypeExpr::Named,
-// so resolve_type_expr below passes the dotted name to make_type() as-is.
-// This works for struct fields (the name round-trips through the emitter)
-// but will silently mis-classify if someone does `match` on a qualified
-// enum. Full cross-module type resolution requires adding a module_path
-// field to TypeExpr and mirroring the Python resolver's import-scope
-// lookup. Tracked as Cb.9a for v5.x.
+// Cb.9a CLOSED (v5.0.5): Qualified type references (e.g., "device.DeviceKind")
+// are stored as dotted strings in TypeExpr::Named by the self-hosted parser.
+// bare_type_name() extracts the last component for primitive/builtin
+// classification; the full dotted name is preserved in TypeInfo for emitter
+// round-tripping. Mirrors Python semantic.py:416-420 (module_path lookup +
+// bare-name TypeInfo). See also Gr.2 (grammar accepts NAME (DOT NAME)*
+// since v4.139.0).
 // ---------------------------------------------------------------------------
+
+fn bare_type_name(name: String) -> String {
+    let mut last_dot: Int = 0 - 1
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= len(name) { break }
+        let ch: String = name.substr(i, 1)
+        if ch == "." { last_dot = i }
+        i = i + 1
+    }
+    if last_dot < 0 { return name }
+    return name.substr(last_dot + 1, len(name) - last_dot - 1)
+}
 
 fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
     let tek: String = type_expr_kind(te)
-    if tek == "named" { return make_type(type_expr_name(te)) }
+    if tek == "named" {
+        let name: String = type_expr_name(te)
+        let bare: String = bare_type_name(name)
+        if is_primitive_type(bare) { return make_type(bare) }
+        return make_type(name)
+    }
     if tek == "generic" {
         let name: String = type_expr_name(te)
+        let bare: String = bare_type_name(name)
         let args: List<TypeExpr> = type_expr_args(te)
         let mut resolved: List<TypeInfo> = []
         let mut i: Int = 0
         for _ in 0..200 {
-            if i >= len(args) { return make_generic_type(name, resolved) }
+            if i >= len(args) {
+                if is_builtin_generic(bare) { return make_generic_type(bare, resolved) }
+                return make_generic_type(name, resolved)
+            }
             let arg: TypeExpr = args[i]
             let rt: TypeInfo = resolve_type_expr(arg)
             resolved.push(rt)
             i = i + 1
         }
+        if is_builtin_generic(bare) { return make_generic_type(bare, resolved) }
         return make_generic_type(name, resolved)
     }
     if tek == "fn" {
@@ -651,6 +708,75 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
             }
         }
         return new_infer_result(unknown_type(), idx_r.st)
+    }
+
+    // v5.6.1 Sh.6 Phase 2 — multi-dim tensor indexing `a[i, j]`. Walk the
+    // object + all indices for side-effect inference (pushes diagnostics);
+    // element type is Tensor<T>'s T, defaulting to Float when unknown.
+    if ek == "tensor_index" {
+        let ti_obj_r: InferResult = infer_expr(st, expr_ti_obj(expr))
+        let mut st_ti: SemState = ti_obj_r.st
+        let ti_idxs: List<Expr> = expr_ti_indices(expr)
+        let mut ki: Int = 0
+        let n_idx: Int = len(ti_idxs)
+        for _ in 0..128 {
+            if ki < n_idx {
+                let ixr: InferResult = infer_expr(st_ti, ti_idxs[ki])
+                st_ti = ixr.st
+                ki = ki + 1
+            }
+        }
+        if type_is_error(ti_obj_r.type_info) {
+            return new_infer_result(error_type(), st_ti)
+        }
+        if ti_obj_r.type_info.name == "Tensor" {
+            if len(ti_obj_r.type_info.args) > 0 {
+                return new_infer_result(ti_obj_r.type_info.args[0], st_ti)
+            }
+            return new_infer_result(make_type("Float"), st_ti)
+        }
+        return new_infer_result(unknown_type(), st_ti)
+    }
+
+    // v5.6.3 Sh.6 Phase 4 — tensor slicing `a[1..3, _]`. Walk the object
+    // and every item's expression(s) for diagnostics. Result type is
+    // Tensor<T> (same as input — rank is preserved/reduced at runtime,
+    // not compile-time). Mirrors mapanare/semantic.py's TensorSlice arm.
+    if ek == "tensor_slice" {
+        let sl_obj_r: InferResult = infer_expr(st, expr_slice_obj(expr))
+        let mut st_sl: SemState = sl_obj_r.st
+        let sl_items: List<IndexItem> = expr_slice_items(expr)
+        let mut sl_i: Int = 0
+        let n_items: Int = len(sl_items)
+        for _ in 0..128 {
+            if sl_i < n_items {
+                let it: IndexItem = sl_items[sl_i]
+                if it.kind == "scalar" {
+                    let scr: InferResult = infer_expr(st_sl, it.expr)
+                    st_sl = scr.st
+                }
+                if it.kind == "range" {
+                    let rs_kind: String = expr_kind(it.start)
+                    if rs_kind != "none_lit" {
+                        let rsr: InferResult = infer_expr(st_sl, it.start)
+                        st_sl = rsr.st
+                    }
+                    let re_kind: String = expr_kind(it.end)
+                    if re_kind != "none_lit" {
+                        let rer: InferResult = infer_expr(st_sl, it.end)
+                        st_sl = rer.st
+                    }
+                }
+                sl_i = sl_i + 1
+            }
+        }
+        if type_is_error(sl_obj_r.type_info) {
+            return new_infer_result(error_type(), st_sl)
+        }
+        if sl_obj_r.type_info.name == "Tensor" {
+            return new_infer_result(sl_obj_r.type_info, st_sl)
+        }
+        return new_infer_result(unknown_type(), st_sl)
     }
 
     if ek == "pipe" { return check_pipe_expr(st, expr_pipe_left(expr), expr_pipe_right(expr)) }
@@ -794,6 +920,13 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
     if ek == "assign" { return check_assign_expr(st, expr_assign_target(expr), expr_assign_op(expr), expr_assign_value(expr)) }
     if ek == "if" { return check_if_expr(st, expr_if_cond(expr), expr_if_then(expr), expr_if_else(expr)) }
     if ek == "match" { return check_match_expr(st, expr_match_subject(expr), expr_match_arms(expr)) }
+
+    // v5.5.0 Sh.4: `await expr` — recurse into inner so errors inside are
+    // caught; the awaited T is inferred at lower-level once Future<T> lands.
+    if ek == "await" {
+        let ir_await: InferResult = infer_expr(st, expr_await_inner(expr))
+        return new_infer_result(unknown_type(), ir_await.st)
+    }
 
     return new_infer_result(unknown_type(), st)
 }
@@ -1979,6 +2112,32 @@ fn register_builtins(st: SemState) -> SemState {
     st2 = define_in_scope(st2, "__mn_system", system_sym)
     let fwrite_sym: Symbol = new_symbol("__mn_file_write", "function", make_builtin_fn_type(void_type()), false)
     st2 = define_in_scope(st2, "__mn_file_write", fwrite_sym)
+    // v5.8.4 Wb.2: host-detect for OS-1 detection mechanism.
+    let hostwin_sym: Symbol = new_symbol("__mn_host_is_win64", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_host_is_win64", hostwin_sym)
+    // v5.8.6 We.1: refined (is_windows, arch_bits) pair.
+    let hostiswin_sym: Symbol = new_symbol("__mn_host_is_windows", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_host_is_windows", hostiswin_sym)
+    let hostbits_sym: Symbol = new_symbol("__mn_host_arch_bits", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_host_arch_bits", hostbits_sym)
+    // v5.9.0 DX.2 / DX.3 / DX.4: native CLI hygiene exports.
+    let vsym: Symbol = new_symbol("__mn_version_string", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_version_string", vsym)
+    let dnsym: Symbol = new_symbol("__mn_dev_null_redirect", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_dev_null_redirect", dnsym)
+    let cesym: Symbol = new_symbol("__mn_clang_err_path", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_clang_err_path", cesym)
+    let dcfsym: Symbol = new_symbol("__mn_dir_count_files", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_dir_count_files", dcfsym)
+    let dtssym: Symbol = new_symbol("__mn_dir_total_size", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_dir_total_size", dtssym)
+    let drrsym: Symbol = new_symbol("__mn_dir_remove_recursive", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_dir_remove_recursive", drrsym)
+    let fesym: Symbol = new_symbol("__mn_file_exists", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_file_exists", fesym)
+    // v5.10.0 Win.1b.D: directory of running binary, used by find_clang().
+    let edsym: Symbol = new_symbol("__mn_executable_dir", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_executable_dir", edsym)
 
     // High-level I/O builtins (v3.41.0)
     let readline_sym: Symbol = new_symbol("read_line", "function", make_builtin_fn_type(string_type()), false)
@@ -2060,6 +2219,27 @@ fn register_builtins(st: SemState) -> SemState {
     // List methods
     let push_sym: Symbol = new_symbol("push", "function", make_builtin_fn_type(void_type()), false)
     st2 = define_in_scope(st2, "push", push_sym)
+
+    // Async builtins (v5.5.0 Sh.4): block_on(future) -> T. The return
+    // type is inferred from the awaited Future<T> at the call site; we
+    // register <unknown> so the type system skips downstream checks.
+    let blockon_sym: Symbol = new_symbol("block_on", "function", make_builtin_fn_type(unknown_type()), false)
+    st2 = define_in_scope(st2, "block_on", blockon_sym)
+
+    // Tensor builtins (v5.6.0 Sh.6). Mirrors mapanare/types.py:349-355 and
+    // is_builtin_function/builtin_return_type above.
+    let trank_sym: Symbol = new_symbol("tensor_rank", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_rank", trank_sym)
+    let tsize_sym: Symbol = new_symbol("tensor_size", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_size", tsize_sym)
+    let tgetf_sym: Symbol = new_symbol("tensor_get_f64", "function", make_builtin_fn_type(make_type("Float")), false)
+    st2 = define_in_scope(st2, "tensor_get_f64", tgetf_sym)
+    let tgeti_sym: Symbol = new_symbol("tensor_get_i64", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_get_i64", tgeti_sym)
+    let tsdim_sym: Symbol = new_symbol("tensor_shape_dim", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "tensor_shape_dim", tsdim_sym)
+    let tprint_sym: Symbol = new_symbol("tensor_print", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "tensor_print", tprint_sym)
 
     return st2
 }

@@ -23,7 +23,7 @@ for mn in $ROOT/tests/golden/*.mn; do
   OUT=$OUTDIR/${t}.out
   ERR=$OUTDIR/${t}.err
 
-  timeout 60 $STAGE1 $mn > $OUT 2> $ERR
+  timeout 60 $STAGE1 emit-llvm $mn > $OUT 2> $ERR
   rc=$?
 
   # ASan reports go to stderr. Look for the sanitizer banner.

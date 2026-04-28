@@ -30,6 +30,10 @@
 #include <direct.h>  /* _mkdir, _rmdir */
 #endif
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>  /* _NSGetExecutablePath for __mn_executable_dir */
+#endif
+
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -193,6 +197,18 @@ int64_t mn_checked_add(int64_t a, int64_t b) {
  * ----------------------------------------------------------------------- */
 
 #define mn_untag(ptr) (ptr)
+
+/* v5.8.3 Wb.1: internal C-side MnString-by-value free. The exported
+ * `__mn_str_free` switched to decomposed (data, len_with_heap_bit) args
+ * for Win64-ABI compatibility (see commentary at the export site).
+ * Internal callers in this file pass a whole MnString, so they go
+ * through this static helper. Defined here near the top so it's in
+ * scope for every caller below. */
+static inline void mn_str_free_value(MnString s) {
+    if (s.data && s.is_heap) {
+        __mn_free((void *)s.data);
+    }
+}
 
 /* -----------------------------------------------------------------------
  * Arena Allocator
@@ -410,7 +426,7 @@ MN_EXPORT void __mn_intern_destroy(void) {
     if (!s_intern_table) return;
     for (size_t i = 0; i < s_intern_tbl_sz; i++) {
         if (s_intern_table[i].occupied) {
-            __mn_str_free(s_intern_table[i].str);
+            mn_str_free_value(s_intern_table[i].str);
         }
     }
     free(s_intern_table);
@@ -938,9 +954,18 @@ MN_EXPORT double __mn_str_to_float(MnString s) {
     return strtod(data, NULL);
 }
 
-MN_EXPORT void __mn_str_free(MnString s) {
-    if (s.data && s.is_heap) {
-        __mn_free((void *)s.data);
+/* v5.8.3 Wb.1: __mn_str_free takes decomposed (data, len_with_heap_bit)
+ * instead of MnString by value. Win64 ABI passes 16-byte structs by
+ * hidden pointer in %rcx, but LLVM lowers IR-level `{ptr, i64}`
+ * aggregate args by decomposing into two registers — same shape as
+ * SysV. The mismatch made every drop-glue free crash on Windows.
+ * Decomposed args match what LLVM's aggregate lowering produces on
+ * both ABIs (rdi+rsi on SysV, rcx+rdx on Win64). The internal-C-caller
+ * convenience is preserved via the static `mn_str_free_value` helper
+ * (forward-declared earlier in this file). */
+MN_EXPORT void __mn_str_free(const char *data, int64_t len_with_heap_bit) {
+    if (data && (len_with_heap_bit & MN_STR_HEAP_BIT)) {
+        __mn_free((void *)data);
     }
 }
 
@@ -1189,7 +1214,15 @@ slow_path:
             fprintf(stderr, "WARNING: __mn_list_push: reinitializing corrupted list (data=%p len=%lld cap=%lld elem=%lld)\n",
                     (void *)list->data, (long long)list->len, (long long)list->cap, (long long)list->elem_size);
         }
-        if (list->elem_size <= 0 || list->elem_size > 65536) list->elem_size = 8;
+        /* Ge.1r (v5.1.1): when elem_size is invalid, use 256 as a safe upper
+         * bound instead of 8.  LLVM -O2 can propagate zeroinitializer through
+         * struct fields when promoting allocas to SSA, zeroing the elem_size
+         * of lists inside large value-typed structs (LowerState, MIRModule).
+         * The old fallback of 8 caused 80-byte (16+8*8) buffer allocations
+         * that were too small for struct-typed list elements, producing heap
+         * overreads in register_mir_struct.  256 accommodates any Mapanare
+         * struct without wasting memory (initial alloc = 16+8*256 = 2064). */
+        if (list->elem_size <= 0 || list->elem_size > 65536) list->elem_size = 256;
         list->data = mn_list_alloc_buf(MN_LIST_INITIAL_CAP, list->elem_size);
         list->cap = MN_LIST_INITIAL_CAP;
         list->len = 0;
@@ -1422,7 +1455,7 @@ MN_EXPORT void __mn_list_free_strings(MnList *list) {
     /* Free each contained MnString before freeing the list buffer. */
     for (int64_t i = 0; i < list->len; i++) {
         MnString *sp = (MnString *)(list->data + i * list->elem_size);
-        __mn_str_free(*sp);
+        mn_str_free_value(*sp);
     }
     __mn_list_free(list);
 }
@@ -1601,6 +1634,293 @@ MN_EXPORT int64_t __mn_dir_remove(MnString path) {
 #endif
     __mn_free(cpath);
     return rc == 0 ? 0 : -1;
+}
+
+/* v5.9.0 DX.4: recursive helpers for the native cache-stats / cache-clean
+ * surface in mapanare/self/main.mn. Pre-v5.9.0 those subcommands shelled
+ * out to ``rm -rf`` / ``find ... | wc -l`` / ``du -sh`` — POSIX-only and
+ * silently broken on Windows where __mn_system invokes cmd.exe. The
+ * ``-d was unexpected at this time`` error reported by Windows users at
+ * v5.8.7 was cmd.exe's reaction to bash's ``[ -d ... ]`` test. These
+ * three exports make the code path platform-agnostic. */
+static int64_t mn_dir_walk_size_(const char *cpath) {
+    int64_t total = 0;
+#ifdef _WIN32
+    size_t plen = strlen(cpath);
+    char *pattern = (char *)__mn_alloc(plen + 3);
+    memcpy(pattern, cpath, plen);
+    pattern[plen] = '\\';
+    pattern[plen + 1] = '*';
+    pattern[plen + 2] = '\0';
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = FindFirstFileA(pattern, &ffd);
+    __mn_free(pattern);
+    if (h == INVALID_HANDLE_VALUE) return total;
+    do {
+        const char *n = ffd.cFileName;
+        if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        size_t nlen = strlen(n);
+        char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+        memcpy(child, cpath, plen);
+        child[plen] = '\\';
+        memcpy(child + plen + 1, n, nlen);
+        child[plen + 1 + nlen] = '\0';
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            total += mn_dir_walk_size_(child);
+        } else {
+            ULARGE_INTEGER sz;
+            sz.LowPart = ffd.nFileSizeLow;
+            sz.HighPart = ffd.nFileSizeHigh;
+            total += (int64_t)sz.QuadPart;
+        }
+        __mn_free(child);
+    } while (FindNextFileA(h, &ffd));
+    FindClose(h);
+#else
+    DIR *d = opendir(cpath);
+    if (!d) return total;
+    size_t plen = strlen(cpath);
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        const char *n = ent->d_name;
+        if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        size_t nlen = strlen(n);
+        char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+        memcpy(child, cpath, plen);
+        child[plen] = '/';
+        memcpy(child + plen + 1, n, nlen);
+        child[plen + 1 + nlen] = '\0';
+        struct stat st;
+        if (stat(child, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                total += mn_dir_walk_size_(child);
+            } else {
+                total += (int64_t)st.st_size;
+            }
+        }
+        __mn_free(child);
+    }
+    closedir(d);
+#endif
+    return total;
+}
+
+static int64_t mn_dir_walk_count_(const char *cpath) {
+    int64_t count = 0;
+#ifdef _WIN32
+    size_t plen = strlen(cpath);
+    char *pattern = (char *)__mn_alloc(plen + 3);
+    memcpy(pattern, cpath, plen);
+    pattern[plen] = '\\';
+    pattern[plen + 1] = '*';
+    pattern[plen + 2] = '\0';
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = FindFirstFileA(pattern, &ffd);
+    __mn_free(pattern);
+    if (h == INVALID_HANDLE_VALUE) return count;
+    do {
+        const char *n = ffd.cFileName;
+        if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        size_t nlen = strlen(n);
+        char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+        memcpy(child, cpath, plen);
+        child[plen] = '\\';
+        memcpy(child + plen + 1, n, nlen);
+        child[plen + 1 + nlen] = '\0';
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            count += mn_dir_walk_count_(child);
+        } else {
+            count += 1;
+        }
+        __mn_free(child);
+    } while (FindNextFileA(h, &ffd));
+    FindClose(h);
+#else
+    DIR *d = opendir(cpath);
+    if (!d) return count;
+    size_t plen = strlen(cpath);
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        const char *n = ent->d_name;
+        if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        size_t nlen = strlen(n);
+        char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+        memcpy(child, cpath, plen);
+        child[plen] = '/';
+        memcpy(child + plen + 1, n, nlen);
+        child[plen + 1 + nlen] = '\0';
+        struct stat st;
+        if (stat(child, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                count += mn_dir_walk_count_(child);
+            } else {
+                count += 1;
+            }
+        }
+        __mn_free(child);
+    }
+    closedir(d);
+#endif
+    return count;
+}
+
+static int mn_dir_remove_recursive_(const char *cpath) {
+#ifdef _WIN32
+    size_t plen = strlen(cpath);
+    char *pattern = (char *)__mn_alloc(plen + 3);
+    memcpy(pattern, cpath, plen);
+    pattern[plen] = '\\';
+    pattern[plen + 1] = '*';
+    pattern[plen + 2] = '\0';
+    WIN32_FIND_DATAA ffd;
+    HANDLE h = FindFirstFileA(pattern, &ffd);
+    __mn_free(pattern);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            const char *n = ffd.cFileName;
+            if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+            size_t nlen = strlen(n);
+            char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+            memcpy(child, cpath, plen);
+            child[plen] = '\\';
+            memcpy(child + plen + 1, n, nlen);
+            child[plen + 1 + nlen] = '\0';
+            if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                mn_dir_remove_recursive_(child);
+            } else {
+                remove(child);
+            }
+            __mn_free(child);
+        } while (FindNextFileA(h, &ffd));
+        FindClose(h);
+    }
+    return _rmdir(cpath);
+#else
+    DIR *d = opendir(cpath);
+    if (d) {
+        size_t plen = strlen(cpath);
+        struct dirent *ent;
+        while ((ent = readdir(d)) != NULL) {
+            const char *n = ent->d_name;
+            if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+            size_t nlen = strlen(n);
+            char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
+            memcpy(child, cpath, plen);
+            child[plen] = '/';
+            memcpy(child + plen + 1, n, nlen);
+            child[plen + 1 + nlen] = '\0';
+            struct stat st;
+            if (lstat(child, &st) == 0) {
+                if (S_ISDIR(st.st_mode)) {
+                    mn_dir_remove_recursive_(child);
+                } else {
+                    remove(child);
+                }
+            }
+            __mn_free(child);
+        }
+        closedir(d);
+    }
+    return rmdir(cpath);
+#endif
+}
+
+MN_EXPORT int64_t __mn_dir_remove_recursive(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int rc = mn_dir_remove_recursive_(cpath);
+    __mn_free(cpath);
+    return rc == 0 ? 0 : -1;
+}
+
+MN_EXPORT int64_t __mn_dir_count_files(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int64_t r = mn_dir_walk_count_(cpath);
+    __mn_free(cpath);
+    return r;
+}
+
+MN_EXPORT int64_t __mn_dir_total_size(MnString path) {
+    char *cpath = mn_to_cstr(path);
+    int64_t r = mn_dir_walk_size_(cpath);
+    __mn_free(cpath);
+    return r;
+}
+
+/* v5.9.0 DX.4: dev-null redirect string for use in __mn_system command
+ * concatenation. cmd.exe rejects ``2>/dev/null`` with "The system cannot
+ * find the path specified" — every existing ``2>/dev/null`` in main.mn
+ * pre-v5.9.0 was a latent Windows breakage. */
+MN_EXPORT MnString __mn_dev_null_redirect(void) {
+#ifdef _WIN32
+    return __mn_str_from_cstr(" 2>NUL");
+#else
+    return __mn_str_from_cstr(" 2>/dev/null");
+#endif
+}
+
+/* v5.9.0 DX.3: platform-portable temp path for capturing clang stderr.
+ * The ``run`` / ``build`` / ``test`` / ``compile`` paths in main.mn used
+ * to swallow clang stderr via ``2>/dev/null``; on a clang failure the
+ * user got bare ``error: clang failed`` with no diagnostic. The new
+ * surface redirects to this path and reprints contents on non-zero
+ * exit. ``/tmp`` doesn't exist on Windows, so resolve %TEMP% there. */
+MN_EXPORT MnString __mn_clang_err_path(void) {
+#ifdef _WIN32
+    static char buf[1024];
+    static int set = 0;
+    if (!set) {
+        const char *t = getenv("TEMP");
+        if (!t || !*t) t = getenv("TMP");
+        if (!t || !*t) t = "C:\\Windows\\Temp";
+        snprintf(buf, sizeof(buf), "%s\\mnc_clang_err.txt", t);
+        set = 1;
+    }
+    return __mn_str_from_cstr(buf);
+#else
+    return __mn_str_from_cstr("/tmp/.mnc_clang_err");
+#endif
+}
+
+/* v5.10.0 Win.1b.D: directory containing the running binary. find_clang()
+ * in main.mn uses this to prefer a bundled LLVM toolchain at
+ * `<exe_dir>/llvm/clang(.exe)` over PATH clang. Returns an empty string
+ * if the lookup fails — the caller falls through to PATH. Result is
+ * cached after the first call (deterministic per process). */
+MN_EXPORT MnString __mn_executable_dir(void) {
+    static char path[4096];
+    static int initialized = 0;
+    if (initialized) return __mn_str_from_cstr(path);
+    initialized = 1;
+
+#ifdef _WIN32
+    DWORD n = GetModuleFileNameA(NULL, path, sizeof(path));
+    if (n == 0 || n >= sizeof(path)) {
+        path[0] = '\0';
+        return __mn_str_empty();
+    }
+#elif defined(__APPLE__)
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) != 0) {
+        path[0] = '\0';
+        return __mn_str_empty();
+    }
+#else
+    ssize_t n = readlink("/proc/self/exe", path, sizeof(path) - 1);
+    if (n <= 0) {
+        path[0] = '\0';
+        return __mn_str_empty();
+    }
+    path[n] = '\0';
+#endif
+
+    /* Strip the trailing basename to get the directory. */
+    char *slash = strrchr(path, '/');
+#ifdef _WIN32
+    char *bslash = strrchr(path, '\\');
+    if (bslash > slash) slash = bslash;
+#endif
+    if (slash) *slash = '\0';
+    return __mn_str_from_cstr(path);
 }
 
 MN_EXPORT int64_t __mn_file_rename(MnString old_path, MnString new_path) {
@@ -2118,12 +2438,12 @@ MN_EXPORT void __mn_map_free_deep(MnMap *map) {
             /* Free string keys */
             if (map->key_type == MN_MAP_KEY_STR) {
                 MnString *key = (MnString *)(bucket + 2);
-                __mn_str_free(*key);
+                mn_str_free_value(*key);
             }
             /* Free string values using explicit val_type tag */
             if (map->val_type == MN_MAP_VAL_STR) {
                 MnString *val = (MnString *)(bucket + 2 + map->key_size);
-                __mn_str_free(*val);
+                mn_str_free_value(*val);
             }
         }
         __mn_free(map->buckets);
@@ -2948,6 +3268,67 @@ MN_EXPORT void __mn_panic(MnString message) {
     }
     fputc('\n', stderr);
     exit(1);
+}
+
+/* v5.8.4 Wb.2: Host detection for self-hosted ABI classifier.
+ * Originally returned "is Win64" but actually reads `_WIN32`, which
+ * is defined for *both* 32-bit and 64-bit Windows builds. v5.8.6
+ * We.1 closes that latent gap by introducing __mn_host_is_windows
+ * + __mn_host_arch_bits below; this export is preserved unchanged
+ * for source-compat with v5.8.4–v5.8.5 stage1 binaries that look
+ * for the symbol by its old name during self-compile. */
+MN_EXPORT int64_t __mn_host_is_win64(void) {
+#ifdef _WIN32
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+/* v5.8.6 We.1: returns 1 on any Windows host (Win32 or Win64), 0
+ * elsewhere. Replaces the misleading-named __mn_host_is_win64 for
+ * the (is_windows, arch_bits) pair the v5.8.6+ self-hosted emitter
+ * uses to disambiguate Win64 sret/sarg from i686 cdecl sret/byval.
+ * `_WIN32` is the canonical "any Windows" macro per Microsoft and
+ * MinGW conventions — defined for both i686-w64-mingw32 and
+ * x86_64-w64-mingw32. */
+MN_EXPORT int64_t __mn_host_is_windows(void) {
+#ifdef _WIN32
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+/* v5.8.6 We.1: returns 32 on ILP32 hosts (i686, armv7, etc.) and
+ * 64 on LP64/LLP64 hosts (x86_64, aarch64, Win64). Default 64 on
+ * unknown architectures so non-Windows callers still see a sane
+ * value. Used by the self-hosted ABI classifier to choose between
+ * Win64 (arch_bits == 64 && is_windows), i686 cdecl (arch_bits ==
+ * 32 && is_windows), and SysV / AAPCS64 (! is_windows). */
+MN_EXPORT int64_t __mn_host_arch_bits(void) {
+#if defined(_WIN64) || defined(__x86_64__) || defined(__aarch64__) || defined(__powerpc64__)
+    return 64;
+#elif defined(__i386__) || defined(_M_IX86) || defined(__arm__)
+    return 32;
+#else
+    return 64;
+#endif
+}
+
+/* v5.9.0 DX.2: build-time-baked version constant. The build pipeline
+ * passes -DMAPANARE_VERSION="\"X.Y.Z\"" sourced from the top-level
+ * VERSION file when compiling this TU. Replaces the __MN_VERSION__
+ * source-tree placeholder + scripts/build_stage1.py:_substitute_version()
+ * dance that produced two known stale-version bugs across project
+ * history (v4.28.0 forensics, v5.8.7 Windows install). Mirrors v5.8.6
+ * We.1's host detection pattern. */
+#ifndef MAPANARE_VERSION
+#define MAPANARE_VERSION "unknown"
+#endif
+
+MN_EXPORT MnString __mn_version_string(void) {
+    return __mn_str_from_cstr(MAPANARE_VERSION);
 }
 
 /* -----------------------------------------------------------------------

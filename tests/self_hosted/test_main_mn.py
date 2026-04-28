@@ -18,7 +18,6 @@ SELF_DIR = REPO_ROOT / "mapanare" / "self"
 MAIN_MN = SELF_DIR / "main.mn"
 VERSION_FILE = REPO_ROOT / "VERSION"
 MNC_STAGE1 = SELF_DIR / "mnc-stage1"
-VERSION_PLACEHOLDER = "__MN_VERSION__"
 
 
 @pytest.fixture
@@ -74,27 +73,25 @@ class TestMainMnPipeline:
         emit_pos = src.index("emit_mir_module(")
         assert parse_pos < lower_pos < emit_pos
 
-    def test_version_placeholder_in_source(self, main_mn_source: str) -> None:
-        """The ``version()`` function must return the ``__MN_VERSION__`` placeholder.
+    def test_version_calls_runtime_export(self, main_mn_source: str) -> None:
+        """``version()`` must call ``__mn_version_string()`` (v5.9.0 DX.2).
 
-        v4.28.0: the literal version string used to be hardcoded in
-        ``main.mn``. That meant the only way the test could pass was a
-        substring match against the entire source file — which gave false
-        positives the moment any comment mentioned the current version
-        (e.g. a ``v4.27.0 recovery`` note). The placeholder is substituted
-        by ``scripts/build_stage1.py`` from the top-level ``VERSION`` file
-        at build time. See ``docs/roadmap/v4/v4.28.0/FORENSICS.md``.
+        Replaced the v4.28.0 ``__MN_VERSION__`` build-time placeholder with
+        a C-runtime export baked at C-compile time via ``-DMAPANARE_VERSION``.
+        Same dispatch shape as ``__mn_host_is_windows()`` (v5.8.6 We.1).
+        Guards against any edit that re-introduces a literal in the body.
         """
-        assert f'return "mapanare {VERSION_PLACEHOLDER}"' in main_mn_source, (
-            "version() must return the placeholder string so the build can "
-            "substitute the live VERSION. Any hardcoded literal is a 19-version-stale "
-            "regression waiting to happen."
+        assert "__mn_version_string()" in main_mn_source, (
+            "version() must call __mn_version_string() — the build pipeline "
+            "bakes the version into the C runtime via -DMAPANARE_VERSION. "
+            "A literal would re-open the staleness class that v4.28.0 closed "
+            "and v5.9.0 DX.2 made structural."
         )
 
     def test_version_string_is_not_hardcoded(self, main_mn_source: str) -> None:
         """No hardcoded ``mapanare X.Y.Z`` literal may appear in ``version()``.
 
-        Guards against a future edit that replaces the placeholder with a
+        Guards against a future edit that replaces the runtime call with a
         fresh hardcoded literal.
         """
         import re
@@ -114,7 +111,7 @@ class TestMainMnPipeline:
                     hardcoded_hits.append((i, line.strip()))
         assert not hardcoded_hits, (
             f"Hardcoded version literal found in version() body: {hardcoded_hits}. "
-            f"Use {VERSION_PLACEHOLDER!r} instead and let the build substitute it."
+            f"Call __mn_version_string() and let the C runtime supply the value."
         )
 
     @pytest.mark.skipif(

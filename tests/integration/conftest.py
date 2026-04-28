@@ -9,6 +9,7 @@ from __future__ import annotations
 import pathlib
 import shutil
 import subprocess
+import sys
 import textwrap
 from dataclasses import dataclass, field
 
@@ -117,6 +118,21 @@ def link_binary(obj_path: pathlib.Path, out_dir: pathlib.Path) -> pathlib.Path:
     _ensure_runtime()
     binary_path = out_dir / obj_path.stem
     tool = _find_tool("clang")
+    # v5.8.8: macOS needs Metal + Foundation frameworks linked. The
+    # runtime archive includes ``mapanare_metal.o`` (Da.2 fix to
+    # Makefile build-rt), and that .o calls into the Metal /
+    # Foundation Objective-C runtimes — without -framework here the
+    # link fails with "Undefined symbols for architecture arm64:
+    # _mapanare_metal_available" etc.
+    extra_link: list[str] = []
+    if sys.platform == "darwin":
+        extra_link += [
+            "-framework",
+            "Metal",
+            "-framework",
+            "Foundation",
+            "-fobjc-arc",
+        ]
     result = _run(
         [
             tool,
@@ -125,6 +141,7 @@ def link_binary(obj_path: pathlib.Path, out_dir: pathlib.Path) -> pathlib.Path:
             "-lm",
             "-lpthread",
             "-ldl",
+            *extra_link,
             "-o",
             str(binary_path),
         ]

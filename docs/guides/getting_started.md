@@ -185,14 +185,13 @@ The golden test suite validates the self-hosted compiler end-to-end:
 python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 --run
 ```
 
-As of v4.143.0 the self-hosted compiler passes **54/66** golden tests
-through `test_native.py`. A near 3-stage fixed point holds since
-v4.134.0 — `stage2.ll` and `stage3.ll` match structurally (identical
-IR, same 109,872 line count) with a bounded 4-line version-metadata
-diff from the v4.139.0 `__MN_VERSION__` substitution (Dr.1). The
-remaining 12 tests fall into named docket buckets (see below). For
-end-user programs that don't hit those features, both pipelines
-produce equivalent binaries.
+As of **v5.7.0** the self-hosted compiler passes **66/66** golden
+tests through `test_native.py` — first time in project history. A
+3-stage fixed point was first reached at v4.134.0; the In.1 inliner
+re-enable at v5.1.2 temporarily regressed it (restoration tracked at
+v5.3.2). The corpus is now at full parity with the Python bootstrap
+for the test suite that defines "self-hosting." Remaining work is
+v6.0 borrow-checker scope (Rt.04 multi-level alias analysis).
 
 ### What the self-hosted compiler doesn't do yet
 
@@ -233,7 +232,7 @@ pytest tests/bootstrap/ -v -n auto    # self-hosted compiler tests
 make lint                             # black + ruff + mypy
 ```
 
-5,160+ tests. The `-n auto` flag (via `pytest-xdist`) runs in parallel.
+5,445+ tests. The `-n auto` flag (via `pytest-xdist`) runs in parallel.
 
 ---
 

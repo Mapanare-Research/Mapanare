@@ -1,4 +1,4 @@
-"""v4.125.0 Cross-language benchmark suite.
+"""Cross-language benchmark suite.
 
 Compares Mapanare against 5 other languages across 6 workloads:
 
@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 import statistics
@@ -45,7 +46,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 BENCH_DIR = Path(__file__).resolve().parent
 RUNTIME_LIB = ROOT / "runtime" / "native" / "libmapanare_rt.a"
-RESULTS_FILE = BENCH_DIR / "v4.125.0-results.json"
+
+# v5.0.6 Bn.3: read live VERSION file instead of hardcoding.
+# Prior to this fix, every benchmark JSON claimed version "4.125.0"
+# regardless of the tree state — three cycles of Mamba review flagged it.
+MAPANARE_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+RESULTS_FILE = BENCH_DIR / f"v{MAPANARE_VERSION}-results.json"
+
+
+def geomean(ratios: list[float]) -> float:
+    """Geometric mean of positive ratios.
+
+    Returns ``math.nan`` for empty input or any non-positive ratio —
+    the geometric mean is undefined for those cases, and a 0.0
+    sentinel would silently read as "infinitely fast" in benchmark
+    summaries.
+
+    >>> geomean([1.0, 4.0])
+    2.0
+    >>> round(geomean([0.5, 2.0, 8.0]), 6)
+    2.0
+    """
+    if not ratios or any(r <= 0 for r in ratios):
+        return math.nan
+    return math.exp(sum(math.log(r) for r in ratios) / len(ratios))
 
 
 # ---------------------------------------------------------------------------
@@ -656,7 +680,7 @@ LANG_ORDER = [
 
 def run_all(only: str | None, n_runs: int) -> dict:
     print("=" * 78)
-    print(f"  CROSS-LANGUAGE BENCHMARK SUITE (v4.125.0) -- {n_runs} runs per config")
+    print(f"  CROSS-LANGUAGE BENCHMARK SUITE (v{MAPANARE_VERSION}) -- {n_runs} runs per config")
     print("=" * 78)
 
     tool_report = {
@@ -700,8 +724,8 @@ def run_all(only: str | None, n_runs: int) -> dict:
                 )
         print()
 
-    return {
-        "version": "4.125.0",
+    out: dict = {
+        "version": MAPANARE_VERSION,
         "date": time.strftime("%Y-%m-%d"),
         "runs_per_config": n_runs,
         "environment": {
@@ -712,6 +736,38 @@ def run_all(only: str | None, n_runs: int) -> dict:
         },
         "results": [asdict(r) for r in all_results],
     }
+    # v5.1.2 Bn.2: compute and embed geomean ratios in the JSON so downstream
+    # reports can cite them without recomputing. Mamba v4.154.0 flagged the
+    # prior approach (external recomputation diverging from reported numbers).
+    gm = _compute_geomean_ratios(out)
+    if gm:
+        out["geomean_ratios"] = {k: round(v, 4) for k, v in gm.items()}
+    return out
+
+
+def _compute_geomean_ratios(data: dict) -> dict[str, float]:
+    """Compute Mn/Lang geomean ratios from raw results.
+
+    v5.1.2 Bn.2: independent geomean computation from per-benchmark medians.
+    Returns {lang_name: geomean_ratio} where ratio = Mn_time / Lang_time.
+    """
+    by_bench: dict[str, dict[str, float]] = {}
+    for entry in data["results"]:
+        wm = entry.get("wall_median_ms", 0)
+        if wm > 0:
+            by_bench.setdefault(entry["benchmark"], {})[entry["language"]] = wm
+
+    ratios_per_lang: dict[str, list[float]] = {}
+    for bench_name, lang_times in by_bench.items():
+        mn_time = lang_times.get("Mapanare")
+        if mn_time is None or mn_time <= 0:
+            continue
+        for lang, lt in lang_times.items():
+            if lang == "Mapanare" or lt <= 0:
+                continue
+            ratios_per_lang.setdefault(lang, []).append(mn_time / lt)
+
+    return {lang: geomean(rs) for lang, rs in ratios_per_lang.items() if rs}
 
 
 def _format_summary_table(data: dict) -> str:
@@ -737,11 +793,22 @@ def _format_summary_table(data: dict) -> str:
             else:
                 row.append("—")
         lines.append("| " + " | ".join(row) + " |")
+
+    # v5.1.2 Bn.2: append geomean ratios
+    gm = _compute_geomean_ratios(data)
+    if gm:
+        lines.append("")
+        lines.append("**Mn/Lang geomean ratios** (lower = faster than Lang):")
+        for lang, ratio in sorted(gm.items()):
+            lines.append(f"  Mn/{lang}: {ratio:.3f}x")
+
     return "\n".join(lines)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="v4.125.0 cross-language benchmark suite")
+    parser = argparse.ArgumentParser(
+        description=f"v{MAPANARE_VERSION} cross-language benchmark suite"
+    )
     parser.add_argument("--runs", type=int, default=10, help="runs per config (default: 10)")
     parser.add_argument(
         "--only",

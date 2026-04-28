@@ -31,7 +31,7 @@ for test in tests/golden/*.mn; do
     expected=$(python3 -m mapanare run "$test" 2>/dev/null) || { echo "  ${name}: SKIP (Python run failed)"; skip=$((skip+1)); continue; }
 
     # Compile through stage1
-    "$STAGE1" "$test" > "/tmp/${name}.ll" 2>/dev/null || { echo -e "  ${name}: ${RED}FAIL${NC} (stage1 compile error)"; fail=$((fail+1)); continue; }
+    "$STAGE1" emit-llvm "$test" > "/tmp/${name}.ll" 2>/dev/null || { echo -e "  ${name}: ${RED}FAIL${NC} (stage1 compile error)"; fail=$((fail+1)); continue; }
 
     # LLVM assemble
     llvm-as "/tmp/${name}.ll" -o "/tmp/${name}.bc" 2>/dev/null || { echo -e "  ${name}: ${RED}FAIL${NC} (llvm-as error)"; fail=$((fail+1)); continue; }

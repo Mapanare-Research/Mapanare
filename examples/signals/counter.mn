@@ -1,0 +1,45 @@
+// Reactive signal counter -- demonstrates Mapanare's signal primitive.
+//
+// Signals are first-class reactive values. When a source signal is
+// written via `.value`, any computed signal that depended on it is
+// automatically marked dirty and re-evaluated on the next read.
+//
+// Expected output (one integer per line):
+//   0
+//   0
+//   1
+//   2
+//   5
+//   10
+//   10
+//   20
+//
+// The Python bootstrap's C backend currently has a signal-typing
+// bug, so run this example via the LLVM path:
+//
+//   python -m mapanare emit-llvm examples/signals/counter.mn -o counter.ll
+//   clang counter.ll runtime/native/libmapanare_rt.a -lm -lpthread -o counter
+//   ./counter
+//
+// Once the native driver (`mnc run`) is the default, this simplifies
+// to: `mnc run examples/signals/counter.mn`.
+
+fn main() {
+    let mut count = signal(0)
+    let doubled = signal { count.value * 2 }
+
+    print(count.value)     // 0
+    print(doubled.value)   // 0
+
+    count.value = 1
+    print(count.value)     // 1
+    print(doubled.value)   // 2  -- recomputed automatically
+
+    count.value = 5
+    print(count.value)     // 5
+    print(doubled.value)   // 10
+
+    count.value = 10
+    print(count.value)     // 10
+    print(doubled.value)   // 20
+}

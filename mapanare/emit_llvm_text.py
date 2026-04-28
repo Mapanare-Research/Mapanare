@@ -44,6 +44,7 @@ from mapanare.mir import (
     MIRModule,
     MIRPipeInfo,
     MIRType,
+    Move,
     Phi,
     Return,
     SignalComputed,
@@ -458,6 +459,8 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_url_parse_host": {"nounwind"},
     "__mn_url_parse_port": {"nounwind", "readonly"},
     "__mn_url_parse_path": {"nounwind"},
+    # v5.1.0 Perf.1: inline list access emits bounds-check trap via abort().
+    "abort": {"nounwind", "noreturn"},
 }
 
 
@@ -524,10 +527,22 @@ class LLVMTextEmitter:
         self._boxed_slots: dict[str, str] = {}  # dest var name → boxed tracking slot
         self._last_tracked_boxed_slot: str | None = None
         self._list_vars: list[str] = []  # dest names for list cleanup
+        # v5.4.4 Own.1 Phase 2 — parallel SSA-source arrays aligned with
+        # _local_strings / _local_boxed / _list_vars. Populated by the
+        # trackers with the bare SSA source name so drop glue can
+        # consult _moved_locals when the lowerer emits Move(src).
+        self._local_strings_source: list[str] = []
+        self._local_boxed_source: list[str] = []
+        self._list_vars_source: list[str] = []
+        self._moved_locals: set[str] = set()
         self._map_vars: list[str] = []  # dest names for map cleanup
         self._signal_vars: list[str] = []  # dest names for signal cleanup
         self._stream_vars: list[str] = []  # dest names for stream cleanup
         self._tensor_vars: list[str] = []  # dest names for tensor cleanup (v4.42.0)
+        # v5.4.3 — nested-loop depth for free-before-store in _track_*.
+        # Pushed when iterating a block whose label starts with
+        # for_body / while_body / mapfor_body; popped after.
+        self._loop_depth: int = 0
         # v4.146.0 E2: precomputed set of pure function names (module-level)
         self._pure_fns: set[str] = set()
         # debug info (DWARF) — v4.62.0 infrastructure
@@ -593,6 +608,7 @@ class LLVMTextEmitter:
         d[Assert] = self._do_assert
         d[AwaitSuspend] = self._do_await_suspend
         d[BlockOn] = self._do_block_on
+        d[Move] = self._do_move
 
     # ── debug metadata helpers (v4.62.0) ─────────────────────────────
 
@@ -1207,8 +1223,67 @@ class LLVMTextEmitter:
 
     # ── declaration helpers ─────────────────────────────────────────
     @property
-    def _win64(self) -> bool:
+    def _is_windows(self) -> bool:
+        """v5.8.6 We.1: any Windows target (i686 or x86_64).
+
+        Replaces the v5.8.4 single-flag ``_win64`` semantic, which
+        conflated "Windows host" with "use Win64 ABI rules" because
+        ``_win64`` returned True for any triple containing ``windows``
+        — including ``i686-w64-windows-gnu``. Win32 (cdecl) and Win64
+        have different return-size thresholds and different aggregate-
+        arg conventions, so the dispatch needs to know both pieces.
+        """
         return "windows" in self._triple
+
+    @property
+    def _win_arch_bits(self) -> int:
+        """v5.8.6 We.1: pointer-width of the target triple in bits.
+
+        32 for ``i686-*`` / ``i386-*``, 64 otherwise. The two-bit pair
+        ``(_is_windows, _win_arch_bits)`` selects the ABI dispatch
+        path: (True, 64) → Win64 sret/sarg, (True, 32) → i686 cdecl
+        sret/byval, (False, *) → SysV / AAPCS64 by-value.
+        """
+        if self._triple.startswith("i686") or self._triple.startswith("i386"):
+            return 32
+        return 64
+
+    @property
+    def _use_win64_abi(self) -> bool:
+        """v5.8.6 We.1: True iff Win64 sret/sarg ABI rules apply."""
+        return self._is_windows and self._win_arch_bits == 64
+
+    @property
+    def _use_i686_abi(self) -> bool:
+        """v5.8.6 We.1: True iff i686 cdecl sret/byval ABI rules apply."""
+        return self._is_windows and self._win_arch_bits == 32
+
+    @property
+    def _use_apple_aarch64_abi(self) -> bool:
+        """v5.8.8 Da.1: True iff Apple AArch64 (AAPCS64-Apple) sret rules apply.
+
+        LLVM's arm64 backend lowers ``define {ptr, i64, ...} @fn()`` (a
+        first-class aggregate return) as register-tuple return (x0..xN),
+        but the C runtime returns > 16 B aggregates via x8 indirect per
+        AAPCS64. The mismatch produces silent miscompilation: caller
+        reads x0..xN and gets uninitialised register state. SysV-x86_64
+        is forgiving (LLVM's x86_64 backend silently rewrites first-class
+        aggregate return → sret-style memory return per AMD64 §3.2.3
+        memory class); arm64 is not. See
+        ``docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md``.
+        """
+        return self._triple.startswith("aarch64-apple")
+
+    @property
+    def _win64(self) -> bool:
+        """v5.8.4 deprecated alias — kept for in-file source compat.
+
+        Now means "use Win64 ABI rules" (was previously "Windows
+        host"); for code paths that actually want the latter, use
+        ``_is_windows``. Reads as a property so existing call sites
+        don't need source rewrites within emit_llvm_text.py.
+        """
+        return self._use_win64_abi
 
     @staticmethod
     def _is_ptr(ty: str) -> bool:
@@ -1252,7 +1327,7 @@ class LLVMTextEmitter:
         self._declared.add(nm)
         self._sigs[nm] = (ret, pts, va)
 
-        if self._win64:
+        if self._use_win64_abi:
             # Win64 ABI: large structs passed by pointer, returned via sret
             abi_pts = ["ptr" if self._is_large_struct(t) else t for t in pts]
             if self._is_large_struct(ret):
@@ -1261,6 +1336,34 @@ class LLVMTextEmitter:
                 abi_ret = "void"
             else:
                 abi_ret = ret
+        elif self._use_i686_abi:
+            # v5.8.6 We.1: i686 cdecl — large structs (> 8 B) need
+            # the `byval(<orig>) align 4` attribute so LLVM's i686
+            # backend lowers them as caller-pushes-by-value, matching
+            # gcc/clang's C ABI for ``MnString``-shaped runtime fns.
+            # Returns > 8 B use the same sret-with-`align 8` shape.
+            abi_pts = [f"ptr byval({t}) align 4" if self._is_large_struct(t) else t for t in pts]
+            if self._is_large_struct(ret):
+                sret = f"ptr sret({ret}) align 8"
+                abi_pts = [sret] + abi_pts
+                abi_ret = "void"
+            else:
+                abi_ret = ret
+        elif self._use_sret(ret):
+            # v5.8.8 Da.1: SysV / AAPCS64 default — > 16 B aggregate
+            # returns must use sret. SysV's "memory class" rule
+            # (AMD64 §3.2.3) and AAPCS64's x8 indirect-result rule
+            # both lower a > 16 B struct return via a hidden first-arg
+            # pointer. LLVM's x86_64 backend silently rewrites
+            # first-class aggregate returns to sret-style memory
+            # return, so the old shape worked on Linux by accident;
+            # LLVM's arm64 backend does not, so the same IR
+            # miscompiles on Apple Silicon. Emit the canonical sret
+            # form unconditionally — matches clang's lowering on both
+            # targets and produces equivalent machine code. See
+            # docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md.
+            abi_pts = [f"ptr sret({ret}) align 8"] + list(pts)
+            abi_ret = "void"
         else:
             abi_pts = list(pts)
             abi_ret = ret
@@ -1389,6 +1492,17 @@ class LLVMTextEmitter:
         if name in self._boxed_slots:
             slot = self._boxed_slots.pop(name)
             self._L(f"store ptr null, ptr {slot}")
+        # v5.4.4 — record the move in _moved_locals so drop glue skips
+        # any tracked slot whose source aliases this name, even when
+        # _str_slots / _boxed_slots didn't wire the slot at track time.
+        self._moved_locals.add(name.lstrip("%"))
+
+    def _do_move(self, i: Move) -> None:
+        # v5.4.0 Own.1 Phase 2 — Move marker from the lowerer. Route to
+        # _move_resource so the Python emitter recognizes explicit
+        # ownership transfers emitted by the self-hosted-style lowerer.
+        # _do_call's blanket-move remains the primary path for most calls.
+        self._move_resource(i.value.name)
 
     def _coerce(self, val: str, fr: str, to: str) -> str:
         if fr == to:
@@ -1482,7 +1596,7 @@ class LLVMTextEmitter:
             et = pts[i] if i < len(pts) else t
             coerced.append((self._coerce(v, t, et) if t != et else v, et))
 
-        if self._win64:
+        if self._use_win64_abi:
             # Win64 ABI: pass large structs by pointer, return via sret
             abi_args: list[tuple[str, str]] = []
             for v, t in coerced:
@@ -1511,6 +1625,53 @@ class LLVMTextEmitter:
             self._L(f"{r} = call {ret} @{fn}({a_str})")
             return r
 
+        if self._use_i686_abi:
+            # v5.8.6 We.1: i686 cdecl — same alloca-and-pass mechanic
+            # as Win64, but the call-site argument carries the
+            # ``byval(<orig>) align 4`` attribute so LLVM's i686
+            # backend lowers it as caller-pushes-by-value (matching
+            # gcc/clang's C ABI). Return > 8 B uses the same sret
+            # ``align 8`` shape Win64 uses.
+            abi_args_i: list[tuple[str, str]] = []
+            for v, t in coerced:
+                if self._is_large_struct(t):
+                    a = self._alloca(t, "sarg")
+                    self._L(f"store {t} {v}, ptr {a}")
+                    abi_args_i.append((a, f"ptr byval({t}) align 4"))
+                else:
+                    abi_args_i.append((v, t))
+
+            if self._is_large_struct(ret):
+                sret_a_i = self._alloca(ret, nm or "sret")
+                sret_arg_i = f"ptr sret({ret}) align 8 {sret_a_i}"
+                rest_i = ", ".join(f"{t} {v}" for v, t in abi_args_i)
+                a_str_i = f"{sret_arg_i}, {rest_i}" if rest_i else sret_arg_i
+                self._L(f"call void @{fn}({a_str_i})")
+                r = self._f(nm or "rt")
+                self._L(f"{r} = load {ret}, ptr {sret_a_i}")
+                return r
+
+            a_str_i = ", ".join(f"{t} {v}" for v, t in abi_args_i)
+            if ret == VOID:
+                self._L(f"call void @{fn}({a_str_i})")
+                return ""
+            r = self._f(nm or "rt")
+            self._L(f"{r} = call {ret} @{fn}({a_str_i})")
+            return r
+
+        if self._use_sret(ret):
+            # v5.8.8 Da.1: SysV / AAPCS64 default — sret call shape
+            # for > 16 B aggregate returns. Mirrors _decl_fn's default
+            # sret declaration. Caller alloca + sret call + load.
+            sret_a = self._alloca(ret, nm or "sret")
+            sret_arg = f"ptr sret({ret}) align 8 {sret_a}"
+            rest = ", ".join(f"{t} {v}" for v, t in coerced)
+            a_str = f"{sret_arg}, {rest}" if rest else sret_arg
+            self._L(f"call void @{fn}({a_str})")
+            r = self._f(nm or "rt")
+            self._L(f"{r} = load {ret}, ptr {sret_a}")
+            return r
+
         a = ", ".join(f"{t} {v}" for v, t in coerced)
         if ret == VOID:
             self._L(f"call void @{fn}({a})")
@@ -1530,8 +1691,15 @@ class LLVMTextEmitter:
         slot = self._f("str_track")
         self._ent.append(f"  {slot} = alloca {{ptr, i64}}, align 8")
         self._ent.append(f"  store {{ptr, i64}} zeroinitializer, ptr {slot}")
+        # v5.4.3 — Rt.03: free-before-store inside loop bodies.
+        if self._loop_depth > 0:
+            prev = self._f("prev_str")
+            self._L(f"{prev} = load {{ptr, i64}}, ptr {slot}")
+            self._L(f"call void @__mn_str_free({{ptr, i64}} {prev})")
         self._L(f"store {{ptr, i64}} {val}, ptr {slot}")
         self._local_strings.append(slot)
+        # v5.4.4 — parallel source array aligned with _local_strings.
+        self._local_strings_source.append(val.lstrip("%"))
         self._last_tracked_str_slot = slot
 
     def _track_closure(self, val: str) -> None:
@@ -1539,6 +1707,13 @@ class LLVMTextEmitter:
         slot = self._f("clos_track")
         self._ent.append(f"  {slot} = alloca {{ptr, ptr}}, align 8")
         self._ent.append(f"  store {{ptr, ptr}} zeroinitializer, ptr {slot}")
+        # v5.4.3 — free the env ptr only; fn ptr is code, no free.
+        if self._loop_depth > 0:
+            prev = self._f("prev_clos")
+            env_prev = self._f("prev_clos_env")
+            self._L(f"{prev} = load {{ptr, ptr}}, ptr {slot}")
+            self._L(f"{env_prev} = extractvalue {{ptr, ptr}} {prev}, 1")
+            self._L(f"call void @free(ptr {env_prev})")
         self._L(f"store {{ptr, ptr}} {val}, ptr {slot}")
         self._local_closures.append(slot)
 
@@ -1547,8 +1722,15 @@ class LLVMTextEmitter:
         slot = self._f("box_track")
         self._ent.append(f"  {slot} = alloca ptr, align 8")
         self._ent.append(f"  store ptr null, ptr {slot}")
+        # v5.4.3 — free-before-store inside loop bodies. @free(null) no-ops.
+        if self._loop_depth > 0:
+            prev = self._f("prev_box")
+            self._L(f"{prev} = load ptr, ptr {slot}")
+            self._L(f"call void @free(ptr {prev})")
         self._L(f"store ptr {ptr_val}, ptr {slot}")
         self._local_boxed.append(slot)
+        # v5.4.4 — parallel source array aligned with _local_boxed.
+        self._local_boxed_source.append(ptr_val.lstrip("%"))
         self._last_tracked_boxed_slot = slot
 
     def _track_container(self, dest_name: str, container_type: str) -> None:
@@ -1561,6 +1743,8 @@ class LLVMTextEmitter:
         if container_type == "list":
             if dest_name not in self._list_vars:
                 self._list_vars.append(dest_name)
+                # v5.4.4 — parallel source array aligned with _list_vars.
+                self._list_vars_source.append(dest_name.lstrip("%"))
         elif container_type == "map":
             if dest_name not in self._map_vars:
                 self._map_vars.append(dest_name)
@@ -2174,6 +2358,12 @@ class LLVMTextEmitter:
         self._signal_vars = []
         self._stream_vars = []
         self._tensor_vars = []
+        self._loop_depth = 0
+        # v5.4.4 — reset parallel SSA-source arrays + moved_locals set.
+        self._local_strings_source = []
+        self._local_boxed_source = []
+        self._list_vars_source = []
+        self._moved_locals = set()
 
         # Per-function arena — disabled: text emitter never routes allocations
         # through mn_arena_alloc, so create/destroy was pure overhead.
@@ -2365,6 +2555,12 @@ class LLVMTextEmitter:
         for bb in fn.blocks:
             self._cb = bb.label
             self._blk[bb.label] = []
+            # v5.4.3 — track loop-body nesting so _track_string /
+            # _track_boxed / _track_closure prepend a free-before-store
+            # when their call site is inside a for/while body.
+            bumped = bb.label.startswith(("for_body", "while_body", "mapfor_body"))
+            if bumped:
+                self._loop_depth += 1
             for inst in bb.instructions:
                 if isinstance(inst, Phi):
                     continue
@@ -2372,6 +2568,8 @@ class LLVMTextEmitter:
                 h = self._disp.get(type(inst))
                 if h:
                     h(inst)
+            if bumped:
+                self._loop_depth -= 1
 
         # deferred phi stores
         for addr, ty, incoming in self._dphi:
@@ -3334,6 +3532,73 @@ class LLVMTextEmitter:
         if fn == "__mn_system" and args:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_system", I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
+        # v5.8.4 Wb.2: host detection — returns 1 on Win64, 0 elsewhere.
+        # The self-hosted emitter calls this in emit_mir_module to pick
+        # SysV vs Win64 ABI. Registering here so the Python bootstrap
+        # also emits the correct `call i64 @__mn_host_is_win64()`.
+        if fn == "__mn_host_is_win64":
+            r = self._rt("__mn_host_is_win64", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
+        # v5.8.6 We.1: refined (is_windows, arch_bits) pair. Both
+        # return Int. The self-hosted emitter calls these in
+        # emit_mir_module to dispatch a 3-way ABI (SysV / Win64 /
+        # i686 cdecl); the Python bootstrap also routes them so the
+        # stage1 build of mnc_all.mn references the new exports.
+        if fn == "__mn_host_is_windows":
+            r = self._rt("__mn_host_is_windows", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_host_arch_bits":
+            r = self._rt("__mn_host_arch_bits", I64, [], [])
+            self._put(i.dest, r, I64)
+            return
+        # v5.9.0 DX.2: build-time-baked version string. Replaces the
+        # __MN_VERSION__ source-tree placeholder; both the version()
+        # surface and the IR metadata node call this at runtime.
+        if fn == "__mn_version_string":
+            r = self._rt("__mn_version_string", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        # v5.9.0 DX.4: native cache stats / clean / dev-null shim.
+        # Replaces the POSIX-only ``__mn_system("if [ -d ... ]")``
+        # shell-out at the cache-stats site; pre-v5.9.0 this errored
+        # out on Windows with ``-d was unexpected at this time``.
+        if fn == "__mn_dev_null_redirect":
+            r = self._rt("__mn_dev_null_redirect", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "__mn_clang_err_path":
+            r = self._rt("__mn_clang_err_path", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        # v5.10.0 Win.1b.D: directory containing the running binary.
+        # find_clang() in main.mn uses this to locate a bundled LLVM
+        # toolchain at <exe_dir>/llvm/clang(.exe) before falling back
+        # to PATH clang.
+        if fn == "__mn_executable_dir":
+            r = self._rt("__mn_executable_dir", STR, [], [])
+            self._track_string(r)
+            self._put(i.dest, r, STR)
+            return
+        if fn == "__mn_dir_count_files" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_dir_count_files", I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_dir_total_size" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_dir_total_size", I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_dir_remove_recursive" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_dir_remove_recursive", I64, [STR], [(a, STR)])
             self._put(i.dest, r, I64)
             return
 
@@ -4329,6 +4594,15 @@ class LLVMTextEmitter:
             if et != PTR:
                 ety = et
         esz = _tsz(ety)
+        # Ge.1r: when the element type is unknown (empty [] without type context),
+        # _rty returns "ptr" and _tsz returns 8.  This is wrong for lists that
+        # may hold structs — LLVM's DSE can propagate the too-small elem_size
+        # backwards into the original list variable at -O2, causing heap overreads.
+        # Use a safe upper bound (256) for empty lists with unknown element type
+        # so that any struct element fits, matching the self-hosted emitter's
+        # 384 heuristic.
+        if not i.elements and esz <= 8 and i.elem_type.kind in (TypeKind.UNKNOWN,):
+            esz = 256
         lv = self._rt("__mn_list_new", LIST, [I64], [(str(esz), I64)], "ln")
         self._track_container(i.dest.name, "list")
         if i.elements:
@@ -4498,15 +4772,52 @@ class LLVMTextEmitter:
             la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {ov}, ptr {la}")
             iv = self._coerce(iv, it, I64) if it != I64 else iv
-            raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)])
             ety = self._rty(i.dest.ty)
-            if ety == PTR:
-                self._put(i.dest, raw, PTR)
-            else:
-                tp = raw  # opaque ptr, no bitcast
-                r = self._f("el")
-                self._L(f"{r} = load {ety}, ptr {tp}")
+            # v5.1.0 Perf.1: inline list access for 8-byte value-type elements.
+            # Replaces opaque call @__mn_list_get with GEP+load so LLVM can
+            # see through to the backing buffer (enables SROA, vectorization,
+            # loop hoisting). Gate: elem size == 8 covers List<Int>, List<Float>,
+            # List<Ptr>. String (16B), Bool (1B), structs → slow path.
+            if _tsz(ety) == 8:
+                # Inline bounds check (unsigned covers negative indices)
+                lenp = self._f("lg.lenp")
+                self._L(f"{lenp} = getelementptr inbounds {LIST}, ptr {la}, i32 0, i32 1")
+                ln = self._f("lg.len")
+                self._L(f"{ln} = load i64, ptr {lenp}")
+                oob = self._f("lg.oob")
+                self._L(f"{oob} = icmp uge i64 {iv}, {ln}")
+                trap_lbl = f"lg.trap.{self._c}"
+                ok_lbl = f"lg.ok.{self._c}"
+                self._c += 1
+                self._L(f"br i1 {oob}, label %{trap_lbl}, label %{ok_lbl}")
+                # Trap block
+                self._blk[trap_lbl] = []
+                self._cb = trap_lbl
+                self._ensure("abort", VOID, [])
+                self._L("call void @abort()")
+                self._L("unreachable")
+                # Fast path: inline GEP + load
+                self._blk[ok_lbl] = []
+                self._cb = ok_lbl
+                dp = self._f("lg.dp")
+                self._L(f"{dp} = getelementptr inbounds {LIST}, ptr {la}, i32 0, i32 0")
+                data = self._f("lg.data")
+                self._L(f"{data} = load ptr, ptr {dp}")
+                ep = self._f("lg.ep")
+                self._L(f"{ep} = getelementptr inbounds i64, ptr {data}, i64 {iv}")
+                r = self._f("lg.v")
+                self._L(f"{r} = load {ety}, ptr {ep}")
                 self._put(i.dest, r, ety)
+            else:
+                # Slow path: opaque call for String, Bool, structs, etc.
+                raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)])
+                if ety == PTR:
+                    self._put(i.dest, raw, PTR)
+                else:
+                    tp = raw  # opaque ptr, no bitcast
+                    r = self._f("el")
+                    self._L(f"{r} = load {ety}, ptr {tp}")
+                    self._put(i.dest, r, ety)
         elif ok == TypeKind.STRING:
             r = self._rt("__mn_str_byte_at", I64, [STR, I64], [(ov, ot), (iv, it)])
             self._put(i.dest, r, I64)
@@ -4531,9 +4842,41 @@ class LLVMTextEmitter:
         if i.obj.ty.kind == TypeKind.LIST:
             la = self._alloca(LIST, "lp")
             self._L(f"store {LIST} {ov}, ptr {la}")
-            raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, it)])
-            tp = raw  # opaque ptr, no bitcast
-            self._L(f"store {vt} {vv}, ptr {tp}")
+            iv = self._coerce(iv, it, I64) if it != I64 else iv
+            # v5.1.0 Perf.1: inline list store for 8-byte value-type elements.
+            if _tsz(vt) == 8:
+                # Inline bounds check
+                lenp = self._f("ls.lenp")
+                self._L(f"{lenp} = getelementptr inbounds {LIST}, ptr {la}, i32 0, i32 1")
+                ln = self._f("ls.len")
+                self._L(f"{ln} = load i64, ptr {lenp}")
+                oob = self._f("ls.oob")
+                self._L(f"{oob} = icmp uge i64 {iv}, {ln}")
+                trap_lbl = f"ls.trap.{self._c}"
+                ok_lbl = f"ls.ok.{self._c}"
+                self._c += 1
+                self._L(f"br i1 {oob}, label %{trap_lbl}, label %{ok_lbl}")
+                # Trap block
+                self._blk[trap_lbl] = []
+                self._cb = trap_lbl
+                self._ensure("abort", VOID, [])
+                self._L("call void @abort()")
+                self._L("unreachable")
+                # Fast path: inline GEP + store
+                self._blk[ok_lbl] = []
+                self._cb = ok_lbl
+                dp = self._f("ls.dp")
+                self._L(f"{dp} = getelementptr inbounds {LIST}, ptr {la}, i32 0, i32 0")
+                data = self._f("ls.data")
+                self._L(f"{data} = load ptr, ptr {dp}")
+                ep = self._f("ls.ep")
+                self._L(f"{ep} = getelementptr inbounds i64, ptr {data}, i64 {iv}")
+                self._L(f"store {vt} {vv}, ptr {ep}")
+            else:
+                # Slow path: opaque call for String, structs, etc.
+                raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)])
+                tp = raw  # opaque ptr, no bitcast
+                self._L(f"store {vt} {vv}, ptr {tp}")
         elif i.obj.ty.kind == TypeKind.MAP:
             ka = self._alloca(it, "ka")
             self._L(f"store {it} {iv}, ptr {ka}")

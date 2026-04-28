@@ -43,7 +43,8 @@ class TestTensorIndexingLLVM:
 
     def test_list_single_index_no_regression(self):
         ir = _emit("fn main() { let a = [1, 2, 3]; let x = a[0] }")
-        assert "__mn_list_get" in ir
+        # v5.1.0 Perf.1: List<Int> uses inline GEP, not __mn_list_get
+        assert "getelementptr inbounds i64" in ir
         assert "__mn_tensor_get" not in ir
 
     def test_variadic_declaration_present(self):

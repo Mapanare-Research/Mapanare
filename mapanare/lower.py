@@ -120,6 +120,7 @@ from mapanare.mir import (
     MIRParam,
     MIRPipeInfo,
     MIRType,
+    Move,
     Phi,
     Return,
     SignalGet,
@@ -1586,6 +1587,7 @@ class MIRLowerer:
             opt_ty = MIRType(TypeInfo(kind=TypeKind.OPTION, args=[inner_ti]))
             dest = self._make_value(ty=opt_ty)
             self._emit(WrapSome(dest=dest, val=val))
+            self._emit(Move(value=val))
             return dest
 
         if isinstance(expr, OkExpr):
@@ -1600,6 +1602,7 @@ class MIRLowerer:
             )
             dest = self._make_value(ty=res_ty)
             self._emit(WrapOk(dest=dest, val=val))
+            self._emit(Move(value=val))
             return dest
 
         if isinstance(expr, ErrExpr):
@@ -1614,6 +1617,7 @@ class MIRLowerer:
             )
             dest = self._make_value(ty=res_ty)
             self._emit(WrapErr(dest=dest, val=val))
+            self._emit(Move(value=val))
             return dest
 
         if isinstance(expr, SignalExpr):
@@ -1640,6 +1644,14 @@ class MIRLowerer:
 
     def _lower_identifier(self, expr: Identifier) -> Value:
         """Lower an identifier reference."""
+        # v5.7.0: bare `None` identifier — KW_NONE only matches
+        # lowercase `none`/`nada`. Mirror self-hosted lower.mn:1438
+        # (v4.134.0 Sh.12) so capital `None` produces a NoneLit IR.
+        if expr.name == "None":
+            ty = MIRType(TypeInfo(kind=TypeKind.OPTION))
+            dest = self._make_value(ty=ty)
+            self._emit(WrapNone(dest=dest, ty=ty))
+            return dest
         val = self._lookup_var(expr.name)
         if val is not None:
             return val
@@ -1911,6 +1923,11 @@ class MIRLowerer:
             "__mn_exit": mir_void(),
             "__mn_str_eprint": mir_void(),
             "__mn_str_eprintln": mir_void(),
+            # v5.8.4 Wb.2: host-detect for self-hosted ABI classifier.
+            "__mn_host_is_win64": mir_int(),
+            # v5.8.6 We.1: refined (is_windows, arch_bits) pair.
+            "__mn_host_is_windows": mir_int(),
+            "__mn_host_arch_bits": mir_int(),
         }
         _call_ret_ty = mir_unknown()
         if isinstance(expr.callee, Identifier):
@@ -1943,6 +1960,7 @@ class MIRLowerer:
                 opt_ty = MIRType(TypeInfo(kind=TypeKind.OPTION, args=[inner_ti]))
                 dest = self._make_value(ty=opt_ty)
                 self._emit(WrapSome(dest=dest, val=args[0]))
+                self._emit(Move(value=args[0]))
                 return dest
             if fn_name == "Ok" and len(args) == 1:
                 ok_ti = (
@@ -1955,6 +1973,7 @@ class MIRLowerer:
                 )
                 dest = self._make_value(ty=res_ty)
                 self._emit(WrapOk(dest=dest, val=args[0]))
+                self._emit(Move(value=args[0]))
                 return dest
             if fn_name == "Err" and len(args) == 1:
                 err_ti = (
@@ -1967,6 +1986,7 @@ class MIRLowerer:
                 )
                 dest = self._make_value(ty=res_ty)
                 self._emit(WrapErr(dest=dest, val=args[0]))
+                self._emit(Move(value=args[0]))
                 return dest
 
             # Handle stream() builtin: create stream from list
@@ -2038,6 +2058,8 @@ class MIRLowerer:
                     self._emit(
                         EnumInit(dest=dest, enum_type=enum_ty, variant=fn_name, payload=args)
                     )
+                    for _a in args:
+                        self._emit(Move(value=_a))
                     return dest
             # Check imported enums
             for enum_name, variants in self._imported_enum_defs.items():
@@ -2048,6 +2070,8 @@ class MIRLowerer:
                         self._emit(
                             EnumInit(dest=dest, enum_type=enum_ty, variant=fn_name, payload=args)
                         )
+                        for _a in args:
+                            self._emit(Move(value=_a))
                         self._patch_list_elem_types_for_enum(enum_name, fn_name, args)
                         return dest
 
@@ -2058,6 +2082,8 @@ class MIRLowerer:
                 fields = list(zip(field_names, args))
                 dest = self._make_value(ty=struct_ty)
                 self._emit(StructInit(dest=dest, struct_type=struct_ty, fields=fields))
+                for _a in args:
+                    self._emit(Move(value=_a))
                 self._patch_list_elem_types_for_struct(fn_name, field_names, args)
                 self._patch_arg_types_from_params(fn_name, args)
                 return dest
@@ -2101,6 +2127,8 @@ class MIRLowerer:
                 enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=ns))
                 dest = self._make_value(ty=enum_ty)
                 self._emit(EnumInit(dest=dest, enum_type=enum_ty, variant=member, payload=args))
+                for _a in args:
+                    self._emit(Move(value=_a))
                 return dest
             # Look up return type: try NS_Member first, then bare Member
             ns_ret = self._fn_return_types.get(
@@ -2337,8 +2365,12 @@ class MIRLowerer:
                 fields=[("message", err_msg), ("line", err_line), ("col", err_col)],
             )
         )
+        self._emit(Move(value=err_msg))
+        self._emit(Move(value=err_line))
+        self._emit(Move(value=err_col))
         err_result = self._make_value(ty=result_ty)
         self._emit(WrapErr(dest=err_result, val=err_struct))
+        self._emit(Move(value=err_struct))
         self._emit(Jump(target=merge_bb.label))
         assert self._block is not None
         err_exit = self._block.label
@@ -2365,10 +2397,13 @@ class MIRLowerer:
         # Step 3: Construct the struct
         struct_val = self._make_value(ty=struct_ty)
         self._emit(StructInit(dest=struct_val, struct_type=struct_ty, fields=field_values))
+        for _fn_, _fv_ in field_values:
+            self._emit(Move(value=_fv_))
 
         # Wrap in Ok
         ok_result = self._make_value(ty=result_ty)
         self._emit(WrapOk(dest=ok_result, val=struct_val))
+        self._emit(Move(value=struct_val))
         self._emit(Jump(target=merge_bb.label))
         assert self._block is not None
         ok_exit = self._block.label
@@ -2506,6 +2541,9 @@ class MIRLowerer:
             # referenced before the push branch executes
             dest = Value(name=obj.name, ty=obj.ty)
             self._emit(ListPush(dest=dest, list_val=obj, element=args[0]))
+            # v5.4.4 — list.push copies the element into the list buffer;
+            # the list owns it now. Drop glue must skip the caller's slot.
+            self._emit(Move(value=args[0]))
             # Update the variable so subsequent reads see the modified list
             if isinstance(expr.object, Identifier):
                 self._update_var(expr.object.name, dest)
@@ -3211,6 +3249,10 @@ class MIRLowerer:
         val_type = pairs[0][1].ty if pairs else mir_unknown()
         dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.MAP)))
         self._emit(MapInit(dest=dest, key_type=key_type, val_type=val_type, pairs=pairs))
+        # v5.4.4 — map owns each key/value pair.
+        for _k, _v in pairs:
+            self._emit(Move(value=_k))
+            self._emit(Move(value=_v))
         return dest
 
     def _lower_construct(self, expr: ConstructExpr) -> Value:
@@ -3227,6 +3269,9 @@ class MIRLowerer:
         struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=struct_name))
         dest = self._make_value(ty=struct_ty)
         self._emit(StructInit(dest=dest, struct_type=struct_ty, fields=fields))
+        # v5.4.4 — StructInit takes ownership of each field value.
+        for _v in field_vals:
+            self._emit(Move(value=_v))
         self._patch_arg_types_from_params(struct_name, field_vals)
         return dest
 
@@ -3286,6 +3331,9 @@ class MIRLowerer:
                 return val
             index = indices[0] if indices else self._make_value()
             self._emit(IndexSet(obj=obj, index=index, val=val))
+            # v5.4.4 — map_set / list_set memcpy key+val into the container.
+            self._emit(Move(value=index))
+            self._emit(Move(value=val))
             # Write back: if the list came from a struct field, the IndexSet
             # only modifies a local copy.  Emit FieldSet to persist the change.
             if isinstance(expr.target.object, FieldAccessExpr):

@@ -21,38 +21,21 @@ import sys
 # Use the same compiler for C runtime and IR to avoid ABI mismatches.
 # On macOS, `gcc` is Apple Clang while LLVM IR is compiled with Homebrew
 # clang-18 — different ABIs cause struct layout corruption at runtime.
-CC = os.environ.get("CC", _shutil.which("clang") or "gcc")
+#
+# Prefer gcc on Windows: system LLVM clang there defaults to the
+# x86_64-pc-windows-msvc target, where MSVC's UCRT marks fopen and
+# strncpy as deprecated and -Werror blows up. w64devkit's MinGW gcc
+# has clean headers. On macOS / Linux keep clang first to avoid the
+# Apple-Clang vs Homebrew-clang ABI mismatch documented above.
+if sys.platform == "win32":
+    CC = os.environ.get("CC", _shutil.which("gcc") or _shutil.which("clang") or "gcc")
+else:
+    CC = os.environ.get("CC", _shutil.which("clang") or "gcc")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SELF_DIR = ROOT / "mapanare" / "self"
 NATIVE_DIR = ROOT / "runtime" / "native"
 VERSION_FILE = ROOT / "VERSION"
-
-# v4.28.0: build-time placeholder in ``mapanare/self/main.mn`` that the
-# build substitutes from the top-level ``VERSION`` file. Prior to this,
-# the self-hosted ``version()`` function returned a hardcoded string that
-# became 19 minor versions stale because the manual bump step was dropped
-# at v4.8.0. See ``docs/roadmap/v4/v4.28.0/FORENSICS.md``.
-VERSION_PLACEHOLDER = "__MN_VERSION__"
-
-
-def _substitute_version(source: str) -> str:
-    """Replace the ``__MN_VERSION__`` placeholder with the live VERSION contents.
-
-    Called on the self-hosted source text before it reaches the compiler.
-    The placeholder must occur; a missing placeholder is a build error so
-    that no future edit can silently unwire the substitution.
-    """
-    if VERSION_PLACEHOLDER not in source:
-        raise SystemExit(
-            f"error: {VERSION_PLACEHOLDER!r} placeholder not found in self-hosted "
-            "source. Re-add it to mapanare/self/main.mn:version() — see "
-            "docs/roadmap/v4/v4.28.0/FORENSICS.md for why this matters."
-        )
-    version = VERSION_FILE.read_text(encoding="utf-8").strip()
-    if not version:
-        raise SystemExit(f"error: {VERSION_FILE} is empty")
-    return source.replace(VERSION_PLACEHOLDER, version)
 
 
 def build() -> pathlib.Path:
@@ -61,37 +44,28 @@ def build() -> pathlib.Path:
 
     ir_path = SELF_DIR / "main.ll"
 
-    # Dr.1 (v4.139.0): substitute __MN_VERSION__ in all self-hosted modules
-    # so the multi-module compiler sees the real version in emit_llvm.mn etc.
-    restored: dict[pathlib.Path, str] = {}
-    version = VERSION_FILE.read_text(encoding="utf-8").strip()
-    for mn_file in sorted(SELF_DIR.glob("*.mn")):
-        text = mn_file.read_text(encoding="utf-8")
-        if VERSION_PLACEHOLDER in text:
-            restored[mn_file] = text
-            mn_file.write_text(text.replace(VERSION_PLACEHOLDER, version), encoding="utf-8")
-
     if "--use-committed" in sys.argv:
         print("[1/6] Using committed LLVM IR (--use-committed) ...")
         ir = ir_path.read_text(encoding="utf-8")
         print(f"  IR: {ir.count(chr(10))} lines <- {ir_path}")
-        for path, original in restored.items():
-            path.write_text(original, encoding="utf-8")
     else:
         print("[1/6] Generating LLVM IR from mapanare/self/*.mn ...")
         from mapanare.multi_module import compile_multi_module_mir
 
-        source = (SELF_DIR / "main.mn").read_text(encoding="utf-8")
-        try:
-            ir = compile_multi_module_mir(
-                root_source=source,
-                root_file=str(SELF_DIR / "main.mn"),
-                opt_level=2,
-                skip_check=True,
-            )
-        finally:
-            for path, original in restored.items():
-                path.write_text(original, encoding="utf-8")
+        # v5.9.0 DX.2: compile directly from SELF_DIR. Pre-v5.9.0 this step
+        # mirrored SELF_DIR into a tempdir to substitute the __MN_VERSION__
+        # placeholder safely (v5.0.6 Dr.1-mutation). The placeholder is
+        # gone — version is now baked into the C runtime via the
+        # MAPANARE_VERSION define and read at runtime through
+        # __mn_version_string() — so the tempdir step is unnecessary.
+        root_file = SELF_DIR / "main.mn"
+        source = root_file.read_text(encoding="utf-8")
+        ir = compile_multi_module_mir(
+            root_source=source,
+            root_file=str(root_file),
+            opt_level=2,
+            skip_check=True,
+        )
 
     # 2. Post-process: make compile() and format_error() externally visible
     print("[2/6] Post-processing IR (external linkage for entry points) ...")
@@ -101,34 +75,16 @@ def build() -> pathlib.Path:
     # misjudges reachability, stripping functions that ARE called.
     ir = ir.replace("define internal ", "define ")
 
-    # Fix target triple if building on a different platform than where
-    # the IR was committed (e.g., committed on Linux x86_64, building on macOS ARM64).
-    import platform
-
-    if sys.platform == "darwin":
-        arch = platform.machine()  # arm64 or x86_64
-        host_triple = f"{arch}-apple-macos"
-        ir = ir.replace(
-            'target triple = "x86_64-unknown-linux-gnu"',
-            f'target triple = "{host_triple}"',
-        )
-        # Also fix datalayout for ARM64
-        if arch == "arm64":
-            linux_x86_dl = (
-                'target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64'
-                '-i64:64-i128:128-f80:128-n8:16:32:64-S128"'
-            )
-            mac_arm64_dl = 'target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128-Fn32"'
-            ir = ir.replace(linux_x86_dl, mac_arm64_dl)
-    elif sys.platform == "win32":
-        # Use the MinGW triple (x86_64-w64-mingw32) rather than the MSVC
-        # triple so clang emits ``___chkstk_ms`` stack probes, which MinGW's
-        # libgcc provides. The MSVC triple emits bare ``__chkstk`` which is
-        # only supplied by MSVC's CRT and fails to link against gcc/ld.
-        ir = ir.replace(
-            'target triple = "x86_64-unknown-linux-gnu"',
-            'target triple = "x86_64-w64-mingw32"',
-        )
+    # v5.8.8 Da.1: triple + datalayout are now plumbed through
+    # ``compile_multi_module_mir(target_name=None)`` —
+    # ``get_target(host_target_name())`` resolves the host target and
+    # the emitter writes correct ``target triple`` + ``target
+    # datalayout`` lines directly into the IR. The previous post-emit
+    # text-patch (Linux→Apple/Windows triple replacement) was a hack
+    # on top of an emit pipeline that already supports per-target
+    # emission; removing it eliminates a structural inconsistency
+    # that masked the v5.8.7 macOS arm64 ABI bug. See
+    # docs/roadmap/v5/v5.8.7/PHASE_0_FINDINGS.md.
 
     ir_path.write_text(ir, encoding="utf-8")
     print(f"  IR: {ir.count(chr(10))} lines -> {ir_path}")
@@ -199,12 +155,16 @@ def build() -> pathlib.Path:
     # stale (Mamba, v4.26.0 panel).
     version_str = VERSION_FILE.read_text(encoding="utf-8").strip()
     version_flags = [f'-DMAPANARE_VERSION="{version_str}"']
+    # v5.8.x: ``-fPIC`` is rejected by clang targeting
+    # ``x86_64-pc-windows-msvc`` (Windows PE/COFF code is position-
+    # independent by default). Omit it on win32 builds.
+    pic_flag = [] if sys.platform == "win32" else ["-fPIC"]
     c_base_flags = [
         CC,
         "-c",
         "-O2",
         "-g",
-        "-fPIC",
+        *pic_flag,
         "-Wall",
         "-Wextra",
         "-Werror",
@@ -233,7 +193,8 @@ def build() -> pathlib.Path:
 
     # 6. Link
     print("[6/6] Linking mnc-stage1 ...")
-    binary = SELF_DIR / "mnc-stage1"
+    binary_name = "mnc-stage1.exe" if sys.platform == "win32" else "mnc-stage1"
+    binary = SELF_DIR / binary_name
     if sys.platform == "win32":
         link_flags = [
             "-lm",

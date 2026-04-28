@@ -344,9 +344,11 @@ def compile_bootstrap(mn_file: pathlib.Path) -> tuple[str, str]:
 
 
 def compile_stage1(mn_file: pathlib.Path, stage1: pathlib.Path) -> tuple[str, str]:
+    # v5.9.1 DX.5: explicit `emit-llvm` subcommand. Pre-v5.9.1 `mnc <file.mn>`
+    # emitted IR to stdout; v5.9.1 makes that path implicit-run.
     try:
         result = subprocess.run(
-            [str(stage1), str(mn_file)],
+            [str(stage1), "emit-llvm", str(mn_file)],
             capture_output=True,
             timeout=30,
         )
@@ -592,9 +594,22 @@ def run_test(
                 if sfp["has_main"] != fp["has_main"]:
                     diffs.append(f"main: {fp['has_main']} vs {sfp['has_main']}")
                     r.compare_ok = False
-                missing = set(fp["functions"]) - set(sfp["functions"])
+                # v5.7.0 Sh.7: lambda function names are arbitrary
+                # intermediates derived from the lowerer's tmp_counter;
+                # bootstrap and stage1 produce different sequences
+                # (e.g. lambda0/2/4 vs lambda0/3/6) for the same source.
+                # Compare lambda functions by COUNT instead of by name.
+                # All non-lambda functions still need exact-name parity.
+                bs_funcs = set(fp["functions"])
+                s1_funcs = set(sfp["functions"])
+                bs_lambdas = {f for f in bs_funcs if f.startswith("lambda")}
+                s1_lambdas = {f for f in s1_funcs if f.startswith("lambda")}
+                missing = (bs_funcs - bs_lambdas) - (s1_funcs - s1_lambdas)
                 if missing:
                     diffs.append(f"missing: {missing}")
+                    r.compare_ok = False
+                if len(s1_lambdas) < len(bs_lambdas):
+                    diffs.append(f"lambdas: stage1={len(s1_lambdas)} < bootstrap={len(bs_lambdas)}")
                     r.compare_ok = False
                 r.compare_diff = "; ".join(diffs)
 

@@ -1,88 +1,186 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repository.
 
 ## Project Overview
 
-Mapanare is an AI-native compiled programming language with first-class agents, signals, streams, and tensors. It compiles to LLVM IR (primary) and C (fallback via gcc). A WebAssembly backend exists for browser/server targets. The self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in `mapanare/self/`. The compiler compiles itself — `bash scripts/build_from_seed.sh` builds from source with no Python.
+Mapanare is an AI-native compiled language with first-class agents,
+signals, streams, and tensors. Compiles to LLVM IR (primary) and C
+(fallback via gcc). WebAssembly backend for browser/server targets.
+Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
+`mapanare/self/`. The compiler compiles itself —
+`bash scripts/build_from_seed.sh` builds from source with no Python.
+
+**Current version:** see `VERSION` file.
 
 ## Current Version & Roadmap
 
-- **v4.153.0** (shipped) — **Pre-perf-panel refresh.** Zero code changes. Measurement-only release preparing evidence for the v4.154.0 perf panel. 6th flaky audit: **30 cumulative sequential non-bootstrap pytest runs, 0 flaky** (5302 passed / 0 failed per run). Fresh 20-run cross-language benchmarks: Mapanare/Rust geomean **1.17×** (was 5.83× at v4.144.0 arc baseline — **80% gap closure** across the E1-E8 arc). Mapanare/C gcc geomean **0.96×** (on par). Mapanare **~168× faster than Python**. Per-workload highlights: `struct_alloc` 1.06× Rust (was 70×), `enum_match` 0.56× Rust (faster), `fib_recursive` 0.85× Rust (faster). Sanitizers: valgrind 0/62/4, ASan 55/0/11. Fixed-point: NEAR (4 diff, version placeholder). PERF_EXPERIMENTS.md end-of-arc audit: all 15 sub-levers verified, 0 cosmetic drift, 0 material discrepancies. Pre-panel audit of v4.145.0-v4.152.0 SESSION_REPORTs: 42/42 claims verified, 0 discrepancies. Artifacts: MEASUREMENTS.md FINAL, FINAL_REPORT_v4.153.md, TREND_v4.144_v4.153.md, FLAKY_AUDIT.md, VALGRIND_REPORT.md, ASAN_REPORT.md, FIXEDPOINT_STATUS.md, DOCKET_LEDGER.md. Quality: 5302 passed / 0 failed; 54/66 goldens. Ledger: 66 dockets, 58 closed (88%), 8 open (0 CRITICAL, 0 HIGH, 0 MEDIUM, 8 LOW).
-- **v4.152.0** (shipped) — **E8 full dead end — dormant MIR passes re-evaluation.** Eighth experiment of the perf arc. Re-evaluated four MIR optimizer passes disabled at v4.111.0 (`strength_reduce`, `inline_small_functions`, `licm`, `escape_analysis`) under current conditions (54/66 goldens, post-Sh.2/Ge.1 arcs). **E8a** strength_reduce: safe, zero-ROI — pass finds 0 mod-by-power-of-2 patterns, golden IR byte-identical, LLVM instcombine covers. **E8b** inline_small_functions: v4.111.0 verify_block crash GONE but inliner still produces SSA name collision (`%t4` defined twice in `parse_program`) — `rename_instructions` renames inlined body but not caller's destination register; llvm-as rejects stage2.ll. Opens In.1 (LOW). **E8c** licm: block_successors crash GONE but `hoist_instruction` leaves instruction in source block, producing duplicate definitions — goldens 54 → 51 (regressions: `05_for_loop`, `21_list_ops`, `33_break_continue`). Opens Li.1 (LOW). **E8d** escape_analysis: +0x3f3 crash GONE (Ge.1 fix), safe but function is a stub (`return f` unchanged) — no codegen path acts on the analysis. Opens Ea.1 (LOW). All four rolled back. v4.109.0 rationale holds: LLVM -O2 subsumes all four passes. Python/self-hosted parity: `strength_reduce` Python ON / self-hosted OFF (tolerable), `inline_small_functions` Python ON / self-hosted OFF (In.1), `licm` both OFF (parity), `escape_analysis` Python ON / self-hosted OFF (Ea.1). Comment blocks at mir_opt.mn:1233-1300 refreshed with v4.152.0 evidence. Quality: 5302 passed / 0 failed; 54/66 goldens; fixed-point NEAR (4 diff); valgrind 0/62/4; ASan 55/0/11. Ledger: 66 dockets (3 new LOW: In.1, Li.1, Ea.1), **58 closed (88%)**, 8 open (0 CRITICAL, 0 HIGH, 0 MEDIUM, 8 LOW).
-- **v4.151.0** (shipped) — **E7 WIN — list allocator hot path (realloc + push fast path).** Seventh experiment of the perf arc. Target: quicksort benchmark (10K list pushes + sort). Three levers attempted: (a) capacity doubling audit — **no-op** (already correct: `cap * 2` with seed 8); (b) `realloc` for value-type lists — **WIN**: `mn_list_grow` now uses `realloc` on COW header base when `managed && elem_size <= 8`, letting the allocator extend in-place instead of fresh-alloc+memcpy+free; (c) `__mn_list_push` fast-path restructure — **WIN**: `__builtin_expect` on `data != NULL && len < cap` with inlined sole-owner check skips validation+detach on common case. No ABI change (value-type predicate uses existing `elem_size` field). quicksort: **1.187 → 1.102 ms (−7.2%)**, ratio 3.13× → **2.99× Rust** (crossed under 3×). Honest story: the benchmark is dominated by list *access* during sorting (~130K `__mn_list_get/set` calls = opaque function calls LLVM can't inline), not by push. The remaining gap requires emitter-level changes (inline list operations in LLVM IR). No non-target workload regresses > 2%. Quality: 5293 passed / 0 failed; 54/66 goldens; fixed-point within threshold; ASan 0 new; valgrind 0 new (4 pre-existing Ge.1).
-- **v4.150.0** (shipped) — **E6 WIN — async scheduler thread pool sizing + agent empty-wake.** Sixth experiment of the perf arc. Target: async benchmark geomean (1.69× Go). Key finding: async benchmarks use LLVM coroutines (`__mn_coro_scheduler_*`), not the agent runtime (`mapanare_agent_*`) — the PLAN's three levers (empty-wake, inline payload, spin-before-park) targeted the wrong code path. Real bottleneck: thread pool startup overhead — `__mn_coro_scheduler_init` creates one OS thread per CPU core; on 32-core machine, 31 `pthread_create` calls take ~2.2 ms, dominating the ~2.3 ms benchmark total. Fix: new `MAPANARE_ASYNC_THREADS` env var in `__mn_coro_scheduler_init` (~8 LOC) overrides default thread count. With `MAPANARE_ASYNC_THREADS=2`: async geomean 2.28 → 1.14 ms (**−50.1%**), Mapanare **0.85× Go** (faster than Go). Lever A (empty-wake sem_post on `mapanare_agent_send`) also applied: only `sem_post` when ring was empty pre-push — correct, sanitizer-clean, NEUTRAL on async geomean (−2%, noise). Levers B/C not attempted (wrong target). CPU geomean −0.9% (no regression). Quality: 5291 passed / 0 failed; 54/66 goldens; fixed-point within threshold; ASan 0 new; valgrind 0 new (4 pre-existing Ge.1).
-- **v4.149.0** (shipped) — **E5 WIN (correctness) — ABI.1 register return for small aggregates.** Fifth experiment of the perf arc. Closes ABI.1 (oldest open perf docket, opened v4.125.0). New `mapanare/abi.py` classifier implements System V AMD64 §3.2.3 (≤ 16B → register), Win64 x64 (1/2/4/8B → register), AArch64 AAPCS64 (≤ 16B → register). Emitter `_use_sret()` replaces `_use_byref()` for return types; argument passing unchanged. LLVM IR now matches Clang's convention: `{i64,i64,i64}` (24B) uses sret on SysV, `{i1,i64}` (16B) stays by value. sret count 0 → 57 in golden corpus (fix adds correct sret for 17-64B aggregates). Performance neutral: enum_match +0.6% (noise). 25 tests in `tests/llvm/test_abi_struct_return.py` (9 SysV + 6 Win64 + 3 AArch64 classifier + 7 emitter integration). Quality: 5286 passed / 0 failed; 54/66 goldens; fixed-point within threshold; ASan 0 new; valgrind 0 new (4 pre-existing Ge.1).
-- **v4.148.0** (shipped) — **E4 WIN — string_concat amortized growth + benchmark methodology fix.** Fourth experiment of the perf arc. Target: string_concat (reported 33× slower than Rust). Two changes: (1) `mn_sb_grow` in `mapanare_core.c` uses `realloc` instead of `calloc`+`memcpy`+`free`, eliminating ~181 KB unnecessary zero-initialization per run and enabling in-place buffer extension. `__mn_sb_create`/`__mn_sb_new` initial allocation changed from `calloc` to `malloc`. `__mn_sb_to_string` shrink-to-fit uses `realloc`. A/B test: **29.7% internal speedup** (0.098 → 0.069 ms). (2) Benchmark methodology fix: new `mn_bench_main.c` wrapper emits `__BENCH_METRICS__` with internal `clock_gettime` timing, matching Rust/Go/C methodology. `run_benchmarks.py` links via `objcopy --redefine-sym main=mn_main`. Prior external timing included ~1.2 ms subprocess spawn overhead, producing a spurious 33× gap. Corrected result: **Mapanare 0.077 ms, Rust 0.038 ms = 2.04× Rust**. Full cross-language geomean **1.13× Rust**. No MnString ABI change. No emitter changes. Quality: 5254 passed / 0 failed; 54/66 goldens; fixed-point within threshold; ASan 0 new; valgrind 0 new (4 pre-existing Ge.1).
-- **v4.147.0** (shipped) — **E3 dead end — parameter-level noalias via escape analysis.** Third experiment of the perf arc. Target: quicksort/prime_sieve/struct_alloc. New MIR pass `mark_noalias_params` (~134 logic lines in `mapanare/mir_opt.py`) with conservative escape-analysis precision rules: 6 escape criteria, 3 exclusion rules (scalar/Signal/Stream/Agent), call-site distinctness check. **Dead end reason:** LLVM `noalias` only applies to pointer-typed (`ptr`) parameters; Mapanare passes `List<T>` (40 bytes), `String` (16 bytes), `Map<K,V>` (48 bytes) as aggregates by value because they're under the 64-byte `_BYREF_BYTES` threshold. No target benchmark function has a `ptr` user parameter. Emitted IR is byte-identical before and after patch. Pass correctly marks 1 param (`partition.arr` in quicksort), 0 emitted as `noalias`. Vectorization barriers are orthogonal: control flow (partition), trip count (prime_sieve), function calls (struct_alloc). Pass kept (zero risk) for future byref threshold changes (E5/ABI.1). `MIRParam.attrs: set[str]` field added for parameter-level metadata. 16 precision tests in `tests/mir_opt/test_noalias_pass.py`. No ABI change. Quality: 5251 passed / 0 failed; 54/66 goldens; fixed-point within threshold; sanitizer sweep clean (0 new ASan/valgrind findings).
-- **v4.146.0** (shipped) — **E2 dead end — fib_recursive calling convention clean.** Second experiment of the perf arc. Full IR audit: optimized Mapanare `fib` is structurally identical to Rust (same accumulator tail-call, same `memory(none) fastcc`, same `add nsw`). v4.30.0 `nsw` claim verified. Remaining ~10% gap (1.11×) is subprocess-spawn overhead in benchmark methodology, not codegen. Hygiene patch kept (zero perf impact): `noundef` on scalar params (`Int`/`Bool`/`Float`), `memory(none) nofree nosync` on pure functions via fixed-point purity computation at module level (~52 logic lines in `emit_llvm_text.py`). No ABI change. Quality: 5228 passed / 0 failed; 54/66 goldens; fixed-point within threshold.
-- **v4.145.0** (shipped) — **E1 closed — enum_match codegen WIN.** First experiment of the perf arc. Unified-return-block optimization for functions returning inline enums: merges all return points through a single result alloca, enabling LLVM SROA + mem2reg to decompose the intermediate `{i64,i64,i64}` aggregate PHI into separate scalar PHIs. After inlining, SimplifyCFG merges the make_shape and area dispatches into a single switch — structurally identical to Rust's output. Optimized IR: 2 switches → 1 switch in hot loop (88 → 55 lines). 10M-iteration measurement: 17.31 → 15.91 ms (8.4% improvement). Bonus: LLVM converts `sdiv i64 %x, 2` → `lshr i32 %x, 1` via nuw nsw narrowing. ~30 logic lines in `mapanare/emit_llvm_text.py`. No ABI change. Quality: 5225 passed / 0 failed; 54/66 goldens; fixed-point within threshold.
-- **v4.144.0** (shipped) — **LOW polish + panel attempt 4.** v4.144.0 baseline panel (9.21/10, 6 EXCEEDS / 0 NEEDS WORK). Cb.5 test suite (34 tests), Cb.6/7/9/10 closures. See `docs/roadmap/v4/v4.144.0/`.
-- **v4.143.0** (shipped) — **Post-rc1 panel + fast-win closeout.** Seven-reviewer panel (Rattler / Viper / Anaconda / Cobra / Coral / Boa / Mamba) against the v4.137.0 → v4.142.0 bridge arc. **Aggregate 8.86/10, grade distribution 3 EXCEEDS (Viper 9.6, Cobra 9.0, Boa 9.0) / 4 MEETS / 0 NEEDS WORK.** Mechanical rule → **Option C** (8.5 ≤ 8.86 < 9.0 AND 0 NEEDS WORK): `v5.0.0-rc1` tag holds, clean `v5.0.0` does not flip this cycle. Δ vs v4.136.0: Rattler 8.9 → 9.1 (+0.2), Viper 9.0 → 9.6 (+0.6), Anaconda 8.9 → 9.1 (+0.2), Cobra 8.7 → 9.0 (+0.3), Coral 8.7 → 8.5 (−0.2), Boa 8.4 → 9.0 (+0.6), Mamba 9.0 → 8.7 (−0.3). Score trajectory: **6.59 → 7.87 → 8.21 → 8.21 → 8.80 → 8.86**. Zero NEEDS WORK; HIGH queue = 0 since v4.137.0 closed Ch.1. Panel closures landing in this release: **Sp.1** MEDIUM (SPEC "legacy Python transpiler backend" ghost purged at lines 25/37/39 + §18.2 rewritten to redirect to `mapanare bind --lang python`); **Co.1r** LOW (SPEC Appendix B fixed-point wording updated from "strict byte-identical" → "3-stage fixed point" with v4.134.0 strict + v4.139.0-present near-fixed-point checkpoints); **Sem.2** LOW (`parse_recovering` now catches `ParseError` from Lark transformer — E420 presents clean diagnostic frame instead of Python traceback); **An.6** MEDIUM (docs drift gate had been failing CI 4 consecutive releases without surfacing — 7 module-level `let mut` blocks wrapped in `fn main()` across `docs/SPEC.md` + `docs/reference.md`; gate reports 142 blocks clean); **An.7** LOW (silent-skip gate extended to resolve `reason=_FOO_REASON` identifiers + scan comment window above constant definitions); **An.8** LOW (`tmp*.py` excluded from black/ruff/mypy in `pyproject.toml`); **Bo.4-drift / Bo.6-drift / Bo.8 / Bo.10 / Bo.11** LOW bundle (README Tests badge `4845+` → `5160+`; `docs/guides/getting_started.md` test count + golden count refreshed; SPEC header `4.139.0` → `4.143.0`; `known_issues.md` footer bumped; near-fixed-point wording synced across README + SPEC + getting_started). Option-A bridge **all closed in this release**: **Bn.1** (instrumented all 10 Rust cross-language benchmarks with `__BENCH_METRICS__` to match Go/C/Python methodology; `run_rust` uses `_run_with_metrics`; live-verified `enum_match` internal wall 0.43ms vs prior 10ms subprocess-spawn-pinned, `string_concat` 0.09ms vs 10ms, `fib_recursive` 17.3ms vs 25ms — Rust numbers are externally citable again); **Gr.3** (renamed `Tensor` struct → `GpuTensor` in `stdlib/gpu/tensor.mn` (63×) + `kernel.mn` (3×) — `TensorError` preserved — Coral's Option 2 closure, grammar collision with `KW_TENSOR` gone); **Reg.1** (new `scripts/check_struct_registry.py` CI gate cross-checks 23 `make_entry` + 23 `register_internal_struct` calls against 89 source structs; immediately caught 3 real latent drifts on first run — `MIRType` field positions 0/1 swapped at both registry sites + `VerifyError` field name `block_name` ≠ source `block_label` at both sites; both fixed; gate wired into `.github/workflows/ci.yml` and `tests/test_ci.py::TestToolsRunLocally::test_struct_registry_gate_passes`). Verification: `ruff check .` 0, `black --check .` 348 unchanged, `mypy mapanare/ runtime/` 0 across 52 files, `check_docs_drift` clean (142 blocks), `check_silent_skips` clean, `check_struct_registry` clean (23/23/89), `pytest tests/parser/ tests/semantic/ tests/test_ci.py tests/llvm/ -q` = **982 passed / 46 skipped**. Ledger: 63 dockets, **58 closed (92%)**, 5 open (0 CRITICAL, 0 HIGH, **0 MEDIUM**, 5 LOW polish). **Zero MEDIUM on the ledger for the first time since v4.99.0 opened the v5-gate series.** Option-A bridge is empty; re-panel should plausibly clear 9.0 aggregate for the clean `v5.0.0` tag.
-- **v4.142.0** (shipped) — **Ge.1 closed + pre-panel refresh.** The last open valgrind docket from the v4.132.0 re-triage is now gone. Full sanitizer state is **valgrind 0 CLEAN / 66 WARNINGS_ONLY / 0 ERRORS** and **ASan 55 CLEAN / 0 ASAN_ERROR / 11 CRASH_NO_ASAN**. The prompt's sketched `fresh_tmp` / `MemsetZero` path turned out to be stale against the live self-hosted tree, so the actual closure came from the real residual path: internal-struct metadata parity fixes in `mapanare/self/emit_llvm.mn` + `mapanare/self/lower.mn`, and a targeted moved-ownership fix in `mapanare/self/lower.mn::try_monomorphize_enum` so specialized enum metadata is not freed before emission. Targeted valgrind checks on `26/29/30/31/32_generic*` all now exit 0. Final verification: **5160 passed / 0 failed / 115 skipped / 9 xfailed / 2 warnings** outside bootstrap, **212 / 13** in bootstrap, native goldens **54/66**, `make lint` clean, fixed-point still **NEAR FIXED POINT** with only the known version-placeholder metadata diff (`stage2.ll` md5 `6d4963cdbe060ac1cee85eb58f2fa932`, `stage3.ll` md5 `dddf64c3a77ed9236c82de517bc055d1`). Benchmarks refreshed with real JSON outputs: cross-language geomean **5.841 ms**, async geomean **5.817 ms**. Ledger: 63 dockets, **48 closed (76%)**, 15 open (0 CRITICAL, 0 HIGH, 8 MEDIUM, 7 LOW).
-- **v4.141.0** (shipped) — **An.2 lint debt cleared + 5th flaky audit.** Closes the last open `An.*` docket from the v4.120.0 Anaconda panel. The branch already contained the black/ruff/mypy cleanup commits; this release re-enabled the local lint gate in `tests/test_ci.py`, removed the now-unused `pytest` import, and verified `make lint` clean end-to-end. `python3 -m pytest tests/test_ci.py -v -s` reports **16 passed**. A VERSION-propagation rebuild (`make build-rt` + `python3 scripts/build_stage1.py`) was required after the first audit attempt exposed stale `4.140.0` strings in `libmapanare_rt.a` and `mnc-stage1`; `mapanare/self/main.ll` now embeds `4.141.0`. **5th flaky audit**: 5 sequential non-bootstrap pytest runs, all **5152 passed / 115 skipped / 9 xfailed / 2 warnings / 0 failed**. Every sorted `FAILED` list is empty; cumulative audit evidence is now **25 sequential runs with zero flaky findings**. Native golden baseline holds at **54/66** through `mnc-stage1`. Fixed-point remains **NEAR FIXED POINT**: stage2.ll == stage3.ll structurally at 109,872 lines, with only the known version-metadata placeholder diff (`"4.141.0"` vs `"__MN_VERSION__"`). Ledger: 63 dockets, **47 closed (75%)**, 16 open (0 CRITICAL, 0 HIGH, 8 MEDIUM, 8 LOW). Anaconda's carry-forward is empty.
-- **v4.140.0** (shipped) — **Self-hosted emitter parity — Cb.5 + SE.1 + Cb.3.** Closes the enum ABI divergence Cobra flagged at the v4.136.0 panel. **Cb.5** (MEDIUM → CLOSED). Ports `_enum_inline` from Python `emit_llvm_text.py` to self-hosted `emit_llvm.mn`: `EmitState.enum_inline_slots: List<Int>` registry, `compute_enum_inline_slots` eligibility, `pack_to_i64` / `unpack_from_i64` helpers. `emit_enum_init` / `emit_enum_payload` branch on inline vs boxed. Enum `Shape { Circle(Int), Square(Int), Triangle(Int, Int), Point, Line(Int), Rect(Int, Int) }` now compiles to `%enum.Shape = type {i64, i64, i64}` in both emitters — byte-identical ABI. `benchmarks/system/enum_match.mn` produces matching `checksum = 52818168` whether compiled via Python bootstrap or `mnc-stage1`. **SE.1** (LOW → CLOSED). Sh.2 ownership-transfer extended from LIST (v4.131.0) / STR (v4.132.0) to MAP / SIGNAL / STREAM in `emit_llvm_text.py::_do_copy`. Drop-glue shapes (`__mn_map_free_deep`, `__mn_signal_free`, `__mn_stream_free_chain`) are ptr-based alloca/load/free — structurally identical to LIST. **Cb.3** (LOW → CLOSED). `docs/guides/getting_started.md` documents `ulimit -s 65536` precondition for `mnc-stage2`. Non-bootstrap pytest **5,128 / 0**; bootstrap 212/13 byte-identical. Goldens 54/66 unchanged. Fixed-point 1-line diff (Dr.1 version-metadata artifact, within `DIFF_THRESHOLD=100`). `mnc-stage1` 3,566,736 bytes stripped (was 3,480,720). stage2.ll 109,872 lines (was 108,397). Ledger: 63 dockets, **46 closed (73%)**, 17 open (0 CRITICAL, 0 HIGH, 8 MEDIUM, 9 LOW).
-- **v4.139.0** (shipped) — **SPEC + language close — Gr.2 / Sem.1 / §0 / Co.1 / Dr.1.** Empties Coral's carry-forward. Grammar `named_type`/`generic_type` now accept `NAME (DOT NAME)*` for qualified type refs (Gr.2 MEDIUM → CLOSED); unblocks `stdlib/gpu/tensor.mn:90` and `stdlib/gpu/kernel.mn:63`. Module-level `let mut` rejected with E420 diagnostic (Sem.1 LOW → CLOSED). `emit_llvm.mn` version string parameterized via `__MN_VERSION__` placeholder + build-time substitution (Dr.1 LOW → CLOSED). SPEC §0 stale "legacy Python transpiler" line deleted. SPEC Appendix B gains strict 3-stage fixed-point section (Co.1). Self-hosted parser mirrored. Pytest **5,127 / 0**. Goldens 54/66. Ledger: 63 dockets, **43 closed (68%)**, 20 open (0 CRITICAL, 0 HIGH, 9 MEDIUM, 11 LOW). Coral's carry-forward emptied.
-- **v4.138.0** (shipped) — **Docs sweep — Bo.1–Bo.7 closed (Boa carry-forward).** Zero compiler or runtime source changes. `mapanare --version` now reads VERSION file directly instead of `importlib.metadata` (Bo.5). `docs/guides/getting_started.md` refreshed: golden count 39/65 → 53/65, native-mode prerequisites section added, Sh.2/Sh.11 removed from open-issues table (Bo.6 + Bo.2). Localized READMEs (es/zh-CN/pt) synced: badges `5.0.0-rc1`, test count `5139+`, benchmark numbers (42.6× Python, 1.12× Rust, 4.86× C), WebAssembly mention + badge (Bo.4 + Bo.7). `docs/known_issues.md` created with user-facing open items + workarounds (Bo.1). STATISTICS.md merge note restored (Bo.3). VERSION propagation: `libmapanare_rt.a` + `mnc-stage1` rebuilt. Pytest **5,142 / 0** (+3 from new `docs/known_issues.md` doc link tests). Goldens 53/65 byte-identical. Fixed-point unchanged. Ledger: 63 dockets, **40 closed (63%)**, 23 open (0 CRITICAL, 0 HIGH, 10 MEDIUM, 13 LOW). All Bo.* CLOSED. Next target: v4.139.0 (Gr.2 + Sem.1).
-- **v4.137.0** (shipped) — **Ch.1 CLOSED — `mapanare_agent_destroy` now `pthread_join`s before teardown.** Single-docket runtime-safety release. The last HIGH-severity open docket on the ledger closes. Four v4.136.0 reviewers named Ch.1 (Viper, Anaconda, Mamba, Coral); Viper held her memory-safety score at 9.0 because of it. `runtime/native/mapanare_runtime.c::mapanare_agent_destroy` now signals `running=0` + posts both semaphores, claims a one-shot join via atomic exchange on a new `needs_join` field, joins the worker if owed, *then* drains rings and tears down. `mapanare_agent_stop` uses the same claim pattern → stop is idempotent; stop+destroy safe in either order. No public API change. ~15 logic lines + 1 new atomic field in struct. Test hygiene: `test_agent_metrics` clears `message_dtor` (the test passes fake-ptr tokens but the v4.78.0 default `message_dtor=free` was calling `free()` on them — latent test-side issue the Ch.1 skip had been masking). All three `tests/native/test_c_hardening.py` sanitizer classes un-skipped and passing: Plain, ASan, TSan. Non-bootstrap pytest **5,139 / 0** (+3 Ch.1). Bootstrap pytest 212 / 13 byte-identical. Goldens 53/65 byte-identical. Strict 3-stage fixed point holds: md5 `0c00ad07fee94f98bb350b359395843b` on both stage2.ll and stage3.ll. Valgrind 0/60/5 byte-identical (all 5 ERRORS Ge.1 residuals). ASan 54/0/11 byte-identical. GitNexus impact pre-edit: **risk LOW**, 0 direct callers in graph, self-contained runtime internals as the PLAN predicted. Ledger state: 58 dockets opened since v4.99.0 → **35 closed (60%)** · 23 open: **0 CRITICAL · 0 HIGH · 10 MEDIUM · 13 LOW**. Zero runtime-safety work remains on the v5.0.0 critical path. Expected v4.143.0 panel impact: Viper +0.3, Anaconda +0.1, Mamba +0.05. Next target: v4.138.0 docs sweep (Bo.4 + Bo.5).
-- **v5.0.0-rc1** (tagged at v4.136.0) — **THE PANEL — v5 gate attempt 3: Option C. First v5 candidate in the project's history.** Seven-reviewer panel (Rattler / Viper / Anaconda / Cobra / Coral / Boa / Mamba) graded v4.121.0–v4.135.0 closeout arc. **Aggregate 8.80/10, grade distribution 1 EXCEEDS (Mamba 9.0) / 6 MEETS / 0 NEEDS WORK.** Mechanical rule: 8.5 ≤ aggregate < 9.0 AND 0 NEEDS WORK → Option C. Per-reviewer (v4.120.0 → v4.136.0): Rattler 8.3 → 8.9, Viper 8.4 → 9.0, **Anaconda 7.6 NEEDS WORK → 8.9 (+1.3)**, Cobra 7.9 → 8.7, Coral 8.1 → 8.7, Boa 8.7 → 8.4 (sole regression — Bo.4 README version badge drift), Mamba 8.5 → 9.0 EXCEEDS. Score trajectory: v4.99.0 6.59 → v4.106.0 7.87 → v4.114.0 8.21 → v4.120.0 8.21 → **v4.136.0 8.80** (the 8.21 plateau broke). Three historical v5 blockers closed + re-verified: Cobra's fixed-point (v4.134.0), Anaconda's CI/testing hygiene (v4.133.0), Viper's Sh.2 memory-safety (v4.131.0+v4.132.0). Zero compiler source changes this release (VERSION + docs only). Carry-forward for v5.0.0 final: HIGH Ch.1 (mapanare_agent_destroy UAF, ~5-line fix, TSan gate dark until closed); MEDIUM Bo.4 (README version drift), Bo.5 (`mapanare --version` prints 2.0.1), Cb.5 (Rt.1 Python/self-hosted enum ABI divergence), Gr.2 (qualified type refs); LOW Sh.2-residual, Dr.1, Cb.3, An.2, Sem.1. Tag `v5.0.0-rc1` created at this commit. v5.0.0 final transition is the lead's call.
-- **v4.135.0** (shipped) — **Pre-panel refresh: 4th flaky audit + sanitizer re-sweeps + benchmark refresh + MEASUREMENTS.md finalised.** 9 artifact files; zero compiler source changes; libmapanare_rt.a + mnc-stage1 rebuilt once for VERSION propagation. 4th flaky audit 5× sequential pytest 34m 26s wall, 0 flaky, 0 failures (first audit with zero failures). Cumulative 20 sequential runs across 4 audits, zero flaky findings. Valgrind 0/60/5 byte-identical to v4.132.0/v4.134.0; ASan 54/0/11 byte-identical; fixed-point md5 holds at `0c00ad07fee94f98bb350b359395843b`. Cross-language benchmarks: Mapanare 4.86× slower than C gcc, 1.12× slower than Rust, 42.6× faster than Python; enum_match 1.468 ms = 0.98× of Rust. Async 42.8× faster than asyncio, 1.61× slower than Go. MEASUREMENTS.md FINAL (505 lines). Docket ledger: 58 opened since v4.99.0, 34 closed (59%), 24 open (0 CRITICAL, 1 HIGH Ch.1, 10 MED, 13 LOW).
-- **v4.134.0** (shipped) — **STRICT 3-STAGE FIXED POINT REACHED.** First time in the v4.x recovery arc. `bash scripts/verify_fixed_point.sh --keep` → `stage2.ll == stage3.ll (108397 lines, 0 diff)`; `md5sum` confirms byte-identical (`0c00ad07fee94f98bb350b359395843b`). La Culebra Se Muerde La Cola. **Sh.11** (`lower_expr` SIGSEGV opened v4.128.0) closed as side-effect of Sh.2 arc — stage1 ran 108,355 lines without crashing on first attempt. **Sh.12** opened + closed in this release: capital `None` (used throughout `mnc_all.mn`) tokenizes as `NAME` (lexer matches only lowercase `none`/`nada` for `KW_NONE`); `lower_identifier("None")` fell through to "Unknown placeholder" → `Const(value, mir_unknown(), "")`; `emit_const` has no `TK_UNKNOWN` case so silently returned without emitting IR, leaving `%None<N>` undef. Six logic lines + nine-line comment in `mapanare/self/lower.mn::lower_identifier` mirror the existing `KW_NONE → Expr::NoneLit` lowering at line 1196 — both `none` (keyword) and `None` (identifier) spellings now produce identical `WrapNone` MIR. Goldens 53/65 byte-identical; valgrind 0/60/5 byte-identical; ASan 54/0/11 byte-identical; pytest non-bootstrap 0 fail / 5,110 pass / 121 skipped / 7 xfailed (1 more pass than v4.133.0 — runtime rebuilt to embed `MAPANARE_VERSION=4.134.0`); pytest bootstrap 13 fail / 212 pass byte-identical. `mnc-stage1` 3,472,528 → 3,480,720 bytes. `libmapanare_rt.a` rebuilt for VERSION propagation (source-tree byte-identical). **Cobra's v4.99.0 v5 blocker** ("a self-hosted compiler that cannot reach 3-stage fixed point is not v5.0.0 material") **is closed**.
-- **v4.133.0** (shipped) — **An.1 test hygiene: 39 → 0.** Zero compiler source changes. 11 tests fixed via test-side corrections (SPEC header drift 3; e2e LLVM stale inliner-folded assertions 5; VERSION-sync rebuild of `libmapanare_rt.a` + `mnc-stage1` 2; doc-link regex skips fenced code 3; ctypes `MnString` `_lenheap` bit-63 mask across db/fs tests 8). 18 tests skipped with named dockets (**TR.1** test_runner missing synthetic `main` 7; **Bn.1** struct-with-String-field ctypes ABI UAF 1; **Rt.2** dir_create ignores recursive 1; **Rt.3** tmpfile_path is a stub 2; **Ch.1** mapanare_agent_destroy UAF before thread join 3; **Tm.1** memory stress fixture no-concat 1; **An.2** repo-wide lint debt deferred 3). Full pytest: 5,109 passed / 0 failed / 121 skipped / 7 xfailed. Bootstrap 212/13 byte-identical. Goldens 53/65 byte-identical. Compiler source diff empty.
-- **v4.132.0** (shipped) — **Sh.2 String-residual.** Mirrors v4.131.0's LIST fix into the STRING branch of `mapanare/emit_llvm_text.py::LLVMTextEmitter._do_copy`: transfer `_str_slots` tracking src → dest when src is a tracked owner; untrack dest when src is an alias (field-get / enum-payload / param). 12 logic lines + 8-line comment. **ASan 9 → 0 ASAN_ERROR (stretch hit); valgrind ERRORS 14 → 5** (target ≤ 6 hit; residual 5 are out-of-scope Ge.1 generics-init class). Goldens 53/65 unchanged; pytest byte-identical (38 non-bootstrap + 13 bootstrap failures — An.1 carry-forward). **Closes Sh.2** (LIST v4.131.0 + STR v4.132.0). **Opens Ge.1** (generics uninit-read: 26_generics, 29_generic_impl, 30_nested_generics, 31_generic_multi, 32_generic_enum). `libmapanare_rt.a` byte-identical.
-- **v4.131.0** (shipped) — **Sh.2 fix arc, release 1: LIST branch.** v4.131.0 was originally THE PANEL (v5 gate attempt 3); pre-panel evidence showed a quality ceiling at 8.21 with Sh.2 unfixed — panel deferred to v4.136.0. The v4.127.0 "mirror `_move_resource` into self-hosted `emit_llvm.mn`" framing was not actionable (self-hosted emitter has no move-tracking infrastructure); actual fix is in the Python emitter's `LLVMTextEmitter._do_copy` LIST branch: only track dest as owner on ownership transfer; untrack dest if src is an alias. Goldens 39 → 53 (+14), valgrind 31 → 14 ERRORS, ASan 23 → 9 findings. 14/9 residuals are all String-analog of same bug (v4.132.0 scope). Python emitter only; `libmapanare_rt.a` byte-identical. Original panel PROMPT.md preserved at `docs/roadmap/v4/v4.131.0/PROMPT-panel.md`.
-- **v4.130.0** (shipped) — **Phase F closeout release 10: pre-panel prep.** Zero code changes. Three sanitizer/audit reports (FLAKY_AUDIT third 5×, VALGRIND_REPORT 0/34/31, ASAN_REPORT 31/23/11), pre-panel audit of 40+ load-bearing claims across 10 SESSION_REPORTs (0 material discrepancies, 5 cosmetic drifts, 2 latent docs flagged), MEASUREMENTS.md finalized. Key finding: Sh.2 is the single dominant open finding — 39 of ~47 sanitizer findings trace to one fix vehicle (mirror v4.101.0 `_move_resource` into self-hosted `emit_llvm.mn`). Reserved for v4.131.0+.
-- **v4.129.0** (shipped) — **SPEC + cookbook + guides sync.** SPEC audit: 8 OK / 4 STALE / 6 WRONG, 11 edits fixing header version, §2.1 const docs, §3.2 Future<T>, §3.6 numbering, §27.1 TypeKind count 25→29, §28 stdlib table, Appendix B pipeline diagram. Examples verification: 29 `.mn` files → 16 PASS / 13 FAIL with 3 new dockets (Gr.1 multi-line collection literals, Gr.2 qualified type refs in type position, Sem.1 module-level `let mut` scoping). README + getting_started synced. Fixed latent `mir_opt.mn` missing from `scripts/concat_self.sh` MODULES list.
-- **v4.128.0** (shipped) — **Self-hosted fixed-point refinement continuation.** Sh.8 closed at source (`None` recognized in `semantic.mn::infer_expr`), brace-spacing normalized `{ ptr, i64 }` → `{ptr, i64}` in 7 helpers + 20+ inline sites, module-ID path-stripping (`ModuleID = '01_hello'` matching Python). Proxy divergence 9,608 → 9,425 lines (-1.9%); M bucket fully closed (78 → 0). New docket Sh.11 (`lower_expr` SIGSEGV on `mnc_all.mn`) replaces Sh.8 as strict-fixed-point blocker. Zero golden regressions.
-- **v4.127.0** (shipped) — **Fixed-point baseline + cosmetic fixes.** Measurement pivot to Python-bootstrap-vs-`mnc-stage1` on 39 passing goldens (strict 3-stage blocked by Sh.8). 9,971 → 9,535 lines (-4.4%): TBAA metadata tree removed from self-hosted (confirmed 100% dead by v4.109.0 forensics), target datalayout/triple added, IR builder whitespace canonicalized `" =op "` → `" = op "` across 25 helpers + 12 inline sites. New `scripts/measure_divergence.py` (234 lines).
-- **v4.126.0** (shipped) — **Golden test push: 27 → 39 (+12).** Parser fix in `is_definition_start` (missing `KW_CONST`/`KW_TRAIT`, latent since v4.55.0) closes 2 tests. Harness relax in `test_native.py` (strict fn-set equality → superset allowed, since `mnc-stage1` doesn't run `inline_small_functions` — output is semantically equivalent, LLVM's inliner converges them at -O2) closes 10 tests. Per-test triage at `GOLDEN_TRIAGE.md`: of 26 remaining, 11 share Sh.2 root cause.
-- **v4.125.0** (shipped) — **Benchmark refresh + 5-run flaky audit.** Cross-language: Mapanare 4.52× slower than C gcc (was 5.46×), on par with Rust (1.00×), 46× faster than Python. `enum_match` 2.31× speedup from v4.124.0 (Mapanare now 0.91× of Rust — faster). Async: 45× faster than asyncio, 1.55× slower than Go. 5-run sequential pytest: 0 flaky tests (failure set byte-identical across all 4 adjacent pairs). ABI.1 docket opened (by-value 24-byte struct return on `enum_match` residual gap).
-- **v4.124.0** (shipped) — **Rt.1: unboxed enum payloads for pointer-fits variants.** `mapanare/emit_llvm_text.py` stores small enum payloads inline in `{i64, i64, ..., i64}` instead of `{i64, ptr}` + heap allocation. Eligibility: ≤ 2 payload fields, each 8-byte-or-smaller, no self-reference. `enum_match` 3.33 → 1.88 ms (1.77× speedup), gap vs Rust 4.1× → 2.3×, malloc count per run 83,333 → 0. Self-hosted emitter deferred (stage2 blocked by Sh.8).
-- **v4.123.0** (shipped) — **Dead-code sweep: −1,963 lines.** Deleted `mapanare/optimizer.py` (1,203 lines, 9% coverage via undocumented `--legacy-optimizer` flag), `tests/optimizer/test_optimizer.py` (1,029 lines), and TBAA metadata tree in `emit_llvm_text.py::_emit_module` (nodes `!1`–`!9`, declared in every module but never attached to any load/store, confirmed dead by v4.109.0 forensics). `OptLevel` aliased to `MIROptLevel`. No behavior change.
-- **v4.122.0** (shipped) — **Qs.1 resolved: `List<Int>` indexing in argument position.** One-line fix in `mapanare/lower.py::_lower_let`: after patching `ListInit.elem_type` for empty-list annotations, also rebind `val.ty = declared` so the named alias carries the full list element type. `print(str(arr[0]))` now emits `load i64, ptr` instead of the buggy `store ptr`/`load ptr` passthrough. 5 IR-level regression tests + new golden `65_list_int_indexing.mn`. Self-hosted path already correct (Python bootstrap was the bug).
-- **v4.121.0** (shipped) — **Phase F closeout release 1.** DWARF deferral warning restored (`-g/--debug` is no-op, SPEC §21.3). Bounded-generic trait fix: unused type params no longer cause false monomorphization. 22/22 v4.117.0-audit deterministic failures closed. Opened An.1 (51 failures outside audit subset) + An.2 (302 lint findings) as v4.122.0+ tracks.
-- **v4.120.0** (shipped) — **Phase F panel: 8.21/10, Option B (NOT tagged v5).** 7 reviewers. 0 NEEDS WORK ... wait, actually 1 NEEDS WORK (Anaconda 7.6 CI/testing). 17 carry-forward items opened (Qs.1, An.1, An.2, Sh.2, Sh.4-7 deferred, Rt.1, ASan.1, etc.). Panel score history: v4.26.0 9.44 → v4.36.0 9.79 peak → v4.99.0 6.59 trough → v4.106.0 7.87 → v4.114.0 8.21 → v4.120.0 **8.21** (quality ceiling hit — panels open new findings at rate prior phases close old ones).
-- **v4.99.0** (shipped) — **Arc 14 panel: 6.59/10, Option B (NOT tagged v5).** Tagged-pointer UB, list indexing, async linking flagged as must-fix. Opens the v4.100.0–v4.119.0 recovery arc.
-- **v4.76.0** (shipped) — **Coroutine arc panel: 8.86/10.** First individual 10/10 score in project history.
-- **v4.36.0** (shipped) — **Peak panel score: 9.79/10.** Historical high.
-- **v5.0.0** (when ready) — Major version tag. Gated by panel aggregate ≥ 9.0 AND 0 NEEDS WORK. Attempts: v4.99.0 (6.59, fail), v4.120.0 (8.21 + 1 NEEDS WORK, fail), **v4.136.0 (8.80, 0 NEEDS WORK → Option C, `v5.0.0-rc1` tagged)**. v5.0.0 final blocked on Ch.1 HIGH (agent_destroy UAF, ~5-line fix) + Bo.4/Bo.5 README hygiene (~40 min). Transition from `-rc1` to clean `v5.0.0` is the lead's call.
+Most recent releases (last 6). Full history at
+`docs/roadmap/ROADMAP.md`:
 
-See `docs/roadmap/ROADMAP.md` for the full roadmap. Organized by era: `docs/roadmap/v0/` through `docs/roadmap/v4/`.
+- **v5.11.0** (shipped) — **Pk.* — packaging hygiene + post-bundle
+  cleanup.** Three deferred-from-v5.10.0 cleanups, zero compiler
+  internals. **Pk.1**: release-artifact filenames now include the
+  version (`mapanare-5.11.0-win-x64.zip`, `mnc-5.11.0-linux-x64`,
+  etc.), driven by the VERSION file. install.ps1 / install.sh probe
+  the versioned name first, fall back to legacy unversioned for
+  pre-v5.11 releases and for the 2-release alias soak window (drop
+  legacy in v5.13.0). `windows-bundled-llvm-smoke` job downloads
+  the versioned ZIP so a missing-versioned-asset upload trips the
+  smoke gate. **Pk.2**: drops the v5.9.1 `mnc <file.mn>`
+  (implicit-run) deprecation stderr line; the v5.9.1 PLAN scheduled
+  removal at v5.11.0 and v5.10.0 carried it as the soak-window
+  concession. `tests/test_cli_default.py::test_default_prints_
+  deprecation_note` inverted to `test_default_silent_after_v5_11_0`.
+  **Pk.3** (evaluate-only): native `mnc` covers 7 of `mapanare`'s
+  25 subcommands. PyInstaller→native bundle swap **deferred** to
+  v5.12.x+ behind Mc.\* (mnc parity) — Mc.1 `mnc lsp`, Mc.2
+  `mnc fmt`, Mc.3 `mnc init`, Mc.4 `mnc check`, Mc.5 `mnc emit-wasm`.
+  See `docs/roadmap/v5/v5.11.0/MNC_PARITY_GAPS.md`. **Pk.4**
+  (closeout-doc): macOS/Linux LLVM bundling stays deferred —
+  system clang remains canonical, static Linux LLVM with libstdc++
+  is ~300 MB, no demand signal. NO seed refresh required (zero
+  new C-runtime exports — first release in 5+ to skip Bb.\*).
+  **Strict 3-stage fixed-point preserved** (226,603 lines / 0 diff,
+  the v5.9.0 milestone held since v5.9.0). Goldens 66/66;
+  `make lint` clean. See `docs/roadmap/v5/v5.11.0/SESSION_REPORT.md`.
+- **v5.10.0** (shipped) — **Win.1b — bundled LLVM toolchain in
+  Windows release ZIP.** Closes the "missing clang" pain on Windows
+  surfaced by the v5.8.7 install probe. v5.9.0 DX.3 made the failure
+  mode helpful (install hint instead of bare "clang failed");
+  v5.10.0 removes the dependency entirely. Default
+  `mapanare-win-x64.zip` grows from ~10 MB to ~95 MB by bundling
+  LLVM 18.1.8's minimal redistributable subset (clang.exe +
+  lld-link.exe + LLVM-C.dll + compiler-rt + LICENSE.TXT) into
+  `mapanare/llvm/`. **Win.1b.A**: `tools/llvm-bundle/
+  extract_minimal.ps1` + `REQUIRED_FILES.md`; PATH-stripped smoke
+  test. **Win.1b.B/C**: `actions/cache@v4` LLVM step + bundle staging
+  in `build-cli` job. **Win.1b.D**: new `__mn_executable_dir()`
+  C-runtime export + `find_clang()` helper in `mapanare/self/main.mn`
+  + 6 clang shell-out sites updated. **Win.1b.E**:
+  `docs/THIRD-PARTY-LICENSES.md` (Apache 2.0 + LLVM Exception).
+  **Win.1b.F**: `install.ps1` honors `MAPANARE_NO_BUNDLED_LLVM=1`
+  for opt-out users → `mapanare-win-x64-minimal.zip` (~10 MB).
+  **Win.1b.G**: `windows-bundled-llvm-smoke` CI job validates the
+  published ZIP end-to-end with PATH stripped. Linux/macOS
+  artifacts unchanged (PLAN Decision 4 — those platforms have
+  system clang; closeout in v5.11.0 Pk.4). Compiler internals
+  untouched; packaging-only release.
+  See `docs/roadmap/v5/v5.10.0/SESSION_REPORT.md`.
+- **v5.9.2** (shipped) — **hygiene — pre-existing test regex +
+  stale README line.** Two pre-existing fixes carried over from
+  v5.9.1 that didn't fit the DX.5 dispatch scope. Test + docs only;
+  zero compiler/runtime edits. **Tg.1**: tighten the quoted-declare
+  regex in `tests/bootstrap/test_stage1_compile.py` — anchor at
+  start-of-line and refuse newline inside the captured group.
+  Closes the latent `Unresolved cross-module refs:
+  [', align 8\n@.str.NNNN = ...']` failure shape (reproduced on
+  v5.9.0 HEAD with index 3025; v5.9.1 HEAD with 3042). Helper
+  extraction de-dups the two call sites; new `TestRegexHelper`
+  with 3 cases guards the failure shape. **Dn.1**: README
+  fixed-point status line — stale `NEAR (4-line VERSION-metadata
+  diff over a 217k-line stage2.ll)` was the v5.6.x state; v5.9.0
+  restored STRICT at the source (DX.2), v5.9.1 preserved it.
+  README now reads STRICT with v5.9.0 credit. NO seed refresh.
+  **Strict 3-stage fixed-point preserved** (the v5.9.0
+  milestone). Goldens 66/66; `test_stage1_compile.py` 20/20 pass
+  (was 19/20 at v5.9.1 HEAD); `make lint` clean. See
+  `docs/roadmap/v5/v5.9.2/SESSION_REPORT.md`.
+- **v5.9.1** (shipped) — **DX.5 — `mnc <file.mn>` defaults to run
+  (BREAKING).** Empties the v5.8.7 Windows install probe DX.* docket
+  list (DX.1–DX.7 all closed). Single behavior change; dispatch-layer
+  only. Pre-v5.9.1 `mnc hello.mn` dumped LLVM IR to stdout (useful
+  for compiler devs, hostile first impression for newcomers); v5.9.1+
+  compiles + runs the program. New `mnc emit-llvm <file.mn>
+  [-o output]` subcommand keeps the IR-emission path verbatim,
+  parallel to the Python CLI's `mapanare emit-llvm`. Non-`.mn` files
+  error with a migration hint pointing at `mnc emit-llvm` (raw IR)
+  or `mnc compile` (transpilation). One-line stderr deprecation note
+  on the implicit-run path; removed in v5.11.0 (v5.10.0 keeps it as
+  a soak window for downstream CI scripts). NO seed refresh required
+  (no new builtin call sites). **Strict 3-stage fixed-point
+  preserved** (the v5.9.0 milestone). Goldens 66/66; new
+  `tests/test_cli_default.py` 6/6 pass; `make lint` clean. See
+  `docs/roadmap/v5/v5.9.1/SESSION_REPORT.md`.
+- **v5.9.0** (shipped) — **DX.* — native CLI hygiene.** Closes the
+  six user-visible CLI gaps surfaced by the v5.8.7 Windows install
+  probe: `mnc --help` works (DX.1); `mnc version` no longer leaks
+  `__MN_VERSION__` (DX.2 — structural fix: new `__mn_version_string()`
+  C-runtime export replaces the v4.28.0 placeholder + build_stage1.py
+  substitution dance, same shape as v5.8.6 We.1); missing-clang prints
+  platform-specific install instructions and surfaces clang stderr
+  (DX.3); `mnc cache stats` / `cache clean` work on Windows via new
+  native `__mn_dir_count_files` / `__mn_dir_total_size` /
+  `__mn_dir_remove_recursive` exports + `__mn_dev_null_redirect()`
+  shim that sweeps every `2>/dev/null` literal (DX.4); install.ps1 +
+  install.sh ship `mnc` alongside `mapanare` and getting-started
+  uses `mnc` consistently (DX.6 + DX.7). DX.5 (default-command
+  change) deferred to v5.9.1. Bb.3 seed refresh shipped. **Strict
+  3-stage fixed-point restored** (225,831 lines / 0 diff) — first
+  since v4.139.0 — as a side effect of the IR-metadata node now
+  calling `__mn_version_string()` at runtime. Goldens 66/66; 36 new
+  pytest tests; `make lint` clean. See
+  `docs/roadmap/v5/v5.9.0/SESSION_REPORT.md`.
+- **v5.8.6** (shipped) — **We.1 closure — i686-w64-mingw32 ABI
+  support.** 3-way ABI dispatch in the emitter (SysV/AAPCS64,
+  Win64 sret/sarg, i686 cdecl sret/byval); fixes silent miscompile
+  of `{ptr,i64}` returns on i686 via LLVM's eax:edx packing.
+  Refines host detection (`__mn_host_is_windows()` /
+  `__mn_host_arch_bits()`); deprecates `__mn_host_is_win64()`.
+  Bb.2 seed refresh (6.57 MB) — old seed predates the new exports.
+  stage2.ll 222,095 lines, strict fixed point in no-Python pipeline.
+  Goldens 66/66; pytest 2,372 passed. See
+  `docs/roadmap/v5/v5.8.6/SESSION_REPORT.md`.
+> Older release notes elided. See `docs/roadmap/ROADMAP.md` for the
+> full ledger and `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` for any
+> specific release.
+
+### Planned / in-progress
+
+- **v5.12.0** — **Mc.6 / Wk.* — Windows SDK split.** Default
+  Windows installs move to `mapanare-${V}-win-x64-sdk.zip`, which
+  bundles one curated LLVM-MinGW/UCRT x86_64 SDK under `sdk/` so
+  clean-machine `mnc run` / `mnc build` keep working. The opt-in
+  `mapanare-${V}-win-x64-minimal.zip` is app-only and requires a
+  user/system compiler. `MAPANARE_NO_BUNDLED_TOOLCHAIN=1` and legacy
+  `MAPANARE_NO_BUNDLED_LLVM=1` select minimal. `toolchain/` must not
+  appear in v5.12.0 Windows release ZIPs. See
+  `docs/roadmap/v5/v5.12.0/WINDOWS_TOOLCHAIN_AUDIT.md`.
+- **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
+- **v6.0** — Borrow checker / multi-level alias analysis. Closes
+  Rt.04 (multi-level drop-glue alias analysis, rescoped
+  v5.6.6 — struct→list→string depth-2). The only remaining
+  v5.6.x v6.0 carry now that v5.6.12 closed Lk.1 at the
+  source via destination passing.
+
+See `docs/roadmap/v5/CLOSEOUT_ARC.md` and
+`docs/roadmap/v5/PARITY_GAPS.md`.
 
 ## Pre-Push Validation (MANDATORY)
 
-**Before ANY commit or push**, run the full validation suite. This mirrors CI exactly and writes results to `error.log`:
+Run the full validation suite before any commit/push. Mirrors CI.
+Writes results to `error.log`.
 
 ```powershell
-.\dev.ps1                  # Full validate: black + ruff + mypy + gcc + pytest + WAT emission (runs once)
-.\dev.ps1 validate         # Same as above (default mode), runs once and exits
-.\dev.ps1 validate -Watch  # Validate then watch for changes
+.\dev.ps1                  # Full validate: black + ruff + mypy + gcc + pytest + WAT
+.\dev.ps1 validate -Watch  # Validate then watch
 .\dev.ps1 test             # pytest only
-.\dev.ps1 lint             # Linters only (black + ruff + mypy)
-.\dev.ps1 fmt              # Auto-format (black + ruff --fix)
-.\dev.ps1 e2e              # End-to-end tests only
+.\dev.ps1 lint             # Linters only
+.\dev.ps1 fmt              # Auto-format
+.\dev.ps1 e2e              # End-to-end tests
 .\dev.ps1 bench            # Benchmarks
 ```
 
-The validate step includes **WAT emission** for all `examples/wasm/*.mn` files — this is what catches WASM CI failures locally. Running just `pytest` is NOT sufficient; the WASM cross-compilation step in CI compiles those examples and will fail independently of pytest.
+The validate step includes **WAT emission** for `examples/wasm/*.mn`
+— catches WASM CI failures locally. `pytest` alone is NOT sufficient.
 
-**Quick partial checks** (use these during development, but always run full validate before pushing):
+Quick partial checks:
 
 ```bash
-# WASM emission only (fast, catches the most common CI-only failures)
 python -m mapanare emit-wasm examples/wasm/hello.mn -o /dev/null
-python -m mapanare emit-wasm examples/wasm/wasi_app.mn -o /dev/null
-
-# Lint only (no tests)
 black --check . && ruff check . && mypy mapanare/ runtime/
-
-# Single test file
 pytest tests/semantic/test_types.py -v
-
-# Single test directory
 pytest tests/parser/ -v
-pytest tests/llvm/ -v
-pytest tests/wasm/ -v
 ```
 
 ## Commands
@@ -90,412 +188,227 @@ pytest tests/wasm/ -v
 ```bash
 make install          # pip install -e ".[dev]"
 make build            # pip install -e .
-make test             # pytest tests/ -v (add -n auto for parallel)
-make lint             # ruff check . && black --check . && mypy mapanare/ runtime/
-make fmt              # black . && ruff check --fix .
+make test             # pytest tests/ -v  (add -n auto for parallel)
+make lint             # ruff + black + mypy
+make fmt              # black + ruff --fix
 make benchmark        # python -m benchmarks.run_all
-make clean            # Remove caches and egg-info
-
-# Run specific tests (always use -n auto for parallel execution via pytest-xdist)
-pytest tests/parser/ -v -n auto              # Parser tests only
-pytest tests/semantic/test_types.py -n auto  # Single test file
-pytest tests/llvm/ -v -n auto               # LLVM emitter tests
-pytest tests/bootstrap/ -v -n auto           # Self-hosted compiler tests
-
-# Golden test harness (native compiler validation)
-python scripts/test_native.py                                    # Bootstrap-only (Windows)
-python scripts/test_native.py --stage1 mapanare/self/mnc-stage1  # Compare with native (WSL)
-python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 --run  # Also run IR via lli
-python scripts/test_native.py --bless                            # Regenerate reference files
-python scripts/test_native.py --filter fib -v                    # One test, verbose
-
-# Rebuild cycle (WSL) — one command for the full edit-compile-test loop
-bash scripts/rebuild.sh              # concat + build + golden (default)
-bash scripts/rebuild.sh quick        # concat + build only (fast iteration)
-bash scripts/rebuild.sh full         # concat + build + golden + selftest + memory
-bash scripts/rebuild.sh audit        # concat + build + audit main.ll
-bash scripts/rebuild.sh worklist     # concat + build + show alloca alias work queue
-
-# IR Doctor — per-function diagnostics for the self-hosted compiler
-# Detects: ALLOCA_ALIAS (real vs mitigated), EMPTY_SWITCH, RET_TYPE_MISMATCH,
-#          MISSING_PERCENT, DUPLICATE_CASE, PHI_UNDEF_REF, LOOP_PUSH, etc.
-# Saves baselines to .ir_doctor/ — reruns show delta (fixed/new/regressed)
-python scripts/ir_doctor.py audit mapanare/self/main.ll              # Audit + baseline + llvm-as
-python scripts/ir_doctor.py --only lower__ audit mapanare/self/main.ll  # Audit specific module
-python scripts/ir_doctor.py worklist mapanare/self/main.ll           # Functions needing recursive rewrite
-python scripts/ir_doctor.py extract mapanare/self/main.ll lower__lower_match  # Dump one function's IR
-python scripts/ir_doctor.py check file.ll                            # Just llvm-as validation
-python scripts/ir_doctor.py golden                                   # Fresh compile+validate ALL golden (WSL, no cache)
-python scripts/ir_doctor.py selftest                                 # Self-compile mnc_all.mn (WSL)
-python scripts/ir_doctor.py memory                                   # Memory scaling test (WSL)
-python scripts/ir_doctor.py table mapanare/self/main.ll              # Per-function metrics table
-python scripts/ir_doctor.py --top 15 table mapanare/self/main.ll     # Top 15 largest functions
-python scripts/ir_doctor.py fingerprint mapanare/self/main.ll        # JSON per-function hashes
-python scripts/ir_doctor.py diff tests/golden/07_enum_match.mn       # Bootstrap vs stage1 (WSL)
-python scripts/ir_doctor.py diff-ir a.ll b.ll                        # Compare two .ll files
-python scripts/ir_doctor.py valgrind tests/golden/11_closure.mn       # Auto-run valgrind + map crash to fields (WSL)
-python scripts/ir_doctor.py valgrind 11_closure.mn --struct EmitState  # Map against a different struct
-python scripts/ir_doctor.py structmap LowerState                     # Show struct byte layout + field names
-python scripts/ir_doctor.py structmap LowerState --offset 176        # What field is at byte 176?
-python scripts/ir_doctor.py structmap                                # List all structs with sizes
-python scripts/ir_doctor.py journal                                  # View debug history (runs + notes)
-python scripts/ir_doctor.py note "tried X, result was Y"             # Add note to debug journal
-python scripts/ir_doctor.py diff-all                                 # All golden tests (WSL)
-python scripts/ir_doctor.py snapshot                                 # Generate .stage1.ll files (WSL)
-python scripts/ir_doctor.py stage2                                   # Compile self-hosted modules through mnc-stage1, validate stage2 IR
-python scripts/ir_doctor.py stage2 --timeout 60                      # With longer timeout
-python scripts/ir_doctor.py valgrind-map ./mapanare/self/mnc-stage1 tests/golden/07_enum_match.mn  # Run valgrind and map crash offsets to struct fields
-python scripts/ir_doctor.py valgrind-map --struct LowerState ./mnc some_file.mn  # Map against specific struct
-python scripts/ir_doctor.py valgrind-map --timeout 60 ./my_binary --flag arg     # With timeout
-python scripts/ir_doctor.py strings mapanare/self/main.ll                        # Validate string constant byte counts
-python scripts/ir_doctor.py strings mapanare/self/main.ll -v                     # Also show duplicate strings
-python scripts/ir_doctor.py xray                                                 # Full stage2 build + runtime test
-python scripts/ir_doctor.py xray --timeout 60                                    # With longer timeout
-python scripts/ir_doctor.py phi-check /tmp/stage2.ll                             # Validate PHI fix preserves structure
-
-# MIR Trace — debug type inference issues in the Python lowerer
-python scripts/mir_trace.py tests/golden/10_result.mn divide         # Trace types for one function
-python scripts/mir_trace.py tests/golden/07_enum_match.mn            # Trace all functions in file
-python scripts/mir_trace.py tests/golden/10_result.mn divide -v      # Verbose (all instructions)
-python scripts/mir_trace.py tests/golden/10_result.mn divide --json  # JSON output
-python scripts/mir_trace.py tests/golden/10_result.mn divide --compare  # Compare MIR vs stage1 IR
-
-# Self-hosted compiler build + fixed-point (WSL/Linux only)
-python scripts/build_stage1.py                   # Build mnc-stage1 from Python bootstrap
-bash scripts/verify_fixed_point.sh               # 3-stage self-compilation verification
-bash scripts/verify_fixed_point.sh --keep        # Keep intermediate IR for debugging
-
-# Culebra v2.0.0 — compiler diagnostics for LLVM IR AND C source (Rust, installed in WSL)
-# 29+ YAML templates across ABI, IR, Binary, Bootstrap categories. Nuclei-style pattern engine.
-# Repo: C:\Users\Juan\Documents\GitHub\Culebra (also at github.com/Mapanare-Research/Culebra)
-# crates.io: https://crates.io/crates/culebra
-
-# --- Core scanning ---
-culebra scan mapanare/self/main.ll                          # Run all templates against IR
-culebra scan mapanare/self/main.ll --tags abi               # ABI checks only
-culebra scan mapanare/self/main.ll --severity critical      # Critical findings only
-culebra scan mapanare/self/main.ll --id option-type-pun-zeroinit  # One specific template
-culebra scan mapanare/self/main.ll --autofix --dry-run      # Preview auto-fixes
-culebra scan mapanare/self/main.ll --autofix                # Apply auto-fixes
-culebra scan mapanare/self/main.ll --header runtime/native/mapanare_runtime.c  # Cross-ref IR vs C structs
-culebra scan mapanare/self/main.ll --format json            # JSON output
-culebra scan mapanare/self/main.ll --format sarif           # SARIF for GitHub Code Scanning
-
-# --- AI-optimized debugging (v0.3.0) ---
-culebra triage mapanare/self/main.ll                        # Group findings by root cause, deduplicate
-culebra triage mapanare/self/main.ll --format json          # Structured JSON for AI consumption
-culebra compare stage1.ll stage2.ll --metric calls          # Per-function metric comparison (flags drops)
-culebra compare stage1.ll stage2.ll --metric pushes --threshold 0.5  # Custom metric + threshold
-culebra explain stage2.ll return-type-divergence            # Show matched IR in context + remediation
-culebra explain stage2.ll option-type-pun-zeroinit --function parser  # Scoped to one function
-culebra bisect stage1.ll stage2.ll                          # Find divergent functions ranked by impact
-culebra bisect stage1.ll stage2.ll --top 30                 # Show more results
-culebra verify stage2.ll return-type-divergence             # PASS/FAIL — verify a fix worked
-culebra verify stage2.ll break-inside-nested-control --function tokenize  # Scoped verify
-
-# --- C backend scanning (v2.0.0) — scan generated C for Mapanare v3.0.0 ---
-culebra scan stage2.c                                       # Auto-detects .c, runs 8 C-specific templates
-culebra scan stage2.c --tags c                              # C templates only
-culebra scan stage2.c --id switch-no-break                  # Check for switch fallthrough
-culebra scan stage2.c --id missing-typedef                  # Find undefined struct types
-culebra diff stage1.c stage2.c                              # Fixed-point: compare C text output
-culebra triage stage2.c --brief                             # Quick C summary
-culebra summary stage2.c                                    # Full diagnostic (works for .c and .ll)
-# C templates: switch-no-break, missing-typedef, null-deref-pattern, goto-dead-label,
-#   union-tag-mismatch, large-struct-by-value, missing-return, buffer-overflow-pattern
-
-# --- Debugging feedback loop (v1.2.0) — wrap commands, learn patterns, track journal ---
-culebra wrap -- clang -c -O1 stage2.ll -o stage2.o          # Proxy command + log to .culebra-session.jsonl
-culebra wrap -- valgrind /tmp/mnc-stage2 /tmp/tiny.mn        # Captures crashes, errors, output
-culebra wrap -- llvm-as stage2.ll -o /dev/null               # Log LLVM errors for analysis
-culebra learn                                                # Analyze session logs → extract error patterns + suggest templates
-culebra learn -v                                             # Verbose: show individual failure details
-culebra journal add "State doesn't persist in emit_instr" --action bug --tags "option,state" --function emit_instr
-culebra journal add "Fixed MIRFunction field indices" --action fix --tags "field-index"
-culebra journal add "mnc-stage2 runs!" --action milestone
-culebra journal show                                         # View timeline of bugs/fixes/milestones
-culebra journal show option                                  # Search journal by keyword
-
-# --- Semi-dynamic analysis (v1.1.0) — call functions, probe values, test returns ---
-culebra eval main.ll --function hardcoded_field_index --arg '"VarInfo"' --arg '"value"'  # Call and print return
-culebra eval main.ll --function find_field_index --arg 0 --arg 0      # Integer args
-culebra probe stage2.ll --function lower_fn --watch '%state'           # Inject printf, compile, run
-culebra probe stage2.ll --function lower_fn --stop-at if_merge         # Stop at specific block
-culebra test-fn main.ll --function hardcoded_field_index --arg 0 --arg 0 --expect-ret 1  # Unit test: PASS/FAIL
-
-# --- Summary (v1.0.0) — one command for everything ---
-culebra summary stage2.ll                                   # Scan + Types + Fields + Health + Score in 5 lines
-culebra summary stage2.ll --struct LowerState               # Filter health to one struct
-
-# --- Type inference + field audit (v0.9.0) — auto-generate types, detect index-0 bug ---
-culebra infer-types stage2.ll                               # Infer missing type defs from insertvalue chains
-culebra infer-types stage2.ll --ll                          # Output as valid LLVM IR (paste into file)
-culebra field-index-audit stage2.ll                         # Find structs where ALL accesses use index 0
-culebra field-index-audit stage2.ll --struct-filter LowerState  # Check specific struct
-
-# --- Display + Inspection (v0.8.0) — syntax-highlighted IR, variable dumps, block walk ---
-culebra pretty stage2.ll                                    # Module overview: stats, types, function size bars
-culebra pretty stage2.ll --function lower_fn                # Syntax-highlighted IR with colored types/labels/terminators
-culebra dump stage2.ll --function lower_fn                  # Variable dump: allocas, types, sizes, def-use counts, PHIs
-culebra dump stage2.ll --function lower_fn -v               # Verbose: also show GEP chains
-culebra inspect stage2.ll --function lower_fn               # Block-by-block control flow walk
-culebra inspect stage2.ll --function lower_fn --block if_alpha  # Detail view of one block
-culebra stacktrace crash.log --ir stage2.ll                 # Parse valgrind/ASAN/gdb output, map to IR
-
-# --- Missing types (v0.7.0) — find undefined struct/enum types blocking compilation ---
-culebra missing-types stage2.ll                             # Find all undefined named types
-culebra missing-types stage2.ll -v                          # Also show which functions reference each
-
-# --- Call graph + progress (v0.6.0) ---
-culebra callchain stage2.ll --from lower --to current_block_terminated  # Find call paths between functions
-culebra callchain stage2.ll --from lower_fn --to add_block --depth 5   # Shows struct types along chain
-culebra progress stage2.ll                                              # IR stats + findings + health score
-culebra progress stage2.ll -b my-baseline.json                         # Also compare against baseline
-
-# --- Crash debugging (v0.5.0) — offset mapping, variable tracing, struct health ---
-culebra crashmap stage2.ll --offset 0x20 --struct FnDefData  # "0x20 = field 4 (name: {ptr, i64})"
-culebra crashmap stage2.ll --offset 0x20                     # Check all structs for that offset
-culebra crashmap stage2.ll                                   # List all struct types with sizes
-culebra trace stage2.ll --function lower_fn --var '%state'   # Follow variable through basic blocks
-culebra trace stage2.ll --function tokenize --var '%pos'     # Shows every load/store/phi/call
-culebra health stage2.ll --struct LowerState                 # PHI zeroinit, type-pun, null loads
-culebra health stage2.ll                                     # Check all structs
-culebra suggest stage2.ll --function lower_definition        # Prioritized fix suggestions for a function
-
-# --- Baseline tracking (v0.4.0) — track progress across fix iterations ---
-culebra baseline save stage2.ll                             # Save current findings as baseline
-culebra baseline diff stage2.ll                             # Compare current scan vs baseline (Fixed/New/Remaining)
-culebra baseline diff stage2.ll -b my-baseline.json         # Compare against specific baseline file
-
-# --- Template assertions (v0.4.0) — CI gates and regression tests ---
-culebra lint-template stage2.ll return-type-divergence --expect   # FAIL if template doesn't fire
-culebra lint-template stage2.ll option-type-pun-zeroinit --reject # FAIL if template fires (regression)
-
-# --- Triage --brief (v0.4.0) — minimal output for AI token efficiency ---
-culebra triage stage2.ll --brief                            # One line: "9 root causes, 31 findings: ..."
-
-# --- Diagnostic map (symptom → templates) ---
-culebra map crash                                           # "what could cause this crash?"
-culebra map "type mismatch"                                 # Search by symptom keyword
-culebra map "zero tokens"                                   # Maps to relevant templates
-culebra map phi                                             # PHI-related issues
-
-# --- Drain queue (Mapanare integration) ---
-culebra drain .culebra-queue.yaml                           # Process dynamically-queued checks
-culebra drain .culebra-queue.yaml --clear                   # Process and clear queue
-
-# --- IR analysis ---
-culebra strings mapanare/self/main.ll                       # Validate [N x i8] byte counts
-culebra audit mapanare/self/main.ll                         # Detect IR pathologies
-culebra check mapanare/self/main.ll                         # Validate IR with llvm-as
-culebra diff stage1.ll stage2.ll                            # Per-function structural diff
-culebra extract mapanare/self/main.ll my_function           # Extract one function's IR
-culebra table mapanare/self/main.ll --top 15                # Per-function metrics table
-
-# --- ABI + binary ---
-culebra abi mapanare/self/main.ll --header runtime/native/mapanare_runtime.c  # Struct layout + sret
-culebra binary ./mapanare/self/mnc-stage1 --ir main.ll      # ELF/PE inspection + .rodata cross-ref
-
-# --- Bootstrap pipeline ---
-culebra phi-check /tmp/stage2.ll                            # Validate transform preserves IR
-culebra pipeline                                            # Run full stage pipeline from culebra.toml
-culebra fixedpoint ./mnc-stage1 mapanare/self/mnc_all.mn    # Fixed-point convergence detection
-
-# --- Templates + workflows ---
-culebra templates list                                      # List all templates
-culebra templates show option-type-pun-zeroinit             # Full template details
-culebra workflow bootstrap-health-check --input stage1_output=stage1.ll  # Multi-step validation
-culebra workflow playground-mapanare --input stage2_output=stage2.ll     # Playground workflow
-
-# --- Misc ---
-culebra watch --patterns '*.ll,*.mn' culebra scan main.ll   # Watch + re-scan on change
-culebra test                                                # Run all [[tests]] from culebra.toml
-culebra run ./mnc-stage1 test.mn --expect "hello"           # Compile, run, check output
-culebra init                                                # Generate starter culebra.toml
+make clean            # Remove caches + egg-info
 ```
+
+### Core workflows
+
+```bash
+# Golden test harness (WSL for stage1)
+python scripts/test_native.py --stage1 mapanare/self/mnc-stage1
+
+# Full rebuild cycle (WSL)
+bash scripts/rebuild.sh              # concat + build + goldens
+
+# Self-hosted fixed-point (WSL)
+python scripts/build_stage1.py
+bash scripts/verify_fixed_point.sh --keep
+```
+
+### Debug tooling
+
+Full command reference: **`docs/guides/tools_reference.md`**.
+
+- `python scripts/ir_doctor.py <cmd>` — per-function IR diagnostics,
+  baselines, valgrind mapping, stage2 pipeline
+- `python scripts/mir_trace.py <file.mn> <fn>` — trace type inference
+  in the Python lowerer
+- `culebra <cmd>` — 49+ templates for IR + C diagnostics (Rust binary,
+  WSL)
 
 ## Testing the Native Compiler
 
-Golden test corpus lives in `tests/golden/*.mn` (15 programs covering all features). Reference IR in `tests/golden/*.ref.ll`.
+Golden corpus at `tests/golden/*.mn` (66 programs). Reference IR at
+`tests/golden/*.ref.ll`.
 
-**Workflow for debugging mnc-stage1:**
-1. Make changes to `mapanare/self/*.mn` or `mapanare/emit_llvm_text.py`
-2. Rebuild: `python scripts/build_stage1.py`
-3. Test: `python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 -v`
-4. The harness compares mnc-stage1 output against the Python bootstrap — shows exactly which functions are missing or different.
+Workflow:
+1. Edit `mapanare/self/*.mn` or `mapanare/emit_llvm_text.py`
+2. `python scripts/build_stage1.py`
+3. `python scripts/test_native.py --stage1 mapanare/self/mnc-stage1 -v`
+4. Harness compares mnc-stage1 output against Python bootstrap —
+   shows which functions are missing or different.
 
-Every run auto-updates `tests/golden/BENCHMARKS.md` with per-test metrics (source lines, IR lines, IR size, function count, compile time). Commit this file to track regressions over time.
+Every run updates `tests/golden/BENCHMARKS.md`. Commit to track
+regressions.
+
+**Current baseline (v5.7.1):** **66/66 — preserved.** Sh.7
+(closure-typed parameters) and B (or-pattern + identifier `None`
+resolution) both closed in v5.7.0; v5.7.1 is a docs/polish release
+with no compiler edits. The closure arc is closed; every test in
+the corpus that defines "self-hosting" now passes through
+`mnc-stage1`.
 
 ## Code Style
 
-- **Black** (line length 100), **Ruff** (E, F, W, I rules), **MyPy** strict mode
-- Target Python 3.11+ (for bootstrap compiler)
+- **Black** (line length 100), **Ruff** (E, F, W, I), **MyPy** strict
+- Target Python 3.11+ (bootstrap compiler)
 - Dataclasses for AST nodes; type hints throughout
 
 ## Compiler Pipeline
 
 ```
-.mn source → Lark LALR parser → AST (dataclasses) → Semantic checker → MIR lowering → MIR optimizer (O0-O3) → Emitter
-                                                                                                                 ├→ emit_llvm_text.py  → LLVM IR (text)
-                                                                                                                 ├→ emit_c.py          → C source
-                                                                                                                 └→ emit_wasm.py       → WebAssembly (WAT/WASM)
+.mn source
+  → Lark LALR parser → AST (dataclasses)
+  → Semantic checker
+  → MIR lowering
+  → MIR optimizer (O0–O3)
+  → Emitter:
+      ├→ emit_llvm_text.py  → LLVM IR (text)
+      ├→ emit_c.py          → C source
+      └→ emit_wasm.py       → WebAssembly (WAT/WASM)
 ```
 
 Key modules in `mapanare/`:
-- `cli.py` — Entry point, command dispatch (run, build, check, emit-llvm, emit-mir, emit-wasm, fmt, test, lint, doc, deploy, init)
-- `parser.py` — Lark transformer: parse tree → AST dataclass nodes
-- `ast_nodes.py` — All AST node definitions
-- `semantic.py` — Two-pass type checker and scope resolver
-- `mir.py` / `mir_builder.py` — MIR data structures and builder
-- `lower.py` — AST → MIR lowering (1,397 lines)
-- `mir_opt.py` — MIR optimizer passes (constant folding, DCE, copy propagation, block merging)
-- `emit_llvm_text.py` — LLVM IR generation (text-based)
-- `emit_c.py` — C source generation from MIR
-- `emit_wasm.py` — WebAssembly (WAT) generation from MIR (v2.0.0)
-- `wasm_linker.py` — wasm-ld integration for multi-module WASM linking (v2.0.0)
-- `types.py` — **Single source of truth** for the type system (TypeKind enum, TypeInfo, builtin registries)
-- `mapanare.lark` — LALR grammar with 13-level precedence climbing
-- `tracing.py` — OpenTelemetry-compatible tracing
-- `diagnostics.py` — Rust-style structured error output
-- `test_runner.py` — Built-in test runner for `mapanare test`
-- `deploy.py` — Deployment scaffolding (Dockerfile, health checks)
+
+| File | Role |
+|---|---|
+| `cli.py` | Entry point — command dispatch |
+| `parser.py` | Lark transformer: parse tree → AST |
+| `ast_nodes.py` | AST node definitions |
+| `semantic.py` | Two-pass type checker + scope resolver |
+| `mir.py` / `mir_builder.py` | MIR data + builder |
+| `lower.py` | AST → MIR lowering |
+| `mir_opt.py` | MIR optimizer passes |
+| `emit_llvm_text.py` | LLVM IR generation |
+| `emit_c.py` | C source generation |
+| `emit_wasm.py` | WebAssembly (WAT) generation |
+| `wasm_linker.py` | wasm-ld multi-module linking |
+| `types.py` | **Single source of truth** for type system |
+| `mapanare.lark` | LALR grammar, 13-level precedence |
+| `tracing.py` | OpenTelemetry-compatible tracing |
+| `diagnostics.py` | Rust-style structured error output |
 
 ## Runtime System
 
-**Python runtime** (`runtime/`): `agent.py`, `signal.py`, `stream.py`, `result.py`, `deploy.py` — asyncio-based agents, reactive signals, async stream operators, Result/Option types, deployment infrastructure. **Legacy — will be replaced by native .mn stdlib.**
+**Python runtime** (`runtime/`): `agent.py`, `signal.py`, `stream.py`,
+`result.py`, `deploy.py`. **Legacy — being replaced by native .mn
+stdlib.**
 
-**Native C runtime** (`runtime/native/`): Arena-based memory (no GC), lock-free SPSC ring buffers, thread pool with work stealing, cooperative agent scheduler (mobile), agent lifecycle, trace hooks, TCP sockets, TLS (OpenSSL via dlopen), file I/O, event loop (epoll/select), string interning with configurable cap, memory profiling. Used by the LLVM backend.
+**Native C runtime** (`runtime/native/`): arena memory (no GC),
+lock-free SPSC ring buffers, thread pool with work-stealing, coop
+scheduler (mobile), agent lifecycle, TCP sockets, TLS (OpenSSL via
+dlopen), file I/O, event loop (epoll/select), string interning,
+memory profiling. Used by the LLVM backend.
 
-## LLVM Backend Status (v2.0.0 — full parity + GPU)
+## LLVM Backend Status
 
-**Working:** Functions, structs, enums, pattern matching, control flow, type inference, generics, Result/Option, print (println deprecated), builtins, lists, maps/dicts (Robin Hood hash table), agents (full lifecycle), signals (full reactivity: computed, subscribers, batched updates), streams (map/filter/take/skip/collect/fold, backpressure), closures (free variable capture via environment structs), traits, module imports, pipes (`|>` for function application), pipe definitions (multi-agent composition), all string methods, GPU kernel dispatch (`@gpu`/`@cuda`/`@vulkan` via MIR GpuKernel metadata → PTX/SPIR-V LLVM codegen).
+**Working:** functions, structs, enums, pattern matching, control
+flow, type inference, generics, Result/Option, print, builtins, lists,
+maps (Robin Hood), agents, signals (full reactivity), streams,
+closures (env struct capture), traits, module imports, pipes,
+multi-agent pipe definitions, string methods, GPU kernel dispatch.
 
-**Not yet on LLVM:** Tensor reshape, mutable views, stepped slices (v5.x). The tensor surface (literals, indexing, broadcasting, reductions, slicing) is stable as of v4.45.0.
+**Not yet on LLVM:** tensor reshape, mutable views, stepped slices
+(v5.x). Tensor surface stable since v4.45.0.
 
-New LLVM features should target `emit_llvm_text.py` (the sole LLVM emitter).
+New LLVM features target `emit_llvm_text.py` (sole LLVM emitter).
 
-## Type System (mapanare/types.py)
+## Type System (`mapanare/types.py`)
 
-All type definitions, builtin registries, and type-name mappings live in `types.py`:
-- `TypeKind` enum (25 kinds: INT, FLOAT, BOOL, STRING, LIST, MAP, OPTION, RESULT, SIGNAL, STREAM, AGENT, TENSOR, FN, etc.)
-- `BUILTIN_FUNCTIONS`: print, println (deprecated), len, str, int, float, Some, Ok, Err, signal, stream
-- `BUILTIN_CALL_MAP`: Mapanare→Python name mapping used by emitters
-- `PYTHON_TYPE_MAP`: Type→Python type mapping
+Single source of truth:
+- `TypeKind` enum (25 kinds: INT, FLOAT, BOOL, STRING, LIST, MAP,
+  OPTION, RESULT, SIGNAL, STREAM, AGENT, TENSOR, FN, etc.)
+- `BUILTIN_FUNCTIONS`: print, println (deprecated), len, str, int,
+  float, Some, Ok, Err, signal, stream
+- `BUILTIN_CALL_MAP`: Mapanare → Python name mapping for emitters
+- `PYTHON_TYPE_MAP`: Type → Python type mapping
 
 ## Self-Hosted Compiler (`mapanare/self/`)
 
-10 modules, 14,000+ lines of Mapanare. Mirrors the Python bootstrap pipeline:
+10 modules, ~14,000 lines of Mapanare. Mirrors the Python bootstrap:
 
-| Module | Lines | Role |
-|--------|-------|------|
-| `ast.mn` | 781 | AST node definitions (structs + enums) + shared constructors |
-| `lexer.mn` | 575 | Character-by-character tokenizer |
-| `parser.mn` | 2,249 | Recursive descent parser, 13-level precedence |
-| `semantic.mn` | 1,729 | Two-pass type checker and scope resolver |
-| `mir.mn` | 791 | MIR data structures (types, values, instructions, blocks, module) |
-| `lower_state.mn` | 587 | Lowerer state, scope management, lookups, type resolution |
-| `lower.mn` | 3,602 | AST → MIR lowering (registration + expression/statement lowering) |
-| `emit_llvm_ir.mn` | 258 | LLVM type constants and IR instruction string builders |
-| `emit_llvm.mn` | 3,206 | MIR → LLVM IR emitter (state, handlers, module emission) |
+| Module | ~LOC | Role |
+|---|---:|---|
+| `ast.mn` | 781 | AST node definitions |
+| `lexer.mn` | 575 | Tokenizer |
+| `parser.mn` | 2,249 | Recursive descent parser |
+| `semantic.mn` | 1,729 | Type checker + scope resolver |
+| `mir.mn` | 791 | MIR data structures |
+| `lower_state.mn` | 587 | Lowerer state |
+| `lower.mn` | 3,602 | AST → MIR lowering |
+| `emit_llvm_ir.mn` | 258 | LLVM type constants + IR builders |
+| `emit_llvm.mn` | 3,206 | MIR → LLVM IR emitter |
 | `main.mn` | 537 | Compiler driver |
 
-**Patterns:** Constructor functions (`let r: T = first_field; return r`), state-threading (functions thread state structs), no struct literal syntax in grammar yet.
+**Patterns:** constructor functions (`let r: T = first_field; return
+r`), state-threading, no struct literal syntax in grammar yet.
 
-**Fixed-point verification** blocked by cross-module LLVM compilation (v0.9.0) and enum lowering gaps.
+**Fixed-point:** NEAR (stage2.ll == stage3.ll except VERSION
+placeholder). Strict hit at v4.134.0; currently NEAR per v5.3.2.
 
 ## Key Conventions
 
-- Grammar lives in `mapanare/mapanare.lark` (also bootstrapped copy in `bootstrap/`)
-- Emitters detect used features (agents, signals, streams) and import only as needed
-- Builtins are dispatched via `BUILTIN_CALL_MAP` in both emitters
-- Self-hosted compiler sources are in `mapanare/self/*.mn`
-- Language spec: `docs/SPEC.md` | Design philosophy: `docs/manifesto.md` | RFCs: `docs/rfcs/`
-- Roadmap: `docs/roadmap/ROADMAP.md` | Era READMEs: `docs/roadmap/v0/` through `docs/roadmap/v4/`
-- Version tracked in `VERSION` file
+- Grammar: `mapanare/mapanare.lark` (bootstrap copy at `bootstrap/`)
+- Emitters detect used features (agents/signals/streams) and import
+  only as needed
+- Builtins dispatched via `BUILTIN_CALL_MAP` in both emitters
+- Self-hosted sources: `mapanare/self/*.mn`
+- Language spec: `docs/SPEC.md` | Manifesto: `docs/manifesto.md` |
+  RFCs: `docs/rfcs/`
+- Roadmap: `docs/roadmap/ROADMAP.md` | Era READMEs:
+  `docs/roadmap/v0/` → `docs/roadmap/v5/`
+- Version: `VERSION` file
 - Bootstrap frozen at v0.6.0 in `bootstrap/`
 
 ## Native-First Philosophy (v0.8.0+)
 
-Starting with v0.8.0, the project moves toward Python independence:
-- **Stdlib in .mn:** New stdlib modules are written in Mapanare (`.mn`), compiled to native code via LLVM. No more Python `.py` stdlib files.
-- **C runtime as foundation:** OS-level primitives (sockets, TLS, file I/O) live in the C runtime. Everything above (HTTP, JSON, routing) is pure Mapanare.
-- **Test on LLVM:** Every test should run on the LLVM backend.
+- **Stdlib in .mn:** new stdlib modules are `.mn`, compiled via LLVM.
+  No more Python `.py` stdlib files.
+- **C runtime as foundation:** OS primitives (sockets, TLS, file I/O)
+  in C. Everything above (HTTP, JSON, routing) in Mapanare.
+- **Test on LLVM:** every test runs on the LLVM backend.
 
-## GPU Backend (v2.0.0)
+## GPU / WASM / Mobile (v2.0.0)
 
-GPU compute via CUDA and Vulkan, loaded dynamically at runtime (no compile-time SDK dependency):
-- **C runtime** (`runtime/native/mapanare_gpu.h/.c`): CUDA Driver API + Vulkan compute via dlopen
-- **MIR metadata** (`mapanare/mir.py`): `MIRGpuKernel` dataclass with device, PTX/SPIR-V source, grid/block config
-- **Lowering** (`mapanare/lower.py`): `@cuda`/`@vulkan`/`@gpu` decorators populate `MIRModule.gpu_kernels`
-- **LLVM codegen** (`mapanare/emit_llvm_text.py`): PTX string embedding + `cuModuleLoadData`/`cuLaunchKernel`, SPIR-V byte embedding + Vulkan pipeline create/dispatch
-- **Python layer** (`experimental/gpu.py`): Device detection, kernel dispatch abstractions
-- **Stdlib** (`stdlib/gpu/`): `device.mn` (GPU detection), `tensor.mn` (GPU-accelerated tensors), `kernel.mn` (kernel management)
-- **Annotations**: `@gpu`, `@cuda`, `@metal`, `@vulkan` on functions for automatic dispatch
-- **Built-in kernels**: PTX for CUDA, GLSL/SPIR-V for Vulkan (tensor add/sub/mul/div/matmul)
-
-## WebAssembly Backend (v2.0.0)
-
-Compile Mapanare to WebAssembly for browser and server-side execution:
-- **Emitter** (`mapanare/emit_wasm.py`): MIR → WAT text format (~2,785 lines)
-- **Linker** (`mapanare/wasm_linker.py`): wasm-ld integration for multi-module linking, memory layout, import/export management
-- **CLI**: `mapanare emit-wasm [--binary] [--link] [--wasi] source.mn [source2.mn ...]`
-- **Targets**: `wasm32-unknown-unknown` (browser), `wasm32-wasi` (server)
-- **JS runtime** (`playground/src/wasm-runtime.js`): Browser host for WASM modules
-- **Stdlib** (`stdlib/wasm/`): `bridge.mn` (JS interop), `runtime.mn` (WASI + memory)
-- **WASI support**: File I/O, environment, clock, random via WASI preview 1
-
-## Mobile Targets (v2.0.0)
-
-Cross-compilation targets for mobile platforms:
-- `aarch64-apple-ios` — iOS ARM64
-- `aarch64-linux-android` — Android ARM64
-- `x86_64-linux-android` — Android emulator
-
-Mobile-specific runtime features:
-- **Cooperative agent scheduler** — single-threaded event-driven execution (default on mobile)
-- **epoll event loop** — Linux/Android I/O multiplexing (kqueue on iOS deferred)
-- **Smaller defaults** — 4KB arenas, 256-slot ring buffers, 64-slot agent queues, 1ms signal batch
-- **String interning cap** — 4K entries on mobile vs 64K on desktop
-- **Memory profiling** — `mapanare_memory_stats()` for arena/intern/agent usage tracking
+- **GPU** — CUDA + Vulkan via dlopen; `@gpu`/`@cuda`/`@vulkan`
+  annotations; PTX/SPIR-V codegen; `stdlib/gpu/`.
+- **WASM** — `mapanare/emit_wasm.py` → WAT, `wasm_linker.py` for
+  wasm-ld. Targets: `wasm32-unknown-unknown`, `wasm32-wasi`.
+- **Mobile** — `aarch64-apple-ios`, `aarch64-linux-android`,
+  `x86_64-linux-android`. Coop scheduler + smaller defaults (4 KB
+  arenas, 256-slot rings, 4 K string intern cap).
 
 ## Ecosystem Packages
 
-- **Dato** (`github.com/Mapanare-Research/dato`) — DataFrame/data analysis package (pandas+numpy replacement), written in .mn
-- `net/crawl` (web crawler), `security/scan` (vulnerability scanner), `security/fuzz` (fuzzer) — all agents-based
-- AI/LLM drivers (`stdlib/ai/`): LLM, embeddings, RAG
+- **Dato** (`github.com/Mapanare-Research/dato`) — DataFrame package
+  (pandas+numpy replacement), in .mn
+- `net/crawl`, `security/scan`, `security/fuzz` — agents-based
+- AI/LLM drivers: `stdlib/ai/` (LLM, embeddings, RAG)
 
 ## CI
 
 GitHub Actions on push/PR to `dev`:
-- **ci** — format check (black) → lint (ruff) → type check (mypy) → tests (pytest). Matrix: Python 3.11, 3.12 on Ubuntu.
-- **native** — C runtime tests with plain gcc, AddressSanitizer, ThreadSanitizer.
-- **wasm** — WASM cross-compilation: emit WAT, convert to WASM via wat2wasm, run WASI examples on wasmtime.
-- **android** — Android cross-compilation: NDK setup, ARM64 + x86_64 `.o` generation, ELF format verification.
+- **ci** — black → ruff → mypy → pytest. Matrix: Python 3.11/3.12
+- **native** — C runtime: gcc, ASan, TSan
+- **wasm** — WAT emit → wat2wasm → wasmtime WASI examples
+- **android** — NDK cross-compile: ARM64 + x86_64 `.o` + ELF verify
 
-4,845+ tests across the full pipeline.
+5,400+ tests across the full pipeline.
 
 ## Skills (slash commands)
 
-These are invocable via `/skill-name` in Claude Code:
-
 | Skill | Description |
-|-------|-------------|
-| `/golden` | Run the 15/15 golden test suite through mnc-stage1 + llvm-as. Shows delta from last run. |
-| `/stage2` | Compile all self-hosted modules through mnc-stage1, validate stage2 IR. Tests self-compilation. |
-| `/rebuild` | Full rebuild cycle: concat .mn sources → build mnc-stage1 → run golden tests. |
-| `/ir-audit` | Audit LLVM IR for known pathologies (ALLOCA_ALIAS, RET_TYPE_MISMATCH, etc.) with baseline tracking. |
-| `/valgrind-map` | Run valgrind on crashing binary, map byte offsets to struct fields automatically. |
-| `/bump-version` | Bump version across VERSION, README, CHANGELOG, and all localized docs. |
-| `/code-review` | Run a full 7-reviewer panel code review of the codebase. |
-| `/create-pr` | Generate PR title and description from the current branch's commits. |
-| `/simplify` | Review changed code for reuse, quality, and efficiency, then fix issues found. |
-| `/autoresearch` | Autonomous experiment loop — iterative research with automatic follow-up. |
-| `/culebra-scan` | Run Culebra v2.0.0 — 49 templates (41 IR + 8 C). Auto-detects .ll vs .c. Autofix, SARIF, triage. |
+|---|---|
+| `/golden` | 15/15 golden suite through mnc-stage1 + llvm-as |
+| `/stage2` | Compile self-hosted modules + validate stage2 IR |
+| `/rebuild` | concat + build mnc-stage1 + run goldens |
+| `/ir-audit` | LLVM IR pathology audit with baselines |
+| `/valgrind-map` | Valgrind + auto-map offsets to struct fields |
+| `/bump-version` | Bump VERSION, README, CHANGELOG, localized docs |
+| `/code-review` | 7-reviewer panel review |
+| `/create-pr` | PR title + description from commits |
+| `/simplify` | Review + fix changed code |
+| `/autoresearch` | Autonomous experiment loop |
+| `/culebra-scan` | Culebra v2.4.0 — 49+ templates (ABI / IR / Binary / Bootstrap / C). Workflow guide: `docs/guides/culebra.md` |
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (25917 symbols, 59194 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (28982 symbols, 62865 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

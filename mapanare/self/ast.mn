@@ -63,6 +63,23 @@ struct MapEntry {
     value: Expr
 }
 
+// v5.6.3 Sh.6 Phase 4 — subscript items for tensor slicing/wildcard.
+//
+// kind:
+//   "scalar"   — single-index expression (`a[i]`). `expr` populated.
+//   "range"    — `a[start..end]`. `start`/`end` populated; `NoneLit` means
+//                open (`a[..end]` or `a[start..]`). Python parity.
+//   "wildcard" — `a[_]`. No expression payload.
+//
+// Scalar items + 1 item → Expr::Index; scalar items + ≥2 items → Expr::TensorIndex;
+// any range/wildcard items → Expr::TensorSlice.
+struct IndexItem {
+    kind: String,
+    expr: Expr,
+    start: Expr,
+    end: Expr
+}
+
 enum Expr {
     IntLit(Int),
     FloatLit(Float),
@@ -79,6 +96,7 @@ enum Expr {
     NamespaceAccess(String, String),
     Index(Expr, Expr),
     TensorIndex(Expr, List<Expr>),
+    TensorSlice(Expr, List<IndexItem>),
     Pipe(Expr, Expr),
     Range(Expr, Expr, Bool),
     Lambda(List<Param>, LambdaBody),
@@ -326,6 +344,7 @@ pub fn expr_kind(e: Expr) -> String {
         NamespaceAccess(_, _) => { return "namespace_access" },
         Index(_, _) => { return "index" },
         TensorIndex(_, _) => { return "tensor_index" },
+        TensorSlice(_, _) => { return "tensor_slice" },
         Pipe(_, _) => { return "pipe" },
         Range(_, _, _) => { return "range" },
         Lambda(_, _) => { return "lambda" },
@@ -430,6 +449,39 @@ pub fn expr_index_obj(e: Expr) -> Expr {
 }
 pub fn expr_index_idx(e: Expr) -> Expr {
     match e { Index(_, x) => { return x }, _ => { return Expr::NoneLit } }
+}
+
+// TensorIndex (v5.6.1 — multi-dim subscript `a[i, j]`)
+pub fn expr_ti_obj(e: Expr) -> Expr {
+    match e { TensorIndex(o, _) => { return o }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_ti_indices(e: Expr) -> List<Expr> {
+    match e {
+        TensorIndex(_, xs) => { return xs },
+        _ => { let empty: List<Expr> = []; return empty }
+    }
+}
+
+// v5.6.3 Sh.6 Phase 4 — IndexItem constructors + TensorSlice accessors.
+pub fn scalar_index_item(e: Expr) -> IndexItem {
+    return new IndexItem { kind: "scalar", expr: e, start: Expr::NoneLit, end: Expr::NoneLit }
+}
+pub fn range_index_item(s: Expr, x: Expr) -> IndexItem {
+    return new IndexItem { kind: "range", expr: Expr::NoneLit, start: s, end: x }
+}
+pub fn wildcard_index_item() -> IndexItem {
+    return new IndexItem { kind: "wildcard", expr: Expr::NoneLit, start: Expr::NoneLit, end: Expr::NoneLit }
+}
+
+// TensorSlice (v5.6.3 — range/wildcard in subscript `a[1..3, _]`)
+pub fn expr_slice_obj(e: Expr) -> Expr {
+    match e { TensorSlice(o, _) => { return o }, _ => { return Expr::NoneLit } }
+}
+pub fn expr_slice_items(e: Expr) -> List<IndexItem> {
+    match e {
+        TensorSlice(_, xs) => { return xs },
+        _ => { let empty: List<IndexItem> = []; return empty }
+    }
 }
 
 // Pipe

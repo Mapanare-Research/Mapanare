@@ -113,6 +113,10 @@ fn is_keyword(name: String) -> Bool {
     // v4.68.0: "async" / "await" restored (Arc 8). See v4.67.0/DESIGN.md.
     if name == "async" { return true }
     if name == "await" { return true }
+    // v5.6.0 (Sh.6): "Tensor" keyword enables Tensor<T>[...] literal syntax.
+    // Python grammar has `KW_TENSOR: "Tensor"` (mapanare.lark:426); mirror here
+    // so parse_tensor_lit's `tt == "KW_TENSOR"` check actually fires.
+    if name == "Tensor" { return true }
     return false
 }
 
@@ -173,6 +177,13 @@ fn keyword_token_type(name: String) -> String {
     // v4.68.0: "async" / "await" restored (Arc 8). See v4.67.0/DESIGN.md.
     if name == "async" { return "KW_ASYNC" }
     if name == "await" { return "KW_AWAIT" }
+    // v5.6.0 (Sh.6): Tensor becomes a keyword so `Tensor<T>[...]` literal
+    // syntax can be disambiguated from `NAME LT` expressions.
+    if name == "Tensor" { return "KW_TENSOR" }
+    // v5.6.3 (Sh.6 Phase 4): standalone `_` lexes as UNDERSCORE so the
+    // parser can route it to wildcard in subscripts (`a[0..2, _]`).
+    // `_foo`, `__bar`, `_1` stay NAME — only exact `_` becomes UNDERSCORE.
+    if name == "_" { return "UNDERSCORE" }
     return "NAME"
 }
 

@@ -1,0 +1,60 @@
+{
+  "mapanare": [
+    {
+      "benchmark": "01_sequential_chain",
+      "language": "mapanare",
+      "median_ms": 1.32,
+      "min_ms": 1.18,
+      "max_ms": 1.57,
+      "runs": 10,
+      "output": "checksum = 5050",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "02_fanout",
+      "language": "mapanare",
+      "median_ms": 1.05,
+      "min_ms": 0.97,
+      "max_ms": 1.13,
+      "runs": 10,
+      "output": "checksum = 171700",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "03_io_bound",
+      "language": "mapanare",
+      "median_ms": 0.98,
+      "min_ms": 0.89,
+      "max_ms": 1.12,
+      "runs": 10,
+      "output": "checksum = 1000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "04_mixed_cpu_io",
+      "language": "mapanare",
+      "median_ms": 0.99,
+      "min_ms": 0.93,
+      "max_ms": 1.02,
+      "runs": 10,
+      "output": "checksum = 12000",
+      "correct": true,
+      "status": "ok"
+    },
+    {
+      "benchmark": "05_backpressure",
+      "language": "mapanare",
+      "median_ms": 1.09,
+      "min_ms": 0.98,
+      "max_ms": 1.3,
+      "runs": 10,
+      "output": "checksum = 2500",
+      "correct": true,
+      "status": "ok"
+    }
+  ],
+  "cross_language": []
+}

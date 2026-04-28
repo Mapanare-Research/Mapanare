@@ -327,6 +327,13 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState {
             let mut sf_lst: List<StructFieldInfo> = s.struct_fields
             sf_lst.push(sfi)
             s.struct_fields = sf_lst
+            // Own.1 (v5.1.3): clear moved-ownership locals.
+            // Mirrors Cb.7 pattern at monomorphize sites (lines 1795-1798).
+            // fields/field_names/field_types ownership moved into module via
+            // info and sfi. Zero headers so future drop-glue won't double-free.
+            fields = []
+            field_names = []
+            field_types = []
             return s
         }
         let field: StructField = data.fields[i]
@@ -354,6 +361,12 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState {
             let mut ev_lst: List<EnumVariantNames> = s.enum_variants
             ev_lst.push(evn)
             s.enum_variants = ev_lst
+            // Own.1 (v5.1.3): clear moved-ownership locals.
+            // Mirrors Cb.7 pattern at monomorphize sites (lines 1997-1998).
+            // variants/variant_names ownership moved into module via
+            // info and evn. Zero headers so future drop-glue won't double-free.
+            variants = []
+            variant_names = []
             return s
         }
         let variant: EnumVariant = data.variants[i]
@@ -730,6 +743,100 @@ fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeE
     // This flag is used later to decide whether to re-wrap with typed WrapNone.
     let mut is_none_literal: Bool = false
     if expr_kind(value) == "none_lit" { is_none_literal = true }
+
+    // v5.6.7 Ve.2 fix — empty-list elem_ty propagation. When lowering
+    // `let xs: List<T> = []`, the default path `lower_expr → lower_list`
+    // can't see the type annotation and emits MIR with
+    // `elem_ty.kind=TK_UNKNOWN`. Downstream, `resolve_mir_type` maps
+    // UNKNOWN to "i64" and `emit_list_init` allocates 8-byte slots for
+    // lists whose elements are 16-byte Strings, 48-byte Params, etc. —
+    // silent corruption previously masked by a 384-byte floor. Fix:
+    // when value is a list literal AND type_ann is `Generic("List", [T])`,
+    // route through `lower_list_typed` so the emitter sees the
+    // annotation's element type on `Instruction::ListInit`.
+    //
+    // v5.6.12 Lk.1 fix — destination passing for List let-bindings.
+    // When the hint path applies, pre-compute the var's alloca name
+    // and lower the list literal directly into it via
+    // `lower_list_typed_into`. Skips the post-emit Alloca + Store pair
+    // entirely (those would create a duplicate alloca + useless copy
+    // — exactly the alloca-aliasing leak from v5.6.10 Lk.1).
+    let hint_elem: MIRType = lower_let_list_hint(st, value, type_ann)
+    if hint_elem.kind != TK_UNKNOWN() {
+        let mut s: LowerState = st
+        // Reserve the var's name + alloca BEFORE lowering the value so
+        // the ListInit dest (`%<name><M>`) and emit_list_init's derived
+        // alloca name (`%<name><M>.addr`) match the var slot.
+        let var_base: String = "%" + name + toString(s.tmp_counter)
+        let addr_name: String = var_base + ".addr"
+        s.tmp_counter = s.tmp_counter + 1
+
+        // Resolve declared val_ty (List<T>). Carries the element-type
+        // arg for downstream lookups (e.g. method dispatch).
+        let mut val_ty: MIRType = mir_list()
+        match type_ann {
+            Some(te) => {
+                let declared: MIRType = lower_resolve_type_checked(s, te)
+                if declared.kind != TK_UNKNOWN() {
+                    val_ty = declared
+                }
+            },
+            _ => {}
+        }
+
+        // Lower into var_base. The emitter hoists the alloca + zero-init
+        // into the entry prelude AND stores the new list into it; no
+        // explicit Alloca/Store needed here.
+        let r2: LowerResult = lower_list_typed_into(s, expr_list_elements(value), hint_elem, var_base)
+        s = r2.state
+
+        // Bind the var to the alloca derived from var_base.
+        let addr2: Value = new_value(addr_name, val_ty)
+        s = define_var(s, name, addr2, mutable)
+        return s
+    }
+
+    // v5.6.13 Layer 1 extension — destination passing for struct
+    // let-bindings. The parser encodes `let foo: Foo = new Foo {...}`
+    // as `Call(Ident("__new_Foo"), [val1, val2, ...])` — see
+    // parser.mn::parse_struct_construct. lower_call_by_name unwraps
+    // this into `Instruction::StructInit` with a fresh-tmp dest. For
+    // a let-binding, route through lower_struct_new_into and use the
+    // var's alloca name directly so the emitter's renamed `.addr`
+    // scratch (was `.si` pre-v5.6.13) for `%foo<N>` produces
+    // `%foo<N>.addr` — the let's binding alloca itself. One alloca
+    // instead of (.addr scratch + .addr binding) and one fewer
+    // load+store at the let boundary. Same mechanism as v5.6.12's
+    // list path; no observable leak in the corpus drives this change
+    // (preventive cleanup only).
+    if expr_kind(value) == "call" {
+        let callee_v: Expr = expr_call_callee(value)
+        if expr_kind(callee_v) == "ident" {
+            let callee_name_v: String = expr_ident_name(callee_v)
+            if callee_name_v.starts_with("__new_") {
+                let struct_name_v: String = callee_name_v.substr(6, len(callee_name_v) - 6)
+                // Only non-generic registered structs go through the fast
+                // path. Generics need try_monomorphize_struct in
+                // lower_call_by_name; let those fall through to the
+                // existing path.
+                if is_struct_name(st, struct_name_v) {
+                    let mut s: LowerState = st
+                    let var_base: String = "%" + name + toString(s.tmp_counter)
+                    let addr_name: String = var_base + ".addr"
+                    s.tmp_counter = s.tmp_counter + 1
+
+                    let r2: LowerResult = lower_struct_new_into(s, struct_name_v, expr_call_args(value), var_base)
+                    s = r2.state
+
+                    let struct_ty: MIRType = mir_struct(struct_name_v)
+                    let addr2: Value = new_value(addr_name, struct_ty)
+                    s = define_var(s, name, addr2, mutable)
+                    return s
+                }
+            }
+        }
+    }
+
     let r: LowerResult = lower_expr(st, value)
     let mut s: LowerState = r.state
 
@@ -1222,6 +1329,12 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     if ek == "index" {
         return lower_index(st, expr_index_obj(expr), expr_index_idx(expr))
     }
+    if ek == "tensor_index" {
+        return lower_tensor_index_get(st, expr_ti_obj(expr), expr_ti_indices(expr))
+    }
+    if ek == "tensor_slice" {
+        return lower_tensor_slice(st, expr_slice_obj(expr), expr_slice_items(expr))
+    }
     if ek == "pipe" {
         return lower_pipe(st, expr_pipe_left(expr), expr_pipe_right(expr))
     }
@@ -1238,8 +1351,13 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
         return lower_sync(st, expr_sync_inner(expr))
     }
     if ek == "await" {
-        // Single-threaded await: just evaluate the inner expression inline
-        return lower_expr(st, expr_await_inner(expr))
+        // v5.5.1 Sh.4 Phase 2: emit AwaitSuspend MIR so the v5.5.2
+        // emitter can wrap this in coro.save + coro.suspend + switch.
+        // The inner expression evaluates to a Future<T>; dest receives T.
+        let inner_r: LowerResult = lower_expr(st, expr_await_inner(expr))
+        let dr_aw: LowerResult = make_value(inner_r.state, mir_unknown(), "t")
+        let s_aw: LowerState = emit_instr(dr_aw.state, Instruction::AwaitSuspend(dr_aw.value, inner_r.value))
+        return new_lower_result(dr_aw.value, s_aw)
     }
     if ek == "send" {
         return lower_send(st, expr_send_target(expr), expr_send_value(expr))
@@ -1264,21 +1382,27 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
         let r_some: LowerResult = lower_expr(st, inner)
         let dr_some: LowerResult = make_value(r_some.state, mir_option(), "t")
         let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, r_some.value))
-        return new_lower_result(dr_some.value, s_some)
+        // v5.4.4 — wrapper takes ownership of the payload.
+        let s_some2: LowerState = emit_instr(s_some, Instruction::Move(r_some.value))
+        return new_lower_result(dr_some.value, s_some2)
     }
     if ek == "ok_wrap" {
         let inner: Expr = expr_wrap_inner(expr)
         let r_ok: LowerResult = lower_expr(st, inner)
         let dr_ok: LowerResult = make_value(r_ok.state, mir_result(), "t")
         let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, r_ok.value))
-        return new_lower_result(dr_ok.value, s_ok)
+        // v5.4.4 — Ok wrapper owns its payload.
+        let s_ok2: LowerState = emit_instr(s_ok, Instruction::Move(r_ok.value))
+        return new_lower_result(dr_ok.value, s_ok2)
     }
     if ek == "err_wrap" {
         let inner: Expr = expr_wrap_inner(expr)
         let r_err: LowerResult = lower_expr(st, inner)
         let dr_err: LowerResult = make_value(r_err.state, mir_result(), "t")
         let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, r_err.value))
-        return new_lower_result(dr_err.value, s_err)
+        // v5.4.4 — Err wrapper owns its payload.
+        let s_err2: LowerState = emit_instr(s_err, Instruction::Move(r_err.value))
+        return new_lower_result(dr_err.value, s_err2)
     }
     if ek == "signal_val" {
         return lower_signal_expr(st, expr_signal_inner(expr))
@@ -1376,6 +1500,70 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult {
 // Binary expression lowering
 // ---------------------------------------------------------------------------
 
+// v5.6.2 Sh.6 Phase 3 — tensor broadcast + scalar binop dispatch.
+// Mirrors mapanare/lower.py::_lower_tensor_binop. Routes tensor⊕tensor
+// through __mn_tensor_{op}_broadcast_{ty}, tensor⊕scalar through
+// _scalar_{ty}, and non-commutative scalar⊕tensor through
+// _r{op}_scalar_{ty} (rsub / rdiv twins).
+fn tensor_op_suffix(op: String) -> String {
+    if op == "+" { return "add" }
+    if op == "-" { return "sub" }
+    if op == "*" { return "mul" }
+    if op == "/" { return "div" }
+    return "add"
+}
+
+fn is_tensor_value(v: Value) -> Bool {
+    return v.ty.kind == TK_TENSOR()
+}
+
+fn lower_tensor_binop(st: LowerState, op: String, lhs: Value, rhs: Value) -> LowerResult {
+    let op_suffix: String = tensor_op_suffix(op)
+    let mut tensor_val: Value = lhs
+    if !is_tensor_value(lhs) { tensor_val = rhs }
+    let elem_kind: Int = tensor_elem_kind_of(tensor_val)
+    let mut ty_suffix: String = "f64"
+    if elem_kind == TK_INT() { ty_suffix = "i64" }
+
+    let both_tensor: Bool = is_tensor_value(lhs) && is_tensor_value(rhs)
+    let mut dest_r: LowerResult = make_value(st, tensor_val.ty, "tbop")
+    let mut args: List<Value> = []
+
+    if both_tensor {
+        let fn_name: String = "__mn_tensor_" + op_suffix + "_broadcast_" + ty_suffix
+        args.push(lhs)
+        args.push(rhs)
+        let s1: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, args))
+        return new_lower_result(dest_r.value, s1)
+    }
+
+    if is_tensor_value(lhs) {
+        // tensor op scalar
+        let fn_name_ts: String = "__mn_tensor_" + op_suffix + "_scalar_" + ty_suffix
+        args.push(lhs)
+        args.push(rhs)
+        let s2: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name_ts, args))
+        return new_lower_result(dest_r.value, s2)
+    }
+
+    // scalar op tensor
+    if op == "+" || op == "*" {
+        // Commutative — forward scalar fn with args swapped
+        let fn_name_cs: String = "__mn_tensor_" + op_suffix + "_scalar_" + ty_suffix
+        args.push(rhs)
+        args.push(lhs)
+        let s3: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name_cs, args))
+        return new_lower_result(dest_r.value, s3)
+    }
+    // Non-commutative — reverse scalar fn (rsub / rdiv). Call takes
+    // (scalar, tensor) per the Python recipe (emit_llvm_text.py:3781).
+    let fn_name_rs: String = "__mn_tensor_r" + op_suffix + "_scalar_" + ty_suffix
+    args.push(lhs)
+    args.push(rhs)
+    let s4: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name_rs, args))
+    return new_lower_result(dest_r.value, s4)
+}
+
 fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerResult {
     // Handle pipe operator
     if op == "|>" {
@@ -1394,6 +1582,13 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
     }
     if rhs_val.ty.kind == TK_UNKNOWN() && lhs_val.ty.kind != TK_UNKNOWN() {
         rhs_val = new_value(rhs_val.name, lhs_val.ty)
+    }
+
+    // v5.6.2 Sh.6 Phase 3 — tensor binop dispatch before generic numeric arm.
+    if is_tensor_value(lhs_val) || is_tensor_value(rhs_val) {
+        if op == "+" || op == "-" || op == "*" || op == "/" {
+            return lower_tensor_binop(rhs_r.state, op, lhs_val, rhs_val)
+        }
     }
 
     let binop_opt: Option<BinOpKind> = binop_from_str(op)
@@ -1501,7 +1696,9 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
             let enum_ty: MIRType = mir_enum(ns)
             let dr_evar: LowerResult = make_value(s, enum_ty, "t")
             let ns_evar: LowerState = emit_instr(dr_evar.state, Instruction::EnumInit(dr_evar.value, enum_ty, member, args))
-            return new_lower_result(dr_evar.value, ns_evar)
+            // v5.4.4 — enum variant owns its payload values.
+            let ns_evar2: LowerState = emit_move_vals(ns_evar, args)
+            return new_lower_result(dr_evar.value, ns_evar2)
         }
         // For struct statics like Program::start(defs), try bare function
         // name first (the function is `start`, not `Program_start`).
@@ -1812,7 +2009,9 @@ fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value
             let struct_ty: MIRType = mir_struct(mangled)
             let dr: LowerResult = make_value(s, struct_ty, "t")
             let s2: LowerState = emit_instr(dr.state, Instruction::StructInit(dr.value, struct_ty, init_pairs))
-            return new_lower_result(dr.value, s2)
+            // v5.4.4 — StructInit takes ownership of each field value.
+            let s3: LowerState = emit_move_fields(s2, init_pairs)
+            return new_lower_result(dr.value, s3)
         },
         _ => { return new_lower_result(void_value(), st) }
     }
@@ -2002,7 +2201,9 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
                     let enum_ty: MIRType = mir_enum(mangled)
                     let dr_enum: LowerResult = make_value(s, enum_ty, "t")
                     let s2: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, variant_name, args))
-                    return new_lower_result(dr_enum.value, s2)
+                    // v5.4.4 — enum variant takes ownership of each arg.
+                    let s3: LowerState = emit_move_vals(s2, args)
+                    return new_lower_result(dr_enum.value, s3)
                 },
                 _ => { return new_lower_result(void_value(), st) }
             }
@@ -2012,6 +2213,19 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
 }
 
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult {
+    // v5.5.1 Sh.4 Phase 2: block_on(future) — drive a coroutine to
+    // completion from non-async context (e.g. main). Emit BlockOn MIR
+    // so the v5.5.2 emitter can lower to scheduler_register +
+    // scheduler_run + coro.destroy + value extraction.  Checked before
+    // monomorphization: block_on is a builtin, not a user-defined fn.
+    if fn_name == "block_on" {
+        if len(args) == 1 {
+            let dr_bo: LowerResult = make_value(st, mir_unknown(), "t")
+            let s_bo: LowerState = emit_instr(dr_bo.state, Instruction::BlockOn(dr_bo.value, args[0]))
+            return new_lower_result(dr_bo.value, s_bo)
+        }
+    }
+
     // Monomorphize generic function calls
     let mono_r: LowerResult = try_monomorphize_call(st, fn_name, args)
     if mono_r.value.name != "%void" { return mono_r }
@@ -2075,6 +2289,100 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let s_epr: LowerState = emit_instr(dr_epr.state, Instruction::Call(dr_epr.value, fn_name, args))
         return new_lower_result(dr_epr.value, s_epr)
     }
+    // v5.8.4 Wb.2: __mn_host_is_win64 returns Int (0 or 1).
+    if fn_name == "__mn_host_is_win64" {
+        let dr_hw: LowerResult = make_value(st, mir_int(), "t")
+        let s_hw: LowerState = emit_instr(dr_hw.state, Instruction::Call(dr_hw.value, fn_name, args))
+        return new_lower_result(dr_hw.value, s_hw)
+    }
+    // v5.8.6 We.1: refined (is_windows, arch_bits) pair. Both return Int.
+    if fn_name == "__mn_host_is_windows" {
+        let dr_hwn: LowerResult = make_value(st, mir_int(), "t")
+        let s_hwn: LowerState = emit_instr(dr_hwn.state, Instruction::Call(dr_hwn.value, fn_name, args))
+        return new_lower_result(dr_hwn.value, s_hwn)
+    }
+    if fn_name == "__mn_host_arch_bits" {
+        let dr_hab: LowerResult = make_value(st, mir_int(), "t")
+        let s_hab: LowerState = emit_instr(dr_hab.state, Instruction::Call(dr_hab.value, fn_name, args))
+        return new_lower_result(dr_hab.value, s_hab)
+    }
+    // v5.9.0 DX.2 / DX.3 / DX.4: native CLI hygiene exports.
+    if fn_name == "__mn_version_string" {
+        let dr_vs: LowerResult = make_value(st, mir_string(), "t")
+        let s_vs: LowerState = emit_instr(dr_vs.state, Instruction::Call(dr_vs.value, fn_name, args))
+        return new_lower_result(dr_vs.value, s_vs)
+    }
+    if fn_name == "__mn_dev_null_redirect" {
+        let dr_dn: LowerResult = make_value(st, mir_string(), "t")
+        let s_dn: LowerState = emit_instr(dr_dn.state, Instruction::Call(dr_dn.value, fn_name, args))
+        return new_lower_result(dr_dn.value, s_dn)
+    }
+    if fn_name == "__mn_clang_err_path" {
+        let dr_ce: LowerResult = make_value(st, mir_string(), "t")
+        let s_ce: LowerState = emit_instr(dr_ce.state, Instruction::Call(dr_ce.value, fn_name, args))
+        return new_lower_result(dr_ce.value, s_ce)
+    }
+    if fn_name == "__mn_dir_count_files" {
+        let dr_dcf: LowerResult = make_value(st, mir_int(), "t")
+        let s_dcf: LowerState = emit_instr(dr_dcf.state, Instruction::Call(dr_dcf.value, fn_name, args))
+        return new_lower_result(dr_dcf.value, s_dcf)
+    }
+    if fn_name == "__mn_dir_total_size" {
+        let dr_dts: LowerResult = make_value(st, mir_int(), "t")
+        let s_dts: LowerState = emit_instr(dr_dts.state, Instruction::Call(dr_dts.value, fn_name, args))
+        return new_lower_result(dr_dts.value, s_dts)
+    }
+    if fn_name == "__mn_dir_remove_recursive" {
+        let dr_drr: LowerResult = make_value(st, mir_int(), "t")
+        let s_drr: LowerState = emit_instr(dr_drr.state, Instruction::Call(dr_drr.value, fn_name, args))
+        return new_lower_result(dr_drr.value, s_drr)
+    }
+    if fn_name == "__mn_file_exists" {
+        let dr_fe: LowerResult = make_value(st, mir_int(), "t")
+        let s_fe: LowerState = emit_instr(dr_fe.state, Instruction::Call(dr_fe.value, fn_name, args))
+        return new_lower_result(dr_fe.value, s_fe)
+    }
+    // v5.10.0 Win.1b.D: directory of running binary, used by find_clang().
+    if fn_name == "__mn_executable_dir" {
+        let dr_ed: LowerResult = make_value(st, mir_string(), "t")
+        let s_ed: LowerState = emit_instr(dr_ed.state, Instruction::Call(dr_ed.value, fn_name, args))
+        return new_lower_result(dr_ed.value, s_ed)
+    }
+    // v5.6.0 Sh.6 — tensor builtin return types. Without these the default
+    // mir_unknown resolves to i64 and emit_builtin_tostring would route
+    // `str(tensor_get_f64(...))` through __mn_str_from_int with a double
+    // arg (type mismatch). tensor_get_f64 must travel as Float.
+    if fn_name == "tensor_rank" {
+        let dr_tr: LowerResult = make_value(st, mir_int(), "t")
+        let s_tr: LowerState = emit_instr(dr_tr.state, Instruction::Call(dr_tr.value, fn_name, args))
+        return new_lower_result(dr_tr.value, s_tr)
+    }
+    if fn_name == "tensor_size" {
+        let dr_ts: LowerResult = make_value(st, mir_int(), "t")
+        let s_ts: LowerState = emit_instr(dr_ts.state, Instruction::Call(dr_ts.value, fn_name, args))
+        return new_lower_result(dr_ts.value, s_ts)
+    }
+    if fn_name == "tensor_get_f64" {
+        let dr_tgf: LowerResult = make_value(st, mir_float(), "t")
+        let s_tgf: LowerState = emit_instr(dr_tgf.state, Instruction::Call(dr_tgf.value, fn_name, args))
+        return new_lower_result(dr_tgf.value, s_tgf)
+    }
+    if fn_name == "tensor_get_i64" {
+        let dr_tgi: LowerResult = make_value(st, mir_int(), "t")
+        let s_tgi: LowerState = emit_instr(dr_tgi.state, Instruction::Call(dr_tgi.value, fn_name, args))
+        return new_lower_result(dr_tgi.value, s_tgi)
+    }
+    if fn_name == "tensor_shape_dim" {
+        let dr_tsd: LowerResult = make_value(st, mir_int(), "t")
+        let s_tsd: LowerState = emit_instr(dr_tsd.state, Instruction::Call(dr_tsd.value, fn_name, args))
+        return new_lower_result(dr_tsd.value, s_tsd)
+    }
+    if fn_name == "tensor_print" {
+        let dr_tp: LowerResult = make_value(st, mir_void(), "t")
+        let s_tp: LowerState = emit_instr(dr_tp.state, Instruction::Call(dr_tp.value, fn_name, args))
+        return new_lower_result(dr_tp.value, s_tp)
+    }
+
     if fn_name == "chr" {
         let dr_chr: LowerResult = make_value(st, mir_string(), "t")
         let s_chr: LowerState = emit_instr(dr_chr.state, Instruction::Call(dr_chr.value, "chr", args))
@@ -2091,7 +2399,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         if len(args) == 1 {
             let dr_some: LowerResult = make_value(st, mir_option(), "t")
             let s_some: LowerState = emit_instr(dr_some.state, Instruction::WrapSome(dr_some.value, args[0]))
-            return new_lower_result(dr_some.value, s_some)
+            // v5.4.4 — Some wrapper takes ownership.
+            let s_some2: LowerState = emit_instr(s_some, Instruction::Move(args[0]))
+            return new_lower_result(dr_some.value, s_some2)
         }
     }
     if fn_name == "Ok" {
@@ -2108,7 +2418,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             }
             let dr_ok: LowerResult = make_value(st, res_ty_ok, "t")
             let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, args[0]))
-            return new_lower_result(dr_ok.value, s_ok)
+            // v5.4.4 — Ok wrapper takes ownership.
+            let s_ok2: LowerState = emit_instr(s_ok, Instruction::Move(args[0]))
+            return new_lower_result(dr_ok.value, s_ok2)
         }
     }
     if fn_name == "Err" {
@@ -2124,7 +2436,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             }
             let dr_err: LowerResult = make_value(st, res_ty_err, "t")
             let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, args[0]))
-            return new_lower_result(dr_err.value, s_err)
+            // v5.4.4 — Err wrapper takes ownership.
+            let s_err2: LowerState = emit_instr(s_err, Instruction::Move(args[0]))
+            return new_lower_result(dr_err.value, s_err2)
         }
     }
 
@@ -2152,7 +2466,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
             }
             let dr_new: LowerResult = make_value(st, struct_ty, "t")
             let s_new: LowerState = emit_instr(dr_new.state, Instruction::StructInit(dr_new.value, struct_ty, field_pairs))
-            return new_lower_result(dr_new.value, s_new)
+            // v5.4.4 — StructInit takes ownership of each field value.
+            let s_new2: LowerState = emit_move_fields(s_new, field_pairs)
+            return new_lower_result(dr_new.value, s_new2)
         }
     }
 
@@ -2168,7 +2484,9 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let enum_ty: MIRType = mir_enum(enum_name)
         let dr_enum: LowerResult = make_value(st, enum_ty, "t")
         let s_enum: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, fn_name, args))
-        return new_lower_result(dr_enum.value, s_enum)
+        // v5.4.4 — enum variant takes ownership of payload args.
+        let s_enum2: LowerState = emit_move_vals(s_enum, args)
+        return new_lower_result(dr_enum.value, s_enum2)
     }
 
     // Check if it's a struct constructor (use if instead of match to avoid
@@ -2191,7 +2509,30 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         }
         let dr_ctor: LowerResult = make_value(st, struct_ty, "t")
         let s_ctor: LowerState = emit_instr(dr_ctor.state, Instruction::StructInit(dr_ctor.value, struct_ty, field_pairs))
-        return new_lower_result(dr_ctor.value, s_ctor)
+        // v5.4.4 — StructInit takes ownership of each field value.
+        let s_ctor2: LowerState = emit_move_fields(s_ctor, field_pairs)
+        return new_lower_result(dr_ctor.value, s_ctor2)
+    }
+
+    // v5.7.0 Sh.7: indirect call through a fn-typed local variable.
+    // Mirrors mapanare/lower.py::_lower_call (v4.103.0 docket #5). When
+    // an identifier resolves to a parameter/binding annotated
+    // `fn(T) -> T`, the alloca's MIR type has kind TK_FN. Load the
+    // value and emit a Call whose fn_name is the loaded SSA name —
+    // emit_call_ir / emit_call_void recognise the leading `%` and
+    // emit `call <ret_ty> %fn(<args>)` rather than `call ... @<name>`.
+    let var_lookup: Option<Value> = lookup_var(st, fn_name)
+    match var_lookup {
+        Some(addr_v) => {
+            if addr_v.ty.kind == TK_FN() {
+                let load_r: LowerResult = make_value(st, addr_v.ty, fn_name + "_val")
+                let load_s: LowerState = emit_instr(load_r.state, Instruction::Load(load_r.value, addr_v))
+                let dr_ind: LowerResult = make_value(load_s, mir_unknown(), "t")
+                let s_ind: LowerState = emit_instr(dr_ind.state, Instruction::Call(dr_ind.value, load_r.value.name, args))
+                return new_lower_result(dr_ind.value, s_ind)
+            }
+        },
+        _ => {}
     }
 
     // Resolve lambda variable names to actual function names
@@ -2351,6 +2692,27 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
         return lower_push_method(s, obj, obj_r, arg_exprs)
     }
 
+    // v5.6.3 Sh.6 Phase 4 — tensor reduction methods
+    // `a.sum()/.mean()/.max()/.min()/.argmax()/.argmin()` route to the
+    // `__mn_tensor_{method}_{f64,i64}` runtime family. mean always goes
+    // to the f64 variant (no _i64 runtime). Mirrors
+    // mapanare/lower.py::_lower_method_call:2503-2522.
+    if is_tensor_reduction_method(method) {
+        if obj_r.value.ty.kind == TK_TENSOR() {
+            let elem_kind_red: Int = tensor_elem_kind_of(obj_r.value)
+            let mut ty_suffix: String = "f64"
+            if elem_kind_red == TK_INT() { ty_suffix = "i64" }
+            if method == "mean" { ty_suffix = "f64" }
+            let red_fn: String = "__mn_tensor_" + method + "_" + ty_suffix
+            let red_ret_ty: MIRType = tensor_reduction_ret_ty(method, elem_kind_red)
+            let red_dest: LowerResult = make_value(s, red_ret_ty, "tred")
+            let mut red_args: List<Value> = []
+            red_args.push(obj_r.value)
+            let s_red: LowerState = emit_instr(red_dest.state, Instruction::Call(red_dest.value, red_fn, red_args))
+            return new_lower_result(red_dest.value, s_red)
+        }
+    }
+
     // Build arg list: [obj_value, arg_values...]
     let mut all_args: List<Value> = []
     all_args.push(obj_r.value)
@@ -2404,6 +2766,48 @@ fn lookup_impl_method(st: LowerState, key: String) -> Option<String> {
     return none
 }
 
+// v5.4.4 Own.1 Phase 2 — Move-emission helpers.
+// emit_move_vals / emit_move_fields append one Move instruction per
+// input value. Used after list.push, map_set, struct_init, enum_init,
+// and Option/Result wrappers so the emitter's drop glue can see that
+// the resource's ownership transferred into the container.
+fn emit_move_vals(st: LowerState, vals: List<Value>) -> LowerState {
+    let mut s: LowerState = st
+    let n: Int = len(vals)
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= n { return s }
+        s = emit_instr(s, Instruction::Move(vals[i]))
+        i = i + 1
+    }
+    return s
+}
+
+fn emit_move_fields(st: LowerState, fields: List<FieldPair>) -> LowerState {
+    let mut s: LowerState = st
+    let n: Int = len(fields)
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= n { return s }
+        s = emit_instr(s, Instruction::Move(fields[i].val))
+        i = i + 1
+    }
+    return s
+}
+
+fn emit_move_kvpairs(st: LowerState, pairs: List<KVPair>) -> LowerState {
+    let mut s: LowerState = st
+    let n: Int = len(pairs)
+    let mut i: Int = 0
+    for _ in 0..500 {
+        if i >= n { return s }
+        s = emit_instr(s, Instruction::Move(pairs[i].key))
+        s = emit_instr(s, Instruction::Move(pairs[i].val))
+        i = i + 1
+    }
+    return s
+}
+
 fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: List<Expr>) -> LowerResult {
     let mut s: LowerState = st
     // Lower the element
@@ -2419,7 +2823,10 @@ fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: L
     all_args.push(arg_r.value)
     let dest_r: LowerResult = make_value(s, mir_void(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "push", all_args))
-    return new_lower_result(dest_r.value, new_s)
+    // v5.4.4 — list.push copies the element into the list buffer; the
+    // container owns it now. Drop glue must skip the caller's slot.
+    let moved_s: LowerState = emit_instr(new_s, Instruction::Move(arg_r.value))
+    return new_lower_result(dest_r.value, moved_s)
 }
 
 fn find_list_alloca(st: LowerState, obj: Expr, obj_r: LowerResult) -> Value {
@@ -2540,6 +2947,38 @@ fn lower_namespace_access(st: LowerState, ns: String, member: String) -> LowerRe
 
 fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
     let obj_r: LowerResult = lower_expr(st, obj)
+
+    // v5.6.1 Sh.6 Phase 2 — single-subscript on tensor (`b[0]`) routes
+    // through the same __mn_tensor_get_*_nd runtime as multi-dim,
+    // matching mapanare/lower.py::_lower_index.
+    if obj_r.value.ty.kind == TK_TENSOR() {
+        let mut one_idx: List<Expr> = []
+        one_idx.push(idx)
+        let obj_name_e: Expr = Expr::NoneLit
+        let idx_r_ti: LowerResult = lower_expr(obj_r.state, idx)
+        let mut s_ti: LowerState = idx_r_ti.state
+
+        let elem_kind_ti: Int = tensor_elem_kind_of(obj_r.value)
+        let mut fn_name_ti: String = "__mn_tensor_get_f64_nd"
+        let mut elem_ty_ti: MIRType = mir_float()
+        if elem_kind_ti == TK_INT() {
+            fn_name_ti = "__mn_tensor_get_i64_nd"
+            elem_ty_ti = mir_int()
+        }
+
+        let rank_r_ti: LowerResult = make_value(s_ti, mir_int(), "trank")
+        s_ti = emit_instr(rank_r_ti.state, Instruction::Const(rank_r_ti.value, mir_int(), "1"))
+
+        let mut all_args_ti: List<Value> = []
+        all_args_ti.push(obj_r.value)
+        all_args_ti.push(rank_r_ti.value)
+        all_args_ti.push(idx_r_ti.value)
+
+        let dest_r_ti: LowerResult = make_value(s_ti, elem_ty_ti, "tget")
+        let s_out: LowerState = emit_instr(dest_r_ti.state, Instruction::Call(dest_r_ti.value, fn_name_ti, all_args_ti))
+        return new_lower_result(dest_r_ti.value, s_out)
+    }
+
     let idx_r: LowerResult = lower_expr(obj_r.state, idx)
 
     // For string indexing, result is a string (char_at)
@@ -2561,6 +3000,194 @@ fn lower_index(st: LowerState, obj: Expr, idx: Expr) -> LowerResult {
     let dest_r: LowerResult = make_value(idx_r.state, elem_ty, "t")
     let s: LowerState = emit_instr(dest_r.state, Instruction::IndexGet(dest_r.value, obj_r.value, idx_r.value))
     return new_lower_result(dest_r.value, s)
+}
+
+// v5.6.1 Sh.6 Phase 2 — `a[i, j]` / `a[i, j, k]` lowered as a variadic
+// Call to __mn_tensor_get_{f64,i64}_nd. Element type is pulled from the
+// tensor value's MIR type args (populated by lower_tensor); defaults to
+// Float when unknown, matching Python's _lower_tensor_get fallback.
+fn tensor_elem_kind_of(v: Value) -> Int {
+    if v.ty.kind == TK_TENSOR() {
+        if len(v.ty.args) > 0 {
+            return v.ty.args[0].kind
+        }
+    }
+    return TK_FLOAT()
+}
+
+// v5.6.3 Sh.6 Phase 4 — helpers for tensor reduction method dispatch.
+fn is_tensor_reduction_method(m: String) -> Bool {
+    if m == "sum" { return true }
+    if m == "mean" { return true }
+    if m == "max" { return true }
+    if m == "min" { return true }
+    if m == "argmax" { return true }
+    if m == "argmin" { return true }
+    return false
+}
+
+// Return type for a tensor reduction method on element kind `elem_kind`:
+//   sum/max/min → element type (Int or Float)
+//   mean        → always Float (no i64 mean runtime)
+//   argmax/argmin → Int
+fn tensor_reduction_ret_ty(method: String, elem_kind: Int) -> MIRType {
+    if method == "argmax" { return mir_int() }
+    if method == "argmin" { return mir_int() }
+    if method == "mean" { return mir_float() }
+    if elem_kind == TK_INT() { return mir_int() }
+    return mir_float()
+}
+
+fn lower_tensor_index_get(st: LowerState, obj: Expr, indices: List<Expr>) -> LowerResult {
+    let obj_r: LowerResult = lower_expr(st, obj)
+    let mut s: LowerState = obj_r.state
+
+    let mut idx_vals: List<Value> = []
+    let mut i: Int = 0
+    let nidx: Int = len(indices)
+    for _ in 0..128 {
+        if i < nidx {
+            let ir: LowerResult = lower_expr(s, indices[i])
+            s = ir.state
+            idx_vals.push(ir.value)
+            i = i + 1
+        }
+    }
+
+    let elem_kind: Int = tensor_elem_kind_of(obj_r.value)
+    let mut fn_name: String = "__mn_tensor_get_f64_nd"
+    let mut elem_ty: MIRType = mir_float()
+    if elem_kind == TK_INT() {
+        fn_name = "__mn_tensor_get_i64_nd"
+        elem_ty = mir_int()
+    }
+
+    // rank constant
+    let rank_r: LowerResult = make_value(s, mir_int(), "trank")
+    s = emit_instr(rank_r.state, Instruction::Const(rank_r.value, mir_int(), toString(nidx)))
+
+    // build args: [tensor, rank, i0, i1, ...]
+    let mut all_args: List<Value> = []
+    all_args.push(obj_r.value)
+    all_args.push(rank_r.value)
+    let mut k: Int = 0
+    for _ in 0..128 {
+        if k < nidx {
+            all_args.push(idx_vals[k])
+            k = k + 1
+        }
+    }
+
+    let dest_r: LowerResult = make_value(s, elem_ty, "tget")
+    s = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, all_args))
+    return new_lower_result(dest_r.value, s)
+}
+
+// v5.6.3 Sh.6 Phase 4 — `a[1..3, _]` lowers to a Call to __mn_tensor_slice
+// with flat args `[tensor, s0, s1, ..., e0, e1, ..., rank]`. The emitter
+// special-cases __mn_tensor_slice to repackage the flat args into two
+// stack-allocated [rank × i64] arrays before calling the runtime.
+// Mirrors mapanare/lower.py::_lower_tensor_slice:2788-2835.
+fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> LowerResult {
+    let obj_r: LowerResult = lower_expr(st, obj)
+    let mut s: LowerState = obj_r.state
+
+    let rank: Int = len(items)
+    let mut starts: List<Value> = []
+    let mut ends: List<Value> = []
+
+    let mut d: Int = 0
+    for _ in 0..128 {
+        if d < rank {
+            let it: IndexItem = items[d]
+            if it.kind == "range" {
+                // start
+                let sv: LowerResult = make_value(s, mir_int(), "ci")
+                s = sv.state
+                if expr_kind(it.start) == "none_lit" {
+                    s = emit_instr(s, Instruction::Const(sv.value, mir_int(), "0"))
+                    starts.push(sv.value)
+                } else {
+                    let start_r: LowerResult = lower_expr(s, it.start)
+                    s = start_r.state
+                    starts.push(start_r.value)
+                }
+                // end
+                if expr_kind(it.end) == "none_lit" {
+                    let ev: LowerResult = make_value(s, mir_int(), "ci")
+                    s = emit_instr(ev.state, Instruction::Const(ev.value, mir_int(), "0"))
+                    ends.push(ev.value)
+                } else {
+                    let end_r: LowerResult = lower_expr(s, it.end)
+                    s = end_r.state
+                    ends.push(end_r.value)
+                }
+            } else {
+                if it.kind == "wildcard" {
+                    // start = 0
+                    let sv_w: LowerResult = make_value(s, mir_int(), "ci")
+                    s = emit_instr(sv_w.state, Instruction::Const(sv_w.value, mir_int(), "0"))
+                    starts.push(sv_w.value)
+                    // end = tensor_shape_dim(obj, d)
+                    let dv: LowerResult = make_value(s, mir_int(), "ci")
+                    s = emit_instr(dv.state, Instruction::Const(dv.value, mir_int(), toString(d)))
+                    let shape_dest: LowerResult = make_value(s, mir_int(), "sdim")
+                    s = shape_dest.state
+                    let mut shape_args: List<Value> = []
+                    shape_args.push(obj_r.value)
+                    shape_args.push(dv.value)
+                    s = emit_instr(s, Instruction::Call(shape_dest.value, "tensor_shape_dim", shape_args))
+                    ends.push(shape_dest.value)
+                } else {
+                    // scalar in slice context — treat as [k, k+1]
+                    let scalar_r: LowerResult = lower_expr(s, it.expr)
+                    s = scalar_r.state
+                    starts.push(scalar_r.value)
+                    let one_r: LowerResult = make_value(s, mir_int(), "ci")
+                    s = emit_instr(one_r.state, Instruction::Const(one_r.value, mir_int(), "1"))
+                    let end_d: LowerResult = make_value(s, mir_int(), "send")
+                    s = emit_instr(end_d.state, Instruction::BinOp(end_d.value, BinOpKind::Add, scalar_r.value, one_r.value))
+                    ends.push(end_d.value)
+                }
+            }
+            d = d + 1
+        }
+    }
+
+    // rank constant
+    let rank_r: LowerResult = make_value(s, mir_int(), "trank")
+    s = emit_instr(rank_r.state, Instruction::Const(rank_r.value, mir_int(), toString(rank)))
+
+    // Result type = Tensor<T> (same element type as obj)
+    let elem_kind_sl: Int = tensor_elem_kind_of(obj_r.value)
+    let mut elem_ty_sl: MIRType = mir_float()
+    if elem_kind_sl == TK_INT() { elem_ty_sl = mir_int() }
+    let res_ty: MIRType = mir_tensor_of(elem_ty_sl)
+
+    let dest_sl: LowerResult = make_value(s, res_ty, "tslice")
+    s = dest_sl.state
+
+    // Flat args: [obj, s0, s1, ..., e0, e1, ..., rank]
+    let mut all_args: List<Value> = []
+    all_args.push(obj_r.value)
+    let mut a_i: Int = 0
+    for _ in 0..128 {
+        if a_i < rank {
+            all_args.push(starts[a_i])
+            a_i = a_i + 1
+        }
+    }
+    let mut b_i: Int = 0
+    for _ in 0..128 {
+        if b_i < rank {
+            all_args.push(ends[b_i])
+            b_i = b_i + 1
+        }
+    }
+    all_args.push(rank_r.value)
+
+    s = emit_instr(s, Instruction::Call(dest_sl.value, "__mn_tensor_slice", all_args))
+    return new_lower_result(dest_sl.value, s)
 }
 
 // ---------------------------------------------------------------------------
@@ -2598,7 +3225,11 @@ fn lower_pipe(st: LowerState, left: Expr, right: Expr) -> LowerResult {
 
     let rk: String = expr_kind(right)
     if rk == "ident" {
-        return lower_pipe_call(arg_r, expr_ident_name(right), [])
+        // v5.6.10 — bind via typed let so the empty extras list flows
+        // through `lower_let_list_hint` and gets a known elem_ty
+        // (Expr is an enum → GEP-trick path in emit_list_init).
+        let empty_extras: List<Expr> = []
+        return lower_pipe_call(arg_r, expr_ident_name(right), empty_extras)
     }
     if rk == "call" {
         return lower_pipe_with_call(arg_r, expr_call_callee(right), expr_call_args(right))
@@ -2714,8 +3345,17 @@ fn count_actual_lambdas(st: LowerState) -> Int {
 }
 
 fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerResult {
+    // v5.7.0 Sh.7: name lambdas after the tmp_counter at creation time
+    // (matching mapanare/lower.py::_lower_lambda which calls
+    // self._fresh_tmp("lambda")). The harness compares function-name
+    // sets; without this, bootstrap (lambdaN where N matches main's
+    // tmp_counter) and stage1 (lambdaK from a separate
+    // count_actual_lambdas counter) diverged on names like
+    // 64_closure_typed.mn — bootstrap emitted lambda0/2/4 while
+    // stage1 emitted lambda1/2/3, failing the function-name parity
+    // check.
     let name_r: LowerResult = fresh_tmp(st, "lambda")
-    let lambda_name: String = "lambda" + toString(count_actual_lambdas(st) + 1)
+    let lambda_name: String = name_r.value.name.substr(1, len(name_r.value.name) - 1)
 
     let body_block: Block = lambda_body_to_block(body)
 
@@ -2878,6 +3518,20 @@ fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult {
 // ---------------------------------------------------------------------------
 
 fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
+    return lower_list_typed(st, elements, mir_unknown())
+}
+
+// v5.6.7 Ve.2 fix — explicit-element-type variant for lowering list
+// literals. When the context provides an element-type hint (e.g.
+// `let xs: List<String> = []` from `lower_let`, pattern-match on
+// `Generic("List", [inner])`), use it instead of the default
+// `mir_unknown()` fallback when the literal is empty. Otherwise the
+// emitter sees `elem_ty.kind=TK_UNKNOWN → resolve_mir_type returns
+// "i64"`, and allocates 8-byte slots for lists that actually hold
+// 16-byte Strings / 48-byte Params / variable-size structs — the
+// exact root cause of the stage2 runtime corruption that had been
+// masked by the 384-byte floor in `emit_list_init`.
+fn lower_list_typed(st: LowerState, elements: List<Expr>, hinted_elem_ty: MIRType) -> LowerResult {
     // Touch st to force materialization before any list operations.
     // Without this, clang -O0 may leave the LowerState in stale registers
     // from the caller's sret return, causing corruption in subsequent ops.
@@ -2894,14 +3548,93 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
         }
     }
 
+    // Prefer the element type inferred from the first element (concrete,
+    // post-lower). Fall back to the caller's hint (from the `let`
+    // annotation). Last resort: mir_unknown() — safe because downstream
+    // emit_list_init keeps a 384-byte floor for unknown/scalar fallback.
     let mut elem_type: MIRType = mir_unknown()
     if len(vals) > 0 {
         let first_v: Value = vals[0]
         elem_type = first_v.ty
+    } else {
+        if hinted_elem_ty.kind != TK_UNKNOWN() {
+            elem_type = hinted_elem_ty
+        }
     }
     let dest_r: LowerResult = make_value(s, mir_list(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
     return new_lower_result(dest_r.value, new_s)
+}
+
+// v5.6.12 Lk.1 fix — destination-passing variant of lower_list_typed.
+// Closes the alloca-aliasing leak class at its structural root: when
+// `let mut a: List<T> = []` is the value's destination, the lowerer
+// emits the ListInit directly into a's slot instead of fresh-tmp'ing
+// %t<N> and then copying it into %a<M>.addr (the duplicate-alloca
+// pattern). The emitter's `dn + ".addr"` convention turns a `dest_name`
+// of "%a<M>" into the alloca name "%a<M>.addr", which the caller then
+// binds for the variable. One alloca, one tracking entry, no copy.
+//
+// Mirrors Rust's destination-passing codegen (PlaceRef in
+// rustc_codegen_llvm) — result-location semantics rather than
+// value-then-copy.
+fn lower_list_typed_into(st: LowerState, elements: List<Expr>, hinted_elem_ty: MIRType, dest_name: String) -> LowerResult {
+    let mut s: LowerState = st
+    let mut vals: List<Value> = []
+    let mut i: Int = 0
+    let nel: Int = len(elements)
+    for _ in 0..2000 {
+        if i < nel {
+            let el_r: LowerResult = lower_expr(s, elements[i])
+            s = el_r.state
+            vals.push(el_r.value)
+            i = i + 1
+        }
+    }
+    let mut elem_type: MIRType = mir_unknown()
+    if len(vals) > 0 {
+        let first_v: Value = vals[0]
+        elem_type = first_v.ty
+    } else {
+        if hinted_elem_ty.kind != TK_UNKNOWN() {
+            elem_type = hinted_elem_ty
+        }
+    }
+    // Use the caller-supplied dest_name (e.g. "%indices0") instead of
+    // fresh-tmp. tmp_counter is NOT bumped here; the caller already
+    // reserved the slot when it picked the variable's name.
+    let dest_val: Value = new_value(dest_name, mir_list())
+    let new_s: LowerState = emit_instr(s, Instruction::ListInit(dest_val, elem_type, vals))
+    return new_lower_result(dest_val, new_s)
+}
+
+// v5.6.7 Ve.2 helper — unwrap `List<T>` type annotation to T (as MIRType).
+// Returns `mir_unknown()` for any type expression that isn't a
+// recognized list generic; callers use the UNKNOWN sentinel to mean
+// "no hint available".
+fn extract_list_elem_ty(st: LowerState, te: TypeExpr) -> MIRType {
+    match te {
+        Generic(name, args) => {
+            if name == "List" && len(args) >= 1 {
+                return lower_resolve_type_checked(st, args[0])
+            }
+            return mir_unknown()
+        },
+        _ => { return mir_unknown() }
+    }
+}
+
+// v5.6.7 Ve.2 helper — resolve a `let x: List<T> = []` pattern to its
+// element type hint for `lower_list_typed`. Returns mir_unknown() when
+// the pattern doesn't apply (value isn't a list literal, or type_ann
+// isn't `List<T>`), letting the caller fall through to the default
+// path.
+fn lower_let_list_hint(st: LowerState, value: Expr, type_ann: Option<TypeExpr>) -> MIRType {
+    if expr_kind(value) != "list_lit" { return mir_unknown() }
+    match type_ann {
+        Some(te) => { return extract_list_elem_ty(st, te) },
+        _ => { return mir_unknown() }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2927,7 +3660,14 @@ fn lower_tensor(st: LowerState, elements: List<Expr>, shape: List<Int>) -> Lower
         let first_v: Value = vals[0]
         elem_type = first_v.ty
     }
-    let dest_r: LowerResult = make_value(s, mir_unknown(), "t")
+    // v5.6.0 Sh.6: tensor value is typed as TENSOR so emit_llvm.mn resolves
+    // it as llvm_ptr() — matches the ret type of __mn_tensor_alloc and the
+    // arg type of every __mn_tensor_* builtin. Without this the var slot
+    // alloca'd for `let a = <tensor>` becomes i64 and llvm-as rejects the
+    // ptr/i64 store mismatch.
+    // v5.6.1 Sh.6 Phase 2: carry elem_type so `a[i, j]` can dispatch between
+    // __mn_tensor_get_f64_nd and _i64_nd. resolve_mir_type still returns ptr.
+    let dest_r: LowerResult = make_value(s, mir_tensor_of(elem_type), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::TensorInit(dest_r.value, elem_type, shape, vals))
     return new_lower_result(dest_r.value, new_s)
 }
@@ -2961,7 +3701,9 @@ fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult {
     }
     let dest_r: LowerResult = make_value(s, mir_map(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::MapInit(dest_r.value, key_ty, val_ty, pairs))
-    return new_lower_result(dest_r.value, new_s)
+    // v5.4.4 — map owns each key/value pair.
+    let moved_s: LowerState = emit_move_kvpairs(new_s, pairs)
+    return new_lower_result(dest_r.value, moved_s)
 }
 
 // ---------------------------------------------------------------------------
@@ -2990,7 +3732,68 @@ fn lower_construct(st: LowerState, name: String, field_inits: List<FieldInit>) -
     let struct_ty: MIRType = mir_struct(name)
     let dest_r: LowerResult = make_value(s, struct_ty, "t")
     s = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "__new_" + name, vals))
+    // v5.4.4 — struct literal takes ownership of each field expression.
+    s = emit_move_vals(s, vals)
     return new_lower_result(dest_r.value, s)
+}
+
+// v5.6.13 Layer 1 extension — destination-passing variant of
+// `__new_<Struct>` constructor lowering, mirroring v5.6.12's
+// lower_list_typed_into. Used by lower_let when the value is a
+// struct constructor. Pairs each positional arg with the struct's
+// declared field name (matching lower_call_by_name's __new_ branch
+// at line ~2374), then emits `Instruction::StructInit` with a
+// caller-supplied dest_name instead of a fresh tmp. The emitter's
+// renamed `.addr` scratch (see emit_struct_init / emit_struct_init
+// _from_values) then materializes `%<dest_name>.addr` — which IS
+// the let's binding alloca, eliminating the duplicate alloca + the
+// load+store dance at the let boundary.
+//
+// Mirrors Rust's destination-passing codegen (PlaceRef in
+// rustc_codegen_llvm) for non-list aggregate types.
+fn lower_struct_new_into(st: LowerState, struct_name: String, arg_exprs: List<Expr>, dest_name: String) -> LowerResult {
+    let mut s: LowerState = st
+
+    // Lower each constructor argument (parallel to lower_call's arg
+    // pre-lowering at line ~1644).
+    let mut args: List<Value> = []
+    let mut i: Int = 0
+    let nae: Int = len(arg_exprs)
+    for _ in 0..500 {
+        if i < nae {
+            let arg_r: LowerResult = lower_expr(s, arg_exprs[i])
+            s = arg_r.state
+            args.push(arg_r.value)
+            i = i + 1
+        }
+    }
+
+    // Pair positional args with declared field names — same logic
+    // as lower_call_by_name's __new_ branch at line ~2380.
+    let field_names: List<String> = get_struct_field_names(s, struct_name)
+    let struct_ty: MIRType = mir_struct(struct_name)
+    let mut field_pairs: List<FieldPair> = []
+    let mut fi: Int = 0
+    let nfn: Int = len(field_names)
+    let na: Int = len(args)
+    for _ in 0..500 {
+        if fi < nfn {
+            if fi < na {
+                let fp: FieldPair = new_field_pair(field_names[fi], args[fi])
+                field_pairs.push(fp)
+                fi = fi + 1
+            }
+        }
+    }
+
+    // Use caller-supplied dest_name (e.g. "%foo3") instead of
+    // fresh-tmp. tmp_counter is NOT bumped here; the caller already
+    // reserved the slot when it picked the variable's name.
+    let dest_val: Value = new_value(dest_name, struct_ty)
+    s = emit_instr(s, Instruction::StructInit(dest_val, struct_ty, field_pairs))
+    // v5.4.4 — StructInit takes ownership of each field value.
+    s = emit_move_fields(s, field_pairs)
+    return new_lower_result(dest_val, s)
 }
 
 // ---------------------------------------------------------------------------
@@ -3008,8 +3811,41 @@ fn lower_signal_expr(st: LowerState, inner: Expr) -> LowerResult {
 // Assignment lowering
 // ---------------------------------------------------------------------------
 
+// v5.6.10 Ve.2 residual helper — return the element-type hint for an
+// assignment of `[]` to a `mut` typed `List<T>` variable. Mirrors the
+// v5.6.7 `lower_let_list_hint` pattern but pulls the hint from the
+// variable's alloca type instead of an explicit annotation. Returns
+// `mir_unknown()` whenever the hint cannot be recovered, letting the
+// caller fall through to `lower_expr` and the 384-byte safety floor in
+// `emit_list_init`.
+fn lower_assign_list_hint(st: LowerState, target: Expr, value: Expr) -> MIRType {
+    if expr_kind(value) != "list_lit" { return mir_unknown() }
+    if expr_kind(target) != "ident" { return mir_unknown() }
+    let tname: String = expr_ident_name(target)
+    let opt_addr: Option<Value> = lookup_var(st, tname)
+    match opt_addr {
+        Some(addr) => {
+            if addr.ty.kind == TK_LIST() && len(addr.ty.args) > 0 {
+                return addr.ty.args[0]
+            }
+            return mir_unknown()
+        },
+        _ => { return mir_unknown() }
+    }
+}
+
 fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerResult {
-    let val_r: LowerResult = lower_expr(st, value)
+    // v5.6.10 — empty-list reassignment elem_ty hint. Same pattern as
+    // v5.6.7's `lower_let`: route `xs = []` through `lower_list_typed`
+    // when the variable's alloca carries a `List<T>` type. Without
+    // this, the RHS lowers via `lower_list → lower_list_typed(... mir_unknown())`
+    // and `emit_list_init` falls through to the 384-byte safety floor.
+    let hint_elem_asgn: MIRType = lower_assign_list_hint(st, target, value)
+    let val_r: LowerResult = if hint_elem_asgn.kind != TK_UNKNOWN() {
+            lower_list_typed(st, expr_list_elements(value), hint_elem_asgn)
+        } else {
+            lower_expr(st, value)
+        }
     let mut s: LowerState = val_r.state
 
     let tk: String = expr_kind(target)
@@ -3069,6 +3905,56 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
         let obj_r_idx: LowerResult = lower_expr(s, expr_index_obj(target))
         let idx_r: LowerResult = lower_expr(obj_r_idx.state, expr_index_idx(target))
         s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r_idx.value, idx_r.value, val_r.value))
+        // v5.4.4 — map_set / list_set memcpy key+val into the container;
+        // ownership transfers. Emit Move so drop glue skips the slot.
+        s = emit_instr(s, Instruction::Move(idx_r.value))
+        s = emit_instr(s, Instruction::Move(val_r.value))
+        return new_lower_result(val_r.value, s)
+    }
+    // v5.6.1 Sh.6 Phase 2 — `d[i, j] = val` for Tensor assignment. Lower as
+    // a direct Call to __mn_tensor_set_{f64,i64}_nd (variadic); skip
+    // IndexSet since the runtime owns the tensor storage.
+    if tk == "tensor_index" {
+        let ti_obj: Expr = expr_ti_obj(target)
+        let ti_idxs: List<Expr> = expr_ti_indices(target)
+        let obj_r_ti: LowerResult = lower_expr(s, ti_obj)
+        s = obj_r_ti.state
+
+        let mut ti_idx_vals: List<Value> = []
+        let mut ii: Int = 0
+        let nti: Int = len(ti_idxs)
+        for _ in 0..128 {
+            if ii < nti {
+                let ir_ti: LowerResult = lower_expr(s, ti_idxs[ii])
+                s = ir_ti.state
+                ti_idx_vals.push(ir_ti.value)
+                ii = ii + 1
+            }
+        }
+
+        let elem_kind_ti: Int = tensor_elem_kind_of(obj_r_ti.value)
+        let mut fn_name_ti: String = "__mn_tensor_set_f64_nd"
+        if elem_kind_ti == TK_INT() {
+            fn_name_ti = "__mn_tensor_set_i64_nd"
+        }
+
+        let rank_r_ti: LowerResult = make_value(s, mir_int(), "trank")
+        s = emit_instr(rank_r_ti.state, Instruction::Const(rank_r_ti.value, mir_int(), toString(nti)))
+
+        let mut all_args_ti: List<Value> = []
+        all_args_ti.push(obj_r_ti.value)
+        all_args_ti.push(rank_r_ti.value)
+        let mut kk: Int = 0
+        for _ in 0..128 {
+            if kk < nti {
+                all_args_ti.push(ti_idx_vals[kk])
+                kk = kk + 1
+            }
+        }
+        all_args_ti.push(val_r.value)
+
+        let void_dest_ti: LowerResult = make_value(s, mir_void(), "tset")
+        s = emit_instr(void_dest_ti.state, Instruction::Call(void_dest_ti.value, fn_name_ti, all_args_ti))
         return new_lower_result(val_r.value, s)
     }
     return new_lower_result(val_r.value, s)
@@ -3106,20 +3992,23 @@ fn build_if_phi_entries(then_term: Bool, else_term: Bool, then_val: Value, else_
             result.push(new_phi_entry(else_lbl, else_val))
         }
     }
-    // If one arm has value but other is void, add zeroinitializer for the void arm
+    // If one arm has value but other is void, add undef for the void arm.
+    // Ge.1r: zeroinitializer is a concrete all-zeros value that LLVM -O2
+    // propagates through struct fields, corrupting list elem_size to 0.
+    // undef means "don't care" and is safe for dead PHI branches.
     if len(result) == 1 {
         let r0_pe: PhiEntry = result[0]
         let r0_val: Value = r0_pe.val
         let r0_ty: MIRType = r0_val.ty
         if then_ok {
             if !then_non_void {
-                let zero_v_then: Value = new_value("zeroinitializer", r0_ty)
+                let zero_v_then: Value = new_value("undef", r0_ty)
                 result.push(new_phi_entry(then_lbl, zero_v_then))
             }
         }
         if else_ok {
             if !else_non_void {
-                let zero_v_else: Value = new_value("zeroinitializer", r0_ty)
+                let zero_v_else: Value = new_value("undef", r0_ty)
                 result.push(new_phi_entry(else_lbl, zero_v_else))
             }
         }
@@ -3328,9 +4217,13 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     if only_then {
         let mut ents_then: List<PhiEntry> = []
         ents_then.push(new_phi_entry(then_exit_label, then_val))
-        // Only include else branch if it's not terminated (reaches merge)
+        // Only include else branch if it's not terminated (reaches merge).
+        // Use "undef" (not "zeroinitializer") for the missing-value branch:
+        // zeroinitializer is a concrete all-zeros value that LLVM -O2 propagates
+        // through struct fields, corrupting list elem_size to 0 (Ge.1r).
+        // undef means "don't care" — LLVM can fold it without injecting zeros.
         if !else_terminated {
-            let zero_v_t: Value = new_value("zeroinitializer", then_val.ty)
+            let zero_v_t: Value = new_value("undef", then_val.ty)
             ents_then.push(new_phi_entry(else_exit_label, zero_v_t))
         }
         let rr_then: LowerResult = make_value(s, then_val.ty, "if_result")
@@ -3340,9 +4233,10 @@ fn lower_if(st: LowerState, cond: Expr, then_block: Block, else_clause: Option<E
     }
     if only_else {
         let mut ents_else: List<PhiEntry> = []
-        // Only include then branch if it's not terminated (reaches merge)
+        // Only include then branch if it's not terminated (reaches merge).
+        // Use "undef" for the same reason as the only_then case (Ge.1r).
         if !then_terminated {
-            let zero_v_e: Value = new_value("zeroinitializer", else_val.ty)
+            let zero_v_e: Value = new_value("undef", else_val.ty)
             ents_else.push(new_phi_entry(then_exit_label, zero_v_e))
         }
         ents_else.push(new_phi_entry(else_exit_label, else_val))
@@ -3553,11 +4447,12 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             // Jump to merge if not terminated
             if !arm_terminated {
                 s = emit_instr(s, Instruction::Jump(merge_label))
-                // Track arm result for phi (include all arms that reach merge)
-                // Use zeroinitializer for void/unknown results to avoid referencing %void
+                // Track arm result for phi (include all arms that reach merge).
+                // Ge.1r: use undef (not zeroinitializer) for void/unknown results —
+                // zeroinitializer propagates zeros through struct fields at -O2.
                 let arm_kind: Int = arm_val_r.value.ty.kind
                 if arm_kind == TK_VOID() || arm_kind == TK_UNKNOWN() || arm_val_r.value.name == "%void" {
-                    let zero_arm: Value = new_value("zeroinitializer", arm_val_r.value.ty)
+                    let zero_arm: Value = new_value("undef", arm_val_r.value.ty)
                     let pe_zero: PhiEntry = new_phi_entry(exit_label, zero_arm)
                     arm_results.push(pe_zero)
                 } else {
@@ -3575,26 +4470,26 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
     s = add_block(s, merge_label)
     let merge_idx: Int = s.current_block_idx
 
-    // Add zeroinitializer entry for switch default→merge path
+    // Add undef entry for switch default→merge path (Ge.1r: not zeroinitializer)
     if default_label == merge_label && len(arm_results) > 0 {
         let entry_label: String = get_block_label(s, match_entry_idx)
         let first_pe: PhiEntry = arm_results[0]
         let first_val: Value = first_pe.val
         let zero_ty: MIRType = first_val.ty
-        let zero_def: Value = new_value("zeroinitializer", zero_ty)
+        let zero_def: Value = new_value("undef", zero_ty)
         let def_pe: PhiEntry = new_phi_entry(entry_label, zero_def)
         arm_results.push(def_pe)
     }
 
     // Merge block
     s = set_block(s, merge_idx)
-    // Skip PHI when all arm results are zeroinitializer (dead match result)
+    // Skip PHI when all arm results are undef (dead match result)
     let mut all_zero: Bool = true
     if len(arm_results) > 0 {
         let mut zi: Int = 0
         for _ in 0..500 {
             if zi < len(arm_results) {
-                if arm_results[zi].val.name != "zeroinitializer" { all_zero = false }
+                if arm_results[zi].val.name != "undef" && arm_results[zi].val.name != "zeroinitializer" { all_zero = false }
                 zi = zi + 1
             }
         }

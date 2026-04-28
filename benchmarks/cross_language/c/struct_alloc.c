@@ -1,10 +1,15 @@
 /* Benchmark: Struct allocation -- C equivalent.
- * Allocate 100,000 Point{x,y,z} structs via malloc, accumulate fields, free.
+ * Allocate 100,000 Point{x,y,z} structs by value, accumulate fields.
  * Expected: checksum = 29999700000 (sum over i in [0..100000) of i+2i+3i).
+ *
+ * v5.1.2 Bn.4: rewritten to return struct by value (stack return) instead
+ * of malloc+free per iteration. This matches the Rust and Mapanare versions
+ * which also use stack-based struct return, making the Mn/C geomean an
+ * apples-to-apples comparison. Prior version measured malloc throughput,
+ * not struct construction — Mamba v4.154.0 flagged the asymmetry.
  */
 #include <stdio.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <time.h>
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -13,12 +18,8 @@ typedef struct {
     int64_t x, y, z;
 } Point;
 
-static Point *make_point(int64_t i) {
-    Point *p = (Point *)malloc(sizeof(Point));
-    if (!p) return NULL;
-    p->x = i;
-    p->y = i * 2;
-    p->z = i * 3;
+static Point make_point(int64_t i) {
+    Point p = { i, i * 2, i * 3 };
     return p;
 }
 
@@ -39,10 +40,8 @@ int main(void) {
 
     int64_t sum = 0;
     for (int64_t i = 0; i < 100000; i++) {
-        Point *p = make_point(i);
-        if (!p) return 1;
-        sum += p->x + p->y + p->z;
-        free(p);
+        Point p = make_point(i);
+        sum += p.x + p.y + p.z;
     }
 
     clock_gettime(CLOCK_MONOTONIC, &wall1);
