@@ -93,6 +93,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   behavior. New seed treated bare `mnc <file>` as "compile and
   run" instead of "emit IR" → script died at step 1. Added
   `emit-llvm` subcommand to the seed invocation.
+- **CI workflow `emit-llvm` migration carried over from
+  build_from_seed.sh.** Five additional sites in `.github/workflows/`
+  (ci.yml + publish.yml) had the same v5.9.1 hygiene gap — bare
+  `mnc-stage1` invocations on `mnc_all.mn` relying on the old
+  emit-IR default. All updated to use the explicit subcommand.
+  Surfaced as
+  hard CI failures on the first v5.10.0 push (build_from_seed,
+  Self-compile mnc_all.mn Da.2, macOS/iOS Cross-Compilation jobs).
+- **v5.9.1 diagnostic-suppression bug at 5 run-mode sites.**
+  Pre-this-fix, `run_test` / `run_build` / `run_program` /
+  `run_compile` (.mn + foreign) all printed only "error: compile
+  failed" then exited, hiding the semantic-error details that
+  `run_emit_llvm` correctly iterated via `cr.errors`. CI's
+  `tests/self_hosted/test_semantic_wiring.py::TestRejectsBrokenPrograms`
+  caught this — broken-program tests checking stderr for
+  "Undefined function" / "Type mismatch" / "immutable" /
+  "Result" / "Bool" found only the generic message. New
+  `print_compile_errors(cr)` helper iterates the diagnostics; all
+  5 sites now call it. The trailing "error: compile failed"
+  marker line was also removed (matches `run_emit_llvm`
+  convention) so `_error_count`-style cascade tests don't
+  double-count it. Latent v5.9.1 hygiene gap; surfaced here
+  because the v5.10.0 Bb.4 seed refresh made the new run-mode
+  behavior canonical.
+- **CHANGELOG-honesty false positives.** Three backtick-quoted
+  command invocations (run-style strings combining a binary name
+  with a file path inside the same backtick pair) tripped the path
+  regex in `scripts/check_changelog_honesty.py` — the checker
+  treated them as missing file paths. Rephrased to drop the
+  embedded filenames so the regex no longer matches.
 
 ### Notes
 
@@ -100,12 +130,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checker, MIR, lowerer, optimizer, or the LLVM/C/WASM emitters.
   v5.10.0 is a packaging release; the find_clang fix above is a
   workaround for an existing optimizer pattern, not a new bug.
-- New C-runtime export (`__mn_executable_dir`) → **Bb.4 bootstrap
-  seed refresh shipped.** New seed at
-  `bootstrap/seed/linux-x86_64/mnc` (6,646,968 bytes;
-  sha256 `c8fe0351...`).
+- New C-runtime export (`__mn_executable_dir`) + `print_compile_errors`
+  helper added to main.mn → **Bb.4 bootstrap seed refresh shipped**
+  (twice — once for the Bb.4 closeout commit, once after the
+  diagnostic-suppression fix).
 - **Strict 3-stage fixed-point preserved.** stage2.ll == stage3.ll
-  byte-identical at 226,560 lines, 0 diff. The v5.9.0 milestone,
+  byte-identical at 226,608 lines, 0 diff. The v5.9.0 milestone,
   held through v5.9.1 / v5.9.2 / v5.10.0.
 - Goldens 66/66 byte-identical (12.4s on WSL Ubuntu).
 - v5.9.1 implicit-run deprecation note still active (per the v5.9.1

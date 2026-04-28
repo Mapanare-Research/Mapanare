@@ -21922,6 +21922,24 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
     return cr
 }
 
+// v5.10.0 hygiene: surface compile diagnostics in run-mode paths.
+// Pre-this-fix run_program / run_test / run_build / run_compile
+// printed only "error: compile failed" then exited, hiding the
+// semantic-error details that run_emit_llvm correctly iterated.
+// CI (test_semantic_wiring's TestRejectsBrokenPrograms) caught this
+// — broken-program tests were checking stderr for "Undefined
+// function" / "Type mismatch" / "immutable" / etc. which weren't
+// being emitted in run mode. Latent v5.9.1 hygiene gap; surfaced
+// here because v5.10.0's Bb.4 seed refresh made the new run-mode
+// behavior canonical.
+fn print_compile_errors(cr: CompileResult) {
+    for i in 0..len(cr.errors) {
+        let err: SemanticError = cr.errors[i]
+        __mn_str_eprint(format_error(err))
+        __mn_str_eprint("\n")
+    }
+}
+
 // ---------------------------------------------------------------------------
 // mn_main — native compiler entry point (called from C shim)
 //
@@ -21964,6 +21982,7 @@ fn run_test(filename: String) {
     }
     let cr: CompileResult = compile(source, filename)
     if !cr.success {
+        print_compile_errors(cr)
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
         __mn_str_eprint(" (compile errors)\n")
@@ -22086,7 +22105,7 @@ fn run_build(filename: String) {
     }
     let cr: CompileResult = compile(source, filename)
     if !cr.success {
-        __mn_str_eprint("error: compile failed\n")
+        print_compile_errors(cr)
         __mn_exit(1)
     }
     // Rename @main → @mn_main so the C wrapper provides the real main()
@@ -22139,7 +22158,7 @@ fn run_program(filename: String) {
     }
     let cr: CompileResult = compile(source, filename)
     if !cr.success {
-        __mn_str_eprint("error: compile failed\n")
+        print_compile_errors(cr)
         __mn_exit(1)
     }
     __mn_file_write("/tmp/mnc_run.ll", rename_main(cr.ir_text))
@@ -22246,7 +22265,7 @@ fn run_compile(filename: String) {
     if ext == ".mn" {
         let cr: CompileResult = compile(source, filename)
         if !cr.success {
-            __mn_str_eprint("error: compile failed\n")
+            print_compile_errors(cr)
             __mn_exit(1)
         }
         let mut out_name: String = "a.out"
@@ -22305,7 +22324,7 @@ fn run_compile(filename: String) {
 
     let cr2: CompileResult = compile(mn_source, filename)
     if !cr2.success {
-        __mn_str_eprint("error: compile failed\n")
+        print_compile_errors(cr2)
         __mn_exit(1)
     }
 
