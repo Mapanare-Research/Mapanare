@@ -132,7 +132,7 @@ The self-hosted compiler runs the full v5.7.0 corpus (66/66 native goldens):
 - **Or-pattern matching with guards** — `Plus | Minus if cond => body` over enum variants and built-in constructors (`None` / `Some` / `Ok` / `Err`).
 - **Drop-glue ownership tracking** — string / list / boxed / tensor lifetimes tracked through return paths and loop iterations; valgrind / ASan / LSan / TSan all clean on the corpus.
 
-Self-host 3-stage fixed-point: NEAR (4-line VERSION-metadata diff over a 217k-line stage2.ll).
+Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 226k lines; restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata diff at the source).
 
 ---
 

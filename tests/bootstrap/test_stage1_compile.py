@@ -27,6 +27,23 @@ def _read_self_hosted() -> tuple[str, str]:
 MNC_STAGE1 = pathlib.Path("mapanare/self/mnc-stage1" + (".exe" if sys.platform == "win32" else ""))
 
 
+_DECLARE_QUOTED_RE = re.compile(
+    r'^declare\s+(?:external\s+)?[^@\n]*@"([^"\n]+)"',
+    re.MULTILINE,
+)
+
+
+def _extract_quoted_declares(llvm_ir: str) -> list[str]:
+    """Return the list of `@"..."`-quoted function names declared in `llvm_ir`.
+
+    Tightened over the v5.9.0/5.9.1-era pattern: anchors at start-of-line
+    and refuses newline inside the captured group, so the regex cannot
+    fall into the cross-construct match shape that produced
+    `Unresolved cross-module refs: [', align 8\\n@.str.NNNN = ...']`.
+    """
+    return _DECLARE_QUOTED_RE.findall(llvm_ir)
+
+
 def _has_mnc_stage1() -> bool:
     """Check if mnc-stage1 exists and is executable on this platform."""
     import os
@@ -37,6 +54,32 @@ def _has_mnc_stage1() -> bool:
     if sys.platform != "win32" and not os.access(MNC_STAGE1, os.X_OK):
         return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# v5.9.2 Tg.1 — quoted-declare regex guard
+# ---------------------------------------------------------------------------
+
+
+class TestRegexHelper:
+    """v5.9.2 Tg.1 — guard the quoted-declare regex against the
+    cross-construct match shape that produced the latent failure
+    on v5.9.0 / v5.9.1 HEAD."""
+
+    def test_clean_declare(self) -> None:
+        ir = 'declare i64 @"foo"(ptr)\n'
+        assert _extract_quoted_declares(ir) == ["foo"]
+
+    def test_declare_followed_by_string_constant(self) -> None:
+        ir = (
+            'declare i64 @"foo"(ptr), align 8\n'
+            '@.str.3042 = private constant [1 x i8] c""\n'
+        )
+        assert _extract_quoted_declares(ir) == ["foo"]
+
+    def test_declare_with_trailing_align(self) -> None:
+        ir = 'declare void @"do.thing"(ptr) #0, align 8\n'
+        assert _extract_quoted_declares(ir) == ["do.thing"]
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +175,7 @@ class TestStage1Compilation:
         """All enum variant constructors resolve to EnumInit (no stale declares)."""
         source, filename = _read_self_hosted()
         llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
-        declares = re.findall(r'declare\s+(?:external\s+)?.*?@"([^"]+)"', llvm_ir)
+        declares = _extract_quoted_declares(llvm_ir)
         enum_prefixes = [
             "Expr_",
             "Stmt_",
@@ -154,7 +197,7 @@ class TestStage1Compilation:
         """Cross-module calls like tokenize, Program_start are properly mangled."""
         source, filename = _read_self_hosted()
         llvm_ir = _compile_to_llvm_ir(source, filename, skip_check=True)
-        declares = re.findall(r'declare\s+(?:external\s+)?.*?@"([^"]+)"', llvm_ir)
+        declares = _extract_quoted_declares(llvm_ir)
         # All declares should be C runtime (__mn_*), printf, range/iter, or LLVM intrinsics
         allowed = {
             "printf",

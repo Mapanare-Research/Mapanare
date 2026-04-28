@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.9.2] - 2026-04-27
+
+### Fixed
+
+- **Tg.1** — `tests/bootstrap/test_stage1_compile.py` quoted-declare
+  regex tightened. The pre-v5.9.2 pattern used `[^"]+` for the
+  captured group, which matches across newlines, allowing a latent
+  cross-construct match that captured `', align 8\n@.str.NNNN = ...']`
+  as a "function name" and reported it as an unresolved cross-module
+  ref. Reproduced on v5.9.0 HEAD with `@.str.3025`; v5.9.1 HEAD with
+  `@.str.3042` — string-table drift confirms the bug tracks compiler
+  output rather than the regex itself. New regex anchors at
+  start-of-line (`^` + `re.MULTILINE`) and rejects newline in two
+  places (`[^@\n]*` and `[^"\n]+`). Both call sites
+  (`test_no_unresolved_enum_constructors`,
+  `test_cross_module_references_resolved`) now use the shared
+  `_extract_quoted_declares` helper. New `TestRegexHelper` with 3
+  cases guards the failure shape.
+
+### Changed
+
+- **Dn.1** — `README.md` self-host fixed-point status line. Stale
+  `NEAR (4-line VERSION-metadata diff over a 217k-line stage2.ll)`
+  reflected the v5.6.x → v5.8.x state. v5.9.0 closed the
+  VERSION-metadata diff at the source (DX.2 — `__mn_version_string()`
+  C-runtime export replaces the `__MN_VERSION__` placeholder),
+  restoring strict 3-stage fixed-point for the first time since
+  v4.139.0. v5.9.1 preserved it. README now reads
+  `STRICT (stage2.ll == stage3.ll byte-identical at 226k lines;
+  restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata
+  diff at the source).`
+
+### Notes
+
+- Test + docs only. Zero changes to parser, semantic checker, MIR,
+  lowerer, optimizer, emitters, dispatch layer, or runtime.
+- No bootstrap seed refresh.
+- Strict 3-stage fixed-point preserved (the v5.9.0 milestone, held
+  through v5.9.1).
+- Goldens 66/66 byte-identical; `make lint` clean;
+  `tests/bootstrap/test_stage1_compile.py` 20/20 pass (was 19/20 at
+  v5.9.1 HEAD; 3 new `TestRegexHelper` cases shipped here).
+- Closes Tg.1, Dn.1.
+
 ## [5.9.1] - 2026-04-27
 
 ### Changed (BREAKING)

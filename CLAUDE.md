@@ -18,6 +18,25 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.9.2** (shipped) — **hygiene — pre-existing test regex +
+  stale README line.** Two pre-existing fixes carried over from
+  v5.9.1 that didn't fit the DX.5 dispatch scope. Test + docs only;
+  zero compiler/runtime edits. **Tg.1**: tighten the quoted-declare
+  regex in `tests/bootstrap/test_stage1_compile.py` — anchor at
+  start-of-line and refuse newline inside the captured group.
+  Closes the latent `Unresolved cross-module refs:
+  [', align 8\n@.str.NNNN = ...']` failure shape (reproduced on
+  v5.9.0 HEAD with index 3025; v5.9.1 HEAD with 3042). Helper
+  extraction de-dups the two call sites; new `TestRegexHelper`
+  with 3 cases guards the failure shape. **Dn.1**: README
+  fixed-point status line — stale `NEAR (4-line VERSION-metadata
+  diff over a 217k-line stage2.ll)` was the v5.6.x state; v5.9.0
+  restored STRICT at the source (DX.2), v5.9.1 preserved it.
+  README now reads STRICT with v5.9.0 credit. NO seed refresh.
+  **Strict 3-stage fixed-point preserved** (the v5.9.0
+  milestone). Goldens 66/66; `test_stage1_compile.py` 20/20 pass
+  (was 19/20 at v5.9.1 HEAD); `make lint` clean. See
+  `docs/roadmap/v5/v5.9.2/SESSION_REPORT.md`.
 - **v5.9.1** (shipped) — **DX.5 — `mnc <file.mn>` defaults to run
   (BREAKING).** Empties the v5.8.7 Windows install probe DX.* docket
   list (DX.1–DX.7 all closed). Single behavior change; dispatch-layer
