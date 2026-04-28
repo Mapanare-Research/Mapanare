@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.13.0] - 2026-04-28
+
+### Added
+
+### Changed
+
+### Fixed
+
+
 ### Changed
 
 - **Mc.6 / Wk.* - Windows SDK split.** Windows release packaging now
@@ -7271,7 +7280,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.2...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.13.0...HEAD
+[5.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.2...v5.13.0
 [5.11.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.0...v5.11.2
 [5.8.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.8.6...v5.8.7
 [5.8.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.8.0...v5.8.1
