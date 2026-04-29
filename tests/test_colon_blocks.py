@@ -119,6 +119,101 @@ class TestToTerseRules:
         out = to_terse(src)
         assert out == format_source(src)
 
+    # v5.17.0 Sh.A.1: regression — match arms must not be rewritten to
+    # `=>:`, which is invalid syntax. Multi-line arms keep braces;
+    # empty arms `=> {}` keep braces. Matches that contain any
+    # multi-line arm body stay entirely in brace form because the
+    # `_indent_to_braces` preprocessor cannot track brace nesting
+    # inside match bodies.
+    def test_to_terse_preserves_multiline_match_arm(self) -> None:
+        src = (
+            "fn f(d: Definition) -> Bool {\n"
+            "    match d {\n"
+            "        FnDef(fd) => {\n"
+            '            if fd.name == "main" {\n'
+            "                return true\n"
+            "            }\n"
+            "        },\n"
+            "        _ => {}\n"
+            "    }\n"
+            "    return false\n"
+            "}\n"
+        )
+        out = to_terse(src)
+        # Match block stayed in brace form (entire match was multi-line)
+        assert "match d {" in out
+        assert "FnDef(fd) => {" in out
+        # The invalid `=>:` form must NEVER appear
+        assert "=>:" not in out
+        # Round-trips to a parseable AST.
+        from mapanare.parser import parse
+
+        parse(out)
+
+    def test_to_terse_preserves_empty_match_arm(self) -> None:
+        src = (
+            "fn f(c: Color) -> Int {\n"
+            "    match c {\n"
+            "        Red => { return 1 },\n"
+            "        Green => { return 2 },\n"
+            "        _ => {}\n"
+            "    }\n"
+            "    return 0\n"
+            "}\n"
+        )
+        out = to_terse(src)
+        # Match converts to colon form (only single-line arms).
+        assert "match c:" in out
+        # Empty arm `=> {}` retained verbatim — no `=>:` corruption.
+        assert "=>:" not in out
+        assert "_ => {}" in out
+        from mapanare.parser import parse
+
+        parse(out)
+
+    def test_to_terse_preserves_if_expression(self) -> None:
+        # `let x = if cond { ... } else { ... }` is an expression
+        # context — braces are part of the if-expr grammar and must
+        # not be rewritten to colons.
+        src = (
+            "fn f(b: Bool) -> Int {\n"
+            "    let x: Int = if b {\n"
+            "        1\n"
+            "    } else {\n"
+            "        2\n"
+            "    }\n"
+            "    return x\n"
+            "}\n"
+        )
+        out = to_terse(src)
+        assert "let x: Int = if b {" in out
+        assert "} else {" in out
+        from mapanare.parser import parse
+
+        parse(out)
+
+    def test_to_terse_multi_level_else_dedent(self) -> None:
+        # Multi-level dedent on `else:` (the round-trip exercise that
+        # forced the v5.17.0 `_indent_to_braces` continuation fix).
+        # Both `to_terse` output and round-trip via parse must work.
+        src = (
+            "fn f(a: Bool, b: Bool) -> Int {\n"
+            "    if a {\n"
+            "        if b {\n"
+            "            return 1\n"
+            "        } else {\n"
+            "            return 2\n"
+            "        }\n"
+            "    } else {\n"
+            "        return 3\n"
+            "    }\n"
+            "}\n"
+        )
+        out = to_terse(src)
+        from mapanare.parser import parse
+
+        parse(out)
+
 
 class TestToBracesRules:
     def test_simple_fn(self) -> None:
