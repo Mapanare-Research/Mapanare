@@ -1920,7 +1920,17 @@ fn has_explicit_main(defs: List<Definition>) -> Bool {
 }
 
 pub fn parse(source: String, filename: String) -> Program {
-    let tokens: List<Token> = tokenize(source, filename)
+    // v5.14.1 B.5/B.6: colon-block preprocessor lives in the C runtime
+    // (`runtime/native/mapanare_core.c::__mn_indent_to_braces`) and is
+    // wired into the self-host as a builtin (semantic.mn::is_builtin_function,
+    // lower.mn, emit_llvm.mn::declare_runtime_fn). It runs before
+    // tokenize() — both top-level `compile()` and the import resolver
+    // in main.mn route through this entry, so colon-style sources
+    // (and brace-only sources, via the fast path) are handled
+    // uniformly. Routed through C rather than .mn because the
+    // bootstrap lower has pathologies on a .mn port of the algorithm.
+    let preprocessed: String = __mn_indent_to_braces(source)
+    let tokens: List<Token> = tokenize(preprocessed, filename)
     let mut pos: Int = 0
     let mut defs: List<Definition> = []
     let mut top_stmts: List<Stmt> = []
@@ -4288,6 +4298,9 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "__mn_file_exists" { return true }
     // v5.10.0 Win.1b.D: bundled-toolchain lookup support.
     if name == "__mn_executable_dir" { return true }
+    // v5.14.1 B.5/B.6: colon-block preprocessor (lives in C runtime
+    // because the bootstrap lower has pathologies on a .mn port).
+    if name == "__mn_indent_to_braces" { return true }
     // High-level I/O builtins (v3.41.0)
     if name == "read_line" { return true }
     if name == "read_file" { return true }
@@ -6250,6 +6263,9 @@ fn register_builtins(st: SemState) -> SemState {
     // v5.10.0 Win.1b.D: directory of running binary, used by find_clang().
     let edsym: Symbol = new_symbol("__mn_executable_dir", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "__mn_executable_dir", edsym)
+    // v5.14.1 B.5/B.6: colon-block preprocessor (in C runtime).
+    let itbsym: Symbol = new_symbol("__mn_indent_to_braces", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_indent_to_braces", itbsym)
 
     // High-level I/O builtins (v3.41.0)
     let readline_sym: Symbol = new_symbol("read_line", "function", make_builtin_fn_type(string_type()), false)
@@ -10214,6 +10230,13 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let dr_vs: LowerResult = make_value(st, mir_string(), "t")
         let s_vs: LowerState = emit_instr(dr_vs.state, Instruction::Call(dr_vs.value, fn_name, args))
         return new_lower_result(dr_vs.value, s_vs)
+    }
+    // v5.14.1 B.5/B.6: colon-block preprocessor — see runtime/native/
+    // mapanare_core.c::__mn_indent_to_braces for why this lives in C.
+    if fn_name == "__mn_indent_to_braces" {
+        let dr_itb: LowerResult = make_value(st, mir_string(), "t")
+        let s_itb: LowerState = emit_instr(dr_itb.state, Instruction::Call(dr_itb.value, fn_name, args))
+        return new_lower_result(dr_itb.value, s_itb)
     }
     if fn_name == "__mn_dev_null_redirect" {
         let dr_dn: LowerResult = make_value(st, mir_string(), "t")
@@ -16055,6 +16078,7 @@ fn get_fn_attrs(name: String) -> String {
     if name == "__mn_str_print" { return " nounwind willreturn" }
     if name == "__mn_str_println" { return " nounwind willreturn" }
     if name == "__mn_str_eprint" { return " nounwind willreturn" }
+    if name == "__mn_indent_to_braces" { return " nounwind willreturn" }
     if name == "__mn_str_eprintln" { return " nounwind willreturn" }
     // -- I/O (v3.41.0) --
     if name == "__mn_read_line" { return " nounwind willreturn" }
@@ -16264,6 +16288,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     // mnc-stage1 ``version()`` surface and the IR metadata node it
     // emits into compiled programs (see emit_metadata_node below).
     s = declare_runtime_fn(s, "__mn_version_string", llvm_string(), "")
+    s = declare_runtime_fn(s, "__mn_indent_to_braces", llvm_string(), llvm_string())
     // v5.9.0 DX.4: native cache stats + dev-null redirect shim. Replaces
     // POSIX-only shell-outs (``find | wc -l``, ``du -sh``, ``rm -rf``,
     // ``2>/dev/null``) that fell through cmd.exe on Windows.

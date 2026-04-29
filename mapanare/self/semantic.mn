@@ -176,6 +176,9 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "__mn_file_exists" { return true }
     // v5.10.0 Win.1b.D: bundled-toolchain lookup support.
     if name == "__mn_executable_dir" { return true }
+    // v5.14.1 B.5/B.6: colon-block preprocessor (lives in C runtime
+    // because the bootstrap lower has pathologies on a .mn port).
+    if name == "__mn_indent_to_braces" { return true }
     // High-level I/O builtins (v3.41.0)
     if name == "read_line" { return true }
     if name == "read_file" { return true }
@@ -2138,6 +2141,9 @@ fn register_builtins(st: SemState) -> SemState {
     // v5.10.0 Win.1b.D: directory of running binary, used by find_clang().
     let edsym: Symbol = new_symbol("__mn_executable_dir", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "__mn_executable_dir", edsym)
+    // v5.14.1 B.5/B.6: colon-block preprocessor (in C runtime).
+    let itbsym: Symbol = new_symbol("__mn_indent_to_braces", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_indent_to_braces", itbsym)
 
     // High-level I/O builtins (v3.41.0)
     let readline_sym: Symbol = new_symbol("read_line", "function", make_builtin_fn_type(string_type()), false)

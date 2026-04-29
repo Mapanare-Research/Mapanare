@@ -1027,6 +1027,7 @@ fn get_fn_attrs(name: String) -> String {
     if name == "__mn_str_print" { return " nounwind willreturn" }
     if name == "__mn_str_println" { return " nounwind willreturn" }
     if name == "__mn_str_eprint" { return " nounwind willreturn" }
+    if name == "__mn_indent_to_braces" { return " nounwind willreturn" }
     if name == "__mn_str_eprintln" { return " nounwind willreturn" }
     // -- I/O (v3.41.0) --
     if name == "__mn_read_line" { return " nounwind willreturn" }
@@ -1236,6 +1237,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
     // mnc-stage1 ``version()`` surface and the IR metadata node it
     // emits into compiled programs (see emit_metadata_node below).
     s = declare_runtime_fn(s, "__mn_version_string", llvm_string(), "")
+    s = declare_runtime_fn(s, "__mn_indent_to_braces", llvm_string(), llvm_string())
     // v5.9.0 DX.4: native cache stats + dev-null redirect shim. Replaces
     // POSIX-only shell-outs (``find | wc -l``, ``du -sh``, ``rm -rf``,
     // ``2>/dev/null``) that fell through cmd.exe on Windows.

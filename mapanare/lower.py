@@ -1931,6 +1931,8 @@ class MIRLowerer:
             # v5.8.6 We.1: refined (is_windows, arch_bits) pair.
             "__mn_host_is_windows": mir_int(),
             "__mn_host_arch_bits": mir_int(),
+            # v5.14.1 B.5/B.6: colon-block preprocessor (in C runtime).
+            "__mn_indent_to_braces": mir_string(),
         }
         _call_ret_ty = mir_unknown()
         if isinstance(expr.callee, Identifier):

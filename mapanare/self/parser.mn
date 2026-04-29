@@ -410,7 +410,17 @@ fn has_explicit_main(defs: List<Definition>) -> Bool {
 }
 
 pub fn parse(source: String, filename: String) -> Program {
-    let tokens: List<Token> = tokenize(source, filename)
+    // v5.14.1 B.5/B.6: colon-block preprocessor lives in the C runtime
+    // (`runtime/native/mapanare_core.c::__mn_indent_to_braces`) and is
+    // wired into the self-host as a builtin (semantic.mn::is_builtin_function,
+    // lower.mn, emit_llvm.mn::declare_runtime_fn). It runs before
+    // tokenize() — both top-level `compile()` and the import resolver
+    // in main.mn route through this entry, so colon-style sources
+    // (and brace-only sources, via the fast path) are handled
+    // uniformly. Routed through C rather than .mn because the
+    // bootstrap lower has pathologies on a .mn port of the algorithm.
+    let preprocessed: String = __mn_indent_to_braces(source)
+    let tokens: List<Token> = tokenize(preprocessed, filename)
     let mut pos: Int = 0
     let mut defs: List<Definition> = []
     let mut top_stmts: List<Stmt> = []

@@ -3662,3 +3662,518 @@ MN_EXPORT MnString __mn_any_typename(MnValue v) {
     }
     return mn_tag_unknown;
 }
+
+/* -----------------------------------------------------------------------
+ * v5.14.1 B.5/B.6: __mn_indent_to_braces — colon-block preprocessor.
+ *
+ * Bootstrap mirror of `mapanare/parser.py::_indent_to_braces`. Lives in
+ * the C runtime rather than `.mn` because the bootstrap lower at v5.14.0
+ * has two pathologies that fire on a port of this algorithm:
+ *
+ *   1. `String.split()` returns a `List<String>` whose elements read
+ *      back as garbage when indexed locally (a subsequent
+ *      `let p: String = lines[i]` sees a mangled value). Indexing
+ *      through a function parameter works.
+ *
+ *   2. A function with deep nested if/else chains and short-circuit
+ *      ops can emit IR with a `phi` whose entries don't match its
+ *      block's predecessors, failing llvm-as verification. Stage2.ll
+ *      breaks → strict 3-stage fixed point regresses.
+ *
+ * Routing through C sidesteps both: this code is plain C, compiled by
+ * gcc/clang directly into libmapanare_rt.a, and bypasses the bootstrap
+ * lower entirely. The Mapanare side is a one-line `extern "C" fn` decl
+ * in `mapanare/self/parser.mn` and a single call before `tokenize()`.
+ *
+ * Both this and `_indent_to_braces` MUST produce byte-identical output
+ * on every parseable golden — the v5.14.1 cross-bootstrap test
+ * (`tests/bootstrap/test_indent_preprocessor.py`) is the oracle.
+ * Any divergence on the corpus is a test failure.
+ *
+ * Algorithm, briefly (mirrors the Python reference line-by-line):
+ *   - Lines ending with ':' open a block (replaced with '{').
+ *   - Dedent closes blocks ('}' inserted).
+ *   - struct/enum/match bodies get trailing commas inserted between
+ *     siblings; the last child of a `match` deliberately does NOT
+ *     get a trailing comma (the LALR grammar accepts the trailing
+ *     comma in the rule shape but rejects it in practice).
+ *   - Brace-style code passes through unchanged (mixed brace+colon
+ *     in one file is legal; this only rewrites the colon lines).
+ *   - Continuation keywords ('else', 'sino', 'else if', 'sino si')
+ *     re-open the previous block on the same logical line.
+ *   - Fast path: if no line ends with ':' (after rstrip), the source
+ *     is returned unchanged.
+ * ----------------------------------------------------------------------- */
+
+/* Heap-allocated dynamic char array used as a scratch line buffer.
+ * Grows via realloc; freed by the caller. */
+typedef struct { char *data; int64_t len; int64_t cap; } MnIB_LineBuf;
+
+/* List of fully-formed output lines. Each line is a malloc'd buffer
+ * we own. Indices into `lines` are stable for the duration of the
+ * preprocessor run, which is what makes the comma back-patch sound. */
+typedef struct {
+    MnIB_LineBuf *items;
+    int64_t       len;
+    int64_t       cap;
+} MnIB_LineList;
+
+/* Indent stack frame, mirrors the Python triple
+ * (level, needs_comma, prev_child_idx). */
+typedef struct {
+    int64_t level;
+    int64_t needs_comma;     /* parent body is comma-separated */
+    int64_t prev_child_idx;  /* -1 = no previous child yet */
+} MnIB_Frame;
+
+typedef struct {
+    MnIB_Frame *items;
+    int64_t     len;
+    int64_t     cap;
+} MnIB_FrameStack;
+
+static void mn_ib_buf_init(MnIB_LineBuf *b) {
+    b->data = NULL; b->len = 0; b->cap = 0;
+}
+
+static void mn_ib_buf_reset(MnIB_LineBuf *b) {
+    if (b->data) free(b->data);
+    b->data = NULL; b->len = 0; b->cap = 0;
+}
+
+static void mn_ib_buf_grow(MnIB_LineBuf *b, int64_t needed) {
+    if (b->cap >= needed) return;
+    int64_t new_cap = b->cap < 16 ? 16 : b->cap;
+    while (new_cap < needed) new_cap *= 2;
+    char *new_data = (char *)realloc(b->data, (size_t)new_cap);
+    if (!new_data) { fprintf(stderr, "mapanare: oom in indent_to_braces\n"); exit(1); }
+    b->data = new_data;
+    b->cap = new_cap;
+}
+
+static void mn_ib_buf_append(MnIB_LineBuf *b, const char *s, int64_t n) {
+    if (n <= 0) return;
+    mn_ib_buf_grow(b, b->len + n);
+    memcpy(b->data + b->len, s, (size_t)n);
+    b->len += n;
+}
+
+static void mn_ib_buf_append_char(MnIB_LineBuf *b, char c) {
+    mn_ib_buf_grow(b, b->len + 1);
+    b->data[b->len++] = c;
+}
+
+static void mn_ib_buf_take(MnIB_LineBuf *b, MnIB_LineBuf *out) {
+    *out = *b;
+    b->data = NULL; b->len = 0; b->cap = 0;
+}
+
+/* Move-by-value: claim ownership of `src`'s buffer; src is reset. */
+static void mn_ib_lines_push(MnIB_LineList *L, MnIB_LineBuf *src) {
+    if (L->len >= L->cap) {
+        int64_t new_cap = L->cap < 8 ? 8 : L->cap * 2;
+        L->items = (MnIB_LineBuf *)realloc(L->items, (size_t)new_cap * sizeof(MnIB_LineBuf));
+        if (!L->items) { fprintf(stderr, "mapanare: oom in indent_to_braces\n"); exit(1); }
+        L->cap = new_cap;
+    }
+    mn_ib_buf_take(src, &L->items[L->len]);
+    L->len += 1;
+}
+
+/* Append `,` to the line at index `idx` (used by the comma back-patch). */
+static void mn_ib_lines_append_comma_to(MnIB_LineList *L, int64_t idx) {
+    if (idx < 0 || idx >= L->len) return;
+    mn_ib_buf_append_char(&L->items[idx], ',');
+}
+
+/* True if line at idx ends with `,` after rstripping space/tab/CR. */
+static int mn_ib_line_rstripped_ends_with_comma(MnIB_LineList *L, int64_t idx) {
+    if (idx < 0 || idx >= L->len) return 0;
+    MnIB_LineBuf *b = &L->items[idx];
+    int64_t e = b->len;
+    while (e > 0) {
+        char c = b->data[e - 1];
+        if (c != ' ' && c != '\t' && c != '\r') break;
+        e--;
+    }
+    if (e == 0) return 0;
+    return b->data[e - 1] == ',' ? 1 : 0;
+}
+
+static void mn_ib_stack_push(MnIB_FrameStack *S, int64_t lvl, int64_t nc, int64_t prev) {
+    if (S->len >= S->cap) {
+        int64_t new_cap = S->cap < 8 ? 8 : S->cap * 2;
+        S->items = (MnIB_Frame *)realloc(S->items, (size_t)new_cap * sizeof(MnIB_Frame));
+        if (!S->items) { fprintf(stderr, "mapanare: oom in indent_to_braces\n"); exit(1); }
+        S->cap = new_cap;
+    }
+    S->items[S->len].level = lvl;
+    S->items[S->len].needs_comma = nc;
+    S->items[S->len].prev_child_idx = prev;
+    S->len += 1;
+}
+
+/* String-view helpers that operate on a (char*, len) slice without
+ * allocating. The preprocessor only needs prefix / suffix / contains
+ * checks, all of which are trivial on byte arrays. */
+
+static int mn_ib_starts_with(const char *s, int64_t n, const char *kw) {
+    int64_t k = (int64_t)strlen(kw);
+    if (k > n) return 0;
+    for (int64_t i = 0; i < k; i++) if (s[i] != kw[i]) return 0;
+    return 1;
+}
+
+static int mn_ib_ends_with_byte(const char *s, int64_t n, char c) {
+    if (n <= 0) return 0;
+    return s[n - 1] == c ? 1 : 0;
+}
+
+static int64_t mn_ib_count_leading_spaces(const char *s, int64_t n) {
+    int64_t i = 0;
+    while (i < n && s[i] == ' ') i++;
+    return i;
+}
+
+/* rstrip start..end-of-line for space, tab, CR. Returns new logical length. */
+static int64_t mn_ib_rstrip_len(const char *s, int64_t n) {
+    int64_t e = n;
+    while (e > 0) {
+        char c = s[e - 1];
+        if (c != ' ' && c != '\t' && c != '\r') break;
+        e--;
+    }
+    return e;
+}
+
+/* lstrip space + tab. Returns first index >= start that is non-whitespace. */
+static int64_t mn_ib_lstrip_off(const char *s, int64_t n) {
+    int64_t i = 0;
+    while (i < n && (s[i] == ' ' || s[i] == '\t')) i++;
+    return i;
+}
+
+/* Mirrors Python's continuation boundary check:
+ * starts_with(kw) AND (n == kw_len OR next char in {' ', ':', '{'}). */
+static int mn_ib_kw_match(const char *s, int64_t n, const char *kw) {
+    if (!mn_ib_starts_with(s, n, kw)) return 0;
+    int64_t k = (int64_t)strlen(kw);
+    if (n == k) return 1;
+    char nc = s[k];
+    return (nc == ' ' || nc == ':' || nc == '{') ? 1 : 0;
+}
+
+static int mn_ib_is_continuation(const char *s, int64_t n) {
+    /* Order: longest first so `else` doesn't shadow `else if`. */
+    if (mn_ib_kw_match(s, n, "sino si")) return 1;
+    if (mn_ib_kw_match(s, n, "else if")) return 1;
+    if (mn_ib_kw_match(s, n, "else"))    return 1;
+    if (mn_ib_kw_match(s, n, "sino"))    return 1;
+    return 0;
+}
+
+static int mn_ib_opener_needs_comma(const char *body, int64_t n) {
+    if (mn_ib_starts_with(body, n, "struct ")) return 1;
+    if (mn_ib_starts_with(body, n, "enum "))   return 1;
+    if (mn_ib_starts_with(body, n, "match "))  return 1;
+    return 0;
+}
+
+/* Emit `level` 4-space indent groups into `out`. */
+static void mn_ib_emit_indent(MnIB_LineBuf *out, int64_t level) {
+    for (int64_t i = 0; i < level; i++) {
+        mn_ib_buf_append(out, "    ", 4);
+    }
+}
+
+/* Fast-path detector: any non-comment line ending in ':'. Walks the
+ * source byte-by-byte; matches the Python `any(...)` pre-check at the
+ * top of `_indent_to_braces`. */
+static int mn_ib_has_colon_blocks(const char *src, int64_t n) {
+    int64_t i = 0;
+    while (i < n) {
+        int64_t line_start = i;
+        while (i < n && src[i] != '\n') i++;
+        int64_t line_len = i - line_start;
+        int64_t end = mn_ib_rstrip_len(src + line_start, line_len);
+        if (end > 0) {
+            int64_t off = mn_ib_lstrip_off(src + line_start, end);
+            int64_t inner_len = end - off;
+            if (inner_len > 0) {
+                /* not blank */
+                int is_comment = 0;
+                const char *content = src + line_start + off;
+                if (content[0] == '#') is_comment = 1;
+                else if (inner_len >= 2 && content[0] == '/' && content[1] == '/') is_comment = 1;
+                if (!is_comment) {
+                    if (mn_ib_ends_with_byte(src + line_start, end, ':')) return 1;
+                }
+            }
+        }
+        if (i < n) i++;  /* skip '\n' */
+    }
+    return 0;
+}
+
+/* Emit a non-block content line into `out`, doing the sibling-comma
+ * back-patch on the previous child of the innermost block when that
+ * block is comma-separated. Mirrors Python's `_emit_content`. */
+static void mn_ib_emit_content(MnIB_LineList *out, MnIB_FrameStack *S,
+                                const char *prefix, int64_t plen,
+                                const char *content, int64_t clen)
+{
+    MnIB_Frame *top = &S->items[S->len - 1];
+    if (top->needs_comma && top->prev_child_idx >= 0) {
+        if (!mn_ib_line_rstripped_ends_with_comma(out, top->prev_child_idx)) {
+            mn_ib_lines_append_comma_to(out, top->prev_child_idx);
+        }
+    }
+    MnIB_LineBuf line;
+    mn_ib_buf_init(&line);
+    mn_ib_buf_append(&line, prefix, plen);
+    mn_ib_buf_append(&line, content, clen);
+    mn_ib_lines_push(out, &line);
+    top->prev_child_idx = out->len - 1;
+}
+
+MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
+    int64_t n_src = (int64_t)source.len;
+    const char *src = source.data;
+
+    /* Fast path: brace-only source returns unchanged. Crucial for the
+     * 95% of corpus that is still brace-style at v5.14.1. */
+    if (!mn_ib_has_colon_blocks(src, n_src)) return source;
+
+    MnIB_LineList out = { NULL, 0, 0 };
+    MnIB_FrameStack stack = { NULL, 0, 0 };
+    /* Initial frame: level=0, no comma, no previous child. */
+    mn_ib_stack_push(&stack, 0, 0, -1);
+
+    /* Indent buffer reused for every prefix we emit. */
+    MnIB_LineBuf indent_buf;
+    mn_ib_buf_init(&indent_buf);
+
+    int64_t pos = 0;
+    while (pos <= n_src) {
+        /* Find the next newline (or EOF). */
+        int64_t line_start = pos;
+        int64_t i = pos;
+        while (i < n_src && src[i] != '\n') i++;
+        int64_t raw_len = i - line_start;
+        const char *raw = src + line_start;
+
+        /* Empty / whitespace-only: emit raw and continue. Python preserves
+         * leading whitespace exactly on these lines. */
+        int64_t stripped_len = mn_ib_rstrip_len(raw, raw_len);
+        if (stripped_len == 0) {
+            MnIB_LineBuf line;
+            mn_ib_buf_init(&line);
+            mn_ib_buf_append(&line, raw, raw_len);
+            mn_ib_lines_push(&out, &line);
+            if (i >= n_src) break;
+            pos = i + 1;
+            continue;
+        }
+
+        int64_t spaces = mn_ib_count_leading_spaces(raw, raw_len);
+        int64_t level = spaces / 4;
+
+        /* Comment-only line: close blocks for dedent (so the `}` lands
+         * above the comment), then emit raw unchanged. */
+        int64_t lstrip_off = mn_ib_lstrip_off(raw, stripped_len);
+        const char *content = raw + lstrip_off;
+        int64_t content_len = stripped_len - lstrip_off;
+
+        int is_comment = 0;
+        if (content_len > 0) {
+            if (content[0] == '#') is_comment = 1;
+            else if (content_len >= 2 && content[0] == '/' && content[1] == '/') is_comment = 1;
+        }
+        if (is_comment) {
+            while (level < stack.items[stack.len - 1].level) {
+                stack.len -= 1;
+                indent_buf.len = 0;
+                mn_ib_emit_indent(&indent_buf, stack.items[stack.len - 1].level);
+                MnIB_LineBuf cl;
+                mn_ib_buf_init(&cl);
+                mn_ib_buf_append(&cl, indent_buf.data, indent_buf.len);
+                mn_ib_buf_append_char(&cl, '}');
+                mn_ib_lines_push(&out, &cl);
+            }
+            MnIB_LineBuf line;
+            mn_ib_buf_init(&line);
+            mn_ib_buf_append(&line, raw, raw_len);
+            mn_ib_lines_push(&out, &line);
+            if (i >= n_src) break;
+            pos = i + 1;
+            continue;
+        }
+
+        /* Continuation (else/sino) — must be detected before dedent close,
+         * because the dedent target IS the close. */
+        if (mn_ib_is_continuation(content, content_len)) {
+            MnIB_Frame *top = &stack.items[stack.len - 1];
+            if (top->level > level) {
+                stack.len -= 1;
+                indent_buf.len = 0;
+                mn_ib_emit_indent(&indent_buf, level);
+                int line_ends_colon = mn_ib_ends_with_byte(raw, stripped_len, ':');
+                MnIB_LineBuf line;
+                mn_ib_buf_init(&line);
+                mn_ib_buf_append(&line, indent_buf.data, indent_buf.len);
+                if (line_ends_colon) {
+                    /* `} body {` */
+                    int64_t body_len = mn_ib_rstrip_len(content, content_len - 1);
+                    mn_ib_buf_append(&line, "} ", 2);
+                    mn_ib_buf_append(&line, content, body_len);
+                    mn_ib_buf_append(&line, " {", 2);
+                    mn_ib_lines_push(&out, &line);
+                    /* Push frame with needs_comma=false. */
+                    mn_ib_stack_push(&stack, level + 1, 0, -1);
+                } else {
+                    mn_ib_buf_append(&line, "} ", 2);
+                    mn_ib_buf_append(&line, content, content_len);
+                    mn_ib_lines_push(&out, &line);
+                }
+            } else {
+                /* Continuation at same level: emit as content. */
+                indent_buf.len = 0;
+                mn_ib_emit_indent(&indent_buf, level);
+                mn_ib_emit_content(&out, &stack,
+                                   indent_buf.data, indent_buf.len,
+                                   content, content_len);
+            }
+            if (i >= n_src) break;
+            pos = i + 1;
+            continue;
+        }
+
+        /* Close blocks for dedent. */
+        while (level < stack.items[stack.len - 1].level) {
+            stack.len -= 1;
+            indent_buf.len = 0;
+            mn_ib_emit_indent(&indent_buf, stack.items[stack.len - 1].level);
+            MnIB_LineBuf cl;
+            mn_ib_buf_init(&cl);
+            mn_ib_buf_append(&cl, indent_buf.data, indent_buf.len);
+            mn_ib_buf_append_char(&cl, '}');
+            mn_ib_lines_push(&out, &cl);
+        }
+
+        if (mn_ib_ends_with_byte(raw, stripped_len, ':')) {
+            /* Block opener: emit `body {` on this line and push a new frame. */
+            int64_t body_len = mn_ib_rstrip_len(content, content_len - 1);
+            indent_buf.len = 0;
+            mn_ib_emit_indent(&indent_buf, level);
+
+            MnIB_LineBuf line;
+            mn_ib_buf_init(&line);
+            mn_ib_buf_append(&line, indent_buf.data, indent_buf.len);
+
+            /* `fn name:` (zero-arg, no parens) gets paren insertion.
+             * Mirrors the Python special case verbatim. */
+            int has_paren = 0;
+            for (int64_t j = 0; j < body_len; j++) if (content[j] == '(') { has_paren = 1; break; }
+            if (mn_ib_starts_with(content, body_len, "fn ") && !has_paren) {
+                /* lstrip after "fn " then look for "->" to split name and ret. */
+                int64_t after_off = 3;
+                while (after_off < body_len && (content[after_off] == ' ' || content[after_off] == '\t')) after_off++;
+                int64_t arrow_idx = -1;
+                for (int64_t j = after_off; j + 1 < body_len; j++) {
+                    if (content[j] == '-' && content[j + 1] == '>') { arrow_idx = j; break; }
+                }
+                if (arrow_idx >= 0) {
+                    int64_t name_end = arrow_idx;
+                    /* rstrip name */
+                    while (name_end > after_off &&
+                           (content[name_end - 1] == ' ' || content[name_end - 1] == '\t')) name_end--;
+                    int64_t ret_start = arrow_idx + 2;
+                    while (ret_start < body_len && (content[ret_start] == ' ' || content[ret_start] == '\t')) ret_start++;
+                    int64_t ret_end = body_len;
+                    while (ret_end > ret_start &&
+                           (content[ret_end - 1] == ' ' || content[ret_end - 1] == '\t')) ret_end--;
+                    mn_ib_buf_append(&line, "fn ", 3);
+                    mn_ib_buf_append(&line, content + after_off, name_end - after_off);
+                    mn_ib_buf_append(&line, "() -> ", 6);
+                    mn_ib_buf_append(&line, content + ret_start, ret_end - ret_start);
+                    mn_ib_buf_append(&line, " {", 2);
+                } else {
+                    mn_ib_buf_append(&line, "fn ", 3);
+                    mn_ib_buf_append(&line, content + after_off, body_len - after_off);
+                    mn_ib_buf_append(&line, "() {", 4);
+                }
+            } else {
+                mn_ib_buf_append(&line, content, body_len);
+                mn_ib_buf_append(&line, " {", 2);
+            }
+            mn_ib_lines_push(&out, &line);
+
+            /* Sibling-comma back-patch for this opener: parent block may
+             * be comma-separated (nested struct in a match arm, etc.). */
+            MnIB_Frame *top = &stack.items[stack.len - 1];
+            if (top->needs_comma && top->prev_child_idx >= 0) {
+                if (!mn_ib_line_rstripped_ends_with_comma(&out, top->prev_child_idx)) {
+                    mn_ib_lines_append_comma_to(&out, top->prev_child_idx);
+                }
+            }
+            top->prev_child_idx = out.len - 1;
+
+            int64_t nc = mn_ib_opener_needs_comma(content, body_len);
+            mn_ib_stack_push(&stack, level + 1, nc, -1);
+        } else {
+            /* Plain content line. */
+            indent_buf.len = 0;
+            mn_ib_emit_indent(&indent_buf, level);
+            mn_ib_emit_content(&out, &stack,
+                               indent_buf.data, indent_buf.len,
+                               content, content_len);
+        }
+
+        if (i >= n_src) break;
+        pos = i + 1;
+    }
+
+    /* Close any blocks left open by EOF. */
+    while (stack.len > 1) {
+        stack.len -= 1;
+        indent_buf.len = 0;
+        mn_ib_emit_indent(&indent_buf, stack.items[stack.len - 1].level);
+        MnIB_LineBuf cl;
+        mn_ib_buf_init(&cl);
+        mn_ib_buf_append(&cl, indent_buf.data, indent_buf.len);
+        mn_ib_buf_append_char(&cl, '}');
+        mn_ib_lines_push(&out, &cl);
+    }
+
+    /* Join lines with '\n'. Mirrors Python's `"\n".join(out)` —
+     * specifically, NO trailing newline added (the source's own
+     * trailing-newline line, if any, was emitted as a blank entry). */
+    int64_t total = 0;
+    for (int64_t k = 0; k < out.len; k++) total += out.items[k].len;
+    if (out.len > 1) total += (out.len - 1);  /* separators */
+
+    char *joined = (char *)malloc((size_t)(total > 0 ? total : 1));
+    if (!joined) { fprintf(stderr, "mapanare: oom in indent_to_braces\n"); exit(1); }
+    int64_t off = 0;
+    for (int64_t k = 0; k < out.len; k++) {
+        if (k > 0) { joined[off++] = '\n'; }
+        if (out.items[k].len > 0) {
+            memcpy(joined + off, out.items[k].data, (size_t)out.items[k].len);
+            off += out.items[k].len;
+        }
+    }
+
+    /* Cleanup. */
+    for (int64_t k = 0; k < out.len; k++) {
+        if (out.items[k].data) free(out.items[k].data);
+    }
+    if (out.items) free(out.items);
+    if (stack.items) free(stack.items);
+    mn_ib_buf_reset(&indent_buf);
+
+    MnString result;
+    result.data = joined;
+    result.len = total;
+    result.is_heap = 1;
+    return result;
+}
