@@ -146,9 +146,76 @@ Most recent releases (last 6). Full history at
   `MAPANARE_NO_BUNDLED_LLVM=1` select minimal. `toolchain/` must not
   appear in v5.12.0 Windows release ZIPs. See
   `docs/roadmap/v5/v5.12.0/WINDOWS_TOOLCHAIN_AUDIT.md`.
+
+**Terseness arc — v5.13–v5.20** (drafted 2026-04-28; 12+
+PLAN/PROMPT files staged across `docs/roadmap/v5/`). Theme:
+move Mapanare's surface syntax to be terser than Python so the
+"minimal code, same result" thesis is actually visible in
+real code. Every release in this arc includes
+`mnc fmt --to-terse` migration tooling; no hard breaks until
+v6.0. Audit-driven: a v5.13.0-prep audit verified that several
+SPEC features (`?` operator, block-form implicit return,
+range syntax `0..10`) were already implemented but undocumented
+as shipping, while string interpolation and the `@test` runtime
+had latent bugs requiring dedicated releases.
+
+- **v5.13.0** — **Mc.2 — `mnc fmt`.** Idempotent, AST-preserving
+  formatter. The linchpin: every later terseness release adds
+  one rewrite pass to `--to-terse`, so this has to be solid
+  first. See `docs/roadmap/v5/v5.13.0/PLAN.md`.
+- **v5.13.1** — **`@test` runtime fix (patch).** Audit found
+  `mapanare test` and `mnc-stage1 test` both fail on the
+  simplest possible `@test` fixture (linker error in Python,
+  `__mn_assert_fail` undefined in native). Bug fix only; ships
+  independently of v5.14.0. See
+  `docs/roadmap/v5/v5.13.1/PLAN.md`.
+- **v5.14.0** — **Te.1 — colon-block syntax (additive).** `:`
+  blocks alongside `{}`. Indent-based tokenizer. `mnc fmt
+  --to-terse` migration tool lands. Range syntax `0..10` is
+  *already in the grammar* — not part of this scope. See
+  `docs/roadmap/v5/v5.14.0/PLAN.md`.
+- **v5.15.0** — **Te.2 — expression density.** List/map
+  comprehensions, `|x| body` lambdas, implicit-return
+  one-liner (`fn double(x) = x * 2`). Block-form implicit
+  return is *already implemented* per audit (SPEC §4.5 is
+  real); not in this scope. See `docs/roadmap/v5/v5.15.0/PLAN.md`.
+- **v5.16.0** — **Te.4 — self-host string-interp parity.**
+  Closes the last Python-vs-native string-handling gap: native
+  `mnc-stage1` doesn't recognize `"${expr}"` interpolation,
+  Python bootstrap does. Pure self-host lexer/parser port. The
+  `?` operator is *already done* in both compilers per audit
+  (SPEC §5.8 is real); not in this scope. Validation buffer
+  before v5.17.0's giant rewrite. See
+  `docs/roadmap/v5/v5.16.0/PLAN.md`.
+- **v5.17.0** — **Sh.* — self-host rewrite.** Mechanical
+  `mnc fmt --to-terse` on `mapanare/self/*.mn`, target ~40%
+  line reduction. Highest-risk release in the arc — strict
+  3-stage fixed point can break if any Te.* rewriter has an
+  edge case. See `docs/roadmap/v5/v5.17.0/PLAN.md`.
+- **v5.18.0** — **Mc.1/3/4 — tooling pack.** LSP server,
+  `mnc init`, `mnc check`, VSCode extension. Includes AST
+  span-info retrofit (Phase 0). See
+  `docs/roadmap/v5/v5.18.0/PLAN.md`.
+- **v5.19.0** — **Te.3 + Dk.* — closeout.** Soft-deprecate
+  `{}` (still parses, emits warning); hard removal scheduled
+  for v6.0. Ship `mapanare/builder` + `mapanare/runtime`
+  Docker images. See `docs/roadmap/v5/v5.19.0/PLAN.md`.
+- **v5.20.0** — **Te.5 — struct ergonomics.** Field shorthand
+  (`Point { x, y }`), struct update (`..old`), destructuring
+  in `let`, `if let` / `while let` / `let else`.
+  *Post-rewrite intentional* — none can be safely auto-migrated
+  by `--to-terse`, so this is opt-in for humans. See
+  `docs/roadmap/v5/v5.20.0/PLAN.md`.
+- **v5.21.0** — **Te.6 — small ergonomic wins.** Chained
+  comparisons (`0 < x < 10`) ships first; the cluster is a sink
+  for additional small ergonomic wins that surface during the
+  arc execution. Deliberately small — small is a feature, not a
+  reason to defer. See `docs/roadmap/v5/v5.21.0/PLAN.md`.
+
 - **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
-- **v6.0** — Borrow checker / multi-level alias analysis. Closes
-  Rt.04 (multi-level drop-glue alias analysis, rescoped
+- **v6.0** — Borrow checker / multi-level alias analysis. Hard
+  removal of `{}` (Te.3 from v5.19.0 was soft deprecation only).
+  Closes Rt.04 (multi-level drop-glue alias analysis, rescoped
   v5.6.6 — struct→list→string depth-2). The only remaining
   v5.6.x v6.0 carry now that v5.6.12 closed Lk.1 at the
   source via destination passing.
