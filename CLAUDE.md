@@ -18,7 +18,42 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
-- **v5.14.1** (ready, not tagged) — **B.\* — bootstrap colon-block
+- **v5.15.0** (ready, not tagged) — **Te.2 — comprehensions,
+  implicit-return one-liner, terse lambdas.** Second release in the
+  v5.13–v5.21 terseness arc. Three additive surface forms.
+  **Te.2.D** — `fn name(args) [-> RetType] = expr` lowers to
+  `Block([ReturnStmt(expr)])` at parse time; downstream
+  semantic/lowerer/emitter unchanged. Block-form implicit return
+  (last-expr-as-result, SPEC §4.5) was already shipped at v5.14.0
+  and not in scope. **Te.2.F** — terse lambda `|x| body`,
+  `|x, y| body`, `|| body`; lowers to the existing `LambdaExpr`
+  AST node, same closure-env machinery as `(x) => body`. BAR is
+  unambiguous in expression position. **Te.2.B / Te.2.C** — list
+  + map comprehensions `[expr for x in iter (if c)*]` and
+  `#{ k: v for ... }`; new `Comprehension` + `CompClause` AST
+  nodes, lowered by AST synthesis in
+  `lower.py::_lower_comprehension` to fresh accumulator + nested
+  for/if + push/insert; result MIR identical to hand-written loop
+  modulo SSA naming. For non-range iterables the synthesizer emits
+  an index-based loop (`for __i in 0..len(xs) { let x = xs[__i];
+  ... }`) routing around the pre-existing `for x in some_list`
+  lowering gap (the runtime `__iter_*` shims only know ranges).
+  New empty-`MapLiteral` type-annotation patch in `_lower_let`
+  mirrors the v4.122.0 empty-`ListLiteral` patch — without it,
+  comprehension-produced maps printed `<?>` for indexed values.
+  **Bootstrap mirror** — implicit-return one-liner and terse
+  lambda land at v5.15.0 (~35 LOC in `mapanare/self/parser.mn`);
+  comprehension mirror **deferred to v5.15.1** (mirrors v5.14.0 →
+  v5.14.1 colon-block split). Goldens **66/66 → 68/68** (new
+  `67_implicit_return_one_liner.mn` and `68_terse_lambda.mn` both
+  compile through `mnc-stage1`). **Strict 3-stage fixed point
+  preserved** (228,630 lines, 0 diff) — bootstrap parser change is
+  purely additive. New tests: `test_implicit_return.py` (5 cases),
+  `test_lambdas.py` (6), `test_comprehensions.py` (11,
+  Python-only). `make lint` clean. See
+  `docs/roadmap/v5/v5.15.0/SESSION_REPORT.md` and
+  `docs/roadmap/v5/v5.15.0/TERSENESS_DESIGN.md`.
+- **v5.14.1** (shipped) — **B.\* — bootstrap colon-block
   mirror (patch).** Closes the v5.14.0 deferred item. `mnc-stage1`
   now lexes/parses/lowers the **`pass`** keyword (B.1–B.4 — five
   lockstep edits across `mapanare/self/{lexer,ast,parser,lower,
@@ -270,11 +305,15 @@ had latent bugs requiring dedicated releases.
 - ~~**v5.14.1**~~ — shipped (see release notes above). Bootstrap
   colon-block mirror — closes the v5.14.0 deferred item ahead of
   v5.16.0/v5.17.0.
-- **v5.15.0** — **Te.2 — expression density.** List/map
-  comprehensions, `|x| body` lambdas, implicit-return
-  one-liner (`fn double(x) = x * 2`). Block-form implicit
-  return is *already implemented* per audit (SPEC §4.5 is
-  real); not in this scope. See `docs/roadmap/v5/v5.15.0/PLAN.md`.
+- ~~**v5.15.0**~~ — shipped (see release notes above).
+- **v5.15.1** — **comprehension bootstrap mirror (patch).** Closes
+  the v5.15.0 deferred item: add `Comprehension` + `CompClause` to
+  `mapanare/self/ast.mn`, list/map-comp parsing to
+  `mapanare/self/parser.mn`, and the synthesis lowering to
+  `mapanare/self/lower.mn`. Validates by re-running the 11
+  `tests/test_comprehensions.py` cases through `mnc-stage1` instead
+  of the Python bootstrap. Same shape as v5.14.1 but smaller — no
+  C runtime export, no separate preprocessor module.
 - **v5.16.0** — **Te.4 — self-host string-interp parity.**
   Closes the last Python-vs-native string-handling gap: native
   `mnc-stage1` doesn't recognize `"${expr}"` interpolation,
@@ -571,7 +610,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (29247 symbols, 63347 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (29285 symbols, 63383 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

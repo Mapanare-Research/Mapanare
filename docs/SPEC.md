@@ -1215,6 +1215,22 @@ pub fn add(a: Int, b: Int) -> Int {
 }
 ```
 
+#### One-liner sugar (v5.15.0 Te.2.D)
+
+When the entire body is a single expression, the brace block can be
+elided in favour of `= expr`:
+
+```mn
+fn double(x: Int) -> Int = x * 2
+fn id(y) = y
+pub fn pi() -> Float = 3.14159
+```
+
+`fn name(args) [-> RetType] = expr` is exactly equivalent to
+`fn name(args) [-> RetType] { return expr }`. The block-form
+last-expression-as-result rule (§4.5) is unrelated and continues to
+work as before.
+
 ### 6.2 Generic Functions
 
 ```mn
@@ -1240,6 +1256,22 @@ Multi-parameter lambdas use tuple syntax on the left of `=>`:
 ```mn
 let sum = (a, b) => a + b
 ```
+
+#### Terse pipe-bar syntax (v5.15.0 Te.2.F)
+
+The `|x| body` form is the canonical short syntax for lambdas:
+
+```mn
+let double = |x| x * 2
+let add = |a, b| a + b
+let answer = || 42
+```
+
+Single-arg, multi-arg, and zero-arg variants all use the pipe-bar
+form — there is no bare-name shorthand (`x => body` style is
+deliberately not introduced). The terse form lowers to the same
+`LambdaExpr` AST node as `(x) => body` and is IR-equivalent modulo
+SSA naming.
 
 Note: Lambda parameter types are inferred from context. Type annotations on lambda parameters are not supported in the grammar — use a named function if explicit types are needed.
 
@@ -1865,6 +1897,29 @@ Out-of-bounds access is a runtime error.
 
 Lists are implemented as arena-backed dynamic arrays. In native mode, `__mn_list_new(elem_size)` allocates, `__mn_list_push(list, elem)` appends, and `__mn_list_get(list, index)` retrieves.
 
+### 16.5 List Comprehensions (v5.15.0 Te.2.B)
+
+```mn
+let doubled: List<Int> = [x * 2 for x in xs]
+let evens:   List<Int> = [x for x in xs if x % 2 == 0]
+let squares: List<Int> = [i * i for i in 0..10]
+let nested:  List<Int> = [a * b for a in 1..4 for b in 1..4]
+```
+
+Each `for x in iter` clause introduces a binding visible to subsequent
+clauses, the filters of its own clause, and the element expression.
+Multiple `for` clauses produce the cartesian product. Multiple `if`
+filters within a clause are conjunctive — the body runs only when all
+filters are true.
+
+A comprehension is sugar for the equivalent `let` + nested `for` +
+`push` loop and emits identical IR modulo SSA naming. There is no
+runtime overhead vs the manual form.
+
+Pattern destructuring in iteration targets (`[(k, v) for ... in
+items]`) is **not supported** in v5.15.0 (deferred to v5.20.0
+Te.5). Single-identifier targets only.
+
 ---
 
 ## 17. Map Operations
@@ -1900,6 +1955,21 @@ let age = ages["Alice"]       // get value by key
 ### 17.4 Map in LLVM Backend
 
 Maps are implemented as a Robin Hood hash table in the C runtime, type-erased via `i8*`. Key types must be hashable (primitives and strings). The map supports iteration via `__mn_map_iter_new()`, `__mn_map_iter_next()`, `__mn_map_iter_free()`.
+
+### 17.5 Map Comprehensions (v5.15.0 Te.2.C)
+
+```mn
+let doubled: Map<Int, Int> = #{ k: k * 2 for k in 0..5 }
+```
+
+Same clause grammar as list comprehensions (§16.5). Lowers to
+`let mut __m = #{}; for k in 0..5 { __m[k] = k * 2 }; __m`. Indexed
+reads on the result require the user to annotate the binding with
+`Map<K, V>` so the empty map's key/value types are inferred — this
+is the same constraint as `let m: Map<Int, Int> = #{}` followed by
+mutation, and v5.15.0 extends the `_lower_let` annotation-patching
+path that v4.122.0 added for empty `List<T>` to also cover empty
+`Map<K, V>`.
 
 ---
 

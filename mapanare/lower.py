@@ -24,6 +24,8 @@ from mapanare.ast_nodes import (
     BreakStmt,
     CallExpr,
     CharLiteral,
+    CompClause,
+    Comprehension,
     ConstDef,
     ConstructExpr,
     ConstructorPattern,
@@ -74,6 +76,7 @@ from mapanare.ast_nodes import (
     SignalDecl,
     SignalExpr,
     SomeExpr,
+    Span,
     SpawnExpr,
     Stmt,
     StreamDecl,
@@ -1236,6 +1239,18 @@ class MIRLowerer:
 
     def _lower_let(self, let: LetBinding) -> None:
         """Lower a let binding."""
+        # v5.15.0 Te.2: when the RHS is a comprehension and the user has
+        # annotated the binding with `List<T>` / `Map<K, V>`, hand that
+        # element-type information to `_lower_comprehension` so the
+        # internal accumulator list's elem_type is patched correctly.
+        # Without this hint, indexing the comprehension's result would
+        # see UNKNOWN element type and the LLVM emitter would fall back
+        # to raw-pointer reads (printing `<?>`).
+        if isinstance(let.value, Comprehension) and let.type_annotation is not None:
+            self._comp_type_hint: TypeExpr | None = let.type_annotation
+        else:
+            self._comp_type_hint = None
+
         # Track lambda bindings so calls can resolve the function name
         if isinstance(let.value, LambdaExpr):
             val = self._lower_expr(let.value)
@@ -1270,6 +1285,19 @@ class MIRLowerer:
                 # Without this, `let arr: List<Int> = []; print(str(arr[0]))`
                 # reaches the LLVM emitter with `%arr.ty.args == [<unknown>]`
                 # and IndexGet emits a raw-pointer read instead of `load i64`.
+                val = Value(name=val.name, ty=declared)
+        # v5.15.0 Te.2.C: same for empty MapLiteral with `Map<K, V>` annotation.
+        if let.type_annotation and isinstance(let.value, MapLiteral) and not let.value.entries:
+            declared = _resolve_type_expr(let.type_annotation)
+            if len(declared.type_info.args) >= 2:
+                k_ty = MIRType(declared.type_info.args[0])
+                v_ty = MIRType(declared.type_info.args[1])
+                for bb in (self._fn.blocks if self._fn else []):
+                    for inst in bb.instructions:
+                        if isinstance(inst, MapInit) and inst.dest == val:
+                            inst.key_type = k_ty
+                            inst.val_type = v_ty
+                            break
                 val = Value(name=val.name, ty=declared)
         # When the expression type is unknown or lacks inner type args but a type
         # annotation is provided, use the annotation to preserve full type info.
@@ -1544,6 +1572,9 @@ class MIRLowerer:
 
         if isinstance(expr, LambdaExpr):
             return self._lower_lambda(expr)
+
+        if isinstance(expr, Comprehension):
+            return self._lower_comprehension(expr)
 
         if isinstance(expr, SpawnExpr):
             return self._lower_spawn(expr)
@@ -3016,6 +3047,184 @@ class MIRLowerer:
             )
         )
         return dest
+
+    def _lower_comprehension(self, expr: Comprehension) -> Value:
+        """Lower a list/map comprehension by synthesizing the equivalent
+        let + nested-for + push (or insert) AST and recursing through the
+        existing statement lowerers (v5.15.0 Te.2.B/C).
+
+        For range iterables (``for x in 0..n``) we emit a direct ForLoop
+        which lowers to the regular range-iter calls. For non-range
+        iterables (lists, etc.) we synthesize an index-based loop —
+        ``for __i in 0..len(xs) { let x = xs[__i]; ... }`` — because
+        ``for x in some_list`` is not yet supported by the generic
+        ForLoop lowering (the runtime ``__iter_*`` shims only know about
+        ranges). The result IR is identical to a hand-written loop in
+        the same style modulo SSA naming.
+        """
+        span: Span = expr.span if expr.span is not None else Span()
+        comp_n = self._tmp_counter
+        self._tmp_counter += 1
+        result_name = f"__mn_comp_{comp_n}"
+
+        if expr.kind == "list":
+            init: Expr = ListLiteral(elements=[], span=span)
+            inner_call: Expr = MethodCallExpr(
+                object=Identifier(name=result_name, span=span),
+                method="push",
+                args=[expr.element if expr.element is not None else Expr()],
+                span=span,
+            )
+        else:
+            from mapanare.ast_nodes import AssignExpr as _AssignExpr
+            from mapanare.ast_nodes import IndexItem as _IndexItem
+
+            init = MapLiteral(entries=[], span=span)
+            # Map insertion uses ``m[k] = v`` rather than a method call —
+            # ``insert`` isn't a runtime export; ``IndexSet`` handles
+            # both list[i] and map[k] writes.
+            inner_call = _AssignExpr(
+                target=IndexExpr(
+                    object=Identifier(name=result_name, span=span),
+                    indices=[
+                        _IndexItem(
+                            kind="scalar",
+                            expr=expr.key if expr.key is not None else Expr(),
+                            span=span,
+                        )
+                    ],
+                    span=span,
+                ),
+                op="=",
+                value=expr.value if expr.value is not None else Expr(),
+                span=span,
+            )
+
+        # Bind the result accumulator in the current scope. Forward any
+        # element-type hint set by the surrounding `_lower_let` so the
+        # internal list's elem_type matches the user-declared
+        # ``List<T>`` / ``Map<K, V>``.
+        type_hint = getattr(self, "_comp_type_hint", None)
+        let_stmt = LetBinding(
+            name=result_name,
+            mutable=True,
+            type_annotation=type_hint,
+            value=init,
+            span=span,
+        )
+        # Clear the hint before recursing so nested comprehensions inside
+        # the element expression don't accidentally inherit it.
+        self._comp_type_hint = None
+        self._lower_let(let_stmt)
+
+        # Build the loop body innermost-out, applying filters then for-clauses
+        # in reverse source order.
+        body: Block = Block(stmts=[ExprStmt(expr=inner_call, span=span)], span=span)
+        for clause in reversed(expr.clauses):
+            for cond in reversed(clause.conditions):
+                body = Block(
+                    stmts=[
+                        ExprStmt(
+                            expr=IfExpr(
+                                condition=cond,
+                                then_block=body,
+                                else_block=None,
+                                span=span,
+                            ),
+                            span=span,
+                        )
+                    ],
+                    span=span,
+                )
+            body = self._wrap_comp_for(clause, body, span)
+
+        for stmt in body.stmts:
+            self._lower_stmt(stmt)
+
+        result_val = self._lookup_var(result_name)
+        if result_val is None:  # pragma: no cover — defensive
+            return self._make_value(prefix="comp_missing")
+        return result_val
+
+    def _wrap_comp_for(self, clause: CompClause, inner: Block, span: Span) -> Block:
+        """Wrap ``inner`` in a for-loop that iterates ``clause.iter`` and
+        binds ``clause.target`` (v5.15.0 Te.2.B/C helper).
+
+        Range iterables get a direct ForLoop; everything else gets the
+        index-based pattern with a hoisted source binding so the iterable
+        expression is evaluated exactly once per clause.
+        """
+        if isinstance(clause.iter, RangeExpr):
+            return Block(
+                stmts=[
+                    ForLoop(
+                        var_name=clause.target,
+                        iterable=clause.iter,
+                        body=inner,
+                        span=span,
+                    )
+                ],
+                span=span,
+            )
+
+        idx_n = self._tmp_counter
+        self._tmp_counter += 1
+        src_name = f"__mn_comp_src_{idx_n}"
+        idx_name = f"__mn_comp_i_{idx_n}"
+
+        let_src = LetBinding(
+            name=src_name,
+            mutable=False,
+            type_annotation=None,
+            value=clause.iter,
+            span=span,
+        )
+        len_call = CallExpr(
+            callee=Identifier(name="len", span=span),
+            args=[Identifier(name=src_name, span=span)],
+            span=span,
+        )
+        range_expr = RangeExpr(
+            start=IntLiteral(value=0, span=span),
+            end=len_call,
+            inclusive=False,
+            span=span,
+        )
+        from mapanare.ast_nodes import (
+            IndexItem,
+        )  # local import — already used elsewhere in this file
+
+        get_elem = IndexExpr(
+            object=Identifier(name=src_name, span=span),
+            indices=[
+                IndexItem(
+                    kind="scalar",
+                    expr=Identifier(name=idx_name, span=span),
+                    span=span,
+                )
+            ],
+            span=span,
+        )
+        bind_target = LetBinding(
+            name=clause.target,
+            mutable=False,
+            type_annotation=None,
+            value=get_elem,
+            span=span,
+        )
+        new_body = Block(stmts=[bind_target] + list(inner.stmts), span=span)
+        return Block(
+            stmts=[
+                let_src,
+                ForLoop(
+                    var_name=idx_name,
+                    iterable=range_expr,
+                    body=new_body,
+                    span=span,
+                ),
+            ],
+            span=span,
+        )
 
     def _lower_spawn(self, expr: SpawnExpr) -> Value:
         """Lower spawn expression: `spawn Agent(args)`."""

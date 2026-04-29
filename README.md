@@ -109,11 +109,16 @@ agent Counter {
 let temperature = signal(72.0)
 let alert = computed(() => temperature.get() > 100.0)
 
-// Streams — composable data pipelines
+// Streams — composable data pipelines (terse-lambda form, v5.15.0)
 let results = data_stream
-    |> filter((x) => x > 0)
-    |> map((x) => x * 2)
+    |> filter(|x| x > 0)
+    |> map(|x| x * 2)
     |> collect()
+
+// Comprehensions + implicit-return one-liner (v5.15.0)
+fn double(x: Int) -> Int = x * 2
+let doubled: List<Int> = [double(x) for x in xs if x > 0]
+let lookup: Map<Int, Int> = #{ k: k * k for k in 0..10 }
 
 // Pattern matching
 match response {
@@ -130,7 +135,7 @@ Full language reference, tutorials, and cookbook at [mapanare.dev/docs](https://
 
 ### Native compiler — what `mnc-stage1` ships
 
-The self-hosted compiler runs the full v5.7.0 corpus (66/66 native goldens):
+The self-hosted compiler runs the full corpus (68/68 native goldens at v5.15.0):
 
 - **Tensors** — literals, multi-dim indexing, NumPy-style broadcasting, slicing, reductions (sum / mean / max / min / argmax / argmin).
 - **Async / await / `block_on`** — real LLVM coroutines (`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`) with scheduler-driven suspension.

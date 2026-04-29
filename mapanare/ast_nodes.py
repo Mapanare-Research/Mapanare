@@ -309,6 +309,30 @@ class ListLiteral(Expr):
 
 
 @dataclass
+class CompClause(ASTNode):
+    """One `for x in iter (if cond)*` clause in a comprehension (v5.15.0)."""
+
+    target: str = ""
+    iter: Expr = field(default_factory=Expr)
+    conditions: list[Expr] = field(default_factory=list)
+
+
+@dataclass
+class Comprehension(Expr):
+    """List or map comprehension (v5.15.0 Te.2.B/C).
+
+    Sugar over `let mut __r = []; for x in xs { if c { __r.push(e) } }; __r`.
+    Lowered by AST synthesis in lower.py — no new MIR ops.
+    """
+
+    kind: str = "list"  # "list" or "map"
+    element: Expr | None = None  # for list comp
+    key: Expr | None = None  # for map comp
+    value: Expr | None = None  # for map comp
+    clauses: list[CompClause] = field(default_factory=list)
+
+
+@dataclass
 class TensorLiteral(Expr):
     """Tensor literal: `Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]`.
 

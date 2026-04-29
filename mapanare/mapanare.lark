@@ -53,7 +53,7 @@ export_names: NAME (COMMA NAME)* COMMA?
 // Function definition
 // ------------------------------------------------------------
 
-fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
+fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? (block | ASSIGN expr)
 
 // v4.68.0: ``async_fn_def`` restored (Arc 8). Backed by DESIGN.md
 // (v4.67.0). Lowering to LLVM coroutine intrinsics arrives at v4.70.0;
@@ -295,9 +295,23 @@ arg_list: expr (COMMA expr)* COMMA?
           | ident
           | tensor_literal
           | list_lit
+          | list_comp
           | map_lit
+          | map_comp
           | paren_expr
           | tuple_expr
+          | lambda_terse
+
+// v5.15.0 Te.2.F: terse lambda — `|x| body`, `|x, y| body`, `|| body`.
+// Single-expression body only. Always wraps the body as `return expr`.
+lambda_terse: BAR (NAME (COMMA NAME)*)? BAR expr
+
+// v5.15.0 Te.2.B/C: list + map comprehensions. The disambiguator
+// against list_lit / map_lit is the keyword `for` after the first
+// element/entry (single-token LALR(1) lookahead).
+list_comp: LBRACKET expr comp_clause+ RBRACKET
+map_comp:  MAP_OPEN expr COLON expr comp_clause+ RBRACE
+comp_clause: KW_FOR NAME KW_IN expr (KW_IF expr)*
 
 // Generic call with turbofish: foo::<Type>(args)
 generic_call_expr: NAME DOUBLE_COLON LT type_expr (COMMA type_expr)* GT LPAREN arg_list? RPAREN

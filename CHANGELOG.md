@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.15.0] - 2026-04-29
+
+### Added
+
+- **Te.2.D — implicit-return one-liner.** `fn name(args) [-> RetType] = expr`
+  is sugar for `fn name(args) [-> RetType] { return expr }`. Grammar:
+  `fn_def` rhs is now `(block | ASSIGN expr)`. Mirrored in the bootstrap
+  parser (`mapanare/self/parser.mn::parse_fn_body` and
+  `parse_fn_body_as_data`). Block-form implicit return (last-expr-as-result)
+  was already shipped at v5.14.0; v5.15.0 does not touch that path.
+- **Te.2.F — terse lambda `|x| body`.** Single-expression body, no type
+  annotations on params. Lowers to the existing `LambdaExpr` AST node —
+  same closure-environment-struct machinery as the legacy `(x) => body`.
+  Mirrored in the bootstrap as a new branch in `parse_atom` triggered
+  on `tt == "BAR"`. Verified IR-equivalent to the long form modulo SSA
+  naming.
+- **Te.2.B / Te.2.C — list + map comprehensions.** `[expr for x in iter
+  (if cond)*]`, `#{ k: v for x in iter (if cond)* }`, multi-`for`
+  cartesian product. New `Comprehension` and `CompClause` AST nodes; new
+  grammar rules `list_comp`, `map_comp`, `comp_clause` parallel to
+  `list_lit` / `map_lit`. LALR(1) disambiguates on the next token after
+  the first element/entry (`for` → comprehension, otherwise → literal).
+  Lowering by AST synthesis in `lower.py::_lower_comprehension`: builds
+  a fresh accumulator, then nested for/if structure, then yields the
+  accumulator. Result MIR is identical to a hand-written loop modulo
+  SSA naming and the synthesized variable name. New empty-`MapLiteral`
+  type-annotation patching path in `_lower_let` mirrors the existing
+  empty-`ListLiteral` patch from v4.122.0. **Bootstrap mirror deferred
+  to v5.15.1** — Python bootstrap supports comprehensions; `mnc-stage1`
+  does not yet parse them. `tests/test_comprehensions.py` (11 cases)
+  exercises parser, e2e execution, and IR-shape sanity through the
+  Python bootstrap.
+- **Phase 0 design doc.** `docs/roadmap/v5/v5.15.0/TERSENESS_DESIGN.md`
+  locks lambda syntax (`|x| body`, no bare-name shorthand), implicit-return
+  rules (one-liner only — block-form already done), and comprehension
+  grammar (list/map, multi-for, no else-clause, no destructuring targets).
+
+### Changed
+
+- **Goldens — 68/68 PASS** (66 prior + 2 new: `67_implicit_return_one_liner.mn`,
+  `68_terse_lambda.mn`). Both new goldens compile and run through `mnc-stage1`,
+  confirming the bootstrap mirror for the two simpler features works end-to-end.
+- **Strict 3-stage fixed point preserved** (228,630 lines, 0 diff). The
+  bootstrap parser change is purely additive (new `if` branches firing only
+  on new syntax shapes), so `mnc_all.mn` — which uses none of the new forms —
+  produces the same MIR/IR through both stage2 and stage3.
+
+### Notes
+
+- **Out of scope (deferred).** Bootstrap mirror for comprehensions →
+  v5.15.1. `mnc fmt` whitespace canonicalization for the new forms →
+  v5.16.0. Pattern-destructuring comprehension targets → v5.20.0 Te.5.
+  Else-clauses in filters, set comprehensions, generator/lazy
+  comprehensions → indefinite. Self-host source rewrites to use the
+  new forms → v5.17.0 Sh.\*.
+- **Pre-existing limitation surfaced.** `for x in some_list` (manual
+  loop) does not iterate correctly because the generic ForLoop
+  lowering emits `__iter_*` calls and the runtime only implements
+  those for ranges. The comprehension synthesizer routes around this
+  by emitting index-based loops on non-range iterables.
+
 ## [5.14.1] - 2026-04-29
 
 ### Added

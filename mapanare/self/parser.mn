@@ -806,14 +806,27 @@ fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, 
         p = tr.pos
     }
 
-    let br: BlockResult = parse_block(tokens, p, filename)
-    p = br.pos
+    // v5.15.0 Te.2.D — implicit-return one-liner: ``fn name(args) = expr``.
+    // Synthesize ``{ return expr }`` so downstream lowering is unchanged.
+    let mut body_block: Block = new_block(new_span(0, 0, 0, 0), [])
+    if peek_type(tokens, p) == "ASSIGN" {
+        p = p + 1
+        let er: ExprResult = parse_expr(tokens, p, filename, 0)
+        let mut implstmts: List<Stmt> = []
+        implstmts.push(Stmt::Return(Some(er.expr)))
+        body_block = new_block(new_span(0, 0, 0, 0), implstmts)
+        p = er.pos
+    } else {
+        let br: BlockResult = parse_block(tokens, p, filename)
+        body_block = br.block
+        p = br.pos
+    }
 
     let mut decorators: List<Decorator> = []
     if is_async {
         decorators.push(new_decorator("async"))
     }
-    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, br.block, decorators)
+    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, body_block, decorators)
     return new_def_result(Definition::FnDef(fd), p)
 }
 
@@ -1210,10 +1223,22 @@ fn parse_fn_body_as_data(tokens: List<Token>, pos: Int, filename: String, name: 
         ret_type = Some(tr.type_expr)
         p = tr.pos
     }
-    let br: BlockResult = parse_block(tokens, p, filename)
-    p = br.pos
+    // v5.15.0 Te.2.D — implicit-return one-liner: ``fn name(args) = expr``.
+    let mut body_block: Block = new_block(new_span(0, 0, 0, 0), [])
+    if peek_type(tokens, p) == "ASSIGN" {
+        p = p + 1
+        let er: ExprResult = parse_expr(tokens, p, filename, 0)
+        let mut implstmts: List<Stmt> = []
+        implstmts.push(Stmt::Return(Some(er.expr)))
+        body_block = new_block(new_span(0, 0, 0, 0), implstmts)
+        p = er.pos
+    } else {
+        let br: BlockResult = parse_block(tokens, p, filename)
+        body_block = br.block
+        p = br.pos
+    }
     let decorators: List<Decorator> = []
-    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, br.block, decorators)
+    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, body_block, decorators)
     return new FnDataResult { data: fd, pos: p }
 }
 
@@ -2085,6 +2110,29 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
 
     // List literal
     if tt == "LBRACKET" { return parse_list_lit(tokens, pos, filename) }
+
+    // v5.15.0 Te.2.F — terse lambda: ``|x| body``, ``|x, y| body``, ``|| body``.
+    // BAR is never the start of an expression elsewhere, so this is
+    // unambiguous in expression position.
+    if tt == "BAR" {
+        let mut p: Int = pos + 1
+        let mut params: List<Param> = []
+        if peek_type(tokens, p) != "BAR" {
+            let n0: String = peek_value(tokens, p)
+            params.push(new_param(n0, none))
+            p = p + 1
+            for _ in 0..32 {
+                if peek_type(tokens, p) != "COMMA" { break }
+                p = p + 1
+                let nn: String = peek_value(tokens, p)
+                params.push(new_param(nn, none))
+                p = p + 1
+            }
+        }
+        p = expect(tokens, p, "BAR")
+        let body_r: ExprResult = parse_expr(tokens, p, filename, 0)
+        return new_expr_result(Expr::Lambda(params, LambdaBody::ExprBody(body_r.expr)), body_r.pos)
+    }
 
     // Parenthesized expression
     if tt == "LPAREN" { return parse_paren_expr(tokens, pos, filename) }

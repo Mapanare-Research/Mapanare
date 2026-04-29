@@ -23,6 +23,8 @@ from mapanare.ast_nodes import (
     BreakStmt,
     CallExpr,
     CharLiteral,
+    CompClause,
+    Comprehension,
     ConstDef,
     ConstructExpr,
     ConstructorPattern,
@@ -967,6 +969,48 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         exprs = [c for c in children if isinstance(c, Expr)]
         return MapEntry(key=exprs[0], value=exprs[1], span=_span_from_children(children))
 
+    # ------------------------------------------------------------------
+    # v5.15.0 Te.2.B/C — list + map comprehensions
+    # ------------------------------------------------------------------
+
+    def comp_clause(self, children: list[Any]) -> CompClause:
+        names = [str(c) for c in children if isinstance(c, Token) and c.type == "NAME"]
+        exprs = [c for c in children if isinstance(c, Expr)]
+        target = names[0] if names else "_"
+        # The first Expr is the iterable; remaining Exprs are if-conditions.
+        iter_expr = exprs[0] if exprs else Expr()
+        conditions = exprs[1:]
+        return CompClause(
+            target=target,
+            iter=iter_expr,
+            conditions=conditions,
+            span=_span_from_children(children),
+        )
+
+    def list_comp(self, children: list[Any]) -> Comprehension:
+        exprs = [c for c in children if isinstance(c, Expr)]
+        clauses = [c for c in children if isinstance(c, CompClause)]
+        element = exprs[0] if exprs else Expr()
+        return Comprehension(
+            kind="list",
+            element=element,
+            clauses=clauses,
+            span=_span_from_children(children),
+        )
+
+    def map_comp(self, children: list[Any]) -> Comprehension:
+        exprs = [c for c in children if isinstance(c, Expr)]
+        clauses = [c for c in children if isinstance(c, CompClause)]
+        key = exprs[0] if exprs else Expr()
+        value = exprs[1] if len(exprs) > 1 else Expr()
+        return Comprehension(
+            kind="map",
+            key=key,
+            value=value,
+            clauses=clauses,
+            span=_span_from_children(children),
+        )
+
     def construct_expr(self, children: list[Any]) -> ConstructExpr:
         items = _filter(children)
         name = str(items[0])
@@ -1093,6 +1137,17 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         left = items[0]
         body = items[1]
         params = self._expr_to_params(left)
+        return LambdaExpr(params=params, body=body, span=_span_from_children(children))
+
+    # v5.15.0 Te.2.F: terse-lambda transformer. Grammar emits the BAR
+    # tokens, zero-or-more NAME tokens, and the body Expr (commas are
+    # stripped by _filter). The Expr in `body` is the only Expr child;
+    # everything else is a Token/NAME.
+    def lambda_terse(self, children: list[Any]) -> LambdaExpr:
+        names = [str(c) for c in children if isinstance(c, Token) and c.type == "NAME"]
+        body_exprs = [c for c in children if isinstance(c, Expr)]
+        body = body_exprs[0] if body_exprs else Expr()
+        params = [Param(name=n) for n in names]
         return LambdaExpr(params=params, body=body, span=_span_from_children(children))
 
     @staticmethod
@@ -1238,6 +1293,16 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             return_type = items[idx]
             idx += 1
         body = items[idx] if idx < len(items) else Block()
+        # v5.15.0 Te.2.D: implicit-return one-liner — `fn f(x) = expr`.
+        # The grammar allows `(block | ASSIGN expr)`; when the parser
+        # delivered an Expr instead of a Block, wrap it as the body of
+        # a `return expr` so downstream lowering is unchanged.
+        if isinstance(body, Expr) and not isinstance(body, Block):
+            body_span: Span = body.span if body.span is not None else Span()
+            body = Block(
+                stmts=[ReturnStmt(value=body, span=body_span)],
+                span=body_span,
+            )
         return FnDef(
             name=name,
             public=public,
