@@ -18,7 +18,49 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
-- **v5.15.1** (ready, not tagged) — **Cb.\* — bootstrap
+- **v5.16.0** (ready, not tagged) — **Te.4 — self-host
+  string-interpolation parity.** Closes the last Python-vs-native
+  string-handling gap. Native `mnc-stage1` now lexes / parses /
+  lowers `"${expr}"` interpolation the same way the Python
+  bootstrap does — same AST shape (`InterpString`), same MIR
+  shape (`InterpConcat`), same `__mn_str_concat` chain. Pre-v5.16,
+  `mnc-stage1` errored on `"hi ${name}"` with
+  "Undefined variable 'name}'" because the half-finished
+  `split_interp_parts` in `parser.mn` had a wrong substr API
+  (end-index instead of count), early-returned after one site,
+  treated expression text as bare `Expr::Ident`, and the lexer's
+  `\$` escape stripped the backslash so escaped interp was
+  indistinguishable from real interp. **Te.4.A** — Phase 0 spec
+  documents Python's `_split_interp` / `_parse_interp_expr` /
+  `_lower_interp_string` / `_do_cast` algorithm as the contract,
+  with a 10-entry case matrix. **Te.4.B** — single-line lexer
+  change preserves `\$` literal. **Te.4.C** — new
+  `Expr::InterpString(List<Expr>)` AST variant; `split_interp_parts`
+  rewritten to position-tracking scan (replaces a char-by-char
+  buffer that hit a bootstrap concat bug, garbage trailing literal
+  bytes); each `${...}` site re-tokenizes and re-feeds through
+  `parse_expr`. **Te.4.D** — new `lower_interp_string` mirrors
+  Python's: each non-StringLit part gets `Cast(target=mir_string)`,
+  chain bundles into `InterpConcat`. Extended `emit_cast` to
+  handle X→String for Int/Float/Bool/String — emits
+  `__mn_str_from_*` (with drop tracking) for primitives, alias
+  `emit_copy` for String. Pre-existing `emit_interp_concat` had a
+  latent dest-name bug (final concat wrote to `dn.cN` not `dn`);
+  fixed. **Te.4.E** — eight new goldens
+  `tests/golden/72…80_string_interp_*.mn`; **goldens 71/71 →
+  80/80** through `mnc-stage1`. New cross-bootstrap test
+  `tests/bootstrap/test_string_interp_mirror.py` (10 cases) asserts
+  byte-identical stdout via Python and native compilation.
+  **Te.4.F** (mnc fmt whitespace canonicalization) deferred —
+  conservative formatter rules out expression-internal rewriting.
+  **Strict 3-stage fixed point preserved** (231,957 lines / 0
+  diff after mnc_all.mn regeneration; ~3.3k new lines from the
+  added lexer / parser / lowerer / emitter paths). NO seed
+  refresh required (no new C-runtime exports). See
+  `docs/roadmap/v5/v5.16.0/SESSION_REPORT.md`,
+  `docs/roadmap/v5/v5.16.0/INTERP_SPEC.md`, and
+  `docs/roadmap/v5/v5.16.0/AUDIT.md`.
+- **v5.15.1** (shipped) — **Cb.\* — bootstrap
   comprehension mirror (patch).** Closes the v5.15.0 deferred
   item. `mnc-stage1` now parses and lowers list comprehensions
   (`[expr for x in iter (if cond)*]`) and map comprehensions
@@ -350,14 +392,9 @@ had latent bugs requiring dedicated releases.
 - ~~**v5.15.1**~~ — shipped (see release notes above). Bootstrap
   comprehension mirror — closes the v5.15.0 deferred item ahead of
   v5.16.0/v5.17.0.
-- **v5.16.0** — **Te.4 — self-host string-interp parity.**
-  Closes the last Python-vs-native string-handling gap: native
-  `mnc-stage1` doesn't recognize `"${expr}"` interpolation,
-  Python bootstrap does. Pure self-host lexer/parser port. The
-  `?` operator is *already done* in both compilers per audit
-  (SPEC §5.8 is real); not in this scope. Validation buffer
-  before v5.17.0's giant rewrite. See
-  `docs/roadmap/v5/v5.16.0/PLAN.md`.
+- ~~**v5.16.0**~~ — shipped (see release notes above). Self-host
+  string-interp parity — closes the v5.13.0-prep audit divergence
+  ahead of v5.17.0.
 - **v5.17.0** — **Sh.* — self-host rewrite.** Mechanical
   `mnc fmt --to-terse` on `mapanare/self/*.mn`, target ~40%
   line reduction. Highest-risk release in the arc — strict
@@ -646,7 +683,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (29398 symbols, 63597 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (29436 symbols, 63648 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

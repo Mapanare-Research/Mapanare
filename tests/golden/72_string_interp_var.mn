@@ -1,0 +1,10 @@
+// v5.16.0 Te.4 — self-host string-interpolation parity.
+//
+// Single-variable interpolation. Native ``mnc-stage1`` now lexes
+// and parses ``"${expr}"`` and lowers it through ``InterpString`` →
+// ``InterpConcat`` MIR (mirror of mapanare/lower.py::_lower_interp_string).
+
+fn main() {
+    let n: String = "world"
+    print("hi ${n}")
+}

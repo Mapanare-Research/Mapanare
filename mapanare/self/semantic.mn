@@ -838,6 +838,24 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
         return new_infer_result(unknown_type(), st_ep)
     }
 
+    // v5.16.0 Te.4.C — string interpolation. Each part is inferred for
+    // side effects (pushes diagnostics); the result is always String.
+    // Mirrors Python's `_infer_expr` on `InterpString` (which delegates
+    // type-checking to the per-part Cast at lower time).
+    if ek == "interp_string" {
+        let iparts: List<Expr> = expr_interp_parts(expr)
+        let mut st_interp: SemState = st
+        let mut i_interp: Int = 0
+        for _ in 0..1000 {
+            if i_interp >= len(iparts) { break }
+            let ipart: Expr = iparts[i_interp]
+            let ipr: InferResult = infer_expr(st_interp, ipart)
+            st_interp = ipr.st
+            i_interp = i_interp + 1
+        }
+        return new_infer_result(string_type(), st_interp)
+    }
+
     if ek == "list_lit" {
         let elements: List<Expr> = expr_list_elements(expr)
         if len(elements) > 0 {

@@ -2275,6 +2275,40 @@ fn emit_cast(st: EmitState, dest: Value, src: Value, target_ty: MIRType) -> Emit
             return s
         }
     }
+    // v5.16.0 Te.4.D — Int/Float/Bool → String for string interpolation.
+    // Mirrors mapanare/emit_llvm_text.py::_do_cast. Emits the matching
+    // `__mn_str_from_*` runtime call and tracks the fresh allocation
+    // for drop-glue. Cast(String→String) collapses to emit_copy (no
+    // tracker — alias of source).
+    if target_ty.kind == TK_STRING() {
+        if src.ty.kind == TK_STRING() {
+            return emit_copy(s, dest, src)
+        }
+        if src.ty.kind == TK_INT() {
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_int", "i64 " + sn)
+            s = emit_track_string(s, dn)
+            return s
+        }
+        if src.ty.kind == TK_FLOAT() {
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_float", "double " + sn)
+            s = emit_track_string(s, dn)
+            return s
+        }
+        if src.ty.kind == TK_BOOL() {
+            let cnt_zb: String = toString(s.counter)
+            s.counter = s.counter + 1
+            let zext_b: String = "%zb" + cnt_zb
+            s = emit_line(s, "  " + zext_b + " = zext i1 " + sn + " to i64")
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_bool", "i64 " + zext_b)
+            s = emit_track_string(s, dn)
+            return s
+        }
+        // Unknown source type — assume i64 (best-effort, matches
+        // emit_builtin_tostring's fallback).
+        s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_int", "i64 " + sn)
+        s = emit_track_string(s, dn)
+        return s
+    }
     // Fallback: bitcast
     s = emit_line(s, emit_bitcast(dn, src_ty, sn, dst_ty))
     return s
@@ -5699,7 +5733,10 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
         return emit_copy(st, dest, parts[0])
     }
 
-    // Concatenate parts left-to-right using __mn_str_concat
+    // Concatenate parts left-to-right using __mn_str_concat. The final
+    // concat writes into `dest.name` directly so downstream uses of
+    // `dest` resolve to a defined SSA value (v5.16.0 Te.4.D — fix
+    // for "use of undefined value" when the chain has >1 join).
     let mut s: EmitState = st
     let dn: String = dest.name
 
@@ -5709,7 +5746,9 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
     let nparts: Int = len(parts)
     for _ in 0..500 {
         if i < nparts {
-            let tmp: String = dn + ".c" + toString(i)
+            let is_last: Bool = (i == nparts - 1)
+            let mut tmp: String = dn + ".c" + toString(i)
+            if is_last { tmp = dn }
             s = emit_rt_call(s, tmp, llvm_string(), "__mn_str_concat", llvm_string() + " " + acc + ", " + llvm_string() + " " + parts[i].name)
             // v5.4.1 Phase 3.4 — each __mn_str_concat result is a fresh
             // heap allocation. Track each intermediate so drop-glue

@@ -1,0 +1,5 @@
+// v5.16.0 Te.4 — arithmetic expression inside ``${...}``.
+
+fn main() {
+    print("sum=${1 + 2}")
+}

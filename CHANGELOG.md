@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.16.0] - 2026-04-29
+
+### Added
+
+- **Te.4 — self-host string-interpolation parity.** Closes the last
+  Python-vs-native string-handling gap. Native `mnc-stage1` now lexes,
+  parses, and lowers `"${expr}"` interpolation the same way the Python
+  bootstrap does — same AST shape (`InterpString`), same MIR shape
+  (`InterpConcat`), same `__mn_str_concat` chain. Pre-v5.16.0,
+  `mnc-stage1` errored on `"hi ${name}"` with "Undefined variable
+  'name}'" because the half-finished `split_interp_parts` in
+  `mapanare/self/parser.mn` (a) called `__mn_str_substr` with the
+  wrong API (end-index instead of count), (b) returned after the
+  first `${...}` site, (c) treated expression text as a bare
+  `Expr::Ident`, and (d) the lexer's `\$` escape collapsed to `$`
+  so escaped interpolation couldn't be detected.
+  **Te.4.A** — `docs/roadmap/v5/v5.16.0/INTERP_SPEC.md` locks
+  Python's `_split_interp` / `_parse_interp_expr` /
+  `_lower_interp_string` / `_do_cast` algorithm as the contract,
+  with a 10-entry case matrix (plain / var / int / float / bool /
+  method / arith / multi / mixed / escaped).
+  **Te.4.B** — single-line lexer change in
+  `mapanare/self/lexer.mn`: `scan_string` preserves `\$` as the
+  two-character sequence so `has_interpolation` can detect escaped
+  sites via the prior backslash byte (mirrors Python's
+  pre-`_unescape` STRING_LIT shape).
+  **Te.4.C** — new `Expr::InterpString(List<Expr>)` AST variant
+  mirrors Python's `InterpString` (`mapanare/self/ast.mn` enum +
+  `expr_kind` + `expr_interp_parts`); `split_interp_parts`
+  rewritten to use a position-tracking scan (`seg_start` / `i`
+  brackets, `s.substr` at flush) — replaces the original
+  char-by-char buffer that hit a bootstrap-lower String concat bug
+  where trailing literal segments emitted garbage bytes (`"] done"`
+  came out as `\01\00\00\00\00\00`). Each `${...}` site re-tokenizes
+  and re-feeds through `parse_expr`, so any expression form works
+  inside (Ident, Binary, MethodCall, Call, Index, MapLit).
+  **Te.4.D** — new `lower_interp_string` in `mapanare/self/lower.mn`
+  mirrors Python's: each non-StringLit part gets a
+  `Cast(target=mir_string)`, the chain bundles into one
+  `InterpConcat` MIR instruction. Extended `emit_cast` to handle
+  X→String for Int / Float / Bool / String — emits
+  `__mn_str_from_int` / `_float` / `_bool` (with drop tracking on
+  the fresh allocation) for primitives, alias-only `emit_copy` for
+  String. Mirrors Python `_do_cast`. Pre-existing
+  `emit_interp_concat` had a latent bug where the last concat wrote
+  to `dn.cN` instead of the dest itself, leaving downstream uses
+  undefined; fixed by rerouting the final concat's result name.
+  **Te.4.E** — eight new goldens in `tests/golden/string_interp_*.mn`
+  (var / int / float / bool / method / arith / multi / mixed /
+  escaped). **Goldens 71/71 → 80/80** through `mnc-stage1`. New
+  cross-bootstrap test `tests/bootstrap/test_string_interp_mirror.py`
+  (10 cases, parameterized) compiles each fixture through both
+  compilers, links with clang against the C runtime, and asserts
+  byte-identical stdout. **Te.4.F** (mnc fmt whitespace
+  canonicalization inside `${}`) deferred to v5.17.0 prep — the
+  conservative formatter design rules out expression-internal
+  rewriting. **Te.4.G** — SPEC.md §2.3 already documents
+  interpolation; v5.16.0 makes the spec promise real on both sides.
+  **Strict 3-stage fixed point preserved** (231,957 lines / 0 diff
+  after mnc_all.mn regeneration; ~3.3k new lines from the added
+  lexer / parser / lowerer / emitter paths) — no shape change to
+  existing emit paths. NO seed refresh
+  required (no new C-runtime exports). `make lint` clean. v5.16.0
+  unblocks v5.17.0 Sh.\* by giving the self-host rewrite a
+  parity-tested string-interp surface to consume. See
+  `docs/roadmap/v5/v5.16.0/SESSION_REPORT.md`,
+  `docs/roadmap/v5/v5.16.0/INTERP_SPEC.md`, and
+  `docs/roadmap/v5/v5.16.0/AUDIT.md`.
+
 ## [5.15.1] - 2026-04-29
 
 ### Added

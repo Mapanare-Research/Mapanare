@@ -1396,6 +1396,15 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     if ek == "list_lit" {
         return lower_list(st, expr_list_elements(expr))
     }
+    // v5.16.0 Te.4.D — string interpolation. Mirrors
+    // mapanare/lower.py::_lower_interp_string. Each non-StringLit part
+    // is wrapped in a Cast-to-String (the emitter routes Cast(X→String)
+    // to `__mn_str_from_int` / `_float` / `_bool` and emits a tracker
+    // for the fresh allocation; Cast(String→String) is an alias).
+    // The full chain becomes a single `InterpConcat` MIR instruction.
+    if ek == "interp_string" {
+        return lower_interp_string(st, expr_interp_parts(expr))
+    }
     if ek == "tensor_lit" {
         return lower_tensor(st, expr_tensor_elements(expr), expr_tensor_shape(expr))
     }
@@ -3557,6 +3566,43 @@ fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult {
 
 fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     return lower_list_typed(st, elements, mir_unknown())
+}
+
+// v5.16.0 Te.4.D — lower a string-interpolation expression to a chain
+// of concat operations. Mirrors mapanare/lower.py::_lower_interp_string.
+//
+// For each part:
+//   * `StringLit` parts pass through unmodified (already mir_string-typed).
+//   * Any other part is wrapped in `Cast(target=mir_string)`. The
+//     emitter routes Cast(Int/Float/Bool→String) to the matching
+//     `__mn_str_from_*` runtime call (with drop tracking on the fresh
+//     allocation) and treats Cast(String→String) as an SSA alias.
+//
+// All resulting Values are bundled into a single `InterpConcat` MIR
+// instruction; `emit_interp_concat` (already in emit_llvm.mn) chains
+// `__mn_str_concat` calls left-to-right.
+fn lower_interp_string(st: LowerState, parts: List<Expr>) -> LowerResult {
+    let mut s: LowerState = st
+    let mut vals: List<Value> = []
+    let mut i: Int = 0
+    let np: Int = len(parts)
+    for _ in 0..1000 {
+        if i >= np { break }
+        let p: Expr = parts[i]
+        let pr: LowerResult = lower_expr(s, p)
+        s = pr.state
+        if expr_kind(p) == "string_lit" {
+            vals.push(pr.value)
+        } else {
+            let cr: LowerResult = make_value(s, mir_string(), "t")
+            s = emit_instr(cr.state, Instruction::Cast(cr.value, pr.value, mir_string()))
+            vals.push(cr.value)
+        }
+        i = i + 1
+    }
+    let dr: LowerResult = make_value(s, mir_string(), "t")
+    let s_final: LowerState = emit_instr(dr.state, Instruction::InterpConcat(dr.value, vals))
+    return new_lower_result(dr.value, s_final)
 }
 
 // v5.6.7 Ve.2 fix — explicit-element-type variant for lowering list

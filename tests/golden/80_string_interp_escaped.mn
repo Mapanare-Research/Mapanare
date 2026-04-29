@@ -1,0 +1,8 @@
+// v5.16.0 Te.4 — escaped ``\${...}`` is treated as literal text,
+// matching the Python bootstrap. The lexer preserves ``\$``
+// verbatim in the STRING_LIT value so ``has_interpolation`` can
+// detect the escape via the prior backslash byte.
+
+fn main() {
+    print("\${not_a_var}")
+}

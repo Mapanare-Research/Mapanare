@@ -119,7 +119,13 @@ enum Expr {
     Assign(Expr, String, Expr),
     If(Expr, Block, Option<ElseClause>),
     Match(Expr, List<MatchArm>),
-    Await(Expr)
+    Await(Expr),
+    Comprehension(String, Option<Expr>, Option<Expr>, Option<Expr>, List<CompClause>),
+    // v5.16.0 Te.4.C — string interpolation. Parts alternate between
+    // `StringLit` (literal text) and arbitrary `Expr` (interpolated
+    // value). Mirrors Python `InterpString` shape so the lowerer can
+    // reuse `InterpConcat` MIR. Empty `parts` means an empty literal.
+    InterpString(List<Expr>)
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +241,14 @@ struct PipeDefData {
     name: String,
     public: Bool,
     stages: List<Expr>
+}
+
+// v5.15.1 — One `for x in iter (if cond)*` clause in a comprehension.
+struct CompClause {
+    span: Span,
+    target: String,
+    iter: Expr,
+    conditions: List<Expr>
 }
 
 struct StructField {
@@ -368,7 +382,16 @@ pub fn expr_kind(e: Expr) -> String {
         Assign(_, _, _) => { return "assign" },
         If(_, _, _) => { return "if" },
         Match(_, _) => { return "match" },
-        Await(_) => { return "await" }
+        Await(_) => { return "await" },
+        Comprehension(_, _, _, _, _) => { return "comprehension" },
+        InterpString(_) => { return "interp_string" }
+    }
+}
+
+pub fn expr_interp_parts(e: Expr) -> List<Expr> {
+    match e {
+        InterpString(p) => { return p },
+        _ => { let empty: List<Expr> = []; return empty }
     }
 }
 
@@ -616,6 +639,27 @@ pub fn expr_match_subject(e: Expr) -> Expr {
 }
 pub fn expr_match_arms(e: Expr) -> List<MatchArm> {
     match e { Match(_, a) => { return a }, _ => { let empty: List<MatchArm> = []; return empty } }
+}
+
+// Comprehension (v5.15.1)
+pub fn expr_comp_kind(e: Expr) -> String {
+    match e { Comprehension(k, _, _, _, _) => { return k }, _ => { return "" } }
+}
+pub fn expr_comp_element(e: Expr) -> Option<Expr> {
+    match e { Comprehension(_, el, _, _, _) => { return el }, _ => { return none } }
+}
+pub fn expr_comp_key(e: Expr) -> Option<Expr> {
+    match e { Comprehension(_, _, k, _, _) => { return k }, _ => { return none } }
+}
+pub fn expr_comp_value(e: Expr) -> Option<Expr> {
+    match e { Comprehension(_, _, _, v, _) => { return v }, _ => { return none } }
+}
+pub fn expr_comp_clauses(e: Expr) -> List<CompClause> {
+    match e { Comprehension(_, _, _, _, cs) => { return cs }, _ => { let empty: List<CompClause> = []; return empty } }
+}
+
+pub fn new_comp_clause(target: String, iter: Expr, conditions: List<Expr>) -> CompClause {
+    return new CompClause { span: make_span(0, 0, 0, 0), target: target, iter: iter, conditions: conditions }
 }
 
 // ---- Stmt kind + accessors ------------------------------------------------
@@ -1285,7 +1329,11 @@ fn scan_string(source: String, pos: Int, line: Int, col: Int) -> Token {
             if esc == "\\" { value = value + "\\" }
             if esc == "\"" { value = value + "\"" }
             if esc == "0" { value = value + "\0" }
-            if esc == "$" { value = value + "$" }
+            // v5.16.0 Te.4.B — preserve `\$` literally so split_interp_parts
+            // can distinguish escaped `\${...}` from real interpolation.
+            // Mirrors Python bootstrap: `_split_interp` operates on
+            // pre-unescape source; STRING_LIT keeps the backslash.
+            if esc == "$" { value = value + "\\" + "$" }
             p = p + 1
         } else {
             if ch == "\n" { cur_line = cur_line + 1 }
@@ -2316,14 +2364,27 @@ fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, 
         p = tr.pos
     }
 
-    let br: BlockResult = parse_block(tokens, p, filename)
-    p = br.pos
+    // v5.15.0 Te.2.D — implicit-return one-liner: ``fn name(args) = expr``.
+    // Synthesize ``{ return expr }`` so downstream lowering is unchanged.
+    let mut body_block: Block = new_block(new_span(0, 0, 0, 0), [])
+    if peek_type(tokens, p) == "ASSIGN" {
+        p = p + 1
+        let er: ExprResult = parse_expr(tokens, p, filename, 0)
+        let mut implstmts: List<Stmt> = []
+        implstmts.push(Stmt::Return(Some(er.expr)))
+        body_block = new_block(new_span(0, 0, 0, 0), implstmts)
+        p = er.pos
+    } else {
+        let br: BlockResult = parse_block(tokens, p, filename)
+        body_block = br.block
+        p = br.pos
+    }
 
     let mut decorators: List<Decorator> = []
     if is_async {
         decorators.push(new_decorator("async"))
     }
-    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, br.block, decorators)
+    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, body_block, decorators)
     return new_def_result(Definition::FnDef(fd), p)
 }
 
@@ -2720,10 +2781,22 @@ fn parse_fn_body_as_data(tokens: List<Token>, pos: Int, filename: String, name: 
         ret_type = Some(tr.type_expr)
         p = tr.pos
     }
-    let br: BlockResult = parse_block(tokens, p, filename)
-    p = br.pos
+    // v5.15.0 Te.2.D — implicit-return one-liner: ``fn name(args) = expr``.
+    let mut body_block: Block = new_block(new_span(0, 0, 0, 0), [])
+    if peek_type(tokens, p) == "ASSIGN" {
+        p = p + 1
+        let er: ExprResult = parse_expr(tokens, p, filename, 0)
+        let mut implstmts: List<Stmt> = []
+        implstmts.push(Stmt::Return(Some(er.expr)))
+        body_block = new_block(new_span(0, 0, 0, 0), implstmts)
+        p = er.pos
+    } else {
+        let br: BlockResult = parse_block(tokens, p, filename)
+        body_block = br.block
+        p = br.pos
+    }
     let decorators: List<Decorator> = []
-    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, br.block, decorators)
+    let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, body_block, decorators)
     return new FnDataResult { data: fd, pos: p }
 }
 
@@ -3386,12 +3459,17 @@ fn parse_method_args(tokens: List<Token>, pos: Int, filename: String, obj: Expr,
 // String interpolation helpers
 // ---------------------------------------------------------------------------
 
+// v5.16.0 Te.4.B — string interpolation detection.
+// Mirrors mapanare/parser.py::_split_interp. Returns true iff `s`
+// contains an unescaped `${`. The lexer preserves `\$` literally, so
+// this scans for a backslash on the byte before the `$` rather than
+// for a stripped escape prefix.
 fn has_interpolation(s: String) -> Bool {
-    for i in 0..len(s) {
+    let n: Int = len(s)
+    for i in 0..n {
         if s.char_at(i) == "$" {
-            if i + 1 < len(s) {
+            if i + 1 < n {
                 if s.char_at(i + 1) == "{" {
-                    // Check not escaped
                     if i == 0 { return true }
                     if s.char_at(i - 1) != "\\" { return true }
                 }
@@ -3401,74 +3479,81 @@ fn has_interpolation(s: String) -> Bool {
     return false
 }
 
-fn split_interp_parts(s: String) -> List<Expr> {
+// v5.16.0 Te.4.B/C — split a STRING_LIT value into a sequence of
+// alternating `Expr::StringLit` (literal text) and `Expr` (interpolated)
+// parts. Mirrors `_split_interp` + `_parse_interp_expr` from
+// mapanare/parser.py. Each `${...}` site re-lexes and re-parses the
+// inner expression text via `tokenize` + `parse_expr` so any expression
+// form (Ident, MethodCall, Binary, Call, MapLit, ...) is supported.
+// The caller wraps the result in `Expr::InterpString(parts)` so the
+// lowerer can route through the existing `InterpConcat` MIR (which
+// emits a chain of `__mn_str_concat` calls and Cast-to-string for
+// non-StringLit parts).
+fn split_interp_parts(s: String, filename: String) -> List<Expr> {
+    // Position-based scan: track [seg_start, i) as the pending literal
+    // segment instead of building char-by-char with `lit = lit + ch`.
+    // The buffer-rebuilding approach hit a bootstrap lower bug where
+    // the trailing-literal segment after an interp site emitted
+    // garbage bytes into the LLVM string constant.
     let mut parts: List<Expr> = []
-    let mut lit: String = ""
+    let mut seg_start: Int = 0
     let mut i: Int = 0
+    let n: Int = len(s)
     for _ in 0..100000 {
-        if i >= len(s) {
-            if len(lit) > 0 { parts.push(Expr::StringLit(lit)) }
-            return parts
-        }
+        if i >= n { break }
         let ch: String = s.char_at(i)
         if ch == "\\" {
-            if i + 1 < len(s) {
-                if s.char_at(i + 1) == "$" {
-                    lit = lit + "$"
-                    i = i + 2
-                } else {
-                    lit = lit + ch
-                    i = i + 1
-                }
-            } else {
-                lit = lit + ch
-                i = i + 1
-            }
+            // Skip the escape and its next char so `\$` doesn't trip
+            // the interp scanner. The literal segment kept as
+            // s[seg_start..segment_end) preserves the backslash byte
+            // that the lexer left intact for us.
+            if i + 1 < n { i = i + 2 } else { i = i + 1 }
         } else {
-            if ch == "$" {
-                if i + 1 < len(s) {
-                    if s.char_at(i + 1) == "{" {
-                        // Flush literal
-                        if len(lit) > 0 {
-                            parts.push(Expr::StringLit(lit))
-                            lit = ""
-                        }
-                        // Find matching }
-                        let mut depth: Int = 1
-                        let mut j: Int = i + 2
-                        for _ in 0..10000 {
-                            if j >= len(s) { return parts }
-                            if depth == 0 { return parts }
-                            if s.char_at(j) == "{" { depth = depth + 1 }
-                            if s.char_at(j) == "}" {
-                                depth = depth - 1
-                                if depth == 0 {
-                                    // Extract expression text between ${ and }
-                                    let expr_text: String = s.substr(i + 2, j)
-                                    // For now, treat as Ident (simple variable reference)
-                                    parts.push(Expr::Ident(expr_text))
-                                    i = j + 1
-                                    return parts
-                                }
-                            }
-                            j = j + 1
-                        }
-                        i = j
+            if ch == "$" && i + 1 < n && s.char_at(i + 1) == "{" {
+                // Flush pending literal segment via substr, not a
+                // rebuilt char buffer.
+                if i > seg_start {
+                    let lit_text: String = s.substr(seg_start, i - seg_start)
+                    parts.push(Expr::StringLit(lit_text))
+                }
+                let mut depth: Int = 1
+                let mut j: Int = i + 2
+                let mut found_close: Bool = false
+                for _ in 0..100000 {
+                    if j >= n { break }
+                    let cj: String = s.char_at(j)
+                    if cj == "{" {
+                        depth = depth + 1
                     } else {
-                        lit = lit + ch
-                        i = i + 1
+                        if cj == "}" {
+                            depth = depth - 1
+                            if depth == 0 { found_close = true; break }
+                        }
                     }
-                } else {
-                    lit = lit + ch
+                    j = j + 1
+                }
+                if found_close == false {
+                    // Unterminated `${...}` — fold the `$` into the
+                    // pending segment and continue.
                     i = i + 1
+                } else {
+                    let expr_len: Int = j - (i + 2)
+                    let expr_text: String = s.substr(i + 2, expr_len)
+                    let etokens: List<Token> = tokenize(expr_text, filename)
+                    let er: ExprResult = parse_expr(etokens, 0, filename, 0)
+                    parts.push(er.expr)
+                    i = j + 1
+                    seg_start = i
                 }
             } else {
-                lit = lit + ch
                 i = i + 1
             }
         }
     }
-    if len(lit) > 0 { parts.push(Expr::StringLit(lit)) }
+    if i > seg_start {
+        let tail_text: String = s.substr(seg_start, i - seg_start)
+        parts.push(Expr::StringLit(tail_text))
+    }
     return parts
 }
 
@@ -3536,16 +3621,14 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     // String literal — check for interpolation ${...}
     if tt == "STRING_LIT" {
         if has_interpolation(val) {
-            let parts: List<Expr> = split_interp_parts(val)
-            if len(parts) > 1 {
-                // Multiple parts: return as a binary concat chain
-                let mut result: Expr = parts[0]
-                for i in 1..len(parts) {
-                    result = Expr::Binary(result, "+", parts[i])
-                }
-                return new_expr_result(result, pos + 1)
-            }
+            let parts: List<Expr> = split_interp_parts(val, filename)
+            // v5.16.0 Te.4.C — wrap in dedicated AST node mirroring
+            // Python `InterpString`. Lowered via `InterpConcat` MIR.
+            return new_expr_result(Expr::InterpString(parts), pos + 1)
         }
+        // No interp: STRING_LIT may still carry preserved `\$`
+        // sequences from the lexer. Mirrors Python's post-`_split_interp`
+        // path which leaves `\$` literal in the StringLit value.
         return new_expr_result(Expr::StringLit(val), pos + 1)
     }
 
@@ -3595,6 +3678,29 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
 
     // List literal
     if tt == "LBRACKET" { return parse_list_lit(tokens, pos, filename) }
+
+    // v5.15.0 Te.2.F — terse lambda: ``|x| body``, ``|x, y| body``, ``|| body``.
+    // BAR is never the start of an expression elsewhere, so this is
+    // unambiguous in expression position.
+    if tt == "BAR" {
+        let mut p: Int = pos + 1
+        let mut params: List<Param> = []
+        if peek_type(tokens, p) != "BAR" {
+            let n0: String = peek_value(tokens, p)
+            params.push(new_param(n0, none))
+            p = p + 1
+            for _ in 0..32 {
+                if peek_type(tokens, p) != "COMMA" { break }
+                p = p + 1
+                let nn: String = peek_value(tokens, p)
+                params.push(new_param(nn, none))
+                p = p + 1
+            }
+        }
+        p = expect(tokens, p, "BAR")
+        let body_r: ExprResult = parse_expr(tokens, p, filename, 0)
+        return new_expr_result(Expr::Lambda(params, LambdaBody::ExprBody(body_r.expr)), body_r.pos)
+    }
 
     // Parenthesized expression
     if tt == "LPAREN" { return parse_paren_expr(tokens, pos, filename) }
@@ -3854,6 +3960,14 @@ fn parse_map_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
     p = expect(tokens, p, "COLON")
     let v0: ExprResult = parse_expr(tokens, p, filename, 0)
     p = v0.pos
+
+    // v5.15.1 — map comprehension disambiguator. After the first
+    // `key: value` pair, a `for` keyword switches into comprehension
+    // mode; otherwise this is a regular map literal.
+    if peek_type(tokens, p) == "KW_FOR" {
+        return parse_map_comp_tail(tokens, p, filename, k0.expr, v0.expr)
+    }
+
     entries.push(new MapEntry { key: k0.expr, value: v0.expr })
 
     for _ in 0..10000 {
@@ -3888,8 +4002,16 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
     }
 
     let e0: ExprResult = parse_expr(tokens, p, filename, 0)
-    elems.push(e0.expr)
     p = e0.pos
+
+    // v5.15.1 — list comprehension disambiguator. After the first
+    // element, a `for` keyword switches into comprehension mode;
+    // otherwise this is a regular list literal.
+    if peek_type(tokens, p) == "KW_FOR" {
+        return parse_list_comp_tail(tokens, p, filename, e0.expr)
+    }
+
+    elems.push(e0.expr)
 
     for _ in 0..10000 {
         if peek_type(tokens, p) != "COMMA" {
@@ -3908,6 +4030,70 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
 
     p = expect(tokens, p, "RBRACKET")
     return new_expr_result(Expr::ListLit(elems), p)
+}
+
+// ---------------------------------------------------------------------------
+// Comprehension parsing (v5.15.1 — Cb.2/Cb.3)
+//
+// Mirrors mapanare/parser.py::list_comp / map_comp / comp_clause. Disambig
+// happens at the call site (parse_list_lit / parse_map_lit) when the
+// next token after the first element/entry is KW_FOR.
+// ---------------------------------------------------------------------------
+
+struct CompClauseResult {
+    clause: CompClause,
+    pos: Int
+}
+
+fn new_comp_clause_result(clause: CompClause, pos: Int) -> CompClauseResult {
+    return new CompClauseResult { clause: clause, pos: pos }
+}
+
+fn parse_comp_clause(tokens: List<Token>, pos: Int, filename: String) -> CompClauseResult {
+    // pos is at KW_FOR
+    let mut p: Int = expect(tokens, pos, "KW_FOR")
+    let target: String = peek_value(tokens, p)
+    p = p + 1
+    p = expect(tokens, p, "KW_IN")
+    let iter_r: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = iter_r.pos
+
+    let mut conditions: List<Expr> = []
+    for _ in 0..32 {
+        if peek_type(tokens, p) != "KW_IF" { break }
+        p = p + 1
+        let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
+        conditions.push(cond_r.expr)
+        p = cond_r.pos
+    }
+
+    return new_comp_clause_result(new_comp_clause(target, iter_r.expr, conditions), p)
+}
+
+fn parse_list_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_expr: Expr) -> ExprResult {
+    let mut p: Int = pos
+    let mut clauses: List<CompClause> = []
+    for _ in 0..32 {
+        if peek_type(tokens, p) != "KW_FOR" { break }
+        let cr: CompClauseResult = parse_comp_clause(tokens, p, filename)
+        clauses.push(cr.clause)
+        p = cr.pos
+    }
+    p = expect(tokens, p, "RBRACKET")
+    return new_expr_result(Expr::Comprehension("list", Some(first_expr), none, none, clauses), p)
+}
+
+fn parse_map_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_key: Expr, first_value: Expr) -> ExprResult {
+    let mut p: Int = pos
+    let mut clauses: List<CompClause> = []
+    for _ in 0..32 {
+        if peek_type(tokens, p) != "KW_FOR" { break }
+        let cr: CompClauseResult = parse_comp_clause(tokens, p, filename)
+        clauses.push(cr.clause)
+        p = cr.pos
+    }
+    p = expect(tokens, p, "RBRACE")
+    return new_expr_result(Expr::Comprehension("map", none, Some(first_key), Some(first_value), clauses), p)
 }
 
 // ---------------------------------------------------------------------------
@@ -4958,6 +5144,24 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
             }
         }
         return new_infer_result(unknown_type(), st_ep)
+    }
+
+    // v5.16.0 Te.4.C — string interpolation. Each part is inferred for
+    // side effects (pushes diagnostics); the result is always String.
+    // Mirrors Python's `_infer_expr` on `InterpString` (which delegates
+    // type-checking to the per-part Cast at lower time).
+    if ek == "interp_string" {
+        let iparts: List<Expr> = expr_interp_parts(expr)
+        let mut st_interp: SemState = st
+        let mut i_interp: Int = 0
+        for _ in 0..1000 {
+            if i_interp >= len(iparts) { break }
+            let ipart: Expr = iparts[i_interp]
+            let ipr: InferResult = infer_expr(st_interp, ipart)
+            st_interp = ipr.st
+            i_interp = i_interp + 1
+        }
+        return new_infer_result(string_type(), st_interp)
     }
 
     if ek == "list_lit" {
@@ -7345,6 +7549,12 @@ struct LowerState {
     generic_enums: List<EnumDefData>,
     loop_header_label: String,
     loop_exit_label: String,
+    // v5.15.1 — type-hint plumbing for comprehension lowering. lower_let
+    // sets this before lowering a Comprehension RHS so the synthesizer
+    // can thread the user's `List<T>` / `Map<K, V>` annotation onto the
+    // internal accumulator. Cleared on entry to the synthesizer so
+    // nested comprehensions don't accidentally inherit it.
+    comp_type_hint: Option<TypeExpr>,
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -7359,7 +7569,7 @@ fn new_lower_state(module_name: String) -> LowerState {
     let generic_fns: List<FnDefData> = []
     let generic_structs: List<StructDefData> = []
     let generic_enums: List<EnumDefData> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "" }
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none }
 }
 
 // Lower result: value + updated state
@@ -8647,11 +8857,27 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
 // Let binding
 // ---------------------------------------------------------------------------
 
-fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
+fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
     // Check if the value expression is a None literal BEFORE lowering.
     // This flag is used later to decide whether to re-wrap with typed WrapNone.
     let mut is_none_literal: Bool = false
     if expr_kind(value) == "none_lit" { is_none_literal = true }
+
+    // v5.15.1 — comprehension type-hint plumbing. When the RHS is a
+    // comprehension and the binding has a `List<T>` / `Map<K, V>`
+    // annotation, hand it to `lower_comprehension` via the lowerer
+    // state so the synthesizer can thread it onto the internal
+    // accumulator. Cleared in `lower_comprehension` on entry. Mirror
+    // of Python `lower.py::_lower_let` v5.15.0 Te.2.
+    let mut st: LowerState = st_in
+    if expr_kind(value) == "comprehension" {
+        match type_ann {
+            Some(_) => { st.comp_type_hint = type_ann },
+            _ => { st.comp_type_hint = none }
+        }
+    } else {
+        st.comp_type_hint = none
+    }
 
     // v5.6.7 Ve.2 fix — empty-list elem_ty propagation. When lowering
     // `let xs: List<T> = []`, the default path `lower_expr → lower_list`
@@ -9287,6 +9513,15 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     if ek == "list_lit" {
         return lower_list(st, expr_list_elements(expr))
     }
+    // v5.16.0 Te.4.D — string interpolation. Mirrors
+    // mapanare/lower.py::_lower_interp_string. Each non-StringLit part
+    // is wrapped in a Cast-to-String (the emitter routes Cast(X→String)
+    // to `__mn_str_from_int` / `_float` / `_bool` and emits a tracker
+    // for the fresh allocation; Cast(String→String) is an alias).
+    // The full chain becomes a single `InterpConcat` MIR instruction.
+    if ek == "interp_string" {
+        return lower_interp_string(st, expr_interp_parts(expr))
+    }
     if ek == "tensor_lit" {
         return lower_tensor(st, expr_tensor_elements(expr), expr_tensor_shape(expr))
     }
@@ -9334,6 +9569,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     }
     if ek == "match" {
         return lower_match(st, expr_match_subject(expr), expr_match_arms(expr))
+    }
+    if ek == "comprehension" {
+        return lower_comprehension(st, expr)
     }
     // Fallback
     let r_fallback: LowerResult = make_value(st, mir_unknown(), "t")
@@ -11447,6 +11685,43 @@ fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult {
     return lower_list_typed(st, elements, mir_unknown())
 }
 
+// v5.16.0 Te.4.D — lower a string-interpolation expression to a chain
+// of concat operations. Mirrors mapanare/lower.py::_lower_interp_string.
+//
+// For each part:
+//   * `StringLit` parts pass through unmodified (already mir_string-typed).
+//   * Any other part is wrapped in `Cast(target=mir_string)`. The
+//     emitter routes Cast(Int/Float/Bool→String) to the matching
+//     `__mn_str_from_*` runtime call (with drop tracking on the fresh
+//     allocation) and treats Cast(String→String) as an SSA alias.
+//
+// All resulting Values are bundled into a single `InterpConcat` MIR
+// instruction; `emit_interp_concat` (already in emit_llvm.mn) chains
+// `__mn_str_concat` calls left-to-right.
+fn lower_interp_string(st: LowerState, parts: List<Expr>) -> LowerResult {
+    let mut s: LowerState = st
+    let mut vals: List<Value> = []
+    let mut i: Int = 0
+    let np: Int = len(parts)
+    for _ in 0..1000 {
+        if i >= np { break }
+        let p: Expr = parts[i]
+        let pr: LowerResult = lower_expr(s, p)
+        s = pr.state
+        if expr_kind(p) == "string_lit" {
+            vals.push(pr.value)
+        } else {
+            let cr: LowerResult = make_value(s, mir_string(), "t")
+            s = emit_instr(cr.state, Instruction::Cast(cr.value, pr.value, mir_string()))
+            vals.push(cr.value)
+        }
+        i = i + 1
+    }
+    let dr: LowerResult = make_value(s, mir_string(), "t")
+    let s_final: LowerState = emit_instr(dr.state, Instruction::InterpConcat(dr.value, vals))
+    return new_lower_result(dr.value, s_final)
+}
+
 // v5.6.7 Ve.2 fix — explicit-element-type variant for lowering list
 // literals. When the context provides an element-type hint (e.g.
 // `let xs: List<String> = []` from `lower_let`, pattern-match on
@@ -11630,6 +11905,206 @@ fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult {
     // v5.4.4 — map owns each key/value pair.
     let moved_s: LowerState = emit_move_kvpairs(new_s, pairs)
     return new_lower_result(dest_r.value, moved_s)
+}
+
+// ---------------------------------------------------------------------------
+// Comprehension lowering (v5.15.1 Cb.4)
+//
+// Mirrors mapanare/lower.py::_lower_comprehension. Synthesizes a fresh
+// accumulator (`__mn_comp_N`), nested for/if structure, and per-step
+// push (lists) or `m[k] = v` assignment (maps). The result is identical
+// to a hand-written loop modulo SSA naming.
+//
+// For range iterables (e.g. `for x in 0..n`), emits a direct For. For
+// non-range iterables (lists), emits the index-based pattern
+// `for __i in 0..len(__src) { let target = __src[__i]; ... }` because
+// `for x in some_list` is not yet supported by the generic ForLoop
+// lowering (the runtime `__iter_*` shims only know about ranges).
+// ---------------------------------------------------------------------------
+
+fn wrap_comp_for(st: LowerState, clause: CompClause, inner: Block) -> Block {
+    // Range iterables: direct ForLoop.
+    if expr_kind(clause.iter) == "range" {
+        let mut stmts: List<Stmt> = []
+        stmts.push(Stmt::For(clause.target, clause.iter, inner))
+        return new_block(make_span(0, 0, 0, 0), stmts)
+    }
+
+    // Non-range iterables: hoist source binding, iterate via index.
+    let n: Int = st.tmp_counter
+    let src_name: String = "__mn_comp_src_" + toString(n)
+    let idx_name: String = "__mn_comp_i_" + toString(n)
+
+    // Build inner: `let target = __src[__i]; <inner.stmts>`
+    let get_elem: Expr = Expr::Index(Expr::Ident(src_name), Expr::Ident(idx_name))
+    let mut body_stmts: List<Stmt> = []
+    body_stmts.push(Stmt::Let(clause.target, false, none, get_elem))
+    let mut i: Int = 0
+    let nstmts: Int = len(inner.stmts)
+    for _ in 0..256 {
+        if i < nstmts {
+            body_stmts.push(inner.stmts[i])
+            i = i + 1
+        }
+    }
+    let new_body: Block = new_block(make_span(0, 0, 0, 0), body_stmts)
+
+    let mut len_args: List<Expr> = []
+    len_args.push(Expr::Ident(src_name))
+    let len_call: Expr = Expr::Call(Expr::Ident("len"), len_args)
+    let range_e: Expr = Expr::Range(Expr::IntLit(0), len_call, false)
+
+    let mut outer_stmts: List<Stmt> = []
+    outer_stmts.push(Stmt::Let(src_name, false, none, clause.iter))
+    outer_stmts.push(Stmt::For(idx_name, range_e, new_body))
+    return new_block(make_span(0, 0, 0, 0), outer_stmts)
+}
+
+fn lower_comprehension(st: LowerState, expr: Expr) -> LowerResult {
+    let kind: String = expr_comp_kind(expr)
+    let clauses: List<CompClause> = expr_comp_clauses(expr)
+
+    // Snapshot and clear the type hint so nested comps inside the
+    // element / key / value don't accidentally inherit it.
+    let mut s: LowerState = st
+    let type_hint: Option<TypeExpr> = s.comp_type_hint
+    s.comp_type_hint = none
+
+    // Reserve a stable accumulator name. `tmp_counter` bumps separately
+    // from `__mn_comp_src_N` / `__mn_comp_i_N` (handed out by
+    // `wrap_comp_for`).
+    let comp_n: Int = s.tmp_counter
+    s.tmp_counter = s.tmp_counter + 1
+    let result_name: String = "__mn_comp_" + toString(comp_n)
+
+    // Build the init expression and the per-iteration write expression.
+    let empty_list_init: List<Expr> = []
+    let mut init: Expr = Expr::ListLit(empty_list_init)
+    let mut inner_call: Expr = Expr::NoneLit
+    if kind == "list" {
+        let elem_opt: Option<Expr> = expr_comp_element(expr)
+        let mut elem_e: Expr = Expr::NoneLit
+        match elem_opt {
+            Some(e) => { elem_e = e },
+            _ => {}
+        }
+        let mut push_args: List<Expr> = []
+        push_args.push(elem_e)
+        inner_call = Expr::MethodCall(Expr::Ident(result_name), "push", push_args)
+    } else {
+        let key_opt: Option<Expr> = expr_comp_key(expr)
+        let val_opt: Option<Expr> = expr_comp_value(expr)
+        let mut key_e: Expr = Expr::NoneLit
+        let mut val_e: Expr = Expr::NoneLit
+        match key_opt {
+            Some(k) => { key_e = k },
+            _ => {}
+        }
+        match val_opt {
+            Some(v) => { val_e = v },
+            _ => {}
+        }
+        let empty_entries: List<MapEntry> = []
+        init = Expr::MapLit(empty_entries)
+        // Map insertion via `m[k] = v` — IndexSet handles both list and
+        // map writes; mirrors Python's _AssignExpr/IndexExpr synthesis.
+        let target_idx: Expr = Expr::Index(Expr::Ident(result_name), key_e)
+        inner_call = Expr::Assign(target_idx, "=", val_e)
+    }
+
+    // Synthesize and lower `let mut __mn_comp_N: <hint> = <init>`.
+    let let_stmt: Stmt = Stmt::Let(result_name, true, type_hint, init)
+    let let_r: LowerResult = lower_stmt(s, let_stmt)
+    s = let_r.state
+
+    // For map comprehensions with an explicit `Map<K, V>` annotation,
+    // post-patch the most recent MapInit instruction's key/val types
+    // (mirror of Python `lower.py::_lower_let` v5.15.0 Te.2.C). Without
+    // this, indexing the comprehension's result would see UNKNOWN
+    // value type and the LLVM emitter would fall back to raw-pointer
+    // reads (printing `<?>`).
+    if kind == "map" {
+        match type_hint {
+            Some(te) => { s = patch_last_mapinit_types(s, te) },
+            _ => {}
+        }
+    }
+
+    // Build the loop body innermost-out: filters then for-clauses,
+    // both in reverse source order.
+    let mut body_stmts0: List<Stmt> = []
+    body_stmts0.push(Stmt::ExprStmt(inner_call))
+    let mut body: Block = new_block(make_span(0, 0, 0, 0), body_stmts0)
+    let nclauses: Int = len(clauses)
+    let mut ci: Int = nclauses - 1
+    for _ in 0..32 {
+        if ci < 0 { break }
+        let clause: CompClause = clauses[ci]
+        // Wrap body in `if cond { body }` for each filter, reversed.
+        let mut fi: Int = len(clause.conditions) - 1
+        for _ in 0..32 {
+            if fi < 0 { break }
+            let cond: Expr = clause.conditions[fi]
+            let if_expr: Expr = Expr::If(cond, body, none)
+            let mut wrap: List<Stmt> = []
+            wrap.push(Stmt::ExprStmt(if_expr))
+            body = new_block(make_span(0, 0, 0, 0), wrap)
+            fi = fi - 1
+        }
+        body = wrap_comp_for(s, clause, body)
+        ci = ci - 1
+    }
+
+    // Lower each statement of the synthesized outer block.
+    let mut bi: Int = 0
+    let nbs: Int = len(body.stmts)
+    for _ in 0..256 {
+        if bi < nbs {
+            let r_bs: LowerResult = lower_stmt(s, body.stmts[bi])
+            s = r_bs.state
+            bi = bi + 1
+        }
+    }
+
+    // Return the populated accumulator (Load from its alloca).
+    return lower_identifier(s, result_name)
+}
+
+// Find the most recent MapInit instruction in the current block and
+// patch its key_type / val_type from a `Map<K, V>` TypeExpr. No-op if
+// the type expression isn't shaped like Map<_, _>.
+fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState {
+    if type_expr_kind(te) != "generic" { return st }
+    if type_expr_name(te) != "Map" { return st }
+    let args: List<TypeExpr> = type_expr_args(te)
+    if len(args) < 2 { return st }
+    let k_ty: MIRType = lower_resolve_type_checked(st, args[0])
+    let v_ty: MIRType = lower_resolve_type_checked(st, args[1])
+
+    let idx: Int = st.current_block_idx
+    if idx < 0 { return st }
+    if idx >= len(st.fn_blocks) { return st }
+    let bb: BasicBlock = st.fn_blocks[idx]
+    let mut instrs: List<Instruction> = bb.instructions
+    let mut j: Int = len(instrs) - 1
+    for _ in 0..512 {
+        if j < 0 { return st }
+        let inst: Instruction = instrs[j]
+        match inst {
+            MapInit(dest, _, _, pairs) => {
+                instrs[j] = Instruction::MapInit(dest, k_ty, v_ty, pairs)
+                let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
+                let mut blocks: List<BasicBlock> = st.fn_blocks
+                blocks[idx] = new_bb
+                let mut new_st: LowerState = st
+                new_st.fn_blocks = blocks
+                return new_st
+            },
+            _ => {}
+        }
+        j = j - 1
+    }
+    return st
 }
 
 // ---------------------------------------------------------------------------
@@ -17326,6 +17801,40 @@ fn emit_cast(st: EmitState, dest: Value, src: Value, target_ty: MIRType) -> Emit
             return s
         }
     }
+    // v5.16.0 Te.4.D — Int/Float/Bool → String for string interpolation.
+    // Mirrors mapanare/emit_llvm_text.py::_do_cast. Emits the matching
+    // `__mn_str_from_*` runtime call and tracks the fresh allocation
+    // for drop-glue. Cast(String→String) collapses to emit_copy (no
+    // tracker — alias of source).
+    if target_ty.kind == TK_STRING() {
+        if src.ty.kind == TK_STRING() {
+            return emit_copy(s, dest, src)
+        }
+        if src.ty.kind == TK_INT() {
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_int", "i64 " + sn)
+            s = emit_track_string(s, dn)
+            return s
+        }
+        if src.ty.kind == TK_FLOAT() {
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_float", "double " + sn)
+            s = emit_track_string(s, dn)
+            return s
+        }
+        if src.ty.kind == TK_BOOL() {
+            let cnt_zb: String = toString(s.counter)
+            s.counter = s.counter + 1
+            let zext_b: String = "%zb" + cnt_zb
+            s = emit_line(s, "  " + zext_b + " = zext i1 " + sn + " to i64")
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_bool", "i64 " + zext_b)
+            s = emit_track_string(s, dn)
+            return s
+        }
+        // Unknown source type — assume i64 (best-effort, matches
+        // emit_builtin_tostring's fallback).
+        s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_int", "i64 " + sn)
+        s = emit_track_string(s, dn)
+        return s
+    }
     // Fallback: bitcast
     s = emit_line(s, emit_bitcast(dn, src_ty, sn, dst_ty))
     return s
@@ -19787,13 +20296,24 @@ fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     if args[0].ty.kind == TK_STRING() {
         s = emit_rt_call(s, dn, llvm_int(), "__mn_str_len", llvm_string() + " " + an)
     } else {
+    if args[0].ty.kind == TK_MAP() {
+        // v5.15.1 — `len(map)` dispatch. Pre-existing gap surfaced
+        // by the v5.15.0 map-comprehension test. The bootstrap maps
+        // a Map value as `{ptr, i64}` where ``.0`` is the runtime
+        // ``MnMap*``. ``__mn_map_len`` takes that pointer directly,
+        // so extract field 0 and pass it.
+        let tmp_mptr: String = dn + ".mp"
+        let mt: String = llvm_map_type()
+        s = emit_line(s, "  " + tmp_mptr + " = extractvalue " + mt + " " + an + ", 0")
+        s = emit_rt_call(s, dn, llvm_int(), "__mn_map_len", "ptr " + tmp_mptr)
+    } else {
         // __mn_list_len expects a pointer; alloca+store the list value first
         let tmp: String = dn + ".lp"
         let lt: String = llvm_list_rt()
         s = emit_line(s, "  " + tmp + " = alloca " + lt)
         s = emit_line(s, "  store " + lt + " " + an + ", " + "ptr " + tmp)
         s = emit_rt_call(s, dn, llvm_int(), "__mn_list_len", "ptr " + tmp)
-    }
+    }}
     return s
 }
 
@@ -20739,7 +21259,10 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
         return emit_copy(st, dest, parts[0])
     }
 
-    // Concatenate parts left-to-right using __mn_str_concat
+    // Concatenate parts left-to-right using __mn_str_concat. The final
+    // concat writes into `dest.name` directly so downstream uses of
+    // `dest` resolve to a defined SSA value (v5.16.0 Te.4.D — fix
+    // for "use of undefined value" when the chain has >1 join).
     let mut s: EmitState = st
     let dn: String = dest.name
 
@@ -20749,7 +21272,9 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
     let nparts: Int = len(parts)
     for _ in 0..500 {
         if i < nparts {
-            let tmp: String = dn + ".c" + toString(i)
+            let is_last: Bool = (i == nparts - 1)
+            let mut tmp: String = dn + ".c" + toString(i)
+            if is_last { tmp = dn }
             s = emit_rt_call(s, tmp, llvm_string(), "__mn_str_concat", llvm_string() + " " + acc + ", " + llvm_string() + " " + parts[i].name)
             // v5.4.1 Phase 3.4 — each __mn_str_concat result is a fresh
             // heap allocation. Track each intermediate so drop-glue

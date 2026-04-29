@@ -1,0 +1,10 @@
+// v5.16.0 Te.4 — literal text both before AND after a ``${...}``
+// site. Exercises the trailing-segment flush in
+// ``split_interp_parts`` (regression-fixed via position-based scan
+// after a buffer-rebuild approach hit a bootstrap-lower String
+// concat bug).
+
+fn main() {
+    let x: Int = 7
+    print("[${x}] done")
+}

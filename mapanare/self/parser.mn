@@ -1901,12 +1901,17 @@ fn parse_method_args(tokens: List<Token>, pos: Int, filename: String, obj: Expr,
 // String interpolation helpers
 // ---------------------------------------------------------------------------
 
+// v5.16.0 Te.4.B — string interpolation detection.
+// Mirrors mapanare/parser.py::_split_interp. Returns true iff `s`
+// contains an unescaped `${`. The lexer preserves `\$` literally, so
+// this scans for a backslash on the byte before the `$` rather than
+// for a stripped escape prefix.
 fn has_interpolation(s: String) -> Bool {
-    for i in 0..len(s) {
+    let n: Int = len(s)
+    for i in 0..n {
         if s.char_at(i) == "$" {
-            if i + 1 < len(s) {
+            if i + 1 < n {
                 if s.char_at(i + 1) == "{" {
-                    // Check not escaped
                     if i == 0 { return true }
                     if s.char_at(i - 1) != "\\" { return true }
                 }
@@ -1916,74 +1921,81 @@ fn has_interpolation(s: String) -> Bool {
     return false
 }
 
-fn split_interp_parts(s: String) -> List<Expr> {
+// v5.16.0 Te.4.B/C — split a STRING_LIT value into a sequence of
+// alternating `Expr::StringLit` (literal text) and `Expr` (interpolated)
+// parts. Mirrors `_split_interp` + `_parse_interp_expr` from
+// mapanare/parser.py. Each `${...}` site re-lexes and re-parses the
+// inner expression text via `tokenize` + `parse_expr` so any expression
+// form (Ident, MethodCall, Binary, Call, MapLit, ...) is supported.
+// The caller wraps the result in `Expr::InterpString(parts)` so the
+// lowerer can route through the existing `InterpConcat` MIR (which
+// emits a chain of `__mn_str_concat` calls and Cast-to-string for
+// non-StringLit parts).
+fn split_interp_parts(s: String, filename: String) -> List<Expr> {
+    // Position-based scan: track [seg_start, i) as the pending literal
+    // segment instead of building char-by-char with `lit = lit + ch`.
+    // The buffer-rebuilding approach hit a bootstrap lower bug where
+    // the trailing-literal segment after an interp site emitted
+    // garbage bytes into the LLVM string constant.
     let mut parts: List<Expr> = []
-    let mut lit: String = ""
+    let mut seg_start: Int = 0
     let mut i: Int = 0
+    let n: Int = len(s)
     for _ in 0..100000 {
-        if i >= len(s) {
-            if len(lit) > 0 { parts.push(Expr::StringLit(lit)) }
-            return parts
-        }
+        if i >= n { break }
         let ch: String = s.char_at(i)
         if ch == "\\" {
-            if i + 1 < len(s) {
-                if s.char_at(i + 1) == "$" {
-                    lit = lit + "$"
-                    i = i + 2
-                } else {
-                    lit = lit + ch
-                    i = i + 1
-                }
-            } else {
-                lit = lit + ch
-                i = i + 1
-            }
+            // Skip the escape and its next char so `\$` doesn't trip
+            // the interp scanner. The literal segment kept as
+            // s[seg_start..segment_end) preserves the backslash byte
+            // that the lexer left intact for us.
+            if i + 1 < n { i = i + 2 } else { i = i + 1 }
         } else {
-            if ch == "$" {
-                if i + 1 < len(s) {
-                    if s.char_at(i + 1) == "{" {
-                        // Flush literal
-                        if len(lit) > 0 {
-                            parts.push(Expr::StringLit(lit))
-                            lit = ""
-                        }
-                        // Find matching }
-                        let mut depth: Int = 1
-                        let mut j: Int = i + 2
-                        for _ in 0..10000 {
-                            if j >= len(s) { return parts }
-                            if depth == 0 { return parts }
-                            if s.char_at(j) == "{" { depth = depth + 1 }
-                            if s.char_at(j) == "}" {
-                                depth = depth - 1
-                                if depth == 0 {
-                                    // Extract expression text between ${ and }
-                                    let expr_text: String = s.substr(i + 2, j)
-                                    // For now, treat as Ident (simple variable reference)
-                                    parts.push(Expr::Ident(expr_text))
-                                    i = j + 1
-                                    return parts
-                                }
-                            }
-                            j = j + 1
-                        }
-                        i = j
+            if ch == "$" && i + 1 < n && s.char_at(i + 1) == "{" {
+                // Flush pending literal segment via substr, not a
+                // rebuilt char buffer.
+                if i > seg_start {
+                    let lit_text: String = s.substr(seg_start, i - seg_start)
+                    parts.push(Expr::StringLit(lit_text))
+                }
+                let mut depth: Int = 1
+                let mut j: Int = i + 2
+                let mut found_close: Bool = false
+                for _ in 0..100000 {
+                    if j >= n { break }
+                    let cj: String = s.char_at(j)
+                    if cj == "{" {
+                        depth = depth + 1
                     } else {
-                        lit = lit + ch
-                        i = i + 1
+                        if cj == "}" {
+                            depth = depth - 1
+                            if depth == 0 { found_close = true; break }
+                        }
                     }
-                } else {
-                    lit = lit + ch
+                    j = j + 1
+                }
+                if found_close == false {
+                    // Unterminated `${...}` — fold the `$` into the
+                    // pending segment and continue.
                     i = i + 1
+                } else {
+                    let expr_len: Int = j - (i + 2)
+                    let expr_text: String = s.substr(i + 2, expr_len)
+                    let etokens: List<Token> = tokenize(expr_text, filename)
+                    let er: ExprResult = parse_expr(etokens, 0, filename, 0)
+                    parts.push(er.expr)
+                    i = j + 1
+                    seg_start = i
                 }
             } else {
-                lit = lit + ch
                 i = i + 1
             }
         }
     }
-    if len(lit) > 0 { parts.push(Expr::StringLit(lit)) }
+    if i > seg_start {
+        let tail_text: String = s.substr(seg_start, i - seg_start)
+        parts.push(Expr::StringLit(tail_text))
+    }
     return parts
 }
 
@@ -2051,16 +2063,14 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     // String literal — check for interpolation ${...}
     if tt == "STRING_LIT" {
         if has_interpolation(val) {
-            let parts: List<Expr> = split_interp_parts(val)
-            if len(parts) > 1 {
-                // Multiple parts: return as a binary concat chain
-                let mut result: Expr = parts[0]
-                for i in 1..len(parts) {
-                    result = Expr::Binary(result, "+", parts[i])
-                }
-                return new_expr_result(result, pos + 1)
-            }
+            let parts: List<Expr> = split_interp_parts(val, filename)
+            // v5.16.0 Te.4.C — wrap in dedicated AST node mirroring
+            // Python `InterpString`. Lowered via `InterpConcat` MIR.
+            return new_expr_result(Expr::InterpString(parts), pos + 1)
         }
+        // No interp: STRING_LIT may still carry preserved `\$`
+        // sequences from the lexer. Mirrors Python's post-`_split_interp`
+        // path which leaves `\$` literal in the StringLit value.
         return new_expr_result(Expr::StringLit(val), pos + 1)
     }
 

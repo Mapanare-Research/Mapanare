@@ -1,0 +1,7 @@
+// v5.16.0 Te.4 — Int interpolation. Cast(Int → String) lowers to
+// ``__mn_str_from_int`` with drop tracking on the fresh allocation.
+
+fn main() {
+    let n: Int = 42
+    print("n=${n}")
+}

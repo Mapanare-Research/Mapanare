@@ -116,7 +116,12 @@ enum Expr {
     If(Expr, Block, Option<ElseClause>),
     Match(Expr, List<MatchArm>),
     Await(Expr),
-    Comprehension(String, Option<Expr>, Option<Expr>, Option<Expr>, List<CompClause>)
+    Comprehension(String, Option<Expr>, Option<Expr>, Option<Expr>, List<CompClause>),
+    // v5.16.0 Te.4.C — string interpolation. Parts alternate between
+    // `StringLit` (literal text) and arbitrary `Expr` (interpolated
+    // value). Mirrors Python `InterpString` shape so the lowerer can
+    // reuse `InterpConcat` MIR. Empty `parts` means an empty literal.
+    InterpString(List<Expr>)
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +379,15 @@ pub fn expr_kind(e: Expr) -> String {
         If(_, _, _) => { return "if" },
         Match(_, _) => { return "match" },
         Await(_) => { return "await" },
-        Comprehension(_, _, _, _, _) => { return "comprehension" }
+        Comprehension(_, _, _, _, _) => { return "comprehension" },
+        InterpString(_) => { return "interp_string" }
+    }
+}
+
+pub fn expr_interp_parts(e: Expr) -> List<Expr> {
+    match e {
+        InterpString(p) => { return p },
+        _ => { let empty: List<Expr> = []; return empty }
     }
 }
 
