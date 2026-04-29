@@ -1978,6 +1978,17 @@ def _indent_to_braces(source: str) -> str:
                 break
 
         if is_continuation:
+            # v5.17.0 Sh.A.1: pop nested blocks until indent_stack
+            # matches this continuation's level. Each inner pop emits
+            # a `}` close brace; the outermost popped block then gets
+            # the `} CONTINUATION {` form. Without this, multi-level
+            # dedent (e.g. ``else:`` at level 0 after content at level
+            # 2) leaves intermediate blocks unclosed in the brace
+            # output.
+            while indent_stack[-1][0] > level + 1:
+                indent_stack.pop()
+                close_indent = "    " * indent_stack[-1][0]
+                out.append(f"{close_indent}}}")
             if indent_stack[-1][0] > level:
                 indent_stack.pop()
                 prefix = "    " * level

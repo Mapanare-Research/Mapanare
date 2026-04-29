@@ -4012,6 +4012,23 @@ MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
         /* Continuation (else/sino) — must be detected before dedent close,
          * because the dedent target IS the close. */
         if (mn_ib_is_continuation(content, content_len)) {
+            /* v5.17.0 Sh.A.1: pop nested colon-blocks until the stack
+             * matches this continuation's level. Each inner pop emits
+             * a `}` close brace; the outermost popped block then gets
+             * the `} CONTINUATION {` form. Without this, multi-level
+             * dedent on `else:` (e.g. `else:` at level 0 after content
+             * at level 2) leaves intermediate blocks unclosed. Mirrors
+             * the Python `_indent_to_braces` fix. */
+            while (stack.items[stack.len - 1].level > level + 1) {
+                stack.len -= 1;
+                indent_buf.len = 0;
+                mn_ib_emit_indent(&indent_buf, stack.items[stack.len - 1].level);
+                MnIB_LineBuf cl;
+                mn_ib_buf_init(&cl);
+                mn_ib_buf_append(&cl, indent_buf.data, indent_buf.len);
+                mn_ib_buf_append_char(&cl, '}');
+                mn_ib_lines_push(&out, &cl);
+            }
             MnIB_Frame *top = &stack.items[stack.len - 1];
             if (top->level > level) {
                 stack.len -= 1;

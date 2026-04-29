@@ -96,6 +96,21 @@ FIXTURES: list[tuple[str, str]] = [
         "mixed_brace_and_colon",
         "fn a() {\n    print(1)\n}\nfn b():\n    print(2)\n",
     ),
+    # v5.17.0 Sh.A.1: multi-level dedent on `else:` continuation. The
+    # outer `else:` at level 0 follows content at level 2 — both
+    # preprocessors must close the inner if-block before emitting the
+    # `} else {` form, otherwise the brace output has unmatched braces.
+    (
+        "multi_level_dedent_else",
+        "fn f(a: Bool, b: Bool) -> Int:\n"
+        "    if a:\n"
+        "        if b:\n"
+        "            return 1\n"
+        "        else:\n"
+        "            return 2\n"
+        "    else:\n"
+        "        return 3\n",
+    ),
 ]
 
 
