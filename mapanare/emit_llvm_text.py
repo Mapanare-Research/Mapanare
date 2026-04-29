@@ -2328,6 +2328,16 @@ class LLVMTextEmitter:
                                 continue  # call to known-pure OK
                             is_pure = False
                             break
+                        # v5.13.1 At.1: Assert lowers to printf + @exit(1) in
+                        # the fail block — observable side effects. Pre-v5.13.1
+                        # this was latent because no `@test` runner ever called
+                        # an assert-bearing fn, so the dead-code-elimination
+                        # consequence of the bogus memory(none) attribute never
+                        # surfaced. Per-test main wrappers (At.1) call test
+                        # functions directly, exposing the gap.
+                        if isinstance(inst, Assert):
+                            is_pure = False
+                            break
                     if not is_pure:
                         break
                 if is_pure:
@@ -5694,8 +5704,17 @@ class LLVMTextEmitter:
         # fail block
         self._blk[fb] = []
         self._cb = fb
-        msg = f"assertion failed at {i.filename}:{i.line}\\n"
-        self._printf(msg, [])
+        # v5.13.1 At.1: surface the user-supplied message (if any) so
+        # `mapanare test` can show meaningful failure context. Pre-v5.13.1
+        # this only printed location, dropping the message Value built
+        # by lower._lower_assert (a real-bug, not a missing feature).
+        if i.message is not None:
+            self._printf(f"assertion failed at {i.filename}:{i.line}: ", [])
+            mv, mt = self._get(i.message)
+            mv = self._coerce(mv, mt, STR) if mt != STR else mv
+            self._rt("__mn_str_println", VOID, [STR], [(mv, STR)])
+        else:
+            self._printf(f"assertion failed at {i.filename}:{i.line}\\n", [])
         self._ensure("exit", VOID, [I64])
         self._L("call void @exit(i64 1)")
         self._L("unreachable")

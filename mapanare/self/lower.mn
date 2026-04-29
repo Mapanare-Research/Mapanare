@@ -1226,11 +1226,21 @@ fn lower_assert(st: LowerState, cond_expr: Expr, msg: Option<String>) -> LowerSt
     s = set_block(s, s.current_block_idx - 2)
     s = emit_instr(s, Instruction::Branch(cond_r.value, ok_label, fail_label))
 
-    // Fail block: call __mn_assert_fail
+    // Fail block: call __mn_assert_fail. v5.13.1 At.2: pass the
+    // user-supplied message (assert COND, "msg") through to the
+    // runtime so `mnc test` failure output surfaces something more
+    // useful than a bare "assertion failed". Pre-v5.13.1 this was
+    // hardcoded to the literal string "assertion failed", which the
+    // C side then prefixed with another "assertion failed" — the
+    // user message was parsed and dropped.
     s = set_block(s, fail_idx)
     let msg_val: LowerResult = make_value(s, mir_string(), "assert_msg")
     s = msg_val.state
-    let msg_str: String = "assertion failed"
+    let mut msg_str: String = ""
+    match msg {
+        Some(m) => { msg_str = m },
+        _ => {}
+    }
     s = emit_instr(s, Instruction::Const(msg_val.value, mir_string(), msg_str))
     let mut fail_args: List<Value> = []
     fail_args.push(msg_val.value)

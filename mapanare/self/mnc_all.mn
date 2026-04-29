@@ -914,7 +914,6 @@ pub fn else_clause_else(ec: ElseClause) -> Option<ElseClause> {
 // Tokenizes .mn source files into a token stream.
 // Character-by-character scanner replacing the Lark-based Python lexer.
 
-
 // ---------------------------------------------------------------------------
 // Token
 // ---------------------------------------------------------------------------
@@ -1510,7 +1509,6 @@ fn tokenize_with_newlines(source: String, filename: String) -> List<Token> {
 //
 // NOTE: Struct construction syntax (Name { field: val }) is not yet in the
 // Lark grammar, so all struct creation uses constructor functions.
-
 
 // ---------------------------------------------------------------------------
 // ParseError
@@ -4108,7 +4106,6 @@ fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult 
 // Performs type checking and scope resolution via two-pass analysis:
 //   Pass 1: register all top-level definitions (names & signatures)
 //   Pass 2: check function bodies, expressions, and statements
-
 
 // ---------------------------------------------------------------------------
 // SemanticError
@@ -7298,7 +7295,6 @@ pub fn fn_is_async(f: MIRFunction) -> Bool {
 // lower_state.mn — Lowerer state, scope management, lookups, and type resolution.
 // Extracted from lower.mn to reduce file size and share lookup utilities.
 
-
 // ---------------------------------------------------------------------------
 // Lowerer state — threaded through all lowering functions
 // ---------------------------------------------------------------------------
@@ -7890,7 +7886,6 @@ fn kind_to_type_name(kind: Int) -> String {
 //
 // Data structures (MIRType, Value, Instruction, etc.) are in mir.mn.
 // State management (LowerState, lookups, type resolution) is in lower_state.mn.
-
 
 // ---------------------------------------------------------------------------
 // Declaration registration (Pass 1)
@@ -9109,11 +9104,21 @@ fn lower_assert(st: LowerState, cond_expr: Expr, msg: Option<String>) -> LowerSt
     s = set_block(s, s.current_block_idx - 2)
     s = emit_instr(s, Instruction::Branch(cond_r.value, ok_label, fail_label))
 
-    // Fail block: call __mn_assert_fail
+    // Fail block: call __mn_assert_fail. v5.13.1 At.2: pass the
+    // user-supplied message (assert COND, "msg") through to the
+    // runtime so `mnc test` failure output surfaces something more
+    // useful than a bare "assertion failed". Pre-v5.13.1 this was
+    // hardcoded to the literal string "assertion failed", which the
+    // C side then prefixed with another "assertion failed" — the
+    // user message was parsed and dropped.
     s = set_block(s, fail_idx)
     let msg_val: LowerResult = make_value(s, mir_string(), "assert_msg")
     s = msg_val.state
-    let msg_str: String = "assertion failed"
+    let mut msg_str: String = ""
+    match msg {
+        Some(m) => { msg_str = m },
+        _ => {}
+    }
     s = emit_instr(s, Instruction::Const(msg_val.value, mir_string(), msg_str))
     let mut fail_args: List<Value> = []
     fail_args.push(msg_val.value)
@@ -12759,7 +12764,6 @@ pub fn lower(program: Program, module_name: String) -> MIRModule {
 // emit_llvm_ir.mn — LLVM IR type constants and instruction string builders.
 // Pure string-producing functions, shared by emit_llvm.mn.
 
-
 // ---------------------------------------------------------------------------
 // LLVM type constants (as string representations)
 // ---------------------------------------------------------------------------
@@ -13133,7 +13137,6 @@ fn abi_classify_return_sret(is_aggregate: Bool, total_size: Int, target: String)
 // strength reduction, function inlining, LICM, escape analysis.
 // v4.97.0: ported all Arc 11-12 optimization passes from Python bootstrap.
 // Wired into compile() after lower(), before emit().
-
 
 // ---------------------------------------------------------------------------
 // Pass 1: Constant folding
@@ -15021,7 +15024,6 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
 //
 // LLVM type constants and IR string builders are in emit_llvm_ir.mn.
 
-
 // ---------------------------------------------------------------------------
 // Emitter state
 // ---------------------------------------------------------------------------
@@ -16214,6 +16216,12 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
 
     // Panic / process
     s = declare_runtime_fn(s, "__mn_panic", "void", llvm_string())
+    // v5.13.1 At.2: assertion-failure runtime, called from the lowered
+    // fail block of every `assert` statement (see lower_assert in
+    // lower.mn). Pre-v5.13.1 the call was emitted but never declared,
+    // so `mnc test` died at clang IR-parse with "use of undefined
+    // value '@__mn_assert_fail'". Defined in runtime/native/mapanare_core.c.
+    s = declare_runtime_fn(s, "__mn_assert_fail", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_exit", "void", "i64")
     s = declare_runtime_fn(s, "__mn_argc", "i64", "")
     s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
@@ -21377,7 +21385,6 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
 // main.mn — Compiler driver for the Mapanare self-hosted compiler.
 // Wires the pipeline: source -> parse -> resolve imports -> lower -> emit_llvm -> LLVM IR.
 
-
 // ---------------------------------------------------------------------------
 // Compilation result
 // ---------------------------------------------------------------------------
@@ -21967,6 +21974,164 @@ fn link_with_runtime(obj_path: String, out_path: String) -> Int {
     return __mn_system(link_src)
 }
 
+// v5.13.1 At.2: source-text scan for `@test fn NAME(...)`. The native
+// compiler doesn't expose the AST to main.mn (compile() returns IR
+// text only), so a line-based scan keeps the patch minimal — the
+// Python bootstrap discovers the same way through test_runner.py's
+// AST walk, but `mnc test` only has the source string in scope.
+// Skips blank lines and `//` comments between `@test` and `fn`.
+fn is_test_name_char(ch: String) -> Bool {
+    if ch == "_" { return true }
+    if ch >= "0" && ch <= "9" { return true }
+    if ch >= "a" && ch <= "z" { return true }
+    if ch >= "A" && ch <= "Z" { return true }
+    return false
+}
+
+fn extract_fn_name(line: String) -> String {
+    // line begins with "fn " — pull the identifier after it.
+    let n: Int = len(line)
+    let mut i: Int = 3
+    let mut start: Int = 3
+    for _ in 0..n {
+        if i >= n { break }
+        let ch: String = line.substr(i, 1)
+        if !is_test_name_char(ch) { break }
+        i = i + 1
+    }
+    return line.substr(start, i - start)
+}
+
+// Manual whitespace strip. lower.mn doesn't translate `.trim()` to
+// `__mn_str_trim`, mirroring emit_llvm.mn::ws_trim — duplicated here
+// instead of imported because mnc_all.mn is a flat concat and main is
+// emitted last (no module-prefixed call sites for ws_trim available).
+fn _trim_line(s: String) -> String {
+    let n: Int = len(s)
+    if n == 0 { return s }
+    let mut start: Int = 0
+    for _ in 0..10000 {
+        if start >= n { break }
+        let c0: String = s.substr(start, 1)
+        if c0 != " " && c0 != "\t" && c0 != "\r" { break }
+        start = start + 1
+    }
+    let mut end: Int = n
+    for _ in 0..10000 {
+        if end <= start { break }
+        let c1: String = s.substr(end - 1, 1)
+        if c1 != " " && c1 != "\t" && c1 != "\r" { break }
+        end = end - 1
+    }
+    if start == 0 && end == n { return s }
+    return s.substr(start, end - start)
+}
+
+// v5.13.1 At.2: manual line-by-line scan via substr instead of
+// String.split — split() in the self-host stage1 returns a List
+// where each element is empty when the source was passed in as a
+// function parameter (suspect string-ownership bug, latent because
+// no other call site in the compiler splits a parameter String).
+// Patch-release scope: route around it; file an issue for v5.14.x.
+fn discover_test_names(source: String) -> List<String> {
+    let mut names: List<String> = []
+    let n: Int = len(source)
+    let mut pos: Int = 0
+    for _ in 0..n {
+        if pos >= n { break }
+        let mut eol: Int = pos
+        for _ in 0..n {
+            if eol >= n { break }
+            if source.substr(eol, 1) == "\n" { break }
+            eol = eol + 1
+        }
+        let line: String = _trim_line(source.substr(pos, eol - pos))
+        if line == "@test" {
+            // Scan forward for the next non-blank, non-comment line
+            let mut q: Int = eol + 1
+            for _ in 0..n {
+                if q >= n { break }
+                let mut q_eol: Int = q
+                for _ in 0..n {
+                    if q_eol >= n { break }
+                    if source.substr(q_eol, 1) == "\n" { break }
+                    q_eol = q_eol + 1
+                }
+                let nl: String = _trim_line(source.substr(q, q_eol - q))
+                let mut consumed: Bool = false
+                if len(nl) == 0 {
+                    q = q_eol + 1
+                    consumed = true
+                }
+                if !consumed {
+                    if nl.starts_with("//") {
+                        q = q_eol + 1
+                        consumed = true
+                    }
+                }
+                if !consumed {
+                    if nl.starts_with("fn ") {
+                        let nm: String = extract_fn_name(nl)
+                        if len(nm) > 0 { names.push(nm) }
+                    }
+                    if nl.starts_with("pub fn ") {
+                        let nm2: String = extract_fn_name(nl.substr(4, len(nl) - 4))
+                        if len(nm2) > 0 { names.push(nm2) }
+                    }
+                    break
+                }
+            }
+        }
+        pos = eol + 1
+    }
+    return names
+}
+
+fn build_test_main_ir(test_name: String) -> String {
+    // mn_user_main.c calls @mn_main(); synthesize one that calls a
+    // single @test function and returns 0. Assertion failures inside
+    // the test call __mn_assert_fail → exit(1) before we return.
+    let mut s: String = "\n; v5.13.1 At.2: per-test entry point synthesized by mnc test.\n"
+    s = s + "define i32 @mn_main() {\n"
+    s = s + "  call void @" + test_name + "()\n"
+    s = s + "  ret i32 0\n"
+    s = s + "}\n"
+    return s
+}
+
+fn run_one_test(base_ir: String, test_name: String, clang_bin: String) -> Bool {
+    let ll_path: String = "/tmp/mnc_test_" + test_name + ".ll"
+    let o_path: String = "/tmp/mnc_test_" + test_name + ".o"
+    let exe_path: String = "/tmp/mnc_test_" + test_name
+    let full_ir: String = base_ir + build_test_main_ir(test_name)
+    __mn_file_write(ll_path, full_ir)
+
+    let r1: Int = __mn_system(clang_bin + " -c -O0 " + ll_path + " -o " + o_path + clang_stderr_redirect())
+    if r1 != 0 {
+        __mn_str_eprint("    FAIL ")
+        __mn_str_eprint(test_name)
+        __mn_str_eprint("\n")
+        report_clang_failure()
+        return false
+    }
+    let r2: Int = link_with_runtime(o_path, exe_path)
+    if r2 != 0 {
+        __mn_str_eprint("    FAIL ")
+        __mn_str_eprint(test_name)
+        __mn_str_eprint(" (link failed)\n")
+        return false
+    }
+    let r3: Int = __mn_system(exe_path)
+    if r3 == 0 {
+        print("    PASS " + test_name)
+        return true
+    }
+    __mn_str_eprint("    FAIL ")
+    __mn_str_eprint(test_name)
+    __mn_str_eprint("\n")
+    return false
+}
+
 fn run_test(filename: String) {
     let source: String = __mn_file_read_or_empty(filename)
     if len(source) == 0 {
@@ -21981,6 +22146,7 @@ fn run_test(filename: String) {
         print_clang_install_help()
         __mn_exit(1)
     }
+    let test_names: List<String> = discover_test_names(source)
     let cr: CompileResult = compile(source, filename)
     if !cr.success {
         print_compile_errors(cr)
@@ -21989,44 +22155,28 @@ fn run_test(filename: String) {
         __mn_str_eprint(" (compile errors)\n")
         __mn_exit(1)
     }
-    // Rename @main → @mn_main so the C wrapper provides the real main()
-    __mn_file_write("/tmp/mnc_test.ll", rename_main(cr.ir_text))
-
-    // Compile IR -> object. v5.9.0 DX.3: stderr captured to a temp path
-    // so report_clang_failure() can show the real error instead of the
-    // pre-v5.9.0 swallowed-via-2>/dev/null behavior. v5.10.0 Win.1b.D:
-    // clang resolved via find_clang() — bundled if present, PATH otherwise.
+    if len(test_names) == 0 {
+        print(filename)
+        print("    no @test functions found")
+        return
+    }
+    print(filename)
+    let base_ir: String = rename_main(cr.ir_text)
     let clang_bin: String = find_clang()
-    let r1: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_test.ll -o /tmp/mnc_test.o" + clang_stderr_redirect())
-    if r1 != 0 {
-        __mn_str_eprint("FAIL ")
-        __mn_str_eprint(filename)
-        __mn_str_eprint("\n")
-        report_clang_failure()
-        __mn_exit(1)
+    let mut passed: Int = 0
+    let mut failed: Int = 0
+    let mut i: Int = 0
+    let n: Int = len(test_names)
+    for _ in 0..n {
+        if i >= n { break }
+        let name: String = test_names[i]
+        let ok: Bool = run_one_test(base_ir, name, clang_bin)
+        if ok { passed = passed + 1 } else { failed = failed + 1 }
+        i = i + 1
     }
-
-    // Link with runtime
-    let r2: Int = link_with_runtime("/tmp/mnc_test.o", "/tmp/mnc_test")
-    if r2 != 0 {
-        __mn_str_eprint("FAIL ")
-        __mn_str_eprint(filename)
-        __mn_str_eprint(" (link failed)\n")
-        __mn_exit(1)
-    }
-
-    // Run
-    let r3: Int = __mn_system("/tmp/mnc_test")
-    if r3 != 0 {
-        __mn_str_eprint("FAIL ")
-        __mn_str_eprint(filename)
-        __mn_str_eprint(" (runtime exit code ")
-        __mn_str_eprint(str(r3))
-        __mn_str_eprint(")\n")
-        __mn_exit(1)
-    }
-
-    print("PASS " + filename)
+    print("")
+    print("result: " + str(passed) + " passed, " + str(failed) + " failed (" + str(n) + " total)")
+    if failed > 0 { __mn_exit(1) }
 }
 
 // ---------------------------------------------------------------------------

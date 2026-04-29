@@ -1,0 +1,14 @@
+@test
+fn test_passes() {
+    assert 1 + 1 == 2
+}
+
+@test
+fn test_string_eq() {
+    assert "hello" == "hello"
+}
+
+@test
+fn test_fails() {
+    assert 1 == 2, "this should fail"
+}

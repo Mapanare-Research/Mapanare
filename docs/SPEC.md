@@ -1255,7 +1255,15 @@ agent Worker {
 ```
 
 Built-in decorators:
-- `@test` — marks a function as a test case.
+- `@test` — marks a function as a test case. Run with
+  `mapanare test <file.mn>` (Python bootstrap) or
+  `mnc test <file.mn>` (native). Each `@test` function executes in
+  its own subprocess so an `assert` failure surfaces as a single
+  test FAIL instead of taking down the whole suite. Optional
+  message form `assert COND, "msg"` is printed on failure. Stable
+  since v5.13.1; CI smoke test at
+  `tests/test_at_test_runtime.py` guards both runners against
+  regression.
 - `@supervised(strategy)` — configures agent restart policy.
 - `@restart(policy, max, window)` — detailed restart configuration.
 - `@allow(permission)` — security permission annotation.

@@ -3270,6 +3270,23 @@ MN_EXPORT void __mn_panic(MnString message) {
     exit(1);
 }
 
+/* v5.13.1 At.2: assertion-failure runtime entry point. The self-hosted
+ * lower.mn emits `call void @__mn_assert_fail(...)` for every `assert`
+ * statement (lower.mn::lower_assert), but no extern declaration was
+ * being emitted in the IR prelude AND the C side never defined the
+ * symbol — `mnc test` died at clang's IR-parse stage with "use of
+ * undefined value '@__mn_assert_fail'". Defined here so the resulting
+ * binary actually links and exits with code 1 on assertion failure. */
+MN_EXPORT void __mn_assert_fail(MnString message) {
+    fprintf(stderr, "assertion failed");
+    if (message.len > 0) {
+        fputs(": ", stderr);
+        fwrite(mn_untag(message.data), 1, (size_t)message.len, stderr);
+    }
+    fputc('\n', stderr);
+    exit(1);
+}
+
 /* v5.8.4 Wb.2: Host detection for self-hosted ABI classifier.
  * Originally returned "is Win64" but actually reads `_WIN32`, which
  * is defined for *both* 32-bit and 64-bit Windows builds. v5.8.6

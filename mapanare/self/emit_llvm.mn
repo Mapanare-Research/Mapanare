@@ -1206,6 +1206,12 @@ fn declare_all_runtime(st: EmitState) -> EmitState {
 
     // Panic / process
     s = declare_runtime_fn(s, "__mn_panic", "void", llvm_string())
+    // v5.13.1 At.2: assertion-failure runtime, called from the lowered
+    // fail block of every `assert` statement (see lower_assert in
+    // lower.mn). Pre-v5.13.1 the call was emitted but never declared,
+    // so `mnc test` died at clang IR-parse with "use of undefined
+    // value '@__mn_assert_fail'". Defined in runtime/native/mapanare_core.c.
+    s = declare_runtime_fn(s, "__mn_assert_fail", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_exit", "void", "i64")
     s = declare_runtime_fn(s, "__mn_argc", "i64", "")
     s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
