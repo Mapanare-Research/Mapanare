@@ -142,7 +142,7 @@ def to_terse(source: str) -> str:
             continue
 
         leading = raw[: len(raw) - len(raw.lstrip(" "))]
-        content = stripped[len(leading):]
+        content = stripped[len(leading) :]
 
         # Pop blocks whose body has ended (indentation has decreased).
         while block_stack and len(leading) <= len(block_stack[-1][0]):

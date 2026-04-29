@@ -65,7 +65,7 @@ def _parseable(src: str) -> bool:
 
 class TestToTerseRules:
     def test_simple_fn(self) -> None:
-        src = "fn main() {\n    print(\"hi\")\n}\n"
+        src = 'fn main() {\n    print("hi")\n}\n'
         out = to_terse(src)
         assert "fn main():" in out
         assert "{" not in out
@@ -75,11 +75,11 @@ class TestToTerseRules:
         src = (
             "fn f() {\n"
             "    if true {\n"
-            "        print(\"a\")\n"
+            '        print("a")\n'
             "    } else if false {\n"
-            "        print(\"b\")\n"
+            '        print("b")\n'
             "    } else {\n"
-            "        print(\"c\")\n"
+            '        print("c")\n'
             "    }\n"
             "}\n"
         )
@@ -122,7 +122,7 @@ class TestToTerseRules:
 
 class TestToBracesRules:
     def test_simple_fn(self) -> None:
-        src = "fn main():\n    print(\"hi\")\n"
+        src = 'fn main():\n    print("hi")\n'
         out = to_braces(src)
         assert "fn main() {" in out
         assert out.rstrip().endswith("}")
@@ -165,9 +165,9 @@ class TestGoldenCrossStyle:
         except ParseError as e:
             pytest.fail(f"to_terse output does not parse: {e}\n--- output ---\n{terse}")
         ast_orig = parse(src)
-        assert _normalize(ast_orig) == _normalize(ast_terse), (
-            f"AST diverged after to_terse on {path.name}"
-        )
+        assert _normalize(ast_orig) == _normalize(
+            ast_terse
+        ), f"AST diverged after to_terse on {path.name}"
 
     def test_round_trip_ast_equivalent(self, path: Path) -> None:
         src = path.read_text(encoding="utf-8")
@@ -179,6 +179,6 @@ class TestGoldenCrossStyle:
         except ParseError as e:
             pytest.fail(f"round-trip output does not parse: {e}")
         ast_orig = parse(src)
-        assert _normalize(ast_orig) == _normalize(ast_rt), (
-            f"AST diverged after to_braces(to_terse(...)) on {path.name}"
-        )
+        assert _normalize(ast_orig) == _normalize(
+            ast_rt
+        ), f"AST diverged after to_braces(to_terse(...)) on {path.name}"
