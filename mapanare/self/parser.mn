@@ -2392,6 +2392,14 @@ fn parse_map_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
     p = expect(tokens, p, "COLON")
     let v0: ExprResult = parse_expr(tokens, p, filename, 0)
     p = v0.pos
+
+    // v5.15.1 — map comprehension disambiguator. After the first
+    // `key: value` pair, a `for` keyword switches into comprehension
+    // mode; otherwise this is a regular map literal.
+    if peek_type(tokens, p) == "KW_FOR" {
+        return parse_map_comp_tail(tokens, p, filename, k0.expr, v0.expr)
+    }
+
     entries.push(new MapEntry { key: k0.expr, value: v0.expr })
 
     for _ in 0..10000 {
@@ -2426,8 +2434,16 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
     }
 
     let e0: ExprResult = parse_expr(tokens, p, filename, 0)
-    elems.push(e0.expr)
     p = e0.pos
+
+    // v5.15.1 — list comprehension disambiguator. After the first
+    // element, a `for` keyword switches into comprehension mode;
+    // otherwise this is a regular list literal.
+    if peek_type(tokens, p) == "KW_FOR" {
+        return parse_list_comp_tail(tokens, p, filename, e0.expr)
+    }
+
+    elems.push(e0.expr)
 
     for _ in 0..10000 {
         if peek_type(tokens, p) != "COMMA" {
@@ -2446,6 +2462,70 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
 
     p = expect(tokens, p, "RBRACKET")
     return new_expr_result(Expr::ListLit(elems), p)
+}
+
+// ---------------------------------------------------------------------------
+// Comprehension parsing (v5.15.1 — Cb.2/Cb.3)
+//
+// Mirrors mapanare/parser.py::list_comp / map_comp / comp_clause. Disambig
+// happens at the call site (parse_list_lit / parse_map_lit) when the
+// next token after the first element/entry is KW_FOR.
+// ---------------------------------------------------------------------------
+
+struct CompClauseResult {
+    clause: CompClause,
+    pos: Int
+}
+
+fn new_comp_clause_result(clause: CompClause, pos: Int) -> CompClauseResult {
+    return new CompClauseResult { clause: clause, pos: pos }
+}
+
+fn parse_comp_clause(tokens: List<Token>, pos: Int, filename: String) -> CompClauseResult {
+    // pos is at KW_FOR
+    let mut p: Int = expect(tokens, pos, "KW_FOR")
+    let target: String = peek_value(tokens, p)
+    p = p + 1
+    p = expect(tokens, p, "KW_IN")
+    let iter_r: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = iter_r.pos
+
+    let mut conditions: List<Expr> = []
+    for _ in 0..32 {
+        if peek_type(tokens, p) != "KW_IF" { break }
+        p = p + 1
+        let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
+        conditions.push(cond_r.expr)
+        p = cond_r.pos
+    }
+
+    return new_comp_clause_result(new_comp_clause(target, iter_r.expr, conditions), p)
+}
+
+fn parse_list_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_expr: Expr) -> ExprResult {
+    let mut p: Int = pos
+    let mut clauses: List<CompClause> = []
+    for _ in 0..32 {
+        if peek_type(tokens, p) != "KW_FOR" { break }
+        let cr: CompClauseResult = parse_comp_clause(tokens, p, filename)
+        clauses.push(cr.clause)
+        p = cr.pos
+    }
+    p = expect(tokens, p, "RBRACKET")
+    return new_expr_result(Expr::Comprehension("list", Some(first_expr), none, none, clauses), p)
+}
+
+fn parse_map_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_key: Expr, first_value: Expr) -> ExprResult {
+    let mut p: Int = pos
+    let mut clauses: List<CompClause> = []
+    for _ in 0..32 {
+        if peek_type(tokens, p) != "KW_FOR" { break }
+        let cr: CompClauseResult = parse_comp_clause(tokens, p, filename)
+        clauses.push(cr.clause)
+        p = cr.pos
+    }
+    p = expect(tokens, p, "RBRACE")
+    return new_expr_result(Expr::Comprehension("map", none, Some(first_key), Some(first_value), clauses), p)
 }
 
 // ---------------------------------------------------------------------------

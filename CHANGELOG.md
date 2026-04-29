@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.15.1] - 2026-04-29
+
+### Added
+
+- **Cb.\* — bootstrap comprehension mirror (patch).** Closes the v5.15.0
+  deferred item. `mnc-stage1` now parses and lowers list comprehensions
+  (`[expr for x in iter (if cond)*]`) and map comprehensions
+  (`#{ k: v for ... }`), with multi-`for` cartesian-product clauses,
+  exactly matching v5.15.0's Python behavior. **Cb.1** — new
+  `Comprehension(String, Option<Expr>, Option<Expr>, Option<Expr>,
+  List<CompClause>)` variant on `Expr` and new `CompClause` struct in
+  `mapanare/self/ast.mn`. **Cb.2/Cb.3** — single-token lookahead in
+  `parse_list_lit` / `parse_map_lit`: when the next token after the
+  first element / `key: value` pair is `KW_FOR`, dispatch to
+  `parse_list_comp_tail` / `parse_map_comp_tail`; otherwise fall
+  through to the existing literal logic. **Cb.4** — `lower_comprehension`
+  in `mapanare/self/lower.mn` mirrors `mapanare/lower.py::
+  _lower_comprehension` line-for-line: synthesizes a fresh accumulator
+  (`__mn_comp_N`), then nested for/if structure with `__r.push(elem)`
+  (lists) or `__r[k] = v` (maps). For non-range iterables, the helper
+  `wrap_comp_for` emits the index-based pattern
+  (`for __i in 0..len(__src) { let target = __src[__i]; ... }`)
+  routing around the pre-existing `for x in some_list` lowering gap.
+  **Cb.5** — type-hint plumbing: new `comp_type_hint: Option<TypeExpr>`
+  field on `LowerState`; `lower_let` sets it before lowering a
+  comprehension RHS so the synthesizer can thread the user's
+  `List<T>` / `Map<K, V>` annotation onto the internal accumulator.
+  For map comprehensions, `patch_last_mapinit_types` post-patches the
+  emitted `MapInit` instruction's `key_type` / `val_type` (mirror of
+  the Python `_lower_let` v5.15.0 Te.2.C empty-`MapLit` annotation
+  patch). One pre-existing emitter gap surfaced and fixed in scope:
+  `emit_builtin_len` now dispatches `len(map)` to `__mn_map_len` via
+  `extractvalue` of field 0 of the `{ptr, i64}` map value (was falling
+  through to the list path and tripping llvm-as on a {ptr, i64} →
+  {ptr, i64, i64, i64, i64} store mismatch). **Goldens 68/68 → 71/71**
+  (new `69_list_comp.mn`, `70_list_comp_filter.mn`, `71_map_comp.mn`,
+  all compile through `mnc-stage1`). New cross-bootstrap test
+  `tests/bootstrap/test_comprehension_mirror.py` (10 cases) re-runs
+  every case from `tests/test_comprehensions.py` through `mnc-stage1`
+  and asserts the same stdout. **Strict 3-stage fixed point preserved**
+  (228,630 lines / 0 diff) — bootstrap parser/lowerer changes are
+  purely additive (new branches fire only on comprehension syntax;
+  `mapanare/self/*.mn` source uses none). NO seed refresh required —
+  comprehension synthesis uses only existing IR ops. `make lint`
+  clean. v5.15.1 closes the comprehension parity-gap docket entry and
+  unblocks v5.16.0 (Te.4 — self-host string-interp parity) using
+  `mnc-stage1` as the validation reference. See
+  `docs/roadmap/v5/v5.15.1/SESSION_REPORT.md` and
+  `docs/roadmap/v5/v5.15.1/AUDIT.md`.
+
 ## [5.15.0] - 2026-04-29
 
 ### Added

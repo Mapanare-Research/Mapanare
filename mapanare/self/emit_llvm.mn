@@ -4736,13 +4736,24 @@ fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     if args[0].ty.kind == TK_STRING() {
         s = emit_rt_call(s, dn, llvm_int(), "__mn_str_len", llvm_string() + " " + an)
     } else {
+    if args[0].ty.kind == TK_MAP() {
+        // v5.15.1 — `len(map)` dispatch. Pre-existing gap surfaced
+        // by the v5.15.0 map-comprehension test. The bootstrap maps
+        // a Map value as `{ptr, i64}` where ``.0`` is the runtime
+        // ``MnMap*``. ``__mn_map_len`` takes that pointer directly,
+        // so extract field 0 and pass it.
+        let tmp_mptr: String = dn + ".mp"
+        let mt: String = llvm_map_type()
+        s = emit_line(s, "  " + tmp_mptr + " = extractvalue " + mt + " " + an + ", 0")
+        s = emit_rt_call(s, dn, llvm_int(), "__mn_map_len", "ptr " + tmp_mptr)
+    } else {
         // __mn_list_len expects a pointer; alloca+store the list value first
         let tmp: String = dn + ".lp"
         let lt: String = llvm_list_rt()
         s = emit_line(s, "  " + tmp + " = alloca " + lt)
         s = emit_line(s, "  store " + lt + " " + an + ", " + "ptr " + tmp)
         s = emit_rt_call(s, dn, llvm_int(), "__mn_list_len", "ptr " + tmp)
-    }
+    }}
     return s
 }
 

@@ -115,7 +115,8 @@ enum Expr {
     Assign(Expr, String, Expr),
     If(Expr, Block, Option<ElseClause>),
     Match(Expr, List<MatchArm>),
-    Await(Expr)
+    Await(Expr),
+    Comprehension(String, Option<Expr>, Option<Expr>, Option<Expr>, List<CompClause>)
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +232,14 @@ struct PipeDefData {
     name: String,
     public: Bool,
     stages: List<Expr>
+}
+
+// v5.15.1 — One `for x in iter (if cond)*` clause in a comprehension.
+struct CompClause {
+    span: Span,
+    target: String,
+    iter: Expr,
+    conditions: List<Expr>
 }
 
 struct StructField {
@@ -364,7 +373,8 @@ pub fn expr_kind(e: Expr) -> String {
         Assign(_, _, _) => { return "assign" },
         If(_, _, _) => { return "if" },
         Match(_, _) => { return "match" },
-        Await(_) => { return "await" }
+        Await(_) => { return "await" },
+        Comprehension(_, _, _, _, _) => { return "comprehension" }
     }
 }
 
@@ -612,6 +622,27 @@ pub fn expr_match_subject(e: Expr) -> Expr {
 }
 pub fn expr_match_arms(e: Expr) -> List<MatchArm> {
     match e { Match(_, a) => { return a }, _ => { let empty: List<MatchArm> = []; return empty } }
+}
+
+// Comprehension (v5.15.1)
+pub fn expr_comp_kind(e: Expr) -> String {
+    match e { Comprehension(k, _, _, _, _) => { return k }, _ => { return "" } }
+}
+pub fn expr_comp_element(e: Expr) -> Option<Expr> {
+    match e { Comprehension(_, el, _, _, _) => { return el }, _ => { return none } }
+}
+pub fn expr_comp_key(e: Expr) -> Option<Expr> {
+    match e { Comprehension(_, _, k, _, _) => { return k }, _ => { return none } }
+}
+pub fn expr_comp_value(e: Expr) -> Option<Expr> {
+    match e { Comprehension(_, _, _, v, _) => { return v }, _ => { return none } }
+}
+pub fn expr_comp_clauses(e: Expr) -> List<CompClause> {
+    match e { Comprehension(_, _, _, _, cs) => { return cs }, _ => { let empty: List<CompClause> = []; return empty } }
+}
+
+pub fn new_comp_clause(target: String, iter: Expr, conditions: List<Expr>) -> CompClause {
+    return new CompClause { span: make_span(0, 0, 0, 0), target: target, iter: iter, conditions: conditions }
 }
 
 // ---- Stmt kind + accessors ------------------------------------------------

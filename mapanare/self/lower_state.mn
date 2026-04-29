@@ -26,6 +26,12 @@ struct LowerState {
     generic_enums: List<EnumDefData>,
     loop_header_label: String,
     loop_exit_label: String,
+    // v5.15.1 — type-hint plumbing for comprehension lowering. lower_let
+    // sets this before lowering a Comprehension RHS so the synthesizer
+    // can thread the user's `List<T>` / `Map<K, V>` annotation onto the
+    // internal accumulator. Cleared on entry to the synthesizer so
+    // nested comprehensions don't accidentally inherit it.
+    comp_type_hint: Option<TypeExpr>,
 }
 
 fn new_lower_state(module_name: String) -> LowerState {
@@ -40,7 +46,7 @@ fn new_lower_state(module_name: String) -> LowerState {
     let generic_fns: List<FnDefData> = []
     let generic_structs: List<StructDefData> = []
     let generic_enums: List<EnumDefData> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "" }
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none }
 }
 
 // Lower result: value + updated state

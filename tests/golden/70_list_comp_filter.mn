@@ -1,0 +1,11 @@
+// v5.15.1 Cb.* — list comprehension with `if` filter. Each filter
+// wraps the inner push in `If(cond, body, None)`. Mirror of v5.15.0
+// ``test_list_comp_filter``.
+
+fn main() {
+    let xs: List<Int> = [1, 2, 3, 4, 5]
+    let evens: List<Int> = [x for x in xs if x % 2 == 0]
+    print(str(len(evens)))
+    print(str(evens[0]))
+    print(str(evens[1]))
+}

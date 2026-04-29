@@ -18,7 +18,48 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
-- **v5.15.0** (ready, not tagged) — **Te.2 — comprehensions,
+- **v5.15.1** (ready, not tagged) — **Cb.\* — bootstrap
+  comprehension mirror (patch).** Closes the v5.15.0 deferred
+  item. `mnc-stage1` now parses and lowers list comprehensions
+  (`[expr for x in iter (if cond)*]`) and map comprehensions
+  (`#{ k: v for ... }`), with multi-`for` cartesian-product
+  clauses, exactly matching v5.15.0's Python behavior.
+  **Cb.1** — new `Comprehension` variant on `Expr` and new
+  `CompClause` struct in `mapanare/self/ast.mn`. **Cb.2/Cb.3**
+  — single-token lookahead in `parse_list_lit` /
+  `parse_map_lit`: `KW_FOR` after the first element / `key:
+  value` pair dispatches to `parse_list_comp_tail` /
+  `parse_map_comp_tail`. **Cb.4** — `lower_comprehension`
+  mirrors `mapanare/lower.py::_lower_comprehension`
+  line-for-line: synthesizes a fresh `__mn_comp_N` accumulator,
+  then nested for/if structure with `__r.push(elem)` (lists)
+  or `__r[k] = v` (maps). For non-range iterables, the helper
+  `wrap_comp_for` emits the index-based pattern. **Cb.5** —
+  type-hint plumbing via new `comp_type_hint:
+  Option<TypeExpr>` field on `LowerState`; `lower_let` sets it
+  before recursing into a comprehension RHS so the synthesizer
+  threads the user's `List<T>` / `Map<K, V>` annotation onto
+  the internal accumulator. For map comp,
+  `patch_last_mapinit_types` post-patches the `MapInit`
+  instruction's `key_type` / `val_type` (mirror of Python
+  v5.15.0 Te.2.C empty-`MapLit` patch). One pre-existing
+  emitter gap surfaced and fixed in scope: `emit_builtin_len`
+  now dispatches `len(map)` to `__mn_map_len` via
+  `extractvalue` of field 0 of the `{ptr, i64}` map value
+  (was falling through to the list path). **Goldens 68/68 →
+  71/71** (new `69_list_comp.mn`, `70_list_comp_filter.mn`,
+  `71_map_comp.mn`). New cross-bootstrap test
+  `tests/bootstrap/test_comprehension_mirror.py` (10 cases)
+  re-runs every case from `tests/test_comprehensions.py`
+  through `mnc-stage1` and asserts stdout-identity with
+  Python. **Strict 3-stage fixed point preserved** (228,630
+  lines / 0 diff) — bootstrap parser/lowerer changes are
+  purely additive. NO seed refresh required. `make lint`
+  clean. v5.15.1 unblocks v5.16.0 (Te.4 — self-host
+  string-interp parity) using `mnc-stage1` as the validation
+  reference. See `docs/roadmap/v5/v5.15.1/SESSION_REPORT.md`
+  and `docs/roadmap/v5/v5.15.1/AUDIT.md`.
+- **v5.15.0** (shipped) — **Te.2 — comprehensions,
   implicit-return one-liner, terse lambdas.** Second release in the
   v5.13–v5.21 terseness arc. Three additive surface forms.
   **Te.2.D** — `fn name(args) [-> RetType] = expr` lowers to
@@ -306,14 +347,9 @@ had latent bugs requiring dedicated releases.
   colon-block mirror — closes the v5.14.0 deferred item ahead of
   v5.16.0/v5.17.0.
 - ~~**v5.15.0**~~ — shipped (see release notes above).
-- **v5.15.1** — **comprehension bootstrap mirror (patch).** Closes
-  the v5.15.0 deferred item: add `Comprehension` + `CompClause` to
-  `mapanare/self/ast.mn`, list/map-comp parsing to
-  `mapanare/self/parser.mn`, and the synthesis lowering to
-  `mapanare/self/lower.mn`. Validates by re-running the 11
-  `tests/test_comprehensions.py` cases through `mnc-stage1` instead
-  of the Python bootstrap. Same shape as v5.14.1 but smaller — no
-  C runtime export, no separate preprocessor module.
+- ~~**v5.15.1**~~ — shipped (see release notes above). Bootstrap
+  comprehension mirror — closes the v5.15.0 deferred item ahead of
+  v5.16.0/v5.17.0.
 - **v5.16.0** — **Te.4 — self-host string-interp parity.**
   Closes the last Python-vs-native string-handling gap: native
   `mnc-stage1` doesn't recognize `"${expr}"` interpolation,

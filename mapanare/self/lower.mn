@@ -740,11 +740,27 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
 // Let binding
 // ---------------------------------------------------------------------------
 
-fn lower_let(st: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
+fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState {
     // Check if the value expression is a None literal BEFORE lowering.
     // This flag is used later to decide whether to re-wrap with typed WrapNone.
     let mut is_none_literal: Bool = false
     if expr_kind(value) == "none_lit" { is_none_literal = true }
+
+    // v5.15.1 — comprehension type-hint plumbing. When the RHS is a
+    // comprehension and the binding has a `List<T>` / `Map<K, V>`
+    // annotation, hand it to `lower_comprehension` via the lowerer
+    // state so the synthesizer can thread it onto the internal
+    // accumulator. Cleared in `lower_comprehension` on entry. Mirror
+    // of Python `lower.py::_lower_let` v5.15.0 Te.2.
+    let mut st: LowerState = st_in
+    if expr_kind(value) == "comprehension" {
+        match type_ann {
+            Some(_) => { st.comp_type_hint = type_ann },
+            _ => { st.comp_type_hint = none }
+        }
+    } else {
+        st.comp_type_hint = none
+    }
 
     // v5.6.7 Ve.2 fix — empty-list elem_ty propagation. When lowering
     // `let xs: List<T> = []`, the default path `lower_expr → lower_list`
@@ -1427,6 +1443,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult {
     }
     if ek == "match" {
         return lower_match(st, expr_match_subject(expr), expr_match_arms(expr))
+    }
+    if ek == "comprehension" {
+        return lower_comprehension(st, expr)
     }
     // Fallback
     let r_fallback: LowerResult = make_value(st, mir_unknown(), "t")
@@ -3723,6 +3742,206 @@ fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult {
     // v5.4.4 — map owns each key/value pair.
     let moved_s: LowerState = emit_move_kvpairs(new_s, pairs)
     return new_lower_result(dest_r.value, moved_s)
+}
+
+// ---------------------------------------------------------------------------
+// Comprehension lowering (v5.15.1 Cb.4)
+//
+// Mirrors mapanare/lower.py::_lower_comprehension. Synthesizes a fresh
+// accumulator (`__mn_comp_N`), nested for/if structure, and per-step
+// push (lists) or `m[k] = v` assignment (maps). The result is identical
+// to a hand-written loop modulo SSA naming.
+//
+// For range iterables (e.g. `for x in 0..n`), emits a direct For. For
+// non-range iterables (lists), emits the index-based pattern
+// `for __i in 0..len(__src) { let target = __src[__i]; ... }` because
+// `for x in some_list` is not yet supported by the generic ForLoop
+// lowering (the runtime `__iter_*` shims only know about ranges).
+// ---------------------------------------------------------------------------
+
+fn wrap_comp_for(st: LowerState, clause: CompClause, inner: Block) -> Block {
+    // Range iterables: direct ForLoop.
+    if expr_kind(clause.iter) == "range" {
+        let mut stmts: List<Stmt> = []
+        stmts.push(Stmt::For(clause.target, clause.iter, inner))
+        return new_block(make_span(0, 0, 0, 0), stmts)
+    }
+
+    // Non-range iterables: hoist source binding, iterate via index.
+    let n: Int = st.tmp_counter
+    let src_name: String = "__mn_comp_src_" + toString(n)
+    let idx_name: String = "__mn_comp_i_" + toString(n)
+
+    // Build inner: `let target = __src[__i]; <inner.stmts>`
+    let get_elem: Expr = Expr::Index(Expr::Ident(src_name), Expr::Ident(idx_name))
+    let mut body_stmts: List<Stmt> = []
+    body_stmts.push(Stmt::Let(clause.target, false, none, get_elem))
+    let mut i: Int = 0
+    let nstmts: Int = len(inner.stmts)
+    for _ in 0..256 {
+        if i < nstmts {
+            body_stmts.push(inner.stmts[i])
+            i = i + 1
+        }
+    }
+    let new_body: Block = new_block(make_span(0, 0, 0, 0), body_stmts)
+
+    let mut len_args: List<Expr> = []
+    len_args.push(Expr::Ident(src_name))
+    let len_call: Expr = Expr::Call(Expr::Ident("len"), len_args)
+    let range_e: Expr = Expr::Range(Expr::IntLit(0), len_call, false)
+
+    let mut outer_stmts: List<Stmt> = []
+    outer_stmts.push(Stmt::Let(src_name, false, none, clause.iter))
+    outer_stmts.push(Stmt::For(idx_name, range_e, new_body))
+    return new_block(make_span(0, 0, 0, 0), outer_stmts)
+}
+
+fn lower_comprehension(st: LowerState, expr: Expr) -> LowerResult {
+    let kind: String = expr_comp_kind(expr)
+    let clauses: List<CompClause> = expr_comp_clauses(expr)
+
+    // Snapshot and clear the type hint so nested comps inside the
+    // element / key / value don't accidentally inherit it.
+    let mut s: LowerState = st
+    let type_hint: Option<TypeExpr> = s.comp_type_hint
+    s.comp_type_hint = none
+
+    // Reserve a stable accumulator name. `tmp_counter` bumps separately
+    // from `__mn_comp_src_N` / `__mn_comp_i_N` (handed out by
+    // `wrap_comp_for`).
+    let comp_n: Int = s.tmp_counter
+    s.tmp_counter = s.tmp_counter + 1
+    let result_name: String = "__mn_comp_" + toString(comp_n)
+
+    // Build the init expression and the per-iteration write expression.
+    let empty_list_init: List<Expr> = []
+    let mut init: Expr = Expr::ListLit(empty_list_init)
+    let mut inner_call: Expr = Expr::NoneLit
+    if kind == "list" {
+        let elem_opt: Option<Expr> = expr_comp_element(expr)
+        let mut elem_e: Expr = Expr::NoneLit
+        match elem_opt {
+            Some(e) => { elem_e = e },
+            _ => {}
+        }
+        let mut push_args: List<Expr> = []
+        push_args.push(elem_e)
+        inner_call = Expr::MethodCall(Expr::Ident(result_name), "push", push_args)
+    } else {
+        let key_opt: Option<Expr> = expr_comp_key(expr)
+        let val_opt: Option<Expr> = expr_comp_value(expr)
+        let mut key_e: Expr = Expr::NoneLit
+        let mut val_e: Expr = Expr::NoneLit
+        match key_opt {
+            Some(k) => { key_e = k },
+            _ => {}
+        }
+        match val_opt {
+            Some(v) => { val_e = v },
+            _ => {}
+        }
+        let empty_entries: List<MapEntry> = []
+        init = Expr::MapLit(empty_entries)
+        // Map insertion via `m[k] = v` — IndexSet handles both list and
+        // map writes; mirrors Python's _AssignExpr/IndexExpr synthesis.
+        let target_idx: Expr = Expr::Index(Expr::Ident(result_name), key_e)
+        inner_call = Expr::Assign(target_idx, "=", val_e)
+    }
+
+    // Synthesize and lower `let mut __mn_comp_N: <hint> = <init>`.
+    let let_stmt: Stmt = Stmt::Let(result_name, true, type_hint, init)
+    let let_r: LowerResult = lower_stmt(s, let_stmt)
+    s = let_r.state
+
+    // For map comprehensions with an explicit `Map<K, V>` annotation,
+    // post-patch the most recent MapInit instruction's key/val types
+    // (mirror of Python `lower.py::_lower_let` v5.15.0 Te.2.C). Without
+    // this, indexing the comprehension's result would see UNKNOWN
+    // value type and the LLVM emitter would fall back to raw-pointer
+    // reads (printing `<?>`).
+    if kind == "map" {
+        match type_hint {
+            Some(te) => { s = patch_last_mapinit_types(s, te) },
+            _ => {}
+        }
+    }
+
+    // Build the loop body innermost-out: filters then for-clauses,
+    // both in reverse source order.
+    let mut body_stmts0: List<Stmt> = []
+    body_stmts0.push(Stmt::ExprStmt(inner_call))
+    let mut body: Block = new_block(make_span(0, 0, 0, 0), body_stmts0)
+    let nclauses: Int = len(clauses)
+    let mut ci: Int = nclauses - 1
+    for _ in 0..32 {
+        if ci < 0 { break }
+        let clause: CompClause = clauses[ci]
+        // Wrap body in `if cond { body }` for each filter, reversed.
+        let mut fi: Int = len(clause.conditions) - 1
+        for _ in 0..32 {
+            if fi < 0 { break }
+            let cond: Expr = clause.conditions[fi]
+            let if_expr: Expr = Expr::If(cond, body, none)
+            let mut wrap: List<Stmt> = []
+            wrap.push(Stmt::ExprStmt(if_expr))
+            body = new_block(make_span(0, 0, 0, 0), wrap)
+            fi = fi - 1
+        }
+        body = wrap_comp_for(s, clause, body)
+        ci = ci - 1
+    }
+
+    // Lower each statement of the synthesized outer block.
+    let mut bi: Int = 0
+    let nbs: Int = len(body.stmts)
+    for _ in 0..256 {
+        if bi < nbs {
+            let r_bs: LowerResult = lower_stmt(s, body.stmts[bi])
+            s = r_bs.state
+            bi = bi + 1
+        }
+    }
+
+    // Return the populated accumulator (Load from its alloca).
+    return lower_identifier(s, result_name)
+}
+
+// Find the most recent MapInit instruction in the current block and
+// patch its key_type / val_type from a `Map<K, V>` TypeExpr. No-op if
+// the type expression isn't shaped like Map<_, _>.
+fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState {
+    if type_expr_kind(te) != "generic" { return st }
+    if type_expr_name(te) != "Map" { return st }
+    let args: List<TypeExpr> = type_expr_args(te)
+    if len(args) < 2 { return st }
+    let k_ty: MIRType = lower_resolve_type_checked(st, args[0])
+    let v_ty: MIRType = lower_resolve_type_checked(st, args[1])
+
+    let idx: Int = st.current_block_idx
+    if idx < 0 { return st }
+    if idx >= len(st.fn_blocks) { return st }
+    let bb: BasicBlock = st.fn_blocks[idx]
+    let mut instrs: List<Instruction> = bb.instructions
+    let mut j: Int = len(instrs) - 1
+    for _ in 0..512 {
+        if j < 0 { return st }
+        let inst: Instruction = instrs[j]
+        match inst {
+            MapInit(dest, _, _, pairs) => {
+                instrs[j] = Instruction::MapInit(dest, k_ty, v_ty, pairs)
+                let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
+                let mut blocks: List<BasicBlock> = st.fn_blocks
+                blocks[idx] = new_bb
+                let mut new_st: LowerState = st
+                new_st.fn_blocks = blocks
+                return new_st
+            },
+            _ => {}
+        }
+        j = j - 1
+    }
+    return st
 }
 
 // ---------------------------------------------------------------------------
