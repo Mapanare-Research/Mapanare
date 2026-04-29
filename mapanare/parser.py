@@ -69,6 +69,7 @@ from mapanare.ast_nodes import (
     NoneLiteral,
     OrPattern,
     Param,
+    PassStmt,
     PipeDef,
     PipeExpr,
     PrintStmt,
@@ -631,6 +632,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def continue_stmt(self, children: list[Any]) -> ContinueStmt:
         return ContinueStmt(span=_span_from_children(children))
+
+    def pass_stmt(self, children: list[Any]) -> PassStmt:
+        return PassStmt(span=_span_from_children(children))
 
     def assert_stmt(self, children: list[Any]) -> AssertStmt:
         items = _filter(children)
@@ -1809,17 +1813,35 @@ _parser = Lark(
 )
 
 
+# v5.14.0 Te.1: openers whose colon-block body is comma-separated.
+# When the preprocessor pushes a block whose opener line begins with
+# one of these tokens, every content line at the inner indent gets
+# a trailing comma appended (the grammar accepts trailing commas on
+# struct fields, enum variants, and match arms — see mapanare.lark).
+_COMMA_BODY_OPENERS = ("struct ", "enum ", "match ")
+
+# Continuation keywords that re-open the previous block on the same
+# logical line (``else``, ``sino``, ``else if``, ``sino si``).
+_CONTINUATION_KW = ("else", "sino", "sino si", "else if")
+
+
 def _indent_to_braces(source: str) -> str:
     """Convert indentation-based syntax to brace-based syntax.
 
-    This preprocessor handles the v3.0.0 colon+indent syntax:
+    Preprocessor for the v3.0.0 colon+indent syntax. Hardened in
+    v5.14.0 (Te.1) to also handle struct/enum/match bodies (which
+    require commas between members) and to be invoked from the error-
+    recovery path (see ``parse_recovering``).
+
     - Lines ending with ``:`` open a block (replaced with ``{``)
     - Dedent closes blocks (``}`` inserted)
-    - If source contains ``{`` at definition level, it's already brace-based
+    - struct/enum/match bodies get trailing commas on each member line
+    - Brace-style code passes through unchanged (mixed brace+colon
+      in one file is legal; this function only rewrites the colon
+      lines)
 
-    Falls back to the original source if no colon blocks are detected.
+    Fast path: if no line ends with ``:``, return the source as-is.
     """
-    # Quick check: if no colon-ending lines, return as-is
     lines = source.split("\n")
     has_colon_blocks = any(
         line.rstrip().endswith(":") and not line.lstrip().startswith(("#", "//"))
@@ -1830,10 +1852,32 @@ def _indent_to_braces(source: str) -> str:
         return source
 
     out: list[str] = []
-    indent_stack: list[int] = [0]  # Stack of indent levels
+    # Stack entries are (indent_level, needs_comma, prev_child_idx).
+    # When a block is opened by a struct/enum/match line, ``needs_comma``
+    # is True. ``prev_child_idx`` is the index in ``out`` of the previous
+    # direct child of this block (or -1 if none yet); the next child
+    # appends ``,`` to that previous line.  The last child never gets a
+    # trailing comma (match grammar rejects it).
+    indent_stack: list[list[Any]] = [[0, False, -1]]
 
-    # Keywords that continue a previous block (else, sino, sino si)
-    _CONTINUATION_KW = ("else", "sino", "sino si", "else if")
+    def _emit_content(prefix: str, content: str) -> None:
+        """Format a non-block content line, inserting ``,`` between
+        siblings if the current parent block is comma-separated.
+        Appends to ``out`` and updates ``prev_child_idx`` of the
+        innermost block."""
+        top = indent_stack[-1]
+        if top[1] and top[2] >= 0 and not out[top[2]].rstrip().endswith(","):
+            # Add separator to the previous sibling
+            out[top[2]] = out[top[2]] + ","
+        out.append(f"{prefix}{content}")
+        # Track this line's position as the latest child of its block
+        top[2] = len(out) - 1
+
+    def _opener_needs_comma(body: str) -> bool:
+        # ``match`` opener may be ``match expr`` — starts with ``match ``.
+        # struct/enum may have generics: ``struct Box<T>`` — also starts
+        # with the prefix.
+        return any(body.startswith(prefix) for prefix in _COMMA_BODY_OPENERS)
 
     i = 0
     while i < len(lines):
@@ -1844,15 +1888,14 @@ def _indent_to_braces(source: str) -> str:
             i += 1
             continue
 
-        # Compute indent level (spaces / 4)
         spaces = len(raw) - len(raw.lstrip())
         level = spaces // 4
 
-        # For comment lines, still close blocks on dedent, then pass through
+        # Comment-only lines: close blocks on dedent, then pass through
         if stripped.lstrip().startswith(("#", "//")):
-            while level < indent_stack[-1]:
+            while level < indent_stack[-1][0]:
                 indent_stack.pop()
-                close_indent = "    " * indent_stack[-1]
+                close_indent = "    " * indent_stack[-1][0]
                 out.append(f"{close_indent}}}")
             out.append(raw)
             i += 1
@@ -1860,7 +1903,7 @@ def _indent_to_braces(source: str) -> str:
 
         content = stripped.lstrip()
 
-        # Check if this line is a continuation (else/sino) before closing blocks
+        # Continuation (else/sino) — must be detected before dedent
         is_continuation = False
         for kw in _CONTINUATION_KW:
             if content.startswith(kw) and (
@@ -1870,34 +1913,32 @@ def _indent_to_braces(source: str) -> str:
                 break
 
         if is_continuation:
-            # Close ONE block level and merge with this continuation
-            if indent_stack[-1] > level:
+            if indent_stack[-1][0] > level:
                 indent_stack.pop()
                 prefix = "    " * level
                 if stripped.endswith(":"):
                     body = content[:-1].rstrip()
                     out.append(f"{prefix}}} {body} {{")
-                    indent_stack.append(level + 1)
+                    indent_stack.append([level + 1, False, -1])
                 else:
                     out.append(f"{prefix}}} {content}")
             else:
                 prefix = "    " * level
-                out.append(f"{prefix}{content}")
+                _emit_content(prefix, content)
             i += 1
             continue
 
         # Close blocks for dedent
-        while level < indent_stack[-1]:
+        while level < indent_stack[-1][0]:
             indent_stack.pop()
-            close_indent = "    " * indent_stack[-1]
+            close_indent = "    " * indent_stack[-1][0]
             out.append(f"{close_indent}}}")
 
         if stripped.endswith(":"):
-            # This line opens a block
-            body = content[:-1].rstrip()  # Remove trailing colon
+            body = content[:-1].rstrip()
             prefix = "    " * level
 
-            # Handle `fn name:` (zero-arg function, needs parens)
+            # ``fn name:`` (zero-arg function, needs parens)
             if body.startswith("fn ") and "(" not in body:
                 parts = body.split(None, 1)
                 fn_name = parts[1] if len(parts) > 1 else ""
@@ -1909,21 +1950,27 @@ def _indent_to_braces(source: str) -> str:
             else:
                 out.append(f"{prefix}{body} {{")
 
-            indent_stack.append(level + 1)
+            # Sibling separator may be needed for this opener line too
+            # if the parent block is comma-separated (e.g. nested struct
+            # inside a match arm). Update parent's prev_child_idx.
+            top = indent_stack[-1]
+            if top[1] and top[2] >= 0 and not out[top[2]].rstrip().endswith(","):
+                out[top[2]] = out[top[2]] + ","
+            top[2] = len(out) - 1
+
+            indent_stack.append([level + 1, _opener_needs_comma(body), -1])
         else:
             prefix = "    " * level
-            out.append(f"{prefix}{content}")
+            _emit_content(prefix, content)
 
         i += 1
 
-    # Close remaining open blocks
     while len(indent_stack) > 1:
         indent_stack.pop()
-        close_indent = "    " * indent_stack[-1]
+        close_indent = "    " * indent_stack[-1][0]
         out.append(f"{close_indent}}}")
 
-    result = "\n".join(out)
-    return result
+    return "\n".join(out)
 
 
 def parse(source: str, *, filename: str = "<input>") -> Program:
@@ -2006,6 +2053,7 @@ _TOKEN_NAMES: dict[str, str] = {
     "KW_TRUE": "'true'",
     "KW_FALSE": "'false'",
     "KW_NONE": "'none'",
+    "KW_PASS": "'pass'",
     "$END": "end of file",
 }
 
@@ -2088,6 +2136,9 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
         A tuple of (partial Program, list of ParseError).
         The Program may contain only successfully parsed definitions.
     """
+    # v5.14.0 Te.1: apply colon-block preprocessor here so recovery
+    # path sees the same syntax surface as ``parse()``.
+    source = _indent_to_braces(source)
     # Try full parse first — fast path
     try:
         result = _parser.parse(source)

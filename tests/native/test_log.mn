@@ -4,51 +4,51 @@ usa stdlib::test::runner
 usa stdlib::log
 
 fn main() -> Int {
-    let mut pass: Int = 0
+    let mut passed: Int = 0
     let mut fail: Int = 0
     let mut r: Int = 0
 
     // --- level constants ---
     r = check_eq("TRACE()", TRACE(), 0)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("DEBUG()", DEBUG(), 10)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("INFO()", INFO(), 20)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("WARN()", WARN(), 30)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("ERROR()", ERROR(), 40)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("FATAL()", FATAL(), 50)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- level_name ---
     r = check_eq_str("level_name(TRACE)", level_name(0), "TRACE")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("level_name(INFO)", level_name(20), "INFO")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("level_name(ERROR)", level_name(40), "ERROR")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("level_name(FATAL)", level_name(50), "FATAL")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- level_from_name ---
     r = check_eq("level_from_name('TRACE')", level_from_name("TRACE"), 0)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("level_from_name('INFO')", level_from_name("INFO"), 20)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("level_from_name('ERROR')", level_from_name("ERROR"), 40)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- level_gte / level_lte ---
     r = check("level_gte(ERROR,WARN)", level_gte(ERROR(), WARN()))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("!level_gte(DEBUG,WARN)", !level_gte(DEBUG(), WARN()))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("level_lte(DEBUG,INFO)", level_lte(DEBUG(), INFO()))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("level_gte(INFO,INFO)", level_gte(INFO(), INFO()))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
-    return test_report(pass, fail)
+    return test_report(passed, fail)
 }

@@ -186,6 +186,7 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
      | return_stmt
      | break_stmt
      | continue_stmt
+     | pass_stmt
      | assert_stmt
      | di_stmt
      | expr_stmt
@@ -198,6 +199,7 @@ const_def: KW_CONST NAME COLON type_expr ASSIGN expr
 return_stmt: KW_RETURN expr?
 break_stmt: KW_BREAK
 continue_stmt: KW_CONTINUE
+pass_stmt: KW_PASS
 assert_stmt: KW_ASSERT expr (COMMA expr)?
 di_stmt: KW_DI expr
 for_stmt: KW_FOR NAME KW_IN expr block
@@ -411,6 +413,10 @@ KW_NEW: "new"
 KW_ASSERT: "assert"
 KW_BREAK.2: /(?:break|sal)(?![a-zA-Z0-9_])/
 KW_CONTINUE.2: /(?:continue|sigue)(?![a-zA-Z0-9_])/
+// v5.14.0 Te.1: ``pass`` — explicit empty-block marker. Required in
+// colon-block bodies that have no statements (``fn empty(): pass``).
+// Lowers to a no-op. Also legal as a stand-alone stmt in brace blocks.
+KW_PASS.2: /pass(?![a-zA-Z0-9_])/
 // v4.68.0: KW_ASYNC / KW_AWAIT restored (Arc 8). Backed by
 // v4.67.0/DESIGN.md. ``async`` and ``await`` are reserved keywords
 // again. This is a breaking change from v4.30.0-v4.67.0 where they

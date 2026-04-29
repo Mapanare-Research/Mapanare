@@ -63,6 +63,7 @@ from mapanare.ast_nodes import (
     NamespaceAccessExpr,
     NoneLiteral,
     OkExpr,
+    PassStmt,
     PipeDef,
     PipeExpr,
     PrintStmt,
@@ -1181,6 +1182,8 @@ class MIRLowerer:
             if self._loop_header_stack:
                 self._emit(Jump(target=self._loop_header_stack[-1]))
             return None
+        if isinstance(stmt, PassStmt):
+            return None  # v5.14.0 Te.1: explicit no-op, emits no MIR
         if isinstance(stmt, AssertStmt):
             self._lower_assert(stmt)
             return None

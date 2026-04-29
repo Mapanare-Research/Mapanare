@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.14.0] - 2026-04-29
+
+### Added
+
+- **Te.1 — colon-block syntax (additive).** Second entry in the
+  v5.13–v5.21 terseness arc. Indent-based block syntax now works
+  alongside `{}` blocks throughout the language: `fn`, `if`/`else`/
+  `else if`, `while`, `for`, `let`, `trait`, `agent`, `impl`,
+  `struct`, `enum`, and `match` all accept colon-introduced bodies
+  whose extent is set by indentation. Architecturally implemented
+  as a string-level preprocessor (`_indent_to_braces` in
+  `mapanare/parser.py`) that runs before Lark — a hardening of the
+  v3.0.0-era preprocessor that already existed but did not handle
+  comma-separated bodies (struct/enum/match) and was not invoked from
+  the error-recovery path. Both gaps are closed.
+- **`pass` keyword.** New reserved word. Required to mark empty
+  colon-block bodies (`fn empty(): pass`) — `{}` would be ambiguous
+  with object/map literals. Lowers to a no-op (zero MIR, zero LLVM
+  output). Also legal as a stand-alone statement in brace blocks.
+  Three pre-existing identifier collisions in stdlib were renamed:
+  `stdlib/db/migrate.mn` (`pass` → `pass_idx`), `stdlib/net/http/auth.mn`
+  (`pass` → `password`), `stdlib/test/runner.mn` (`pass` → `passed`).
+  Seven `tests/native/*.mn` files were updated in lockstep.
+- **`mapanare fmt --to-terse`** — comment-preserving brace → colon
+  rewriter. Idempotent. Strips trailing commas from struct/enum/
+  match members. Expands `... {}` empty inline blocks to colon-form
+  with explicit `pass`. Conservative: any line that does not match a
+  known shape passes through unchanged.
+- **`mapanare fmt --to-braces`** — inverse rewriter, thin wrapper
+  over `_indent_to_braces` followed by `format_source` for canonical
+  whitespace.
+- **`tests/test_colon_blocks.py`** — 208 cross-style validation
+  tests. For every parseable golden file: `to_terse` is idempotent;
+  `to_terse(brace_src)` parses to AST equivalent to the original
+  (modulo span info and the no-op `PassStmt` insertion); the round
+  trip `to_braces(to_terse(src))` recovers the original AST.
+- `docs/roadmap/v5/v5.14.0/COLON_BLOCK_DESIGN.md` — Phase 0
+  deliverable. Documents the seven locked design decisions
+  (terminator strategy, tab/space rule, empty-block, single-line,
+  mixed brace+colon, comment behavior, `pass` keyword) and the
+  pre-implementation audit that revealed the existing v3.0.0
+  preprocessor.
+
+### Changed
+
+- `parse_recovering` now invokes `_indent_to_braces` before parsing
+  chunks. Previously only the fast `parse()` path saw colon syntax,
+  so `mapanare check` (and any downstream that uses error recovery)
+  silently rejected colon-form source. Closes a latent bug.
+- `_indent_to_braces` rewritten to track parent-block context. New
+  rules: when the parent opener is `struct`/`enum`/`match`, the
+  preprocessor inserts a `,` between consecutive child lines. The
+  last child of a `match` block deliberately does not get a trailing
+  comma (the LALR grammar accepts `(arm (COMMA arm)* COMMA?)?` but
+  rejects the trailing comma in practice).
+
+### Deferred
+
+- **Bootstrap mirror — deferred to a follow-up release.**
+  `mnc-stage1` continues to require brace-style source.
+  Self-hosted compiler at `mapanare/self/*.mn` is unchanged in
+  v5.14.0, so the strict 3-stage fixed point is preserved by
+  construction. Bootstrap colon-syntax support is only load-bearing
+  at v5.17.0 (Sh.\* — mechanical rewrite of `mapanare/self/`); a
+  dedicated PLAN will land it before then. Users who want to feed
+  colon-style source to `mnc-stage1` can run `mapanare fmt
+  --to-braces` first.
+- **Single-line `if x: y` form.** Preprocessor only handles
+  newline+indent bodies. Single-line colon-blocks moved to v5.21.0
+  Te.6 (small ergonomic wins). The current parse error
+  (``Unexpected ':' — expected '{'``) is actionable.
+
 ## [5.13.0] - 2026-04-28
 
 ### Added

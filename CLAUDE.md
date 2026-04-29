@@ -18,6 +18,41 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.14.0** (ready, not tagged) — **Te.1 — colon-block syntax
+  (additive).** Second release in the v5.13–v5.21 terseness arc.
+  Indent-based block syntax now works alongside `{}` for every
+  block-introducing construct: `fn`, `if`/`else`/`else if`, `while`,
+  `for`, `let`, `trait`, `agent`, `impl`, `struct`, `enum`, `match`.
+  Both syntaxes produce identical AST and identical IR. Phase 0
+  audit found the v3.0.0-era `_indent_to_braces` preprocessor at
+  `mapanare/parser.py:1812` already covered ~70% of the surface;
+  v5.14.0 hardens it (struct/enum/match comma-insertion between
+  siblings; last child of `match` deliberately not comma-suffixed
+  to satisfy LALR), and wires `parse_recovering` through the
+  preprocessor — closes a latent bug where `mapanare check` rejected
+  colon syntax. New **`pass` keyword** (real reserved word; lowers
+  to no-op) required for empty colon-block bodies — `{}` would be
+  ambiguous with object/map literals. Three stdlib `pass`-as-identifier
+  collisions renamed: `stdlib/db/migrate.mn` (`pass` → `pass_idx`),
+  `stdlib/net/http/auth.mn` (`pass` → `password`),
+  `stdlib/test/runner.mn` (`pass` → `passed`); seven `tests/native/*.mn`
+  test files updated in lockstep. New tooling: **`mapanare fmt
+  --to-terse`** (comment-preserving brace → colon rewriter,
+  idempotent, strips trailing commas in struct/enum/match bodies,
+  expands `... {}` to `: pass`) and **`mapanare fmt --to-braces`**
+  (inverse, thin wrapper over `_indent_to_braces` + `format_source`).
+  New `tests/test_colon_blocks.py` (208 cross-style validation tests:
+  every parseable golden round-trips; rewriter unit rules covered).
+  **Bootstrap mirror deferred** — `mnc-stage1` continues to require
+  brace-style source; bootstrap colon support only load-bearing at
+  v5.17.0 Sh.\*, dedicated PLAN will land before then. **Strict
+  3-stage fixed point preserved by construction** (no
+  `mapanare/self/*.mn` source edits in v5.14.0). Goldens 66/66
+  (brace, unchanged corpus); `mypy mapanare/ runtime/` clean.
+  v5.14.0 is the additive precondition for v5.15.0+ rewrite passes
+  to compose on top of `format_source`. See
+  `docs/roadmap/v5/v5.14.0/SESSION_REPORT.md` and
+  `docs/roadmap/v5/v5.14.0/COLON_BLOCK_DESIGN.md`.
 - **v5.13.0** (shipped) — **Mc.2 — `mnc fmt` (the formatter).**
   First release in the v5.13–v5.21 terseness arc. New
   `mapanare/format.py` module: idempotent, AST-preserving,
@@ -199,11 +234,8 @@ had latent bugs requiring dedicated releases.
   `__mn_assert_fail` undefined in native). Bug fix only; ships
   independently of v5.14.0. See
   `docs/roadmap/v5/v5.13.1/PLAN.md`.
-- **v5.14.0** — **Te.1 — colon-block syntax (additive).** `:`
-  blocks alongside `{}`. Indent-based tokenizer. `mnc fmt
-  --to-terse` migration tool lands. Range syntax `0..10` is
-  *already in the grammar* — not part of this scope. See
-  `docs/roadmap/v5/v5.14.0/PLAN.md`.
+- ~~**v5.14.0**~~ — shipped (see release notes above). Bootstrap
+  mirror deferred to a follow-up patch release before v5.17.0.
 - **v5.15.0** — **Te.2 — expression density.** List/map
   comprehensions, `|x| body` lambdas, implicit-return
   one-liner (`fn double(x) = x * 2`). Block-form implicit

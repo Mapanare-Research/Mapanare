@@ -15,7 +15,7 @@ from mapanare.diagnostics import (
     format_diagnostic,
     format_summary,
 )
-from mapanare.format import format_source
+from mapanare.format import format_source, to_braces, to_terse
 from mapanare.mir_opt import MIROptLevel as OptLevel
 from mapanare.modules import ModuleResolver
 from mapanare.parser import ParseError, parse, parse_recovering
@@ -347,6 +347,17 @@ def cmd_fmt(args: argparse.Namespace) -> None:
         print("error: no .mn files found", file=sys.stderr)
         sys.exit(1)
 
+    # v5.14.0 Te.1: choose surface-syntax transformer.
+    if getattr(args, "to_terse", False) and getattr(args, "to_braces", False):
+        print("error: --to-terse and --to-braces are mutually exclusive", file=sys.stderr)
+        sys.exit(1)
+    if getattr(args, "to_terse", False):
+        transformer = to_terse
+    elif getattr(args, "to_braces", False):
+        transformer = to_braces
+    else:
+        transformer = format_source
+
     changed: list[Path] = []
     errored: list[Path] = []
 
@@ -377,7 +388,7 @@ def cmd_fmt(args: argparse.Namespace) -> None:
             errored.append(path)
             continue
 
-        formatted = format_source(source)
+        formatted = transformer(source)
         if formatted == source:
             continue
         changed.append(path)
@@ -1790,6 +1801,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--stdout",
         action="store_true",
         help="Print formatted source to stdout instead of writing in place",
+    )
+    # v5.14.0 Te.1: surface-syntax conversion modes
+    p_fmt.add_argument(
+        "--to-terse",
+        action="store_true",
+        dest="to_terse",
+        help="Rewrite brace-block syntax to colon-block syntax",
+    )
+    p_fmt.add_argument(
+        "--to-braces",
+        action="store_true",
+        dest="to_braces",
+        help="Rewrite colon-block syntax to brace-block syntax",
     )
     p_fmt.set_defaults(func=cmd_fmt)
 

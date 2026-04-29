@@ -439,6 +439,18 @@ class ContinueStmt(Stmt):
 
 
 @dataclass
+class PassStmt(Stmt):
+    """Pass statement: `pass` — explicit no-op (v5.14.0 Te.1).
+
+    Required by colon-block syntax to mark empty bodies
+    (``fn empty(): pass``). Also legal as a stand-alone stmt in
+    brace blocks. Emits zero MIR / no LLVM output.
+    """
+
+    pass
+
+
+@dataclass
 class AssertStmt(Stmt):
     """Assert statement: `assert expr` or `assert expr, "message"`."""
 

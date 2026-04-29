@@ -61,6 +61,7 @@ from mapanare.ast_nodes import (
     NamespaceAccessExpr,
     NoneLiteral,
     OkExpr,
+    PassStmt,
     PipeDef,
     PipeExpr,
     PrintStmt,
@@ -1707,6 +1708,8 @@ class SemanticChecker:
             pass  # break is valid in for/while loops
         elif isinstance(stmt, ContinueStmt):
             pass  # continue is valid in for/while loops
+        elif isinstance(stmt, PassStmt):
+            pass  # v5.14.0 Te.1: explicit no-op
         elif isinstance(stmt, AssertStmt):
             self._infer_expr(stmt.condition)
             if stmt.message is not None:

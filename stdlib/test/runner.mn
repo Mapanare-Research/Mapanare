@@ -50,10 +50,10 @@ pub fn check_ne(name: String, a: Int, b: Int) -> Int {
 // Report — print summary, return exit code
 // ---------------------------------------------------------------------------
 
-pub fn test_report(pass: Int, fail: Int) -> Int {
-    let total: Int = pass + fail
+pub fn test_report(passed: Int, fail: Int) -> Int {
+    let total: Int = passed + fail
     print("")
-    print(str(pass) + " passed, " + str(fail) + " failed, " + str(total) + " total")
+    print(str(passed) + " passed, " + str(fail) + " failed, " + str(total) + " total")
     if fail > 0 { return 1 }
     return 0
 }

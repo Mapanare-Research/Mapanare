@@ -110,6 +110,7 @@ spelling.
 | `new` | — | Declarations | Struct construction |
 | `none` | `nada` | Literals | `Option<T>::None` |
 | `output` | — | Agents | Channel declaration inside `agent` block |
+| `pass` | — | Statements | No-op statement; required for empty colon-block bodies (see §4.0) |
 | `pipe` | — | Declarations | Pipeline declaration |
 | `pub` | — | Visibility | Public visibility modifier |
 | `return` | `da` | Functions | Return from function |
@@ -894,6 +895,54 @@ fn apply(f: fn(Int) -> Int, x: Int) -> Int {
 ---
 
 ## 4. Control Flow
+
+### 4.0 Block Syntax
+
+Mapanare accepts two block syntaxes interchangeably (since v5.14.0).
+Both produce identical AST and identical IR.
+
+**Brace style** (canonical, present since v0.1):
+
+```mn
+fn factorial(n: Int) -> Int {
+    if n <= 1 {
+        return 1
+    } else {
+        return n * factorial(n - 1)
+    }
+}
+```
+
+**Colon style** (additive, since v5.14.0):
+
+```mn
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        return 1
+    else:
+        return n * factorial(n - 1)
+```
+
+Rules for colon style:
+
+- A line ending with `:` opens a block; the block extends across
+  every following line at deeper indentation.
+- Indentation is **4 spaces per level**. Tabs in indent are
+  converted to 4 spaces by the formatter.
+- Empty bodies require the `pass` keyword:
+  ```mn
+  fn empty():
+      pass
+  ```
+- Single-line `if x: y` form is **not** supported in v5.14.0
+  (deferred to v5.21.0). Put the body on the next line.
+- Mixed brace + colon in one file is legal at parse time. Use
+  `mapanare fmt --to-terse` (or `--to-braces`) to normalize.
+
+`mnc-stage1` (the native bootstrap compiler) currently requires
+brace style. Run `mapanare fmt --to-braces` first to feed
+colon-style source through `mnc-stage1`. Native bootstrap support
+for colon style is on the roadmap.
 
 ### 4.1 If / Else
 

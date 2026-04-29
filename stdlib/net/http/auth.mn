@@ -60,10 +60,10 @@ pub fn parse_basic_auth(header: String) -> Option<List<String>> {
             pon colon_pos: Int = decoded.find(":")
             si colon_pos < 0 { da nada }
             pon user: String = decoded.substr(0, colon_pos)
-            pon pass: String = decoded.substr(colon_pos + 1, len(decoded))
+            pon password: String = decoded.substr(colon_pos + 1, len(decoded))
             pon mut parts: List<String> = []
             parts = parts + [user]
-            parts = parts + [pass]
+            parts = parts + [password]
             da Some(parts)
         },
         Err(e) => {
@@ -173,9 +173,9 @@ pub fn verify_basic_auth(header: String, expected_user: String, expected_pass: S
                 da Denied("Malformed Basic auth credentials")
             }
             pon user: String = parts[0]
-            pon pass: String = parts[1]
+            pon password: String = parts[1]
             si user == expected_user {
-                si pass == expected_pass {
+                si password == expected_pass {
                     da Authenticated(user)
                 }
             }

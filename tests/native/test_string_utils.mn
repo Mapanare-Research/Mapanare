@@ -4,55 +4,55 @@ usa stdlib::test::runner
 usa stdlib::text::string_utils
 
 fn main() -> Int {
-    let mut pass: Int = 0
+    let mut passed: Int = 0
     let mut fail: Int = 0
     let mut r: Int = 0
 
     // --- hex_digit_value ---
     r = check_eq("hex_digit_value('0')", hex_digit_value("0"), 0)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("hex_digit_value('9')", hex_digit_value("9"), 9)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("hex_digit_value('a')", hex_digit_value("a"), 10)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("hex_digit_value('f')", hex_digit_value("f"), 15)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("hex_digit_value('A')", hex_digit_value("A"), 10)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- is_digit ---
     r = check("is_digit('5')", is_digit("5"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("!is_digit('x')", !is_digit("x"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- is_hex ---
     r = check("is_hex('a')", is_hex("a"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("is_hex('F')", is_hex("F"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("!is_hex('g')", !is_hex("g"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- hex_char ---
     r = check_eq_str("hex_char(0)", hex_char(0), "0")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("hex_char(10)", hex_char(10), "A")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("hex_char(15)", hex_char(15), "F")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- parse_int_manual ---
     r = check_eq("parse_int_manual('42')", parse_int_manual("42"), 42)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("parse_int_manual('0')", parse_int_manual("0"), 0)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- digit_value ---
     r = check_eq("digit_value('0')", digit_value("0"), 0)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("digit_value('7')", digit_value("7"), 7)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
-    return test_report(pass, fail)
+    return test_report(passed, fail)
 }
