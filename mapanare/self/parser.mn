@@ -1433,6 +1433,8 @@ fn parse_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
     if tt == "KW_WHILE" { return parse_while_stmt(tokens, pos, filename) }
     if tt == "KW_BREAK" { return new_stmt_result(Stmt::Break, pos + 1) }
     if tt == "KW_CONTINUE" { return new_stmt_result(Stmt::Continue, pos + 1) }
+    // v5.14.1 B.2: pass lowers to a no-op statement (mirror Python bootstrap).
+    if tt == "KW_PASS" { return new_stmt_result(Stmt::Pass, pos + 1) }
     if tt == "KW_ASSERT" { return parse_assert_stmt(tokens, pos, filename) }
 
     let er: ExprResult = parse_expr(tokens, pos, filename, 0)

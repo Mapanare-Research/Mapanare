@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: python scripts/concat_self.py
+// Do not edit — regenerate with: bash scripts/concat_self.sh
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -134,6 +134,7 @@ enum Stmt {
     While(Expr, Block),
     Break,
     Continue,
+    Pass,
     Assert(Expr, Option<String>),
     SignalDecl(String, Bool, Option<TypeExpr>, Expr, Bool),
     StreamDecl(String, Option<TypeExpr>, Expr)
@@ -628,6 +629,7 @@ pub fn stmt_kind(s: Stmt) -> String {
         While(_, _) => { return "while" },
         Break => { return "break" },
         Continue => { return "continue" },
+        Pass => { return "pass" },
         Assert(_, _) => { return "assert" },
         SignalDecl(_, _, _, _, _) => { return "signal_decl" },
         StreamDecl(_, _, _) => { return "stream_decl" }
@@ -914,6 +916,7 @@ pub fn else_clause_else(ec: ElseClause) -> Option<ElseClause> {
 // Tokenizes .mn source files into a token stream.
 // Character-by-character scanner replacing the Lark-based Python lexer.
 
+
 // ---------------------------------------------------------------------------
 // Token
 // ---------------------------------------------------------------------------
@@ -1018,6 +1021,9 @@ fn is_keyword(name: String) -> Bool {
     if name == "sal" { return true }
     if name == "continue" { return true }
     if name == "sigue" { return true }
+    // v5.14.1 B.1: pass — required to mark empty colon-block bodies.
+    // Mirror Python bootstrap (mapanare/parser.py:KW_PASS).
+    if name == "pass" { return true }
     if name == "di" { return true }
     // v4.78.0: "const" moved to top of is_keyword (near "let")
     // v4.68.0: "async" / "await" restored (Arc 8). See v4.67.0/DESIGN.md.
@@ -1082,6 +1088,7 @@ fn keyword_token_type(name: String) -> String {
     if name == "sal" { return "KW_BREAK" }
     if name == "continue" { return "KW_CONTINUE" }
     if name == "sigue" { return "KW_CONTINUE" }
+    if name == "pass" { return "KW_PASS" }
     if name == "di" { return "KW_DI" }
     // v4.78.0: "const" moved near "let" above (CARRY_FORWARD A10b)
     // v4.68.0: "async" / "await" restored (Arc 8). See v4.67.0/DESIGN.md.
@@ -1509,6 +1516,7 @@ fn tokenize_with_newlines(source: String, filename: String) -> List<Token> {
 //
 // NOTE: Struct construction syntax (Name { field: val }) is not yet in the
 // Lark grammar, so all struct creation uses constructor functions.
+
 
 // ---------------------------------------------------------------------------
 // ParseError
@@ -2935,6 +2943,8 @@ fn parse_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
     if tt == "KW_WHILE" { return parse_while_stmt(tokens, pos, filename) }
     if tt == "KW_BREAK" { return new_stmt_result(Stmt::Break, pos + 1) }
     if tt == "KW_CONTINUE" { return new_stmt_result(Stmt::Continue, pos + 1) }
+    // v5.14.1 B.2: pass lowers to a no-op statement (mirror Python bootstrap).
+    if tt == "KW_PASS" { return new_stmt_result(Stmt::Pass, pos + 1) }
     if tt == "KW_ASSERT" { return parse_assert_stmt(tokens, pos, filename) }
 
     let er: ExprResult = parse_expr(tokens, pos, filename, 0)
@@ -4106,6 +4116,7 @@ fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult 
 // Performs type checking and scope resolution via two-pass analysis:
 //   Pass 1: register all top-level definitions (names & signatures)
 //   Pass 2: check function bodies, expressions, and statements
+
 
 // ---------------------------------------------------------------------------
 // SemanticError
@@ -7295,6 +7306,7 @@ pub fn fn_is_async(f: MIRFunction) -> Bool {
 // lower_state.mn — Lowerer state, scope management, lookups, and type resolution.
 // Extracted from lower.mn to reduce file size and share lookup utilities.
 
+
 // ---------------------------------------------------------------------------
 // Lowerer state — threaded through all lowering functions
 // ---------------------------------------------------------------------------
@@ -7886,6 +7898,7 @@ fn kind_to_type_name(kind: Int) -> String {
 //
 // Data structures (MIRType, Value, Instruction, etc.) are in mir.mn.
 // State management (LowerState, lookups, type resolution) is in lower_state.mn.
+
 
 // ---------------------------------------------------------------------------
 // Declaration registration (Pass 1)
@@ -8597,6 +8610,8 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
         }
         return new_lower_result(void_value(), st)
     }
+    // v5.14.1 B.4: `pass` is a no-op — emit zero MIR.
+    if sk == "pass" { return new_lower_result(void_value(), st) }
     if sk == "assert" {
         let s_assert: LowerState = lower_assert(st, stmt_assert_expr(stmt), stmt_assert_msg(stmt))
         return new_lower_result(void_value(), s_assert)
@@ -12764,6 +12779,7 @@ pub fn lower(program: Program, module_name: String) -> MIRModule {
 // emit_llvm_ir.mn — LLVM IR type constants and instruction string builders.
 // Pure string-producing functions, shared by emit_llvm.mn.
 
+
 // ---------------------------------------------------------------------------
 // LLVM type constants (as string representations)
 // ---------------------------------------------------------------------------
@@ -13137,6 +13153,7 @@ fn abi_classify_return_sret(is_aggregate: Bool, total_size: Int, target: String)
 // strength reduction, function inlining, LICM, escape analysis.
 // v4.97.0: ported all Arc 11-12 optimization passes from Python bootstrap.
 // Wired into compile() after lower(), before emit().
+
 
 // ---------------------------------------------------------------------------
 // Pass 1: Constant folding
@@ -15023,6 +15040,7 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule {
 //   - A local counter produces unique SSA names (%0, %1, ...)
 //
 // LLVM type constants and IR string builders are in emit_llvm_ir.mn.
+
 
 // ---------------------------------------------------------------------------
 // Emitter state
@@ -21385,6 +21403,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String {
 // main.mn — Compiler driver for the Mapanare self-hosted compiler.
 // Wires the pipeline: source -> parse -> resolve imports -> lower -> emit_llvm -> LLVM IR.
 
+
 // ---------------------------------------------------------------------------
 // Compilation result
 // ---------------------------------------------------------------------------
@@ -22679,3 +22698,4 @@ fn mn_main() {
     __mn_str_eprint("       'mnc compile <file>' for transpilation (.py/.php/.ts/.go).\n")
     __mn_exit(1)
 }
+

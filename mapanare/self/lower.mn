@@ -719,6 +719,8 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult {
         }
         return new_lower_result(void_value(), st)
     }
+    // v5.14.1 B.4: `pass` is a no-op — emit zero MIR.
+    if sk == "pass" { return new_lower_result(void_value(), st) }
     if sk == "assert" {
         let s_assert: LowerState = lower_assert(st, stmt_assert_expr(stmt), stmt_assert_msg(stmt))
         return new_lower_result(void_value(), s_assert)

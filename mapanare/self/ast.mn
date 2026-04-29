@@ -130,6 +130,7 @@ enum Stmt {
     While(Expr, Block),
     Break,
     Continue,
+    Pass,
     Assert(Expr, Option<String>),
     SignalDecl(String, Bool, Option<TypeExpr>, Expr, Bool),
     StreamDecl(String, Option<TypeExpr>, Expr)
@@ -624,6 +625,7 @@ pub fn stmt_kind(s: Stmt) -> String {
         While(_, _) => { return "while" },
         Break => { return "break" },
         Continue => { return "continue" },
+        Pass => { return "pass" },
         Assert(_, _) => { return "assert" },
         SignalDecl(_, _, _, _, _) => { return "signal_decl" },
         StreamDecl(_, _, _) => { return "stream_decl" }
