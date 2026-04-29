@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.14.1] - 2026-04-29
+
+### Added
+
+- **B.1–B.4 — `pass` keyword in self-host bootstrap.** Five lockstep
+  edits across `mapanare/self/{lexer,ast,parser,lower,semantic}.mn`
+  modeled byte-for-byte on `break`/`continue`. `mnc-stage1` now lexes,
+  parses, and lowers `pass` as a no-op statement (zero MIR, zero IR);
+  it works as both an empty colon-block body (`fn empty(): pass`) and
+  a stand-alone statement in brace blocks. Phase 0 audit confirmed
+  zero `pass`-as-identifier collisions in `mapanare/self/*.mn` (the
+  v5.14.0 stdlib renames pre-handled the three real collisions).
+- **B.5–B.6 — `__mn_indent_to_braces` colon-block preprocessor.**
+  Lives in C (`runtime/native/mapanare_core.c`, ~280 LOC); mirrors
+  `mapanare/parser.py::_indent_to_braces` line-by-line — same
+  algorithm, same comma-insertion rules, same continuation handling.
+  Wired into `mapanare/self/parser.mn::parse` as a builtin extern
+  call before `tokenize()`. Routed through C rather than `.mn` after
+  surfacing two bootstrap-lower pathologies during a `.mn`-side port
+  attempt (split-result `List<String>` indexing, PHI predecessor
+  mismatch); see `docs/roadmap/v5/v5.14.1/SESSION_REPORT.md` for the
+  detour and reproducers. Brace-only sources hit the fast path; the
+  cost on brace-style corpus is negligible.
+- **B.7 — cross-bootstrap validation test.**
+  `tests/bootstrap/test_indent_preprocessor.py` (new, 175 LOC, 142
+  cases) asserts `mapanare.parser._indent_to_braces` and
+  `__mn_indent_to_braces` produce byte-identical output on every
+  parseable golden plus 10 hand-rolled fixtures. New hidden
+  `mnc-stage1 preprocess <file>` subcommand exposes the C path for
+  the test (not surfaced in `--help`).
+- **B.8 — `mnc fmt --to-terse` / `--to-braces`.** Already worked at
+  v5.13.0 (the `mnc fmt` shell-out forwards every argv verbatim);
+  v5.14.1 just updates the usage string for discoverability.
+
+### Changed
+
+- `mapanare/types.py` `BUILTIN_FUNCTIONS`,
+  `mapanare/lower.py` `_BUILTIN_RET`, and
+  `mapanare/emit_llvm_text.py` runtime-fn dispatch all gain a
+  `__mn_indent_to_braces: STRING_TYPE` entry. The emit_llvm_text.py
+  branch is the load-bearing one — without it the bootstrap declared
+  the return as `ptr` (8 bytes) and the high 8 bytes of the
+  `MnString` (the length) were silently dropped, manifesting as
+  goldens going 66/66 → 0/66 with no other diff.
+
+### Validation
+
+- 66/66 brace goldens + 66/66 colon goldens (v5.14.0 baseline was
+  0/66 colon — the Phase 0 `AUDIT.md` acceptance criterion).
+- 142/142 cross-bootstrap test cases (fixtures + corpus, both
+  forms).
+- 208/208 v5.14.0 colon-block tests still green.
+- **Strict 3-stage fixed point preserved** (228,630 lines, 0 diff).
+- `make lint` clean.
+
 ## [5.14.0] - 2026-04-29
 
 ### Added

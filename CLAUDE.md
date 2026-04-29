@@ -18,7 +18,39 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
-- **v5.14.0** (ready, not tagged) — **Te.1 — colon-block syntax
+- **v5.14.1** (ready, not tagged) — **B.\* — bootstrap colon-block
+  mirror (patch).** Closes the v5.14.0 deferred item. `mnc-stage1`
+  now lexes/parses/lowers the **`pass`** keyword (B.1–B.4 — five
+  lockstep edits across `mapanare/self/{lexer,ast,parser,lower,
+  semantic}.mn` modeled byte-for-byte on `break`/`continue`) and
+  accepts colon-block syntax for every parseable golden via the
+  new **`__mn_indent_to_braces`** preprocessor (B.5–B.6). The
+  preprocessor lives in C (`runtime/native/mapanare_core.c`,
+  ~280 LOC), mirrors `mapanare/parser.py::_indent_to_braces`
+  line-by-line, and is wired into `parser.mn::parse` as a builtin
+  extern call before `tokenize()`. **Routed through C rather than
+  `.mn`** after a `.mn`-side port attempt surfaced two bootstrap-
+  lower pathologies that broke fixed point: (1) `String.split()`
+  results return mangled values when indexed locally (works via
+  function param); (2) deeply-nested if/else with short-circuit
+  ops emits PHIs whose entries don't match block predecessors
+  (llvm-as rejects). Both are tracked separately as bootstrap-
+  quality work; the C-route here sidesteps both by construction.
+  New cross-bootstrap test (B.7) `tests/bootstrap/test_indent_
+  preprocessor.py` (142 cases) asserts byte-identical output
+  between Python and C on every parseable golden plus 10 hand-
+  rolled fixtures via a hidden `mnc-stage1 preprocess` subcommand.
+  B.8 (native `mnc fmt --to-terse` / `--to-braces`) was zero-LOC
+  — already worked at v5.13.0 since the dispatch forwards every
+  argv verbatim. **Native colon goldens 0/66 → 66/66** (the Phase
+  0 acceptance criterion); brace 66/66 unchanged. **Strict 3-stage
+  fixed point preserved** (228,630 lines, 0 diff). `make lint`
+  clean. v5.14.1 unblocks v5.16.0's self-host string-interp parity
+  validation buffer and v5.17.0's mechanical `mnc fmt --to-terse
+  mapanare/self/` rewrite. See
+  `docs/roadmap/v5/v5.14.1/SESSION_REPORT.md` and
+  `docs/roadmap/v5/v5.14.1/AUDIT.md`.
+- **v5.14.0** (shipped) — **Te.1 — colon-block syntax
   (additive).** Second release in the v5.13–v5.21 terseness arc.
   Indent-based block syntax now works alongside `{}` for every
   block-introducing construct: `fn`, `if`/`else`/`else if`, `while`,
@@ -234,8 +266,10 @@ had latent bugs requiring dedicated releases.
   `__mn_assert_fail` undefined in native). Bug fix only; ships
   independently of v5.14.0. See
   `docs/roadmap/v5/v5.13.1/PLAN.md`.
-- ~~**v5.14.0**~~ — shipped (see release notes above). Bootstrap
-  mirror deferred to a follow-up patch release before v5.17.0.
+- ~~**v5.14.0**~~ — shipped (see release notes above).
+- ~~**v5.14.1**~~ — shipped (see release notes above). Bootstrap
+  colon-block mirror — closes the v5.14.0 deferred item ahead of
+  v5.16.0/v5.17.0.
 - **v5.15.0** — **Te.2 — expression density.** List/map
   comprehensions, `|x| body` lambdas, implicit-return
   one-liner (`fn double(x) = x * 2`). Block-form implicit
@@ -537,7 +571,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (29243 symbols, 63274 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (29247 symbols, 63347 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

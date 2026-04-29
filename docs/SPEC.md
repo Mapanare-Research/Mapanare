@@ -939,10 +939,16 @@ Rules for colon style:
 - Mixed brace + colon in one file is legal at parse time. Use
   `mapanare fmt --to-terse` (or `--to-braces`) to normalize.
 
-`mnc-stage1` (the native bootstrap compiler) currently requires
-brace style. Run `mapanare fmt --to-braces` first to feed
-colon-style source through `mnc-stage1`. Native bootstrap support
-for colon style is on the roadmap.
+As of v5.14.1, both compilers — the Python bootstrap and the native
+`mnc-stage1` — fully support both syntaxes. Source is preprocessed
+into brace form before tokenization on both sides; brace-only
+sources hit a fast path with negligible overhead. The
+`tests/bootstrap/test_indent_preprocessor.py` cross-bootstrap test
+asserts byte-identical output between
+`mapanare.parser._indent_to_braces` (Python) and
+`runtime/native/mapanare_core.c::__mn_indent_to_braces` (C) on every
+parseable golden. Mixing brace and colon in one source file is also
+legal — only the colon-introduced blocks get rewritten.
 
 ### 4.1 If / Else
 

@@ -982,6 +982,22 @@ fn run_program(filename: String) {
 // moves IR-emission behind this explicit subcommand.
 // ---------------------------------------------------------------------------
 
+// v5.14.1 B.7: dump the result of running `__mn_indent_to_braces`
+// over a source file. Used by tests/bootstrap/test_indent_preprocessor.py
+// to assert byte-identical output between the Python and C
+// implementations on every parseable golden.
+fn run_preprocess(filename: String) {
+    let source: String = __mn_file_read_or_empty(filename)
+    if len(source) <= 0 {
+        __mn_str_eprint("error: cannot read file '")
+        __mn_str_eprint(filename)
+        __mn_str_eprint("'\n")
+        __mn_exit(1)
+    }
+    let preprocessed: String = __mn_indent_to_braces(source)
+    print(preprocessed)
+}
+
 fn run_emit_llvm(filename: String) {
     let source: String = __mn_file_read_or_empty(filename)
     if len(source) <= 0 {
@@ -1248,6 +1264,18 @@ fn mn_main() {
         run_emit_llvm(__mn_argv(2))
         return
     }
+    // v5.14.1 B.7: hidden test hook — print the result of
+    // `__mn_indent_to_braces(file)` to stdout. Used by the cross-
+    // bootstrap test to verify the C preprocessor agrees byte-for-byte
+    // with the Python `_indent_to_braces`.
+    if arg1 == "preprocess" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc preprocess <file.mn>\n")
+            __mn_exit(1)
+        }
+        run_preprocess(__mn_argv(2))
+        return
+    }
     // v5.13.0 Mc.2: fmt — canonicalize whitespace in .mn source. The
     // formatter logic lives in Python (mapanare/format.py); the native
     // dispatch shells out to ``mapanare fmt``. Porting format.py to .mn
@@ -1256,7 +1284,7 @@ fn mn_main() {
     // in self/ if the shell-out becomes a measurable hot path.
     if arg1 == "fmt" {
         if __mn_argc() < 3 {
-            __mn_str_eprint("usage: mnc fmt <path...> [--check] [--stdout]\n")
+            __mn_str_eprint("usage: mnc fmt <path...> [--check] [--stdout] [--to-terse] [--to-braces]\n")
             __mn_exit(1)
         }
         let mut fmt_cmd: String = "mapanare fmt"
