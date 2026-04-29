@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: bash scripts/concat_self.sh
+// Do not edit — regenerate with: python scripts/concat_self.py
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -20296,24 +20296,25 @@ fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     if args[0].ty.kind == TK_STRING() {
         s = emit_rt_call(s, dn, llvm_int(), "__mn_str_len", llvm_string() + " " + an)
     } else {
-    if args[0].ty.kind == TK_MAP() {
-        // v5.15.1 — `len(map)` dispatch. Pre-existing gap surfaced
-        // by the v5.15.0 map-comprehension test. The bootstrap maps
-        // a Map value as `{ptr, i64}` where ``.0`` is the runtime
-        // ``MnMap*``. ``__mn_map_len`` takes that pointer directly,
-        // so extract field 0 and pass it.
-        let tmp_mptr: String = dn + ".mp"
-        let mt: String = llvm_map_type()
-        s = emit_line(s, "  " + tmp_mptr + " = extractvalue " + mt + " " + an + ", 0")
-        s = emit_rt_call(s, dn, llvm_int(), "__mn_map_len", "ptr " + tmp_mptr)
-    } else {
-        // __mn_list_len expects a pointer; alloca+store the list value first
-        let tmp: String = dn + ".lp"
-        let lt: String = llvm_list_rt()
-        s = emit_line(s, "  " + tmp + " = alloca " + lt)
-        s = emit_line(s, "  store " + lt + " " + an + ", " + "ptr " + tmp)
-        s = emit_rt_call(s, dn, llvm_int(), "__mn_list_len", "ptr " + tmp)
-    }}
+        if args[0].ty.kind == TK_MAP() {
+            // v5.15.1 — `len(map)` dispatch. Pre-existing gap surfaced
+            // by the v5.15.0 map-comprehension test. The bootstrap maps
+            // a Map value as `{ptr, i64}` where ``.0`` is the runtime
+            // ``MnMap*``. ``__mn_map_len`` takes that pointer directly,
+            // so extract field 0 and pass it.
+            let tmp_mptr: String = dn + ".mp"
+            let mt: String = llvm_map_type()
+            s = emit_line(s, "  " + tmp_mptr + " = extractvalue " + mt + " " + an + ", 0")
+            s = emit_rt_call(s, dn, llvm_int(), "__mn_map_len", "ptr " + tmp_mptr)
+        } else {
+            // __mn_list_len expects a pointer; alloca+store the list value first
+            let tmp: String = dn + ".lp"
+            let lt: String = llvm_list_rt()
+            s = emit_line(s, "  " + tmp + " = alloca " + lt)
+            s = emit_line(s, "  store " + lt + " " + an + ", " + "ptr " + tmp)
+            s = emit_rt_call(s, dn, llvm_int(), "__mn_list_len", "ptr " + tmp)
+        }
+    }
     return s
 }
 
@@ -20333,11 +20334,12 @@ fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitS
         s = emit_line(s, "  " + zext_b + " = zext i1 " + an + " to i64")
         s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_bool", "i64 " + zext_b)
     } else {
-    if args[0].ty.kind == TK_FLOAT() {
-        s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_float", "double " + an)
-    } else {
-        s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_int", "i64 " + an)
-    }}
+        if args[0].ty.kind == TK_FLOAT() {
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_float", "double " + an)
+        } else {
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_from_int", "i64 " + an)
+        }
+    }
     return s
 }
 
@@ -20350,11 +20352,12 @@ fn emit_builtin_int(st: EmitState, dest: Value, args: List<Value>) -> EmitState 
     if args[0].ty.kind == TK_FLOAT() {
         s = emit_line(s, "  " + dn + " = fptosi double " + an + " to i64")
     } else {
-    if args[0].ty.kind == TK_INT() {
-        return emit_copy(s, dest, args[0])
-    } else {
-        s = emit_rt_call(s, dn, llvm_int(), "__mn_str_to_int", llvm_string() + " " + an)
-    }}
+        if args[0].ty.kind == TK_INT() {
+            return emit_copy(s, dest, args[0])
+        } else {
+            s = emit_rt_call(s, dn, llvm_int(), "__mn_str_to_int", llvm_string() + " " + an)
+        }
+    }
     return s
 }
 
@@ -20367,11 +20370,12 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
     if args[0].ty.kind == TK_INT() {
         s = emit_line(s, "  " + dn + " = sitofp i64 " + an + " to double")
     } else {
-    if args[0].ty.kind == TK_FLOAT() {
-        return emit_copy(s, dest, args[0])
-    } else {
-        s = emit_rt_call(s, dn, llvm_float(), "__mn_str_to_float", llvm_string() + " " + an)
-    }}
+        if args[0].ty.kind == TK_FLOAT() {
+            return emit_copy(s, dest, args[0])
+        } else {
+            s = emit_rt_call(s, dn, llvm_float(), "__mn_str_to_float", llvm_string() + " " + an)
+        }
+    }
     return s
 }
 
@@ -23276,4 +23280,3 @@ fn mn_main() {
     __mn_str_eprint("       'mnc compile <file>' for transpilation (.py/.php/.ts/.go).\n")
     __mn_exit(1)
 }
-
