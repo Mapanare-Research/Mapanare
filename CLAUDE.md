@@ -18,6 +18,36 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.13.0** (shipped) — **Mc.2 — `mnc fmt` (the formatter).**
+  First release in the v5.13–v5.21 terseness arc. New
+  `mapanare/format.py` module: idempotent, AST-preserving,
+  whitespace-only canonicalizer (~70 LOC). Six rules in order —
+  CRLF/CR → LF, strip trailing whitespace, leading tabs → 4 spaces,
+  cap 2+ consecutive blank lines at 1, strip leading/trailing
+  blanks, single trailing newline. Wired into both `mapanare fmt`
+  (Python CLI) and `mnc fmt` (native, shells out to Python). CLI
+  surface: `<path>...` writes in place (default preserved from
+  v5.12.x), `--check` exits 1 on drift, `--stdout` prints to
+  stdout, directory paths recurse. **Conservative by design** — no
+  re-indent, no brace-style change, no expression rewriting, no
+  import sorting; those decisions deferred to v5.14.0+ rewrite
+  passes. Phase 0 audit (`STYLE_AUDIT.md`) found 114/114 corpus
+  files use 4-space indent, 0 trailing whitespace, 0 missing
+  trailing newlines, 2 CRLF outliers — the unanimity is what made
+  the conservative ruleset defensible. One-time self-format on
+  `mapanare/self/{ast,lexer}.mn` (CRLF → LF) and the regenerated
+  `mnc_all.mn` (10 stripped blank lines at module boundaries).
+  v5.13.0 also rolls in the v5.12.0 plan (Mc.6 / Wk.* — Windows
+  SDK split; see CHANGELOG). New `tests/test_format.py` (704
+  corpus assertions + 13 unit rules + 7 CLI integration tests).
+  **Goldens 66/66 preserved.** Strict 3-stage fixed-point
+  unaffected by the formatter (the 1-line `!"5.13.0"` vs
+  `!"5.11.0"` drift is pre-existing from the version-bump commit
+  538584b). `make lint` clean. The formatter is the load-bearing
+  foundation for v5.17.0's mechanical `mnc fmt --to-terse`
+  rewrite of the 14k-line self-hosted compiler. See
+  `docs/roadmap/v5/v5.13.0/SESSION_REPORT.md` and
+  `docs/guides/formatter.md`.
 - **v5.11.0** (shipped) — **Pk.* — packaging hygiene + post-bundle
   cleanup.** Three deferred-from-v5.10.0 cleanups, zero compiler
   internals. **Pk.1**: release-artifact filenames now include the

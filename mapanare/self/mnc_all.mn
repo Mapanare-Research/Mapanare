@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: bash scripts/concat_self.sh
+// Do not edit — regenerate with: python scripts/concat_self.py
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -21416,6 +21416,7 @@ fn print_help_text() {
     print("Usage:")
     print("  mnc <file.mn>             compile and run (default)")
     print("  mnc emit-llvm <file.mn>   compile to LLVM IR [-o output]")
+    print("  mnc fmt <path...>         canonicalize whitespace [--check|--stdout]")
     print("  mnc run <file.mn>         compile and execute")
     print("  mnc build <file.mn|dir>   build native binary [-o output]")
     print("  mnc compile <file>        transpile + build (.py/.php/.ts/.go)")
@@ -22472,6 +22473,30 @@ fn mn_main() {
         run_emit_llvm(__mn_argv(2))
         return
     }
+    // v5.13.0 Mc.2: fmt — canonicalize whitespace in .mn source. The
+    // formatter logic lives in Python (mapanare/format.py); the native
+    // dispatch shells out to ``mapanare fmt``. Porting format.py to .mn
+    // is out of scope for v5.13.0 — the Python implementation is the
+    // single source of truth, and a future Mc.* release can mirror it
+    // in self/ if the shell-out becomes a measurable hot path.
+    if arg1 == "fmt" {
+        if __mn_argc() < 3 {
+            __mn_str_eprint("usage: mnc fmt <path...> [--check] [--stdout]\n")
+            __mn_exit(1)
+        }
+        let mut fmt_cmd: String = "mapanare fmt"
+        let mut fa: Int = 2
+        for _ in 0..64 {
+            if fa >= __mn_argc() { fa = __mn_argc() + 1 }
+            if fa < __mn_argc() {
+                fmt_cmd = fmt_cmd + " " + __mn_argv(fa)
+                fa = fa + 1
+            }
+        }
+        let fr: Int = __mn_system(fmt_cmd)
+        if fr != 0 { __mn_exit(fr) }
+        return
+    }
     if arg1 == "compile" {
         if __mn_argc() < 3 {
             __mn_str_eprint("usage: mnc compile <file> [-o output]\n")
@@ -22504,4 +22529,3 @@ fn mn_main() {
     __mn_str_eprint("       'mnc compile <file>' for transpilation (.py/.php/.ts/.go).\n")
     __mn_exit(1)
 }
-

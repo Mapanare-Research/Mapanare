@@ -11,7 +11,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Mc.2 — `mnc fmt` (the formatter).** First entry in the v5.13–v5.21
+  terseness arc. Idempotent, AST-preserving, whitespace-only formatter
+  for `.mn` source. Lives in `mapanare/format.py`; wired into both
+  `mapanare fmt` (Python CLI) and `mnc fmt` (native, shells out to
+  Python for v5.13.0). CLI surface: `mnc fmt <path>...` writes in
+  place, `--check` exits 1 on drift without writing, `--stdout` prints
+  to stdout, directory paths recurse. Conservative by design — only
+  normalizes line endings (CRLF/CR → LF), strips trailing whitespace,
+  replaces leading tabs with 4 spaces, collapses 2+ consecutive blank
+  lines to 1, ensures one trailing newline. **Does NOT** re-indent,
+  rewrite expressions, change brace style, or sort imports — those
+  decisions are deferred to later releases (see
+  `docs/roadmap/v5/v5.13.0/STYLE_AUDIT.md` §5). The conservatism is
+  load-bearing for v5.14.0+ which layers `--to-terse` rewrite passes
+  on top of this core; the v5.17.0 Sh.\* self-host rewrite depends
+  on this formatter being rock-solid first. Corpus invariants
+  (idempotency, AST preservation, output shape) are checked across
+  every `.mn` file in `tests/golden/`, `mapanare/self/`, and
+  `examples/` by `tests/test_format.py` (704 corpus assertions, 13
+  unit rules, 7 CLI integration tests). One-time self-format applied
+  to `mapanare/self/ast.mn`, `mapanare/self/lexer.mn` (CRLF → LF) and
+  the generated `mnc_all.mn` (10 stripped blank lines at module
+  boundaries from `concat_self.py`'s output). Goldens 66/66 preserved;
+  the strict 3-stage fixed point's 1-line `!"5.13.0"` vs `!"5.11.0"`
+  drift is pre-existing from the version bump (commit 538584b) and
+  unaffected by the formatter.
+- `docs/guides/formatter.md` — usage guide, pre-commit hook example,
+  editor-integration notes, and the contractual invariants tooling
+  can rely on.
+- `docs/roadmap/v5/v5.13.0/STYLE_AUDIT.md` — Phase 0 deliverable. The
+  audit found 114/114 `.mn` files use 4-space indent, 0 trailing
+  whitespace, 0 missing trailing newlines, and only 2 CRLF outliers.
+  The unanimity of the corpus is what made the conservative ruleset
+  defensible; non-unanimous decisions (trailing commas, brace style)
+  are explicitly deferred.
+
 ### Changed
+
+- `mapanare/cli.py` `_format_mapanare` is now a thin wrapper over
+  `mapanare.format.format_source`. The pre-v5.13.0 implementation
+  was an unmaintained stub whose docstring claimed "spaces around
+  binary operators" but whose body did not implement that. The
+  alias is preserved for backwards compatibility with any caller
+  that imported the private name.
+- `cmd_fmt` and the `p_fmt` argparse subparser accept multiple
+  paths, directories (recursive `.mn` walk), `--check`, and
+  `--stdout`. Default behavior (write in place) is preserved from
+  v5.12.x to keep the existing `tests/cli/test_cli.py::TestFmt`
+  contract intact.
 
 ### Fixed
 

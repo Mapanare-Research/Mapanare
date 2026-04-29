@@ -168,6 +168,7 @@ cd Mapanare
 bash scripts/build_from_seed.sh    # no Python needed
 ./mnc hello.mn                     # compile and run (default)
 ./mnc emit-llvm hello.mn           # compile to LLVM IR
+./mnc fmt mapanare/self/           # canonicalize whitespace (v5.13.0+)
 ```
 
 > **v5.9.1 BREAKING:** `mnc <file.mn>` now compiles and runs the

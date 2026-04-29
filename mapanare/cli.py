@@ -15,6 +15,7 @@ from mapanare.diagnostics import (
     format_diagnostic,
     format_summary,
 )
+from mapanare.format import format_source
 from mapanare.mir_opt import MIROptLevel as OptLevel
 from mapanare.modules import ModuleResolver
 from mapanare.parser import ParseError, parse, parse_recovering
@@ -329,21 +330,99 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def cmd_fmt(args: argparse.Namespace) -> None:
-    """Format an .mn source file (normalize whitespace and indentation)."""
-    source = _read_source(args.source)
+    """Format .mn source — normalize whitespace canonically.
 
-    # Verify the file parses before formatting
-    try:
-        parse(source, filename=args.source)
-    except ParseError as e:
-        _emit_parse_error(e, source, args.source)
+    Accepts files and directories (directories are recursively scanned for
+    ``.mn`` files). Default behavior writes formatted output back in place
+    for backwards compatibility with v5.12.x and earlier; ``--check``
+    reports diff candidates without writing (exit 1 if any), ``--stdout``
+    prints to stdout instead of writing.
+
+    Files that fail to parse are reported on stderr and skipped; the
+    overall exit code is 1 if any file errored or (under --check) needed
+    changes.
+    """
+    paths = _expand_fmt_paths(args.sources)
+    if not paths:
+        print("error: no .mn files found", file=sys.stderr)
         sys.exit(1)
 
-    formatted = _format_mapanare(source)
+    changed: list[Path] = []
+    errored: list[Path] = []
 
-    with open(args.source, "w", encoding="utf-8") as f:
-        f.write(formatted)
-    print(f"formatted {args.source}")
+    for path in paths:
+        # Read in binary mode so universal-newline translation does not
+        # silently mask CRLF / CR endings — the formatter is supposed to
+        # canonicalize line endings, and that requires actually seeing them.
+        try:
+            raw = path.read_bytes()
+        except OSError as e:
+            print(f"error: cannot read {path}: {e}", file=sys.stderr)
+            errored.append(path)
+            continue
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeDecodeError as e:
+            print(f"error: {path}: not valid UTF-8: {e}", file=sys.stderr)
+            errored.append(path)
+            continue
+
+        # Verify the file parses before formatting — prevents fmt from
+        # silently rewriting a file that the rest of the pipeline can't
+        # consume.
+        try:
+            parse(source, filename=str(path))
+        except ParseError as e:
+            _emit_parse_error(e, source, str(path))
+            errored.append(path)
+            continue
+
+        formatted = format_source(source)
+        if formatted == source:
+            continue
+        changed.append(path)
+
+        if args.check:
+            print(f"would format: {path}", file=sys.stderr)
+        elif args.stdout:
+            sys.stdout.write(formatted)
+        else:
+            # Write in binary so the LF-normalized output lands on disk
+            # exactly as produced (no platform-specific re-translation).
+            path.write_bytes(formatted.encode("utf-8"))
+            print(f"formatted {path}")
+
+    if errored:
+        sys.exit(1)
+    if args.check and changed:
+        sys.exit(1)
+
+
+def _expand_fmt_paths(sources: list[str]) -> list[Path]:
+    """Expand a mix of files and directories into a sorted list of .mn files.
+
+    Directories are walked recursively; only ``.mn`` files are included.
+    Non-.mn explicit files are still included (the caller asked for them).
+    """
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for s in sources:
+        p = Path(s)
+        if not p.exists():
+            print(f"error: path not found: {s}", file=sys.stderr)
+            continue
+        if p.is_dir():
+            for f in sorted(p.rglob("*.mn")):
+                rp = f.resolve()
+                if rp not in seen:
+                    seen.add(rp)
+                    out.append(f)
+        else:
+            rp = p.resolve()
+            if rp not in seen:
+                seen.add(rp)
+                out.append(p)
+    return out
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -1497,44 +1576,14 @@ def cmd_targets(args: argparse.Namespace) -> None:
 
 
 def _format_mapanare(source: str) -> str:
-    """Basic Mapanare source formatter.
+    """Backwards-compatible thin wrapper over ``mapanare.format.format_source``.
 
-    Normalizes:
-    - Trailing whitespace on each line
-    - Consistent indentation (4 spaces)
-    - No more than 2 consecutive blank lines
-    - Single trailing newline at end of file
-    - Spaces around binary operators
+    Kept as an internal alias so callers that imported the v5.12.x and
+    earlier name keep working. New code should import ``format_source``
+    from ``mapanare.format`` directly. v5.13.0 promoted the formatter to
+    its own module.
     """
-    lines = source.split("\n")
-    result: list[str] = []
-    consecutive_blank = 0
-
-    for line in lines:
-        # Strip trailing whitespace
-        stripped = line.rstrip()
-
-        if stripped == "":
-            consecutive_blank += 1
-            if consecutive_blank <= 2:
-                result.append("")
-            continue
-
-        consecutive_blank = 0
-
-        # Normalize leading whitespace: convert tabs to 4 spaces
-        content = stripped.lstrip()
-        leading = stripped[: len(stripped) - len(content)]
-        # Replace tabs with 4 spaces
-        leading = leading.replace("\t", "    ")
-        result.append(leading + content)
-
-    # Strip trailing blank lines, ensure single trailing newline
-    while result and result[-1] == "":
-        result.pop()
-    result.append("")
-
-    return "\n".join(result)
+    return format_source(source)
 
 
 def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
@@ -1723,8 +1772,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.set_defaults(func=cmd_run)
 
     # fmt
-    p_fmt = subparsers.add_parser("fmt", help="Format .mn source")
-    p_fmt.add_argument("source", help="Path to .mn source file")
+    p_fmt = subparsers.add_parser(
+        "fmt",
+        help="Format .mn source (canonical whitespace)",
+    )
+    p_fmt.add_argument(
+        "sources",
+        nargs="+",
+        help="One or more .mn files or directories (directories are scanned recursively)",
+    )
+    p_fmt.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit 1 if any file would be reformatted; do not write",
+    )
+    p_fmt.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Print formatted source to stdout instead of writing in place",
+    )
     p_fmt.set_defaults(func=cmd_fmt)
 
     # init
