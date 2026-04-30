@@ -18,7 +18,50 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
-- **v5.17.0** (ready, not tagged) — **Sh.* — self-host rewrite to
+- **v5.17.1** (ready, not tagged) — **Sh.C + Sh.D + Sh.G — terse
+  polish.** Per-site judgment follow-up to v5.17.0's mechanical
+  brace → colon rewrite. **Sh.C.B** — list comprehensions in
+  `transpiler.mn` (3 sites: `pop_scope` accumulators and a
+  match-arm `rest` builder); CLEAR-WIN survey across all 17
+  modules found only 5 candidate single-push for-loops, of which
+  3 were comp-shaped (the other 2 used a prepend-pattern
+  comprehension can't express cleanly). Defensive `for _ in 0..N`
+  patterns with artificial upper bounds (12+ sites in `lower.mn` /
+  `parser.mn` / `emit_llvm.mn`) deliberately SKIP'd as
+  out-of-scope-for-syntax-only. **Sh.D.B** — implicit-return
+  upgrades across all 16 modules (`abi.mn` had 0 sites; everything
+  else got at least one). 159 ONELINER conversions
+  (`fn name() -> T: return E` → `fn name() -> T = E`,
+  v5.15.0 Te.2.D parser form) plus 121 BLOCK_SHORT conversions
+  (drop trailing `return` keyword to leave bare expression as
+  block-form implicit return, SPEC §4.5). Strict single-return
+  filter: only functions with exactly ONE `return` substring in
+  the body and that return on the LAST non-blank line at body
+  indent — protects against multi-return functions where dropping
+  the keyword changes semantics. 28 BLOCK_LONG candidates (>5
+  prelude statements) deliberately SKIP'd: in long functions the
+  explicit `return` keyword is a punctuation marker readers scan
+  for, and stripping it for one keyword saves a line at a
+  readability cost. **Sh.G** — SPEC.md flagship examples,
+  README.md first-impression example, and CLAUDE.md release-notes
+  preamble refreshed to terse + idiomatic style. Total source
+  shrink **-169 lines (-0.7%)** across 17 commits (24,917 →
+  24,748). Modest LOC delta: BLOCK_SHORT conversions don't drop
+  lines (`return E` and bare `E` both occupy one line), but they
+  do count as readability wins. Cumulative v5.13.0 → v5.17.1
+  shrink: **-3,950 lines (-13.8%)** off the v5.13.0 baseline.
+  **Strict 3-stage fixed point preserved**: stage2.ll == stage3.ll
+  at 231,957 lines / 0-line diff at every per-module commit.
+  **Goldens 80/80** throughout. NO seed refresh required (no new
+  C-runtime exports). NO bootstrap parser changes (v5.15.0
+  Te.2.D shipped function-init form; v5.14.0 Te.1 shipped
+  block-form implicit return; both forms have been bootstrap-
+  ready since their respective releases). Validated by 63/63
+  transpiler tests + 137/137 SPEC tests + the standard
+  `verify_fixed_point.sh` + `build_from_seed.sh` flow. See
+  `docs/roadmap/v5/v5.17.1/SESSION_REPORT.md`,
+  `COMPREHENSION_SITES.md`, and `IMPLICIT_RETURN_SITES.md`.
+- **v5.17.0** (shipped) — **Sh.* — self-host rewrite to
   terse syntax.** Headline release of the v5.13–v5.21 terseness
   arc: the 14k-line self-hosted compiler in `mapanare/self/` now
   ships in colon-block form. **Sh.B** — all 17 hand-edited modules
@@ -433,10 +476,10 @@ had latent bugs requiring dedicated releases.
   `mnc fmt --to-terse` on `mapanare/self/*.mn`. **-3,781 lines
   (13.2%)** across the 17 hand-edited modules; strict 3-stage
   fixed point preserved at 0-line diff.
-- **v5.17.1** — **Sh.C + Sh.D + Sh.G — terse polish.** Per-site
+- ~~**v5.17.1**~~ — shipped (see release notes above). Per-site
   comprehension upgrades, implicit-return upgrades, SPEC.md /
-  README.md / CLAUDE.md example refresh. PLAN authored at
-  `docs/roadmap/v5/v5.17.1/PLAN.md`.
+  README.md / CLAUDE.md example refresh. **-169 lines** on top
+  of v5.17.0; cumulative v5.13.0 → v5.17.1 shrink **-13.8%**.
 - **v5.18.0** — **Mc.1/3/4 — tooling pack.** LSP server,
   `mnc init`, `mnc check`, VSCode extension. Includes AST
   span-info retrofit (Phase 0). See
