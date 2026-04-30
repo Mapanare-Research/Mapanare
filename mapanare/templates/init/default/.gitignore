@@ -1,0 +1,26 @@
+# Build artifacts
+dist/
+build/
+*.ll
+*.bc
+*.o
+*.wasm
+*.wat
+
+# Native binaries
+{{NAME}}
+{{NAME}}.exe
+
+# Mapanare cache
+.mapanare-cache/
+.mn-cache/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
