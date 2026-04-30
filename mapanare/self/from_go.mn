@@ -12,8 +12,7 @@ struct GoToken:
     line: Int
     col: Int
 
-fn new_go_token(kind: String, value: String, line: Int, col: Int) -> GoToken:
-    return new GoToken { kind: kind, value: value, line: line, col: col }
+fn new_go_token(kind: String, value: String, line: Int, col: Int) -> GoToken = new GoToken { kind: kind, value: value, line: line, col: col }
 
 // ---------------------------------------------------------------------------
 // Go keyword table
@@ -54,8 +53,7 @@ fn is_go_keyword(s: String) -> Bool:
 // Tokenizer helpers
 // ---------------------------------------------------------------------------
 
-fn is_go_alpha(c: String) -> Bool:
-    return is_transpiler_alpha(c)
+fn is_go_alpha(c: String) -> Bool = is_transpiler_alpha(c)
 
 fn is_go_alnum(c: String) -> Bool:
     if is_go_alpha(c) { return true }
@@ -286,7 +284,7 @@ struct GoParser:
 
 fn new_go_parser(tokens: List<GoToken>, filename: String) -> GoParser:
     let st: TranspilerState = new_state(filename, "go")
-    return new GoParser { tokens: tokens, pos: 0, state: st }
+    new GoParser { tokens: tokens, pos: 0, state: st }
 
 fn go_current(p: GoParser) -> GoToken:
     if p.pos < len(p.tokens):
@@ -295,7 +293,7 @@ fn go_current(p: GoParser) -> GoToken:
 
 fn go_advance(p: GoParser) -> GoParser:
     p.pos = p.pos + 1
-    return p
+    p
 
 fn go_expect_kw(p: GoParser, kw: String) -> GoParser:
     let t: GoToken = go_current(p)
@@ -314,18 +312,18 @@ fn go_expect_op(p: GoParser, op: String) -> GoParser:
 fn go_skip_newlines(p: GoParser) -> GoParser:
     while go_current(p).kind == "NEWLINE":
         p = go_advance(p)
-    return p
+    p
 
 fn go_skip_semicolons(p: GoParser) -> GoParser:
     while go_current(p).kind == "OP":
         if go_current(p).value != ";" { break }
         p = go_advance(p)
-    return p
+    p
 
 fn go_skip_whitespace(p: GoParser) -> GoParser:
     p = go_skip_newlines(p)
     p = go_skip_semicolons(p)
-    return p
+    p
 
 // ---------------------------------------------------------------------------
 // Type translation
@@ -333,7 +331,7 @@ fn go_skip_whitespace(p: GoParser) -> GoParser:
 
 fn translate_go_type(type_str: String) -> String:
     let mappings: List<TypeMapping> = go_type_mappings()
-    return translate_type(type_str, mappings)
+    translate_type(type_str, mappings)
 
 // Read a Go type from the token stream (handles pointers, slices, maps)
 fn go_read_type(p: GoParser) -> String:
@@ -1079,7 +1077,7 @@ fn translate_go_type_alias(p: GoParser, ind: String) -> String:
     while go_current(p).kind != "NEWLINE":
         if go_current(p).kind == "EOF" { break }
         p = go_advance(p)
-    return ind + "// type " + tname + " = " + target + "\n"
+    ind + "// type " + tname + " = " + target + "\n"
 
 // ---------------------------------------------------------------------------
 // Const/var block translation
@@ -1126,7 +1124,7 @@ fn translate_go_const_block(p: GoParser, ind: String) -> String:
         else:
             out = ind + "// const " + cname + "\n"
 
-    return out
+    out
 
 // ---------------------------------------------------------------------------
 // Main translation entry point
@@ -1268,4 +1266,4 @@ fn translate_go(source: String, filename: String) -> String:
         // Skip other top-level tokens
         p = go_advance(p)
 
-    return out_text
+    out_text
