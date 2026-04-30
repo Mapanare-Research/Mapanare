@@ -108,3 +108,16 @@ fixed point should be preserved by construction; if a specific site
 breaks fixed point, that's a lowerer-determinism bug worth a
 follow-up issue (and the site goes back into the SKIP column for
 v5.17.1).
+
+
+## v5.17.2 update — defensive-loop catalogue closed
+
+The 11 SKIP'd defensive-iteration sites listed under
+"Pattern across `lower.mn`, `parser.mn`, `emit_llvm.mn`" above
+were rewritten in v5.17.2 Sh.H. All 10 Pattern A sites
+(`lower.mn:575, 1542, 2766, 2858, 2863, 3022, 3393, 3764, 4459+4465`
+and `emit_llvm.mn:5735`) became
+`for i in 0..len(xs): r.push(xs[i])`. The 1 Pattern B site
+(`parser.mn:1582`) became `while true:`. Strict 3-stage fixed point
+preserved at 231,723 lines (0-line diff). Per-site verdicts and
+LOC deltas in `docs/roadmap/v5/v5.17.2/SESSION_REPORT.md`.

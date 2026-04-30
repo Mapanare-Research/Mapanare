@@ -18,7 +18,35 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
-- **v5.17.1** (ready, not tagged) — **Sh.C + Sh.D + Sh.G — terse
+- **v5.17.2** (ready, not tagged) — **Sh.H — defensive-loop
+  cleanup.** Closes the 11 defensive-iteration sites catalogued
+  in v5.17.1's COMPREHENSION_SITES.md as out-of-scope-for-syntax-
+  only. Two patterns. **Pattern A** (10 sites) — pure
+  index-collection
+  `for _ in 0..LARGE: if i < n: r.push(xs[i]); i = i + 1`
+  rewritten to `for i in 0..len(xs): r.push(xs[i])`: 9 sites in
+  `lower.mn` (`bind_method_self_param`, tensor method-call /
+  __mn_tensor_get / __mn_tensor_slice / tensor-set arg packing,
+  closure capture explicit-params packing, for-comprehension
+  body-stmts copy, `verify_module` nested loops) plus 1 in
+  `emit_llvm.mn` (function-body emission outer loop).
+  **Pattern B** (1 site) — state-advance `while true:` in disguise
+  in `parser.mn::parse_call_args`; the artificial `0..100` bound
+  was a placeholder for a real `while true` that the lowerer
+  accepts cleanly with the early-return exits. Source shrink
+  **-38 lines** across 3 modules (`parser.mn` 0, `lower.mn` -34,
+  `emit_llvm.mn` -4); cumulative v5.13.0 → v5.17.2 shrink
+  **-3,988 lines (-13.9%)** off the v5.13.0 baseline. IR shrink
+  **-234 lines** (231957 → 231723), consistent with the lowerer
+  emitting one less PHI per rewritten counter loop. **Strict
+  3-stage fixed point preserved**: stage2.ll == stage3.ll at
+  231,723 lines / 0-line diff at every per-module commit.
+  **Goldens 80/80** throughout. NO seed refresh required (all
+  rewrites are syntax-equivalent within the v5.14.0+ supported
+  colon-block / range-for surface; zero new C-runtime exports).
+  All 11 catalogued sites applied successfully — none SKIP'd.
+  See `docs/roadmap/v5/v5.17.2/SESSION_REPORT.md`.
+- **v5.17.1** (shipped) — **Sh.C + Sh.D + Sh.G — terse
   polish.** Per-site judgment follow-up to v5.17.0's mechanical
   brace → colon rewrite. **Sh.C.B** — list comprehensions in
   `transpiler.mn` (3 sites: `pop_scope` accumulators and a
@@ -480,12 +508,9 @@ had latent bugs requiring dedicated releases.
   comprehension upgrades, implicit-return upgrades, SPEC.md /
   README.md / CLAUDE.md example refresh. **-169 lines** on top
   of v5.17.0; cumulative v5.13.0 → v5.17.1 shrink **-13.8%**.
-- **v5.17.2** — **Sh.H — defensive-loop cleanup.** Closes the 12
-  defensive-iteration sites catalogued in v5.17.1
-  COMPREHENSION_SITES.md (`for _ in 0..LARGE: if i < n` →
-  `for i in 0..n`). Bootstrap-era cruft; range-for is everywhere
-  in the same files now. PLAN at
-  `docs/roadmap/v5/v5.17.2/PLAN.md`.
+- ~~**v5.17.2**~~ — shipped (see release notes above). All 11
+  defensive-iteration sites rewritten to range-for / `while true`;
+  strict 3-stage fixed point preserved at 0-line diff.
 - **v5.18.0** — **Mc.1/3/4 — tooling pack.** LSP server,
   `mnc init`, `mnc check`, VSCode extension. Includes AST
   span-info retrofit (Phase 0). See

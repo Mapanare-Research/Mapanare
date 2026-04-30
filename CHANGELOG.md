@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.17.2] - 2026-04-30
+
+### Changed
+
+- **Sh.H — defensive-loop cleanup.** Closes the 11
+  defensive-iteration sites catalogued in v5.17.1's
+  `COMPREHENSION_SITES.md`. Two patterns. **Pattern A** (10 sites)
+  — pure index-collection
+  `for _ in 0..LARGE: if i < n: r.push(xs[i]); i = i + 1`
+  rewritten to `for i in 0..len(xs): r.push(xs[i])`: 9 sites in
+  `lower.mn` (575, 1542, 2766, 2858, 2863, 3022, 3393, 3764, and
+  the `verify_module` nested pair at 4459+4465) plus 1 in
+  `emit_llvm.mn` (5735, function-body emission outer loop).
+  **Pattern B** (1 site) — state-advance `while true:` in disguise
+  in `parser.mn::parse_call_args` (1582). Source shrink:
+  **-38 lines** across 3 modules; cumulative v5.13.0 → v5.17.2
+  shrink: **-3,988 lines (-13.9%)**. IR shrink: **-234 lines**
+  (231957 → 231723), consistent with the lowerer emitting one
+  less PHI per rewritten counter loop.
+
+### Preserved
+
+- **Strict 3-stage fixed point.** stage2.ll == stage3.ll at
+  231,723 lines / 0-line diff at every per-module commit and at
+  HEAD. Held since v5.9.0.
+- **Goldens 80/80** at every per-module commit and at HEAD.
+- **No seed refresh required.** All rewrites are syntax-equivalent
+  within the v5.14.0+ supported colon-block / range-for surface;
+  zero new C-runtime exports.
+
+### Skipped (intentional)
+
+- **Comprehension promotion of Pattern A sites.** Each of the 10
+  rewritten loops could plausibly become a list comprehension,
+  but v5.17.2 stopped at plain range-for to keep each commit a
+  minimal logic refactor. Comprehension promotion is a separate
+  per-site judgment call.
+- **Other `for _ in 0..LARGE:` patterns** that aren't
+  pure index-collection (AST walkers with loop-carried state
+  beyond a single index). Not catalogued in v5.17.1 and
+  intentionally untouched.
+
 ## [5.17.1] - 2026-04-30
 
 ### Changed
