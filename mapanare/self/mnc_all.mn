@@ -2862,7 +2862,7 @@ fn parse_call_args(tokens: List<Token>, pos: Int, filename: String, callee: Expr
     args.push(a0.expr)
     p = a0.pos
 
-    for _ in 0..100:
+    while true:
         if peek_type(tokens, p) != "COMMA":
             p = expect(tokens, p, "RPAREN")
             return new_expr_result(Expr::Call(callee, args), p)
