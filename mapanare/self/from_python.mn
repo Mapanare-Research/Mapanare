@@ -12,8 +12,7 @@ struct PyToken:
     line: Int
     col: Int
 
-fn new_token(kind: String, value: String, line: Int, col: Int) -> PyToken:
-    return new PyToken { kind: kind, value: value, line: line, col: col }
+fn new_token(kind: String, value: String, line: Int, col: Int) -> PyToken = new PyToken { kind: kind, value: value, line: line, col: col }
 
 // ---------------------------------------------------------------------------
 // Python keyword table
@@ -61,8 +60,7 @@ fn is_py_keyword(s: String) -> Bool:
 // Tokenizer helpers
 // ---------------------------------------------------------------------------
 
-fn is_py_alpha(c: String) -> Bool:
-    return is_transpiler_alpha(c)
+fn is_py_alpha(c: String) -> Bool = is_transpiler_alpha(c)
 
 fn is_py_alnum(c: String) -> Bool:
     if is_py_alpha(c) { return true }
@@ -202,7 +200,7 @@ struct PyParser:
 
 fn new_py_parser(tokens: List<PyToken>, filename: String) -> PyParser:
     let st: TranspilerState = new_state(filename, "python")
-    return new PyParser { tokens: tokens, pos: 0, state: st }
+    new PyParser { tokens: tokens, pos: 0, state: st }
 
 fn current(p: PyParser) -> PyToken:
     if p.pos < len(p.tokens):
@@ -211,7 +209,7 @@ fn current(p: PyParser) -> PyToken:
 
 fn advance(p: PyParser) -> PyParser:
     p.pos = p.pos + 1
-    return p
+    p
 
 fn expect_kw(p: PyParser, kw: String) -> PyParser:
     let t: PyToken = current(p)
@@ -230,7 +228,7 @@ fn expect_op(p: PyParser, op: String) -> PyParser:
 fn skip_newlines(p: PyParser) -> PyParser:
     while current(p).kind == "NEWLINE":
         p = advance(p)
-    return p
+    p
 
 // ---------------------------------------------------------------------------
 // Type translation using transpiler framework
@@ -238,7 +236,7 @@ fn skip_newlines(p: PyParser) -> PyParser:
 
 fn translate_py_type(type_str: String) -> String:
     let mappings: List<TypeMapping> = python_type_mappings()
-    return translate_type(type_str, mappings)
+    translate_type(type_str, mappings)
 
 // ---------------------------------------------------------------------------
 // Python stdlib shims
@@ -487,4 +485,4 @@ fn translate_python(source: String, filename: String) -> String:
         // Skip other top-level tokens
         p = advance(p)
 
-    return out_text
+    out_text
