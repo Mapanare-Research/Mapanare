@@ -14,15 +14,13 @@ import self::emit_llvm
 // Compilation result
 // ---------------------------------------------------------------------------
 
-struct CompileResult {
-    success: Bool,
-    ir_text: String,
+struct CompileResult:
+    success: Bool
+    ir_text: String
     errors: List<SemanticError>
-}
 
-fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError>) -> CompileResult {
+fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError>) -> CompileResult:
     return new CompileResult { success: success, ir_text: ir_text, errors: errors }
-}
 
 // ---------------------------------------------------------------------------
 // version — return the compiler version string
@@ -34,15 +32,14 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // substitution dance. The structural fix closes a class of staleness bugs
 // (v4.28.0 forensics: 19 minors stale; v5.8.7 Windows publish: placeholder
 // shipped as the literal). Mirrors the v5.8.6 We.1 host-detection pattern.
-fn version() -> String {
+fn version() -> String:
     return "mapanare " + __mn_version_string()
-}
 
 // v5.9.0 DX.1: --help / -h / help / help <sub> / <sub> --help all print
 // usage. Pre-v5.9.0 these flags fell through the default-IR-emit branch
 // and surfaced as ``error: cannot read file '--help'`` — every new user
 // hit it.
-fn print_help_text() {
+fn print_help_text():
     print("mapanare " + __mn_version_string() + " - native compiler")
     print("")
     print("Usage:")
@@ -59,7 +56,6 @@ fn print_help_text() {
     print("")
     print("For per-subcommand help: mnc help <subcommand>")
     print("Docs: https://mapanare.dev/docs")
-}
 
 // v5.10.0 Win.1b.D: prefer a bundled LLVM toolchain over PATH clang.
 // Windows release ZIPs starting v5.10.0 ship clang.exe + lld-link.exe
@@ -76,20 +72,17 @@ fn print_help_text() {
 // ``"clang"`` literal at every call site, dropping the bundled-path
 // branches entirely. The single-return form keeps the conditional
 // logic intact through inlining + dead-code elimination.
-fn find_clang() -> String {
+fn find_clang() -> String:
     let mut result: String = "clang"
     let exe_dir: String = __mn_executable_dir()
     let bundled_win: String = exe_dir + "/llvm/clang.exe"
-    if __mn_file_exists(bundled_win) != 0 {
+    if __mn_file_exists(bundled_win) != 0:
         result = "\"" + bundled_win + "\""
-    } else {
+    else:
         let bundled_unix: String = exe_dir + "/llvm/clang"
-        if __mn_file_exists(bundled_unix) != 0 {
+        if __mn_file_exists(bundled_unix) != 0:
             result = "\"" + bundled_unix + "\""
-        }
-    }
     return result
-}
 
 // v5.9.0 DX.3: probe clang once per invocation. Pre-v5.9.0 a missing
 // clang (the default state on most Windows boxes) surfaced as bare
@@ -98,86 +91,71 @@ fn find_clang() -> String {
 // platform-aware install-instructions block. v5.10.0 Win.1b.D layers
 // the bundled-LLVM lookup on top: if the bundle is present, we probe
 // the bundled clang and never touch PATH.
-fn check_clang_available() -> Bool {
+fn check_clang_available() -> Bool:
     let clang_bin: String = find_clang()
-    if __mn_host_is_windows() != 0 {
+    if __mn_host_is_windows() != 0:
         let rw: Int = __mn_system(clang_bin + " --version > NUL 2>NUL")
         return rw == 0
-    }
     let r: Int = __mn_system(clang_bin + " --version > /dev/null 2>/dev/null")
     return r == 0
-}
 
-fn print_clang_install_help() {
+fn print_clang_install_help():
     __mn_str_eprint("error: clang not found.\n")
     __mn_str_eprint("Mapanare needs clang to compile to native binaries.\n")
     __mn_str_eprint("Install LLVM and try again:\n")
-    if __mn_host_is_windows() != 0 {
+    if __mn_host_is_windows() != 0:
         __mn_str_eprint("  winget install LLVM.LLVM\n")
         __mn_str_eprint("  (or download from https://llvm.org/builds)\n")
-    } else {
+    else:
         __mn_str_eprint("  macOS: brew install llvm  (or xcode-select --install)\n")
         __mn_str_eprint("  Linux: apt install clang  (or your distro's equivalent)\n")
         __mn_str_eprint("  See https://llvm.org/builds for direct downloads.\n")
-    }
-}
 
 // v5.9.0 DX.3: when clang is found but exits non-zero, surface its
 // stderr (which we previously swallowed via ``2>/dev/null``) so the
 // user can see the real error instead of a bare "clang failed".
-fn report_clang_failure() {
+fn report_clang_failure():
     let err_path: String = __mn_clang_err_path()
     let stderr_text: String = __mn_file_read_or_empty(err_path)
     __mn_str_eprint("error: clang failed:\n")
-    if len(stderr_text) > 0 {
+    if len(stderr_text) > 0:
         __mn_str_eprint(stderr_text)
-        if !stderr_text.ends_with("\n") {
+        if !stderr_text.ends_with("\n"):
             __mn_str_eprint("\n")
-        }
-    }
-}
 
 // v5.9.0 DX.3: stderr-capture suffix for shell-out clang invocations.
 // Replaces ``2>/dev/null`` (stderr swallowed) with ``2><platform-temp>``
 // so report_clang_failure() can read the real diagnostic.
-fn clang_stderr_redirect() -> String {
+fn clang_stderr_redirect() -> String:
     return " 2>" + __mn_clang_err_path()
-}
 
 // v5.9.0 DX.4: pretty-print a byte count. Mirrors ``du -sh`` output
 // shape so the cache-stats user-facing surface looks unchanged.
-fn format_bytes(n: Int) -> String {
-    if n < 1024 {
+fn format_bytes(n: Int) -> String:
+    if n < 1024:
         return str(n) + "B"
-    }
-    if n < 1048576 {
+    if n < 1048576:
         let kb: Int = n / 1024
         return str(kb) + "K"
-    }
-    if n < 1073741824 {
+    if n < 1073741824:
         let mb: Int = n / 1048576
         return str(mb) + "M"
-    }
     let gb: Int = n / 1073741824
     return str(gb) + "G"
-}
 
-fn count_lines(s: String) -> Int {
+fn count_lines(s: String) -> Int:
     let n: Int = len(s)
     let mut count: Int = 0
     let mut i: Int = 0
-    for _ in 0..1000000 {
+    for _ in 0..1000000:
         if i >= n { break }
-        if s.substr(i, 1) == "\n" {
+        if s.substr(i, 1) == "\n":
             count = count + 1
-        }
         i = i + 1
-    }
     return count
-}
 
-fn print_subcommand_help(cmd: String) {
-    if cmd == "build" {
+fn print_subcommand_help(cmd: String):
+    if cmd == "build":
         print("Usage: mnc build <file.mn|dir> [-o output] [--release|--debug|--small]")
         print("")
         print("Compile to native executable. Defaults to a.out.")
@@ -187,41 +165,34 @@ fn print_subcommand_help(cmd: String) {
         print("  --debug       -O0, no strip")
         print("  --small       -Os + LTO + strip")
         return
-    }
-    if cmd == "run" {
+    if cmd == "run":
         print("Usage: mnc run <file.mn> [args...]")
         print("")
         print("Compile and execute. Args after <file.mn> are forwarded to the program.")
         return
-    }
-    if cmd == "test" {
+    if cmd == "test":
         print("Usage: mnc test <file.mn>")
         print("")
         print("Compile, link, run; print PASS or FAIL with reason.")
         return
-    }
-    if cmd == "cache" {
+    if cmd == "cache":
         print("Usage: mnc cache <stats|clean>")
         print("")
         print("  stats   show cache directory size and module count")
         print("  clean   delete the cache directory")
         return
-    }
-    if cmd == "compile" {
+    if cmd == "compile":
         print("Usage: mnc compile <file> [-o output]")
         print("")
         print("Transpile + build. Supported: .mn, .py, .php, .ts, .go")
         return
-    }
-    if cmd == "emit-llvm" {
+    if cmd == "emit-llvm":
         print("Usage: mnc emit-llvm <file.mn> [-o output]")
         print("")
         print("Compile to LLVM IR. Without -o, prints to stdout.")
         print("With -o <path>, writes to file.")
         return
-    }
     print_help_text()
-}
 
 // ---------------------------------------------------------------------------
 // Path helpers for module resolution
@@ -230,71 +201,59 @@ fn print_subcommand_help(cmd: String) {
 // Extract directory part of a path: "/foo/bar/baz.mn" -> "/foo/bar/"
 // Returns "" if no directory separator found.
 // Scans from end to find last separator (avoids nested-assign MIR bug).
-fn dir_of_path(path: String) -> String {
+fn dir_of_path(path: String) -> String:
     let slen: Int = len(path)
     if slen == 0 { return "" }
     let mut i: Int = slen - 1
-    for _ in 0..4096 {
+    for _ in 0..4096:
         if i < 0 { return "" }
         let ch: String = path.substr(i, 1)
-        if ch == "/" {
+        if ch == "/":
             return path.substr(0, i + 1)
-        }
         i = i - 1
-    }
     return ""
-}
 
 // Join import path segments with "/": ["stdlib", "math"] -> "stdlib/math"
-fn join_import_path(segments: List<String>) -> String {
+fn join_import_path(segments: List<String>) -> String:
     let mut result: String = ""
     let mut i: Int = 0
     let n: Int = len(segments)
-    for _ in 0..20 {
+    for _ in 0..20:
         if i >= n { return result }
-        if i > 0 {
+        if i > 0:
             result = result + "/" + segments[i]
-        } else {
+        else:
             result = segments[i]
-        }
         i = i + 1
-    }
     return result
-}
 
 // Extract last path component: "stdlib/text" -> "text", "math" -> "math"
-fn basename_of(path: String) -> String {
+fn basename_of(path: String) -> String:
     let slen: Int = len(path)
     if slen == 0 { return "" }
     let mut i: Int = slen - 1
-    for _ in 0..256 {
+    for _ in 0..256:
         if i < 0 { return path }
         let ch: String = path.substr(i, 1)
-        if ch == "/" {
+        if ch == "/":
             return path.substr(i + 1, slen - i - 1)
-        }
         i = i - 1
-    }
     return path
-}
 
 // Extract file extension: "hello.py" -> ".py", "foo.mn" -> ".mn"
-fn file_extension(filename: String) -> String {
+fn file_extension(filename: String) -> String:
     let flen: Int = len(filename)
     let mut i: Int = flen - 1
-    for _ in 0..20 {
+    for _ in 0..20:
         if i < 0 { return "" }
-        if filename.substr(i, 1) == "." {
+        if filename.substr(i, 1) == ".":
             return filename.substr(i, flen - i)
-        }
         i = i - 1
-    }
     return ""
-}
 
 // Try a single directory + relative path combination.
 // Resolution order: <rel>.mn, <rel>/mod.mn, <rel>/<basename>.mn
-fn try_resolve(dir: String, rel: String) -> String {
+fn try_resolve(dir: String, rel: String) -> String:
     let c1: String = dir + rel + ".mn"
     let r1: String = __mn_file_read_or_empty(c1)
     if len(r1) > 0 { return c1 }
@@ -303,36 +262,31 @@ fn try_resolve(dir: String, rel: String) -> String {
     if len(r2) > 0 { return c2 }
     // Try <rel>/<basename>.mn (e.g., stdlib/text -> stdlib/text/text.mn)
     let base: String = basename_of(rel)
-    if len(base) > 0 {
+    if len(base) > 0:
         let c3: String = dir + rel + "/" + base + ".mn"
         let r3: String = __mn_file_read_or_empty(c3)
         if len(r3) > 0 { return c3 }
-    }
     return ""
-}
 
 // Resolve an import path to a file path, reading to check existence.
 // Search order: source_dir, parent dirs of source_dir, then CWD.
 // Returns "" if not found.
-fn resolve_import_file(segments: List<String>, source_dir: String) -> String {
+fn resolve_import_file(segments: List<String>, source_dir: String) -> String:
     let rel: String = join_import_path(segments)
     // Try relative to source directory and each parent up to root
     let mut dir: String = source_dir
-    for _ in 0..20 {
-        if len(dir) == 0 {
+    for _ in 0..20:
+        if len(dir) == 0:
             // Try CWD-relative (empty prefix)
             let cwd_result: String = try_resolve("", rel)
             if len(cwd_result) > 0 { return cwd_result }
             return ""
-        }
         let result: String = try_resolve(dir, rel)
         if len(result) > 0 { return result }
         // Climb to parent: strip trailing slash, then find last slash
         let trimmed: String = dir.substr(0, len(dir) - 1)
         dir = dir_of_path(trimmed)
-    }
     return ""
-}
 
 // ---------------------------------------------------------------------------
 // Definition dedup — remove earlier duplicates from circular imports.
@@ -340,52 +294,42 @@ fn resolve_import_file(segments: List<String>, source_dir: String) -> String {
 // real definitions from B. Keep the LAST occurrence of each function name.
 // ---------------------------------------------------------------------------
 
-fn definition_name(defn: Definition) -> String {
+fn definition_name(defn: Definition) -> String:
     let dk: String = def_kind(defn)
     if dk == "fn_def" { return "__fn__" + def_fn_data(defn).name }
     if dk == "struct_def" { return "__st__" + def_struct_data(defn).name }
     if dk == "enum_def" { return "__en__" + def_enum_data(defn).name }
     if dk == "extern_fn_def" { return "__ex__" + def_extern_name(defn) }
     return ""
-}
 
-fn has_later_def(defs: List<Definition>, idx: Int, name: String, total: Int) -> Bool {
+fn has_later_def(defs: List<Definition>, idx: Int, name: String, total: Int) -> Bool:
     // Check if any definition after idx has the same name
     let mut found: Bool = false
     let mut j: Int = idx + 1
-    for _ in 0..10000 {
-        if j < total {
-            if definition_name(defs[j]) == name {
+    for _ in 0..10000:
+        if j < total:
+            if definition_name(defs[j]) == name:
                 found = true
-            }
             j = j + 1
-        }
-    }
     return found
-}
 
-fn dedup_definitions(defs: List<Definition>) -> List<Definition> {
+fn dedup_definitions(defs: List<Definition>) -> List<Definition>:
     let mut result: List<Definition> = []
     let n: Int = len(defs)
     let mut i: Int = 0
-    for _ in 0..10000 {
-        if i < n {
+    for _ in 0..10000:
+        if i < n:
             let defn: Definition = defs[i]
             let name: String = definition_name(defn)
             // Keep definitions with no extractable name
-            if len(name) == 0 {
+            if len(name) == 0:
                 result.push(defn)
-            } else {
+            else:
                 // Only keep if no later definition has the same name
-                if has_later_def(defs, i, name, n) == false {
+                if has_later_def(defs, i, name, n) == false:
                     result.push(defn)
-                }
-            }
             i = i + 1
-        }
-    }
     return result
-}
 
 // ---------------------------------------------------------------------------
 // Import resolution — read imported files, parse, merge definitions
@@ -394,7 +338,7 @@ fn dedup_definitions(defs: List<Definition>) -> List<Definition> {
 // Resolve all imports in a program. Reads imported files, parses them,
 // and prepends their definitions to the program.
 // visited tracks already-resolved files to prevent circular imports.
-fn resolve_imports(program: Program, filename: String, visited: List<String>) -> Program {
+fn resolve_imports(program: Program, filename: String, visited: List<String>) -> Program:
     let source_dir: String = dir_of_path(filename)
     let mut all_defs: List<Definition> = []
     let mut vis: List<String> = visited
@@ -403,75 +347,60 @@ fn resolve_imports(program: Program, filename: String, visited: List<String>) ->
     // First pass: find and resolve import definitions
     let mut i: Int = 0
     let ndefs: Int = len(program.definitions)
-    for _ in 0..2000 {
-        if i >= ndefs {
+    for _ in 0..2000:
+        if i >= ndefs:
             // Append the original non-import definitions
             let mut j: Int = 0
-            for _ in 0..10000 {
-                if j >= ndefs {
+            for _ in 0..10000:
+                if j >= ndefs:
                     // Dedup: remove earlier stubs when real implementations exist
                     let deduped: List<Definition> = dedup_definitions(all_defs)
                     return start(deduped)
-                }
                 let defn_j: Definition = program.definitions[j]
-                if def_kind(defn_j) != "import_def" {
+                if def_kind(defn_j) != "import_def":
                     all_defs.push(defn_j)
-                }
                 j = j + 1
-            }
             let deduped2: List<Definition> = dedup_definitions(all_defs)
             return start(deduped2)
-        }
         let defn: Definition = program.definitions[i]
-        if def_kind(defn) == "import_def" {
+        if def_kind(defn) == "import_def":
             let imp_path: List<String> = def_import_path(defn)
-            if len(imp_path) > 0 {
+            if len(imp_path) > 0:
                 let resolved_file: String = resolve_import_file(imp_path, source_dir)
-                if len(resolved_file) > 0 {
+                if len(resolved_file) > 0:
                     // Check if already visited (circular import guard)
-                    if is_visited(vis, resolved_file) == false {
+                    if is_visited(vis, resolved_file) == false:
                         vis.push(resolved_file)
                         let imp_source: String = __mn_file_read_or_empty(resolved_file)
-                        if len(imp_source) > 0 {
+                        if len(imp_source) > 0:
                             let imp_program: Program = parse(imp_source, resolved_file)
                             // Recursively resolve imports in the imported module
                             let resolved_imp: Program = resolve_imports(imp_program, resolved_file, vis)
                             // Prepend imported definitions (skip import defs themselves)
                             let mut k: Int = 0
                             let nimp: Int = len(resolved_imp.definitions)
-                            for _ in 0..10000 {
+                            for _ in 0..10000:
                                 if k >= nimp { k = nimp + 1 }
-                                if k < nimp {
+                                if k < nimp:
                                     all_defs.push(resolved_imp.definitions[k])
                                     k = k + 1
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
         i = i + 1
-    }
     return start(all_defs)
-}
 
-fn is_visited(visited: List<String>, path: String) -> Bool {
+fn is_visited(visited: List<String>, path: String) -> Bool:
     let mut i: Int = 0
     let n: Int = len(visited)
-    for _ in 0..100 {
+    for _ in 0..100:
         if i >= n { return false }
         if visited[i] == path { return true }
         i = i + 1
-    }
     return false
-}
 
 // ---------------------------------------------------------------------------
 // compile — run the full pipeline on a source string
 // ---------------------------------------------------------------------------
 
-fn compile(source: String, filename: String) -> CompileResult {
+fn compile(source: String, filename: String) -> CompileResult:
     // Stage 1: parse
     let program: Program = parse(source, filename)
 
@@ -482,9 +411,8 @@ fn compile(source: String, filename: String) -> CompileResult {
     // Stage 3: semantic analysis
     // v4.52.0: check() returns errors; callers handle display (removed double-print)
     let errors: List<SemanticError> = check(resolved, filename)
-    if len(errors) > 0 {
+    if len(errors) > 0:
         return new_compile_result(false, "", errors)
-    }
 
     // Stage 4: lower AST to MIR
     let mir_module: MIRModule = lower(resolved, filename)
@@ -497,14 +425,13 @@ fn compile(source: String, filename: String) -> CompileResult {
     // emission") on the self-hosted side. Prior to this, verify_module was
     // defined in lower.mn but had zero call sites in the compile pipeline.
     let verify_errs: List<VerifyError> = verify_module(opt_module)
-    if len(verify_errs) > 0 {
+    if len(verify_errs) > 0:
         __mn_str_eprint("error: MIR verifier detected malformed IR before emission:\n")
         let mut vi: Int = 0
-        for _ in 0..1000 {
-            if vi >= len(verify_errs) {
+        for _ in 0..1000:
+            if vi >= len(verify_errs):
                 let empty: List<SemanticError> = []
                 return new_compile_result(false, "", empty)
-            }
             let ve: VerifyError = verify_errs[vi]
             __mn_str_eprint("  ")
             __mn_str_eprint(ve.fn_name)
@@ -514,8 +441,6 @@ fn compile(source: String, filename: String) -> CompileResult {
             __mn_str_eprint(ve.message)
             __mn_str_eprint("\n")
             vi = vi + 1
-        }
-    }
 
     // Stage 6: emit LLVM IR from MIR
     // v4.128.0: strip path + extension to match Python CLI's
@@ -527,33 +452,28 @@ fn compile(source: String, filename: String) -> CompileResult {
     let ir_text: String = emit_mir_module(opt_module, stem)
     let no_errors: List<SemanticError> = []
     return new_compile_result(true, ir_text, no_errors)
-}
 
 // ---------------------------------------------------------------------------
 // format_error — format a SemanticError for display
 // ---------------------------------------------------------------------------
 
-fn format_error(err: SemanticError) -> String {
+fn format_error(err: SemanticError) -> String:
     return err.filename + ":" + toString(err.line) + ":" + toString(err.column) + ": error: " + err.message
-}
 
 // ---------------------------------------------------------------------------
 // compile_and_print — compile and print result or errors
 // ---------------------------------------------------------------------------
 
-fn compile_and_print(source: String, filename: String) -> CompileResult {
+fn compile_and_print(source: String, filename: String) -> CompileResult:
     let cr: CompileResult = compile(source, filename)
 
-    if cr.success {
+    if cr.success:
         print(cr.ir_text)
-    } else {
-        for i in 0..len(cr.errors) {
+    else:
+        for i in 0..len(cr.errors):
             let err: SemanticError = cr.errors[i]
             print(format_error(err))
-        }
-    }
     return cr
-}
 
 // v5.10.0 hygiene: surface compile diagnostics in run-mode paths.
 // Pre-this-fix run_program / run_test / run_build / run_compile
@@ -565,13 +485,11 @@ fn compile_and_print(source: String, filename: String) -> CompileResult {
 // being emitted in run mode. Latent v5.9.1 hygiene gap; surfaced
 // here because v5.10.0's Bb.4 seed refresh made the new run-mode
 // behavior canonical.
-fn print_compile_errors(cr: CompileResult) {
-    for i in 0..len(cr.errors) {
+fn print_compile_errors(cr: CompileResult):
+    for i in 0..len(cr.errors):
         let err: SemanticError = cr.errors[i]
         __mn_str_eprint(format_error(err))
         __mn_str_eprint("\n")
-    }
-}
 
 // ---------------------------------------------------------------------------
 // mn_main — native compiler entry point (called from C shim)
@@ -584,20 +502,18 @@ fn print_compile_errors(cr: CompileResult) {
 // test — compile, link, run, report pass/fail
 // ---------------------------------------------------------------------------
 
-fn rename_main(ir: String) -> String {
+fn rename_main(ir: String) -> String:
     return ir.replace("@main(", "@mn_main(")
-}
 
 // Link an object file with the Mapanare runtime.
 // Tries precompiled libmapanare_rt.a first, falls back to C source.
-fn link_with_runtime(obj_path: String, out_path: String) -> Int {
+fn link_with_runtime(obj_path: String, out_path: String) -> Int:
     let null_r: String = __mn_dev_null_redirect()
     let link_pre: String = "gcc " + obj_path + " runtime/native/libmapanare_rt.a -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
     let r: Int = __mn_system(link_pre)
     if r == 0 { return 0 }
     let link_src: String = "gcc " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
     return __mn_system(link_src)
-}
 
 // v5.13.1 At.2: source-text scan for `@test fn NAME(...)`. The native
 // compiler doesn't expose the AST to main.mn (compile() returns IR
@@ -605,52 +521,46 @@ fn link_with_runtime(obj_path: String, out_path: String) -> Int {
 // Python bootstrap discovers the same way through test_runner.py's
 // AST walk, but `mnc test` only has the source string in scope.
 // Skips blank lines and `//` comments between `@test` and `fn`.
-fn is_test_name_char(ch: String) -> Bool {
+fn is_test_name_char(ch: String) -> Bool:
     if ch == "_" { return true }
     if ch >= "0" && ch <= "9" { return true }
     if ch >= "a" && ch <= "z" { return true }
     if ch >= "A" && ch <= "Z" { return true }
     return false
-}
 
-fn extract_fn_name(line: String) -> String {
+fn extract_fn_name(line: String) -> String:
     // line begins with "fn " — pull the identifier after it.
     let n: Int = len(line)
     let mut i: Int = 3
     let mut start: Int = 3
-    for _ in 0..n {
+    for _ in 0..n:
         if i >= n { break }
         let ch: String = line.substr(i, 1)
         if !is_test_name_char(ch) { break }
         i = i + 1
-    }
     return line.substr(start, i - start)
-}
 
 // Manual whitespace strip. lower.mn doesn't translate `.trim()` to
 // `__mn_str_trim`, mirroring emit_llvm.mn::ws_trim — duplicated here
 // instead of imported because mnc_all.mn is a flat concat and main is
 // emitted last (no module-prefixed call sites for ws_trim available).
-fn _trim_line(s: String) -> String {
+fn _trim_line(s: String) -> String:
     let n: Int = len(s)
     if n == 0 { return s }
     let mut start: Int = 0
-    for _ in 0..10000 {
+    for _ in 0..10000:
         if start >= n { break }
         let c0: String = s.substr(start, 1)
         if c0 != " " && c0 != "\t" && c0 != "\r" { break }
         start = start + 1
-    }
     let mut end: Int = n
-    for _ in 0..10000 {
+    for _ in 0..10000:
         if end <= start { break }
         let c1: String = s.substr(end - 1, 1)
         if c1 != " " && c1 != "\t" && c1 != "\r" { break }
         end = end - 1
-    }
     if start == 0 && end == n { return s }
     return s.substr(start, end - start)
-}
 
 // v5.13.1 At.2: manual line-by-line scan via substr instead of
 // String.split — split() in the self-host stage1 returns a List
@@ -658,61 +568,49 @@ fn _trim_line(s: String) -> String {
 // function parameter (suspect string-ownership bug, latent because
 // no other call site in the compiler splits a parameter String).
 // Patch-release scope: route around it; file an issue for v5.14.x.
-fn discover_test_names(source: String) -> List<String> {
+fn discover_test_names(source: String) -> List<String>:
     let mut names: List<String> = []
     let n: Int = len(source)
     let mut pos: Int = 0
-    for _ in 0..n {
+    for _ in 0..n:
         if pos >= n { break }
         let mut eol: Int = pos
-        for _ in 0..n {
+        for _ in 0..n:
             if eol >= n { break }
             if source.substr(eol, 1) == "\n" { break }
             eol = eol + 1
-        }
         let line: String = _trim_line(source.substr(pos, eol - pos))
-        if line == "@test" {
+        if line == "@test":
             // Scan forward for the next non-blank, non-comment line
             let mut q: Int = eol + 1
-            for _ in 0..n {
+            for _ in 0..n:
                 if q >= n { break }
                 let mut q_eol: Int = q
-                for _ in 0..n {
+                for _ in 0..n:
                     if q_eol >= n { break }
                     if source.substr(q_eol, 1) == "\n" { break }
                     q_eol = q_eol + 1
-                }
                 let nl: String = _trim_line(source.substr(q, q_eol - q))
                 let mut consumed: Bool = false
-                if len(nl) == 0 {
+                if len(nl) == 0:
                     q = q_eol + 1
                     consumed = true
-                }
-                if !consumed {
-                    if nl.starts_with("//") {
+                if !consumed:
+                    if nl.starts_with("//"):
                         q = q_eol + 1
                         consumed = true
-                    }
-                }
-                if !consumed {
-                    if nl.starts_with("fn ") {
+                if !consumed:
+                    if nl.starts_with("fn "):
                         let nm: String = extract_fn_name(nl)
                         if len(nm) > 0 { names.push(nm) }
-                    }
-                    if nl.starts_with("pub fn ") {
+                    if nl.starts_with("pub fn "):
                         let nm2: String = extract_fn_name(nl.substr(4, len(nl) - 4))
                         if len(nm2) > 0 { names.push(nm2) }
-                    }
                     break
-                }
-            }
-        }
         pos = eol + 1
-    }
     return names
-}
 
-fn build_test_main_ir(test_name: String) -> String {
+fn build_test_main_ir(test_name: String) -> String:
     // mn_user_main.c calls @mn_main(); synthesize one that calls a
     // single @test function and returns 0. Assertion failures inside
     // the test call __mn_assert_fail → exit(1) before we return.
@@ -722,9 +620,8 @@ fn build_test_main_ir(test_name: String) -> String {
     s = s + "  ret i32 0\n"
     s = s + "}\n"
     return s
-}
 
-fn run_one_test(base_ir: String, test_name: String, clang_bin: String) -> Bool {
+fn run_one_test(base_ir: String, test_name: String, clang_bin: String) -> Bool:
     let ll_path: String = "/tmp/mnc_test_" + test_name + ".ll"
     let o_path: String = "/tmp/mnc_test_" + test_name + ".o"
     let exe_path: String = "/tmp/mnc_test_" + test_name
@@ -732,59 +629,51 @@ fn run_one_test(base_ir: String, test_name: String, clang_bin: String) -> Bool {
     __mn_file_write(ll_path, full_ir)
 
     let r1: Int = __mn_system(clang_bin + " -c -O0 " + ll_path + " -o " + o_path + clang_stderr_redirect())
-    if r1 != 0 {
+    if r1 != 0:
         __mn_str_eprint("    FAIL ")
         __mn_str_eprint(test_name)
         __mn_str_eprint("\n")
         report_clang_failure()
         return false
-    }
     let r2: Int = link_with_runtime(o_path, exe_path)
-    if r2 != 0 {
+    if r2 != 0:
         __mn_str_eprint("    FAIL ")
         __mn_str_eprint(test_name)
         __mn_str_eprint(" (link failed)\n")
         return false
-    }
     let r3: Int = __mn_system(exe_path)
-    if r3 == 0 {
+    if r3 == 0:
         print("    PASS " + test_name)
         return true
-    }
     __mn_str_eprint("    FAIL ")
     __mn_str_eprint(test_name)
     __mn_str_eprint("\n")
     return false
-}
 
-fn run_test(filename: String) {
+fn run_test(filename: String):
     let source: String = __mn_file_read_or_empty(filename)
-    if len(source) == 0 {
+    if len(source) == 0:
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
         __mn_str_eprint(" (cannot read file)\n")
         __mn_exit(1)
-    }
     // v5.9.0 DX.3: probe clang before any work so the failure mode is
     // an install-instructions message instead of an opaque "FAIL ... clang failed".
-    if !check_clang_available() {
+    if !check_clang_available():
         print_clang_install_help()
         __mn_exit(1)
-    }
     let test_names: List<String> = discover_test_names(source)
     let cr: CompileResult = compile(source, filename)
-    if !cr.success {
+    if !cr.success:
         print_compile_errors(cr)
         __mn_str_eprint("FAIL ")
         __mn_str_eprint(filename)
         __mn_str_eprint(" (compile errors)\n")
         __mn_exit(1)
-    }
-    if len(test_names) == 0 {
+    if len(test_names) == 0:
         print(filename)
         print("    no @test functions found")
         return
-    }
     print(filename)
     let base_ir: String = rename_main(cr.ir_text)
     let clang_bin: String = find_clang()
@@ -792,48 +681,42 @@ fn run_test(filename: String) {
     let mut failed: Int = 0
     let mut i: Int = 0
     let n: Int = len(test_names)
-    for _ in 0..n {
+    for _ in 0..n:
         if i >= n { break }
         let name: String = test_names[i]
         let ok: Bool = run_one_test(base_ir, name, clang_bin)
         if ok { passed = passed + 1 } else { failed = failed + 1 }
         i = i + 1
-    }
     print("")
     print("result: " + str(passed) + " passed, " + str(failed) + " failed (" + str(n) + " total)")
     if failed > 0 { __mn_exit(1) }
-}
 
 // ---------------------------------------------------------------------------
 // build — compile, link, produce executable
 // ---------------------------------------------------------------------------
 
-fn run_build(filename: String) {
+fn run_build(filename: String):
     // v5.9.0 DX.3: probe clang up front for the single-file path. The
     // directory path delegates to mnc-build.sh which has its own
     // toolchain detection.
     let ext: String = file_extension(filename)
-    if len(ext) > 0 && !check_clang_available() {
+    if len(ext) > 0 && !check_clang_available():
         print_clang_install_help()
         __mn_exit(1)
-    }
 
     // Directory build: delegate to mnc-build.sh for incremental compilation
-    if len(ext) == 0 {
+    if len(ext) == 0:
         let mut cmd: String = "bash scripts/mnc-build.sh " + filename
         // Forward remaining args (e.g., -o output --timing)
         let mut ai: Int = 3
-        for _ in 0..20 {
+        for _ in 0..20:
             if ai >= __mn_argc() { ai = __mn_argc() + 1 }
-            if ai < __mn_argc() {
+            if ai < __mn_argc():
                 cmd = cmd + " " + __mn_argv(ai)
                 ai = ai + 1
-            }
-        }
         let r: Int = __mn_system(cmd)
         if r != 0 { __mn_exit(r) }
         return
-    }
 
     // Single-file build
     // Parse flags: -o <output>, --release, --debug, --small
@@ -842,48 +725,39 @@ fn run_build(filename: String) {
     let mut strip_flag: String = ""
     let mut lto_flag: String = ""
     let mut ai2: Int = 3
-    for _ in 0..20 {
+    for _ in 0..20:
         if ai2 >= __mn_argc() { ai2 = __mn_argc() + 1 }
-        if ai2 < __mn_argc() {
+        if ai2 < __mn_argc():
             let fl: String = __mn_argv(ai2)
-            if fl == "-o" && ai2 + 1 < __mn_argc() {
+            if fl == "-o" && ai2 + 1 < __mn_argc():
                 out_name = __mn_argv(ai2 + 1)
                 ai2 = ai2 + 2
-            }
-            if fl == "--release" {
+            if fl == "--release":
                 opt_flag = "-O2"
                 lto_flag = " -flto"
                 strip_flag = " -s"
                 ai2 = ai2 + 1
-            }
-            if fl == "--debug" {
+            if fl == "--debug":
                 opt_flag = "-O0"
                 ai2 = ai2 + 1
-            }
-            if fl == "--small" {
+            if fl == "--small":
                 opt_flag = "-Os"
                 lto_flag = " -flto"
                 strip_flag = " -s"
                 ai2 = ai2 + 1
-            }
-            if fl != "-o" && fl != "--release" && fl != "--debug" && fl != "--small" {
+            if fl != "-o" && fl != "--release" && fl != "--debug" && fl != "--small":
                 ai2 = ai2 + 1
-            }
-        }
-    }
 
     let source: String = __mn_file_read_or_empty(filename)
-    if len(source) <= 0 {
+    if len(source) <= 0:
         __mn_str_eprint("error: cannot read file '")
         __mn_str_eprint(filename)
         __mn_str_eprint("'\n")
         __mn_exit(1)
-    }
     let cr: CompileResult = compile(source, filename)
-    if !cr.success {
+    if !cr.success:
         print_compile_errors(cr)
         __mn_exit(1)
-    }
     // Rename @main → @mn_main so the C wrapper provides the real main()
     __mn_file_write("/tmp/mnc_build.ll", rename_main(cr.ir_text))
 
@@ -894,49 +768,42 @@ fn run_build(filename: String) {
     let clang_bin: String = find_clang()
     let clang_cmd: String = clang_bin + " -c " + opt_flag + " /tmp/mnc_build.ll -o /tmp/mnc_build.o" + clang_stderr_redirect()
     let r1: Int = __mn_system(clang_cmd)
-    if r1 != 0 {
+    if r1 != 0:
         report_clang_failure()
         __mn_exit(1)
-    }
 
     // Link
     let r2: Int = link_with_runtime("/tmp/mnc_build.o", out_name)
     // Strip if release/small mode
-    if len(strip_flag) > 0 {
+    if len(strip_flag) > 0:
         let strip_cmd: String = "strip " + out_name + __mn_dev_null_redirect()
         __mn_system(strip_cmd)
-    }
-    if r2 != 0 {
+    if r2 != 0:
         __mn_str_eprint("error: link failed\n")
         __mn_exit(1)
-    }
 
     print("built: " + out_name)
-}
 
 // ---------------------------------------------------------------------------
 // run — compile, link, execute in one step
 // ---------------------------------------------------------------------------
 
-fn run_program(filename: String) {
+fn run_program(filename: String):
     let source: String = __mn_file_read_or_empty(filename)
-    if len(source) <= 0 {
+    if len(source) <= 0:
         __mn_str_eprint("error: cannot read file '")
         __mn_str_eprint(filename)
         __mn_str_eprint("'\n")
         __mn_exit(1)
-    }
     // v5.9.0 DX.3: probe clang first; saves the user a wasted compile cycle
     // when the real fix is "install LLVM".
-    if !check_clang_available() {
+    if !check_clang_available():
         print_clang_install_help()
         __mn_exit(1)
-    }
     let cr: CompileResult = compile(source, filename)
-    if !cr.success {
+    if !cr.success:
         print_compile_errors(cr)
         __mn_exit(1)
-    }
     __mn_file_write("/tmp/mnc_run.ll", rename_main(cr.ir_text))
 
     // Single-step compile+link via clang (faster than separate clang + gcc).
@@ -945,35 +812,28 @@ fn run_program(filename: String) {
     let clang_bin: String = find_clang()
     let compile_cmd: String = clang_bin + " -O0 /tmp/mnc_run.ll runtime/native/libmapanare_rt.a -o /tmp/mnc_run -lm -lpthread" + clang_stderr_redirect()
     let r1: Int = __mn_system(compile_cmd)
-    if r1 != 0 {
+    if r1 != 0:
         // Fall back to two-step compile+link
         let r1b: Int = __mn_system(clang_bin + " -c -O0 /tmp/mnc_run.ll -o /tmp/mnc_run.o" + clang_stderr_redirect())
-        if r1b != 0 {
+        if r1b != 0:
             report_clang_failure()
             __mn_exit(1)
-        }
         let r2: Int = link_with_runtime("/tmp/mnc_run.o", "/tmp/mnc_run")
-        if r2 != 0 {
+        if r2 != 0:
             __mn_str_eprint("error: link failed\n")
             __mn_exit(1)
-        }
-    }
 
     // Build command with forwarded args: /tmp/mnc_run [args...]
     let mut cmd: String = "/tmp/mnc_run"
     let mut ai: Int = 3
-    for _ in 0..100 {
+    for _ in 0..100:
         if ai >= __mn_argc() { ai = __mn_argc() + 1 }
-        if ai < __mn_argc() {
+        if ai < __mn_argc():
             cmd = cmd + " " + __mn_argv(ai)
             ai = ai + 1
-        }
-    }
     let r3: Int = __mn_system(cmd)
-    if r3 != 0 {
+    if r3 != 0:
         __mn_exit(r3)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // emit-llvm — compile to LLVM IR, print to stdout or write to file with -o.
@@ -986,49 +846,40 @@ fn run_program(filename: String) {
 // over a source file. Used by tests/bootstrap/test_indent_preprocessor.py
 // to assert byte-identical output between the Python and C
 // implementations on every parseable golden.
-fn run_preprocess(filename: String) {
+fn run_preprocess(filename: String):
     let source: String = __mn_file_read_or_empty(filename)
-    if len(source) <= 0 {
+    if len(source) <= 0:
         __mn_str_eprint("error: cannot read file '")
         __mn_str_eprint(filename)
         __mn_str_eprint("'\n")
         __mn_exit(1)
-    }
     let preprocessed: String = __mn_indent_to_braces(source)
     print(preprocessed)
-}
 
-fn run_emit_llvm(filename: String) {
+fn run_emit_llvm(filename: String):
     let source: String = __mn_file_read_or_empty(filename)
-    if len(source) <= 0 {
+    if len(source) <= 0:
         __mn_str_eprint("error: cannot read file '")
         __mn_str_eprint(filename)
         __mn_str_eprint("'\n")
         __mn_exit(1)
-    }
     let cr: CompileResult = compile(source, filename)
-    if !cr.success {
-        for i in 0..len(cr.errors) {
+    if !cr.success:
+        for i in 0..len(cr.errors):
             let err: SemanticError = cr.errors[i]
             __mn_str_eprint(format_error(err))
             __mn_str_eprint("\n")
-        }
         __mn_exit(1)
-    }
     // Optional `-o <path>`: write IR to file instead of stdout.
     let mut out_path: String = ""
-    if __mn_argc() >= 5 {
+    if __mn_argc() >= 5:
         let flag: String = __mn_argv(3)
-        if flag == "-o" {
+        if flag == "-o":
             out_path = __mn_argv(4)
-        }
-    }
-    if len(out_path) > 0 {
+    if len(out_path) > 0:
         __mn_file_write(out_path, cr.ir_text)
-    } else {
+    else:
         print(cr.ir_text)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // compile — transpile foreign source (.py/.php/.ts/.go) then compile to native.
@@ -1036,53 +887,45 @@ fn run_emit_llvm(filename: String) {
 // falls back to the Python CLI for transpilation, then compiles the .mn output.
 // ---------------------------------------------------------------------------
 
-fn run_compile(filename: String) {
+fn run_compile(filename: String):
     let source: String = __mn_file_read_or_empty(filename)
-    if len(source) <= 0 {
+    if len(source) <= 0:
         __mn_str_eprint("error: cannot read file '")
         __mn_str_eprint(filename)
         __mn_str_eprint("'\n")
         __mn_exit(1)
-    }
     // v5.9.0 DX.3: probe clang up front. compile applies to both the .mn
     // and the foreign-source paths; both ultimately invoke clang.
-    if !check_clang_available() {
+    if !check_clang_available():
         print_clang_install_help()
         __mn_exit(1)
-    }
 
     let ext: String = file_extension(filename)
 
     // .mn files compile directly
-    if ext == ".mn" {
+    if ext == ".mn":
         let cr: CompileResult = compile(source, filename)
-        if !cr.success {
+        if !cr.success:
             print_compile_errors(cr)
             __mn_exit(1)
-        }
         let mut out_name: String = "a.out"
-        if __mn_argc() >= 4 {
+        if __mn_argc() >= 4:
             let flag: String = __mn_argv(3)
-            if flag == "-o" && __mn_argc() >= 5 {
+            if flag == "-o" && __mn_argc() >= 5:
                 out_name = __mn_argv(4)
-            }
-        }
         __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr.ir_text))
         // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present.
         let clang_bin: String = find_clang()
         let r1: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
-        if r1 != 0 {
+        if r1 != 0:
             report_clang_failure()
             __mn_exit(1)
-        }
         let r2: Int = link_with_runtime("/tmp/mnc_compile.o", out_name)
-        if r2 != 0 {
+        if r2 != 0:
             __mn_str_eprint("error: link failed\n")
             __mn_exit(1)
-        }
         print("compiled: " + out_name)
         return
-    }
 
     // Foreign source: transpile via mapanare CLI, then compile the .mn result
     let mut ok: Bool = false
@@ -1090,59 +933,50 @@ fn run_compile(filename: String) {
     if ext == ".php" { ok = true }
     if ext == ".ts" { ok = true }
     if ext == ".go" { ok = true }
-    if !ok {
+    if !ok:
         __mn_str_eprint("error: unsupported file type '")
         __mn_str_eprint(ext)
         __mn_str_eprint("' (supported: .mn, .py, .php, .ts, .go)\n")
         __mn_exit(1)
-    }
 
     // Transpile to .mn via the Python CLI (mapanare transpile <file> -o /tmp/mnc_transpiled.mn)
     let transpile_cmd: String = "mapanare transpile " + filename + " -o /tmp/mnc_transpiled.mn" + __mn_dev_null_redirect()
     let rt: Int = __mn_system(transpile_cmd)
-    if rt != 0 {
+    if rt != 0:
         __mn_str_eprint("error: transpilation failed for '")
         __mn_str_eprint(filename)
         __mn_str_eprint("'\n")
         __mn_exit(1)
-    }
 
     // Now compile the transpiled .mn source
     let mn_source: String = __mn_file_read_or_empty("/tmp/mnc_transpiled.mn")
-    if len(mn_source) == 0 {
+    if len(mn_source) == 0:
         __mn_str_eprint("error: transpiler produced empty output\n")
         __mn_exit(1)
-    }
 
     let cr2: CompileResult = compile(mn_source, filename)
-    if !cr2.success {
+    if !cr2.success:
         print_compile_errors(cr2)
         __mn_exit(1)
-    }
 
     let mut out_name2: String = "a.out"
-    if __mn_argc() >= 4 {
+    if __mn_argc() >= 4:
         let flag2: String = __mn_argv(3)
-        if flag2 == "-o" && __mn_argc() >= 5 {
+        if flag2 == "-o" && __mn_argc() >= 5:
             out_name2 = __mn_argv(4)
-        }
-    }
 
     __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr2.ir_text))
     // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present.
     let clang_bin: String = find_clang()
     let r3: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
-    if r3 != 0 {
+    if r3 != 0:
         report_clang_failure()
         __mn_exit(1)
-    }
     let r4: Int = link_with_runtime("/tmp/mnc_compile.o", out_name2)
-    if r4 != 0 {
+    if r4 != 0:
         __mn_str_eprint("error: link failed\n")
         __mn_exit(1)
-    }
     print("compiled: " + out_name2)
-}
 
 // ---------------------------------------------------------------------------
 // mn_main — native compiler entry point (called from C shim)
@@ -1151,8 +985,8 @@ fn run_compile(filename: String) {
 // Errors go to stderr. Returns exit code via __mn_exit.
 // ---------------------------------------------------------------------------
 
-fn mn_main() {
-    if __mn_argc() < 2 {
+fn mn_main():
+    if __mn_argc() < 2:
         __mn_str_eprint("usage: mnc <file.mn>           (compile and run)\n")
         __mn_str_eprint("       mnc emit-llvm <file.mn> (compile to IR)\n")
         __mn_str_eprint("       mnc test <file.mn>\n")
@@ -1163,57 +997,46 @@ fn mn_main() {
         __mn_str_eprint("       mnc version\n")
         __mn_str_eprint("       mnc --help              (or 'mnc help <subcommand>')\n")
         __mn_exit(1)
-    }
     let arg1: String = __mn_argv(1)
 
     // v5.9.0 DX.1: help dispatch — pre-v5.9.0 these fell through and
     // surfaced as ``error: cannot read file '--help'``.
-    if arg1 == "--help" || arg1 == "-h" || arg1 == "help" {
-        if __mn_argc() >= 3 {
+    if arg1 == "--help" || arg1 == "-h" || arg1 == "help":
+        if __mn_argc() >= 3:
             print_subcommand_help(__mn_argv(2))
-        } else {
+        else:
             print_help_text()
-        }
         return
-    }
 
     // Per-subcommand help: ``mnc <sub> --help`` prints just that sub's
     // usage. Cheaper than threading a flag through each run_* helper.
-    if __mn_argc() >= 3 && __mn_argv(2) == "--help" {
+    if __mn_argc() >= 3 && __mn_argv(2) == "--help":
         print_subcommand_help(arg1)
         return
-    }
 
     // Subcommands
-    if arg1 == "test" {
-        if __mn_argc() < 3 {
+    if arg1 == "test":
+        if __mn_argc() < 3:
             __mn_str_eprint("usage: mnc test <file.mn>\n")
             __mn_exit(1)
-        }
         run_test(__mn_argv(2))
         return
-    }
-    if arg1 == "build" {
-        if __mn_argc() < 3 {
+    if arg1 == "build":
+        if __mn_argc() < 3:
             __mn_str_eprint("usage: mnc build <file.mn> [-o output]\n")
             __mn_exit(1)
-        }
         run_build(__mn_argv(2))
         return
-    }
-    if arg1 == "run" {
-        if __mn_argc() < 3 {
+    if arg1 == "run":
+        if __mn_argc() < 3:
             __mn_str_eprint("usage: mnc run <file.mn> [args...]\n")
             __mn_exit(1)
-        }
         run_program(__mn_argv(2))
         return
-    }
-    if arg1 == "cache" {
-        if __mn_argc() < 3 {
+    if arg1 == "cache":
+        if __mn_argc() < 3:
             __mn_str_eprint("usage: mnc cache <stats|clean>\n")
             __mn_exit(1)
-        }
         let cache_cmd: String = __mn_argv(2)
         // v5.9.0 DX.4: native rewrite. Pre-v5.9.0 both branches shelled
         // out to POSIX-only commands (``rm -rf`` / ``find ... | wc -l`` /
@@ -1221,97 +1044,79 @@ fn mn_main() {
         // and surfaced ``-d was unexpected at this time``. The runtime
         // helpers __mn_dir_remove_recursive / __mn_dir_count_files /
         // __mn_dir_total_size are platform-aware.
-        if cache_cmd == "clean" {
-            if __mn_file_exists(".mnc_cache") == 0 {
+        if cache_cmd == "clean":
+            if __mn_file_exists(".mnc_cache") == 0:
                 print("No cache to clear.")
                 return
-            }
             let rc: Int = __mn_dir_remove_recursive(".mnc_cache")
-            if rc == 0 {
+            if rc == 0:
                 print("Cache cleared.")
-            } else {
+            else:
                 __mn_str_eprint("error: failed to remove .mnc_cache\n")
                 __mn_exit(1)
-            }
             return
-        }
-        if cache_cmd == "stats" {
-            if __mn_file_exists(".mnc_cache") == 0 {
+        if cache_cmd == "stats":
+            if __mn_file_exists(".mnc_cache") == 0:
                 print("No cache (run mnc build <dir> first)")
                 return
-            }
             let count: Int = __mn_dir_count_files(".mnc_cache")
             let total: Int = __mn_dir_total_size(".mnc_cache")
             print("Cache: .mnc_cache/")
             print("  Files: " + str(count))
             print("  Size: " + format_bytes(total))
-            if __mn_file_exists(".mnc_cache/manifest.txt") != 0 {
+            if __mn_file_exists(".mnc_cache/manifest.txt") != 0:
                 let manifest: String = __mn_file_read_or_empty(".mnc_cache/manifest.txt")
                 print("  Modules: " + str(count_lines(manifest)))
-            }
             return
-        }
         __mn_str_eprint("unknown cache command: ")
         __mn_str_eprint(cache_cmd)
         __mn_str_eprint("\n")
         __mn_exit(1)
-    }
-    if arg1 == "emit-llvm" {
-        if __mn_argc() < 3 {
+    if arg1 == "emit-llvm":
+        if __mn_argc() < 3:
             __mn_str_eprint("usage: mnc emit-llvm <file.mn> [-o output]\n")
             __mn_exit(1)
-        }
         run_emit_llvm(__mn_argv(2))
         return
-    }
     // v5.14.1 B.7: hidden test hook — print the result of
     // `__mn_indent_to_braces(file)` to stdout. Used by the cross-
     // bootstrap test to verify the C preprocessor agrees byte-for-byte
     // with the Python `_indent_to_braces`.
-    if arg1 == "preprocess" {
-        if __mn_argc() < 3 {
+    if arg1 == "preprocess":
+        if __mn_argc() < 3:
             __mn_str_eprint("usage: mnc preprocess <file.mn>\n")
             __mn_exit(1)
-        }
         run_preprocess(__mn_argv(2))
         return
-    }
     // v5.13.0 Mc.2: fmt — canonicalize whitespace in .mn source. The
     // formatter logic lives in Python (mapanare/format.py); the native
     // dispatch shells out to ``mapanare fmt``. Porting format.py to .mn
     // is out of scope for v5.13.0 — the Python implementation is the
     // single source of truth, and a future Mc.* release can mirror it
     // in self/ if the shell-out becomes a measurable hot path.
-    if arg1 == "fmt" {
-        if __mn_argc() < 3 {
+    if arg1 == "fmt":
+        if __mn_argc() < 3:
             __mn_str_eprint("usage: mnc fmt <path...> [--check] [--stdout] [--to-terse] [--to-braces]\n")
             __mn_exit(1)
-        }
         let mut fmt_cmd: String = "mapanare fmt"
         let mut fa: Int = 2
-        for _ in 0..64 {
+        for _ in 0..64:
             if fa >= __mn_argc() { fa = __mn_argc() + 1 }
-            if fa < __mn_argc() {
+            if fa < __mn_argc():
                 fmt_cmd = fmt_cmd + " " + __mn_argv(fa)
                 fa = fa + 1
-            }
-        }
         let fr: Int = __mn_system(fmt_cmd)
         if fr != 0 { __mn_exit(fr) }
         return
-    }
-    if arg1 == "compile" {
-        if __mn_argc() < 3 {
+    if arg1 == "compile":
+        if __mn_argc() < 3:
             __mn_str_eprint("usage: mnc compile <file> [-o output]\n")
             __mn_exit(1)
-        }
         run_compile(__mn_argv(2))
         return
-    }
-    if arg1 == "version" || arg1 == "--version" {
+    if arg1 == "version" || arg1 == "--version":
         print(version())
         return
-    }
 
     // v5.9.1 DX.5: implicit run is the default for .mn files. Pre-v5.9.1
     // the default was IR emission; that path moved to `mnc emit-llvm`.
@@ -1319,10 +1124,9 @@ fn mn_main() {
     // v5.9.1 / v5.10.0 carried for downstream CI scripts.
     let filename: String = arg1
     let ext_check: String = file_extension(filename)
-    if ext_check == ".mn" {
+    if ext_check == ".mn":
         run_program(filename)
         return
-    }
 
     // Non-.mn files: error with migration hint pointing at the right surface.
     __mn_str_eprint("error: '")
@@ -1331,4 +1135,3 @@ fn mn_main() {
     __mn_str_eprint("       Use 'mnc emit-llvm <file>' for raw IR emission, or\n")
     __mn_str_eprint("       'mnc compile <file>' for transpilation (.py/.php/.ts/.go).\n")
     __mn_exit(1)
-}
