@@ -181,7 +181,7 @@ fn collect_targets(inst: Instruction) -> List<String>:
             targets.push(cases[ci].block_label)
             ci = ci + 1
         targets.push(instr_switch_default(inst))
-    return targets
+    targets
 
 fn is_in_list(name: String, lst: List<String>) -> Bool:
     let mut i: Int = 0
@@ -263,7 +263,7 @@ fn add_targets_to_worklist(targets: List<String>, reachable: List<String>, workl
             worklist.push(targets[ti])
             added = true
         ti = ti + 1
-    return added
+    added
 
 fn collect_phi_refs(f: MIRFunction) -> List<String>:
     // Collect all block labels referenced by PHI entries in any block
@@ -284,7 +284,7 @@ fn collect_phi_refs(f: MIRFunction) -> List<String>:
                     ei = ei + 1
             ii = ii + 1
         bi = bi + 1
-    return refs
+    refs
 
 fn dead_block_elim_function(f: MIRFunction) -> MIRFunction:
     if len(f.blocks) <= 1 { return f }
@@ -374,9 +374,8 @@ fn is_power_of_two(n: Int) -> Bool:
         p = p * 2
     return false
 
-fn power_of_two_mask(n: Int) -> Int:
+fn power_of_two_mask(n: Int) -> Int = n - 1
     // Returns n - 1 (the bitmask for x % n when n is power of 2)
-    return n - 1
 
 fn try_strength_reduce(inst: Instruction) -> Option<Instruction>:
     let ik: String = instr_kind(inst)
@@ -544,7 +543,7 @@ fn count_calls(f: MIRFunction, lookup: List<FnLookupEntry>) -> List<CallCount>:
                 }
             ii = ii + 1
         bi = bi + 1
-    return counts
+    counts
 
 fn get_call_count(counts: List<CallCount>, name: String) -> Int:
     let mut i: Int = 0
@@ -1347,7 +1346,7 @@ fn collect_loop_defs(f: MIRFunction, loop_body: List<String>) -> List<String>:
                         defs.push(dest.name)
                 ii = ii + 1
         bi = bi + 1
-    return defs
+    defs
 
 // Find the index of a block label that appears before position `before_idx`
 fn find_earlier_block(blocks: List<BasicBlock>, label: String, before_idx: Int) -> Int:
