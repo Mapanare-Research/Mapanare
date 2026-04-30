@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.17.1] - 2026-04-30
+
+### Changed
+
+- **Sh.C + Sh.D + Sh.G — terse polish.** Per-site judgment
+  follow-up to v5.17.0's mechanical brace → colon rewrite. Three
+  deliverables across 20 commits: list comprehensions where the
+  manual loop was strictly accumulator-shaped (3 sites in
+  `transpiler.mn`); implicit-return upgrades across all 16
+  modules — 159 ONELINER conversions
+  (`fn name() -> T: return E` → `fn name() -> T = E`,
+  v5.15.0 Te.2.D function-init form) plus 121 BLOCK_SHORT
+  conversions (drop trailing `return` keyword to leave bare
+  expression, v5.14.0 Te.1 + SPEC §4.5 block-form implicit
+  return); SPEC.md / README.md / CLAUDE.md examples refreshed to
+  terse + idiomatic style. Total source shrink:
+  **-169 lines (-0.7%)** on top of v5.17.0; cumulative
+  v5.13.0 → v5.17.1 shrink: **-3,950 lines (-13.8%)**. Modest LOC
+  delta — BLOCK_SHORT conversions don't drop lines (`return E`
+  and bare `E` both occupy one line) but count as readability
+  wins; the -169 figure is essentially the ONELINER count.
+
+### Preserved
+
+- **Strict 3-stage fixed point.** stage2.ll == stage3.ll at
+  231,957 lines / 0-line diff at every per-module commit and at
+  HEAD. Held since v5.9.0; reaffirmed through v5.17.1.
+- **Goldens 80/80** at every per-module commit and at HEAD.
+- **No seed refresh required.** Zero new C-runtime exports; no
+  parser changes (the v5.15.0 Te.2.D function-init form and
+  v5.14.0 Te.1 block-form implicit return have both been
+  bootstrap-ready since their respective releases).
+
+### Skipped (intentional, catalogued)
+
+- **BLOCK_LONG implicit-return upgrades (28 sites).** Functions
+  with >5 prelude statements + a single trailing `return`. In
+  long functions the explicit `return` keyword is a punctuation
+  marker readers scan for; stripping it for one keyword saves a
+  line at a real readability cost. See
+  `docs/roadmap/v5/v5.17.1/IMPLICIT_RETURN_SITES.md`.
+- **Defensive `for _ in 0..LARGE: if i < n` → comprehension**
+  rewrites (12+ sites in `lower.mn` / `parser.mn` / `emit_llvm.mn`).
+  Would require also removing the artificial bound, which is
+  logic refactoring not syntax-only rewrite. See
+  `docs/roadmap/v5/v5.17.1/COMPREHENSION_SITES.md`.
+
 ## [5.17.0] - 2026-04-30
 
 ### Changed
