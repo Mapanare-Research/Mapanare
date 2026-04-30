@@ -571,11 +571,8 @@ fn fix_self_param_type(method: FnDefData, target: String) -> FnDefData:
     let fixed_self: Param = new Param { span: first.span, name: "self", type_annotation: Some(self_type) }
     let mut new_params: List<Param> = []
     new_params.push(fixed_self)
-    let mut pi: Int = 1
-    for _ in 0..50:
-        if pi < len(method.params):
-            new_params.push(method.params[pi])
-            pi = pi + 1
+    for pi in 1..len(method.params):
+        new_params.push(method.params[pi])
     return new_fn_def_data(method.span, method.name, method.public, method.type_params, new_params, method.return_type, method.body, method.decorators)
 
 // ---------------------------------------------------------------------------
@@ -1537,12 +1534,8 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
         let dr_meth: LowerResult = make_value(obj_r.state, mir_unknown(), "t")
         let mut all_args: List<Value> = []
         all_args.push(obj_r.value)
-        let mut j: Int = 0
-        let nargs_fa: Int = len(args)
-        for _ in 0..500:
-            if j < nargs_fa:
-                all_args.push(args[j])
-                j = j + 1
+        for j in 0..len(args):
+            all_args.push(args[j])
         let ns_meth: LowerState = emit_instr(dr_meth.state, Instruction::Call(dr_meth.value, method, all_args))
         return new_lower_result(dr_meth.value, ns_meth)
     if ck == "namespace_access":
@@ -2762,11 +2755,8 @@ fn lower_tensor_index_get(st: LowerState, obj: Expr, indices: List<Expr>) -> Low
     let mut all_args: List<Value> = []
     all_args.push(obj_r.value)
     all_args.push(rank_r.value)
-    let mut k: Int = 0
-    for _ in 0..128:
-        if k < nidx:
-            all_args.push(idx_vals[k])
-            k = k + 1
+    for k in 0..nidx:
+        all_args.push(idx_vals[k])
 
     let dest_r: LowerResult = make_value(s, elem_ty, "tget")
     s = emit_instr(dest_r.state, Instruction::Call(dest_r.value, fn_name, all_args))
@@ -2853,16 +2843,10 @@ fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> Lowe
     // Flat args: [obj, s0, s1, ..., e0, e1, ..., rank]
     let mut all_args: List<Value> = []
     all_args.push(obj_r.value)
-    let mut a_i: Int = 0
-    for _ in 0..128:
-        if a_i < rank:
-            all_args.push(starts[a_i])
-            a_i = a_i + 1
-    let mut b_i: Int = 0
-    for _ in 0..128:
-        if b_i < rank:
-            all_args.push(ends[b_i])
-            b_i = b_i + 1
+    for a_i in 0..rank:
+        all_args.push(starts[a_i])
+    for b_i in 0..rank:
+        all_args.push(ends[b_i])
     all_args.push(rank_r.value)
 
     s = emit_instr(s, Instruction::Call(dest_sl.value, "__mn_tensor_slice", all_args))
@@ -3017,12 +3001,8 @@ fn lower_lambda(st: LowerState, params: List<Param>, body: LambdaBody) -> LowerR
     let parent_vars: List<VarInfo> = name_r.state.vars
     let mut all_params: List<Param> = []
     let mut capture_suffix: String = ""
-    let mut pi: Int = 0
-    let np: Int = len(params)
-    for _ in 0..100:
-        if pi < np:
-            all_params.push(params[pi])
-            pi = pi + 1
+    for pi in 0..len(params):
+        all_params.push(params[pi])
     let mut ci: Int = 0
     let npv: Int = len(parent_vars)
     for _ in 0..500:
@@ -3388,12 +3368,8 @@ fn wrap_comp_for(st: LowerState, clause: CompClause, inner: Block) -> Block:
     let get_elem: Expr = Expr::Index(Expr::Ident(src_name), Expr::Ident(idx_name))
     let mut body_stmts: List<Stmt> = []
     body_stmts.push(Stmt::Let(clause.target, false, none, get_elem))
-    let mut i: Int = 0
-    let nstmts: Int = len(inner.stmts)
-    for _ in 0..256:
-        if i < nstmts:
-            body_stmts.push(inner.stmts[i])
-            i = i + 1
+    for i in 0..len(inner.stmts):
+        body_stmts.push(inner.stmts[i])
     let new_body: Block = new_block(make_span(0, 0, 0, 0), body_stmts)
 
     let mut len_args: List<Expr> = []
@@ -3760,11 +3736,8 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
         let mut all_args_ti: List<Value> = []
         all_args_ti.push(obj_r_ti.value)
         all_args_ti.push(rank_r_ti.value)
-        let mut kk: Int = 0
-        for _ in 0..128:
-            if kk < nti:
-                all_args_ti.push(ti_idx_vals[kk])
-                kk = kk + 1
+        for kk in 0..nti:
+            all_args_ti.push(ti_idx_vals[kk])
         all_args_ti.push(val_r.value)
 
         let void_dest_ti: LowerResult = make_value(s, mir_void(), "tset")
@@ -4455,18 +4428,11 @@ fn new_verify_error(fn_name: String, block: String, msg: String) -> VerifyError 
 
 fn verify_module(module: MIRModule) -> List<VerifyError>:
     let mut errors: List<VerifyError> = []
-    let mut i: Int = 0
-    for _ in 0..2000:
-        if i >= len(module.functions) { return errors }
+    for i in 0..len(module.functions):
         let f: MIRFunction = module.functions[i]
         let fn_errors: List<VerifyError> = verify_function(f)
-        let mut j: Int = 0
-        let nfe: Int = len(fn_errors)
-        for _ in 0..2000:
-            if j < nfe:
-                errors.push(fn_errors[j])
-                j = j + 1
-        i = i + 1
+        for j in 0..len(fn_errors):
+            errors.push(fn_errors[j])
     return errors
 
 fn verify_function(f: MIRFunction) -> List<VerifyError>:
