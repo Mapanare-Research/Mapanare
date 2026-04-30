@@ -19,8 +19,7 @@ struct CompileResult:
     ir_text: String
     errors: List<SemanticError>
 
-fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError>) -> CompileResult:
-    return new CompileResult { success: success, ir_text: ir_text, errors: errors }
+fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError>) -> CompileResult = new CompileResult { success: success, ir_text: ir_text, errors: errors }
 
 // ---------------------------------------------------------------------------
 // version — return the compiler version string
@@ -32,8 +31,7 @@ fn new_compile_result(success: Bool, ir_text: String, errors: List<SemanticError
 // substitution dance. The structural fix closes a class of staleness bugs
 // (v4.28.0 forensics: 19 minors stale; v5.8.7 Windows publish: placeholder
 // shipped as the literal). Mirrors the v5.8.6 We.1 host-detection pattern.
-fn version() -> String:
-    return "mapanare " + __mn_version_string()
+fn version() -> String = "mapanare " + __mn_version_string()
 
 // v5.9.0 DX.1: --help / -h / help / help <sub> / <sub> --help all print
 // usage. Pre-v5.9.0 these flags fell through the default-IR-emit branch
@@ -82,7 +80,7 @@ fn find_clang() -> String:
         let bundled_unix: String = exe_dir + "/llvm/clang"
         if __mn_file_exists(bundled_unix) != 0:
             result = "\"" + bundled_unix + "\""
-    return result
+    result
 
 // v5.9.0 DX.3: probe clang once per invocation. Pre-v5.9.0 a missing
 // clang (the default state on most Windows boxes) surfaced as bare
@@ -126,8 +124,7 @@ fn report_clang_failure():
 // v5.9.0 DX.3: stderr-capture suffix for shell-out clang invocations.
 // Replaces ``2>/dev/null`` (stderr swallowed) with ``2><platform-temp>``
 // so report_clang_failure() can read the real diagnostic.
-fn clang_stderr_redirect() -> String:
-    return " 2>" + __mn_clang_err_path()
+fn clang_stderr_redirect() -> String = " 2>" + __mn_clang_err_path()
 
 // v5.9.0 DX.4: pretty-print a byte count. Mirrors ``du -sh`` output
 // shape so the cache-stats user-facing surface looks unchanged.
@@ -152,7 +149,7 @@ fn count_lines(s: String) -> Int:
         if s.substr(i, 1) == "\n":
             count = count + 1
         i = i + 1
-    return count
+    count
 
 fn print_subcommand_help(cmd: String):
     if cmd == "build":
@@ -311,7 +308,7 @@ fn has_later_def(defs: List<Definition>, idx: Int, name: String, total: Int) -> 
             if definition_name(defs[j]) == name:
                 found = true
             j = j + 1
-    return found
+    found
 
 fn dedup_definitions(defs: List<Definition>) -> List<Definition>:
     let mut result: List<Definition> = []
@@ -329,7 +326,7 @@ fn dedup_definitions(defs: List<Definition>) -> List<Definition>:
                 if has_later_def(defs, i, name, n) == false:
                     result.push(defn)
             i = i + 1
-    return result
+    result
 
 // ---------------------------------------------------------------------------
 // Import resolution — read imported files, parse, merge definitions
@@ -457,8 +454,7 @@ fn compile(source: String, filename: String) -> CompileResult:
 // format_error — format a SemanticError for display
 // ---------------------------------------------------------------------------
 
-fn format_error(err: SemanticError) -> String:
-    return err.filename + ":" + toString(err.line) + ":" + toString(err.column) + ": error: " + err.message
+fn format_error(err: SemanticError) -> String = err.filename + ":" + toString(err.line) + ":" + toString(err.column) + ": error: " + err.message
 
 // ---------------------------------------------------------------------------
 // compile_and_print — compile and print result or errors
@@ -473,7 +469,7 @@ fn compile_and_print(source: String, filename: String) -> CompileResult:
         for i in 0..len(cr.errors):
             let err: SemanticError = cr.errors[i]
             print(format_error(err))
-    return cr
+    cr
 
 // v5.10.0 hygiene: surface compile diagnostics in run-mode paths.
 // Pre-this-fix run_program / run_test / run_build / run_compile
@@ -502,8 +498,7 @@ fn print_compile_errors(cr: CompileResult):
 // test — compile, link, run, report pass/fail
 // ---------------------------------------------------------------------------
 
-fn rename_main(ir: String) -> String:
-    return ir.replace("@main(", "@mn_main(")
+fn rename_main(ir: String) -> String = ir.replace("@main(", "@mn_main(")
 
 // Link an object file with the Mapanare runtime.
 // Tries precompiled libmapanare_rt.a first, falls back to C source.
@@ -538,7 +533,7 @@ fn extract_fn_name(line: String) -> String:
         let ch: String = line.substr(i, 1)
         if !is_test_name_char(ch) { break }
         i = i + 1
-    return line.substr(start, i - start)
+    line.substr(start, i - start)
 
 // Manual whitespace strip. lower.mn doesn't translate `.trim()` to
 // `__mn_str_trim`, mirroring emit_llvm.mn::ws_trim — duplicated here
@@ -608,7 +603,7 @@ fn discover_test_names(source: String) -> List<String>:
                         if len(nm2) > 0 { names.push(nm2) }
                     break
         pos = eol + 1
-    return names
+    names
 
 fn build_test_main_ir(test_name: String) -> String:
     // mn_user_main.c calls @mn_main(); synthesize one that calls a
