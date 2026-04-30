@@ -13369,8 +13369,7 @@ struct StructEntry:
     field_types: List<String>
     llvm_type: String
 
-fn new_struct_entry(name: String, fields: List<String>, types: List<String>, ty: String) -> StructEntry:
-    return new StructEntry { name: name, field_names: fields, field_types: types, llvm_type: ty }
+fn new_struct_entry(name: String, fields: List<String>, types: List<String>, ty: String) -> StructEntry = new StructEntry { name: name, field_names: fields, field_types: types, llvm_type: ty }
 
 fn lookup_struct_field_types(st: EmitState, name: String) -> List<String>:
     // v5.6.5 Ve.1 fix: register_internal_struct pushes entries with empty
@@ -13399,8 +13398,7 @@ struct FnEntry:
     ret_type: String
     param_types: List<String>
 
-fn new_fn_entry(name: String, ret: String, params: List<String>) -> FnEntry:
-    return new FnEntry { name: name, ret_type: ret, param_types: params }
+fn new_fn_entry(name: String, ret: String, params: List<String>) -> FnEntry = new FnEntry { name: name, ret_type: ret, param_types: params }
 
 struct EmitState:
     lines: List<String>
@@ -13530,7 +13528,7 @@ fn build_internal_struct_list() -> List<StructEntry>:
 
 fn make_entry(name: String, field_names: List<String>) -> StructEntry:
     let types: List<String> = []
-    return new_struct_entry(name, field_names, types, "%struct." + name)
+    new_struct_entry(name, field_names, types, "%struct." + name)
 
 // Pre-register internal compiler struct types that may not be in the MIR module.
 // Without these, find_field_index returns 0 for all fields (index-0 bug).
@@ -13538,7 +13536,7 @@ fn register_internal_struct(st: EmitState, name: String, fields: List<String>) -
     let types: List<String> = []
     let entry: StructEntry = new_struct_entry(name, fields, types, "%struct." + name)
     st.structs.push(entry)
-    return st
+    st
 
 fn register_all_internal_structs(st: EmitState) -> EmitState:
     let mut s: EmitState = st
@@ -13592,10 +13590,9 @@ fn register_all_internal_structs(st: EmitState) -> EmitState:
 
 fn emit_global(st: EmitState, line: String) -> EmitState:
     st.str_globals.push(line)
-    return st
+    st
 
-fn emit_fresh_tmp(st: EmitState, prefix: String) -> String:
-    return prefix + "." + toString(st.counter)
+fn emit_fresh_tmp(st: EmitState, prefix: String) -> String = prefix + "." + toString(st.counter)
 
 // ---------------------------------------------------------------------------
 // Line emission
@@ -13609,24 +13606,20 @@ fn emit_line(st: EmitState, line: String) -> EmitState:
         st.entry_block_body.push(line)
     else:
         st.lines.push(line)
-    return st
+    st
 
-fn emit_blank(st: EmitState) -> EmitState:
-    return emit_line(st, "")
+fn emit_blank(st: EmitState) -> EmitState = emit_line(st, "")
 
 // ---------------------------------------------------------------------------
 // Counter helpers
 // ---------------------------------------------------------------------------
 
-fn next_ssa(st: EmitState) -> EmitState:
+fn next_ssa(st: EmitState) -> EmitState = st
     // Returns state with counter incremented; caller uses st.counter for name
-    return st
 
-fn ssa_name(st: EmitState) -> String:
-    return "%" + toString(st.counter)
+fn ssa_name(st: EmitState) -> String = "%" + toString(st.counter)
 
-fn next_str_name(st: EmitState) -> String:
-    return "@str." + toString(st.str_counter)
+fn next_str_name(st: EmitState) -> String = "@str." + toString(st.str_counter)
 
 // ---------------------------------------------------------------------------
 // Lookup helpers
@@ -14952,7 +14945,7 @@ fn emit_mir_instruction(st: EmitState, inst: Instruction) -> EmitState:
     // of which compiler produced this binary.  Dispatches via match-on-string
     // (not match-on-enum) for cross-compilation stability.
     let kind: String = instr_kind(inst)
-    return emit_mir_by_kind(st, inst, kind)
+    emit_mir_by_kind(st, inst, kind)
 
 fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState:
     if kind == "const" { return emit_const(st, instr_dest(inst), instr_const_type(inst), instr_const_val(inst)) }
@@ -15214,7 +15207,7 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
 
 fn emit_mir_branch(st: EmitState, inst: Instruction) -> EmitState:
     let cond: Value = instr_branch_cond(inst)
-    return emit_line(st, emit_cbranch(cond.name, instr_branch_true(inst), instr_branch_false(inst)))
+    emit_line(st, emit_cbranch(cond.name, instr_branch_true(inst), instr_branch_false(inst)))
 
 fn emit_list_init_checked(st: EmitState, inst: Instruction) -> EmitState:
     let dest: Value = instr_dest(inst)
@@ -15902,7 +15895,7 @@ fn is_byref_type(ty: String) -> Bool:
 // llvm_type (the inline {...} form) in the struct table.
 // Returns 256 as a safe upper bound if the struct is not registered
 // (e.g. forward reference before registration, opaque type).
-fn struct_byte_size(st: EmitState, ty: String) -> Int:
+fn struct_byte_size(st: EmitState, ty: String) -> Int = llvm_sizeof_st(st, ty)
     // v5.6.10 — delegate to llvm_sizeof_st for correct recursive sizing.
     //
     // Prior body walked the struct table via llvm_aggregate_size which
@@ -15922,7 +15915,6 @@ fn struct_byte_size(st: EmitState, ty: String) -> Int:
     // v5.6.10/PLAN.md §D2 conditions the patch on green sanitizers and
     // a preserved fixed-point — verified post-Ve.3 in the v5.6.10
     // session report.
-    return llvm_sizeof_st(st, ty)
 
 // v5.0.4 Cb.15: compute real byte size of a named enum type.
 // Inline enums: (1 + max_inline_slots) * 8 bytes.
@@ -16030,7 +16022,7 @@ fn llvm_aggregate_size(ty: String) -> Int:
     // Count comma-separated fields, each assumed 8 bytes
     let inner: String = ty.substr(1, len(ty) - 2)
     let parts: List<String> = inner.split(",")
-    return len(parts) * 8
+    len(parts) * 8
 
 // v5.6.5 Ve.1 fix — state-aware ABI byte size.
 // llvm_type_size returns a hardcoded 256 for any %struct.* (safe upper
@@ -16137,7 +16129,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
             s = emit_line(s, "  " + la + " = alloca " + llvm_list_rt())
             s = emit_line(s, "  store " + llvm_list_rt() + " " + list_ref + ", ptr " + la)
             s = emit_rt_call_void(s, "__mn_list_push", "ptr " + la + ", ptr " + ea)
-    return s
+    s
 
 fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<Value>) -> EmitState:
     let mut s: EmitState = st
@@ -16426,11 +16418,9 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
 // Alloca/Load/Store instructions
 // ---------------------------------------------------------------------------
 
-fn emit_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState:
-    return emit_line(st, llvm_alloca(dest.name, resolve_type(st, ty)))
+fn emit_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState = emit_line(st, llvm_alloca(dest.name, resolve_type(st, ty)))
 
-fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState:
-    return emit_line(st, llvm_load(dest.name, resolve_type(st, dest.ty), ptr.name))
+fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState = emit_line(st, llvm_load(dest.name, resolve_type(st, dest.ty), ptr.name))
 
 fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState:
     let val_ty: String = resolve_type(st, val.ty)
@@ -16859,7 +16849,7 @@ fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState:
         s = emit_line(s, "  " + dn + " = zext i1 " + raw_tag + " to i64")
     else:
         s = emit_line(s, emit_extractvalue(dn, enum_ty, val.name, "0"))
-    return s
+    s
 
 // ---------------------------------------------------------------------------
 // EnumPayload instruction
@@ -16975,7 +16965,7 @@ fn emit_wrap_none(st: EmitState, dest: Value, ty: MIRType) -> EmitState:
     let opt_ty: String = llvm_option_type(llvm_ptr())
     let dn: String = dest.name
     let s: EmitState = emit_line(st, emit_insertvalue(dn, opt_ty, "undef", "0", "i1", "0"))
-    return s
+    s
 
 fn emit_wrap_ok(st: EmitState, dest: Value, val: Value) -> EmitState:
     let mut s: EmitState = st
@@ -17034,7 +17024,7 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState:
     else:
         // Non-option: direct extractvalue
         s = emit_line(s, emit_extractvalue(dn, val_ty, val.name, "1"))
-    return s
+    s
 
 // ---------------------------------------------------------------------------
 // Call instruction
@@ -17854,7 +17844,7 @@ fn emit_track_closure(st: EmitState, val_name: String) -> EmitState:
     s.counter = s.counter + 1
     let env_tmp: String = "%clos.env." + toString(env_idx)
     s = emit_line(s, "  " + env_tmp + " = extractvalue {ptr, ptr} " + val_name + ", 1")
-    return emit_track_boxed(s, env_tmp)
+    emit_track_boxed(s, env_tmp)
 
 // v5.6.4 Own.1 Phase 3 — Rt.06 tensor tracking.
 // Mirrors emit_track_boxed structurally — tensor values are a single
@@ -18473,15 +18463,14 @@ fn emit_agent_spawn(st: EmitState, dest: Value, ty: MIRType, args: List<Value>) 
     let mut s: EmitState = st
     // Call agent spawn runtime function
     s = emit_rt_call(s, dn, "ptr", "__mn_agent_spawn", "ptr null, ptr null")
-    return s
+    s
 
-fn emit_agent_send(st: EmitState, ag: Value, channel: String, val: Value) -> EmitState:
-    return emit_rt_call_void(st, "__mn_agent_send", "ptr " + ag.name + ", ptr null, ptr null")
+fn emit_agent_send(st: EmitState, ag: Value, channel: String, val: Value) -> EmitState = emit_rt_call_void(st, "__mn_agent_send", "ptr " + ag.name + ", ptr null, ptr null")
 
 fn emit_agent_sync(st: EmitState, dest: Value, ag: Value, channel: String) -> EmitState:
     let dn: String = dest.name
     let s2: EmitState = emit_rt_call(st, dn, "ptr", "__mn_agent_sync", "ptr " + ag.name + ", ptr null")
-    return s2
+    s2
 
 // ---------------------------------------------------------------------------
 // Signal instructions
@@ -18490,15 +18479,14 @@ fn emit_agent_sync(st: EmitState, dest: Value, ag: Value, channel: String) -> Em
 fn emit_signal_init(st: EmitState, dest: Value, ty: MIRType, val: Value) -> EmitState:
     let dn: String = dest.name
     let s2: EmitState = emit_rt_call(st, dn, "ptr", "__mn_signal_new", "ptr null")
-    return s2
+    s2
 
 fn emit_signal_get(st: EmitState, dest: Value, sig: Value) -> EmitState:
     let dn: String = dest.name
     let s2: EmitState = emit_rt_call(st, dn, "ptr", "__mn_signal_get", "ptr " + sig.name)
-    return s2
+    s2
 
-fn emit_signal_set(st: EmitState, sig: Value, val: Value) -> EmitState:
-    return emit_rt_call_void(st, "__mn_signal_set", "ptr " + sig.name + ", ptr null")
+fn emit_signal_set(st: EmitState, sig: Value, val: Value) -> EmitState = emit_rt_call_void(st, "__mn_signal_set", "ptr " + sig.name + ", ptr null")
 
 // ---------------------------------------------------------------------------
 // StreamOp instruction
@@ -18509,7 +18497,7 @@ fn emit_stream_op(st: EmitState, dest: Value, kind: StreamOpKind, source: Value,
     let dn: String = dest.name
     // Stream operations are runtime-dispatched; minimal LLVM lowering
     let s2: EmitState = emit_line(s, "  " + dn + " = bitcast ptr " + source.name + " to ptr")
-    return s2
+    s2
 
 // ---------------------------------------------------------------------------
 // InterpConcat instruction
@@ -18959,8 +18947,7 @@ fn emit_format_constants(st: EmitState) -> EmitState:
 // Public API: emit_mir_module
 // ---------------------------------------------------------------------------
 
-fn str_join(sep: String, parts: List<String>) -> String:
-    return join(sep, parts)
+fn str_join(sep: String, parts: List<String>) -> String = join(sep, parts)
 
 pub fn emit_mir_module(module: MIRModule, module_name: String) -> String:
     let mut st: EmitState = new_emit_state(module_name)
