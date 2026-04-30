@@ -795,11 +795,9 @@ struct Lexer:
 // Constructor functions
 // ---------------------------------------------------------------------------
 
-fn new_token(tok_type: String, value: String, line: Int, col: Int, end_line: Int, end_col: Int) -> Token:
-    return new Token { tok_type: tok_type, value: value, line: line, column: col, end_line: end_line, end_column: end_col }
+fn new_token(tok_type: String, value: String, line: Int, col: Int, end_line: Int, end_col: Int) -> Token = new Token { tok_type: tok_type, value: value, line: line, column: col, end_line: end_line, end_column: end_col }
 
-fn new_lexer(source: String, pos: Int, line: Int, column: Int, filename: String) -> Lexer:
-    return new Lexer { source: source, pos: pos, line: line, column: column, filename: filename }
+fn new_lexer(source: String, pos: Int, line: Int, column: Int, filename: String) -> Lexer = new Lexer { source: source, pos: pos, line: line, column: column, filename: filename }
 
 // ---------------------------------------------------------------------------
 // Keywords (28 total)
@@ -973,8 +971,7 @@ fn is_hex_digit(ch: String) -> Bool:
 // Lexer helpers — use positional args, no struct literals
 // ---------------------------------------------------------------------------
 
-fn lexer_at_end(source: String, pos: Int) -> Bool:
-    return pos >= len(source)
+fn lexer_at_end(source: String, pos: Int) -> Bool = pos >= len(source)
 
 fn lexer_peek(source: String, pos: Int) -> String:
     if pos >= len(source) { return "" }
@@ -1283,8 +1280,7 @@ fn tokenize(source: String, filename: String) -> List<Token>:
 
     return tokens
 
-fn tokenize_with_newlines(source: String, filename: String) -> List<Token>:
-    return tokenize(source, filename)
+fn tokenize_with_newlines(source: String, filename: String) -> List<Token> = tokenize(source, filename)
 
 // ===== parser.mn =====
 // parser.mn — Mapanare parser, self-hosted.
@@ -6443,8 +6439,7 @@ struct LowerResult:
     value: Value
     state: LowerState
 
-fn new_lower_result(val: Value, st: LowerState) -> LowerResult:
-    return new LowerResult { value: val, state: st }
+fn new_lower_result(val: Value, st: LowerState) -> LowerResult = new LowerResult { value: val, state: st }
 
 // ---------------------------------------------------------------------------
 // Name generation
@@ -6455,19 +6450,19 @@ fn fresh_tmp(st: LowerState, prefix: String) -> LowerResult:
     let mut new_st: LowerState = st
     new_st.tmp_counter = st.tmp_counter + 1
     let val: Value = new_value(name, mir_unknown())
-    return new_lower_result(val, new_st)
+    new_lower_result(val, new_st)
 
 fn fresh_block_label(st: LowerState, prefix: String) -> LowerResult:
     let name: String = prefix + toString(st.block_counter)
     let mut new_st: LowerState = st
     new_st.block_counter = st.block_counter + 1
     let val: Value = new_value(name, mir_unknown())
-    return new_lower_result(val, new_st)
+    new_lower_result(val, new_st)
 
 fn make_value(st: LowerState, ty: MIRType, prefix: String) -> LowerResult:
     let r: LowerResult = fresh_tmp(st, prefix)
     let val: Value = new_value(r.value.name, ty)
-    return new_lower_result(val, r.state)
+    new_lower_result(val, r.state)
 
 // ---------------------------------------------------------------------------
 // Block management
@@ -6491,7 +6486,7 @@ fn is_some_fn(opt: Option<MIRFunction>) -> Bool:
 fn set_block(st: LowerState, idx: Int) -> LowerState:
     let mut new_st: LowerState = st
     new_st.current_block_idx = idx
-    return new_st
+    new_st
 
 fn emit_instr(st: LowerState, instr: Instruction) -> LowerState:
     // Append instruction to current block using flattened fn_blocks list.
@@ -6507,7 +6502,7 @@ fn emit_instr(st: LowerState, instr: Instruction) -> LowerState:
             let mut blocks: List<BasicBlock> = new_st.fn_blocks
             blocks[idx] = new_bb
             new_st.fn_blocks = blocks
-    return new_st
+    new_st
 
 fn current_block_terminated(st: LowerState) -> Bool:
     let idx: Int = st.current_block_idx
@@ -6528,7 +6523,7 @@ fn lower_push_scope(st: LowerState) -> LowerState:
     let mut stack: List<Int> = new_st.scope_stack
     stack.push(var_count)
     new_st.scope_stack = stack
-    return new_st
+    new_st
 
 fn lower_pop_scope(st: LowerState) -> LowerState:
     let mut new_st: LowerState = st
@@ -6545,7 +6540,7 @@ fn lower_pop_scope(st: LowerState) -> LowerState:
                     restored.push(st.vars[i])
                     i = i + 1
         new_st.vars = restored
-    return new_st
+    new_st
 
 fn define_var(st: LowerState, name: String, val: Value, mutable: Bool) -> LowerState:
     let mut new_st: LowerState = st
@@ -6553,7 +6548,7 @@ fn define_var(st: LowerState, name: String, val: Value, mutable: Bool) -> LowerS
     let mut vs: List<VarInfo> = new_st.vars
     vs.push(vi)
     new_st.vars = vs
-    return new_st
+    new_st
 
 fn lookup_var(st: LowerState, name: String) -> Option<Value>:
     let mut i: Int = len(st.vars) - 1
@@ -11903,7 +11898,7 @@ fn collect_targets(inst: Instruction) -> List<String>:
             targets.push(cases[ci].block_label)
             ci = ci + 1
         targets.push(instr_switch_default(inst))
-    return targets
+    targets
 
 fn is_in_list(name: String, lst: List<String>) -> Bool:
     let mut i: Int = 0
@@ -11985,7 +11980,7 @@ fn add_targets_to_worklist(targets: List<String>, reachable: List<String>, workl
             worklist.push(targets[ti])
             added = true
         ti = ti + 1
-    return added
+    added
 
 fn collect_phi_refs(f: MIRFunction) -> List<String>:
     // Collect all block labels referenced by PHI entries in any block
@@ -12006,7 +12001,7 @@ fn collect_phi_refs(f: MIRFunction) -> List<String>:
                     ei = ei + 1
             ii = ii + 1
         bi = bi + 1
-    return refs
+    refs
 
 fn dead_block_elim_function(f: MIRFunction) -> MIRFunction:
     if len(f.blocks) <= 1 { return f }
@@ -12096,9 +12091,8 @@ fn is_power_of_two(n: Int) -> Bool:
         p = p * 2
     return false
 
-fn power_of_two_mask(n: Int) -> Int:
+fn power_of_two_mask(n: Int) -> Int = n - 1
     // Returns n - 1 (the bitmask for x % n when n is power of 2)
-    return n - 1
 
 fn try_strength_reduce(inst: Instruction) -> Option<Instruction>:
     let ik: String = instr_kind(inst)
@@ -12266,7 +12260,7 @@ fn count_calls(f: MIRFunction, lookup: List<FnLookupEntry>) -> List<CallCount>:
                 }
             ii = ii + 1
         bi = bi + 1
-    return counts
+    counts
 
 fn get_call_count(counts: List<CallCount>, name: String) -> Int:
     let mut i: Int = 0
@@ -13069,7 +13063,7 @@ fn collect_loop_defs(f: MIRFunction, loop_body: List<String>) -> List<String>:
                         defs.push(dest.name)
                 ii = ii + 1
         bi = bi + 1
-    return defs
+    defs
 
 // Find the index of a block label that appears before position `before_idx`
 fn find_earlier_block(blocks: List<BasicBlock>, label: String, before_idx: Int) -> Int:

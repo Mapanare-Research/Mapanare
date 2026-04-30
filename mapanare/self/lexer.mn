@@ -41,11 +41,9 @@ struct Lexer:
 // Constructor functions
 // ---------------------------------------------------------------------------
 
-fn new_token(tok_type: String, value: String, line: Int, col: Int, end_line: Int, end_col: Int) -> Token:
-    return new Token { tok_type: tok_type, value: value, line: line, column: col, end_line: end_line, end_column: end_col }
+fn new_token(tok_type: String, value: String, line: Int, col: Int, end_line: Int, end_col: Int) -> Token = new Token { tok_type: tok_type, value: value, line: line, column: col, end_line: end_line, end_column: end_col }
 
-fn new_lexer(source: String, pos: Int, line: Int, column: Int, filename: String) -> Lexer:
-    return new Lexer { source: source, pos: pos, line: line, column: column, filename: filename }
+fn new_lexer(source: String, pos: Int, line: Int, column: Int, filename: String) -> Lexer = new Lexer { source: source, pos: pos, line: line, column: column, filename: filename }
 
 // ---------------------------------------------------------------------------
 // Keywords (28 total)
@@ -219,8 +217,7 @@ fn is_hex_digit(ch: String) -> Bool:
 // Lexer helpers — use positional args, no struct literals
 // ---------------------------------------------------------------------------
 
-fn lexer_at_end(source: String, pos: Int) -> Bool:
-    return pos >= len(source)
+fn lexer_at_end(source: String, pos: Int) -> Bool = pos >= len(source)
 
 fn lexer_peek(source: String, pos: Int) -> String:
     if pos >= len(source) { return "" }
@@ -529,5 +526,4 @@ fn tokenize(source: String, filename: String) -> List<Token>:
 
     return tokens
 
-fn tokenize_with_newlines(source: String, filename: String) -> List<Token>:
-    return tokenize(source, filename)
+fn tokenize_with_newlines(source: String, filename: String) -> List<Token> = tokenize(source, filename)
