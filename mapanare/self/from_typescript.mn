@@ -12,8 +12,7 @@ struct TsToken:
     line: Int
     col: Int
 
-fn new_ts_token(kind: String, value: String, line: Int, col: Int) -> TsToken:
-    return new TsToken { kind: kind, value: value, line: line, col: col }
+fn new_ts_token(kind: String, value: String, line: Int, col: Int) -> TsToken = new TsToken { kind: kind, value: value, line: line, col: col }
 
 // ---------------------------------------------------------------------------
 // TypeScript keyword table
@@ -287,7 +286,7 @@ struct TsParser:
 
 fn new_ts_parser(tokens: List<TsToken>, filename: String) -> TsParser:
     let st: TranspilerState = new_state(filename, "typescript")
-    return new TsParser { tokens: tokens, pos: 0, state: st }
+    new TsParser { tokens: tokens, pos: 0, state: st }
 
 fn ts_current(p: TsParser) -> TsToken:
     if p.pos < len(p.tokens):
@@ -296,7 +295,7 @@ fn ts_current(p: TsParser) -> TsToken:
 
 fn ts_advance(p: TsParser) -> TsParser:
     p.pos = p.pos + 1
-    return p
+    p
 
 fn ts_expect_kw(p: TsParser, kw: String) -> TsParser:
     let t: TsToken = ts_current(p)
@@ -315,18 +314,18 @@ fn ts_expect_op(p: TsParser, op: String) -> TsParser:
 fn ts_skip_newlines(p: TsParser) -> TsParser:
     while ts_current(p).kind == "NEWLINE":
         p = ts_advance(p)
-    return p
+    p
 
 fn ts_skip_semicolons(p: TsParser) -> TsParser:
     while ts_current(p).kind == "OP":
         if ts_current(p).value != ";" { break }
         p = ts_advance(p)
-    return p
+    p
 
 fn ts_skip_whitespace(p: TsParser) -> TsParser:
     p = ts_skip_newlines(p)
     p = ts_skip_semicolons(p)
-    return p
+    p
 
 // ---------------------------------------------------------------------------
 // Type translation
@@ -334,7 +333,7 @@ fn ts_skip_whitespace(p: TsParser) -> TsParser:
 
 fn translate_ts_type(type_str: String) -> String:
     let mappings: List<TypeMapping> = typescript_type_mappings()
-    return translate_type(type_str, mappings)
+    translate_type(type_str, mappings)
 
 // Skip a TS type annotation after ":" (handles generics with angle brackets)
 fn ts_skip_type_annotation(p: TsParser) -> TsParser:
@@ -1308,4 +1307,4 @@ fn translate_typescript(source: String, filename: String) -> String:
         // Skip other top-level tokens
         p = ts_advance(p)
 
-    return out_text
+    out_text
