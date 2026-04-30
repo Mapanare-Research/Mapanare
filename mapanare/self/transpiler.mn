@@ -15,7 +15,7 @@ struct TypeMapping:
 
 fn new_type_mapping(source: String, target: String) -> TypeMapping:
     let args: List<String> = []
-    return new TypeMapping { source_name: source, target_kind: target, generic_args: args }
+    new TypeMapping { source_name: source, target_kind: target, generic_args: args }
 
 fn translate_type(source_type: String, mappings: List<TypeMapping>) -> String:
     // Handle nullable: "?Type" → "Option<Type>"
@@ -161,16 +161,14 @@ struct ParamDef:
     type_name: String
     default_value: String
 
-fn new_param(name: String, type_name: String) -> ParamDef:
-    return new ParamDef { name: name, type_name: type_name, default_value: "" }
+fn new_param(name: String, type_name: String) -> ParamDef = new ParamDef { name: name, type_name: type_name, default_value: "" }
 
 struct FieldDef:
     name: String
     type_name: String
     default_value: String
 
-fn new_field(name: String, type_name: String) -> FieldDef:
-    return new FieldDef { name: name, type_name: type_name, default_value: "" }
+fn new_field(name: String, type_name: String) -> FieldDef = new FieldDef { name: name, type_name: type_name, default_value: "" }
 
 struct MethodDef:
     name: String
@@ -182,7 +180,7 @@ struct MethodDef:
 fn new_method(name: String, return_type: String) -> MethodDef:
     let params: List<ParamDef> = []
     let body: List<String> = []
-    return new MethodDef { name: name, params: params, return_type: return_type, body_lines: body, is_static: false }
+    new MethodDef { name: name, params: params, return_type: return_type, body_lines: body, is_static: false }
 
 fn translate_class_to_struct(name: String, fields: List<FieldDef>, methods: List<MethodDef>, indent_str: String) -> String:
     let mut out: String = ""
@@ -266,7 +264,7 @@ struct CatchClause:
 
 fn new_catch(exc_type: String, var_name: String) -> CatchClause:
     let body: List<String> = []
-    return new CatchClause { exception_type: exc_type, variable: var_name, body_lines: body }
+    new CatchClause { exception_type: exc_type, variable: var_name, body_lines: body }
 
 fn translate_exception_to_result(try_body: List<String>, catch_clauses: List<CatchClause>, finally_body: List<String>, indent_str: String) -> String:
     let mut out: String = ""
@@ -308,10 +306,9 @@ struct StdlibShim:
 
 fn new_shim(source: String, target: String, is_method: Bool) -> StdlibShim:
     let reorder: List<Int> = []
-    return new StdlibShim { source_name: source, target_expr: target, is_method: is_method, arg_reorder: reorder }
+    new StdlibShim { source_name: source, target_expr: target, is_method: is_method, arg_reorder: reorder }
 
-fn new_shim_reorder(source: String, target: String, is_method: Bool, reorder: List<Int>) -> StdlibShim:
-    return new StdlibShim { source_name: source, target_expr: target, is_method: is_method, arg_reorder: reorder }
+fn new_shim_reorder(source: String, target: String, is_method: Bool, reorder: List<Int>) -> StdlibShim = new StdlibShim { source_name: source, target_expr: target, is_method: is_method, arg_reorder: reorder }
 
 fn join_args(args: List<String>) -> String:
     let mut result: String = ""
@@ -319,7 +316,7 @@ fn join_args(args: List<String>) -> String:
         if i > 0:
             result = result + ", "
         result = result + args[i]
-    return result
+    result
 
 fn translate_stdlib_call(func_name: String, args: List<String>, shims: List<StdlibShim>) -> String:
     // Lookup in shim registry
@@ -353,8 +350,7 @@ fn translate_stdlib_call(func_name: String, args: List<String>, shims: List<Stdl
 // Diagnostics
 // ---------------------------------------------------------------------------
 
-fn report_unsupported(feature: String, suggestion: String, source_line: Int, filename: String) -> String:
-    return "// WARNING: " + feature + " not supported (line " + str(source_line) + "). " + suggestion
+fn report_unsupported(feature: String, suggestion: String, source_line: Int, filename: String) -> String = "// WARNING: " + feature + " not supported (line " + str(source_line) + "). " + suggestion
 
 // ---------------------------------------------------------------------------
 // any boxing decision helper
@@ -362,7 +358,7 @@ fn report_unsupported(feature: String, suggestion: String, source_line: Int, fil
 
 fn needs_any_boxing(source_type: String, mappings: List<TypeMapping>) -> Bool:
     let mapped: String = translate_type(source_type, mappings)
-    return mapped == "any"
+    mapped == "any"
 
 fn emit_any_annotation(param_name: String, inferred_type: String) -> String:
     if inferred_type == "any":
@@ -396,7 +392,7 @@ fn new_state(filename: String, lang: String) -> TranspilerState:
 fn push_scope(state: TranspilerState) -> TranspilerState:
     state.scope_markers.push(len(state.declared_vars))
     state.indent_level = state.indent_level + 1
-    return state
+    state
 
 fn pop_scope(state: TranspilerState) -> TranspilerState:
     if len(state.scope_markers) > 0:
@@ -405,7 +401,7 @@ fn pop_scope(state: TranspilerState) -> TranspilerState:
         state.scope_markers = [state.scope_markers[i] for i in 0..len(state.scope_markers) - 1]
     if state.indent_level > 0:
         state.indent_level = state.indent_level - 1
-    return state
+    state
 
 fn is_declared(state: TranspilerState, name: String) -> Bool:
     for i in 0..len(state.declared_vars):
@@ -415,21 +411,21 @@ fn is_declared(state: TranspilerState, name: String) -> Bool:
 
 fn declare_var(state: TranspilerState, name: String) -> TranspilerState:
     state.declared_vars.push(name)
-    return state
+    state
 
 fn indent(state: TranspilerState) -> String:
     let mut result: String = ""
     for i in 0..state.indent_level:
         result = result + "    "
-    return result
+    result
 
 fn add_warning(state: TranspilerState, msg: String) -> TranspilerState:
     state.warnings.push(msg)
-    return state
+    state
 
 fn add_error(state: TranspilerState, msg: String) -> TranspilerState:
     state.errors.push(msg)
-    return state
+    state
 
 // ---------------------------------------------------------------------------
 // Language-specific mapping factories
