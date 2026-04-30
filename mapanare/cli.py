@@ -233,17 +233,18 @@ def _compile_multi_module_text(
     )
 
 
-def cmd_check(args: argparse.Namespace) -> None:
-    """Type-check an .mn source file with error recovery."""
-    source = _read_source(args.source)
-    resolver = ModuleResolver()
+def _check_one(path: str, *, werror: bool) -> bool:
+    """Type-check a single .mn file. Return True iff it has zero errors.
 
-    # Parse with recovery to collect multiple parse errors
-    ast, parse_errors = parse_recovering(source, filename=args.source)
+    Prints diagnostics to stderr and an "OK" line to stdout, matching the
+    historical single-file output.
+    """
+    source = _read_source(path)
+    resolver = ModuleResolver()
+    ast, parse_errors = parse_recovering(source, filename=path)
 
     all_diagnostics: list[Diagnostic] = []
 
-    # Convert parse errors to diagnostics
     for pe in parse_errors:
         from mapanare.ast_nodes import Span
 
@@ -257,15 +258,11 @@ def cmd_check(args: argparse.Namespace) -> None:
             )
         )
 
-    # Run semantic analysis even if there were parse errors (on partial AST)
-    werror = getattr(args, "werror", False)
     if ast.definitions:
         from mapanare.semantic import check
 
-        sem_errors = check(ast, filename=args.source, resolver=resolver)
+        sem_errors = check(ast, filename=path, resolver=resolver)
         for err in sem_errors:
-            # v4.27.0: use the real span carried by SemanticError via
-            # to_diagnostic(). --werror promotes warnings to errors.
             diag = err.to_diagnostic()
             is_warning = err.severity == "warning"
             if is_warning and not werror:
@@ -281,9 +278,57 @@ def cmd_check(args: argparse.Namespace) -> None:
         summary = format_summary(all_diagnostics)
         if summary:
             print(summary, file=sys.stderr)
-        sys.exit(1)
+        return False
 
-    print(f"check: {args.source} OK")
+    print(f"check: {path} OK")
+    return True
+
+
+def _walk_mn_files(root: str = ".") -> list[str]:
+    """Walk a directory tree and return .mn files in stable sorted order.
+
+    Skips common build/cache directories so `mapanare check --all` stays
+    fast on real projects.
+    """
+    skip = {".git", ".mn-cache", ".mapanare-cache", "dist", "build", "node_modules"}
+    out: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith(".")]
+        for fn in filenames:
+            if fn.endswith(".mn"):
+                out.append(os.path.join(dirpath, fn))
+    out.sort()
+    return out
+
+
+def cmd_check(args: argparse.Namespace) -> None:
+    """Type-check one or many .mn source files with error recovery."""
+    werror = getattr(args, "werror", False)
+    walk_all = getattr(args, "all", False)
+
+    if walk_all:
+        paths = _walk_mn_files(".")
+        if not paths:
+            print("check: no .mn files found", file=sys.stderr)
+            sys.exit(1)
+    else:
+        if not args.source:
+            print(
+                "error: provide a source file or pass --all to walk the current dir",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        paths = [args.source]
+
+    failed = 0
+    for path in paths:
+        if not _check_one(path, werror=werror):
+            failed += 1
+
+    if failed:
+        if walk_all:
+            print(f"check: {failed}/{len(paths)} file(s) had errors", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -1742,7 +1787,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     # check
     p_check = subparsers.add_parser("check", help="Type-check .mn source")
-    p_check.add_argument("source", help="Path to .mn source file")
+    p_check.add_argument(
+        "source",
+        nargs="?",
+        default=None,
+        help="Path to .mn source file (omit with --all to walk current dir)",
+    )
+    p_check.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="Recursively check every .mn file under the current directory",
+    )
     p_check.add_argument(
         "--werror",
         action="store_true",
