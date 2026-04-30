@@ -19,7 +19,7 @@ fn register_declarations(st: LowerState, program: Program) -> LowerState:
     s = register_declarations_pass1(s, program)
     // Pass 2: register structs, impls, functions, imports
     s = register_declarations_pass2(s, program)
-    return s
+    s
 
 // Pass 1: register enums. Extracted to helper to use return-based loop exit.
 fn register_declarations_pass1(st: LowerState, program: Program) -> LowerState:
@@ -1165,11 +1165,11 @@ fn lower_signal_decl(st: LowerState, name: String, mutable: Bool, type_ann: Opti
     let dest_r: LowerResult = make_value(init_r.state, mir_signal(), "sig")
     let mut s: LowerState = emit_instr(dest_r.state, Instruction::SignalInit(dest_r.value, sig_type, init_r.value))
     s = define_var(s, name, dest_r.value, mutable)
-    return s
+    s
 
 fn lower_stream_decl(st: LowerState, name: String, value: Expr) -> LowerState:
     let r: LowerResult = lower_expr(st, value)
-    return define_var(r.state, name, r.value, false)
+    define_var(r.state, name, r.value, false)
 
 // ---------------------------------------------------------------------------
 // Expression lowering
@@ -1392,8 +1392,7 @@ fn tensor_op_suffix(op: String) -> String:
     if op == "/" { return "div" }
     return "add"
 
-fn is_tensor_value(v: Value) -> Bool:
-    return v.ty.kind == TK_TENSOR()
+fn is_tensor_value(v: Value) -> Bool = v.ty.kind == TK_TENSOR()
 
 fn lower_tensor_binop(st: LowerState, op: String, lhs: Value, rhs: Value) -> LowerResult:
     let op_suffix: String = tensor_op_suffix(op)
@@ -1619,7 +1618,7 @@ fn mangle_generic_name(base: String, arg_types: List<MIRType>) -> String:
             if tk == TK_VOID() { result = result + "Void" }
             if tk == TK_UNKNOWN() { result = result + "Unknown" }
             i = i + 1
-    return result
+    result
 
 fn infer_type_args_from_call(gfn: FnDefData, arg_types: List<MIRType>) -> List<MIRType>:
     // Build substitution: match type_params[i] against param annotations
@@ -1649,7 +1648,7 @@ fn infer_type_args_from_call(gfn: FnDefData, arg_types: List<MIRType>) -> List<M
                     pi = pi + 1
             if !found { result.push(mir_unknown()) }
             ti = ti + 1
-    return result
+    result
 
 fn substitute_type_annotation(ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> Option<TypeExpr>:
     match ann {
@@ -1774,7 +1773,7 @@ fn infer_struct_type_args(gs: StructDefData, args: List<Value>) -> List<MIRType>
                 if idx < len(args) { concrete.push(args[idx].ty) }
             if idx < 0 { concrete.push(mir_unknown()) }
             ti = ti + 1
-    return concrete
+    concrete
 
 fn find_struct_field_for_tp(gs: StructDefData, tp_name: String) -> Int:
     let mut i: Int = 0
@@ -1941,7 +1940,7 @@ fn infer_enum_type_args(ge: EnumDefData, variant: EnumVariant, args: List<Value>
                     fi = fi + 1
             if !found { concrete.push(mir_unknown()) }
             ti = ti + 1
-    return concrete
+    concrete
 
 fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>) -> LowerResult:
     let enum_name: String = generic_enum_name_for_variant(st, variant_name)
@@ -2950,22 +2949,22 @@ fn find_expr_alloca(st: LowerState, expr: Expr, obj_r: LowerResult) -> Value:
 fn module_push_struct(m: MIRModule, info: StructInfo) -> MIRModule:
     let mut lst: List<StructInfo> = m.structs
     lst.push(info)
-    return new MIRModule { name: m.name, functions: m.functions, structs: lst, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
+    new MIRModule { name: m.name, functions: m.functions, structs: lst, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
 
 fn module_push_enum(m: MIRModule, info: EnumInfo) -> MIRModule:
     let mut lst: List<EnumInfo> = m.enums
     lst.push(info)
-    return new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: lst, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
+    new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: lst, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
 
 fn module_push_function(m: MIRModule, f: MIRFunction) -> MIRModule:
     let mut lst: List<MIRFunction> = m.functions
     lst.push(f)
-    return new MIRModule { name: m.name, functions: lst, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
+    new MIRModule { name: m.name, functions: lst, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: m.agents, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
 
 fn module_push_agent(m: MIRModule, info: AgentInfo) -> MIRModule:
     let mut lst: List<AgentInfo> = m.agents
     lst.push(info)
-    return new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: lst, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
+    new MIRModule { name: m.name, functions: m.functions, structs: m.structs, enums: m.enums, extern_fns: m.extern_fns, agents: lst, pipes: m.pipes, imports: m.imports, trait_names: m.trait_names, consts: m.consts }
 
 fn lower_arm_body(st: LowerState, body: MatchArmBody) -> LowerResult:
     if match_arm_body_kind(body) == "block" { return lower_block(st, match_arm_body_block(body)) }
@@ -3158,8 +3157,7 @@ fn lower_error_prop(st: LowerState, inner: Expr) -> LowerResult:
 // List lowering
 // ---------------------------------------------------------------------------
 
-fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult:
-    return lower_list_typed(st, elements, mir_unknown())
+fn lower_list(st: LowerState, elements: List<Expr>) -> LowerResult = lower_list_typed(st, elements, mir_unknown())
 
 // v5.16.0 Te.4.D — lower a string-interpolation expression to a chain
 // of concat operations. Mirrors mapanare/lower.py::_lower_interp_string.
@@ -3631,7 +3629,7 @@ fn lower_signal_expr(st: LowerState, inner: Expr) -> LowerResult:
     let init_r: LowerResult = lower_expr(st, inner)
     let dest_r: LowerResult = make_value(init_r.state, mir_signal(), "t")
     let s: LowerState = emit_instr(dest_r.state, Instruction::SignalInit(dest_r.value, mir_signal(), init_r.value))
-    return new_lower_result(dest_r.value, s)
+    new_lower_result(dest_r.value, s)
 
 // ---------------------------------------------------------------------------
 // Assignment lowering
@@ -4322,11 +4320,9 @@ fn bind_pattern_fields(st: LowerState, subject: Value, variant_name: String, sub
         pi = pi + 1
     return s
 
-fn format_value(v: Value) -> String:
-    return v.name
+fn format_value(v: Value) -> String = v.name
 
-fn format_type(t: MIRType) -> String:
-    return t.name
+fn format_type(t: MIRType) -> String = t.name
 
 fn format_instruction(inst: Instruction) -> String:
     let k: String = instr_kind(inst)
@@ -4455,8 +4451,7 @@ struct VerifyError:
     block_label: String
     message: String
 
-fn new_verify_error(fn_name: String, block: String, msg: String) -> VerifyError:
-    return new VerifyError { fn_name: fn_name, block_label: block, message: msg }
+fn new_verify_error(fn_name: String, block: String, msg: String) -> VerifyError = new VerifyError { fn_name: fn_name, block_label: block, message: msg }
 
 fn verify_module(module: MIRModule) -> List<VerifyError>:
     let mut errors: List<VerifyError> = []
