@@ -12,28 +12,26 @@ import self::lexer
 // ParseError
 // ---------------------------------------------------------------------------
 
-struct ParseError {
-    message: String,
-    line: Int,
-    column: Int,
+struct ParseError:
+    message: String
+    line: Int
+    column: Int
     filename: String
-}
 
 // ---------------------------------------------------------------------------
 // Parser state
 // ---------------------------------------------------------------------------
 
-struct Parser {
-    tokens: List<Token>,
-    pos: Int,
+struct Parser:
+    tokens: List<Token>
+    pos: Int
     filename: String
-}
 
 // ---------------------------------------------------------------------------
 // Token classification helpers
 // ---------------------------------------------------------------------------
 
-fn is_skip_token(tok_type: String) -> Bool {
+fn is_skip_token(tok_type: String) -> Bool:
     if tok_type == "KW_FN" { return true }
     if tok_type == "KW_ASYNC" { return true }
     if tok_type == "KW_LET" { return true }
@@ -80,9 +78,8 @@ fn is_skip_token(tok_type: String) -> Bool {
     if tok_type == "QUESTION" { return true }
     if tok_type == "SEND" { return true }
     return false
-}
 
-fn is_keep_token(tok_type: String) -> Bool {
+fn is_keep_token(tok_type: String) -> Bool:
     if tok_type == "KW_PUB" { return true }
     if tok_type == "KW_MUT" { return true }
     if tok_type == "KW_SELF" { return true }
@@ -95,21 +92,19 @@ fn is_keep_token(tok_type: String) -> Bool {
     if tok_type == "STRING_LIT" { return true }
     if tok_type == "CHAR_LIT" { return true }
     return false
-}
 
 // ---------------------------------------------------------------------------
 // Integer parsing helpers
 // ---------------------------------------------------------------------------
 
-fn parse_int_token(tok_type: String, value: String) -> Int {
+fn parse_int_token(tok_type: String, value: String) -> Int:
     return 0
-}
 
 // ---------------------------------------------------------------------------
 // Binary operator helpers
 // ---------------------------------------------------------------------------
 
-fn is_arithmetic_op(op: String) -> Bool {
+fn is_arithmetic_op(op: String) -> Bool:
     if op == "+" { return true }
     if op == "-" { return true }
     if op == "*" { return true }
@@ -117,9 +112,8 @@ fn is_arithmetic_op(op: String) -> Bool {
     if op == "%" { return true }
     if op == "@" { return true }
     return false
-}
 
-fn is_comparison_op(op: String) -> Bool {
+fn is_comparison_op(op: String) -> Bool:
     if op == "<" { return true }
     if op == ">" { return true }
     if op == "<=" { return true }
@@ -127,197 +121,160 @@ fn is_comparison_op(op: String) -> Bool {
     if op == "==" { return true }
     if op == "!=" { return true }
     return false
-}
 
-fn is_logical_op(op: String) -> Bool {
+fn is_logical_op(op: String) -> Bool:
     if op == "&&" { return true }
     if op == "||" { return true }
     return false
-}
 
-fn is_assign_op(op: String) -> Bool {
+fn is_assign_op(op: String) -> Bool:
     if op == "=" { return true }
     if op == "+=" { return true }
     if op == "-=" { return true }
     if op == "*=" { return true }
     if op == "/=" { return true }
     return false
-}
 
 // ---------------------------------------------------------------------------
 // Result structs — each parse function returns (value, new position)
 // ---------------------------------------------------------------------------
 
-struct ExprResult {
-    expr: Expr,
+struct ExprResult:
+    expr: Expr
     pos: Int
-}
 
-struct StmtResult {
-    stmt: Stmt,
+struct StmtResult:
+    stmt: Stmt
     pos: Int
-}
 
-struct BlockResult {
-    block: Block,
+struct BlockResult:
+    block: Block
     pos: Int
-}
 
-struct TypeResult {
-    type_expr: TypeExpr,
+struct TypeResult:
+    type_expr: TypeExpr
     pos: Int
-}
 
-struct PatternResult {
-    pattern: Pattern,
+struct PatternResult:
+    pattern: Pattern
     pos: Int
-}
 
-struct DefResult {
-    def_node: Definition,
+struct DefResult:
+    def_node: Definition
     pos: Int
-}
 
-struct ParamResult {
-    param: Param,
+struct ParamResult:
+    param: Param
     pos: Int
-}
 
-struct MatchArmResult {
-    arm: MatchArm,
+struct MatchArmResult:
+    arm: MatchArm
     pos: Int
-}
 
 // v5.6.3 Sh.6 Phase 4 — subscript item parser result.
-struct IndexItemResult {
-    item: IndexItem,
+struct IndexItemResult:
+    item: IndexItem
     pos: Int
-}
 
 // ---------------------------------------------------------------------------
 // Constructor functions — populate result structs positionally
 // ---------------------------------------------------------------------------
 
-fn new_expr_result(expr: Expr, pos: Int) -> ExprResult {
+fn new_expr_result(expr: Expr, pos: Int) -> ExprResult:
     return new ExprResult { expr: expr, pos: pos }
-}
 
-fn new_stmt_result(stmt: Stmt, pos: Int) -> StmtResult {
+fn new_stmt_result(stmt: Stmt, pos: Int) -> StmtResult:
     return new StmtResult { stmt: stmt, pos: pos }
-}
 
-fn new_block_result(block: Block, pos: Int) -> BlockResult {
+fn new_block_result(block: Block, pos: Int) -> BlockResult:
     return new BlockResult { block: block, pos: pos }
-}
 
-fn new_type_result(type_expr: TypeExpr, pos: Int) -> TypeResult {
+fn new_type_result(type_expr: TypeExpr, pos: Int) -> TypeResult:
     return new TypeResult { type_expr: type_expr, pos: pos }
-}
 
-fn new_pattern_result(pattern: Pattern, pos: Int) -> PatternResult {
+fn new_pattern_result(pattern: Pattern, pos: Int) -> PatternResult:
     return new PatternResult { pattern: pattern, pos: pos }
-}
 
-fn new_def_result(def_node: Definition, pos: Int) -> DefResult {
+fn new_def_result(def_node: Definition, pos: Int) -> DefResult:
     return new DefResult { def_node: def_node, pos: pos }
-}
 
-fn new_param_result(param: Param, pos: Int) -> ParamResult {
+fn new_param_result(param: Param, pos: Int) -> ParamResult:
     return new ParamResult { param: param, pos: pos }
-}
 
-fn new_match_arm_result(arm: MatchArm, pos: Int) -> MatchArmResult {
+fn new_match_arm_result(arm: MatchArm, pos: Int) -> MatchArmResult:
     return new MatchArmResult { arm: arm, pos: pos }
-}
 
 // AST node constructors (new_span, new_block, new_fn_def_data are in ast.mn)
 
-fn new_param(name: String, type_ann: Option<TypeExpr>) -> Param {
+fn new_param(name: String, type_ann: Option<TypeExpr>) -> Param:
     return new Param { span: new_span(0, 0, 0, 0), name: name, type_annotation: type_ann }
-}
 
-fn new_struct_field(name: String, type_ann: TypeExpr) -> StructField {
+fn new_struct_field(name: String, type_ann: TypeExpr) -> StructField:
     return new StructField { span: new_span(0, 0, 0, 0), name: name, type_annotation: type_ann }
-}
 
-fn new_enum_variant(name: String, fields: List<TypeExpr>) -> EnumVariant {
+fn new_enum_variant(name: String, fields: List<TypeExpr>) -> EnumVariant:
     return new EnumVariant { span: new_span(0, 0, 0, 0), name: name, fields: fields }
-}
 
-fn new_match_arm(pattern: Pattern, body: MatchArmBody, guard: Option<Expr>) -> MatchArm {
+fn new_match_arm(pattern: Pattern, body: MatchArmBody, guard: Option<Expr>) -> MatchArm:
     return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body, guard: guard }
-}
 
-fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData {
+fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData:
     return new StructDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, fields: fields }
-}
 
-fn new_enum_def_data(name: String, public: Bool, type_params: List<String>, variants: List<EnumVariant>) -> EnumDefData {
+fn new_enum_def_data(name: String, public: Bool, type_params: List<String>, variants: List<EnumVariant>) -> EnumDefData:
     return new EnumDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, variants: variants }
-}
 
-fn new_agent_def_data(name: String, public: Bool, inputs: List<AgentInput>, outputs: List<AgentOutput>, state: List<Stmt>, methods: List<FnDefData>, decorators: List<Decorator>) -> AgentDefData {
+fn new_agent_def_data(name: String, public: Bool, inputs: List<AgentInput>, outputs: List<AgentOutput>, state: List<Stmt>, methods: List<FnDefData>, decorators: List<Decorator>) -> AgentDefData:
     return new AgentDefData { span: new_span(0, 0, 0, 0), name: name, public: public, inputs: inputs, outputs: outputs, state: state, methods: methods, decorators: decorators }
-}
 
-fn new_pipe_def_data(name: String, public: Bool, stages: List<Expr>) -> PipeDefData {
+fn new_pipe_def_data(name: String, public: Bool, stages: List<Expr>) -> PipeDefData:
     return new PipeDefData { span: new_span(0, 0, 0, 0), name: name, public: public, stages: stages }
-}
 
-fn new_decorator(name: String, args: List<Expr>) -> Decorator {
+fn new_decorator(name: String, args: List<Expr>) -> Decorator:
     return new Decorator { span: new_span(0, 0, 0, 0), name: name, args: args }
-}
 
 // ---------------------------------------------------------------------------
 // Token access helpers
 // ---------------------------------------------------------------------------
 
-fn peek_type(tokens: List<Token>, pos: Int) -> String {
+fn peek_type(tokens: List<Token>, pos: Int) -> String:
     if pos >= len(tokens) { return "EOF" }
     let tok: Token = tokens[pos]
     return tok.tok_type
-}
 
-fn peek_value(tokens: List<Token>, pos: Int) -> String {
+fn peek_value(tokens: List<Token>, pos: Int) -> String:
     if pos >= len(tokens) { return "" }
     let tok: Token = tokens[pos]
     return tok.value
-}
 
-fn at_end(tokens: List<Token>, pos: Int) -> Bool {
+fn at_end(tokens: List<Token>, pos: Int) -> Bool:
     return pos >= len(tokens)
-}
 
-fn expect(tokens: List<Token>, pos: Int, expected: String) -> Int {
+fn expect(tokens: List<Token>, pos: Int, expected: String) -> Int:
     let tt: String = peek_type(tokens, pos)
-    if tt != expected {
+    if tt != expected:
         __mn_str_eprint("parse error: expected ")
         __mn_str_eprint(expected)
         __mn_str_eprint(" but got ")
         __mn_str_eprint(tt)
         __mn_str_eprint("\n")
-    }
     return pos + 1
-}
 
-fn skip_semis(tokens: List<Token>, pos: Int) -> Int {
+fn skip_semis(tokens: List<Token>, pos: Int) -> Int:
     let mut p: Int = pos
-    for _ in 0..100000 {
+    for _ in 0..100000:
         if p >= len(tokens) { return p }
-        if peek_type(tokens, p) == "SEMICOLON" {
+        if peek_type(tokens, p) == "SEMICOLON":
             p = p + 1
-        } else {
+        else:
             return p
-        }
-    }
     return p
-}
 
 // ---------------------------------------------------------------------------
 // Operator helpers
 // ---------------------------------------------------------------------------
 
-fn tok_to_binop(tt: String) -> String {
+fn tok_to_binop(tt: String) -> String:
     if tt == "PLUS" { return "+" }
     if tt == "MINUS" { return "-" }
     if tt == "STAR" { return "*" }
@@ -336,9 +293,8 @@ fn tok_to_binop(tt: String) -> String {
     if tt == "RANGE" { return ".." }
     if tt == "RANGE_INCL" { return "..=" }
     return ""
-}
 
-fn op_precedence(op: String) -> Int {
+fn op_precedence(op: String) -> Int:
     if op == "||" { return 1 }
     if op == "&&" { return 2 }
     if op == "==" { return 3 }
@@ -357,19 +313,17 @@ fn op_precedence(op: String) -> Int {
     if op == "%" { return 8 }
     if op == "@" { return 8 }
     return 0
-}
 
-fn is_right_assoc(op: String) -> Bool {
+fn is_right_assoc(op: String) -> Bool:
     if op == ".." { return true }
     if op == "..=" { return true }
     return false
-}
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-fn is_definition_start(tt: String) -> Bool {
+fn is_definition_start(tt: String) -> Bool:
     if tt == "KW_IMPORT" { return true }
     if tt == "KW_EXPORT" { return true }
     if tt == "KW_PUB" { return true }
@@ -392,10 +346,9 @@ fn is_definition_start(tt: String) -> Bool {
     if tt == "KW_TRAIT" { return true }
     if tt == "AT" { return true }
     return false
-}
 
-fn has_explicit_main(defs: List<Definition>) -> Bool {
-    for i in 0..len(defs) {
+fn has_explicit_main(defs: List<Definition>) -> Bool:
+    for i in 0..len(defs):
         let d: Definition = defs[i]
         match d {
             FnDef(fd) => {
@@ -405,11 +358,9 @@ fn has_explicit_main(defs: List<Definition>) -> Bool {
             },
             _ => {}
         }
-    }
     return false
-}
 
-pub fn parse(source: String, filename: String) -> Program {
+pub fn parse(source: String, filename: String) -> Program:
     // v5.14.1 B.5/B.6: colon-block preprocessor lives in the C runtime
     // (`runtime/native/mapanare_core.c::__mn_indent_to_braces`) and is
     // wired into the self-host as a builtin (semantic.mn::is_builtin_function,
@@ -425,62 +376,52 @@ pub fn parse(source: String, filename: String) -> Program {
     let mut defs: List<Definition> = []
     let mut top_stmts: List<Stmt> = []
 
-    for _ in 0..100000 {
+    for _ in 0..100000:
         pos = skip_semis(tokens, pos)
-        if pos >= len(tokens) {
-            if len(top_stmts) > 0 {
-                if !has_explicit_main(defs) {
+        if pos >= len(tokens):
+            if len(top_stmts) > 0:
+                if !has_explicit_main(defs):
                     let body_early: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
                     let empty_tp: List<String> = []
                     let empty_params: List<Param> = []
                     let empty_decs: List<Decorator> = []
                     let main_fn_early: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp, empty_params, none, body_early, empty_decs)
                     defs.push(Definition::FnDef(main_fn_early))
-                }
-            }
             return Program::start(defs)
-        }
 
         let tt: String = peek_type(tokens, pos)
-        if is_definition_start(tt) {
+        if is_definition_start(tt):
             let r: DefResult = parse_definition(tokens, pos, filename)
             defs.push(r.def_node)
             pos = r.pos
-        } else {
+        else:
             let sr: StmtResult = parse_stmt(tokens, pos, filename)
             top_stmts.push(sr.stmt)
             pos = sr.pos
-        }
-    }
 
-    if len(top_stmts) > 0 {
-        if !has_explicit_main(defs) {
+    if len(top_stmts) > 0:
+        if !has_explicit_main(defs):
             let body_final: Block = new_block(new_span(0, 0, 0, 0), top_stmts)
             let empty_tp2: List<String> = []
             let empty_params2: List<Param> = []
             let empty_decs2: List<Decorator> = []
             let main_fn_final: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), "main", false, empty_tp2, empty_params2, none, body_final, empty_decs2)
             defs.push(Definition::FnDef(main_fn_final))
-        }
-    }
 
     return Program::start(defs)
-}
 
 // ---------------------------------------------------------------------------
 // Definition dispatch
 // ---------------------------------------------------------------------------
 
-fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let tt: String = peek_type(tokens, pos)
 
-    if tt == "KW_IMPORT" {
+    if tt == "KW_IMPORT":
         return parse_import_def(tokens, pos, filename)
-    }
-    if tt == "KW_EXPORT" {
+    if tt == "KW_EXPORT":
         return parse_export_def(tokens, pos, filename)
-    }
-    if tt == "KW_PUB" {
+    if tt == "KW_PUB":
         let next_tt: String = peek_type(tokens, pos + 1)
         if next_tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
         // v4.68.0: ``KW_ASYNC`` dispatch restored (Arc 8).
@@ -489,7 +430,6 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         if next_tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
         if next_tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
         if next_tt == "KW_PIPE" { return parse_pipe_def(tokens, pos, filename) }
-    }
     // v4.68.0: ``KW_ASYNC`` top-level dispatch restored (Arc 8).
     if tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
     if tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
@@ -497,51 +437,42 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     // binary has a codegen issue where checks late in long if-chains are
     // unreachable. Placed right after KW_FN which is known to work.
     if tt == "KW_CONST" { return parse_const_def(tokens, pos, filename) }
-    if tt == "NAME" {
+    if tt == "NAME":
         if peek_value(tokens, pos) == "const" { return parse_const_def(tokens, pos, filename) }
-    }
     if tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
     if tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
     if tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
     if tt == "KW_PIPE" { return parse_pipe_def(tokens, pos, filename) }
-    if tt == "KW_TYPE" {
+    if tt == "KW_TYPE":
         // tipo/type can be either a type alias (type Foo = Bar) or
         // a tipo definition (tipo Foo { fields/variants }). Peek ahead
         // to decide: KW_TYPE NAME LBRACE → struct-like, else → alias.
         let tipo_name_pos: Int = pos + 1
-        if tipo_name_pos + 1 < len(tokens) {
+        if tipo_name_pos + 1 < len(tokens):
             let after_name_tt: String = peek_type(tokens, tipo_name_pos + 1)
-            if after_name_tt == "LBRACE" {
+            if after_name_tt == "LBRACE":
                 return parse_tipo_def(tokens, pos, filename)
-            }
-        }
         return parse_type_alias_def(tokens, pos, filename)
-    }
     if tt == "KW_IMPL" { return parse_impl_def(tokens, pos, filename) }
-    if tt == "KW_TRAIT" {
+    if tt == "KW_TRAIT":
         let mut tp: Int = pos + 1
         let trait_name: String = peek_value(tokens, tp)
         tp = tp + 1
         let mut trait_methods: List<FnDefData> = []
-        if peek_type(tokens, tp) == "LBRACE" {
+        if peek_type(tokens, tp) == "LBRACE":
             tp = tp + 1
-            for _ in 0..100 {
-                if peek_type(tokens, tp) == "RBRACE" {
+            for _ in 0..100:
+                if peek_type(tokens, tp) == "RBRACE":
                     tp = tp + 1
                     return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
-                }
-                if peek_type(tokens, tp) == "KW_FN" {
+                if peek_type(tokens, tp) == "KW_FN":
                     let fr: FnDataResult = parse_fn_def_as_data(tokens, tp, filename)
                     trait_methods.push(fr.data)
                     tp = fr.pos
-                } else {
+                else:
                     tp = tp + 1
-                }
-            }
             return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
-        }
         return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
-    }
     if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
     if tt == "KW_LET" { return parse_module_let(tokens, pos, filename) }
     if tt == "KW_CONST" { return parse_const_def(tokens, pos, filename) }
@@ -552,13 +483,12 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     let empty_items: List<String> = []
     let d: Definition = Definition::ImportDef(empty_path, empty_items)
     return new_def_result(d, pos + 1)
-}
 
 // ---------------------------------------------------------------------------
 // Import definition
 // ---------------------------------------------------------------------------
 
-fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let mut p: Int = pos + 1
     let mut path: List<String> = []
 
@@ -566,23 +496,20 @@ fn parse_import_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     path.push(name0)
     p = p + 1
 
-    for _ in 0..100 {
-        if peek_type(tokens, p) != "DOUBLE_COLON" {
+    for _ in 0..100:
+        if peek_type(tokens, p) != "DOUBLE_COLON":
             let imp_items: List<String> = []
             return new_def_result(Definition::ImportDef(path, imp_items), p)
-        }
         p = p + 1
         let seg: String = peek_value(tokens, p)
         path.push(seg)
         p = p + 1
-    }
 
     let trail_items: List<String> = []
     return new_def_result(Definition::ImportDef(path, trail_items), p)
-}
 
 // v4.55.0: const definition parsing
-fn parse_const_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_const_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     // v4.78.0 (CARRY_FORWARD A10b): emit LetDef instead of ConstDef so
     // that const symbols use the same scope registration path as let
     // definitions. ConstDef (the last enum variant) has a codegen issue
@@ -593,11 +520,10 @@ fn parse_const_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
     p = p + 1
     // Optional type annotation: ": TYPE"
     let mut type_name: String = ""
-    if peek_type(tokens, p) == "COLON" {
+    if peek_type(tokens, p) == "COLON":
         p = p + 1
         type_name = peek_value(tokens, p)
         p = p + 1
-    }
     // Expect "="
     if peek_type(tokens, p) == "ASSIGN" { p = p + 1 }
     // Parse value expression
@@ -605,13 +531,12 @@ fn parse_const_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
     p = er.pos
     p = skip_semis(tokens, p)
     return new_def_result(Definition::LetDef(name, type_name, er.expr), p)
-}
 
 // ---------------------------------------------------------------------------
 // Extern "C" function declaration
 // ---------------------------------------------------------------------------
 
-fn parse_module_let(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_module_let(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     // let NAME: TYPE = EXPR
     let mut p: Int = pos + 1
     // Skip optional 'mut' (module-level let is always immutable, but tolerate it)
@@ -620,26 +545,23 @@ fn parse_module_let(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     p = p + 1
     // Optional type annotation: ": TYPE"
     let mut type_name: String = ""
-    if peek_type(tokens, p) == "COLON" {
+    if peek_type(tokens, p) == "COLON":
         p = p + 1
         type_name = peek_value(tokens, p)
         p = p + 1
-    }
     // Expect "="
-    if peek_type(tokens, p) == "ASSIGN" {
+    if peek_type(tokens, p) == "ASSIGN":
         p = p + 1
-    }
     // Parse value expression
     let er: ExprResult = parse_expr(tokens, p, filename)
     p = er.pos
     // Skip optional semicolons/newlines
     p = skip_semis(tokens, p)
     return new_def_result(Definition::LetDef(name, type_name, er.expr), p)
-}
 
 // ---------------------------------------------------------------------------
 
-fn parse_extern_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_extern_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     // extern "C" fn name(params) -> RetType
     let mut p: Int = pos + 1
     // Skip the "C" string literal (ABI specifier)
@@ -653,92 +575,79 @@ fn parse_extern_def(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     // Parse parameters
     p = expect(tokens, p, "LPAREN")
     let mut params: List<Param> = []
-    if peek_type(tokens, p) != "RPAREN" {
+    if peek_type(tokens, p) != "RPAREN":
         let pr: ParamResult = parse_param(tokens, p, filename)
         params.push(pr.param)
         p = pr.pos
-        for _ in 0..50 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..50:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "RPAREN")
                 let mut ret_type: Option<TypeExpr> = none
-                if peek_type(tokens, p) == "ARROW" {
+                if peek_type(tokens, p) == "ARROW":
                     p = p + 1
                     let tr: TypeResult = parse_type_expr(tokens, p, filename)
                     ret_type = Some(tr.type_expr)
                     p = tr.pos
-                }
                 return new_def_result(Definition::ExternFnDef(abi, name, params, ret_type), p)
-            }
             p = p + 1
             let pr2: ParamResult = parse_param(tokens, p, filename)
             params.push(pr2.param)
             p = pr2.pos
-        }
-    }
     p = expect(tokens, p, "RPAREN")
 
     let mut ret_type: Option<TypeExpr> = none
-    if peek_type(tokens, p) == "ARROW" {
+    if peek_type(tokens, p) == "ARROW":
         p = p + 1
         let tr: TypeResult = parse_type_expr(tokens, p, filename)
         ret_type = Some(tr.type_expr)
         p = tr.pos
-    }
     return new_def_result(Definition::ExternFnDef(abi, name, params, ret_type), p)
-}
 
 // ---------------------------------------------------------------------------
 // Export definition
 // ---------------------------------------------------------------------------
 
-fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_export_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let mut p: Int = pos + 1
     let tt: String = peek_type(tokens, p)
 
-    if tt == "KW_FN" {
+    if tt == "KW_FN":
         let r_fn: DefResult = parse_fn_def(tokens, p, filename)
         let exp_items_fn: List<String> = []
         return new_def_result(Definition::ExportDef(none, exp_items_fn), r_fn.pos)
-    }
-    if tt == "KW_STRUCT" {
+    if tt == "KW_STRUCT":
         let r_st: DefResult = parse_struct_def(tokens, p, filename)
         let exp_items_st: List<String> = []
         return new_def_result(Definition::ExportDef(none, exp_items_st), r_st.pos)
-    }
 
     let mut names: List<String> = []
     names.push(peek_value(tokens, p))
     p = p + 1
-    for _ in 0..100 {
-        if peek_type(tokens, p) != "COMMA" {
+    for _ in 0..100:
+        if peek_type(tokens, p) != "COMMA":
             return new_def_result(Definition::ExportDef(none, names), p)
-        }
         p = p + 1
         names.push(peek_value(tokens, p))
         p = p + 1
-    }
     return new_def_result(Definition::ExportDef(none, names), p)
-}
 
 // ---------------------------------------------------------------------------
 // Function definition
 // ---------------------------------------------------------------------------
 
-fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let mut p: Int = pos
     let mut is_pub: Bool = false
     // v4.68.0: ``is_async`` activated — the lexer emits ``KW_ASYNC`` again.
     let mut is_async: Bool = false
 
-    if peek_type(tokens, p) == "KW_PUB" {
+    if peek_type(tokens, p) == "KW_PUB":
         is_pub = true
         p = p + 1
-    }
     // v4.68.0: check for ``async fn`` (KW_ASYNC before KW_FN).
-    if peek_type(tokens, p) == "KW_ASYNC" {
+    if peek_type(tokens, p) == "KW_ASYNC":
         is_async = true
         p = p + 1
-    }
     p = expect(tokens, p, "KW_FN")
 
     let name: String = peek_value(tokens, p)
@@ -746,155 +655,133 @@ fn parse_fn_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
 
     // Optional type params <T, U>
     let mut type_params: List<String> = []
-    if peek_type(tokens, p) == "LT" {
+    if peek_type(tokens, p) == "LT":
         p = p + 1
         type_params.push(peek_value(tokens, p))
         p = p + 1
-        for _ in 0..20 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..20:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "GT")
                 return parse_fn_params(tokens, p, filename, name, is_pub, type_params, is_async)
-            }
             p = p + 1
             type_params.push(peek_value(tokens, p))
             p = p + 1
-        }
         p = expect(tokens, p, "GT")
-    }
 
     return parse_fn_params(tokens, p, filename, name, is_pub, type_params, is_async)
-}
 
-fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, is_async: Bool) -> DefResult {
+fn parse_fn_params(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, is_async: Bool) -> DefResult:
     let mut p: Int = pos
     p = expect(tokens, p, "LPAREN")
     let mut params: List<Param> = []
 
-    if peek_type(tokens, p) != "RPAREN" {
+    if peek_type(tokens, p) != "RPAREN":
         let pr: ParamResult = parse_param(tokens, p, filename)
         params.push(pr.param)
         p = pr.pos
 
-        for _ in 0..50 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..50:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "RPAREN")
                 return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params, is_async)
-            }
             p = p + 1
-            if peek_type(tokens, p) == "RPAREN" {
+            if peek_type(tokens, p) == "RPAREN":
                 p = p + 1
                 return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params, is_async)
-            }
             let pr2: ParamResult = parse_param(tokens, p, filename)
             params.push(pr2.param)
             p = pr2.pos
-        }
-    }
     p = expect(tokens, p, "RPAREN")
 
     return parse_fn_body(tokens, p, filename, name, is_pub, type_params, params, is_async)
-}
 
-fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, params: List<Param>, is_async: Bool) -> DefResult {
+fn parse_fn_body(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, params: List<Param>, is_async: Bool) -> DefResult:
     let mut p: Int = pos
 
     let mut ret_type: Option<TypeExpr> = none
-    if peek_type(tokens, p) == "ARROW" {
+    if peek_type(tokens, p) == "ARROW":
         p = p + 1
         let tr: TypeResult = parse_type_expr(tokens, p, filename)
         ret_type = Some(tr.type_expr)
         p = tr.pos
-    }
 
     // v5.15.0 Te.2.D — implicit-return one-liner: ``fn name(args) = expr``.
     // Synthesize ``{ return expr }`` so downstream lowering is unchanged.
     let mut body_block: Block = new_block(new_span(0, 0, 0, 0), [])
-    if peek_type(tokens, p) == "ASSIGN" {
+    if peek_type(tokens, p) == "ASSIGN":
         p = p + 1
         let er: ExprResult = parse_expr(tokens, p, filename, 0)
         let mut implstmts: List<Stmt> = []
         implstmts.push(Stmt::Return(Some(er.expr)))
         body_block = new_block(new_span(0, 0, 0, 0), implstmts)
         p = er.pos
-    } else {
+    else:
         let br: BlockResult = parse_block(tokens, p, filename)
         body_block = br.block
         p = br.pos
-    }
 
     let mut decorators: List<Decorator> = []
-    if is_async {
+    if is_async:
         decorators.push(new_decorator("async"))
-    }
     let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, body_block, decorators)
     return new_def_result(Definition::FnDef(fd), p)
-}
 
-fn parse_param(tokens: List<Token>, pos: Int, filename: String) -> ParamResult {
+fn parse_param(tokens: List<Token>, pos: Int, filename: String) -> ParamResult:
     let name: String = peek_value(tokens, pos)
     let mut p: Int = pos + 1
     // Handle bare "self" parameter (no type annotation)
-    if name == "self" {
-        if peek_type(tokens, p) != "COLON" {
+    if name == "self":
+        if peek_type(tokens, p) != "COLON":
             let param: Param = new_param("self", none)
             return new_param_result(param, p)
-        }
-    }
     p = expect(tokens, p, "COLON")
     let tr: TypeResult = parse_type_expr(tokens, p, filename)
     let param: Param = new_param(name, Some(tr.type_expr))
     return new_param_result(param, tr.pos)
-}
 
 // ---------------------------------------------------------------------------
 // Struct definition
 // ---------------------------------------------------------------------------
 
-fn parse_struct_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_struct_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let mut p: Int = pos
     let mut is_pub: Bool = false
 
-    if peek_type(tokens, p) == "KW_PUB" {
+    if peek_type(tokens, p) == "KW_PUB":
         is_pub = true
         p = p + 1
-    }
     p = expect(tokens, p, "KW_STRUCT")
 
     let name: String = peek_value(tokens, p)
     p = p + 1
 
     let mut type_params: List<String> = []
-    if peek_type(tokens, p) == "LT" {
+    if peek_type(tokens, p) == "LT":
         p = p + 1
         type_params.push(peek_value(tokens, p))
         p = p + 1
-        for _ in 0..20 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..20:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "GT")
                 return parse_struct_fields(tokens, p, filename, name, is_pub, type_params)
-            }
             p = p + 1
             type_params.push(peek_value(tokens, p))
             p = p + 1
-        }
         p = expect(tokens, p, "GT")
-    }
 
     return parse_struct_fields(tokens, p, filename, name, is_pub, type_params)
-}
 
-fn parse_struct_fields(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> DefResult {
+fn parse_struct_fields(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> DefResult:
     let mut p: Int = pos
     p = expect(tokens, p, "LBRACE")
 
     let mut fields: List<StructField> = []
-    for _ in 0..100 {
+    for _ in 0..100:
         p = skip_semis(tokens, p)
-        if peek_type(tokens, p) == "RBRACE" {
+        if peek_type(tokens, p) == "RBRACE":
             p = p + 1
             let sd_early: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
             return new_def_result(Definition::StructDef(sd_early), p)
-        }
 
         let fname: String = peek_value(tokens, p)
         p = p + 1
@@ -906,248 +793,211 @@ fn parse_struct_fields(tokens: List<Token>, pos: Int, filename: String, name: St
         fields.push(field)
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    }
 
     let sd_final: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
     return new_def_result(Definition::StructDef(sd_final), p)
-}
 
 // ---------------------------------------------------------------------------
 // Enum definition
 // ---------------------------------------------------------------------------
 
-fn parse_enum_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_enum_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let mut p: Int = pos
     let mut is_pub: Bool = false
 
-    if peek_type(tokens, p) == "KW_PUB" {
+    if peek_type(tokens, p) == "KW_PUB":
         is_pub = true
         p = p + 1
-    }
     p = expect(tokens, p, "KW_ENUM")
 
     let name: String = peek_value(tokens, p)
     p = p + 1
 
     let mut type_params: List<String> = []
-    if peek_type(tokens, p) == "LT" {
+    if peek_type(tokens, p) == "LT":
         p = p + 1
         type_params.push(peek_value(tokens, p))
         p = p + 1
-        for _ in 0..20 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..20:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "GT")
                 return parse_enum_body(tokens, p, filename, name, is_pub, type_params)
-            }
             p = p + 1
             type_params.push(peek_value(tokens, p))
             p = p + 1
-        }
         p = expect(tokens, p, "GT")
-    }
 
     return parse_enum_body(tokens, p, filename, name, is_pub, type_params)
-}
 
-fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> DefResult {
+fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> DefResult:
     let mut p: Int = pos
     p = expect(tokens, p, "LBRACE")
 
     let mut variants: List<EnumVariant> = []
-    for _ in 0..100 {
+    for _ in 0..100:
         p = skip_semis(tokens, p)
-        if peek_type(tokens, p) == "RBRACE" {
+        if peek_type(tokens, p) == "RBRACE":
             p = p + 1
             let ed_early: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
             return new_def_result(Definition::EnumDef(ed_early), p)
-        }
 
         let vname: String = peek_value(tokens, p)
         p = p + 1
         let mut vtypes: List<TypeExpr> = []
 
-        if peek_type(tokens, p) == "LPAREN" {
+        if peek_type(tokens, p) == "LPAREN":
             p = p + 1
-            if peek_type(tokens, p) != "RPAREN" {
+            if peek_type(tokens, p) != "RPAREN":
                 let tr: TypeResult = parse_type_expr(tokens, p, filename)
                 vtypes.push(tr.type_expr)
                 p = tr.pos
-                for _ in 0..20 {
-                    if peek_type(tokens, p) != "COMMA" {
+                for _ in 0..20:
+                    if peek_type(tokens, p) != "COMMA":
                         p = expect(tokens, p, "RPAREN")
                         let v_inner: EnumVariant = new_enum_variant(vname, vtypes)
                         variants.push(v_inner)
                         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
                         // Continue loop
                         return parse_enum_body_continue(tokens, p, filename, name, is_pub, type_params, variants)
-                    }
                     p = p + 1
                     let tr2: TypeResult = parse_type_expr(tokens, p, filename)
                     vtypes.push(tr2.type_expr)
                     p = tr2.pos
-                }
-            }
             p = expect(tokens, p, "RPAREN")
-        }
 
         let v_outer: EnumVariant = new_enum_variant(vname, vtypes)
         variants.push(v_outer)
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    }
 
     let ed_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
     return new_def_result(Definition::EnumDef(ed_final), p)
-}
 
-fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, variants: List<EnumVariant>) -> DefResult {
+fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, variants: List<EnumVariant>) -> DefResult:
     let mut p: Int = pos
     let mut vars: List<EnumVariant> = variants
 
-    for _ in 0..100 {
+    for _ in 0..100:
         p = skip_semis(tokens, p)
-        if peek_type(tokens, p) == "RBRACE" {
+        if peek_type(tokens, p) == "RBRACE":
             p = p + 1
             let ed_c_early: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
             return new_def_result(Definition::EnumDef(ed_c_early), p)
-        }
 
         let vn: String = peek_value(tokens, p)
         p = p + 1
         let mut vt: List<TypeExpr> = []
 
-        if peek_type(tokens, p) == "LPAREN" {
+        if peek_type(tokens, p) == "LPAREN":
             p = p + 1
-            if peek_type(tokens, p) != "RPAREN" {
+            if peek_type(tokens, p) != "RPAREN":
                 let tr: TypeResult = parse_type_expr(tokens, p, filename)
                 vt.push(tr.type_expr)
                 p = tr.pos
-                for _ in 0..20 {
-                    if peek_type(tokens, p) != "COMMA" {
+                for _ in 0..20:
+                    if peek_type(tokens, p) != "COMMA":
                         p = expect(tokens, p, "RPAREN")
                         let v2: EnumVariant = new_enum_variant(vn, vt)
                         vars.push(v2)
                         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
                         return parse_enum_body_continue(tokens, p, filename, name, is_pub, type_params, vars)
-                    }
                     p = p + 1
                     let tr2: TypeResult = parse_type_expr(tokens, p, filename)
                     vt.push(tr2.type_expr)
                     p = tr2.pos
-                }
-            }
             p = expect(tokens, p, "RPAREN")
-        }
 
         let v: EnumVariant = new_enum_variant(vn, vt)
         vars.push(v)
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    }
 
     let ed_c_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
     return new_def_result(Definition::EnumDef(ed_c_final), p)
-}
 
 // ---------------------------------------------------------------------------
 // Type alias
 // ---------------------------------------------------------------------------
 
-fn parse_type_alias_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_type_alias_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let mut p: Int = pos + 1
     let name: String = peek_value(tokens, p)
     p = p + 1
     p = expect(tokens, p, "ASSIGN")
     let tr: TypeResult = parse_type_expr(tokens, p, filename)
     return new_def_result(Definition::TypeAlias(name, tr.type_expr), tr.pos)
-}
 
-fn parse_tipo_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_tipo_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     // tipo Name { fields | variants } — unified type definition.
     // If first member starts with BAR → enum, else → struct.
     let mut p: Int = pos
     let mut is_pub: Bool = false
-    if peek_type(tokens, p) == "KW_PUB" {
+    if peek_type(tokens, p) == "KW_PUB":
         is_pub = true
         p = p + 1
-    }
     p = p + 1
     let name: String = peek_value(tokens, p)
     p = p + 1
 
     let mut type_params: List<String> = []
-    if peek_type(tokens, p) == "LT" {
+    if peek_type(tokens, p) == "LT":
         p = p + 1
         type_params.push(peek_value(tokens, p))
         p = p + 1
-        for _ in 0..20 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..20:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "GT")
                 // Peek after LBRACE to decide struct vs enum
                 let peek_pos: Int = p + 1
                 let first_tt: String = peek_type(tokens, skip_semis(tokens, peek_pos))
-                if first_tt == "BAR" {
+                if first_tt == "BAR":
                     return parse_tipo_enum(tokens, p, filename, name, is_pub, type_params)
-                }
                 return parse_struct_fields(tokens, p, filename, name, is_pub, type_params)
-            }
             p = p + 1
             type_params.push(peek_value(tokens, p))
             p = p + 1
-        }
         p = expect(tokens, p, "GT")
-    }
 
     // Peek inside { to decide: BAR → enum variants, else → struct fields
     let peek_inside: Int = skip_semis(tokens, p + 1)
-    if peek_type(tokens, peek_inside) == "BAR" {
+    if peek_type(tokens, peek_inside) == "BAR":
         return parse_tipo_enum(tokens, p, filename, name, is_pub, type_params)
-    }
     return parse_struct_fields(tokens, p, filename, name, is_pub, type_params)
-}
 
-fn parse_tipo_enum(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> DefResult {
+fn parse_tipo_enum(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> DefResult:
     // Parse { | Variant1 | Variant2(Type) | ... }
     let mut p: Int = pos
     p = expect(tokens, p, "LBRACE")
 
     let mut variants: List<EnumVariant> = []
-    for _ in 0..200 {
+    for _ in 0..200:
         p = skip_semis(tokens, p)
-        if peek_type(tokens, p) == "RBRACE" {
+        if peek_type(tokens, p) == "RBRACE":
             p = p + 1
             let ed: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
             return new_def_result(Definition::EnumDef(ed), p)
-        }
         p = expect(tokens, p, "BAR")
         let vname: String = peek_value(tokens, p)
         p = p + 1
 
         let mut vtypes: List<TypeExpr> = []
-        if peek_type(tokens, p) == "LPAREN" {
+        if peek_type(tokens, p) == "LPAREN":
             p = p + 1
             let mut done_args: Bool = false
-            for _ in 0..20 {
-                if !done_args {
-                    if peek_type(tokens, p) == "RPAREN" {
+            for _ in 0..20:
+                if !done_args:
+                    if peek_type(tokens, p) == "RPAREN":
                         p = p + 1
                         done_args = true
-                    }
-                }
-                if !done_args {
+                if !done_args:
                     let tr: TypeResult = parse_type_expr(tokens, p, filename)
                     vtypes.push(tr.type_expr)
                     p = tr.pos
                     if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-                }
-            }
-        }
         let v_parsed: EnumVariant = new_enum_variant(vname, vtypes)
         variants.push(v_parsed)
-    }
     let ed_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
     return new_def_result(Definition::EnumDef(ed_final), p)
-}
 
 // ---------------------------------------------------------------------------
 // Impl definition
@@ -1156,12 +1006,11 @@ fn parse_tipo_enum(tokens: List<Token>, pos: Int, filename: String, name: String
 // Parse a function definition and return just the FnDefData + new pos.
 // Used by parse_impl_def to avoid DefResult.defn enum field access
 // (Python emitter limitation: struct fields of enum type cause IR type mismatch).
-struct FnDataResult {
-    data: FnDefData,
+struct FnDataResult:
+    data: FnDefData
     pos: Int
-}
 
-fn parse_fn_def_as_data(tokens: List<Token>, pos: Int, filename: String) -> FnDataResult {
+fn parse_fn_def_as_data(tokens: List<Token>, pos: Int, filename: String) -> FnDataResult:
     let mut p: Int = pos
     let mut is_pub: Bool = false
     if peek_type(tokens, p) == "KW_PUB" { is_pub = true; p = p + 1 }
@@ -1169,156 +1018,131 @@ fn parse_fn_def_as_data(tokens: List<Token>, pos: Int, filename: String) -> FnDa
     let name: String = peek_value(tokens, p)
     p = p + 1
     let mut type_params: List<String> = []
-    if peek_type(tokens, p) == "LT" {
+    if peek_type(tokens, p) == "LT":
         p = p + 1
         type_params.push(peek_value(tokens, p))
         p = p + 1
-        for _ in 0..20 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..20:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "GT")
                 return parse_fn_params_as_data(tokens, p, filename, name, is_pub, type_params)
-            }
             p = p + 1
             type_params.push(peek_value(tokens, p))
             p = p + 1
-        }
         p = expect(tokens, p, "GT")
-    }
     return parse_fn_params_as_data(tokens, p, filename, name, is_pub, type_params)
-}
 
-fn parse_fn_params_as_data(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> FnDataResult {
+fn parse_fn_params_as_data(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>) -> FnDataResult:
     let mut p: Int = pos
     p = expect(tokens, p, "LPAREN")
     let mut params: List<Param> = []
-    if peek_type(tokens, p) != "RPAREN" {
+    if peek_type(tokens, p) != "RPAREN":
         let pr: ParamResult = parse_param(tokens, p, filename)
         params.push(pr.param)
         p = pr.pos
-        for _ in 0..50 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..50:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "RPAREN")
                 return parse_fn_body_as_data(tokens, p, filename, name, is_pub, type_params, params)
-            }
             p = p + 1
-            if peek_type(tokens, p) == "RPAREN" {
+            if peek_type(tokens, p) == "RPAREN":
                 p = p + 1
                 return parse_fn_body_as_data(tokens, p, filename, name, is_pub, type_params, params)
-            }
             let pr2: ParamResult = parse_param(tokens, p, filename)
             params.push(pr2.param)
             p = pr2.pos
-        }
-    }
     p = expect(tokens, p, "RPAREN")
     return parse_fn_body_as_data(tokens, p, filename, name, is_pub, type_params, params)
-}
 
-fn parse_fn_body_as_data(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, params: List<Param>) -> FnDataResult {
+fn parse_fn_body_as_data(tokens: List<Token>, pos: Int, filename: String, name: String, is_pub: Bool, type_params: List<String>, params: List<Param>) -> FnDataResult:
     let mut p: Int = pos
     let mut ret_type: Option<TypeExpr> = none
-    if peek_type(tokens, p) == "ARROW" {
+    if peek_type(tokens, p) == "ARROW":
         p = p + 1
         let tr: TypeResult = parse_type_expr(tokens, p, filename)
         ret_type = Some(tr.type_expr)
         p = tr.pos
-    }
     // v5.15.0 Te.2.D — implicit-return one-liner: ``fn name(args) = expr``.
     let mut body_block: Block = new_block(new_span(0, 0, 0, 0), [])
-    if peek_type(tokens, p) == "ASSIGN" {
+    if peek_type(tokens, p) == "ASSIGN":
         p = p + 1
         let er: ExprResult = parse_expr(tokens, p, filename, 0)
         let mut implstmts: List<Stmt> = []
         implstmts.push(Stmt::Return(Some(er.expr)))
         body_block = new_block(new_span(0, 0, 0, 0), implstmts)
         p = er.pos
-    } else {
+    else:
         let br: BlockResult = parse_block(tokens, p, filename)
         body_block = br.block
         p = br.pos
-    }
     let decorators: List<Decorator> = []
     let fd: FnDefData = new_fn_def_data(new_span(0, 0, 0, 0), name, is_pub, type_params, params, ret_type, body_block, decorators)
     return new FnDataResult { data: fd, pos: p }
-}
 
-fn skip_brace_block(tokens: List<Token>, pos: Int) -> Int {
+fn skip_brace_block(tokens: List<Token>, pos: Int) -> Int:
     let mut p: Int = pos
-    if peek_type(tokens, p) == "LBRACE" {
+    if peek_type(tokens, p) == "LBRACE":
         p = p + 1
         let mut depth: Int = 1
-        for _ in 0..500 {
+        for _ in 0..500:
             if depth == 0 { return p }
             if peek_type(tokens, p) == "LBRACE" { depth = depth + 1 }
             if peek_type(tokens, p) == "RBRACE" { depth = depth - 1 }
             p = p + 1
-        }
-    }
     return p
-}
 
-fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let mut p: Int = pos + 1
 
     // Skip optional type params: impl<T, U> ...
-    if peek_type(tokens, p) == "LT" {
+    if peek_type(tokens, p) == "LT":
         p = p + 1
         let mut done_tp: Bool = false
-        for _ in 0..20 {
-            if !done_tp {
+        for _ in 0..20:
+            if !done_tp:
                 if peek_type(tokens, p) == "GT" { p = p + 1; done_tp = true }
                 if !done_tp { p = p + 1 }
-            }
-        }
-    }
 
     let first_name: String = peek_value(tokens, p)
     p = p + 1
 
     // Skip optional type args: impl<T> Name<T> { ... }
-    if peek_type(tokens, p) == "LT" {
+    if peek_type(tokens, p) == "LT":
         p = p + 1
         let mut done_ta: Bool = false
-        for _ in 0..20 {
-            if !done_ta {
+        for _ in 0..20:
+            if !done_ta:
                 if peek_type(tokens, p) == "GT" { p = p + 1; done_ta = true }
                 if !done_ta { p = p + 1 }
-            }
-        }
-    }
 
     // Check for "impl Trait for Type { ... }" syntax
     let mut target: String = first_name
     let mut trait_name: Option<String> = none
-    if peek_type(tokens, p) == "KW_FOR" {
+    if peek_type(tokens, p) == "KW_FOR":
         p = p + 1
         trait_name = Some(first_name)
         target = peek_value(tokens, p)
         p = p + 1
-    }
 
     p = expect(tokens, p, "LBRACE")
 
     let mut methods: List<FnDefData> = []
-    for _ in 0..100 {
+    for _ in 0..100:
         p = skip_semis(tokens, p)
-        if peek_type(tokens, p) == "RBRACE" {
+        if peek_type(tokens, p) == "RBRACE":
             p = p + 1
             return new_def_result(Definition::ImplDef(target, trait_name, methods), p)
-        }
         let r: FnDataResult = parse_fn_def_as_data(tokens, p, filename)
         methods.push(r.data)
         p = r.pos
-    }
 
     return new_def_result(Definition::ImplDef(target, trait_name, methods), p)
-}
 
 // ---------------------------------------------------------------------------
 // Agent definition (brace-skip for bootstrap)
 // ---------------------------------------------------------------------------
 
-fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     // Pre-create typed empty lists for AgentDefData constructor
     let no_inputs: List<AgentInput> = []
     let no_outputs: List<AgentOutput> = []
@@ -1327,139 +1151,117 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
     let no_adecs: List<Decorator> = []
     let mut p: Int = pos
     let mut is_pub: Bool = false
-    if peek_type(tokens, p) == "KW_PUB" {
+    if peek_type(tokens, p) == "KW_PUB":
         is_pub = true
         p = p + 1
-    }
     p = expect(tokens, p, "KW_AGENT")
     let name: String = peek_value(tokens, p)
     p = p + 1
     p = expect(tokens, p, "LBRACE")
     let mut depth: Int = 1
-    for _ in 0..100000 {
-        if p >= len(tokens) {
+    for _ in 0..100000:
+        if p >= len(tokens):
             let ad_eof: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
             return new_def_result(Definition::AgentDef(ad_eof), p)
-        }
         let tt: String = peek_type(tokens, p)
         if tt == "LBRACE" { depth = depth + 1 }
-        if tt == "RBRACE" {
+        if tt == "RBRACE":
             depth = depth - 1
-            if depth == 0 {
+            if depth == 0:
                 p = p + 1
                 let ad_close: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
                 return new_def_result(Definition::AgentDef(ad_close), p)
-            }
-        }
         p = p + 1
-    }
     let ad_end: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
     return new_def_result(Definition::AgentDef(ad_end), p)
-}
 
 // ---------------------------------------------------------------------------
 // Pipe definition (brace-skip for bootstrap)
 // ---------------------------------------------------------------------------
 
-fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let no_stages: List<Expr> = []
     let mut p: Int = pos
     let mut is_pub: Bool = false
-    if peek_type(tokens, p) == "KW_PUB" {
+    if peek_type(tokens, p) == "KW_PUB":
         is_pub = true
         p = p + 1
-    }
     p = expect(tokens, p, "KW_PIPE")
     let name: String = peek_value(tokens, p)
     p = p + 1
     p = expect(tokens, p, "LBRACE")
     let mut depth: Int = 1
-    for _ in 0..100000 {
-        if p >= len(tokens) {
+    for _ in 0..100000:
+        if p >= len(tokens):
             let pd_eof: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
             return new_def_result(Definition::PipeDef(pd_eof), p)
-        }
         let tt: String = peek_type(tokens, p)
         if tt == "LBRACE" { depth = depth + 1 }
-        if tt == "RBRACE" {
+        if tt == "RBRACE":
             depth = depth - 1
-            if depth == 0 {
+            if depth == 0:
                 p = p + 1
                 let pd_close: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
                 return new_def_result(Definition::PipeDef(pd_close), p)
-            }
-        }
         p = p + 1
-    }
     let pd_end: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
     return new_def_result(Definition::PipeDef(pd_end), p)
-}
 
 // ---------------------------------------------------------------------------
 // Decorated definition
 // ---------------------------------------------------------------------------
 
-fn parse_decorated_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult {
+fn parse_decorated_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let mut p: Int = pos
-    for _ in 0..10 {
+    for _ in 0..10:
         if peek_type(tokens, p) != "AT" { return parse_definition(tokens, p, filename) }
         p = p + 1
         p = p + 1
-        if peek_type(tokens, p) == "LPAREN" {
+        if peek_type(tokens, p) == "LPAREN":
             p = p + 1
             let mut depth: Int = 1
-            for _ in 0..1000 {
+            for _ in 0..1000:
                 if p >= len(tokens) { return parse_definition(tokens, p, filename) }
                 if peek_type(tokens, p) == "LPAREN" { depth = depth + 1 }
-                if peek_type(tokens, p) == "RPAREN" {
+                if peek_type(tokens, p) == "RPAREN":
                     depth = depth - 1
-                    if depth == 0 {
+                    if depth == 0:
                         p = p + 1
                         return parse_definition(tokens, p, filename)
-                    }
-                }
                 p = p + 1
-            }
-        }
-    }
     return parse_definition(tokens, p, filename)
-}
 
 // ---------------------------------------------------------------------------
 // Block
 // ---------------------------------------------------------------------------
 
-fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult {
+fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult:
     let mut p: Int = pos
     p = expect(tokens, p, "LBRACE")
 
     let mut stmts: List<Stmt> = []
-    for _ in 0..100000 {
+    for _ in 0..100000:
         p = skip_semis(tokens, p)
-        if at_end(tokens, p) {
+        if at_end(tokens, p):
             let blk_eof: Block = new_block(new_span(0, 0, 0, 0), stmts)
             return new_block_result(blk_eof, p)
-        }
-        if peek_type(tokens, p) == "RBRACE" {
+        if peek_type(tokens, p) == "RBRACE":
             p = p + 1
             let blk_close: Block = new_block(new_span(0, 0, 0, 0), stmts)
             return new_block_result(blk_close, p)
-        }
 
         let sr: StmtResult = parse_stmt(tokens, p, filename)
         stmts.push(sr.stmt)
         p = sr.pos
-    }
 
     let blk_end: Block = new_block(new_span(0, 0, 0, 0), stmts)
     return new_block_result(blk_end, p)
-}
 
 // ---------------------------------------------------------------------------
 // Statement dispatch
 // ---------------------------------------------------------------------------
 
-fn parse_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
+fn parse_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
     let tt: String = peek_type(tokens, pos)
 
     if tt == "KW_LET" { return parse_let_stmt(tokens, pos, filename) }
@@ -1474,43 +1276,39 @@ fn parse_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
 
     let er: ExprResult = parse_expr(tokens, pos, filename, 0)
     return new_stmt_result(Stmt::ExprStmt(er.expr), er.pos)
-}
 
 // ---------------------------------------------------------------------------
 // Let statement
 // ---------------------------------------------------------------------------
 
-fn parse_let_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
+fn parse_let_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
     let mut p: Int = pos + 1
     let mut is_mut: Bool = false
 
-    if peek_type(tokens, p) == "KW_MUT" {
+    if peek_type(tokens, p) == "KW_MUT":
         is_mut = true
         p = p + 1
-    }
 
     let name: String = peek_value(tokens, p)
     p = p + 1
 
     let mut type_ann: Option<TypeExpr> = none
-    if peek_type(tokens, p) == "COLON" {
+    if peek_type(tokens, p) == "COLON":
         p = p + 1
         let tr: TypeResult = parse_type_expr(tokens, p, filename)
         type_ann = Some(tr.type_expr)
         p = tr.pos
-    }
 
     p = expect(tokens, p, "ASSIGN")
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
     return new_stmt_result(Stmt::Let(name, is_mut, type_ann, er.expr), er.pos)
-}
 
 // ---------------------------------------------------------------------------
 // Return statement
 // ---------------------------------------------------------------------------
 
-fn parse_return_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
+fn parse_return_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
     let mut p: Int = pos + 1
 
     let tt: String = peek_type(tokens, p)
@@ -1520,13 +1318,12 @@ fn parse_return_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtRes
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
     return new_stmt_result(Stmt::Return(Some(er.expr)), er.pos)
-}
 
 // ---------------------------------------------------------------------------
 // For statement
 // ---------------------------------------------------------------------------
 
-fn parse_for_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
+fn parse_for_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
     let mut p: Int = pos + 1
     let var_name: String = peek_value(tokens, p)
     p = p + 1
@@ -1537,73 +1334,63 @@ fn parse_for_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
 
     let br: BlockResult = parse_block(tokens, p, filename)
     return new_stmt_result(Stmt::For(var_name, er.expr, br.block), br.pos)
-}
 
-fn parse_while_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
+fn parse_while_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
     let mut p: Int = pos + 1
     let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
     p = cond_r.pos
     let body_r: BlockResult = parse_block(tokens, p, filename)
     p = body_r.pos
     return new_stmt_result(Stmt::While(cond_r.expr, body_r.block), p)
-}
 
-fn parse_assert_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult {
+fn parse_assert_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
     let mut p: Int = pos + 1
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
     p = er.pos
     let mut msg: Option<String> = none
-    if peek_type(tokens, p) == "COMMA" {
+    if peek_type(tokens, p) == "COMMA":
         p = p + 1
         msg = Some(peek_value(tokens, p))
         p = p + 1
-    }
     return new_stmt_result(Stmt::Assert(er.expr, msg), p)
-}
 
 // ---------------------------------------------------------------------------
 // Expression parser — precedence climbing
 // ---------------------------------------------------------------------------
 
-fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) -> ExprResult {
+fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) -> ExprResult:
     let mut left_r: ExprResult = parse_unary(tokens, pos, filename)
     let mut left: Expr = left_r.expr
     let mut p: Int = left_r.pos
 
     // Assignment operators (right-associative, lowest precedence)
-    if min_prec == 0 {
+    if min_prec == 0:
         let att: String = peek_type(tokens, p)
-        if att == "ASSIGN" {
+        if att == "ASSIGN":
             p = p + 1
             let rhs_eq: ExprResult = parse_expr(tokens, p, filename, 0)
             return new_expr_result(Expr::Assign(left, "=", rhs_eq.expr), rhs_eq.pos)
-        }
-        if att == "PLUS_EQ" {
+        if att == "PLUS_EQ":
             p = p + 1
             let rhs_add: ExprResult = parse_expr(tokens, p, filename, 0)
             return new_expr_result(Expr::Assign(left, "+=", rhs_add.expr), rhs_add.pos)
-        }
-        if att == "MINUS_EQ" {
+        if att == "MINUS_EQ":
             p = p + 1
             let rhs_sub: ExprResult = parse_expr(tokens, p, filename, 0)
             return new_expr_result(Expr::Assign(left, "-=", rhs_sub.expr), rhs_sub.pos)
-        }
-        if att == "STAR_EQ" {
+        if att == "STAR_EQ":
             p = p + 1
             let rhs_mul: ExprResult = parse_expr(tokens, p, filename, 0)
             return new_expr_result(Expr::Assign(left, "*=", rhs_mul.expr), rhs_mul.pos)
-        }
-        if att == "SLASH_EQ" {
+        if att == "SLASH_EQ":
             p = p + 1
             let rhs_div: ExprResult = parse_expr(tokens, p, filename, 0)
             return new_expr_result(Expr::Assign(left, "/=", rhs_div.expr), rhs_div.pos)
-        }
-        if att == "SEND" {
+        if att == "SEND":
             p = p + 1
             let rhs_send: ExprResult = parse_expr(tokens, p, filename, 0)
             return new_expr_result(Expr::Send(left, rhs_send.expr), rhs_send.pos)
-        }
-        if att == "FAT_ARROW" {
+        if att == "FAT_ARROW":
             p = p + 1
             let body: ExprResult = parse_expr(tokens, p, filename, 0)
             // Extract lambda params from the left-hand side expression.
@@ -1633,11 +1420,9 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
                 _ => {}
             }
             return new_expr_result(Expr::Lambda(params, LambdaBody::ExprBody(body.expr)), body.pos)
-        }
-    }
 
     // Binary operator loop
-    for _ in 0..10000 {
+    for _ in 0..10000:
         if at_end(tokens, p) { return new_expr_result(left, p) }
 
         let op_tt: String = peek_type(tokens, p)
@@ -1655,121 +1440,101 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
         let right_r: ExprResult = parse_expr(tokens, p, filename, next_prec)
         p = right_r.pos
 
-        if op == "|>" {
+        if op == "|>":
             left = Expr::Pipe(left, right_r.expr)
-        } else {
-            if op == ".." {
+        else:
+            if op == "..":
                 left = Expr::Range(left, right_r.expr, false)
-            } else {
-                if op == "..=" {
+            else:
+                if op == "..=":
                     left = Expr::Range(left, right_r.expr, true)
-                } else {
+                else:
                     left = Expr::Binary(left, op, right_r.expr)
-                }
-            }
-        }
-    }
 
     return new_expr_result(left, p)
-}
 
 // ---------------------------------------------------------------------------
 // Unary expressions
 // ---------------------------------------------------------------------------
 
-fn parse_unary(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_unary(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let tt: String = peek_type(tokens, pos)
 
-    if tt == "MINUS" {
+    if tt == "MINUS":
         let r_neg: ExprResult = parse_unary(tokens, pos + 1, filename)
         return new_expr_result(Expr::Unary("-", r_neg.expr), r_neg.pos)
-    }
-    if tt == "BANG" {
+    if tt == "BANG":
         let r_not: ExprResult = parse_unary(tokens, pos + 1, filename)
         return new_expr_result(Expr::Unary("!", r_not.expr), r_not.pos)
-    }
     // v4.68.0: ``KW_AWAIT`` restored (Arc 8). See v4.67.0/DESIGN.md §3.2.
-    if tt == "KW_AWAIT" {
+    if tt == "KW_AWAIT":
         let r_await: ExprResult = parse_unary(tokens, pos + 1, filename)
         return new_expr_result(Expr::Await(r_await.expr), r_await.pos)
-    }
 
     return parse_postfix(tokens, pos, filename)
-}
 
 // ---------------------------------------------------------------------------
 // Postfix expressions
 // ---------------------------------------------------------------------------
 
-fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let mut ar: ExprResult = parse_atom(tokens, pos, filename)
     let mut left: Expr = ar.expr
     let mut p: Int = ar.pos
 
-    for _ in 0..10000 {
+    for _ in 0..10000:
         if at_end(tokens, p) { return new_expr_result(left, p) }
 
         let tt: String = peek_type(tokens, p)
 
-        if tt == "LPAREN" {
+        if tt == "LPAREN":
             let cr: ExprResult = parse_call_args(tokens, p, filename, left)
             left = cr.expr
             p = cr.pos
-        } else {
-            if tt == "DOT" {
+        else:
+            if tt == "DOT":
                 p = p + 1
                 let field_name: String = peek_value(tokens, p)
                 p = p + 1
 
-                if peek_type(tokens, p) == "LPAREN" {
+                if peek_type(tokens, p) == "LPAREN":
                     let mr: ExprResult = parse_method_args(tokens, p, filename, left, field_name)
                     left = mr.expr
                     p = mr.pos
-                } else {
+                else:
                     left = Expr::FieldAccess(left, field_name)
-                }
-            } else {
-                if tt == "LBRACKET" {
+            else:
+                if tt == "LBRACKET":
                     p = p + 1
                     let mut items: List<IndexItem> = []
                     let first_ii: IndexItemResult = parse_index_item(tokens, p, filename)
                     p = first_ii.pos
                     items.push(first_ii.item)
-                    for _ in 0..128 {
-                        if peek_type(tokens, p) == "COMMA" {
+                    for _ in 0..128:
+                        if peek_type(tokens, p) == "COMMA":
                             p = p + 1
                             let nxt_ii: IndexItemResult = parse_index_item(tokens, p, filename)
                             p = nxt_ii.pos
                             items.push(nxt_ii.item)
-                        }
-                    }
                     p = expect(tokens, p, "RBRACKET")
                     // Route to Index (1 scalar), TensorIndex (≥2 scalars), or
                     // TensorSlice (any non-scalar item). v5.6.3 Sh.6 Phase 4.
                     let has_nonscalar: Bool = any_nonscalar_item(items)
-                    if has_nonscalar {
+                    if has_nonscalar:
                         left = Expr::TensorSlice(left, items)
-                    } else {
-                        if len(items) == 1 {
+                    else:
+                        if len(items) == 1:
                             left = Expr::Index(left, items[0].expr)
-                        } else {
+                        else:
                             left = Expr::TensorIndex(left, scalar_exprs_of(items))
-                        }
-                    }
-                } else {
-                    if tt == "QUESTION" {
+                else:
+                    if tt == "QUESTION":
                         p = p + 1
                         left = Expr::ErrorProp(left)
-                    } else {
+                    else:
                         return new_expr_result(left, p)
-                    }
-                }
-            }
-        }
-    }
 
     return new_expr_result(left, p)
-}
 
 // v5.6.3 Sh.6 Phase 4 — parse one subscript item (scalar / range / wildcard).
 //
@@ -1783,119 +1548,97 @@ fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
 // The expression parser normally eats `..` as a binary range operator
 // (precedence 6). We pass min_prec=7 so parse_expr stops before `..` and
 // we can classify the item ourselves.
-fn parse_index_item(tokens: List<Token>, pos: Int, filename: String) -> IndexItemResult {
-    if peek_type(tokens, pos) == "UNDERSCORE" {
+fn parse_index_item(tokens: List<Token>, pos: Int, filename: String) -> IndexItemResult:
+    if peek_type(tokens, pos) == "UNDERSCORE":
         return new IndexItemResult { item: wildcard_index_item(), pos: pos + 1 }
-    }
-    if peek_type(tokens, pos) == "RANGE" {
+    if peek_type(tokens, pos) == "RANGE":
         // `..end` — open start
         let end_r: ExprResult = parse_expr(tokens, pos + 1, filename, 7)
         return new IndexItemResult { item: range_index_item(Expr::NoneLit, end_r.expr), pos: end_r.pos }
-    }
     let first: ExprResult = parse_expr(tokens, pos, filename, 7)
-    if peek_type(tokens, first.pos) == "RANGE" {
+    if peek_type(tokens, first.pos) == "RANGE":
         let after_dd: Int = first.pos + 1
         let close: String = peek_type(tokens, after_dd)
-        if close == "COMMA" {
+        if close == "COMMA":
             return new IndexItemResult { item: range_index_item(first.expr, Expr::NoneLit), pos: after_dd }
-        }
-        if close == "RBRACKET" {
+        if close == "RBRACKET":
             return new IndexItemResult { item: range_index_item(first.expr, Expr::NoneLit), pos: after_dd }
-        }
         let end_r: ExprResult = parse_expr(tokens, after_dd, filename, 7)
         return new IndexItemResult { item: range_index_item(first.expr, end_r.expr), pos: end_r.pos }
-    }
     return new IndexItemResult { item: scalar_index_item(first.expr), pos: first.pos }
-}
 
-fn any_nonscalar_item(items: List<IndexItem>) -> Bool {
+fn any_nonscalar_item(items: List<IndexItem>) -> Bool:
     let mut i: Int = 0
     let n: Int = len(items)
-    for _ in 0..128 {
-        if i < n {
+    for _ in 0..128:
+        if i < n:
             if items[i].kind != "scalar" { return true }
             i = i + 1
-        }
-    }
     return false
-}
 
-fn scalar_exprs_of(items: List<IndexItem>) -> List<Expr> {
+fn scalar_exprs_of(items: List<IndexItem>) -> List<Expr>:
     let mut out: List<Expr> = []
     let mut i: Int = 0
     let n: Int = len(items)
-    for _ in 0..128 {
-        if i < n {
+    for _ in 0..128:
+        if i < n:
             out.push(items[i].expr)
             i = i + 1
-        }
-    }
     return out
-}
 
-fn parse_call_args(tokens: List<Token>, pos: Int, filename: String, callee: Expr) -> ExprResult {
+fn parse_call_args(tokens: List<Token>, pos: Int, filename: String, callee: Expr) -> ExprResult:
     let mut p: Int = pos + 1
     let mut args: List<Expr> = []
 
-    if peek_type(tokens, p) == "RPAREN" {
+    if peek_type(tokens, p) == "RPAREN":
         p = p + 1
         return new_expr_result(Expr::Call(callee, args), p)
-    }
 
     let a0: ExprResult = parse_expr(tokens, p, filename, 0)
     args.push(a0.expr)
     p = a0.pos
 
-    for _ in 0..100 {
-        if peek_type(tokens, p) != "COMMA" {
+    for _ in 0..100:
+        if peek_type(tokens, p) != "COMMA":
             p = expect(tokens, p, "RPAREN")
             return new_expr_result(Expr::Call(callee, args), p)
-        }
         p = p + 1
-        if peek_type(tokens, p) == "RPAREN" {
+        if peek_type(tokens, p) == "RPAREN":
             p = p + 1
             return new_expr_result(Expr::Call(callee, args), p)
-        }
         let an: ExprResult = parse_expr(tokens, p, filename, 0)
         args.push(an.expr)
         p = an.pos
-    }
 
     p = expect(tokens, p, "RPAREN")
     return new_expr_result(Expr::Call(callee, args), p)
-}
 
-fn parse_method_args(tokens: List<Token>, pos: Int, filename: String, obj: Expr, method: String) -> ExprResult {
+fn parse_method_args(tokens: List<Token>, pos: Int, filename: String, obj: Expr, method: String) -> ExprResult:
     let mut p: Int = pos + 1
     let mut args: List<Expr> = []
 
-    if peek_type(tokens, p) == "RPAREN" {
+    if peek_type(tokens, p) == "RPAREN":
         p = p + 1
         return new_expr_result(Expr::MethodCall(obj, method, args), p)
-    }
 
     let a0: ExprResult = parse_expr(tokens, p, filename, 0)
     args.push(a0.expr)
     p = a0.pos
 
-    for _ in 0..100 {
-        if peek_type(tokens, p) != "COMMA" {
+    for _ in 0..100:
+        if peek_type(tokens, p) != "COMMA":
             p = expect(tokens, p, "RPAREN")
             return new_expr_result(Expr::MethodCall(obj, method, args), p)
-        }
         p = p + 1
-        if peek_type(tokens, p) == "RPAREN" {
+        if peek_type(tokens, p) == "RPAREN":
             p = p + 1
             return new_expr_result(Expr::MethodCall(obj, method, args), p)
-        }
         let an: ExprResult = parse_expr(tokens, p, filename, 0)
         args.push(an.expr)
         p = an.pos
-    }
 
     p = expect(tokens, p, "RPAREN")
     return new_expr_result(Expr::MethodCall(obj, method, args), p)
-}
 
 // ---------------------------------------------------------------------------
 // String interpolation helpers
@@ -1906,20 +1649,15 @@ fn parse_method_args(tokens: List<Token>, pos: Int, filename: String, obj: Expr,
 // contains an unescaped `${`. The lexer preserves `\$` literally, so
 // this scans for a backslash on the byte before the `$` rather than
 // for a stripped escape prefix.
-fn has_interpolation(s: String) -> Bool {
+fn has_interpolation(s: String) -> Bool:
     let n: Int = len(s)
-    for i in 0..n {
-        if s.char_at(i) == "$" {
-            if i + 1 < n {
-                if s.char_at(i + 1) == "{" {
+    for i in 0..n:
+        if s.char_at(i) == "$":
+            if i + 1 < n:
+                if s.char_at(i + 1) == "{":
                     if i == 0 { return true }
                     if s.char_at(i - 1) != "\\" { return true }
-                }
-            }
-        }
-    }
     return false
-}
 
 // v5.16.0 Te.4.B/C — split a STRING_LIT value into a sequence of
 // alternating `Expr::StringLit` (literal text) and `Expr` (interpolated)
@@ -1931,7 +1669,7 @@ fn has_interpolation(s: String) -> Bool {
 // lowerer can route through the existing `InterpConcat` MIR (which
 // emits a chain of `__mn_str_concat` calls and Cast-to-string for
 // non-StringLit parts).
-fn split_interp_parts(s: String, filename: String) -> List<Expr> {
+fn split_interp_parts(s: String, filename: String) -> List<Expr>:
     // Position-based scan: track [seg_start, i) as the pending literal
     // segment instead of building char-by-char with `lit = lit + ch`.
     // The buffer-rebuilding approach hit a bootstrap lower bug where
@@ -1941,44 +1679,40 @@ fn split_interp_parts(s: String, filename: String) -> List<Expr> {
     let mut seg_start: Int = 0
     let mut i: Int = 0
     let n: Int = len(s)
-    for _ in 0..100000 {
+    for _ in 0..100000:
         if i >= n { break }
         let ch: String = s.char_at(i)
-        if ch == "\\" {
+        if ch == "\\":
             // Skip the escape and its next char so `\$` doesn't trip
             // the interp scanner. The literal segment kept as
             // s[seg_start..segment_end) preserves the backslash byte
             // that the lexer left intact for us.
             if i + 1 < n { i = i + 2 } else { i = i + 1 }
-        } else {
-            if ch == "$" && i + 1 < n && s.char_at(i + 1) == "{" {
+        else:
+            if ch == "$" && i + 1 < n && s.char_at(i + 1) == "{":
                 // Flush pending literal segment via substr, not a
                 // rebuilt char buffer.
-                if i > seg_start {
+                if i > seg_start:
                     let lit_text: String = s.substr(seg_start, i - seg_start)
                     parts.push(Expr::StringLit(lit_text))
-                }
                 let mut depth: Int = 1
                 let mut j: Int = i + 2
                 let mut found_close: Bool = false
-                for _ in 0..100000 {
+                for _ in 0..100000:
                     if j >= n { break }
                     let cj: String = s.char_at(j)
-                    if cj == "{" {
+                    if cj == "{":
                         depth = depth + 1
-                    } else {
-                        if cj == "}" {
+                    else:
+                        if cj == "}":
                             depth = depth - 1
                             if depth == 0 { found_close = true; break }
-                        }
-                    }
                     j = j + 1
-                }
-                if found_close == false {
+                if found_close == false:
                     // Unterminated `${...}` — fold the `$` into the
                     // pending segment and continue.
                     i = i + 1
-                } else {
+                else:
                     let expr_len: Int = j - (i + 2)
                     let expr_text: String = s.substr(i + 2, expr_len)
                     let etokens: List<Token> = tokenize(expr_text, filename)
@@ -1986,43 +1720,34 @@ fn split_interp_parts(s: String, filename: String) -> List<Expr> {
                     parts.push(er.expr)
                     i = j + 1
                     seg_start = i
-                }
-            } else {
+            else:
                 i = i + 1
-            }
-        }
-    }
-    if i > seg_start {
+    if i > seg_start:
         let tail_text: String = s.substr(seg_start, i - seg_start)
         parts.push(Expr::StringLit(tail_text))
-    }
     return parts
-}
 
 // ---------------------------------------------------------------------------
 // Atom expressions
 // ---------------------------------------------------------------------------
 
-fn parse_struct_fields_to_list(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_struct_fields_to_list(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     // Parse field values: name: expr, name: expr, ...
     // Returns a ListLit of the field values (ignoring field names)
     let mut p: Int = pos
     let mut vals: List<Expr> = []
-    for _ in 0..100 {
-        if peek_type(tokens, p) == "RBRACE" {
+    for _ in 0..100:
+        if peek_type(tokens, p) == "RBRACE":
             return new_expr_result(Expr::ListLit(vals), p + 1)
-        }
         p = p + 1  // skip field name
         p = expect(tokens, p, "COLON")
         let er: ExprResult = parse_expr(tokens, p, filename, 0)
         p = er.pos
         vals.push(er.expr)
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    }
     return new_expr_result(Expr::ListLit(vals), p)
-}
 
-fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     // Parse: new Name { field1: val1, field2: val2 }
     // Returns Call(Ident("__new_Name"), [val1, val2])
     let struct_name: String = peek_value(tokens, pos + 1)
@@ -2045,9 +1770,8 @@ fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> Ex
             return new_expr_result(Expr::Call(callee, empty), p)
         }
     }
-}
 
-fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let tt: String = peek_type(tokens, pos)
     let val: String = peek_value(tokens, pos)
 
@@ -2061,18 +1785,16 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     if tt == "FLOAT_LIT" { return new_expr_result(Expr::FloatLit(float(val)), pos + 1) }
 
     // String literal — check for interpolation ${...}
-    if tt == "STRING_LIT" {
-        if has_interpolation(val) {
+    if tt == "STRING_LIT":
+        if has_interpolation(val):
             let parts: List<Expr> = split_interp_parts(val, filename)
             // v5.16.0 Te.4.C — wrap in dedicated AST node mirroring
             // Python `InterpString`. Lowered via `InterpConcat` MIR.
             return new_expr_result(Expr::InterpString(parts), pos + 1)
-        }
         // No interp: STRING_LIT may still carry preserved `\$`
         // sequences from the lexer. Mirrors Python's post-`_split_interp`
         // path which leaves `\$` literal in the StringLit value.
         return new_expr_result(Expr::StringLit(val), pos + 1)
-    }
 
     // Char literal
     if tt == "CHAR_LIT" { return new_expr_result(Expr::CharLit(val), pos + 1) }
@@ -2097,23 +1819,19 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     if tt == "KW_SPAWN" { return parse_spawn_expr(tokens, pos, filename) }
 
     // Sync expression
-    if tt == "KW_SYNC" {
+    if tt == "KW_SYNC":
         let sr: ExprResult = parse_postfix(tokens, pos + 1, filename)
         return new_expr_result(Expr::Sync(sr.expr), sr.pos)
-    }
 
     // Signal expression
     if tt == "KW_SIGNAL" { return parse_signal_expr(tokens, pos, filename) }
 
     // Tensor literal: Tensor<Type>[elements]  (v4.42.0)
-    if tt == "KW_TENSOR" {
-        if pos + 1 < len(tokens) {
+    if tt == "KW_TENSOR":
+        if pos + 1 < len(tokens):
             let next_tt: String = tokens[pos + 1].tok_type
-            if next_tt == "LT" {
+            if next_tt == "LT":
                 return parse_tensor_lit(tokens, pos, filename)
-            }
-        }
-    }
 
     // Map literal: #{ key: val, ... }
     if tt == "MAP_OPEN" { return parse_map_lit(tokens, pos, filename) }
@@ -2124,25 +1842,22 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     // v5.15.0 Te.2.F — terse lambda: ``|x| body``, ``|x, y| body``, ``|| body``.
     // BAR is never the start of an expression elsewhere, so this is
     // unambiguous in expression position.
-    if tt == "BAR" {
+    if tt == "BAR":
         let mut p: Int = pos + 1
         let mut params: List<Param> = []
-        if peek_type(tokens, p) != "BAR" {
+        if peek_type(tokens, p) != "BAR":
             let n0: String = peek_value(tokens, p)
             params.push(new_param(n0, none))
             p = p + 1
-            for _ in 0..32 {
+            for _ in 0..32:
                 if peek_type(tokens, p) != "COMMA" { break }
                 p = p + 1
                 let nn: String = peek_value(tokens, p)
                 params.push(new_param(nn, none))
                 p = p + 1
-            }
-        }
         p = expect(tokens, p, "BAR")
         let body_r: ExprResult = parse_expr(tokens, p, filename, 0)
         return new_expr_result(Expr::Lambda(params, LambdaBody::ExprBody(body_r.expr)), body_r.pos)
-    }
 
     // Parenthesized expression
     if tt == "LPAREN" { return parse_paren_expr(tokens, pos, filename) }
@@ -2150,30 +1865,26 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
     // Struct constructor: new Name { field: val, ... }
     // Emits as Call(Ident("__new_Name"), [val1, val2, ...]).
     // The emitter handles __new_ calls as struct construction.
-    if tt == "KW_NEW" {
+    if tt == "KW_NEW":
         return parse_struct_construct(tokens, pos, filename)
-    }
 
     // Identifier or namespace access
     // Soft keywords: allowed as identifiers in expression position
-    if tt == "NAME" || tt == "KW_INPUT" || tt == "KW_OUTPUT" || tt == "KW_AGENT" || tt == "KW_DI" || tt == "KW_STREAM" {
+    if tt == "NAME" || tt == "KW_INPUT" || tt == "KW_OUTPUT" || tt == "KW_AGENT" || tt == "KW_DI" || tt == "KW_STREAM":
         let name: String = val
-        if peek_type(tokens, pos + 1) == "DOUBLE_COLON" {
+        if peek_type(tokens, pos + 1) == "DOUBLE_COLON":
             let ns_member: String = peek_value(tokens, pos + 2)
             return new_expr_result(Expr::NamespaceAccess(name, ns_member), pos + 3)
-        }
         return new_expr_result(Expr::Ident(name), pos + 1)
-    }
 
     // Fallback
     return new_expr_result(Expr::NoneLit, pos + 1)
-}
 
 // ---------------------------------------------------------------------------
 // If expression
 // ---------------------------------------------------------------------------
 
-fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let mut p: Int = pos + 1
 
     let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
@@ -2182,30 +1893,27 @@ fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
     let then_r: BlockResult = parse_block(tokens, p, filename)
     p = then_r.pos
 
-    if peek_type(tokens, p) != "KW_ELSE" {
+    if peek_type(tokens, p) != "KW_ELSE":
         return new_expr_result(Expr::If(cond_r.expr, then_r.block, none), p)
-    }
 
     p = p + 1
 
-    if peek_type(tokens, p) == "KW_IF" {
+    if peek_type(tokens, p) == "KW_IF":
         let elif_r: ExprResult = parse_if_expr(tokens, p, filename)
         let else_stmts: List<Stmt> = [Stmt::ExprStmt(elif_r.expr)]
         let else_block: Block = new_block(new_span(0, 0, 0, 0), else_stmts)
         let ec_elif: ElseClause = ElseClause::ElseBlock(else_block)
         return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(ec_elif)), elif_r.pos)
-    }
 
     let else_r: BlockResult = parse_block(tokens, p, filename)
     let ec_else: ElseClause = ElseClause::ElseBlock(else_r.block)
     return new_expr_result(Expr::If(cond_r.expr, then_r.block, Some(ec_else)), else_r.pos)
-}
 
 // ---------------------------------------------------------------------------
 // Match expression
 // ---------------------------------------------------------------------------
 
-fn parse_match_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_match_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let mut p: Int = pos + 1
 
     let subj_r: ExprResult = parse_expr(tokens, p, filename, 0)
@@ -2214,80 +1922,69 @@ fn parse_match_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
     p = expect(tokens, p, "LBRACE")
 
     let mut arms: List<MatchArm> = []
-    for _ in 0..100 {
+    for _ in 0..100:
         p = skip_semis(tokens, p)
-        if peek_type(tokens, p) == "RBRACE" {
+        if peek_type(tokens, p) == "RBRACE":
             p = p + 1
             return new_expr_result(Expr::Match(subj_r.expr, arms), p)
-        }
 
         let mar: MatchArmResult = parse_match_arm_item(tokens, p, filename)
         arms.push(mar.arm)
         p = mar.pos
 
         if peek_type(tokens, p) == "COMMA" { p = p + 1 }
-    }
 
     return new_expr_result(Expr::Match(subj_r.expr, arms), p)
-}
 
-fn parse_match_arm_item(tokens: List<Token>, pos: Int, filename: String) -> MatchArmResult {
+fn parse_match_arm_item(tokens: List<Token>, pos: Int, filename: String) -> MatchArmResult:
     let pr: PatternResult = parse_pattern(tokens, pos, filename)
     let mut p: Int = pr.pos
 
     // v4.35.0: optional guard — `if <expr>` before `=>`
     let mut guard: Option<Expr> = None
-    if peek_type(tokens, p) == "KW_IF" {
+    if peek_type(tokens, p) == "KW_IF":
         p = p + 1
         let gr: ExprResult = parse_expr(tokens, p, filename, 0)
         guard = Some(gr.expr)
         p = gr.pos
-    }
 
     p = expect(tokens, p, "FAT_ARROW")
 
-    if peek_type(tokens, p) == "LBRACE" {
+    if peek_type(tokens, p) == "LBRACE":
         let br: BlockResult = parse_block(tokens, p, filename)
         let arm_blk: MatchArm = new_match_arm(pr.pattern, MatchArmBody::BlockBody(br.block), guard)
         return new_match_arm_result(arm_blk, br.pos)
-    }
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
     let arm_expr: MatchArm = new_match_arm(pr.pattern, MatchArmBody::ExprBody(er.expr), guard)
     return new_match_arm_result(arm_expr, er.pos)
-}
 
 // ---------------------------------------------------------------------------
 // Pattern
 // ---------------------------------------------------------------------------
 
-fn parse_pattern(tokens: List<Token>, pos: Int, filename: String) -> PatternResult {
+fn parse_pattern(tokens: List<Token>, pos: Int, filename: String) -> PatternResult:
     // v4.35.0: parse or-patterns — `pattern_alt (| pattern_alt)*`
     let first: PatternResult = parse_pattern_alt(tokens, pos, filename)
     let mut p: Int = first.pos
-    if peek_type(tokens, p) != "BAR" {
+    if peek_type(tokens, p) != "BAR":
         return first
-    }
     let mut alts: List<Pattern> = [first.pattern]
-    for _ in 0..20 {
-        if peek_type(tokens, p) != "BAR" {
+    for _ in 0..20:
+        if peek_type(tokens, p) != "BAR":
             return new_pattern_result(Pattern::OrPat(alts), p)
-        }
         p = p + 1
         let next: PatternResult = parse_pattern_alt(tokens, p, filename)
         alts.push(next.pattern)
         p = next.pos
-    }
     return new_pattern_result(Pattern::OrPat(alts), p)
-}
 
-fn parse_pattern_alt(tokens: List<Token>, pos: Int, filename: String) -> PatternResult {
+fn parse_pattern_alt(tokens: List<Token>, pos: Int, filename: String) -> PatternResult:
     let tt: String = peek_type(tokens, pos)
     let val: String = peek_value(tokens, pos)
 
-    if val == "_" {
+    if val == "_":
         return new_pattern_result(Pattern::Wildcard, pos + 1)
-    }
 
     if tt == "DEC_INT" { return new_pattern_result(Pattern::LiteralPat(Expr::IntLit(int(val))), pos + 1) }
     if tt == "FLOAT_LIT" { return new_pattern_result(Pattern::LiteralPat(Expr::FloatLit(float(val))), pos + 1) }
@@ -2295,106 +1992,93 @@ fn parse_pattern_alt(tokens: List<Token>, pos: Int, filename: String) -> Pattern
     if tt == "KW_TRUE" { return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(true)), pos + 1) }
     if tt == "KW_FALSE" { return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(false)), pos + 1) }
 
-    if tt == "NAME" {
-        if peek_type(tokens, pos + 1) == "LPAREN" {
+    if tt == "NAME":
+        if peek_type(tokens, pos + 1) == "LPAREN":
             let name: String = val
             let mut p: Int = pos + 2
             let mut pats: List<Pattern> = []
 
-            if peek_type(tokens, p) != "RPAREN" {
+            if peek_type(tokens, p) != "RPAREN":
                 let p0: PatternResult = parse_pattern(tokens, p, filename)
                 pats.push(p0.pattern)
                 p = p0.pos
-                for _ in 0..20 {
-                    if peek_type(tokens, p) != "COMMA" {
+                for _ in 0..20:
+                    if peek_type(tokens, p) != "COMMA":
                         p = expect(tokens, p, "RPAREN")
                         return new_pattern_result(Pattern::ConstructorPat(name, pats), p)
-                    }
                     p = p + 1
                     let pn: PatternResult = parse_pattern(tokens, p, filename)
                     pats.push(pn.pattern)
                     p = pn.pos
-                }
-            }
             p = expect(tokens, p, "RPAREN")
             return new_pattern_result(Pattern::ConstructorPat(name, pats), p)
-        }
 
         return new_pattern_result(Pattern::IdentPat(val), pos + 1)
-    }
 
     return new_pattern_result(Pattern::Wildcard, pos + 1)
-}
 
 // ---------------------------------------------------------------------------
 // Spawn expression
 // ---------------------------------------------------------------------------
 
-fn parse_spawn_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_spawn_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let mut p: Int = pos + 1
     let name: String = peek_value(tokens, p)
     p = p + 1
 
     p = expect(tokens, p, "LPAREN")
     let mut args: List<Expr> = []
-    if peek_type(tokens, p) != "RPAREN" {
+    if peek_type(tokens, p) != "RPAREN":
         let a0: ExprResult = parse_expr(tokens, p, filename, 0)
         args.push(a0.expr)
         p = a0.pos
-        for _ in 0..50 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..50:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "RPAREN")
                 let callee_early: Expr = Expr::Ident(name)
                 return new_expr_result(Expr::Spawn(callee_early, args), p)
-            }
             p = p + 1
             let an: ExprResult = parse_expr(tokens, p, filename, 0)
             args.push(an.expr)
             p = an.pos
-        }
-    }
     p = expect(tokens, p, "RPAREN")
     let callee_final: Expr = Expr::Ident(name)
     return new_expr_result(Expr::Spawn(callee_final, args), p)
-}
 
 // ---------------------------------------------------------------------------
 // Signal expression
 // ---------------------------------------------------------------------------
 
-fn parse_signal_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_signal_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let mut p: Int = pos + 1
 
-    if peek_type(tokens, p) == "LPAREN" {
+    if peek_type(tokens, p) == "LPAREN":
         p = p + 1
         let er: ExprResult = parse_expr(tokens, p, filename, 0)
         p = er.pos
         p = expect(tokens, p, "RPAREN")
         return new_expr_result(Expr::SignalVal(er.expr, false), p)
-    }
 
-    if peek_type(tokens, p) == "LBRACE" {
+    if peek_type(tokens, p) == "LBRACE":
         let br: BlockResult = parse_block(tokens, p, filename)
         return new_expr_result(Expr::SignalVal(Expr::NoneLit, true), br.pos)
-    }
 
     return new_expr_result(Expr::NoneLit, p)
-}
 
 // ---------------------------------------------------------------------------
 // List literal
 // ---------------------------------------------------------------------------
 
-fn parse_map_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_map_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     // MAP_OPEN = "#{", already consumed one token (pos is at MAP_OPEN)
     let mut p: Int = pos + 1
     let mut entries: List<MapEntry> = []
 
-    // Empty map: #{}
-    if peek_type(tokens, p) == "RBRACE" {
+    // Empty map: #:
+        pass
+    if peek_type(tokens, p) == "RBRACE":
         p = p + 1
         return new_expr_result(Expr::MapLit(entries), p)
-    }
 
     // First entry: key: value
     let k0: ExprResult = parse_expr(tokens, p, filename, 0)
@@ -2406,42 +2090,36 @@ fn parse_map_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult 
     // v5.15.1 — map comprehension disambiguator. After the first
     // `key: value` pair, a `for` keyword switches into comprehension
     // mode; otherwise this is a regular map literal.
-    if peek_type(tokens, p) == "KW_FOR" {
+    if peek_type(tokens, p) == "KW_FOR":
         return parse_map_comp_tail(tokens, p, filename, k0.expr, v0.expr)
-    }
 
     entries.push(new MapEntry { key: k0.expr, value: v0.expr })
 
-    for _ in 0..10000 {
-        if peek_type(tokens, p) != "COMMA" {
+    for _ in 0..10000:
+        if peek_type(tokens, p) != "COMMA":
             p = expect(tokens, p, "RBRACE")
             return new_expr_result(Expr::MapLit(entries), p)
-        }
         p = p + 1
-        if peek_type(tokens, p) == "RBRACE" {
+        if peek_type(tokens, p) == "RBRACE":
             p = p + 1
             return new_expr_result(Expr::MapLit(entries), p)
-        }
         let kn: ExprResult = parse_expr(tokens, p, filename, 0)
         p = kn.pos
         p = expect(tokens, p, "COLON")
         let vn: ExprResult = parse_expr(tokens, p, filename, 0)
         p = vn.pos
         entries.push(new MapEntry { key: kn.expr, value: vn.expr })
-    }
 
     p = expect(tokens, p, "RBRACE")
     return new_expr_result(Expr::MapLit(entries), p)
-}
 
-fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let mut p: Int = pos + 1
     let mut elems: List<Expr> = []
 
-    if peek_type(tokens, p) == "RBRACKET" {
+    if peek_type(tokens, p) == "RBRACKET":
         p = p + 1
         return new_expr_result(Expr::ListLit(elems), p)
-    }
 
     let e0: ExprResult = parse_expr(tokens, p, filename, 0)
     p = e0.pos
@@ -2449,30 +2127,25 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
     // v5.15.1 — list comprehension disambiguator. After the first
     // element, a `for` keyword switches into comprehension mode;
     // otherwise this is a regular list literal.
-    if peek_type(tokens, p) == "KW_FOR" {
+    if peek_type(tokens, p) == "KW_FOR":
         return parse_list_comp_tail(tokens, p, filename, e0.expr)
-    }
 
     elems.push(e0.expr)
 
-    for _ in 0..10000 {
-        if peek_type(tokens, p) != "COMMA" {
+    for _ in 0..10000:
+        if peek_type(tokens, p) != "COMMA":
             p = expect(tokens, p, "RBRACKET")
             return new_expr_result(Expr::ListLit(elems), p)
-        }
         p = p + 1
-        if peek_type(tokens, p) == "RBRACKET" {
+        if peek_type(tokens, p) == "RBRACKET":
             p = p + 1
             return new_expr_result(Expr::ListLit(elems), p)
-        }
         let en_val: ExprResult = parse_expr(tokens, p, filename, 0)
         elems.push(en_val.expr)
         p = en_val.pos
-    }
 
     p = expect(tokens, p, "RBRACKET")
     return new_expr_result(Expr::ListLit(elems), p)
-}
 
 // ---------------------------------------------------------------------------
 // Comprehension parsing (v5.15.1 — Cb.2/Cb.3)
@@ -2482,16 +2155,14 @@ fn parse_list_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult
 // next token after the first element/entry is KW_FOR.
 // ---------------------------------------------------------------------------
 
-struct CompClauseResult {
-    clause: CompClause,
+struct CompClauseResult:
+    clause: CompClause
     pos: Int
-}
 
-fn new_comp_clause_result(clause: CompClause, pos: Int) -> CompClauseResult {
+fn new_comp_clause_result(clause: CompClause, pos: Int) -> CompClauseResult:
     return new CompClauseResult { clause: clause, pos: pos }
-}
 
-fn parse_comp_clause(tokens: List<Token>, pos: Int, filename: String) -> CompClauseResult {
+fn parse_comp_clause(tokens: List<Token>, pos: Int, filename: String) -> CompClauseResult:
     // pos is at KW_FOR
     let mut p: Int = expect(tokens, pos, "KW_FOR")
     let target: String = peek_value(tokens, p)
@@ -2501,42 +2172,36 @@ fn parse_comp_clause(tokens: List<Token>, pos: Int, filename: String) -> CompCla
     p = iter_r.pos
 
     let mut conditions: List<Expr> = []
-    for _ in 0..32 {
+    for _ in 0..32:
         if peek_type(tokens, p) != "KW_IF" { break }
         p = p + 1
         let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
         conditions.push(cond_r.expr)
         p = cond_r.pos
-    }
 
     return new_comp_clause_result(new_comp_clause(target, iter_r.expr, conditions), p)
-}
 
-fn parse_list_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_expr: Expr) -> ExprResult {
+fn parse_list_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_expr: Expr) -> ExprResult:
     let mut p: Int = pos
     let mut clauses: List<CompClause> = []
-    for _ in 0..32 {
+    for _ in 0..32:
         if peek_type(tokens, p) != "KW_FOR" { break }
         let cr: CompClauseResult = parse_comp_clause(tokens, p, filename)
         clauses.push(cr.clause)
         p = cr.pos
-    }
     p = expect(tokens, p, "RBRACKET")
     return new_expr_result(Expr::Comprehension("list", Some(first_expr), none, none, clauses), p)
-}
 
-fn parse_map_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_key: Expr, first_value: Expr) -> ExprResult {
+fn parse_map_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_key: Expr, first_value: Expr) -> ExprResult:
     let mut p: Int = pos
     let mut clauses: List<CompClause> = []
-    for _ in 0..32 {
+    for _ in 0..32:
         if peek_type(tokens, p) != "KW_FOR" { break }
         let cr: CompClauseResult = parse_comp_clause(tokens, p, filename)
         clauses.push(cr.clause)
         p = cr.pos
-    }
     p = expect(tokens, p, "RBRACE")
     return new_expr_result(Expr::Comprehension("map", none, Some(first_key), Some(first_value), clauses), p)
-}
 
 // ---------------------------------------------------------------------------
 // Tensor literal: Tensor<Type>[elements] (v4.42.0, v5.6.0 nested-array)
@@ -2561,28 +2226,24 @@ fn parse_map_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_ke
 //   `ls.ok.N` blocks from the caller's CFG.
 // ---------------------------------------------------------------------------
 
-fn _tensor_pad_list(list: List<Int>, min_len: Int) -> List<Int> {
+fn _tensor_pad_list(list: List<Int>, min_len: Int) -> List<Int>:
     let mut out: List<Int> = list
-    for _ in 0..64 {
+    for _ in 0..64:
         if len(out) > min_len { break }
         out.push(0)
-    }
     return out
-}
 
-fn _tensor_set_at(list: List<Int>, idx: Int, val: Int) -> List<Int> {
+fn _tensor_set_at(list: List<Int>, idx: Int, val: Int) -> List<Int>:
     let mut out: List<Int> = list
     out[idx] = val
     return out
-}
 
-fn _tensor_inc_at(list: List<Int>, idx: Int) -> List<Int> {
+fn _tensor_inc_at(list: List<Int>, idx: Int) -> List<Int>:
     let mut out: List<Int> = list
     out[idx] = list[idx] + 1
     return out
-}
 
-fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     // pos points at KW_TENSOR. Consume Tensor < T > [ — we are at the first
     // token INSIDE the outermost literal body once parse_tensor_lit returns
     // control to its body loop.
@@ -2602,70 +2263,62 @@ fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
     counts.push(0)
     let mut depth: Int = 0
 
-    for _ in 0..1000000 {
+    for _ in 0..1000000:
         let tt: String = peek_type(tokens, p)
-        if tt == "RBRACKET" {
+        if tt == "RBRACKET":
             shape = _tensor_pad_list(shape, depth)
             shape = _tensor_set_at(shape, depth, counts[depth])
             p = p + 1
-            if depth == 0 {
+            if depth == 0:
                 return new_expr_result(Expr::TensorLit(flat, shape), p)
-            }
             depth = depth - 1
             counts = _tensor_inc_at(counts, depth)
-        } else if tt == "COMMA" {
+        else if tt == "COMMA":
             p = p + 1
-        } else if tt == "LBRACKET" {
+        else if tt == "LBRACKET":
             depth = depth + 1
             counts = _tensor_pad_list(counts, depth)
             counts = _tensor_set_at(counts, depth, 0)
             p = p + 1
-        } else {
+        else:
             let er: ExprResult = parse_expr(tokens, p, filename, 0)
             flat.push(er.expr)
             counts = _tensor_inc_at(counts, depth)
             p = er.pos
-        }
-    }
     return new_expr_result(Expr::TensorLit(flat, shape), p)
-}
 
 // ---------------------------------------------------------------------------
 // Parenthesized expression
 // ---------------------------------------------------------------------------
 
-fn parse_paren_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult {
+fn parse_paren_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let mut p: Int = pos + 1
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
     p = er.pos
 
-    if peek_type(tokens, p) == "RPAREN" {
+    if peek_type(tokens, p) == "RPAREN":
         p = p + 1
         return new_expr_result(er.expr, p)
-    }
 
     // Tuple: (expr, expr, ...)
     let mut elems: List<Expr> = [er.expr]
-    for _ in 0..100 {
-        if peek_type(tokens, p) != "COMMA" {
+    for _ in 0..100:
+        if peek_type(tokens, p) != "COMMA":
             p = expect(tokens, p, "RPAREN")
             return new_expr_result(Expr::ListLit(elems), p)
-        }
         p = p + 1
         let en_val: ExprResult = parse_expr(tokens, p, filename, 0)
         elems.push(en_val.expr)
         p = en_val.pos
-    }
     p = expect(tokens, p, "RPAREN")
     return new_expr_result(Expr::ListLit(elems), p)
-}
 
 // ---------------------------------------------------------------------------
 // Type expression parser
 // ---------------------------------------------------------------------------
 
-fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResult {
+fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResult:
     let tt: String = peek_type(tokens, pos)
 
     if tt == "KW_FN" { return parse_fn_type(tokens, pos, filename) }
@@ -2673,30 +2326,25 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
     // v5.6.0 (Sh.6): KW_TENSOR treated as a type name in type position, so
     // `let x: Tensor<Int>` still parses (Tensor became a keyword to
     // disambiguate tensor literals). The token value is still "Tensor".
-    if tt == "NAME" || tt == "KW_TENSOR" {
+    if tt == "NAME" || tt == "KW_TENSOR":
         let mut name: String = peek_value(tokens, pos)
         let mut p: Int = pos + 1
-        for _ in 0..10 {
+        for _ in 0..10:
             if peek_type(tokens, p) != "DOT" { break }
             if peek_type(tokens, p + 1) != "NAME" { break }
             name = name + "." + peek_value(tokens, p + 1)
             p = p + 2
-        }
-        if peek_type(tokens, p) == "LT" {
+        if peek_type(tokens, p) == "LT":
             return parse_generic_type_at(tokens, p, name, filename)
-        }
         return new_type_result(TypeExpr::Named(name), p)
-    }
 
     return new_type_result(TypeExpr::Named("Void"), pos + 1)
-}
 
-fn parse_generic_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult {
+fn parse_generic_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult:
     let name: String = peek_value(tokens, pos)
     return parse_generic_type_at(tokens, pos + 1, name, filename)
-}
 
-fn parse_generic_type_at(tokens: List<Token>, pos: Int, name: String, filename: String) -> TypeResult {
+fn parse_generic_type_at(tokens: List<Token>, pos: Int, name: String, filename: String) -> TypeResult:
     let mut p: Int = pos
     p = expect(tokens, p, "LT")
 
@@ -2705,45 +2353,38 @@ fn parse_generic_type_at(tokens: List<Token>, pos: Int, name: String, filename: 
     args.push(t0.type_expr)
     p = t0.pos
 
-    for _ in 0..20 {
-        if peek_type(tokens, p) != "COMMA" {
+    for _ in 0..20:
+        if peek_type(tokens, p) != "COMMA":
             p = expect(tokens, p, "GT")
             return new_type_result(TypeExpr::Generic(name, args), p)
-        }
         p = p + 1
         let tn: TypeResult = parse_type_expr(tokens, p, filename)
         args.push(tn.type_expr)
         p = tn.pos
-    }
 
     p = expect(tokens, p, "GT")
     return new_type_result(TypeExpr::Generic(name, args), p)
-}
 
-fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult {
+fn parse_fn_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult:
     let mut p: Int = pos + 1
     p = expect(tokens, p, "LPAREN")
 
     let mut param_types: List<TypeExpr> = []
-    if peek_type(tokens, p) != "RPAREN" {
+    if peek_type(tokens, p) != "RPAREN":
         let t0: TypeResult = parse_type_expr(tokens, p, filename)
         param_types.push(t0.type_expr)
         p = t0.pos
-        for _ in 0..20 {
-            if peek_type(tokens, p) != "COMMA" {
+        for _ in 0..20:
+            if peek_type(tokens, p) != "COMMA":
                 p = expect(tokens, p, "RPAREN")
                 p = expect(tokens, p, "ARROW")
                 let ret_early: TypeResult = parse_type_expr(tokens, p, filename)
                 return new_type_result(TypeExpr::FnTy(param_types, ret_early.type_expr), ret_early.pos)
-            }
             p = p + 1
             let tn: TypeResult = parse_type_expr(tokens, p, filename)
             param_types.push(tn.type_expr)
             p = tn.pos
-        }
-    }
     p = expect(tokens, p, "RPAREN")
     p = expect(tokens, p, "ARROW")
     let ret_final: TypeResult = parse_type_expr(tokens, p, filename)
     return new_type_result(TypeExpr::FnTy(param_types, ret_final.type_expr), ret_final.pos)
-}
