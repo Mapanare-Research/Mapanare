@@ -981,29 +981,33 @@ The condition must be of type `Bool`.
 Iterates over a range or iterable:
 
 ```mn
-for i in 0..10 {
+for i in 0..10:
     print("${i}")
-}
 
-for item in items {
+for item in items:
     process(item)
-}
 ```
 
 The loop variable is immutable within the body. The iterable can be a `Range`, `List<T>`, `Stream<T>`, or `Map<K, V>` (iterates over entries).
+
+For pure value-collection loops, prefer a comprehension:
+
+```mn
+let doubled: List<Int> = [x * 2 for x in xs]
+let positive: List<Int> = [x for x in xs if x > 0]
+let lookup:   Map<Int, Int> = #{ k: k * k for k in 0..10 }
+```
 
 ### 4.3 While Loop
 
 Loops while a condition is true:
 
 ```mn
-fn main() {
+fn main():
     let mut count = 0
-    while count < 10 {
+    while count < 10:
         print("${count}")
         count += 1
-    }
-}
 ```
 
 The condition must be of type `Bool`. Evaluated before each iteration.
@@ -1025,12 +1029,19 @@ for i in 0..100 {
 `return` exits the current function with a value:
 
 ```mn
-fn double(x: Int) -> Int {
+fn double(x: Int) -> Int:
     return x * 2
-}
 ```
 
-`return` without a value returns `Void`. If omitted, the last expression in the function body is the implicit return value.
+`return` without a value returns `Void`. If omitted, the last expression in the function body is the implicit return value:
+
+```mn
+fn double(x: Int) -> Int:
+    x * 2
+
+// Or as a one-liner (function-init form, v5.15.0):
+fn triple(x: Int) -> Int = x * 3
+```
 
 ### 4.6 Match Expression
 
