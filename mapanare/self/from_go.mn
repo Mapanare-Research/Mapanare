@@ -6,22 +6,20 @@
 // Go Token types
 // ---------------------------------------------------------------------------
 
-struct GoToken {
-    kind: String,
-    value: String,
-    line: Int,
+struct GoToken:
+    kind: String
+    value: String
+    line: Int
     col: Int
-}
 
-fn new_go_token(kind: String, value: String, line: Int, col: Int) -> GoToken {
+fn new_go_token(kind: String, value: String, line: Int, col: Int) -> GoToken:
     return new GoToken { kind: kind, value: value, line: line, col: col }
-}
 
 // ---------------------------------------------------------------------------
 // Go keyword table
 // ---------------------------------------------------------------------------
 
-fn is_go_keyword(s: String) -> Bool {
+fn is_go_keyword(s: String) -> Bool:
     if s == "func" { return true }
     if s == "type" { return true }
     if s == "struct" { return true }
@@ -51,447 +49,364 @@ fn is_go_keyword(s: String) -> Bool {
     if s == "fallthrough" { return true }
     if s == "goto" { return true }
     return false
-}
 
 // ---------------------------------------------------------------------------
 // Tokenizer helpers
 // ---------------------------------------------------------------------------
 
-fn is_go_alpha(c: String) -> Bool {
+fn is_go_alpha(c: String) -> Bool:
     return is_transpiler_alpha(c)
-}
 
-fn is_go_alnum(c: String) -> Bool {
+fn is_go_alnum(c: String) -> Bool:
     if is_go_alpha(c) { return true }
     if is_digit(c) { return true }
     return false
-}
 
 // ---------------------------------------------------------------------------
 // Tokenizer
 // ---------------------------------------------------------------------------
 
-fn tokenize_go(source: String) -> List<GoToken> {
+fn tokenize_go(source: String) -> List<GoToken>:
     let mut tokens: List<GoToken> = []
     let mut pos: Int = 0
     let mut line: Int = 1
     let mut col: Int = 1
     let slen: Int = len(source)
 
-    while pos < slen {
+    while pos < slen:
         let c: String = source[pos]
 
         // Newline
-        if c == "\n" {
+        if c == "\n":
             tokens.push(new_go_token("NEWLINE", "\n", line, col))
             pos = pos + 1
             line = line + 1
             col = 1
             continue
-        }
 
         // Skip whitespace (not newline)
-        if c == " " || c == "\t" || c == "\r" {
+        if c == " " || c == "\t" || c == "\r":
             pos = pos + 1
             col = col + 1
             continue
-        }
 
         // Single-line comment: // to end of line
-        if c == "/" {
-            if pos + 1 < slen {
-                if source[pos + 1] == "/" {
-                    while pos < slen {
+        if c == "/":
+            if pos + 1 < slen:
+                if source[pos + 1] == "/":
+                    while pos < slen:
                         if source[pos] == "\n" { break }
                         pos = pos + 1
-                    }
                     continue
-                }
-            }
-        }
 
         // Multi-line comment: /* ... */
-        if c == "/" {
-            if pos + 1 < slen {
-                if source[pos + 1] == "*" {
+        if c == "/":
+            if pos + 1 < slen:
+                if source[pos + 1] == "*":
                     pos = pos + 2
                     col = col + 2
-                    while pos + 1 < slen {
-                        if source[pos] == "*" {
-                            if source[pos + 1] == "/" {
+                    while pos + 1 < slen:
+                        if source[pos] == "*":
+                            if source[pos + 1] == "/":
                                 pos = pos + 2
                                 col = col + 2
                                 break
-                            }
-                        }
-                        if source[pos] == "\n" {
+                        if source[pos] == "\n":
                             line = line + 1
                             col = 1
-                        } else {
+                        else:
                             col = col + 1
-                        }
                         pos = pos + 1
-                    }
                     continue
-                }
-            }
-        }
 
         // Raw string literal: `...`
-        if c == "`" {
+        if c == "`":
             pos = pos + 1
             col = col + 1
             let mut value: String = ""
-            while pos < slen {
-                if source[pos] == "`" {
+            while pos < slen:
+                if source[pos] == "`":
                     pos = pos + 1
                     col = col + 1
                     break
-                }
-                if source[pos] == "\n" {
+                if source[pos] == "\n":
                     line = line + 1
                     col = 1
                     value = value + "\\n"
-                } else {
+                else:
                     value = value + source[pos]
                     col = col + 1
-                }
                 pos = pos + 1
-            }
             tokens.push(new_go_token("STRING", value, line, col))
             continue
-        }
 
         // String literals
-        if c == "\"" {
+        if c == "\"":
             pos = pos + 1
             col = col + 1
             let mut value: String = ""
-            while pos < slen {
+            while pos < slen:
                 let sc: String = source[pos]
-                if sc == "\"" {
+                if sc == "\"":
                     pos = pos + 1
                     col = col + 1
                     break
-                }
-                if sc == "\\" {
+                if sc == "\\":
                     pos = pos + 1
                     col = col + 1
-                    if pos < slen {
+                    if pos < slen:
                         value = value + source[pos]
                         pos = pos + 1
                         col = col + 1
-                    }
                     continue
-                }
                 value = value + sc
                 pos = pos + 1
                 col = col + 1
-            }
             tokens.push(new_go_token("STRING", value, line, col))
             continue
-        }
 
         // Rune literal: 'c'
-        if c == "'" {
+        if c == "'":
             pos = pos + 1
             col = col + 1
             let mut value: String = ""
-            while pos < slen {
+            while pos < slen:
                 let rc: String = source[pos]
-                if rc == "'" {
+                if rc == "'":
                     pos = pos + 1
                     col = col + 1
                     break
-                }
-                if rc == "\\" {
+                if rc == "\\":
                     pos = pos + 1
                     col = col + 1
-                    if pos < slen {
+                    if pos < slen:
                         value = value + source[pos]
                         pos = pos + 1
                         col = col + 1
-                    }
                     continue
-                }
                 value = value + rc
                 pos = pos + 1
                 col = col + 1
-            }
             tokens.push(new_go_token("RUNE", value, line, col))
             continue
-        }
 
         // Numbers
-        if is_digit(c) {
+        if is_digit(c):
             let mut num: String = ""
             let mut has_dot: Bool = false
             // Handle hex: 0x...
-            if c == "0" {
-                if pos + 1 < slen {
-                    if source[pos + 1] == "x" || source[pos + 1] == "X" {
+            if c == "0":
+                if pos + 1 < slen:
+                    if source[pos + 1] == "x" || source[pos + 1] == "X":
                         num = "0x"
                         pos = pos + 2
                         col = col + 2
-                        while pos < slen {
+                        while pos < slen:
                             let hc: String = source[pos]
-                            if is_digit(hc) || hc == "a" || hc == "b" || hc == "c" || hc == "d" || hc == "e" || hc == "f" || hc == "A" || hc == "B" || hc == "C" || hc == "D" || hc == "E" || hc == "F" {
+                            if is_digit(hc) || hc == "a" || hc == "b" || hc == "c" || hc == "d" || hc == "e" || hc == "f" || hc == "A" || hc == "B" || hc == "C" || hc == "D" || hc == "E" || hc == "F":
                                 num = num + hc
                                 pos = pos + 1
                                 col = col + 1
-                            } else {
+                            else:
                                 break
-                            }
-                        }
                         tokens.push(new_go_token("INT", num, line, col))
                         continue
-                    }
-                }
-            }
-            while pos < slen {
+            while pos < slen:
                 let nc: String = source[pos]
                 if nc == "." { has_dot = true }
-                if is_digit(nc) || nc == "." || nc == "_" {
+                if is_digit(nc) || nc == "." || nc == "_":
                     if nc != "_" { num = num + nc }
                     pos = pos + 1
                     col = col + 1
-                } else {
+                else:
                     break
-                }
-            }
-            if has_dot {
+            if has_dot:
                 tokens.push(new_go_token("FLOAT", num, line, col))
-            } else {
+            else:
                 tokens.push(new_go_token("INT", num, line, col))
-            }
             continue
-        }
 
         // Identifiers and keywords
-        if is_go_alpha(c) {
+        if is_go_alpha(c):
             let mut ident: String = ""
-            while pos < slen {
+            while pos < slen:
                 let ic: String = source[pos]
-                if is_go_alnum(ic) {
+                if is_go_alnum(ic):
                     ident = ident + ic
                     pos = pos + 1
                     col = col + 1
-                } else {
+                else:
                     break
-                }
-            }
-            if is_go_keyword(ident) {
+            if is_go_keyword(ident):
                 tokens.push(new_go_token("KEYWORD", ident, line, col))
-            } else {
+            else:
                 tokens.push(new_go_token("IDENT", ident, line, col))
-            }
             continue
-        }
 
         // Three-character operators
-        if pos + 2 < slen {
+        if pos + 2 < slen:
             let three: String = c + source[pos + 1] + source[pos + 2]
-            if three == "<<=" || three == ">>=" || three == "..." {
+            if three == "<<=" || three == ">>=" || three == "...":
                 tokens.push(new_go_token("OP", three, line, col))
                 pos = pos + 3
                 col = col + 3
                 continue
-            }
-        }
 
         // Two-character operators
-        if pos + 1 < slen {
+        if pos + 1 < slen:
             let two: String = c + source[pos + 1]
-            if two == ":=" || two == "==" || two == "!=" || two == "<=" || two == ">=" || two == "+=" || two == "-=" || two == "*=" || two == "/=" || two == "&&" || two == "||" || two == "++" || two == "--" || two == "<-" || two == "<<" || two == ">>" || two == "&^" {
+            if two == ":=" || two == "==" || two == "!=" || two == "<=" || two == ">=" || two == "+=" || two == "-=" || two == "*=" || two == "/=" || two == "&&" || two == "||" || two == "++" || two == "--" || two == "<-" || two == "<<" || two == ">>" || two == "&^":
                 tokens.push(new_go_token("OP", two, line, col))
                 pos = pos + 2
                 col = col + 2
                 continue
-            }
-        }
 
         // Single-character operators and punctuation
-        if c == "+" || c == "-" || c == "*" || c == "/" || c == "%" || c == "=" || c == "<" || c == ">" || c == "!" || c == "&" || c == "|" || c == "^" || c == "(" || c == ")" || c == "[" || c == "]" || c == "{" || c == "}" || c == "," || c == ":" || c == "." || c == ";" {
+        if c == "+" || c == "-" || c == "*" || c == "/" || c == "%" || c == "=" || c == "<" || c == ">" || c == "!" || c == "&" || c == "|" || c == "^" || c == "(" || c == ")" || c == "[" || c == "]" || c == "{" || c == "}" || c == "," || c == ":" || c == "." || c == ";":
             tokens.push(new_go_token("OP", c, line, col))
             pos = pos + 1
             col = col + 1
             continue
-        }
 
         // Unknown character: skip
         pos = pos + 1
         col = col + 1
-    }
 
     tokens.push(new_go_token("EOF", "", line, col))
     return tokens
-}
 
 // ---------------------------------------------------------------------------
 // Parser state
 // ---------------------------------------------------------------------------
 
-struct GoParser {
-    tokens: List<GoToken>,
-    pos: Int,
+struct GoParser:
+    tokens: List<GoToken>
+    pos: Int
     state: TranspilerState
-}
 
-fn new_go_parser(tokens: List<GoToken>, filename: String) -> GoParser {
+fn new_go_parser(tokens: List<GoToken>, filename: String) -> GoParser:
     let st: TranspilerState = new_state(filename, "go")
     return new GoParser { tokens: tokens, pos: 0, state: st }
-}
 
-fn go_current(p: GoParser) -> GoToken {
-    if p.pos < len(p.tokens) {
+fn go_current(p: GoParser) -> GoToken:
+    if p.pos < len(p.tokens):
         return p.tokens[p.pos]
-    }
     return new_go_token("EOF", "", 0, 0)
-}
 
-fn go_advance(p: GoParser) -> GoParser {
+fn go_advance(p: GoParser) -> GoParser:
     p.pos = p.pos + 1
     return p
-}
 
-fn go_expect_kw(p: GoParser, kw: String) -> GoParser {
+fn go_expect_kw(p: GoParser, kw: String) -> GoParser:
     let t: GoToken = go_current(p)
-    if t.kind == "KEYWORD" {
-        if t.value == kw {
+    if t.kind == "KEYWORD":
+        if t.value == kw:
             return go_advance(p)
-        }
-    }
     return go_advance(p)
-}
 
-fn go_expect_op(p: GoParser, op: String) -> GoParser {
+fn go_expect_op(p: GoParser, op: String) -> GoParser:
     let t: GoToken = go_current(p)
-    if t.kind == "OP" {
-        if t.value == op {
+    if t.kind == "OP":
+        if t.value == op:
             return go_advance(p)
-        }
-    }
     return go_advance(p)
-}
 
-fn go_skip_newlines(p: GoParser) -> GoParser {
-    while go_current(p).kind == "NEWLINE" {
+fn go_skip_newlines(p: GoParser) -> GoParser:
+    while go_current(p).kind == "NEWLINE":
         p = go_advance(p)
-    }
     return p
-}
 
-fn go_skip_semicolons(p: GoParser) -> GoParser {
-    while go_current(p).kind == "OP" {
+fn go_skip_semicolons(p: GoParser) -> GoParser:
+    while go_current(p).kind == "OP":
         if go_current(p).value != ";" { break }
         p = go_advance(p)
-    }
     return p
-}
 
-fn go_skip_whitespace(p: GoParser) -> GoParser {
+fn go_skip_whitespace(p: GoParser) -> GoParser:
     p = go_skip_newlines(p)
     p = go_skip_semicolons(p)
     return p
-}
 
 // ---------------------------------------------------------------------------
 // Type translation
 // ---------------------------------------------------------------------------
 
-fn translate_go_type(type_str: String) -> String {
+fn translate_go_type(type_str: String) -> String:
     let mappings: List<TypeMapping> = go_type_mappings()
     return translate_type(type_str, mappings)
-}
 
 // Read a Go type from the token stream (handles pointers, slices, maps)
-fn go_read_type(p: GoParser) -> String {
+fn go_read_type(p: GoParser) -> String:
     let t: GoToken = go_current(p)
 
     // Pointer: *Type
-    if t.value == "*" {
+    if t.value == "*":
         p = go_advance(p)
         let inner: String = go_read_type(p)
         return inner
-    }
 
     // Slice: []Type
-    if t.value == "[" {
+    if t.value == "[":
         p = go_advance(p)
-        if go_current(p).value == "]" {
+        if go_current(p).value == "]":
             p = go_advance(p)
             let elem: String = go_read_type(p)
             return "List<" + elem + ">"
-        }
         // Array: [N]Type — treat as List
-        while go_current(p).value != "]" {
+        while go_current(p).value != "]":
             if go_current(p).kind == "EOF" { break }
             p = go_advance(p)
-        }
         if go_current(p).value == "]" { p = go_advance(p) }
         let elem: String = go_read_type(p)
         return "List<" + elem + ">"
-    }
 
     // Map: map[K]V
-    if t.kind == "KEYWORD" {
-        if t.value == "map" {
+    if t.kind == "KEYWORD":
+        if t.value == "map":
             p = go_advance(p)
-            if go_current(p).value == "[" {
+            if go_current(p).value == "[":
                 p = go_advance(p)
                 let key_type: String = go_read_type(p)
-                while go_current(p).value != "]" {
+                while go_current(p).value != "]":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 if go_current(p).value == "]" { p = go_advance(p) }
                 let val_type: String = go_read_type(p)
                 return "Map<" + key_type + ", " + val_type + ">"
-            }
             return "Map<any, any>"
-        }
-        if t.value == "chan" {
+        if t.value == "chan":
             p = go_advance(p)
             let elem: String = go_read_type(p)
             return "Stream<" + elem + ">"
-        }
-    }
 
     // func(...) ... → Fn type
-    if t.kind == "KEYWORD" {
-        if t.value == "func" {
+    if t.kind == "KEYWORD":
+        if t.value == "func":
             p = go_advance(p)
             return "Fn"
-        }
-    }
 
     // interface{} → any
-    if t.kind == "KEYWORD" {
-        if t.value == "interface" {
+    if t.kind == "KEYWORD":
+        if t.value == "interface":
             p = go_advance(p)
-            if go_current(p).value == "{" {
+            if go_current(p).value == "{":
                 p = go_advance(p)
                 if go_current(p).value == "}" { p = go_advance(p) }
-            }
             return "any"
-        }
-    }
 
     // Named type
-    if t.kind == "IDENT" || t.kind == "KEYWORD" {
+    if t.kind == "IDENT" || t.kind == "KEYWORD":
         p = go_advance(p)
         return translate_go_type(t.value)
-    }
 
     p = go_advance(p)
     return "any"
-}
 
 // ---------------------------------------------------------------------------
 // Go stdlib shims
 // ---------------------------------------------------------------------------
 
-fn go_stdlib_shims() -> List<StdlibShim> {
+fn go_stdlib_shims() -> List<StdlibShim>:
     let mut shims: List<StdlibShim> = []
     shims.push(new_shim("fmt.Println", "print", false))
     shims.push(new_shim("fmt.Printf", "print", false))
@@ -523,297 +438,245 @@ fn go_stdlib_shims() -> List<StdlibShim> {
     shims.push(new_shim("math.Max", "max", false))
     shims.push(new_shim("math.Min", "min", false))
     return shims
-}
 
 // ---------------------------------------------------------------------------
 // Expression translation
 // ---------------------------------------------------------------------------
 
-fn translate_go_expr(p: GoParser) -> String {
+fn translate_go_expr(p: GoParser) -> String:
     let t: GoToken = go_current(p)
 
     // String literal
-    if t.kind == "STRING" {
+    if t.kind == "STRING":
         p = go_advance(p)
         return "\"" + t.value + "\""
-    }
 
     // Rune literal → string
-    if t.kind == "RUNE" {
+    if t.kind == "RUNE":
         p = go_advance(p)
         return "\"" + t.value + "\""
-    }
 
     // Int literal
-    if t.kind == "INT" {
+    if t.kind == "INT":
         p = go_advance(p)
         return t.value
-    }
 
     // Float literal
-    if t.kind == "FLOAT" {
+    if t.kind == "FLOAT":
         p = go_advance(p)
         return t.value
-    }
 
     // Boolean/nil literals
-    if t.kind == "KEYWORD" {
-        if t.value == "true" {
+    if t.kind == "KEYWORD":
+        if t.value == "true":
             p = go_advance(p)
             return "true"
-        }
-        if t.value == "false" {
+        if t.value == "false":
             p = go_advance(p)
             return "false"
-        }
-        if t.value == "nil" {
+        if t.value == "nil":
             p = go_advance(p)
             return "None"
-        }
-    }
 
     // Address-of: &expr → just expr (Mapanare handles by reference)
-    if t.kind == "OP" {
-        if t.value == "&" {
+    if t.kind == "OP":
+        if t.value == "&":
             p = go_advance(p)
             return translate_go_expr(p)
-        }
-        if t.value == "*" {
+        if t.value == "*":
             p = go_advance(p)
             return translate_go_expr(p)
-        }
-        if t.value == "!" {
+        if t.value == "!":
             p = go_advance(p)
             let inner: String = translate_go_expr(p)
             return "!" + inner
-        }
         // Slice literal: []Type{...}
-        if t.value == "[" {
+        if t.value == "[":
             p = go_advance(p)
-            if go_current(p).value == "]" {
+            if go_current(p).value == "]":
                 p = go_advance(p)
                 // Skip type name
-                if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+                if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
                     p = go_advance(p)
-                }
-                if go_current(p).value == "{" {
+                if go_current(p).value == "{":
                     p = go_advance(p)
                     let mut items: String = ""
                     let mut first: Bool = true
-                    while go_current(p).value != "}" {
+                    while go_current(p).value != "}":
                         if go_current(p).kind == "EOF" { break }
-                        if go_current(p).value == "," {
+                        if go_current(p).value == ",":
                             p = go_advance(p)
                             go_skip_newlines(p)
                             continue
-                        }
-                        if go_current(p).kind == "NEWLINE" {
+                        if go_current(p).kind == "NEWLINE":
                             p = go_advance(p)
                             continue
-                        }
                         if !first { items = items + ", " }
                         items = items + translate_go_expr(p)
                         first = false
                         p = go_advance(p)
-                    }
                     if go_current(p).value == "}" { p = go_advance(p) }
                     return "[" + items + "]"
-                }
-            }
             return "[]"
-        }
-    }
 
     // Identifier, function call, method call, or struct literal
-    if t.kind == "IDENT" {
+    if t.kind == "IDENT":
         p = go_advance(p)
         let mut name: String = t.value
         // Handle dotted names: fmt.Println, strings.Contains
-        while go_current(p).value == "." {
+        while go_current(p).value == ".":
             p = go_advance(p)
             let member: String = go_current(p).value
             p = go_advance(p)
             // Check for method call
-            if go_current(p).value == "(" {
+            if go_current(p).value == "(":
                 p = go_advance(p)
                 let mut args: List<String> = []
-                while go_current(p).value != ")" {
+                while go_current(p).value != ")":
                     if go_current(p).kind == "EOF" { break }
-                    if go_current(p).value == "," {
+                    if go_current(p).value == ",":
                         p = go_advance(p)
                         p = go_skip_newlines(p)
                         continue
-                    }
-                    if go_current(p).kind == "NEWLINE" {
+                    if go_current(p).kind == "NEWLINE":
                         p = go_advance(p)
                         continue
-                    }
                     let arg: String = translate_go_expr(p)
                     args.push(arg)
-                    while go_current(p).value != "," {
+                    while go_current(p).value != ",":
                         if go_current(p).value == ")" { break }
                         if go_current(p).kind == "EOF" { break }
                         p = go_advance(p)
-                    }
-                }
                 if go_current(p).value == ")" { p = go_advance(p) }
                 let shims: List<StdlibShim> = go_stdlib_shims()
                 let dotted: String = name + "." + member
                 let shimmed: String = translate_stdlib_call(dotted, args, shims)
-                if shimmed != dotted + "(" + join_args(args) + ")" {
+                if shimmed != dotted + "(" + join_args(args) + ")":
                     return shimmed
-                }
                 // Method call on receiver
                 let mut margs: List<String> = []
                 margs.push(name)
-                for ai in 0..len(args) {
+                for ai in 0..len(args):
                     margs.push(args[ai])
-                }
                 return translate_stdlib_call(member, margs, shims)
-            }
             name = name + "." + member
-        }
         // Function call
-        if go_current(p).value == "(" {
+        if go_current(p).value == "(":
             p = go_advance(p)
             let mut args: List<String> = []
-            while go_current(p).value != ")" {
+            while go_current(p).value != ")":
                 if go_current(p).kind == "EOF" { break }
-                if go_current(p).value == "," {
+                if go_current(p).value == ",":
                     p = go_advance(p)
                     p = go_skip_newlines(p)
                     continue
-                }
-                if go_current(p).kind == "NEWLINE" {
+                if go_current(p).kind == "NEWLINE":
                     p = go_advance(p)
                     continue
-                }
                 let arg: String = translate_go_expr(p)
                 args.push(arg)
-                while go_current(p).value != "," {
+                while go_current(p).value != ",":
                     if go_current(p).value == ")" { break }
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
-            }
             if go_current(p).value == ")" { p = go_advance(p) }
             let shims: List<StdlibShim> = go_stdlib_shims()
             return translate_stdlib_call(name, args, shims)
-        }
         // Struct literal: Name{field: val, ...}
-        if go_current(p).value == "{" {
+        if go_current(p).value == "{":
             p = go_advance(p)
             let mut items: String = ""
             let mut first: Bool = true
-            while go_current(p).value != "}" {
+            while go_current(p).value != "}":
                 if go_current(p).kind == "EOF" { break }
-                if go_current(p).value == "," {
+                if go_current(p).value == ",":
                     p = go_advance(p)
                     p = go_skip_newlines(p)
                     continue
-                }
-                if go_current(p).kind == "NEWLINE" {
+                if go_current(p).kind == "NEWLINE":
                     p = go_advance(p)
                     continue
-                }
                 if !first { items = items + ", " }
                 let key: String = go_current(p).value
                 p = go_advance(p)
-                if go_current(p).value == ":" {
+                if go_current(p).value == ":":
                     p = go_advance(p)
                     let val: String = translate_go_expr(p)
                     items = items + key + ": " + val
-                } else {
+                else:
                     items = items + key
-                }
                 first = false
                 p = go_advance(p)
-            }
             if go_current(p).value == "}" { p = go_advance(p) }
             return "new " + name + " { " + items + " }"
-        }
         // Array access: name[idx]
-        if go_current(p).value == "[" {
+        if go_current(p).value == "[":
             p = go_advance(p)
             let idx: String = translate_go_expr(p)
-            while go_current(p).value != "]" {
+            while go_current(p).value != "]":
                 if go_current(p).kind == "EOF" { break }
                 p = go_advance(p)
-            }
             if go_current(p).value == "]" { p = go_advance(p) }
             return name + "[" + idx + "]"
-        }
         return name
-    }
 
     // make() call
-    if t.kind == "KEYWORD" {
-        if t.value == "map" {
+    if t.kind == "KEYWORD":
+        if t.value == "map":
             // map[K]V literal: map[string]int{...}
             p = go_advance(p)
-            if go_current(p).value == "[" {
+            if go_current(p).value == "[":
                 p = go_advance(p)
-                while go_current(p).value != "]" {
+                while go_current(p).value != "]":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 if go_current(p).value == "]" { p = go_advance(p) }
                 // Skip value type
-                if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+                if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
                     p = go_advance(p)
-                }
-                if go_current(p).value == "{" {
+                if go_current(p).value == "{":
                     p = go_advance(p)
                     let mut items: String = ""
                     let mut first: Bool = true
-                    while go_current(p).value != "}" {
+                    while go_current(p).value != "}":
                         if go_current(p).kind == "EOF" { break }
-                        if go_current(p).value == "," {
+                        if go_current(p).value == ",":
                             p = go_advance(p)
                             p = go_skip_newlines(p)
                             continue
-                        }
-                        if go_current(p).kind == "NEWLINE" {
+                        if go_current(p).kind == "NEWLINE":
                             p = go_advance(p)
                             continue
-                        }
                         if !first { items = items + ", " }
                         let key: String = translate_go_expr(p)
-                        while go_current(p).value != ":" {
+                        while go_current(p).value != ":":
                             if go_current(p).value == "}" { break }
                             if go_current(p).kind == "EOF" { break }
                             p = go_advance(p)
-                        }
                         if go_current(p).value == ":" { p = go_advance(p) }
                         let val: String = translate_go_expr(p)
                         items = items + key + ": " + val
                         first = false
                         p = go_advance(p)
-                    }
                     if go_current(p).value == "}" { p = go_advance(p) }
                     return "{" + items + "}"
-                }
-            }
             return "{}"
-        }
-    }
 
     // Fallback
     p = go_advance(p)
     return t.value
-}
 
 // ---------------------------------------------------------------------------
 // Function translation
 // ---------------------------------------------------------------------------
 
-fn translate_go_function(p: GoParser, ind: String) -> String {
+fn translate_go_function(p: GoParser, ind: String) -> String:
     p = go_expect_kw(p, "func")
 
     // Check for method receiver: func (r ReceiverType) name(...)
     let mut receiver_name: String = ""
     let mut receiver_type: String = ""
-    if go_current(p).value == "(" {
+    if go_current(p).value == "(":
         p = go_advance(p)
         receiver_name = go_current(p).value
         p = go_advance(p)
@@ -822,7 +685,6 @@ fn translate_go_function(p: GoParser, ind: String) -> String {
         receiver_type = go_current(p).value
         p = go_advance(p)
         if go_current(p).value == ")" { p = go_advance(p) }
-    }
 
     let name_tok: GoToken = go_current(p)
     let name: String = name_tok.value
@@ -833,89 +695,71 @@ fn translate_go_function(p: GoParser, ind: String) -> String {
     // Parse parameters
     let mut params: String = ""
     let mut first: Bool = true
-    if len(receiver_type) > 0 {
+    if len(receiver_type) > 0:
         params = "self"
         first = false
-    }
-    while go_current(p).value != ")" {
+    while go_current(p).value != ")":
         if go_current(p).kind == "EOF" { break }
-        if go_current(p).value == "," {
+        if go_current(p).value == ",":
             p = go_advance(p)
             continue
-        }
-        if go_current(p).kind == "NEWLINE" {
+        if go_current(p).kind == "NEWLINE":
             p = go_advance(p)
             continue
-        }
         if !first { params = params + ", " }
         let pname: String = go_current(p).value
         p = go_advance(p)
         // Type follows parameter name
         let mut ptype: String = ""
-        if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" || go_current(p).value == "*" || go_current(p).value == "[" {
+        if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" || go_current(p).value == "*" || go_current(p).value == "[":
             ptype = go_read_type(p)
             // Advance past the type tokens
-            if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+            if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
                 p = go_advance(p)
-            }
-        }
-        if len(ptype) > 0 {
+        if len(ptype) > 0:
             params = params + pname + ": " + ptype
-        } else {
+        else:
             params = params + pname
-        }
         first = false
-    }
     p = go_expect_op(p, ")")
 
     // Return type(s)
     let mut ret: String = ""
     // Single return type
-    if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" || go_current(p).value == "*" || go_current(p).value == "[" {
+    if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" || go_current(p).value == "*" || go_current(p).value == "[":
         let rtype: String = go_read_type(p)
-        if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+        if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
             p = go_advance(p)
-        }
-        if rtype != "Void" {
+        if rtype != "Void":
             ret = " -> " + rtype
-        }
-    }
     // Multiple return types: (Type, error) → Result<Type, String>
-    if go_current(p).value == "(" {
+    if go_current(p).value == "(":
         p = go_advance(p)
         let mut types: List<String> = []
-        while go_current(p).value != ")" {
+        while go_current(p).value != ")":
             if go_current(p).kind == "EOF" { break }
-            if go_current(p).value == "," {
+            if go_current(p).value == ",":
                 p = go_advance(p)
                 continue
-            }
             let rtype: String = go_read_type(p)
             types.push(rtype)
-            if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+            if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
                 p = go_advance(p)
-            }
-        }
         if go_current(p).value == ")" { p = go_advance(p) }
-        if len(types) == 2 {
-            if types[1] == "String" {
+        if len(types) == 2:
+            if types[1] == "String":
                 ret = " -> Result<" + types[0] + ", String>"
-            } else {
+            else:
                 ret = " -> " + types[0]
-            }
-        } else {
-            if len(types) == 1 {
+        else:
+            if len(types) == 1:
                 if types[0] != "Void" { ret = " -> " + types[0] }
-            }
-        }
-    }
 
     // Build function header
     let mut out: String = ""
-    if len(receiver_type) > 0 {
+    if len(receiver_type) > 0:
         // This is a method — we'll emit it standalone with a comment
         out = ind + "// method on " + receiver_type + "\n"
-    }
     out = out + ind + "fn " + name + "(" + params + ")" + ret + " {\n"
 
     // Skip opening brace
@@ -926,247 +770,208 @@ fn translate_go_function(p: GoParser, ind: String) -> String {
     // Translate body
     let mut depth: Int = 1
     let mut body_count: Int = 0
-    while go_current(p).kind != "EOF" {
+    while go_current(p).kind != "EOF":
         if depth <= 0 { break }
         let t: GoToken = go_current(p)
 
-        if t.kind == "OP" {
-            if t.value == "{" {
+        if t.kind == "OP":
+            if t.value == "{":
                 depth = depth + 1
                 p = go_advance(p)
                 continue
-            }
-            if t.value == "}" {
+            if t.value == "}":
                 depth = depth - 1
                 p = go_advance(p)
                 continue
-            }
-        }
 
-        if t.kind == "KEYWORD" {
-            if t.value == "return" {
+        if t.kind == "KEYWORD":
+            if t.value == "return":
                 p = go_advance(p)
                 // Check for multiple return values
                 let expr1: String = translate_go_expr(p)
-                while go_current(p).kind != "NEWLINE" {
+                while go_current(p).kind != "NEWLINE":
                     if go_current(p).kind == "EOF" { break }
                     if go_current(p).value == "}" { break }
                     p = go_advance(p)
-                }
                 out = out + ind + "    return " + expr1 + "\n"
                 p = go_skip_whitespace(p)
                 body_count = body_count + 1
                 continue
-            }
-            if t.value == "var" {
+            if t.value == "var":
                 p = go_advance(p)
                 let vname: String = go_current(p).value
                 p = go_advance(p)
                 let vtype: String = go_read_type(p)
-                if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+                if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
                     p = go_advance(p)
-                }
-                if go_current(p).value == "=" {
+                if go_current(p).value == "=":
                     p = go_advance(p)
                     let expr: String = translate_go_expr(p)
                     out = out + ind + "    let mut " + vname + ": " + vtype + " = " + expr + "\n"
-                } else {
+                else:
                     out = out + ind + "    let mut " + vname + ": " + vtype + "\n"
-                }
-                while go_current(p).kind != "NEWLINE" {
+                while go_current(p).kind != "NEWLINE":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 p = go_skip_whitespace(p)
                 body_count = body_count + 1
                 continue
-            }
-            if t.value == "if" {
+            if t.value == "if":
                 p = go_advance(p)
                 let cond: String = translate_go_expr(p)
                 // Skip to opening brace
-                while go_current(p).value != "{" {
+                while go_current(p).value != "{":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 out = out + ind + "    if " + cond + " {\n"
                 out = out + ind + "        // ...\n"
                 out = out + ind + "    }\n"
                 // Skip if body
-                if go_current(p).value == "{" {
+                if go_current(p).value == "{":
                     p = go_advance(p)
                     let mut inner_depth: Int = 1
-                    while inner_depth > 0 {
+                    while inner_depth > 0:
                         if go_current(p).kind == "EOF" { break }
                         if go_current(p).value == "{" { inner_depth = inner_depth + 1 }
                         if go_current(p).value == "}" { inner_depth = inner_depth - 1 }
                         p = go_advance(p)
-                    }
-                }
                 p = go_skip_whitespace(p)
                 body_count = body_count + 1
                 continue
-            }
-            if t.value == "for" {
+            if t.value == "for":
                 p = go_advance(p)
                 // Check for range-based for: for k, v := range collection {
                 let mut is_range: Bool = false
                 let mut look: Int = p.pos
-                while look < len(p.tokens) {
+                while look < len(p.tokens):
                     if p.tokens[look].value == "{" { break }
-                    if p.tokens[look].value == "range" {
+                    if p.tokens[look].value == "range":
                         is_range = true
                         break
-                    }
                     look = look + 1
-                }
-                if is_range {
+                if is_range:
                     // Collect variable names before :=
                     let vname: String = go_current(p).value
                     // Skip to range
-                    while go_current(p).value != "range" {
+                    while go_current(p).value != "range":
                         if go_current(p).kind == "EOF" { break }
                         p = go_advance(p)
-                    }
                     p = go_advance(p)
                     let collection: String = translate_go_expr(p)
-                    while go_current(p).value != "{" {
+                    while go_current(p).value != "{":
                         if go_current(p).kind == "EOF" { break }
                         p = go_advance(p)
-                    }
                     out = out + ind + "    for " + vname + " in " + collection + " {\n"
                     out = out + ind + "        // ...\n"
                     out = out + ind + "    }\n"
-                } else {
+                else:
                     out = out + ind + "    while /* ... */ {\n"
                     out = out + ind + "        // ...\n"
                     out = out + ind + "    }\n"
-                    while go_current(p).value != "{" {
+                    while go_current(p).value != "{":
                         if go_current(p).kind == "EOF" { break }
                         p = go_advance(p)
-                    }
-                }
                 // Skip body
-                if go_current(p).value == "{" {
+                if go_current(p).value == "{":
                     p = go_advance(p)
                     let mut inner_depth: Int = 1
-                    while inner_depth > 0 {
+                    while inner_depth > 0:
                         if go_current(p).kind == "EOF" { break }
                         if go_current(p).value == "{" { inner_depth = inner_depth + 1 }
                         if go_current(p).value == "}" { inner_depth = inner_depth - 1 }
                         p = go_advance(p)
-                    }
-                }
                 p = go_skip_whitespace(p)
                 body_count = body_count + 1
                 continue
-            }
-            if t.value == "defer" {
+            if t.value == "defer":
                 p = go_advance(p)
                 let expr: String = translate_go_expr(p)
                 out = out + ind + "    // defer " + expr + "\n"
-                while go_current(p).kind != "NEWLINE" {
+                while go_current(p).kind != "NEWLINE":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 p = go_skip_whitespace(p)
                 body_count = body_count + 1
                 continue
-            }
-            if t.value == "go" {
+            if t.value == "go":
                 // goroutine → spawn
                 p = go_advance(p)
                 let expr: String = translate_go_expr(p)
                 out = out + ind + "    spawn " + expr + "\n"
-                while go_current(p).kind != "NEWLINE" {
+                while go_current(p).kind != "NEWLINE":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 p = go_skip_whitespace(p)
                 body_count = body_count + 1
                 continue
-            }
-            if t.value == "switch" {
+            if t.value == "switch":
                 p = go_advance(p)
                 let expr: String = translate_go_expr(p)
                 out = out + ind + "    match " + expr + " {\n"
                 out = out + ind + "        // cases\n"
                 out = out + ind + "    }\n"
                 // Skip switch body
-                while go_current(p).value != "{" {
+                while go_current(p).value != "{":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
-                if go_current(p).value == "{" {
+                if go_current(p).value == "{":
                     p = go_advance(p)
                     let mut inner_depth: Int = 1
-                    while inner_depth > 0 {
+                    while inner_depth > 0:
                         if go_current(p).kind == "EOF" { break }
                         if go_current(p).value == "{" { inner_depth = inner_depth + 1 }
                         if go_current(p).value == "}" { inner_depth = inner_depth - 1 }
                         p = go_advance(p)
-                    }
-                }
                 p = go_skip_whitespace(p)
                 body_count = body_count + 1
                 continue
-            }
-        }
 
         // Short declaration: name := expr
-        if t.kind == "IDENT" {
+        if t.kind == "IDENT":
             let vname: String = t.value
             p = go_advance(p)
-            if go_current(p).value == ":=" {
+            if go_current(p).value == ":=":
                 p = go_advance(p)
                 let expr: String = translate_go_expr(p)
                 let inferred: String = infer_local_type(expr)
                 out = out + ind + "    let mut " + vname + ": " + inferred + " = " + expr + "\n"
-                while go_current(p).kind != "NEWLINE" {
+                while go_current(p).kind != "NEWLINE":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 p = go_skip_whitespace(p)
                 body_count = body_count + 1
                 continue
-            }
             // Assignment: name = expr
-            if go_current(p).value == "=" {
+            if go_current(p).value == "=":
                 p = go_advance(p)
                 let expr: String = translate_go_expr(p)
                 out = out + ind + "    " + vname + " = " + expr + "\n"
-                while go_current(p).kind != "NEWLINE" {
+                while go_current(p).kind != "NEWLINE":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 p = go_skip_whitespace(p)
                 body_count = body_count + 1
                 continue
-            }
             // Expression statement (function call etc.)
             // Put the name back as part of expression
-        }
 
         // Skip to next newline
-        while go_current(p).kind != "NEWLINE" {
+        while go_current(p).kind != "NEWLINE":
             if go_current(p).value == "}" { break }
             if go_current(p).kind == "EOF" { break }
             p = go_advance(p)
-        }
         p = go_skip_whitespace(p)
         body_count = body_count + 1
         if body_count > 100 { break }
-    }
 
     out = out + ind + "}\n"
     return out
-}
 
 // ---------------------------------------------------------------------------
 // Struct translation
 // ---------------------------------------------------------------------------
 
-fn translate_go_struct(p: GoParser, ind: String) -> String {
+fn translate_go_struct(p: GoParser, ind: String) -> String:
     p = go_expect_kw(p, "type")
     let sname: String = go_current(p).value
     p = go_advance(p)
@@ -1178,37 +983,33 @@ fn translate_go_struct(p: GoParser, ind: String) -> String {
     p = go_skip_whitespace(p)
 
     let mut field_count: Int = 0
-    while go_current(p).value != "}" {
+    while go_current(p).value != "}":
         if go_current(p).kind == "EOF" { break }
-        if go_current(p).kind == "NEWLINE" {
+        if go_current(p).kind == "NEWLINE":
             p = go_advance(p)
             continue
-        }
         let fname: String = go_current(p).value
         p = go_advance(p)
         let ftype: String = go_read_type(p)
         // Advance past type tokens
-        while go_current(p).kind != "NEWLINE" {
+        while go_current(p).kind != "NEWLINE":
             if go_current(p).value == "}" { break }
             if go_current(p).kind == "EOF" { break }
             p = go_advance(p)
-        }
         out = out + ind + "    " + fname + ": " + ftype + "\n"
         p = go_skip_whitespace(p)
         field_count = field_count + 1
         if field_count > 100 { break }
-    }
     if go_current(p).value == "}" { p = go_advance(p) }
 
     out = out + ind + "}\n"
     return out
-}
 
 // ---------------------------------------------------------------------------
 // Interface → trait translation
 // ---------------------------------------------------------------------------
 
-fn translate_go_interface(p: GoParser, ind: String) -> String {
+fn translate_go_interface(p: GoParser, ind: String) -> String:
     p = go_expect_kw(p, "type")
     let iname: String = go_current(p).value
     p = go_advance(p)
@@ -1220,305 +1021,251 @@ fn translate_go_interface(p: GoParser, ind: String) -> String {
     p = go_skip_whitespace(p)
 
     let mut method_count: Int = 0
-    while go_current(p).value != "}" {
+    while go_current(p).value != "}":
         if go_current(p).kind == "EOF" { break }
-        if go_current(p).kind == "NEWLINE" {
+        if go_current(p).kind == "NEWLINE":
             p = go_advance(p)
             continue
-        }
         // Method signature: Name(params) ReturnType
-        if go_current(p).kind == "IDENT" {
+        if go_current(p).kind == "IDENT":
             let mname: String = go_current(p).value
             p = go_advance(p)
-            if go_current(p).value == "(" {
+            if go_current(p).value == "(":
                 p = go_advance(p)
                 let mut params: String = "self"
-                while go_current(p).value != ")" {
+                while go_current(p).value != ")":
                     if go_current(p).kind == "EOF" { break }
-                    if go_current(p).value == "," {
+                    if go_current(p).value == ",":
                         p = go_advance(p)
                         continue
-                    }
                     let pname: String = go_current(p).value
                     p = go_advance(p)
                     let ptype: String = go_read_type(p)
-                    if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+                    if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
                         p = go_advance(p)
-                    }
                     params = params + ", " + pname + ": " + ptype
-                }
                 if go_current(p).value == ")" { p = go_advance(p) }
                 let mut ret: String = ""
-                if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" || go_current(p).value == "(" {
+                if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" || go_current(p).value == "(":
                     let rtype: String = go_read_type(p)
-                    if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+                    if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
                         p = go_advance(p)
-                    }
                     if rtype != "Void" { ret = " -> " + rtype }
-                }
                 out = out + ind + "    fn " + mname + "(" + params + ")" + ret + "\n"
-            } else {
+            else:
                 // Embedded interface
                 out = out + ind + "    // embeds " + mname + "\n"
-            }
-        }
-        while go_current(p).kind != "NEWLINE" {
+        while go_current(p).kind != "NEWLINE":
             if go_current(p).value == "}" { break }
             if go_current(p).kind == "EOF" { break }
             p = go_advance(p)
-        }
         p = go_skip_whitespace(p)
         method_count = method_count + 1
         if method_count > 100 { break }
-    }
     if go_current(p).value == "}" { p = go_advance(p) }
 
     out = out + ind + "}\n"
     return out
-}
 
 // ---------------------------------------------------------------------------
 // Type alias translation
 // ---------------------------------------------------------------------------
 
-fn translate_go_type_alias(p: GoParser, ind: String) -> String {
+fn translate_go_type_alias(p: GoParser, ind: String) -> String:
     p = go_expect_kw(p, "type")
     let tname: String = go_current(p).value
     p = go_advance(p)
     let target: String = go_read_type(p)
-    while go_current(p).kind != "NEWLINE" {
+    while go_current(p).kind != "NEWLINE":
         if go_current(p).kind == "EOF" { break }
         p = go_advance(p)
-    }
     return ind + "// type " + tname + " = " + target + "\n"
-}
 
 // ---------------------------------------------------------------------------
 // Const/var block translation
 // ---------------------------------------------------------------------------
 
-fn translate_go_const_block(p: GoParser, ind: String) -> String {
+fn translate_go_const_block(p: GoParser, ind: String) -> String:
     p = go_expect_kw(p, "const")
     let mut out: String = ""
 
-    if go_current(p).value == "(" {
+    if go_current(p).value == "(":
         // Const block: const ( ... )
         p = go_advance(p)
         p = go_skip_whitespace(p)
-        while go_current(p).value != ")" {
+        while go_current(p).value != ")":
             if go_current(p).kind == "EOF" { break }
-            if go_current(p).kind == "NEWLINE" {
+            if go_current(p).kind == "NEWLINE":
                 p = go_advance(p)
                 continue
-            }
             let cname: String = go_current(p).value
             p = go_advance(p)
-            if go_current(p).value == "=" {
+            if go_current(p).value == "=":
                 p = go_advance(p)
                 let expr: String = translate_go_expr(p)
                 out = out + ind + "let " + cname + " = " + expr + "\n"
-            } else {
+            else:
                 out = out + ind + "// const " + cname + "\n"
-            }
-            while go_current(p).kind != "NEWLINE" {
+            while go_current(p).kind != "NEWLINE":
                 if go_current(p).value == ")" { break }
                 if go_current(p).kind == "EOF" { break }
                 p = go_advance(p)
-            }
             p = go_skip_whitespace(p)
-        }
         if go_current(p).value == ")" { p = go_advance(p) }
-    } else {
+    else:
         // Single const
         let cname: String = go_current(p).value
         p = go_advance(p)
         // Optional type
-        if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+        if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
             p = go_advance(p)
-        }
-        if go_current(p).value == "=" {
+        if go_current(p).value == "=":
             p = go_advance(p)
             let expr: String = translate_go_expr(p)
             out = ind + "let " + cname + " = " + expr + "\n"
-        } else {
+        else:
             out = ind + "// const " + cname + "\n"
-        }
-    }
 
     return out
-}
 
 // ---------------------------------------------------------------------------
 // Main translation entry point
 // ---------------------------------------------------------------------------
 
-fn translate_go(source: String, filename: String) -> String {
+fn translate_go(source: String, filename: String) -> String:
     let tokens: List<GoToken> = tokenize_go(source)
     let mut p: GoParser = new_go_parser(tokens, filename)
     let mut out_text: String = "// Translated from " + filename + " by mapanare transpile\n\n"
 
     p = go_skip_whitespace(p)
 
-    while go_current(p).kind != "EOF" {
+    while go_current(p).kind != "EOF":
         let t: GoToken = go_current(p)
 
-        if t.kind == "KEYWORD" {
+        if t.kind == "KEYWORD":
             // Package declaration
-            if t.value == "package" {
+            if t.value == "package":
                 p = go_advance(p)
                 let pkg: String = go_current(p).value
                 p = go_advance(p)
                 out_text = out_text + "// package " + pkg + "\n\n"
                 p = go_skip_whitespace(p)
                 continue
-            }
             // Import declaration
-            if t.value == "import" {
+            if t.value == "import":
                 p = go_advance(p)
-                if go_current(p).value == "(" {
+                if go_current(p).value == "(":
                     // Multi-line import
                     p = go_advance(p)
-                    while go_current(p).value != ")" {
+                    while go_current(p).value != ")":
                         if go_current(p).kind == "EOF" { break }
                         p = go_advance(p)
-                    }
                     if go_current(p).value == ")" { p = go_advance(p) }
-                } else {
+                else:
                     // Single import
-                    while go_current(p).kind != "NEWLINE" {
+                    while go_current(p).kind != "NEWLINE":
                         if go_current(p).kind == "EOF" { break }
                         p = go_advance(p)
-                    }
-                }
                 out_text = out_text + "// import skipped\n"
                 p = go_skip_whitespace(p)
                 continue
-            }
             // Function declaration
-            if t.value == "func" {
+            if t.value == "func":
                 out_text = out_text + translate_go_function(p, "") + "\n"
-                while go_current(p).kind != "EOF" {
-                    if go_current(p).kind == "KEYWORD" {
+                while go_current(p).kind != "EOF":
+                    if go_current(p).kind == "KEYWORD":
                         let kv: String = go_current(p).value
-                        if kv == "func" || kv == "type" || kv == "var" || kv == "const" {
+                        if kv == "func" || kv == "type" || kv == "var" || kv == "const":
                             break
-                        }
-                    }
                     p = go_advance(p)
-                }
                 continue
-            }
             // Type declarations (struct, interface, alias)
-            if t.value == "type" {
+            if t.value == "type":
                 // Look ahead to see if struct, interface, or alias
                 let mut look: Int = p.pos + 1
                 // Skip name
                 if look < len(p.tokens) { look = look + 1 }
                 let mut what: String = ""
                 if look < len(p.tokens) { what = p.tokens[look].value }
-                if what == "struct" {
+                if what == "struct":
                     out_text = out_text + translate_go_struct(p, "") + "\n"
-                    while go_current(p).kind != "EOF" {
-                        if go_current(p).kind == "KEYWORD" {
+                    while go_current(p).kind != "EOF":
+                        if go_current(p).kind == "KEYWORD":
                             let kv: String = go_current(p).value
-                            if kv == "func" || kv == "type" || kv == "var" || kv == "const" {
+                            if kv == "func" || kv == "type" || kv == "var" || kv == "const":
                                 break
-                            }
-                        }
                         p = go_advance(p)
-                    }
                     continue
-                }
-                if what == "interface" {
+                if what == "interface":
                     out_text = out_text + translate_go_interface(p, "") + "\n"
-                    while go_current(p).kind != "EOF" {
-                        if go_current(p).kind == "KEYWORD" {
+                    while go_current(p).kind != "EOF":
+                        if go_current(p).kind == "KEYWORD":
                             let kv: String = go_current(p).value
-                            if kv == "func" || kv == "type" || kv == "var" || kv == "const" {
+                            if kv == "func" || kv == "type" || kv == "var" || kv == "const":
                                 break
-                            }
-                        }
                         p = go_advance(p)
-                    }
                     continue
-                }
                 // Type alias
                 out_text = out_text + translate_go_type_alias(p, "")
-                while go_current(p).kind != "NEWLINE" {
+                while go_current(p).kind != "NEWLINE":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 p = go_skip_whitespace(p)
                 continue
-            }
             // Const declarations
-            if t.value == "const" {
+            if t.value == "const":
                 out_text = out_text + translate_go_const_block(p, "") + "\n"
                 p = go_skip_whitespace(p)
                 continue
-            }
             // Var declarations
-            if t.value == "var" {
+            if t.value == "var":
                 p = go_advance(p)
-                if go_current(p).value == "(" {
+                if go_current(p).value == "(":
                     // Var block
                     p = go_advance(p)
                     p = go_skip_whitespace(p)
-                    while go_current(p).value != ")" {
+                    while go_current(p).value != ")":
                         if go_current(p).kind == "EOF" { break }
-                        if go_current(p).kind == "NEWLINE" {
+                        if go_current(p).kind == "NEWLINE":
                             p = go_advance(p)
                             continue
-                        }
                         let vname: String = go_current(p).value
                         p = go_advance(p)
                         let vtype: String = go_read_type(p)
-                        if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+                        if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
                             p = go_advance(p)
-                        }
-                        if go_current(p).value == "=" {
+                        if go_current(p).value == "=":
                             p = go_advance(p)
                             let expr: String = translate_go_expr(p)
                             out_text = out_text + "let mut " + vname + ": " + vtype + " = " + expr + "\n"
-                        } else {
+                        else:
                             out_text = out_text + "let mut " + vname + ": " + vtype + "\n"
-                        }
-                        while go_current(p).kind != "NEWLINE" {
+                        while go_current(p).kind != "NEWLINE":
                             if go_current(p).value == ")" { break }
                             if go_current(p).kind == "EOF" { break }
                             p = go_advance(p)
-                        }
                         p = go_skip_whitespace(p)
-                    }
                     if go_current(p).value == ")" { p = go_advance(p) }
-                } else {
+                else:
                     // Single var
                     let vname: String = go_current(p).value
                     p = go_advance(p)
                     let vtype: String = go_read_type(p)
-                    if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD" {
+                    if go_current(p).kind == "IDENT" || go_current(p).kind == "KEYWORD":
                         p = go_advance(p)
-                    }
-                    if go_current(p).value == "=" {
+                    if go_current(p).value == "=":
                         p = go_advance(p)
                         let expr: String = translate_go_expr(p)
                         out_text = out_text + "let mut " + vname + ": " + vtype + " = " + expr + "\n"
-                    } else {
+                    else:
                         out_text = out_text + "let mut " + vname + ": " + vtype + "\n"
-                    }
-                }
-                while go_current(p).kind != "NEWLINE" {
+                while go_current(p).kind != "NEWLINE":
                     if go_current(p).kind == "EOF" { break }
                     p = go_advance(p)
-                }
                 p = go_skip_whitespace(p)
                 continue
-            }
-        }
 
         // Skip other top-level tokens
         p = go_advance(p)
-    }
 
     return out_text
-}
