@@ -480,6 +480,12 @@ had latent bugs requiring dedicated releases.
   comprehension upgrades, implicit-return upgrades, SPEC.md /
   README.md / CLAUDE.md example refresh. **-169 lines** on top
   of v5.17.0; cumulative v5.13.0 → v5.17.1 shrink **-13.8%**.
+- **v5.17.2** — **Sh.H — defensive-loop cleanup.** Closes the 12
+  defensive-iteration sites catalogued in v5.17.1
+  COMPREHENSION_SITES.md (`for _ in 0..LARGE: if i < n` →
+  `for i in 0..n`). Bootstrap-era cruft; range-for is everywhere
+  in the same files now. PLAN at
+  `docs/roadmap/v5/v5.17.2/PLAN.md`.
 - **v5.18.0** — **Mc.1/3/4 — tooling pack.** LSP server,
   `mnc init`, `mnc check`, VSCode extension. Includes AST
   span-info retrofit (Phase 0). See
