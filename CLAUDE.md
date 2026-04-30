@@ -18,7 +18,41 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
-- **v5.16.0** (ready, not tagged) — **Te.4 — self-host
+- **v5.17.0** (ready, not tagged) — **Sh.* — self-host rewrite to
+  terse syntax.** Headline release of the v5.13–v5.21 terseness
+  arc: the 14k-line self-hosted compiler in `mapanare/self/` now
+  ships in colon-block form. **Sh.B** — all 17 hand-edited modules
+  processed via `mapanare fmt --to-terse` in dependency order, one
+  commit per module, with stage1 build + goldens 80/80 validated
+  between every commit. Total source shrink **-3,781 lines (13.2%)**
+  across the 17 modules (28,698 → 24,917). Per-module deltas
+  range from 5.3% (`abi.mn`) to 20.2% (`ast.mn`); largest absolute
+  drops are `emit_llvm.mn` (-646), `lower.mn` (-603), and
+  `parser.mn` (-359). The regenerated `mnc_all.mn` shrinks from
+  23,282 to 20,377 lines (-2,905, 12.5%). **No semantic change** —
+  this is `to_terse` followed by parser-synthesis-back-to-the-same-
+  AST, so the IR shape is conserved by construction. **Sh.E** —
+  bootstrap seed refresh: the v5.10.0-vintage Linux seed at
+  `bootstrap/seed/linux-x86_64/mnc` segfaulted at stage 1 against
+  the new colon-block source (predates v5.14.0's
+  `_indent_to_braces` preprocessor); refreshed from the v5.17.0
+  HEAD `mnc-stage1`. **Sh.F** — **strict 3-stage fixed point
+  preserved**: stage2.ll == stage3.ll at 231,957 lines / 0-line
+  diff (the v5.9.0 milestone, held since v5.9.0). **Goldens 80/80**
+  at every per-module commit and at HEAD. `scripts/build_from_seed.sh`
+  succeeds with the refreshed seed. Phase 0 (Sh.A.1.A/B/C, shipped
+  ab057e0 prior to this release) preemptively fixed three v5.14.0-era
+  latent rewriter bugs (`to_terse` corruption of multi-line match
+  arms, `to_terse` corruption of expression-context blocks,
+  `_indent_to_braces` multi-level dedent); the per-module rewrite
+  ran to completion without surfacing further issues. **Deferred to
+  v5.17.1**: Sh.C (comprehension upgrades), Sh.D (implicit-return
+  upgrades), Sh.G (SPEC / README / CLAUDE example refresh) — all
+  per-site judgment work that would have blocked the strict-fixed-
+  point payoff release. See
+  `docs/roadmap/v5/v5.17.0/SESSION_REPORT.md` and
+  `docs/roadmap/v5/v5.17.0/PHASE_0_SURVEY.md`.
+- **v5.16.0** (shipped) — **Te.4 — self-host
   string-interpolation parity.** Closes the last Python-vs-native
   string-handling gap. Native `mnc-stage1` now lexes / parses /
   lowers `"${expr}"` interpolation the same way the Python
@@ -395,11 +429,14 @@ had latent bugs requiring dedicated releases.
 - ~~**v5.16.0**~~ — shipped (see release notes above). Self-host
   string-interp parity — closes the v5.13.0-prep audit divergence
   ahead of v5.17.0.
-- **v5.17.0** — **Sh.* — self-host rewrite.** Mechanical
-  `mnc fmt --to-terse` on `mapanare/self/*.mn`, target ~40%
-  line reduction. Highest-risk release in the arc — strict
-  3-stage fixed point can break if any Te.* rewriter has an
-  edge case. See `docs/roadmap/v5/v5.17.0/PLAN.md`.
+- ~~**v5.17.0**~~ — shipped (see release notes above). Mechanical
+  `mnc fmt --to-terse` on `mapanare/self/*.mn`. **-3,781 lines
+  (13.2%)** across the 17 hand-edited modules; strict 3-stage
+  fixed point preserved at 0-line diff.
+- **v5.17.1** — **Sh.C + Sh.D + Sh.G — terse polish.** Per-site
+  comprehension upgrades, implicit-return upgrades, SPEC.md /
+  README.md / CLAUDE.md example refresh. PLAN authored at
+  `docs/roadmap/v5/v5.17.1/PLAN.md`.
 - **v5.18.0** — **Mc.1/3/4 — tooling pack.** LSP server,
   `mnc init`, `mnc check`, VSCode extension. Includes AST
   span-info retrofit (Phase 0). See
@@ -683,7 +720,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (29436 symbols, 63648 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (29536 symbols, 63769 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

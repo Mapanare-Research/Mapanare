@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.17.0] - 2026-04-30
+
+### Changed
+
+- **Sh.* — self-host rewrite to terse syntax.** Headline release of
+  the v5.13–v5.21 terseness arc. The 14k-line self-hosted compiler
+  in `mapanare/self/` now ships in colon-block form. All 17
+  hand-edited modules processed via `mapanare fmt --to-terse` in
+  dependency order, one commit per module, with stage1 build +
+  goldens 80/80 validated between every commit. Total source
+  shrink: **-3,781 lines (13.2%)** across the 17 modules
+  (28,698 → 24,917). Per-module deltas range from 5.3% (`abi.mn`)
+  to 20.2% (`ast.mn`). The regenerated `mnc_all.mn` shrinks from
+  23,282 to 20,377 lines (-2,905, 12.5%). **No semantic change** —
+  this is `to_terse` followed by parser-synthesis-back-to-the-same-
+  AST, so the IR shape is conserved by construction.
+
+### Fixed
+
+- **Sh.E — bootstrap seed refresh.**
+  `scripts/build_from_seed.sh` segfaulted at stage 1 against
+  the new colon-block sources because the Linux seed at
+  `bootstrap/seed/linux-x86_64/mnc` was a v5.10.0 binary that
+  predates v5.14.0's `_indent_to_braces` preprocessor. Refreshed
+  seed from the v5.17.0 HEAD `mapanare/self/mnc-stage1`
+  (sha256 `929e7a4b...19b0a0`). Post-refresh: stage 1 / stage 2 IR
+  both 231,957 lines, llvm-as OK, final binary smoke test OK.
+
+### Validation
+
+- **Strict 3-stage fixed point preserved.** stage2.ll == stage3.ll
+  at 231,957 lines / 0-line diff (the v5.9.0 milestone, held since
+  v5.9.0). The mechanical rewrite is sound.
+- Goldens 80/80 at every per-module commit and at the final HEAD.
+- `scripts/build_from_seed.sh` succeeds with the refreshed seed.
+
+### Deferred
+
+- **Sh.C / Sh.D / Sh.G** — comprehension upgrades, implicit-return
+  upgrades, and SPEC.md / README.md / CLAUDE.md example refresh.
+  Slipped to v5.17.1 (PLAN already authored at
+  `docs/roadmap/v5/v5.17.1/PLAN.md`). The mechanical pass alone
+  is the releasable v5.17.0 unit; bundling the per-site judgment
+  work would have blocked the strict-fixed-point payoff release
+  behind ~6 more hours of work.
+
+See `docs/roadmap/v5/v5.17.0/SESSION_REPORT.md` and
+`docs/roadmap/v5/v5.17.0/PHASE_0_SURVEY.md` for the full ledger.
+
+
 ## [5.16.0] - 2026-04-29
 
 ### Added
@@ -7635,7 +7685,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.13.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.17.0...HEAD
+[5.17.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.16.0...v5.17.0
 [5.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.2...v5.13.0
 [5.11.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.0...v5.11.2
 [5.8.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.8.6...v5.8.7
