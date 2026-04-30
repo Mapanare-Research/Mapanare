@@ -19106,7 +19106,10 @@ fn print_help_text():
     print("  mnc run <file.mn>         compile and execute")
     print("  mnc build <file.mn|dir>   build native binary [-o output]")
     print("  mnc compile <file>        transpile + build (.py/.php/.ts/.go)")
+    print("  mnc check <file.mn>       type-check [--all] [--werror]")
+    print("  mnc init <path>           scaffold a new project [--name NAME]")
     print("  mnc test <file.mn>        compile, link, run, report pass/fail")
+    print("  mnc lsp                   start the language server (stdio)")
     print("  mnc cache <stats|clean>   inspect or clear build cache")
     print("  mnc version               print version")
     print("  mnc --help                show this help")
@@ -20161,6 +20164,49 @@ fn mn_main():
                 fa = fa + 1
         let fr: Int = __mn_system(fmt_cmd)
         if fr != 0 { __mn_exit(fr) }
+        return
+    // v5.18.0 Mc.4: check — shell out to ``mapanare check``. Native port
+    // tracked on the follow-up docket; the Python implementation drives
+    // diagnostics through the same parser+semantic stack the LSP uses.
+    if arg1 == "check":
+        let mut chk_cmd: String = "mapanare check"
+        let mut ca: Int = 2
+        for _ in 0..64:
+            if ca >= __mn_argc() { ca = __mn_argc() + 1 }
+            if ca < __mn_argc():
+                chk_cmd = chk_cmd + " " + __mn_argv(ca)
+                ca = ca + 1
+        let cr_check: Int = __mn_system(chk_cmd)
+        if cr_check != 0 { __mn_exit(cr_check) }
+        return
+    // v5.18.0 Mc.3: init — shell out to ``mapanare init``. Scaffolds a
+    // new project from mapanare/templates/init/<template>/. Native port
+    // tracked on the follow-up docket.
+    if arg1 == "init":
+        let mut init_cmd: String = "mapanare init"
+        let mut ia: Int = 2
+        for _ in 0..64:
+            if ia >= __mn_argc() { ia = __mn_argc() + 1 }
+            if ia < __mn_argc():
+                init_cmd = init_cmd + " " + __mn_argv(ia)
+                ia = ia + 1
+        let ir_init: Int = __mn_system(init_cmd)
+        if ir_init != 0 { __mn_exit(ir_init) }
+        return
+    // v5.18.0 Mc.1: lsp — shell out to the pygls-based language server.
+    // Editor extensions launching ``mnc lsp`` get the same protocol they
+    // would from ``mapanare lsp`` or ``mapanare-lsp``. Native ``.mn``
+    // LSP is deferred (PLAN risk register).
+    if arg1 == "lsp":
+        let mut lsp_cmd: String = "mapanare lsp"
+        let mut la: Int = 2
+        for _ in 0..64:
+            if la >= __mn_argc() { la = __mn_argc() + 1 }
+            if la < __mn_argc():
+                lsp_cmd = lsp_cmd + " " + __mn_argv(la)
+                la = la + 1
+        let lr: Int = __mn_system(lsp_cmd)
+        if lr != 0 { __mn_exit(lr) }
         return
     if arg1 == "compile":
         if __mn_argc() < 3:
