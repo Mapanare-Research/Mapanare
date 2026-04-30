@@ -8,11 +8,10 @@
 // MIR type representation
 // ---------------------------------------------------------------------------
 
-struct MIRType {
-    name: String,
-    kind: Int,
+struct MIRType:
+    name: String
+    kind: Int
     args: List<MIRType>
-}
 
 // MIRType kind constants — integer tags (no string comparisons)
 pub fn TK_INT() -> Int { return 0 }
@@ -37,7 +36,7 @@ pub fn TK_TENSOR() -> Int { return 18 }
 pub fn TK_PTR() -> Int { return 19 }
 
 // Convert kind tag to string name (for emit_llvm_ir and diagnostics)
-pub fn tk_name(k: Int) -> String {
+pub fn tk_name(k: Int) -> String:
     if k == 0 { return "int" }
     if k == 1 { return "float" }
     if k == 2 { return "bool" }
@@ -56,16 +55,13 @@ pub fn tk_name(k: Int) -> String {
     if k == 15 { return "agent" }
     if k == 16 { return "range" }
     return "unknown"
-}
 
-fn new_mir_type(name: String, kind: Int) -> MIRType {
+fn new_mir_type(name: String, kind: Int) -> MIRType:
     let args: List<MIRType> = []
     return new MIRType { name: name, kind: kind, args: args }
-}
 
-fn new_mir_type_with_args(name: String, kind: Int, args: List<MIRType>) -> MIRType {
+fn new_mir_type_with_args(name: String, kind: Int, args: List<MIRType>) -> MIRType:
     return new MIRType { name: name, kind: kind, args: args }
-}
 
 fn mir_int() -> MIRType { return new_mir_type("Int", TK_INT()) }
 fn mir_float() -> MIRType { return new_mir_type("Float", TK_FLOAT()) }
@@ -74,11 +70,10 @@ fn mir_string() -> MIRType { return new_mir_type("String", TK_STRING()) }
 fn mir_void() -> MIRType { return new_mir_type("Void", TK_VOID()) }
 fn mir_unknown() -> MIRType { return new_mir_type("<unknown>", TK_UNKNOWN()) }
 fn mir_option() -> MIRType { return new_mir_type("Option", TK_OPTION()) }
-fn mir_option_of(inner: MIRType) -> MIRType {
+fn mir_option_of(inner: MIRType) -> MIRType:
     let mut t: MIRType = new_mir_type("Option", TK_OPTION())
     t.args.push(inner)
     return t
-}
 fn mir_result() -> MIRType { return new_mir_type("Result", TK_RESULT()) }
 fn mir_list() -> MIRType { return new_mir_type("List", TK_LIST()) }
 // v5.6.0 Sh.6: tensor values travel as ptr through the LLVM backend.
@@ -87,325 +82,279 @@ fn mir_tensor() -> MIRType { return new_mir_type("Tensor", TK_TENSOR()) }
 // lowering can pick between __mn_tensor_get_f64_nd and _i64_nd. Resolves
 // to the same `ptr` at the LLVM layer — args are inspected only by
 // lowering, not by resolve_mir_type.
-fn mir_tensor_of(elem: MIRType) -> MIRType {
+fn mir_tensor_of(elem: MIRType) -> MIRType:
     let mut t: MIRType = new_mir_type("Tensor", TK_TENSOR())
     t.args.push(elem)
     return t
-}
 fn mir_map() -> MIRType { return new_mir_type("Map", TK_MAP()) }
 fn mir_signal() -> MIRType { return new_mir_type("Signal", TK_SIGNAL()) }
 fn mir_range() -> MIRType { return new_mir_type("Range", TK_RANGE()) }
 fn mir_fn_type() -> MIRType { return new_mir_type("<fn>", TK_FN()) }
 
-fn mir_struct(name: String) -> MIRType {
+fn mir_struct(name: String) -> MIRType:
     return new_mir_type(name, TK_STRUCT())
-}
 
-fn mir_enum(name: String) -> MIRType {
+fn mir_enum(name: String) -> MIRType:
     return new_mir_type(name, TK_ENUM())
-}
 
-fn mir_agent(name: String) -> MIRType {
+fn mir_agent(name: String) -> MIRType:
     return new_mir_type(name, TK_AGENT())
-}
 
 // ---------------------------------------------------------------------------
 // MIR values — SSA virtual registers
 // ---------------------------------------------------------------------------
 
-struct Value {
-    name: String,
+struct Value:
+    name: String
     ty: MIRType
-}
 
-fn new_value(name: String, ty: MIRType) -> Value {
+fn new_value(name: String, ty: MIRType) -> Value:
     return new Value { name: name, ty: ty }
-}
 
-fn void_value() -> Value {
+fn void_value() -> Value:
     return new_value("%void", mir_void())
-}
 
 // ---------------------------------------------------------------------------
 // MIR instructions — encoded as tagged enum
 // ---------------------------------------------------------------------------
 
-enum BinOpKind {
-    Add, Sub, Mul, Div, Mod,
-    Eq, Ne, Lt, Gt, Le, Ge,
+enum BinOpKind:
+    Add, Sub, Mul, Div, Mod
+    Eq, Ne, Lt, Gt, Le, Ge
     And, Or
-}
 
-enum UnaryOpKind {
+enum UnaryOpKind:
     Neg, Not
-}
 
-enum StreamOpKind {
+enum StreamOpKind:
     Map, Filter, Fold, Take, Skip, Collect
-}
 
 // Field pair for struct init
-struct FieldPair {
-    name: String,
+struct FieldPair:
+    name: String
     val: Value
-}
 
-fn new_field_pair(name: String, val: Value) -> FieldPair {
+fn new_field_pair(name: String, val: Value) -> FieldPair:
     return new FieldPair { name: name, val: val }
-}
 
 // Key-value pair for map init
-struct KVPair {
-    key: Value,
+struct KVPair:
+    key: Value
     val: Value
-}
 
-fn new_kv_pair(key: Value, val: Value) -> KVPair {
+fn new_kv_pair(key: Value, val: Value) -> KVPair:
     return new KVPair { key: key, val: val }
-}
 
 // Phi incoming entry
-struct PhiEntry {
-    block_label: String,
+struct PhiEntry:
+    block_label: String
     val: Value
-}
 
-fn new_phi_entry(label: String, val: Value) -> PhiEntry {
+fn new_phi_entry(label: String, val: Value) -> PhiEntry:
     return new PhiEntry { block_label: label, val: val }
-}
 
 // Switch case entry
-struct SwitchCase {
-    tag_value: String,
+struct SwitchCase:
+    tag_value: String
     block_label: String
-}
 
-fn new_switch_case(tag: String, label: String) -> SwitchCase {
+fn new_switch_case(tag: String, label: String) -> SwitchCase:
     return new SwitchCase { tag_value: tag, block_label: label }
-}
 
-enum Instruction {
+enum Instruction:
     // Values
-    Const(Value, MIRType, String),
-    Copy(Value, Value),
-    Cast(Value, Value, MIRType),
+    Const(Value, MIRType, String)
+    Copy(Value, Value)
+    Cast(Value, Value, MIRType)
     // Arithmetic
-    BinOp(Value, BinOpKind, Value, Value),
-    UnaryOp(Value, UnaryOpKind, Value),
+    BinOp(Value, BinOpKind, Value, Value)
+    UnaryOp(Value, UnaryOpKind, Value)
     // Aggregates
-    StructInit(Value, MIRType, List<FieldPair>),
-    FieldGet(Value, Value, String),
-    FieldSet(Value, String, Value),
-    ListInit(Value, MIRType, List<Value>),
-    TensorInit(Value, MIRType, List<Int>, List<Value>),
-    IndexGet(Value, Value, Value),
-    IndexSet(Value, Value, Value),
-    Alloca(Value, MIRType),
-    Load(Value, Value),
-    Store(Value, Value),
-    MapInit(Value, MIRType, MIRType, List<KVPair>),
+    StructInit(Value, MIRType, List<FieldPair>)
+    FieldGet(Value, Value, String)
+    FieldSet(Value, String, Value)
+    ListInit(Value, MIRType, List<Value>)
+    TensorInit(Value, MIRType, List<Int>, List<Value>)
+    IndexGet(Value, Value, Value)
+    IndexSet(Value, Value, Value)
+    Alloca(Value, MIRType)
+    Load(Value, Value)
+    Store(Value, Value)
+    MapInit(Value, MIRType, MIRType, List<KVPair>)
     // Enum
-    EnumInit(Value, MIRType, String, List<Value>),
-    EnumTag(Value, Value),
-    EnumPayload(Value, Value, String),
+    EnumInit(Value, MIRType, String, List<Value>)
+    EnumTag(Value, Value)
+    EnumPayload(Value, Value, String)
     // Option/Result
-    WrapSome(Value, Value),
-    WrapNone(Value, MIRType),
-    WrapOk(Value, Value),
-    WrapErr(Value, Value),
-    Unwrap(Value, Value),
+    WrapSome(Value, Value)
+    WrapNone(Value, MIRType)
+    WrapOk(Value, Value)
+    WrapErr(Value, Value)
+    Unwrap(Value, Value)
     // Functions
-    Call(Value, String, List<Value>),
-    Return(Option<Value>),
+    Call(Value, String, List<Value>)
+    Return(Option<Value>)
     // Control flow
-    Jump(String),
-    Branch(Value, String, String),
-    Switch(Value, List<SwitchCase>, String),
+    Jump(String)
+    Branch(Value, String, String)
+    Switch(Value, List<SwitchCase>, String)
     // Agents
-    AgentSpawn(Value, MIRType, List<Value>),
-    AgentSend(Value, String, Value),
-    AgentSync(Value, Value, String),
+    AgentSpawn(Value, MIRType, List<Value>)
+    AgentSend(Value, String, Value)
+    AgentSync(Value, Value, String)
     // Signals
-    SignalInit(Value, MIRType, Value),
-    SignalGet(Value, Value),
-    SignalSet(Value, Value),
+    SignalInit(Value, MIRType, Value)
+    SignalGet(Value, Value)
+    SignalSet(Value, Value)
     // Streams
-    StreamOp(Value, StreamOpKind, Value, List<Value>),
+    StreamOp(Value, StreamOpKind, Value, List<Value>)
     // Strings
-    InterpConcat(Value, List<Value>),
+    InterpConcat(Value, List<Value>)
     // SSA
-    Phi(Value, List<PhiEntry>),
+    Phi(Value, List<PhiEntry>)
     // v5.4.0 Own.1 Phase 2 — ownership transfer marker (no dest)
-    Move(Value),
+    Move(Value)
     // v5.5.1 Sh.4 Phase 2 — coroutine suspension + block-on wait.
     // AwaitSuspend(dest, future): inside an async fn, suspend until the
     // future is ready, then extract T. The emitter (v5.5.2) lowers to
     // coro.save + coro.suspend + switch + fast-path readiness check.
     // BlockOn(dest, future): outside an async fn (e.g. main), drive the
     // coroutine to completion via __mn_coro_scheduler_run, then extract T.
-    AwaitSuspend(Value, Value),
+    AwaitSuspend(Value, Value)
     BlockOn(Value, Value)
-}
 
 // ---------------------------------------------------------------------------
 // Basic block
 // ---------------------------------------------------------------------------
 
-struct BasicBlock {
-    label: String,
+struct BasicBlock:
+    label: String
     instructions: List<Instruction>
-}
 
-fn new_basic_block(label: String) -> BasicBlock {
+fn new_basic_block(label: String) -> BasicBlock:
     let instrs: List<Instruction> = []
     return new BasicBlock { label: label, instructions: instrs }
-}
 
-fn is_terminator(inst: Instruction) -> Bool {
-    match inst {
-        Jump(_) => { return true },
-        Branch(_, _, _) => { return true },
-        Switch(_, _, _) => { return true },
-        Return(_) => { return true },
+fn is_terminator(inst: Instruction) -> Bool:
+    match inst:
+        Jump(_) => { return true }
+        Branch(_, _, _) => { return true }
+        Switch(_, _, _) => { return true }
+        Return(_) => { return true }
         _ => { return false }
-    }
-}
 
-fn block_terminated(bb: BasicBlock) -> Bool {
+fn block_terminated(bb: BasicBlock) -> Bool:
     if len(bb.instructions) == 0 { return false }
     let last: Instruction = bb.instructions[len(bb.instructions) - 1]
     return is_terminator(last)
-}
 
 // ---------------------------------------------------------------------------
 // MIR function
 // ---------------------------------------------------------------------------
 
-struct MIRParam {
-    name: String,
+struct MIRParam:
+    name: String
     ty: MIRType
-}
 
-fn new_mir_param(name: String, ty: MIRType) -> MIRParam {
+fn new_mir_param(name: String, ty: MIRType) -> MIRParam:
     return new MIRParam { name: name, ty: ty }
-}
 
-struct MIRFunction {
-    name: String,
-    params: List<MIRParam>,
-    return_type: MIRType,
-    blocks: List<BasicBlock>,
-    decorators: List<String>,
+struct MIRFunction:
+    name: String
+    params: List<MIRParam>
+    return_type: MIRType
+    blocks: List<BasicBlock>
+    decorators: List<String>
     is_public: Bool
-}
 
-fn new_mir_function(name: String, params: List<MIRParam>, ret: MIRType, decorators: List<String>, is_public: Bool) -> MIRFunction {
+fn new_mir_function(name: String, params: List<MIRParam>, ret: MIRType, decorators: List<String>, is_public: Bool) -> MIRFunction:
     let blocks: List<BasicBlock> = []
     return new MIRFunction { name: name, params: params, return_type: ret, blocks: blocks, decorators: decorators, is_public: is_public }
-}
 
 // ---------------------------------------------------------------------------
 // MIR module
 // ---------------------------------------------------------------------------
 
-struct StructInfo {
-    name: String,
+struct StructInfo:
+    name: String
     fields: List<FieldPair>
-}
 
-fn new_struct_info(name: String, fields: List<FieldPair>) -> StructInfo {
+fn new_struct_info(name: String, fields: List<FieldPair>) -> StructInfo:
     return new StructInfo { name: name, fields: fields }
-}
 
-struct EnumVariantInfo {
-    name: String,
+struct EnumVariantInfo:
+    name: String
     payload_types: List<MIRType>
-}
 
-fn new_enum_variant_info(name: String, types: List<MIRType>) -> EnumVariantInfo {
+fn new_enum_variant_info(name: String, types: List<MIRType>) -> EnumVariantInfo:
     return new EnumVariantInfo { name: name, payload_types: types }
-}
 
-struct EnumInfo {
-    name: String,
+struct EnumInfo:
+    name: String
     variants: List<EnumVariantInfo>
-}
 
-fn new_enum_info(name: String, variants: List<EnumVariantInfo>) -> EnumInfo {
+fn new_enum_info(name: String, variants: List<EnumVariantInfo>) -> EnumInfo:
     return new EnumInfo { name: name, variants: variants }
-}
 
-struct ExternFnInfo {
-    abi: String,
-    module_name: String,
-    fn_name: String,
-    param_types: List<MIRType>,
+struct ExternFnInfo:
+    abi: String
+    module_name: String
+    fn_name: String
+    param_types: List<MIRType>
     return_type: MIRType
-}
 
-fn new_extern_fn_info(abi: String, module_name: String, fn_name: String, params: List<MIRType>, ret: MIRType) -> ExternFnInfo {
+fn new_extern_fn_info(abi: String, module_name: String, fn_name: String, params: List<MIRType>, ret: MIRType) -> ExternFnInfo:
     return new ExternFnInfo { abi: abi, module_name: module_name, fn_name: fn_name, param_types: params, return_type: ret }
-}
 
-struct AgentInfo {
-    name: String,
-    inputs: List<String>,
-    outputs: List<String>,
+struct AgentInfo:
+    name: String
+    inputs: List<String>
+    outputs: List<String>
     method_names: List<String>
-}
 
-fn new_agent_info(name: String, inputs: List<String>, outputs: List<String>, methods: List<String>) -> AgentInfo {
+fn new_agent_info(name: String, inputs: List<String>, outputs: List<String>, methods: List<String>) -> AgentInfo:
     return new AgentInfo { name: name, inputs: inputs, outputs: outputs, method_names: methods }
-}
 
-struct PipeInfo {
-    name: String,
+struct PipeInfo:
+    name: String
     stages: List<String>
-}
 
-fn new_pipe_info(name: String, stages: List<String>) -> PipeInfo {
+fn new_pipe_info(name: String, stages: List<String>) -> PipeInfo:
     return new PipeInfo { name: name, stages: stages }
-}
 
-struct ImportInfo {
-    path: List<String>,
+struct ImportInfo:
+    path: List<String>
     items: List<String>
-}
 
-fn new_import_info(path: List<String>, items: List<String>) -> ImportInfo {
+fn new_import_info(path: List<String>, items: List<String>) -> ImportInfo:
     return new ImportInfo { path: path, items: items }
-}
 
-struct ModuleConst {
-    name: String,
-    type_name: String,
-    int_value: Int,
-    str_value: String,
+struct ModuleConst:
+    name: String
+    type_name: String
+    int_value: Int
+    str_value: String
     is_string: Bool
-}
 
-fn new_module_const_int(name: String, type_name: String, value: Int) -> ModuleConst {
+fn new_module_const_int(name: String, type_name: String, value: Int) -> ModuleConst:
     return new ModuleConst { name: name, type_name: type_name, int_value: value, str_value: "", is_string: false }
-}
 
-fn new_module_const_str(name: String, type_name: String, value: String) -> ModuleConst {
+fn new_module_const_str(name: String, type_name: String, value: String) -> ModuleConst:
     return new ModuleConst { name: name, type_name: type_name, int_value: 0, str_value: value, is_string: true }
-}
 
-struct MIRModule {
-    name: String,
-    functions: List<MIRFunction>,
-    structs: List<StructInfo>,
-    enums: List<EnumInfo>,
-    extern_fns: List<ExternFnInfo>,
-    agents: List<AgentInfo>,
-    pipes: List<PipeInfo>,
-    imports: List<ImportInfo>,
-    trait_names: List<String>,
+struct MIRModule:
+    name: String
+    functions: List<MIRFunction>
+    structs: List<StructInfo>
+    enums: List<EnumInfo>
+    extern_fns: List<ExternFnInfo>
+    agents: List<AgentInfo>
+    pipes: List<PipeInfo>
+    imports: List<ImportInfo>
+    trait_names: List<String>
     consts: List<ModuleConst>
-}
 
-fn new_mir_module(name: String) -> MIRModule {
+fn new_mir_module(name: String) -> MIRModule:
     let functions: List<MIRFunction> = []
     let structs: List<StructInfo> = []
     let enums: List<EnumInfo> = []
@@ -416,102 +365,85 @@ fn new_mir_module(name: String) -> MIRModule {
     let trait_names: List<String> = []
     let consts: List<ModuleConst> = []
     return new MIRModule { name: name, functions: functions, structs: structs, enums: enums, extern_fns: extern_fns, agents: agents, pipes: pipes, imports: imports, trait_names: trait_names, consts: consts }
-}
 
 // ---------------------------------------------------------------------------
 // Variable tracking
 // ---------------------------------------------------------------------------
 
-struct VarInfo {
-    name: String,
-    current: Value,
+struct VarInfo:
+    name: String
+    current: Value
     mutable: Bool
-}
 
-fn new_var_info(name: String, val: Value, mutable: Bool) -> VarInfo {
+fn new_var_info(name: String, val: Value, mutable: Bool) -> VarInfo:
     return new VarInfo { name: name, current: val, mutable: mutable }
-}
 
 // Impl method mapping: "Type.method" -> "Type_method"
-struct ImplEntry {
-    key: String,
+struct ImplEntry:
+    key: String
     mir_name: String
-}
 
-fn new_impl_entry(key: String, mir_name: String) -> ImplEntry {
+fn new_impl_entry(key: String, mir_name: String) -> ImplEntry:
     return new ImplEntry { key: key, mir_name: mir_name }
-}
 
 // Struct field names and types mapping
-struct StructFieldInfo {
-    name: String,
-    field_names: List<String>,
+struct StructFieldInfo:
+    name: String
+    field_names: List<String>
     field_types: List<MIRType>
-}
 
-fn new_struct_field_info(name: String, fields: List<String>, types: List<MIRType>) -> StructFieldInfo {
+fn new_struct_field_info(name: String, fields: List<String>, types: List<MIRType>) -> StructFieldInfo:
     return new StructFieldInfo { name: name, field_names: fields, field_types: types }
-}
 
 // Enum variant names mapping
-struct EnumVariantNames {
-    enum_name: String,
+struct EnumVariantNames:
+    enum_name: String
     variant_names: List<String>
-}
 
-fn new_enum_variant_names(name: String, variants: List<String>) -> EnumVariantNames {
+fn new_enum_variant_names(name: String, variants: List<String>) -> EnumVariantNames:
     return new EnumVariantNames { enum_name: name, variant_names: variants }
-}
 
 // Lambda variable mapping
-struct LambdaEntry {
-    var_name: String,
+struct LambdaEntry:
+    var_name: String
     fn_name: String
-}
 
-fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry {
+fn new_lambda_entry(var_name: String, fn_name: String) -> LambdaEntry:
     return new LambdaEntry { var_name: var_name, fn_name: fn_name }
-}
 
 // ---------------------------------------------------------------------------
 // Enum-to-string conversion (used by emit_llvm.mn and pretty-printer)
 // ---------------------------------------------------------------------------
 
-pub fn binop_kind_to_str(op: BinOpKind) -> String {
-    match op {
-        Add => { return "add" },
-        Sub => { return "sub" },
-        Mul => { return "mul" },
-        Div => { return "div" },
-        Mod => { return "mod" },
-        Eq => { return "eq" },
-        Ne => { return "ne" },
-        Lt => { return "lt" },
-        Gt => { return "gt" },
-        Le => { return "le" },
-        Ge => { return "ge" },
-        And => { return "and" },
+pub fn binop_kind_to_str(op: BinOpKind) -> String:
+    match op:
+        Add => { return "add" }
+        Sub => { return "sub" }
+        Mul => { return "mul" }
+        Div => { return "div" }
+        Mod => { return "mod" }
+        Eq => { return "eq" }
+        Ne => { return "ne" }
+        Lt => { return "lt" }
+        Gt => { return "gt" }
+        Le => { return "le" }
+        Ge => { return "ge" }
+        And => { return "and" }
         Or => { return "or" }
-    }
-}
 
-pub fn unaryop_kind_to_str(op: UnaryOpKind) -> String {
-    match op {
-        Neg => { return "neg" },
+pub fn unaryop_kind_to_str(op: UnaryOpKind) -> String:
+    match op:
+        Neg => { return "neg" }
         Not => { return "not" }
-    }
-}
 
-pub fn streamop_kind_to_str(op: StreamOpKind) -> String {
-    match op {
-        Map => { return "map" },
-        Filter => { return "filter" },
-        Fold => { return "fold" },
-        Take => { return "take" },
-        Skip => { return "skip" },
+pub fn streamop_kind_to_str(op: StreamOpKind) -> String:
+    match op:
+        Map => { return "map" }
+        Filter => { return "filter" }
+        Fold => { return "fold" }
+        Take => { return "take" }
+        Skip => { return "skip" }
         Collect => { return "collect" }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // String-tagged dispatch: instr_kind + field accessors
@@ -521,401 +453,322 @@ pub fn streamop_kind_to_str(op: StreamOpKind) -> String {
 // lower.mn) call these instead of matching on Instruction directly.
 // ---------------------------------------------------------------------------
 
-pub fn instr_kind(i: Instruction) -> String {
-    match i {
-        Const(_, _, _) => { return "const" },
-        Copy(_, _) => { return "copy" },
-        Cast(_, _, _) => { return "cast" },
-        BinOp(_, _, _, _) => { return "binop" },
-        UnaryOp(_, _, _) => { return "unaryop" },
-        StructInit(_, _, _) => { return "struct_init" },
-        FieldGet(_, _, _) => { return "field_get" },
-        FieldSet(_, _, _) => { return "field_set" },
-        ListInit(_, _, _) => { return "list_init" },
-        TensorInit(_, _, _, _) => { return "tensor_init" },
-        IndexGet(_, _, _) => { return "index_get" },
-        IndexSet(_, _, _) => { return "index_set" },
-        Alloca(_, _) => { return "alloca" },
-        Load(_, _) => { return "load" },
-        Store(_, _) => { return "store" },
-        MapInit(_, _, _, _) => { return "map_init" },
-        EnumInit(_, _, _, _) => { return "enum_init" },
-        EnumTag(_, _) => { return "enum_tag" },
-        EnumPayload(_, _, _) => { return "enum_payload" },
-        WrapSome(_, _) => { return "wrap_some" },
-        WrapNone(_, _) => { return "wrap_none" },
-        WrapOk(_, _) => { return "wrap_ok" },
-        WrapErr(_, _) => { return "wrap_err" },
-        Unwrap(_, _) => { return "unwrap" },
-        Call(_, _, _) => { return "call" },
-        Return(_) => { return "return" },
-        Jump(_) => { return "jump" },
-        Branch(_, _, _) => { return "branch" },
-        Switch(_, _, _) => { return "switch" },
-        AgentSpawn(_, _, _) => { return "agent_spawn" },
-        AgentSend(_, _, _) => { return "agent_send" },
-        AgentSync(_, _, _) => { return "agent_sync" },
-        SignalInit(_, _, _) => { return "signal_init" },
-        SignalGet(_, _) => { return "signal_get" },
-        SignalSet(_, _) => { return "signal_set" },
-        StreamOp(_, _, _, _) => { return "stream_op" },
-        InterpConcat(_, _) => { return "interp_concat" },
-        Phi(_, _) => { return "phi" },
-        Move(_) => { return "move" },
-        AwaitSuspend(_, _) => { return "await_suspend" },
+pub fn instr_kind(i: Instruction) -> String:
+    match i:
+        Const(_, _, _) => { return "const" }
+        Copy(_, _) => { return "copy" }
+        Cast(_, _, _) => { return "cast" }
+        BinOp(_, _, _, _) => { return "binop" }
+        UnaryOp(_, _, _) => { return "unaryop" }
+        StructInit(_, _, _) => { return "struct_init" }
+        FieldGet(_, _, _) => { return "field_get" }
+        FieldSet(_, _, _) => { return "field_set" }
+        ListInit(_, _, _) => { return "list_init" }
+        TensorInit(_, _, _, _) => { return "tensor_init" }
+        IndexGet(_, _, _) => { return "index_get" }
+        IndexSet(_, _, _) => { return "index_set" }
+        Alloca(_, _) => { return "alloca" }
+        Load(_, _) => { return "load" }
+        Store(_, _) => { return "store" }
+        MapInit(_, _, _, _) => { return "map_init" }
+        EnumInit(_, _, _, _) => { return "enum_init" }
+        EnumTag(_, _) => { return "enum_tag" }
+        EnumPayload(_, _, _) => { return "enum_payload" }
+        WrapSome(_, _) => { return "wrap_some" }
+        WrapNone(_, _) => { return "wrap_none" }
+        WrapOk(_, _) => { return "wrap_ok" }
+        WrapErr(_, _) => { return "wrap_err" }
+        Unwrap(_, _) => { return "unwrap" }
+        Call(_, _, _) => { return "call" }
+        Return(_) => { return "return" }
+        Jump(_) => { return "jump" }
+        Branch(_, _, _) => { return "branch" }
+        Switch(_, _, _) => { return "switch" }
+        AgentSpawn(_, _, _) => { return "agent_spawn" }
+        AgentSend(_, _, _) => { return "agent_send" }
+        AgentSync(_, _, _) => { return "agent_sync" }
+        SignalInit(_, _, _) => { return "signal_init" }
+        SignalGet(_, _) => { return "signal_get" }
+        SignalSet(_, _) => { return "signal_set" }
+        StreamOp(_, _, _, _) => { return "stream_op" }
+        InterpConcat(_, _) => { return "interp_concat" }
+        Phi(_, _) => { return "phi" }
+        Move(_) => { return "move" }
+        AwaitSuspend(_, _) => { return "await_suspend" }
         BlockOn(_, _) => { return "block_on" }
-    }
-}
 
 // --- Instruction field accessors ---
 // Each function extracts one field from a specific variant (or group of
 // variants).  The _ => default is never reached when callers check
 // instr_kind() first.
 
-pub fn instr_dest(i: Instruction) -> Value {
-    match i {
-        Const(d, _, _) => { return d },
-        Copy(d, _) => { return d },
-        Cast(d, _, _) => { return d },
-        BinOp(d, _, _, _) => { return d },
-        UnaryOp(d, _, _) => { return d },
-        StructInit(d, _, _) => { return d },
-        FieldGet(d, _, _) => { return d },
-        ListInit(d, _, _) => { return d },
-        TensorInit(d, _, _, _) => { return d },
-        IndexGet(d, _, _) => { return d },
-        Alloca(d, _) => { return d },
-        Load(d, _) => { return d },
-        MapInit(d, _, _, _) => { return d },
-        EnumInit(d, _, _, _) => { return d },
-        EnumTag(d, _) => { return d },
-        EnumPayload(d, _, _) => { return d },
-        WrapSome(d, _) => { return d },
-        WrapNone(d, _) => { return d },
-        WrapOk(d, _) => { return d },
-        WrapErr(d, _) => { return d },
-        Unwrap(d, _) => { return d },
-        Call(d, _, _) => { return d },
-        AgentSpawn(d, _, _) => { return d },
-        AgentSync(d, _, _) => { return d },
-        SignalInit(d, _, _) => { return d },
-        SignalGet(d, _) => { return d },
-        StreamOp(d, _, _, _) => { return d },
-        InterpConcat(d, _) => { return d },
-        Phi(d, _) => { return d },
-        AwaitSuspend(d, _) => { return d },
-        BlockOn(d, _) => { return d },
+pub fn instr_dest(i: Instruction) -> Value:
+    match i:
+        Const(d, _, _) => { return d }
+        Copy(d, _) => { return d }
+        Cast(d, _, _) => { return d }
+        BinOp(d, _, _, _) => { return d }
+        UnaryOp(d, _, _) => { return d }
+        StructInit(d, _, _) => { return d }
+        FieldGet(d, _, _) => { return d }
+        ListInit(d, _, _) => { return d }
+        TensorInit(d, _, _, _) => { return d }
+        IndexGet(d, _, _) => { return d }
+        Alloca(d, _) => { return d }
+        Load(d, _) => { return d }
+        MapInit(d, _, _, _) => { return d }
+        EnumInit(d, _, _, _) => { return d }
+        EnumTag(d, _) => { return d }
+        EnumPayload(d, _, _) => { return d }
+        WrapSome(d, _) => { return d }
+        WrapNone(d, _) => { return d }
+        WrapOk(d, _) => { return d }
+        WrapErr(d, _) => { return d }
+        Unwrap(d, _) => { return d }
+        Call(d, _, _) => { return d }
+        AgentSpawn(d, _, _) => { return d }
+        AgentSync(d, _, _) => { return d }
+        SignalInit(d, _, _) => { return d }
+        SignalGet(d, _) => { return d }
+        StreamOp(d, _, _, _) => { return d }
+        InterpConcat(d, _) => { return d }
+        Phi(d, _) => { return d }
+        AwaitSuspend(d, _) => { return d }
+        BlockOn(d, _) => { return d }
         _ => { return void_value() }
-    }
-}
 
 // Const
-pub fn instr_const_type(i: Instruction) -> MIRType {
+pub fn instr_const_type(i: Instruction) -> MIRType:
     match i { Const(_, t, _) => { return t }, _ => { return mir_void() } }
-}
-pub fn instr_const_val(i: Instruction) -> String {
+pub fn instr_const_val(i: Instruction) -> String:
     match i { Const(_, _, v) => { return v }, _ => { return "" } }
-}
 
 // Copy
-pub fn instr_copy_src(i: Instruction) -> Value {
+pub fn instr_copy_src(i: Instruction) -> Value:
     match i { Copy(_, s) => { return s }, _ => { return void_value() } }
-}
 
 // Cast
-pub fn instr_cast_src(i: Instruction) -> Value {
+pub fn instr_cast_src(i: Instruction) -> Value:
     match i { Cast(_, s, _) => { return s }, _ => { return void_value() } }
-}
-pub fn instr_cast_type(i: Instruction) -> MIRType {
+pub fn instr_cast_type(i: Instruction) -> MIRType:
     match i { Cast(_, _, t) => { return t }, _ => { return mir_void() } }
-}
 
 // BinOp
-pub fn instr_binop_op(i: Instruction) -> BinOpKind {
+pub fn instr_binop_op(i: Instruction) -> BinOpKind:
     match i { BinOp(_, o, _, _) => { return o }, _ => { return BinOpKind::Add } }
-}
-pub fn instr_binop_lhs(i: Instruction) -> Value {
+pub fn instr_binop_lhs(i: Instruction) -> Value:
     match i { BinOp(_, _, l, _) => { return l }, _ => { return void_value() } }
-}
-pub fn instr_binop_rhs(i: Instruction) -> Value {
+pub fn instr_binop_rhs(i: Instruction) -> Value:
     match i { BinOp(_, _, _, r) => { return r }, _ => { return void_value() } }
-}
 
 // UnaryOp
-pub fn instr_unaryop_op(i: Instruction) -> UnaryOpKind {
+pub fn instr_unaryop_op(i: Instruction) -> UnaryOpKind:
     match i { UnaryOp(_, o, _) => { return o }, _ => { return UnaryOpKind::Neg } }
-}
-pub fn instr_unaryop_operand(i: Instruction) -> Value {
+pub fn instr_unaryop_operand(i: Instruction) -> Value:
     match i { UnaryOp(_, _, v) => { return v }, _ => { return void_value() } }
-}
 
 // StructInit
-pub fn instr_struct_type(i: Instruction) -> MIRType {
+pub fn instr_struct_type(i: Instruction) -> MIRType:
     match i { StructInit(_, t, _) => { return t }, _ => { return mir_void() } }
-}
-pub fn instr_struct_fields(i: Instruction) -> List<FieldPair> {
+pub fn instr_struct_fields(i: Instruction) -> List<FieldPair>:
     match i { StructInit(_, _, f) => { return f }, _ => { let empty: List<FieldPair> = []; return empty } }
-}
 
 // FieldGet
-pub fn instr_fieldget_obj(i: Instruction) -> Value {
+pub fn instr_fieldget_obj(i: Instruction) -> Value:
     match i { FieldGet(_, o, _) => { return o }, _ => { return void_value() } }
-}
-pub fn instr_fieldget_name(i: Instruction) -> String {
+pub fn instr_fieldget_name(i: Instruction) -> String:
     match i { FieldGet(_, _, n) => { return n }, _ => { return "" } }
-}
 
 // FieldSet
-pub fn instr_fieldset_obj(i: Instruction) -> Value {
+pub fn instr_fieldset_obj(i: Instruction) -> Value:
     match i { FieldSet(o, _, _) => { return o }, _ => { return void_value() } }
-}
-pub fn instr_fieldset_name(i: Instruction) -> String {
+pub fn instr_fieldset_name(i: Instruction) -> String:
     match i { FieldSet(_, n, _) => { return n }, _ => { return "" } }
-}
-pub fn instr_fieldset_val(i: Instruction) -> Value {
+pub fn instr_fieldset_val(i: Instruction) -> Value:
     match i { FieldSet(_, _, v) => { return v }, _ => { return void_value() } }
-}
 
 // ListInit
-pub fn instr_list_type(i: Instruction) -> MIRType {
+pub fn instr_list_type(i: Instruction) -> MIRType:
     match i { ListInit(_, t, _) => { return t }, _ => { return mir_void() } }
-}
-pub fn instr_list_elements(i: Instruction) -> List<Value> {
+pub fn instr_list_elements(i: Instruction) -> List<Value>:
     match i { ListInit(_, _, e) => { return e }, _ => { let empty: List<Value> = []; return empty } }
-}
 
 // TensorInit (v4.42.0)
-pub fn instr_tensor_type(i: Instruction) -> MIRType {
+pub fn instr_tensor_type(i: Instruction) -> MIRType:
     match i { TensorInit(_, t, _, _) => { return t }, _ => { return mir_void() } }
-}
-pub fn instr_tensor_shape(i: Instruction) -> List<Int> {
+pub fn instr_tensor_shape(i: Instruction) -> List<Int>:
     match i { TensorInit(_, _, s, _) => { return s }, _ => { let empty: List<Int> = []; return empty } }
-}
-pub fn instr_tensor_elements(i: Instruction) -> List<Value> {
+pub fn instr_tensor_elements(i: Instruction) -> List<Value>:
     match i { TensorInit(_, _, _, e) => { return e }, _ => { let empty: List<Value> = []; return empty } }
-}
 
 // IndexGet
-pub fn instr_indexget_obj(i: Instruction) -> Value {
+pub fn instr_indexget_obj(i: Instruction) -> Value:
     match i { IndexGet(_, o, _) => { return o }, _ => { return void_value() } }
-}
-pub fn instr_indexget_idx(i: Instruction) -> Value {
+pub fn instr_indexget_idx(i: Instruction) -> Value:
     match i { IndexGet(_, _, x) => { return x }, _ => { return void_value() } }
-}
 
 // IndexSet
-pub fn instr_indexset_obj(i: Instruction) -> Value {
+pub fn instr_indexset_obj(i: Instruction) -> Value:
     match i { IndexSet(o, _, _) => { return o }, _ => { return void_value() } }
-}
-pub fn instr_indexset_idx(i: Instruction) -> Value {
+pub fn instr_indexset_idx(i: Instruction) -> Value:
     match i { IndexSet(_, x, _) => { return x }, _ => { return void_value() } }
-}
-pub fn instr_indexset_val(i: Instruction) -> Value {
+pub fn instr_indexset_val(i: Instruction) -> Value:
     match i { IndexSet(_, _, v) => { return v }, _ => { return void_value() } }
-}
 
 // Alloca
-pub fn instr_alloca_type(i: Instruction) -> MIRType {
+pub fn instr_alloca_type(i: Instruction) -> MIRType:
     match i { Alloca(_, t) => { return t }, _ => { return mir_void() } }
-}
 
 // Load
-pub fn instr_load_ptr(i: Instruction) -> Value {
+pub fn instr_load_ptr(i: Instruction) -> Value:
     match i { Load(_, p) => { return p }, _ => { return void_value() } }
-}
 
 // Store
-pub fn instr_store_ptr(i: Instruction) -> Value {
+pub fn instr_store_ptr(i: Instruction) -> Value:
     match i { Store(p, _) => { return p }, _ => { return void_value() } }
-}
-pub fn instr_store_val(i: Instruction) -> Value {
+pub fn instr_store_val(i: Instruction) -> Value:
     match i { Store(_, v) => { return v }, _ => { return void_value() } }
-}
 
 // MapInit
-pub fn instr_map_key_type(i: Instruction) -> MIRType {
+pub fn instr_map_key_type(i: Instruction) -> MIRType:
     match i { MapInit(_, k, _, _) => { return k }, _ => { return mir_void() } }
-}
-pub fn instr_map_val_type(i: Instruction) -> MIRType {
+pub fn instr_map_val_type(i: Instruction) -> MIRType:
     match i { MapInit(_, _, v, _) => { return v }, _ => { return mir_void() } }
-}
-pub fn instr_map_pairs(i: Instruction) -> List<KVPair> {
+pub fn instr_map_pairs(i: Instruction) -> List<KVPair>:
     match i { MapInit(_, _, _, p) => { return p }, _ => { let empty: List<KVPair> = []; return empty } }
-}
 
 // EnumInit
-pub fn instr_enum_type(i: Instruction) -> MIRType {
+pub fn instr_enum_type(i: Instruction) -> MIRType:
     match i { EnumInit(_, t, _, _) => { return t }, _ => { return mir_void() } }
-}
-pub fn instr_enum_variant(i: Instruction) -> String {
+pub fn instr_enum_variant(i: Instruction) -> String:
     match i { EnumInit(_, _, v, _) => { return v }, _ => { return "" } }
-}
-pub fn instr_enum_payload(i: Instruction) -> List<Value> {
+pub fn instr_enum_payload(i: Instruction) -> List<Value>:
     match i { EnumInit(_, _, _, p) => { return p }, _ => { let empty: List<Value> = []; return empty } }
-}
 
 // EnumTag
-pub fn instr_enumtag_val(i: Instruction) -> Value {
+pub fn instr_enumtag_val(i: Instruction) -> Value:
     match i { EnumTag(_, v) => { return v }, _ => { return void_value() } }
-}
 
 // EnumPayload
-pub fn instr_enumpayload_val(i: Instruction) -> Value {
+pub fn instr_enumpayload_val(i: Instruction) -> Value:
     match i { EnumPayload(_, v, _) => { return v }, _ => { return void_value() } }
-}
-pub fn instr_enumpayload_variant(i: Instruction) -> String {
+pub fn instr_enumpayload_variant(i: Instruction) -> String:
     match i { EnumPayload(_, _, v) => { return v }, _ => { return "" } }
-}
 
 // WrapSome / WrapOk / WrapErr / Unwrap — all have (dest, val)
-pub fn instr_wrap_val(i: Instruction) -> Value {
-    match i {
-        WrapSome(_, v) => { return v },
-        WrapOk(_, v) => { return v },
-        WrapErr(_, v) => { return v },
-        Unwrap(_, v) => { return v },
+pub fn instr_wrap_val(i: Instruction) -> Value:
+    match i:
+        WrapSome(_, v) => { return v }
+        WrapOk(_, v) => { return v }
+        WrapErr(_, v) => { return v }
+        Unwrap(_, v) => { return v }
         _ => { return void_value() }
-    }
-}
 
 // WrapNone
-pub fn instr_wrapnone_type(i: Instruction) -> MIRType {
+pub fn instr_wrapnone_type(i: Instruction) -> MIRType:
     match i { WrapNone(_, t) => { return t }, _ => { return mir_void() } }
-}
 
 // Call
-pub fn instr_call_fn(i: Instruction) -> String {
+pub fn instr_call_fn(i: Instruction) -> String:
     match i { Call(_, f, _) => { return f }, _ => { return "" } }
-}
-pub fn instr_call_args(i: Instruction) -> List<Value> {
+pub fn instr_call_args(i: Instruction) -> List<Value>:
     match i { Call(_, _, a) => { return a }, _ => { let empty: List<Value> = []; return empty } }
-}
 
 // Return
-pub fn instr_return_val(i: Instruction) -> Option<Value> {
+pub fn instr_return_val(i: Instruction) -> Option<Value>:
     match i { Return(v) => { return v }, _ => { return none } }
-}
 
 // Jump
-pub fn instr_jump_target(i: Instruction) -> String {
+pub fn instr_jump_target(i: Instruction) -> String:
     match i { Jump(t) => { return t }, _ => { return "" } }
-}
 
 // Branch
-pub fn instr_branch_cond(i: Instruction) -> Value {
+pub fn instr_branch_cond(i: Instruction) -> Value:
     match i { Branch(c, _, _) => { return c }, _ => { return void_value() } }
-}
-pub fn instr_branch_true(i: Instruction) -> String {
+pub fn instr_branch_true(i: Instruction) -> String:
     match i { Branch(_, t, _) => { return t }, _ => { return "" } }
-}
-pub fn instr_branch_false(i: Instruction) -> String {
+pub fn instr_branch_false(i: Instruction) -> String:
     match i { Branch(_, _, f) => { return f }, _ => { return "" } }
-}
 
 // Switch
-pub fn instr_switch_tag(i: Instruction) -> Value {
+pub fn instr_switch_tag(i: Instruction) -> Value:
     match i { Switch(t, _, _) => { return t }, _ => { return void_value() } }
-}
-pub fn instr_switch_cases(i: Instruction) -> List<SwitchCase> {
+pub fn instr_switch_cases(i: Instruction) -> List<SwitchCase>:
     match i { Switch(_, c, _) => { return c }, _ => { let empty: List<SwitchCase> = []; return empty } }
-}
-pub fn instr_switch_default(i: Instruction) -> String {
+pub fn instr_switch_default(i: Instruction) -> String:
     match i { Switch(_, _, d) => { return d }, _ => { return "" } }
-}
 
 // AgentSpawn
-pub fn instr_agent_type(i: Instruction) -> MIRType {
+pub fn instr_agent_type(i: Instruction) -> MIRType:
     match i { AgentSpawn(_, t, _) => { return t }, _ => { return mir_void() } }
-}
-pub fn instr_agent_args(i: Instruction) -> List<Value> {
+pub fn instr_agent_args(i: Instruction) -> List<Value>:
     match i { AgentSpawn(_, _, a) => { return a }, _ => { let empty: List<Value> = []; return empty } }
-}
 
 // AgentSend
-pub fn instr_agentsend_agent(i: Instruction) -> Value {
+pub fn instr_agentsend_agent(i: Instruction) -> Value:
     match i { AgentSend(a, _, _) => { return a }, _ => { return void_value() } }
-}
-pub fn instr_agentsend_channel(i: Instruction) -> String {
+pub fn instr_agentsend_channel(i: Instruction) -> String:
     match i { AgentSend(_, c, _) => { return c }, _ => { return "" } }
-}
-pub fn instr_agentsend_val(i: Instruction) -> Value {
+pub fn instr_agentsend_val(i: Instruction) -> Value:
     match i { AgentSend(_, _, v) => { return v }, _ => { return void_value() } }
-}
 
 // AgentSync
-pub fn instr_agentsync_agent(i: Instruction) -> Value {
+pub fn instr_agentsync_agent(i: Instruction) -> Value:
     match i { AgentSync(_, a, _) => { return a }, _ => { return void_value() } }
-}
-pub fn instr_agentsync_channel(i: Instruction) -> String {
+pub fn instr_agentsync_channel(i: Instruction) -> String:
     match i { AgentSync(_, _, c) => { return c }, _ => { return "" } }
-}
 
 // SignalInit
-pub fn instr_signal_type(i: Instruction) -> MIRType {
+pub fn instr_signal_type(i: Instruction) -> MIRType:
     match i { SignalInit(_, t, _) => { return t }, _ => { return mir_void() } }
-}
-pub fn instr_signal_val(i: Instruction) -> Value {
+pub fn instr_signal_val(i: Instruction) -> Value:
     match i { SignalInit(_, _, v) => { return v }, _ => { return void_value() } }
-}
 
 // SignalGet
-pub fn instr_signalget_sig(i: Instruction) -> Value {
+pub fn instr_signalget_sig(i: Instruction) -> Value:
     match i { SignalGet(_, s) => { return s }, _ => { return void_value() } }
-}
 
 // SignalSet
-pub fn instr_signalset_sig(i: Instruction) -> Value {
+pub fn instr_signalset_sig(i: Instruction) -> Value:
     match i { SignalSet(s, _) => { return s }, _ => { return void_value() } }
-}
-pub fn instr_signalset_val(i: Instruction) -> Value {
+pub fn instr_signalset_val(i: Instruction) -> Value:
     match i { SignalSet(_, v) => { return v }, _ => { return void_value() } }
-}
 
 // StreamOp
-pub fn instr_streamop_kind(i: Instruction) -> StreamOpKind {
+pub fn instr_streamop_kind(i: Instruction) -> StreamOpKind:
     match i { StreamOp(_, k, _, _) => { return k }, _ => { return StreamOpKind::Map } }
-}
-pub fn instr_streamop_source(i: Instruction) -> Value {
+pub fn instr_streamop_source(i: Instruction) -> Value:
     match i { StreamOp(_, _, s, _) => { return s }, _ => { return void_value() } }
-}
-pub fn instr_streamop_args(i: Instruction) -> List<Value> {
+pub fn instr_streamop_args(i: Instruction) -> List<Value>:
     match i { StreamOp(_, _, _, a) => { return a }, _ => { let empty: List<Value> = []; return empty } }
-}
 
 // InterpConcat
-pub fn instr_concat_parts(i: Instruction) -> List<Value> {
+pub fn instr_concat_parts(i: Instruction) -> List<Value>:
     match i { InterpConcat(_, p) => { return p }, _ => { let empty: List<Value> = []; return empty } }
-}
 
 // Phi
-pub fn instr_phi_entries(i: Instruction) -> List<PhiEntry> {
+pub fn instr_phi_entries(i: Instruction) -> List<PhiEntry>:
     match i { Phi(_, e) => { return e }, _ => { let empty: List<PhiEntry> = []; return empty } }
-}
 
 // Move (v5.4.0 Own.1 Phase 2)
-pub fn instr_move_val(i: Instruction) -> Value {
+pub fn instr_move_val(i: Instruction) -> Value:
     match i { Move(v) => { return v }, _ => { return void_value() } }
-}
 
 // AwaitSuspend / BlockOn (v5.5.1 Sh.4 Phase 2)
-pub fn instr_await_suspend_future(i: Instruction) -> Value {
+pub fn instr_await_suspend_future(i: Instruction) -> Value:
     match i { AwaitSuspend(_, f) => { return f }, _ => { return void_value() } }
-}
-pub fn instr_block_on_future(i: Instruction) -> Value {
+pub fn instr_block_on_future(i: Instruction) -> Value:
     match i { BlockOn(_, f) => { return f }, _ => { return void_value() } }
-}
 
 // v5.5.1 Sh.4 Phase 2: scan the function's decorators for "async".
 // The parser stashes `async fn` as a decorator per parser.mn:797-798;
 // this is the authoritative check for "is this a coroutine function"
 // that the emitter will use in v5.5.2 when wrapping the function body
 // with coro.id/coro.begin/initial-suspend.
-pub fn fn_is_async(f: MIRFunction) -> Bool {
+pub fn fn_is_async(f: MIRFunction) -> Bool:
     let mut i: Int = 0
-    for _ in 0..512 {
+    for _ in 0..512:
         if i >= len(f.decorators) { return false }
         if f.decorators[i] == "async" { return true }
         i = i + 1
-    }
     return false
-}
