@@ -1395,8 +1395,7 @@ fn is_keep_token(tok_type: String) -> Bool:
 // Integer parsing helpers
 // ---------------------------------------------------------------------------
 
-fn parse_int_token(tok_type: String, value: String) -> Int:
-    return 0
+fn parse_int_token(tok_type: String, value: String) -> Int = 0
 
 // ---------------------------------------------------------------------------
 // Binary operator helpers
@@ -1478,58 +1477,41 @@ struct IndexItemResult:
 // Constructor functions — populate result structs positionally
 // ---------------------------------------------------------------------------
 
-fn new_expr_result(expr: Expr, pos: Int) -> ExprResult:
-    return new ExprResult { expr: expr, pos: pos }
+fn new_expr_result(expr: Expr, pos: Int) -> ExprResult = new ExprResult { expr: expr, pos: pos }
 
-fn new_stmt_result(stmt: Stmt, pos: Int) -> StmtResult:
-    return new StmtResult { stmt: stmt, pos: pos }
+fn new_stmt_result(stmt: Stmt, pos: Int) -> StmtResult = new StmtResult { stmt: stmt, pos: pos }
 
-fn new_block_result(block: Block, pos: Int) -> BlockResult:
-    return new BlockResult { block: block, pos: pos }
+fn new_block_result(block: Block, pos: Int) -> BlockResult = new BlockResult { block: block, pos: pos }
 
-fn new_type_result(type_expr: TypeExpr, pos: Int) -> TypeResult:
-    return new TypeResult { type_expr: type_expr, pos: pos }
+fn new_type_result(type_expr: TypeExpr, pos: Int) -> TypeResult = new TypeResult { type_expr: type_expr, pos: pos }
 
-fn new_pattern_result(pattern: Pattern, pos: Int) -> PatternResult:
-    return new PatternResult { pattern: pattern, pos: pos }
+fn new_pattern_result(pattern: Pattern, pos: Int) -> PatternResult = new PatternResult { pattern: pattern, pos: pos }
 
-fn new_def_result(def_node: Definition, pos: Int) -> DefResult:
-    return new DefResult { def_node: def_node, pos: pos }
+fn new_def_result(def_node: Definition, pos: Int) -> DefResult = new DefResult { def_node: def_node, pos: pos }
 
-fn new_param_result(param: Param, pos: Int) -> ParamResult:
-    return new ParamResult { param: param, pos: pos }
+fn new_param_result(param: Param, pos: Int) -> ParamResult = new ParamResult { param: param, pos: pos }
 
-fn new_match_arm_result(arm: MatchArm, pos: Int) -> MatchArmResult:
-    return new MatchArmResult { arm: arm, pos: pos }
+fn new_match_arm_result(arm: MatchArm, pos: Int) -> MatchArmResult = new MatchArmResult { arm: arm, pos: pos }
 
 // AST node constructors (new_span, new_block, new_fn_def_data are in ast.mn)
 
-fn new_param(name: String, type_ann: Option<TypeExpr>) -> Param:
-    return new Param { span: new_span(0, 0, 0, 0), name: name, type_annotation: type_ann }
+fn new_param(name: String, type_ann: Option<TypeExpr>) -> Param = new Param { span: new_span(0, 0, 0, 0), name: name, type_annotation: type_ann }
 
-fn new_struct_field(name: String, type_ann: TypeExpr) -> StructField:
-    return new StructField { span: new_span(0, 0, 0, 0), name: name, type_annotation: type_ann }
+fn new_struct_field(name: String, type_ann: TypeExpr) -> StructField = new StructField { span: new_span(0, 0, 0, 0), name: name, type_annotation: type_ann }
 
-fn new_enum_variant(name: String, fields: List<TypeExpr>) -> EnumVariant:
-    return new EnumVariant { span: new_span(0, 0, 0, 0), name: name, fields: fields }
+fn new_enum_variant(name: String, fields: List<TypeExpr>) -> EnumVariant = new EnumVariant { span: new_span(0, 0, 0, 0), name: name, fields: fields }
 
-fn new_match_arm(pattern: Pattern, body: MatchArmBody, guard: Option<Expr>) -> MatchArm:
-    return new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body, guard: guard }
+fn new_match_arm(pattern: Pattern, body: MatchArmBody, guard: Option<Expr>) -> MatchArm = new MatchArm { span: new_span(0, 0, 0, 0), pattern: pattern, body: body, guard: guard }
 
-fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData:
-    return new StructDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, fields: fields }
+fn new_struct_def_data(name: String, public: Bool, type_params: List<String>, fields: List<StructField>) -> StructDefData = new StructDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, fields: fields }
 
-fn new_enum_def_data(name: String, public: Bool, type_params: List<String>, variants: List<EnumVariant>) -> EnumDefData:
-    return new EnumDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, variants: variants }
+fn new_enum_def_data(name: String, public: Bool, type_params: List<String>, variants: List<EnumVariant>) -> EnumDefData = new EnumDefData { span: new_span(0, 0, 0, 0), name: name, public: public, type_params: type_params, variants: variants }
 
-fn new_agent_def_data(name: String, public: Bool, inputs: List<AgentInput>, outputs: List<AgentOutput>, state: List<Stmt>, methods: List<FnDefData>, decorators: List<Decorator>) -> AgentDefData:
-    return new AgentDefData { span: new_span(0, 0, 0, 0), name: name, public: public, inputs: inputs, outputs: outputs, state: state, methods: methods, decorators: decorators }
+fn new_agent_def_data(name: String, public: Bool, inputs: List<AgentInput>, outputs: List<AgentOutput>, state: List<Stmt>, methods: List<FnDefData>, decorators: List<Decorator>) -> AgentDefData = new AgentDefData { span: new_span(0, 0, 0, 0), name: name, public: public, inputs: inputs, outputs: outputs, state: state, methods: methods, decorators: decorators }
 
-fn new_pipe_def_data(name: String, public: Bool, stages: List<Expr>) -> PipeDefData:
-    return new PipeDefData { span: new_span(0, 0, 0, 0), name: name, public: public, stages: stages }
+fn new_pipe_def_data(name: String, public: Bool, stages: List<Expr>) -> PipeDefData = new PipeDefData { span: new_span(0, 0, 0, 0), name: name, public: public, stages: stages }
 
-fn new_decorator(name: String, args: List<Expr>) -> Decorator:
-    return new Decorator { span: new_span(0, 0, 0, 0), name: name, args: args }
+fn new_decorator(name: String, args: List<Expr>) -> Decorator = new Decorator { span: new_span(0, 0, 0, 0), name: name, args: args }
 
 // ---------------------------------------------------------------------------
 // Token access helpers
@@ -1545,8 +1527,7 @@ fn peek_value(tokens: List<Token>, pos: Int) -> String:
     let tok: Token = tokens[pos]
     return tok.value
 
-fn at_end(tokens: List<Token>, pos: Int) -> Bool:
-    return pos >= len(tokens)
+fn at_end(tokens: List<Token>, pos: Int) -> Bool = pos >= len(tokens)
 
 fn expect(tokens: List<Token>, pos: Int, expected: String) -> Int:
     let tt: String = peek_type(tokens, pos)
@@ -1556,7 +1537,7 @@ fn expect(tokens: List<Token>, pos: Int, expected: String) -> Int:
         __mn_str_eprint(" but got ")
         __mn_str_eprint(tt)
         __mn_str_eprint("\n")
-    return pos + 1
+    pos + 1
 
 fn skip_semis(tokens: List<Token>, pos: Int) -> Int:
     let mut p: Int = pos
@@ -2223,7 +2204,7 @@ fn parse_type_alias_def(tokens: List<Token>, pos: Int, filename: String) -> DefR
     p = p + 1
     p = expect(tokens, p, "ASSIGN")
     let tr: TypeResult = parse_type_expr(tokens, p, filename)
-    return new_def_result(Definition::TypeAlias(name, tr.type_expr), tr.pos)
+    new_def_result(Definition::TypeAlias(name, tr.type_expr), tr.pos)
 
 fn parse_tipo_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     // tipo Name { fields | variants } — unified type definition.
@@ -2639,7 +2620,7 @@ fn parse_while_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResu
     p = cond_r.pos
     let body_r: BlockResult = parse_block(tokens, p, filename)
     p = body_r.pos
-    return new_stmt_result(Stmt::While(cond_r.expr, body_r.block), p)
+    new_stmt_result(Stmt::While(cond_r.expr, body_r.block), p)
 
 fn parse_assert_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
     let mut p: Int = pos + 1
@@ -2650,7 +2631,7 @@ fn parse_assert_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtRes
         p = p + 1
         msg = Some(peek_value(tokens, p))
         p = p + 1
-    return new_stmt_result(Stmt::Assert(er.expr, msg), p)
+    new_stmt_result(Stmt::Assert(er.expr, msg), p)
 
 // ---------------------------------------------------------------------------
 // Expression parser — precedence climbing
@@ -2882,7 +2863,7 @@ fn scalar_exprs_of(items: List<IndexItem>) -> List<Expr>:
         if i < n:
             out.push(items[i].expr)
             i = i + 1
-    return out
+    out
 
 fn parse_call_args(tokens: List<Token>, pos: Int, filename: String, callee: Expr) -> ExprResult:
     let mut p: Int = pos + 1
@@ -3457,8 +3438,7 @@ struct CompClauseResult:
     clause: CompClause
     pos: Int
 
-fn new_comp_clause_result(clause: CompClause, pos: Int) -> CompClauseResult:
-    return new CompClauseResult { clause: clause, pos: pos }
+fn new_comp_clause_result(clause: CompClause, pos: Int) -> CompClauseResult = new CompClauseResult { clause: clause, pos: pos }
 
 fn parse_comp_clause(tokens: List<Token>, pos: Int, filename: String) -> CompClauseResult:
     // pos is at KW_FOR
@@ -3488,7 +3468,7 @@ fn parse_list_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_e
         clauses.push(cr.clause)
         p = cr.pos
     p = expect(tokens, p, "RBRACKET")
-    return new_expr_result(Expr::Comprehension("list", Some(first_expr), none, none, clauses), p)
+    new_expr_result(Expr::Comprehension("list", Some(first_expr), none, none, clauses), p)
 
 fn parse_map_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_key: Expr, first_value: Expr) -> ExprResult:
     let mut p: Int = pos
@@ -3499,7 +3479,7 @@ fn parse_map_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_ke
         clauses.push(cr.clause)
         p = cr.pos
     p = expect(tokens, p, "RBRACE")
-    return new_expr_result(Expr::Comprehension("map", none, Some(first_key), Some(first_value), clauses), p)
+    new_expr_result(Expr::Comprehension("map", none, Some(first_key), Some(first_value), clauses), p)
 
 // ---------------------------------------------------------------------------
 // Tensor literal: Tensor<Type>[elements] (v4.42.0, v5.6.0 nested-array)
@@ -3529,17 +3509,17 @@ fn _tensor_pad_list(list: List<Int>, min_len: Int) -> List<Int>:
     for _ in 0..64:
         if len(out) > min_len { break }
         out.push(0)
-    return out
+    out
 
 fn _tensor_set_at(list: List<Int>, idx: Int, val: Int) -> List<Int>:
     let mut out: List<Int> = list
     out[idx] = val
-    return out
+    out
 
 fn _tensor_inc_at(list: List<Int>, idx: Int) -> List<Int>:
     let mut out: List<Int> = list
     out[idx] = list[idx] + 1
-    return out
+    out
 
 fn parse_tensor_lit(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     // pos points at KW_TENSOR. Consume Tensor < T > [ — we are at the first
@@ -3640,7 +3620,7 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
 
 fn parse_generic_type(tokens: List<Token>, pos: Int, filename: String) -> TypeResult:
     let name: String = peek_value(tokens, pos)
-    return parse_generic_type_at(tokens, pos + 1, name, filename)
+    parse_generic_type_at(tokens, pos + 1, name, filename)
 
 fn parse_generic_type_at(tokens: List<Token>, pos: Int, name: String, filename: String) -> TypeResult:
     let mut p: Int = pos
