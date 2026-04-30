@@ -18,7 +18,48 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
-- **v5.17.2** (ready, not tagged) — **Sh.H — defensive-loop
+- **v5.18.0** (ready, not tagged) — **Mc.* — LSP + init + check
+  (tooling pack).** Editor-quality waypoint. Ships the
+  Mc.1 / Mc.3 / Mc.4 trio from the parity arc plus a greenfield
+  VSCode extension. **Phase 0 surprise:** the original PLAN
+  assumed greenfield — audit found the bulk already shipped.
+  `mapanare/lsp/` is a 3,020-line pygls package that already
+  implements PLAN's MVP capability set plus extras (find-refs,
+  rename, workspace-wide cross-module index); `cmd_check` /
+  `cmd_init` / `cmd_lsp` are wired in `cli.py`; every AST node
+  carries `span: Span(line, column, end_line, end_column)`;
+  the symbol table builds binding-site positions. Reframed as
+  **verify-and-fill**: locked design in
+  `docs/roadmap/v5/v5.18.0/MC_TOOLING_DESIGN.md`. **Mc.4** —
+  added `--all` recursive walk (skips `.git`, `dist/`, `build/`,
+  `node_modules`, etc.) plus `tests/test_check.py` (10/10).
+  **Mc.3** — refactored from inline-string scaffolding (brace
+  syntax, missing files) to template-directory layout at
+  `mapanare/templates/init/<template>/` with `{{NAME}}`
+  substitution and project-name validation
+  (`^[A-Za-z_][A-Za-z0-9_-]*$`); default template uses canonical
+  terse syntax and ships `main.mn`, `mapanare.toml`, `.gitignore`,
+  `README.md`. `tests/test_init.py` 10/10. **Mc.1** — verified
+  the existing pygls LSP via the existing 116-test suite plus a
+  new `tests/lsp/test_initialize_roundtrip.py` JSON-RPC stdio
+  smoke (117/117). **Mc.1.G** — sibling repo
+  `Mapanare-Research/mapanare-vscode` bumped from v0.4.0 → v0.5.0
+  to track `mapanare-lsp v0.5.0`; added `mapanare.init` and
+  `mapanare.checkAll` commands wiring the v5.18.0 `mapa init` /
+  `mapa check --all` surfaces; README refreshed. **Native dispatch** —
+  `mapanare/self/main.mn` learned `check`/`init`/`lsp` cases
+  shelling out to Python (mirror of the v5.13.0 `fmt` pattern).
+  **Strict 3-stage fixed point preserved**: stage2.ll ==
+  stage3.ll at **232,281 lines / 0-line diff**, +558 lines vs.
+  v5.17.2's 231,723 (the IR cost of the three new dispatch
+  arms). **No seed refresh required** (no new C-runtime
+  exports). New docs: `docs/guides/lsp.md`,
+  `docs/guides/init.md`, `MC_TOOLING_DESIGN.md`,
+  `SESSION_REPORT.md`. Marketplace
+  publish, `--template` flag, code actions / semantic tokens /
+  inlay hints, and native LSP port all explicitly deferred.
+  See `docs/roadmap/v5/v5.18.0/SESSION_REPORT.md`.
+- **v5.17.2** (shipped) — **Sh.H — defensive-loop
   cleanup.** Closes the 11 defensive-iteration sites catalogued
   in v5.17.1's COMPREHENSION_SITES.md as out-of-scope-for-syntax-
   only. Two patterns. **Pattern A** (10 sites) — pure
@@ -511,10 +552,13 @@ had latent bugs requiring dedicated releases.
 - ~~**v5.17.2**~~ — shipped (see release notes above). All 11
   defensive-iteration sites rewritten to range-for / `while true`;
   strict 3-stage fixed point preserved at 0-line diff.
-- **v5.18.0** — **Mc.1/3/4 — tooling pack.** LSP server,
-  `mnc init`, `mnc check`, VSCode extension. Includes AST
-  span-info retrofit (Phase 0). See
-  `docs/roadmap/v5/v5.18.0/PLAN.md`.
+- ~~**v5.18.0**~~ — shipped (see release notes above). LSP +
+  init + check tooling pack; verify-and-fill on the existing
+  pygls implementation, terse-syntax init template, VSCode
+  extension at `editors/vscode/`, native dispatch shell-out.
+  Strict 3-stage fixed point preserved at 232,281 lines / 0-line
+  diff. AST span retrofit was a no-op — every node already
+  carried `span` info.
 - **v5.19.0** — **Te.3 + Dk.* — closeout.** Soft-deprecate
   `{}` (still parses, emits warning); hard removal scheduled
   for v6.0. Ship `mapanare/builder` + `mapanare/runtime`

@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.18.0] - 2026-04-30
+
+### Added
+
+- **Mc.4 — `mapanare check`.** Standalone parser + semantic check
+  with structured Rust-style diagnostics. Already-wired
+  `cmd_check` (since pre-v5.13) gained a `--all` flag that walks
+  `.mn` files under the current directory (skipping `.git`,
+  `dist/`, `build/`, `node_modules`, etc.). Existing `--werror`
+  flag preserved. New end-to-end suite at `tests/test_check.py`
+  (10/10 pass). Native `mnc check` shells out to `mapanare check`
+  for v5.18.0; native port deferred.
+- **Mc.3 — `mapanare init`.** Refactored from inline-string
+  scaffolding to a template-directory layout at
+  `mapanare/templates/init/<template>/`. The default template
+  ships `main.mn` (canonical terse syntax — `fn main(): ...`),
+  `mapanare.toml`, `.gitignore`, and `README.md`, with `{{NAME}}`
+  placeholder substitution. Project names validated against
+  `^[A-Za-z_][A-Za-z0-9_-]*$`. Re-init is non-destructive on
+  existing files. New end-to-end suite at `tests/test_init.py`
+  (10/10 pass). Native `mnc init` shells out.
+- **Mc.1 — Mapanare Language Server (`mapanare lsp`).** First
+  public release of the pygls-based LSP at `mapanare/lsp/`
+  (3,020 lines across `server.py`, `analysis.py`, `completion.py`,
+  `diagnostics.py`, `rename.py`, `workspace.py`). Identifies as
+  `mapanare-lsp v0.5.0`. Capabilities shipped: `initialize`,
+  `didOpen` / `didChange` / `didClose`, `publishDiagnostics`
+  (push, debounced 300 ms), `hover`, `definition`, `references`,
+  `completion` (identifiers, member access on `.`, types on `:`,
+  import paths, builtin methods on `Option`/`String`/`List`),
+  `rename` (cross-module, conservative). Workspace-wide symbol
+  index for cross-module go-to-def. Native `mnc lsp` shells out.
+  117 LSP tests passing (116 prior + 1 new
+  `test_initialize_roundtrip` JSON-RPC stdio smoke).
+- **Mc.1.G — VSCode extension v0.5.0 (external repo).** The
+  official extension at
+  [Mapanare-Research/mapanare-vscode](https://github.com/Mapanare-Research/mapanare-vscode)
+  ships v0.5.0 alongside this release. Tracks `mapanare-lsp v0.5.0`.
+  New commands **Initialize New Project Here** and **Check All
+  Files in Workspace** wire the v5.18.0 `mapa init` and
+  `mapa check --all` surfaces. Existing run/check/compile/fmt/lint
+  commands and 40+ snippets unchanged. README refreshed to match
+  the v5.18.0 LSP capability matrix.
+- **Native dispatch (Mc.* shell-out).** `mapanare/self/main.mn`
+  learned three new subcommand cases (`check`, `init`, `lsp`)
+  mirroring the v5.13.0 `fmt` shell-out pattern. Help text
+  updated. Native ports tracked on the follow-up docket.
+- **Docs.** New `docs/guides/lsp.md` (capability matrix, editor
+  setup for VSCode/Neovim/Helix, troubleshooting),
+  `docs/guides/init.md` (template format, options, planned
+  templates), `editors/vscode/README.md`,
+  `docs/roadmap/v5/v5.18.0/MC_TOOLING_DESIGN.md` (Phase 0
+  audit + decision lock), `docs/roadmap/v5/v5.18.0/SESSION_REPORT.md`.
+
+### Preserved
+
+- **Strict 3-stage fixed point.** stage2.ll == stage3.ll at
+  232,281 lines / 0-line diff after the `main.mn` dispatch
+  additions + `concat_self.py` regeneration. The +558-line
+  growth vs. v5.17.2's 231,723 is the IR cost of the three new
+  dispatch arms shelling out via `__mn_system`. Held since v5.9.0.
+- **Existing LSP test suite.** 116/116 pre-existing pass at HEAD,
+  plus the new initialize round-trip → 117/117.
+- **No seed refresh required.** Dispatch additions are pure
+  shell-outs; no new C-runtime exports.
+
+### Phase 0 finding
+
+The release was originally scoped against a greenfield assumption
+(create `mapanare/lsp.py`, add `cmd_check` / `cmd_init` / `cmd_lsp`,
+build symbol table for hover, retrofit AST positions). The
+audit found **most of that already shipped**: the LSP package is
+a 3,020-line pygls implementation; all three CLI commands are
+wired; every AST node carries `span: Span(line, column,
+end_line, end_column)`; the symbol table builds binding-site
+positions today. v5.18.0 reframed as **verify-and-fill**: lock
+the design (`MC_TOOLING_DESIGN.md`), fix init's brace-syntax +
+missing-files divergence, add `--all` to check, ship the VSCode
+extension + native dispatch + docs.
+
+### Out of scope (deferred)
+
+- `--template` flag for `mapanare init` — only `default` ships;
+  `cli`, `agent`, `web-server` slotted for v5.18.x or v5.19.x.
+- Mc.5 — `mnc emit-wasm` native parity (Python CLI works today;
+  native port slotted for a future patch).
+- Code actions / semantic tokens / inlay hints / `workspace/symbol`
+  — v5.20.0+ per Mc.* parity arc.
+- VSCode marketplace publish — slotted for v5.20.0 once the
+  extension stabilizes.
+- Native `.mn` LSP port — no schedule; the Python implementation
+  is the single source of truth.
+
 ## [5.17.2] - 2026-04-30
 
 ### Changed

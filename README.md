@@ -24,7 +24,7 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.17.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.18.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-5800+_passing-brightgreen.svg?style=flat-square)]()
 [![Goldens](https://img.shields.io/badge/goldens-66%2F66-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
@@ -61,6 +61,14 @@ Or download binaries from [Releases](https://github.com/Mapanare-Research/Mapana
 
 ## Hello World
 
+```bash
+mapanare init hello && cd hello
+mapanare run main.mn
+```
+
+`mapanare init` scaffolds a runnable project (terse `main.mn`,
+`mapanare.toml`, `.gitignore`, `README.md`). For a one-liner:
+
 ```mn
 fn main():
     print("hello from mapanare")
@@ -69,7 +77,14 @@ fn main():
 ```bash
 mapanare run hello.mn        # compile + run
 mapanare build hello.mn      # produce a native binary
+mapanare check hello.mn      # type-check, no codegen
+mapanare lsp                 # start the language server (stdio)
 ```
+
+VS Code users: install
+[the official extension](https://github.com/Mapanare-Research/mapanare-vscode)
+(`mapanare-research.mapanare`). Neovim/Helix setup lives in
+[`docs/guides/lsp.md`](docs/guides/lsp.md).
 
 ---
 
