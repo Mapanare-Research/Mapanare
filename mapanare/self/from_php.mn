@@ -12,8 +12,7 @@ struct PhpToken:
     line: Int
     col: Int
 
-fn new_php_token(kind: String, value: String, line: Int, col: Int) -> PhpToken:
-    return new PhpToken { kind: kind, value: value, line: line, col: col }
+fn new_php_token(kind: String, value: String, line: Int, col: Int) -> PhpToken = new PhpToken { kind: kind, value: value, line: line, col: col }
 
 // ---------------------------------------------------------------------------
 // PHP keyword table
@@ -66,8 +65,7 @@ fn is_php_keyword(s: String) -> Bool:
 // Tokenizer helpers
 // ---------------------------------------------------------------------------
 
-fn is_php_alpha(c: String) -> Bool:
-    return is_transpiler_alpha(c)
+fn is_php_alpha(c: String) -> Bool = is_transpiler_alpha(c)
 
 fn is_php_alnum(c: String) -> Bool:
     if is_php_alpha(c) { return true }
@@ -268,7 +266,7 @@ struct PhpParser:
 
 fn new_php_parser(tokens: List<PhpToken>, filename: String) -> PhpParser:
     let st: TranspilerState = new_state(filename, "php")
-    return new PhpParser { tokens: tokens, pos: 0, state: st }
+    new PhpParser { tokens: tokens, pos: 0, state: st }
 
 fn php_current(p: PhpParser) -> PhpToken:
     if p.pos < len(p.tokens):
@@ -277,7 +275,7 @@ fn php_current(p: PhpParser) -> PhpToken:
 
 fn php_advance(p: PhpParser) -> PhpParser:
     p.pos = p.pos + 1
-    return p
+    p
 
 fn php_expect_kw(p: PhpParser, kw: String) -> PhpParser:
     let t: PhpToken = php_current(p)
@@ -296,18 +294,18 @@ fn php_expect_op(p: PhpParser, op: String) -> PhpParser:
 fn php_skip_newlines(p: PhpParser) -> PhpParser:
     while php_current(p).kind == "NEWLINE":
         p = php_advance(p)
-    return p
+    p
 
 fn php_skip_semicolons(p: PhpParser) -> PhpParser:
     while php_current(p).kind == "OP":
         if php_current(p).value != ";" { break }
         p = php_advance(p)
-    return p
+    p
 
 fn php_skip_whitespace(p: PhpParser) -> PhpParser:
     p = php_skip_newlines(p)
     p = php_skip_semicolons(p)
-    return p
+    p
 
 // ---------------------------------------------------------------------------
 // Type translation using transpiler framework
@@ -315,7 +313,7 @@ fn php_skip_whitespace(p: PhpParser) -> PhpParser:
 
 fn translate_php_type(type_str: String) -> String:
     let mappings: List<TypeMapping> = php_type_mappings()
-    return translate_type(type_str, mappings)
+    translate_type(type_str, mappings)
 
 // ---------------------------------------------------------------------------
 // PHP stdlib shims
@@ -969,4 +967,4 @@ fn translate_php(source: String, filename: String) -> String:
         // Skip other top-level tokens
         p = php_advance(p)
 
-    return out_text
+    out_text
