@@ -339,9 +339,7 @@ fn translate_stdlib_call(func_name: String, args: List<String>, shims: List<Stdl
                 // Method-style: first arg is receiver
                 if len(reordered) > 0:
                     let receiver: String = reordered[0]
-                    let mut rest: List<String> = []
-                    for k in 1..len(reordered):
-                        rest.push(reordered[k])
+                    let rest: List<String> = [reordered[k] for k in 1..len(reordered)]
                     return receiver + "." + s.target_expr + "(" + join_args(rest) + ")"
                 return s.target_expr + "()"
 
@@ -403,16 +401,8 @@ fn push_scope(state: TranspilerState) -> TranspilerState:
 fn pop_scope(state: TranspilerState) -> TranspilerState:
     if len(state.scope_markers) > 0:
         let marker: Int = state.scope_markers[len(state.scope_markers) - 1]
-        // Trim declared_vars back to the marker
-        let mut new_vars: List<String> = []
-        for i in 0..marker:
-            new_vars.push(state.declared_vars[i])
-        state.declared_vars = new_vars
-        // Pop the marker
-        let mut new_markers: List<Int> = []
-        for i in 0..len(state.scope_markers) - 1:
-            new_markers.push(state.scope_markers[i])
-        state.scope_markers = new_markers
+        state.declared_vars = [state.declared_vars[i] for i in 0..marker]
+        state.scope_markers = [state.scope_markers[i] for i in 0..len(state.scope_markers) - 1]
     if state.indent_level > 0:
         state.indent_level = state.indent_level - 1
     return state
