@@ -5730,14 +5730,10 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String:
             dix = dix + 1
 
     // Emit function bodies
-    let total_fns: Int = len(module.functions)
-    let mut fi: Int = 0
-    for _ in 0..5000:
-        if fi < total_fns:
-            let f_emit: MIRFunction = module.functions[fi]
-            if len(f_emit.blocks) > 0:
-                st = emit_mir_function(st, f_emit, module)
-            fi = fi + 1
+    for fi in 0..len(module.functions):
+        let f_emit: MIRFunction = module.functions[fi]
+        if len(f_emit.blocks) > 0:
+            st = emit_mir_function(st, f_emit, module)
 
     // Append string globals
     let mut gi: Int = 0
