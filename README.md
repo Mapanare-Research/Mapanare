@@ -62,9 +62,8 @@ Or download binaries from [Releases](https://github.com/Mapanare-Research/Mapana
 ## Hello World
 
 ```mn
-fn main() {
+fn main():
     print("hello from mapanare")
-}
 ```
 
 ```bash
@@ -99,32 +98,30 @@ mapanare build your_script.py -o your_script
 
 ```mn
 // Agents — first-class concurrent actors
-agent Counter {
+agent Counter:
     state count: Int = 0
-    on increment { count = count + 1 }
-    on get_count -> Int { return count }
-}
+    on increment: count = count + 1
+    on get_count -> Int = count
 
 // Signals — reactive state
 let temperature = signal(72.0)
-let alert = computed(() => temperature.get() > 100.0)
+let alert = computed(|| temperature.get() > 100.0)
 
-// Streams — composable data pipelines (terse-lambda form, v5.15.0)
+// Streams — composable data pipelines
 let results = data_stream
     |> filter(|x| x > 0)
     |> map(|x| x * 2)
     |> collect()
 
-// Comprehensions + implicit-return one-liner (v5.15.0)
+// Comprehensions + implicit-return one-liner
 fn double(x: Int) -> Int = x * 2
 let doubled: List<Int> = [double(x) for x in xs if x > 0]
 let lookup: Map<Int, Int> = #{ k: k * k for k in 0..10 }
 
 // Pattern matching
-match response {
+match response:
     Ok(data) => process(data),
     Err(e) => print(e)
-}
 
 // AI stdlib
 import ai::llm
@@ -135,7 +132,7 @@ Full language reference, tutorials, and cookbook at [mapanare.dev/docs](https://
 
 ### Native compiler — what `mnc-stage1` ships
 
-The self-hosted compiler runs the full corpus (68/68 native goldens at v5.15.0):
+The self-hosted compiler runs the full corpus (80/80 native goldens at v5.17.1):
 
 - **Tensors** — literals, multi-dim indexing, NumPy-style broadcasting, slicing, reductions (sum / mean / max / min / argmax / argmin).
 - **Async / await / `block_on`** — real LLVM coroutines (`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`) with scheduler-driven suspension.
@@ -143,7 +140,7 @@ The self-hosted compiler runs the full corpus (68/68 native goldens at v5.15.0):
 - **Or-pattern matching with guards** — `Plus | Minus if cond => body` over enum variants and built-in constructors (`None` / `Some` / `Ok` / `Err`).
 - **Drop-glue ownership tracking** — string / list / boxed / tensor lifetimes tracked through return paths and loop iterations; valgrind / ASan / LSan / TSan all clean on the corpus.
 
-Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 226k lines; restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata diff at the source).
+Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 231,957 lines; restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata diff at the source; held through v5.17.0's mechanical brace → colon rewrite and v5.17.1's implicit-return polish).
 
 ---
 
