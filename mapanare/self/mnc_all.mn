@@ -3685,8 +3685,7 @@ struct SemanticError:
     column: Int
     filename: String
 
-fn new_semantic_error(msg: String, line: Int, col: Int, fname: String) -> SemanticError:
-    return new SemanticError { message: msg, line: line, column: col, filename: fname }
+fn new_semantic_error(msg: String, line: Int, col: Int, fname: String) -> SemanticError = new SemanticError { message: msg, line: line, column: col, filename: fname }
 
 // ---------------------------------------------------------------------------
 // Type representation
@@ -3700,19 +3699,15 @@ struct TypeInfo:
     return_type: Option<TypeInfo>
     tensor_shape: Option<List<Int>>
 
-fn new_type_info(name: String, args: List<TypeInfo>, is_fn: Bool, params: List<TypeInfo>, ret: Option<TypeInfo>, shape: Option<List<Int>>) -> TypeInfo:
-    return new TypeInfo { name: name, args: args, is_function: is_fn, param_types: params, return_type: ret, tensor_shape: shape }
+fn new_type_info(name: String, args: List<TypeInfo>, is_fn: Bool, params: List<TypeInfo>, ret: Option<TypeInfo>, shape: Option<List<Int>>) -> TypeInfo = new TypeInfo { name: name, args: args, is_function: is_fn, param_types: params, return_type: ret, tensor_shape: shape }
 
 // Singleton type constructors
-fn unknown_type() -> TypeInfo:
-    return make_type("<unknown>")
+fn unknown_type() -> TypeInfo = make_type("<unknown>")
 
 // v4.53.0: UNRESOLVED/ERROR split (A8)
-fn error_type() -> TypeInfo:
-    return make_type("<error>")
+fn error_type() -> TypeInfo = make_type("<error>")
 
-fn type_is_error(ti: TypeInfo) -> Bool:
-    return ti.name == "<error>"
+fn type_is_error(ti: TypeInfo) -> Bool = ti.name == "<error>"
 
 // Returns true for <unknown>, <unresolved>, or <error> — any type where
 // downstream checks should be skipped (either "not yet known" or "already broken").
@@ -3722,41 +3717,35 @@ fn type_should_skip(name: String) -> Bool:
     if name == "<error>" { return true }
     return false
 
-fn int_type() -> TypeInfo:
-    return make_type("Int")
+fn int_type() -> TypeInfo = make_type("Int")
 
-fn float_type() -> TypeInfo:
-    return make_type("Float")
+fn float_type() -> TypeInfo = make_type("Float")
 
-fn bool_type() -> TypeInfo:
-    return make_type("Bool")
+fn bool_type() -> TypeInfo = make_type("Bool")
 
-fn string_type() -> TypeInfo:
-    return make_type("String")
+fn string_type() -> TypeInfo = make_type("String")
 
-fn char_type() -> TypeInfo:
-    return make_type("Char")
+fn char_type() -> TypeInfo = make_type("Char")
 
-fn void_type() -> TypeInfo:
-    return make_type("Void")
+fn void_type() -> TypeInfo = make_type("Void")
 
 fn make_type(name: String) -> TypeInfo:
     let args: List<TypeInfo> = []
     let params: List<TypeInfo> = []
-    return new_type_info(name, args, false, params, none, none)
+    new_type_info(name, args, false, params, none, none)
 
 fn make_generic_type(name: String, args: List<TypeInfo>) -> TypeInfo:
     let params: List<TypeInfo> = []
-    return new_type_info(name, args, false, params, none, none)
+    new_type_info(name, args, false, params, none, none)
 
 fn make_fn_type(params: List<TypeInfo>, ret: TypeInfo) -> TypeInfo:
     let args: List<TypeInfo> = []
-    return new_type_info("<fn>", args, true, params, Some(ret), none)
+    new_type_info("<fn>", args, true, params, Some(ret), none)
 
 fn make_builtin_fn_type(ret: TypeInfo) -> TypeInfo:
     let args: List<TypeInfo> = []
     let params: List<TypeInfo> = []
-    return new_type_info("<builtin>", args, true, params, Some(ret), none)
+    new_type_info("<builtin>", args, true, params, Some(ret), none)
 
 // ---------------------------------------------------------------------------
 // Primitive and builtin type sets
@@ -3931,8 +3920,7 @@ struct Symbol:
     type_info: TypeInfo
     mutable: Bool
 
-fn new_symbol(name: String, kind: String, ti: TypeInfo, mutable: Bool) -> Symbol:
-    return new Symbol { name: name, kind: kind, type_info: ti, mutable: mutable }
+fn new_symbol(name: String, kind: String, ti: TypeInfo, mutable: Bool) -> Symbol = new Symbol { name: name, kind: kind, type_info: ti, mutable: mutable }
 
 struct Scope:
     parent: Option<Scope>
@@ -3940,14 +3928,14 @@ struct Scope:
 
 fn new_scope(parent: Option<Scope>) -> Scope:
     let syms: List<Symbol> = []
-    return new Scope { parent: parent, symbols: syms }
+    new Scope { parent: parent, symbols: syms }
 
 fn scope_define(scope: Scope, name: String, sym: Symbol) -> Scope:
     // Append symbol to scope's symbol list.
     // Later entries shadow earlier ones (last-match-wins in lookup).
     let mut syms: List<Symbol> = scope.symbols
     syms.push(sym)
-    return new Scope { parent: scope.parent, symbols: syms }
+    new Scope { parent: scope.parent, symbols: syms }
 
 fn scope_lookup(scope: Scope, name: String) -> Option<Symbol>:
     // Linear search through symbols (last to first for shadowing).
@@ -3986,7 +3974,7 @@ struct SemanticChecker:
 fn new_checker(filename: String) -> SemanticChecker:
     let scope: Scope = new_scope(none)
     let errs: List<SemanticError> = []
-    return new SemanticChecker { filename: filename, errors: errs, global_scope: scope, current_scope: scope }
+    new SemanticChecker { filename: filename, errors: errs, global_scope: scope, current_scope: scope }
 
 // ---------------------------------------------------------------------------
 // State threading — result structs for functions that return a value + state
@@ -4011,13 +3999,11 @@ fn new_sem_state(filename: String) -> SemState:
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
     let zero_span: Span = make_span(0, 0, 0, 0)
-    return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "" }
+    new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "" }
 
-fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult:
-    return new InferResult { type_info: ti, st: st }
+fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult = new InferResult { type_info: ti, st: st }
 
-fn new_check_result(st: SemState) -> CheckResult:
-    return new CheckResult { st: st }
+fn new_check_result(st: SemState) -> CheckResult = new CheckResult { st: st }
 
 // ---------------------------------------------------------------------------
 // Error helpers
@@ -4027,13 +4013,11 @@ fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState:
     let err: SemanticError = new_semantic_error(msg, line, col, st.filename)
     let mut errs: List<SemanticError> = st.errors
     errs.push(err)
-    return new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+    new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
 
-fn add_error_here(st: SemState, msg: String) -> SemState:
-    return add_error(st, msg, st.current_span.line, st.current_span.column)
+fn add_error_here(st: SemState, msg: String) -> SemState = add_error(st, msg, st.current_span.line, st.current_span.column)
 
-fn add_error_msg(st: SemState, msg: String) -> SemState:
-    return add_error_here(st, msg)
+fn add_error_msg(st: SemState, msg: String) -> SemState = add_error_here(st, msg)
 
 // ---------------------------------------------------------------------------
 // Scope helpers
@@ -4042,7 +4026,7 @@ fn add_error_msg(st: SemState, msg: String) -> SemState:
 fn push_scope(st: SemState) -> SemState:
     let child: Scope = new_scope(Some(st.scope))
     let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
-    return new_st
+    new_st
 
 fn pop_scope(st: SemState) -> SemState:
     match st.scope.parent {
@@ -4053,16 +4037,14 @@ fn pop_scope(st: SemState) -> SemState:
         _ => { return st }
     }
 
-fn set_span(st: SemState, span: Span) -> SemState:
-    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+fn set_span(st: SemState, span: Span) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
 
 fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState:
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
     let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
-    return new_st
+    new_st
 
-fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState:
-    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name }
+fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name }
 
 // ---------------------------------------------------------------------------
 // Type compatibility checking
@@ -4154,11 +4136,9 @@ fn check_arithmetic_result(left: String, right: String, op: String) -> String:
         if right == "Int" { return "Int" }
     return "<unknown>"
 
-fn check_comparison_result(left: String, right: String) -> String:
-    return "Bool"
+fn check_comparison_result(left: String, right: String) -> String = "Bool"
 
-fn check_logical_result(left: String, right: String) -> String:
-    return "Bool"
+fn check_logical_result(left: String, right: String) -> String = "Bool"
 
 // ---------------------------------------------------------------------------
 // Type resolution — convert TypeExpr AST nodes to TypeInfo
@@ -4573,7 +4553,7 @@ fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> Inf
     if !type_should_skip(rt):
         if rt != "Bool":
             st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + rt)
-    return new_infer_result(bool_type(), st2)
+    new_infer_result(bool_type(), st2)
 
 fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult:
     let mut st2: SemState = st
@@ -4883,12 +4863,12 @@ fn check_spawn_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult
             st2 = ar.st
             i = i + 1
     // Then check callee (no nested match-in-if-in-for)
-    return check_spawn_callee(st2, callee)
+    check_spawn_callee(st2, callee)
 
 fn check_send_expr(st: SemState, value: Expr, target: Expr) -> SemState:
     let vr: InferResult = infer_expr(st, value)
     let tr: InferResult = infer_expr(vr.st, target)
-    return tr.st
+    tr.st
 
 // ---------------------------------------------------------------------------
 // Pipe expression
@@ -5668,7 +5648,7 @@ pub fn check(program: Program, filename: String) -> List<SemanticError>:
 
 fn check_or_raise(program: Program, filename: String) -> List<SemanticError>:
     let errors: List<SemanticError> = check(program, filename)
-    return errors
+    errors
 
 // ===== mir.mn =====
 // mir.mn — MIR (Mid-level Intermediate Representation) data structures.
