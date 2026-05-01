@@ -158,3 +158,27 @@ class TestToolsRunLocally:
         assert (
             result.returncode == 0
         ), f"check_struct_registry failed:\n{result.stdout}\n{result.stderr}"
+
+
+class TestMakeCIGates:
+    """v5.24.0 Hy.1 — `make ci-gates` runs the full gate inventory.
+
+    Anaconda §2.D recommendation: a single Makefile target that runs every
+    structural gate locally, so the pre-release checklist shrinks to
+    "run make ci-gates, expect zero violations." Closes the
+    wired-but-unchecked failure mode that produced Reg.1 / hollow-feature
+    gate / docs-drift gate silent failures across v5.17.0 → v5.22.0.
+    """
+
+    def test_make_ci_gates_target_runs(self) -> None:
+        result = subprocess.run(
+            ["make", "ci-gates"],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            cwd=ROOT,
+        )
+        assert result.returncode == 0, f"make ci-gates failed:\n{result.stdout}\n{result.stderr}"
+        assert (
+            "All gates GREEN" in result.stdout
+        ), f"missing 'All gates GREEN' marker in:\n{result.stdout}"

@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.24.0] - 2026-05-01
+
+**Hy.\* — structural hygiene gates.** Fourth release in the
+v5.23–v5.24 recovery arc. The "this should never have slipped"
+infrastructure release: closes the H.\* / Bo.\* drift class
+**structurally** (vs the closure-by-hygiene-release pattern that
+capped the v5.7.1 / v5.11.0 / v5.22.0 panel aggregates at
+9.55–9.66). **Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+preserved by construction at **239,835 lines / 0 diff** (18-release
+strict streak; same line count as v5.23.2). Goldens **95/95**.
+
+Six items closed:
+
+- **Hy.1** (Anaconda §2.D, MEDIUM) — new `make ci-gates` target
+  running the full CI-gate inventory locally as a single command.
+  8 sub-gates wired (`silent_skips`, `changelog_honesty`,
+  `workflow_shapes`, `docs_drift`, `hollow_features`,
+  `struct_registry`, plus the new `doc_freshness` and `cadence`).
+  Pre-release checklist shrinks to "run `make ci-gates`, expect
+  zero violations." Eliminates the wired-but-unchecked failure
+  mode that produced Reg.1 / hollow-feature gate / docs-drift gate
+  silent failures across v5.17.0 → v5.22.0 (Anaconda's load-bearing
+  −1.30 grade hit). New `tests/test_ci.py::TestMakeCIGates` (1
+  case).
+- **Hy.2** (Coral / Boa Bo.27, MEDIUM) — new
+  `scripts/check_doc_freshness.py` (~190 LOC) with 5 MVP checks:
+  version badge sync (en/es/pt/zh-CN), goldens badge sync, multiple
+  distinct exact-line-count claims in README.md, body
+  goldens-claim consistency, SPEC.md header version freshness
+  (tolerates up to 2 minor versions of lag — covers a panel +
+  recovery-arc window without forcing per-release header bumps).
+  Wired into `.github/workflows/ci.yml` parallel to the struct-
+  registry gate. New `tests/test_doc_freshness.py` (7 cases): live-
+  repo invariant + 5 fixture-based violation classes + 1 boundary
+  tolerance. Wider scope (every prose claim about every metric) is
+  explicitly held for v6.0+.
+- **Hy.3** (Anaconda §1, MEDIUM) — new `scripts/check_cadence.py`
+  (~90 LOC) per `.reviews/REVIEW_CADENCE.md`: panel runs every 5
+  minor versions; gate fires OVERDUE at lag ≥5. Picks the latest
+  panel directory by scanning `.reviews/v<MAJOR>.<MINOR>.<PATCH>/`
+  for at least one Markdown file. Wired into ci.yml as a
+  `cadence-check` job with `continue-on-error: true` (warn-only at
+  PR time; the panel cycle itself involves churn that should not
+  block CI). Hard signal lands at pre-release time via
+  `make ci-gates`. At v5.24.0 we are 2 minors past v5.22.0 — gate
+  exits 0; fires hard at v5.27.0 if no panel runs by then. New
+  `tests/test_cadence.py` (6 cases).
+- **Hy.4** (Cobra 3rd-cycle, LOW) — `scripts/build_from_seed.sh:
+  159` magic-number `>= 45` replaced with self-evident formula:
+  `EXPECTED_PASS=$((TOTAL_GOLDENS - EXPECTED_SEED_FAILS))` where
+  `TOTAL_GOLDENS=$(ls "${ROOT}"/tests/golden/*.mn | wc -l)` and
+  `EXPECTED_SEED_FAILS=20` (named: `Te.5/Te.6/comprehensions/
+  complex closures predate the v5.10.0-vintage seed`). At v5.24.0
+  threshold becomes 75 (95 − 20); no longer drifts as goldens are
+  added.
+- **Hy.5** (Pk.1.A, 11-release carry from v5.10.0) — Linux + macOS
+  versioned-tarball smoke gates in `.github/workflows/publish.yml`.
+  Two new jobs `linux-tarball-smoke` and `macos-tarball-smoke`,
+  parallel to the existing `windows-sdk-smoke`. Each downloads
+  `mapanare-${V}-linux-x64.tar.gz` / `mapanare-${V}-mac-arm64.tar.gz`,
+  extracts, runs `mapanare --version` and `mapanare emit-llvm
+  hello.mn -o hello.ll`, asserts non-empty output. `checksums` job
+  `needs:` extended so a missing/corrupt Linux or macOS asset
+  trips a gate at publish time, not when a user reports it.
+- **Hy.6** (Pe.1 reframe, LOW) — `.reviews/CARRY_FORWARD.md` Pe.1
+  row updated per Mamba's v5.22.0 #2: "curve flattening" framing
+  retired; growth is proportional to bootstrap-side AST additions
+  across the Te.\* arc, not a v6.0 budget concern at current rate
+  (need another 30+ releases at +0.5%/release before doubling).
+  Documentation-only.
+
+**Carry-forward delta**: Hy.1 / Hy.2 / Hy.3 (3 MEDIUM) + Hy.4 /
+Hy.5 / Hy.6 (3 LOW) all closed. v5.23–v5.24 recovery arc has now
+closed every panel-flagged HIGH and 4 of 8 panel MEDIUMs in four
+releases (RC.\* + Mb.\* + Te.3.B + Hy.\*).
+
+**Out of scope** (held): Wd.\* (manifesto M2 + SPEC corpus M3 +
+Coral L1–L5 + TR1) — v5.24.1; Bo.27 audit cross-reference column
+convention applies at v5.27.0 panel.
+
+See `docs/roadmap/v5/v5.24.0/SESSION_REPORT.md` and `PLAN.md`.
+
 ## [5.23.2] - 2026-05-01
 
 **Te.3.B — bootstrap brace-deprecation mirror.** Third release in
@@ -8767,7 +8850,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.2...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.0...HEAD
+[5.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.0...v5.24.0
 [5.23.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.1...v5.23.2
 [5.23.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.0...v5.23.1
 [5.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.23.0

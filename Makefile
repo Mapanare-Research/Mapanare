@@ -3,7 +3,7 @@
 # to /bin/dash which has no ``<(...)`` support.
 SHELL := /bin/bash
 
-.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report count-tests leak-check
+.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report count-tests leak-check ci-gates
 
 # v4.29.0: build-rt now enumerates every runtime object that is expected
 # to land in libmapanare_rt.a. The list used to be hand-maintained and
@@ -149,3 +149,22 @@ clean:
 leak-check:  ## v5.4.2: compile+link+run every golden under LSan, gate against baseline
 	@bash scripts/run_asan_leak_goldens.sh
 	@python3 scripts/check_leak_summary.py
+
+# v5.24.0 Hy.1 (Anaconda §2.D): single command running the full CI-gate
+# inventory locally. Pre-release checklist shrinks to "run make ci-gates,
+# expect zero violations." Eliminates the wired-but-unchecked failure
+# mode that produced Reg.1 / hollow-feature gate / docs-drift gate
+# silent failures across v5.17.0 → v5.22.0 (Anaconda's −1.30 grade hit).
+# Cadence-check is intentionally non-blocking (warn-only) here — it
+# fires hard in CI only when the v5.27.0 panel window opens.
+ci-gates:  ## v5.24.0 Hy.1: run all CI gates locally, exit 1 on any failure
+	@echo "=== Mapanare CI Gates ==="
+	@python3 scripts/check_silent_skips.py tests/ && echo "  silent_skips: GREEN" || (echo "  silent_skips: RED"; exit 1)
+	@python3 scripts/check_changelog_honesty.py && echo "  changelog_honesty: GREEN" || (echo "  changelog_honesty: RED"; exit 1)
+	@python3 scripts/check_workflow_shapes.py && echo "  workflow_shapes: GREEN" || (echo "  workflow_shapes: RED"; exit 1)
+	@python3 scripts/check_docs_drift.py && echo "  docs_drift: GREEN" || (echo "  docs_drift: RED"; exit 1)
+	@python3 scripts/check_no_hollow_features.py && echo "  hollow_features: GREEN" || (echo "  hollow_features: RED"; exit 1)
+	@python3 scripts/check_struct_registry.py && echo "  struct_registry: GREEN" || (echo "  struct_registry: RED"; exit 1)
+	@python3 scripts/check_doc_freshness.py && echo "  doc_freshness: GREEN" || (echo "  doc_freshness: RED"; exit 1)
+	@python3 scripts/check_cadence.py && echo "  cadence: GREEN" || echo "  cadence: WARN (non-blocking)"
+	@echo "=== All gates GREEN ==="

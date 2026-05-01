@@ -248,7 +248,7 @@ v5.22.0 HEAD.
 | Boa Bo.22 | `mapanare run` vs `mnc run` in README Hello World | LOW | **CLOSED v5.23.0 RC.14** | v5.23.0 RC.14 | All 5 invocations + alias note ("`mapanare` is also installed as an alias for `mnc`.") added |
 | Boa Bo.19 | Test count drift (badge/body/measurement triple) | LOW | **CLOSED v5.23.0 RC.2** | v5.23.0 RC.2 (incidental closure same paragraph) | 5,800+ in body now matches badge |
 | Boa Bo.20 | README links to `benchmarks/FINAL_REPORT_v4.153.md` | LOW | **CLOSED v5.23.0 RC.2** | v5.23.0 RC.2 (incidental closure same paragraph) | Updated to `benchmarks/FINAL_REPORT.md` |
-| Mamba Pe.1 | stage2.ll growth scaling | LOW | **REFRAMED** (downgrade pending) | — | +5.07% over 10 releases; "curve flattening" framing should retire — growth proportional to bootstrap AST surface, not budget concern |
+| Mamba Pe.1 | stage2.ll growth scaling | LOW | **REFRAMED v5.24.0 Hy.6** | v5.24.0 Hy.6 | "Curve flattening" framing retired per Mamba's v5.22.0 #2: growth is proportional to bootstrap-side AST additions across the Te.\* arc, not a v6.0 budget concern at current rate (need another 30+ releases at +0.5%/release before doubling). |
 | Anaconda informational LOWs | Coverage gate / Windows CI lane / self-compile pytest smoke / MIR destination-passing tests / inliner-kinds whitelist | LOW each | **STILL OPEN** | — | 53/38/etc-release deferred status quo unchanged |
 
 **v5.22.0 panel — new findings:**

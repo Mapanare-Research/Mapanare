@@ -18,6 +18,60 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.24.0** (ready, not tagged) — **Hy.\* — structural hygiene
+  gates.** Fourth release in the v5.23–v5.24 recovery arc. The
+  "this should never have slipped" infrastructure release: closes
+  the H.\* / Bo.\* drift class **structurally** (vs the closure-
+  by-hygiene-release pattern that capped the v5.7.1 / v5.11.0 /
+  v5.22.0 panel aggregates at 9.55–9.66). **Zero compiler edits.
+  Zero runtime edits. Zero `mapanare/self/*.mn` source edits.**
+  Strict 3-stage fixed point preserved by construction at **239,835
+  lines / 0 diff** (18-release strict streak; same line count as
+  v5.23.2). Goldens **95/95**. **Hy.1**: new `make ci-gates` target
+  running 8 sub-gates (`silent_skips`, `changelog_honesty`,
+  `workflow_shapes`, `docs_drift`, `hollow_features`,
+  `struct_registry`, plus the new `doc_freshness` and `cadence`)
+  — pre-release checklist shrinks to "expect zero violations."
+  Eliminates the wired-but-unchecked failure mode that produced
+  Reg.1 / hollow-feature gate / docs-drift gate silent failures
+  across v5.17.0 → v5.22.0 (Anaconda's load-bearing −1.30 hit).
+  **Hy.2**: new `scripts/check_doc_freshness.py` (~190 LOC) with
+  5 MVP checks — version-badge sync (en/es/pt/zh-CN), goldens-
+  badge sync, multiple distinct exact-line-count claims in
+  README.md, body-goldens consistency, SPEC.md header version
+  (tolerates ≤2 minor lag). Wired into ci.yml parallel to the
+  struct-registry gate. Wider scope (every prose claim about every
+  metric) is explicitly v6.0+. New `tests/test_doc_freshness.py`
+  (7 cases). **Hy.3**: new `scripts/check_cadence.py` (~90 LOC)
+  per `.reviews/REVIEW_CADENCE.md` — fires OVERDUE at lag ≥5
+  minor versions since last panel. Wired into ci.yml as a
+  `cadence-check` job with `continue-on-error: true` (warn-only
+  at PR time; hard signal at pre-release via `make ci-gates`). At
+  v5.24.0 we are 2 minors past v5.22.0; gate exits 0. Fires hard
+  at v5.27.0. New `tests/test_cadence.py` (6 cases). **Hy.4**
+  (Cobra 3rd-cycle): `scripts/build_from_seed.sh:159` magic
+  `>= 45` replaced with self-evident formula
+  `EXPECTED_PASS=$((TOTAL_GOLDENS - EXPECTED_SEED_FAILS))` where
+  `EXPECTED_SEED_FAILS=20` (named: `Te.5/Te.6/comprehensions/
+  complex closures predate the v5.10.0-vintage seed`). **Hy.5**
+  (Pk.1.A, 11-release carry from v5.10.0): two new jobs
+  `linux-tarball-smoke` and `macos-tarball-smoke` in
+  `.github/workflows/publish.yml`, parallel to the existing
+  `windows-sdk-smoke`. Each downloads the published versioned
+  tarball, extracts, runs `mapanare --version` + `mapanare
+  emit-llvm hello.mn -o hello.ll`, asserts non-empty output.
+  `checksums` job `needs:` extended. **Hy.6** (Pe.1 reframe):
+  `.reviews/CARRY_FORWARD.md` Pe.1 row updated per Mamba's v5.22.0
+  #2 — "curve flattening" framing retired; growth is proportional
+  to bootstrap-side AST additions across the Te.\* arc, not a v6.0
+  budget concern (30+ releases at +0.5%/release before doubling).
+  **Carry-forward delta**: Hy.1 / Hy.2 / Hy.3 (3 MEDIUM) + Hy.4 /
+  Hy.5 / Hy.6 (3 LOW) closed. v5.23–v5.24 arc has now closed every
+  panel-flagged HIGH and 4 of 8 panel MEDIUMs in four releases
+  (RC.\* + Mb.\* + Te.3.B + Hy.\*). **Out of scope** (held): Wd.\*
+  (manifesto M2 + SPEC corpus M3 + Coral L1–L5 + TR1) — v5.24.1.
+  See `docs/roadmap/v5/v5.24.0/SESSION_REPORT.md` and `PLAN.md`.
+
 - **v5.23.2** (ready, not tagged) — **Te.3.B — bootstrap brace-
   deprecation mirror.** Third release in the v5.23–v5.24 recovery
   arc. Closes the **Te.3 asymmetric closure** flagged independently
@@ -1336,7 +1390,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (30313 symbols, 64893 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (30359 symbols, 64950 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

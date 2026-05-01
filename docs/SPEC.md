@@ -1,7 +1,15 @@
 # Mapanare Language Specification
 
-**Version:** 5.21.0
-**Status:** Live — synced to the v5.21.0 cut (2026-05-01)
+**Version:** 5.24.0
+**Status:** Live — synced to the v5.24.0 cut (2026-05-01)
+
+> **v5.24.0 — Hy.\* hygiene re-anchor.** SPEC body unchanged from
+> the v5.21.0 cut. The v5.22.0 panel, v5.23.0/v5.23.1/v5.23.2
+> recovery arc, and v5.24.0 hygiene release added **zero language
+> features, zero new MIR ops, zero new IR shapes** (RC.\* CI
+> recovery, Mb.\* memory hygiene, Te.3.B brace-deprecation mirror,
+> Hy.\* structural gates — all infrastructure). The v5.21.0 sync
+> block below remains authoritative for language semantics.
 
 > **v5.21.1 — pre-panel docs hygiene.** SPEC re-synced from the
 > v5.7.1 cut to reflect the **v5.13–v5.21 terseness arc** plus

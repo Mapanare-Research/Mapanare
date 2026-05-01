@@ -765,6 +765,101 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # =========================================================================
+  # 5a. Smoke-test the published Linux versioned tarball end-to-end on
+  # a clean ubuntu runner. v5.24.0 Hy.5 (Pk.1.A): mirrors the Windows
+  # SDK smoke shape on the Linux tarball so a missing/corrupt release
+  # asset trips a smoke gate at publish time, not when a user reports
+  # that ``curl ... | tar -xz`` ships a broken binary. 11-release
+  # carry from v5.10.0 (Win.1b shipped Windows-only smoke) through
+  # v5.22.0 panel (Pk.1.A flagged the asymmetry). The published
+  # tarball expands to ``mapanare/mapanare`` (PyInstaller bundle).
+  # =========================================================================
+  linux-tarball-smoke:
+    needs: [release, build-cli]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download published Linux tarball
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          V="${{ needs.release.outputs.new_version }}"
+          ASSET="mapanare-${V}-linux-x64.tar.gz"
+          gh release download "v${V}" -p "$ASSET" -O /tmp/mapanare.tar.gz \
+            -R "${{ github.repository }}"
+          if [ ! -s /tmp/mapanare.tar.gz ]; then
+            echo "FATAL: $ASSET missing or empty in release"
+            exit 1
+          fi
+          ls -la /tmp/mapanare.tar.gz
+
+      - name: Extract + smoke
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mapanare-extracted
+          tar -xzf /tmp/mapanare.tar.gz -C /tmp/mapanare-extracted
+          BIN=/tmp/mapanare-extracted/mapanare/mapanare
+          if [ ! -x "$BIN" ]; then
+            echo "FATAL: tarball missing executable mapanare/mapanare"
+            ls -la /tmp/mapanare-extracted/mapanare/ || true
+            exit 1
+          fi
+          "$BIN" --version
+          echo 'fn main(): print("hello from clean Linux smoke")' > /tmp/hello.mn
+          "$BIN" emit-llvm /tmp/hello.mn -o /tmp/hello.ll
+          if [ ! -s /tmp/hello.ll ]; then
+            echo "FATAL: emit-llvm produced empty output"
+            exit 1
+          fi
+          echo "Linux tarball smoke: OK"
+
+  # =========================================================================
+  # 5b. Smoke-test the published macOS versioned tarball end-to-end on
+  # a clean macos runner. Same shape as linux-tarball-smoke; closes
+  # the macOS half of Pk.1.A.
+  # =========================================================================
+  macos-tarball-smoke:
+    needs: [release, build-cli]
+    runs-on: macos-latest
+
+    steps:
+      - name: Download published macOS tarball
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          V="${{ needs.release.outputs.new_version }}"
+          ASSET="mapanare-${V}-mac-arm64.tar.gz"
+          gh release download "v${V}" -p "$ASSET" -O /tmp/mapanare.tar.gz \
+            -R "${{ github.repository }}"
+          if [ ! -s /tmp/mapanare.tar.gz ]; then
+            echo "FATAL: $ASSET missing or empty in release"
+            exit 1
+          fi
+          ls -la /tmp/mapanare.tar.gz
+
+      - name: Extract + smoke
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mapanare-extracted
+          tar -xzf /tmp/mapanare.tar.gz -C /tmp/mapanare-extracted
+          BIN=/tmp/mapanare-extracted/mapanare/mapanare
+          if [ ! -x "$BIN" ]; then
+            echo "FATAL: tarball missing executable mapanare/mapanare"
+            ls -la /tmp/mapanare-extracted/mapanare/ || true
+            exit 1
+          fi
+          "$BIN" --version
+          echo 'fn main(): print("hello from clean macOS smoke")' > /tmp/hello.mn
+          "$BIN" emit-llvm /tmp/hello.mn -o /tmp/hello.ll
+          if [ ! -s /tmp/hello.ll ]; then
+            echo "FATAL: emit-llvm produced empty output"
+            exit 1
+          fi
+          echo "macOS tarball smoke: OK"
+
+  # =========================================================================
   # 5. Smoke-test the published Windows SDK ZIP end-to-end with PATH,
   # LIB, and INCLUDE stripped. This catches clean-machine SDK failures
   # before users do.
@@ -832,7 +927,7 @@ jobs:
   # 6. Generate SHA256 checksums for all release artifacts
   # =========================================================================
   checksums:
-    needs: [release, build-cli, build-native, windows-sdk-smoke]
+    needs: [release, build-cli, build-native, windows-sdk-smoke, linux-tarball-smoke, macos-tarball-smoke]
     runs-on: ubuntu-latest
 
     steps:

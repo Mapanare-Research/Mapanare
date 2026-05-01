@@ -147,6 +147,19 @@ jobs:
           set -e
           python3 scripts/check_struct_registry.py
 
+      # v5.24.0 Hy.2: docs-freshness gate. Closes the H.* / Bo.* drift
+      # class structurally — version badges, goldens count, fixed-point
+      # line-count claims, and SPEC header version must match the
+      # current state of the repo. Same prevention pattern as the
+      # struct-registry gate above: catch staleness at PR time, not at
+      # the next pre-panel hygiene release.
+      - name: Docs freshness gate
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          python3 scripts/check_doc_freshness.py
+
       # Build the native runtime archive and self-hosted compiler
       # (mnc-stage1) before pytest. Many tests under tests/parser/,
       # tests/self_hosted/, tests/llvm/, tests/bootstrap/ shell out
@@ -176,6 +189,35 @@ jobs:
   # coverage thresholds — the tests/COVERAGE.md audit is the baseline,
   # and a future release will flip this to gating once the numbers have
   # stabilised across 5 releases.
+  # ---------------------------------------------------------------------------
+  # v5.24.0 Hy.3 — cadence enforcement gate (warn-only).
+  #
+  # Fires when ≥5 minor versions have shipped without a panel in
+  # ``.reviews/v<MAJOR>.<MINOR>.<PATCH>/``. Per
+  # ``.reviews/REVIEW_CADENCE.md`` (Anaconda §1, v5.22.0 panel),
+  # silent skips of the cadence trigger were the load-bearing class
+  # of process-discipline regression that produced the v5.16.0 /
+  # v5.20.0 missed panels.
+  #
+  # ``continue-on-error: true`` keeps PRs unblocked during the
+  # panel-cycle window (the panel itself involves churn that should
+  # not block CI). The hard failure surfaces at pre-release time via
+  # ``make ci-gates`` — that is when the lead is already gating the
+  # tag, so a hard signal is appropriate.
+  # ---------------------------------------------------------------------------
+  cadence-check:
+    name: Cadence enforcement (warn-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run cadence gate
+        run: python3 scripts/check_cadence.py
+
   coverage:
     name: Coverage (informational)
     runs-on: ubuntu-latest
