@@ -114,6 +114,13 @@ enum Expr:
     // value). Mirrors Python `InterpString` shape so the lowerer can
     // reuse `InterpConcat` MIR. Empty `parts` means an empty literal.
     InterpString(List<Expr>)
+    // v5.20.1 Te.5.F.C — struct update: `new T { x: 5, ..base }` and
+    // `new T { ..base }`. `overrides` carries the explicit field
+    // initializers (with names), `base` is the source for unmentioned
+    // fields. Lowered by synthesizing a regular `Construct` whose
+    // fields appear in struct-declaration order — overrides slotted by
+    // name, holes filled with `__mn_base_N.<field>` accesses.
+    ConstructUpdate(String, List<FieldInit>, Expr)
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -334,6 +341,7 @@ pub fn expr_kind(e: Expr) -> String:
         Await(_) => { return "await" }
         Comprehension(_, _, _, _, _) => { return "comprehension" }
         InterpString(_) => { return "interp_string" }
+        ConstructUpdate(_, _, _) => { return "construct_update" }
 
 pub fn expr_interp_parts(e: Expr) -> List<Expr>:
     match e:
@@ -486,6 +494,14 @@ pub fn expr_construct_name(e: Expr) -> String:
     match e { Construct(n, _) => { return n }, _ => { return "" } }
 pub fn expr_construct_fields(e: Expr) -> List<FieldInit>:
     match e { Construct(_, f) => { return f }, _ => { let empty: List<FieldInit> = []; return empty } }
+
+// ConstructUpdate (v5.20.1 Te.5.F.C)
+pub fn expr_construct_update_name(e: Expr) -> String:
+    match e { ConstructUpdate(n, _, _) => { return n }, _ => { return "" } }
+pub fn expr_construct_update_overrides(e: Expr) -> List<FieldInit>:
+    match e { ConstructUpdate(_, f, _) => { return f }, _ => { let empty: List<FieldInit> = []; return empty } }
+pub fn expr_construct_update_base(e: Expr) -> Expr:
+    match e { ConstructUpdate(_, _, b) => { return b }, _ => { return Expr::NoneLit } }
 
 // SomeWrap / OkWrap / ErrWrap — single inner Expr
 pub fn expr_wrap_inner(e: Expr) -> Expr:
@@ -3020,28 +3036,79 @@ fn parse_struct_fields_to_list(tokens: List<Token>, pos: Int, filename: String) 
     return new_expr_result(Expr::ListLit(vals), p)
 
 fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
-    // Parse: new Name { field1: val1, field2: val2 }
-    // Returns Call(Ident("__new_Name"), [val1, val2])
+    // Parse: `new Name { field: val, ..., [..base] }`.
+    //
+    // Without a `..base` trailer, returns `Call(Ident("__new_Name"),
+    // [val1, val2, ...])` — preserves IR shape for the 80+ legacy
+    // goldens that pre-date Te.5. With a `..base` trailer, returns
+    // `Expr::ConstructUpdate(name, overrides, base)` (v5.20.1
+    // Te.5.F.C). The two forms cannot mix-and-match: once the parser
+    // sees `..`, it consumes the base and expects the closing brace.
     let struct_name: String = peek_value(tokens, pos + 1)
     let mut p: Int = pos + 2
     p = expect(tokens, p, "LBRACE")
 
-    // Parse field values (returns ListLit wrapping the values)
-    let fields_r: ExprResult = parse_struct_fields_to_list(tokens, p, filename)
-    p = fields_r.pos
+    let mut overrides: List<FieldInit> = []
+    let mut has_base: Bool = false
+    let mut base_expr: Expr = Expr::NoneLit
 
-    // Extract the values from ListLit
-    // The lowerer will handle Call("__new_Name", args) as struct construction
+    // Empty body: `new T { }` — no fields, no base.
+    if peek_type(tokens, p) == "RBRACE":
+        let callee_e: Expr = Expr::Ident("__new_" + struct_name)
+        let empty_e: List<Expr> = []
+        return new_expr_result(Expr::Call(callee_e, empty_e), p + 1)
+
+    // Bare `..base` form: `new T { ..base }`.
+    if peek_type(tokens, p) == "RANGE":
+        p = p + 1
+        let bre: ExprResult = parse_expr(tokens, p, filename, 0)
+        base_expr = bre.expr
+        p = bre.pos
+        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        p = expect(tokens, p, "RBRACE")
+        return new_expr_result(Expr::ConstructUpdate(struct_name, overrides, base_expr), p)
+
+    // Field-init list with optional trailing `..base`.
+    for _ in 0..100:
+        if peek_type(tokens, p) == "RBRACE":
+            p = p + 1
+            break
+        if peek_type(tokens, p) == "RANGE":
+            p = p + 1
+            let bre2: ExprResult = parse_expr(tokens, p, filename, 0)
+            base_expr = bre2.expr
+            p = bre2.pos
+            has_base = true
+            if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+            p = expect(tokens, p, "RBRACE")
+            break
+        let fname: String = peek_value(tokens, p)
+        p = p + 1
+        let mut val_expr: Expr = Expr::Ident(fname)
+        if peek_type(tokens, p) == "COLON":
+            p = p + 1
+            let ver: ExprResult = parse_expr(tokens, p, filename, 0)
+            val_expr = ver.expr
+            p = ver.pos
+        let fi: FieldInit = new FieldInit { span: new_span(0, 0, 0, 0), name: fname, value: val_expr }
+        overrides.push(fi)
+        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+
+    if has_base:
+        return new_expr_result(Expr::ConstructUpdate(struct_name, overrides, base_expr), p)
+
+    // No base: collapse to legacy positional `Call(__new_X, vals)`
+    // shape. Field names are dropped — same as pre-v5.20.1 behavior,
+    // so existing 80 goldens IR-byte-identical.
+    let mut vals: List<Expr> = []
+    let mut vi: Int = 0
+    let nov: Int = len(overrides)
+    for _ in 0..500:
+        if vi < nov:
+            vals.push(overrides[vi].value)
+            vi = vi + 1
     let callee: Expr = Expr::Ident("__new_" + struct_name)
-    match fields_r.expr {
-        ListLit(vals) => {
-            return new_expr_result(Expr::Call(callee, vals), p)
-        },
-        _ => {
-            let empty: List<Expr> = []
-            return new_expr_result(Expr::Call(callee, empty), p)
-        }
-    }
+    return new_expr_result(Expr::Call(callee, vals), p)
 
 fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let tt: String = peek_type(tokens, pos)
@@ -4432,6 +4499,24 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
             st_ctor = fr_ctor.st
             i_ctor = i_ctor + 1
         return new_infer_result(make_type(name), st_ctor)
+
+    // v5.20.1 Te.5.F.C — struct update: type-check overrides + base.
+    if ek == "construct_update":
+        let cu_name: String = expr_construct_update_name(expr)
+        let cu_overrides: List<FieldInit> = expr_construct_update_overrides(expr)
+        let cu_base: Expr = expr_construct_update_base(expr)
+        let mut st_cu: SemState = st
+        let base_r_cu: InferResult = infer_expr(st_cu, cu_base)
+        st_cu = base_r_cu.st
+        let mut j_cu: Int = 0
+        let n_cu: Int = len(cu_overrides)
+        for _ in 0..200:
+            if j_cu >= n_cu { return new_infer_result(make_type(cu_name), st_cu) }
+            let ovi: FieldInit = cu_overrides[j_cu]
+            let or_cu: InferResult = infer_expr(st_cu, ovi.value)
+            st_cu = or_cu.st
+            j_cu = j_cu + 1
+        return new_infer_result(make_type(cu_name), st_cu)
 
     if ek == "some_wrap":
         let vr_some: InferResult = infer_expr(st, expr_wrap_inner(expr))
@@ -6427,6 +6512,11 @@ struct LowerState:
     // internal accumulator. Cleared on entry to the synthesizer so
     // nested comprehensions don't accidentally inherit it.
     comp_type_hint: Option<TypeExpr>
+    // v5.20.1 Te.5.F.C/D — counter for synthesized base/destructure tmp
+    // names (`__mn_base_N`, `__mn_dst_N`). Separate from `tmp_counter`
+    // so synthesized base tmps don't perturb the global `%tN` sequence,
+    // keeping IR byte-identical to the manual long form. Reset per fn.
+    struct_update_counter: Int
 
 fn new_lower_state(module_name: String) -> LowerState:
     let module: MIRModule = new_mir_module(module_name)
@@ -6440,7 +6530,7 @@ fn new_lower_state(module_name: String) -> LowerState:
     let generic_fns: List<FnDefData> = []
     let generic_structs: List<StructDefData> = []
     let generic_enums: List<EnumDefData> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none }
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none, struct_update_counter: 0 }
 
 // Lower result: value + updated state
 struct LowerResult:
@@ -7369,6 +7459,9 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     s.current_fn = Some(mir_fn)
     s.tmp_counter = 0
     s.block_counter = 0
+    // v5.20.1 Te.5.F — reset synthesized-base counter per fn so
+    // `__mn_base_N` / `__mn_dst_N` numbering restarts at 0 each function.
+    s.struct_update_counter = 0
     let fresh_vars: List<VarInfo> = []
     s.vars = fresh_vars
     let fresh_blocks: List<BasicBlock> = []
@@ -8165,6 +8258,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult:
         return lower_map(st, expr_map_entries(expr))
     if ek == "construct":
         return lower_construct(st, expr_construct_name(expr), expr_construct_fields(expr))
+    // v5.20.1 Te.5.F.C — struct update: `new T { x: 5, ..base }`.
+    if ek == "construct_update":
+        return lower_struct_update(st, expr_construct_update_name(expr), expr_construct_update_overrides(expr), expr_construct_update_base(expr))
     if ek == "some_wrap":
         let inner: Expr = expr_wrap_inner(expr)
         let r_some: LowerResult = lower_expr(st, inner)
@@ -10417,6 +10513,71 @@ fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState:
         }
         j = j - 1
     return st
+
+// ---------------------------------------------------------------------------
+// v5.20.1 Te.5.F.C — Struct update lowering
+// ---------------------------------------------------------------------------
+
+// Lower `new T { x: 5, ..base }` (and `new T { ..base }`) by synthesizing
+// a regular Construct whose fields are in struct-declaration order:
+// overrides slotted by name, holes filled with `__mn_base_N.<field>`
+// accesses. Mirrors `mapanare/lower.py::_lower_struct_update`.
+fn lower_struct_update(st: LowerState, name: String, overrides: List<FieldInit>, base: Expr) -> LowerResult:
+    let mut s: LowerState = st
+
+    // Resolve full field list. Reject unknown structs.
+    if !is_struct_name(s, name):
+        return lower_construct(s, name, overrides)
+    let field_names: List<String> = get_struct_field_names(s, name)
+    let nfn: Int = len(field_names)
+
+    // Synthesize a fresh base tmp name. Use a dedicated counter so
+    // tmp_counter stays byte-identical to the manual long form.
+    let base_idx: Int = s.struct_update_counter
+    s.struct_update_counter = base_idx + 1
+    let base_tmp_name: String = "__mn_base_" + toString(base_idx)
+
+    // Lower the base expression once and register it under the
+    // synthesized name so later FieldAccess(Ident(base_tmp_name), ...)
+    // lookups find the same Value.
+    //
+    // The bootstrap's `define_var` semantically registers an alloca
+    // *pointer*; lower_identifier then emits a Load on lookup. Mirror
+    // that contract here: alloca + store + define_var(addr).
+    let base_r: LowerResult = lower_expr(s, base)
+    s = base_r.state
+    let struct_ty_b: MIRType = mir_struct(name)
+    let base_addr: Value = new_value("%" + base_tmp_name + ".addr", struct_ty_b)
+    s = emit_instr(s, Instruction::Alloca(base_addr, struct_ty_b))
+    s = emit_instr(s, Instruction::Store(base_addr, base_r.value))
+    s = define_var(s, base_tmp_name, base_addr, false)
+
+    // Build the full FieldInit list in struct-declaration order.
+    // Overrides take precedence; the rest are FieldAccess from base.
+    let mut full_fields: List<FieldInit> = []
+    let mut fi: Int = 0
+    let novr: Int = len(overrides)
+    for _ in 0..500:
+        if fi < nfn:
+            let fname: String = field_names[fi]
+            let mut found_override: Bool = false
+            let mut override_expr: Expr = Expr::NoneLit
+            let mut oi: Int = 0
+            for _ in 0..500:
+                if oi < novr:
+                    let ov: FieldInit = overrides[oi]
+                    if ov.name == fname:
+                        found_override = true
+                        override_expr = ov.value
+                        break
+                    oi = oi + 1
+            let mut val_expr: Expr = Expr::FieldAccess(Expr::Ident(base_tmp_name), fname)
+            if found_override { val_expr = override_expr }
+            let synth_fi: FieldInit = new FieldInit { span: make_span(0, 0, 0, 0), name: fname, value: val_expr }
+            full_fields.push(synth_fi)
+            fi = fi + 1
+
+    return lower_construct(s, name, full_fields)
 
 // ---------------------------------------------------------------------------
 // Construct (struct literal) lowering

@@ -110,6 +110,13 @@ enum Expr:
     // value). Mirrors Python `InterpString` shape so the lowerer can
     // reuse `InterpConcat` MIR. Empty `parts` means an empty literal.
     InterpString(List<Expr>)
+    // v5.20.1 Te.5.F.C — struct update: `new T { x: 5, ..base }` and
+    // `new T { ..base }`. `overrides` carries the explicit field
+    // initializers (with names), `base` is the source for unmentioned
+    // fields. Lowered by synthesizing a regular `Construct` whose
+    // fields appear in struct-declaration order — overrides slotted by
+    // name, holes filled with `__mn_base_N.<field>` accesses.
+    ConstructUpdate(String, List<FieldInit>, Expr)
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -330,6 +337,7 @@ pub fn expr_kind(e: Expr) -> String:
         Await(_) => { return "await" }
         Comprehension(_, _, _, _, _) => { return "comprehension" }
         InterpString(_) => { return "interp_string" }
+        ConstructUpdate(_, _, _) => { return "construct_update" }
 
 pub fn expr_interp_parts(e: Expr) -> List<Expr>:
     match e:
@@ -482,6 +490,14 @@ pub fn expr_construct_name(e: Expr) -> String:
     match e { Construct(n, _) => { return n }, _ => { return "" } }
 pub fn expr_construct_fields(e: Expr) -> List<FieldInit>:
     match e { Construct(_, f) => { return f }, _ => { let empty: List<FieldInit> = []; return empty } }
+
+// ConstructUpdate (v5.20.1 Te.5.F.C)
+pub fn expr_construct_update_name(e: Expr) -> String:
+    match e { ConstructUpdate(n, _, _) => { return n }, _ => { return "" } }
+pub fn expr_construct_update_overrides(e: Expr) -> List<FieldInit>:
+    match e { ConstructUpdate(_, f, _) => { return f }, _ => { let empty: List<FieldInit> = []; return empty } }
+pub fn expr_construct_update_base(e: Expr) -> Expr:
+    match e { ConstructUpdate(_, _, b) => { return b }, _ => { return Expr::NoneLit } }
 
 // SomeWrap / OkWrap / ErrWrap — single inner Expr
 pub fn expr_wrap_inner(e: Expr) -> Expr:

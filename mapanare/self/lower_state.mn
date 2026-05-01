@@ -32,6 +32,11 @@ struct LowerState:
     // internal accumulator. Cleared on entry to the synthesizer so
     // nested comprehensions don't accidentally inherit it.
     comp_type_hint: Option<TypeExpr>
+    // v5.20.1 Te.5.F.C/D — counter for synthesized base/destructure tmp
+    // names (`__mn_base_N`, `__mn_dst_N`). Separate from `tmp_counter`
+    // so synthesized base tmps don't perturb the global `%tN` sequence,
+    // keeping IR byte-identical to the manual long form. Reset per fn.
+    struct_update_counter: Int
 
 fn new_lower_state(module_name: String) -> LowerState:
     let module: MIRModule = new_mir_module(module_name)
@@ -45,7 +50,7 @@ fn new_lower_state(module_name: String) -> LowerState:
     let generic_fns: List<FnDefData> = []
     let generic_structs: List<StructDefData> = []
     let generic_enums: List<EnumDefData> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none }
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none, struct_update_counter: 0 }
 
 // Lower result: value + updated state
 struct LowerResult:

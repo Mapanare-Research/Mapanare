@@ -1737,28 +1737,79 @@ fn parse_struct_fields_to_list(tokens: List<Token>, pos: Int, filename: String) 
     return new_expr_result(Expr::ListLit(vals), p)
 
 fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
-    // Parse: new Name { field1: val1, field2: val2 }
-    // Returns Call(Ident("__new_Name"), [val1, val2])
+    // Parse: `new Name { field: val, ..., [..base] }`.
+    //
+    // Without a `..base` trailer, returns `Call(Ident("__new_Name"),
+    // [val1, val2, ...])` — preserves IR shape for the 80+ legacy
+    // goldens that pre-date Te.5. With a `..base` trailer, returns
+    // `Expr::ConstructUpdate(name, overrides, base)` (v5.20.1
+    // Te.5.F.C). The two forms cannot mix-and-match: once the parser
+    // sees `..`, it consumes the base and expects the closing brace.
     let struct_name: String = peek_value(tokens, pos + 1)
     let mut p: Int = pos + 2
     p = expect(tokens, p, "LBRACE")
 
-    // Parse field values (returns ListLit wrapping the values)
-    let fields_r: ExprResult = parse_struct_fields_to_list(tokens, p, filename)
-    p = fields_r.pos
+    let mut overrides: List<FieldInit> = []
+    let mut has_base: Bool = false
+    let mut base_expr: Expr = Expr::NoneLit
 
-    // Extract the values from ListLit
-    // The lowerer will handle Call("__new_Name", args) as struct construction
+    // Empty body: `new T { }` — no fields, no base.
+    if peek_type(tokens, p) == "RBRACE":
+        let callee_e: Expr = Expr::Ident("__new_" + struct_name)
+        let empty_e: List<Expr> = []
+        return new_expr_result(Expr::Call(callee_e, empty_e), p + 1)
+
+    // Bare `..base` form: `new T { ..base }`.
+    if peek_type(tokens, p) == "RANGE":
+        p = p + 1
+        let bre: ExprResult = parse_expr(tokens, p, filename, 0)
+        base_expr = bre.expr
+        p = bre.pos
+        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        p = expect(tokens, p, "RBRACE")
+        return new_expr_result(Expr::ConstructUpdate(struct_name, overrides, base_expr), p)
+
+    // Field-init list with optional trailing `..base`.
+    for _ in 0..100:
+        if peek_type(tokens, p) == "RBRACE":
+            p = p + 1
+            break
+        if peek_type(tokens, p) == "RANGE":
+            p = p + 1
+            let bre2: ExprResult = parse_expr(tokens, p, filename, 0)
+            base_expr = bre2.expr
+            p = bre2.pos
+            has_base = true
+            if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+            p = expect(tokens, p, "RBRACE")
+            break
+        let fname: String = peek_value(tokens, p)
+        p = p + 1
+        let mut val_expr: Expr = Expr::Ident(fname)
+        if peek_type(tokens, p) == "COLON":
+            p = p + 1
+            let ver: ExprResult = parse_expr(tokens, p, filename, 0)
+            val_expr = ver.expr
+            p = ver.pos
+        let fi: FieldInit = new FieldInit { span: new_span(0, 0, 0, 0), name: fname, value: val_expr }
+        overrides.push(fi)
+        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+
+    if has_base:
+        return new_expr_result(Expr::ConstructUpdate(struct_name, overrides, base_expr), p)
+
+    // No base: collapse to legacy positional `Call(__new_X, vals)`
+    // shape. Field names are dropped — same as pre-v5.20.1 behavior,
+    // so existing 80 goldens IR-byte-identical.
+    let mut vals: List<Expr> = []
+    let mut vi: Int = 0
+    let nov: Int = len(overrides)
+    for _ in 0..500:
+        if vi < nov:
+            vals.push(overrides[vi].value)
+            vi = vi + 1
     let callee: Expr = Expr::Ident("__new_" + struct_name)
-    match fields_r.expr {
-        ListLit(vals) => {
-            return new_expr_result(Expr::Call(callee, vals), p)
-        },
-        _ => {
-            let empty: List<Expr> = []
-            return new_expr_result(Expr::Call(callee, empty), p)
-        }
-    }
+    return new_expr_result(Expr::Call(callee, vals), p)
 
 fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let tt: String = peek_type(tokens, pos)

@@ -467,6 +467,9 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     s.current_fn = Some(mir_fn)
     s.tmp_counter = 0
     s.block_counter = 0
+    // v5.20.1 Te.5.F — reset synthesized-base counter per fn so
+    // `__mn_base_N` / `__mn_dst_N` numbering restarts at 0 each function.
+    s.struct_update_counter = 0
     let fresh_vars: List<VarInfo> = []
     s.vars = fresh_vars
     let fresh_blocks: List<BasicBlock> = []
@@ -1263,6 +1266,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult:
         return lower_map(st, expr_map_entries(expr))
     if ek == "construct":
         return lower_construct(st, expr_construct_name(expr), expr_construct_fields(expr))
+    // v5.20.1 Te.5.F.C — struct update: `new T { x: 5, ..base }`.
+    if ek == "construct_update":
+        return lower_struct_update(st, expr_construct_update_name(expr), expr_construct_update_overrides(expr), expr_construct_update_base(expr))
     if ek == "some_wrap":
         let inner: Expr = expr_wrap_inner(expr)
         let r_some: LowerResult = lower_expr(st, inner)
@@ -3515,6 +3521,71 @@ fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState:
         }
         j = j - 1
     return st
+
+// ---------------------------------------------------------------------------
+// v5.20.1 Te.5.F.C — Struct update lowering
+// ---------------------------------------------------------------------------
+
+// Lower `new T { x: 5, ..base }` (and `new T { ..base }`) by synthesizing
+// a regular Construct whose fields are in struct-declaration order:
+// overrides slotted by name, holes filled with `__mn_base_N.<field>`
+// accesses. Mirrors `mapanare/lower.py::_lower_struct_update`.
+fn lower_struct_update(st: LowerState, name: String, overrides: List<FieldInit>, base: Expr) -> LowerResult:
+    let mut s: LowerState = st
+
+    // Resolve full field list. Reject unknown structs.
+    if !is_struct_name(s, name):
+        return lower_construct(s, name, overrides)
+    let field_names: List<String> = get_struct_field_names(s, name)
+    let nfn: Int = len(field_names)
+
+    // Synthesize a fresh base tmp name. Use a dedicated counter so
+    // tmp_counter stays byte-identical to the manual long form.
+    let base_idx: Int = s.struct_update_counter
+    s.struct_update_counter = base_idx + 1
+    let base_tmp_name: String = "__mn_base_" + toString(base_idx)
+
+    // Lower the base expression once and register it under the
+    // synthesized name so later FieldAccess(Ident(base_tmp_name), ...)
+    // lookups find the same Value.
+    //
+    // The bootstrap's `define_var` semantically registers an alloca
+    // *pointer*; lower_identifier then emits a Load on lookup. Mirror
+    // that contract here: alloca + store + define_var(addr).
+    let base_r: LowerResult = lower_expr(s, base)
+    s = base_r.state
+    let struct_ty_b: MIRType = mir_struct(name)
+    let base_addr: Value = new_value("%" + base_tmp_name + ".addr", struct_ty_b)
+    s = emit_instr(s, Instruction::Alloca(base_addr, struct_ty_b))
+    s = emit_instr(s, Instruction::Store(base_addr, base_r.value))
+    s = define_var(s, base_tmp_name, base_addr, false)
+
+    // Build the full FieldInit list in struct-declaration order.
+    // Overrides take precedence; the rest are FieldAccess from base.
+    let mut full_fields: List<FieldInit> = []
+    let mut fi: Int = 0
+    let novr: Int = len(overrides)
+    for _ in 0..500:
+        if fi < nfn:
+            let fname: String = field_names[fi]
+            let mut found_override: Bool = false
+            let mut override_expr: Expr = Expr::NoneLit
+            let mut oi: Int = 0
+            for _ in 0..500:
+                if oi < novr:
+                    let ov: FieldInit = overrides[oi]
+                    if ov.name == fname:
+                        found_override = true
+                        override_expr = ov.value
+                        break
+                    oi = oi + 1
+            let mut val_expr: Expr = Expr::FieldAccess(Expr::Ident(base_tmp_name), fname)
+            if found_override { val_expr = override_expr }
+            let synth_fi: FieldInit = new FieldInit { span: make_span(0, 0, 0, 0), name: fname, value: val_expr }
+            full_fields.push(synth_fi)
+            fi = fi + 1
+
+    return lower_construct(s, name, full_fields)
 
 // ---------------------------------------------------------------------------
 // Construct (struct literal) lowering

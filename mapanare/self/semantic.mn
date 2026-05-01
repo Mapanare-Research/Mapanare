@@ -771,6 +771,24 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
             i_ctor = i_ctor + 1
         return new_infer_result(make_type(name), st_ctor)
 
+    // v5.20.1 Te.5.F.C — struct update: type-check overrides + base.
+    if ek == "construct_update":
+        let cu_name: String = expr_construct_update_name(expr)
+        let cu_overrides: List<FieldInit> = expr_construct_update_overrides(expr)
+        let cu_base: Expr = expr_construct_update_base(expr)
+        let mut st_cu: SemState = st
+        let base_r_cu: InferResult = infer_expr(st_cu, cu_base)
+        st_cu = base_r_cu.st
+        let mut j_cu: Int = 0
+        let n_cu: Int = len(cu_overrides)
+        for _ in 0..200:
+            if j_cu >= n_cu { return new_infer_result(make_type(cu_name), st_cu) }
+            let ovi: FieldInit = cu_overrides[j_cu]
+            let or_cu: InferResult = infer_expr(st_cu, ovi.value)
+            st_cu = or_cu.st
+            j_cu = j_cu + 1
+        return new_infer_result(make_type(cu_name), st_cu)
+
     if ek == "some_wrap":
         let vr_some: InferResult = infer_expr(st, expr_wrap_inner(expr))
         let args_some: List<TypeInfo> = []
