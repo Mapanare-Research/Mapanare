@@ -811,6 +811,40 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
 
     if ek == "assign" { return check_assign_expr(st, expr_assign_target(expr), expr_assign_op(expr), expr_assign_value(expr)) }
     if ek == "if" { return check_if_expr(st, expr_if_cond(expr), expr_if_then(expr), expr_if_else(expr)) }
+    // v5.20.1 Te.5.F.E — if-let: infer scrutinee, bind pattern in
+    // then-block scope; else block in a nested scope.
+    if ek == "if_let":
+        let il_pat: Pattern = expr_iflet_pattern(expr)
+        let il_scrut: Expr = expr_iflet_scrutinee(expr)
+        let il_then: Block = expr_iflet_then(expr)
+        let il_else: Option<Block> = expr_iflet_else(expr)
+        let sr_il: InferResult = infer_expr(st, il_scrut)
+        let mut s_il: SemState = sr_il.st
+        let inner_il: SemState = push_scope(s_il)
+        let pk_il: String = pattern_kind(il_pat)
+        let mut bound_il: SemState = inner_il
+        if pk_il == "constructor":
+            let pargs_il: List<Pattern> = pattern_ctor_args(il_pat)
+            let mut j_il: Int = 0
+            let nargs_il: Int = len(pargs_il)
+            for _ in 0..16:
+                if j_il >= nargs_il { break }
+                let arg_il: Pattern = pargs_il[j_il]
+                if pattern_kind(arg_il) == "ident":
+                    let sym_il: Symbol = new_symbol(pattern_ident_name(arg_il), "variable", unknown_type(), false)
+                    bound_il = define_in_scope(bound_il, pattern_ident_name(arg_il), sym_il)
+                j_il = j_il + 1
+        let after_il: SemState = check_block(bound_il, il_then)
+        let mut after2_il: SemState = pop_scope(after_il)
+        match il_else {
+            Some(eb) => {
+                let inner2_il: SemState = push_scope(after2_il)
+                let after3_il: SemState = check_block(inner2_il, eb)
+                after2_il = pop_scope(after3_il)
+            },
+            _ => {}
+        }
+        return new_infer_result(unknown_type(), after2_il)
     if ek == "match" { return check_match_expr(st, expr_match_subject(expr), expr_match_arms(expr)) }
 
     // v5.5.0 Sh.4: `await expr` — recurse into inner so errors inside are
@@ -1321,6 +1355,18 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState:
         return check_signal_decl(st, stmt_signal_name(stmt), stmt_signal_mutable(stmt), stmt_signal_type(stmt), stmt_signal_value(stmt))
     if sk == "stream_decl":
         return check_stream_decl(st, stmt_stream_name(stmt), stmt_stream_type(stmt), stmt_stream_value(stmt))
+    // v5.20.1 Te.5.F.D — let destructure: type-check value + bind
+    // each leaf field name in the surrounding scope.
+    if sk == "let_destructure":
+        return check_let_destructure(st, stmt_letdest_pattern(stmt), stmt_letdest_mutable(stmt), stmt_letdest_value(stmt))
+    // v5.20.1 Te.5.F.E — let-else: type-check scrutinee + binds the
+    // pattern's single ident (if any) in the surrounding scope; else
+    // block runs in a nested scope.
+    if sk == "let_else":
+        return check_let_else(st, stmt_letelse_pattern(stmt), stmt_letelse_scrutinee(stmt), stmt_letelse_else(stmt))
+    // v5.20.1 Te.5.F.E — while-let: scrutinee + body in nested scope.
+    if sk == "while_let":
+        return check_while_let(st, stmt_whilelet_pattern(stmt), stmt_whilelet_scrutinee(stmt), stmt_whilelet_body(stmt))
     return st
 
 // ---------------------------------------------------------------------------
@@ -1347,6 +1393,80 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
         return define_in_scope(st2, name, sym)
     let sym2: Symbol = new_symbol(name, "variable", resolved, mutable)
     return define_in_scope(st2, name, sym2)
+
+// v5.20.1 Te.5.F.D — let destructure check: type-infer value, then
+// recursively define each leaf field name in the current scope.
+fn check_let_destructure(st: SemState, pattern: StructPattern, outer_mut: Bool, value: Expr) -> SemState:
+    let vr: InferResult = infer_expr(st, value)
+    let mut st2: SemState = vr.st
+    return define_pattern_bindings(st2, pattern, outer_mut)
+
+fn define_pattern_bindings(st: SemState, pattern: StructPattern, outer_mut: Bool) -> SemState:
+    let mut s: SemState = st
+    let n: Int = len(pattern.fields)
+    let mut i: Int = 0
+    for _ in 0..200:
+        if i >= n { return s }
+        let fp: FieldPattern = pattern.fields[i]
+        match fp.sub_pattern {
+            Some(sub) => {
+                s = define_pattern_bindings(s, sub, outer_mut)
+            },
+            _ => {
+                let mut leaf_mut: Bool = outer_mut
+                if fp.mutable { leaf_mut = true }
+                let sym: Symbol = new_symbol(fp.name, "variable", unknown_type(), leaf_mut)
+                s = define_in_scope(s, fp.name, sym)
+            }
+        }
+        i = i + 1
+    return s
+
+// v5.20.1 Te.5.F.E — let-else check: type-infer scrutinee, bind the
+// pattern's single ident (if any) in the surrounding scope, type-check
+// else block in a nested scope.
+fn check_let_else(st: SemState, pattern: Pattern, scrutinee: Expr, else_block: Block) -> SemState:
+    let sr: InferResult = infer_expr(st, scrutinee)
+    let mut s: SemState = sr.st
+    // Bind pattern leaves into the current scope (they "leak" — that's
+    // the essence of let-else).
+    let pk: String = pattern_kind(pattern)
+    if pk == "constructor":
+        let pargs: List<Pattern> = pattern_ctor_args(pattern)
+        let mut j: Int = 0
+        let nargs: Int = len(pargs)
+        for _ in 0..16:
+            if j >= nargs { break }
+            let arg: Pattern = pargs[j]
+            if pattern_kind(arg) == "ident":
+                let sym: Symbol = new_symbol(pattern_ident_name(arg), "variable", unknown_type(), false)
+                s = define_in_scope(s, pattern_ident_name(arg), sym)
+            j = j + 1
+    // Else block in a nested scope.
+    let inner: SemState = push_scope(s)
+    let after: SemState = check_block(inner, else_block)
+    return pop_scope(after)
+
+// v5.20.1 Te.5.F.E — while-let check.
+fn check_while_let(st: SemState, pattern: Pattern, scrutinee: Expr, body: Block) -> SemState:
+    let sr: InferResult = infer_expr(st, scrutinee)
+    let mut s: SemState = sr.st
+    let inner: SemState = push_scope(s)
+    let pk: String = pattern_kind(pattern)
+    let mut bound: SemState = inner
+    if pk == "constructor":
+        let pargs: List<Pattern> = pattern_ctor_args(pattern)
+        let mut j: Int = 0
+        let nargs: Int = len(pargs)
+        for _ in 0..16:
+            if j >= nargs { break }
+            let arg: Pattern = pargs[j]
+            if pattern_kind(arg) == "ident":
+                let sym: Symbol = new_symbol(pattern_ident_name(arg), "variable", unknown_type(), false)
+                bound = define_in_scope(bound, pattern_ident_name(arg), sym)
+            j = j + 1
+    let after: SemState = check_block(bound, body)
+    return pop_scope(after)
 
 // ---------------------------------------------------------------------------
 // For loop

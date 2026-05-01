@@ -641,6 +641,18 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult:
     if sk == "stream_decl":
         let s_strm: LowerState = lower_stream_decl(st, stmt_stream_name(stmt), stmt_stream_value(stmt))
         return new_lower_result(void_value(), s_strm)
+    // v5.20.1 Te.5.F.D — `let Point { x, y } = expr`.
+    if sk == "let_destructure":
+        let s_ld: LowerState = lower_let_destructure(st, stmt_letdest_pattern(stmt), stmt_letdest_mutable(stmt), stmt_letdest_type(stmt), stmt_letdest_value(stmt))
+        return new_lower_result(void_value(), s_ld)
+    // v5.20.1 Te.5.F.E — `let Some(x) = expr else block`.
+    if sk == "let_else":
+        let s_le: LowerState = lower_let_else(st, stmt_letelse_pattern(stmt), stmt_letelse_scrutinee(stmt), stmt_letelse_else(stmt))
+        return new_lower_result(void_value(), s_le)
+    // v5.20.1 Te.5.F.E — `while let <pat> = expr block`.
+    if sk == "while_let":
+        let s_wl: LowerState = lower_while_let(st, stmt_whilelet_pattern(stmt), stmt_whilelet_scrutinee(stmt), stmt_whilelet_body(stmt))
+        return new_lower_result(void_value(), s_wl)
     return new_lower_result(void_value(), st)
 
 // ---------------------------------------------------------------------------
@@ -1269,6 +1281,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult:
     // v5.20.1 Te.5.F.C — struct update: `new T { x: 5, ..base }`.
     if ek == "construct_update":
         return lower_struct_update(st, expr_construct_update_name(expr), expr_construct_update_overrides(expr), expr_construct_update_base(expr))
+    // v5.20.1 Te.5.F.E — if-let.
+    if ek == "if_let":
+        return lower_if_let(st, expr_iflet_pattern(expr), expr_iflet_scrutinee(expr), expr_iflet_then(expr), expr_iflet_else(expr))
     if ek == "some_wrap":
         let inner: Expr = expr_wrap_inner(expr)
         let r_some: LowerResult = lower_expr(st, inner)
@@ -3520,6 +3535,81 @@ fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState:
             _ => {}
         }
         j = j - 1
+    return st
+
+// ---------------------------------------------------------------------------
+// v5.20.1 Te.5.F.D — Let destructure lowering
+// ---------------------------------------------------------------------------
+
+// Mirrors `mapanare/lower.py::_lower_let_destructure`. When the RHS is
+// a bare Identifier already in scope, run field accesses directly on
+// the source name (IR byte-identical to manual `let x = p.x; let y =
+// p.y`). Otherwise lower the RHS once into a `__mn_dst_N` tmp.
+fn lower_let_destructure(st: LowerState, pattern: StructPattern, outer_mut: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState:
+    let mut s: LowerState = st
+
+    // Bare-Ident RHS optimization: skip the synthesized base tmp.
+    if expr_kind(value) == "ident":
+        let src_name: String = expr_ident_name(value)
+        let lookup: Option<Value> = lookup_var(s, src_name)
+        match lookup {
+            Some(_) => {
+                return emit_destructure_pattern(s, pattern, src_name, outer_mut)
+            },
+            _ => {}
+        }
+
+    // General case: synthesize `let __mn_dst_N = value` first.
+    let tmp_idx: Int = s.struct_update_counter
+    s.struct_update_counter = tmp_idx + 1
+    let base_name: String = "__mn_dst_" + toString(tmp_idx)
+    s = lower_let(s, base_name, false, type_ann, value)
+    return emit_destructure_pattern(s, pattern, base_name, outer_mut)
+
+// Walk a StructPattern; emit per-field `let` for leaf bindings, recurse
+// for nested struct sub-patterns. Mirrors `_emit_destructure_pattern`.
+fn emit_destructure_pattern(st: LowerState, pattern: StructPattern, base_name: String, outer_mut: Bool) -> LowerState:
+    let mut s: LowerState = st
+    let n: Int = len(pattern.fields)
+    let mut i: Int = 0
+    for _ in 0..200:
+        if i >= n { return s }
+        let fp: FieldPattern = pattern.fields[i]
+        let fa: Expr = Expr::FieldAccess(Expr::Ident(base_name), fp.name)
+        match fp.sub_pattern {
+            Some(sub) => {
+                let nested_idx: Int = s.struct_update_counter
+                s.struct_update_counter = nested_idx + 1
+                let nested_base: String = "__mn_dst_" + toString(nested_idx)
+                let none_t: Option<TypeExpr> = none
+                s = lower_let(s, nested_base, false, none_t, fa)
+                s = emit_destructure_pattern(s, sub, nested_base, outer_mut)
+            },
+            _ => {
+                let mut leaf_mut: Bool = outer_mut
+                if fp.mutable { leaf_mut = true }
+                let none_t2: Option<TypeExpr> = none
+                s = lower_let(s, fp.name, leaf_mut, none_t2, fa)
+            }
+        }
+        i = i + 1
+    return s
+
+// ---------------------------------------------------------------------------
+// v5.20.1 Te.5.F.E — if-let / while-let / let-else (stubs filled in Phase 4)
+// ---------------------------------------------------------------------------
+
+// Stubs for Phase 4. Phase 3 ships only Te.5.F.D; the dispatch entries
+// above route here so the bootstrap doesn't crash on Phase-4 forms
+// during intermediate validation. Each stub no-ops with a stderr note
+// (real implementations land in Phase 4).
+fn lower_if_let(st: LowerState, pattern: Pattern, scrutinee: Expr, then_block: Block, else_block: Option<Block>) -> LowerResult:
+    return new_lower_result(void_value(), st)
+
+fn lower_while_let(st: LowerState, pattern: Pattern, scrutinee: Expr, body: Block) -> LowerState:
+    return st
+
+fn lower_let_else(st: LowerState, pattern: Pattern, scrutinee: Expr, else_block: Block) -> LowerState:
     return st
 
 // ---------------------------------------------------------------------------

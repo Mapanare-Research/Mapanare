@@ -1270,6 +1270,22 @@ fn parse_let_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
         is_mut = true
         p = p + 1
 
+    // v5.20.1 Te.5.F.D / Te.5.F.E dispatch by single-token lookahead.
+    let t0: String = peek_type(tokens, p)
+    let t1: String = peek_type(tokens, p + 1)
+
+    // Te.5.F.D destructure: `let [mut] Name { ... } [: T] = expr`.
+    if t0 == "NAME" && t1 == "LBRACE":
+        return parse_let_destructure_body(tokens, p, filename, is_mut)
+
+    // Te.5.F.E let-else with constructor pattern: `let Name(x) = expr else block`.
+    if t0 == "NAME" && t1 == "LPAREN":
+        return parse_let_else_body(tokens, p, filename)
+
+    // Te.5.F.E let-else with wildcard pattern: `let _ = expr else block`.
+    if t0 == "UNDERSCORE":
+        return parse_let_else_body(tokens, p, filename)
+
     let name: String = peek_value(tokens, p)
     p = p + 1
 
@@ -1284,6 +1300,93 @@ fn parse_let_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
     return new_stmt_result(Stmt::Let(name, is_mut, type_ann, er.expr), er.pos)
+
+// v5.20.1 Te.5.F.D — parse `Name { fields } [: T] = expr`. Caller has
+// already consumed `KW_LET KW_MUT?`. `pos` points at the struct NAME.
+fn parse_let_destructure_body(tokens: List<Token>, pos: Int, filename: String, is_mut: Bool) -> StmtResult:
+    let pat_r: StructPatResult = parse_struct_dest_pat(tokens, pos, filename)
+    let mut p: Int = pat_r.pos
+
+    let mut type_ann: Option<TypeExpr> = none
+    if peek_type(tokens, p) == "COLON":
+        p = p + 1
+        let tr: TypeResult = parse_type_expr(tokens, p, filename)
+        type_ann = Some(tr.type_expr)
+        p = tr.pos
+
+    p = expect(tokens, p, "ASSIGN")
+
+    let er: ExprResult = parse_expr(tokens, p, filename, 0)
+    return new_stmt_result(Stmt::LetDestructure(pat_r.pattern, is_mut, type_ann, er.expr), er.pos)
+
+struct StructPatResult:
+    pattern: StructPattern
+    pos: Int
+
+fn new_struct_pat_result(p: StructPattern, pos: Int) -> StructPatResult = new StructPatResult { pattern: p, pos: pos }
+
+fn parse_struct_dest_pat(tokens: List<Token>, pos: Int, filename: String) -> StructPatResult:
+    let name: String = peek_value(tokens, pos)
+    let mut p: Int = pos + 1
+    p = expect(tokens, p, "LBRACE")
+    let mut fields: List<FieldPattern> = []
+    let mut has_rest: Bool = false
+    if peek_type(tokens, p) == "RBRACE":
+        p = p + 1
+        return new_struct_pat_result(new_struct_pattern(name, fields, has_rest), p)
+    for _ in 0..200:
+        if peek_type(tokens, p) == "RBRACE":
+            p = p + 1
+            break
+        if peek_type(tokens, p) == "RANGE":
+            has_rest = true
+            p = p + 1
+            if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+            p = expect(tokens, p, "RBRACE")
+            break
+        let fr: FieldPatResult = parse_field_dest(tokens, p, filename)
+        fields.push(fr.field_pattern)
+        p = fr.pos
+        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+    return new_struct_pat_result(new_struct_pattern(name, fields, has_rest), p)
+
+struct FieldPatResult:
+    field_pattern: FieldPattern
+    pos: Int
+
+fn new_field_pat_result(fp: FieldPattern, pos: Int) -> FieldPatResult = new FieldPatResult { field_pattern: fp, pos: pos }
+
+fn parse_field_dest(tokens: List<Token>, pos: Int, filename: String) -> FieldPatResult:
+    let mut p: Int = pos
+    let mut mutable: Bool = false
+    if peek_type(tokens, p) == "KW_MUT":
+        mutable = true
+        p = p + 1
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+    let mut sub: Option<StructPattern> = none
+    if peek_type(tokens, p) == "COLON":
+        p = p + 1
+        let sr: StructPatResult = parse_struct_dest_pat(tokens, p, filename)
+        sub = Some(sr.pattern)
+        p = sr.pos
+        // `mut` on a nested-pattern field is meaningless (Python D4
+        // discards quietly). Mirror that.
+        mutable = false
+    return new_field_pat_result(new_field_pattern(name, mutable, sub), p)
+
+// v5.20.1 Te.5.F.E — parse `<pattern> = expr else block`. Caller has
+// already consumed `KW_LET`. Pattern is constructor (NAME LPAREN ...)
+// or wildcard (UNDERSCORE).
+fn parse_let_else_body(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
+    let pr: PatternResult = parse_pattern(tokens, pos, filename)
+    let mut p: Int = pr.pos
+    p = expect(tokens, p, "ASSIGN")
+    let er: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = er.pos
+    p = expect(tokens, p, "KW_ELSE")
+    let br: BlockResult = parse_block(tokens, p, filename)
+    return new_stmt_result(Stmt::LetElse(pr.pattern, er.expr, br.block), br.pos)
 
 // ---------------------------------------------------------------------------
 // Return statement

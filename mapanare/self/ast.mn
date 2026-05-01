@@ -117,6 +117,9 @@ enum Expr:
     // fields appear in struct-declaration order — overrides slotted by
     // name, holes filled with `__mn_base_N.<field>` accesses.
     ConstructUpdate(String, List<FieldInit>, Expr)
+    // v5.20.1 Te.5.F.E — `if let <pattern> = <scrutinee> { ... }
+    // [else { ... }]`. Desugars at lower time to a 2-arm match.
+    IfLet(Pattern, Expr, Block, Option<Block>)
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -134,6 +137,16 @@ enum Stmt:
     Assert(Expr, Option<String>)
     SignalDecl(String, Bool, Option<TypeExpr>, Expr, Bool)
     StreamDecl(String, Option<TypeExpr>, Expr)
+    // v5.20.1 Te.5.F.D — `let Point { x, y } = expr`. Outer `mutable`
+    // applies to every bound name without its own `mut`. The pattern's
+    // shape matches Python's StructPattern; nested patterns supported.
+    LetDestructure(StructPattern, Bool, Option<TypeExpr>, Expr)
+    // v5.20.1 Te.5.F.E — refutable + diverging-else binding. Pattern
+    // restricted to ConstructorPat with 0/1 args (single ident or
+    // wildcard) or top-level Wildcard. Else block must diverge (D5).
+    LetElse(Pattern, Expr, Block)
+    // v5.20.1 Te.5.F.E — `while let <pat> = <scrutinee> { body }`.
+    WhileLet(Pattern, Expr, Block)
 
 struct Block:
     span: Span
@@ -149,6 +162,24 @@ enum Pattern:
     LiteralPat(Expr)
     ConstructorPat(String, List<Pattern>)
     OrPat(List<Pattern>)
+
+// v5.20.1 Te.5.F.D — destructure pattern (separate from match `Pattern`,
+// mirrors Python's `StructPattern` / `FieldPattern` dataclasses).
+struct StructPattern:
+    span: Span
+    name: String
+    fields: List<FieldPattern>
+    has_rest: Bool
+
+struct FieldPattern:
+    span: Span
+    name: String
+    mutable: Bool
+    sub_pattern: Option<StructPattern>
+
+fn new_field_pattern(name: String, mutable: Bool, sub: Option<StructPattern>) -> FieldPattern = new FieldPattern { span: new_span(0, 0, 0, 0), name: name, mutable: mutable, sub_pattern: sub }
+
+fn new_struct_pattern(name: String, fields: List<FieldPattern>, has_rest: Bool) -> StructPattern = new StructPattern { span: new_span(0, 0, 0, 0), name: name, fields: fields, has_rest: has_rest }
 
 struct MatchArm:
     span: Span
@@ -338,6 +369,7 @@ pub fn expr_kind(e: Expr) -> String:
         Comprehension(_, _, _, _, _) => { return "comprehension" }
         InterpString(_) => { return "interp_string" }
         ConstructUpdate(_, _, _) => { return "construct_update" }
+        IfLet(_, _, _, _) => { return "if_let" }
 
 pub fn expr_interp_parts(e: Expr) -> List<Expr>:
     match e:
@@ -499,6 +531,16 @@ pub fn expr_construct_update_overrides(e: Expr) -> List<FieldInit>:
 pub fn expr_construct_update_base(e: Expr) -> Expr:
     match e { ConstructUpdate(_, _, b) => { return b }, _ => { return Expr::NoneLit } }
 
+// IfLet (v5.20.1 Te.5.F.E)
+pub fn expr_iflet_pattern(e: Expr) -> Pattern:
+    match e { IfLet(p, _, _, _) => { return p }, _ => { return Pattern::Wildcard } }
+pub fn expr_iflet_scrutinee(e: Expr) -> Expr:
+    match e { IfLet(_, s, _, _) => { return s }, _ => { return Expr::NoneLit } }
+pub fn expr_iflet_then(e: Expr) -> Block:
+    match e { IfLet(_, _, t, _) => { return t }, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+pub fn expr_iflet_else(e: Expr) -> Option<Block>:
+    match e { IfLet(_, _, _, eb) => { return eb }, _ => { return none } }
+
 // SomeWrap / OkWrap / ErrWrap — single inner Expr
 pub fn expr_wrap_inner(e: Expr) -> Expr:
     match e:
@@ -565,6 +607,9 @@ pub fn stmt_kind(s: Stmt) -> String:
         Assert(_, _) => { return "assert" }
         SignalDecl(_, _, _, _, _) => { return "signal_decl" }
         StreamDecl(_, _, _) => { return "stream_decl" }
+        LetDestructure(_, _, _, _) => { return "let_destructure" }
+        LetElse(_, _, _) => { return "let_else" }
+        WhileLet(_, _, _) => { return "while_let" }
 
 pub fn stmt_let_name(s: Stmt) -> String:
     match s { Let(n, _, _, _) => { return n }, _ => { return "" } }
@@ -608,6 +653,34 @@ pub fn stmt_stream_type(s: Stmt) -> Option<TypeExpr>:
     match s { StreamDecl(_, t, _) => { return t }, _ => { return none } }
 pub fn stmt_stream_value(s: Stmt) -> Expr:
     match s { StreamDecl(_, _, v) => { return v }, _ => { return Expr::NoneLit } }
+
+// v5.20.1 Te.5.F.D — LetDestructure accessors
+pub fn stmt_letdest_pattern(s: Stmt) -> StructPattern:
+    match s:
+        LetDestructure(p, _, _, _) => { return p }
+        _ => { let f: List<FieldPattern> = []; return new_struct_pattern("", f, false) }
+pub fn stmt_letdest_mutable(s: Stmt) -> Bool:
+    match s { LetDestructure(_, m, _, _) => { return m }, _ => { return false } }
+pub fn stmt_letdest_type(s: Stmt) -> Option<TypeExpr>:
+    match s { LetDestructure(_, _, t, _) => { return t }, _ => { return none } }
+pub fn stmt_letdest_value(s: Stmt) -> Expr:
+    match s { LetDestructure(_, _, _, v) => { return v }, _ => { return Expr::NoneLit } }
+
+// v5.20.1 Te.5.F.E — LetElse accessors
+pub fn stmt_letelse_pattern(s: Stmt) -> Pattern:
+    match s { LetElse(p, _, _) => { return p }, _ => { return Pattern::Wildcard } }
+pub fn stmt_letelse_scrutinee(s: Stmt) -> Expr:
+    match s { LetElse(_, e, _) => { return e }, _ => { return Expr::NoneLit } }
+pub fn stmt_letelse_else(s: Stmt) -> Block:
+    match s { LetElse(_, _, b) => { return b }, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+
+// v5.20.1 Te.5.F.E — WhileLet accessors
+pub fn stmt_whilelet_pattern(s: Stmt) -> Pattern:
+    match s { WhileLet(p, _, _) => { return p }, _ => { return Pattern::Wildcard } }
+pub fn stmt_whilelet_scrutinee(s: Stmt) -> Expr:
+    match s { WhileLet(_, e, _) => { return e }, _ => { return Expr::NoneLit } }
+pub fn stmt_whilelet_body(s: Stmt) -> Block:
+    match s { WhileLet(_, _, b) => { return b }, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
 
 // ---- Definition kind + accessors ------------------------------------------
 

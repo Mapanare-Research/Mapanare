@@ -121,6 +121,9 @@ enum Expr:
     // fields appear in struct-declaration order — overrides slotted by
     // name, holes filled with `__mn_base_N.<field>` accesses.
     ConstructUpdate(String, List<FieldInit>, Expr)
+    // v5.20.1 Te.5.F.E — `if let <pattern> = <scrutinee> { ... }
+    // [else { ... }]`. Desugars at lower time to a 2-arm match.
+    IfLet(Pattern, Expr, Block, Option<Block>)
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -138,6 +141,16 @@ enum Stmt:
     Assert(Expr, Option<String>)
     SignalDecl(String, Bool, Option<TypeExpr>, Expr, Bool)
     StreamDecl(String, Option<TypeExpr>, Expr)
+    // v5.20.1 Te.5.F.D — `let Point { x, y } = expr`. Outer `mutable`
+    // applies to every bound name without its own `mut`. The pattern's
+    // shape matches Python's StructPattern; nested patterns supported.
+    LetDestructure(StructPattern, Bool, Option<TypeExpr>, Expr)
+    // v5.20.1 Te.5.F.E — refutable + diverging-else binding. Pattern
+    // restricted to ConstructorPat with 0/1 args (single ident or
+    // wildcard) or top-level Wildcard. Else block must diverge (D5).
+    LetElse(Pattern, Expr, Block)
+    // v5.20.1 Te.5.F.E — `while let <pat> = <scrutinee> { body }`.
+    WhileLet(Pattern, Expr, Block)
 
 struct Block:
     span: Span
@@ -153,6 +166,24 @@ enum Pattern:
     LiteralPat(Expr)
     ConstructorPat(String, List<Pattern>)
     OrPat(List<Pattern>)
+
+// v5.20.1 Te.5.F.D — destructure pattern (separate from match `Pattern`,
+// mirrors Python's `StructPattern` / `FieldPattern` dataclasses).
+struct StructPattern:
+    span: Span
+    name: String
+    fields: List<FieldPattern>
+    has_rest: Bool
+
+struct FieldPattern:
+    span: Span
+    name: String
+    mutable: Bool
+    sub_pattern: Option<StructPattern>
+
+fn new_field_pattern(name: String, mutable: Bool, sub: Option<StructPattern>) -> FieldPattern = new FieldPattern { span: new_span(0, 0, 0, 0), name: name, mutable: mutable, sub_pattern: sub }
+
+fn new_struct_pattern(name: String, fields: List<FieldPattern>, has_rest: Bool) -> StructPattern = new StructPattern { span: new_span(0, 0, 0, 0), name: name, fields: fields, has_rest: has_rest }
 
 struct MatchArm:
     span: Span
@@ -342,6 +373,7 @@ pub fn expr_kind(e: Expr) -> String:
         Comprehension(_, _, _, _, _) => { return "comprehension" }
         InterpString(_) => { return "interp_string" }
         ConstructUpdate(_, _, _) => { return "construct_update" }
+        IfLet(_, _, _, _) => { return "if_let" }
 
 pub fn expr_interp_parts(e: Expr) -> List<Expr>:
     match e:
@@ -503,6 +535,16 @@ pub fn expr_construct_update_overrides(e: Expr) -> List<FieldInit>:
 pub fn expr_construct_update_base(e: Expr) -> Expr:
     match e { ConstructUpdate(_, _, b) => { return b }, _ => { return Expr::NoneLit } }
 
+// IfLet (v5.20.1 Te.5.F.E)
+pub fn expr_iflet_pattern(e: Expr) -> Pattern:
+    match e { IfLet(p, _, _, _) => { return p }, _ => { return Pattern::Wildcard } }
+pub fn expr_iflet_scrutinee(e: Expr) -> Expr:
+    match e { IfLet(_, s, _, _) => { return s }, _ => { return Expr::NoneLit } }
+pub fn expr_iflet_then(e: Expr) -> Block:
+    match e { IfLet(_, _, t, _) => { return t }, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+pub fn expr_iflet_else(e: Expr) -> Option<Block>:
+    match e { IfLet(_, _, _, eb) => { return eb }, _ => { return none } }
+
 // SomeWrap / OkWrap / ErrWrap — single inner Expr
 pub fn expr_wrap_inner(e: Expr) -> Expr:
     match e:
@@ -569,6 +611,9 @@ pub fn stmt_kind(s: Stmt) -> String:
         Assert(_, _) => { return "assert" }
         SignalDecl(_, _, _, _, _) => { return "signal_decl" }
         StreamDecl(_, _, _) => { return "stream_decl" }
+        LetDestructure(_, _, _, _) => { return "let_destructure" }
+        LetElse(_, _, _) => { return "let_else" }
+        WhileLet(_, _, _) => { return "while_let" }
 
 pub fn stmt_let_name(s: Stmt) -> String:
     match s { Let(n, _, _, _) => { return n }, _ => { return "" } }
@@ -612,6 +657,34 @@ pub fn stmt_stream_type(s: Stmt) -> Option<TypeExpr>:
     match s { StreamDecl(_, t, _) => { return t }, _ => { return none } }
 pub fn stmt_stream_value(s: Stmt) -> Expr:
     match s { StreamDecl(_, _, v) => { return v }, _ => { return Expr::NoneLit } }
+
+// v5.20.1 Te.5.F.D — LetDestructure accessors
+pub fn stmt_letdest_pattern(s: Stmt) -> StructPattern:
+    match s:
+        LetDestructure(p, _, _, _) => { return p }
+        _ => { let f: List<FieldPattern> = []; return new_struct_pattern("", f, false) }
+pub fn stmt_letdest_mutable(s: Stmt) -> Bool:
+    match s { LetDestructure(_, m, _, _) => { return m }, _ => { return false } }
+pub fn stmt_letdest_type(s: Stmt) -> Option<TypeExpr>:
+    match s { LetDestructure(_, _, t, _) => { return t }, _ => { return none } }
+pub fn stmt_letdest_value(s: Stmt) -> Expr:
+    match s { LetDestructure(_, _, _, v) => { return v }, _ => { return Expr::NoneLit } }
+
+// v5.20.1 Te.5.F.E — LetElse accessors
+pub fn stmt_letelse_pattern(s: Stmt) -> Pattern:
+    match s { LetElse(p, _, _) => { return p }, _ => { return Pattern::Wildcard } }
+pub fn stmt_letelse_scrutinee(s: Stmt) -> Expr:
+    match s { LetElse(_, e, _) => { return e }, _ => { return Expr::NoneLit } }
+pub fn stmt_letelse_else(s: Stmt) -> Block:
+    match s { LetElse(_, _, b) => { return b }, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+
+// v5.20.1 Te.5.F.E — WhileLet accessors
+pub fn stmt_whilelet_pattern(s: Stmt) -> Pattern:
+    match s { WhileLet(p, _, _) => { return p }, _ => { return Pattern::Wildcard } }
+pub fn stmt_whilelet_scrutinee(s: Stmt) -> Expr:
+    match s { WhileLet(_, e, _) => { return e }, _ => { return Expr::NoneLit } }
+pub fn stmt_whilelet_body(s: Stmt) -> Block:
+    match s { WhileLet(_, _, b) => { return b }, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
 
 // ---- Definition kind + accessors ------------------------------------------
 
@@ -2569,6 +2642,22 @@ fn parse_let_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
         is_mut = true
         p = p + 1
 
+    // v5.20.1 Te.5.F.D / Te.5.F.E dispatch by single-token lookahead.
+    let t0: String = peek_type(tokens, p)
+    let t1: String = peek_type(tokens, p + 1)
+
+    // Te.5.F.D destructure: `let [mut] Name { ... } [: T] = expr`.
+    if t0 == "NAME" && t1 == "LBRACE":
+        return parse_let_destructure_body(tokens, p, filename, is_mut)
+
+    // Te.5.F.E let-else with constructor pattern: `let Name(x) = expr else block`.
+    if t0 == "NAME" && t1 == "LPAREN":
+        return parse_let_else_body(tokens, p, filename)
+
+    // Te.5.F.E let-else with wildcard pattern: `let _ = expr else block`.
+    if t0 == "UNDERSCORE":
+        return parse_let_else_body(tokens, p, filename)
+
     let name: String = peek_value(tokens, p)
     p = p + 1
 
@@ -2583,6 +2672,93 @@ fn parse_let_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
     return new_stmt_result(Stmt::Let(name, is_mut, type_ann, er.expr), er.pos)
+
+// v5.20.1 Te.5.F.D — parse `Name { fields } [: T] = expr`. Caller has
+// already consumed `KW_LET KW_MUT?`. `pos` points at the struct NAME.
+fn parse_let_destructure_body(tokens: List<Token>, pos: Int, filename: String, is_mut: Bool) -> StmtResult:
+    let pat_r: StructPatResult = parse_struct_dest_pat(tokens, pos, filename)
+    let mut p: Int = pat_r.pos
+
+    let mut type_ann: Option<TypeExpr> = none
+    if peek_type(tokens, p) == "COLON":
+        p = p + 1
+        let tr: TypeResult = parse_type_expr(tokens, p, filename)
+        type_ann = Some(tr.type_expr)
+        p = tr.pos
+
+    p = expect(tokens, p, "ASSIGN")
+
+    let er: ExprResult = parse_expr(tokens, p, filename, 0)
+    return new_stmt_result(Stmt::LetDestructure(pat_r.pattern, is_mut, type_ann, er.expr), er.pos)
+
+struct StructPatResult:
+    pattern: StructPattern
+    pos: Int
+
+fn new_struct_pat_result(p: StructPattern, pos: Int) -> StructPatResult = new StructPatResult { pattern: p, pos: pos }
+
+fn parse_struct_dest_pat(tokens: List<Token>, pos: Int, filename: String) -> StructPatResult:
+    let name: String = peek_value(tokens, pos)
+    let mut p: Int = pos + 1
+    p = expect(tokens, p, "LBRACE")
+    let mut fields: List<FieldPattern> = []
+    let mut has_rest: Bool = false
+    if peek_type(tokens, p) == "RBRACE":
+        p = p + 1
+        return new_struct_pat_result(new_struct_pattern(name, fields, has_rest), p)
+    for _ in 0..200:
+        if peek_type(tokens, p) == "RBRACE":
+            p = p + 1
+            break
+        if peek_type(tokens, p) == "RANGE":
+            has_rest = true
+            p = p + 1
+            if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+            p = expect(tokens, p, "RBRACE")
+            break
+        let fr: FieldPatResult = parse_field_dest(tokens, p, filename)
+        fields.push(fr.field_pattern)
+        p = fr.pos
+        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+    return new_struct_pat_result(new_struct_pattern(name, fields, has_rest), p)
+
+struct FieldPatResult:
+    field_pattern: FieldPattern
+    pos: Int
+
+fn new_field_pat_result(fp: FieldPattern, pos: Int) -> FieldPatResult = new FieldPatResult { field_pattern: fp, pos: pos }
+
+fn parse_field_dest(tokens: List<Token>, pos: Int, filename: String) -> FieldPatResult:
+    let mut p: Int = pos
+    let mut mutable: Bool = false
+    if peek_type(tokens, p) == "KW_MUT":
+        mutable = true
+        p = p + 1
+    let name: String = peek_value(tokens, p)
+    p = p + 1
+    let mut sub: Option<StructPattern> = none
+    if peek_type(tokens, p) == "COLON":
+        p = p + 1
+        let sr: StructPatResult = parse_struct_dest_pat(tokens, p, filename)
+        sub = Some(sr.pattern)
+        p = sr.pos
+        // `mut` on a nested-pattern field is meaningless (Python D4
+        // discards quietly). Mirror that.
+        mutable = false
+    return new_field_pat_result(new_field_pattern(name, mutable, sub), p)
+
+// v5.20.1 Te.5.F.E — parse `<pattern> = expr else block`. Caller has
+// already consumed `KW_LET`. Pattern is constructor (NAME LPAREN ...)
+// or wildcard (UNDERSCORE).
+fn parse_let_else_body(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
+    let pr: PatternResult = parse_pattern(tokens, pos, filename)
+    let mut p: Int = pr.pos
+    p = expect(tokens, p, "ASSIGN")
+    let er: ExprResult = parse_expr(tokens, p, filename, 0)
+    p = er.pos
+    p = expect(tokens, p, "KW_ELSE")
+    let br: BlockResult = parse_block(tokens, p, filename)
+    return new_stmt_result(Stmt::LetElse(pr.pattern, er.expr, br.block), br.pos)
 
 // ---------------------------------------------------------------------------
 // Return statement
@@ -4540,6 +4716,40 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
 
     if ek == "assign" { return check_assign_expr(st, expr_assign_target(expr), expr_assign_op(expr), expr_assign_value(expr)) }
     if ek == "if" { return check_if_expr(st, expr_if_cond(expr), expr_if_then(expr), expr_if_else(expr)) }
+    // v5.20.1 Te.5.F.E — if-let: infer scrutinee, bind pattern in
+    // then-block scope; else block in a nested scope.
+    if ek == "if_let":
+        let il_pat: Pattern = expr_iflet_pattern(expr)
+        let il_scrut: Expr = expr_iflet_scrutinee(expr)
+        let il_then: Block = expr_iflet_then(expr)
+        let il_else: Option<Block> = expr_iflet_else(expr)
+        let sr_il: InferResult = infer_expr(st, il_scrut)
+        let mut s_il: SemState = sr_il.st
+        let inner_il: SemState = push_scope(s_il)
+        let pk_il: String = pattern_kind(il_pat)
+        let mut bound_il: SemState = inner_il
+        if pk_il == "constructor":
+            let pargs_il: List<Pattern> = pattern_ctor_args(il_pat)
+            let mut j_il: Int = 0
+            let nargs_il: Int = len(pargs_il)
+            for _ in 0..16:
+                if j_il >= nargs_il { break }
+                let arg_il: Pattern = pargs_il[j_il]
+                if pattern_kind(arg_il) == "ident":
+                    let sym_il: Symbol = new_symbol(pattern_ident_name(arg_il), "variable", unknown_type(), false)
+                    bound_il = define_in_scope(bound_il, pattern_ident_name(arg_il), sym_il)
+                j_il = j_il + 1
+        let after_il: SemState = check_block(bound_il, il_then)
+        let mut after2_il: SemState = pop_scope(after_il)
+        match il_else {
+            Some(eb) => {
+                let inner2_il: SemState = push_scope(after2_il)
+                let after3_il: SemState = check_block(inner2_il, eb)
+                after2_il = pop_scope(after3_il)
+            },
+            _ => {}
+        }
+        return new_infer_result(unknown_type(), after2_il)
     if ek == "match" { return check_match_expr(st, expr_match_subject(expr), expr_match_arms(expr)) }
 
     // v5.5.0 Sh.4: `await expr` — recurse into inner so errors inside are
@@ -5050,6 +5260,18 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState:
         return check_signal_decl(st, stmt_signal_name(stmt), stmt_signal_mutable(stmt), stmt_signal_type(stmt), stmt_signal_value(stmt))
     if sk == "stream_decl":
         return check_stream_decl(st, stmt_stream_name(stmt), stmt_stream_type(stmt), stmt_stream_value(stmt))
+    // v5.20.1 Te.5.F.D — let destructure: type-check value + bind
+    // each leaf field name in the surrounding scope.
+    if sk == "let_destructure":
+        return check_let_destructure(st, stmt_letdest_pattern(stmt), stmt_letdest_mutable(stmt), stmt_letdest_value(stmt))
+    // v5.20.1 Te.5.F.E — let-else: type-check scrutinee + binds the
+    // pattern's single ident (if any) in the surrounding scope; else
+    // block runs in a nested scope.
+    if sk == "let_else":
+        return check_let_else(st, stmt_letelse_pattern(stmt), stmt_letelse_scrutinee(stmt), stmt_letelse_else(stmt))
+    // v5.20.1 Te.5.F.E — while-let: scrutinee + body in nested scope.
+    if sk == "while_let":
+        return check_while_let(st, stmt_whilelet_pattern(stmt), stmt_whilelet_scrutinee(stmt), stmt_whilelet_body(stmt))
     return st
 
 // ---------------------------------------------------------------------------
@@ -5076,6 +5298,80 @@ fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<Ty
         return define_in_scope(st2, name, sym)
     let sym2: Symbol = new_symbol(name, "variable", resolved, mutable)
     return define_in_scope(st2, name, sym2)
+
+// v5.20.1 Te.5.F.D — let destructure check: type-infer value, then
+// recursively define each leaf field name in the current scope.
+fn check_let_destructure(st: SemState, pattern: StructPattern, outer_mut: Bool, value: Expr) -> SemState:
+    let vr: InferResult = infer_expr(st, value)
+    let mut st2: SemState = vr.st
+    return define_pattern_bindings(st2, pattern, outer_mut)
+
+fn define_pattern_bindings(st: SemState, pattern: StructPattern, outer_mut: Bool) -> SemState:
+    let mut s: SemState = st
+    let n: Int = len(pattern.fields)
+    let mut i: Int = 0
+    for _ in 0..200:
+        if i >= n { return s }
+        let fp: FieldPattern = pattern.fields[i]
+        match fp.sub_pattern {
+            Some(sub) => {
+                s = define_pattern_bindings(s, sub, outer_mut)
+            },
+            _ => {
+                let mut leaf_mut: Bool = outer_mut
+                if fp.mutable { leaf_mut = true }
+                let sym: Symbol = new_symbol(fp.name, "variable", unknown_type(), leaf_mut)
+                s = define_in_scope(s, fp.name, sym)
+            }
+        }
+        i = i + 1
+    return s
+
+// v5.20.1 Te.5.F.E — let-else check: type-infer scrutinee, bind the
+// pattern's single ident (if any) in the surrounding scope, type-check
+// else block in a nested scope.
+fn check_let_else(st: SemState, pattern: Pattern, scrutinee: Expr, else_block: Block) -> SemState:
+    let sr: InferResult = infer_expr(st, scrutinee)
+    let mut s: SemState = sr.st
+    // Bind pattern leaves into the current scope (they "leak" — that's
+    // the essence of let-else).
+    let pk: String = pattern_kind(pattern)
+    if pk == "constructor":
+        let pargs: List<Pattern> = pattern_ctor_args(pattern)
+        let mut j: Int = 0
+        let nargs: Int = len(pargs)
+        for _ in 0..16:
+            if j >= nargs { break }
+            let arg: Pattern = pargs[j]
+            if pattern_kind(arg) == "ident":
+                let sym: Symbol = new_symbol(pattern_ident_name(arg), "variable", unknown_type(), false)
+                s = define_in_scope(s, pattern_ident_name(arg), sym)
+            j = j + 1
+    // Else block in a nested scope.
+    let inner: SemState = push_scope(s)
+    let after: SemState = check_block(inner, else_block)
+    return pop_scope(after)
+
+// v5.20.1 Te.5.F.E — while-let check.
+fn check_while_let(st: SemState, pattern: Pattern, scrutinee: Expr, body: Block) -> SemState:
+    let sr: InferResult = infer_expr(st, scrutinee)
+    let mut s: SemState = sr.st
+    let inner: SemState = push_scope(s)
+    let pk: String = pattern_kind(pattern)
+    let mut bound: SemState = inner
+    if pk == "constructor":
+        let pargs: List<Pattern> = pattern_ctor_args(pattern)
+        let mut j: Int = 0
+        let nargs: Int = len(pargs)
+        for _ in 0..16:
+            if j >= nargs { break }
+            let arg: Pattern = pargs[j]
+            if pattern_kind(arg) == "ident":
+                let sym: Symbol = new_symbol(pattern_ident_name(arg), "variable", unknown_type(), false)
+                bound = define_in_scope(bound, pattern_ident_name(arg), sym)
+            j = j + 1
+    let after: SemState = check_block(bound, body)
+    return pop_scope(after)
 
 // ---------------------------------------------------------------------------
 // For loop
@@ -7633,6 +7929,18 @@ fn lower_stmt(st: LowerState, stmt: Stmt) -> LowerResult:
     if sk == "stream_decl":
         let s_strm: LowerState = lower_stream_decl(st, stmt_stream_name(stmt), stmt_stream_value(stmt))
         return new_lower_result(void_value(), s_strm)
+    // v5.20.1 Te.5.F.D — `let Point { x, y } = expr`.
+    if sk == "let_destructure":
+        let s_ld: LowerState = lower_let_destructure(st, stmt_letdest_pattern(stmt), stmt_letdest_mutable(stmt), stmt_letdest_type(stmt), stmt_letdest_value(stmt))
+        return new_lower_result(void_value(), s_ld)
+    // v5.20.1 Te.5.F.E — `let Some(x) = expr else block`.
+    if sk == "let_else":
+        let s_le: LowerState = lower_let_else(st, stmt_letelse_pattern(stmt), stmt_letelse_scrutinee(stmt), stmt_letelse_else(stmt))
+        return new_lower_result(void_value(), s_le)
+    // v5.20.1 Te.5.F.E — `while let <pat> = expr block`.
+    if sk == "while_let":
+        let s_wl: LowerState = lower_while_let(st, stmt_whilelet_pattern(stmt), stmt_whilelet_scrutinee(stmt), stmt_whilelet_body(stmt))
+        return new_lower_result(void_value(), s_wl)
     return new_lower_result(void_value(), st)
 
 // ---------------------------------------------------------------------------
@@ -8261,6 +8569,9 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult:
     // v5.20.1 Te.5.F.C — struct update: `new T { x: 5, ..base }`.
     if ek == "construct_update":
         return lower_struct_update(st, expr_construct_update_name(expr), expr_construct_update_overrides(expr), expr_construct_update_base(expr))
+    // v5.20.1 Te.5.F.E — if-let.
+    if ek == "if_let":
+        return lower_if_let(st, expr_iflet_pattern(expr), expr_iflet_scrutinee(expr), expr_iflet_then(expr), expr_iflet_else(expr))
     if ek == "some_wrap":
         let inner: Expr = expr_wrap_inner(expr)
         let r_some: LowerResult = lower_expr(st, inner)
@@ -10512,6 +10823,81 @@ fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState:
             _ => {}
         }
         j = j - 1
+    return st
+
+// ---------------------------------------------------------------------------
+// v5.20.1 Te.5.F.D — Let destructure lowering
+// ---------------------------------------------------------------------------
+
+// Mirrors `mapanare/lower.py::_lower_let_destructure`. When the RHS is
+// a bare Identifier already in scope, run field accesses directly on
+// the source name (IR byte-identical to manual `let x = p.x; let y =
+// p.y`). Otherwise lower the RHS once into a `__mn_dst_N` tmp.
+fn lower_let_destructure(st: LowerState, pattern: StructPattern, outer_mut: Bool, type_ann: Option<TypeExpr>, value: Expr) -> LowerState:
+    let mut s: LowerState = st
+
+    // Bare-Ident RHS optimization: skip the synthesized base tmp.
+    if expr_kind(value) == "ident":
+        let src_name: String = expr_ident_name(value)
+        let lookup: Option<Value> = lookup_var(s, src_name)
+        match lookup {
+            Some(_) => {
+                return emit_destructure_pattern(s, pattern, src_name, outer_mut)
+            },
+            _ => {}
+        }
+
+    // General case: synthesize `let __mn_dst_N = value` first.
+    let tmp_idx: Int = s.struct_update_counter
+    s.struct_update_counter = tmp_idx + 1
+    let base_name: String = "__mn_dst_" + toString(tmp_idx)
+    s = lower_let(s, base_name, false, type_ann, value)
+    return emit_destructure_pattern(s, pattern, base_name, outer_mut)
+
+// Walk a StructPattern; emit per-field `let` for leaf bindings, recurse
+// for nested struct sub-patterns. Mirrors `_emit_destructure_pattern`.
+fn emit_destructure_pattern(st: LowerState, pattern: StructPattern, base_name: String, outer_mut: Bool) -> LowerState:
+    let mut s: LowerState = st
+    let n: Int = len(pattern.fields)
+    let mut i: Int = 0
+    for _ in 0..200:
+        if i >= n { return s }
+        let fp: FieldPattern = pattern.fields[i]
+        let fa: Expr = Expr::FieldAccess(Expr::Ident(base_name), fp.name)
+        match fp.sub_pattern {
+            Some(sub) => {
+                let nested_idx: Int = s.struct_update_counter
+                s.struct_update_counter = nested_idx + 1
+                let nested_base: String = "__mn_dst_" + toString(nested_idx)
+                let none_t: Option<TypeExpr> = none
+                s = lower_let(s, nested_base, false, none_t, fa)
+                s = emit_destructure_pattern(s, sub, nested_base, outer_mut)
+            },
+            _ => {
+                let mut leaf_mut: Bool = outer_mut
+                if fp.mutable { leaf_mut = true }
+                let none_t2: Option<TypeExpr> = none
+                s = lower_let(s, fp.name, leaf_mut, none_t2, fa)
+            }
+        }
+        i = i + 1
+    return s
+
+// ---------------------------------------------------------------------------
+// v5.20.1 Te.5.F.E — if-let / while-let / let-else (stubs filled in Phase 4)
+// ---------------------------------------------------------------------------
+
+// Stubs for Phase 4. Phase 3 ships only Te.5.F.D; the dispatch entries
+// above route here so the bootstrap doesn't crash on Phase-4 forms
+// during intermediate validation. Each stub no-ops with a stderr note
+// (real implementations land in Phase 4).
+fn lower_if_let(st: LowerState, pattern: Pattern, scrutinee: Expr, then_block: Block, else_block: Option<Block>) -> LowerResult:
+    return new_lower_result(void_value(), st)
+
+fn lower_while_let(st: LowerState, pattern: Pattern, scrutinee: Expr, body: Block) -> LowerState:
+    return st
+
+fn lower_let_else(st: LowerState, pattern: Pattern, scrutinee: Expr, else_block: Block) -> LowerState:
     return st
 
 // ---------------------------------------------------------------------------
