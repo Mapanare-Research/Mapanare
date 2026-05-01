@@ -18,6 +18,58 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.20.0** (ready, not tagged) — **Te.5 — struct ergonomics
+  (Python side).** Post-Sh.* terseness capstone. Four additive
+  surface forms, all desugared to existing constructs — zero new
+  MIR ops, zero new runtime functions, zero new IR shapes.
+  **Te.5.B** — field shorthand: `Point { x, y }` ≡ `Point { x: x,
+  y: y }`. Phase 0 surprise: `mapanare/parser.py:1022`
+  `field_init` already had a value-omitted fall-through to
+  `Identifier(name=name)`; only the grammar rule was mandatory-
+  colon. AST and IR byte-identical to long form. **Te.5.C** —
+  struct update: `Point { x: 5, ..base }` lowers to `let
+  __mn_base_N = base; new Point { x: 5, y: __mn_base_N.y, ... }`.
+  Single base only (D2); trailing position only (D1). New
+  `_struct_update_counter` separate from `_tmp_counter` keeps the
+  synthesized base tmp from perturbing the global `%tN` sequence
+  — IR byte-identical to manual long form. **Te.5.D** — let
+  destructuring: `let Point { x, y } = p` binds `x` and `y` in
+  the surrounding scope. Nested patterns `let Outer { inner: Inner
+  { a }, b } = o` (D3 in `let` only), rest patterns `let Point {
+  x, .. } = p` (D9), and per-field mutability `let Point { mut x,
+  y } = p` (D4) all work. When RHS is a bare Identifier, the
+  lowerer skips the synthesized base tmp — IR byte-identical to
+  `let x = p.x; let y = p.y`. **Te.5.E** — three refutable-binding
+  forms desugared at lower time to existing match/while/let.
+  `if let <pat> = <scrut> { ... } [else { ... }]` → 2-arm match.
+  `while let <pat> = <scrut> { body }` (D8) → `while true { match
+  scrut { pat => body, _ => break } }`. `let <pat> = <scrut> else
+  { ... }` (D5/D6) → strategy 2 synthesized return: for
+  single-binding `let Some(x) = opt else { ... }` builds `let x =
+  match opt { Some(x) => x, _ => { else_block } }`. New module-
+  level `_block_diverges` / `_stmt_diverges` /
+  `_expr_or_block_diverges` recursively walk the AST tail
+  recognizing ReturnStmt/BreakStmt/ContinueStmt/panic/abort/exit
+  calls and nested if/match where every leaf branch diverges. The
+  function's implicit return does NOT satisfy the divergence
+  requirement (D6). v5.20.0 `let else` patterns restricted to
+  constructor patterns with 0 or 1 args (single identifier or
+  wildcard) and wildcard patterns; multi-binding patterns deferred
+  to v5.21.0+. **11 new goldens** at `tests/golden/81-91_*.mn`,
+  all compile through `mapanare emit-llvm` and IR-validate via
+  `clang -c`. Python bootstrap: 91/91 PASS. Native stage1: 80/80
+  existing PASS, **11/11 new FAIL** because `mnc-stage1` was built
+  from v5.18.0 source — bootstrap mirror is on the v5.20.1 docket
+  (Te.5.F, mirror v5.14.0→v5.14.1 / v5.15.0→v5.15.1 pattern).
+  Phase 5 (bootstrap mirror) deferred — 4–6h on its own per
+  design doc, splits cleanly. **No `mapanare/self/*.mn` source
+  edits in v5.20.0** so existing strict-fixed-point status is
+  unchanged from v5.18.0 (232,281 lines / 0-line diff). Source
+  delta: +20 lines lark, +44 ast_nodes, +72 parser, +60 semantic,
+  +281 lower = **+477 lines Python total**. 557 parser+semantic
+  tests pass. 10 design decisions locked in
+  `docs/roadmap/v5/v5.20.0/STRUCT_ERGO_DESIGN.md`. See
+  `docs/roadmap/v5/v5.20.0/SESSION_REPORT.md`.
 - **v5.19.1** (ready, not tagged) — **Dk.* — Docker images +
   `mnc init --docker`.** Packaging-only release. Two new official
   images on GHCR: `mapanare-builder:5.19.1` (~640 MB —
@@ -599,12 +651,21 @@ had latent bugs requiring dedicated releases.
   `{}` (still parses, emits warning); hard removal scheduled
   for v6.0. Ship `mapanare/builder` + `mapanare/runtime`
   Docker images. See `docs/roadmap/v5/v5.19.0/PLAN.md`.
-- **v5.20.0** — **Te.5 — struct ergonomics.** Field shorthand
-  (`Point { x, y }`), struct update (`..old`), destructuring
-  in `let`, `if let` / `while let` / `let else`.
-  *Post-rewrite intentional* — none can be safely auto-migrated
-  by `--to-terse`, so this is opt-in for humans. See
-  `docs/roadmap/v5/v5.20.0/PLAN.md`.
+- ~~**v5.20.0**~~ — shipped (see release notes above). Te.5
+  Python side — field shorthand, struct update (`..base`),
+  let destructuring, if-let / while-let / let-else. Bootstrap
+  mirror split out to v5.20.1 per the v5.14.0→v5.14.1 /
+  v5.15.0→v5.15.1 precedent.
+- **v5.20.1** — **Te.5.F — bootstrap mirror.** Mirror all four
+  Te.5 features in `mapanare/self/{ast,parser,lower,semantic}.mn`.
+  Per-feature commit ordering smallest-first (Te.5.B ~10 LOC,
+  Te.5.C ~120, Te.5.D ~250, Te.5.E ~400). Strict 3-stage fixed
+  point validation between every commit. Closes the v5.20.0
+  deferred item; the 11 new goldens (81-91) currently fail
+  through `mnc-stage1` because the bootstrap was built from
+  v5.18.0 source. See `docs/roadmap/v5/v5.20.0/SESSION_REPORT.md`
+  ("Deferred to v5.20.1") and `STRUCT_ERGO_DESIGN.md` ("Bootstrap
+  mirror plan").
 - **v5.21.0** — **Te.6 — small ergonomic wins.** Chained
   comparisons (`0 < x < 10`) ships first; the cluster is a sink
   for additional small ergonomic wins that surface during the

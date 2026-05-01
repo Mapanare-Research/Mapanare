@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.20.0] - 2026-04-30
+
+### Added
+
+- **Te.5.B — Field shorthand in struct literals.** `Point { x, y }`
+  is sugar for `Point { x: x, y: y }`. Mixed forms allowed:
+  `Point { x: 99, y }` overrides x and shorthands y. AST and IR
+  byte-identical to the long form. Phase 0 surprise:
+  `mapanare/parser.py:1022` `field_init` already had a value-
+  omitted fall-through; only the grammar rule was mandatory-
+  colon, so this turned into a 1-character relaxation.
+- **Te.5.C — Struct update syntax (`..base`).** `Point { x: 5,
+  ..old }` builds a Point with `x=5` and remaining fields copied
+  from `old`. Single base only; trailing position only. Lowering
+  uses a new `_struct_update_counter` (separate from `_tmp_counter`)
+  so the synthesized base tmp doesn't perturb the global `%tN`
+  sequence — IR byte-identical to the manual long form.
+- **Te.5.D — Let destructuring.** `let Point { x, y } = p` binds
+  `x` and `y` in the surrounding scope. New AST nodes
+  `StructPattern`, `FieldPattern`, `LetDestructure`. Nested
+  patterns (`let Outer { inner: Inner { a }, b } = o`), rest
+  patterns (`let Point { x, .. } = p`), and per-field mutability
+  (`let Point { mut x, y } = p`) all work. When RHS is a bare
+  Identifier, the lowerer skips the synthesized base tmp and runs
+  field accesses directly on the source name — IR is byte-
+  identical to `let x = p.x; let y = p.y`.
+- **Te.5.E — `if let` / `while let` / `let else`.** Three
+  refutable-binding forms desugared at lower time to existing
+  match/while/let machinery. New AST nodes `IfLetExpr`,
+  `WhileLetStmt`, `LetElseStmt`. `let else` requires the else
+  block to diverge (return/break/continue/panic/abort/exit, or
+  nested if/match where every leaf branch diverges); the function's
+  implicit return does NOT satisfy divergence. New module-level
+  `_block_diverges`, `_stmt_diverges`, `_expr_or_block_diverges`
+  helpers. v5.20.0 `let else` patterns restricted to constructor
+  patterns with 0 or 1 args (single identifier or wildcard) and
+  wildcard patterns; multi-binding patterns deferred to v5.21.0+.
+- **11 new goldens** at `tests/golden/81-91_*.mn` covering all
+  four features. All compile through `mapanare emit-llvm` and
+  IR-validate via `clang -c`.
+- **`docs/roadmap/v5/v5.20.0/STRUCT_ERGO_DESIGN.md`** — Phase 0
+  design lock with 10 locked decisions, AST-node sketch,
+  per-feature lowering plan, bootstrap-mirror ordering.
+- **SPEC.md updates** — §3.7 (Struct Types) gains "Field
+  Shorthand", "Struct Update Syntax", "Destructuring in `let`"
+  subsections. New §4.3.1 "Conditional Binding" covers `if let`
+  / `while let` / `let else`.
+
+### Deferred to v5.20.1
+
+- **Te.5.F — bootstrap mirror.** Mirror all four features in
+  `mapanare/self/{ast,parser,lower,semantic}.mn`. Per design doc
+  estimated 4–6h on its own (Te.5.B ~10 LOC, Te.5.C ~120, Te.5.D
+  ~250, Te.5.E ~400). Splitting bootstrap mirror into v5.20.1
+  follows the v5.14.0 → v5.14.1 colon-block pattern and the
+  v5.15.0 → v5.15.1 comprehension pattern.
+- **Strict 3-stage fixed point validation.** v5.20.0 makes no
+  edits to `mapanare/self/*.mn` so the v5.18.0 milestone
+  (232,281 lines / 0-line diff) is preserved by construction.
+  v5.20.1 will re-validate after the mirror lands.
+
+### Notes
+
+- v5.20.0 is the post-Sh.* terseness capstone — adds the struct
+  sugar that auto-migration tools couldn't safely produce during
+  the v5.17.0 self-host rewrite. All four features are additive;
+  existing struct/match code keeps working unchanged.
+- Zero new MIR ops, zero new runtime functions, zero new IR
+  shapes. All four features are pure surface sugar over existing
+  primitives.
+- Native `mnc-stage1` was built from v5.18.0 source so the 11 new
+  goldens fail through stage1 until v5.20.1 ships the bootstrap
+  mirror. Existing 80 goldens still pass.
+
 ## [5.19.1] - 2026-04-30
 
 ### Added

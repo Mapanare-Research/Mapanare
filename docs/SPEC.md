@@ -621,6 +621,51 @@ let p = new Point { x: 1.0, y: 2.0 }
 
 The `new` keyword is required for LALR grammar disambiguation (it distinguishes struct literals from blocks after `if`/`for`/`while`).
 
+#### Field Shorthand (since v5.20.0)
+
+When a field initializer's value is a local variable with the same name as the field, the colon and value can be omitted:
+
+```mn
+let x = 1.0
+let y = 2.0
+let p = new Point { x, y }              // = new Point { x: x, y: y }
+let q = new Point { x: 99.0, y }        // mixed forms allowed
+```
+
+The shorthand is purely syntactic — IR is byte-identical to the long form.
+
+#### Struct Update Syntax (since v5.20.0)
+
+`..base` at the end of a struct literal copies any unmentioned fields from `base`. The base must be the same struct type.
+
+```mn
+let p1 = new Point { x: 1.0, y: 2.0 }
+let p2 = new Point { x: 99.0, ..p1 }    // x=99, y=p1.y
+let p3 = new Point { ..p1 }             // pure copy
+```
+
+Only one `..base` per literal is allowed; it must come last (after all explicit overrides). Override fields can appear in any order; `..base` always trails.
+
+#### Destructuring in `let` (since v5.20.0)
+
+A struct pattern in a `let` binding extracts fields into local variables:
+
+```mn
+let p = new Point { x: 1.0, y: 2.0 }
+let Point { x, y } = p              // binds x and y
+let Point { x, .. } = p             // binds only x (rest pattern)
+let Point { mut x, y } = p          // x is mutable, y is not
+let mut Point { x, y } = p          // both mutable
+```
+
+Nested struct patterns are supported. The outer field name is **not** bound when the colon-then-pattern form is used; only the leaf names are:
+
+```mn
+let Outer { inner: Inner { a }, b } = o   // binds a and b (NOT inner)
+```
+
+When the right-hand side is a bare identifier, the lowering is exactly equivalent to `let x = p.x; let y = p.y;`.
+
 #### Methods via `impl`
 
 ```mn
@@ -1011,6 +1056,82 @@ fn main():
 ```
 
 The condition must be of type `Bool`. Evaluated before each iteration.
+
+### 4.3.1 Conditional Binding (since v5.20.0)
+
+Three refutable-binding forms make working with `Option`, `Result`,
+and other tagged variants more concise than full `match`
+expressions.
+
+#### `if let`
+
+`if let <pattern> = <scrutinee> { ... } [else { ... }]` runs the
+then-block iff `scrutinee` matches `pattern`, binding any pattern
+variables in the then-block scope. The optional else-block runs
+when the pattern does not match.
+
+```mn
+if let Some(x) = opt:
+    use(x)
+else:
+    fallback()
+```
+
+Equivalent to:
+
+```mn
+match opt:
+    Some(x) => use(x),
+    _       => fallback()
+```
+
+#### `while let`
+
+`while let <pattern> = <scrutinee> { body }` re-evaluates
+`scrutinee` each iteration; loops as long as the pattern matches,
+exits otherwise.
+
+```mn
+while let Some(x) = pop():
+    process(x)
+```
+
+Equivalent to:
+
+```mn
+while true:
+    match pop():
+        Some(x) => process(x),
+        _       => break
+```
+
+#### `let else`
+
+`let <pattern> = <scrutinee> else { ... }` is a refutable binding
+where the else-block runs (and **must diverge**) when the pattern
+fails. Pattern variables are bound for the rest of the surrounding
+scope.
+
+```mn
+fn parse_pos(s: String) -> Result<Int, String>:
+    let Some(n) = parse_int(s) else:
+        return Err("not int")
+    if n < 0:
+        return Err("negative")
+    return Ok(n)
+```
+
+The else block must end with a divergent statement (`return`,
+`break`, `continue`, `panic(...)`, or a nested form where every
+branch diverges). The function's implicit return at the tail does
+**not** satisfy the divergence requirement — the else block must
+itself end with an explicit divergent form. The compiler emits an
+error if the else block can fall through.
+
+In v5.20.0, `let else` patterns are restricted to constructor
+patterns with 0 or 1 args (single identifier or wildcard) and
+top-level wildcard patterns. Multi-binding patterns are deferred
+to a future release.
 
 ### 4.4 Break
 
