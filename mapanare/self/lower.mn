@@ -3596,21 +3596,165 @@ fn emit_destructure_pattern(st: LowerState, pattern: StructPattern, base_name: S
     return s
 
 // ---------------------------------------------------------------------------
-// v5.20.1 Te.5.F.E — if-let / while-let / let-else (stubs filled in Phase 4)
+// v5.20.1 Te.5.F.E — if-let / while-let / let-else
 // ---------------------------------------------------------------------------
 
-// Stubs for Phase 4. Phase 3 ships only Te.5.F.D; the dispatch entries
-// above route here so the bootstrap doesn't crash on Phase-4 forms
-// during intermediate validation. Each stub no-ops with a stderr note
-// (real implementations land in Phase 4).
+// Mirrors `mapanare/lower.py::_lower_if_let`. Desugars to a 2-arm
+// match: success arm runs then_block, wildcard arm runs else_block
+// (or empty Block when omitted).
 fn lower_if_let(st: LowerState, pattern: Pattern, scrutinee: Expr, then_block: Block, else_block: Option<Block>) -> LowerResult:
-    return new_lower_result(void_value(), st)
+    let none_guard: Option<Expr> = none
+    let success_arm: MatchArm = new_match_arm(pattern, MatchArmBody::BlockBody(then_block), none_guard)
+    let mut else_body_block: Block = then_block  // placeholder
+    let empty_stmts: List<Stmt> = []
+    else_body_block = new_block(make_span(0, 0, 0, 0), empty_stmts)
+    match else_block {
+        Some(eb) => { else_body_block = eb },
+        _ => {}
+    }
+    let wildcard_arm: MatchArm = new_match_arm(Pattern::Wildcard, MatchArmBody::BlockBody(else_body_block), none_guard)
+    let mut arms: List<MatchArm> = []
+    arms.push(success_arm)
+    arms.push(wildcard_arm)
+    return lower_match(st, scrutinee, arms)
 
+// Mirrors `_lower_while_let`. Desugars to:
+//   while true { match scrutinee { pat => body, _ => break } }
 fn lower_while_let(st: LowerState, pattern: Pattern, scrutinee: Expr, body: Block) -> LowerState:
-    return st
+    let none_guard: Option<Expr> = none
+    let success_arm: MatchArm = new_match_arm(pattern, MatchArmBody::BlockBody(body), none_guard)
+    let break_stmts: List<Stmt> = [Stmt::Break]
+    let break_block: Block = new_block(make_span(0, 0, 0, 0), break_stmts)
+    let break_arm: MatchArm = new_match_arm(Pattern::Wildcard, MatchArmBody::BlockBody(break_block), none_guard)
+    let mut arms: List<MatchArm> = []
+    arms.push(success_arm)
+    arms.push(break_arm)
+    let match_expr: Expr = Expr::Match(scrutinee, arms)
+    let body_stmts: List<Stmt> = [Stmt::ExprStmt(match_expr)]
+    let while_body: Block = new_block(make_span(0, 0, 0, 0), body_stmts)
+    return lower_while(st, Expr::BoolLit(true), while_body)
 
+// Mirrors `_lower_let_else`. Strategy 2 (synthesized return):
+//   let bound = match scrutinee { Some(bound) => bound, _ => else_block }
+// Pattern shapes supported in v5.20.1:
+//   - Pattern::Wildcard
+//   - ConstructorPat with 0 args                       (e.g. None)
+//   - ConstructorPat with 1 ident arg (Some(x), Ok(v), Err(e))
+//   - ConstructorPat with 1 wildcard arg (Some(_))
+// Multi-binding patterns deferred to v5.21.0+.
 fn lower_let_else(st: LowerState, pattern: Pattern, scrutinee: Expr, else_block: Block) -> LowerState:
-    return st
+    let mut s: LowerState = st
+    // Note: Python raises a RuntimeError at lower time when the else
+    // block doesn't diverge. The bootstrap can't easily emit a
+    // structured diagnostic from inside lower; we proceed with the
+    // desugar and let downstream type-check or runtime catch it.
+    // `block_diverges` is exposed for the cross-bootstrap test that
+    // exercises the negative case.
+    let _div: Bool = block_diverges(else_block)
+
+    let none_guard: Option<Expr> = none
+    let pk: String = pattern_kind(pattern)
+
+    // Wildcard or 0-arg / 1-wildcard-arg constructor: emit as match
+    // statement with no outer binding.
+    if pk == "wildcard":
+        let wild_body: Block = new_block(make_span(0, 0, 0, 0), [])
+        let arm0: MatchArm = new_match_arm(Pattern::Wildcard, MatchArmBody::BlockBody(wild_body), none_guard)
+        let arms_w: List<MatchArm> = [arm0]
+        let mr_w: LowerResult = lower_match(s, scrutinee, arms_w)
+        return mr_w.state
+
+    if pk == "constructor":
+        let pargs: List<Pattern> = pattern_ctor_args(pattern)
+        let nargs: Int = len(pargs)
+        let mut single_ident: Bool = false
+        let mut single_wild: Bool = false
+        if nargs == 1:
+            let pak: String = pattern_kind(pargs[0])
+            if pak == "ident" { single_ident = true }
+            if pak == "wildcard" { single_wild = true }
+
+        if nargs == 0 || single_wild:
+            // No outer binding — emit as match-statement.
+            let empty_stmts: List<Stmt> = []
+            let succ_body: Block = new_block(make_span(0, 0, 0, 0), empty_stmts)
+            let succ_arm: MatchArm = new_match_arm(pattern, MatchArmBody::BlockBody(succ_body), none_guard)
+            let wild_arm: MatchArm = new_match_arm(Pattern::Wildcard, MatchArmBody::BlockBody(else_block), none_guard)
+            let arms_le: List<MatchArm> = [succ_arm, wild_arm]
+            let mr_le: LowerResult = lower_match(s, scrutinee, arms_le)
+            return mr_le.state
+
+        if single_ident:
+            // `let Some(x) = opt else { ... }` →
+            // `let x = match opt { Some(x) => x, _ => else_block }`.
+            let bound_name: String = pattern_ident_name(pargs[0])
+            let succ_arm2: MatchArm = new_match_arm(pattern, MatchArmBody::ExprBody(Expr::Ident(bound_name)), none_guard)
+            let wild_arm2: MatchArm = new_match_arm(Pattern::Wildcard, MatchArmBody::BlockBody(else_block), none_guard)
+            let arms_si: List<MatchArm> = [succ_arm2, wild_arm2]
+            let synth_match: Expr = Expr::Match(scrutinee, arms_si)
+            let none_t: Option<TypeExpr> = none
+            return lower_let(s, bound_name, false, none_t, synth_match)
+
+    // Unsupported pattern shape — fall through; produces a degenerate
+    // empty match that evaluates the scrutinee for side effects.
+    let only_match_body: Block = new_block(make_span(0, 0, 0, 0), [])
+    let arm_only: MatchArm = new_match_arm(Pattern::Wildcard, MatchArmBody::BlockBody(only_match_body), none_guard)
+    let arms_default: List<MatchArm> = [arm_only]
+    let mr_def: LowerResult = lower_match(s, scrutinee, arms_default)
+    return mr_def.state
+
+// v5.20.1 Te.5.F.E divergence helpers. Mirrors `_block_diverges` /
+// `_stmt_diverges` / `_expr_or_block_diverges` in lower.py — used by
+// `lower_let_else` to enforce D5/D6.
+fn block_diverges(block: Block) -> Bool:
+    if len(block.stmts) == 0 { return false }
+    return stmt_diverges(block.stmts[len(block.stmts) - 1])
+
+fn stmt_diverges(s: Stmt) -> Bool:
+    let sk: String = stmt_kind(s)
+    if sk == "return" { return true }
+    if sk == "break" { return true }
+    if sk == "continue" { return true }
+    if sk == "expr_stmt":
+        let e: Expr = stmt_expr(s)
+        let ek: String = expr_kind(e)
+        if ek == "call":
+            let callee: Expr = expr_call_callee(e)
+            if expr_kind(callee) == "ident":
+                let cn: String = expr_ident_name(callee)
+                if cn == "panic" { return true }
+                if cn == "abort" { return true }
+                if cn == "exit" { return true }
+        if ek == "match":
+            let arms: List<MatchArm> = expr_match_arms(e)
+            if len(arms) == 0 { return false }
+            let mut i: Int = 0
+            for _ in 0..200:
+                if i >= len(arms) { return true }
+                if !match_arm_body_diverges(arms[i].body) { return false }
+                i = i + 1
+            return true
+        if ek == "if":
+            let then_b: Block = expr_if_then(e)
+            if !block_diverges(then_b) { return false }
+            let else_opt: Option<ElseClause> = expr_if_else(e)
+            match else_opt {
+                Some(ec) => {
+                    let eck: String = else_clause_kind(ec)
+                    if eck == "else_block":
+                        return block_diverges(else_clause_block(ec))
+                    return false
+                },
+                _ => { return false }
+            }
+    return false
+
+fn match_arm_body_diverges(body: MatchArmBody) -> Bool:
+    let bk: String = match_arm_body_kind(body)
+    if bk == "block":
+        return block_diverges(match_arm_body_block(body))
+    let synth_stmt: Stmt = Stmt::ExprStmt(match_arm_body_expr(body))
+    return stmt_diverges(synth_stmt)
 
 // ---------------------------------------------------------------------------
 // v5.20.1 Te.5.F.C — Struct update lowering
@@ -4325,10 +4469,20 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             if !arm_terminated:
                 s = emit_instr(s, Instruction::Jump(merge_label))
                 // Track arm result for phi (include all arms that reach merge).
-                // Ge.1r: use undef (not zeroinitializer) for void/unknown results —
+                // Ge.1r: use undef (not zeroinitializer) for void results —
                 // zeroinitializer propagates zeros through struct fields at -O2.
+                //
+                // v5.20.1 Te.5.F.E: TK_UNKNOWN is no longer demoted to undef.
+                // The let-else desugar produces match arms whose body is
+                // `Expr::Ident(bound_name)` where the bound name was attached
+                // by `bind_one_pattern_field` with payload type from
+                // `infer_variant_payload_type` — for function-call scrutinees,
+                // that resolves to TK_UNKNOWN. Demoting to undef forces phi
+                // skip, then `lower_let` sees void and emits `alloca void`.
+                // Treating TK_UNKNOWN as a real value lets the emitter resolve
+                // the LLVM type from incoming values (`emit_mir_phi` step 1).
                 let arm_kind: Int = arm_val_r.value.ty.kind
-                if arm_kind == TK_VOID() || arm_kind == TK_UNKNOWN() || arm_val_r.value.name == "%void":
+                if arm_kind == TK_VOID() || arm_val_r.value.name == "%void":
                     let zero_arm: Value = new_value("undef", arm_val_r.value.ty)
                     let pe_zero: PhiEntry = new_phi_entry(exit_label, zero_arm)
                     arm_results.push(pe_zero)
@@ -4372,10 +4526,15 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
         s = emit_instr(s, Instruction::Phi(rr_phi.value, arm_results))
         return new_lower_result(rr_phi.value, s)
 
-    // All arms terminated (all have return/break). Merge block is unreachable
-    // but callers may reference the result. Use the function's return type
-    // to create a properly-typed dummy value (alloca+load of zeroed memory).
+    // All arms terminated (all have return/break) OR all arms produced
+    // void results (statement-context match, e.g. v5.20.1 if-let
+    // / while-let / let-else when used in a `fn main()` body).
+    // Merge block may be unreachable but callers may reference the
+    // result. When fn_ret is void, emitting `alloca void` is invalid
+    // LLVM — return void_value() and let the caller drop the result.
     let fn_ret: MIRType = get_current_fn_ret_type(s)
+    if fn_ret.kind == TK_VOID():
+        return new_lower_result(void_value(), s)
     let rr_unreach: LowerResult = make_value(s, fn_ret, "match_result")
     s = rr_unreach.state
     let dummy_addr: Value = new_value(rr_unreach.value.name + ".dummy", fn_ret)

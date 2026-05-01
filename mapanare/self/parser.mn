@@ -1421,6 +1421,16 @@ fn parse_for_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult
 
 fn parse_while_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
     let mut p: Int = pos + 1
+    // v5.20.1 Te.5.F.E — `while let <pattern> = <scrutinee> { body }`.
+    if peek_type(tokens, p) == "KW_LET":
+        p = p + 1
+        let wl_pat: PatternResult = parse_pattern(tokens, p, filename)
+        p = wl_pat.pos
+        p = expect(tokens, p, "ASSIGN")
+        let wl_scrut: ExprResult = parse_expr(tokens, p, filename, 0)
+        p = wl_scrut.pos
+        let wl_body: BlockResult = parse_block(tokens, p, filename)
+        return new_stmt_result(Stmt::WhileLet(wl_pat.pattern, wl_scrut.expr, wl_body.block), wl_body.pos)
     let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
     p = cond_r.pos
     let body_r: BlockResult = parse_block(tokens, p, filename)
@@ -2029,6 +2039,24 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
 
 fn parse_if_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let mut p: Int = pos + 1
+
+    // v5.20.1 Te.5.F.E — `if let <pattern> = <scrutinee> { ... } [else { ... }]`.
+    if peek_type(tokens, p) == "KW_LET":
+        p = p + 1
+        let il_pat: PatternResult = parse_pattern(tokens, p, filename)
+        p = il_pat.pos
+        p = expect(tokens, p, "ASSIGN")
+        let il_scrut: ExprResult = parse_expr(tokens, p, filename, 0)
+        p = il_scrut.pos
+        let il_then: BlockResult = parse_block(tokens, p, filename)
+        p = il_then.pos
+        let mut il_else: Option<Block> = none
+        if peek_type(tokens, p) == "KW_ELSE":
+            p = p + 1
+            let il_eb: BlockResult = parse_block(tokens, p, filename)
+            il_else = Some(il_eb.block)
+            p = il_eb.pos
+        return new_expr_result(Expr::IfLet(il_pat.pattern, il_scrut.expr, il_then.block, il_else), p)
 
     let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
     p = cond_r.pos
