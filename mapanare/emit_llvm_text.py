@@ -3611,6 +3611,31 @@ class LLVMTextEmitter:
             r = self._rt("__mn_dir_remove_recursive", I64, [STR], [(a, STR)])
             self._put(i.dest, r, I64)
             return
+        # v5.23.1 Mb.1: V.9 lifecycle leak — __mn_indent_to_braces returns
+        # an owned MnString allocated in C. Without a dedicated handler
+        # the call falls through to the auto-declare path which does not
+        # call _track_string, so parser__parse leaks the preprocessed
+        # buffer on every invocation. Bounded to single-shot in mnc-stage1
+        # (OS reaps on exit) but unbounded if the runtime is embedded in
+        # a long-lived process (LSP server, watch-mode compiler).
+        #
+        # Track the result for drop-glue freeing, but DO NOT register the
+        # slot in _str_slots (clear _last_tracked_str_slot before _put).
+        # Reason: Python's _do_call applies a blanket-move to every user-
+        # function arg, which zeros the _str_slots entry for the variable.
+        # parse() does `let preprocessed = __mn_indent_to_braces(source);
+        # tokenize(preprocessed, filename)`, and tokenize is a borrow, not
+        # a consume — but blanket-move would zero the slot anyway, leaking
+        # the buffer. The self-host emit_llvm.mn doesn't have this blanket
+        # move (it relies on explicit Move from the lowerer), so stage2/3
+        # IR is leak-clean by construction; only stage1 needs this guard.
+        if fn == "__mn_indent_to_braces" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_indent_to_braces", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._last_tracked_str_slot = None
+            self._put(i.dest, r, STR)
+            return
 
         # High-level I/O builtins (v3.41.0)
         if fn == "read_line":

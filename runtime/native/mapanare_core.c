@@ -1642,9 +1642,28 @@ MN_EXPORT int64_t __mn_dir_remove(MnString path) {
  * silently broken on Windows where __mn_system invokes cmd.exe. The
  * ``-d was unexpected at this time`` error reported by Windows users at
  * v5.8.7 was cmd.exe's reaction to bash's ``[ -d ... ]`` test. These
- * three exports make the code path platform-agnostic. */
-static int64_t mn_dir_walk_size_(const char *cpath) {
+ * three exports make the code path platform-agnostic.
+ *
+ * v5.23.1 Mb.4 (V.6 — 3rd cycle): add a recursion depth parameter capped
+ * at MN_DIR_WALK_MAX_DEPTH (4096). Bounds the C stack against pathological
+ * directory trees (cycles via symlinks, deeply nested junctions). The
+ * Mapanare cache directory is rarely deeper than 5 levels in practice;
+ * the cap is a defensive ceiling, not an active throttle.
+ *
+ * v5.23.1 Mb.5 (V.7 — 3rd cycle): on Windows, skip entries with
+ * FILE_ATTRIBUTE_REPARSE_POINT (junctions / mount points / symlinks).
+ * Without this skip, descending into a junction that points back into
+ * the tree creates an infinite recursion loop. POSIX uses lstat() in
+ * the recursive-remove path (already correct — does not follow symlinks)
+ * and stat() in the count/size paths (follows symlinks but doesn't
+ * recurse on non-directories). Adding lstat() to the count/size paths
+ * matches Windows reparse-point skip behavior.
+ */
+#define MN_DIR_WALK_MAX_DEPTH 4096
+
+static int64_t mn_dir_walk_size_(const char *cpath, int depth) {
     int64_t total = 0;
+    if (depth >= MN_DIR_WALK_MAX_DEPTH) return total;
 #ifdef _WIN32
     size_t plen = strlen(cpath);
     char *pattern = (char *)__mn_alloc(plen + 3);
@@ -1659,6 +1678,8 @@ static int64_t mn_dir_walk_size_(const char *cpath) {
     do {
         const char *n = ffd.cFileName;
         if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        /* v5.23.1 Mb.5: skip junctions / symlinks / mount points. */
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
         size_t nlen = strlen(n);
         char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
         memcpy(child, cpath, plen);
@@ -1666,7 +1687,7 @@ static int64_t mn_dir_walk_size_(const char *cpath) {
         memcpy(child + plen + 1, n, nlen);
         child[plen + 1 + nlen] = '\0';
         if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            total += mn_dir_walk_size_(child);
+            total += mn_dir_walk_size_(child, depth + 1);
         } else {
             ULARGE_INTEGER sz;
             sz.LowPart = ffd.nFileSizeLow;
@@ -1691,10 +1712,11 @@ static int64_t mn_dir_walk_size_(const char *cpath) {
         memcpy(child + plen + 1, n, nlen);
         child[plen + 1 + nlen] = '\0';
         struct stat st;
-        if (stat(child, &st) == 0) {
+        /* v5.23.1 Mb.5: lstat instead of stat — don't follow symlinks. */
+        if (lstat(child, &st) == 0) {
             if (S_ISDIR(st.st_mode)) {
-                total += mn_dir_walk_size_(child);
-            } else {
+                total += mn_dir_walk_size_(child, depth + 1);
+            } else if (S_ISREG(st.st_mode)) {
                 total += (int64_t)st.st_size;
             }
         }
@@ -1705,8 +1727,9 @@ static int64_t mn_dir_walk_size_(const char *cpath) {
     return total;
 }
 
-static int64_t mn_dir_walk_count_(const char *cpath) {
+static int64_t mn_dir_walk_count_(const char *cpath, int depth) {
     int64_t count = 0;
+    if (depth >= MN_DIR_WALK_MAX_DEPTH) return count;
 #ifdef _WIN32
     size_t plen = strlen(cpath);
     char *pattern = (char *)__mn_alloc(plen + 3);
@@ -1721,6 +1744,8 @@ static int64_t mn_dir_walk_count_(const char *cpath) {
     do {
         const char *n = ffd.cFileName;
         if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+        /* v5.23.1 Mb.5: skip junctions / symlinks / mount points. */
+        if (ffd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
         size_t nlen = strlen(n);
         char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
         memcpy(child, cpath, plen);
@@ -1728,7 +1753,7 @@ static int64_t mn_dir_walk_count_(const char *cpath) {
         memcpy(child + plen + 1, n, nlen);
         child[plen + 1 + nlen] = '\0';
         if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            count += mn_dir_walk_count_(child);
+            count += mn_dir_walk_count_(child, depth + 1);
         } else {
             count += 1;
         }
@@ -1750,10 +1775,11 @@ static int64_t mn_dir_walk_count_(const char *cpath) {
         memcpy(child + plen + 1, n, nlen);
         child[plen + 1 + nlen] = '\0';
         struct stat st;
-        if (stat(child, &st) == 0) {
+        /* v5.23.1 Mb.5: lstat instead of stat — don't follow symlinks. */
+        if (lstat(child, &st) == 0) {
             if (S_ISDIR(st.st_mode)) {
-                count += mn_dir_walk_count_(child);
-            } else {
+                count += mn_dir_walk_count_(child, depth + 1);
+            } else if (S_ISREG(st.st_mode)) {
                 count += 1;
             }
         }
@@ -1764,7 +1790,8 @@ static int64_t mn_dir_walk_count_(const char *cpath) {
     return count;
 }
 
-static int mn_dir_remove_recursive_(const char *cpath) {
+static int mn_dir_remove_recursive_(const char *cpath, int depth) {
+    if (depth >= MN_DIR_WALK_MAX_DEPTH) return -1;
 #ifdef _WIN32
     size_t plen = strlen(cpath);
     char *pattern = (char *)__mn_alloc(plen + 3);
@@ -1779,6 +1806,8 @@ static int mn_dir_remove_recursive_(const char *cpath) {
         do {
             const char *n = ffd.cFileName;
             if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0'))) continue;
+            /* v5.23.1 Mb.5: skip junctions / symlinks / mount points. */
+            if (ffd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
             size_t nlen = strlen(n);
             char *child = (char *)__mn_alloc(plen + 1 + nlen + 1);
             memcpy(child, cpath, plen);
@@ -1786,7 +1815,7 @@ static int mn_dir_remove_recursive_(const char *cpath) {
             memcpy(child + plen + 1, n, nlen);
             child[plen + 1 + nlen] = '\0';
             if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                mn_dir_remove_recursive_(child);
+                mn_dir_remove_recursive_(child, depth + 1);
             } else {
                 remove(child);
             }
@@ -1812,7 +1841,7 @@ static int mn_dir_remove_recursive_(const char *cpath) {
             struct stat st;
             if (lstat(child, &st) == 0) {
                 if (S_ISDIR(st.st_mode)) {
-                    mn_dir_remove_recursive_(child);
+                    mn_dir_remove_recursive_(child, depth + 1);
                 } else {
                     remove(child);
                 }
@@ -1827,21 +1856,21 @@ static int mn_dir_remove_recursive_(const char *cpath) {
 
 MN_EXPORT int64_t __mn_dir_remove_recursive(MnString path) {
     char *cpath = mn_to_cstr(path);
-    int rc = mn_dir_remove_recursive_(cpath);
+    int rc = mn_dir_remove_recursive_(cpath, 0);
     __mn_free(cpath);
     return rc == 0 ? 0 : -1;
 }
 
 MN_EXPORT int64_t __mn_dir_count_files(MnString path) {
     char *cpath = mn_to_cstr(path);
-    int64_t r = mn_dir_walk_count_(cpath);
+    int64_t r = mn_dir_walk_count_(cpath, 0);
     __mn_free(cpath);
     return r;
 }
 
 MN_EXPORT int64_t __mn_dir_total_size(MnString path) {
     char *cpath = mn_to_cstr(path);
-    int64_t r = mn_dir_walk_size_(cpath);
+    int64_t r = mn_dir_walk_size_(cpath, 0);
     __mn_free(cpath);
     return r;
 }

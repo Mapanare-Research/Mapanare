@@ -18,6 +18,72 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.23.1** (ready, not tagged) — **Mb.\* — memory hygiene.**
+  Second release in the v5.23–v5.24 recovery arc. Closes Viper
+  **V.9** (the v5.14.1 `__mn_indent_to_braces` MnString lifecycle
+  leak; 30 bytes per colon-syntax compile in stage1; bounded to
+  single-shot in `mnc-stage1` but unbounded in long-lived embedded
+  contexts), **3 NEW Te.5 ASan leaks** on
+  `tests/golden/{88_if_let, 90_while_let, 91_let_else}.mn` (1 leak
+  / 8 bytes each, surfaced post-v5.22.0 panel via the
+  LeakSanitizer CI workflow), and **V.6 / V.7 / V.8** — Viper LOW,
+  3rd cycle each (DX.4 walker carries). Plus prevention
+  infrastructure: two new CI gates so future lifecycle /
+  cache-walker bugs surface at PR time. **Strict 3-stage fixed
+  point preserved at 239,485 lines / 0 diff** (16-release strict
+  streak; +260 lines vs v5.23.0's 239,225, expected from the new
+  `box_track` allocas at every `Some(x)` site introduced by Mb.2).
+  Goldens **95/95**. **Mb.1**: V.9 root cause was NOT the missing
+  tracked-output annotation Viper diagnosed — adding the dedicated
+  handler in `emit_llvm_text.py::_do_call` and calling
+  `_track_string` was insufficient; Python's `_do_call` applies a
+  blanket-move at every user-fn arg site
+  (`emit_llvm_text.py:4156-4178`), zeroing the
+  `_str_slots[name]` tracking slot at `tokenize(preprocessed,
+  filename)`. Self-host `emit_llvm.mn` doesn't have this
+  blanket-move (relies on explicit Move from lowerer); stage2/3
+  are leak-clean by construction. Surgical fix in Python:
+  `_last_tracked_str_slot = None` before `_put` so the slot lives
+  in `_local_strings` (drop-glue) but not in `_str_slots`
+  (blanket-move zero). Defensive: `__mn_indent_to_braces` added
+  to `is_string_returning_builtin` in self-host emitter.
+  **Mb.2**: Te.5 leak root cause was NOT the let-else / while-let
+  / if-let desugaring as the plan suspected — it's
+  `mapanare/self/emit_llvm.mn::emit_wrap_some` (line 3599)
+  heap-allocating the Some payload via `malloc(sizeof(val))` for
+  the `{i1, ptr}` Option representation but never calling
+  `emit_track_boxed`. Single-line fix:
+  `s = emit_track_boxed(s, ea)` after the malloc. Closes 3 NEW
+  Te.5 leaks AND improves baseline 17_option from 2/16 → 1/8.
+  Baseline TSV refreshed at
+  `docs/roadmap/v5/v5.4.2/baseline/asan-leak-baseline.tsv`.
+  **Mb.3**: new `sanitizer-mnc-stage1` job in
+  `.github/workflows/sanitizers.yml` — runs valgrind on goldens
+  86/88/90/91; greps for `__mn_indent_to_braces` in any leak
+  chain. Cannot use `--error-exitcode=1` directly (mnc-stage1
+  has known pre-existing single-shot leaks). **Mb.4 (V.6, 3rd
+  cycle)**: `MN_DIR_WALK_MAX_DEPTH` (4096) cap parameter on
+  `mn_dir_walk_size_` / `mn_dir_walk_count_` /
+  `mn_dir_remove_recursive_`. Pragmatic alternative to the plan's
+  full iterative work-queue rewrite — bounds C stack with minimal
+  LOC churn. **Mb.5 (V.7, 3rd cycle)**: Win32 walker branches now
+  skip `FILE_ATTRIBUTE_REPARSE_POINT` entries (junctions /
+  symlinks / mount points); POSIX side switched `stat()` →
+  `lstat()` in count/size paths for symmetric symlink-skip.
+  Verified locally: a fixture with a symlink pointing back into
+  the tree no longer double-counts files. **Mb.6 (V.8, 3rd
+  cycle)**: new `sanitizer-cache-walkers` job — populates
+  `.mnc_cache` fixture (3 levels + non-loop symlink) and runs
+  `mnc version` / `mnc cache stats` / `mnc cache clean` under
+  valgrind. Closes the v5.10.0+ delta sanitizer-coverage gap.
+  **Mb.7 deferred to v5.24.0**: investigation found the 9
+  LINK_FAIL goldens (47, 48, 49, 51, 55-59) trip an i64/i1
+  tag-emit bug in self-host emit_llvm.mn — unrelated to PIC reloc,
+  unrelated to memory hygiene. **Carry-forward delta**:
+  V.9 + V.6 + V.7 + V.8 + 3 NEW Te.5 leaks closed; 17_option
+  improved 2/16 → 1/8. See
+  `docs/roadmap/v5/v5.23.1/SESSION_REPORT.md` and `PLAN.md`.
+
 - **v5.23.0** (ready, not tagged) — **RC.\* — CI recovery + HIGH
   closures.** First release in the v5.23–v5.24 recovery arc.
   Closes the **8 silently-failing CI workflows** at v5.22.0 HEAD
@@ -1209,7 +1275,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (30269 symbols, 64824 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (30313 symbols, 64893 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

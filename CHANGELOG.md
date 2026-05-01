@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.23.1] - 2026-05-01
+
+**Mb.\* — memory hygiene.** Second release in the v5.23–v5.24
+recovery arc. Closes Viper V.9 (`__mn_indent_to_braces` lifecycle
+leak), 3 NEW Te.5 ASan leaks (88_if_let / 90_while_let /
+91_let_else), and V.6 / V.7 / V.8 (Viper LOW, 3rd cycle each — DX.4
+walker carries). Plus prevention infrastructure: two new CI gates
+(`sanitizer-mnc-stage1`, `sanitizer-cache-walkers`) so future
+lifecycle / cache-walker bugs surface at PR time. Strict 3-stage
+fixed point preserved at **239,485 lines / 0 diff** (16-release
+streak; +260 vs v5.23.0's 239,225, expected from the new
+`box_track` allocas). Goldens 95/95.
+
+### Added
+
+- **Mb.3** — `sanitizer-mnc-stage1` CI job in
+  `.github/workflows/sanitizers.yml`. Runs valgrind on
+  `mnc-stage1 emit-llvm` of goldens 86/88/90/91; greps for
+  `__mn_indent_to_braces` in any leak chain → fail on regression.
+  Cannot use `--error-exitcode=1` directly (mnc-stage1 has known
+  pre-existing single-shot leaks unrelated to V.9).
+- **Mb.6** — `sanitizer-cache-walkers` CI job. Builds a
+  populated `.mnc_cache` fixture (3 levels + non-loop symlink) and
+  runs `mnc version` / `mnc cache stats` / `mnc cache clean` under
+  valgrind. Closes the v5.10.0+ delta sanitizer-coverage gap
+  (Viper V.8, 3rd panel).
+
+### Changed
+
+- **Mb.4** (Viper V.6, **3rd cycle**) — added `MN_DIR_WALK_MAX_DEPTH`
+  (4096) cap parameter to `mn_dir_walk_size_` /
+  `mn_dir_walk_count_` / `mn_dir_remove_recursive_`. Pragmatic
+  alternative to the plan's full iterative work-queue rewrite —
+  bounds C stack against pathological directory trees with minimal
+  LOC churn.
+- **Mb.5** (Viper V.7, **3rd cycle**) — Win32 walker branches now
+  skip `FILE_ATTRIBUTE_REPARSE_POINT` entries (junctions /
+  symlinks / mount points). POSIX side switched `stat()` →
+  `lstat()` in count/size paths for symmetric symlink-skip
+  behavior. Verified locally: a fixture with a symlink pointing
+  back into the tree no longer double-counts files.
+- **Mb.2** baseline TSV refresh — updated
+  `docs/roadmap/v5/v5.4.2/baseline/asan-leak-baseline.tsv`:
+  17_option transitioned LINK_FAIL → LEAK 1/8;
+  62_list_output IMPROVED 13/346 → 9/141;
+  39_gpu_detect / 40_gpu_tensor unchanged.
+
+### Fixed
+
+- **Mb.1** (Viper V.9, MEDIUM) — `__mn_indent_to_braces`
+  lifecycle leak in `parser__parse`. The Python emitter's
+  `_do_call` blanket-move was zeroing the
+  `_str_slots[preprocessed]` tracking slot at the
+  `tokenize(preprocessed, filename)` call site (tokenize is a
+  borrow, not a consume). Surgical fix: dedicated handler for
+  `__mn_indent_to_braces` in `emit_llvm_text.py::_do_call` that
+  calls `_track_string(r)` then clears `_last_tracked_str_slot`
+  before `_put`, so the slot lives in `_local_strings` (drop-glue
+  consults this) but not in `_str_slots` (blanket-move consults
+  this). Drop-glue at `parse()` exit now correctly frees the
+  buffer. Verified: 30-byte leak from `__mn_indent_to_braces` →
+  `parser__parse` no longer present in valgrind output.
+  **stage2/3 are leak-clean by construction** (the self-host
+  `emit_llvm.mn` doesn't have the blanket-move; the leak is
+  stage1-specific). Defensive: also added
+  `__mn_indent_to_braces` to `is_string_returning_builtin` in
+  the self-host emitter.
+- **Mb.2** — 3 NEW Te.5 ASan leaks on
+  `tests/golden/{88_if_let, 90_while_let, 91_let_else}.mn`
+  (1 leak / 8 bytes each, surfaced post-v5.22.0 panel via the
+  LeakSanitizer CI workflow). Root cause: self-host
+  `emit_wrap_some` (`mapanare/self/emit_llvm.mn:3599`)
+  heap-allocates the Some payload via `malloc(sizeof(val))` to
+  build `{i1, ptr}`, but does not call `emit_track_boxed` on the
+  malloc'd pointer. Single-line fix:
+  `s = emit_track_boxed(s, ea)` after the malloc. The leak class
+  was load-bearing on golden 17_option since v5.4.2 baseline
+  (2 leaks); v5.23.1 closes 1 of 2.
+- Mb.7 (ASan-gate llc aborts) **deferred to v5.24.0** —
+  investigation found the 9 LINK_FAIL goldens (47, 48, 49, 51, 55-59)
+  are tripped by an i64/i1 tag-emit bug in self-host emit_llvm.mn,
+  unrelated to PIC reloc and unrelated to memory hygiene scope.
+
+See `docs/roadmap/v5/v5.23.1/SESSION_REPORT.md` and `PLAN.md`.
+
+
 ## [5.23.0] - 2026-05-01
 
 **RC.\* — CI recovery + HIGH closures.** First release in the
@@ -8587,7 +8673,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.1...HEAD
+[5.23.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.0...v5.23.1
 [5.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.23.0
 [5.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.22.0
 [5.21.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.1

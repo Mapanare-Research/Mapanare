@@ -17789,6 +17789,14 @@ fn emit_wrap_some(st: EmitState, dest: Value, val: Value) -> EmitState:
     let sz: String = dn + ".sz"
     s = emit_line(s, "  " + sz + " = ptrtoint ptr getelementptr (" + val_ty + ", ptr null, i32 1) to i64")
     s = emit_line(s, "  " + ea + " = call ptr @malloc(i64 " + sz + ")")
+    // v5.23.1 Mb.2: track the malloc'd box for drop-glue freeing.
+    // emit_drop_glue_boxed iterates st.boxed_owned at every ret and calls
+    // free() unless the pointer aliases a returned value. Without this,
+    // every Some(x) construction leaks the payload box on every fn exit
+    // — the Te.5 if-let / while-let / let-else NEW LEAK class on
+    // tests/golden/{88,90,91}.mn surfaces this latent gap, but it's also
+    // the load-bearing leak in golden 17_option since v5.4.2.
+    s = emit_track_boxed(s, ea)
     s = emit_line(s, "  store " + val_ty + " " + val.name + ", ptr " + ea)
     let opt_ty: String = llvm_option_type(llvm_ptr())
     let tag_name: String = dn + ".tag"
@@ -18608,6 +18616,11 @@ fn is_string_returning_builtin(fn_name: String) -> Bool:
     if fn_name == "gpu_device_name" { return true }
     if fn_name == "join" { return true }
     if fn_name == "typeof" { return true }
+    // v5.23.1 Mb.1: V.9 lifecycle leak — defensive belt-and-suspenders.
+    // lower.mn already types the dest as mir_string() so the kind-based
+    // branch at line 1650 catches it, but list this name explicitly so
+    // any future refactor that loses the mir_string() hint still tracks.
+    if fn_name == "__mn_indent_to_braces" { return true }
     return false
 
 // ---------------------------------------------------------------------------

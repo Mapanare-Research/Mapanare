@@ -15,7 +15,7 @@ test	compile_rc	run_rc	leak_count	leak_bytes	first_frame	class
 14_nested_struct	0	0	0	0	-	CLEAN
 15_multifunction	0	0	0	0	-	CLEAN
 16_string_escape	0	0	0	0	-	CLEAN
-17_option	0	-	-	-	llc	LINK_FAIL
+17_option	0	0	1	8	find_positive	LEAK
 18_method_chain	0	0	0	0	-	CLEAN
 19_nested_match	0	0	0	0	-	CLEAN
 20_recursion	0	0	0	0	-	CLEAN
@@ -60,7 +60,7 @@ test	compile_rc	run_rc	leak_count	leak_bytes	first_frame	class
 58_async_file_io	1	-	-	-	-	COMPILE_FAIL
 58_const_scope	0	0	0	0	-	CLEAN
 59_async_fanout	1	-	-	-	-	COMPILE_FAIL
-62_list_output	0	0	13	346	__mn_alloc	LEAK
+62_list_output	0	0	9	141	__mn_alloc	LEAK
 63_else_sino	0	0	0	0	-	CLEAN
 64_closure_typed	1	-	-	-	-	COMPILE_FAIL
 65_list_int_indexing	0	0	0	0	-	CLEAN

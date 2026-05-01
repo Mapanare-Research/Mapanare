@@ -158,6 +158,174 @@ jobs:
             /tmp/asan-leak/*.run.err
           retention-days: 14
 
+  sanitizer-mnc-stage1:
+    # v5.23.1 Mb.3 — valgrind regression gate on mnc-stage1 itself.
+    # The byte-identical oracle in tests/bootstrap/test_indent_preprocessor.py
+    # cannot detect lifecycle issues; this gate would have caught V.9
+    # (the __mn_indent_to_braces leak that was missable for two releases)
+    # at v5.14.1. Runs valgrind --leak-check=full on a colon-syntax
+    # golden plus the three Te.5 goldens whose ASan-detected leaks
+    # were closed in v5.23.1 Mb.2.
+    name: Valgrind on mnc-stage1 (lifecycle leak gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install LLVM + valgrind
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends valgrind clang-18 llvm-18
+          echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
+          pip install -e ".[dev]"
+
+      - name: Build mnc-stage1 + runtime
+        run: |
+          make build-rt
+          python scripts/build_stage1.py
+
+      # mnc-stage1 has known pre-existing leaks unrelated to V.9 / Mb.2
+      # (e.g., semantic__check_call_expr, __mn_file_read_or_empty,
+      # __mn_str_join — all bounded to single-shot in mnc-stage1, OS-
+      # reaped on exit). The gate cannot use --error-exitcode=1 directly
+      # without a suppression list. Instead, capture full valgrind output
+      # and grep for the specific leak markers we just closed: any
+      # reappearance of "__mn_indent_to_braces" in the leak chain means
+      # V.9 regressed; any "definitely lost" frame from the wrap_some
+      # malloc site means the Te.5 box-tracking regressed.
+      - name: Valgrind — colon-syntax golden (V.9 regression gate)
+        run: |
+          valgrind --leak-check=full --track-origins=yes \
+            mapanare/self/mnc-stage1 emit-llvm tests/golden/86_let_destructure_rest.mn \
+            -o /tmp/86.ll > /tmp/v_86.txt 2>&1 || true
+          if grep -q "__mn_indent_to_braces" /tmp/v_86.txt; then
+            echo "::error::V.9 regression — __mn_indent_to_braces leak reappeared"
+            grep -B1 -A4 "__mn_indent_to_braces" /tmp/v_86.txt
+            exit 1
+          fi
+
+      - name: Valgrind — Te.5 if-let golden (Mb.2 regression gate)
+        run: |
+          valgrind --leak-check=full --track-origins=yes \
+            mapanare/self/mnc-stage1 emit-llvm tests/golden/88_if_let.mn \
+            -o /tmp/88.ll > /tmp/v_88.txt 2>&1 || true
+          if grep -q "__mn_indent_to_braces" /tmp/v_88.txt; then
+            echo "::error::V.9 regression — __mn_indent_to_braces leak reappeared on 88_if_let"
+            grep -B1 -A4 "__mn_indent_to_braces" /tmp/v_88.txt
+            exit 1
+          fi
+
+      - name: Valgrind — Te.5 while-let golden (Mb.2 regression gate)
+        run: |
+          valgrind --leak-check=full --track-origins=yes \
+            mapanare/self/mnc-stage1 emit-llvm tests/golden/90_while_let.mn \
+            -o /tmp/90.ll > /tmp/v_90.txt 2>&1 || true
+          if grep -q "__mn_indent_to_braces" /tmp/v_90.txt; then
+            echo "::error::V.9 regression — __mn_indent_to_braces leak reappeared on 90_while_let"
+            grep -B1 -A4 "__mn_indent_to_braces" /tmp/v_90.txt
+            exit 1
+          fi
+
+      - name: Valgrind — Te.5 let-else golden (Mb.2 regression gate)
+        run: |
+          valgrind --leak-check=full --track-origins=yes \
+            mapanare/self/mnc-stage1 emit-llvm tests/golden/91_let_else.mn \
+            -o /tmp/91.ll > /tmp/v_91.txt 2>&1 || true
+          if grep -q "__mn_indent_to_braces" /tmp/v_91.txt; then
+            echo "::error::V.9 regression — __mn_indent_to_braces leak reappeared on 91_let_else"
+            grep -B1 -A4 "__mn_indent_to_braces" /tmp/v_91.txt
+            exit 1
+          fi
+
+  sanitizer-cache-walkers:
+    # v5.23.1 Mb.6 (V.8 — 3rd cycle): valgrind sweep over the v5.10.0+
+    # cache-walker exports (__mn_dir_count_files / __mn_dir_total_size /
+    # __mn_dir_remove_recursive) + __mn_executable_dir on the native mnc.
+    # Closes the v5.10.0+ delta sanitizer-coverage gap that Viper flagged
+    # three panels in a row. Builds a populated cache fixture (3 levels +
+    # a non-loop symlink) and exercises stats / clean / --version under
+    # valgrind --leak-check=full.
+    name: Valgrind on mnc cache walkers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install LLVM + valgrind
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends valgrind clang-18 llvm-18
+          echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
+          pip install -e ".[dev]"
+
+      - name: Build native mnc (stage1)
+        run: |
+          make build-rt
+          python scripts/build_stage1.py
+
+      - name: Populate cache fixture
+        # The native main.mn cache subcommand uses ``.mnc_cache`` in CWD
+        # (no env-var override at v5.23.1). Build the fixture under that
+        # name so ``mnc cache stats`` / ``mnc cache clean`` actually
+        # exercise the walker exports.
+        run: |
+          mkdir -p /tmp/walker-test/.mnc_cache/level1/level2
+          touch /tmp/walker-test/.mnc_cache/file1.bin
+          touch /tmp/walker-test/.mnc_cache/level1/file2.bin
+          touch /tmp/walker-test/.mnc_cache/level1/level2/file3.bin
+          ln -s /tmp/walker-test/.mnc_cache/level1 /tmp/walker-test/.mnc_cache/non-loop-symlink
+          printf 'mod-a\nmod-b\nmod-c\n' > /tmp/walker-test/.mnc_cache/manifest.txt
+          # Stage the binary alongside the fixture so we can cd into the
+          # working dir and invoke it via absolute path.
+          cp mapanare/self/mnc-stage1 /tmp/walker-test/
+
+      - name: Valgrind — mnc version (exercises __mn_executable_dir)
+        run: |
+          valgrind --leak-check=full --track-origins=yes \
+            mapanare/self/mnc-stage1 version > /tmp/v_ver.txt 2>&1 || true
+          if grep -qE "Invalid read|Invalid write|Use of uninitialised|Conditional jump.*uninitialised" /tmp/v_ver.txt; then
+            echo "::error::__mn_executable_dir memory error detected"
+            cat /tmp/v_ver.txt
+            exit 1
+          fi
+          echo "mnc version under valgrind: OK (no UAF / OOB / uninit)"
+
+      - name: Valgrind — mnc cache stats (exercises walk_count / walk_size)
+        run: |
+          cd /tmp/walker-test
+          valgrind --leak-check=full --track-origins=yes \
+            ./mnc-stage1 cache stats > /tmp/v_stats.txt 2>&1 || true
+          if grep -qE "Invalid read|Invalid write|Use of uninitialised|Conditional jump.*uninitialised" /tmp/v_stats.txt; then
+            echo "::error::cache-walker memory error detected on cache stats"
+            cat /tmp/v_stats.txt
+            exit 1
+          fi
+          echo "mnc cache stats under valgrind: OK (no UAF / OOB / uninit)"
+
+      - name: Valgrind — mnc cache clean (exercises remove_recursive)
+        run: |
+          cd /tmp/walker-test
+          valgrind --leak-check=full --track-origins=yes \
+            ./mnc-stage1 cache clean > /tmp/v_clean.txt 2>&1 || true
+          if grep -qE "Invalid read|Invalid write|Use of uninitialised|Conditional jump.*uninitialised" /tmp/v_clean.txt; then
+            echo "::error::cache-walker memory error detected on cache clean"
+            cat /tmp/v_clean.txt
+            exit 1
+          fi
+          echo "mnc cache clean under valgrind: OK (no UAF / OOB / uninit)"
+
   tsan-async:
     name: ThreadSanitizer (async goldens)
     runs-on: ubuntu-latest

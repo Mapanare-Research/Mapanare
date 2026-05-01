@@ -242,9 +242,9 @@ v5.22.0 HEAD.
 | Pk.1.A | Linux/macOS versioned-tarball smoke gates missing | LOW | **STILL OPEN — 11 releases** | — | v5.13.0 alias-drop deadline cited in 6 written locations did not ship |
 | Cobra per-PR fixed-point gate (3rd-time ask) | Per-PR fixed-point CI gate not wired | LOW | **CLOSED** (mea culpa from v5.8.0 / v5.11.0 — was always wired) | v4.29.0 | `.github/workflows/ci.yml:858`; Cobra confirmed at v5.22.0 panel |
 | Cobra `>= 45` magic | Hard-coded threshold in `build_from_seed.sh:159` | LOW | **STILL OPEN — 3rd panel** | — | Threshold drifting from corpus year-over-year (now ~50–55 vs 95-corpus) |
-| Viper V.6 | DX.4 walkers unbounded recursion | LOW | **STILL OPEN — 3rd cycle** | — | `mn_dir_walk_*_` still directly recursive; degenerate-input risk preserved |
-| Viper V.7 | Win32 walkers follow reparse points | LOW | **STILL OPEN — 3rd cycle** | — | `grep FILE_ATTRIBUTE_REPARSE_POINT runtime/native/mapanare_core.c` returns zero |
-| Viper V.8 | No ASan/valgrind sweep on v5.10.0+ deltas | LOW | **STILL OPEN — 3rd cycle** | — | `sanitizer-cache-walkers` job not present; 13 releases without sanitizer sweep on cache walker code |
+| Viper V.6 | DX.4 walkers unbounded recursion | LOW | **CLOSED v5.23.1 Mb.4** | v5.23.1 Mb.4 | `MN_DIR_WALK_MAX_DEPTH` (4096) cap parameter added to all 3 walkers — pragmatic alternative to plan's full iterative work-queue rewrite |
+| Viper V.7 | Win32 walkers follow reparse points | LOW | **CLOSED v5.23.1 Mb.5** | v5.23.1 Mb.5 | `FILE_ATTRIBUTE_REPARSE_POINT` skip in 3 Win32 sites; POSIX `stat()` → `lstat()` for symmetric symlink-skip |
+| Viper V.8 | No ASan/valgrind sweep on v5.10.0+ deltas | LOW | **CLOSED v5.23.1 Mb.6** | v5.23.1 Mb.6 | `sanitizer-cache-walkers` CI job exercises `mnc cache stats` / `cache clean` / `version` under valgrind |
 | Boa Bo.22 | `mapanare run` vs `mnc run` in README Hello World | LOW | **CLOSED v5.23.0 RC.14** | v5.23.0 RC.14 | All 5 invocations + alias note ("`mapanare` is also installed as an alias for `mnc`.") added |
 | Boa Bo.19 | Test count drift (badge/body/measurement triple) | LOW | **CLOSED v5.23.0 RC.2** | v5.23.0 RC.2 (incidental closure same paragraph) | 5,800+ in body now matches badge |
 | Boa Bo.20 | README links to `benchmarks/FINAL_REPORT_v4.153.md` | LOW | **CLOSED v5.23.0 RC.2** | v5.23.0 RC.2 (incidental closure same paragraph) | Updated to `benchmarks/FINAL_REPORT.md` |
@@ -258,7 +258,8 @@ v5.22.0 HEAD.
 | Reg.1 | `check_struct_registry.py` regex hard-codes brace headers (`struct Name {`); inert since v5.17.0 Sh.\* mechanical rewrite. 23 violations at HEAD; **5 releases of silent registry blindness** during the largest feature-velocity arc in v5 history. The gate v4.143.0 commissioned to catch Ge.1-class drift is the same gate that became inert when Sh.B mechanically rewrote every struct definition. | HIGH | Anaconda §2.A + Cobra #1 | 1 | **CLOSED v5.23.0 RC.1** | — |
 | Bo.18r-3 | `README.md:188-192` benchmarks-section lead-in paragraph still v5.7.1-vintage. v5.21.1 H.1 closed sibling line 176 (the line the lead's audit cited); panel-flagged 188-192 was not in the audit. **3rd consecutive panel of the same paragraph.** Severity escalated MEDIUM → HIGH at v5.22.0 per process-discipline signal. | HIGH | Boa #1 | 3 | **CLOSED v5.23.0 RC.2** (rounded `239k` framing; line 176 also updated) | — |
 | Bo.25 | Goldens badge `66/66` across all 4 READMEs while body says `95/95`. Same systematic-skill-gap fingerprint as v5.11.0 Bo.21. Three releases of badge lag. Structural fix: extend `bump_version.py` to auto-discover `tests/golden/*.mn` count. | HIGH | Boa #2 | 1 | **CLOSED v5.23.0 RC.3** (one-shot + structural; `tests/test_bump_version.py` 5/5) | — |
-| V.9 | `__mn_indent_to_braces` MnString lifecycle leak: returned `joined` buffer is not drop-glue tracked at the `parser.mn::parse` call site. Bounded to single-shot in `mnc-stage1`; unbounded if embedded in long-lived process. The byte-identical oracle `test_indent_preprocessor.py` cannot detect lifecycle issues — class blind spot. **Mandatory CI follow-up:** valgrind regression gate. | MEDIUM | Viper V.9 | 1 | OPEN | v5.22.x |
+| V.9 | `__mn_indent_to_braces` MnString lifecycle leak: returned `joined` buffer is not drop-glue tracked at the `parser.mn::parse` call site. Bounded to single-shot in `mnc-stage1`; unbounded if embedded in long-lived process. The byte-identical oracle `test_indent_preprocessor.py` cannot detect lifecycle issues — class blind spot. **Mandatory CI follow-up:** valgrind regression gate. | MEDIUM | Viper V.9 | 1 | **CLOSED v5.23.1 Mb.1** | v5.23.1 Mb.1 (Python `_do_call` blanket-move bypass) + Mb.3 (`sanitizer-mnc-stage1` regression gate) |
+| Te.5 ASan leaks | 3 NEW LEAK regressions on `tests/golden/{88_if_let, 90_while_let, 91_let_else}.mn` — surfaced post-v5.22.0 panel via the LeakSanitizer CI workflow. Root cause was self-host `emit_wrap_some` malloc'ing the Some payload but never calling `emit_track_boxed`. Latent on baseline 17_option since v5.4.2. | MEDIUM | LeakSanitizer CI (post-panel) | 1 | **CLOSED v5.23.1 Mb.2** | v5.23.1 Mb.2 (`s = emit_track_boxed(s, ea)` after malloc; baseline TSV refreshed) |
 | Te.3 hollow / asymmetric closure | Brace-deprecation warning misses single-line `{...}` shape; native `mnc-stage1` has zero brace-deprecation logic. PRE_PANEL_AUDIT.md's own canonical pre-flight test command demonstrates the gap. **Asymmetric closure**: PY: closed | SH: open. Three independent reviewers flagged. | MEDIUM | Coral M1 / Anaconda §3 / Rattler #1 | 1 | OPEN | v5.22.x (must close before v6.0 hard removal) |
 | Hollow-feature gate calibration | `check_no_hollow_features.py` step 3 fails on `CompClause` (v5.15.0 Te.2) + `FieldPattern` (v5.20.0 Te.5.D) — whitelist calibration miss. Same 5+/2+ release silent-fail pattern as Reg.1. | MEDIUM | Anaconda §2.B | 1 | **CLOSED v5.23.0 RC.4** | — |
 | Manifesto coherence (M2) | `docs/manifesto.md:31` "Curly braces for blocks" untouched against brace-deprecated codebase. **3rd consecutive panel of manifesto drift.** | MEDIUM | Coral M2 | 3 | OPEN | v5.22.x |
@@ -295,6 +296,19 @@ v5.22.0 HEAD.
   (v5.24.1), Bo.27 (v5.27.0 audit), Stage2 teardown (v6.0)
 - **1 v6.0-rescoped** unchanged
 - **15 RC.\* closed in v5.23.0** (RC.1–RC.15 in one mechanical session)
+
+**Aggregate state entering v5.24.x (post-v5.23.1 Mb.\* closeout):**
+- **0 HIGH** open
+- **3 MEDIUM** open: Te.3 hollow-surface (v5.23.2), Manifesto
+  coherence M2 (v5.24.1), SPEC corpus M3 (v5.24.1), Hy.\* cluster
+  (v5.24.0). V.9 + Te.5 ASan leaks closed.
+- **~4 LOW** open: Pk.1.A, `>= 45` magic, Coral L1–L5 / TR1, Bo.27,
+  Stage2 teardown. **V.6 / V.7 / V.8 closed** (3rd-cycle exit).
+  Mb.7 (ASan-gate llc aborts) added as a new tracked v5.24.0+
+  LOW (i64/i1 tag-emit bug, async-codegen llc class, pre-existing,
+  unrelated to memory hygiene).
+- **1 v6.0-rescoped** unchanged
+- **6 Mb.\* closed in v5.23.1** (Mb.1–Mb.6); Mb.7 deferred.
 
 **Cadence reset:** next routine panel due at **v5.27.0** (5
 minors past v5.22.0).
