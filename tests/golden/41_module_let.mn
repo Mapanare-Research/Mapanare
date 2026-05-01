@@ -3,11 +3,9 @@
 let MAX_SIZE: Int = 100
 let PI_APPROX: Int = 3
 
-fn get_max() -> Int {
+fn get_max() -> Int:
     return MAX_SIZE
-}
 
-fn main() {
+fn main():
     print(get_max())
     print(PI_APPROX)
-}

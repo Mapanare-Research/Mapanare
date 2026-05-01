@@ -4,7 +4,6 @@
 // and parses ``"${expr}"`` and lowers it through ``InterpString`` →
 // ``InterpConcat`` MIR (mirror of mapanare/lower.py::_lower_interp_string).
 
-fn main() {
+fn main():
     let n: String = "world"
     print("hi ${n}")
-}

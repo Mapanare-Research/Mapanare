@@ -5,8 +5,7 @@
 // Python ``_lower_let`` v5.15.0 Te.2.C empty-MapLit patch). Mirror
 // of v5.15.0 ``test_map_comp_doubles``.
 
-fn main() {
+fn main():
     let doubled: Map<Int, Int> = #{ k: k * 2 for k in 0..5 }
     print(str(len(doubled)))
     print(str(doubled[3]))
-}

@@ -1,21 +1,16 @@
 // tests/golden/27_impl.mn — Impl method dispatch
 
-struct Counter {
+struct Counter:
     value: Int
-}
 
-impl Counter {
-    fn get(self) -> Int {
+impl Counter:
+    fn get(self) -> Int:
         return self.value
-    }
 
-    fn add(self, n: Int) -> Int {
+    fn add(self, n: Int) -> Int:
         return self.value + n
-    }
-}
 
-fn main() {
+fn main():
     let c = new Counter { value: 42 }
     print(c.get())
     print(c.add(8))
-}

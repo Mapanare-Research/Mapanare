@@ -2,7 +2,7 @@
 //
 // Tests read and write via t[i, j] syntax with bounds checking.
 
-fn main() {
+fn main():
     // 2-D read
     let a = Tensor<Float>[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
     print(str(a[0, 0]))
@@ -30,7 +30,6 @@ fn main() {
     // Integer tensor
     let e = Tensor<Int>[100, 200, 300]
     print(str(e[1]))
-}
 
 // Expected output:
 // 1

@@ -1,17 +1,14 @@
-fn describe(opt: Option<Int>) -> String {
-    match opt {
-        Some(0) | None => "zero or absent",
-        Some(x) if x > 0 && x < 10 => "small positive",
-        Some(x) if x > 0 => "large positive",
-        Some(x) if x < 0 => "negative",
+fn describe(opt: Option<Int>) -> String:
+    match opt:
+        Some(0) | None => "zero or absent"
+        Some(x) if x > 0 && x < 10 => "small positive"
+        Some(x) if x > 0 => "large positive"
+        Some(x) if x < 0 => "negative"
         _ => "unreachable"
-    }
-}
 
-fn main() {
+fn main():
     print(describe(Some(0)))
     print(describe(None))
     print(describe(Some(5)))
     print(describe(Some(42)))
     print(describe(Some(-1)))
-}

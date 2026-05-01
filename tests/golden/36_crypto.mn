@@ -1,4 +1,4 @@
-fn main() {
+fn main():
     // SHA-256 (hex-encoded digest)
     pon hash: String = hex_encode(sha256("hello world"))
     print(hash)
@@ -10,4 +10,3 @@ fn main() {
     // Hex encode
     pon hex: String = hex_encode("AB")
     print(hex)
-}

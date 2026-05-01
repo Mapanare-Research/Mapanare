@@ -9,11 +9,9 @@
 let BLOCK_SIZE: Int = 256
 let GRID_SIZE: Int = 1
 
-fn compute_threads() -> Int {
+fn compute_threads() -> Int:
     return BLOCK_SIZE * GRID_SIZE
-}
 
-fn main() {
+fn main():
     print(compute_threads())
     print("threads computed via module let")
-}

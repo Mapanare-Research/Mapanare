@@ -2,7 +2,6 @@
 // is re-tokenized and re-parsed via parse_expr, so any expression
 // shape is supported (Ident, MethodCall, Binary, Call, Index, ...).
 
-fn main() {
+fn main():
     let s: String = "hi"
     print("${s.to_upper()}")
-}

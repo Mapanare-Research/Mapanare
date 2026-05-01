@@ -3,19 +3,15 @@
 
 const MAX: Int = 100
 
-fn check(x: Int) -> Bool {
+fn check(x: Int) -> Bool:
     return x < MAX
-}
 
-fn main() {
-    si check(50) {
+fn main():
+    si check(50):
         print("true")
-    } sino {
+    sino:
         print("false")
-    }
-    si check(150) {
+    si check(150):
         print("true")
-    } sino {
+    sino:
         print("false")
-    }
-}

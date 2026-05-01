@@ -1,24 +1,19 @@
 // tests/golden/29_generic_impl.mn — Generic impl blocks
 
-struct Box<T> {
+struct Box<T>:
     value: T
-}
 
-impl<T> Box<T> {
-    fn get(self) -> T {
+impl<T> Box<T>:
+    fn get(self) -> T:
         return self.value
-    }
 
-    fn set(self, v: T) -> T {
+    fn set(self, v: T) -> T:
         return v
-    }
-}
 
-fn main() {
+fn main():
     let b = new Box { value: 42 }
     print(b.get())
     print(b.set(99))
 
     let c = new Box { value: 7 }
     print(c.get())
-}

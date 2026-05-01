@@ -4,7 +4,6 @@
 // after a buffer-rebuild approach hit a bootstrap-lower String
 // concat bug).
 
-fn main() {
+fn main():
     let x: Int = 7
     print("[${x}] done")
-}

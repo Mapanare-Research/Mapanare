@@ -1,9 +1,7 @@
-tipo Pair {
-    first: Int,
+tipo Pair:
+    first: Int
     second: Int
-}
 
-fn main() {
+fn main():
     pon p: Pair = new Pair { first: 10, second: 20 }
     print(str(p.first))
-}

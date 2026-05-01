@@ -5,8 +5,7 @@ const N: Int = 100
 const DOUBLED: Int = 200
 const GREETING: String = "hello"
 
-fn main() {
+fn main():
     print(str(N))
     print(str(DOUBLED))
     print(GREETING)
-}

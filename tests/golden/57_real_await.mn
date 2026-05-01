@@ -3,26 +3,21 @@
 // Tests multiple async fns, chained awaits, and arithmetic on results.
 // Expected output: 110
 
-async fn fetch_a() -> Int {
+async fn fetch_a() -> Int:
     return 20
-}
 
-async fn fetch_b() -> Int {
+async fn fetch_b() -> Int:
     return 40
-}
 
-async fn fetch_c() -> Int {
+async fn fetch_c() -> Int:
     return 50
-}
 
-async fn fanout() -> Int {
+async fn fanout() -> Int:
     let a = await fetch_a()
     let b = await fetch_b()
     let c = await fetch_c()
     return a + b + c
-}
 
-fn main() {
+fn main():
     let total = block_on(fanout())
     print(str(total))
-}

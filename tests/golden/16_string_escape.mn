@@ -1,8 +1,7 @@
-fn main() {
+fn main():
     let msg: String = "line1\nline2"
     print(msg)
     let tab: String = "col1\tcol2"
     print(tab)
     let bs: String = "back\\slash"
     print(bs)
-}

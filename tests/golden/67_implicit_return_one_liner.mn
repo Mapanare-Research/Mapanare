@@ -10,8 +10,7 @@ fn double(x: Int) -> Int = x * 2
 fn id(y: Int) -> Int = y
 fn add(a: Int, b: Int) -> Int = a + b
 
-fn main() {
+fn main():
     print(str(double(5)))
     print(str(id(7)))
     print(str(add(3, 4)))
-}

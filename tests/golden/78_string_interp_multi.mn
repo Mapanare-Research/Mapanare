@@ -2,8 +2,7 @@
 // to a left-fold of ``__mn_str_concat`` with the final concat
 // writing into the InterpConcat dest directly.
 
-fn main() {
+fn main():
     let a: Int = 1
     let b: Int = 2
     print("${a} and ${b}")
-}

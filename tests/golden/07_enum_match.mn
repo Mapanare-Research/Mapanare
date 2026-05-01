@@ -1,13 +1,10 @@
-tipo Color {
+tipo Color:
     | Red
     | Green
     | Blue
-}
 
-fn main() {
+fn main():
     pon c: Color = Color::Green
-    match c {
-        Green => { print("green") },
+    match c:
+        Green => { print("green") }
         _ => { print("other") }
-    }
-}

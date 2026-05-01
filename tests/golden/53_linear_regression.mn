@@ -3,7 +3,7 @@
 // Demonstrates tensor construction, element-wise ops, broadcasting,
 // indexing, and reductions in a practical ML context.
 
-fn main() {
+fn main():
     // Training data: y = 2x + 1 (with some noise)
     let X = Tensor<Float>[1.0, 2.0, 3.0, 4.0, 5.0]
     let y = Tensor<Float>[3.0, 5.0, 7.0, 9.0, 11.0]
@@ -15,7 +15,7 @@ fn main() {
     let n = 5.0
 
     // Manual gradient descent (10 iterations for demo)
-    for epoch in 0..10 {
+    for epoch in 0..10:
         // Forward: pred = w * X + b
         let pred = X * w + b
 
@@ -29,13 +29,11 @@ fn main() {
         // Update
         w = w - lr * grad_w
         b = b - lr * grad_b
-    }
 
     // After 10 iterations, w should be approaching 2.0 and b approaching 1.0
     print("w = " + str(w))
     print("b = " + str(b))
     print("converging")
-}
 
 // Expected output (approximate):
 // w = <approaching 2.0>

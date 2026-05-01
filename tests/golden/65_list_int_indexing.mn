@@ -5,7 +5,7 @@
 // `print(str(arr[0]))` (str() saw a pointer) and raw pointer values
 // for `let v: Int = arr[0]`. Python bootstrap was correct.
 
-fn main() {
+fn main():
     let mut arr: List<Int> = []
     arr.push(42)
     arr.push(99)
@@ -28,4 +28,3 @@ fn main() {
     // In arithmetic.
     let sum: Int = arr[0] + arr[1]
     print(str(sum))
-}

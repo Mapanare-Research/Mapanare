@@ -3,6 +3,5 @@
 // verbatim in the STRING_LIT value so ``has_interpolation`` can
 // detect the escape via the prior backslash byte.
 
-fn main() {
+fn main():
     print("\${not_a_var}")
-}

@@ -1,4 +1,4 @@
-fn main() {
+fn main():
     // Regex match
     pon matched: Bool = regex_match("[0-9]+", "abc123def")
     print(str(matched))
@@ -7,4 +7,3 @@ fn main() {
     // Regex replace
     pon result: String = regex_replace("[0-9]+", "abc123def456", "NUM")
     print(result)
-}

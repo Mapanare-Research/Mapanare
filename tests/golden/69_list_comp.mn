@@ -3,10 +3,9 @@
 // a hand-written loop modulo SSA naming. Mirror of v5.15.0
 // ``test_list_comp_doubles``.
 
-fn main() {
+fn main():
     let xs: List<Int> = [1, 2, 3, 4, 5]
     let doubled: List<Int> = [x * 2 for x in xs]
     print(str(len(doubled)))
     print(str(doubled[0]))
     print(str(doubled[4]))
-}

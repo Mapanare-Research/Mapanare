@@ -1,7 +1,6 @@
 // v5.16.0 Te.4 — Bool interpolation via ``__mn_str_from_bool``
 // (with the customary ``zext i1 → i64`` step).
 
-fn main() {
+fn main():
     let b: Bool = true
     print("b=${b}")
-}

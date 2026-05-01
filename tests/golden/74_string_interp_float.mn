@@ -1,6 +1,5 @@
 // v5.16.0 Te.4 — Float interpolation via ``__mn_str_from_float``.
 
-fn main() {
+fn main():
     let f: Float = 3.14
     print("f=${f}")
-}
