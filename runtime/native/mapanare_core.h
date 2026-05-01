@@ -708,6 +708,11 @@ MN_EXPORT void __mn_panic(MnString message);
  *  Prints `assertion failed[: <message>]` to stderr and exits 1. */
 MN_EXPORT void __mn_assert_fail(MnString message);
 
+/** v5.14.1 B.5/B.6: colon-block preprocessor. Mirror of
+ *  mapanare/parser.py::_indent_to_braces. Returns a heap MnString;
+ *  caller owns the result. */
+MN_EXPORT MnString __mn_indent_to_braces(MnString source);
+
 /** v5.8.4 Wb.2: returns 1 if the running host is Win64, 0 otherwise.
  *  Kept for source-compat with v5.8.4–v5.8.5 self-hosted emitter
  *  builds. The v5.8.6 We.1 closure of the i686 latent gap supersedes

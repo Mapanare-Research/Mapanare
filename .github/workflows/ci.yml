@@ -612,6 +612,20 @@ jobs:
           file mapanare_core.o
           echo "macOS native build: OK"
 
+      # v5.23.0 RC.8: build the canonical libmapanare_rt.a (8 modules + Metal)
+      # via the Makefile target. mapanare/cli.py's link path looks for
+      # ``runtime/native/libmapanare_rt.a`` by exact name when shelling out
+      # to clang from `mapanare run` / `mapanare build`. The earlier ad-hoc
+      # libmapanare.a is only used for the C-runtime smoke tests above.
+      # Without this step `pytest tests/` on macOS hits "undefined symbol"
+      # errors for `__mn_str_eq` / `__mn_str_println` etc. on every test
+      # that compiles a .mn program through the Python CLI.
+      - name: Build libmapanare_rt.a for cli.py link path (RC.8)
+        run: |
+          make build-rt
+          test -f runtime/native/libmapanare_rt.a
+          file runtime/native/libmapanare_rt.a
+
       - name: Run macOS C runtime tests
         run: |
           cd runtime/native
@@ -884,8 +898,15 @@ jobs:
       - name: Build mnc-stage1
         run: python scripts/build_stage1.py
 
-      - name: Build native runtime
+      - name: Build native runtime (.so)
         run: python runtime/native/build_native.py
+
+      # v5.23.0 RC.7: build_native.py only produces libmapanare_runtime.so;
+      # the static archive libmapanare_rt.a needed by the builder image is
+      # produced by `make build-rt`. Without this step the next ``cp``
+      # silently fails the docker-smoke job.
+      - name: Build runtime archive (libmapanare_rt.a)
+        run: make build-rt
 
       - name: Stage builder build context
         run: |

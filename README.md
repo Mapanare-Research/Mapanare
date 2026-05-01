@@ -24,9 +24,9 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.22.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.23.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-5800+_passing-brightgreen.svg?style=flat-square)]()
-[![Goldens](https://img.shields.io/badge/goldens-66%2F66-brightgreen.svg?style=flat-square)]()
+[![Goldens](https://img.shields.io/badge/goldens-95%2F95-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -80,11 +80,11 @@ The multi-stage Dockerfile uses
 ## Hello World
 
 ```bash
-mapanare init hello && cd hello
-mapanare run main.mn
+mnc init hello && cd hello
+mnc run main.mn
 ```
 
-`mapanare init` scaffolds a runnable project (terse `main.mn`,
+`mnc init` scaffolds a runnable project (terse `main.mn`,
 `mapanare.toml`, `.gitignore`, `README.md`). For a one-liner:
 
 ```mn
@@ -93,11 +93,18 @@ fn main():
 ```
 
 ```bash
-mapanare run hello.mn        # compile + run
-mapanare build hello.mn      # produce a native binary
-mapanare check hello.mn      # type-check, no codegen
-mapanare lsp                 # start the language server (stdio)
+mnc run hello.mn        # compile + run
+mnc build hello.mn      # produce a native binary
+mnc check hello.mn      # type-check, no codegen
+mnc lsp                 # start the language server (stdio)
 ```
+
+(`mapanare` is also installed as an alias for `mnc`.)
+
+Source canonicalization: [`docs/guides/formatter.md`](docs/guides/formatter.md).
+New project scaffolding: [`docs/guides/init.md`](docs/guides/init.md).
+VS Code: [`docs/guides/lsp.md`](docs/guides/lsp.md).
+Docker: [`docs/guides/docker.md`](docs/guides/docker.md).
 
 VS Code users: install
 [the official extension](https://github.com/Mapanare-Research/mapanare-vscode)
@@ -111,7 +118,7 @@ VS Code users: install
 Take your existing Python scripts and compile them to native binaries:
 
 ```bash
-mapanare build your_script.py -o your_script
+mnc build your_script.py -o your_script
 ./your_script   # 33-239x faster
 ```
 
@@ -173,7 +180,7 @@ The self-hosted compiler runs the full corpus (95/95 native goldens at v5.21.0):
 - **Or-pattern matching with guards** — `Plus | Minus if cond => body` over enum variants and built-in constructors (`None` / `Some` / `Ok` / `Err`).
 - **Drop-glue ownership tracking** — string / list / boxed / tensor lifetimes tracked through return paths and loop iterations; valgrind / ASan / LSan / TSan all clean on the corpus.
 
-Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 238,086 lines; restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata diff at the source; held through v5.17.0's mechanical brace → colon rewrite, v5.20.0's struct ergonomics, and v5.21.0's chained comparisons — longest streak in project history at 13 consecutive releases).
+Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 239k lines; restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata diff at the source; held through v5.17.0's mechanical brace → colon rewrite, v5.20.0's struct ergonomics, v5.21.0's chained comparisons, and v5.23.0's CI recovery — longest streak in project history at 14 consecutive releases).
 
 ---
 
@@ -185,13 +192,13 @@ Geometric mean across 6 cross-language benchmarks (median of 10 runs):
 |---|---:|---:|---:|---:|
 | **Mapanare** | **168x faster** | 0.85x (faster) | 1.17x | 0.96x |
 
-The self-hosted compiler compiles itself (3-stage fixed point reached
-at v4.134.0; temporarily regressed at v5.1.2 from In.1 inliner
-re-enable; restored to NEAR at v5.6.11, preserved through v5.8.0 —
-4-line VERSION-metadata diff over a 217k-line stage2.ll). 5,720+
-tests passing, zero flaky across 30 sequential runs.
+The self-hosted compiler compiles itself to a strict 3-stage fixed
+point (stage2.ll == stage3.ll byte-identical at 239k lines; strict
+since v5.9.0, held through 14 consecutive releases — see "Native
+compiler" above). 5,800+ tests passing, zero flaky across 40+
+sequential runs.
 
-[Full benchmark report](benchmarks/FINAL_REPORT_v4.153.md)
+[Full benchmark report](benchmarks/FINAL_REPORT.md)
 
 ---
 

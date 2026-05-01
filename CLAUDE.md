@@ -18,6 +18,70 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.23.0** (ready, not tagged) — **RC.\* — CI recovery + HIGH
+  closures.** First release in the v5.23–v5.24 recovery arc.
+  Closes the **8 silently-failing CI workflows** at v5.22.0 HEAD
+  (4 panel-flagged, 4 NEW), the v5.22.0 panel's **4 HIGH** docket
+  items, **4 MEDIUM**, and **6 LOW** — 15 items in one mechanical
+  session. **Strict 3-stage fixed point preserved at 239,225
+  lines / 0-line diff** (15-release strict streak; line count
+  grew from v5.22.0's documented 238,086 because `mnc_all.mn` was
+  stale at v5.22.0 — re-concatenation surfaced the v5.21.0 Te.6
+  chain-compare references that weren't being tested). Goldens
+  **95/95**. **HIGH**: **RC.1 Reg.1** —
+  `scripts/check_struct_registry.py` regex extended to accept
+  colon-form (`[\{:]`) plus indent-tracking body parser; surfaced
+  5 real latent drifts all in `LowerState`
+  (`comp_type_hint`/v5.15.1, `struct_update_counter`/v5.20.1,
+  `chain_compare_counter`/v5.21.0). v5.17.0 Sh.\*'s colon-syntax
+  migration silently disabled the gate for 5 releases. Drift was
+  cosmetic for runtime correctness (`find_struct_entry` searches
+  end-first; `register_mir_struct`'s real registration shadows
+  the stale internal one), but the gate's contract is sync.
+  Both registry sites in `mapanare/self/emit_llvm.mn` updated to
+  20 fields — only `mapanare/self/*.mn` edit in v5.23.0
+  (data-only, 3 strings × 2 list literals; zero compiler logic).
+  **RC.2 Bo.18r** (3rd consecutive panel) — `README.md:188-192`
+  rewritten with rounded `239k` / 14-release / 5,800+ framing
+  (self-immunization; v5.9.2 Dn.1 pattern). Closes Bo.19 + Bo.20.
+  **RC.3 Bo.25** — goldens badge `66/66` → `95/95` across all 4
+  README locales; `scripts/bump_version.py` extended with
+  `_GOLDENS_BADGE_RE` + `_count_goldens()` + per-locale sweep
+  (parallel to version-badge sweep); new
+  `tests/test_bump_version.py` 5/5. **MEDIUM**: **RC.4** added
+  `CompClause` + `FieldPattern` to
+  `_AST_INFRASTRUCTURE` in `check_no_hollow_features.py`. **RC.5**
+  fixed `docs/SPEC.md:1456` (`fn id(y) = y` → `fn id<T>(y: T) -> T = y`).
+  **RC.6** force-added `.reviews/v5.22.0/prompt.md` (10/11 panel
+  artifacts already tracked from v5.22.0 setup). **RC.7 Docker
+  Smoke** — root cause was `runtime/native/build_native.py`
+  produces only `.so` not `libmapanare_rt.a`; added "Build runtime
+  archive" step (`make build-rt`) to both `ci.yml` and
+  `publish-docker.yml`. **RC.8 macOS/iOS** — root cause was
+  `cli.py` looks for `libmapanare_rt.a` by exact name but macOS
+  workflow built ad-hoc `libmapanare.a`; added `make build-rt`
+  step (already has Darwin handling for `mapanare_metal.m`).
+  **RC.9 stage2 ir_doctor** — v5.21.0 Te.6 added the first
+  cross-module reference (`lower.mn` → `parser.mn::new_match_arm`);
+  per-module compile path now detects "Undefined function"
+  failures and retries against `mnc_all.mn`, marking modules as
+  `OK (via mnc_all)`. **11/11** stage2 modules valid post-fix.
+  **LOW**: **RC.10** added `__mn_indent_to_braces` decl to
+  `mapanare_core.h`. **RC.11** wrote v5.19.0 SESSION_REPORT.md
+  retroactively (Te.3.A/B/C/D/E + scope-split rationale).
+  **RC.12** Sh.\* baseline labeling corrected to dual-baseline
+  framing. **RC.13** test_indent_preprocessor count refresh
+  142 → 201. **RC.14** Bo.22 README `mapanare *` → `mnc *`
+  (5 substitutions + alias note). **RC.15** Bo.26 added 4 guide
+  links from README. **Carry-forward delta**: 4 HIGH/8 MEDIUM/~12
+  LOW → **0 HIGH/4 MEDIUM/~7 LOW**. **Out of scope** (held):
+  V.9, Te.5 leaks (v5.23.1); Te.3 hollow-surface (v5.23.2);
+  `make ci-gates` + `check_doc_freshness.py` + cadence gate +
+  Pk.1.A (v5.24.0); Manifesto M2 + SPEC corpus M3 + Coral L1-L5
+  (v5.24.1). See
+  `docs/roadmap/v5/v5.23.0/SESSION_REPORT.md`, `PLAN.md`, and
+  `docs/roadmap/v5/RECOVERY_ARC_v5.23-v5.24.md`.
+
 - **v5.22.0** (ready, not tagged) — **RE-PANEL — terseness-arc
   closeout.** Panel-only release; the release identity is the
   panel itself. **Zero compiler edits. Zero runtime edits.
@@ -377,8 +441,9 @@ Most recent releases (last 6). Full history at
   was a placeholder for a real `while true` that the lowerer
   accepts cleanly with the early-return exits. Source shrink
   **-38 lines** across 3 modules (`parser.mn` 0, `lower.mn` -34,
-  `emit_llvm.mn` -4); cumulative v5.13.0 → v5.17.2 shrink
-  **-3,988 lines (-13.9%)** off the v5.13.0 baseline. IR shrink
+  `emit_llvm.mn` -4); cumulative shrink **-3,988 lines (-13.9%)**
+  off the pre-Sh.B-immediate baseline (post-Te.4); **-2,285 lines
+  (-8.18%)** net v5.13.0 → v5.21.1. IR shrink
   **-234 lines** (231957 → 231723), consistent with the lowerer
   emitting one less PHI per rewritten counter loop. **Strict
   3-stage fixed point preserved**: stage2.ll == stage3.ll at

@@ -1455,7 +1455,7 @@ elided in favour of `= expr`:
 
 ```mn
 fn double(x: Int) -> Int = x * 2
-fn id(y) = y
+fn id<T>(y: T) -> T = y
 pub fn pi() -> Float = 3.14159
 ```
 

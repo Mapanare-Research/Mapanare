@@ -42,8 +42,10 @@ from pathlib import Path
 SELF_DIR = Path(__file__).resolve().parent.parent / "mapanare" / "self"
 SKIP_FILES = {"mnc_all.mn", "stage2.ll", "stage3.ll", "main.ll"}
 
-# Matches ``struct Name {`` (with or without leading ``pub``).
-STRUCT_HEADER_RE = re.compile(r"^(?:pub\s+)?struct\s+([A-Z][A-Za-z0-9_]*)\s*\{")
+# Matches ``struct Name {`` (brace-form) or ``struct Name:`` (colon-form,
+# v5.14.0 Te.1). Captures the struct name and (group 2) the body delimiter
+# so ``parse_struct_defs`` can dispatch on form.
+STRUCT_HEADER_RE = re.compile(r"^(\s*)(?:pub\s+)?struct\s+([A-Z][A-Za-z0-9_]*)\s*([\{:])")
 
 # Matches a struct field: ``field_name: TypeExpr`` (with optional ``mut``,
 # optional trailing comma). Stops at the first token that isn't a valid
@@ -77,7 +79,14 @@ REGISTRY_OMIT = {"StringBuilder", "MessagePart"}
 
 
 def parse_struct_defs(path: Path) -> dict[str, list[str]]:
-    """Return a ``{struct_name: [field_names]}`` map for ``path``."""
+    """Return a ``{struct_name: [field_names]}`` map for ``path``.
+
+    Handles both brace-form ``struct Name { ... }`` and colon-form
+    ``struct Name:`` with indented body (v5.14.0 Te.1). For colon-form,
+    the body terminates at the first non-blank, non-comment line whose
+    indent is <= the struct header's indent (mirror of the indent-tracking
+    logic in ``mapanare/parser.py::_indent_to_braces``).
+    """
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     out: dict[str, list[str]] = {}
@@ -87,7 +96,9 @@ def parse_struct_defs(path: Path) -> dict[str, list[str]]:
         if not m:
             i += 1
             continue
-        name = m.group(1)
+        header_indent = len(m.group(1))
+        name = m.group(2)
+        delim = m.group(3)
         # ``// registry:omit`` on the same or preceding line skips the struct.
         header_line = lines[i]
         if "registry:omit" in header_line:
@@ -98,22 +109,39 @@ def parse_struct_defs(path: Path) -> dict[str, list[str]]:
             continue
         fields: list[str] = []
         j = i + 1
-        depth = 1
-        while j < len(lines) and depth > 0:
-            line = lines[j]
-            # Track brace depth so nested ``{ ... }`` in default values don't
-            # falsely close the struct.
-            for ch in line:
-                if ch == "{":
-                    depth += 1
-                elif ch == "}":
-                    depth -= 1
-            if depth == 0:
-                break
-            field_m = FIELD_RE.match(line)
-            if field_m:
-                fields.append(field_m.group(1))
-            j += 1
+        if delim == "{":
+            # Brace-form: track brace depth; nested ``{ ... }`` in default
+            # values don't falsely close the struct.
+            depth = 1
+            while j < len(lines) and depth > 0:
+                line = lines[j]
+                for ch in line:
+                    if ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                if depth == 0:
+                    break
+                field_m = FIELD_RE.match(line)
+                if field_m:
+                    fields.append(field_m.group(1))
+                j += 1
+        else:
+            # Colon-form: body terminates at first non-blank, non-comment
+            # line whose indent is <= header_indent.
+            while j < len(lines):
+                line = lines[j]
+                stripped = line.strip()
+                if stripped == "" or stripped.startswith("//"):
+                    j += 1
+                    continue
+                line_indent = len(line) - len(line.lstrip())
+                if line_indent <= header_indent:
+                    break
+                field_m = FIELD_RE.match(line)
+                if field_m:
+                    fields.append(field_m.group(1))
+                j += 1
         out[name] = fields
         i = j + 1
     return out

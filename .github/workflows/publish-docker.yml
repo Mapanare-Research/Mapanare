@@ -75,8 +75,16 @@ jobs:
       - name: Build native runtime artifacts
         run: |
           python runtime/native/build_native.py
-          test -f runtime/native/libmapanare_rt.a
           test -f runtime/native/libmapanare_runtime.so
+
+      # v5.23.0 RC.7: build_native.py only produces libmapanare_runtime.so;
+      # libmapanare_rt.a (consumed by the builder image) comes from
+      # `make build-rt`. Adding this step closes the silently-failing
+      # publish-docker `Stage builder image build context` step.
+      - name: Build runtime archive (libmapanare_rt.a)
+        run: |
+          make build-rt
+          test -f runtime/native/libmapanare_rt.a
 
       - name: Stage builder image build context
         run: |

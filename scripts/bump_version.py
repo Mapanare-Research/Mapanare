@@ -79,6 +79,19 @@ README_BADGES = [
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-.\w]*)?$")
 
+# v5.23.0 RC.3: keep the goldens badge in lockstep with the actual count
+# in tests/golden/. Same shape as the version-badge sweep — single regex
+# applied to all 4 README locales (the badge label is in English in every
+# locale because shields.io has no localization for "goldens").
+_GOLDENS_BADGE_RE = re.compile(r"badge/goldens-\d+%2F\d+-brightgreen")
+_GOLDEN_DIR = REPO_ROOT / "tests" / "golden"
+
+
+def _count_goldens() -> int:
+    if not _GOLDEN_DIR.exists():
+        return 0
+    return len(list(_GOLDEN_DIR.glob("*.mn")))
+
 
 def _read_version(path: Path) -> str:
     text = path.read_text(encoding="utf-8").strip()
@@ -117,6 +130,19 @@ def _bump_readme_badge(
     text = path.read_text(encoding="utf-8")
     replacement = template.format(ver=new)
     new_text, n = regex.subn(replacement, text)
+    if n == 0 or new_text == text:
+        return (path, False)
+    if not dry_run:
+        path.write_text(new_text, encoding="utf-8")
+    return (path, True)
+
+
+def _bump_goldens_badge(path: Path, count: int, *, dry_run: bool) -> tuple[Path, bool]:
+    if not path.exists():
+        return (path, False)
+    text = path.read_text(encoding="utf-8")
+    replacement = f"badge/goldens-{count}%2F{count}-brightgreen"
+    new_text, n = _GOLDENS_BADGE_RE.subn(replacement, text)
     if n == 0 or new_text == text:
         return (path, False)
     if not dry_run:
@@ -261,6 +287,12 @@ def main() -> int:
     changes.append(_bump_version_file(new, dry_run=args.dry_run))
     for path, regex, template in README_BADGES:
         changes.append(_bump_readme_badge(path, regex, template, new, dry_run=args.dry_run))
+
+    # v5.23.0 RC.3: goldens badge sweep, parallel to the version-badge sweep.
+    goldens_count = _count_goldens()
+    print(f"  goldens count: {goldens_count} (from tests/golden/*.mn)")
+    for path, _, _ in README_BADGES:
+        changes.append(_bump_goldens_badge(path, goldens_count, dry_run=args.dry_run))
 
     cl_path, cl_modified, cl_warnings = _bump_changelog(old, new, args.date, dry_run=args.dry_run)
     changes.append((cl_path, cl_modified))

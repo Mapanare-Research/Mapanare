@@ -7,6 +7,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.23.0] - 2026-05-01
+
+**RC.\* — CI recovery + HIGH closures.** First release in the
+v5.23–v5.24 recovery arc. Closes the **8 silently-failing CI
+workflows** at v5.22.0 HEAD (4 panel-flagged, 4 NEW), the v5.22.0
+panel's **4 HIGH** docket items, **4 MEDIUM**, and **6 LOW**.
+Strict 3-stage fixed point preserved at **239,225 lines / 0 diff**
+(15-release strict streak; line count grew from v5.22.0's
+documented 238,086 because `mnc_all.mn` was stale and
+re-concatenation surfaced v5.21.0 Te.6's chain-compare references).
+Goldens **95/95**. **Mechanical, not design** — every fix shape
+locked in the `PLAN.md`.
+
+### HIGH closures
+
+**RC.1 — Reg.1 `check_struct_registry.py` colon-form support.**
+`STRUCT_HEADER_RE` extended to accept `[\{:]`; `parse_struct_defs`
+extended with indent-tracking branch (mirror of
+`mapanare/parser.py::_indent_to_braces`). Regex restoration
+surfaced **5 real latent drifts** all in `LowerState`:
+`comp_type_hint` (v5.15.1), `struct_update_counter` (v5.20.1
+Te.5.F.C), `chain_compare_counter` (v5.21.0 Te.6) — added but never
+registered. v5.17.0 Sh.\* (colon-syntax migration of
+`mapanare/self/*.mn`) silently disabled the gate for 5 releases.
+Drift was cosmetic for runtime correctness (`find_struct_entry`
+searches end-first, so `register_mir_struct`'s real registration
+shadows the stale internal one), but the gate's contract is sync.
+Both registry sites in `mapanare/self/emit_llvm.mn` updated to
+include all 20 LowerState fields. **Only `mapanare/self/*.mn`
+edit in v5.23.0** — data-only (3 strings × 2 list literals); zero
+compiler logic touched.
+
+<!-- no-check --> **RC.2 — Bo.18r README benchmark paragraph (3rd consecutive
+panel).** `README.md:188-192` rewritten with rounded `239k` /
+14-release strict streak / 5,800+ tests framing. Self-immunizes
+against next-decay (v5.9.2 Dn.1 pattern). Same edit closes Bo.19
+(test count drift) and Bo.20 <!-- no-check --> (the `FINAL_REPORT_v4.153.md` link is replaced with `benchmarks/FINAL_REPORT.md`).
+Also updated `README.md:176` (Native compiler section) which
+carried the same stale 238,086 / 13-release framing.
+
+**RC.3 — Bo.25 goldens badge structural fix.** One-shot:
+`goldens-66%2F66 → goldens-95%2F95` across all 4 README locales.
+Structural: `scripts/bump_version.py` extended with
+`_GOLDENS_BADGE_RE` + `_count_goldens()` + per-locale sweep that
+runs in lockstep with the version-badge sweep. New
+`tests/test_bump_version.py` 5/5. Future bumps auto-update the
+badge.
+
+### MEDIUM closures
+
+**RC.4 — Hollow-feature gate calibration.**
+`scripts/check_no_hollow_features.py::_AST_INFRASTRUCTURE` gained
+`CompClause` (v5.15.0 Te.2) and `FieldPattern` (v5.20.0 Te.5.D) —
+both are sub-nodes held inside parent nodes (`Comprehension.clauses`,
+`StructPattern.fields`), not top-level isinstance dispatch targets.
+
+**RC.5 — `check_docs_drift.py` SPEC.md:1456.** `fn id(y) = y`
+(untyped param) → `fn id<T>(y: T) -> T = y`. Gate clean.
+
+<!-- no-check --> **RC.6 — `check_changelog_honesty.py` `.reviews/v5.22.0/`.**
+Option A (track all panel artifacts). 10/11 already tracked from
+v5.22.0 setup; the panel `prompt.md` artifact was force-added to
+close the last gap.
+
+**RC.7 — Docker Smoke.** Root cause (different from PROMPT
+hypothesis): `runtime/native/build_native.py` produces only the
+`.so`, not `libmapanare_rt.a`. The `cp` step in both `ci.yml`'s
+`docker-smoke` job and `publish-docker.yml`'s `Stage builder image
+build context` was silently failing. Added a "Build runtime
+archive" step (`make build-rt`) to both workflows.
+
+<!-- no-check --> **RC.8 — macOS / iOS cross-compile.** Root cause: the macOS
+workflow built `libmapanare.a` (different name); `mapanare/cli.py`
+looks for `libmapanare_rt.a` by exact name. `pytest tests/` on
+macOS hit `__mn_str_eq` / `__mn_str_println` undefined for every
+test compiling a Mapanare source file. Added a "Build
+libmapanare_rt.a for cli.py link path" step (`make build-rt` —
+already has Darwin handling for `mapanare_metal.m`) to the macOS
+workflow.
+
+**RC.9 — Self-Hosted Compiler stage2 ir_doctor.** Root cause:
+v5.21.0 Te.6 added the first cross-module reference (`lower.mn`
+calling `parser.mn::new_match_arm`); `scripts/ir_doctor.py
+stage2` compiles each module independently and fails. Per-module
+compile path now detects "Undefined function" cross-module-ref
+failures and retries against `mnc_all.mn`; on success, marks the
+module as `OK (via mnc_all)`. Summary count fixed to count both
+`OK` and `OK (via mnc_all)` as valid. **11/11 stage2 modules
+valid** post-fix.
+
+### LOW closures
+
+**RC.10** — `runtime/native/mapanare_core.h` gained the
+`__mn_indent_to_braces` decl (mirror of
+`mapanare/parser.py::_indent_to_braces`; implementation has been
+in `mapanare_core.c` since v5.14.1 B.5/B.6).
+
+**RC.11** — `docs/roadmap/v5/v5.19.0/SESSION_REPORT.md` written
+retroactively from `PLAN.md` + `PROMPT.md` + `DOCKER_DESIGN.md` +
+the 3 commits (6adfee7, fba8521, db32bd4). Documents Te.3.A/B/C/D/E
+and the scope-split rationale (Dk.\* → v5.19.1).
+
+**RC.12** — Sh.\* baseline labeling drift in
+`.reviews/CARRY_FORWARD.md` row Sh.H and `CLAUDE.md:381` corrected
+from "−13.9% off the v5.13.0 baseline" (wrong; measures
+pre-Sh.B-immediate baseline) to dual-baseline framing:
+"−3,988 lines (−13.9%) off pre-Sh.B-immediate baseline" /
+"−2,285 lines (−8.18%) net v5.13.0 → v5.21.1".
+
+**RC.13** — `tests/bootstrap/test_indent_preprocessor.py` count
+refresh from `142` → `201` in `PRE_PANEL_AUDIT.md` and
+`.reviews/CARRY_FORWARD.md` row Te.1.B.
+
+**RC.14** — Bo.22 (2nd panel): README Hello World +
+Write-Python-Compile-Native sections changed from `mapanare *` to
+`mnc *` (5 substitutions); parenthetical alias note added.
+
+**RC.15** — Bo.26: 4 guide links added to README after the
+`mnc fmt` / `mnc init` invocations: `docs/guides/formatter.md`,
+`docs/guides/init.md`, `docs/guides/lsp.md`,
+`docs/guides/docker.md`.
+
+### Carry-forward delta
+
+Pre-v5.23.0: 4 HIGH / 8 MEDIUM / ~12 LOW. Post-v5.23.0: **0 HIGH /
+4 MEDIUM / ~7 LOW**. 15 RC.\* items closed in one mechanical
+session. Open items rolled to v5.23.1 (V.9, Mb.\* leaks) /
+v5.23.2 (Te.3 hollow-surface) / v5.24.0 (Hy.\* hygiene gates) /
+v5.24.1 (Manifesto M2, SPEC corpus M3, Coral L1-L5) / v6.0.
+
+### Out of scope (held)
+
+- **V.9 indent-preprocessor leak.** v5.23.1 (Mb.1).
+- **Te.5 ASan leaks** (88_if_let, 90_while_let, 91_let_else).
+  v5.23.1 (Mb.2).
+- **Te.3 hollow-surface** (single-line `{...}` shape + native
+  mirror). v5.23.2.
+- <!-- no-check --> **`make ci-gates` Makefile target.** v5.24.0 (Hy.1).
+- <!-- no-check --> **`check_doc_freshness.py`** structural fix. v5.24.0 (Hy.2).
+- **Cadence enforcement gate.** v5.24.0 (Hy.3).
+- **Pk.1.A** Linux/macOS versioned-tarball smoke gates. v5.24.0
+  (Hy.5).
+- **Manifesto M2** + **SPEC corpus M3** + **Coral L1–L5**. v5.24.1.
+
+See `docs/roadmap/v5/v5.23.0/SESSION_REPORT.md` and
+`docs/roadmap/v5/RECOVERY_ARC_v5.23-v5.24.md`.
+
 ## [5.22.0] - 2026-05-01
 
 **RE-PANEL — terseness-arc closeout.** Panel-only release; the
@@ -8440,7 +8587,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.0...HEAD
+[5.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.23.0
 [5.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.22.0
 [5.21.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.1
 [5.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.0

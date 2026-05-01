@@ -207,7 +207,7 @@ python3 scripts/test_native.py --stage1 mapanare/self/mnc-stage1
 # Bootstrap mirror cross-tests
 python3 -m pytest tests/bootstrap/ -v
 # expected: test_te5_mirror.py 12/12, test_string_interp_mirror.py 10/10,
-#           test_comprehension_mirror.py 10/10, test_indent_preprocessor.py 142/142,
+#           test_comprehension_mirror.py 10/10, test_indent_preprocessor.py 201/201,
 #           test_chained_cmp_mirror.py 10/10 (added v5.21.1)
 
 # Build from seed
