@@ -319,8 +319,11 @@ generic_call_expr: NAME DOUBLE_COLON LT type_expr (COMMA type_expr)* GT LPAREN a
 // Struct construction: new Name { field: value, ... }
 // Uses `new` keyword prefix for LALR disambiguation (avoids
 // ambiguity between struct literals and blocks after if/for/while).
-construct_expr: KW_NEW NAME LBRACE (field_init (COMMA field_init)* COMMA?)? RBRACE
-field_init: NAME COLON expr
+// v5.20.0 Te.5.B: field shorthand — `Point { x }` ≡ `Point { x: x }`.
+// v5.20.0 Te.5.C: struct update — `Point { x: 5, ..base }`.
+construct_expr: KW_NEW NAME LBRACE (field_init (COMMA field_init)* (COMMA RANGE expr)? COMMA?)? RBRACE
+              | KW_NEW NAME LBRACE RANGE expr RBRACE
+field_init: NAME (COLON expr)?
 
 int_lit: DEC_INT | HEX_INT | BIN_INT | OCT_INT
 float_lit: FLOAT_LIT

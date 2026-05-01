@@ -1,0 +1,25 @@
+// v5.20.0 Te.5.B — struct field shorthand.
+//
+// `Point { x, y }` is sugar for `Point { x: x, y: y }`. The field
+// name and the local variable name match by lexical convention; the
+// shorthand collapses the duplicated text. Mixed forms are allowed:
+// `Point { x: 99, y }` overrides x and shorthands y.
+//
+// IR is byte-identical to the long form (modulo module-id header) —
+// the desugaring happens at AST construction time in
+// mapanare/parser.py::field_init, where a value-omitted FieldInit
+// falls back to Identifier(name=name).
+
+struct Point:
+    x: Int
+    y: Int
+
+fn main():
+    let x: Int = 1
+    let y: Int = 2
+    let p: Point = new Point { x, y }
+    print(str(p.x))
+    print(str(p.y))
+    let q: Point = new Point { x: 99, y }
+    print(str(q.x))
+    print(str(q.y))
