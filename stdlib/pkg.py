@@ -980,6 +980,7 @@ def init_project(
     name: str | None = None,
     *,
     template: str = "default",
+    overlays: list[str] | None = None,
 ) -> MapanareManifest:
     """Initialize a new Mapanare project from a scaffolding template.
 
@@ -987,35 +988,43 @@ def init_project(
     ``project_dir`` with ``{{NAME}}`` substituted. ``mapanare.toml`` is
     re-emitted from a fresh ``MapanareManifest`` rather than copied so
     downstream tooling sees a canonical TOML shape.
+
+    ``overlays`` names additional templates layered on top of the base
+    template in order. Files from a later overlay never replace files
+    already present in the project — re-init is non-destructive.
     """
     if name is None:
         name = os.path.basename(os.path.abspath(project_dir))
     if not _INIT_NAME_RE.match(name):
         raise ManifestError(f"invalid project name '{name}': must match [A-Za-z_][A-Za-z0-9_-]*")
 
-    root = _template_root(template)
-    if not os.path.isdir(root):
-        raise ManifestError(f"init template '{template}' not found at {root}")
+    template_chain = [template, *(overlays or [])]
+    for tname in template_chain:
+        root = _template_root(tname)
+        if not os.path.isdir(root):
+            raise ManifestError(f"init template '{tname}' not found at {root}")
 
     os.makedirs(project_dir, exist_ok=True)
 
-    for src_dir, _, files in os.walk(root):
-        rel_dir = os.path.relpath(src_dir, root)
-        dst_dir = project_dir if rel_dir == "." else os.path.join(project_dir, rel_dir)
-        os.makedirs(dst_dir, exist_ok=True)
-        for fname in files:
-            # mapanare.toml is regenerated from the manifest below.
-            if rel_dir == "." and fname == "mapanare.toml":
-                continue
-            src = os.path.join(src_dir, fname)
-            dst = os.path.join(dst_dir, fname)
-            if os.path.isfile(dst):
-                continue
-            with open(src, encoding="utf-8") as f:
-                contents = f.read()
-            contents = contents.replace("{{NAME}}", name)
-            with open(dst, "w", encoding="utf-8") as f:
-                f.write(contents)
+    for tname in template_chain:
+        root = _template_root(tname)
+        for src_dir, _, files in os.walk(root):
+            rel_dir = os.path.relpath(src_dir, root)
+            dst_dir = project_dir if rel_dir == "." else os.path.join(project_dir, rel_dir)
+            os.makedirs(dst_dir, exist_ok=True)
+            for fname in files:
+                # mapanare.toml is regenerated from the manifest below.
+                if rel_dir == "." and fname == "mapanare.toml":
+                    continue
+                src = os.path.join(src_dir, fname)
+                dst = os.path.join(dst_dir, fname)
+                if os.path.isfile(dst):
+                    continue
+                with open(src, encoding="utf-8") as f:
+                    contents = f.read()
+                contents = contents.replace("{{NAME}}", name)
+                with open(dst, "w", encoding="utf-8") as f:
+                    f.write(contents)
 
     manifest = MapanareManifest(
         name=name,

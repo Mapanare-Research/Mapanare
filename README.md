@@ -57,6 +57,24 @@ $env:MAPANARE_NO_BUNDLED_LLVM = "1"; irm https://mapanare.dev/install.ps1 | iex
 
 Or download binaries from [Releases](https://github.com/Mapanare-Research/Mapanare/releases). Use the Windows SDK ZIP for clean-machine native builds or the minimal ZIP when you already have a compiler. See [`docs/THIRD-PARTY-LICENSES.md`](docs/THIRD-PARTY-LICENSES.md) for bundled SDK licenses.
 
+### Quick start with Docker
+
+[![mapanare-builder](https://img.shields.io/badge/ghcr.io-mapanare--builder-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/mapanare-research/Mapanare/pkgs/container/mapanare-builder)
+[![mapanare-runtime](https://img.shields.io/badge/ghcr.io-mapanare--runtime-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/mapanare-research/Mapanare/pkgs/container/mapanare-runtime)
+
+No host toolchain? Compile and run inside the official images:
+
+```bash
+mnc init demo --docker && cd demo
+docker build -t demo .
+docker run --rm demo
+```
+
+The multi-stage Dockerfile uses
+`ghcr.io/mapanare-research/mapanare-builder` for the build and
+`mapanare-runtime` for the final image (~115 MB). See
+[`docs/guides/docker.md`](docs/guides/docker.md).
+
 ---
 
 ## Hello World

@@ -534,7 +534,10 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     project_dir = args.path or "."
     name = args.name
-    manifest = init_project(project_dir, name=name)
+    overlays: list[str] = []
+    if getattr(args, "docker", False):
+        overlays.append("docker")
+    manifest = init_project(project_dir, name=name, overlays=overlays)
     print(f"initialized project '{manifest.name}' in {os.path.abspath(project_dir)}")
 
 
@@ -1934,6 +1937,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_init = subparsers.add_parser("init", help="Initialize a new Mapanare project")
     p_init.add_argument("path", nargs="?", default=".", help="Project directory (default: .)")
     p_init.add_argument("--name", default=None, help="Project name (default: directory name)")
+    p_init.add_argument(
+        "--docker",
+        action="store_true",
+        help="Add a multi-stage Dockerfile + .dockerignore using mapanare-builder/-runtime",
+    )
     p_init.set_defaults(func=cmd_init)
 
     # install

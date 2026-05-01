@@ -1,0 +1,9 @@
+# Build artifacts and developer-only files. Trim aggressively to keep
+# the docker build context (and image cache invalidation surface) small.
+dist/
+.cache/
+*.ll
+*.o
+.git/
+.gitignore
+README.md

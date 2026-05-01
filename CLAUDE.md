@@ -18,6 +18,42 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.19.1** (ready, not tagged) — **Dk.* — Docker images +
+  `mnc init --docker`.** Packaging-only release. Two new official
+  images on GHCR: `mapanare-builder:5.19.1` (~640 MB —
+  debian:bookworm-slim + clang-18 + lld-18 from apt.llvm.org +
+  the `mnc` binary + `libmapanare_rt.a`) and
+  `mapanare-runtime:5.19.1` (~115 MB — debian:bookworm-slim +
+  `libmapanare_rt.so`). New `mnc init --docker` flag overlays a
+  multi-stage `Dockerfile` + `.dockerignore` on top of the default
+  scaffold; `init_project()` learned an `overlays: list[str]`
+  parameter; new template at `mapanare/templates/init/docker/`.
+  Multi-stage hello-world final image lands at ~115 MB. New
+  `.github/workflows/publish-docker.yml` builds + pushes both
+  images on every release tag with GHA-cache; new `docker-smoke`
+  job in `ci.yml` rebuilds both images on every CI run and
+  exercises the multi-stage hello-world end-to-end. New
+  `docs/guides/docker.md` covers usage, multi-stage pattern, opt-
+  out, troubleshooting. README gains a "Quick start with Docker"
+  section + GHCR badges. `tests/test_init.py` 10/10 → 15/15 (5
+  new cases for `--docker`). **Three documented design
+  amendments** in `docs/roadmap/v5/v5.19.1/DESIGN_AMENDMENT.md`:
+  (A1) builder image-size ceiling raised 300 MB → 700 MB —
+  libLLVM-18 + libclang-cpp + transitive deps are non-removable
+  while `mnc build` shells out to `clang`; (A2) `gcc` symlinked to
+  `clang` in the image because `link_with_runtime` invokes literal
+  `gcc`; (A3) in-image `mnc` wrapper script symlinks
+  `runtime/native/libmapanare_rt.a` into CWD before exec to
+  satisfy mnc's relative-path resolution. A2 + A3 have a clean
+  v5.20.0+ follow-up ("builder-image diet": switch
+  `link_with_runtime` to drive `lld` directly — saves ~99 MB and
+  retires both shims). **Zero compiler / runtime / stdlib / .mn
+  edits.** Goldens unaffected (80/80). Strict 3-stage fixed point
+  preserved by construction. **Closes the Dk.* arc** that was
+  originally bundled with v5.19.0 (Te.3 + Dk.*) and split out at
+  scope-split commit 6adfee7 so the deprecation work could ship
+  clean. See `docs/roadmap/v5/v5.19.1/SESSION_REPORT.md`,
+  `DESIGN_AMENDMENT.md`, and the v5.19.0 `DOCKER_DESIGN.md`.
 - **v5.18.0** (ready, not tagged) — **Mc.* — LSP + init + check
   (tooling pack).** Editor-quality waypoint. Ships the
   Mc.1 / Mc.3 / Mc.4 trio from the parity arc plus a greenfield
@@ -838,7 +874,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (29709 symbols, 63983 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (29750 symbols, 64044 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

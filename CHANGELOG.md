@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.19.1] - 2026-04-30
+
+### Added
+
+- **Dk.1 — `mapanare-builder` Docker image.** New
+  `docker/builder/Dockerfile` produces an amd64 Linux image with
+  clang-18 + lld-18 (from apt.llvm.org), the native `mnc` binary,
+  and `libmapanare_rt.a`. Published on every release tag to
+  `ghcr.io/mapanare-research/mapanare-builder:<version>` and
+  `:latest`. Image size: ~640 MB uncompressed (~280 MB compressed
+  pull); see `docs/roadmap/v5/v5.19.1/DESIGN_AMENDMENT.md` for
+  why the original 300 MB ceiling was raised to 700 MB.
+- **Dk.2 — `mapanare-runtime` Docker image.** New
+  `docker/runtime/Dockerfile` produces a minimal
+  `debian:bookworm-slim` + `libmapanare_rt.so` base for running
+  Mapanare-compiled binaries. Published as
+  `ghcr.io/mapanare-research/mapanare-runtime`. Image size:
+  ~115 MB uncompressed (~40 MB compressed pull).
+- **Dk.3 — `mnc init --docker`.** New flag on `mapanare init` /
+  `mnc init` overlays a multi-stage Dockerfile + `.dockerignore`
+  on top of the default project scaffold. Uses the official
+  `mapanare-builder` for the build stage and `mapanare-runtime`
+  for the final image. `init_project()` extended with an
+  `overlays: list[str]` parameter; new template lives at
+  `mapanare/templates/init/docker/`. `tests/test_init.py` 15/15
+  pass (5 new cases).
+- **Dk.4 — `publish-docker.yml` workflow.** New release-tag-
+  triggered GitHub Actions workflow that builds + pushes both
+  images to GHCR with cache-from/to GHA cache. Includes a
+  post-publish multi-stage smoke that asserts hello-world
+  builds + runs.
+- **Dk.5 — `docs/guides/docker.md`.** Usage, multi-stage pattern,
+  image-size guidance, opt-out, troubleshooting.
+- **Dk.6 — CI `docker-smoke` job.** Appended to `ci.yml`;
+  rebuilds both images on every CI run and exercises the
+  multi-stage hello-world end-to-end. Catches Dockerfile drift
+  before a release tag.
+- **Dk.7 — README "Quick start with Docker".** New section + GHCR
+  badges in the install block.
+
+### Changed
+
+- Nothing in the compiler, runtime, stdlib, or self-hosted
+  sources. Packaging-only release.
+
+### Notes
+
+- Goldens unaffected (80/80, unchanged).
+- Strict 3-stage fixed point preserved by construction (no
+  `mapanare/self/` source touched).
+- VERSION not bumped — release tagging is the lead's call.
+- See `docs/roadmap/v5/v5.19.1/SESSION_REPORT.md` for the full
+  ledger and `DESIGN_AMENDMENT.md` for size-budget deviations.
+
 ## [5.18.0] - 2026-04-30
 
 ### Added

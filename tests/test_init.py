@@ -92,3 +92,53 @@ def test_init_accepts_valid_names(tmp_path: Path, name: str) -> None:
     target = tmp_path / name
     r = _run("init", str(target), cwd=tmp_path)
     assert r.returncode == 0, r.stderr
+
+
+# v5.19.1 Dk.3 — `mnc init --docker` overlay tests.
+
+
+def test_init_docker_scaffolds_dockerfile(tmp_path: Path) -> None:
+    target = tmp_path / "demo"
+    r = _run("init", str(target), "--docker", cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    # Base template files still present.
+    assert (target / "main.mn").is_file()
+    assert (target / "mapanare.toml").is_file()
+    # Overlay-added files present.
+    assert (target / "Dockerfile").is_file()
+    assert (target / ".dockerignore").is_file()
+
+
+def test_init_docker_substitutes_name_in_dockerfile(tmp_path: Path) -> None:
+    target = tmp_path / "myapp"
+    r = _run("init", str(target), "--docker", cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    body = (target / "Dockerfile").read_text()
+    assert "myapp" in body
+    assert "{{NAME}}" not in body
+
+
+def test_init_docker_references_official_images(tmp_path: Path) -> None:
+    target = tmp_path / "imgcheck"
+    r = _run("init", str(target), "--docker", cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    body = (target / "Dockerfile").read_text()
+    assert "ghcr.io/mapanare-research/mapanare-builder:" in body
+    assert "ghcr.io/mapanare-research/mapanare-runtime:" in body
+
+
+def test_init_docker_preserves_existing_dockerfile(tmp_path: Path) -> None:
+    target = tmp_path / "existing"
+    target.mkdir()
+    (target / "Dockerfile").write_text("# user's own dockerfile\n")
+    r = _run("init", str(target), "--docker", cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert (target / "Dockerfile").read_text() == "# user's own dockerfile\n"
+
+
+def test_init_without_docker_skips_dockerfile(tmp_path: Path) -> None:
+    target = tmp_path / "plain"
+    r = _run("init", str(target), cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert not (target / "Dockerfile").exists()
+    assert not (target / ".dockerignore").exists()

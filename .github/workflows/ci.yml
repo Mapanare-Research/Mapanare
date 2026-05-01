@@ -856,3 +856,94 @@ jobs:
           set -e
           ulimit -s 65536
           bash scripts/verify_fixed_point.sh
+
+  # v5.19.1 Dk.6 — build the docker images locally on every CI run and
+  # exercise the multi-stage hello-world. Catches Dockerfile drift,
+  # base-image-skew, and CLI-surface breakage before a release tag.
+  # Doesn't push — that's `publish-docker.yml`'s job.
+  docker-smoke:
+    name: Docker Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare
+        run: pip install -e .
+
+      - name: Install LLVM 18
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y llvm-18 clang-18
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
+
+      - name: Build mnc-stage1
+        run: python scripts/build_stage1.py
+
+      - name: Build native runtime
+        run: python runtime/native/build_native.py
+
+      - name: Stage builder build context
+        run: |
+          mkdir -p docker/builder/build-context
+          cp mapanare/self/mnc-stage1     docker/builder/build-context/mnc
+          cp runtime/native/libmapanare_rt.a docker/builder/build-context/
+
+      - name: Stage runtime build context
+        run: |
+          mkdir -p docker/runtime/build-context
+          cp runtime/native/libmapanare_runtime.so \
+              docker/runtime/build-context/libmapanare_rt.so
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build mapanare-builder:smoke
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/builder/build-context
+          file: docker/builder/Dockerfile
+          tags: mapanare-builder:smoke
+          load: true
+          cache-from: type=gha,scope=builder-smoke
+          cache-to: type=gha,mode=max,scope=builder-smoke
+
+      - name: Build mapanare-runtime:smoke
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/runtime/build-context
+          file: docker/runtime/Dockerfile
+          tags: mapanare-runtime:smoke
+          load: true
+          cache-from: type=gha,scope=runtime-smoke
+          cache-to: type=gha,mode=max,scope=runtime-smoke
+
+      - name: Multi-stage hello-world
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/docker-smoke
+          cat > /tmp/docker-smoke/main.mn <<'EOF'
+          fn main():
+              print("hello from docker smoke")
+          EOF
+          cat > /tmp/docker-smoke/Dockerfile <<'EOF'
+          FROM mapanare-builder:smoke AS build
+          COPY . /src
+          WORKDIR /src
+          RUN mkdir -p dist && mnc build main.mn -o dist/hello
+
+          FROM mapanare-runtime:smoke
+          COPY --from=build /src/dist/hello /app/hello
+          ENTRYPOINT ["/app/hello"]
+          EOF
+          docker build -t docker-smoke /tmp/docker-smoke
+          out=$(docker run --rm docker-smoke)
+          echo "Output: $out"
+          test "$out" = "hello from docker smoke"
+          docker images docker-smoke --format "Final image size: {{.Size}}"
+          docker images mapanare-builder:smoke --format "Builder size: {{.Size}}"
+          docker images mapanare-runtime:smoke --format "Runtime size: {{.Size}}"
