@@ -7,6 +7,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.21.1] - 2026-05-01
+
+**Mc.7 — pre-panel docs hygiene.** Doc-surface only; **zero
+compiler / runtime / MIR / IR / `mapanare/self/*.mn` edits.**
+Strict 3-stage fixed point preserved by construction at 238,086
+lines / 0-line diff (v5.9.0 milestone, held through 13
+consecutive releases — longest streak in project history).
+Goldens **95/95**. Closes the 12 H.\* findings in
+`.reviews/v5.22.0/PRE_PANEL_AUDIT.md` so the v5.22.0 panel
+inherits a clean docket.
+
+### Added
+
+- **`examples/chained_cmp.mn`.** New 28-line example exercising
+  3-element chains (`0 < n < 10`), 4-element chains
+  (`a < b < c < d`), half-open form (`lo <= x < hi`), and the
+  once-evaluation property via a `print("M")`-printing middle
+  function. Compiles clean through `mapanare emit-llvm` and is
+  picked up by `tests/test_format.py`'s `examples/` corpus
+  iteration automatically.
+- **`tests/bootstrap/test_chained_cmp_mirror.py`.** New
+  cross-bootstrap mirror test (mirror of `test_te5_mirror.py`).
+  4 golden cases (92–95) + 6 inline cases covering chained `==`,
+  mixed eq+cmp (post-merge), non-trivial middle, chain in
+  if-condition, typed-let chain, half-open mixed `<=`/`<`. Both
+  bootstraps compile, link with `libmapanare_rt.a`, run, and
+  assert byte-identical stdout. **10/10 PASS.**
+- **Format invariants for chains.** New
+  `tests/test_format.py::TestRules` cases (4 assertions)
+  guard idempotence on chain shapes. `mapanare/format.py`
+  module docstring gained a v5.21.1 paragraph noting that
+  chained comparisons round-trip stable through the line-based
+  whitespace canonicalization without an expression-level pass.
+- **`.reviews/CARRY_FORWARD.md` v5.13.0 → v5.21.1 arc append.**
+  19-row table covering Mc.2, Te.1 + bootstrap mirror, Te.2 +
+  bootstrap mirror, Te.4, Sh.\* (v5.17.0/.1/.2), Mc.\*
+  (v5.18.0), Te.3, Dk.\*, Te.5 + bootstrap mirror, Te.6, and
+  this row's H.1–H.13 hygiene closure.
+
+### Changed
+
+- **`docs/SPEC.md` header re-synced** from `Live — synced to
+  the v5.7.1 cut (2026-04-26)` to `Live — synced to the v5.21.0
+  cut (2026-05-01)`. New "What changed since the v5.7.1 sync"
+  block summarizes the 14-release arc release-by-release.
+  Spec-sync-discipline block lists the §s re-audited at v5.21.1
+  (§2.1 `pass`, §2.2 chained-cmp + L7 merge, §3.7 struct
+  ergonomics, §4.0 Te.3, §4.3.1 conditional binding,
+  §6.x closures + comprehensions + lambdas).
+- **`docs/SPEC.md` §4.0 (Block Syntax) rewritten for v5.19.0
+  Te.3.** Lead now reads "Mapanare accepts colon-style as
+  canonical (since v5.19.0). Brace-style is **soft-deprecated**:
+  it parses but emits a warning at parse time, and `mnc fmt`
+  (no flag) auto-migrates `{}` → `:` per file." Adds the
+  warning text verbatim, `MAPANARE_NO_BRACE_WARNING=1` opt-out,
+  `mnc fmt --keep-braces` flag, and v6.0 hard-removal milestone.
+  Brace example moved below colon example as legacy syntax.
+- **`docs/SPEC.md:1009` broken `if x: y` promise rescoped to
+  v6.0.** v5.14.0 SPEC originally promised single-line form
+  for v5.21.0; v5.21.0 shipped Te.6 chained comparisons
+  instead. v5.21.1 explicitly defers single-line form to v6.0
+  (Decision-1 Path B per `docs/roadmap/v5/v5.21.1/PLAN.md`),
+  to coincide with `{}` hard removal.
+- **README.md** native-compiler section bumped: `80/80
+  native goldens at v5.17.1` → `95/95 native goldens at
+  v5.21.0`; fixed-point line bumped 231,957 → 238,086 lines
+  with carry trail naming the 13-release streak through
+  v5.21.0 chained comparisons.
+- **Localized READMEs (es/pt/zh-CN)** "Native compiler — what
+  `mnc-stage1` ships" subsection rewritten in each language.
+  Bullet list adds the terseness arc summary; fixed-point line
+  STRICT 238,086 lines + 13-release streak; Sh.\* shrink
+  number. Closes Boa Bo.17r structurally.
+- **`docs/known_issues.md` Last-updated** bumped from v5.11.0
+  to v5.21.1; prior v5.11.0 line moved to "Earlier
+  last-updated:". New "v5.13.0 → v5.21.1 closures" narrative
+  block (12 entries) added next to the existing v5.4.0 →
+  v5.7.0 closures block. Last-verified note bumped from
+  v5.7.1 (2026-04-26) to v5.21.1 (2026-05-01).
+- **`tests/golden/BENCHMARKS-windows.md`** gained a v5.21.1
+  H.12 admonition at the top making the v5.8.8 staleness
+  visible. The merged `BENCHMARKS.md` regenerates via
+  `_merge_benchmarks()` and now shows linux v5.21.0 numbers
+  next to a clearly-flagged Windows v5.8.8 section. Closes
+  Rattler #1 from v5.11.0 panel.
+
+### Fixed
+
+- **v5.14.0 forward-promise honesty.** The "deferred to
+  v5.21.0" promise on single-line `if x: y` is now closed with
+  an explicit deferral note rather than carried forward as a
+  silent broken promise. Same regression class as v4.18.0–v4.26.0
+  hollow-features arc; explicit deferral fixes the documentation
+  contract.
+
+### What does NOT ship
+
+- **Compiler edits.** Zero. `mapanare/parser.py`, `lower.py`,
+  `semantic.py`, `emit_llvm_text.py` — untouched.
+- **Runtime edits.** Zero. `runtime/native/` untouched.
+- **MIR / IR changes.** Zero. Strict 3-stage fixed point at
+  238,086 lines / 0 diff preserved by construction.
+- **`mapanare/self/*.mn` edits.** Zero. Bootstrap source
+  identical to v5.21.0.
+- **Lark grammar edits.** Zero. `mapanare/mapanare.lark`
+  unchanged. Path B for Decision-1 means single-line `if x: y`
+  does not land here.
+- **New language features.** Zero. Hygiene release.
+
+See `docs/roadmap/v5/v5.21.1/SESSION_REPORT.md` and `PLAN.md`.
+
 ## [5.21.0] - 2026-05-01
 
 ### Added
@@ -8165,7 +8276,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.1...HEAD
+[5.21.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.1
 [5.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.0
 [5.17.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.16.0...v5.17.0
 [5.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.2...v5.13.0

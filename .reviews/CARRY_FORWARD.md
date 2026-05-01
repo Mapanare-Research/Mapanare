@@ -190,6 +190,37 @@ corresponding release CHANGELOG entries for detail.
 | Cb.6–Cb.10 | Five LOW items from Cobra's v4.143.0 review | v4.143.0 panel (Cobra) | LOW each | 1 | OPEN | v5.0.0-final polish |
 | Own.1 | Self-hosted lowerer lacks compile-time move-semantics enforcement (Ge.1 class root pattern) | v4.143.0 panel (Viper) | LOW | 1 | OPEN | v5.x refactor |
 
+## Items resolved in the v5.13.0 → v5.21.1 terseness arc
+
+The v5.13–v5.21 arc closed each Mc.\* / Te.\* / Sh.\* / Dk.\* item
+the v5.11.0 panel left open or that surfaced during arc execution.
+v5.21.1 hygiene closes 12 docs-surface findings the v5.22.0 panel
+would otherwise dock at fresh; structural closure prevents the
+Bo.18r-style two-consecutive-panel regression. Each row names the
+release the item closed in.
+
+| # | Item | First reported | Severity | Resolved in | Evidence |
+|---|------|----------------|----------|-------------|----------|
+| Mc.2 | `mnc fmt` formatter: idempotent, AST-preserving whitespace canonicalizer | v5.11.0 panel docket (terseness-arc precondition) | LOW | v5.13.0 | New `mapanare/format.py`; 704 corpus assertions + 13 unit rules + 7 CLI integration tests in `tests/test_format.py` |
+| Te.1 | Colon-block syntax: indent-based blocks alongside `{}` for every block-introducing construct | v5.13.0 PLAN | MEDIUM | v5.14.0 | `mapanare/parser.py::_indent_to_braces` preprocessor + `pass` keyword; 208 cross-style tests in `tests/test_colon_blocks.py` |
+| Te.1.B | Bootstrap colon-block mirror: `mnc-stage1` accepts colon syntax | v5.14.0 SESSION_REPORT (deferred) | MEDIUM | v5.14.1 | New `__mn_indent_to_braces` C-runtime preprocessor + `pass` lex/parse/lower; `tests/bootstrap/test_indent_preprocessor.py` 142/142 |
+| Te.2 | Comprehensions, terse lambdas, implicit-return one-liner | v5.13.0 PLAN | MEDIUM | v5.15.0 | New `Comprehension` / `CompClause` AST + `LambdaExpr` / one-line `fn name(args) = expr`; `tests/test_comprehensions.py` 11/11, `tests/test_lambdas.py` 6/6 |
+| Te.2.B | Bootstrap comprehension mirror | v5.15.0 SESSION_REPORT (deferred) | MEDIUM | v5.15.1 | `Expr::Comprehension` + `parse_list_comp_tail` / `parse_map_comp_tail` + `lower_comprehension`; `tests/bootstrap/test_comprehension_mirror.py` 10/10 |
+| Te.4 | Self-host string-interpolation parity (Python ↔ `mnc-stage1`) | v5.13.0-prep audit | MEDIUM | v5.16.0 | New `Expr::InterpString` + `lower_interp_string` + lexer `\$` escape fix; `tests/bootstrap/test_string_interp_mirror.py` 10/10 |
+| Sh.B | Mechanical `mnc fmt --to-terse` rewrite of self-host modules | v5.13.0 PLAN | LOW | v5.17.0 | All 17 `mapanare/self/*.mn` modules colon-style; **-3,781 lines (-13.2%)**; strict 3-stage fixed point preserved at every per-module commit |
+| Sh.C/D/G | Per-site comprehension upgrades, implicit-return upgrades, SPEC/README example refresh | v5.17.0 SESSION_REPORT (deferred) | LOW | v5.17.1 | 159 ONELINER + 121 BLOCK_SHORT implicit-return conversions + 3 comp-shape rewrites; **-169 lines** on top of v5.17.0 |
+| Sh.H | Defensive-iteration cleanup (11 sites in `lower.mn`/`emit_llvm.mn`/`parser.mn`) | v5.17.1 COMPREHENSION_SITES.md | LOW | v5.17.2 | All 11 catalogued sites rewritten; **-38 lines**; cumulative v5.13.0 → v5.17.2 shrink **-3,988 lines (-13.9%)** |
+| Mc.1 | LSP server (pygls) verified end-to-end | v5.18.0 PLAN (verify-and-fill) | LOW | v5.18.0 | 3,020-line pygls package + new JSON-RPC stdio smoke `tests/lsp/test_initialize_roundtrip.py` (117/117) |
+| Mc.3 | `mapa init` template scaffolding | v5.18.0 PLAN | LOW | v5.18.0 | New `mapanare/templates/init/` + `{{NAME}}` substitution + project-name validation; 10/10 in `tests/test_init.py` |
+| Mc.4 | `mapa check --all` recursive walk | v5.18.0 PLAN | LOW | v5.18.0 | `--all` flag with skip-list (`.git/`, `dist/`, `build/`, `node_modules/`); 10/10 in `tests/test_check.py` |
+| Mc.1.G | VSCode extension v0.5.0 wiring `mapa init` / `mapa check --all` commands | v5.18.0 PLAN | LOW | v5.18.0 | Sibling repo `Mapanare-Research/mapanare-vscode` v0.5.0; `mapanare.init` + `mapanare.checkAll` commands |
+| Te.3 | `{}` soft-deprecation: parse-time warning + `mnc fmt` auto-migration default | v5.18.0 closeout (originally v5.17.x) | MEDIUM | v5.19.0 | One-warning-per-file at parse time + `MAPANARE_NO_BRACE_WARNING=1` opt-out + `mnc fmt --keep-braces`; hard removal scheduled v6.0 |
+| Dk.\* | GHCR Docker images (`mapanare-builder`, `mapanare-runtime`) + `mnc init --docker` overlay | v5.10.0 closeout (Dk.\* split from v5.19.0) | LOW | v5.19.1 | New `.github/workflows/publish-docker.yml` + multi-stage hello-world ~115 MB final image; `docker-smoke` CI job |
+| Te.5 | Struct ergonomics: field shorthand, struct update, let destructuring, if-let / while-let / let-else (Python side) | v5.13.0 PLAN | MEDIUM | v5.20.0 | 4 surface forms desugared at lower time; 11 new goldens at `tests/golden/81…91`; **+477 lines Python** total |
+| Te.5.F | Bootstrap Te.5 mirror: `mnc-stage1` parses + lowers all four Te.5 forms identically | v5.20.0 SESSION_REPORT (deferred) | MEDIUM | v5.20.1 | New `Expr::ConstructUpdate` + `Stmt::LetDestructure` + `Expr::IfLet` / `Stmt::WhileLet` / `Stmt::LetElse` AST variants; `tests/bootstrap/test_te5_mirror.py` 12/12; **+742 lines** total |
+| Te.6 | Chained comparisons (`0 < x < 10`) with once-evaluation + L4-merge of equality and ordering operators | v5.13.0 PLAN | MEDIUM | v5.21.0 | New `Expr::ChainedCmp(operands, ops)` AST + `_lower_chained_compare`; bootstrap mirror at v5.21.0 in lockstep; goldens 91/91 → 95/95; strict fixed point preserved |
+| H.1–H.13 | Pre-panel docs-surface drift across SPEC, README, localized READMEs, CARRY_FORWARD ledger | v5.22.0 PRE_PANEL_AUDIT.md | HIGH (4) / MEDIUM (1) / LOW (8) | v5.21.1 | This row's release: SPEC re-synced from v5.7.1 → v5.21.0 cut; §4.0 documents Te.3; §1009 broken `if x: y` promise rescoped to v6.0; 4 localized READMEs prose-synced; `examples/chained_cmp.mn`; `tests/bootstrap/test_chained_cmp_mirror.py` 10/10; `format.py` chained-cmp invariant tests; CARRY_FORWARD arc append (this row) |
+
 ---
 
 ## Update protocol

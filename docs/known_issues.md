@@ -1,6 +1,8 @@
 # Known Issues — User-Facing
 
-Last updated: v5.11.0 (Pk.* — packaging hygiene + post-bundle cleanup. Three deferred-from-v5.10.0 cleanups, zero compiler internals. **Pk.1**: release-artifact filenames now include the version (`mapanare-5.11.0-win-x64.zip`, `mnc-5.11.0-linux-x64`, etc.), driven by the VERSION file. install.ps1 / install.sh probe the versioned name first and fall back to the legacy unversioned alias for releases <= v5.10.0 and through a 2-release soak window (drop the fallback in v5.13.0). The legacy unversioned URL keeps resolving so blog-post install scripts that hardcoded it stay green. windows-bundled-llvm-smoke job downloads the versioned ZIP so a missing-versioned-asset failure trips the smoke gate. **Pk.2**: drops the v5.9.1 `mnc <file.mn>` (implicit-run) deprecation stderr line; v5.10.0 carried it as the soak-window concession per the v5.9.1 PLAN's stated cadence. `tests/test_cli_default.py::test_default_prints_deprecation_note` inverted to `test_default_silent_after_v5_11_0`. **Pk.3** (evaluate-only): native `mnc` is missing 18 of `mapanare`'s 25 subcommands (`lsp`, `fmt`, `init`, `check`, `lint`, `emit-c/wasm/mir`, `transpile`, `bind`, `doc`, registry commands). PyInstaller→native bundle swap deferred to v5.12.x+ behind Mc.* (mnc parity). See `docs/roadmap/v5/v5.11.0/MNC_PARITY_GAPS.md`. **Pk.4** (closeout-doc): macOS/Linux LLVM bundling stays deferred — system clang remains canonical (xcode-select / apt clang); a static Linux LLVM bundle with libstdc++ is ~300 MB; no demand signal emerged. Re-open if it does. NO seed refresh required (zero new C-runtime exports — first release in 5+ to skip Bb.*). Strict 3-stage fixed-point preserved (the v5.9.0 milestone). Goldens 66/66; `make lint` clean. See `docs/roadmap/v5/v5.11.0/SESSION_REPORT.md`.).
+Last updated: v5.21.1 (Mc.7 — pre-panel docs hygiene. Doc-surface only; zero compiler / runtime / MIR / IR changes. Re-syncs SPEC from the v5.7.1 cut to v5.21.0 to cover the Te.1–Te.6 terseness arc, Sh.\* self-host shrink, Mc.\* tooling pack, Te.3 brace soft-deprecation, Dk.\* Docker images, and Te.5 struct ergonomics. Closes 12 H.\* findings flagged in `.reviews/v5.22.0/PRE_PANEL_AUDIT.md`. The broken v5.14.0 SPEC promise of single-line `if x: y` at v5.21.0 is rescoped explicitly to v6.0. New `examples/chained_cmp.mn`, `tests/bootstrap/test_chained_cmp_mirror.py` (10/10 PASS), `format.py` chained-cmp invariant tests. Strict 3-stage fixed point preserved at 238,086 lines / 0 diff (v5.9.0 milestone, held through 13 consecutive releases). Goldens 95/95. See `docs/roadmap/v5/v5.21.1/SESSION_REPORT.md`.).
+
+Earlier last-updated: v5.11.0 (Pk.* — packaging hygiene + post-bundle cleanup. Three deferred-from-v5.10.0 cleanups, zero compiler internals. **Pk.1**: release-artifact filenames now include the version (`mapanare-5.11.0-win-x64.zip`, `mnc-5.11.0-linux-x64`, etc.), driven by the VERSION file. install.ps1 / install.sh probe the versioned name first and fall back to the legacy unversioned alias for releases <= v5.10.0 and through a 2-release soak window (drop the fallback in v5.13.0). The legacy unversioned URL keeps resolving so blog-post install scripts that hardcoded it stay green. windows-bundled-llvm-smoke job downloads the versioned ZIP so a missing-versioned-asset failure trips the smoke gate. **Pk.2**: drops the v5.9.1 `mnc <file.mn>` (implicit-run) deprecation stderr line; v5.10.0 carried it as the soak-window concession per the v5.9.1 PLAN's stated cadence. `tests/test_cli_default.py::test_default_prints_deprecation_note` inverted to `test_default_silent_after_v5_11_0`. **Pk.3** (evaluate-only): native `mnc` is missing 18 of `mapanare`'s 25 subcommands (`lsp`, `fmt`, `init`, `check`, `lint`, `emit-c/wasm/mir`, `transpile`, `bind`, `doc`, registry commands). PyInstaller→native bundle swap deferred to v5.12.x+ behind Mc.* (mnc parity). See `docs/roadmap/v5/v5.11.0/MNC_PARITY_GAPS.md`. **Pk.4** (closeout-doc): macOS/Linux LLVM bundling stays deferred — system clang remains canonical (xcode-select / apt clang); a static Linux LLVM bundle with libstdc++ is ~300 MB; no demand signal emerged. Re-open if it does. NO seed refresh required (zero new C-runtime exports — first release in 5+ to skip Bb.*). Strict 3-stage fixed-point preserved (the v5.9.0 milestone). Goldens 66/66; `make lint` clean. See `docs/roadmap/v5/v5.11.0/SESSION_REPORT.md`.).
 
 Earlier last-updated: v5.10.0 (Win.1b — bundled LLVM toolchain in the Windows release ZIP. Closes the "missing clang" pain on Windows surfaced by the v5.8.7 install probe; v5.9.0 DX.3 made the failure mode helpful (install hint instead of bare "clang failed"); v5.10.0 removes the dependency entirely. Default `mapanare-win-x64.zip` grows from ~10 MB to ~95 MB by bundling LLVM 18.1.8's minimal redistributable subset (clang.exe + lld-link.exe + LLVM-C.dll + compiler-rt + LICENSE.TXT) into `mapanare/llvm/`. New `__mn_executable_dir()` C-runtime export + `find_clang()` helper in `mapanare/self/main.mn`. Bb.4 seed refresh required for the new export. install.ps1 honors `MAPANARE_NO_BUNDLED_LLVM=1` for opt-out users → `mapanare-win-x64-minimal.zip` (~10 MB). `windows-bundled-llvm-smoke` CI job validates the published ZIP end-to-end with PATH stripped. Linux/macOS artifacts unchanged (PLAN Decision 4 — system clang is canonical there). See `docs/roadmap/v5/v5.10.0/SESSION_REPORT.md`.).
 
@@ -23,6 +25,46 @@ Earlier last-updated: v5.8.6 (We.1 closure — i686-w64-mingw32 ABI support. v5.
 | Sh.9b | async emitter bug #2: see `docs/guides/async.md` | documented workaround in async guide | v5.x |
 | ~~Wb.2~~ | ~~Self-hosted emit_llvm.mn hardcodes SysV ABI at line 2243~~ | — | **CLOSED v5.8.4** (port complete; aggregate-returning runtime fns emit Win64 sret on Windows; aggregate args use the sarg ptr pattern; Windows fixed-point holds within the same Dr.1 tolerance as Linux) |
 | ~~We.1~~ | ~~v5.8.4 `__mn_host_is_win64()` reads `_WIN32` (defined for both Win32 and Win64), so cross-compiling to `i686-w64-mingw32` silently triggers Win64 sret/sarg ABI rules — wrong for i686 cdecl which needs `byval(<T>) align 4` on aggregate args and a stricter `> 8 B → sret` return threshold.~~ | Use `x86_64-w64-mingw32` (the only Windows target Mapanare actually shipped through v5.8.5) | **CLOSED v5.8.6** (3-way ABI dispatch SysV / Win64 / i686; new paired exports `__mn_host_is_windows()` + `__mn_host_arch_bits()`; EmitState `is_win64` → `is_windows + win_arch`; Bb.2 seed refresh) |
+
+> **v5.13.0 → v5.21.1 closures** (terseness arc; full traces in
+> per-release SESSION_REPORTs):
+>
+> - **Mc.2** (`mnc fmt`) — CLOSED v5.13.0. Idempotent
+>   AST-preserving whitespace canonicalizer; 704 corpus
+>   assertions in `tests/test_format.py`.
+> - **Te.1** (colon-block syntax + `pass` keyword) — CLOSED
+>   v5.14.0; bootstrap mirror CLOSED v5.14.1 via new
+>   `__mn_indent_to_braces` C-runtime preprocessor.
+> - **Te.2** (comprehensions, terse lambdas, implicit-return
+>   one-liner) — CLOSED v5.15.0; bootstrap mirror CLOSED
+>   v5.15.1.
+> - **Te.4** (self-host string-interp parity) — CLOSED v5.16.0.
+>   `mnc-stage1` lexes / parses / lowers `"${expr}"` identically
+>   to the Python bootstrap; `tests/bootstrap/test_string_interp_mirror.py`
+>   10/10.
+> - **Sh.\*** (mechanical self-host rewrite to terse syntax) —
+>   CLOSED v5.17.0/.1/.2. **-3,950 lines (-13.8%)** off the
+>   v5.13.0 baseline; strict 3-stage fixed point preserved at
+>   every per-module commit.
+> - **Mc.\*** (LSP + init + check tooling pack) — CLOSED v5.18.0.
+>   3,020-line pygls package + `mapa init` template scaffolding +
+>   `mapa check --all` + VSCode extension v0.5.0.
+> - **Te.3** (`{}` soft-deprecation) — CLOSED v5.19.0. Parse-time
+>   warning + `mnc fmt` auto-migration default + `MAPANARE_NO_BRACE_WARNING=1`
+>   opt-out + `mnc fmt --keep-braces`. Hard removal scheduled v6.0.
+> - **Dk.\*** (GHCR Docker images) — CLOSED v5.19.1. `mapanare-builder`
+>   + `mapanare-runtime` images on GHCR + `mnc init --docker` overlay.
+> - **Te.5** (struct ergonomics — field shorthand, struct update
+>   `..base`, let destructuring, if-let / while-let / let-else) —
+>   CLOSED v5.20.0; bootstrap mirror CLOSED v5.20.1.
+> - **Te.6** (chained comparisons, `0 < x < 10`) — CLOSED v5.21.0.
+>   Once-evaluation of interior operands; equality and ordering
+>   operators merged at a single precedence level.
+> - **H.1–H.13** (pre-panel docs-surface drift) — CLOSED v5.21.1.
+>   Closes the 13 findings the v5.22.0 panel would otherwise dock
+>   at fresh: SPEC re-sync, README + localized README prose
+>   sync, broken `if x: y` promise rescoped to v6.0, and
+>   docs/test polish for v5.21.0 chained-cmp.
 
 > **v5.4.0 → v5.7.0 closures** (moved out of the active table; full
 > traces in their per-release SESSION_REPORTs):
@@ -102,4 +144,4 @@ The transpiler handles pure-compute Python (functions, loops, conditionals, arit
 
 **Best results with:** type-annotated functions, simple data types (int, float, bool, str), `for`/`while` loops, arithmetic.
 
-Last verified: v5.7.1 (2026-04-26).
+Last verified: v5.21.1 (2026-05-01).

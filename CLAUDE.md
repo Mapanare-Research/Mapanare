@@ -18,6 +18,59 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.21.1** (ready, not tagged) — **Mc.7 — pre-panel docs
+  hygiene.** Doc-surface-only release closing the 12 H.\*
+  findings flagged in `.reviews/v5.22.0/PRE_PANEL_AUDIT.md`.
+  Same posture as v5.7.1 → v5.8.0 (project-record 9.66 panel).
+  **Zero compiler edits. Zero runtime edits. Zero MIR / IR
+  changes. Zero `mapanare/self/*.mn` edits.** Strict 3-stage
+  fixed point preserved by construction at 238,086 lines /
+  0-line diff (v5.9.0 milestone, held through 13 consecutive
+  releases — longest streak in project history). Goldens
+  **95/95**. **Decision-1 Path B locked**: the v5.14.0
+  forward promise of single-line `if x: y` at v5.21.0 is
+  rescoped explicitly to v6.0 (to coincide with `{}` hard
+  removal); v5.21.1 PROMPT explicitly forbade the grammar +
+  bootstrap edits Path A would require, and rescoping is the
+  honest closure for a documentation contract violation.
+  **H.1**: README.md goldens 80/80→95/95 + fixed-point
+  231,957→238,086 with carry trail. **H.2**: SPEC.md header
+  bumped from v5.7.1 cut to v5.21.0 cut + new "What changed
+  since v5.7.1 sync" block summarizing the 14-release arc.
+  **H.3**: SPEC §4.0 rewritten for v5.19.0 Te.3 — colon-style
+  is now canonical, brace-style soft-deprecated with parse-
+  time warning, `MAPANARE_NO_BRACE_WARNING=1` opt-out and
+  `mnc fmt --keep-braces` documented. **H.4**: SPEC:1009
+  broken `if x: y` promise rescoped to v6.0 with explicit
+  rationale. **H.5** verify-only: SPEC already has Te.5
+  (field shorthand §3.7, struct update §3.7, let destructuring
+  §3.7, if-let / while-let / let-else §4.3.1) and Te.6
+  (chained comparisons §2.2) sections — no additions needed.
+  **H.6**: localized READMEs (es/pt/zh-CN) prose body synced
+  (badges already updated at v5.21.0 by `bump_version.py`);
+  fixed-point STRICT 238,086 + terseness arc summary in target
+  language. Closes Boa Bo.17r structurally. **H.7**: new
+  `examples/chained_cmp.mn` — 28-line example exercising 3-/
+  4-element chains + once-evaluation demo. **H.8**:
+  `mapanare/format.py` module docstring documents that v5.21.0
+  chained comparisons are preserved by line-based whitespace
+  canonicalization without an expression-level pass; new 4
+  unit tests guard idempotence on chain shapes. **H.9**: new
+  `tests/bootstrap/test_chained_cmp_mirror.py` (mirror of
+  `test_te5_mirror.py`) — 4 golden cases + 6 inline cases,
+  Python ↔ `mnc-stage1` byte-identical stdout assertion;
+  **10/10 PASS**. **H.10**: `.reviews/CARRY_FORWARD.md` v5.13.0
+  → v5.21.1 arc append (19 rows, each with resolving release
+  + evidence pointer). **H.11**: `docs/known_issues.md`
+  Last-updated bumped to v5.21.1 with v5.13.0 → v5.21.1
+  closures narrative (12 entries). **H.12**:
+  `BENCHMARKS-windows.md` gained a "last sync v5.8.8"
+  admonition making staleness visible; per-platform split was
+  already structural — closes Rattler #1 from v5.11.0 panel.
+  Pre-panel posture: v5.22.0 panel inherits **0 CRITICAL / 0
+  HIGH / 0 MEDIUM / 1 LOW (deferred to v6.0)**. See
+  `docs/roadmap/v5/v5.21.1/SESSION_REPORT.md` and `PLAN.md`.
+
 - **v5.21.0** (ready, not tagged) — **Te.6 — chained
   comparisons.** Python-style `0 < x < 10` parses as a single
   chained expression and means `0 < x && x < 10`, with `x`

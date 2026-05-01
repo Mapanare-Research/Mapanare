@@ -18,6 +18,17 @@ Invariants (verified by ``tests/test_format.py``):
 The formatter does NOT re-indent, change brace style, rewrite
 expressions, or reorder declarations. Those decisions are deferred
 to later releases (see STYLE_AUDIT §5).
+
+v5.21.1 — Chained comparisons (v5.21.0 Te.6, e.g. ``0 < x < 10``)
+are token-shaped just like ordinary binary comparisons; the
+line-based whitespace canonicalization preserves them with single
+spaces around each operator without any expression-level pass.
+The formatter therefore needs no ``ChainedCompare`` arm —
+``format_source`` already round-trips chains stable, and
+``to_terse`` / ``to_braces`` (which act only on block openers and
+trailing commas) leave chain lines verbatim. This is verified by
+the corpus invariants over goldens 92–95 and
+``examples/chained_cmp.mn``.
 """
 
 from __future__ import annotations

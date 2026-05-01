@@ -88,6 +88,31 @@ class TestRules:
         assert check_formatted("fn main() {}\n\n\n") is False  # extra blanks
         assert check_formatted("fn main() {}\r\n") is False  # CRLF
 
+    # v5.21.1 H.8 — chained comparisons (v5.21.0 Te.6) round-trip
+    # stable through the line-based formatter without an
+    # expression-level pass. These assertions guard against future
+    # regressions that introduce token-level rewriting that could
+    # interfere with the chain-collector grammar.
+    def test_chained_cmp_idempotent_3_element(self) -> None:
+        s = "let r: Bool = 0 < x < 10\n"
+        assert format_source(s) == s
+        assert check_formatted(s) is True
+
+    def test_chained_cmp_idempotent_4_element(self) -> None:
+        s = "let r: Bool = a < b < c < d\n"
+        assert format_source(s) == s
+        assert check_formatted(s) is True
+
+    def test_chained_cmp_idempotent_mixed_ops(self) -> None:
+        s = "let r: Bool = 1 <= x <= 10 != 5\n"
+        assert format_source(s) == s
+        assert check_formatted(s) is True
+
+    def test_chained_cmp_idempotent_mixed_direction(self) -> None:
+        s = "let r: Bool = a < b > c\n"
+        assert format_source(s) == s
+        assert check_formatted(s) is True
+
 
 # ---------------------------------------------------------------------------
 # Corpus tests — invariants must hold on every .mn file

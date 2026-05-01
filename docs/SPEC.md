@@ -1,32 +1,88 @@
 # Mapanare Language Specification
 
-**Version:** 5.7.1
-**Status:** Live — synced to the v5.7.1 cut (2026-04-26)
+**Version:** 5.21.0
+**Status:** Live — synced to the v5.21.0 cut (2026-05-01)
 
-> **v5.7.1 — pre-panel polish.** SPEC reflects the v5.4.0–v5.7.0
-> arc: native goldens **66/66** (first time in project history,
-> v5.7.0); self-hosted parity for tensor literals + multi-dim
-> indexing + broadcast + slicing + reductions (v5.6.0–v5.6.3);
-> async / `await` / `block_on` via real LLVM coroutines in the
-> self-hosted emitter (v5.5.4–v5.5.7); closure-typed function
-> parameters (v5.7.0 Sh.7); or-pattern + identifier `None`
-> resolution (v5.7.0 B); drop-glue ownership tracking for
-> string / list / boxed / tensor (v5.4.0–v5.6.4); self-host
-> 3-stage fixed-point restored to NEAR (v5.6.11). See
-> `docs/roadmap/v5/CLOSEOUT_ARC.md` for the complete arc trace.
+> **v5.21.1 — pre-panel docs hygiene.** SPEC re-synced from the
+> v5.7.1 cut to reflect the **v5.13–v5.21 terseness arc** plus
+> tooling/packaging waypoints. No language regressions; every
+> form documented below either was already present at v5.7.1 or
+> ships additively. The v5.22.0 panel cross-references this
+> sync block against the SESSION_REPORTs.
+
+> **What changed since the v5.7.1 sync.** The v5.13–v5.21 arc
+> is the largest feature-velocity arc in v5 history. Six
+> additive language features (Te.1–Te.6) shipped with **zero
+> new MIR ops, zero new IR shapes, zero new runtime function
+> additions** — every desugaring routes through existing
+> primitives. Strict 3-stage fixed point preserved across all
+> 13 consecutive releases (longest streak in project history).
+>
+> - **v5.13.0 — Mc.2 `mnc fmt`.** Idempotent, AST-preserving,
+>   whitespace-only canonicalizer. The linchpin: every later
+>   terseness release adds one rewrite pass on top.
+> - **v5.14.0 — Te.1 colon-block syntax.** Indent-based blocks
+>   for every block-introducing construct alongside `{}`. New
+>   reserved word `pass` for empty bodies.
+> - **v5.14.1 — bootstrap colon-block mirror.** New
+>   `__mn_indent_to_braces` C-runtime preprocessor wired into
+>   the bootstrap parser; `mnc-stage1` now accepts colon-style
+>   on every parseable golden.
+> - **v5.15.0 — Te.2 comprehensions, terse lambdas,
+>   implicit-return one-liner.** `[expr for x in iter (if c)*]`,
+>   `#{ k: v for ... }`, `|x| body`, `fn name(args) = expr`.
+> - **v5.15.1 — bootstrap comprehension mirror.**
+> - **v5.16.0 — Te.4 self-host string-interpolation parity.**
+>   `mnc-stage1` lexes/parses/lowers `"${expr}"` identically to
+>   the Python bootstrap.
+> - **v5.17.0/.1/.2 — Sh.\* mechanical self-host rewrite to
+>   terse syntax.** 17 modules; **-3,950 lines (-13.8%)** off
+>   the v5.13.0 baseline. Strict fixed point preserved at every
+>   per-module commit.
+> - **v5.18.0 — Mc.\* LSP + init + check tooling pack.**
+>   `mapa lsp` (pygls), `mapa init` (template scaffolding),
+>   `mapa check --all` (recursive walk), VSCode extension at
+>   `editors/vscode/`.
+> - **v5.19.0 — Te.3 `{}` soft-deprecation.** Brace-syntax
+>   sources still parse but emit a one-time per-file warning;
+>   `mnc fmt` (no flag) auto-migrates `{}` → `:`.
+>   `MAPANARE_NO_BRACE_WARNING=1` opts out. Hard removal at
+>   v6.0.
+> - **v5.19.1 — Dk.\* GHCR Docker images.**
+>   `mapanare-builder` / `mapanare-runtime` on GHCR;
+>   `mnc init --docker` overlay.
+> - **v5.20.0 — Te.5 struct ergonomics.** Field shorthand
+>   (`Point { x, y }`), struct update (`{ x: 5, ..base }`), let
+>   destructuring, refutable-binding forms (if-let, while-let,
+>   let-else).
+> - **v5.20.1 — bootstrap Te.5 mirror.** `mnc-stage1` parses
+>   and lowers all four Te.5 surface forms identically.
+> - **v5.21.0 — Te.6 chained comparisons.** Python-style
+>   `0 < x < 10` parses as a single chained expression with
+>   once-evaluation of interior operands. Six comparison
+>   operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) merged at a
+>   single precedence level (was: ordering at L4, equality
+>   at L3 pre-v5.21.0).
+> - **Goldens 66/66 → 95/95.** +29 new goldens covering Te.1
+>   `pass`, Te.2 comprehensions/lambda/implicit-return, Te.4
+>   string-interp, Te.5 struct ergonomics, Te.6 chained-cmp.
+> - **Strict 3-stage fixed point preserved** at 238,086 lines
+>   / 0 diff (was 226,603 at v5.9.0).
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
 
 > **Spec sync discipline.** Each release fact-checks this spec
 > against the live grammar (`mapanare/mapanare.lark`), type system
 > (`mapanare/types.py`), and self-hosted lexer
-> (`mapanare/self/lexer.mn`). The v5.7.1 sync re-audits §2.1
-> (keywords + bilingual master list), §3 (type system), §3.11
-> (tensors), §5.6 (or-patterns), §6.3 (closures), §27.1 (stability
-> count), §28 (stdlib), §29 (async), and Appendix B (compilation
-> pipeline) against the v5.4.0–v5.7.0 changes. If you discover
-> drift, open a documentation issue against the specific section
-> number.
+> (`mapanare/self/lexer.mn`). The v5.21.1 sync re-audits §2.1
+> (keywords — `pass` reserved at v5.14.0), §2.2 (operator
+> precedence — chained comparisons + L7 merge at v5.21.0),
+> §3.7 (struct ergonomics — field shorthand, struct update,
+> let destructuring), §4.0 (block syntax — Te.3
+> soft-deprecation), §4.3.1 (conditional binding), and §6.x
+> (closures + comprehensions + lambdas) against the v5.13–v5.21
+> changes. If you discover drift, open a documentation issue
+> against the specific section number.
 
 ---
 
@@ -969,22 +1025,14 @@ fn apply(f: fn(Int) -> Int, x: Int) -> Int {
 
 ### 4.0 Block Syntax
 
-Mapanare accepts two block syntaxes interchangeably (since v5.14.0).
-Both produce identical AST and identical IR.
+Mapanare accepts colon-style as **canonical** (since v5.19.0).
+Brace-style is **soft-deprecated**: it parses but emits a
+warning at parse time, and `mnc fmt` (no flag) auto-migrates
+`{}` → `:` per file. Hard removal is scheduled for **v6.0**.
+Both styles still produce identical AST and identical IR until
+hard removal.
 
-**Brace style** (canonical, present since v0.1):
-
-```mn
-fn factorial(n: Int) -> Int {
-    if n <= 1 {
-        return 1
-    } else {
-        return n * factorial(n - 1)
-    }
-}
-```
-
-**Colon style** (additive, since v5.14.0):
+**Colon style** (canonical, since v5.14.0; default since v5.19.0):
 
 ```mn
 fn factorial(n: Int) -> Int:
@@ -1005,10 +1053,37 @@ Rules for colon style:
   fn empty():
       pass
   ```
-- Single-line `if x: y` form is **not** supported in v5.14.0
-  (deferred to v5.21.0). Put the body on the next line.
-- Mixed brace + colon in one file is legal at parse time. Use
-  `mapanare fmt --to-terse` (or `--to-braces`) to normalize.
+- Single-line `if x: y` form is **not** supported. The v5.14.0
+  SPEC originally promised this for v5.21.0; that promise was
+  rescoped at v5.21.1 to coincide with the v6.0 `{}` hard
+  removal. Until v6.0, put the body on the next line.
+
+**Brace style** (legacy, soft-deprecated since v5.19.0; hard
+removal at v6.0):
+
+```mn
+fn factorial(n: Int) -> Int {
+    if n <= 1 {
+        return 1
+    } else {
+        return n * factorial(n - 1)
+    }
+}
+```
+
+Brace-syntax sources parse but the parser emits one warning
+per file:
+
+```
+warning: <file>: uses deprecated {}-block syntax (N occurrences).
+Run `mnc fmt <file>` to migrate. Hard removal in v6.0.
+```
+
+Set `MAPANARE_NO_BRACE_WARNING=1` to suppress the warning
+(useful in CI scripts that already track the migration). Use
+`mnc fmt --keep-braces` to preserve braces when running the
+formatter. The default `mnc fmt <file>` auto-migrates to colon
+style.
 
 As of v5.14.1, both compilers — the Python bootstrap and the native
 `mnc-stage1` — fully support both syntaxes. Source is preprocessed
@@ -1019,7 +1094,7 @@ asserts byte-identical output between
 `mapanare.parser._indent_to_braces` (Python) and
 `runtime/native/mapanare_core.c::__mn_indent_to_braces` (C) on every
 parseable golden. Mixing brace and colon in one source file is also
-legal — only the colon-introduced blocks get rewritten.
+legal at parse time — only the colon-introduced blocks get rewritten.
 
 ### 4.1 If / Else
 

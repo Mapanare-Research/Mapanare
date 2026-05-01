@@ -1,0 +1,29 @@
+// Chained comparisons — v5.21.0 Te.6.
+//
+// Python-style: `0 < x < 10` means `0 < x && x < 10` with
+// `x` evaluated exactly once. All six comparison operators
+// (`<`, `<=`, `>`, `>=`, `==`, `!=`) chain at a single
+// precedence level. Mixed-direction chains are legal but
+// rare: `a < b > c` means `a < b && b > c`.
+
+fn in_range(x: Int, lo: Int, hi: Int) -> Bool:
+    return lo <= x < hi
+
+fn middle(x: Int) -> Int:
+    print("M")
+    return x
+
+fn main():
+    let n: Int = 7
+    print(str(in_range(n, 0, 10)))    // true
+    print(str(0 < n < 10))            // true (3-element)
+
+    let a: Int = 1
+    let b: Int = 2
+    let c: Int = 3
+    let d: Int = 4
+    print(str(a < b < c < d))         // true (4-element)
+
+    // Side-effecting middle term evaluates exactly once.
+    // Output: "M" then "true" — never two "M"s.
+    print(str(0 < middle(5) < 10))

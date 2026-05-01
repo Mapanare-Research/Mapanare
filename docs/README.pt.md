@@ -24,7 +24,7 @@ Compila para binarios nativos via LLVM e WebAssembly.
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![Licenca](https://img.shields.io/badge/licenca-MIT-green.svg?style=flat-square)](../LICENSE)
-[![Versao](https://img.shields.io/badge/versao-5.21.0-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![Versao](https://img.shields.io/badge/versao-5.21.1-blue.svg?style=flat-square)](../CHANGELOG.md)
 [![Testes](https://img.shields.io/badge/testes-5800+_passando-brightgreen.svg?style=flat-square)]()
 [![Goldens](https://img.shields.io/badge/goldens-66%2F66-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
@@ -115,15 +115,16 @@ Referencia completa, tutoriais e receitas em [mapanare.dev/docs](https://mapanar
 
 ### Compilador nativo — o que `mnc-stage1` entrega
 
-O compilador auto-hospedado roda o corpus completo da v5.7.0 (66/66 goldens nativos):
+O compilador auto-hospedado roda o corpus completo da v5.21.0 (95/95 goldens nativos):
 
 - **Tensores** — literais, indexacao multi-dim, broadcasting estilo NumPy, slicing, reducoes (sum / mean / max / min / argmax / argmin).
 - **Async / await / `block_on`** — coroutines LLVM reais (`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`) com suspensao dirigida pelo scheduler.
 - **Parametros tipo closure** — `fn apply(f: fn(Int) -> Int, x: Int)` rebaixado via SSA de chamada indireta.
 - **Pattern matching com or-patterns e guards** — `Plus | Minus if cond => body` sobre variantes enum e construtores embutidos (`None` / `Some` / `Ok` / `Err`).
 - **Drop-glue de ownership** — lifetimes de string / list / boxed / tensor rastreados em caminhos de retorno e laços; valgrind / ASan / LSan / TSan todos limpos no corpus.
+- **Sintaxe terse (arco v5.13–v5.21)** — blocos com dois pontos (Te.1), comprehensions de listas/mapas e lambdas terse (Te.2), interpolacao de strings auto-hospedada (Te.4), ergonomia de structs (Te.5: shorthand de campos, `..base`, destructuring, if-let / while-let / let-else), comparacoes encadeadas (Te.6: `0 < x < 10`).
 
-Ponto fixo auto-hospedado de 3 estagios: NEAR (diferenca de 4 linhas de metadata VERSION num stage2.ll de 217k linhas).
+Ponto fixo auto-hospedado de 3 estagios: STRICT (stage2.ll == stage3.ll byte-identicos em 238,086 linhas; restaurado v5.9.0; mantido atraves da reescrita mecanica de chaves para dois pontos em v5.17.0, da ergonomia de structs em v5.20.0, e das comparacoes encadeadas em v5.21.0 — sequencia mais longa na historia do projeto: 13 lancamentos consecutivos). Compilador auto-hospedado encolheu **-3,950 linhas (-13.8%)** desde v5.13.0 via a reescrita Sh.\* sem quebrar o ponto fixo.
 
 ---
 

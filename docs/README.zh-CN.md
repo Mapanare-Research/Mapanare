@@ -24,7 +24,7 @@
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![许可证](https://img.shields.io/badge/许可证-MIT-green.svg?style=flat-square)](../LICENSE)
-[![版本](https://img.shields.io/badge/版本-5.21.0-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![版本](https://img.shields.io/badge/版本-5.21.1-blue.svg?style=flat-square)](../CHANGELOG.md)
 [![测试](https://img.shields.io/badge/测试-5800+_通过-brightgreen.svg?style=flat-square)]()
 [![Goldens](https://img.shields.io/badge/goldens-66%2F66-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
@@ -115,15 +115,16 @@ let answer = ask(ollama("llama3.2"), "什么是Mapanare?")
 
 ### 原生编译器 — `mnc-stage1` 提供的功能
 
-自托管编译器可运行完整的 v5.7.0 测试集（66/66 原生 goldens）：
+自托管编译器可运行完整的 v5.21.0 测试集（95/95 原生 goldens）：
 
 - **张量** — 字面量、多维索引、NumPy 风格广播、切片、归约（sum / mean / max / min / argmax / argmin）。
 - **Async / await / `block_on`** — 真正的 LLVM 协程（`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`），由调度器驱动挂起。
 - **闭包类型参数** — `fn apply(f: fn(Int) -> Int, x: Int)` 通过间接调用 SSA 进行降级。
 - **带守卫的或模式匹配** — `Plus | Minus if cond => body` 适用于枚举变体和内置构造器（`None` / `Some` / `Ok` / `Err`）。
 - **所有权 Drop-glue** — string / list / boxed / tensor 生命周期在返回路径和循环迭代中被跟踪；valgrind / ASan / LSan / TSan 在测试集上全部干净。
+- **简洁语法（v5.13–v5.21 弧线）** — 冒号块（Te.1）、列表/映射推导式与简洁 lambda（Te.2）、自托管字符串插值（Te.4）、结构体人体工学（Te.5：字段简写、`..base`、解构、if-let / while-let / let-else）、链式比较（Te.6：`0 < x < 10`）。
 
-自托管 3 阶段不动点：NEAR（在 21.7 万行的 stage2.ll 上 VERSION 元数据 4 行差异）。
+自托管 3 阶段不动点：STRICT（stage2.ll 与 stage3.ll 在 238,086 行字节级一致；v5.9.0 恢复；经 v5.17.0 大括号→冒号机械重写、v5.20.0 结构体人体工学和 v5.21.0 链式比较保持不变 —— 项目历史上最长连续记录：连续 13 个版本）。自托管编译器自 v5.13.0 起通过 Sh.\* 重写收缩了 **-3,950 行 (-13.8%)**，且未破坏不动点。
 
 ---
 
