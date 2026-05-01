@@ -45,6 +45,7 @@ from mapanare.ast_nodes import (
     GenericType,
     Identifier,
     IfExpr,
+    IfLetExpr,
     ImplDef,
     ImportDef,
     IndexExpr,
@@ -53,6 +54,7 @@ from mapanare.ast_nodes import (
     LambdaExpr,
     LetBinding,
     LetDestructure,
+    LetElseStmt,
     ListLiteral,
     MapLiteral,
     MatchExpr,
@@ -85,6 +87,7 @@ from mapanare.ast_nodes import (
     TypeAlias,
     TypeExpr,
     UnaryExpr,
+    WhileLetStmt,
     WhileLoop,
 )
 from mapanare.types import (
@@ -732,6 +735,8 @@ class SemanticChecker:
             return self._check_assign(expr)
         if isinstance(expr, IfExpr):
             return self._check_if(expr)
+        if isinstance(expr, IfLetExpr):
+            return self._check_if_let(expr)
         if isinstance(expr, MatchExpr):
             return self._check_match(expr)
         if isinstance(expr, NamespaceAccessExpr):
@@ -1109,6 +1114,23 @@ class SemanticChecker:
             self._pop_scope()
         elif isinstance(expr.else_block, IfExpr):
             self._check_if(expr.else_block)
+        return UNKNOWN_TYPE
+
+    def _check_if_let(self, expr: IfLetExpr) -> TypeInfo:
+        """v5.20.0 Te.5.E: type-check `if let <pat> = <scrutinee> { ... }`."""
+        subject_type = self._infer_expr(expr.scrutinee)
+        # Then block — pattern bindings live in this scope.
+        self._push_scope()
+        self._bind_pattern(expr.pattern, subject_type)
+        self._check_block(expr.then_block)
+        self._pop_scope()
+        # Else — no bindings leak across.
+        if isinstance(expr.else_block, Block):
+            self._push_scope()
+            self._check_block(expr.else_block)
+            self._pop_scope()
+        elif isinstance(expr.else_block, (IfExpr, IfLetExpr)):
+            self._infer_expr(expr.else_block)
         return UNKNOWN_TYPE
 
     def _check_match(self, expr: MatchExpr) -> TypeInfo:
@@ -1684,6 +1706,10 @@ class SemanticChecker:
             self._check_let(stmt)
         elif isinstance(stmt, LetDestructure):
             self._check_let_destructure(stmt)
+        elif isinstance(stmt, LetElseStmt):
+            self._check_let_else(stmt)
+        elif isinstance(stmt, WhileLetStmt):
+            self._check_while_let(stmt)
         elif isinstance(stmt, ExprStmt):
             self._infer_expr(stmt.expr)
         elif isinstance(stmt, ReturnStmt):
@@ -1762,6 +1788,32 @@ class SemanticChecker:
         """
         self._infer_expr(dest.value)
         self._define_pattern_bindings(dest.pattern, outer_mut=dest.mutable)
+
+    def _check_let_else(self, stmt: LetElseStmt) -> None:
+        """v5.20.0 Te.5.E: scope-bind a let-else statement.
+
+        Strategy: type-check the scrutinee, then bind pattern names in
+        the OUTER (current) scope so the rest of the block can reference
+        them. The else block runs in a child scope. Divergence is
+        enforced at lower time, but we also do a best-effort source-
+        level check so the user gets an early error.
+        """
+        subject_type = self._infer_expr(stmt.scrutinee)
+        # Pattern bindings leak into the surrounding scope (the
+        # essential feature of let-else).
+        self._bind_pattern(stmt.pattern, subject_type)
+        # Else block — its own scope.
+        self._push_scope()
+        self._check_block(stmt.else_block)
+        self._pop_scope()
+
+    def _check_while_let(self, stmt: WhileLetStmt) -> None:
+        """v5.20.0 Te.5.E: type-check `while let <pat> = <scrutinee> { body }`."""
+        subject_type = self._infer_expr(stmt.scrutinee)
+        self._push_scope()
+        self._bind_pattern(stmt.pattern, subject_type)
+        self._check_block(stmt.body)
+        self._pop_scope()
 
     def _define_pattern_bindings(
         self, pattern: StructPattern, outer_mut: bool

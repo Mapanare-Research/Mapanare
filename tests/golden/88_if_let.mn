@@ -1,0 +1,10 @@
+// v5.20.0 Te.5.E — `if let <pat> = <scrutinee> { ... }`.
+//
+// Desugars to a 2-arm match: success arm runs the then-block, the
+// wildcard arm runs `()`. Equivalent to `match opt { Some(x) =>
+// f(x), _ => () }` and produces structurally identical IR.
+
+fn main():
+    let opt: Option<Int> = Some(42)
+    if let Some(x) = opt:
+        print(str(x))

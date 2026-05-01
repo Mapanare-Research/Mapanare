@@ -50,6 +50,7 @@ from mapanare.ast_nodes import (
     Identifier,
     IdentPattern,
     IfExpr,
+    IfLetExpr,
     ImplDef,
     ImportDef,
     IndexExpr,
@@ -58,9 +59,12 @@ from mapanare.ast_nodes import (
     LambdaExpr,
     LetBinding,
     LetDestructure,
+    LetElseStmt,
     ListLiteral,
     MapLiteral,
+    MatchArm,
     MatchExpr,
+    WildcardPattern,
     MethodCallExpr,
     ModuleLetDef,
     NamedType,
@@ -91,6 +95,7 @@ from mapanare.ast_nodes import (
     TraitDef,
     TypeExpr,
     UnaryExpr,
+    WhileLetStmt,
     WhileLoop,
 )
 from mapanare.mir import (
@@ -202,6 +207,65 @@ def _ast_span_to_mir(node: ASTNode | None) -> SourceSpan | None:
         return None
     s = node.span
     return SourceSpan(line=s.line, column=s.column, end_line=s.end_line, end_column=s.end_column)
+
+
+def _stmt_diverges(stmt: object) -> bool:
+    """v5.20.0 Te.5.E: does this statement guarantee non-fall-through?
+
+    Used to enforce the let-else divergence requirement (D5/D6).
+    The accepted divergent shapes are: ReturnStmt, BreakStmt,
+    ContinueStmt, calls to `panic`/`abort`, and nested control-flow
+    where every leaf branch diverges.
+    """
+    from mapanare.ast_nodes import (
+        BreakStmt,
+        CallExpr,
+        ContinueStmt,
+        ExprStmt,
+        Identifier,
+        IfExpr,
+        MatchExpr,
+        ReturnStmt,
+    )
+
+    if isinstance(stmt, (ReturnStmt, BreakStmt, ContinueStmt)):
+        return True
+    if isinstance(stmt, ExprStmt):
+        e = stmt.expr
+        if isinstance(e, CallExpr) and isinstance(e.callee, Identifier):
+            if e.callee.name in ("panic", "abort", "exit"):
+                return True
+        if isinstance(e, MatchExpr):
+            return bool(e.arms) and all(
+                _expr_or_block_diverges(arm.body) for arm in e.arms
+            )
+        if isinstance(e, IfExpr):
+            then_div = _block_diverges(e.then_block)
+            if e.else_block is None:
+                return False
+            if isinstance(e.else_block, IfExpr):
+                # Recurse via wrapping — treat as ExprStmt for divergence.
+                return then_div and _stmt_diverges(ExprStmt(expr=e.else_block))
+            return then_div and _block_diverges(e.else_block)
+    return False
+
+
+def _expr_or_block_diverges(node: object) -> bool:
+    """Helper for match-arm divergence — body may be Block or Expr."""
+    from mapanare.ast_nodes import Block, ExprStmt
+
+    if isinstance(node, Block):
+        return _block_diverges(node)
+    return _stmt_diverges(ExprStmt(expr=node))
+
+
+def _block_diverges(block: object) -> bool:
+    """v5.20.0 Te.5.E: does this Block guarantee non-fall-through?"""
+    from mapanare.ast_nodes import Block
+
+    if not isinstance(block, Block) or not block.stmts:
+        return False
+    return _stmt_diverges(block.stmts[-1])
 
 
 # ---------------------------------------------------------------------------
@@ -1170,6 +1234,12 @@ class MIRLowerer:
         if isinstance(stmt, LetDestructure):
             self._lower_let_destructure(stmt)
             return None
+        if isinstance(stmt, LetElseStmt):
+            self._lower_let_else(stmt)
+            return None
+        if isinstance(stmt, WhileLetStmt):
+            self._lower_while_let(stmt)
+            return None
         if isinstance(stmt, ExprStmt):
             return self._lower_expr(stmt.expr)
         if isinstance(stmt, ReturnStmt):
@@ -1422,6 +1492,155 @@ class MIRLowerer:
                     base_name=sub_base_name,
                     outer_mut=outer_mut,
                 )
+
+    # ------------------------------------------------------------------
+    # v5.20.0 Te.5.E — if-let / while-let / let-else
+    # ------------------------------------------------------------------
+
+    def _lower_if_let(self, expr: IfLetExpr) -> Value:
+        """Lower `if let <pat> = <scrutinee> { ... } [else { ... }]`.
+
+        Desugars to a 2-arm match: success arm = then_block, wildcard
+        arm = else_block (or empty block when omitted). Reuses
+        `_lower_match` so all decision-tree compilation, exhaustiveness,
+        and arm-binding scoping are inherited.
+        """
+        success_arm = MatchArm(pattern=expr.pattern, body=expr.then_block)
+        if expr.else_block is None:
+            else_body: Block | Expr = Block(stmts=[])
+        elif isinstance(expr.else_block, Block):
+            else_body = expr.else_block
+        else:
+            # IfExpr or IfLetExpr — wrap in a Block as ExprStmt.
+            else_body = Block(stmts=[ExprStmt(expr=expr.else_block)])
+        wildcard_arm = MatchArm(pattern=WildcardPattern(), body=else_body)
+        synthetic = MatchExpr(subject=expr.scrutinee, arms=[success_arm, wildcard_arm])
+        return self._lower_match(synthetic)
+
+    def _lower_while_let(self, stmt: WhileLetStmt) -> None:
+        """Lower `while let <pat> = <scrutinee> { body }` per D8.
+
+        Desugars to:
+            while true {
+                match <scrutinee> {
+                    <pat> => <body>,
+                    _ => break,
+                }
+            }
+
+        Scrutinee is re-evaluated each iteration (matches Rust).
+        """
+        success_arm = MatchArm(pattern=stmt.pattern, body=stmt.body)
+        break_arm = MatchArm(
+            pattern=WildcardPattern(),
+            body=Block(stmts=[BreakStmt()]),
+        )
+        match_expr = MatchExpr(
+            subject=stmt.scrutinee,
+            arms=[success_arm, break_arm],
+        )
+        while_body = Block(stmts=[ExprStmt(expr=match_expr)])
+        synthetic = WhileLoop(
+            condition=BoolLiteral(value=True),
+            body=while_body,
+        )
+        self._lower_while(synthetic)
+
+    def _lower_let_else(self, stmt: LetElseStmt) -> None:
+        """Lower `let <pattern> = <scrutinee> else { ... }` per D5.
+
+        Strategy 2 (synthesized return): transform to
+            let <bound> = match <scrutinee> {
+                <pattern> => <bound>,
+                _ => { else_block },          # diverging
+            }
+
+        For 0-arg ConstructorPattern (None) and Wildcard variants, no
+        outer binding is needed — emit as a plain match-statement.
+
+        Pattern shapes supported in v5.20.0:
+            - WildcardPattern
+            - ConstructorPattern with 0 args (e.g. None)
+            - ConstructorPattern with 1 IdentPattern arg (Some(x), Ok(v), Err(e))
+            - ConstructorPattern with 1 WildcardPattern arg (Some(_))
+        Multi-binding patterns deferred to v5.21.0+.
+        """
+        pattern = stmt.pattern
+
+        # Divergence check (D5/D6). The else block must end in a
+        # divergent statement; the surrounding fn's implicit return
+        # does NOT satisfy the requirement.
+        if not _block_diverges(stmt.else_block):
+            raise RuntimeError(
+                "let-else: the else block must diverge "
+                "(end with `return`, `break`, `continue`, or `panic(...)`). "
+                "An implicit return at the function tail does NOT satisfy "
+                "this requirement."
+            )
+
+        if isinstance(pattern, WildcardPattern):
+            # `let _ = expr else { ... }` — wildcard always matches;
+            # else is dead. Emit the match for the side effect of
+            # evaluating expr.
+            synthetic = MatchExpr(
+                subject=stmt.scrutinee,
+                arms=[MatchArm(pattern=WildcardPattern(), body=Block(stmts=[]))],
+            )
+            self._lower_match(synthetic)
+            return
+
+        if isinstance(pattern, ConstructorPattern):
+            n_args = len(pattern.args)
+            single_ident = (
+                n_args == 1 and isinstance(pattern.args[0], IdentPattern)
+            )
+            single_wild = (
+                n_args == 1 and isinstance(pattern.args[0], WildcardPattern)
+            )
+
+            if n_args == 0 or single_wild:
+                # No outer binding to leak — emit as match-statement.
+                synthetic = MatchExpr(
+                    subject=stmt.scrutinee,
+                    arms=[
+                        MatchArm(pattern=pattern, body=Block(stmts=[])),
+                        MatchArm(pattern=WildcardPattern(), body=stmt.else_block),
+                    ],
+                )
+                self._lower_match(synthetic)
+                return
+
+            if single_ident:
+                # `let Some(x) = opt else { ... }` — the canonical case.
+                # Build: let x = match opt { Some(x) => x, _ => else_block }
+                bound_name = pattern.args[0].name  # type: ignore[attr-defined]
+                success_arm = MatchArm(
+                    pattern=pattern,
+                    body=Identifier(name=bound_name),
+                )
+                wildcard_arm = MatchArm(
+                    pattern=WildcardPattern(),
+                    body=stmt.else_block,
+                )
+                synthetic = MatchExpr(
+                    subject=stmt.scrutinee,
+                    arms=[success_arm, wildcard_arm],
+                )
+                synthetic_let = LetBinding(
+                    name=bound_name,
+                    mutable=False,
+                    type_annotation=None,
+                    value=synthetic,
+                )
+                self._lower_let(synthetic_let)
+                return
+
+        raise RuntimeError(
+            f"let-else: unsupported pattern shape "
+            f"{type(pattern).__name__}; v5.20.0 supports wildcard and "
+            "constructor patterns with 0 or 1 args (single identifier "
+            "or wildcard). Multi-binding patterns are deferred."
+        )
 
     def _lower_return(self, ret: ReturnStmt) -> None:
         """Lower a return statement."""
@@ -1770,6 +1989,9 @@ class MIRLowerer:
 
         if isinstance(expr, IfExpr):
             return self._lower_if(expr)
+
+        if isinstance(expr, IfLetExpr):
+            return self._lower_if_let(expr)
 
         if isinstance(expr, MatchExpr):
             return self._lower_match(expr)

@@ -1,0 +1,11 @@
+// v5.20.0 Te.5.E — `if let <pat> = <scrutinee> { ... } else { ... }`.
+//
+// Both branches present. Wildcard arm runs `else_block`. Equivalent
+// to `match opt { Some(x) => print_int(x), _ => print_str("none") }`.
+
+fn main():
+    let opt: Option<Int> = None
+    if let Some(x) = opt:
+        print(str(x))
+    else:
+        print("none")

@@ -1,0 +1,24 @@
+// v5.20.0 Te.5.E — `let <pat> = <scrutinee> else { ... }` (D5/D6).
+//
+// Refutable binding with mandatory diverging else. The Some(n)
+// pattern unwraps n into the surrounding scope when scrutinee is
+// Some; the else block must diverge (return/break/continue/panic)
+// to satisfy the let-else divergence requirement.
+//
+// Lowered as:
+//   let n = match maybe_int() {
+//       Some(n) => n,
+//       _ => { return },     // diverges
+//   }
+//
+// The function's implicit return does NOT satisfy divergence
+// (D6) — the else block must itself end with `return` (or another
+// divergent form). This golden uses an explicit return.
+
+fn maybe_int() -> Option<Int>:
+    return Some(42)
+
+fn main():
+    let Some(n) = maybe_int() else:
+        return
+    print(str(n))

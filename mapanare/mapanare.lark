@@ -181,9 +181,11 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 
 ?stmt: let_stmt
      | let_dest_stmt
+     | let_else_stmt
      | for_stmt
      | for_await_stmt
      | while_stmt
+     | while_let_stmt
      | return_stmt
      | break_stmt
      | continue_stmt
@@ -209,6 +211,18 @@ field_dest_list: field_dest (COMMA field_dest)* (COMMA RANGE)? COMMA?
                | RANGE COMMA?
 
 field_dest: KW_MUT? NAME (COLON struct_dest_pat)?
+
+// v5.20.0 Te.5.E: `let <constructor_pattern> = <scrutinee> else { ... }`.
+// Pattern is restricted to constructor_pattern to avoid LALR(1)
+// ambiguity with let_stmt / let_dest_stmt; this covers Some(x) /
+// Ok(v) / Err(e) / wildcard which are the cases that benefit from
+// let-else. The else block is required and must diverge (D5/D6 —
+// semantic check enforces).
+let_else_stmt: KW_LET (constructor_pattern | wildcard_pattern) ASSIGN expr KW_ELSE block
+
+// v5.20.0 Te.5.E: `while let <pattern> = <scrutinee> { body }`.
+// Desugars to `while true { match scrutinee { pat => body, _ => break } }`.
+while_let_stmt: KW_WHILE KW_LET pattern ASSIGN expr block
 
 // v4.55.0: real const — distinct from let, requires type annotation + constant initializer
 const_def: KW_CONST NAME COLON type_expr ASSIGN expr
@@ -303,6 +317,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | signal_expr
           | stream_expr
           | if_expr
+          | if_let_expr
           | match_expr
           | construct_expr
           | generic_call_expr
@@ -363,6 +378,11 @@ stream_expr: KW_STREAM LPAREN expr RPAREN
 
 if_expr: KW_IF expr block (KW_ELSE block)? -> if_simple
        | KW_IF expr block KW_ELSE if_expr -> if_elseif
+
+// v5.20.0 Te.5.E: `if let <pattern> = <scrutinee> { ... } [else { ... }]`.
+// Desugars to `match` over the scrutinee with the pattern arm + a
+// wildcard arm running the else block (or `()` when omitted).
+if_let_expr: KW_IF KW_LET pattern ASSIGN expr block (KW_ELSE block)?
 
 match_expr: KW_MATCH expr LBRACE _nl* match_arms _nl* RBRACE
 match_arms: (match_arm (COMMA _nl* match_arm)* COMMA?)?

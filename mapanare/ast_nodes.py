@@ -467,6 +467,36 @@ class LetDestructure(Stmt):
 
 
 @dataclass
+class LetElseStmt(Stmt):
+    """v5.20.0 Te.5.E: `let <ConstructorPattern> = <scrutinee> else { ... }`.
+
+    Refutable binding with mandatory diverging else block. Pattern is
+    one of: ConstructorPattern (Some/Ok/Err with single ident or
+    wildcard arg) or WildcardPattern. Else block must diverge — D5.
+    Lowered as: `let bound_name = match scrutinee { pat => bound_name,
+    _ => { else_block } }`.
+    """
+
+    pattern: "Pattern" = field(default_factory=lambda: Pattern())
+    scrutinee: Expr = field(default_factory=Expr)
+    else_block: Block = field(default_factory=lambda: Block())
+
+
+@dataclass
+class WhileLetStmt(Stmt):
+    """v5.20.0 Te.5.E: `while let <pattern> = <scrutinee> { body }`.
+
+    Desugars to `while true { match scrutinee { pat => body,
+    _ => break } }`. Scrutinee is re-evaluated each iteration
+    (matches Rust).
+    """
+
+    pattern: "Pattern" = field(default_factory=lambda: Pattern())
+    scrutinee: Expr = field(default_factory=Expr)
+    body: Block = field(default_factory=lambda: Block())
+
+
+@dataclass
 class ExprStmt(Stmt):
     """Expression used as a statement."""
 
@@ -565,6 +595,20 @@ class IfExpr(Expr):
     condition: Expr = field(default_factory=Expr)
     then_block: Block = field(default_factory=lambda: Block())
     else_block: Block | IfExpr | None = None
+
+
+@dataclass
+class IfLetExpr(Expr):
+    """v5.20.0 Te.5.E: `if let <pattern> = <scrutinee> { ... } [else { ... }]`.
+
+    Desugars to a match: success arm runs then_block; wildcard arm
+    runs else_block (or `()` when omitted).
+    """
+
+    pattern: "Pattern" = field(default_factory=lambda: Pattern())
+    scrutinee: Expr = field(default_factory=Expr)
+    then_block: Block = field(default_factory=lambda: Block())
+    else_block: Block | "IfExpr | IfLetExpr | None" = None
 
 
 @dataclass

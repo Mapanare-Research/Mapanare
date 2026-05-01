@@ -53,6 +53,7 @@ from mapanare.ast_nodes import (
     Identifier,
     IdentPattern,
     IfExpr,
+    IfLetExpr,
     ImplDef,
     ImportDef,
     IndexExpr,
@@ -62,6 +63,7 @@ from mapanare.ast_nodes import (
     LambdaExpr,
     LetBinding,
     LetDestructure,
+    LetElseStmt,
     ListLiteral,
     LiteralPattern,
     MapEntry,
@@ -102,6 +104,7 @@ from mapanare.ast_nodes import (
     TypeExpr,
     TypeParam,
     UnaryExpr,
+    WhileLetStmt,
     WhileLoop,
     WildcardPattern,
 )
@@ -766,6 +769,30 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         body = items[1]
         return WhileLoop(condition=condition, body=body, span=_span_from_children(children))
 
+    # v5.20.0 Te.5.E: `while let <pattern> = <scrutinee> { body }`.
+    def while_let_stmt(self, children: list[Any]) -> WhileLetStmt:
+        items = _filter(children)
+        # Items: pattern, scrutinee, body
+        pattern, scrutinee, body = items[0], items[1], items[2]
+        return WhileLetStmt(
+            pattern=pattern,
+            scrutinee=scrutinee,
+            body=body,
+            span=_span_from_children(children),
+        )
+
+    # v5.20.0 Te.5.E: `let <pattern> = <scrutinee> else { ... }`.
+    def let_else_stmt(self, children: list[Any]) -> LetElseStmt:
+        items = _filter(children)
+        # Items: pattern, scrutinee, else_block
+        pattern, scrutinee, else_block = items[0], items[1], items[2]
+        return LetElseStmt(
+            pattern=pattern,
+            scrutinee=scrutinee,
+            else_block=else_block,
+            span=_span_from_children(children),
+        )
+
     def expr_stmt(self, children: list[Any]) -> ExprStmt:
         return ExprStmt(expr=children[0], span=_span_from_children(children))
 
@@ -1306,6 +1333,22 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             condition=items[0],
             then_block=items[1],
             else_block=items[2],
+            span=_span_from_children(children),
+        )
+
+    # v5.20.0 Te.5.E: `if let <pattern> = <scrutinee> { ... } [else { ... }]`.
+    def if_let_expr(self, children: list[Any]) -> IfLetExpr:
+        items = _filter(children)
+        # Items: pattern, scrutinee, then_block, else_block?
+        pattern = items[0]
+        scrutinee = items[1]
+        then_block = items[2]
+        else_block = items[3] if len(items) > 3 else None
+        return IfLetExpr(
+            pattern=pattern,
+            scrutinee=scrutinee,
+            then_block=then_block,
+            else_block=else_block,
             span=_span_from_children(children),
         )
 
