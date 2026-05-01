@@ -377,6 +377,21 @@ class FieldInit(ASTNode):
 
 
 @dataclass
+class StructUpdate(Expr):
+    """Struct update: `new Point { x: 5, ..old }`. v5.20.0 Te.5.C.
+
+    Lowers to a `ConstructExpr` with overrides plus per-field
+    accesses on the base for any field not in `overrides`. Single
+    `base` only (D2). Field list must be completed at lower time
+    when the struct definition is in scope.
+    """
+
+    name: str = ""
+    overrides: list[FieldInit] = field(default_factory=list)
+    base: Expr = field(default_factory=Expr)
+
+
+@dataclass
 class SomeExpr(Expr):
     """Some(value) wrapping expression."""
 
@@ -429,6 +444,23 @@ class LetBinding(Stmt):
     """Let binding: `let x: Int = 42` or `let mut x = 0`."""
 
     name: str = ""
+    mutable: bool = False
+    type_annotation: TypeExpr | None = None
+    value: Expr = field(default_factory=Expr)
+
+
+@dataclass
+class LetDestructure(Stmt):
+    """v5.20.0 Te.5.D: `let <StructPattern> [: T] = <expr>`.
+
+    Lowers to `let __mn_dst_N = expr` followed by per-field lets;
+    when `value` is a bare Identifier, the tmp is skipped and the
+    field accesses run on the source name directly. `mutable`
+    here is the outer `let mut` — applies to every bound name
+    that doesn't have its own `mut` already.
+    """
+
+    pattern: StructPattern = field(default_factory=lambda: StructPattern())
     mutable: bool = False
     type_annotation: TypeExpr | None = None
     value: Expr = field(default_factory=Expr)
@@ -594,6 +626,36 @@ class OrPattern(Pattern):
     """Or-pattern: matches if any alternative matches. `A | B | C`."""
 
     alternatives: list[Pattern] = field(default_factory=list)
+
+
+@dataclass
+class FieldPattern(ASTNode):
+    """v5.20.0 Te.5.D: a single field within a StructPattern.
+
+    `name`            — shorthand binds the field to a local of the
+                        same name; sub_pattern is None.
+    `mut name`        — same as above, mutable.
+    `name: <pattern>` — destructure the field into a nested pattern;
+                        the outer name is NOT bound.
+    `mut` is meaningful only when sub_pattern is None.
+    """
+
+    name: str = ""
+    mutable: bool = False
+    sub_pattern: Pattern | None = None
+
+
+@dataclass
+class StructPattern(Pattern):
+    """v5.20.0 Te.5.D: `Name { field, field, .. }` in a `let` binding.
+
+    `has_rest=True` means the pattern ended in `..` — fields not
+    listed are not bound (and not validated against the struct).
+    """
+
+    name: str = ""
+    fields: list[FieldPattern] = field(default_factory=list)
+    has_rest: bool = False
 
 
 # ---------------------------------------------------------------------------

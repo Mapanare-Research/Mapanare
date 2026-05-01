@@ -1,0 +1,21 @@
+// v5.20.0 Te.5.D — nested struct destructuring.
+//
+// `let Outer { inner: Inner { a }, c } = o` first binds the nested
+// `inner` field into a fresh `__mn_dst_N` tmp, then recurses on the
+// inner pattern to bind `a`. The outer name `inner` is NOT bound
+// (Rust semantics — the colon means "destructure into this nested
+// pattern"); only `a` and `c` end up in scope.
+
+struct Inner:
+    a: Int
+    b: Int
+
+struct Outer:
+    inner: Inner
+    c: Int
+
+fn main():
+    let o: Outer = new Outer { inner: new Inner { a: 10, b: 20 }, c: 30 }
+    let Outer { inner: Inner { a }, c } = o
+    print(str(a))
+    print(str(c))

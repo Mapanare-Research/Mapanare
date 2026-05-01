@@ -52,6 +52,7 @@ from mapanare.ast_nodes import (
     IntLiteral,
     LambdaExpr,
     LetBinding,
+    LetDestructure,
     ListLiteral,
     MapLiteral,
     MatchExpr,
@@ -76,6 +77,7 @@ from mapanare.ast_nodes import (
     StreamDecl,
     StringLiteral,
     StructDef,
+    StructPattern,
     SyncExpr,
     TensorLiteral,
     TensorType,
@@ -1680,6 +1682,8 @@ class SemanticChecker:
     def _check_stmt(self, stmt: object) -> None:
         if isinstance(stmt, LetBinding):
             self._check_let(stmt)
+        elif isinstance(stmt, LetDestructure):
+            self._check_let_destructure(stmt)
         elif isinstance(stmt, ExprStmt):
             self._infer_expr(stmt.expr)
         elif isinstance(stmt, ReturnStmt):
@@ -1747,6 +1751,35 @@ class SemanticChecker:
                 mutable=let.mutable,
             ),
         )
+
+    def _check_let_destructure(self, dest: LetDestructure) -> None:
+        """v5.20.0 Te.5.D: type-check + scope-bind a destructuring let.
+
+        Strategy: type-check the RHS (catches undefined-variable issues
+        early), then walk the pattern, defining each bound leaf name in
+        the current scope. Field-name validation is deferred to lower
+        time which has access to the resolved struct field list.
+        """
+        self._infer_expr(dest.value)
+        self._define_pattern_bindings(dest.pattern, outer_mut=dest.mutable)
+
+    def _define_pattern_bindings(
+        self, pattern: StructPattern, outer_mut: bool
+    ) -> None:
+        for fp in pattern.fields:
+            if fp.sub_pattern is None:
+                self.current_scope.define(
+                    fp.name,
+                    Symbol(
+                        name=fp.name,
+                        kind=SymbolKind.VARIABLE,
+                        type_info=UNKNOWN_TYPE,
+                        mutable=outer_mut or fp.mutable,
+                    ),
+                )
+            else:
+                assert isinstance(fp.sub_pattern, StructPattern)
+                self._define_pattern_bindings(fp.sub_pattern, outer_mut=outer_mut)
 
     def _check_for(self, loop: ForLoop) -> None:
         iter_type = self._infer_expr(loop.iterable)

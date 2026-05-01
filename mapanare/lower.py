@@ -40,6 +40,7 @@ from mapanare.ast_nodes import (
     ExprStmt,
     ExternFnDef,
     FieldAccessExpr,
+    FieldInit,
     FloatLiteral,
     FnDef,
     FnType,
@@ -56,6 +57,7 @@ from mapanare.ast_nodes import (
     IntLiteral,
     LambdaExpr,
     LetBinding,
+    LetDestructure,
     ListLiteral,
     MapLiteral,
     MatchExpr,
@@ -82,6 +84,8 @@ from mapanare.ast_nodes import (
     StreamDecl,
     StringLiteral,
     StructDef,
+    StructPattern,
+    StructUpdate,
     SyncExpr,
     TensorLiteral,
     TraitDef,
@@ -278,6 +282,9 @@ class MIRLowerer:
         self._block: BasicBlock | None = None
         self._tmp_counter = 0
         self._block_counter = 0
+        # v5.20.0 Te.5.C: separate counter for synthesized struct-update
+        # base tmps so they don't perturb the global %tN sequence.
+        self._struct_update_counter = 0
         # Variable name → current SSA value
         self._vars: dict[str, _VarInfo] = {}
         # Scope stack for nested scopes
@@ -1160,6 +1167,9 @@ class MIRLowerer:
         if isinstance(stmt, LetBinding):
             self._lower_let(stmt)
             return None
+        if isinstance(stmt, LetDestructure):
+            self._lower_let_destructure(stmt)
+            return None
         if isinstance(stmt, ExprStmt):
             return self._lower_expr(stmt.expr)
         if isinstance(stmt, ReturnStmt):
@@ -1317,6 +1327,101 @@ class MIRLowerer:
         named = Value(name=f"%{let.name}", ty=val.ty)
         self._emit(Copy(dest=named, src=val))
         self._define_var(let.name, named, mutable=let.mutable)
+
+    def _lower_let_destructure(self, dest: LetDestructure) -> None:
+        """Lower `let Point { x, y } = expr`. v5.20.0 Te.5.D.
+
+        Strategy: when the RHS is a bare Identifier, run field accesses
+        directly on the source name so IR matches `let x = p.x; let y =
+        p.y` byte-identically. Otherwise lower the RHS once into a tmp.
+        """
+        # Short-circuit when the RHS is already a bare ident — avoids
+        # an extra Copy/alloca and matches the manual long-form IR.
+        if isinstance(dest.value, Identifier):
+            base_name = dest.value.name
+            base_already_bound = self._lookup_var(base_name) is not None
+            if base_already_bound:
+                self._emit_destructure_pattern(
+                    pattern=dest.pattern,
+                    base_name=base_name,
+                    outer_mut=dest.mutable,
+                )
+                return
+
+        # General case: lower the RHS into a synthesized tmp, register
+        # under a fresh name, then run field accesses through it.
+        tmp_idx = self._struct_update_counter
+        self._struct_update_counter += 1
+        base_name = f"__mn_dst_{tmp_idx}"
+        # Reuse _lower_let for the RHS so all type-annotation patching
+        # (empty list/map element-type) works identically.
+        synthetic_let = LetBinding(
+            name=base_name,
+            mutable=False,
+            type_annotation=dest.type_annotation,
+            value=dest.value,
+        )
+        self._lower_let(synthetic_let)
+        self._emit_destructure_pattern(
+            pattern=dest.pattern,
+            base_name=base_name,
+            outer_mut=dest.mutable,
+        )
+
+    def _emit_destructure_pattern(
+        self,
+        pattern: StructPattern,
+        base_name: str,
+        outer_mut: bool,
+    ) -> None:
+        """Emit per-field `let` bindings for a StructPattern over a
+        named base. Recurses for nested struct sub-patterns. v5.20.0.
+        """
+        # Validate fields against the struct definition where possible.
+        struct_name = pattern.name
+        known_fields: list[str] | None = self._struct_fields.get(struct_name)
+        if known_fields is None and self._imported_struct_defs:
+            imported = self._imported_struct_defs.get(struct_name)
+            if imported is not None:
+                known_fields = [f for f, _ in imported]
+
+        for fp in pattern.fields:
+            if known_fields is not None and fp.name not in known_fields:
+                raise RuntimeError(
+                    f"let destructure: '{struct_name}' has no field '{fp.name}'"
+                )
+            field_access = FieldAccessExpr(
+                object=Identifier(name=base_name),
+                field_name=fp.name,
+            )
+            if fp.sub_pattern is None:
+                # Leaf binding — emit `let [mut] <name> = base.<field>`.
+                synthetic = LetBinding(
+                    name=fp.name,
+                    mutable=outer_mut or fp.mutable,
+                    type_annotation=None,
+                    value=field_access,
+                )
+                self._lower_let(synthetic)
+            else:
+                # Nested struct pattern — bind the field into a fresh
+                # tmp, then recurse with that tmp as the new base.
+                assert isinstance(fp.sub_pattern, StructPattern)
+                tmp_idx = self._struct_update_counter
+                self._struct_update_counter += 1
+                sub_base_name = f"__mn_dst_{tmp_idx}"
+                synthetic_let = LetBinding(
+                    name=sub_base_name,
+                    mutable=False,
+                    type_annotation=None,
+                    value=field_access,
+                )
+                self._lower_let(synthetic_let)
+                self._emit_destructure_pattern(
+                    pattern=fp.sub_pattern,
+                    base_name=sub_base_name,
+                    outer_mut=outer_mut,
+                )
 
     def _lower_return(self, ret: ReturnStmt) -> None:
         """Lower a return statement."""
@@ -1610,6 +1715,9 @@ class MIRLowerer:
 
         if isinstance(expr, ConstructExpr):
             return self._lower_construct(expr)
+
+        if isinstance(expr, StructUpdate):
+            return self._lower_struct_update(expr)
 
         if isinstance(expr, SomeExpr):
             val = self._lower_expr(expr.value)
@@ -3488,6 +3596,63 @@ class MIRLowerer:
             self._emit(Move(value=_v))
         self._patch_arg_types_from_params(struct_name, field_vals)
         return dest
+
+    def _lower_struct_update(self, expr: StructUpdate) -> Value:
+        """Lower struct update: `new Point { x: 5, ..base }`. v5.20.0 Te.5.C.
+
+        Resolves the struct's full field list, lowers `base` into a fresh
+        local, then synthesizes a regular ConstructExpr filling overrides
+        from `expr.overrides` and the rest from `base.<field>` accesses.
+        Reuses _lower_construct for the actual emission.
+        """
+        struct_name = expr.name
+
+        # Resolve the full field list (local definitions or imported)
+        field_names: list[str] | None = self._struct_fields.get(struct_name)
+        if field_names is None and self._imported_struct_defs:
+            imported = self._imported_struct_defs.get(struct_name)
+            if imported is not None:
+                field_names = [f for f, _ in imported]
+        if field_names is None:
+            raise RuntimeError(
+                f"struct update: unknown struct '{struct_name}' "
+                f"(no field list available; ensure the struct is defined or imported)"
+            )
+
+        # Build override map; reject unknown override fields up-front.
+        override_map: dict[str, Expr] = {}
+        for fi in expr.overrides:
+            if fi.name not in field_names:
+                raise RuntimeError(
+                    f"struct update: '{struct_name}' has no field '{fi.name}'"
+                )
+            override_map[fi.name] = fi.value
+
+        # Lower `base` once into a tmp, register it under a synthesized
+        # name so that synthesized Identifier(name=base_tmp_name) lookups
+        # in the field-access fallback hit the same Value.
+        # Use a dedicated counter so we don't perturb the global %tN
+        # sequence — keeps IR byte-identical to the manual long form.
+        base_idx = self._struct_update_counter
+        self._struct_update_counter += 1
+        base_tmp_name = f"__mn_base_{base_idx}"
+        base_val = self._lower_expr(expr.base)
+        self._define_var(base_tmp_name, base_val, mutable=False)
+
+        # Synthesize a full ConstructExpr matching the struct's field order.
+        full_fields: list[FieldInit] = []
+        for fname in field_names:
+            if fname in override_map:
+                value_expr = override_map[fname]
+            else:
+                value_expr = FieldAccessExpr(
+                    object=Identifier(name=base_tmp_name),
+                    field_name=fname,
+                )
+            full_fields.append(FieldInit(name=fname, value=value_expr))
+
+        synthetic = ConstructExpr(name=struct_name, fields=full_fields)
+        return self._lower_construct(synthetic)
 
     def _lower_signal_expr(self, expr: SignalExpr) -> Value:
         """Lower signal expression: `signal(value)`."""

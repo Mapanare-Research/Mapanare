@@ -1,0 +1,15 @@
+// v5.20.0 Te.5.D — rest pattern `..` in destructuring (D9).
+//
+// `let Point { x, .. } = p` binds only `x`; the remaining fields
+// (y, z) are not destructured. The rest pattern must come last in
+// the field list (grammar enforces) and at most one per pattern.
+
+struct Point:
+    x: Int
+    y: Int
+    z: Int
+
+fn main():
+    let p: Point = new Point { x: 1, y: 2, z: 3 }
+    let Point { x, .. } = p
+    print(str(x))

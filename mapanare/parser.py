@@ -43,6 +43,7 @@ from mapanare.ast_nodes import (
     ExternFnDef,
     FieldAccessExpr,
     FieldInit,
+    FieldPattern,
     FloatLiteral,
     FnDef,
     FnType,
@@ -60,6 +61,7 @@ from mapanare.ast_nodes import (
     IntLiteral,
     LambdaExpr,
     LetBinding,
+    LetDestructure,
     ListLiteral,
     LiteralPattern,
     MapEntry,
@@ -73,6 +75,7 @@ from mapanare.ast_nodes import (
     NoneLiteral,
     OrPattern,
     Param,
+    Pattern,
     PassStmt,
     PipeDef,
     PipeExpr,
@@ -88,6 +91,8 @@ from mapanare.ast_nodes import (
     StringLiteral,
     StructDef,
     StructField,
+    StructPattern,
+    StructUpdate,
     SyncExpr,
     TensorLiteral,
     TensorType,
@@ -613,6 +618,93 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             span=_span_from_children(children),
         )
 
+    # v5.20.0 Te.5.D: let destructuring.
+    def let_dest_stmt(self, children: list[Any]) -> LetDestructure:
+        items = _filter(children)
+        mutable = False
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_MUT":
+            mutable = True
+            idx += 1
+        pattern = items[idx]
+        assert isinstance(pattern, StructPattern)
+        idx += 1
+        type_ann: TypeExpr | None = None
+        if idx < len(items) - 1 and isinstance(items[idx], TypeExpr):
+            type_ann = items[idx]
+            idx += 1
+        value = items[idx]
+        return LetDestructure(
+            pattern=pattern,
+            mutable=mutable,
+            type_annotation=type_ann,
+            value=value,
+            span=_span_from_children(children),
+        )
+
+    def struct_dest_pat(self, children: list[Any]) -> StructPattern:
+        # NAME LBRACE field_dest_list? RBRACE
+        # field_dest_list (when present) returns a tuple
+        # (list[FieldPattern], has_rest: bool).
+        items = _filter(children)
+        name = str(items[0])
+        fields: list[FieldPattern] = []
+        has_rest = False
+        for it in items[1:]:
+            if isinstance(it, tuple):
+                fields, has_rest = it
+                break
+        return StructPattern(
+            name=name,
+            fields=fields,
+            has_rest=has_rest,
+            span=_span_from_children(children),
+        )
+
+    def field_dest_list(
+        self, children: list[Any]
+    ) -> tuple[list[FieldPattern], bool]:
+        # Two productions:
+        #   field_dest (COMMA field_dest)* (COMMA RANGE)? COMMA?
+        #   RANGE COMMA?
+        # RANGE is a Token (not in _KEEP) so _filter strips it; we
+        # detect it by walking the raw children list.
+        fields: list[FieldPattern] = []
+        has_rest = False
+        for c in children:
+            if isinstance(c, Token):
+                if c.type == "RANGE":
+                    has_rest = True
+            elif isinstance(c, FieldPattern):
+                fields.append(c)
+        return fields, has_rest
+
+    def field_dest(self, children: list[Any]) -> FieldPattern:
+        # KW_MUT? NAME (COLON struct_dest_pat)?
+        items = _filter(children)
+        mutable = False
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_MUT":
+            mutable = True
+            idx += 1
+        name = str(items[idx])
+        idx += 1
+        sub: Pattern | None = None
+        if idx < len(items) and isinstance(items[idx], Pattern):
+            sub = items[idx]
+            # `mut` on a nested-pattern field is meaningless — the
+            # outer name isn't bound. Quietly discard the flag (or
+            # we could error, but a quiet drop avoids surprising
+            # users; spec is explicit in design D4).
+            if sub is not None:
+                mutable = False
+        return FieldPattern(
+            name=name,
+            mutable=mutable,
+            sub_pattern=sub,
+            span=_span_from_children(children),
+        )
+
     def const_def(self, children: list[Any]) -> ConstDef:
         """v4.55.0: ``const NAME: TYPE = EXPR`` — real const definition."""
         items = _filter(children)
@@ -1013,11 +1105,36 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             span=_span_from_children(children),
         )
 
-    def construct_expr(self, children: list[Any]) -> ConstructExpr:
-        items = _filter(children)
-        name = str(items[0])
-        fields = [c for c in items[1:] if isinstance(c, FieldInit)]
-        return ConstructExpr(name=name, fields=fields, span=_span_from_children(children))
+    def construct_expr(self, children: list[Any]) -> "ConstructExpr | StructUpdate":
+        # v5.20.0 Te.5.C: detect `..base` (RANGE token followed by an Expr).
+        # If present, everything before RANGE is overrides; the Expr after
+        # RANGE is the base. Otherwise it's a regular ConstructExpr.
+        name: str | None = None
+        overrides: list[FieldInit] = []
+        base: Expr | None = None
+        saw_range = False
+        for c in children:
+            if isinstance(c, Token):
+                if c.type == "NAME" and name is None:
+                    name = str(c)
+                elif c.type == "RANGE":
+                    saw_range = True
+            elif isinstance(c, FieldInit):
+                overrides.append(c)
+            elif isinstance(c, Expr) and saw_range and base is None:
+                base = c
+        if saw_range and base is not None:
+            return StructUpdate(
+                name=name or "",
+                overrides=overrides,
+                base=base,
+                span=_span_from_children(children),
+            )
+        return ConstructExpr(
+            name=name or "",
+            fields=overrides,
+            span=_span_from_children(children),
+        )
 
     def field_init(self, children: list[Any]) -> FieldInit:
         items = _filter(children)

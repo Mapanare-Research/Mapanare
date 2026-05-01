@@ -1,0 +1,17 @@
+// v5.20.0 Te.5.D — `let` destructuring (basic case).
+//
+// `let Point { x, y } = p` binds `x` and `y` to the corresponding
+// fields. When the RHS is a bare Identifier (the common case), the
+// lowerer skips the synthesized base tmp and runs field accesses
+// directly on the source name — IR is byte-identical to the manual
+// long form `let x: Int = p.x; let y: Int = p.y`.
+
+struct Point:
+    x: Int
+    y: Int
+
+fn main():
+    let p: Point = new Point { x: 1, y: 2 }
+    let Point { x, y } = p
+    print(str(x))
+    print(str(y))

@@ -180,6 +180,7 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
      | LBRACE ELLIPSIS RBRACE
 
 ?stmt: let_stmt
+     | let_dest_stmt
      | for_stmt
      | for_await_stmt
      | while_stmt
@@ -193,6 +194,21 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 
 
 let_stmt: KW_LET KW_MUT? NAME (COLON type_expr)? ASSIGN expr
+
+// v5.20.0 Te.5.D: struct destructuring in let.
+//   let Point { x, y } = p
+//   let mut Point { x, y } = p           — outer mut applies to all
+//   let Point { x, mut y } = p           — per-field mut (D4)
+//   let Outer { inner: Inner { a }, b } = o   — nested
+//   let Point { x, .. } = p              — rest pattern (D9)
+let_dest_stmt: KW_LET KW_MUT? struct_dest_pat (COLON type_expr)? ASSIGN expr
+
+struct_dest_pat: NAME LBRACE field_dest_list? RBRACE
+
+field_dest_list: field_dest (COMMA field_dest)* (COMMA RANGE)? COMMA?
+               | RANGE COMMA?
+
+field_dest: KW_MUT? NAME (COLON struct_dest_pat)?
 
 // v4.55.0: real const — distinct from let, requires type annotation + constant initializer
 const_def: KW_CONST NAME COLON type_expr ASSIGN expr
