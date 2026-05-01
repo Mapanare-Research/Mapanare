@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.20.1] - 2026-05-01
+
+### Added
+
+- **Te.5.F — bootstrap mirror for v5.20.0 Te.5.B/C/D/E.** Closes
+  the v5.20.0 SESSION_REPORT's "Deferred to v5.20.1" item.
+  `mnc-stage1` now parses and lowers all four Te.5 surface forms
+  exactly matching v5.20.0's Python behavior.
+  - **Te.5.F.B — field shorthand mirror.** Single-character
+    relaxation in `parse_struct_fields_to_list`: when COLON is
+    absent after a NAME, synthesize `Ident(fname)` as the value.
+  - **Te.5.F.C — struct update mirror.** New `Expr::ConstructUpdate`
+    AST variant in `mapanare/self/ast.mn`. `parse_struct_construct`
+    rewritten to detect trailing `..base` (and bare
+    `new T { ..base }`); `lower_struct_update` synthesizes a
+    `Construct` whose fields appear in struct-declaration order
+    (overrides slotted by name, holes filled with
+    `__mn_base_N.<field>` accesses). New `struct_update_counter`
+    on `LowerState` (separate from `tmp_counter`) keeps the
+    synthesized base tmp from perturbing the global `%tN` sequence.
+  - **Te.5.F.D — let destructuring mirror.** New
+    `Stmt::LetDestructure` plus `StructPattern` / `FieldPattern`
+    structs. `parse_let_stmt` extended with single-token-lookahead
+    dispatch to `parse_let_destructure_body`. Nested patterns,
+    rest patterns (`..`), per-field `mut` all supported.
+    Bare-Ident-RHS optimization: skip the synthesized base tmp
+    when RHS is already in scope (IR byte-identical to manual
+    `let x = p.x; let y = p.y`).
+  - **Te.5.F.E — if-let / while-let / let-else mirror.** Added
+    `Expr::IfLet`, `Stmt::WhileLet`, `Stmt::LetElse`. `parse_if_expr`
+    / `parse_while_stmt` / `parse_let_stmt` extended with
+    `KW_LET` / `NAME LPAREN` / `UNDERSCORE` lookaheads. Lowerers
+    desugar to existing match/while/let machinery (no new MIR
+    ops). Divergence helpers `block_diverges`, `stmt_diverges`,
+    `match_arm_body_diverges` ported from Python.
+- **`tests/bootstrap/test_te5_mirror.py`** — 12 cross-bootstrap
+  cases assert byte-identical stdout from Python and `mnc-stage1`
+  for every v5.20.0 Te.5 golden.
+- **`docs/roadmap/v5/v5.20.1/AUDIT.md`** — Phase 0 audit.
+- **`docs/roadmap/v5/v5.20.1/SESSION_REPORT.md`** — release closeout.
+
+### Fixed
+
+- `lower_match` in `mapanare/self/lower.mn` — two pre-existing
+  latent bugs surfaced by Te.5.F.E and fixed in scope:
+  1. Skip the `alloca <fn_ret>` dummy-load dance when fn_ret is
+     void. `alloca void` is invalid LLVM; pre-Phase-4 the dummy
+     path was only reached by user code with non-void return
+     types. Now returns `void_value()` for void functions.
+  2. Stop demoting TK_UNKNOWN arm values to undef. The let-else
+     desugar produces `Expr::Ident(bound_name)` arms whose
+     payload type resolves to TK_UNKNOWN when the scrutinee is a
+     function-call result; demoting to undef forced phi-skip ->
+     alloca-fn_ret -> alloca-void in `fn main()`. The IR emitter's
+     `emit_mir_phi` already has fallback type resolution
+     (incoming-value scan + backwards phi search), so passing
+     TK_UNKNOWN through is well-defined.
+- `mapanare/lower.py::_expr_or_block_diverges` — pre-existing
+  v5.20.0 mypy error (`object` passed to `ExprStmt(expr=)`
+  without isinstance guard). Added explicit `isinstance(node,
+  Expr)` check; non-Block, non-Expr nodes return `False`.
+
+### Validated
+
+- 91/91 native goldens PASS through `mnc-stage1`.
+- Strict 3-stage fixed point preserved: stage2.ll == stage3.ll
+  at **238,086 lines / 0-line diff**. The v5.18.0 0-line-diff
+  milestone is preserved; line count grew by the cumulative size
+  of the new bootstrap `.mn` code (+5,805 IR lines vs v5.18.0's
+  232,281).
+- `bash scripts/build_from_seed.sh` succeeds — the no-Python
+  pipeline produces the same 238,086-line IR.
+- `make lint` clean.
+
+### Source delta
+
+`mapanare/self/` files only: **+742 lines** total
+(ast.mn +89, parser.mn +190, semantic.mn +138, lower.mn +320,
+lower_state.mn +5). 1.55× the v5.20.0 Python delta of +477,
+proportional to the bootstrap's lower-level idioms.
+
+### Deviations from Python
+
+1. **`let_else` divergence check** is computed but not enforced
+   in the bootstrap. Python raises a `RuntimeError` when the
+   else block doesn't diverge; the bootstrap proceeds with the
+   desugar (the bootstrap can't easily emit a structured
+   diagnostic from inside `lower.mn`).
+2. The pre-existing bootstrap miscompile of out-of-order field
+   initializers in non-`..base` literals (`new Point { y: 99,
+   x: 1 }`) is left untouched — Te.5.F.C uses a separate by-name
+   path that reorders correctly. Tracked as v5.21.0+ follow-up.
+
 ## [5.20.0] - 2026-04-30
 
 ### Added

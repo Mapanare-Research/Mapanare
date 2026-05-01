@@ -77,8 +77,8 @@ from mapanare.ast_nodes import (
     NoneLiteral,
     OrPattern,
     Param,
-    Pattern,
     PassStmt,
+    Pattern,
     PipeDef,
     PipeExpr,
     PrintStmt,
@@ -664,9 +664,7 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             span=_span_from_children(children),
         )
 
-    def field_dest_list(
-        self, children: list[Any]
-    ) -> tuple[list[FieldPattern], bool]:
+    def field_dest_list(self, children: list[Any]) -> tuple[list[FieldPattern], bool]:
         # Two productions:
         #   field_dest (COMMA field_dest)* (COMMA RANGE)? COMMA?
         #   RANGE COMMA?

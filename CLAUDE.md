@@ -18,6 +18,53 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.20.1** (ready, not tagged) — **Te.5.F — bootstrap mirror
+  (patch).** Closes the v5.20.0 SESSION_REPORT's "Deferred to
+  v5.20.1" item. `mnc-stage1` now parses and lowers all four
+  Te.5 surface forms (field shorthand, struct update `..base`,
+  let destructuring, if-let / while-let / let-else) exactly
+  matching v5.20.0's Python behavior. **Te.5.F.B** — single-char
+  parser relaxation in `parse_struct_fields_to_list` (synthesize
+  `Ident(fname)` when COLON absent). **Te.5.F.C** — new
+  `Expr::ConstructUpdate` AST + `lower_struct_update` mirroring
+  Python: synthesizes a `Construct` in struct-declaration order,
+  overrides slotted by name, holes filled with
+  `__mn_base_N.<field>`. New `struct_update_counter` on
+  `LowerState`. **Te.5.F.D** — new `Stmt::LetDestructure` plus
+  `StructPattern` / `FieldPattern` structs; single-token
+  `KW_LET KW_MUT? NAME LBRACE` lookahead in `parse_let_stmt`;
+  bare-Ident-RHS optimization preserves IR byte-identity with
+  manual `let x = p.x; let y = p.y`. **Te.5.F.E** — new
+  `Expr::IfLet`, `Stmt::WhileLet`, `Stmt::LetElse`. `parse_if_expr`
+  / `parse_while_stmt` / `parse_let_stmt` learn `KW_LET` /
+  `NAME LPAREN` / `UNDERSCORE` lookaheads. Lowerers desugar to
+  existing match/while/let machinery (zero new MIR ops). Bootstrap
+  divergence helpers `block_diverges`, `stmt_diverges`,
+  `match_arm_body_diverges` ported from Python. Two pre-existing
+  `lower_match` latent bugs surfaced and fixed in scope: (1) skip
+  `alloca <fn_ret>` dummy when fn_ret is void (would emit invalid
+  `alloca void`); (2) stop demoting TK_UNKNOWN arm values to
+  undef (forced phi-skip → alloca-fn_ret → alloca-void in
+  `fn main()` for let-else). **91/91 native goldens** PASS
+  through `mnc-stage1`; cross-bootstrap test
+  `tests/bootstrap/test_te5_mirror.py` (12/12 PASS) asserts
+  byte-identical stdout for every Te.5 golden. **Strict 3-stage
+  fixed point preserved at 238,086 lines / 0-line diff** (+5,805
+  IR lines vs v5.18.0's 232,281, expected from the new bootstrap
+  `.mn` code). `bash scripts/build_from_seed.sh` succeeds.
+  Source delta: +89 ast.mn, +190 parser.mn, +138 semantic.mn,
+  +320 lower.mn, +5 lower_state.mn = **+742 lines** total
+  (1.55× the v5.20.0 Python delta). One pre-existing v5.20.0
+  mypy error in `mapanare/lower.py::_expr_or_block_diverges`
+  fixed in scope. **Bootstrap deviation from Python**: let-else
+  non-divergent else block proceeds at lower time (Python raises
+  RuntimeError); deliberate — bootstrap can't easily emit a
+  structured diagnostic from inside `lower.mn`. Pre-existing
+  bootstrap miscompile of out-of-order field initializers in
+  non-`..base` literals left untouched (out of scope; Te.5.F.C
+  uses a separate by-name path). See
+  `docs/roadmap/v5/v5.20.1/SESSION_REPORT.md`,
+  `docs/roadmap/v5/v5.20.1/AUDIT.md`.
 - **v5.20.0** (ready, not tagged) — **Te.5 — struct ergonomics
   (Python side).** Post-Sh.* terseness capstone. Four additive
   surface forms, all desugared to existing constructs — zero new
@@ -656,14 +703,10 @@ had latent bugs requiring dedicated releases.
   let destructuring, if-let / while-let / let-else. Bootstrap
   mirror split out to v5.20.1 per the v5.14.0→v5.14.1 /
   v5.15.0→v5.15.1 precedent.
-- **v5.20.1** — **Te.5.F — bootstrap mirror.** Mirror all four
-  Te.5 features in `mapanare/self/{ast,parser,lower,semantic}.mn`.
-  Per-feature commit ordering smallest-first (Te.5.B ~10 LOC,
-  Te.5.C ~120, Te.5.D ~250, Te.5.E ~400). Strict 3-stage fixed
-  point validation between every commit. Closes the v5.20.0
-  deferred item; the 11 new goldens (81-91) currently fail
-  through `mnc-stage1` because the bootstrap was built from
-  v5.18.0 source. See `docs/roadmap/v5/v5.20.0/SESSION_REPORT.md`
+- ~~**v5.20.1**~~ — shipped (see release notes above). Te.5.F
+  bootstrap mirror. 91/91 native goldens; strict 3-stage fixed
+  point preserved at 238,086 lines / 0-line diff. See
+  `docs/roadmap/v5/v5.20.0/SESSION_REPORT.md`
   ("Deferred to v5.20.1") and `STRUCT_ERGO_DESIGN.md` ("Bootstrap
   mirror plan").
 - **v5.21.0** — **Te.6 — small ergonomic wins.** Chained

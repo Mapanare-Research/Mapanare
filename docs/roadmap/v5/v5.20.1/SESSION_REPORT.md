@@ -114,11 +114,18 @@ and native pipelines.
 |---|---|---|---|
 | 0 (audit, baseline) | 80/91 | 232,281 lines / 0 diff | v5.18.0 milestone |
 | 1 (Te.5.F.B) | 81/91 | 232,322 lines / 0 diff | +41 IR lines |
-| 2 (Te.5.F.C) | 83/91 | 233,453 lines / 0 diff | +1131 IR lines |
-| 3 (Te.5.F.D) | 88/91 | 236,478 lines / 0 diff | +3025 IR lines |
-| 4 (Te.5.F.E) | 91/91 | (TBD) | (TBD) |
+| 2 (Te.5.F.C) | 83/91 | 233,453 lines / 0 diff | +1,131 IR lines |
+| 3 (Te.5.F.D) | 88/91 | 236,478 lines / 0 diff | +3,025 IR lines |
+| 4 (Te.5.F.E) | **91/91** | **238,086 lines / 0 diff** | +1,608 IR lines |
 
-`bash scripts/build_from_seed.sh` succeeds. `make lint` clean.
+`bash scripts/build_from_seed.sh` succeeds. `make lint` clean
+(one pre-existing mypy error in `mapanare/lower.py:257`
+`_expr_or_block_diverges` from v5.20.0 commit 4ea40e11 fixed in
+scope — added an explicit `isinstance(node, Expr)` guard).
+
+`tests/bootstrap/test_te5_mirror.py` 12/12 PASS — 11 byte-
+identical-stdout cases covering every Te.5.F.B–E surface form
+plus a sanity case for the let-else divergence-check deviation.
 
 ## Source line count delta
 
@@ -126,14 +133,17 @@ and native pipelines.
 
 | File | Before | After | Δ |
 |---|---:|---:|---:|
-| `ast.mn` | 749 | (TBD) | (TBD) |
-| `parser.mn` | 2,370 | (TBD) | (TBD) |
-| `semantic.mn` | 1,982 | (TBD) | (TBD) |
-| `lower.mn` | 4,515 | (TBD) | (TBD) |
-| `lower_state.mn` | 508 | (TBD) | (TBD) |
+| `ast.mn` | 749 | 838 | +89 |
+| `parser.mn` | 2,370 | 2,560 | +190 |
+| `semantic.mn` | 1,982 | 2,120 | +138 |
+| `lower.mn` | 4,515 | 4,835 | +320 |
+| `lower_state.mn` | 508 | 513 | +5 |
 
-Mirror size roughly tracks the v5.20.0 Python delta of +477
-lines, scaled up by the bootstrap's lower-level idioms.
+Total bootstrap delta: **+742 lines**. Mirror is 1.55× the
+v5.20.0 Python delta of +477 lines, in line with the bootstrap's
+lower-level idioms (manual accessor functions, explicit
+`peek_type()` lookahead vs Lark grammar, hand-written recursive-
+descent vs LALR transformers).
 
 ## Deviations from Python
 

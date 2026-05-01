@@ -108,16 +108,9 @@ def test_te5_byte_identical(stem: str) -> None:
     if not src.exists():
         pytest.skip(f"{src} not found")
     with tempfile.TemporaryDirectory() as td:
-        d = Path(td)
-        py_out = _python_run(stem, d / "py")
-        (d / "py").mkdir(exist_ok=True)
-        # Re-run with separate workdirs to avoid file collision.
+        py_out = _python_run(stem, Path(td))
     with tempfile.TemporaryDirectory() as td2:
-        d2 = Path(td2)
-        py_out = _python_run(stem, d2)
-    with tempfile.TemporaryDirectory() as td3:
-        d3 = Path(td3)
-        nat_out = _stage1_run(stem, d3)
+        nat_out = _stage1_run(stem, Path(td2))
     assert py_out == nat_out, (
         f"divergence on {stem}:\n"
         f"  python: {py_out!r}\n"

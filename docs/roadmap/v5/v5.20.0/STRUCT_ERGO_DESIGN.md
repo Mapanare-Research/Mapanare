@@ -540,7 +540,7 @@ Minimum 10 new goldens:
 | 2 | Te.5.C struct update (Python) | 2h | grammar + lowering + 2 goldens |
 | 3 | Te.5.D let destructuring (Python) | 3h | grammar + lowering + 3 goldens |
 | 4 | Te.5.E if-let / while-let / let-else (Python) | 4h | grammar + 3 lowerings + divergence + 4 goldens |
-| 5 | Te.5.F bootstrap mirror | 4-6h | 4 sub-features, fixed-point check each |
+| 5 | Te.5.F bootstrap mirror | shipped in v5.20.1 | 4 sub-features, fixed-point check each |
 | 6 | Te.5.G golden consolidation | 1h | 10+ pass through stage1 |
 | 7 | Te.5.H + Te.5.I — fmt + SPEC + closeout | 2h | docs + SESSION_REPORT |
 

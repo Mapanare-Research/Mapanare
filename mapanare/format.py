@@ -168,12 +168,7 @@ def _looks_like_stmt_block_opener(opener_body: str) -> bool:
     # already match via the space form, but `impl<T>` needs the
     # ``<`` suffix).
     for kw in _STMT_BLOCK_KEYWORDS:
-        if (
-            s == kw
-            or s.startswith(kw + " ")
-            or s.startswith(kw + "(")
-            or s.startswith(kw + "<")
-        ):
+        if s == kw or s.startswith(kw + " ") or s.startswith(kw + "(") or s.startswith(kw + "<"):
             return True
     # Continuations after `} ` strip: `else`, `else if`, `else{`, ...
     # v5.19.0 Te.3.B: include Spanish ``si`` for ``} else si X {`` and

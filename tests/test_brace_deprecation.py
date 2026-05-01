@@ -7,13 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from mapanare.parser import (
     count_user_brace_block_openers,
     parse,
 )
-
 
 # ---------------------------------------------------------------------------
 # Te.3.A — count_user_brace_block_openers
@@ -21,28 +18,22 @@ from mapanare.parser import (
 
 
 def test_count_pure_colon_source_is_zero():
-    src = "fn main():\n    print(\"hi\")\n"
+    src = 'fn main():\n    print("hi")\n'
     assert count_user_brace_block_openers(src) == 0
 
 
 def test_count_pure_brace_source():
-    src = "fn main() {\n    print(\"hi\")\n}\n"
+    src = 'fn main() {\n    print("hi")\n}\n'
     assert count_user_brace_block_openers(src) == 1
 
 
 def test_count_mixed_source():
-    src = "fn a() {\n    print(\"a\")\n}\n\nfn b():\n    print(\"b\")\n"
+    src = 'fn a() {\n    print("a")\n}\n\nfn b():\n    print("b")\n'
     assert count_user_brace_block_openers(src) == 1
 
 
 def test_count_multiple_brace_blocks():
-    src = (
-        "fn a() {\n"
-        "    if x > 0 {\n"
-        "        print(\"yes\")\n"
-        "    }\n"
-        "}\n"
-    )
+    src = "fn a() {\n" "    if x > 0 {\n" '        print("yes")\n' "    }\n" "}\n"
     assert count_user_brace_block_openers(src) == 2
 
 
@@ -52,7 +43,7 @@ def test_count_ignores_map_literal():
 
 
 def test_count_ignores_brace_inside_string():
-    src = "fn main():\n    let s = \"contains { in string\"\n"
+    src = 'fn main():\n    let s = "contains { in string"\n'
     assert count_user_brace_block_openers(src) == 0
 
 
@@ -62,12 +53,12 @@ def test_count_ignores_line_comment_with_brace():
 
 
 def test_count_ignores_full_comment_line():
-    src = "fn main():\n    // a brace here {\n    print(\"x\")\n"
+    src = 'fn main():\n    // a brace here {\n    print("x")\n'
     assert count_user_brace_block_openers(src) == 0
 
 
 def test_count_handles_escaped_quote_in_string():
-    src = "fn main():\n    let s = \"x\\\"y\" + \"{\"\n"
+    src = 'fn main():\n    let s = "x\\"y" + "{"\n'
     # The brace is inside a string literal — must not count.
     assert count_user_brace_block_openers(src) == 0
 
@@ -78,7 +69,7 @@ def test_count_handles_escaped_quote_in_string():
 
 
 def test_parse_emits_warning_for_brace_source(capsys):
-    src = "fn main() {\n    print(\"hi\")\n}\n"
+    src = 'fn main() {\n    print("hi")\n}\n'
     parse(src, filename="test.mn")
     captured = capsys.readouterr()
     assert "deprecated" in captured.err
@@ -87,20 +78,14 @@ def test_parse_emits_warning_for_brace_source(capsys):
 
 
 def test_parse_silent_on_colon_source(capsys):
-    src = "fn main():\n    print(\"hi\")\n"
+    src = 'fn main():\n    print("hi")\n'
     parse(src, filename="test.mn")
     captured = capsys.readouterr()
     assert captured.err == ""
 
 
 def test_parse_warning_plural_for_multiple_braces(capsys):
-    src = (
-        "fn a() {\n"
-        "    if x > 0 {\n"
-        "        print(\"y\")\n"
-        "    }\n"
-        "}\n"
-    )
+    src = "fn a() {\n" "    if x > 0 {\n" '        print("y")\n' "    }\n" "}\n"
     parse(src, filename="test.mn")
     captured = capsys.readouterr()
     assert "2 occurrences" in captured.err
@@ -109,13 +94,13 @@ def test_parse_warning_plural_for_multiple_braces(capsys):
 def test_parse_one_warning_per_file_not_per_block(capsys):
     src = (
         "fn a() {\n"
-        "    print(\"a\")\n"
+        '    print("a")\n'
         "}\n"
         "fn b() {\n"
-        "    print(\"b\")\n"
+        '    print("b")\n'
         "}\n"
         "fn c() {\n"
-        "    print(\"c\")\n"
+        '    print("c")\n'
         "}\n"
     )
     parse(src, filename="test.mn")
@@ -132,7 +117,7 @@ def test_parse_one_warning_per_file_not_per_block(capsys):
 
 def test_env_var_suppresses_warning(monkeypatch, capsys):
     monkeypatch.setenv("MAPANARE_NO_BRACE_WARNING", "1")
-    src = "fn main() {\n    print(\"hi\")\n}\n"
+    src = 'fn main() {\n    print("hi")\n}\n'
     parse(src, filename="test.mn")
     captured = capsys.readouterr()
     assert captured.err == ""
@@ -140,7 +125,7 @@ def test_env_var_suppresses_warning(monkeypatch, capsys):
 
 def test_env_var_unset_does_not_suppress(monkeypatch, capsys):
     monkeypatch.delenv("MAPANARE_NO_BRACE_WARNING", raising=False)
-    src = "fn main() {\n    print(\"hi\")\n}\n"
+    src = 'fn main() {\n    print("hi")\n}\n'
     parse(src, filename="test.mn")
     captured = capsys.readouterr()
     assert "deprecated" in captured.err
@@ -166,7 +151,7 @@ def _run_fmt(args: list[str], cwd: Path | None = None) -> subprocess.CompletedPr
 
 def test_fmt_default_auto_migrates_braces(tmp_path):
     f = tmp_path / "x.mn"
-    f.write_text("fn main() {\n    print(\"hi\")\n}\n", encoding="utf-8")
+    f.write_text('fn main() {\n    print("hi")\n}\n', encoding="utf-8")
     result = _run_fmt([str(f)])
     assert result.returncode == 0, result.stderr
     text = f.read_text(encoding="utf-8")
@@ -176,7 +161,7 @@ def test_fmt_default_auto_migrates_braces(tmp_path):
 
 def test_fmt_keep_braces_does_not_migrate(tmp_path):
     f = tmp_path / "x.mn"
-    original = "fn main() {\n    print(\"hi\")\n}\n"
+    original = 'fn main() {\n    print("hi")\n}\n'
     f.write_text(original, encoding="utf-8")
     result = _run_fmt([str(f), "--keep-braces"])
     assert result.returncode == 0, result.stderr
@@ -187,7 +172,7 @@ def test_fmt_keep_braces_does_not_migrate(tmp_path):
 
 def test_fmt_check_fails_on_brace_source(tmp_path):
     f = tmp_path / "x.mn"
-    f.write_text("fn main() {\n    print(\"hi\")\n}\n", encoding="utf-8")
+    f.write_text('fn main() {\n    print("hi")\n}\n', encoding="utf-8")
     result = _run_fmt([str(f), "--check"])
     assert result.returncode == 1
     assert "would format" in result.stderr
@@ -195,7 +180,7 @@ def test_fmt_check_fails_on_brace_source(tmp_path):
 
 def test_fmt_check_passes_on_colon_source(tmp_path):
     f = tmp_path / "x.mn"
-    f.write_text("fn main():\n    print(\"hi\")\n", encoding="utf-8")
+    f.write_text('fn main():\n    print("hi")\n', encoding="utf-8")
     result = _run_fmt([str(f), "--check"])
     assert result.returncode == 0
 
@@ -204,14 +189,14 @@ def test_fmt_check_keep_braces_passes_on_brace_source(tmp_path):
     """--keep-braces + already-formatted brace source: --check passes."""
     f = tmp_path / "x.mn"
     # Already canonical whitespace, brace style.
-    f.write_text("fn main() {\n    print(\"hi\")\n}\n", encoding="utf-8")
+    f.write_text('fn main() {\n    print("hi")\n}\n', encoding="utf-8")
     result = _run_fmt([str(f), "--check", "--keep-braces"])
     assert result.returncode == 0
 
 
 def test_fmt_does_not_emit_redundant_warning_during_migration(tmp_path):
     f = tmp_path / "x.mn"
-    f.write_text("fn main() {\n    print(\"hi\")\n}\n", encoding="utf-8")
+    f.write_text('fn main() {\n    print("hi")\n}\n', encoding="utf-8")
     result = _run_fmt([str(f)])
     # The "Run mnc fmt to migrate" warning would be redundant since
     # the user is already running fmt; cmd_fmt suppresses it during
@@ -221,7 +206,7 @@ def test_fmt_does_not_emit_redundant_warning_during_migration(tmp_path):
 
 def test_fmt_to_terse_and_keep_braces_mutually_exclusive(tmp_path):
     f = tmp_path / "x.mn"
-    f.write_text("fn main():\n    print(\"hi\")\n", encoding="utf-8")
+    f.write_text('fn main():\n    print("hi")\n', encoding="utf-8")
     result = _run_fmt([str(f), "--to-terse", "--keep-braces"])
     assert result.returncode == 1
     assert "mutually exclusive" in result.stderr
@@ -229,7 +214,7 @@ def test_fmt_to_terse_and_keep_braces_mutually_exclusive(tmp_path):
 
 def test_fmt_to_braces_and_keep_braces_mutually_exclusive(tmp_path):
     f = tmp_path / "x.mn"
-    f.write_text("fn main():\n    print(\"hi\")\n", encoding="utf-8")
+    f.write_text('fn main():\n    print("hi")\n', encoding="utf-8")
     result = _run_fmt([str(f), "--to-braces", "--keep-braces"])
     assert result.returncode == 1
     assert "mutually exclusive" in result.stderr

@@ -64,7 +64,6 @@ from mapanare.ast_nodes import (
     MapLiteral,
     MatchArm,
     MatchExpr,
-    WildcardPattern,
     MethodCallExpr,
     ModuleLetDef,
     NamedType,
@@ -97,6 +96,7 @@ from mapanare.ast_nodes import (
     UnaryExpr,
     WhileLetStmt,
     WhileLoop,
+    WildcardPattern,
 )
 from mapanare.mir import (
     AgentSend,
@@ -236,9 +236,7 @@ def _stmt_diverges(stmt: object) -> bool:
             if e.callee.name in ("panic", "abort", "exit"):
                 return True
         if isinstance(e, MatchExpr):
-            return bool(e.arms) and all(
-                _expr_or_block_diverges(arm.body) for arm in e.arms
-            )
+            return bool(e.arms) and all(_expr_or_block_diverges(arm.body) for arm in e.arms)
         if isinstance(e, IfExpr):
             then_div = _block_diverges(e.then_block)
             if e.else_block is None:
@@ -252,11 +250,13 @@ def _stmt_diverges(stmt: object) -> bool:
 
 def _expr_or_block_diverges(node: object) -> bool:
     """Helper for match-arm divergence — body may be Block or Expr."""
-    from mapanare.ast_nodes import Block, ExprStmt
+    from mapanare.ast_nodes import Block, Expr, ExprStmt
 
     if isinstance(node, Block):
         return _block_diverges(node)
-    return _stmt_diverges(ExprStmt(expr=node))
+    if isinstance(node, Expr):
+        return _stmt_diverges(ExprStmt(expr=node))
+    return False
 
 
 def _block_diverges(block: object) -> bool:
@@ -1457,9 +1457,7 @@ class MIRLowerer:
 
         for fp in pattern.fields:
             if known_fields is not None and fp.name not in known_fields:
-                raise RuntimeError(
-                    f"let destructure: '{struct_name}' has no field '{fp.name}'"
-                )
+                raise RuntimeError(f"let destructure: '{struct_name}' has no field '{fp.name}'")
             field_access = FieldAccessExpr(
                 object=Identifier(name=base_name),
                 field_name=fp.name,
@@ -1591,12 +1589,8 @@ class MIRLowerer:
 
         if isinstance(pattern, ConstructorPattern):
             n_args = len(pattern.args)
-            single_ident = (
-                n_args == 1 and isinstance(pattern.args[0], IdentPattern)
-            )
-            single_wild = (
-                n_args == 1 and isinstance(pattern.args[0], WildcardPattern)
-            )
+            single_ident = n_args == 1 and isinstance(pattern.args[0], IdentPattern)
+            single_wild = n_args == 1 and isinstance(pattern.args[0], WildcardPattern)
 
             if n_args == 0 or single_wild:
                 # No outer binding to leak — emit as match-statement.
@@ -3845,9 +3839,7 @@ class MIRLowerer:
         override_map: dict[str, Expr] = {}
         for fi in expr.overrides:
             if fi.name not in field_names:
-                raise RuntimeError(
-                    f"struct update: '{struct_name}' has no field '{fi.name}'"
-                )
+                raise RuntimeError(f"struct update: '{struct_name}' has no field '{fi.name}'")
             override_map[fi.name] = fi.value
 
         # Lower `base` once into a tmp, register it under a synthesized

@@ -1815,9 +1815,7 @@ class SemanticChecker:
         self._check_block(stmt.body)
         self._pop_scope()
 
-    def _define_pattern_bindings(
-        self, pattern: StructPattern, outer_mut: bool
-    ) -> None:
+    def _define_pattern_bindings(self, pattern: StructPattern, outer_mut: bool) -> None:
         for fp in pattern.fields:
             if fp.sub_pattern is None:
                 self.current_scope.define(
