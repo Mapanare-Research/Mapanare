@@ -2201,48 +2201,76 @@ def _indent_to_braces(source: str) -> str:
     return "\n".join(out)
 
 
+_BLOCK_KEYWORDS = frozenset(
+    {
+        "fn",
+        "if",
+        "else",
+        "while",
+        "for",
+        "match",
+        "loop",
+        "do",
+        "try",
+        "impl",
+        "trait",
+        "agent",
+        "struct",
+        "enum",
+    }
+)
+
+
 def count_user_brace_block_openers(source: str) -> int:
-    """Count user-written brace-block opener lines in ``source``.
+    """Count user-written ``{`` block openers in ``source``.
 
-    v5.19.0 Te.3.A. Runs **before** ``_indent_to_braces`` so it sees
-    the source as the user typed it. The preprocessor would otherwise
-    convert every colon-block into brace form, making the two
-    indistinguishable post-preprocess.
+    v5.19.0 Te.3.A; v5.23.2 Te.3.B.1 extended to catch single-line
+    ``{...}`` shapes. Runs **before** ``_indent_to_braces`` so it sees
+    the source as the user typed it.
 
-    A line is counted as a user brace-block opener if, after
-    stripping a trailing ``//`` line comment and trailing whitespace:
+    A ``{`` is counted as a user-written block opener iff (per line,
+    with strings / chars / ``//`` comments masked to spaces, and
+    skipping ``#{`` map openers + ``${`` interpolation openers):
 
-    - the line ends with ``{``, AND
-    - the line does NOT end with ``#{`` (map literal opener), AND
-    - the line is not inside a string literal (we track ``"`` toggle
-      with backslash escapes), AND
-    - the line is not a comment-only line (``#`` or ``//`` prefix).
+    - Rule (a): the ``{`` is the last non-WS char on its line —
+      catches multi-line ``fn main() {`` / ``struct Point {`` shapes.
+    - Rule (b): a block keyword (``fn``, ``if``, ``else``, ``while``,
+      ``for``, ``match``, ``loop``, ``do``, ``try``, ``impl``,
+      ``trait``, ``agent``, ``struct``, ``enum``) appears on the same
+      line before the ``{``, and there is no standalone ``=`` between
+      the latest such keyword and the ``{``. The ``=`` filter excludes
+      implicit-return shapes like ``fn make() -> Point = Point { x }``,
+      which is an expression not a block.
+    - Rule (c): the chars immediately before the ``{`` (after WS) are
+      ``=>`` — catches match-arm and closure block bodies.
 
-    False positives are limited to multi-line struct literals like::
+    Struct / map literals like ``Point { x: 1, y: 2 }`` on canonical
+    colon-style lines do not match any rule (no block keyword on the
+    line; not at line end; no ``=>``) so they are correctly NOT
+    counted, even though they syntactically contain ``{``.
 
-        let p = Point {
-            x: 1,
-        }
-
-    These are vanishingly rare in canonical style. The cost of a
-    false positive is one stderr warning line; the cost is bounded.
+    False positives are bounded to multi-line struct literals
+    (``let p = Point {`` on a line by itself), which are absent from
+    the corpus and vanishingly rare in canonical style. Block
+    comments (``/* ... */``) are not stripped.
     """
     count = 0
     in_str = False
     in_char = False
+
     for raw in source.split("\n"):
-        # Walk the line tracking string state so we don't miscount
-        # `{` inside a string literal.  Drop a trailing ``//`` line
-        # comment (``#`` line comments are handled by the prefix check
-        # below — they only apply to comment-only lines).
-        code: list[str] = []
+        # Mask strings / chars / line-comments to spaces so the
+        # downstream rules see only "code" characters at their original
+        # column positions.
+        masked = list(raw)
         i = 0
-        while i < len(raw):
+        line_len = len(raw)
+        while i < line_len:
             ch = raw[i]
             if in_str:
-                code.append(ch)
-                if ch == "\\" and i + 1 < len(raw):
-                    code.append(raw[i + 1])
+                masked[i] = " "
+                if ch == "\\" and i + 1 < line_len:
+                    masked[i + 1] = " "
                     i += 2
                     continue
                 if ch == '"':
@@ -2250,44 +2278,109 @@ def count_user_brace_block_openers(source: str) -> int:
                 i += 1
                 continue
             if in_char:
-                code.append(ch)
-                if ch == "\\" and i + 1 < len(raw):
-                    code.append(raw[i + 1])
+                masked[i] = " "
+                if ch == "\\" and i + 1 < line_len:
+                    masked[i + 1] = " "
                     i += 2
                     continue
                 if ch == "'":
                     in_char = False
                 i += 1
                 continue
-            # Outside a string: a ``//`` ends the line for code purposes
-            if ch == "/" and i + 1 < len(raw) and raw[i + 1] == "/":
+            if ch == "/" and i + 1 < line_len and raw[i + 1] == "/":
+                # `//` line comment — mask through end of line.
+                for j in range(i, line_len):
+                    masked[j] = " "
                 break
             if ch == '"':
+                masked[i] = " "
                 in_str = True
-                code.append(ch)
                 i += 1
                 continue
             if ch == "'":
+                masked[i] = " "
                 in_char = True
-                code.append(ch)
                 i += 1
                 continue
-            code.append(ch)
             i += 1
 
-        line_code = "".join(code).rstrip()
-        if not line_code:
-            continue
-        stripped = line_code.lstrip()
-        # Comment-only lines: skip
-        if stripped.startswith(("#", "//")):
-            continue
-        if not line_code.endswith("{"):
-            continue
-        # ``#{`` is a map literal, not a block opener
-        if line_code.endswith("#{"):
-            continue
-        count += 1
+        line_code = "".join(masked)
+
+        # Find each `{` in the masked line and apply the three rules.
+        for idx in range(len(line_code)):
+            if line_code[idx] != "{":
+                continue
+            # Skip `#{` (map literal) and `${` (string interpolation).
+            if idx > 0 and line_code[idx - 1] in ("#", "$"):
+                continue
+
+            # Rule (a): last non-WS char on its line.
+            tail = idx + 1
+            while tail < len(line_code) and line_code[tail] in (" ", "\t", "\r"):
+                tail += 1
+            if tail >= len(line_code):
+                count += 1
+                continue
+
+            prefix = line_code[:idx]
+
+            # Rule (c): immediately preceded by `=>` (WS only between).
+            rstripped = prefix.rstrip()
+            if rstripped.endswith("=>"):
+                count += 1
+                continue
+
+            # Rule (b): block keyword on this line, no standalone `=`
+            # between the latest such keyword and the `{`. Bound the
+            # search at the most recent `{` / `}` / `;` so nested
+            # constructs reset cleanly.
+            scope_start = (
+                max(
+                    prefix.rfind("{"),
+                    prefix.rfind("}"),
+                    prefix.rfind(";"),
+                )
+                + 1
+            )
+            latest_kw_pos = -1
+            j = scope_start
+            while j < idx:
+                ch = prefix[j]
+                if ch.isalpha() or ch == "_":
+                    word_start = j
+                    while j < idx and (prefix[j].isalnum() or prefix[j] == "_"):
+                        j += 1
+                    word = prefix[word_start:j]
+                    if word in _BLOCK_KEYWORDS:
+                        latest_kw_pos = word_start
+                else:
+                    j += 1
+            if latest_kw_pos < 0:
+                continue
+            # Standalone `=`: not part of `==` / `!=` / `<=` / `>=` /
+            # `=>` / `+=` / `-=` / `*=` / `/=` / `%=`.
+            tail_after_kw = prefix[latest_kw_pos:]
+            k = 0
+            saw_eq = False
+            while k < len(tail_after_kw):
+                if tail_after_kw[k] == "=":
+                    prev_ch = tail_after_kw[k - 1] if k > 0 else " "
+                    next_ch = tail_after_kw[k + 1] if k + 1 < len(tail_after_kw) else " "
+                    if next_ch == "=":  # `==`
+                        k += 2
+                        continue
+                    if next_ch == ">":  # `=>`
+                        k += 2
+                        continue
+                    if prev_ch in ("=", "!", "<", ">", "+", "-", "*", "/", "%"):
+                        k += 1
+                        continue
+                    saw_eq = True
+                    break
+                k += 1
+            if not saw_eq:
+                count += 1
+
     return count
 
 
@@ -2321,9 +2414,18 @@ def parse(source: str, *, filename: str = "<input>") -> Program:
     Raises:
         ParseError: If the source has syntax errors.
     """
-    brace_count = count_user_brace_block_openers(source)
-    if brace_count > 0:
-        _emit_brace_deprecation_warning(filename, brace_count)
+    # v5.23.2 Te.3.B.1: skip the warning for synthetic filenames
+    # (``<interp>``, ``<input>``, etc.). ``_parse_interp_expr``
+    # recursively calls ``parse(filename="<interp>")`` with a brace-
+    # style synthesized wrapper — the warning would otherwise fire on
+    # every interpolated expression in any user file. The native
+    # bootstrap (``parser.mn::split_interp_parts``) routes through
+    # ``parse_expr`` directly and never re-enters ``parse()``, so this
+    # filter is Python-side only.
+    if not (filename.startswith("<") and filename.endswith(">")):
+        brace_count = count_user_brace_block_openers(source)
+        if brace_count > 0:
+            _emit_brace_deprecation_warning(filename, brace_count)
     source = _indent_to_braces(source)
     try:
         result = _parser.parse(source)
@@ -2478,9 +2580,11 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
     # path sees the same syntax surface as ``parse()``.
     # v5.19.0 Te.3.A: detect user-written brace blocks before
     # preprocessing so the warning reflects what the user wrote.
-    brace_count = count_user_brace_block_openers(source)
-    if brace_count > 0:
-        _emit_brace_deprecation_warning(filename, brace_count)
+    # v5.23.2 Te.3.B.1: skip the warning for synthetic filenames.
+    if not (filename.startswith("<") and filename.endswith(">")):
+        brace_count = count_user_brace_block_openers(source)
+        if brace_count > 0:
+            _emit_brace_deprecation_warning(filename, brace_count)
     source = _indent_to_braces(source)
     # Try full parse first — fast path
     try:

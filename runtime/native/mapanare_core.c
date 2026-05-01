@@ -4223,3 +4223,264 @@ MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
     result.is_heap = 1;
     return result;
 }
+
+/* -----------------------------------------------------------------------
+ * v5.23.2 Te.3.B.2: __mn_count_user_brace_block_openers
+ *                 + __mn_emit_brace_deprecation_warning.
+ *
+ * Bootstrap mirror of mapanare/parser.py::count_user_brace_block_openers
+ * and ::_emit_brace_deprecation_warning. Lives in C for the same reason
+ * as __mn_indent_to_braces (see comment above): the bootstrap lower has
+ * pathologies on a .mn port of complex string-walking logic, and routing
+ * through C gives a single source of truth for the byte-identity contract
+ * (Python and stage1 must produce the same warning text).
+ *
+ * Algorithm (per-line, with strings / chars / `//` comments masked to
+ * spaces):
+ *   - Skip `#{` (map literal) and `${` (string interpolation).
+ *   - Rule (a): `{` is the last non-WS char on its line — count.
+ *   - Rule (b): a block keyword (fn/if/else/while/for/match/loop/do/try/
+ *               impl/trait/agent/struct/enum) appears on the same line
+ *               before the `{`, and there is no standalone `=` between
+ *               the latest such keyword and the `{`.
+ *   - Rule (c): `=>` immediately precedes the `{` (after WS).
+ *
+ * The `=` filter excludes implicit-return shapes like
+ * `fn make() -> Point = Point { x }` — that's an expression, not a block.
+ * Struct / map literals like `Point { x: 1, y: 2 }` on canonical
+ * colon-style lines do not match any rule and are correctly NOT counted.
+ *
+ * The byte-identity contract is enforced by tests/bootstrap/
+ * test_brace_deprecation_mirror.py.
+ * ----------------------------------------------------------------------- */
+
+static int mn_bd_is_block_keyword(const char *w, int64_t wlen) {
+    /* fn / if / else / while / for / match / loop / do / try /
+     * impl / trait / agent / struct / enum */
+    if (wlen == 2) {
+        if (w[0] == 'f' && w[1] == 'n') return 1;
+        if (w[0] == 'i' && w[1] == 'f') return 1;
+        if (w[0] == 'd' && w[1] == 'o') return 1;
+    } else if (wlen == 3) {
+        if (w[0] == 'f' && w[1] == 'o' && w[2] == 'r') return 1;
+        if (w[0] == 't' && w[1] == 'r' && w[2] == 'y') return 1;
+    } else if (wlen == 4) {
+        if (memcmp(w, "else", 4) == 0) return 1;
+        if (memcmp(w, "loop", 4) == 0) return 1;
+        if (memcmp(w, "impl", 4) == 0) return 1;
+        if (memcmp(w, "enum", 4) == 0) return 1;
+    } else if (wlen == 5) {
+        if (memcmp(w, "while", 5) == 0) return 1;
+        if (memcmp(w, "match", 5) == 0) return 1;
+        if (memcmp(w, "trait", 5) == 0) return 1;
+        if (memcmp(w, "agent", 5) == 0) return 1;
+    } else if (wlen == 6) {
+        if (memcmp(w, "struct", 6) == 0) return 1;
+    }
+    return 0;
+}
+
+static int mn_bd_is_id_char(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+static int mn_bd_is_id_start(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+static int mn_bd_compound_eq_prev(char c) {
+    /* Chars that, before `=`, mark it as part of a compound op
+     * (==, !=, <=, >=, +=, -=, *=, /=, %=). */
+    return c == '=' || c == '!' || c == '<' || c == '>' ||
+           c == '+' || c == '-' || c == '*' || c == '/' || c == '%';
+}
+
+/* Walk forward from `prefix[start..end)` looking for a standalone `=`
+ * (not part of `==`, `!=`, `<=`, `>=`, `=>`, `+=`, `-=`, `*=`, `/=`,
+ * `%=`). Returns 1 if found. */
+static int mn_bd_has_standalone_eq(const char *prefix, int64_t start, int64_t end) {
+    int64_t k = start;
+    while (k < end) {
+        if (prefix[k] == '=') {
+            char prev_ch = k > start ? prefix[k - 1] : ' ';
+            char next_ch = k + 1 < end ? prefix[k + 1] : ' ';
+            if (next_ch == '=') { k += 2; continue; }   /* == */
+            if (next_ch == '>') { k += 2; continue; }   /* => */
+            if (mn_bd_compound_eq_prev(prev_ch)) { k += 1; continue; }
+            return 1;
+        }
+        k += 1;
+    }
+    return 0;
+}
+
+MN_EXPORT int64_t __mn_count_user_brace_block_openers(MnString source) {
+    int64_t n = source.len;
+    if (n <= 0) return 0;
+    const char *src = mn_untag(source.data);
+
+    /* Build a masked copy: strings / chars / `//` comments → spaces.
+     * Newlines preserved at their original column positions. */
+    char *masked = (char *)malloc((size_t)n);
+    if (!masked) {
+        fprintf(stderr, "mapanare: oom in count_user_brace_block_openers\n");
+        exit(1);
+    }
+    int64_t i = 0;
+    int in_str = 0;
+    int in_chr = 0;
+    while (i < n) {
+        char ch = src[i];
+        if (in_str) {
+            masked[i] = ' ';
+            if (ch == '\\' && i + 1 < n) {
+                masked[i + 1] = ' ';
+                i += 2;
+                continue;
+            }
+            if (ch == '\n') {
+                /* Mapanare doesn't have multi-line raw strings in lex,
+                 * but defensively reset on newline so the masking stays
+                 * structurally aligned. */
+                masked[i] = '\n';
+                in_str = 0;
+            } else if (ch == '"') {
+                in_str = 0;
+            }
+            i += 1;
+            continue;
+        }
+        if (in_chr) {
+            masked[i] = ' ';
+            if (ch == '\\' && i + 1 < n) {
+                masked[i + 1] = ' ';
+                i += 2;
+                continue;
+            }
+            if (ch == '\n') {
+                masked[i] = '\n';
+                in_chr = 0;
+            } else if (ch == '\'') {
+                in_chr = 0;
+            }
+            i += 1;
+            continue;
+        }
+        if (ch == '/' && i + 1 < n && src[i + 1] == '/') {
+            /* Line comment — mask through end of line. */
+            while (i < n && src[i] != '\n') {
+                masked[i] = ' ';
+                i += 1;
+            }
+            continue;
+        }
+        if (ch == '"') { masked[i] = ' '; in_str = 1; i += 1; continue; }
+        if (ch == '\'') { masked[i] = ' '; in_chr = 1; i += 1; continue; }
+        masked[i] = ch;
+        i += 1;
+    }
+
+    /* Walk masked source line-by-line, applying the three rules. */
+    int64_t count = 0;
+    int64_t line_start = 0;
+    int64_t pos = 0;
+    while (pos <= n) {
+        if (pos < n && masked[pos] != '\n') { pos += 1; continue; }
+        int64_t line_end = pos;  /* exclusive */
+        /* Process [line_start, line_end). */
+        for (int64_t idx = line_start; idx < line_end; idx++) {
+            if (masked[idx] != '{') continue;
+            /* Skip `#{` and `${`. */
+            if (idx > line_start) {
+                char p = masked[idx - 1];
+                if (p == '#' || p == '$') continue;
+            }
+
+            /* Rule (a): last non-WS char on line. */
+            int64_t tail = idx + 1;
+            while (tail < line_end &&
+                   (masked[tail] == ' ' || masked[tail] == '\t' ||
+                    masked[tail] == '\r')) {
+                tail += 1;
+            }
+            if (tail >= line_end) {
+                count += 1;
+                continue;
+            }
+
+            /* Rule (c): immediately preceded by `=>` (after WS). */
+            int64_t back = idx - 1;
+            while (back >= line_start &&
+                   (masked[back] == ' ' || masked[back] == '\t' ||
+                    masked[back] == '\r')) {
+                back -= 1;
+            }
+            if (back >= line_start + 1 &&
+                masked[back] == '>' && masked[back - 1] == '=') {
+                count += 1;
+                continue;
+            }
+
+            /* Rule (b): block keyword on line, no standalone `=`
+             * between the latest such keyword and `{`. Bound the
+             * keyword search at the most recent `{` / `}` / `;` so
+             * nested constructs reset cleanly. */
+            int64_t scope_start = line_start;
+            for (int64_t k = idx - 1; k >= line_start; k--) {
+                char c = masked[k];
+                if (c == '{' || c == '}' || c == ';') {
+                    scope_start = k + 1;
+                    break;
+                }
+            }
+            int64_t latest_kw_pos = -1;
+            int64_t k = scope_start;
+            while (k < idx) {
+                char c = masked[k];
+                if (mn_bd_is_id_start(c)) {
+                    int64_t word_start = k;
+                    while (k < idx && mn_bd_is_id_char(masked[k])) k += 1;
+                    int64_t wlen = k - word_start;
+                    if (mn_bd_is_block_keyword(masked + word_start, wlen)) {
+                        latest_kw_pos = word_start;
+                    }
+                } else {
+                    k += 1;
+                }
+            }
+            if (latest_kw_pos < 0) continue;
+            if (mn_bd_has_standalone_eq(masked, latest_kw_pos, idx)) {
+                continue;
+            }
+            count += 1;
+        }
+        if (pos >= n) break;
+        line_start = pos + 1;
+        pos = line_start;
+    }
+
+    free(masked);
+    return count;
+}
+
+MN_EXPORT void __mn_emit_brace_deprecation_warning(MnString path, int64_t count) {
+    if (count <= 0) return;
+    /* MAPANARE_NO_BRACE_WARNING=1 opt-out (mirrors Python). */
+    const char *opt = getenv("MAPANARE_NO_BRACE_WARNING");
+    if (opt && opt[0]) return;
+
+    const char *plural = (count == 1) ? "occurrence" : "occurrences";
+    /* Match Python text byte-for-byte. */
+    fputs("warning: ", stderr);
+    if (path.len > 0) {
+        fwrite(mn_untag(path.data), 1, (size_t)path.len, stderr);
+    }
+    fputs(": uses deprecated {}-block syntax (", stderr);
+    fprintf(stderr, "%lld %s", (long long)count, plural);
+    fputs("). Run `mnc fmt ", stderr);
+    if (path.len > 0) {
+        fwrite(mn_untag(path.data), 1, (size_t)path.len, stderr);
+    }
+    fputs("` to migrate. Hard removal in v6.0.\n", stderr);
+}

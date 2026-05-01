@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: bash scripts/concat_self.sh
+// Do not edit — regenerate with: python scripts/concat_self.py
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -1745,6 +1745,17 @@ fn has_explicit_main(defs: List<Definition>) -> Bool:
     return false
 
 pub fn parse(source: String, filename: String) -> Program:
+    // v5.23.2 Te.3.B.2: brace-block deprecation warning. Runs **before**
+    // __mn_indent_to_braces so the detector sees the source as the user
+    // wrote it (the preprocessor would otherwise convert every colon
+    // block into brace form, making the two indistinguishable).
+    // Mirrors mapanare/parser.py::parse — same call shape, byte-identical
+    // warning text. Honors MAPANARE_NO_BRACE_WARNING=1 (handled inside
+    // the C runtime). See runtime/native/mapanare_core.c::
+    // __mn_count_user_brace_block_openers for the algorithm.
+    let brace_count: Int = __mn_count_user_brace_block_openers(source)
+    if brace_count > 0:
+        __mn_emit_brace_deprecation_warning(filename, brace_count)
     // v5.14.1 B.5/B.6: colon-block preprocessor lives in the C runtime
     // (`runtime/native/mapanare_core.c::__mn_indent_to_braces`) and is
     // wired into the self-host as a builtin (semantic.mn::is_builtin_function,
@@ -4139,6 +4150,10 @@ fn is_builtin_function(name: String) -> Bool:
     // v5.14.1 B.5/B.6: colon-block preprocessor (lives in C runtime
     // because the bootstrap lower has pathologies on a .mn port).
     if name == "__mn_indent_to_braces" { return true }
+    // v5.23.2 Te.3.B.2: brace-deprecation detector + warning emitter.
+    // Same C-runtime routing as __mn_indent_to_braces.
+    if name == "__mn_count_user_brace_block_openers" { return true }
+    if name == "__mn_emit_brace_deprecation_warning" { return true }
     // High-level I/O builtins (v3.41.0)
     if name == "read_line" { return true }
     if name == "read_file" { return true }
@@ -6000,6 +6015,11 @@ fn register_builtins(st: SemState) -> SemState:
     // v5.14.1 B.5/B.6: colon-block preprocessor (in C runtime).
     let itbsym: Symbol = new_symbol("__mn_indent_to_braces", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "__mn_indent_to_braces", itbsym)
+    // v5.23.2 Te.3.B.2: brace-deprecation detector + warning emitter.
+    let cubbsym: Symbol = new_symbol("__mn_count_user_brace_block_openers", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_count_user_brace_block_openers", cubbsym)
+    let ebdwsym: Symbol = new_symbol("__mn_emit_brace_deprecation_warning", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_emit_brace_deprecation_warning", ebdwsym)
 
     // High-level I/O builtins (v3.41.0)
     let readline_sym: Symbol = new_symbol("read_line", "function", make_builtin_fn_type(string_type()), false)
@@ -9565,6 +9585,16 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let dr_itb: LowerResult = make_value(st, mir_string(), "t")
         let s_itb: LowerState = emit_instr(dr_itb.state, Instruction::Call(dr_itb.value, fn_name, args))
         return new_lower_result(dr_itb.value, s_itb)
+    // v5.23.2 Te.3.B.2: brace-deprecation detector + warning emitter.
+    // Same C-runtime routing as __mn_indent_to_braces.
+    if fn_name == "__mn_count_user_brace_block_openers":
+        let dr_cubb: LowerResult = make_value(st, mir_int(), "t")
+        let s_cubb: LowerState = emit_instr(dr_cubb.state, Instruction::Call(dr_cubb.value, fn_name, args))
+        return new_lower_result(dr_cubb.value, s_cubb)
+    if fn_name == "__mn_emit_brace_deprecation_warning":
+        let dr_ebdw: LowerResult = make_value(st, mir_void(), "t")
+        let s_ebdw: LowerState = emit_instr(dr_ebdw.state, Instruction::Call(dr_ebdw.value, fn_name, args))
+        return new_lower_result(dr_ebdw.value, s_ebdw)
     if fn_name == "__mn_dev_null_redirect":
         let dr_dn: LowerResult = make_value(st, mir_string(), "t")
         let s_dn: LowerState = emit_instr(dr_dn.state, Instruction::Call(dr_dn.value, fn_name, args))
@@ -15118,6 +15148,8 @@ fn get_fn_attrs(name: String) -> String:
     if name == "__mn_str_println" { return " nounwind willreturn" }
     if name == "__mn_str_eprint" { return " nounwind willreturn" }
     if name == "__mn_indent_to_braces" { return " nounwind willreturn" }
+    if name == "__mn_count_user_brace_block_openers" { return " nounwind willreturn" }
+    if name == "__mn_emit_brace_deprecation_warning" { return " nounwind willreturn" }
     if name == "__mn_str_eprintln" { return " nounwind willreturn" }
     // -- I/O (v3.41.0) --
     if name == "__mn_read_line" { return " nounwind willreturn" }
@@ -15327,6 +15359,16 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     // emits into compiled programs (see emit_metadata_node below).
     s = declare_runtime_fn(s, "__mn_version_string", llvm_string(), "")
     s = declare_runtime_fn(s, "__mn_indent_to_braces", llvm_string(), llvm_string())
+    // v5.23.2 Te.3.B.2: brace-deprecation detector + warning emitter.
+    // Counts user-written `{` block openers (excluding struct/map literals)
+    // and emits a single stderr warning with `mnc fmt` migration hint.
+    // Mirrors mapanare/parser.py::count_user_brace_block_openers and
+    // ::_emit_brace_deprecation_warning byte-for-byte. Lives in C runtime
+    // so the Python and native sides have a single source of truth (see
+    // runtime/native/mapanare_core.c for the same C-routing rationale
+    // as __mn_indent_to_braces).
+    s = declare_runtime_fn(s, "__mn_count_user_brace_block_openers", "i64", llvm_string())
+    s = declare_runtime_fn(s, "__mn_emit_brace_deprecation_warning", "void", llvm_string() + ", i64")
     // v5.9.0 DX.4: native cache stats + dev-null redirect shim. Replaces
     // POSIX-only shell-outs (``find | wc -l``, ``du -sh``, ``rm -rf``,
     // ``2>/dev/null``) that fell through cmd.exe on Windows.
@@ -21129,4 +21171,3 @@ fn mn_main():
     __mn_str_eprint("       Use 'mnc emit-llvm <file>' for raw IR emission, or\n")
     __mn_str_eprint("       'mnc compile <file>' for transpilation (.py/.php/.ts/.go).\n")
     __mn_exit(1)
-

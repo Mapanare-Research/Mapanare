@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.23.2] - 2026-05-01
+
+**Te.3.B — bootstrap brace-deprecation mirror.** Third release in
+the v5.23–v5.24 recovery arc. Closes the **asymmetric closure**
+flagged independently by 3 v5.22.0 panel reviewers (Coral M1,
+Anaconda §3, Rattler #1): the Python detector missed single-line
+`{...}` shapes (line-based, only counted lines whose trailing non-
+comment char was `{`); native `mnc-stage1` had zero brace-
+deprecation logic at all. v5.23.2 fixes both at the same algorithm
+layer with a single source of truth (C-runtime export). Strict
+3-stage fixed point preserved at **239,835 lines / 0 diff**
+(17-release strict streak; +350 lines vs v5.23.1's 239,485,
+expected from the new C-extern call sites). Goldens 95/95.
+Bb.\* seed refresh required (mirrors v5.17.0 Sh.E precedent).
+
+### Added
+
+- **Te.3.B.2** — two new C-runtime exports in
+  `runtime/native/mapanare_core.c`:
+  `__mn_count_user_brace_block_openers(MnString) -> int64_t` and
+  `__mn_emit_brace_deprecation_warning(MnString path, int64_t
+  count) -> void`. Same C-routing rationale as v5.14.1 B.5
+  `__mn_indent_to_braces` — single source of truth, byte-identity
+  by construction, sidesteps any bootstrap-lower string-walking
+  pathologies. Both wired through `mapanare/self/semantic.mn`,
+  `mapanare/self/lower.mn`, `mapanare/self/emit_llvm.mn`, and
+  `mapanare/self/parser.mn` (~30 LOC total). `parse()` calls them
+  before `__mn_indent_to_braces` so the detector sees source as
+  the user typed it.
+- **Te.3.B.3** — new
+  `tests/bootstrap/test_brace_deprecation_mirror.py` cross-
+  bootstrap byte-identity test. 10 parameterized cases (single-
+  line, multi-line, escaped brace, brace in string, brace in
+  comment, `#{` map literal, `${...}` interpolation, mixed colon +
+  brace, no braces, multiple) + 1 explicit
+  `MAPANARE_NO_BRACE_WARNING=1` opt-out test. Asserts Python's
+  `mapanare emit-llvm` and native `mnc-stage1 emit-llvm` produce
+  byte-identical warning text on every shape. 11/11 PASS.
+- 5 regression tests in `tests/test_brace_deprecation.py` pinning
+  the rewrite (single-line counts; struct literal NOT counted;
+  implicit-return struct literal NOT counted; `=>` block body
+  counted; interpolation NOT counted).
+
+### Changed
+
+- **Te.3.B.1** — `mapanare/parser.py::count_user_brace_block_
+  openers` rewritten as a per-line character-walker with three
+  rules:
+  - **(a)** `{` is the last non-WS char on its line — catches
+    multi-line `fn main() {` / `struct Point {` / `match expr {`.
+  - **(b)** a block keyword (`fn`, `if`, `else`, `while`, `for`,
+    `match`, `loop`, `do`, `try`, `impl`, `trait`, `agent`,
+    `struct`, `enum`) appears on the same line before the `{`,
+    AND there is no standalone `=` between the latest such
+    keyword and the `{`. The `=` filter excludes implicit-return
+    shapes like `fn make() -> Point = Point { x }` — that's an
+    expression, not a block. Compound operators (`==`, `!=`,
+    `<=`, `>=`, `=>`, `+=`, `-=`, `*=`, `/=`, `%=`) don't
+    qualify.
+  - **(c)** the chars immediately before the `{` (after WS) are
+    `=>` — catches match-arm and closure block bodies.
+
+  Pre-v5.23.2 the line-based detector silently missed single-line
+  shapes like `fn main() { print("hi") }` because the line ended
+  in `}`. Post-v5.23.2 these fire correctly without false-
+  positiving on canonical colon-style struct literals (`Point { x:
+  1 }` on a colon-style line stays at 0). Sweep across the
+  corpus confirms canonical goldens
+  (`tests/golden/06_struct.mn`, `81_struct_shorthand.mn`,
+  `82_struct_update.mn`, `84_let_destructure.mn`, etc.) stay at
+  count 0.
+- **Te.3.B.1** — `mapanare/parser.py::parse` and
+  `parse_recovering` skip the warning for synthetic filenames
+  (those wrapped in `<...>`). `_parse_interp_expr` recursively
+  calls `parse(filename="<interp>")` with a brace-style synthesized
+  wrapper for every interpolated expression — without this filter,
+  the warning would fire on every `"${expr}"` in any user file.
+  Native bootstrap is unaffected — `parser.mn::split_interp_parts`
+  routes through `parse_expr` directly, never re-enters `parse()`.
+- **Te.3.B.4** — `.reviews/v5.22.0/PRE_PANEL_AUDIT.md` "Pre-flight
+  commands" section updated with v5.23.2-update note documenting
+  the gap closure for the v5.27.0 panel; native parallel commands
+  added showing byte-identical warning behavior; bootstrap-mirror
+  test count updated (11/11 added v5.23.2).
+
+### Migration
+
+- **Te.3.B.5** — Bb.\* seed refresh required.
+  `bootstrap/seed/linux-x86_64/mnc` (and its `.sha256`) refreshed
+  from v5.23.2 HEAD `mapanare/self/mnc-stage1` because the v5.10.0-
+  vintage seed predates the new C-runtime exports. Same shape as
+  v5.17.0 Sh.E. Post-refresh `scripts/build_from_seed.sh`
+  succeeds.
+
 ## [5.23.1] - 2026-05-01
 
 **Mb.\* — memory hygiene.** Second release in the v5.23–v5.24
@@ -8673,7 +8767,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.2...HEAD
+[5.23.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.1...v5.23.2
 [5.23.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.0...v5.23.1
 [5.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.23.0
 [5.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.22.0

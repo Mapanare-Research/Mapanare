@@ -208,7 +208,8 @@ python3 scripts/test_native.py --stage1 mapanare/self/mnc-stage1
 python3 -m pytest tests/bootstrap/ -v
 # expected: test_te5_mirror.py 12/12, test_string_interp_mirror.py 10/10,
 #           test_comprehension_mirror.py 10/10, test_indent_preprocessor.py 201/201,
-#           test_chained_cmp_mirror.py 10/10 (added v5.21.1)
+#           test_chained_cmp_mirror.py 10/10 (added v5.21.1),
+#           test_brace_deprecation_mirror.py 11/11 (added v5.23.2)
 
 # Build from seed
 bash scripts/build_from_seed.sh
@@ -223,11 +224,30 @@ python3 scripts/check_changelog_honesty.py
 python3 scripts/check_workflow_shapes.py
 
 # Brace-deprecation flow
+# > **Note (v5.23.2 update):** the single-line shape below now fires
+# > the warning correctly post-Te.3.B.1. Pre-v5.23.2 the Python
+# > detector was line-based and only counted lines whose trailing
+# > non-comment char was ``{`` — the canonical pre-flight command
+# > below silently emitted no warning, masking the gap. v5.23.2
+# > rewrote the detector with rules (a)/(b)/(c) (line-end / block-
+# > keyword-context / ``=>``-immediate-prefix) and ported it as a
+# > C-runtime export so ``mnc-stage1`` fires the same warning byte-
+# > for-byte. Future audits should keep this command as the canonical
+# > test of warning coverage; native ``mnc-stage1 emit-llvm`` and
+# > Python ``mapanare emit-llvm`` must produce identical warning text
+# > (see ``tests/bootstrap/test_brace_deprecation_mirror.py``).
 echo 'fn main() { print("hi") }' > /tmp/brace.mn
 python3 -m mapanare emit-llvm /tmp/brace.mn 2>&1 | head -3
 # expected: warning: /tmp/brace.mn: uses deprecated {}-block syntax (1 occurrence). Run `mnc fmt /tmp/brace.mn` to migrate. Hard removal in v6.0.
 
+# Native must produce byte-identical warning (v5.23.2 Te.3.B.2):
+mapanare/self/mnc-stage1 emit-llvm /tmp/brace.mn -o /tmp/x.ll 2>&1 | head -3
+# expected: warning: /tmp/brace.mn: uses deprecated {}-block syntax (1 occurrence). Run `mnc fmt /tmp/brace.mn` to migrate. Hard removal in v6.0.
+
 MAPANARE_NO_BRACE_WARNING=1 python3 -m mapanare emit-llvm /tmp/brace.mn 2>&1 | head -3
+# expected: no warning
+
+MAPANARE_NO_BRACE_WARNING=1 mapanare/self/mnc-stage1 emit-llvm /tmp/brace.mn -o /tmp/x.ll 2>&1 | head -3
 # expected: no warning
 
 # Chained-cmp once-evaluation (the load-bearing semantic test)

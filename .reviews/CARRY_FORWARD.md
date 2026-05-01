@@ -260,7 +260,7 @@ v5.22.0 HEAD.
 | Bo.25 | Goldens badge `66/66` across all 4 READMEs while body says `95/95`. Same systematic-skill-gap fingerprint as v5.11.0 Bo.21. Three releases of badge lag. Structural fix: extend `bump_version.py` to auto-discover `tests/golden/*.mn` count. | HIGH | Boa #2 | 1 | **CLOSED v5.23.0 RC.3** (one-shot + structural; `tests/test_bump_version.py` 5/5) | — |
 | V.9 | `__mn_indent_to_braces` MnString lifecycle leak: returned `joined` buffer is not drop-glue tracked at the `parser.mn::parse` call site. Bounded to single-shot in `mnc-stage1`; unbounded if embedded in long-lived process. The byte-identical oracle `test_indent_preprocessor.py` cannot detect lifecycle issues — class blind spot. **Mandatory CI follow-up:** valgrind regression gate. | MEDIUM | Viper V.9 | 1 | **CLOSED v5.23.1 Mb.1** | v5.23.1 Mb.1 (Python `_do_call` blanket-move bypass) + Mb.3 (`sanitizer-mnc-stage1` regression gate) |
 | Te.5 ASan leaks | 3 NEW LEAK regressions on `tests/golden/{88_if_let, 90_while_let, 91_let_else}.mn` — surfaced post-v5.22.0 panel via the LeakSanitizer CI workflow. Root cause was self-host `emit_wrap_some` malloc'ing the Some payload but never calling `emit_track_boxed`. Latent on baseline 17_option since v5.4.2. | MEDIUM | LeakSanitizer CI (post-panel) | 1 | **CLOSED v5.23.1 Mb.2** | v5.23.1 Mb.2 (`s = emit_track_boxed(s, ea)` after malloc; baseline TSV refreshed) |
-| Te.3 hollow / asymmetric closure | Brace-deprecation warning misses single-line `{...}` shape; native `mnc-stage1` has zero brace-deprecation logic. PRE_PANEL_AUDIT.md's own canonical pre-flight test command demonstrates the gap. **Asymmetric closure**: PY: closed | SH: open. Three independent reviewers flagged. | MEDIUM | Coral M1 / Anaconda §3 / Rattler #1 | 1 | OPEN | v5.22.x (must close before v6.0 hard removal) |
+| Te.3 hollow / asymmetric closure | Brace-deprecation warning misses single-line `{...}` shape; native `mnc-stage1` has zero brace-deprecation logic. PRE_PANEL_AUDIT.md's own canonical pre-flight test command demonstrates the gap. **Asymmetric closure**: PY: closed | SH: open. Three independent reviewers flagged. | MEDIUM | Coral M1 / Anaconda §3 / Rattler #1 | 1 | **CLOSED v5.23.2 Te.3.B.1–.5** | v5.23.2 Te.3.B.1 (Python detector rewritten as char-walker w/ rules a/b/c) + Te.3.B.2 (C-runtime mirror via `__mn_count_user_brace_block_openers` + `__mn_emit_brace_deprecation_warning`) + Te.3.B.3 (`tests/bootstrap/test_brace_deprecation_mirror.py` 11/11 byte-identity contract) + Te.3.B.4 (PRE_PANEL_AUDIT.md update) + Te.3.B.5 (Bb.\* seed refresh, mirrors v5.17.0 Sh.E). Strict 3-stage fixed point preserved at 239,835 lines / 0 diff. |
 | Hollow-feature gate calibration | `check_no_hollow_features.py` step 3 fails on `CompClause` (v5.15.0 Te.2) + `FieldPattern` (v5.20.0 Te.5.D) — whitelist calibration miss. Same 5+/2+ release silent-fail pattern as Reg.1. | MEDIUM | Anaconda §2.B | 1 | **CLOSED v5.23.0 RC.4** | — |
 | Manifesto coherence (M2) | `docs/manifesto.md:31` "Curly braces for blocks" untouched against brace-deprecated codebase. **3rd consecutive panel of manifesto drift.** | MEDIUM | Coral M2 | 3 | OPEN | v5.22.x |
 | SPEC example corpus (M3) | 26 of 36 block-openers in `docs/SPEC.md` are brace-style against §4.0 declaring colon-canonical (72%). v5.21.1 hygiene closed prose but not examples. | MEDIUM | Coral M3 | 1 | OPEN | v5.23.0 |
@@ -296,6 +296,20 @@ v5.22.0 HEAD.
   (v5.24.1), Bo.27 (v5.27.0 audit), Stage2 teardown (v6.0)
 - **1 v6.0-rescoped** unchanged
 - **15 RC.\* closed in v5.23.0** (RC.1–RC.15 in one mechanical session)
+
+**Aggregate state entering v5.24.x (post-v5.23.2 Te.3.B closeout):**
+- **0 HIGH** open
+- **3 MEDIUM** open: Manifesto coherence M2 (v5.24.1), SPEC corpus
+  M3 (v5.24.1), Cadence skip / `make ci-gates` /
+  `check_doc_freshness.py` (v5.24.0 Hy.\* — one structural cluster).
+  V.9 closed v5.23.1; Te.3 hollow / asymmetric closure CLOSED
+  v5.23.2 (this row).
+- **~7 LOW** open: same as above row; v5.23.2 did not close any LOW.
+- **1 v6.0-rescoped** unchanged.
+- **5 v5.23.2 closures**: Te.3.B.1 (Python detector rewrite) +
+  Te.3.B.2 (native mirror) + Te.3.B.3 (cross-bootstrap mirror test
+  11/11) + Te.3.B.4 (PRE_PANEL_AUDIT.md update) + Te.3.B.5 (Bb.\*
+  seed refresh).
 
 **Aggregate state entering v5.24.x (post-v5.23.1 Mb.\* closeout):**
 - **0 HIGH** open

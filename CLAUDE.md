@@ -18,6 +18,67 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.23.2** (ready, not tagged) — **Te.3.B — bootstrap brace-
+  deprecation mirror.** Third release in the v5.23–v5.24 recovery
+  arc. Closes the **Te.3 asymmetric closure** flagged independently
+  by 3 v5.22.0 panel reviewers (Coral M1 + Anaconda §3 + Rattler
+  #1): the Python detector missed single-line `{...}` shapes (line-
+  based, only counted lines whose trailing non-comment char was
+  `{`); native `mnc-stage1` had zero brace-deprecation logic at
+  all. v5.23.2 fixes both at the same algorithm layer with a single
+  source of truth (C-runtime export). **Strict 3-stage fixed point
+  preserved at 239,835 lines / 0 diff** (17-release strict streak;
+  +350 lines vs v5.23.1's 239,485, expected from the new C-extern
+  call sites). Goldens **95/95**. **Te.3.B.1**: Python detector
+  rewritten as a per-line character-walker over masked code
+  (strings / chars / `//` comments → spaces) with three rules —
+  (a) `{` is last non-WS on line, (b) block keyword precedes `{`
+  with no standalone `=` between latest keyword and `{` (excludes
+  implicit-return shapes like
+  `fn make() -> Point = Point { x }`; comparison/compound ops `==`
+  / `!=` / `<=` / `>=` / `=>` / `+=` etc. don't qualify), (c) `=>`
+  immediately precedes `{` (match-arm / closure body). Catches
+  single-line `fn main() { print("hi") }` (the gap); does NOT
+  false-positive on canonical struct literals like
+  `Point { x: 1, y: 2 }` in colon-style code (sweep across goldens
+  06/81/82/84/85 confirms count=0). Synthetic-filename filter
+  (`<...>`) suppresses the warning for the `_parse_interp_expr`
+  recursive `parse(filename="<interp>")` call that synthesizes a
+  brace-style wrapper for every interpolated expression — without
+  this filter the warning would fire on every `"${expr}"` in any
+  user file. **Te.3.B.2**: same algorithm ported to C runtime as
+  `__mn_count_user_brace_block_openers` +
+  `__mn_emit_brace_deprecation_warning`. Same C-routing rationale
+  as v5.14.1 B.5 `__mn_indent_to_braces` — single source of truth,
+  byte-identity by construction, sidesteps any bootstrap-lower
+  string-walking pathologies (PLAN initially proposed `.mn` port;
+  C is strictly better here). `mapanare/self/parser.mn::parse`
+  calls both before `__mn_indent_to_braces`;
+  `MAPANARE_NO_BRACE_WARNING=1` opt-out honored via `getenv()` in
+  C. Bootstrap wiring across `semantic.mn` /
+  `lower.mn` / `emit_llvm.mn` / `parser.mn` (~30 LOC). **Te.3.B.3**:
+  new `tests/bootstrap/test_brace_deprecation_mirror.py` (11 cases
+  — 10 parameterized covering single-line, multi-line, escaped
+  brace, brace in string, brace in comment, `#{` map literal,
+  `${...}` interpolation, mixed colon + brace, no braces, multiple
+  + 1 opt-out) is the byte-identity contract. 11/11 PASS.
+  **Te.3.B.4**: `.reviews/v5.22.0/PRE_PANEL_AUDIT.md` "Pre-flight
+  commands" updated with v5.23.2-update note + native parallel
+  commands documenting the gap closure for the v5.27.0 panel.
+  **Te.3.B.5**: Bb.\* seed refresh required —
+  `bootstrap/seed/linux-x86_64/mnc` + `.sha256` refreshed from
+  v5.23.2 HEAD `mapanare/self/mnc-stage1` because the v5.10.0-
+  vintage seed's `is_builtin_function` rejects the new exports.
+  Same shape as v5.17.0 Sh.E precedent. Post-refresh
+  `bash scripts/build_from_seed.sh` succeeds. **Carry-forward
+  delta**: Te.3 hollow / asymmetric closure CLOSED at v5.23.2 (1
+  MEDIUM × 3 reviewer cycles). Coral L3 (`mnc fmt --keep-braces`
+  polish for single-line shapes) and self-host source migration to
+  colon-only (mnc_all.mn still emits 3,116-occurrence warning per
+  parse, all legitimate `=> { ... }` match-arm bodies in `ast.mn` /
+  `lower.mn`) remain held for v5.24.x. See
+  `docs/roadmap/v5/v5.23.2/SESSION_REPORT.md` and `PLAN.md`.
+
 - **v5.23.1** (ready, not tagged) — **Mb.\* — memory hygiene.**
   Second release in the v5.23–v5.24 recovery arc. Closes Viper
   **V.9** (the v5.14.1 `__mn_indent_to_braces` MnString lifecycle

@@ -2171,6 +2171,16 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let dr_itb: LowerResult = make_value(st, mir_string(), "t")
         let s_itb: LowerState = emit_instr(dr_itb.state, Instruction::Call(dr_itb.value, fn_name, args))
         return new_lower_result(dr_itb.value, s_itb)
+    // v5.23.2 Te.3.B.2: brace-deprecation detector + warning emitter.
+    // Same C-runtime routing as __mn_indent_to_braces.
+    if fn_name == "__mn_count_user_brace_block_openers":
+        let dr_cubb: LowerResult = make_value(st, mir_int(), "t")
+        let s_cubb: LowerState = emit_instr(dr_cubb.state, Instruction::Call(dr_cubb.value, fn_name, args))
+        return new_lower_result(dr_cubb.value, s_cubb)
+    if fn_name == "__mn_emit_brace_deprecation_warning":
+        let dr_ebdw: LowerResult = make_value(st, mir_void(), "t")
+        let s_ebdw: LowerState = emit_instr(dr_ebdw.state, Instruction::Call(dr_ebdw.value, fn_name, args))
+        return new_lower_result(dr_ebdw.value, s_ebdw)
     if fn_name == "__mn_dev_null_redirect":
         let dr_dn: LowerResult = make_value(st, mir_string(), "t")
         let s_dn: LowerState = emit_instr(dr_dn.state, Instruction::Call(dr_dn.value, fn_name, args))

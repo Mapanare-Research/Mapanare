@@ -64,6 +64,48 @@ def test_count_handles_escaped_quote_in_string():
 
 
 # ---------------------------------------------------------------------------
+# v5.23.2 Te.3.B.1 — single-line brace shape now counts (was the gap)
+# ---------------------------------------------------------------------------
+
+
+def test_count_single_line_brace_block():
+    """v5.23.2 Te.3.B.1: ``fn main() { print(\"hi\") }`` was silently uncounted
+    by the pre-v5.23.2 line-based detector. Must now count."""
+    assert count_user_brace_block_openers('fn main() { print("hi") }') == 1
+
+
+def test_count_single_line_struct_literal_not_counted():
+    """v5.23.2 Te.3.B.1: ``Point { x: 1 }`` is a struct literal, not a block.
+    Canonical colon-style code must not trigger the warning."""
+    src = "fn main():\n    let p = Point { x: 1, y: 2 }\n"
+    assert count_user_brace_block_openers(src) == 0
+
+
+def test_count_single_line_interp_not_counted():
+    """v5.23.2 Te.3.B.1: ``${n}`` inside a string must not count (already
+    masked by string-state, but exercised here for the mirror contract)."""
+    src = 'fn main():\n    let n = 5\n    print("${n}")\n'
+    assert count_user_brace_block_openers(src) == 0
+
+
+def test_count_implicit_return_struct_literal_not_counted():
+    """v5.23.2 Te.3.B.1: ``fn make() = Point { x }`` is implicit-return with
+    a struct literal, not a block. The standalone ``=`` between ``fn`` and
+    ``{`` disqualifies rule (b)."""
+    src = "fn make() -> Point = Point { x: 0, y: 0 }\n"
+    assert count_user_brace_block_openers(src) == 0
+
+
+def test_count_arrow_block_body():
+    """v5.23.2 Te.3.B.1: ``=> {`` is a block opener (match arm or closure
+    body), per rule (c)."""
+    src = "fn f(x): match x:\n    Some(y) => { y + 1 }\n    None => 0\n"
+    # In colon-style, the inner `=> { y + 1 }` is a brace-style match arm
+    # body. Rule (c) catches it.
+    assert count_user_brace_block_openers(src) == 1
+
+
+# ---------------------------------------------------------------------------
 # Te.3.A — warning emission via parse()
 # ---------------------------------------------------------------------------
 

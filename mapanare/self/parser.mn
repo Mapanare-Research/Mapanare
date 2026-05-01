@@ -356,6 +356,17 @@ fn has_explicit_main(defs: List<Definition>) -> Bool:
     return false
 
 pub fn parse(source: String, filename: String) -> Program:
+    // v5.23.2 Te.3.B.2: brace-block deprecation warning. Runs **before**
+    // __mn_indent_to_braces so the detector sees the source as the user
+    // wrote it (the preprocessor would otherwise convert every colon
+    // block into brace form, making the two indistinguishable).
+    // Mirrors mapanare/parser.py::parse — same call shape, byte-identical
+    // warning text. Honors MAPANARE_NO_BRACE_WARNING=1 (handled inside
+    // the C runtime). See runtime/native/mapanare_core.c::
+    // __mn_count_user_brace_block_openers for the algorithm.
+    let brace_count: Int = __mn_count_user_brace_block_openers(source)
+    if brace_count > 0:
+        __mn_emit_brace_deprecation_warning(filename, brace_count)
     // v5.14.1 B.5/B.6: colon-block preprocessor lives in the C runtime
     // (`runtime/native/mapanare_core.c::__mn_indent_to_braces`) and is
     // wired into the self-host as a builtin (semantic.mn::is_builtin_function,
