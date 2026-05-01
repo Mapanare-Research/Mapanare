@@ -18,6 +18,62 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.22.0** (ready, not tagged) — **RE-PANEL — terseness-arc
+  closeout.** Panel-only release; the release identity is the
+  panel itself. **Zero compiler edits. Zero runtime edits.
+  Zero `mapanare/self/*.mn` edits.** Strict 3-stage fixed
+  point preserved by construction at 238,086 lines / 0-line
+  diff (v5.9.0 milestone, held through 13 consecutive
+  releases — longest streak in project history; 2.6× the
+  v5.11.0 streak). Goldens **95/95**. Same posture as v5.8.0
+  (which graded v5.3.1 → v5.7.1 at 9.66 — project ceiling).
+  **Aggregate: 9.41 / 10. Decision: Option A** (point-release
+  health gate clears; no recovery cycle opened) — third
+  consecutive Option A under the v5-gate mechanical rule
+  (v5.7.1: 9.66; v5.11.0: 9.62; v5.22.0: 9.41). Δ vs v5.11.0:
+  **−0.21** — largest single-arc regression since v5.0.0,
+  driven entirely by process-discipline debt that the H.\*
+  hygiene pattern did not catch. All 7 reviewers PASS or
+  PASS WITH NOTES; **0 NEEDS WORK**. **Per-reviewer**:
+  Rattler 9.85 (±0.0), Viper 9.7 (−0.20), Anaconda 8.4
+  (**−1.30**, load-bearing regression), Cobra 9.55 (−0.15),
+  Coral 9.55 (+0.05), Boa 9.0 (+0.10), Mamba 9.85 (+0.05).
+  **5 v5.11.0 docket items closed**: Bo.21 version badges
+  HIGH (v5.21.1 H.1), Bo.17r localized READMEs MEDIUM ~80%
+  (v5.21.1 H.3), Coral SPEC re-sync MEDIUM (v5.21.1 H.2/H.5),
+  Mc.\* docket MEDIUM (v5.18.0), Cobra per-PR fixed-point
+  gate (mea culpa — was always wired at v4.29.0). **11 still
+  open** (Pk.1.A 11-release carry; `>=45` magic 3rd ask;
+  V.6/V.7/V.8 3rd cycle; **Bo.18r 3rd consecutive panel —
+  escalated to HIGH**; Bo.22 2nd panel; etc.). **2 NEW HIGH**:
+  **Reg.1** (Anaconda + Cobra) `check_struct_registry.py`
+  regex hard-codes brace headers; inert since v5.17.0 Sh.\*;
+  23 violations at HEAD — 5 releases of silent registry
+  blindness during the largest feature-velocity arc in v5
+  history. **Bo.25** (Boa) goldens badge `66/66` across all
+  4 READMEs while body says `95/95`. **8 NEW MEDIUM**: V.9
+  (`__mn_indent_to_braces` MnString lifecycle leak,
+  unbounded if embedded), Te.3 hollow / asymmetric closure
+  (Coral M1 + Anaconda §3 + Rattler #1, three independent
+  reviewers — single-line `{...}` shape silently bypasses
+  warning AND native `mnc-stage1` has zero brace-deprecation
+  logic), `check_no_hollow_features.py` calibration miss
+  (`CompClause` + `FieldPattern`), Manifesto coherence (3rd
+  panel of "Curly braces for blocks" drift), SPEC example
+  corpus 72% brace-style against §4.0 colon-canonical,
+  cadence skip (5-minor + 5-language-feature triggers both
+  fired and not honored), Sh.\* shrink baseline labeling
+  drift (actual −8.18% net v5.13.0 → v5.21.1, not −13.9%
+  cited), `check_docs_drift.py` SPEC.md:1456 violation,
+  `make ci-gates` Makefile target structural fix,
+  `check_doc_freshness.py` CI gate structural fix. **Aggregate
+  state entering v5.22.x**: 4 HIGH / 8 MEDIUM / ~12 LOW / 1
+  v6.0-rescoped. **Cadence reset**: next routine panel at
+  v5.27.0; cadence enforcement gate targeted for v5.23.0.
+  See `.reviews/v5.22.0/README.md`,
+  `.reviews/v5.22.0/V5_DECISION.md`, and
+  `docs/roadmap/v5/v5.22.0/SESSION_REPORT.md`.
+
 - **v5.21.1** (ready, not tagged) — **Mc.7 — pre-panel docs
   hygiene.** Doc-surface-only release closing the 12 H.\*
   findings flagged in `.reviews/v5.22.0/PRE_PANEL_AUDIT.md`.

@@ -7,6 +7,170 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.22.0] - 2026-05-01
+
+**RE-PANEL — terseness-arc closeout.** Panel-only release; the
+release identity is the panel itself. **Zero compiler edits.
+Zero runtime edits. Zero `mapanare/self/*.mn` edits.** Strict
+3-stage fixed point preserved by construction at 238,086 lines
+/ 0-line diff (the v5.9.0 milestone, now held across **13
+consecutive shipping releases — longest streak in project
+history**, 2.6× the v5.11.0 streak). Goldens **95/95**. Same
+posture as v5.8.0 (which graded v5.3.1 → v5.7.1 at 9.66 —
+project ceiling).
+
+### Panel result
+
+**Aggregate: 9.41 / 10. Decision: Option A** (point-release
+health gate clears; no recovery cycle opened). Third
+consecutive Option A under the v5-gate mechanical rule
+(v5.7.1: 9.66; v5.11.0: 9.62; v5.22.0: 9.41). Δ vs v5.11.0:
+**−0.21** — the largest single-arc regression since v5.0.0,
+driven entirely by process-discipline debt that the H.\*
+hygiene pattern did not catch. All 7 reviewers returned PASS
+or PASS WITH NOTES; **0 NEEDS WORK**.
+
+### Per-reviewer scores
+
+| # | Reviewer | Domain | Score | Δ vs v5.11.0 | Verdict |
+|---|----------|---|---:|---:|---|
+| 1 | Rattler | LLVM IR / codegen | 9.85 | ±0.0 | PASS WITH NOTES |
+| 2 | Viper | Memory safety | 9.7 | −0.20 | PASS WITH NOTES |
+| 3 | Anaconda | CI / testing / toolchain | 8.4 | **−1.30** | PASS WITH NOTES |
+| 4 | Cobra | Bootstrap / self-hosted | 9.55 | −0.15 | PASS WITH NOTES |
+| 5 | Coral | Language design | 9.55 | +0.05 | PASS WITH NOTES |
+| 6 | Boa | Documentation / DX | 9.0 | +0.10 | PASS WITH NOTES |
+| 7 | Mamba | C runtime / performance | 9.85 | +0.05 | PASS |
+| | **Aggregate** | — | **9.41** | **−0.21** | **Option A** |
+
+### v5.11.0 → v5.22.0 hero metrics
+
+- **6 additive language features** (Te.1 colon-block, Te.2
+  comprehensions / lambda / implicit-return, Te.3 `{}`
+  soft-deprecation, Te.4 string-interp parity, Te.5 struct
+  ergonomics, Te.6 chained comparisons) shipped with **zero
+  new MIR ops, zero new IR shapes, only two new C-runtime
+  exports** (`__mn_assert_fail` 8 LOC + `__mn_indent_to_braces`
+  545 LOC, both bootstrap-mirror plumbing).
+- **Strict 3-stage fixed point preserved** at 238,086 lines /
+  0-line diff across **13 consecutive shipping releases**
+  (v5.9.0 → v5.21.1; longest in project history).
+- **Self-hosted compiler shrunk −11.5%** (net source delta
+  v5.13.0 → v5.21.1; −2,285 lines) via Sh.\* mechanical rewrite
+  without breaking fixed point at any per-module commit.
+- **Goldens 66/66 → 95/95** (+29 native goldens covering all
+  Te.\* features).
+- **Bootstrap mirror cross-tests all green**: Te.5 12/12, Te.6
+  10/10, comprehension 10/10, string-interp 10/10,
+  indent-preprocessor 201/201.
+- **C runtime delta: +553 lines** across 10 releases (out of
+  ~21k LOC C runtime — essentially flat).
+
+### Closures verified
+
+The panel verified the v5.21.1 H.\* hygiene closures plus
+re-graded every v5.11.0 panel docket item:
+
+- **5 v5.11.0 docket items closed**: Bo.21 (version badges
+  HIGH), Bo.17r (localized READMEs ~80%, MEDIUM), Coral SPEC
+  re-sync (MEDIUM), Mc.\* docket (MEDIUM), Cobra per-PR
+  fixed-point gate (mea culpa — was always wired at v4.29.0).
+- **11 v5.11.0 docket items still open**: Pk.1.A (11-release
+  carry; Linux/macOS versioned-tarball smoke gates), Cobra
+  `>= 45` magic (3rd panel ask), Viper V.6 / V.7 / V.8 (3rd
+  cycle each), Bo.18r (3rd panel — escalated to HIGH), Bo.22
+  (2nd panel), Bo.19, Bo.20, Pe.1 (reframed), Anaconda
+  informational LOWs.
+
+### Findings surfaced by the panel (new at v5.22.0)
+
+- **HIGH** — **Reg.1** (Anaconda + Cobra). `check_struct_registry.py`
+  regex hard-codes brace headers (`struct Name {`); inert since
+  v5.17.0 Sh.\* rewrote every struct to colon-form. **23
+  violations at HEAD; 5 releases of silent registry blindness**
+  during the largest feature-velocity arc in v5 history. The
+  gate v4.143.0 commissioned to catch Ge.1-class drift is the
+  same gate that became inert when Sh.B mechanically rewrote
+  the struct surface.
+- **HIGH** — **Bo.18r** (Boa, **3rd consecutive panel**).
+  `README.md:188-192` benchmarks-section paragraph still
+  v5.7.1-vintage. v5.21.1 H.1 closed the *sibling* line
+  `README.md:176`; panel-flagged 188-192 was not in the audit.
+  Severity escalated MEDIUM → HIGH.
+- **HIGH** — **Bo.25** (Boa, NEW). Goldens badge `66/66`
+  across all 4 READMEs while body says `95/95`. Same
+  systematic-skill-gap fingerprint as v5.11.0 Bo.21.
+- **MEDIUM** — **V.9** (Viper). `__mn_indent_to_braces`
+  MnString lifecycle leak: returned `joined` buffer not
+  drop-glue tracked at the `parser.mn::parse` call site.
+  Bounded to single-shot in `mnc-stage1`; unbounded if embedded
+  in long-lived process.
+- **MEDIUM** — **Te.3 hollow / asymmetric closure** (Coral M1
+  + Anaconda §3 + Rattler #1; three independent reviewers).
+  Brace-deprecation warning misses single-line `{...}` shape;
+  native `mnc-stage1` has zero brace-deprecation logic at all.
+  PRE_PANEL_AUDIT.md's own canonical pre-flight test command
+  demonstrates the gap. **Asymmetric closure**: PY: closed |
+  SH: open.
+- **MEDIUM** — **Hollow-feature gate calibration** (Anaconda
+  §2.B). `check_no_hollow_features.py` step 3 fails on
+  `CompClause` (v5.15.0 Te.2) + `FieldPattern` (v5.20.0
+  Te.5.D).
+- **MEDIUM** — **Manifesto coherence** (Coral M2, **3rd
+  consecutive panel**). `docs/manifesto.md:31` "Curly braces
+  for blocks" untouched against brace-deprecated codebase.
+- **MEDIUM** — **SPEC example corpus** (Coral M3). 26 of 36
+  block-openers in `docs/SPEC.md` are brace-style against
+  §4.0 declaring colon-canonical (72%).
+- **MEDIUM** — **Cadence skip** (Anaconda §1). 5-minor
+  (v5.16.0) + 5-language-feature (v5.20.0) triggers fired and
+  were skipped.
+- **MEDIUM** — **Sh.\* shrink baseline labeling** (Cobra #2 +
+  Rattler #4). "−13.9% off v5.13.0" actually measures
+  pre-Sh.B-immediate baseline (post-Te.4); net v5.13.0 →
+  v5.21.1 is −8.18% (−2,285 lines).
+- **MEDIUM** — `check_docs_drift.py` SPEC.md:1456 (`fn id(y)
+  = y` doesn't parse via current grammar; untyped param).
+- **MEDIUM (structural)** — `make ci-gates` Makefile target
+  (Anaconda §2.D); <!-- no-check --> `check_doc_freshness.py` CI gate (Coral +
+  Boa Bo.27, structural fix for the H.\* / Bo.\* drift class)
+  — both are recommended future scripts, not present at HEAD.
+- **LOW** — `__mn_indent_to_braces` not in `mapanare_core.h`
+  (Mamba #1); v5.19.0 SESSION_REPORT missing on disk (Rattler
+  #2 + Anaconda); `tests/bootstrap/test_indent_preprocessor.py`
+  count refresh (Cobra #4 — audit cites 142, actual 201);
+  Bo.26 guides discoverability; Bo.27 audit cross-reference
+  column convention; cadence enforcement gate; Coral L1–L5
+  SPEC discoverability; stage2 teardown crash 70+ releases
+  stale.
+
+**Aggregate state entering v5.22.x:** 4 HIGH / 8 MEDIUM /
+~12 LOW / 1 v6.0-rescoped (Rt.04). See
+`.reviews/v5.22.0/README.md` for the deduplicated 24-row
+prioritized action items table; `.reviews/v5.22.0/V5_DECISION.md`
+for the formal Option A decision text;
+`.reviews/CARRY_FORWARD.md` for the panel-resolution ledger
+update.
+
+### Cadence reset
+
+**Next routine panel due at v5.27.0** (5 minors past v5.22.0).
+Cadence enforcement gate targeted for v5.23.0 (Anaconda §1
+recommendation) to prevent another silent skip.
+
+### Panel artifacts
+
+- `.reviews/v5.22.0/01-rattler.md` — LLVM IR / codegen review (9.85)
+- `.reviews/v5.22.0/02-viper.md` — Memory safety review (9.7)
+- `.reviews/v5.22.0/03-anaconda.md` — CI / testing / toolchain review (8.4)
+- `.reviews/v5.22.0/04-cobra.md` — Bootstrap / self-hosted review (9.55)
+- `.reviews/v5.22.0/05-coral.md` — Language design review (9.55)
+- `.reviews/v5.22.0/06-boa.md` — Documentation / DX review (9.0)
+- `.reviews/v5.22.0/07-mamba.md` — C runtime / performance review (9.85)
+- `.reviews/v5.22.0/README.md` — panel summary
+- `.reviews/v5.22.0/V5_DECISION.md` — formal Option A decision
+- `docs/roadmap/v5/v5.22.0/SESSION_REPORT.md` — session report
+
 ## [5.21.1] - 2026-05-01
 
 **Mc.7 — pre-panel docs hygiene.** Doc-surface only; **zero
@@ -8276,7 +8440,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...HEAD
+[5.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.22.0
 [5.21.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.1
 [5.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.0
 [5.17.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.16.0...v5.17.0
