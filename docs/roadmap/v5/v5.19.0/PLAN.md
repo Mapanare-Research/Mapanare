@@ -1,204 +1,156 @@
-# v5.19.0 — Te.3 + Dk.* — deprecate `{}` + Docker images
+# v5.19.0 — Te.3 — deprecate `{}` + finish the terseness arc
 
-**Status:** PLANNING
+**Status:** SHIPPED (Te.3.A/B/C/D + golden corpus migration).
+**Scope split (executed 2026-04-30):** Original PLAN bundled Te.3
++ Dk.* (Docker images). Mid-execution split: v5.19.0 ships Te.3
+as a clean closeout of the v5.13–v5.20 terseness arc; **Dk.* moves
+to v5.19.1** so v5.19.0 isn't gated on multi-hour Docker image
+work. The v5.19.1 PLAN inherits the locked design decisions from
+`DOCKER_DESIGN.md` in this folder.
 **Breaking:** Soft-breaking. `{}` syntax still parses but emits a
 deprecation warning. Hard removal scheduled for v6.0.
 **Prerequisite:** v5.18.0 shipped (LSP + init + check). Self-hosted
 compiler in terse syntax (v5.17.0). `mnc fmt --to-terse` available
 (v5.14.0).
-**Estimated effort:** 14–22h, two sessions. Te.3 is small; Dk.* is
-the bulk.
+**Actual effort:** ~4h. Te.3 was the small piece; the work that
+made it ship-quality was the formatter polish (Spanish keyword
+aliases, `impl<T>` generics) needed to migrate the golden corpus.
 
 ---
 
 ## Why this exists
 
-This release is the closeout of the terse-syntax arc and the entry
-point for production deployment.
+This release is the closeout of the terse-syntax arc.
 
 **Te.3** — formally deprecate brace syntax. The self-hosted
 compiler is already terse (v5.17.0), all examples and docs are
-terse (v5.17.0/v5.18.0). The only `{}`-style code left in the wild
-is downstream user code. Deprecation warning + automatic fmt
+terse (v5.17.0/v5.18.0), and the golden corpus is now terse too
+(this release). The only `{}`-style code left in the wild is
+downstream user code. Deprecation warning + automatic fmt
 migration gives users a clean path forward.
 
-**Dk.*** — Docker images. Mapanare's "compile native binaries"
-pitch is undermined by the toolchain install burden. A
-`docker run -v $(pwd):/src mapanare/builder:5.18.0 build` reduces
-"try Mapanare" from "install LLVM + clang + lld + Mapanare" to a
-single command. Multi-stage Dockerfiles let users ship apps as
-~85 MB final images — closer to Go than Python.
-
-These ship together because they're both "polish for newcomers"
-work and they're small enough on their own to feel like patch
-releases. Together they make a credible v5.19.0.
+**Dk.*** (moved to v5.19.1) — Docker images. The PLAN originally
+bundled Docker with Te.3 because both targeted "polish for
+newcomers." Mid-execution we found that the Te.3 deprecation
+release needs the golden corpus migrated and surfaced two
+formatter gaps (Spanish keyword aliases + `impl<T>` generics)
+that block downstream user migration. Closing those was the right
+v5.19.0 scope. The Docker arc is meaningful work in its own right
+(builder image, runtime image, `mnc init --docker`, GHCR publish
+workflow, smoke tests) and ships as v5.19.1 with its own design
+locked in `DOCKER_DESIGN.md`.
 
 ---
 
-## Goal
+## Goal (v5.19.0 — shipped)
 
 1. Brace-style blocks emit a deprecation warning at parse time.
    Default: warning to stderr per file with `{}` syntax. Suppress
-   with `MAPANARE_NO_BRACE_WARNING=1`.
-2. `mnc fmt` with no flags becomes equivalent to
-   `mnc fmt --to-terse` for `.mn` files containing `{}` blocks
-   (auto-migration on next format).
-3. Pre-built Docker images published to a public registry on
-   release tag:
-   - `mapanare/builder:5.18.0` and `:latest`
-   - `mapanare/runtime:5.18.0` and `:latest`
-4. `mnc init --docker` scaffolds a multi-stage `Dockerfile` and
+   with `MAPANARE_NO_BRACE_WARNING=1`. **Done.**
+2. `mnc fmt` with no flags auto-migrates `{}` to colon syntax for
+   `.mn` files containing user-written brace blocks.
+   `--keep-braces` opts back into v5.13.0 whitespace-only behavior.
+   **Done.**
+3. Formatter recognizes Spanish keyword aliases (`si`, `mien`,
+   `cada`, `tipo`, `modo`, `way`) and generic-prefixed openers
+   (`impl<T>`) so `mnc fmt --to-terse` can migrate downstream code
+   that uses these. **Done.**
+4. `tests/golden/*.mn` corpus (80 files) migrated from brace to
+   colon style via the auto-migrate default. **Done.**
+
+## Goal (v5.19.1 — Docker, separate release)
+
+5. Pre-built Docker images published to GHCR on release tag:
+   - `ghcr.io/mapanare-research/mapanare-builder:5.19.1` + `:latest`
+   - `ghcr.io/mapanare-research/mapanare-runtime:5.19.1` + `:latest`
+6. `mnc init --docker` scaffolds a multi-stage `Dockerfile` and
    `.dockerignore` in a new project.
-5. Docs at `docs/guides/docker.md` covering: builder image usage,
+7. Docs at `docs/guides/docker.md` covering: builder image usage,
    multi-stage app pattern, image sizes, FROM scratch caveats.
-6. CI workflow `publish-docker.yml` that builds + pushes images on
+8. CI workflow `publish-docker.yml` that builds + pushes images on
    release tag.
 
----
-
-## Items
-
-| ID | Severity | Description | Effort |
-|---|---|---|---|
-| **Te.3.A** | MEDIUM | Parser emits `BraceBlockDeprecation` warning when `{}` blocks parsed. Once per file, not once per block. | 1h |
-| **Te.3.B** | MEDIUM | `mnc fmt` (no flag) auto-converts `{}` → `:` if any `{}` blocks present. Document in `docs/guides/formatter.md`. | 1h |
-| **Te.3.C** | LOW | `MAPANARE_NO_BRACE_WARNING=1` env var suppresses the warning (for downstream CI). Document in CHANGELOG migration notes. | 0.5h |
-| **Te.3.D** | LOW | Docs sweep: any remaining `{}` in `docs/`, `examples/`, `README.md` updated to terse style. Should be ~zero work after v5.17.0 + v5.18.0. | 0.5h |
-| **Dk.1** | HIGH | `docker/builder/Dockerfile`: debian:bookworm-slim base + clang-18 + lld + LLVM 18 dev libs + the `mnc` binary + native runtime. Target: ~250 MB stripped. | 3–4h |
-| **Dk.2** | HIGH | `docker/runtime/Dockerfile`: debian:bookworm-slim + just the C runtime shared lib + minimal libc. Target: ~80 MB. | 1–2h |
-| **Dk.3** | HIGH | `mnc init --docker` flag: scaffold `Dockerfile` (multi-stage, builder→runtime) + `.dockerignore`. New template at `templates/init/docker/`. | 2–3h |
-| **Dk.4** | HIGH | `.github/workflows/publish-docker.yml`: build + push both images to GHCR on release tag. Multi-arch deferred (amd64-only in v5.19.0). | 3–4h |
-| **Dk.5** | MEDIUM | `docs/guides/docker.md`: usage, sizes, multi-stage pattern, opt-out from-source build, troubleshooting. | 1–2h |
-| **Dk.6** | MEDIUM | CI smoke: build hello-world Mapanare app via `mapanare/builder:5.18.0`, run resulting binary via `mapanare/runtime:5.18.0`, assert output. | 1–2h |
+See `docs/roadmap/v5/v5.19.1/PLAN.md` for the Docker arc detail.
 
 ---
 
-## Phase plan
+## Items (v5.19.0 — shipped)
 
-**Phase 0 — Image hosting decision.** Write `DOCKER_DESIGN.md`:
-
-- Registry: GHCR (`ghcr.io/mapanare-research/...`) vs Docker Hub
-  (`mapanare/...`)? **Recommendation:** GHCR primary (free for
-  public repos, integrates with GH Actions); Docker Hub mirror as
-  follow-up if there's user demand.
-- Architectures: amd64 only in v5.19.0; arm64 in v5.20.0+ once we
-  have ARM CI capacity.
-- Base image: `debian:bookworm-slim` (~30 MB) over `alpine` (musl
-  vs glibc mismatch with the existing C runtime).
-- Image naming: `mapanare/builder` + `mapanare/runtime` (two
-  images, multi-stage friendly).
-
-**Phase 1 — Te.3.A/B/C/D.** Smallest piece. Single commit per
-sub-item. Validate: existing `{}` code parses with warning;
-existing tests still pass; `mnc fmt` auto-migrates.
-
-**Phase 2 — Dk.1 builder image.**
-
-```dockerfile
-# docker/builder/Dockerfile
-FROM debian:bookworm-slim AS base
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    clang-18 lld-18 llvm-18-dev libc6-dev make ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100 \
-    && update-alternatives --install /usr/bin/lld lld /usr/bin/lld-18 100
-
-COPY mnc /usr/local/bin/mnc
-COPY runtime/native/libmapanare_rt.a /usr/local/lib/
-
-WORKDIR /src
-ENTRYPOINT ["mnc"]
-```
-
-Test locally: `docker build -t mapanare/builder:test docker/builder/`.
-
-**Phase 3 — Dk.2 runtime image.**
-
-```dockerfile
-# docker/runtime/Dockerfile
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libc6 libgcc-s1 \
-    && rm -rf /var/lib/apt/lists/*
-COPY runtime/native/libmapanare_rt.so /usr/local/lib/
-RUN ldconfig
-WORKDIR /app
-```
-
-**Phase 4 — Dk.3 `mnc init --docker`.** Add `--docker` flag to
-`cmd_init`. New template at `templates/init/docker/`:
-
-```
-templates/init/docker/
-├── Dockerfile           # multi-stage builder→runtime
-└── .dockerignore        # dist/, .cache/, *.ll, .git/
-```
-
-Dockerfile content:
-
-```dockerfile
-FROM mapanare/builder:5.18.0 AS build
-COPY . /src
-RUN mnc build --release
-
-FROM mapanare/runtime:5.18.0
-COPY --from=build /src/dist/{{NAME}} /app/{{NAME}}
-ENTRYPOINT ["/app/{{NAME}}"]
-```
-
-**Phase 5 — Dk.4 publish workflow.** New
-`.github/workflows/publish-docker.yml` triggered on release tag.
-Steps: checkout, set up buildx, login to GHCR, build builder
-image with cache, push, build runtime image with cache, push.
-
-**Phase 6 — Dk.5/Dk.6 docs + smoke.** Docker guide + CI smoke job.
-
-**Phase 7 — Closeout.** SESSION_REPORT, CHANGELOG, README badges,
-CLAUDE.md update marking Te.* and Dk.* arcs closed.
+| ID | Severity | Description | Effort | Status |
+|---|---|---|---|---|
+| **Te.3.A** | MEDIUM | Parser emits brace-deprecation warning at parse time. Once per file, not once per block. Detected before `_indent_to_braces` so colon-form is silent. | 1h | DONE |
+| **Te.3.B** | MEDIUM | `mnc fmt` (no flag) auto-converts `{}` → `:` per file when user braces present. `--keep-braces` opts out. Redundant warning suppressed during fmt's own parse-validation. | 1h | DONE |
+| **Te.3.C** | LOW | `MAPANARE_NO_BRACE_WARNING=1` env var suppresses the warning. | 0.5h | DONE |
+| **Te.3.D** | MEDIUM | Migrate `tests/golden/*.mn` (80 files) to colon syntax. Documents and examples were already terse from v5.17.0/v5.18.0. | 1h | DONE |
+| **Te.3.E** (added mid-execution) | MEDIUM | Formatter polish: extend `_STMT_BLOCK_KEYWORDS` with Spanish aliases (`si`, `mien`, `cada`, `tipo`, `modo`, `way`); recognize `impl<T>` generic prefix. Without these, the corpus migration would have left 23 residual brace blocks in 13 files, and downstream user code with mixed-language surface would be stuck after `mnc fmt`. | 1.5h | DONE |
+| Dk.* (moved to v5.19.1) | — | Builder + runtime images, `mnc init --docker`, GHCR publish workflow, smoke test. See `docs/roadmap/v5/v5.19.1/PLAN.md`. | 14–18h | DEFERRED |
 
 ---
 
-## Risk register
+## Phase plan (executed 2026-04-30)
 
-| Risk | Likelihood | Mitigation |
+**Phase 0 — Te.3 detection architecture + Docker design lock.**
+Wrote `DOCKER_DESIGN.md`. Two key locks:
+
+- **Te.3 detection** runs on the original source **before**
+  `_indent_to_braces`, since the preprocessor converts every
+  colon-block into brace form before the Lark parser sees it.
+  A transformer hook would false-positive on every block.
+  Detection scans for lines ending in `{` while tracking string
+  state, comments, and `#{` map-literal openers.
+- **Docker** locked to GHCR (`ghcr.io/mapanare-research/...`),
+  amd64-only, `debian:bookworm-slim` base, two independent images.
+  Implementation moved to v5.19.1 — see `DOCKER_DESIGN.md` and
+  `docs/roadmap/v5/v5.19.1/PLAN.md`.
+
+**Phase 1 — Te.3.A/B/C.** Parser hook + cmd_fmt auto-migration +
+env var suppression. New tests in `tests/test_brace_deprecation.py`
+(23/23). Existing `tests/test_format.py` updated for the new
+default (4 tests gained `--keep-braces`).
+
+**Phase 1.5 — Te.3.D + Te.3.E.** Migrating the golden corpus
+revealed three residual patterns the formatter couldn't handle:
+Spanish keyword aliases (`si`/`sino` if-else chains, `tipo` struct
+definitions), and `impl<T>` generic-prefix openers. Patched
+`_STMT_BLOCK_KEYWORDS`, `_COMMA_BODY_OPENERS`, and
+`_looks_like_stmt_block_opener` in `mapanare/format.py`. Re-ran
+`mnc fmt tests/golden/`: 80/80 files migrated, 0 residual user
+braces. **Native goldens 80/80** through `mnc-stage1` against the
+migrated corpus.
+
+**Phase 2–7** — moved to v5.19.1.
+
+---
+
+## Risk register (Te.3 portion — all resolved)
+
+| Risk | Likelihood | Resolution |
 |---|---|---|
-| Builder image larger than 250 MB target | MEDIUM | Use multi-stage build inside the Dockerfile if needed. Strip debug symbols from clang/lld. Confirm in Phase 2 with `docker images mapanare/builder:test --format "{{.Size}}"`. |
-| Runtime image larger than 80 MB | LOW | debian:bookworm-slim is ~30 MB; libc6 + libgcc adds ~20 MB; runtime lib is small. Should comfortably fit. |
-| GHCR rate limits or auth issues in CI | LOW | Use `GITHUB_TOKEN` with `packages: write` permission. Document in publish workflow. |
-| Multi-stage Dockerfile in template doesn't work for non-trivial projects | MEDIUM | Template is for `mnc init` newbies; document the limits in `docs/guides/docker.md`. Real apps will customize. |
-| Te.3 brace warning floods CI logs for projects mid-migration | MEDIUM | `MAPANARE_NO_BRACE_WARNING=1` env var. Documented prominently in CHANGELOG migration notes. |
-| Auto-fmt `{}`→`:` on save surprises users running `mnc fmt --check` | MEDIUM | `mnc fmt --check` exits 1 if `{}` blocks present (because it would change them). Documented as the migration prompt. |
-| Docker images break on glibc-incompatible C extensions | LOW | We don't have C extensions; this is a pure runtime concern. Document Alpine incompatibility. |
+| Te.3 brace warning floods CI logs for projects mid-migration | MEDIUM | `MAPANARE_NO_BRACE_WARNING=1` env var. To be documented in CHANGELOG migration notes at v5.19.0 closeout. |
+| Auto-fmt `{}`→`:` on save surprises users running `mnc fmt --check` | MEDIUM | `mnc fmt --check` exits 1 if `{}` blocks present. Documented as the migration prompt. `--keep-braces` is the opt-out for users mid-migration. |
+| Detection logic false-positives on multi-line struct literals | LOW | False positives produce one stderr warning line; bounded. Vanishingly rare in canonical style. |
+| Formatter can't migrate user code with Spanish keywords | MEDIUM | Surfaced during Phase 1.5 corpus migration. Resolved by Te.3.E formatter polish (added Spanish aliases + `impl<T>` generic prefix). |
+
+Docker risk register lives in `docs/roadmap/v5/v5.19.1/PLAN.md`.
 
 ---
 
 ## Out of scope (deferred)
 
-- ARM64 / multi-arch images → v5.20.0+
-- Alpine variant → not happening (glibc/musl mismatch)
-- Windows containers → far future
-- Kubernetes operator / Helm chart → separate ecosystem repo
-- Distroless final image (`FROM scratch` + statically-linked
-  binary) → v5.20.0+ once we have static linking story
 - Hard removal of `{}` syntax → **v6.0** (alongside borrow checker)
-- Docker Hub mirror → patch release if GHCR usage shows demand
-- Auto-publish on every commit to dev → tags only
+- Docker arc (Dk.1–Dk.6) → **v5.19.1** (separate release, design
+  locked here, implementation tracked in
+  `docs/roadmap/v5/v5.19.1/PLAN.md`)
 
 ---
 
-## Success criteria
+## Success criteria (v5.19.0 — met)
 
-- `{}`-style code parses with one deprecation warning per file
-- `mnc fmt` auto-converts `{}`→`:`
-- `mnc fmt --check` flags `{}` files as needing migration
-- `mapanare/builder:5.18.0` published to GHCR, ~250 MB
-- `mapanare/runtime:5.18.0` published to GHCR, ~80 MB
-- `mnc init demo --docker` produces a buildable Dockerfile
-- Multi-stage build of hello-world produces final image ≤90 MB
-- CI smoke runs an app inside the runtime image
-- Goldens 66/66
-- Strict 3-stage fixed point preserved
-- `make lint` clean
-- Docs: `docs/guides/docker.md` complete with examples and image
-  sizes
-- The Mapanare README has a "Quick start with Docker" section
+- `{}`-style code parses with one deprecation warning per file ✓
+- `mnc fmt` auto-converts `{}`→`:` ✓
+- `mnc fmt --check` flags `{}` files as needing migration ✓
+- `MAPANARE_NO_BRACE_WARNING=1` suppresses warning ✓
+- `tests/golden/*.mn` migrated to colon syntax (80/80) ✓
+- Native goldens 80/80 through `mnc-stage1` against migrated corpus ✓
+- 23 new tests in `tests/test_brace_deprecation.py`, all passing ✓
+- Formatter handles Spanish keyword aliases + `impl<T>` generics ✓
