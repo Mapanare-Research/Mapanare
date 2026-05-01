@@ -8165,7 +8165,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.17.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...HEAD
+[5.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.0
 [5.17.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.16.0...v5.17.0
 [5.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.2...v5.13.0
 [5.11.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.0...v5.11.2

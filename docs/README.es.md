@@ -24,7 +24,7 @@ Compila a binarios nativos via LLVM y WebAssembly.
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![Licencia](https://img.shields.io/badge/licencia-MIT-green.svg?style=flat-square)](../LICENSE)
-[![Version](https://img.shields.io/badge/version-5.17.0-blue.svg?style=flat-square)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.21.0-blue.svg?style=flat-square)](../CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-5800+_pasando-brightgreen.svg?style=flat-square)]()
 [![Goldens](https://img.shields.io/badge/goldens-66%2F66-brightgreen.svg?style=flat-square)]()
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
