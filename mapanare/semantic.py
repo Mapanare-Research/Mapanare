@@ -23,6 +23,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ChainedCompare,
     CharLiteral,
     ConstDef,
     ConstructExpr,
@@ -517,6 +518,22 @@ class SemanticChecker:
             return sym.type_info
         if isinstance(expr, BinaryExpr):
             return self._check_binary(expr)
+        if isinstance(expr, ChainedCompare):
+            # v5.21.0 Te.6: type-check each adjacent pair as a comparison
+            # and record any per-pair trait_dispatch annotation so the
+            # lowerer's synthesized pairs route through the right trait.
+            # Result is always Bool.
+            expr.pair_trait_dispatches = []
+            for i, op_str in enumerate(expr.ops):
+                pair = BinaryExpr(
+                    left=expr.operands[i],
+                    op=op_str,
+                    right=expr.operands[i + 1],
+                    span=expr.span,
+                )
+                self._check_binary(pair)
+                expr.pair_trait_dispatches.append(pair.trait_dispatch)
+            return BOOL_TYPE
         if isinstance(expr, UnaryExpr):
             return self._check_unary(expr)
         if isinstance(expr, CallExpr):

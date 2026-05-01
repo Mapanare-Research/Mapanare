@@ -470,6 +470,8 @@ fn lower_fn(st: LowerState, fn_def: FnDefData, name_prefix: String) -> LowerStat
     // v5.20.1 Te.5.F — reset synthesized-base counter per fn so
     // `__mn_base_N` / `__mn_dst_N` numbering restarts at 0 each function.
     s.struct_update_counter = 0
+    // v5.21.0 Te.6 — reset chained-compare temp counter per fn.
+    s.chain_compare_counter = 0
     let fresh_vars: List<VarInfo> = []
     s.vars = fresh_vars
     let fresh_blocks: List<BasicBlock> = []
@@ -1224,6 +1226,8 @@ fn lower_expr(st: LowerState, expr: Expr) -> LowerResult:
         return lower_identifier(st, expr_ident_name(expr))
     if ek == "binary":
         return lower_binary(st, expr_binary_left(expr), expr_binary_op(expr), expr_binary_right(expr))
+    if ek == "chained_cmp":
+        return lower_chained_cmp(st, expr_chained_operands(expr), expr_chained_ops(expr))
     if ek == "unary":
         return lower_unary(st, expr_unary_op(expr), expr_unary_operand(expr))
     if ek == "call":
@@ -1499,6 +1503,63 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
             return new_lower_result(dr_opcall.value, s_opcall)
         }
     }
+
+// ---------------------------------------------------------------------------
+// v5.21.0 Te.6 — chained comparison lowering
+// ---------------------------------------------------------------------------
+
+// D4 triviality predicate: trivial = side-effect-free, single-evaluation
+// read. Trivial operands skip the temp; everything else gets a temp so
+// each operand evaluates exactly once (D3).
+fn is_trivial_chain_operand(e: Expr) -> Bool:
+    let k: String = expr_kind(e)
+    if k == "ident" { return true }
+    if k == "int_lit" { return true }
+    if k == "float_lit" { return true }
+    if k == "bool_lit" { return true }
+    if k == "string_lit" { return true }
+    if k == "char_lit" { return true }
+    if k == "none_lit" { return true }
+    return false
+
+// Desugar `a op1 b op2 c op3 d` to
+// `(a op1 b) && (b op2 c) && (c op3 d)`. Interior non-trivial operands
+// are bound to a synthesized `__mn_chain_N` local before the chain so
+// each operand evaluates exactly once. Mirror of
+// `mapanare/lower.py::_lower_chained_compare`.
+fn lower_chained_cmp(st: LowerState, operands: List<Expr>, ops: List<String>) -> LowerResult:
+    let mut s: LowerState = st
+    let n: Int = len(operands)
+    // Replace non-trivial interior operands with bound temps.
+    let mut chain_operands: List<Expr> = []
+    let mut i: Int = 0
+    for _ in 0..n:
+        if i < n:
+            chain_operands.push(operands[i])
+            i = i + 1
+    let mut j: Int = 1
+    for _ in 0..n:
+        if j < n - 1:
+            let sub: Expr = chain_operands[j]
+            if !is_trivial_chain_operand(sub):
+                let tmp_idx: Int = s.chain_compare_counter
+                s.chain_compare_counter = tmp_idx + 1
+                let tmp_name: String = "__mn_chain_" + toString(tmp_idx)
+                let synth_let: Stmt = Stmt::Let(tmp_name, false, none, sub)
+                let let_r: LowerResult = lower_stmt(s, synth_let)
+                s = let_r.state
+                chain_operands[j] = Expr::Ident(tmp_name)
+            j = j + 1
+    // Build pairwise BinaryExprs joined by `&&`.
+    let nops: Int = len(ops)
+    let mut result: Expr = Expr::Binary(chain_operands[0], ops[0], chain_operands[1])
+    let mut k: Int = 1
+    for _ in 0..nops:
+        if k < nops:
+            let next_pair: Expr = Expr::Binary(chain_operands[k], ops[k], chain_operands[k + 1])
+            result = Expr::Binary(result, "&&", next_pair)
+            k = k + 1
+    return lower_expr(s, result)
 
 // ---------------------------------------------------------------------------
 // Unary expression lowering

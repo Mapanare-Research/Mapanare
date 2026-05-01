@@ -23,6 +23,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ChainedCompare,
     CharLiteral,
     CompClause,
     Comprehension,
@@ -349,6 +350,9 @@ class MIRLowerer:
         # v5.20.0 Te.5.C: separate counter for synthesized struct-update
         # base tmps so they don't perturb the global %tN sequence.
         self._struct_update_counter = 0
+        # v5.21.0 Te.6: separate counter for synthesized chained-compare
+        # tmps (see _lower_chained_compare).
+        self._chain_compare_counter = 0
         # Variable name → current SSA value
         self._vars: dict[str, _VarInfo] = {}
         # Scope stack for nested scopes
@@ -1864,6 +1868,9 @@ class MIRLowerer:
         if isinstance(expr, BinaryExpr):
             return self._lower_binary(expr)
 
+        if isinstance(expr, ChainedCompare):
+            return self._lower_chained_compare(expr)
+
         if isinstance(expr, UnaryExpr):
             return self._lower_unary(expr)
 
@@ -2097,6 +2104,72 @@ class MIRLowerer:
         dest = self._make_value(ty=result_ty)
         self._emit(BinOp(dest=dest, op=op, lhs=lhs, rhs=rhs))
         return dest
+
+    @staticmethod
+    def _is_trivial_chain_operand(e: Expr) -> bool:
+        """v5.21.0 Te.6 — D4 triviality predicate.
+
+        Trivial = side-effect-free, single-evaluation read. Trivial
+        operands skip the temp binding to keep IR clean. Anything not
+        listed gets a temp; conservative by design.
+        """
+        return isinstance(
+            e,
+            (
+                Identifier,
+                IntLiteral,
+                FloatLiteral,
+                BoolLiteral,
+                StringLiteral,
+                CharLiteral,
+                NoneLiteral,
+            ),
+        )
+
+    def _lower_chained_compare(self, expr: ChainedCompare) -> Value:
+        """v5.21.0 Te.6 — desugar a 3+ element comparison chain.
+
+        `a op1 b op2 c op3 d` lowers to `(a op1 b) && (b op2 c) && (c op3 d)`.
+        Interior non-trivial operands are bound to a synthesized
+        `__mn_chain_N` local before the chain so each operand evaluates
+        exactly once (D3). Trivial operands (Identifier / literals) skip
+        the temp.
+        """
+        # Replace non-trivial interior operands with bound temps.
+        operands_for_chain: list[Expr] = list(expr.operands)
+        for i in range(1, len(operands_for_chain) - 1):
+            sub = operands_for_chain[i]
+            if not self._is_trivial_chain_operand(sub):
+                tmp_name = f"__mn_chain_{self._chain_compare_counter}"
+                self._chain_compare_counter += 1
+                synthetic_let = LetBinding(
+                    name=tmp_name,
+                    mutable=False,
+                    type_annotation=None,
+                    value=sub,
+                    span=expr.span,
+                )
+                self._lower_let(synthetic_let)
+                operands_for_chain[i] = Identifier(name=tmp_name, span=sub.span)
+        # Build pairwise BinaryExprs joined by `&&`. Recurse through
+        # _lower_expr so trait dispatch (Eq / Ord) and tensor broadcast
+        # paths work. Trait dispatch was annotated by the semantic
+        # checker per pair; copy it onto each synthesized BinaryExpr.
+        pairs: list[BinaryExpr] = []
+        for i, op_str in enumerate(expr.ops):
+            pair_node = BinaryExpr(
+                left=operands_for_chain[i],
+                op=op_str,
+                right=operands_for_chain[i + 1],
+                span=expr.span,
+            )
+            if i < len(expr.pair_trait_dispatches):
+                pair_node.trait_dispatch = expr.pair_trait_dispatches[i]
+            pairs.append(pair_node)
+        result: Expr = pairs[0]
+        for next_pair in pairs[1:]:
+            result = BinaryExpr(left=result, op="&&", right=next_pair, span=expr.span)
+        return self._lower_expr(result)
 
     def _lower_pipe_binary(self, expr: BinaryExpr) -> Value:
         """Lower `a |> f` to `Call(f, [a])`, with special handling for stream ops."""

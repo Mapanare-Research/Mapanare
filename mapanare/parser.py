@@ -24,6 +24,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ChainedCompare,
     CharLiteral,
     CompClause,
     Comprehension,
@@ -822,37 +823,28 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         items = _filter(children)
         return BinaryExpr(left=items[0], op="@", right=items[1], span=_span_from_children(children))
 
-    def eq_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(
-            left=items[0], op="==", right=items[1], span=_span_from_children(children)
-        )
+    def cmp_tail(self, children: list[Any]) -> tuple[str, Expr]:
+        # children = [op_token, pipe_expr] — keep the op Token verbatim;
+        # _filter would drop it because cmp ops are not in _KEEP.
+        op_tok = children[0]
+        rhs = children[1]
+        return (str(op_tok), rhs)
 
-    def ne_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(
-            left=items[0], op="!=", right=items[1], span=_span_from_children(children)
-        )
-
-    def lt_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(left=items[0], op="<", right=items[1], span=_span_from_children(children))
-
-    def gt_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(left=items[0], op=">", right=items[1], span=_span_from_children(children))
-
-    def le_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(
-            left=items[0], op="<=", right=items[1], span=_span_from_children(children)
-        )
-
-    def ge_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(
-            left=items[0], op=">=", right=items[1], span=_span_from_children(children)
-        )
+    def cmp_chain(self, children: list[Any]) -> Expr:
+        # children = [first_operand, cmp_tail_tuple, cmp_tail_tuple, ...]
+        first = children[0]
+        tails = children[1:]
+        # Single comparison: preserve legacy BinaryExpr shape (byte-identical IR).
+        if len(tails) == 1:
+            op_str, rhs = tails[0]
+            return BinaryExpr(left=first, op=op_str, right=rhs, span=_span_from_children(children))
+        # Chained: 2+ comparisons → ChainedCompare(operands, ops)
+        operands: list[Expr] = [first]
+        ops: list[str] = []
+        for op_str, rhs in tails:
+            ops.append(op_str)
+            operands.append(rhs)
+        return ChainedCompare(operands=operands, ops=ops, span=_span_from_children(children))
 
     def and_op(self, children: list[Any]) -> BinaryExpr:
         items = _filter(children)

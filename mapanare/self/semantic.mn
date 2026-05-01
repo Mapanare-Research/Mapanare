@@ -568,6 +568,22 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
         }
 
     if ek == "binary" { return check_binary_expr(st, expr_binary_left(expr), expr_binary_op(expr), expr_binary_right(expr)) }
+    if ek == "chained_cmp":
+        // v5.21.0 Te.6 — type-check each adjacent pair as a comparison.
+        // Result is always Bool. Threading state through pair checks
+        // mirrors how `infer_expr` handles other multi-subexpression
+        // shapes (call args, method args).
+        let mut st_chain: SemState = st
+        let cc_operands: List<Expr> = expr_chained_operands(expr)
+        let cc_ops: List<String> = expr_chained_ops(expr)
+        let nco: Int = len(cc_ops)
+        let mut ci: Int = 0
+        for _ in 0..200:
+            if ci >= nco { return new_infer_result(make_type("Bool"), st_chain) }
+            let pr: InferResult = check_binary_expr(st_chain, cc_operands[ci], cc_ops[ci], cc_operands[ci + 1])
+            st_chain = pr.st
+            ci = ci + 1
+        return new_infer_result(make_type("Bool"), st_chain)
     if ek == "unary" { return check_unary_expr(st, expr_unary_op(expr), expr_unary_operand(expr)) }
     if ek == "call" { return check_call_expr(st, expr_call_callee(expr), expr_call_args(expr)) }
 

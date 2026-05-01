@@ -120,6 +120,12 @@ enum Expr:
     // v5.20.1 Te.5.F.E — `if let <pattern> = <scrutinee> { ... }
     // [else { ... }]`. Desugars at lower time to a 2-arm match.
     IfLet(Pattern, Expr, Block, Option<Block>)
+    // v5.21.0 Te.6 — chained comparison: `0 < x < 10` (3+ operands).
+    // `len(ops) == len(operands) - 1`; each op is one of
+    // `< <= > >= == !=`. Lowered by `lower_chained_compare` to
+    // `&&`-joined pairwise comparisons; non-trivial interior
+    // operands bound to `__mn_chain_N` so they evaluate exactly once.
+    ChainedCmp(List<Expr>, List<String>)
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -370,6 +376,7 @@ pub fn expr_kind(e: Expr) -> String:
         InterpString(_) => { return "interp_string" }
         ConstructUpdate(_, _, _) => { return "construct_update" }
         IfLet(_, _, _, _) => { return "if_let" }
+        ChainedCmp(_, _) => { return "chained_cmp" }
 
 pub fn expr_interp_parts(e: Expr) -> List<Expr>:
     match e:
@@ -399,6 +406,16 @@ pub fn expr_binary_op(e: Expr) -> String:
     match e { Binary(_, o, _) => { return o }, _ => { return "" } }
 pub fn expr_binary_right(e: Expr) -> Expr:
     match e { Binary(_, _, r) => { return r }, _ => { return Expr::NoneLit } }
+
+// v5.21.0 Te.6 — ChainedCmp accessors
+pub fn expr_chained_operands(e: Expr) -> List<Expr>:
+    match e:
+        ChainedCmp(operands, _) => { return operands }
+        _ => { let empty: List<Expr> = []; return empty }
+pub fn expr_chained_ops(e: Expr) -> List<String>:
+    match e:
+        ChainedCmp(_, ops) => { return ops }
+        _ => { let empty: List<String> = []; return empty }
 
 // Unary
 pub fn expr_unary_op(e: Expr) -> String:

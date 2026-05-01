@@ -1,0 +1,16 @@
+// v5.21.0 Te.6 — chained comparisons (3-element).
+//
+// `0 < x < 10` parses as Python-style chained comparison and means
+// `0 < x && x < 10`, with `x` evaluated exactly once. Trivial
+// operands (Identifiers, literals) skip the synthesized temp; the
+// IR is byte-identical to the hand-rolled `&&` form.
+
+fn check(x: Int) -> Bool:
+    return 0 < x < 10
+
+fn main():
+    print(str(check(5)))
+    print(str(check(0)))
+    print(str(check(10)))
+    print(str(check(-1)))
+    print(str(check(11)))

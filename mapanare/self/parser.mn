@@ -278,8 +278,12 @@ fn tok_to_binop(tt: String) -> String:
 fn op_precedence(op: String) -> Int:
     if op == "||" { return 1 }
     if op == "&&" { return 2 }
-    if op == "==" { return 3 }
-    if op == "!=" { return 3 }
+    // v5.21.0 Te.6 — D1: merge `==`/`!=` with ordering ops at single
+    // precedence level (was 3; now 4). Required so `a == b < c` chains
+    // as `(a == b) && (b < c)`. Audit confirmed no existing code relies
+    // on the prior asymmetric precedence.
+    if op == "==" { return 4 }
+    if op == "!=" { return 4 }
     if op == "<" { return 4 }
     if op == ">" { return 4 }
     if op == "<=" { return 4 }
@@ -298,6 +302,16 @@ fn op_precedence(op: String) -> Int:
 fn is_right_assoc(op: String) -> Bool:
     if op == ".." { return true }
     if op == "..=" { return true }
+    return false
+
+// v5.21.0 Te.6 — D1 chain operator set. Pure comparison only.
+fn is_cmp_op(op: String) -> Bool:
+    if op == "==" { return true }
+    if op == "!=" { return true }
+    if op == "<" { return true }
+    if op == ">" { return true }
+    if op == "<=" { return true }
+    if op == ">=" { return true }
     return false
 
 // ---------------------------------------------------------------------------
@@ -1543,7 +1557,34 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
                 if op == "..=":
                     left = Expr::Range(left, right_r.expr, true)
                 else:
-                    left = Expr::Binary(left, op, right_r.expr)
+                    if is_cmp_op(op):
+                        // v5.21.0 Te.6 — collect consecutive comparisons
+                        // into a chain. After consuming one cmp op,
+                        // if the next op is also a cmp, accumulate.
+                        let mut operands: List<Expr> = []
+                        let mut ops: List<String> = []
+                        operands.push(left)
+                        operands.push(right_r.expr)
+                        ops.push(op)
+                        for _ in 0..1000:
+                            if at_end(tokens, p) { break }
+                            let nt: String = peek_type(tokens, p)
+                            let n_op: String = tok_to_binop(nt)
+                            if !is_cmp_op(n_op) { break }
+                            let n_prec: Int = op_precedence(n_op)
+                            if n_prec < min_prec { break }
+                            p = p + 1
+                            let n_next_prec: Int = n_prec + 1
+                            let n_right_r: ExprResult = parse_expr(tokens, p, filename, n_next_prec)
+                            p = n_right_r.pos
+                            operands.push(n_right_r.expr)
+                            ops.push(n_op)
+                        if len(ops) == 1:
+                            left = Expr::Binary(operands[0], ops[0], operands[1])
+                        else:
+                            left = Expr::ChainedCmp(operands, ops)
+                    else:
+                        left = Expr::Binary(left, op, right_r.expr)
 
     return new_expr_result(left, p)
 

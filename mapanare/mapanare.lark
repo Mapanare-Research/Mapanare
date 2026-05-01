@@ -260,18 +260,19 @@ expr_stmt: expr
 ?or_expr: and_expr
         | or_expr OR and_expr -> or_op
 
-?and_expr: eq_expr
-         | and_expr AND eq_expr -> and_op
+?and_expr: cmp_expr
+         | and_expr AND cmp_expr -> and_op
 
-?eq_expr: cmp_expr
-        | eq_expr EQ cmp_expr -> eq_op
-        | eq_expr NE cmp_expr -> ne_op
-
+// v5.21.0 Te.6: comparisons chain (Python-style).
+// 0 cmp_tail → just pipe_expr (inlined by ?).
+// 1 cmp_tail → cmp_chain transformer emits a BinaryExpr (legacy shape).
+// 2+ cmp_tail → cmp_chain transformer emits a ChainedCompare node.
+// EQ/NE merged into the same precedence level as LT/GT/LE/GE so
+// `a == b < c` chains as `(a == b) && (b < c)` matching Python.
 ?cmp_expr: pipe_expr
-         | cmp_expr LT pipe_expr -> lt_op
-         | cmp_expr GT pipe_expr -> gt_op
-         | cmp_expr LE pipe_expr -> le_op
-         | cmp_expr GE pipe_expr -> ge_op
+         | pipe_expr cmp_tail+ -> cmp_chain
+
+cmp_tail: (LT | GT | LE | GE | EQ | NE) pipe_expr
 
 ?pipe_expr: range_expr
           | pipe_expr PIPE_OP range_expr -> pipe_op

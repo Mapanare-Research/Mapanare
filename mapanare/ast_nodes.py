@@ -162,6 +162,29 @@ class BinaryExpr(Expr):
 
 
 @dataclass
+class ChainedCompare(Expr):
+    """Chained comparison: `0 < x < 10` (3+ operands).
+
+    v5.21.0 Te.6: parses 3+ comparison operands into a single node.
+    `len(ops) == len(operands) - 1`; each `ops[i]` is one of
+    `< <= > >= == !=`. Lowered to `&&`-joined pairwise comparisons
+    with non-trivial interior operands bound to a fresh temp so
+    each subexpression is evaluated exactly once.
+
+    2-element comparisons (`a < b`) keep the existing `BinaryExpr`
+    AST shape — byte-identical IR before and after v5.21.0.
+
+    `pair_trait_dispatches` mirrors `BinaryExpr.trait_dispatch`
+    per pair; populated by the semantic checker so the lowerer
+    can route each synthesized pair through the right trait method.
+    """
+
+    operands: list[Expr] = field(default_factory=list)
+    ops: list[str] = field(default_factory=list)
+    pair_trait_dispatches: list[str | None] = field(default_factory=list)
+
+
+@dataclass
 class UnaryExpr(Expr):
     """Unary operation: `-x`, `!flag`."""
 
