@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from mapanare.format import check_formatted, format_source
+from mapanare.format import check_formatted, format_source, to_terse_markdown
 from mapanare.parser import parse
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -237,6 +237,81 @@ def test_output_single_trailing_newline(path: Path) -> None:
 # ---------------------------------------------------------------------------
 # CLI integration — the user-facing contract
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# v5.24.1 Wd.2 — markdown-aware rewriter (`to_terse_markdown`).
+#
+# The rewriter walks markdown source, runs ``to_terse`` on `````mn``
+# fence bodies, and honors ``<!-- preserve-brace -->`` as an opt-out
+# marker on the line immediately above the opening fence. Other code-
+# block languages and prose pass through unchanged.
+# ---------------------------------------------------------------------------
+
+
+class TestMarkdownRewriter:
+    def test_rewrites_mn_fence_body(self) -> None:
+        src = "Some prose.\n\n```mn\nfn foo() {\n    return 1\n}\n```\n"
+        out = to_terse_markdown(src)
+        assert "fn foo():" in out
+        assert "    return 1" in out
+        assert "fn foo() {" not in out
+
+    def test_preserve_brace_marker_skips_rewrite(self) -> None:
+        src = (
+            "Demo of legacy brace shape:\n\n"
+            "<!-- preserve-brace -->\n"
+            "```mn\n"
+            "fn foo() {\n"
+            "    return 1\n"
+            "}\n"
+            "```\n"
+        )
+        out = to_terse_markdown(src)
+        # Brace shape preserved verbatim
+        assert "fn foo() {" in out
+        assert "fn foo():" not in out
+
+    def test_preserve_brace_marker_with_blank_line_above_fence(self) -> None:
+        # Blank lines between marker and fence are tolerated.
+        src = (
+            "<!-- preserve-brace -->\n" "\n" "```mn\n" "fn foo() {\n" "    return 1\n" "}\n" "```\n"
+        )
+        out = to_terse_markdown(src)
+        assert "fn foo() {" in out
+
+    def test_other_language_fences_pass_through(self) -> None:
+        # ``bash`` fences must not be touched even if they contain
+        # brace-looking shapes.
+        src = '```bash\nif [ -z "$x" ]; then echo hi; fi\n```\n'
+        assert to_terse_markdown(src) == src
+
+    def test_prose_outside_fences_unchanged(self) -> None:
+        src = (
+            "# Heading\n\n" "Paragraph with `inline { code }` does not parse.\n\n" "Another line.\n"
+        )
+        assert to_terse_markdown(src) == src
+
+    def test_idempotent_on_already_colon_style(self) -> None:
+        src = "```mn\nfn foo():\n    return 1\n```\n"
+        once = to_terse_markdown(src)
+        twice = to_terse_markdown(once)
+        assert once == twice
+
+    def test_empty_input(self) -> None:
+        assert to_terse_markdown("") == ""
+
+    def test_multiple_fences_independent(self) -> None:
+        src = (
+            "```mn\nfn a() {\n    return 1\n}\n```\n\n"
+            "<!-- preserve-brace -->\n"
+            "```mn\nfn b() {\n    return 2\n}\n```\n"
+        )
+        out = to_terse_markdown(src)
+        # First fence rewritten, second preserved.
+        assert "fn a():" in out
+        assert "fn b() {" in out
+        assert "fn b():" not in out
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:

@@ -262,8 +262,8 @@ v5.22.0 HEAD.
 | Te.5 ASan leaks | 3 NEW LEAK regressions on `tests/golden/{88_if_let, 90_while_let, 91_let_else}.mn` — surfaced post-v5.22.0 panel via the LeakSanitizer CI workflow. Root cause was self-host `emit_wrap_some` malloc'ing the Some payload but never calling `emit_track_boxed`. Latent on baseline 17_option since v5.4.2. | MEDIUM | LeakSanitizer CI (post-panel) | 1 | **CLOSED v5.23.1 Mb.2** | v5.23.1 Mb.2 (`s = emit_track_boxed(s, ea)` after malloc; baseline TSV refreshed) |
 | Te.3 hollow / asymmetric closure | Brace-deprecation warning misses single-line `{...}` shape; native `mnc-stage1` has zero brace-deprecation logic. PRE_PANEL_AUDIT.md's own canonical pre-flight test command demonstrates the gap. **Asymmetric closure**: PY: closed | SH: open. Three independent reviewers flagged. | MEDIUM | Coral M1 / Anaconda §3 / Rattler #1 | 1 | **CLOSED v5.23.2 Te.3.B.1–.5** | v5.23.2 Te.3.B.1 (Python detector rewritten as char-walker w/ rules a/b/c) + Te.3.B.2 (C-runtime mirror via `__mn_count_user_brace_block_openers` + `__mn_emit_brace_deprecation_warning`) + Te.3.B.3 (`tests/bootstrap/test_brace_deprecation_mirror.py` 11/11 byte-identity contract) + Te.3.B.4 (PRE_PANEL_AUDIT.md update) + Te.3.B.5 (Bb.\* seed refresh, mirrors v5.17.0 Sh.E). Strict 3-stage fixed point preserved at 239,835 lines / 0 diff. |
 | Hollow-feature gate calibration | `check_no_hollow_features.py` step 3 fails on `CompClause` (v5.15.0 Te.2) + `FieldPattern` (v5.20.0 Te.5.D) — whitelist calibration miss. Same 5+/2+ release silent-fail pattern as Reg.1. | MEDIUM | Anaconda §2.B | 1 | **CLOSED v5.23.0 RC.4** | — |
-| Manifesto coherence (M2) | `docs/manifesto.md:31` "Curly braces for blocks" untouched against brace-deprecated codebase. **3rd consecutive panel of manifesto drift.** | MEDIUM | Coral M2 | 3 | OPEN | v5.22.x |
-| SPEC example corpus (M3) | 26 of 36 block-openers in `docs/SPEC.md` are brace-style against §4.0 declaring colon-canonical (72%). v5.21.1 hygiene closed prose but not examples. | MEDIUM | Coral M3 | 1 | OPEN | v5.23.0 |
+| Manifesto coherence (M2) | `docs/manifesto.md:31` "Curly braces for blocks" untouched against brace-deprecated codebase. **3rd consecutive panel of manifesto drift.** | MEDIUM | Coral M2 | 3 | **CLOSED v5.24.1 Wd.1** | v5.24.1 Wd.1 (verbatim Coral M2 fix: "Indented blocks (with a brace-form legacy through v6.0)") |
+| SPEC example corpus (M3) | 26 of 36 block-openers in `docs/SPEC.md` are brace-style against §4.0 declaring colon-canonical (72%). v5.21.1 hygiene closed prose but not examples. | MEDIUM | Coral M3 | 1 | **CLOSED v5.24.1 Wd.2** | v5.24.1 Wd.2 (`to_terse_markdown` + `<!-- preserve-brace -->` opt-out + 8-case `TestMarkdownRewriter`; 26 → 0 mechanical brace block-openers, 2 preserved in §4.0 demo) |
 | Cadence skip (process) | 5-minor (v5.16.0) AND 5-language-feature (v5.20.0) triggers fired and were not honored at trigger; documented as overdue but not run on schedule. | MEDIUM | Anaconda §1 | 1 | OPEN | v5.23.0 (CI gate enforcement) |
 | Sh.\* shrink baseline labeling | "−13.9% off v5.13.0" cited across v5.17.x SR + CARRY_FORWARD.md + CLAUDE.md actually measures pre-Sh.B-immediate baseline (post-Te.4); net v5.13.0 → v5.21.1 is **−8.18% (-2,285 lines)**. Headline shrink is real; baseline label is not. | MEDIUM | Cobra #2 / Rattler #4 | 1 | **CLOSED v5.23.0 RC.12** (dual-baseline framing; `CARRY_FORWARD.md` row Sh.H + `CLAUDE.md:381` updated) | — |
 | `check_docs_drift.py` SPEC.md:1456 | `fn id(y) = y` doesn't parse via current grammar (untyped param). Annotate `y: Int` or add `<!-- pseudo -->` opt-out marker. | LOW | Anaconda §2.C | 1 | **CLOSED v5.23.0 RC.5** (`fn id<T>(y: T) -> T = y`) | — |
@@ -273,9 +273,9 @@ v5.22.0 HEAD.
 | v5.19.0 SESSION_REPORT missing | `docs/roadmap/v5/v5.19.0/SESSION_REPORT.md` does not exist on disk despite Te.3 having shipped (3 commits in log). | LOW | Rattler #2 / Anaconda LOW | 1 | **CLOSED v5.23.0 RC.11** (backfilled from PLAN/PROMPT/DOCKER_DESIGN + 3 commits) | — |
 | `tests/bootstrap/test_indent_preprocessor.py` count refresh | PRE_PANEL_AUDIT.md and CARRY_FORWARD.md cite suite at 142; live collection shows 201. | LOW | Cobra #4 | 1 | **CLOSED v5.23.0 RC.13** | — |
 | Bo.26 (guides discoverability) | `docs/guides/formatter.md` and `docs/guides/init.md` not linked from any README or SPEC. | LOW | Boa #5 | 1 | **CLOSED v5.23.0 RC.15** (4 guides linked: formatter, init, lsp, docker) | — |
-| Bo.27 (audit cross-reference column) | PRE_PANEL_AUDIT.md should add a "Closes prior-panel finding" column at next pre-panel audit. Process observation behind H.\* / Bo.\* mismatch driving Bo.18r persistence. | LOW (process) | Boa #6 | 1 | OPEN | v5.27.0 audit |
+| Bo.27 (audit cross-reference column) | PRE_PANEL_AUDIT.md should add a "Closes prior-panel finding" column at next pre-panel audit. Process observation behind H.\* / Bo.\* mismatch driving Bo.18r persistence. | LOW (process) | Boa #6 | 1 | **CLOSED v5.24.1 Wd.8** | v5.24.1 Wd.8 (new `.reviews/PANEL_AUDIT_TEMPLATE.md` codifying convention; `.reviews/REVIEW_CADENCE.md` updated; convention applies starting v5.27.0) |
 | Cadence enforcement gate | CI gate or pre-release script firing when ≥5 minor versions OR ≥5 language-feature releases ship without a panel. | LOW (process) | Anaconda §1 | 1 | OPEN | v5.23.0 |
-| Coral L1–L5 / TR1 | SPEC §27 deprecation crosslink, broken-promise wording, `mnc fmt --keep-braces` flag mention, generic-bound trait sketch, examples directory micro-organization. | LOW each | Coral L1–L5 | 1 each | OPEN | v5.23.0+ |
+| Coral L1–L5 / TR1 | SPEC §27 deprecation crosslink, broken-promise wording, `mnc fmt --keep-braces` flag mention, generic-bound trait sketch, examples directory micro-organization. | LOW each | Coral L1–L5 | 1 each | **CLOSED v5.24.1 Wd.3–Wd.7** | v5.24.1 Wd.3 (§27.3 Te.3 worked-example crosslink) + Wd.4 (§4.0 broken-promise wording polish) + Wd.5 (§4.0 `mnc fmt --keep-braces` example) + Wd.6 (§7.4 generic-bound trait sketch + `examples/struct_ergo/generic_trait.mn`) + Wd.7 (`examples/terseness/` + `examples/struct_ergo/` + `examples/INDEX.md`) |
 | Stage2-binary teardown crash (RC=3) | Papered over by `set +e` in `verify_fixed_point.sh:124-137`. **70+ releases stale** since v4.30.0 PLAN. | LOW (carry) | Rattler #5 | 70+ | OPEN | v6.0 cleanup window |
 
 **Aggregate state entering v5.22.x:**
@@ -324,8 +324,42 @@ v5.22.0 HEAD.
 - **1 v6.0-rescoped** unchanged
 - **6 Mb.\* closed in v5.23.1** (Mb.1–Mb.6); Mb.7 deferred.
 
+**Aggregate state entering v5.25.x (post-v5.24.1 Wd.\* closeout — ARC CLOSED):**
+- **0 HIGH** open
+- **0 MEDIUM** open. v5.22.0 panel's 8 MEDIUMs all closed across the
+  arc: V.9 (v5.23.1 Mb.1), Te.5 ASan leaks (v5.23.1 Mb.2), Te.3
+  hollow / asymmetric closure (v5.23.2), Hollow-feature gate
+  calibration (v5.23.0 RC.4), Hy.\* cluster — `make ci-gates` /
+  `check_doc_freshness.py` / cadence (v5.24.0), Manifesto coherence
+  M2 (v5.24.1 Wd.1), SPEC corpus M3 (v5.24.1 Wd.2), Sh.\* shrink
+  baseline labeling (v5.23.0 RC.12).
+- **~5 LOW** open: Pk.1.A still in legacy-soak (the v5.10.0 carry —
+  CLOSED v5.24.0 Hy.5 with Linux + macOS smoke gates), `>= 45`
+  magic CLOSED v5.24.0 Hy.4, V.6/V.7/V.8 CLOSED v5.23.1 Mb.4–6,
+  Coral L1–L5 / TR1 CLOSED v5.24.1 Wd.3–7, Bo.27 CLOSED v5.24.1
+  Wd.8. Remaining open: Anaconda informational LOWs (coverage gate
+  / Windows CI / self-compile pytest smoke / MIR destination-
+  passing tests / inliner-kinds whitelist), Mb.7 (i64/i1 tag-emit
+  bug), Stage2 teardown crash (v6.0).
+- **1 v6.0-rescoped** unchanged (Rt.04 multi-level alias analysis).
+- **8 Wd.\* closed in v5.24.1** (Wd.1–Wd.8): manifesto M2,
+  SPEC corpus M3, Coral L1–L5, Bo.27 audit cross-reference column.
+
+**Arc closure summary (v5.22.0 panel → v5.24.1 closeout):**
+
+| Class | At v5.22.0 panel | At v5.24.1 closeout |
+|---|---:|---:|
+| HIGH | 4 | **0** |
+| MEDIUM | 8 | **0** |
+| LOW | ~12 | ~5 (polish only) |
+| v6.0 carry | 1 (Rt.04) | 1 (Rt.04) — unchanged |
+
+Five releases shipped across the recovery arc (RC.\* v5.23.0 +
+Mb.\* v5.23.1 + Te.3.B v5.23.2 + Hy.\* v5.24.0 + Wd.\* v5.24.1).
+
 **Cadence reset:** next routine panel due at **v5.27.0** (5
-minors past v5.22.0).
+minors past v5.22.0). Cadence-check CI gate (v5.24.0 Hy.3) fires
+hard at v5.27.0 if no panel runs by then.
 
 ---
 

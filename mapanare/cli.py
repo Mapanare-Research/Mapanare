@@ -16,7 +16,7 @@ from mapanare.diagnostics import (
     format_diagnostic,
     format_summary,
 )
-from mapanare.format import format_source, to_braces, to_terse
+from mapanare.format import format_source, to_braces, to_terse, to_terse_markdown
 from mapanare.mir_opt import MIROptLevel as OptLevel
 from mapanare.modules import ModuleResolver
 from mapanare.parser import ParseError, parse, parse_recovering
@@ -445,6 +445,33 @@ def cmd_fmt(args: argparse.Namespace) -> None:
         except UnicodeDecodeError as e:
             print(f"error: {path}: not valid UTF-8: {e}", file=sys.stderr)
             errored.append(path)
+            continue
+
+        # v5.24.1 Wd.2: markdown sources are processed via
+        # ``to_terse_markdown`` — only `````mn`` fence
+        # bodies are rewritten; prose and other-language fences pass
+        # through verbatim. ``--to-terse`` is the only meaningful flag
+        # for markdown; other flags either no-op or are rejected.
+        is_markdown = path.suffix.lower() in {".md", ".markdown"}
+        if is_markdown:
+            if not explicit_terse:
+                print(
+                    f"error: {path}: markdown sources require --to-terse",
+                    file=sys.stderr,
+                )
+                errored.append(path)
+                continue
+            formatted = to_terse_markdown(source)
+            if formatted == source:
+                continue
+            changed.append(path)
+            if args.check:
+                print(f"would format: {path}", file=sys.stderr)
+            elif args.stdout:
+                sys.stdout.write(formatted)
+            else:
+                path.write_bytes(formatted.encode("utf-8"))
+                print(f"formatted {path}")
             continue
 
         # Verify the file parses before formatting — prevents fmt from

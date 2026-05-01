@@ -28,7 +28,7 @@ The formatter therefore needs no ``ChainedCompare`` arm —
 ``to_terse`` / ``to_braces`` (which act only on block openers and
 trailing commas) leave chain lines verbatim. This is verified by
 the corpus invariants over goldens 92–95 and
-``examples/chained_cmp.mn``.
+``examples/terseness/chained_cmp.mn``.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ __all__ = [
     "check_formatted",
     "to_terse",
     "to_braces",
+    "to_terse_markdown",
 ]
 
 
@@ -506,3 +507,100 @@ def to_braces(source: str) -> str:
     from mapanare.parser import _indent_to_braces
 
     return format_source(_indent_to_braces(source))
+
+
+# ---------------------------------------------------------------------------
+# v5.24.1 Wd.2 — markdown-aware brace-to-colon rewriter for SPEC / guide docs.
+#
+# ``to_terse_markdown`` walks a markdown source line by line, locates
+# fenced `````mn ... ````` code blocks, and
+# runs ``to_terse`` on each fence body. Other code-block languages
+# (`````bash``, `````toml``, etc.) and prose
+# are passed through verbatim. A ``<!-- preserve-brace -->`` HTML comment
+# on the line immediately before an ``mn`` fence (skipping blank lines)
+# opts that fence out — the brace shape is kept verbatim, useful for
+# historical-artifact examples (e.g. a section that intentionally
+# demonstrates the brace shape).
+#
+# The rewriter is conservative: any fence body that round-trips
+# unchanged through ``to_terse`` (already colon-style, or shapes
+# ``to_terse`` cannot prove safe to rewrite) lands in the output
+# unchanged. The function is idempotent.
+# ---------------------------------------------------------------------------
+
+_MD_PRESERVE_MARKER = "<!-- preserve-brace -->"
+
+
+def to_terse_markdown(source: str) -> str:
+    """Rewrite `````mn`` fences in a markdown document to
+    colon-block syntax.
+
+    Honors a ``<!-- preserve-brace -->`` HTML comment immediately above
+    the opening fence (blank lines between the marker and the fence are
+    allowed) as an opt-out marker — the marked fence's body is kept
+    verbatim. Other code-block languages and prose pass through
+    unchanged. Idempotent.
+    """
+    if not source:
+        return source
+
+    lines = source.split("\n")
+    out: list[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+        if stripped == "```mn":
+            # Look back to detect a preserve-brace marker, allowing
+            # any number of blank lines between the marker and the fence.
+            preserve = False
+            j = len(out) - 1
+            while j >= 0 and out[j].strip() == "":
+                j -= 1
+            if j >= 0 and out[j].strip() == _MD_PRESERVE_MARKER:
+                preserve = True
+
+            # Capture fence body until the closing fence.
+            body: list[str] = []
+            i += 1
+            while i < n and lines[i].strip() != "```":
+                body.append(lines[i])
+                i += 1
+            # Closing fence (if present)
+            closer = lines[i] if i < n else "```"
+            if i < n:
+                i += 1
+
+            out.append(line)
+            if preserve or not body:
+                out.extend(body)
+            else:
+                rewritten = to_terse("\n".join(body))
+                # ``to_terse`` always appends a trailing newline; split
+                # produces a trailing empty element we must drop.
+                pieces = rewritten.split("\n")
+                if pieces and pieces[-1] == "":
+                    pieces.pop()
+                out.extend(pieces)
+            out.append(closer)
+            continue
+
+        # Non-mn fences: pass the body through unchanged so we don't
+        # mistake their content for nested `````mn``
+        # markers. Detect any `````<lang>`` opener.
+        if stripped.startswith("```") and stripped != "```":
+            out.append(line)
+            i += 1
+            while i < n and lines[i].strip() != "```":
+                out.append(lines[i])
+                i += 1
+            if i < n:
+                out.append(lines[i])
+                i += 1
+            continue
+
+        out.append(line)
+        i += 1
+
+    return "\n".join(out)

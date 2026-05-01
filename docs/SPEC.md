@@ -669,9 +669,8 @@ Mapanare uses local type inference. The compiler infers types from the immediate
 - **Function parameters:** All function parameters require type annotations.
 
   ```mn
-  fn add(a: Int, b: Int) -> Int {
+  fn add(a: Int, b: Int) -> Int:
       return a + b
-  }
   ```
 
 - **Function return types:** Required when the function signature needs to be clear. Can be omitted if the return type is `Void`.
@@ -695,10 +694,9 @@ Mapanare uses local type inference. The compiler infers types from the immediate
 Structs are product types -- named collections of fields.
 
 ```mn
-struct Point {
-    x: Float,
-    y: Float,
-}
+struct Point:
+    x: Float
+    y: Float
 ```
 
 #### Struct Construction
@@ -759,22 +757,19 @@ When the right-hand side is a bare identifier, the lowering is exactly equivalen
 #### Methods via `impl`
 
 ```mn
-impl Point {
-    fn distance(self, other: Point) -> Float {
+impl Point:
+    fn distance(self, other: Point) -> Float:
         let dx = self.x - other.x
         let dy = self.y - other.y
         return Math::sqrt(dx * dx + dy * dy)
-    }
-}
 ```
 
 #### Generic Structs
 
 ```mn
-struct Pair<A, B> {
-    first: A,
-    second: B,
-}
+struct Pair<A, B>:
+    first: A
+    second: B
 ```
 
 ### 3.8 Enum Types (Algebraic Data Types)
@@ -783,13 +778,12 @@ Enums are sum types -- tagged unions where each variant can carry different data
 
 <!-- pseudo -->
 ```mn
-enum Shape {
-    Circle(Float),
-    Rectangle(Float, Float),
-    Triangle(Float, Float, Float),
-}
+enum Shape:
+    Circle(Float)
+    Rectangle(Float, Float)
+    Triangle(Float, Float, Float)
 
-fn area(shape: Shape) -> Float {
+fn area(shape: Shape) -> Float:
     match shape {
         Circle(r)          => 3.14159 * r * r,
         Rectangle(w, h)    => w * h,
@@ -798,7 +792,6 @@ fn area(shape: Shape) -> Float {
             return Math::sqrt(s * (s - a) * (s - b) * (s - c))
         },
     }
-}
 ```
 
 #### Variants
@@ -806,11 +799,10 @@ fn area(shape: Shape) -> Float {
 Each variant can carry zero or more values:
 
 ```mn
-enum Token {
+enum Token:
     Eof,                           // no data
     Number(Int),                   // one value
     Pair(String, Int),             // two values
-}
 ```
 
 #### Exhaustiveness
@@ -820,10 +812,9 @@ Match expressions on enums must be exhaustive -- every variant must be handled, 
 #### Generic Enums
 
 ```mn
-enum Either<A, B> {
-    Left(A),
-    Right(B),
-}
+enum Either<A, B>:
+    Left(A)
+    Right(B)
 ```
 
 ### 3.9 Option and Result Types
@@ -837,10 +828,9 @@ enum Either<A, B> {
 let x: Option<Int> = Some(42)
 let y: Option<Int> = none
 
-match x {
-    Some(v) => print("Got: ${v}"),
-    None    => print("Nothing"),
-}
+match x:
+    Some(v) => print("Got: ${v}")
+    None    => print("Nothing")
 ```
 
 `Option` values must be explicitly unwrapped before use. There is no implicit null.
@@ -859,15 +849,13 @@ match x {
 
 <!-- pseudo -->
 ```mn
-fn parse_int(s: String) -> Result<Int, String> {
+fn parse_int(s: String) -> Result<Int, String>:
     // ...
-}
 
 let result = parse_int("42")
-match result {
-    Ok(n)  => print("Parsed: ${n}"),
-    Err(e) => print("Error: ${e}"),
-}
+match result:
+    Ok(n)  => print("Parsed: ${n}")
+    Err(e) => print("Error: ${e}")
 ```
 
 **Construction:**
@@ -877,10 +865,9 @@ match result {
 **Error propagation:** The `?` operator provides concise error propagation:
 
 ```mn
-fn process(s: String) -> Result<Int, String> {
+fn process(s: String) -> Result<Int, String>:
     let n = parse_int(s)?    // returns Err early if parse fails
     return Ok(n * 2)
-}
 ```
 
 When `?` is applied to a `Result`, it unwraps `Ok(v)` for the expression's value or returns `Err(e)` from the enclosing function. The enclosing function must return a compatible `Result` type.
@@ -890,17 +877,15 @@ When `?` is applied to a `Result`, it unwraps `Ok(v)` for the expression's value
 Agents have typed input and output channels that form their public interface.
 
 ```mn
-agent Counter {
+agent Counter:
     input increment: Int
     output count: Int
 
     let mut state: Int = 0
 
-    fn handle(increment: Int) -> Int {
+    fn handle(increment: Int) -> Int:
         self.state += increment
         return self.state
-    }
-}
 ```
 
 When you `spawn` an agent, the returned handle exposes the input and output channels with their declared types. See section 9 (Agent Model) for full semantics.
@@ -1022,9 +1007,8 @@ Function types describe the signature of a callable value (function pointer or c
 type Predicate = fn(Int) -> Bool
 type Mapper = fn(String) -> String
 
-fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+fn apply(f: fn(Int) -> Int, x: Int) -> Int:
     return f(x)
-}
 ```
 
 ---
@@ -1062,13 +1046,18 @@ Rules for colon style:
       pass
   ```
 - Single-line `if x: y` form is **not** supported. The v5.14.0
-  SPEC originally promised this for v5.21.0; that promise was
-  rescoped at v5.21.1 to coincide with the v6.0 `{}` hard
-  removal. Until v6.0, put the body on the next line.
+  SPEC incorrectly promised this form for v5.21.0; the v5.21.0
+  small-ergonomic-wins cycle shipped chained comparisons (Te.6)
+  instead, and the single-line form was rescoped at v5.21.1 to
+  v6.0 — when the brace-form removal will eliminate the parser
+  ambiguity that makes single-line colon-form complex to integrate
+  cleanly with brace shape. Until v6.0, put the body on the next
+  line.
 
 **Brace style** (legacy, soft-deprecated since v5.19.0; hard
 removal at v6.0):
 
+<!-- preserve-brace -->
 ```mn
 fn factorial(n: Int) -> Int {
     if n <= 1 {
@@ -1091,7 +1080,16 @@ Set `MAPANARE_NO_BRACE_WARNING=1` to suppress the warning
 (useful in CI scripts that already track the migration). Use
 `mnc fmt --keep-braces` to preserve braces when running the
 formatter. The default `mnc fmt <file>` auto-migrates to colon
-style.
+style. Example invocations:
+
+```bash
+# Auto-migrate brace style to colon style (recommended):
+mnc fmt src/main.mn
+
+# Apply canonical formatting while keeping brace syntax (soak-window
+# concession — useful for codebases that prefer to migrate later):
+mnc fmt --keep-braces src/main.mn
+```
 
 As of v5.14.1, both compilers — the Python bootstrap and the native
 `mnc-stage1` — fully support both syntaxes. Source is preprocessed
@@ -1109,23 +1107,21 @@ legal at parse time — only the colon-introduced blocks get rewritten.
 `if` is an expression — it evaluates to a value when both branches are present.
 
 ```mn
-if condition {
+if condition:
     // then branch
-} else {
+else:
     // else branch
-}
 ```
 
 Chained conditions use `else if`:
 
 ```mn
-if x > 10 {
+if x > 10:
     print("big")
-} else if x > 0 {
+else if x > 0:
     print("small")
-} else {
+else:
     print("non-positive")
-}
 ```
 
 The condition must be of type `Bool`.
@@ -1247,11 +1243,9 @@ to a future release.
 `break` exits the innermost `for` or `while` loop immediately:
 
 ```mn
-for i in 0..100 {
-    if i > 10 {
+for i in 0..100:
+    if i > 10:
         break
-    }
-}
 ```
 
 ### 4.5 Return
@@ -1279,10 +1273,9 @@ Pattern matching dispatches on the structure of a value. See section 5 (Pattern 
 
 <!-- pseudo -->
 ```mn
-match value {
-    Some(x) => print("got ${x}"),
-    None    => print("nothing"),
-}
+match value:
+    Some(x) => print("got ${x}")
+    None    => print("nothing")
 ```
 
 ### 4.7 Assert Statement
@@ -1305,11 +1298,10 @@ The optional second argument is an error message expression (typically a string)
 
 <!-- pseudo -->
 ```mn
-match expr {
-    pattern1 => expr_or_block,
-    pattern2 => expr_or_block,
+match expr:
+    pattern1 => expr_or_block
+    pattern2 => expr_or_block
     ...
-}
 ```
 
 Match arms are separated by commas. Each arm consists of a pattern, `=>`, and either an expression or a block.
@@ -1329,26 +1321,23 @@ Enum variants are destructured by their constructor pattern:
 
 <!-- pseudo -->
 ```mn
-enum Expr {
-    Num(Int),
-    Add(Int, Int),
-}
+enum Expr:
+    Num(Int)
+    Add(Int, Int)
 
-match expr {
-    Num(n)    => print("number: ${n}"),
-    Add(a, b) => print("sum: ${a + b}"),
-}
+match expr:
+    Num(n)    => print("number: ${n}")
+    Add(a, b) => print("sum: ${a + b}")
 ```
 
 Nested destructuring is supported:
 
 <!-- pseudo -->
 ```mn
-match result {
-    Ok(Some(v)) => print("got ${v}"),
-    Ok(None)    => print("ok but empty"),
-    Err(e)      => print("error: ${e}"),
-}
+match result:
+    Ok(Some(v)) => print("got ${v}")
+    Ok(None)    => print("ok but empty")
+    Err(e)      => print("error: ${e}")
 ```
 
 ### 5.4 Exhaustiveness
@@ -1368,12 +1357,11 @@ A match arm can have an optional `if` guard between the pattern and `=>`:
 
 <!-- pseudo -->
 ```mn
-match n {
-    x if x < 0 => "negative",
-    0 => "zero",
-    x if x > 0 => "positive",
+match n:
+    x if x < 0 => "negative"
+    0 => "zero"
+    x if x > 0 => "positive"
     _ => "unreachable"
-}
 ```
 
 The guard expression must evaluate to `Bool`. If the guard is `false`, the match falls through to the next arm. Guards can reference names bound by the pattern (e.g., `Some(x) if x > 0`).
@@ -1386,12 +1374,11 @@ A pattern can be a disjunction of alternatives separated by `|`:
 
 <!-- pseudo -->
 ```mn
-match token {
-    Plus | Minus => "additive",
-    Star | Slash | Mod => "multiplicative",
-    Eof => "end",
+match token:
+    Plus | Minus => "additive"
+    Star | Slash | Mod => "multiplicative"
+    Eof => "end"
     _ => "other"
-}
 ```
 
 All alternatives in an or-pattern must bind the same set of variable names. (The current implementation checks name-set equality only; type compatibility across alternatives is not yet enforced.) An or-pattern expands coverage: `A | B` covers both `A` and `B`.
@@ -1427,11 +1414,10 @@ The `?` operator propagates errors from `Result<T, E>` and unwraps `Option<T>`:
 
 <!-- pseudo -->
 ```mn
-fn parse_config(path: String) -> Result<Config, String> {
+fn parse_config(path: String) -> Result<Config, String>:
     let text = read_file(path)?
     let config = parse(text)?
     return Ok(config)
-}
 ```
 
 When applied to a `Result`, `?` returns the `Ok` value or early-returns the `Err`. When applied to an `Option`, `?` returns the `Some` value or early-returns `None`. The enclosing function must return a compatible `Result` or `Option` type.
@@ -1443,17 +1429,15 @@ When applied to a `Result`, `?` returns the `Ok` value or early-returns the `Err
 ### 6.1 Function Definition
 
 ```mn
-fn name(param1: Type1, param2: Type2) -> ReturnType {
+fn name(param1: Type1, param2: Type2) -> ReturnType:
     // body
-}
 ```
 
 Functions can be marked `pub` for visibility outside the module:
 
 ```mn
-pub fn add(a: Int, b: Int) -> Int {
+pub fn add(a: Int, b: Int) -> Int:
     return a + b
-}
 ```
 
 #### One-liner sugar (v5.15.0 Te.2.D)
@@ -1475,9 +1459,8 @@ work as before.
 ### 6.2 Generic Functions
 
 ```mn
-fn identity<T>(x: T) -> T {
+fn identity<T>(x: T) -> T:
     return x
-}
 
 let a = identity(42)       // T = Int
 let b = identity("hello")  // T = String
@@ -1537,9 +1520,8 @@ Functions can accept closures (and named functions) as parameters
 using function-type annotations:
 
 ```mn
-fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+fn apply(f: fn(Int) -> Int, x: Int) -> Int:
     return f(x)
-}
 
 let double = (x) => x * 2
 let result = apply(double, 5)   // 10
@@ -1572,14 +1554,12 @@ Decorators are compile-time annotations applied to definitions:
 
 ```mn
 @test
-fn test_addition() {
+fn test_addition():
     assert 1 + 1 == 2
-}
 
 @supervised("one_for_one")
-agent Worker {
+agent Worker:
     // ...
-}
 ```
 
 Built-in decorators:
@@ -1605,13 +1585,11 @@ Built-in decorators:
 A trait defines a set of method signatures that types can implement:
 
 ```mn
-trait Display {
+trait Display:
     fn to_string(self) -> String
-}
 
-trait Eq {
+trait Eq:
     fn eq(self, other: Self) -> Bool
-}
 ```
 
 Trait methods declare their signatures without bodies. The `self` parameter indicates the method receiver.
@@ -1621,17 +1599,13 @@ Trait methods declare their signatures without bodies. The `self` parameter indi
 Types implement traits via `impl Trait for Type` blocks:
 
 ```mn
-impl Display for Point {
-    fn to_string(self) -> String {
+impl Display for Point:
+    fn to_string(self) -> String:
         return "(${self.x}, ${self.y})"
-    }
-}
 
-impl Eq for Point {
-    fn eq(self, other: Point) -> Bool {
+impl Eq for Point:
+    fn eq(self, other: Point) -> Bool:
         return self.x == other.x && self.y == other.y
-    }
-}
 ```
 
 The compiler verifies that all trait methods are implemented. Missing or extra methods are compile-time errors.
@@ -1650,12 +1624,38 @@ The compiler verifies that all trait methods are implemented. Missing or extra m
 Generic type parameters can be constrained with trait bounds:
 
 ```mn
-fn print_value<T: Display>(x: T) {
+fn print_value<T: Display>(x: T):
     print(x.to_string())
-}
 ```
 
 The bound `T: Display` means `T` must implement the `Display` trait.
+
+**Worked example.** Define a trait, implement it for one type, then
+write a generic function that operates on any type bound by that trait:
+
+```mn
+struct Score:
+    n: Int
+
+trait Comparable:
+    fn compare(self, other: Self) -> Int
+
+impl Comparable for Score:
+    fn compare(self, other: Score) -> Int:
+        return self.n - other.n
+
+fn min<T: Comparable>(a: T, b: T) -> T:
+    if a.compare(b) < 0:
+        return a
+    return b
+```
+
+Calling `min(Score { n: 3 }, Score { n: 7 })` monomorphizes to a
+specialized `min<Score>` (see §13.4) and returns the lower-scored
+value. Adding `impl Comparable for <other-type>` would let the same
+`min` function work on that type without further changes — the trait
+bound is the only contract `min` relies on. A complete runnable
+version of this example lives at `examples/struct_ergo/generic_trait.mn`.
 
 ---
 
@@ -1722,7 +1722,7 @@ Agents are the fundamental concurrency primitive in Mapanare. They are concurren
 ### 9.2 Definition
 
 ```mn
-agent MyAgent {
+agent MyAgent:
     input request: RequestType
     output response: ResponseType
 
@@ -1730,15 +1730,13 @@ agent MyAgent {
     let mut counter: Int = 0
 
     // Handler: called when input is received
-    fn handle(request: RequestType) -> ResponseType {
+    fn handle(request: RequestType) -> ResponseType:
         self.counter += 1
         // process and return
-    }
 
     // Lifecycle hooks (optional)
     fn on_init() { }
     fn on_stop() { }
-}
 ```
 
 Agent members:
@@ -1817,7 +1815,7 @@ Signals are reactive primitives that hold a value and automatically propagate ch
 ### 10.2 Declaration
 
 ```mn
-fn main() {
+fn main():
     // Mutable signal: can be set directly
     let mut count = signal(0)
 
@@ -1827,7 +1825,6 @@ fn main() {
     // Updating a signal
     count.value = 5
     print(doubled.value)   // prints 10
-}
 ```
 
 `signal(expr)` creates a mutable signal with an initial value. `signal { expr }` creates a computed signal that re-evaluates when its dependencies change.
@@ -1837,14 +1834,13 @@ fn main() {
 The compiler tracks which signals are read during the evaluation of a computed signal. When any dependency changes, the computed signal is marked dirty and recomputed on next access (lazy) or immediately (eager, configurable).
 
 ```mn
-fn main() {
+fn main():
     let mut a = signal(1)
     let mut b = signal(2)
     let sum = signal { a.value + b.value }
 
     a.value = 10
     print(sum.value)   // prints 12
-}
 ```
 
 ### 10.4 Subscribers
@@ -1896,9 +1892,8 @@ Streams are asynchronous iterables that produce values over time. They are the p
 let s = Stream::from([1, 2, 3, 4, 5])
 
 // Consume a stream
-for value in s {
+for value in s:
     print("${value}")
-}
 ```
 
 ### 11.3 Stream Operators
@@ -1959,26 +1954,21 @@ Stream operators are lazy by default — they are not evaluated until the stream
 Named pipelines compose agents into data-processing graphs:
 
 ```mn
-agent Tokenizer {
+agent Tokenizer:
     input text: String
     output tokens: List<String>
 
-    fn handle(text: String) -> List<String> {
+    fn handle(text: String) -> List<String>:
         return text.split(" ")
-    }
-}
 
-agent Classifier {
+agent Classifier:
     input tokens: List<String>
     output label: String
 
-    fn handle(tokens: List<String>) -> String {
-        if len(tokens) > 10 {
+    fn handle(tokens: List<String>) -> String:
+        if len(tokens) > 10:
             return "long"
-        }
         return "short"
-    }
-}
 
 pipe ClassifyText {
     Tokenizer |> Classifier
@@ -2001,19 +1991,16 @@ The pipe chain connects the output of one agent to the input of the next. The pi
 Functions, structs, enums, and agents can be parameterized over types using angle-bracket syntax:
 
 ```mn
-fn identity<T>(x: T) -> T {
+fn identity<T>(x: T) -> T:
     return x
-}
 
-struct Pair<A, B> {
-    first: A,
-    second: B,
-}
+struct Pair<A, B>:
+    first: A
+    second: B
 
-enum Either<A, B> {
-    Left(A),
-    Right(B),
-}
+enum Either<A, B>:
+    Left(A)
+    Right(B)
 ```
 
 ### 13.2 Type Parameter Constraints
@@ -2021,12 +2008,10 @@ enum Either<A, B> {
 Type parameters can have trait bounds:
 
 ```mn
-fn max<T: Ord>(a: T, b: T) -> T {
-    if a.cmp(b) > 0 {
+fn max<T: Ord>(a: T, b: T) -> T:
+    if a.cmp(b) > 0:
         return a
-    }
     return b
-}
 ```
 
 ### 13.3 Instantiation
@@ -2315,15 +2300,13 @@ Mapanare includes a built-in test runner invoked via `mapanare test`. Test funct
 
 ```mn
 @test
-fn test_addition() {
+fn test_addition():
     assert 1 + 1 == 2
-}
 
 @test
-fn test_string_length() {
+fn test_string_length():
     let s = "hello"
     assert len(s) == 5
-}
 ```
 
 **Rules:**
@@ -2429,14 +2412,12 @@ Agents can be organized into supervision trees with configurable restart strateg
 
 ```mn
 @supervised("one_for_one")
-agent Worker {
+agent Worker:
     input task: String
     output result: String
 
-    fn handle(task: String) -> String {
+    fn handle(task: String) -> String:
         return process(task)
-    }
-}
 ```
 
 | Strategy | Behavior |
@@ -2477,8 +2458,8 @@ Generates a multi-stage Dockerfile optimized for Mapanare agent applications.
 Mapanare provides GPU-accelerated tensor operations via built-in functions. GPU compute uses the CUDA Driver API loaded at runtime via `dlopen` — no SDK installation required. Programs degrade gracefully to CPU when no GPU is available.
 
 ```mn
-fn main() {
-    si gpu_available() {
+fn main():
+    si gpu_available():
         print("GPU: " + gpu_device_name())
 
         pon a: List<Float> = [1.0, 2.0, 3.0, 4.0]
@@ -2486,8 +2467,6 @@ fn main() {
         pon c: List<Float> = gpu_tensor_add(a, b)
         // c = [6.0, 8.0, 10.0, 12.0]
         print("c[0] = " + str(c[0]))
-    }
-}
 ```
 
 ### 23.1 Built-in GPU Functions
@@ -2651,14 +2630,12 @@ print("Hello, Mapanare!")
 Demonstrates defining an agent with typed input and output channels, spawning it, sending a message, and synchronously receiving a result.
 
 ```mn
-agent Greeter {
+agent Greeter:
     input name: String
     output greeting: String
 
-    fn handle(name: String) -> String {
+    fn handle(name: String) -> String:
         return "Hello, " + name + "!"
-    }
-}
 
 let greeter = spawn Greeter()
 greeter.name <- "World"
@@ -2681,26 +2658,21 @@ print(result)
 Demonstrates composing multiple agents into a named pipeline using the `pipe` keyword and `|>` operator.
 
 ```mn
-agent Tokenizer {
+agent Tokenizer:
     input text: String
     output tokens: List<String>
 
-    fn handle(text: String) -> List<String> {
+    fn handle(text: String) -> List<String>:
         return text.split(" ")
-    }
-}
 
-agent Classifier {
+agent Classifier:
     input tokens: List<String>
     output label: String
 
-    fn handle(tokens: List<String>) -> String {
-        if len(tokens) > 10 {
+    fn handle(tokens: List<String>) -> String:
+        if len(tokens) > 10:
             return "long"
-        }
         return "short"
-    }
-}
 
 pipe ClassifyText {
     Tokenizer |> Classifier
@@ -2756,6 +2728,15 @@ Any change to a frozen area requires:
 2. **Deprecation warning:** The old behavior must emit a compiler warning for at least one minor version.
 3. **Migration guide:** Instructions for updating affected code.
 4. **Major version bump:** Breaking changes require a new major version.
+
+**Worked example (v5.19.0 → v6.0).** Te.3 (`{}`-block soft-deprecation, v5.19.0)
+demonstrates this cycle in v5: a parse-time warning starts at v5.19.0,
+the formatter ships an auto-migration default at the same release, the
+deprecation soaks for two release cycles, and hard removal lands at the
+v6.0 major bump. See §4.0 for the user-facing migration path
+(`mnc fmt <path>` to migrate; `mnc fmt --keep-braces` to format without
+migrating; `MAPANARE_NO_BRACE_WARNING=1` to suppress the warning during
+migration).
 
 ---
 
@@ -2879,10 +2860,9 @@ Functions: `regex_match`, `regex_search`, `regex_replace`, `regex_split`. Charac
 An `async fn` declares a function that can suspend and resume:
 
 ```mn
-async fn fetch_data(url: String) -> String {
+async fn fetch_data(url: String) -> String:
     let response = await http_get(url)
     return response.body
-}
 ```
 
 Semantics:
@@ -2943,9 +2923,8 @@ No explicit `.poll()`, `.cancel()`, or `.then()` in v4.x. The scheduler is the s
 `block_on` is a built-in function that bridges synchronous and asynchronous code:
 
 ```mn
-fn main() {
+fn main():
     let result: Int = block_on(compute())
-}
 ```
 
 - Drives the event loop until the given future resolves.

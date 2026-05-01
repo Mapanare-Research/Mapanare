@@ -18,6 +18,74 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.24.1** (ready, not tagged) — **Wd.\* — wider docs cleanup
+  (arc closeout).** **Final** release in the v5.23–v5.24 recovery
+  arc. Closes the 3-consecutive-panel manifesto drift (Coral M2,
+  v5.7.1 / v5.11.0 / v5.22.0), the SPEC corpus 72%-brace-style
+  state against §4.0's colon-canonical declaration (Coral M3),
+  five Coral L1–L5 polish items, and codifies the Bo.27 audit
+  cross-reference column convention for the v5.27.0 audit. **Zero
+  compiler edits. Zero runtime edits. Zero `mapanare/self/*.mn`
+  source edits.** Strict 3-stage fixed point preserved by
+  construction at **239,835 lines / 0 diff** (19-release strict
+  streak; same line count as v5.24.0 because no `.mn` source
+  changed). Goldens **95/95**. **Wd.1**: `docs/manifesto.md:31`
+  rewritten to "Indented blocks (with a brace-form legacy through
+  v6.0)" per Coral M2's verbatim suggested fix — the manifesto's
+  first-impression syntax description now matches the Te.3
+  soft-deprecation posture (v5.19.0). **Wd.2**: `docs/SPEC.md`
+  migrated from 26 brace-style block-openers to 0 (the 2 remaining
+  brace openers live inside the §4.0 "Brace style" demo block,
+  intentionally preserved with a `<!-- preserve-brace -->` marker).
+  New `to_terse_markdown` function in `mapanare/format.py` (~95
+  LOC) walks markdown source line-by-line, runs `to_terse` on each
+  `` ```mn `` fence body, and honors the `<!-- preserve-brace -->`
+  HTML comment as opt-out. `mapanare/cli.py::cmd_fmt` learned a
+  `.md` / `.markdown` dispatch path requiring explicit
+  `--to-terse` (no auto-migration default on markdown). New
+  `tests/test_format.py::TestMarkdownRewriter` (8 cases). The
+  migration also surfaced a latent `to_terse` bug rewriting empty
+  `#{}` map literals as `#:` plus indented `pass`; held for
+  v5.25.0+ as a scope-creep guard with manual revert at SPEC §17.1.
+  **Wd.3**: SPEC §27.3 gained a "Worked example (v5.19.0 → v6.0)"
+  paragraph pointing at Te.3 as the canonical worked example of
+  the deprecation cycle in v5; cross-links to §4.0 for migration
+  commands. **Wd.4**: SPEC §4.0 broken-promise wording tightened
+  to acknowledge the v5.14.0 forward promise more explicitly and
+  link the v6.0 rescope to the parser ambiguity that hard removal
+  eliminates. **Wd.5**: SPEC §4.0 Te.3 status block gained two
+  example invocations of `mnc fmt` (auto-migrate +
+  `--keep-braces`). **Wd.6**: SPEC §7.4 (Trait Bounds on Generics)
+  gained a 10-line worked example — `Comparable` trait + `impl
+  Comparable for Score` + generic `min<T: Comparable>(a: T, b: T)
+  -> T`. Phase 0 surfaced that `impl <Trait> for Int` doesn't
+  compile (primitives aren't impl targets); shipped shape uses a
+  user-defined `Score` struct mirroring §7.2 convention. Runnable
+  file at `examples/struct_ergo/generic_trait.mn`. **Wd.7**:
+  examples directory micro-organization. `chained_cmp.mn` →
+  `examples/terseness/chained_cmp.mn`; `examples/struct_ergo/`
+  seeded by Wd.6's example. Async demos stay top-level
+  (`docs/cookbook/async.md` + `docs/guides/async.md` cite by
+  path). New `examples/INDEX.md`. `mapanare/format.py` docstring
+  reference updated; historical CHANGELOG / SESSION_REPORT
+  references preserved. **Wd.8**: new
+  `.reviews/PANEL_AUDIT_TEMPLATE.md` codifying the audit
+  cross-reference convention per Boa Bo.27 — every `H.*`
+  hygiene-release finding must bind to a prior-panel finding ID
+  (or "(none — fresh)"); every prior-panel HIGH/MEDIUM either
+  appears in the `H.*` table or in a "deferred to <future
+  release>" section. Closes the v5.22.0 Bo.18r failure mode
+  (3-panel persistence: hygiene closures patched the audit's
+  cited line, walked past the panel-flagged paragraph). Convention
+  applies starting v5.27.0. `.reviews/REVIEW_CADENCE.md` updated.
+  **Arc closure**: v5.23–v5.24 recovery arc closes at v5.24.1
+  HEAD with **0 HIGH / 0 MEDIUM / ~5 LOW** open in the docket.
+  Five releases shipped across the arc (RC.\* + Mb.\* + Te.3.B
+  + Hy.\* + Wd.\*). v5.27.0 panel inherits zero structural debt;
+  targeted at **9.55–9.65** aggregate (recovery from v5.22.0's
+  9.41 floor). See `docs/roadmap/v5/v5.24.1/SESSION_REPORT.md`
+  and `PLAN.md`.
+
 - **v5.24.0** (ready, not tagged) — **Hy.\* — structural hygiene
   gates.** Fourth release in the v5.23–v5.24 recovery arc. The
   "this should never have slipped" infrastructure release: closes
@@ -1390,7 +1458,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (30359 symbols, 64950 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (30398 symbols, 65070 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

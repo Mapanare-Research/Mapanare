@@ -1,0 +1,28 @@
+// generic_trait.mn — bounded-generics with traits.
+//
+// SPEC §7.4 worked example. Defines a `Comparable` trait, implements
+// it for `Score`, then writes a generic `min<T: Comparable>` function
+// that works on any type bound by the trait. Adding `impl Comparable
+// for <other-type>` lets the same `min` function work on that type
+// without further changes.
+
+struct Score:
+    n: Int
+
+trait Comparable:
+    fn compare(self, other: Self) -> Int
+
+impl Comparable for Score:
+    fn compare(self, other: Score) -> Int:
+        return self.n - other.n
+
+fn min<T: Comparable>(a: T, b: T) -> T:
+    if a.compare(b) < 0:
+        return a
+    return b
+
+fn main():
+    let a = new Score { n: 3 }
+    let b = new Score { n: 7 }
+    let m = min(a, b)
+    print(m.n)
