@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.21.0] - 2026-05-01
+
+### Added
+
+- **Te.6 — chained comparisons.** Python-style `0 < x < 10`
+  parses as a single chained expression and means
+  `0 < x && x < 10`, with `x` evaluated exactly once. All six
+  comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) sit
+  at a single merged precedence level and freely chain in any
+  combination. Mixed-direction chains are legal (`a < b > c`).
+  - **Grammar.** New `cmp_chain` rule replaces the stratified
+    `cmp_expr` / `eq_expr` chain. Single comparisons (`a < b`)
+    preserve the existing `BinaryExpr` AST shape and produce
+    byte-identical IR — a hard requirement for strict 3-stage
+    fixed point. Only 3+ element chains build a new
+    `ChainedCompare` AST node.
+  - **Precedence merge.** `==`/`!=` now sit at the same
+    precedence level as `<`/`>`/`<=`/`>=`. Pre-v5.21.0,
+    `a == b < c` parsed as `a == (b < c)`; v5.21.0 chains it
+    as `(a == b) && (b < c)`. Audit confirmed no existing code
+    depended on the prior asymmetric precedence.
+  - **Triviality predicate.** Trivial operands (Identifiers and
+    primitive literals — Int, Float, Bool, String, Char, None)
+    inline; non-trivial interior operands bind to a synthesized
+    `__mn_chain_N` local before the `&&`-chain is built so each
+    operand evaluates exactly once. Conservative — when in
+    doubt, emit the temp.
+  - **Trait dispatch survives.** New `pair_trait_dispatches`
+    field on `ChainedCompare`, populated by the semantic
+    checker per pair, propagates Eq / Ord trait routing to the
+    lowerer's synthesized pairs. Custom struct types with
+    `Ord` chain correctly via `cmp` calls.
+  - **Bootstrap mirror.** `mnc-stage1` parses, type-checks,
+    and lowers chains identically. New
+    `Expr::ChainedCmp(operands, ops)` variant in
+    `mapanare/self/ast.mn` plus `expr_chained_*` accessors.
+    New `is_cmp_op` helper and chain-collection branch in
+    `parser.mn::parse_expr` (after one comparison op + RHS,
+    if the next token is also a cmp, accumulate into
+    operands/ops lists). `op_precedence` updated for the
+    precedence merge. New `infer_expr` arm in `semantic.mn`.
+    New `lower_chained_cmp` in `lower.mn` with
+    `is_trivial_chain_operand` predicate matching Python
+    verbatim. New `chain_compare_counter: Int` field on
+    `LowerState` (separate from `tmp_counter` so synthesized
+    `__mn_chain_N` allocas don't perturb the global `%tN`
+    sequence — same discipline as v5.20.1 Te.5.F.C's
+    `struct_update_counter`). Per-fn reset alongside the
+    other counters.
+  - **Goldens 91/91 → 95/95** (new `92_chained_cmp_simple.mn`,
+    `93_chained_cmp_4.mn`, `94_chained_cmp_mixed.mn`,
+    `95_chained_cmp_side_effect.mn`). The side-effect golden
+    is the load-bearing once-evaluation test: `middle()`
+    prints exactly one "M" per chain expression.
+  - **Strict 3-stage fixed point preserved** by construction.
+    Single-comparison shapes take the legacy AST + lowering
+    path with zero IR diff. Bootstrap source delta is
+    additive only; no rewrites of existing modules. New
+    `Expr::ChainedCmp` is not yet used in any self-host
+    source, so the regenerated stage1/2/3 output is
+    byte-identical to v5.20.1 for all unchanged code paths.
+  - **No new MIR ops.** Everything desugars to existing
+    `BinOp(LT/GT/LE/GE/EQ/NE)`, `BinOp(AND)`, and trait
+    `Call` instructions. No new IR shapes.
+
+  See `docs/roadmap/v5/v5.21.0/SESSION_REPORT.md` and
+  `CHAINED_CMP_DESIGN.md` for the six locked design
+  decisions.
+
+### Changed
+
+- **SPEC.md §2.2.** New "Chained Comparisons (v5.21.0)"
+  subsection. Operator precedence table updated:
+  `<`/`>`/`<=`/`>=`/`==`/`!=` collapsed into a single
+  precedence level (was levels 7+8, now just 7). Migration
+  note explains the precedence merge.
+
 ## [5.20.1] - 2026-05-01
 
 ### Added

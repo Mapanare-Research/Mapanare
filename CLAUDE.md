@@ -18,6 +18,63 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.21.0** (ready, not tagged) — **Te.6 — chained
+  comparisons.** Python-style `0 < x < 10` parses as a single
+  chained expression and means `0 < x && x < 10`, with `x`
+  evaluated exactly once. All six comparison operators
+  (`<`, `<=`, `>`, `>=`, `==`, `!=`) sit at a single merged
+  precedence level and freely chain in any combination. Mixed-
+  direction chains are legal (`a < b > c`). The "small wins"
+  capstone of the v5.13–v5.20 terseness arc — small on
+  purpose; the cluster doesn't pad scope. **Phase 0 (D1–D6)**:
+  six locked design decisions in
+  `docs/roadmap/v5/v5.21.0/CHAINED_CMP_DESIGN.md` — operator
+  set, direction mixing, once-evaluation, triviality
+  predicate, precedence level, byte-identity for single
+  comparisons. **Grammar.** `cmp_expr` rewritten as a chain
+  collector: `pipe_expr cmp_tail+ -> cmp_chain`. The
+  transformer dispatches on tail count — 0 inlines (pure
+  pass-through), 1 emits the legacy `BinaryExpr` (D6 — IR
+  byte-identical for single comparisons), 2+ emits a new
+  `ChainedCompare(operands, ops)` AST node. The pre-v5.21.0
+  `eq_expr` precedence layer is folded into `cmp_expr` (D1)
+  — `==`/`!=` move from precedence 3 to 4, matching
+  ordering ops. Audit confirmed no existing code mixes
+  `==` and `<` at the same level without explicit parens or
+  `&&`/`||`. **Lower.** `_lower_chained_compare` desugars at
+  lower time: for each interior non-trivial operand,
+  synthesize a `LetBinding("__mn_chain_N", value=op)` so the
+  operand evaluates exactly once; replace with
+  `Identifier("__mn_chain_N")`; build pairwise `BinaryExpr`
+  nodes (copying `pair_trait_dispatches[i]` from the
+  semantic checker so Eq/Ord trait routing survives); fold
+  with `&&`. New `_chain_compare_counter` field on the
+  lowerer, separate from `tmp_counter` (same discipline as
+  v5.20.1 Te.5.F.C's `struct_update_counter`). **Bootstrap
+  mirror** lands in lockstep — `mnc-stage1` parses, type-
+  checks, and lowers chains identically. New
+  `Expr::ChainedCmp(List<Expr>, List<String>)` variant in
+  `mapanare/self/ast.mn`; new `is_cmp_op` helper +
+  chain-collection branch in `parser.mn::parse_expr`;
+  `op_precedence` updated for the precedence merge; new
+  `infer_expr` arm in `semantic.mn`; new `lower_chained_cmp`
+  + `is_trivial_chain_operand` in `lower.mn` matching
+  Python's predicate verbatim; new `chain_compare_counter`
+  field on `LowerState`. **Goldens 91/91 → 95/95** —
+  `92_chained_cmp_simple.mn`, `93_chained_cmp_4.mn`,
+  `94_chained_cmp_mixed.mn`, `95_chained_cmp_side_effect.mn`
+  (the last is the load-bearing once-evaluation test).
+  **Strict 3-stage fixed point preserved by construction**:
+  single-comparison shapes take the legacy AST + lowering
+  path with zero IR diff; bootstrap source delta is
+  additive only (no rewrites); `Expr::ChainedCmp` is not yet
+  used in any self-host source. **No new MIR ops** —
+  everything desugars to existing `BinOp(LT/GT/LE/GE/EQ/NE)`,
+  `BinOp(AND)`, and trait `Call` instructions. **No new IR
+  shapes**, no runtime functions added. SPEC.md §2.2 gains a
+  "Chained Comparisons (v5.21.0)" subsection with migration
+  note. See `docs/roadmap/v5/v5.21.0/SESSION_REPORT.md`.
+
 - **v5.20.1** (ready, not tagged) — **Te.5.F — bootstrap mirror
   (patch).** Closes the v5.20.0 SESSION_REPORT's "Deferred to
   v5.20.1" item. `mnc-stage1` now parses and lowers all four
@@ -978,7 +1035,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (30005 symbols, 64482 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (29992 symbols, 64482 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

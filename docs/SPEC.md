@@ -344,6 +344,27 @@ let result = data |> tokenize |> classify |> format
 | `<=` | Less or equal | Ordering comparison. |
 | `>=` | Greater or equal | Ordering comparison. |
 
+##### Chained Comparisons (v5.21.0)
+
+Comparison operators chain Python-style: `0 < x < 10` means
+`0 < x && x < 10`, with `x` evaluated exactly once. All six
+comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) sit at
+the same precedence level and freely chain in any combination.
+The chain produces a single `Bool`.
+
+```mn
+let in_range: Bool = 0 <= x < 10              // half-open
+let triple: Bool = a == b == c                // all equal
+let mixed: Bool = 0 < x <= 10                 // both ends
+```
+
+Mixed-direction chains are legal but rare: `a < b > c` means
+`a < b && b > c`. Each adjacent pair evaluates independently.
+
+The middle term in a chain is bound to a synthesized local
+before the `&&`-chain is built, so side-effecting expressions
+run exactly once: `0 < f() < 10` calls `f()` once.
+
 #### Logical Operators
 
 | Operator | Name | Description |
@@ -381,13 +402,18 @@ let result = data |> tokenize |> classify |> format
 | 4 | `+` `-` |
 | 5 | `..` `..=` |
 | 6 | `\|>` |
-| 7 | `<` `>` `<=` `>=` |
-| 8 | `==` `!=` |
-| 9 | `&&` |
-| 10 | `\|\|` |
-| 11 | `?` |
-| 12 | `=` `+=` `-=` `*=` `/=` `<-` |
-| 13 (lowest) | `=>` |
+| 7 | `<` `>` `<=` `>=` `==` `!=` (chainable) |
+| 8 | `&&` |
+| 9 | `\|\|` |
+| 10 | `?` |
+| 11 | `=` `+=` `-=` `*=` `/=` `<-` |
+| 12 (lowest) | `=>` |
+
+> v5.21.0 — comparison operators chain at a single precedence
+> level. Pre-v5.21.0, `==`/`!=` sat at strictly lower precedence
+> than ordering operators; `a == b < c` parsed as `a == (b < c)`.
+> v5.21.0 merges them: the same expression now chains as
+> `(a == b) && (b < c)`, matching Python.
 
 ### 2.3 Literals
 
