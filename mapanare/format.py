@@ -100,22 +100,40 @@ def check_formatted(source: str) -> bool:
 # these blocks ``to_terse`` strips trailing commas from member lines
 # (the colon form has implicit separators); ``to_braces`` re-inserts
 # them via the parser preprocessor.
-_COMMA_BODY_OPENERS = ("struct ", "enum ", "match ")
+# v5.19.0 Te.3.B: include Spanish aliases ``tipo`` (struct) and
+# ``modo`` / ``way`` (trait).
+_COMMA_BODY_OPENERS = (
+    "struct ",
+    "enum ",
+    "match ",
+    "tipo ",
+    "modo ",
+    "way ",
+)
 
 # v5.17.0 Sh.A.1: keywords that begin a statement-level block which
 # is safe to convert from `... {` to `... :`. Anything else (e.g.
 # ``let x = if cond {``, struct literals, lambdas inlined as
 # arguments) opens an *expression*-context block whose grammar
 # requires braces — those must be left verbatim.
+# v5.19.0 Te.3.B: extended with Spanish keyword aliases so the
+# formatter can migrate downstream user code that mixes English and
+# Spanish surface (the v3.0.0 bilingual feature).
 _STMT_BLOCK_KEYWORDS = (
     "fn",
     "if",
+    "si",
     "while",
+    "mien",
     "for",
+    "cada",
     "loop",
     "struct",
+    "tipo",
     "enum",
     "trait",
+    "modo",
+    "way",
     "agent",
     "impl",
     "match",
@@ -145,10 +163,21 @@ def _looks_like_stmt_block_opener(opener_body: str) -> bool:
         else:
             break
     # Statement keyword: `fn name(...)`, `if cond`, `loop`, ...
+    # v5.19.0 Te.3.B: also recognize generic-prefixed openers like
+    # `impl<T> Box<T>`, `fn<T>(...)`, `struct Foo<T>` (the last two
+    # already match via the space form, but `impl<T>` needs the
+    # ``<`` suffix).
     for kw in _STMT_BLOCK_KEYWORDS:
-        if s == kw or s.startswith(kw + " ") or s.startswith(kw + "("):
+        if (
+            s == kw
+            or s.startswith(kw + " ")
+            or s.startswith(kw + "(")
+            or s.startswith(kw + "<")
+        ):
             return True
     # Continuations after `} ` strip: `else`, `else if`, `else{`, ...
+    # v5.19.0 Te.3.B: include Spanish ``si`` for ``} else si X {`` and
+    # ``} sino si X {`` shapes.
     for kw in _CONTINUATION_PREFIXES:
         if s == kw or s.startswith(kw + " ") or s.startswith(kw + "{"):
             return True

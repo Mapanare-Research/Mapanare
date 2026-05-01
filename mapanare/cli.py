@@ -6,6 +6,7 @@ import argparse
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from mapanare.diagnostics import (
@@ -393,15 +394,38 @@ def cmd_fmt(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # v5.14.0 Te.1: choose surface-syntax transformer.
+    # v5.19.0 Te.3.B: bare ``mnc fmt`` auto-migrates ``{}`` to colon
+    # syntax by running ``to_terse`` whenever the source contains
+    # user-written brace blocks. ``--keep-braces`` opts out.
     if getattr(args, "to_terse", False) and getattr(args, "to_braces", False):
         print("error: --to-terse and --to-braces are mutually exclusive", file=sys.stderr)
         sys.exit(1)
-    if getattr(args, "to_terse", False):
-        transformer = to_terse
-    elif getattr(args, "to_braces", False):
+    if getattr(args, "to_terse", False) and getattr(args, "keep_braces", False):
+        print("error: --to-terse and --keep-braces are mutually exclusive", file=sys.stderr)
+        sys.exit(1)
+    if getattr(args, "to_braces", False) and getattr(args, "keep_braces", False):
+        print("error: --to-braces and --keep-braces are mutually exclusive", file=sys.stderr)
+        sys.exit(1)
+
+    explicit_terse = bool(getattr(args, "to_terse", False))
+    explicit_braces = bool(getattr(args, "to_braces", False))
+    keep_braces = bool(getattr(args, "keep_braces", False))
+
+    if explicit_terse:
+        transformer: Callable[[str], str] = to_terse
+        per_file_auto_terse = False
+    elif explicit_braces:
         transformer = to_braces
-    else:
+        per_file_auto_terse = False
+    elif keep_braces:
         transformer = format_source
+        per_file_auto_terse = False
+    else:
+        # Auto-migration default: per-file decision. format_source for
+        # files that already use colon syntax; to_terse for files that
+        # contain user-written brace blocks.
+        transformer = format_source  # placeholder; chosen per file
+        per_file_auto_terse = True
 
     changed: list[Path] = []
     errored: list[Path] = []
@@ -425,15 +449,38 @@ def cmd_fmt(args: argparse.Namespace) -> None:
 
         # Verify the file parses before formatting — prevents fmt from
         # silently rewriting a file that the rest of the pipeline can't
-        # consume.
+        # consume. v5.19.0: temporarily suppress the brace-deprecation
+        # warning during the parse-validation call — the user is
+        # already running fmt, the "Run mnc fmt to migrate" hint would
+        # be redundant noise.
+        prior_no_warn = os.environ.get("MAPANARE_NO_BRACE_WARNING")
+        os.environ["MAPANARE_NO_BRACE_WARNING"] = "1"
         try:
             parse(source, filename=str(path))
         except ParseError as e:
             _emit_parse_error(e, source, str(path))
             errored.append(path)
             continue
+        finally:
+            if prior_no_warn is None:
+                os.environ.pop("MAPANARE_NO_BRACE_WARNING", None)
+            else:
+                os.environ["MAPANARE_NO_BRACE_WARNING"] = prior_no_warn
 
-        formatted = transformer(source)
+        # v5.19.0 Te.3.B: per-file auto-migration. If the source has
+        # user-written brace blocks AND the user did not pass an
+        # explicit flag, route through to_terse instead of format_source.
+        if per_file_auto_terse:
+            from mapanare.parser import count_user_brace_block_openers
+
+            if count_user_brace_block_openers(source) > 0:
+                file_transformer: Callable[[str], str] = to_terse
+            else:
+                file_transformer = format_source
+        else:
+            file_transformer = transformer
+
+        formatted = file_transformer(source)
         if formatted == source:
             continue
         changed.append(path)
@@ -1870,6 +1917,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="to_braces",
         help="Rewrite colon-block syntax to brace-block syntax",
+    )
+    # v5.19.0 Te.3.B: ``mnc fmt`` (no flag) auto-converts ``{}`` to
+    # colon syntax. ``--keep-braces`` opts out for downstream projects
+    # mid-migration that want canonical whitespace without surface
+    # rewriting.
+    p_fmt.add_argument(
+        "--keep-braces",
+        action="store_true",
+        dest="keep_braces",
+        help="Suppress automatic {}->colon migration (whitespace-only formatting)",
     )
     p_fmt.set_defaults(func=cmd_fmt)
 

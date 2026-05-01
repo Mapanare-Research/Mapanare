@@ -226,6 +226,9 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 class TestCli:
     def test_check_clean_corpus_exits_zero(self, tmp_path: Path) -> None:
         # The golden corpus must be canonically formatted at HEAD.
+        # v5.19.0 Te.3.B + Phase 1.5: corpus migrated to colon syntax,
+        # so the bare ``mnc fmt --check`` (auto-migrate default) is
+        # silent on the corpus.
         result = _run_cli("fmt", "--check", "tests/golden")
         assert result.returncode == 0, (
             f"tests/golden has files that need reformatting:\n"
@@ -247,9 +250,12 @@ class TestCli:
         assert f.read_text() == original
 
     def test_default_writes_in_place(self, tmp_path: Path) -> None:
+        # v5.19.0 Te.3.B: bare ``mnc fmt`` auto-migrates braces. Use
+        # ``--keep-braces`` to preserve the v5.13.0 whitespace-only
+        # contract this test was written against.
         f = tmp_path / "dirty.mn"
         f.write_text("fn main() {   \n}\n")
-        result = _run_cli("fmt", str(f))
+        result = _run_cli("fmt", "--keep-braces", str(f))
         assert result.returncode == 0
         assert f.read_text() == "fn main() {\n}\n"
 
@@ -257,7 +263,7 @@ class TestCli:
         f = tmp_path / "dirty.mn"
         original = "fn main() {   \n}\n"
         f.write_text(original)
-        result = _run_cli("fmt", "--stdout", str(f))
+        result = _run_cli("fmt", "--stdout", "--keep-braces", str(f))
         assert result.returncode == 0
         assert f.read_text() == original
         assert "fn main() {\n}\n" in result.stdout
@@ -268,8 +274,11 @@ class TestCli:
         f1.write_text("fn x() {  \n}\n")
         f2 = tmp_path / "y.mn"
         f2.write_text("fn y() {\n}\n")
-        result = _run_cli("fmt", "--check", str(tmp_path))
-        # f1 needs reformatting, f2 does not -> exit 1
+        # v5.19.0: ``--keep-braces`` so the test exercises whitespace-only
+        # canonicalization. With the new auto-migrate default both files
+        # would "format" (be migrated to colon).
+        result = _run_cli("fmt", "--check", "--keep-braces", str(tmp_path))
+        # f1 needs reformatting (trailing whitespace), f2 does not -> exit 1
         assert result.returncode == 1
         assert "x.mn" in result.stderr
         assert "y.mn" not in result.stderr

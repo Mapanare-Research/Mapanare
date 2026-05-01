@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -2049,6 +2051,113 @@ def _indent_to_braces(source: str) -> str:
     return "\n".join(out)
 
 
+def count_user_brace_block_openers(source: str) -> int:
+    """Count user-written brace-block opener lines in ``source``.
+
+    v5.19.0 Te.3.A. Runs **before** ``_indent_to_braces`` so it sees
+    the source as the user typed it. The preprocessor would otherwise
+    convert every colon-block into brace form, making the two
+    indistinguishable post-preprocess.
+
+    A line is counted as a user brace-block opener if, after
+    stripping a trailing ``//`` line comment and trailing whitespace:
+
+    - the line ends with ``{``, AND
+    - the line does NOT end with ``#{`` (map literal opener), AND
+    - the line is not inside a string literal (we track ``"`` toggle
+      with backslash escapes), AND
+    - the line is not a comment-only line (``#`` or ``//`` prefix).
+
+    False positives are limited to multi-line struct literals like::
+
+        let p = Point {
+            x: 1,
+        }
+
+    These are vanishingly rare in canonical style. The cost of a
+    false positive is one stderr warning line; the cost is bounded.
+    """
+    count = 0
+    in_str = False
+    in_char = False
+    for raw in source.split("\n"):
+        # Walk the line tracking string state so we don't miscount
+        # `{` inside a string literal.  Drop a trailing ``//`` line
+        # comment (``#`` line comments are handled by the prefix check
+        # below — they only apply to comment-only lines).
+        code: list[str] = []
+        i = 0
+        while i < len(raw):
+            ch = raw[i]
+            if in_str:
+                code.append(ch)
+                if ch == "\\" and i + 1 < len(raw):
+                    code.append(raw[i + 1])
+                    i += 2
+                    continue
+                if ch == '"':
+                    in_str = False
+                i += 1
+                continue
+            if in_char:
+                code.append(ch)
+                if ch == "\\" and i + 1 < len(raw):
+                    code.append(raw[i + 1])
+                    i += 2
+                    continue
+                if ch == "'":
+                    in_char = False
+                i += 1
+                continue
+            # Outside a string: a ``//`` ends the line for code purposes
+            if ch == "/" and i + 1 < len(raw) and raw[i + 1] == "/":
+                break
+            if ch == '"':
+                in_str = True
+                code.append(ch)
+                i += 1
+                continue
+            if ch == "'":
+                in_char = True
+                code.append(ch)
+                i += 1
+                continue
+            code.append(ch)
+            i += 1
+
+        line_code = "".join(code).rstrip()
+        if not line_code:
+            continue
+        stripped = line_code.lstrip()
+        # Comment-only lines: skip
+        if stripped.startswith(("#", "//")):
+            continue
+        if not line_code.endswith("{"):
+            continue
+        # ``#{`` is a map literal, not a block opener
+        if line_code.endswith("#{"):
+            continue
+        count += 1
+    return count
+
+
+def _emit_brace_deprecation_warning(filename: str, count: int) -> None:
+    """Print one v5.19.0 brace-deprecation warning to stderr.
+
+    Suppressed by ``MAPANARE_NO_BRACE_WARNING=1``. Wording is stable
+    so downstream CI can grep for it.
+    """
+    if os.environ.get("MAPANARE_NO_BRACE_WARNING"):
+        return
+    plural = "occurrence" if count == 1 else "occurrences"
+    print(
+        f"warning: {filename}: uses deprecated {{}}-block syntax "
+        f"({count} {plural}). Run `mnc fmt {filename}` to migrate. "
+        f"Hard removal in v6.0.",
+        file=sys.stderr,
+    )
+
+
 def parse(source: str, *, filename: str = "<input>") -> Program:
     """Parse Mapanare source code into an AST Program node.
 
@@ -2062,6 +2171,9 @@ def parse(source: str, *, filename: str = "<input>") -> Program:
     Raises:
         ParseError: If the source has syntax errors.
     """
+    brace_count = count_user_brace_block_openers(source)
+    if brace_count > 0:
+        _emit_brace_deprecation_warning(filename, brace_count)
     source = _indent_to_braces(source)
     try:
         result = _parser.parse(source)
@@ -2214,6 +2326,11 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
     """
     # v5.14.0 Te.1: apply colon-block preprocessor here so recovery
     # path sees the same syntax surface as ``parse()``.
+    # v5.19.0 Te.3.A: detect user-written brace blocks before
+    # preprocessing so the warning reflects what the user wrote.
+    brace_count = count_user_brace_block_openers(source)
+    if brace_count > 0:
+        _emit_brace_deprecation_warning(filename, brace_count)
     source = _indent_to_braces(source)
     # Try full parse first — fast path
     try:
