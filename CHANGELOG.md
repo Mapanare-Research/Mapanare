@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.26.1] - 2026-05-02
+
+**Eu.1..Eu.4 — close v5.26.0-deferred LINK_FAIL bug classes; Eu.\*
+arc closeout.** Four small-but-distinct codegen / lowering fixes
+that move goldens 47, 48, 49, 51 from LINK_FAIL → PASS. Each was a
+pre-existing latent bug surfaced by v5.26.0's Phase 0 audit and
+tracked as `xfail(strict)` in `tests/llvm/test_async_link.py`. Per-
+bug Phase 0 investigations honored — bundled in one release for
+efficiency, not conflated. **Strict 3-stage fixed point preserved
+at 241,842 lines / 0 diff** (22-release strict streak; +1,849
+lines vs v5.26.0's 239,993 from the new lowerer/emitter arms —
+within the PLAN's expected 500-line target × 4 sites). Goldens
+**95/95**. `tests/llvm/test_async_link.py` 10/10 PASS, 0 XFAIL.
+
+### Fixed
+
+- **Eu.1** — `emit_unwrap` on `Result<T, E>` did a single
+  `extractvalue ..., 1` returning the inner aggregate `{Ok_ty,
+  Err_ty}` rather than the Ok payload at field 0 of that inner
+  aggregate. Fixed at both `mapanare/emit_llvm_text.py::_do_unwrap`
+  and `mapanare/self/emit_llvm.mn::emit_unwrap` — for `TK_RESULT`
+  subjects, do TWO `extractvalue` ops (field 1 of outer, then
+  field 0 of inner). Closes golden 47 (`?` operator on Result).
+- **Eu.2** — Result literal `Ok(...)` / `Err(...)` lowered with
+  empty `dest.ty.args` when no enclosing Result return type was
+  found, so `emit_wrap_ok` / `emit_wrap_err` derived the outer
+  wrapper type from `resolve_mir_type` (fallback `{i1, {ptr,
+  ptr}}`) while the inner aggregate used the real Ok/Err widths
+  — three disagreeing `insertvalue` widths in one chain. Fixed
+  at `mapanare/self/lower.mn` Ok/Err lowering to default missing
+  args mirroring `mapanare/lower.py:2398` (`Result<T, String>`
+  for `Ok(T)` and `Result<Int, T>` for `Err(T)`). Closes
+  golden 48 (`classify(Ok(42))` and `classify(Err("fail"))`
+  call sites).
+- **Eu.3** — `match` on a primitive (Int / Bool / String) subject
+  emitted `EnumTag` which lowered to `extractvalue i64 %v, 0`
+  — LLVM rejects this because i64 is not an aggregate. Fixed
+  at `mapanare/self/lower.mn::lower_match`: primitive subjects
+  bypass the switch entirely and emit a sequential test cascade
+  (jump to `arm[0]`; arms with literal patterns gain an implicit
+  `subject == LIT` check at entry; existing guard fall-through
+  unchanged). `bind_ident_pattern` now uniquifies its alloca
+  name so multiple `Some(x) if guard` arms don't collide on
+  `%x.addr`. Closes golden 49 (`match n: x if x < 0 => ...`).
+- **Eu.4** — `match` with or-pattern + guards
+  (e.g., `Some(0) | None`) emitted N duplicate `i64 1` switch
+  cases (one per `Some`-arm) — LLVM rejects "duplicate case
+  value in switch". Fixed via two coordinated changes in
+  `mapanare/self/lower.mn`: (1) `build_match_arms` now
+  dedups switch entries by tag value (first arm wins; subsequent
+  same-tag arms remain reachable through the existing fall-through
+  chain), and (2) or-pattern arms with a literal-bearing alt
+  (e.g., `Some(0)`) emit a per-alt entry switch at the arm body
+  to disambiguate which alt actually matched (`None` direct
+  match; `Some(0)` payload-equality check; default → next arm).
+  New helper `is_builtin_variant_name` recognises
+  `None`/`Some`/`Ok`/`Err` as variants when they appear as
+  `IdentPat` (the parser does not wrap them in `ConstructorPat`).
+  Closes golden 51 (`Some(0) | None | Some(x) if guard | ...`).
+
+### Changed
+
+- `tests/llvm/test_async_link.py::test_deferred_link_failures` is
+  no longer a placeholder for the four `xfail(strict)` LINK_FAIL
+  bug classes — the `pytest.xfail` short-circuit is removed and
+  the test body now runs the full emit-link-and-run cycle on
+  goldens 47, 48, 49, 51. Each `reason` field rewritten to
+  document the v5.26.1 closure rather than the v5.26.0-era
+  bug class.
+
+
 ## [5.26.0] - 2026-05-02
 
 **Mb.7 + Mb.9 — codegen + Win64 ABI fixes; Mb.\* arc closeout.**
@@ -9092,7 +9163,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.1...HEAD
+[5.26.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.0...v5.26.1
 [5.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.25.0...v5.26.0
 [5.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...v5.25.0
 [5.24.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...v5.24.1

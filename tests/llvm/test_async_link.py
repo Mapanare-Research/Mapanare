@@ -65,16 +65,14 @@ RT_ARCHIVE = REPO_ROOT / "runtime" / "native" / "libmapanare_rt.a"
 ASYNC_CLUSTER_GOLDENS = [55, 56, 57, 58, 59]
 
 DEFERRED_GOLDENS = {
-    47: "v5.26.1: emit_unwrap on Result<T,E> does single extractvalue at "
-    "index 1; needs second extractvalue at index 0 of the inner "
-    "aggregate. Mb.7 closes the leading i64/i1 site; this Unwrap site "
-    "is the next blocker.",
-    48: "v5.26.1: Result literal construction emits three disagreeing "
-    "insertvalue types (outer/inner/payload).",
-    49: "v5.26.1: match on Int subject emits extractvalue i64 (i64 is not "
-    "an aggregate); match-on-primitive lowering surface.",
-    51: "v5.26.1: match with or-pattern + guards emits duplicate switch "
-    "cases (every Some-arm gets i64 1).",
+    47: "v5.26.1 Eu.1: closed — emit_unwrap on Result extracts inner "
+    "aggregate then Ok payload (Python + self-host).",
+    48: "v5.26.1 Eu.2: closed — Ok()/Err() lowerer defaults missing "
+    "Result type args so wrap_ok/wrap_err's outer + inner widths agree.",
+    49: "v5.26.1 Eu.3: closed — primitive subjects bypass EnumTag and "
+    "use a sequential test cascade with literal re-checks at arm entry.",
+    51: "v5.26.1 Eu.4: closed — switch cases dedup by tag, and or-pattern "
+    "arms with literal-bearing alts emit a per-alt entry switch.",
 }
 
 
@@ -231,12 +229,13 @@ def test_deferred_link_failures(
     clang_bin: str,
     tmp_path: Path,
 ) -> None:
-    """v5.26.1+ rescoped — distinct LINK_FAIL bug classes surfaced
-    by Phase 0 audit. Each needs its own investigation. Marked
-    xfail strict so a future fix that flips them green surfaces
-    as XPASS and forces the marker to be removed.
+    """v5.26.1 Eu.* — formerly xfail link contracts for the four
+    distinct bug classes surfaced by v5.26.0 Phase 0 audit. All four
+    closed at v5.26.1 HEAD (Eu.1 emit_unwrap, Eu.2 Result-literal
+    args, Eu.3 match-on-Int, Eu.4 or-pattern + guards). Now a regular
+    link contract — these golden programs must compile, link cleanly
+    against the runtime archive, and exit 0.
     """
-    pytest.xfail(reason)
     src = _resolve_golden(golden_num)
     ll_path = tmp_path / f"{golden_num}.ll"
     bin_path = tmp_path / f"{golden_num}"
@@ -256,11 +255,18 @@ def test_deferred_link_failures(
         text=True,
         timeout=120,
     )
-    assert link.returncode == 0, link.stderr
+    assert link.returncode == 0, (
+        f"clang link failed for golden {golden_num} ({src.name}):\n"
+        f"--- stderr ---\n{link.stderr}\n"
+        f"reason context: {reason}"
+    )
     run = subprocess.run(
         [str(bin_path)],
         capture_output=True,
         text=True,
         timeout=30,
     )
-    assert run.returncode == 0, run.stderr
+    assert run.returncode == 0, (
+        f"binary for golden {golden_num} ({src.name}) exited "
+        f"{run.returncode}\nstdout:\n{run.stdout}\nstderr:\n{run.stderr}"
+    )

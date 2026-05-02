@@ -18,6 +18,73 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.26.1** (ready, not tagged) — **Eu.1..Eu.4 — close
+  v5.26.0-deferred LINK_FAIL bug classes; Eu.\* arc closeout.**
+  Four small-but-distinct codegen / lowering fixes that move
+  goldens 47, 48, 49, 51 from LINK_FAIL → PASS. Each was a
+  pre-existing latent bug surfaced by v5.26.0's Phase 0 audit
+  and tracked as `xfail(strict)` in
+  `tests/llvm/test_async_link.py`. Per-bug Phase 0 investigations
+  honored — bundled in one release for efficiency, not conflated
+  (mirrors v5.26.0 Mb.7/Mb.9 split discipline). **Strict 3-stage
+  fixed point preserved at 241,842 lines / 0 diff** (22-release
+  strict streak; +1,849 lines vs v5.26.0's 239,993 from the new
+  lowerer/emitter arms). Goldens **95/95**.
+  `tests/llvm/test_async_link.py` 10/10 PASS, 0 XFAIL.
+  **Eu.1**: `emit_unwrap` on `Result<T, E>` did one
+  `extractvalue ..., 1` returning the inner aggregate `{Ok_ty,
+  Err_ty}` rather than the Ok payload at field 0 of that inner
+  aggregate. Fixed at both `mapanare/emit_llvm_text.py::_do_unwrap`
+  and `mapanare/self/emit_llvm.mn::emit_unwrap` — for `TK_RESULT`
+  subjects, do TWO `extractvalue` ops. Closes golden 47 (`?`
+  operator on Result). **Eu.2**: standalone `Ok(...)` / `Err(...)`
+  literals at call-arg sites (e.g., `classify(Ok(42))` from
+  `main`) lowered with empty `dest.ty.args` because the caller
+  wasn't a Result-returning fn — `emit_wrap_ok` then derived the
+  outer wrapper type from `resolve_mir_type` (fallback `{i1, {ptr,
+  ptr}}`) while the inner aggregate used real Ok/Err widths
+  (`{i64, ptr}`) — three disagreeing `insertvalue` widths in one
+  chain. Fixed at `mapanare/self/lower.mn` Ok/Err lowering to
+  default missing args mirroring `mapanare/lower.py:2398`
+  (`Result<T, String>` for `Ok(T)` and `Result<Int, T>` for
+  `Err(T)`). Closes golden 48. **Eu.3**: `match` on a primitive
+  (Int / Bool / String) subject emitted `EnumTag` which lowered
+  to `extractvalue i64 %v, 0` — LLVM rejects (i64 is not
+  aggregate). Fixed at `mapanare/self/lower.mn::lower_match`:
+  primitive subjects bypass the switch entirely and emit a
+  sequential test cascade — jump to `arm[0]`; arms with literal
+  patterns gain an implicit `subject == LIT` check at entry; the
+  existing v4.79.0 P3 guard fall-through is preserved. Also
+  `bind_ident_pattern` uniquifies its alloca SSA name with
+  `tmp_counter` (mirrors `bind_one_pattern_field`'s pattern) so
+  multiple `Some(x) if guard` arms don't collide on `%x.addr`
+  under cascade dispatch. Closes golden 49. **Eu.4**: `match`
+  with or-pattern + guards (e.g., `Some(0) | None | Some(x) if g
+  | ...`) emitted N duplicate `i64 1` switch cases — LLVM rejects
+  "duplicate case value in switch". Fixed via two coordinated
+  changes in `mapanare/self/lower.mn`: (1) `build_match_arms`
+  dedups switch entries by tag value (first arm wins; subsequent
+  same-tag arms remain reachable through fall-through), default
+  label set once (wildcard wins over earlier ident-non-enum); and
+  (2) or-pattern arms with a literal-bearing alt emit a per-alt
+  entry switch at the arm body — constructor alts with no payload
+  (e.g., `None`) → direct match; constructor alts with literal
+  sub-args (e.g., `Some(0)`) → payload-check block; default →
+  next arm. New helper `is_builtin_variant_name` recognises
+  `None`/`Some`/`Ok`/`Err` as variants when they appear as
+  `IdentPat` (the parser does not wrap them in `ConstructorPat`).
+  Closes golden 51. **Bb.\* — no seed refresh** (no C-runtime
+  call shape changes). **Eu.\* arc CLOSED** — every v5.23.1 →
+  v5.26.0 LINK_FAIL bug class is now a regression-locked PASS
+  via `tests/llvm/test_async_link.py::test_deferred_link_failures`
+  (10/10 PASS at HEAD; the four `pytest.xfail` short-circuits
+  were removed). Source delta: ~17 LOC Python + ~14 LOC self-host
+  (Eu.1) + ~10 LOC self-host (Eu.2) + ~95 LOC self-host (Eu.3) +
+  ~150 LOC self-host (Eu.4) = ~286 LOC total (above the per-fix
+  30-LOC ceiling but kept in scope to close the arc structurally;
+  alternative was four small releases over 1–2 weeks).
+  See `docs/roadmap/v5/v5.26.1/SESSION_REPORT.md` and `AUDIT.md`.
+
 - **v5.26.0** (ready, not tagged) — **Mb.7 + Mb.9 — codegen +
   Win64 ABI fixes; Mb.\* arc closeout.** Two real codegen fixes
   in the same release. Mb.7 closes the 3-release carry (v5.23.1

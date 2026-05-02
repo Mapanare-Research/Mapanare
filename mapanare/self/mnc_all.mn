@@ -9682,6 +9682,15 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                 },
                 _ => {}
             }
+            // Eu.2 (v5.26.1): if no enclosing Result type was found, default
+            // args to <ok_arg_ty, String> mirroring mapanare/lower.py:2398.
+            // Without this, dest.ty.args is empty and emit_wrap_ok's outer
+            // type falls back to {i1, {ptr, ptr}} while inner uses the real
+            // ok type — three disagreeing insertvalue widths in one chain.
+            if len(res_ty_ok.args) < 2:
+                let mut ok_arg_ty: MIRType = args[0].ty
+                if ok_arg_ty.kind == TK_UNKNOWN() { ok_arg_ty = mir_int() }
+                res_ty_ok = new_mir_type_with_args("Result", TK_RESULT(), [ok_arg_ty, mir_string()])
             let dr_ok: LowerResult = make_value(st, res_ty_ok, "t")
             let s_ok: LowerState = emit_instr(dr_ok.state, Instruction::WrapOk(dr_ok.value, args[0]))
             // v5.4.4 — Ok wrapper takes ownership.
@@ -9698,6 +9707,12 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
                 },
                 _ => {}
             }
+            // Eu.2 (v5.26.1): default args to <Int, err_arg_ty> when no
+            // enclosing Result type. Mirrors mapanare/lower.py:2411.
+            if len(res_ty_err.args) < 2:
+                let mut err_arg_ty: MIRType = args[0].ty
+                if err_arg_ty.kind == TK_UNKNOWN() { err_arg_ty = mir_string() }
+                res_ty_err = new_mir_type_with_args("Result", TK_RESULT(), [mir_int(), err_arg_ty])
             let dr_err: LowerResult = make_value(st, res_ty_err, "t")
             let s_err: LowerState = emit_instr(dr_err.state, Instruction::WrapErr(dr_err.value, args[0]))
             // v5.4.4 — Err wrapper takes ownership.
@@ -11802,6 +11817,25 @@ fn get_block_label(st: LowerState, idx: Int) -> String:
 // Match lowering
 // ---------------------------------------------------------------------------
 
+// Eu.4 (v5.26.1): does this or-pattern's alt set need an entry-time
+// disambiguation (because at least one alt is a constructor with a
+// literal sub-arg, e.g., `Some(0)`)?
+fn or_pattern_has_literal_alt(alts: List<Pattern>) -> Bool:
+    let mut i: Int = 0
+    let n: Int = len(alts)
+    for _ in 0..20:
+        if i < n:
+            let alt: Pattern = alts[i]
+            if pattern_kind(alt) == "constructor":
+                let aargs: List<Pattern> = pattern_ctor_args(alt)
+                let mut j: Int = 0
+                for _ in 0..10:
+                    if j < len(aargs):
+                        if pattern_kind(aargs[j]) == "literal" { return true }
+                        j = j + 1
+            i = i + 1
+    return false
+
 struct MatchBuildResult:
     state: LowerState
     arm_labels: List<String>
@@ -11809,11 +11843,40 @@ struct MatchBuildResult:
     cases: List<SwitchCase>
     default_label: String
 
+// Eu.4 (v5.26.1): track tag values seen so far so we never add a
+// duplicate switch case (LLVM rejects "duplicate case value in switch").
+// The first arm with each ctor/literal wins the switch entry; subsequent
+// same-tag arms are reachable only through fall-through chaining.
+fn list_contains_str(xs: List<String>, s: String) -> Bool:
+    let mut i: Int = 0
+    let n: Int = len(xs)
+    for _ in 0..500:
+        if i >= n { return false }
+        if xs[i] == s { return true }
+        i = i + 1
+    return false
+
+// Eu.4 (v5.26.1): the parser produces `None` / `Some` / `Ok` / `Err`
+// as `IdentPat`, not `ConstructorPat`, even when they refer to the
+// built-in Option/Result variants. `is_enum_variant` checks the
+// user-registered enums and returns false for these built-ins, so the
+// or-pattern alt-loop would mis-classify `None` as a binding ident
+// (setting default_lbl) rather than a switch case. Recognize the four
+// built-in variant names here.
+fn is_builtin_variant_name(name: String) -> Bool:
+    if name == "None" { return true }
+    if name == "Some" { return true }
+    if name == "Ok"   { return true }
+    if name == "Err"  { return true }
+    return false
+
 fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -> MatchBuildResult:
     let mut labels: List<String> = []
     let mut indices: List<Int> = []
     let mut cases: List<SwitchCase> = []
+    let mut seen_tags: List<String> = []
     let mut default_lbl: String = merge_label
+    let mut default_set: Bool = false
     let mut s: LowerState = st
     let mut i: Int = 0
     let n: Int = len(arms)
@@ -11827,15 +11890,26 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
             indices.push(s.current_block_idx)
             let arm: MatchArm = arms[i]
             let pk_arm: String = pattern_kind(arm.pattern)
-            if pk_arm == "constructor" { cases.push(new_switch_case(pattern_ctor_name(arm.pattern), label)) }
-            if pk_arm == "literal" { cases.push(new_switch_case(get_literal_value(pattern_literal_expr(arm.pattern)), label)) }
+            if pk_arm == "constructor":
+                let ctor_n: String = pattern_ctor_name(arm.pattern)
+                if !list_contains_str(seen_tags, ctor_n):
+                    cases.push(new_switch_case(ctor_n, label))
+                    seen_tags.push(ctor_n)
+            if pk_arm == "literal":
+                let lit_v: String = get_literal_value(pattern_literal_expr(arm.pattern))
+                if !list_contains_str(seen_tags, lit_v):
+                    cases.push(new_switch_case(lit_v, label))
+                    seen_tags.push(lit_v)
             if pk_arm == "ident":
                 let pn: String = pattern_ident_name(arm.pattern)
-                if is_enum_variant(s, pn):
-                    cases.push(new_switch_case(pn, label))
+                if is_enum_variant(s, pn) || is_builtin_variant_name(pn):
+                    if !list_contains_str(seen_tags, pn):
+                        cases.push(new_switch_case(pn, label))
+                        seen_tags.push(pn)
                 else:
-                    default_lbl = label
-            if pk_arm == "wildcard" { default_lbl = label }
+                    if !default_set { default_lbl = label; default_set = true }
+            if pk_arm == "wildcard":
+                if !default_set { default_lbl = label; default_set = true }
             // v4.35.0: or-patterns — add one switch case per alternative
             if pk_arm == "or":
                 let alts: List<Pattern> = pattern_or_alts(arm.pattern)
@@ -11844,12 +11918,26 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
                     if oi >= len(alts) { oi = len(alts) } else:
                         let alt: Pattern = alts[oi]
                         let apk: String = pattern_kind(alt)
-                        if apk == "constructor" { cases.push(new_switch_case(pattern_ctor_name(alt), label)) }
-                        if apk == "literal" { cases.push(new_switch_case(get_literal_value(pattern_literal_expr(alt)), label)) }
+                        if apk == "constructor":
+                            let alt_ctor: String = pattern_ctor_name(alt)
+                            if !list_contains_str(seen_tags, alt_ctor):
+                                cases.push(new_switch_case(alt_ctor, label))
+                                seen_tags.push(alt_ctor)
+                        if apk == "literal":
+                            let alt_lit: String = get_literal_value(pattern_literal_expr(alt))
+                            if !list_contains_str(seen_tags, alt_lit):
+                                cases.push(new_switch_case(alt_lit, label))
+                                seen_tags.push(alt_lit)
                         if apk == "ident":
                             let apn: String = pattern_ident_name(alt)
-                            if is_enum_variant(s, apn) { cases.push(new_switch_case(apn, label)) } else { default_lbl = label }
-                        if apk == "wildcard" { default_lbl = label }
+                            if is_enum_variant(s, apn) || is_builtin_variant_name(apn):
+                                if !list_contains_str(seen_tags, apn):
+                                    cases.push(new_switch_case(apn, label))
+                                    seen_tags.push(apn)
+                            else:
+                                if !default_set { default_lbl = label; default_set = true }
+                        if apk == "wildcard":
+                            if !default_set { default_lbl = label; default_set = true }
                         oi = oi + 1
             i = i + 1
     // Build result ONLY after all mutations are done — avoids aliasing
@@ -11880,7 +11968,21 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
 
     // Emit switch or branch (in the entry block)
     s = set_block(s, match_entry_idx)
-    if len(cases) > 0:
+    // Eu.3 (v5.26.1): primitive subjects (Int/Bool/String) cannot pass
+    // through `EnumTag` — `extractvalue i64 %v, 0` is rejected by LLVM
+    // (i64 is not an aggregate). Bypass the switch entirely and emit a
+    // sequential cascade — jump to arm[0]; each arm's entry re-tests its
+    // pattern (literal / guard / wildcard) and falls through to the next
+    // arm on miss. The arm-body loop below recognises primitive-subject
+    // mode and inserts the implicit equality test for literal patterns.
+    let subj_kind: Int = subject_r.value.ty.kind
+    let is_primitive_subject: Bool = subj_kind == TK_INT() || subj_kind == TK_BOOL() || subj_kind == TK_STRING()
+    if is_primitive_subject:
+        if len(arm_labels) > 0:
+            s = emit_instr(s, Instruction::Jump(arm_labels[0]))
+        else:
+            s = emit_instr(s, Instruction::Jump(merge_label))
+    else if len(cases) > 0:
         let tag_r: LowerResult = make_value(s, subject_r.value.ty, "tag")
         s = tag_r.state
         s = emit_instr(s, Instruction::EnumTag(tag_r.value, subject_r.value))
@@ -11901,10 +12003,122 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             s = set_block(s, arm_idx)
             s = lower_push_scope(s)
 
+            // Eu.4 (v5.26.1): or-pattern with literal-bearing alts (e.g.,
+            // `Some(0) | None`) needs an entry-time disambiguating switch.
+            // The outer match switch dedups (Some, label0)/(None, label0),
+            // so both Some and None tags reach this arm. We must verify
+            // which alt actually fires:
+            //   * None alt → matches unconditionally (no payload to check)
+            //   * Some(0) alt → matches only if payload == 0
+            // On no match → fall through to next arm. Mirrors the v4.79.0
+            // P3 jump-to-next discipline but for or-patterns.
+            let or_next_label: String = if ai + 1 < na_match { arm_labels[ai + 1] } else { merge_label }
+            let mut arm_block_idx: Int = arm_idx
+            if pattern_kind(arm.pattern) == "or":
+                let or_alts: List<Pattern> = pattern_or_alts(arm.pattern)
+                if or_pattern_has_literal_alt(or_alts):
+                    let body_run_r: LowerResult = fresh_block_label(s, "or_body")
+                    s = body_run_r.state
+                    let body_run_label: String = body_run_r.value.name
+                    // Pass 1: build switch cases, allocating chk blocks for
+                    // alts that need payload checks.
+                    let mut alt_cases: List<SwitchCase> = []
+                    let mut chk_labels: List<String> = []
+                    let mut chk_ctors: List<String> = []
+                    let mut chk_lit_exprs: List<Expr> = []
+                    let mut oi2: Int = 0
+                    for _ in 0..20:
+                        if oi2 < len(or_alts):
+                            let oalt: Pattern = or_alts[oi2]
+                            let oalt_pk: String = pattern_kind(oalt)
+                            if oalt_pk == "constructor":
+                                let oc: String = pattern_ctor_name(oalt)
+                                let oargs: List<Pattern> = pattern_ctor_args(oalt)
+                                let mut o_lit_idx: Int = -1
+                                let mut oa: Int = 0
+                                for _ in 0..10:
+                                    if oa < len(oargs):
+                                        if o_lit_idx < 0 && pattern_kind(oargs[oa]) == "literal":
+                                            o_lit_idx = oa
+                                        oa = oa + 1
+                                if o_lit_idx >= 0:
+                                    let cr: LowerResult = fresh_block_label(s, "alt_chk")
+                                    s = cr.state
+                                    alt_cases.push(new_switch_case(oc, cr.value.name))
+                                    chk_labels.push(cr.value.name)
+                                    chk_ctors.push(oc)
+                                    chk_lit_exprs.push(pattern_literal_expr(oargs[o_lit_idx]))
+                                else:
+                                    alt_cases.push(new_switch_case(oc, body_run_label))
+                            // Eu.4 (v5.26.1): IdentPat("None") / "Some" / "Ok"
+                            // / "Err" are parsed as ident, not constructor.
+                            // They behave as no-payload constructors —
+                            // direct alt match on tag.
+                            if oalt_pk == "ident":
+                                let oan: String = pattern_ident_name(oalt)
+                                if is_enum_variant(s, oan) || is_builtin_variant_name(oan):
+                                    alt_cases.push(new_switch_case(oan, body_run_label))
+                            oi2 = oi2 + 1
+                    // Emit dispatching switch in the arm-entry block.
+                    // Tag dest type = subject type (TK_OPTION/TK_RESULT/TK_ENUM)
+                    // so emit_enum_tag zexts to i64 — Switch dispatches on i64.
+                    let or_tag_r: LowerResult = make_value(s, subject_r.value.ty, "ortag")
+                    s = or_tag_r.state
+                    s = emit_instr(s, Instruction::EnumTag(or_tag_r.value, subject_r.value))
+                    s = emit_instr(s, Instruction::Switch(or_tag_r.value, alt_cases, or_next_label))
+                    // Pass 2: emit each payload-check block.
+                    let mut ck: Int = 0
+                    for _ in 0..20:
+                        if ck < len(chk_labels):
+                            s = add_block(s, chk_labels[ck])
+                            let pty: MIRType = infer_variant_payload_type(s, subject_r.value, chk_ctors[ck], 0)
+                            let pr: LowerResult = make_value(s, pty, "altpay")
+                            s = pr.state
+                            s = emit_instr(s, Instruction::EnumPayload(pr.value, subject_r.value, chk_ctors[ck] + ":0"))
+                            let lr: LowerResult = lower_expr(s, chk_lit_exprs[ck])
+                            s = lr.state
+                            let xr: LowerResult = make_value(s, mir_bool(), "altpaycmp")
+                            s = xr.state
+                            s = emit_instr(s, Instruction::BinOp(xr.value, BinOpKind::Eq, pr.value, lr.value))
+                            s = emit_instr(s, Instruction::Branch(xr.value, body_run_label, or_next_label))
+                            ck = ck + 1
+                    // Continue arm body in the body_run block.
+                    s = add_block(s, body_run_label)
+                    arm_block_idx = s.current_block_idx
+
             // Bind pattern variables — uses helper + explicit typed temp
             // to preserve LowerState type (avoids emitter type tracking loss)
             let s_bound: LowerState = bind_arm_pattern(s, subject_r.value, arm.pattern)
             s = s_bound
+
+            // Eu.3 (v5.26.1): under the primitive-subject sequential
+            // cascade, literal patterns must re-test `subject == LIT` at
+            // arm entry — without this, falling through from a previous
+            // arm's failed guard would execute the wrong body (e.g., n=42
+            // entering the `0 => "zero"` arm).
+            if is_primitive_subject:
+                let pk_lit: String = pattern_kind(arm.pattern)
+                if pk_lit == "literal":
+                    let lit_expr: Expr = pattern_literal_expr(arm.pattern)
+                    let lit_r: LowerResult = lower_expr(s, lit_expr)
+                    s = lit_r.state
+                    let cmp_r: LowerResult = make_value(s, mir_bool(), "litcmp")
+                    s = cmp_r.state
+                    s = emit_instr(s, Instruction::BinOp(cmp_r.value, BinOpKind::Eq, subject_r.value, lit_r.value))
+                    let lpass_r: LowerResult = fresh_block_label(s, "lit_pass")
+                    s = lpass_r.state
+                    let lpass_label: String = lpass_r.value.name
+                    let lfail_r: LowerResult = fresh_block_label(s, "lit_fail")
+                    s = lfail_r.state
+                    let lfail_label: String = lfail_r.value.name
+                    s = emit_instr(s, Instruction::Branch(cmp_r.value, lpass_label, lfail_label))
+                    s = add_block(s, lfail_label)
+                    if ai + 1 < na_match {
+                        s = emit_instr(s, Instruction::Jump(arm_labels[ai + 1]))
+                    } else {
+                        s = emit_instr(s, Instruction::Jump(merge_label))
+                    }
+                    s = add_block(s, lpass_label)
 
             // v4.79.0 (CARRY_FORWARD P3): guard fall-through — evaluate
             // guard, branch on result. On guard failure, jump to the next
@@ -12066,8 +12280,16 @@ fn bind_arm_pattern(st: LowerState, subject_val: Value, pat: Pattern) -> LowerSt
 
 fn bind_ident_pattern(st: LowerState, subject_val: Value, name: String) -> LowerState:
     if is_enum_variant(st, name) { return st }
-    let ident_addr: Value = new_value("%" + name + ".addr", subject_val.ty)
-    let mut s: LowerState = emit_instr(st, Instruction::Alloca(ident_addr, subject_val.ty))
+    // Eu.3 (v5.26.1): uniquify the alloca SSA name. Pre-Eu.3, every
+    // ident-pattern arm got `%<name>.addr` verbatim — under switch
+    // dispatch this was harmless because most arms were unreachable, but
+    // the primitive-subject sequential cascade reaches every arm and
+    // LLVM rejects multiple `alloca` definitions with the same name.
+    // Mirrors the pattern in bind_one_pattern_field (line ~4727).
+    let mut s: LowerState = st
+    let ident_addr: Value = new_value("%" + name + toString(s.tmp_counter) + ".addr", subject_val.ty)
+    s.tmp_counter = s.tmp_counter + 1
+    s = emit_instr(s, Instruction::Alloca(ident_addr, subject_val.ty))
     s = emit_instr(s, Instruction::Store(ident_addr, subject_val))
     s = define_var(s, name, ident_addr, false)
     return s
@@ -17913,8 +18135,24 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState:
         // Use destination type for the load — avoids struct/enum name mismatches
         let inner_ty: String = resolve_type(st, dest.ty)
         s = emit_line(s, "  " + dn + " = load " + inner_ty + ", ptr " + ptr_name)
+    else if val.ty.kind == TK_RESULT():
+        // Eu.1 (v5.26.1): Result is `{i1, {Ok_ty, Err_ty}}`. The single
+        // `extractvalue ..., 1` returns the *inner* aggregate, not the Ok
+        // payload, so consumers typed as Ok_ty get a width mismatch
+        // (golden 47 — `?` operator on Result<Int, String>). Two
+        // extractvalues — field 1 of outer (inner aggregate) then field 0
+        // of inner (Ok payload).
+        if len(val.ty.args) >= 2:
+            let ok_ty: String = resolve_mir_type(val.ty.args[0])
+            let err_ty: String = resolve_mir_type(val.ty.args[1])
+            let inner_ty: String = "{" + ok_ty + ", " + err_ty + "}"
+            let inner_name: String = dn + ".inner"
+            s = emit_line(s, emit_extractvalue(inner_name, val_ty, val.name, "1"))
+            s = emit_line(s, emit_extractvalue(dn, inner_ty, inner_name, "0"))
+        else:
+            s = emit_line(s, emit_extractvalue(dn, val_ty, val.name, "1"))
     else:
-        // Non-option: direct extractvalue
+        // Non-option/non-result: direct extractvalue
         s = emit_line(s, emit_extractvalue(dn, val_ty, val.name, "1"))
     s
 

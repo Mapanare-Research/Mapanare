@@ -3702,8 +3702,24 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState:
         // Use destination type for the load — avoids struct/enum name mismatches
         let inner_ty: String = resolve_type(st, dest.ty)
         s = emit_line(s, "  " + dn + " = load " + inner_ty + ", ptr " + ptr_name)
+    else if val.ty.kind == TK_RESULT():
+        // Eu.1 (v5.26.1): Result is `{i1, {Ok_ty, Err_ty}}`. The single
+        // `extractvalue ..., 1` returns the *inner* aggregate, not the Ok
+        // payload, so consumers typed as Ok_ty get a width mismatch
+        // (golden 47 — `?` operator on Result<Int, String>). Two
+        // extractvalues — field 1 of outer (inner aggregate) then field 0
+        // of inner (Ok payload).
+        if len(val.ty.args) >= 2:
+            let ok_ty: String = resolve_mir_type(val.ty.args[0])
+            let err_ty: String = resolve_mir_type(val.ty.args[1])
+            let inner_ty: String = "{" + ok_ty + ", " + err_ty + "}"
+            let inner_name: String = dn + ".inner"
+            s = emit_line(s, emit_extractvalue(inner_name, val_ty, val.name, "1"))
+            s = emit_line(s, emit_extractvalue(dn, inner_ty, inner_name, "0"))
+        else:
+            s = emit_line(s, emit_extractvalue(dn, val_ty, val.name, "1"))
     else:
-        // Non-option: direct extractvalue
+        // Non-option/non-result: direct extractvalue
         s = emit_line(s, emit_extractvalue(dn, val_ty, val.name, "1"))
     s
 

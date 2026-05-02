@@ -5228,6 +5228,23 @@ class LLVMTextEmitter:
 
     def _do_unwrap(self, i: Unwrap) -> None:
         v, t = self._get(i.val)
+        # Eu.1 (v5.26.1): Result is `{i1, {Ok_ty, Err_ty}}`. The single
+        # `extractvalue ..., 1` returns the *inner* aggregate, not the Ok
+        # payload, so consumers typed as Ok_ty get a width mismatch. Two
+        # extractvalues — field 1 of outer (inner aggregate) then field 0
+        # of inner (Ok payload) — and the dest's stored type becomes Ok_ty.
+        if i.val.ty.kind == TypeKind.RESULT:
+            a = i.val.ty.type_info.args
+            if len(a) >= 2:
+                ok_ty = self._rti(a[0])
+                err_ty = self._rti(a[1])
+                inner_ty = "{" + ok_ty + ", " + err_ty + "}"
+                inner = self._f("uw_inner")
+                self._L(f"{inner} = extractvalue {t} {v}, 1")
+                r = self._f("uw")
+                self._L(f"{r} = extractvalue {inner_ty} {inner}, 0")
+                self._put(i.dest, r, ok_ty)
+                return
         r = self._f("uw")
         self._L(f"{r} = extractvalue {t} {v}, 1")
         dt = self._rty(i.dest.ty) if i.dest.ty.kind != TypeKind.UNKNOWN else PTR
