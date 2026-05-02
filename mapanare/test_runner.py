@@ -128,14 +128,35 @@ def _compile_test_to_llvm(source: str, filename: str, test_names: list[str]) -> 
 
 
 def _find_runtime_lib() -> str | None:
-    """Locate the native runtime shared/static library for linking."""
+    """Locate the native runtime shared/static library for linking.
+
+    Canonical artifacts (matched in priority order):
+
+    * ``libmapanare_rt.a``      — built by ``make build-rt`` (8 modules + Metal
+      on Darwin); the link target ``cli.py`` and every CI workflow rely on.
+    * ``libmapanare_runtime.so`` — built by ``runtime/native/build_native.py``;
+      shared-library variant used by the docker runtime image.
+
+    Pre-fix the candidates included ``libmapanare_core.*`` — stale names that
+    no current build target produces. The mismatch silently returned ``None``
+    so ``mapanare test`` shipped clang invocations with no runtime library,
+    and the linker failed on ``__mn_str_eq`` / ``__mn_str_println`` only on
+    fresh-checkout CI (a stale local ``libmapanare_core.so`` masked it on
+    developer machines).
+    """
     this_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(this_dir, "..", "runtime", "native"),
         os.path.join(this_dir, "runtime", "native"),
     ]
+    names = (
+        "libmapanare_rt.a",
+        "libmapanare_runtime.so",
+        "libmapanare_runtime.dylib",
+        "libmapanare_runtime.dll",
+    )
     for d in candidates:
-        for name in ("libmapanare_core.a", "libmapanare_core.so", "libmapanare_core.dll"):
+        for name in names:
             path = os.path.join(d, name)
             if os.path.isfile(path):
                 return os.path.abspath(path)

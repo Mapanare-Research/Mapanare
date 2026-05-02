@@ -3969,9 +3969,20 @@ MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
     int64_t n_src = (int64_t)source.len;
     const char *src = source.data;
 
-    /* Fast path: brace-only source returns unchanged. Crucial for the
-     * 95% of corpus that is still brace-style at v5.14.1. */
-    if (!mn_ib_has_colon_blocks(src, n_src)) return source;
+    /* Fast path: brace-only source returns a fresh copy (NOT the input
+     * MnString aliased) — every caller treats the result as a separately
+     * drop-tracked String, so returning ``source`` directly produced a
+     * double-free at function-end drop glue when both ``source`` and the
+     * returned ``preprocessed`` were freed. The aliasing was load-bearing
+     * for the v5.14.1 fast-path performance claim, but post-v5.17.0 the
+     * self-host is colon-style, the corpus split has flipped, and one
+     * memcpy of a source file is negligible. Surfaced by
+     * ``tests/bootstrap/test_indent_preprocessor.py::
+     * test_fixture_matches_python[brace_only_passthrough]`` running the
+     * ``mnc-stage1 preprocess`` subcommand on ``fn main() { print(1) }``. */
+    if (!mn_ib_has_colon_blocks(src, n_src)) {
+        return __mn_str_from_parts(src, n_src);
+    }
 
     MnIB_LineList out = { NULL, 0, 0 };
     MnIB_FrameStack stack = { NULL, 0, 0 };
