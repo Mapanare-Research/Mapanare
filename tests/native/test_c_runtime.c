@@ -573,6 +573,25 @@ static void increment_counter(void *arg) {
     ATOMIC_INC(&g_counter);
 }
 
+/* v5.29.0: same race shape as the agent-state polling helpers below
+ * — pool workers increment g_counter asynchronously; a fixed-delay
+ * sleep before the assertion sometimes fired before the last task
+ * landed on a loaded runner. Poll with a generous upper bound. */
+static int wait_for_counter(int target, int timeout_ms) {
+    const int step_ms = 5;
+    int elapsed = 0;
+    while (elapsed < timeout_ms) {
+        if (ATOMIC_LOAD(&g_counter) >= target) return 1;
+#ifdef _WIN32
+        Sleep(step_ms);
+#else
+        usleep((useconds_t)step_ms * 1000);
+#endif
+        elapsed += step_ms;
+    }
+    return ATOMIC_LOAD(&g_counter) >= target;
+}
+
 TEST(test_pool_basic) {
     mapanare_thread_pool_t pool;
     ASSERT_EQ(mapanare_pool_create(&pool, 2), 0);
@@ -588,12 +607,7 @@ TEST(test_pool_basic) {
         ASSERT_EQ(mapanare_pool_submit(&pool, increment_counter, NULL), 0);
     }
 
-    /* Wait for completion */
-#ifdef _WIN32
-    Sleep(500);
-#else
-    usleep(500000);
-#endif
+    ASSERT(wait_for_counter(10, 2000));
     ASSERT_EQ(ATOMIC_LOAD(&g_counter), 10);
     mapanare_pool_destroy(&pool);
 }
@@ -616,12 +630,7 @@ TEST(test_pool_saturation) {
         }
     }
 
-    /* Wait for all tasks to complete */
-#ifdef _WIN32
-    Sleep(2000);
-#else
-    usleep(2000000);
-#endif
+    ASSERT(wait_for_counter(submitted, 5000));
     ASSERT_EQ(ATOMIC_LOAD(&g_counter), submitted);
     mapanare_pool_destroy(&pool);
 }
@@ -655,20 +664,77 @@ static int failing_handler(void *agent_data, void *msg, void **out_msg) {
     return -1;
 }
 
+/* v5.29.0: replace fixed-delay sleeps before agent state assertions
+ * with bounded polling. The agent worker thread sets state
+ * asynchronously — see ``mapanare_runtime.c::agent_thread_fn`` for the
+ * IDLE → RUNNING transition (line 569), the handler-error → FAILED
+ * transition (lines 606 / 612), and the running-flag-cleared → STOPPED
+ * transition (line 630). ``mapanare_agent_pause`` no-ops if the worker
+ * hasn't reached RUNNING yet, so a too-short fixed sleep after spawn()
+ * silently dropped the pause and produced the v5.28.0-era flakes in
+ * test_agent_pause_resume / test_agent_failing_handler on loaded
+ * GitHub runners. Polling with a generous upper bound returns
+ * immediately on success; only a genuinely stuck transition consumes
+ * the full timeout. The 5 ms step is small enough that the polling
+ * overhead is negligible vs the worker's ms-scale wakeup latency. */
+static void test_sleep_ms(int ms) {
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    usleep((useconds_t)ms * 1000);
+#endif
+}
+
+static int wait_for_agent_state(mapanare_agent_t *agent,
+                                mapanare_agent_state_t target,
+                                int timeout_ms) {
+    const int step_ms = 5;
+    int elapsed = 0;
+    while (elapsed < timeout_ms) {
+        if (mapanare_agent_get_state(agent) == target) return 1;
+        test_sleep_ms(step_ms);
+        elapsed += step_ms;
+    }
+    return mapanare_agent_get_state(agent) == target;
+}
+
+static int wait_for_messages_processed(mapanare_agent_t *agent,
+                                       int64_t target,
+                                       int timeout_ms) {
+    const int step_ms = 5;
+    int elapsed = 0;
+    while (elapsed < timeout_ms) {
+        if (mapanare_agent_messages_processed(agent) >= target) return 1;
+        test_sleep_ms(step_ms);
+        elapsed += step_ms;
+    }
+    return mapanare_agent_messages_processed(agent) >= target;
+}
+
+static int wait_for_agent_recv(mapanare_agent_t *agent,
+                               void **out,
+                               int timeout_ms) {
+    const int step_ms = 5;
+    int elapsed = 0;
+    while (elapsed < timeout_ms) {
+        if (mapanare_agent_recv(agent, out) == 0) return 1;
+        test_sleep_ms(step_ms);
+        elapsed += step_ms;
+    }
+    return mapanare_agent_recv(agent, out) == 0;
+}
+
 TEST(test_agent_lifecycle) {
     mapanare_agent_t agent;
     ASSERT_EQ(mapanare_agent_init(&agent, "test_lifecycle", echo_handler, NULL, 256, 256), 0);
     ASSERT_EQ(mapanare_agent_get_state(&agent), MAPANARE_AGENT_IDLE);
 
     ASSERT_EQ(mapanare_agent_spawn(&agent), 0);
-#ifdef _WIN32
-    Sleep(50);
-#else
-    usleep(50000);
-#endif
-    ASSERT_EQ(mapanare_agent_get_state(&agent), MAPANARE_AGENT_RUNNING);
+    ASSERT(wait_for_agent_state(&agent, MAPANARE_AGENT_RUNNING, 1000));
 
     mapanare_agent_stop(&agent);
+    /* stop() joins the worker thread (mapanare_runtime.c:767-769), so
+     * the STOPPED transition is observed synchronously on return. */
     ASSERT_EQ(mapanare_agent_get_state(&agent), MAPANARE_AGENT_STOPPED);
     mapanare_agent_destroy(&agent);
 }
@@ -677,21 +743,12 @@ TEST(test_agent_send_recv) {
     mapanare_agent_t agent;
     ASSERT_EQ(mapanare_agent_init(&agent, "doubler", double_handler, NULL, 256, 256), 0);
     ASSERT_EQ(mapanare_agent_spawn(&agent), 0);
-#ifdef _WIN32
-    Sleep(50);
-#else
-    usleep(50000);
-#endif
+    ASSERT(wait_for_agent_state(&agent, MAPANARE_AGENT_RUNNING, 1000));
 
     mapanare_agent_send(&agent, (void *)21);
-#ifdef _WIN32
-    Sleep(100);
-#else
-    usleep(100000);
-#endif
 
     void *out = NULL;
-    ASSERT_EQ(mapanare_agent_recv(&agent, &out), 0);
+    ASSERT(wait_for_agent_recv(&agent, &out, 1000));
     ASSERT_EQ((intptr_t)out, 42);
 
     mapanare_agent_stop(&agent);
@@ -702,11 +759,10 @@ TEST(test_agent_pause_resume) {
     mapanare_agent_t agent;
     ASSERT_EQ(mapanare_agent_init(&agent, "pause_test", echo_handler, NULL, 256, 256), 0);
     ASSERT_EQ(mapanare_agent_spawn(&agent), 0);
-#ifdef _WIN32
-    Sleep(50);
-#else
-    usleep(50000);
-#endif
+    /* Worker thread sets state=RUNNING in agent_thread_fn; pause()
+     * silently no-ops if state hasn't reached RUNNING yet. Wait for
+     * the transition before pausing — closes the race entirely. */
+    ASSERT(wait_for_agent_state(&agent, MAPANARE_AGENT_RUNNING, 1000));
 
     mapanare_agent_pause(&agent);
     ASSERT_EQ(mapanare_agent_get_state(&agent), MAPANARE_AGENT_PAUSED);
@@ -722,20 +778,15 @@ TEST(test_agent_failing_handler) {
     mapanare_agent_t agent;
     ASSERT_EQ(mapanare_agent_init(&agent, "fail_test", failing_handler, NULL, 256, 256), 0);
     ASSERT_EQ(mapanare_agent_spawn(&agent), 0);
-#ifdef _WIN32
-    Sleep(50);
-#else
-    usleep(50000);
-#endif
+    ASSERT(wait_for_agent_state(&agent, MAPANARE_AGENT_RUNNING, 1000));
 
     mapanare_agent_send(&agent, (void *)1);
-#ifdef _WIN32
-    Sleep(200);
-#else
-    usleep(200000);
-#endif
+    /* Worker picks up the message asynchronously and sets state=FAILED
+     * after the handler returns non-zero (mapanare_runtime.c:606/612).
+     * Poll instead of fixed sleep — generous bound covers loaded CI
+     * runners; returns immediately on the local fast path. */
+    ASSERT(wait_for_agent_state(&agent, MAPANARE_AGENT_FAILED, 2000));
 
-    ASSERT_EQ(mapanare_agent_get_state(&agent), MAPANARE_AGENT_FAILED);
     mapanare_agent_stop(&agent);
     mapanare_agent_destroy(&agent);
 }
@@ -751,20 +802,14 @@ TEST(test_agent_metrics) {
     ASSERT_EQ(mapanare_agent_messages_processed(&agent), 0);
 
     ASSERT_EQ(mapanare_agent_spawn(&agent), 0);
-#ifdef _WIN32
-    Sleep(50);
-#else
-    usleep(50000);
-#endif
+    ASSERT(wait_for_agent_state(&agent, MAPANARE_AGENT_RUNNING, 1000));
 
     for (int i = 0; i < 5; i++) {
         mapanare_agent_send(&agent, (void *)(intptr_t)(i + 1));
     }
-#ifdef _WIN32
-    Sleep(300);
-#else
-    usleep(300000);
-#endif
+    /* Worker increments messages_processed (mapanare_runtime.c:595)
+     * once per handled message; poll instead of fixed sleep. */
+    ASSERT(wait_for_messages_processed(&agent, 5, 2000));
 
     ASSERT_EQ(mapanare_agent_messages_processed(&agent), 5);
     mapanare_agent_stop(&agent);
@@ -861,12 +906,7 @@ TEST(test_shutdown_with_agents) {
     ASSERT_NE(agent, NULL);
     mapanare_registry_add(&reg, agent);
     ASSERT_EQ(mapanare_agent_spawn(agent), 0);
-#ifdef _WIN32
-    Sleep(50);
-#else
-    usleep(50000);
-#endif
-    ASSERT_EQ(mapanare_agent_get_state(agent), MAPANARE_AGENT_RUNNING);
+    ASSERT(wait_for_agent_state(agent, MAPANARE_AGENT_RUNNING, 1000));
 
     /* Manually stop (we can't send ourselves a signal safely in tests) */
     mapanare_registry_stop_all(&reg);
