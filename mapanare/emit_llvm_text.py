@@ -3636,6 +3636,32 @@ class LLVMTextEmitter:
             self._last_tracked_str_slot = None
             self._put(i.dest, r, STR)
             return
+        # v5.26.0 Mb.9: route the v5.23.2 Te.3.B.2 brace-deprecation
+        # functions through `_rt` for the same reason the
+        # `__mn_indent_to_braces` handler above exists — without it
+        # the call falls through to the user-call path, which uses
+        # the 64-byte ``_use_byref`` threshold instead of `_rt`'s
+        # 8-byte ``_is_large_struct`` threshold. ``MnString`` is
+        # 16 bytes, so on Win64 the call site emits the struct
+        # by value while ``_decl_fn`` already declares the function
+        # with a ``ptr`` parameter — gcc lowers ``MnString source``
+        # per Win64 ABI as pass-by-hidden-pointer, dereferences
+        # rcx as the struct pointer, and reads the data buffer's
+        # bytes 8..16 as the length field. Surfaced in publish run
+        # #48 as ``oom in count_user_brace_block_openers`` with the
+        # length read containing ``"generate"`` (bytes 8..16 of
+        # ``mnc_all.mn``'s ``// Auto-generated:`` prelude).
+        if fn == "__mn_count_user_brace_block_openers" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt(fn, I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_emit_brace_deprecation_warning" and len(args) >= 2:
+            pa = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            cv = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            self._rt(fn, VOID, [STR, I64], [(pa, STR), (cv, I64)])
+            self._put(i.dest, "0", I1)
+            return
 
         # High-level I/O builtins (v3.41.0)
         if fn == "read_line":

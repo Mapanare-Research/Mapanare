@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.26.0] - 2026-05-02
+
+**Mb.7 + Mb.9 — codegen + Win64 ABI fixes; Mb.\* arc closeout.**
+Two real codegen fixes in the same release. Mb.7 closes the
+3-release carry (v5.23.1 → v5.24.0 → v5.25.0) of the i64/i1
+tag-emit bug in the self-host emitter. Mb.9 closes the
+publish-run-#48 Windows OOM in the v5.23.2 Te.3.B.2 brace-
+deprecation runtime functions. Phase 0 audit discovered the
+v5.23.1 SESSION_REPORT premise ("9 LINK_FAIL goldens share one
+bug") was wrong — only the async cluster (55–59) was misclassified
+as needing the fix; goldens 47/48/49/51 fail for distinct reasons
+(rescoped to v5.26.1 as Eu.1..Eu.4). **Strict 3-stage fixed point
+preserved at 239,993 lines / 0 diff** (+158 lines vs v5.25.0,
+expected from new dispatch arms; 21-release strict streak).
+**Goldens 95/95.** **No C-runtime edits.** **No Bb.\* seed refresh
+required** (correcting the PLAN). See
+`docs/roadmap/v5/v5.26.0/SESSION_REPORT.md` and `AUDIT.md`.
+
+### Added
+
+- New `tests/llvm/test_async_link.py` regression suite —
+  IR-invariant gate for the Mb.7 i64/i1 tag-emit anti-pattern,
+  link-and-run sanity for the async cluster (goldens 55–59),
+  and `xfail` markers for the four distinct LINK_FAIL bug
+  classes rescoped to v5.26.1 (`Eu.1..Eu.4`).
+- New `tests/native/test_brace_funcs_windows_abi.py` regression
+  suite — IR-shape gate (under `x86_64-w64-windows-gnu` triple)
+  plus Linux ctypes contract for `__mn_count_user_brace_block_openers`
+  and `__mn_emit_brace_deprecation_warning` (Mb.9).
+
+### Changed
+
+- `mapanare/self/emit_llvm.mn::emit_enum_tag` honors
+  `dest.ty.kind` for Result/Option subjects: when the lowerer
+  asks for an i1 tag (try-op path, `TK_BOOL`), emit i1 directly;
+  when it asks for the wider enum type (match path), keep the
+  existing zext-to-i64 path load-bearing for `emit_mir_switch`.
+  Closes Mb.7.
+- `mapanare/emit_llvm_text.py::_do_call` and
+  `mapanare/self/emit_llvm.mn::emit_mir_call` route the v5.23.2
+  Te.3.B.2 brace-deprecation runtime functions through the
+  runtime-call path so 16-byte `MnString` args take the
+  alloca + store + ptr-pass pattern on Win64 (matching gcc's
+  Win64 ABI for `MnString source`). Closes Mb.9.
+- `mnc_all.mn` regenerated via `bash scripts/concat_self.sh`.
+
+### Fixed
+
+- **Mb.7** (3-release carry) — i64/i1 tag-emit bug: `emit_enum_tag`
+  for Result/Option zext'd the i1 tag to i64 unconditionally; the
+  try-operator path then emitted `br i1 %i64_val, ...`, which the
+  LLVM verifier rejected. Surgical 5-LOC fix; falsifiability
+  round-trip documented in SESSION_REPORT.
+- **Mb.9** — Win64 ABI mismatch for `__mn_count_user_brace_block_openers`
+  and `__mn_emit_brace_deprecation_warning`. Python's `_do_call`
+  uses a 64-byte byref threshold, but `_decl_fn` declared the
+  function with a `ptr` parameter (8-byte threshold on Win64).
+  The 16-byte `MnString` was passed by-value at the call site
+  while gcc lowered the C signature as Win64 pass-by-hidden-
+  pointer; `source.len` then read the data buffer's bytes 8..16
+  as a length — for `mnc_all.mn` (starts with `// Auto-generated:`)
+  those bytes are `g e n e r a t e` → `0x65746172656e6567` →
+  `malloc(7e+18)` → publish-run-#48 OOM. Fixed via explicit
+  handlers in both Python and self-host emitters routing the
+  calls through the runtime-call path with correct Win64 ABI
+  handling. **No C-runtime edits needed**.
+
+### Closes / Carries forward
+
+- Closes the **Mb.\* arc** (memory- and ABI-related panel
+  findings from v5.22.0 + v5.23.2's Te.3.B.2 follow-on).
+- **Phase 0 finding** rescopes 4 LINK_FAIL goldens (47/48/49/51)
+  to v5.26.1 with their own bug classes (Eu.1..Eu.4). The PLAN's
+  premise that all 9 LINK_FAIL goldens shared one bug was based
+  on test_native.py harness output that compared Python and
+  self-host IR rather than running actual link cycles.
+
+
 ## [5.25.0] - 2026-05-02
 
 **Pv.\* — CI prevention infrastructure.** First release in the new
@@ -9014,7 +9092,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.25.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.0...HEAD
+[5.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.25.0...v5.26.0
 [5.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...v5.25.0
 [5.24.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...v5.24.1
 [5.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.0...v5.24.0

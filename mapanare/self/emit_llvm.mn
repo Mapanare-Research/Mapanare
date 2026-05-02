@@ -3509,11 +3509,17 @@ fn emit_enum_tag(st: EmitState, dest: Value, val: Value) -> EmitState:
     let enum_ty: String = resolve_type(st, val.ty)
     let dn: String = dest.name
     // For Result/Option the tag field is i1; for enums it's i64.
-    // Extract field 0 and zext to i64 if needed.
+    // The lowerer types `dest` per its consumer: try-op declares
+    // `mir_bool()` (TK_BOOL → expects i1 for `br i1`); match
+    // declares the enum type itself (expects i64 for `switch i64`,
+    // which `emit_mir_switch` hard-codes). Honor `dest.ty.kind`.
     if val.ty.kind == TK_RESULT() || val.ty.kind == TK_OPTION():
-        let raw_tag: String = dn + ".raw"
-        s = emit_line(s, emit_extractvalue(raw_tag, enum_ty, val.name, "0"))
-        s = emit_line(s, "  " + dn + " = zext i1 " + raw_tag + " to i64")
+        if dest.ty.kind == TK_BOOL():
+            s = emit_line(s, emit_extractvalue(dn, enum_ty, val.name, "0"))
+        else:
+            let raw_tag: String = dn + ".raw"
+            s = emit_line(s, emit_extractvalue(raw_tag, enum_ty, val.name, "0"))
+            s = emit_line(s, "  " + dn + " = zext i1 " + raw_tag + " to i64")
     else:
         s = emit_line(s, emit_extractvalue(dn, enum_ty, val.name, "0"))
     s
@@ -3744,6 +3750,24 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "__mn_str_eprint":
         let as_epr: String = llvm_string() + " " + args[0].name
         return emit_rt_call_void(st, "__mn_str_eprint", as_epr)
+    // v5.26.0 Mb.9: route the v5.23.2 Te.3.B.2 brace-deprecation
+    // functions through emit_rt_call(_void). The default user-call
+    // path uses is_byref_type_st (64-byte threshold), but MnString
+    // is 16 bytes, so on Win64 it would pass the struct by value
+    // while declare_runtime_fn already declared the parameter as
+    // `ptr` (8-byte threshold via win64_rewrite_decl_params). gcc
+    // implements `MnString source` per Win64 ABI as pass-by-hidden-
+    // pointer, dereferences rcx as the struct pointer, and reads
+    // the data buffer's bytes 8..16 as the length field. Mirrors
+    // the v5.23.1 Mb.1 pattern for `__mn_indent_to_braces`. Once
+    // mnc-stage1.exe is rebuilt with the Python-side fix, this
+    // self-host fix keeps stage2.ll Win64-correct on its own.
+    if fn_name == "__mn_count_user_brace_block_openers":
+        let as_cbb: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_count_user_brace_block_openers", as_cbb)
+    if fn_name == "__mn_emit_brace_deprecation_warning":
+        let as_ebw: String = llvm_string() + " " + args[0].name + ", i64 " + args[1].name
+        return emit_rt_call_void(st, "__mn_emit_brace_deprecation_warning", as_ebw)
 
     // chr/ord builtins
     if fn_name == "chr":

@@ -18,6 +18,52 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.26.0** (ready, not tagged) — **Mb.7 + Mb.9 — codegen +
+  Win64 ABI fixes; Mb.\* arc closeout.** Two real codegen fixes
+  in the same release. Mb.7 closes the 3-release carry (v5.23.1
+  → v5.24.0 → v5.25.0) of the i64/i1 tag-emit bug in
+  `mapanare/self/emit_llvm.mn::emit_enum_tag`: the function
+  zexted Result/Option i1 tags to i64 unconditionally, but the
+  try-operator path declared its dest as `mir_bool()` (i1) and
+  consumed it in `Branch`, producing invalid `br i1 %i64_val`.
+  Surgical 5-LOC fix — honors `dest.ty.kind`: emit i1 directly
+  for `TK_BOOL` consumers (try-op), keep zext for `TK_RESULT`/
+  `TK_OPTION`/`TK_ENUM` (match → `switch i64`). Mb.9 closes the
+  publish-run-#48 Windows OOM in the v5.23.2 Te.3.B.2 functions
+  `__mn_count_user_brace_block_openers` and
+  `__mn_emit_brace_deprecation_warning`: Python's `_do_call`
+  uses a 64-byte byref threshold but `_decl_fn` uses 8 bytes on
+  Win64 — the 16-byte `MnString` was passed by-value at the
+  call site while the declaration said `ptr`, and gcc's Win64
+  pass-by-hidden-pointer semantics for `MnString source` then
+  read the data buffer's bytes 8..16 as the length. For
+  `mnc_all.mn` (`// Auto-generated:`) those bytes are
+  `g e n e r a t e` → `0x65746172656e6567` → `malloc(7e+18)` →
+  OOM. Fixed via explicit handlers in Python's `_do_call` AND
+  self-host's `emit_mir_call` routing both functions through
+  the runtime-call path (mirrors the v5.23.1 Mb.1 pattern for
+  `__mn_indent_to_braces`). **No C-runtime edits**; the C side
+  was always correct. **No Bb.\* seed refresh** (no call shapes
+  change); this corrects the PLAN. **Phase 0 disclosure** — the
+  v5.23.1 SESSION_REPORT premise ("9 LINK_FAIL goldens share
+  one bug") was wrong: only golden 47 had Mb.7's bug; goldens
+  55-59 (the async cluster) never had it (always linked); 47/48/
+  49/51 fail for distinct reasons (Eu.1..Eu.4 rescoped to
+  v5.26.1). **Strict 3-stage fixed point preserved by
+  construction at 239,993 lines / 0 diff** (21-release strict
+  streak; +158 lines vs v5.25.0's 239,835 from the new dispatch
+  arms). Goldens **95/95**. New `tests/llvm/test_async_link.py`
+  (10 tests: 6 PASS + 4 documented xfail) — IR-invariant gate
+  for the i64/i1 anti-pattern, link-and-run sanity for the async
+  cluster, xfail markers documenting the four v5.26.1-rescoped
+  bug classes (XPASS-strict so future fixes auto-flip them).
+  New `tests/native/test_brace_funcs_windows_abi.py` (8 PASS)
+  — IR-shape gate under forced Win64 triple plus Linux ctypes
+  contract proving the C side is correct on SysV. **Mb.\* arc
+  CLOSED** — every memory- and ABI-related panel finding
+  through v5.22.0 + v5.23.2's Te.3.B.2 follow-on closed. See
+  `docs/roadmap/v5/v5.26.0/SESSION_REPORT.md` and `AUDIT.md`.
+
 - **v5.25.0** (ready, not tagged) — **Pv.\* — CI prevention
   infrastructure.** First release in the new **Pv.\*** sub-arc
   (structural pattern parallel to v5.24.0's **Hy.\***). Closes
@@ -1530,7 +1576,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (30508 symbols, 65199 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (30625 symbols, 65321 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
