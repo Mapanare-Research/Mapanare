@@ -18,6 +18,68 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.28.0** (ready, not tagged) — **RE-PANEL — v5.23.0 →
+  v5.27.0 recovery + prevention + arc-closeout arc graded.**
+  Panel-only release. **Zero compiler edits. Zero runtime edits.
+  Zero `mapanare/self/*.mn` source edits.** Strict 3-stage fixed
+  point preserved by construction at v5.27.0's 241,842 lines / 0
+  diff. 7 reviewers graded the v5.23.0 → v5.27.0 arc (8 releases,
+  9 SESSION_REPORTs) using the v5-gate mechanical decision rule.
+  **Aggregate: 9.72 / 10. Decision: Option A.** Fourth
+  consecutive Option A under the v5-gate framework, **largest
+  single-arc recovery in v5 history (+0.31 vs v5.22.0's 9.41
+  floor)**, and **first panel above the v5.7.1 / v5.8.0 9.66
+  ceiling in the v5 series**. Score trajectory: 9.66 → 9.62 →
+  9.41 → **9.72** — 3-consecutive-panel downward trend (-0.04,
+  -0.21) broken with +0.31. **Per-reviewer:** Rattler 9.90
+  (+0.05), Viper 9.80 (+0.10), **Anaconda 9.60 (+1.20 — load-
+  bearing recovery; the v5.22.0 -1.30 dock was driven by 3
+  silently-RED CI gates that v5.23.0 RC.\* + v5.24.0 Hy.\* +
+  v5.25.0 Pv.\* closed structurally, not symptomatically)**,
+  Cobra 9.70 (+0.15), Coral 9.70 (+0.15), **Boa 9.55 (+0.55 —
+  largest single-panel Boa improvement in project history;
+  Bo.18r 3-consecutive-panel persistence finally structurally
+  closed)**, Mamba 9.80 (-0.05). 7 EXCEEDS / 0 MEETS / 0 NEEDS
+  WORK; 7 PASS WITH NOTES. **0 NEW HIGH, 0 NEW MEDIUM, ~14 NEW
+  LOW** (mostly process polish). **v5.22.0 docket: 25/25 items
+  CLOSED at v5.28.0 HEAD** (highest closure rate in v5 history
+  across a single recovery arc). Mb.\* / Mc.\* / Eu.\* arcs all
+  CLOSED entering this panel; 4 prev-LINK_FAIL goldens
+  (47/48/49/51) flipped to PASS via Eu.1..Eu.4. **Phase 2 H.\*
+  hygiene closures** (committed `069ff24` ahead of panel cut,
+  per Bo.27 / Wd.8 cross-reference convention codified at
+  `.reviews/PANEL_AUDIT_TEMPLATE.md`): H.1/H.2/H.3 (Bo.18r-class)
+  README.md fixed-point status paragraphs at lines 175 / 183 /
+  196-197 bumped to v5.27.0 / 241k / 23 consecutive releases;
+  H.4 (Bo.17r-class) 3 localized READMEs (es/pt/zh-CN) native-
+  compiler subsection rewritten with v5.23-v5.27 arc summary;
+  H.5 (Bo.10-class) `docs/known_issues.md` Last-updated bumped;
+  H.6 (An.1-class) `.reviews/CARRY_FORWARD.md` v5.25-v5.27
+  closure rows appended (4-release update-protocol drift caught
+  + fixed); H.7 cadence-gap acknowledgment in PROMPT.md +
+  PRE_PANEL_AUDIT.md preambles. **Cadence-gap closure 1 minor
+  late on purpose** — v5.24.0 Hy.3 cadence-enforcement gate
+  fired hard at v5.27.0 (5+ minor threshold); v5.28.0 closes
+  the gap because bundling formatter polish (Mc.8+Mc.9+Tk.1)
+  with a panel cycle was rejected during v5.27.0 PLAN drafting.
+  Two reviewers (Anaconda, Coral) independently judged the
+  framing honest. **Convergent recommendation (Cobra Cb.New1 +
+  Rattler Ra.Inf1 — independent reviewers, same finding shape)**:
+  extend `tests/llvm/test_async_link.py` link-and-run pattern
+  to all 95 goldens via new `test_llvm_link_all.py` (Tn.\*
+  generalization). Closes the structural gap that hid Eu.1..Eu.4
+  for 3 releases. **Escalate to MEDIUM at v5.29.0 if not picked
+  up in a Pv.\* follow-on.** Other LOW recommendations: M.1
+  (Mamba — `.h` vs `.c` header asymmetry recurrence; Pv.7-style
+  structural gate); A.1 (Anaconda — new
+  `check_carry_forward_freshness.py` gate); Ra.New1 (Rattler —
+  Stage2 teardown narrowed to stdout-redirect-specific SIGSEGV;
+  investigation tractable, consider closing in v5.29.0 rather
+  than v6.0). **Cadence reset:** next routine panel due v5.33.0.
+  See `.reviews/v5.28.0/{README.md, V5_DECISION.md, PRE_PANEL_AUDIT.md}`,
+  7× `<reviewer>/findings.md`, and
+  `docs/roadmap/v5/v5.28.0/SESSION_REPORT.md`.
+
 - **v5.27.0** (ready, not tagged) — **Mc.8 + Mc.9 + Tk.1 —
   formatter polish; Mc.\* parity arc CLOSED.** Three formatter /
   rewriter polish items shipping together because they all live
@@ -1707,7 +1769,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (30625 symbols, 65321 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (30872 symbols, 65700 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

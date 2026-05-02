@@ -7,6 +7,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.28.0] - 2026-05-02
+
+**RE-PANEL — v5.23.0 → v5.27.0 recovery + prevention + arc-closeout
+arc panel.** Panel-only release. The release identity IS the panel
+itself. **Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+preserved by construction at v5.27.0's 241,842 lines / 0 diff
+(zero self-host source delta). 7 reviewers graded the v5.23.0 →
+v5.27.0 arc (9 SESSION_REPORTs) using the v5-gate mechanical
+decision rule.
+
+**Aggregate: 9.72 / 10. Decision: Option A.** Fourth consecutive
+Option A under the v5-gate framework, **largest single-arc
+recovery in v5 history (+0.31 vs v5.22.0's 9.41 floor)**, and
+**first panel above the v5.7.1 / v5.8.0 9.66 ceiling in the v5
+series**. Score trajectory: 9.66 → 9.62 → 9.41 → **9.72** —
+3-consecutive-panel downward trend (-0.04, -0.21) broken with
++0.31. Per-reviewer: Rattler 9.90 (+0.05), Viper 9.80 (+0.10),
+**Anaconda 9.60 (+1.20 — load-bearing recovery)**, Cobra 9.70
+(+0.15), Coral 9.70 (+0.15), **Boa 9.55 (+0.55 — largest
+single-panel Boa improvement in project history)**, Mamba 9.80
+(−0.05). 7 EXCEEDS / 0 MEETS / 0 NEEDS WORK; 7 PASS WITH NOTES.
+0 NEW HIGH, 0 NEW MEDIUM, ~14 NEW LOW (mostly process polish).
+
+**v5.22.0 docket closure: 25/25 items CLOSED at v5.28.0 HEAD.**
+Highest closure rate in v5 history across a single recovery arc.
+The 4 v6.0-rescoped items (Rt.04 multi-level alias, Te.3 hard
+removal of `{}`, single-line `if x: y`, Stage2 teardown crash)
+carry forward as planned.
+
+**Phase 2 H.\* hygiene closures** (committed `069ff24` ahead of
+panel cut, per Bo.27 / Wd.8 cross-reference convention codified
+at `.reviews/PANEL_AUDIT_TEMPLATE.md`):
+
+- **H.1, H.2, H.3** (HIGH, Boa Bo.18r-class): `README.md` lines
+  175 / 183 / 196-197 fixed-point status paragraphs bumped from
+  v5.21.0 / 239k / 17 + 14 consecutive releases to v5.27.0 /
+  241k / 23 consecutive releases.
+- **H.4** (HIGH, Boa Bo.17r-class): 3 localized READMEs
+  (es/pt/zh-CN) native-compiler subsection rewritten:
+  v5.21.0 → v5.27.0; 238,086 → 241,842 lines; 13 → 23
+  consecutive releases; -3,950 lines (-13.8%) → -2,285 lines
+  (-8.18%) net v5.13.0 → v5.21.1 dual-baseline framing per
+  v5.23.0 RC.12 normalization. Added v5.23-v5.27 arc summary
+  paragraph in each language.
+- **H.5** (MEDIUM, Boa Bo.10-class): `docs/known_issues.md`
+  Last-updated bumped from v5.21.1 to v5.27.0 with v5.23-v5.27
+  closure narrative.
+- **H.6** (MEDIUM, Anaconda An.1-class): `.reviews/CARRY_FORWARD.md`
+  appended v5.25.0 Pv.\* / v5.26.0 Mb.7+Mb.9 / v5.26.1 Eu.1..Eu.4
+  / v5.27.0 Mc.8+Mc.9+Tk.1 closure rows. New "Aggregate state
+  entering v5.28.0 panel" subsection. Update-protocol drift
+  caught + fixed (4-release accumulation).
+- **H.7** (LOW, process): cadence-gap acknowledgment in
+  PROMPT.md + PRE_PANEL_AUDIT.md preambles. v5.28.0 closes the
+  v5.24.0 Hy.3 cadence-enforcement gate gap **1 minor late on
+  purpose** — bundling formatter polish (Mc.8 + Mc.9 + Tk.1)
+  with a panel cycle was rejected during v5.27.0 PLAN drafting.
+
+### Added
+
+- `.reviews/v5.28.0/` panel directory tree (subdirectory-per-
+  reviewer convention per v5.28.0 PROMPT spec):
+  - `prompt.md` — shared panel brief (charter, required reading,
+    what-this-panel-must-answer, the 7 reviewers, review file
+    format, pre-flight verification, process instructions)
+  - `PRE_PANEL_AUDIT.md` — lead's fact-check; 7 H.\* findings
+    (H.1-H.6 closures + H.7 cadence acknowledgment); each H.\*
+    binds to prior-panel finding ID per Bo.27 / Wd.8 convention;
+    live snapshot at v5.27.0 HEAD pre-Phase-2 + v5.28.0 HEAD
+    post-Phase-2.
+  - Per-reviewer brief in each subdirectory:
+    `.reviews/v5.28.0/rattler/prompt.md`,
+    `.reviews/v5.28.0/viper/prompt.md`,
+    `.reviews/v5.28.0/anaconda/prompt.md`,
+    `.reviews/v5.28.0/cobra/prompt.md`,
+    `.reviews/v5.28.0/coral/prompt.md`,
+    `.reviews/v5.28.0/boa/prompt.md`,
+    `.reviews/v5.28.0/mamba/prompt.md`
+  - Per-reviewer findings in each subdirectory:
+    `.reviews/v5.28.0/rattler/findings.md`,
+    `.reviews/v5.28.0/viper/findings.md`,
+    `.reviews/v5.28.0/anaconda/findings.md`,
+    `.reviews/v5.28.0/cobra/findings.md`,
+    `.reviews/v5.28.0/coral/findings.md`,
+    `.reviews/v5.28.0/boa/findings.md`,
+    `.reviews/v5.28.0/mamba/findings.md`
+    (~2,500 lines / ~134 KB total)
+  - `V5_DECISION.md` — formal Option A document with mechanical-
+    rule check, per-reviewer score table, 13-panel trajectory,
+    v5.22.0 docket closure verification, 14 NEW LOW catalog with
+    Bo.27 prior-panel bindings, carry-forward delta, cadence reset
+  - `README.md` — panel index synthesis (verdict table,
+    consensus, action items, regressions/improvements, evidence
+    base)
+
+### Changed
+
+- `README.md` lines 175 / 183 / 196-197 — fixed-point status
+  paragraphs refreshed (Phase 2 H.1/H.2/H.3 — Bo.18r-class
+  closure; 4th-panel-risk averted)
+- `docs/README.es.md`, `docs/README.pt.md`, `docs/README.zh-CN.md`
+  — native-compiler subsection refreshed with v5.27.0 reality +
+  v5.23-v5.27 arc summary (Phase 2 H.4 — Bo.17r-class closure)
+- `docs/known_issues.md` — Last-updated bumped from v5.21.1 to
+  v5.27.0 (Phase 2 H.5)
+- `.reviews/CARRY_FORWARD.md` — v5.25.0 → v5.27.0 closure rows
+  appended; new "Aggregate state entering v5.28.0 panel"
+  subsection (0 HIGH / 0 MEDIUM / ~5 LOW); arc closure summary
+  table updated (Phase 2 H.6)
+- `CLAUDE.md` — release-notes preamble entry for v5.28.0 added
+- `VERSION` — 5.27.0 → 5.28.0
+- README badges (en/es/pt/zh-CN) — version bumped via
+  `scripts/bump_version.py`
+
+### Fixed
+
+- (No code fixes shipped in v5.28.0; this is a panel-only release.
+  The arc graded fixed 4 LINK_FAIL goldens via Eu.1..Eu.4 in
+  v5.26.1, the i64/i1 codegen bug via Mb.7 in v5.26.0, the Win64
+  byval/byref MnString ABI via Mb.9 in v5.26.0, and the V.9
+  MnString lifecycle leak via Mb.1 in v5.23.1; all verified live
+  at v5.28.0 HEAD by the panel.)
+
+### Carry-forward (entering v5.28.x / v5.29.0+)
+
+- 0 HIGH, 0 MEDIUM, ~14 LOW (mostly process polish; see
+  `.reviews/v5.28.0/V5_DECISION.md` carry-forward table for full
+  list)
+- **Convergent recommendation (Cobra Cb.New1 + Rattler Ra.Inf1)**:
+  extend `tests/llvm/test_async_link.py` link-and-run pattern to
+  all 95 goldens via a new test_llvm_link_all module (Tn.\*
+  generalization). Closes the structural gap that hid Eu.1..Eu.4
+  for 3 releases. **Escalate to MEDIUM at v5.29.0 if not picked
+  up in a Pv.\* follow-on.**
+- v6.0 carry: Rt.04, Te.3 hard removal, single-line `if x: y`,
+  Stage2 teardown crash (Rattler Ra.New1 narrowed to
+  stdout-redirect-specific SIGSEGV — investigation now
+  tractable; consider closing in v5.29.0 rather than v6.0)
+
+**Cadence reset:** next routine panel due at **v5.33.0** (5
+minors past v5.28.0). See
+`docs/roadmap/v5/v5.28.0/SESSION_REPORT.md`,
+`.reviews/v5.28.0/V5_DECISION.md`, and
+`.reviews/v5.28.0/README.md`.
+
+
 ## [5.27.0] - 2026-05-02
 
 **Mc.8 + Mc.9 + Tk.1 — formatter polish; Mc.\* parity arc CLOSED.**
@@ -9243,7 +9390,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.27.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.28.0...HEAD
+[5.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.27.0...v5.28.0
 [5.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.1...v5.27.0
 [5.26.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.0...v5.26.1
 [5.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.25.0...v5.26.0
