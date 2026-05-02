@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.29.0] - 2026-05-02
+
+**Mb.10 + Pv.7 + Pv.8 — Win64 ABI closeout + CI race prevention.**
+Three findings, three fixes, one release. Reopens the Mb.* arc
+(declared closed at v5.26.1) for one residual Win64 ABI gap —
+`__mn_indent_to_braces` was the parent of the v5.26.0 Mb.9 brace-
+deprecation siblings, which got the byref routing fix; the parent
+itself was missed. Closes structurally this time. Adds two Pv.* items
+(Pv.7 + Pv.8) as continuation of v5.25.0's CI prevention infrastructure.
+Strict 3-stage fixed point preserved by construction at **241,898
+lines / 0 diff** (restored STRICT from v5.28.0's NEAR — the prior
+NEAR was a v5.9.0 DX.2 artifact from a stale stage1 binary linked
+against an older runtime version, not actual divergence). Goldens
+**95/95**.
+
+### Added
+
+- **Mb.10.C** (`tests/llvm/test_indent_to_braces_win64_abi.py`, 6
+  cases) — Win64 ABI regression contract for `__mn_indent_to_braces`.
+  IR-shape gates under `x86_64-w64-windows-gnu` triple via the
+  Python emitter (load-bearing); SysV negative gate; ctypes
+  contract against `runtime/native/mapanare_core.c` for runtime-side correctness.
+  Falsifiability round-trip verified — reverting the v5.23.1 Python
+  handler triggers the gate failure exactly matching the
+  publish-run-#50 anti-pattern (`call ... ({ptr, i64} %l.0)`).
+
+### Fixed
+
+- **Mb.10** (`mapanare/self/emit_llvm.mn`) — route
+  `__mn_indent_to_braces` through `emit_rt_call` for the same Win64
+  ABI byref-threshold reason as v5.26.0 Mb.9 routed the
+  brace-deprecation siblings. The Python emitter has had this
+  routing since v5.23.1 Mb.1 (`emit_llvm_text.py:3632`); the
+  self-host side was never updated, so stage2.ll emitted a by-value
+  call against a declare-as-`ptr` signature on Win64. gcc lowered
+  the call as pass-by-hidden-pointer with rcx pointing into the
+  struct's data buffer instead of into a valid `MnString` —
+  SIGSEGV on the first `source.len` read. Surfaced in publish
+  run #50 (`build-native (windows-latest, mnc-win-x64.exe,
+  x86_64-w64-mingw32)`). 3-LOC fix mirroring the Mb.9 routing
+  pattern at lines 3781-3786. Bb.* seed refresh: NOT required
+  (no C-runtime export changes). **Mb.\* arc CLOSED structurally**
+  (v5.26.0's claim was correct for Mb.7+Mb.9 but missed
+  `__mn_indent_to_braces`).
+
+- **Pv.7** (`Makefile`, **already shipped on dev as commit
+  `bc3bc7b`**) — `clean-build-test` race against parallel pytest
+  workers. Pre-fix, the `rm -f libmapanare_rt.a && make build-rt`
+  sequence in `clean-build-test` left a 1-3 second window where the
+  canonical archive was missing; under `pytest -n auto`, parallel
+  workers in `tests/bootstrap/` / `tests/llvm/` that link against
+  the archive could trip "no such file or directory" before the
+  rebuild completed. Fixed by parameterizing `build-rt` with
+  `RT_OUTPUT ?= runtime/native/libmapanare_rt.a`, rebuilding into a
+  sandbox path (`runtime/native/.libmapanare_rt.cbt-tmp.a`), then
+  atomic `mv -f` into the canonical path. Race-window evidence:
+  200-poll test at 20 ms cadence over the full 4-second rebuild
+  produced **0 MISSING reports**.
+
+- **Pv.8** (`tests/native/test_c_runtime.c`, **already shipped on
+  dev as commit `f119c43`**) — agent-state timing races in
+  `test_agent_pause_resume` and `test_agent_failing_handler`.
+  `mapanare_agent_pause()` is a guarded transition that silently
+  no-ops if the agent isn't yet RUNNING; the worker thread sets
+  state=RUNNING only after the OS schedules the new thread, and the
+  test's fixed `usleep(50000)` was sometimes insufficient under CI
+  load. 4 new polling helpers (`wait_for_agent_state`,
+  `wait_for_messages_processed`, `wait_for_agent_recv`,
+  `wait_for_counter` + `test_sleep_ms`); 7 fixed-delay sleeps
+  converted to bounded polls. Generous timeouts (1000 ms for state,
+  2000 ms for FAILED / messages-processed, 5000 ms for 500-task
+  pool stress) — returns on first match; only consumes the full
+  budget if the worker is genuinely stuck. Plain + ASan + TSan all
+  green; `gcc -O2 -g -pthread -Wall -Wextra -Werror` clean.
+
+
 ## [5.28.0] - 2026-05-02
 
 **RE-PANEL — v5.23.0 → v5.27.0 recovery + prevention + arc-closeout
@@ -9390,7 +9466,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.28.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.29.0...HEAD
+[5.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.28.0...v5.29.0
 [5.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.27.0...v5.28.0
 [5.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.1...v5.27.0
 [5.26.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.0...v5.26.1
