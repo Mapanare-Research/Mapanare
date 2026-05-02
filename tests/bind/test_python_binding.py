@@ -144,7 +144,13 @@ def test_so_exports_every_public_function(tmp_path: Path) -> None:
     so_path = out_dir / "libmath_lib.so"
     nm = subprocess.run(["nm", "--defined-only", str(so_path)], capture_output=True, text=True)
     assert nm.returncode == 0, nm.stderr
-    symbols = {line.split()[-1] for line in nm.stdout.splitlines() if line.strip()}
+    # macOS Mach-O prepends ``_`` to every external symbol; Linux ELF does not.
+    # Strip that prefix on Darwin so the assertion is platform-agnostic.
+    raw = {line.split()[-1] for line in nm.stdout.splitlines() if line.strip()}
+    if sys.platform == "darwin":
+        symbols = {s[1:] if s.startswith("_") else s for s in raw}
+    else:
+        symbols = raw
     for name in ("add", "multiply", "greet", "mn_main"):
         assert name in symbols, f"Expected {name!r} in {so_path}, got {sorted(symbols)}"
 
