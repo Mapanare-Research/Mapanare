@@ -274,6 +274,5 @@ def test_indent_to_braces_returns_valid_mnstring(
     assert actual_len > 0, f"empty output for non-empty src {src!r}"
     body = ctypes.string_at(out.data, actual_len) if out.data else b""
     assert must_contain in body, (
-        f"output for {src!r} does not contain {must_contain!r}: "
-        f"got {body!r}"
+        f"output for {src!r} does not contain {must_contain!r}: " f"got {body!r}"
     )

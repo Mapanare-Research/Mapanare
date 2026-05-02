@@ -18,6 +18,112 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.29.0** (ready, not tagged) — **Mb.10 + Pv.7 + Pv.8 —
+  Win64 ABI closeout + CI race prevention.** Three findings,
+  three fixes, one release. Reopens the **Mb.\*** arc (declared
+  closed at v5.26.1) for one residual Win64 ABI gap and closes
+  it **structurally** this time. **Strict 3-stage fixed point
+  preserved by construction at 241,898 lines / 0 diff** (24-
+  release strict streak; restored from v5.28.0's NEAR — the
+  prior NEAR was a v5.9.0 DX.2 artifact from a stale stage1
+  binary linked against a v5.27.0-vintage runtime, not actual
+  divergence). Goldens **95/95**. **Mb.10**: closes
+  publish-run-#50 Windows SIGSEGV in `__mn_indent_to_braces`.
+  Sister fix to v5.26.0 Mb.9 (which routed the brace-deprecation
+  siblings `__mn_count_user_brace_block_openers` and
+  `__mn_emit_brace_deprecation_warning` but missed the parent
+  function with the same Win64 ABI shape). Pre-fix mechanism:
+  `emit_mir_call`'s user-call fallthrough uses the 64-byte
+  `is_byref_type_st` threshold for arg classification; `MnString`
+  is 16 bytes, so on Win64 the call site emitted the struct by
+  value while `declare_runtime_fn` already declared the function
+  with `ptr` parameter via `win64_rewrite_decl_params` (8-byte
+  threshold). gcc lowered `MnString source` per Win64 ABI as
+  pass-by-hidden-pointer with rcx pointing into the struct's
+  data buffer instead of into a valid `MnString` — SIGSEGV on
+  the first `source.len` read. The Python emitter has had this
+  routing since v5.23.1 Mb.1 (`emit_llvm_text.py:3632`); the
+  self-host side was missed. The Mb.9 Python comment at
+  `mapanare/self/emit_llvm.mn:3778` even names the missing
+  routing as the pattern Mb.9 mirrored — but Mb.9's author only
+  added the routing for the brace-deprecation pair, not for the
+  parent function. Bug stayed latent because Linux/macOS publish
+  jobs hide the mismatch via SysV register-passing, and Windows
+  publish wasn't reaching the stage2-self-compile step for
+  v5.23.1 → v5.27.0 (failing earlier on other things). v5.28.0
+  RE-PANEL did not surface Mb.10 (test gap; covered by Tn.1
+  panel rec). 3-LOC fix in `mapanare/self/emit_llvm.mn` (12-line
+  block including explanatory comment) inserted after the Mb.9
+  brace-deprecation routing at line 3786, mirroring the same
+  shape — only the return type differs (`llvm_string()` i.e.
+  `{ptr, i64}` MnString here, vs `"i64"` for the counter).
+  `emit_rt_call` uses `win64_sarg_rewrite_args` (8-byte
+  threshold matching `win64_rewrite_decl_params`), producing
+  the correct `sret+sarg` shape on Win64 and a no-op on Linux
+  SysV. **Mb.10.C** new
+  `tests/llvm/test_indent_to_braces_win64_abi.py` (6 cases
+  mirrors v5.26.0 Mb.9.C's `test_brace_funcs_windows_abi.py`):
+  3 IR-shape gates under Win64 triple via the Python emitter
+  (load-bearing); 1 SysV negative gate pinning the by-value
+  shape so future emitter refactors don't accidentally rewrite
+  it; 3 ctypes contract cases against
+  `runtime/native/mapanare_core.c` for runtime-side correctness.
+  Falsifiability round-trip verified — reverting the v5.23.1
+  Python handler triggers the IR-shape gate failure exactly
+  matching the publish-run-#50 anti-pattern (`call ... ({ptr,
+  i64} %l.0)`). **Bb.\* seed refresh: NOT required** (no
+  C-runtime export changes; the v5.10.0-vintage seed has no
+  view of how `mnc-stage1` emits the call). **Pv.7**: closes
+  `clean-build-test` race against parallel `pytest -n auto`
+  workers. Pre-fix, the `rm -f libmapanare_rt.a && make
+  build-rt` sequence in `clean-build-test` left a 1-3 second
+  window where the canonical archive was missing; surfaced as
+  flake on `tests/bootstrap/test_chained_cmp_mirror.py`
+  (gw0 hit the race window). **Already shipped on dev as
+  commit `bc3bc7b`** between v5.28.0 and v5.29.0. Fix
+  parameterizes `build-rt` with `RT_OUTPUT ?=
+  runtime/native/libmapanare_rt.a`, rebuilds into a sandbox
+  path on the same filesystem (`runtime/native/.libmapanare_rt
+  .cbt-tmp.a`), then atomic `mv -f` into the canonical path.
+  Race-window evidence captured in v5.29.0 SESSION_REPORT:
+  200-poll watcher at 20 ms cadence over the full 4-second
+  rebuild produced **0 MISSING reports**. **Pv.8**: closes
+  agent-state timing races in `tests/native/test_c_runtime.c`'s
+  `test_agent_pause_resume` (`:712`) and
+  `test_agent_failing_handler` (`:738`). `mapanare_agent_pause()`
+  is a guarded transition that silently no-ops if the agent
+  isn't yet RUNNING; the worker thread sets state=RUNNING only
+  after the OS schedules the new thread, and the test's fixed
+  `usleep(50000)` was sometimes insufficient under CI load.
+  **Already shipped on dev as commit `f119c43`** between
+  v5.28.0 and v5.29.0 (the PROMPT/PLAN were drafted assuming
+  the fix was uncommitted; verified at Phase 0 that it had
+  landed cleanly). Fix adds 4 polling helpers
+  (`wait_for_agent_state`, `wait_for_messages_processed`,
+  `wait_for_agent_recv`, `wait_for_counter` + `test_sleep_ms`)
+  plus 7 fixed-delay sleeps converted to bounded polls
+  (`test_agent_lifecycle`, `test_agent_send_recv`,
+  `test_agent_pause_resume`, `test_agent_failing_handler`,
+  `test_agent_metrics`, `test_shutdown_with_agents`,
+  `test_pool_basic` + `test_pool_saturation`). Generous
+  timeouts (1000 ms for state, 2000 ms for FAILED /
+  messages-processed, 5000 ms for 500-task pool stress) —
+  returns on first match; only consumes the full budget if the
+  worker is genuinely stuck. Plain + ASan + TSan all green
+  (3/3); `gcc -O2 -g -pthread -Wall -Wextra -Werror` clean.
+  Pv.8.B (preemptive sweep of 11 same-shape sites in
+  `tests/native/test_agent_scheduler.py`) **deferred** to
+  v5.30.0+ if a flake materializes; reactive-only fix
+  discipline preserved. **Mb.\* arc CLOSED structurally** —
+  v5.26.0's "Mb.\* arc CLOSED" claim was strictly correct for
+  Mb.7+Mb.9 but missed `__mn_indent_to_braces`; v5.29.0 closes
+  the arc for real. Aggregate state entering v5.30.0: 0 HIGH /
+  1 MEDIUM (Tn.1 escalated per v5.28.0 panel directive — not
+  picked up here, deliberately deferred to keep Mb.10 scope
+  tight) / ~5 LOW. Cadence unchanged: next routine panel still
+  due v5.33.0. See `docs/roadmap/v5/v5.29.0/{SESSION_REPORT.md,
+  PLAN.md, AUDIT.md}`.
+
 - **v5.28.0** (ready, not tagged) — **RE-PANEL — v5.23.0 →
   v5.27.0 recovery + prevention + arc-closeout arc graded.**
   Panel-only release. **Zero compiler edits. Zero runtime edits.
