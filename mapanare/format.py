@@ -39,6 +39,8 @@ __all__ = [
     "to_terse",
     "to_braces",
     "to_terse_markdown",
+    "find_long_lines",
+    "sort_imports",
 ]
 
 
@@ -468,6 +470,15 @@ def to_terse(source: str) -> str:
             if opener.endswith("=>"):
                 out.append(f"{leading}{content}")
                 continue
+            # v5.27.0 Tk.1: expression-context empty literals (``#{}`` empty
+            # map, ``Foo {}`` empty struct, ``[]``-equivalent etc.) are NOT
+            # block openers. Apply the same statement-block-opener filter the
+            # ``endswith(" {")`` branch relies on (via the verbatim pre-pass)
+            # so ``let m: Map<K, V> = #{}`` survives ``to_terse`` unchanged
+            # rather than collapsing to ``let m: Map<K, V> = #:`` + ``pass``.
+            if not _looks_like_stmt_block_opener(opener):
+                out.append(f"{leading}{content}")
+                continue
             comma_body = any(opener.startswith(p) for p in _COMMA_BODY_OPENERS)
             out.append(f"{leading}{opener}:")
             inner_indent = leading + "    "
@@ -602,5 +613,122 @@ def to_terse_markdown(source: str) -> str:
 
         out.append(line)
         i += 1
+
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# v5.27.0 Mc.8 — long-line detection (detect-only).
+#
+# Mapanare's grammar is strictly single-line for all expressions: newlines
+# are not implicit continuations inside parens / brackets / braces. The
+# parser rejects every wrap shape — split arg lists, multi-line method
+# chains, multi-line operator chains. ``wrap_lines``-style automatic
+# rewriting therefore cannot satisfy ``Mc.2``'s AST-preservation
+# invariant under the v5.27.0 grammar.
+#
+# v5.27.0 closes Mc.8 honestly by shipping a *detector* — ``find_long_lines``
+# reports overlong lines without modifying source. The CLI surfaces them
+# as warnings (or failures under ``--check``); users can then refactor
+# manually. A future release that also adds newline-tolerant grammar
+# inside grouping delimiters can revisit auto-wrapping.
+# ---------------------------------------------------------------------------
+
+
+def find_long_lines(source: str, max_length: int = 100) -> list[tuple[int, int]]:
+    """Return ``[(line_no, length), ...]`` for lines exceeding ``max_length``.
+
+    Line numbers are 1-based. Trailing newline is excluded from the
+    length count. Strict inequality: a line of exactly ``max_length``
+    visible characters is NOT flagged.
+
+    Pure function. No I/O. Source-modification-free, so trivially
+    AST-preserving.
+    """
+    if max_length <= 0:
+        return []
+    out: list[tuple[int, int]] = []
+    for i, line in enumerate(source.split("\n"), start=1):
+        # ``split("\n")`` drops the trailing newline already; what
+        # remains is the visible content. Tabs are counted as one
+        # character — ``format_source`` normalizes leading tabs to
+        # 4 spaces, so by the time the detector runs (after fmt),
+        # the count is canonical.
+        if len(line) > max_length:
+            out.append((i, len(line)))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# v5.27.0 Mc.9 — import sort.
+#
+# Sorts contiguous ``import ...`` blocks alphabetically. The block
+# boundary is any non-import / non-comment line — including a blank
+# line — so the user's existing grouping (e.g. stdlib / third-party /
+# local separated by blanks) is preserved as the de-facto group
+# structure: each group sorts independently.
+#
+# Comments inside an import block (``// keep this first``) split the
+# block into sub-blocks; each sub-block sorts independently. This is
+# the conservative choice — a free-floating comment adjacent to a
+# specific import would otherwise drift to a different import after
+# sorting, which is a silent semantics change for human readers.
+#
+# AST preservation: Mapanare's import resolution is order-insensitive
+# for the shapes the corpus uses (``import path::sub``). The sort
+# preserves the multiset of imports; ``parse(src)`` and
+# ``parse(sort_imports(src))`` produce ASTs that differ only in
+# ``ImportDecl`` declaration order — verified by
+# ``tests/test_format_imports.py`` over the corpus.
+# ---------------------------------------------------------------------------
+
+
+def _is_import_line(line: str) -> bool:
+    """Return True iff ``line`` is a top-level ``import`` statement.
+
+    Recognizes the ``KW_IMPORT NAME (DOUBLE_COLON NAME)*`` shape and the
+    optional ``{ items }`` selector tail. Whitespace-tolerant: a line
+    with leading spaces/tabs is NOT an import (only top-level imports
+    are sorted; nested ``import`` inside a block is not a thing in
+    Mapanare today, but the indentation guard makes the check robust
+    if the grammar grows there).
+    """
+    stripped = line.lstrip()
+    if stripped != line:
+        return False  # indented — not a top-level import
+    return stripped.startswith("import ")
+
+
+def sort_imports(source: str) -> str:
+    """Sort contiguous top-level ``import`` blocks alphabetically.
+
+    Block boundaries are any non-import line (blank, comment, or other
+    statement). Each contiguous run of imports is sorted in place;
+    blank-line groupings between runs are preserved. Idempotent.
+
+    AST-preserving up to ``ImportDecl`` declaration order — Mapanare's
+    import resolution does not depend on source order for the shapes
+    the corpus uses.
+    """
+    if not source:
+        return source
+
+    lines = source.split("\n")
+    out: list[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        if _is_import_line(lines[i]):
+            # Collect contiguous imports — stop at any non-import line.
+            block_start = i
+            while i < n and _is_import_line(lines[i]):
+                i += 1
+            # Stable sort by full line text (case-sensitive ASCII order
+            # — matches how the corpus is already grouped).
+            block = sorted(lines[block_start:i])
+            out.extend(block)
+        else:
+            out.append(lines[i])
+            i += 1
 
     return "\n".join(out)

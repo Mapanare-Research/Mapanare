@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.27.0] - 2026-05-02
+
+**Mc.8 + Mc.9 + Tk.1 — formatter polish; Mc.\* parity arc CLOSED.**
+Three formatter / rewriter polish items shipping together because
+they all live in `mapanare/format.py` and ship without compiler
+edits. Closes the v5.13.0 Mc.\* parity gap docket (Mc.8 + Mc.9,
+12-release carry each) and the v5.24.1 Wd.2 latent rewriter bug
+(Tk.1, 3-release carry). **Strict 3-stage fixed point preserved
+by construction at 241,842 lines / 0 diff** (23-release strict
+streak — same line count as v5.26.1 because zero
+`mapanare/self/*.mn` source edits in v5.27.0). Goldens **95/95**.
+
+### Added
+
+- **Mc.8** `mapanare fmt --line-length N` / `mnc fmt --line-length
+  N` — **detect-only** long-line reporter. Pure read-only scan;
+  never modifies source. In default mode reports lines exceeding
+  `N` chars on stderr; under `--check` causes a non-zero exit so
+  CI gates can enforce a ceiling. `N=0` (the default) disables
+  the check. Phase 0 surfaced that Mapanare's grammar is strictly
+  single-line for all expressions — newlines are not implicit
+  continuations inside `(`/`[`/`{`/`#{` — so an auto-wrap rewriter
+  cannot satisfy the v5.13.0 Mc.2 AST-preservation invariant.
+  v5.27.0 closes Mc.8 honestly by shipping the detector;
+  auto-wrap is rescoped to a future release that also adds
+  newline-tolerant grammar inside grouping delimiters.
+- **Mc.9** `mapanare fmt --sort-imports` / `mnc fmt --sort-imports`
+  — sorts contiguous top-level `import` blocks alphabetically.
+  Block boundaries are any non-import line (blank, comment, or
+  other statement), so the user's existing groupings (e.g.
+  stdlib / third-party / local separated by blanks) function as
+  the de-facto group structure: each group sorts independently.
+  Comments inside an import block split the surrounding block
+  into sub-blocks. Idempotent. AST-preserving up to `ImportDecl`
+  declaration order.
+- New `mapanare/format.py::find_long_lines(source, max_length)` —
+  pure function returning `[(line_no, length), ...]` for lines
+  strictly exceeding `max_length`.
+- New `mapanare/format.py::sort_imports(source)` — pure function
+  performing the import-block sort.
+- New `tests/test_format_wrap.py` (19 tests — 14 unit + 5 CLI).
+- New `tests/test_format_imports.py` (24 tests — 13 unit + 2 AST
+  preservation + 3 CLI + 5 idempotence fixtures + 1 corpus check
+  on `mapanare/self/main.mn`).
+- 4 new tests in `tests/test_colon_blocks.py` and
+  `tests/test_format.py` for Tk.1.
+- `docs/guides/formatter.md` extended with `--sort-imports` and
+  `--line-length` sections including the conservative ruleset.
+
+### Changed
+
+- `mapanare fmt` now accepts `--line-length N` and `--sort-imports`
+  flags (additive on top of the existing transformers).
+- `mnc fmt` (native dispatch) forwards the new flags via the
+  existing argv-forwarding loop in `mapanare/self/main.mn` —
+  **zero `mapanare/self/*.mn` source edits**.
+
+### Fixed
+
+- **Tk.1**: `mapanare/format.py::to_terse` — empty `#{}` map
+  literals (and empty `Foo {}` struct literals) now survive the
+  `--to-terse` rewrite verbatim. Pre-fix, the rewriter
+  unconditionally collapsed any line ending in `{}` to a
+  colon-block opener plus an indented `pass`, producing
+  grammatically invalid output for expression-context empty
+  literals (e.g., `let m: Map<String, Int> = #{}` → `let m:
+  Map<String, Int> = #:` + `pass`). Surgical 6-LOC fix gates the
+  rewrite on `_looks_like_stmt_block_opener`, mirroring the
+  guard the `endswith(" {")` branch relies on via
+  `_find_match_verbatim_lines`. v5.24.1 Wd.2 sidestepped this
+  bug by leaving SPEC §17.1 unrewritten; with Tk.1 fixed,
+  `to_terse_markdown(SPEC.md)` is now safe to run end-to-end.
+- Cadence-gate fire (v5.24.0 Hy.3): `scripts/check_cadence.py`
+  fires hard at v5.27.0 HEAD (5+ minor versions since v5.22.0
+  panel). **Acknowledged and informational** — the v5.28.0
+  RE-PANEL closes the cadence gap one minor late on purpose;
+  bundling formatter polish with a panel cycle was rejected
+  during PLAN drafting.
+
+
 ## [5.26.1] - 2026-05-02
 
 **Eu.1..Eu.4 — close v5.26.0-deferred LINK_FAIL bug classes; Eu.\*
@@ -9163,7 +9243,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.27.0...HEAD
+[5.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.1...v5.27.0
 [5.26.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.0...v5.26.1
 [5.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.25.0...v5.26.0
 [5.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...v5.25.0

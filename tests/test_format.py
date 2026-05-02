@@ -313,6 +313,19 @@ class TestMarkdownRewriter:
         assert "fn b() {" in out
         assert "fn b():" not in out
 
+    # v5.27.0 Tk.1 — empty-map literals inside ``mn`` fences must
+    # survive ``to_terse_markdown`` unchanged. Pre-fix the rewriter
+    # collapsed ``let empty: Map<String, Int> = #{}`` to ``let
+    # empty: Map<String, Int> = #:`` plus an indented ``pass``,
+    # producing grammatically invalid markdown that the v5.24.1 Wd.2
+    # rollout sidestepped by leaving SPEC §17.1 unrewritten.
+    def test_empty_map_literal_preserved_in_fence(self) -> None:
+        src = "```mn\n" 'let ages = #{"Alice": 30}\n' "let empty: Map<String, Int> = #{}\n" "```\n"
+        out = to_terse_markdown(src)
+        assert "let empty: Map<String, Int> = #{}" in out
+        assert "= #:" not in out
+        assert "pass" not in out
+
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(

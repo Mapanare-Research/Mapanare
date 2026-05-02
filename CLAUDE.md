@@ -18,6 +18,70 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.27.0** (ready, not tagged) — **Mc.8 + Mc.9 + Tk.1 —
+  formatter polish; Mc.\* parity arc CLOSED.** Three formatter /
+  rewriter polish items shipping together because they all live
+  in `mapanare/format.py` and ship without compiler edits. Closes
+  the v5.13.0 Mc.\* parity gap docket (Mc.8 + Mc.9, 12-release
+  carry each) and the v5.24.1 Wd.2 latent rewriter bug (Tk.1,
+  3-release carry). **Strict 3-stage fixed point preserved by
+  construction at 241,842 lines / 0 diff** (23-release strict
+  streak — same line count as v5.26.1 because zero
+  `mapanare/self/*.mn` source edits in v5.27.0; the existing
+  argv-forwarding loop in `main.mn` carries the new flags through
+  the native dispatch unchanged). Goldens **95/95**. **Mc.8**
+  (`mapanare fmt --line-length N`): **detect-only** long-line
+  reporter. Phase 0 surfaced that Mapanare's grammar is strictly
+  single-line for all expressions — newlines are not implicit
+  continuations inside `(`/`[`/`{`/`#{` — so an auto-wrap
+  rewriter cannot satisfy the v5.13.0 Mc.2 AST-preservation
+  invariant. Pure read-only scan; never modifies source; default
+  mode reports overlong lines on stderr; under `--check` causes a
+  non-zero exit so CI gates can enforce the ceiling; `N=0` (the
+  default) disables the check. Auto-wrap rescoped to a future
+  release that also adds newline-tolerant grammar inside grouping
+  delimiters. **Mc.9** (`mapanare fmt --sort-imports`): sorts
+  contiguous top-level `import` blocks alphabetically. Block
+  boundaries are any non-import line (blank, comment, or other
+  statement), so the user's existing groupings (e.g. stdlib /
+  third-party / local separated by blanks) function as the
+  de-facto group structure: each group sorts independently.
+  Comments inside an import block split the surrounding block
+  into sub-blocks — neither side reorders across the comment.
+  Idempotent. AST-preserving up to `ImportDecl` declaration
+  order; load-bearing corpus check sorts the 8-import block in
+  `mapanare/self/main.mn` and asserts `ImportDecl` multiset
+  preservation. **Tk.1** (`to_terse` empty `#{}` rewriter bug):
+  surgical 6-LOC fix in `mapanare/format.py::to_terse` —
+  `endswith("{}")` branch now applies the same
+  `_looks_like_stmt_block_opener` filter the `endswith(" {")`
+  branch relies on via `_find_match_verbatim_lines`, so
+  expression-context empty literals (`let m: Map<String, Int> =
+  #{}`, `let p = Point {}`) survive verbatim instead of
+  collapsing to grammatically invalid `... = #:` + indented
+  `pass`. v5.24.1 Wd.2 sidestepped this latent bug by leaving
+  SPEC §17.1 unrewritten; with Tk.1 fixed, `to_terse_markdown
+  (SPEC.md)` is now safe to run end-to-end. Falsifiability
+  round-trip verified: 3 unit tests (`test_to_terse_preserves_
+  empty_map_literal`, `test_to_terse_empty_map_literal_idempotent`,
+  `test_to_terse_preserves_empty_struct_literal`) all fail on
+  pre-fix `format.py` with the exact pre-fix bug shape; all 3
+  pass after the fix. **Source delta:** Python only —
+  `mapanare/format.py` ~95 LOC (Tk.1 ~6 + `find_long_lines` ~30
+  + `sort_imports` ~50 + `__all__`); `mapanare/cli.py` ~30 LOC
+  (argparse + per-file detector wiring); 4 new test files /
+  extensions (~525 LOC tests, 47 new test cases); ~90 LOC docs
+  in `docs/guides/formatter.md`. **Cadence-gate hard fire**:
+  `scripts/check_cadence.py` fires hard at v5.27.0 HEAD (5+
+  minor versions since v5.22.0 panel). **Acknowledged and
+  informational** — the v5.28.0 RE-PANEL closes the cadence gap
+  one minor late on purpose; bundling formatter polish with a
+  panel cycle was rejected during PLAN drafting (formatter work
+  is the wrong scope to mix with a panel review cycle).
+  **Mc.\* parity arc CLOSED** — every Mc.\* item from the
+  v5.13.0 parity gap docket is now resolved. See
+  `docs/roadmap/v5/v5.27.0/SESSION_REPORT.md` and `PLAN.md`.
+
 - **v5.26.1** (ready, not tagged) — **Eu.1..Eu.4 — close
   v5.26.0-deferred LINK_FAIL bug classes; Eu.\* arc closeout.**
   Four small-but-distinct codegen / lowering fixes that move

@@ -27,8 +27,13 @@ In order:
   already 4-space indented; v5.13.0 codifies that without enforcing
   it line-by-line).
 - Rewrite expressions, calls, or operator spacing.
-- Sort or rewrite `import` statements.
-- Wrap long lines.
+- ~~Sort or rewrite `import` statements.~~ **As of v5.27.0 (Mc.9)**:
+  `--sort-imports` sorts contiguous top-level `import` blocks
+  alphabetically. See below.
+- ~~Wrap long lines.~~ **As of v5.27.0 (Mc.8)**: `--line-length N`
+  is detect-only — long lines are reported on stderr but the source
+  is never modified, because Mapanare's grammar rejects multi-line
+  expressions. See below.
 - Add or remove trailing commas in struct/list/map literals.
 - Reformat comments — `//`, `///`, and `/* */` are preserved verbatim.
 - Migrate `{}` blocks to `:` blocks — that is **v5.14.0 (Te.1)**, via
@@ -37,15 +42,92 @@ In order:
 ## CLI
 
 ```text
-mnc fmt <path>...               # format .mn files (in place)
-mnc fmt <dir>                   # recursively format every .mn under a directory
-mnc fmt --check <path>...       # exit 1 if any file would change; do not write
-mnc fmt --stdout <path>         # print formatted output to stdout
+mnc fmt <path>...                # format .mn files (in place)
+mnc fmt <dir>                    # recursively format every .mn under a directory
+mnc fmt --check <path>...        # exit 1 if any file would change; do not write
+mnc fmt --stdout <path>          # print formatted output to stdout
+mnc fmt --to-terse <path>        # migrate {} blocks to colon blocks (v5.14.0)
+mnc fmt --to-braces <path>       # migrate colon blocks to {} blocks (v5.14.0)
+mnc fmt --keep-braces <path>     # whitespace-only; suppress {}->colon auto-migration
+mnc fmt --sort-imports <path>    # sort contiguous top-level import blocks (v5.27.0)
+mnc fmt --line-length N <path>   # report lines exceeding N chars on stderr (v5.27.0)
 ```
 
 `mapanare fmt` accepts the same flags. Both refuse to format a file
 that fails to parse (exits 1 with the usual diagnostic so you can
 fix the syntax error before the formatter rewrites anything).
+
+### `--sort-imports` (v5.27.0 Mc.9)
+
+Sorts contiguous top-level `import` blocks alphabetically. Block
+boundaries are any non-import line — blank lines, comments, or
+other top-level declarations — so the user's existing groupings are
+preserved as the de-facto group structure. Each contiguous run of
+imports sorts independently; blank-line separators between groups
+stay put.
+
+```mn
+// before
+import self::mir
+import self::ast
+import self::lower
+
+import stdlib::math
+import stdlib::io
+
+// after `mnc fmt --sort-imports`
+import self::ast
+import self::lower
+import self::mir
+
+import stdlib::io
+import stdlib::math
+```
+
+A comment between two imports splits the surrounding block into two
+sub-blocks; neither side reorders across the comment. This keeps
+intentional adjacency comments (e.g. `// keep this first`) attached
+to the imports they describe.
+
+The pass is idempotent and AST-preserving: Mapanare's import
+resolution does not depend on source order for the shapes the
+corpus uses, so the resulting AST has the same `ImportDecl`
+multiset, just sorted.
+
+### `--line-length N` (v5.27.0 Mc.8 — detect-only)
+
+Reports every line that exceeds `N` characters on stderr. Under
+`--check`, the presence of any overlong line causes a non-zero exit
+so CI gates can enforce the ceiling. **The source is never modified
+by `--line-length`**, regardless of mode.
+
+This is detect-only because Mapanare's grammar is strictly
+single-line for all expressions: newlines are not implicit
+continuations inside parens, brackets, or braces. The parser rejects
+every wrap shape (split arg list at comma, multi-line method chain
+at dot, multi-line `&&` / `||` / `|>` operator chain), so an
+auto-wrapping rewriter would necessarily break the v5.13.0 Mc.2
+**AST-preservation** invariant. v5.27.0 closes Mc.8 honestly by
+shipping the detector now and deferring auto-wrap to a future
+release that also adds newline-tolerant grammar inside grouping
+delimiters.
+
+```bash
+# CI gate: refuse a PR that introduces lines over 100 chars
+mnc fmt --check --line-length 100 mapanare/self/ tests/golden/
+
+# Local survey
+mnc fmt --line-length 100 mapanare/self/ 2>&1 | grep "exceeds"
+
+# Disabled: --line-length 0 (the default) skips the check entirely
+mnc fmt --line-length 0 mapanare/self/
+```
+
+Refactoring an overlong line is up to the user — split the
+expression into intermediate `let` bindings, extract a helper
+function, or shorten an identifier. Mapanare's design preference is
+that an expression that does not fit on one line is asking to be
+named.
 
 ### Examples
 

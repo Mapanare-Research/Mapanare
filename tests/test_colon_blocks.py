@@ -108,6 +108,34 @@ class TestToTerseRules:
         assert "fn empty():" in out
         assert "pass" in out
 
+    # v5.27.0 Tk.1 — empty-map literal preservation. The pre-fix
+    # rewriter unconditionally treated any line ending in ``{}`` as
+    # an empty-block opener, collapsing ``let m = #{}`` to ``let m =
+    # #:`` plus an indented ``pass`` (grammatically invalid). The fix
+    # gates the block-opener rewrite on
+    # ``_looks_like_stmt_block_opener`` so expression-context empty
+    # literals survive unchanged.
+    def test_to_terse_preserves_empty_map_literal(self) -> None:
+        src = "let m: Map<String, Int> = #{}\n"
+        out = to_terse(src)
+        assert out == src
+        assert "#:" not in out
+        assert "pass" not in out
+
+    def test_to_terse_empty_map_literal_idempotent(self) -> None:
+        src = "let m: Map<String, Int> = #{}\n"
+        once = to_terse(src)
+        twice = to_terse(once)
+        assert once == twice == src
+
+    def test_to_terse_preserves_empty_struct_literal(self) -> None:
+        # Expression-context ``Foo {}`` is also caught by the same
+        # filter — empty struct literals must survive intact.
+        src = "let p = Point {}\n"
+        out = to_terse(src)
+        assert out == src
+        assert "pass" not in out
+
     def test_idempotent(self) -> None:
         src = "fn f() {\n    if x {\n        return 1\n    }\n}\n"
         once = to_terse(src)

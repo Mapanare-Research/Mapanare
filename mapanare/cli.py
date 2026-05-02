@@ -16,7 +16,14 @@ from mapanare.diagnostics import (
     format_diagnostic,
     format_summary,
 )
-from mapanare.format import format_source, to_braces, to_terse, to_terse_markdown
+from mapanare.format import (
+    find_long_lines,
+    format_source,
+    sort_imports,
+    to_braces,
+    to_terse,
+    to_terse_markdown,
+)
 from mapanare.mir_opt import MIROptLevel as OptLevel
 from mapanare.modules import ModuleResolver
 from mapanare.parser import ParseError, parse, parse_recovering
@@ -410,6 +417,9 @@ def cmd_fmt(args: argparse.Namespace) -> None:
     explicit_terse = bool(getattr(args, "to_terse", False))
     explicit_braces = bool(getattr(args, "to_braces", False))
     keep_braces = bool(getattr(args, "keep_braces", False))
+    # v5.27.0 Mc.8 / Mc.9 — additive options.
+    line_length = int(getattr(args, "line_length", 0) or 0)
+    do_sort_imports = bool(getattr(args, "sort_imports", False))
 
     if explicit_terse:
         transformer: Callable[[str], str] = to_terse
@@ -508,7 +518,27 @@ def cmd_fmt(args: argparse.Namespace) -> None:
             file_transformer = transformer
 
         formatted = file_transformer(source)
+        # v5.27.0 Mc.9 — sort imports as an additive pass after the
+        # primary transformer. Pure text-level sort; idempotent.
+        if do_sort_imports:
+            formatted = sort_imports(formatted)
+
+        # v5.27.0 Mc.8 — long-line detection. Pure read-only scan; the
+        # source is never modified. Reported on stderr; long lines under
+        # --check cause a non-zero exit so CI gates can enforce the
+        # ceiling.
+        long_lines: list[tuple[int, int]] = []
+        if line_length > 0:
+            long_lines = find_long_lines(formatted, line_length)
+            for line_no, length in long_lines:
+                print(
+                    f"{path}:{line_no}: line exceeds {line_length} chars ({length})",
+                    file=sys.stderr,
+                )
+
         if formatted == source:
+            if args.check and long_lines:
+                changed.append(path)
             continue
         changed.append(path)
 
@@ -1957,6 +1987,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="keep_braces",
         help="Suppress automatic {}->colon migration (whitespace-only formatting)",
+    )
+    # v5.27.0 Mc.8 — long-line detection (detect-only).
+    # Mapanare's grammar rejects multi-line expressions, so automatic
+    # wrapping cannot satisfy the AST-preservation invariant. ``--line-length``
+    # reports overlong lines on stderr and (under ``--check``) treats them as
+    # a check failure; the source is never modified.
+    p_fmt.add_argument(
+        "--line-length",
+        type=int,
+        default=0,
+        metavar="N",
+        dest="line_length",
+        help="Report lines exceeding N characters (default: 0 = disabled)",
+    )
+    # v5.27.0 Mc.9 — sort top-level import blocks alphabetically.
+    p_fmt.add_argument(
+        "--sort-imports",
+        action="store_true",
+        dest="sort_imports",
+        help="Sort contiguous top-level import blocks alphabetically",
     )
     p_fmt.set_defaults(func=cmd_fmt)
 
