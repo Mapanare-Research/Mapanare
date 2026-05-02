@@ -115,7 +115,7 @@ Referencia completa, tutoriales y recetario en [mapanare.dev/docs](https://mapan
 
 ### Compilador nativo — lo que envia `mnc-stage1`
 
-El compilador auto-hospedado corre el corpus completo de v5.21.0 (95/95 goldens nativos):
+El compilador auto-hospedado corre el corpus completo de v5.27.0 (95/95 goldens nativos):
 
 - **Tensores** — literales, indexacion multi-dim, broadcasting estilo NumPy, slicing, reducciones (sum / mean / max / min / argmax / argmin).
 - **Async / await / `block_on`** — corrutinas LLVM reales (`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`) con suspension dirigida por el scheduler.
@@ -124,7 +124,9 @@ El compilador auto-hospedado corre el corpus completo de v5.21.0 (95/95 goldens 
 - **Drop-glue para ownership** — lifetimes de string / list / boxed / tensor rastreados en rutas de retorno y bucles; valgrind / ASan / LSan / TSan todos limpios en el corpus.
 - **Sintaxis terse (arco v5.13–v5.21)** — bloques con dos puntos (Te.1), comprensiones de listas/mapas y lambdas terse (Te.2), interpolacion de strings auto-hospedada (Te.4), ergonomia de structs (Te.5: shorthand de campos, `..base`, destructuring, if-let / while-let / let-else), comparaciones encadenadas (Te.6: `0 < x < 10`).
 
-Punto fijo auto-hospedado de 3 etapas: STRICT (stage2.ll == stage3.ll byte-identical en 238,086 lineas; restaurado v5.9.0; mantenido a traves de la reescritura mecanica de llaves a dos puntos en v5.17.0, la ergonomia de structs en v5.20.0, y las comparaciones encadenadas en v5.21.0 — racha mas larga en la historia del proyecto: 13 lanzamientos consecutivos). Compilador auto-hospedado encogio **-3,950 lineas (-13.8%)** desde v5.13.0 via la reescritura Sh.\* sin romper el punto fijo.
+Punto fijo auto-hospedado de 3 etapas: STRICT (stage2.ll == stage3.ll byte-identical en 241,842 lineas; restaurado v5.9.0; mantenido a traves de la reescritura mecanica de llaves a dos puntos en v5.17.0, la ergonomia de structs en v5.20.0, las comparaciones encadenadas en v5.21.0, la recuperacion CI en v5.23.0, el espejo bootstrap de deprecacion de llaves en v5.23.2, las puertas Hy.\* de higiene en v5.24.0, la infraestructura Pv.\* de prevencion en v5.25.0, las correcciones de codegen Mb.7 + Win64 ABI Mb.9 en v5.26.0, los cierres Eu.\* de payload de enum en v5.26.1, y el cierre del arco Mc.\* en v5.27.0 — racha mas larga en la historia del proyecto: 23 lanzamientos consecutivos). Compilador auto-hospedado encogio **-2,285 lineas (-8.18%)** neto de v5.13.0 → v5.21.1 via la reescritura Sh.\* sin romper el punto fijo.
+
+Arco de recuperacion + prevencion v5.23–v5.27: 8 lanzamientos cerrando los 4 HIGH + 8 MEDIUM del docket panel v5.22.0 + cerrando los arcos Mb.\* / Mc.\* / Eu.\* + 4 goldens previamente LINK_FAIL (47/48/49/51) ahora PASS via Eu.1..Eu.4 (v5.26.1).
 
 ---
 

@@ -172,7 +172,7 @@ Full language reference, tutorials, and cookbook at [mapanare.dev/docs](https://
 
 ### Native compiler — what `mnc-stage1` ships
 
-The self-hosted compiler runs the full corpus (95/95 native goldens at v5.21.0):
+The self-hosted compiler runs the full corpus (95/95 native goldens at v5.27.0):
 
 - **Tensors** — literals, multi-dim indexing, NumPy-style broadcasting, slicing, reductions (sum / mean / max / min / argmax / argmin).
 - **Async / await / `block_on`** — real LLVM coroutines (`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`) with scheduler-driven suspension.
@@ -180,7 +180,7 @@ The self-hosted compiler runs the full corpus (95/95 native goldens at v5.21.0):
 - **Or-pattern matching with guards** — `Plus | Minus if cond => body` over enum variants and built-in constructors (`None` / `Some` / `Ok` / `Err`).
 - **Drop-glue ownership tracking** — string / list / boxed / tensor lifetimes tracked through return paths and loop iterations; valgrind / ASan / LSan / TSan all clean on the corpus.
 
-Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 239k lines; restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata diff at the source; held through v5.17.0's mechanical brace → colon rewrite, v5.20.0's struct ergonomics, v5.21.0's chained comparisons, v5.23.0's CI recovery, and v5.23.2's bootstrap brace-deprecation mirror — longest streak in project history at 17 consecutive releases).
+Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 241k lines; restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata diff at the source; held through v5.17.0's mechanical brace → colon rewrite, v5.20.0's struct ergonomics, v5.21.0's chained comparisons, v5.23.0's CI recovery, v5.23.2's bootstrap brace-deprecation mirror, v5.24.0's Hy.\* hygiene gates, v5.25.0's Pv.\* prevention infrastructure, v5.26.0's Mb.7 codegen fix + Mb.9 Win64 ABI, v5.26.1's Eu.\* enum-payload closures, and v5.27.0's Mc.\* parity arc closeout — longest streak in project history at 23 consecutive releases).
 
 ---
 
@@ -193,8 +193,8 @@ Geometric mean across 6 cross-language benchmarks (median of 10 runs):
 | **Mapanare** | **168x faster** | 0.85x (faster) | 1.17x | 0.96x |
 
 The self-hosted compiler compiles itself to a strict 3-stage fixed
-point (stage2.ll == stage3.ll byte-identical at 239k lines; strict
-since v5.9.0, held through 14 consecutive releases — see "Native
+point (stage2.ll == stage3.ll byte-identical at 241k lines; strict
+since v5.9.0, held through 23 consecutive releases — see "Native
 compiler" above). 5,800+ tests passing, zero flaky across 40+
 sequential runs.
 

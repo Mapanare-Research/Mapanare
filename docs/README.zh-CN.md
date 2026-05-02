@@ -115,7 +115,7 @@ let answer = ask(ollama("llama3.2"), "什么是Mapanare?")
 
 ### 原生编译器 — `mnc-stage1` 提供的功能
 
-自托管编译器可运行完整的 v5.21.0 测试集（95/95 原生 goldens）：
+自托管编译器可运行完整的 v5.27.0 测试集（95/95 原生 goldens）：
 
 - **张量** — 字面量、多维索引、NumPy 风格广播、切片、归约（sum / mean / max / min / argmax / argmin）。
 - **Async / await / `block_on`** — 真正的 LLVM 协程（`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`），由调度器驱动挂起。
@@ -124,7 +124,9 @@ let answer = ask(ollama("llama3.2"), "什么是Mapanare?")
 - **所有权 Drop-glue** — string / list / boxed / tensor 生命周期在返回路径和循环迭代中被跟踪；valgrind / ASan / LSan / TSan 在测试集上全部干净。
 - **简洁语法（v5.13–v5.21 弧线）** — 冒号块（Te.1）、列表/映射推导式与简洁 lambda（Te.2）、自托管字符串插值（Te.4）、结构体人体工学（Te.5：字段简写、`..base`、解构、if-let / while-let / let-else）、链式比较（Te.6：`0 < x < 10`）。
 
-自托管 3 阶段不动点：STRICT（stage2.ll 与 stage3.ll 在 238,086 行字节级一致；v5.9.0 恢复；经 v5.17.0 大括号→冒号机械重写、v5.20.0 结构体人体工学和 v5.21.0 链式比较保持不变 —— 项目历史上最长连续记录：连续 13 个版本）。自托管编译器自 v5.13.0 起通过 Sh.\* 重写收缩了 **-3,950 行 (-13.8%)**，且未破坏不动点。
+自托管 3 阶段不动点：STRICT（stage2.ll 与 stage3.ll 在 241,842 行字节级一致；v5.9.0 恢复；经 v5.17.0 大括号→冒号机械重写、v5.20.0 结构体人体工学、v5.21.0 链式比较、v5.23.0 CI 恢复、v5.23.2 引导大括号弃用镜像、v5.24.0 Hy.\* 卫生闸门、v5.25.0 Pv.\* 预防基础设施、v5.26.0 Mb.7 代码生成修复 + Mb.9 Win64 ABI、v5.26.1 Eu.\* 枚举载荷闭合，以及 v5.27.0 Mc.\* 对等弧闭合后保持不变 —— 项目历史上最长连续记录：连续 23 个版本）。自托管编译器从 v5.13.0 → v5.21.1 净缩减 **-2,285 行 (-8.18%)** 通过 Sh.\* 重写，且未破坏不动点。
+
+v5.23–v5.27 恢复 + 预防弧：8 个版本关闭了 v5.22.0 面板 docket 中的 4 HIGH + 8 MEDIUM + 关闭了 Mb.\* / Mc.\* / Eu.\* 弧 + 4 个先前 LINK_FAIL 的 golden（47/48/49/51）现在通过 Eu.1..Eu.4 (v5.26.1) 全部 PASS。
 
 ---
 
