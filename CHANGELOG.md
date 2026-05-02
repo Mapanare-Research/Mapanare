@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.25.0] - 2026-05-02
+
+**Pv.\* — CI prevention infrastructure.** First release in the new
+**Pv.\*** sub-arc (structural pattern parallel to v5.24.0's
+**Hy.\***). Closes the class of failure where a CI-only test path
+catches a bug that could have been caught locally — typically
+because (a) a stale local artifact masks the bug on the developer
+machine, (b) a feature ships without an end-to-end test exercising
+it through the .mn-caller side, or (c) a test asset only runs on a
+non-Windows CI job. **Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+preserved by construction at **239,835 lines / 0 diff** (20-release
+strict streak; same line count as v5.24.1 because no source under
+`mapanare/self/` changed). Goldens **95/95**.
+
+### Added
+
+- **Pv.1** — `tests/test_runtime_lib_lookup.py` (3 cases) locks
+  `mapanare.test_runner._find_runtime_lib()` against re-introduction
+  of the v3.x-era `libmapanare_core.*` candidate names. Sweeps any
+  stale shadow artifacts before the lookup, asserts canonical name
+  resolution, and end-to-end links a tiny IR fragment that
+  references `__mn_str_eq` against whatever archive the lookup
+  returns. Falsifiability round-trip documented in the module
+  docstring.
+- **Pv.2** — `tests/bootstrap/test_preprocess_memcheck.py` (3
+  parameterized cases) runs `mnc-stage1 preprocess` on brace-only
+  / colon-only / mixed fixtures under valgrind. Locks
+  `runtime/native/mapanare_core.c::__mn_indent_to_braces`'s
+  brace-only fast-path against MnString-aliasing regressions: the
+  original double-free pre-fix surfaces as `Invalid free` on the
+  brace-only fixture. Mirrors v5.23.1 Mb.3's grep-for-symbol
+  pattern rather than `--error-exitcode=1` so the pre-existing
+  `__mn_argv` single-shot leak (known since v5.23.1) doesn't
+  poison the assertion.
+- **Pv.3** — `make ci-gates` extension: new `clean-build-test`
+  sub-gate (9 sub-gates total, up from 8). Removes
+  `runtime/native/libmapanare_*.{a,so,dylib,dll}`, runs `make
+  build-rt`, then runs `pytest tests/test_at_test_runtime.py
+  tests/test_runtime_lib_lookup.py`. Catches the runtime-archive
+  rename / relocation class structurally before any PR lands.
+- **Pv.4** — `scripts/validate_wsl.sh` runs the Linux pytest path
+  end-to-end (`make build-rt` + python3 `scripts/build_stage1.py`
+  + `pytest tests/ -x -n auto`). New `dev.ps1 validate-wsl` mode
+  shells out via `wsl -d Ubuntu` so a Windows host can produce the
+  Linux pytest signal without leaving the dev loop. Optional
+  pre-push hook at `scripts/hooks/pre-push.sample` (commented
+  opt-in; not enabled by default — running the full suite on every
+  push is the dev's call, not a forced policy).
+- **Pv.6** — `tests/test_publish_smoke_fixtures.py` (2 cases)
+  extracts every inline .mn fixture from
+  `.github/workflows/publish.yml` (5 today: 1 echo single-line
+  brace, 2 printf multi-line colon, 2 PowerShell here-string
+  multi-line brace) and parses each through
+  `mapanare.parser.parse`. Locks the failure mode against any
+  future workflow edit authored against an unshipped feature.
+
+### Changed
+
+- **Pv.6** — `.github/workflows/publish.yml` Linux + macOS
+  tarball-smoke fixtures rewritten from single-line
+  `fn main(): print("...")` (which never parsed; v5.14.0 SPEC
+  §1009 forward promise rescoped to v6.0 by v5.21.1 H.4) to
+  multi-line colon via `printf 'fn main():\n    print(...)\n'`.
+  Closes publish run #48's Linux + macOS tarball-smoke job
+  failures. Locked by `tests/test_publish_smoke_fixtures.py`.
+
+### Fixed
+
+- **Pv.5** — `CLAUDE.md` "Planned / in-progress" section: removed
+  the now-stale v5.13.1 entry. The runtime-lib wiring (At.1's only
+  remaining open item) shipped on `dev` between v5.24.1 and
+  v5.25.0 (commit `9dcbbb5`); the `@test` runtime is fully
+  functional end-to-end on Python and native paths. No replacement
+  entry — v5.13.1 simply leaves the planned list.
+
+
 ## [5.24.1] - 2026-05-01
 
 **Wd.\* — wider docs cleanup (arc closeout).** **Final** release
@@ -8937,7 +9014,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.25.0...HEAD
+[5.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...v5.25.0
 [5.24.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...v5.24.1
 [5.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.0...v5.24.0
 [5.23.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.1...v5.23.2

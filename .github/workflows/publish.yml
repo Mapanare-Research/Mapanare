@@ -806,7 +806,14 @@ jobs:
             exit 1
           fi
           "$BIN" --version
-          echo 'fn main(): print("hello from clean Linux smoke")' > /tmp/hello.mn
+          # v5.25.0 Pv.6: multi-line colon. Single-line ``fn x(): y`` was
+          # the v5.14.0 SPEC §1009 promise that v5.21.1 H.4 rescoped to
+          # v6.0; ``echo 'fn main(): ...'`` here was authored against an
+          # unshipped feature and broke the publish pipeline at run #48.
+          # tests/test_publish_smoke_fixtures.py locks every .mn fixture
+          # in this workflow against a parse-time regression.
+          printf 'fn main():\n    print("hello from clean Linux smoke")\n' \
+              > /tmp/hello.mn
           "$BIN" emit-llvm /tmp/hello.mn -o /tmp/hello.ll
           if [ ! -s /tmp/hello.ll ]; then
             echo "FATAL: emit-llvm produced empty output"
@@ -851,7 +858,9 @@ jobs:
             exit 1
           fi
           "$BIN" --version
-          echo 'fn main(): print("hello from clean macOS smoke")' > /tmp/hello.mn
+          # v5.25.0 Pv.6: multi-line colon — see Linux smoke comment above.
+          printf 'fn main():\n    print("hello from clean macOS smoke")\n' \
+              > /tmp/hello.mn
           "$BIN" emit-llvm /tmp/hello.mn -o /tmp/hello.ll
           if [ ! -s /tmp/hello.ll ]; then
             echo "FATAL: emit-llvm produced empty output"

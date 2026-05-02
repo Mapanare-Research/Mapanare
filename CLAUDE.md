@@ -18,6 +18,84 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 Most recent releases (last 6). Full history at
 `docs/roadmap/ROADMAP.md`:
 
+- **v5.25.0** (ready, not tagged) — **Pv.\* — CI prevention
+  infrastructure.** First release in the new **Pv.\*** sub-arc
+  (structural pattern parallel to v5.24.0's **Hy.\***). Closes
+  the class of failure where a CI-only test path catches a bug
+  that could have been caught locally — typically because (a) a
+  stale local artifact masks the bug on the developer machine,
+  (b) a feature ships without an end-to-end test exercising it
+  through the .mn-caller side, or (c) a test asset only runs on a
+  non-Windows CI job. **Zero compiler edits. Zero runtime edits.
+  Zero `mapanare/self/*.mn` source edits.** Strict 3-stage fixed
+  point preserved by construction at **239,835 lines / 0 diff**
+  (20-release strict streak; same line count as v5.24.1 because
+  no source under `mapanare/self/` changed). Goldens **95/95**.
+  **Pv.1**: new `tests/test_runtime_lib_lookup.py` (3 cases)
+  locks `mapanare.test_runner._find_runtime_lib()` against
+  re-introduction of v3.x-era `libmapanare_core.*` candidate
+  names; sweeps stale shadows, asserts canonical name resolution,
+  end-to-end links a tiny IR fragment that references
+  `__mn_str_eq` against whatever archive the lookup returned.
+  Pre-fix (commit `9dcbbb5` shipped on `dev` between v5.24.1 and
+  v5.25.0) the lookup silently returned `None` because the
+  candidate list still mentioned the v3.x names; a stale local
+  `libmapanare_core.so` masked the regression on developer
+  machines for 11+ releases. **Pv.2**: new
+  `tests/bootstrap/test_preprocess_memcheck.py` (3 parameterized
+  cases — brace-only, colon-only, mixed) runs `mnc-stage1
+  preprocess` under valgrind. Locks the
+  `__mn_indent_to_braces` brace-only fast-path against
+  MnString-aliasing regressions; pre-fix the fast path returned
+  the input MnString aliased and produced a double-free at
+  function-end drop glue. Mirrors v5.23.1 Mb.3's grep-for-symbol
+  pattern rather than `--error-exitcode=1` because `mnc-stage1`
+  has a pre-existing single-shot leak from `__mn_argv` (~71 bytes,
+  known and tracked since v5.23.1) that would otherwise produce a
+  100% noise floor. **Pv.3**: extended `make ci-gates` (v5.24.0
+  Hy.1) with new `clean-build-test` sub-gate — 9 sub-gates total,
+  up from 8. Removes
+  `runtime/native/libmapanare_*.{a,so,dylib,dll}` (the explicit
+  `rm -f` is what makes the rebuild meaningful — `make clean`
+  alone does not touch the archive), runs `make build-rt`, then
+  runs `pytest tests/test_at_test_runtime.py
+  tests/test_runtime_lib_lookup.py`. Catches the runtime-archive
+  rename / relocation class structurally before any PR lands.
+  **Pv.4**: new `scripts/validate_wsl.sh` runs the Linux pytest
+  path end-to-end (`make build-rt` + `python3
+  scripts/build_stage1.py` + `pytest tests/ -x -n auto`) from any
+  CWD by resolving the repo root from the script's own location.
+  New `dev.ps1 validate-wsl` mode shells out via `wsl -d Ubuntu`
+  so a Windows host can produce the Linux pytest signal without
+  leaving the dev loop. Optional pre-push hook at
+  `scripts/hooks/pre-push.sample` (commented opt-in; not enabled
+  by default — forcing the full suite on every push kills the dev
+  loop and produces resentment, not safety). **Pv.5**: removed
+  the v5.13.1 entry from CLAUDE.md "Planned / in-progress"
+  section. The runtime-lib wiring (At.1's only remaining open
+  item) shipped on `dev` between v5.24.1 and v5.25.0; the `@test`
+  runtime is fully functional end-to-end. **Pv.6**: closes
+  publish run #48 Linux + macOS tarball-smoke job failures.
+  `.github/workflows/publish.yml` Linux + macOS smoke fixtures
+  rewritten from `echo 'fn main(): print("...")' > /tmp/hello.mn`
+  (single-line `fn x(): y` was the v5.14.0 SPEC §1009 forward
+  promise that v5.21.1 H.4 explicitly rescoped to v6.0 — fixture
+  authored against an unshipped feature) to multi-line colon via
+  `printf 'fn main():\n    print(...)\n'`. New
+  `tests/test_publish_smoke_fixtures.py` (2 cases) extracts every
+  inline `.mn` fixture across four shapes (bash echo, bash
+  printf, PowerShell here-string, bash heredoc) and parses each
+  through `mapanare.parser.parse`; first test guards against a
+  regex update silently dropping every fixture. **5 fixtures
+  locked at v5.25.0 HEAD**. **Falsifiability**: every Pv.\* test
+  documents a revert-and-restore round-trip in its module
+  docstring; verified red-then-green for Pv.1 / Pv.2 / Pv.6 in
+  the release session. **Out of scope** (held): Mb.7 (i64/i1
+  tag-emit, 9 LINK_FAIL goldens) — v5.26.0; `to_terse` empty
+  `#{}` rewriter bug — v5.27.0; `mnc fmt` long-line wrap +
+  import sort — v5.27.0. See
+  `docs/roadmap/v5/v5.25.0/SESSION_REPORT.md` and `PLAN.md`.
+
 - **v5.24.1** (ready, not tagged) — **Wd.\* — wider docs cleanup
   (arc closeout).** **Final** release in the v5.23–v5.24 recovery
   arc. Closes the 3-consecutive-panel manifesto drift (Coral M2,
@@ -1139,12 +1217,6 @@ had latent bugs requiring dedicated releases.
   formatter. The linchpin: every later terseness release adds
   one rewrite pass to `--to-terse`, so this has to be solid
   first. See `docs/roadmap/v5/v5.13.0/PLAN.md`.
-- **v5.13.1** — **`@test` runtime fix (patch).** Audit found
-  `mapanare test` and `mnc-stage1 test` both fail on the
-  simplest possible `@test` fixture (linker error in Python,
-  `__mn_assert_fail` undefined in native). Bug fix only; ships
-  independently of v5.14.0. See
-  `docs/roadmap/v5/v5.13.1/PLAN.md`.
 - ~~**v5.14.0**~~ — shipped (see release notes above).
 - ~~**v5.14.1**~~ — shipped (see release notes above). Bootstrap
   colon-block mirror — closes the v5.14.0 deferred item ahead of

@@ -3,7 +3,7 @@
 # to /bin/dash which has no ``<(...)`` support.
 SHELL := /bin/bash
 
-.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report count-tests leak-check ci-gates
+.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report count-tests leak-check ci-gates clean-build-test
 
 # v4.29.0: build-rt now enumerates every runtime object that is expected
 # to land in libmapanare_rt.a. The list used to be hand-maintained and
@@ -167,4 +167,22 @@ ci-gates:  ## v5.24.0 Hy.1: run all CI gates locally, exit 1 on any failure
 	@python3 scripts/check_struct_registry.py && echo "  struct_registry: GREEN" || (echo "  struct_registry: RED"; exit 1)
 	@python3 scripts/check_doc_freshness.py && echo "  doc_freshness: GREEN" || (echo "  doc_freshness: RED"; exit 1)
 	@python3 scripts/check_cadence.py && echo "  cadence: GREEN" || echo "  cadence: WARN (non-blocking)"
+	@$(MAKE) -s clean-build-test && echo "  clean-build-test: GREEN" || (echo "  clean-build-test: RED"; exit 1)
 	@echo "=== All gates GREEN ==="
+
+# v5.25.0 Pv.3: rebuild runtime archive from a clean state and run the
+# @test runtime smoke test against it. Catches the runtime-archive
+# rename / relocation class structurally — any future drift between
+# what `make build-rt` produces and what `_find_runtime_lib()` looks
+# for fails the gate at PR time, not on fresh-checkout CI. The
+# explicit ``rm -f`` of the candidate artifacts is what makes the
+# rebuild meaningful: ``make clean`` alone does not touch
+# ``runtime/native/libmapanare_*.{a,so,dylib,dll}``.
+clean-build-test:  ## v5.25.0 Pv.3: clean rebuild of runtime + @test smoke
+	@rm -f runtime/native/libmapanare_rt.a \
+	       runtime/native/libmapanare_runtime.so \
+	       runtime/native/libmapanare_runtime.dylib \
+	       runtime/native/libmapanare_runtime.dll
+	@$(MAKE) -s build-rt >/dev/null
+	@pytest tests/test_at_test_runtime.py tests/test_runtime_lib_lookup.py \
+	        -q --no-header --tb=short

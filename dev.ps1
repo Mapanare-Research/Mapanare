@@ -9,9 +9,10 @@
 #   .\dev.ps1 fmt              # auto-format and fix
 #   .\dev.ps1 e2e              # run e2e tests only
 #   .\dev.ps1 bench            # run benchmarks
+#   .\dev.ps1 validate-wsl     # v5.25.0 Pv.4: full Linux pytest via WSL
 
 param(
-    [ValidateSet("validate", "test", "lint", "fmt", "e2e", "bench")]
+    [ValidateSet("validate", "test", "lint", "fmt", "e2e", "bench", "validate-wsl")]
     [string]$Mode = "validate",
 
     [switch]$Watch
@@ -274,6 +275,28 @@ if ($Mode -eq "bench") {
 if ($Mode -eq "lint") {
     Invoke-AllChecks
     return
+}
+
+# --- validate-wsl mode (v5.25.0 Pv.4) ---
+# Shells out to scripts/validate_wsl.sh inside WSL Ubuntu so the
+# Linux pytest path runs end-to-end without leaving the Windows
+# dev loop. Closes the "fresh-checkout CI surprise" class that
+# produced Pv.1 / Pv.2: a stale local artifact masks a runtime
+# regression on Windows pytest until CI greens out.
+#
+# ``wsl -d Ubuntu bash -c`` runs in $HOME, not the project dir;
+# validate_wsl.sh resolves the repo root from its own location so
+# the surrounding cd is unnecessary. Invoking with --cd forwards
+# the current Windows working dir for any error messages.
+if ($Mode -eq "validate-wsl") {
+    $wslRoot = (& wsl -d Ubuntu wslpath -a "$Root" 2>$null)
+    if (-not $wslRoot) {
+        Write-Host "[dev] could not resolve WSL path for $Root" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "[dev] running scripts/validate_wsl.sh inside WSL Ubuntu..." -ForegroundColor Cyan
+    & wsl -d Ubuntu bash "$wslRoot/scripts/validate_wsl.sh"
+    exit $LASTEXITCODE
 }
 
 # --- validate mode (run once, watch with -Watch) ---
