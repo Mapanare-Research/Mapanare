@@ -18217,6 +18217,19 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "__mn_emit_brace_deprecation_warning":
         let as_ebw: String = llvm_string() + " " + args[0].name + ", i64 " + args[1].name
         return emit_rt_call_void(st, "__mn_emit_brace_deprecation_warning", as_ebw)
+    // v5.29.0 Mb.10: route __mn_indent_to_braces through emit_rt_call
+    // for the same Win64 ABI reason as v5.26.0 Mb.9 routed the
+    // brace-deprecation siblings above. The Python emitter has had
+    // this routing since v5.23.1 Mb.1 (emit_llvm_text.py:3632); the
+    // self-host side was missed. Without this, stage2.ll emitted a
+    // by-value call against a declare-as-`ptr` signature on Win64,
+    // and gcc lowered the call as pass-by-hidden-pointer with rcx
+    // pointing into the struct's data buffer instead of into a
+    // valid MnString — SIGSEGV on the first source.len read in
+    // __mn_indent_to_braces (publish run #50, x86_64-w64-mingw32).
+    if fn_name == "__mn_indent_to_braces":
+        let as_itb: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, llvm_string(), "__mn_indent_to_braces", as_itb)
 
     // chr/ord builtins
     if fn_name == "chr":
