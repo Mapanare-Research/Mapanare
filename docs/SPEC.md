@@ -1,21 +1,39 @@
 # Mapanare Language Specification
 
-**Version:** 5.33.1
-**Status:** Live — synced to the v5.33.1 cut (2026-05-03)
+**Version:** 5.34.0
+**Status:** Live — synced to the v5.34.0 cut (2026-05-03)
 
-> **v5.31.0 → v5.33.1 — banner UX hotfix + native `mnc` desktop
-> distribution + SPEC header re-sync.** SPEC body unchanged from
-> the v5.21.0 cut. v5.31.0 (Bn.\* — banner hotfix; "[dev mode]"
-> lie killed on release installs), v5.32.0 (Nw.\* — native
-> `mnc.exe` shipped in Windows SDK ZIP; Python becomes
-> bootstrap-only on Windows release installs), v5.33.0 (Nu.\* —
-> native `mnc` shipped in Linux x86_64 + macOS arm64 release
-> tarballs; Linux aarch64 + macOS x86_64 deferred to v5.34.0+),
-> and v5.33.1 (Hd.\* — SPEC header drift hotfix; this re-sync)
-> together added **zero language features, zero new MIR ops,
-> zero new IR shapes, zero new runtime functions** —
-> packaging / hotfix releases only. The v5.21.0 sync block below
-> remains authoritative for language semantics.
+> **v5.34.0 — Dt.\* — first-class date / time stdlib.** SPEC body
+> unchanged from the v5.21.0 cut. v5.34.0 ships net-new
+> `stdlib/time.mn` surface (`Date`, `Time`, `DateTime`, `Duration`,
+> `Timezone` types; ISO 8601 + RFC 3339 parse / format; arithmetic
+> with month/day rollover; v0 timezone surface — UTC + system-local
+> only, named tzdb deferred to v5.34.1+) on top of a new portable C
+> shim at `runtime/native/mapanare_time.c`. Adds **zero language
+> features, zero new MIR ops, zero new IR shapes** but DOES add
+> **six new C runtime functions** (the first SPEC-scoped runtime
+> additions since v5.21.0): `__mn_now_realtime_ns`,
+> `__mn_utc_pack`, `__mn_local_pack`, `__mn_local_offset_minutes`,
+> `__mn_timegm`, `__mn_normalize_pack`. Strict 3-stage fixed point
+> preserved by construction at v5.33.x's 241,898 lines / 0 diff
+> (29-release strict streak from v5.7.1). Goldens 95/95. v5.34.0
+> closes the v5.33.0 cadence-gap-acknowledged carry.
+
+> **v5.31.0 → v5.33.2 — banner UX hotfix + native `mnc` desktop
+> distribution + SPEC header re-sync + cadence-gate relaxation.**
+> SPEC body unchanged from the v5.21.0 cut. v5.31.0 (Bn.\* — banner
+> hotfix; "[dev mode]" lie killed on release installs), v5.32.0
+> (Nw.\* — native `mnc.exe` shipped in Windows SDK ZIP; Python
+> becomes bootstrap-only on Windows release installs), v5.33.0
+> (Nu.\* — native `mnc` shipped in Linux x86_64 + macOS arm64
+> release tarballs; Linux aarch64 + macOS x86_64 deferred to
+> v5.34.0+), v5.33.1 (Hd.\* — SPEC header drift hotfix), and
+> v5.33.2 (Cd.\* — relax panel-cadence enforcement to
+> informational-only) together added **zero language features,
+> zero new MIR ops, zero new IR shapes, zero new runtime
+> functions** — packaging / hotfix / tooling-policy releases only.
+> The v5.21.0 sync block below remains authoritative for language
+> semantics.
 
 > **v5.28.0 → v5.30.0 — RE-PANEL + Win64 ABI closeout +
 > packaging.** SPEC body unchanged from the v5.21.0 cut.

@@ -25,6 +25,7 @@ RUNTIME_SOURCES := \
 	mapanare_gpu_builtins.c \
 	mapanare_db.c \
 	mapanare_html.c \
+	mapanare_time.c \
 	mn_user_main.c
 
 # Files under runtime/native/ that are deliberately not part of the

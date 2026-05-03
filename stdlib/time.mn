@@ -1,20 +1,38 @@
-// time.mn — Time Utilities for Mapanare
+// stdlib/time.mn — Date / time / duration stdlib for Mapanare.
 //
-// Provides monotonic clock access, sleep, stopwatch, and pure duration
-// conversion helpers. Clock and sleep delegate to the C runtime; duration
-// formatting is pure Mapanare.
+// v5.34.0 Dt.* — first-class Date / Time / DateTime / Duration / Timezone
+// types, ISO 8601 + RFC 3339 parse / format, arithmetic with month/day
+// rollover, and a v0 timezone surface (UTC + system-local; named tzdb
+// returns explicit Err and is deferred to v5.34.1+).
+//
+// PROMPT deviation note: the v5.34.0 PROMPT/PLAN specified a directory
+// module at stdlib/time/{types,construct,parse,format,arith,tz}.mn.
+// Phase 2 dev surfaced two cross-module limitations in the current
+// Mapanare toolchain:
+//   1. Native compiler (mnc-stage1) does NOT propagate extern_fn_def
+//      declarations across module imports — every consumer would have to
+//      re-declare every extern.
+//   2. Python LLVM emitter mangles defined function names with module
+//      prefix (e.g. `time_construct__datetime_now`) but emits unprefixed
+//      forward declarations at the call site, producing link failures.
+// Both issues are tracked separately (the closest existing reference is
+// the v4.129.0 known-issue note on examples/ai/basic_chat.mn). Every
+// existing stdlib module (math, crypto, fs, ai/llm, db/*) is single-file
+// with self-contained tests; this file follows that proven pattern.
+//
+// The directory-module split is the right structural shape, but it has
+// to ride a separate cross-module-emitter fix that is outside v5.34.0
+// scope. Recorded in docs/roadmap/v5/v5.34.0/SESSION_REPORT.md as the
+// load-bearing PLAN deviation.
 
-// ---------------------------------------------------------------------------
-// Extern C runtime functions
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// SECTION A — Existing surface preserved (v5.33.x): monotonic clock,
+// Stopwatch, duration unit conversion, format_duration_ms.
+// ===========================================================================
 
 extern "C" fn __mn_clock_monotonic_ns() -> Int
 extern "C" fn __mn_sleep_ms(ms: Int)
 extern "C" fn clock() -> Int
-
-// ---------------------------------------------------------------------------
-// Clock primitives
-// ---------------------------------------------------------------------------
 
 /// Returns the current monotonic clock value in nanoseconds.
 pub fn now_ns() -> Int {
@@ -26,22 +44,16 @@ pub fn delay_ms(ms: Int) {
     __mn_sleep_ms(ms)
 }
 
-// ---------------------------------------------------------------------------
-// Stopwatch
-// ---------------------------------------------------------------------------
-
 pub tipo Stopwatch {
     start_ns: Int,
     elapsed_ns: Int,
     running: Bool
 }
 
-/// Creates a new Stopwatch that is not running with zero elapsed time.
 pub fn stopwatch_new() -> Stopwatch {
     da new Stopwatch { start_ns: 0, elapsed_ns: 0, running: false }
 }
 
-/// Starts the stopwatch. If already running, returns as-is.
 pub fn stopwatch_start(sw: Stopwatch) -> Stopwatch {
     si sw.running {
         da sw
@@ -50,7 +62,6 @@ pub fn stopwatch_start(sw: Stopwatch) -> Stopwatch {
     da new Stopwatch { start_ns: t, elapsed_ns: sw.elapsed_ns, running: true }
 }
 
-/// Stops the stopwatch and accumulates elapsed time. If not running, returns as-is.
 pub fn stopwatch_stop(sw: Stopwatch) -> Stopwatch {
     si sw.running == false {
         da sw
@@ -61,13 +72,10 @@ pub fn stopwatch_stop(sw: Stopwatch) -> Stopwatch {
     da new Stopwatch { start_ns: 0, elapsed_ns: total, running: false }
 }
 
-/// Resets the stopwatch to zero elapsed, not running.
 pub fn stopwatch_reset(sw: Stopwatch) -> Stopwatch {
     da new Stopwatch { start_ns: 0, elapsed_ns: 0, running: false }
 }
 
-/// Returns the total elapsed time in nanoseconds. If the stopwatch is
-/// currently running, includes the time since the last start.
 pub fn stopwatch_elapsed_ns(sw: Stopwatch) -> Int {
     si sw.running {
         pon t: Int = __mn_clock_monotonic_ns()
@@ -77,40 +85,19 @@ pub fn stopwatch_elapsed_ns(sw: Stopwatch) -> Int {
     da sw.elapsed_ns
 }
 
-/// Returns the total elapsed time in milliseconds.
 pub fn stopwatch_elapsed_ms(sw: Stopwatch) -> Int {
     pon ns: Int = stopwatch_elapsed_ns(sw)
     da ns / 1000000
 }
 
-/// Returns true if the stopwatch is currently running.
 pub fn stopwatch_is_running(sw: Stopwatch) -> Bool {
     da sw.running
 }
 
-// ---------------------------------------------------------------------------
-// Pure duration conversion helpers
-// ---------------------------------------------------------------------------
-
-/// Converts nanoseconds to milliseconds.
-pub fn ns_to_ms(ns: Int) -> Int {
-    da ns / 1000000
-}
-
-/// Converts milliseconds to nanoseconds.
-pub fn ms_to_ns(ms: Int) -> Int {
-    da ms * 1000000
-}
-
-/// Converts nanoseconds to seconds.
-pub fn ns_to_s(ns: Int) -> Int {
-    da ns / 1000000000
-}
-
-/// Converts seconds to nanoseconds.
-pub fn s_to_ns(s: Int) -> Int {
-    da s * 1000000000
-}
+pub fn ns_to_ms(ns: Int) -> Int { da ns / 1000000 }
+pub fn ms_to_ns(ms: Int) -> Int { da ms * 1000000 }
+pub fn ns_to_s(ns: Int)  -> Int { da ns / 1000000000 }
+pub fn s_to_ns(s: Int)   -> Int { da s * 1000000000 }
 
 /// Formats a duration in milliseconds as a human-readable string.
 /// - Under 1000ms: "123ms"
@@ -118,56 +105,793 @@ pub fn s_to_ns(s: Int) -> Int {
 /// - 60000ms and above: "2m 30s"
 pub fn format_duration_ms(ms: Int) -> String {
     si ms < 1000 {
-        da int_to_str(ms) + "ms"
+        da time_int_to_str(ms) + "ms"
     }
     si ms < 60000 {
         pon whole_s: Int = ms / 1000
         pon frac: Int = (ms % 1000) / 100
         si frac == 0 {
-            da int_to_str(whole_s) + "s"
+            da time_int_to_str(whole_s) + "s"
         }
-        da int_to_str(whole_s) + "." + int_to_str(frac) + "s"
+        da time_int_to_str(whole_s) + "." + time_int_to_str(frac) + "s"
     }
     pon total_s: Int = ms / 1000
     pon minutes: Int = total_s / 60
     pon seconds: Int = total_s % 60
     si seconds == 0 {
-        da int_to_str(minutes) + "m"
+        da time_int_to_str(minutes) + "m"
     }
-    da int_to_str(minutes) + "m " + int_to_str(seconds) + "s"
+    da time_int_to_str(minutes) + "m " + time_int_to_str(seconds) + "s"
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// SECTION B — v5.34.0 Dt.* extern declarations (mapanare_time.c).
+//
+// All entry points return packed int64 fields. Encoding:
+//   packed = y*10^10 + mo*10^8 + d*10^6 + h*10^4 + mi*10^2 + s
+// -1 reserved for syscall failure / out-of-range. The .mn side decodes
+// via repeated `% 100` / `/ 100`, ending with year.
+// ===========================================================================
 
-/// Converts a non-negative integer to its decimal string representation.
-fn int_to_str(n: Int) -> String {
-    si n == 0 {
-        da "0"
-    }
-    pon mut result: String = ""
-    pon mut remaining: Int = n
-    si remaining < 0 {
+extern "C" fn __mn_now_realtime_ns() -> Int
+extern "C" fn __mn_utc_pack(epoch_secs: Int) -> Int
+extern "C" fn __mn_local_pack(epoch_secs: Int) -> Int
+extern "C" fn __mn_local_offset_minutes(epoch_secs: Int) -> Int
+extern "C" fn __mn_timegm(y: Int, mo: Int, d: Int, h: Int, mi: Int, s: Int) -> Int
+extern "C" fn __mn_normalize_pack(y: Int, mo: Int, d: Int, h: Int, mi: Int, s: Int) -> Int
+
+// ===========================================================================
+// SECTION C — Internal helpers (int_to_str, pad_zero, parse helpers).
+//
+// Hand-rolled and prefixed `time_` to avoid clashing with caller-side
+// helpers when a user co-locates utilities in their own code.
+// ===========================================================================
+
+fn time_int_to_str(n: Int) -> String {
+    if n == 0 { return "0" }
+    let mut result: String = ""
+    let mut remaining: Int = n
+    let mut negative: Bool = false
+    if remaining < 0 {
+        negative = true
         remaining = 0 - remaining
     }
-    mien remaining > 0 {
-        pon digit: Int = remaining % 10
-        pon mut ch: String = "0"
-        si digit == 1 { ch = "1" }
-        si digit == 2 { ch = "2" }
-        si digit == 3 { ch = "3" }
-        si digit == 4 { ch = "4" }
-        si digit == 5 { ch = "5" }
-        si digit == 6 { ch = "6" }
-        si digit == 7 { ch = "7" }
-        si digit == 8 { ch = "8" }
-        si digit == 9 { ch = "9" }
+    let mut guard: Int = 0
+    while remaining > 0 {
+        let digit: Int = remaining % 10
+        let mut ch: String = "0"
+        if digit == 1 { ch = "1" }
+        if digit == 2 { ch = "2" }
+        if digit == 3 { ch = "3" }
+        if digit == 4 { ch = "4" }
+        if digit == 5 { ch = "5" }
+        if digit == 6 { ch = "6" }
+        if digit == 7 { ch = "7" }
+        if digit == 8 { ch = "8" }
+        if digit == 9 { ch = "9" }
         result = ch + result
         remaining = remaining / 10
+        guard = guard + 1
+        if guard > 32 { return result }
     }
-    si n < 0 {
+    if negative {
         result = "-" + result
     }
-    da result
+    return result
+}
+
+/// Pads `n` (decimal) to width `w` with leading zeros.
+/// Used by formatters: %Y → width 4, %m %d %H %M %S → width 2.
+pub fn pad_zero(n: Int, w: Int) -> String {
+    let s: String = time_int_to_str(n)
+    let mut result: String = s
+    let mut needed: Int = w - len(s)
+    while needed > 0 {
+        result = "0" + result
+        needed = needed - 1
+    }
+    return result
+}
+
+// time_digit_value — single-char ASCII digit lookup, returns -1 if not 0-9.
+fn time_digit_value(c: String) -> Int {
+    if c == "0" { return 0 }
+    if c == "1" { return 1 }
+    if c == "2" { return 2 }
+    if c == "3" { return 3 }
+    if c == "4" { return 4 }
+    if c == "5" { return 5 }
+    if c == "6" { return 6 }
+    if c == "7" { return 7 }
+    if c == "8" { return 8 }
+    if c == "9" { return 9 }
+    return -1
+}
+
+// time_parse_int — parses `width` decimal chars from `s` starting at `pos`.
+// Returns -1 on any non-digit. width must be > 0.
+fn time_parse_int(s: String, pos: Int, width: Int) -> Int {
+    let n: Int = len(s)
+    if pos < 0 { return -1 }
+    if pos + width > n { return -1 }
+    let mut result: Int = 0
+    let mut i: Int = 0
+    while i < width {
+        let c: String = s.substr(pos + i, 1)
+        let d: Int = time_digit_value(c)
+        if d < 0 { return -1 }
+        result = result * 10 + d
+        i = i + 1
+    }
+    return result
+}
+
+// time_str_eq_at — does s contain `needle` starting at pos?
+fn time_str_eq_at(s: String, pos: Int, needle: String) -> Bool {
+    let nlen: Int = len(needle)
+    let slen: Int = len(s)
+    if pos + nlen > slen { return false }
+    let chunk: String = s.substr(pos, nlen)
+    return chunk == needle
+}
+
+// ===========================================================================
+// SECTION D — v5.34.0 Dt.1 core types.
+//
+// Year range: 1..9999 enforced at construction. Month: 1..12. Day: per-month
+// with leap year support at Feb 29. Leap-year rule: divisible by 4, EXCEPT
+// divisible by 100, EXCEPT divisible by 400. So:
+//   1900 → NOT leap. 2000 → leap. 2024 → leap. 2100 → NOT leap.
+// All four boundaries pinned in tests.
+//
+// tz_offset_minutes is "minutes east of UTC" (POSIX convention).
+//   +05:30 (India) → +330. -05:00 (US Eastern) → -300. UTC → 0.
+// ===========================================================================
+
+pub tipo Date {
+    year: Int,
+    month: Int,
+    day: Int
+}
+
+pub tipo Time {
+    hour: Int,
+    minute: Int,
+    second: Int,
+    nanos: Int
+}
+
+pub tipo DateTime {
+    date: Date,
+    time: Time,
+    tz_offset_minutes: Int
+}
+
+pub tipo Duration {
+    seconds: Int,
+    nanos: Int
+}
+
+pub tipo Timezone {
+    | UTC
+    | Local
+    | FixedOffset(Int)
+}
+
+pub fn is_leap_year(y: Int) -> Bool {
+    if y % 400 == 0 { return true }
+    if y % 100 == 0 { return false }
+    if y % 4 == 0 { return true }
+    return false
+}
+
+pub fn days_in_month(y: Int, m: Int) -> Int {
+    if m == 1  { return 31 }
+    if m == 2  {
+        if is_leap_year(y) { return 29 }
+        return 28
+    }
+    if m == 3  { return 31 }
+    if m == 4  { return 30 }
+    if m == 5  { return 31 }
+    if m == 6  { return 30 }
+    if m == 7  { return 31 }
+    if m == 8  { return 31 }
+    if m == 9  { return 30 }
+    if m == 10 { return 31 }
+    if m == 11 { return 30 }
+    if m == 12 { return 31 }
+    return 0
+}
+
+// ===========================================================================
+// SECTION E — Dt.1 validating constructors.
+//
+// Rejects 2026-13-03 with "month out of range: 13". Rejects 1900-02-29
+// with "invalid date: 1900-2-29". Rejects 2024-02-29 NOT — leap year.
+// ===========================================================================
+
+pub fn date_new(y: Int, m: Int, d: Int) -> Result<Date, String> {
+    if y < 1 {
+        return Err("year out of range: " + time_int_to_str(y))
+    }
+    if y > 9999 {
+        return Err("year out of range: " + time_int_to_str(y))
+    }
+    if m < 1 {
+        return Err("month out of range: " + time_int_to_str(m))
+    }
+    if m > 12 {
+        return Err("month out of range: " + time_int_to_str(m))
+    }
+    let max_day: Int = days_in_month(y, m)
+    if d < 1 {
+        return Err("day out of range: " + time_int_to_str(d))
+    }
+    if d > max_day {
+        return Err("invalid date: " + time_int_to_str(y) + "-" + time_int_to_str(m) + "-" + time_int_to_str(d))
+    }
+    let r: Date = new Date { year: y, month: m, day: d }
+    return Ok(r)
+}
+
+pub fn time_new(h: Int, m: Int, s: Int, ns: Int) -> Result<Time, String> {
+    if h < 0 {
+        return Err("hour out of range: " + time_int_to_str(h))
+    }
+    if h > 23 {
+        return Err("hour out of range: " + time_int_to_str(h))
+    }
+    if m < 0 {
+        return Err("minute out of range: " + time_int_to_str(m))
+    }
+    if m > 59 {
+        return Err("minute out of range: " + time_int_to_str(m))
+    }
+    if s < 0 {
+        return Err("second out of range: " + time_int_to_str(s))
+    }
+    // 60 tolerated for leap second.
+    if s > 60 {
+        return Err("second out of range: " + time_int_to_str(s))
+    }
+    if ns < 0 {
+        return Err("nanos out of range: " + time_int_to_str(ns))
+    }
+    if ns > 999999999 {
+        return Err("nanos out of range: " + time_int_to_str(ns))
+    }
+    let r: Time = new Time { hour: h, minute: m, second: s, nanos: ns }
+    return Ok(r)
+}
+
+pub fn datetime_new(date: Date, time: Time, tz_offset_minutes: Int) -> Result<DateTime, String> {
+    if tz_offset_minutes < -1440 {
+        return Err("tz_offset out of range: " + time_int_to_str(tz_offset_minutes))
+    }
+    if tz_offset_minutes > 1440 {
+        return Err("tz_offset out of range: " + time_int_to_str(tz_offset_minutes))
+    }
+    let r: DateTime = new DateTime { date: date, time: time, tz_offset_minutes: tz_offset_minutes }
+    return Ok(r)
+}
+
+pub fn duration_new(seconds: Int, nanos: Int) -> Duration {
+    let r: Duration = new Duration { seconds: seconds, nanos: nanos }
+    return r
+}
+
+// ===========================================================================
+// SECTION F — Dt.2 clock-touching constructors.
+//
+// All entry points that talk to the realtime clock return Result<T, String>
+// so a syscall failure surfaces as Err rather than a panic. Sub-second
+// precision is dropped from broken-down forms in v0; full nanosecond
+// transit available via raw __mn_now_realtime_ns().
+// ===========================================================================
+
+pub fn unpack_to_datetime(packed: Int) -> Result<DateTime, String> {
+    if packed < 0 {
+        return Err("runtime returned -1 (out of range or syscall failure)")
+    }
+    let s: Int  = packed % 100
+    let p1: Int = packed / 100
+    let mi: Int = p1 % 100
+    let p2: Int = p1 / 100
+    let h: Int  = p2 % 100
+    let p3: Int = p2 / 100
+    let d: Int  = p3 % 100
+    let p4: Int = p3 / 100
+    let mo: Int = p4 % 100
+    let y: Int  = p4 / 100
+
+    let date_r: Result<Date, String> = date_new(y, mo, d)
+    match date_r {
+        Ok(date) => {
+            let time_r: Result<Time, String> = time_new(h, mi, s, 0)
+            match time_r {
+                Ok(time) => {
+                    let dt_r: Result<DateTime, String> = datetime_new(date, time, 0)
+                    return dt_r
+                },
+                Err(msg) => { return Err(msg) }
+            }
+        },
+        Err(msg) => { return Err(msg) }
+    }
+    return Err("unreachable")
+}
+
+pub fn datetime_now() -> Result<DateTime, String> {
+    let ns: Int = __mn_now_realtime_ns()
+    if ns < 0 {
+        return Err("clock_gettime failed")
+    }
+    let secs: Int = ns / 1000000000
+    let packed: Int = __mn_utc_pack(secs)
+    return unpack_to_datetime(packed)
+}
+
+pub fn datetime_from_epoch(epoch_secs: Int) -> Result<DateTime, String> {
+    let packed: Int = __mn_utc_pack(epoch_secs)
+    return unpack_to_datetime(packed)
+}
+
+pub fn date_today() -> Result<Date, String> {
+    let dt_r: Result<DateTime, String> = datetime_now()
+    match dt_r {
+        Ok(dt) => { return Ok(dt.date) },
+        Err(msg) => { return Err(msg) }
+    }
+    return Err("unreachable")
+}
+
+pub fn duration_seconds(n: Int) -> Duration { return duration_new(n, 0) }
+pub fn duration_minutes(n: Int) -> Duration { return duration_new(n * 60, 0) }
+pub fn duration_hours(n: Int)   -> Duration { return duration_new(n * 3600, 0) }
+pub fn duration_days(n: Int)    -> Duration { return duration_new(n * 86400, 0) }
+
+pub fn datetime_to_epoch(dt: DateTime) -> Result<Int, String> {
+    let utc_secs: Int = __mn_timegm(dt.date.year, dt.date.month, dt.date.day, dt.time.hour, dt.time.minute, dt.time.second)
+    if utc_secs < 0 {
+        return Err("timegm failed (out of range)")
+    }
+    let adjusted: Int = utc_secs - dt.tz_offset_minutes * 60
+    return Ok(adjusted)
+}
+
+// ===========================================================================
+// SECTION G — Dt.5 arithmetic.
+//
+// Method form (free functions). Phase 0 spike (v5.34.0 dev) confirmed
+// `impl Add for Duration` doesn't lower in the current toolchain
+// — semantic checker rejects with "Undefined trait 'Add'". Recorded in
+// SESSION_REPORT.
+//
+// All datetime additions / subtractions go through __mn_normalize_pack
+// to handle month/day rollover and leap-year boundaries. Year overflow
+// (outside [1, 9999]) returns Err.
+// ===========================================================================
+
+pub fn duration_add(a: Duration, b: Duration) -> Duration {
+    let total_nanos: Int = a.nanos + b.nanos
+    let carry_secs: Int = total_nanos / 1000000000
+    let final_nanos: Int = total_nanos % 1000000000
+    let total_secs: Int = a.seconds + b.seconds + carry_secs
+    return duration_new(total_secs, final_nanos)
+}
+
+pub fn duration_sub(a: Duration, b: Duration) -> Duration {
+    let total_nanos: Int = a.nanos - b.nanos
+    let mut final_nanos: Int = total_nanos
+    let mut borrow: Int = 0
+    if total_nanos < 0 {
+        final_nanos = total_nanos + 1000000000
+        borrow = 1
+    }
+    let total_secs: Int = a.seconds - b.seconds - borrow
+    return duration_new(total_secs, final_nanos)
+}
+
+pub fn duration_mul(d: Duration, n: Int) -> Duration {
+    let new_nanos_total: Int = d.nanos * n
+    let carry: Int = new_nanos_total / 1000000000
+    let final_nanos: Int = new_nanos_total % 1000000000
+    let final_secs: Int = d.seconds * n + carry
+    return duration_new(final_secs, final_nanos)
+}
+
+pub fn datetime_add_duration(dt: DateTime, dur: Duration) -> Result<DateTime, String> {
+    let added_secs: Int = dt.time.second + dur.seconds
+    let packed: Int = __mn_normalize_pack(dt.date.year, dt.date.month, dt.date.day, dt.time.hour, dt.time.minute, added_secs)
+    if packed < 0 {
+        return Err("date overflow")
+    }
+    let r: Result<DateTime, String> = unpack_to_datetime(packed)
+    match r {
+        Ok(new_dt) => {
+            let with_tz: DateTime = new DateTime { date: new_dt.date, time: new_dt.time, tz_offset_minutes: dt.tz_offset_minutes }
+            return Ok(with_tz)
+        },
+        Err(msg) => { return Err(msg) }
+    }
+    return Err("unreachable")
+}
+
+pub fn datetime_sub_duration(dt: DateTime, dur: Duration) -> Result<DateTime, String> {
+    let neg: Duration = duration_new(0 - dur.seconds, 0 - dur.nanos)
+    return datetime_add_duration(dt, neg)
+}
+
+pub fn datetime_diff(later: DateTime, earlier: DateTime) -> Result<Duration, String> {
+    let later_e_r: Result<Int, String> = datetime_to_epoch(later)
+    let early_e_r: Result<Int, String> = datetime_to_epoch(earlier)
+    match later_e_r {
+        Ok(le) => {
+            match early_e_r {
+                Ok(ee) => {
+                    return Ok(duration_new(le - ee, 0))
+                },
+                Err(msg) => { return Err(msg) }
+            }
+        },
+        Err(msg) => { return Err(msg) }
+    }
+    return Err("unreachable")
+}
+
+// ===========================================================================
+// SECTION H — Dt.4 formatters.
+//
+// strftime subset for v5.34.0: %Y %m %d %H %M %S %z %Z and literal %%.
+// %z → numeric offset like "+0530" or "-0500". %Z → name like "UTC" or
+// local zone abbreviation (best-effort: "UTC" when offset==0, otherwise
+// hex-shaped numeric form). Full strftime expansion (`%a`, `%b`, `%j`,
+// `%w`, etc.) deferred to v5.34.1+.
+// ===========================================================================
+
+fn format_tz_z(offset_minutes: Int) -> String {
+    let mut sign: String = "+"
+    let mut abs_min: Int = offset_minutes
+    if offset_minutes < 0 {
+        sign = "-"
+        abs_min = 0 - offset_minutes
+    }
+    let hh: Int = abs_min / 60
+    let mm: Int = abs_min % 60
+    return sign + pad_zero(hh, 2) + pad_zero(mm, 2)
+}
+
+fn format_tz_name(offset_minutes: Int) -> String {
+    if offset_minutes == 0 { return "UTC" }
+    return format_tz_z(offset_minutes)
+}
+
+pub fn datetime_format(dt: DateTime, fmt: String) -> String {
+    let n: Int = len(fmt)
+    let mut result: String = ""
+    let mut i: Int = 0
+    while i < n {
+        let c: String = fmt.substr(i, 1)
+        if c == "%" {
+            if i + 1 >= n {
+                result = result + "%"
+                i = i + 1
+            } else {
+                let spec: String = fmt.substr(i + 1, 1)
+                if spec == "Y" {
+                    result = result + pad_zero(dt.date.year, 4)
+                } else { if spec == "m" {
+                    result = result + pad_zero(dt.date.month, 2)
+                } else { if spec == "d" {
+                    result = result + pad_zero(dt.date.day, 2)
+                } else { if spec == "H" {
+                    result = result + pad_zero(dt.time.hour, 2)
+                } else { if spec == "M" {
+                    result = result + pad_zero(dt.time.minute, 2)
+                } else { if spec == "S" {
+                    result = result + pad_zero(dt.time.second, 2)
+                } else { if spec == "z" {
+                    result = result + format_tz_z(dt.tz_offset_minutes)
+                } else { if spec == "Z" {
+                    result = result + format_tz_name(dt.tz_offset_minutes)
+                } else { if spec == "%" {
+                    result = result + "%"
+                } else {
+                    // Unknown specifier: pass through verbatim.
+                    result = result + "%" + spec
+                } } } } } } } } }
+                i = i + 2
+            }
+        } else {
+            result = result + c
+            i = i + 1
+        }
+    }
+    return result
+}
+
+pub fn date_format(d: Date, fmt: String) -> String {
+    let zero_t: Time = new Time { hour: 0, minute: 0, second: 0, nanos: 0 }
+    let dt: DateTime = new DateTime { date: d, time: zero_t, tz_offset_minutes: 0 }
+    return datetime_format(dt, fmt)
+}
+
+/// Default ISO 8601 form: "YYYY-MM-DD".
+pub fn date_to_iso(d: Date) -> String {
+    return date_format(d, "%Y-%m-%d")
+}
+
+/// Default RFC 3339 form: "YYYY-MM-DDTHH:MM:SS+HHMM" (no colon in offset
+/// per `%z`; use `format(...)` with explicit sub-format if "+HH:MM" needed).
+pub fn datetime_to_rfc3339(dt: DateTime) -> String {
+    return datetime_format(dt, "%Y-%m-%dT%H:%M:%S%z")
+}
+
+pub fn duration_format(d: Duration) -> String {
+    return "PT" + time_int_to_str(d.seconds) + "S"
+}
+
+// ===========================================================================
+// SECTION I — Dt.3 parsers.
+//
+// Tolerant of common variants per v5.34.0 PROMPT:
+//   - With or without `T` separator between date and time
+//   - `Z` for UTC OR `+00:00` / `-00:00` / `+0000` / `-0000`
+//   - Offset formats: `+05:30`, `+0530`, `-05:00`, `-0500`
+// Strict on:
+//   - 4-digit year, 2-digit month/day/hour/min/sec
+//   - Year/month/day in valid ranges (delegated to date_new)
+//   - Useful diagnostic on every Err
+// ===========================================================================
+
+pub fn date_parse_iso(s: String) -> Result<Date, String> {
+    let n: Int = len(s)
+    if n < 10 {
+        return Err("date too short for ISO 8601: " + s)
+    }
+    let y: Int = time_parse_int(s, 0, 4)
+    if y < 0 { return Err("non-numeric year in: " + s) }
+    let dash1: String = s.substr(4, 1)
+    if dash1 != "-" { return Err("missing '-' after year in: " + s) }
+    let m: Int = time_parse_int(s, 5, 2)
+    if m < 0 { return Err("non-numeric month in: " + s) }
+    let dash2: String = s.substr(7, 1)
+    if dash2 != "-" { return Err("missing '-' after month in: " + s) }
+    let d: Int = time_parse_int(s, 8, 2)
+    if d < 0 { return Err("non-numeric day in: " + s) }
+    return date_new(y, m, d)
+}
+
+// parse_tz_offset_at — parses an RFC 3339 timezone offset starting at pos.
+// Accepts: `Z`, `+HH:MM`, `-HH:MM`, `+HHMM`, `-HHMM`. Returns minutes east
+// of UTC, or -99999 (sentinel) on parse failure. The sentinel is needed
+// because legitimate offsets can be 0; can't use 0 to mean "failure".
+fn parse_tz_offset_at(s: String, pos: Int) -> Int {
+    let n: Int = len(s)
+    if pos >= n { return -99999 }
+    let first: String = s.substr(pos, 1)
+    if first == "Z" { return 0 }
+    if first == "z" { return 0 }
+    let mut sign: Int = 1
+    if first == "-" { sign = -1 }
+    if first != "-" {
+        if first != "+" { return -99999 }
+    }
+    let hh: Int = time_parse_int(s, pos + 1, 2)
+    if hh < 0 { return -99999 }
+    if hh > 23 { return -99999 }
+    // Accept `:MM` or `MM` after the hour.
+    let mut mm_pos: Int = pos + 3
+    if pos + 3 < n {
+        let nxt: String = s.substr(pos + 3, 1)
+        if nxt == ":" {
+            mm_pos = pos + 4
+        }
+    }
+    let mm: Int = time_parse_int(s, mm_pos, 2)
+    if mm < 0 { return -99999 }
+    if mm > 59 { return -99999 }
+    return sign * (hh * 60 + mm)
+}
+
+pub fn datetime_parse_rfc3339(s: String) -> Result<DateTime, String> {
+    let n: Int = len(s)
+    if n < 19 {
+        return Err("datetime too short for RFC 3339: " + s)
+    }
+    let date_str: String = s.substr(0, 10)
+    let date_r: Result<Date, String> = date_parse_iso(date_str)
+    let mut date_val: Date = new Date { year: 0, month: 0, day: 0 }
+    let mut date_ok: Bool = false
+    match date_r {
+        Ok(d) => { date_val = d ; date_ok = true },
+        Err(msg) => { return Err(msg) }
+    }
+    if date_ok == false {
+        return Err("date parse failure: " + s)
+    }
+    let sep: String = s.substr(10, 1)
+    if sep != "T" {
+        if sep != "t" {
+            if sep != " " {
+                return Err("expected 'T' or ' ' separator in: " + s)
+            }
+        }
+    }
+    let h: Int = time_parse_int(s, 11, 2)
+    if h < 0 { return Err("non-numeric hour in: " + s) }
+    if s.substr(13, 1) != ":" {
+        return Err("missing ':' after hour in: " + s)
+    }
+    let mi: Int = time_parse_int(s, 14, 2)
+    if mi < 0 { return Err("non-numeric minute in: " + s) }
+    if s.substr(16, 1) != ":" {
+        return Err("missing ':' after minute in: " + s)
+    }
+    let sec: Int = time_parse_int(s, 17, 2)
+    if sec < 0 { return Err("non-numeric second in: " + s) }
+    let time_r: Result<Time, String> = time_new(h, mi, sec, 0)
+    let mut time_val: Time = new Time { hour: 0, minute: 0, second: 0, nanos: 0 }
+    match time_r {
+        Ok(t) => { time_val = t },
+        Err(msg) => { return Err(msg) }
+    }
+    // Skip optional fractional seconds: ".NNN..." (drop precision in v0).
+    let mut tz_pos: Int = 19
+    if tz_pos < n {
+        if s.substr(tz_pos, 1) == "." {
+            let mut p: Int = tz_pos + 1
+            let mut found_pos: Int = -1
+            while p < n {
+                let ch: String = s.substr(p, 1)
+                let dv: Int = time_digit_value(ch)
+                if dv < 0 {
+                    found_pos = p
+                    p = n
+                } else {
+                    p = p + 1
+                }
+            }
+            if found_pos < 0 {
+                tz_pos = n
+            } else {
+                tz_pos = found_pos
+            }
+        }
+    }
+    if tz_pos >= n {
+        return Err("missing timezone offset in: " + s)
+    }
+    let off: Int = parse_tz_offset_at(s, tz_pos)
+    if off == -99999 {
+        return Err("invalid timezone offset in: " + s)
+    }
+    return datetime_new(date_val, time_val, off)
+}
+
+// duration_parse_iso — parses ISO 8601 duration form `PT<H>H<M>M<S>S`.
+// Accepts any subset of components in that order. Examples:
+//   "PT1H30M"   → 5400 seconds
+//   "PT45S"     → 45 seconds
+//   "PT2H"      → 7200 seconds
+//   "PT1H30M0S" → 5400 seconds
+// Date components (`P3D`, `P1Y`, etc.) are NOT supported in v0 (ambiguous
+// without anchor date). Returns Err for anything other than `PT...` shape.
+pub fn duration_parse_iso(s: String) -> Result<Duration, String> {
+    let n: Int = len(s)
+    if n < 3 {
+        return Err("duration too short: " + s)
+    }
+    if s.substr(0, 1) != "P" {
+        return Err("duration must start with 'P': " + s)
+    }
+    if s.substr(1, 1) != "T" {
+        return Err("only PT-form (time-only) supported in v0: " + s)
+    }
+    let mut total_secs: Int = 0
+    let mut pos: Int = 2
+    let mut current: Int = 0
+    let mut have_digit: Bool = false
+    let mut last_unit: String = ""
+    while pos < n {
+        let c: String = s.substr(pos, 1)
+        let dv: Int = time_digit_value(c)
+        if dv >= 0 {
+            current = current * 10 + dv
+            have_digit = true
+        } else {
+            if have_digit == false {
+                return Err("duration unit without value at pos " + time_int_to_str(pos) + ": " + s)
+            }
+            if c == "H" {
+                total_secs = total_secs + current * 3600
+                last_unit = "H"
+            } else { if c == "M" {
+                total_secs = total_secs + current * 60
+                last_unit = "M"
+            } else { if c == "S" {
+                total_secs = total_secs + current
+                last_unit = "S"
+            } else {
+                return Err("unknown duration unit '" + c + "' in: " + s)
+            } } }
+            current = 0
+            have_digit = false
+        }
+        pos = pos + 1
+    }
+    if have_digit {
+        return Err("trailing digits without unit: " + s)
+    }
+    return Ok(duration_new(total_secs, 0))
+}
+
+// ===========================================================================
+// SECTION J — Dt.6 timezone v0.
+//
+// UTC and Local only in v5.34.0. Named-zone lookup ("America/Lima",
+// "Europe/Madrid", etc.) returns explicit `Err("named tzdb not yet
+// supported: <name>")` — non-negotiable per PLAN. Silent fallback to UTC
+// is the bug-class that bites real users on flight-booking apps.
+// ===========================================================================
+
+pub fn tz_utc() -> Timezone {
+    return UTC
+}
+
+pub fn tz_local() -> Timezone {
+    return Local
+}
+
+pub fn tz_fixed(offset_minutes: Int) -> Timezone {
+    return FixedOffset(offset_minutes)
+}
+
+pub fn tz_named(name: String) -> Result<Timezone, String> {
+    return Err("named tzdb not yet supported: " + name)
+}
+
+pub fn tz_offset_minutes_for(tz: Timezone, epoch_secs: Int) -> Result<Int, String> {
+    match tz {
+        UTC => { return Ok(0) },
+        Local => {
+            let off: Int = __mn_local_offset_minutes(epoch_secs)
+            // INT64_MIN sentinel from C side; in Mapanare Int we test against
+            // a safe lower bound (real offsets are in [-1440, +1440]).
+            if off < -2000 {
+                return Err("local offset lookup failed")
+            }
+            return Ok(off)
+        },
+        FixedOffset(m) => { return Ok(m) }
+    }
+    return Err("unreachable")
+}
+
+/// datetime_to_local — re-anchors a UTC datetime into local timezone,
+/// honoring DST at that instant. Input dt MUST have tz_offset_minutes==0
+/// (a true UTC value); use datetime_to_epoch + datetime_from_epoch_in_tz
+/// for arbitrary-zone conversion.
+pub fn datetime_to_local(dt_utc: DateTime) -> Result<DateTime, String> {
+    let epoch_r: Result<Int, String> = datetime_to_epoch(dt_utc)
+    match epoch_r {
+        Ok(epoch_secs) => {
+            let off: Int = __mn_local_offset_minutes(epoch_secs)
+            if off < -2000 {
+                return Err("local offset lookup failed")
+            }
+            let local_packed: Int = __mn_local_pack(epoch_secs)
+            let local_dt_r: Result<DateTime, String> = unpack_to_datetime(local_packed)
+            match local_dt_r {
+                Ok(local_dt) => {
+                    let with_off: DateTime = new DateTime { date: local_dt.date, time: local_dt.time, tz_offset_minutes: off }
+                    return Ok(with_off)
+                },
+                Err(msg) => { return Err(msg) }
+            }
+        },
+        Err(msg) => { return Err(msg) }
+    }
+    return Err("unreachable")
 }

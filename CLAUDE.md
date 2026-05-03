@@ -19,6 +19,119 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.34.0** (ready, not tagged) — **Dt.\* — first-class date /
+  time stdlib.** First stdlib expansion since v5.21.0. **Zero
+  compiler edits. Zero `mapanare/self/*.mn` source touches.**
+  Strict 3-stage fixed point preserved by construction at
+  v5.33.x's **241,898 lines / 0 diff** (29-release strict streak
+  from the v5.7.1 baseline). Goldens **95/95**. Net-new
+  `stdlib/time.mn` (~723 LOC) shipping `Date`, `Time`, `DateTime`,
+  `Duration`, `Timezone` types with construction-time validation
+  (rejects `2026-13-03`, `1900-02-29`, year out of `[1, 9999]`);
+  ISO 8601 + RFC 3339 parse/format with strftime specifier subset
+  (`%Y %m %d %H %M %S %z %Z %%`); arithmetic with month/day
+  rollover and leap-year handling; v0 timezone surface (UTC +
+  system-local; `tz_named("America/Lima")` returns explicit
+  `Err("named tzdb not yet supported: ...")` — non-negotiable
+  defer per PLAN, silent fallback to UTC is the bug-class that
+  bites real users). All v5.33.x flat-file surface (`Stopwatch`,
+  `now_ns`, `format_duration_ms`, etc.) preserved unchanged at
+  the top of the file. Built on a new ~340 LOC portable C shim
+  at `runtime/native/mapanare_time.c` (POSIX default + `#ifdef
+  _WIN32` for `GetSystemTimePreciseAsFileTime` / `localtime_s` /
+  `gmtime_s` / `_mkgmtime`). Six new runtime exports:
+  `__mn_now_realtime_ns`, `__mn_utc_pack`, `__mn_local_pack`,
+  `__mn_local_offset_minutes`, `__mn_timegm`,
+  `__mn_normalize_pack`. Wired into `runtime/native/Makefile`
+  `RUNTIME_SOURCES` (`libmapanare_rt.a` now contains 9 modules +
+  Metal on Darwin).
+  **Phase 0 spike result.** PROMPT scoped Dt.5 with operator
+  overloads (`dt + dur`). Spike (`/tmp/op_spike.mn`) confirmed
+  `impl Add for Dur` does NOT lower through `mnc-stage1` —
+  semantic checker reports `Undefined trait 'Add'` and `Operator
+  '+' not supported for types Dur and Dur`. Operator-overload
+  infrastructure (`trait Add`, etc.) does not exist in the
+  current toolchain. Per PROMPT mitigation, Dt.5 fell back to
+  free-function method form: `datetime_add_duration(dt, dur)`,
+  `duration_add(a, b)`, `duration_mul(d, n)`, etc. Same surface
+  semantics, less ergonomic, no syntax change.
+  **PLAN deviation (load-bearing) — single-file vs. directory
+  module.** PROMPT specified `stdlib/time/{types,construct,parse,
+  format,arith,tz}.mn`. Phase 2 dev surfaced two cross-module
+  limitations: (1) native `mnc-stage1` does not propagate
+  `extern_fn_def` declarations across module imports — every
+  consumer would have to re-declare every extern; (2) the Python
+  LLVM emitter mangles defined function names with the module
+  prefix (`time__date_new`) but emits unprefixed forward
+  declarations at call sites, producing link failures
+  (reproduced via `python3 -m mapanare emit-llvm + clang link`;
+  same root cause as the `examples/ai/basic_chat.mn` v4.129.0
+  known-issue note). Both blocked the multi-file design. Every
+  existing stdlib module (`math`, `crypto`, `fs`, `ai/llm`,
+  `db/*`) is single-file with self-contained tests for the same
+  reason — v5.34.0 follows that proven pattern. Cross-module
+  fixes tracked separately and explicitly **outside v5.34.0
+  scope** (the PROMPT itself warned "If you find yourself
+  opening `mapanare/self/lower.mn` or `emit_llvm.mn`, you have
+  gone outside scope"). The directory-module shape remains the
+  right structural goal; it has to ride a separate
+  cross-module-emitter fix.
+  **Dt.7 tests.** 7 `.mn` test files under `stdlib/time/tests/`
+  + new pytest harness `tests/stdlib/test_time_dt.py` (mirrors
+  the v3.x `test_crypto.py` concatenation pattern: read
+  `stdlib/time.mn`, prepend to each `.mn` test main body,
+  compile via Python LLVM emitter, link against
+  `libmapanare_rt.a`, run, assert `"PASSED"` in stdout). 9/9
+  GREEN at HEAD. Tests cover: Dt.1 leap-year boundaries
+  (1900/2000/2024/2100/2400 — the bug-class behind every "Feb
+  29 1900" mishap); Dt.2 epoch round-trip across 0 (1970) →
+  2000000000 (2033); Dt.3 22 parse cases including
+  `2026-05-03T14:32:00.123Z` (fractional secs) and
+  `+05:30`/`-05:00` offset variants; Dt.4 strftime specifier
+  coverage; Dt.5 month/day rollover (Jan 31 + 1d → Feb 1; Dec
+  31 23:59:59 + 1s → next year; Feb 29 leap + 365d → Feb 28
+  non-leap); Dt.6 `tz_named` explicit-defer assertion; Dt.7
+  three property-style tests (parse-then-format round-trip,
+  epoch round-trip, arithmetic associativity) on a fixed
+  deterministic table of boundary fixtures.
+  **Dt.8 C shim.** ~340 LOC. Adapted PROMPT signatures from
+  out-pointer form to scalar returns with packed-int64
+  representation (`packed = y*10^10 + mo*10^8 + d*10^6 +
+  h*10^4 + mi*10^2 + s`) — Mapanare `extern "C" fn` exposes only
+  Int / String / List<X> returns, no out-pointer surface. C
+  smoke (`/tmp/time_shim_smoke.c`, 20 cases): leap-year
+  boundaries, normalization forward/backward, year overflow,
+  out-of-range rejection. 20/20 PASS. Valgrind clean.
+  **Dt.9 docs.** `docs/stdlib/time.md` — quick reference, type
+  definitions with year-range/leap-year/tz-sign conventions
+  documented, strftime specifier table, four required cookbook
+  recipes (parse-then-format round-trip; "1 week from now"; "is
+  this date in the past?"; "format as ISO 8601 in local
+  timezone"), migration note from the v5.33.x flat
+  `stdlib/time.mn` (every existing surface preserved).
+  **Closeout: caught one bug at Phase 6.** ISO parser
+  fractional-seconds skip had off-by-one between loop-exit
+  sentinel (`p = n`) and post-loop fallback
+  (`if p == n { tz_pos = p }`). Symptom:
+  `2026-05-03T14:32:00.123Z` failed parse with empty
+  diagnostic. Fix: track `found_pos` separately from loop-exit
+  sentinel; only fall back to `tz_pos = n` when `found_pos < 0`.
+  Pinned in `test_parse_iso.mn` case 17 — round-trip parse →
+  format → parse.
+  **Hd-class preventative.** SPEC.md header re-synced from
+  v5.33.1's "synced to the v5.33.1 cut" to "synced to the
+  v5.34.0 cut" with a new 14-line block summarizing what
+  v5.34.0 adds (specifically enumerating the 6 new runtime
+  functions — the first SPEC-scoped runtime additions since
+  v5.21.0). `check_doc_freshness.py` GREEN.
+  Aggregate state entering v5.35.0: **1 HIGH** (Tn.1 — DEADLINE
+  per v5.33.0 escalation, 6-release overdue carry-forward) /
+  **2 MEDIUM** (macOS notarization; carry) / ~7 LOW (added
+  named-tzdb, cross-module mangling, operator-overload
+  infrastructure, full strftime expansion, sub-second precision
+  in broken-down forms). See
+  `docs/roadmap/v5/v5.34.0/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
 - **v5.33.2** (ready, not tagged) — **Cd.\* — relax panel-cadence
   enforcement to informational-only.** Tooling-policy hotfix.
   **Zero compiler edits. Zero runtime edits. Zero

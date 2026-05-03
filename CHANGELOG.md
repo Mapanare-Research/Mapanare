@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.34.0] - 2026-05-03
+
+**Dt.\* — first-class date / time stdlib.** Net-new `stdlib/time.mn`
+surface: `Date`, `Time`, `DateTime`, `Duration`, `Timezone` types
+with construction-time validation (rejects `2026-13-03`,
+`1900-02-29`); ISO 8601 + RFC 3339 parse / format with strftime
+specifier subset (`%Y %m %d %H %M %S %z %Z %%`); arithmetic with
+month/day rollover and leap-year handling; v0 timezone surface
+(UTC + system-local; `tz_named("America/Lima")` returns explicit
+`Err("named tzdb not yet supported: ...")` — non-negotiable defer
+per PLAN, silent fallback to UTC is the bug-class that bites real
+users on flight-booking apps). All v5.33.x flat-file surface
+(`Stopwatch`, `now_ns`, `format_duration_ms`, etc.) preserved
+unchanged. Built on a new ~340 LOC portable C shim at
+`runtime/native/mapanare_time.c` (POSIX default; Windows path
+behind `#ifdef _WIN32` for `GetSystemTimePreciseAsFileTime` /
+`localtime_s` / `_mkgmtime`). Strict 3-stage fixed point preserved
+by construction at v5.33.x's **241,898 lines / 0 diff** (29-release
+strict streak). Goldens **95/95**.
+
+**PLAN deviation (load-bearing).** PROMPT specified a directory
+module at `stdlib/time/{types,construct,parse,format,arith,tz}.mn`. <!-- no-check -->
+Phase 2 dev surfaced two cross-module limitations in the current
+toolchain: native `mnc-stage1` does not propagate `extern_fn_def`
+declarations across module imports, and the Python LLVM emitter
+mangles defined function names with the module prefix
+(`time__date_new`) but emits unprefixed forward declarations at
+call sites — producing link failures. Both blocked the multi-file
+design. Every existing stdlib module (`math`, `crypto`, `fs`,
+`ai/llm`, `db/*`) is single-file with self-contained tests for the
+same reason; v5.34.0 follows that proven pattern. Recorded in
+`docs/roadmap/v5/v5.34.0/SESSION_REPORT.md` with the Phase 0
+operator-overload spike result that informed the same decision
+for Dt.5 (method form `datetime_add_duration(dt, dur)` instead of
+operator overload `dt + dur`).
+
+### Added
+
+- `stdlib/time.mn` — Dt.1..Dt.6 + Dt.9 surface (~700 LOC):
+  Date/Time/DateTime/Duration/Timezone, validating constructors,
+  clock entry points, parsers, formatters, arithmetic, timezone v0.
+- `runtime/native/mapanare_time.c` — Dt.8 portable C shim (~340 LOC):
+  `__mn_now_realtime_ns`, `__mn_utc_pack`, `__mn_local_pack`,
+  `__mn_local_offset_minutes`, `__mn_timegm`, `__mn_normalize_pack`.
+- `stdlib/time/tests/` — Dt.7 tests (`test_date.mn`,
+  `test_datetime.mn`, `test_parse_iso.mn`, `test_format.mn`,
+  `test_arithmetic.mn`, `test_property.mn`, `test_tz.mn`).
+- `tests/stdlib/test_time_dt.py` — pytest harness following the
+  v3.x `test_crypto.py` concatenation pattern.
+- `docs/stdlib/time.md` — surface reference + cookbook + migration
+  note from the v5.33.x flat file.
+
+### Changed
+
+- `runtime/native/Makefile` `RUNTIME_SOURCES`: added
+  `mapanare_time.c` to the runtime-archive build set
+  (`libmapanare_rt.a` now contains 9 modules + Metal on Darwin).
+
+### Fixed
+
+- ISO 8601 parser fractional-seconds skip: off-by-one between
+  loop-exit (`p = n`) and post-loop check (`if p == n { tz_pos = p }`)
+  caused `2026-05-03T14:32:00.123Z` to fail with empty diagnostic.
+  Caught at Phase 6 by `test_parse_iso.mn` round-trip case before
+  closeout. Restructured to track `found_pos` separately from `p`.
+
+
 ## [5.33.2] - 2026-05-03
 
 **Cd.\* — relax panel-cadence enforcement to informational-only.**
@@ -9742,7 +9809,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.2...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.34.0...HEAD
+[5.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.2...v5.34.0
 [5.33.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.1...v5.33.2
 [5.33.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.0...v5.33.1
 [5.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.32.0...v5.33.0
