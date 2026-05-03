@@ -1,7 +1,30 @@
 # Mapanare Language Specification
 
-**Version:** 5.37.0
-**Status:** Live — synced to the v5.37.0 cut (2026-05-03)
+**Version:** 5.38.0
+**Status:** Live — synced to the v5.38.0 cut (2026-05-03)
+
+> **v5.38.0 — Re.\* — regex stdlib closeout.** SPEC body unchanged
+> from the v5.21.0 cut. v5.38.0 audits + extends the existing
+> `stdlib/text/regex.mn` (PCRE2 wrapper shipped at v0.9.0): adds the
+> `Regex`-first compile-once API (`regex_is_match` / `regex_find` /
+> `regex_find_all` / `regex_replace` / `regex_replace_all` /
+> `regex_captures` / `regex_captures_iter` / `regex_free`) plus a
+> `Captures` type with named-group lookup (`captures_get`,
+> `captures_get_named`, `captures_count`). Named groups parse
+> `(?P<name>...)` / `(?<name>...)` in the pattern source via the
+> new `parse_named_groups` walker — **no new C runtime exports**.
+> Backref-bearing replacements (`$0..$9`, `${name}`, `$$`) work
+> through PCRE2's default substitute mode. PLAN-deviated from a
+> Pike VM rewrite (kept PCRE2; rewrite is a v6.0+ candidate).
+> Source: `stdlib/text/regex.mn` extended; new
+> `stdlib/text/tests/test_regex_smoke.mn` (10 sections) +
+> `stdlib/text/tests/test_regex_corpus.mn` (~40 cases) +
+> `tests/stdlib/test_text_regex.py` harness; new
+> `docs/stdlib/regex.md`. Adds **zero language features, zero
+> new MIR ops, zero new IR shapes, zero new runtime functions**.
+> Strict 3-stage fixed point preserved by construction at
+> v5.37.0's 241,898 lines / 0 diff; 33-release strict streak from
+> v5.7.1.
 
 > **v5.37.0 — Ht.\* — HTTP App / router / middleware / streaming
 > encoders.** SPEC body unchanged from the v5.21.0 cut. v5.37.0 adds

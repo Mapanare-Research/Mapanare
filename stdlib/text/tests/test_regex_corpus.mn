@@ -1,0 +1,165 @@
+// test_regex_corpus.mn — v5.38.0 Re.4 regex pattern-syntax corpus.
+//
+// Locks in PCRE2-default behavior for the documented v5.38.0 surface:
+//   - literals + dot
+//   - quantifiers * + ? {n} {n,m}
+//   - anchors ^ $
+//   - character classes [a-z] [^...] \d \w \s
+//   - alternation |
+//   - non-capturing group (?:...)
+//   - capture groups (...)  +  named (?P<name>...)
+//   - case-insensitive inline flag (?i)
+//
+// Each helper takes a (pattern, subject) and asserts a Bool. Runs over
+// the Regex-first compile-once API exclusively.
+
+fn assert_match(label: String, pattern: String, subject: String) -> Int {
+    pon r: Result<Regex, RegexError> = compile(pattern)
+    match r {
+        Ok(rx) => {
+            pon ok: Bool = regex_is_match(rx, subject)
+            pon _d: Regex = regex_free(rx)
+            si ok == false {
+                print("FAIL: " + label + " — expected match for " + pattern + " on " + subject)
+                da 1
+            }
+            da 0
+        },
+        Err(_e) => {
+            print("FAIL: " + label + " — compile error for " + pattern)
+            da 1
+        }
+    }
+}
+
+fn assert_no_match(label: String, pattern: String, subject: String) -> Int {
+    pon r: Result<Regex, RegexError> = compile(pattern)
+    match r {
+        Ok(rx) => {
+            pon ok: Bool = regex_is_match(rx, subject)
+            pon _d: Regex = regex_free(rx)
+            si ok == true {
+                print("FAIL: " + label + " — expected NO match for " + pattern + " on " + subject)
+                da 1
+            }
+            da 0
+        },
+        Err(_e) => {
+            print("FAIL: " + label + " — compile error for " + pattern)
+            da 1
+        }
+    }
+}
+
+fn assert_replace_all(label: String, pattern: String, subject: String, repl: String, expected: String) -> Int {
+    pon r: Result<Regex, RegexError> = compile(pattern)
+    match r {
+        Ok(rx) => {
+            pon out: String = regex_replace_all(rx, subject, repl)
+            pon _d: Regex = regex_free(rx)
+            si out != expected {
+                print("FAIL: " + label + " — expected " + expected + " got " + out)
+                da 1
+            }
+            da 0
+        },
+        Err(_e) => {
+            print("FAIL: " + label + " — compile error")
+            da 1
+        }
+    }
+}
+
+fn assert_find_all_count(label: String, pattern: String, subject: String, expected_count: Int) -> Int {
+    pon r: Result<Regex, RegexError> = compile(pattern)
+    match r {
+        Ok(rx) => {
+            pon all: List<Match> = regex_find_all(rx, subject)
+            pon n: Int = len(all)
+            pon _d: Regex = regex_free(rx)
+            si n != expected_count {
+                print("FAIL: " + label + " — expected count " + str(expected_count) + " got " + str(n))
+                da 1
+            }
+            da 0
+        },
+        Err(_e) => {
+            print("FAIL: " + label + " — compile error")
+            da 1
+        }
+    }
+}
+
+fn main() {
+    pon mut fails: Int = 0
+
+    // --- literals + dot ---
+    fails = fails + assert_match("c1", "abc", "xabcy")
+    fails = fails + assert_match("c2", "h.llo", "hello")
+    fails = fails + assert_match("c3", "h.llo", "hxllo")
+    fails = fails + assert_no_match("c4", "h.llo", "hxxllo")
+
+    // --- quantifiers ---
+    fails = fails + assert_match("q1", "ab*c", "ac")
+    fails = fails + assert_match("q2", "ab*c", "abbbbc")
+    fails = fails + assert_no_match("q3", "ab+c", "ac")
+    fails = fails + assert_match("q4", "ab+c", "abc")
+    fails = fails + assert_match("q5", "colou?r", "color")
+    fails = fails + assert_match("q6", "colou?r", "colour")
+    fails = fails + assert_match("q7", "a{3}", "aaa")
+    fails = fails + assert_no_match("q8", "^a{3}$", "aa")
+    fails = fails + assert_match("q9", "a{2,4}", "aaa")
+    fails = fails + assert_no_match("q10", "^a{2,4}$", "a")
+
+    // --- anchors ---
+    fails = fails + assert_match("a1", "^hello", "hello world")
+    fails = fails + assert_no_match("a2", "^hello", "say hello")
+    fails = fails + assert_match("a3", "world$", "hello world")
+    fails = fails + assert_no_match("a4", "world$", "world hello")
+
+    // --- character classes ---
+    fails = fails + assert_match("cc1", "[a-z]+", "hello")
+    fails = fails + assert_no_match("cc2", "^[a-z]+$", "Hello")
+    fails = fails + assert_match("cc3", "[^0-9]+", "abc")
+    fails = fails + assert_no_match("cc4", "^[^0-9]+$", "abc123")
+    fails = fails + assert_match("cc5", "\\d+", "abc 123")
+    fails = fails + assert_no_match("cc6", "^\\d+$", "abc")
+    fails = fails + assert_match("cc7", "\\w+", "user_42")
+    fails = fails + assert_match("cc8", "\\s+", "a b")
+
+    // --- alternation ---
+    fails = fails + assert_match("alt1", "cat|dog", "I have a cat")
+    fails = fails + assert_match("alt2", "cat|dog", "I have a dog")
+    fails = fails + assert_no_match("alt3", "cat|dog", "I have a fish")
+
+    // --- non-capturing groups ---
+    fails = fails + assert_match("nc1", "(?:foo)+bar", "foofoobar")
+    fails = fails + assert_no_match("nc2", "^(?:foo)+bar$", "fobar")
+
+    // --- capture groups (numbered) ---
+    fails = fails + assert_replace_all("gn1", "(\\w+) (\\w+)", "john smith", "$2 $1", "smith john")
+    fails = fails + assert_replace_all("gn2", "(\\d+)", "id=42", "[$1]", "id=[42]")
+
+    // --- case-insensitive (?i) inline flag ---
+    fails = fails + assert_match("ci1", "(?i)hello", "HELLO")
+    fails = fails + assert_match("ci2", "(?i)hello", "Hello")
+    fails = fails + assert_no_match("ci3", "hello", "HELLO")
+
+    // --- find_all counts ---
+    fails = fails + assert_find_all_count("fa1", "\\d+", "10 20 30 40", 4)
+    fails = fails + assert_find_all_count("fa2", "[a-z]+", "Hello World Foo", 3)
+    fails = fails + assert_find_all_count("fa3", "xyz", "no occurrences", 0)
+    fails = fails + assert_find_all_count("fa4", "a+", "aaaa", 1)
+
+    // --- replace_all edge cases ---
+    fails = fails + assert_replace_all("ra1", "\\d+", "abc 1 def 22 ghi 333", "N", "abc N def N ghi N")
+    fails = fails + assert_replace_all("ra2", "X", "no Xs here X", "Y", "no Ys here Y")
+    fails = fails + assert_replace_all("ra3", "^", "abc", ">", ">abc")
+    fails = fails + assert_replace_all("ra4", "no_match", "abc", "X", "abc")
+
+    si fails == 0 {
+        print("test_regex_corpus PASSED")
+    } sino {
+        print("test_regex_corpus FAILED: " + str(fails) + " case(s)")
+    }
+}

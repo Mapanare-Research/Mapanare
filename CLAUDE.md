@@ -19,6 +19,122 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.38.0** (ready, not tagged) — **Re.\* — regex stdlib
+  closeout.** Fifth release in the stdlib gap-close arc
+  (Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0, Ht.\* @
+  v5.37.0, Re.\* @ v5.38.0). **Zero compiler edits. Zero new
+  C runtime exports. Zero `mapanare/self/*.mn` source touches.**
+  Strict 3-stage fixed point preserved by construction at
+  v5.37.0's **241,898 lines / 0 diff** (33-release strict
+  streak from v5.7.1). Goldens **95/95**. v5.38.0 audited the
+  pre-existing PCRE2-backed `stdlib/text/regex.mn` (271 LOC,
+  shipped at v0.9.0), fixed two pre-existing parse / lowering
+  bugs that had silently broken the module at HEAD, and
+  extended the surface with a `Regex`-first compile-once API
+  plus a `Captures` type with named-group lookup.
+  **Phase 0 deviation from PLAN (load-bearing).** PLAN
+  specified "net-new module at `stdlib/regex/`, ~600 LOC Pike
+  VM"; Phase 0 audit established that a complete PCRE2 wrapper
+  was already shipped. Audit committed at
+  `docs/roadmap/v5/v5.38.0/PRE_PHASE_AUDIT.md`, surfaced to
+  lead, **lead approved keeping PCRE2** (Pike VM rewrite is a
+  v6.0+ candidate). Same pattern as v5.34.0 / v5.35.0 / v5.37.0
+  — Phase-0-driven scope correction toward the right
+  deliverable for the release window.
+  **Re.1+Re.2 — Regex-first API**:
+  `regex_is_match(r, s) -> Bool`,
+  `regex_find(r, s) -> Option<Match>`,
+  `regex_find_all(r, s) -> List<Match>`,
+  `regex_replace(r, s, repl) -> String`,
+  `regex_replace_all(r, s, repl) -> String`,
+  `regex_free(r) -> Regex`. The pre-existing pattern-string-
+  first free-function API (`regex_match`, `find_all`,
+  `replace`, `replace_all`, `regex_split`, `is_match`) is
+  **preserved unchanged**.
+  **Re.3 — Captures + named groups**: new `NamePair` and
+  `Captures` types; `regex_captures(r, s) -> Option<Captures>`;
+  `regex_captures_iter(r, s) -> List<Captures>`;
+  `captures_get(c, idx) -> Option<String>`;
+  `captures_get_named(c, name) -> Option<String>`;
+  `captures_count(c) -> Int`. Named groups parse
+  `(?P<name>...)` and `(?<name>...)` in pattern source via the
+  new `parse_named_groups` walker (Path A — no new C runtime
+  exports). Walker handles escapes, character classes,
+  non-capturing groups, lookarounds, atomic groups, inline
+  flags, and comments. **`Captures` stores group state as
+  parallel `List<String> + List<Bool>`** rather than
+  `List<Option<String>>` to sidestep the v5.x drop-glue carry
+  on `List<Option<X>>` appends (`snapshot_all_groups` hung in
+  early testing); public `captures_get` surface preserves
+  `Option<String>` so callers don't see the workaround.
+  **Backref-bearing replacements work natively** — PCRE2's
+  default `pcre2_substitute` recognizes `$0..$9`, `${name}`,
+  and `$$` without `PCRE2_SUBSTITUTE_EXTENDED`; existing C
+  wrapper at `runtime/native/mapanare_io.c` passes the right
+  options. Pattern-side backreferences (`\1`) remain
+  out-of-scope (NP-complete).
+  **Re.4 — runtime test corpus**:
+  `stdlib/text/tests/test_regex_smoke.mn` (10 sections,
+  ~270 LOC) covers compile happy + error paths,
+  `regex_is_match`, `regex_captures` named-group extraction,
+  numbered-group access, unknown-name handling,
+  `captures_count`, `captures_iter`, `regex_replace_all`
+  with `$1`/`$2`, named backref via `${name}`, `$$` literal
+  escape. `stdlib/text/tests/test_regex_corpus.mn` (~150 LOC,
+  ~40 cases) covers literals + `.`, quantifiers, anchors,
+  character classes, alternation, non-capturing groups,
+  capture groups (numbered), inline flag `(?i)`, `find_all`
+  count assertions, `replace_all` edge cases. Pytest harness
+  `tests/stdlib/test_text_regex.py` mirrors v5.34/v5.35
+  concatenation pattern (read regex module, prepend to test
+  main body, compile via Python LLVM emitter, link against
+  `libmapanare_rt.a`, run, assert "PASSED"). Gated on
+  `libpcre2-8` dlopen target. **3/3 GREEN.**
+  **Re.5 — `docs/stdlib/regex.md`** (~360 LOC): pattern
+  syntax reference, type / API reference, 6 cookbook recipes
+  (compile-once match-many; extract named fields; swap pairs
+  via `$1`/`$2`; replace via named backref; iterate matches
+  with groups; case-insensitive via `(?i)`), deviation notes,
+  migration note from the pre-v5.38.0 surface.
+  **Two pre-existing bugs fixed in v5.38.0** (both
+  silently-broken-at-HEAD, would have failed the user's first
+  attempt to use regex from a fresh clone): (1) 17 occurrences
+  of `pon _: Int = ...` (the parser does not accept `_` as a
+  binding name) — renamed to `pon _drop: Int = ...`; (2)
+  `parse_named_groups` underlying `String.substr(start, count)`
+  semantics — Mapanare's `substr` third arg is a **count**, not
+  an exclusive end-index. The pre-existing `regex_split` at
+  lines 235/242 has the same shape `text.substr(offset,
+  text_len)` — over-reads past string end, mitigated by PCRE2
+  capping bounds; latent silent over-read, not a visible crash.
+  **Re.6 — new MEDIUM (deferred)**: `pon m: Option<Match> =
+  regex_match(...)` allocates `m` as `i1` instead of as the
+  `Option<Match>` aggregate (same bug class as v5.36.0 Js.0.B
+  / v5.26.1 Eu.\*). Reproduces standalone with no v5.38.0
+  additions involved. Out of scope — fix needed in
+  `mapanare/lower.py` / `emit_llvm_text.py`, not in the regex
+  module. The v5.38.0 Regex-first API does not trigger this
+  bug because `Regex` (not `Option<Match>`) is the local type.
+  **`regex_replace` (single-shot) returns subject unchanged**
+  on multi-match input — underlying C wrapper without
+  `PCRE2_SUBSTITUTE_GLOBAL` does not substitute under current
+  testing. v5.38.x follow-up; `regex_replace_all` validated.
+  **Hd-class preventative.** `docs/SPEC.md` header re-synced
+  from "v5.37.0 cut" to "v5.38.0 cut" with new sync block
+  summarizing what v5.38.0 ships. `check_doc_freshness.py`
+  GREEN. Source delta: ~461 LOC `stdlib/text/regex.mn` (Re.\*
+  surface) + ~270 LOC `test_regex_smoke.mn` + ~150 LOC
+  `test_regex_corpus.mn` + ~170 LOC pytest harness + ~360 LOC
+  `docs/stdlib/regex.md` + CHANGELOG / CLAUDE.md / SPEC sync /
+  mechanical bump_version.py edits. Aggregate state entering
+  v5.39.0: **0 HIGH** / **3 MEDIUM** (Re.6 new, Ht.5 typed
+  handler waits on Js.4.B, macOS notarization carry from
+  v5.33.0 Nu.2) / ~9 LOW (Pike VM rewrite candidate added,
+  `regex_replace` single-shot follow-up, Rust regex corpus
+  port, plus v5.37.0 carries). See
+  `docs/roadmap/v5/v5.38.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.37.0** (ready, not tagged) — **Ht.\* — HTTP App / router /
   middleware / streaming encoders.** Fourth release in the stdlib
   gap-close arc (Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0,

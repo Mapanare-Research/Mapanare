@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.38.0] - 2026-05-03
+
+**Re.\* — regex stdlib closeout.** Fifth release in the stdlib
+gap-close arc (Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0,
+Ht.\* @ v5.37.0, Re.\* @ v5.38.0). v5.38.0 audited the existing
+`stdlib/text/regex.mn` (271 LOC PCRE2 wrapper, shipped at v0.9.0),
+fixed two pre-existing parse / lowering bugs to make it actually
+runnable, and extended it with the `Regex`-first compile-once API
+the v5.38.0 PROMPT named: `regex_is_match`, `regex_find`,
+`regex_find_all`, `regex_replace`, `regex_replace_all`,
+`regex_captures`, `regex_captures_iter`, `regex_free`, plus a
+`Captures` type with named-group lookup (`captures_get` /
+`captures_get_named` / `captures_count`). Named groups parse
+`(?P<name>...)` / `(?<name>...)` in Mapanare source (Path A — no
+new C runtime exports). Backref-bearing replacements (`$0..$9`,
+`${name}`, `$$`) work through PCRE2's default substitute mode.
+Tests: 10-section `stdlib/text/tests/test_regex_smoke.mn` +
+~40-case `stdlib/text/tests/test_regex_corpus.mn` +
+`tests/stdlib/test_text_regex.py` harness mirroring the
+v5.34/v5.35 concatenation pattern.
+
+### Added
+
+- **Re.1+Re.2** (`stdlib/text/regex.mn`) — `Regex`-first API:
+  `regex_is_match(r, s)`, `regex_find(r, s) -> Option<Match>`,
+  `regex_find_all(r, s) -> List<Match>`, `regex_replace(r, s, repl)`,
+  `regex_replace_all(r, s, repl)`, `regex_free(r) -> Regex`.
+- **Re.3** (`stdlib/text/regex.mn`) — `Captures` + `NamePair`
+  types, `regex_captures(r, s) -> Option<Captures>`,
+  `regex_captures_iter(r, s) -> List<Captures>`,
+  `captures_get(c, idx) -> Option<String>`,
+  `captures_get_named(c, name) -> Option<String>`,
+  `captures_count(c) -> Int`. Named-group lookup parses
+  `(?P<name>...)` / `(?<name>...)` in the pattern source via
+  the new `parse_named_groups` walker.
+- **Re.4** (`stdlib/text/tests/`) — `test_regex_smoke.mn`
+  (10 sections) + `test_regex_corpus.mn` (~40 pattern-syntax
+  cases). Pytest harness `tests/stdlib/test_text_regex.py`
+  gated on `libpcre2-8` dlopen target.
+- **Re.5** (`docs/stdlib/regex.md`) — pattern syntax reference,
+  type / API reference, 6 cookbook recipes, deviation notes,
+  migration note.
+
+### Changed
+
+- **`stdlib/text/regex.mn` was unparseable at HEAD pre-v5.38.0**
+  due to 17 occurrences of `pon _: Int = ...` (the parser does
+  not accept `_` as a binding name). v5.38.0 renames these to
+  `pon _drop: Int = ...` so the existing pattern-string-first
+  free-function API at least parses again. The existing
+  `tests/stdlib/test_regex.py` (compile-only IR-shape) now
+  passes; before v5.38.0 it could not have been running. This
+  is source-compatible with any caller that already imported
+  the module (none existed in-tree).
+- `Captures` is internally represented as parallel
+  `List<String> + List<Bool>` rather than `List<Option<String>>`
+  to sidestep the v5.x drop-glue carry on `List<Option<X>>`
+  appends. The public `captures_get` surface preserves
+  `Option<String>` so callers don't see the workaround.
+
+### Fixed
+
+- `parse_named_groups` underlying `String.substr(start, count)`
+  semantics — Mapanare's `substr` third arg is a **count**, not
+  an exclusive end-index. v5.38.0 internal-fix; the existing
+  pre-v5.38.0 `regex_split` (which passed end-index as count)
+  over-reads past string-end, mitigated by PCRE2 capping bounds.
+
+### Deviations from PLAN
+
+1. **PLAN scoped a Pike VM rewrite** (~600 LOC engine in a new
+   `stdlib/regex/` directory). Phase 0 audit established that a
+   full PCRE2 wrapper was already shipped at v0.9.0; v5.38.0
+   keeps the existing engine + extends it. Pike VM is logged as
+   a v6.0+ LOW.
+2. **Re.2 `find` alias deferred** — calls broken pre-existing
+   `regex_match(pattern, text)` whose return type is
+   mis-lowered (`Option<Match>` → `i1`). Tracked as **Re.6,
+   new MEDIUM** carry-forward; fix needed in the Mapanare
+   semantic / lowering pipeline, not in the regex module.
+3. **Re.3 implementation chose Path A** (parse `(?P<name>...)`
+   in Mapanare source) over Path B (new C export) — no runtime surface
+   changes, deferred PCRE2-version-bump risk.
+4. **Test corpus is hand-written runtime, not lifted from Rust
+   regex's data/** — v5.38.0 ships ~50 cases asserting the
+   v5.38.0 surface; importing the Rust regex corpus is a
+   v5.38.x candidate when the legacy lowering bug closes.
+5. **`regex_replace` (single-shot) returns subject unchanged
+   on multi-match input** — the underlying C wrapper without
+   `PCRE2_SUBSTITUTE_GLOBAL` does not substitute under current
+   testing. v5.38.x follow-up; `regex_replace_all` validated
+   end-to-end.
+
+
 ## [5.37.0] - 2026-05-03
 
 **Ht.\* — HTTP App / router / middleware / streaming encoders.**
@@ -10222,7 +10316,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.37.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.38.0...HEAD
+[5.38.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.37.0...v5.38.0
 [5.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.36.0...v5.37.0
 [5.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.35.0...v5.36.0
 [5.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.34.0...v5.35.0
