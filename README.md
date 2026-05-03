@@ -24,9 +24,9 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.13.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.30.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-5800+_passing-brightgreen.svg?style=flat-square)]()
-[![Goldens](https://img.shields.io/badge/goldens-66%2F66-brightgreen.svg?style=flat-square)]()
+[![Goldens](https://img.shields.io/badge/goldens-95%2F95-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
 [![GitHub Stars](https://img.shields.io/github/stars/Mapanare-Research/Mapanare?style=flat-square&color=f5c542)](https://github.com/Mapanare-Research/Mapanare/stargazers)
 
@@ -57,20 +57,59 @@ $env:MAPANARE_NO_BUNDLED_LLVM = "1"; irm https://mapanare.dev/install.ps1 | iex
 
 Or download binaries from [Releases](https://github.com/Mapanare-Research/Mapanare/releases). Use the Windows SDK ZIP for clean-machine native builds or the minimal ZIP when you already have a compiler. See [`docs/THIRD-PARTY-LICENSES.md`](docs/THIRD-PARTY-LICENSES.md) for bundled SDK licenses.
 
+### Quick start with Docker
+
+[![mapanare-builder](https://img.shields.io/badge/ghcr.io-mapanare--builder-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/mapanare-research/Mapanare/pkgs/container/mapanare-builder)
+[![mapanare-runtime](https://img.shields.io/badge/ghcr.io-mapanare--runtime-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/mapanare-research/Mapanare/pkgs/container/mapanare-runtime)
+
+No host toolchain? Compile and run inside the official images:
+
+```bash
+mnc init demo --docker && cd demo
+docker build -t demo .
+docker run --rm demo
+```
+
+The multi-stage Dockerfile uses
+`ghcr.io/mapanare-research/mapanare-builder` for the build and
+`mapanare-runtime` for the final image (~115 MB). See
+[`docs/guides/docker.md`](docs/guides/docker.md).
+
 ---
 
 ## Hello World
 
+```bash
+mnc init hello && cd hello
+mnc run main.mn
+```
+
+`mnc init` scaffolds a runnable project (terse `main.mn`,
+`mapanare.toml`, `.gitignore`, `README.md`). For a one-liner:
+
 ```mn
-fn main() {
+fn main():
     print("hello from mapanare")
-}
 ```
 
 ```bash
-mapanare run hello.mn        # compile + run
-mapanare build hello.mn      # produce a native binary
+mnc run hello.mn        # compile + run
+mnc build hello.mn      # produce a native binary
+mnc check hello.mn      # type-check, no codegen
+mnc lsp                 # start the language server (stdio)
 ```
+
+(`mapanare` is also installed as an alias for `mnc`.)
+
+Source canonicalization: [`docs/guides/formatter.md`](docs/guides/formatter.md).
+New project scaffolding: [`docs/guides/init.md`](docs/guides/init.md).
+VS Code: [`docs/guides/lsp.md`](docs/guides/lsp.md).
+Docker: [`docs/guides/docker.md`](docs/guides/docker.md).
+
+VS Code users: install
+[the official extension](https://github.com/Mapanare-Research/mapanare-vscode)
+(`mapanare-research.mapanare`). Neovim/Helix setup lives in
+[`docs/guides/lsp.md`](docs/guides/lsp.md).
 
 ---
 
@@ -79,7 +118,7 @@ mapanare build hello.mn      # produce a native binary
 Take your existing Python scripts and compile them to native binaries:
 
 ```bash
-mapanare build your_script.py -o your_script
+mnc build your_script.py -o your_script
 ./your_script   # 33-239x faster
 ```
 
@@ -99,27 +138,30 @@ mapanare build your_script.py -o your_script
 
 ```mn
 // Agents — first-class concurrent actors
-agent Counter {
+agent Counter:
     state count: Int = 0
-    on increment { count = count + 1 }
-    on get_count -> Int { return count }
-}
+    on increment: count = count + 1
+    on get_count -> Int = count
 
 // Signals — reactive state
 let temperature = signal(72.0)
-let alert = computed(() => temperature.get() > 100.0)
+let alert = computed(|| temperature.get() > 100.0)
 
 // Streams — composable data pipelines
 let results = data_stream
-    |> filter((x) => x > 0)
-    |> map((x) => x * 2)
+    |> filter(|x| x > 0)
+    |> map(|x| x * 2)
     |> collect()
 
+// Comprehensions + implicit-return one-liner
+fn double(x: Int) -> Int = x * 2
+let doubled: List<Int> = [double(x) for x in xs if x > 0]
+let lookup: Map<Int, Int> = #{ k: k * k for k in 0..10 }
+
 // Pattern matching
-match response {
+match response:
     Ok(data) => process(data),
     Err(e) => print(e)
-}
 
 // AI stdlib
 import ai::llm
@@ -130,7 +172,7 @@ Full language reference, tutorials, and cookbook at [mapanare.dev/docs](https://
 
 ### Native compiler — what `mnc-stage1` ships
 
-The self-hosted compiler runs the full v5.7.0 corpus (66/66 native goldens):
+The self-hosted compiler runs the full corpus (95/95 native goldens at v5.27.0):
 
 - **Tensors** — literals, multi-dim indexing, NumPy-style broadcasting, slicing, reductions (sum / mean / max / min / argmax / argmin).
 - **Async / await / `block_on`** — real LLVM coroutines (`presplitcoroutine` + `@llvm.coro.id/begin/save/suspend/end`) with scheduler-driven suspension.
@@ -138,7 +180,7 @@ The self-hosted compiler runs the full v5.7.0 corpus (66/66 native goldens):
 - **Or-pattern matching with guards** — `Plus | Minus if cond => body` over enum variants and built-in constructors (`None` / `Some` / `Ok` / `Err`).
 - **Drop-glue ownership tracking** — string / list / boxed / tensor lifetimes tracked through return paths and loop iterations; valgrind / ASan / LSan / TSan all clean on the corpus.
 
-Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 226k lines; restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata diff at the source).
+Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 241k lines; restored v5.9.0 — DX.2 closed the v4.140.0–v5.8.x VERSION-metadata diff at the source; held through v5.17.0's mechanical brace → colon rewrite, v5.20.0's struct ergonomics, v5.21.0's chained comparisons, v5.23.0's CI recovery, v5.23.2's bootstrap brace-deprecation mirror, v5.24.0's Hy.\* hygiene gates, v5.25.0's Pv.\* prevention infrastructure, v5.26.0's Mb.7 codegen fix + Mb.9 Win64 ABI, v5.26.1's Eu.\* enum-payload closures, and v5.27.0's Mc.\* parity arc closeout — longest streak in project history at 23 consecutive releases).
 
 ---
 
@@ -150,13 +192,13 @@ Geometric mean across 6 cross-language benchmarks (median of 10 runs):
 |---|---:|---:|---:|---:|
 | **Mapanare** | **168x faster** | 0.85x (faster) | 1.17x | 0.96x |
 
-The self-hosted compiler compiles itself (3-stage fixed point reached
-at v4.134.0; temporarily regressed at v5.1.2 from In.1 inliner
-re-enable; restored to NEAR at v5.6.11, preserved through v5.8.0 —
-4-line VERSION-metadata diff over a 217k-line stage2.ll). 5,720+
-tests passing, zero flaky across 30 sequential runs.
+The self-hosted compiler compiles itself to a strict 3-stage fixed
+point (stage2.ll == stage3.ll byte-identical at 241k lines; strict
+since v5.9.0, held through 23 consecutive releases — see "Native
+compiler" above). 5,800+ tests passing, zero flaky across 40+
+sequential runs.
 
-[Full benchmark report](benchmarks/FINAL_REPORT_v4.153.md)
+[Full benchmark report](benchmarks/FINAL_REPORT.md)
 
 ---
 
@@ -168,6 +210,7 @@ cd Mapanare
 bash scripts/build_from_seed.sh    # no Python needed
 ./mnc hello.mn                     # compile and run (default)
 ./mnc emit-llvm hello.mn           # compile to LLVM IR
+./mnc fmt mapanare/self/           # canonicalize whitespace (v5.13.0+)
 ```
 
 > **v5.9.1 BREAKING:** `mnc <file.mn>` now compiles and runs the

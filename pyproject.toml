@@ -30,7 +30,10 @@ dev = [
 version = {file = "VERSION"}
 
 [tool.setuptools.packages.find]
-include = ["mapanare*", "runtime*", "stdlib*", "editors*"]
+include = ["mapanare*", "runtime*", "stdlib*"]
+
+[tool.setuptools.package-data]
+"mapanare.templates" = ["init/**/*", "init/**/.gitignore"]
 
 [project.scripts]
 mapanare = "mapanare.cli:main"

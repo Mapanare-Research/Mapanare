@@ -6,24 +6,21 @@
 // string that had been pushed then inspected later via join(). This
 // is the minimal reproducer.
 
-struct St {
-    lines: List<String>,
+struct St:
+    lines: List<String>
     n: Int
-}
 
-fn emit_line(st: St, line: String) -> St {
+fn emit_line(st: St, line: String) -> St:
     let mut s: St = st
     s.lines.push(line)
     return s
-}
 
-fn add_decl(st: St, name: String, ret: String) -> St {
+fn add_decl(st: St, name: String, ret: String) -> St:
     let mut s: St = st
     let line: String = "declare " + ret + " @" + name + "()"
     return emit_line(s, line)
-}
 
-fn main() {
+fn main():
     let empty: List<String> = []
     let st0: St = new St { lines: empty, n: 0 }
     let mut st: St = st0
@@ -32,4 +29,3 @@ fn main() {
     st = add_decl(st, "baz", "double")
     let out: String = join("\n", st.lines)
     print(out)
-}

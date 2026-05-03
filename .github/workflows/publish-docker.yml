@@ -1,0 +1,165 @@
+name: Release — Docker Images
+
+# v5.19.1 Dk.4: build and push the official Mapanare images to GHCR
+# whenever a release tag is published.
+#
+# Two independent images, both linux/amd64 only in v5.19.1:
+#   * ghcr.io/mapanare-research/mapanare-builder
+#   * ghcr.io/mapanare-research/mapanare-runtime
+#
+# The builder image stages the just-built `mnc-stage1` binary and
+# `runtime/native/libmapanare_rt.a`. The runtime image stages
+# `runtime/native/libmapanare_runtime.so`. Both images consume the
+# release tag (`vX.Y.Z`) and re-publish under `:X.Y.Z` and `:latest`.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build images for (e.g. v5.19.1)'
+        required: true
+        type: string
+
+concurrency:
+  group: publish-docker-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      REGISTRY: ghcr.io
+      OWNER: mapanare-research
+      # `tag_name` is "vX.Y.Z"; strip the leading "v" for the image tag.
+      RAW_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version tag
+        id: version
+        run: |
+          RAW="${{ env.RAW_TAG }}"
+          VERSION="${RAW#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Mapanare (for build_stage1.py + build_native.py)
+        run: pip install -e .
+
+      - name: Install LLVM 18
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y llvm-18 clang-18
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
+
+      - name: Build mnc-stage1 (Linux amd64)
+        run: |
+          python scripts/build_stage1.py
+          test -f mapanare/self/mnc-stage1
+          file mapanare/self/mnc-stage1
+
+      - name: Build native runtime artifacts
+        run: |
+          python runtime/native/build_native.py
+          test -f runtime/native/libmapanare_runtime.so
+
+      # v5.23.0 RC.7: build_native.py only produces libmapanare_runtime.so;
+      # libmapanare_rt.a (consumed by the builder image) comes from
+      # `make build-rt`. Adding this step closes the silently-failing
+      # publish-docker `Stage builder image build context` step.
+      - name: Build runtime archive (libmapanare_rt.a)
+        run: |
+          make build-rt
+          test -f runtime/native/libmapanare_rt.a
+
+      - name: Stage builder image build context
+        run: |
+          mkdir -p docker/builder/build-context
+          cp mapanare/self/mnc-stage1 docker/builder/build-context/mnc
+          cp runtime/native/libmapanare_rt.a docker/builder/build-context/
+          ls -la docker/builder/build-context/
+
+      - name: Stage runtime image build context
+        run: |
+          mkdir -p docker/runtime/build-context
+          cp runtime/native/libmapanare_runtime.so \
+              docker/runtime/build-context/libmapanare_rt.so
+          ls -la docker/runtime/build-context/
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push mapanare-builder
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/builder/build-context
+          file: docker/builder/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/mapanare-builder:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/mapanare-builder:latest
+          cache-from: type=gha,scope=builder
+          cache-to: type=gha,mode=max,scope=builder
+
+      - name: Build & push mapanare-runtime
+        uses: docker/build-push-action@v5
+        with:
+          context: docker/runtime/build-context
+          file: docker/runtime/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/mapanare-runtime:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/mapanare-runtime:latest
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime
+
+      - name: Smoke — pull both images
+        run: |
+          docker pull "${{ env.REGISTRY }}/${{ env.OWNER }}/mapanare-builder:${{ steps.version.outputs.version }}"
+          docker pull "${{ env.REGISTRY }}/${{ env.OWNER }}/mapanare-runtime:${{ steps.version.outputs.version }}"
+
+      - name: Smoke — multi-stage hello-world
+        run: |
+          mkdir -p /tmp/docker-smoke
+          cat > /tmp/docker-smoke/main.mn <<'EOF'
+          fn main():
+              print("hello from docker smoke")
+          EOF
+          cat > /tmp/docker-smoke/Dockerfile <<EOF
+          FROM ${{ env.REGISTRY }}/${{ env.OWNER }}/mapanare-builder:${{ steps.version.outputs.version }} AS build
+          COPY . /src
+          WORKDIR /src
+          RUN mkdir -p dist && mnc build main.mn -o dist/hello
+
+          FROM ${{ env.REGISTRY }}/${{ env.OWNER }}/mapanare-runtime:${{ steps.version.outputs.version }}
+          COPY --from=build /src/dist/hello /app/hello
+
+          ENTRYPOINT ["/app/hello"]
+          EOF
+          docker build -t docker-smoke /tmp/docker-smoke
+          out=$(docker run --rm docker-smoke)
+          echo "Output: $out"
+          test "$out" = "hello from docker smoke"
+          docker images docker-smoke --format "Final image size: {{.Size}}"

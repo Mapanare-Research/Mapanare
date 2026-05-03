@@ -5,15 +5,13 @@
 // closure passed as a typed function parameter, closure invoked
 // directly and through a parameter.
 
-fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+fn apply(f: fn(Int) -> Int, x: Int) -> Int:
     return f(x)
-}
 
-fn combine(f: fn(Int, Int) -> Int, a: Int, b: Int) -> Int {
+fn combine(f: fn(Int, Int) -> Int, a: Int, b: Int) -> Int:
     return f(a, b)
-}
 
-fn main() {
+fn main():
     let double: fn(Int) -> Int = (x) => x * 2
     let negate: fn(Int) -> Int = (x) => 0 - x
     let sum: fn(Int, Int) -> Int = (a, b) => a + b
@@ -22,4 +20,3 @@ fn main() {
     print(str(apply(negate, 3)))
     print(str(double(10)))
     print(str(combine(sum, 7, 8)))
-}

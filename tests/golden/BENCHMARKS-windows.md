@@ -1,9 +1,19 @@
 # Mapanare Benchmarks - Windows
 
-Generated: 2026-04-28 00:44 UTC  
-Version: 5.8.8 (`1057e2de`)  
-Platform: Darwin arm64, Python 3.12.13  
-Total time: 1.2s  
+> **v5.21.1 H.12 — Windows benchmark last sync.** The numbers
+> below are pinned to v5.8.8 because the Windows benchmark
+> runner has not re-emitted since the v5.8.8 → v5.21.0 stretch
+> (auto-regenerated only when `scripts/test_native.py` runs on
+> a Windows host; the linux runner refreshes
+> `BENCHMARKS-linux.md` on every CI run). Per-platform split
+> structurally closes the v5.11.0 panel Rattler #1 finding;
+> staleness is visible here and in the merged `BENCHMARKS.md`.
+> Re-run on a Windows host to refresh.
+
+Generated: 2026-04-28 00:44 UTC (last Windows-host run)
+Version: 5.8.8 (`1057e2de`)
+Platform: Darwin arm64, Python 3.12.13
+Total time: 1.2s
 
 ## Bootstrap Compiler (Python)
 

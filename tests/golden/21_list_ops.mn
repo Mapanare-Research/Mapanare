@@ -1,15 +1,12 @@
-fn sum_list(items: List<Int>) -> Int {
+fn sum_list(items: List<Int>) -> Int:
     let mut total: Int = 0
-    for i in 0..len(items) {
+    for i in 0..len(items):
         total = total + items[i]
-    }
     return total
-}
 
-fn main() {
+fn main():
     let mut nums: List<Int> = [10, 20, 30, 40]
     print(str(sum_list(nums)))
     nums.push(50)
     print(str(len(nums)))
     print(str(sum_list(nums)))
-}

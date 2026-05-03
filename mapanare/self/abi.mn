@@ -23,31 +23,28 @@
 // Mapanare aggregates contain only integer-class fields (i64, i32, i8,
 // i1, ptr), so every eightbyte classifies as INTEGER and the 16-byte
 // size threshold is the only check needed.
-fn abi_sysv_use_sret(total_size: Int) -> Bool {
+fn abi_sysv_use_sret(total_size: Int) -> Bool:
     if total_size <= 16 { return false }
     return true
-}
 
 // Win64 x64 calling convention return classification.
 //
 // Only aggregates of exactly 1, 2, 4, or 8 bytes can be returned in
 // rax. All other sizes use sret (hidden first parameter in rcx).
-fn abi_win64_use_sret(total_size: Int) -> Bool {
+fn abi_win64_use_sret(total_size: Int) -> Bool:
     if total_size == 1 { return false }
     if total_size == 2 { return false }
     if total_size == 4 { return false }
     if total_size == 8 { return false }
     return true
-}
 
 // AArch64 AAPCS64 return classification.
 //
 // Aggregates <= 16 bytes return in x0 / x1. Larger aggregates use the
 // indirect result register x8 (equivalent to sret).
-fn abi_aapcs64_use_sret(total_size: Int) -> Bool {
+fn abi_aapcs64_use_sret(total_size: Int) -> Bool:
     if total_size <= 16 { return false }
     return true
-}
 
 // v5.8.6 We.1: i686-w64-mingw32 / i386 cdecl return classification.
 //
@@ -56,10 +53,9 @@ fn abi_aapcs64_use_sret(total_size: Int) -> Bool {
 // i686-w64-mingw32-gcc 13 confirms: struct sizes 12 / 16 / 24 / 64 /
 // 80 all use sret; size 8 uses register pair. See SESSION_REPORT
 // §Phase 0 for the assembly trace.
-fn abi_i686_cdecl_use_sret(total_size: Int) -> Bool {
+fn abi_i686_cdecl_use_sret(total_size: Int) -> Bool:
     if total_size <= 8 { return false }
     return true
-}
 
 // ---------------------------------------------------------------------------
 // Unified classifier
@@ -74,7 +70,7 @@ fn abi_i686_cdecl_use_sret(total_size: Int) -> Bool {
 //   target       — target triple string (e.g. "x86_64-unknown-linux-gnu")
 //
 // Returns true if sret is needed, false if the value fits in registers.
-fn abi_classify_return_sret(is_aggregate: Bool, total_size: Int, target: String) -> Bool {
+fn abi_classify_return_sret(is_aggregate: Bool, total_size: Int, target: String) -> Bool:
     // Scalars always return in a register.
     if !is_aggregate { return false }
     if total_size == 0 { return false }
@@ -91,4 +87,3 @@ fn abi_classify_return_sret(is_aggregate: Bool, total_size: Int, target: String)
     if target.starts_with("aarch64") { return abi_aapcs64_use_sret(total_size) }
     // Default: System V AMD64
     return abi_sysv_use_sret(total_size)
-}

@@ -2328,6 +2328,16 @@ class LLVMTextEmitter:
                                 continue  # call to known-pure OK
                             is_pure = False
                             break
+                        # v5.13.1 At.1: Assert lowers to printf + @exit(1) in
+                        # the fail block — observable side effects. Pre-v5.13.1
+                        # this was latent because no `@test` runner ever called
+                        # an assert-bearing fn, so the dead-code-elimination
+                        # consequence of the bogus memory(none) attribute never
+                        # surfaced. Per-test main wrappers (At.1) call test
+                        # functions directly, exposing the gap.
+                        if isinstance(inst, Assert):
+                            is_pure = False
+                            break
                     if not is_pure:
                         break
                 if is_pure:
@@ -3600,6 +3610,57 @@ class LLVMTextEmitter:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_dir_remove_recursive", I64, [STR], [(a, STR)])
             self._put(i.dest, r, I64)
+            return
+        # v5.23.1 Mb.1: V.9 lifecycle leak — __mn_indent_to_braces returns
+        # an owned MnString allocated in C. Without a dedicated handler
+        # the call falls through to the auto-declare path which does not
+        # call _track_string, so parser__parse leaks the preprocessed
+        # buffer on every invocation. Bounded to single-shot in mnc-stage1
+        # (OS reaps on exit) but unbounded if the runtime is embedded in
+        # a long-lived process (LSP server, watch-mode compiler).
+        #
+        # Track the result for drop-glue freeing, but DO NOT register the
+        # slot in _str_slots (clear _last_tracked_str_slot before _put).
+        # Reason: Python's _do_call applies a blanket-move to every user-
+        # function arg, which zeros the _str_slots entry for the variable.
+        # parse() does `let preprocessed = __mn_indent_to_braces(source);
+        # tokenize(preprocessed, filename)`, and tokenize is a borrow, not
+        # a consume — but blanket-move would zero the slot anyway, leaking
+        # the buffer. The self-host emit_llvm.mn doesn't have this blanket
+        # move (it relies on explicit Move from the lowerer), so stage2/3
+        # IR is leak-clean by construction; only stage1 needs this guard.
+        if fn == "__mn_indent_to_braces" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_indent_to_braces", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._last_tracked_str_slot = None
+            self._put(i.dest, r, STR)
+            return
+        # v5.26.0 Mb.9: route the v5.23.2 Te.3.B.2 brace-deprecation
+        # functions through `_rt` for the same reason the
+        # `__mn_indent_to_braces` handler above exists — without it
+        # the call falls through to the user-call path, which uses
+        # the 64-byte ``_use_byref`` threshold instead of `_rt`'s
+        # 8-byte ``_is_large_struct`` threshold. ``MnString`` is
+        # 16 bytes, so on Win64 the call site emits the struct
+        # by value while ``_decl_fn`` already declares the function
+        # with a ``ptr`` parameter — gcc lowers ``MnString source``
+        # per Win64 ABI as pass-by-hidden-pointer, dereferences
+        # rcx as the struct pointer, and reads the data buffer's
+        # bytes 8..16 as the length field. Surfaced in publish run
+        # #48 as ``oom in count_user_brace_block_openers`` with the
+        # length read containing ``"generate"`` (bytes 8..16 of
+        # ``mnc_all.mn``'s ``// Auto-generated:`` prelude).
+        if fn == "__mn_count_user_brace_block_openers" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt(fn, I64, [STR], [(a, STR)])
+            self._put(i.dest, r, I64)
+            return
+        if fn == "__mn_emit_brace_deprecation_warning" and len(args) >= 2:
+            pa = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            cv = self._coerce(args[1][0], args[1][1], I64) if args[1][1] != I64 else args[1][0]
+            self._rt(fn, VOID, [STR, I64], [(pa, STR), (cv, I64)])
+            self._put(i.dest, "0", I1)
             return
 
         # High-level I/O builtins (v3.41.0)
@@ -5167,6 +5228,23 @@ class LLVMTextEmitter:
 
     def _do_unwrap(self, i: Unwrap) -> None:
         v, t = self._get(i.val)
+        # Eu.1 (v5.26.1): Result is `{i1, {Ok_ty, Err_ty}}`. The single
+        # `extractvalue ..., 1` returns the *inner* aggregate, not the Ok
+        # payload, so consumers typed as Ok_ty get a width mismatch. Two
+        # extractvalues — field 1 of outer (inner aggregate) then field 0
+        # of inner (Ok payload) — and the dest's stored type becomes Ok_ty.
+        if i.val.ty.kind == TypeKind.RESULT:
+            a = i.val.ty.type_info.args
+            if len(a) >= 2:
+                ok_ty = self._rti(a[0])
+                err_ty = self._rti(a[1])
+                inner_ty = "{" + ok_ty + ", " + err_ty + "}"
+                inner = self._f("uw_inner")
+                self._L(f"{inner} = extractvalue {t} {v}, 1")
+                r = self._f("uw")
+                self._L(f"{r} = extractvalue {inner_ty} {inner}, 0")
+                self._put(i.dest, r, ok_ty)
+                return
         r = self._f("uw")
         self._L(f"{r} = extractvalue {t} {v}, 1")
         dt = self._rty(i.dest.ty) if i.dest.ty.kind != TypeKind.UNKNOWN else PTR
@@ -5694,8 +5772,17 @@ class LLVMTextEmitter:
         # fail block
         self._blk[fb] = []
         self._cb = fb
-        msg = f"assertion failed at {i.filename}:{i.line}\\n"
-        self._printf(msg, [])
+        # v5.13.1 At.1: surface the user-supplied message (if any) so
+        # `mapanare test` can show meaningful failure context. Pre-v5.13.1
+        # this only printed location, dropping the message Value built
+        # by lower._lower_assert (a real-bug, not a missing feature).
+        if i.message is not None:
+            self._printf(f"assertion failed at {i.filename}:{i.line}: ", [])
+            mv, mt = self._get(i.message)
+            mv = self._coerce(mv, mt, STR) if mt != STR else mv
+            self._rt("__mn_str_println", VOID, [STR], [(mv, STR)])
+        else:
+            self._printf(f"assertion failed at {i.filename}:{i.line}\\n", [])
         self._ensure("exit", VOID, [I64])
         self._L("call void @exit(i64 1)")
         self._L("unreachable")

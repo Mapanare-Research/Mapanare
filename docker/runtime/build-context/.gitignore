@@ -1,0 +1,3 @@
+# Build artifact staged by docker/runtime/README.md or by the
+# publish-docker.yml CI workflow. Do not commit.
+libmapanare_rt.so

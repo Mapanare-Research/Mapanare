@@ -1,0 +1,11 @@
+// v5.15.1 Cb.* — map comprehension uses ``__r[k] = v`` (Assign +
+// IndexExpr) since maps don't expose a ``.insert`` method. The
+// synthesizer threads the user's ``Map<K, V>`` annotation onto the
+// internal accumulator (``patch_last_mapinit_types`` mirrors the
+// Python ``_lower_let`` v5.15.0 Te.2.C empty-MapLit patch). Mirror
+// of v5.15.0 ``test_map_comp_doubles``.
+
+fn main():
+    let doubled: Map<Int, Int> = #{ k: k * 2 for k in 0..5 }
+    print(str(len(doubled)))
+    print(str(doubled[3]))

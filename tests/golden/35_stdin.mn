@@ -1,4 +1,3 @@
-fn main() {
+fn main():
     pon name: String = read_line()
     print("Hello, " + name + "!")
-}

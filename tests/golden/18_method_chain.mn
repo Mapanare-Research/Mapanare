@@ -1,4 +1,4 @@
-fn main() {
+fn main():
     let s: String = "Hello, World!"
     let upper: String = s.to_upper()
     print(upper)
@@ -6,4 +6,3 @@ fn main() {
     print(str(has))
     let idx: Int = s.find("World")
     print(str(idx))
-}

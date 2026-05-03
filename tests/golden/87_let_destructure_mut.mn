@@ -1,0 +1,16 @@
+// v5.20.0 Te.5.D — per-field mutability in destructuring (D4).
+//
+// `let Point { mut x, y } = p` makes only `x` mutable; `y` is
+// immutable. Top-level `let mut Point { x, y } = p` would make
+// both mutable; per-field `mut` overrides on a per-name basis.
+
+struct Point:
+    x: Int
+    y: Int
+
+fn main():
+    let p: Point = new Point { x: 1, y: 2 }
+    let Point { mut x, y } = p
+    x = x + 100
+    print(str(x))
+    print(str(y))

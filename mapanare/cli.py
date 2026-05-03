@@ -6,6 +6,7 @@ import argparse
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from mapanare.diagnostics import (
@@ -14,6 +15,14 @@ from mapanare.diagnostics import (
     Severity,
     format_diagnostic,
     format_summary,
+)
+from mapanare.format import (
+    find_long_lines,
+    format_source,
+    sort_imports,
+    to_braces,
+    to_terse,
+    to_terse_markdown,
 )
 from mapanare.mir_opt import MIROptLevel as OptLevel
 from mapanare.modules import ModuleResolver
@@ -232,17 +241,18 @@ def _compile_multi_module_text(
     )
 
 
-def cmd_check(args: argparse.Namespace) -> None:
-    """Type-check an .mn source file with error recovery."""
-    source = _read_source(args.source)
-    resolver = ModuleResolver()
+def _check_one(path: str, *, werror: bool) -> bool:
+    """Type-check a single .mn file. Return True iff it has zero errors.
 
-    # Parse with recovery to collect multiple parse errors
-    ast, parse_errors = parse_recovering(source, filename=args.source)
+    Prints diagnostics to stderr and an "OK" line to stdout, matching the
+    historical single-file output.
+    """
+    source = _read_source(path)
+    resolver = ModuleResolver()
+    ast, parse_errors = parse_recovering(source, filename=path)
 
     all_diagnostics: list[Diagnostic] = []
 
-    # Convert parse errors to diagnostics
     for pe in parse_errors:
         from mapanare.ast_nodes import Span
 
@@ -256,15 +266,11 @@ def cmd_check(args: argparse.Namespace) -> None:
             )
         )
 
-    # Run semantic analysis even if there were parse errors (on partial AST)
-    werror = getattr(args, "werror", False)
     if ast.definitions:
         from mapanare.semantic import check
 
-        sem_errors = check(ast, filename=args.source, resolver=resolver)
+        sem_errors = check(ast, filename=path, resolver=resolver)
         for err in sem_errors:
-            # v4.27.0: use the real span carried by SemanticError via
-            # to_diagnostic(). --werror promotes warnings to errors.
             diag = err.to_diagnostic()
             is_warning = err.severity == "warning"
             if is_warning and not werror:
@@ -280,9 +286,57 @@ def cmd_check(args: argparse.Namespace) -> None:
         summary = format_summary(all_diagnostics)
         if summary:
             print(summary, file=sys.stderr)
-        sys.exit(1)
+        return False
 
-    print(f"check: {args.source} OK")
+    print(f"check: {path} OK")
+    return True
+
+
+def _walk_mn_files(root: str = ".") -> list[str]:
+    """Walk a directory tree and return .mn files in stable sorted order.
+
+    Skips common build/cache directories so `mapanare check --all` stays
+    fast on real projects.
+    """
+    skip = {".git", ".mn-cache", ".mapanare-cache", "dist", "build", "node_modules"}
+    out: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith(".")]
+        for fn in filenames:
+            if fn.endswith(".mn"):
+                out.append(os.path.join(dirpath, fn))
+    out.sort()
+    return out
+
+
+def cmd_check(args: argparse.Namespace) -> None:
+    """Type-check one or many .mn source files with error recovery."""
+    werror = getattr(args, "werror", False)
+    walk_all = getattr(args, "all", False)
+
+    if walk_all:
+        paths = _walk_mn_files(".")
+        if not paths:
+            print("check: no .mn files found", file=sys.stderr)
+            sys.exit(1)
+    else:
+        if not args.source:
+            print(
+                "error: provide a source file or pass --all to walk the current dir",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        paths = [args.source]
+
+    failed = 0
+    for path in paths:
+        if not _check_one(path, werror=werror):
+            failed += 1
+
+    if failed:
+        if walk_all:
+            print(f"check: {failed}/{len(paths)} file(s) had errors", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -329,21 +383,206 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def cmd_fmt(args: argparse.Namespace) -> None:
-    """Format an .mn source file (normalize whitespace and indentation)."""
-    source = _read_source(args.source)
+    """Format .mn source — normalize whitespace canonically.
 
-    # Verify the file parses before formatting
-    try:
-        parse(source, filename=args.source)
-    except ParseError as e:
-        _emit_parse_error(e, source, args.source)
+    Accepts files and directories (directories are recursively scanned for
+    ``.mn`` files). Default behavior writes formatted output back in place
+    for backwards compatibility with v5.12.x and earlier; ``--check``
+    reports diff candidates without writing (exit 1 if any), ``--stdout``
+    prints to stdout instead of writing.
+
+    Files that fail to parse are reported on stderr and skipped; the
+    overall exit code is 1 if any file errored or (under --check) needed
+    changes.
+    """
+    paths = _expand_fmt_paths(args.sources)
+    if not paths:
+        print("error: no .mn files found", file=sys.stderr)
         sys.exit(1)
 
-    formatted = _format_mapanare(source)
+    # v5.14.0 Te.1: choose surface-syntax transformer.
+    # v5.19.0 Te.3.B: bare ``mnc fmt`` auto-migrates ``{}`` to colon
+    # syntax by running ``to_terse`` whenever the source contains
+    # user-written brace blocks. ``--keep-braces`` opts out.
+    if getattr(args, "to_terse", False) and getattr(args, "to_braces", False):
+        print("error: --to-terse and --to-braces are mutually exclusive", file=sys.stderr)
+        sys.exit(1)
+    if getattr(args, "to_terse", False) and getattr(args, "keep_braces", False):
+        print("error: --to-terse and --keep-braces are mutually exclusive", file=sys.stderr)
+        sys.exit(1)
+    if getattr(args, "to_braces", False) and getattr(args, "keep_braces", False):
+        print("error: --to-braces and --keep-braces are mutually exclusive", file=sys.stderr)
+        sys.exit(1)
 
-    with open(args.source, "w", encoding="utf-8") as f:
-        f.write(formatted)
-    print(f"formatted {args.source}")
+    explicit_terse = bool(getattr(args, "to_terse", False))
+    explicit_braces = bool(getattr(args, "to_braces", False))
+    keep_braces = bool(getattr(args, "keep_braces", False))
+    # v5.27.0 Mc.8 / Mc.9 — additive options.
+    line_length = int(getattr(args, "line_length", 0) or 0)
+    do_sort_imports = bool(getattr(args, "sort_imports", False))
+
+    if explicit_terse:
+        transformer: Callable[[str], str] = to_terse
+        per_file_auto_terse = False
+    elif explicit_braces:
+        transformer = to_braces
+        per_file_auto_terse = False
+    elif keep_braces:
+        transformer = format_source
+        per_file_auto_terse = False
+    else:
+        # Auto-migration default: per-file decision. format_source for
+        # files that already use colon syntax; to_terse for files that
+        # contain user-written brace blocks.
+        transformer = format_source  # placeholder; chosen per file
+        per_file_auto_terse = True
+
+    changed: list[Path] = []
+    errored: list[Path] = []
+
+    for path in paths:
+        # Read in binary mode so universal-newline translation does not
+        # silently mask CRLF / CR endings — the formatter is supposed to
+        # canonicalize line endings, and that requires actually seeing them.
+        try:
+            raw = path.read_bytes()
+        except OSError as e:
+            print(f"error: cannot read {path}: {e}", file=sys.stderr)
+            errored.append(path)
+            continue
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeDecodeError as e:
+            print(f"error: {path}: not valid UTF-8: {e}", file=sys.stderr)
+            errored.append(path)
+            continue
+
+        # v5.24.1 Wd.2: markdown sources are processed via
+        # ``to_terse_markdown`` — only `````mn`` fence
+        # bodies are rewritten; prose and other-language fences pass
+        # through verbatim. ``--to-terse`` is the only meaningful flag
+        # for markdown; other flags either no-op or are rejected.
+        is_markdown = path.suffix.lower() in {".md", ".markdown"}
+        if is_markdown:
+            if not explicit_terse:
+                print(
+                    f"error: {path}: markdown sources require --to-terse",
+                    file=sys.stderr,
+                )
+                errored.append(path)
+                continue
+            formatted = to_terse_markdown(source)
+            if formatted == source:
+                continue
+            changed.append(path)
+            if args.check:
+                print(f"would format: {path}", file=sys.stderr)
+            elif args.stdout:
+                sys.stdout.write(formatted)
+            else:
+                path.write_bytes(formatted.encode("utf-8"))
+                print(f"formatted {path}")
+            continue
+
+        # Verify the file parses before formatting — prevents fmt from
+        # silently rewriting a file that the rest of the pipeline can't
+        # consume. v5.19.0: temporarily suppress the brace-deprecation
+        # warning during the parse-validation call — the user is
+        # already running fmt, the "Run mnc fmt to migrate" hint would
+        # be redundant noise.
+        prior_no_warn = os.environ.get("MAPANARE_NO_BRACE_WARNING")
+        os.environ["MAPANARE_NO_BRACE_WARNING"] = "1"
+        try:
+            parse(source, filename=str(path))
+        except ParseError as e:
+            _emit_parse_error(e, source, str(path))
+            errored.append(path)
+            continue
+        finally:
+            if prior_no_warn is None:
+                os.environ.pop("MAPANARE_NO_BRACE_WARNING", None)
+            else:
+                os.environ["MAPANARE_NO_BRACE_WARNING"] = prior_no_warn
+
+        # v5.19.0 Te.3.B: per-file auto-migration. If the source has
+        # user-written brace blocks AND the user did not pass an
+        # explicit flag, route through to_terse instead of format_source.
+        if per_file_auto_terse:
+            from mapanare.parser import count_user_brace_block_openers
+
+            if count_user_brace_block_openers(source) > 0:
+                file_transformer: Callable[[str], str] = to_terse
+            else:
+                file_transformer = format_source
+        else:
+            file_transformer = transformer
+
+        formatted = file_transformer(source)
+        # v5.27.0 Mc.9 — sort imports as an additive pass after the
+        # primary transformer. Pure text-level sort; idempotent.
+        if do_sort_imports:
+            formatted = sort_imports(formatted)
+
+        # v5.27.0 Mc.8 — long-line detection. Pure read-only scan; the
+        # source is never modified. Reported on stderr; long lines under
+        # --check cause a non-zero exit so CI gates can enforce the
+        # ceiling.
+        long_lines: list[tuple[int, int]] = []
+        if line_length > 0:
+            long_lines = find_long_lines(formatted, line_length)
+            for line_no, length in long_lines:
+                print(
+                    f"{path}:{line_no}: line exceeds {line_length} chars ({length})",
+                    file=sys.stderr,
+                )
+
+        if formatted == source:
+            if args.check and long_lines:
+                changed.append(path)
+            continue
+        changed.append(path)
+
+        if args.check:
+            print(f"would format: {path}", file=sys.stderr)
+        elif args.stdout:
+            sys.stdout.write(formatted)
+        else:
+            # Write in binary so the LF-normalized output lands on disk
+            # exactly as produced (no platform-specific re-translation).
+            path.write_bytes(formatted.encode("utf-8"))
+            print(f"formatted {path}")
+
+    if errored:
+        sys.exit(1)
+    if args.check and changed:
+        sys.exit(1)
+
+
+def _expand_fmt_paths(sources: list[str]) -> list[Path]:
+    """Expand a mix of files and directories into a sorted list of .mn files.
+
+    Directories are walked recursively; only ``.mn`` files are included.
+    Non-.mn explicit files are still included (the caller asked for them).
+    """
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for s in sources:
+        p = Path(s)
+        if not p.exists():
+            print(f"error: path not found: {s}", file=sys.stderr)
+            continue
+        if p.is_dir():
+            for f in sorted(p.rglob("*.mn")):
+                rp = f.resolve()
+                if rp not in seen:
+                    seen.add(rp)
+                    out.append(f)
+        else:
+            rp = p.resolve()
+            if rp not in seen:
+                seen.add(rp)
+                out.append(p)
+    return out
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -352,7 +591,10 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     project_dir = args.path or "."
     name = args.name
-    manifest = init_project(project_dir, name=name)
+    overlays: list[str] = []
+    if getattr(args, "docker", False):
+        overlays.append("docker")
+    manifest = init_project(project_dir, name=name, overlays=overlays)
     print(f"initialized project '{manifest.name}' in {os.path.abspath(project_dir)}")
 
 
@@ -1497,44 +1739,14 @@ def cmd_targets(args: argparse.Namespace) -> None:
 
 
 def _format_mapanare(source: str) -> str:
-    """Basic Mapanare source formatter.
+    """Backwards-compatible thin wrapper over ``mapanare.format.format_source``.
 
-    Normalizes:
-    - Trailing whitespace on each line
-    - Consistent indentation (4 spaces)
-    - No more than 2 consecutive blank lines
-    - Single trailing newline at end of file
-    - Spaces around binary operators
+    Kept as an internal alias so callers that imported the v5.12.x and
+    earlier name keep working. New code should import ``format_source``
+    from ``mapanare.format`` directly. v5.13.0 promoted the formatter to
+    its own module.
     """
-    lines = source.split("\n")
-    result: list[str] = []
-    consecutive_blank = 0
-
-    for line in lines:
-        # Strip trailing whitespace
-        stripped = line.rstrip()
-
-        if stripped == "":
-            consecutive_blank += 1
-            if consecutive_blank <= 2:
-                result.append("")
-            continue
-
-        consecutive_blank = 0
-
-        # Normalize leading whitespace: convert tabs to 4 spaces
-        content = stripped.lstrip()
-        leading = stripped[: len(stripped) - len(content)]
-        # Replace tabs with 4 spaces
-        leading = leading.replace("\t", "    ")
-        result.append(leading + content)
-
-    # Strip trailing blank lines, ensure single trailing newline
-    while result and result[-1] == "":
-        result.pop()
-    result.append("")
-
-    return "\n".join(result)
+    return format_source(source)
 
 
 def _add_debug_flag(parser: argparse.ArgumentParser) -> None:
@@ -1682,7 +1894,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     # check
     p_check = subparsers.add_parser("check", help="Type-check .mn source")
-    p_check.add_argument("source", help="Path to .mn source file")
+    p_check.add_argument(
+        "source",
+        nargs="?",
+        default=None,
+        help="Path to .mn source file (omit with --all to walk current dir)",
+    )
+    p_check.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="Recursively check every .mn file under the current directory",
+    )
     p_check.add_argument(
         "--werror",
         action="store_true",
@@ -1723,14 +1946,79 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.set_defaults(func=cmd_run)
 
     # fmt
-    p_fmt = subparsers.add_parser("fmt", help="Format .mn source")
-    p_fmt.add_argument("source", help="Path to .mn source file")
+    p_fmt = subparsers.add_parser(
+        "fmt",
+        help="Format .mn source (canonical whitespace)",
+    )
+    p_fmt.add_argument(
+        "sources",
+        nargs="+",
+        help="One or more .mn files or directories (directories are scanned recursively)",
+    )
+    p_fmt.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit 1 if any file would be reformatted; do not write",
+    )
+    p_fmt.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Print formatted source to stdout instead of writing in place",
+    )
+    # v5.14.0 Te.1: surface-syntax conversion modes
+    p_fmt.add_argument(
+        "--to-terse",
+        action="store_true",
+        dest="to_terse",
+        help="Rewrite brace-block syntax to colon-block syntax",
+    )
+    p_fmt.add_argument(
+        "--to-braces",
+        action="store_true",
+        dest="to_braces",
+        help="Rewrite colon-block syntax to brace-block syntax",
+    )
+    # v5.19.0 Te.3.B: ``mnc fmt`` (no flag) auto-converts ``{}`` to
+    # colon syntax. ``--keep-braces`` opts out for downstream projects
+    # mid-migration that want canonical whitespace without surface
+    # rewriting.
+    p_fmt.add_argument(
+        "--keep-braces",
+        action="store_true",
+        dest="keep_braces",
+        help="Suppress automatic {}->colon migration (whitespace-only formatting)",
+    )
+    # v5.27.0 Mc.8 — long-line detection (detect-only).
+    # Mapanare's grammar rejects multi-line expressions, so automatic
+    # wrapping cannot satisfy the AST-preservation invariant. ``--line-length``
+    # reports overlong lines on stderr and (under ``--check``) treats them as
+    # a check failure; the source is never modified.
+    p_fmt.add_argument(
+        "--line-length",
+        type=int,
+        default=0,
+        metavar="N",
+        dest="line_length",
+        help="Report lines exceeding N characters (default: 0 = disabled)",
+    )
+    # v5.27.0 Mc.9 — sort top-level import blocks alphabetically.
+    p_fmt.add_argument(
+        "--sort-imports",
+        action="store_true",
+        dest="sort_imports",
+        help="Sort contiguous top-level import blocks alphabetically",
+    )
     p_fmt.set_defaults(func=cmd_fmt)
 
     # init
     p_init = subparsers.add_parser("init", help="Initialize a new Mapanare project")
     p_init.add_argument("path", nargs="?", default=".", help="Project directory (default: .)")
     p_init.add_argument("--name", default=None, help="Project name (default: directory name)")
+    p_init.add_argument(
+        "--docker",
+        action="store_true",
+        help="Add a multi-stage Dockerfile + .dockerignore using mapanare-builder/-runtime",
+    )
     p_init.set_defaults(func=cmd_init)
 
     # install

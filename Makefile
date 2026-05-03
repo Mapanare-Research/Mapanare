@@ -3,7 +3,7 @@
 # to /bin/dash which has no ``<(...)`` support.
 SHELL := /bin/bash
 
-.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report count-tests leak-check
+.PHONY: install build build-native build-rt check-runtime-sources check-no-tracked-binaries bootstrap test lint fmt clean benchmark benchmark-runtime benchmark-cross-lang benchmark-report count-tests leak-check ci-gates clean-build-test
 
 # v4.29.0: build-rt now enumerates every runtime object that is expected
 # to land in libmapanare_rt.a. The list used to be hand-maintained and
@@ -48,6 +48,11 @@ build-native:  ## Build from seed (no Python required — needs gcc + llvm)
 # forward and guarantees the next staleness is a build-system bug.
 MAPANARE_VERSION := $(shell cat VERSION)
 
+# v5.29.0: archive output path is parameterized so ``clean-build-test``
+# can rebuild into a sandbox path and then atomically rename the result
+# into place. The default is the canonical path; nothing else changes.
+RT_OUTPUT ?= runtime/native/libmapanare_rt.a
+
 build-rt: check-runtime-sources  ## Pre-compile C runtime into static library (faster linking)
 	# v4.27.0: build with -fPIC so the archive can be linked into FFI shared
 	# libraries produced by `mapanare bind --lang python`. Without -fPIC, the
@@ -74,9 +79,9 @@ build-rt: check-runtime-sources  ## Pre-compile C runtime into static library (f
 		echo "  clang -O2 -fPIC -fobjc-arc -c runtime/native/mapanare_metal.m -o /tmp/mapanare_rt_mapanare_metal.o"; \
 		clang -O2 -fPIC -fobjc-arc '-DMAPANARE_VERSION="$(MAPANARE_VERSION)"' -c -I runtime/native runtime/native/mapanare_metal.m -o /tmp/mapanare_rt_mapanare_metal.o || exit 1; \
 	fi
-	@ar rcs runtime/native/libmapanare_rt.a /tmp/mapanare_rt_*.o
+	@ar rcs $(RT_OUTPUT) /tmp/mapanare_rt_*.o
 	@rm -f /tmp/mapanare_rt_*.o
-	@echo "Built runtime/native/libmapanare_rt.a ($(words $(RUNTIME_SOURCES)) modules + Metal on Darwin, -fPIC, MAPANARE_VERSION=$(MAPANARE_VERSION))"
+	@echo "Built $(RT_OUTPUT) ($(words $(RUNTIME_SOURCES)) modules + Metal on Darwin, -fPIC, MAPANARE_VERSION=$(MAPANARE_VERSION))"
 
 check-runtime-sources:  ## v4.29.0: fail if runtime/native/*.c drifts from RUNTIME_SOURCES
 	@ACTUAL=$$(ls runtime/native/*.c | xargs -n1 basename | sort); \
@@ -149,3 +154,57 @@ clean:
 leak-check:  ## v5.4.2: compile+link+run every golden under LSan, gate against baseline
 	@bash scripts/run_asan_leak_goldens.sh
 	@python3 scripts/check_leak_summary.py
+
+# v5.24.0 Hy.1 (Anaconda §2.D): single command running the full CI-gate
+# inventory locally. Pre-release checklist shrinks to "run make ci-gates,
+# expect zero violations." Eliminates the wired-but-unchecked failure
+# mode that produced Reg.1 / hollow-feature gate / docs-drift gate
+# silent failures across v5.17.0 → v5.22.0 (Anaconda's −1.30 grade hit).
+# Cadence-check is intentionally non-blocking (warn-only) here — it
+# fires hard in CI only when the v5.27.0 panel window opens.
+ci-gates:  ## v5.24.0 Hy.1: run all CI gates locally, exit 1 on any failure
+	@echo "=== Mapanare CI Gates ==="
+	@python3 scripts/check_silent_skips.py tests/ && echo "  silent_skips: GREEN" || (echo "  silent_skips: RED"; exit 1)
+	@python3 scripts/check_changelog_honesty.py && echo "  changelog_honesty: GREEN" || (echo "  changelog_honesty: RED"; exit 1)
+	@python3 scripts/check_workflow_shapes.py && echo "  workflow_shapes: GREEN" || (echo "  workflow_shapes: RED"; exit 1)
+	@python3 scripts/check_docs_drift.py && echo "  docs_drift: GREEN" || (echo "  docs_drift: RED"; exit 1)
+	@python3 scripts/check_no_hollow_features.py && echo "  hollow_features: GREEN" || (echo "  hollow_features: RED"; exit 1)
+	@python3 scripts/check_struct_registry.py && echo "  struct_registry: GREEN" || (echo "  struct_registry: RED"; exit 1)
+	@python3 scripts/check_doc_freshness.py && echo "  doc_freshness: GREEN" || (echo "  doc_freshness: RED"; exit 1)
+	@python3 scripts/check_cadence.py && echo "  cadence: GREEN" || echo "  cadence: WARN (non-blocking)"
+	@$(MAKE) -s clean-build-test && echo "  clean-build-test: GREEN" || (echo "  clean-build-test: RED"; exit 1)
+	@echo "=== All gates GREEN ==="
+
+# v5.25.0 Pv.3: rebuild runtime archive from a clean state and run the
+# @test runtime smoke test against it. Catches the runtime-archive
+# rename / relocation class structurally — any future drift between
+# what `make build-rt` produces and what `_find_runtime_lib()` looks
+# for fails the gate at PR time, not on fresh-checkout CI.
+#
+# v5.29.0: the original implementation did `rm -f` on the canonical
+# archive then ran `make build-rt`, which left a 1–3s window where
+# the canonical archive was missing. Under `pytest -n auto` this
+# raced with parallel workers in tests/bootstrap/, tests/llvm/, etc.
+# that link against the canonical archive, producing flaky
+# "no such file or directory: 'runtime/native/libmapanare_rt.a'"
+# failures. The fix builds the rebuilt archive at a sibling sandbox
+# path (same filesystem so `mv` is atomic) and renames it into place
+# at the end. Stale `.so/.dylib/.dll` shadow targets are cleared
+# from the sandbox path only — the canonical archive is replaced
+# atomically, never absent. The clean-rebuild semantic is preserved
+# because the sandbox archive starts empty (rm before ar rcs); any
+# stale member from a prior build is excluded by construction.
+clean-build-test:  ## v5.25.0 Pv.3: clean rebuild of runtime + @test smoke
+	@# Sweep legacy shared-library shadows so `_find_runtime_lib()` cannot
+	@# fall back to a stale name (no current build target produces these,
+	@# but a v3.x-era leftover would silently satisfy the canonical-name
+	@# assertion in test_runtime_lib_lookup.py).
+	@rm -f runtime/native/libmapanare_runtime.so \
+	       runtime/native/libmapanare_runtime.dylib \
+	       runtime/native/libmapanare_runtime.dll
+	@SANDBOX=runtime/native/.libmapanare_rt.cbt-tmp.a; \
+	rm -f $$SANDBOX; \
+	$(MAKE) -s build-rt RT_OUTPUT=$$SANDBOX >/dev/null && \
+	mv -f $$SANDBOX runtime/native/libmapanare_rt.a
+	@pytest tests/test_at_test_runtime.py tests/test_runtime_lib_lookup.py \
+	        -q --no-header --tb=short

@@ -156,3 +156,42 @@ preventive cleanup only.
 After v5.6.13 ships, the trajectory rejoins the original arc:
 v5.7.0 (Sh.7 + B → 66/66), v5.7.1 (docs polish), v5.8.0
 (RE-PANEL).
+
+---
+
+## v5.19.x docket sequence (terseness arc closeout + Docker)
+
+Issued during the v5.13–v5.21 terseness arc closeout. Tracked
+here for completeness:
+
+| Release | Docket | Status |
+|---|---|---|
+| v5.19.0 | Te.3 (brace deprecation + fmt auto-migration) | CLOSED |
+| **v5.19.1** | **Dk.1–Dk.7 (Docker images + `mnc init --docker`)** | **CLOSED** |
+
+The v5.19.0 PLAN originally bundled Te.3 + Dk.* into a single
+release; mid-execution scope split (commit 6adfee7) moved Dk.*
+to a dedicated v5.19.1 patch so the deprecation could ship clean.
+
+### v5.19.1 deferred follow-ups (open carry to v5.20.0+)
+
+Both surfaced from `v5.19.1/DESIGN_AMENDMENT.md` items A2 + A3 —
+clean compiler-side fixes that retire Docker-side workarounds:
+
+- **Builder-image diet.** Patch
+  `mapanare/self/main.mn::link_with_runtime` to drive `lld`
+  directly (current path: `gcc obj rt.a -o exe -no-pie -rdynamic
+  -lm -lpthread`). Unblocks shipping `mapanare-builder` with only
+  `llvm-18` (no `clang` / `libclang-cpp` — saves ~99 MB),
+  targeting **~450 MB** builder image. Out of scope for v5.19.1
+  because the prompt forbade compiler edits. Retires the `gcc →
+  clang` symlink shim (A2).
+- **`MAPANARE_RUNTIME_LIB_PATH` env-var override.** First-class
+  compiler support for an explicit runtime-archive path,
+  replacing the in-image `mnc` wrapper script that symlinks
+  `runtime/native/libmapanare_rt.a` into CWD before exec'ing the
+  real binary. Retires A3.
+
+Both items are small, additive, and don't conflict with
+v5.20.0's Te.5 (struct ergonomics) — they can ship in parallel
+as a v5.20.x patch or alongside Te.5.

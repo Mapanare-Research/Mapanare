@@ -1,0 +1,26 @@
+// v5.21.0 Te.6 — side-effecting middle term: D3 once-evaluation.
+//
+// The middle term in `0 < middle() < 10` MUST evaluate exactly
+// once. The lowerer binds the non-trivial middle to a synthesized
+// `__mn_chain_N` temp before constructing the `&&` chain.
+//
+// This golden verifies the once-evaluation property at runtime by
+// having `middle()` print "M" on each call. The chain expression
+// produces exactly ONE "M" print, never two. If the implementation
+// regresses to double-evaluation, the output shape changes and the
+// golden harness diff'd against the Python bootstrap fails.
+
+fn middle(seed: Int) -> Int:
+    print("M")
+    return seed + 1
+
+fn check(seed: Int) -> Bool:
+    return 0 < middle(seed) < 100
+
+fn main():
+    print("call_a:")
+    let a: Bool = check(4)
+    print(str(a))
+    print("call_b:")
+    let b: Bool = check(99)
+    print(str(b))

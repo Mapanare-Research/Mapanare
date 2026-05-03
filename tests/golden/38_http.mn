@@ -1,5 +1,4 @@
-fn main() {
+fn main():
     // HTTP GET (will return empty string if offline or no OpenSSL)
     pon body: String = http_get("http://httpbin.org/robots.txt")
     print(str(len(body)))
-}

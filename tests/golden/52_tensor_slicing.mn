@@ -2,7 +2,7 @@
 //
 // Tests range slicing (N..M), wildcard (_), and reduction methods.
 
-fn main() {
+fn main():
     // Reductions
     let a = Tensor<Float>[1.0, 2.0, 3.0, 4.0, 5.0]
     print(str(a.sum()))
@@ -30,7 +30,6 @@ fn main() {
     let row = d[0..2, _]
     print(str(tensor_rank(row)))
     print(str(tensor_size(row)))
-}
 
 // Expected output:
 // 15

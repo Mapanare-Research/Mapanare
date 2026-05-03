@@ -119,8 +119,8 @@ fn sort_migrations(migrations: List<Migration>) -> List<Migration> {
         k = k + 1
     }
 
-    pon mut pass: Int = 0
-    mien pass < count {
+    pon mut pass_idx: Int = 0
+    mien pass_idx < count {
         // Find the smallest unused version
         pon mut min_ver: Int = 999999999
         pon mut min_idx: Int = -1
@@ -151,7 +151,7 @@ fn sort_migrations(migrations: List<Migration>) -> List<Migration> {
             used = new_used
         }
 
-        pass = pass + 1
+        pass_idx = pass_idx + 1
     }
 
     da sorted

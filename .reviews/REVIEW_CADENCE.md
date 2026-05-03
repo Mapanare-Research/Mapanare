@@ -64,18 +64,28 @@ Run a focused 1-reviewer delta review when the diff meets EITHER of:
 
 ## How to run a full panel
 
-1. Copy `.reviews/prompt.md` and substitute the target version
-2. Create `.reviews/vX.Y.Z/` with one file per reviewer:
+1. **Pre-panel audit (v5.24.1 Wd.8 — canonical from v5.27.0+).**
+   Copy `.reviews/PANEL_AUDIT_TEMPLATE.md` to
+   `.reviews/vX.Y.Z/PRE_PANEL_AUDIT.md` and fill it out. The template
+   binds each `H.*` hygiene finding to the prior-panel finding ID it
+   closes (or "(none — fresh)"). Every prior-panel HIGH and MEDIUM
+   must either appear in the `H.*` table with its prior-panel ID
+   cited, or appear in the "deferred to <future release>" section —
+   never carry silently. Closes the v5.22.0 Bo.18r failure mode where
+   hygiene-release closures patched what the audit cited and walked
+   past the panel-flagged shape.
+2. Copy `.reviews/prompt.md` and substitute the target version
+3. Create `.reviews/vX.Y.Z/` with one file per reviewer:
    `01-viper.md`, `02-boa.md`, `03-cobra.md`, `04-mamba.md`,
    `05-anaconda.md`, `06-rattler.md`, `07-coral.md`
-3. Each reviewer gets the prompt + the repo state at the target tag.
+4. Each reviewer gets the prompt + the repo state at the target tag.
    Reviewers do NOT see each other's output during review — the panel
    is parallel, not collaborative
-4. After all 7 files are in, write `.reviews/vX.Y.Z/README.md` as the
+5. After all 7 files are in, write `.reviews/vX.Y.Z/README.md` as the
    panel summary: verdict table, overall consensus, health gate,
    carry-forward deltas from the previous panel, disagreements,
    severity split
-5. Update `.reviews/CARRY_FORWARD.md` with the new items the panel
+6. Update `.reviews/CARRY_FORWARD.md` with the new items the panel
    surfaced and the items the panel confirms closed
 
 ## How to run a delta review

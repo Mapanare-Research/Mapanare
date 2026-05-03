@@ -1,0 +1,20 @@
+// v5.20.0 Te.5.C — multi-field override + carries-over.
+//
+// Overrides multiple fields (x and z); only y is copied from the
+// base. Also exercises the order-independence — the `..base` form
+// always lands trailing per the grammar, but the override fields
+// can appear in any order relative to the struct definition.
+
+struct Box:
+    x: Int
+    y: Int
+    z: Int
+    w: Int
+
+fn main():
+    let b1: Box = new Box { x: 1, y: 2, z: 3, w: 4 }
+    let b2: Box = new Box { z: 30, x: 10, ..b1 }
+    print(str(b2.x))
+    print(str(b2.y))
+    print(str(b2.z))
+    print(str(b2.w))

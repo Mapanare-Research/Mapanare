@@ -23,6 +23,7 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ChainedCompare,
     CharLiteral,
     ConstDef,
     ConstructExpr,
@@ -45,6 +46,7 @@ from mapanare.ast_nodes import (
     GenericType,
     Identifier,
     IfExpr,
+    IfLetExpr,
     ImplDef,
     ImportDef,
     IndexExpr,
@@ -52,6 +54,8 @@ from mapanare.ast_nodes import (
     IntLiteral,
     LambdaExpr,
     LetBinding,
+    LetDestructure,
+    LetElseStmt,
     ListLiteral,
     MapLiteral,
     MatchExpr,
@@ -61,6 +65,7 @@ from mapanare.ast_nodes import (
     NamespaceAccessExpr,
     NoneLiteral,
     OkExpr,
+    PassStmt,
     PipeDef,
     PipeExpr,
     PrintStmt,
@@ -75,6 +80,7 @@ from mapanare.ast_nodes import (
     StreamDecl,
     StringLiteral,
     StructDef,
+    StructPattern,
     SyncExpr,
     TensorLiteral,
     TensorType,
@@ -82,6 +88,7 @@ from mapanare.ast_nodes import (
     TypeAlias,
     TypeExpr,
     UnaryExpr,
+    WhileLetStmt,
     WhileLoop,
 )
 from mapanare.types import (
@@ -511,6 +518,22 @@ class SemanticChecker:
             return sym.type_info
         if isinstance(expr, BinaryExpr):
             return self._check_binary(expr)
+        if isinstance(expr, ChainedCompare):
+            # v5.21.0 Te.6: type-check each adjacent pair as a comparison
+            # and record any per-pair trait_dispatch annotation so the
+            # lowerer's synthesized pairs route through the right trait.
+            # Result is always Bool.
+            expr.pair_trait_dispatches = []
+            for i, op_str in enumerate(expr.ops):
+                pair = BinaryExpr(
+                    left=expr.operands[i],
+                    op=op_str,
+                    right=expr.operands[i + 1],
+                    span=expr.span,
+                )
+                self._check_binary(pair)
+                expr.pair_trait_dispatches.append(pair.trait_dispatch)
+            return BOOL_TYPE
         if isinstance(expr, UnaryExpr):
             return self._check_unary(expr)
         if isinstance(expr, CallExpr):
@@ -729,6 +752,8 @@ class SemanticChecker:
             return self._check_assign(expr)
         if isinstance(expr, IfExpr):
             return self._check_if(expr)
+        if isinstance(expr, IfLetExpr):
+            return self._check_if_let(expr)
         if isinstance(expr, MatchExpr):
             return self._check_match(expr)
         if isinstance(expr, NamespaceAccessExpr):
@@ -1106,6 +1131,23 @@ class SemanticChecker:
             self._pop_scope()
         elif isinstance(expr.else_block, IfExpr):
             self._check_if(expr.else_block)
+        return UNKNOWN_TYPE
+
+    def _check_if_let(self, expr: IfLetExpr) -> TypeInfo:
+        """v5.20.0 Te.5.E: type-check `if let <pat> = <scrutinee> { ... }`."""
+        subject_type = self._infer_expr(expr.scrutinee)
+        # Then block — pattern bindings live in this scope.
+        self._push_scope()
+        self._bind_pattern(expr.pattern, subject_type)
+        self._check_block(expr.then_block)
+        self._pop_scope()
+        # Else — no bindings leak across.
+        if isinstance(expr.else_block, Block):
+            self._push_scope()
+            self._check_block(expr.else_block)
+            self._pop_scope()
+        elif isinstance(expr.else_block, (IfExpr, IfLetExpr)):
+            self._infer_expr(expr.else_block)
         return UNKNOWN_TYPE
 
     def _check_match(self, expr: MatchExpr) -> TypeInfo:
@@ -1679,6 +1721,12 @@ class SemanticChecker:
     def _check_stmt(self, stmt: object) -> None:
         if isinstance(stmt, LetBinding):
             self._check_let(stmt)
+        elif isinstance(stmt, LetDestructure):
+            self._check_let_destructure(stmt)
+        elif isinstance(stmt, LetElseStmt):
+            self._check_let_else(stmt)
+        elif isinstance(stmt, WhileLetStmt):
+            self._check_while_let(stmt)
         elif isinstance(stmt, ExprStmt):
             self._infer_expr(stmt.expr)
         elif isinstance(stmt, ReturnStmt):
@@ -1707,6 +1755,8 @@ class SemanticChecker:
             pass  # break is valid in for/while loops
         elif isinstance(stmt, ContinueStmt):
             pass  # continue is valid in for/while loops
+        elif isinstance(stmt, PassStmt):
+            pass  # v5.14.0 Te.1: explicit no-op
         elif isinstance(stmt, AssertStmt):
             self._infer_expr(stmt.condition)
             if stmt.message is not None:
@@ -1744,6 +1794,59 @@ class SemanticChecker:
                 mutable=let.mutable,
             ),
         )
+
+    def _check_let_destructure(self, dest: LetDestructure) -> None:
+        """v5.20.0 Te.5.D: type-check + scope-bind a destructuring let.
+
+        Strategy: type-check the RHS (catches undefined-variable issues
+        early), then walk the pattern, defining each bound leaf name in
+        the current scope. Field-name validation is deferred to lower
+        time which has access to the resolved struct field list.
+        """
+        self._infer_expr(dest.value)
+        self._define_pattern_bindings(dest.pattern, outer_mut=dest.mutable)
+
+    def _check_let_else(self, stmt: LetElseStmt) -> None:
+        """v5.20.0 Te.5.E: scope-bind a let-else statement.
+
+        Strategy: type-check the scrutinee, then bind pattern names in
+        the OUTER (current) scope so the rest of the block can reference
+        them. The else block runs in a child scope. Divergence is
+        enforced at lower time, but we also do a best-effort source-
+        level check so the user gets an early error.
+        """
+        subject_type = self._infer_expr(stmt.scrutinee)
+        # Pattern bindings leak into the surrounding scope (the
+        # essential feature of let-else).
+        self._bind_pattern(stmt.pattern, subject_type)
+        # Else block — its own scope.
+        self._push_scope()
+        self._check_block(stmt.else_block)
+        self._pop_scope()
+
+    def _check_while_let(self, stmt: WhileLetStmt) -> None:
+        """v5.20.0 Te.5.E: type-check `while let <pat> = <scrutinee> { body }`."""
+        subject_type = self._infer_expr(stmt.scrutinee)
+        self._push_scope()
+        self._bind_pattern(stmt.pattern, subject_type)
+        self._check_block(stmt.body)
+        self._pop_scope()
+
+    def _define_pattern_bindings(self, pattern: StructPattern, outer_mut: bool) -> None:
+        for fp in pattern.fields:
+            if fp.sub_pattern is None:
+                self.current_scope.define(
+                    fp.name,
+                    Symbol(
+                        name=fp.name,
+                        kind=SymbolKind.VARIABLE,
+                        type_info=UNKNOWN_TYPE,
+                        mutable=outer_mut or fp.mutable,
+                    ),
+                )
+            else:
+                assert isinstance(fp.sub_pattern, StructPattern)
+                self._define_pattern_bindings(fp.sub_pattern, outer_mut=outer_mut)
 
     def _check_for(self, loop: ForLoop) -> None:
         iter_type = self._infer_expr(loop.iterable)

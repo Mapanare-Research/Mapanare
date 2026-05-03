@@ -15,122 +15,453 @@ Self-hosted compiler is 38,000+ lines of `.mn` across 10 modules in
 
 ## Current Version & Roadmap
 
-Most recent releases (last 6). Full history at
-`docs/roadmap/ROADMAP.md`:
+Most recent releases. Full history at
+`docs/roadmap/ROADMAP.md` and
+`docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
-- **v5.11.0** (shipped) — **Pk.* — packaging hygiene + post-bundle
-  cleanup.** Three deferred-from-v5.10.0 cleanups, zero compiler
-  internals. **Pk.1**: release-artifact filenames now include the
-  version (`mapanare-5.11.0-win-x64.zip`, `mnc-5.11.0-linux-x64`,
-  etc.), driven by the VERSION file. install.ps1 / install.sh probe
-  the versioned name first, fall back to legacy unversioned for
-  pre-v5.11 releases and for the 2-release alias soak window (drop
-  legacy in v5.13.0). `windows-bundled-llvm-smoke` job downloads
-  the versioned ZIP so a missing-versioned-asset upload trips the
-  smoke gate. **Pk.2**: drops the v5.9.1 `mnc <file.mn>`
-  (implicit-run) deprecation stderr line; the v5.9.1 PLAN scheduled
-  removal at v5.11.0 and v5.10.0 carried it as the soak-window
-  concession. `tests/test_cli_default.py::test_default_prints_
-  deprecation_note` inverted to `test_default_silent_after_v5_11_0`.
-  **Pk.3** (evaluate-only): native `mnc` covers 7 of `mapanare`'s
-  25 subcommands. PyInstaller→native bundle swap **deferred** to
-  v5.12.x+ behind Mc.\* (mnc parity) — Mc.1 `mnc lsp`, Mc.2
-  `mnc fmt`, Mc.3 `mnc init`, Mc.4 `mnc check`, Mc.5 `mnc emit-wasm`.
-  See `docs/roadmap/v5/v5.11.0/MNC_PARITY_GAPS.md`. **Pk.4**
-  (closeout-doc): macOS/Linux LLVM bundling stays deferred —
-  system clang remains canonical, static Linux LLVM with libstdc++
-  is ~300 MB, no demand signal. NO seed refresh required (zero
-  new C-runtime exports — first release in 5+ to skip Bb.\*).
-  **Strict 3-stage fixed-point preserved** (226,603 lines / 0 diff,
-  the v5.9.0 milestone held since v5.9.0). Goldens 66/66;
-  `make lint` clean. See `docs/roadmap/v5/v5.11.0/SESSION_REPORT.md`.
-- **v5.10.0** (shipped) — **Win.1b — bundled LLVM toolchain in
-  Windows release ZIP.** Closes the "missing clang" pain on Windows
-  surfaced by the v5.8.7 install probe. v5.9.0 DX.3 made the failure
-  mode helpful (install hint instead of bare "clang failed");
-  v5.10.0 removes the dependency entirely. Default
-  `mapanare-win-x64.zip` grows from ~10 MB to ~95 MB by bundling
-  LLVM 18.1.8's minimal redistributable subset (clang.exe +
-  lld-link.exe + LLVM-C.dll + compiler-rt + LICENSE.TXT) into
-  `mapanare/llvm/`. **Win.1b.A**: `tools/llvm-bundle/
-  extract_minimal.ps1` + `REQUIRED_FILES.md`; PATH-stripped smoke
-  test. **Win.1b.B/C**: `actions/cache@v4` LLVM step + bundle staging
-  in `build-cli` job. **Win.1b.D**: new `__mn_executable_dir()`
-  C-runtime export + `find_clang()` helper in `mapanare/self/main.mn`
-  + 6 clang shell-out sites updated. **Win.1b.E**:
-  `docs/THIRD-PARTY-LICENSES.md` (Apache 2.0 + LLVM Exception).
-  **Win.1b.F**: `install.ps1` honors `MAPANARE_NO_BUNDLED_LLVM=1`
-  for opt-out users → `mapanare-win-x64-minimal.zip` (~10 MB).
-  **Win.1b.G**: `windows-bundled-llvm-smoke` CI job validates the
-  published ZIP end-to-end with PATH stripped. Linux/macOS
-  artifacts unchanged (PLAN Decision 4 — those platforms have
-  system clang; closeout in v5.11.0 Pk.4). Compiler internals
-  untouched; packaging-only release.
-  See `docs/roadmap/v5/v5.10.0/SESSION_REPORT.md`.
-- **v5.9.2** (shipped) — **hygiene — pre-existing test regex +
-  stale README line.** Two pre-existing fixes carried over from
-  v5.9.1 that didn't fit the DX.5 dispatch scope. Test + docs only;
-  zero compiler/runtime edits. **Tg.1**: tighten the quoted-declare
-  regex in `tests/bootstrap/test_stage1_compile.py` — anchor at
-  start-of-line and refuse newline inside the captured group.
-  Closes the latent `Unresolved cross-module refs:
-  [', align 8\n@.str.NNNN = ...']` failure shape (reproduced on
-  v5.9.0 HEAD with index 3025; v5.9.1 HEAD with 3042). Helper
-  extraction de-dups the two call sites; new `TestRegexHelper`
-  with 3 cases guards the failure shape. **Dn.1**: README
-  fixed-point status line — stale `NEAR (4-line VERSION-metadata
-  diff over a 217k-line stage2.ll)` was the v5.6.x state; v5.9.0
-  restored STRICT at the source (DX.2), v5.9.1 preserved it.
-  README now reads STRICT with v5.9.0 credit. NO seed refresh.
-  **Strict 3-stage fixed-point preserved** (the v5.9.0
-  milestone). Goldens 66/66; `test_stage1_compile.py` 20/20 pass
-  (was 19/20 at v5.9.1 HEAD); `make lint` clean. See
-  `docs/roadmap/v5/v5.9.2/SESSION_REPORT.md`.
-- **v5.9.1** (shipped) — **DX.5 — `mnc <file.mn>` defaults to run
-  (BREAKING).** Empties the v5.8.7 Windows install probe DX.* docket
-  list (DX.1–DX.7 all closed). Single behavior change; dispatch-layer
-  only. Pre-v5.9.1 `mnc hello.mn` dumped LLVM IR to stdout (useful
-  for compiler devs, hostile first impression for newcomers); v5.9.1+
-  compiles + runs the program. New `mnc emit-llvm <file.mn>
-  [-o output]` subcommand keeps the IR-emission path verbatim,
-  parallel to the Python CLI's `mapanare emit-llvm`. Non-`.mn` files
-  error with a migration hint pointing at `mnc emit-llvm` (raw IR)
-  or `mnc compile` (transpilation). One-line stderr deprecation note
-  on the implicit-run path; removed in v5.11.0 (v5.10.0 keeps it as
-  a soak window for downstream CI scripts). NO seed refresh required
-  (no new builtin call sites). **Strict 3-stage fixed-point
-  preserved** (the v5.9.0 milestone). Goldens 66/66; new
-  `tests/test_cli_default.py` 6/6 pass; `make lint` clean. See
-  `docs/roadmap/v5/v5.9.1/SESSION_REPORT.md`.
-- **v5.9.0** (shipped) — **DX.* — native CLI hygiene.** Closes the
-  six user-visible CLI gaps surfaced by the v5.8.7 Windows install
-  probe: `mnc --help` works (DX.1); `mnc version` no longer leaks
-  `__MN_VERSION__` (DX.2 — structural fix: new `__mn_version_string()`
-  C-runtime export replaces the v4.28.0 placeholder + build_stage1.py
-  substitution dance, same shape as v5.8.6 We.1); missing-clang prints
-  platform-specific install instructions and surfaces clang stderr
-  (DX.3); `mnc cache stats` / `cache clean` work on Windows via new
-  native `__mn_dir_count_files` / `__mn_dir_total_size` /
-  `__mn_dir_remove_recursive` exports + `__mn_dev_null_redirect()`
-  shim that sweeps every `2>/dev/null` literal (DX.4); install.ps1 +
-  install.sh ship `mnc` alongside `mapanare` and getting-started
-  uses `mnc` consistently (DX.6 + DX.7). DX.5 (default-command
-  change) deferred to v5.9.1. Bb.3 seed refresh shipped. **Strict
-  3-stage fixed-point restored** (225,831 lines / 0 diff) — first
-  since v4.139.0 — as a side effect of the IR-metadata node now
-  calling `__mn_version_string()` at runtime. Goldens 66/66; 36 new
-  pytest tests; `make lint` clean. See
-  `docs/roadmap/v5/v5.9.0/SESSION_REPORT.md`.
-- **v5.8.6** (shipped) — **We.1 closure — i686-w64-mingw32 ABI
-  support.** 3-way ABI dispatch in the emitter (SysV/AAPCS64,
-  Win64 sret/sarg, i686 cdecl sret/byval); fixes silent miscompile
-  of `{ptr,i64}` returns on i686 via LLVM's eax:edx packing.
-  Refines host detection (`__mn_host_is_windows()` /
-  `__mn_host_arch_bits()`); deprecates `__mn_host_is_win64()`.
-  Bb.2 seed refresh (6.57 MB) — old seed predates the new exports.
-  stage2.ll 222,095 lines, strict fixed point in no-Python pipeline.
-  Goldens 66/66; pytest 2,372 passed. See
-  `docs/roadmap/v5/v5.8.6/SESSION_REPORT.md`.
+- **v5.30.0** (ready, not tagged) — **Vb.\* — packaging-only
+  release: version bump.** **Zero compiler edits. Zero runtime
+  edits. Zero `mapanare/self/*.mn` source edits.** Strict
+  3-stage fixed point preserved by construction at v5.29.0's
+  **241,898 lines / 0 diff** (25-release strict streak from
+  the v5.7.1 baseline). Goldens **95/95**. Advances the
+  published version surface (VERSION, README badges in
+  en/es/pt/zh-CN, CHANGELOG.md) so the next `dev` → `main`
+  merge carries a clean v5.30.0 number; the substantive
+  deliverable is the refreshed PR description covering
+  v5.13.0 → v5.30.0 cumulative scope (currently `main` is
+  stuck at v5.13.0). All real fix / feature work shipped at
+  v5.29.0 (Mb.10 self-host emitter routing for
+  `__mn_indent_to_braces` Win64 ABI; Pv.7 / Pv.8 already on
+  `dev` pre-v5.29.0). NO seed refresh required (no C-runtime
+  export changes — no `.mn` source touches the C side at
+  all). `make ci-gates` GREEN (9 sub-gates); `make lint`
+  clean. See `docs/roadmap/v5/v5.30.0/{PLAN.md,
+  SESSION_REPORT.md, PR_BODY.md}`.
+
+- **v5.29.0** (ready, not tagged) — **Mb.10 + Pv.7 + Pv.8 —
+  Win64 ABI closeout + CI race prevention.** Three findings,
+  three fixes, one release. Reopens the **Mb.\*** arc (declared
+  closed at v5.26.1) for one residual Win64 ABI gap and closes
+  it **structurally** this time. **Strict 3-stage fixed point
+  preserved by construction at 241,898 lines / 0 diff** (24-
+  release strict streak; restored from v5.28.0's NEAR — the
+  prior NEAR was a v5.9.0 DX.2 artifact from a stale stage1
+  binary linked against a v5.27.0-vintage runtime, not actual
+  divergence). Goldens **95/95**. **Mb.10**: closes
+  publish-run-#50 Windows SIGSEGV in `__mn_indent_to_braces`.
+  Sister fix to v5.26.0 Mb.9 (which routed the brace-deprecation
+  siblings `__mn_count_user_brace_block_openers` and
+  `__mn_emit_brace_deprecation_warning` but missed the parent
+  function with the same Win64 ABI shape). Pre-fix mechanism:
+  `emit_mir_call`'s user-call fallthrough uses the 64-byte
+  `is_byref_type_st` threshold for arg classification; `MnString`
+  is 16 bytes, so on Win64 the call site emitted the struct by
+  value while `declare_runtime_fn` already declared the function
+  with `ptr` parameter via `win64_rewrite_decl_params` (8-byte
+  threshold). gcc lowered `MnString source` per Win64 ABI as
+  pass-by-hidden-pointer with rcx pointing into the struct's
+  data buffer instead of into a valid `MnString` — SIGSEGV on
+  the first `source.len` read. The Python emitter has had this
+  routing since v5.23.1 Mb.1 (`emit_llvm_text.py:3632`); the
+  self-host side was missed. The Mb.9 Python comment at
+  `mapanare/self/emit_llvm.mn:3778` even names the missing
+  routing as the pattern Mb.9 mirrored — but Mb.9's author only
+  added the routing for the brace-deprecation pair, not for the
+  parent function. Bug stayed latent because Linux/macOS publish
+  jobs hide the mismatch via SysV register-passing, and Windows
+  publish wasn't reaching the stage2-self-compile step for
+  v5.23.1 → v5.27.0 (failing earlier on other things). v5.28.0
+  RE-PANEL did not surface Mb.10 (test gap; covered by Tn.1
+  panel rec). 3-LOC fix in `mapanare/self/emit_llvm.mn` (12-line
+  block including explanatory comment) inserted after the Mb.9
+  brace-deprecation routing at line 3786, mirroring the same
+  shape — only the return type differs (`llvm_string()` i.e.
+  `{ptr, i64}` MnString here, vs `"i64"` for the counter).
+  `emit_rt_call` uses `win64_sarg_rewrite_args` (8-byte
+  threshold matching `win64_rewrite_decl_params`), producing
+  the correct `sret+sarg` shape on Win64 and a no-op on Linux
+  SysV. **Mb.10.C** new
+  `tests/llvm/test_indent_to_braces_win64_abi.py` (6 cases
+  mirrors v5.26.0 Mb.9.C's `test_brace_funcs_windows_abi.py`):
+  3 IR-shape gates under Win64 triple via the Python emitter
+  (load-bearing); 1 SysV negative gate pinning the by-value
+  shape so future emitter refactors don't accidentally rewrite
+  it; 3 ctypes contract cases against
+  `runtime/native/mapanare_core.c` for runtime-side correctness.
+  Falsifiability round-trip verified — reverting the v5.23.1
+  Python handler triggers the IR-shape gate failure exactly
+  matching the publish-run-#50 anti-pattern (`call ... ({ptr,
+  i64} %l.0)`). **Bb.\* seed refresh: NOT required** (no
+  C-runtime export changes; the v5.10.0-vintage seed has no
+  view of how `mnc-stage1` emits the call). **Pv.7**: closes
+  `clean-build-test` race against parallel `pytest -n auto`
+  workers. Pre-fix, the `rm -f libmapanare_rt.a && make
+  build-rt` sequence in `clean-build-test` left a 1-3 second
+  window where the canonical archive was missing; surfaced as
+  flake on `tests/bootstrap/test_chained_cmp_mirror.py`
+  (gw0 hit the race window). **Already shipped on dev as
+  commit `bc3bc7b`** between v5.28.0 and v5.29.0. Fix
+  parameterizes `build-rt` with `RT_OUTPUT ?=
+  runtime/native/libmapanare_rt.a`, rebuilds into a sandbox
+  path on the same filesystem (`runtime/native/.libmapanare_rt
+  .cbt-tmp.a`), then atomic `mv -f` into the canonical path.
+  Race-window evidence captured in v5.29.0 SESSION_REPORT:
+  200-poll watcher at 20 ms cadence over the full 4-second
+  rebuild produced **0 MISSING reports**. **Pv.8**: closes
+  agent-state timing races in `tests/native/test_c_runtime.c`'s
+  `test_agent_pause_resume` (`:712`) and
+  `test_agent_failing_handler` (`:738`). `mapanare_agent_pause()`
+  is a guarded transition that silently no-ops if the agent
+  isn't yet RUNNING; the worker thread sets state=RUNNING only
+  after the OS schedules the new thread, and the test's fixed
+  `usleep(50000)` was sometimes insufficient under CI load.
+  **Already shipped on dev as commit `f119c43`** between
+  v5.28.0 and v5.29.0 (the PROMPT/PLAN were drafted assuming
+  the fix was uncommitted; verified at Phase 0 that it had
+  landed cleanly). Fix adds 4 polling helpers
+  (`wait_for_agent_state`, `wait_for_messages_processed`,
+  `wait_for_agent_recv`, `wait_for_counter` + `test_sleep_ms`)
+  plus 7 fixed-delay sleeps converted to bounded polls
+  (`test_agent_lifecycle`, `test_agent_send_recv`,
+  `test_agent_pause_resume`, `test_agent_failing_handler`,
+  `test_agent_metrics`, `test_shutdown_with_agents`,
+  `test_pool_basic` + `test_pool_saturation`). Generous
+  timeouts (1000 ms for state, 2000 ms for FAILED /
+  messages-processed, 5000 ms for 500-task pool stress) —
+  returns on first match; only consumes the full budget if the
+  worker is genuinely stuck. Plain + ASan + TSan all green
+  (3/3); `gcc -O2 -g -pthread -Wall -Wextra -Werror` clean.
+  Pv.8.B (preemptive sweep of 11 same-shape sites in
+  `tests/native/test_agent_scheduler.py`) **deferred** to
+  v5.30.0+ if a flake materializes; reactive-only fix
+  discipline preserved. **Mb.\* arc CLOSED structurally** —
+  v5.26.0's "Mb.\* arc CLOSED" claim was strictly correct for
+  Mb.7+Mb.9 but missed `__mn_indent_to_braces`; v5.29.0 closes
+  the arc for real. Aggregate state entering v5.30.0: 0 HIGH /
+  1 MEDIUM (Tn.1 escalated per v5.28.0 panel directive — not
+  picked up here, deliberately deferred to keep Mb.10 scope
+  tight) / ~5 LOW. Cadence unchanged: next routine panel still
+  due v5.33.0. See `docs/roadmap/v5/v5.29.0/{SESSION_REPORT.md,
+  PLAN.md, AUDIT.md}`.
+
+- **v5.28.0** (ready, not tagged) — **RE-PANEL — v5.23.0 →
+  v5.27.0 recovery + prevention + arc-closeout arc graded.**
+  Panel-only release. **Zero compiler edits. Zero runtime edits.
+  Zero `mapanare/self/*.mn` source edits.** Strict 3-stage fixed
+  point preserved by construction at v5.27.0's 241,842 lines / 0
+  diff. 7 reviewers graded the v5.23.0 → v5.27.0 arc (8 releases,
+  9 SESSION_REPORTs) using the v5-gate mechanical decision rule.
+  **Aggregate: 9.72 / 10. Decision: Option A.** Fourth
+  consecutive Option A under the v5-gate framework, **largest
+  single-arc recovery in v5 history (+0.31 vs v5.22.0's 9.41
+  floor)**, and **first panel above the v5.7.1 / v5.8.0 9.66
+  ceiling in the v5 series**. Score trajectory: 9.66 → 9.62 →
+  9.41 → **9.72** — 3-consecutive-panel downward trend (-0.04,
+  -0.21) broken with +0.31. **Per-reviewer:** Rattler 9.90
+  (+0.05), Viper 9.80 (+0.10), **Anaconda 9.60 (+1.20 — load-
+  bearing recovery; the v5.22.0 -1.30 dock was driven by 3
+  silently-RED CI gates that v5.23.0 RC.\* + v5.24.0 Hy.\* +
+  v5.25.0 Pv.\* closed structurally, not symptomatically)**,
+  Cobra 9.70 (+0.15), Coral 9.70 (+0.15), **Boa 9.55 (+0.55 —
+  largest single-panel Boa improvement in project history;
+  Bo.18r 3-consecutive-panel persistence finally structurally
+  closed)**, Mamba 9.80 (-0.05). 7 EXCEEDS / 0 MEETS / 0 NEEDS
+  WORK; 7 PASS WITH NOTES. **0 NEW HIGH, 0 NEW MEDIUM, ~14 NEW
+  LOW** (mostly process polish). **v5.22.0 docket: 25/25 items
+  CLOSED at v5.28.0 HEAD** (highest closure rate in v5 history
+  across a single recovery arc). Mb.\* / Mc.\* / Eu.\* arcs all
+  CLOSED entering this panel; 4 prev-LINK_FAIL goldens
+  (47/48/49/51) flipped to PASS via Eu.1..Eu.4. **Phase 2 H.\*
+  hygiene closures** (committed `069ff24` ahead of panel cut,
+  per Bo.27 / Wd.8 cross-reference convention codified at
+  `.reviews/PANEL_AUDIT_TEMPLATE.md`): H.1/H.2/H.3 (Bo.18r-class)
+  README.md fixed-point status paragraphs at lines 175 / 183 /
+  196-197 bumped to v5.27.0 / 241k / 23 consecutive releases;
+  H.4 (Bo.17r-class) 3 localized READMEs (es/pt/zh-CN) native-
+  compiler subsection rewritten with v5.23-v5.27 arc summary;
+  H.5 (Bo.10-class) `docs/known_issues.md` Last-updated bumped;
+  H.6 (An.1-class) `.reviews/CARRY_FORWARD.md` v5.25-v5.27
+  closure rows appended (4-release update-protocol drift caught
+  + fixed); H.7 cadence-gap acknowledgment in PROMPT.md +
+  PRE_PANEL_AUDIT.md preambles. **Cadence-gap closure 1 minor
+  late on purpose** — v5.24.0 Hy.3 cadence-enforcement gate
+  fired hard at v5.27.0 (5+ minor threshold); v5.28.0 closes
+  the gap because bundling formatter polish (Mc.8+Mc.9+Tk.1)
+  with a panel cycle was rejected during v5.27.0 PLAN drafting.
+  Two reviewers (Anaconda, Coral) independently judged the
+  framing honest. **Convergent recommendation (Cobra Cb.New1 +
+  Rattler Ra.Inf1 — independent reviewers, same finding shape)**:
+  extend `tests/llvm/test_async_link.py` link-and-run pattern
+  to all 95 goldens via new `test_llvm_link_all.py` (Tn.\*
+  generalization). Closes the structural gap that hid Eu.1..Eu.4
+  for 3 releases. **Escalate to MEDIUM at v5.29.0 if not picked
+  up in a Pv.\* follow-on.** Other LOW recommendations: M.1
+  (Mamba — `.h` vs `.c` header asymmetry recurrence; Pv.7-style
+  structural gate); A.1 (Anaconda — new
+  `check_carry_forward_freshness.py` gate); Ra.New1 (Rattler —
+  Stage2 teardown narrowed to stdout-redirect-specific SIGSEGV;
+  investigation tractable, consider closing in v5.29.0 rather
+  than v6.0). **Cadence reset:** next routine panel due v5.33.0.
+  See `.reviews/v5.28.0/{README.md, V5_DECISION.md, PRE_PANEL_AUDIT.md}`,
+  7× `<reviewer>/findings.md`, and
+  `docs/roadmap/v5/v5.28.0/SESSION_REPORT.md`.
+
+- **v5.27.0** (ready, not tagged) — **Mc.8 + Mc.9 + Tk.1 —
+  formatter polish; Mc.\* parity arc CLOSED.** Three formatter /
+  rewriter polish items shipping together because they all live
+  in `mapanare/format.py` and ship without compiler edits. Closes
+  the v5.13.0 Mc.\* parity gap docket (Mc.8 + Mc.9, 12-release
+  carry each) and the v5.24.1 Wd.2 latent rewriter bug (Tk.1,
+  3-release carry). **Strict 3-stage fixed point preserved by
+  construction at 241,842 lines / 0 diff** (23-release strict
+  streak — same line count as v5.26.1 because zero
+  `mapanare/self/*.mn` source edits in v5.27.0; the existing
+  argv-forwarding loop in `main.mn` carries the new flags through
+  the native dispatch unchanged). Goldens **95/95**. **Mc.8**
+  (`mapanare fmt --line-length N`): **detect-only** long-line
+  reporter. Phase 0 surfaced that Mapanare's grammar is strictly
+  single-line for all expressions — newlines are not implicit
+  continuations inside `(`/`[`/`{`/`#{` — so an auto-wrap
+  rewriter cannot satisfy the v5.13.0 Mc.2 AST-preservation
+  invariant. Pure read-only scan; never modifies source; default
+  mode reports overlong lines on stderr; under `--check` causes a
+  non-zero exit so CI gates can enforce the ceiling; `N=0` (the
+  default) disables the check. Auto-wrap rescoped to a future
+  release that also adds newline-tolerant grammar inside grouping
+  delimiters. **Mc.9** (`mapanare fmt --sort-imports`): sorts
+  contiguous top-level `import` blocks alphabetically. Block
+  boundaries are any non-import line (blank, comment, or other
+  statement), so the user's existing groupings (e.g. stdlib /
+  third-party / local separated by blanks) function as the
+  de-facto group structure: each group sorts independently.
+  Comments inside an import block split the surrounding block
+  into sub-blocks — neither side reorders across the comment.
+  Idempotent. AST-preserving up to `ImportDecl` declaration
+  order; load-bearing corpus check sorts the 8-import block in
+  `mapanare/self/main.mn` and asserts `ImportDecl` multiset
+  preservation. **Tk.1** (`to_terse` empty `#{}` rewriter bug):
+  surgical 6-LOC fix in `mapanare/format.py::to_terse` —
+  `endswith("{}")` branch now applies the same
+  `_looks_like_stmt_block_opener` filter the `endswith(" {")`
+  branch relies on via `_find_match_verbatim_lines`, so
+  expression-context empty literals (`let m: Map<String, Int> =
+  #{}`, `let p = Point {}`) survive verbatim instead of
+  collapsing to grammatically invalid `... = #:` + indented
+  `pass`. v5.24.1 Wd.2 sidestepped this latent bug by leaving
+  SPEC §17.1 unrewritten; with Tk.1 fixed, `to_terse_markdown
+  (SPEC.md)` is now safe to run end-to-end. Falsifiability
+  round-trip verified: 3 unit tests (`test_to_terse_preserves_
+  empty_map_literal`, `test_to_terse_empty_map_literal_idempotent`,
+  `test_to_terse_preserves_empty_struct_literal`) all fail on
+  pre-fix `format.py` with the exact pre-fix bug shape; all 3
+  pass after the fix. **Source delta:** Python only —
+  `mapanare/format.py` ~95 LOC (Tk.1 ~6 + `find_long_lines` ~30
+  + `sort_imports` ~50 + `__all__`); `mapanare/cli.py` ~30 LOC
+  (argparse + per-file detector wiring); 4 new test files /
+  extensions (~525 LOC tests, 47 new test cases); ~90 LOC docs
+  in `docs/guides/formatter.md`. **Cadence-gate hard fire**:
+  `scripts/check_cadence.py` fires hard at v5.27.0 HEAD (5+
+  minor versions since v5.22.0 panel). **Acknowledged and
+  informational** — the v5.28.0 RE-PANEL closes the cadence gap
+  one minor late on purpose; bundling formatter polish with a
+  panel cycle was rejected during PLAN drafting (formatter work
+  is the wrong scope to mix with a panel review cycle).
+  **Mc.\* parity arc CLOSED** — every Mc.\* item from the
+  v5.13.0 parity gap docket is now resolved. See
+  `docs/roadmap/v5/v5.27.0/SESSION_REPORT.md` and `PLAN.md`.
+
+- **v5.26.1** (ready, not tagged) — **Eu.1..Eu.4 — close
+  v5.26.0-deferred LINK_FAIL bug classes; Eu.\* arc closeout.**
+  Four small-but-distinct codegen / lowering fixes that move
+  goldens 47, 48, 49, 51 from LINK_FAIL → PASS. Each was a
+  pre-existing latent bug surfaced by v5.26.0's Phase 0 audit
+  and tracked as `xfail(strict)` in
+  `tests/llvm/test_async_link.py`. Per-bug Phase 0 investigations
+  honored — bundled in one release for efficiency, not conflated
+  (mirrors v5.26.0 Mb.7/Mb.9 split discipline). **Strict 3-stage
+  fixed point preserved at 241,842 lines / 0 diff** (22-release
+  strict streak; +1,849 lines vs v5.26.0's 239,993 from the new
+  lowerer/emitter arms). Goldens **95/95**.
+  `tests/llvm/test_async_link.py` 10/10 PASS, 0 XFAIL.
+  **Eu.1**: `emit_unwrap` on `Result<T, E>` did one
+  `extractvalue ..., 1` returning the inner aggregate `{Ok_ty,
+  Err_ty}` rather than the Ok payload at field 0 of that inner
+  aggregate. Fixed at both `mapanare/emit_llvm_text.py::_do_unwrap`
+  and `mapanare/self/emit_llvm.mn::emit_unwrap` — for `TK_RESULT`
+  subjects, do TWO `extractvalue` ops. Closes golden 47 (`?`
+  operator on Result). **Eu.2**: standalone `Ok(...)` / `Err(...)`
+  literals at call-arg sites (e.g., `classify(Ok(42))` from
+  `main`) lowered with empty `dest.ty.args` because the caller
+  wasn't a Result-returning fn — `emit_wrap_ok` then derived the
+  outer wrapper type from `resolve_mir_type` (fallback `{i1, {ptr,
+  ptr}}`) while the inner aggregate used real Ok/Err widths
+  (`{i64, ptr}`) — three disagreeing `insertvalue` widths in one
+  chain. Fixed at `mapanare/self/lower.mn` Ok/Err lowering to
+  default missing args mirroring `mapanare/lower.py:2398`
+  (`Result<T, String>` for `Ok(T)` and `Result<Int, T>` for
+  `Err(T)`). Closes golden 48. **Eu.3**: `match` on a primitive
+  (Int / Bool / String) subject emitted `EnumTag` which lowered
+  to `extractvalue i64 %v, 0` — LLVM rejects (i64 is not
+  aggregate). Fixed at `mapanare/self/lower.mn::lower_match`:
+  primitive subjects bypass the switch entirely and emit a
+  sequential test cascade — jump to `arm[0]`; arms with literal
+  patterns gain an implicit `subject == LIT` check at entry; the
+  existing v4.79.0 P3 guard fall-through is preserved. Also
+  `bind_ident_pattern` uniquifies its alloca SSA name with
+  `tmp_counter` (mirrors `bind_one_pattern_field`'s pattern) so
+  multiple `Some(x) if guard` arms don't collide on `%x.addr`
+  under cascade dispatch. Closes golden 49. **Eu.4**: `match`
+  with or-pattern + guards (e.g., `Some(0) | None | Some(x) if g
+  | ...`) emitted N duplicate `i64 1` switch cases — LLVM rejects
+  "duplicate case value in switch". Fixed via two coordinated
+  changes in `mapanare/self/lower.mn`: (1) `build_match_arms`
+  dedups switch entries by tag value (first arm wins; subsequent
+  same-tag arms remain reachable through fall-through), default
+  label set once (wildcard wins over earlier ident-non-enum); and
+  (2) or-pattern arms with a literal-bearing alt emit a per-alt
+  entry switch at the arm body — constructor alts with no payload
+  (e.g., `None`) → direct match; constructor alts with literal
+  sub-args (e.g., `Some(0)`) → payload-check block; default →
+  next arm. New helper `is_builtin_variant_name` recognises
+  `None`/`Some`/`Ok`/`Err` as variants when they appear as
+  `IdentPat` (the parser does not wrap them in `ConstructorPat`).
+  Closes golden 51. **Bb.\* — no seed refresh** (no C-runtime
+  call shape changes). **Eu.\* arc CLOSED** — every v5.23.1 →
+  v5.26.0 LINK_FAIL bug class is now a regression-locked PASS
+  via `tests/llvm/test_async_link.py::test_deferred_link_failures`
+  (10/10 PASS at HEAD; the four `pytest.xfail` short-circuits
+  were removed). Source delta: ~17 LOC Python + ~14 LOC self-host
+  (Eu.1) + ~10 LOC self-host (Eu.2) + ~95 LOC self-host (Eu.3) +
+  ~150 LOC self-host (Eu.4) = ~286 LOC total (above the per-fix
+  30-LOC ceiling but kept in scope to close the arc structurally;
+  alternative was four small releases over 1–2 weeks).
+  See `docs/roadmap/v5/v5.26.1/SESSION_REPORT.md` and `AUDIT.md`.
+
+- **v5.26.0** (ready, not tagged) — **Mb.7 + Mb.9 — codegen +
+  Win64 ABI fixes; Mb.\* arc closeout.** Two real codegen fixes
+  in the same release. Mb.7 closes the 3-release carry (v5.23.1
+  → v5.24.0 → v5.25.0) of the i64/i1 tag-emit bug in
+  `mapanare/self/emit_llvm.mn::emit_enum_tag`: the function
+  zexted Result/Option i1 tags to i64 unconditionally, but the
+  try-operator path declared its dest as `mir_bool()` (i1) and
+  consumed it in `Branch`, producing invalid `br i1 %i64_val`.
+  Surgical 5-LOC fix — honors `dest.ty.kind`: emit i1 directly
+  for `TK_BOOL` consumers (try-op), keep zext for `TK_RESULT`/
+  `TK_OPTION`/`TK_ENUM` (match → `switch i64`). Mb.9 closes the
+  publish-run-#48 Windows OOM in the v5.23.2 Te.3.B.2 functions
+  `__mn_count_user_brace_block_openers` and
+  `__mn_emit_brace_deprecation_warning`: Python's `_do_call`
+  uses a 64-byte byref threshold but `_decl_fn` uses 8 bytes on
+  Win64 — the 16-byte `MnString` was passed by-value at the
+  call site while the declaration said `ptr`, and gcc's Win64
+  pass-by-hidden-pointer semantics for `MnString source` then
+  read the data buffer's bytes 8..16 as the length. For
+  `mnc_all.mn` (`// Auto-generated:`) those bytes are
+  `g e n e r a t e` → `0x65746172656e6567` → `malloc(7e+18)` →
+  OOM. Fixed via explicit handlers in Python's `_do_call` AND
+  self-host's `emit_mir_call` routing both functions through
+  the runtime-call path (mirrors the v5.23.1 Mb.1 pattern for
+  `__mn_indent_to_braces`). **No C-runtime edits**; the C side
+  was always correct. **No Bb.\* seed refresh** (no call shapes
+  change); this corrects the PLAN. **Phase 0 disclosure** — the
+  v5.23.1 SESSION_REPORT premise ("9 LINK_FAIL goldens share
+  one bug") was wrong: only golden 47 had Mb.7's bug; goldens
+  55-59 (the async cluster) never had it (always linked); 47/48/
+  49/51 fail for distinct reasons (Eu.1..Eu.4 rescoped to
+  v5.26.1). **Strict 3-stage fixed point preserved by
+  construction at 239,993 lines / 0 diff** (21-release strict
+  streak; +158 lines vs v5.25.0's 239,835 from the new dispatch
+  arms). Goldens **95/95**. New `tests/llvm/test_async_link.py`
+  (10 tests: 6 PASS + 4 documented xfail) — IR-invariant gate
+  for the i64/i1 anti-pattern, link-and-run sanity for the async
+  cluster, xfail markers documenting the four v5.26.1-rescoped
+  bug classes (XPASS-strict so future fixes auto-flip them).
+  New `tests/native/test_brace_funcs_windows_abi.py` (8 PASS)
+  — IR-shape gate under forced Win64 triple plus Linux ctypes
+  contract proving the C side is correct on SysV. **Mb.\* arc
+  CLOSED** — every memory- and ABI-related panel finding
+  through v5.22.0 + v5.23.2's Te.3.B.2 follow-on closed. See
+  `docs/roadmap/v5/v5.26.0/SESSION_REPORT.md` and `AUDIT.md`.
+
+- **v5.25.0** (ready, not tagged) — **Pv.\* — CI prevention
+  infrastructure.** First release in the new **Pv.\*** sub-arc
+  (structural pattern parallel to v5.24.0's **Hy.\***). Closes
+  the class of failure where a CI-only test path catches a bug
+  that could have been caught locally — typically because (a) a
+  stale local artifact masks the bug on the developer machine,
+  (b) a feature ships without an end-to-end test exercising it
+  through the .mn-caller side, or (c) a test asset only runs on a
+  non-Windows CI job. **Zero compiler edits. Zero runtime edits.
+  Zero `mapanare/self/*.mn` source edits.** Strict 3-stage fixed
+  point preserved by construction at **239,835 lines / 0 diff**
+  (20-release strict streak; same line count as v5.24.1 because
+  no source under `mapanare/self/` changed). Goldens **95/95**.
+  **Pv.1**: new `tests/test_runtime_lib_lookup.py` (3 cases)
+  locks `mapanare.test_runner._find_runtime_lib()` against
+  re-introduction of v3.x-era `libmapanare_core.*` candidate
+  names; sweeps stale shadows, asserts canonical name resolution,
+  end-to-end links a tiny IR fragment that references
+  `__mn_str_eq` against whatever archive the lookup returned.
+  Pre-fix (commit `9dcbbb5` shipped on `dev` between v5.24.1 and
+  v5.25.0) the lookup silently returned `None` because the
+  candidate list still mentioned the v3.x names; a stale local
+  `libmapanare_core.so` masked the regression on developer
+  machines for 11+ releases. **Pv.2**: new
+  `tests/bootstrap/test_preprocess_memcheck.py` (3 parameterized
+  cases — brace-only, colon-only, mixed) runs `mnc-stage1
+  preprocess` under valgrind. Locks the
+  `__mn_indent_to_braces` brace-only fast-path against
+  MnString-aliasing regressions; pre-fix the fast path returned
+  the input MnString aliased and produced a double-free at
+  function-end drop glue. Mirrors v5.23.1 Mb.3's grep-for-symbol
+  pattern rather than `--error-exitcode=1` because `mnc-stage1`
+  has a pre-existing single-shot leak from `__mn_argv` (~71 bytes,
+  known and tracked since v5.23.1) that would otherwise produce a
+  100% noise floor. **Pv.3**: extended `make ci-gates` (v5.24.0
+  Hy.1) with new `clean-build-test` sub-gate — 9 sub-gates total,
+  up from 8. Removes
+  `runtime/native/libmapanare_*.{a,so,dylib,dll}` (the explicit
+  `rm -f` is what makes the rebuild meaningful — `make clean`
+  alone does not touch the archive), runs `make build-rt`, then
+  runs `pytest tests/test_at_test_runtime.py
+  tests/test_runtime_lib_lookup.py`. Catches the runtime-archive
+  rename / relocation class structurally before any PR lands.
+  **Pv.4**: new `scripts/validate_wsl.sh` runs the Linux pytest
+  path end-to-end (`make build-rt` + `python3
+  scripts/build_stage1.py` + `pytest tests/ -x -n auto`) from any
+  CWD by resolving the repo root from the script's own location.
+  New `dev.ps1 validate-wsl` mode shells out via `wsl -d Ubuntu`
+  so a Windows host can produce the Linux pytest signal without
+  leaving the dev loop. Optional pre-push hook at
+  `scripts/hooks/pre-push.sample` (commented opt-in; not enabled
+  by default — forcing the full suite on every push kills the dev
+  loop and produces resentment, not safety). **Pv.5**: removed
+  the v5.13.1 entry from CLAUDE.md "Planned / in-progress"
+  section. The runtime-lib wiring (At.1's only remaining open
+  item) shipped on `dev` between v5.24.1 and v5.25.0; the `@test`
+  runtime is fully functional end-to-end. **Pv.6**: closes
+  publish run #48 Linux + macOS tarball-smoke job failures.
+  `.github/workflows/publish.yml` Linux + macOS smoke fixtures
+  rewritten from `echo 'fn main(): print("...")' > /tmp/hello.mn`
+  (single-line `fn x(): y` was the v5.14.0 SPEC §1009 forward
+  promise that v5.21.1 H.4 explicitly rescoped to v6.0 — fixture
+  authored against an unshipped feature) to multi-line colon via
+  `printf 'fn main():\n    print(...)\n'`. New
+  `tests/test_publish_smoke_fixtures.py` (2 cases) extracts every
+  inline `.mn` fixture across four shapes (bash echo, bash
+  printf, PowerShell here-string, bash heredoc) and parses each
+  through `mapanare.parser.parse`; first test guards against a
+  regex update silently dropping every fixture. **5 fixtures
+  locked at v5.25.0 HEAD**. **Falsifiability**: every Pv.\* test
+  documents a revert-and-restore round-trip in its module
+  docstring; verified red-then-green for Pv.1 / Pv.2 / Pv.6 in
+  the release session. **Out of scope** (held): Mb.7 (i64/i1
+  tag-emit, 9 LINK_FAIL goldens) — v5.26.0; `to_terse` empty
+  `#{}` rewriter bug — v5.27.0; `mnc fmt` long-line wrap +
+  import sort — v5.27.0. See
+  `docs/roadmap/v5/v5.25.0/SESSION_REPORT.md` and `PLAN.md`.
+
 > Older release notes elided. See `docs/roadmap/ROADMAP.md` for the
 > full ledger and `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` for any
 > specific release.
@@ -146,9 +477,22 @@ Most recent releases (last 6). Full history at
   `MAPANARE_NO_BUNDLED_LLVM=1` select minimal. `toolchain/` must not
   appear in v5.12.0 Windows release ZIPs. See
   `docs/roadmap/v5/v5.12.0/WINDOWS_TOOLCHAIN_AUDIT.md`.
-- **v5.8.0** — **RE-PANEL** (target 9.7+). Features first, panel last.
-- **v6.0** — Borrow checker / multi-level alias analysis. Closes
-  Rt.04 (multi-level drop-glue alias analysis, rescoped
+
+**Terseness arc — v5.13–v5.21 (shipped).** All terseness arc
+releases (v5.13.0 → v5.21.0, plus the Sh.\* self-host rewrite at
+v5.17.0 → v5.17.2) have shipped. See per-release SESSION_REPORTs
+under `docs/roadmap/v5/v5.13.0/` through `docs/roadmap/v5/v5.21.0/`
+for details, or `CHANGELOG.md` for summaries. The terseness thesis
+is now visible in real code: cumulative source shrink of −13.8%
+across `mapanare/self/` from v5.13.0 baseline.
+
+- **v5.19.0** — **Te.3 + Dk.* — closeout.** Soft-deprecate
+  `{}` (still parses, emits warning); hard removal scheduled
+  for v6.0. Ship `mapanare/builder` + `mapanare/runtime`
+  Docker images. See `docs/roadmap/v5/v5.19.0/PLAN.md`.
+- **v6.0** — Borrow checker / multi-level alias analysis. Hard
+  removal of `{}` (Te.3 from v5.19.0 was soft deprecation only).
+  Closes Rt.04 (multi-level drop-glue alias analysis, rescoped
   v5.6.6 — struct→list→string depth-2). The only remaining
   v5.6.x v6.0 carry now that v5.6.12 closed Lk.1 at the
   source via destination passing.
@@ -408,7 +752,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (28982 symbols, 62865 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (31007 symbols, 65870 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

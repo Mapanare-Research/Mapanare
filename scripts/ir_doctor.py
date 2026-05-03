@@ -1586,10 +1586,20 @@ def cmd_stage2(args: argparse.Namespace) -> int:
     Tests whether mnc-stage1 can compile its own source modules and produce
     valid LLVM IR.  This is the gate for Phase 4 (fixed-point verification).
     Also attempts full mnc_all.mn compilation.
+
+    v5.23.0 RC.9: per-module compilation falls back to mnc_all.mn on
+    "Undefined function" cross-module-reference failures. v5.21.0 Te.6
+    added cross-module refs (lower.mn calling parser.mn::new_match_arm)
+    that the per-module path can't resolve in isolation. The fallback
+    compiles mnc_all.mn (the whole concatenated source) and reports OK
+    under the module name — this matches the gate's intent ("does the
+    self-hosted source compile cleanly through mnc-stage1?") without
+    requiring a multi-file mnc-stage1 invocation flag.
     """
     stage1 = pathlib.Path(args.stage1)
     self_dir = ROOT / "mapanare" / "self"
     timeout_s = args.timeout
+    all_mn = self_dir / "mnc_all.mn"
 
     modules = [
         "ast.mn",
@@ -1608,6 +1618,15 @@ def cmd_stage2(args: argparse.Namespace) -> int:
         print(f"Stage1 binary not found: {stage1}", file=sys.stderr)
         return 1
 
+    def _compile(src: pathlib.Path, t: int) -> tuple[int, str, str]:
+        proc = subprocess.run(
+            [str(stage1), "emit-llvm", str(src)],
+            capture_output=True,
+            text=True,
+            timeout=t,
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+
     results: list[tuple[str, str, int, str]] = []
     for mod in modules:
         mn_path = self_dir / mod
@@ -1615,16 +1634,21 @@ def cmd_stage2(args: argparse.Namespace) -> int:
         print(f"  {name}...", end=" ", flush=True)
 
         try:
-            proc = subprocess.run(
-                [str(stage1), "emit-llvm", str(mn_path)],
-                capture_output=True,
-                text=True,
-                timeout=timeout_s,
-            )
-            ir = proc.stdout
+            rc, ir, stderr = _compile(mn_path, timeout_s)
             n_lines = ir.count("\n")
-            if proc.returncode != 0 or n_lines == 0:
-                crash = proc.stderr.strip().split("\n")[0] if proc.stderr else "no output"
+            # v5.23.0 RC.9: cross-module ref ⇒ retry against mnc_all.mn.
+            if (rc != 0 or n_lines == 0) and "Undefined function" in stderr and all_mn.exists():
+                rc, ir, stderr = _compile(all_mn, timeout_s * 4)
+                n_lines = ir.count("\n")
+                if rc == 0 and n_lines > 0:
+                    valid, err = validate_ir(ir)
+                    if valid:
+                        mod_obj = parse_ir(ir)
+                        print(f"OK (via mnc_all)  {len(mod_obj.functions)} fn  {n_lines} lines")
+                        results.append((name, "OK (via mnc_all)", n_lines, "cross-module ref"))
+                        continue
+            if rc != 0 or n_lines == 0:
+                crash = stderr.strip().split("\n")[0] if stderr else "no output"
                 print(f"COMPILE_FAIL ({crash})")
                 results.append((name, "COMPILE_FAIL", 0, crash))
                 continue
@@ -1685,7 +1709,8 @@ def cmd_stage2(args: argparse.Namespace) -> int:
     for name, status, n_lines, err in results:
         err_short = err[:40] if err else ""
         print(f"{name:<20s} {status:<15s} {n_lines:>7d}  {err_short}")
-    ok = sum(1 for _, s, *_ in results if s == "OK")
+    # v5.23.0 RC.9: count both "OK" and "OK (via mnc_all)" as valid.
+    ok = sum(1 for _, s, *_ in results if s.startswith("OK"))
     print(f"\n{ok}/{len(results)} stage2 modules valid")
     return 0 if ok == len(results) else 1
 

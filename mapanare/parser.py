@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +24,10 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ChainedCompare,
     CharLiteral,
+    CompClause,
+    Comprehension,
     ConstDef,
     ConstructExpr,
     ConstructorPattern,
@@ -39,6 +44,7 @@ from mapanare.ast_nodes import (
     ExternFnDef,
     FieldAccessExpr,
     FieldInit,
+    FieldPattern,
     FloatLiteral,
     FnDef,
     FnType,
@@ -48,6 +54,7 @@ from mapanare.ast_nodes import (
     Identifier,
     IdentPattern,
     IfExpr,
+    IfLetExpr,
     ImplDef,
     ImportDef,
     IndexExpr,
@@ -56,6 +63,8 @@ from mapanare.ast_nodes import (
     IntLiteral,
     LambdaExpr,
     LetBinding,
+    LetDestructure,
+    LetElseStmt,
     ListLiteral,
     LiteralPattern,
     MapEntry,
@@ -69,6 +78,8 @@ from mapanare.ast_nodes import (
     NoneLiteral,
     OrPattern,
     Param,
+    PassStmt,
+    Pattern,
     PipeDef,
     PipeExpr,
     PrintStmt,
@@ -83,6 +94,8 @@ from mapanare.ast_nodes import (
     StringLiteral,
     StructDef,
     StructField,
+    StructPattern,
+    StructUpdate,
     SyncExpr,
     TensorLiteral,
     TensorType,
@@ -92,6 +105,7 @@ from mapanare.ast_nodes import (
     TypeExpr,
     TypeParam,
     UnaryExpr,
+    WhileLetStmt,
     WhileLoop,
     WildcardPattern,
 )
@@ -608,6 +622,91 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             span=_span_from_children(children),
         )
 
+    # v5.20.0 Te.5.D: let destructuring.
+    def let_dest_stmt(self, children: list[Any]) -> LetDestructure:
+        items = _filter(children)
+        mutable = False
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_MUT":
+            mutable = True
+            idx += 1
+        pattern = items[idx]
+        assert isinstance(pattern, StructPattern)
+        idx += 1
+        type_ann: TypeExpr | None = None
+        if idx < len(items) - 1 and isinstance(items[idx], TypeExpr):
+            type_ann = items[idx]
+            idx += 1
+        value = items[idx]
+        return LetDestructure(
+            pattern=pattern,
+            mutable=mutable,
+            type_annotation=type_ann,
+            value=value,
+            span=_span_from_children(children),
+        )
+
+    def struct_dest_pat(self, children: list[Any]) -> StructPattern:
+        # NAME LBRACE field_dest_list? RBRACE
+        # field_dest_list (when present) returns a tuple
+        # (list[FieldPattern], has_rest: bool).
+        items = _filter(children)
+        name = str(items[0])
+        fields: list[FieldPattern] = []
+        has_rest = False
+        for it in items[1:]:
+            if isinstance(it, tuple):
+                fields, has_rest = it
+                break
+        return StructPattern(
+            name=name,
+            fields=fields,
+            has_rest=has_rest,
+            span=_span_from_children(children),
+        )
+
+    def field_dest_list(self, children: list[Any]) -> tuple[list[FieldPattern], bool]:
+        # Two productions:
+        #   field_dest (COMMA field_dest)* (COMMA RANGE)? COMMA?
+        #   RANGE COMMA?
+        # RANGE is a Token (not in _KEEP) so _filter strips it; we
+        # detect it by walking the raw children list.
+        fields: list[FieldPattern] = []
+        has_rest = False
+        for c in children:
+            if isinstance(c, Token):
+                if c.type == "RANGE":
+                    has_rest = True
+            elif isinstance(c, FieldPattern):
+                fields.append(c)
+        return fields, has_rest
+
+    def field_dest(self, children: list[Any]) -> FieldPattern:
+        # KW_MUT? NAME (COLON struct_dest_pat)?
+        items = _filter(children)
+        mutable = False
+        idx = 0
+        if isinstance(items[idx], Token) and items[idx].type == "KW_MUT":
+            mutable = True
+            idx += 1
+        name = str(items[idx])
+        idx += 1
+        sub: Pattern | None = None
+        if idx < len(items) and isinstance(items[idx], Pattern):
+            sub = items[idx]
+            # `mut` on a nested-pattern field is meaningless — the
+            # outer name isn't bound. Quietly discard the flag (or
+            # we could error, but a quiet drop avoids surprising
+            # users; spec is explicit in design D4).
+            if sub is not None:
+                mutable = False
+        return FieldPattern(
+            name=name,
+            mutable=mutable,
+            sub_pattern=sub,
+            span=_span_from_children(children),
+        )
+
     def const_def(self, children: list[Any]) -> ConstDef:
         """v4.55.0: ``const NAME: TYPE = EXPR`` — real const definition."""
         items = _filter(children)
@@ -631,6 +730,9 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
 
     def continue_stmt(self, children: list[Any]) -> ContinueStmt:
         return ContinueStmt(span=_span_from_children(children))
+
+    def pass_stmt(self, children: list[Any]) -> PassStmt:
+        return PassStmt(span=_span_from_children(children))
 
     def assert_stmt(self, children: list[Any]) -> AssertStmt:
         items = _filter(children)
@@ -666,6 +768,30 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         body = items[1]
         return WhileLoop(condition=condition, body=body, span=_span_from_children(children))
 
+    # v5.20.0 Te.5.E: `while let <pattern> = <scrutinee> { body }`.
+    def while_let_stmt(self, children: list[Any]) -> WhileLetStmt:
+        items = _filter(children)
+        # Items: pattern, scrutinee, body
+        pattern, scrutinee, body = items[0], items[1], items[2]
+        return WhileLetStmt(
+            pattern=pattern,
+            scrutinee=scrutinee,
+            body=body,
+            span=_span_from_children(children),
+        )
+
+    # v5.20.0 Te.5.E: `let <pattern> = <scrutinee> else { ... }`.
+    def let_else_stmt(self, children: list[Any]) -> LetElseStmt:
+        items = _filter(children)
+        # Items: pattern, scrutinee, else_block
+        pattern, scrutinee, else_block = items[0], items[1], items[2]
+        return LetElseStmt(
+            pattern=pattern,
+            scrutinee=scrutinee,
+            else_block=else_block,
+            span=_span_from_children(children),
+        )
+
     def expr_stmt(self, children: list[Any]) -> ExprStmt:
         return ExprStmt(expr=children[0], span=_span_from_children(children))
 
@@ -697,37 +823,28 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         items = _filter(children)
         return BinaryExpr(left=items[0], op="@", right=items[1], span=_span_from_children(children))
 
-    def eq_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(
-            left=items[0], op="==", right=items[1], span=_span_from_children(children)
-        )
+    def cmp_tail(self, children: list[Any]) -> tuple[str, Expr]:
+        # children = [op_token, pipe_expr] — keep the op Token verbatim;
+        # _filter would drop it because cmp ops are not in _KEEP.
+        op_tok = children[0]
+        rhs = children[1]
+        return (str(op_tok), rhs)
 
-    def ne_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(
-            left=items[0], op="!=", right=items[1], span=_span_from_children(children)
-        )
-
-    def lt_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(left=items[0], op="<", right=items[1], span=_span_from_children(children))
-
-    def gt_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(left=items[0], op=">", right=items[1], span=_span_from_children(children))
-
-    def le_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(
-            left=items[0], op="<=", right=items[1], span=_span_from_children(children)
-        )
-
-    def ge_op(self, children: list[Any]) -> BinaryExpr:
-        items = _filter(children)
-        return BinaryExpr(
-            left=items[0], op=">=", right=items[1], span=_span_from_children(children)
-        )
+    def cmp_chain(self, children: list[Any]) -> Expr:
+        # children = [first_operand, cmp_tail_tuple, cmp_tail_tuple, ...]
+        first = children[0]
+        tails = children[1:]
+        # Single comparison: preserve legacy BinaryExpr shape (byte-identical IR).
+        if len(tails) == 1:
+            op_str, rhs = tails[0]
+            return BinaryExpr(left=first, op=op_str, right=rhs, span=_span_from_children(children))
+        # Chained: 2+ comparisons → ChainedCompare(operands, ops)
+        operands: list[Expr] = [first]
+        ops: list[str] = []
+        for op_str, rhs in tails:
+            ops.append(op_str)
+            operands.append(rhs)
+        return ChainedCompare(operands=operands, ops=ops, span=_span_from_children(children))
 
     def and_op(self, children: list[Any]) -> BinaryExpr:
         items = _filter(children)
@@ -963,11 +1080,78 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         exprs = [c for c in children if isinstance(c, Expr)]
         return MapEntry(key=exprs[0], value=exprs[1], span=_span_from_children(children))
 
-    def construct_expr(self, children: list[Any]) -> ConstructExpr:
-        items = _filter(children)
-        name = str(items[0])
-        fields = [c for c in items[1:] if isinstance(c, FieldInit)]
-        return ConstructExpr(name=name, fields=fields, span=_span_from_children(children))
+    # ------------------------------------------------------------------
+    # v5.15.0 Te.2.B/C — list + map comprehensions
+    # ------------------------------------------------------------------
+
+    def comp_clause(self, children: list[Any]) -> CompClause:
+        names = [str(c) for c in children if isinstance(c, Token) and c.type == "NAME"]
+        exprs = [c for c in children if isinstance(c, Expr)]
+        target = names[0] if names else "_"
+        # The first Expr is the iterable; remaining Exprs are if-conditions.
+        iter_expr = exprs[0] if exprs else Expr()
+        conditions = exprs[1:]
+        return CompClause(
+            target=target,
+            iter=iter_expr,
+            conditions=conditions,
+            span=_span_from_children(children),
+        )
+
+    def list_comp(self, children: list[Any]) -> Comprehension:
+        exprs = [c for c in children if isinstance(c, Expr)]
+        clauses = [c for c in children if isinstance(c, CompClause)]
+        element = exprs[0] if exprs else Expr()
+        return Comprehension(
+            kind="list",
+            element=element,
+            clauses=clauses,
+            span=_span_from_children(children),
+        )
+
+    def map_comp(self, children: list[Any]) -> Comprehension:
+        exprs = [c for c in children if isinstance(c, Expr)]
+        clauses = [c for c in children if isinstance(c, CompClause)]
+        key = exprs[0] if exprs else Expr()
+        value = exprs[1] if len(exprs) > 1 else Expr()
+        return Comprehension(
+            kind="map",
+            key=key,
+            value=value,
+            clauses=clauses,
+            span=_span_from_children(children),
+        )
+
+    def construct_expr(self, children: list[Any]) -> "ConstructExpr | StructUpdate":
+        # v5.20.0 Te.5.C: detect `..base` (RANGE token followed by an Expr).
+        # If present, everything before RANGE is overrides; the Expr after
+        # RANGE is the base. Otherwise it's a regular ConstructExpr.
+        name: str | None = None
+        overrides: list[FieldInit] = []
+        base: Expr | None = None
+        saw_range = False
+        for c in children:
+            if isinstance(c, Token):
+                if c.type == "NAME" and name is None:
+                    name = str(c)
+                elif c.type == "RANGE":
+                    saw_range = True
+            elif isinstance(c, FieldInit):
+                overrides.append(c)
+            elif isinstance(c, Expr) and saw_range and base is None:
+                base = c
+        if saw_range and base is not None:
+            return StructUpdate(
+                name=name or "",
+                overrides=overrides,
+                base=base,
+                span=_span_from_children(children),
+            )
+        return ConstructExpr(
+            name=name or "",
+            fields=overrides,
+            span=_span_from_children(children),
+        )
 
     def field_init(self, children: list[Any]) -> FieldInit:
         items = _filter(children)
@@ -1091,6 +1275,17 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
         params = self._expr_to_params(left)
         return LambdaExpr(params=params, body=body, span=_span_from_children(children))
 
+    # v5.15.0 Te.2.F: terse-lambda transformer. Grammar emits the BAR
+    # tokens, zero-or-more NAME tokens, and the body Expr (commas are
+    # stripped by _filter). The Expr in `body` is the only Expr child;
+    # everything else is a Token/NAME.
+    def lambda_terse(self, children: list[Any]) -> LambdaExpr:
+        names = [str(c) for c in children if isinstance(c, Token) and c.type == "NAME"]
+        body_exprs = [c for c in children if isinstance(c, Expr)]
+        body = body_exprs[0] if body_exprs else Expr()
+        params = [Param(name=n) for n in names]
+        return LambdaExpr(params=params, body=body, span=_span_from_children(children))
+
     @staticmethod
     def _expr_to_params(expr: Any) -> list[Param]:
         if isinstance(expr, Identifier):
@@ -1128,6 +1323,22 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             condition=items[0],
             then_block=items[1],
             else_block=items[2],
+            span=_span_from_children(children),
+        )
+
+    # v5.20.0 Te.5.E: `if let <pattern> = <scrutinee> { ... } [else { ... }]`.
+    def if_let_expr(self, children: list[Any]) -> IfLetExpr:
+        items = _filter(children)
+        # Items: pattern, scrutinee, then_block, else_block?
+        pattern = items[0]
+        scrutinee = items[1]
+        then_block = items[2]
+        else_block = items[3] if len(items) > 3 else None
+        return IfLetExpr(
+            pattern=pattern,
+            scrutinee=scrutinee,
+            then_block=then_block,
+            else_block=else_block,
             span=_span_from_children(children),
         )
 
@@ -1234,6 +1445,16 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             return_type = items[idx]
             idx += 1
         body = items[idx] if idx < len(items) else Block()
+        # v5.15.0 Te.2.D: implicit-return one-liner — `fn f(x) = expr`.
+        # The grammar allows `(block | ASSIGN expr)`; when the parser
+        # delivered an Expr instead of a Block, wrap it as the body of
+        # a `return expr` so downstream lowering is unchanged.
+        if isinstance(body, Expr) and not isinstance(body, Block):
+            body_span: Span = body.span if body.span is not None else Span()
+            body = Block(
+                stmts=[ReturnStmt(value=body, span=body_span)],
+                span=body_span,
+            )
         return FnDef(
             name=name,
             public=public,
@@ -1809,17 +2030,35 @@ _parser = Lark(
 )
 
 
+# v5.14.0 Te.1: openers whose colon-block body is comma-separated.
+# When the preprocessor pushes a block whose opener line begins with
+# one of these tokens, every content line at the inner indent gets
+# a trailing comma appended (the grammar accepts trailing commas on
+# struct fields, enum variants, and match arms — see mapanare.lark).
+_COMMA_BODY_OPENERS = ("struct ", "enum ", "match ")
+
+# Continuation keywords that re-open the previous block on the same
+# logical line (``else``, ``sino``, ``else if``, ``sino si``).
+_CONTINUATION_KW = ("else", "sino", "sino si", "else if")
+
+
 def _indent_to_braces(source: str) -> str:
     """Convert indentation-based syntax to brace-based syntax.
 
-    This preprocessor handles the v3.0.0 colon+indent syntax:
+    Preprocessor for the v3.0.0 colon+indent syntax. Hardened in
+    v5.14.0 (Te.1) to also handle struct/enum/match bodies (which
+    require commas between members) and to be invoked from the error-
+    recovery path (see ``parse_recovering``).
+
     - Lines ending with ``:`` open a block (replaced with ``{``)
     - Dedent closes blocks (``}`` inserted)
-    - If source contains ``{`` at definition level, it's already brace-based
+    - struct/enum/match bodies get trailing commas on each member line
+    - Brace-style code passes through unchanged (mixed brace+colon
+      in one file is legal; this function only rewrites the colon
+      lines)
 
-    Falls back to the original source if no colon blocks are detected.
+    Fast path: if no line ends with ``:``, return the source as-is.
     """
-    # Quick check: if no colon-ending lines, return as-is
     lines = source.split("\n")
     has_colon_blocks = any(
         line.rstrip().endswith(":") and not line.lstrip().startswith(("#", "//"))
@@ -1830,10 +2069,32 @@ def _indent_to_braces(source: str) -> str:
         return source
 
     out: list[str] = []
-    indent_stack: list[int] = [0]  # Stack of indent levels
+    # Stack entries are (indent_level, needs_comma, prev_child_idx).
+    # When a block is opened by a struct/enum/match line, ``needs_comma``
+    # is True. ``prev_child_idx`` is the index in ``out`` of the previous
+    # direct child of this block (or -1 if none yet); the next child
+    # appends ``,`` to that previous line.  The last child never gets a
+    # trailing comma (match grammar rejects it).
+    indent_stack: list[list[Any]] = [[0, False, -1]]
 
-    # Keywords that continue a previous block (else, sino, sino si)
-    _CONTINUATION_KW = ("else", "sino", "sino si", "else if")
+    def _emit_content(prefix: str, content: str) -> None:
+        """Format a non-block content line, inserting ``,`` between
+        siblings if the current parent block is comma-separated.
+        Appends to ``out`` and updates ``prev_child_idx`` of the
+        innermost block."""
+        top = indent_stack[-1]
+        if top[1] and top[2] >= 0 and not out[top[2]].rstrip().endswith(","):
+            # Add separator to the previous sibling
+            out[top[2]] = out[top[2]] + ","
+        out.append(f"{prefix}{content}")
+        # Track this line's position as the latest child of its block
+        top[2] = len(out) - 1
+
+    def _opener_needs_comma(body: str) -> bool:
+        # ``match`` opener may be ``match expr`` — starts with ``match ``.
+        # struct/enum may have generics: ``struct Box<T>`` — also starts
+        # with the prefix.
+        return any(body.startswith(prefix) for prefix in _COMMA_BODY_OPENERS)
 
     i = 0
     while i < len(lines):
@@ -1844,15 +2105,14 @@ def _indent_to_braces(source: str) -> str:
             i += 1
             continue
 
-        # Compute indent level (spaces / 4)
         spaces = len(raw) - len(raw.lstrip())
         level = spaces // 4
 
-        # For comment lines, still close blocks on dedent, then pass through
+        # Comment-only lines: close blocks on dedent, then pass through
         if stripped.lstrip().startswith(("#", "//")):
-            while level < indent_stack[-1]:
+            while level < indent_stack[-1][0]:
                 indent_stack.pop()
-                close_indent = "    " * indent_stack[-1]
+                close_indent = "    " * indent_stack[-1][0]
                 out.append(f"{close_indent}}}")
             out.append(raw)
             i += 1
@@ -1860,7 +2120,7 @@ def _indent_to_braces(source: str) -> str:
 
         content = stripped.lstrip()
 
-        # Check if this line is a continuation (else/sino) before closing blocks
+        # Continuation (else/sino) — must be detected before dedent
         is_continuation = False
         for kw in _CONTINUATION_KW:
             if content.startswith(kw) and (
@@ -1870,34 +2130,43 @@ def _indent_to_braces(source: str) -> str:
                 break
 
         if is_continuation:
-            # Close ONE block level and merge with this continuation
-            if indent_stack[-1] > level:
+            # v5.17.0 Sh.A.1: pop nested blocks until indent_stack
+            # matches this continuation's level. Each inner pop emits
+            # a `}` close brace; the outermost popped block then gets
+            # the `} CONTINUATION {` form. Without this, multi-level
+            # dedent (e.g. ``else:`` at level 0 after content at level
+            # 2) leaves intermediate blocks unclosed in the brace
+            # output.
+            while indent_stack[-1][0] > level + 1:
+                indent_stack.pop()
+                close_indent = "    " * indent_stack[-1][0]
+                out.append(f"{close_indent}}}")
+            if indent_stack[-1][0] > level:
                 indent_stack.pop()
                 prefix = "    " * level
                 if stripped.endswith(":"):
                     body = content[:-1].rstrip()
                     out.append(f"{prefix}}} {body} {{")
-                    indent_stack.append(level + 1)
+                    indent_stack.append([level + 1, False, -1])
                 else:
                     out.append(f"{prefix}}} {content}")
             else:
                 prefix = "    " * level
-                out.append(f"{prefix}{content}")
+                _emit_content(prefix, content)
             i += 1
             continue
 
         # Close blocks for dedent
-        while level < indent_stack[-1]:
+        while level < indent_stack[-1][0]:
             indent_stack.pop()
-            close_indent = "    " * indent_stack[-1]
+            close_indent = "    " * indent_stack[-1][0]
             out.append(f"{close_indent}}}")
 
         if stripped.endswith(":"):
-            # This line opens a block
-            body = content[:-1].rstrip()  # Remove trailing colon
+            body = content[:-1].rstrip()
             prefix = "    " * level
 
-            # Handle `fn name:` (zero-arg function, needs parens)
+            # ``fn name:`` (zero-arg function, needs parens)
             if body.startswith("fn ") and "(" not in body:
                 parts = body.split(None, 1)
                 fn_name = parts[1] if len(parts) > 1 else ""
@@ -1909,21 +2178,227 @@ def _indent_to_braces(source: str) -> str:
             else:
                 out.append(f"{prefix}{body} {{")
 
-            indent_stack.append(level + 1)
+            # Sibling separator may be needed for this opener line too
+            # if the parent block is comma-separated (e.g. nested struct
+            # inside a match arm). Update parent's prev_child_idx.
+            top = indent_stack[-1]
+            if top[1] and top[2] >= 0 and not out[top[2]].rstrip().endswith(","):
+                out[top[2]] = out[top[2]] + ","
+            top[2] = len(out) - 1
+
+            indent_stack.append([level + 1, _opener_needs_comma(body), -1])
         else:
             prefix = "    " * level
-            out.append(f"{prefix}{content}")
+            _emit_content(prefix, content)
 
         i += 1
 
-    # Close remaining open blocks
     while len(indent_stack) > 1:
         indent_stack.pop()
-        close_indent = "    " * indent_stack[-1]
+        close_indent = "    " * indent_stack[-1][0]
         out.append(f"{close_indent}}}")
 
-    result = "\n".join(out)
-    return result
+    return "\n".join(out)
+
+
+_BLOCK_KEYWORDS = frozenset(
+    {
+        "fn",
+        "if",
+        "else",
+        "while",
+        "for",
+        "match",
+        "loop",
+        "do",
+        "try",
+        "impl",
+        "trait",
+        "agent",
+        "struct",
+        "enum",
+    }
+)
+
+
+def count_user_brace_block_openers(source: str) -> int:
+    """Count user-written ``{`` block openers in ``source``.
+
+    v5.19.0 Te.3.A; v5.23.2 Te.3.B.1 extended to catch single-line
+    ``{...}`` shapes. Runs **before** ``_indent_to_braces`` so it sees
+    the source as the user typed it.
+
+    A ``{`` is counted as a user-written block opener iff (per line,
+    with strings / chars / ``//`` comments masked to spaces, and
+    skipping ``#{`` map openers + ``${`` interpolation openers):
+
+    - Rule (a): the ``{`` is the last non-WS char on its line —
+      catches multi-line ``fn main() {`` / ``struct Point {`` shapes.
+    - Rule (b): a block keyword (``fn``, ``if``, ``else``, ``while``,
+      ``for``, ``match``, ``loop``, ``do``, ``try``, ``impl``,
+      ``trait``, ``agent``, ``struct``, ``enum``) appears on the same
+      line before the ``{``, and there is no standalone ``=`` between
+      the latest such keyword and the ``{``. The ``=`` filter excludes
+      implicit-return shapes like ``fn make() -> Point = Point { x }``,
+      which is an expression not a block.
+    - Rule (c): the chars immediately before the ``{`` (after WS) are
+      ``=>`` — catches match-arm and closure block bodies.
+
+    Struct / map literals like ``Point { x: 1, y: 2 }`` on canonical
+    colon-style lines do not match any rule (no block keyword on the
+    line; not at line end; no ``=>``) so they are correctly NOT
+    counted, even though they syntactically contain ``{``.
+
+    False positives are bounded to multi-line struct literals
+    (``let p = Point {`` on a line by itself), which are absent from
+    the corpus and vanishingly rare in canonical style. Block
+    comments (``/* ... */``) are not stripped.
+    """
+    count = 0
+    in_str = False
+    in_char = False
+
+    for raw in source.split("\n"):
+        # Mask strings / chars / line-comments to spaces so the
+        # downstream rules see only "code" characters at their original
+        # column positions.
+        masked = list(raw)
+        i = 0
+        line_len = len(raw)
+        while i < line_len:
+            ch = raw[i]
+            if in_str:
+                masked[i] = " "
+                if ch == "\\" and i + 1 < line_len:
+                    masked[i + 1] = " "
+                    i += 2
+                    continue
+                if ch == '"':
+                    in_str = False
+                i += 1
+                continue
+            if in_char:
+                masked[i] = " "
+                if ch == "\\" and i + 1 < line_len:
+                    masked[i + 1] = " "
+                    i += 2
+                    continue
+                if ch == "'":
+                    in_char = False
+                i += 1
+                continue
+            if ch == "/" and i + 1 < line_len and raw[i + 1] == "/":
+                # `//` line comment — mask through end of line.
+                for j in range(i, line_len):
+                    masked[j] = " "
+                break
+            if ch == '"':
+                masked[i] = " "
+                in_str = True
+                i += 1
+                continue
+            if ch == "'":
+                masked[i] = " "
+                in_char = True
+                i += 1
+                continue
+            i += 1
+
+        line_code = "".join(masked)
+
+        # Find each `{` in the masked line and apply the three rules.
+        for idx in range(len(line_code)):
+            if line_code[idx] != "{":
+                continue
+            # Skip `#{` (map literal) and `${` (string interpolation).
+            if idx > 0 and line_code[idx - 1] in ("#", "$"):
+                continue
+
+            # Rule (a): last non-WS char on its line.
+            tail = idx + 1
+            while tail < len(line_code) and line_code[tail] in (" ", "\t", "\r"):
+                tail += 1
+            if tail >= len(line_code):
+                count += 1
+                continue
+
+            prefix = line_code[:idx]
+
+            # Rule (c): immediately preceded by `=>` (WS only between).
+            rstripped = prefix.rstrip()
+            if rstripped.endswith("=>"):
+                count += 1
+                continue
+
+            # Rule (b): block keyword on this line, no standalone `=`
+            # between the latest such keyword and the `{`. Bound the
+            # search at the most recent `{` / `}` / `;` so nested
+            # constructs reset cleanly.
+            scope_start = (
+                max(
+                    prefix.rfind("{"),
+                    prefix.rfind("}"),
+                    prefix.rfind(";"),
+                )
+                + 1
+            )
+            latest_kw_pos = -1
+            j = scope_start
+            while j < idx:
+                ch = prefix[j]
+                if ch.isalpha() or ch == "_":
+                    word_start = j
+                    while j < idx and (prefix[j].isalnum() or prefix[j] == "_"):
+                        j += 1
+                    word = prefix[word_start:j]
+                    if word in _BLOCK_KEYWORDS:
+                        latest_kw_pos = word_start
+                else:
+                    j += 1
+            if latest_kw_pos < 0:
+                continue
+            # Standalone `=`: not part of `==` / `!=` / `<=` / `>=` /
+            # `=>` / `+=` / `-=` / `*=` / `/=` / `%=`.
+            tail_after_kw = prefix[latest_kw_pos:]
+            k = 0
+            saw_eq = False
+            while k < len(tail_after_kw):
+                if tail_after_kw[k] == "=":
+                    prev_ch = tail_after_kw[k - 1] if k > 0 else " "
+                    next_ch = tail_after_kw[k + 1] if k + 1 < len(tail_after_kw) else " "
+                    if next_ch == "=":  # `==`
+                        k += 2
+                        continue
+                    if next_ch == ">":  # `=>`
+                        k += 2
+                        continue
+                    if prev_ch in ("=", "!", "<", ">", "+", "-", "*", "/", "%"):
+                        k += 1
+                        continue
+                    saw_eq = True
+                    break
+                k += 1
+            if not saw_eq:
+                count += 1
+
+    return count
+
+
+def _emit_brace_deprecation_warning(filename: str, count: int) -> None:
+    """Print one v5.19.0 brace-deprecation warning to stderr.
+
+    Suppressed by ``MAPANARE_NO_BRACE_WARNING=1``. Wording is stable
+    so downstream CI can grep for it.
+    """
+    if os.environ.get("MAPANARE_NO_BRACE_WARNING"):
+        return
+    plural = "occurrence" if count == 1 else "occurrences"
+    print(
+        f"warning: {filename}: uses deprecated {{}}-block syntax "
+        f"({count} {plural}). Run `mnc fmt {filename}` to migrate. "
+        f"Hard removal in v6.0.",
+        file=sys.stderr,
+    )
 
 
 def parse(source: str, *, filename: str = "<input>") -> Program:
@@ -1939,6 +2414,18 @@ def parse(source: str, *, filename: str = "<input>") -> Program:
     Raises:
         ParseError: If the source has syntax errors.
     """
+    # v5.23.2 Te.3.B.1: skip the warning for synthetic filenames
+    # (``<interp>``, ``<input>``, etc.). ``_parse_interp_expr``
+    # recursively calls ``parse(filename="<interp>")`` with a brace-
+    # style synthesized wrapper — the warning would otherwise fire on
+    # every interpolated expression in any user file. The native
+    # bootstrap (``parser.mn::split_interp_parts``) routes through
+    # ``parse_expr`` directly and never re-enters ``parse()``, so this
+    # filter is Python-side only.
+    if not (filename.startswith("<") and filename.endswith(">")):
+        brace_count = count_user_brace_block_openers(source)
+        if brace_count > 0:
+            _emit_brace_deprecation_warning(filename, brace_count)
     source = _indent_to_braces(source)
     try:
         result = _parser.parse(source)
@@ -2006,6 +2493,7 @@ _TOKEN_NAMES: dict[str, str] = {
     "KW_TRUE": "'true'",
     "KW_FALSE": "'false'",
     "KW_NONE": "'none'",
+    "KW_PASS": "'pass'",
     "$END": "end of file",
 }
 
@@ -2088,6 +2576,16 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
         A tuple of (partial Program, list of ParseError).
         The Program may contain only successfully parsed definitions.
     """
+    # v5.14.0 Te.1: apply colon-block preprocessor here so recovery
+    # path sees the same syntax surface as ``parse()``.
+    # v5.19.0 Te.3.A: detect user-written brace blocks before
+    # preprocessing so the warning reflects what the user wrote.
+    # v5.23.2 Te.3.B.1: skip the warning for synthetic filenames.
+    if not (filename.startswith("<") and filename.endswith(">")):
+        brace_count = count_user_brace_block_openers(source)
+        if brace_count > 0:
+            _emit_brace_deprecation_warning(filename, brace_count)
+    source = _indent_to_braces(source)
     # Try full parse first — fast path
     try:
         result = _parser.parse(source)

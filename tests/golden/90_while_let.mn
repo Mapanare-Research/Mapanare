@@ -1,0 +1,20 @@
+// v5.20.0 Te.5.E — `while let <pat> = <scrutinee> { body }` (D8).
+//
+// Desugars to:
+//   while true {
+//       match scrutinee {
+//           pat => body,
+//           _ => break,
+//       }
+//   }
+//
+// The scrutinee is re-evaluated each iteration (matches Rust). This
+// golden uses an explicit `break` inside the body to avoid an
+// infinite loop — exercising the desugar path without requiring a
+// pop()-style iterator.
+
+fn main():
+    let opt: Option<Int> = Some(7)
+    while let Some(x) = opt:
+        print(str(x))
+        break

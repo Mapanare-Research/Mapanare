@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# v5.25.0 Pv.4 — opt-in pre-push hook running the WSL validate path.
+#
+# This hook is NOT enabled by default. Forcing the full Linux pytest
+# suite on every push kills the dev loop and produces resentment, not
+# safety. The dev who chooses this trade-off does so explicitly.
+#
+# To enable on this checkout (one-time):
+#
+#   cp scripts/hooks/pre-push.sample .git/hooks/pre-push
+#   chmod +x .git/hooks/pre-push
+#
+# To bypass for an individual push:
+#
+#   git push --no-verify ...
+#
+# The hook fails the push on any test failure or build error. To
+# escape an actually broken state without bypassing every check,
+# fix the underlying issue rather than disabling the hook.
+
+set -euo pipefail
+
+# Resolve the script's own location so we can locate validate_wsl.sh
+# whether or not the hook was copied or symlinked.
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# In a normal git layout HOOK_DIR is .git/hooks; the validator is
+# two levels up at scripts/validate_wsl.sh.
+REPO_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
+VALIDATOR="$REPO_ROOT/scripts/validate_wsl.sh"
+
+if [ ! -x "$VALIDATOR" ]; then
+    echo "[pre-push] $VALIDATOR not found or not executable" >&2
+    exit 1
+fi
+
+exec "$VALIDATOR"

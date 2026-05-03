@@ -1,9 +1,7 @@
-tipo Point {
-    x: Int,
+tipo Point:
+    x: Int
     y: Int
-}
 
-fn main() {
+fn main():
     pon p: Point = new Point { x: 3, y: 4 }
     print(str(p.x))
-}

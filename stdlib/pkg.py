@@ -962,10 +962,69 @@ def bump_version(project_dir: str, bump_type: str = "patch") -> str:
 # ---------------------------------------------------------------------------
 
 
-def init_project(project_dir: str, name: str | None = None) -> MapanareManifest:
-    """Initialize a new Mapanare project with mapanare.toml."""
+_INIT_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+
+
+def _template_root(template: str = "default") -> str:
+    """Return the on-disk path to a project init template directory.
+
+    Templates ship under ``mapanare/templates/init/<template>/``.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(here)
+    return os.path.join(repo_root, "mapanare", "templates", "init", template)
+
+
+def init_project(
+    project_dir: str,
+    name: str | None = None,
+    *,
+    template: str = "default",
+    overlays: list[str] | None = None,
+) -> MapanareManifest:
+    """Initialize a new Mapanare project from a scaffolding template.
+
+    Copies every file under ``mapanare/templates/init/<template>/`` into
+    ``project_dir`` with ``{{NAME}}`` substituted. ``mapanare.toml`` is
+    re-emitted from a fresh ``MapanareManifest`` rather than copied so
+    downstream tooling sees a canonical TOML shape.
+
+    ``overlays`` names additional templates layered on top of the base
+    template in order. Files from a later overlay never replace files
+    already present in the project — re-init is non-destructive.
+    """
     if name is None:
         name = os.path.basename(os.path.abspath(project_dir))
+    if not _INIT_NAME_RE.match(name):
+        raise ManifestError(f"invalid project name '{name}': must match [A-Za-z_][A-Za-z0-9_-]*")
+
+    template_chain = [template, *(overlays or [])]
+    for tname in template_chain:
+        root = _template_root(tname)
+        if not os.path.isdir(root):
+            raise ManifestError(f"init template '{tname}' not found at {root}")
+
+    os.makedirs(project_dir, exist_ok=True)
+
+    for tname in template_chain:
+        root = _template_root(tname)
+        for src_dir, _, files in os.walk(root):
+            rel_dir = os.path.relpath(src_dir, root)
+            dst_dir = project_dir if rel_dir == "." else os.path.join(project_dir, rel_dir)
+            os.makedirs(dst_dir, exist_ok=True)
+            for fname in files:
+                # mapanare.toml is regenerated from the manifest below.
+                if rel_dir == "." and fname == "mapanare.toml":
+                    continue
+                src = os.path.join(src_dir, fname)
+                dst = os.path.join(dst_dir, fname)
+                if os.path.isfile(dst):
+                    continue
+                with open(src, encoding="utf-8") as f:
+                    contents = f.read()
+                contents = contents.replace("{{NAME}}", name)
+                with open(dst, "w", encoding="utf-8") as f:
+                    f.write(contents)
 
     manifest = MapanareManifest(
         name=name,
@@ -973,14 +1032,5 @@ def init_project(project_dir: str, name: str | None = None) -> MapanareManifest:
         description="",
         license="MIT",
     )
-
-    os.makedirs(project_dir, exist_ok=True)
     save_manifest(manifest, project_dir)
-
-    # Create main.ax if it doesn't exist
-    main_path = os.path.join(project_dir, "main.mn")
-    if not os.path.isfile(main_path):
-        with open(main_path, "w", encoding="utf-8") as f:
-            f.write('fn main() {\n    print("Hello, Mapanare!")\n}\n')
-
     return manifest

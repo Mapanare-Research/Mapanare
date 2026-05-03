@@ -1,0 +1,19 @@
+// v5.15.0 Te.2.F — terse lambda syntax: ``|x| body``, ``|x, y| body``.
+//
+// Lowers to the existing ``LambdaExpr`` AST node — same closure
+// machinery as ``(x) => x + 1``. Verified IR-equivalent to the
+// long form modulo SSA naming.
+
+fn apply1(f: fn(Int) -> Int, x: Int) -> Int:
+    return f(x)
+
+fn apply2(f: fn(Int, Int) -> Int, a: Int, b: Int) -> Int:
+    return f(a, b)
+
+fn main():
+    let trip: Int = apply1(|n| n * 3, 5)
+    let plus_hundred: Int = apply1(|n| n + 100, 7)
+    let mul: Int = apply2(|a, b| a * b, 6, 7)
+    print(str(trip))
+    print(str(plus_hundred))
+    print(str(mul))

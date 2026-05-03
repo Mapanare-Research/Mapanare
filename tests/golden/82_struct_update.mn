@@ -1,0 +1,17 @@
+// v5.20.0 Te.5.C — struct update syntax: `new T { f: v, ..base }`.
+//
+// Single-field override; remaining fields copied from `base` via
+// per-field accesses on a synthesized base temp. IR is byte-
+// identical to the manual long form `new T { f: v, g: base.g, ... }`.
+
+struct Point:
+    x: Int
+    y: Int
+    z: Int
+
+fn main():
+    let p1: Point = new Point { x: 1, y: 2, z: 3 }
+    let p2: Point = new Point { x: 99, ..p1 }
+    print(str(p2.x))
+    print(str(p2.y))
+    print(str(p2.z))

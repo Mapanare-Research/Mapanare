@@ -9,11 +9,9 @@
 let MAX: Int = 100
 let GREETING: String = "hello"
 
-fn get_max() -> Int {
+fn get_max() -> Int:
     return MAX
-}
 
-fn main() {
+fn main():
     print(get_max())
     print(GREETING)
-}

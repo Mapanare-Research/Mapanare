@@ -7,11 +7,2215 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.30.0] - 2026-05-02
+
+**Vb.\* — packaging-only release: version bump.** Zero compiler
+edits. Zero runtime edits. Zero `mapanare/self/*.mn` source edits.
+Strict 3-stage fixed point preserved by construction at v5.29.0's
+**241,898 lines / 0 diff** (25-release strict streak). Goldens
+**95/95**. The release advances the published version surface
+(VERSION, README badges in en/es/pt/zh-CN, CHANGELOG.md) so the
+next `dev` → `main` merge carries a clean v5.30.0 number and the
+PR description reflects the cumulative scope of every release that
+has not yet landed on `main` (`main` is currently at v5.13.0; this
+merge carries v5.13.0 → v5.30.0). All substantive fix / feature
+work shipped at v5.29.0 (Mb.10 self-host emitter routing for
+`__mn_indent_to_braces` Win64 ABI; Pv.7 / Pv.8 already on `dev`
+pre-v5.29.0 as `bc3bc7b` / `f119c43`). See
+`docs/roadmap/v5/v5.30.0/SESSION_REPORT.md`.
+
+
+## [5.29.0] - 2026-05-02
+
+**Mb.10 + Pv.7 + Pv.8 — Win64 ABI closeout + CI race prevention.**
+Three findings, three fixes, one release. Reopens the Mb.* arc
+(declared closed at v5.26.1) for one residual Win64 ABI gap —
+`__mn_indent_to_braces` was the parent of the v5.26.0 Mb.9 brace-
+deprecation siblings, which got the byref routing fix; the parent
+itself was missed. Closes structurally this time. Adds two Pv.* items
+(Pv.7 + Pv.8) as continuation of v5.25.0's CI prevention infrastructure.
+Strict 3-stage fixed point preserved by construction at **241,898
+lines / 0 diff** (restored STRICT from v5.28.0's NEAR — the prior
+NEAR was a v5.9.0 DX.2 artifact from a stale stage1 binary linked
+against an older runtime version, not actual divergence). Goldens
+**95/95**.
+
+### Added
+
+- **Mb.10.C** (`tests/llvm/test_indent_to_braces_win64_abi.py`, 6
+  cases) — Win64 ABI regression contract for `__mn_indent_to_braces`.
+  IR-shape gates under `x86_64-w64-windows-gnu` triple via the
+  Python emitter (load-bearing); SysV negative gate; ctypes
+  contract against `runtime/native/mapanare_core.c` for runtime-side correctness.
+  Falsifiability round-trip verified — reverting the v5.23.1 Python
+  handler triggers the gate failure exactly matching the
+  publish-run-#50 anti-pattern (`call ... ({ptr, i64} %l.0)`).
+
+### Fixed
+
+- **Mb.10** (`mapanare/self/emit_llvm.mn`) — route
+  `__mn_indent_to_braces` through `emit_rt_call` for the same Win64
+  ABI byref-threshold reason as v5.26.0 Mb.9 routed the
+  brace-deprecation siblings. The Python emitter has had this
+  routing since v5.23.1 Mb.1 (`emit_llvm_text.py:3632`); the
+  self-host side was never updated, so stage2.ll emitted a by-value
+  call against a declare-as-`ptr` signature on Win64. gcc lowered
+  the call as pass-by-hidden-pointer with rcx pointing into the
+  struct's data buffer instead of into a valid `MnString` —
+  SIGSEGV on the first `source.len` read. Surfaced in publish
+  run #50 (`build-native (windows-latest, mnc-win-x64.exe,
+  x86_64-w64-mingw32)`). 3-LOC fix mirroring the Mb.9 routing
+  pattern at lines 3781-3786. Bb.* seed refresh: NOT required
+  (no C-runtime export changes). **Mb.\* arc CLOSED structurally**
+  (v5.26.0's claim was correct for Mb.7+Mb.9 but missed
+  `__mn_indent_to_braces`).
+
+- **Pv.7** (`Makefile`, **already shipped on dev as commit
+  `bc3bc7b`**) — `clean-build-test` race against parallel pytest
+  workers. Pre-fix, the `rm -f libmapanare_rt.a && make build-rt`
+  sequence in `clean-build-test` left a 1-3 second window where the
+  canonical archive was missing; under `pytest -n auto`, parallel
+  workers in `tests/bootstrap/` / `tests/llvm/` that link against
+  the archive could trip "no such file or directory" before the
+  rebuild completed. Fixed by parameterizing `build-rt` with
+  `RT_OUTPUT ?= runtime/native/libmapanare_rt.a`, rebuilding into a
+  sandbox path (`runtime/native/.libmapanare_rt.cbt-tmp.a`), then
+  atomic `mv -f` into the canonical path. Race-window evidence:
+  200-poll test at 20 ms cadence over the full 4-second rebuild
+  produced **0 MISSING reports**.
+
+- **Pv.8** (`tests/native/test_c_runtime.c`, **already shipped on
+  dev as commit `f119c43`**) — agent-state timing races in
+  `test_agent_pause_resume` and `test_agent_failing_handler`.
+  `mapanare_agent_pause()` is a guarded transition that silently
+  no-ops if the agent isn't yet RUNNING; the worker thread sets
+  state=RUNNING only after the OS schedules the new thread, and the
+  test's fixed `usleep(50000)` was sometimes insufficient under CI
+  load. 4 new polling helpers (`wait_for_agent_state`,
+  `wait_for_messages_processed`, `wait_for_agent_recv`,
+  `wait_for_counter` + `test_sleep_ms`); 7 fixed-delay sleeps
+  converted to bounded polls. Generous timeouts (1000 ms for state,
+  2000 ms for FAILED / messages-processed, 5000 ms for 500-task
+  pool stress) — returns on first match; only consumes the full
+  budget if the worker is genuinely stuck. Plain + ASan + TSan all
+  green; `gcc -O2 -g -pthread -Wall -Wextra -Werror` clean.
+
+
+## [5.28.0] - 2026-05-02
+
+**RE-PANEL — v5.23.0 → v5.27.0 recovery + prevention + arc-closeout
+arc panel.** Panel-only release. The release identity IS the panel
+itself. **Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+preserved by construction at v5.27.0's 241,842 lines / 0 diff
+(zero self-host source delta). 7 reviewers graded the v5.23.0 →
+v5.27.0 arc (9 SESSION_REPORTs) using the v5-gate mechanical
+decision rule.
+
+**Aggregate: 9.72 / 10. Decision: Option A.** Fourth consecutive
+Option A under the v5-gate framework, **largest single-arc
+recovery in v5 history (+0.31 vs v5.22.0's 9.41 floor)**, and
+**first panel above the v5.7.1 / v5.8.0 9.66 ceiling in the v5
+series**. Score trajectory: 9.66 → 9.62 → 9.41 → **9.72** —
+3-consecutive-panel downward trend (-0.04, -0.21) broken with
++0.31. Per-reviewer: Rattler 9.90 (+0.05), Viper 9.80 (+0.10),
+**Anaconda 9.60 (+1.20 — load-bearing recovery)**, Cobra 9.70
+(+0.15), Coral 9.70 (+0.15), **Boa 9.55 (+0.55 — largest
+single-panel Boa improvement in project history)**, Mamba 9.80
+(−0.05). 7 EXCEEDS / 0 MEETS / 0 NEEDS WORK; 7 PASS WITH NOTES.
+0 NEW HIGH, 0 NEW MEDIUM, ~14 NEW LOW (mostly process polish).
+
+**v5.22.0 docket closure: 25/25 items CLOSED at v5.28.0 HEAD.**
+Highest closure rate in v5 history across a single recovery arc.
+The 4 v6.0-rescoped items (Rt.04 multi-level alias, Te.3 hard
+removal of `{}`, single-line `if x: y`, Stage2 teardown crash)
+carry forward as planned.
+
+**Phase 2 H.\* hygiene closures** (committed `069ff24` ahead of
+panel cut, per Bo.27 / Wd.8 cross-reference convention codified
+at `.reviews/PANEL_AUDIT_TEMPLATE.md`):
+
+- **H.1, H.2, H.3** (HIGH, Boa Bo.18r-class): `README.md` lines
+  175 / 183 / 196-197 fixed-point status paragraphs bumped from
+  v5.21.0 / 239k / 17 + 14 consecutive releases to v5.27.0 /
+  241k / 23 consecutive releases.
+- **H.4** (HIGH, Boa Bo.17r-class): 3 localized READMEs
+  (es/pt/zh-CN) native-compiler subsection rewritten:
+  v5.21.0 → v5.27.0; 238,086 → 241,842 lines; 13 → 23
+  consecutive releases; -3,950 lines (-13.8%) → -2,285 lines
+  (-8.18%) net v5.13.0 → v5.21.1 dual-baseline framing per
+  v5.23.0 RC.12 normalization. Added v5.23-v5.27 arc summary
+  paragraph in each language.
+- **H.5** (MEDIUM, Boa Bo.10-class): `docs/known_issues.md`
+  Last-updated bumped from v5.21.1 to v5.27.0 with v5.23-v5.27
+  closure narrative.
+- **H.6** (MEDIUM, Anaconda An.1-class): `.reviews/CARRY_FORWARD.md`
+  appended v5.25.0 Pv.\* / v5.26.0 Mb.7+Mb.9 / v5.26.1 Eu.1..Eu.4
+  / v5.27.0 Mc.8+Mc.9+Tk.1 closure rows. New "Aggregate state
+  entering v5.28.0 panel" subsection. Update-protocol drift
+  caught + fixed (4-release accumulation).
+- **H.7** (LOW, process): cadence-gap acknowledgment in
+  PROMPT.md + PRE_PANEL_AUDIT.md preambles. v5.28.0 closes the
+  v5.24.0 Hy.3 cadence-enforcement gate gap **1 minor late on
+  purpose** — bundling formatter polish (Mc.8 + Mc.9 + Tk.1)
+  with a panel cycle was rejected during v5.27.0 PLAN drafting.
+
+### Added
+
+- `.reviews/v5.28.0/` panel directory tree (subdirectory-per-
+  reviewer convention per v5.28.0 PROMPT spec):
+  - `prompt.md` — shared panel brief (charter, required reading,
+    what-this-panel-must-answer, the 7 reviewers, review file
+    format, pre-flight verification, process instructions)
+  - `PRE_PANEL_AUDIT.md` — lead's fact-check; 7 H.\* findings
+    (H.1-H.6 closures + H.7 cadence acknowledgment); each H.\*
+    binds to prior-panel finding ID per Bo.27 / Wd.8 convention;
+    live snapshot at v5.27.0 HEAD pre-Phase-2 + v5.28.0 HEAD
+    post-Phase-2.
+  - Per-reviewer brief in each subdirectory:
+    `.reviews/v5.28.0/rattler/prompt.md`,
+    `.reviews/v5.28.0/viper/prompt.md`,
+    `.reviews/v5.28.0/anaconda/prompt.md`,
+    `.reviews/v5.28.0/cobra/prompt.md`,
+    `.reviews/v5.28.0/coral/prompt.md`,
+    `.reviews/v5.28.0/boa/prompt.md`,
+    `.reviews/v5.28.0/mamba/prompt.md`
+  - Per-reviewer findings in each subdirectory:
+    `.reviews/v5.28.0/rattler/findings.md`,
+    `.reviews/v5.28.0/viper/findings.md`,
+    `.reviews/v5.28.0/anaconda/findings.md`,
+    `.reviews/v5.28.0/cobra/findings.md`,
+    `.reviews/v5.28.0/coral/findings.md`,
+    `.reviews/v5.28.0/boa/findings.md`,
+    `.reviews/v5.28.0/mamba/findings.md`
+    (~2,500 lines / ~134 KB total)
+  - `V5_DECISION.md` — formal Option A document with mechanical-
+    rule check, per-reviewer score table, 13-panel trajectory,
+    v5.22.0 docket closure verification, 14 NEW LOW catalog with
+    Bo.27 prior-panel bindings, carry-forward delta, cadence reset
+  - `README.md` — panel index synthesis (verdict table,
+    consensus, action items, regressions/improvements, evidence
+    base)
+
+### Changed
+
+- `README.md` lines 175 / 183 / 196-197 — fixed-point status
+  paragraphs refreshed (Phase 2 H.1/H.2/H.3 — Bo.18r-class
+  closure; 4th-panel-risk averted)
+- `docs/README.es.md`, `docs/README.pt.md`, `docs/README.zh-CN.md`
+  — native-compiler subsection refreshed with v5.27.0 reality +
+  v5.23-v5.27 arc summary (Phase 2 H.4 — Bo.17r-class closure)
+- `docs/known_issues.md` — Last-updated bumped from v5.21.1 to
+  v5.27.0 (Phase 2 H.5)
+- `.reviews/CARRY_FORWARD.md` — v5.25.0 → v5.27.0 closure rows
+  appended; new "Aggregate state entering v5.28.0 panel"
+  subsection (0 HIGH / 0 MEDIUM / ~5 LOW); arc closure summary
+  table updated (Phase 2 H.6)
+- `CLAUDE.md` — release-notes preamble entry for v5.28.0 added
+- `VERSION` — 5.27.0 → 5.28.0
+- README badges (en/es/pt/zh-CN) — version bumped via
+  `scripts/bump_version.py`
+
+### Fixed
+
+- (No code fixes shipped in v5.28.0; this is a panel-only release.
+  The arc graded fixed 4 LINK_FAIL goldens via Eu.1..Eu.4 in
+  v5.26.1, the i64/i1 codegen bug via Mb.7 in v5.26.0, the Win64
+  byval/byref MnString ABI via Mb.9 in v5.26.0, and the V.9
+  MnString lifecycle leak via Mb.1 in v5.23.1; all verified live
+  at v5.28.0 HEAD by the panel.)
+
+### Carry-forward (entering v5.28.x / v5.29.0+)
+
+- 0 HIGH, 0 MEDIUM, ~14 LOW (mostly process polish; see
+  `.reviews/v5.28.0/V5_DECISION.md` carry-forward table for full
+  list)
+- **Convergent recommendation (Cobra Cb.New1 + Rattler Ra.Inf1)**:
+  extend `tests/llvm/test_async_link.py` link-and-run pattern to
+  all 95 goldens via a new test_llvm_link_all module (Tn.\*
+  generalization). Closes the structural gap that hid Eu.1..Eu.4
+  for 3 releases. **Escalate to MEDIUM at v5.29.0 if not picked
+  up in a Pv.\* follow-on.**
+- v6.0 carry: Rt.04, Te.3 hard removal, single-line `if x: y`,
+  Stage2 teardown crash (Rattler Ra.New1 narrowed to
+  stdout-redirect-specific SIGSEGV — investigation now
+  tractable; consider closing in v5.29.0 rather than v6.0)
+
+**Cadence reset:** next routine panel due at **v5.33.0** (5
+minors past v5.28.0). See
+`docs/roadmap/v5/v5.28.0/SESSION_REPORT.md`,
+`.reviews/v5.28.0/V5_DECISION.md`, and
+`.reviews/v5.28.0/README.md`.
+
+
+## [5.27.0] - 2026-05-02
+
+**Mc.8 + Mc.9 + Tk.1 — formatter polish; Mc.\* parity arc CLOSED.**
+Three formatter / rewriter polish items shipping together because
+they all live in `mapanare/format.py` and ship without compiler
+edits. Closes the v5.13.0 Mc.\* parity gap docket (Mc.8 + Mc.9,
+12-release carry each) and the v5.24.1 Wd.2 latent rewriter bug
+(Tk.1, 3-release carry). **Strict 3-stage fixed point preserved
+by construction at 241,842 lines / 0 diff** (23-release strict
+streak — same line count as v5.26.1 because zero
+`mapanare/self/*.mn` source edits in v5.27.0). Goldens **95/95**.
+
+### Added
+
+- **Mc.8** `mapanare fmt --line-length N` / `mnc fmt --line-length
+  N` — **detect-only** long-line reporter. Pure read-only scan;
+  never modifies source. In default mode reports lines exceeding
+  `N` chars on stderr; under `--check` causes a non-zero exit so
+  CI gates can enforce a ceiling. `N=0` (the default) disables
+  the check. Phase 0 surfaced that Mapanare's grammar is strictly
+  single-line for all expressions — newlines are not implicit
+  continuations inside `(`/`[`/`{`/`#{` — so an auto-wrap rewriter
+  cannot satisfy the v5.13.0 Mc.2 AST-preservation invariant.
+  v5.27.0 closes Mc.8 honestly by shipping the detector;
+  auto-wrap is rescoped to a future release that also adds
+  newline-tolerant grammar inside grouping delimiters.
+- **Mc.9** `mapanare fmt --sort-imports` / `mnc fmt --sort-imports`
+  — sorts contiguous top-level `import` blocks alphabetically.
+  Block boundaries are any non-import line (blank, comment, or
+  other statement), so the user's existing groupings (e.g.
+  stdlib / third-party / local separated by blanks) function as
+  the de-facto group structure: each group sorts independently.
+  Comments inside an import block split the surrounding block
+  into sub-blocks. Idempotent. AST-preserving up to `ImportDecl`
+  declaration order.
+- New `mapanare/format.py::find_long_lines(source, max_length)` —
+  pure function returning `[(line_no, length), ...]` for lines
+  strictly exceeding `max_length`.
+- New `mapanare/format.py::sort_imports(source)` — pure function
+  performing the import-block sort.
+- New `tests/test_format_wrap.py` (19 tests — 14 unit + 5 CLI).
+- New `tests/test_format_imports.py` (24 tests — 13 unit + 2 AST
+  preservation + 3 CLI + 5 idempotence fixtures + 1 corpus check
+  on `mapanare/self/main.mn`).
+- 4 new tests in `tests/test_colon_blocks.py` and
+  `tests/test_format.py` for Tk.1.
+- `docs/guides/formatter.md` extended with `--sort-imports` and
+  `--line-length` sections including the conservative ruleset.
+
+### Changed
+
+- `mapanare fmt` now accepts `--line-length N` and `--sort-imports`
+  flags (additive on top of the existing transformers).
+- `mnc fmt` (native dispatch) forwards the new flags via the
+  existing argv-forwarding loop in `mapanare/self/main.mn` —
+  **zero `mapanare/self/*.mn` source edits**.
+
+### Fixed
+
+- **Tk.1**: `mapanare/format.py::to_terse` — empty `#{}` map
+  literals (and empty `Foo {}` struct literals) now survive the
+  `--to-terse` rewrite verbatim. Pre-fix, the rewriter
+  unconditionally collapsed any line ending in `{}` to a
+  colon-block opener plus an indented `pass`, producing
+  grammatically invalid output for expression-context empty
+  literals (e.g., `let m: Map<String, Int> = #{}` → `let m:
+  Map<String, Int> = #:` + `pass`). Surgical 6-LOC fix gates the
+  rewrite on `_looks_like_stmt_block_opener`, mirroring the
+  guard the `endswith(" {")` branch relies on via
+  `_find_match_verbatim_lines`. v5.24.1 Wd.2 sidestepped this
+  bug by leaving SPEC §17.1 unrewritten; with Tk.1 fixed,
+  `to_terse_markdown(SPEC.md)` is now safe to run end-to-end.
+- Cadence-gate fire (v5.24.0 Hy.3): `scripts/check_cadence.py`
+  fires hard at v5.27.0 HEAD (5+ minor versions since v5.22.0
+  panel). **Acknowledged and informational** — the v5.28.0
+  RE-PANEL closes the cadence gap one minor late on purpose;
+  bundling formatter polish with a panel cycle was rejected
+  during PLAN drafting.
+
+
+## [5.26.1] - 2026-05-02
+
+**Eu.1..Eu.4 — close v5.26.0-deferred LINK_FAIL bug classes; Eu.\*
+arc closeout.** Four small-but-distinct codegen / lowering fixes
+that move goldens 47, 48, 49, 51 from LINK_FAIL → PASS. Each was a
+pre-existing latent bug surfaced by v5.26.0's Phase 0 audit and
+tracked as `xfail(strict)` in `tests/llvm/test_async_link.py`. Per-
+bug Phase 0 investigations honored — bundled in one release for
+efficiency, not conflated. **Strict 3-stage fixed point preserved
+at 241,842 lines / 0 diff** (22-release strict streak; +1,849
+lines vs v5.26.0's 239,993 from the new lowerer/emitter arms —
+within the PLAN's expected 500-line target × 4 sites). Goldens
+**95/95**. `tests/llvm/test_async_link.py` 10/10 PASS, 0 XFAIL.
+
+### Fixed
+
+- **Eu.1** — `emit_unwrap` on `Result<T, E>` did a single
+  `extractvalue ..., 1` returning the inner aggregate `{Ok_ty,
+  Err_ty}` rather than the Ok payload at field 0 of that inner
+  aggregate. Fixed at both `mapanare/emit_llvm_text.py::_do_unwrap`
+  and `mapanare/self/emit_llvm.mn::emit_unwrap` — for `TK_RESULT`
+  subjects, do TWO `extractvalue` ops (field 1 of outer, then
+  field 0 of inner). Closes golden 47 (`?` operator on Result).
+- **Eu.2** — Result literal `Ok(...)` / `Err(...)` lowered with
+  empty `dest.ty.args` when no enclosing Result return type was
+  found, so `emit_wrap_ok` / `emit_wrap_err` derived the outer
+  wrapper type from `resolve_mir_type` (fallback `{i1, {ptr,
+  ptr}}`) while the inner aggregate used the real Ok/Err widths
+  — three disagreeing `insertvalue` widths in one chain. Fixed
+  at `mapanare/self/lower.mn` Ok/Err lowering to default missing
+  args mirroring `mapanare/lower.py:2398` (`Result<T, String>`
+  for `Ok(T)` and `Result<Int, T>` for `Err(T)`). Closes
+  golden 48 (`classify(Ok(42))` and `classify(Err("fail"))`
+  call sites).
+- **Eu.3** — `match` on a primitive (Int / Bool / String) subject
+  emitted `EnumTag` which lowered to `extractvalue i64 %v, 0`
+  — LLVM rejects this because i64 is not an aggregate. Fixed
+  at `mapanare/self/lower.mn::lower_match`: primitive subjects
+  bypass the switch entirely and emit a sequential test cascade
+  (jump to `arm[0]`; arms with literal patterns gain an implicit
+  `subject == LIT` check at entry; existing guard fall-through
+  unchanged). `bind_ident_pattern` now uniquifies its alloca
+  name so multiple `Some(x) if guard` arms don't collide on
+  `%x.addr`. Closes golden 49 (`match n: x if x < 0 => ...`).
+- **Eu.4** — `match` with or-pattern + guards
+  (e.g., `Some(0) | None`) emitted N duplicate `i64 1` switch
+  cases (one per `Some`-arm) — LLVM rejects "duplicate case
+  value in switch". Fixed via two coordinated changes in
+  `mapanare/self/lower.mn`: (1) `build_match_arms` now
+  dedups switch entries by tag value (first arm wins; subsequent
+  same-tag arms remain reachable through the existing fall-through
+  chain), and (2) or-pattern arms with a literal-bearing alt
+  (e.g., `Some(0)`) emit a per-alt entry switch at the arm body
+  to disambiguate which alt actually matched (`None` direct
+  match; `Some(0)` payload-equality check; default → next arm).
+  New helper `is_builtin_variant_name` recognises
+  `None`/`Some`/`Ok`/`Err` as variants when they appear as
+  `IdentPat` (the parser does not wrap them in `ConstructorPat`).
+  Closes golden 51 (`Some(0) | None | Some(x) if guard | ...`).
+
+### Changed
+
+- `tests/llvm/test_async_link.py::test_deferred_link_failures` is
+  no longer a placeholder for the four `xfail(strict)` LINK_FAIL
+  bug classes — the `pytest.xfail` short-circuit is removed and
+  the test body now runs the full emit-link-and-run cycle on
+  goldens 47, 48, 49, 51. Each `reason` field rewritten to
+  document the v5.26.1 closure rather than the v5.26.0-era
+  bug class.
+
+
+## [5.26.0] - 2026-05-02
+
+**Mb.7 + Mb.9 — codegen + Win64 ABI fixes; Mb.\* arc closeout.**
+Two real codegen fixes in the same release. Mb.7 closes the
+3-release carry (v5.23.1 → v5.24.0 → v5.25.0) of the i64/i1
+tag-emit bug in the self-host emitter. Mb.9 closes the
+publish-run-#48 Windows OOM in the v5.23.2 Te.3.B.2 brace-
+deprecation runtime functions. Phase 0 audit discovered the
+v5.23.1 SESSION_REPORT premise ("9 LINK_FAIL goldens share one
+bug") was wrong — only the async cluster (55–59) was misclassified
+as needing the fix; goldens 47/48/49/51 fail for distinct reasons
+(rescoped to v5.26.1 as Eu.1..Eu.4). **Strict 3-stage fixed point
+preserved at 239,993 lines / 0 diff** (+158 lines vs v5.25.0,
+expected from new dispatch arms; 21-release strict streak).
+**Goldens 95/95.** **No C-runtime edits.** **No Bb.\* seed refresh
+required** (correcting the PLAN). See
+`docs/roadmap/v5/v5.26.0/SESSION_REPORT.md` and `AUDIT.md`.
+
+### Added
+
+- New `tests/llvm/test_async_link.py` regression suite —
+  IR-invariant gate for the Mb.7 i64/i1 tag-emit anti-pattern,
+  link-and-run sanity for the async cluster (goldens 55–59),
+  and `xfail` markers for the four distinct LINK_FAIL bug
+  classes rescoped to v5.26.1 (`Eu.1..Eu.4`).
+- New `tests/native/test_brace_funcs_windows_abi.py` regression
+  suite — IR-shape gate (under `x86_64-w64-windows-gnu` triple)
+  plus Linux ctypes contract for `__mn_count_user_brace_block_openers`
+  and `__mn_emit_brace_deprecation_warning` (Mb.9).
+
+### Changed
+
+- `mapanare/self/emit_llvm.mn::emit_enum_tag` honors
+  `dest.ty.kind` for Result/Option subjects: when the lowerer
+  asks for an i1 tag (try-op path, `TK_BOOL`), emit i1 directly;
+  when it asks for the wider enum type (match path), keep the
+  existing zext-to-i64 path load-bearing for `emit_mir_switch`.
+  Closes Mb.7.
+- `mapanare/emit_llvm_text.py::_do_call` and
+  `mapanare/self/emit_llvm.mn::emit_mir_call` route the v5.23.2
+  Te.3.B.2 brace-deprecation runtime functions through the
+  runtime-call path so 16-byte `MnString` args take the
+  alloca + store + ptr-pass pattern on Win64 (matching gcc's
+  Win64 ABI for `MnString source`). Closes Mb.9.
+- `mnc_all.mn` regenerated via `bash scripts/concat_self.sh`.
+
+### Fixed
+
+- **Mb.7** (3-release carry) — i64/i1 tag-emit bug: `emit_enum_tag`
+  for Result/Option zext'd the i1 tag to i64 unconditionally; the
+  try-operator path then emitted `br i1 %i64_val, ...`, which the
+  LLVM verifier rejected. Surgical 5-LOC fix; falsifiability
+  round-trip documented in SESSION_REPORT.
+- **Mb.9** — Win64 ABI mismatch for `__mn_count_user_brace_block_openers`
+  and `__mn_emit_brace_deprecation_warning`. Python's `_do_call`
+  uses a 64-byte byref threshold, but `_decl_fn` declared the
+  function with a `ptr` parameter (8-byte threshold on Win64).
+  The 16-byte `MnString` was passed by-value at the call site
+  while gcc lowered the C signature as Win64 pass-by-hidden-
+  pointer; `source.len` then read the data buffer's bytes 8..16
+  as a length — for `mnc_all.mn` (starts with `// Auto-generated:`)
+  those bytes are `g e n e r a t e` → `0x65746172656e6567` →
+  `malloc(7e+18)` → publish-run-#48 OOM. Fixed via explicit
+  handlers in both Python and self-host emitters routing the
+  calls through the runtime-call path with correct Win64 ABI
+  handling. **No C-runtime edits needed**.
+
+### Closes / Carries forward
+
+- Closes the **Mb.\* arc** (memory- and ABI-related panel
+  findings from v5.22.0 + v5.23.2's Te.3.B.2 follow-on).
+- **Phase 0 finding** rescopes 4 LINK_FAIL goldens (47/48/49/51)
+  to v5.26.1 with their own bug classes (Eu.1..Eu.4). The PLAN's
+  premise that all 9 LINK_FAIL goldens shared one bug was based
+  on test_native.py harness output that compared Python and
+  self-host IR rather than running actual link cycles.
+
+
+## [5.25.0] - 2026-05-02
+
+**Pv.\* — CI prevention infrastructure.** First release in the new
+**Pv.\*** sub-arc (structural pattern parallel to v5.24.0's
+**Hy.\***). Closes the class of failure where a CI-only test path
+catches a bug that could have been caught locally — typically
+because (a) a stale local artifact masks the bug on the developer
+machine, (b) a feature ships without an end-to-end test exercising
+it through the .mn-caller side, or (c) a test asset only runs on a
+non-Windows CI job. **Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+preserved by construction at **239,835 lines / 0 diff** (20-release
+strict streak; same line count as v5.24.1 because no source under
+`mapanare/self/` changed). Goldens **95/95**.
+
+### Added
+
+- **Pv.1** — `tests/test_runtime_lib_lookup.py` (3 cases) locks
+  `mapanare.test_runner._find_runtime_lib()` against re-introduction
+  of the v3.x-era `libmapanare_core.*` candidate names. Sweeps any
+  stale shadow artifacts before the lookup, asserts canonical name
+  resolution, and end-to-end links a tiny IR fragment that
+  references `__mn_str_eq` against whatever archive the lookup
+  returns. Falsifiability round-trip documented in the module
+  docstring.
+- **Pv.2** — `tests/bootstrap/test_preprocess_memcheck.py` (3
+  parameterized cases) runs `mnc-stage1 preprocess` on brace-only
+  / colon-only / mixed fixtures under valgrind. Locks
+  `runtime/native/mapanare_core.c::__mn_indent_to_braces`'s
+  brace-only fast-path against MnString-aliasing regressions: the
+  original double-free pre-fix surfaces as `Invalid free` on the
+  brace-only fixture. Mirrors v5.23.1 Mb.3's grep-for-symbol
+  pattern rather than `--error-exitcode=1` so the pre-existing
+  `__mn_argv` single-shot leak (known since v5.23.1) doesn't
+  poison the assertion.
+- **Pv.3** — `make ci-gates` extension: new `clean-build-test`
+  sub-gate (9 sub-gates total, up from 8). Removes
+  `runtime/native/libmapanare_*.{a,so,dylib,dll}`, runs `make
+  build-rt`, then runs `pytest tests/test_at_test_runtime.py
+  tests/test_runtime_lib_lookup.py`. Catches the runtime-archive
+  rename / relocation class structurally before any PR lands.
+- **Pv.4** — `scripts/validate_wsl.sh` runs the Linux pytest path
+  end-to-end (`make build-rt` + python3 `scripts/build_stage1.py`
+  + `pytest tests/ -x -n auto`). New `dev.ps1 validate-wsl` mode
+  shells out via `wsl -d Ubuntu` so a Windows host can produce the
+  Linux pytest signal without leaving the dev loop. Optional
+  pre-push hook at `scripts/hooks/pre-push.sample` (commented
+  opt-in; not enabled by default — running the full suite on every
+  push is the dev's call, not a forced policy).
+- **Pv.6** — `tests/test_publish_smoke_fixtures.py` (2 cases)
+  extracts every inline .mn fixture from
+  `.github/workflows/publish.yml` (5 today: 1 echo single-line
+  brace, 2 printf multi-line colon, 2 PowerShell here-string
+  multi-line brace) and parses each through
+  `mapanare.parser.parse`. Locks the failure mode against any
+  future workflow edit authored against an unshipped feature.
+
+### Changed
+
+- **Pv.6** — `.github/workflows/publish.yml` Linux + macOS
+  tarball-smoke fixtures rewritten from single-line
+  `fn main(): print("...")` (which never parsed; v5.14.0 SPEC
+  §1009 forward promise rescoped to v6.0 by v5.21.1 H.4) to
+  multi-line colon via `printf 'fn main():\n    print(...)\n'`.
+  Closes publish run #48's Linux + macOS tarball-smoke job
+  failures. Locked by `tests/test_publish_smoke_fixtures.py`.
+
+### Fixed
+
+- **Pv.5** — `CLAUDE.md` "Planned / in-progress" section: removed
+  the now-stale v5.13.1 entry. The runtime-lib wiring (At.1's only
+  remaining open item) shipped on `dev` between v5.24.1 and
+  v5.25.0 (commit `9dcbbb5`); the `@test` runtime is fully
+  functional end-to-end on Python and native paths. No replacement
+  entry — v5.13.1 simply leaves the planned list.
+
+
+## [5.24.1] - 2026-05-01
+
+**Wd.\* — wider docs cleanup (arc closeout).** **Final** release
+in the v5.23–v5.24 recovery arc. Closes the 3-consecutive-panel
+manifesto drift (Coral M2, v5.7.1 / v5.11.0 / v5.22.0), the SPEC
+corpus 72%-brace-style state against §4.0's colon-canonical
+declaration (Coral M3), five Coral L1–L5 polish items, and codifies
+the Bo.27 audit cross-reference column convention for the v5.27.0
+audit. **Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+preserved by construction at **239,835 lines / 0 diff**
+(19-release strict streak; same line count as v5.24.0). Goldens
+**95/95**.
+
+Eight items closed:
+
+- **Wd.1** (Coral M2, MEDIUM, 3rd consecutive panel) —
+  `docs/manifesto.md:31` "Curly braces for blocks" replaced with
+  "Indented blocks (with a brace-form legacy through v6.0)" per
+  Coral M2's verbatim suggested fix. The first-impression syntax
+  description now matches the codebase's Te.3 soft-deprecation
+  posture (v5.19.0).
+- **Wd.2** (Coral M3, MEDIUM) — `docs/SPEC.md` migrated from 26
+  brace-style block-openers to 0 mechanical brace-style
+  block-openers; the 2 remaining brace openers live inside the
+  §4.0 "Brace style" demo block (intentionally preserved with a
+  `<!-- preserve-brace -->` marker). New `to_terse_markdown` in
+  `mapanare/format.py` walks markdown source line-by-line, runs
+  `to_terse` on each `` ```mn `` fence body, and honors the
+  `<!-- preserve-brace -->` opt-out. `cmd_fmt` learned a markdown
+  dispatch path keyed on file suffix. New `tests/test_format.py::
+  TestMarkdownRewriter` (8 cases). Migration also surfaced a
+  latent `to_terse` bug rewriting empty `#{}` map literals as
+  `#:` plus indented `pass`; held for v5.25.0+ as a scope-creep
+  guard, with manual revert at SPEC §17.1.
+- **Wd.3** (Coral L1, LOW) — SPEC §27.3 "Worked example
+  (v5.19.0 → v6.0)" paragraph added pointing at Te.3 as the
+  canonical worked example of the deprecation cycle in v5.
+  Cross-links to §4.0 for migration commands.
+- **Wd.4** (Coral L2, LOW) — SPEC §4.0 broken-promise wording
+  tightened to acknowledge the v5.14.0 forward promise more
+  explicitly and link the v6.0 rescope to the parser ambiguity
+  that hard removal eliminates.
+- **Wd.5** (Coral L3, LOW) — SPEC §4.0 Te.3 status block gained
+  two example invocations of `mnc fmt` (auto-migrate path +
+  `--keep-braces` soak-window concession). Flag was documented
+  at v5.21.1 H.6 but example was absent.
+- **Wd.6** (Coral L4, LOW) — SPEC §7.4 (Trait Bounds on Generics)
+  gained a 10-line worked example: `Comparable` trait + `impl
+  Comparable for Score` + generic `min<T: Comparable>(a: T, b: T)
+  -> T`. Phase 0 surfaced that `impl <Trait> for Int` doesn't
+  compile (primitives aren't impl targets); the shipped shape
+  uses a user-defined `Score` struct mirroring the existing
+  §7.2 convention. Runnable file at
+  `examples/struct_ergo/generic_trait.mn`.
+- **Wd.7** (Coral L5, LOW) — examples directory micro-organization.
+  `examples/chained_cmp.mn` → `examples/terseness/chained_cmp.mn`. <!-- no-check -->
+  `examples/struct_ergo/` seeded by the new Wd.6 example. Async
+  demos (`async_file_io.mn`, `async_http_demo.mn`) stay at top
+  level because doc references in `docs/cookbook/async.md` and
+  `docs/guides/async.md` cite them by path. New `examples/INDEX.md`
+  documents the categories. `mapanare/format.py` docstring
+  reference updated to the new path; historical references in
+  CHANGELOG and v5.21.1 SESSION_REPORT preserved (those are
+  historical text describing release-time state).
+- **Wd.8** (Boa Bo.27, LOW) — new `.reviews/PANEL_AUDIT_TEMPLATE.md`
+  codifying the audit cross-reference convention. Every `H.*`
+  hygiene-release finding must bind to a prior-panel finding ID
+  (or "(none — fresh)"). Every prior-panel HIGH and MEDIUM must
+  either appear in the `H.*` table or appear in a "deferred to
+  <future release>" section. Closes the v5.22.0 Bo.18r failure
+  mode (3-panel persistence: hygiene closures patched the audit's
+  cited line, walked past the panel-flagged paragraph). Convention
+  applies starting v5.27.0. `.reviews/REVIEW_CADENCE.md` updated.
+
+**Carry-forward delta**: Wd.1 (1 MEDIUM, 3rd-panel) + Wd.2
+(1 MEDIUM) + Wd.3 / Wd.4 / Wd.5 / Wd.6 / Wd.7 / Wd.8 (6 LOW)
+all closed.
+
+**Arc closure**: v5.23–v5.24 recovery arc closes at v5.24.1 HEAD
+with **0 HIGH / 0 MEDIUM / ~5 LOW** open in the docket. Five
+releases shipped across the arc (RC.\* + Mb.\* + Te.3.B + Hy.\* +
+Wd.\*). v5.27.0 panel inherits zero structural debt; targeted at
+**9.55–9.65** aggregate (recovery from v5.22.0's 9.41 floor).
+
+See `docs/roadmap/v5/v5.24.1/SESSION_REPORT.md` and `PLAN.md`.
+
+## [5.24.0] - 2026-05-01
+
+**Hy.\* — structural hygiene gates.** Fourth release in the
+v5.23–v5.24 recovery arc. The "this should never have slipped"
+infrastructure release: closes the H.\* / Bo.\* drift class
+**structurally** (vs the closure-by-hygiene-release pattern that
+capped the v5.7.1 / v5.11.0 / v5.22.0 panel aggregates at
+9.55–9.66). **Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+preserved by construction at **239,835 lines / 0 diff** (18-release
+strict streak; same line count as v5.23.2). Goldens **95/95**.
+
+Six items closed:
+
+- **Hy.1** (Anaconda §2.D, MEDIUM) — new `make ci-gates` target
+  running the full CI-gate inventory locally as a single command.
+  8 sub-gates wired (`silent_skips`, `changelog_honesty`,
+  `workflow_shapes`, `docs_drift`, `hollow_features`,
+  `struct_registry`, plus the new `doc_freshness` and `cadence`).
+  Pre-release checklist shrinks to "run `make ci-gates`, expect
+  zero violations." Eliminates the wired-but-unchecked failure
+  mode that produced Reg.1 / hollow-feature gate / docs-drift gate
+  silent failures across v5.17.0 → v5.22.0 (Anaconda's load-bearing
+  −1.30 grade hit). New `tests/test_ci.py::TestMakeCIGates` (1
+  case).
+- **Hy.2** (Coral / Boa Bo.27, MEDIUM) — new
+  `scripts/check_doc_freshness.py` (~190 LOC) with 5 MVP checks:
+  version badge sync (en/es/pt/zh-CN), goldens badge sync, multiple
+  distinct exact-line-count claims in README.md, body
+  goldens-claim consistency, SPEC.md header version freshness
+  (tolerates up to 2 minor versions of lag — covers a panel +
+  recovery-arc window without forcing per-release header bumps).
+  Wired into `.github/workflows/ci.yml` parallel to the struct-
+  registry gate. New `tests/test_doc_freshness.py` (7 cases): live-
+  repo invariant + 5 fixture-based violation classes + 1 boundary
+  tolerance. Wider scope (every prose claim about every metric) is
+  explicitly held for v6.0+.
+- **Hy.3** (Anaconda §1, MEDIUM) — new `scripts/check_cadence.py`
+  (~90 LOC) per `.reviews/REVIEW_CADENCE.md`: panel runs every 5
+  minor versions; gate fires OVERDUE at lag ≥5. Picks the latest
+  panel directory by scanning `.reviews/v<MAJOR>.<MINOR>.<PATCH>/`
+  for at least one Markdown file. Wired into ci.yml as a
+  `cadence-check` job with `continue-on-error: true` (warn-only at
+  PR time; the panel cycle itself involves churn that should not
+  block CI). Hard signal lands at pre-release time via
+  `make ci-gates`. At v5.24.0 we are 2 minors past v5.22.0 — gate
+  exits 0; fires hard at v5.27.0 if no panel runs by then. New
+  `tests/test_cadence.py` (6 cases).
+- **Hy.4** (Cobra 3rd-cycle, LOW) — `scripts/build_from_seed.sh:
+  159` magic-number `>= 45` replaced with self-evident formula:
+  `EXPECTED_PASS=$((TOTAL_GOLDENS - EXPECTED_SEED_FAILS))` where
+  `TOTAL_GOLDENS=$(ls "${ROOT}"/tests/golden/*.mn | wc -l)` and
+  `EXPECTED_SEED_FAILS=20` (named: `Te.5/Te.6/comprehensions/
+  complex closures predate the v5.10.0-vintage seed`). At v5.24.0
+  threshold becomes 75 (95 − 20); no longer drifts as goldens are
+  added.
+- **Hy.5** (Pk.1.A, 11-release carry from v5.10.0) — Linux + macOS
+  versioned-tarball smoke gates in `.github/workflows/publish.yml`.
+  Two new jobs `linux-tarball-smoke` and `macos-tarball-smoke`,
+  parallel to the existing `windows-sdk-smoke`. Each downloads
+  `mapanare-${V}-linux-x64.tar.gz` / `mapanare-${V}-mac-arm64.tar.gz`,
+  extracts, runs `mapanare --version` and `mapanare emit-llvm
+  hello.mn -o hello.ll`, asserts non-empty output. `checksums` job
+  `needs:` extended so a missing/corrupt Linux or macOS asset
+  trips a gate at publish time, not when a user reports it.
+- **Hy.6** (Pe.1 reframe, LOW) — `.reviews/CARRY_FORWARD.md` Pe.1
+  row updated per Mamba's v5.22.0 #2: "curve flattening" framing
+  retired; growth is proportional to bootstrap-side AST additions
+  across the Te.\* arc, not a v6.0 budget concern at current rate
+  (need another 30+ releases at +0.5%/release before doubling).
+  Documentation-only.
+
+**Carry-forward delta**: Hy.1 / Hy.2 / Hy.3 (3 MEDIUM) + Hy.4 /
+Hy.5 / Hy.6 (3 LOW) all closed. v5.23–v5.24 recovery arc has now
+closed every panel-flagged HIGH and 4 of 8 panel MEDIUMs in four
+releases (RC.\* + Mb.\* + Te.3.B + Hy.\*).
+
+**Out of scope** (held): Wd.\* (manifesto M2 + SPEC corpus M3 +
+Coral L1–L5 + TR1) — v5.24.1; Bo.27 audit cross-reference column
+convention applies at v5.27.0 panel.
+
+See `docs/roadmap/v5/v5.24.0/SESSION_REPORT.md` and `PLAN.md`.
+
+## [5.23.2] - 2026-05-01
+
+**Te.3.B — bootstrap brace-deprecation mirror.** Third release in
+the v5.23–v5.24 recovery arc. Closes the **asymmetric closure**
+flagged independently by 3 v5.22.0 panel reviewers (Coral M1,
+Anaconda §3, Rattler #1): the Python detector missed single-line
+`{...}` shapes (line-based, only counted lines whose trailing non-
+comment char was `{`); native `mnc-stage1` had zero brace-
+deprecation logic at all. v5.23.2 fixes both at the same algorithm
+layer with a single source of truth (C-runtime export). Strict
+3-stage fixed point preserved at **239,835 lines / 0 diff**
+(17-release strict streak; +350 lines vs v5.23.1's 239,485,
+expected from the new C-extern call sites). Goldens 95/95.
+Bb.\* seed refresh required (mirrors v5.17.0 Sh.E precedent).
+
+### Added
+
+- **Te.3.B.2** — two new C-runtime exports in
+  `runtime/native/mapanare_core.c`:
+  `__mn_count_user_brace_block_openers(MnString) -> int64_t` and
+  `__mn_emit_brace_deprecation_warning(MnString path, int64_t
+  count) -> void`. Same C-routing rationale as v5.14.1 B.5
+  `__mn_indent_to_braces` — single source of truth, byte-identity
+  by construction, sidesteps any bootstrap-lower string-walking
+  pathologies. Both wired through `mapanare/self/semantic.mn`,
+  `mapanare/self/lower.mn`, `mapanare/self/emit_llvm.mn`, and
+  `mapanare/self/parser.mn` (~30 LOC total). `parse()` calls them
+  before `__mn_indent_to_braces` so the detector sees source as
+  the user typed it.
+- **Te.3.B.3** — new
+  `tests/bootstrap/test_brace_deprecation_mirror.py` cross-
+  bootstrap byte-identity test. 10 parameterized cases (single-
+  line, multi-line, escaped brace, brace in string, brace in
+  comment, `#{` map literal, `${...}` interpolation, mixed colon +
+  brace, no braces, multiple) + 1 explicit
+  `MAPANARE_NO_BRACE_WARNING=1` opt-out test. Asserts Python's
+  `mapanare emit-llvm` and native `mnc-stage1 emit-llvm` produce
+  byte-identical warning text on every shape. 11/11 PASS.
+- 5 regression tests in `tests/test_brace_deprecation.py` pinning
+  the rewrite (single-line counts; struct literal NOT counted;
+  implicit-return struct literal NOT counted; `=>` block body
+  counted; interpolation NOT counted).
+
+### Changed
+
+- **Te.3.B.1** — `mapanare/parser.py::count_user_brace_block_
+  openers` rewritten as a per-line character-walker with three
+  rules:
+  - **(a)** `{` is the last non-WS char on its line — catches
+    multi-line `fn main() {` / `struct Point {` / `match expr {`.
+  - **(b)** a block keyword (`fn`, `if`, `else`, `while`, `for`,
+    `match`, `loop`, `do`, `try`, `impl`, `trait`, `agent`,
+    `struct`, `enum`) appears on the same line before the `{`,
+    AND there is no standalone `=` between the latest such
+    keyword and the `{`. The `=` filter excludes implicit-return
+    shapes like `fn make() -> Point = Point { x }` — that's an
+    expression, not a block. Compound operators (`==`, `!=`,
+    `<=`, `>=`, `=>`, `+=`, `-=`, `*=`, `/=`, `%=`) don't
+    qualify.
+  - **(c)** the chars immediately before the `{` (after WS) are
+    `=>` — catches match-arm and closure block bodies.
+
+  Pre-v5.23.2 the line-based detector silently missed single-line
+  shapes like `fn main() { print("hi") }` because the line ended
+  in `}`. Post-v5.23.2 these fire correctly without false-
+  positiving on canonical colon-style struct literals (`Point { x:
+  1 }` on a colon-style line stays at 0). Sweep across the
+  corpus confirms canonical goldens
+  (`tests/golden/06_struct.mn`, `81_struct_shorthand.mn`,
+  `82_struct_update.mn`, `84_let_destructure.mn`, etc.) stay at
+  count 0.
+- **Te.3.B.1** — `mapanare/parser.py::parse` and
+  `parse_recovering` skip the warning for synthetic filenames
+  (those wrapped in `<...>`). `_parse_interp_expr` recursively
+  calls `parse(filename="<interp>")` with a brace-style synthesized
+  wrapper for every interpolated expression — without this filter,
+  the warning would fire on every `"${expr}"` in any user file.
+  Native bootstrap is unaffected — `parser.mn::split_interp_parts`
+  routes through `parse_expr` directly, never re-enters `parse()`.
+- **Te.3.B.4** — `.reviews/v5.22.0/PRE_PANEL_AUDIT.md` "Pre-flight
+  commands" section updated with v5.23.2-update note documenting
+  the gap closure for the v5.27.0 panel; native parallel commands
+  added showing byte-identical warning behavior; bootstrap-mirror
+  test count updated (11/11 added v5.23.2).
+
+### Migration
+
+- **Te.3.B.5** — Bb.\* seed refresh required.
+  `bootstrap/seed/linux-x86_64/mnc` (and its `.sha256`) refreshed
+  from v5.23.2 HEAD `mapanare/self/mnc-stage1` because the v5.10.0-
+  vintage seed predates the new C-runtime exports. Same shape as
+  v5.17.0 Sh.E. Post-refresh `scripts/build_from_seed.sh`
+  succeeds.
+
+## [5.23.1] - 2026-05-01
+
+**Mb.\* — memory hygiene.** Second release in the v5.23–v5.24
+recovery arc. Closes Viper V.9 (`__mn_indent_to_braces` lifecycle
+leak), 3 NEW Te.5 ASan leaks (88_if_let / 90_while_let /
+91_let_else), and V.6 / V.7 / V.8 (Viper LOW, 3rd cycle each — DX.4
+walker carries). Plus prevention infrastructure: two new CI gates
+(`sanitizer-mnc-stage1`, `sanitizer-cache-walkers`) so future
+lifecycle / cache-walker bugs surface at PR time. Strict 3-stage
+fixed point preserved at **239,485 lines / 0 diff** (16-release
+streak; +260 vs v5.23.0's 239,225, expected from the new
+`box_track` allocas). Goldens 95/95.
+
+### Added
+
+- **Mb.3** — `sanitizer-mnc-stage1` CI job in
+  `.github/workflows/sanitizers.yml`. Runs valgrind on
+  `mnc-stage1 emit-llvm` of goldens 86/88/90/91; greps for
+  `__mn_indent_to_braces` in any leak chain → fail on regression.
+  Cannot use `--error-exitcode=1` directly (mnc-stage1 has known
+  pre-existing single-shot leaks unrelated to V.9).
+- **Mb.6** — `sanitizer-cache-walkers` CI job. Builds a
+  populated `.mnc_cache` fixture (3 levels + non-loop symlink) and
+  runs `mnc version` / `mnc cache stats` / `mnc cache clean` under
+  valgrind. Closes the v5.10.0+ delta sanitizer-coverage gap
+  (Viper V.8, 3rd panel).
+
+### Changed
+
+- **Mb.4** (Viper V.6, **3rd cycle**) — added `MN_DIR_WALK_MAX_DEPTH`
+  (4096) cap parameter to `mn_dir_walk_size_` /
+  `mn_dir_walk_count_` / `mn_dir_remove_recursive_`. Pragmatic
+  alternative to the plan's full iterative work-queue rewrite —
+  bounds C stack against pathological directory trees with minimal
+  LOC churn.
+- **Mb.5** (Viper V.7, **3rd cycle**) — Win32 walker branches now
+  skip `FILE_ATTRIBUTE_REPARSE_POINT` entries (junctions /
+  symlinks / mount points). POSIX side switched `stat()` →
+  `lstat()` in count/size paths for symmetric symlink-skip
+  behavior. Verified locally: a fixture with a symlink pointing
+  back into the tree no longer double-counts files.
+- **Mb.2** baseline TSV refresh — updated
+  `docs/roadmap/v5/v5.4.2/baseline/asan-leak-baseline.tsv`:
+  17_option transitioned LINK_FAIL → LEAK 1/8;
+  62_list_output IMPROVED 13/346 → 9/141;
+  39_gpu_detect / 40_gpu_tensor unchanged.
+
+### Fixed
+
+- **Mb.1** (Viper V.9, MEDIUM) — `__mn_indent_to_braces`
+  lifecycle leak in `parser__parse`. The Python emitter's
+  `_do_call` blanket-move was zeroing the
+  `_str_slots[preprocessed]` tracking slot at the
+  `tokenize(preprocessed, filename)` call site (tokenize is a
+  borrow, not a consume). Surgical fix: dedicated handler for
+  `__mn_indent_to_braces` in `emit_llvm_text.py::_do_call` that
+  calls `_track_string(r)` then clears `_last_tracked_str_slot`
+  before `_put`, so the slot lives in `_local_strings` (drop-glue
+  consults this) but not in `_str_slots` (blanket-move consults
+  this). Drop-glue at `parse()` exit now correctly frees the
+  buffer. Verified: 30-byte leak from `__mn_indent_to_braces` →
+  `parser__parse` no longer present in valgrind output.
+  **stage2/3 are leak-clean by construction** (the self-host
+  `emit_llvm.mn` doesn't have the blanket-move; the leak is
+  stage1-specific). Defensive: also added
+  `__mn_indent_to_braces` to `is_string_returning_builtin` in
+  the self-host emitter.
+- **Mb.2** — 3 NEW Te.5 ASan leaks on
+  `tests/golden/{88_if_let, 90_while_let, 91_let_else}.mn`
+  (1 leak / 8 bytes each, surfaced post-v5.22.0 panel via the
+  LeakSanitizer CI workflow). Root cause: self-host
+  `emit_wrap_some` (`mapanare/self/emit_llvm.mn:3599`)
+  heap-allocates the Some payload via `malloc(sizeof(val))` to
+  build `{i1, ptr}`, but does not call `emit_track_boxed` on the
+  malloc'd pointer. Single-line fix:
+  `s = emit_track_boxed(s, ea)` after the malloc. The leak class
+  was load-bearing on golden 17_option since v5.4.2 baseline
+  (2 leaks); v5.23.1 closes 1 of 2.
+- Mb.7 (ASan-gate llc aborts) **deferred to v5.24.0** —
+  investigation found the 9 LINK_FAIL goldens (47, 48, 49, 51, 55-59)
+  are tripped by an i64/i1 tag-emit bug in self-host emit_llvm.mn,
+  unrelated to PIC reloc and unrelated to memory hygiene scope.
+
+See `docs/roadmap/v5/v5.23.1/SESSION_REPORT.md` and `PLAN.md`.
+
+
+## [5.23.0] - 2026-05-01
+
+**RC.\* — CI recovery + HIGH closures.** First release in the
+v5.23–v5.24 recovery arc. Closes the **8 silently-failing CI
+workflows** at v5.22.0 HEAD (4 panel-flagged, 4 NEW), the v5.22.0
+panel's **4 HIGH** docket items, **4 MEDIUM**, and **6 LOW**.
+Strict 3-stage fixed point preserved at **239,225 lines / 0 diff**
+(15-release strict streak; line count grew from v5.22.0's
+documented 238,086 because `mnc_all.mn` was stale and
+re-concatenation surfaced v5.21.0 Te.6's chain-compare references).
+Goldens **95/95**. **Mechanical, not design** — every fix shape
+locked in the `PLAN.md`.
+
+### HIGH closures
+
+**RC.1 — Reg.1 `check_struct_registry.py` colon-form support.**
+`STRUCT_HEADER_RE` extended to accept `[\{:]`; `parse_struct_defs`
+extended with indent-tracking branch (mirror of
+`mapanare/parser.py::_indent_to_braces`). Regex restoration
+surfaced **5 real latent drifts** all in `LowerState`:
+`comp_type_hint` (v5.15.1), `struct_update_counter` (v5.20.1
+Te.5.F.C), `chain_compare_counter` (v5.21.0 Te.6) — added but never
+registered. v5.17.0 Sh.\* (colon-syntax migration of
+`mapanare/self/*.mn`) silently disabled the gate for 5 releases.
+Drift was cosmetic for runtime correctness (`find_struct_entry`
+searches end-first, so `register_mir_struct`'s real registration
+shadows the stale internal one), but the gate's contract is sync.
+Both registry sites in `mapanare/self/emit_llvm.mn` updated to
+include all 20 LowerState fields. **Only `mapanare/self/*.mn`
+edit in v5.23.0** — data-only (3 strings × 2 list literals); zero
+compiler logic touched.
+
+<!-- no-check --> **RC.2 — Bo.18r README benchmark paragraph (3rd consecutive
+panel).** `README.md:188-192` rewritten with rounded `239k` /
+14-release strict streak / 5,800+ tests framing. Self-immunizes
+against next-decay (v5.9.2 Dn.1 pattern). Same edit closes Bo.19
+(test count drift) and Bo.20 <!-- no-check --> (the `FINAL_REPORT_v4.153.md` link is replaced with `benchmarks/FINAL_REPORT.md`).
+Also updated `README.md:176` (Native compiler section) which
+carried the same stale 238,086 / 13-release framing.
+
+**RC.3 — Bo.25 goldens badge structural fix.** One-shot:
+`goldens-66%2F66 → goldens-95%2F95` across all 4 README locales.
+Structural: `scripts/bump_version.py` extended with
+`_GOLDENS_BADGE_RE` + `_count_goldens()` + per-locale sweep that
+runs in lockstep with the version-badge sweep. New
+`tests/test_bump_version.py` 5/5. Future bumps auto-update the
+badge.
+
+### MEDIUM closures
+
+**RC.4 — Hollow-feature gate calibration.**
+`scripts/check_no_hollow_features.py::_AST_INFRASTRUCTURE` gained
+`CompClause` (v5.15.0 Te.2) and `FieldPattern` (v5.20.0 Te.5.D) —
+both are sub-nodes held inside parent nodes (`Comprehension.clauses`,
+`StructPattern.fields`), not top-level isinstance dispatch targets.
+
+**RC.5 — `check_docs_drift.py` SPEC.md:1456.** `fn id(y) = y`
+(untyped param) → `fn id<T>(y: T) -> T = y`. Gate clean.
+
+<!-- no-check --> **RC.6 — `check_changelog_honesty.py` `.reviews/v5.22.0/`.**
+Option A (track all panel artifacts). 10/11 already tracked from
+v5.22.0 setup; the panel `prompt.md` artifact was force-added to
+close the last gap.
+
+**RC.7 — Docker Smoke.** Root cause (different from PROMPT
+hypothesis): `runtime/native/build_native.py` produces only the
+`.so`, not `libmapanare_rt.a`. The `cp` step in both `ci.yml`'s
+`docker-smoke` job and `publish-docker.yml`'s `Stage builder image
+build context` was silently failing. Added a "Build runtime
+archive" step (`make build-rt`) to both workflows.
+
+<!-- no-check --> **RC.8 — macOS / iOS cross-compile.** Root cause: the macOS
+workflow built `libmapanare.a` (different name); `mapanare/cli.py`
+looks for `libmapanare_rt.a` by exact name. `pytest tests/` on
+macOS hit `__mn_str_eq` / `__mn_str_println` undefined for every
+test compiling a Mapanare source file. Added a "Build
+libmapanare_rt.a for cli.py link path" step (`make build-rt` —
+already has Darwin handling for `mapanare_metal.m`) to the macOS
+workflow.
+
+**RC.9 — Self-Hosted Compiler stage2 ir_doctor.** Root cause:
+v5.21.0 Te.6 added the first cross-module reference (`lower.mn`
+calling `parser.mn::new_match_arm`); `scripts/ir_doctor.py
+stage2` compiles each module independently and fails. Per-module
+compile path now detects "Undefined function" cross-module-ref
+failures and retries against `mnc_all.mn`; on success, marks the
+module as `OK (via mnc_all)`. Summary count fixed to count both
+`OK` and `OK (via mnc_all)` as valid. **11/11 stage2 modules
+valid** post-fix.
+
+### LOW closures
+
+**RC.10** — `runtime/native/mapanare_core.h` gained the
+`__mn_indent_to_braces` decl (mirror of
+`mapanare/parser.py::_indent_to_braces`; implementation has been
+in `mapanare_core.c` since v5.14.1 B.5/B.6).
+
+**RC.11** — `docs/roadmap/v5/v5.19.0/SESSION_REPORT.md` written
+retroactively from `PLAN.md` + `PROMPT.md` + `DOCKER_DESIGN.md` +
+the 3 commits (6adfee7, fba8521, db32bd4). Documents Te.3.A/B/C/D/E
+and the scope-split rationale (Dk.\* → v5.19.1).
+
+**RC.12** — Sh.\* baseline labeling drift in
+`.reviews/CARRY_FORWARD.md` row Sh.H and `CLAUDE.md:381` corrected
+from "−13.9% off the v5.13.0 baseline" (wrong; measures
+pre-Sh.B-immediate baseline) to dual-baseline framing:
+"−3,988 lines (−13.9%) off pre-Sh.B-immediate baseline" /
+"−2,285 lines (−8.18%) net v5.13.0 → v5.21.1".
+
+**RC.13** — `tests/bootstrap/test_indent_preprocessor.py` count
+refresh from `142` → `201` in `PRE_PANEL_AUDIT.md` and
+`.reviews/CARRY_FORWARD.md` row Te.1.B.
+
+**RC.14** — Bo.22 (2nd panel): README Hello World +
+Write-Python-Compile-Native sections changed from `mapanare *` to
+`mnc *` (5 substitutions); parenthetical alias note added.
+
+**RC.15** — Bo.26: 4 guide links added to README after the
+`mnc fmt` / `mnc init` invocations: `docs/guides/formatter.md`,
+`docs/guides/init.md`, `docs/guides/lsp.md`,
+`docs/guides/docker.md`.
+
+### Carry-forward delta
+
+Pre-v5.23.0: 4 HIGH / 8 MEDIUM / ~12 LOW. Post-v5.23.0: **0 HIGH /
+4 MEDIUM / ~7 LOW**. 15 RC.\* items closed in one mechanical
+session. Open items rolled to v5.23.1 (V.9, Mb.\* leaks) /
+v5.23.2 (Te.3 hollow-surface) / v5.24.0 (Hy.\* hygiene gates) /
+v5.24.1 (Manifesto M2, SPEC corpus M3, Coral L1-L5) / v6.0.
+
+### Out of scope (held)
+
+- **V.9 indent-preprocessor leak.** v5.23.1 (Mb.1).
+- **Te.5 ASan leaks** (88_if_let, 90_while_let, 91_let_else).
+  v5.23.1 (Mb.2).
+- **Te.3 hollow-surface** (single-line `{...}` shape + native
+  mirror). v5.23.2.
+- <!-- no-check --> **`make ci-gates` Makefile target.** v5.24.0 (Hy.1).
+- <!-- no-check --> **`check_doc_freshness.py`** structural fix. v5.24.0 (Hy.2).
+- **Cadence enforcement gate.** v5.24.0 (Hy.3).
+- **Pk.1.A** Linux/macOS versioned-tarball smoke gates. v5.24.0
+  (Hy.5).
+- **Manifesto M2** + **SPEC corpus M3** + **Coral L1–L5**. v5.24.1.
+
+See `docs/roadmap/v5/v5.23.0/SESSION_REPORT.md` and
+`docs/roadmap/v5/RECOVERY_ARC_v5.23-v5.24.md`.
+
+## [5.22.0] - 2026-05-01
+
+**RE-PANEL — terseness-arc closeout.** Panel-only release; the
+release identity is the panel itself. **Zero compiler edits.
+Zero runtime edits. Zero `mapanare/self/*.mn` edits.** Strict
+3-stage fixed point preserved by construction at 238,086 lines
+/ 0-line diff (the v5.9.0 milestone, now held across **13
+consecutive shipping releases — longest streak in project
+history**, 2.6× the v5.11.0 streak). Goldens **95/95**. Same
+posture as v5.8.0 (which graded v5.3.1 → v5.7.1 at 9.66 —
+project ceiling).
+
+### Panel result
+
+**Aggregate: 9.41 / 10. Decision: Option A** (point-release
+health gate clears; no recovery cycle opened). Third
+consecutive Option A under the v5-gate mechanical rule
+(v5.7.1: 9.66; v5.11.0: 9.62; v5.22.0: 9.41). Δ vs v5.11.0:
+**−0.21** — the largest single-arc regression since v5.0.0,
+driven entirely by process-discipline debt that the H.\*
+hygiene pattern did not catch. All 7 reviewers returned PASS
+or PASS WITH NOTES; **0 NEEDS WORK**.
+
+### Per-reviewer scores
+
+| # | Reviewer | Domain | Score | Δ vs v5.11.0 | Verdict |
+|---|----------|---|---:|---:|---|
+| 1 | Rattler | LLVM IR / codegen | 9.85 | ±0.0 | PASS WITH NOTES |
+| 2 | Viper | Memory safety | 9.7 | −0.20 | PASS WITH NOTES |
+| 3 | Anaconda | CI / testing / toolchain | 8.4 | **−1.30** | PASS WITH NOTES |
+| 4 | Cobra | Bootstrap / self-hosted | 9.55 | −0.15 | PASS WITH NOTES |
+| 5 | Coral | Language design | 9.55 | +0.05 | PASS WITH NOTES |
+| 6 | Boa | Documentation / DX | 9.0 | +0.10 | PASS WITH NOTES |
+| 7 | Mamba | C runtime / performance | 9.85 | +0.05 | PASS |
+| | **Aggregate** | — | **9.41** | **−0.21** | **Option A** |
+
+### v5.11.0 → v5.22.0 hero metrics
+
+- **6 additive language features** (Te.1 colon-block, Te.2
+  comprehensions / lambda / implicit-return, Te.3 `{}`
+  soft-deprecation, Te.4 string-interp parity, Te.5 struct
+  ergonomics, Te.6 chained comparisons) shipped with **zero
+  new MIR ops, zero new IR shapes, only two new C-runtime
+  exports** (`__mn_assert_fail` 8 LOC + `__mn_indent_to_braces`
+  545 LOC, both bootstrap-mirror plumbing).
+- **Strict 3-stage fixed point preserved** at 238,086 lines /
+  0-line diff across **13 consecutive shipping releases**
+  (v5.9.0 → v5.21.1; longest in project history).
+- **Self-hosted compiler shrunk −11.5%** (net source delta
+  v5.13.0 → v5.21.1; −2,285 lines) via Sh.\* mechanical rewrite
+  without breaking fixed point at any per-module commit.
+- **Goldens 66/66 → 95/95** (+29 native goldens covering all
+  Te.\* features).
+- **Bootstrap mirror cross-tests all green**: Te.5 12/12, Te.6
+  10/10, comprehension 10/10, string-interp 10/10,
+  indent-preprocessor 201/201.
+- **C runtime delta: +553 lines** across 10 releases (out of
+  ~21k LOC C runtime — essentially flat).
+
+### Closures verified
+
+The panel verified the v5.21.1 H.\* hygiene closures plus
+re-graded every v5.11.0 panel docket item:
+
+- **5 v5.11.0 docket items closed**: Bo.21 (version badges
+  HIGH), Bo.17r (localized READMEs ~80%, MEDIUM), Coral SPEC
+  re-sync (MEDIUM), Mc.\* docket (MEDIUM), Cobra per-PR
+  fixed-point gate (mea culpa — was always wired at v4.29.0).
+- **11 v5.11.0 docket items still open**: Pk.1.A (11-release
+  carry; Linux/macOS versioned-tarball smoke gates), Cobra
+  `>= 45` magic (3rd panel ask), Viper V.6 / V.7 / V.8 (3rd
+  cycle each), Bo.18r (3rd panel — escalated to HIGH), Bo.22
+  (2nd panel), Bo.19, Bo.20, Pe.1 (reframed), Anaconda
+  informational LOWs.
+
+### Findings surfaced by the panel (new at v5.22.0)
+
+- **HIGH** — **Reg.1** (Anaconda + Cobra). `check_struct_registry.py`
+  regex hard-codes brace headers (`struct Name {`); inert since
+  v5.17.0 Sh.\* rewrote every struct to colon-form. **23
+  violations at HEAD; 5 releases of silent registry blindness**
+  during the largest feature-velocity arc in v5 history. The
+  gate v4.143.0 commissioned to catch Ge.1-class drift is the
+  same gate that became inert when Sh.B mechanically rewrote
+  the struct surface.
+- **HIGH** — **Bo.18r** (Boa, **3rd consecutive panel**).
+  `README.md:188-192` benchmarks-section paragraph still
+  v5.7.1-vintage. v5.21.1 H.1 closed the *sibling* line
+  `README.md:176`; panel-flagged 188-192 was not in the audit.
+  Severity escalated MEDIUM → HIGH.
+- **HIGH** — **Bo.25** (Boa, NEW). Goldens badge `66/66`
+  across all 4 READMEs while body says `95/95`. Same
+  systematic-skill-gap fingerprint as v5.11.0 Bo.21.
+- **MEDIUM** — **V.9** (Viper). `__mn_indent_to_braces`
+  MnString lifecycle leak: returned `joined` buffer not
+  drop-glue tracked at the `parser.mn::parse` call site.
+  Bounded to single-shot in `mnc-stage1`; unbounded if embedded
+  in long-lived process.
+- **MEDIUM** — **Te.3 hollow / asymmetric closure** (Coral M1
+  + Anaconda §3 + Rattler #1; three independent reviewers).
+  Brace-deprecation warning misses single-line `{...}` shape;
+  native `mnc-stage1` has zero brace-deprecation logic at all.
+  PRE_PANEL_AUDIT.md's own canonical pre-flight test command
+  demonstrates the gap. **Asymmetric closure**: PY: closed |
+  SH: open.
+- **MEDIUM** — **Hollow-feature gate calibration** (Anaconda
+  §2.B). `check_no_hollow_features.py` step 3 fails on
+  `CompClause` (v5.15.0 Te.2) + `FieldPattern` (v5.20.0
+  Te.5.D).
+- **MEDIUM** — **Manifesto coherence** (Coral M2, **3rd
+  consecutive panel**). `docs/manifesto.md:31` "Curly braces
+  for blocks" untouched against brace-deprecated codebase.
+- **MEDIUM** — **SPEC example corpus** (Coral M3). 26 of 36
+  block-openers in `docs/SPEC.md` are brace-style against
+  §4.0 declaring colon-canonical (72%).
+- **MEDIUM** — **Cadence skip** (Anaconda §1). 5-minor
+  (v5.16.0) + 5-language-feature (v5.20.0) triggers fired and
+  were skipped.
+- **MEDIUM** — **Sh.\* shrink baseline labeling** (Cobra #2 +
+  Rattler #4). "−13.9% off v5.13.0" actually measures
+  pre-Sh.B-immediate baseline (post-Te.4); net v5.13.0 →
+  v5.21.1 is −8.18% (−2,285 lines).
+- **MEDIUM** — `check_docs_drift.py` SPEC.md:1456 (`fn id(y)
+  = y` doesn't parse via current grammar; untyped param).
+- **MEDIUM (structural)** — `make ci-gates` Makefile target
+  (Anaconda §2.D); <!-- no-check --> `check_doc_freshness.py` CI gate (Coral +
+  Boa Bo.27, structural fix for the H.\* / Bo.\* drift class)
+  — both are recommended future scripts, not present at HEAD.
+- **LOW** — `__mn_indent_to_braces` not in `mapanare_core.h`
+  (Mamba #1); v5.19.0 SESSION_REPORT missing on disk (Rattler
+  #2 + Anaconda); `tests/bootstrap/test_indent_preprocessor.py`
+  count refresh (Cobra #4 — audit cites 142, actual 201);
+  Bo.26 guides discoverability; Bo.27 audit cross-reference
+  column convention; cadence enforcement gate; Coral L1–L5
+  SPEC discoverability; stage2 teardown crash 70+ releases
+  stale.
+
+**Aggregate state entering v5.22.x:** 4 HIGH / 8 MEDIUM /
+~12 LOW / 1 v6.0-rescoped (Rt.04). See
+`.reviews/v5.22.0/README.md` for the deduplicated 24-row
+prioritized action items table; `.reviews/v5.22.0/V5_DECISION.md`
+for the formal Option A decision text;
+`.reviews/CARRY_FORWARD.md` for the panel-resolution ledger
+update.
+
+### Cadence reset
+
+**Next routine panel due at v5.27.0** (5 minors past v5.22.0).
+Cadence enforcement gate targeted for v5.23.0 (Anaconda §1
+recommendation) to prevent another silent skip.
+
+### Panel artifacts
+
+- `.reviews/v5.22.0/01-rattler.md` — LLVM IR / codegen review (9.85)
+- `.reviews/v5.22.0/02-viper.md` — Memory safety review (9.7)
+- `.reviews/v5.22.0/03-anaconda.md` — CI / testing / toolchain review (8.4)
+- `.reviews/v5.22.0/04-cobra.md` — Bootstrap / self-hosted review (9.55)
+- `.reviews/v5.22.0/05-coral.md` — Language design review (9.55)
+- `.reviews/v5.22.0/06-boa.md` — Documentation / DX review (9.0)
+- `.reviews/v5.22.0/07-mamba.md` — C runtime / performance review (9.85)
+- `.reviews/v5.22.0/README.md` — panel summary
+- `.reviews/v5.22.0/V5_DECISION.md` — formal Option A decision
+- `docs/roadmap/v5/v5.22.0/SESSION_REPORT.md` — session report
+
+## [5.21.1] - 2026-05-01
+
+**Mc.7 — pre-panel docs hygiene.** Doc-surface only; **zero
+compiler / runtime / MIR / IR / `mapanare/self/*.mn` edits.**
+Strict 3-stage fixed point preserved by construction at 238,086
+lines / 0-line diff (v5.9.0 milestone, held through 13
+consecutive releases — longest streak in project history).
+Goldens **95/95**. Closes the 12 H.\* findings in
+`.reviews/v5.22.0/PRE_PANEL_AUDIT.md` so the v5.22.0 panel
+inherits a clean docket.
+
+### Added
+
+- **`examples/chained_cmp.mn`.** New 28-line example exercising
+  3-element chains (`0 < n < 10`), 4-element chains
+  (`a < b < c < d`), half-open form (`lo <= x < hi`), and the
+  once-evaluation property via a `print("M")`-printing middle
+  function. Compiles clean through `mapanare emit-llvm` and is
+  picked up by `tests/test_format.py`'s `examples/` corpus
+  iteration automatically.
+- **`tests/bootstrap/test_chained_cmp_mirror.py`.** New
+  cross-bootstrap mirror test (mirror of `test_te5_mirror.py`).
+  4 golden cases (92–95) + 6 inline cases covering chained `==`,
+  mixed eq+cmp (post-merge), non-trivial middle, chain in
+  if-condition, typed-let chain, half-open mixed `<=`/`<`. Both
+  bootstraps compile, link with `libmapanare_rt.a`, run, and
+  assert byte-identical stdout. **10/10 PASS.**
+- **Format invariants for chains.** New
+  `tests/test_format.py::TestRules` cases (4 assertions)
+  guard idempotence on chain shapes. `mapanare/format.py`
+  module docstring gained a v5.21.1 paragraph noting that
+  chained comparisons round-trip stable through the line-based
+  whitespace canonicalization without an expression-level pass.
+- **`.reviews/CARRY_FORWARD.md` v5.13.0 → v5.21.1 arc append.**
+  19-row table covering Mc.2, Te.1 + bootstrap mirror, Te.2 +
+  bootstrap mirror, Te.4, Sh.\* (v5.17.0/.1/.2), Mc.\*
+  (v5.18.0), Te.3, Dk.\*, Te.5 + bootstrap mirror, Te.6, and
+  this row's H.1–H.13 hygiene closure.
+
+### Changed
+
+- **`docs/SPEC.md` header re-synced** from `Live — synced to
+  the v5.7.1 cut (2026-04-26)` to `Live — synced to the v5.21.0
+  cut (2026-05-01)`. New "What changed since the v5.7.1 sync"
+  block summarizes the 14-release arc release-by-release.
+  Spec-sync-discipline block lists the §s re-audited at v5.21.1
+  (§2.1 `pass`, §2.2 chained-cmp + L7 merge, §3.7 struct
+  ergonomics, §4.0 Te.3, §4.3.1 conditional binding,
+  §6.x closures + comprehensions + lambdas).
+- **`docs/SPEC.md` §4.0 (Block Syntax) rewritten for v5.19.0
+  Te.3.** Lead now reads "Mapanare accepts colon-style as
+  canonical (since v5.19.0). Brace-style is **soft-deprecated**:
+  it parses but emits a warning at parse time, and `mnc fmt`
+  (no flag) auto-migrates `{}` → `:` per file." Adds the
+  warning text verbatim, `MAPANARE_NO_BRACE_WARNING=1` opt-out,
+  `mnc fmt --keep-braces` flag, and v6.0 hard-removal milestone.
+  Brace example moved below colon example as legacy syntax.
+- **`docs/SPEC.md:1009` broken `if x: y` promise rescoped to
+  v6.0.** v5.14.0 SPEC originally promised single-line form
+  for v5.21.0; v5.21.0 shipped Te.6 chained comparisons
+  instead. v5.21.1 explicitly defers single-line form to v6.0
+  (Decision-1 Path B per `docs/roadmap/v5/v5.21.1/PLAN.md`),
+  to coincide with `{}` hard removal.
+- **README.md** native-compiler section bumped: `80/80
+  native goldens at v5.17.1` → `95/95 native goldens at
+  v5.21.0`; fixed-point line bumped 231,957 → 238,086 lines
+  with carry trail naming the 13-release streak through
+  v5.21.0 chained comparisons.
+- **Localized READMEs (es/pt/zh-CN)** "Native compiler — what
+  `mnc-stage1` ships" subsection rewritten in each language.
+  Bullet list adds the terseness arc summary; fixed-point line
+  STRICT 238,086 lines + 13-release streak; Sh.\* shrink
+  number. Closes Boa Bo.17r structurally.
+- **`docs/known_issues.md` Last-updated** bumped from v5.11.0
+  to v5.21.1; prior v5.11.0 line moved to "Earlier
+  last-updated:". New "v5.13.0 → v5.21.1 closures" narrative
+  block (12 entries) added next to the existing v5.4.0 →
+  v5.7.0 closures block. Last-verified note bumped from
+  v5.7.1 (2026-04-26) to v5.21.1 (2026-05-01).
+- **`tests/golden/BENCHMARKS-windows.md`** gained a v5.21.1
+  H.12 admonition at the top making the v5.8.8 staleness
+  visible. The merged `BENCHMARKS.md` regenerates via
+  `_merge_benchmarks()` and now shows linux v5.21.0 numbers
+  next to a clearly-flagged Windows v5.8.8 section. Closes
+  Rattler #1 from v5.11.0 panel.
+
+### Fixed
+
+- **v5.14.0 forward-promise honesty.** The "deferred to
+  v5.21.0" promise on single-line `if x: y` is now closed with
+  an explicit deferral note rather than carried forward as a
+  silent broken promise. Same regression class as v4.18.0–v4.26.0
+  hollow-features arc; explicit deferral fixes the documentation
+  contract.
+
+### What does NOT ship
+
+- **Compiler edits.** Zero. `mapanare/parser.py`, `lower.py`,
+  `semantic.py`, `emit_llvm_text.py` — untouched.
+- **Runtime edits.** Zero. `runtime/native/` untouched.
+- **MIR / IR changes.** Zero. Strict 3-stage fixed point at
+  238,086 lines / 0 diff preserved by construction.
+- **`mapanare/self/*.mn` edits.** Zero. Bootstrap source
+  identical to v5.21.0.
+- **Lark grammar edits.** Zero. `mapanare/mapanare.lark`
+  unchanged. Path B for Decision-1 means single-line `if x: y`
+  does not land here.
+- **New language features.** Zero. Hygiene release.
+
+See `docs/roadmap/v5/v5.21.1/SESSION_REPORT.md` and `PLAN.md`.
+
+## [5.21.0] - 2026-05-01
+
+### Added
+
+- **Te.6 — chained comparisons.** Python-style `0 < x < 10`
+  parses as a single chained expression and means
+  `0 < x && x < 10`, with `x` evaluated exactly once. All six
+  comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) sit
+  at a single merged precedence level and freely chain in any
+  combination. Mixed-direction chains are legal (`a < b > c`).
+  - **Grammar.** New `cmp_chain` rule replaces the stratified
+    `cmp_expr` / `eq_expr` chain. Single comparisons (`a < b`)
+    preserve the existing `BinaryExpr` AST shape and produce
+    byte-identical IR — a hard requirement for strict 3-stage
+    fixed point. Only 3+ element chains build a new
+    `ChainedCompare` AST node.
+  - **Precedence merge.** `==`/`!=` now sit at the same
+    precedence level as `<`/`>`/`<=`/`>=`. Pre-v5.21.0,
+    `a == b < c` parsed as `a == (b < c)`; v5.21.0 chains it
+    as `(a == b) && (b < c)`. Audit confirmed no existing code
+    depended on the prior asymmetric precedence.
+  - **Triviality predicate.** Trivial operands (Identifiers and
+    primitive literals — Int, Float, Bool, String, Char, None)
+    inline; non-trivial interior operands bind to a synthesized
+    `__mn_chain_N` local before the `&&`-chain is built so each
+    operand evaluates exactly once. Conservative — when in
+    doubt, emit the temp.
+  - **Trait dispatch survives.** New `pair_trait_dispatches`
+    field on `ChainedCompare`, populated by the semantic
+    checker per pair, propagates Eq / Ord trait routing to the
+    lowerer's synthesized pairs. Custom struct types with
+    `Ord` chain correctly via `cmp` calls.
+  - **Bootstrap mirror.** `mnc-stage1` parses, type-checks,
+    and lowers chains identically. New
+    `Expr::ChainedCmp(operands, ops)` variant in
+    `mapanare/self/ast.mn` plus `expr_chained_*` accessors.
+    New `is_cmp_op` helper and chain-collection branch in
+    `parser.mn::parse_expr` (after one comparison op + RHS,
+    if the next token is also a cmp, accumulate into
+    operands/ops lists). `op_precedence` updated for the
+    precedence merge. New `infer_expr` arm in `semantic.mn`.
+    New `lower_chained_cmp` in `lower.mn` with
+    `is_trivial_chain_operand` predicate matching Python
+    verbatim. New `chain_compare_counter: Int` field on
+    `LowerState` (separate from `tmp_counter` so synthesized
+    `__mn_chain_N` allocas don't perturb the global `%tN`
+    sequence — same discipline as v5.20.1 Te.5.F.C's
+    `struct_update_counter`). Per-fn reset alongside the
+    other counters.
+  - **Goldens 91/91 → 95/95** (new `92_chained_cmp_simple.mn`,
+    `93_chained_cmp_4.mn`, `94_chained_cmp_mixed.mn`,
+    `95_chained_cmp_side_effect.mn`). The side-effect golden
+    is the load-bearing once-evaluation test: `middle()`
+    prints exactly one "M" per chain expression.
+  - **Strict 3-stage fixed point preserved** by construction.
+    Single-comparison shapes take the legacy AST + lowering
+    path with zero IR diff. Bootstrap source delta is
+    additive only; no rewrites of existing modules. New
+    `Expr::ChainedCmp` is not yet used in any self-host
+    source, so the regenerated stage1/2/3 output is
+    byte-identical to v5.20.1 for all unchanged code paths.
+  - **No new MIR ops.** Everything desugars to existing
+    `BinOp(LT/GT/LE/GE/EQ/NE)`, `BinOp(AND)`, and trait
+    `Call` instructions. No new IR shapes.
+
+  See `docs/roadmap/v5/v5.21.0/SESSION_REPORT.md` and
+  `CHAINED_CMP_DESIGN.md` for the six locked design
+  decisions.
+
+### Changed
+
+- **SPEC.md §2.2.** New "Chained Comparisons (v5.21.0)"
+  subsection. Operator precedence table updated:
+  `<`/`>`/`<=`/`>=`/`==`/`!=` collapsed into a single
+  precedence level (was levels 7+8, now just 7). Migration
+  note explains the precedence merge.
+
+## [5.20.1] - 2026-05-01
+
+### Added
+
+- **Te.5.F — bootstrap mirror for v5.20.0 Te.5.B/C/D/E.** Closes
+  the v5.20.0 SESSION_REPORT's "Deferred to v5.20.1" item.
+  `mnc-stage1` now parses and lowers all four Te.5 surface forms
+  exactly matching v5.20.0's Python behavior.
+  - **Te.5.F.B — field shorthand mirror.** Single-character
+    relaxation in `parse_struct_fields_to_list`: when COLON is
+    absent after a NAME, synthesize `Ident(fname)` as the value.
+  - **Te.5.F.C — struct update mirror.** New `Expr::ConstructUpdate`
+    AST variant in `mapanare/self/ast.mn`. `parse_struct_construct`
+    rewritten to detect trailing `..base` (and bare
+    `new T { ..base }`); `lower_struct_update` synthesizes a
+    `Construct` whose fields appear in struct-declaration order
+    (overrides slotted by name, holes filled with
+    `__mn_base_N.<field>` accesses). New `struct_update_counter`
+    on `LowerState` (separate from `tmp_counter`) keeps the
+    synthesized base tmp from perturbing the global `%tN` sequence.
+  - **Te.5.F.D — let destructuring mirror.** New
+    `Stmt::LetDestructure` plus `StructPattern` / `FieldPattern`
+    structs. `parse_let_stmt` extended with single-token-lookahead
+    dispatch to `parse_let_destructure_body`. Nested patterns,
+    rest patterns (`..`), per-field `mut` all supported.
+    Bare-Ident-RHS optimization: skip the synthesized base tmp
+    when RHS is already in scope (IR byte-identical to manual
+    `let x = p.x; let y = p.y`).
+  - **Te.5.F.E — if-let / while-let / let-else mirror.** Added
+    `Expr::IfLet`, `Stmt::WhileLet`, `Stmt::LetElse`. `parse_if_expr`
+    / `parse_while_stmt` / `parse_let_stmt` extended with
+    `KW_LET` / `NAME LPAREN` / `UNDERSCORE` lookaheads. Lowerers
+    desugar to existing match/while/let machinery (no new MIR
+    ops). Divergence helpers `block_diverges`, `stmt_diverges`,
+    `match_arm_body_diverges` ported from Python.
+- **`tests/bootstrap/test_te5_mirror.py`** — 12 cross-bootstrap
+  cases assert byte-identical stdout from Python and `mnc-stage1`
+  for every v5.20.0 Te.5 golden.
+- **`docs/roadmap/v5/v5.20.1/AUDIT.md`** — Phase 0 audit.
+- **`docs/roadmap/v5/v5.20.1/SESSION_REPORT.md`** — release closeout.
+
+### Fixed
+
+- `lower_match` in `mapanare/self/lower.mn` — two pre-existing
+  latent bugs surfaced by Te.5.F.E and fixed in scope:
+  1. Skip the `alloca <fn_ret>` dummy-load dance when fn_ret is
+     void. `alloca void` is invalid LLVM; pre-Phase-4 the dummy
+     path was only reached by user code with non-void return
+     types. Now returns `void_value()` for void functions.
+  2. Stop demoting TK_UNKNOWN arm values to undef. The let-else
+     desugar produces `Expr::Ident(bound_name)` arms whose
+     payload type resolves to TK_UNKNOWN when the scrutinee is a
+     function-call result; demoting to undef forced phi-skip ->
+     alloca-fn_ret -> alloca-void in `fn main()`. The IR emitter's
+     `emit_mir_phi` already has fallback type resolution
+     (incoming-value scan + backwards phi search), so passing
+     TK_UNKNOWN through is well-defined.
+- `mapanare/lower.py::_expr_or_block_diverges` — pre-existing
+  v5.20.0 mypy error (`object` passed to `ExprStmt(expr=)`
+  without isinstance guard). Added explicit `isinstance(node,
+  Expr)` check; non-Block, non-Expr nodes return `False`.
+
+### Validated
+
+- 91/91 native goldens PASS through `mnc-stage1`.
+- Strict 3-stage fixed point preserved: stage2.ll == stage3.ll
+  at **238,086 lines / 0-line diff**. The v5.18.0 0-line-diff
+  milestone is preserved; line count grew by the cumulative size
+  of the new bootstrap `.mn` code (+5,805 IR lines vs v5.18.0's
+  232,281).
+- `bash scripts/build_from_seed.sh` succeeds — the no-Python
+  pipeline produces the same 238,086-line IR.
+- `make lint` clean.
+
+### Source delta
+
+`mapanare/self/` files only: **+742 lines** total
+(ast.mn +89, parser.mn +190, semantic.mn +138, lower.mn +320,
+lower_state.mn +5). 1.55× the v5.20.0 Python delta of +477,
+proportional to the bootstrap's lower-level idioms.
+
+### Deviations from Python
+
+1. **`let_else` divergence check** is computed but not enforced
+   in the bootstrap. Python raises a `RuntimeError` when the
+   else block doesn't diverge; the bootstrap proceeds with the
+   desugar (the bootstrap can't easily emit a structured
+   diagnostic from inside `lower.mn`).
+2. The pre-existing bootstrap miscompile of out-of-order field
+   initializers in non-`..base` literals (`new Point { y: 99,
+   x: 1 }`) is left untouched — Te.5.F.C uses a separate by-name
+   path that reorders correctly. Tracked as v5.21.0+ follow-up.
+
+## [5.20.0] - 2026-04-30
+
+### Added
+
+- **Te.5.B — Field shorthand in struct literals.** `Point { x, y }`
+  is sugar for `Point { x: x, y: y }`. Mixed forms allowed:
+  `Point { x: 99, y }` overrides x and shorthands y. AST and IR
+  byte-identical to the long form. Phase 0 surprise:
+  `mapanare/parser.py:1022` `field_init` already had a value-
+  omitted fall-through; only the grammar rule was mandatory-
+  colon, so this turned into a 1-character relaxation.
+- **Te.5.C — Struct update syntax (`..base`).** `Point { x: 5,
+  ..old }` builds a Point with `x=5` and remaining fields copied
+  from `old`. Single base only; trailing position only. Lowering
+  uses a new `_struct_update_counter` (separate from `_tmp_counter`)
+  so the synthesized base tmp doesn't perturb the global `%tN`
+  sequence — IR byte-identical to the manual long form.
+- **Te.5.D — Let destructuring.** `let Point { x, y } = p` binds
+  `x` and `y` in the surrounding scope. New AST nodes
+  `StructPattern`, `FieldPattern`, `LetDestructure`. Nested
+  patterns (`let Outer { inner: Inner { a }, b } = o`), rest
+  patterns (`let Point { x, .. } = p`), and per-field mutability
+  (`let Point { mut x, y } = p`) all work. When RHS is a bare
+  Identifier, the lowerer skips the synthesized base tmp and runs
+  field accesses directly on the source name — IR is byte-
+  identical to `let x = p.x; let y = p.y`.
+- **Te.5.E — `if let` / `while let` / `let else`.** Three
+  refutable-binding forms desugared at lower time to existing
+  match/while/let machinery. New AST nodes `IfLetExpr`,
+  `WhileLetStmt`, `LetElseStmt`. `let else` requires the else
+  block to diverge (return/break/continue/panic/abort/exit, or
+  nested if/match where every leaf branch diverges); the function's
+  implicit return does NOT satisfy divergence. New module-level
+  `_block_diverges`, `_stmt_diverges`, `_expr_or_block_diverges`
+  helpers. v5.20.0 `let else` patterns restricted to constructor
+  patterns with 0 or 1 args (single identifier or wildcard) and
+  wildcard patterns; multi-binding patterns deferred to v5.21.0+.
+- **11 new goldens** at `tests/golden/81-91_*.mn` covering all
+  four features. All compile through `mapanare emit-llvm` and
+  IR-validate via `clang -c`.
+- **`docs/roadmap/v5/v5.20.0/STRUCT_ERGO_DESIGN.md`** — Phase 0
+  design lock with 10 locked decisions, AST-node sketch,
+  per-feature lowering plan, bootstrap-mirror ordering.
+- **SPEC.md updates** — §3.7 (Struct Types) gains "Field
+  Shorthand", "Struct Update Syntax", "Destructuring in `let`"
+  subsections. New §4.3.1 "Conditional Binding" covers `if let`
+  / `while let` / `let else`.
+
+### Deferred to v5.20.1
+
+- **Te.5.F — bootstrap mirror.** Mirror all four features in
+  `mapanare/self/{ast,parser,lower,semantic}.mn`. Per design doc
+  estimated 4–6h on its own (Te.5.B ~10 LOC, Te.5.C ~120, Te.5.D
+  ~250, Te.5.E ~400). Splitting bootstrap mirror into v5.20.1
+  follows the v5.14.0 → v5.14.1 colon-block pattern and the
+  v5.15.0 → v5.15.1 comprehension pattern.
+- **Strict 3-stage fixed point validation.** v5.20.0 makes no
+  edits to `mapanare/self/*.mn` so the v5.18.0 milestone
+  (232,281 lines / 0-line diff) is preserved by construction.
+  v5.20.1 will re-validate after the mirror lands.
+
+### Notes
+
+- v5.20.0 is the post-Sh.* terseness capstone — adds the struct
+  sugar that auto-migration tools couldn't safely produce during
+  the v5.17.0 self-host rewrite. All four features are additive;
+  existing struct/match code keeps working unchanged.
+- Zero new MIR ops, zero new runtime functions, zero new IR
+  shapes. All four features are pure surface sugar over existing
+  primitives.
+- Native `mnc-stage1` was built from v5.18.0 source so the 11 new
+  goldens fail through stage1 until v5.20.1 ships the bootstrap
+  mirror. Existing 80 goldens still pass.
+
+## [5.19.1] - 2026-04-30
+
+### Added
+
+- **Dk.1 — `mapanare-builder` Docker image.** New
+  `docker/builder/Dockerfile` produces an amd64 Linux image with
+  clang-18 + lld-18 (from apt.llvm.org), the native `mnc` binary,
+  and `libmapanare_rt.a`. Published on every release tag to
+  `ghcr.io/mapanare-research/mapanare-builder:<version>` and
+  `:latest`. Image size: ~640 MB uncompressed (~280 MB compressed
+  pull); see `docs/roadmap/v5/v5.19.1/DESIGN_AMENDMENT.md` for
+  why the original 300 MB ceiling was raised to 700 MB.
+- **Dk.2 — `mapanare-runtime` Docker image.** New
+  `docker/runtime/Dockerfile` produces a minimal
+  `debian:bookworm-slim` + `libmapanare_rt.so` base for running
+  Mapanare-compiled binaries. Published as
+  `ghcr.io/mapanare-research/mapanare-runtime`. Image size:
+  ~115 MB uncompressed (~40 MB compressed pull).
+- **Dk.3 — `mnc init --docker`.** New flag on `mapanare init` /
+  `mnc init` overlays a multi-stage Dockerfile + `.dockerignore`
+  on top of the default project scaffold. Uses the official
+  `mapanare-builder` for the build stage and `mapanare-runtime`
+  for the final image. `init_project()` extended with an
+  `overlays: list[str]` parameter; new template lives at
+  `mapanare/templates/init/docker/`. `tests/test_init.py` 15/15
+  pass (5 new cases).
+- **Dk.4 — `publish-docker.yml` workflow.** New release-tag-
+  triggered GitHub Actions workflow that builds + pushes both
+  images to GHCR with cache-from/to GHA cache. Includes a
+  post-publish multi-stage smoke that asserts hello-world
+  builds + runs.
+- **Dk.5 — `docs/guides/docker.md`.** Usage, multi-stage pattern,
+  image-size guidance, opt-out, troubleshooting.
+- **Dk.6 — CI `docker-smoke` job.** Appended to `ci.yml`;
+  rebuilds both images on every CI run and exercises the
+  multi-stage hello-world end-to-end. Catches Dockerfile drift
+  before a release tag.
+- **Dk.7 — README "Quick start with Docker".** New section + GHCR
+  badges in the install block.
+
+### Changed
+
+- Nothing in the compiler, runtime, stdlib, or self-hosted
+  sources. Packaging-only release.
+
+### Notes
+
+- Goldens unaffected (80/80, unchanged).
+- Strict 3-stage fixed point preserved by construction (no
+  `mapanare/self/` source touched).
+- VERSION not bumped — release tagging is the lead's call.
+- See `docs/roadmap/v5/v5.19.1/SESSION_REPORT.md` for the full
+  ledger and `DESIGN_AMENDMENT.md` for size-budget deviations.
+
+## [5.18.0] - 2026-04-30
+
+### Added
+
+- **Mc.4 — `mapanare check`.** Standalone parser + semantic check
+  with structured Rust-style diagnostics. Already-wired
+  `cmd_check` (since pre-v5.13) gained a `--all` flag that walks
+  `.mn` files under the current directory (skipping `.git`,
+  `dist/`, `build/`, `node_modules`, etc.). Existing `--werror`
+  flag preserved. New end-to-end suite at `tests/test_check.py`
+  (10/10 pass). Native `mnc check` shells out to `mapanare check`
+  for v5.18.0; native port deferred.
+- **Mc.3 — `mapanare init`.** Refactored from inline-string
+  scaffolding to a template-directory layout at
+  `mapanare/templates/init/<template>/`. The default template
+  ships `main.mn` (canonical terse syntax — `fn main(): ...`),
+  `mapanare.toml`, `.gitignore`, and `README.md`, with `{{NAME}}`
+  placeholder substitution. Project names validated against
+  `^[A-Za-z_][A-Za-z0-9_-]*$`. Re-init is non-destructive on
+  existing files. New end-to-end suite at `tests/test_init.py`
+  (10/10 pass). Native `mnc init` shells out.
+- **Mc.1 — Mapanare Language Server (`mapanare lsp`).** First
+  public release of the pygls-based LSP at `mapanare/lsp/`
+  (3,020 lines across `server.py`, `analysis.py`, `completion.py`,
+  `diagnostics.py`, `rename.py`, `workspace.py`). Identifies as
+  `mapanare-lsp v0.5.0`. Capabilities shipped: `initialize`,
+  `didOpen` / `didChange` / `didClose`, `publishDiagnostics`
+  (push, debounced 300 ms), `hover`, `definition`, `references`,
+  `completion` (identifiers, member access on `.`, types on `:`,
+  import paths, builtin methods on `Option`/`String`/`List`),
+  `rename` (cross-module, conservative). Workspace-wide symbol
+  index for cross-module go-to-def. Native `mnc lsp` shells out.
+  117 LSP tests passing (116 prior + 1 new
+  `test_initialize_roundtrip` JSON-RPC stdio smoke).
+- **Mc.1.G — VSCode extension v0.5.0 (external repo).** The
+  official extension at
+  [Mapanare-Research/mapanare-vscode](https://github.com/Mapanare-Research/mapanare-vscode)
+  ships v0.5.0 alongside this release. Tracks `mapanare-lsp v0.5.0`.
+  New commands **Initialize New Project Here** and **Check All
+  Files in Workspace** wire the v5.18.0 `mapa init` and
+  `mapa check --all` surfaces. Existing run/check/compile/fmt/lint
+  commands and 40+ snippets unchanged. README refreshed to match
+  the v5.18.0 LSP capability matrix.
+- **Native dispatch (Mc.* shell-out).** `mapanare/self/main.mn`
+  learned three new subcommand cases (`check`, `init`, `lsp`)
+  mirroring the v5.13.0 `fmt` shell-out pattern. Help text
+  updated. Native ports tracked on the follow-up docket.
+- **Docs.** New `docs/guides/lsp.md` (capability matrix, editor
+  setup for VSCode/Neovim/Helix, troubleshooting),
+  `docs/guides/init.md` (template format, options, planned
+  templates), `editors/vscode/README.md`,
+  `docs/roadmap/v5/v5.18.0/MC_TOOLING_DESIGN.md` (Phase 0
+  audit + decision lock), `docs/roadmap/v5/v5.18.0/SESSION_REPORT.md`.
+
+### Preserved
+
+- **Strict 3-stage fixed point.** stage2.ll == stage3.ll at
+  232,281 lines / 0-line diff after the `main.mn` dispatch
+  additions + `concat_self.py` regeneration. The +558-line
+  growth vs. v5.17.2's 231,723 is the IR cost of the three new
+  dispatch arms shelling out via `__mn_system`. Held since v5.9.0.
+- **Existing LSP test suite.** 116/116 pre-existing pass at HEAD,
+  plus the new initialize round-trip → 117/117.
+- **No seed refresh required.** Dispatch additions are pure
+  shell-outs; no new C-runtime exports.
+
+### Phase 0 finding
+
+The release was originally scoped against a greenfield assumption
+(create `mapanare/lsp.py`, add `cmd_check` / `cmd_init` / `cmd_lsp`,
+build symbol table for hover, retrofit AST positions). The
+audit found **most of that already shipped**: the LSP package is
+a 3,020-line pygls implementation; all three CLI commands are
+wired; every AST node carries `span: Span(line, column,
+end_line, end_column)`; the symbol table builds binding-site
+positions today. v5.18.0 reframed as **verify-and-fill**: lock
+the design (`MC_TOOLING_DESIGN.md`), fix init's brace-syntax +
+missing-files divergence, add `--all` to check, ship the VSCode
+extension + native dispatch + docs.
+
+### Out of scope (deferred)
+
+- `--template` flag for `mapanare init` — only `default` ships;
+  `cli`, `agent`, `web-server` slotted for v5.18.x or v5.19.x.
+- Mc.5 — `mnc emit-wasm` native parity (Python CLI works today;
+  native port slotted for a future patch).
+- Code actions / semantic tokens / inlay hints / `workspace/symbol`
+  — v5.20.0+ per Mc.* parity arc.
+- VSCode marketplace publish — slotted for v5.20.0 once the
+  extension stabilizes.
+- Native `.mn` LSP port — no schedule; the Python implementation
+  is the single source of truth.
+
+## [5.17.2] - 2026-04-30
+
+### Changed
+
+- **Sh.H — defensive-loop cleanup.** Closes the 11
+  defensive-iteration sites catalogued in v5.17.1's
+  `COMPREHENSION_SITES.md`. Two patterns. **Pattern A** (10 sites)
+  — pure index-collection
+  `for _ in 0..LARGE: if i < n: r.push(xs[i]); i = i + 1`
+  rewritten to `for i in 0..len(xs): r.push(xs[i])`: 9 sites in
+  `lower.mn` (575, 1542, 2766, 2858, 2863, 3022, 3393, 3764, and
+  the `verify_module` nested pair at 4459+4465) plus 1 in
+  `emit_llvm.mn` (5735, function-body emission outer loop).
+  **Pattern B** (1 site) — state-advance `while true:` in disguise
+  in `parser.mn::parse_call_args` (1582). Source shrink:
+  **-38 lines** across 3 modules; cumulative v5.13.0 → v5.17.2
+  shrink: **-3,988 lines (-13.9%)**. IR shrink: **-234 lines**
+  (231957 → 231723), consistent with the lowerer emitting one
+  less PHI per rewritten counter loop.
+
+### Preserved
+
+- **Strict 3-stage fixed point.** stage2.ll == stage3.ll at
+  231,723 lines / 0-line diff at every per-module commit and at
+  HEAD. Held since v5.9.0.
+- **Goldens 80/80** at every per-module commit and at HEAD.
+- **No seed refresh required.** All rewrites are syntax-equivalent
+  within the v5.14.0+ supported colon-block / range-for surface;
+  zero new C-runtime exports.
+
+### Skipped (intentional)
+
+- **Comprehension promotion of Pattern A sites.** Each of the 10
+  rewritten loops could plausibly become a list comprehension,
+  but v5.17.2 stopped at plain range-for to keep each commit a
+  minimal logic refactor. Comprehension promotion is a separate
+  per-site judgment call.
+- **Other `for _ in 0..LARGE:` patterns** that aren't
+  pure index-collection (AST walkers with loop-carried state
+  beyond a single index). Not catalogued in v5.17.1 and
+  intentionally untouched.
+
+## [5.17.1] - 2026-04-30
+
+### Changed
+
+- **Sh.C + Sh.D + Sh.G — terse polish.** Per-site judgment
+  follow-up to v5.17.0's mechanical brace → colon rewrite. Three
+  deliverables across 20 commits: list comprehensions where the
+  manual loop was strictly accumulator-shaped (3 sites in
+  `transpiler.mn`); implicit-return upgrades across all 16
+  modules — 159 ONELINER conversions
+  (`fn name() -> T: return E` → `fn name() -> T = E`,
+  v5.15.0 Te.2.D function-init form) plus 121 BLOCK_SHORT
+  conversions (drop trailing `return` keyword to leave bare
+  expression, v5.14.0 Te.1 + SPEC §4.5 block-form implicit
+  return); SPEC.md / README.md / CLAUDE.md examples refreshed to
+  terse + idiomatic style. Total source shrink:
+  **-169 lines (-0.7%)** on top of v5.17.0; cumulative
+  v5.13.0 → v5.17.1 shrink: **-3,950 lines (-13.8%)**. Modest LOC
+  delta — BLOCK_SHORT conversions don't drop lines (`return E`
+  and bare `E` both occupy one line) but count as readability
+  wins; the -169 figure is essentially the ONELINER count.
+
+### Preserved
+
+- **Strict 3-stage fixed point.** stage2.ll == stage3.ll at
+  231,957 lines / 0-line diff at every per-module commit and at
+  HEAD. Held since v5.9.0; reaffirmed through v5.17.1.
+- **Goldens 80/80** at every per-module commit and at HEAD.
+- **No seed refresh required.** Zero new C-runtime exports; no
+  parser changes (the v5.15.0 Te.2.D function-init form and
+  v5.14.0 Te.1 block-form implicit return have both been
+  bootstrap-ready since their respective releases).
+
+### Skipped (intentional, catalogued)
+
+- **BLOCK_LONG implicit-return upgrades (28 sites).** Functions
+  with >5 prelude statements + a single trailing `return`. In
+  long functions the explicit `return` keyword is a punctuation
+  marker readers scan for; stripping it for one keyword saves a
+  line at a real readability cost. See
+  `docs/roadmap/v5/v5.17.1/IMPLICIT_RETURN_SITES.md`.
+- **Defensive `for _ in 0..LARGE: if i < n` → comprehension**
+  rewrites (12+ sites in `lower.mn` / `parser.mn` / `emit_llvm.mn`).
+  Would require also removing the artificial bound, which is
+  logic refactoring not syntax-only rewrite. See
+  `docs/roadmap/v5/v5.17.1/COMPREHENSION_SITES.md`.
+
+## [5.17.0] - 2026-04-30
+
+### Changed
+
+- **Sh.* — self-host rewrite to terse syntax.** Headline release of
+  the v5.13–v5.21 terseness arc. The 14k-line self-hosted compiler
+  in `mapanare/self/` now ships in colon-block form. All 17
+  hand-edited modules processed via `mapanare fmt --to-terse` in
+  dependency order, one commit per module, with stage1 build +
+  goldens 80/80 validated between every commit. Total source
+  shrink: **-3,781 lines (13.2%)** across the 17 modules
+  (28,698 → 24,917). Per-module deltas range from 5.3% (`abi.mn`)
+  to 20.2% (`ast.mn`). The regenerated `mnc_all.mn` shrinks from
+  23,282 to 20,377 lines (-2,905, 12.5%). **No semantic change** —
+  this is `to_terse` followed by parser-synthesis-back-to-the-same-
+  AST, so the IR shape is conserved by construction.
+
+### Fixed
+
+- **Sh.E — bootstrap seed refresh.**
+  `scripts/build_from_seed.sh` segfaulted at stage 1 against
+  the new colon-block sources because the Linux seed at
+  `bootstrap/seed/linux-x86_64/mnc` was a v5.10.0 binary that
+  predates v5.14.0's `_indent_to_braces` preprocessor. Refreshed
+  seed from the v5.17.0 HEAD `mapanare/self/mnc-stage1`
+  (sha256 `929e7a4b...19b0a0`). Post-refresh: stage 1 / stage 2 IR
+  both 231,957 lines, llvm-as OK, final binary smoke test OK.
+
+### Validation
+
+- **Strict 3-stage fixed point preserved.** stage2.ll == stage3.ll
+  at 231,957 lines / 0-line diff (the v5.9.0 milestone, held since
+  v5.9.0). The mechanical rewrite is sound.
+- Goldens 80/80 at every per-module commit and at the final HEAD.
+- `scripts/build_from_seed.sh` succeeds with the refreshed seed.
+
+### Deferred
+
+- **Sh.C / Sh.D / Sh.G** — comprehension upgrades, implicit-return
+  upgrades, and SPEC.md / README.md / CLAUDE.md example refresh.
+  Slipped to v5.17.1 (PLAN already authored at
+  `docs/roadmap/v5/v5.17.1/PLAN.md`). The mechanical pass alone
+  is the releasable v5.17.0 unit; bundling the per-site judgment
+  work would have blocked the strict-fixed-point payoff release
+  behind ~6 more hours of work.
+
+See `docs/roadmap/v5/v5.17.0/SESSION_REPORT.md` and
+`docs/roadmap/v5/v5.17.0/PHASE_0_SURVEY.md` for the full ledger.
+
+
+## [5.16.0] - 2026-04-29
+
+### Added
+
+- **Te.4 — self-host string-interpolation parity.** Closes the last
+  Python-vs-native string-handling gap. Native `mnc-stage1` now lexes,
+  parses, and lowers `"${expr}"` interpolation the same way the Python
+  bootstrap does — same AST shape (`InterpString`), same MIR shape
+  (`InterpConcat`), same `__mn_str_concat` chain. Pre-v5.16.0,
+  `mnc-stage1` errored on `"hi ${name}"` with "Undefined variable
+  'name}'" because the half-finished `split_interp_parts` in
+  `mapanare/self/parser.mn` (a) called `__mn_str_substr` with the
+  wrong API (end-index instead of count), (b) returned after the
+  first `${...}` site, (c) treated expression text as a bare
+  `Expr::Ident`, and (d) the lexer's `\$` escape collapsed to `$`
+  so escaped interpolation couldn't be detected.
+  **Te.4.A** — `docs/roadmap/v5/v5.16.0/INTERP_SPEC.md` locks
+  Python's `_split_interp` / `_parse_interp_expr` /
+  `_lower_interp_string` / `_do_cast` algorithm as the contract,
+  with a 10-entry case matrix (plain / var / int / float / bool /
+  method / arith / multi / mixed / escaped).
+  **Te.4.B** — single-line lexer change in
+  `mapanare/self/lexer.mn`: `scan_string` preserves `\$` as the
+  two-character sequence so `has_interpolation` can detect escaped
+  sites via the prior backslash byte (mirrors Python's
+  pre-`_unescape` STRING_LIT shape).
+  **Te.4.C** — new `Expr::InterpString(List<Expr>)` AST variant
+  mirrors Python's `InterpString` (`mapanare/self/ast.mn` enum +
+  `expr_kind` + `expr_interp_parts`); `split_interp_parts`
+  rewritten to use a position-tracking scan (`seg_start` / `i`
+  brackets, `s.substr` at flush) — replaces the original
+  char-by-char buffer that hit a bootstrap-lower String concat bug
+  where trailing literal segments emitted garbage bytes (`"] done"`
+  came out as `\01\00\00\00\00\00`). Each `${...}` site re-tokenizes
+  and re-feeds through `parse_expr`, so any expression form works
+  inside (Ident, Binary, MethodCall, Call, Index, MapLit).
+  **Te.4.D** — new `lower_interp_string` in `mapanare/self/lower.mn`
+  mirrors Python's: each non-StringLit part gets a
+  `Cast(target=mir_string)`, the chain bundles into one
+  `InterpConcat` MIR instruction. Extended `emit_cast` to handle
+  X→String for Int / Float / Bool / String — emits
+  `__mn_str_from_int` / `_float` / `_bool` (with drop tracking on
+  the fresh allocation) for primitives, alias-only `emit_copy` for
+  String. Mirrors Python `_do_cast`. Pre-existing
+  `emit_interp_concat` had a latent bug where the last concat wrote
+  to `dn.cN` instead of the dest itself, leaving downstream uses
+  undefined; fixed by rerouting the final concat's result name.
+  **Te.4.E** — eight new goldens in `tests/golden/string_interp_*.mn`
+  (var / int / float / bool / method / arith / multi / mixed /
+  escaped). **Goldens 71/71 → 80/80** through `mnc-stage1`. New
+  cross-bootstrap test `tests/bootstrap/test_string_interp_mirror.py`
+  (10 cases, parameterized) compiles each fixture through both
+  compilers, links with clang against the C runtime, and asserts
+  byte-identical stdout. **Te.4.F** (mnc fmt whitespace
+  canonicalization inside `${}`) deferred to v5.17.0 prep — the
+  conservative formatter design rules out expression-internal
+  rewriting. **Te.4.G** — SPEC.md §2.3 already documents
+  interpolation; v5.16.0 makes the spec promise real on both sides.
+  **Strict 3-stage fixed point preserved** (231,957 lines / 0 diff
+  after mnc_all.mn regeneration; ~3.3k new lines from the added
+  lexer / parser / lowerer / emitter paths) — no shape change to
+  existing emit paths. NO seed refresh
+  required (no new C-runtime exports). `make lint` clean. v5.16.0
+  unblocks v5.17.0 Sh.\* by giving the self-host rewrite a
+  parity-tested string-interp surface to consume. See
+  `docs/roadmap/v5/v5.16.0/SESSION_REPORT.md`,
+  `docs/roadmap/v5/v5.16.0/INTERP_SPEC.md`, and
+  `docs/roadmap/v5/v5.16.0/AUDIT.md`.
+
+## [5.15.1] - 2026-04-29
+
+### Added
+
+- **Cb.\* — bootstrap comprehension mirror (patch).** Closes the v5.15.0
+  deferred item. `mnc-stage1` now parses and lowers list comprehensions
+  (`[expr for x in iter (if cond)*]`) and map comprehensions
+  (`#{ k: v for ... }`), with multi-`for` cartesian-product clauses,
+  exactly matching v5.15.0's Python behavior. **Cb.1** — new
+  `Comprehension(String, Option<Expr>, Option<Expr>, Option<Expr>,
+  List<CompClause>)` variant on `Expr` and new `CompClause` struct in
+  `mapanare/self/ast.mn`. **Cb.2/Cb.3** — single-token lookahead in
+  `parse_list_lit` / `parse_map_lit`: when the next token after the
+  first element / `key: value` pair is `KW_FOR`, dispatch to
+  `parse_list_comp_tail` / `parse_map_comp_tail`; otherwise fall
+  through to the existing literal logic. **Cb.4** — `lower_comprehension`
+  in `mapanare/self/lower.mn` mirrors `mapanare/lower.py::
+  _lower_comprehension` line-for-line: synthesizes a fresh accumulator
+  (`__mn_comp_N`), then nested for/if structure with `__r.push(elem)`
+  (lists) or `__r[k] = v` (maps). For non-range iterables, the helper
+  `wrap_comp_for` emits the index-based pattern
+  (`for __i in 0..len(__src) { let target = __src[__i]; ... }`)
+  routing around the pre-existing `for x in some_list` lowering gap.
+  **Cb.5** — type-hint plumbing: new `comp_type_hint: Option<TypeExpr>`
+  field on `LowerState`; `lower_let` sets it before lowering a
+  comprehension RHS so the synthesizer can thread the user's
+  `List<T>` / `Map<K, V>` annotation onto the internal accumulator.
+  For map comprehensions, `patch_last_mapinit_types` post-patches the
+  emitted `MapInit` instruction's `key_type` / `val_type` (mirror of
+  the Python `_lower_let` v5.15.0 Te.2.C empty-`MapLit` annotation
+  patch). One pre-existing emitter gap surfaced and fixed in scope:
+  `emit_builtin_len` now dispatches `len(map)` to `__mn_map_len` via
+  `extractvalue` of field 0 of the `{ptr, i64}` map value (was falling
+  through to the list path and tripping llvm-as on a {ptr, i64} →
+  {ptr, i64, i64, i64, i64} store mismatch). **Goldens 68/68 → 71/71**
+  (new `69_list_comp.mn`, `70_list_comp_filter.mn`, `71_map_comp.mn`,
+  all compile through `mnc-stage1`). New cross-bootstrap test
+  `tests/bootstrap/test_comprehension_mirror.py` (10 cases) re-runs
+  every case from `tests/test_comprehensions.py` through `mnc-stage1`
+  and asserts the same stdout. **Strict 3-stage fixed point preserved**
+  (228,630 lines / 0 diff) — bootstrap parser/lowerer changes are
+  purely additive (new branches fire only on comprehension syntax;
+  `mapanare/self/*.mn` source uses none). NO seed refresh required —
+  comprehension synthesis uses only existing IR ops. `make lint`
+  clean. v5.15.1 closes the comprehension parity-gap docket entry and
+  unblocks v5.16.0 (Te.4 — self-host string-interp parity) using
+  `mnc-stage1` as the validation reference. See
+  `docs/roadmap/v5/v5.15.1/SESSION_REPORT.md` and
+  `docs/roadmap/v5/v5.15.1/AUDIT.md`.
+
+## [5.15.0] - 2026-04-29
+
+### Added
+
+- **Te.2.D — implicit-return one-liner.** `fn name(args) [-> RetType] = expr`
+  is sugar for `fn name(args) [-> RetType] { return expr }`. Grammar:
+  `fn_def` rhs is now `(block | ASSIGN expr)`. Mirrored in the bootstrap
+  parser (`mapanare/self/parser.mn::parse_fn_body` and
+  `parse_fn_body_as_data`). Block-form implicit return (last-expr-as-result)
+  was already shipped at v5.14.0; v5.15.0 does not touch that path.
+- **Te.2.F — terse lambda `|x| body`.** Single-expression body, no type
+  annotations on params. Lowers to the existing `LambdaExpr` AST node —
+  same closure-environment-struct machinery as the legacy `(x) => body`.
+  Mirrored in the bootstrap as a new branch in `parse_atom` triggered
+  on `tt == "BAR"`. Verified IR-equivalent to the long form modulo SSA
+  naming.
+- **Te.2.B / Te.2.C — list + map comprehensions.** `[expr for x in iter
+  (if cond)*]`, `#{ k: v for x in iter (if cond)* }`, multi-`for`
+  cartesian product. New `Comprehension` and `CompClause` AST nodes; new
+  grammar rules `list_comp`, `map_comp`, `comp_clause` parallel to
+  `list_lit` / `map_lit`. LALR(1) disambiguates on the next token after
+  the first element/entry (`for` → comprehension, otherwise → literal).
+  Lowering by AST synthesis in `lower.py::_lower_comprehension`: builds
+  a fresh accumulator, then nested for/if structure, then yields the
+  accumulator. Result MIR is identical to a hand-written loop modulo
+  SSA naming and the synthesized variable name. New empty-`MapLiteral`
+  type-annotation patching path in `_lower_let` mirrors the existing
+  empty-`ListLiteral` patch from v4.122.0. **Bootstrap mirror deferred
+  to v5.15.1** — Python bootstrap supports comprehensions; `mnc-stage1`
+  does not yet parse them. `tests/test_comprehensions.py` (11 cases)
+  exercises parser, e2e execution, and IR-shape sanity through the
+  Python bootstrap.
+- **Phase 0 design doc.** `docs/roadmap/v5/v5.15.0/TERSENESS_DESIGN.md`
+  locks lambda syntax (`|x| body`, no bare-name shorthand), implicit-return
+  rules (one-liner only — block-form already done), and comprehension
+  grammar (list/map, multi-for, no else-clause, no destructuring targets).
+
+### Changed
+
+- **Goldens — 68/68 PASS** (66 prior + 2 new: `67_implicit_return_one_liner.mn`,
+  `68_terse_lambda.mn`). Both new goldens compile and run through `mnc-stage1`,
+  confirming the bootstrap mirror for the two simpler features works end-to-end.
+- **Strict 3-stage fixed point preserved** (228,630 lines, 0 diff). The
+  bootstrap parser change is purely additive (new `if` branches firing only
+  on new syntax shapes), so `mnc_all.mn` — which uses none of the new forms —
+  produces the same MIR/IR through both stage2 and stage3.
+
+### Notes
+
+- **Out of scope (deferred).** Bootstrap mirror for comprehensions →
+  v5.15.1. `mnc fmt` whitespace canonicalization for the new forms →
+  v5.16.0. Pattern-destructuring comprehension targets → v5.20.0 Te.5.
+  Else-clauses in filters, set comprehensions, generator/lazy
+  comprehensions → indefinite. Self-host source rewrites to use the
+  new forms → v5.17.0 Sh.\*.
+- **Pre-existing limitation surfaced.** `for x in some_list` (manual
+  loop) does not iterate correctly because the generic ForLoop
+  lowering emits `__iter_*` calls and the runtime only implements
+  those for ranges. The comprehension synthesizer routes around this
+  by emitting index-based loops on non-range iterables.
+
+## [5.14.1] - 2026-04-29
+
+### Added
+
+- **B.1–B.4 — `pass` keyword in self-host bootstrap.** Five lockstep
+  edits across `mapanare/self/{lexer,ast,parser,lower,semantic}.mn`
+  modeled byte-for-byte on `break`/`continue`. `mnc-stage1` now lexes,
+  parses, and lowers `pass` as a no-op statement (zero MIR, zero IR);
+  it works as both an empty colon-block body (`fn empty(): pass`) and
+  a stand-alone statement in brace blocks. Phase 0 audit confirmed
+  zero `pass`-as-identifier collisions in `mapanare/self/*.mn` (the
+  v5.14.0 stdlib renames pre-handled the three real collisions).
+- **B.5–B.6 — `__mn_indent_to_braces` colon-block preprocessor.**
+  Lives in C (`runtime/native/mapanare_core.c`, ~280 LOC); mirrors
+  `mapanare/parser.py::_indent_to_braces` line-by-line — same
+  algorithm, same comma-insertion rules, same continuation handling.
+  Wired into `mapanare/self/parser.mn::parse` as a builtin extern
+  call before `tokenize()`. Routed through C rather than `.mn` after
+  surfacing two bootstrap-lower pathologies during a `.mn`-side port
+  attempt (split-result `List<String>` indexing, PHI predecessor
+  mismatch); see `docs/roadmap/v5/v5.14.1/SESSION_REPORT.md` for the
+  detour and reproducers. Brace-only sources hit the fast path; the
+  cost on brace-style corpus is negligible.
+- **B.7 — cross-bootstrap validation test.**
+  `tests/bootstrap/test_indent_preprocessor.py` (new, 175 LOC, 142
+  cases) asserts `mapanare.parser._indent_to_braces` and
+  `__mn_indent_to_braces` produce byte-identical output on every
+  parseable golden plus 10 hand-rolled fixtures. New hidden
+  `mnc-stage1 preprocess <file>` subcommand exposes the C path for
+  the test (not surfaced in `--help`).
+- **B.8 — `mnc fmt --to-terse` / `--to-braces`.** Already worked at
+  v5.13.0 (the `mnc fmt` shell-out forwards every argv verbatim);
+  v5.14.1 just updates the usage string for discoverability.
+
+### Changed
+
+- `mapanare/types.py` `BUILTIN_FUNCTIONS`,
+  `mapanare/lower.py` `_BUILTIN_RET`, and
+  `mapanare/emit_llvm_text.py` runtime-fn dispatch all gain a
+  `__mn_indent_to_braces: STRING_TYPE` entry. The emit_llvm_text.py
+  branch is the load-bearing one — without it the bootstrap declared
+  the return as `ptr` (8 bytes) and the high 8 bytes of the
+  `MnString` (the length) were silently dropped, manifesting as
+  goldens going 66/66 → 0/66 with no other diff.
+
+### Validation
+
+- 66/66 brace goldens + 66/66 colon goldens (v5.14.0 baseline was
+  0/66 colon — the Phase 0 `AUDIT.md` acceptance criterion).
+- 142/142 cross-bootstrap test cases (fixtures + corpus, both
+  forms).
+- 208/208 v5.14.0 colon-block tests still green.
+- **Strict 3-stage fixed point preserved** (228,630 lines, 0 diff).
+- `make lint` clean.
+
+## [5.14.0] - 2026-04-29
+
+### Added
+
+- **Te.1 — colon-block syntax (additive).** Second entry in the
+  v5.13–v5.21 terseness arc. Indent-based block syntax now works
+  alongside `{}` blocks throughout the language: `fn`, `if`/`else`/
+  `else if`, `while`, `for`, `let`, `trait`, `agent`, `impl`,
+  `struct`, `enum`, and `match` all accept colon-introduced bodies
+  whose extent is set by indentation. Architecturally implemented
+  as a string-level preprocessor (`_indent_to_braces` in
+  `mapanare/parser.py`) that runs before Lark — a hardening of the
+  v3.0.0-era preprocessor that already existed but did not handle
+  comma-separated bodies (struct/enum/match) and was not invoked from
+  the error-recovery path. Both gaps are closed.
+- **`pass` keyword.** New reserved word. Required to mark empty
+  colon-block bodies (`fn empty(): pass`) — `{}` would be ambiguous
+  with object/map literals. Lowers to a no-op (zero MIR, zero LLVM
+  output). Also legal as a stand-alone statement in brace blocks.
+  Three pre-existing identifier collisions in stdlib were renamed:
+  `stdlib/db/migrate.mn` (`pass` → `pass_idx`), `stdlib/net/http/auth.mn`
+  (`pass` → `password`), `stdlib/test/runner.mn` (`pass` → `passed`).
+  Seven `tests/native/*.mn` files were updated in lockstep.
+- **`mapanare fmt --to-terse`** — comment-preserving brace → colon
+  rewriter. Idempotent. Strips trailing commas from struct/enum/
+  match members. Expands `... {}` empty inline blocks to colon-form
+  with explicit `pass`. Conservative: any line that does not match a
+  known shape passes through unchanged.
+- **`mapanare fmt --to-braces`** — inverse rewriter, thin wrapper
+  over `_indent_to_braces` followed by `format_source` for canonical
+  whitespace.
+- **`tests/test_colon_blocks.py`** — 208 cross-style validation
+  tests. For every parseable golden file: `to_terse` is idempotent;
+  `to_terse(brace_src)` parses to AST equivalent to the original
+  (modulo span info and the no-op `PassStmt` insertion); the round
+  trip `to_braces(to_terse(src))` recovers the original AST.
+- `docs/roadmap/v5/v5.14.0/COLON_BLOCK_DESIGN.md` — Phase 0
+  deliverable. Documents the seven locked design decisions
+  (terminator strategy, tab/space rule, empty-block, single-line,
+  mixed brace+colon, comment behavior, `pass` keyword) and the
+  pre-implementation audit that revealed the existing v3.0.0
+  preprocessor.
+
+### Changed
+
+- `parse_recovering` now invokes `_indent_to_braces` before parsing
+  chunks. Previously only the fast `parse()` path saw colon syntax,
+  so `mapanare check` (and any downstream that uses error recovery)
+  silently rejected colon-form source. Closes a latent bug.
+- `_indent_to_braces` rewritten to track parent-block context. New
+  rules: when the parent opener is `struct`/`enum`/`match`, the
+  preprocessor inserts a `,` between consecutive child lines. The
+  last child of a `match` block deliberately does not get a trailing
+  comma (the LALR grammar accepts `(arm (COMMA arm)* COMMA?)?` but
+  rejects the trailing comma in practice).
+
+### Deferred
+
+- **Bootstrap mirror — deferred to a follow-up release.**
+  `mnc-stage1` continues to require brace-style source.
+  Self-hosted compiler at `mapanare/self/*.mn` is unchanged in
+  v5.14.0, so the strict 3-stage fixed point is preserved by
+  construction. Bootstrap colon-syntax support is only load-bearing
+  at v5.17.0 (Sh.\* — mechanical rewrite of `mapanare/self/`); a
+  dedicated PLAN will land it before then. Users who want to feed
+  colon-style source to `mnc-stage1` can run `mapanare fmt
+  --to-braces` first.
+- **Single-line `if x: y` form.** Preprocessor only handles
+  newline+indent bodies. Single-line colon-blocks moved to v5.21.0
+  Te.6 (small ergonomic wins). The current parse error
+  (``Unexpected ':' — expected '{'``) is actionable.
+
 ## [5.13.0] - 2026-04-28
 
 ### Added
 
+- **Mc.2 — `mnc fmt` (the formatter).** First entry in the v5.13–v5.21
+  terseness arc. Idempotent, AST-preserving, whitespace-only formatter
+  for `.mn` source. Lives in `mapanare/format.py`; wired into both
+  `mapanare fmt` (Python CLI) and `mnc fmt` (native, shells out to
+  Python for v5.13.0). CLI surface: `mnc fmt <path>...` writes in
+  place, `--check` exits 1 on drift without writing, `--stdout` prints
+  to stdout, directory paths recurse. Conservative by design — only
+  normalizes line endings (CRLF/CR → LF), strips trailing whitespace,
+  replaces leading tabs with 4 spaces, collapses 2+ consecutive blank
+  lines to 1, ensures one trailing newline. **Does NOT** re-indent,
+  rewrite expressions, change brace style, or sort imports — those
+  decisions are deferred to later releases (see
+  `docs/roadmap/v5/v5.13.0/STYLE_AUDIT.md` §5). The conservatism is
+  load-bearing for v5.14.0+ which layers `--to-terse` rewrite passes
+  on top of this core; the v5.17.0 Sh.\* self-host rewrite depends
+  on this formatter being rock-solid first. Corpus invariants
+  (idempotency, AST preservation, output shape) are checked across
+  every `.mn` file in `tests/golden/`, `mapanare/self/`, and
+  `examples/` by `tests/test_format.py` (704 corpus assertions, 13
+  unit rules, 7 CLI integration tests). One-time self-format applied
+  to `mapanare/self/ast.mn`, `mapanare/self/lexer.mn` (CRLF → LF) and
+  the generated `mnc_all.mn` (10 stripped blank lines at module
+  boundaries from `concat_self.py`'s output). Goldens 66/66 preserved;
+  the strict 3-stage fixed point's 1-line `!"5.13.0"` vs `!"5.11.0"`
+  drift is pre-existing from the version bump (commit 538584b) and
+  unaffected by the formatter.
+- `docs/guides/formatter.md` — usage guide, pre-commit hook example,
+  editor-integration notes, and the contractual invariants tooling
+  can rely on.
+- `docs/roadmap/v5/v5.13.0/STYLE_AUDIT.md` — Phase 0 deliverable. The
+  audit found 114/114 `.mn` files use 4-space indent, 0 trailing
+  whitespace, 0 missing trailing newlines, and only 2 CRLF outliers.
+  The unanimity of the corpus is what made the conservative ruleset
+  defensible; non-unanimous decisions (trailing commas, brace style)
+  are explicitly deferred.
+
 ### Changed
+
+- `mapanare/cli.py` `_format_mapanare` is now a thin wrapper over
+  `mapanare.format.format_source`. The pre-v5.13.0 implementation
+  was an unmaintained stub whose docstring claimed "spaces around
+  binary operators" but whose body did not implement that. The
+  alias is preserved for backwards compatibility with any caller
+  that imported the private name.
+- `cmd_fmt` and the `p_fmt` argparse subparser accept multiple
+  paths, directories (recursive `.mn` walk), `--check`, and
+  `--stdout`. Default behavior (write in place) is preserved from
+  v5.12.x to keep the existing `tests/cli/test_cli.py::TestFmt`
+  contract intact.
 
 ### Fixed
 
@@ -7280,7 +9484,23 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.13.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.30.0...HEAD
+[5.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.29.0...v5.30.0
+[5.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.28.0...v5.29.0
+[5.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.27.0...v5.28.0
+[5.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.1...v5.27.0
+[5.26.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.0...v5.26.1
+[5.26.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.25.0...v5.26.0
+[5.25.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...v5.25.0
+[5.24.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.1...v5.24.1
+[5.24.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.24.0...v5.24.0
+[5.23.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.1...v5.23.2
+[5.23.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.23.0...v5.23.1
+[5.23.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.23.0
+[5.22.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.22.0...v5.22.0
+[5.21.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.1
+[5.21.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.21.0...v5.21.0
+[5.17.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.16.0...v5.17.0
 [5.13.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.2...v5.13.0
 [5.11.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.11.0...v5.11.2
 [5.8.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.8.6...v5.8.7

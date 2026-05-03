@@ -1,25 +1,20 @@
 // tests/golden/28_traits.mn — Trait bounds + impl dispatch
 
-struct Vec2 {
-    x: Int,
+struct Vec2:
+    x: Int
     y: Int
-}
 
-impl Vec2 {
-    fn magnitude(self) -> Int {
+impl Vec2:
+    fn magnitude(self) -> Int:
         return self.x + self.y
-    }
-}
 
-fn double<T>(x: T) -> T {
+fn double<T>(x: T) -> T:
     return x
-}
 
-fn main() {
+fn main():
     let v = new Vec2 { x: 3, y: 7 }
     let m: Int = v.magnitude()
     print(m)
 
     let a: Int = double(21)
     print(a)
-}

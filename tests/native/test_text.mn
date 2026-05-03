@@ -4,91 +4,91 @@ usa stdlib::test::runner
 usa stdlib::text
 
 fn main() -> Int {
-    let mut pass: Int = 0
+    let mut passed: Int = 0
     let mut fail: Int = 0
     let mut r: Int = 0
 
     // --- repeat ---
     r = check_eq_str("repeat('x',3)", repeat("x", 3), "xxx")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("repeat('ab',2)", repeat("ab", 2), "abab")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("repeat('z',0)", repeat("z", 0), "")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- reverse ---
     r = check_eq_str("reverse('abc')", reverse("abc"), "cba")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("reverse('')", reverse(""), "")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("reverse('a')", reverse("a"), "a")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- contains ---
     r = check("contains('hello','ell')", contains("hello", "ell"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("!contains('hello','xyz')", !contains("hello", "xyz"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- starts_with / ends_with ---
     r = check("starts_with('hello','hel')", starts_with("hello", "hel"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("ends_with('hello','llo')", ends_with("hello", "llo"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("!starts_with('hello','xyz')", !starts_with("hello", "xyz"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- index_of ---
     r = check_eq("index_of('hello','ll')", index_of("hello", "ll"), 2)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("index_of('hello','xyz')", index_of("hello", "xyz"), 0 - 1)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- count ---
     r = check_eq("count('ababa','a')", count("ababa", "a"), 3)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq("count('hello','z')", count("hello", "z"), 0)
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- is_empty ---
     r = check("is_empty('')", is_empty(""))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("!is_empty('x')", !is_empty("x"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- replace ---
     r = check_eq_str("replace('hello','l','r')", replace("hello", "l", "r"), "herro")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- truncate (max_len is total length including suffix) ---
     r = check_eq_str("truncate('hello world',8,'...')", truncate("hello world", 8, "..."), "hello...")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("truncate('hi',10,'...')", truncate("hi", 10, "..."), "hi")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- capitalize ---
     r = check_eq_str("capitalize('hello')", capitalize("hello"), "Hello")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- substr (start, count) semantics ---
     r = check_eq_str("substr(0,3)", "hello".substr(0, 3), "hel")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("substr(2,3)", "hello".substr(2, 3), "llo")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("substr(0,0)", "hello".substr(0, 0), "")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("substr(4,1)", "hello".substr(4, 1), "o")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check_eq_str("substr(0,100)", "hello".substr(0, 100), "hello")
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
     // --- is_alpha / is_whitespace ---
     r = check("is_alpha('a')", is_alpha("a"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("!is_alpha('1')", !is_alpha("1"))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
     r = check("is_whitespace(' ')", is_whitespace(" "))
-    if r == 1 { pass = pass + 1 } else { fail = fail + 1 }
+    if r == 1 { passed = passed + 1 } else { fail = fail + 1 }
 
-    return test_report(pass, fail)
+    return test_report(passed, fail)
 }

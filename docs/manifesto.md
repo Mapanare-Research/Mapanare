@@ -28,7 +28,7 @@ Reactive signals replace callback hell. When a value changes, everything that de
 
 Tensors have compile-time shape checking. If you try to multiply a 3x4 matrix by a 5x2 matrix, the compiler tells you before you run anything. Shape errors are the most common source of bugs in numerical code, and Mapanare eliminates them at compile time.
 
-The syntax is clean and direct. Curly braces for blocks, strong static typing with inference where it helps, no semicolons where they add nothing. If you have written Rust, Go, or TypeScript, you can read Mapanare immediately.
+The syntax is clean and direct. Indented blocks (with a brace-form legacy through v6.0), strong static typing with inference where it helps, no semicolons where they add nothing. If you have written Rust, Go, or TypeScript, you can read Mapanare immediately.
 
 ## The Approach
 

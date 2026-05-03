@@ -154,10 +154,16 @@ if [ "${1:-}" = "--verify" ]; then
         fi
     done
     echo "  ${PASS} pass, ${FAIL} fail"
-    # v4.155.0: seed-built compiler has known limitations (enums, tensors,
-    # async, closures). Require >=45 pass instead of zero fail.
-    if [ "${PASS}" -lt 45 ]; then
-        echo "  ERROR: expected >=45 pass, got ${PASS}"
+    # v4.155.0 / v5.24.0 Hy.4 (Cobra 3rd-panel ask): seed-built compiler
+    # has known limitations — Te.5/Te.6/comprehensions/complex closures
+    # postdate the v5.10.0-vintage seed. Express the expected pass count
+    # as a self-evident formula instead of a magic threshold so future
+    # golden additions don't silently widen the acceptance window.
+    TOTAL_GOLDENS=$(ls "${ROOT}"/tests/golden/*.mn | wc -l)
+    EXPECTED_SEED_FAILS=20
+    EXPECTED_PASS=$((TOTAL_GOLDENS - EXPECTED_SEED_FAILS))
+    if [ "${PASS}" -lt "${EXPECTED_PASS}" ]; then
+        echo "  ERROR: expected >=${EXPECTED_PASS} pass (of ${TOTAL_GOLDENS} goldens, ${EXPECTED_SEED_FAILS} seed-incompatible), got ${PASS}"
         exit 1
     fi
 fi

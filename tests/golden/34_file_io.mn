@@ -1,4 +1,4 @@
-fn main() {
+fn main():
     // Write a file
     write_file("/tmp/mn_test_34.txt", "hello world")
     // Read it back
@@ -16,4 +16,3 @@ fn main() {
     // List directory
     pon files: List<String> = list_dir("/tmp")
     print(str(len(files)))
-}

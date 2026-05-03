@@ -5,17 +5,14 @@
 // module.Type). Gr.2 qualified-type-ref parsing is covered by
 // tests/parser/test_*qualified*.
 
-struct Handle {
+struct Handle:
     id: Int
-}
 
-fn make_handle(val: Int) -> Handle {
+fn make_handle(val: Int) -> Handle:
     let h: Handle = new Handle { id: val }
     return h
-}
 
-fn main() -> Int {
+fn main() -> Int:
     let h: Handle = make_handle(42)
     print(h.id)
     return 0
-}

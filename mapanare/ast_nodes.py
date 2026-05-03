@@ -162,6 +162,29 @@ class BinaryExpr(Expr):
 
 
 @dataclass
+class ChainedCompare(Expr):
+    """Chained comparison: `0 < x < 10` (3+ operands).
+
+    v5.21.0 Te.6: parses 3+ comparison operands into a single node.
+    `len(ops) == len(operands) - 1`; each `ops[i]` is one of
+    `< <= > >= == !=`. Lowered to `&&`-joined pairwise comparisons
+    with non-trivial interior operands bound to a fresh temp so
+    each subexpression is evaluated exactly once.
+
+    2-element comparisons (`a < b`) keep the existing `BinaryExpr`
+    AST shape — byte-identical IR before and after v5.21.0.
+
+    `pair_trait_dispatches` mirrors `BinaryExpr.trait_dispatch`
+    per pair; populated by the semantic checker so the lowerer
+    can route each synthesized pair through the right trait method.
+    """
+
+    operands: list[Expr] = field(default_factory=list)
+    ops: list[str] = field(default_factory=list)
+    pair_trait_dispatches: list[str | None] = field(default_factory=list)
+
+
+@dataclass
 class UnaryExpr(Expr):
     """Unary operation: `-x`, `!flag`."""
 
@@ -309,6 +332,30 @@ class ListLiteral(Expr):
 
 
 @dataclass
+class CompClause(ASTNode):
+    """One `for x in iter (if cond)*` clause in a comprehension (v5.15.0)."""
+
+    target: str = ""
+    iter: Expr = field(default_factory=Expr)
+    conditions: list[Expr] = field(default_factory=list)
+
+
+@dataclass
+class Comprehension(Expr):
+    """List or map comprehension (v5.15.0 Te.2.B/C).
+
+    Sugar over `let mut __r = []; for x in xs { if c { __r.push(e) } }; __r`.
+    Lowered by AST synthesis in lower.py — no new MIR ops.
+    """
+
+    kind: str = "list"  # "list" or "map"
+    element: Expr | None = None  # for list comp
+    key: Expr | None = None  # for map comp
+    value: Expr | None = None  # for map comp
+    clauses: list[CompClause] = field(default_factory=list)
+
+
+@dataclass
 class TensorLiteral(Expr):
     """Tensor literal: `Tensor<Float>[[1.0, 2.0], [3.0, 4.0]]`.
 
@@ -350,6 +397,21 @@ class FieldInit(ASTNode):
 
     name: str = ""
     value: Expr = field(default_factory=Expr)
+
+
+@dataclass
+class StructUpdate(Expr):
+    """Struct update: `new Point { x: 5, ..old }`. v5.20.0 Te.5.C.
+
+    Lowers to a `ConstructExpr` with overrides plus per-field
+    accesses on the base for any field not in `overrides`. Single
+    `base` only (D2). Field list must be completed at lower time
+    when the struct definition is in scope.
+    """
+
+    name: str = ""
+    overrides: list[FieldInit] = field(default_factory=list)
+    base: Expr = field(default_factory=Expr)
 
 
 @dataclass
@@ -411,6 +473,53 @@ class LetBinding(Stmt):
 
 
 @dataclass
+class LetDestructure(Stmt):
+    """v5.20.0 Te.5.D: `let <StructPattern> [: T] = <expr>`.
+
+    Lowers to `let __mn_dst_N = expr` followed by per-field lets;
+    when `value` is a bare Identifier, the tmp is skipped and the
+    field accesses run on the source name directly. `mutable`
+    here is the outer `let mut` — applies to every bound name
+    that doesn't have its own `mut` already.
+    """
+
+    pattern: StructPattern = field(default_factory=lambda: StructPattern())
+    mutable: bool = False
+    type_annotation: TypeExpr | None = None
+    value: Expr = field(default_factory=Expr)
+
+
+@dataclass
+class LetElseStmt(Stmt):
+    """v5.20.0 Te.5.E: `let <ConstructorPattern> = <scrutinee> else { ... }`.
+
+    Refutable binding with mandatory diverging else block. Pattern is
+    one of: ConstructorPattern (Some/Ok/Err with single ident or
+    wildcard arg) or WildcardPattern. Else block must diverge — D5.
+    Lowered as: `let bound_name = match scrutinee { pat => bound_name,
+    _ => { else_block } }`.
+    """
+
+    pattern: "Pattern" = field(default_factory=lambda: Pattern())
+    scrutinee: Expr = field(default_factory=Expr)
+    else_block: Block = field(default_factory=lambda: Block())
+
+
+@dataclass
+class WhileLetStmt(Stmt):
+    """v5.20.0 Te.5.E: `while let <pattern> = <scrutinee> { body }`.
+
+    Desugars to `while true { match scrutinee { pat => body,
+    _ => break } }`. Scrutinee is re-evaluated each iteration
+    (matches Rust).
+    """
+
+    pattern: "Pattern" = field(default_factory=lambda: Pattern())
+    scrutinee: Expr = field(default_factory=Expr)
+    body: Block = field(default_factory=lambda: Block())
+
+
+@dataclass
 class ExprStmt(Stmt):
     """Expression used as a statement."""
 
@@ -434,6 +543,18 @@ class BreakStmt(Stmt):
 @dataclass
 class ContinueStmt(Stmt):
     """Continue statement: `continue` / `sigue`."""
+
+    pass
+
+
+@dataclass
+class PassStmt(Stmt):
+    """Pass statement: `pass` — explicit no-op (v5.14.0 Te.1).
+
+    Required by colon-block syntax to mark empty bodies
+    (``fn empty(): pass``). Also legal as a stand-alone stmt in
+    brace blocks. Emits zero MIR / no LLVM output.
+    """
 
     pass
 
@@ -500,6 +621,20 @@ class IfExpr(Expr):
 
 
 @dataclass
+class IfLetExpr(Expr):
+    """v5.20.0 Te.5.E: `if let <pattern> = <scrutinee> { ... } [else { ... }]`.
+
+    Desugars to a match: success arm runs then_block; wildcard arm
+    runs else_block (or `()` when omitted).
+    """
+
+    pattern: "Pattern" = field(default_factory=lambda: Pattern())
+    scrutinee: Expr = field(default_factory=Expr)
+    then_block: Block = field(default_factory=lambda: Block())
+    else_block: Block | "IfExpr | IfLetExpr | None" = None
+
+
+@dataclass
 class MatchArm(ASTNode):
     """A single arm in a match expression."""
 
@@ -558,6 +693,36 @@ class OrPattern(Pattern):
     """Or-pattern: matches if any alternative matches. `A | B | C`."""
 
     alternatives: list[Pattern] = field(default_factory=list)
+
+
+@dataclass
+class FieldPattern(ASTNode):
+    """v5.20.0 Te.5.D: a single field within a StructPattern.
+
+    `name`            — shorthand binds the field to a local of the
+                        same name; sub_pattern is None.
+    `mut name`        — same as above, mutable.
+    `name: <pattern>` — destructure the field into a nested pattern;
+                        the outer name is NOT bound.
+    `mut` is meaningful only when sub_pattern is None.
+    """
+
+    name: str = ""
+    mutable: bool = False
+    sub_pattern: Pattern | None = None
+
+
+@dataclass
+class StructPattern(Pattern):
+    """v5.20.0 Te.5.D: `Name { field, field, .. }` in a `let` binding.
+
+    `has_rest=True` means the pattern ended in `..` — fields not
+    listed are not bound (and not validated against the struct).
+    """
+
+    name: str = ""
+    fields: list[FieldPattern] = field(default_factory=list)
+    has_rest: bool = False
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 //
 // Tests 1-D, 2-D, and 3-D tensor literals with element access via builtins.
 
-fn main() {
+fn main():
     // 1-D tensor
     let a = Tensor<Float>[1.0, 2.0, 3.0]
     print(str(tensor_rank(a)))
@@ -35,7 +35,6 @@ fn main() {
     let e = Tensor<Float>[-1.0, -2.5, 3.0]
     print(str(tensor_get_f64(e, 0)))
     print(str(tensor_get_f64(e, 1)))
-}
 
 // Expected output:
 // 1

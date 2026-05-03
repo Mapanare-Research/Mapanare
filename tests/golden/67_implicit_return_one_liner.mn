@@ -1,0 +1,16 @@
+// v5.15.0 Te.2.D — implicit-return one-liner.
+//
+//   ``fn name(args) [-> RetType] = expr``
+//
+// is sugar for ``fn name(args) [-> RetType] { return expr }``.
+// Block-form implicit return (last-expr-as-result, SPEC §4.5)
+// already worked at v5.14.0 and is not in this golden's scope.
+
+fn double(x: Int) -> Int = x * 2
+fn id(y: Int) -> Int = y
+fn add(a: Int, b: Int) -> Int = a + b
+
+fn main():
+    print(str(double(5)))
+    print(str(id(7)))
+    print(str(add(3, 4)))

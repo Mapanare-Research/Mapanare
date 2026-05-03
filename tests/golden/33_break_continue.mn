@@ -1,58 +1,45 @@
 // Golden test: break and continue in while and for loops.
 // Validates that break-in-if-in-for works correctly.
 
-fn sum_until(limit: Int) -> Int {
+fn sum_until(limit: Int) -> Int:
     let mut sum: Int = 0
     let mut i: Int = 0
-    while i < 20 {
-        if i >= limit {
+    while i < 20:
+        if i >= limit:
             break
-        }
         sum = sum + i
         i = i + 1
-    }
     return sum
-}
 
-fn skip_evens() -> Int {
+fn skip_evens() -> Int:
     let mut sum: Int = 0
     let mut i: Int = 0
-    while i < 10 {
+    while i < 10:
         i = i + 1
-        if i % 2 == 0 {
+        if i % 2 == 0:
             continue
-        }
         sum = sum + i
-    }
     return sum
-}
 
-fn break_in_for() -> Int {
+fn break_in_for() -> Int:
     let mut result: Int = 0
-    for i in 0..100 {
-        if i == 5 {
+    for i in 0..100:
+        if i == 5:
             break
-        }
         result = result + i
-    }
     return result
-}
 
-fn nested_break() -> Int {
+fn nested_break() -> Int:
     let mut found: Int = -1
     let items: List<Int> = [10, 20, 30, 40, 50]
-    for i in 0..5 {
-        if items[i] == 30 {
+    for i in 0..5:
+        if items[i] == 30:
             found = i
             break
-        }
-    }
     return found
-}
 
-fn main() {
+fn main():
     print(sum_until(5))
     print(skip_evens())
     print(break_in_for())
     print(nested_break())
-}

@@ -6,22 +6,19 @@
 // Python Token types
 // ---------------------------------------------------------------------------
 
-struct PyToken {
-    kind: String,
-    value: String,
-    line: Int,
+struct PyToken:
+    kind: String
+    value: String
+    line: Int
     col: Int
-}
 
-fn new_token(kind: String, value: String, line: Int, col: Int) -> PyToken {
-    return new PyToken { kind: kind, value: value, line: line, col: col }
-}
+fn new_token(kind: String, value: String, line: Int, col: Int) -> PyToken = new PyToken { kind: kind, value: value, line: line, col: col }
 
 // ---------------------------------------------------------------------------
 // Python keyword table
 // ---------------------------------------------------------------------------
 
-fn is_py_keyword(s: String) -> Bool {
+fn is_py_keyword(s: String) -> Bool:
     if s == "def" { return true }
     if s == "class" { return true }
     if s == "if" { return true }
@@ -58,234 +55,194 @@ fn is_py_keyword(s: String) -> Bool {
     if s == "global" { return true }
     if s == "nonlocal" { return true }
     return false
-}
 
 // ---------------------------------------------------------------------------
 // Tokenizer helpers
 // ---------------------------------------------------------------------------
 
-fn is_py_alpha(c: String) -> Bool {
-    return is_transpiler_alpha(c)
-}
+fn is_py_alpha(c: String) -> Bool = is_transpiler_alpha(c)
 
-fn is_py_alnum(c: String) -> Bool {
+fn is_py_alnum(c: String) -> Bool:
     if is_py_alpha(c) { return true }
     if is_digit(c) { return true }
     return false
-}
 
 // ---------------------------------------------------------------------------
 // Tokenizer
 // ---------------------------------------------------------------------------
 
-fn tokenize_python(source: String) -> List<PyToken> {
+fn tokenize_python(source: String) -> List<PyToken>:
     let mut tokens: List<PyToken> = []
     let mut pos: Int = 0
     let mut line: Int = 1
     let mut col: Int = 1
     let slen: Int = len(source)
 
-    while pos < slen {
+    while pos < slen:
         let c: String = source[pos]
 
         // Newline
-        if c == "\n" {
+        if c == "\n":
             tokens.push(new_token("NEWLINE", "\n", line, col))
             pos = pos + 1
             line = line + 1
             col = 1
             continue
-        }
 
         // Skip whitespace (not newline)
-        if c == " " || c == "\t" || c == "\r" {
+        if c == " " || c == "\t" || c == "\r":
             pos = pos + 1
             col = col + 1
             continue
-        }
 
         // Comment: # to end of line
-        if c == "#" {
-            while pos < slen {
+        if c == "#":
+            while pos < slen:
                 if source[pos] == "\n" { break }
                 pos = pos + 1
-            }
             continue
-        }
 
         // String literals
-        if c == "\"" || c == "'" {
+        if c == "\"" || c == "'":
             let quote: String = c
             let start: Int = pos
             pos = pos + 1
             col = col + 1
             let mut value: String = ""
-            while pos < slen {
+            while pos < slen:
                 let sc: String = source[pos]
-                if sc == quote {
+                if sc == quote:
                     pos = pos + 1
                     col = col + 1
                     break
-                }
-                if sc == "\\" {
+                if sc == "\\":
                     pos = pos + 1
                     col = col + 1
-                    if pos < slen {
+                    if pos < slen:
                         value = value + source[pos]
                         pos = pos + 1
                         col = col + 1
-                    }
                     continue
-                }
                 value = value + sc
                 pos = pos + 1
                 col = col + 1
-            }
             tokens.push(new_token("STRING", value, line, col))
             continue
-        }
 
         // Numbers
-        if is_digit(c) {
+        if is_digit(c):
             let start: Int = pos
             let mut num: String = ""
             let mut has_dot: Bool = false
-            while pos < slen {
+            while pos < slen:
                 let nc: String = source[pos]
                 if nc == "." { has_dot = true }
-                if is_digit(nc) || nc == "." || nc == "_" {
+                if is_digit(nc) || nc == "." || nc == "_":
                     if nc != "_" { num = num + nc }
                     pos = pos + 1
                     col = col + 1
-                } else {
+                else:
                     break
-                }
-            }
-            if has_dot {
+            if has_dot:
                 tokens.push(new_token("FLOAT", num, line, col))
-            } else {
+            else:
                 tokens.push(new_token("INT", num, line, col))
-            }
             continue
-        }
 
         // Identifiers and keywords
-        if is_py_alpha(c) {
+        if is_py_alpha(c):
             let mut ident: String = ""
-            while pos < slen {
+            while pos < slen:
                 let ic: String = source[pos]
-                if is_py_alnum(ic) {
+                if is_py_alnum(ic):
                     ident = ident + ic
                     pos = pos + 1
                     col = col + 1
-                } else {
+                else:
                     break
-                }
-            }
-            if is_py_keyword(ident) {
+            if is_py_keyword(ident):
                 tokens.push(new_token("KEYWORD", ident, line, col))
-            } else {
+            else:
                 tokens.push(new_token("IDENT", ident, line, col))
-            }
             continue
-        }
 
         // Two-character operators
-        if pos + 1 < slen {
+        if pos + 1 < slen:
             let two: String = c + source[pos + 1]
-            if two == "==" || two == "!=" || two == "<=" || two == ">=" || two == "+=" || two == "-=" || two == "*=" || two == "/=" || two == "->" || two == "**" || two == "//" || two == "<<" || two == ">>" {
+            if two == "==" || two == "!=" || two == "<=" || two == ">=" || two == "+=" || two == "-=" || two == "*=" || two == "/=" || two == "->" || two == "**" || two == "//" || two == "<<" || two == ">>":
                 tokens.push(new_token("OP", two, line, col))
                 pos = pos + 2
                 col = col + 2
                 continue
-            }
-        }
 
         // Single-character operators and punctuation
-        if c == "+" || c == "-" || c == "*" || c == "/" || c == "%" || c == "=" || c == "<" || c == ">" || c == "!" || c == "&" || c == "|" || c == "^" || c == "~" || c == "(" || c == ")" || c == "[" || c == "]" || c == "{" || c == "}" || c == "," || c == ":" || c == "." || c == ";" || c == "@" {
+        if c == "+" || c == "-" || c == "*" || c == "/" || c == "%" || c == "=" || c == "<" || c == ">" || c == "!" || c == "&" || c == "|" || c == "^" || c == "~" || c == "(" || c == ")" || c == "[" || c == "]" || c == "{" || c == "}" || c == "," || c == ":" || c == "." || c == ";" || c == "@":
             tokens.push(new_token("OP", c, line, col))
             pos = pos + 1
             col = col + 1
             continue
-        }
 
         // Unknown character: skip
         pos = pos + 1
         col = col + 1
-    }
 
     tokens.push(new_token("EOF", "", line, col))
     return tokens
-}
 
 // ---------------------------------------------------------------------------
 // Parser state
 // ---------------------------------------------------------------------------
 
-struct PyParser {
-    tokens: List<PyToken>,
-    pos: Int,
+struct PyParser:
+    tokens: List<PyToken>
+    pos: Int
     state: TranspilerState
-}
 
-fn new_py_parser(tokens: List<PyToken>, filename: String) -> PyParser {
+fn new_py_parser(tokens: List<PyToken>, filename: String) -> PyParser:
     let st: TranspilerState = new_state(filename, "python")
-    return new PyParser { tokens: tokens, pos: 0, state: st }
-}
+    new PyParser { tokens: tokens, pos: 0, state: st }
 
-fn current(p: PyParser) -> PyToken {
-    if p.pos < len(p.tokens) {
+fn current(p: PyParser) -> PyToken:
+    if p.pos < len(p.tokens):
         return p.tokens[p.pos]
-    }
     return new_token("EOF", "", 0, 0)
-}
 
-fn advance(p: PyParser) -> PyParser {
+fn advance(p: PyParser) -> PyParser:
     p.pos = p.pos + 1
-    return p
-}
+    p
 
-fn expect_kw(p: PyParser, kw: String) -> PyParser {
+fn expect_kw(p: PyParser, kw: String) -> PyParser:
     let t: PyToken = current(p)
-    if t.kind == "KEYWORD" {
-        if t.value == kw {
+    if t.kind == "KEYWORD":
+        if t.value == kw:
             return advance(p)
-        }
-    }
     return advance(p)
-}
 
-fn expect_op(p: PyParser, op: String) -> PyParser {
+fn expect_op(p: PyParser, op: String) -> PyParser:
     let t: PyToken = current(p)
-    if t.kind == "OP" {
-        if t.value == op {
+    if t.kind == "OP":
+        if t.value == op:
             return advance(p)
-        }
-    }
     return advance(p)
-}
 
-fn skip_newlines(p: PyParser) -> PyParser {
-    while current(p).kind == "NEWLINE" {
+fn skip_newlines(p: PyParser) -> PyParser:
+    while current(p).kind == "NEWLINE":
         p = advance(p)
-    }
-    return p
-}
+    p
 
 // ---------------------------------------------------------------------------
 // Type translation using transpiler framework
 // ---------------------------------------------------------------------------
 
-fn translate_py_type(type_str: String) -> String {
+fn translate_py_type(type_str: String) -> String:
     let mappings: List<TypeMapping> = python_type_mappings()
-    return translate_type(type_str, mappings)
-}
+    translate_type(type_str, mappings)
 
 // ---------------------------------------------------------------------------
 // Python stdlib shims
 // ---------------------------------------------------------------------------
 
-fn python_stdlib_shims() -> List<StdlibShim> {
+fn python_stdlib_shims() -> List<StdlibShim>:
     let mut shims: List<StdlibShim> = []
     shims.push(new_shim("print", "print", false))
     shims.push(new_shim("len", "len", false))
@@ -306,118 +263,98 @@ fn python_stdlib_shims() -> List<StdlibShim> {
     shims.push(new_shim("split", "split", true))
     shims.push(new_shim("join", "join", true))
     return shims
-}
 
 // ---------------------------------------------------------------------------
 // Expression translation (simplified)
 // ---------------------------------------------------------------------------
 
-fn translate_py_expr(p: PyParser) -> String {
+fn translate_py_expr(p: PyParser) -> String:
     let t: PyToken = current(p)
 
     // String literal
-    if t.kind == "STRING" {
+    if t.kind == "STRING":
         p = advance(p)
         return "\"" + t.value + "\""
-    }
 
     // Int literal
-    if t.kind == "INT" {
+    if t.kind == "INT":
         p = advance(p)
         return t.value
-    }
 
     // Float literal
-    if t.kind == "FLOAT" {
+    if t.kind == "FLOAT":
         p = advance(p)
         return t.value
-    }
 
     // Boolean literals
-    if t.kind == "KEYWORD" {
-        if t.value == "True" {
+    if t.kind == "KEYWORD":
+        if t.value == "True":
             p = advance(p)
             return "true"
-        }
-        if t.value == "False" {
+        if t.value == "False":
             p = advance(p)
             return "false"
-        }
-        if t.value == "None" {
+        if t.value == "None":
             p = advance(p)
             return "None"
-        }
-        if t.value == "not" {
+        if t.value == "not":
             p = advance(p)
             let inner: String = translate_py_expr(p)
             return "!" + inner
-        }
-    }
 
     // Identifier or function call
-    if t.kind == "IDENT" {
+    if t.kind == "IDENT":
         p = advance(p)
         let name: String = t.value
         // Check for function call
-        if current(p).kind == "OP" {
-            if current(p).value == "(" {
+        if current(p).kind == "OP":
+            if current(p).value == "(":
                 p = advance(p)
                 let mut args: List<String> = []
-                while current(p).value != ")" {
+                while current(p).value != ")":
                     if current(p).kind == "EOF" { break }
-                    if current(p).value == "," {
+                    if current(p).value == ",":
                         p = advance(p)
                         continue
-                    }
                     let arg: String = translate_py_expr(p)
                     args.push(arg)
                     // Advance past the expression tokens
-                    while current(p).value != "," {
+                    while current(p).value != ",":
                         if current(p).value == ")" { break }
                         if current(p).kind == "EOF" { break }
                         p = advance(p)
-                    }
-                }
                 if current(p).value == ")" { p = advance(p) }
                 let shims: List<StdlibShim> = python_stdlib_shims()
                 return translate_stdlib_call(name, args, shims)
-            }
-        }
         return name
-    }
 
     // List literal
-    if t.kind == "OP" {
-        if t.value == "[" {
+    if t.kind == "OP":
+        if t.value == "[":
             p = advance(p)
             let mut items: String = ""
             let mut first: Bool = true
-            while current(p).value != "]" {
+            while current(p).value != "]":
                 if current(p).kind == "EOF" { break }
-                if current(p).value == "," {
+                if current(p).value == ",":
                     p = advance(p)
                     continue
-                }
                 if !first { items = items + ", " }
                 items = items + translate_py_expr(p)
                 first = false
                 p = advance(p)
-            }
             if current(p).value == "]" { p = advance(p) }
             return "[" + items + "]"
-        }
-    }
 
     // Fallback
     p = advance(p)
     return t.value
-}
 
 // ---------------------------------------------------------------------------
 // Statement translation
 // ---------------------------------------------------------------------------
 
-fn translate_py_function(p: PyParser, ind: String) -> String {
+fn translate_py_function(p: PyParser, ind: String) -> String:
     p = expect_kw(p, "def")
     let name_tok: PyToken = current(p)
     let name: String = name_tok.value
@@ -427,43 +364,37 @@ fn translate_py_function(p: PyParser, ind: String) -> String {
     // Parse parameters
     let mut params: String = ""
     let mut first: Bool = true
-    while current(p).value != ")" {
+    while current(p).value != ")":
         if current(p).kind == "EOF" { break }
-        if current(p).value == "," {
+        if current(p).value == ",":
             p = advance(p)
             continue
-        }
         if !first { params = params + ", " }
         let pname: String = current(p).value
         p = advance(p)
         // Check for type annotation: param: type
-        if current(p).value == ":" {
+        if current(p).value == ":":
             p = advance(p)
             let ptype: String = translate_py_type(current(p).value)
             p = advance(p)
             params = params + pname + ": " + ptype
-        } else {
+        else:
             params = params + pname
-        }
         // Skip default value
-        if current(p).value == "=" {
+        if current(p).value == "=":
             p = advance(p)
             p = advance(p)
-        }
         first = false
-    }
     p = expect_op(p, ")")
 
     // Return type
     let mut ret: String = ""
-    if current(p).value == "->" {
+    if current(p).value == "->":
         p = advance(p)
         let rtype: String = translate_py_type(current(p).value)
         p = advance(p)
-        if rtype != "Void" {
+        if rtype != "Void":
             ret = " -> " + rtype
-        }
-    }
 
     p = expect_op(p, ":")
     p = skip_newlines(p)
@@ -473,106 +404,85 @@ fn translate_py_function(p: PyParser, ind: String) -> String {
 
     // Translate body (simplified: collect statements until dedent)
     let mut body_count: Int = 0
-    while current(p).kind != "EOF" {
+    while current(p).kind != "EOF":
         let t: PyToken = current(p)
-        if t.kind == "KEYWORD" {
-            if t.value == "def" || t.value == "class" {
+        if t.kind == "KEYWORD":
+            if t.value == "def" || t.value == "class":
                 break
-            }
-            if t.value == "return" {
+            if t.value == "return":
                 p = advance(p)
                 let expr: String = translate_py_expr(p)
                 out = out + ind + "    return " + expr + "\n"
                 // Skip to next newline
-                while current(p).kind != "NEWLINE" {
+                while current(p).kind != "NEWLINE":
                     if current(p).kind == "EOF" { break }
                     p = advance(p)
-                }
                 p = skip_newlines(p)
                 body_count = body_count + 1
                 continue
-            }
-            if t.value == "pass" {
+            if t.value == "pass":
                 p = advance(p)
                 p = skip_newlines(p)
                 continue
-            }
-        }
         // Skip unrecognized tokens to next newline
-        while current(p).kind != "NEWLINE" {
+        while current(p).kind != "NEWLINE":
             if current(p).kind == "EOF" { break }
             p = advance(p)
-        }
         p = skip_newlines(p)
         body_count = body_count + 1
         if body_count > 50 { break }
-    }
 
     out = out + ind + "}\n"
     return out
-}
 
 // ---------------------------------------------------------------------------
 // Main translation entry point
 // ---------------------------------------------------------------------------
 
-fn translate_python(source: String, filename: String) -> String {
+fn translate_python(source: String, filename: String) -> String:
     let tokens: List<PyToken> = tokenize_python(source)
     let mut p: PyParser = new_py_parser(tokens, filename)
     let mut out_text: String = "// Translated from " + filename + " by mapanare transpile\n\n"
 
     p = skip_newlines(p)
 
-    while current(p).kind != "EOF" {
+    while current(p).kind != "EOF":
         let t: PyToken = current(p)
 
         // Function definition
-        if t.kind == "KEYWORD" {
-            if t.value == "def" {
+        if t.kind == "KEYWORD":
+            if t.value == "def":
                 out_text = out_text + translate_py_function(p, "") + "\n"
                 // Skip past the function body tokens
-                while current(p).kind != "EOF" {
-                    if current(p).kind == "KEYWORD" {
-                        if current(p).value == "def" || current(p).value == "class" {
+                while current(p).kind != "EOF":
+                    if current(p).kind == "KEYWORD":
+                        if current(p).value == "def" || current(p).value == "class":
                             break
-                        }
-                    }
                     p = advance(p)
-                }
                 continue
-            }
-            if t.value == "import" || t.value == "from" {
+            if t.value == "import" || t.value == "from":
                 // Skip import statements
-                while current(p).kind != "NEWLINE" {
+                while current(p).kind != "NEWLINE":
                     if current(p).kind == "EOF" { break }
                     p = advance(p)
-                }
                 p = skip_newlines(p)
                 out_text = out_text + "// import skipped\n"
                 continue
-            }
-            if t.value == "class" {
+            if t.value == "class":
                 // Simplified class handling
                 p = advance(p)
                 let cname: String = current(p).value
                 p = advance(p)
                 out_text = out_text + "struct " + cname + " {\n}\n\n"
                 // Skip class body
-                while current(p).kind != "EOF" {
-                    if current(p).kind == "KEYWORD" {
-                        if current(p).value == "def" || current(p).value == "class" {
+                while current(p).kind != "EOF":
+                    if current(p).kind == "KEYWORD":
+                        if current(p).value == "def" || current(p).value == "class":
                             break
-                        }
-                    }
                     p = advance(p)
-                }
                 continue
-            }
-        }
 
         // Skip other top-level tokens
         p = advance(p)
-    }
 
-    return out_text
-}
+    out_text

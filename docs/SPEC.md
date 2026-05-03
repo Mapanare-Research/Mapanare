@@ -1,32 +1,117 @@
 # Mapanare Language Specification
 
-**Version:** 5.7.1
-**Status:** Live — synced to the v5.7.1 cut (2026-04-26)
+**Version:** 5.30.0
+**Status:** Live — synced to the v5.30.0 cut (2026-05-02)
 
-> **v5.7.1 — pre-panel polish.** SPEC reflects the v5.4.0–v5.7.0
-> arc: native goldens **66/66** (first time in project history,
-> v5.7.0); self-hosted parity for tensor literals + multi-dim
-> indexing + broadcast + slicing + reductions (v5.6.0–v5.6.3);
-> async / `await` / `block_on` via real LLVM coroutines in the
-> self-hosted emitter (v5.5.4–v5.5.7); closure-typed function
-> parameters (v5.7.0 Sh.7); or-pattern + identifier `None`
-> resolution (v5.7.0 B); drop-glue ownership tracking for
-> string / list / boxed / tensor (v5.4.0–v5.6.4); self-host
-> 3-stage fixed-point restored to NEAR (v5.6.11). See
-> `docs/roadmap/v5/CLOSEOUT_ARC.md` for the complete arc trace.
+> **v5.28.0 → v5.30.0 — RE-PANEL + Win64 ABI closeout +
+> packaging.** SPEC body unchanged from the v5.21.0 cut.
+> v5.28.0 (RE-PANEL — 7-reviewer aggregate 9.72/10, +0.31
+> recovery from v5.22.0's 9.41 floor), v5.29.0 (Mb.10 self-host
+> emitter routing for `__mn_indent_to_braces` Win64 ABI; Pv.7 /
+> Pv.8 CI race prevention), and v5.30.0 (Vb.\* packaging-only
+> version bump) together added **zero language features, zero
+> new MIR ops, zero new IR shapes, zero new runtime functions**
+> — panel + codegen-correctness + packaging releases only. The
+> v5.21.0 sync block below remains authoritative for language
+> semantics.
+
+> **v5.27.0 — Mc.\* parity arc CLOSED.** SPEC body unchanged from
+> the v5.21.0 cut. v5.25.0 (Pv.\* CI prevention), v5.26.0 (Mb.7 +
+> Mb.9 codegen / Win64 ABI), v5.26.1 (Eu.\* enum-payload codegen
+> closures), and v5.27.0 (Mc.8 + Mc.9 + Tk.1 formatter polish)
+> together added **zero language features, zero new MIR ops, zero
+> new IR shapes, zero new runtime functions** — codegen-correctness
+> + tooling-polish releases only. The v5.21.0 sync block below
+> remains authoritative for language semantics.
+
+> **v5.24.0 — Hy.\* hygiene re-anchor.** SPEC body unchanged from
+> the v5.21.0 cut. The v5.22.0 panel, v5.23.0/v5.23.1/v5.23.2
+> recovery arc, and v5.24.0 hygiene release added **zero language
+> features, zero new MIR ops, zero new IR shapes** (RC.\* CI
+> recovery, Mb.\* memory hygiene, Te.3.B brace-deprecation mirror,
+> Hy.\* structural gates — all infrastructure). The v5.21.0 sync
+> block below remains authoritative for language semantics.
+
+> **v5.21.1 — pre-panel docs hygiene.** SPEC re-synced from the
+> v5.7.1 cut to reflect the **v5.13–v5.21 terseness arc** plus
+> tooling/packaging waypoints. No language regressions; every
+> form documented below either was already present at v5.7.1 or
+> ships additively. The v5.22.0 panel cross-references this
+> sync block against the SESSION_REPORTs.
+
+> **What changed since the v5.7.1 sync.** The v5.13–v5.21 arc
+> is the largest feature-velocity arc in v5 history. Six
+> additive language features (Te.1–Te.6) shipped with **zero
+> new MIR ops, zero new IR shapes, zero new runtime function
+> additions** — every desugaring routes through existing
+> primitives. Strict 3-stage fixed point preserved across all
+> 13 consecutive releases (longest streak in project history).
+>
+> - **v5.13.0 — Mc.2 `mnc fmt`.** Idempotent, AST-preserving,
+>   whitespace-only canonicalizer. The linchpin: every later
+>   terseness release adds one rewrite pass on top.
+> - **v5.14.0 — Te.1 colon-block syntax.** Indent-based blocks
+>   for every block-introducing construct alongside `{}`. New
+>   reserved word `pass` for empty bodies.
+> - **v5.14.1 — bootstrap colon-block mirror.** New
+>   `__mn_indent_to_braces` C-runtime preprocessor wired into
+>   the bootstrap parser; `mnc-stage1` now accepts colon-style
+>   on every parseable golden.
+> - **v5.15.0 — Te.2 comprehensions, terse lambdas,
+>   implicit-return one-liner.** `[expr for x in iter (if c)*]`,
+>   `#{ k: v for ... }`, `|x| body`, `fn name(args) = expr`.
+> - **v5.15.1 — bootstrap comprehension mirror.**
+> - **v5.16.0 — Te.4 self-host string-interpolation parity.**
+>   `mnc-stage1` lexes/parses/lowers `"${expr}"` identically to
+>   the Python bootstrap.
+> - **v5.17.0/.1/.2 — Sh.\* mechanical self-host rewrite to
+>   terse syntax.** 17 modules; **-3,950 lines (-13.8%)** off
+>   the v5.13.0 baseline. Strict fixed point preserved at every
+>   per-module commit.
+> - **v5.18.0 — Mc.\* LSP + init + check tooling pack.**
+>   `mapa lsp` (pygls), `mapa init` (template scaffolding),
+>   `mapa check --all` (recursive walk), VSCode extension at
+>   `editors/vscode/`.
+> - **v5.19.0 — Te.3 `{}` soft-deprecation.** Brace-syntax
+>   sources still parse but emit a one-time per-file warning;
+>   `mnc fmt` (no flag) auto-migrates `{}` → `:`.
+>   `MAPANARE_NO_BRACE_WARNING=1` opts out. Hard removal at
+>   v6.0.
+> - **v5.19.1 — Dk.\* GHCR Docker images.**
+>   `mapanare-builder` / `mapanare-runtime` on GHCR;
+>   `mnc init --docker` overlay.
+> - **v5.20.0 — Te.5 struct ergonomics.** Field shorthand
+>   (`Point { x, y }`), struct update (`{ x: 5, ..base }`), let
+>   destructuring, refutable-binding forms (if-let, while-let,
+>   let-else).
+> - **v5.20.1 — bootstrap Te.5 mirror.** `mnc-stage1` parses
+>   and lowers all four Te.5 surface forms identically.
+> - **v5.21.0 — Te.6 chained comparisons.** Python-style
+>   `0 < x < 10` parses as a single chained expression with
+>   once-evaluation of interior operands. Six comparison
+>   operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) merged at a
+>   single precedence level (was: ordering at L4, equality
+>   at L3 pre-v5.21.0).
+> - **Goldens 66/66 → 95/95.** +29 new goldens covering Te.1
+>   `pass`, Te.2 comprehensions/lambda/implicit-return, Te.4
+>   string-interp, Te.5 struct ergonomics, Te.6 chained-cmp.
+> - **Strict 3-stage fixed point preserved** at 238,086 lines
+>   / 0 diff (was 226,603 at v5.9.0).
 
 Mapanare is an AI-native compiled programming language where agents, signals, streams, and tensors are first-class primitives -- not libraries. The production backend targets LLVM for native machine code; a C backend (gcc/clang) exists as fallback; a WebAssembly backend targets browser and server environments.
 
 > **Spec sync discipline.** Each release fact-checks this spec
 > against the live grammar (`mapanare/mapanare.lark`), type system
 > (`mapanare/types.py`), and self-hosted lexer
-> (`mapanare/self/lexer.mn`). The v5.7.1 sync re-audits §2.1
-> (keywords + bilingual master list), §3 (type system), §3.11
-> (tensors), §5.6 (or-patterns), §6.3 (closures), §27.1 (stability
-> count), §28 (stdlib), §29 (async), and Appendix B (compilation
-> pipeline) against the v5.4.0–v5.7.0 changes. If you discover
-> drift, open a documentation issue against the specific section
-> number.
+> (`mapanare/self/lexer.mn`). The v5.21.1 sync re-audits §2.1
+> (keywords — `pass` reserved at v5.14.0), §2.2 (operator
+> precedence — chained comparisons + L7 merge at v5.21.0),
+> §3.7 (struct ergonomics — field shorthand, struct update,
+> let destructuring), §4.0 (block syntax — Te.3
+> soft-deprecation), §4.3.1 (conditional binding), and §6.x
+> (closures + comprehensions + lambdas) against the v5.13–v5.21
+> changes. If you discover drift, open a documentation issue
+> against the specific section number.
 
 ---
 
@@ -110,6 +195,7 @@ spelling.
 | `new` | — | Declarations | Struct construction |
 | `none` | `nada` | Literals | `Option<T>::None` |
 | `output` | — | Agents | Channel declaration inside `agent` block |
+| `pass` | — | Statements | No-op statement; required for empty colon-block bodies (see §4.0) |
 | `pipe` | — | Declarations | Pipeline declaration |
 | `pub` | — | Visibility | Public visibility modifier |
 | `return` | `da` | Functions | Return from function |
@@ -343,6 +429,27 @@ let result = data |> tokenize |> classify |> format
 | `<=` | Less or equal | Ordering comparison. |
 | `>=` | Greater or equal | Ordering comparison. |
 
+##### Chained Comparisons (v5.21.0)
+
+Comparison operators chain Python-style: `0 < x < 10` means
+`0 < x && x < 10`, with `x` evaluated exactly once. All six
+comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) sit at
+the same precedence level and freely chain in any combination.
+The chain produces a single `Bool`.
+
+```mn
+let in_range: Bool = 0 <= x < 10              // half-open
+let triple: Bool = a == b == c                // all equal
+let mixed: Bool = 0 < x <= 10                 // both ends
+```
+
+Mixed-direction chains are legal but rare: `a < b > c` means
+`a < b && b > c`. Each adjacent pair evaluates independently.
+
+The middle term in a chain is bound to a synthesized local
+before the `&&`-chain is built, so side-effecting expressions
+run exactly once: `0 < f() < 10` calls `f()` once.
+
 #### Logical Operators
 
 | Operator | Name | Description |
@@ -380,13 +487,18 @@ let result = data |> tokenize |> classify |> format
 | 4 | `+` `-` |
 | 5 | `..` `..=` |
 | 6 | `\|>` |
-| 7 | `<` `>` `<=` `>=` |
-| 8 | `==` `!=` |
-| 9 | `&&` |
-| 10 | `\|\|` |
-| 11 | `?` |
-| 12 | `=` `+=` `-=` `*=` `/=` `<-` |
-| 13 (lowest) | `=>` |
+| 7 | `<` `>` `<=` `>=` `==` `!=` (chainable) |
+| 8 | `&&` |
+| 9 | `\|\|` |
+| 10 | `?` |
+| 11 | `=` `+=` `-=` `*=` `/=` `<-` |
+| 12 (lowest) | `=>` |
+
+> v5.21.0 — comparison operators chain at a single precedence
+> level. Pre-v5.21.0, `==`/`!=` sat at strictly lower precedence
+> than ordering operators; `a == b < c` parsed as `a == (b < c)`.
+> v5.21.0 merges them: the same expression now chains as
+> `(a == b) && (b < c)`, matching Python.
 
 ### 2.3 Literals
 
@@ -578,9 +690,8 @@ Mapanare uses local type inference. The compiler infers types from the immediate
 - **Function parameters:** All function parameters require type annotations.
 
   ```mn
-  fn add(a: Int, b: Int) -> Int {
+  fn add(a: Int, b: Int) -> Int:
       return a + b
-  }
   ```
 
 - **Function return types:** Required when the function signature needs to be clear. Can be omitted if the return type is `Void`.
@@ -604,10 +715,9 @@ Mapanare uses local type inference. The compiler infers types from the immediate
 Structs are product types -- named collections of fields.
 
 ```mn
-struct Point {
-    x: Float,
-    y: Float,
-}
+struct Point:
+    x: Float
+    y: Float
 ```
 
 #### Struct Construction
@@ -620,25 +730,67 @@ let p = new Point { x: 1.0, y: 2.0 }
 
 The `new` keyword is required for LALR grammar disambiguation (it distinguishes struct literals from blocks after `if`/`for`/`while`).
 
+#### Field Shorthand (since v5.20.0)
+
+When a field initializer's value is a local variable with the same name as the field, the colon and value can be omitted:
+
+```mn
+let x = 1.0
+let y = 2.0
+let p = new Point { x, y }              // = new Point { x: x, y: y }
+let q = new Point { x: 99.0, y }        // mixed forms allowed
+```
+
+The shorthand is purely syntactic — IR is byte-identical to the long form.
+
+#### Struct Update Syntax (since v5.20.0)
+
+`..base` at the end of a struct literal copies any unmentioned fields from `base`. The base must be the same struct type.
+
+```mn
+let p1 = new Point { x: 1.0, y: 2.0 }
+let p2 = new Point { x: 99.0, ..p1 }    // x=99, y=p1.y
+let p3 = new Point { ..p1 }             // pure copy
+```
+
+Only one `..base` per literal is allowed; it must come last (after all explicit overrides). Override fields can appear in any order; `..base` always trails.
+
+#### Destructuring in `let` (since v5.20.0)
+
+A struct pattern in a `let` binding extracts fields into local variables:
+
+```mn
+let p = new Point { x: 1.0, y: 2.0 }
+let Point { x, y } = p              // binds x and y
+let Point { x, .. } = p             // binds only x (rest pattern)
+let Point { mut x, y } = p          // x is mutable, y is not
+let mut Point { x, y } = p          // both mutable
+```
+
+Nested struct patterns are supported. The outer field name is **not** bound when the colon-then-pattern form is used; only the leaf names are:
+
+```mn
+let Outer { inner: Inner { a }, b } = o   // binds a and b (NOT inner)
+```
+
+When the right-hand side is a bare identifier, the lowering is exactly equivalent to `let x = p.x; let y = p.y;`.
+
 #### Methods via `impl`
 
 ```mn
-impl Point {
-    fn distance(self, other: Point) -> Float {
+impl Point:
+    fn distance(self, other: Point) -> Float:
         let dx = self.x - other.x
         let dy = self.y - other.y
         return Math::sqrt(dx * dx + dy * dy)
-    }
-}
 ```
 
 #### Generic Structs
 
 ```mn
-struct Pair<A, B> {
-    first: A,
-    second: B,
-}
+struct Pair<A, B>:
+    first: A
+    second: B
 ```
 
 ### 3.8 Enum Types (Algebraic Data Types)
@@ -647,13 +799,12 @@ Enums are sum types -- tagged unions where each variant can carry different data
 
 <!-- pseudo -->
 ```mn
-enum Shape {
-    Circle(Float),
-    Rectangle(Float, Float),
-    Triangle(Float, Float, Float),
-}
+enum Shape:
+    Circle(Float)
+    Rectangle(Float, Float)
+    Triangle(Float, Float, Float)
 
-fn area(shape: Shape) -> Float {
+fn area(shape: Shape) -> Float:
     match shape {
         Circle(r)          => 3.14159 * r * r,
         Rectangle(w, h)    => w * h,
@@ -662,7 +813,6 @@ fn area(shape: Shape) -> Float {
             return Math::sqrt(s * (s - a) * (s - b) * (s - c))
         },
     }
-}
 ```
 
 #### Variants
@@ -670,11 +820,10 @@ fn area(shape: Shape) -> Float {
 Each variant can carry zero or more values:
 
 ```mn
-enum Token {
+enum Token:
     Eof,                           // no data
     Number(Int),                   // one value
     Pair(String, Int),             // two values
-}
 ```
 
 #### Exhaustiveness
@@ -684,10 +833,9 @@ Match expressions on enums must be exhaustive -- every variant must be handled, 
 #### Generic Enums
 
 ```mn
-enum Either<A, B> {
-    Left(A),
-    Right(B),
-}
+enum Either<A, B>:
+    Left(A)
+    Right(B)
 ```
 
 ### 3.9 Option and Result Types
@@ -701,10 +849,9 @@ enum Either<A, B> {
 let x: Option<Int> = Some(42)
 let y: Option<Int> = none
 
-match x {
-    Some(v) => print("Got: ${v}"),
-    None    => print("Nothing"),
-}
+match x:
+    Some(v) => print("Got: ${v}")
+    None    => print("Nothing")
 ```
 
 `Option` values must be explicitly unwrapped before use. There is no implicit null.
@@ -723,15 +870,13 @@ match x {
 
 <!-- pseudo -->
 ```mn
-fn parse_int(s: String) -> Result<Int, String> {
+fn parse_int(s: String) -> Result<Int, String>:
     // ...
-}
 
 let result = parse_int("42")
-match result {
-    Ok(n)  => print("Parsed: ${n}"),
-    Err(e) => print("Error: ${e}"),
-}
+match result:
+    Ok(n)  => print("Parsed: ${n}")
+    Err(e) => print("Error: ${e}")
 ```
 
 **Construction:**
@@ -741,10 +886,9 @@ match result {
 **Error propagation:** The `?` operator provides concise error propagation:
 
 ```mn
-fn process(s: String) -> Result<Int, String> {
+fn process(s: String) -> Result<Int, String>:
     let n = parse_int(s)?    // returns Err early if parse fails
     return Ok(n * 2)
-}
 ```
 
 When `?` is applied to a `Result`, it unwraps `Ok(v)` for the expression's value or returns `Err(e)` from the enclosing function. The enclosing function must return a compatible `Result` type.
@@ -754,17 +898,15 @@ When `?` is applied to a `Result`, it unwraps `Ok(v)` for the expression's value
 Agents have typed input and output channels that form their public interface.
 
 ```mn
-agent Counter {
+agent Counter:
     input increment: Int
     output count: Int
 
     let mut state: Int = 0
 
-    fn handle(increment: Int) -> Int {
+    fn handle(increment: Int) -> Int:
         self.state += increment
         return self.state
-    }
-}
 ```
 
 When you `spawn` an agent, the returned handle exposes the input and output channels with their declared types. See section 9 (Agent Model) for full semantics.
@@ -886,37 +1028,121 @@ Function types describe the signature of a callable value (function pointer or c
 type Predicate = fn(Int) -> Bool
 type Mapper = fn(String) -> String
 
-fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+fn apply(f: fn(Int) -> Int, x: Int) -> Int:
     return f(x)
-}
 ```
 
 ---
 
 ## 4. Control Flow
 
+### 4.0 Block Syntax
+
+Mapanare accepts colon-style as **canonical** (since v5.19.0).
+Brace-style is **soft-deprecated**: it parses but emits a
+warning at parse time, and `mnc fmt` (no flag) auto-migrates
+`{}` → `:` per file. Hard removal is scheduled for **v6.0**.
+Both styles still produce identical AST and identical IR until
+hard removal.
+
+**Colon style** (canonical, since v5.14.0; default since v5.19.0):
+
+```mn
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        return 1
+    else:
+        return n * factorial(n - 1)
+```
+
+Rules for colon style:
+
+- A line ending with `:` opens a block; the block extends across
+  every following line at deeper indentation.
+- Indentation is **4 spaces per level**. Tabs in indent are
+  converted to 4 spaces by the formatter.
+- Empty bodies require the `pass` keyword:
+  ```mn
+  fn empty():
+      pass
+  ```
+- Single-line `if x: y` form is **not** supported. The v5.14.0
+  SPEC incorrectly promised this form for v5.21.0; the v5.21.0
+  small-ergonomic-wins cycle shipped chained comparisons (Te.6)
+  instead, and the single-line form was rescoped at v5.21.1 to
+  v6.0 — when the brace-form removal will eliminate the parser
+  ambiguity that makes single-line colon-form complex to integrate
+  cleanly with brace shape. Until v6.0, put the body on the next
+  line.
+
+**Brace style** (legacy, soft-deprecated since v5.19.0; hard
+removal at v6.0):
+
+<!-- preserve-brace -->
+```mn
+fn factorial(n: Int) -> Int {
+    if n <= 1 {
+        return 1
+    } else {
+        return n * factorial(n - 1)
+    }
+}
+```
+
+Brace-syntax sources parse but the parser emits one warning
+per file:
+
+```
+warning: <file>: uses deprecated {}-block syntax (N occurrences).
+Run `mnc fmt <file>` to migrate. Hard removal in v6.0.
+```
+
+Set `MAPANARE_NO_BRACE_WARNING=1` to suppress the warning
+(useful in CI scripts that already track the migration). Use
+`mnc fmt --keep-braces` to preserve braces when running the
+formatter. The default `mnc fmt <file>` auto-migrates to colon
+style. Example invocations:
+
+```bash
+# Auto-migrate brace style to colon style (recommended):
+mnc fmt src/main.mn
+
+# Apply canonical formatting while keeping brace syntax (soak-window
+# concession — useful for codebases that prefer to migrate later):
+mnc fmt --keep-braces src/main.mn
+```
+
+As of v5.14.1, both compilers — the Python bootstrap and the native
+`mnc-stage1` — fully support both syntaxes. Source is preprocessed
+into brace form before tokenization on both sides; brace-only
+sources hit a fast path with negligible overhead. The
+`tests/bootstrap/test_indent_preprocessor.py` cross-bootstrap test
+asserts byte-identical output between
+`mapanare.parser._indent_to_braces` (Python) and
+`runtime/native/mapanare_core.c::__mn_indent_to_braces` (C) on every
+parseable golden. Mixing brace and colon in one source file is also
+legal at parse time — only the colon-introduced blocks get rewritten.
+
 ### 4.1 If / Else
 
 `if` is an expression — it evaluates to a value when both branches are present.
 
 ```mn
-if condition {
+if condition:
     // then branch
-} else {
+else:
     // else branch
-}
 ```
 
 Chained conditions use `else if`:
 
 ```mn
-if x > 10 {
+if x > 10:
     print("big")
-} else if x > 0 {
+else if x > 0:
     print("small")
-} else {
+else:
     print("non-positive")
-}
 ```
 
 The condition must be of type `Bool`.
@@ -926,43 +1152,121 @@ The condition must be of type `Bool`.
 Iterates over a range or iterable:
 
 ```mn
-for i in 0..10 {
+for i in 0..10:
     print("${i}")
-}
 
-for item in items {
+for item in items:
     process(item)
-}
 ```
 
 The loop variable is immutable within the body. The iterable can be a `Range`, `List<T>`, `Stream<T>`, or `Map<K, V>` (iterates over entries).
+
+For pure value-collection loops, prefer a comprehension:
+
+```mn
+let doubled: List<Int> = [x * 2 for x in xs]
+let positive: List<Int> = [x for x in xs if x > 0]
+let lookup:   Map<Int, Int> = #{ k: k * k for k in 0..10 }
+```
 
 ### 4.3 While Loop
 
 Loops while a condition is true:
 
 ```mn
-fn main() {
+fn main():
     let mut count = 0
-    while count < 10 {
+    while count < 10:
         print("${count}")
         count += 1
-    }
-}
 ```
 
 The condition must be of type `Bool`. Evaluated before each iteration.
+
+### 4.3.1 Conditional Binding (since v5.20.0)
+
+Three refutable-binding forms make working with `Option`, `Result`,
+and other tagged variants more concise than full `match`
+expressions.
+
+#### `if let`
+
+`if let <pattern> = <scrutinee> { ... } [else { ... }]` runs the
+then-block iff `scrutinee` matches `pattern`, binding any pattern
+variables in the then-block scope. The optional else-block runs
+when the pattern does not match.
+
+```mn
+if let Some(x) = opt:
+    use(x)
+else:
+    fallback()
+```
+
+Equivalent to:
+
+```mn
+match opt:
+    Some(x) => use(x),
+    _       => fallback()
+```
+
+#### `while let`
+
+`while let <pattern> = <scrutinee> { body }` re-evaluates
+`scrutinee` each iteration; loops as long as the pattern matches,
+exits otherwise.
+
+```mn
+while let Some(x) = pop():
+    process(x)
+```
+
+Equivalent to:
+
+```mn
+while true:
+    match pop():
+        Some(x) => process(x),
+        _       => break
+```
+
+#### `let else`
+
+`let <pattern> = <scrutinee> else { ... }` is a refutable binding
+where the else-block runs (and **must diverge**) when the pattern
+fails. Pattern variables are bound for the rest of the surrounding
+scope.
+
+```mn
+fn parse_pos(s: String) -> Result<Int, String>:
+    let Some(n) = parse_int(s) else:
+        return Err("not int")
+    if n < 0:
+        return Err("negative")
+    return Ok(n)
+```
+
+The else block must end with a divergent statement (`return`,
+`break`, `continue`, `panic(...)`, or a nested form where every
+branch diverges). The function's implicit return at the tail does
+**not** satisfy the divergence requirement — the else block must
+itself end with an explicit divergent form. The compiler emits an
+error if the else block can fall through.
+
+In v5.20.0, `let else` patterns are restricted to constructor
+patterns with 0 or 1 args (single identifier or wildcard) and
+top-level wildcard patterns. Multi-binding patterns are deferred
+to a future release.
 
 ### 4.4 Break
 
 `break` exits the innermost `for` or `while` loop immediately:
 
 ```mn
-for i in 0..100 {
-    if i > 10 {
+for i in 0..100:
+    if i > 10:
         break
-    }
-}
 ```
 
 ### 4.5 Return
@@ -970,12 +1274,19 @@ for i in 0..100 {
 `return` exits the current function with a value:
 
 ```mn
-fn double(x: Int) -> Int {
+fn double(x: Int) -> Int:
     return x * 2
-}
 ```
 
-`return` without a value returns `Void`. If omitted, the last expression in the function body is the implicit return value.
+`return` without a value returns `Void`. If omitted, the last expression in the function body is the implicit return value:
+
+```mn
+fn double(x: Int) -> Int:
+    x * 2
+
+// Or as a one-liner (function-init form, v5.15.0):
+fn triple(x: Int) -> Int = x * 3
+```
 
 ### 4.6 Match Expression
 
@@ -983,10 +1294,9 @@ Pattern matching dispatches on the structure of a value. See section 5 (Pattern 
 
 <!-- pseudo -->
 ```mn
-match value {
-    Some(x) => print("got ${x}"),
-    None    => print("nothing"),
-}
+match value:
+    Some(x) => print("got ${x}")
+    None    => print("nothing")
 ```
 
 ### 4.7 Assert Statement
@@ -1009,11 +1319,10 @@ The optional second argument is an error message expression (typically a string)
 
 <!-- pseudo -->
 ```mn
-match expr {
-    pattern1 => expr_or_block,
-    pattern2 => expr_or_block,
+match expr:
+    pattern1 => expr_or_block
+    pattern2 => expr_or_block
     ...
-}
 ```
 
 Match arms are separated by commas. Each arm consists of a pattern, `=>`, and either an expression or a block.
@@ -1033,26 +1342,23 @@ Enum variants are destructured by their constructor pattern:
 
 <!-- pseudo -->
 ```mn
-enum Expr {
-    Num(Int),
-    Add(Int, Int),
-}
+enum Expr:
+    Num(Int)
+    Add(Int, Int)
 
-match expr {
-    Num(n)    => print("number: ${n}"),
-    Add(a, b) => print("sum: ${a + b}"),
-}
+match expr:
+    Num(n)    => print("number: ${n}")
+    Add(a, b) => print("sum: ${a + b}")
 ```
 
 Nested destructuring is supported:
 
 <!-- pseudo -->
 ```mn
-match result {
-    Ok(Some(v)) => print("got ${v}"),
-    Ok(None)    => print("ok but empty"),
-    Err(e)      => print("error: ${e}"),
-}
+match result:
+    Ok(Some(v)) => print("got ${v}")
+    Ok(None)    => print("ok but empty")
+    Err(e)      => print("error: ${e}")
 ```
 
 ### 5.4 Exhaustiveness
@@ -1072,12 +1378,11 @@ A match arm can have an optional `if` guard between the pattern and `=>`:
 
 <!-- pseudo -->
 ```mn
-match n {
-    x if x < 0 => "negative",
-    0 => "zero",
-    x if x > 0 => "positive",
+match n:
+    x if x < 0 => "negative"
+    0 => "zero"
+    x if x > 0 => "positive"
     _ => "unreachable"
-}
 ```
 
 The guard expression must evaluate to `Bool`. If the guard is `false`, the match falls through to the next arm. Guards can reference names bound by the pattern (e.g., `Some(x) if x > 0`).
@@ -1090,12 +1395,11 @@ A pattern can be a disjunction of alternatives separated by `|`:
 
 <!-- pseudo -->
 ```mn
-match token {
-    Plus | Minus => "additive",
-    Star | Slash | Mod => "multiplicative",
-    Eof => "end",
+match token:
+    Plus | Minus => "additive"
+    Star | Slash | Mod => "multiplicative"
+    Eof => "end"
     _ => "other"
-}
 ```
 
 All alternatives in an or-pattern must bind the same set of variable names. (The current implementation checks name-set equality only; type compatibility across alternatives is not yet enforced.) An or-pattern expands coverage: `A | B` covers both `A` and `B`.
@@ -1131,11 +1435,10 @@ The `?` operator propagates errors from `Result<T, E>` and unwraps `Option<T>`:
 
 <!-- pseudo -->
 ```mn
-fn parse_config(path: String) -> Result<Config, String> {
+fn parse_config(path: String) -> Result<Config, String>:
     let text = read_file(path)?
     let config = parse(text)?
     return Ok(config)
-}
 ```
 
 When applied to a `Result`, `?` returns the `Ok` value or early-returns the `Err`. When applied to an `Option`, `?` returns the `Some` value or early-returns `None`. The enclosing function must return a compatible `Result` or `Option` type.
@@ -1147,25 +1450,38 @@ When applied to a `Result`, `?` returns the `Ok` value or early-returns the `Err
 ### 6.1 Function Definition
 
 ```mn
-fn name(param1: Type1, param2: Type2) -> ReturnType {
+fn name(param1: Type1, param2: Type2) -> ReturnType:
     // body
-}
 ```
 
 Functions can be marked `pub` for visibility outside the module:
 
 ```mn
-pub fn add(a: Int, b: Int) -> Int {
+pub fn add(a: Int, b: Int) -> Int:
     return a + b
-}
 ```
+
+#### One-liner sugar (v5.15.0 Te.2.D)
+
+When the entire body is a single expression, the brace block can be
+elided in favour of `= expr`:
+
+```mn
+fn double(x: Int) -> Int = x * 2
+fn id<T>(y: T) -> T = y
+pub fn pi() -> Float = 3.14159
+```
+
+`fn name(args) [-> RetType] = expr` is exactly equivalent to
+`fn name(args) [-> RetType] { return expr }`. The block-form
+last-expression-as-result rule (§4.5) is unrelated and continues to
+work as before.
 
 ### 6.2 Generic Functions
 
 ```mn
-fn identity<T>(x: T) -> T {
+fn identity<T>(x: T) -> T:
     return x
-}
 
 let a = identity(42)       // T = Int
 let b = identity("hello")  // T = String
@@ -1185,6 +1501,22 @@ Multi-parameter lambdas use tuple syntax on the left of `=>`:
 ```mn
 let sum = (a, b) => a + b
 ```
+
+#### Terse pipe-bar syntax (v5.15.0 Te.2.F)
+
+The `|x| body` form is the canonical short syntax for lambdas:
+
+```mn
+let double = |x| x * 2
+let add = |a, b| a + b
+let answer = || 42
+```
+
+Single-arg, multi-arg, and zero-arg variants all use the pipe-bar
+form — there is no bare-name shorthand (`x => body` style is
+deliberately not introduced). The terse form lowers to the same
+`LambdaExpr` AST node as `(x) => body` and is IR-equivalent modulo
+SSA naming.
 
 Note: Lambda parameter types are inferred from context. Type annotations on lambda parameters are not supported in the grammar — use a named function if explicit types are needed.
 
@@ -1209,9 +1541,8 @@ Functions can accept closures (and named functions) as parameters
 using function-type annotations:
 
 ```mn
-fn apply(f: fn(Int) -> Int, x: Int) -> Int {
+fn apply(f: fn(Int) -> Int, x: Int) -> Int:
     return f(x)
-}
 
 let double = (x) => x * 2
 let result = apply(double, 5)   // 10
@@ -1244,18 +1575,24 @@ Decorators are compile-time annotations applied to definitions:
 
 ```mn
 @test
-fn test_addition() {
+fn test_addition():
     assert 1 + 1 == 2
-}
 
 @supervised("one_for_one")
-agent Worker {
+agent Worker:
     // ...
-}
 ```
 
 Built-in decorators:
-- `@test` — marks a function as a test case.
+- `@test` — marks a function as a test case. Run with
+  `mapanare test <file.mn>` (Python bootstrap) or
+  `mnc test <file.mn>` (native). Each `@test` function executes in
+  its own subprocess so an `assert` failure surfaces as a single
+  test FAIL instead of taking down the whole suite. Optional
+  message form `assert COND, "msg"` is printed on failure. Stable
+  since v5.13.1; CI smoke test at
+  `tests/test_at_test_runtime.py` guards both runners against
+  regression.
 - `@supervised(strategy)` — configures agent restart policy.
 - `@restart(policy, max, window)` — detailed restart configuration.
 - `@allow(permission)` — security permission annotation.
@@ -1269,13 +1606,11 @@ Built-in decorators:
 A trait defines a set of method signatures that types can implement:
 
 ```mn
-trait Display {
+trait Display:
     fn to_string(self) -> String
-}
 
-trait Eq {
+trait Eq:
     fn eq(self, other: Self) -> Bool
-}
 ```
 
 Trait methods declare their signatures without bodies. The `self` parameter indicates the method receiver.
@@ -1285,17 +1620,13 @@ Trait methods declare their signatures without bodies. The `self` parameter indi
 Types implement traits via `impl Trait for Type` blocks:
 
 ```mn
-impl Display for Point {
-    fn to_string(self) -> String {
+impl Display for Point:
+    fn to_string(self) -> String:
         return "(${self.x}, ${self.y})"
-    }
-}
 
-impl Eq for Point {
-    fn eq(self, other: Point) -> Bool {
+impl Eq for Point:
+    fn eq(self, other: Point) -> Bool:
         return self.x == other.x && self.y == other.y
-    }
-}
 ```
 
 The compiler verifies that all trait methods are implemented. Missing or extra methods are compile-time errors.
@@ -1314,12 +1645,38 @@ The compiler verifies that all trait methods are implemented. Missing or extra m
 Generic type parameters can be constrained with trait bounds:
 
 ```mn
-fn print_value<T: Display>(x: T) {
+fn print_value<T: Display>(x: T):
     print(x.to_string())
-}
 ```
 
 The bound `T: Display` means `T` must implement the `Display` trait.
+
+**Worked example.** Define a trait, implement it for one type, then
+write a generic function that operates on any type bound by that trait:
+
+```mn
+struct Score:
+    n: Int
+
+trait Comparable:
+    fn compare(self, other: Self) -> Int
+
+impl Comparable for Score:
+    fn compare(self, other: Score) -> Int:
+        return self.n - other.n
+
+fn min<T: Comparable>(a: T, b: T) -> T:
+    if a.compare(b) < 0:
+        return a
+    return b
+```
+
+Calling `min(Score { n: 3 }, Score { n: 7 })` monomorphizes to a
+specialized `min<Score>` (see §13.4) and returns the lower-scored
+value. Adding `impl Comparable for <other-type>` would let the same
+`min` function work on that type without further changes — the trait
+bound is the only contract `min` relies on. A complete runnable
+version of this example lives at `examples/struct_ergo/generic_trait.mn`.
 
 ---
 
@@ -1386,7 +1743,7 @@ Agents are the fundamental concurrency primitive in Mapanare. They are concurren
 ### 9.2 Definition
 
 ```mn
-agent MyAgent {
+agent MyAgent:
     input request: RequestType
     output response: ResponseType
 
@@ -1394,15 +1751,13 @@ agent MyAgent {
     let mut counter: Int = 0
 
     // Handler: called when input is received
-    fn handle(request: RequestType) -> ResponseType {
+    fn handle(request: RequestType) -> ResponseType:
         self.counter += 1
         // process and return
-    }
 
     // Lifecycle hooks (optional)
     fn on_init() { }
     fn on_stop() { }
-}
 ```
 
 Agent members:
@@ -1481,7 +1836,7 @@ Signals are reactive primitives that hold a value and automatically propagate ch
 ### 10.2 Declaration
 
 ```mn
-fn main() {
+fn main():
     // Mutable signal: can be set directly
     let mut count = signal(0)
 
@@ -1491,7 +1846,6 @@ fn main() {
     // Updating a signal
     count.value = 5
     print(doubled.value)   // prints 10
-}
 ```
 
 `signal(expr)` creates a mutable signal with an initial value. `signal { expr }` creates a computed signal that re-evaluates when its dependencies change.
@@ -1501,14 +1855,13 @@ fn main() {
 The compiler tracks which signals are read during the evaluation of a computed signal. When any dependency changes, the computed signal is marked dirty and recomputed on next access (lazy) or immediately (eager, configurable).
 
 ```mn
-fn main() {
+fn main():
     let mut a = signal(1)
     let mut b = signal(2)
     let sum = signal { a.value + b.value }
 
     a.value = 10
     print(sum.value)   // prints 12
-}
 ```
 
 ### 10.4 Subscribers
@@ -1560,9 +1913,8 @@ Streams are asynchronous iterables that produce values over time. They are the p
 let s = Stream::from([1, 2, 3, 4, 5])
 
 // Consume a stream
-for value in s {
+for value in s:
     print("${value}")
-}
 ```
 
 ### 11.3 Stream Operators
@@ -1623,26 +1975,21 @@ Stream operators are lazy by default — they are not evaluated until the stream
 Named pipelines compose agents into data-processing graphs:
 
 ```mn
-agent Tokenizer {
+agent Tokenizer:
     input text: String
     output tokens: List<String>
 
-    fn handle(text: String) -> List<String> {
+    fn handle(text: String) -> List<String>:
         return text.split(" ")
-    }
-}
 
-agent Classifier {
+agent Classifier:
     input tokens: List<String>
     output label: String
 
-    fn handle(tokens: List<String>) -> String {
-        if len(tokens) > 10 {
+    fn handle(tokens: List<String>) -> String:
+        if len(tokens) > 10:
             return "long"
-        }
         return "short"
-    }
-}
 
 pipe ClassifyText {
     Tokenizer |> Classifier
@@ -1665,19 +2012,16 @@ The pipe chain connects the output of one agent to the input of the next. The pi
 Functions, structs, enums, and agents can be parameterized over types using angle-bracket syntax:
 
 ```mn
-fn identity<T>(x: T) -> T {
+fn identity<T>(x: T) -> T:
     return x
-}
 
-struct Pair<A, B> {
-    first: A,
-    second: B,
-}
+struct Pair<A, B>:
+    first: A
+    second: B
 
-enum Either<A, B> {
-    Left(A),
-    Right(B),
-}
+enum Either<A, B>:
+    Left(A)
+    Right(B)
 ```
 
 ### 13.2 Type Parameter Constraints
@@ -1685,12 +2029,10 @@ enum Either<A, B> {
 Type parameters can have trait bounds:
 
 ```mn
-fn max<T: Ord>(a: T, b: T) -> T {
-    if a.cmp(b) > 0 {
+fn max<T: Ord>(a: T, b: T) -> T:
+    if a.cmp(b) > 0:
         return a
-    }
     return b
-}
 ```
 
 ### 13.3 Instantiation
@@ -1802,6 +2144,29 @@ Out-of-bounds access is a runtime error.
 
 Lists are implemented as arena-backed dynamic arrays. In native mode, `__mn_list_new(elem_size)` allocates, `__mn_list_push(list, elem)` appends, and `__mn_list_get(list, index)` retrieves.
 
+### 16.5 List Comprehensions (v5.15.0 Te.2.B)
+
+```mn
+let doubled: List<Int> = [x * 2 for x in xs]
+let evens:   List<Int> = [x for x in xs if x % 2 == 0]
+let squares: List<Int> = [i * i for i in 0..10]
+let nested:  List<Int> = [a * b for a in 1..4 for b in 1..4]
+```
+
+Each `for x in iter` clause introduces a binding visible to subsequent
+clauses, the filters of its own clause, and the element expression.
+Multiple `for` clauses produce the cartesian product. Multiple `if`
+filters within a clause are conjunctive — the body runs only when all
+filters are true.
+
+A comprehension is sugar for the equivalent `let` + nested `for` +
+`push` loop and emits identical IR modulo SSA naming. There is no
+runtime overhead vs the manual form.
+
+Pattern destructuring in iteration targets (`[(k, v) for ... in
+items]`) is **not supported** in v5.15.0 (deferred to v5.20.0
+Te.5). Single-identifier targets only.
+
 ---
 
 ## 17. Map Operations
@@ -1837,6 +2202,21 @@ let age = ages["Alice"]       // get value by key
 ### 17.4 Map in LLVM Backend
 
 Maps are implemented as a Robin Hood hash table in the C runtime, type-erased via `i8*`. Key types must be hashable (primitives and strings). The map supports iteration via `__mn_map_iter_new()`, `__mn_map_iter_next()`, `__mn_map_iter_free()`.
+
+### 17.5 Map Comprehensions (v5.15.0 Te.2.C)
+
+```mn
+let doubled: Map<Int, Int> = #{ k: k * 2 for k in 0..5 }
+```
+
+Same clause grammar as list comprehensions (§16.5). Lowers to
+`let mut __m = #{}; for k in 0..5 { __m[k] = k * 2 }; __m`. Indexed
+reads on the result require the user to annotate the binding with
+`Map<K, V>` so the empty map's key/value types are inferred — this
+is the same constraint as `let m: Map<Int, Int> = #{}` followed by
+mutation, and v5.15.0 extends the `_lower_let` annotation-patching
+path that v4.122.0 added for empty `List<T>` to also cover empty
+`Map<K, V>`.
 
 ---
 
@@ -1941,15 +2321,13 @@ Mapanare includes a built-in test runner invoked via `mapanare test`. Test funct
 
 ```mn
 @test
-fn test_addition() {
+fn test_addition():
     assert 1 + 1 == 2
-}
 
 @test
-fn test_string_length() {
+fn test_string_length():
     let s = "hello"
     assert len(s) == 5
-}
 ```
 
 **Rules:**
@@ -2055,14 +2433,12 @@ Agents can be organized into supervision trees with configurable restart strateg
 
 ```mn
 @supervised("one_for_one")
-agent Worker {
+agent Worker:
     input task: String
     output result: String
 
-    fn handle(task: String) -> String {
+    fn handle(task: String) -> String:
         return process(task)
-    }
-}
 ```
 
 | Strategy | Behavior |
@@ -2103,8 +2479,8 @@ Generates a multi-stage Dockerfile optimized for Mapanare agent applications.
 Mapanare provides GPU-accelerated tensor operations via built-in functions. GPU compute uses the CUDA Driver API loaded at runtime via `dlopen` — no SDK installation required. Programs degrade gracefully to CPU when no GPU is available.
 
 ```mn
-fn main() {
-    si gpu_available() {
+fn main():
+    si gpu_available():
         print("GPU: " + gpu_device_name())
 
         pon a: List<Float> = [1.0, 2.0, 3.0, 4.0]
@@ -2112,8 +2488,6 @@ fn main() {
         pon c: List<Float> = gpu_tensor_add(a, b)
         // c = [6.0, 8.0, 10.0, 12.0]
         print("c[0] = " + str(c[0]))
-    }
-}
 ```
 
 ### 23.1 Built-in GPU Functions
@@ -2277,14 +2651,12 @@ print("Hello, Mapanare!")
 Demonstrates defining an agent with typed input and output channels, spawning it, sending a message, and synchronously receiving a result.
 
 ```mn
-agent Greeter {
+agent Greeter:
     input name: String
     output greeting: String
 
-    fn handle(name: String) -> String {
+    fn handle(name: String) -> String:
         return "Hello, " + name + "!"
-    }
-}
 
 let greeter = spawn Greeter()
 greeter.name <- "World"
@@ -2307,26 +2679,21 @@ print(result)
 Demonstrates composing multiple agents into a named pipeline using the `pipe` keyword and `|>` operator.
 
 ```mn
-agent Tokenizer {
+agent Tokenizer:
     input text: String
     output tokens: List<String>
 
-    fn handle(text: String) -> List<String> {
+    fn handle(text: String) -> List<String>:
         return text.split(" ")
-    }
-}
 
-agent Classifier {
+agent Classifier:
     input tokens: List<String>
     output label: String
 
-    fn handle(tokens: List<String>) -> String {
-        if len(tokens) > 10 {
+    fn handle(tokens: List<String>) -> String:
+        if len(tokens) > 10:
             return "long"
-        }
         return "short"
-    }
-}
 
 pipe ClassifyText {
     Tokenizer |> Classifier
@@ -2382,6 +2749,15 @@ Any change to a frozen area requires:
 2. **Deprecation warning:** The old behavior must emit a compiler warning for at least one minor version.
 3. **Migration guide:** Instructions for updating affected code.
 4. **Major version bump:** Breaking changes require a new major version.
+
+**Worked example (v5.19.0 → v6.0).** Te.3 (`{}`-block soft-deprecation, v5.19.0)
+demonstrates this cycle in v5: a parse-time warning starts at v5.19.0,
+the formatter ships an auto-migration default at the same release, the
+deprecation soaks for two release cycles, and hard removal lands at the
+v6.0 major bump. See §4.0 for the user-facing migration path
+(`mnc fmt <path>` to migrate; `mnc fmt --keep-braces` to format without
+migrating; `MAPANARE_NO_BRACE_WARNING=1` to suppress the warning during
+migration).
 
 ---
 
@@ -2505,10 +2881,9 @@ Functions: `regex_match`, `regex_search`, `regex_replace`, `regex_split`. Charac
 An `async fn` declares a function that can suspend and resume:
 
 ```mn
-async fn fetch_data(url: String) -> String {
+async fn fetch_data(url: String) -> String:
     let response = await http_get(url)
     return response.body
-}
 ```
 
 Semantics:
@@ -2569,9 +2944,8 @@ No explicit `.poll()`, `.cancel()`, or `.then()` in v4.x. The scheduler is the s
 `block_on` is a built-in function that bridges synchronous and asynchronous code:
 
 ```mn
-fn main() {
+fn main():
     let result: Int = block_on(compute())
-}
 ```
 
 - Drives the event loop until the given future resolves.

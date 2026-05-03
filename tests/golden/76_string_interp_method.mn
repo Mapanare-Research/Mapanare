@@ -1,0 +1,7 @@
+// v5.16.0 Te.4 — method-call inside ``${...}``. The expression text
+// is re-tokenized and re-parsed via parse_expr, so any expression
+// shape is supported (Ident, MethodCall, Binary, Call, Index, ...).
+
+fn main():
+    let s: String = "hi"
+    print("${s.to_upper()}")

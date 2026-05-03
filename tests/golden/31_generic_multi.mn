@@ -1,25 +1,20 @@
 // tests/golden/31_generic_multi.mn — Multiple generic instantiations
 
-struct Container<T> {
-    value: T,
+struct Container<T>:
+    value: T
     count: Int
-}
 
-impl<T> Container<T> {
-    fn get(self) -> T {
+impl<T> Container<T>:
+    fn get(self) -> T:
         return self.value
-    }
 
-    fn times(self) -> Int {
+    fn times(self) -> Int:
         return self.count
-    }
-}
 
-fn identity<T>(x: T) -> T {
+fn identity<T>(x: T) -> T:
     return x
-}
 
-fn main() {
+fn main():
     // Int instantiation
     let a = new Container { value: 42, count: 1 }
     print(a.get())
@@ -32,4 +27,3 @@ fn main() {
 
     // Generic function standalone
     print(identity(77))
-}

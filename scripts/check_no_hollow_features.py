@@ -85,6 +85,13 @@ _AST_INFRASTRUCTURE = frozenset(
         "MatchArm",
         "FieldInit",
         "MapEntry",
+        # v5.15.0 Te.2 — held inside Comprehension.clauses; lowered as part
+        # of the parent Comprehension dispatch, not via a top-level
+        # isinstance check
+        "CompClause",
+        # v5.20.0 Te.5.D — held inside StructPattern.fields; lowered as
+        # part of the parent StructPattern dispatch
+        "FieldPattern",
         "ImportDef",
         "ExportDef",
         "TraitMethod",

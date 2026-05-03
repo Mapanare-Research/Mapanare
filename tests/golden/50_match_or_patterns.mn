@@ -1,25 +1,21 @@
-enum Token {
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Mod,
-    Eof,
+enum Token:
+    Plus
+    Minus
+    Star
+    Slash
+    Mod
+    Eof
     Ident(String)
-}
 
-fn category(t: Token) -> String {
-    match t {
-        Plus | Minus => "additive",
-        Star | Slash | Mod => "multiplicative",
-        Eof => "end",
+fn category(t: Token) -> String:
+    match t:
+        Plus | Minus => "additive"
+        Star | Slash | Mod => "multiplicative"
+        Eof => "end"
         Ident(_) => "name"
-    }
-}
 
-fn main() {
+fn main():
     print(category(Token::Plus))
     print(category(Token::Slash))
     print(category(Token::Eof))
     print(category(Token::Ident("x")))
-}

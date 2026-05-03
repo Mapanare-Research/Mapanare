@@ -23,7 +23,10 @@ from mapanare.ast_nodes import (
     BoolLiteral,
     BreakStmt,
     CallExpr,
+    ChainedCompare,
     CharLiteral,
+    CompClause,
+    Comprehension,
     ConstDef,
     ConstructExpr,
     ConstructorPattern,
@@ -38,6 +41,7 @@ from mapanare.ast_nodes import (
     ExprStmt,
     ExternFnDef,
     FieldAccessExpr,
+    FieldInit,
     FloatLiteral,
     FnDef,
     FnType,
@@ -47,6 +51,7 @@ from mapanare.ast_nodes import (
     Identifier,
     IdentPattern,
     IfExpr,
+    IfLetExpr,
     ImplDef,
     ImportDef,
     IndexExpr,
@@ -54,8 +59,11 @@ from mapanare.ast_nodes import (
     IntLiteral,
     LambdaExpr,
     LetBinding,
+    LetDestructure,
+    LetElseStmt,
     ListLiteral,
     MapLiteral,
+    MatchArm,
     MatchExpr,
     MethodCallExpr,
     ModuleLetDef,
@@ -63,6 +71,7 @@ from mapanare.ast_nodes import (
     NamespaceAccessExpr,
     NoneLiteral,
     OkExpr,
+    PassStmt,
     PipeDef,
     PipeExpr,
     PrintStmt,
@@ -73,17 +82,22 @@ from mapanare.ast_nodes import (
     SignalDecl,
     SignalExpr,
     SomeExpr,
+    Span,
     SpawnExpr,
     Stmt,
     StreamDecl,
     StringLiteral,
     StructDef,
+    StructPattern,
+    StructUpdate,
     SyncExpr,
     TensorLiteral,
     TraitDef,
     TypeExpr,
     UnaryExpr,
+    WhileLetStmt,
     WhileLoop,
+    WildcardPattern,
 )
 from mapanare.mir import (
     AgentSend,
@@ -196,6 +210,65 @@ def _ast_span_to_mir(node: ASTNode | None) -> SourceSpan | None:
     return SourceSpan(line=s.line, column=s.column, end_line=s.end_line, end_column=s.end_column)
 
 
+def _stmt_diverges(stmt: object) -> bool:
+    """v5.20.0 Te.5.E: does this statement guarantee non-fall-through?
+
+    Used to enforce the let-else divergence requirement (D5/D6).
+    The accepted divergent shapes are: ReturnStmt, BreakStmt,
+    ContinueStmt, calls to `panic`/`abort`, and nested control-flow
+    where every leaf branch diverges.
+    """
+    from mapanare.ast_nodes import (
+        BreakStmt,
+        CallExpr,
+        ContinueStmt,
+        ExprStmt,
+        Identifier,
+        IfExpr,
+        MatchExpr,
+        ReturnStmt,
+    )
+
+    if isinstance(stmt, (ReturnStmt, BreakStmt, ContinueStmt)):
+        return True
+    if isinstance(stmt, ExprStmt):
+        e = stmt.expr
+        if isinstance(e, CallExpr) and isinstance(e.callee, Identifier):
+            if e.callee.name in ("panic", "abort", "exit"):
+                return True
+        if isinstance(e, MatchExpr):
+            return bool(e.arms) and all(_expr_or_block_diverges(arm.body) for arm in e.arms)
+        if isinstance(e, IfExpr):
+            then_div = _block_diverges(e.then_block)
+            if e.else_block is None:
+                return False
+            if isinstance(e.else_block, IfExpr):
+                # Recurse via wrapping — treat as ExprStmt for divergence.
+                return then_div and _stmt_diverges(ExprStmt(expr=e.else_block))
+            return then_div and _block_diverges(e.else_block)
+    return False
+
+
+def _expr_or_block_diverges(node: object) -> bool:
+    """Helper for match-arm divergence — body may be Block or Expr."""
+    from mapanare.ast_nodes import Block, Expr, ExprStmt
+
+    if isinstance(node, Block):
+        return _block_diverges(node)
+    if isinstance(node, Expr):
+        return _stmt_diverges(ExprStmt(expr=node))
+    return False
+
+
+def _block_diverges(block: object) -> bool:
+    """v5.20.0 Te.5.E: does this Block guarantee non-fall-through?"""
+    from mapanare.ast_nodes import Block
+
+    if not isinstance(block, Block) or not block.stmts:
+        return False
+    return _stmt_diverges(block.stmts[-1])
+
+
 # ---------------------------------------------------------------------------
 # Type resolution helpers
 # ---------------------------------------------------------------------------
@@ -274,6 +347,12 @@ class MIRLowerer:
         self._block: BasicBlock | None = None
         self._tmp_counter = 0
         self._block_counter = 0
+        # v5.20.0 Te.5.C: separate counter for synthesized struct-update
+        # base tmps so they don't perturb the global %tN sequence.
+        self._struct_update_counter = 0
+        # v5.21.0 Te.6: separate counter for synthesized chained-compare
+        # tmps (see _lower_chained_compare).
+        self._chain_compare_counter = 0
         # Variable name → current SSA value
         self._vars: dict[str, _VarInfo] = {}
         # Scope stack for nested scopes
@@ -1156,6 +1235,15 @@ class MIRLowerer:
         if isinstance(stmt, LetBinding):
             self._lower_let(stmt)
             return None
+        if isinstance(stmt, LetDestructure):
+            self._lower_let_destructure(stmt)
+            return None
+        if isinstance(stmt, LetElseStmt):
+            self._lower_let_else(stmt)
+            return None
+        if isinstance(stmt, WhileLetStmt):
+            self._lower_while_let(stmt)
+            return None
         if isinstance(stmt, ExprStmt):
             return self._lower_expr(stmt.expr)
         if isinstance(stmt, ReturnStmt):
@@ -1181,6 +1269,8 @@ class MIRLowerer:
             if self._loop_header_stack:
                 self._emit(Jump(target=self._loop_header_stack[-1]))
             return None
+        if isinstance(stmt, PassStmt):
+            return None  # v5.14.0 Te.1: explicit no-op, emits no MIR
         if isinstance(stmt, AssertStmt):
             self._lower_assert(stmt)
             return None
@@ -1233,6 +1323,18 @@ class MIRLowerer:
 
     def _lower_let(self, let: LetBinding) -> None:
         """Lower a let binding."""
+        # v5.15.0 Te.2: when the RHS is a comprehension and the user has
+        # annotated the binding with `List<T>` / `Map<K, V>`, hand that
+        # element-type information to `_lower_comprehension` so the
+        # internal accumulator list's elem_type is patched correctly.
+        # Without this hint, indexing the comprehension's result would
+        # see UNKNOWN element type and the LLVM emitter would fall back
+        # to raw-pointer reads (printing `<?>`).
+        if isinstance(let.value, Comprehension) and let.type_annotation is not None:
+            self._comp_type_hint: TypeExpr | None = let.type_annotation
+        else:
+            self._comp_type_hint = None
+
         # Track lambda bindings so calls can resolve the function name
         if isinstance(let.value, LambdaExpr):
             val = self._lower_expr(let.value)
@@ -1268,6 +1370,19 @@ class MIRLowerer:
                 # reaches the LLVM emitter with `%arr.ty.args == [<unknown>]`
                 # and IndexGet emits a raw-pointer read instead of `load i64`.
                 val = Value(name=val.name, ty=declared)
+        # v5.15.0 Te.2.C: same for empty MapLiteral with `Map<K, V>` annotation.
+        if let.type_annotation and isinstance(let.value, MapLiteral) and not let.value.entries:
+            declared = _resolve_type_expr(let.type_annotation)
+            if len(declared.type_info.args) >= 2:
+                k_ty = MIRType(declared.type_info.args[0])
+                v_ty = MIRType(declared.type_info.args[1])
+                for bb in (self._fn.blocks if self._fn else []):
+                    for inst in bb.instructions:
+                        if isinstance(inst, MapInit) and inst.dest == val:
+                            inst.key_type = k_ty
+                            inst.val_type = v_ty
+                            break
+                val = Value(name=val.name, ty=declared)
         # When the expression type is unknown or lacks inner type args but a type
         # annotation is provided, use the annotation to preserve full type info.
         if let.type_annotation:
@@ -1286,6 +1401,244 @@ class MIRLowerer:
         named = Value(name=f"%{let.name}", ty=val.ty)
         self._emit(Copy(dest=named, src=val))
         self._define_var(let.name, named, mutable=let.mutable)
+
+    def _lower_let_destructure(self, dest: LetDestructure) -> None:
+        """Lower `let Point { x, y } = expr`. v5.20.0 Te.5.D.
+
+        Strategy: when the RHS is a bare Identifier, run field accesses
+        directly on the source name so IR matches `let x = p.x; let y =
+        p.y` byte-identically. Otherwise lower the RHS once into a tmp.
+        """
+        # Short-circuit when the RHS is already a bare ident — avoids
+        # an extra Copy/alloca and matches the manual long-form IR.
+        if isinstance(dest.value, Identifier):
+            base_name = dest.value.name
+            base_already_bound = self._lookup_var(base_name) is not None
+            if base_already_bound:
+                self._emit_destructure_pattern(
+                    pattern=dest.pattern,
+                    base_name=base_name,
+                    outer_mut=dest.mutable,
+                )
+                return
+
+        # General case: lower the RHS into a synthesized tmp, register
+        # under a fresh name, then run field accesses through it.
+        tmp_idx = self._struct_update_counter
+        self._struct_update_counter += 1
+        base_name = f"__mn_dst_{tmp_idx}"
+        # Reuse _lower_let for the RHS so all type-annotation patching
+        # (empty list/map element-type) works identically.
+        synthetic_let = LetBinding(
+            name=base_name,
+            mutable=False,
+            type_annotation=dest.type_annotation,
+            value=dest.value,
+        )
+        self._lower_let(synthetic_let)
+        self._emit_destructure_pattern(
+            pattern=dest.pattern,
+            base_name=base_name,
+            outer_mut=dest.mutable,
+        )
+
+    def _emit_destructure_pattern(
+        self,
+        pattern: StructPattern,
+        base_name: str,
+        outer_mut: bool,
+    ) -> None:
+        """Emit per-field `let` bindings for a StructPattern over a
+        named base. Recurses for nested struct sub-patterns. v5.20.0.
+        """
+        # Validate fields against the struct definition where possible.
+        struct_name = pattern.name
+        known_fields: list[str] | None = self._struct_fields.get(struct_name)
+        if known_fields is None and self._imported_struct_defs:
+            imported = self._imported_struct_defs.get(struct_name)
+            if imported is not None:
+                known_fields = [f for f, _ in imported]
+
+        for fp in pattern.fields:
+            if known_fields is not None and fp.name not in known_fields:
+                raise RuntimeError(f"let destructure: '{struct_name}' has no field '{fp.name}'")
+            field_access = FieldAccessExpr(
+                object=Identifier(name=base_name),
+                field_name=fp.name,
+            )
+            if fp.sub_pattern is None:
+                # Leaf binding — emit `let [mut] <name> = base.<field>`.
+                synthetic = LetBinding(
+                    name=fp.name,
+                    mutable=outer_mut or fp.mutable,
+                    type_annotation=None,
+                    value=field_access,
+                )
+                self._lower_let(synthetic)
+            else:
+                # Nested struct pattern — bind the field into a fresh
+                # tmp, then recurse with that tmp as the new base.
+                assert isinstance(fp.sub_pattern, StructPattern)
+                tmp_idx = self._struct_update_counter
+                self._struct_update_counter += 1
+                sub_base_name = f"__mn_dst_{tmp_idx}"
+                synthetic_let = LetBinding(
+                    name=sub_base_name,
+                    mutable=False,
+                    type_annotation=None,
+                    value=field_access,
+                )
+                self._lower_let(synthetic_let)
+                self._emit_destructure_pattern(
+                    pattern=fp.sub_pattern,
+                    base_name=sub_base_name,
+                    outer_mut=outer_mut,
+                )
+
+    # ------------------------------------------------------------------
+    # v5.20.0 Te.5.E — if-let / while-let / let-else
+    # ------------------------------------------------------------------
+
+    def _lower_if_let(self, expr: IfLetExpr) -> Value:
+        """Lower `if let <pat> = <scrutinee> { ... } [else { ... }]`.
+
+        Desugars to a 2-arm match: success arm = then_block, wildcard
+        arm = else_block (or empty block when omitted). Reuses
+        `_lower_match` so all decision-tree compilation, exhaustiveness,
+        and arm-binding scoping are inherited.
+        """
+        success_arm = MatchArm(pattern=expr.pattern, body=expr.then_block)
+        if expr.else_block is None:
+            else_body: Block | Expr = Block(stmts=[])
+        elif isinstance(expr.else_block, Block):
+            else_body = expr.else_block
+        else:
+            # IfExpr or IfLetExpr — wrap in a Block as ExprStmt.
+            else_body = Block(stmts=[ExprStmt(expr=expr.else_block)])
+        wildcard_arm = MatchArm(pattern=WildcardPattern(), body=else_body)
+        synthetic = MatchExpr(subject=expr.scrutinee, arms=[success_arm, wildcard_arm])
+        return self._lower_match(synthetic)
+
+    def _lower_while_let(self, stmt: WhileLetStmt) -> None:
+        """Lower `while let <pat> = <scrutinee> { body }` per D8.
+
+        Desugars to:
+            while true {
+                match <scrutinee> {
+                    <pat> => <body>,
+                    _ => break,
+                }
+            }
+
+        Scrutinee is re-evaluated each iteration (matches Rust).
+        """
+        success_arm = MatchArm(pattern=stmt.pattern, body=stmt.body)
+        break_arm = MatchArm(
+            pattern=WildcardPattern(),
+            body=Block(stmts=[BreakStmt()]),
+        )
+        match_expr = MatchExpr(
+            subject=stmt.scrutinee,
+            arms=[success_arm, break_arm],
+        )
+        while_body = Block(stmts=[ExprStmt(expr=match_expr)])
+        synthetic = WhileLoop(
+            condition=BoolLiteral(value=True),
+            body=while_body,
+        )
+        self._lower_while(synthetic)
+
+    def _lower_let_else(self, stmt: LetElseStmt) -> None:
+        """Lower `let <pattern> = <scrutinee> else { ... }` per D5.
+
+        Strategy 2 (synthesized return): transform to
+            let <bound> = match <scrutinee> {
+                <pattern> => <bound>,
+                _ => { else_block },          # diverging
+            }
+
+        For 0-arg ConstructorPattern (None) and Wildcard variants, no
+        outer binding is needed — emit as a plain match-statement.
+
+        Pattern shapes supported in v5.20.0:
+            - WildcardPattern
+            - ConstructorPattern with 0 args (e.g. None)
+            - ConstructorPattern with 1 IdentPattern arg (Some(x), Ok(v), Err(e))
+            - ConstructorPattern with 1 WildcardPattern arg (Some(_))
+        Multi-binding patterns deferred to v5.21.0+.
+        """
+        pattern = stmt.pattern
+
+        # Divergence check (D5/D6). The else block must end in a
+        # divergent statement; the surrounding fn's implicit return
+        # does NOT satisfy the requirement.
+        if not _block_diverges(stmt.else_block):
+            raise RuntimeError(
+                "let-else: the else block must diverge "
+                "(end with `return`, `break`, `continue`, or `panic(...)`). "
+                "An implicit return at the function tail does NOT satisfy "
+                "this requirement."
+            )
+
+        if isinstance(pattern, WildcardPattern):
+            # `let _ = expr else { ... }` — wildcard always matches;
+            # else is dead. Emit the match for the side effect of
+            # evaluating expr.
+            synthetic = MatchExpr(
+                subject=stmt.scrutinee,
+                arms=[MatchArm(pattern=WildcardPattern(), body=Block(stmts=[]))],
+            )
+            self._lower_match(synthetic)
+            return
+
+        if isinstance(pattern, ConstructorPattern):
+            n_args = len(pattern.args)
+            single_ident = n_args == 1 and isinstance(pattern.args[0], IdentPattern)
+            single_wild = n_args == 1 and isinstance(pattern.args[0], WildcardPattern)
+
+            if n_args == 0 or single_wild:
+                # No outer binding to leak — emit as match-statement.
+                synthetic = MatchExpr(
+                    subject=stmt.scrutinee,
+                    arms=[
+                        MatchArm(pattern=pattern, body=Block(stmts=[])),
+                        MatchArm(pattern=WildcardPattern(), body=stmt.else_block),
+                    ],
+                )
+                self._lower_match(synthetic)
+                return
+
+            if single_ident:
+                # `let Some(x) = opt else { ... }` — the canonical case.
+                # Build: let x = match opt { Some(x) => x, _ => else_block }
+                bound_name = pattern.args[0].name  # type: ignore[attr-defined]
+                success_arm = MatchArm(
+                    pattern=pattern,
+                    body=Identifier(name=bound_name),
+                )
+                wildcard_arm = MatchArm(
+                    pattern=WildcardPattern(),
+                    body=stmt.else_block,
+                )
+                synthetic = MatchExpr(
+                    subject=stmt.scrutinee,
+                    arms=[success_arm, wildcard_arm],
+                )
+                synthetic_let = LetBinding(
+                    name=bound_name,
+                    mutable=False,
+                    type_annotation=None,
+                    value=synthetic,
+                )
+                self._lower_let(synthetic_let)
+                return
+
+        raise RuntimeError(
+            f"let-else: unsupported pattern shape "
+            f"{type(pattern).__name__}; v5.20.0 supports wildcard and "
+            "constructor patterns with 0 or 1 args (single identifier "
+            "or wildcard). Multi-binding patterns are deferred."
+        )
 
     def _lower_return(self, ret: ReturnStmt) -> None:
         """Lower a return statement."""
@@ -1515,6 +1868,9 @@ class MIRLowerer:
         if isinstance(expr, BinaryExpr):
             return self._lower_binary(expr)
 
+        if isinstance(expr, ChainedCompare):
+            return self._lower_chained_compare(expr)
+
         if isinstance(expr, UnaryExpr):
             return self._lower_unary(expr)
 
@@ -1541,6 +1897,9 @@ class MIRLowerer:
 
         if isinstance(expr, LambdaExpr):
             return self._lower_lambda(expr)
+
+        if isinstance(expr, Comprehension):
+            return self._lower_comprehension(expr)
 
         if isinstance(expr, SpawnExpr):
             return self._lower_spawn(expr)
@@ -1576,6 +1935,9 @@ class MIRLowerer:
 
         if isinstance(expr, ConstructExpr):
             return self._lower_construct(expr)
+
+        if isinstance(expr, StructUpdate):
+            return self._lower_struct_update(expr)
 
         if isinstance(expr, SomeExpr):
             val = self._lower_expr(expr.value)
@@ -1628,6 +1990,9 @@ class MIRLowerer:
 
         if isinstance(expr, IfExpr):
             return self._lower_if(expr)
+
+        if isinstance(expr, IfLetExpr):
+            return self._lower_if_let(expr)
 
         if isinstance(expr, MatchExpr):
             return self._lower_match(expr)
@@ -1739,6 +2104,72 @@ class MIRLowerer:
         dest = self._make_value(ty=result_ty)
         self._emit(BinOp(dest=dest, op=op, lhs=lhs, rhs=rhs))
         return dest
+
+    @staticmethod
+    def _is_trivial_chain_operand(e: Expr) -> bool:
+        """v5.21.0 Te.6 — D4 triviality predicate.
+
+        Trivial = side-effect-free, single-evaluation read. Trivial
+        operands skip the temp binding to keep IR clean. Anything not
+        listed gets a temp; conservative by design.
+        """
+        return isinstance(
+            e,
+            (
+                Identifier,
+                IntLiteral,
+                FloatLiteral,
+                BoolLiteral,
+                StringLiteral,
+                CharLiteral,
+                NoneLiteral,
+            ),
+        )
+
+    def _lower_chained_compare(self, expr: ChainedCompare) -> Value:
+        """v5.21.0 Te.6 — desugar a 3+ element comparison chain.
+
+        `a op1 b op2 c op3 d` lowers to `(a op1 b) && (b op2 c) && (c op3 d)`.
+        Interior non-trivial operands are bound to a synthesized
+        `__mn_chain_N` local before the chain so each operand evaluates
+        exactly once (D3). Trivial operands (Identifier / literals) skip
+        the temp.
+        """
+        # Replace non-trivial interior operands with bound temps.
+        operands_for_chain: list[Expr] = list(expr.operands)
+        for i in range(1, len(operands_for_chain) - 1):
+            sub = operands_for_chain[i]
+            if not self._is_trivial_chain_operand(sub):
+                tmp_name = f"__mn_chain_{self._chain_compare_counter}"
+                self._chain_compare_counter += 1
+                synthetic_let = LetBinding(
+                    name=tmp_name,
+                    mutable=False,
+                    type_annotation=None,
+                    value=sub,
+                    span=expr.span,
+                )
+                self._lower_let(synthetic_let)
+                operands_for_chain[i] = Identifier(name=tmp_name, span=sub.span)
+        # Build pairwise BinaryExprs joined by `&&`. Recurse through
+        # _lower_expr so trait dispatch (Eq / Ord) and tensor broadcast
+        # paths work. Trait dispatch was annotated by the semantic
+        # checker per pair; copy it onto each synthesized BinaryExpr.
+        pairs: list[BinaryExpr] = []
+        for i, op_str in enumerate(expr.ops):
+            pair_node = BinaryExpr(
+                left=operands_for_chain[i],
+                op=op_str,
+                right=operands_for_chain[i + 1],
+                span=expr.span,
+            )
+            if i < len(expr.pair_trait_dispatches):
+                pair_node.trait_dispatch = expr.pair_trait_dispatches[i]
+            pairs.append(pair_node)
+        result: Expr = pairs[0]
+        for next_pair in pairs[1:]:
+            result = BinaryExpr(left=result, op="&&", right=next_pair, span=expr.span)
+        return self._lower_expr(result)
 
     def _lower_pipe_binary(self, expr: BinaryExpr) -> Value:
         """Lower `a |> f` to `Call(f, [a])`, with special handling for stream ops."""
@@ -1928,6 +2359,8 @@ class MIRLowerer:
             # v5.8.6 We.1: refined (is_windows, arch_bits) pair.
             "__mn_host_is_windows": mir_int(),
             "__mn_host_arch_bits": mir_int(),
+            # v5.14.1 B.5/B.6: colon-block preprocessor (in C runtime).
+            "__mn_indent_to_braces": mir_string(),
         }
         _call_ret_ty = mir_unknown()
         if isinstance(expr.callee, Identifier):
@@ -3012,6 +3445,184 @@ class MIRLowerer:
         )
         return dest
 
+    def _lower_comprehension(self, expr: Comprehension) -> Value:
+        """Lower a list/map comprehension by synthesizing the equivalent
+        let + nested-for + push (or insert) AST and recursing through the
+        existing statement lowerers (v5.15.0 Te.2.B/C).
+
+        For range iterables (``for x in 0..n``) we emit a direct ForLoop
+        which lowers to the regular range-iter calls. For non-range
+        iterables (lists, etc.) we synthesize an index-based loop —
+        ``for __i in 0..len(xs) { let x = xs[__i]; ... }`` — because
+        ``for x in some_list`` is not yet supported by the generic
+        ForLoop lowering (the runtime ``__iter_*`` shims only know about
+        ranges). The result IR is identical to a hand-written loop in
+        the same style modulo SSA naming.
+        """
+        span: Span = expr.span if expr.span is not None else Span()
+        comp_n = self._tmp_counter
+        self._tmp_counter += 1
+        result_name = f"__mn_comp_{comp_n}"
+
+        if expr.kind == "list":
+            init: Expr = ListLiteral(elements=[], span=span)
+            inner_call: Expr = MethodCallExpr(
+                object=Identifier(name=result_name, span=span),
+                method="push",
+                args=[expr.element if expr.element is not None else Expr()],
+                span=span,
+            )
+        else:
+            from mapanare.ast_nodes import AssignExpr as _AssignExpr
+            from mapanare.ast_nodes import IndexItem as _IndexItem
+
+            init = MapLiteral(entries=[], span=span)
+            # Map insertion uses ``m[k] = v`` rather than a method call —
+            # ``insert`` isn't a runtime export; ``IndexSet`` handles
+            # both list[i] and map[k] writes.
+            inner_call = _AssignExpr(
+                target=IndexExpr(
+                    object=Identifier(name=result_name, span=span),
+                    indices=[
+                        _IndexItem(
+                            kind="scalar",
+                            expr=expr.key if expr.key is not None else Expr(),
+                            span=span,
+                        )
+                    ],
+                    span=span,
+                ),
+                op="=",
+                value=expr.value if expr.value is not None else Expr(),
+                span=span,
+            )
+
+        # Bind the result accumulator in the current scope. Forward any
+        # element-type hint set by the surrounding `_lower_let` so the
+        # internal list's elem_type matches the user-declared
+        # ``List<T>`` / ``Map<K, V>``.
+        type_hint = getattr(self, "_comp_type_hint", None)
+        let_stmt = LetBinding(
+            name=result_name,
+            mutable=True,
+            type_annotation=type_hint,
+            value=init,
+            span=span,
+        )
+        # Clear the hint before recursing so nested comprehensions inside
+        # the element expression don't accidentally inherit it.
+        self._comp_type_hint = None
+        self._lower_let(let_stmt)
+
+        # Build the loop body innermost-out, applying filters then for-clauses
+        # in reverse source order.
+        body: Block = Block(stmts=[ExprStmt(expr=inner_call, span=span)], span=span)
+        for clause in reversed(expr.clauses):
+            for cond in reversed(clause.conditions):
+                body = Block(
+                    stmts=[
+                        ExprStmt(
+                            expr=IfExpr(
+                                condition=cond,
+                                then_block=body,
+                                else_block=None,
+                                span=span,
+                            ),
+                            span=span,
+                        )
+                    ],
+                    span=span,
+                )
+            body = self._wrap_comp_for(clause, body, span)
+
+        for stmt in body.stmts:
+            self._lower_stmt(stmt)
+
+        result_val = self._lookup_var(result_name)
+        if result_val is None:  # pragma: no cover — defensive
+            return self._make_value(prefix="comp_missing")
+        return result_val
+
+    def _wrap_comp_for(self, clause: CompClause, inner: Block, span: Span) -> Block:
+        """Wrap ``inner`` in a for-loop that iterates ``clause.iter`` and
+        binds ``clause.target`` (v5.15.0 Te.2.B/C helper).
+
+        Range iterables get a direct ForLoop; everything else gets the
+        index-based pattern with a hoisted source binding so the iterable
+        expression is evaluated exactly once per clause.
+        """
+        if isinstance(clause.iter, RangeExpr):
+            return Block(
+                stmts=[
+                    ForLoop(
+                        var_name=clause.target,
+                        iterable=clause.iter,
+                        body=inner,
+                        span=span,
+                    )
+                ],
+                span=span,
+            )
+
+        idx_n = self._tmp_counter
+        self._tmp_counter += 1
+        src_name = f"__mn_comp_src_{idx_n}"
+        idx_name = f"__mn_comp_i_{idx_n}"
+
+        let_src = LetBinding(
+            name=src_name,
+            mutable=False,
+            type_annotation=None,
+            value=clause.iter,
+            span=span,
+        )
+        len_call = CallExpr(
+            callee=Identifier(name="len", span=span),
+            args=[Identifier(name=src_name, span=span)],
+            span=span,
+        )
+        range_expr = RangeExpr(
+            start=IntLiteral(value=0, span=span),
+            end=len_call,
+            inclusive=False,
+            span=span,
+        )
+        from mapanare.ast_nodes import (
+            IndexItem,
+        )  # local import — already used elsewhere in this file
+
+        get_elem = IndexExpr(
+            object=Identifier(name=src_name, span=span),
+            indices=[
+                IndexItem(
+                    kind="scalar",
+                    expr=Identifier(name=idx_name, span=span),
+                    span=span,
+                )
+            ],
+            span=span,
+        )
+        bind_target = LetBinding(
+            name=clause.target,
+            mutable=False,
+            type_annotation=None,
+            value=get_elem,
+            span=span,
+        )
+        new_body = Block(stmts=[bind_target] + list(inner.stmts), span=span)
+        return Block(
+            stmts=[
+                let_src,
+                ForLoop(
+                    var_name=idx_name,
+                    iterable=range_expr,
+                    body=new_body,
+                    span=span,
+                ),
+            ],
+            span=span,
+        )
+
     def _lower_spawn(self, expr: SpawnExpr) -> Value:
         """Lower spawn expression: `spawn Agent(args)`."""
         args = [self._lower_expr(a) for a in expr.args]
@@ -3274,6 +3885,61 @@ class MIRLowerer:
             self._emit(Move(value=_v))
         self._patch_arg_types_from_params(struct_name, field_vals)
         return dest
+
+    def _lower_struct_update(self, expr: StructUpdate) -> Value:
+        """Lower struct update: `new Point { x: 5, ..base }`. v5.20.0 Te.5.C.
+
+        Resolves the struct's full field list, lowers `base` into a fresh
+        local, then synthesizes a regular ConstructExpr filling overrides
+        from `expr.overrides` and the rest from `base.<field>` accesses.
+        Reuses _lower_construct for the actual emission.
+        """
+        struct_name = expr.name
+
+        # Resolve the full field list (local definitions or imported)
+        field_names: list[str] | None = self._struct_fields.get(struct_name)
+        if field_names is None and self._imported_struct_defs:
+            imported = self._imported_struct_defs.get(struct_name)
+            if imported is not None:
+                field_names = [f for f, _ in imported]
+        if field_names is None:
+            raise RuntimeError(
+                f"struct update: unknown struct '{struct_name}' "
+                f"(no field list available; ensure the struct is defined or imported)"
+            )
+
+        # Build override map; reject unknown override fields up-front.
+        override_map: dict[str, Expr] = {}
+        for fi in expr.overrides:
+            if fi.name not in field_names:
+                raise RuntimeError(f"struct update: '{struct_name}' has no field '{fi.name}'")
+            override_map[fi.name] = fi.value
+
+        # Lower `base` once into a tmp, register it under a synthesized
+        # name so that synthesized Identifier(name=base_tmp_name) lookups
+        # in the field-access fallback hit the same Value.
+        # Use a dedicated counter so we don't perturb the global %tN
+        # sequence — keeps IR byte-identical to the manual long form.
+        base_idx = self._struct_update_counter
+        self._struct_update_counter += 1
+        base_tmp_name = f"__mn_base_{base_idx}"
+        base_val = self._lower_expr(expr.base)
+        self._define_var(base_tmp_name, base_val, mutable=False)
+
+        # Synthesize a full ConstructExpr matching the struct's field order.
+        full_fields: list[FieldInit] = []
+        for fname in field_names:
+            if fname in override_map:
+                value_expr = override_map[fname]
+            else:
+                value_expr = FieldAccessExpr(
+                    object=Identifier(name=base_tmp_name),
+                    field_name=fname,
+                )
+            full_fields.append(FieldInit(name=fname, value=value_expr))
+
+        synthetic = ConstructExpr(name=struct_name, fields=full_fields)
+        return self._lower_construct(synthetic)
 
     def _lower_signal_expr(self, expr: SignalExpr) -> Value:
         """Lower signal expression: `signal(value)`."""

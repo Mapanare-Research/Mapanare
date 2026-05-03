@@ -10,108 +10,79 @@ import self::ast
 // SemanticError
 // ---------------------------------------------------------------------------
 
-struct SemanticError {
-    message: String,
-    line: Int,
-    column: Int,
+struct SemanticError:
+    message: String
+    line: Int
+    column: Int
     filename: String
-}
 
-fn new_semantic_error(msg: String, line: Int, col: Int, fname: String) -> SemanticError {
-    return new SemanticError { message: msg, line: line, column: col, filename: fname }
-}
+fn new_semantic_error(msg: String, line: Int, col: Int, fname: String) -> SemanticError = new SemanticError { message: msg, line: line, column: col, filename: fname }
 
 // ---------------------------------------------------------------------------
 // Type representation
 // ---------------------------------------------------------------------------
 
-struct TypeInfo {
-    name: String,
-    args: List<TypeInfo>,
-    is_function: Bool,
-    param_types: List<TypeInfo>,
-    return_type: Option<TypeInfo>,
+struct TypeInfo:
+    name: String
+    args: List<TypeInfo>
+    is_function: Bool
+    param_types: List<TypeInfo>
+    return_type: Option<TypeInfo>
     tensor_shape: Option<List<Int>>
-}
 
-fn new_type_info(name: String, args: List<TypeInfo>, is_fn: Bool, params: List<TypeInfo>, ret: Option<TypeInfo>, shape: Option<List<Int>>) -> TypeInfo {
-    return new TypeInfo { name: name, args: args, is_function: is_fn, param_types: params, return_type: ret, tensor_shape: shape }
-}
+fn new_type_info(name: String, args: List<TypeInfo>, is_fn: Bool, params: List<TypeInfo>, ret: Option<TypeInfo>, shape: Option<List<Int>>) -> TypeInfo = new TypeInfo { name: name, args: args, is_function: is_fn, param_types: params, return_type: ret, tensor_shape: shape }
 
 // Singleton type constructors
-fn unknown_type() -> TypeInfo {
-    return make_type("<unknown>")
-}
+fn unknown_type() -> TypeInfo = make_type("<unknown>")
 
 // v4.53.0: UNRESOLVED/ERROR split (A8)
-fn error_type() -> TypeInfo {
-    return make_type("<error>")
-}
+fn error_type() -> TypeInfo = make_type("<error>")
 
-fn type_is_error(ti: TypeInfo) -> Bool {
-    return ti.name == "<error>"
-}
+fn type_is_error(ti: TypeInfo) -> Bool = ti.name == "<error>"
 
 // Returns true for <unknown>, <unresolved>, or <error> — any type where
 // downstream checks should be skipped (either "not yet known" or "already broken").
-fn type_should_skip(name: String) -> Bool {
+fn type_should_skip(name: String) -> Bool:
     if name == "<unknown>" { return true }
     if name == "<unresolved>" { return true }
     if name == "<error>" { return true }
     return false
-}
 
-fn int_type() -> TypeInfo {
-    return make_type("Int")
-}
+fn int_type() -> TypeInfo = make_type("Int")
 
-fn float_type() -> TypeInfo {
-    return make_type("Float")
-}
+fn float_type() -> TypeInfo = make_type("Float")
 
-fn bool_type() -> TypeInfo {
-    return make_type("Bool")
-}
+fn bool_type() -> TypeInfo = make_type("Bool")
 
-fn string_type() -> TypeInfo {
-    return make_type("String")
-}
+fn string_type() -> TypeInfo = make_type("String")
 
-fn char_type() -> TypeInfo {
-    return make_type("Char")
-}
+fn char_type() -> TypeInfo = make_type("Char")
 
-fn void_type() -> TypeInfo {
-    return make_type("Void")
-}
+fn void_type() -> TypeInfo = make_type("Void")
 
-fn make_type(name: String) -> TypeInfo {
+fn make_type(name: String) -> TypeInfo:
     let args: List<TypeInfo> = []
     let params: List<TypeInfo> = []
-    return new_type_info(name, args, false, params, none, none)
-}
+    new_type_info(name, args, false, params, none, none)
 
-fn make_generic_type(name: String, args: List<TypeInfo>) -> TypeInfo {
+fn make_generic_type(name: String, args: List<TypeInfo>) -> TypeInfo:
     let params: List<TypeInfo> = []
-    return new_type_info(name, args, false, params, none, none)
-}
+    new_type_info(name, args, false, params, none, none)
 
-fn make_fn_type(params: List<TypeInfo>, ret: TypeInfo) -> TypeInfo {
+fn make_fn_type(params: List<TypeInfo>, ret: TypeInfo) -> TypeInfo:
     let args: List<TypeInfo> = []
-    return new_type_info("<fn>", args, true, params, Some(ret), none)
-}
+    new_type_info("<fn>", args, true, params, Some(ret), none)
 
-fn make_builtin_fn_type(ret: TypeInfo) -> TypeInfo {
+fn make_builtin_fn_type(ret: TypeInfo) -> TypeInfo:
     let args: List<TypeInfo> = []
     let params: List<TypeInfo> = []
-    return new_type_info("<builtin>", args, true, params, Some(ret), none)
-}
+    new_type_info("<builtin>", args, true, params, Some(ret), none)
 
 // ---------------------------------------------------------------------------
 // Primitive and builtin type sets
 // ---------------------------------------------------------------------------
 
-fn is_primitive_type(name: String) -> Bool {
+fn is_primitive_type(name: String) -> Bool:
     if name == "Int" { return true }
     if name == "Float" { return true }
     if name == "Bool" { return true }
@@ -119,9 +90,8 @@ fn is_primitive_type(name: String) -> Bool {
     if name == "Char" { return true }
     if name == "Void" { return true }
     return false
-}
 
-fn is_builtin_generic(name: String) -> Bool {
+fn is_builtin_generic(name: String) -> Bool:
     if name == "Option" { return true }
     if name == "Result" { return true }
     if name == "List" { return true }
@@ -131,9 +101,8 @@ fn is_builtin_generic(name: String) -> Bool {
     if name == "Channel" { return true }
     if name == "Tensor" { return true }
     return false
-}
 
-fn is_builtin_function(name: String) -> Bool {
+fn is_builtin_function(name: String) -> Bool:
     if name == "print" { return true }
     if name == "println" { return true }
     if name == "len" { return true }
@@ -176,6 +145,13 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "__mn_file_exists" { return true }
     // v5.10.0 Win.1b.D: bundled-toolchain lookup support.
     if name == "__mn_executable_dir" { return true }
+    // v5.14.1 B.5/B.6: colon-block preprocessor (lives in C runtime
+    // because the bootstrap lower has pathologies on a .mn port).
+    if name == "__mn_indent_to_braces" { return true }
+    // v5.23.2 Te.3.B.2: brace-deprecation detector + warning emitter.
+    // Same C-runtime routing as __mn_indent_to_braces.
+    if name == "__mn_count_user_brace_block_openers" { return true }
+    if name == "__mn_emit_brace_deprecation_warning" { return true }
     // High-level I/O builtins (v3.41.0)
     if name == "read_line" { return true }
     if name == "read_file" { return true }
@@ -214,9 +190,8 @@ fn is_builtin_function(name: String) -> Bool {
     if name == "tensor_shape_dim" { return true }
     if name == "tensor_print" { return true }
     return false
-}
 
-fn builtin_return_type(name: String) -> String {
+fn builtin_return_type(name: String) -> String:
     if name == "print" { return "Void" }
     if name == "println" { return "Void" }
     if name == "len" { return "Int" }
@@ -269,155 +244,126 @@ fn builtin_return_type(name: String) -> String {
     if name == "tensor_shape_dim" { return "Int" }
     if name == "tensor_print" { return "Void" }
     return "Void"
-}
 
 // ---------------------------------------------------------------------------
 // Symbol table
 // ---------------------------------------------------------------------------
 
-struct Symbol {
-    name: String,
-    kind: String,
-    type_info: TypeInfo,
+struct Symbol:
+    name: String
+    kind: String
+    type_info: TypeInfo
     mutable: Bool
-}
 
-fn new_symbol(name: String, kind: String, ti: TypeInfo, mutable: Bool) -> Symbol {
-    return new Symbol { name: name, kind: kind, type_info: ti, mutable: mutable }
-}
+fn new_symbol(name: String, kind: String, ti: TypeInfo, mutable: Bool) -> Symbol = new Symbol { name: name, kind: kind, type_info: ti, mutable: mutable }
 
-struct Scope {
-    parent: Option<Scope>,
+struct Scope:
+    parent: Option<Scope>
     symbols: List<Symbol>
-}
 
-fn new_scope(parent: Option<Scope>) -> Scope {
+fn new_scope(parent: Option<Scope>) -> Scope:
     let syms: List<Symbol> = []
-    return new Scope { parent: parent, symbols: syms }
-}
+    new Scope { parent: parent, symbols: syms }
 
-fn scope_define(scope: Scope, name: String, sym: Symbol) -> Scope {
+fn scope_define(scope: Scope, name: String, sym: Symbol) -> Scope:
     // Append symbol to scope's symbol list.
     // Later entries shadow earlier ones (last-match-wins in lookup).
     let mut syms: List<Symbol> = scope.symbols
     syms.push(sym)
-    return new Scope { parent: scope.parent, symbols: syms }
-}
+    new Scope { parent: scope.parent, symbols: syms }
 
-fn scope_lookup(scope: Scope, name: String) -> Option<Symbol> {
+fn scope_lookup(scope: Scope, name: String) -> Option<Symbol>:
     // Linear search through symbols (last to first for shadowing).
     let mut i: Int = len(scope.symbols) - 1
-    for _ in 0..1000000 {
-        if i < 0 {
+    for _ in 0..1000000:
+        if i < 0:
             // Not found locally; walk to parent scope.
-            match scope.parent {
-                Some(parent) => { return scope_lookup(parent, name) },
+            match scope.parent:
+                Some(parent) => { return scope_lookup(parent, name) }
                 _ => { return none }
-            }
-        }
         let sym: Symbol = scope.symbols[i]
         if sym.name == name { return Some(sym) }
         i = i - 1
-    }
     return none
-}
 
-fn scope_lookup_local(scope: Scope, name: String) -> Option<Symbol> {
+fn scope_lookup_local(scope: Scope, name: String) -> Option<Symbol>:
     // Only search the current scope (no parent walk).
     let mut i: Int = len(scope.symbols) - 1
-    for _ in 0..1000000 {
+    for _ in 0..1000000:
         if i < 0 { return none }
         let sym: Symbol = scope.symbols[i]
         if sym.name == name { return Some(sym) }
         i = i - 1
-    }
     return none
-}
 
 // ---------------------------------------------------------------------------
 // Semantic checker state
 // ---------------------------------------------------------------------------
 
-struct SemanticChecker {
-    filename: String,
-    errors: List<SemanticError>,
-    global_scope: Scope,
+struct SemanticChecker:
+    filename: String
+    errors: List<SemanticError>
+    global_scope: Scope
     current_scope: Scope
-}
 
-fn new_checker(filename: String) -> SemanticChecker {
+fn new_checker(filename: String) -> SemanticChecker:
     let scope: Scope = new_scope(none)
     let errs: List<SemanticError> = []
-    return new SemanticChecker { filename: filename, errors: errs, global_scope: scope, current_scope: scope }
-}
+    new SemanticChecker { filename: filename, errors: errs, global_scope: scope, current_scope: scope }
 
 // ---------------------------------------------------------------------------
 // State threading — result structs for functions that return a value + state
 // ---------------------------------------------------------------------------
 
-struct SemState {
-    errors: List<SemanticError>,
-    scope: Scope,
-    filename: String,
-    current_span: Span,
-    current_fn_return: TypeInfo,
+struct SemState:
+    errors: List<SemanticError>
+    scope: Scope
+    filename: String
+    current_span: Span
+    current_fn_return: TypeInfo
     current_fn_name: String
-}
 
-struct InferResult {
-    type_info: TypeInfo,
+struct InferResult:
+    type_info: TypeInfo
     st: SemState
-}
 
-struct CheckResult {
+struct CheckResult:
     st: SemState
-}
 
-fn new_sem_state(filename: String) -> SemState {
+fn new_sem_state(filename: String) -> SemState:
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
     let zero_span: Span = make_span(0, 0, 0, 0)
-    return new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "" }
-}
+    new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "" }
 
-fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult {
-    return new InferResult { type_info: ti, st: st }
-}
+fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult = new InferResult { type_info: ti, st: st }
 
-fn new_check_result(st: SemState) -> CheckResult {
-    return new CheckResult { st: st }
-}
+fn new_check_result(st: SemState) -> CheckResult = new CheckResult { st: st }
 
 // ---------------------------------------------------------------------------
 // Error helpers
 // ---------------------------------------------------------------------------
 
-fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState {
+fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState:
     let err: SemanticError = new_semantic_error(msg, line, col, st.filename)
     let mut errs: List<SemanticError> = st.errors
     errs.push(err)
-    return new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
-}
+    new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
 
-fn add_error_here(st: SemState, msg: String) -> SemState {
-    return add_error(st, msg, st.current_span.line, st.current_span.column)
-}
+fn add_error_here(st: SemState, msg: String) -> SemState = add_error(st, msg, st.current_span.line, st.current_span.column)
 
-fn add_error_msg(st: SemState, msg: String) -> SemState {
-    return add_error_here(st, msg)
-}
+fn add_error_msg(st: SemState, msg: String) -> SemState = add_error_here(st, msg)
 
 // ---------------------------------------------------------------------------
 // Scope helpers
 // ---------------------------------------------------------------------------
 
-fn push_scope(st: SemState) -> SemState {
+fn push_scope(st: SemState) -> SemState:
     let child: Scope = new_scope(Some(st.scope))
     let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
-    return new_st
-}
+    new_st
 
-fn pop_scope(st: SemState) -> SemState {
+fn pop_scope(st: SemState) -> SemState:
     match st.scope.parent {
         Some(parent) => {
             let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
@@ -425,53 +371,44 @@ fn pop_scope(st: SemState) -> SemState {
         },
         _ => { return st }
     }
-}
 
-fn set_span(st: SemState, span: Span) -> SemState {
-    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
-}
+fn set_span(st: SemState, span: Span) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
 
-fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState {
+fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState:
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
     let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
-    return new_st
-}
+    new_st
 
-fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState {
-    return new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name }
-}
+fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name }
 
 // ---------------------------------------------------------------------------
 // Type compatibility checking
 // ---------------------------------------------------------------------------
 
-fn is_type_param(name: String) -> Bool {
+fn is_type_param(name: String) -> Bool:
     // Single uppercase letter (T, A, B, ...) or <builtin> are type parameters
     if name == "<builtin>" { return true }
-    if len(name) == 1 {
+    if len(name) == 1:
         let c: Int = name.byte_at(0)
         if c >= 65 && c <= 90 { return true }
-    }
     return false
-}
 
-fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
+fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool:
     // v4.53.0: skip check for unknown/unresolved/error types
     if type_should_skip(a.name) { return true }
     if type_should_skip(b.name) { return true }
     if is_type_param(a.name) { return true }
     if is_type_param(b.name) { return true }
-    if a.is_function {
-        if b.is_function {
+    if a.is_function:
+        if b.is_function:
             // Compare param counts
             if len(a.param_types) != len(b.param_types) { return false }
             // Compare parameter types pairwise
             let mut j: Int = 0
-            for _ in 0..200 {
+            for _ in 0..200:
                 if j >= len(a.param_types) { break }
                 if types_compatible(a.param_types[j], b.param_types[j]) == false { return false }
                 j = j + 1
-            }
             // Compare return types
             match a.return_type {
                 Some(a_ret) => {
@@ -485,30 +422,25 @@ fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool {
                 _ => {}
             }
             return true
-        }
         return false
-    }
     if a.name != b.name { return false }
     return true
-}
 
-fn is_numeric_type(name: String) -> Bool {
+fn is_numeric_type(name: String) -> Bool:
     if name == "Int" { return true }
     if name == "Float" { return true }
     if type_should_skip(name) { return true }
     return false
-}
 
-fn is_arithmetic_operand(name: String) -> Bool {
+fn is_arithmetic_operand(name: String) -> Bool:
     if name == "Int" { return true }
     if name == "Float" { return true }
     if name == "String" { return true }
     if name == "Tensor" { return true }
     if type_should_skip(name) { return true }
     return false
-}
 
-fn type_exists(st: SemState, t: TypeInfo) -> Bool {
+fn type_exists(st: SemState, t: TypeInfo) -> Bool:
     if is_primitive_type(t.name) { return true }
     if is_builtin_generic(t.name) { return true }
     let sym: Option<Symbol> = scope_lookup(st.scope, t.name)
@@ -522,34 +454,26 @@ fn type_exists(st: SemState, t: TypeInfo) -> Bool {
         },
         _ => { return false }
     }
-}
 
 // ---------------------------------------------------------------------------
 // Binary operator type rules
 // ---------------------------------------------------------------------------
 
-fn check_arithmetic_result(left: String, right: String, op: String) -> String {
+fn check_arithmetic_result(left: String, right: String, op: String) -> String:
     if left == "Tensor" { return "Tensor" }
     if right == "Tensor" { return "Tensor" }
-    if op == "+" {
+    if op == "+":
         if left == "String" { return "String" }
         if right == "String" { return "String" }
-    }
     if left == "Float" { return "Float" }
     if right == "Float" { return "Float" }
-    if left == "Int" {
+    if left == "Int":
         if right == "Int" { return "Int" }
-    }
     return "<unknown>"
-}
 
-fn check_comparison_result(left: String, right: String) -> String {
-    return "Bool"
-}
+fn check_comparison_result(left: String, right: String) -> String = "Bool"
 
-fn check_logical_result(left: String, right: String) -> String {
-    return "Bool"
-}
+fn check_logical_result(left: String, right: String) -> String = "Bool"
 
 // ---------------------------------------------------------------------------
 // Type resolution — convert TypeExpr AST nodes to TypeInfo
@@ -563,79 +487,67 @@ fn check_logical_result(left: String, right: String) -> String {
 // since v4.139.0).
 // ---------------------------------------------------------------------------
 
-fn bare_type_name(name: String) -> String {
+fn bare_type_name(name: String) -> String:
     let mut last_dot: Int = 0 - 1
     let mut i: Int = 0
-    for _ in 0..500 {
+    for _ in 0..500:
         if i >= len(name) { break }
         let ch: String = name.substr(i, 1)
         if ch == "." { last_dot = i }
         i = i + 1
-    }
     if last_dot < 0 { return name }
     return name.substr(last_dot + 1, len(name) - last_dot - 1)
-}
 
-fn resolve_type_expr(te: TypeExpr) -> TypeInfo {
+fn resolve_type_expr(te: TypeExpr) -> TypeInfo:
     let tek: String = type_expr_kind(te)
-    if tek == "named" {
+    if tek == "named":
         let name: String = type_expr_name(te)
         let bare: String = bare_type_name(name)
         if is_primitive_type(bare) { return make_type(bare) }
         return make_type(name)
-    }
-    if tek == "generic" {
+    if tek == "generic":
         let name: String = type_expr_name(te)
         let bare: String = bare_type_name(name)
         let args: List<TypeExpr> = type_expr_args(te)
         let mut resolved: List<TypeInfo> = []
         let mut i: Int = 0
-        for _ in 0..200 {
-            if i >= len(args) {
+        for _ in 0..200:
+            if i >= len(args):
                 if is_builtin_generic(bare) { return make_generic_type(bare, resolved) }
                 return make_generic_type(name, resolved)
-            }
             let arg: TypeExpr = args[i]
             let rt: TypeInfo = resolve_type_expr(arg)
             resolved.push(rt)
             i = i + 1
-        }
         if is_builtin_generic(bare) { return make_generic_type(bare, resolved) }
         return make_generic_type(name, resolved)
-    }
-    if tek == "fn" {
+    if tek == "fn":
         let param_types: List<TypeExpr> = type_expr_fn_params(te)
         let return_type: TypeExpr = type_expr_fn_ret(te)
         let mut params: List<TypeInfo> = []
         let mut i_fn: Int = 0
-        for _ in 0..200 {
-            if i_fn >= len(param_types) {
+        for _ in 0..200:
+            if i_fn >= len(param_types):
                 let ret: TypeInfo = resolve_type_expr(return_type)
                 return make_fn_type(params, ret)
-            }
             let pt: TypeExpr = param_types[i_fn]
             let rp: TypeInfo = resolve_type_expr(pt)
             params.push(rp)
             i_fn = i_fn + 1
-        }
         let ret2: TypeInfo = resolve_type_expr(return_type)
         return make_fn_type(params, ret2)
-    }
     return unknown_type()
-}
 
-fn resolve_type_opt(te: Option<TypeExpr>) -> TypeInfo {
-    match te {
-        Some(t) => { return resolve_type_expr(t) },
+fn resolve_type_opt(te: Option<TypeExpr>) -> TypeInfo:
+    match te:
+        Some(t) => { return resolve_type_expr(t) }
         _ => { return unknown_type() }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Expression type inference
 // ---------------------------------------------------------------------------
 
-fn infer_expr(st: SemState, expr: Expr) -> InferResult {
+fn infer_expr(st: SemState, expr: Expr) -> InferResult:
     let ek: String = expr_kind(expr)
     if ek == "int_lit" { return new_infer_result(int_type(), st) }
     if ek == "float_lit" { return new_infer_result(float_type(), st) }
@@ -644,7 +556,7 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
     if ek == "char_lit" { return new_infer_result(char_type(), st) }
     if ek == "none_lit" { return new_infer_result(make_type("Option"), st) }
 
-    if ek == "ident" {
+    if ek == "ident":
         let name: String = expr_ident_name(expr)
         // v4.128.0 (Sh.8): bare `None` is a variant of Option. Mirrors
         // mapanare/lower.py::_lower_identifier. Prevents "Undefined
@@ -658,284 +570,316 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult {
                 return new_infer_result(error_type(), st_ident_err)
             }
         }
-    }
 
     if ek == "binary" { return check_binary_expr(st, expr_binary_left(expr), expr_binary_op(expr), expr_binary_right(expr)) }
+    if ek == "chained_cmp":
+        // v5.21.0 Te.6 — type-check each adjacent pair as a comparison.
+        // Result is always Bool. Threading state through pair checks
+        // mirrors how `infer_expr` handles other multi-subexpression
+        // shapes (call args, method args).
+        let mut st_chain: SemState = st
+        let cc_operands: List<Expr> = expr_chained_operands(expr)
+        let cc_ops: List<String> = expr_chained_ops(expr)
+        let nco: Int = len(cc_ops)
+        let mut ci: Int = 0
+        for _ in 0..200:
+            if ci >= nco { return new_infer_result(make_type("Bool"), st_chain) }
+            let pr: InferResult = check_binary_expr(st_chain, cc_operands[ci], cc_ops[ci], cc_operands[ci + 1])
+            st_chain = pr.st
+            ci = ci + 1
+        return new_infer_result(make_type("Bool"), st_chain)
     if ek == "unary" { return check_unary_expr(st, expr_unary_op(expr), expr_unary_operand(expr)) }
     if ek == "call" { return check_call_expr(st, expr_call_callee(expr), expr_call_args(expr)) }
 
-    if ek == "method_call" {
+    if ek == "method_call":
         let obj_r: InferResult = infer_expr(st, expr_method_obj(expr))
         // v4.53.0: cascade suppression — ERROR receiver propagates
         if type_is_error(obj_r.type_info) { return new_infer_result(error_type(), obj_r.st) }
         let mut st_method: SemState = obj_r.st
         let args: List<Expr> = expr_method_args(expr)
         let mut i_method: Int = 0
-        for _ in 0..200 {
+        for _ in 0..200:
             if i_method >= len(args) { return new_infer_result(unknown_type(), st_method) }
             let arg: Expr = args[i_method]
             let ar: InferResult = infer_expr(st_method, arg)
             st_method = ar.st
             i_method = i_method + 1
-        }
         return new_infer_result(unknown_type(), st_method)
-    }
 
-    if ek == "field_access" {
+    if ek == "field_access":
         let obj_r_field: InferResult = infer_expr(st, expr_field_obj(expr))
         // v4.53.0: cascade suppression — ERROR receiver propagates
         if type_is_error(obj_r_field.type_info) { return new_infer_result(error_type(), obj_r_field.st) }
         return new_infer_result(unknown_type(), obj_r_field.st)
-    }
 
-    if ek == "namespace_access" {
+    if ek == "namespace_access":
         return new_infer_result(unknown_type(), st)
-    }
 
-    if ek == "index" {
+    if ek == "index":
         let obj_r_idx: InferResult = infer_expr(st, expr_index_obj(expr))
         // v4.53.0: cascade suppression — ERROR receiver propagates
-        if type_is_error(obj_r_idx.type_info) {
+        if type_is_error(obj_r_idx.type_info):
             let idx_r_skip: InferResult = infer_expr(obj_r_idx.st, expr_index_idx(expr))
             return new_infer_result(error_type(), idx_r_skip.st)
-        }
         let idx_r: InferResult = infer_expr(obj_r_idx.st, expr_index_idx(expr))
         // List<T>[i] -> T
-        if obj_r_idx.type_info.name == "List" {
-            if len(obj_r_idx.type_info.args) > 0 {
+        if obj_r_idx.type_info.name == "List":
+            if len(obj_r_idx.type_info.args) > 0:
                 let elem_ti: TypeInfo = obj_r_idx.type_info.args[0]
                 return new_infer_result(elem_ti, idx_r.st)
-            }
-        }
         return new_infer_result(unknown_type(), idx_r.st)
-    }
 
     // v5.6.1 Sh.6 Phase 2 — multi-dim tensor indexing `a[i, j]`. Walk the
     // object + all indices for side-effect inference (pushes diagnostics);
     // element type is Tensor<T>'s T, defaulting to Float when unknown.
-    if ek == "tensor_index" {
+    if ek == "tensor_index":
         let ti_obj_r: InferResult = infer_expr(st, expr_ti_obj(expr))
         let mut st_ti: SemState = ti_obj_r.st
         let ti_idxs: List<Expr> = expr_ti_indices(expr)
         let mut ki: Int = 0
         let n_idx: Int = len(ti_idxs)
-        for _ in 0..128 {
-            if ki < n_idx {
+        for _ in 0..128:
+            if ki < n_idx:
                 let ixr: InferResult = infer_expr(st_ti, ti_idxs[ki])
                 st_ti = ixr.st
                 ki = ki + 1
-            }
-        }
-        if type_is_error(ti_obj_r.type_info) {
+        if type_is_error(ti_obj_r.type_info):
             return new_infer_result(error_type(), st_ti)
-        }
-        if ti_obj_r.type_info.name == "Tensor" {
-            if len(ti_obj_r.type_info.args) > 0 {
+        if ti_obj_r.type_info.name == "Tensor":
+            if len(ti_obj_r.type_info.args) > 0:
                 return new_infer_result(ti_obj_r.type_info.args[0], st_ti)
-            }
             return new_infer_result(make_type("Float"), st_ti)
-        }
         return new_infer_result(unknown_type(), st_ti)
-    }
 
     // v5.6.3 Sh.6 Phase 4 — tensor slicing `a[1..3, _]`. Walk the object
     // and every item's expression(s) for diagnostics. Result type is
     // Tensor<T> (same as input — rank is preserved/reduced at runtime,
     // not compile-time). Mirrors mapanare/semantic.py's TensorSlice arm.
-    if ek == "tensor_slice" {
+    if ek == "tensor_slice":
         let sl_obj_r: InferResult = infer_expr(st, expr_slice_obj(expr))
         let mut st_sl: SemState = sl_obj_r.st
         let sl_items: List<IndexItem> = expr_slice_items(expr)
         let mut sl_i: Int = 0
         let n_items: Int = len(sl_items)
-        for _ in 0..128 {
-            if sl_i < n_items {
+        for _ in 0..128:
+            if sl_i < n_items:
                 let it: IndexItem = sl_items[sl_i]
-                if it.kind == "scalar" {
+                if it.kind == "scalar":
                     let scr: InferResult = infer_expr(st_sl, it.expr)
                     st_sl = scr.st
-                }
-                if it.kind == "range" {
+                if it.kind == "range":
                     let rs_kind: String = expr_kind(it.start)
-                    if rs_kind != "none_lit" {
+                    if rs_kind != "none_lit":
                         let rsr: InferResult = infer_expr(st_sl, it.start)
                         st_sl = rsr.st
-                    }
                     let re_kind: String = expr_kind(it.end)
-                    if re_kind != "none_lit" {
+                    if re_kind != "none_lit":
                         let rer: InferResult = infer_expr(st_sl, it.end)
                         st_sl = rer.st
-                    }
-                }
                 sl_i = sl_i + 1
-            }
-        }
-        if type_is_error(sl_obj_r.type_info) {
+        if type_is_error(sl_obj_r.type_info):
             return new_infer_result(error_type(), st_sl)
-        }
-        if sl_obj_r.type_info.name == "Tensor" {
+        if sl_obj_r.type_info.name == "Tensor":
             return new_infer_result(sl_obj_r.type_info, st_sl)
-        }
         return new_infer_result(unknown_type(), st_sl)
-    }
 
     if ek == "pipe" { return check_pipe_expr(st, expr_pipe_left(expr), expr_pipe_right(expr)) }
 
-    if ek == "range" {
+    if ek == "range":
         let sr: InferResult = infer_expr(st, expr_range_start(expr))
         let er_range: InferResult = infer_expr(sr.st, expr_range_end(expr))
         return new_infer_result(make_type("Range"), er_range.st)
-    }
 
     if ek == "lambda" { return check_lambda_expr(st, expr_lambda_params(expr), expr_lambda_body(expr)) }
     if ek == "spawn" { return check_spawn_expr(st, expr_spawn_callee(expr), expr_spawn_args(expr)) }
 
-    if ek == "sync" {
+    if ek == "sync":
         let ir_sync: InferResult = infer_expr(st, expr_sync_inner(expr))
         return new_infer_result(unknown_type(), ir_sync.st)
-    }
 
-    if ek == "send" {
+    if ek == "send":
         let st_send: SemState = check_send_expr(st, expr_send_target(expr), expr_send_value(expr))
         return new_infer_result(void_type(), st_send)
-    }
 
-    if ek == "error_prop" {
+    if ek == "error_prop":
         let ir_errprop: InferResult = infer_expr(st, expr_errorprop_inner(expr))
         // v4.53.0: cascade suppression — ERROR inner propagates without new error
         if type_is_error(ir_errprop.type_info) { return new_infer_result(error_type(), ir_errprop.st) }
         let mut st_ep: SemState = ir_errprop.st
         let inner_name: String = ir_errprop.type_info.name
         // v4.52.0: validate ? operator (D1 fix)
-        if !type_should_skip(inner_name) {
-            if inner_name != "Result" {
-                if inner_name != "Option" {
+        if !type_should_skip(inner_name):
+            if inner_name != "Result":
+                if inner_name != "Option":
                     st_ep = add_error_here(st_ep, "`?` requires `Result` or `Option`, got `" + inner_name + "`")
                     return new_infer_result(error_type(), st_ep)
-                }
-            }
-        }
         // Check enclosing function returns compatible type
-        if inner_name == "Result" {
-            if !type_should_skip(st_ep.current_fn_return.name) {
-                if st_ep.current_fn_return.name != "Result" {
+        if inner_name == "Result":
+            if !type_should_skip(st_ep.current_fn_return.name):
+                if st_ep.current_fn_return.name != "Result":
                     st_ep = add_error_here(st_ep, "`?` on a `Result` value requires the enclosing function `" + st_ep.current_fn_name + "` to return `Result`")
                     return new_infer_result(error_type(), st_ep)
-                }
-            }
-        }
-        if inner_name == "Option" {
-            if !type_should_skip(st_ep.current_fn_return.name) {
-                if st_ep.current_fn_return.name != "Option" {
+        if inner_name == "Option":
+            if !type_should_skip(st_ep.current_fn_return.name):
+                if st_ep.current_fn_return.name != "Option":
                     st_ep = add_error_here(st_ep, "`?` on an `Option` value requires the enclosing function `" + st_ep.current_fn_name + "` to return `Option`")
                     return new_infer_result(error_type(), st_ep)
-                }
-            }
-        }
         return new_infer_result(unknown_type(), st_ep)
-    }
 
-    if ek == "list_lit" {
+    // v5.16.0 Te.4.C — string interpolation. Each part is inferred for
+    // side effects (pushes diagnostics); the result is always String.
+    // Mirrors Python's `_infer_expr` on `InterpString` (which delegates
+    // type-checking to the per-part Cast at lower time).
+    if ek == "interp_string":
+        let iparts: List<Expr> = expr_interp_parts(expr)
+        let mut st_interp: SemState = st
+        let mut i_interp: Int = 0
+        for _ in 0..1000:
+            if i_interp >= len(iparts) { break }
+            let ipart: Expr = iparts[i_interp]
+            let ipr: InferResult = infer_expr(st_interp, ipart)
+            st_interp = ipr.st
+            i_interp = i_interp + 1
+        return new_infer_result(string_type(), st_interp)
+
+    if ek == "list_lit":
         let elements: List<Expr> = expr_list_elements(expr)
-        if len(elements) > 0 {
+        if len(elements) > 0:
             let first: Expr = elements[0]
             let fr_list: InferResult = infer_expr(st, first)
             let mut st_list: SemState = fr_list.st
             let mut i_list: Int = 1
-            for _ in 0..600 {
-                if i_list >= len(elements) {
+            for _ in 0..600:
+                if i_list >= len(elements):
                     let args_list: List<TypeInfo> = []
                     return new_infer_result(make_generic_type("List", args_list), st_list)
-                }
                 let elem: Expr = elements[i_list]
                 let er_list: InferResult = infer_expr(st_list, elem)
                 st_list = er_list.st
                 i_list = i_list + 1
-            }
             let args2: List<TypeInfo> = []
             return new_infer_result(make_generic_type("List", args2), st_list)
-        }
         let empty_args: List<TypeInfo> = []
         return new_infer_result(make_generic_type("List", empty_args), st)
-    }
 
     // Tensor literal (v4.42.0)
-    if ek == "tensor_lit" {
+    if ek == "tensor_lit":
         let elements: List<Expr> = expr_tensor_elements(expr)
         let mut st_tens: SemState = st
         let mut i_tens: Int = 0
-        for _ in 0..2000 {
-            if i_tens >= len(elements) {
+        for _ in 0..2000:
+            if i_tens >= len(elements):
                 let args_tens: List<TypeInfo> = []
                 return new_infer_result(make_generic_type("Tensor", args_tens), st_tens)
-            }
             let elem_t: Expr = elements[i_tens]
             let er_tens: InferResult = infer_expr(st_tens, elem_t)
             st_tens = er_tens.st
             i_tens = i_tens + 1
-        }
         let args2_t: List<TypeInfo> = []
         return new_infer_result(make_generic_type("Tensor", args2_t), st_tens)
-    }
 
-    if ek == "construct" {
+    if ek == "construct":
         let name: String = expr_construct_name(expr)
         let fields: List<FieldInit> = expr_construct_fields(expr)
         let mut st_ctor: SemState = st
         let mut i_ctor: Int = 0
-        for _ in 0..200 {
+        for _ in 0..200:
             if i_ctor >= len(fields) { return new_infer_result(make_type(name), st_ctor) }
             let fi: FieldInit = fields[i_ctor]
             let fr_ctor: InferResult = infer_expr(st_ctor, fi.value)
             st_ctor = fr_ctor.st
             i_ctor = i_ctor + 1
-        }
         return new_infer_result(make_type(name), st_ctor)
-    }
 
-    if ek == "some_wrap" {
+    // v5.20.1 Te.5.F.C — struct update: type-check overrides + base.
+    if ek == "construct_update":
+        let cu_name: String = expr_construct_update_name(expr)
+        let cu_overrides: List<FieldInit> = expr_construct_update_overrides(expr)
+        let cu_base: Expr = expr_construct_update_base(expr)
+        let mut st_cu: SemState = st
+        let base_r_cu: InferResult = infer_expr(st_cu, cu_base)
+        st_cu = base_r_cu.st
+        let mut j_cu: Int = 0
+        let n_cu: Int = len(cu_overrides)
+        for _ in 0..200:
+            if j_cu >= n_cu { return new_infer_result(make_type(cu_name), st_cu) }
+            let ovi: FieldInit = cu_overrides[j_cu]
+            let or_cu: InferResult = infer_expr(st_cu, ovi.value)
+            st_cu = or_cu.st
+            j_cu = j_cu + 1
+        return new_infer_result(make_type(cu_name), st_cu)
+
+    if ek == "some_wrap":
         let vr_some: InferResult = infer_expr(st, expr_wrap_inner(expr))
         let args_some: List<TypeInfo> = []
         return new_infer_result(make_generic_type("Option", args_some), vr_some.st)
-    }
 
-    if ek == "ok_wrap" {
+    if ek == "ok_wrap":
         let vr_ok: InferResult = infer_expr(st, expr_wrap_inner(expr))
         let args_ok: List<TypeInfo> = []
         return new_infer_result(make_generic_type("Result", args_ok), vr_ok.st)
-    }
 
-    if ek == "err_wrap" {
+    if ek == "err_wrap":
         let vr_err: InferResult = infer_expr(st, expr_wrap_inner(expr))
         let args_err: List<TypeInfo> = []
         return new_infer_result(make_generic_type("Result", args_err), vr_err.st)
-    }
 
-    if ek == "signal_val" {
+    if ek == "signal_val":
         let vr_signal: InferResult = infer_expr(st, expr_signal_inner(expr))
         let args_signal: List<TypeInfo> = []
         return new_infer_result(make_generic_type("Signal", args_signal), vr_signal.st)
-    }
 
     if ek == "assign" { return check_assign_expr(st, expr_assign_target(expr), expr_assign_op(expr), expr_assign_value(expr)) }
     if ek == "if" { return check_if_expr(st, expr_if_cond(expr), expr_if_then(expr), expr_if_else(expr)) }
+    // v5.20.1 Te.5.F.E — if-let: infer scrutinee, bind pattern in
+    // then-block scope; else block in a nested scope.
+    if ek == "if_let":
+        let il_pat: Pattern = expr_iflet_pattern(expr)
+        let il_scrut: Expr = expr_iflet_scrutinee(expr)
+        let il_then: Block = expr_iflet_then(expr)
+        let il_else: Option<Block> = expr_iflet_else(expr)
+        let sr_il: InferResult = infer_expr(st, il_scrut)
+        let mut s_il: SemState = sr_il.st
+        let inner_il: SemState = push_scope(s_il)
+        let pk_il: String = pattern_kind(il_pat)
+        let mut bound_il: SemState = inner_il
+        if pk_il == "constructor":
+            let pargs_il: List<Pattern> = pattern_ctor_args(il_pat)
+            let mut j_il: Int = 0
+            let nargs_il: Int = len(pargs_il)
+            for _ in 0..16:
+                if j_il >= nargs_il { break }
+                let arg_il: Pattern = pargs_il[j_il]
+                if pattern_kind(arg_il) == "ident":
+                    let sym_il: Symbol = new_symbol(pattern_ident_name(arg_il), "variable", unknown_type(), false)
+                    bound_il = define_in_scope(bound_il, pattern_ident_name(arg_il), sym_il)
+                j_il = j_il + 1
+        let after_il: SemState = check_block(bound_il, il_then)
+        let mut after2_il: SemState = pop_scope(after_il)
+        match il_else {
+            Some(eb) => {
+                let inner2_il: SemState = push_scope(after2_il)
+                let after3_il: SemState = check_block(inner2_il, eb)
+                after2_il = pop_scope(after3_il)
+            },
+            _ => {}
+        }
+        return new_infer_result(unknown_type(), after2_il)
     if ek == "match" { return check_match_expr(st, expr_match_subject(expr), expr_match_arms(expr)) }
 
     // v5.5.0 Sh.4: `await expr` — recurse into inner so errors inside are
     // caught; the awaited T is inferred at lower-level once Future<T> lands.
-    if ek == "await" {
+    if ek == "await":
         let ir_await: InferResult = infer_expr(st, expr_await_inner(expr))
         return new_infer_result(unknown_type(), ir_await.st)
-    }
 
     return new_infer_result(unknown_type(), st)
-}
 
 // ---------------------------------------------------------------------------
 // Binary operators
 // ---------------------------------------------------------------------------
 
-fn check_binary_expr(st: SemState, left: Expr, op: String, right: Expr) -> InferResult {
+fn check_binary_expr(st: SemState, left: Expr, op: String, right: Expr) -> InferResult:
     let lr: InferResult = infer_expr(st, left)
     let rr: InferResult = infer_expr(lr.st, right)
     let lt: String = lr.type_info.name
@@ -968,158 +912,117 @@ fn check_binary_expr(st: SemState, left: Expr, op: String, right: Expr) -> Infer
     if op == "@" { return check_matmul_binary(st2, lt, rt, lr.type_info, rr.type_info) }
 
     return new_infer_result(unknown_type(), st2)
-}
 
-fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult {
+fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult:
     // Tensor element-wise operations
-    if lt == "Tensor" {
-        if !type_should_skip(rt) {
-            if rt != "Tensor" {
-                if rt != "Int" {
-                    if rt != "Float" {
+    if lt == "Tensor":
+        if !type_should_skip(rt):
+            if rt != "Tensor":
+                if rt != "Int":
+                    if rt != "Float":
                         let st_tensor_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for Tensor and " + rt)
                         return new_infer_result(make_type("Tensor"), st_tensor_lt)
-                    }
-                }
-            }
-        }
         return new_infer_result(make_type("Tensor"), st)
-    }
-    if rt == "Tensor" {
-        if !type_should_skip(lt) {
-            if lt != "Int" {
-                if lt != "Float" {
+    if rt == "Tensor":
+        if !type_should_skip(lt):
+            if lt != "Int":
+                if lt != "Float":
                     let st_tensor_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for " + lt + " and Tensor")
                     return new_infer_result(make_type("Tensor"), st_tensor_rt)
-                }
-            }
-        }
         return new_infer_result(make_type("Tensor"), st)
-    }
 
     // Non-tensor arithmetic
-    if !type_should_skip(lt) {
-        if lt != "Int" {
-            if lt != "Float" {
-                if lt != "String" {
+    if !type_should_skip(lt):
+        if lt != "Int":
+            if lt != "Float":
+                if lt != "String":
                     let st_arith_lt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
                     return new_infer_result(error_type(), st_arith_lt)
-                }
-            }
-        }
-    }
-    if !type_should_skip(rt) {
-        if rt != "Int" {
-            if rt != "Float" {
-                if rt != "String" {
+    if !type_should_skip(rt):
+        if rt != "Int":
+            if rt != "Float":
+                if rt != "String":
                     let st_arith_rt: SemState = add_error_here(st, "Operator '" + op + "' not supported for types " + lt + " and " + rt)
                     return new_infer_result(error_type(), st_arith_rt)
-                }
-            }
-        }
-    }
 
     let result_name: String = check_arithmetic_result(lt, rt, op)
     return new_infer_result(make_type(result_name), st)
-}
 
-fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> InferResult {
+fn check_logical_binary(st: SemState, lt: String, rt: String, op: String) -> InferResult:
     let mut st2: SemState = st
-    if !type_should_skip(lt) {
-        if lt != "Bool" {
+    if !type_should_skip(lt):
+        if lt != "Bool":
             st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + lt)
-        }
-    }
-    if !type_should_skip(rt) {
-        if rt != "Bool" {
+    if !type_should_skip(rt):
+        if rt != "Bool":
             st2 = add_error_here(st2, "Operator '" + op + "' requires Bool, got " + rt)
-        }
-    }
-    return new_infer_result(bool_type(), st2)
-}
+    new_infer_result(bool_type(), st2)
 
-fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult {
+fn check_matmul_binary(st: SemState, lt: String, rt: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult:
     let mut st2: SemState = st
-    if !type_should_skip(lt) {
-        if lt != "Tensor" {
+    if !type_should_skip(lt):
+        if lt != "Tensor":
             st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + lt)
-        }
-    }
-    if !type_should_skip(rt) {
-        if rt != "Tensor" {
+    if !type_should_skip(rt):
+        if rt != "Tensor":
             st2 = add_error_here(st2, "Operator '@' requires Tensor, got " + rt)
-        }
-    }
     let elem: TypeInfo = unknown_type()
-    if len(left_ti.args) > 0 {
+    if len(left_ti.args) > 0:
         let elem2: TypeInfo = left_ti.args[0]
         let mut args: List<TypeInfo> = []
         args.push(elem2)
         return new_infer_result(make_generic_type("Tensor", args), st2)
-    }
     let args3: List<TypeInfo> = []
     return new_infer_result(make_generic_type("Tensor", args3), st2)
-}
 
 // ---------------------------------------------------------------------------
 // Unary operators
 // ---------------------------------------------------------------------------
 
-fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult {
+fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult:
     let or: InferResult = infer_expr(st, operand)
     let ot: String = or.type_info.name
     // v4.53.0: cascade suppression
     if ot == "<error>" { return new_infer_result(error_type(), or.st) }
 
-    if op == "-" {
-        if !type_should_skip(ot) {
-            if ot != "Int" {
-                if ot != "Float" {
+    if op == "-":
+        if !type_should_skip(ot):
+            if ot != "Int":
+                if ot != "Float":
                     let st_neg: SemState = add_error_here(or.st, "Unary '-' not supported for type " + ot)
                     return new_infer_result(error_type(), st_neg)
-                }
-            }
-        }
         return new_infer_result(or.type_info, or.st)
-    }
 
-    if op == "!" {
-        if !type_should_skip(ot) {
-            if ot != "Bool" {
+    if op == "!":
+        if !type_should_skip(ot):
+            if ot != "Bool":
                 let st_not: SemState = add_error_here(or.st, "Unary '!' requires Bool, got " + ot)
                 return new_infer_result(error_type(), st_not)
-            }
-        }
         return new_infer_result(bool_type(), or.st)
-    }
 
     return new_infer_result(unknown_type(), or.st)
-}
 
 // ---------------------------------------------------------------------------
 // Call expression
 // ---------------------------------------------------------------------------
 
-fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult {
+fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult:
     // Infer argument types
     let mut st2: SemState = st
     let mut arg_types: List<TypeInfo> = []
     let mut i: Int = 0
-    for _ in 0..200 {
-        if i >= len(args) {
+    for _ in 0..200:
+        if i >= len(args):
             return check_call_resolved(st2, callee, arg_types)
-        }
         let arg: Expr = args[i]
         let ar: InferResult = infer_expr(st2, arg)
         st2 = ar.st
         arg_types.push(ar.type_info)
         i = i + 1
-    }
     return check_call_resolved(st2, callee, arg_types)
-}
 
-fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) -> InferResult {
-    if expr_kind(callee) == "ident" {
+fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) -> InferResult:
+    if expr_kind(callee) == "ident":
         let name: String = expr_ident_name(callee)
         let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
         match sym_opt {
@@ -1154,21 +1057,19 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
                 return new_infer_result(error_type(), st_undef)
             }
         }
-    }
     let cr: InferResult = infer_expr(st, callee)
     // v4.53.0: cascade suppression — ERROR callee propagates
     if type_is_error(cr.type_info) { return new_infer_result(error_type(), cr.st) }
     return new_infer_result(unknown_type(), cr.st)
-}
 
 // ---------------------------------------------------------------------------
 // Assignment
 // ---------------------------------------------------------------------------
 
-fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> InferResult {
+fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> InferResult:
     let vr: InferResult = infer_expr(st, value)
 
-    if expr_kind(target) == "ident" {
+    if expr_kind(target) == "ident":
         let name: String = expr_ident_name(target)
         let sym_opt: Option<Symbol> = scope_lookup(vr.st.scope, name)
         match sym_opt {
@@ -1192,26 +1093,22 @@ fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> Inf
                 return new_infer_result(void_type(), st_assign_undef)
             }
         }
-    }
     // Field or index target — infer both sides
     let tr: InferResult = infer_expr(vr.st, target)
     return new_infer_result(void_type(), tr.st)
-}
 
 // ---------------------------------------------------------------------------
 // If expression
 // ---------------------------------------------------------------------------
 
-fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Option<ElseClause>) -> InferResult {
+fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Option<ElseClause>) -> InferResult:
     let cr: InferResult = infer_expr(st, cond)
     let mut st2: SemState = cr.st
 
     // v4.53.0: skip check for unknown/error types
-    if !type_should_skip(cr.type_info.name) {
-        if cr.type_info.name != "Bool" {
+    if !type_should_skip(cr.type_info.name):
+        if cr.type_info.name != "Bool":
             st2 = add_error_here(st2, "If condition must be Bool, got " + cr.type_info.name)
-        }
-    }
 
     // Check then block
     let then_st: SemState = push_scope(st2)
@@ -1227,27 +1124,24 @@ fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Optio
     }
 
     return new_infer_result(unknown_type(), st2)
-}
 
-fn check_else_clause(st: SemState, ec: ElseClause) -> SemState {
-    if else_clause_kind(ec) == "else_block" {
+fn check_else_clause(st: SemState, ec: ElseClause) -> SemState:
+    if else_clause_kind(ec) == "else_block":
         let inner: SemState = push_scope(st)
         let after: SemState = check_block(inner, else_clause_block(ec))
         return pop_scope(after)
-    }
     let r: InferResult = check_if_expr(st, else_clause_cond(ec), else_clause_then(ec), else_clause_else(ec))
     return r.st
-}
 
 // ---------------------------------------------------------------------------
 // Match expression
 // ---------------------------------------------------------------------------
 
-fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferResult {
+fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferResult:
     let sr: InferResult = infer_expr(st, subject)
     let mut st2: SemState = sr.st
     let mut i: Int = 0
-    for _ in 0..200 {
+    for _ in 0..200:
         if i >= len(arms) { return new_infer_result(unknown_type(), st2) }
         let arm: MatchArm = arms[i]
         let arm_st: SemState = push_scope(st2)
@@ -1270,92 +1164,78 @@ fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferR
         let after_arm: SemState = check_match_arm_body(guarded_st, arm.body)
         st2 = pop_scope(after_arm)
         i = i + 1
-    }
     return new_infer_result(unknown_type(), st2)
-}
 
-fn check_match_arm_body(st: SemState, body: MatchArmBody) -> SemState {
-    if match_arm_body_kind(body) == "expr" {
+fn check_match_arm_body(st: SemState, body: MatchArmBody) -> SemState:
+    if match_arm_body_kind(body) == "expr":
         let r: InferResult = infer_expr(st, match_arm_body_expr(body))
         return r.st
-    }
     return check_block(st, match_arm_body_block(body))
-}
 
-fn bind_pattern(st: SemState, pat: Pattern) -> SemState {
+fn bind_pattern(st: SemState, pat: Pattern) -> SemState:
     let pk: String = pattern_kind(pat)
     if pk == "wildcard" { return st }
-    if pk == "ident" {
+    if pk == "ident":
         let name: String = pattern_ident_name(pat)
         let sym: Symbol = new_symbol(name, "variable", unknown_type(), false)
         return define_in_scope(st, name, sym)
-    }
     if pk == "literal" { return st }
-    if pk == "constructor" {
+    if pk == "constructor":
         let args: List<Pattern> = pattern_ctor_args(pat)
         let mut st2: SemState = st
         let mut i: Int = 0
-        for _ in 0..200 {
+        for _ in 0..200:
             if i >= len(args) { return st2 }
             let arg: Pattern = args[i]
             st2 = bind_pattern(st2, arg)
             i = i + 1
-        }
         return st2
-    }
     // v4.35.0: or-patterns — bind from first alternative (all have same names)
-    if pk == "or" {
+    if pk == "or":
         let alts: List<Pattern> = pattern_or_alts(pat)
-        if len(alts) > 0 {
+        if len(alts) > 0:
             return bind_pattern(st, alts[0])
-        }
-    }
     return st
-}
 
 // ---------------------------------------------------------------------------
 // Lambda
 // ---------------------------------------------------------------------------
 
-fn check_lambda_expr(st: SemState, params: List<Param>, body: LambdaBody) -> InferResult {
+fn check_lambda_expr(st: SemState, params: List<Param>, body: LambdaBody) -> InferResult:
     let inner: SemState = push_scope(st)
     let mut st2: SemState = inner
     let mut param_types: List<TypeInfo> = []
     let mut i: Int = 0
 
     // Register parameters
-    for _ in 0..200 {
-        if i >= len(params) {
+    for _ in 0..200:
+        if i >= len(params):
             // Check body
             let body_result: InferResult = check_lambda_body(st2, body)
             let st3: SemState = pop_scope(body_result.st)
             let fn_ti: TypeInfo = make_fn_type(param_types, body_result.type_info)
             return new_infer_result(fn_ti, st3)
-        }
         let p: Param = params[i]
         let pt: TypeInfo = resolve_type_opt(p.type_annotation)
         param_types.push(pt)
         let sym: Symbol = new_symbol(p.name, "param", pt, false)
         st2 = define_in_scope(st2, p.name, sym)
         i = i + 1
-    }
 
     let st4: SemState = pop_scope(st2)
     return new_infer_result(unknown_type(), st4)
-}
 
-fn check_lambda_body(st: SemState, body: LambdaBody) -> InferResult {
+fn check_lambda_body(st: SemState, body: LambdaBody) -> InferResult:
     if lambda_body_kind(body) == "expr" { return infer_expr(st, lambda_body_expr(body)) }
     let st2: SemState = check_block(st, lambda_body_block(body))
     return new_infer_result(unknown_type(), st2)
-}
 
 // ---------------------------------------------------------------------------
 // Spawn / Send
 // ---------------------------------------------------------------------------
 
-fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult {
-    if expr_kind(callee) == "ident" {
+fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult:
+    if expr_kind(callee) == "ident":
         let name: String = expr_ident_name(callee)
         let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
         match sym_opt {
@@ -1373,42 +1253,36 @@ fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult {
                 return new_infer_result(error_type(), st_err)
             }
         }
-    }
     return new_infer_result(unknown_type(), st)
-}
 
-fn check_spawn_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult {
+fn check_spawn_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult:
     // Infer arguments first
     let mut st2: SemState = st
     let mut i: Int = 0
-    for _ in 0..200 {
-        if i < len(args) {
+    for _ in 0..200:
+        if i < len(args):
             let arg: Expr = args[i]
             let ar: InferResult = infer_expr(st2, arg)
             st2 = ar.st
             i = i + 1
-        }
-    }
     // Then check callee (no nested match-in-if-in-for)
-    return check_spawn_callee(st2, callee)
-}
+    check_spawn_callee(st2, callee)
 
-fn check_send_expr(st: SemState, value: Expr, target: Expr) -> SemState {
+fn check_send_expr(st: SemState, value: Expr, target: Expr) -> SemState:
     let vr: InferResult = infer_expr(st, value)
     let tr: InferResult = infer_expr(vr.st, target)
-    return tr.st
-}
+    tr.st
 
 // ---------------------------------------------------------------------------
 // Pipe expression
 // ---------------------------------------------------------------------------
 
-fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
+fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult:
     let lr: InferResult = infer_expr(st, left)
     let st2: SemState = lr.st
 
     let rk: String = expr_kind(right)
-    if rk == "ident" {
+    if rk == "ident":
         let name: String = expr_ident_name(right)
         let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
         match sym_opt {
@@ -1445,40 +1319,33 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult {
                 return new_infer_result(error_type(), st3_undef)
             }
         }
-    }
-    if rk == "call" {
+    if rk == "call":
         return check_call_expr(st2, expr_call_callee(right), expr_call_args(right))
-    }
     let rr: InferResult = infer_expr(st2, right)
     return new_infer_result(unknown_type(), rr.st)
-}
 
 // ---------------------------------------------------------------------------
 // Block and statement checking
 // ---------------------------------------------------------------------------
 
-fn check_block(st: SemState, block: Block) -> SemState {
+fn check_block(st: SemState, block: Block) -> SemState:
     let mut st2: SemState = set_span(st, block.span)
     let mut i: Int = 0
-    for _ in 0..600 {
+    for _ in 0..600:
         if i >= len(block.stmts) { return st2 }
         let stmt: Stmt = block.stmts[i]
         st2 = check_stmt(st2, stmt)
         i = i + 1
-    }
     return st2
-}
 
-fn check_stmt(st: SemState, stmt: Stmt) -> SemState {
+fn check_stmt(st: SemState, stmt: Stmt) -> SemState:
     let sk: String = stmt_kind(stmt)
-    if sk == "let" {
+    if sk == "let":
         return check_let_stmt(st, stmt_let_name(stmt), stmt_let_mutable(stmt), stmt_let_type(stmt), stmt_let_value(stmt))
-    }
-    if sk == "expr_stmt" {
+    if sk == "expr_stmt":
         let r_expr: InferResult = infer_expr(st, stmt_expr(stmt))
         return r_expr.st
-    }
-    if sk == "return" {
+    if sk == "return":
         let value_opt: Option<Expr> = stmt_return_val(stmt)
         match value_opt {
             Some(value) => {
@@ -1487,186 +1354,242 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState {
             },
             _ => { return st }
         }
-    }
-    if sk == "for" {
+    if sk == "for":
         return check_for_stmt(st, stmt_for_var(stmt), stmt_for_iter(stmt), stmt_for_body(stmt))
-    }
-    if sk == "while" {
+    if sk == "while":
         let wr: InferResult = infer_expr(st, stmt_while_cond(stmt))
         let mut st_while: SemState = wr.st
         // v4.52.0: while condition must be Bool (D3 fix)
-        if !type_should_skip(wr.type_info.name) {
-            if wr.type_info.name != "Bool" {
+        if !type_should_skip(wr.type_info.name):
+            if wr.type_info.name != "Bool":
                 st_while = add_error_here(st_while, "While condition must be Bool, got " + wr.type_info.name)
-            }
-        }
         let inner: SemState = push_scope(st_while)
         let after: SemState = check_block(inner, stmt_while_body(stmt))
         return pop_scope(after)
-    }
     if sk == "break" { return st }
     if sk == "continue" { return st }
-    if sk == "assert" {
+    if sk == "assert":
         let ar: InferResult = infer_expr(st, stmt_assert_expr(stmt))
         return ar.st
-    }
-    if sk == "signal_decl" {
+    if sk == "signal_decl":
         return check_signal_decl(st, stmt_signal_name(stmt), stmt_signal_mutable(stmt), stmt_signal_type(stmt), stmt_signal_value(stmt))
-    }
-    if sk == "stream_decl" {
+    if sk == "stream_decl":
         return check_stream_decl(st, stmt_stream_name(stmt), stmt_stream_type(stmt), stmt_stream_value(stmt))
-    }
+    // v5.20.1 Te.5.F.D — let destructure: type-check value + bind
+    // each leaf field name in the surrounding scope.
+    if sk == "let_destructure":
+        return check_let_destructure(st, stmt_letdest_pattern(stmt), stmt_letdest_mutable(stmt), stmt_letdest_value(stmt))
+    // v5.20.1 Te.5.F.E — let-else: type-check scrutinee + binds the
+    // pattern's single ident (if any) in the surrounding scope; else
+    // block runs in a nested scope.
+    if sk == "let_else":
+        return check_let_else(st, stmt_letelse_pattern(stmt), stmt_letelse_scrutinee(stmt), stmt_letelse_else(stmt))
+    // v5.20.1 Te.5.F.E — while-let: scrutinee + body in nested scope.
+    if sk == "while_let":
+        return check_while_let(st, stmt_whilelet_pattern(stmt), stmt_whilelet_scrutinee(stmt), stmt_whilelet_body(stmt))
     return st
-}
 
 // ---------------------------------------------------------------------------
 // Let binding
 // ---------------------------------------------------------------------------
 
-fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> SemState {
+fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> SemState:
     let vr: InferResult = infer_expr(st, value)
     let ann_type: TypeInfo = resolve_type_opt(type_ann)
     let mut st2: SemState = vr.st
 
     // Check annotation matches value type
     // v4.53.0: skip if either side is unknown/error (cascade suppression)
-    if !type_should_skip(ann_type.name) {
-        if !type_should_skip(vr.type_info.name) {
-            if types_compatible(ann_type, vr.type_info) == false {
+    if !type_should_skip(ann_type.name):
+        if !type_should_skip(vr.type_info.name):
+            if types_compatible(ann_type, vr.type_info) == false:
                 st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name)
-            }
-        }
-    }
 
     // Use annotation if available, otherwise inferred
     let resolved: TypeInfo = ann_type
-    if type_should_skip(ann_type.name) {
+    if type_should_skip(ann_type.name):
         let resolved2: TypeInfo = vr.type_info
         let sym: Symbol = new_symbol(name, "variable", resolved2, mutable)
         return define_in_scope(st2, name, sym)
-    }
     let sym2: Symbol = new_symbol(name, "variable", resolved, mutable)
     return define_in_scope(st2, name, sym2)
-}
+
+// v5.20.1 Te.5.F.D — let destructure check: type-infer value, then
+// recursively define each leaf field name in the current scope.
+fn check_let_destructure(st: SemState, pattern: StructPattern, outer_mut: Bool, value: Expr) -> SemState:
+    let vr: InferResult = infer_expr(st, value)
+    let mut st2: SemState = vr.st
+    return define_pattern_bindings(st2, pattern, outer_mut)
+
+fn define_pattern_bindings(st: SemState, pattern: StructPattern, outer_mut: Bool) -> SemState:
+    let mut s: SemState = st
+    let n: Int = len(pattern.fields)
+    let mut i: Int = 0
+    for _ in 0..200:
+        if i >= n { return s }
+        let fp: FieldPattern = pattern.fields[i]
+        match fp.sub_pattern {
+            Some(sub) => {
+                s = define_pattern_bindings(s, sub, outer_mut)
+            },
+            _ => {
+                let mut leaf_mut: Bool = outer_mut
+                if fp.mutable { leaf_mut = true }
+                let sym: Symbol = new_symbol(fp.name, "variable", unknown_type(), leaf_mut)
+                s = define_in_scope(s, fp.name, sym)
+            }
+        }
+        i = i + 1
+    return s
+
+// v5.20.1 Te.5.F.E — let-else check: type-infer scrutinee, bind the
+// pattern's single ident (if any) in the surrounding scope, type-check
+// else block in a nested scope.
+fn check_let_else(st: SemState, pattern: Pattern, scrutinee: Expr, else_block: Block) -> SemState:
+    let sr: InferResult = infer_expr(st, scrutinee)
+    let mut s: SemState = sr.st
+    // Bind pattern leaves into the current scope (they "leak" — that's
+    // the essence of let-else).
+    let pk: String = pattern_kind(pattern)
+    if pk == "constructor":
+        let pargs: List<Pattern> = pattern_ctor_args(pattern)
+        let mut j: Int = 0
+        let nargs: Int = len(pargs)
+        for _ in 0..16:
+            if j >= nargs { break }
+            let arg: Pattern = pargs[j]
+            if pattern_kind(arg) == "ident":
+                let sym: Symbol = new_symbol(pattern_ident_name(arg), "variable", unknown_type(), false)
+                s = define_in_scope(s, pattern_ident_name(arg), sym)
+            j = j + 1
+    // Else block in a nested scope.
+    let inner: SemState = push_scope(s)
+    let after: SemState = check_block(inner, else_block)
+    return pop_scope(after)
+
+// v5.20.1 Te.5.F.E — while-let check.
+fn check_while_let(st: SemState, pattern: Pattern, scrutinee: Expr, body: Block) -> SemState:
+    let sr: InferResult = infer_expr(st, scrutinee)
+    let mut s: SemState = sr.st
+    let inner: SemState = push_scope(s)
+    let pk: String = pattern_kind(pattern)
+    let mut bound: SemState = inner
+    if pk == "constructor":
+        let pargs: List<Pattern> = pattern_ctor_args(pattern)
+        let mut j: Int = 0
+        let nargs: Int = len(pargs)
+        for _ in 0..16:
+            if j >= nargs { break }
+            let arg: Pattern = pargs[j]
+            if pattern_kind(arg) == "ident":
+                let sym: Symbol = new_symbol(pattern_ident_name(arg), "variable", unknown_type(), false)
+                bound = define_in_scope(bound, pattern_ident_name(arg), sym)
+            j = j + 1
+    let after: SemState = check_block(bound, body)
+    return pop_scope(after)
 
 // ---------------------------------------------------------------------------
 // For loop
 // ---------------------------------------------------------------------------
 
-fn check_for_stmt(st: SemState, var_name: String, iterable: Expr, body: Block) -> SemState {
+fn check_for_stmt(st: SemState, var_name: String, iterable: Expr, body: Block) -> SemState:
     let ir: InferResult = infer_expr(st, iterable)
     let inner: SemState = push_scope(ir.st)
     // Infer loop variable type from iterable
     let mut var_type: TypeInfo = unknown_type()
-    if ir.type_info.kind == "range" {
+    if ir.type_info.kind == "range":
         var_type = int_type()
-    }
-    if ir.type_info.kind == "list" {
-        if len(ir.type_info.args) > 0 {
+    if ir.type_info.kind == "list":
+        if len(ir.type_info.args) > 0:
             var_type = ir.type_info.args[0]
-        }
-    }
     let sym: Symbol = new_symbol(var_name, "variable", var_type, false)
     let bound: SemState = define_in_scope(inner, var_name, sym)
     let after: SemState = check_block(bound, body)
     return pop_scope(after)
-}
 
 // ---------------------------------------------------------------------------
 // Signal / Stream declarations
 // ---------------------------------------------------------------------------
 
-fn check_signal_decl(st: SemState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> SemState {
+fn check_signal_decl(st: SemState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> SemState:
     let vr: InferResult = infer_expr(st, value)
     let ann_type: TypeInfo = resolve_type_opt(type_ann)
     let resolved: TypeInfo = ann_type
-    if type_should_skip(ann_type.name) {
+    if type_should_skip(ann_type.name):
         let resolved2: TypeInfo = vr.type_info
         let mut args: List<TypeInfo> = []
         args.push(resolved2)
         let sig_type: TypeInfo = make_generic_type("Signal", args)
         let sym: Symbol = new_symbol(name, "variable", sig_type, mutable)
         return define_in_scope(vr.st, name, sym)
-    }
     let mut args2: List<TypeInfo> = []
     args2.push(resolved)
     let sig_type2: TypeInfo = make_generic_type("Signal", args2)
     let sym2: Symbol = new_symbol(name, "variable", sig_type2, mutable)
     return define_in_scope(vr.st, name, sym2)
-}
 
-fn check_stream_decl(st: SemState, name: String, type_ann: Option<TypeExpr>, value: Expr) -> SemState {
+fn check_stream_decl(st: SemState, name: String, type_ann: Option<TypeExpr>, value: Expr) -> SemState:
     let vr: InferResult = infer_expr(st, value)
     let ann_type: TypeInfo = resolve_type_opt(type_ann)
     let resolved: TypeInfo = ann_type
-    if type_should_skip(ann_type.name) {
+    if type_should_skip(ann_type.name):
         let resolved2: TypeInfo = vr.type_info
         let args: List<TypeInfo> = []
         let stream_type: TypeInfo = make_generic_type("Stream", args)
         let sym: Symbol = new_symbol(name, "variable", stream_type, false)
         return define_in_scope(vr.st, name, sym)
-    }
     let args2: List<TypeInfo> = []
     let stream_type2: TypeInfo = make_generic_type("Stream", args2)
     let sym2: Symbol = new_symbol(name, "variable", stream_type2, false)
     return define_in_scope(vr.st, name, sym2)
-}
 
 // ---------------------------------------------------------------------------
 // Definition registration (first pass)
 // ---------------------------------------------------------------------------
 
-fn register_definitions(st: SemState, program: Program) -> SemState {
+fn register_definitions(st: SemState, program: Program) -> SemState:
     let mut st2: SemState = st
     let mut i: Int = 0
-    for _ in 0..2000 {
+    for _ in 0..2000:
         if i >= len(program.definitions) { return st2 }
         let def: Definition = program.definitions[i]
         st2 = register_def(st2, def)
         i = i + 1
-    }
     return st2
-}
 
-fn register_def(st: SemState, def: Definition) -> SemState {
+fn register_def(st: SemState, def: Definition) -> SemState:
     let dk: String = def_kind(def)
     // v4.78.0 (CARRY_FORWARD A10b): handle const_def early, before the
     // long if-chain, to work around a codegen issue where later branches
     // are unreachable in the compiled binary.
-    if dk == "const_def" {
+    if dk == "const_def":
         let cn: String = def_const_name(def)
         let cte: TypeExpr = def_const_type_expr(def)
         let cty: TypeInfo = resolve_type_expr(cte)
         let csym: Symbol = new_symbol(cn, "variable", cty, false)
         return define_in_scope(st, cn, csym)
-    }
-    if dk == "fn_def" {
+    if dk == "fn_def":
         let data: FnDefData = def_fn_data(def)
         let mut params: List<TypeInfo> = []
         let mut pi: Int = 0
-        for _ in 0..200 {
-            if pi >= len(data.params) {
+        for _ in 0..200:
+            if pi >= len(data.params):
                 let ret: TypeInfo = resolve_type_opt(data.return_type)
                 let fn_type: TypeInfo = make_fn_type(params, ret)
                 let sym_fn: Symbol = new_symbol(data.name, "function", fn_type, false)
                 return define_in_scope(st, data.name, sym_fn)
-            }
             let p: Param = data.params[pi]
             let pt: TypeInfo = resolve_type_opt(p.type_annotation)
             pi = pi + 1
-        }
         return st
-    }
-    if dk == "agent_def" {
+    if dk == "agent_def":
         let data: AgentDefData = def_agent_data(def)
         let sym_agent: Symbol = new_symbol(data.name, "agent", make_type(data.name), false)
         return define_in_scope(st, data.name, sym_agent)
-    }
-    if dk == "pipe_def" {
+    if dk == "pipe_def":
         let sym_pipe: Symbol = new_symbol("pipe", "pipe", unknown_type(), false)
         return define_in_scope(st, "pipe", sym_pipe)
-    }
-    if dk == "struct_def" {
+    if dk == "struct_def":
         let data: StructDefData = def_struct_data(def)
         let sym_struct: Symbol = new_symbol(data.name, "struct", make_type(data.name), false)
         let mut st2: SemState = define_in_scope(st, data.name, sym_struct)
@@ -1676,58 +1599,48 @@ fn register_def(st: SemState, def: Definition) -> SemState {
         let ctor_sym: Symbol = new_symbol(ctor_name, "function", ctor_type, false)
         st2 = define_in_scope(st2, ctor_name, ctor_sym)
         return st2
-    }
-    if dk == "enum_def" {
+    if dk == "enum_def":
         let data: EnumDefData = def_enum_data(def)
         let sym_enum: Symbol = new_symbol(data.name, "enum", make_type(data.name), false)
         let mut st2: SemState = define_in_scope(st, data.name, sym_enum)
         let mut vi: Int = 0
-        for _ in 0..200 {
+        for _ in 0..200:
             if vi >= len(data.variants) { return st2 }
             let v: EnumVariant = data.variants[vi]
             let variant_type: TypeInfo = make_builtin_fn_type(make_type(data.name))
             let vsym: Symbol = new_symbol(v.name, "function", variant_type, false)
             st2 = define_in_scope(st2, v.name, vsym)
             vi = vi + 1
-        }
         return st2
-    }
-    if dk == "type_alias" {
+    if dk == "type_alias":
         let name: String = def_type_alias_name(def)
         let resolved: TypeInfo = resolve_type_expr(def_type_alias_type(def))
         let sym_alias: Symbol = new_symbol(name, "type_alias", resolved, false)
         return define_in_scope(st, name, sym_alias)
-    }
-    if dk == "import_def" {
+    if dk == "import_def":
         let path: List<String> = def_import_path(def)
         let items: List<String> = def_import_items(def)
         let mut st2: SemState = st
-        if len(items) > 0 {
+        if len(items) > 0:
             let mut ii: Int = 0
-            for _ in 0..200 {
+            for _ in 0..200:
                 if ii >= len(items) { return st2 }
                 let item: String = items[ii]
                 let sym_item: Symbol = new_symbol(item, "variable", unknown_type(), false)
                 st2 = define_in_scope(st2, item, sym_item)
                 ii = ii + 1
-            }
-        } else {
-            if len(path) > 0 {
+        else:
+            if len(path) > 0:
                 let mod_name: String = path[len(path) - 1]
                 let sym_mod: Symbol = new_symbol(mod_name, "variable", unknown_type(), false)
                 st2 = define_in_scope(st2, mod_name, sym_mod)
-            }
-        }
         return st2
-    }
-    if dk == "export_def" {
+    if dk == "export_def":
         let inner_def: Option<Definition> = def_export_inner(def)
-        match inner_def {
-            Some(d) => { return register_def(st, d) },
+        match inner_def:
+            Some(d) => { return register_def(st, d) }
             _ => { return st }
-        }
-    }
-    if dk == "trait_def" {
+    if dk == "trait_def":
         let trait_name: String = def_trait_name(def)
         let trait_methods: List<FnDefData> = def_trait_methods(def)
         // Store method count in args list length for validation
@@ -1736,17 +1649,15 @@ fn register_def(st: SemState, def: Definition) -> SemState {
         let mut st2_trait: SemState = define_in_scope(st, trait_name, sym_trait)
         // Register each trait method as "TraitName.method_name" for impl validation
         let mut tmi: Int = 0
-        for _ in 0..200 {
+        for _ in 0..200:
             if tmi >= len(trait_methods) { return st2_trait }
             let tm: FnDefData = trait_methods[tmi]
             let tm_key: String = trait_name + "." + tm.name
             let tm_sym: Symbol = new_symbol(tm_key, "trait_method", unknown_type(), false)
             st2_trait = define_in_scope(st2_trait, tm_key, tm_sym)
             tmi = tmi + 1
-        }
         return st2_trait
-    }
-    if dk == "let_def" {
+    if dk == "let_def":
         let let_name: String = def_let_name(def)
         let let_type_name: String = def_let_type(def)
         let mut let_ty: TypeInfo = unknown_type()
@@ -1756,49 +1667,42 @@ fn register_def(st: SemState, def: Definition) -> SemState {
         if let_type_name == "String" { let_ty = string_type() }
         let sym_let: Symbol = new_symbol(let_name, "variable", let_ty, false)
         return define_in_scope(st, let_name, sym_let)
-    }
     // const_def handled at top of function (v4.78.0, CARRY_FORWARD A10b)
     // impl_def — methods handled in second pass
     return st
-}
 
 // ---------------------------------------------------------------------------
 // Definition checking (second pass)
 // ---------------------------------------------------------------------------
 
-fn check_definitions(st: SemState, program: Program) -> SemState {
+fn check_definitions(st: SemState, program: Program) -> SemState:
     let mut st2: SemState = st
     let mut i: Int = 0
-    for _ in 0..2000 {
+    for _ in 0..2000:
         if i >= len(program.definitions) { return st2 }
         let def: Definition = program.definitions[i]
         st2 = check_def(st2, def)
         i = i + 1
-    }
     return st2
-}
 
-fn check_def(st: SemState, def: Definition) -> SemState {
+fn check_def(st: SemState, def: Definition) -> SemState:
     let dk: String = def_kind(def)
     if dk == "fn_def" { return check_fn_body(st, def_fn_data(def)) }
     if dk == "agent_def" { return check_agent_body(st, def_agent_data(def)) }
     if dk == "pipe_def" { return check_pipe_stages(st, def_pipe_data(def)) }
     if dk == "impl_def" { return check_impl_body(st, def_impl_target(def), def_impl_trait_name(def), def_impl_methods(def)) }
-    if dk == "export_def" {
+    if dk == "export_def":
         let inner_def: Option<Definition> = def_export_inner(def)
-        match inner_def {
-            Some(d) => { return check_def(st, d) },
+        match inner_def:
+            Some(d) => { return check_def(st, d) }
             _ => { return st }
-        }
-    }
     return st
-}
 
 // ---------------------------------------------------------------------------
 // Function body checking
 // ---------------------------------------------------------------------------
 
-fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
+fn check_fn_body(st: SemState, data: FnDefData) -> SemState:
     let inner: SemState = push_scope(set_span(st, data.span))
     // v4.52.0: set function context for ? operator validation
     let ret_type: TypeInfo = resolve_type_opt(data.return_type)
@@ -1806,27 +1710,24 @@ fn check_fn_body(st: SemState, data: FnDefData) -> SemState {
 
     // Register parameters
     let mut pi: Int = 0
-    for _ in 0..200 {
-        if pi >= len(data.params) {
+    for _ in 0..200:
+        if pi >= len(data.params):
             // Check body
             let after: SemState = check_block(st2, data.body)
             return pop_scope(after)
-        }
         let p: Param = data.params[pi]
         let pt: TypeInfo = resolve_type_opt(p.type_annotation)
         let sym: Symbol = new_symbol(p.name, "param", pt, false)
         st2 = define_in_scope(st2, p.name, sym)
         pi = pi + 1
-    }
 
     return pop_scope(st2)
-}
 
 // ---------------------------------------------------------------------------
 // Agent body checking
 // ---------------------------------------------------------------------------
 
-fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
+fn check_agent_body(st: SemState, data: AgentDefData) -> SemState:
     let inner: SemState = push_scope(set_span(st, data.span))
     let mut st2: SemState = inner
 
@@ -1836,57 +1737,48 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState {
 
     // Register inputs
     let mut ii: Int = 0
-    for _ in 0..200 {
-        if ii >= len(data.inputs) {
+    for _ in 0..200:
+        if ii >= len(data.inputs):
             // Register outputs
             let mut oi: Int = 0
-            for _ in 0..200 {
-                if oi >= len(data.outputs) {
+            for _ in 0..200:
+                if oi >= len(data.outputs):
                     // Check state bindings
                     let mut si_idx: Int = 0
-                    for _ in 0..200 {
-                        if si_idx >= len(data.state) {
+                    for _ in 0..200:
+                        if si_idx >= len(data.state):
                             // Check methods
                             let mut mi: Int = 0
-                            for _ in 0..200 {
-                                if mi >= len(data.methods) {
+                            for _ in 0..200:
+                                if mi >= len(data.methods):
                                     return pop_scope(st2)
-                                }
                                 let method: FnDefData = data.methods[mi]
                                 st2 = check_fn_body(st2, method)
                                 mi = mi + 1
-                            }
                             return pop_scope(st2)
-                        }
                         let state_stmt: Stmt = data.state[si_idx]
                         st2 = check_stmt(st2, state_stmt)
                         si_idx = si_idx + 1
-                    }
                     return pop_scope(st2)
-                }
                 let out: AgentOutput = data.outputs[oi]
                 let out_type: TypeInfo = resolve_type_expr(out.type_annotation)
                 let out_sym: Symbol = new_symbol(out.name, "variable", out_type, false)
                 st2 = define_in_scope(st2, out.name, out_sym)
                 oi = oi + 1
-            }
             return pop_scope(st2)
-        }
         let inp: AgentInput = data.inputs[ii]
         let inp_type: TypeInfo = resolve_type_expr(inp.type_annotation)
         let inp_sym: Symbol = new_symbol(inp.name, "variable", inp_type, false)
         st2 = define_in_scope(st2, inp.name, inp_sym)
         ii = ii + 1
-    }
 
     return pop_scope(st2)
-}
 
 // ---------------------------------------------------------------------------
 // Impl block checking
 // ---------------------------------------------------------------------------
 
-fn check_impl_body(st: SemState, target: String, trait_name_opt: Option<String>, methods: List<FnDefData>) -> SemState {
+fn check_impl_body(st: SemState, target: String, trait_name_opt: Option<String>, methods: List<FnDefData>) -> SemState:
     let sym_opt: Option<Symbol> = scope_lookup(st.scope, target)
     let mut st2: SemState = st
     match sym_opt {
@@ -1917,70 +1809,58 @@ fn check_impl_body(st: SemState, target: String, trait_name_opt: Option<String>,
     }
 
     let mut mi: Int = 0
-    for _ in 0..200 {
+    for _ in 0..200:
         if mi >= len(methods) { return st2 }
         let method: FnDefData = methods[mi]
         st2 = check_fn_body(st2, method)
         mi = mi + 1
-    }
     return st2
-}
 
-fn validate_trait_methods(st: SemState, trait_name: String, target: String, impl_methods: List<FnDefData>) -> SemState {
+fn validate_trait_methods(st: SemState, trait_name: String, target: String, impl_methods: List<FnDefData>) -> SemState:
     // Build list of implemented method names
     let mut impl_names: List<String> = []
     let mut ii: Int = 0
-    for _ in 0..200 {
+    for _ in 0..200:
         if ii >= len(impl_methods) { ii = len(impl_methods) + 1 }
-        if ii < len(impl_methods) {
+        if ii < len(impl_methods):
             impl_names.push(impl_methods[ii].name)
             ii = ii + 1
-        }
-    }
 
     // Check each registered trait method "TraitName.method" exists in impl
     let mut st2: SemState = st
     let mut ti: Int = 0
     let scope_syms: List<Symbol> = st.scope.symbols
-    for _ in 0..10000 {
+    for _ in 0..10000:
         if ti >= len(scope_syms) { return st2 }
         let sym: Symbol = scope_syms[ti]
-        if sym.kind == "trait_method" {
+        if sym.kind == "trait_method":
             let prefix: String = trait_name + "."
-            if sym.name.starts_with(prefix) {
+            if sym.name.starts_with(prefix):
                 // Extract method name after "TraitName."
                 let method_name: String = sym.name.substr(len(prefix), len(sym.name) - len(prefix))
                 // Check if impl provides this method
-                if !list_contains(impl_names, method_name) {
+                if !list_contains(impl_names, method_name):
                     st2 = add_error_here(st2, "Missing method '" + method_name + "' required by trait '" + trait_name + "' for type '" + target + "'")
-                }
-            }
-        }
         ti = ti + 1
-    }
     return st2
-}
 
-fn list_contains(lst: List<String>, item: String) -> Bool {
+fn list_contains(lst: List<String>, item: String) -> Bool:
     let mut i: Int = 0
-    for _ in 0..200 {
+    for _ in 0..200:
         if i >= len(lst) { return false }
         if lst[i] == item { return true }
         i = i + 1
-    }
     return false
-}
 
 // ---------------------------------------------------------------------------
 // Pipe definition checking
 // ---------------------------------------------------------------------------
 
-fn check_pipe_stage_type(st: SemState, stage: Expr, pipe_name: String) -> TypeInfo {
+fn check_pipe_stage_type(st: SemState, stage: Expr, pipe_name: String) -> TypeInfo:
     if expr_kind(stage) == "ident" { return resolve_pipe_ident_type(st, expr_ident_name(stage)) }
     return unknown_type()
-}
 
-fn resolve_pipe_ident_type(st: SemState, name: String) -> TypeInfo {
+fn resolve_pipe_ident_type(st: SemState, name: String) -> TypeInfo:
     let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
     match sym_opt {
         Some(sym) => {
@@ -1988,53 +1868,45 @@ fn resolve_pipe_ident_type(st: SemState, name: String) -> TypeInfo {
         },
         _ => { return unknown_type() }
     }
-}
 
-fn resolve_sym_output_type(sym: Symbol) -> TypeInfo {
+fn resolve_sym_output_type(sym: Symbol) -> TypeInfo:
     if sym.kind != "function" { return unknown_type() }
     if !sym.type_info.is_function { return unknown_type() }
-    match sym.type_info.return_type {
-        Some(ret) => { return ret },
+    match sym.type_info.return_type:
+        Some(ret) => { return ret }
         _ => { return unknown_type() }
-    }
-}
 
-fn check_pipe_stage_err(st: SemState, stage: Expr, pipe_name: String) -> SemState {
-    if expr_kind(stage) == "ident" {
+fn check_pipe_stage_err(st: SemState, stage: Expr, pipe_name: String) -> SemState:
+    if expr_kind(stage) == "ident":
         let name: String = expr_ident_name(stage)
         let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
-        match sym_opt {
-            Some(sym) => { return st },
+        match sym_opt:
+            Some(sym) => { return st }
             _ => { return add_error_here(st, "Undefined stage '" + name + "' in pipe '" + pipe_name + "'") }
-        }
-    }
     let sr: InferResult = infer_expr(st, stage)
     return sr.st
-}
 
-fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState {
+fn check_pipe_stages(st: SemState, data: PipeDefData) -> SemState:
     if len(data.stages) < 2 { return st }
 
     let mut st2: SemState = st
     let mut prev_output: TypeInfo = unknown_type()
     let mut si_idx: Int = 0
 
-    for _ in 0..200 {
+    for _ in 0..200:
         if si_idx >= len(data.stages) { return st2 }
         let stage: Expr = data.stages[si_idx]
         prev_output = check_pipe_stage_type(st2, stage, data.name)
         let stage_err: SemState = check_pipe_stage_err(st2, stage, data.name)
         st2 = stage_err
         si_idx = si_idx + 1
-    }
     return st2
-}
 
 // ---------------------------------------------------------------------------
 // Builtin registration
 // ---------------------------------------------------------------------------
 
-fn register_builtins(st: SemState) -> SemState {
+fn register_builtins(st: SemState) -> SemState:
     let mut st2: SemState = st
 
     // print, println -> Void
@@ -2138,6 +2010,14 @@ fn register_builtins(st: SemState) -> SemState {
     // v5.10.0 Win.1b.D: directory of running binary, used by find_clang().
     let edsym: Symbol = new_symbol("__mn_executable_dir", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "__mn_executable_dir", edsym)
+    // v5.14.1 B.5/B.6: colon-block preprocessor (in C runtime).
+    let itbsym: Symbol = new_symbol("__mn_indent_to_braces", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_indent_to_braces", itbsym)
+    // v5.23.2 Te.3.B.2: brace-deprecation detector + warning emitter.
+    let cubbsym: Symbol = new_symbol("__mn_count_user_brace_block_openers", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_count_user_brace_block_openers", cubbsym)
+    let ebdwsym: Symbol = new_symbol("__mn_emit_brace_deprecation_warning", "function", make_builtin_fn_type(void_type()), false)
+    st2 = define_in_scope(st2, "__mn_emit_brace_deprecation_warning", ebdwsym)
 
     // High-level I/O builtins (v3.41.0)
     let readline_sym: Symbol = new_symbol("read_line", "function", make_builtin_fn_type(string_type()), false)
@@ -2242,13 +2122,12 @@ fn register_builtins(st: SemState) -> SemState {
     st2 = define_in_scope(st2, "tensor_print", tprint_sym)
 
     return st2
-}
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-pub fn check(program: Program, filename: String) -> List<SemanticError> {
+pub fn check(program: Program, filename: String) -> List<SemanticError>:
     // Create initial state with builtins
     let mut st: SemState = new_sem_state(filename)
     st = register_builtins(st)
@@ -2260,9 +2139,7 @@ pub fn check(program: Program, filename: String) -> List<SemanticError> {
     st = check_definitions(st, program)
 
     return st.errors
-}
 
-fn check_or_raise(program: Program, filename: String) -> List<SemanticError> {
+fn check_or_raise(program: Program, filename: String) -> List<SemanticError>:
     let errors: List<SemanticError> = check(program, filename)
-    return errors
-}
+    errors

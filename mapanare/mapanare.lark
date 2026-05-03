@@ -53,7 +53,7 @@ export_names: NAME (COMMA NAME)* COMMA?
 // Function definition
 // ------------------------------------------------------------
 
-fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? block
+fn_def: (KW_PUB | PLUS)? KW_FN NAME type_params? LPAREN param_list? RPAREN (ARROW type_expr)? (block | ASSIGN expr)
 
 // v4.68.0: ``async_fn_def`` restored (Arc 8). Backed by DESIGN.md
 // (v4.67.0). Lowering to LLVM coroutine intrinsics arrives at v4.70.0;
@@ -180,12 +180,16 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
      | LBRACE ELLIPSIS RBRACE
 
 ?stmt: let_stmt
+     | let_dest_stmt
+     | let_else_stmt
      | for_stmt
      | for_await_stmt
      | while_stmt
+     | while_let_stmt
      | return_stmt
      | break_stmt
      | continue_stmt
+     | pass_stmt
      | assert_stmt
      | di_stmt
      | expr_stmt
@@ -193,11 +197,39 @@ block: LBRACE (_nl | SEMICOLON)* (stmt (_nl | SEMICOLON)+)* (stmt (_nl | SEMICOL
 
 let_stmt: KW_LET KW_MUT? NAME (COLON type_expr)? ASSIGN expr
 
+// v5.20.0 Te.5.D: struct destructuring in let.
+//   let Point { x, y } = p
+//   let mut Point { x, y } = p           — outer mut applies to all
+//   let Point { x, mut y } = p           — per-field mut (D4)
+//   let Outer { inner: Inner { a }, b } = o   — nested
+//   let Point { x, .. } = p              — rest pattern (D9)
+let_dest_stmt: KW_LET KW_MUT? struct_dest_pat (COLON type_expr)? ASSIGN expr
+
+struct_dest_pat: NAME LBRACE field_dest_list? RBRACE
+
+field_dest_list: field_dest (COMMA field_dest)* (COMMA RANGE)? COMMA?
+               | RANGE COMMA?
+
+field_dest: KW_MUT? NAME (COLON struct_dest_pat)?
+
+// v5.20.0 Te.5.E: `let <constructor_pattern> = <scrutinee> else { ... }`.
+// Pattern is restricted to constructor_pattern to avoid LALR(1)
+// ambiguity with let_stmt / let_dest_stmt; this covers Some(x) /
+// Ok(v) / Err(e) / wildcard which are the cases that benefit from
+// let-else. The else block is required and must diverge (D5/D6 —
+// semantic check enforces).
+let_else_stmt: KW_LET (constructor_pattern | wildcard_pattern) ASSIGN expr KW_ELSE block
+
+// v5.20.0 Te.5.E: `while let <pattern> = <scrutinee> { body }`.
+// Desugars to `while true { match scrutinee { pat => body, _ => break } }`.
+while_let_stmt: KW_WHILE KW_LET pattern ASSIGN expr block
+
 // v4.55.0: real const — distinct from let, requires type annotation + constant initializer
 const_def: KW_CONST NAME COLON type_expr ASSIGN expr
 return_stmt: KW_RETURN expr?
 break_stmt: KW_BREAK
 continue_stmt: KW_CONTINUE
+pass_stmt: KW_PASS
 assert_stmt: KW_ASSERT expr (COMMA expr)?
 di_stmt: KW_DI expr
 for_stmt: KW_FOR NAME KW_IN expr block
@@ -228,18 +260,19 @@ expr_stmt: expr
 ?or_expr: and_expr
         | or_expr OR and_expr -> or_op
 
-?and_expr: eq_expr
-         | and_expr AND eq_expr -> and_op
+?and_expr: cmp_expr
+         | and_expr AND cmp_expr -> and_op
 
-?eq_expr: cmp_expr
-        | eq_expr EQ cmp_expr -> eq_op
-        | eq_expr NE cmp_expr -> ne_op
-
+// v5.21.0 Te.6: comparisons chain (Python-style).
+// 0 cmp_tail → just pipe_expr (inlined by ?).
+// 1 cmp_tail → cmp_chain transformer emits a BinaryExpr (legacy shape).
+// 2+ cmp_tail → cmp_chain transformer emits a ChainedCompare node.
+// EQ/NE merged into the same precedence level as LT/GT/LE/GE so
+// `a == b < c` chains as `(a == b) && (b < c)` matching Python.
 ?cmp_expr: pipe_expr
-         | cmp_expr LT pipe_expr -> lt_op
-         | cmp_expr GT pipe_expr -> gt_op
-         | cmp_expr LE pipe_expr -> le_op
-         | cmp_expr GE pipe_expr -> ge_op
+         | pipe_expr cmp_tail+ -> cmp_chain
+
+cmp_tail: (LT | GT | LE | GE | EQ | NE) pipe_expr
 
 ?pipe_expr: range_expr
           | pipe_expr PIPE_OP range_expr -> pipe_op
@@ -285,6 +318,7 @@ arg_list: expr (COMMA expr)* COMMA?
           | signal_expr
           | stream_expr
           | if_expr
+          | if_let_expr
           | match_expr
           | construct_expr
           | generic_call_expr
@@ -293,9 +327,23 @@ arg_list: expr (COMMA expr)* COMMA?
           | ident
           | tensor_literal
           | list_lit
+          | list_comp
           | map_lit
+          | map_comp
           | paren_expr
           | tuple_expr
+          | lambda_terse
+
+// v5.15.0 Te.2.F: terse lambda — `|x| body`, `|x, y| body`, `|| body`.
+// Single-expression body only. Always wraps the body as `return expr`.
+lambda_terse: BAR (NAME (COMMA NAME)*)? BAR expr
+
+// v5.15.0 Te.2.B/C: list + map comprehensions. The disambiguator
+// against list_lit / map_lit is the keyword `for` after the first
+// element/entry (single-token LALR(1) lookahead).
+list_comp: LBRACKET expr comp_clause+ RBRACKET
+map_comp:  MAP_OPEN expr COLON expr comp_clause+ RBRACE
+comp_clause: KW_FOR NAME KW_IN expr (KW_IF expr)*
 
 // Generic call with turbofish: foo::<Type>(args)
 generic_call_expr: NAME DOUBLE_COLON LT type_expr (COMMA type_expr)* GT LPAREN arg_list? RPAREN
@@ -303,8 +351,11 @@ generic_call_expr: NAME DOUBLE_COLON LT type_expr (COMMA type_expr)* GT LPAREN a
 // Struct construction: new Name { field: value, ... }
 // Uses `new` keyword prefix for LALR disambiguation (avoids
 // ambiguity between struct literals and blocks after if/for/while).
-construct_expr: KW_NEW NAME LBRACE (field_init (COMMA field_init)* COMMA?)? RBRACE
-field_init: NAME COLON expr
+// v5.20.0 Te.5.B: field shorthand — `Point { x }` ≡ `Point { x: x }`.
+// v5.20.0 Te.5.C: struct update — `Point { x: 5, ..base }`.
+construct_expr: KW_NEW NAME LBRACE (field_init (COMMA field_init)* (COMMA RANGE expr)? COMMA?)? RBRACE
+              | KW_NEW NAME LBRACE RANGE expr RBRACE
+field_init: NAME (COLON expr)?
 
 int_lit: DEC_INT | HEX_INT | BIN_INT | OCT_INT
 float_lit: FLOAT_LIT
@@ -328,6 +379,11 @@ stream_expr: KW_STREAM LPAREN expr RPAREN
 
 if_expr: KW_IF expr block (KW_ELSE block)? -> if_simple
        | KW_IF expr block KW_ELSE if_expr -> if_elseif
+
+// v5.20.0 Te.5.E: `if let <pattern> = <scrutinee> { ... } [else { ... }]`.
+// Desugars to `match` over the scrutinee with the pattern arm + a
+// wildcard arm running the else block (or `()` when omitted).
+if_let_expr: KW_IF KW_LET pattern ASSIGN expr block (KW_ELSE block)?
 
 match_expr: KW_MATCH expr LBRACE _nl* match_arms _nl* RBRACE
 match_arms: (match_arm (COMMA _nl* match_arm)* COMMA?)?
@@ -411,6 +467,10 @@ KW_NEW: "new"
 KW_ASSERT: "assert"
 KW_BREAK.2: /(?:break|sal)(?![a-zA-Z0-9_])/
 KW_CONTINUE.2: /(?:continue|sigue)(?![a-zA-Z0-9_])/
+// v5.14.0 Te.1: ``pass`` — explicit empty-block marker. Required in
+// colon-block bodies that have no statements (``fn empty(): pass``).
+// Lowers to a no-op. Also legal as a stand-alone stmt in brace blocks.
+KW_PASS.2: /pass(?![a-zA-Z0-9_])/
 // v4.68.0: KW_ASYNC / KW_AWAIT restored (Arc 8). Backed by
 // v4.67.0/DESIGN.md. ``async`` and ``await`` are reserved keywords
 // again. This is a breaking change from v4.30.0-v4.67.0 where they

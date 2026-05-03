@@ -7,7 +7,6 @@ Usage: mapanare test [path] [--filter pattern]
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -129,25 +128,147 @@ def _compile_test_to_llvm(source: str, filename: str, test_names: list[str]) -> 
 
 
 def _find_runtime_lib() -> str | None:
-    """Locate the native runtime shared/static library for linking."""
+    """Locate the native runtime shared/static library for linking.
+
+    Canonical artifacts (matched in priority order):
+
+    * ``libmapanare_rt.a``      — built by ``make build-rt`` (8 modules + Metal
+      on Darwin); the link target ``cli.py`` and every CI workflow rely on.
+    * ``libmapanare_runtime.so`` — built by ``runtime/native/build_native.py``;
+      shared-library variant used by the docker runtime image.
+
+    Pre-fix the candidates included ``libmapanare_core.*`` — stale names that
+    no current build target produces. The mismatch silently returned ``None``
+    so ``mapanare test`` shipped clang invocations with no runtime library,
+    and the linker failed on ``__mn_str_eq`` / ``__mn_str_println`` only on
+    fresh-checkout CI (a stale local ``libmapanare_core.so`` masked it on
+    developer machines).
+    """
     this_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(this_dir, "..", "runtime", "native"),
         os.path.join(this_dir, "runtime", "native"),
     ]
+    names = (
+        "libmapanare_rt.a",
+        "libmapanare_runtime.so",
+        "libmapanare_runtime.dylib",
+        "libmapanare_runtime.dll",
+    )
     for d in candidates:
-        for name in ("libmapanare_core.a", "libmapanare_core.so", "libmapanare_core.dll"):
+        for name in names:
             path = os.path.join(d, name)
             if os.path.isfile(path):
                 return os.path.abspath(path)
     return None
 
 
+_TEST_MAIN_TEMPLATE = """
+; v5.13.1 At.1: per-test main wrapper synthesized by mapanare.test_runner.
+; The lowered IR for a @test fn has no entry point; clang/ld would fail
+; with "undefined reference to `main`". Each test gets its own binary
+; with a main that calls exactly that test and returns 0 on normal
+; completion. Assertion failures inside the test call exit(1) directly.
+define i32 @main() {{
+  call void @{symbol}()
+  ret i32 0
+}}
+"""
+
+
+def _emit_test_main(symbol: str) -> str:
+    """Build the per-test entry-point IR fragment that calls ``symbol``."""
+    return _TEST_MAIN_TEMPLATE.format(symbol=symbol)
+
+
+def _build_clang_cmd(
+    ir_path: str, bin_path: str, rt_lib: str | None
+) -> tuple[list[str], dict[str, str] | None]:
+    from mapanare.toolchain import detect_toolchain, invocation_env
+
+    tc = detect_toolchain()
+    clang_exe = tc.clang if tc else "clang"
+    cmd = [clang_exe or "clang", "-O2", ir_path, "-o", bin_path]
+    if rt_lib:
+        cmd.append(rt_lib)
+    if tc is None or tc.needs_libm_flag:
+        cmd.append("-lm")
+    if tc is None or tc.needs_pthread_flag:
+        cmd.append("-lpthread")
+    env = invocation_env(tc) if tc else None
+    return cmd, env
+
+
+def _extract_failure_message(stdout: str, stderr: str, returncode: int) -> str:
+    """Pull the most useful failure context out of a crashed test process."""
+    combined = (stdout + stderr).strip()
+    for line in combined.split("\n"):
+        if "assertion failed" in line.lower():
+            return line.strip()
+    if combined:
+        return combined
+    return f"process exited with code {returncode}"
+
+
+def _run_one_test(base_ir: str, filepath: str, name: str, rt_lib: str | None) -> TestResult:
+    """Compile + run a single @test function in its own subprocess."""
+    full_ir = base_ir + _emit_test_main(name)
+
+    ir_fd, ir_path = tempfile.mkstemp(suffix=".ll", prefix=f"mn_test_{name}_")
+    exe_ext = ".exe" if sys.platform == "win32" else ""
+    bin_path = ir_path.replace(".ll", exe_ext or ".out")
+
+    try:
+        with os.fdopen(ir_fd, "w", encoding="utf-8") as f:
+            f.write(full_ir)
+
+        clang_cmd, env = _build_clang_cmd(ir_path, bin_path, rt_lib)
+        compile_result = subprocess.run(
+            clang_cmd, capture_output=True, text=True, timeout=60, env=env
+        )
+        if compile_result.returncode != 0:
+            return TestResult(
+                name=name,
+                file=filepath,
+                passed=False,
+                error=f"clang compile error: {compile_result.stderr.strip()}",
+            )
+
+        t0 = time.perf_counter()
+        try:
+            proc = subprocess.run([bin_path], capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            return TestResult(
+                name=name,
+                file=filepath,
+                passed=False,
+                duration=time.perf_counter() - t0,
+                error="timeout (60s)",
+            )
+        duration = time.perf_counter() - t0
+
+        if proc.returncode == 0:
+            return TestResult(name=name, file=filepath, passed=True, duration=duration)
+        return TestResult(
+            name=name,
+            file=filepath,
+            passed=False,
+            duration=duration,
+            error=_extract_failure_message(proc.stdout, proc.stderr, proc.returncode),
+        )
+    finally:
+        if os.path.exists(ir_path):
+            os.unlink(ir_path)
+        if os.path.exists(bin_path):
+            os.unlink(bin_path)
+
+
 def run_test_file(filepath: str, filter_pattern: str | None = None) -> list[TestResult]:
     """Run all @test functions in a single .mn file via clang AOT compilation.
 
-    Each test function is executed in a separate subprocess so that assertion
-    failures (which call exit(1) in compiled code) do not kill the runner.
+    Each test compiles to its own binary (the lowered IR has no main; we
+    synthesize one per test) and runs in a subprocess so assertion exit(1)
+    can't take down the runner.
     """
     source = _read_file(filepath)
     test_names = discover_tests(source, filepath)
@@ -158,126 +279,16 @@ def run_test_file(filepath: str, filter_pattern: str | None = None) -> list[Test
     if not test_names:
         return []
 
-    # Compile to LLVM IR (once per file)
     try:
-        llvm_ir = _compile_test_to_llvm(source, filepath, test_names)
+        base_ir = _compile_test_to_llvm(source, filepath, test_names)
     except (ParseError, SemanticErrors, Exception) as e:
         return [
             TestResult(name=n, file=filepath, passed=False, error=f"compile error: {e}")
             for n in test_names
         ]
 
-    # Write LLVM IR to a temp file, compile to binary with clang, then run
-    ir_fd, ir_path = tempfile.mkstemp(suffix=".ll", prefix="mn_test_")
-    try:
-        with os.fdopen(ir_fd, "w", encoding="utf-8") as f:
-            f.write(llvm_ir)
-
-        # Compile LLVM IR to a native binary
-        exe_ext = ".exe" if sys.platform == "win32" else ""
-        bin_path = ir_path.replace(".ll", exe_ext)
-        rt_lib = _find_runtime_lib()
-
-        from mapanare.toolchain import detect_toolchain, invocation_env
-
-        tc = detect_toolchain()
-        clang_exe = tc.clang if tc else "clang"
-        clang_cmd = [clang_exe or "clang", "-O2", ir_path, "-o", bin_path]
-        if rt_lib:
-            clang_cmd.append(rt_lib)
-        if tc is None or tc.needs_libm_flag:
-            clang_cmd.append("-lm")
-        if tc is None or tc.needs_pthread_flag:
-            clang_cmd.append("-lpthread")
-        compile_result = subprocess.run(
-            clang_cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env=invocation_env(tc) if tc else None,
-        )
-        if compile_result.returncode != 0:
-            return [
-                TestResult(
-                    name=n,
-                    file=filepath,
-                    passed=False,
-                    error=f"clang compile error: {compile_result.stderr}",
-                )
-                for n in test_names
-            ]
-
-        results: list[TestResult] = []
-        for name in test_names:
-            t0 = time.perf_counter()
-            try:
-                proc = subprocess.run(
-                    [bin_path],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-                duration = time.perf_counter() - t0
-
-                if proc.returncode == 0 and proc.stdout.strip():
-                    data = json.loads(proc.stdout.strip().split("\n")[-1])
-                    results.append(
-                        TestResult(
-                            name=name,
-                            file=filepath,
-                            passed=data["passed"],
-                            duration=data.get("duration", duration),
-                            error=data.get("error", ""),
-                        )
-                    )
-                else:
-                    # Process exited non-zero (assertion failure calls exit(1))
-                    stderr = proc.stderr.strip()
-                    # Extract assertion message from stderr/stdout
-                    error_msg = stderr or proc.stdout.strip()
-                    if not error_msg:
-                        error_msg = f"process exited with code {proc.returncode}"
-                    # Clean up the error: look for "assertion failed" in output
-                    combined = (proc.stdout + proc.stderr).strip()
-                    for line in combined.split("\n"):
-                        if "assertion failed" in line.lower():
-                            error_msg = line.strip()
-                            break
-                    results.append(
-                        TestResult(
-                            name=name,
-                            file=filepath,
-                            passed=False,
-                            duration=duration,
-                            error=error_msg,
-                        )
-                    )
-            except subprocess.TimeoutExpired:
-                results.append(
-                    TestResult(
-                        name=name,
-                        file=filepath,
-                        passed=False,
-                        duration=time.perf_counter() - t0,
-                        error="timeout (60s)",
-                    )
-                )
-            except Exception as e:
-                results.append(
-                    TestResult(
-                        name=name,
-                        file=filepath,
-                        passed=False,
-                        duration=time.perf_counter() - t0,
-                        error=str(e),
-                    )
-                )
-
-        return results
-    finally:
-        os.unlink(ir_path)
-        if os.path.exists(bin_path):
-            os.unlink(bin_path)
+    rt_lib = _find_runtime_lib()
+    return [_run_one_test(base_ir, filepath, name, rt_lib) for name in test_names]
 
 
 def run_tests(path: str = ".", filter_pattern: str | None = None) -> TestSuite:

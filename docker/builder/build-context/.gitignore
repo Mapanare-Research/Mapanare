@@ -1,0 +1,6 @@
+# Build artifacts staged by docker/builder/README.md or by the
+# publish-docker.yml CI workflow. Do not commit.
+mnc
+libmapanare_rt.a
+# mnc-wrapper.sh is checked in (it's source, not a build artifact).
+!mnc-wrapper.sh

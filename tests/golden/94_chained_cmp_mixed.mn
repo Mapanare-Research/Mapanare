@@ -1,0 +1,24 @@
+// v5.21.0 Te.6 — chained comparison with mixed operators.
+//
+// All six ops chain at the same precedence level (D1):
+// `< <= > >= == !=`. v5.21.0 merges `==`/`!=` into the same
+// precedence as ordering ops so `a == b < c` parses as
+// `(a == b) && (b < c)`, matching Python.
+
+fn half_open(x: Int) -> Bool:
+    return 0 <= x < 10
+
+fn closed(x: Int) -> Bool:
+    return 0 <= x <= 10
+
+fn equality(a: Int, b: Int, c: Int) -> Bool:
+    return a == b == c
+
+fn main():
+    print(str(half_open(0)))
+    print(str(half_open(5)))
+    print(str(half_open(9)))
+    print(str(half_open(10)))
+    print(str(closed(10)))
+    print(str(equality(7, 7, 7)))
+    print(str(equality(7, 7, 8)))
