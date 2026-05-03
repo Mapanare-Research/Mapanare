@@ -199,7 +199,13 @@ jobs:
   # =========================================================================
 
   build-cli:
-    needs: release
+    # v5.32.0 Nw.2: build-cli now waits on build-native so the Windows
+    # path can stage the native ``mnc-win-x64.exe`` into the SDK ZIP
+    # at ``dist/mapanare/mnc.exe``. Pre-v5.32.0 ``mnc.exe`` was a copy
+    # of the PyInstaller-bundled ``mapanare.exe``, which meant every
+    # CLI invocation on a Windows SDK install dispatched through the
+    # Python bootstrap — the structural lie v5.31.0 only papered over.
+    needs: [release, build-native]
     strategy:
       fail-fast: false
       matrix:
@@ -247,11 +253,44 @@ jobs:
       - name: Build CLI binary
         run: pyinstaller packaging/mapanare.spec --clean
 
-      - name: Stage mnc alias in Windows CLI bundle
+      # v5.32.0 Nw.2: download the native ``mnc-win-x64.exe`` produced
+      # by the build-native Windows job (full stage1 → stage2 self-
+      # compile cycle on a Windows runner via w64devkit MinGW). Stage
+      # it into the PyInstaller dir as ``mnc.exe`` so the SDK ZIP ships
+      # a real native compiler frontend instead of a Python bootstrap
+      # alias. Falls back to the PyInstaller copy only if the artifact
+      # is missing — protects against a transient build-native failure
+      # silently shipping the pre-v5.32.0 alias-shaped ZIP.
+      - name: Download native mnc.exe (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@v4
+        with:
+          name: mnc-windows-x64-native
+          path: .tmp-native-mnc
+
+      - name: Stage native mnc.exe in Windows CLI bundle
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Copy-Item dist/mapanare/mapanare.exe dist/mapanare/mnc.exe -Force
+          $native = ".tmp-native-mnc/mnc-win-x64.exe"
+          if (-not (Test-Path $native)) {
+              throw "FATAL: native mnc-win-x64.exe artifact missing; build-native must have failed"
+          }
+          # Verify it's actually a PE32+ executable, not a Python stub
+          # masquerading as one. ``Get-Item`` on a PE binary reads the
+          # 4-byte signature at offset 0x3C → ``PE\0\0`` (0x50 0x45).
+          $bytes = [System.IO.File]::ReadAllBytes($native)
+          if ($bytes.Length -lt 64 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+              throw "FATAL: native mnc.exe is not a PE binary (no MZ header)"
+          }
+          Copy-Item $native dist/mapanare/mnc.exe -Force
+          Write-Host "Staged native mnc.exe ($($bytes.Length) bytes) into dist/mapanare/"
+          # Sanity: the staged binary must NOT be the PyInstaller copy
+          # (those are ~30 MB; native is ~3 MB).
+          $size = (Get-Item dist/mapanare/mnc.exe).Length
+          if ($size -gt 20MB) {
+              throw "FATAL: staged mnc.exe is $size bytes (>20 MB suggests PyInstaller copy, not native binary)"
+          }
 
       - name: Smoke test CLI binary
         shell: bash
@@ -358,8 +397,21 @@ jobs:
               print("hello from clean Windows SDK smoke")
           }
           "@ | Out-File hello.mn -Encoding ASCII
+          # v5.32.0 Nw.4: --version must dispatch to the native binary
+          # without spawning Python. Snapshot the python process count
+          # before and after, then assert the call did not start a new
+          # Python interpreter. (We can't assert "zero Python anywhere"
+          # because the runner itself may have python.exe running for
+          # unrelated reasons — but we CAN assert ``mnc.exe --version``
+          # didn't add to the count.)
+          $pyBefore = (Get-Process | Where-Object { $_.Name -match '^python' }).Count
           & ./dist/mapanare/mnc.exe --version
           if ($LASTEXITCODE -ne 0) { throw "--version failed" }
+          $pyAfter = (Get-Process | Where-Object { $_.Name -match '^python' }).Count
+          if ($pyAfter -gt $pyBefore) {
+              throw "FATAL: mnc.exe --version spawned a python process (before=$pyBefore, after=$pyAfter). Native binary did not load — pre-v5.32.0 PyInstaller-copy regression."
+          }
+          Write-Host "OK: mnc.exe --version did not spawn Python (before=$pyBefore, after=$pyAfter)"
           & ./dist/mapanare/mnc.exe run hello.mn
           if ($LASTEXITCODE -ne 0) { throw "run failed" }
           & ./dist/mapanare/mnc.exe build hello.mn -o hello.exe
@@ -764,6 +816,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # v5.32.0 Nw.2: also expose the native binary as a workflow
+      # artifact so the Windows build-cli job can stage it inside the
+      # SDK ZIP at ``dist/mapanare/mnc.exe`` (replacing the PyInstaller
+      # copy of mapanare.exe). The release-asset upload above keeps the
+      # standalone download path; this artifact is the in-workflow
+      # handoff. Windows-only — only build-cli's SDK ZIP needs it for
+      # v5.32.0; Linux/macOS bundling moves to v5.33.0.
+      - name: Upload native binary as workflow artifact (Windows)
+        if: runner.os == 'Windows' && hashFiles(matrix.artifact) != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnc-windows-x64-native
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 1
+
   # =========================================================================
   # 5a. Smoke-test the published Linux versioned tarball end-to-end on
   # a clean ubuntu runner. v5.24.0 Hy.5 (Pk.1.A): mirrors the Windows
@@ -912,18 +980,57 @@ jobs:
           if (-not (Test-Path out\mapanare\sdk\bin\clang.exe)) {
             throw "SDK ZIP missing sdk\bin\clang.exe"
           }
+          if (-not (Test-Path out\mapanare\mnc.exe)) {
+            throw "SDK ZIP missing mnc.exe"
+          }
+
+          # v5.32.0 Nw.4: verify the staged mnc.exe is a native PE
+          # binary, not the pre-v5.32.0 PyInstaller-copy stub. The
+          # PyInstaller-bundled mapanare.exe is ~30 MB; the native
+          # mnc-stage1 strips to ~3-4 MB. Anything > 20 MB at
+          # mnc.exe is a regression to the pre-v5.32.0 alias-shaped
+          # ZIP.
+          $mncSize = (Get-Item out\mapanare\mnc.exe).Length
+          $mncSizeMB = [math]::Round($mncSize / 1MB, 1)
+          Write-Host "mnc.exe size: $mncSizeMB MB ($mncSize bytes)"
+          if ($mncSizeMB -gt 20) {
+            throw "FATAL: mnc.exe is $mncSizeMB MB (>20 MB suggests PyInstaller copy regression — Nw.2 staging step did not run, or the build-native artifact was missing)"
+          }
+          # Verify PE32+ MZ header.
+          $head = [System.IO.File]::ReadAllBytes("out\mapanare\mnc.exe") |
+                  Select-Object -First 2
+          if ($head[0] -ne 0x4D -or $head[1] -ne 0x5A) {
+            throw "FATAL: mnc.exe missing MZ header (not a PE binary)"
+          }
+
           $env:PATH = "C:\Windows\System32;C:\Windows"
           Remove-Item Env:LIB -ErrorAction SilentlyContinue
           Remove-Item Env:INCLUDE -ErrorAction SilentlyContinue
           Remove-Item Env:CC -ErrorAction SilentlyContinue
           Remove-Item Env:CXX -ErrorAction SilentlyContinue
+
+          # v5.32.0 Nw.4: --version must dispatch to the native
+          # frontend. Snapshot Python process count, run --version,
+          # snapshot again. A new Python interpreter would mean we
+          # silently shipped the pre-v5.32.0 alias-shaped ZIP.
+          $expectedVersion = (Get-Content VERSION -Raw).Trim()
+          $pyBefore = (Get-Process | Where-Object { $_.Name -match '^python' }).Count
+          $versionOutput = & ./out/mapanare/mnc.exe --version 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "--version failed: $versionOutput" }
+          $pyAfter = (Get-Process | Where-Object { $_.Name -match '^python' }).Count
+          if ($pyAfter -gt $pyBefore) {
+            throw "FATAL: mnc.exe --version spawned a python process (before=$pyBefore, after=$pyAfter). Native binary did not load."
+          }
+          if ($versionOutput -notmatch [regex]::Escape($expectedVersion)) {
+            throw "FATAL: --version output '$versionOutput' does not contain expected '$expectedVersion'"
+          }
+          Write-Host "OK: mnc.exe --version is native ($($versionOutput.Trim()))"
+
           @"
           fn main() {
               print("hello from clean Windows smoke")
           }
           "@ | Out-File hello.mn -Encoding ASCII
-          & ./out/mapanare/mnc.exe --version
-          if ($LASTEXITCODE -ne 0) { throw "--version failed" }
           & ./out/mapanare/mnc.exe run hello.mn
           if ($LASTEXITCODE -ne 0) { throw "run failed" }
           & ./out/mapanare/mnc.exe build hello.mn -o hello.exe
