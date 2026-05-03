@@ -1,7 +1,39 @@
 # Mapanare Language Specification
 
-**Version:** 5.38.0
-**Status:** Live — synced to the v5.38.0 cut (2026-05-03)
+**Version:** 5.39.0
+**Status:** Live — synced to the v5.39.0 cut (2026-05-03)
+
+> **v5.39.0 — Cr.\* — crypto stdlib hashing/MAC/random extensions.**
+> SPEC body unchanged from the v5.21.0 cut. v5.39.0 audits + extends
+> the existing `stdlib/crypto.mn` (283 LOC; SHA-1/256/512 + HMAC-SHA256
+> + Base64 + Hex + JWT HS256 + random_bytes already shipped) with
+> SHA-3-256, BLAKE2b-512, HMAC-SHA512, `constant_time_eq`, streaming
+> `DigestCtx` + `HmacCtx`, `random_u64`, `random_range`. Eight new
+> `__mn_*` C runtime exports appended at the end of the existing
+> crypto block in `runtime/native/mapanare_io.c`:
+> `__mn_sha3_256_str`, `__mn_blake2b_str`, `__mn_hmac_sha512_str`,
+> `__mn_constant_time_eq`, `__mn_md_ctx_new` /
+> `__mn_md_ctx_update` / `__mn_md_ctx_finalize`,
+> `__mn_hmac_ctx_new` / `__mn_hmac_ctx_update` /
+> `__mn_hmac_ctx_finalize`. ABI-stable: appended, not inserted.
+> SHA-3 / BLAKE2 / HMAC_CTX symbols probed as **optional** in
+> `evp_load()` — NULL is legitimate; callers gate. Pre-existing
+> SHA-1/256/512 + HMAC-SHA256 + Base64 + Hex + JWT surface preserved
+> unchanged. **Cr.0 emitter shortcut fix (load-bearing):** the
+> Python LLVM emitter at `mapanare/emit_llvm_text.py` had
+> unconditional builtin shortcuts for `sha256` / `hmac_sha256` /
+> `base64_*` / `hex_encode` / `random_bytes` / `regex_match` /
+> `regex_replace` that bypassed user-defined wrappers when MIR
+> inlining failed (high call-site count). Now gated on `fn not in
+> self._sigs`; user-defined wrappers win when present. AEAD,
+> Ed25519/X25519, KDFs (PBKDF2/HKDF/Argon2id) explicitly deferred to
+> v5.39.1 — staged scope per Phase-0 audit; each has its own
+> correctness trap (GCM nonce reuse, Ed25519 key serialization,
+> Argon2 availability skew across OpenSSL major versions).
+> **Stdlib gap-close arc CLOSED** — v5.34.0 (date/time) → v5.35.0
+> (sqlite) → v5.36.0 (JSON) → v5.37.0 (HTTP App) → v5.38.0 (regex
+> closeout) → v5.39.0 (crypto extensions). Manifesto arc begins
+> v5.40.0 with `ask`.
 
 > **v5.38.0 — Re.\* — regex stdlib closeout.** SPEC body unchanged
 > from the v5.21.0 cut. v5.38.0 audits + extends the existing

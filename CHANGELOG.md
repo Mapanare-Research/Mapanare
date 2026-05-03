@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.39.0] - 2026-05-03
+
+**Cr.\* — crypto stdlib hashing/MAC/random extensions; final item
+in the stdlib gap-close arc.** Sixth and final release in the
+stdlib gap-close arc (Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @
+v5.36.0, Ht.\* @ v5.37.0, Re.\* @ v5.38.0, Cr.\* @ v5.39.0).
+**Staged scope:** v5.39.0 ships the easy hashing / streaming /
+random additions; AEAD (AES-GCM, ChaCha20-Poly1305), Ed25519 +
+X25519, and password KDFs (PBKDF2, HKDF, Argon2id) are scoped for
+v5.39.1 because each has its own correctness trap (GCM nonce
+reuse, Ed25519 key serialization, Argon2 availability skew across
+OpenSSL major versions). v5.39.0 audited the pre-existing
+`stdlib/crypto.mn` (283 LOC, shipped early — already provided
+SHA-1/256/512, HMAC-SHA256, Base64 + Base64URL, Hex, JWT HS256,
+random_bytes, CryptoError) and extended it. **Strict 3-stage
+fixed point preserved by construction at v5.38.0's 241,898 lines
+/ 0 diff** (34-release strict streak from v5.7.1; zero
+`mapanare/self/*.mn` source touches). Goldens **95/95**.
+
+### Added
+
+- **Cr.1 hashing additions.** `sha3_256(data) -> hex String`
+  (FIPS 202; requires OpenSSL 1.1.1+) and
+  `blake2b(data) -> hex String` (RFC 7693; OpenSSL 1.1.0+),
+  with matching `_raw` variants returning binary digests.
+  Optional symbols — when libcrypto lacks them, the wrapper
+  returns the empty string; documented detection contract in
+  `docs/stdlib/crypto.md`.
+- **Cr.1 streaming digest.** `DigestCtx { handle, algo }` opaque
+  struct + free functions: `digest_new(algo) -> Option<DigestCtx>`,
+  `digest_update(ctx, chunk) -> Bool`, `digest_finalize(ctx) ->
+  String` (hex), `digest_finalize_raw(ctx) -> String`. Algo IDs:
+  1=SHA-256, 2=SHA-512, 3=SHA-3-256, 4=BLAKE2b. Helper functions
+  `algo_sha256()` / `algo_sha512()` / `algo_sha3_256()` /
+  `algo_blake2b()` (Mapanare does not yet support top-level
+  `const` declarations).
+- **Cr.2 HMAC additions.** `hmac_sha512(key, data) -> hex String`
+  + `_raw` variant.
+- **Cr.2 constant_time_eq.** `constant_time_eq(a, b) -> Bool` for
+  timing-safe MAC verification. Prefers OpenSSL `CRYPTO_memcmp`
+  when available; falls back to a volatile-masked aggregation
+  loop. Length comparison is not constant-time, but for
+  fixed-output-size MAC compares (256 = 32 bytes, 512 = 64 bytes)
+  both inputs are the algorithm's known length.
+- **Cr.2 streaming HMAC.** `HmacCtx { handle, algo }` opaque
+  struct + `hmac_new(algo, key) -> Option<HmacCtx>`,
+  `hmac_update`, `hmac_finalize` (hex / `_raw`). algo: 1 or 2
+  only — HMAC-SHA-3 / HMAC-BLAKE2 wait for v5.39.1+.
+- **Cr.5 random extensions.** `random_u64() -> Int` (8 bytes from
+  `random_bytes` packed big-endian) and `random_range(low, high)
+  -> Int` using rejection sampling to avoid modulo bias.
+  Degenerate cases handled: `random_range(5, 5) == 5`;
+  `random_range(10, 5) == 10`. No new C-runtime exports — both
+  derive from `__mn_random_bytes_str`.
+- **Cr.7 RFC test corpus.** `stdlib/crypto/tests/test_crypto_smoke.mn`
+  (~190 LOC, surface smoke + streaming chunked-vs-one-shot
+  equivalence + random distribution sanity) and
+  `test_crypto_corpus.mn` (~110 LOC, RFC 6234 SHA / FIPS 202
+  SHA-3 / RFC 7693 BLAKE2 / RFC 4231 HMAC tests 1, 2, 4, 5).
+  Pytest harness at `tests/stdlib/test_crypto_runtime.py`
+  (~165 LOC) mirrors the v5.34/v5.35/v5.38 concatenation
+  pattern. **3/3 GREEN.**
+- **Cr.8 C runtime extensions.** Eight new `__mn_*` exports
+  appended at the end of the existing crypto block in
+  `runtime/native/mapanare_io.c`: `__mn_sha3_256_str`,
+  `__mn_blake2b_str`, `__mn_hmac_sha512_str`,
+  `__mn_constant_time_eq`, `__mn_md_ctx_new`,
+  `__mn_md_ctx_update`, `__mn_md_ctx_finalize`,
+  `__mn_hmac_ctx_new`, `__mn_hmac_ctx_update`,
+  `__mn_hmac_ctx_finalize`. ABI-stable — appended,
+  not inserted; stage1 binaries built against pre-v5.39.0 runtime
+  keep working. Five new EVP function pointers wired into the
+  `s_evp` struct as **optional** (NULL is legitimate; callers gate).
+- **Cr.9 docs.** `docs/stdlib/crypto.md` (~290 LOC) — quick
+  reference, type/API reference, 5 cookbook recipes, "what's
+  not here yet" v5.39.1 plan, compatibility note explaining
+  the Cr.0 emitter fix.
+
+### Changed
+
+- **Cr.0 — emitter shortcut fix (load-bearing).** Pre-v5.39.0,
+  the Python LLVM emitter at `mapanare/emit_llvm_text.py` had
+  unconditional builtin shortcuts for `sha256`, `hmac_sha256`,
+  `base64_encode/decode`, `hex_encode`, `random_bytes`,
+  `regex_match`, `regex_replace`. These shortcuts called the
+  underlying `__mn_*_str` C exports directly, bypassing the
+  user-defined wrappers in `stdlib/crypto.mn` /
+  `stdlib/text/regex.mn` that hex-encode the output / wrap in
+  Result types. When MIR inlining failed (high call-site count
+  or function-size threshold), the shortcut won and silently
+  changed the return shape — `sha256(x)` returned 32 raw bytes
+  instead of 64 hex chars; `hmac_sha256(k, m)` returned 32 raw
+  bytes instead of hex. Surfaced by the new RFC corpus tests
+  with 5 callsites: 4 callsites to `hmac_sha256` returned raw
+  bytes, the corresponding `hmac_sha512` callsites (no shortcut)
+  returned hex. **Fix:** gate each shortcut on `fn not in
+  self._sigs`, deferring to the user-defined wrapper when one
+  exists. Pre-existing `test_crypto.py` and `test_regex.py`
+  (1001 stdlib tests total) all green; goldens 95/95 preserved;
+  STRICT fixed point preserved.
+
+### Fixed
+
+
+
 ## [5.38.0] - 2026-05-03
 
 **Re.\* — regex stdlib closeout.** Fifth release in the stdlib
@@ -10316,7 +10421,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.38.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.0...HEAD
+[5.39.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.38.0...v5.39.0
 [5.38.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.37.0...v5.38.0
 [5.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.36.0...v5.37.0
 [5.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.35.0...v5.36.0

@@ -19,6 +19,18 @@ extern "C" fn __mn_hex_encode_str(data: String) -> String
 extern "C" fn __mn_hex_decode_str(data: String) -> String
 extern "C" fn __mn_random_bytes_str(n: Int) -> String
 
+// v5.39.0 Cr.* extensions
+extern "C" fn __mn_sha3_256_str(data: String) -> String
+extern "C" fn __mn_blake2b_str(data: String) -> String
+extern "C" fn __mn_hmac_sha512_str(key: String, data: String) -> String
+extern "C" fn __mn_constant_time_eq(a: String, b: String) -> Int
+extern "C" fn __mn_md_ctx_new(algo_id: Int) -> Int
+extern "C" fn __mn_md_ctx_update(handle: Int, chunk: String) -> Int
+extern "C" fn __mn_md_ctx_finalize(handle: Int) -> String
+extern "C" fn __mn_hmac_ctx_new(algo_id: Int, key: String) -> Int
+extern "C" fn __mn_hmac_ctx_update(handle: Int, chunk: String) -> Int
+extern "C" fn __mn_hmac_ctx_finalize(handle: Int) -> String
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------
@@ -280,4 +292,227 @@ fn random_bytes(n: Int) -> List<Int> {
 fn random_hex(n: Int) -> String {
     pon raw: String = __mn_random_bytes_str(n)
     da __mn_hex_encode_str(raw)
+}
+
+// ===========================================================================
+// v5.39.0 Cr.* — extensions
+//
+// New surface (added v5.39.0; existing surface above preserved unchanged):
+//
+//   Hashing       sha3_256, blake2b (+ raw variants)
+//   HMAC          hmac_sha512 (+ raw)
+//   MAC verify    constant_time_eq
+//   Streaming     DigestCtx + digest_new / digest_update / digest_finalize
+//                 HmacCtx   + hmac_new   / hmac_update   / hmac_finalize
+//   Random        random_u64, random_range
+//
+// AEAD (Cr.3), Ed25519/X25519 (Cr.4), and KDFs (Cr.6) ship in v5.39.1.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// SHA-3-256 + BLAKE2b (hex digest output by default)
+//
+// Returns empty string when the underlying libcrypto is too old
+// (pre-1.1.1 for SHA-3-256, pre-1.1.0 for BLAKE2b).
+// ---------------------------------------------------------------------------
+
+fn sha3_256(data: String) -> String {
+    pon raw: String = __mn_sha3_256_str(data)
+    da __mn_hex_encode_str(raw)
+}
+
+fn sha3_256_raw(data: String) -> String {
+    da __mn_sha3_256_str(data)
+}
+
+fn blake2b(data: String) -> String {
+    pon raw: String = __mn_blake2b_str(data)
+    da __mn_hex_encode_str(raw)
+}
+
+fn blake2b_raw(data: String) -> String {
+    da __mn_blake2b_str(data)
+}
+
+// ---------------------------------------------------------------------------
+// HMAC-SHA512 (hex digest output)
+// ---------------------------------------------------------------------------
+
+fn hmac_sha512(key: String, data: String) -> String {
+    pon raw: String = __mn_hmac_sha512_str(key, data)
+    da __mn_hex_encode_str(raw)
+}
+
+fn hmac_sha512_raw(key: String, data: String) -> String {
+    da __mn_hmac_sha512_str(key, data)
+}
+
+// ---------------------------------------------------------------------------
+// constant_time_eq — timing-safe byte comparison for MAC verification
+//
+// Prefers OpenSSL CRYPTO_memcmp; falls back to a volatile-masked loop when
+// the symbol is absent. Length comparison is NOT constant-time, but for
+// fixed-output-size MAC compares (sha256 = 32 bytes, sha512 = 64 bytes)
+// both sides are the algorithm's known length so this leaks nothing
+// useful.
+// ---------------------------------------------------------------------------
+
+fn constant_time_eq(a: String, b: String) -> Bool {
+    pon r: Int = __mn_constant_time_eq(a, b)
+    da r == 1
+}
+
+// ---------------------------------------------------------------------------
+// Streaming digest API
+//
+// Algo IDs:
+//   1 = SHA-256
+//   2 = SHA-512
+//   3 = SHA-3-256
+//   4 = BLAKE2b-512
+//
+// Lifetime: digest_new returns Option<DigestCtx>; the underlying handle
+// owns a heap-allocated EVP_MD_CTX*. Caller MUST call digest_finalize
+// exactly once. digest_finalize frees the context regardless of success;
+// after finalize the handle is invalid and any reuse returns the empty
+// string.
+// ---------------------------------------------------------------------------
+
+pub tipo DigestCtx {
+    handle: Int,
+    algo: Int
+}
+
+// Algo IDs (kept as functions because Mapanare does not yet support
+// top-level `const` declarations as of v5.39.0):
+//
+//   algo_sha256()    = 1
+//   algo_sha512()    = 2
+//   algo_sha3_256()  = 3
+//   algo_blake2b()   = 4
+
+fn algo_sha256() -> Int    { da 1 }
+fn algo_sha512() -> Int    { da 2 }
+fn algo_sha3_256() -> Int  { da 3 }
+fn algo_blake2b() -> Int   { da 4 }
+
+fn digest_new(algo: Int) -> Option<DigestCtx> {
+    pon h: Int = __mn_md_ctx_new(algo)
+    si h == 0 {
+        da nada
+    }
+    da Some(new DigestCtx { handle: h, algo: algo })
+}
+
+fn digest_update(ctx: DigestCtx, chunk: String) -> Bool {
+    pon r: Int = __mn_md_ctx_update(ctx.handle, chunk)
+    da r == 1
+}
+
+fn digest_finalize(ctx: DigestCtx) -> String {
+    pon raw: String = __mn_md_ctx_finalize(ctx.handle)
+    si len(raw) == 0 {
+        da ""
+    }
+    da __mn_hex_encode_str(raw)
+}
+
+fn digest_finalize_raw(ctx: DigestCtx) -> String {
+    da __mn_md_ctx_finalize(ctx.handle)
+}
+
+// ---------------------------------------------------------------------------
+// Streaming HMAC API (SHA-256 + SHA-512 only; SHA-3-HMAC is v5.39.1+)
+//
+// algo_id matches the digest constants: 1 = SHA-256, 2 = SHA-512.
+// SHA-3 / BLAKE2 are accepted by digest_new but rejected by hmac_new
+// (returns nada).
+// ---------------------------------------------------------------------------
+
+pub tipo HmacCtx {
+    handle: Int,
+    algo: Int
+}
+
+fn hmac_new(algo: Int, key: String) -> Option<HmacCtx> {
+    pon h: Int = __mn_hmac_ctx_new(algo, key)
+    si h == 0 {
+        da nada
+    }
+    da Some(new HmacCtx { handle: h, algo: algo })
+}
+
+fn hmac_update(ctx: HmacCtx, chunk: String) -> Bool {
+    pon r: Int = __mn_hmac_ctx_update(ctx.handle, chunk)
+    da r == 1
+}
+
+fn hmac_finalize(ctx: HmacCtx) -> String {
+    pon raw: String = __mn_hmac_ctx_finalize(ctx.handle)
+    si len(raw) == 0 {
+        da ""
+    }
+    da __mn_hex_encode_str(raw)
+}
+
+fn hmac_finalize_raw(ctx: HmacCtx) -> String {
+    da __mn_hmac_ctx_finalize(ctx.handle)
+}
+
+// ---------------------------------------------------------------------------
+// Random extensions: random_u64, random_range
+//
+// random_u64 reads 8 bytes via random_bytes_str and assembles a big-endian
+// unsigned 64-bit value. Returned as Int; values above 2^63 will appear
+// negative under signed interpretation (Mapanare Int is 64-bit signed).
+//
+// random_range(low, high) returns a uniformly-distributed Int in
+// [low, high) using rejection sampling to avoid modulo bias.
+// Returns low when high <= low (degenerate range).
+// ---------------------------------------------------------------------------
+
+fn random_u64() -> Int {
+    pon raw: String = __mn_random_bytes_str(8)
+    si len(raw) < 8 {
+        da 0
+    }
+    pon b0: Int = raw.byte_at(0)
+    pon b1: Int = raw.byte_at(1)
+    pon b2: Int = raw.byte_at(2)
+    pon b3: Int = raw.byte_at(3)
+    pon b4: Int = raw.byte_at(4)
+    pon b5: Int = raw.byte_at(5)
+    pon b6: Int = raw.byte_at(6)
+    pon b7: Int = raw.byte_at(7)
+    pon hi: Int = (b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3
+    pon lo: Int = (b4 * 16777216) + (b5 * 65536) + (b6 * 256) + b7
+    da (hi * 4294967296) + lo
+}
+
+fn random_range(low: Int, high: Int) -> Int {
+    si high <= low {
+        da low
+    }
+    pon range_size: Int = high - low
+    // Rejection sampling: discard samples in the wraparound zone above
+    // the largest multiple of range_size that fits in [0, 2^63).
+    // 2^63 = 9223372036854775808. The largest multiple is
+    // (max_u63 // range_size) * range_size.
+    pon max_u63: Int = 9223372036854775807
+    pon limit: Int = max_u63 - (max_u63 % range_size)
+    pon mut tries: Int = 0
+    mien tries < 1000 {
+        pon r: Int = random_u64()
+        // Coerce to non-negative by masking the sign bit.
+        pon mut v: Int = r
+        si v < 0 {
+            v = v + max_u63 + 1
+        }
+        si v < limit {
+            da low + (v % range_size)
+        }
+        tries = tries + 1
+    }
+    // Practically unreachable; fall back to biased modulo after 1000 tries.
+    da low + (random_u64() % range_size)
 }

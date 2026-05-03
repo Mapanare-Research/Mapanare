@@ -3703,51 +3703,62 @@ class LLVMTextEmitter:
             self._put(i.dest, r, LIST)
             return
 
-        # Network, crypto, regex builtins (v3.42.0)
-        if fn == "http_get" and args:
+        # Network, crypto, regex builtins (v3.42.0).
+        #
+        # v5.39.0 Cr.* fix: defer to user-defined wrappers when present.
+        # The stdlib/crypto.mn wrappers `sha256` / `hmac_sha256` /
+        # `random_bytes` etc. produce hex / List-of-Int returns, while
+        # the raw shortcuts here produce raw bytes / String. Without
+        # this gate, user code that imports the stdlib gets the wrong
+        # return shape any time the MIR inliner fails to inline (e.g.
+        # high call-site count). Same gate applies to `regex_match` /
+        # `regex_replace` — stdlib/text/regex.mn defines its own
+        # wrappers.
+        is_user_defined = fn in self._sigs
+        if fn == "http_get" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_http_get", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "sha256" and args:
+        if fn == "sha256" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_sha256_str", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "base64_encode" and args:
+        if fn == "base64_encode" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_base64_encode_str", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "base64_decode" and args:
+        if fn == "base64_decode" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_base64_decode_str", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "hmac_sha256" and len(args) >= 2:
+        if fn == "hmac_sha256" and len(args) >= 2 and not is_user_defined:
             a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
             r = self._rt("__mn_hmac_sha256_str", STR, [STR, STR], [(a0, STR), (a1, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "hex_encode" and args:
+        if fn == "hex_encode" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_hex_encode_str", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "random_bytes" and args:
+        if fn == "random_bytes" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
             r = self._rt("__mn_random_bytes_str", STR, [I64], [(a, I64)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "regex_match" and len(args) >= 2:
+        if fn == "regex_match" and len(args) >= 2 and not is_user_defined:
             a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
             h = self._rt("__mn_regex_compile_str", I64, [STR], [(a0, STR)])
@@ -3759,7 +3770,7 @@ class LLVMTextEmitter:
             self._L(f"{tb} = icmp sgt i64 {r}, 0")
             self._put(i.dest, tb, I1)
             return
-        if fn == "regex_replace" and len(args) >= 3:
+        if fn == "regex_replace" and len(args) >= 3 and not is_user_defined:
             a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
             a2 = self._coerce(args[2][0], args[2][1], STR) if args[2][1] != STR else args[2][0]

@@ -1,0 +1,189 @@
+// v5.39.0 Cr.* smoke tests for stdlib/crypto.mn additions.
+//
+// Covers: sha3_256, blake2b, hmac_sha512, constant_time_eq,
+// streaming DigestCtx + HmacCtx, random_u64, random_range.
+//
+// The pytest harness (tests/stdlib/test_crypto_runtime.py)
+// prepends stdlib/crypto.mn to this file, compiles via the
+// Python LLVM emitter, links libmapanare_rt.a, runs, and
+// asserts "PASSED" appears in stdout (and no "FAIL " line).
+//
+// Mapanare grammar requires single-line argument lists, so the
+// long expected hex strings are bound to local variables first.
+
+fn check_eq(label: String, got: String, expected: String, fails_in: Int) -> Int {
+    si got != expected {
+        print("FAIL " + label)
+        print("  got:      " + got)
+        print("  expected: " + expected)
+        da fails_in + 1
+    }
+    da fails_in
+}
+
+fn main() -> Int {
+    pon mut fails: Int = 0
+
+    // SHA-3-256("abc") — FIPS 202 known-answer
+    pon e_sha3_abc: String = "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"
+    fails = check_eq("sha3_256(abc)", sha3_256("abc"), e_sha3_abc, fails)
+
+    pon e_sha3_empty: String = "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"
+    fails = check_eq("sha3_256(empty)", sha3_256(""), e_sha3_empty, fails)
+
+    // BLAKE2b("abc") — RFC 7693 Appendix A
+    pon e_b2_abc: String = "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923"
+    fails = check_eq("blake2b(abc)", blake2b("abc"), e_b2_abc, fails)
+
+    // HMAC-SHA512(0x0b*20, "Hi There") — RFC 4231 test 1
+    pon key20_r: Result<String, CryptoError> = hex_decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")
+    pon mut key20: String = ""
+    match key20_r {
+        Ok(k) => { key20 = k },
+        Err(_e) => { print("FAIL hex_decode key20"); fails = fails + 1 }
+    }
+    pon e_h512_t1: String = "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854"
+    fails = check_eq("hmac_sha512 t1", hmac_sha512(key20, "Hi There"), e_h512_t1, fails)
+
+    // constant_time_eq
+    si !constant_time_eq("hello", "hello") {
+        print("FAIL constant_time_eq(eq)")
+        fails = fails + 1
+    }
+    si constant_time_eq("hello", "world") {
+        print("FAIL constant_time_eq(neq same len)")
+        fails = fails + 1
+    }
+    si constant_time_eq("hello", "hi") {
+        print("FAIL constant_time_eq(neq diff len)")
+        fails = fails + 1
+    }
+    si !constant_time_eq("", "") {
+        print("FAIL constant_time_eq empty")
+        fails = fails + 1
+    }
+
+    // Streaming SHA-256: chunked must equal one-shot
+    pon dctx_opt: Option<DigestCtx> = digest_new(algo_sha256())
+    match dctx_opt {
+        Some(dctx) => {
+            pon _u1: Bool = digest_update(dctx, "abc")
+            pon _u2: Bool = digest_update(dctx, "def")
+            pon got: String = digest_finalize(dctx)
+            pon expected: String = sha256("abcdef")
+            fails = check_eq("streaming sha256 chunked", got, expected, fails)
+        },
+        None => {
+            print("FAIL digest_new(sha256) returned nada")
+            fails = fails + 1
+        }
+    }
+
+    // Streaming SHA-3-256
+    pon dctx3_opt: Option<DigestCtx> = digest_new(algo_sha3_256())
+    match dctx3_opt {
+        Some(dctx3) => {
+            pon _u3: Bool = digest_update(dctx3, "ab")
+            pon _u4: Bool = digest_update(dctx3, "c")
+            pon got3: String = digest_finalize(dctx3)
+            fails = check_eq("streaming sha3_256(ab+c)", got3, e_sha3_abc, fails)
+        },
+        None => {
+            print("FAIL digest_new(sha3_256) returned nada")
+            fails = fails + 1
+        }
+    }
+
+    // Streaming HMAC-SHA256 chunked vs one-shot
+    pon hctx_opt: Option<HmacCtx> = hmac_new(algo_sha256(), key20)
+    match hctx_opt {
+        Some(hctx) => {
+            pon _u5: Bool = hmac_update(hctx, "Hi ")
+            pon _u6: Bool = hmac_update(hctx, "There")
+            pon got_h: String = hmac_finalize(hctx)
+            pon expected_h: String = hmac_sha256(key20, "Hi There")
+            fails = check_eq("streaming hmac_sha256 chunked", got_h, expected_h, fails)
+        },
+        None => {
+            print("FAIL hmac_new(sha256) returned nada")
+            fails = fails + 1
+        }
+    }
+
+    pon hctx512_opt: Option<HmacCtx> = hmac_new(algo_sha512(), key20)
+    match hctx512_opt {
+        Some(hctx512) => {
+            pon _u7: Bool = hmac_update(hctx512, "Hi ")
+            pon _u8: Bool = hmac_update(hctx512, "There")
+            pon got_h512: String = hmac_finalize(hctx512)
+            pon expected_h512: String = hmac_sha512(key20, "Hi There")
+            fails = check_eq("streaming hmac_sha512 chunked", got_h512, expected_h512, fails)
+        },
+        None => {
+            print("FAIL hmac_new(sha512) returned nada")
+            fails = fails + 1
+        }
+    }
+
+    // hmac_new with bogus algo returns nada
+    pon bogus_opt: Option<HmacCtx> = hmac_new(99, key20)
+    match bogus_opt {
+        Some(_x) => {
+            print("FAIL hmac_new(99) returned Some")
+            fails = fails + 1
+        },
+        None => {
+            // expected
+        }
+    }
+
+    // random_u64 returns different values across two calls (smoke)
+    pon r1: Int = random_u64()
+    pon r2: Int = random_u64()
+    si r1 == r2 {
+        print("FAIL random_u64 returned identical values")
+        fails = fails + 1
+    }
+
+    // random_range stays in bounds
+    pon mut min_seen: Int = 999
+    pon mut max_seen: Int = -1
+    pon mut k: Int = 0
+    pon mut bounds_ok: Bool = true
+    mien k < 200 {
+        pon v: Int = random_range(0, 100)
+        si v < 0 { bounds_ok = false }
+        si v >= 100 { bounds_ok = false }
+        si v < min_seen { min_seen = v }
+        si v > max_seen { max_seen = v }
+        k = k + 1
+    }
+    si !bounds_ok {
+        print("FAIL random_range out of bounds")
+        fails = fails + 1
+    }
+    si min_seen >= 50 {
+        print("FAIL random_range distribution narrow (min)")
+        fails = fails + 1
+    }
+    si max_seen < 50 {
+        print("FAIL random_range distribution narrow (max)")
+        fails = fails + 1
+    }
+
+    si random_range(5, 5) != 5 {
+        print("FAIL random_range(5,5) should return 5")
+        fails = fails + 1
+    }
+    si random_range(10, 5) != 10 {
+        print("FAIL random_range(10,5) should return low=10")
+        fails = fails + 1
+    }
+
+    si fails == 0 {
+        print("PASSED")
+        da 0
+    }
+    print("FAILED")
+    da 1
+}

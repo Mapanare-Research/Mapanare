@@ -19,6 +19,144 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.39.0** (ready, not tagged) — **Cr.\* — crypto stdlib
+  hashing/MAC/random extensions; stdlib gap-close arc CLOSED.**
+  Sixth and final release in the stdlib gap-close arc
+  (Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0, Ht.\* @
+  v5.37.0, Re.\* @ v5.38.0, Cr.\* @ v5.39.0). **Staged scope
+  (deviation from PLAN, lead-approved at Phase 0).** v5.39.0
+  ships the easy hashing / streaming / random additions on top
+  of the pre-existing `stdlib/crypto.mn` (283 LOC; SHA-1/256/512
+  + HMAC-SHA256 + Base64 + Hex + JWT HS256 + random_bytes
+  already shipped). AEAD (AES-GCM, ChaCha20-Poly1305 +
+  NonceCounter helper), Ed25519 + X25519, and password KDFs
+  (PBKDF2, HKDF, Argon2id with explicit-Err fallback) explicitly
+  deferred to v5.39.1. Reason: each has its own correctness trap
+  (GCM nonce reuse, Ed25519 key serialization, Argon2 OpenSSL
+  major-version skew); bundling with the easy hashing additions
+  raises the chance one ships subtly wrong, and they are
+  structurally independent. **Strict 3-stage fixed point
+  preserved by construction at v5.38.0's 241,898 lines / 0 diff**
+  (35-release strict streak from v5.7.1; zero
+  `mapanare/self/*.mn` source touches). Goldens **95/95**.
+  **Cr.1 hashing additions:** `sha3_256` (FIPS 202; OpenSSL
+  1.1.1+), `blake2b` (RFC 7693; 1.1.0+) with `_raw` variants;
+  optional symbols, return empty string on older libcrypto.
+  **Cr.1 streaming digest:** `DigestCtx { handle, algo }` opaque
+  struct + `digest_new(algo) -> Option<DigestCtx>`,
+  `digest_update`, `digest_finalize` (hex / `_raw`). Algo IDs:
+  1=SHA-256, 2=SHA-512, 3=SHA-3-256, 4=BLAKE2b. Helper functions
+  `algo_sha256()` / `algo_sha512()` / `algo_sha3_256()` /
+  `algo_blake2b()` (Mapanare does not yet support top-level
+  `const` declarations as of v5.39.0 — minor parser ergonomics
+  candidate for v5.40+). Caller MUST call `_finalize` exactly
+  once; finalize frees the underlying EVP_MD_CTX* regardless of
+  success. Handle = `(int64_t)(intptr_t)ctx` direct cast.
+  **Cr.2 HMAC additions:** `hmac_sha512` + `_raw` variant.
+  `constant_time_eq(a, b) -> Bool` for timing-safe MAC verify;
+  prefers OpenSSL `CRYPTO_memcmp`, falls back to a
+  volatile-masked aggregation loop. Streaming `HmacCtx` with
+  algo 1 (SHA-256) or 2 (SHA-512); HMAC over SHA-3 / BLAKE2 is
+  v5.40.x+ via `EVP_MAC` migration.
+  **Cr.5 random extensions:** `random_u64()` reads 8 bytes from
+  `random_bytes` packed big-endian; `random_range(low, high)`
+  uses rejection sampling to avoid modulo bias. Degenerate
+  `random_range(5, 5)` returns 5; `random_range(10, 5)` returns
+  low. No new C-runtime exports — both derive from
+  `__mn_random_bytes_str`.
+  **Cr.7 RFC test corpus:** new
+  `stdlib/crypto/tests/test_crypto_smoke.mn` (~190 LOC, surface
+  smoke + streaming chunked-vs-one-shot equivalence + random
+  distribution sanity) and `test_crypto_corpus.mn` (~110 LOC,
+  RFC 6234 SHA-256 / SHA-512, FIPS 202 SHA-3-256, RFC 7693
+  BLAKE2b-512, RFC 4231 HMAC tests 1, 2, 4, 5). Pytest harness
+  `tests/stdlib/test_crypto_runtime.py` (~165 LOC) mirrors the
+  v5.34 / v5.35 / v5.38 concatenation pattern: prepend
+  `stdlib/crypto.mn`, compile via Python LLVM emitter, link
+  against `libmapanare_rt.a`, run, assert "PASSED". **3/3 GREEN.**
+  Pre-existing `tests/stdlib/test_crypto.py` (40 compile-only
+  cases) preserved unchanged.
+  **Cr.8 C runtime extensions** in `runtime/native/mapanare_io.c`
+  (NOT a separate `mapanare_crypto.c` — PLAN's `mapanare_tls.c`
+  reference is wrong; OpenSSL plumbing already lives in
+  `mapanare_io.c`, same wrap-don't-duplicate decision as v5.35.0
+  Sq.7 with `mapanare_db.c`). Ten new `__mn_*` exports appended
+  at end of existing crypto block: `__mn_sha3_256_str`,
+  `__mn_blake2b_str`, `__mn_hmac_sha512_str`,
+  `__mn_constant_time_eq`, `__mn_md_ctx_new`,
+  `__mn_md_ctx_update`, `__mn_md_ctx_finalize`,
+  `__mn_hmac_ctx_new`, `__mn_hmac_ctx_update`,
+  `__mn_hmac_ctx_finalize`. ABI-stable: appended, not inserted;
+  stage1 binaries built against pre-v5.39.0 runtime keep working.
+  Five new EVP function pointers (`EVP_sha3_256`,
+  `EVP_blake2b512`, `CRYPTO_memcmp`, plus `HMAC_CTX_*` legacy
+  set) wired into `s_evp` struct as **optional** (NULL is
+  legitimate; callers gate at runtime). `evp_load()` resolution
+  block extended; required-symbols gate unchanged.
+  **Cr.9 docs** — new `docs/stdlib/crypto.md` (~290 LOC):
+  quick reference, type/API reference, 5 cookbook recipes
+  (one-shot hash, chunked stream hash, timing-safe MAC verify,
+  BLAKE2b for keyed hashing, jitter via `random_range`),
+  "what's not here yet" v5.39.1 plan, compatibility note for
+  the Cr.0 emitter fix.
+  **Cr.0 emitter shortcut fix (LOAD-BEARING)** —
+  `mapanare/emit_llvm_text.py` had unconditional builtin
+  shortcuts at lines 3713-3776 for `sha256`, `hmac_sha256`,
+  `base64_encode`, `base64_decode`, `hex_encode`, `random_bytes`,
+  `regex_match`, `regex_replace`, `http_get`. These shortcuts
+  called the underlying `__mn_*_str` C exports directly,
+  bypassing the user-defined wrappers in `stdlib/crypto.mn` /
+  `stdlib/text/regex.mn` that hex-encode the output / wrap in
+  Result types. When MIR inlining failed (high call-site count
+  or function-size threshold), the shortcut won and silently
+  changed the return shape — `sha256(x)` returned 32 raw bytes
+  instead of 64 hex chars; `hmac_sha256(k, m)` returned 32 raw
+  bytes instead of hex. Surfaced by the new RFC corpus tests
+  with 5 `hmac_sha256` callsites: 4 returned raw, 1 (the only
+  call from inside `hmac_sha256`'s own user-defined chain)
+  inlined cleanly. The corresponding `hmac_sha512` callsites
+  (no shortcut existed) returned hex correctly — the
+  asymmetric-failure pattern was the diagnostic. Latent bug
+  since v3.42.0 (when the shortcuts were introduced; user-defined
+  `stdlib/crypto.mn` wrappers came later). **Fix:** gate each
+  shortcut on `fn not in self._sigs`, deferring to the
+  user-defined wrapper when one exists. ~10 LOC change. No
+  callers depended on the shortcut's raw-bytes return — raw
+  access has always been spelled `sha256_raw` / `hmac_sha256_raw`
+  in the stdlib. Pre-existing `test_crypto.py` (40) +
+  `test_regex.py` (32) all green; broader stdlib sweep 1001 PASS;
+  goldens 95/95 preserved; STRICT fixed point preserved.
+  **Cr.0 belongs to the same bug-class as v5.36.0 Js.0**
+  (`emit_llvm_text.py` `_san` sanitizer over-stripping `%`)
+  and v5.36.0 Js.0.B (Result wrap-shape mismatch) — emitter
+  bugs surfaced by extending the stdlib in ways that exercise
+  more code paths.
+  **Hd-class preventative.** `docs/SPEC.md` header re-synced
+  from "v5.38.0 cut" to "v5.39.0 cut" with new sync block
+  summarizing Cr.\* additions (specifically enumerating the 10
+  new C runtime exports and the Cr.0 emitter fix; runtime-additions
+  count is the highest since v5.34.0 Dt.\*).
+  `check_doc_freshness.py` GREEN. `check_changelog_honesty.py`
+  GREEN. Source delta: ~165 LOC C in `mapanare_io.c` (Cr.1 + Cr.2
+  + Cr.8) + ~235 LOC `stdlib/crypto.mn` extensions (Cr.1 + Cr.2 +
+  Cr.5) + ~300 LOC `.mn` tests (Cr.7) + ~165 LOC pytest harness
+  + ~290 LOC `docs/stdlib/crypto.md` (Cr.9) + ~10 LOC
+  `mapanare/emit_llvm_text.py` (Cr.0) + ~85 LOC CHANGELOG +
+  ~35 LOC SPEC sync + CLAUDE.md release-notes entry +
+  mechanical bump_version.py edits.
+  Aggregate state entering v5.39.1: **0 HIGH** (the hard items
+  Cr.3 + Cr.4 + Cr.6 are explicitly named for v5.39.1, not
+  carried forward as HIGH) / **1 MEDIUM** (macOS notarization,
+  carry from v5.33.0 Nu.2) / ~6 LOW (EVP_MAC migration, native
+  Bytes type, HMAC over SHA-3/BLAKE2, JWT verify routing through
+  constant_time_eq, Pike VM regex rewrite candidate, regex_replace
+  single-shot follow-up from v5.38.0). **Stdlib gap-close arc
+  CLOSED.** Manifesto arc begins v5.40.0 with `ask` (the user's
+  v5.40.0 PROMPT will reference Cr.\* surface for HMAC-signed
+  API key handling). See
+  `docs/roadmap/v5/v5.39.0/{PLAN.md, PROMPT.md, PRE_PHASE_AUDIT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.38.0** (ready, not tagged) — **Re.\* — regex stdlib
   closeout.** Fifth release in the stdlib gap-close arc
   (Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0, Ht.\* @
@@ -1626,7 +1764,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (31538 symbols, 66514 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (31611 symbols, 66597 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

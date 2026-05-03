@@ -1005,6 +1005,17 @@ typedef void* (*fn_HMAC)(const void *evp_md, const void *key, int key_len,
                          const unsigned char *d, size_t n,
                          unsigned char *md, unsigned int *md_len);
 
+/* v5.39.0 Cr.* additions: SHA-3 / BLAKE2 (optional), HMAC streaming, CRYPTO_memcmp */
+typedef void* (*fn_EVP_sha3_256)(void);
+typedef void* (*fn_EVP_blake2b512)(void);
+typedef int   (*fn_CRYPTO_memcmp)(const void *a, const void *b, size_t n);
+typedef void* (*fn_HMAC_CTX_new)(void);
+typedef void  (*fn_HMAC_CTX_free)(void *ctx);
+typedef int   (*fn_HMAC_Init_ex)(void *ctx, const void *key, int len,
+                                 const void *md, void *impl);
+typedef int   (*fn_HMAC_Update)(void *ctx, const unsigned char *data, size_t len);
+typedef int   (*fn_HMAC_Final)(void *ctx, unsigned char *md, unsigned int *len);
+
 static struct {
     int loaded;
     int available;
@@ -1017,6 +1028,15 @@ static struct {
     fn_EVP_DigestUpdate   EVP_DigestUpdate;
     fn_EVP_DigestFinal_ex EVP_DigestFinal_ex;
     fn_HMAC               HMAC;
+    /* v5.39.0 — optional / new */
+    fn_EVP_sha3_256       EVP_sha3_256;       /* OpenSSL 1.1.1+ */
+    fn_EVP_blake2b512     EVP_blake2b512;     /* OpenSSL 1.1.0+ */
+    fn_CRYPTO_memcmp      CRYPTO_memcmp;      /* timing-safe compare */
+    fn_HMAC_CTX_new       HMAC_CTX_new;       /* legacy 1.1.x; works in 3.x */
+    fn_HMAC_CTX_free      HMAC_CTX_free;
+    fn_HMAC_Init_ex       HMAC_Init_ex;
+    fn_HMAC_Update        HMAC_Update;
+    fn_HMAC_Final         HMAC_Final;
 } s_evp = {0};
 
 static int evp_load(void) {
@@ -1047,6 +1067,16 @@ static int evp_load(void) {
     EVP_SYM(EVP_DigestUpdate);
     EVP_SYM(EVP_DigestFinal_ex);
     EVP_SYM(HMAC);
+
+    /* v5.39.0 — optional symbols. NULL is legitimate; callers gate. */
+    EVP_SYM(EVP_sha3_256);
+    EVP_SYM(EVP_blake2b512);
+    EVP_SYM(CRYPTO_memcmp);
+    EVP_SYM(HMAC_CTX_new);
+    EVP_SYM(HMAC_CTX_free);
+    EVP_SYM(HMAC_Init_ex);
+    EVP_SYM(HMAC_Update);
+    EVP_SYM(HMAC_Final);
 
     #undef EVP_SYM
 
@@ -1300,6 +1330,168 @@ MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n) {
     MnString result = __mn_str_from_parts(buf, n);
     free(buf);
     return result;
+}
+
+/* =======================================================================
+ * 6b. Crypto extensions (v5.39.0 Cr.* — appended for ABI stability).
+ *
+ * SHA-3-256, BLAKE2b: optional symbols; surface empty MnString when
+ * the underlying libcrypto is too old (pre-1.1.0 for BLAKE2b,
+ * pre-1.1.1 for SHA-3). HMAC-SHA512 reuses the existing HMAC()
+ * one-shot. constant_time_eq prefers OpenSSL CRYPTO_memcmp; falls
+ * back to a volatile-masked loop. Streaming digest + HMAC contexts
+ * cast EVP_MD_CTX* / HMAC_CTX* to int64_t handles. Caller MUST call
+ * the matching _finalize exactly once (frees ctx); double-finalize
+ * or finalize-after-update-error returns empty MnString.
+ *
+ * Algo IDs (md_ctx + hmac_ctx):
+ *   1 = SHA-256
+ *   2 = SHA-512
+ *   3 = SHA-3-256  (md_ctx only; HMAC stops at SHA-512 for v5.39.0)
+ *   4 = BLAKE2b-512 (md_ctx only)
+ * ======================================================================= */
+
+MN_IO_EXPORT MnString __mn_sha3_256_str(MnString data) {
+    if (evp_load() < 0) return __mn_str_empty();
+    if (!s_evp.EVP_sha3_256) return __mn_str_empty();
+    return evp_hash(data, s_evp.EVP_sha3_256, 32);
+}
+
+MN_IO_EXPORT MnString __mn_blake2b_str(MnString data) {
+    if (evp_load() < 0) return __mn_str_empty();
+    if (!s_evp.EVP_blake2b512) return __mn_str_empty();
+    return evp_hash(data, s_evp.EVP_blake2b512, 64);
+}
+
+MN_IO_EXPORT MnString __mn_hmac_sha512_str(MnString key, MnString data) {
+    if (evp_load() < 0 || !s_evp.HMAC) return __mn_str_empty();
+
+    unsigned char md[64];
+    unsigned int md_len = 0;
+
+    void *result = s_evp.HMAC(s_evp.EVP_sha512(), key.data, (int)key.len,
+                              (const unsigned char *)data.data, (size_t)data.len,
+                              md, &md_len);
+    if (!result || md_len != 64) return __mn_str_empty();
+
+    return __mn_str_from_parts((const char *)md, 64);
+}
+
+/* Returns 1 if equal (length and content), 0 otherwise. Length
+ * comparison is not constant-time, but for MAC verification both
+ * sides have the algorithm's known output length. */
+MN_IO_EXPORT int64_t __mn_constant_time_eq(MnString a, MnString b) {
+    if (a.len != b.len) return 0;
+    if (a.len == 0) return 1;
+
+    if (evp_load() == 0 && s_evp.CRYPTO_memcmp) {
+        return s_evp.CRYPTO_memcmp(a.data, b.data, (size_t)a.len) == 0 ? 1 : 0;
+    }
+
+    /* Fallback: volatile-masked loop. Aggregates differences without
+     * branching on byte values; the volatile sink discourages the
+     * optimizer from short-circuiting. */
+    volatile unsigned char diff = 0;
+    const unsigned char *pa = (const unsigned char *)a.data;
+    const unsigned char *pb = (const unsigned char *)b.data;
+    uint64_t n = a.len;
+    for (uint64_t i = 0; i < n; i++) {
+        diff = (unsigned char)(diff | (unsigned char)(pa[i] ^ pb[i]));
+    }
+    return diff == 0 ? 1 : 0;
+}
+
+static void *evp_md_for_algo(int64_t algo_id) {
+    switch (algo_id) {
+        case 1: return s_evp.EVP_sha256 ? s_evp.EVP_sha256() : NULL;
+        case 2: return s_evp.EVP_sha512 ? s_evp.EVP_sha512() : NULL;
+        case 3: return s_evp.EVP_sha3_256 ? s_evp.EVP_sha3_256() : NULL;
+        case 4: return s_evp.EVP_blake2b512 ? s_evp.EVP_blake2b512() : NULL;
+        default: return NULL;
+    }
+}
+
+MN_IO_EXPORT int64_t __mn_md_ctx_new(int64_t algo_id) {
+    if (evp_load() < 0) return 0;
+    void *md_type = evp_md_for_algo(algo_id);
+    if (!md_type) return 0;
+
+    void *ctx = s_evp.EVP_MD_CTX_new();
+    if (!ctx) return 0;
+
+    if (s_evp.EVP_DigestInit_ex(ctx, md_type, NULL) != 1) {
+        s_evp.EVP_MD_CTX_free(ctx);
+        return 0;
+    }
+    return (int64_t)(intptr_t)ctx;
+}
+
+MN_IO_EXPORT int64_t __mn_md_ctx_update(int64_t handle, MnString chunk) {
+    if (handle == 0) return 0;
+    if (evp_load() < 0) return 0;
+    void *ctx = (void *)(intptr_t)handle;
+    if (chunk.len == 0) return 1;
+    return s_evp.EVP_DigestUpdate(ctx, chunk.data, (size_t)chunk.len) == 1 ? 1 : 0;
+}
+
+MN_IO_EXPORT MnString __mn_md_ctx_finalize(int64_t handle) {
+    if (handle == 0) return __mn_str_empty();
+    if (evp_load() < 0) return __mn_str_empty();
+    void *ctx = (void *)(intptr_t)handle;
+
+    unsigned char md[64];
+    unsigned int md_len = 0;
+    int ok = s_evp.EVP_DigestFinal_ex(ctx, md, &md_len);
+    s_evp.EVP_MD_CTX_free(ctx);  /* always free, even on error */
+    if (!ok) return __mn_str_empty();
+    return __mn_str_from_parts((const char *)md, (int64_t)md_len);
+}
+
+MN_IO_EXPORT int64_t __mn_hmac_ctx_new(int64_t algo_id, MnString key) {
+    if (evp_load() < 0) return 0;
+    if (!s_evp.HMAC_CTX_new || !s_evp.HMAC_CTX_free ||
+        !s_evp.HMAC_Init_ex) return 0;
+
+    /* HMAC streaming supports SHA-256 and SHA-512 in v5.39.0. */
+    void *md_type = NULL;
+    switch (algo_id) {
+        case 1: md_type = s_evp.EVP_sha256 ? s_evp.EVP_sha256() : NULL; break;
+        case 2: md_type = s_evp.EVP_sha512 ? s_evp.EVP_sha512() : NULL; break;
+        default: return 0;
+    }
+    if (!md_type) return 0;
+
+    void *ctx = s_evp.HMAC_CTX_new();
+    if (!ctx) return 0;
+
+    if (s_evp.HMAC_Init_ex(ctx, key.data, (int)key.len, md_type, NULL) != 1) {
+        s_evp.HMAC_CTX_free(ctx);
+        return 0;
+    }
+    return (int64_t)(intptr_t)ctx;
+}
+
+MN_IO_EXPORT int64_t __mn_hmac_ctx_update(int64_t handle, MnString chunk) {
+    if (handle == 0) return 0;
+    if (evp_load() < 0 || !s_evp.HMAC_Update) return 0;
+    void *ctx = (void *)(intptr_t)handle;
+    if (chunk.len == 0) return 1;
+    return s_evp.HMAC_Update(ctx, (const unsigned char *)chunk.data,
+                             (size_t)chunk.len) == 1 ? 1 : 0;
+}
+
+MN_IO_EXPORT MnString __mn_hmac_ctx_finalize(int64_t handle) {
+    if (handle == 0) return __mn_str_empty();
+    if (evp_load() < 0 || !s_evp.HMAC_Final || !s_evp.HMAC_CTX_free)
+        return __mn_str_empty();
+    void *ctx = (void *)(intptr_t)handle;
+
+    unsigned char md[64];
+    unsigned int md_len = 0;
+    int ok = s_evp.HMAC_Final(ctx, md, &md_len);
+    s_evp.HMAC_CTX_free(ctx);  /* always free */
+    if (!ok) return __mn_str_empty();
+    return __mn_str_from_parts((const char *)md, (int64_t)md_len);
 }
 
 /* =======================================================================
