@@ -171,16 +171,20 @@ distributed primitives are downstream packages.
   *truly* first-class.
 - **Manifesto arc CLOSED for v5.x.** With supervision (v5.42.0)
   + distributed (v5.43.0), agents have production-grade
-  primitives. v6.0 conversation can begin.
+  primitives. The v6.0 conversation can begin after the package
+  runway and closeout panel land.
 
 **Inherits to v5.44.0:**
+- Package-aware imports + stdlib extraction runway (Ps.*): make
+  installed packages real compiler import roots before v5 closes.
 - Service registry / discovery (LOW; downstream).
 - Replication / consensus (LOW; downstream).
 - mTLS (LOW).
 - Binary serde fast path (LOW).
 - Dynamic key rotation (LOW).
 
-**Aggregate state entering v5.44.0 (closeout panel):**
+**Aggregate state entering v5.44.0 (package-system runway):**
 manifesto arc complete; stdlib gap-close complete;
-foundation arc complete. v5.44.0 is the panel that
+foundation arc complete. v5.44.0 makes installed packages
+compile like normal dependencies; v5.45.0 is the panel that
 green-lights v6.0.

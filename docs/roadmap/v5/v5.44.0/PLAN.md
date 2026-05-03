@@ -1,66 +1,76 @@
-# v5.44.0 — Cp.\* — end-of-v5 closeout panel
+# v5.44.0 — Ps.* — package-aware imports + stdlib extraction runway
 
 **Status:** PLANNING
-**Type:** Panel-only release. **Zero compiler edits. Zero runtime
-edits. Zero `mapanare/self/*.mn` source edits.** No new features.
-This is the structural pause before any v6.0 conversation begins.
-**Breaking:** No.
-**Prerequisite:** v5.43.0 shipped (distributed agents — manifesto
-arc complete). All v5.31.0 → v5.43.0 releases shipped: foundation
-arc (banner, native binaries x3), stdlib arc (date/time, sqlite,
-JSON, HTTP, regex, crypto), manifesto arc (`ask`, tensor
-closeout, supervision, distributed agents).
-**Estimated effort:** 2–3 sessions. Pre-panel audit, 7-reviewer
-panel, decision document, carry-forward to v6.0. Mirrors the shape
-of v5.28.0 RE-PANEL.
+**Type:** Package-system / compiler integration release. Small,
+load-bearing CLI + module-resolution edits; no language syntax
+changes. This is the ecosystem bridge before the v5 closeout
+panel.
+**Breaking:** No. Existing bundled `stdlib/` remains the default.
+Installed packages become an additional import source.
+**Prerequisite:** v5.43.0 shipped (distributed agents). Package
+manager docs and `stdlib/pkg.py` already exist; this release makes
+installed packages compile like real dependencies.
+**Estimated effort:** 1-2 sessions. Mostly resolver/CLI wiring,
+tests, docs, and one clean pure-.mn package example.
 
 ---
 
 ## Why this exists
 
-v5 has been a long, dense series. The user's directive was
-explicit: **panels at the end of the series, not in the middle.**
-v5.44.0 is that panel — the single closeout review of everything
-v5.31.0 through v5.43.0 shipped, which transitively reviews the
-entire v5 series since the last panel at v5.28.0 RE-PANEL.
+Mapanare already has the shape of a Cargo/npm/pip-style package
+system:
 
-Three decisions need to land here:
+- `mapanare.toml`
+- `[dependencies]`
+- semver-ish constraints
+- `mn_modules/<name>-<version>/`
+- `mapanare.lock`
+- registry-first install with git fallback
+- publish tarballs
 
-1. **Has the v5 thesis delivered?** The terseness arc, the
-   stdlib gap-close, the manifesto items. Did they ship at the
-   quality the project promised?
-2. **Is v6.0 ready to start?** v6.0 is the borrow-checker arc.
-   It requires the v5 stdlib to be solid (so users have
-   somewhere to land) and the v5 type system to be
-   well-understood (so the borrow checker has stable ground to
-   build on).
-3. **What carries forward to v6.0?** Every release through
-   v5.43.0 deferred items to "v6.0 carry." Audit them; the ones
-   still relevant become v6.0 PLAN inputs; the ones that don't
-   become v5.44.x patches or get explicitly retired.
+But the compiler side is not complete enough to make an external
+repo behave like a normal user dependency. `mnc install` can place
+packages under `mn_modules/`, yet the import resolver mainly searches
+the source file directory and the built-in `stdlib/`. That means an
+isolated `mapanare-research/stdlib` repo can be tested with manual
+path tricks, but not yet with the normal workflow:
+
+```bash
+mnc install collections
+mnc run main.mn
+```
+
+This release closes that gap. It does **not** move the whole stdlib
+out of the main repo. It creates the runway for doing that safely:
+package-aware imports, version/install tracking in the compiler
+workflow, CI proof from an isolated repo, and clear policy for which
+stdlib modules can be external packages.
+
+The important rule: packages that require native runtime ABI support
+(`net/http`, future `time`, sqlite, TLS, etc.) stay bundled until the
+runtime requirement is explicit in package metadata and CI. Pure `.mn`
+packages move first.
 
 ---
 
 ## Goals
 
-1. **Cp.1** — Pre-panel audit: enumerate every shipped item in
-   v5.31.0 → v5.43.0; identify silent-RED gates if any (the
-   v5.28.0 RE-PANEL caught 3 of these for v5.22.0).
-2. **Cp.2** — 7-reviewer panel: Rattler, Viper, Anaconda, Cobra,
-   Coral, Boa, Mamba (the standard v5 panel composition; see
-   `.reviews/PANEL_AUDIT_TEMPLATE.md`).
-3. **Cp.3** — Aggregate decision: Option A (v5 ships clean,
-   ready for v6.0) / Option B (v5 ships with caveats; v6.0
-   gated on v5.44.x patches) / Option C (recovery arc needed
-   before v6.0).
-4. **Cp.4** — Carry-forward ledger: v6.0 PLAN inputs from v5
-   carries; explicit "retired" list for items no longer
-   relevant.
-5. **Cp.5** — v5 retrospective: what worked, what didn't, what
-   to repeat in v6.0 process.
-6. **Cp.6** — CLAUDE.md ledger update: prune the "Most recent
-   releases" section; promote v5 closeout summary; archive
-   per-release entries to roadmap-only.
+1. **Ps.1** — Package-aware import resolution: installed packages in
+   `mn_modules/` are importable without manual `--stdlib-path` hacks.
+2. **Ps.2** — Lockfile-backed install tracking: compiler/CLI can
+   identify the exact installed version used for a build.
+3. **Ps.3** — Stable package layout contract: package root, entry
+   module, exported module names, and examples are documented and
+   tested.
+4. **Ps.4** — External stdlib policy: classify stdlib modules as
+   bundled-core, runtime-bound package candidates, or pure package
+   candidates.
+5. **Ps.5** — Isolated-repo test path: prove an external package repo
+   can be checked out, installed, imported, tested, and packaged.
+6. **Ps.6** — CI sketch for `mapanare-research/stdlib`: matrix against
+   latest released `mnc` and current `main`/nightly `mnc`.
+7. **Ps.7** — Keep the v5 closeout panel honest: v5.45.0 audits this
+   ecosystem bridge before v6.0 begins.
 
 ---
 
@@ -68,116 +78,118 @@ Three decisions need to land here:
 
 | ID | Severity | Description | Effort |
 |---|---|---|---|
-| **Cp.1** | HIGH | **Pre-panel audit (`PRE_PANEL_AUDIT.md`).** Enumerate every numbered item that shipped in v5.31.0 → v5.43.0 (every Bn., Nw., Nu., Dt., Sq., Js., Ht., Re., Cr., Ai., Ts., As., Da. ID). For each: state at HEAD = SHIPPED / PARTIAL / DEFERRED. Cross-check CI gates: every gate in `make ci-gates` actually GREEN at HEAD (catches silent-RED). | 4h |
-| **Cp.2** | HIGH (load-bearing) | **7-reviewer panel.** Use the existing `/code-review` skill. Each reviewer reads PRE_PANEL_AUDIT.md + relevant SESSION_REPORTs and produces `findings.md` with EXCEEDS / MEETS / NEEDS WORK grade per category, plus PASS / PASS WITH NOTES / FAIL recommendation. Standard v5 composition: Rattler (mechanical correctness), Viper (perf), Anaconda (process / test discipline), Cobra (architecture), Coral (UX / docs), Boa (long-tail bug closure), Mamba (security). | 6h (panel runs in parallel) |
-| **Cp.3** | HIGH | **Decision document (`V5_DECISION.md`).** Aggregate panel scores; apply the v5-gate mechanical decision rule (mean ≥ 9.5 = Option A green-light; 9.0-9.5 = Option A with notes; <9.0 = Option B or C). Document the chosen path. v5.28.0 RE-PANEL hit 9.72 (Option A); v5.44.0 expectation is similar quality given the structural arc completion, but the panel decides, not the lead. | 2h |
-| **Cp.4** | HIGH | **Carry-forward ledger (`V5_TO_V6_CARRY.md`).** Every "carry forward" line from v5.31.0+ PLANs becomes an entry. Categorize: (a) becomes v6.0 PLAN input (real work for v6.0), (b) becomes a v5.44.x patch candidate (small, doesn't need v6.0 scope), (c) retired (no longer relevant). Examples: `Tn.1` (95-golden link gate) — retire if v5.36.0 finally landed it, otherwise v5.44.x. macOS notarization — v5.44.x. Borrow checker — v6.0 PLAN input. Hard removal of `{}` — v6.0 PLAN input. | 3h |
-| **Cp.5** | MEDIUM | **v5 retrospective (`V5_RETRO.md`).** What worked: structural fix discipline, panel cadence (when followed), strict fixed-point gate. What didn't: mid-arc panels causing rebumps, SDK-bundle scope creep at v5.12.0 (caught only at v5.31.0), the Tn.1 N-release overrun. What to bring to v6.0: tighter PLAN sizing (v5.43.0 was too big for one release; v6.0 borrow checker should split into Bc.1.0 / Bc.2.0 / Bc.3.0 sub-releases). ~1500 words. | 3h |
-| **Cp.6** | MEDIUM | **CLAUDE.md ledger update.** Prune "Most recent releases" — keep only v5.42.0, v5.43.0, v5.44.0 explicit; archive v5.31.0 through v5.41.0 to a "v5 closeout summary" paragraph that references roadmap. Add a v5.44.0 closeout entry with panel score + Option chosen + v6.0 readiness statement. | 1h |
-| **Cp.7** | MEDIUM | **`docs/roadmap/v5/CLOSEOUT_ARC.md` final update.** Existing file tracks the v5 closeout arc; v5.44.0 is the actual closeout. Final paragraph: "v5 closed at v5.44.0 with panel decision X. v6.0 PLAN draft begins at v6.0/PLAN.md per V5_TO_V6_CARRY.md inputs." | 30 min |
-| **Cp.8** | HIGH (gate) | **Cadence-check + ci-gates GREEN at HEAD.** v5.44.0 is panel-only; the substantive gate is "everything that was supposed to ship in v5 actually shipped and stayed green." `make ci-gates` GREEN; `make lint` clean; goldens 95/95; STRICT 3-stage fixed point preserved. | 30 min |
+| **Ps.1** | HIGH | **Package import roots.** Extend `ModuleResolver` construction so project builds include installed package roots from `mn_modules/`, derived from `mapanare.lock` when present and directory scan fallback otherwise. Keep search order deterministic: source-local, explicit `--stdlib-path`/extra paths, installed packages, bundled stdlib. | 3h |
+| **Ps.2** | HIGH | **Package name to import root mapping.** Define how `mn_collections-0.1.0/` maps to imports. Preferred v0: package root exports `mod.mn` or `main.mn`; package name import aliases hyphen to underscore (`mn-foo` importable as `mn_foo`). Document the rule and add tests for exact-version dirs. | 2h |
+| **Ps.3** | HIGH | **CLI integration.** Ensure `mnc run`, `mnc build`, `mnc emit-llvm`, `mnc emit-mir`, and test runner paths all construct resolvers with the same package roots. Today `build` has `--stdlib-path`; `emit-llvm` still uses a plain resolver. Remove that inconsistency. | 3h |
+| **Ps.4** | HIGH | **Lockfile/install tracking in build diagnostics.** When a package import resolves through `mn_modules`, record package name/version/source in the module cache or diagnostics surface. This gives reproducible-build breadcrumbs and lets future `mnc package graph` report actual deps. | 2h |
+| **Ps.5** | MEDIUM | **Pure package exemplar.** Promote `examples/packages/mn_collections` into the blessed example, because it is pure `.mn` and does not depend on removed Python interop. Add a consumer example with `[dependencies] mn_collections = "0.1.0"` and an import that compiles through `mn_modules`. | 2h |
+| **Ps.6** | MEDIUM | **HTTP/time policy note.** Document why `examples/packages/mn_http` is not the model: it uses removed `extern "Python"` and the real `stdlib/net/http.mn` is runtime-bound. `net/http` remains bundled until packages can declare native runtime ABI requirements. Same policy applies to v5.34.0 time shims. | 1h |
+| **Ps.7** | MEDIUM | **External stdlib classification doc.** Add `docs/guides/stdlib-packaging.md` or extend package docs with a table: bundled-core, pure package candidate, runtime-bound candidate, downstream-only. Initial candidates: `text`, `encoding/csv`, collection helpers = pure; `net/http`, `time`, sqlite/crypto = runtime-bound; calendars beyond Gregorian = downstream-only. | 2h |
+| **Ps.8** | MEDIUM | **Isolated repo workflow.** Write the theoretical-but-actionable flow for `mapanare-research/stdlib`: checkout repo, install local path/git dependency, run package tests, pack tarball, publish. Include local dev loop before registry exists. | 1h |
+| **Ps.9** | MEDIUM | **CI contract.** Draft `.github/workflows/stdlib.yml` shape for the future external repo: test against latest released `mnc`, current Mapanare `main` artifact, Windows/macOS/Linux, and a package tarball smoke test. Keep as docs unless the repo exists in this tree. | 1h |
+| **Ps.10** | HIGH (gate) | **Tests.** Add focused tests for manifest parsing, `mn_modules` root discovery, import resolution from installed package dirs, lockfile preference, CLI parity across `build`/`emit-llvm`, and tarball exclusion of `mn_modules`. | 4h |
 
 ---
 
 ## Phase plan
 
-- **Phase 0** — Pre-flight; v5.43.0 HEAD clean.
-- **Phase 1** — Cp.1 PRE_PANEL_AUDIT.md (must precede panel —
-  reviewers need the artifact).
-- **Phase 2** — Cp.2 panel runs (parallel; ~6h wall but each
-  reviewer is independent). Use `/code-review v5_44_closeout` to
-  drive.
-- **Phase 3** — Cp.3 V5_DECISION.md once findings land. Apply
-  the mechanical decision rule.
-- **Phase 4** — Cp.4 carry-forward ledger.
-- **Phase 5** — Cp.5 retrospective; Cp.6 CLAUDE.md prune;
-  Cp.7 CLOSEOUT_ARC update.
-- **Phase 6** — Cp.8 ci-gates + bump.
+- **Phase 0** — Pre-flight; v5.43.0 HEAD clean. Confirm package
+  manager tests and module-resolution tests baseline.
+- **Phase 1** — Ps.1 + Ps.2 resolver design and package-root
+  discovery. Keep it deterministic and tiny.
+- **Phase 2** — Ps.3 CLI parity: all compile/test entry points use
+  the same resolver construction.
+- **Phase 3** — Ps.4 build diagnostics / install tracking surface.
+- **Phase 4** — Ps.5 pure package exemplar + consumer example.
+- **Phase 5** — Ps.6-Ps.9 docs: stdlib packaging policy,
+  isolated-repo workflow, CI contract.
+- **Phase 6** — Ps.10 tests + regression gates.
+- **Phase 7** — Bump + tag.
 
 ---
 
 ## Out of scope
 
-- **Compiler edits.** Panel-only by construction.
-- **v6.0 PLAN drafting.** That happens in `docs/roadmap/v6/`
-  after v5.44.0 ships and the carry-forward ledger is set;
-  v5.44.0 produces the *inputs* to that PLAN, not the PLAN
-  itself.
-- **New features.** Anything that surfaces during panel as
-  "needs work" routes to a v5.44.x patch or to v6.0, not to
-  v5.44.0 itself.
-- **Hard removal of `{}` syntax.** v6.0; soft deprecation since
-  v5.19.0 holds for now.
+- **Moving bundled stdlib out of this repo.** v5.44.0 only makes that
+  safe later. Bundled stdlib remains the default user experience.
+- **Registry server changes.** Use existing registry-first + git
+  fallback behavior. Server-side metadata improvements can follow.
+- **Native ABI dependency metadata.** This release documents the
+  requirement but does not design the full ABI declaration format.
+- **Making `net/http` external.** It is runtime-bound and should stay
+  bundled for now.
+- **Making v5.34.0 `time` external.** It needs runtime shims; same
+  policy as HTTP.
+- **v6.0 borrow-checker work.** The panel moved to v5.45.0; v6.0
+  still waits for that panel.
 
 ---
 
 ## Risk
 
-1. **Panel finds NEEDS WORK on a load-bearing item.** v5.28.0
-   RE-PANEL caught Anaconda's 3 silent-RED CI gates. Panel can
-   surprise. Mitigation: Cp.1 audit pre-empts most of this; if
-   panel still flags something serious, Option B/C handles it
-   (ship v5.44.x patches before v6.0 starts).
-2. **Reviewers disagree sharply.** Panel has produced consistent
-   results historically (mean ± 0.3 across 7 reviewers); larger
-   spreads usually surface real ambiguity. Mitigation: spread
-   ≥ 0.5 triggers a follow-up review round before deciding.
-3. **The v5.28.0 9.72 ceiling.** v5.44.0 might score lower
-   simply because v5.31.0–v5.43.0 covered more ambitious scope
-   (manifesto arc) than the v5.23-v5.27 recovery arc. Lower
-   score isn't necessarily a problem; it just means
-   v5.44.x/v6.0 inherits more carry. Mitigation: judge against
-   absolute decision rule, not ceiling-relative.
-4. **Cadence drift.** v5.44.0 is the first panel since v5.28.0,
-   covering 13 substantive releases. The cadence-check gate
-   would have fired at v5.34.0+ if mid-arc panels were the
-   policy; user explicitly directed otherwise. Mitigation:
-   v5.44.0 PLAN documents the deliberate cadence choice up
-   front so the panel doesn't dock for it.
+1. **Import search order ambiguity.** Local files, installed packages,
+   and bundled stdlib can collide. Mitigation: deterministic order,
+   diagnostic that reports the chosen path, and tests for collisions.
+2. **Package names vs import names.** Hyphens are normal package names
+   but awkward module names. Mitigation: v0 rule is simple and
+   documented: package names may contain hyphens; import aliases use
+   underscores.
+3. **Lockfile lies if `mn_modules` is manually edited.** The lockfile
+   can point at a version not actually installed. Mitigation: if the
+   locked package directory is missing or integrity mismatches, fail
+   with `run mnc install`, not silent fallback.
+4. **Runtime-bound packages look installable but fail at link time.**
+   HTTP/time are the concrete examples. Mitigation: do not bless them
+   as external package examples yet; document native ABI metadata as
+   a future requirement.
+5. **Panel scope drift.** Adding v5.44.0 before the closeout means the
+   panel has one more release to audit. Mitigation: v5.45.0 panel plan
+   explicitly includes Ps.* in its audit list.
 
 ---
 
 ## Success criteria
 
-- ✅ PRE_PANEL_AUDIT.md complete, all v5.31-v5.43 items
-  classified.
-- ✅ 7 reviewer findings.md files in
-  `.reviews/v5.44.0/<reviewer>/findings.md`.
-- ✅ V5_DECISION.md with explicit Option A/B/C and aggregate
-  score.
-- ✅ V5_TO_V6_CARRY.md complete with v6.0 PLAN inputs ready.
-- ✅ V5_RETRO.md captures lessons.
-- ✅ CLAUDE.md pruned + v5 closeout entry added.
+- ✅ A project with `mapanare.toml` + `mapanare.lock` can import a
+  package installed under `mn_modules/<name>-<version>/`.
+- ✅ `mnc build`, `mnc emit-llvm`, `mnc emit-mir`, and test runner use
+  the same package-aware resolver behavior.
+- ✅ Lockfile-installed version is visible in build diagnostics or
+  module metadata.
+- ✅ `mn_collections` package example compiles from a consumer project.
+- ✅ `mn_http` package example is either marked legacy/broken or
+  clearly redirected to bundled `stdlib/net/http.mn`.
+- ✅ Docs explain bundled-core vs pure-package vs runtime-bound package
+  policy.
+- ✅ Isolated `mapanare-research/stdlib` workflow is documented enough
+  to test a package before a registry publish.
+- ✅ Focused package/import tests pass.
 - ✅ Goldens 95/95.
-- ✅ STRICT 3-stage fixed point preserved.
-- ✅ `make ci-gates` GREEN; `make lint` clean.
+- ✅ Strict 3-stage fixed point preserved.
 
 ---
 
 ## Carry-forward delta
 
 **Closes:**
-- v5 series. The longest-running major version arc in the
-  project's history.
+- "installed packages are not real compiler import roots" gap.
+- The immediate blocker to testing package candidates from an isolated
+  repo.
+- The roadmap ambiguity around whether `http`/`time` should move out
+  now: not yet, because they are runtime-bound.
 
-**Inherits to v6.0:**
-- Whatever Cp.4 carry-forward ledger surfaces. Expected:
-  borrow checker (the v6.0 thesis), hard removal of `{}`,
-  multi-level alias analysis, view-aliasing safety
-  (Ts.2 stopgap), any panel-surfaced "MEDIUM" that's a
-  v6.0 scope item.
+**Inherits to v5.45.0:**
+- End-of-v5 closeout panel. It now audits v5.31.0 through v5.44.0,
+  including Ps.*.
 
-**Inherits to v5.44.x patches (if any):**
-- Per panel findings; small structural items that don't need
-  v6.0 scope.
+**Inherits to v6.0 or later:**
+- Native ABI dependency metadata for packages.
+- First-class `mnc package graph` / dependency tree UI.
+- Actual `mapanare-research/stdlib` repo split once package imports
+  have soaked.
+- Registry-side package provenance/signing hardening.
 
-**v5 series state at HEAD:**
-- Foundation arc CLOSED (banner + 3 prebuilt binary releases).
-- Stdlib gap-close arc CLOSED (date/time, sqlite, JSON, HTTP,
-  regex, crypto).
-- Manifesto arc CLOSED (`ask`, tensor closeout, supervision,
-  distributed agents).
-- Terseness arc CLOSED (since v5.27.0).
-- Mb.\* arc CLOSED (since v5.29.0).
-- Pv.\* arc CLOSED (since v5.32.0 / v5.33.0).
-- v6.0 begins.
+**Aggregate state entering v5.45.0 (closeout panel):**
+foundation arc complete; stdlib gap-close complete; manifesto arc
+complete; package-system runway complete. v5.45.0 is the panel that
+green-lights v6.0.
