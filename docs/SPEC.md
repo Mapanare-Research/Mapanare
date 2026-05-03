@@ -1,7 +1,33 @@
 # Mapanare Language Specification
 
-**Version:** 5.36.0
-**Status:** Live — synced to the v5.36.0 cut (2026-05-03)
+**Version:** 5.37.0
+**Status:** Live — synced to the v5.37.0 cut (2026-05-03)
+
+> **v5.37.0 — Ht.\* — HTTP App / router / middleware / streaming
+> encoders.** SPEC body unchanged from the v5.21.0 cut. v5.37.0 adds
+> two new stdlib modules under `stdlib/net/http/`: **`router.mn`**
+> ships an opt-in `App` container with a path-pattern router
+> (`:name` parameters, `*name` wildcards alongside literals; method
+> dispatch GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS) and a
+> **registration-table middleware** list (Logger, Cors, BodyLimit,
+> RequestId, Custom). **`streaming.mn`** ships RFC 7230 §4.1 chunked
+> transfer encoding (`chunked_encode`, `build_chunked_response`,
+> `int_to_hex`) and a Server-Sent Events encoder (`SseLite`,
+> `sse_lite_encode`, `sse_lite_encode_stream`). Adds **zero language
+> features, zero new MIR ops, zero new IR shapes, zero new runtime
+> functions**. The legacy `stdlib/net/http/server.mn` `Router`
+> (string-named handlers, `${name}` syntax) is preserved unchanged.
+> Three PROMPT deviations documented in `### Changed` /
+> `### Deviations from PROMPT`: middleware as registration table
+> (not closure chain — fn-value calls broken in both backends);
+> ordered list of compiled patterns (not recursive trie); Ht.3
+> ships as documentation only since `stdlib/net/websocket.mn`
+> already has a complete RFC 6455 server; Ht.4 ships encoders, not
+> a bounded-RSS streamer (needs new `__mn_tcp_send_bytes` C
+> export). Ht.5 typed-handler-shorthand deferred to v5.38.0+
+> pending Js.4.B drop-glue fix from v5.36.0 carry. Strict 3-stage
+> fixed point preserved at v5.36.0's 241,898 lines / 0 diff;
+> 32-release strict streak from v5.7.1.
 
 > **v5.36.0 — Js.\* — JSON completeness arc.** SPEC body unchanged
 > from the v5.21.0 cut. v5.36.0 makes `stdlib/encoding/json.mn`

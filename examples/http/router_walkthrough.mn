@@ -1,0 +1,184 @@
+// examples/http/router_walkthrough.mn — v5.37.0 Ht.1+Ht.2+Ht.4 walkthrough.
+//
+// Demonstrates the new App / Router / Middleware / streaming-encoder
+// surface from stdlib/net/http/router.mn + stdlib/net/http/streaming.mn
+// at the data-structure level: register routes, match against a handful
+// of request shapes, print the dispatch decisions, and emit a chunked
+// HTTP response + an SSE stream.
+//
+// Build and run via:
+//
+//   cat stdlib/net/http/router.mn \
+//       stdlib/net/http/streaming.mn \
+//       examples/http/router_walkthrough.mn > /tmp/walk.mn
+//   python3 -m mapanare emit-llvm /tmp/walk.mn -o /tmp/walk.ll
+//   clang /tmp/walk.ll runtime/native/libmapanare_rt.a -o /tmp/walk
+//   /tmp/walk
+//
+// (Concatenation harness mirrors the v5.34/v5.35/v5.37 stdlib tests —
+// cross-module imports are deferred to a future release.)
+
+fn show_match(app: App, method: String, path: String) {
+    let p: DispatchPick = app_pick(app, method, path)
+    match p {
+        Picked(m) => {
+            print("[hit] " + method + " " + path + " -> " + m.handler)
+            // Print bound parameters one at a time. Lookups via
+            // match_param keep the v5.x map drop-glue at bay.
+            let id: String = match_param(m, "id")
+            if len(id) > 0 { print("       :id   = " + id) }
+            let name: String = match_param(m, "filename")
+            if len(name) > 0 { print("       :filename = " + name) }
+            let path_p: String = match_param(m, "path")
+            if len(path_p) > 0 { print("       *path = " + path_p) }
+        },
+        Default(resp) => {
+            let code: Int = response_status_code(resp)
+            print("[miss] " + method + " " + path + " -> " + walk_int_to_str(code))
+        }
+    }
+}
+
+fn walk_int_to_str(n: Int) -> String {
+    if n == 200 { return "200" }
+    if n == 404 { return "404" }
+    if n == 405 { return "405" }
+    if n == 413 { return "413" }
+    if n == 500 { return "500" }
+    return walk_int_to_str_any(n)
+}
+
+fn demo_routing() {
+    print("--- Section 1: routing")
+    let mut app: App = new_app()
+    app = app_get(app, "/", "h_index")
+    app = app_get(app, "/users/me", "h_self")
+    app = app_get(app, "/users/:id", "h_user_by_id")
+    app = app_get(app, "/users/:id/posts/:pid", "h_user_post")
+    app = app_get(app, "/static/:filename", "h_static_one")
+    app = app_get(app, "/static/*path", "h_static_tree")
+    app = app_post(app, "/users", "h_create_user")
+    show_match(app, "GET", "/")
+    show_match(app, "GET", "/users/me")
+    show_match(app, "GET", "/users/42")
+    show_match(app, "GET", "/users/42/posts/7")
+    show_match(app, "GET", "/static/main.css")
+    show_match(app, "GET", "/static/css/themes/dark.css")
+    show_match(app, "POST", "/users")
+    show_match(app, "DELETE", "/users")              // 405 — path matches but no DELETE
+    show_match(app, "GET", "/nonexistent")           // 404
+}
+
+fn demo_middleware() {
+    print("--- Section 2: middleware")
+    let mut app: App = new_app()
+    app = app_use(app, mw_request_id())
+    app = app_use(app, mw_logger())
+    app = app_use(app, mw_body_limit(64))
+    app = app_use(app, mw_cors("*", "GET, POST", "Content-Type"))
+
+    // Small body — passes through.
+    let req_small: Request = new_request("POST", "/api/echo", "small payload")
+    let outcome_small: MwOutcome = app_run_before(app, req_small)
+    match outcome_small {
+        MwContinue(req2) => {
+            print("[ok] continued; rid_len=" + walk_int_to_str_any(len(req2.request_id)))
+        },
+        MwShortCircuit(_) => { print("[ok] unexpected short-circuit") }
+    }
+
+    // Oversized body — short-circuits with 413.
+    let req_big: Request = new_request("POST", "/api/echo", "this body is way too long to fit under the body limit here AT ALL — definitely over 64 bytes worth of payload data")
+    let outcome_big: MwOutcome = app_run_before(app, req_big)
+    match outcome_big {
+        MwContinue(_) => { print("[oops] big body slipped past body_limit") },
+        MwShortCircuit(resp) => {
+            print("[ok] body_limit short-circuit; status=" + walk_int_to_str(response_status_code(resp)))
+        }
+    }
+
+    // Apply post-handler chain — CORS injects three headers; logger prints status.
+    let resp_in: Response = response_text(200, "hi")
+    let resp_out: Response = app_run_after(app, req_small, resp_in)
+    print("[hdr] origin=" + response_get_header(resp_out, "Access-Control-Allow-Origin"))
+}
+
+fn walk_int_to_str_any(n: Int) -> String {
+    if n == 0 { return "0" }
+    let mut x: Int = n
+    let mut buf: String = ""
+    while x > 0 {
+        let d: Int = x % 10
+        let ch: String = walk_digit(d)
+        buf = ch + buf
+        x = x / 10
+    }
+    return buf
+}
+
+fn walk_digit(d: Int) -> String {
+    if d == 0 { return "0" }
+    if d == 1 { return "1" }
+    if d == 2 { return "2" }
+    if d == 3 { return "3" }
+    if d == 4 { return "4" }
+    if d == 5 { return "5" }
+    if d == 6 { return "6" }
+    if d == 7 { return "7" }
+    if d == 8 { return "8" }
+    return "9"
+}
+
+fn demo_chunked() {
+    print("--- Section 3: chunked transfer encoding")
+    let chunks: List<String> = ["first chunk\n", "second chunk\n", "third\n"]
+    let h: List<String> = ["Content-Type", "text/plain"]
+    let wire: String = build_chunked_response(200, h, chunks)
+    print("[wire] head + " + walk_int_to_str_any(len(wire)) + " bytes total")
+    // Just print the head section so output stays tidy.
+    let hn: Int = len(wire)
+    let mut head_end: Int = 0
+    let mut i: Int = 0
+    while i + 3 < hn {
+        if wire.char_at(i) == "\r" {
+            if wire.char_at(i + 1) == "\n" {
+                if wire.char_at(i + 2) == "\r" {
+                    if wire.char_at(i + 3) == "\n" {
+                        head_end = i + 4
+                        i = hn
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    let mut head: String = ""
+    let mut j: Int = 0
+    while j < head_end {
+        head = head + wire.char_at(j)
+        j = j + 1
+    }
+    print(head)
+}
+
+fn demo_sse() {
+    print("--- Section 4: server-sent events")
+    let mut e1: SseLite = new_sse_lite("welcome")
+    e1 = sse_lite_with_id(e1, "1")
+    let mut e2: SseLite = new_sse_lite("first line\nsecond line")
+    e2 = sse_lite_with_type(e2, "multiline")
+    let events: List<SseLite> = [e1, e2]
+    let body: String = sse_lite_encode_stream(events, 3000)
+    print(body)
+}
+
+fn main() -> Int {
+    demo_routing()
+    print("")
+    demo_middleware()
+    print("")
+    demo_chunked()
+    print("")
+    demo_sse()
+    return 0
+}

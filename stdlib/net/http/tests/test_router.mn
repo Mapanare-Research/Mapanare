@@ -1,0 +1,173 @@
+// stdlib/net/http/tests/test_router.mn — Ht.1 router behavior tests.
+//
+// Exercises:
+//   - literal segment match
+//   - single-param binding (`:id`)
+//   - multi-param binding (`:uid` and `:pid`)
+//   - wildcard binding (`*path`)
+//   - literal-beats-param priority
+//   - param-beats-wildcard priority
+//   - method dispatch (GET vs POST)
+//   - 404 path
+//   - 405 path (path matches under another method)
+//
+// Harness: tests/stdlib/test_http_router.py concatenates router.mn
+// content with this file's main, compiles via Python LLVM emitter,
+// links libmapanare_rt.a, runs, asserts "PASSED" in stdout.
+
+fn t_literal() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/foo", "h_foo")
+    let m: MatchedRoute = app_match(a, "GET", "/foo")
+    if m.matched == false { return false }
+    if m.handler != "h_foo" { return false }
+    return true
+}
+
+fn t_param() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/users/:id", "h_user")
+    let m: MatchedRoute = app_match(a, "GET", "/users/42")
+    if m.matched == false { return false }
+    if m.handler != "h_user" { return false }
+    if match_param(m, "id") != "42" { return false }
+    return true
+}
+
+fn t_two_params() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/users/:uid/posts/:pid", "h_post")
+    let m: MatchedRoute = app_match(a, "GET", "/users/7/posts/13")
+    if m.matched == false { return false }
+    if match_param(m, "uid") != "7" { return false }
+    if match_param(m, "pid") != "13" { return false }
+    return true
+}
+
+fn t_wildcard() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/static/*path", "h_static")
+    let m: MatchedRoute = app_match(a, "GET", "/static/css/main.css")
+    if m.matched == false { return false }
+    if match_param(m, "path") != "css/main.css" { return false }
+    return true
+}
+
+fn t_literal_beats_param() -> Bool {
+    let mut a: App = new_app()
+    // Register :id first; literal /me must still beat it.
+    a = app_get(a, "/users/:id", "h_id")
+    a = app_get(a, "/users/me", "h_me")
+    let m: MatchedRoute = app_match(a, "GET", "/users/me")
+    if m.matched == false { return false }
+    if m.handler != "h_me" { return false }
+    return true
+}
+
+fn t_param_beats_wildcard() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/static/*rest", "h_wild")
+    a = app_get(a, "/static/:filename", "h_param")
+    let m: MatchedRoute = app_match(a, "GET", "/static/main.css")
+    if m.matched == false { return false }
+    if m.handler != "h_param" { return false }
+    return true
+}
+
+fn t_method_dispatch() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/api", "h_get")
+    a = app_post(a, "/api", "h_post")
+    let mg: MatchedRoute = app_match(a, "GET", "/api")
+    if mg.handler != "h_get" { return false }
+    let mp: MatchedRoute = app_match(a, "POST", "/api")
+    if mp.handler != "h_post" { return false }
+    return true
+}
+
+fn t_404() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/foo", "h_foo")
+    let m: MatchedRoute = app_match(a, "GET", "/bar")
+    if m.matched { return false }
+    return true
+}
+
+fn t_405() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/api", "h_get")
+    let m: MatchedRoute = app_match(a, "POST", "/api")
+    if m.matched { return false }
+    if m.method_allowed { return false }
+    return true
+}
+
+fn t_pick_picked() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/x", "h_x")
+    let p: DispatchPick = app_pick(a, "GET", "/x")
+    match p {
+        Picked(m) => {
+            if m.handler == "h_x" { return true }
+            return false
+        },
+        Default(_) => { return false }
+    }
+}
+
+fn t_pick_404() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/x", "h_x")
+    let p: DispatchPick = app_pick(a, "GET", "/nope")
+    match p {
+        Picked(_) => { return false },
+        Default(r) => {
+            if response_status_code(r) == 404 { return true }
+            return false
+        }
+    }
+}
+
+fn t_pick_405() -> Bool {
+    let mut a: App = new_app()
+    a = app_get(a, "/api", "h_get")
+    let p: DispatchPick = app_pick(a, "POST", "/api")
+    match p {
+        Picked(_) => { return false },
+        Default(r) => {
+            if response_status_code(r) == 405 { return true }
+            return false
+        }
+    }
+}
+
+fn run_one(name: String, ok: Bool) -> Bool {
+    if ok {
+        print(name + " ok")
+        return true
+    }
+    print(name + " FAIL")
+    return false
+}
+
+fn main() -> Int {
+    let mut all_ok: Bool = true
+    if run_one("t_literal", t_literal()) == false { all_ok = false }
+    if run_one("t_param", t_param()) == false { all_ok = false }
+    if run_one("t_two_params", t_two_params()) == false { all_ok = false }
+    if run_one("t_wildcard", t_wildcard()) == false { all_ok = false }
+    if run_one("t_literal_beats_param", t_literal_beats_param()) == false { all_ok = false }
+    if run_one("t_param_beats_wildcard", t_param_beats_wildcard()) == false { all_ok = false }
+    if run_one("t_method_dispatch", t_method_dispatch()) == false { all_ok = false }
+    if run_one("t_404", t_404()) == false { all_ok = false }
+    if run_one("t_405", t_405()) == false { all_ok = false }
+    if run_one("t_pick_picked", t_pick_picked()) == false { all_ok = false }
+    if run_one("t_pick_404", t_pick_404()) == false { all_ok = false }
+    if run_one("t_pick_405", t_pick_405()) == false { all_ok = false }
+    if all_ok {
+        print("test_router PASSED")
+        return 0
+    }
+    print("test_router FAILED")
+    return 1
+}

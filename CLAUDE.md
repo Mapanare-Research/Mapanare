@@ -19,6 +19,99 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.37.0** (ready, not tagged) — **Ht.\* — HTTP App / router /
+  middleware / streaming encoders.** Fourth release in the stdlib
+  gap-close arc (Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0,
+  Ht.\* @ v5.37.0). New `stdlib/net/http/router.mn` ships an opt-in
+  `App` container bundling a path-pattern router (`:name`
+  parameters + `*name` wildcards alongside literals; method
+  dispatch GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS) with a
+  **registration-table middleware** list (Logger / Cors /
+  BodyLimit / RequestId / Custom). New
+  `stdlib/net/http/streaming.mn` ships RFC 7230 §4.1 chunked
+  transfer encoding plus a Server-Sent Events encoder. **Zero
+  compiler edits. Zero `mapanare/self/*.mn` source touches.**
+  Strict 3-stage fixed point preserved by construction at
+  v5.36.0's **241,898 lines / 0 diff** (32-release strict streak
+  from v5.7.1). Goldens **95/95**. Twenty-nine new pytest
+  assertions across 3 `.mn` test files: 12 router + 6 middleware
+  + 11 streaming, all GREEN; pytest harness
+  `tests/stdlib/test_http_router.py` mirrors the v5.34/v5.35
+  concatenation pattern. The legacy `stdlib/net/http/server.mn`
+  `Router` (string-named handlers, `${name}` syntax) is
+  **preserved unchanged** — existing pytest coverage in
+  `tests/stdlib/test_http_server.py` keeps passing; the v5.37.0
+  surface is opt-in via the new module. **Five PROMPT deviations,
+  all load-bearing, all structurally driven, all surfaced in
+  Phase 0.** **(1) Ht.2 — registration table, not closure
+  chain.** PROMPT specified `type Middleware = fn(Request, Next)
+  -> Response`. Phase-0 spike confirmed both backends fail on
+  indirect calls through fn-typed parameters: native
+  `mnc-stage1` produces invalid IR (`use of undefined value`);
+  Python LLVM emitter links cleanly but **SEGVs at runtime**.
+  Same root cause as v5.35.0's deferred
+  `transaction<T>(f: fn() -> ...)` shape. v5.37.0 ships the
+  registration-table form (Middleware enum variants); custom
+  middleware via `Custom(name)` dispatched through a user-
+  written `dispatch_custom_middleware_before` switch. Closure-
+  chain shape is a v5.38.0+ candidate. **(2) Ht.1 — ordered
+  list of compiled patterns, not recursive trie.** Functionally
+  equivalent — same API surface, same priority rule (literal >
+  parameter > wildcard, locked with explicit overlap tests),
+  same big-O on small route counts. Removes a recursion risk
+  in the MIR lowerer that the v5.37.0 release scope did not
+  budget for. **(3) Ht.3 ships as documentation only.**
+  `stdlib/net/websocket.mn` already had a complete RFC 6455
+  client + server (`ws_accept_upgrade`, `ws_recv_full` with
+  fragmentation, masking, control-frame size cap, UTF-8
+  validation, `wss://` over TLS, `ws_echo_loop`). The PROMPT's
+  `stdlib/net/http/ws.mn` would have been a redundant wrapper.
+  Cookbook in `docs/stdlib/http.md` shows the integration path.
+  Autobahn fixture corpus deferred to v5.38.0+ as **Ht.3.B**.
+  **(4) Ht.4 — encoders, not bounded-RSS streamer.** Existing
+  `__mn_tcp_send_str(fd, data: String)` C-runtime export takes
+  a whole string; a real bounded-RSS streaming writer needs
+  `__mn_tcp_send_bytes(fd, ptr, len)` plus a chunk-pump driver
+  loop. v5.37.0 ships *encoders* (`chunked_encode`,
+  `build_chunked_response`, `SseLite` + `sse_lite_encode_stream`)
+  that produce wire-format strings; the wire format is identical
+  to what the eventual streamer will write. Pump driver is
+  **Ht.4.B** for v5.38.0+. **(5) Ht.5 deferred** pending Js.4.B
+  drop-glue fix from v5.36.0 carry. `from_json::<T>` builds
+  successfully but SEGVs at runtime in field extraction;
+  without working `from_json::<T>` the typed-handler-shorthand
+  auto-deserialization has no mechanism. v5.36.x will close
+  Js.4.B; v5.38.0+ picks Ht.5 back up. **Headers stored as
+  `List<String>` alternating-kv** (not `Map<String, String>`)
+  in `Request`, `Response`, and middleware return shapes —
+  same v5.x map-in-returned-payload drop-glue motivation as
+  `MatchedRoute.params_kv`; helpers `hdr_get` / `hdr_set` /
+  `hdr_has` provide the standard Map-style operations on top.
+  Five v5.x carry-forward bug-classes documented in source-file
+  preambles + CHANGELOG `### Changed`: multi-line struct literals
+  not parsed (single-line workaround); `for x in some_list` not
+  lowered (index-based `while i < len(xs)` workaround); string-
+  aliasing on `xs = xs + [cur]; cur = mut` (snapshot via
+  `let snap = cur + ""`); `Map<String, String>` drop-glue in
+  returned struct/enum (replace with `List<String>` kv); fn-
+  value parameter invocation broken (registration-table dispatch
+  instead of closure chain). **Hd-class preventative** —
+  `docs/SPEC.md` header re-synced from "v5.36.0 cut" to
+  "v5.37.0 cut" with new sync block summarizing what v5.37.0
+  ships. `check_doc_freshness.py` GREEN. Source delta: ~600
+  LOC `stdlib/net/http/router.mn`, ~250 LOC
+  `stdlib/net/http/streaming.mn`, ~400 LOC `.mn` tests, ~110
+  LOC pytest harness, ~150 LOC walkthrough example, ~360 LOC
+  `docs/stdlib/http.md`, plus CHANGELOG / CLAUDE.md / SPEC sync
+  / mechanical bump_version.py edits. Aggregate state entering
+  v5.38.0: **0 HIGH** / **2 MEDIUM** (Ht.5 typed handler waits
+  on Js.4.B; macOS notarization carry from v5.33.0 Nu.2) / ~7
+  LOW (Ht.3.B Autobahn corpus, Ht.4.B bounded-RSS streamer,
+  closure-chain middleware, native `Bytes` type,
+  `Map<String, String>` drop-glue, plus v5.36.0+ carries).
+  See `docs/roadmap/v5/v5.37.0/{PLAN.md, PROMPT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.36.0** (ready, not tagged) — **Js.\* — JSON completeness
   arc.** Third release in the stdlib gap-close arc (Dt.\* @
   v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0); these three are the
@@ -1417,7 +1510,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (31454 symbols, 66378 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (31475 symbols, 66463 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

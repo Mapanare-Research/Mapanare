@@ -7,6 +7,189 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.37.0] - 2026-05-03
+
+**Ht.\* — HTTP App / router / middleware / streaming encoders.**
+Fourth release in the stdlib gap-close arc (Dt.\* @ v5.34.0,
+Sq.\* @ v5.35.0, Js.\* @ v5.36.0, Ht.\* @ v5.37.0). New
+`stdlib/net/http/router.mn` ships an opt-in `App` container
+bundling a path-pattern router (`:name` parameters + `*name`
+wildcards alongside literals, method dispatch GET/POST/PUT/
+DELETE/PATCH/HEAD/OPTIONS) with a registration-table middleware
+list (Logger / Cors / BodyLimit / RequestId / Custom). New
+`stdlib/net/http/streaming.mn` ships RFC 7230 §4.1 chunked
+transfer encoding plus a Server-Sent Events (SSE) encoder.
+**Zero compiler edits. Zero `mapanare/self/*.mn` source touches.**
+Strict 3-stage fixed point preserved by construction at
+v5.36.0's **241,898 lines / 0 diff** (32-release strict streak
+from v5.7.1). Goldens **95/95**. Twenty-nine new pytest cases:
+12 router + 6 middleware + 11 streaming, all GREEN.
+
+The legacy `stdlib/net/http/server.mn` `Router` (string-named
+handlers, `${name}` syntax) is **preserved unchanged** — existing
+pytest coverage in `tests/stdlib/test_http_server.py` keeps
+passing. The v5.37.0 surface is opt-in via the new module.
+
+### Added
+
+- **Ht.1 — path-pattern router via ordered list of compiled patterns.**
+  `App`, `RouteEntry`, `CompiledSeg`, `MatchedRoute`,
+  `DispatchPick(Picked|Default)` types. `app_get` / `app_post` /
+  `app_put` / `app_delete` / `app_patch` / `app_head` /
+  `app_options` per-method registration. Path syntax: literal
+  segments, `:name` parameters, `*name` wildcards (terminal).
+  Priority on overlap: literal > parameter > wildcard, locked
+  with explicit `t_literal_beats_param` and
+  `t_param_beats_wildcard` tests. `app_match(method, path)`
+  returns a `MatchedRoute` with `params_kv: List<String>`
+  (alternating key/value); access via `match_param(m, name)` /
+  `match_has_param(m, name)`. `app_pick` convenience returns
+  `Picked(MatchedRoute)` or `Default(Response)` (404 / 405
+  distinguished by a second pass over the route table).
+- **Ht.2 — middleware registration table.** `Middleware` enum
+  variants: `Logger`, `Cors(origins, methods, headers)`,
+  `BodyLimit(n)`, `RequestId`, `Custom(name)`. Constructor
+  helpers (`mw_logger()`, `mw_cors(...)`, `mw_body_limit(n)`,
+  `mw_request_id()`, `mw_custom(name)`). `app_use(app, mw)`
+  appends to the chain. `app_run_before` / `app_run_after`
+  walk the chain in registration order. Short-circuit
+  semantics: `BodyLimit` returns `MwShortCircuit(413 response)`
+  when `len(req.body) > max_bytes`; the rest of the chain and
+  the handler are skipped. `RequestId` mints a 32-char hex id
+  via `__mn_random_bytes_str(16)` when none is present and
+  echoes it back as `X-Request-Id` post-handler. `Cors` injects
+  the three `Access-Control-*` response headers post-handler.
+- **Ht.4 — streaming encoders** in
+  `stdlib/net/http/streaming.mn`. `chunked_encode_one(payload)`
+  / `chunked_encode(chunks)` / `build_chunked_response(status,
+  headers, chunks)` for RFC 7230 §4.1 chunked transfer
+  encoding. `build_chunked_response` automatically adds
+  `Transfer-Encoding: chunked` and drops any pre-existing
+  `Content-Length` (cannot coexist per RFC §3.3.1).
+  `int_to_hex(n)` lowercase-hex helper. SSE encoders:
+  `SseLite { id, event_type, data, retry_ms }` builder type
+  with `new_sse_lite` / `sse_lite_with_id` /
+  `sse_lite_with_type` / `sse_lite_with_retry` /
+  `sse_lite_encode(event)` / `sse_lite_encode_stream(events,
+  default_retry_ms)`. Multi-line `data` payloads emit one
+  `data:` prefix per `\n`-separated line per the SSE spec.
+  `sse_response_headers()` returns the standard SSE header
+  shape (`Content-Type: text/event-stream`, `Cache-Control:
+  no-cache`, `X-Accel-Buffering: no`).
+- **Ht.6 — pytest harness** at
+  `tests/stdlib/test_http_router.py`. Mirrors the v5.34/v5.35
+  concatenation pattern: read `router.mn` (and `streaming.mn`
+  where needed), prepend to each test main, compile via the
+  Python LLVM emitter, link `libmapanare_rt.a`, run, assert
+  `PASSED` in stdout. Three pytest cases (`test_router.mn`,
+  `test_middleware.mn`, `test_streaming.mn`); 29 assertions
+  across the three files; 3/3 GREEN. New test files under
+  `stdlib/net/http/tests/` carry the assertions.
+- **Ht.7 — walkthrough example** at
+  `examples/http/router_walkthrough.mn`. Demonstrates route
+  registration, parameter binding (literal / param /
+  wildcard), 404 / 405 paths, middleware short-circuit,
+  CORS post-handler, chunked-encoding wire format, and SSE
+  framing. Compiles and runs end-to-end via the
+  router + streaming concatenation harness.
+- **Ht.8 — cookbook** at `docs/stdlib/http.md`. Quick
+  reference, path patterns, middleware reference + short-
+  circuit semantics, custom middleware via the registration-
+  table extension point, alternating-kv header API, chunked
+  encoding, SSE, streaming-aware logger pattern, WebSocket
+  integration via the existing `stdlib/net/websocket.mn`,
+  migration table from `server.mn` legacy `Router` to
+  `router.mn` `App`.
+
+### Changed
+
+- **Headers stored as `List<String>` alternating-kv** in the new
+  `Request`, `Response`, and middleware return shapes — NOT
+  `Map<String, String>`. Same motivation as
+  `MatchedRoute.params_kv`: a v5.x drop-glue bug frees Maps
+  stored as struct fields / enum payloads before the caller
+  can read them. Lists pass through correctly. New helpers
+  `hdr_get` / `hdr_set` / `hdr_has` provide the standard
+  Map-style operations on top of the alternating-kv list.
+  This is a **deviation from the PROMPT's `Map<String, String>`
+  shape** for headers but is necessary to ship a working
+  surface today; the drop-glue fix is tracked as a v5.x carry
+  LOW.
+
+### Deviations from PROMPT
+
+- **Ht.2 — registration table, not closure chain.** PROMPT
+  specified `type Middleware = fn(Request, Next) -> Response`.
+  Phase-0 spike confirmed both backends fail on indirect calls
+  through fn-typed parameters: `mnc-stage1` produces invalid
+  IR (`use of undefined value`); the Python LLVM emitter
+  links cleanly but **SEGVs at runtime**. Same root cause as
+  v5.35.0's deferred `transaction<T>(f: fn() -> ...)` shape.
+  v5.37.0 ships the registration-table form (Middleware enum
+  variants) instead. Custom user middleware is dispatched by
+  string name via a user-supplied
+  `dispatch_custom_middleware_before(name, ...)` switch —
+  documented in `docs/stdlib/http.md`. The closure-chain form
+  is a v5.38.0+ candidate when indirect fn-value calls land.
+- **Ht.1 — ordered list of compiled patterns, not recursive
+  trie.** Functionally equivalent — same API surface, same
+  priority rule (literal > parameter > wildcard), same big-O
+  on small route counts. The deviation removes a recursion
+  risk in the MIR lowerer that the v5.37.0 release scope did
+  not budget for. Visible in source as a single
+  `RouteEntry { method, pattern, segs, handler, specificity,
+  insertion_order }` flat list sorted on registration by
+  descending specificity.
+- **Ht.3 ships as documentation only.**
+  `stdlib/net/websocket.mn` already had a complete RFC 6455
+  client + server implementation (`ws_accept_upgrade`,
+  `ws_recv_full` with fragmentation, masking, control-frame
+  size cap, UTF-8 validation, `wss://` over TLS,
+  `ws_echo_loop`). The PROMPT's net-new wrapper file would
+  have been a redundant duplicate. v5.37.0 documents the
+  integration path in `docs/stdlib/http.md` instead. The
+  Autobahn fixture corpus is deferred to v5.38.0+ (Ht.3.B) —
+  the existing parser passes manual smoke; fixture-locked
+  conformance is a separate corpus-import effort.
+- **Ht.4 — encoders, not bounded-RSS streamer.** The existing
+  `__mn_tcp_send_str(fd, data: String)` C-runtime export
+  takes a whole string. A real bounded-RSS streaming writer
+  needs a future bytes-oriented send export plus a chunk-pump
+  driver loop. v5.37.0 ships *encoders* that produce
+  wire-format strings; the wire format is identical to what
+  the eventual streamer will write, so the encoders compose
+  forward into v5.38.0 (Ht.4.B) cleanly.
+- **Ht.5 deferred to v5.38.0+** pending Js.4.B drop-glue fix.
+  `from_json::<T>` builds successfully but SEGVs at runtime
+  in field extraction (a v5.36.0 carry, documented in that
+  release's CHANGELOG). Without working `from_json::<T>`,
+  the typed-handler-shorthand auto-deserialization has no
+  mechanism. v5.36.x will close Js.4.B; v5.38.0 picks Ht.5
+  back up.
+- **Single-file modules** rather than directory layouts.
+  Mirrors the v5.34.0 / v5.35.0 stdlib pattern: cross-module
+  function calls have known mangling/extern-propagation
+  limitations. Tests run via concatenation harness.
+
+### Carry-forward to v5.38.0
+
+| Item | Status |
+| --- | --- |
+| Ht.3.B Autobahn fixture corpus | LOW |
+| Ht.4.B bounded-RSS streaming writer (waits on bytes-oriented C send export) | LOW |
+| Ht.5 typed handler shorthand (waits on Js.4.B) | MEDIUM |
+| Closure-chain middleware (waits on indirect fn-value calls) | LOW |
+| Native `Bytes` type (also blocks Js.3 streaming, Sq.6 sqlite Json variant) | LOW |
+| macOS notarization | MEDIUM (carry from v5.33.0 Nu.2) |
+| `Map<String, String>` drop-glue in returned struct/enum | LOW (now also blocks fn-chain middleware design) |
+
+Aggregate state entering v5.38.0: **0 HIGH** / **2 MEDIUM**
+(Ht.5 typed handler waits on Js.4.B; macOS notarization carry)
+/ ~7 LOW. Cadence: panel rule informational-only since v5.33.2
+Cd.\*; lead drives review timing.
+
+
+
 ## [5.36.0] - 2026-05-03
 
 **Js.\* — JSON completeness arc.** RFC 8259 strictness, indent-
@@ -10039,7 +10222,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.36.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.37.0...HEAD
+[5.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.36.0...v5.37.0
 [5.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.35.0...v5.36.0
 [5.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.34.0...v5.35.0
 [5.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.2...v5.34.0

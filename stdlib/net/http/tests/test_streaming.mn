@@ -1,0 +1,155 @@
+// stdlib/net/http/tests/test_streaming.mn — Ht.4 streaming-encoder tests.
+//
+// Exercises:
+//   - int_to_hex (boundary values)
+//   - chunked_encode_one wire format
+//   - chunked_encode multi-chunk + termination
+//   - chunked_encode skips empty chunks
+//   - build_chunked_response emits Transfer-Encoding: chunked
+//   - build_chunked_response strips Content-Length
+//   - sse_lite_encode single-line data
+//   - sse_lite_encode multi-line data emits one `data:` per line
+//   - sse_lite_encode with id / event / retry fields
+//   - sse_lite_encode_stream with default retry hint
+//   - sse_response_headers shape
+
+fn t_hex() -> Bool {
+    if int_to_hex(0) != "0" { return false }
+    if int_to_hex(15) != "f" { return false }
+    if int_to_hex(16) != "10" { return false }
+    if int_to_hex(255) != "ff" { return false }
+    if int_to_hex(4096) != "1000" { return false }
+    return true
+}
+
+fn t_chunked_one() -> Bool {
+    let s: String = chunked_encode_one("hello")
+    if s != "5\r\nhello\r\n" { return false }
+    return true
+}
+
+fn t_chunked_multi() -> Bool {
+    let chunks: List<String> = ["foo", "barbaz"]
+    let s: String = chunked_encode(chunks)
+    let want: String = "3\r\nfoo\r\n6\r\nbarbaz\r\n0\r\n\r\n"
+    if s != want { return false }
+    return true
+}
+
+fn t_chunked_skips_empty() -> Bool {
+    let chunks: List<String> = ["foo", "", "bar"]
+    let s: String = chunked_encode(chunks)
+    let want: String = "3\r\nfoo\r\n3\r\nbar\r\n0\r\n\r\n"
+    if s != want { return false }
+    return true
+}
+
+fn t_chunked_terminator_only() -> Bool {
+    let chunks: List<String> = []
+    let s: String = chunked_encode(chunks)
+    if s != "0\r\n\r\n" { return false }
+    return true
+}
+
+fn t_response_strips_content_length() -> Bool {
+    let h: List<String> = ["Content-Type", "text/plain", "Content-Length", "999"]
+    let chunks: List<String> = ["abc"]
+    let s: String = build_chunked_response(200, h, chunks)
+    // Must contain Transfer-Encoding: chunked.
+    if str_contains(s, "Transfer-Encoding: chunked") == false { return false }
+    // Must NOT contain Content-Length.
+    if str_contains(s, "Content-Length") { return false }
+    // Must contain Content-Type passthrough.
+    if str_contains(s, "Content-Type: text/plain") == false { return false }
+    return true
+}
+
+fn t_sse_data_only() -> Bool {
+    let e: SseLite = new_sse_lite("hello")
+    let w: String = sse_lite_encode(e)
+    if w != "data: hello\n\n" { return false }
+    return true
+}
+
+fn t_sse_multiline_data() -> Bool {
+    let e: SseLite = new_sse_lite("line1\nline2\nline3")
+    let w: String = sse_lite_encode(e)
+    if w != "data: line1\ndata: line2\ndata: line3\n\n" { return false }
+    return true
+}
+
+fn t_sse_with_id_event_retry() -> Bool {
+    let mut e: SseLite = new_sse_lite("payload")
+    e = sse_lite_with_id(e, "42")
+    e = sse_lite_with_type(e, "ping")
+    e = sse_lite_with_retry(e, 5000)
+    let w: String = sse_lite_encode(e)
+    let want: String = "id: 42\nevent: ping\nretry: 5000\ndata: payload\n\n"
+    if w != want { return false }
+    return true
+}
+
+fn t_sse_stream_with_default_retry() -> Bool {
+    let e1: SseLite = new_sse_lite("first")
+    let e2: SseLite = new_sse_lite("second")
+    let events: List<SseLite> = [e1, e2]
+    let w: String = sse_lite_encode_stream(events, 3000)
+    let want: String = "retry: 3000\n\ndata: first\n\ndata: second\n\n"
+    if w != want { return false }
+    return true
+}
+
+fn t_sse_headers_shape() -> Bool {
+    let h: List<String> = sse_response_headers()
+    if hdr_get(h, "Content-Type") != "text/event-stream" { return false }
+    if hdr_get(h, "Cache-Control") != "no-cache" { return false }
+    return true
+}
+
+// Tiny `String contains substring` helper — naive O(n*m) since strings
+// here are short.
+fn str_contains(haystack: String, needle: String) -> Bool {
+    let hn: Int = len(haystack)
+    let nn: Int = len(needle)
+    if nn == 0 { return true }
+    if nn > hn { return false }
+    let mut i: Int = 0
+    while i + nn <= hn {
+        let mut j: Int = 0
+        let mut ok: Bool = true
+        while j < nn {
+            if haystack.char_at(i + j) != needle.char_at(j) {
+                ok = false
+                j = nn
+            }
+            j = j + 1
+        }
+        if ok { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn run_one(name: String, ok: Bool) -> Bool {
+    if ok { print(name + " ok"); return true }
+    print(name + " FAIL")
+    return false
+}
+
+fn main() -> Int {
+    let mut all_ok: Bool = true
+    if run_one("t_hex", t_hex()) == false { all_ok = false }
+    if run_one("t_chunked_one", t_chunked_one()) == false { all_ok = false }
+    if run_one("t_chunked_multi", t_chunked_multi()) == false { all_ok = false }
+    if run_one("t_chunked_skips_empty", t_chunked_skips_empty()) == false { all_ok = false }
+    if run_one("t_chunked_terminator_only", t_chunked_terminator_only()) == false { all_ok = false }
+    if run_one("t_response_strips_content_length", t_response_strips_content_length()) == false { all_ok = false }
+    if run_one("t_sse_data_only", t_sse_data_only()) == false { all_ok = false }
+    if run_one("t_sse_multiline_data", t_sse_multiline_data()) == false { all_ok = false }
+    if run_one("t_sse_with_id_event_retry", t_sse_with_id_event_retry()) == false { all_ok = false }
+    if run_one("t_sse_stream_with_default_retry", t_sse_stream_with_default_retry()) == false { all_ok = false }
+    if run_one("t_sse_headers_shape", t_sse_headers_shape()) == false { all_ok = false }
+    if all_ok { print("test_streaming PASSED"); return 0 }
+    print("test_streaming FAILED")
+    return 1
+}

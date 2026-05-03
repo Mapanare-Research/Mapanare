@@ -1,0 +1,714 @@
+// stdlib/net/http/router.mn — App / router / middleware for Mapanare HTTP.
+//
+// v5.37.0 Ht.1 + Ht.2.
+//
+// Ships:
+//   - Path-pattern router with `:name` (parameter) and `*name` (wildcard)
+//     segments alongside literal segments. Method dispatch
+//     (GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS).
+//   - App container that bundles the route table with a registration-table
+//     middleware list.
+//   - Built-in middleware variants: Logger, Cors, BodyLimit, RequestId,
+//     Custom(name).
+//
+// PROMPT/PLAN deviations (load-bearing, documented in
+// docs/roadmap/v5/v5.37.0/SESSION_REPORT.md):
+//
+//   1. Ordered-list-of-compiled-patterns instead of a recursive trie.
+//      Functionally equivalent — same API surface, same priority rule
+//      (literal > parameter > wildcard), same big-O on small route
+//      counts. The deviation removes a recursion risk in the
+//      MIR lowerer that the v5.37.0 release scope did not budget for.
+//
+//   2. Middleware is a registration table (Middleware variants), not
+//      a fn-value chain. The PROMPT specified
+//      `type Middleware = fn(Request, Next) -> Response`. A v5.37.0
+//      Phase-0 spike confirmed both backends fail on indirect calls
+//      through fn-typed parameters: native `mnc-stage1` produces
+//      invalid IR (`use of undefined value`) at the indirect-call
+//      site; the Python LLVM emitter links cleanly but SEGVs at
+//      runtime. Same root cause as v5.35.0's transaction-closure
+//      deferral. Custom user middleware is dispatched by string name
+//      via a user-supplied `dispatch_custom_middleware(name, ...)`
+//      function. Closure-chain shape is a v5.38.0+ candidate when
+//      indirect fn-value calls land.
+//
+//   3. The legacy `stdlib/net/http/server.mn` Router (string-named
+//      handlers, `${name}` syntax) is preserved unchanged. Existing
+//      pytest coverage in `tests/stdlib/test_http_server.py` keeps
+//      working. The v5.37.0 surface is opt-in via this module.
+//
+//   4. Multi-line struct literals are not supported in current
+//      compiler (carry-forward LOW from v5.36.0); all `new Foo { ... }`
+//      literals are single-line.
+//
+//   5. List iteration uses index-based `while i < len(xs)` rather
+//      than `for x in xs`; the latter is not yet wired through the
+//      generic ForLoop lowering (mapanare/self/lower.mn:3458 — runtime
+//      `__iter_*` shims only know about ranges). Map iteration uses
+//      Spanish `cada k en map` per the established stdlib pattern.
+
+// ===========================================================================
+// SECTION A — int-to-string helper.
+// ===========================================================================
+
+fn rt_digit_char(d: Int) -> String {
+    if d == 0 { return "0" }
+    if d == 1 { return "1" }
+    if d == 2 { return "2" }
+    if d == 3 { return "3" }
+    if d == 4 { return "4" }
+    if d == 5 { return "5" }
+    if d == 6 { return "6" }
+    if d == 7 { return "7" }
+    if d == 8 { return "8" }
+    return "9"
+}
+
+fn rt_int_to_str(n: Int) -> String {
+    if n == 0 { return "0" }
+    let mut neg: Bool = false
+    let mut x: Int = n
+    if x < 0 {
+        neg = true
+        x = 0 - x
+    }
+    let mut buf: String = ""
+    while x > 0 {
+        let d: Int = x % 10
+        let ch: String = rt_digit_char(d)
+        buf = ch + buf
+        x = x / 10
+    }
+    if neg { return "-" + buf }
+    return buf
+}
+
+fn rt_hex_char(d: Int) -> String {
+    if d < 10 { return rt_digit_char(d) }
+    if d == 10 { return "a" }
+    if d == 11 { return "b" }
+    if d == 12 { return "c" }
+    if d == 13 { return "d" }
+    if d == 14 { return "e" }
+    return "f"
+}
+
+// ===========================================================================
+// SECTION B — Path / segment helpers.
+// ===========================================================================
+
+// Split a path into segments by "/". Empty segments are dropped.
+//
+// `let snap: String = cur + ""` snapshot is load-bearing — appending a
+// mutable string buffer directly into a list aliases the underlying byte
+// buffer in the current emitter; subsequent `cur = ""` then mutation
+// corrupts the list element. The `+ ""` routes through __mn_str_concat,
+// which allocates a fresh buffer. Verified in /tmp/split_probe2 vs
+// /tmp/split_probe3 during v5.37.0 Phase 1 spike.
+fn rt_split_path(path: String) -> List<String> {
+    let plen: Int = len(path)
+    let mut segs: List<String> = []
+    let mut cur: String = ""
+    let mut i: Int = 0
+    while i < plen {
+        let ch: String = path.char_at(i)
+        if ch == "/" {
+            if len(cur) > 0 {
+                let snap: String = cur + ""
+                segs = segs + [snap]
+                cur = ""
+            }
+        } else {
+            cur = cur + ch
+        }
+        i = i + 1
+    }
+    if len(cur) > 0 {
+        let snap: String = cur + ""
+        segs = segs + [snap]
+    }
+    return segs
+}
+
+// Reassemble the trailing segments (from index `start`) into a
+// slash-joined string. Used by the wildcard binder.
+fn rt_join_from(segs: List<String>, start: Int) -> String {
+    let total: Int = len(segs)
+    if start >= total { return "" }
+    let mut out: String = segs[start]
+    let mut i: Int = start + 1
+    while i < total {
+        out = out + "/" + segs[i]
+        i = i + 1
+    }
+    return out
+}
+
+// ===========================================================================
+// SECTION C — Compiled segment + RouteEntry types.
+//
+// SegKind constants: 0 literal, 1 param, 2 wildcard.
+// ===========================================================================
+
+pub tipo CompiledSeg {
+    kind: Int,
+    text: String
+}
+
+fn rt_compile_seg(raw: String) -> CompiledSeg {
+    let n: Int = len(raw)
+    if n == 0 { return new CompiledSeg { kind: 0, text: "" } }
+    let head: String = raw.char_at(0)
+    if head == ":" {
+        let mut name: String = ""
+        let mut i: Int = 1
+        while i < n {
+            name = name + raw.char_at(i)
+            i = i + 1
+        }
+        let snap: String = name + ""
+        return new CompiledSeg { kind: 1, text: snap }
+    }
+    if head == "*" {
+        let mut name: String = ""
+        let mut i: Int = 1
+        while i < n {
+            name = name + raw.char_at(i)
+            i = i + 1
+        }
+        let snap: String = name + ""
+        return new CompiledSeg { kind: 2, text: snap }
+    }
+    return new CompiledSeg { kind: 0, text: raw }
+}
+
+fn rt_compile_pattern(pattern: String) -> List<CompiledSeg> {
+    let raw_segs: List<String> = rt_split_path(pattern)
+    let mut compiled: List<CompiledSeg> = []
+    let n: Int = len(raw_segs)
+    let mut i: Int = 0
+    while i < n {
+        let cs: CompiledSeg = rt_compile_seg(raw_segs[i])
+        compiled = compiled + [cs]
+        i = i + 1
+    }
+    return compiled
+}
+
+// Specificity score: literals 2, params 1, wildcards 0. Higher wins.
+fn rt_pattern_specificity(segs: List<CompiledSeg>) -> Int {
+    let mut score: Int = 0
+    let n: Int = len(segs)
+    let mut i: Int = 0
+    while i < n {
+        let s: CompiledSeg = segs[i]
+        if s.kind == 0 { score = score + 2 }
+        if s.kind == 1 { score = score + 1 }
+        i = i + 1
+    }
+    return score
+}
+
+pub tipo RouteEntry {
+    method: String,
+    pattern: String,
+    segs: List<CompiledSeg>,
+    handler: String,
+    specificity: Int,
+    insertion_order: Int
+}
+
+fn rt_make_entry(method: String, pattern: String, handler: String, ord: Int) -> RouteEntry {
+    let compiled: List<CompiledSeg> = rt_compile_pattern(pattern)
+    let spec: Int = rt_pattern_specificity(compiled)
+    return new RouteEntry { method: method, pattern: pattern, segs: compiled, handler: handler, specificity: spec, insertion_order: ord }
+}
+
+// ===========================================================================
+// SECTION D — Match logic.
+// ===========================================================================
+
+// MatchedRoute uses a flat List<String> for parameter bindings (key/value
+// alternating) rather than Map<String, String>. The Map shape triggers a
+// v5.x drop-glue bug where the producer's local map is freed before the
+// caller can read it (see CLAUDE.md "v5.x match-cleanup SEGV" carry).
+// The List<String> form sidesteps the bug; access via `match_param` /
+// `match_has_param` helpers.
+pub tipo MatchedRoute {
+    matched: Bool,
+    handler: String,
+    params_kv: List<String>,
+    method_allowed: Bool
+}
+
+fn rt_match_make(matched: Bool, handler: String, params_kv: List<String>, method_allowed: Bool) -> MatchedRoute {
+    return new MatchedRoute { matched: matched, handler: handler, params_kv: params_kv, method_allowed: method_allowed }
+}
+
+fn rt_match_none() -> MatchedRoute {
+    let empty: List<String> = []
+    return rt_match_make(false, "", empty, false)
+}
+
+// Lookup a bound parameter by name. Returns "" if missing.
+pub fn match_param(m: MatchedRoute, name: String) -> String {
+    let n: Int = len(m.params_kv)
+    let mut i: Int = 0
+    while i + 1 < n {
+        if m.params_kv[i] == name { return m.params_kv[i + 1] }
+        i = i + 2
+    }
+    return ""
+}
+
+pub fn match_has_param(m: MatchedRoute, name: String) -> Bool {
+    let n: Int = len(m.params_kv)
+    let mut i: Int = 0
+    while i + 1 < n {
+        if m.params_kv[i] == name { return true }
+        i = i + 2
+    }
+    return false
+}
+
+// Try matching one entry's pattern against the request path. Returns a
+// MatchedRoute with `matched=true` and bound params on success.
+fn rt_try_match_pattern(segs: List<CompiledSeg>, path_segs: List<String>) -> MatchedRoute {
+    let nseg: Int = len(segs)
+    let nreq: Int = len(path_segs)
+    let mut kv: List<String> = []
+    let mut i: Int = 0
+    while i < nseg {
+        let cs: CompiledSeg = segs[i]
+        if cs.kind == 2 {
+            let captured: String = rt_join_from(path_segs, i)
+            let kname: String = cs.text + ""
+            kv = kv + [kname]
+            kv = kv + [captured]
+            return rt_match_make(true, "", kv, true)
+        }
+        if i >= nreq {
+            return rt_match_none()
+        }
+        let req_seg: String = path_segs[i]
+        if cs.kind == 0 {
+            if cs.text != req_seg { return rt_match_none() }
+        } else {
+            let kname: String = cs.text + ""
+            let snap: String = req_seg + ""
+            kv = kv + [kname]
+            kv = kv + [snap]
+        }
+        i = i + 1
+    }
+    if nreq != nseg { return rt_match_none() }
+    return rt_match_make(true, "", kv, true)
+}
+
+// ===========================================================================
+// SECTION E — Middleware variants.
+// ===========================================================================
+
+pub tipo Middleware {
+    | Logger
+    | Cors(String, String, String)
+    | BodyLimit(Int)
+    | RequestId
+    | Custom(String)
+}
+
+pub fn mw_logger() -> Middleware { return Logger }
+pub fn mw_cors(origins: String, methods: String, headers: String) -> Middleware { return Cors(origins, methods, headers) }
+pub fn mw_body_limit(max_bytes: Int) -> Middleware { return BodyLimit(max_bytes) }
+pub fn mw_request_id() -> Middleware { return RequestId }
+pub fn mw_custom(name: String) -> Middleware { return Custom(name) }
+
+// ===========================================================================
+// SECTION F — Request / Response value types.
+//
+// Headers are stored as List<String> alternating-kv (indices 0,2,4,...
+// are names; 1,3,5,... are values) rather than Map<String, String>.
+// Same v5.x map drop-glue motivation as MatchedRoute.params_kv: any Map
+// stored as a struct field or enum payload is freed by the producer's
+// drop-glue before the caller can read it. Lists pass through correctly.
+// Access via `hdr_get` / `hdr_set` / `hdr_has`.
+// ===========================================================================
+
+pub fn hdr_get(headers: List<String>, name: String) -> String {
+    let n: Int = len(headers)
+    let mut i: Int = 0
+    while i + 1 < n {
+        if headers[i] == name { return headers[i + 1] }
+        i = i + 2
+    }
+    return ""
+}
+
+pub fn hdr_has(headers: List<String>, name: String) -> Bool {
+    let n: Int = len(headers)
+    let mut i: Int = 0
+    while i + 1 < n {
+        if headers[i] == name { return true }
+        i = i + 2
+    }
+    return false
+}
+
+// Set or replace a header. Returns a new list with `name` mapped to
+// `value`. Existing keys are replaced in place; missing keys are
+// appended at the end.
+pub fn hdr_set(headers: List<String>, name: String, value: String) -> List<String> {
+    let n: Int = len(headers)
+    let mut out: List<String> = []
+    let mut i: Int = 0
+    let mut replaced: Bool = false
+    while i + 1 < n {
+        let k: String = headers[i]
+        let v: String = headers[i + 1]
+        if k == name {
+            out = out + [k]
+            out = out + [value]
+            replaced = true
+        } else {
+            out = out + [k]
+            out = out + [v]
+        }
+        i = i + 2
+    }
+    if replaced == false {
+        out = out + [name]
+        out = out + [value]
+    }
+    return out
+}
+
+pub tipo Request {
+    method: String,
+    path: String,
+    query: String,
+    headers: List<String>,
+    body: String,
+    request_id: String
+}
+
+pub fn new_request(method: String, path: String, body: String) -> Request {
+    let h: List<String> = []
+    return new Request { method: method, path: path, query: "", headers: h, body: body, request_id: "" }
+}
+
+pub fn request_with_query(req: Request, q: String) -> Request {
+    return new Request { method: req.method, path: req.path, query: q, headers: req.headers, body: req.body, request_id: req.request_id }
+}
+
+pub fn request_with_header(req: Request, name: String, value: String) -> Request {
+    let h2: List<String> = hdr_set(req.headers, name, value)
+    return new Request { method: req.method, path: req.path, query: req.query, headers: h2, body: req.body, request_id: req.request_id }
+}
+
+pub fn request_with_request_id(req: Request, rid: String) -> Request {
+    return new Request { method: req.method, path: req.path, query: req.query, headers: req.headers, body: req.body, request_id: rid }
+}
+
+// Response is a sum type so streaming + SSE can coexist with buffered
+// bodies. The third payload of ResponseStream / ResponseSse is an
+// opaque marker string the writer side interprets.
+pub tipo Response {
+    | ResponseBody(Int, List<String>, String)
+    | ResponseStream(Int, List<String>, String)
+    | ResponseSse(Int, List<String>, String)
+}
+
+pub fn response_text(status: Int, body: String) -> Response {
+    let h: List<String> = ["Content-Type", "text/plain; charset=utf-8"]
+    return ResponseBody(status, h, body)
+}
+
+pub fn response_html(status: Int, body: String) -> Response {
+    let h: List<String> = ["Content-Type", "text/html; charset=utf-8"]
+    return ResponseBody(status, h, body)
+}
+
+pub fn response_json(status: Int, body: String) -> Response {
+    let h: List<String> = ["Content-Type", "application/json"]
+    return ResponseBody(status, h, body)
+}
+
+pub fn response_status(status: Int) -> Response {
+    let h: List<String> = []
+    return ResponseBody(status, h, "")
+}
+
+pub fn response_with_header(resp: Response, name: String, value: String) -> Response {
+    match resp {
+        ResponseBody(s, hdrs, body) => {
+            let h2: List<String> = hdr_set(hdrs, name, value)
+            return ResponseBody(s, h2, body)
+        },
+        ResponseStream(s, hdrs, marker) => {
+            let h2: List<String> = hdr_set(hdrs, name, value)
+            return ResponseStream(s, h2, marker)
+        },
+        ResponseSse(s, hdrs, marker) => {
+            let h2: List<String> = hdr_set(hdrs, name, value)
+            return ResponseSse(s, h2, marker)
+        }
+    }
+}
+
+pub fn response_status_code(resp: Response) -> Int {
+    match resp {
+        ResponseBody(s, _, _) => { return s },
+        ResponseStream(s, _, _) => { return s },
+        ResponseSse(s, _, _) => { return s }
+    }
+}
+
+pub fn response_get_header(resp: Response, name: String) -> String {
+    match resp {
+        ResponseBody(_, hdrs, _) => { return hdr_get(hdrs, name) },
+        ResponseStream(_, hdrs, _) => { return hdr_get(hdrs, name) },
+        ResponseSse(_, hdrs, _) => { return hdr_get(hdrs, name) }
+    }
+}
+
+// ===========================================================================
+// SECTION G — App container.
+// ===========================================================================
+
+pub tipo App {
+    routes: List<RouteEntry>,
+    middlewares: List<Middleware>,
+    route_count: Int
+}
+
+pub fn new_app() -> App {
+    let routes: List<RouteEntry> = []
+    let middlewares: List<Middleware> = []
+    return new App { routes: routes, middlewares: middlewares, route_count: 0 }
+}
+
+// Insertion sorted-on-write: each new entry is placed at the position
+// where descending specificity is preserved. Registration order
+// tie-breaks within the same specificity class.
+fn rt_app_register(app: App, method: String, pattern: String, handler: String) -> App {
+    let entry: RouteEntry = rt_make_entry(method, pattern, handler, app.route_count)
+    let mut out: List<RouteEntry> = []
+    let mut placed: Bool = false
+    let nroutes: Int = len(app.routes)
+    let mut i: Int = 0
+    while i < nroutes {
+        let r: RouteEntry = app.routes[i]
+        if placed {
+            out = out + [r]
+        } else {
+            if entry.specificity > r.specificity {
+                out = out + [entry]
+                out = out + [r]
+                placed = true
+            } else {
+                out = out + [r]
+            }
+        }
+        i = i + 1
+    }
+    if placed == false { out = out + [entry] }
+    return new App { routes: out, middlewares: app.middlewares, route_count: app.route_count + 1 }
+}
+
+pub fn app_get(app: App, pattern: String, handler: String) -> App { return rt_app_register(app, "GET", pattern, handler) }
+pub fn app_post(app: App, pattern: String, handler: String) -> App { return rt_app_register(app, "POST", pattern, handler) }
+pub fn app_put(app: App, pattern: String, handler: String) -> App { return rt_app_register(app, "PUT", pattern, handler) }
+pub fn app_delete(app: App, pattern: String, handler: String) -> App { return rt_app_register(app, "DELETE", pattern, handler) }
+pub fn app_patch(app: App, pattern: String, handler: String) -> App { return rt_app_register(app, "PATCH", pattern, handler) }
+pub fn app_head(app: App, pattern: String, handler: String) -> App { return rt_app_register(app, "HEAD", pattern, handler) }
+pub fn app_options(app: App, pattern: String, handler: String) -> App { return rt_app_register(app, "OPTIONS", pattern, handler) }
+
+pub fn app_use(app: App, mw: Middleware) -> App {
+    let mut mws: List<Middleware> = []
+    let nmw: Int = len(app.middlewares)
+    let mut i: Int = 0
+    while i < nmw {
+        mws = mws + [app.middlewares[i]]
+        i = i + 1
+    }
+    mws = mws + [mw]
+    return new App { routes: app.routes, middlewares: mws, route_count: app.route_count }
+}
+
+// Resolve a method+path against the route table.
+// Pass 1: method+pattern match → handler.
+// Pass 2: any-method pattern match → method_allowed=false (caller emits 405).
+// Otherwise: not matched (caller emits 404).
+pub fn app_match(app: App, method: String, path: String) -> MatchedRoute {
+    let path_segs: List<String> = rt_split_path(path)
+    let nroutes: Int = len(app.routes)
+    let mut i: Int = 0
+    while i < nroutes {
+        let r: RouteEntry = app.routes[i]
+        if r.method == method {
+            let m: MatchedRoute = rt_try_match_pattern(r.segs, path_segs)
+            if m.matched {
+                return rt_match_make(true, r.handler, m.params_kv, true)
+            }
+        }
+        i = i + 1
+    }
+    let mut j: Int = 0
+    while j < nroutes {
+        let r2: RouteEntry = app.routes[j]
+        let m2: MatchedRoute = rt_try_match_pattern(r2.segs, path_segs)
+        if m2.matched {
+            let empty: List<String> = []
+            return rt_match_make(false, "", empty, false)
+        }
+        j = j + 1
+    }
+    return rt_match_none()
+}
+
+// ===========================================================================
+// SECTION H — Built-in middleware effects.
+// ===========================================================================
+
+extern "C" fn __mn_random_bytes_str(n: Int) -> String
+
+pub tipo MwOutcome {
+    | MwContinue(Request)
+    | MwShortCircuit(Response)
+}
+
+fn mw_short_circuit_413(max_bytes: Int) -> Response {
+    let h: List<String> = ["Content-Type", "text/plain; charset=utf-8"]
+    let body: String = "413 Payload Too Large (max " + rt_int_to_str(max_bytes) + " bytes)"
+    return ResponseBody(413, h, body)
+}
+
+fn mw_apply_logger_before(req: Request) {
+    print("[http] " + req.method + " " + req.path)
+}
+
+fn mw_mint_request_id() -> String {
+    let raw: String = __mn_random_bytes_str(16)
+    let mut hex: String = ""
+    let n: Int = len(raw)
+    let mut i: Int = 0
+    while i < n {
+        let b: Int = ord(raw.char_at(i))
+        let hi: Int = b / 16
+        let lo: Int = b % 16
+        hex = hex + rt_hex_char(hi) + rt_hex_char(lo)
+        i = i + 1
+    }
+    return hex
+}
+
+fn mw_apply_cors_after(resp: Response, origins: String, methods: String, headers: String) -> Response {
+    let r1: Response = response_with_header(resp, "Access-Control-Allow-Origin", origins)
+    let r2: Response = response_with_header(r1, "Access-Control-Allow-Methods", methods)
+    let r3: Response = response_with_header(r2, "Access-Control-Allow-Headers", headers)
+    return r3
+}
+
+fn mw_apply_request_id_after(resp: Response, req: Request) -> Response {
+    if len(req.request_id) == 0 { return resp }
+    return response_with_header(resp, "X-Request-Id", req.request_id)
+}
+
+// Run pre-handler middleware. Returns either the (possibly transformed)
+// request or a Response if any middleware short-circuited.
+pub fn app_run_before(app: App, req: Request) -> MwOutcome {
+    let mut current: Request = req
+    let nmw: Int = len(app.middlewares)
+    let mut i: Int = 0
+    while i < nmw {
+        let mw: Middleware = app.middlewares[i]
+        match mw {
+            Logger => {
+                mw_apply_logger_before(current)
+            },
+            BodyLimit(max_bytes) => {
+                if len(current.body) > max_bytes {
+                    return MwShortCircuit(mw_short_circuit_413(max_bytes))
+                }
+            },
+            RequestId => {
+                if len(current.request_id) == 0 {
+                    let rid: String = mw_mint_request_id()
+                    current = request_with_request_id(current, rid)
+                }
+            },
+            Cors(_, _, _) => { },
+            Custom(_) => { }
+        }
+        i = i + 1
+    }
+    return MwContinue(current)
+}
+
+// Apply post-handler middleware in registration order.
+pub fn app_run_after(app: App, req: Request, resp: Response) -> Response {
+    let mut current: Response = resp
+    let nmw: Int = len(app.middlewares)
+    let mut i: Int = 0
+    while i < nmw {
+        let mw: Middleware = app.middlewares[i]
+        match mw {
+            Logger => {
+                let sc: Int = response_status_code(current)
+                print("[http] -> " + rt_int_to_str(sc))
+            },
+            Cors(origins, methods, headers) => {
+                current = mw_apply_cors_after(current, origins, methods, headers)
+            },
+            RequestId => {
+                current = mw_apply_request_id_after(current, req)
+            },
+            BodyLimit(_) => { },
+            Custom(_) => { }
+        }
+        i = i + 1
+    }
+    return current
+}
+
+// ===========================================================================
+// SECTION I — Default 404 / 405 builders.
+// ===========================================================================
+
+pub fn response_404() -> Response {
+    let h: List<String> = ["Content-Type", "text/plain; charset=utf-8"]
+    return ResponseBody(404, h, "404 Not Found")
+}
+
+pub fn response_405() -> Response {
+    let h: List<String> = ["Content-Type", "text/plain; charset=utf-8", "Allow", "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS"]
+    return ResponseBody(405, h, "405 Method Not Allowed")
+}
+
+// ===========================================================================
+// SECTION J — DispatchPick convenience.
+//
+// Returns either a matched route or a default 404/405 response so callers
+// can write `match app_pick(app, ...) { Picked(m) => ..., Default(r) => ... }`.
+// ===========================================================================
+
+pub tipo DispatchPick {
+    | Picked(MatchedRoute)
+    | Default(Response)
+}
+
+pub fn app_pick(app: App, method: String, path: String) -> DispatchPick {
+    let m: MatchedRoute = app_match(app, method, path)
+    if m.matched { return Picked(m) }
+    let path_segs: List<String> = rt_split_path(path)
+    let nroutes: Int = len(app.routes)
+    let mut i: Int = 0
+    while i < nroutes {
+        let r: RouteEntry = app.routes[i]
+        let try_m: MatchedRoute = rt_try_match_pattern(r.segs, path_segs)
+        if try_m.matched { return Default(response_405()) }
+        i = i + 1
+    }
+    return Default(response_404())
+}
