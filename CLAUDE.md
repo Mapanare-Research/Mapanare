@@ -19,6 +19,83 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.32.0** (ready, not tagged) — **Nw.2 + Nw.3 + Nw.4 + Nw.5
+  + Nw.6 — ship native `mnc.exe` in the Windows SDK ZIP.**
+  Closes the structural "Python is the front door on Windows
+  release installs" problem that v5.31.0 only papered over.
+  v5.12.0 shipped the *toolchain* bundle (`sdk\bin\clang.exe` —
+  LLVM-MinGW). v5.32.0 ships the *frontend* bundle: `mnc.exe`
+  in `mapanare-${V}-win-x64-sdk.zip` and `-minimal.zip` is now
+  the native compiler binary, not a PyInstaller copy of
+  `mapanare.exe`. **Zero compiler edits. Zero runtime edits.
+  Zero `mapanare/self/*.mn` source edits.** Strict 3-stage
+  fixed point preserved by construction at v5.31.0's **241,898
+  lines / 0 diff** (27-release strict streak from the v5.7.1
+  baseline). Goldens **95/95**. After this release a fresh
+  Windows SDK install never invokes Python for `mnc --version`,
+  `mnc run`, or `mnc build`. **Nw.1 deviation from PROMPT:**
+  PROMPT recommended approach (a) cross-compile from Linux CI
+  via `clang --target=x86_64-w64-mingw32`. v5.32.0 uses
+  approach (b) — reuses the existing `build-native` Windows
+  job's `mnc-win-x64.exe` artifact (full stage1 → stage2
+  self-compile cycle on a `windows-latest` runner via w64devkit
+  MinGW). Reasons: PROMPT explicitly allows fallback to (b)
+  "if cross-compile produces ABI mismatches" — doing (b)
+  directly avoids a discovery cycle; existing path is validated
+  across 30+ releases and runs the full self-compile cycle
+  (stronger Win64-ABI validation than cross-compile);
+  smaller diff — no third Windows-build code path. Trade-off:
+  ~5-10 min of serial CI on the Windows publish path
+  (`build-cli` now `needs: [release, build-native]`).
+  Cross-compile remains available for v5.33.0+ when Linux /
+  macOS native-frontend bundling motivates a unified job.
+  **Nw.2** publish.yml wiring: `build-native` Windows path
+  uploads `mnc-win-x64.exe` as the `mnc-windows-x64-native`
+  workflow artifact (in addition to the existing GitHub
+  Release upload). `build-cli` Windows path downloads it and
+  stages as `dist/mapanare/mnc.exe` with two guards:
+  MZ-header check (PE32+ DOS-stub `0x4D 0x5A`) and 20 MB size
+  ceiling (native is ~3-4 MB; PyInstaller copy is ~30 MB —
+  20 MB reliably distinguishes). Replaces the pre-v5.32.0
+  `Copy-Item dist/mapanare/mapanare.exe dist/mapanare/mnc.exe`
+  alias-shape. **Nw.3** native-binary fallback wrapper:
+  `mapanare/__main__.py` rewritten with a 25-LOC preamble
+  that detects a sibling `bin/mnc[.exe]` and `os.execv`s to
+  it. `MAPANARE_FORCE_PYTHON=1` opts out for dev/debug. Also
+  fixes a pre-v5.32.0 bug where `cli.main()` ran at module-
+  import time (no `if __name__ == "__main__":` guard) — pytest
+  collection of the new fallback tests would have hit
+  argparse `SystemExit` otherwise. New
+  `tests/test_native_fallback.py` (3 cases) locks the
+  detection logic and the env-var bypass. **Nw.4** smoke gate:
+  augmented existing `Clean Windows SDK smoke before archiving`
+  (in build-cli) and `windows-sdk-smoke` (post-publish, on
+  the published ZIP) with three new gates — MZ-header +
+  size-ceiling check on `mnc.exe`; version-string match
+  against `VERSION`; no-new-Python-process assertion across
+  the `--version` call (snapshots `Get-Process | Where-Object
+  { $_.Name -match '^python' }` count before / after). The
+  no-Python assertion is the load-bearing one — that's the
+  specific anti-pattern v5.32.0 closes. **Nw.5** minimal ZIP
+  also ships native `mnc.exe` automatically — minimal-ZIP
+  staging archives `dist/mapanare/` *after* Nw.2 staging has
+  swapped the binary, so no separate code path needed.
+  **Nw.6** docs: CLAUDE.md Native-First Philosophy section
+  gains a paragraph; README.md install section calls out the
+  v5.32.0+ native shipping; CHANGELOG.md `## [5.32.0]` filled
+  in with full Nw.\* details + the deviation note;
+  `check_changelog_honesty.py` GREEN. **Layout decision:**
+  PROMPT specified `bin\mnc.exe`; v5.32.0 keeps `mnc.exe`
+  at the bundle root because the bundled SDK lives at
+  `sdk/bin/clang.exe` (not `bin/sdk/bin/clang.exe`) — PROMPT's
+  layout assumption didn't match v5.12.0's existing structure.
+  Aggregate state entering v5.33.0: 0 HIGH / 1 MEDIUM (Tn.1,
+  4-release overdue; v5.32.0 deferred to keep scope tight;
+  escalates to HIGH at v5.33.0 per v5.31.0 cadence note) /
+  ~5 LOW. Cadence unchanged: next routine panel still due
+  v5.33.0. See
+  `docs/roadmap/v5/v5.32.0/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
 - **v5.31.0** (ready, not tagged) — **Bn.1 + Bn.2 + Bn.3 +
   Bn.4 + Bn.5 — banner hotfix; kill the "[dev mode]" lie.**
   Pure UX hotfix. **Zero compiler edits. Zero runtime edits.
@@ -776,6 +853,14 @@ placeholder). Strict hit at v4.134.0; currently NEAR per v5.3.2.
 - **C runtime as foundation:** OS primitives (sockets, TLS, file I/O)
   in C. Everything above (HTTP, JSON, routing) in Mapanare.
 - **Test on LLVM:** every test runs on the LLVM backend.
+- **Python entrypoint is bootstrap-only on release installs (v5.32.0+).**
+  Windows SDK ZIPs ship a real native `mnc.exe` (built from
+  `mapanare/self/` via the stage1 → stage2 self-compile cycle). The
+  Python `mapanare`/`mnc` console-script remains for clean clones,
+  pip-installs without the SDK, and the `bash scripts/build_from_seed.sh`
+  bootstrap path. `mapanare/__main__.py` detects a sibling
+  `bin/mnc[.exe]` and `os.execv`s to it; `MAPANARE_FORCE_PYTHON=1`
+  opts out for dev/debug.
 
 ## GPU / WASM / Mobile (v2.0.0)
 
