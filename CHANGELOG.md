@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.39.1] - 2026-05-03
+
+**Js.4.B.1 — `from_json::<T>` IR-emission shape fix (no-import
+case).** First of two release sessions dedicated to closing
+**Js.4.B** (the v5.36.0-deferred typed-serde defect that v5.40.0
+Phase 0 surfaced as significantly worse than its original
+SESSION_REPORT documented — actually two distinct bugs, not one).
+v5.39.1 closes the **IR-emission shape mismatch** when user code
+calls `from_json::<T>(s)` without importing
+`stdlib/encoding/json`; v5.39.2 will close the runtime SEGV in
+`__mn_map_get` when the import IS present. After v5.39.2 ships,
+v5.40.0 (`ask` keyword — Ai.\*) picks up cleanly. Adds **zero
+language features, zero new MIR ops, zero new IR shapes, zero
+new C runtime exports**. Strict 3-stage fixed point preserved by
+construction at v5.39.0's 241,898 lines / 0 diff (35-release
+strict streak from v5.7.1; zero `mapanare/self/*.mn` source
+touches). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.B.1 (`mapanare/lower.py:_lower_decode_to` +
+  `_lower_from_json`)** — when user code does NOT import
+  `stdlib/encoding/json`, the emitter at `_do_enum_payload`
+  (`emit_llvm_text.py:5187+`) falls into the Result/Option
+  fallback because `JsonValue` is not in `self._enums`. The
+  fallback emits `extractvalue {i64, ptr} %enum, 1` which
+  yields a `ptr` (the boxed payload pointer), then `_put`s the
+  value tagged with the dest's primitive type (e.g. `i64` for
+  an Int field). The next consumer reads with the wrong type
+  → IR validation fails at link with `'%pl.NN' defined with
+  type 'ptr' but expected 'i64'`. Fix: new
+  `_ensure_json_types_registered()` helper called at the top
+  of `_lower_decode_to` and `_lower_from_json` injects the
+  canonical `JsonValue` (7 variants: Null, Bool, Int, Float,
+  Str, Array(List<JsonValue>), Object(Map<String, JsonValue>))
+  and `JsonError` (3 fields: message, line, col) layouts into
+  `self._module.enums` / `self._module.structs` when missing.
+  Idempotent — guarded with `if "JsonValue" not in
+  self._module.enums`. The proper boxed-enum extraction path
+  (line 5134+) then fires; downstream extraction is correct.
+  Layout mirrors `stdlib/encoding/json.mn:15-29`; new
+  `tests/stdlib/test_struct_json_layout.py` (2 cases) catches
+  json.mn drift loudly.
+
+### Added
+
+- `tests/stdlib/test_struct_json_ir_shape.py` (4 cases) —
+  Int / String / Bool field cases plus a mixed Int+String case;
+  validate via `clang -c` (full IR validation, no link). The
+  no-import case CANNOT link (`decode` undefined without the
+  json import) and that is correct, not a regression. Runtime
+  correctness for the with-import path is gated separately in
+  v5.39.2's link-and-run suite.
+- `tests/stdlib/test_struct_json_layout.py` (2 cases) —
+  layout-drift guard: parses `stdlib/encoding/json.mn`,
+  extracts `JsonValue` enum + `JsonError` struct definitions,
+  asserts they match the lower.py-injected canonical layout.
+  If json.mn drifts, the no-import path silently emits IR
+  against the wrong shape; this test fails loudly.
+
+### Changed
+
+- **Js.4.B framing.** v5.36.0 SESSION_REPORT documented Js.4.B
+  as a single deferred issue ("`from_json::<T>` builds
+  successfully but SEGVs at runtime in field extraction").
+  v5.40.0 Phase 0 audit (`docs/roadmap/v5/v5.40.0/PRE_PHASE_AUDIT.md`)
+  established this is structurally two distinct failure modes:
+  (1) no-import case — invalid IR (this release closes); (2)
+  with-import case — valid IR, runtime SEGV in `__mn_map_get`
+  (v5.39.2 will close). Bundled fix for both was rejected to
+  preserve falsifiability anchors and isolate STRICT risk.
+- **Phase 2 self-host mirror N/A.** PROMPT/PLAN scoped a
+  `mapanare/self/lower.mn` mirror as load-bearing for STRICT.
+  Phase 0 confirmed `mapanare/self/` has no `from_json` /
+  `decode_to` lowering at all — Js.4 (v5.36.0) was
+  Python-bootstrap-only. Mirror is structurally absent; STRICT
+  preserved by construction. Documented in
+  `docs/roadmap/v5/v5.39.1/SESSION_REPORT.md`.
+
+
 ## [5.39.0] - 2026-05-03
 
 **Cr.\* — crypto stdlib hashing/MAC/random extensions; final item
@@ -10421,7 +10501,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.1...HEAD
+[5.39.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.0...v5.39.1
 [5.39.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.38.0...v5.39.0
 [5.38.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.37.0...v5.38.0
 [5.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.36.0...v5.37.0

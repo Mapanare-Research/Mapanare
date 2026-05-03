@@ -19,6 +19,125 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.39.1** (ready, not tagged) — **Js.4.B.1 — `from_json::<T>`
+  IR-emission shape fix (no-import case).** First of two release
+  sessions dedicated to closing **Js.4.B** (the v5.36.0-deferred
+  typed-serde defect that v5.40.0 Phase 0 audit
+  (`docs/roadmap/v5/v5.40.0/PRE_PHASE_AUDIT.md`) re-diagnosed as
+  significantly worse than the original SESSION_REPORT
+  documented — actually two structurally distinct failure modes,
+  not one). v5.39.1 closes the **IR-emission shape mismatch**
+  in the no-import case; v5.39.2 will close the **runtime SEGV
+  in `__mn_map_get`** in the with-import case. After v5.39.2
+  ships, v5.40.0 (Ai.\* — `ask` manifesto-arc kickoff) picks up
+  cleanly. Adds **zero language features, zero new MIR ops,
+  zero new IR shapes, zero new C runtime exports**. **Strict
+  3-stage fixed point preserved by construction** at v5.39.0's
+  **241,898 lines / 0 diff** (35-release strict streak from
+  v5.7.1; zero `mapanare/self/*.mn` source touches). Goldens
+  **95/95**.
+  **The bug.** When user code calls `from_json::<T>(s)` without
+  `import stdlib::encoding::json`, the lowerer emits
+  `EnumPayload(variant="Object", ...)` for the `JsonValue`
+  subject. The emitter at `_do_enum_payload`
+  (`mapanare/emit_llvm_text.py:5187`) checks `if en in
+  self._enums` — false because `JsonValue` was never
+  registered. Falls into the Result/Option fallback's `else`
+  branch which emits `extractvalue {i64, ptr} %enum, 1` — this
+  yields a `ptr` (the boxed payload pointer) but `_put` tags
+  the value with `dt = self._rty(i.dest.ty)` which is `i64`
+  for an Int field. The next consumer fails IR validation:
+  `'%pl.48' defined with type 'ptr' but expected 'i64'`.
+  Latent since v5.36.0 Js.4 ship; the v5.36.0
+  `tests/stdlib/test_struct_json.py` was compile-only
+  (validated IR text generation, never linked) so the
+  validation-time failure stayed hidden through v5.36.0 →
+  v5.39.0.
+  **Strategy A (audit-recommended) chosen.** New
+  `_ensure_json_types_registered(self) -> None` helper at
+  `mapanare/lower.py:2767` injects the canonical `JsonValue`
+  (7 variants: Null, Bool(Bool), Int(Int), Float(Float),
+  Str(String), Array(List<JsonValue>),
+  Object(Map<String, JsonValue>)) and `JsonError` (3 fields:
+  message: String, line: Int, col: Int) layouts into
+  `self._module.enums` / `self._module.structs` when not
+  already present. Idempotent — guarded with `if "JsonValue"
+  not in self._module.enums`. Called at the top of
+  `_lower_decode_to` AND `_lower_from_json` (the two
+  Js.4-related entry points) so registration runs before any
+  `EnumPayload` emission. Layout uses `MIRType(TypeInfo(...))`
+  wrapping (matches the stored shape from
+  `_register_declarations` at `lower.py:822-848`) and the
+  `mir_int()` / `mir_string()` / `mir_bool()` factory helpers
+  already imported at line 159-162 — no new imports needed.
+  With `JsonValue` registered, the proper boxed-enum
+  extraction path (`emit_llvm_text.py:5134-5185`) fires;
+  downstream extraction is correct. Runtime SEGV in
+  `__mn_map_get` remains — that's v5.39.2's whole release.
+  **Strategy B (fix the emitter fallback)** held — narrower
+  contract for the fallback path is the right invariant; the
+  v5.39.2 runtime SEGV fix needs the Strategy A path anyway
+  because `_is_self_ref` recursion only matters once
+  `JsonValue` is properly registered.
+  **Layout-drift guard** — `tests/stdlib/test_struct_json_layout.py`
+  (2 cases) parses `stdlib/encoding/json.mn`, extracts the
+  `JsonValue` enum + `JsonError` struct AST shape, asserts
+  shape-for-shape match against the lower.py-injected canonical
+  layout. If json.mn drifts (variant rename, field reorder,
+  type change), the no-import path silently emits IR against
+  the wrong shape — the with-import path keeps working,
+  masking the divergence. The drift test fails loudly with a
+  pointer to the lower.py update needed.
+  **IR-shape regression test** —
+  `tests/stdlib/test_struct_json_ir_shape.py` (4 cases):
+  parametrized over Int / String / Bool single-field structs +
+  one mixed Int+String case. Validates with `clang -c` (full
+  IR validation, no link). Pre-fix all four fail with the exact
+  `'%pl.NN' defined with type 'ptr' but expected ...` error
+  shape; post-fix all four pass. The no-import case CANNOT
+  link end-to-end (`decode` undefined without the json
+  import) and that is correct, not a regression — runtime
+  correctness for the with-import path is gated separately in
+  v5.39.2's link-and-run suite. The pre-existing
+  `tests/stdlib/test_struct_json.py` (20 compile-only cases)
+  is preserved unchanged.
+  **PROMPT/PLAN deviation (load-bearing) — Phase 2 self-host
+  mirror N/A.** PROMPT/PLAN scoped a `mapanare/self/lower.mn`
+  mirror as load-bearing for STRICT and budgeted ~1h.
+  Phase 0 verification (`grep -rn "from_json\|decode_to"
+  mapanare/self/`) returned zero matches: there is no
+  `_lower_from_json` / `_lower_decode_to` in the self-host.
+  The Js.4 surface (v5.36.0 Shape B — typed serde intrinsics)
+  was Python-bootstrap-only and no self-host mirror has ever
+  been shipped. STRICT preserved trivially by construction;
+  v5.39.1 makes zero `mapanare/self/*.mn` source touches.
+  Documented in `docs/roadmap/v5/v5.39.1/SESSION_REPORT.md`
+  + CHANGELOG `### Changed`.
+  **Falsifiability round-trip locked** — repro confirmed with
+  `/tmp/serde_simple.mn` pre-fix; post-fix clean compile;
+  reverted (`s/self._ensure_json_types_registered()/pass/g`),
+  reproduced exact pre-fix error
+  (`'%pl.48' defined with type 'ptr' but expected 'i64'`),
+  reapplied, clean compile. v5.39.2 has the anchor when
+  STRICT regressions surface from the deeper runtime fix.
+  **Hd-class preventative.** `docs/SPEC.md` header re-synced
+  from "v5.39.0 cut" to "v5.39.1 cut" with new sync block
+  summarizing the Js.4.B.1 fix and the v5.39.1+v5.39.2 arc
+  framing. `check_doc_freshness.py` GREEN.
+  Source delta: ~50 LOC `mapanare/lower.py` (helper + 2 call
+  sites) + ~165 LOC `tests/stdlib/test_struct_json_ir_shape.py`
+  + ~115 LOC `tests/stdlib/test_struct_json_layout.py` +
+  ~80 LOC CHANGELOG + ~25 LOC SPEC sync + this CLAUDE.md
+  release-notes entry + mechanical bump_version.py edits.
+  Aggregate state entering v5.39.2: **1 HIGH** (Js.4.B.2 —
+  runtime SEGV in `__mn_map_get` when json import is present;
+  arc continuation) / **1 MEDIUM** (macOS notarization;
+  carry from v5.33.0 Nu.2) / ~6 LOW (carries unchanged from
+  v5.39.0). See
+  `docs/roadmap/v5/v5.39.1/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`
+  and `docs/roadmap/v5/v5.40.0/PRE_PHASE_AUDIT.md` for
+  diagnosis artifacts.
+
 - **v5.39.0** (ready, not tagged) — **Cr.\* — crypto stdlib
   hashing/MAC/random extensions; stdlib gap-close arc CLOSED.**
   Sixth and final release in the stdlib gap-close arc
@@ -1764,7 +1883,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (31611 symbols, 66597 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (31771 symbols, 66763 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

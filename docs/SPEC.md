@@ -1,7 +1,27 @@
 # Mapanare Language Specification
 
-**Version:** 5.39.0
-**Status:** Live — synced to the v5.39.0 cut (2026-05-03)
+**Version:** 5.39.1
+**Status:** Live — synced to the v5.39.1 cut (2026-05-03)
+
+> **v5.39.1 — Js.4.B.1 — `from_json::<T>` IR-emission shape fix
+> (no-import case).** SPEC body unchanged from the v5.21.0 cut.
+> First of two release sessions dedicated to closing **Js.4.B**
+> (the v5.36.0-deferred typed-serde defect). v5.39.1 closes the
+> **IR-emission shape mismatch** when user code calls
+> `from_json::<T>(s)` without importing `stdlib/encoding/json`;
+> the lowerer's new `_ensure_json_types_registered()` helper
+> (`mapanare/lower.py`) injects canonical `JsonValue` (7 variants)
+> and `JsonError` (3 fields) layouts into `self._module.enums` /
+> `self._module.structs` when missing, so the emitter's proper
+> boxed-enum extraction path fires instead of the Result/Option
+> fallback. v5.39.2 will close the remaining runtime SEGV in
+> `__mn_map_get` when the json import IS present. Adds **zero
+> language features, zero new MIR ops, zero new IR shapes, zero
+> new C runtime exports**. Strict 3-stage fixed point preserved
+> by construction at v5.39.0's 241,898 lines / 0 diff (35-release
+> strict streak from v5.7.1; zero `mapanare/self/*.mn` source
+> touches — the self-host has no `from_json` / `decode_to`
+> lowering, so the PROMPT-scoped mirror is structurally N/A).
 
 > **v5.39.0 — Cr.\* — crypto stdlib hashing/MAC/random extensions.**
 > SPEC body unchanged from the v5.21.0 cut. v5.39.0 audits + extends

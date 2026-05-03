@@ -2764,12 +2764,66 @@ class MIRLowerer:
         self._emit(Call(dest=dest, fn_name="str", args=[field_val]))
         return dest
 
+    def _ensure_json_types_registered(self) -> None:
+        """v5.39.1 Js.4.B.1 — register JsonValue + JsonError in the
+        MIR module so the LLVM emitter sees them as first-class user
+        enums/structs and the proper boxed-enum extraction path
+        fires (rather than the Result/Option fallback in
+        emit_llvm_text._do_enum_payload's else branch, which
+        extractvalue's a ptr but stores it as the dest's primitive
+        type — invalid IR).
+
+        Layout mirrors stdlib/encoding/json.mn:15-29. If json.mn
+        drifts, tests/stdlib/test_struct_json_layout.py fails loudly.
+        """
+        if "JsonValue" not in self._module.enums:
+            jv_enum = MIRType(TypeInfo(kind=TypeKind.ENUM, name="JsonValue"))
+            self._module.enums["JsonValue"] = [
+                ("Null", []),
+                ("Bool", [mir_bool()]),
+                ("Int", [mir_int()]),
+                ("Float", [MIRType(TypeInfo(kind=TypeKind.FLOAT))]),
+                ("Str", [mir_string()]),
+                (
+                    "Array",
+                    [
+                        MIRType(
+                            TypeInfo(
+                                kind=TypeKind.LIST,
+                                args=[jv_enum.type_info],
+                            )
+                        )
+                    ],
+                ),
+                (
+                    "Object",
+                    [
+                        MIRType(
+                            TypeInfo(
+                                kind=TypeKind.MAP,
+                                args=[
+                                    TypeInfo(kind=TypeKind.STRING),
+                                    jv_enum.type_info,
+                                ],
+                            )
+                        )
+                    ],
+                ),
+            ]
+        if "JsonError" not in self._module.structs:
+            self._module.structs["JsonError"] = [
+                ("message", mir_string()),
+                ("line", mir_int()),
+                ("col", mir_int()),
+            ]
+
     def _lower_decode_to(self, expr: CallExpr, json_val: Value) -> Value:
         """Lower decode_to::<T>(json_value) — deserialize JsonValue to struct.
 
         Takes a JsonValue (already parsed), extracts Object variant's map,
         looks up each struct field by key, converts to proper type, constructs struct.
         """
+        self._ensure_json_types_registered()
         type_arg = expr.type_args[0]
         struct_name = type_arg.name if hasattr(type_arg, "name") else ""
         fields = self._module.structs.get(struct_name, [])
@@ -2878,6 +2932,7 @@ class MIRLowerer:
                 Err(e)  => Err(e),
             }
         """
+        self._ensure_json_types_registered()
         type_arg = expr.type_args[0]
         struct_name = type_arg.name if hasattr(type_arg, "name") else ""
         # Result<T, JsonError> where T is the user-specified type.
