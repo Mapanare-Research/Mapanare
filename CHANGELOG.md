@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.33.0] - 2026-05-03
+
+**Nu.1 + Nu.2 + Nu.3 + Nu.4 + Nu.5 + Nu.6 — ship native `mnc` in the
+Linux x86_64 and macOS arm64 release tarballs.** Mirror of v5.32.0
+Nw.\* applied to the two existing Unix tarballs. Closes the
+asymmetry where Windows had the fix and Unix didn't —
+release-tarball users on Linux x86_64 and macOS arm64 no longer
+hit the Python bootstrap on `mnc --version`, `mnc run`, or
+`mnc build`. **Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+preserved by construction at v5.32.0's **241,898 lines / 0 diff**
+(28-release strict streak from the v5.7.1 baseline). Goldens
+**95/95**.
+
+**Nu.1 + Nu.2 deviation from PROMPT.** PROMPT scoped four arches:
+Linux x86_64 + Linux aarch64 + macOS x86_64 + macOS arm64. v5.33.0
+ships only the two arches that already build natively in
+`build-native` (Linux x86_64 on `ubuntu-latest`, macOS arm64 on
+`macos-latest`). Linux aarch64 and macOS x86_64 are **deferred to
+v5.34.0**. Reasons: (a) `scripts/build_stage1.py` has no `--target`
+/ `--output` flags — it always builds for the host; cross-compile
+would need new infrastructure that exceeds v5.32.0's "lift the
+proven path" precedent; (b) Linux aarch64 needs a cross-compile +
+qemu smoke pipeline that doesn't exist; (c) macOS x86_64 needs a
+separate `macos-13` runner and a brand-new tarball name in the
+release matrix. Mirrors v5.32.0's own "deviation from PROMPT"
+(build-native reuse vs. PROMPT's cross-compile recipe — same
+logic: prefer the validated path; preserve the more ambitious
+recipe for the next minor when it's motivated).
+
+### Added
+
+- **Nu.1 — `mnc-linux-x64-native` workflow artifact.**
+  `.github/workflows/publish.yml` `build-native` Linux job uploads
+  the freshly-built `mnc-linux-x64` as an in-workflow artifact
+  (1-day retention, `if-no-files-found: error`) so `build-cli` can
+  stage it into the Linux tarball without re-running the
+  stage1 → stage2 self-compile cycle. Mirrors the
+  `mnc-windows-x64-native` v5.32.0 Nw.2 upload exactly.
+- **Nu.2 — `mnc-darwin-arm64-native` workflow artifact.** Same shape
+  as Nu.1; `build-native` macOS job uploads the freshly-built
+  `mnc-darwin-arm64` artifact for `build-cli`'s macOS staging step.
+- **Nu.3 — Linux + macOS native `mnc` staging in the tarball.**
+  `build-cli` Linux + macOS paths download the matching
+  `mnc-<platform>-native` artifact, run three guards before staging
+  — ELF / Mach-O magic (`7f454c46` for ELF; `cffaedfe` for Mach-O
+  64-bit little-endian) + 20 MB size ceiling (native is ~3-4 MB;
+  PyInstaller-copy regression would be ~30 MB) + non-zero-bytes
+  check — then copy to `dist/mapanare/mnc` (sibling of the existing
+  `dist/mapanare/mapanare` PyInstaller binary; bundle-root layout
+  matching the v5.32.0 Nw.2 decision rather than the PROMPT's
+  `bin/mnc` shape). macOS path also runs ad-hoc `codesign -s -` so
+  Gatekeeper doesn't quarantine the binary on first run after
+  tar extraction.
+- **Nu.4 — release-blocking smoke gates (Linux + macOS).** Two
+  layers, both load-bearing. **Layer 1 in-job** (`build-cli`
+  "Clean Linux/macOS native mnc smoke before archiving"): on the
+  staging directory, asserts `dist/mapanare/mnc --version` (a)
+  contains the expected version string from `VERSION`, (b) does
+  not spawn a new Python interpreter (snapshots `pgrep -fl python`
+  count before / after — same anti-pattern Windows Nw.4 closes).
+  **Layer 2 published** (extends existing `linux-tarball-smoke` +
+  `macos-tarball-smoke` jobs which already gate on
+  `windows-sdk-smoke`'s shape): downloads the published tarball
+  from the GitHub Release, runs the same magic / size /
+  version-string / no-Python-spawn checks. Per-platform stat flag
+  (`stat -c%s` Linux vs. `stat -f%z` macOS). The no-Python
+  assertion is the load-bearing one — that's the specific
+  anti-pattern v5.33.0 closes for the Unix release tarballs.
+- **Nu.5 — `_native_binary_name(os_name=...)` helper.** Extracted
+  from `_native_binary` in `mapanare/__main__.py` so the
+  suffix-selection logic (`"mnc.exe" if os.name == "nt" else "mnc"`)
+  is testable cross-platform without monkeypatching `os.name`
+  globally (which crashes pathlib on Linux:
+  `NotImplementedError: cannot instantiate 'WindowsPath' on your system`).
+- **Nu.5 — parametrized cross-platform suffix lock.**
+  `tests/test_native_fallback.py::test_native_binary_suffix_per_platform`
+  parametrizes over (`posix` → `mnc`, `nt` → `mnc.exe`) so a Linux
+  CI worker validates the Windows lookup and vice versa. 5/5 tests
+  in `test_native_fallback.py` GREEN (3 from v5.32.0 Nw.3, 2 added
+  for Nu.5). Falsifiability: hardcoding the wrong suffix flips one
+  of the two parametrized cases.
+
+### Changed
+
+- **Nu.6 — README install-section paragraph.** Now mentions native
+  `mnc` ships on Linux x86_64 + macOS arm64 release tarballs (in
+  addition to the v5.32.0 Windows SDK ZIP); macOS-quarantine
+  workaround (`xattr -d com.apple.quarantine`) documented inline.
+- **Nu.6 — CLAUDE.md Native-First Philosophy section.** Updated to
+  reflect Linux + macOS arm64 native shipping; explicit note that
+  Linux aarch64 + macOS x86_64 are deferred to v5.34.0.
+- **Localized READMEs (es / pt / zh-CN) deliberately not updated.**
+  v5.32.0 followed the same pattern (English README only); the
+  v5.28.0 panel H.4 finding tracks localized README updates as a
+  bookkeeping cycle, not per-release work.
+
+### Fixed
+
+- N/A — packaging release; no compiler / runtime / source fixes.
+
+**Aggregate state entering v5.34.0:** 0 HIGH / 2 MEDIUM (Tn.1 —
+5-release overdue, escalates to HIGH per v5.32.0 directive; macOS
+notarization, new from Nu.2 ad-hoc-signing shortcut) / ~6 LOW
+(deferred Linux aarch64 + macOS x86_64 tarballs added). See
+`docs/roadmap/v5/v5.33.0/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
+
 ## [5.32.0] - 2026-05-03
 
 **Nw.2 + Nw.3 + Nw.4 + Nw.5 + Nw.6 — ship native `mnc.exe` in the
@@ -9599,7 +9707,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.32.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.0...HEAD
+[5.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.32.0...v5.33.0
 [5.32.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.31.0...v5.32.0
 [5.31.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.30.0...v5.31.0
 [5.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.29.0...v5.30.0

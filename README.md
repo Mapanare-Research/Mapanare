@@ -24,7 +24,7 @@ English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [P
 [![Discord](https://img.shields.io/discord/1480688663674359810?style=for-the-badge&logo=discord&logoColor=white&label=Discord&color=5865F2)](https://discord.gg/5hpGBm3WXf)
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.32.0-blue.svg?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.33.0-blue.svg?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-5800+_passing-brightgreen.svg?style=flat-square)]()
 [![Goldens](https://img.shields.io/badge/goldens-95%2F95-brightgreen.svg?style=flat-square)]()
 [![CI](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Mapanare-Research/Mapanare/actions/workflows/ci.yml?query=branch%3Adev)
@@ -55,7 +55,9 @@ $env:MAPANARE_NO_BUNDLED_TOOLCHAIN = "1"; irm https://mapanare.dev/install.ps1 |
 $env:MAPANARE_NO_BUNDLED_LLVM = "1"; irm https://mapanare.dev/install.ps1 | iex
 ```
 
-Or download binaries from [Releases](https://github.com/Mapanare-Research/Mapanare/releases). Use the Windows SDK ZIP for clean-machine native builds or the minimal ZIP when you already have a compiler. Both ZIPs ship a real native `mnc.exe` (v5.32.0+) — `mnc --version`, `mnc run`, and `mnc build` no longer dispatch through the Python bootstrap. See [`docs/THIRD-PARTY-LICENSES.md`](docs/THIRD-PARTY-LICENSES.md) for bundled SDK licenses.
+Or download binaries from [Releases](https://github.com/Mapanare-Research/Mapanare/releases). Use the Windows SDK ZIP for clean-machine native builds or the minimal ZIP when you already have a compiler. **All v5.33.0+ release tarballs and Windows ZIPs ship a real native `mnc` binary** (Linux x86_64 + macOS arm64 added in v5.33.0; Windows x86_64 since v5.32.0) — `mnc --version`, `mnc run`, and `mnc build` no longer dispatch through the Python bootstrap. The Python `mapanare`/`mnc` console-script remains as the bootstrap path for clean clones and pip-installs without a release bundle. See [`docs/THIRD-PARTY-LICENSES.md`](docs/THIRD-PARTY-LICENSES.md) for bundled SDK licenses.
+
+> **macOS users:** if you downloaded the tarball over the network and Gatekeeper quarantines `mnc` on first run, clear the attribute with `xattr -d com.apple.quarantine ./mapanare/mnc`. Proper Developer ID notarization is tracked for v5.34.0+; v5.33.0 ships ad-hoc-signed binaries.
 
 ### Quick start with Docker
 
