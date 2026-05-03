@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.33.1] - 2026-05-03
+
+**Hd.\* — SPEC header drift hotfix.** Zero compiler edits. Zero
+runtime edits. Zero `mapanare/self/*.mn` source edits. Strict
+3-stage fixed point preserved by construction at v5.33.0's line
+count / 0 diff. Goldens 95/95. Closes the
+`check_doc_freshness.py` SPEC-header lag violation —
+`docs/SPEC.md` header bumped from "synced to the v5.30.0 cut" to
+"synced to the v5.33.1 cut" with a new sync block summarizing the
+v5.31 / v5.32 / v5.33 packaging arc. The structural gate (Hy.2
+landed v5.24.0) catches the next recurrence in CI rather than at
+the panel. See
+`docs/roadmap/v5/v5.33.1/{PLAN.md, SESSION_REPORT.md}`.
+
+
 ## [5.33.0] - 2026-05-03
 
 **Nu.1 + Nu.2 + Nu.3 + Nu.4 + Nu.5 + Nu.6 — ship native `mnc` in the
@@ -9707,7 +9722,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.1...HEAD
+[5.33.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.0...v5.33.1
 [5.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.32.0...v5.33.0
 [5.32.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.31.0...v5.32.0
 [5.31.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.30.0...v5.31.0

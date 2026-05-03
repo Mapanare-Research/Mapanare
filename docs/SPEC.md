@@ -1,7 +1,21 @@
 # Mapanare Language Specification
 
-**Version:** 5.30.0
-**Status:** Live — synced to the v5.30.0 cut (2026-05-02)
+**Version:** 5.33.1
+**Status:** Live — synced to the v5.33.1 cut (2026-05-03)
+
+> **v5.31.0 → v5.33.1 — banner UX hotfix + native `mnc` desktop
+> distribution + SPEC header re-sync.** SPEC body unchanged from
+> the v5.21.0 cut. v5.31.0 (Bn.\* — banner hotfix; "[dev mode]"
+> lie killed on release installs), v5.32.0 (Nw.\* — native
+> `mnc.exe` shipped in Windows SDK ZIP; Python becomes
+> bootstrap-only on Windows release installs), v5.33.0 (Nu.\* —
+> native `mnc` shipped in Linux x86_64 + macOS arm64 release
+> tarballs; Linux aarch64 + macOS x86_64 deferred to v5.34.0+),
+> and v5.33.1 (Hd.\* — SPEC header drift hotfix; this re-sync)
+> together added **zero language features, zero new MIR ops,
+> zero new IR shapes, zero new runtime functions** —
+> packaging / hotfix releases only. The v5.21.0 sync block below
+> remains authoritative for language semantics.
 
 > **v5.28.0 → v5.30.0 — RE-PANEL + Win64 ABI closeout +
 > packaging.** SPEC body unchanged from the v5.21.0 cut.
