@@ -292,6 +292,92 @@ jobs:
               throw "FATAL: staged mnc.exe is $size bytes (>20 MB suggests PyInstaller copy, not native binary)"
           }
 
+      # v5.33.0 Nu.1: download the native ``mnc-linux-x64`` produced
+      # by the build-native Linux job. Stage it into the PyInstaller
+      # dir as ``mnc`` so the Linux tarball ships a real native
+      # compiler frontend instead of relying on the PyInstaller
+      # ``mapanare`` Python bootstrap. Mirrors the v5.32.0 Nw.2
+      # Windows wiring exactly — same shape, same guards, ``.exe``
+      # suffix dropped on Unix.
+      - name: Download native mnc (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: mnc-linux-x64-native
+          path: .tmp-native-mnc
+
+      - name: Stage native mnc in Linux CLI bundle
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          native=".tmp-native-mnc/mnc-linux-x64"
+          if [ ! -f "$native" ]; then
+            echo "FATAL: native mnc-linux-x64 artifact missing; build-native must have failed"
+            exit 1
+          fi
+          # ELF magic: 0x7F 0x45 0x4C 0x46 ("\x7fELF"). Catches a
+          # malformed artifact masquerading as a PyInstaller copy.
+          head_bytes=$(head -c 4 "$native" | od -An -tx1 | tr -d ' ')
+          if [ "$head_bytes" != "7f454c46" ]; then
+            echo "FATAL: native mnc is not an ELF binary (head=$head_bytes)"
+            exit 1
+          fi
+          chmod +x "$native"
+          cp "$native" dist/mapanare/mnc
+          chmod +x dist/mapanare/mnc
+          size=$(stat -c%s dist/mapanare/mnc)
+          echo "Staged native mnc ($size bytes) into dist/mapanare/"
+          # Sanity ceiling: the staged binary must NOT be a
+          # PyInstaller copy (those are ~30 MB; native is ~3-4 MB).
+          if [ "$size" -gt 20971520 ]; then
+            echo "FATAL: staged mnc is $size bytes (>20 MB suggests PyInstaller copy, not native binary)"
+            exit 1
+          fi
+          file dist/mapanare/mnc
+
+      # v5.33.0 Nu.2: download the native ``mnc-darwin-arm64``
+      # produced by the build-native macOS job. Mirrors the Linux
+      # path; ad-hoc codesign so Gatekeeper doesn't quarantine the
+      # binary on first run after tar extraction. Proper Developer
+      # ID notarization tracked as v5.34.0+ LOW.
+      - name: Download native mnc (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/download-artifact@v4
+        with:
+          name: mnc-darwin-arm64-native
+          path: .tmp-native-mnc
+
+      - name: Stage native mnc in macOS CLI bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          native=".tmp-native-mnc/mnc-darwin-arm64"
+          if [ ! -f "$native" ]; then
+            echo "FATAL: native mnc-darwin-arm64 artifact missing; build-native must have failed"
+            exit 1
+          fi
+          # Mach-O 64-bit magic (little-endian): cffaedfe.
+          head_bytes=$(head -c 4 "$native" | od -An -tx1 | tr -d ' ')
+          if [ "$head_bytes" != "cffaedfe" ] && [ "$head_bytes" != "feedfacf" ]; then
+            echo "FATAL: native mnc is not a Mach-O binary (head=$head_bytes)"
+            exit 1
+          fi
+          chmod +x "$native"
+          cp "$native" dist/mapanare/mnc
+          chmod +x dist/mapanare/mnc
+          # Ad-hoc codesign — identity ``-`` means anonymous self-sign.
+          # Required for arm64 macOS to avoid Gatekeeper quarantine.
+          codesign -s - dist/mapanare/mnc
+          size=$(stat -f%z dist/mapanare/mnc)
+          echo "Staged native mnc ($size bytes) into dist/mapanare/"
+          if [ "$size" -gt 20971520 ]; then
+            echo "FATAL: staged mnc is $size bytes (>20 MB suggests PyInstaller copy, not native binary)"
+            exit 1
+          fi
+          file dist/mapanare/mnc
+
       - name: Smoke test CLI binary
         shell: bash
         run: |
@@ -302,6 +388,46 @@ jobs:
           "$BINARY" --version
           "$BINARY" --help
           echo "CLI smoke test passed"
+
+      # v5.33.0 Nu.4: in-job smoke for the staged native mnc on
+      # Linux + macOS. Mirrors the load-bearing checks from the
+      # Windows "Clean Windows SDK smoke before archiving" step:
+      # version-string match against VERSION + assertion that
+      # ``mnc --version`` did not spawn a new Python interpreter.
+      # The no-Python assertion is the specific anti-pattern this
+      # release closes for Linux/macOS — same as v5.32.0 Nw.4 did
+      # for Windows. Fails the job before the tarball is archived.
+      - name: Clean Linux/macOS native mnc smoke before archiving
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mnc=./dist/mapanare/mnc
+          if [ ! -x "$mnc" ]; then
+            echo "FATAL: dist/mapanare/mnc missing or not executable"
+            ls -la dist/mapanare/ || true
+            exit 1
+          fi
+          expected=$(cat VERSION | tr -d '[:space:]')
+          # Snapshot python process count, run --version, snapshot
+          # again. A new Python interpreter would mean the staged mnc
+          # is the pre-v5.33.0 Python-bootstrap path, not the native
+          # binary. ``pgrep -c`` would return 1 even with zero matches
+          # on some systems; use ``-l`` + ``wc -l`` for a stable count.
+          py_before=$(pgrep -fl '[Pp]ython' 2>/dev/null | wc -l || echo 0)
+          out=$("$mnc" --version 2>&1)
+          py_after=$(pgrep -fl '[Pp]ython' 2>/dev/null | wc -l || echo 0)
+          echo "mnc --version output: $out"
+          echo "Python process count before=$py_before after=$py_after"
+          if [ "$py_after" -gt "$py_before" ]; then
+            echo "FATAL: mnc --version spawned a python process (before=$py_before after=$py_after). Native binary did not load — pre-v5.33.0 PyInstaller-Python regression."
+            exit 1
+          fi
+          if ! echo "$out" | grep -qF "$expected"; then
+            echo "FATAL: mnc --version output '$out' does not contain expected version '$expected'"
+            exit 1
+          fi
+          echo "OK: native mnc --version is $out (no Python spawned)"
 
       # -------------------------------------------------------------------
       # v5.12.0 Wk.* - archive the true minimal Windows ZIP before any SDK
@@ -816,18 +942,43 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # v5.32.0 Nw.2: also expose the native binary as a workflow
-      # artifact so the Windows build-cli job can stage it inside the
-      # SDK ZIP at ``dist/mapanare/mnc.exe`` (replacing the PyInstaller
-      # copy of mapanare.exe). The release-asset upload above keeps the
-      # standalone download path; this artifact is the in-workflow
-      # handoff. Windows-only — only build-cli's SDK ZIP needs it for
-      # v5.32.0; Linux/macOS bundling moves to v5.33.0.
+      # v5.32.0 Nw.2 / v5.33.0 Nu.1+Nu.2: expose the native binary as
+      # a workflow artifact so build-cli can stage it inside the
+      # platform tarball (Windows: ``dist/mapanare/mnc.exe`` in the
+      # SDK ZIP; Linux/macOS: ``dist/mapanare/mnc`` in the tar.gz).
+      # The release-asset upload above keeps the standalone download
+      # path; this artifact is the in-workflow handoff.
+      #
+      # Windows artifact name (``mnc-windows-x64-native``) is locked
+      # by the existing build-cli download step; Linux + macOS names
+      # follow the same ``mnc-<platform>-<arch>-native`` convention.
+      # Linux aarch64 + macOS x86_64 are deferred to v5.34.0 — neither
+      # has an existing native runner here and cross-compile via
+      # build_stage1.py is not yet supported (the script always builds
+      # for the host; --target/--output flags do not exist).
       - name: Upload native binary as workflow artifact (Windows)
         if: runner.os == 'Windows' && hashFiles(matrix.artifact) != ''
         uses: actions/upload-artifact@v4
         with:
           name: mnc-windows-x64-native
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload native binary as workflow artifact (Linux)
+        if: runner.os == 'Linux' && hashFiles(matrix.artifact) != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnc-linux-x64-native
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload native binary as workflow artifact (macOS)
+        if: runner.os == 'macOS' && hashFiles(matrix.artifact) != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnc-darwin-arm64-native
           path: ${{ matrix.artifact }}
           if-no-files-found: error
           retention-days: 1
@@ -862,6 +1013,10 @@ jobs:
           fi
           ls -la /tmp/mapanare.tar.gz
 
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
       - name: Extract + smoke
         run: |
           set -euo pipefail
@@ -889,6 +1044,52 @@ jobs:
           fi
           echo "Linux tarball smoke: OK"
 
+      # v5.33.0 Nu.4: verify the published tarball contains a real
+      # native ``mnc`` binary (not the pre-v5.33.0 Python-bootstrap
+      # path) and that ``mnc --version`` does not spawn a Python
+      # interpreter. Mirrors the load-bearing checks from the
+      # ``windows-sdk-smoke`` job for the v5.32.0 ``mnc.exe`` path.
+      - name: Verify published tarball ships native mnc (Linux)
+        run: |
+          set -euo pipefail
+          MNC=/tmp/mapanare-extracted/mapanare/mnc
+          if [ ! -x "$MNC" ]; then
+            echo "FATAL: tarball missing executable mapanare/mnc"
+            ls -la /tmp/mapanare-extracted/mapanare/ || true
+            exit 1
+          fi
+          # ELF magic check.
+          head_bytes=$(head -c 4 "$MNC" | od -An -tx1 | tr -d ' ')
+          if [ "$head_bytes" != "7f454c46" ]; then
+            echo "FATAL: mnc is not an ELF binary (head=$head_bytes)"
+            exit 1
+          fi
+          # Size ceiling. Native ~3-4 MB; PyInstaller-copy regression
+          # would be ~30 MB.
+          size=$(stat -c%s "$MNC")
+          size_mb=$(python3 -c "print(round($size/1024/1024,1))")
+          echo "mnc size: ${size_mb} MB (${size} bytes)"
+          if [ "$size" -gt 20971520 ]; then
+            echo "FATAL: mnc is ${size_mb} MB (>20 MB suggests PyInstaller copy regression — Nu.1 staging step did not run, or the build-native artifact was missing)"
+            exit 1
+          fi
+          # Version-string match. Catches a stale binary (e.g.,
+          # last-release's mnc accidentally re-uploaded).
+          expected=$(cat VERSION | tr -d '[:space:]')
+          py_before=$(pgrep -fl '[Pp]ython' 2>/dev/null | wc -l || echo 0)
+          out=$("$MNC" --version 2>&1)
+          py_after=$(pgrep -fl '[Pp]ython' 2>/dev/null | wc -l || echo 0)
+          echo "mnc --version output: $out"
+          if ! echo "$out" | grep -qF "$expected"; then
+            echo "FATAL: --version output '$out' does not contain expected '$expected'"
+            exit 1
+          fi
+          if [ "$py_after" -gt "$py_before" ]; then
+            echo "FATAL: mnc --version spawned a python process (before=$py_before after=$py_after). Native binary did not load."
+            exit 1
+          fi
+          echo "OK: published Linux tarball ships native mnc ($out, no Python spawned)"
+
   # =========================================================================
   # 5b. Smoke-test the published macOS versioned tarball end-to-end on
   # a clean macos runner. Same shape as linux-tarball-smoke; closes
@@ -914,6 +1115,10 @@ jobs:
           fi
           ls -la /tmp/mapanare.tar.gz
 
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
       - name: Extract + smoke
         run: |
           set -euo pipefail
@@ -935,6 +1140,47 @@ jobs:
             exit 1
           fi
           echo "macOS tarball smoke: OK"
+
+      # v5.33.0 Nu.4: verify the published tarball contains a real
+      # native ``mnc`` Mach-O binary and that ``mnc --version`` does
+      # not spawn a Python interpreter. Mirrors the Linux smoke shape;
+      # macOS uses ``stat -f%z`` instead of ``stat -c%s``.
+      - name: Verify published tarball ships native mnc (macOS)
+        run: |
+          set -euo pipefail
+          MNC=/tmp/mapanare-extracted/mapanare/mnc
+          if [ ! -x "$MNC" ]; then
+            echo "FATAL: tarball missing executable mapanare/mnc"
+            ls -la /tmp/mapanare-extracted/mapanare/ || true
+            exit 1
+          fi
+          # Mach-O 64-bit magic (LE little-endian: cffaedfe; BE: feedfacf).
+          head_bytes=$(head -c 4 "$MNC" | od -An -tx1 | tr -d ' ')
+          if [ "$head_bytes" != "cffaedfe" ] && [ "$head_bytes" != "feedfacf" ]; then
+            echo "FATAL: mnc is not a Mach-O binary (head=$head_bytes)"
+            exit 1
+          fi
+          size=$(stat -f%z "$MNC")
+          size_mb=$(python3 -c "print(round($size/1024/1024,1))")
+          echo "mnc size: ${size_mb} MB (${size} bytes)"
+          if [ "$size" -gt 20971520 ]; then
+            echo "FATAL: mnc is ${size_mb} MB (>20 MB suggests PyInstaller copy regression)"
+            exit 1
+          fi
+          expected=$(cat VERSION | tr -d '[:space:]')
+          py_before=$(pgrep -fl '[Pp]ython' 2>/dev/null | wc -l || echo 0)
+          out=$("$MNC" --version 2>&1)
+          py_after=$(pgrep -fl '[Pp]ython' 2>/dev/null | wc -l || echo 0)
+          echo "mnc --version output: $out"
+          if ! echo "$out" | grep -qF "$expected"; then
+            echo "FATAL: --version output '$out' does not contain expected '$expected'"
+            exit 1
+          fi
+          if [ "$py_after" -gt "$py_before" ]; then
+            echo "FATAL: mnc --version spawned a python process (before=$py_before after=$py_after). Native binary did not load."
+            exit 1
+          fi
+          echo "OK: published macOS tarball ships native mnc ($out, no Python spawned)"
 
   # =========================================================================
   # 5. Smoke-test the published Windows SDK ZIP end-to-end with PATH,

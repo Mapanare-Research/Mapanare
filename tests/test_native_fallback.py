@@ -70,3 +70,32 @@ def test_force_python_disables_native(tmp_path: Path, monkeypatch: pytest.Monkey
     from mapanare.__main__ import _native_binary
 
     assert _native_binary() is None
+
+
+# v5.33.0 Nu.5: cross-platform suffix-selection lock. The host-coupled
+# ``test_native_binary_present`` above only exercises the host's branch
+# of the ``os.name == "nt"`` ternary in ``_native_binary_name``. This
+# case pins both branches independent of host: a Linux CI worker
+# validates the Windows ``mnc.exe`` selection, and a Windows CI worker
+# validates the Linux/macOS ``mnc`` selection. A regression that
+# hardcodes the wrong suffix at one of the four platform tarballs
+# (Linux x64, macOS arm64, Windows x64, plus future v5.34.0+
+# Linux aarch64 / macOS x86_64) would surface here.
+#
+# We can't monkeypatch ``os.name`` globally — pathlib reads it during
+# ``Path(...)`` construction and on Linux it raises NotImplementedError
+# when asked to instantiate WindowsPath. v5.33.0 extracts
+# ``_native_binary_name(os_name=...)`` so the suffix logic is testable
+# without disturbing pathlib.
+@pytest.mark.parametrize(
+    "fake_os_name,expected_bin",
+    [
+        ("posix", "mnc"),  # Linux + macOS
+        ("nt", "mnc.exe"),  # Windows
+    ],
+)
+def test_native_binary_suffix_per_platform(fake_os_name: str, expected_bin: str) -> None:
+    """The wrapper's suffix selection must depend only on os.name."""
+    from mapanare.__main__ import _native_binary_name
+
+    assert _native_binary_name(os_name=fake_os_name) == expected_bin
