@@ -19,6 +19,77 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.31.0** (ready, not tagged) — **Bn.1 + Bn.2 + Bn.3 +
+  Bn.4 + Bn.5 — banner hotfix; kill the "[dev mode]" lie.**
+  Pure UX hotfix. **Zero compiler edits. Zero runtime edits.
+  Zero `mapanare/self/*.mn` source edits.** Strict 3-stage
+  fixed point preserved by construction at v5.30.0's
+  **241,898 lines / 0 diff** (26-release strict streak from
+  the v5.7.1 baseline). Goldens **95/95**. Closes the
+  publish-run-#50-shaped report where a fresh Windows SDK
+  install ran `mnc --version` and got `[dev mode] Using
+  Python bootstrap compiler. For native speed: mnc run
+  <file.mn>` printed before the version string — three
+  things wrong: "[dev mode]" was a lie on a release install,
+  "for native speed: mnc run <file.mn>" was incoherent on a
+  metadata command, and the banner fired unconditionally
+  before argparse ran. The Python bootstrap was fine — it
+  just announced itself wrong. **Bn.1**: new
+  `_should_show_dev_banner(argv)` argv-peek in
+  `mapanare/cli.py::main` skips the banner when the first
+  non-flag token is in `NO_BANNER_COMMANDS = frozenset({
+  "--version", "--help", "-h", "init", "list"})`; honest-
+  default policy is "when in doubt, don't fire". **Bn.2**:
+  new `_is_release_install()` helper (`@lru_cache(1)`):
+  primary signal is `MAPANARE_RELEASE=1` env var; fallback
+  is the absence of `pyproject.toml` + `.git` directory at
+  the repo root (the parent of `mapanare/`). Release
+  installs never see the banner. **Bn.3**: dev-clone
+  banner reworded to honestly describe the situation:
+  `[mapanare dev] running from source clone (.../mapanare/
+  cli.py). Set MAPANARE_RELEASE=1 or install via the SDK to
+  silence.` Path embedded so a developer with multiple
+  checkouts can tell which one they're hitting. Misleading
+  "for native speed: mnc run <file.mn>" suggestion removed.
+  **Bn.4**: new `tests/test_cli_banner.py` (5 cases) locks
+  all four matrix cells {dev clone, release install} ×
+  {metadata cmd, compile cmd} plus the new wording.
+  Falsifiability: removing either gate in `cli.py`
+  reproduces the publish-run-#50 anti-pattern. **Bn.5**:
+  `packaging/pyinstaller-entry.py::main()` calls
+  `os.environ.setdefault("MAPANARE_RELEASE", "1")` before
+  importing `mapanare.cli`. Single edit covers Linux
+  tarball, macOS bundle, and Windows SDK ZIP — every
+  release platform ships via the PyInstaller bundle so all
+  inherit the env var. The Bash shim
+  (`packaging/mapanare-shim.sh`) `exec`s the bundled
+  binary directly so the env var set inside the entry
+  point is the process's own env. `setdefault` (not
+  unconditional set) means a user who explicitly unsets
+  `MAPANARE_RELEASE` for testing can still trigger the
+  path-heuristic fallback. **v5.31.0 ≠ v5.32.0** — the
+  native `mnc.exe` shipping work (which makes the Python
+  path *unused* on release installs, not just *quiet*)
+  is v5.32.0. Source delta: ~115 LOC of behavior change
+  across 3 files (`cli.py` +37/-5, new
+  `test_cli_banner.py` +75, `pyinstaller-entry.py` +9/-1)
+  — well under PLAN's 50–80 LOC target with the test file
+  the bulk of the new code. **Lesson captured for future
+  bump-only releases**: rebuild stage1 via
+  `python3 scripts/build_stage1.py` between
+  `bump_version.py` and `verify_fixed_point.sh` — first
+  fixed-point run after the bump showed a spurious 4-line
+  VERSION-placeholder NEAR diff (`!0 = !{!"5.30.0"}` vs
+  `!0 = !{!"5.31.0"}`) because cached stage1 still
+  embedded pre-bump VERSION; rebuild restored STRICT.
+  Aggregate state entering v5.32.0: 0 HIGH / 1 MEDIUM
+  (Tn.1 still 3-release overdue; bumped from "overdue"
+  toward "escalate to HIGH at v5.33.0 if not landed";
+  deliberately deferred to keep v5.31.0 scope tight) /
+  ~5 LOW. Cadence unchanged: next routine panel still
+  due v5.33.0. See
+  `docs/roadmap/v5/v5.31.0/{PLAN.md, SESSION_REPORT.md}`.
+
 - **v5.30.0** (ready, not tagged) — **Vb.\* — packaging-only
   release: version bump.** **Zero compiler edits. Zero runtime
   edits. Zero `mapanare/self/*.mn` source edits.** Strict
