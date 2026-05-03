@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 
 from mapanare.diagnostics import (
@@ -32,6 +33,43 @@ from mapanare.targets import get_target, host_target_name, list_targets
 
 _VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
 __version__ = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "unknown"
+
+
+# v5.31.0 Bn.1: subcommands that don't compile or execute Mapanare code never
+# warrant the dev-clone banner. When adding a new pure-metadata subcommand,
+# add it here in the same PR so the banner doesn't fire spuriously.
+NO_BANNER_COMMANDS = frozenset({"--version", "--help", "-h", "init", "list"})
+
+
+@lru_cache(maxsize=1)
+def _is_release_install() -> bool:
+    """True if the current Mapanare install is a release artifact, not a dev clone.
+
+    Primary signal: ``MAPANARE_RELEASE=1`` env var (set by the PyInstaller
+    entry and SDK launchers). Fallback: dev clones have ``pyproject.toml`` and
+    a ``.git`` directory at the repo root (parent of ``mapanare/``); release
+    installs do not.
+    """
+    if os.environ.get("MAPANARE_RELEASE") == "1":
+        return True
+    pkg_dir = Path(__file__).resolve().parent
+    repo_root_candidate = pkg_dir.parent
+    return not (
+        (repo_root_candidate / "pyproject.toml").exists()
+        and (repo_root_candidate / ".git").is_dir()
+    )
+
+
+def _should_show_dev_banner(argv: list[str]) -> bool:
+    """Show the dev-mode banner only on dev clones for compile/run commands."""
+    if _is_release_install():
+        return False
+    for tok in argv[1:]:
+        if tok in NO_BANNER_COMMANDS:
+            return False
+        if not tok.startswith("-"):
+            return tok not in NO_BANNER_COMMANDS
+    return False
 
 
 def _read_source(path: str) -> str:
@@ -2328,10 +2366,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """CLI entry point."""
-    print(
-        "[dev mode] Using Python bootstrap compiler. " "For native speed: mnc run <file.mn>",
-        file=sys.stderr,
-    )
+    if _should_show_dev_banner(sys.argv):
+        print(
+            f"[mapanare dev] running from source clone ({Path(__file__).resolve()}). "
+            "Set MAPANARE_RELEASE=1 or install via the SDK to silence.",
+            file=sys.stderr,
+        )
     parser = build_parser()
     args = parser.parse_args()
 
