@@ -1,8 +1,14 @@
-"""v5.24.0 Hy.3 — cadence enforcement gate unit tests.
+"""scripts/check_cadence.py unit tests.
 
-Exercises ``scripts/check_cadence.py`` against the live repo state
-(must be within-cadence at HEAD) plus constructed fixtures for the
-OVERDUE class.
+History
+-------
+v5.24.0 Hy.3 introduced the cadence gate as an enforcing gate
+(exit 1 on overdue) and these tests asserted that. v5.33.2 Cd.2
+relaxed the script to informational-only (always exit 0); the
+fixture tests below now assert the REMINDER message is printed
+when lag is past threshold, but exit code stays 0. See
+``scripts/check_cadence.py`` docstring + the user-level
+``feedback_no_forced_cadence_gates`` memory for rationale.
 """
 
 from __future__ import annotations
@@ -40,8 +46,9 @@ def _make_fixture(tmp_path: Path, *, version: str, panels: list[str]) -> Path:
 # ── Live-repo invariant ──
 
 
-def test_cadence_within_window_at_head() -> None:
-    """v5.23.2 + last panel v5.22.0 → 1 minor lag → OK."""
+def test_cadence_always_exits_zero_at_head() -> None:
+    """v5.33.2 Cd.1: script is informational-only — always exits 0
+    regardless of lag at HEAD."""
     result = subprocess.run(
         ["python3", str(SCRIPT)],
         capture_output=True,
@@ -51,27 +58,29 @@ def test_cadence_within_window_at_head() -> None:
     )
     assert (
         result.returncode == 0
-    ), f"expected within cadence at HEAD, got:\n{result.stdout}\n{result.stderr}"
-    assert "OK" in result.stdout
+    ), f"expected exit 0 (informational), got:\n{result.stdout}\n{result.stderr}"
+    # Either OK or REMINDER is acceptable; both are exit 0.
+    assert "OK" in result.stdout or "REMINDER" in result.stdout
 
 
 # ── Constructed fixtures ──
 
 
 def test_cadence_overdue_fixture(tmp_path: Path) -> None:
-    """Latest panel at v5.10.0, current at v5.30.0 (lag 20) → OVERDUE."""
+    """Latest panel at v5.10.0, current at v5.30.0 (lag 20) → REMINDER, exit 0."""
     cwd = _make_fixture(tmp_path, version="5.30.0", panels=["v5.10.0"])
     result = _run(cwd)
-    assert result.returncode == 1, f"expected OVERDUE, got: {result.stdout}"
-    assert "OVERDUE" in result.stdout
+    assert result.returncode == 0, f"expected exit 0 (informational), got: {result.stdout}"
+    assert "REMINDER" in result.stdout
     assert "v5.10.0" in result.stdout
 
 
-def test_cadence_at_threshold_fires(tmp_path: Path) -> None:
-    """5-minor lag exactly → OVERDUE (boundary)."""
+def test_cadence_at_threshold_prints_reminder(tmp_path: Path) -> None:
+    """5-minor lag exactly → REMINDER printed (boundary), exit 0."""
     cwd = _make_fixture(tmp_path, version="5.27.0", panels=["v5.22.0"])
     result = _run(cwd)
-    assert result.returncode == 1, f"expected OVERDUE, got: {result.stdout}"
+    assert result.returncode == 0, f"expected exit 0, got: {result.stdout}"
+    assert "REMINDER" in result.stdout
 
 
 def test_cadence_just_below_threshold_passes(tmp_path: Path) -> None:

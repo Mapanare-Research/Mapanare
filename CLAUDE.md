@@ -19,6 +19,42 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.33.2** (ready, not tagged) — **Cd.\* — relax panel-cadence
+  enforcement to informational-only.** Tooling-policy hotfix.
+  **Zero compiler edits. Zero runtime edits. Zero
+  `mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+  preserved by construction at v5.33.1's 241,898 lines / 0 diff
+  (30-release strict streak from the v5.7.1 baseline). Goldens
+  **95/95**. Closes the v5.33.1-push CI failures: the
+  "Cadence enforcement (warn-only)" job in `.github/workflows/ci.yml`
+  reported a red ❌ even though `continue-on-error: true` made it
+  non-blocking, and `tests/test_cadence.py::test_cadence_within_window_at_head`
+  asserted exit 0 at HEAD which was impossible at 5 minors past
+  v5.28.0 panel. **Cd.1**: `scripts/check_cadence.py` rewritten —
+  `main()` always returns 0; `OVERDUE` renamed to `REMINDER` +
+  clarifying "Informational only — lead drives review timing.";
+  docstring updated with the v5.24.0 Hy.3 → v5.33.2 Cd.1 history
+  + the artifact-correctness-vs-human-scheduling distinction.
+  **Cd.2**: `tests/test_cadence.py` updated — fixture cases that
+  previously asserted exit 1 on overdue now assert exit 0 +
+  REMINDER message printed. Doc-drift / changelog-honesty /
+  fixed-point line-count gates remain hard — those enforce
+  *artifact correctness*; this one tracked a *human scheduling
+  decision*, which is the lead's call. User-memory entry
+  `feedback_no_forced_cadence_gates` recorded so the rule survives
+  across sessions: visibility/REMINDER OK, CI-blocking enforcement
+  not OK; same rule applies if a future arc proposes the same
+  shape under a different name. Source delta: ~50 LOC in
+  `scripts/check_cadence.py` (full rewrite), ~30 LOC in
+  `tests/test_cadence.py` (fixture-case updates), CHANGELOG
+  one-paragraph entry, this CLAUDE.md entry, plus the mechanical
+  Vb.\* files. Stage1 + `libmapanare_rt.a` rebuilt post-bump per
+  the v5.31.0 + v5.33.1 lessons. Aggregate state entering v5.34.0:
+  **1 HIGH** (Tn.1 — 6-release overdue carry; panel cadence
+  demoted from HIGH to LOW since the gate is no longer enforcing)
+  / **2 MEDIUM** (macOS notarization; carry) / ~6 LOW. See
+  `docs/roadmap/v5/v5.33.2/{PLAN.md, SESSION_REPORT.md}`.
+
 - **v5.33.1** (ready, not tagged) — **Hd.\* — SPEC header drift
   hotfix.** Docs-surface-only hotfix. **Zero compiler edits.
   Zero runtime edits. Zero `mapanare/self/*.mn` source edits.**

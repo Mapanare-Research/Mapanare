@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.33.2] - 2026-05-03
+
+**Cd.\* — relax panel-cadence enforcement to informational-only.**
+Zero compiler edits. Zero runtime edits. Zero `mapanare/self/*.mn`
+source edits. Strict 3-stage fixed point preserved by construction
+at v5.33.1's 241,898 lines / 0 diff. Goldens 95/95.
+`scripts/check_cadence.py` rewritten to always exit 0 — prints a
+`REMINDER` line when the lag is past 5 minor versions but never
+fails CI or blocks a release. The lead drives review timing, not a
+script. `tests/test_cadence.py` updated to match: fixture cases
+that previously asserted exit 1 on overdue now assert exit 0 +
+REMINDER message. Closes the v5.33.1-push CI failures (the
+"Cadence enforcement (warn-only)" job and the
+`tests/test_cadence.py::test_cadence_within_window_at_head` test
+that were both fatal-on-overdue despite the "warn-only" label).
+Doc-drift / changelog-honesty / fixed-point gates remain hard —
+this change targets only the human-scheduling gate. See
+`docs/roadmap/v5/v5.33.2/{PLAN.md, SESSION_REPORT.md}`.
+
+
 ## [5.33.1] - 2026-05-03
 
 **Hd.\* — SPEC header drift hotfix.** Zero compiler edits. Zero
@@ -9722,7 +9742,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.2...HEAD
+[5.33.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.1...v5.33.2
 [5.33.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.0...v5.33.1
 [5.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.32.0...v5.33.0
 [5.32.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.31.0...v5.32.0

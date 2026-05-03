@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
-"""scripts/check_cadence.py — v5.24.0 Hy.3 cadence enforcement gate.
+"""scripts/check_cadence.py — informational panel-cadence reminder.
 
-Per ``.reviews/REVIEW_CADENCE.md``, a full 7-reviewer panel runs every
-5 minor versions OR after 5 language-feature releases. This script
-warns when either trigger has fired without a corresponding panel
-directory at ``.reviews/v<MAJOR>.<MINOR>.<PATCH>/``.
+History
+-------
+v5.24.0 Hy.3 introduced this script as an enforcing gate that exited
+1 when ≥5 minor versions had passed since the last panel directory
+under ``.reviews/``. By v5.33.1 the gate was firing on every push
+(5 minors past the v5.28.0 panel) and blocking CI.
 
-Closes the v5.16.0 / v5.20.0 silent-skip class flagged in the v5.22.0
-panel (Anaconda §1): three triggers fired across the v5.13–v5.21 arc
-and zero panels ran in between.
+v5.33.2 Cd.1 demotes the gate to **informational only**: the script
+ALWAYS exits 0. It still prints a REMINDER line in CI logs when the
+lag is past the threshold so the cadence stays visible — but the
+lead drives review timing, not a script. See
+``feedback_no_forced_cadence_gates`` in user memory for the
+rationale.
 
 Behavior
 --------
-- exit 0: within cadence (lag < 5 minor versions since last panel).
-- exit 1: OVERDUE — print the version that should have hosted the
-  panel and the next scheduled tag.
+- exit 0 always.
+- ``OK`` line if within cadence (lag < 5 minor versions).
+- ``REMINDER`` line if past threshold — informational only; never
+  fails CI, never blocks a release.
+- ``no prior panel`` line if no panel history found.
 
-At v5.24.0 we are 2 minor versions past the last panel (v5.22.0), so
-the gate prints OK and exits 0. The gate fires hard at v5.27.0 if no
-panel has been hosted by then.
-
-This script is wired into ``.github/workflows/ci.yml`` as a soft-warn
-job (continue-on-error: true) so PRs that happen to trip it during
-the panel-window are not blocked. The hard signal is at pre-release
-time via ``make ci-gates``.
+Distinction from other gates: doc-drift / changelog-honesty /
+fixed-point line-count gates ENFORCE artifact correctness and stay
+hard. This one tracks a human scheduling decision, so it's a
+reminder, not a gate.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ from pathlib import Path
 
 ROOT = Path(os.getcwd())
 
-# How many minor versions can pass before a panel is OVERDUE.
+# How many minor versions can pass before the REMINDER kicks in.
 # Per .reviews/REVIEW_CADENCE.md — "Every 5 minor versions."
 PANEL_INTERVAL_MINORS = 5
 
@@ -76,7 +79,7 @@ def main() -> int:
     last_panel = get_last_panel_version()
 
     if last_panel is None:
-        print("check_cadence: no prior panel found in .reviews/")
+        print("check_cadence: no prior panel found in .reviews/ (informational)")
         return 0
 
     minors_since = (current[0] - last_panel[0]) * 100 + (current[1] - last_panel[1])
@@ -86,19 +89,19 @@ def main() -> int:
 
     if minors_since >= PANEL_INTERVAL_MINORS:
         print(
-            f"check_cadence: OVERDUE — {minors_since} minor versions "
+            f"check_cadence: REMINDER — {minors_since} minor versions "
             f"since last panel ({last_str})"
         )
         print(
             f"  Per .reviews/REVIEW_CADENCE.md, a full 7-reviewer "
-            f"panel was due at {next_panel}."
+            f"panel was suggested at {next_panel}."
         )
-        print("  Schedule a panel cycle before tagging the next minor.")
-        return 1
+        print("  Informational only — lead drives review timing.")
+        return 0
 
     print(
         f"check_cadence: OK ({minors_since} minor versions since "
-        f"{last_str}; next panel at {next_panel})"
+        f"{last_str}; next reminder at {next_panel})"
     )
     return 0
 
