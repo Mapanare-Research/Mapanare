@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.31.0] - 2026-05-03
+
+**Bn.1 + Bn.2 + Bn.3 + Bn.4 + Bn.5 — banner hotfix; kill the
+"[dev mode]" lie.** Pure UX hotfix. **Zero compiler edits. Zero
+runtime edits. Zero `mapanare/self/*.mn` source edits.** Strict
+3-stage fixed point preserved by construction at v5.30.0's
+**241,898 lines / 0 diff** (26-release strict streak). Goldens
+**95/95**. Closes the publish-run-#50-shaped report where a fresh
+Windows SDK install ran `mnc --version` and got `[dev mode] Using
+Python bootstrap compiler. For native speed: mnc run <file.mn>`
+printed before the version string. The Python bootstrap was
+fine — it just announced itself wrong. v5.31.0 makes it stop
+announcing itself on metadata commands and on release installs;
+v5.32.0 will ship a native `mnc.exe` so the Python path is no
+longer the front door at all on release installs.
+
+### Added
+- `tests/test_cli_banner.py` — 5 cases locking the four
+  install-context × command-class matrix cells plus the new
+  banner wording. Falsifiability: removing either gate in
+  `mapanare/cli.py` reproduces the publish-run-#50 anti-pattern.
+
+### Fixed
+- **Bn.1 + Bn.3** Banner suppressed on `--version`, `--help`,
+  `-h`, `init`, `list` via `_should_show_dev_banner` argv-peek
+  in `mapanare/cli.py::main`. Misleading "for native speed: mnc
+  run <file.mn>" suggestion removed; banner reworded to honestly
+  describe the dev-clone path: `[mapanare dev] running from
+  source clone (.../mapanare/cli.py). Set MAPANARE_RELEASE=1 or
+  install via the SDK to silence.`
+- **Bn.2** New `_is_release_install()` helper (`@lru_cache(1)`):
+  primary signal is `MAPANARE_RELEASE=1` env var; fallback is
+  the absence of `pyproject.toml` + `.git` directory at the repo
+  root (the parent of `mapanare/`). Release installs never see
+  the banner.
+- **Bn.5** `packaging/pyinstaller-entry.py` calls
+  `os.environ.setdefault("MAPANARE_RELEASE", "1")` before
+  importing `mapanare.cli`. Single edit covers every release
+  platform shipping via the PyInstaller bundle (Linux tarball,
+  macOS bundle, Windows SDK ZIP). The Bash shim
+  (`packaging/mapanare-shim.sh`) execs the bundled binary
+  directly so the env var is inherited.
+
+
 ## [5.30.0] - 2026-05-02
 
 **Vb.\* — packaging-only release: version bump.** Zero compiler
@@ -9484,7 +9528,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.30.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.31.0...HEAD
+[5.31.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.30.0...v5.31.0
 [5.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.29.0...v5.30.0
 [5.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.28.0...v5.29.0
 [5.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.27.0...v5.28.0
