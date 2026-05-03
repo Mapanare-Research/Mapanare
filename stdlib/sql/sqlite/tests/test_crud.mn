@@ -1,0 +1,156 @@
+// test_crud.mn — CREATE / INSERT / SELECT / UPDATE / DELETE round-trip.
+//
+// Concatenated by tests/stdlib/test_sql_sqlite.py.
+
+fn fail_with(msg: String, fails_in: Int) -> Int {
+    print("FAIL: " + msg)
+    return fails_in + 1
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    let db_r: Result<Database, SqlError> = database_open_memory()
+    match db_r {
+        Ok(db) => {
+            // CREATE TABLE
+            let r1: Result<Int, SqlError> = database_execute(db, "CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT, age INTEGER)")
+            match r1 {
+                Ok(_) => {},
+                Err(e) => { fails = fail_with("CREATE TABLE failed", fails) }
+            }
+
+            // INSERT (3 rows)
+            let r2: Result<Int, SqlError> = database_execute(db, "INSERT INTO users(name, age) VALUES('alice', 30)")
+            match r2 {
+                Ok(n) => {
+                    if n != 1 { fails = fail_with("first INSERT changes != 1", fails) }
+                },
+                Err(e) => { fails = fail_with("first INSERT failed", fails) }
+            }
+            let r3: Result<Int, SqlError> = database_execute(db, "INSERT INTO users(name, age) VALUES('bob', 25)")
+            match r3 {
+                Ok(_) => {},
+                Err(e) => { fails = fail_with("second INSERT failed", fails) }
+            }
+            let r4: Result<Int, SqlError> = database_execute(db, "INSERT INTO users(name, age) VALUES('carol', 35)")
+            match r4 {
+                Ok(_) => {},
+                Err(e) => { fails = fail_with("third INSERT failed", fails) }
+            }
+
+            // last_insert_rowid should be 3 after 3 INSERTs.
+            if database_last_insert_rowid(db) != 3 {
+                fails = fail_with("last_insert_rowid != 3", fails)
+            }
+
+            // SELECT — count + read first row.
+            let q1_r: Result<Statement, SqlError> = database_prepare(db, "SELECT COUNT(*) FROM users")
+            match q1_r {
+                Ok(stmt) => {
+                    let s_r: Result<Int, SqlError> = statement_step(stmt)
+                    match s_r {
+                        Ok(rc) => {
+                            if rc == 100 {
+                                let n_r: Result<Int, SqlError> = statement_column_int(stmt, 0)
+                                match n_r {
+                                    Ok(n) => {
+                                        if n != 3 { fails = fail_with("COUNT(*) != 3", fails) }
+                                    },
+                                    Err(e) => { fails = fail_with("COUNT column read failed", fails) }
+                                }
+                            }
+                            if rc != 100 { fails = fail_with("COUNT step did not return ROW", fails) }
+                        },
+                        Err(e) => { fails = fail_with("COUNT step failed", fails) }
+                    }
+                    let s2: Statement = statement_finalize(stmt)
+                },
+                Err(e) => { fails = fail_with("COUNT prepare failed", fails) }
+            }
+
+            // SELECT with WHERE + named param.
+            let q2_r: Result<Statement, SqlError> = database_prepare(db, "SELECT age FROM users WHERE name = :name")
+            match q2_r {
+                Ok(stmt2) => {
+                    let bind_r: Result<Bool, SqlError> = statement_bind_named(stmt2, ":name", value_text("bob"))
+                    match bind_r {
+                        Ok(_) => {
+                            let s_r: Result<Int, SqlError> = statement_step(stmt2)
+                            match s_r {
+                                Ok(rc) => {
+                                    if rc == 100 {
+                                        let age_r: Result<Int, SqlError> = statement_column_int(stmt2, 0)
+                                        match age_r {
+                                            Ok(age) => {
+                                                if age != 25 { fails = fail_with("bob age != 25", fails) }
+                                            },
+                                            Err(e) => { fails = fail_with("bob age column read", fails) }
+                                        }
+                                    }
+                                    if rc != 100 { fails = fail_with("bob lookup no row", fails) }
+                                },
+                                Err(e) => { fails = fail_with("bob lookup step", fails) }
+                            }
+                        },
+                        Err(e) => { fails = fail_with("bind :name failed", fails) }
+                    }
+                    let s3: Statement = statement_finalize(stmt2)
+                },
+                Err(e) => { fails = fail_with("WHERE prepare failed", fails) }
+            }
+
+            // UPDATE — bob ages by 1.
+            let r5: Result<Int, SqlError> = database_execute(db, "UPDATE users SET age = age + 1 WHERE name = 'bob'")
+            match r5 {
+                Ok(changed) => {
+                    if changed != 1 { fails = fail_with("UPDATE changes != 1", fails) }
+                },
+                Err(e) => { fails = fail_with("UPDATE failed", fails) }
+            }
+
+            // DELETE — carol leaves.
+            let r6: Result<Int, SqlError> = database_execute(db, "DELETE FROM users WHERE name = 'carol'")
+            match r6 {
+                Ok(changed2) => {
+                    if changed2 != 1 { fails = fail_with("DELETE changes != 1", fails) }
+                },
+                Err(e) => { fails = fail_with("DELETE failed", fails) }
+            }
+
+            // Final count = 2.
+            let q3_r: Result<Statement, SqlError> = database_prepare(db, "SELECT COUNT(*) FROM users")
+            match q3_r {
+                Ok(stmt3) => {
+                    let s_r: Result<Int, SqlError> = statement_step(stmt3)
+                    match s_r {
+                        Ok(rc) => {
+                            if rc == 100 {
+                                let n_r: Result<Int, SqlError> = statement_column_int(stmt3, 0)
+                                match n_r {
+                                    Ok(n) => {
+                                        if n != 2 { fails = fail_with("final COUNT != 2", fails) }
+                                    },
+                                    Err(e) => { fails = fail_with("final COUNT read", fails) }
+                                }
+                            }
+                        },
+                        Err(e) => { fails = fail_with("final COUNT step", fails) }
+                    }
+                    let s4: Statement = statement_finalize(stmt3)
+                },
+                Err(e) => { fails = fail_with("final COUNT prepare", fails) }
+            }
+
+            let dropped: Database = database_close(db)
+        },
+        Err(e) => { fails = fail_with("open :memory: failed", fails) }
+    }
+
+    if fails == 0 {
+        print("test_crud PASSED")
+    }
+    if fails != 0 {
+        print("test_crud FAILED")
+    }
+}

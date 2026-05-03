@@ -1,0 +1,84 @@
+// test_open_close.mn — Database open / close lifecycle.
+//
+// Concatenated by tests/stdlib/test_sql_sqlite.py harness; the harness
+// reads stdlib/sql/sqlite.mn and prepends it before this main body so
+// every public symbol (database_open, database_close, SqlError, ...)
+// is in scope.
+
+fn main() {
+    let mut fails: Int = 0
+
+    // 1. :memory: open + close happy path.
+    let db_r: Result<Database, SqlError> = database_open_memory()
+    match db_r {
+        Ok(db) => {
+            let dropped: Database = database_close(db)
+            if dropped.closed == false {
+                print("FAIL: close did not flip closed flag")
+                fails = fails + 1
+            }
+        },
+        Err(e) => {
+            print("FAIL: :memory: open returned Err")
+            fails = fails + 1
+        }
+    }
+
+    // 2. Bad path returns Err. SQLite happily creates files at any
+    //    path the user has write access to, so we use a path that
+    //    SQLite cannot open at all (a directory that doesn't exist
+    //    AND has a slash so it's interpreted as a path, not a name).
+    let bad_r: Result<Database, SqlError> = database_open("/nonexistent_dir_for_sq_test/xyz.db")
+    match bad_r {
+        Ok(_) => {
+            print("FAIL: bad path returned Ok")
+            fails = fails + 1
+        },
+        Err(e) => {
+            // Expected — could be LoadFail or BadSql depending on platform.
+            // Either is fine; we only assert that it's Err.
+        }
+    }
+
+    // 3. Close-after-close is idempotent.
+    let db2_r: Result<Database, SqlError> = database_open_memory()
+    match db2_r {
+        Ok(db2) => {
+            let c1: Database = database_close(db2)
+            let c2: Database = database_close(c1)
+            if c2.closed == false {
+                print("FAIL: double-close lost closed flag")
+                fails = fails + 1
+            }
+        },
+        Err(e) => {
+            print("FAIL: second :memory: open returned Err")
+            fails = fails + 1
+        }
+    }
+
+    // 4. libversion is non-empty and starts with a digit.
+    let v: String = database_libversion()
+    if len(v) == 0 {
+        print("FAIL: libversion empty")
+        fails = fails + 1
+    }
+    if len(v) > 0 {
+        let first: String = v.char_at(0)
+        if first < "0" {
+            print("FAIL: libversion does not start with digit: " + v)
+            fails = fails + 1
+        }
+        if first > "9" {
+            print("FAIL: libversion does not start with digit: " + v)
+            fails = fails + 1
+        }
+    }
+
+    if fails == 0 {
+        print("test_open_close PASSED")
+    }
+    if fails != 0 {
+        print("test_open_close FAILED")
+    }
+}

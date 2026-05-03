@@ -1,7 +1,29 @@
 # Mapanare Language Specification
 
-**Version:** 5.34.0
-**Status:** Live — synced to the v5.34.0 cut (2026-05-03)
+**Version:** 5.35.0
+**Status:** Live — synced to the v5.35.0 cut (2026-05-03)
+
+> **v5.35.0 — Sq.\* — first-class SQLite3 stdlib driver + Tn.1
+> closure.** SPEC body unchanged from the v5.21.0 cut. v5.35.0 ships
+> net-new `stdlib/sql/sqlite.mn` surface (`Database`, `Statement`,
+> `Value`, `SqlError`, `SavepointHandle` types; typed `column<T>`
+> with mismatch detection; named parameter binding via `:name` /
+> `@name` / `$name`; explicit transaction primitives + nested
+> SAVEPOINTs; blob support carrying raw bytes through `String`)
+> backed by `dlopen(libsqlite3)` wrappers in
+> `runtime/native/mapanare_db.c`. Adds **zero language features,
+> zero new MIR ops, zero new IR shapes** but DOES add **eight new C
+> runtime functions** in `mapanare_db.c` extending the v5.34.x
+> sqlite3 surface: `__mn_sqlite3_libversion`,
+> `__mn_sqlite3_bind_blob`, `__mn_sqlite3_column_blob`,
+> `__mn_sqlite3_reset`, `__mn_sqlite3_bind_parameter_index`,
+> `__mn_sqlite3_changes`, `__mn_sqlite3_last_insert_rowid`,
+> `__mn_sqlite3_extended_errcode`. Also lands **Sq.0 (formerly
+> Tn.1)** — `tests/llvm/test_llvm_link_all.py` — closing the
+> v5.28.0 RE-PANEL convergent recommendation that had carried 6
+> releases. Strict 3-stage fixed point preserved by construction at
+> v5.34.0's 241,898 lines / 0 diff (30-release strict streak from
+> v5.7.1). Goldens 95/95.
 
 > **v5.34.0 — Dt.\* — first-class date / time stdlib.** SPEC body
 > unchanged from the v5.21.0 cut. v5.34.0 ships net-new

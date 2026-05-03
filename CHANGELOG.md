@@ -7,6 +7,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.35.0] - 2026-05-03
+
+**Sq.\* — first-class SQLite3 stdlib driver + Tn.1 closure.** Closes
+the persistence gap: every Mapanare app that needs to save data
+beyond a process lifetime now has a typed, Result-returning surface.
+Net-new `stdlib/sql/sqlite.mn` (~720 LOC) wraps the v5.34.x
+`mapanare_db.c` sqlite exports plus 8 new ones added at Sq.7
+(`sqlite3_libversion`, `sqlite3_bind_blob`, `sqlite3_column_blob` /
+`column_bytes`, `sqlite3_reset`, `sqlite3_bind_parameter_index`,
+`sqlite3_changes`, `sqlite3_last_insert_rowid`,
+`sqlite3_extended_errcode`). 5 stdlib tests under
+`stdlib/sql/sqlite/tests/` exercise the full CRUD round-trip,
+commit/rollback/nested-savepoint transactions, prepared-statement
+reuse via reset+rebind+step (the Sq.5-deferred performance path), and
+`SqlError`-variant coverage including `Constraint` extended-rc
+mapping. **Tn.1 closure:** `tests/llvm/test_llvm_link_all.py` extends
+the v5.26.0 link-and-run pattern from 10 goldens to all 95 — closes
+the v5.28.0 RE-PANEL convergent recommendation that had carried
+forward 6 releases (v5.29.0 → v5.34.0). 96/96 PASS at HEAD in 8s.
+Strict 3-stage fixed point preserved by construction at v5.34.0's
+**241,898 lines / 0 diff** (30-release strict streak from the v5.7.1
+baseline). Goldens **95/95**. **Four PLAN deviations**, all
+structurally driven by current toolchain limitations and documented
+in `docs/roadmap/v5/v5.35.0/SESSION_REPORT.md`: (1) single-file
+module instead of <!-- no-check --> `stdlib/sql/sqlite/{db,stmt,value,...}.mn`
+directory — same lesson as v5.34.0 `stdlib/time.mn`; (2)
+`Value::Blob` carries `String` (Mapanare has no native `Bytes` type);
+(3) explicit `database_begin / commit / rollback` + `SavepointHandle`
+nesting instead of `transaction<T>(\|\| -> Result<T, SqlError>)` —
+Mapanare stdlib has no precedent for generic-closure-arg functions;
+(4) Sq.5 statement cache deferred to v5.36.0 — Mapanare's value
+semantics + lack of ergonomic `Map<K,V>` operations make automatic
+caching API ugly without first surfacing `prepare-once + reset+bind
++step`, which produces the same 5-10× speedup callers want. The
+existing v5.34.x `stdlib/db/sqlite.mn` is **untouched**; both drivers
+coexist (the older one routes through `Connection` / unified SQL
+URLs; the new one is the typed-`column<T>` + named-param surface).
+
+### Added
+
+- **Sq.0 (formerly Tn.1)** — `tests/llvm/test_llvm_link_all.py`. New
+  parametrized link-and-run gate covering every golden in
+  `tests/golden/`. The corpus-count gate doubles as a documentation
+  freshness check: drift forces an update to BENCHMARKS.md, the
+  most recent SESSION_REPORT, and the CLAUDE.md release-notes entry.
+  96/96 PASS at HEAD (95 link-and-run + 1 corpus-count).
+- **Sq.1 + Sq.2** — `Database` / `Statement` types in
+  `stdlib/sql/sqlite.mn`. `database_open(path)` /
+  `database_open_memory()` / `database_close(db)` /
+  `database_execute(db, sql)` / `database_prepare(db, sql)`;
+  `statement_bind_int / _float / _string / _blob / _bool / _null /
+  _value / _named`; `statement_step` / `statement_reset` /
+  `statement_finalize`; `statement_column_int / _float / _string /
+  _blob / _bool / _value / _count / _name`. All Result-returning;
+  closed/finalized guards make idempotent close/finalize safe.
+- **Sq.3** — `Value` enum (`Null / Int / Float / Text / Blob / Bool
+  / DateTime`). `column<T>` mismatch returns
+  `SqlError::TypeMismatch(...)` with both expected and actual sqlite
+  type names. JSON support via Sq.3.B preview (carry as
+  `Value::Text`); first-class `Value::Json` arrives at v5.36.0
+  Js.\* with a forward-compat sqlite-round-trip test.
+- **Sq.4** — Transaction primitives. `database_begin` /
+  `database_commit` / `database_rollback`. Nested via
+  `database_savepoint_begin` returning a `SavepointHandle` that
+  carries the bumped counter; `database_savepoint_release` /
+  `database_savepoint_rollback`.
+- **Sq.6** — 5 stdlib tests under `stdlib/sql/sqlite/tests/` plus
+  `tests/stdlib/test_sq_sqlite.py` harness (mirrors the v5.34.0
+  Dt.\* concatenation pattern). All 7 tests GREEN against `:memory:`,
+  pytest `-n auto` safe.
+- **Sq.7** — 8 new sqlite3 wrapper functions in
+  `runtime/native/mapanare_db.c` + `mapanare_db.h`:
+  `__mn_sqlite3_libversion`, `_bind_blob`, `_column_blob`,
+  `_reset`, `_bind_parameter_index`, `_changes`,
+  `_last_insert_rowid`, `_extended_errcode`. Pre-existing v5.34.x
+  exports unchanged. Smoke harness (`/tmp/sq7_smoke.c`) verifies
+  blob round-trip + named-param resolution + extended-rc mapping
+  against the system libsqlite3 (3.45.1 on the build host).
+- **Sq.8** — Pinned `sqlite3.dll` v3.46.1 bundled in the Windows
+  SDK + minimal ZIPs at `dist/mapanare/bin/sqlite3.dll`. Pinned URL
+  is `https://www.sqlite.org/2024/sqlite-dll-win-x64-3460100.zip`;
+  500 KB ≤ size ≤ 5 MB guard catches partial download / wrong file.
+  MZ-header check rejects HTML-error-as-DLL. To bump: change both
+  the URL and `$expectedVersion` in `publish.yml` AND this
+  CHANGELOG entry together.
+- **Sq.9** — `docs/stdlib/sql.md` cookbook: open / CRUD / batch
+  insert / prepared reuse / `match SqlError` / blob handling /
+  Sq.3.B JSON preview / migration note from `stdlib/db/sqlite.mn` /
+  Sq.8 Windows DLL distribution policy.
+
+### Changed
+
+- **CLAUDE.md / docs/SPEC.md header** — synced to the v5.35.0 cut
+  (Hd.\*-class preventative; closes the `check_doc_freshness.py`
+  SPEC-header staleness gate before it fires).
+- **`runtime/native/mapanare_db.c`** — sqlite3 function-pointer
+  stash extended with 8 new entries (additive; no existing pointer
+  changed). `sqlite3_load()` resolves all new symbols as optional
+  (missing = LoadFail returned by the consumer rather than a hard
+  init failure).
+- **`runtime/native/mapanare_db.h`** — 8 new `__mn_sqlite3_*`
+  declarations after `__mn_sqlite3_errmsg`. Pre-existing
+  declarations unchanged.
+
+### Fixed
+
+- (None — additive release.)
+
+
 ## [5.34.0] - 2026-05-03
 
 **Dt.\* — first-class date / time stdlib.** Net-new `stdlib/time.mn`
@@ -9809,7 +9918,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.34.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.35.0...HEAD
+[5.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.34.0...v5.35.0
 [5.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.2...v5.34.0
 [5.33.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.1...v5.33.2
 [5.33.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.0...v5.33.1

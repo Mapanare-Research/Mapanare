@@ -19,6 +19,125 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.35.0** (ready, not tagged) — **Sq.\* — first-class SQLite3
+  stdlib driver + Tn.1 closure.** Closes the persistence gap.
+  Net-new `stdlib/sql/sqlite.mn` (~720 LOC) wraps the existing
+  v5.34.x `mapanare_db.c` sqlite exports plus 8 new ones added at
+  Sq.7 (`__mn_sqlite3_libversion`, `_bind_blob`, `_column_blob`,
+  `_reset`, `_bind_parameter_index`, `_changes`,
+  `_last_insert_rowid`, `_extended_errcode`). **Zero compiler
+  edits. Zero `mapanare/self/*.mn` source touches.** Strict 3-stage
+  fixed point preserved by construction at v5.34.0's **241,898
+  lines / 0 diff** (30-release strict streak from the v5.7.1
+  baseline). Goldens **95/95**. Surface: `Database`, `Statement`,
+  `Value` (7 variants: Null/Int/Float/Text/Blob/Bool/DateTime),
+  `SqlError` (8 variants with retry/recovery semantics —
+  `LoadFail`, `VersionTooOld(String)`, `BadSql(String)`,
+  `TypeMismatch(String)`, `Constraint(String)`, `Busy`, `Misuse`,
+  `Closed`), `SavepointHandle` for nested transactions. Typed
+  `column<T>` with mismatch detection; named parameter binding via
+  `:name` / `@name` / `$name`; explicit transaction primitives
+  (`database_begin / commit / rollback`) plus `SavepointHandle`-
+  based nesting; blob support carrying raw bytes through `String`;
+  `database_open` does a `>= 3.7.0` libsqlite3 version check via
+  the new `sqlite3_libversion` export.
+  **Sq.0 (formerly Tn.1) — closure of v5.28.0 RE-PANEL directive
+  carried 6 releases.** New `tests/llvm/test_llvm_link_all.py`
+  generalizes the v5.26.0 link-and-run pattern from 10 goldens
+  (the async cluster + 4 v5.26.1 Eu.\* deferred goldens) to all
+  95. 96/96 PASS at HEAD in 8s on 32 workers. Closes the structural
+  test gap that hid Eu.1..Eu.4 LINK_FAIL bugs for 3 releases (v5.23.1
+  → v5.26.0 Phase 0 audit).
+  **Bundled-vs-staged-as-Sq.0 decision.** v5.35.0 PROMPT scoped
+  Tn.1 as a hard-gate precondition that should ship as a v5.34.1
+  hotfix. After surfacing this at Phase 0, the user directed
+  bundle-into-v5.35.0 — preserves deadline integrity (Tn.1 was
+  named DEADLINE-at-v5.35.0 in v5.33.0 directive) without spending
+  a release slot. Tradeoff: substantive Sq.\* arc + tiny mechanical
+  test ship together; honesty cost paid in this release-notes
+  entry + SESSION_REPORT explicitly calling out Sq.0's prior
+  Tn.1 identity.
+  **Sq.6 tests.** 5 `.mn` test files under
+  `stdlib/sql/sqlite/tests/` + new pytest harness
+  `tests/stdlib/test_sq_sqlite.py` (mirrors the v5.34.0 Dt.\*
+  concatenation pattern: read `stdlib/sql/sqlite.mn`, prepend to
+  each `.mn` test main body, compile via Python LLVM emitter, link
+  against `libmapanare_rt.a`, run, assert `"PASSED"` in stdout).
+  7/7 GREEN at HEAD (5 .mn tests + parses-clean + typechecks-clean)
+  in 3.98s. Tests cover: Sq.1 lifecycle (open / close idempotent
+  / libversion non-empty); Sq.1+2 full CRUD with named-param
+  binding; Sq.4 commit + rollback + nested SAVEPOINT (mid-tx
+  count → post-commit count → savepoint rollback discards inner
+  inserts but outer commit retains); Sq.2+5 manual prepared-stmt
+  reuse via `reset+bind+step` over 200 iterations in a single
+  transaction; Sq.1+2+3 SqlError variant coverage including
+  Constraint extended-rc mapping (UNIQUE = 2067, PRIMARYKEY =
+  1555 propagated through the message string).
+  **Sq.7 C shim — extends, doesn't duplicate.** Phase 1
+  discovery: `runtime/native/mapanare_db.c` already had complete
+  sqlite3 dlopen plumbing (877 LOC, 18 function pointers, full
+  `SQLITE_SYM(...)` resolution) — the PROMPT's "create net-new
+  `mapanare_sqlite.c` (~150 LOC)" was based on incomplete reading
+  of the existing runtime. User directed wrap-don't-duplicate;
+  Sq.7 added 8 new function pointers + 8 new wrapper functions
+  to the existing `s_sqlite` struct + `sqlite3_load()` resolver.
+  ~80 LOC of new C, no new source files. Build path unchanged
+  (`mapanare_db.c` already in `Makefile` `RUNTIME_SOURCES`). C
+  smoke harness at `/tmp/sq7_smoke.c` (6 cases including blob
+  round-trip with embedded NUL, named-param resolution,
+  duplicate-INSERT extended errcode) PASS against system
+  libsqlite3 3.45.1.
+  **Sq.8 Windows DLL bundle.** `.github/workflows/publish.yml`
+  Windows `build-cli` path now downloads pinned
+  `https://www.sqlite.org/2024/sqlite-dll-win-x64-3460100.zip`
+  (SQLite 3.46.1), extracts and stages
+  `dist/mapanare/bin/sqlite3.dll`. Three guards: MZ-header check
+  (catches HTML-error-as-DLL); 500 KB ≤ size ≤ 5 MB (catches
+  partial download / wrong file); explicit version-string
+  variable in the shell that future bumps must update with the
+  URL. Linux + macOS use system libsqlite3 (Ubuntu 20.04+ ships
+  3.31+; macOS 13+ ships 3.39+).
+  **Sq.9 docs.** `docs/stdlib/sql.md` (~370 lines) — quick
+  reference, types, 7 cookbook recipes (open + create + insert +
+  read on `:memory:`; on-disk database; transaction-wrapped
+  batch insert with the perf-explanation; manual prepared-stmt
+  reuse with the Sq.5-deferred note; `match SqlError` for
+  retry/recovery; blob handling; Sq.3.B JSON preview with
+  forward link to v5.36.0 Js.\*); deviations explicitly listed;
+  migration / coexistence note from existing `stdlib/db/sqlite.mn`;
+  Sq.8 Windows DLL distribution policy.
+  **Five PLAN deviations (all load-bearing, all structurally
+  driven).** (1) Single-file module instead of directory layout
+  — same lesson as v5.34.0 `stdlib/time.mn`, blocked on cross-
+  module mangling/extern-propagation fix. (2) `Value::Blob(String)`
+  not `Value::Blob(Bytes)` — Mapanare has no native `Bytes` type;
+  v5.36.0 Js.\* arc may introduce one. (3) Explicit transaction
+  primitives + `SavepointHandle` instead of `transaction<T>(\|\|
+  ...)` closure wrapper — Mapanare stdlib has no precedent for
+  generic-closure-arg functions. (4) Sq.5 statement cache deferred
+  to v5.36.0 — without first-class state mutation across function
+  calls + `Map<K,V>` ergonomics, the auto-cache API is uglier
+  than the manual `prepare-once + reset+bind+step` path that
+  produces the same 5-10× speedup. (5) Sq.7 wraps existing
+  `mapanare_db.c` instead of new `mapanare_sqlite.c` — Phase 1
+  scope discovery, surfaced to user, accepted.
+  **Hd-class preventative.** `docs/SPEC.md` header re-synced from
+  "synced to the v5.34.0 cut" to "synced to the v5.35.0 cut" with
+  a new sync block summarizing what v5.35.0 ships (specifically
+  enumerating the 8 new C runtime functions in `mapanare_db.c`).
+  `check_doc_freshness.py` GREEN.
+  Aggregate state entering v5.36.0: **0 HIGH** (Tn.1 closed) /
+  **1 MEDIUM** (macOS notarization carry from v5.33.0 Nu.2) /
+  ~9 LOW (Sq.5 cache deferred, native `Bytes` type, closure-arg
+  transaction wrapper, PostgreSQL/MySQL typed wrappers, schema
+  migrations + ORM, async sqlite, cross-module emitter fix,
+  carry from v5.34.0). The existing v5.34.x `stdlib/db/sqlite.mn`
+  is **untouched**; both drivers coexist (the older one routes
+  through `Connection` / unified SQL URLs; the new
+  `stdlib/sql/sqlite.mn` is the typed-`column<T>` + named-param
+  surface).
+  See `docs/roadmap/v5/v5.35.0/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
 - **v5.34.0** (ready, not tagged) — **Dt.\* — first-class date /
   time stdlib.** First stdlib expansion since v5.21.0. **Zero
   compiler edits. Zero `mapanare/self/*.mn` source touches.**

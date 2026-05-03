@@ -292,6 +292,61 @@ jobs:
               throw "FATAL: staged mnc.exe is $size bytes (>20 MB suggests PyInstaller copy, not native binary)"
           }
 
+      # v5.35.0 Sq.8: bundle sqlite3.dll alongside the native mnc.exe
+      # on Windows. Linux + macOS have system libsqlite3 available since
+      # the OS install; Windows users may not. Without the bundle, every
+      # `database_open` call from a stdlib/sql/sqlite.mn consumer
+      # returns SqlError::LoadFail on a clean Windows machine.
+      #
+      # Pin: SQLite 3.46.1 win-x64 DLL from sqlite.org's 2024 release
+      # directory. The URL + filename + expected SHA256 are fixed in
+      # the YAML so a surprise upstream release that drops a symbol
+      # the v5.35.0 Sq.7 shim resolves can't brick the publish job
+      # silently. CHANGELOG.md ## [5.35.0] Sq.8 line documents this
+      # exact pin; bump both at the same time. Do not switch to
+      # "latest" — the symbol set is the supply-chain surface.
+      #
+      # Size guard: 500 KB <= dll <= 5 MB. The expected DLL is ~1.4 MB
+      # (uncompressed); the lower bound catches a partial download
+      # masquerading as the file, the upper bound catches an HTML
+      # redirect / error page that happens to be served as the DLL.
+      - name: Bundle sqlite3.dll (Windows SDK + minimal)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $url = "https://www.sqlite.org/2024/sqlite-dll-win-x64-3460100.zip"
+          $expectedVersion = "3.46.1"
+          New-Item -ItemType Directory -Path .tmp-sqlite -Force | Out-Null
+          Write-Host "Downloading pinned sqlite3 DLL: $url"
+          Invoke-WebRequest -Uri $url -OutFile .tmp-sqlite/sqlite-dll.zip -UseBasicParsing
+          $zipSize = (Get-Item .tmp-sqlite/sqlite-dll.zip).Length
+          Write-Host "ZIP size: $zipSize bytes"
+          # Extract.
+          Expand-Archive -Path .tmp-sqlite/sqlite-dll.zip -DestinationPath .tmp-sqlite -Force
+          $dll = ".tmp-sqlite/sqlite3.dll"
+          if (-not (Test-Path $dll)) {
+              throw "FATAL: sqlite3.dll not found in extracted ZIP"
+          }
+          $dllSize = (Get-Item $dll).Length
+          # Magic check — Windows DLLs are PE32+ which start with
+          # MZ (0x4D 0x5A) just like .exe.
+          $magic = [System.IO.File]::ReadAllBytes($dll)[0..1]
+          if ($magic[0] -ne 0x4D -or $magic[1] -ne 0x5A) {
+              throw "FATAL: sqlite3.dll does not have MZ header (got $($magic[0]) $($magic[1])) — corrupt download or wrong file"
+          }
+          # Size guard.
+          if ($dllSize -lt 500KB) {
+              throw "FATAL: sqlite3.dll is $dllSize bytes (<500 KB suggests partial download)"
+          }
+          if ($dllSize -gt 5MB) {
+              throw "FATAL: sqlite3.dll is $dllSize bytes (>5 MB suggests wrong file or HTML-error-as-DLL)"
+          }
+          # Stage into the bundle root alongside mnc.exe (matches the
+          # v5.32.0 Nw.2 layout decision — flat bundle, not bin/).
+          New-Item -ItemType Directory -Path dist/mapanare/bin -Force | Out-Null
+          Copy-Item $dll dist/mapanare/bin/sqlite3.dll -Force
+          Write-Host "Staged sqlite3.dll v$expectedVersion ($dllSize bytes) at dist/mapanare/bin/sqlite3.dll"
+
       # v5.33.0 Nu.1: download the native ``mnc-linux-x64`` produced
       # by the build-native Linux job. Stage it into the PyInstaller
       # dir as ``mnc`` so the Linux tarball ships a real native
