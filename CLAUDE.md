@@ -19,6 +19,48 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.33.1** (ready, not tagged) — **Hd.\* — SPEC header drift
+  hotfix.** Docs-surface-only hotfix. **Zero compiler edits.
+  Zero runtime edits. Zero `mapanare/self/*.mn` source edits.**
+  Strict 3-stage fixed point preserved by construction at
+  v5.33.0's 241,898 lines / 0 diff (29-release strict streak
+  from the v5.7.1 baseline). Goldens **95/95**. Closes
+  `check_doc_freshness.py` SPEC-header lag violation (3 minors
+  stale, max tolerated 2). `docs/SPEC.md` header re-synced from
+  `synced to the v5.30.0 cut` to `synced to the v5.33.1 cut`;
+  new sync block at the top summarizes v5.31.0 (Bn.\* banner
+  hotfix), v5.32.0 (Nw.\* Windows native `mnc.exe` in SDK ZIP),
+  v5.33.0 (Nu.\* Linux x86_64 + macOS arm64 native `mnc` in
+  release tarballs; Linux aarch64 + macOS x86_64 deferred to
+  v5.34.0+), and v5.33.1 (this re-sync) — declarative,
+  cross-checked against each release's SESSION_REPORT.
+  v5.31–v5.33.1 together added **zero language features, zero
+  new MIR ops, zero new IR shapes, zero new runtime functions**
+  — packaging / hotfix releases only. The structural gate
+  (`check_doc_freshness.py`'s `check_spec_header()`, landed at
+  v5.24.0 Hy.2 with a 2-minor lag tolerance) fired exactly as
+  designed: SPEC stayed unsynced for 3 minor releases, gate
+  flipped hard at v5.33.0 HEAD, hotfix re-syncs and the gate
+  closes the next recurrence in CI rather than at the panel.
+  Source delta: ~14 LOC in `docs/SPEC.md` (Hd.1 header bump +
+  Hd.2 sync block), ~12 LOC in `CHANGELOG.md` (one-paragraph
+  hotfix entry, no fake `### Added`/`### Changed`/`### Fixed`
+  subsection content), this CLAUDE.md entry, plus the
+  mechanical files `bump_version.py` touched (VERSION + 4
+  README badges en/es/pt/zh-CN). Stage1 rebuilt post-bump so
+  IR-metadata embeds `!"5.33.1"` in stage2 + stage3 (the
+  v5.31.0 SESSION_REPORT documented lesson — without the
+  rebuild, `verify_fixed_point.sh` would show a 4-line
+  VERSION-placeholder NEAR diff). **Panel cadence note:**
+  `check_cadence.py` warn-only OVERDUE — 5 minor versions since
+  v5.28.0 panel; full 7-reviewer panel deliberately not picked
+  up here (multi-day cycle, exceeds hotfix scope). Escalated to
+  v5.34.0 as HIGH carry-forward. Aggregate state entering
+  v5.34.0: **2 HIGH** (panel cadence escalated; Tn.1 5-release
+  overdue carrying forward) / **2 MEDIUM** (macOS notarization;
+  carry) / ~6 LOW. See
+  `docs/roadmap/v5/v5.33.1/{PLAN.md, SESSION_REPORT.md}`.
+
 - **v5.33.0** (ready, not tagged) — **Nu.1 + Nu.2 + Nu.3 + Nu.4
   + Nu.5 + Nu.6 — ship native `mnc` in the Linux x86_64 and
   macOS arm64 release tarballs.** Mirror of v5.32.0 Nw.\*
