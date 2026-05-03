@@ -1,7 +1,31 @@
 # Mapanare Language Specification
 
-**Version:** 5.35.0
-**Status:** Live — synced to the v5.35.0 cut (2026-05-03)
+**Version:** 5.36.0
+**Status:** Live — synced to the v5.36.0 cut (2026-05-03)
+
+> **v5.36.0 — Js.\* — JSON completeness arc.** SPEC body unchanged
+> from the v5.21.0 cut. v5.36.0 makes `stdlib/encoding/json.mn`
+> RFC 8259 strict — inputs that previously parsed silently and now
+> error: leading-zero numbers (`01`, `-01`), unescaped control
+> characters in strings (bytes U+0000..U+001F including embedded
+> `\n` / `\t` / `\r`), and documents nesting deeper than 256 levels.
+> Surface additions: `parse` / `to_json` / `to_json_pretty` aliases;
+> `to_json_pretty(value, indent: Int)` with configurable indent
+> (was hardcoded 2-space pre-fix); pull-based streaming API
+> (`json_stream_open` / `json_stream_next` / `JsonStreamParser`);
+> typed serde intrinsics `to_json::<T>` / `from_json::<T>` —
+> compile-time monomorphized, sister to existing
+> `encode_struct::<T>` / `decode_to::<T>`. **Js.4 caveat:**
+> `to_json::<T>` ships fully working at runtime; `from_json::<T>`
+> ships compile-tested, runtime SEGV deferred to v5.36.1 as Js.4.B
+> (a pre-existing v5.x drop-glue bug uncovered by the fix). Adds
+> **zero language features, zero new MIR ops, zero new IR shapes,
+> zero new runtime functions**. Two compiler-side bug-fixes
+> (Js.0, Js.0.B) in `mapanare/emit_llvm_text.py` and
+> `mapanare/lower.py` that were required for end-to-end JSON build.
+> Goldens 95/95. Strict 3-stage fixed point preserved by
+> construction at v5.35.0's 241,898 lines / 0 diff (31-release
+> strict streak from v5.7.1).
 
 > **v5.35.0 — Sq.\* — first-class SQLite3 stdlib driver + Tn.1
 > closure.** SPEC body unchanged from the v5.21.0 cut. v5.35.0 ships

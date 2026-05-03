@@ -19,6 +19,95 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.36.0** (ready, not tagged) — **Js.\* — JSON completeness
+  arc.** Third release in the stdlib gap-close arc (Dt.\* @
+  v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0); these three are the
+  prerequisites named for v5.40.0 `ask`. **Strict 3-stage fixed
+  point preserved by construction at v5.35.0's 241,898 lines / 0
+  diff** (31-release strict streak from v5.7.1; zero
+  `mapanare/self/*.mn` source touches). Goldens **95/95**.
+  **Js.1 — JSON parser is now RFC 8259 strict.** Inputs that
+  previously parsed silently and now error: leading-zero numbers
+  (`01`, `-01`, `00.5`); unescaped control chars in strings (bytes
+  U+0000..U+001F including embedded `\n`/`\t`/`\r`); documents
+  nesting deeper than 256 levels (was a SEGV pre-fix on inputs
+  like `[[[...]]]` × 100k). 8 nst/JSONTestSuite fixtures moved
+  from broken to conformant; final corpus state **283 CONFORM /
+  35 IMPL / 0 DEVIATE / 0 CRASH = 318**. Strict mode is **not
+  opt-out** at this release — no `JsonParseOpts { strict: false }`
+  flag yet. Documented in `### Changed` (potentially
+  breaking-ish) per CHANGELOG honesty rule. **Js.2** —
+  `to_json_pretty(value, indent)` configurable indent (was
+  hardcoded 2 spaces); `indent <= 0` falls through to compact
+  `to_json` byte-for-byte. New aliases `to_json` / `to_json_pretty`
+  / `parse` mirror existing `encode` / `encode_pretty` / `decode`.
+  **Js.3 (LITE)** — pull-based streaming API
+  (`JsonStreamParser`, `JsonStreamStep`, `json_stream_open`,
+  `json_stream_next`, `json_stream_error`) on top of the existing
+  batch parser. Ships the API contract; true chunked I/O with
+  peak-RSS-bounded streaming deferred to a release that adds a
+  native `Bytes` type. **Js.4 (Shape B) — typed serde
+  intrinsics `to_json::<T>` and `from_json::<T>`** as compile-time
+  monomorphized aliases of existing `encode_struct::<T>` /
+  `decode_to::<T>`. **`to_json::<T>` works end-to-end** at this
+  release (verified `Point{3,4}` → `{"x": 3, "y": 4}`).
+  **`from_json::<T>` builds successfully but SEGVs at runtime**
+  in field-extraction (a pre-existing v5.x drop-glue bug
+  uncovered by the Js.0.B fix). API surface is in place so
+  v5.40.0 `ask` work can build against it; runtime fix tracked
+  as **Js.4.B for v5.36.1**. **Phase 0 user decision**: Shape B
+  (extend existing intrinsics) over Shape A (build runtime
+  reflection from scratch — would have been 3-5 release
+  sessions). PROMPT/PLAN claimed runtime type metadata existed at
+  `runtime/native/mapanare_typeinfo.c` "or inlined in
+  mapanare_core.c"; verified empirically that `print(struct)`
+  literally just emits `printf("%lld\n", first_field)` with no
+  field iteration — runtime metadata does not exist. **Js.5** —
+  `tests/stdlib/test_json_corpus_baseline.py` regression gate
+  asserting CONFORM ≥ 283 / DEVIATE ≤ 0 / CRASH ≤ 0. Marked
+  `pytest.mark.slow`. **Js.7** — `docs/stdlib/json.md` user-
+  facing reference. Documents strictness changes, every public
+  API, the Js.3-LITE memory characteristic, and Js.4.B
+  explicitly so callers know what they can rely on.
+  **Js.6 sqlite integration deferred to v5.36.1** — was scoped
+  to add `Value::Json(JsonValue)` variant requiring
+  `from_json::<JsonValue>` runtime path, blocked by Js.4.B.
+  **Two compiler bug-fixes uncovered during the work and shipped
+  in-release.** **Js.0** (`mapanare/emit_llvm_text.py:1421`):
+  `_san` sanitizer used `nm.lstrip("%")` (only leading) but
+  callers interpolated names into compound IDs like
+  `f"_map_iter_{value.name}"`; embedded `%` survived
+  sanitization → invalid IR (`%_map_iter_%entries37.addr`).
+  1-line fix: strip ALL `%`, not just leading. Goldens 95/95
+  preserved. **Required for any end-to-end test of the existing
+  json.mn module to work** (the bug surfaced as soon as Phase 0
+  tried to build the corpus runner). **Js.0.B**
+  (`mapanare/emit_llvm_text.py:5214` / `:5223`):
+  `_do_wrap_ok` / `_do_wrap_err` hardcoded the unfilled side of
+  the Result struct as `ptr`, producing `{i1, {ok_ty, ptr}}` when
+  the consumer expected `{i1, {ok_ty, err_ty}}`. Mismatch invisible
+  until Phi merge of two arms with full type info hit a size
+  conflict. Fix uses dest's `Result.args` when available (kind
+  == RESULT and len(args) ≥ 2); falls back to legacy shape
+  otherwise. Required for Js.4 `from_json::<T>` to even build.
+  **Bb.\*: NOT required** (no C-runtime export changes). **Hd-
+  class preventative**: SPEC.md header re-synced from "v5.35.0
+  cut" to "v5.36.0 cut" with new sync block summarizing what
+  v5.36.0 ships (specifically calling out Js.1 as `### Changed`
+  / potentially breaking-ish; Js.4.B as the load-bearing
+  deferred fix for v5.40.0 `ask`). `check_doc_freshness.py`
+  GREEN. **Vendored RFC 8259 corpus is gitignored** at
+  `stdlib/json/tests/fixtures/rfc8259/`; `scripts/run_json_corpus.py`
+  clones nst/JSONTestSuite on demand if missing. Aggregate state
+  entering v5.37.0: **0 HIGH** / **1 MEDIUM** (Js.4.B
+  `decode_to`/`from_json` runtime SEGV; macOS notarization carry
+  from v5.33.0 Nu.2) / ~6 LOW (native `Bytes` type, Js.6 sqlite
+  paired with Js.4.B, field-type coverage extension paired with
+  Js.4.B, `JsonParseOpts` opt-out, multi-line struct literal
+  syntax, v5.x match-cleanup SEGV, cyclic-struct detection).
+  See `docs/roadmap/v5/v5.36.0/{PLAN.md, PROMPT.md,
+  SESSION_REPORT.md, RFC_AUDIT.md}`.
+
 - **v5.35.0** (ready, not tagged) — **Sq.\* — first-class SQLite3
   stdlib driver + Tn.1 closure.** Closes the persistence gap.
   Net-new `stdlib/sql/sqlite.mn` (~720 LOC) wraps the existing

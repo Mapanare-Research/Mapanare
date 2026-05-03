@@ -1,3 +1,8 @@
+# v5.36.0: vendored RFC 8259 corpus is fetched on demand by
+# scripts/run_json_corpus.py — clones nst/JSONTestSuite if the
+# fixtures dir is missing. Not stored in-tree (318 files).
+stdlib/json/tests/fixtures/rfc8259/
+
 # Built compiler binary (output of build_from_seed.sh)
 /mnc
 

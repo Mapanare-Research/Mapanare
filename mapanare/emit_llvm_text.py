@@ -1418,7 +1418,10 @@ class LLVMTextEmitter:
 
     @staticmethod
     def _san(nm: str) -> str:
-        return nm.lstrip("%").replace(".", "_").replace("-", "_")
+        # v5.36.0 Js.0: strip all '%' (not just leading) so compound names
+        # like f"_map_iter_{value.name}" don't preserve embedded sigils
+        # when value.name itself starts with '%' (e.g., "%entries37").
+        return nm.replace("%", "").replace(".", "_").replace("-", "_")
 
     def _get(self, v: Value) -> tuple[str, str]:
         """Load MIR value from alloca → (tmp, type)."""
@@ -5209,7 +5212,25 @@ class LLVMTextEmitter:
         self._put(i.dest, _zero(ty), ty)
 
     def _do_wrap_ok(self, i: WrapOk) -> None:
+        # v5.36.0 Js.0.B: when dest carries full Result<Ok, Err> type info,
+        # use it so the produced struct shape matches downstream consumers.
+        # Pre-fix the Err slot was hardcoded as `ptr`, which mismatched the
+        # alloca size when the consumer (e.g. Js.4 from_json) uses the full
+        # typed alloca. Falls back to legacy `{i1, {t, ptr}}` shape when the
+        # dest is a generic Result with no args (existing behavior).
         v, t = self._get(i.val)
+        if i.dest.ty.kind == TypeKind.RESULT:
+            a = i.dest.ty.type_info.args
+            if len(a) >= 2:
+                ok_ty = self._rti(a[0])
+                err_ty = self._rti(a[1])
+                rt = f"{{i1, {{{ok_ty}, {err_ty}}}}}"
+                s0 = self._f("wo")
+                self._L(f"{s0} = insertvalue {rt} undef, i1 1, 0")
+                s1 = self._f("wo")
+                self._L(f"{s1} = insertvalue {rt} {s0}, {ok_ty} {v}, 1, 0")
+                self._put(i.dest, s1, rt)
+                return
         rt = f"{{i1, {{{t}, ptr}}}}"
         s0 = self._f("wo")
         self._L(f"{s0} = insertvalue {rt} undef, i1 1, 0")
@@ -5218,7 +5239,20 @@ class LLVMTextEmitter:
         self._put(i.dest, s1, rt)
 
     def _do_wrap_err(self, i: WrapErr) -> None:
+        # v5.36.0 Js.0.B: sister fix to _do_wrap_ok. Same shape rationale.
         v, t = self._get(i.val)
+        if i.dest.ty.kind == TypeKind.RESULT:
+            a = i.dest.ty.type_info.args
+            if len(a) >= 2:
+                ok_ty = self._rti(a[0])
+                err_ty = self._rti(a[1])
+                rt = f"{{i1, {{{ok_ty}, {err_ty}}}}}"
+                s0 = self._f("we")
+                self._L(f"{s0} = insertvalue {rt} undef, i1 0, 0")
+                s1 = self._f("we")
+                self._L(f"{s1} = insertvalue {rt} {s0}, {err_ty} {v}, 1, 1")
+                self._put(i.dest, s1, rt)
+                return
         rt = f"{{i1, {{ptr, {t}}}}}"
         s0 = self._f("we")
         self._L(f"{s0} = insertvalue {rt} undef, i1 0, 0")

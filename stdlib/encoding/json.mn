@@ -214,16 +214,16 @@ fn parse_json_string(src: String, pos: Int, line: Int, col: Int) -> StringResult
             result = result + er.value
             p = p + 1 + er.advance
             c = c + 1 + er.advance
-        } sino { si ch == "\n" {
-            ln = ln + 1
-            c = 1
-            result = result + ch
-            p = p + 1
         } sino {
+            // RFC 8259 §7: a JSON string MUST NOT contain unescaped
+            // control characters (U+0000..U+001F). Reject any byte < 32.
+            si src.byte_at(p) < 32 {
+                da new StringResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_json_error("Unescaped control character in string", ln, c) }
+            }
             result = result + ch
             p = p + 1
             c = c + 1
-        } }
+        }
     }
     da new StringResult { value: "", pos: p, line: ln, col: c, ok: false, error: new_json_error("Unterminated string", line, col) }
 }
@@ -266,15 +266,30 @@ fn parse_json_number(src: String, pos: Int, line: Int, col: Int) -> NumberResult
     }
 
     // Integer part
+    // RFC 8259 §6: integer part is "0" or [1-9][0-9]*. A leading "0"
+    // followed by another digit (e.g. "01", "-01") must be rejected.
     pon mut int_part: Int = 0
-    mien p < slen {
-        pon ch: String = src.char_at(p)
-        si is_json_digit(ch) {
-            int_part = int_part * 10 + digit_value(ch)
-            p = p + 1
-            c = c + 1
-        } sino {
-            sal
+    si first_digit == "0" {
+        // Consume the single 0; reject if next char is another digit.
+        p = p + 1
+        c = c + 1
+        si p < slen {
+            pon next_after_zero: String = src.char_at(p)
+            si is_json_digit(next_after_zero) {
+                da new NumberResult { int_val: 0, float_val: 0.0, is_float: false, pos: p, col: c, ok: false, error: new_json_error("Leading zero followed by digit not allowed", line, c) }
+            }
+        }
+    } sino {
+        // First digit is 1..9; consume the run.
+        mien p < slen {
+            pon ch: String = src.char_at(p)
+            si is_json_digit(ch) {
+                int_part = int_part * 10 + digit_value(ch)
+                p = p + 1
+                c = c + 1
+            } sino {
+                sal
+            }
         }
     }
 
@@ -365,7 +380,17 @@ fn parse_json_number(src: String, pos: Int, line: Int, col: Int) -> NumberResult
 // Recursive descent parser (Tasks 4, 7, 8, 10)
 // ---------------------------------------------------------------------------
 
+// v5.36.0 Js.1.C — depth limit prevents stack overflow on deeply nested
+// input (RFC 8259 sets no maximum but real implementations must). 256 is
+// the same default sqlite, jansson, etc. use; large enough for sane
+// inputs, low enough to fit in any reasonable thread stack.
+const MAX_JSON_DEPTH: Int = 256
+
 pub fn decode_value(src: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
+    da decode_value_d(src, pos, line, col, 0)
+}
+
+fn decode_value_d(src: String, pos: Int, line: Int, col: Int, depth: Int) -> Result<DecodeResult, JsonError> {
     pon slen: Int = len(src)
 
     pon ws: SkipResult = skip_whitespace(src, pos, line, col)
@@ -444,10 +469,10 @@ pub fn decode_value(src: String, pos: Int, line: Int, col: Int) -> Result<Decode
     }
 
     // Array
-    si ch == "[" { da decode_array(src, p, ln, c) }
+    si ch == "[" { da decode_array(src, p, ln, c, depth + 1) }
 
     // Object
-    si ch == "{" { da decode_object(src, p, ln, c) }
+    si ch == "{" { da decode_object(src, p, ln, c, depth + 1) }
 
     da Err(new_json_error("Unexpected character: " + ch, ln, c))
 }
@@ -456,7 +481,10 @@ pub fn decode_value(src: String, pos: Int, line: Int, col: Int) -> Result<Decode
 // Array parser (Task 7)
 // ---------------------------------------------------------------------------
 
-fn decode_array(src: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
+fn decode_array(src: String, pos: Int, line: Int, col: Int, depth: Int) -> Result<DecodeResult, JsonError> {
+    si depth > MAX_JSON_DEPTH {
+        da Err(new_json_error("Maximum nesting depth exceeded", line, col))
+    }
     pon slen: Int = len(src)
     pon mut p: Int = pos + 1
     pon mut ln: Int = line
@@ -478,7 +506,7 @@ fn decode_array(src: String, pos: Int, line: Int, col: Int) -> Result<DecodeResu
     mien count < 1000000 {
         count = count + 1
 
-        pon val_result: Result<DecodeResult, JsonError> = decode_value(src, p, ln, c)
+        pon val_result: Result<DecodeResult, JsonError> = decode_value_d(src, p, ln, c, depth)
         match val_result {
             Ok(dr) => {
                 items.push(dr.value)
@@ -514,7 +542,10 @@ fn decode_array(src: String, pos: Int, line: Int, col: Int) -> Result<DecodeResu
 // Object parser (Task 8)
 // ---------------------------------------------------------------------------
 
-fn decode_object(src: String, pos: Int, line: Int, col: Int) -> Result<DecodeResult, JsonError> {
+fn decode_object(src: String, pos: Int, line: Int, col: Int, depth: Int) -> Result<DecodeResult, JsonError> {
+    si depth > MAX_JSON_DEPTH {
+        da Err(new_json_error("Maximum nesting depth exceeded", line, col))
+    }
     pon slen: Int = len(src)
     pon mut p: Int = pos + 1
     pon mut ln: Int = line
@@ -560,7 +591,7 @@ fn decode_object(src: String, pos: Int, line: Int, col: Int) -> Result<DecodeRes
         p = p + 1
         c = c + 1
 
-        pon val_result: Result<DecodeResult, JsonError> = decode_value(src, p, ln, c)
+        pon val_result: Result<DecodeResult, JsonError> = decode_value_d(src, p, ln, c, depth)
         match val_result {
             Ok(dr) => {
                 entries[key_result.value] = dr.value
@@ -659,11 +690,15 @@ pub fn encode(value: JsonValue) -> String {
 // Pretty-print serializer (Task 15)
 // ---------------------------------------------------------------------------
 
-fn make_indent(level: Int) -> String {
+// v5.36.0 Js.2: indent is now configurable. make_indent(spaces, level)
+// emits `spaces*level` literal space characters. Pre-v5.36.0 hardcoded
+// 2-space indent.
+fn make_indent(spaces: Int, level: Int) -> String {
+    pon total: Int = spaces * level
     pon mut result: String = ""
     pon mut i: Int = 0
-    mien i < level {
-        result = result + "  "
+    mien i < total {
+        result = result + " "
         i = i + 1
     }
     da result
@@ -682,8 +717,8 @@ fn encode_pretty_inner(value: JsonValue, indent: Int, level: Int) -> String {
             pon item_count: Int = len(items)
             si item_count == 0 { da "[]" }
             pon next_level: Int = level + 1
-            pon inner_indent: String = make_indent(next_level)
-            pon outer_indent: String = make_indent(level)
+            pon inner_indent: String = make_indent(indent, next_level)
+            pon outer_indent: String = make_indent(indent, level)
             pon mut result: String = "[\n"
             pon mut i: Int = 0
             mien i < item_count {
@@ -696,8 +731,8 @@ fn encode_pretty_inner(value: JsonValue, indent: Int, level: Int) -> String {
         },
         Object(entries) => {
             pon next_level: Int = level + 1
-            pon inner_indent: String = make_indent(next_level)
-            pon outer_indent: String = make_indent(level)
+            pon inner_indent: String = make_indent(indent, next_level)
+            pon outer_indent: String = make_indent(indent, level)
             pon mut result: String = "{\n"
             pon mut first: Bool = true
             cada key en entries {
@@ -711,7 +746,28 @@ fn encode_pretty_inner(value: JsonValue, indent: Int, level: Int) -> String {
 }
 
 pub fn encode_pretty(value: JsonValue, indent: Int) -> String {
+    // v5.36.0 Js.2: indent=0 falls through to compact encode() byte-for-byte.
+    // The recursive emitter would produce subtly different spacing around `,`
+    // and `:` with zero-width indent, so we early-return.
+    si indent <= 0 { da encode(value) }
     da encode_pretty_inner(value, indent, 0)
+}
+
+// v5.36.0 Js.2 / Js.4: PROMPT-spec aliases for encode/encode_pretty/decode.
+// These give the to_json<T> family used by v5.40.0 ask primitive a stable
+// surface; the legacy encode/decode/encode_pretty names are preserved so
+// no downstream callers break.
+
+pub fn to_json(value: JsonValue) -> String {
+    da encode(value)
+}
+
+pub fn to_json_pretty(value: JsonValue, indent: Int) -> String {
+    da encode_pretty(value, indent)
+}
+
+pub fn parse(text: String) -> Result<JsonValue, JsonError> {
+    da decode(text)
 }
 
 // ---------------------------------------------------------------------------
@@ -891,6 +947,78 @@ fn stream_parse_value(src: String, pos: Int, line: Int, col: Int) -> EventResult
 pub fn stream_parse(src: String) -> Result<List<JsonEvent>, JsonError> {
     pon result: EventResult = stream_parse_value(src, 0, 1, 1)
     si result.ok { da Ok(result.events) } sino { da Err(result.error) }
+}
+
+// ---------------------------------------------------------------------------
+// v5.36.0 Js.3 — pull-based streaming API (LITE).
+//
+// This ships the API contract PROMPT specifies (`open` / `next`) on top
+// of the existing batch parser. Memory is still O(document size); true
+// chunked I/O with peak-RSS bounded < document size is deferred to a
+// later release that adds a native `Bytes` type and a chunk-aware state
+// machine.
+//
+// Usage:
+//     let mut p: JsonStreamParser = json_stream_open(text)
+//     match stream_error(p) {
+//         Some(e) => { /* handle parse error */ },
+//         None => {
+//             let mut done: Bool = false
+//             mien !done {
+//                 let step: JsonStreamStep = json_stream_next(p)
+//                 p = step.parser
+//                 match step.event {
+//                     Some(ev) => { /* handle ev */ },
+//                     None => { done = true }
+//                 }
+//             }
+//         }
+//     }
+// ---------------------------------------------------------------------------
+
+pub tipo JsonStreamParser {
+    events: List<JsonEvent>,
+    cursor: Int,
+    error: JsonError,
+    has_error: Bool
+}
+
+pub tipo JsonStreamStep {
+    parser: JsonStreamParser,
+    event: Option<JsonEvent>
+}
+
+fn empty_event_list() -> List<JsonEvent> {
+    pon empty: List<JsonEvent> = []
+    da empty
+}
+
+pub fn json_stream_open(text: String) -> JsonStreamParser {
+    pon r: Result<List<JsonEvent>, JsonError> = stream_parse(text)
+    match r {
+        Ok(evs) => {
+            pon empty_err: JsonError = new_json_error("", 0, 0)
+            da new JsonStreamParser { events: evs, cursor: 0, error: empty_err, has_error: false }
+        },
+        Err(e) => {
+            pon empty_evs: List<JsonEvent> = empty_event_list()
+            da new JsonStreamParser { events: empty_evs, cursor: 0, error: e, has_error: true }
+        }
+    }
+}
+
+pub fn json_stream_next(p: JsonStreamParser) -> JsonStreamStep {
+    si p.cursor >= len(p.events) {
+        da new JsonStreamStep { parser: p, event: None }
+    }
+    pon ev: JsonEvent = p.events[p.cursor]
+    pon p2: JsonStreamParser = new JsonStreamParser { events: p.events, cursor: p.cursor + 1, error: p.error, has_error: p.has_error }
+    da new JsonStreamStep { parser: p2, event: Some(ev) }
+}
+
+pub fn json_stream_error(p: JsonStreamParser) -> Option<JsonError> {
+    si p.has_error { da Some(p.error) }
+    da None
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.36.0] - 2026-05-03
+
+**Js.\* — JSON completeness arc.** RFC 8259 strictness, indent-
+configurable pretty-print, pull-based streaming API, typed
+`to_json::<T>` end-to-end, plus two compiler bug-fixes uncovered
+during the work. Third release in the stdlib gap-close arc
+(Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0). Goldens 95/95.
+Strict 3-stage fixed point preserved at v5.35.0's 241,898 lines /
+0 diff (zero `mapanare/self/*.mn` source touches).
+
+### Added
+
+- **Js.2 — `to_json_pretty(value, indent)`** with configurable
+  spaces-per-level. Pre-v5.36.0 `encode_pretty` hardcoded a
+  2-space indent; the new entry takes `indent` as a parameter
+  and falls through to compact `to_json` byte-for-byte when
+  `indent <= 0`.
+- **Js.2 — alias trio: `to_json`, `to_json_pretty`, `parse`.**
+  PROMPT-spec spellings preserved alongside the legacy
+  `encode`, `encode_pretty`, `decode` names. Identical behavior
+  on each pair.
+- **Js.3 — pull-based streaming API** (`json_stream_open`,
+  `json_stream_next`, `json_stream_error`,
+  `JsonStreamParser`/`JsonStreamStep` types). Js.3-LITE shape:
+  ships the API contract; under the hood the document is fully
+  parsed and `next` pops from a precomputed event list. True
+  chunked I/O with peak-RSS-bounded streaming is deferred to
+  the release that adds a native `Bytes` type.
+- **Js.4 (Shape B) — typed serde intrinsics** `to_json::<T>` and
+  `from_json::<T>`. Compile-time monomorphized (same lowering
+  path as the existing `encode_struct::<T>` / `decode_to::<T>`).
+  `to_json::<T>` works end-to-end at this release; `from_json::<T>`
+  builds successfully but SEGVs at runtime in the field-extraction
+  step — runtime fix tracked as Js.4.B for v5.36.1. The API
+  surface is in place so v5.40.0 `ask` work can build against it.
+- **Js.5 — `tests/stdlib/test_json_corpus_baseline.py`**
+  regression gate. Runs the full nst/JSONTestSuite corpus
+  through the parser via `scripts/run_json_corpus.py` and
+  asserts CONFORM ≥ 283 / DEVIATE = 0 / CRASH = 0. Catches
+  any future regression of the leading-zero, control-char, or
+  deep-nesting fixes.
+- **Js.7 — `docs/stdlib/json.md`** user-facing reference.
+  Documents the strictness changes, every public API, the
+  Js.3-LITE memory characteristic, and the Js.4.B deferred
+  runtime fix.
+- **`scripts/run_json_corpus.py`** — RFC 8259 corpus runner.
+  Auto-clones the gitignored fixtures dir from
+  nst/JSONTestSuite on first run. Produces
+  `docs/roadmap/v5/v5.36.0/RFC_AUDIT.md` with per-fixture
+  CONFORM/DEVIATE/CRASH classification.
+
+### Changed
+
+- **Js.1 — JSON parser is now RFC 8259 strict.** Inputs that
+  previously parsed silently and now error:
+  - **Leading-zero numbers** (`01`, `-01`, `00.5`) — RFC 8259 §6
+    forbids leading zeros in the integer part.
+  - **Unescaped control characters in strings** — bytes
+    `U+0000`..`U+001F` inside string literals must be escaped.
+    Pre-v5.36.0 the parser specifically tracked unescaped `\n`
+    for line counting and accepted it; that path is now an error.
+  - **Deep nesting beyond 256 levels** — pre-v5.36.0 inputs like
+    `[[[...]]]` with 100,000+ nesting blew the recursion stack
+    with a SEGV. Now returns
+    `Err(JsonError { message: "Maximum nesting depth exceeded", ... })`.
+  Strict mode is **not opt-out** in v5.36.0 — there is no
+  `JsonParseOpts` flag yet. The `parse(text)` entry point
+  always uses strict mode.
+- **Js.2 — `encode_pretty(value, 0)` now byte-equals
+  `encode(value)`.** Pre-v5.36.0 the recursive emitter ran with
+  zero-width indent and produced subtly different spacing
+  (around `,` and `:`) than the compact `encode`. The fix
+  early-returns through the compact path so `indent <= 0` and
+  `indent >= 1` are the only two regimes.
+
+### Fixed
+
+<!-- no-check -->
+- **Js.0 — `_san` sanitizer in `mapanare/emit_llvm_text.py:1421`.**
+  Pre-fix the sanitizer used `nm.lstrip("%")` which only stripped
+  the leading `%` from an SSA name. When that name was interpolated
+  into a compound identifier (e.g. `f"_map_iter_{value.name}"`),
+  an embedded `%` survived and produced invalid LLVM IR. Surfaced
+  when building any source that includes the existing
+  `stdlib/encoding/json.mn` module — its map-iteration code path
+  triggered `%_map_iter_%entries37.addr` IR. 1-line fix: strip ALL
+  `%`, not just leading. Goldens 95/95 preserved.
+- **Js.0.B — `_do_wrap_ok` / `_do_wrap_err` Result type-args
+  propagation.** The Wrap codegen hardcoded the unfilled side of
+  the Result struct as `ptr`, producing `{i1, {ok_ty, ptr}}` when
+  the user expected `{i1, {ok_ty, err_ty}}`. Mismatch was invisible
+  until Phi-merge of two arms with full type info hit a size
+  conflict. The fix uses the dest's `Result.args` when available
+  (kind == RESULT and len(args) ≥ 2), falls back to the legacy
+  shape when args are missing. Required for Js.4 Shape B
+  `from_json::<T>` to build.
+- **Js.1.A — leading-zero number rejection** in
+  `parse_json_number`. After consuming `0`, the next character is
+  checked; if a digit follows, the parser returns `Err`.
+- **Js.1.B — unescaped control-char rejection** in
+  `parse_json_string`. The string-content loop now reads the byte
+  value via `src.byte_at(p)` and rejects any byte < 32. The pre-fix
+  special case for unescaped `\n` (line tracking + appended to
+  result) is removed; embedded newlines are an RFC violation
+  regardless.
+- **Js.1.C — depth limit** in `decode_array` / `decode_object`. New
+  `MAX_JSON_DEPTH: Int = 256` const at module scope. The
+  `decode_value` public entry point delegates to a private
+  `decode_value_d(..., depth)` that threads depth through to the
+  array and object recursive paths. At depth > 256, both return
+  `Err(JsonError { message: "Maximum nesting depth exceeded", ... })`.
+- **`_lower_decode_to` Result type args** in `mapanare/lower.py`.
+  Pre-fix `result_ty = MIRType(TypeInfo(kind=TypeKind.RESULT))`
+  carried no type args; the user's match arm extraction read the
+  Ok payload as `ptr` rather than the struct shape. Bug stayed
+  latent because `tests/stdlib/test_struct_json.py` only checked
+  IR-text content, never link or run. Now sets
+  `args=[T, JsonError]` so downstream consumers see the right
+  shape.
+
+
 ## [5.35.0] - 2026-05-03
 
 **Sq.\* — first-class SQLite3 stdlib driver + Tn.1 closure.** Closes
@@ -9918,7 +10039,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.35.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.36.0...HEAD
+[5.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.35.0...v5.36.0
 [5.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.34.0...v5.35.0
 [5.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.2...v5.34.0
 [5.33.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.1...v5.33.2

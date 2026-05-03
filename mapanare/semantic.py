@@ -978,17 +978,25 @@ class SemanticChecker:
         # Handle generic call intrinsics (turbofish syntax)
         if isinstance(expr.callee, Identifier) and expr.type_args:
             name = expr.callee.name
-            if name == "encode_struct":
+            if name == "encode_struct" or name == "to_json":
+                # v5.36.0 Js.4 (Shape B): to_json::<T>(v) is a user-facing
+                # alias for encode_struct::<T>(v). Same lowering, same scope
+                # (primitives + Option<T> on fields; List/Map/nested-struct/
+                # enum field support deferred to a future release).
                 if len(expr.type_args) != 1:
-                    self._error("encode_struct expects exactly one type argument", expr)
+                    self._error(f"{name} expects exactly one type argument", expr)
                 if len(expr.args) != 1:
-                    self._error("encode_struct expects exactly one argument", expr)
+                    self._error(f"{name} expects exactly one argument", expr)
                 return STRING_TYPE
-            if name == "decode_to":
+            if name == "decode_to" or name == "from_json":
+                # v5.36.0 Js.4 (Shape B): from_json::<T>(s: String) parses
+                # the string then runs decode_to::<T>. decode_to::<T> takes a
+                # pre-parsed JsonValue. Same return type either way.
                 if len(expr.type_args) != 1:
-                    self._error("decode_to expects exactly one type argument", expr)
+                    self._error(f"{name} expects exactly one type argument", expr)
                 if len(expr.args) != 1:
-                    self._error("decode_to expects exactly one argument (JsonValue)", expr)
+                    arg_kind = "String" if name == "from_json" else "JsonValue"
+                    self._error(f"{name} expects exactly one argument ({arg_kind})", expr)
                 type_arg = expr.type_args[0]
                 type_name = type_arg.name if hasattr(type_arg, "name") else ""
                 return TypeInfo(

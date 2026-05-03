@@ -2267,8 +2267,14 @@ class MIRLowerer:
             fn_name = expr.callee.name
             if fn_name == "encode_struct" and len(args) == 1:
                 return self._lower_encode_struct(expr, args[0])
+            if fn_name == "to_json" and len(args) == 1:
+                # v5.36.0 Js.4 (Shape B): alias of encode_struct
+                return self._lower_encode_struct(expr, args[0])
             if fn_name == "decode_to" and len(args) == 1:
                 return self._lower_decode_to(expr, args[0])
+            if fn_name == "from_json" and len(args) == 1:
+                # v5.36.0 Js.4 (Shape B): parse + decode_to chain
+                return self._lower_from_json(expr, args[0])
             if fn_name == "__struct_meta" and len(args) == 0:
                 return self._lower_struct_meta(expr)
 
@@ -2768,7 +2774,22 @@ class MIRLowerer:
         struct_name = type_arg.name if hasattr(type_arg, "name") else ""
         fields = self._module.structs.get(struct_name, [])
 
-        result_ty = MIRType(TypeInfo(kind=TypeKind.RESULT))
+        # v5.36.0 Js.4: result_ty must carry type args so the user's match
+        # arms extract the correct payload shape. Pre-fix this was a bare
+        # `Result` with no args; downstream Phi merges + Ok extraction
+        # produced `ptr` instead of `{i64, i64, ...}` for the Point payload.
+        # Bug stayed latent because tests/stdlib/test_struct_json.py only
+        # checked compilation-to-IR-text, never link.
+        result_ty = MIRType(
+            TypeInfo(
+                kind=TypeKind.RESULT,
+                name="Result",
+                args=[
+                    TypeInfo(kind=TypeKind.STRUCT, name=struct_name),
+                    TypeInfo(kind=TypeKind.STRUCT, name="JsonError"),
+                ],
+            )
+        )
         struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=struct_name))
         err_struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name="JsonError"))
 
@@ -2845,6 +2866,82 @@ class MIRLowerer:
         self._set_block(merge_bb)
         final = self._make_value(ty=result_ty)
         self._emit(Phi(dest=final, incoming=[(err_exit, err_result), (ok_exit, ok_result)]))
+        return final
+
+    def _lower_from_json(self, expr: CallExpr, str_val: Value) -> Value:
+        """Lower from_json::<T>(s: String) — parse + decode_to chain.
+
+        v5.36.0 Js.4 (Shape B). Lowers to:
+            let r = decode(s)         // Result<JsonValue, JsonError>
+            match r {
+                Ok(jv)  => decode_to::<T>(jv),
+                Err(e)  => Err(e),
+            }
+        """
+        type_arg = expr.type_args[0]
+        struct_name = type_arg.name if hasattr(type_arg, "name") else ""
+        # Result<T, JsonError> where T is the user-specified type.
+        result_ty = MIRType(
+            TypeInfo(
+                kind=TypeKind.RESULT,
+                name="Result",
+                args=[
+                    TypeInfo(kind=TypeKind.STRUCT, name=struct_name),
+                    TypeInfo(kind=TypeKind.STRUCT, name="JsonError"),
+                ],
+            )
+        )
+        # decode() returns Result<JsonValue, JsonError>.
+        decode_result_ty = MIRType(
+            TypeInfo(
+                kind=TypeKind.RESULT,
+                name="Result",
+                args=[
+                    TypeInfo(kind=TypeKind.ENUM, name="JsonValue"),
+                    TypeInfo(kind=TypeKind.STRUCT, name="JsonError"),
+                ],
+            )
+        )
+        json_value_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name="JsonValue"))
+        err_struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name="JsonError"))
+
+        # Step 1: call decode(s)
+        decode_result = self._make_value(ty=decode_result_ty)
+        self._emit(Call(dest=decode_result, fn_name="decode", args=[str_val]))
+
+        # Step 2: switch on Ok/Err
+        tag = self._make_value(ty=mir_int())
+        self._emit(EnumTag(dest=tag, enum_val=decode_result))
+
+        ok_bb = self._new_block("from_json_ok")
+        err_bb = self._new_block("from_json_err")
+        merge_bb = self._new_block("from_json_merge")
+        self._emit(Switch(tag=tag, cases=[("Ok", ok_bb.label)], default_block=err_bb.label))
+
+        # Ok path: extract JsonValue payload, run decode_to
+        self._set_block(ok_bb)
+        jv = self._make_value(ty=json_value_ty)
+        self._emit(EnumPayload(dest=jv, enum_val=decode_result, variant="Ok", payload_idx=0))
+        decoded = self._lower_decode_to(expr, jv)
+        self._emit(Jump(target=merge_bb.label))
+        assert self._block is not None
+        ok_exit = self._block.label
+
+        # Err path: pass error through, re-wrap into Result<T, JsonError>
+        self._set_block(err_bb)
+        err_val = self._make_value(ty=err_struct_ty)
+        self._emit(EnumPayload(dest=err_val, enum_val=decode_result, variant="Err", payload_idx=0))
+        err_result = self._make_value(ty=result_ty)
+        self._emit(WrapErr(dest=err_result, val=err_val))
+        self._emit(Move(value=err_val))
+        self._emit(Jump(target=merge_bb.label))
+        assert self._block is not None
+        err_exit = self._block.label
+
+        # Merge
+        self._set_block(merge_bb)
+        final = self._make_value(ty=result_ty)
+        self._emit(Phi(dest=final, incoming=[(ok_exit, decoded), (err_exit, err_result)]))
         return final
 
     def _decode_json_field(self, jval: Value, target_type: MIRType) -> Value:
