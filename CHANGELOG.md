@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.30.0] - 2026-05-02
+
+**Vb.\* — packaging-only release: version bump.** Zero compiler
+edits. Zero runtime edits. Zero `mapanare/self/*.mn` source edits.
+Strict 3-stage fixed point preserved by construction at v5.29.0's
+**241,898 lines / 0 diff** (25-release strict streak). Goldens
+**95/95**. The release advances the published version surface
+(VERSION, README badges in en/es/pt/zh-CN, CHANGELOG.md) so the
+next `dev` → `main` merge carries a clean v5.30.0 number and the
+PR description reflects the cumulative scope of every release that
+has not yet landed on `main` (`main` is currently at v5.13.0; this
+merge carries v5.13.0 → v5.30.0). All substantive fix / feature
+work shipped at v5.29.0 (Mb.10 self-host emitter routing for
+`__mn_indent_to_braces` Win64 ABI; Pv.7 / Pv.8 already on `dev`
+pre-v5.29.0 as `bc3bc7b` / `f119c43`). See
+`docs/roadmap/v5/v5.30.0/SESSION_REPORT.md`.
+
+
 ## [5.29.0] - 2026-05-02
 
 **Mb.10 + Pv.7 + Pv.8 — Win64 ABI closeout + CI race prevention.**
@@ -9466,7 +9484,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.29.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.30.0...HEAD
+[5.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.29.0...v5.30.0
 [5.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.28.0...v5.29.0
 [5.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.27.0...v5.28.0
 [5.27.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.26.1...v5.27.0
