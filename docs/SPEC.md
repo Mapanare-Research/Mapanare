@@ -1,7 +1,19 @@
 # Mapanare Language Specification
 
-**Version:** 5.27.0
-**Status:** Live — synced to the v5.27.0 cut (2026-05-02)
+**Version:** 5.30.0
+**Status:** Live — synced to the v5.30.0 cut (2026-05-02)
+
+> **v5.28.0 → v5.30.0 — RE-PANEL + Win64 ABI closeout +
+> packaging.** SPEC body unchanged from the v5.21.0 cut.
+> v5.28.0 (RE-PANEL — 7-reviewer aggregate 9.72/10, +0.31
+> recovery from v5.22.0's 9.41 floor), v5.29.0 (Mb.10 self-host
+> emitter routing for `__mn_indent_to_braces` Win64 ABI; Pv.7 /
+> Pv.8 CI race prevention), and v5.30.0 (Vb.\* packaging-only
+> version bump) together added **zero language features, zero
+> new MIR ops, zero new IR shapes, zero new runtime functions**
+> — panel + codegen-correctness + packaging releases only. The
+> v5.21.0 sync block below remains authoritative for language
+> semantics.
 
 > **v5.27.0 — Mc.\* parity arc CLOSED.** SPEC body unchanged from
 > the v5.21.0 cut. v5.25.0 (Pv.\* CI prevention), v5.26.0 (Mb.7 +
