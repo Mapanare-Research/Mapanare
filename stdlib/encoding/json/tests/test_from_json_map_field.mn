@@ -1,0 +1,83 @@
+// v5.39.6 Js.4.E.2 — link-and-run regression for from_json::<T> on
+// a struct with a Map-typed field. Pre-fix this returned the raw
+// JsonValue::Object enum where a Map<String, V> shape was expected
+// (mapanare/lower.py::_decode_json_field fell into the raw-jval
+// fallback for TypeKind.MAP) — silent shape mismatch surfaced as
+// wrong field contents (or downstream segfault on Map access via
+// __mn_map_get against the JsonValue enum's unrelated bytes).
+// Post-fix the map is decoded key-by-key via the new
+// _emit_map_decode_body helper, with inner-value type recursing
+// through _decode_json_field.
+//
+// Symmetric pair to v5.39.6's test_to_json_map_field.mn (encode
+// side). Together they close the round-trip for Map-typed fields.
+//
+// Each sub-case is wrapped in its own helper so we don't call
+// from_json::<T> multiple times from the same function body (the
+// from_json_merge / decode_object block labels are bare, not
+// _fresh_block-prefixed; multiple invocations in one function
+// collide pre-MIR-verifier — same caveat as v5.39.5 list tests).
+
+struct IntMapBag { lookup: Map<String, Int> }
+struct StrMapBag { tags: Map<String, String> }
+
+fn case_int_two() -> Bool {
+    pon mut ok: Bool = false
+    pon s: String = "{\"lookup\": {\"a\": 1, \"b\": 2}}"
+    pon r: Result<IntMapBag, JsonError> = from_json::<IntMapBag>(s)
+    match r {
+        Ok(b) => {
+            si len(b.lookup) == 2 && b.lookup["a"] == 1 && b.lookup["b"] == 2 {
+                ok = true
+            }
+        },
+        Err(e) => print("decode error in case_int_two")
+    }
+    return ok
+}
+
+fn case_int_empty() -> Bool {
+    pon mut ok: Bool = false
+    pon s: String = "{\"lookup\": {}}"
+    pon r: Result<IntMapBag, JsonError> = from_json::<IntMapBag>(s)
+    match r {
+        Ok(b) => {
+            si len(b.lookup) == 0 {
+                ok = true
+            }
+        },
+        Err(e) => print("decode error in case_int_empty")
+    }
+    return ok
+}
+
+fn case_string_values() -> Bool {
+    pon mut ok: Bool = false
+    pon s: String = "{\"tags\": {\"greeting\": \"hello\", \"farewell\": \"bye\"}}"
+    pon r: Result<StrMapBag, JsonError> = from_json::<StrMapBag>(s)
+    match r {
+        Ok(b) => {
+            si len(b.tags) == 2 && b.tags["greeting"] == "hello" && b.tags["farewell"] == "bye" {
+                ok = true
+            }
+        },
+        Err(e) => print("decode error in case_string_values")
+    }
+    return ok
+}
+
+fn main() -> Int {
+    pon ok1: Bool = case_int_two()
+    pon ok2: Bool = case_int_empty()
+    pon ok3: Bool = case_string_values()
+    si !ok1 {
+        print("FAIL test_from_json_map_field case1: wrong int-map contents")
+    } sino si !ok2 {
+        print("FAIL test_from_json_map_field case2: empty map non-empty")
+    } sino si !ok3 {
+        print("FAIL test_from_json_map_field case3: wrong string-map contents")
+    } sino {
+        print("PASSED test_from_json_map_field")
+    }
+    return 0
+}

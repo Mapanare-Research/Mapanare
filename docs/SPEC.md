@@ -1,7 +1,43 @@
 # Mapanare Language Specification
 
-**Version:** 5.39.5
-**Status:** Live — synced to the v5.39.5 cut (2026-05-03)
+**Version:** 5.39.6
+**Status:** Live — synced to the v5.39.6 cut (2026-05-04)
+
+> **v5.39.6 — Js.4.E.1 + Js.4.E.2 — typed-serde MAP encode +
+> decode; round-trip closure for `Map<String, V>`-typed fields.**
+> SPEC body unchanged from the v5.21.0 cut. Sibling release to
+> v5.39.5 (LIST decode); bundles encode + decode in one release
+> because Map's invariant decision is simpler than LIST's was
+> (string-key only — JSON object keys are strings per RFC 8259
+> §4) and both halves are mechanical mirrors of v5.39.4 +
+> v5.39.5 patterns. **Js.4.E.1**: added missing `TypeKind.MAP`
+> branch in `mapanare/lower.py::_encode_field_to_json`; new
+> `_emit_map_json_body` helper iterates via `__mn_map_keys` +
+> per-key IndexGet on the map, emits `"key": value` pairs
+> separated by `, `, recurses through `_encode_field_to_json`
+> per value. Pre-fix `Bag("box", #{"a": 1})` encoded as
+> `{"name": "box", "lookup": <?>}`. **Js.4.E.2**: added missing
+> `TypeKind.MAP` branch in `mapanare/lower.py::_decode_json_field`;
+> new `_emit_map_decode_body` helper extracts inner
+> `Map<String, JsonValue>` from the Object variant, initializes
+> empty `Map<String, V>` accumulator (relies on v5.39.2's
+> `_do_map_init` empty-literal fix), iterates keys, recurse-decodes
+> per value, accumulates via `IndexSet` (lowered to
+> `__mn_map_set`). Unlike v5.39.5 LIST decode, no SSA-name-reuse
+> trick needed: MAP lowers to `PTR` and `__mn_map_set` mutates the
+> bucket array in place without changing the outer pointer.
+> **Invariant decision (locked at PLAN):** `Map<K, V>` fields with
+> non-String K → compile-time error (rejected over silent lossy
+> coercion via `str(key)` and runtime error). Diagnostic shape:
+> `to_json/from_json: Map<K, V> requires K = String (got <KIND>)`.
+> ENUM encoding (tagged-union shape) and ENUM decoding remain
+> held — last typed-serde piece, scoped for v5.39.7. Adds **zero
+> language features, zero new MIR ops, zero new IR shapes, zero
+> new C runtime exports**. Strict 3-stage fixed point preserved
+> by construction at v5.39.5's 241,898 lines / 0 diff
+> (40-release strict streak from v5.7.1; zero
+> `mapanare/self/*.mn` source touches — Phase 0 grep returned
+> 0 matches; mirror is structurally N/A).
 
 > **v5.39.5 — Js.4.D.3 — typed-serde LIST decode (round-trip
 > closure for List-typed fields); v5.39.x arc CLOSED.** SPEC body

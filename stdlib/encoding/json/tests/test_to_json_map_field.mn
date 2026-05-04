@@ -1,0 +1,81 @@
+// v5.39.6 Js.4.E.1 — link-and-run regression for to_json::<T> on a
+// struct with a Map-typed field. Pre-fix this emitted the `<?>`
+// placeholder at the inner field's encoding site
+// (mapanare/lower.py::_encode_field_to_json fell into the str()
+// fallback for TypeKind.MAP). Post-fix the map is encoded
+// entry-by-entry via the new _emit_map_json_body helper, with
+// inner-value type recursing through _encode_field_to_json.
+//
+// JSON object keys are unordered (RFC 8259 §4); assertions use
+// `contains` patterns so test stability does not depend on Map
+// hash order.
+//
+// Each sub-case is wrapped in its own helper function because the
+// to_json::<T> emit-side does not currently fresh_block-prefix every
+// label it generates; multiple invocations from one main body have
+// historically collided pre-MIR-verifier (same caveat as v5.39.5
+// list-decode tests).
+
+struct Bag { name: String, lookup: Map<String, Int> }
+struct StrMapBag { tags: Map<String, String> }
+
+fn case_two_entries() -> Bool {
+    pon mut ok: Bool = false
+    pon mut m: Map<String, Int> = #{}
+    m["a"] = 1
+    m["b"] = 2
+    pon b: Bag = Bag("box", m)
+    pon encoded: String = to_json::<Bag>(b)
+    si encoded.contains("<?>") {
+        return false
+    }
+    si encoded.contains("\"a\": 1") && encoded.contains("\"b\": 2") && encoded.contains("\"name\": \"box\"") {
+        ok = true
+    }
+    return ok
+}
+
+fn case_empty_map() -> Bool {
+    pon mut ok: Bool = false
+    pon mut m: Map<String, Int> = #{}
+    pon b: Bag = Bag("empty", m)
+    pon encoded: String = to_json::<Bag>(b)
+    si encoded.contains("<?>") {
+        return false
+    }
+    si encoded.contains("\"lookup\": {}") {
+        ok = true
+    }
+    return ok
+}
+
+fn case_string_values() -> Bool {
+    pon mut ok: Bool = false
+    pon mut m: Map<String, String> = #{}
+    m["greeting"] = "hello"
+    pon b: StrMapBag = StrMapBag(m)
+    pon encoded: String = to_json::<StrMapBag>(b)
+    si encoded.contains("<?>") {
+        return false
+    }
+    si encoded.contains("\"greeting\": \"hello\"") {
+        ok = true
+    }
+    return ok
+}
+
+fn main() -> Int {
+    pon ok1: Bool = case_two_entries()
+    pon ok2: Bool = case_empty_map()
+    pon ok3: Bool = case_string_values()
+    si !ok1 {
+        print("FAIL test_to_json_map_field case1: missing entries or placeholder")
+    } sino si !ok2 {
+        print("FAIL test_to_json_map_field case2: empty map not encoded as {}")
+    } sino si !ok3 {
+        print("FAIL test_to_json_map_field case3: string values not encoded")
+    } sino {
+        print("PASSED test_to_json_map_field")
+    }
+    return 0
+}

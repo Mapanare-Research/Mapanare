@@ -19,6 +19,107 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.39.6** (ready, not tagged) — **Js.4.E.1 + Js.4.E.2 —
+  typed-serde MAP encode + decode; round-trip closure for
+  `Map<String, V>`-typed fields.** Sibling release to v5.39.5
+  (LIST decode); bundles encode + decode in one release because
+  Map's invariant decision is simpler than LIST's was
+  (string-key only — JSON object keys are strings per RFC 8259
+  §4) and both halves are mechanical mirrors of v5.39.4 +
+  v5.39.5 patterns. Adds **zero language features, zero new
+  MIR ops, zero new IR shapes, zero new C runtime exports**.
+  **Strict 3-stage fixed point preserved by construction** at
+  v5.39.5's **241,898 lines / 0 diff** (40-release strict
+  streak from v5.7.1; zero `mapanare/self/*.mn` source
+  touches — Phase 0 verified
+  `grep -rn "from_json\|decode_to\|encode_struct\|to_json"
+  mapanare/self/` returned 0 matches). Goldens **95/95**.
+  **Js.4.E.1 — MAP encode.**
+  `mapanare/lower.py:2689::_encode_field_to_json` had explicit
+  handlers for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT`
+  (v5.39.3) and `LIST` (v5.39.4) but no branch for
+  `TypeKind.MAP`. The fallback at
+  `Call(fn_name="str", args=[field_val])` emitted the literal
+  `<?>` placeholder. Pre-fix `Bag("box", #{"a": 1, "b": 2})`
+  encoded as `{"name": "box", "lookup": <?>}`; post-fix encodes
+  as `{"name": "box", "lookup": {"a": 1, "b": 2}}` (key order
+  unspecified per RFC 8259). Fix adds a new
+  `_emit_map_json_body(map_val, val_type) -> Value` helper
+  mirroring v5.39.4's `_emit_list_json_body` shape: iterate via
+  `__mn_map_keys` (returns `List<String>`) + per-key IndexGet
+  on the map (lowered to `__mn_map_get`), emit
+  `"key": value` pairs separated by `, `, recurse through
+  `_encode_field_to_json` per value so nested
+  `Map<String, Struct>` / `Map<String, List>` /
+  `Map<String, Map>` fall through STRUCT / LIST / MAP /
+  primitive branches uniformly. Mutable-Phi loop pattern
+  matches v5.39.4. **Js.4.E.2 — MAP decode.**
+  `mapanare/lower.py:3166::_decode_json_field` had explicit
+  handlers for primitives + OPTION + STRUCT (v5.39.4) + LIST
+  (v5.39.5) but no branch for `TypeKind.MAP`. Pre-fix
+  `from_json::<Bag>("{\"lookup\": {\"a\": 1}}")` SEGV'd
+  (consumer treated raw JsonValue::Object enum bytes as a
+  `MnMap*`). Fix adds a new
+  `_emit_map_decode_body(jval, val_type) -> Value` helper
+  mirroring v5.39.5's `_emit_list_decode_body` decode-side
+  shape: extract `Map<String, JsonValue>` from the `Object`
+  variant via `EnumPayload(variant="Object", payload_idx=0)`,
+  initialize an empty `Map<String, V>` accumulator (relies on
+  v5.39.2's `_do_map_init` empty-literal type-derivation fix
+  for correct bucket sizing), iterate keys, recurse-decode per
+  value, accumulate via `IndexSet` (lowered to
+  `__mn_map_set`).
+  **No SSA-name-reuse trick needed (vs. v5.39.5 ListPush)** —
+  Phase 1 audit confirmed `MAP` lowers to `PTR` in the IR
+  (`emit_llvm_text._rty`), and `__mn_map_set` mutates the
+  bucket array in place without changing the outer `MnMap*`.
+  The accumulator value is invariant across loop iterations,
+  so the decode helper uses a single counter phi (no acc phi).
+  **Invariant decision (locked at PLAN — no Phase 0 audit)**:
+  `Map<K, V>` fields with non-String K → compile-time error.
+  Diagnostic shape: `to_json/from_json: Map<K, V> requires
+  K = String (got <KIND>)`. Rationale: JSON object keys are
+  strings per RFC 8259 §4; `Map<Int, X>` and `Map<Float, X>`
+  have no canonical JSON projection. Rejected silent lossy
+  coercion (`str(key)` → asymmetric round-trip) and runtime
+  error (surfaced too late) in favor of compile-time
+  rejection. Documented as `### Changed` (potentially
+  breaking-ish but no production user has exercised this path
+  pre-fix — encode emitted `<?>`, decode SEGV'd).
+  **Self-host mirror N/A by construction**: Phase 0 grep
+  returned 0 matches. The Js.4 typed-serde surface shipped
+  Python-bootstrap-only at v5.36.0 and has not been mirrored.
+  STRICT preserved trivially.
+  **Test infrastructure extension.** Two new `.mn` test files
+  (`test_to_json_map_field.mn`, `test_from_json_map_field.mn`,
+  3 sub-cases each wrapped in helper functions per the v5.39.5
+  caveat about bare `from_json_merge` block labels) appended
+  to `TEST_FILES`. Plus 2 parametrized rejection cases
+  (`test_typed_serde_map_nonstring_key_rejected`) asserting
+  `RuntimeError` for `Map<Int, V>` and `Map<Float, V>` fields.
+  **15/15 GREEN** at HEAD (was 11 at v5.39.5; +4 total).
+  Falsifiability locked per fix — disabling either MAP branch
+  in `lower.py` makes the corresponding test fail; reapplying
+  restores GREEN.
+  **Hd-class preventative** — `docs/SPEC.md` header re-synced
+  from "v5.39.5 cut" to "v5.39.6 cut" with new sync block
+  documenting the MAP invariant decision.
+  `check_doc_freshness.py` GREEN; `check_changelog_honesty.py`
+  GREEN. Source delta: ~185 LOC `mapanare/lower.py`
+  (Js.4.E.1 helper + branch ~95 LOC; Js.4.E.2 helper + branch
+  ~90 LOC) + ~160 LOC `.mn` test cases (2 files) + ~44 LOC
+  `test_struct_json_runtime.py` (TEST_FILES + rejection
+  parametrized cases) + ~120 LOC CHANGELOG + ~35 LOC SPEC sync
+  + this CLAUDE.md release-notes entry + mechanical
+  bump_version.py edits. Aggregate state entering v5.39.7:
+  **0 HIGH** (Js.4.E.\* closed) / **1 MEDIUM** (macOS
+  notarization carry from v5.33.0 Nu.2) / ~6 LOW (added ENUM
+  encode/decode as v5.39.7 candidate — last typed-serde piece
+  before v5.40.0 manifesto-arc kickoff). **Js.4.E.\* arc
+  CLOSED.** See
+  `docs/roadmap/v5/v5.39.6/{PLAN.md, PROMPT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.39.5** (ready, not tagged) — **Js.4.D.3 — typed-serde
   LIST decode (round-trip closure for List-typed fields);
   v5.39.x arc CLOSED.** Symmetric pair to v5.39.4 Js.4.D.1
@@ -2241,7 +2342,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (31898 symbols, 66944 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (31941 symbols, 67020 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

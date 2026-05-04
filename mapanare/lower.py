@@ -2787,6 +2787,20 @@ class MIRLowerer:
             )
             return self._emit_list_json_body(field_val, inner_type)
 
+        if kind == TypeKind.MAP:
+            # v5.39.6 Js.4.E.1 — encode each entry as "key": value, recursing
+            # through _encode_field_to_json on the value type. Pre-fix this
+            # fell into the str() fallback, producing the `<?>` placeholder
+            # for any Map-typed struct field. JSON object keys must be
+            # strings (RFC 8259 §4); non-String K is rejected at compile
+            # time per the v5.39.6 PLAN invariant decision.
+            args = ftype.type_info.args if ftype.type_info else []
+            key_kind = args[0].kind if args else TypeKind.UNKNOWN
+            if key_kind != TypeKind.STRING:
+                raise RuntimeError(f"to_json: Map<K, V> requires K = String (got {key_kind.name})")
+            val_type = MIRType(args[1]) if len(args) > 1 else mir_unknown()
+            return self._emit_map_json_body(field_val, val_type)
+
         # Fallback: convert to string with str()
         dest = self._make_value(ty=mir_string())
         self._emit(Call(dest=dest, fn_name="str", args=[field_val]))
@@ -2905,6 +2919,162 @@ class MIRLowerer:
         self._set_block(exit_bb)
         close = self._make_value(ty=mir_string())
         self._emit(Const(dest=close, ty=mir_string(), value="]"))
+        final = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=final, op=BinOpKind.ADD, lhs=result_phi_dest, rhs=close))
+        return final
+
+    def _emit_map_json_body(self, map_val: Value, val_type: MIRType) -> Value:
+        """Emit MIR producing a JSON `{...}` string for map_val.
+
+        Mirrors v5.39.4's _emit_list_json_body shape but for Map<String, V>.
+        Iterates via __mn_map_keys (List<String>) + per-key IndexGet on the
+        map (lowered to __mn_map_get). Recurses through _encode_field_to_json
+        on the value type so nested Map<String, Struct> / Map<String, List>
+        / Map<String, Map> fall through STRUCT / LIST / MAP / primitive
+        branches uniformly.
+
+        Loop shape (mutable-Phi pattern; same as the LIST encode helper):
+            entry: keys = __mn_map_keys(map); len_v = len(keys); zero=0
+                   init = "{"; jump header
+            header: counter = phi(zero, new_counter)
+                    result  = phi(init, new_result)
+                    cmp = counter < len_v
+                    branch cmp -> body, exit
+            body:   key      = keys[counter]
+                    val      = map[key]                ; IndexGet on Map
+                    quoted_k = "\"" + key + "\""
+                    val_str  = _encode_field_to_json(val, val_type)
+                    pair     = quoted_k + ": " + val_str
+                    if counter == 0: result_after = result + pair
+                    else:            result_after = result + ", " + pair
+                    new_counter = counter + 1
+                    new_result  = result_after
+                    jump header
+            exit:   final = result + "}"; return final
+
+        Note: JSON object keys are unordered (RFC 8259 §4); tests must
+        assert via `contains` patterns rather than positional equality.
+        """
+        assert self._block is not None
+        entry_label = self._block.label
+
+        # keys = __mn_map_keys(map)
+        keys_ty = MIRType(TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.STRING)]))
+        keys_val = self._make_value(ty=keys_ty)
+        self._emit(Call(dest=keys_val, fn_name="__mn_map_keys", args=[map_val]))
+
+        # len_v = len(keys)
+        len_val = self._make_value(ty=mir_int())
+        self._emit(Call(dest=len_val, fn_name="len", args=[keys_val]))
+
+        zero = self._make_value(ty=mir_int())
+        self._emit(Const(dest=zero, ty=mir_int(), value=0))
+
+        init_str = self._make_value(ty=mir_string())
+        self._emit(Const(dest=init_str, ty=mir_string(), value="{"))
+
+        header_bb = self._new_block(self._fresh_block("map_enc_header"))
+        body_bb = self._new_block(self._fresh_block("map_enc_body"))
+        exit_bb = self._new_block(self._fresh_block("map_enc_exit"))
+
+        self._emit(Jump(target=header_bb.label))
+
+        # Header: phi nodes for counter + accumulator (incoming filled later)
+        self._set_block(header_bb)
+        counter_phi_dest = self._make_value(ty=mir_int())
+        counter_phi = Phi(dest=counter_phi_dest, incoming=[])
+        self._emit(counter_phi)
+        result_phi_dest = self._make_value(ty=mir_string())
+        result_phi = Phi(dest=result_phi_dest, incoming=[])
+        self._emit(result_phi)
+
+        cmp = self._make_value(ty=mir_bool())
+        self._emit(BinOp(dest=cmp, op=BinOpKind.LT, lhs=counter_phi_dest, rhs=len_val))
+        self._emit(Branch(cond=cmp, true_block=body_bb.label, false_block=exit_bb.label))
+
+        # Body
+        self._set_block(body_bb)
+        key = self._make_value(ty=mir_string())
+        self._emit(IndexGet(dest=key, obj=keys_val, index=counter_phi_dest))
+
+        val = self._make_value(ty=val_type)
+        self._emit(IndexGet(dest=val, obj=map_val, index=key))
+
+        # quoted_key = "\"" + key + "\""
+        q1 = self._make_value(ty=mir_string())
+        self._emit(Const(dest=q1, ty=mir_string(), value='"'))
+        q2 = self._make_value(ty=mir_string())
+        self._emit(Const(dest=q2, ty=mir_string(), value='"'))
+        kq1 = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=kq1, op=BinOpKind.ADD, lhs=q1, rhs=key))
+        kq2 = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=kq2, op=BinOpKind.ADD, lhs=kq1, rhs=q2))
+
+        # encoded value through recursion
+        val_str = self._encode_field_to_json(val, val_type)
+
+        # pair = quoted_key + ": " + val_str
+        colon = self._make_value(ty=mir_string())
+        self._emit(Const(dest=colon, ty=mir_string(), value=": "))
+        with_colon = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=with_colon, op=BinOpKind.ADD, lhs=kq2, rhs=colon))
+        pair = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=pair, op=BinOpKind.ADD, lhs=with_colon, rhs=val_str))
+
+        # Separator decision: first iteration vs rest
+        is_first = self._make_value(ty=mir_bool())
+        self._emit(BinOp(dest=is_first, op=BinOpKind.EQ, lhs=counter_phi_dest, rhs=zero))
+
+        first_bb = self._new_block(self._fresh_block("map_enc_first"))
+        rest_bb = self._new_block(self._fresh_block("map_enc_rest"))
+        sep_merge_bb = self._new_block(self._fresh_block("map_enc_sep_merge"))
+        self._emit(Branch(cond=is_first, true_block=first_bb.label, false_block=rest_bb.label))
+
+        # First-element path: result + pair
+        self._set_block(first_bb)
+        first_added = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=first_added, op=BinOpKind.ADD, lhs=result_phi_dest, rhs=pair))
+        self._emit(Jump(target=sep_merge_bb.label))
+        assert self._block is not None
+        first_exit = self._block.label
+
+        # Rest path: result + ", " + pair
+        self._set_block(rest_bb)
+        comma = self._make_value(ty=mir_string())
+        self._emit(Const(dest=comma, ty=mir_string(), value=", "))
+        with_comma = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=with_comma, op=BinOpKind.ADD, lhs=result_phi_dest, rhs=comma))
+        rest_added = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=rest_added, op=BinOpKind.ADD, lhs=with_comma, rhs=pair))
+        self._emit(Jump(target=sep_merge_bb.label))
+        assert self._block is not None
+        rest_exit = self._block.label
+
+        # Merge separator branches
+        self._set_block(sep_merge_bb)
+        new_result = self._make_value(ty=mir_string())
+        self._emit(
+            Phi(dest=new_result, incoming=[(first_exit, first_added), (rest_exit, rest_added)])
+        )
+
+        # counter++
+        one = self._make_value(ty=mir_int())
+        self._emit(Const(dest=one, ty=mir_int(), value=1))
+        new_counter = self._make_value(ty=mir_int())
+        self._emit(BinOp(dest=new_counter, op=BinOpKind.ADD, lhs=counter_phi_dest, rhs=one))
+
+        assert self._block is not None
+        body_exit_label = self._block.label
+        self._emit(Jump(target=header_bb.label))
+
+        # Patch the header phis now that body's exit label is known
+        counter_phi.incoming = [(entry_label, zero), (body_exit_label, new_counter)]
+        result_phi.incoming = [(entry_label, init_str), (body_exit_label, new_result)]
+
+        # Exit: append "}"
+        self._set_block(exit_bb)
+        close = self._make_value(ty=mir_string())
+        self._emit(Const(dest=close, ty=mir_string(), value="}"))
         final = self._make_value(ty=mir_string())
         self._emit(BinOp(dest=final, op=BinOpKind.ADD, lhs=result_phi_dest, rhs=close))
         return final
@@ -3250,6 +3420,23 @@ class MIRLowerer:
             )
             return self._emit_list_decode_body(jval, inner_type)
 
+        if kind == TypeKind.MAP:
+            # v5.39.6 Js.4.E.2 — symmetric pair to v5.39.6 Js.4.E.1's MAP
+            # encode branch. Pre-fix this fell into the raw-jval fallback
+            # below, returning the JsonValue::Object enum where a
+            # Map<String, V> was expected — silent shape mismatch on the
+            # consumer side. JSON object keys must be strings (RFC 8259);
+            # non-String K is rejected at compile time per the v5.39.6
+            # PLAN invariant decision.
+            args = target_type.type_info.args if target_type.type_info else []
+            key_kind = args[0].kind if args else TypeKind.UNKNOWN
+            if key_kind != TypeKind.STRING:
+                raise RuntimeError(
+                    f"from_json: Map<K, V> requires K = String (got {key_kind.name})"
+                )
+            val_type = MIRType(args[1]) if len(args) > 1 else mir_unknown()
+            return self._emit_map_decode_body(jval, val_type)
+
         # Fallback: just return the raw value
         return jval
 
@@ -3349,6 +3536,128 @@ class MIRLowerer:
         # Exit
         self._set_block(exit_bb)
         return acc_phi_dest
+
+    def _emit_map_decode_body(self, obj_jval: Value, val_type: MIRType) -> Value:
+        """Emit MIR converting JsonValue::Object(Map<String, JsonValue>) to Map<String, V>.
+
+        v5.39.6 Js.4.E.2 — sibling to v5.39.6 Js.4.E.1's _emit_map_json_body
+        on the decode side: extract the inner Map<String, JsonValue> from
+        the Object variant, iterate via __mn_map_keys, recursively decode
+        each value through _decode_json_field, IndexSet into a typed
+        Map<String, V> accumulator.
+
+        Unlike LIST decode, MAP doesn't need an SSA-name-reuse trick — the
+        Mapanare Map value is a single ptr to a heap MnMap (see
+        emit_llvm_text._rty: MAP → PTR), and __mn_map_set mutates the
+        bucket array in place without changing the outer pointer. So the
+        accumulator is initialized once and IndexSet'd inside the loop;
+        no phi needed for it. The counter still uses a phi.
+
+        Loop shape:
+            entry: inner_map = EnumPayload(obj_jval, "Object", 0)
+                   acc       = MapInit(empty)
+                   keys      = __mn_map_keys(inner_map)
+                   len_v     = len(keys); zero=0; jump header
+            header: counter = phi(zero, new_counter)
+                    cmp = counter < len_v
+                    branch cmp -> body, exit
+            body:   key      = keys[counter]
+                    elem_jv  = inner_map[key]      ; IndexGet on Map
+                    decoded  = _decode_json_field(elem_jv, val_type)
+                    acc[key] = decoded             ; IndexSet (in-place)
+                    new_counter = counter + 1; jump header
+            exit:   return acc
+
+        Trusts that the JsonValue is an Object variant (consistent with
+        the no-tag-check behavior of the primitive branches and with the
+        v5.39.4 STRUCT decode and v5.39.5 LIST decode helpers).
+        """
+        assert self._block is not None
+        entry_label = self._block.label
+
+        map_ty = MIRType(
+            TypeInfo(
+                kind=TypeKind.MAP,
+                args=[TypeInfo(kind=TypeKind.STRING), val_type.type_info],
+            )
+        )
+        # Inner Map<String, JsonValue> from the Object variant
+        jv_ti = TypeInfo(kind=TypeKind.ENUM, name="JsonValue")
+        inner_map_ty = MIRType(
+            TypeInfo(kind=TypeKind.MAP, args=[TypeInfo(kind=TypeKind.STRING), jv_ti])
+        )
+        inner_map = self._make_value(ty=inner_map_ty)
+        self._emit(EnumPayload(dest=inner_map, enum_val=obj_jval, variant="Object", payload_idx=0))
+
+        # Initialize accumulator: empty Map<String, V>. v5.39.2 Js.4.B.2
+        # _do_map_init derives ksz/vsz/ktag from key_type/val_type, so the
+        # bucket layout is correct for String-key + V-value inserts.
+        acc = self._make_value(ty=map_ty)
+        self._emit(
+            MapInit(
+                dest=acc,
+                key_type=mir_string(),
+                val_type=val_type,
+                pairs=[],
+            )
+        )
+
+        # keys = __mn_map_keys(inner_map)
+        keys_ty = MIRType(TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.STRING)]))
+        keys_val = self._make_value(ty=keys_ty)
+        self._emit(Call(dest=keys_val, fn_name="__mn_map_keys", args=[inner_map]))
+
+        # len_v = len(keys)
+        len_val = self._make_value(ty=mir_int())
+        self._emit(Call(dest=len_val, fn_name="len", args=[keys_val]))
+
+        zero = self._make_value(ty=mir_int())
+        self._emit(Const(dest=zero, ty=mir_int(), value=0))
+
+        header_bb = self._new_block(self._fresh_block("map_dec_header"))
+        body_bb = self._new_block(self._fresh_block("map_dec_body"))
+        exit_bb = self._new_block(self._fresh_block("map_dec_exit"))
+
+        self._emit(Jump(target=header_bb.label))
+
+        # Header: counter phi only (acc is invariant across iterations).
+        self._set_block(header_bb)
+        counter_phi_dest = self._make_value(ty=mir_int())
+        counter_phi = Phi(dest=counter_phi_dest, incoming=[])
+        self._emit(counter_phi)
+
+        cmp = self._make_value(ty=mir_bool())
+        self._emit(BinOp(dest=cmp, op=BinOpKind.LT, lhs=counter_phi_dest, rhs=len_val))
+        self._emit(Branch(cond=cmp, true_block=body_bb.label, false_block=exit_bb.label))
+
+        # Body: key = keys[counter]; elem_jv = inner_map[key]; decode; insert
+        self._set_block(body_bb)
+        key = self._make_value(ty=mir_string())
+        self._emit(IndexGet(dest=key, obj=keys_val, index=counter_phi_dest))
+
+        elem_jval = self._make_value(ty=MIRType(jv_ti))
+        self._emit(IndexGet(dest=elem_jval, obj=inner_map, index=key))
+
+        decoded = self._decode_json_field(elem_jval, val_type)
+
+        self._emit(IndexSet(obj=acc, index=key, val=decoded))
+
+        # counter++
+        one = self._make_value(ty=mir_int())
+        self._emit(Const(dest=one, ty=mir_int(), value=1))
+        new_counter = self._make_value(ty=mir_int())
+        self._emit(BinOp(dest=new_counter, op=BinOpKind.ADD, lhs=counter_phi_dest, rhs=one))
+
+        assert self._block is not None
+        body_exit_label = self._block.label
+        self._emit(Jump(target=header_bb.label))
+
+        # Patch the header phi now that body's exit label is known
+        counter_phi.incoming = [(entry_label, zero), (body_exit_label, new_counter)]
+
+        # Exit
+        self._set_block(exit_bb)
+        return acc
 
     def _lower_method_call(self, expr: MethodCallExpr) -> Value:
         """Lower a method call: `obj.method(args)`."""

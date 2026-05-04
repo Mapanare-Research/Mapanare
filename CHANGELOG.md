@@ -7,6 +7,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.39.6] - 2026-05-04
+
+**Js.4.E.1 + Js.4.E.2 — typed-serde MAP encode + decode; round-trip
+closure for `Map<String, V>`-typed fields.** Sibling release to
+v5.39.5 (LIST decode). Bundles encode + decode in one release
+because Map's invariant decision is simpler than LIST's was
+(string-key only — JSON objects per RFC 8259 §4) and both halves
+are mechanical mirrors of v5.39.4 (LIST encode) + v5.39.5 (LIST
+decode) patterns. Adds **zero language features, zero new MIR
+ops, zero new IR shapes, zero new C runtime exports**. Strict
+3-stage fixed point preserved by construction at v5.39.5's
+**241,898 lines / 0 diff** (40-release strict streak from
+v5.7.1; zero `mapanare/self/*.mn` source touches — Phase 0
+verified `grep -rn "from_json\|decode_to\|encode_struct\|to_json"
+mapanare/self/` returned 0 matches).
+
+### Changed
+
+- **Compile-time error: `Map<K, V>` fields with non-String K are
+  rejected by `to_json::<T>` and `from_json::<T>`.** JSON object
+  keys must be strings (RFC 8259 §4); `Map<Int, X>` and
+  `Map<Float, X>` have no canonical JSON projection. The PLAN
+  invariant decision picked compile-time rejection over silent
+  lossy coercion (`str(key)` → asymmetric round-trip) and over
+  runtime error (surfaced too late). Diagnostic shape:
+  `to_json: Map<K, V> requires K = String (got <KIND>)` and
+  `from_json: Map<K, V> requires K = String (got <KIND>)`.
+  Potentially breaking-ish, but no production user has exercised
+  this path — pre-fix `to_json::<T>` emitted the `<?>` placeholder
+  for any Map-typed field, and `from_json::<T>` fell into the
+  raw-jval fallback (silent shape mismatch / SEGV).
+
+### Fixed
+
+- **Js.4.E.1 — `to_json::<T>` MAP encode.**
+  `mapanare/lower.py:2689::_encode_field_to_json` had explicit
+  handlers for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT`
+  (the latter from v5.39.3) and `LIST` (from v5.39.4) but no
+  branch for `TypeKind.MAP`. The fallback at
+  `Call(fn_name="str", args=[field_val])` emitted the literal
+  `<?>` placeholder via `mapanare/emit_llvm_text.py`'s
+  `_mkstr("<?>")`. Pre-fix `Bag("box", #{"a": 1, "b": 2})` encoded
+  as `{"name": "box", "lookup": <?>}`. Fix adds a new
+  `_emit_map_json_body(map_val, val_type) -> Value` helper
+  mirroring v5.39.4's `_emit_list_json_body` shape: iterate via
+  `__mn_map_keys` (returns `List<String>`) + per-key IndexGet on
+  the map (lowered to `__mn_map_get`), emit
+  `"key": value` pairs separated by `, `, recurse through
+  `_encode_field_to_json` per value so nested
+  `Map<String, Struct>` / `Map<String, List>` / `Map<String, Map>`
+  fall through STRUCT / LIST / MAP / primitive branches uniformly.
+  Mutable-Phi loop pattern matches v5.39.4. Empty `#{}`,
+  primitive-value, and string-value cases all encode correctly
+  post-fix. Key ordering is unspecified (JSON objects are
+  unordered per RFC 8259 §4); tests assert via `contains`
+  patterns rather than positional equality.
+
+- **Js.4.E.2 — `from_json::<T>` MAP decode.**
+  `mapanare/lower.py:3166::_decode_json_field` had explicit
+  handlers for primitives + OPTION + STRUCT (v5.39.4) + LIST
+  (v5.39.5) but no branch for `TypeKind.MAP`. The fallback
+  `return jval` returned the raw `JsonValue::Object` enum where
+  the consumer expected the typed `Map<String, V>` shape — silent
+  shape mismatch surfaced as wrong field contents (or downstream
+  segfault on Map access via `__mn_map_get` against the
+  JsonValue enum's unrelated bytes). Pre-fix
+  `from_json::<Bag>("{\"lookup\": {\"a\": 1}}")` SEGV'd before
+  printing anything. Fix adds a new
+  `_emit_map_decode_body(jval, val_type) -> Value` helper
+  mirroring v5.39.5's `_emit_list_decode_body` decode-side shape:
+  extract `Map<String, JsonValue>` from the `Object` variant via
+  `EnumPayload(variant="Object", payload_idx=0)`, initialize an
+  empty `Map<String, V>` accumulator (relies on v5.39.2's
+  `_do_map_init` empty-literal type-derivation fix for correct
+  bucket sizing), iterate keys via `__mn_map_keys` + per-key
+  IndexGet on the inner map, recurse through `_decode_json_field`
+  per value, accumulate via `IndexSet` (lowered to
+  `__mn_map_set`).
+
+- **No SSA-name-reuse trick needed (vs. v5.39.5 ListPush).**
+  Phase 1 audit confirmed `MAP` lowers to `PTR` in the IR
+  (`emit_llvm_text._rty`), and `__mn_map_set` mutates the bucket
+  array in place without changing the outer `MnMap*`. The
+  accumulator value is invariant across loop iterations, so the
+  decode helper uses a single counter phi (no acc phi). This is
+  simpler than the LIST decode case where ListPush could grow
+  the buffer (and v5.39.5's SSA-name-reuse trick was
+  load-bearing).
+
+- **Self-host mirror N/A by construction.** Phase 0 grep returned
+  0 matches. The Js.4 typed-serde surface shipped Python-
+  bootstrap-only at v5.36.0 and has not been mirrored. STRICT
+  preserved trivially; v5.39.6 makes zero `mapanare/self/*.mn`
+  source touches.
+
+<!-- no-check --> - **Test infrastructure extension.** Two new test files (.mn)
+  appended to `TEST_FILES` in
+  `tests/stdlib/test_struct_json_runtime.py`:
+  `test_to_json_map_field.mn` (Js.4.E.1 single-direction encode,
+  3 sub-cases: `Map<String, Int>` two entries, empty map encodes
+  as `{}`, `Map<String, String>` value-side recursion) and
+  `test_from_json_map_field.mn` (Js.4.E.2 single-direction
+  decode, 3 sub-cases mirroring the encode-side shapes). Each
+  sub-case wrapped in its own helper function (same caveat as
+  v5.39.5 LIST tests — `from_json_merge` / `decode_object` block
+  labels are bare; multiple invocations in one function body
+  collide pre-MIR-verifier). 13/13 GREEN at HEAD (was 11 at
+  v5.39.5; +2). Added 2 parametrized rejection cases
+  (`test_typed_serde_map_nonstring_key_rejected`) asserting
+  `RuntimeError` with the expected diagnostic for
+  `Map<Int, V>` and `Map<Float, V>` fields. 15/15 total GREEN.
+
+- **Falsifiability locked per fix** — disabling either MAP branch
+  in `lower.py` makes the corresponding test fail; reapplying
+  restores GREEN. Aggregate state entering v5.39.7: **0 HIGH** /
+  **1 MEDIUM** (macOS notarization carry from v5.33.0 Nu.2) /
+  ~6 LOW (added ENUM encode/decode as v5.39.7 candidate;
+  prior carries unchanged). See
+  `docs/roadmap/v5/v5.39.6/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
+
 ## [5.39.5] - 2026-05-03
 
 **Js.4.D.3 — `from_json::<T>` LIST nested decoding; v5.39.x arc
@@ -10918,7 +11039,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.5...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.6...HEAD
+[5.39.6]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.5...v5.39.6
 [5.39.5]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.4...v5.39.5
 [5.39.4]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.3...v5.39.4
 [5.39.3]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.2...v5.39.3

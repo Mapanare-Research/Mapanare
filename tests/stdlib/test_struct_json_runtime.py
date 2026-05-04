@@ -68,6 +68,15 @@ TEST_FILES = [
     # enum where List<X> was expected). Symmetric pair to v5.39.4
     # Js.4.D.1's encode-side test_to_json_list_field.mn.
     "test_from_json_list_field.mn",
+    # v5.39.6 Js.4.E.1 — to_json::<T> Map-typed field encode (was <?>
+    # pre-fix; _encode_field_to_json fell into the str() fallback for
+    # TypeKind.MAP). String-key only — non-String K is a compile-time
+    # error.
+    "test_to_json_map_field.mn",
+    # v5.39.6 Js.4.E.2 — from_json::<T> Map-typed field decode (silent
+    # shape mismatch pre-fix; consumer saw raw JsonValue::Object enum
+    # where Map<String, V> was expected). Symmetric pair to Js.4.E.1.
+    "test_from_json_map_field.mn",
 ]
 
 
@@ -170,3 +179,42 @@ def test_struct_json_runtime(test_file, stdlib_source, runtime_archive, tmp_path
     if "FAIL " in stdout:
         pytest.fail(f"{test_file} reported failures:\n{stdout}")
     assert "PASSED" in stdout, f"{test_file} did not report PASSED:\n{stdout}"
+
+
+# v5.39.6 Js.4.E — rejection tests for non-String Map keys. JSON object
+# keys must be strings (RFC 8259 §4); Mapanare's typed-serde rejects
+# non-String K at compile time with a clean diagnostic. Pre-fix: silent
+# invalid IR or `<?>` placeholder. Post-fix: RuntimeError with the
+# expected "requires K = String" message.
+_REJECT_CASES = [
+    (
+        "to_json_int_key",
+        "struct Bad { lookup: Map<Int, String> }\n"
+        "fn main() -> Int {\n"
+        "    pon mut m: Map<Int, String> = #{}\n"
+        "    print(to_json::<Bad>(Bad(m)))\n"
+        "    return 0\n"
+        "}\n",
+        "to_json: Map<K, V> requires K = String",
+    ),
+    (
+        "from_json_float_key",
+        "struct Bad { lookup: Map<Float, Int> }\n"
+        "fn main() -> Int {\n"
+        '    pon r: Result<Bad, JsonError> = from_json::<Bad>("{}")\n'
+        "    return 0\n"
+        "}\n",
+        "from_json: Map<K, V> requires K = String",
+    ),
+]
+
+
+@pytest.mark.skipif(not _have_llvmlite(), reason="llvmlite required for MIR LLVM emit")
+@pytest.mark.parametrize("label,main_body,expected_msg", _REJECT_CASES)
+def test_typed_serde_map_nonstring_key_rejected(label, main_body, expected_msg, stdlib_source):
+    """Non-String Map key should raise at lower-time (not silently miscompile)."""
+    from mapanare.cli import _compile_to_llvm_ir
+
+    combined = stdlib_source + "\n\n// === rejection harness ===\n\n" + main_body
+    with pytest.raises(RuntimeError, match=expected_msg):
+        _compile_to_llvm_ir(combined, f"{label}.mn")
