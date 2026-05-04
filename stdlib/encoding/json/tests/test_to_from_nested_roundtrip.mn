@@ -4,6 +4,12 @@
 // and v5.39.4's encode-side LIST branch (Js.4.D.1) is exercised
 // by the embedded List<Int> field.
 //
+// v5.39.5 Js.4.D.3 — strengthened with inner.ints assertions.
+// Pre-v5.39.5 the embedded List<Int> survived the encode side
+// but decoded as a raw JsonValue::Array enum on the decode side
+// (silent shape mismatch). v5.39.5's _emit_list_decode_body
+// closes the round-trip end-to-end.
+//
 // Failure here is the most actionable diagnostic: an
 // encode-decode disagreement localizes to the diverging field.
 
@@ -22,6 +28,12 @@ fn main() -> Int {
                 print("FAIL test_to_from_nested_roundtrip: wrong inner.x")
             } sino si decoded.inner.y != "hi" {
                 print("FAIL test_to_from_nested_roundtrip: wrong inner.y")
+            } sino si len(decoded.inner.ints) != 3 {
+                print("FAIL test_to_from_nested_roundtrip: wrong inner.ints len")
+            } sino si decoded.inner.ints[0] != 10 {
+                print("FAIL test_to_from_nested_roundtrip: wrong inner.ints[0]")
+            } sino si decoded.inner.ints[2] != 30 {
+                print("FAIL test_to_from_nested_roundtrip: wrong inner.ints[2]")
             } sino {
                 print("PASSED test_to_from_nested_roundtrip")
             }

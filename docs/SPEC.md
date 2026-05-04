@@ -1,7 +1,40 @@
 # Mapanare Language Specification
 
-**Version:** 5.39.4
-**Status:** Live — synced to the v5.39.4 cut (2026-05-03)
+**Version:** 5.39.5
+**Status:** Live — synced to the v5.39.5 cut (2026-05-03)
+
+> **v5.39.5 — Js.4.D.3 — typed-serde LIST decode (round-trip
+> closure for List-typed fields); v5.39.x arc CLOSED.** SPEC body
+> unchanged from the v5.21.0 cut. Symmetric pair to v5.39.4
+> Js.4.D.1 (LIST encode). Closes the last v5.39.x-deferred
+> typed-serde gap before the v5.40.0 manifesto-arc kickoff. After
+> this release, the typed-serde round-trip
+> `to_json::<T>` ↔ `from_json::<T>` closes for **every shape
+> v5.40.0 Ai.\* (`ask_typed::<T>`) actually returns** from typical
+> LLM responses (primitive, struct, nested struct,
+> `List<primitive>`, `List<struct>`). Single load-bearing fix in
+> `mapanare/lower.py::_decode_json_field`: added the missing
+> `TypeKind.LIST` branch (the dispatch had
+> `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT` (the latter from
+> v5.39.4) but fell through to the raw-jval return for LIST). New
+> `_emit_list_decode_body(arr_jval, inner_type) -> Value` helper
+> mirrors v5.39.4's `_emit_list_json_body` shape on the decode
+> side: extract `List<JsonValue>` from the `Array` variant via
+> `EnumPayload(variant="Array", payload_idx=0)`, initialize an
+> empty typed accumulator, loop over the inner array, recurse
+> through `_decode_json_field` per element, accumulate via
+> in-place `ListPush` (mirrors `_lower_method_call`'s `.push()`
+> SSA name-reuse pattern at `mapanare/lower.py:3298`). MAP
+> encoding (string-key invariant), ENUM encoding (tagged-union
+> shape), and MAP/ENUM decoding remain held with documented
+> invariant questions — none load-bearing for v5.40.0 Ai.\*. Adds
+> **zero language features, zero new MIR ops, zero new IR
+> shapes, zero new C runtime exports**. Strict 3-stage fixed
+> point preserved by construction at v5.39.4's 241,898 lines / 0
+> diff (39-release strict streak from v5.7.1; zero
+> `mapanare/self/*.mn` source touches — Phase 0 grep returned 0
+> matches, mirror is structurally N/A). **Js.4.\* arc CLOSED
+> for v5.40.0 dependencies.**
 
 > **v5.39.4 — Js.4.D.1 + Js.4.D.2 — typed-serde round-trip closure
 > for nested-struct + List-typed fields.** SPEC body unchanged from

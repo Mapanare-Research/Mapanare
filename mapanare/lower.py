@@ -3237,8 +3237,118 @@ class MIRLowerer:
             if struct_name and struct_name in self._module.structs:
                 return self._emit_decode_struct_inline(jval, struct_name)
 
+        if kind == TypeKind.LIST:
+            # v5.39.5 Js.4.D.3 — symmetric pair to v5.39.4 Js.4.D.1's LIST
+            # encode branch. Pre-fix this fell into the raw-jval fallback
+            # below, returning the JsonValue::Array enum where a List<X>
+            # was expected — silent shape mismatch surfacing as wrong list
+            # contents (or downstream segfault on element access).
+            inner_type = (
+                MIRType(target_type.type_info.args[0])
+                if target_type.type_info and target_type.type_info.args
+                else mir_unknown()
+            )
+            return self._emit_list_decode_body(jval, inner_type)
+
         # Fallback: just return the raw value
         return jval
+
+    def _emit_list_decode_body(self, arr_jval: Value, inner_type: MIRType) -> Value:
+        """Emit MIR converting JsonValue::Array(List<JsonValue>) to List<inner>.
+
+        v5.39.5 Js.4.D.3 — sibling to v5.39.4's _emit_list_json_body shape
+        but on the decode side: extract the inner List<JsonValue> from the
+        Array variant, iterate, recursively decode each element through
+        _decode_json_field, accumulate into a typed List<inner>.
+
+        Loop shape (mutable-Phi pattern; same as encode-side, with in-place
+        ListPush mirroring _lower_method_call's .push() pattern at
+        lower.py:3298 — the dest reuses acc_phi_dest's name so the phi
+        alloca acts as the single mutable list slot across iterations):
+
+            entry: inner_arr = EnumPayload(arr_jval, "Array", 0)
+                   acc_init = ListInit([])
+                   len_v = len(inner_arr); zero=0; jump header
+            header: counter = phi(zero, new_counter)
+                    acc     = phi(acc_init, new_acc)   ; new_acc.name == acc.name
+                    cmp = counter < len_v
+                    branch cmp -> body, exit
+            body:   elem_jv = inner_arr[counter]
+                    decoded = _decode_json_field(elem_jv, inner_type)
+                    new_acc = ListPush(acc, decoded)   ; in-place via name reuse
+                    new_counter = counter + 1
+                    jump header
+            exit:   return acc
+        """
+        assert self._block is not None
+        entry_label = self._block.label
+        list_ty = MIRType(TypeInfo(kind=TypeKind.LIST, args=[inner_type.type_info]))
+
+        # Extract inner List<JsonValue> from the Array variant
+        inner_arr = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.LIST)))
+        self._emit(EnumPayload(dest=inner_arr, enum_val=arr_jval, variant="Array", payload_idx=0))
+
+        # Initialize accumulator: empty List<inner>
+        acc_init = self._make_value(ty=list_ty)
+        self._emit(ListInit(dest=acc_init, elem_type=inner_type, elements=[]))
+
+        # len(inner_arr)
+        len_val = self._make_value(ty=mir_int())
+        self._emit(Call(dest=len_val, fn_name="len", args=[inner_arr]))
+
+        zero = self._make_value(ty=mir_int())
+        self._emit(Const(dest=zero, ty=mir_int(), value=0))
+
+        header_bb = self._new_block(self._fresh_block("list_dec_header"))
+        body_bb = self._new_block(self._fresh_block("list_dec_body"))
+        exit_bb = self._new_block(self._fresh_block("list_dec_exit"))
+
+        self._emit(Jump(target=header_bb.label))
+
+        # Header: phi nodes for counter + accumulator (incoming filled later)
+        self._set_block(header_bb)
+        counter_phi_dest = self._make_value(ty=mir_int())
+        counter_phi = Phi(dest=counter_phi_dest, incoming=[])
+        self._emit(counter_phi)
+        acc_phi_dest = self._make_value(ty=list_ty)
+        acc_phi = Phi(dest=acc_phi_dest, incoming=[])
+        self._emit(acc_phi)
+
+        cmp = self._make_value(ty=mir_bool())
+        self._emit(BinOp(dest=cmp, op=BinOpKind.LT, lhs=counter_phi_dest, rhs=len_val))
+        self._emit(Branch(cond=cmp, true_block=body_bb.label, false_block=exit_bb.label))
+
+        # Body: extract elem JsonValue, recurse-decode, push into accumulator
+        self._set_block(body_bb)
+        elem_jval = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.ENUM, name="JsonValue")))
+        self._emit(IndexGet(dest=elem_jval, obj=inner_arr, index=counter_phi_dest))
+
+        decoded = self._decode_json_field(elem_jval, inner_type)
+
+        # In-place ListPush: reuse acc_phi_dest's SSA name as the dest so the
+        # emitter's phi alloca is the single mutable list slot. Mirrors
+        # _lower_method_call's .push() pattern at lower.py:3298.
+        new_acc = Value(name=acc_phi_dest.name, ty=list_ty)
+        self._emit(ListPush(dest=new_acc, list_val=acc_phi_dest, element=decoded))
+        self._emit(Move(value=decoded))
+
+        # counter++
+        one = self._make_value(ty=mir_int())
+        self._emit(Const(dest=one, ty=mir_int(), value=1))
+        new_counter = self._make_value(ty=mir_int())
+        self._emit(BinOp(dest=new_counter, op=BinOpKind.ADD, lhs=counter_phi_dest, rhs=one))
+
+        assert self._block is not None
+        body_exit_label = self._block.label
+        self._emit(Jump(target=header_bb.label))
+
+        # Patch the header phis now that body's exit label is known
+        counter_phi.incoming = [(entry_label, zero), (body_exit_label, new_counter)]
+        acc_phi.incoming = [(entry_label, acc_init), (body_exit_label, new_acc)]
+
+        # Exit
+        self._set_block(exit_bb)
+        return acc_phi_dest
 
     def _lower_method_call(self, expr: MethodCallExpr) -> Value:
         """Lower a method call: `obj.method(args)`."""

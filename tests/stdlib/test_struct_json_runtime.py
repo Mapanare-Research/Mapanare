@@ -61,7 +61,13 @@ TEST_FILES = [
     # shape mismatch pre-fix; consumer saw raw JsonValue)
     "test_from_json_nested_struct.mn",
     # v5.39.4 — full round-trip closure for nested-struct shapes
+    # (strengthened at v5.39.5 with inner.ints assertions)
     "test_to_from_nested_roundtrip.mn",
+    # v5.39.5 Js.4.D.3 — from_json::<T> List-typed field decode
+    # (silent shape mismatch pre-fix; consumer saw raw JsonValue::Array
+    # enum where List<X> was expected). Symmetric pair to v5.39.4
+    # Js.4.D.1's encode-side test_to_json_list_field.mn.
+    "test_from_json_list_field.mn",
 ]
 
 

@@ -1,0 +1,82 @@
+// v5.39.5 Js.4.D.3 — link-and-run regression for from_json::<T> on
+// a struct with a List-typed field. Pre-fix this returned the raw
+// JsonValue::Array enum where a List<X> shape was expected
+// (mapanare/lower.py::_decode_json_field fell into the raw-jval
+// fallback for TypeKind.LIST) — silent shape mismatch surfaced as
+// wrong list contents (or downstream segfault on element access).
+// Post-fix the list is decoded element-by-element via the new
+// _emit_list_decode_body helper, with inner-element type recursing
+// through _decode_json_field.
+//
+// Symmetric pair to v5.39.4's test_to_json_list_field.mn (encode
+// side). Together they close the round-trip for List-typed fields.
+//
+// Each sub-case is wrapped in its own helper so we don't call
+// from_json::<T> multiple times from the same function body (the
+// from_json_merge / decode_object block labels are bare, not
+// _fresh_block-prefixed; multiple invocations in one function
+// collide pre-MIR-verifier).
+
+struct IntBag { items: List<Int> }
+struct StrBag { tags: List<String> }
+
+fn case_int_three() -> Bool {
+    pon mut ok: Bool = false
+    pon s: String = "{\"items\": [1, 2, 3]}"
+    pon r: Result<IntBag, JsonError> = from_json::<IntBag>(s)
+    match r {
+        Ok(b) => {
+            si len(b.items) == 3 && b.items[0] == 1 && b.items[2] == 3 {
+                ok = true
+            }
+        },
+        Err(e) => print("decode error in case_int_three")
+    }
+    return ok
+}
+
+fn case_int_empty() -> Bool {
+    pon mut ok: Bool = false
+    pon s: String = "{\"items\": []}"
+    pon r: Result<IntBag, JsonError> = from_json::<IntBag>(s)
+    match r {
+        Ok(b) => {
+            si len(b.items) == 0 {
+                ok = true
+            }
+        },
+        Err(e) => print("decode error in case_int_empty")
+    }
+    return ok
+}
+
+fn case_string_two() -> Bool {
+    pon mut ok: Bool = false
+    pon s: String = "{\"tags\": [\"a\", \"b\"]}"
+    pon r: Result<StrBag, JsonError> = from_json::<StrBag>(s)
+    match r {
+        Ok(b) => {
+            si len(b.tags) == 2 && b.tags[1] == "b" {
+                ok = true
+            }
+        },
+        Err(e) => print("decode error in case_string_two")
+    }
+    return ok
+}
+
+fn main() -> Int {
+    pon ok1: Bool = case_int_three()
+    pon ok2: Bool = case_int_empty()
+    pon ok3: Bool = case_string_two()
+    si !ok1 {
+        print("FAIL test_from_json_list_field case1: wrong list contents")
+    } sino si !ok2 {
+        print("FAIL test_from_json_list_field case2: empty list non-empty")
+    } sino si !ok3 {
+        print("FAIL test_from_json_list_field case3: wrong string list")
+    } sino {
+        print("PASSED test_from_json_list_field")
+    }
+    return 0
+}

@@ -19,6 +19,113 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.39.5** (ready, not tagged) — **Js.4.D.3 — typed-serde
+  LIST decode (round-trip closure for List-typed fields);
+  v5.39.x arc CLOSED.** Symmetric pair to v5.39.4 Js.4.D.1
+  (LIST encode). Closes the last v5.39.x-deferred typed-serde
+  gap before the v5.40.0 manifesto-arc kickoff. After this
+  release, the typed-serde round-trip
+  `to_json::<T>` ↔ `from_json::<T>` closes for **every shape
+  v5.40.0 Ai.\* (`ask_typed::<T>`) actually returns** from
+  typical LLM responses (primitive, struct, nested struct,
+  `List<primitive>`, `List<struct>`). Adds **zero language
+  features, zero new MIR ops, zero new IR shapes, zero new C
+  runtime exports**. **Strict 3-stage fixed point preserved
+  by construction** at v5.39.4's **241,898 lines / 0 diff**
+  (39-release strict streak from v5.7.1; zero
+  `mapanare/self/*.mn` source touches — Phase 0 verified
+  `grep -rn "from_json\|decode_to\|encode_struct\|to_json"
+  mapanare/self/` returned 0 matches). Goldens **95/95**.
+  **Js.4.D.3 — LIST decode.**
+  `mapanare/lower.py:3166::_decode_json_field` had explicit
+  handlers for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT`
+  (the latter from v5.39.4) but no branch for
+  `TypeKind.LIST`. The fallback `return jval` returned the
+  raw `JsonValue::Array` enum where the consumer expected the
+  typed `List<X>` value — silent shape mismatch surfaced as
+  wrong list contents (or downstream segfault on element
+  access). Pre-fix
+  `from_json::<Bag>("{\"items\": [1, 2, 3]}")` printed
+  garbage `94467072822368` for `len(b.items)`; post-fix
+  prints `3`. Fix adds a new
+  `_emit_list_decode_body(arr_jval, inner_type) -> Value`
+  helper mirroring v5.39.4's `_emit_list_json_body` shape on
+  the decode side: extract `List<JsonValue>` from the `Array`
+  variant via `EnumPayload(variant="Array", payload_idx=0)`,
+  initialize an empty `List<inner>` accumulator, mutable-Phi
+  loop over the inner array length, recurse through
+  `_decode_json_field` per element, accumulate via in-place
+  `ListPush` (mirrors `_lower_method_call`'s `.push()` SSA
+  name-reuse pattern at `mapanare/lower.py:3298` — the dest
+  reuses `acc_phi_dest`'s name so the emitter's phi alloca
+  acts as the single mutable list slot across iterations).
+  Element type from `target_type.type_info.args[0]`;
+  recursion handles nested `List<List<X>>`, `List<Struct>`,
+  etc. uniformly through the existing dispatch.
+  **In-place ListPush across the loop boundary** — Phase 1
+  audit confirmed Option A (in-place push reusing the phi
+  dest's SSA name) works. The phi alloca system at
+  `mapanare/emit_llvm_text.py:2461-2473` registers
+  `_alloc[acc_phi_dest.name] = (%phi.<name>, ty)`; ListPush
+  at `:4761` finds the alloca via `_get_ptr`, calls
+  `__mn_list_push` which mutates the buffer in place, then
+  reloads. The deferred phi store from the body-exit
+  incoming becomes a no-op load-from-self / store-to-self
+  because `new_acc.name == acc_phi_dest.name`. Option B
+  fallback (`Copy`-then-`ListPush`) was on the table but
+  Phase 1 spike produced valid IR for Option A, so Option A
+  shipped.
+  **Self-host mirror N/A by construction**: Phase 0 grep
+  returned 0 matches. The Js.4 typed-serde surface shipped
+  Python-bootstrap-only at v5.36.0 and has not been
+  mirrored. STRICT preserved trivially.
+  **Test infrastructure extension.** New
+  `stdlib/encoding/json/tests/test_from_json_list_field.mn`
+  (~80 LOC, 3 sub-cases: `List<Int>` with 3 elements, empty
+  list, `List<String>` with 2 elements) appended to
+  `TEST_FILES` in
+  `tests/stdlib/test_struct_json_runtime.py`. Each sub-case
+  is wrapped in its own helper function because
+  `_lower_from_json`'s `from_json_merge` / `decode_object`
+  block labels are bare (not `_fresh_block`-prefixed);
+  multiple `from_json::<T>` calls in one function body
+  collide pre-MIR-verifier. Documented as a v5.39.6+ LOW
+  (cosmetic; surfaced because v5.39.5's test exercised the
+  multi-decode shape that prior tests didn't). 11/11 GREEN
+  at HEAD (was 10 at v5.39.4 HEAD; +1).
+  **Strengthened `test_to_from_nested_roundtrip.mn`** with
+  three new assertions
+  (`len(decoded.inner.ints) == 3`,
+  `decoded.inner.ints[0] == 10`,
+  `decoded.inner.ints[2] == 30`). v5.39.4 deliberately
+  omitted these because the embedded `List<Int>` field would
+  have failed on the decode side; v5.39.5 closes the gap.
+  Falsifiability locked per fix — reverting the
+  `TypeKind.LIST` branch in `_decode_json_field` makes
+  `test_from_json_list_field` SEGV (exit -11) and the
+  strengthened nested round-trip fail on the new
+  `inner.ints` assertions; reapplying restores both to
+  GREEN.
+  **Hd-class preventative** — `docs/SPEC.md` header
+  re-synced from "v5.39.4 cut" to "v5.39.5 cut" with new
+  sync block. `check_doc_freshness.py` GREEN;
+  `check_changelog_honesty.py` GREEN. Source delta: ~85 LOC
+  `mapanare/lower.py` (helper + branch) + ~80 LOC `.mn`
+  test case + ~8 LOC nested-roundtrip strengthening + ~6
+  LOC `test_struct_json_runtime.py` TEST_FILES update +
+  ~110 LOC CHANGELOG + ~30 LOC SPEC sync + this CLAUDE.md
+  release-notes entry + mechanical bump_version.py edits.
+  Aggregate state entering v5.40.0: **0 HIGH** (Js.4.D.3
+  closed; typed-serde round-trip closed for v5.40.0 Ai.\*
+  call shapes) / **1 MEDIUM** (macOS notarization carry
+  from v5.33.0 Nu.2) / ~10 LOW (added MAP encode/decode,
+  ENUM encode/decode, bare block labels in
+  `_lower_from_json` cosmetic). **Js.4.\* arc CLOSED for
+  v5.40.0 dependencies.** v5.40.0 manifesto-arc kickoff
+  (`ask`/`ask_typed::<T>`) unblocked. See
+  `docs/roadmap/v5/v5.39.5/{PLAN.md, PROMPT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.39.4** (ready, not tagged) — **Js.4.D.1 + Js.4.D.2 —
   typed-serde round-trip closure for nested-struct + List-typed
   fields.** Two siblings to v5.39.3's STRUCT field encoding
