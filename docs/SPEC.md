@@ -1,7 +1,35 @@
 # Mapanare Language Specification
 
-**Version:** 5.39.2
-**Status:** Live — synced to the v5.39.2 cut (2026-05-03)
+**Version:** 5.39.3
+**Status:** Live — synced to the v5.39.3 cut (2026-05-03)
+
+> **v5.39.3 — Js.4.C — `to_json::<T>` nested-struct recursion.**
+> SPEC body unchanged from the v5.21.0 cut. Split-from-v5.39.2
+> follow-on. v5.39.2 closed the runtime SEGV in `from_json::<T>`
+> (Js.4.B.2) but explicitly held back the `to_json::<T>` nested-
+> struct fix because it lives in a different code path. v5.39.3
+> closes that hole. Single load-bearing fix in
+> `mapanare/lower.py::_encode_field_to_json`: added the missing
+> `TypeKind.STRUCT` branch (the dispatch had `STRING` / `INT` /
+> `FLOAT` / `BOOL` / `OPTION` but fell through to the `str()`
+> fallback for STRUCT, producing the `<?>` placeholder via
+> `mapanare/emit_llvm_text.py:3465`). Refactored
+> `_lower_encode_struct` to share `_emit_struct_json_body(struct_val,
+> struct_name) -> Value` with the new STRUCT branch — both the
+> top-level intrinsic and the field-recursion call the same
+> emitter. Bundle scope: STRUCT only; LIST/MAP/ENUM held for
+> v5.39.4 (LIST runtime-iteration MIR exceeded ~20 LOC bundle
+> threshold; MAP/ENUM have invariant questions deserving their
+> own session). After v5.39.3 ships, the typed-serde encode path
+> (`to_json::<T>`) handles nested structs end-to-end; the manifesto-
+> arc ergonomic v5.40.0 Ai.\* will exercise via `ask_typed::<T>`.
+> Adds **zero language features, zero new MIR ops, zero new IR
+> shapes, zero new C runtime exports**. Strict 3-stage fixed point
+> preserved by construction at v5.39.2's 241,898 lines / 0 diff
+> (37-release strict streak from v5.7.1; zero
+> `mapanare/self/*.mn` source touches — Phase 0 verified the
+> typed-serde surface remains Python-bootstrap-only, so the
+> PROMPT-scoped mirror is structurally N/A).
 
 > **v5.39.2 — Js.4.B.2 — `from_json::<T>` runtime SEGV closeout +
 > link-and-run regression suite. v5.39.1+v5.39.2 arc CLOSED.** SPEC

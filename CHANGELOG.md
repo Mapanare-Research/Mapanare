@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.39.3] - 2026-05-03
+
+**Js.4.C — `to_json::<T>` nested-struct recursion.** Split-from-v5.39.2
+follow-on. v5.39.2 closed the runtime SEGV in `from_json::<T>`
+(Js.4.B.2) but explicitly held back the `to_json::<T>` nested-struct
+fix — different code path, bundling would have inflated v5.39.2's
+scope. v5.39.3 closes that hole. After this release, the typed-serde
+surface (`to_json::<T>` ↔ `from_json::<T>`) round-trips cleanly for
+nested struct shapes — the manifesto-arc ergonomic v5.40.0 Ai.\* will
+exercise via `ask_typed::<T>`. Adds **zero language features, zero
+new MIR ops, zero new IR shapes, zero new C runtime exports**.
+**Strict 3-stage fixed point preserved by construction** at v5.39.2's
+**241,898 lines / 0 diff** (37-release strict streak from v5.7.1;
+zero `mapanare/self/*.mn` source touches — Phase 0 verified
+`grep -rn "from_json\|decode_to\|encode_struct\|to_json" mapanare/self/`
+returned 0 matches, so the typed-serde surface remains
+Python-bootstrap-only). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.C (`mapanare/lower.py::_encode_field_to_json`)** — added
+  the missing `TypeKind.STRUCT` branch. Pre-fix `to_json::<Wrap>(w)`
+  with `struct Wrap { name: String, inner: Inner }` emitted
+  `{"name": "ok", "inner": <?>}` because the type-dispatch had
+  explicit handlers for `STRING` / `INT` / `FLOAT` / `BOOL` /
+  `OPTION` (the latter recursing on the inner type) but no branch
+  for `STRUCT`. The fallback at line 2762 (`Call(fn_name="str",
+  args=[field_val])`) emitted the `<?>` placeholder via
+  `mapanare/emit_llvm_text.py:3465`. Post-fix the new STRUCT
+  branch recurses through the shared `_emit_struct_json_body`
+  helper (extracted from `_lower_encode_struct`) so nested
+  structs produce real JSON. Latent since v5.36.0 Js.4 ship; the
+  v5.36.0 `tests/stdlib/test_struct_json.py` was compile-only —
+  the placeholder text was syntactically present in IR but never
+  link-tested.
+
+### Changed
+
+- **Refactored `mapanare/lower.py::_lower_encode_struct`** to
+  delegate to the new `_emit_struct_json_body(struct_val,
+  struct_name) -> Value` helper. Both the top-level
+  `encode_struct::<T>` / `to_json::<T>` intrinsic and the new
+  STRUCT-typed-field recursion share the same JSON body emission;
+  the previous duplication-by-extraction-pattern is now a single
+  load-bearing function. External API of `_lower_encode_struct`
+  unchanged.
+- **Bundle scope decision (Phase 1).** Default per PLAN was
+  STRUCT-first with optional LIST bundling if the runtime
+  list-iteration MIR sketch fit in ~20 LOC. Phase 1 review of
+  the iteration shape (counter alloca + `len()` runtime call +
+  comparison + `IndexGet` + accumulator) put the LIST branch at
+  ~30-50 LOC; v5.39.3 stayed strict with PLAN's bundle threshold
+  and held LIST for v5.39.4. MAP and ENUM also held: MAP has the
+  string-key invariant question (JSON requires string keys; need
+  to decide reject-at-typecheck vs coerce vs runtime-error); ENUM
+  has the tagged-union shape question (`"VariantName"` vs
+  `{"Variant": payload}` vs `{"tag": ..., "payload": ...}`).
+  v5.39.4 will pick these up together once the ENUM shape decision
+  aligns with `from_json::<T>` round-trip semantics.
+
+### Added
+
+- **`stdlib/encoding/json/tests/test_to_json_nested_struct.mn`** —
+  appended to `tests/stdlib/test_struct_json_runtime.py`'s
+  `TEST_FILES`. Encode-and-inspect single-direction test
+  (`to_json::<Wrap>(w)` then `String.contains` checks for the
+  three field substrings + the `<?>` placeholder anti-substring).
+  Single-direction on purpose: the `from_json::<T>` decoder
+  (`mapanare/lower.py::_decode_json_field`) only handles primitive
+  field types at v5.39.3 HEAD — a round-trip equality test would
+  fail on the decode side, not the v5.39.3 fix. Encode-decode
+  round-trip for nested structs is tracked as a v5.39.4 candidate.
+  **Falsifiability locked**: reverting the new STRUCT branch in
+  `_encode_field_to_json` reproduces the `<?>` placeholder; the
+  new test fails with the recorded
+  `FAIL test_to_json_nested_struct: still emits <?> placeholder`
+  signature. One Edit-and-pytest cycle reproduces.
+
+
 ## [5.39.2] - 2026-05-03
 
 **Js.4.B.2 — `from_json::<T>` runtime SEGV closeout + link-and-run
@@ -10625,7 +10704,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.2...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.3...HEAD
+[5.39.3]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.2...v5.39.3
 [5.39.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.1...v5.39.2
 [5.39.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.0...v5.39.1
 [5.39.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.38.0...v5.39.0

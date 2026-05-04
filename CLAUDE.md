@@ -19,6 +19,80 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.39.3** (ready, not tagged) — **Js.4.C — `to_json::<T>`
+  nested-struct recursion.** Split-from-v5.39.2 follow-on.
+  v5.39.2 closed the runtime SEGV in `from_json::<T>` (Js.4.B.2)
+  but explicitly held back the `to_json::<T>` nested-struct fix
+  because it lives in a different code path. v5.39.3 closes that
+  hole. After this release, the typed-serde encode path
+  (`to_json::<T>`) handles nested struct fields end-to-end; the
+  manifesto-arc ergonomic v5.40.0 Ai.\* will exercise via
+  `ask_typed::<T>`. Adds **zero language features, zero new MIR
+  ops, zero new IR shapes, zero new C runtime exports**. **Strict
+  3-stage fixed point preserved by construction** at v5.39.2's
+  **241,898 lines / 0 diff** (37-release strict streak from v5.7.1;
+  zero `mapanare/self/*.mn` source touches — Phase 0 verified
+  `grep -rn "from_json\|decode_to\|encode_struct\|to_json"
+  mapanare/self/` returned 0 matches). Goldens **95/95**.
+  **The bug.** `mapanare/lower.py:2681::_encode_field_to_json`
+  had explicit handlers for `STRING` / `INT` / `FLOAT` / `BOOL` /
+  `OPTION` (the latter recursing on the inner type) but no branch
+  for `TypeKind.STRUCT`. The fallback at line 2762
+  (`Call(fn_name="str", args=[field_val])`) emitted the literal
+  `<?>` placeholder via `mapanare/emit_llvm_text.py:3465`'s
+  `r, _ = self._mkstr("<?>")`. Latent since v5.36.0 Js.4 ship;
+  the v5.36.0 `tests/stdlib/test_struct_json.py` was compile-only
+  — the placeholder text was syntactically present in IR but
+  never link-tested. **Fix.** Refactored `_lower_encode_struct`
+  to delegate to a new shared `_emit_struct_json_body(struct_val,
+  struct_name) -> Value` helper. Added the missing `TypeKind.STRUCT`
+  branch in `_encode_field_to_json` that recurses through the
+  same helper, guarded on
+  `struct_name in self._module.structs`. The two call sites (the
+  top-level `encode_struct::<T>` / `to_json::<T>` intrinsic and
+  the new STRUCT-typed-field recursion) now share one load-bearing
+  emitter. ~70 LOC change. **Bundle scope: STRUCT only.** Phase 1
+  review of the LIST iteration MIR sketch put it at ~30-50 LOC
+  (counter alloca + `len()` runtime call + comparison + IndexGet
+  + accumulator) — exceeded PLAN's ~20 LOC bundle threshold.
+  MAP and ENUM also held: MAP has the JSON-string-key invariant
+  question (reject vs coerce vs runtime-error); ENUM has the
+  tagged-union shape question (`"VariantName"` vs `{"Variant":
+  payload}` vs `{"tag": ..., "payload": ...}`). v5.39.4 will
+  pick these up together once the ENUM shape decision aligns
+  with `from_json::<T>` round-trip semantics. **Self-host
+  mirror N/A**: Phase 0 grep returned 0 matches. The Js.4
+  typed-serde surface shipped Python-bootstrap-only at v5.36.0
+  and has not been mirrored. STRICT preserved trivially by
+  construction. **Test.** New
+  `stdlib/encoding/json/tests/test_to_json_nested_struct.mn`
+  (~30 LOC) appended to v5.39.2's
+  `tests/stdlib/test_struct_json_runtime.py::TEST_FILES`.
+  Single-direction encode-and-inspect (`to_json::<Wrap>(w)` then
+  `String.contains` checks). Single-direction on purpose: the
+  `from_json::<T>` decoder
+  (`mapanare/lower.py::_decode_json_field`) only handles
+  primitive field types at v5.39.3 HEAD — a round-trip equality
+  test would fail on the decode side, not the v5.39.3 fix. Round-
+  trip for nested structs is a v5.39.4 candidate. Falsifiability
+  locked: reverting the new STRUCT branch reproduces the `<?>`
+  placeholder; the new test fails with the recorded
+  `FAIL test_to_json_nested_struct: still emits <?> placeholder`
+  signature. One Edit-and-pytest cycle. **Hd-class preventative**
+  — `docs/SPEC.md` header re-synced from "v5.39.2 cut" to
+  "v5.39.3 cut" with new sync block. `check_doc_freshness.py`
+  GREEN; `check_changelog_honesty.py` GREEN. Source delta:
+  ~70 LOC `mapanare/lower.py` (helper extraction + STRUCT branch)
+  + ~30 LOC `.mn` test case + ~2 LOC `test_struct_json_runtime.py`
+  TEST_FILES update + ~75 LOC CHANGELOG + ~30 LOC SPEC sync +
+  this CLAUDE.md release-notes entry + mechanical bump_version.py
+  edits. Aggregate state entering v5.39.4: **0 HIGH** (Js.4.C
+  closed for STRUCT) / **1 MEDIUM** (macOS notarization carry
+  from v5.33.0 Nu.2) / ~8 LOW (added `to_json::<T>` LIST/MAP/ENUM
+  nested encoding + `from_json::<T>` nested-struct decoding as
+  v5.39.4 candidates). See
+  `docs/roadmap/v5/v5.39.3/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
 - **v5.39.2** (ready, not tagged) — **Js.4.B.2 — `from_json::<T>`
   runtime SEGV closeout + link-and-run regression suite.
   v5.39.1+v5.39.2 arc CLOSED.** Second of two release sessions on

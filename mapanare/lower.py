@@ -2590,15 +2590,23 @@ class MIRLowerer:
         """Lower encode_struct::<T>(value) — serialize struct to JSON string."""
         type_arg = expr.type_args[0]
         struct_name = type_arg.name if hasattr(type_arg, "name") else ""
+        return self._emit_struct_json_body(struct_val, struct_name)
+
+    def _emit_struct_json_body(self, struct_val: Value, struct_name: str) -> Value:
+        """Emit MIR producing a JSON `{...}` string for struct_val.
+
+        Shared between top-level encode_struct::<T> / to_json::<T>
+        (via _lower_encode_struct) and struct-typed-field recursion
+        (via _encode_field_to_json's STRUCT branch). v5.39.3 Js.4.C —
+        closes the `<?>` placeholder for nested struct fields.
+        """
         fields = self._module.structs.get(struct_name, [])
         if not fields:
-            # Fallback: just return empty object
             dest = self._make_value(ty=mir_string())
             self._emit(Const(dest=dest, ty=mir_string(), value="{}"))
             return dest
 
         # Build JSON string: {"field1": val1, "field2": val2, ...}
-        # Start with "{"
         result = self._make_value(ty=mir_string())
         self._emit(Const(dest=result, ty=mir_string(), value="{"))
 
@@ -2758,6 +2766,15 @@ class MIRLowerer:
             result = self._make_value(ty=mir_string())
             self._emit(Phi(dest=result, incoming=[(some_exit, inner_str), (none_exit, null_str)]))
             return result
+
+        if kind == TypeKind.STRUCT:
+            # v5.39.3 Js.4.C — recurse into nested struct field via shared helper.
+            # Pre-fix this fell into the str() fallback below, producing the
+            # `<?>` placeholder. The struct must be registered in
+            # self._module.structs (any reachable struct definition is).
+            struct_name = ftype.type_info.name if ftype.type_info else ""
+            if struct_name and struct_name in self._module.structs:
+                return self._emit_struct_json_body(field_val, struct_name)
 
         # Fallback: convert to string with str()
         dest = self._make_value(ty=mir_string())

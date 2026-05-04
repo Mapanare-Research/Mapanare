@@ -53,6 +53,8 @@ TEST_FILES = [
     "test_from_json_float.mn",
     "test_from_json_compound.mn",
     "test_to_from_roundtrip.mn",
+    # v5.39.3 Js.4.C — to_json::<T> nested struct field (was <?> pre-fix)
+    "test_to_json_nested_struct.mn",
 ]
 
 
