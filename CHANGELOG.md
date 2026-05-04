@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.39.7] - 2026-05-04
+
+**Js.4.F.1 + Js.4.F.2 — typed-serde ENUM encode + decode;
+round-trip closure for enum-typed fields. Final release in the
+v5.39.x typed-serde arc; Js.4.\* arc CLOSED.** After v5.39.7 the
+typed-serde round-trip
+`to_json::<T>` ↔ `from_json::<T>` closes for **every common LLM
+JSON response shape** (primitive, struct, nested struct,
+`List<X>`, `Map<String, V>`, and tagged-union enums). Adds
+**zero language features, zero new MIR ops, zero new IR shapes,
+zero new C runtime exports**. Strict 3-stage fixed point
+preserved by construction at v5.39.6's **241,898 lines / 0
+diff** (41-release strict streak from v5.7.1; zero
+`mapanare/self/*.mn` source touches — Phase 0 verified
+`grep -rn "from_json|decode_to|encode_struct|to_json"
+mapanare/self/` returned 0 matches). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.F.1 — `to_json::<T>` ENUM encode**:
+  `mapanare/lower.py:_encode_field_to_json` had explicit handlers
+  for primitives + OPTION + STRUCT (v5.39.3) + LIST (v5.39.4) +
+  MAP (v5.39.6) but no branch for `TypeKind.ENUM`. Pre-fix the
+  fallback at `Call(fn_name="str", args=[field_val])` emitted
+  the literal `<?>` placeholder for any enum-typed struct field.
+  `Record(2, Pending(42))` encoded as
+  `{"id": 2, "status": <?>}`; post-fix encodes as
+  `{"id": 2, "status": {"Pending": 42}}`. Fix adds a new
+  `_emit_enum_json_body(enum_val, enum_name) -> Value` helper
+  (~120 LOC) that switches on `EnumTag(enum_val)` with one block
+  per variant + a default block, merges the per-variant strings
+  via a Phi. Per-variant payload shape: no-payload → bare string
+  `"VariantName"`; single-payload → `{"VariantName": <encoded>}`;
+  multi-payload → `{"VariantName": [<p0>, <p1>, ...]}` (positional
+  tuple → JSON array). Recurses through `_encode_field_to_json`
+  per payload type so nested struct / list / map / enum payloads
+  fall through uniformly.
+
+- **Js.4.F.2 — `from_json::<T>` ENUM decode**:
+  `mapanare/lower.py:_decode_json_field` had explicit handlers
+  for primitives + OPTION + STRUCT (v5.39.4) + LIST (v5.39.5) +
+  MAP (v5.39.6) but no branch for `TypeKind.ENUM`. Pre-fix the
+  raw-jval fallback returned the JsonValue enum where the typed
+  enum value was expected — silent shape mismatch on the
+  consumer side. Fix adds a new
+  `_emit_enum_decode_body(jval, enum_name) -> Value` helper
+  (~190 LOC) that switches on the JsonValue tag (Str / Object /
+  default), then runs a string-cascade compare against each
+  variant name. For the Str path: each no-payload variant gets
+  one `if jstr == "VariantName" { EnumInit(VariantName) }`
+  arm. For the Object path: extract the
+  `Map<String, JsonValue>` entries via
+  `EnumPayload(variant="Object")`, pull the single variant key
+  via `__mn_map_keys`+`keys[0]`, cascade-compare against each
+  payload-bearing variant, decode the payload(s) positionally
+  (1-tuple → recurse `_decode_json_field`; n-tuple → extract
+  `JsonValue::Array`'s inner `List<JsonValue>` and decode each
+  element by its declared payload type), then `EnumInit` with
+  the decoded payloads. Linear cascade — fast enough for typical
+  enums (< 20 variants); hash-based dispatch is a v5.40+
+  candidate if benchmarks show need.
+
+- **Js.4.F.0 — enum/struct disambiguation in
+  `_encode_field_to_json` + `_decode_json_field`**:
+  `_resolve_type_expr` cannot distinguish enum from struct at
+  parse time — both come through as `TypeKind.STRUCT` with the
+  user-supplied name. The Js.4.F.1 + Js.4.F.2 branches are
+  routed inside the existing STRUCT branches: check
+  `self._module.enums` first (with the skip list
+  `{Option, Result, JsonValue}` keeping compiler-internal enums
+  on their existing paths — OPTION is handled separately, Result
+  is the parent context never reached as a struct field,
+  JsonValue is the recursive case routed via
+  `_ensure_json_types_registered`), fall through to the struct
+  path only if the name is genuinely a struct.
+
+### Changed
+
+- **Externally-tagged JSON shape locked for enum encoding.**
+  Three shapes were on the table (externally tagged
+  `{"V": payload}`, internally tagged `{"tag": "V", ...}`,
+  adjacently tagged `{"tag": "V", "payload": ...}`); externally
+  tagged was chosen at PLAN — most common in JSON-RPC, OpenAI /
+  Anthropic function-calling schemas, and Rust serde's default
+  derive output; round-trips trivially through the existing
+  `_emit_list_decode_body` for multi-payload variants. Special
+  case: no-payload variants encode as the bare string
+  `"VariantName"` (not `{"VariantName": null}`) — matches Rust
+  serde's `untagged()` for unit variants and is what most LLMs
+  produce in function-call responses. Documented in
+  `docs/SPEC.md` v5.39.7 sync block.
+
+- **`Js.4.*` typed-serde arc CLOSED.** v5.39.0 → v5.39.7 closed
+  every `TypeKind` branch in `_encode_field_to_json` /
+  `_decode_json_field` that v5.36.0's Phase-0 audit identified as
+  structurally incomplete. Round-trip now works end-to-end for:
+  primitives (v5.39.2), multi-field structs (v5.39.2), nested
+  structs (v5.39.3 + v5.39.4), `List<X>` (v5.39.4 + v5.39.5),
+  `Map<String, V>` (v5.39.6), and tagged-union enums (v5.39.7).
+  v5.40.0 manifesto-arc kickoff (`ask` / `ask_typed::<T>`) fully
+  unblocked.
+
+
 ## [5.39.6] - 2026-05-04
 
 **Js.4.E.1 + Js.4.E.2 — typed-serde MAP encode + decode; round-trip
@@ -11039,7 +11142,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.6...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.7...HEAD
+[5.39.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.6...v5.39.7
 [5.39.6]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.5...v5.39.6
 [5.39.5]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.4...v5.39.5
 [5.39.4]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.3...v5.39.4

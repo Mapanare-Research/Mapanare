@@ -77,6 +77,21 @@ TEST_FILES = [
     # shape mismatch pre-fix; consumer saw raw JsonValue::Object enum
     # where Map<String, V> was expected). Symmetric pair to Js.4.E.1.
     "test_from_json_map_field.mn",
+    # v5.39.7 Js.4.F.1 — to_json::<T> ENUM-typed field encode (was <?>
+    # pre-fix; _encode_field_to_json fell into the str() fallback for
+    # any name not in self._module.structs, including all user-defined
+    # enums). Externally-tagged JSON shape: bare string for no-payload
+    # variants, {"VariantName": payload} for single-payload, and
+    # {"VariantName": [p0, p1, ...]} for multi-payload variants.
+    "test_to_json_enum_field.mn",
+    # v5.39.7 Js.4.F.2 — from_json::<T> ENUM-typed field decode (silent
+    # shape mismatch pre-fix; consumer saw raw JsonValue enum where
+    # the typed enum value was expected). Switch on JsonValue tag,
+    # cascade-compare variant name; positional decode of payload tuple.
+    "test_from_json_enum_field.mn",
+    # v5.39.7 Js.4.F.* — load-bearing round-trip closure for ENUM-typed
+    # fields; ensures encode and decode wire to the same JSON shape.
+    "test_to_from_enum_roundtrip.mn",
 ]
 
 

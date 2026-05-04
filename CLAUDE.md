@@ -19,6 +19,142 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.39.7** (ready, not tagged) — **Js.4.F.1 + Js.4.F.2 —
+  typed-serde ENUM encode + decode; round-trip closure for
+  enum-typed fields. Final release in the v5.39.x typed-serde
+  arc; Js.4.\* arc CLOSED.** After v5.39.7 the typed-serde
+  round-trip `to_json::<T>` ↔ `from_json::<T>` closes for
+  **every common LLM JSON response shape** (primitive, struct,
+  nested struct, `List<X>`, `Map<String, V>`, and tagged-union
+  enums). Adds **zero language features, zero new MIR ops,
+  zero new IR shapes, zero new C runtime exports**. **Strict
+  3-stage fixed point preserved by construction** at v5.39.6's
+  **241,898 lines / 0 diff** (41-release strict streak from
+  v5.7.1; zero `mapanare/self/*.mn` source touches — Phase 0
+  verified `grep -rn "from_json|decode_to|encode_struct|to_json"
+  mapanare/self/` returned 0 matches). Goldens **95/95**.
+  **Js.4.F.1 — ENUM encode.**
+  `mapanare/lower.py:2689::_encode_field_to_json` had explicit
+  handlers for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT`
+  (v5.39.3) + `LIST` (v5.39.4) + `MAP` (v5.39.6) but no branch
+  for user-defined enum-typed fields. Pre-fix the fallback at
+  `Call(fn_name="str", args=[field_val])` emitted the literal
+  `<?>` placeholder. `Record(2, Pending(42))` encoded as
+  `{"id": 2, "status": <?>}`; post-fix encodes as
+  `{"id": 2, "status": {"Pending": 42}}`. Fix adds a new
+  `_emit_enum_json_body(enum_val, enum_name) -> Value` helper
+  (~120 LOC) that switches on `EnumTag(enum_val)` with one
+  block per variant + a default block, merges the per-variant
+  strings via a Phi. Per-variant payload shape: **no-payload →
+  bare string `"VariantName"`; single-payload →
+  `{"VariantName": <encoded>}`; multi-payload →
+  `{"VariantName": [<p0>, <p1>, ...]}`** (positional tuple →
+  JSON array). Recurses through `_encode_field_to_json` per
+  payload type so nested struct / list / map / enum payloads
+  fall through uniformly. **Js.4.F.2 — ENUM decode.**
+  `mapanare/lower.py:3336::_decode_json_field` had explicit
+  handlers for primitives + OPTION + STRUCT (v5.39.4) + LIST
+  (v5.39.5) + MAP (v5.39.6) but no branch for user-defined
+  enum-typed fields. Pre-fix the raw-jval fallback returned
+  the JsonValue enum where the typed enum value was expected
+  — silent shape mismatch on the consumer side. Fix adds a
+  new `_emit_enum_decode_body(jval, enum_name) -> Value`
+  helper (~190 LOC) that switches on the JsonValue tag (Str /
+  Object / default), then runs a string-cascade compare
+  against each variant name. **Str path:** each no-payload
+  variant gets one
+  `if jstr == "VariantName" { EnumInit(VariantName) }` arm.
+  **Object path:** extract the `Map<String, JsonValue>`
+  entries via `EnumPayload(variant="Object")`, pull the single
+  variant key via `__mn_map_keys`+`keys[0]`, cascade-compare
+  against each payload-bearing variant, decode the payload(s)
+  positionally (1-tuple → recurse `_decode_json_field`;
+  n-tuple → extract `JsonValue::Array`'s inner
+  `List<JsonValue>` and decode each element by its declared
+  payload type), then `EnumInit` with the decoded payloads.
+  **Linear cascade** — fast enough for typical enums (< 20
+  variants); hash-based dispatch is a v5.40+ candidate.
+  **Js.4.F.0 — enum/struct disambiguation.**
+  `_resolve_type_expr` cannot distinguish enum from struct at
+  parse time — both come through as `TypeKind.STRUCT` with
+  the user-supplied name. The Js.4.F.1 + Js.4.F.2 branches
+  are routed inside the existing STRUCT branches: check
+  `self._module.enums` first (with the skip list
+  `{Option, Result, JsonValue}` keeping compiler-internal
+  enums on their existing paths — OPTION is handled
+  separately, Result is the parent context never reached as a
+  struct field, JsonValue is the recursive case routed via
+  `_ensure_json_types_registered`), fall through to the
+  struct path only if the name is genuinely a struct.
+  **Externally-tagged JSON shape locked at PLAN.** Three
+  shapes were on the table (externally tagged
+  `{"V": payload}`, internally tagged `{"tag": "V", ...}`,
+  adjacently tagged `{"tag": "V", "payload": ...}`);
+  externally tagged was chosen — most common in JSON-RPC,
+  OpenAI / Anthropic function-calling schemas, and Rust
+  serde's default derive output; round-trips trivially
+  through the existing `_emit_list_decode_body` for
+  multi-payload variants. Special case: no-payload variants
+  encode as the bare string `"VariantName"` (not
+  `{"VariantName": null}`) — matches Rust serde's
+  `untagged()` for unit variants and is what most LLMs
+  produce in function-call responses.
+  **Self-host mirror N/A by construction**: Phase 0 grep
+  returned 0 matches. The Js.4 typed-serde surface shipped
+  Python-bootstrap-only at v5.36.0 and has not been mirrored.
+  STRICT preserved trivially.
+  **Test infrastructure extension.** Three new `.mn` test
+  files appended to `TEST_FILES` in
+  `tests/stdlib/test_struct_json_runtime.py`:
+  `test_to_json_enum_field.mn` (Js.4.F.1 single-direction
+  encode covering all three variant payload shapes),
+  `test_from_json_enum_field.mn` (Js.4.F.2 single-direction
+  decode covering all three shapes), and
+  `test_to_from_enum_roundtrip.mn` (load-bearing round-trip
+  ensuring encode and decode wire to the same JSON shape).
+  **18/18 GREEN** at HEAD (was 15 at v5.39.6; +3).
+  **Match arms use block-form actions** (`=> { ok = ... }`)
+  because the parser does not accept `=> return EXPR` after a
+  pattern — collect success into a mutable flag and return
+  it. Documented in each test file preamble as a v5.40+
+  parser-ergonomics candidate. Falsifiability locked per fix
+  — reverting either branch fails the corresponding
+  single-direction test plus the round-trip; reverting both
+  fails all three new tests.
+  **Hd-class preventative** — `docs/SPEC.md` header re-synced
+  from "v5.39.6 cut" to "v5.39.7 cut" with new sync block
+  documenting the externally-tagged invariant decision +
+  Js.4.\* arc closeout. `check_doc_freshness.py` GREEN;
+  `check_changelog_honesty.py` GREEN. Source delta: ~310 LOC
+  `mapanare/lower.py` (Js.4.F.1 helper + branch ~120 LOC;
+  Js.4.F.2 helper + branch ~190 LOC) + ~225 LOC `.mn` test
+  cases (3 files) + ~22 LOC `test_struct_json_runtime.py`
+  TEST_FILES + ~115 LOC CHANGELOG + ~50 LOC SPEC sync + this
+  CLAUDE.md release-notes entry + mechanical
+  bump_version.py edits. **Arc retrospective:** v5.39.0 →
+  v5.39.7 closed every `TypeKind` branch in
+  `_encode_field_to_json` / `_decode_json_field` that
+  v5.36.0's Phase-0 audit identified as structurally
+  incomplete. Round-trip now works end-to-end for: primitives
+  (v5.39.2), multi-field structs (v5.39.2), nested structs
+  (v5.39.3 + v5.39.4), `List<X>` (v5.39.4 + v5.39.5),
+  `Map<String, V>` (v5.39.6), and tagged-union enums
+  (v5.39.7). The bundling discipline (one TypeKind per
+  release, with documented invariant decisions for the harder
+  cases) traded release count for falsifiability rigor —
+  every fix has a revert-and-restore test pair locked in the
+  regression suite. Aggregate state entering v5.40.0:
+  **0 HIGH** (Js.4.F.\* closed; typed-serde round-trip closed
+  for every common LLM JSON shape) / **1 MEDIUM** (macOS
+  notarization carry from v5.33.0 Nu.2) / ~5 LOW (hash-
+  dispatched enum decode, internally/adjacently tagged shapes,
+  custom serde rename attributes, parser ergonomic
+  `=> return EXPR`, prior carries). **Js.4.\* arc CLOSED.
+  v5.40.0 manifesto-arc kickoff (`ask` / `ask_typed::<T>`)
+  fully unblocked.** See
+  `docs/roadmap/v5/v5.39.7/{PLAN.md, PROMPT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.39.6** (ready, not tagged) — **Js.4.E.1 + Js.4.E.2 —
   typed-serde MAP encode + decode; round-trip closure for
   `Map<String, V>`-typed fields.** Sibling release to v5.39.5

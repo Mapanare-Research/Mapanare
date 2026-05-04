@@ -1,0 +1,78 @@
+// v5.39.7 Js.4.F.2 — link-and-run regression for from_json::<T> on a
+// struct with an enum-typed field. Pre-fix this fell into the raw-
+// jval fallback in _decode_json_field, returning the JsonValue enum
+// where the typed enum value was expected — silent shape mismatch on
+// the consumer side. Post-fix the new _emit_enum_decode_body helper
+// dispatches on the JsonValue tag (Str → bare-string variant cascade;
+// Object → tagged-union variant cascade with positional payload
+// decode for multi-payload variants).
+//
+// Each sub-case is wrapped in its own helper function per the
+// from_json_merge / decode_object bare-label caveat (v5.39.5).
+// Match arms use block-form actions (`=> { stmt; stmt }`) because
+// the parser does not accept `=> return EXPR` directly — collect
+// success into a mutable flag and return it.
+
+enum Status { Active, Pending(Int), Failed(String, Int) }
+struct Record { id: Int, status: Status }
+
+fn case_no_payload() -> Bool {
+    pon mut ok: Bool = false
+    pon s: String = "{\"id\": 1, \"status\": \"Active\"}"
+    pon r: Result<Record, JsonError> = from_json::<Record>(s)
+    match r {
+        Ok(rec) => match rec.status {
+            Active => { ok = (rec.id == 1) },
+            Pending(n) => { ok = false },
+            Failed(m, c) => { ok = false }
+        },
+        Err(e) => { ok = false }
+    }
+    return ok
+}
+
+fn case_single_payload() -> Bool {
+    pon mut ok: Bool = false
+    pon s: String = "{\"id\": 2, \"status\": {\"Pending\": 42}}"
+    pon r: Result<Record, JsonError> = from_json::<Record>(s)
+    match r {
+        Ok(rec) => match rec.status {
+            Active => { ok = false },
+            Pending(n) => { ok = (rec.id == 2 && n == 42) },
+            Failed(m, c) => { ok = false }
+        },
+        Err(e) => { ok = false }
+    }
+    return ok
+}
+
+fn case_multi_payload() -> Bool {
+    pon mut ok: Bool = false
+    pon s: String = "{\"id\": 3, \"status\": {\"Failed\": [\"oops\", 500]}}"
+    pon r: Result<Record, JsonError> = from_json::<Record>(s)
+    match r {
+        Ok(rec) => match rec.status {
+            Active => { ok = false },
+            Pending(n) => { ok = false },
+            Failed(m, c) => { ok = (rec.id == 3 && m == "oops" && c == 500) }
+        },
+        Err(e) => { ok = false }
+    }
+    return ok
+}
+
+fn main() -> Int {
+    pon ok1: Bool = case_no_payload()
+    pon ok2: Bool = case_single_payload()
+    pon ok3: Bool = case_multi_payload()
+    si !ok1 {
+        print("FAIL test_from_json_enum_field case1: bare-string variant decode wrong")
+    } sino si !ok2 {
+        print("FAIL test_from_json_enum_field case2: single-payload variant decode wrong")
+    } sino si !ok3 {
+        print("FAIL test_from_json_enum_field case3: multi-payload variant decode wrong")
+    } sino {
+        print("PASSED test_from_json_enum_field")
+    }
+    return 0
+}

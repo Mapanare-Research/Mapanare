@@ -2772,7 +2772,20 @@ class MIRLowerer:
             # Pre-fix this fell into the str() fallback below, producing the
             # `<?>` placeholder. The struct must be registered in
             # self._module.structs (any reachable struct definition is).
+            #
+            # v5.39.7 Js.4.F.1 — _resolve_type_expr cannot distinguish
+            # enum from struct at parse time (both come through as
+            # TypeKind.STRUCT with the user-supplied name). Check the
+            # enums registry first so enum-typed fields route to the
+            # ENUM helper below; fall through to the struct path only
+            # if the name is genuinely a struct.
             struct_name = ftype.type_info.name if ftype.type_info else ""
+            if (
+                struct_name
+                and struct_name not in {"Option", "Result", "JsonValue"}
+                and struct_name in self._module.enums
+            ):
+                return self._emit_enum_json_body(field_val, struct_name)
             if struct_name and struct_name in self._module.structs:
                 return self._emit_struct_json_body(field_val, struct_name)
 
@@ -2800,6 +2813,23 @@ class MIRLowerer:
                 raise RuntimeError(f"to_json: Map<K, V> requires K = String (got {key_kind.name})")
             val_type = MIRType(args[1]) if len(args) > 1 else mir_unknown()
             return self._emit_map_json_body(field_val, val_type)
+
+        if kind == TypeKind.ENUM:
+            # v5.39.7 Js.4.F.1 — externally-tagged JSON shape
+            # ({"VariantName": payload}, with bare-string for no-payload
+            # variants). Pre-fix this fell into the str() fallback,
+            # producing the `<?>` placeholder for any enum-typed struct
+            # field. Skip list ({Option, Result, JsonValue}) keeps the
+            # compiler-internal enums on their existing paths: OPTION is
+            # handled above, Result is the parent context never reached
+            # as a struct field, JsonValue is the recursive case.
+            enum_name = ftype.type_info.name if ftype.type_info else ""
+            if (
+                enum_name
+                and enum_name not in {"Option", "Result", "JsonValue"}
+                and enum_name in self._module.enums
+            ):
+                return self._emit_enum_json_body(field_val, enum_name)
 
         # Fallback: convert to string with str()
         dest = self._make_value(ty=mir_string())
@@ -3078,6 +3108,120 @@ class MIRLowerer:
         final = self._make_value(ty=mir_string())
         self._emit(BinOp(dest=final, op=BinOpKind.ADD, lhs=result_phi_dest, rhs=close))
         return final
+
+    def _emit_enum_json_body(self, enum_val: Value, enum_name: str) -> Value:
+        """Emit MIR producing an externally-tagged JSON string for enum_val.
+
+        v5.39.7 Js.4.F.1 — Switch on EnumTag, one block per variant, merge
+        the per-variant strings via a Phi. Per-variant shapes:
+
+            no-payload      → bare string "VariantName"
+            single-payload  → {"VariantName": <encoded>}
+            multi-payload   → {"VariantName": [<p0>, <p1>, ...]}
+
+        Multi-payload variants project the positional tuple to a JSON array;
+        the decode side expects the same shape via _emit_list_decode_body.
+        Recurses through _encode_field_to_json per payload type so nested
+        Struct / List / Map / Enum payloads fall through uniformly.
+
+        Default block (unrecognized tag at runtime — shouldn't happen for a
+        well-typed enum) emits the literal "<UNKNOWN>" placeholder so the
+        Phi has a complete incoming list and the result remains valid JSON.
+        """
+        variants = self._module.enums.get(enum_name, [])
+
+        tag = self._make_value(ty=mir_int())
+        self._emit(EnumTag(dest=tag, enum_val=enum_val))
+
+        merge_bb = self._new_block(self._fresh_block("enum_enc_merge"))
+
+        case_pairs: list[tuple[str, str]] = []
+        var_blocks: dict[str, Any] = {}
+        for vname, _ptypes in variants:
+            bb = self._new_block(self._fresh_block(f"enum_enc_{vname}"))
+            case_pairs.append((vname, bb.label))
+            var_blocks[vname] = bb
+
+        default_bb = self._new_block(self._fresh_block("enum_enc_default"))
+        self._emit(Switch(tag=tag, cases=case_pairs, default_block=default_bb.label))
+
+        incoming: list[tuple[str, Value]] = []
+
+        for vname, payload_types in variants:
+            bb = var_blocks[vname]
+            self._set_block(bb)
+
+            if not payload_types:
+                # No payload: bare string "\"VariantName\""
+                s = self._make_value(ty=mir_string())
+                self._emit(Const(dest=s, ty=mir_string(), value=f'"{vname}"'))
+                self._emit(Jump(target=merge_bb.label))
+                assert self._block is not None
+                incoming.append((self._block.label, s))
+                continue
+
+            if len(payload_types) == 1:
+                # Single payload: {"VariantName": <encoded>}
+                ptype = payload_types[0]
+                inner = self._make_value(ty=ptype)
+                self._emit(EnumPayload(dest=inner, enum_val=enum_val, variant=vname, payload_idx=0))
+                inner_str = self._encode_field_to_json(inner, ptype)
+
+                prefix = self._make_value(ty=mir_string())
+                self._emit(Const(dest=prefix, ty=mir_string(), value=f'{{"{vname}": '))
+                t1 = self._make_value(ty=mir_string())
+                self._emit(BinOp(dest=t1, op=BinOpKind.ADD, lhs=prefix, rhs=inner_str))
+                suffix = self._make_value(ty=mir_string())
+                self._emit(Const(dest=suffix, ty=mir_string(), value="}"))
+                t2 = self._make_value(ty=mir_string())
+                self._emit(BinOp(dest=t2, op=BinOpKind.ADD, lhs=t1, rhs=suffix))
+                self._emit(Jump(target=merge_bb.label))
+                assert self._block is not None
+                incoming.append((self._block.label, t2))
+                continue
+
+            # Multi-payload: {"VariantName": [<p0>, <p1>, ...]}
+            current = self._make_value(ty=mir_string())
+            self._emit(Const(dest=current, ty=mir_string(), value=f'{{"{vname}": ['))
+
+            for idx, ptype in enumerate(payload_types):
+                inner = self._make_value(ty=ptype)
+                self._emit(
+                    EnumPayload(dest=inner, enum_val=enum_val, variant=vname, payload_idx=idx)
+                )
+                inner_str = self._encode_field_to_json(inner, ptype)
+
+                if idx > 0:
+                    sep = self._make_value(ty=mir_string())
+                    self._emit(Const(dest=sep, ty=mir_string(), value=", "))
+                    t = self._make_value(ty=mir_string())
+                    self._emit(BinOp(dest=t, op=BinOpKind.ADD, lhs=current, rhs=sep))
+                    current = t
+                t = self._make_value(ty=mir_string())
+                self._emit(BinOp(dest=t, op=BinOpKind.ADD, lhs=current, rhs=inner_str))
+                current = t
+
+            close = self._make_value(ty=mir_string())
+            self._emit(Const(dest=close, ty=mir_string(), value="]}"))
+            final_v = self._make_value(ty=mir_string())
+            self._emit(BinOp(dest=final_v, op=BinOpKind.ADD, lhs=current, rhs=close))
+            self._emit(Jump(target=merge_bb.label))
+            assert self._block is not None
+            incoming.append((self._block.label, final_v))
+
+        # Default block: emit "<UNKNOWN>" placeholder string
+        self._set_block(default_bb)
+        ph = self._make_value(ty=mir_string())
+        self._emit(Const(dest=ph, ty=mir_string(), value='"<UNKNOWN>"'))
+        self._emit(Jump(target=merge_bb.label))
+        assert self._block is not None
+        incoming.append((self._block.label, ph))
+
+        # Merge
+        self._set_block(merge_bb)
+        result = self._make_value(ty=mir_string())
+        self._emit(Phi(dest=result, incoming=incoming))
+        return result
 
     def _ensure_json_types_registered(self) -> None:
         """v5.39.1 Js.4.B.1 — register JsonValue + JsonError in the
@@ -3403,7 +3547,18 @@ class MIRLowerer:
             # expected — silent shape mismatch on the consumer side.
             # Trusts that the JsonValue is an Object variant (consistent
             # with the no-tag-check behavior of the primitive branches).
+            #
+            # v5.39.7 Js.4.F.2 — same enum-vs-struct disambiguation as the
+            # encode side: _resolve_type_expr cannot tell enum from struct
+            # at parse time, so check the enums registry first and route
+            # to the ENUM decode helper.
             struct_name = target_type.type_info.name if target_type.type_info else ""
+            if (
+                struct_name
+                and struct_name not in {"Option", "Result", "JsonValue"}
+                and struct_name in self._module.enums
+            ):
+                return self._emit_enum_decode_body(jval, struct_name)
             if struct_name and struct_name in self._module.structs:
                 return self._emit_decode_struct_inline(jval, struct_name)
 
@@ -3658,6 +3813,216 @@ class MIRLowerer:
         # Exit
         self._set_block(exit_bb)
         return acc
+
+    def _emit_enum_decode_body(self, jval: Value, enum_name: str) -> Value:
+        """Decode externally-tagged JSON to an enum value.
+
+        v5.39.7 Js.4.F.2 — symmetric pair to Js.4.F.1's encode helper.
+        Accepts two JSON shapes per the externally-tagged invariant:
+
+            "VariantName"             → no-payload variant
+            {"VariantName": payload}  → payload-bearing variant
+                payload is a single JSON value for 1-tuple variants,
+                a JSON array for n-tuple (n>=2) variants.
+
+        Switch on EnumTag(jval):
+            Str    → string-cascade compare against each no-payload
+                     variant; on match, EnumInit; on miss, fallback.
+            Object → extract entries Map<String, JsonValue>; pull the
+                     single key (keys[0]); cascade against each
+                     payload-bearing variant; for 1-tuple decode the
+                     value through _decode_json_field; for n-tuple
+                     extract Array(List<JsonValue>) from the value
+                     and decode positionally; EnumInit with the
+                     decoded payloads; on miss, fallback.
+            default→ fallback (EnumInit of the first variant; same
+                     no-tag-check no-error pattern as STRUCT decode).
+
+        Linear cascade is fast enough for typical enums (< 20 variants).
+        Hash-based dispatch is a v5.40+ candidate if benchmarks show need.
+        """
+        variants = self._module.enums.get(enum_name, [])
+        enum_ty = MIRType(TypeInfo(kind=TypeKind.ENUM, name=enum_name))
+        jv_ti = TypeInfo(kind=TypeKind.ENUM, name="JsonValue")
+
+        # Pick a default variant for fallback paths (first variant; if it
+        # has no payload, EnumInit with empty payload is safe).
+        default_variant: tuple[str, list[MIRType]] | None = variants[0] if variants else None
+
+        def _emit_default_init() -> Value:
+            """Emit a default-init enum value for fallback. Uses the first
+            variant; for payload-bearing first variants, populate with
+            zero/empty values of the correct types so EnumInit's payload
+            list matches the variant arity.
+            """
+            ev = self._make_value(ty=enum_ty)
+            if default_variant is None:
+                self._emit(EnumInit(dest=ev, enum_type=enum_ty, variant="", payload=[]))
+                return ev
+            vname, ptypes = default_variant
+            payload: list[Value] = []
+            for ptype in ptypes:
+                pkind = ptype.type_info.kind
+                pv = self._make_value(ty=ptype)
+                if pkind == TypeKind.INT:
+                    self._emit(Const(dest=pv, ty=mir_int(), value=0))
+                elif pkind == TypeKind.FLOAT:
+                    self._emit(Const(dest=pv, ty=MIRType(TypeInfo(kind=TypeKind.FLOAT)), value=0.0))
+                elif pkind == TypeKind.BOOL:
+                    self._emit(Const(dest=pv, ty=mir_bool(), value=False))
+                elif pkind == TypeKind.STRING:
+                    self._emit(Const(dest=pv, ty=mir_string(), value=""))
+                else:
+                    # For aggregate types, emit a null-ish const; this
+                    # path only fires on malformed JSON for the first
+                    # variant and is intentionally lossy.
+                    self._emit(Const(dest=pv, ty=ptype, value=None))
+                payload.append(pv)
+            self._emit(EnumInit(dest=ev, enum_type=enum_ty, variant=vname, payload=payload))
+            return ev
+
+        no_payload = [(n, p) for n, p in variants if not p]
+        with_payload = [(n, p) for n, p in variants if p]
+
+        # 1. Switch on jval tag (Str / Object / default)
+        tag = self._make_value(ty=mir_int())
+        self._emit(EnumTag(dest=tag, enum_val=jval))
+
+        str_bb = self._new_block(self._fresh_block("enum_dec_str"))
+        obj_bb = self._new_block(self._fresh_block("enum_dec_obj"))
+        err_bb = self._new_block(self._fresh_block("enum_dec_err"))
+        merge_bb = self._new_block(self._fresh_block("enum_dec_merge"))
+
+        self._emit(
+            Switch(
+                tag=tag,
+                cases=[("Str", str_bb.label), ("Object", obj_bb.label)],
+                default_block=err_bb.label,
+            )
+        )
+
+        incoming: list[tuple[str, Value]] = []
+
+        # ---- Str path: bare-string variant cascade ----
+        self._set_block(str_bb)
+        s = self._make_value(ty=mir_string())
+        self._emit(EnumPayload(dest=s, enum_val=jval, variant="Str", payload_idx=0))
+
+        for vname, _ptypes in no_payload:
+            match_bb = self._new_block(self._fresh_block(f"enum_dec_str_match_{vname}"))
+            next_bb = self._new_block(self._fresh_block("enum_dec_str_next"))
+
+            cv = self._make_value(ty=mir_string())
+            self._emit(Const(dest=cv, ty=mir_string(), value=vname))
+            cmp = self._make_value(ty=mir_bool())
+            self._emit(BinOp(dest=cmp, op=BinOpKind.EQ, lhs=s, rhs=cv))
+            self._emit(Branch(cond=cmp, true_block=match_bb.label, false_block=next_bb.label))
+
+            self._set_block(match_bb)
+            ev = self._make_value(ty=enum_ty)
+            self._emit(EnumInit(dest=ev, enum_type=enum_ty, variant=vname, payload=[]))
+            self._emit(Jump(target=merge_bb.label))
+            assert self._block is not None
+            incoming.append((self._block.label, ev))
+
+            self._set_block(next_bb)
+
+        # Str cascade fall-through: emit default and merge
+        str_default_val = _emit_default_init()
+        self._emit(Jump(target=merge_bb.label))
+        assert self._block is not None
+        incoming.append((self._block.label, str_default_val))
+
+        # ---- Object path: tagged-union variant cascade ----
+        self._set_block(obj_bb)
+        # entries: Map<String, JsonValue>
+        entries_ty = MIRType(
+            TypeInfo(kind=TypeKind.MAP, args=[TypeInfo(kind=TypeKind.STRING), jv_ti])
+        )
+        entries = self._make_value(ty=entries_ty)
+        self._emit(EnumPayload(dest=entries, enum_val=jval, variant="Object", payload_idx=0))
+
+        # keys = __mn_map_keys(entries); variant_key = keys[0]
+        keys_ty = MIRType(TypeInfo(kind=TypeKind.LIST, args=[TypeInfo(kind=TypeKind.STRING)]))
+        keys_val = self._make_value(ty=keys_ty)
+        self._emit(Call(dest=keys_val, fn_name="__mn_map_keys", args=[entries]))
+
+        zero = self._make_value(ty=mir_int())
+        self._emit(Const(dest=zero, ty=mir_int(), value=0))
+        variant_key = self._make_value(ty=mir_string())
+        self._emit(IndexGet(dest=variant_key, obj=keys_val, index=zero))
+
+        for vname, payload_types in with_payload:
+            match_bb = self._new_block(self._fresh_block(f"enum_dec_obj_match_{vname}"))
+            next_bb = self._new_block(self._fresh_block("enum_dec_obj_next"))
+
+            cv = self._make_value(ty=mir_string())
+            self._emit(Const(dest=cv, ty=mir_string(), value=vname))
+            cmp = self._make_value(ty=mir_bool())
+            self._emit(BinOp(dest=cmp, op=BinOpKind.EQ, lhs=variant_key, rhs=cv))
+            self._emit(Branch(cond=cmp, true_block=match_bb.label, false_block=next_bb.label))
+
+            self._set_block(match_bb)
+            # payload_jval = entries[vname]
+            key_const = self._make_value(ty=mir_string())
+            self._emit(Const(dest=key_const, ty=mir_string(), value=vname))
+            payload_jv = self._make_value(ty=MIRType(jv_ti))
+            self._emit(IndexGet(dest=payload_jv, obj=entries, index=key_const))
+
+            decoded_payload: list[Value] = []
+            if len(payload_types) == 1:
+                ptype = payload_types[0]
+                decoded = self._decode_json_field(payload_jv, ptype)
+                decoded_payload.append(decoded)
+            else:
+                # Multi-payload: payload_jv is JsonValue::Array.
+                # Extract the inner List<JsonValue>; decode positionally.
+                arr_ty = MIRType(TypeInfo(kind=TypeKind.LIST, args=[jv_ti]))
+                arr = self._make_value(ty=arr_ty)
+                self._emit(
+                    EnumPayload(dest=arr, enum_val=payload_jv, variant="Array", payload_idx=0)
+                )
+                for idx, ptype in enumerate(payload_types):
+                    idx_v = self._make_value(ty=mir_int())
+                    self._emit(Const(dest=idx_v, ty=mir_int(), value=idx))
+                    elem_jv = self._make_value(ty=MIRType(jv_ti))
+                    self._emit(IndexGet(dest=elem_jv, obj=arr, index=idx_v))
+                    decoded = self._decode_json_field(elem_jv, ptype)
+                    decoded_payload.append(decoded)
+
+            ev = self._make_value(ty=enum_ty)
+            self._emit(
+                EnumInit(
+                    dest=ev,
+                    enum_type=enum_ty,
+                    variant=vname,
+                    payload=decoded_payload,
+                )
+            )
+            self._emit(Jump(target=merge_bb.label))
+            assert self._block is not None
+            incoming.append((self._block.label, ev))
+
+            self._set_block(next_bb)
+
+        # Object cascade fall-through
+        obj_default_val = _emit_default_init()
+        self._emit(Jump(target=merge_bb.label))
+        assert self._block is not None
+        incoming.append((self._block.label, obj_default_val))
+
+        # ---- Default path: not Str / not Object ----
+        self._set_block(err_bb)
+        err_default_val = _emit_default_init()
+        self._emit(Jump(target=merge_bb.label))
+        assert self._block is not None
+        incoming.append((self._block.label, err_default_val))
+
+        # ---- Merge ----
+        self._set_block(merge_bb)
+        result = self._make_value(ty=enum_ty)
+        self._emit(Phi(dest=result, incoming=incoming))
+        return result
 
     def _lower_method_call(self, expr: MethodCallExpr) -> Value:
         """Lower a method call: `obj.method(args)`."""

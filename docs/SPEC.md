@@ -1,7 +1,51 @@
 # Mapanare Language Specification
 
-**Version:** 5.39.6
-**Status:** Live — synced to the v5.39.6 cut (2026-05-04)
+**Version:** 5.39.7
+**Status:** Live — synced to the v5.39.7 cut (2026-05-04)
+
+> **v5.39.7 — Js.4.F.1 + Js.4.F.2 — typed-serde ENUM encode +
+> decode; round-trip closure for enum-typed fields. Final
+> release in the v5.39.x typed-serde arc; Js.4.\* arc CLOSED.**
+> SPEC body unchanged from the v5.21.0 cut. After v5.39.7 the
+> typed-serde round-trip `to_json::<T>` ↔ `from_json::<T>`
+> closes for every common LLM JSON response shape (primitive,
+> struct, nested struct, `List<X>`, `Map<String, V>`, and
+> tagged-union enums). **Js.4.F.1**: added missing
+> `TypeKind.ENUM` branch in
+> `mapanare/lower.py::_encode_field_to_json` (routed inside the
+> existing STRUCT branch since `_resolve_type_expr` cannot
+> distinguish enum from struct at parse time; skip list
+> `{Option, Result, JsonValue}` keeps compiler-internal enums on
+> their existing paths); new `_emit_enum_json_body` helper
+> switches on `EnumTag` with one block per variant + default,
+> merges via Phi. Per-variant payload shape: no-payload → bare
+> string `"VariantName"`; single-payload →
+> `{"VariantName": <encoded>}`; multi-payload →
+> `{"VariantName": [<p0>, <p1>, ...]}` (positional tuple → JSON
+> array). **Js.4.F.2**: added missing `TypeKind.ENUM` branch in
+> `mapanare/lower.py::_decode_json_field`; new
+> `_emit_enum_decode_body` helper switches on JsonValue tag
+> (Str / Object / default), then runs a string-cascade compare
+> against each variant name. For Str: each no-payload variant
+> gets one `if jstr == "VariantName" { EnumInit(VariantName) }`
+> arm. For Object: extract `Map<String, JsonValue>` entries via
+> `EnumPayload(variant="Object")`, pull the single variant key
+> via `__mn_map_keys`+`keys[0]`, cascade-compare against each
+> payload-bearing variant, decode payload(s) positionally
+> (1-tuple → recurse `_decode_json_field`; n-tuple → extract
+> `JsonValue::Array`'s inner `List<JsonValue>` and decode each
+> element by its declared payload type), then `EnumInit`.
+> **Externally-tagged JSON shape locked at PLAN** —
+> `{"VariantName": payload}` with bare-string for unit variants;
+> matches Rust serde's default derive output and what most LLMs
+> produce in function-call responses. Adds **zero language
+> features, zero new MIR ops, zero new IR shapes, zero new C
+> runtime exports**. Strict 3-stage fixed point preserved by
+> construction at v5.39.6's 241,898 lines / 0 diff (41-release
+> strict streak from v5.7.1; zero `mapanare/self/*.mn` source
+> touches — Phase 0 grep returned 0 matches; mirror is
+> structurally N/A). **Js.4.\* arc CLOSED.** v5.40.0 manifesto-
+> arc kickoff (`ask` / `ask_typed::<T>`) fully unblocked.
 
 > **v5.39.6 — Js.4.E.1 + Js.4.E.2 — typed-serde MAP encode +
 > decode; round-trip closure for `Map<String, V>`-typed fields.**
