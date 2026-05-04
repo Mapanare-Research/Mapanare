@@ -1,0 +1,27 @@
+// v5.39.4 Js.4.D.2 — link-and-run regression for from_json::<T> on
+// a struct with a struct-typed field. Pre-fix this returned the raw
+// JsonValue enum where the nested struct shape was expected
+// (mapanare/lower.py::_decode_json_field fell into the raw-jval
+// fallback for TypeKind.STRUCT) — silent shape mismatch on the
+// consumer side, surfaced as wrong field values after decode.
+// Post-fix the nested struct is decoded recursively via the new
+// _emit_decode_struct_inline helper extracted from _lower_decode_to.
+
+struct Inner { x: Int, y: String }
+struct Wrap { name: String, inner: Inner }
+
+fn main() -> Int {
+    pon s: String = "{\"name\": \"ok\", \"inner\": {\"x\": 42, \"y\": \"hi\"}}"
+    pon r: Result<Wrap, JsonError> = from_json::<Wrap>(s)
+    match r {
+        Ok(w) => {
+            si w.name == "ok" && w.inner.x == 42 && w.inner.y == "hi" {
+                print("PASSED test_from_json_nested_struct")
+            } sino {
+                print("FAIL test_from_json_nested_struct: wrong values after decode")
+            }
+        },
+        Err(e) => print("FAIL test_from_json_nested_struct: decode error")
+    }
+    return 0
+}

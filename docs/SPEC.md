@@ -1,7 +1,38 @@
 # Mapanare Language Specification
 
-**Version:** 5.39.3
-**Status:** Live — synced to the v5.39.3 cut (2026-05-03)
+**Version:** 5.39.4
+**Status:** Live — synced to the v5.39.4 cut (2026-05-03)
+
+> **v5.39.4 — Js.4.D.1 + Js.4.D.2 — typed-serde round-trip closure
+> for nested-struct + List-typed fields.** SPEC body unchanged from
+> the v5.21.0 cut. Two siblings to v5.39.3's STRUCT encoding (Js.4.C),
+> bundled because together they unlock the `to_json::<T>` ↔
+> `from_json::<T>` round-trip for the shapes v5.40.0 Ai.\*
+> (`ask_typed::<T>`) actually returns. **Js.4.D.1**: added the
+> missing `TypeKind.LIST` branch in
+> `mapanare/lower.py::_encode_field_to_json` (sibling to v5.39.3's
+> STRUCT branch); the new `_emit_list_json_body` helper emits a
+> counter+phi loop calling `_encode_field_to_json` per element, so
+> nested `List<List<T>>` and `List<Struct>` recurse uniformly through
+> the existing branches. Pre-fix `Bag("box", [1, 2, 3])` encoded as
+> `{"name": "box", "items": <?>}`. **Js.4.D.2**: added the missing
+> `TypeKind.STRUCT` branch in
+> `mapanare/lower.py::_decode_json_field`. Sibling factoring to
+> v5.39.3 on the encode side: extracted
+> `_emit_decode_struct_inline(json_val, struct_name) -> Value` from
+> `_lower_decode_to`'s Object branch; the helper is shared between
+> the top-level `decode_to::<T>` / `from_json::<T>` Ok-path and the
+> new STRUCT field-recursion. Pre-fix nested struct fields decoded
+> to garbage (silent shape mismatch — fallback returned the raw
+> `JsonValue` enum). Bundle scope locked: STRUCT-decode + LIST-encode
+> only; MAP encoding (string-key invariant), ENUM encoding (tagged-
+> union shape), and LIST/MAP/ENUM decoding held for v5.39.5+ — each
+> deserves its own Phase 0 audit. Adds **zero language features,
+> zero new MIR ops, zero new IR shapes, zero new C runtime exports**.
+> Strict 3-stage fixed point preserved by construction at v5.39.3's
+> 241,898 lines / 0 diff (38-release strict streak from v5.7.1;
+> zero `mapanare/self/*.mn` source touches — Phase 0 grep returned
+> 0 matches, mirror is structurally N/A).
 
 > **v5.39.3 — Js.4.C — `to_json::<T>` nested-struct recursion.**
 > SPEC body unchanged from the v5.21.0 cut. Split-from-v5.39.2

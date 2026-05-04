@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.39.4] - 2026-05-03
+
+**Js.4.D.1 + Js.4.D.2 — typed-serde round-trip closure for nested
+struct + List-typed fields.** Two siblings to v5.39.3's STRUCT
+encoding (Js.4.C), bundled in one release because together they
+unlock the `to_json::<T>` ↔ `from_json::<T>` round-trip for the
+shapes v5.40.0 Ai.\* (`ask_typed::<T>`) actually returns. Adds
+**zero language features, zero new MIR ops, zero new IR shapes,
+zero new C runtime exports**. **Strict 3-stage fixed point
+preserved by construction** at v5.39.3's **241,898 lines / 0 diff**
+(38-release strict streak from v5.7.1; zero `mapanare/self/*.mn`
+source touches — Phase 0 verified `grep -rn "from_json\|decode_to\|encode_struct\|to_json" mapanare/self/`
+returned 0 matches). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.D.1 — `to_json::<T>` LIST nested encoding.**
+  `mapanare/lower.py::_encode_field_to_json` had explicit handlers
+  for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT` (the latter
+  shipped in v5.39.3) but no branch for `TypeKind.LIST`. The
+  fallback `Call(fn_name="str", args=[field_val])` emitted the
+  literal `<?>` placeholder via `mapanare/emit_llvm_text.py`'s
+  `r, _ = self._mkstr("<?>")`. Pre-fix `Bag("box", [1, 2, 3])`
+  encoded as `{"name": "box", "items": <?>}`. Fix adds a new
+  `_emit_list_json_body(list_val, inner_type) -> Value` helper
+  emitting a counter+phi loop that calls `_encode_field_to_json`
+  per element, recursing through STRUCT / LIST / primitive
+  branches uniformly. Post-fix `[1, 2, 3]`, `["foo", "bar"]`,
+  `[{"id": 1, "name": "a"}]`, and the empty-list `[]` cases all
+  encode correctly. Latent since v5.36.0 Js.4 ship; the v5.36.0
+  `tests/stdlib/test_struct_json.py` was compile-only — the
+  placeholder text was syntactically present in IR but never
+  link-tested. Same bug class as v5.39.3 Js.4.C (missing
+  TypeKind branch in the encoder dispatch).
+
+- **Js.4.D.2 — `from_json::<T>` nested struct decoding.**
+  `mapanare/lower.py::_decode_json_field` had explicit handlers
+  for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION` but no branch for
+  `TypeKind.STRUCT`. The fallback returned the raw `JsonValue`
+  enum where the consumer expected the struct shape — silent
+  shape mismatch surfaced as wrong field values after decode
+  (no link error, no SEGV — just garbage data). Pre-fix
+  `from_json::<Wrap>("{\"name\": \"ok\", \"inner\": {\"x\": 42, \"y\": \"hi\"}}")`
+  returned a Wrap with `inner.x=0` / `inner.y=""`. Fix extracts
+  the field-extraction body of `_lower_decode_to` into a new
+  `_emit_decode_struct_inline(json_val, struct_name) -> Value`
+  helper (sibling factoring to v5.39.3's `_emit_struct_json_body`
+  on the encode side). The new helper is called from both the
+  top-level `_lower_decode_to` Object branch (replacing the
+  inline body — same external behavior) and the new STRUCT
+  branch in `_decode_json_field` (which trusts the JsonValue is
+  an Object variant, consistent with the no-tag-check behavior
+  of the primitive branches).
+
+### Changed
+
+- **Bundle scope: STRUCT decode + LIST encode only.** MAP encoding
+  has the JSON-string-key invariant question (reject vs coerce vs
+  runtime-error); ENUM encoding has the tagged-union shape question
+  (`"VariantName"` vs `{"Variant": payload}` vs `{"tag": ..., "payload": ...}`);
+  LIST/MAP/ENUM decoding mirrors the same questions on the parse
+  side. Each deserves its own Phase 0 audit and lead-approved
+  invariant decision; v5.39.5+ picks them up.
+
+- **Self-host mirror N/A**: Phase 0 grep for
+  `from_json|decode_to|encode_struct|to_json` in `mapanare/self/`
+  returned 0 matches. The Js.4 typed-serde surface shipped
+  Python-bootstrap-only at v5.36.0 and has not been mirrored.
+  STRICT preserved trivially by construction.
+
+- **Test infrastructure extension.** Three new Mapanare test
+  fixtures appended to `TEST_FILES` in
+  `tests/stdlib/test_struct_json_runtime.py`:
+  `test_to_json_list_field.mn` (Js.4.D.1 single-direction encode),
+  `test_from_json_nested_struct.mn` (Js.4.D.2 single-direction
+  decode), and `test_to_from_nested_roundtrip.mn` (load-bearing
+  round-trip with embedded `List<Int>` field exercising both
+  fixes). 10/10 GREEN at HEAD (was 7 at v5.39.3 HEAD; +3).
+  Falsifiability locked per fix — reverting either branch fails
+  the corresponding single-direction test; reverting both fails
+  the round-trip with the diverging-field signature.
+
+- **Hd-class preventative.** `docs/SPEC.md` header re-synced from
+  "v5.39.3 cut" to "v5.39.4 cut" with new sync block.
+  `check_doc_freshness.py` GREEN; `check_changelog_honesty.py`
+  GREEN.
+
+
 ## [5.39.3] - 2026-05-03
 
 **Js.4.C — `to_json::<T>` nested-struct recursion.** Split-from-v5.39.2
@@ -10704,7 +10792,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.3...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.4...HEAD
+[5.39.4]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.3...v5.39.4
 [5.39.3]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.2...v5.39.3
 [5.39.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.1...v5.39.2
 [5.39.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.0...v5.39.1

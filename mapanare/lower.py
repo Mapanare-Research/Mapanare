@@ -2776,10 +2776,138 @@ class MIRLowerer:
             if struct_name and struct_name in self._module.structs:
                 return self._emit_struct_json_body(field_val, struct_name)
 
+        if kind == TypeKind.LIST:
+            # v5.39.4 Js.4.D.1 — encode each element through _encode_field_to_json.
+            # Pre-fix this fell into the str() fallback, producing the `<?>`
+            # placeholder for any List-typed struct field.
+            inner_type = (
+                MIRType(ftype.type_info.args[0])
+                if ftype.type_info and ftype.type_info.args
+                else mir_unknown()
+            )
+            return self._emit_list_json_body(field_val, inner_type)
+
         # Fallback: convert to string with str()
         dest = self._make_value(ty=mir_string())
         self._emit(Call(dest=dest, fn_name="str", args=[field_val]))
         return dest
+
+    def _emit_list_json_body(self, list_val: Value, inner_type: MIRType) -> Value:
+        """Emit MIR producing a JSON `[...]` string for list_val.
+
+        Loops element-by-element and recurses through _encode_field_to_json
+        on the element type, so nested List<List<T>> / List<Struct> fall
+        through the existing STRUCT / LIST / primitive branches uniformly.
+        v5.39.4 Js.4.D.1 — sibling to v5.39.3's STRUCT branch.
+
+        Loop shape (mutable-Phi pattern; same as a hand-written while):
+            entry: zero=0; len_v=len(list); init="["; jump header
+            header: counter=phi(zero, new_counter)
+                    result =phi(init, new_result)
+                    cmp = counter < len_v
+                    branch cmp -> body, exit
+            body:   elem = list[counter]
+                    elem_str = _encode_field_to_json(elem, inner_type)
+                    if counter == 0: result_after = result + elem_str
+                    else:            result_after = result + ", " + elem_str
+                    new_counter = counter + 1
+                    new_result  = result_after
+                    jump header
+            exit:   final = result + "]"; return final
+        """
+        assert self._block is not None
+        entry_label = self._block.label
+
+        zero = self._make_value(ty=mir_int())
+        self._emit(Const(dest=zero, ty=mir_int(), value=0))
+
+        len_val = self._make_value(ty=mir_int())
+        self._emit(Call(dest=len_val, fn_name="len", args=[list_val]))
+
+        init_str = self._make_value(ty=mir_string())
+        self._emit(Const(dest=init_str, ty=mir_string(), value="["))
+
+        header_bb = self._new_block(self._fresh_block("list_enc_header"))
+        body_bb = self._new_block(self._fresh_block("list_enc_body"))
+        exit_bb = self._new_block(self._fresh_block("list_enc_exit"))
+
+        self._emit(Jump(target=header_bb.label))
+
+        # Header: phi nodes for counter + accumulator (incoming filled later)
+        self._set_block(header_bb)
+        counter_phi_dest = self._make_value(ty=mir_int())
+        counter_phi = Phi(dest=counter_phi_dest, incoming=[])
+        self._emit(counter_phi)
+        result_phi_dest = self._make_value(ty=mir_string())
+        result_phi = Phi(dest=result_phi_dest, incoming=[])
+        self._emit(result_phi)
+
+        cmp = self._make_value(ty=mir_bool())
+        self._emit(BinOp(dest=cmp, op=BinOpKind.LT, lhs=counter_phi_dest, rhs=len_val))
+        self._emit(Branch(cond=cmp, true_block=body_bb.label, false_block=exit_bb.label))
+
+        # Body: extract element, encode, append (with separator if not first)
+        self._set_block(body_bb)
+        elem = self._make_value(ty=inner_type)
+        self._emit(IndexGet(dest=elem, obj=list_val, index=counter_phi_dest))
+        elem_str = self._encode_field_to_json(elem, inner_type)
+
+        is_first = self._make_value(ty=mir_bool())
+        self._emit(BinOp(dest=is_first, op=BinOpKind.EQ, lhs=counter_phi_dest, rhs=zero))
+
+        first_bb = self._new_block(self._fresh_block("list_enc_first"))
+        rest_bb = self._new_block(self._fresh_block("list_enc_rest"))
+        sep_merge_bb = self._new_block(self._fresh_block("list_enc_sep_merge"))
+        self._emit(Branch(cond=is_first, true_block=first_bb.label, false_block=rest_bb.label))
+
+        # First-element path: result + elem_str
+        self._set_block(first_bb)
+        first_added = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=first_added, op=BinOpKind.ADD, lhs=result_phi_dest, rhs=elem_str))
+        self._emit(Jump(target=sep_merge_bb.label))
+        assert self._block is not None
+        first_exit = self._block.label
+
+        # Rest path: result + ", " + elem_str
+        self._set_block(rest_bb)
+        comma = self._make_value(ty=mir_string())
+        self._emit(Const(dest=comma, ty=mir_string(), value=", "))
+        with_comma = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=with_comma, op=BinOpKind.ADD, lhs=result_phi_dest, rhs=comma))
+        rest_added = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=rest_added, op=BinOpKind.ADD, lhs=with_comma, rhs=elem_str))
+        self._emit(Jump(target=sep_merge_bb.label))
+        assert self._block is not None
+        rest_exit = self._block.label
+
+        # Merge separator branches
+        self._set_block(sep_merge_bb)
+        new_result = self._make_value(ty=mir_string())
+        self._emit(
+            Phi(dest=new_result, incoming=[(first_exit, first_added), (rest_exit, rest_added)])
+        )
+
+        # counter++
+        one = self._make_value(ty=mir_int())
+        self._emit(Const(dest=one, ty=mir_int(), value=1))
+        new_counter = self._make_value(ty=mir_int())
+        self._emit(BinOp(dest=new_counter, op=BinOpKind.ADD, lhs=counter_phi_dest, rhs=one))
+
+        assert self._block is not None
+        body_exit_label = self._block.label
+        self._emit(Jump(target=header_bb.label))
+
+        # Patch the header phis now that body's exit label is known
+        counter_phi.incoming = [(entry_label, zero), (body_exit_label, new_counter)]
+        result_phi.incoming = [(entry_label, init_str), (body_exit_label, new_result)]
+
+        # Exit: append "]"
+        self._set_block(exit_bb)
+        close = self._make_value(ty=mir_string())
+        self._emit(Const(dest=close, ty=mir_string(), value="]"))
+        final = self._make_value(ty=mir_string())
+        self._emit(BinOp(dest=final, op=BinOpKind.ADD, lhs=result_phi_dest, rhs=close))
+        return final
 
     def _ensure_json_types_registered(self) -> None:
         """v5.39.1 Js.4.B.1 — register JsonValue + JsonError in the
@@ -2839,11 +2967,13 @@ class MIRLowerer:
 
         Takes a JsonValue (already parsed), extracts Object variant's map,
         looks up each struct field by key, converts to proper type, constructs struct.
+        v5.39.4 Js.4.D.2: factored out _emit_decode_struct_inline so the
+        nested-struct field decoder can reuse the field-extraction body
+        without the outer Result-wrap + tag-check.
         """
         self._ensure_json_types_registered()
         type_arg = expr.type_args[0]
         struct_name = type_arg.name if hasattr(type_arg, "name") else ""
-        fields = self._module.structs.get(struct_name, [])
 
         # v5.36.0 Js.4: result_ty must carry type args so the user's match
         # arms extract the correct payload shape. Pre-fix this was a bare
@@ -2861,7 +2991,6 @@ class MIRLowerer:
                 ],
             )
         )
-        struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=struct_name))
         err_struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name="JsonError"))
 
         # Step 1: Check if json_val is an Object variant
@@ -2900,30 +3029,9 @@ class MIRLowerer:
         assert self._block is not None
         err_exit = self._block.label
 
-        # Object path: extract the map
+        # Object path: shared inline decoder
         self._set_block(obj_bb)
-        entries = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.MAP)))
-        self._emit(EnumPayload(dest=entries, enum_val=json_val, variant="Object", payload_idx=0))
-
-        # Step 2: Extract each field from the map
-        field_values: list[tuple[str, Value]] = []
-        for fname, ftype in fields:
-            key = self._make_value(ty=mir_string())
-            self._emit(Const(dest=key, ty=mir_string(), value=fname))
-
-            # Get JsonValue from map by key
-            jval = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.ENUM, name="JsonValue")))
-            self._emit(IndexGet(dest=jval, obj=entries, index=key))
-
-            # Convert JsonValue to the field's type
-            converted = self._decode_json_field(jval, ftype)
-            field_values.append((fname, converted))
-
-        # Step 3: Construct the struct
-        struct_val = self._make_value(ty=struct_ty)
-        self._emit(StructInit(dest=struct_val, struct_type=struct_ty, fields=field_values))
-        for _fn_, _fv_ in field_values:
-            self._emit(Move(value=_fv_))
+        struct_val = self._emit_decode_struct_inline(json_val, struct_name)
 
         # Wrap in Ok
         ok_result = self._make_value(ty=result_ty)
@@ -2938,6 +3046,45 @@ class MIRLowerer:
         final = self._make_value(ty=result_ty)
         self._emit(Phi(dest=final, incoming=[(err_exit, err_result), (ok_exit, ok_result)]))
         return final
+
+    def _emit_decode_struct_inline(self, json_val: Value, struct_name: str) -> Value:
+        """Emit MIR that extracts a struct of `struct_name` from `json_val`,
+        assuming `json_val` is a `JsonValue::Object`. Returns the bare
+        struct value (NOT wrapped in Result).
+
+        Shared between top-level decode_to::<T> / from_json::<T> (via
+        _lower_decode_to's Object branch) and struct-typed-field recursion
+        (via _decode_json_field's STRUCT branch). v5.39.4 Js.4.D.2 —
+        sibling to v5.39.3's encode-side _emit_struct_json_body factoring.
+
+        The caller is responsible for any tag-check + error-result wrap;
+        this helper is the pure Object → struct conversion.
+        """
+        struct_ty = MIRType(TypeInfo(kind=TypeKind.STRUCT, name=struct_name))
+        fields = self._module.structs.get(struct_name, [])
+
+        # Extract the entries map from the Object variant
+        entries = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.MAP)))
+        self._emit(EnumPayload(dest=entries, enum_val=json_val, variant="Object", payload_idx=0))
+
+        # Extract each field by name
+        field_values: list[tuple[str, Value]] = []
+        for fname, ftype in fields:
+            key = self._make_value(ty=mir_string())
+            self._emit(Const(dest=key, ty=mir_string(), value=fname))
+
+            jval = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.ENUM, name="JsonValue")))
+            self._emit(IndexGet(dest=jval, obj=entries, index=key))
+
+            converted = self._decode_json_field(jval, ftype)
+            field_values.append((fname, converted))
+
+        # Construct the struct
+        struct_val = self._make_value(ty=struct_ty)
+        self._emit(StructInit(dest=struct_val, struct_type=struct_ty, fields=field_values))
+        for _fn_, _fv_ in field_values:
+            self._emit(Move(value=_fv_))
+        return struct_val
 
     def _lower_from_json(self, expr: CallExpr, str_val: Value) -> Value:
         """Lower from_json::<T>(s: String) — parse + decode_to chain.
@@ -3078,6 +3225,17 @@ class MIRLowerer:
             result = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.OPTION)))
             self._emit(Phi(dest=result, incoming=[(none_exit, none_val), (some_exit, some_val)]))
             return result
+
+        if kind == TypeKind.STRUCT:
+            # v5.39.4 Js.4.D.2 — recurse into nested struct field via shared
+            # helper. Pre-fix this fell into the raw-jval fallback below,
+            # which returned the JsonValue enum where the struct shape was
+            # expected — silent shape mismatch on the consumer side.
+            # Trusts that the JsonValue is an Object variant (consistent
+            # with the no-tag-check behavior of the primitive branches).
+            struct_name = target_type.type_info.name if target_type.type_info else ""
+            if struct_name and struct_name in self._module.structs:
+                return self._emit_decode_struct_inline(jval, struct_name)
 
         # Fallback: just return the raw value
         return jval

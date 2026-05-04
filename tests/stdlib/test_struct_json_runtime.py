@@ -55,6 +55,13 @@ TEST_FILES = [
     "test_to_from_roundtrip.mn",
     # v5.39.3 Js.4.C — to_json::<T> nested struct field (was <?> pre-fix)
     "test_to_json_nested_struct.mn",
+    # v5.39.4 Js.4.D.1 — to_json::<T> List-typed field (was <?> pre-fix)
+    "test_to_json_list_field.mn",
+    # v5.39.4 Js.4.D.2 — from_json::<T> nested struct decode (silent
+    # shape mismatch pre-fix; consumer saw raw JsonValue)
+    "test_from_json_nested_struct.mn",
+    # v5.39.4 — full round-trip closure for nested-struct shapes
+    "test_to_from_nested_roundtrip.mn",
 ]
 
 

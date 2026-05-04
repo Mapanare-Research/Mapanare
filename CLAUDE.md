@@ -19,6 +19,100 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.39.4** (ready, not tagged) — **Js.4.D.1 + Js.4.D.2 —
+  typed-serde round-trip closure for nested-struct + List-typed
+  fields.** Two siblings to v5.39.3's STRUCT field encoding
+  (Js.4.C), bundled in one release because together they unlock
+  the `to_json::<T>` ↔ `from_json::<T>` round-trip for the
+  shapes v5.40.0 Ai.\* (`ask_typed::<T>`) actually returns. After
+  this release, the typed-serde round-trip handles
+  `struct Wrap { name: String, inner: Inner }` end-to-end
+  (encode → decode → field-by-field equality holds), and
+  List-typed fields encode element-by-element. Adds **zero
+  language features, zero new MIR ops, zero new IR shapes,
+  zero new C runtime exports**. **Strict 3-stage fixed point
+  preserved by construction** at v5.39.3's **241,898 lines / 0
+  diff** (38-release strict streak from v5.7.1; zero
+  `mapanare/self/*.mn` source touches — Phase 0 verified
+  `grep -rn "from_json\|decode_to\|encode_struct\|to_json"
+  mapanare/self/` returned 0 matches). Goldens **95/95**.
+  **Js.4.D.1 — LIST encode.**
+  `mapanare/lower.py:2689::_encode_field_to_json` had explicit
+  handlers for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT`
+  (the latter from v5.39.3) but no branch for `TypeKind.LIST`.
+  The fallback `Call(fn_name="str", args=[field_val])` emitted
+  the literal `<?>` placeholder via `_mkstr("<?>")`. Pre-fix
+  `Bag("box", [1, 2, 3])` encoded as
+  `{"name": "box", "items": <?>}`. Fix adds a new
+  `_emit_list_json_body(list_val, inner_type) -> Value` helper
+  emitting a counter+phi loop that calls `_encode_field_to_json`
+  per element, recursing through STRUCT / LIST / primitive
+  branches uniformly. Empty `[]`, `["foo", "bar"]`, and
+  `[{"id": 1, "name": "a"}, ...]` all encode correctly post-fix.
+  Mutable-Phi loop pattern: emit Phi instructions at header with
+  empty incoming, fill incoming after body's exit label is known
+  (`Phi.incoming` is a mutable list — pattern is safe).
+  **Js.4.D.2 — STRUCT decode.**
+  `mapanare/lower.py:3019::_decode_json_field` had explicit
+  handlers for primitives + OPTION but no branch for
+  `TypeKind.STRUCT`. The fallback returned the raw `JsonValue`
+  enum where the consumer expected the struct shape — silent
+  shape mismatch surfaced as wrong field values after decode
+  (no link error, no SEGV — just garbage data). Pre-fix nested
+  `from_json::<Wrap>(s)` returned a Wrap with `inner.x=0` /
+  `inner.y=""`. Fix mirrors v5.39.3's encode-side helper-extract
+  pattern: extracted
+  `_emit_decode_struct_inline(json_val, struct_name) -> Value`
+  from `_lower_decode_to`'s Object branch (the field-extraction
+  + StructInit body, ~30 LOC); the helper is shared between the
+  top-level `decode_to::<T>` / `from_json::<T>` Ok-path
+  (replacing the inlined body) and the new STRUCT branch in
+  `_decode_json_field` (which trusts the JsonValue is an Object
+  variant, consistent with the no-tag-check behavior of the
+  primitive branches).
+  **Field lookup audit (load-bearing):** confirmed at
+  `mapanare/lower.py:2912` that `_lower_decode_to` uses
+  by-name lookup (`Const(key=fname)` → `IndexGet(entries, key)`)
+  — not positional — so the round-trip works for any JSON
+  producer regardless of field-declaration order.
+  **Bundle scope: STRUCT decode + LIST encode only.** MAP
+  encoding has the JSON-string-key invariant question (reject
+  vs coerce vs runtime-error); ENUM encoding has the tagged-
+  union shape question (`"VariantName"` vs `{"Variant":
+  payload}` vs `{"tag": ..., "payload": ...}`); LIST/MAP/ENUM
+  decoding mirrors the same questions on the parse side. Each
+  deserves its own Phase 0 audit and lead-approved invariant
+  decision. v5.39.5+ picks them up.
+  **Self-host mirror N/A by construction**: Phase 0 grep
+  returned 0 matches. The Js.4 typed-serde surface shipped
+  Python-bootstrap-only at v5.36.0 and has not been mirrored.
+  STRICT preserved trivially.
+  **Test infrastructure extension.** Three new `.mn` test
+  files appended to `TEST_FILES` in
+  `tests/stdlib/test_struct_json_runtime.py`:
+  `test_to_json_list_field.mn` (Js.4.D.1 single-direction encode),
+  `test_from_json_nested_struct.mn` (Js.4.D.2 single-direction
+  decode), and `test_to_from_nested_roundtrip.mn` (load-bearing
+  round-trip with embedded `List<Int>` field exercising both
+  fixes). 10/10 GREEN at HEAD (was 7 at v5.39.3 HEAD; +3).
+  **Falsifiability locked per fix** — reverting either branch
+  fails the corresponding single-direction test; reverting
+  both fails the round-trip with the diverging-field signature.
+  **Hd-class preventative** — `docs/SPEC.md` header re-synced
+  from "v5.39.3 cut" to "v5.39.4 cut" with new sync block.
+  `check_doc_freshness.py` GREEN; `check_changelog_honesty.py`
+  GREEN. Source delta: ~165 LOC `mapanare/lower.py` (Js.4.D.1
+  helper + branch ~115 LOC; Js.4.D.2 helper extraction + branch
+  ~50 LOC net) + ~80 LOC `.mn` test cases (3 files) + ~10 LOC
+  `test_struct_json_runtime.py` TEST_FILES update + ~85 LOC
+  CHANGELOG + ~30 LOC SPEC sync + this CLAUDE.md release-notes
+  entry + mechanical bump_version.py edits. Aggregate state
+  entering v5.39.5: **0 HIGH** (Js.4.D.1 + Js.4.D.2 closed) /
+  **1 MEDIUM** (macOS notarization carry from v5.33.0 Nu.2) /
+  ~10 LOW (added MAP encode, ENUM encode, LIST/MAP/ENUM decode
+  as v5.39.5+ candidates). See
+  `docs/roadmap/v5/v5.39.4/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
 - **v5.39.3** (ready, not tagged) — **Js.4.C — `to_json::<T>`
   nested-struct recursion.** Split-from-v5.39.2 follow-on.
   v5.39.2 closed the runtime SEGV in `from_json::<T>` (Js.4.B.2)
@@ -2040,7 +2134,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (31799 symbols, 66843 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (31837 symbols, 66876 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
