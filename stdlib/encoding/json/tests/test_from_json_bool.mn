@@ -1,0 +1,19 @@
+// v5.39.2 Js.4.B.2 — single-Bool-field struct round-trip.
+
+struct PBool { active: Bool }
+
+fn main() -> Int {
+    pon s: String = "{\"active\": true}"
+    pon r: Result<PBool, JsonError> = from_json::<PBool>(s)
+    match r {
+        Ok(p) => {
+            si p.active == true {
+                print("PASSED test_from_json_bool")
+            } sino {
+                print("FAIL test_from_json_bool: wrong value")
+            }
+        },
+        Err(e) => print("FAIL test_from_json_bool: decode error")
+    }
+    return 0
+}

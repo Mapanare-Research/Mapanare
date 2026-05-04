@@ -1,0 +1,19 @@
+// v5.39.2 Js.4.B.2 — single-String-field struct round-trip.
+
+struct PStr { name: String }
+
+fn main() -> Int {
+    pon s: String = "{\"name\": \"hello\"}"
+    pon r: Result<PStr, JsonError> = from_json::<PStr>(s)
+    match r {
+        Ok(p) => {
+            si p.name == "hello" {
+                print("PASSED test_from_json_string")
+            } sino {
+                print("FAIL test_from_json_string: wrong value")
+            }
+        },
+        Err(e) => print("FAIL test_from_json_string: decode error")
+    }
+    return 0
+}

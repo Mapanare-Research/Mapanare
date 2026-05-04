@@ -19,6 +19,89 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.39.2** (ready, not tagged) — **Js.4.B.2 — `from_json::<T>`
+  runtime SEGV closeout + link-and-run regression suite.
+  v5.39.1+v5.39.2 arc CLOSED.** Second of two release sessions on
+  Js.4.B; together they close the v5.36.0-deferred typed-serde
+  defect surfaced at v5.40.0 Phase 0 audit. v5.39.1 closed the
+  IR-emission shape (no-import case); v5.39.2 closes the runtime
+  SEGV in `__mn_map_get` (with-import case). After v5.39.2 ships,
+  v5.40.0 (Ai.\* — `ask` keyword, manifesto-arc kickoff) picks up
+  cleanly with the typed-output ergonomic intact. Adds **zero
+  language features, zero new MIR ops, zero new IR shapes, zero
+  new C runtime exports**. **Strict 3-stage fixed point preserved
+  by construction** at v5.39.1's **241,898 lines / 0 diff**
+  (36-release strict streak from v5.7.1; zero
+  `mapanare/self/*.mn` source touches). Goldens **95/95**.
+  **The bug.** PROMPT/PLAN's leading hypothesis was that
+  `_is_self_ref` doesn't recurse through `LIST` / `MAP` / `OPTION`
+  / `RESULT` type args, so `JsonValue::Object(Map<String,
+  JsonValue>)` and `Array(List<JsonValue>)` weren't marked boxed
+  at registration time. **Phase 1 instrumentation confirmed
+  `boxed=set()` for JsonValue but the side-by-side IR audit of
+  the construction (`malloc(8); store ptr %map`) vs extraction
+  (`extractvalue, 1; gep {ptr}, 0; load ptr`) showed both sides
+  agreed on the unboxed `{ptr}` layout.** The audit's hypothesis
+  was wrong about the load-bearing root cause. The actual bug
+  was one level deeper: **the Map handle itself was created with
+  the wrong sizes/key-type.** GDB pinpointed the SEGV not inside
+  `__mn_map_get` but two instructions past its return — at
+  `load {i64, ptr} from NULL` in main, because
+  `__mn_map_get` returned NULL (key not found). Inspecting the
+  Map struct showed `key_size=8, val_size=8, key_type=0/INT` for
+  what should have been a `Map<String, JsonValue>` (16/16/1).
+  **Root cause:** `mapanare/emit_llvm_text.py::_do_map_init`
+  empty-literal branch (`if i.pairs: ... else: ksz, vsz, ktag =
+  8, 8, 0`) hardcoded `(8, 8, 0)` defaults instead of deriving
+  from the declared `MapInit.key_type` / `MapInit.val_type`.
+  **Any** `Map<String, X> = #{}` or `Map<Float, X> = #{}` was
+  silently miscompiled. `decode_object_inner`'s
+  `pon mut entries: Map<String, JsonValue> = #{}` was the
+  load-bearing instance. Latent since the multi-typed map
+  literal surface landed; never surfaced because the original
+  `tests/stdlib/test_struct_json.py` was compile-only. **Fix:**
+  derive `ksz` / `ktag` from `i.key_type` and `vsz` from
+  `i.val_type` unconditionally. ~25 LOC change. Defensive
+  symmetry fix in `_do_enum_init`: Map values consumed as enum
+  payloads now also drain from `_map_vars` (was: only
+  `_list_vars`) — doesn't fire in the v5.39.2 repro but the
+  asymmetry was a latent footgun. **Self-host mirror N/A**:
+  Phase 0 verified `mapanare/self/emit_llvm.mn:3106-3169::
+  emit_map_init` already derives `key_size`/`val_size` from
+  `key_ty`/`val_ty` regardless of pair count (sensible defaults
+  16 / 64 for STRUCT/ENUM). The Python bug was a latent drift
+  between Python and self-host that the self-host already had
+  right. STRICT preserved trivially; v5.39.2 makes zero
+  `mapanare/self/*.mn` source touches. **Link-and-run
+  regression suite** — new `tests/stdlib/test_struct_json_runtime.py`
+  + 6 `.mn` test cases under `stdlib/encoding/json/tests/`
+  mirrors v5.34/v5.35/v5.39.0 concat pattern. This is the test
+  infrastructure that should have existed since v5.36.0 — the
+  compile-only `test_struct_json.py` (preserved unchanged) is
+  exactly why Js.4.B stayed latent for 4 releases. All 6
+  GREEN; v5.39.1's `test_struct_json_ir_shape.py` (4) +
+  `test_struct_json_layout.py` (2) preserved GREEN.
+  **Falsifiability round-trip locked as the test suite
+  itself** — revert `_do_map_init`, all 6 cases fail with the
+  recorded SEGV signature; reapply, all 6 pass. One
+  Edit-and-pytest cycle. **`to_json::<T>` nested-struct split
+  to v5.39.3** — `to_json::<Wrap>(w)` with struct-typed field
+  still emits `<?>`; different code path
+  (`_emit_struct_to_json`), out of v5.39.2's scope. **Hd-class
+  preventative** — `docs/SPEC.md` header re-synced from
+  "v5.39.1 cut" to "v5.39.2 cut". `check_doc_freshness.py`
+  GREEN. Source delta: ~25 LOC `mapanare/emit_llvm_text.py`
+  (`_do_map_init` + `_do_enum_init` defensive map-vars
+  removal) + ~120 LOC pytest harness + ~120 LOC `.mn` test
+  cases (6 files) + ~125 LOC CHANGELOG + ~30 LOC SPEC sync +
+  this CLAUDE.md release-notes entry + mechanical
+  bump_version.py edits. Aggregate state entering v5.39.3:
+  **0 HIGH** (Js.4.B fully closed) / **1 MEDIUM** (macOS
+  notarization carry from v5.33.0 Nu.2) / ~7 LOW (added
+  `to_json::<T>` nested-struct as v5.39.3 candidate). **Js.4.B
+  arc CLOSED.** v5.40.0 manifesto-arc kickoff unblocked. See
+  `docs/roadmap/v5/v5.39.2/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
 - **v5.39.1** (ready, not tagged) — **Js.4.B.1 — `from_json::<T>`
   IR-emission shape fix (no-import case).** First of two release
   sessions dedicated to closing **Js.4.B** (the v5.36.0-deferred
@@ -1883,7 +1966,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (31771 symbols, 66763 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (31789 symbols, 66811 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

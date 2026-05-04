@@ -1,0 +1,19 @@
+// v5.39.2 Js.4.B.2 — multi-field struct round-trip with mixed types.
+
+struct PCompound { name: String, age: Int }
+
+fn main() -> Int {
+    pon s: String = "{\"name\": \"alice\", \"age\": 30}"
+    pon r: Result<PCompound, JsonError> = from_json::<PCompound>(s)
+    match r {
+        Ok(p) => {
+            si p.name == "alice" && p.age == 30 {
+                print("PASSED test_from_json_compound")
+            } sino {
+                print("FAIL test_from_json_compound: wrong values")
+            }
+        },
+        Err(e) => print("FAIL test_from_json_compound: decode error")
+    }
+    return 0
+}

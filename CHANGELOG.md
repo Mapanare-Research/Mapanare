@@ -7,6 +7,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.39.2] - 2026-05-03
+
+**Js.4.B.2 — `from_json::<T>` runtime SEGV closeout + link-and-run
+regression suite. v5.39.1 + v5.39.2 arc CLOSED.** Second of two
+release sessions on Js.4.B; together they close the v5.36.0-deferred
+typed-serde defect that v5.40.0 Phase 0 audit re-diagnosed as two
+structurally distinct failure modes. After v5.39.2 ships, v5.40.0
+(Ai.\* — `ask` keyword, manifesto-arc kickoff) picks up cleanly with
+the typed-output ergonomic intact. Adds **zero language features,
+zero new MIR ops, zero new IR shapes, zero new C runtime exports**.
+**Strict 3-stage fixed point preserved by construction** at v5.39.1's
+**241,898 lines / 0 diff** (36-release strict streak from v5.7.1;
+zero `mapanare/self/*.mn` source touches — see "Self-host mirror
+N/A" below). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.B.2 (`mapanare/emit_llvm_text.py::_do_map_init`)** — when
+  a `Map<K, V>` literal had no initial pairs (`#{}`), the empty
+  branch hardcoded `(ksz=8, vsz=8, ktag=0)` instead of deriving
+  sizes and tags from the declared `MapInit.key_type` /
+  `MapInit.val_type`. Any `Map<String, X> = #{}` (or
+  `Map<Float, X> = #{}`) was created with 8-byte buckets and
+  `key_type=0/INT`. Subsequent `m["key"] = value` calls into
+  `__mn_map_set` wrote a 16-byte String key past the end of the
+  18-byte bucket and used the INT hash function on the bytes;
+  `__mn_map_get(m, "key")` always missed and returned NULL.
+  Caller IR then loaded `{i64, ptr}` from NULL → SEGV. The
+  load-bearing example was `decode_object_inner`'s
+  `pon mut entries: Map<String, JsonValue> = #{}` — every
+  `from_json::<T>(s)` SEGV'd in `__mn_map_get` post-v5.39.1
+  through this path. Latent since the multi-typed map literal
+  surface landed; never surfaced because the original
+  `tests/stdlib/test_struct_json.py` was compile-only. Fix derives
+  `ksz` / `ktag` from `i.key_type` and `vsz` from `i.val_type`
+  unconditionally.
+- **Js.4.B.2 (`mapanare/emit_llvm_text.py::_do_enum_init`)** —
+  when an enum payload is a `Map`, the consumed value's name now
+  also drains from `_map_vars` (not just `_list_vars`), preventing
+  a future class of double-free where the enclosing function's
+  drop glue would call `__mn_map_free_deep` on a Map whose
+  ownership has been moved into the enum payload. Doesn't fire
+  in the v5.39.2 repro (drop glue wasn't actually emitted on the
+  decode_object path), but the asymmetry between `_list_vars`
+  and `_map_vars` removal was a latent footgun.
+
+### Added
+
+- `tests/stdlib/test_struct_json_runtime.py` — link-and-run
+  regression harness for typed serde. Mirrors the v5.34.0 / v5.35.0
+  / v5.39.0 concatenation pattern: read
+  `stdlib/text/string_utils.mn` + `stdlib/encoding/json.mn`,
+  prepend to each test main body, compile via Python LLVM
+  emitter, link against `libmapanare_rt.a`, run, assert "PASSED"
+  (and no "FAIL "). 6 cases under `stdlib/encoding/json/tests/`:
+  `test_from_json_int.mn`, `test_from_json_string.mn`,
+  `test_from_json_bool.mn`, `test_from_json_float.mn`,
+  `test_from_json_compound.mn`, `test_to_from_roundtrip.mn`.
+  This is the test infrastructure that should have existed since
+  v5.36.0 — the existing compile-only
+  `tests/stdlib/test_struct_json.py` (preserved unchanged) is
+  exactly why Js.4.B stayed latent for 4 releases.
+
+### Changed
+
+- **Phase 1 hypothesis revised mid-release.** PROMPT/PLAN's
+  leading hypothesis was that `_is_self_ref` doesn't recurse
+  through `LIST` / `MAP` / `OPTION` / `RESULT` type args, so
+  `JsonValue::Object(Map<String, JsonValue>)` and
+  `Array(List<JsonValue>)` were not marked boxed at registration
+  time. Phase 1 instrumentation confirmed `boxed=set()` for
+  `JsonValue` — but that turned out to be a real-but-unrelated
+  observation, not the load-bearing root cause. Side-by-side IR
+  audit of the construction (`malloc(8); store ptr %map_val`) vs
+  extraction (`extractvalue, 1; gep {ptr}, 0; load ptr`) showed
+  both sides agreed on the unboxed `{ptr}` layout. The actual
+  bug was one level deeper: the Map handle itself was created
+  with the wrong `key_size` / `val_size` / `key_type` (the
+  empty-literal default-ints branch) and the initial `m["x"] =
+  value` corrupted bucket memory rather than inserting cleanly.
+  GDB pinpointed the SEGV not inside `__mn_map_get` but right
+  after — at `load {i64, ptr} from NULL` in main. Documented
+  in v5.39.2 SESSION_REPORT so v5.40.0+ has the correct anchor
+  if `_is_self_ref` recursion comes back as a separate concern.
+- **PROMPT/PLAN deviation (load-bearing) — Phase 3 self-host
+  mirror N/A.** PROMPT scoped a `mapanare/self/emit_llvm.mn`
+  mirror as load-bearing for STRICT and budgeted ~1-2h. Phase 0
+  verification: `mapanare/self/emit_llvm.mn:3106-3169::emit_map_init`
+  already derives `key_size` / `val_size` / `key_tag` / `val_tag`
+  from `key_ty` / `val_ty` regardless of pair count (with sensible
+  defaults at lines 3125-3133: `val_size=16` for any non-Int val,
+  `64` for STRUCT/ENUM). The Python bug was a latent drift
+  between Python and self-host that the self-host already had
+  right. STRICT preserved trivially by construction; v5.39.2
+  makes zero `mapanare/self/*.mn` source touches.
+- **`to_json::<T>` nested-struct serialization split to v5.39.3.**
+  v5.39.2 Phase 1 bundle decision: `to_json::<Wrap>(w)` for a
+  struct with a struct-typed field still emits `<?>` for the
+  inner field, not recursive JSON. Different code path
+  (`_emit_struct_to_json` in the encoder), distinct from
+  `_do_map_init`. Bundling would have inflated v5.39.2's scope
+  beyond the surgical Js.4.B.2 fix. v5.39.3 will close.
+
+**Falsifiability round-trip locked.** Reverted `_do_map_init` to
+its pre-fix shape (hardcoded `(8, 8, 0)` empty branch); all 6
+parametrized cases in `test_struct_json_runtime.py` failed with
+the recorded SEGV signature. Reapplied; all 6 pass. Round-trip
+is the test suite itself — falsification is one
+`Edit`-and-pytest cycle. `tests/stdlib/test_struct_json.py` (20
+compile-only cases, v5.36.0 carry) preserved unchanged; both
+v5.39.1 contributions (`test_struct_json_ir_shape.py` 4 cases,
+`test_struct_json_layout.py` 2 cases) GREEN.
+
+**Hd-class preventative.** `docs/SPEC.md` header re-synced from
+"v5.39.1 cut" to "v5.39.2 cut" with new sync block summarizing
+Js.4.B.2. `check_doc_freshness.py` GREEN.
+
+Aggregate state entering v5.39.3: **0 HIGH** / **1 MEDIUM** (macOS
+notarization, carry from v5.33.0 Nu.2) / ~7 LOW (added
+`to_json::<T>` nested-struct recursion as v5.39.3 candidate; rest
+unchanged from v5.39.1 carries). **Js.4.B arc CLOSED.** v5.40.0
+`ask` manifesto-arc kickoff unblocked.
+
+
 ## [5.39.1] - 2026-05-03
 
 **Js.4.B.1 — `from_json::<T>` IR-emission shape fix (no-import
@@ -10501,7 +10625,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.2...HEAD
+[5.39.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.1...v5.39.2
 [5.39.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.0...v5.39.1
 [5.39.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.38.0...v5.39.0
 [5.38.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.37.0...v5.38.0

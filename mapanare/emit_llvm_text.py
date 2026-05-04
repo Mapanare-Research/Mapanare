@@ -4963,18 +4963,26 @@ class LLVMTextEmitter:
 
     # --- MapInit ---
     def _do_map_init(self, i: MapInit) -> None:
+        # v5.39.2 Js.4.B.2: derive ksz / vsz / ktag from MapInit's declared
+        # key/val MIRTypes regardless of whether the literal has initial
+        # pairs. Pre-fix the empty-literal branch hardcoded (8, 8, 0)
+        # which mis-sized any non-Int-keyed empty map (e.g.
+        # `Map<String, JsonValue> = #{}` got 8-byte buckets and key_type
+        # tag 0/INT, so subsequent String inserts wrote past the bucket
+        # and lookups missed). decode_object's `entries: Map<String,
+        # JsonValue> = #{}` was the load-bearing example.
+        ksz = _tsz(self._rty(i.key_type))
+        ktag = (
+            1
+            if i.key_type.kind == TypeKind.STRING
+            else (2 if i.key_type.kind == TypeKind.FLOAT else 0)
+        )
         if i.pairs:
             fk, _ = self._get(i.pairs[0][0])
             fv, fvt = self._get(i.pairs[0][1])
-            ksz = _tsz(self._rty(i.key_type))
             vsz = _tsz(fvt)
-            ktag = (
-                1
-                if i.key_type.kind == TypeKind.STRING
-                else (2 if i.key_type.kind == TypeKind.FLOAT else 0)
-            )
         else:
-            ksz, vsz, ktag = 8, 8, 0
+            vsz = _tsz(self._rty(i.val_type))
         vtag = 1 if i.val_type.kind == TypeKind.STRING else 0
         mp = self._rt(
             "__mn_map_new",
@@ -5018,10 +5026,14 @@ class LLVMTextEmitter:
                         ft = self._rty(ptypes[j])
                         if pval.name in self._list_vars:
                             self._list_vars.remove(pval.name)
+                        if pval.name in self._map_vars:
+                            self._map_vars.remove(pval.name)
                         self._move_resource(pval.name)
                         root_name = self._lroots.get(pval.name)
                         if root_name and root_name in self._list_vars:
                             self._list_vars.remove(root_name)
+                        if root_name and root_name in self._map_vars:
+                            self._map_vars.remove(root_name)
                         v, t = self._get(pval)
                         if t != ft:
                             v = self._coerce(v, t, ft)
@@ -5052,14 +5064,22 @@ class LLVMTextEmitter:
                 self._track_boxed(raw)
                 tp = raw  # opaque ptr, no bitcast
                 for j, pval in enumerate(i.payload):
-                    # Move semantics: payloads are consumed by the enum
+                    # Move semantics: payloads are consumed by the enum.
+                    # v5.39.2 Js.4.B.2: also drain _map_vars so a Map
+                    # payload (e.g. JsonValue::Object) isn't deep-freed
+                    # by the enclosing function's drop glue while it's
+                    # still owned by the enum payload.
                     if pval.name in self._list_vars:
                         self._list_vars.remove(pval.name)
+                    if pval.name in self._map_vars:
+                        self._map_vars.remove(pval.name)
                     self._move_resource(pval.name)
                     # Also check root alias (push write-backs)
                     root_name = self._lroots.get(pval.name)
                     if root_name and root_name in self._list_vars:
                         self._list_vars.remove(root_name)
+                    if root_name and root_name in self._map_vars:
+                        self._map_vars.remove(root_name)
                     # For list values, check if there's a root alloca from push
                     # write-backs (the copy alias may be stale)
                     if root_name and root_name in self._alloc:

@@ -1,7 +1,37 @@
 # Mapanare Language Specification
 
-**Version:** 5.39.1
-**Status:** Live — synced to the v5.39.1 cut (2026-05-03)
+**Version:** 5.39.2
+**Status:** Live — synced to the v5.39.2 cut (2026-05-03)
+
+> **v5.39.2 — Js.4.B.2 — `from_json::<T>` runtime SEGV closeout +
+> link-and-run regression suite. v5.39.1+v5.39.2 arc CLOSED.** SPEC
+> body unchanged from the v5.21.0 cut. Second of two release
+> sessions on Js.4.B; together they close the v5.36.0-deferred
+> typed-serde defect surfaced at v5.40.0 Phase 0 audit. Single
+> load-bearing fix in `mapanare/emit_llvm_text.py::_do_map_init`:
+> empty-literal `Map<K, V> = #{}` now derives `key_size` /
+> `val_size` / `key_tag` from the declared `MapInit.key_type` /
+> `MapInit.val_type` regardless of pair count, instead of
+> hardcoding `(8, 8, 0)`. The hardcoded defaults silently broke
+> any non-Int-keyed empty map (`Map<String, X>` was the load-
+> bearing case via `decode_object_inner`'s `entries: Map<String,
+> JsonValue> = #{}`). Defensive symmetry fix in
+> `_do_enum_init`: Map values consumed as enum payloads now also
+> drain from `_map_vars` (was: only `_list_vars`). New link-and-run
+> regression harness `tests/stdlib/test_struct_json_runtime.py`
+> with 6 .mn cases under `stdlib/encoding/json/tests/` — the
+> infrastructure that should have existed since v5.36.0; the
+> compile-only carry `tests/stdlib/test_struct_json.py` is what
+> kept Js.4.B latent for 4 releases. Adds **zero language features,
+> zero new MIR ops, zero new IR shapes, zero new C runtime
+> exports**. Strict 3-stage fixed point preserved by construction
+> at v5.39.1's 241,898 lines / 0 diff (36-release strict streak
+> from v5.7.1; zero `mapanare/self/*.mn` source touches — self-host
+> `emit_map_init` already had the correct shape, so PROMPT-scoped
+> mirror is structurally N/A). `to_json::<T>` nested-struct
+> serialization (`<?>` placeholder for struct-typed fields) split
+> to v5.39.3; different code path. v5.40.0 (Ai.\* — `ask` keyword
+> manifesto-arc kickoff) unblocked.
 
 > **v5.39.1 — Js.4.B.1 — `from_json::<T>` IR-emission shape fix
 > (no-import case).** SPEC body unchanged from the v5.21.0 cut.

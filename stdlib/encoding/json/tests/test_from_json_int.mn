@@ -1,0 +1,21 @@
+// v5.39.2 Js.4.B.2 — link-and-run smoke for from_json::<T> on
+// a single-Int-field struct. Pre-fix this SEGV'd in __mn_map_get
+// via decode_to::<P>; post-fix the round-trip succeeds.
+
+struct PInt { x: Int }
+
+fn main() -> Int {
+    pon s: String = "{\"x\": 42}"
+    pon r: Result<PInt, JsonError> = from_json::<PInt>(s)
+    match r {
+        Ok(p) => {
+            si p.x == 42 {
+                print("PASSED test_from_json_int")
+            } sino {
+                print("FAIL test_from_json_int: wrong value")
+            }
+        },
+        Err(e) => print("FAIL test_from_json_int: decode error")
+    }
+    return 0
+}
