@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.44.1] - 2026-05-05
+
+**Ps.11 + Ps.12 — scripts parity + gitignore template; tactical
+hotfix completing v5.44.0 Ps.\* arc.** Two real edits, one nit,
+four tests, one commit. v5.44.0 closed package-aware import
+resolution inside `mapanare/`; v5.44.1 closes the parity gap
+beyond that boundary so scripts and benchmarks honor `mn_modules/`
+identically, and `mnc init`-created projects exclude
+`mn_modules/` by default.
+
+**Zero compiler edits, zero runtime edits, zero new C-runtime
+exports, zero `mapanare/self/*.mn` source touches, zero language
+surface changes.** Strict 3-stage fixed point preserved by
+construction at v5.44.0's **242,338 lines / 0 diff**
+(47-release strict streak from the v5.7.1 baseline). Goldens
+**96/96**.
+
+### Added
+
+- **Ps.11.A** — `scripts/build_stage1.py`, `scripts/ir_doctor.py`,
+  `scripts/measure_divergence.py`, `benchmarks/bench_stdlib.py`
+  now build resolvers via `build_resolver_for_source` with a
+  tolerant `PackageDiscoveryError` fallback (LSP/test-runner
+  pattern) and pass `resolver=` explicitly to
+  `compile_multi_module_mir` / `_compile_to_llvm_ir`. Pre-fix
+  these helpers fell through to the in-helper bare-resolver
+  fallback, silently bypassing package-aware import resolution
+  for any project with `mapanare.toml` + `mn_modules/`. After
+  this release the stage1 bootstrap, ir-doctor diff, divergence
+  sweep, and stdlib benchmarks all see the same package roots
+  `mnc build` does.
+- **Ps.11.B** — `tests/packages/test_cli_parity.py` audit list
+  extended to the four scripts/benchmarks files. Added
+  complementary `test_scripts_pass_resolver_to_compile_helper`
+  parametrized gate that locks the script-shape parity
+  invariant (every `compile_multi_module_mir` /
+  `_compile_to_llvm_ir` call passes an explicit `resolver=`
+  kwarg). The pre-existing bare-`ModuleResolver()` regex didn't
+  catch this surface because the four files don't construct
+  resolvers directly — they relied on the helper's internal
+  fallback. Falsifiability verified: reverting the
+  `resolver=resolver` kwarg in `build_stage1.py` fails the new
+  gate with the exact file:line.
+- **Ps.12.A** — `mapanare/templates/init/default/.gitignore`
+  now excludes `mn_modules/`, `__pycache__/`, `*.pyc`,
+  `*.diag.json`, `*.a`, `*.so`, `*.dylib`, `*.dll` (in addition
+  to the v5.44.0 baseline). `mapanare.toml` and `mapanare.lock`
+  remain committed per Cargo / npm / pip convention; `*.mn`
+  remains committed (excluding it would mask every Mapanare
+  source file).
+- **Ps.12.B** — net-new
+  `tests/packages/test_init_template_gitignore.py` (4 cases):
+  required-patterns presence, forbidden-patterns absence,
+  load-bearing `mn_modules/` exclusion, and an end-to-end test
+  running `init_project` against `tmp_path` and verifying the
+  produced `.gitignore` matches the canonical template
+  (placeholder substituted, forbidden patterns absent).
+
+### Changed
+
+- **Ps.13** — hoisted `from typing import Any` from inside
+  `_surface_install_diagnostics`'s `if diag_json:` body to
+  `mapanare/cli.py`'s module-top imports. No behavior change;
+  cleanup nit deferred from v5.44.0.
+- **`benchmarks/bench_stdlib.py`** — removed the pre-existing
+  invalid `use_mir=True` kwarg from the `_compile_to_llvm_ir`
+  call site. The kwarg has not been a valid `_compile_to_llvm_ir`
+  signature parameter for many releases; the benchmark would
+  have raised `TypeError` if anyone ran it. Same edit replaces
+  the call with the canonical signature plus the v5.44.1 Ps.11.A
+  `resolver=` kwarg.
+
+### Fixed
+
+- **`scripts/build_stage1.py` package-aware bootstrap** — the
+  self-host stage1 build now honors a `mapanare.toml` +
+  `mn_modules/` checkout of `mapanare/self/`. Pre-fix the
+  bootstrap silently fell through to bare resolution; post-fix
+  it routes through `build_resolver_for_source` with a tolerant
+  fallback so a malformed lockfile still produces a working
+  stage1.
+
+
+
 ## [5.44.0] - 2026-05-05
 
 **Ps.\* — package-aware imports + stdlib extraction runway;
@@ -11811,7 +11895,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.1...HEAD
+[5.44.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.0...v5.44.1
 [5.44.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.43.0...v5.44.0
 [5.43.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.42.0...v5.43.0
 [5.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.41.0...v5.42.0

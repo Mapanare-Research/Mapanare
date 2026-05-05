@@ -19,6 +19,107 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.44.1** (ready, not tagged) — **Ps.11 + Ps.12 —
+  scripts parity + gitignore template; tactical hotfix
+  completing the v5.44.0 Ps.\* arc end-to-end.** Two real
+  edits, one nit, four tests, one commit. v5.44.0 closed
+  package-aware import resolution inside `mapanare/`;
+  v5.44.1 closes the parity gap beyond that boundary. **Zero
+  compiler edits, zero runtime edits, zero new C-runtime
+  exports, zero `mapanare/self/*.mn` source touches, zero
+  language surface changes.** Strict 3-stage fixed point
+  preserved by construction at v5.44.0's **242,338 lines /
+  0 diff** (47-release strict streak from the v5.7.1
+  baseline). Goldens **96/96**.
+  **PROMPT/PLAN deviation (load-bearing) — surface shape.**
+  PROMPT premise was that `scripts/build_stage1.py`,
+  `scripts/ir_doctor.py`, `scripts/measure_divergence.py`,
+  and `benchmarks/bench_stdlib.py` contained bare
+  `ModuleResolver()` constructions matching the v5.44.0
+  `tests/packages/test_cli_parity.py` regex. Phase 0 audit
+  surfaced that none of these four files construct resolvers
+  directly — they invoke `compile_multi_module_mir` /
+  `_compile_to_llvm_ir` **without passing a resolver
+  argument**, falling through to the helper's in-function
+  bare-resolver fallback at `mapanare/multi_module.py:646`.
+  Same parity gap, different surface shape. The existing
+  bare-`ModuleResolver()` regex doesn't fire for these files
+  even with `files_to_audit` extended to include them, so
+  Ps.11.B grew a complementary
+  `test_scripts_pass_resolver_to_compile_helper` parametrized
+  gate that locks the actual invariant: every
+  `compile_multi_module_mir` / `_compile_to_llvm_ir` call
+  from these files must pass an explicit `resolver=` kwarg.
+  Falsifiability verified — reverting the `resolver=resolver`
+  kwarg in `scripts/build_stage1.py` fails the new gate with
+  the recorded shape.
+  **Ps.11.A — scripts/benchmarks resolver parity.** Each of
+  the four files now constructs a resolver via
+  `build_resolver_for_source(source_path)` with a tolerant
+  `PackageDiscoveryError` fallback (mirrors v5.44.0 Ps.3
+  LSP/test-runner pattern; tolerant rather than `sys.exit`
+  because dev tooling must keep working on broken
+  lockfiles). After v5.44.1 the stage1 bootstrap, ir-doctor
+  diff, divergence sweep, and stdlib benchmarks all see the
+  same package roots `mnc build` does. Incidentally fixed:
+  `benchmarks/bench_stdlib.py:55` had a pre-existing invalid
+  `use_mir=True` kwarg that would have raised `TypeError` on
+  any actual benchmark run — same edit drops it along with
+  adding the `resolver=` kwarg.
+  **Ps.11.B — gate extension.**
+  `tests/packages/test_cli_parity.py` `files_to_audit` +4
+  entries (mechanical extension of v5.44.0 audit scope; passes
+  trivially) plus the new
+  `test_scripts_pass_resolver_to_compile_helper` parametrized
+  gate (load-bearing structural change; walks each file via
+  paren-depth tracking, strips comment-only lines and inline
+  `# tail` comments to ignore docstring/commentary mentions
+  of the helper names, asserts every call has `resolver=` in
+  its argument list).
+  **Ps.12.A — init template gitignore.**
+  `mapanare/templates/init/default/.gitignore` now excludes
+  `mn_modules/` (load-bearing v5.44.1 add — freshly
+  initialized projects no longer commit installed packages),
+  `__pycache__/`, `*.pyc`, `*.diag.json`, `*.a`, `*.so`,
+  `*.dylib`, `*.dll`. `mapanare.toml` and `mapanare.lock`
+  remain committed per Cargo / npm / pip convention; `*.mn`
+  remains committed (excluding it would mask every Mapanare
+  source file).
+  **Ps.12.B — gitignore lock test.** Net-new
+  `tests/packages/test_init_template_gitignore.py` (4 cases):
+  required-patterns presence, forbidden-patterns absence
+  (catches future edits adding `mapanare.toml` /
+  `mapanare.lock` / `*.mn` to the gitignore), load-bearing
+  `mn_modules/` exclusion, end-to-end via
+  `stdlib.pkg.init_project(tmp_path)` verifying produced
+  `.gitignore` matches the canonical template (placeholder
+  substituted, forbidden patterns absent).
+  **Ps.13 — import hoist.** Hoisted `from typing import Any`
+  from inside `_surface_install_diagnostics`'s `if
+  diag_json:` body to module-top imports in `mapanare/cli.py`
+  (1-LOC cleanup nit deferred from v5.44.0).
+  **Source delta:** ~50 LOC across 4 scripts/benchmarks
+  files (Ps.11.A) + ~80 LOC `tests/packages/test_cli_parity.py`
+  (Ps.11.B new gate + comment-stripping logic) + ~12 LOC
+  `mapanare/templates/init/default/.gitignore` (Ps.12.A) +
+  ~115 LOC net-new `tests/packages/test_init_template_gitignore.py`
+  (Ps.12.B) + 2 LOC `mapanare/cli.py` (Ps.13) +
+  PRE_PHASE_AUDIT.md + SESSION_REPORT.md + CHANGELOG +
+  SPEC sync + this CLAUDE.md release-notes entry +
+  mechanical bump_version.py edits. Tests at HEAD:
+  `tests/packages/` + `tests/modules/` 98 GREEN (was 90 at
+  v5.44.0; +8 = 4 init-template gitignore cases + 4
+  scripts-resolver gate parametrized cases). Aggregate
+  state entering v5.45.0 (closeout panel): **0 HIGH** /
+  **2 MEDIUM** (carries unchanged from v5.44.0: lowerer
+  fixes for `Result<T, complex Err>` + variant rewrap +
+  nested 15-arm match; macOS notarization carry from
+  v5.33.0 Nu.2) / **~8 LOW** (carries unchanged). v5.45.0
+  closeout panel runs as planned (per the v5.46.0 deferral
+  commit `f7a6272b`). See
+  `docs/roadmap/v5/v5.44.1/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.44.0** (ready, not tagged) — **Ps.\* — package-aware
   imports + stdlib extraction runway; ecosystem-bridge gap
   closed before v5.45.0 panel.** First release in the
@@ -3124,7 +3225,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (32269 symbols, 67545 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (32489 symbols, 68039 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

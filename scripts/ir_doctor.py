@@ -696,9 +696,24 @@ def bootstrap_compile(mn_path: str | pathlib.Path) -> str:
     source = mn_path.read_text(encoding="utf-8")
     # Use the multi-module compiler for self-hosted sources
     if "import self::" in source or str(mn_path).endswith("mnc_all.mn"):
+        from mapanare.modules import ModuleResolver
         from mapanare.multi_module import compile_multi_module_mir
+        from mapanare.pkg_discovery import (
+            PackageDiscoveryError,
+            build_resolver_for_source,
+        )
 
-        return compile_multi_module_mir(source, str(mn_path), opt_level=2)
+        # v5.44.1 Ps.11.A: build a package-aware resolver so a project
+        # under diff with `mapanare.toml` + `mn_modules/` resolves
+        # imports identically to `mnc emit-llvm`. Tolerant fallback —
+        # diff tooling must keep working on broken lockfiles.
+        try:
+            resolver = build_resolver_for_source(str(mn_path))
+        except PackageDiscoveryError:
+            resolver = ModuleResolver()
+        return compile_multi_module_mir(
+            source, str(mn_path), opt_level=2, resolver=resolver
+        )
     else:
         # Use the CLI-level compile path which handles all wiring
         with tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f:

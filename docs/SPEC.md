@@ -1,8 +1,21 @@
 # Mapanare Language Specification
 
-**Version:** 5.44.0
-**Status:** Live — synced to the v5.44.0 cut (2026-05-05)
+**Version:** 5.44.1
+**Status:** Live — synced to the v5.44.1 cut (2026-05-05)
 
+> **v5.44.1 — Ps.11 + Ps.12 — scripts parity + gitignore
+> template.** Tactical hotfix completing the v5.44.0 Ps.\*
+> arc end-to-end. Extends the v5.44.0 Ps.3 resolver-parity
+> contract beyond the `mapanare/` boundary to
+> `scripts/build_stage1.py`, `scripts/ir_doctor.py`,
+> `scripts/measure_divergence.py`, `benchmarks/bench_stdlib.py`,
+> and adds `mn_modules/` plus canonical build artifacts to
+> the `mnc init` default `.gitignore`. **Zero compiler edits,
+> zero runtime edits, zero self-host source touches, zero
+> language surface changes.** STRICT preserved at v5.44.0's
+> **242,338 lines / 0 diff** (47-release strict streak);
+> goldens 96/96.
+>
 > **v5.44.0 — Ps.\* — package-aware imports + stdlib
 > extraction runway.** First release in the package-system
 > arc. Wires the existing `stdlib/pkg.py` machinery

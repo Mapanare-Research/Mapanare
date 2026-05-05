@@ -42,8 +42,23 @@ STAGE1 = ROOT / "mapanare" / "self" / "mnc-stage1"
 def compile_bootstrap(mn_file: pathlib.Path) -> tuple[str, str]:
     try:
         from mapanare.cli import _compile_to_llvm_ir
+        from mapanare.modules import ModuleResolver
+        from mapanare.pkg_discovery import (
+            PackageDiscoveryError,
+            build_resolver_for_source,
+        )
 
-        ir = _compile_to_llvm_ir(mn_file.read_text(encoding="utf-8"), str(mn_file))
+        # v5.44.1 Ps.11.A: per-file resolver construction; package roots
+        # may differ across files in the divergence sweep. Tolerant
+        # fallback — divergence reports must keep working on broken
+        # lockfiles.
+        try:
+            resolver = build_resolver_for_source(str(mn_file))
+        except PackageDiscoveryError:
+            resolver = ModuleResolver()
+        ir = _compile_to_llvm_ir(
+            mn_file.read_text(encoding="utf-8"), str(mn_file), resolver=resolver
+        )
         return ir, ""
     except Exception as e:  # pragma: no cover
         return "", str(e)

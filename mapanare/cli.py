@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from mapanare.diagnostics import (
     Diagnostic,
@@ -175,7 +176,6 @@ def _surface_install_diagnostics(
 
     if diag_json:
         import json as _json
-        from typing import Any
 
         # Group records by package; one packages[] entry per (name, version).
         by_pkg: dict[tuple[str, str], dict[str, Any]] = {}
