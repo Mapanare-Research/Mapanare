@@ -617,6 +617,7 @@ def compile_multi_module_mir(
     debug: bool = False,
     skip_check: bool = False,
     no_verify: bool = False,
+    resolver: ModuleResolver | None = None,
 ) -> str:
     """Compile a root .mn file and all its imports into a single LLVM IR string.
 
@@ -637,8 +638,12 @@ def compile_multi_module_mir(
     from mapanare.semantic import check_or_raise
     from mapanare.targets import get_target
 
-    # 1. Parse and semantic check (resolver resolves all imports)
-    resolver = ModuleResolver()
+    # 1. Parse and semantic check (resolver resolves all imports).
+    # ``resolver`` is optional for backward compatibility (legacy
+    # callers without package awareness still get a bare resolver);
+    # callers in mapanare/cli.py pass the package-aware one (Ps.3).
+    if resolver is None:
+        resolver = ModuleResolver()
     ast = parse(root_source, filename=root_file)
     if skip_check:
         # Run check for import resolution but ignore semantic errors

@@ -1086,12 +1086,19 @@ def _resolve_imported_symbols(
     Returns (imported_symbols, import_defs).
     """
     from mapanare.modules import ModuleResolutionError, ModuleResolver
+    from mapanare.pkg_discovery import PackageDiscoveryError, build_resolver_for_source
 
     filepath = _uri_to_filepath(uri)
     if not filepath:
         return {}, []
 
-    resolver = ModuleResolver()
+    # v5.44.0 Ps.3: package-aware resolution. Tolerant of discovery
+    # errors so a malformed mapanare.lock doesn't break editor analysis;
+    # the build path will surface the same error properly via stderr.
+    try:
+        resolver = build_resolver_for_source(filepath)
+    except PackageDiscoveryError:
+        resolver = ModuleResolver()
     imported: dict[str, SymbolInfo] = {}
     import_defs: list[ImportDef] = []
 

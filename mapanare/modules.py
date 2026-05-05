@@ -2,6 +2,22 @@
 
 Resolves import paths to files, parses and caches modules, and detects
 circular imports.
+
+Search-order policy (v5.44.0+, locked by tests in tests/packages/):
+
+1. ``self::`` prefix — relative to the source file's directory.
+2. Source-local file or directory (``<source_dir>/<path>.mn`` or
+   ``<source_dir>/<path>/mod.mn``).
+3. Explicit user-provided search paths (``--stdlib-path`` /
+   ``--extra-path`` / ``MAPANARE_PATH``).
+4. Installed package roots (``PackageRoot`` records from
+   ``mapanare.pkg_discovery``; v5.44.0 backed by ``mn_modules/``).
+5. Bundled stdlib shipped with the compiler.
+
+Source-local always wins; explicit overrides outrank packages;
+packages outrank bundled stdlib. Order is deterministic and never
+varies based on which source happens to "answer first" — each step
+is checked in sequence.
 """
 
 from __future__ import annotations
@@ -9,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from mapanare.ast_nodes import (
     AgentDef,
@@ -22,6 +39,9 @@ from mapanare.ast_nodes import (
     StructDef,
     TypeAlias,
 )
+
+if TYPE_CHECKING:
+    from mapanare.pkg_discovery import PackageRoot
 
 
 @dataclass
@@ -43,6 +63,32 @@ class ResolvedModule:
     source_hash: str = ""  # SHA-256 hex digest for change detection
 
 
+@dataclass(frozen=True)
+class ImportRecord:
+    """Single record of a package-resolved import (Ps.4 diagnostics).
+
+    Attributes:
+        package_name: Canonical package name from the manifest.
+        import_name: Name actually used in the ``import`` statement
+            (post hyphen→underscore mapping).
+        version: Resolved version string.
+        source: Backing storage (``"mn_modules"`` in v5.44.0; reserved
+            ``"path"`` / ``"git"`` / ``"global-cache"`` for the future).
+        integrity: SHA-256 from the lockfile, or ``None``.
+        import_path: Original dotted import path components, e.g.
+            ``["mn_collections", "sorted_list"]``.
+        resolved_filepath: Absolute path the import resolved to.
+    """
+
+    package_name: str
+    import_name: str
+    version: str
+    source: str
+    integrity: str | None
+    import_path: tuple[str, ...]
+    resolved_filepath: str
+
+
 class ModuleResolutionError(Exception):
     """Raised when a module cannot be resolved."""
 
@@ -52,33 +98,64 @@ class ModuleResolver:
 
     Maintains a module cache keyed by absolute path and a resolution stack
     for circular import detection.
+
+    Construction is backward-compatible: every legacy call site that
+    passes nothing (or only ``search_paths=...``) keeps its prior
+    behavior. ``package_roots`` and the ``_import_log`` only fire when
+    callers opt in via :func:`mapanare.cli._build_resolver_from_args`
+    (Ps.3).
     """
 
-    def __init__(self, search_paths: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        search_paths: list[str] | None = None,
+        *,
+        package_roots: "list[PackageRoot] | None" = None,
+    ) -> None:
         self._cache: dict[str, ResolvedModule] = {}
         self._resolution_stack: list[str] = []
-        self._search_paths = search_paths or []
-        # Auto-add the stdlib directory if it exists
+        # Explicit user paths (--stdlib-path / --extra-path / MAPANARE_PATH).
+        self._explicit_paths: list[str] = list(search_paths or [])
+        # Installed package roots (v5.44.0+, Ps.1). Empty list keeps
+        # legacy behavior unchanged.
+        self._package_roots: list[PackageRoot] = list(package_roots or [])
+        # Resolved package-import log (v5.44.0+, Ps.4).
+        self._import_log: list[ImportRecord] = []
+        # Auto-detect bundled stdlib (last in the search order).
         stdlib_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "stdlib"
         )
-        if os.path.isdir(stdlib_dir) and stdlib_dir not in self._search_paths:
-            self._search_paths.append(stdlib_dir)
+        self._bundled_stdlib_dir: str | None = (
+            stdlib_dir if os.path.isdir(stdlib_dir) else None
+        )
+        # Backward-compat view: combined explicit + bundled stdlib list.
+        # No external code grep-uses this in v5.44.0 HEAD; preserved for
+        # any unindexed/playground consumer.
+        self._search_paths: list[str] = list(self._explicit_paths)
+        if (
+            self._bundled_stdlib_dir is not None
+            and self._bundled_stdlib_dir not in self._search_paths
+        ):
+            self._search_paths.append(self._bundled_stdlib_dir)
 
     def resolve_path(self, import_path: list[str], source_dir: str) -> str | None:
         """Resolve an import path to a file on disk.
 
-        Search order:
-        0. Handle ``self::`` prefix: resolve relative to source_dir directly
-        1. <source_dir>/<path>.mn
-        2. <source_dir>/<path>/mod.mn
-        3. Each search path (stdlib, etc.)
+        Search order (locked):
 
-        Returns absolute path or None if not found.
+        0. ``self::`` prefix: resolve relative to ``source_dir``,
+           stripping the prefix.
+        1. Source-local: ``<source_dir>/<path>.mn`` then
+           ``<source_dir>/<path>/mod.mn``.
+        2. Explicit user paths (``--stdlib-path`` / ``--extra-path``).
+        3. Installed package roots (Ps.1).
+        4. Bundled stdlib.
+
+        Returns absolute path or ``None`` if not found.
         """
-        # Handle `import self::module` — resolve relative to source_dir,
-        # stripping the "self" prefix so `self::ast` resolves to `<dir>/ast.mn`
-        # rather than `<dir>/self/ast.mn`.
+        # Step 0: `import self::module` — resolve relative to source_dir,
+        # stripping the "self" prefix so `self::ast` resolves to
+        # `<dir>/ast.mn` rather than `<dir>/self/ast.mn`.
         if import_path and import_path[0] == "self":
             remaining = import_path[1:]
             if remaining:
@@ -86,25 +163,24 @@ class ModuleResolver:
                 candidate_self = os.path.normpath(os.path.join(source_dir, rel_self))
                 if os.path.isfile(candidate_self):
                     return os.path.abspath(candidate_self)
-                # Try directory module
                 rel_self_dir = os.path.join(*remaining, "mod.mn")
                 candidate_self_dir = os.path.normpath(os.path.join(source_dir, rel_self_dir))
                 if os.path.isfile(candidate_self_dir):
                     return os.path.abspath(candidate_self_dir)
 
         rel = os.path.join(*import_path) + ".mn"
+        rel_dir = os.path.join(*import_path, "mod.mn")
+
+        # Step 1: source-local file, then source-local mod.mn.
         candidate = os.path.normpath(os.path.join(source_dir, rel))
         if os.path.isfile(candidate):
             return os.path.abspath(candidate)
-
-        # Try directory module
-        rel_dir = os.path.join(*import_path, "mod.mn")
         candidate_dir = os.path.normpath(os.path.join(source_dir, rel_dir))
         if os.path.isfile(candidate_dir):
             return os.path.abspath(candidate_dir)
 
-        # Search additional paths
-        for search_dir in self._search_paths:
+        # Step 2: explicit user-provided search paths.
+        for search_dir in self._explicit_paths:
             candidate = os.path.normpath(os.path.join(search_dir, rel))
             if os.path.isfile(candidate):
                 return os.path.abspath(candidate)
@@ -112,7 +188,76 @@ class ModuleResolver:
             if os.path.isfile(candidate_dir):
                 return os.path.abspath(candidate_dir)
 
+        # Step 3: installed package roots (Ps.1). The first path component
+        # is matched against each PackageRoot's import_name; the remainder
+        # resolves relative to the package's root_dir.
+        if import_path and self._package_roots:
+            head = import_path[0]
+            for pkg in self._package_roots:
+                if pkg.import_name != head:
+                    continue
+                resolved = self._resolve_in_package(pkg, import_path)
+                if resolved is not None:
+                    return resolved
+                # Same import_name on multiple packages would be ambiguous;
+                # discovery already errors on duplicates, so the first
+                # match is the only match.
+
+        # Step 4: bundled stdlib (last).
+        if self._bundled_stdlib_dir is not None:
+            candidate = os.path.normpath(os.path.join(self._bundled_stdlib_dir, rel))
+            if os.path.isfile(candidate):
+                return os.path.abspath(candidate)
+            candidate_dir = os.path.normpath(os.path.join(self._bundled_stdlib_dir, rel_dir))
+            if os.path.isfile(candidate_dir):
+                return os.path.abspath(candidate_dir)
+
         return None
+
+    def _resolve_in_package(
+        self, pkg: "PackageRoot", import_path: list[str]
+    ) -> str | None:
+        """Resolve an ``import_path`` whose head matches ``pkg.import_name``.
+
+        Records the resolution in ``_import_log`` (Ps.4) on success.
+        """
+        remaining = import_path[1:]
+        resolved: str | None = None
+        if not remaining:
+            # Bare `import <pkg>` resolves to the package entry module.
+            resolved = os.path.abspath(str(pkg.entry_module))
+        else:
+            rel = os.path.join(*remaining) + ".mn"
+            candidate = os.path.normpath(os.path.join(str(pkg.root_dir), rel))
+            if os.path.isfile(candidate):
+                resolved = os.path.abspath(candidate)
+            else:
+                rel_dir = os.path.join(*remaining, "mod.mn")
+                candidate_dir = os.path.normpath(os.path.join(str(pkg.root_dir), rel_dir))
+                if os.path.isfile(candidate_dir):
+                    resolved = os.path.abspath(candidate_dir)
+
+        if resolved is not None:
+            self._import_log.append(
+                ImportRecord(
+                    package_name=pkg.package_name,
+                    import_name=pkg.import_name,
+                    version=pkg.version,
+                    source=pkg.source,
+                    integrity=pkg.integrity,
+                    import_path=tuple(import_path),
+                    resolved_filepath=resolved,
+                )
+            )
+        return resolved
+
+    def import_log(self) -> list[ImportRecord]:
+        """Return the package-import log (Ps.4 diagnostics surface)."""
+        return list(self._import_log)
+
+    def package_roots(self) -> "list[PackageRoot]":
+        """Return the installed package roots this resolver was built with."""
+        return list(self._package_roots)
 
     def resolve_module(
         self,

@@ -1,7 +1,71 @@
 # Mapanare Language Specification
 
-**Version:** 5.43.0
-**Status:** Live — synced to the v5.43.0 cut (2026-05-05)
+**Version:** 5.44.0
+**Status:** Live — synced to the v5.44.0 cut (2026-05-05)
+
+> **v5.44.0 — Ps.\* — package-aware imports + stdlib
+> extraction runway.** First release in the package-system
+> arc. Wires the existing `stdlib/pkg.py` machinery
+> (manifest parser, lockfile, registry+git install,
+> `mn_modules/` layout, publish tarball — all 1037 LOC
+> shipped pre-v5.44.0) into the existing
+> `mapanare/modules.py` resolver. After v5.44.0, a project
+> with `mapanare.toml` + `mapanare.lock` + `mn_modules/`
+> imports installed packages without manual
+> `--stdlib-path` hacks.
+>
+> **Adds zero language features, zero new MIR ops, zero
+> new IR shapes, zero new C runtime exports, zero
+> `mapanare/self/*.mn` source touches.** Strict 3-stage
+> fixed point preserved by construction at v5.43.0's
+> **242,338 lines / 0 diff** (46-release strict streak
+> from the v5.7.1 baseline). Goldens **96/96** (no new
+> goldens; no compiler edits).
+>
+> **Resolver search order (locked):**
+> source-local → explicit (`--stdlib-path` /
+> `--extra-path` / `MAPANARE_PATH`) → installed packages
+> → bundled stdlib. Source-local always wins; explicit
+> overrides outrank packages; packages outrank bundled
+> stdlib. Hyphen→underscore canonicalization for package
+> import names (`mn-foo` → `import mn_foo`).
+>
+> **Lockfile policy:** authoritative when present.
+> Missing install dir → `PackageDiscoveryError(... run
+> mnc install)`. No silent version fallback. Multiple
+> installed versions in scan mode (no lockfile) → error.
+>
+> **Bundled-vs-package classification** documented in
+> `docs/guides/stdlib-packaging.md`: bundled-core /
+> pure-package candidate / runtime-bound (uses `extern
+> "C"` against `__mn_*` runtime symbols — stays bundled
+> until `mapanare.toml` can declare native-ABI deps,
+> deferred to v6.0+) / downstream-only.
+>
+> **CLI parity:** every compile / check / emit / test
+> entry point routes resolver construction through
+> `_build_resolver_from_args(args, source_path)` and
+> exposes identical `--stdlib-path` / `--extra-path` /
+> `--verbose` / `--diag-json` flags. Locked by
+> `tests/packages/test_cli_parity.py`.
+>
+> **Diagnostics:** `--verbose` emits one
+> `[package] <name>@<version> from <source>` line per
+> resolved package import on stderr. `--diag-json PATH`
+> writes a machine-readable JSON record (schema v1) of
+> resolved packages and their import paths. Both
+> surfaces silent when not requested.
+>
+> **What this release does NOT do:** does not move any
+> stdlib module out of the main repo (Ps.\* is the
+> runway, not the migration); does not implement a
+> global package cache (`PackageRoot.source` field
+> reserved for future `"global-cache"` literal); does
+> not design native-ABI dependency metadata (deferred to
+> v6.0+).
+>
+> **v5.45.0 is the closeout panel** auditing v5.31.0 →
+> v5.44.0 and green-lighting v6.0.
 
 > **v5.43.0 — Da.\* — distributed agents v0; manifesto arc
 > CLOSED for v5.x.** Third and final manifesto-arc release

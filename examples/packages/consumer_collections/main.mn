@@ -1,0 +1,24 @@
+// v5.44.0 Ps.5 — package-aware consumer of mn_collections.
+//
+// Demonstrates the package-aware import mechanism added in v5.44.0:
+// the resolver picks up the `mn_collections-0.1.0/` directory under
+// `mn_modules/` (selected by `mapanare.lock` when present) and
+// `import mn_collections` resolves there without manual --stdlib-path.
+//
+// Dev loop:
+//     cd examples/packages/consumer_collections
+//     mnc install                   # populates mn_modules/ + mapanare.lock
+//     mnc run main.mn               # uses the linked package
+//     mnc build main.mn --verbose   # emit `[package]` lines
+
+import mn_collections
+
+fn main() {
+    pon xs: List<Int> = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]
+    print("input length: " + str(len(xs)))
+    print("sum:          " + str(sum(xs)))
+    print("max:          " + str(max(xs)))
+    print("min:          " + str(min(xs)))
+    pon reversed: List<Int> = reverse(xs)
+    print("reverse[0]:   " + str(reversed[0]))
+}

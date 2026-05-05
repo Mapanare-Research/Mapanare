@@ -7,6 +7,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.44.0] - 2026-05-05
+
+**Ps.\* — package-aware imports + stdlib extraction runway;
+ecosystem-bridge gap closed before v5.45.0 panel.** First release
+in the package-system arc. After v5.43.0 closed the manifesto arc,
+v5.44.0 wires the existing package machinery
+(`stdlib/pkg.py` — manifest parser, lockfile, registry+git install,
+`mn_modules/` layout, publish tarball — all 1037 LOC shipped pre-v5.44.0)
+into the existing import resolver (`mapanare/modules.py`). Result:
+a project with `mapanare.toml` + `mapanare.lock` + `mn_modules/`
+imports installed packages without manual `--stdlib-path` hacks.
+Strict 3-stage fixed point preserved by construction at v5.43.0's
+**242,338 lines / 0 diff** (46-release strict streak from the
+v5.7.1 baseline; zero `mapanare/self/*.mn` source touches; zero
+compiler edits; zero runtime edits). Goldens **96/96**.
+
+### Added
+
+- **Ps.1** — `mapanare/pkg_discovery.py` (~280 LOC, net-new):
+  `PackageRoot` frozen dataclass + `discover_package_roots()` +
+  `find_project_dir()` + `package_name_to_import_name()` +
+  `build_resolver_for_source()`. The resolver consumes
+  `PackageRoot` records produced here; storage layout
+  (`mn_modules/<name>-<version>/` today, future global cache
+  later) stays inside discovery. Lockfile-authoritative when
+  present; alphabetical scan fallback otherwise. Reserved
+  `source` literals: `"mn_modules"` (v5.44.0), `"path"`, `"git"`,
+  `"global-cache"` (forward-compat for v6.0+).
+- **Ps.1+Ps.2** — `ModuleResolver.__init__` extended with kw-only
+  `package_roots: list[PackageRoot] | None = None`. Search-order
+  policy (locked by tests): source-local → explicit
+  (`--stdlib-path`/`--extra-path`/`MAPANARE_PATH`) → installed
+  packages → bundled stdlib. Hyphen→underscore canonicalization
+  for package import names (`mn-foo` → `import mn_foo`). Bare
+  package import (`import mn_collections`) resolves to package
+  entry module (mod.mn convention, else main.mn). Subpath imports
+  (`import mn_collections::utils`) resolve under `root_dir`.
+- **Ps.4** — `ImportRecord` dataclass + `_import_log` on
+  `ModuleResolver`: every package-resolved import records
+  `(package_name, import_name, version, source, integrity,
+  import_path, resolved_filepath)`.
+- **Ps.3** — `mapanare/cli.py`: new
+  `_build_resolver_from_args(args, source_path)`,
+  `_collect_explicit_paths(args)`, `_add_resolver_args(parser)`
+  helpers. Every compile/check/emit/test entry point routes
+  resolver construction through the helper: `cmd_check`,
+  `cmd_run`, `cmd_build`, `cmd_emit_llvm`, `cmd_emit_c`,
+  `cmd_emit_mir`, `cmd_emit_wasm`, `cmd_build_multi`, `cmd_test`.
+  All 9 entry points expose identical `--stdlib-path` and
+  `--extra-path` flags (parity locked by
+  `tests/packages/test_cli_parity.py`).
+- **Ps.4** — `_surface_install_diagnostics(args, resolver)` helper
+  + `--verbose` (one `[package] <name>@<version> from <source>`
+  line per resolved import on stderr, deduped on `(name, version)`)
+  + `--diag-json PATH` (machine-readable JSON: `{schema_version: 1,
+  packages: [{name, import_name, version, source, integrity,
+  imports: [{import_path, resolved}, ...]}]}`). Both surfaces
+  silent when not requested. Always called AFTER successful
+  compilation.
+- **Ps.5** — `examples/packages/consumer_collections/`: net-new
+  pure-Mapanare consumer demo with `mapanare.toml`, `mapanare.lock`,
+  `main.mn`, README, and pre-staged `mn_modules/mn_collections-0.1.0/`
+  (so the example runs out-of-the-box). Demonstrates the v5.44.0
+  end-to-end consumer flow.
+- **Ps.6** — `examples/packages/mn_http/LEGACY.md` and
+  `examples/packages/mn_json/LEGACY.md`: explicit legacy markers
+  documenting why these examples don't compile (use removed
+  `extern "Python"`) and why HTTP / JSON-via-Python aren't the
+  model (HTTP is runtime-bound; JSON ships natively as
+  `stdlib/encoding/json.mn`).
+- **Ps.7** — `docs/guides/stdlib-packaging.md` (~290 LOC, net-new):
+  classification table (bundled-core / pure-package candidate /
+  runtime-bound / downstream-only) + per-class definitions +
+  initial inventory of every stdlib module + the migration-path
+  prerequisites (native-ABI declaration in `mapanare.toml` +
+  runtime-export ABI versioning, both deferred to v6.0+).
+- **Ps.8** — `docs/guides/external-package-workflow.md` (~230 LOC,
+  net-new): path/git/registry dependency dev loops, daily
+  iteration recipe, hyphen-mapping rule, publishing flow,
+  diagnosis guide. Reference for the future
+  `mapanare-research/stdlib` repo split workflow.
+- **Ps.9** — `docs/guides/stdlib-ci-template.yml` (~140 LOC,
+  net-new): reference YAML for the future
+  `mapanare-research/stdlib` repo's CI. Multi-OS matrix
+  (Linux/macOS/Windows) × dual-channel (latest released + main
+  artifact) + tarball-exclusion smoke gate. Not active CI; copy
+  to the actual stdlib repo when it splits.
+- **Ps.10** — `tests/packages/` (net-new directory; 65 cases
+  across 7 files):
+  `test_resolver_search_order.py` (12) — locks the four-step
+  search-order contract;
+  `test_resolver_lockfile.py` (15) — locks the lockfile-
+  authoritative contract + hyphen mapping + project-dir walk;
+  `test_cli_parity.py` (17) — every compile subcommand exposes
+  resolver flags + grep-gate against bare `ModuleResolver()`
+  reintroductions;
+  `test_install_diagnostics.py` (7) — `--verbose` and
+  `--diag-json` surfaces;
+  `test_consumer_collections_e2e.py` (8) — staged exemplar
+  end-to-end + LEGACY.md presence check;
+  `test_package_tarball_excludes_mn_modules.py` (3) — locks
+  already-correct tarball exclusion as a regression gate;
+  `test_resolver_does_not_scan_global_cache.py` (3) — locks
+  the local-storage / shared-storage / project-scoped boundary.
+
+### Changed
+
+- `mapanare/multi_module.py:compile_multi_module_mir` — new
+  optional `resolver: ModuleResolver | None = None` kw param.
+  Backward-compatible: if not passed, constructs a bare
+  `ModuleResolver()` (legacy behavior). CLI callers in
+  `cli.py` now thread the package-aware resolver through.
+- `mapanare/test_runner.py:_compile_test_to_llvm` — uses
+  `build_resolver_for_source(filename)` for package-aware
+  resolution; falls back to bare `ModuleResolver()` on
+  `PackageDiscoveryError` (LSP-style tolerance — test
+  running shouldn't sys.exit on a malformed lockfile).
+- `mapanare/lsp/analysis.py:_resolve_imported_symbols` — same
+  pattern as test_runner: package-aware with tolerant fallback.
+- `mapanare/cli.py:_check_one` — new optional `resolver` kw arg
+  (defaults to bare `ModuleResolver()` for legacy callers);
+  `cmd_check` passes the package-aware one.
+- `mapanare/cli.py:_compile_to_c` — new optional `resolver` kw
+  arg threaded to `check_or_raise(...)`; `cmd_run`, `cmd_emit_c`,
+  and the C-fallback path in `cmd_build` all pass the
+  package-aware resolver.
+- `mapanare/cli.py:_compile_multi_module_text` — same shape;
+  threads the resolver through to `compile_multi_module_mir`.
+- `mapanare/cli.py` `--stdlib-path` previously lived only on
+  `mnc build`. Now lives on every compile subcommand via
+  `_add_resolver_args(parser)`. Existing single-site flag was
+  removed from the inline `p_build` definition (replaced by
+  `_add_resolver_args(p_build)`); identical surface for users.
+
+### Fixed
+
+(No bugs fixed — v5.44.0 is structural / packaging work only.
+Existing test suites for module resolution, CLI, cross-module
+compilation all green at v5.44.0 HEAD with the additive resolver
+extension.)
+
+
 ## [5.43.0] - 2026-05-05
 
 **Da.\* — distributed agents v0; manifesto arc CLOSED for v5.x.**
@@ -11669,7 +11811,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.43.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.0...HEAD
+[5.44.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.43.0...v5.44.0
 [5.43.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.42.0...v5.43.0
 [5.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.41.0...v5.42.0
 [5.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.40.0...v5.41.0

@@ -28,6 +28,10 @@ from mapanare.format import (
 from mapanare.mir_opt import MIROptLevel as OptLevel
 from mapanare.modules import ModuleResolver
 from mapanare.parser import ParseError, parse, parse_recovering
+from mapanare.pkg_discovery import (
+    PackageDiscoveryError,
+    build_resolver_for_source,
+)
 from mapanare.semantic import SemanticErrors, check_or_raise
 from mapanare.targets import get_target, host_target_name, list_targets
 
@@ -39,6 +43,168 @@ __version__ = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "
 # warrant the dev-clone banner. When adding a new pure-metadata subcommand,
 # add it here in the same PR so the banner doesn't fire spuriously.
 NO_BANNER_COMMANDS = frozenset({"--version", "--help", "-h", "init", "list"})
+
+
+# v5.44.0 Ps.3: every compile / check / emit / test entry point routes
+# resolver construction through this helper so package roots, explicit
+# search paths, and bundled stdlib are wired identically. If you find
+# yourself constructing a bare ``ModuleResolver()`` outside this helper,
+# stop — the parametrized parity test in
+# ``tests/packages/test_cli_parity.py`` will catch it.
+
+def _collect_explicit_paths(args: argparse.Namespace) -> list[str]:
+    """Gather explicit search paths from CLI flags + ``MAPANARE_PATH`` env.
+
+    Order: ``--stdlib-path`` first (legacy single-path arg), then each
+    ``--extra-path`` in repeat order, then ``MAPANARE_PATH`` entries
+    split on the OS path separator. Empty / nonexistent entries are
+    dropped (matches existing behavior).
+    """
+    paths: list[str] = []
+    stdlib_path = getattr(args, "stdlib_path", None)
+    if stdlib_path:
+        paths.append(stdlib_path)
+    extra = getattr(args, "extra_path", None) or []
+    for p in extra:
+        if p and p not in paths:
+            paths.append(p)
+    env_path = os.environ.get("MAPANARE_PATH")
+    if env_path:
+        for p in env_path.split(os.pathsep):
+            if p and p not in paths:
+                paths.append(p)
+    return paths
+
+
+def _build_resolver_from_args(
+    args: argparse.Namespace,
+    source_path: str | None = None,
+) -> ModuleResolver:
+    """Construct a ``ModuleResolver`` with package-aware roots (Ps.3).
+
+    Single source of truth for resolver construction across every CLI
+    entry point. Walks up from ``source_path`` to find an enclosing
+    ``mapanare.toml``, reads ``mapanare.lock`` if present, discovers
+    installed package roots via :func:`discover_package_roots`, and
+    threads them through the resolver alongside any explicit
+    ``--stdlib-path`` / ``--extra-path`` / ``MAPANARE_PATH`` paths.
+
+    A ``PackageDiscoveryError`` (e.g. lockfile points at a missing
+    install dir) is surfaced as a stderr message + ``sys.exit(1)``;
+    the alternative — silently falling back to no packages — would
+    erode the reproducibility contract.
+    """
+    explicit = _collect_explicit_paths(args)
+    try:
+        return build_resolver_for_source(source_path, explicit_paths=explicit)
+    except PackageDiscoveryError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _add_resolver_args(parser: argparse.ArgumentParser) -> None:
+    """Add the standard package-aware resolver argparse flags (Ps.3 + Ps.4).
+
+    Parsers wired through ``_build_resolver_from_args`` MUST call this
+    so all entry points expose identical resolver-control + diagnostics
+    surface.
+    """
+    parser.add_argument(
+        "--stdlib-path",
+        metavar="PATH",
+        help="Path to stdlib directory (default: auto-detect from install)",
+        default=None,
+    )
+    parser.add_argument(
+        "--extra-path",
+        metavar="PATH",
+        action="append",
+        default=None,
+        help="Additional module search path (repeatable)",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Print package resolution decisions to stderr (Ps.4)",
+    )
+    parser.add_argument(
+        "--diag-json",
+        metavar="PATH",
+        default=None,
+        help="Write build diagnostics (resolved packages) as JSON to PATH (Ps.4)",
+    )
+
+
+def _surface_install_diagnostics(
+    args: argparse.Namespace,
+    resolver: ModuleResolver,
+) -> None:
+    """Surface the resolver's package-import log (Ps.4).
+
+    Two surfaces:
+
+    * ``--verbose``: one ``[package] <name>@<version> from <source>``
+      line per resolved package import, written to stderr. Deduped on
+      ``(package_name, version)`` so a project that imports five
+      submodules of one package prints one line, not five.
+    * ``--diag-json PATH``: machine-readable JSON containing the full
+      package list (one entry per ``PackageRoot`` actually used) plus
+      per-import resolution records.
+
+    Either surface is a silent no-op when not requested. Always called
+    AFTER compilation succeeds so failed builds don't leak partial
+    diagnostics.
+    """
+    log = resolver.import_log()
+    verbose = bool(getattr(args, "verbose", False))
+    diag_json = getattr(args, "diag_json", None)
+
+    if verbose:
+        # Dedupe on (package_name, version) to keep output compact.
+        seen: set[tuple[str, str]] = set()
+        for rec in log:
+            key = (rec.package_name, rec.version)
+            if key in seen:
+                continue
+            seen.add(key)
+            print(
+                f"[package] {rec.package_name}@{rec.version} from {rec.source}",
+                file=sys.stderr,
+            )
+
+    if diag_json:
+        import json as _json
+        from typing import Any
+
+        # Group records by package; one packages[] entry per (name, version).
+        by_pkg: dict[tuple[str, str], dict[str, Any]] = {}
+        for rec in log:
+            key = (rec.package_name, rec.version)
+            entry = by_pkg.setdefault(
+                key,
+                {
+                    "name": rec.package_name,
+                    "import_name": rec.import_name,
+                    "version": rec.version,
+                    "source": rec.source,
+                    "integrity": rec.integrity,
+                    "imports": [],
+                },
+            )
+            entry["imports"].append(
+                {
+                    "import_path": list(rec.import_path),
+                    "resolved": rec.resolved_filepath,
+                }
+            )
+        payload = {
+            "schema_version": 1,
+            "packages": list(by_pkg.values()),
+        }
+        with open(diag_json, "w", encoding="utf-8") as f:
+            _json.dump(payload, f, indent=2)
+            f.write("\n")
 
 
 @lru_cache(maxsize=1)
@@ -216,6 +382,7 @@ def _compile_to_llvm_ir(
             debug=debug,
             skip_check=skip_check,
             no_verify=no_verify,
+            resolver=resolver,
         )
     if not skip_check:
         check_or_raise(ast, filename=filename, resolver=resolver, werror=werror)
@@ -255,6 +422,7 @@ def _compile_multi_module_text(
     target_name: str | None = None,
     skip_check: bool = False,
     no_verify: bool = False,
+    resolver: ModuleResolver | None = None,
 ) -> str:
     """Compile multiple .mn files into a single linked LLVM IR module.
 
@@ -276,17 +444,23 @@ def _compile_multi_module_text(
         target_name=target_name,
         skip_check=skip_check,
         no_verify=no_verify,
+        resolver=resolver,
     )
 
 
-def _check_one(path: str, *, werror: bool) -> bool:
+def _check_one(
+    path: str, *, werror: bool, resolver: ModuleResolver | None = None
+) -> bool:
     """Type-check a single .mn file. Return True iff it has zero errors.
 
     Prints diagnostics to stderr and an "OK" line to stdout, matching the
-    historical single-file output.
+    historical single-file output. ``resolver`` defaults to a bare
+    ``ModuleResolver()`` for legacy callers; ``cmd_check`` passes the
+    package-aware one.
     """
     source = _read_source(path)
-    resolver = ModuleResolver()
+    if resolver is None:
+        resolver = ModuleResolver()
     ast, parse_errors = parse_recovering(source, filename=path)
 
     all_diagnostics: list[Diagnostic] = []
@@ -368,8 +542,11 @@ def cmd_check(args: argparse.Namespace) -> None:
 
     failed = 0
     for path in paths:
-        if not _check_one(path, werror=werror):
+        resolver = _build_resolver_from_args(args, source_path=path)
+        if not _check_one(path, werror=werror, resolver=resolver):
             failed += 1
+        else:
+            _surface_install_diagnostics(args, resolver)
 
     if failed:
         if walk_all:
@@ -404,9 +581,12 @@ def cmd_run(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     debug = _resolve_debug(args)
+    resolver = _build_resolver_from_args(args, source_path=args.source)
 
     try:
-        c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
+        c_source = _compile_to_c(
+            source, args.source, opt_level=opt_level, debug=debug, resolver=resolver
+        )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
@@ -417,6 +597,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    _surface_install_diagnostics(args, resolver)
     _run_c_source(c_source, args.source)
 
 
@@ -830,9 +1011,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
     debug = _resolve_debug(args)
-    stdlib_path: str | None = getattr(args, "stdlib_path", None)
-    search_paths = [stdlib_path] if stdlib_path else None
-    resolver = ModuleResolver(search_paths=search_paths)
+    resolver = _build_resolver_from_args(args, source_path=args.source)
     werror = getattr(args, "werror", False)
 
     import tempfile
@@ -920,7 +1099,9 @@ def cmd_build(args: argparse.Namespace) -> None:
             print(install_instructions(), file=sys.stderr)
             sys.exit(1)
         try:
-            c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
+            c_source = _compile_to_c(
+                source, args.source, opt_level=opt_level, debug=debug, resolver=resolver
+            )
         except ParseError as e:
             _emit_parse_error(e, source, args.source)
             sys.exit(1)
@@ -1165,6 +1346,8 @@ def cmd_build(args: argparse.Namespace) -> None:
             else:
                 print("note: no linker found (install clang or gcc to produce executables)")
 
+    _surface_install_diagnostics(args, resolver)
+
 
 def cmd_emit_llvm(args: argparse.Namespace) -> None:
     """Emit LLVM IR for an .mn source file."""
@@ -1172,7 +1355,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
     opt_level = _parse_opt_level(args)
     target_name: str | None = getattr(args, "target", None)
     debug = _resolve_debug(args)
-    resolver = ModuleResolver()
+    resolver = _build_resolver_from_args(args, source_path=args.source)
     try:
         llvm_ir = _compile_to_llvm_ir(
             source,
@@ -1198,6 +1381,7 @@ def cmd_emit_llvm(args: argparse.Namespace) -> None:
         f.write(llvm_ir)
     target = get_target(target_name)
     print(f"emitted {args.source} -> {out_path} (target: {target.triple})")
+    _surface_install_diagnostics(args, resolver)
 
 
 def _compile_to_c(
@@ -1205,15 +1389,22 @@ def _compile_to_c(
     filename: str,
     opt_level: OptLevel = OptLevel.O2,
     debug: bool = False,
+    resolver: ModuleResolver | None = None,
 ) -> str:
-    """Parse, check, optimize, and emit C source from Mapanare source."""
+    """Parse, check, optimize, and emit C source from Mapanare source.
+
+    ``resolver`` is optional for backward compatibility (legacy callers
+    without package awareness keep working). When provided, it is passed
+    to ``check_or_raise`` so package imports resolve identically to
+    every other entry point (Ps.3).
+    """
     from mapanare.emit_c import emit_c
     from mapanare.lower import lower as build_mir
     from mapanare.mir_opt import MIROptLevel
     from mapanare.mir_opt import optimize_module as mir_optimize
 
     ast = parse(source, filename=filename)
-    check_or_raise(ast, filename=filename)
+    check_or_raise(ast, filename=filename, resolver=resolver)
 
     module_name = os.path.splitext(os.path.basename(filename))[0]
     source_file = os.path.basename(filename)
@@ -1318,8 +1509,11 @@ def cmd_emit_c(args: argparse.Namespace) -> None:
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
     debug = _resolve_debug(args)
+    resolver = _build_resolver_from_args(args, source_path=args.source)
     try:
-        c_source = _compile_to_c(source, args.source, opt_level=opt_level, debug=debug)
+        c_source = _compile_to_c(
+            source, args.source, opt_level=opt_level, debug=debug, resolver=resolver
+        )
     except ParseError as e:
         _emit_parse_error(e, source, args.source)
         sys.exit(1)
@@ -1334,6 +1528,7 @@ def cmd_emit_c(args: argparse.Namespace) -> None:
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(c_source)
     print(f"emitted {args.source} -> {out_path} (backend: C)")
+    _surface_install_diagnostics(args, resolver)
 
 
 def cmd_emit_mir(args: argparse.Namespace) -> None:
@@ -1345,7 +1540,7 @@ def cmd_emit_mir(args: argparse.Namespace) -> None:
 
     source = _read_source(args.source)
     opt_level = _parse_opt_level(args)
-    resolver = ModuleResolver()
+    resolver = _build_resolver_from_args(args, source_path=args.source)
     try:
         ast = parse(source, filename=args.source)
         check_or_raise(ast, filename=args.source, resolver=resolver)
@@ -1367,6 +1562,7 @@ def cmd_emit_mir(args: argparse.Namespace) -> None:
         print(f"emitted {args.source} -> {out_path} (MIR)")
     else:
         print(output, end="")
+    _surface_install_diagnostics(args, resolver)
 
 
 def cmd_emit_wasm(args: argparse.Namespace) -> None:
@@ -1385,7 +1581,7 @@ def cmd_emit_wasm(args: argparse.Namespace) -> None:
     wat_paths: list[str] = []
     for src_file in source_files:
         source = _read_source(src_file)
-        resolver = ModuleResolver()
+        resolver = _build_resolver_from_args(args, source_path=src_file)
         try:
             ast = parse(source, filename=src_file)
             check_or_raise(ast, filename=src_file, resolver=resolver)
@@ -1415,6 +1611,7 @@ def cmd_emit_wasm(args: argparse.Namespace) -> None:
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(wat_output)
         print(f"emitted {src_file} -> {out_path} (WebAssembly text format)")
+        _surface_install_diagnostics(args, resolver)
         wat_paths.append(out_path)
 
     # Link multiple WAT modules into a single .wasm binary
@@ -1558,6 +1755,8 @@ def cmd_build_multi(args: argparse.Namespace) -> None:
     target_name: str | None = getattr(args, "target", None)
     skip_check = _resolve_no_check(args)
     no_verify = _resolve_no_verify(args)
+    root_file = source_files[0] if source_files else None
+    resolver = _build_resolver_from_args(args, source_path=root_file)
     try:
         llvm_ir = _compile_multi_module_text(
             source_files,
@@ -1565,6 +1764,7 @@ def cmd_build_multi(args: argparse.Namespace) -> None:
             target_name=target_name,
             skip_check=skip_check,
             no_verify=no_verify,
+            resolver=resolver,
         )
     except ParseError as e:
         print(f"parse error: {e}", file=sys.stderr)
@@ -1581,6 +1781,7 @@ def cmd_build_multi(args: argparse.Namespace) -> None:
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(llvm_ir)
     print(f"linked {len(source_files)} modules -> {out_path}")
+    _surface_install_diagnostics(args, resolver)
 
 
 def cmd_test(args: argparse.Namespace) -> None:
@@ -1950,6 +2151,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Treat warnings as errors",
     )
+    _add_resolver_args(p_check)
     p_check.set_defaults(func=cmd_check)
 
     # run
@@ -1981,6 +2183,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_debug_flag(p_run)
     _add_edition_flag(p_run)
     _add_no_verify_flag(p_run)
+    _add_resolver_args(p_run)
     p_run.set_defaults(func=cmd_run)
 
     # fmt
@@ -2148,12 +2351,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         help="Link against a C library (e.g. --link-lib m for libm)",
     )
-    p_build.add_argument(
-        "--stdlib-path",
-        metavar="PATH",
-        help="Path to stdlib directory (default: auto-detect from install)",
-        default=None,
-    )
+    _add_resolver_args(p_build)
     p_build.add_argument(
         "--werror",
         action="store_true",
@@ -2186,6 +2384,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_debug_flag(p_emit_llvm)
     _add_edition_flag(p_emit_llvm)
     _add_no_verify_flag(p_emit_llvm)
+    _add_resolver_args(p_emit_llvm)
     p_emit_llvm.set_defaults(func=cmd_emit_llvm)
 
     # emit-c
@@ -2195,6 +2394,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_opt_level_args(p_emit_c)
     _add_debug_flag(p_emit_c)
     _add_edition_flag(p_emit_c)
+    _add_resolver_args(p_emit_c)
     p_emit_c.set_defaults(func=cmd_emit_c)
 
     # emit-mir
@@ -2202,6 +2402,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_emit_mir.add_argument("source", help="Path to .mn source file")
     p_emit_mir.add_argument("-o", metavar="OUTPUT", help="Output file path", default=None)
     _add_opt_level_args(p_emit_mir)
+    _add_resolver_args(p_emit_mir)
     p_emit_mir.set_defaults(func=cmd_emit_mir)
 
     # emit-wasm
@@ -2249,6 +2450,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Initial memory in bytes (default: 1048576, use with --link)",
     )
     _add_opt_level_args(p_emit_wasm)
+    _add_resolver_args(p_emit_wasm)
     p_emit_wasm.set_defaults(func=cmd_emit_wasm)
 
     # lint
@@ -2296,6 +2498,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_opt_level_args(p_build_multi)
     _add_no_verify_flag(p_build_multi)
+    _add_resolver_args(p_build_multi)
     p_build_multi.set_defaults(func=cmd_build_multi)
 
     # targets
@@ -2313,6 +2516,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Only run tests whose name contains PATTERN",
     )
+    _add_resolver_args(p_test)
     p_test.set_defaults(func=cmd_test)
 
     # doc

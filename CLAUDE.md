@@ -19,6 +19,140 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.44.0** (ready, not tagged) — **Ps.\* — package-aware
+  imports + stdlib extraction runway; ecosystem-bridge gap
+  closed before v5.45.0 panel.** First release in the
+  package-system arc. After v5.43.0 closed the manifesto arc,
+  v5.44.0 wires the existing `stdlib/pkg.py` machinery (~1037
+  LOC of manifest parser, lockfile, registry+git install,
+  `mn_modules/` layout, publish tarball — all shipped pre-v5.44.0)
+  into the existing `mapanare/modules.py` resolver. Result: a
+  project with `mapanare.toml` + `mapanare.lock` + `mn_modules/`
+  imports installed packages without manual `--stdlib-path`
+  hacks. **Adds zero language features, zero new MIR ops, zero
+  new IR shapes, zero new C runtime exports, zero
+  `mapanare/self/*.mn` source touches, zero compiler edits, zero
+  runtime edits.** Strict 3-stage fixed point preserved by
+  construction at v5.43.0's **242,338 lines / 0 diff**
+  (46-release strict streak from the v5.7.1 baseline). Goldens
+  **96/96**. **PROMPT/PLAN deviation (load-bearing)**: PLAN
+  framed Ps.\* as "design a package system." Phase 0 audit
+  (`PRE_PHASE_AUDIT.md`) found stdlib/pkg.py is 1037 LOC of
+  complete manifest/lockfile/install/publish code. v5.44.0
+  *wires existing parts together*; doesn't redesign. The
+  PROMPT pre-empted this: "the PLAN treats this as if the
+  package system were green-field. The premise is partly
+  wrong at HEAD." Audit confirmed the warning. **Ps.1+Ps.2 —
+  resolver extension + name mapping**: net-new
+  `mapanare/pkg_discovery.py` (~280 LOC) shipping
+  `PackageRoot` frozen dataclass + `discover_package_roots()` +
+  `find_project_dir()` + `package_name_to_import_name()` +
+  `build_resolver_for_source()`. The resolver consumes
+  `PackageRoot` records produced by discovery; storage layout
+  (`mn_modules/<name>-<version>/` today, future global cache
+  later) stays inside discovery. `ModuleResolver.__init__`
+  extended with kw-only `package_roots: list[PackageRoot] |
+  None = None` (backward-compatible — bare `ModuleResolver()`
+  unchanged). Search-order policy locked by tests:
+  source-local → explicit (`--stdlib-path` / `--extra-path` /
+  `MAPANARE_PATH`) → installed packages → bundled stdlib.
+  Hyphen→underscore canonicalization (`mn-foo` →
+  `import mn_foo`). Bare package import resolves to entry
+  module (`mod.mn` else `main.mn`). Lockfile-authoritative
+  when present; alphabetical scan fallback otherwise; multiple
+  installed versions in scan mode → `PackageDiscoveryError`;
+  missing locked install dir → `PackageDiscoveryError("...run
+  mnc install")`. **Reserved `source` literals**:
+  `"mn_modules"` (v5.44.0), `"path"`, `"git"`,
+  `"global-cache"` (forward-compat for v6.0+; the compiler
+  must not scan a global cache opportunistically — locked by
+  `tests/packages/test_resolver_does_not_scan_global_cache.py`).
+  **Ps.3 — CLI parity refactor**: extracted
+  `_build_resolver_from_args(args, source_path)`,
+  `_collect_explicit_paths(args)`, and
+  `_add_resolver_args(parser)` helpers. Refactored 8 of the 9
+  existing `ModuleResolver()` construction sites in
+  `mapanare/cli.py` (5 sites), `mapanare/multi_module.py`
+  (1 site), `mapanare/test_runner.py` (1 site),
+  `mapanare/lsp/analysis.py` (1 site). The 9th site (the
+  pre-v5.44.0 `cmd_build` site that used `search_paths=`)
+  also routes through the helper. Every compile / check /
+  emit / test entry point now exposes identical
+  `--stdlib-path`, `--extra-path`, `--verbose`, `--diag-json`
+  surface (`cmd_check`, `cmd_run`, `cmd_build`,
+  `cmd_emit_llvm`, `cmd_emit_c`, `cmd_emit_mir`,
+  `cmd_emit_wasm`, `cmd_build_multi`, `cmd_test`).
+  **Ps.4 — install diagnostics**: `_import_log` on
+  `ModuleResolver` records every package-resolved import.
+  `--verbose` prints `[package] <name>@<version> from
+  <source>` per import on stderr (deduped on
+  `(package_name, version)`). `--diag-json PATH` writes
+  `{schema_version: 1, packages: [...]}` JSON. Both
+  surfaces silent when not requested; always called AFTER
+  successful compilation. **Ps.5 — pure exemplar**:
+  `examples/packages/consumer_collections/` net-new (mapanare.toml
+  + mapanare.lock + main.mn + README + pre-staged
+  `mn_modules/mn_collections-0.1.0/`). The pre-staging means
+  the demo runs out-of-the-box without network access.
+  **Ps.6 — legacy markers**:
+  `examples/packages/mn_http/LEGACY.md` AND
+  `examples/packages/mn_json/LEGACY.md` (PROMPT mentioned
+  only `mn_http`; Phase 0 audit found `mn_json` has the
+  identical `extern "Python"` legacy shape; treated
+  identically). Both explain the migration story.
+  **Ps.7 + Ps.8 + Ps.9 — docs**:
+  `docs/guides/stdlib-packaging.md` (~290 LOC,
+  classification table for bundled-core / pure-package /
+  runtime-bound / downstream-only stdlib modules + initial
+  inventory + migration prerequisites);
+  `docs/guides/external-package-workflow.md` (~230 LOC,
+  path/git/registry dep modes + dev loop + diagnosis);
+  `docs/guides/stdlib-ci-template.yml` (~140 LOC,
+  reference-only YAML for the future external stdlib
+  repo's CI).
+  **Ps.10 — tests**: net-new `tests/packages/` (65 cases
+  across 7 files — search order; lockfile;
+  CLI parity; install diagnostics; consumer e2e; tarball
+  exclusion; no global-cache scan). All 65 GREEN at HEAD
+  in 1.77s.
+  **Backward-compat verified**: `tests/modules/test_module_resolution.py`
+  25/25 GREEN (legacy `ModuleResolver()` and
+  `ModuleResolver(search_paths=...)` unchanged).
+  **GitNexus impact** on `ModuleResolver` returned CRITICAL
+  (56 impacted symbols, 23 direct callers, 17 execution
+  flows). Surfaced to lead; approved on the basis that the
+  change is structurally additive (kw-only optional new
+  param with safe default). The `test_bare_constructor_unchanged_behavior`
+  + `test_search_paths_kw_unchanged_behavior` cases lock
+  the backward-compat invariant.
+  **Source delta:** ~280 LOC net-new
+  `mapanare/pkg_discovery.py` + ~80 LOC modified
+  `mapanare/modules.py` (resolver extension) + ~190 LOC
+  net-new helpers in `mapanare/cli.py` + ~50 LOC modified
+  across `multi_module.py`/`test_runner.py`/
+  `lsp/analysis.py` + ~1,100 LOC `tests/packages/` (7
+  files) + ~660 LOC `docs/guides/` (3 guides) + ~80 LOC
+  `examples/packages/consumer_collections/` (4 files +
+  staged copies) + ~50 LOC LEGACY.md (2 files) + ~430 LOC
+  PRE_PHASE_AUDIT.md + SESSION_REPORT.md + CHANGELOG +
+  SPEC sync + this CLAUDE.md release-notes entry +
+  mechanical bump_version.py edits.
+  Aggregate state entering v5.45.0 (closeout panel):
+  **0 HIGH** (Ps.\* arc closed cleanly) /
+  **2 MEDIUM** (carry from v5.43.0: lowerer fixes for
+  `Result<T, complex Err>` + variant rewrap + nested
+  15-arm match; macOS notarization carry from v5.33.0
+  Nu.2) / **~8 LOW** (added: native-ABI dependency
+  declaration schema, runtime-export ABI versioning,
+  global-cache implementation, registry-side package
+  signing — all v6.0+ work; carries from v5.43.0).
+  **Manifesto arc CLOSED at v5.43.0. Package-system
+  runway CLOSED at v5.44.0. v5.45.0 is the closeout
+  panel that audits v5.31.0 → v5.44.0 and green-lights
+  v6.0.** See
+  `docs/roadmap/v5/v5.44.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.43.0** (ready, not tagged) — **Da.\* — distributed agents
   v0; manifesto arc CLOSED for v5.x.** Third and final
   manifesto-arc release after v5.40.0 `ask` and v5.42.0 As.\*
