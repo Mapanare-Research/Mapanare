@@ -1,7 +1,34 @@
 # Mapanare Language Specification
 
-**Version:** 5.39.7
-**Status:** Live — synced to the v5.39.7 cut (2026-05-04)
+**Version:** 5.40.0
+**Status:** Live — synced to the v5.40.0 cut (2026-05-04)
+
+> **v5.40.0 — Ai.\* — `ask` runtime adapter; manifesto-arc
+> kickoff.** SPEC body unchanged from the v5.21.0 cut. v5.40.0
+> ships `stdlib/ai/ask.mn` (provider-agnostic env-driven LLM
+> dispatch + `AskError` 8-variant enum + `ask_text` +
+> `ask_with_schema` + `map_extract_error`) and
+> `stdlib/ai/ask_cache.mn` (opt-in SHA-256-keyed response cache)
+> on top of v5.36.0's `__struct_meta::<T>()` schema intrinsic and
+> v5.39.x's typed-serde round-trip. **Zero compiler edits, zero
+> new C runtime exports, zero `mapanare/self/*.mn` source
+> touches.** STRICT preserved by construction at v5.39.7's
+> 241,898 lines / 0 diff (42-release strict streak). PROMPT/PLAN
+> deviation (load-bearing): the reserved `ask` keyword + binding-
+> context type inference (Ai.1 + Ai.2) and the
+> `ask_typed::<T>(prompt)` intrinsic (Ai.8) are deferred to
+> v5.41.0 — Phase 0 audit confirmed nested-generic intrinsic
+> dispatch in `mapanare/lower.py::_specialize_fn` does NOT
+> propagate substituted type arguments to inner intrinsic call
+> sites (e.g., `from_json::<T>` lowered with literal "T" instead
+> of the substituted struct), so a user-level
+> `pub fn ask_typed<T>` cannot work without a structural fix that
+> threatens the strict streak. v5.40.0 ships function-syntax
+> (`ask_with_schema(prompt, __struct_meta::<T>())` paired with
+> `from_json::<T>`); v5.41.0 picks up the keyword on the back of
+> the `_specialize_fn` body-walk fix. Manifesto demo:
+> `examples/ai/plan_generator.mn` (Plan with steps + ETA from a
+> goal string). Goldens 95/95.
 
 > **v5.39.7 — Js.4.F.1 + Js.4.F.2 — typed-serde ENUM encode +
 > decode; round-trip closure for enum-typed fields. Final

@@ -40,6 +40,14 @@ Phase two is a Python transpiler. Mapanare source code compiles to readable Pyth
 
 Phase three onward builds the real infrastructure: a standard library, an LLVM backend for native compilation, a package manager, and eventually a self-hosting compiler written in Mapanare itself. Each phase delivers working software. Each phase is usable on its own.
 
+## `ask` — the first manifesto item shipped at the syntax level (v5.40.0)
+
+Every other language has the same shape for "call an LLM and get back a typed result": import a client library, configure a model, write a prompt, hand-write the JSON schema, send the request, parse the response, deserialize into a struct. The library does the work but the user does the wiring.
+
+Mapanare flips that. `ask_with_schema(prompt, __struct_meta::<Plan>())` is the whole call site. The compiler generates the JSON schema from your struct definition at compile time. The runtime sends the schema to the configured provider as a structured-output constraint. The response comes back as JSON and runs through `from_json::<Plan>` to produce a typed value. There is no library boilerplate, no runtime reflection, no string parsing. Provider, model, and API key are environment-driven, so the same source compiles and runs against Anthropic, OpenAI, or a local llama.cpp instance with no source change.
+
+This is the manifesto thesis at syntax level: AI calls have first-class type-system support, the same way that signals and streams and agents already do. v5.40.0 ships the runtime adapter (`ai::ask`) and the typed-output ergonomic. The reserved keyword form — `let plan: Plan = ask("...")` with binding-context type inference — is the v5.41.0 candidate, gated on a nested-generic-intrinsic-substitution fix in the lowerer.
+
 ## The Invitation
 
 Mapanare is open source from day one. The specification, the compiler, the standard library, the tooling -- all of it is public, all of it accepts contributions.

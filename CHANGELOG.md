@@ -7,6 +7,123 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.40.0] - 2026-05-04
+
+**Ai.\* — `ask` runtime adapter; manifesto-arc kickoff.** First
+release in the manifesto arc. Ships
+`stdlib/ai/ask.mn` (env-driven config + `AskError` + `ask_text` +
+`ask_with_schema`) and `stdlib/ai/ask_cache.mn` (opt-in SHA-256-keyed
+response cache) on top of v5.36.0's `__struct_meta::<T>()` schema
+intrinsic and v5.39.x's typed-serde round-trip
+(`to_json::<T>` ↔ `from_json::<T>`). **Zero compiler edits. Zero new
+C runtime exports. Zero `mapanare/self/*.mn` source touches.** Strict
+3-stage fixed point preserved by construction at v5.39.7's **241,898
+lines / 0 diff** (42-release strict streak from the v5.7.1 baseline).
+Goldens **95/95**.
+
+### Added
+
+- **Ai.4 / Ai.5 — `stdlib/ai/ask.mn`** — provider-agnostic env-driven
+  LLM dispatch. `build_config_from_env()` reads `MAPANARE_AI_PROVIDER`
+  / `MAPANARE_AI_MODEL` / `MAPANARE_AI_API_KEY` /
+  `MAPANARE_AI_LOCAL_URL` with fallback to `MAPANARE_LLM_*`
+  (existing `default_config()` vars) for compatibility. Recognised
+  providers: `anthropic`, `openai`, `groq`, `ollama`, `local` (alias
+  for ollama). `ask_text(prompt) -> Result<String, AskError>` for
+  free-form chat; `ask_with_schema(prompt, schema) -> Result<String,
+  AskError>` for typed-output extraction (pair with
+  `__struct_meta::<T>()` and `from_json::<T>` at the call site).
+  `AskError` is a v5.39.7-clean enum (8 variants:
+  `Network(String)`, `RateLimit(Int)`, `SchemaMismatch(String)`,
+  `ContentFiltered(String)`, `TimedOut`, `ProviderUnavailable(String)`,
+  `MalformedResponse(String)`, `DeserializeFailed(String)`). The
+  `TimedOut` variant is named to avoid colliding with the existing
+  `LLMError::Timeout(String)` in `stdlib/ai/llm.mn`.
+  `map_extract_error(e: ExtractError) -> AskError` translates the
+  underlying `extract_with_schema` error family.
+- **Ai.6 — `stdlib/ai/ask_cache.mn`** — opt-in response cache.
+  Cache key is SHA-256 over
+  `(provider || "|" || model || "|" || prompt || "|" || schema)`.
+  Cache files live under `MAPANARE_AI_CACHE_DIR` (absent disables);
+  TTL default 86400 seconds, override via
+  `MAPANARE_AI_CACHE_TTL_SECONDS` (`0` disables expiry). Atomic writes
+  via temp + rename. Self-contained (direct C-runtime externs only) so
+  it concatenates alongside `stdlib/ai/llm.mn` + `stdlib/ai/ask.mn` without
+  dragging in `stdlib/fs.mn` (the latter carries a pre-existing IR
+  codegen issue around `walk_dir`'s match-on-Result-of-List shape that's
+  unrelated to v5.40.0; tracked outside scope as a v5.41.0+ LOW).
+- **Ai.7 — link-and-run regression suite** at
+  `tests/stdlib/test_ai_ask.py` — 5 deterministic Mapanare test cases
+  (`test_ask_error_variants` covers all 8 AskError variants +
+  `map_extract_error` translation; `test_ask_config_env` covers
+  default / unset env path; `test_ask_config_env_anthropic` covers
+  `MAPANARE_AI_PROVIDER=anthropic` + API key + model; `test_ask_cache_roundtrip`
+  covers store / hit / miss-on-different-key; `test_ask_schema_shapes`
+  covers 7 struct shapes including nested + Option + List + Map). Plus
+  a live-gated `test_ai_ask_live` skipped unless
+  `MAPANARE_AI_API_KEY` is present. **5/5 deterministic GREEN at HEAD;
+  live test skipped in CI as designed**. Concatenation harness
+  pattern mirrors v5.34.0 / v5.35.0 / v5.39.x.
+- **Ai.9 — `examples/ai/plan_generator.mn`** — manifesto demo. Takes
+  a goal string, asks the configured provider for a structured `Plan
+  { goal: String, steps: List<Step>, eta_days: Int }` (where `Step
+  { title: String, detail: String }`), decodes via `from_json::<Plan>`,
+  renders the steps. Run with
+  `MAPANARE_AI_PROVIDER=anthropic MAPANARE_AI_API_KEY=sk-ant-...`.
+- **Ai.10 — `docs/stdlib/ai.md`** (~340 LOC). Quick reference, type
+  / API reference, provider configuration matrix, typed-output
+  pattern, AskError variants, cache configuration, 5 cookbook recipes
+  (plan generator, code reviewer, free-form chat, switching providers
+  via env, deterministic test runs via cache), explicit "what's not
+  here yet" list, migration / coexistence note from `ai::llm::ask`.
+- **`docs/manifesto.md`** gains a "first manifesto item shipped at
+  the syntax level" section explicitly calling out v5.40.0 as the
+  arc-kickoff release and v5.41.0 as the keyword candidate.
+
+### Changed
+
+- **PROMPT/PLAN deviation (load-bearing) — Ai.1 + Ai.2 + Ai.8 deferred
+  to v5.41.0.** PROMPT scoped a reserved `ask` keyword with binding-
+  context type inference (`let plan: Plan = ask("...")`) plus an
+  `ask_typed::<T>(prompt)` intrinsic. Phase 0 audit at v5.39.7 HEAD
+  surfaced two structural blockers: (1) Mapanare's existing
+  `pub fn ask(config, prompt)` in `stdlib/ai/llm.mn` would collide
+  with a reserved keyword — keyword-form parsing would shadow the
+  2-arg form across the entire ecosystem; (2) a user-level generic
+  `pub fn ask_typed<T>(prompt) -> Result<T, JsonError> { da
+  from_json::<T>(...) }` does NOT propagate the substituted type
+  parameter to the inner `from_json::<T>` intrinsic call site —
+  `_specialize_fn` substitutes parameter and return types but does
+  not walk the body to substitute nested `type_args` in `CallExpr`
+  nodes. Confirmed empirically: a test calling
+  `parse_typed::<P>("{\"x\": 42}")` with `P { x: Int }` returns 0
+  (default-init) instead of 42 because the inner `from_json::<T>`
+  was lowered with the literal type-variable name "T" rather than
+  the substituted "P". The intrinsic-form fix would require
+  `_specialize_fn` to recursively rewrite `CallExpr.type_args`
+  through the body — perturbs the IR and threatens the 42-release
+  STRICT streak. v5.40.0 ships the runtime adapter at function-syntax;
+  the keyword + binding-context inference is v5.41.0 on the back of
+  a `_specialize_fn` body-walk fix.
+- **`AskError::TimedOut` (not `Timeout`)** to avoid collision with
+  `LLMError::Timeout(String)` in `stdlib/ai/llm.mn`. Match patterns
+  on `Timeout` from a concatenated source SEGV'd silently because the
+  pattern-matcher resolved to the wrong enum's variant. Documented
+  in source preamble.
+- **`ai::ask::ask_text` / `ai::ask::ask_with_schema` are additive.**
+  The existing `ai::llm::ask(config, prompt)` (explicit-config form)
+  and `ai::llm::extract_with_schema(config, schema, text, retries)`
+  are preserved unchanged.
+- **`docs/SPEC.md`** header re-synced from "v5.39.7 cut" to "v5.40.0
+  cut" with a new sync block summarizing the manifesto-arc kickoff.
+- **`docs/manifesto.md`** updated.
+
+### Fixed
+
+- *(none — packaging-and-stdlib release; no compiler / runtime fixes)*
+
+
+
 ## [5.39.7] - 2026-05-04
 
 **Js.4.F.1 + Js.4.F.2 — typed-serde ENUM encode + decode;
@@ -11142,7 +11259,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.7...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.40.0...HEAD
+[5.40.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.7...v5.40.0
 [5.39.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.6...v5.39.7
 [5.39.6]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.5...v5.39.6
 [5.39.5]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.4...v5.39.5

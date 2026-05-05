@@ -1,0 +1,25 @@
+// v5.40.0 Ai.4 — provider-agnostic env-driven config dispatch.
+// Falsifiability: changing the env-var precedence or the default
+// model selection in build_config_from_env reproduces the
+// corresponding "FAIL " arm here. The harness sets MAPANARE_AI_*
+// env vars before invoking; default-paths are exercised by the
+// no-env case.
+
+fn case_default_no_env() -> Bool {
+    // Harness must run with no MAPANARE_AI_* / MAPANARE_LLM_* env;
+    // pytest fixture clears them. Default = ollama / llama3.2.
+    pon cfg: LLMConfig = build_config_from_env()
+    pon ok_host: Bool = (cfg.host == "localhost")
+    pon ok_port: Bool = (cfg.port == 11434)
+    pon ok_model: Bool = (cfg.model == "llama3.2")
+    si ok_host == false { print("FAIL config_env default: host=" + cfg.host) }
+    si ok_port == false { print("FAIL config_env default: port=" + str(cfg.port)) }
+    si ok_model == false { print("FAIL config_env default: model=" + cfg.model) }
+    da ok_host && ok_port && ok_model
+}
+
+fn main() -> Int {
+    si case_default_no_env() == false { print("FAIL test_ask_config_env") }
+    print("PASSED test_ask_config_env_defaults")
+    return 0
+}

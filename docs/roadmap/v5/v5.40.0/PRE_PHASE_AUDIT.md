@@ -1,205 +1,147 @@
 # v5.40.0 — Pre-Phase Audit (Ai.\* — `ask` as a language primitive)
 
-**Status: HARD STOP at Phase 0.** v5.40.0 cannot ship as designed.
-Js.4.B is open and significantly worse than the v5.36.0
-SESSION_REPORT documented. v5.40.0 Ai.4 (runtime adapter) rides on
-`from_json::<T>`; without it, the runtime path has no mechanism.
+**Status: PROCEED.** v5.39.7 HEAD is clean and the hard prerequisite —
+the entire Js.4.\* arc — closed across v5.39.1 → v5.39.7. Each minor
+in the arc closed one `TypeKind` branch in the
+`_encode_field_to_json` / `_decode_json_field` dispatch tables; at
+v5.39.7 HEAD the typed-serde round-trip
+`to_json::<T>` ↔ `from_json::<T>` works end-to-end for every common
+LLM JSON response shape (primitive, struct, nested struct, `List<X>`,
+`Map<String, V>`, externally-tagged enums).
 
-The PROMPT explicitly anticipates this:
+The original v5.40.0 PRE_PHASE_AUDIT (drafted at v5.39.0 HEAD)
+recommended Path A — defer v5.40.0; ship a multi-session Js.4.B fix
+arc. **Path A was taken**: v5.39.1 → v5.39.7 closed the arc, item
+by item, with regression-locked link-and-run tests. v5.40.0 picks
+back up cleanly.
 
-> **Hard prerequisite:** v5.39.0 shipped (Cr.\* crypto closeout)
-> AND v5.36.0 Js.4.B fixed. If Js.4.B is still open at Phase 0,
-> **STOP** and ship v5.36.x first.
-
-## Gate results
+## Gate results at v5.39.7 HEAD
 
 | Gate                                    | Result | Notes                                     |
 |-----------------------------------------|--------|-------------------------------------------|
-| Baseline VERSION = 5.39.0               | ✅     | Pre-bump state; v5.39.0 ready/not-tagged  |
-| `__struct_meta::<T>()` exists           | ✅     | `mapanare/lower.py:2278` + `semantic.py:1010` |
-| `extract_with_schema` exists            | ✅     | `stdlib/ai/llm.mn:1987`                   |
-| `ExtractError` exists                   | ✅     | `stdlib/ai/llm.mn:1930`                   |
-| `to_json::<T>` flat structs             | ✅     | Single-level structs serialize correctly. |
-| `to_json::<T>` nested structs           | ❌     | Nested struct fields print as `<?>` — `_emit_struct_to_json` doesn't recurse into struct-typed fields. |
-| `from_json::<T>` no-import              | ❌     | IR emission fails: `extractvalue ... 1` yields `ptr` but consumer is `store i64`. JsonValue not registered when user code doesn't import json. |
-| `from_json::<T>` with json imported     | ❌     | IR emits, links — but **runtime SEGV in `__mn_map_get`** when extracting a struct field from the decoded Object. The Map pointer in `JsonValue::Object` payload extraction is wrong. |
-| Plain `decode(s)` (no decode_to)        | ✅     | `Result<JsonValue, JsonError>` with `match Object(entries)` works correctly. |
+| Baseline VERSION = 5.39.7               | ✅     | Pre-bump state; v5.39.7 ready/not-tagged  |
+| `make ci-gates`                         | ✅     | All 9 sub-gates GREEN                     |
+| `bash scripts/verify_fixed_point.sh`    | ✅     | STRICT — 241,898 lines / 0 diff           |
+| `python3 scripts/test_native.py`        | ✅     | 95/95 goldens                             |
+| `tests/stdlib/test_struct_json_runtime` | ✅     | 18/18 GREEN — full Js.4 round-trip locked |
+| `__struct_meta::<T>()` exists           | ✅     | `mapanare/lower.py:2646` + `semantic.py:1010` |
+| `extract_with_schema` exists            | ✅     | `stdlib/ai/llm.mn:1987` — retry-on-malformed-JSON |
+| `ExtractError` exists                   | ✅     | `stdlib/ai/llm.mn:1930` — 4 variants      |
+| `default_config()` from env             | ✅     | `stdlib/ai/llm.mn:1845` — reads `MAPANARE_LLM_*` |
+| `to_json::<T>` end-to-end               | ✅     | Js.4.D.1 (LIST), Js.4.E.1 (MAP), Js.4.F.1 (ENUM) |
+| `from_json::<T>` end-to-end             | ✅     | Js.4.D.3, Js.4.E.2, Js.4.F.2 — round-trip closed |
+| `crypto.sha256(s)` for cache keying     | ✅     | `stdlib/crypto.mn:70` — Cr.\* @ v5.39.0   |
+| `fs.read_file / write_file / rename`    | ✅     | `stdlib/fs.mn` — atomic-write building blocks |
+| `__mn_env_get` for env reads            | ✅     | `runtime/native/mapanare_html.c:662`      |
 
-## Js.4.B repro at v5.39.0 HEAD
+## PLAN items — current state
 
-`/tmp/jsdt.mn` (concatenates `stdlib/text/string_utils.mn` +
-`stdlib/encoding/json.mn` + main):
+| ID    | PLAN claim                          | Reality at v5.39.7 HEAD               | Status      |
+|-------|-------------------------------------|---------------------------------------|-------------|
+| Ai.1  | Add `ask` keyword                   | NEW. Grammar / parser / AST work.     | NEW         |
+| Ai.2  | Lowering with binding-context inference | NEW. Most subtle compiler change. | NEW         |
+| Ai.3  | Compile-time JSON schema generation | **CLOSED.** `__struct_meta::<T>()` already emits a JSON Schema string at compile time. v5.40.0 lifts and reuses. | CLOSED      |
+| Ai.4  | Runtime in `stdlib/ai/ask.mn`       | PARTIAL. `extract_with_schema` is the load-bearing pipeline; provider-agnostic env wrapper + `from_json::<T>` deserialization is NEW (~80 LOC). | PARTIAL     |
+| Ai.5  | `AskError` enum                     | PARTIAL. `ExtractError` covers ~half of the variants. Reuse + extend, or wrap. | PARTIAL     |
+| Ai.6  | Optional cache                      | NEW. `crypto.sha256` + `fs` primitives are in place; ~120 LOC `.mn`. | NEW         |
+| Ai.7  | Tests                               | NEW. Mock-provider deterministic + live-gated. | NEW         |
+| Ai.8  | Compile-time schema embedding       | **CLOSED.** Already what `__struct_meta` does. | CLOSED      |
+| Ai.9  | Examples (`plan_generator.mn`)       | NEW.                                  | NEW         |
+| Ai.10 | Docs (`docs/stdlib/ai.md`)          | NEW.                                  | NEW         |
 
-```mn
-struct P { x: Int }
-fn main() -> Int {
-    print("start")
-    let s: String = "{\"x\": 42}"
-    let r: Result<JsonValue, JsonError> = decode(s)
-    match r {
-        Ok(jv) => {
-            print("decoded ok")
-            let dr: Result<P, JsonError> = decode_to::<P>(jv)
-            match dr {
-                Ok(p) => { print("p ok") },
-                Err(e) => { print("p err") }
-            }
-        },
-        Err(e) => { print("decode err") }
-    }
-    return 0
-}
-```
+## Compiler-edit budget
 
-GDB:
+**Hard cap: ~50 LOC total** across grammar / parser / lower /
+semantic in **both** Python and self-hosted compilers. Rationale:
+compiler edits perturb IR; STRICT must hold across the
+self-host's stage2 ↔ stage3 fixed point. If the keyword cannot be
+landed in budget, **fall back to function-syntax shape** —
+`ask_typed::<T>(prompt)` works without grammar edits — and ship the
+keyword in v5.41.0 once the lowering shape is proven.
 
-```
-Program received signal SIGSEGV, Segmentation fault.
-0x000055555559bc43 in __mn_map_get ()
-#0  0x000055555559bc43 in __mn_map_get ()
-#1  0x0000555555590f97 in main ()
-```
+**Decision strategy:**
 
-SEGVs *before* `print("start")` runs — first executable instruction
-in main reaches `__mn_map_get` and dies on `map->key_type` because
-the Map pointer is invalid.
+1. **Phase 1 (load-bearing)** — ship `ask_typed::<T>(prompt)` +
+   `ask_text(prompt)` as ordinary `pub fn`s in `stdlib/ai/ask.mn`
+   using existing turbofish syntax. Zero compiler edits. This is the
+   manifesto-level deliverable. If Phase 2 (keyword sugar) defers,
+   v5.40.0 still ships the runtime end-to-end.
+2. **Phase 2 (sugar, optional)** — add `ask` as a primary
+   expression. Lowers to `Call("ask_typed", [prompt],
+   type_args=[T])` where T is the binding-context expected type.
+   Surface to the lead if compiler-edit count exceeds 80 LOC across
+   both compilers.
 
-## Why the bug is deeper than v5.36.0 SESSION_REPORT claimed
+## Naming collision: existing `pub fn ask(config, prompt)`
 
-The v5.36.0 SESSION_REPORT said: "from_json::<T> builds successfully
-but SEGVs at runtime in field extraction." This is technically
-accurate but masks the structure of the failure:
+`stdlib/ai/llm.mn:1114` already defines `pub fn ask(config:
+LLMConfig, prompt: String) -> Result<String, LLMError>`. v5.40.0's
+new function-style entry points are **distinct names**:
 
-1. **Two distinct failure modes** depending on whether json is
-   imported:
-   - **No-import:** invalid IR (`extractvalue` shape mismatch).
-     `_do_enum_payload`'s Result/Option fallback runs because
-     `JsonValue` isn't in `self._enums`. The fallback emits
-     `extractvalue ... 1` (ptr) and `_put`s as `i64`. Caller
-     fails IR validation.
-   - **With-import:** valid IR, runtime SEGV at `__mn_map_get`.
-     Goes through the proper boxed-enum path. `JsonValue::Object`'s
-     payload Map gets extracted, but the resulting `ptr` value is
-     wrong by the time it reaches the runtime call.
+- `ask_typed::<T>(prompt)` — generic, env-driven config. (NEW)
+- `ask_text(prompt)` — env-driven config, returns `Result<String, AskError>`. (NEW)
 
-2. **`_is_self_ref` doesn't detect the recursion.**
-   `JsonValue::Object` has payload `Map<String, JsonValue>`. The
-   `_is_self_ref(JsonValue, Map<String, JsonValue>)` check looks at
-   the outer kind (MAP) and doesn't recurse into the type
-   parameters. So `("Object", 0)` is NOT marked boxed. Same problem
-   for `Array(List<JsonValue>)`. The whole boxed-payload path
-   (line 5178-5183) never fires for these variants.
+Existing `llm.ask(config, prompt)` is preserved unchanged — explicit
+config form. Different module, different signature, no collision.
 
-3. **`TypeKind.MAP` lowers to `PTR` (opaque pointer)** at
-   `_rty:988`. So the Object payload struct is `{ptr}` (one
-   pointer field). When `decode()` constructs `Object(map)`, it
-   stores the Map pointer in this `{ptr}`. When `decode_to`
-   extracts, it loads that pointer and passes to `__mn_map_get`.
-   On the surface this looks correct.
+If Phase 2 adds `ask` as a keyword, the existing 2-arg `ask(config,
+prompt)` form would become a parse-time conflict. Mitigation: the
+keyword-form `ask` only matches `ask "(" expr ")"` (one arg);
+explicit calls with two args route through the existing
+`postfix_expr LPAREN arg_list RPAREN` path (resolved later via
+identifier lookup in semantic). If the keyword reservation conflict
+surfaces, defer Phase 2.
 
-4. **The actual bug needs IR-level investigation that exceeds
-   one-session scope.** Hypothesis: the alloca for the extracted
-   `entries` value gets sized as `ptr` (8 bytes), but somewhere a
-   load reads more than 8 bytes from it (treating it as a Map
-   struct directly), or the wrong slot of the JsonValue payload
-   struct gets read. Confirming requires either: emitter
-   instrumentation matching MIR-value to alloca address, or
-   side-by-side IR diff between the working
-   `match jv { Object(entries) => ... }` path (which works) and
-   the failing `decode_to`-emitted EnumPayload path. Both code
-   paths emit the same MIR instruction (`EnumPayload`); the
-   manual-`match` form goes through a different lowering arm in
-   the emitter.
+## Env-var naming
 
-## Why this isn't a v5.39.1 hotfix
+**Decision: `MAPANARE_AI_*`** (PROMPT) takes precedence; fall back
+to `MAPANARE_LLM_*` (existing `default_config()`) for compatibility.
 
-A v5.39.1 hotfix as scoped (~30-50 LOC compiler edit) does not
-fit. The diagnosis exceeded the diagnosis budget; the actual fix
-likely requires:
+`build_config_from_env()` in `stdlib/ai/ask.mn` reads:
 
-- Audit of `_is_self_ref` to recurse into MAP/LIST type args.
-- Reconcile the `match`-vs-`EnumPayload` emitter divergence.
-- Possibly a `_decode_json_field` rework to load through the
-  payload pointer with the right type for each variant kind.
-- Mirror the fix in `mapanare/self/lower.mn` AND
-  `mapanare/self/emit_llvm.mn` (load-bearing for STRICT).
-- Audit `to_json::<T>` nested-struct emission (related; same
-  family).
-- New link-and-run regression suite (current
-  `tests/stdlib/test_struct_json.py` is compile-only — exactly
-  why this stayed latent for 4 releases).
-- Round-trip 5+ struct shapes through link-and-run (the gate
-  Js.4.B was supposed to close).
+- `MAPANARE_AI_PROVIDER` (else `MAPANARE_LLM_BACKEND`, else
+  `"anthropic"` if API key present, else `"ollama"`)
+- `MAPANARE_AI_MODEL` (else `MAPANARE_LLM_MODEL`, else
+  per-provider default)
+- `MAPANARE_AI_API_KEY` (else `MAPANARE_LLM_API_KEY`, else `""`)
+- `MAPANARE_AI_LOCAL_URL` (else `MAPANARE_LLM_BASE_URL`, else
+  `"http://localhost"` for ollama)
+- `MAPANARE_AI_CACHE_DIR` (cache opt-in; absent disables)
+- `MAPANARE_AI_CACHE_TTL_SECONDS` (default 86400 — 24h)
 
-Conservative estimate: **2-3 release sessions.** Multiple compiler
-edits across both Python bootstrap and self-host. STRICT regressions
-likely on first attempt. Not a one-session hotfix.
+## AskError shape
 
-## Recommendation
+Strategy: **extend `ExtractError`** with the missing variants;
+introduce `AskError` as an alias / wrapper. Smaller surface area
+than a parallel hierarchy. Conversion is mechanical via
+`map_extract_error`.
 
-**Three paths, in order of preference:**
+`ExtractError` variants today: `LlmFailed(String)`,
+`ParseFailed(String)`, `ValidationFailed(String)`,
+`RetriesExhausted(String)`.
 
-### Path A — defer v5.40.0; ship v5.39.1 as scoped Js.4.B fix arc
+PLAN's `AskError` adds: `Network(String)`,
+`RateLimit { retry_after_seconds: Int }`,
+`SchemaMismatch(String)`, `ContentFiltered(String)`, `Timeout`,
+`ProviderUnavailable(String)`, `MalformedResponse(String)`,
+`DeserializeFailed(String)`.
 
-Ship a multi-session **v5.39.1 + v5.39.2** arc dedicated to closing
-Js.4.B properly:
+**Decision: define `AskError` as its own enum in
+`stdlib/ai/ask.mn`** (Js.4.F closed enum encode/decode at v5.39.7,
+so the error type round-trips through JSON cleanly if a caller wants
+to log it). Map `ExtractError::*` → `AskError::*` in
+`map_extract_error`.
 
-- **v5.39.1**: fix `_decode_json_field` + `_do_enum_payload` for
-  the no-import case (invalid IR → valid IR). Runtime can still
-  SEGV — this gets the IR shape right.
-- **v5.39.2**: close the runtime SEGV. Audit `_is_self_ref` for
-  MAP/LIST recursion. Audit decode/decode_to layout symmetry.
-  Add the link-and-run regression suite.
-- **v5.39.3** (if needed): close `to_json::<T>` nested-struct
-  recursion.
-- Each release: mirror Python edits to self-host
-  (`mapanare/self/lower.mn`, `mapanare/self/emit_llvm.mn`).
-  STRICT preserved at each step.
+## Diagnosis artifacts (preserved from v5.39.0 audit)
 
-Then v5.40.0 picks back up cleanly.
+The original v5.39.0-vintage Js.4.B repro at `/tmp/jsdt.mn` no longer
+SEGVs. v5.39.2 closed the runtime SEGV in `__mn_map_get` by deriving
+the Map handle's key/val sizes from `MapInit.key_type`/
+`MapInit.val_type` instead of the hardcoded `(8, 8, 0)` defaults.
 
-### Path B — ship v5.40.0 with `ask_text` only; defer `ask_typed` to v5.40.1
+## Decision
 
-Ship the keyword + grammar + provider wiring + cache, with
-`ask_typed::<T>` explicitly deferred. `ask_text(prompt) ->
-Result<String, AskError>` returns the LLM's raw string unchanged
-— no `from_json::<T>` involved. Manifesto-level ergonomic for
-typed output is **explicitly downgraded** in CHANGELOG.
-
-This is a degraded v5.40.0 — the keyword *is* shippable and useful
-without typed output, but the typed-output ergonomic was the
-manifesto sell. Document the deviation honestly.
-
-### Path C — bundle the Js.4.B fix into v5.40.0
-
-Adds the v5.39.1 + v5.39.2 scope on top of the ~50 LOC Ai.\*
-compiler-edit budget. ~100-150 LOC of compiler edits in one
-release with grammar / lower / semantic changes interleaving with
-runtime serde fixes. **STRICT will fight this**, possibly across
-multiple verify cycles. Not recommended.
-
-## What was confirmed working
-
-- `__struct_meta::<T>()` emits a JSON schema string at compile
-  time. Works for the simple shapes tested.
-- `to_json::<T>` for flat structs.
-- `extract_with_schema` retry-on-malformed-JSON loop in
-  `stdlib/ai/llm.mn`.
-- `decode(s) -> Result<JsonValue, JsonError>` end-to-end
-  including `match jv { Object(entries) => ... }` extraction.
-
-## Diagnosis artifacts
-
-- `/tmp/jsbug2.mn` — minimal repro of the working
-  `match jv { Object(entries) => ... }` path (PASSES).
-- `/tmp/jsdt.mn` — minimal repro of the failing
-  `decode_to::<P>(jv)` path (SEGV in `__mn_map_get`).
-- `/tmp/diag.py` — emitter instrumentation showing JsonValue's
-  `boxed` set is empty at `_reg_enum` time (the Object/Array
-  variants should be marked boxed-by-recursion but aren't).
-
-## Decision required from lead
-
-Three paths above. **Path A recommended.** Write back which to take
-and v5.39.1 PROMPT can pick up the diagnosis artifacts above as
-its starting point.
+**Proceed with Phase 1 (function-syntax runtime adapter, zero
+compiler edits) load-bearing. Phase 2 (keyword sugar) is best-effort
+within compiler-edit budget; if STRICT regresses, defer to v5.41.0
+with an honest CHANGELOG note.**

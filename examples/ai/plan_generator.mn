@@ -1,0 +1,73 @@
+// examples/ai/plan_generator.mn — v5.40.0 Ai.\* manifesto demo.
+//
+// Takes a goal string. Asks the configured provider for a structured
+// Plan (a list of named steps + an ETA). Decodes the LLM's JSON
+// response into a typed Mapanare struct via from_json::<Plan>.
+//
+// Provider is read from MAPANARE_AI_PROVIDER (anthropic | openai |
+// groq | ollama | local). Set MAPANARE_AI_API_KEY for hosted
+// providers. Defaults to ollama / llama3.2 with no key.
+//
+// Run:
+//   export MAPANARE_AI_PROVIDER=anthropic
+//   export MAPANARE_AI_API_KEY=sk-ant-...
+//   mnc run examples/ai/plan_generator.mn
+//
+// Optional caching (deterministic re-runs):
+//   export MAPANARE_AI_CACHE_DIR=/tmp/mapanare-ai-cache
+//
+// This is the manifesto-arc demo: in any other language, the user
+// would have to hand-write the prompt template, hand-write the JSON
+// schema, hand-write the deserializer. Mapanare ships all of that
+// behind ask_with_schema + __struct_meta + from_json — no library
+// boilerplate, no runtime reflection, no string parsing.
+
+import ai::llm
+import ai::ask
+import encoding::json
+
+struct Step {
+    title: String,
+    detail: String
+}
+
+struct Plan {
+    goal: String,
+    steps: List<Step>,
+    eta_days: Int
+}
+
+fn render_plan(p: Plan) {
+    print("Plan for: " + p.goal)
+    print("ETA: " + str(p.eta_days) + " days")
+    print("")
+    pon mut i: Int = 0
+    mien i < len(p.steps) {
+        pon s: Step = p.steps[i]
+        print(str(i + 1) + ". " + s.title)
+        print("   " + s.detail)
+        i = i + 1
+    }
+}
+
+fn main() -> Int {
+    pon goal: String = "Migrate a small SQLite-backed service to Postgres without downtime."
+    pon prompt: String =
+        "Draft a concrete migration plan for the following goal. " +
+        "Reply with ONLY a JSON object matching the schema. Goal: " + goal
+
+    pon schema: String = __struct_meta::<Plan>()
+    pon r: Result<String, AskError> = ask_with_schema(prompt, schema)
+
+    match r {
+        Ok(json_text) => {
+            pon parsed: Result<Plan, JsonError> = from_json::<Plan>(json_text)
+            match parsed {
+                Ok(p)  => { render_plan(p) },
+                Err(e) => { print("Failed to parse JSON: " + e.message) }
+            }
+        },
+        Err(e) => { print("Ask failed: " + ask_error_message(e)) }
+    }
+    return 0
+}

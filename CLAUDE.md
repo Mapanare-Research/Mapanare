@@ -19,6 +19,132 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.40.0** (ready, not tagged) — **Ai.\* — `ask` runtime
+  adapter; manifesto-arc kickoff.** First release in the
+  manifesto arc; the AI-native pitch graduates from "library
+  API" to "stdlib-level surface." Ships `stdlib/ai/ask.mn`
+  (provider-agnostic env-driven LLM dispatch via
+  `build_config_from_env()` reading `MAPANARE_AI_PROVIDER` /
+  `MAPANARE_AI_MODEL` / `MAPANARE_AI_API_KEY` /
+  `MAPANARE_AI_LOCAL_URL` with fallback to `MAPANARE_LLM_*` for
+  compatibility; recognised providers: anthropic, openai, groq,
+  ollama, local; `ask_text(prompt) -> Result<String, AskError>`
+  for free-form chat; `ask_with_schema(prompt, schema) ->
+  Result<String, AskError>` for typed-output extraction;
+  `AskError` 8-variant enum: `Network(String)`, `RateLimit(Int)`,
+  `SchemaMismatch(String)`, `ContentFiltered(String)`,
+  `TimedOut`, `ProviderUnavailable(String)`,
+  `MalformedResponse(String)`, `DeserializeFailed(String)`;
+  `map_extract_error(e: ExtractError) -> AskError` translates the
+  underlying retry-on-malformed-JSON engine's failures) and
+  `stdlib/ai/ask_cache.mn` (opt-in response cache; SHA-256 over
+  `(provider, model, prompt, schema)` keying; cache files at
+  `${MAPANARE_AI_CACHE_DIR}/${key}.json`; TTL default 86400s
+  override via `MAPANARE_AI_CACHE_TTL_SECONDS`; atomic writes via
+  temp + rename) on top of v5.36.0's `__struct_meta::<T>()`
+  schema intrinsic and v5.39.x's typed-serde round-trip
+  (`to_json::<T>` ↔ `from_json::<T>` closed for every common
+  shape). **Zero compiler edits. Zero new C runtime exports.
+  Zero `mapanare/self/*.mn` source touches.** Strict 3-stage
+  fixed point preserved by construction at v5.39.7's **241,898
+  lines / 0 diff** (42-release strict streak from v5.7.1
+  baseline). Goldens **95/95**.
+  **PROMPT/PLAN deviation (load-bearing) — Ai.1 + Ai.2 + Ai.8
+  deferred to v5.41.0.** The reserved `ask` keyword
+  (`let plan: Plan = ask("...")` with binding-context type
+  inference) and the `ask_typed::<T>(prompt)` intrinsic were
+  scoped as the load-bearing manifesto deliverables. Phase 0
+  audit at v5.39.7 HEAD surfaced two structural blockers:
+  (1) **naming collision** — `stdlib/ai/llm.mn:1114` already
+  defines `pub fn ask(config, prompt)`; a reserved keyword
+  would shadow this across the entire ecosystem; (2)
+  **nested-generic intrinsic substitution does not propagate** —
+  `mapanare/lower.py::_specialize_fn` substitutes parameter and
+  return types when monomorphizing a generic function, but does
+  not walk the body to rewrite nested `CallExpr.type_args`.
+  Confirmed empirically: a user-level `fn parse_typed<T>(s: String)
+  -> Result<T, JsonError> { da from_json::<T>(s) }` called as
+  `parse_typed::<P>("{\"x\": 42}")` with `P { x: Int }` returns
+  0 (default-init) instead of 42 because the inner
+  `from_json::<T>` was lowered with the literal type-variable
+  name "T". Both an intrinsic-form (~80 LOC of Result-chaining
+  MIR per call site) and a structural fix in `_specialize_fn`
+  threaten the 42-release STRICT streak. The PROMPT explicitly
+  authorized fall-back to function-syntax: "If the changes
+  threaten STRICT, fall back to a function-syntax shape … and
+  revisit the keyword in v5.41.x. The strict streak is more
+  valuable than the keyword sugar." v5.40.0 takes the function-
+  syntax path; v5.41.0 picks up the keyword on the back of a
+  `_specialize_fn` body-walk fix that recursively rewrites
+  `CallExpr.type_args` through specialized function bodies (NEW
+  MEDIUM tracked).
+  **Naming gotcha (load-bearing)** — `LLMError` already defines
+  a `Timeout(String)` variant. A unit `Timeout` in `AskError`
+  collided silently in match-pattern resolution under
+  concatenation; the pattern-matcher resolved to the *other*
+  enum's variant. Caught in Phase 1 smoke; renamed to
+  `TimedOut`. Documented in CHANGELOG `### Changed` and source
+  preamble.
+  **Self-contained cache module** — Phase 3 surfaced a pre-
+  existing IR codegen issue in `stdlib/fs.mn::walk_dir` (match
+  on `Result<List<String>, FsError>` lowers to `extractvalue ptr
+  ... 0` then `zext ptr to i64`, which clang rejects).
+  Reproduces on `dev` HEAD with no v5.40.0 changes (verified via
+  `git stash` + standalone fs-only smoke). **Out of scope** per
+  PROMPT (the LLVM emitter / lowerer is the v5.40.0 third rail).
+  `stdlib/ai/ask_cache.mn` rewritten to use direct C-runtime
+  externs (`__mn_file_write`, `__mn_file_exists`,
+  `__mn_file_rename`, `__mn_file_mtime`, `__mn_dir_create`,
+  `__mn_file_read_or_empty`, `__mn_now_realtime_ns`,
+  `__mn_sha256_str`, `__mn_hex_encode_str`); ~10 extra LOC, no
+  fs.mn dependency; the fs.mn issue is tracked as v5.41.0+ LOW.
+  **Test infrastructure.** New
+  `tests/stdlib/test_ai_ask.py` (concat-pattern mirrors v5.34.0
+  Dt.\* / v5.35.0 Sq.\* / v5.39.x Js.4.\*) with 5 deterministic
+  `.mn` test cases under `stdlib/ai/tests/`:
+  `test_ask_error_variants.mn` (8 AskError variants + 2
+  map_extract_error cases), `test_ask_config_env.mn` (default
+  path → ollama / llama3.2), `test_ask_config_env_anthropic.mn`
+  (env=anthropic + API key → api.anthropic.com:443),
+  `test_ask_cache_roundtrip.mn` (store / hit / miss-on-different-
+  key), `test_ask_schema_shapes.mn` (7 struct shapes through
+  `__struct_meta::<T>()` covering primitives + Option + List +
+  Map + nested). **5/5 GREEN at HEAD in 8.92s, 1 SKIPPED**
+  (live-gated `test_ai_ask_live` skipped without
+  `MAPANARE_AI_API_KEY`).
+  **Manifesto demo** — `examples/ai/plan_generator.mn` (~60
+  LOC). Takes a goal string, asks the configured provider for a
+  structured `Plan { goal: String, steps: List<Step>, eta_days:
+  Int }` (where `Step { title: String, detail: String }`),
+  decodes via `from_json::<Plan>`, renders the steps with
+  title + detail. Run with `MAPANARE_AI_PROVIDER=anthropic
+  MAPANARE_AI_API_KEY=sk-ant-...`. Single best demo of
+  manifesto-level ergonomic that's tractable today.
+  **Hd-class preventative** — `docs/SPEC.md` header re-synced
+  from "v5.39.7 cut" to "v5.40.0 cut" with new sync block
+  documenting the manifesto-arc kickoff + the Ai.1/Ai.2/Ai.8
+  deferral rationale. `check_doc_freshness.py` GREEN;
+  `check_changelog_honesty.py` GREEN. `docs/manifesto.md`
+  updated with a dedicated "first manifesto item shipped at the
+  syntax level" section. `docs/stdlib/ai.md` net-new (~340 LOC
+  — quick reference + provider config matrix + typed-output
+  pattern + AskError table + cache config + 5 cookbook recipes
+  + "what's not here yet" + migration / coexistence note).
+  Source delta: ~155 LOC `stdlib/ai/ask.mn` (new) + ~110 LOC
+  `stdlib/ai/ask_cache.mn` (new) + ~245 LOC `.mn` test cases (5
+  files) + ~175 LOC pytest harness + ~60 LOC manifesto example +
+  ~340 LOC `docs/stdlib/ai.md` + ~6 LOC manifesto delta + ~95
+  LOC CHANGELOG + ~25 LOC SPEC sync + this CLAUDE.md release-
+  notes entry + mechanical bump_version.py edits.
+  Aggregate state entering v5.41.0: **0 HIGH** / **2 MEDIUM**
+  (`_specialize_fn` body-walk fix gating Ai.1+Ai.2 keyword
+  sugar — NEW; macOS notarization carry from v5.33.0 Nu.2) /
+  **~6 LOW** (`stdlib/fs.mn::walk_dir` IR codegen issue NEW;
+  streaming `ask`, tool calling, multi-turn, plus prior carries
+  from v5.39.7). **Manifesto arc begins.** See
+  `docs/roadmap/v5/v5.40.0/{PLAN.md, PROMPT.md, PRE_PHASE_AUDIT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.39.7** (ready, not tagged) — **Js.4.F.1 + Js.4.F.2 —
   typed-serde ENUM encode + decode; round-trip closure for
   enum-typed fields. Final release in the v5.39.x typed-serde

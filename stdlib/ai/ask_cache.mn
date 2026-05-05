@@ -1,0 +1,109 @@
+// ai/ask_cache.mn — opt-in response cache for `ask` (v5.40.0 Ai.6).
+//
+// Cache key: SHA-256 over (provider || "|" || model || "|" || prompt
+// || "|" || schema). Cache files live under MAPANARE_AI_CACHE_DIR;
+// absent or empty disables the cache. Atomic writes via temp + rename.
+//
+// TTL default 86400 seconds (24h); override with MAPANARE_AI_CACHE_TTL_SECONDS.
+//
+// Surface:
+//   ask_cache_dir()                          -> String  (or "" if disabled)
+//   ask_cache_ttl()                          -> Int     (seconds; 0 disables expiry check)
+//   ask_cache_key(provider, model, prompt, schema) -> String  (hex SHA-256)
+//   ask_cache_lookup(key)                    -> Option<String>
+//   ask_cache_store(key, value)              -> Bool
+//
+// This module is intentionally self-contained — direct C-runtime
+// externs only — so it can be concatenated alongside ai/llm.mn +
+// ai/ask.mn without depending on stdlib/fs.mn (which carries a
+// pre-existing IR codegen issue around walk_dir's match-on-Result-of-
+// List shape that's unrelated to v5.40.0; tracked outside scope).
+
+extern "C" fn __mn_sha256_str(data: String) -> String
+extern "C" fn __mn_hex_encode_str(data: String) -> String
+extern "C" fn __mn_now_realtime_ns() -> Int
+extern "C" fn __mn_file_write(path: String, content: String) -> Int
+extern "C" fn __mn_file_exists(path: String) -> Int
+extern "C" fn __mn_file_rename(old_path: String, new_path: String) -> Int
+extern "C" fn __mn_file_mtime(path: String) -> Int
+extern "C" fn __mn_dir_create(path: String, recursive: Int) -> Int
+extern "C" fn __mn_file_read_or_empty(path: String) -> String
+
+fn __ask_cache_now_seconds() -> Int {
+    pon ns: Int = __mn_now_realtime_ns()
+    da ns / 1000000000
+}
+
+fn ask_cache_sha256_hex(data: String) -> String {
+    pon raw: String = __mn_sha256_str(data)
+    da __mn_hex_encode_str(raw)
+}
+
+pub fn ask_cache_dir() -> String {
+    da __mn_env_get("MAPANARE_AI_CACHE_DIR")
+}
+
+pub fn ask_cache_ttl() -> Int {
+    pon raw: String = __mn_env_get("MAPANARE_AI_CACHE_TTL_SECONDS")
+    si len(raw) == 0 {
+        da 86400
+    }
+    pon n: Int = int(raw)
+    si n < 0 { da 0 }
+    da n
+}
+
+pub fn ask_cache_key(provider: String, model: String, prompt: String, schema: String) -> String {
+    pon raw: String = provider + "|" + model + "|" + prompt + "|" + schema
+    da ask_cache_sha256_hex(raw)
+}
+
+fn ask_cache_path(key: String) -> String {
+    pon dir: String = ask_cache_dir()
+    si len(dir) == 0 { da "" }
+    pon last: Int = len(dir) - 1
+    si dir.char_at(last) == "/" {
+        da dir + key + ".json"
+    }
+    da dir + "/" + key + ".json"
+}
+
+pub fn ask_cache_lookup(key: String) -> Option<String> {
+    pon path: String = ask_cache_path(key)
+    si len(path) == 0 { da None }
+    si __mn_file_exists(path) == 0 { da None }
+
+    pon ttl: Int = ask_cache_ttl()
+    si ttl > 0 {
+        pon mt: Int = __mn_file_mtime(path)
+        si mt > 0 {
+            pon age: Int = __ask_cache_now_seconds() - mt
+            si age > ttl {
+                da None
+            }
+        }
+    }
+
+    pon contents: String = __mn_file_read_or_empty(path)
+    si len(contents) == 0 { da None }
+    da Some(contents)
+}
+
+pub fn ask_cache_store(key: String, value: String) -> Bool {
+    pon path: String = ask_cache_path(key)
+    si len(path) == 0 { da false }
+
+    pon dir: String = ask_cache_dir()
+    si len(dir) > 0 {
+        pon _md: Int = __mn_dir_create(dir, 1)
+    }
+
+    // Atomic write: temp file + rename. If write or rename fails,
+    // return false and don't leave a partial file at `path`.
+    pon tmp_path: String = path + ".tmp"
+    pon w: Int = __mn_file_write(tmp_path, value)
+    si w < 0 { da false }
+    pon r: Int = __mn_file_rename(tmp_path, path)
+    si r < 0 { da false }
+    da true
+}
