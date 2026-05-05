@@ -1,0 +1,115 @@
+// v5.43.0 Da.7 case 8+9+10 — supervision interop.
+//
+// Exercises the conversion helpers that bridge remote ChildExited
+// frames to the v5.42.0 supervisor.mn strategy library. The full
+// auto-routing through a parent supervisor's inbox is v5.43.x; this
+// test validates the primitives.
+
+fn main() {
+    // ---- RemoteExitReason name + msg helpers ----
+    pon r1: RemoteExitReason = RemoteCrashed("oom")
+    si remote_exit_reason_name(r1) != "RemoteCrashed" { print("FAIL: name r1"); return }
+    si remote_exit_reason_msg(r1) != "oom" { print("FAIL: msg r1"); return }
+
+    pon r2: RemoteExitReason = RemoteUnreachable("timeout")
+    si remote_exit_reason_name(r2) != "RemoteUnreachable" { print("FAIL: name r2"); return }
+    si remote_exit_reason_msg(r2) != "timeout" { print("FAIL: msg r2"); return }
+
+    pon r3: RemoteExitReason = RemoteShutdown
+    si remote_exit_reason_name(r3) != "RemoteShutdown" { print("FAIL: name r3"); return }
+    si remote_exit_reason_msg(r3) != "" { print("FAIL: msg r3"); return }
+
+    // ---- classify_remote_exit -> ClassifiedExit (case 8 — remote
+    // crash) (case 9 — transport-loss treated as Crashed kind so the
+    // supervisor strategy decides per its policy).
+    pon ce1: ClassifiedExit = classify_remote_exit(RemoteCrashed("panic"))
+    si ce1.exit_kind != EXIT_CRASHED() || ce1.reason != "panic" {
+        print("FAIL: classify Crashed"); return
+    }
+
+    pon ce2: ClassifiedExit = classify_remote_exit(RemoteUnreachable("net"))
+    si ce2.exit_kind != EXIT_CRASHED() {
+        print("FAIL: classify Unreachable kind"); return
+    }
+    si ce2.reason.substr(0, 16) != "transport-lost: " {
+        print("FAIL: classify Unreachable reason prefix"); return
+    }
+
+    pon ce3: ClassifiedExit = classify_remote_exit(RemoteShutdown)
+    si ce3.exit_kind != EXIT_SHUTDOWN() || ce3.reason != "" {
+        print("FAIL: classify Shutdown"); return
+    }
+
+    // ---- ChildExitedMsg encode/decode round-trip ----
+    pon m1: ChildExitedMsg = new_child_exited_msg("worker-7", 0, "panic: index oob")
+    pon enc1: String = encode_child_exited(m1)
+    pon dec1: ChildExitedMsg = decode_child_exited(enc1)
+    si dec1.child_id != "worker-7" || dec1.kind != 0 || dec1.reason != "panic: index oob" {
+        print("FAIL: round-trip Crashed"); return
+    }
+
+    pon m2: ChildExitedMsg = new_child_exited_msg("worker-8", 1, "no route to host")
+    pon enc2: String = encode_child_exited(m2)
+    pon dec2: ChildExitedMsg = decode_child_exited(enc2)
+    si dec2.child_id != "worker-8" || dec2.kind != 1 {
+        print("FAIL: round-trip Unreachable"); return
+    }
+
+    pon m3: ChildExitedMsg = new_child_exited_msg("worker-9", 2, "")
+    pon enc3: String = encode_child_exited(m3)
+    pon dec3: ChildExitedMsg = decode_child_exited(enc3)
+    si dec3.child_id != "worker-9" || dec3.kind != 2 {
+        print("FAIL: round-trip Shutdown"); return
+    }
+
+    // ---- decode rejects malformed input ----
+    pon dec_bad: ChildExitedMsg = decode_child_exited("{not a real frame}")
+    si dec_bad.child_id != "" { print("FAIL: malformed accepted"); return }
+
+    pon dec_short: ChildExitedMsg = decode_child_exited("{}")
+    si dec_short.child_id != "" { print("FAIL: short JSON accepted"); return }
+
+    // ---- Case 10: mixed local/remote supervision tree.
+    // Local supervisor with 2 children. A remote ChildExited frame
+    // arrives for child id 901. We decode + classify + route through
+    // supervisor_handle_exit and assert the right RestartDecision.
+    pon sup0: Supervisor = new_supervisor(STRATEGY_ONE_FOR_ONE(), 5, 60)
+    pon sup1: Supervisor = add_child(sup0, new_child_spec(901, "remote-worker", RESTART_PERMANENT()))
+    pon sup2: Supervisor = add_child(sup1, new_child_spec(902, "local-worker", RESTART_PERMANENT()))
+
+    // Simulate inbound remote ChildExited frame: child 901 crashed.
+    pon remote_msg: ChildExitedMsg = new_child_exited_msg("901", 0, "remote panic")
+    pon wire: String = encode_child_exited(remote_msg)
+    pon decoded: ChildExitedMsg = decode_child_exited(wire)
+    si decoded.kind != 0 { print("FAIL: mixed-tree decode kind"); return }
+
+    // Convert to RemoteExitReason then classify.
+    pon reason: RemoteExitReason = child_kind_to_reason(decoded.kind, decoded.reason)
+    pon ce: ClassifiedExit = classify_remote_exit(reason)
+    si ce.exit_kind != EXIT_CRASHED() {
+        print("FAIL: mixed-tree classify"); return
+    }
+
+    // Feed into v5.42.0 supervisor.
+    pon transition: SupervisorTransition = supervisor_handle_exit(sup2, 901, ce.exit_kind, ce.reason)
+    si transition.decision.no_op {
+        print("FAIL: Permanent + Crashed should restart, got no_op"); return
+    }
+    si transition.decision.escalate {
+        print("FAIL: 1st crash should not escalate"); return
+    }
+    si len(transition.decision.ids_to_restart) != 1 {
+        print("FAIL: OneForOne should restart 1, got " + str(len(transition.decision.ids_to_restart))); return
+    }
+    si transition.decision.ids_to_restart[0] != 901 {
+        print("FAIL: should restart 901, got " + str(transition.decision.ids_to_restart[0])); return
+    }
+
+    // Env defaults.
+    pon iv: Int = node_ping_interval_ms()
+    si iv != 10000 { print("FAIL: ping interval default: " + str(iv)); return }
+    pon to_ms: Int = node_ping_timeout_ms()
+    si to_ms != 5000 { print("FAIL: ping timeout default: " + str(to_ms)); return }
+
+    print("PASSED")
+}

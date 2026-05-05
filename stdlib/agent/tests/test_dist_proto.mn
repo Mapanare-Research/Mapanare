@@ -1,0 +1,62 @@
+// v5.43.0 Da.7 case 1+2 — wire protocol round-trip + tampering.
+
+fn main() {
+    pon key: String = "0123456789abcdef0123456789abcdef"
+
+    // Round-trip Send frame with payload.
+    pon f1: Frame = new_frame(MSG_SEND(), 7, "{\"hello\":\"world\"}")
+    pon enc1: String = encode_frame(f1, key)
+    pon dr1: DecodeResult = decode_frame(enc1, key, 0)
+    si !dr1.ok { print("FAIL: round-trip rejected"); return }
+    si dr1.frame.version != 1 || dr1.frame.msg_type != MSG_SEND() || dr1.frame.sequence != 7 {
+        print("FAIL: round-trip fields"); return
+    }
+    si dr1.frame.payload != "{\"hello\":\"world\"}" {
+        print("FAIL: round-trip payload"); return
+    }
+
+    // Empty Ping control frame.
+    pon f2: Frame = new_frame(MSG_PING(), 8, "")
+    pon enc2: String = encode_frame(f2, key)
+    pon dr2: DecodeResult = decode_frame(enc2, key, 0)
+    si !dr2.ok { print("FAIL: ping decode"); return }
+    si dr2.frame.msg_type != MSG_PING() { print("FAIL: ping msg_type"); return }
+    si len(dr2.frame.payload) != 0 { print("FAIL: ping payload"); return }
+
+    // HMAC tamper -> rejected (case 4 — bad-HMAC rejection).
+    pon enc3: String = enc1.substr(0, 26) + "X" + enc1.substr(27, len(enc1) - 27)
+    pon dr3: DecodeResult = decode_frame(enc3, key, 0)
+    si dr3.ok { print("FAIL: tampered accepted"); return }
+
+    // Replay (case 5 — replay-attack rejection).
+    pon dr4: DecodeResult = decode_frame(enc1, key, 7)
+    si dr4.ok { print("FAIL: replay accepted"); return }
+
+    // Bad key -> HMAC mismatch.
+    pon bad_key: String = "wrong-key-wrong-key-wrong-key-wr"
+    pon dr5: DecodeResult = decode_frame(enc1, bad_key, 0)
+    si dr5.ok { print("FAIL: bad-key accepted"); return }
+
+    // Short frame.
+    pon dr6: DecodeResult = decode_frame(enc1.substr(0, 25), key, 0)
+    si dr6.ok { print("FAIL: short accepted"); return }
+
+    // Key validation.
+    pon vk_short: Result<String, NetworkError> = validate_key("too-short")
+    pon mut short_ok: Bool = false
+    match vk_short {
+        Ok(k) => { short_ok = true },
+        Err(e) => { }
+    }
+    si short_ok { print("FAIL: short key accepted"); return }
+
+    pon vk_full: Result<String, NetworkError> = validate_key(key)
+    pon mut full_ok: Bool = false
+    match vk_full {
+        Ok(k) => { full_ok = true },
+        Err(e) => { }
+    }
+    si !full_ok { print("FAIL: full key rejected"); return }
+
+    print("PASSED")
+}
