@@ -1,7 +1,56 @@
 # Mapanare Language Specification
 
-**Version:** 5.41.0
-**Status:** Live — synced to the v5.41.0 cut (2026-05-04)
+**Version:** 5.42.0
+**Status:** Live — synced to the v5.42.0 cut (2026-05-05)
+
+> **v5.42.0 — As.\* — agent supervision trees.** Second
+> manifesto-arc release after v5.40.0 `ask`. Ships
+> Erlang/OTP-style supervision on top of the existing agent
+> runtime: the strategy library `stdlib/agent/supervisor.mn`
+> (~370 LOC; `Supervisor`, `ChildSpec`, `RestartPolicy`,
+> `RestartStrategy` with the three Erlang-exact strategies
+> `OneForOne` / `RestForOne` / `OneForAll`,
+> `RestartDecision`, `WindowCheck`, `SupervisorTransition`)
+> plus the C runtime substrate for push-based child-exit
+> notifications. **Adds four new C runtime exports**:
+> `mapanare_agent_set_parent`, `mapanare_agent_set_on_exit`,
+> `mapanare_agent_set_exit_reason`,
+> `mapanare_agent_get_exit_reason` — plus the static C
+> trampoline `__mn_supervisor_install_child_hook` and a new
+> `mapanare_exit_reason_kind_t` enum (NORMAL / SHUTDOWN /
+> KILLED / CRASHED). Append-only struct extension on
+> `mapanare_agent_t` (4 fields totalling ~496 bytes,
+> bringing the struct from 488 to 984 bytes on x86_64
+> Linux); zero-init by the existing `memset` in
+> `mapanare_agent_init` keeps pre-v5.42.0 callers working
+> unchanged. Adds **zero new MIR ops, zero compiler edits,
+> zero `mapanare/self/*.mn` source touches**. Strict 3-stage
+> fixed point preserved by construction at v5.41.0's
+> **242,338 lines / 0 diff** (44-release strict streak).
+> Goldens **96/96** (no new goldens — supervision tested
+> via 9 .mn link-and-run cases under `stdlib/agent/tests/`).
+>
+> **PROMPT/PLAN deviation (load-bearing).** Phase 0 audit
+> (`docs/roadmap/v5/v5.42.0/PRE_PHASE_AUDIT.md`) surfaced
+> five premise errors: naming throughout (`MnAgent` /
+> `mn_agent_*` / `MN_MSG_*` don't exist — runtime is
+> `mapanare_agent_t` / `mapanare_agent_*`); no
+> system-message-kind enum exists (PLAN.md Risk #4 cannot
+> materialize as written; re-targeted to lock the struct-
+> extension binary-compat case); no `mn_agent_exit*` API
+> (As.4 structured-payload routing implemented as a
+> side-channel: handler calls
+> `mapanare_agent_set_exit_reason` before returning rc != 0;
+> on_exit reads back via the FAILED state-store release);
+> pre-existing `restart_policy` field is intra-agent
+> handler-error retry, NOT supervisor-driven; v5.42.0 As.6
+> adds the latter on top, leaving the former untouched.
+> Lead-approved Path B (push-driven via opt-in C callback)
+> over Path A (pure-Mapanare poll-based).
+>
+> SPEC body unchanged from the v5.21.0 cut. v5.42.0 ships
+> entirely as runtime + stdlib + tests + docs + examples;
+> no SPEC-level surface changes.
 
 > **v5.41.0 — Ts.1 — `tensor.reshape` on the LLVM backend
 > (option B part 1).** SPEC body unchanged from the v5.21.0

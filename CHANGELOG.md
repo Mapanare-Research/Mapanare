@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.42.0] - 2026-05-05
+
+**As.\* — agent supervision trees.** Second manifesto-arc release
+(after v5.40.0 `ask`). Ships Erlang/OTP-style supervision on top of
+the existing agent runtime: the strategy library
+`stdlib/agent/supervisor.mn` plus the C runtime substrate for
+push-based child-exit notifications in
+`runtime/native/mapanare_runtime.{c,h}`.
+
+**Strict 3-stage fixed point preserved** at v5.41.0's **242,338 lines
+/ 0 diff** (44-release strict streak from the v5.7.1 baseline; zero
+`mapanare/self/*.mn` source touches). Goldens **96/96** (no new
+goldens — supervision tested via 9 .mn link-and-run cases under
+`stdlib/agent/tests/`).
+
+**PROMPT/PLAN deviations (load-bearing).** Phase 0 audit
+(`docs/roadmap/v5/v5.42.0/PRE_PHASE_AUDIT.md`) surfaced five premise
+errors: (1) the runtime is `mapanare_agent_t` / `mapanare_agent_*`,
+not `MnAgent` / `mn_agent_*` as the prompt claimed; (2) there is no
+system-message-kind enum at the C runtime level — inbox messages are
+opaque `void *`, so PLAN.md Risk #4 (binary-compat regression on
+enum shifting) cannot materialize as written; re-targeted to lock
+the struct-extension case; (3) there is no `mn_agent_exit*` API;
+(4) the pre-existing restart_policy field on the agent struct is
+intra-agent handler-error retry, NOT supervisor-driven restart;
+v5.42.0 As.6 adds the latter on top, leaving the former untouched;
+(5) goldens at v5.41.0 HEAD are 96/96, not 98/98 as the prompt
+claimed. Lead-approved Path B (push-driven via opt-in C callback)
+over Path A (pure-Mapanare poll-based). Documented in the
+SESSION_REPORT.
+
+### Added
+
+- **As.6 — runtime supervision substrate.** Four append-only fields
+  on `mapanare_agent_t` (`parent`, `on_exit` callback fn-pointer,
+  `on_exit_cb_data`, `last_exit_kind` + `last_exit_reason[256]`),
+  zero-initialized by the existing `memset` in `mapanare_agent_init`
+  so pre-v5.42.0 `mapanare_agent_new` callers (the two stage1
+  emitters) keep working unchanged. Four new `MAPANARE_EXPORT`
+  helpers: `mapanare_agent_set_parent`, `mapanare_agent_set_on_exit`,
+  `mapanare_agent_set_exit_reason`,
+  `mapanare_agent_get_exit_reason`. Three FAILED-transition sites
+  (`mapanare_runtime.c:606,612` coop scheduler;
+  `mapanare_runtime.c:1411` pthread worker) invoke `on_exit` after
+  the state store, before the worker thread exits.
+- **As.6 — `__mn_supervisor_install_child_hook`** static C trampoline
+  (in `mapanare_runtime.c`) wires a child agent's `on_exit` to a
+  callback which builds a heap-allocated `__mn_child_exit_msg_t` and
+  `mapanare_agent_send`s it to the parent supervisor's inbox.
+- **As.4 — `mapanare_exit_reason_kind_t` enum** (NORMAL / SHUTDOWN /
+  KILLED / CRASHED). Fixed-size 256-byte reason string avoids
+  per-FAILED malloc.
+- **As.1 + As.2 — `stdlib/agent/supervisor.mn`** (~370 LOC). Strategy
+  library shape (NOT an agent itself — sidesteps the v5.x
+  fn-typed-parameter-invocation quirk and the cross-typed-children
+  problem). Public surface: `Supervisor`, `ChildSpec`,
+  `RestartPolicy` constants (`Permanent` / `Temporary` /
+  `Transient`), `RestartStrategy` constants (`OneForOne` /
+  `RestForOne` / `OneForAll`), `RestartDecision`, `WindowCheck`,
+  `SupervisorTransition`. Core operation:
+  `supervisor_handle_exit(s, agent_id, exit_kind, reason)` returns a
+  `SupervisorTransition { sup, decision }`. Erlang/OTP semantics
+  exactly for all three strategies.
+- **As.3 — restart limits + backoff.** Sliding-window discrete
+  approximation. Optional exponential backoff
+  (`backoff_initial_ms` × 2^(consecutive_restarts-1), capped at
+  `backoff_max_ms`); default 0 = disabled.
+- **As.5 — 9 link-and-run tests** under `stdlib/agent/tests/`
+  + pytest harness `tests/stdlib/test_supervisor.py`. Cover the
+  three strategies, restart-limit exhaustion, backoff progression
+  with cap, normal-exit + per-policy matrix, child-id remapping,
+  window reset, stale-notification no-op. **9/9 GREEN** at HEAD in
+  3.44s.
+- **As.5 — binary-compat regression test**
+  `tests/runtime/test_agent_struct_compat.py` (4 cases). Locks
+  `sizeof(mapanare_agent_t)` ≤ 1024, opaque-PTR emitter declarations,
+  append-only field placement, and the on_exit invocation at every
+  FAILED-transition site.
+- **As.6 — C smoke harness** at `/tmp/as6_smoke.c`. PASSED. TSan
+  compile-clean.
+- **As.7 — examples** `examples/agents/supervisor_strategy_demo.mn`
+  (all three strategies on a 3-child tree, end-to-end through LLVM
+  emitter + clang) and `examples/agents/worker_pool_supervised.mn`
+  (orchestration sketch).
+- **As.8 — `docs/stdlib/agent.md`** (~250 LOC). Quick reference,
+  strategy table, RestartPolicy semantics, backoff, push-based
+  notification substrate, four cookbook recipes, deferred items,
+  migration/coexistence note explaining pre-v5.42.0 `restart_policy`
+  (intra-agent retry) is orthogonal to v5.42.0 supervision (parent
+  decides what to do once FAILED).
+
+### Changed
+
+- **`mapanare_agent_t` struct grew by ~496 bytes** (488 → 984 bytes
+  on x86_64 Linux). Append-only — every existing caller still works
+  unchanged because: (1) emitters never inline
+  `sizeof(mapanare_agent_t)`; (2) the only allocator is
+  `mapanare_agent_new` (heap, owned by the v5.42.0 runtime);
+  (3) `mapanare_agent_init`'s `memset` zero-inits the new fields,
+  leaving `on_exit = NULL` so the new `if (agent->on_exit)` guards
+  at FAILED sites are no-ops in the pre-v5.42.0 path.
+
+
 ## [5.41.0] - 2026-05-04
 
 **Ts.1 — `tensor.reshape` on the LLVM backend (option B part 1).**
@@ -11334,7 +11437,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.41.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.42.0...HEAD
+[5.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.41.0...v5.42.0
 [5.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.40.0...v5.41.0
 [5.40.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.7...v5.40.0
 [5.39.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.6...v5.39.7

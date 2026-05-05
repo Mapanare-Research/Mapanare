@@ -1,0 +1,29 @@
+// As.5 case 6b — stale notification (child not registered) is a
+// no-op. Models the case where a child was removed from the
+// supervisor before its ChildExited notification arrived.
+
+fn main() {
+    let s0 = new_supervisor(STRATEGY_ONE_FOR_ALL(), 5, 60)
+    let s1 = add_child(s0, new_child_spec(1001, "a", RESTART_PERMANENT()))
+
+    // Notification for an id NOT in the spec list.
+    let t = supervisor_handle_exit(s1, 9999, EXIT_CRASHED(), "ghost")
+    si !t.decision.no_op {
+        print("FAIL: stale notification not no-op")
+        return
+    }
+    si t.decision.escalate {
+        print("FAIL: stale notification escalated")
+        return
+    }
+    si len(t.decision.ids_to_restart) != 0 {
+        print("FAIL: stale notification produced restarts")
+        return
+    }
+    // Window count should NOT have advanced.
+    si t.sup.restart_count_in_window != 0 {
+        print("FAIL: stale notification advanced window")
+        return
+    }
+    print("PASSED")
+}

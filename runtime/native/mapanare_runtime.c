@@ -605,12 +605,20 @@ static void *agent_thread_fn(void *arg) {
                     if (restarts > agent->max_restarts) {
                         atomic_store_i32(&agent->state, MAPANARE_AGENT_FAILED);
                         atomic_store_i32(&agent->running, 0);
+                        /* v5.42.0 As.6: notify supervisor before exit. */
+                        if (agent->on_exit) {
+                            agent->on_exit(agent, agent->on_exit_cb_data);
+                        }
                         break;
                     }
                     continue;
                 } else {
                     atomic_store_i32(&agent->state, MAPANARE_AGENT_FAILED);
                     atomic_store_i32(&agent->running, 0);
+                    /* v5.42.0 As.6: notify supervisor before exit. */
+                    if (agent->on_exit) {
+                        agent->on_exit(agent, agent->on_exit_cb_data);
+                    }
                     break;
                 }
             }
@@ -859,6 +867,111 @@ MAPANARE_EXPORT void mapanare_agent_set_restart_policy(mapanare_agent_t *agent,
                                                         int32_t max_restarts) {
     agent->restart_policy = policy;
     agent->max_restarts = max_restarts;
+}
+
+/* -----------------------------------------------------------------------
+ * v5.42.0 As.6 — supervision hooks
+ * ----------------------------------------------------------------------- */
+
+MAPANARE_EXPORT void mapanare_agent_set_parent(mapanare_agent_t *child,
+                                                mapanare_agent_t *parent) {
+    if (!child) return;
+    child->parent = parent;
+}
+
+MAPANARE_EXPORT void mapanare_agent_set_on_exit(mapanare_agent_t *child,
+                                                 mapanare_on_exit_fn on_exit,
+                                                 void *cb_data) {
+    if (!child) return;
+    child->on_exit         = on_exit;
+    child->on_exit_cb_data = cb_data;
+}
+
+MAPANARE_EXPORT void mapanare_agent_set_exit_reason(mapanare_agent_t *self,
+                                                     mapanare_exit_reason_kind_t kind,
+                                                     const char *reason) {
+    if (!self) return;
+    atomic_store_i32(&self->last_exit_kind, (int32_t)kind);
+    if (reason) {
+        size_t n = strlen(reason);
+        if (n > MAPANARE_EXIT_REASON_MAX - 1) n = MAPANARE_EXIT_REASON_MAX - 1;
+        memcpy(self->last_exit_reason, reason, n);
+        self->last_exit_reason[n] = '\0';
+    } else {
+        self->last_exit_reason[0] = '\0';
+    }
+}
+
+/* Static trampoline: builds a heap-allocated ChildExited struct and
+ * sends it to the parent's inbox. Wired via __mn_supervisor_install_child_hook.
+ *
+ * Layout of __mn_child_exit_msg_t MUST match the Mapanare-side
+ * ChildExitedMsg struct so the parent agent's handler can decode it.
+ * Field order: agent_id (i64), kind (i64), reason (MnString).
+ *
+ * Heap-allocated so the child's worker thread can hand off ownership
+ * to the parent via the inbox; the parent is responsible for free()
+ * after handling.
+ */
+typedef struct {
+    int64_t  agent_id;
+    int64_t  kind;
+    char     reason[MAPANARE_EXIT_REASON_MAX];
+} mapanare_child_exit_msg_t;
+
+static void supervisor_trampoline(struct mapanare_agent *child,
+                                   void *cb_data) {
+    mapanare_agent_t *parent = (mapanare_agent_t *)cb_data;
+    if (!parent) return;
+
+    mapanare_child_exit_msg_t *msg = (mapanare_child_exit_msg_t *)malloc(sizeof(*msg));
+    if (!msg) return; /* OOM — drop the notification rather than abort */
+
+    msg->agent_id = (int64_t)child->id;
+    msg->kind     = (int64_t)atomic_load_i32(&child->last_exit_kind);
+    memcpy(msg->reason, child->last_exit_reason, MAPANARE_EXIT_REASON_MAX);
+    msg->reason[MAPANARE_EXIT_REASON_MAX - 1] = '\0';
+
+    if (mapanare_agent_send(parent, msg) != 0) {
+        /* Inbox full or shutdown; the message is leaked. Logging
+         * here would itself contend; the supervisor's restart-limit
+         * window is the structural backstop. */
+        free(msg);
+    }
+}
+
+/* Public Mapanare-callable hook: install the supervision trampoline
+ * on `child` so its FAILED transition posts a ChildExited message to
+ * `parent`'s inbox. Both args are opaque agent handles cast through
+ * Int (mapanare_agent_t * fits in 64-bit Mapanare Int).
+ *
+ * Returns 0 on success, -1 on null pointer.
+ */
+MAPANARE_EXPORT int __mn_supervisor_install_child_hook(int64_t child_handle,
+                                                        int64_t parent_handle) {
+    mapanare_agent_t *child  = (mapanare_agent_t *)(uintptr_t)child_handle;
+    mapanare_agent_t *parent = (mapanare_agent_t *)(uintptr_t)parent_handle;
+    if (!child || !parent) return -1;
+    mapanare_agent_set_parent(child, parent);
+    mapanare_agent_set_on_exit(child, supervisor_trampoline, parent);
+    return 0;
+}
+
+MAPANARE_EXPORT void mapanare_agent_get_exit_reason(mapanare_agent_t *child,
+                                                     mapanare_exit_reason_kind_t *kind_out,
+                                                     char *reason_out) {
+    if (!child) {
+        if (kind_out)   *kind_out = MAPANARE_EXIT_NORMAL;
+        if (reason_out) reason_out[0] = '\0';
+        return;
+    }
+    if (kind_out) {
+        *kind_out = (mapanare_exit_reason_kind_t)atomic_load_i32(&child->last_exit_kind);
+    }
+    if (reason_out) {
+        memcpy(reason_out, child->last_exit_reason, MAPANARE_EXIT_REASON_MAX);
+        reason_out[MAPANARE_EXIT_REASON_MAX - 1] = '\0';
+    }
 }
 
 /* =======================================================================
@@ -1411,6 +1524,10 @@ MAPANARE_EXPORT int mapanare_coop_scheduler_step(mapanare_coop_scheduler_t *sche
             atomic_store_i32(&agent->state, MAPANARE_AGENT_FAILED);
             atomic_store_i32(&agent->running, 0);
             if (agent->on_stop) agent->on_stop(agent->agent_data);
+            /* v5.42.0 As.6: notify supervisor before exit. */
+            if (agent->on_exit) {
+                agent->on_exit(agent, agent->on_exit_cb_data);
+            }
             agent_done = 1;
         }
 

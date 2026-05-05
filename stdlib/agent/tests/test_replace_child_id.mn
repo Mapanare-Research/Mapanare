@@ -1,0 +1,45 @@
+// As.5 case 6a (proxy for nested-supervisor escalation) — verify
+// replace_child_id rewires the spec list so subsequent
+// ChildExited notifications targeting the NEW id find the entry.
+
+fn main() {
+    let s0 = new_supervisor(STRATEGY_ONE_FOR_ONE(), 10, 60)
+    let s1 = add_child(s0, new_child_spec(801, "a", RESTART_PERMANENT()))
+    let s2 = add_child(s1, new_child_spec(802, "b", RESTART_PERMANENT()))
+
+    let t = supervisor_handle_exit(s2, 801, EXIT_CRASHED(), "first crash")
+    let s3 = t.sup
+    si len(t.decision.ids_to_restart) != 1 || t.decision.ids_to_restart[0] != 801 {
+        print("FAIL: first restart did not target 801")
+        return
+    }
+
+    // Orchestrator respawns child 801 with new id 901; remap.
+    let s4 = replace_child_id(s3, 801, 901)
+
+    // Verify lookup_child finds 901 now and still has display_name "a".
+    let spec = lookup_child(s4, 901)
+    si spec.agent_id != 901 {
+        print("FAIL: lookup post-remap missed 901")
+        return
+    }
+    si spec.display_name != "a" {
+        print("FAIL: display_name lost: '" + spec.display_name + "'")
+        return
+    }
+
+    // 801 should no longer be findable.
+    let stale = lookup_child(s4, 801)
+    si stale.agent_id != -1 {
+        print("FAIL: stale id 801 still found")
+        return
+    }
+
+    // Subsequent crash on 901 should restart 901.
+    let t2 = supervisor_handle_exit(s4, 901, EXIT_CRASHED(), "second crash")
+    si len(t2.decision.ids_to_restart) != 1 || t2.decision.ids_to_restart[0] != 901 {
+        print("FAIL: post-remap restart targeted wrong id")
+        return
+    }
+    print("PASSED")
+}

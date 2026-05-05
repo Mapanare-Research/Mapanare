@@ -1,0 +1,31 @@
+// As.5 case 7 — Normal-exit child does NOT trigger restart with
+// Transient policy; DOES with Permanent.
+
+fn main() {
+    let s0 = new_supervisor(STRATEGY_ONE_FOR_ONE(), 5, 60)
+    let s1 = add_child(s0, new_child_spec(701, "transient", RESTART_TRANSIENT()))
+    let s2 = add_child(s1, new_child_spec(702, "permanent", RESTART_PERMANENT()))
+    let s3 = add_child(s2, new_child_spec(703, "temporary", RESTART_TEMPORARY()))
+
+    // Transient + Normal -> no restart
+    let t1 = supervisor_handle_exit(s3, 701, EXIT_NORMAL(), "clean")
+    si !t1.decision.no_op {
+        print("FAIL: transient+normal restarted")
+        return
+    }
+
+    // Permanent + Normal -> restart
+    let t2 = supervisor_handle_exit(s3, 702, EXIT_NORMAL(), "clean")
+    si t2.decision.no_op {
+        print("FAIL: permanent+normal did not restart")
+        return
+    }
+
+    // Temporary + Crashed -> no restart
+    let t3 = supervisor_handle_exit(s3, 703, EXIT_CRASHED(), "panic")
+    si !t3.decision.no_op {
+        print("FAIL: temporary+crashed restarted")
+        return
+    }
+    print("PASSED")
+}

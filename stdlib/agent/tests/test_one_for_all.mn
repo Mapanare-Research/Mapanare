@@ -1,0 +1,20 @@
+// As.5 case 3 — OneForAll restarts every child in the group.
+
+fn main() {
+    let s0 = new_supervisor(STRATEGY_ONE_FOR_ALL(), 5, 60)
+    let s1 = add_child(s0, new_child_spec(301, "a", RESTART_PERMANENT()))
+    let s2 = add_child(s1, new_child_spec(302, "b", RESTART_PERMANENT()))
+    let s3 = add_child(s2, new_child_spec(303, "c", RESTART_PERMANENT()))
+
+    let t = supervisor_handle_exit(s3, 302, EXIT_CRASHED(), "b crashed")
+    let ids = t.decision.ids_to_restart
+    si len(ids) != 3 {
+        print("FAIL: expected all 3 restarted, got " + str(len(ids)))
+        return
+    }
+    si ids[0] != 301 || ids[1] != 302 || ids[2] != 303 {
+        print("FAIL: ids out of order")
+        return
+    }
+    print("PASSED")
+}

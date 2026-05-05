@@ -19,6 +19,142 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.42.0** (ready, not tagged) — **As.\* — agent supervision
+  trees.** Second manifesto-arc release after v5.40.0 `ask`. Ships
+  Erlang/OTP-style supervision: the strategy library
+  `stdlib/agent/supervisor.mn` (~370 LOC; `Supervisor`, `ChildSpec`,
+  `RestartPolicy` constants Permanent/Temporary/Transient,
+  `RestartStrategy` constants OneForOne/RestForOne/OneForAll,
+  `RestartDecision`, `WindowCheck`, `SupervisorTransition`) plus
+  the C runtime substrate for push-based child-exit notifications
+  in `runtime/native/mapanare_runtime.{c,h}`. Erlang/OTP semantics
+  exactly for all three strategies. Adds **four new C runtime
+  exports** (`mapanare_agent_set_parent`,
+  `mapanare_agent_set_on_exit`, `mapanare_agent_set_exit_reason`,
+  `mapanare_agent_get_exit_reason`) plus the static C trampoline
+  `__mn_supervisor_install_child_hook`. New
+  `mapanare_exit_reason_kind_t` enum (NORMAL / SHUTDOWN / KILLED /
+  CRASHED). Append-only struct extension on `mapanare_agent_t`
+  (4 fields totalling ~496 bytes — 488 → 984 bytes on x86_64
+  Linux); zero-init by the existing `memset` in
+  `mapanare_agent_init` keeps pre-v5.42.0 callers working
+  unchanged. Adds **zero new MIR ops, zero compiler edits, zero
+  `mapanare/self/*.mn` source touches**. Strict 3-stage fixed
+  point preserved by construction at v5.41.0's **242,338 lines /
+  0 diff** (44-release strict streak from the v5.7.1 baseline).
+  Goldens **96/96** (no new goldens — supervision tested via 9
+  link-and-run cases under `stdlib/agent/tests/`).
+  **PROMPT/PLAN deviation (load-bearing).** Phase 0 audit
+  (`docs/roadmap/v5/v5.42.0/PRE_PHASE_AUDIT.md`) surfaced five
+  premise errors: (1) naming throughout — runtime is
+  `mapanare_agent_t` / `mapanare_agent_*`, not `MnAgent` /
+  `mn_agent_*` / `MN_MSG_*` as the prompt claimed (cosmetic but
+  touches every file path / symbol in the prompt's Phase 1);
+  (2) **no system-message-kind enum exists** — inbox messages
+  are opaque `void *` discriminated entirely at the user
+  agent's handler. PLAN.md Risk #4 ("appending
+  `MN_MSG_CHILD_EXITED` shifts later enum values, breaking
+  stage1 binaries") cannot materialize as written — there is no
+  enum. Re-targeted the binary-compat regression test to lock
+  the struct-extension case (the v5.41.0 pattern, applied to a
+  different shape); (3) no `mn_agent_exit*` API — agents enter
+  FAILED only when the handler returns rc != 0; the structured
+  payload propagation (As.4) was implemented as a side-channel
+  (handler calls `mapanare_agent_set_exit_reason(self, kind,
+  reason)` before returning rc != 0; on_exit reads back via
+  `mapanare_agent_get_exit_reason` after the FAILED state-store
+  release); (4) the pre-existing `restart_policy` field on
+  `mapanare_agent_t` is intra-agent handler-error retry, NOT
+  supervisor-driven restart; v5.42.0 As.6 adds the latter on
+  top, leaving the former untouched (documented in the
+  `docs/stdlib/agent.md` migration/coexistence note);
+  (5) goldens at v5.41.0 HEAD are **96/96**, not 98/98 as the
+  prompt claimed; v5.42.0 ships 0 new goldens. Lead-approved
+  Path B (push-driven via opt-in C callback) over Path A
+  (pure-Mapanare poll-based, zero C edits). Path B has lower
+  restart latency and preserves the full feature set including
+  ExitReason payload routing.
+  **Library shape.** v5.42.0 ships the supervisor as a *strategy
+  library*, not as an agent itself. The supervisor's job is
+  answering "given this child's exit, which children should the
+  orchestrator restart, and should we escalate?" — NOT spawning
+  / killing agents. This shape sidesteps two known v5.x quirks:
+  (a) fn-typed parameters (factories) are unreliable to invoke
+  through Mapanare's lowering (v5.37.0 Ht.\* lesson —
+  registration-table workaround); (b) cross-typed agents
+  (children of mixed `agent X / agent Y` types) cannot be stored
+  in a single homogeneous list. Storing just integer agent IDs
+  sidesteps it. The orchestrator side does the actual respawn,
+  driven by the strategy library's decisions. Tracked as a
+  v5.43.0 ergonomic upgrade (MEDIUM): pass a factory closure to
+  the supervisor; supervisor spawns + restarts.
+  **As.6 substrate.** Three FAILED-transition sites
+  (`mapanare_runtime.c:606,612` coop scheduler;
+  `mapanare_runtime.c:1411` pthread worker) invoke `on_exit`
+  after the state store, before the worker thread exits —
+  happens-before edge to the supervisor's read is the FAILED
+  state-store release. The static C trampoline
+  `supervisor_trampoline` (in `mapanare_runtime.c`, registered
+  via `__mn_supervisor_install_child_hook`) builds a heap-
+  allocated `__mn_child_exit_msg_t { agent_id: i64, kind: i64,
+  reason: char[256] }` and `mapanare_agent_send`s it to the
+  parent supervisor's inbox. Layout matches a Mapanare-side
+  `ChildExitedMsg` struct so the parent agent's handler can
+  decode it.
+  **Tests.** New `stdlib/agent/tests/test_*.mn` (9 cases, ~250
+  LOC total): three strategy tests (one per RestartStrategy),
+  restart-limit exhaustion, backoff progression with cap,
+  normal-exit + per-policy matrix, child-id remapping
+  (`replace_child_id`), window reset, stale-notification no-op.
+  Pytest harness `tests/stdlib/test_supervisor.py` mirrors the
+  v5.34.0 / v5.39.x concatenation pattern; **9/9 GREEN at HEAD
+  in 3.44s**. Plus `tests/runtime/test_agent_struct_compat.py`
+  (4 binary-compat regression cases): locks `sizeof
+  (mapanare_agent_t)` between 488 and 1024 bytes (current 984
+  on x86_64 Linux), opaque-PTR emitter declarations,
+  append-only field placement after the v4.33.0
+  `message_dtor` anchor, and the on_exit invocation at every
+  FAILED-transition site. **4/4 GREEN.** Plus
+  `tests/runtime/test_as6_supervision_smoke.c` — spawn parent +
+  child, child handler stamps `EXIT_CRASHED + reason` then
+  returns rc != 0, callback fires on the dying child's thread,
+  supervisor reads back the structured reason intact.
+  **PASSED. TSan compile-clean.** Pre-existing
+  `tests/runtime/test_agent_destroy_drain.c` still passes —
+  backward compat verified.
+  **Examples.** `examples/agents/supervisor_strategy_demo.mn`
+  exercises all three strategies on a 3-child tree (output
+  verified end-to-end through the LLVM emitter + clang link +
+  execution path); `examples/agents/worker_pool_supervised.mn`
+  sketches the orchestration pattern with pseudocode for the
+  `__mn_supervisor_install_child_hook` integration.
+  **Hd-class preventative.** `docs/SPEC.md` header re-synced
+  from "v5.41.0 cut" to "v5.42.0 cut" with a new sync block
+  summarizing what v5.42.0 ships (specifically calling out the
+  four new C runtime exports + the static C trampoline + the
+  As.6 struct-extension binary-compat invariant).
+  `check_doc_freshness.py` GREEN. `check_changelog_honesty.py`
+  GREEN. `make ci-gates` GREEN (9 sub-gates); `make lint`
+  clean. Source delta: ~80 LOC C in `mapanare_runtime.{c,h}`
+  (As.4 + As.6) + ~370 LOC `stdlib/agent/supervisor.mn`
+  (As.1 + As.2 + As.3) + ~250 LOC `.mn` tests (9 files) +
+  ~140 LOC pytest harness + ~190 LOC binary-compat regression
+  test + ~110 LOC C smoke harness + ~150 LOC examples (2
+  files) + ~250 LOC `docs/stdlib/agent.md` (As.8) + ~100 LOC
+  CHANGELOG + ~60 LOC SPEC sync + this CLAUDE.md release-notes
+  entry + mechanical bump_version.py edits. Aggregate state
+  entering v5.43.0: **0 HIGH** / **2 MEDIUM**
+  (spawn-restart-via-Mapanare-fn ergonomic — v5.43.0
+  commitment for the headline supervision item; macOS
+  notarization carry from v5.33.0 Nu.2) / **~7 LOW**
+  (`@agent`-handle ↔ `mapanare_agent_t *` bridge; dynamic
+  child addition; distributed supervision blocked on remote
+  agents work; process registry / via syntax;
+  restart-decision logging structured-events; cap doc for the
+  256-byte exit-reason buffer; carries from v5.41.0). See
+  `docs/roadmap/v5/v5.42.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.41.0** (ready, not tagged) — **Ts.1 — `tensor.reshape`
   on the LLVM backend (option B part 1).** First half of the
   longest-standing v5.x parity gap closeout. The language-builtin
@@ -2678,7 +2814,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (32037 symbols, 67236 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (32081 symbols, 67276 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

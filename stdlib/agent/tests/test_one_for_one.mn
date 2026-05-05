@@ -1,0 +1,28 @@
+// As.5 case 1 — OneForOne restarts only the failed child.
+
+fn main() {
+    let s0 = new_supervisor(STRATEGY_ONE_FOR_ONE(), 5, 60)
+    let s1 = add_child(s0, new_child_spec(101, "a", RESTART_PERMANENT()))
+    let s2 = add_child(s1, new_child_spec(102, "b", RESTART_PERMANENT()))
+    let s3 = add_child(s2, new_child_spec(103, "c", RESTART_PERMANENT()))
+
+    let t = supervisor_handle_exit(s3, 102, EXIT_CRASHED(), "panic in b")
+    si t.decision.no_op {
+        print("FAIL: no_op set for crashed child")
+        return
+    }
+    si t.decision.escalate {
+        print("FAIL: spurious escalate")
+        return
+    }
+    let ids = t.decision.ids_to_restart
+    si len(ids) != 1 {
+        print("FAIL: expected exactly one restart, got " + str(len(ids)))
+        return
+    }
+    si ids[0] != 102 {
+        print("FAIL: expected to restart 102, got " + str(ids[0]))
+        return
+    }
+    print("PASSED")
+}

@@ -173,11 +173,40 @@ typedef enum {
     MAPANARE_RESTART_RESTART = 1,
 } mapanare_restart_policy_t;
 
+/** v5.42.0 As.4: structured exit-reason kinds. Mirrors the
+ * stdlib/agent/supervisor.mn ExitReason enum. */
+typedef enum {
+    MAPANARE_EXIT_NORMAL   = 0,
+    MAPANARE_EXIT_SHUTDOWN = 1,
+    MAPANARE_EXIT_KILLED   = 2,
+    MAPANARE_EXIT_CRASHED  = 3,
+} mapanare_exit_reason_kind_t;
+
+#define MAPANARE_EXIT_REASON_MAX 256
+
 /** Message handler callback.  Return 0 on success, non-zero on error. */
 typedef int (*mapanare_handler_fn)(void *agent_data, void *msg, void **out_msg);
 
 /** Lifecycle callbacks. */
 typedef void (*mapanare_lifecycle_fn)(void *agent_data);
+
+/* Forward declaration so the on_exit callback typedef can name it
+ * before the full struct definition appears below. */
+struct mapanare_agent;
+
+/** v5.42.0 As.6: child-exit callback. Invoked from the dying agent's
+ * worker thread immediately after the FAILED state store, before the
+ * worker exits. The callback runs while the child agent's pointer is
+ * still valid; the supervisor side is expected to:
+ *   1. Read child->id and the exit reason via
+ *      mapanare_agent_get_exit_reason(child, ...).
+ *   2. Build a Mapanare-side ChildExited{id, kind, reason} message.
+ *   3. Post it to the parent supervisor's inbox via
+ *      mapanare_agent_send().
+ * The callback MUST NOT call mapanare_agent_stop / destroy on the
+ * child — the child's worker thread is mid-shutdown. */
+typedef void (*mapanare_on_exit_fn)(struct mapanare_agent *child,
+                                     void *cb_data);
 
 typedef struct mapanare_agent {
     /* Identity */
@@ -242,6 +271,24 @@ typedef struct mapanare_agent {
      * "caller owns lifetime" (backwards-compatible with all existing
      * agents). */
     void (*message_dtor)(void *msg);
+
+    /* v5.42.0 As.6: supervision hooks. APPEND-ONLY — old binaries
+     * built against the v5.41.0 runtime keep working because
+     * mapanare_agent_new uses calloc(); zero-init on these fields
+     * means "no parent; don't notify; no exit reason captured" which
+     * is the pre-v5.42.0 behaviour. */
+    struct mapanare_agent     *parent;          /* nullable */
+    mapanare_on_exit_fn        on_exit;         /* nullable */
+    void                      *on_exit_cb_data; /* opaque */
+    mapanare_atomic_i32        last_exit_kind;  /* mapanare_exit_reason_kind_t */
+    /* last_exit_reason is written by mapanare_agent_set_exit_reason
+     * (called from the agent's own handler before returning rc != 0)
+     * and read by mapanare_agent_get_exit_reason after FAILED. The
+     * write/read happen on different threads but the on_exit callback
+     * is invoked AFTER the FAILED state store and AFTER any handler
+     * has finished, so the write happens-before the read via the
+     * atomic state-store release. No mutex needed. */
+    char                       last_exit_reason[MAPANARE_EXIT_REASON_MAX];
 } mapanare_agent_t;
 
 /** Initialise an agent.  Does NOT start it — call mapanare_agent_spawn(). */
@@ -294,6 +341,45 @@ MAPANARE_EXPORT int mapanare_agent_recv_blocking(mapanare_agent_t *agent, void *
 MAPANARE_EXPORT void mapanare_agent_set_restart_policy(mapanare_agent_t *agent,
                                                         mapanare_restart_policy_t policy,
                                                         int32_t max_restarts);
+
+/* -----------------------------------------------------------------------
+ * v5.42.0 As.6 — supervision hooks
+ *
+ * These four helpers are the C-runtime substrate for the
+ * stdlib/agent/supervisor.mn library. They are append-only — calling
+ * none of them preserves pre-v5.42.0 behaviour exactly.
+ * ----------------------------------------------------------------------- */
+
+/** Register the supervisor pointer for a child agent. Pass NULL to
+ * detach. The supervisor field is purely informational from the
+ * runtime's perspective — the actual notification is via on_exit. */
+MAPANARE_EXPORT void mapanare_agent_set_parent(mapanare_agent_t *child,
+                                                mapanare_agent_t *parent);
+
+/** Register a callback invoked when the child agent transitions to
+ * FAILED. The callback runs on the dying child's worker thread,
+ * BEFORE the thread exits, so cb_data must be valid for the lifetime
+ * of the agent. Pass NULL to clear. */
+MAPANARE_EXPORT void mapanare_agent_set_on_exit(mapanare_agent_t *child,
+                                                 mapanare_on_exit_fn on_exit,
+                                                 void *cb_data);
+
+/** Handler-side helper: store a structured exit-reason payload on the
+ * agent. Intended to be called from inside a handler immediately
+ * before returning a non-zero rc. The reason string is truncated to
+ * MAPANARE_EXIT_REASON_MAX-1 bytes. Safe to call from any thread (the
+ * happens-before edge to the on_exit reader is the FAILED state
+ * store; see the field-level note in mapanare_agent_t). */
+MAPANARE_EXPORT void mapanare_agent_set_exit_reason(mapanare_agent_t *self,
+                                                     mapanare_exit_reason_kind_t kind,
+                                                     const char *reason);
+
+/** Read back the structured exit reason. kind_out and reason_out may
+ * be NULL. reason_out is a stable copy into a caller-owned buffer
+ * (capacity MAPANARE_EXIT_REASON_MAX bytes). */
+MAPANARE_EXPORT void mapanare_agent_get_exit_reason(mapanare_agent_t *child,
+                                                     mapanare_exit_reason_kind_t *kind_out,
+                                                     char *reason_out);
 
 /* -----------------------------------------------------------------------
  * Agent registry — track agents by name

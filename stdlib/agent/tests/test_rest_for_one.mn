@@ -1,0 +1,26 @@
+// As.5 case 2 — RestForOne restarts failed child + everything started after it.
+
+fn main() {
+    let s0 = new_supervisor(STRATEGY_REST_FOR_ONE(), 5, 60)
+    let s1 = add_child(s0, new_child_spec(201, "stage1", RESTART_PERMANENT()))
+    let s2 = add_child(s1, new_child_spec(202, "stage2", RESTART_PERMANENT()))
+    let s3 = add_child(s2, new_child_spec(203, "stage3", RESTART_PERMANENT()))
+    let s4 = add_child(s3, new_child_spec(204, "stage4", RESTART_PERMANENT()))
+
+    // Stage2 fails: should restart stages 2, 3, 4 — NOT stage 1.
+    let t = supervisor_handle_exit(s4, 202, EXIT_CRASHED(), "stage2 panic")
+    si t.decision.no_op {
+        print("FAIL: no_op set")
+        return
+    }
+    let ids = t.decision.ids_to_restart
+    si len(ids) != 3 {
+        print("FAIL: expected 3 restarts, got " + str(len(ids)))
+        return
+    }
+    si ids[0] != 202 || ids[1] != 203 || ids[2] != 204 {
+        print("FAIL: ids out of order: " + str(ids[0]) + "," + str(ids[1]) + "," + str(ids[2]))
+        return
+    }
+    print("PASSED")
+}

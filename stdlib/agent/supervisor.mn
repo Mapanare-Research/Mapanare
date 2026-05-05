@@ -1,0 +1,419 @@
+// supervisor.mn — Erlang/OTP-style supervision strategy library
+// for Mapanare agents.
+//
+// v5.42.0 As.* — second manifesto-arc release.
+//
+// SHAPE: this module is a *strategy library*, not an agent. It does
+// not spawn or kill agents on its own. The user's orchestration code
+// drives the lifecycle (spawning, sending shutdown messages, calling
+// the runtime restart hooks); this library answers two questions:
+//
+//   1. "A child just exited — given the strategy, which children
+//      should I restart?" — supervisor_handle_exit
+//   2. "Have we exceeded the restart-limit window?" — the same
+//      function returns escalate=true when so.
+//
+// This shape sidesteps two known v5.x quirks:
+//   - fn-typed parameters (factories) are unreliable to invoke
+//     through Mapanare's lowering. Lesson from v5.37.0 Ht.* —
+//     "registration table, not closure chain."
+//   - Cross-typed agents (children of mixed `agent X / agent Y`
+//     types) cannot be stored in a single homogeneous list. Storing
+//     just integer child IDs sidesteps it.
+//
+// The companion C runtime hook (mapanare_agent_set_on_exit, added
+// in v5.42.0 As.6) gives push-based notification: a static C
+// trampoline (__mn_supervisor_install_child_hook in
+// runtime/native/mapanare_runtime.c) builds a ChildExited
+// message and posts it to the supervisor agent's inbox. The
+// orchestration agent then calls supervisor_handle_exit on this
+// library to compute the restart decision.
+//
+// LANGUAGE QUIRK NOTE: every `new T { ... }` literal here is on a
+// single line — multi-line struct literals do not parse at v5.x
+// HEAD (carry from v5.37.0). Helper constructors keep call sites
+// readable without breaking the parser.
+
+// ---------------------------------------------------------------------------
+// ExitReason — mirrors mapanare_exit_reason_kind_t in
+// runtime/native/mapanare_runtime.h
+// ---------------------------------------------------------------------------
+
+pub fn EXIT_NORMAL() -> Int   { da 0 }
+pub fn EXIT_SHUTDOWN() -> Int { da 1 }
+pub fn EXIT_KILLED() -> Int   { da 2 }
+pub fn EXIT_CRASHED() -> Int  { da 3 }
+
+pub fn exit_reason_name(kind: Int) -> String {
+    si kind == 0 { da "Normal" }
+    si kind == 1 { da "Shutdown" }
+    si kind == 2 { da "Killed" }
+    si kind == 3 { da "Crashed" }
+    da "Unknown"
+}
+
+// True for exits that supervised RestartPolicy::Transient should
+// treat as "do not restart." Normal + Shutdown only.
+pub fn is_normal_exit(kind: Int) -> Bool {
+    da kind == 0 || kind == 1
+}
+
+// ---------------------------------------------------------------------------
+// RestartPolicy — per-child opt-in to restart on which exits
+// Matches Erlang/OTP semantics:
+//   Permanent  — always restart
+//   Temporary  — never restart
+//   Transient  — restart only on abnormal exit (Crashed, Killed)
+// ---------------------------------------------------------------------------
+
+pub fn RESTART_PERMANENT() -> Int { da 0 }
+pub fn RESTART_TEMPORARY() -> Int { da 1 }
+pub fn RESTART_TRANSIENT() -> Int { da 2 }
+
+pub fn restart_policy_name(p: Int) -> String {
+    si p == 0 { da "Permanent" }
+    si p == 1 { da "Temporary" }
+    si p == 2 { da "Transient" }
+    da "Unknown"
+}
+
+// Returns true if a child with `policy` should be restarted given
+// that it exited with reason kind `exit_kind`.
+pub fn should_restart(policy: Int, exit_kind: Int) -> Bool {
+    si policy == 1 { da false }                  // Temporary
+    si policy == 0 { da true }                   // Permanent
+    da !is_normal_exit(exit_kind)                // Transient
+}
+
+// ---------------------------------------------------------------------------
+// RestartStrategy — what to do when a child exits
+//   OneForOne   — restart only the failed child
+//   RestForOne  — restart failed child + everything started after it
+//   OneForAll   — restart every child in the group
+// ---------------------------------------------------------------------------
+
+pub fn STRATEGY_ONE_FOR_ONE() -> Int   { da 0 }
+pub fn STRATEGY_REST_FOR_ONE() -> Int  { da 1 }
+pub fn STRATEGY_ONE_FOR_ALL() -> Int   { da 2 }
+
+pub fn strategy_name(s: Int) -> String {
+    si s == 0 { da "OneForOne" }
+    si s == 1 { da "RestForOne" }
+    si s == 2 { da "OneForAll" }
+    da "Unknown"
+}
+
+// ---------------------------------------------------------------------------
+// ChildSpec — declares one supervised child by ID + policy
+// `agent_id` is the runtime agent identity (mapanare_agent_t::id).
+// `display_name` is informational, used in logs and error messages.
+// ---------------------------------------------------------------------------
+
+pub tipo ChildSpec {
+    agent_id: Int,
+    display_name: String,
+    policy: Int
+}
+
+pub fn new_child_spec(agent_id: Int, name: String, policy: Int) -> ChildSpec {
+    da new ChildSpec { agent_id: agent_id, display_name: name, policy: policy }
+}
+
+// ---------------------------------------------------------------------------
+// RestartDecision — the answer supervisor_handle_exit returns
+//   ids_to_restart   — child agent_ids that should be torn down +
+//                      respawned by the orchestrator, in spec order.
+//   escalate         — true if the restart-limit window has been
+//                      exceeded; the parent supervisor should now
+//                      treat THIS supervisor as a failed child.
+//   no_op            — true if the policy says "don't restart" or the
+//                      exit was a clean Normal/Shutdown that no policy
+//                      treats as restartable. ids_to_restart is then
+//                      empty.
+// ---------------------------------------------------------------------------
+
+pub tipo RestartDecision {
+    ids_to_restart: List<Int>,
+    escalate: Bool,
+    no_op: Bool,
+    reason: String
+}
+
+fn empty_decision(reason: String) -> RestartDecision {
+    let ids: List<Int> = []
+    da new RestartDecision { ids_to_restart: ids, escalate: false, no_op: true, reason: reason }
+}
+
+fn escalate_decision(reason: String) -> RestartDecision {
+    let ids: List<Int> = []
+    da new RestartDecision { ids_to_restart: ids, escalate: true, no_op: false, reason: reason }
+}
+
+fn restart_decision(ids: List<Int>, reason: String) -> RestartDecision {
+    da new RestartDecision { ids_to_restart: ids, escalate: false, no_op: false, reason: reason }
+}
+
+// ---------------------------------------------------------------------------
+// Supervisor — opaque state struct.
+// ---------------------------------------------------------------------------
+
+pub tipo Supervisor {
+    children: List<ChildSpec>,
+    strategy: Int,
+    max_restarts: Int,
+    max_window_secs: Int,
+    backoff_initial_ms: Int,
+    backoff_max_ms: Int,
+    restart_count_in_window: Int,
+    window_start_ns: Int,
+    consecutive_restarts: Int
+}
+
+// Internal builder keeps every constructor on one line.
+fn build_supervisor(children: List<ChildSpec>, strategy: Int, max_restarts: Int, max_window_secs: Int, backoff_initial_ms: Int, backoff_max_ms: Int, restart_count_in_window: Int, window_start_ns: Int, consecutive_restarts: Int) -> Supervisor {
+    da new Supervisor { children: children, strategy: strategy, max_restarts: max_restarts, max_window_secs: max_window_secs, backoff_initial_ms: backoff_initial_ms, backoff_max_ms: backoff_max_ms, restart_count_in_window: restart_count_in_window, window_start_ns: window_start_ns, consecutive_restarts: consecutive_restarts }
+}
+
+// Constructs a new Supervisor with `max_restarts` allowed within
+// `max_window_secs` seconds. Backoff defaults to 0 (none); set
+// nonzero values via with_backoff after construction.
+pub fn new_supervisor(strategy: Int, max_restarts: Int, max_window_secs: Int) -> Supervisor {
+    let kids: List<ChildSpec> = []
+    da build_supervisor(kids, strategy, max_restarts, max_window_secs, 0, 0, 0, 0, 0)
+}
+
+// Returns a Supervisor with backoff parameters set. Returns a NEW
+// value (Mapanare structs are value-typed; caller binds the result).
+pub fn with_backoff(s: Supervisor, initial_ms: Int, max_ms: Int) -> Supervisor {
+    da build_supervisor(s.children, s.strategy, s.max_restarts, s.max_window_secs, initial_ms, max_ms, s.restart_count_in_window, s.window_start_ns, s.consecutive_restarts)
+}
+
+// Appends a ChildSpec. Order matters for RestForOne. Returns a new
+// Supervisor — the input is left unchanged.
+pub fn add_child(s: Supervisor, spec: ChildSpec) -> Supervisor {
+    let kids = s.children + [spec]
+    da build_supervisor(kids, s.strategy, s.max_restarts, s.max_window_secs, s.backoff_initial_ms, s.backoff_max_ms, s.restart_count_in_window, s.window_start_ns, s.consecutive_restarts)
+}
+
+pub fn child_count(s: Supervisor) -> Int {
+    da len(s.children)
+}
+
+// Returns the index of the child with matching agent_id, or -1.
+fn find_child_index(s: Supervisor, agent_id: Int) -> Int {
+    let mut i: Int = 0
+    while i < len(s.children) {
+        let spec = s.children[i]
+        si spec.agent_id == agent_id {
+            da i
+        }
+        i = i + 1
+    }
+    da -1
+}
+
+// Returns the ChildSpec with matching agent_id, or a sentinel.
+pub fn lookup_child(s: Supervisor, agent_id: Int) -> ChildSpec {
+    let idx = find_child_index(s, agent_id)
+    si idx < 0 {
+        da new ChildSpec { agent_id: -1, display_name: "<not found>", policy: RESTART_TEMPORARY() }
+    }
+    da s.children[idx]
+}
+
+// ---------------------------------------------------------------------------
+// Restart-limit accounting — sliding window
+//
+// Counts restarts within the trailing `max_window_secs` seconds.
+// If count > max_restarts after admitting THIS restart, the window
+// has been exceeded and the supervisor itself should escalate.
+//
+// NOTE: this is a discrete-window approximation, not a true sliding
+// window. When the elapsed time since `window_start_ns` exceeds
+// `max_window_secs`, the window resets. This is enough for crash-loop
+// detection — Erlang's supervisor uses the same approximation.
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_clock_monotonic_ns() -> Int
+
+fn ns_per_sec() -> Int { da 1000000000 }
+
+pub tipo WindowCheck {
+    sup: Supervisor,
+    exceeded: Bool
+}
+
+fn build_window_check(sup: Supervisor, exceeded: Bool) -> WindowCheck {
+    da new WindowCheck { sup: sup, exceeded: exceeded }
+}
+
+pub fn record_restart(s: Supervisor) -> WindowCheck {
+    let now: Int = __mn_clock_monotonic_ns()
+    let window_ns: Int = s.max_window_secs * ns_per_sec()
+    let mut count: Int = s.restart_count_in_window
+    let mut start: Int = s.window_start_ns
+
+    si start == 0 {
+        // First restart in this supervisor's history.
+        start = now
+        count = 1
+    } sino {
+        let elapsed: Int = now - start
+        si elapsed > window_ns {
+            // Window expired; reset.
+            start = now
+            count = 1
+        } sino {
+            count = count + 1
+        }
+    }
+
+    let exceeded: Bool = count > s.max_restarts
+    let new_sup = build_supervisor(s.children, s.strategy, s.max_restarts, s.max_window_secs, s.backoff_initial_ms, s.backoff_max_ms, count, start, s.consecutive_restarts + 1)
+    da build_window_check(new_sup, exceeded)
+}
+
+// Resets the consecutive-restart counter — call after a child runs
+// cleanly without crashing.
+pub fn reset_consecutive_restarts(s: Supervisor) -> Supervisor {
+    da build_supervisor(s.children, s.strategy, s.max_restarts, s.max_window_secs, s.backoff_initial_ms, s.backoff_max_ms, s.restart_count_in_window, s.window_start_ns, 0)
+}
+
+// Computes the next backoff delay in milliseconds given the current
+// consecutive_restarts count and the supervisor's bounds. Returns 0
+// if backoff is disabled.
+pub fn next_backoff_ms(s: Supervisor) -> Int {
+    si s.backoff_initial_ms <= 0 { da 0 }
+    let n: Int = s.consecutive_restarts - 1
+    si n < 0 { da s.backoff_initial_ms }
+    let mut delay: Int = s.backoff_initial_ms
+    let mut i: Int = 0
+    while i < n {
+        delay = delay * 2
+        si delay >= s.backoff_max_ms && s.backoff_max_ms > 0 {
+            da s.backoff_max_ms
+        }
+        i = i + 1
+    }
+    si s.backoff_max_ms > 0 && delay > s.backoff_max_ms {
+        da s.backoff_max_ms
+    }
+    da delay
+}
+
+// ---------------------------------------------------------------------------
+// Strategy logic — handle a single child's exit
+// ---------------------------------------------------------------------------
+
+pub tipo SupervisorTransition {
+    sup: Supervisor,
+    decision: RestartDecision
+}
+
+fn make_transition(sup: Supervisor, decision: RestartDecision) -> SupervisorTransition {
+    da new SupervisorTransition { sup: sup, decision: decision }
+}
+
+// Builds the list of agent IDs that should be restarted given the
+// strategy and the failed child's index in `s.children`.
+fn ids_for_strategy(s: Supervisor, failed_idx: Int) -> List<Int> {
+    let mut ids: List<Int> = []
+    si s.strategy == 0 {
+        // OneForOne — only the failed child
+        ids = ids + [s.children[failed_idx].agent_id]
+        da ids
+    }
+    si s.strategy == 1 {
+        // RestForOne — failed + all children registered after
+        let mut i: Int = failed_idx
+        while i < len(s.children) {
+            ids = ids + [s.children[i].agent_id]
+            i = i + 1
+        }
+        da ids
+    }
+    si s.strategy == 2 {
+        // OneForAll — every child
+        let mut j: Int = 0
+        while j < len(s.children) {
+            ids = ids + [s.children[j].agent_id]
+            j = j + 1
+        }
+        da ids
+    }
+    // Unknown strategy — treat as no-op
+    da ids
+}
+
+pub fn supervisor_handle_exit(s: Supervisor, agent_id: Int, exit_kind: Int, reason: String) -> SupervisorTransition {
+    let idx = find_child_index(s, agent_id)
+    si idx < 0 {
+        // Stale notification — child not registered (already replaced
+        // or never owned). No-op.
+        da make_transition(s, empty_decision("child not registered"))
+    }
+
+    let spec = s.children[idx]
+
+    // Decide whether to restart based on per-child policy.
+    si !should_restart(spec.policy, exit_kind) {
+        let why = "policy=" + restart_policy_name(spec.policy) + " kind=" + exit_reason_name(exit_kind)
+        da make_transition(s, empty_decision(why))
+    }
+
+    // Account for this restart in the rate-limit window.
+    let check = record_restart(s)
+    si check.exceeded {
+        let msg = "restart_limit_exceeded: " + str(check.sup.restart_count_in_window) + " in window"
+        da make_transition(check.sup, escalate_decision(msg))
+    }
+
+    // Compute the IDs to restart per strategy.
+    let ids = ids_for_strategy(check.sup, idx)
+    let dec = restart_decision(ids, "strategy=" + strategy_name(check.sup.strategy))
+    da make_transition(check.sup, dec)
+}
+
+// ---------------------------------------------------------------------------
+// Child-id remapping after restart
+//
+// When the orchestrator respawns a child, the new agent has a new
+// agent_id. Call replace_child_id to update the supervisor's
+// ChildSpec list so subsequent ChildExited notifications can find
+// the entry.
+// ---------------------------------------------------------------------------
+
+pub fn replace_child_id(s: Supervisor, old_id: Int, new_id: Int) -> Supervisor {
+    let mut updated: List<ChildSpec> = []
+    let mut i: Int = 0
+    while i < len(s.children) {
+        let spec = s.children[i]
+        si spec.agent_id == old_id {
+            updated = updated + [new_child_spec(new_id, spec.display_name, spec.policy)]
+        } sino {
+            updated = updated + [spec]
+        }
+        i = i + 1
+    }
+    da build_supervisor(updated, s.strategy, s.max_restarts, s.max_window_secs, s.backoff_initial_ms, s.backoff_max_ms, s.restart_count_in_window, s.window_start_ns, s.consecutive_restarts)
+}
+
+// ---------------------------------------------------------------------------
+// Runtime hook bridge — call from the orchestrator's spawn site
+//
+// __mn_supervisor_install_child_hook is a thin C trampoline that
+// wires a child agent's mapanare_agent_set_on_exit to a static
+// callback which posts a ChildExited message into the parent's
+// inbox. Returns 0 on success, -1 on failure.
+//
+// agent_handle / parent_handle are the opaque mapanare_agent_t *
+// values held by the language as `agent`-typed values; in practice
+// the orchestrator passes them via @agent surface.
+//
+// At v5.42.0 the bridge is documented but not wired through the
+// language's @agent surface — the practical use is from C-level
+// orchestration code or tests. The pure strategy library above is
+// fully usable without it.
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_supervisor_install_child_hook(child: Int, parent: Int) -> Int
