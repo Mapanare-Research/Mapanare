@@ -1,0 +1,267 @@
+// url.mn — agent URL parsing for distributed agents v0
+//
+// v5.43.0 Da.4 — third manifesto-arc release.
+//
+// SHAPE: pure-Mapanare URL parser. No C runtime dependencies. Single
+// file, concat-pattern compatible (the test harness prepends this to
+// remote_proto.mn + node.mn + remote.mn before compiling, mirroring
+// the v5.42.0 supervision test harness).
+//
+// Wire format: tcp://host:port/agent-id
+//              tls://host:port/agent-id
+//              unix:///path/to/socket/agent-id  (rejected at runtime
+//                                                in v5.43.0 — slot
+//                                                reserved for future)
+//
+// LANGUAGE QUIRK NOTE: every `new T { ... }` literal is on a single
+// line — multi-line struct literals do not parse at v5.x HEAD (carry
+// from v5.37.0+). Helper constructors keep call sites readable.
+
+// ---------------------------------------------------------------------------
+// NetworkError — the umbrella error type for the entire distributed-
+// agents stack. Defined here in url.mn (the first concat module) so
+// every later phase can reference the same enum without re-declaring.
+//
+// Variants intentionally enumerate every failure mode reachable from
+// the public API surface:
+//   BadUrl              — URL string did not parse
+//   UnsupportedScheme   — scheme not in {tcp, tls} at v5.43.0
+//   NoKey               — MAPANARE_NODE_KEY env missing or too short
+//   ConnectFailed       — TCP connect / DNS / TLS handshake failed
+//   ListenFailed        — bind / listen / TLS-server-ctx setup failed
+//   HmacFailed          — HMAC verify mismatch (frame rejected)
+//   Replay              — sequence <= last_seen on this connection
+//   ProtoVersion        — frame's version byte != 1
+//   ProtoOversized      — frame body exceeded 100 MB cap
+//   ProtoMalformed      — frame body too short or wrong shape
+//   Timeout             — heartbeat Pong window expired or send/recv timed out
+//   TransportLost       — connection died mid-flight
+//   AgentNotFound       — message arrived for an unregistered agent id
+//   SerdeError          — to_json / from_json failure
+//   Internal            — catch-all for runtime errors
+// ---------------------------------------------------------------------------
+
+pub tipo NetworkError {
+    | BadUrl(String)
+    | UnsupportedScheme(String)
+    | NoKey(String)
+    | ConnectFailed(String)
+    | ListenFailed(String)
+    | HmacFailed(String)
+    | Replay(String)
+    | ProtoVersion(String)
+    | ProtoOversized(String)
+    | ProtoMalformed(String)
+    | Timeout(String)
+    | TransportLost(String)
+    | AgentNotFound(String)
+    | SerdeError(String)
+    | Internal(String)
+}
+
+fn new_bad_url(msg: String) -> NetworkError              { da BadUrl(msg) }
+fn new_unsupported_scheme(msg: String) -> NetworkError   { da UnsupportedScheme(msg) }
+
+// ---------------------------------------------------------------------------
+// AgentUrl — parsed URL parts.
+//   scheme:   "tcp" or "tls" (lowercased)
+//   host:     hostname or IPv4 dotted-quad. v0 does NOT support IPv6
+//             bracket-syntax (e.g. [::1]:8080) — slot reserved
+//             for v5.44+. Empty for unix scheme (deferred).
+//   port:     1..65535 for tcp/tls; 0 for unix.
+//   agent_id: path segment after host:port — uniquely identifies one
+//             agent on the remote node.
+// ---------------------------------------------------------------------------
+
+pub tipo AgentUrl {
+    scheme: String,
+    host: String,
+    port: Int,
+    agent_id: String
+}
+
+pub fn new_agent_url(scheme: String, host: String, port: Int, agent_id: String) -> AgentUrl {
+    da new AgentUrl { scheme: scheme, host: host, port: port, agent_id: agent_id }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers — character class predicates and substring search.
+// Mapanare's String.char_at returns a 1-byte String; we compare those
+// directly. parse_int_local is duplicated rather than imported to keep
+// url.mn self-contained.
+// ---------------------------------------------------------------------------
+
+fn is_digit_str(ch: String) -> Bool {
+    da ch == "0" || ch == "1" || ch == "2" || ch == "3" || ch == "4" || ch == "5" || ch == "6" || ch == "7" || ch == "8" || ch == "9"
+}
+
+fn parse_int_local(s: String) -> Int {
+    pon slen: Int = len(s)
+    pon mut result: Int = 0
+    pon mut i: Int = 0
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        si !is_digit_str(ch) {
+            da -1
+        }
+        pon mut digit: Int = 0
+        si ch == "0" { digit = 0
+        } sino { si ch == "1" { digit = 1
+        } sino { si ch == "2" { digit = 2
+        } sino { si ch == "3" { digit = 3
+        } sino { si ch == "4" { digit = 4
+        } sino { si ch == "5" { digit = 5
+        } sino { si ch == "6" { digit = 6
+        } sino { si ch == "7" { digit = 7
+        } sino { si ch == "8" { digit = 8
+        } sino { si ch == "9" { digit = 9
+        } } } } } } } } } }
+        result = result * 10 + digit
+        i = i + 1
+    }
+    da result
+}
+
+// Returns the index of the first occurrence of `needle` (single char)
+// in `s` at or after `start`, or len(s) if not found.
+fn index_of_char(s: String, needle: String, start: Int) -> Int {
+    pon slen: Int = len(s)
+    pon mut i: Int = start
+    mien i < slen {
+        si s.char_at(i) == needle {
+            da i
+        }
+        i = i + 1
+    }
+    da slen
+}
+
+// Returns the index of the LAST occurrence of `needle` in `s` at or
+// after `start`, or -1 if not found. Used to find the host:port split
+// (the rightmost ':' before the path-separating '/').
+fn last_index_of_char(s: String, needle: String, start: Int, end: Int) -> Int {
+    pon mut i: Int = end - 1
+    mien i >= start {
+        si s.char_at(i) == needle {
+            da i
+        }
+        i = i - 1
+    }
+    da -1
+}
+
+// Returns the index of the first occurrence of "://" in s, or -1.
+fn find_scheme_separator(s: String) -> Int {
+    pon slen: Int = len(s)
+    pon mut i: Int = 0
+    mien i + 2 < slen {
+        si s.char_at(i) == ":" && s.char_at(i + 1) == "/" && s.char_at(i + 2) == "/" {
+            da i
+        }
+        i = i + 1
+    }
+    da -1
+}
+
+// ---------------------------------------------------------------------------
+// parse_agent_url — the public entry point.
+//
+// Parses a URL of the form scheme://host:port/agent-id. Returns a
+// Result<AgentUrl, NetworkError> with structured error variants for
+// every distinguishable failure mode (BadUrl for shape failures,
+// UnsupportedScheme for unix and unknown schemes).
+//
+// Falsifiability: unit tests in stdlib/agent/tests/test_url.mn assert
+// every error path triggers the right variant; reverting any branch
+// here flips a parametrized case in the test from PASS to FAIL.
+// ---------------------------------------------------------------------------
+
+pub fn parse_agent_url(s: String) -> Result<AgentUrl, NetworkError> {
+    pon slen: Int = len(s)
+    si slen == 0 {
+        da Err(new_bad_url("empty URL"))
+    }
+
+    // 1. Locate "://" separator.
+    pon sep: Int = find_scheme_separator(s)
+    si sep < 0 {
+        da Err(new_bad_url("missing :// separator"))
+    }
+    pon scheme: String = s.substr(0, sep)
+
+    // 2. Validate scheme.
+    si scheme == "unix" {
+        da Err(new_unsupported_scheme("unix:// is reserved for v5.44+; v5.43.0 supports tcp:// and tls:// only"))
+    }
+    si scheme != "tcp" && scheme != "tls" {
+        da Err(new_unsupported_scheme("unknown scheme '" + scheme + "'; expected tcp or tls"))
+    }
+
+    // 3. Authority + path. Authority starts at sep+3, ends at the
+    //    first '/' (which begins the path / agent-id).
+    pon auth_start: Int = sep + 3
+    si auth_start >= slen {
+        da Err(new_bad_url("missing host"))
+    }
+    pon path_start: Int = index_of_char(s, "/", auth_start)
+    si path_start >= slen {
+        da Err(new_bad_url("missing /agent-id path"))
+    }
+    pon authority: String = s.substr(auth_start, path_start - auth_start)
+
+    // 4. Split authority on the LAST ':' (so a future IPv6 bracket
+    //    syntax can be added without changing this branch — for v0
+    //    we only handle hostnames + IPv4 so 'last ':'' is correct).
+    pon auth_len: Int = len(authority)
+    si auth_len == 0 {
+        da Err(new_bad_url("empty host:port"))
+    }
+    pon colon_idx: Int = last_index_of_char(authority, ":", 0, auth_len)
+    si colon_idx < 0 {
+        da Err(new_bad_url("missing port (expected host:port)"))
+    }
+    si colon_idx == 0 {
+        da Err(new_bad_url("empty host"))
+    }
+
+    pon host: String = authority.substr(0, colon_idx)
+    pon port_str: String = authority.substr(colon_idx + 1, auth_len - colon_idx - 1)
+    si len(port_str) == 0 {
+        da Err(new_bad_url("empty port"))
+    }
+    pon port: Int = parse_int_local(port_str)
+    si port < 0 {
+        da Err(new_bad_url("non-numeric port: '" + port_str + "'"))
+    }
+    si port == 0 || port > 65535 {
+        da Err(new_bad_url("port out of range 1..65535: " + port_str))
+    }
+
+    // 5. agent-id is everything after the leading '/'.
+    pon id_start: Int = path_start + 1
+    si id_start >= slen {
+        da Err(new_bad_url("empty agent-id"))
+    }
+    pon agent_id: String = s.substr(id_start, slen - id_start)
+
+    // Reject agent-id with embedded '/' for v0 — keeps the format
+    // simple. Future versions may support nested paths.
+    pon agent_id_len: Int = len(agent_id)
+    pon mut k: Int = 0
+    mien k < agent_id_len {
+        si agent_id.char_at(k) == "/" {
+            da Err(new_bad_url("agent-id must not contain '/' in v5.43.0"))
+        }
+        k = k + 1
+    }
+
+    da Ok(new_agent_url(scheme, host, port, agent_id))
+}
+
+// ---------------------------------------------------------------------------
+// is_tls — convenience predicate.
+// ---------------------------------------------------------------------------
+
+pub fn url_is_tls(u: AgentUrl) -> Bool {
+    da u.scheme == "tls"
+}

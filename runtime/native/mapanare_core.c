@@ -999,11 +999,28 @@ MN_EXPORT int64_t __mn_str_ord(MnString s) {
 }
 
 MN_EXPORT MnString __mn_str_chr(int64_t code) {
-    if (code < 0 || code > 127) {
+    /* v5.43.0 Da.2: extend range from 0..127 to 0..255. Mapanare
+     * strings are byte arrays (per the file-header note), not UTF-8;
+     * the original 0..127 bound was defensive code that confused the
+     * two. This unblocks binary protocol implementation in pure
+     * Mapanare (Da.2 frame encoding builds the on-the-wire byte
+     * stream from u32 BE length-prefix + u8 version + u8 msg_type
+     * etc., all of which routinely produce bytes >= 128). The
+     * pre-existing latent bug in stdlib/net/websocket.mn (where
+     * `str(byte0)` is decimal stringification of a header byte
+     * rather than byte-string emission) is structurally adjacent
+     * but tracked separately as a v5.44+ candidate; v5.43.0 fixes
+     * the runtime primitive that any pure-Mapanare binary protocol
+     * needs, and Da.2 uses __mn_str_chr correctly via __mn_str_from_parts
+     * under the covers. */
+    if (code < 0 || code > 255) {
         return __mn_str_empty();
     }
-    char buf[2] = { (char)code, '\0' };
-    return __mn_str_from_cstr(buf);
+    /* __mn_str_from_cstr would walk to the NUL terminator and
+     * truncate when code == 0. Use __mn_str_from_parts with an
+     * explicit length so the byte 0x00 is preserved. */
+    char buf[1] = { (char)code };
+    return __mn_str_from_parts(buf, 1);
 }
 
 MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {

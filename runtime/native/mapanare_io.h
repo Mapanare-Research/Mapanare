@@ -93,6 +93,25 @@ MN_IO_EXPORT int64_t __mn_tls_write(void *tls_ctx, const void *buf, int64_t len)
  *  Does NOT close the underlying TCP socket — call __mn_tcp_close separately. */
 MN_IO_EXPORT void __mn_tls_close(void *tls_ctx);
 
+/** v5.43.0 Da.8 — server-side TLS context creation.
+ *  Loads cert + private key from PEM files; returns opaque server context
+ *  pointer (cast to int64_t for Mapanare ABI). NULL on failure (missing
+ *  OpenSSL, bad cert, key mismatch, etc.). The returned context can be
+ *  reused across many __mn_tls_accept calls; free with
+ *  __mn_tls_server_ctx_free. */
+MN_IO_EXPORT void *__mn_tls_server_ctx_new(const char *cert_path,
+                                            const char *key_path);
+
+/** Free a server-side TLS context. Must not be called while any TLS
+ *  connection accepted from this context is still alive. */
+MN_IO_EXPORT void __mn_tls_server_ctx_free(void *server_ctx);
+
+/** v5.43.0 Da.8 — server-side TLS handshake.
+ *  Wraps an accepted TCP socket fd with TLS using the given server
+ *  context. Returns opaque TLS connection ctx (compatible with
+ *  __mn_tls_read / __mn_tls_write / __mn_tls_close), or NULL on failure. */
+MN_IO_EXPORT void *__mn_tls_accept(int64_t fd, void *server_ctx);
+
 /* -----------------------------------------------------------------------
  * 3. File I/O (extended, fd-based)
  *

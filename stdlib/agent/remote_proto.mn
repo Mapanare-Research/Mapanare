@@ -1,0 +1,249 @@
+// remote_proto.mn — wire protocol for distributed agents v0
+//
+// v5.43.0 Da.2 — third manifesto-arc release.
+//
+// SHAPE: pure-Mapanare frame encode/decode for the distributed-agent
+// transport. The C layer (mapanare_node.c) handles raw TCP/TLS I/O
+// plus the outermost 4-byte big-endian length-prefix; this module
+// builds the frame body that goes inside that prefix.
+//
+// Wire format (v1, locked at PRE_PHASE_AUDIT):
+//
+//     +-------+--------+----------+-----------+----------+
+//     | u8 v  | u8 mt  | u64 seq  | 16 b hmac | payload  |
+//     +-------+--------+----------+-----------+----------+
+//
+// All multi-byte integer fields are big-endian. HMAC is
+// HMAC-SHA256(key, version || msg_type || sequence_be || payload)
+// truncated to 16 bytes. Truncation is RFC 4868 secure if the key
+// is >= 32 raw bytes (KEY_MIN_BYTES). Sequence numbers prevent
+// replay: the receiver tracks last_seen per connection and rejects
+// any frame with sequence <= last_seen.
+//
+// IMPORTANT (v5.43.0 Da.0 finding): `str(int)` is decimal
+// stringification, NOT a 1-byte string. Use `__mn_str_chr(byte)`
+// (v5.43.0 fix accepts 0..255) to put a single byte into a String.
+// This module relies on the v5.43.0 mapanare_core.c chr range
+// extension; on a pre-v5.43.0 runtime any byte >= 128 silently
+// becomes empty and frames will be malformed.
+//
+// Depends on:
+//   - url.mn for NetworkError variants (concat order: url first).
+//   - C runtime: __mn_str_chr, __mn_str_byte_at, __mn_hmac_sha256_str,
+//                __mn_constant_time_eq, __mn_str_substr-via-method.
+
+// ---------------------------------------------------------------------------
+// C runtime externs
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_str_chr(code: Int) -> String
+extern "C" fn __mn_str_byte_at(s: String, i: Int) -> Int
+extern "C" fn __mn_hmac_sha256_str(key: String, data: String) -> String
+extern "C" fn __mn_constant_time_eq(a: String, b: String) -> Int
+
+// ---------------------------------------------------------------------------
+// Wire-format constants — locked at v5.43.0 PRE_PHASE_AUDIT.md.
+// Append-only enum value space; insertion in the middle would shift
+// later types and break deployed nodes. Values 7..15 reserved for
+// v1.x extensions; 16+ require a v2 frame (different version byte).
+// ---------------------------------------------------------------------------
+
+pub fn MSG_SEND() -> Int          { da 1 }
+pub fn MSG_REPLY() -> Int         { da 2 }
+pub fn MSG_PING() -> Int          { da 3 }
+pub fn MSG_PONG() -> Int          { da 4 }
+pub fn MSG_CHILD_EXITED() -> Int  { da 5 }
+pub fn MSG_PROTO_ERROR() -> Int   { da 6 }
+
+pub fn WIRE_VERSION() -> Int      { da 1 }
+pub fn HMAC_TRUNC_BYTES() -> Int  { da 16 }
+pub fn KEY_MIN_BYTES() -> Int     { da 32 }
+pub fn MAX_FRAME_BYTES() -> Int   { da 100 * 1024 * 1024 }
+pub fn HEADER_BYTES() -> Int      { da 26 } // version(1) + msg_type(1) + seq(8) + hmac(16)
+
+pub fn msg_type_name(t: Int) -> String {
+    si t == 1 { da "Send" }
+    si t == 2 { da "Reply" }
+    si t == 3 { da "Ping" }
+    si t == 4 { da "Pong" }
+    si t == 5 { da "ChildExited" }
+    si t == 6 { da "ProtoError" }
+    da "Unknown"
+}
+
+pub fn is_valid_msg_type(t: Int) -> Bool {
+    da t >= 1 && t <= 6
+}
+
+// ---------------------------------------------------------------------------
+// Frame — the in-memory shape of one wire message. The 4-byte length
+// prefix is NOT part of Frame: that is added/stripped by the C layer
+// (mapanare_node.{c,h}) at write/read time. The HMAC field is
+// computed by encode_frame and verified by decode_frame; user code
+// constructs frames without computing HMAC explicitly.
+// ---------------------------------------------------------------------------
+
+pub tipo Frame {
+    version: Int,
+    msg_type: Int,
+    sequence: Int,
+    payload: String   // JSON-encoded message body; empty for control frames.
+}
+
+pub fn new_frame(msg_type: Int, sequence: Int, payload: String) -> Frame {
+    da new Frame { version: 1, msg_type: msg_type, sequence: sequence, payload: payload }
+}
+
+// ---------------------------------------------------------------------------
+// Big-endian byte packing/unpacking helpers.
+// ---------------------------------------------------------------------------
+
+fn pack_u64_be(n: Int) -> String {
+    pon b0: Int = (n / 72057594037927936) % 256  // (n >> 56) & 0xFF
+    pon b1: Int = (n / 281474976710656) % 256    // (n >> 48) & 0xFF
+    pon b2: Int = (n / 1099511627776) % 256      // (n >> 40) & 0xFF
+    pon b3: Int = (n / 4294967296) % 256         // (n >> 32) & 0xFF
+    pon b4: Int = (n / 16777216) % 256           // (n >> 24) & 0xFF
+    pon b5: Int = (n / 65536) % 256              // (n >> 16) & 0xFF
+    pon b6: Int = (n / 256) % 256                // (n >> 8)  & 0xFF
+    pon b7: Int = n % 256                        // (n     )  & 0xFF
+    da __mn_str_chr(b0) + __mn_str_chr(b1) + __mn_str_chr(b2) + __mn_str_chr(b3) + __mn_str_chr(b4) + __mn_str_chr(b5) + __mn_str_chr(b6) + __mn_str_chr(b7)
+}
+
+fn unpack_u64_be(s: String, off: Int) -> Int {
+    pon b0: Int = __mn_str_byte_at(s, off)
+    pon b1: Int = __mn_str_byte_at(s, off + 1)
+    pon b2: Int = __mn_str_byte_at(s, off + 2)
+    pon b3: Int = __mn_str_byte_at(s, off + 3)
+    pon b4: Int = __mn_str_byte_at(s, off + 4)
+    pon b5: Int = __mn_str_byte_at(s, off + 5)
+    pon b6: Int = __mn_str_byte_at(s, off + 6)
+    pon b7: Int = __mn_str_byte_at(s, off + 7)
+    pon r: Int = b0 * 72057594037927936 + b1 * 281474976710656 + b2 * 1099511627776 + b3 * 4294967296 + b4 * 16777216 + b5 * 65536 + b6 * 256 + b7
+    da r
+}
+
+// ---------------------------------------------------------------------------
+// HMAC compute + truncate to 16 bytes. Input is the raw frame bytes
+// EXCLUDING the HMAC slot — i.e. version || msg_type || sequence_be
+// || payload. RFC 4868 truncation: HMAC-SHA256 result is 32 bytes;
+// taking the first 16 is the secure choice for ½-truncation.
+// ---------------------------------------------------------------------------
+
+fn compute_hmac_16(key: String, msg: String) -> String {
+    pon raw: String = __mn_hmac_sha256_str(key, msg)  // 32 raw bytes
+    da raw.substr(0, 16)
+}
+
+// ---------------------------------------------------------------------------
+// Public API — encode_frame produces the on-the-wire frame body.
+// ---------------------------------------------------------------------------
+
+pub fn encode_frame(f: Frame, key: String) -> String {
+    pon ver_b: String = __mn_str_chr(f.version)
+    pon mt_b: String = __mn_str_chr(f.msg_type)
+    pon seq_b: String = pack_u64_be(f.sequence)
+    pon msg: String = ver_b + mt_b + seq_b + f.payload
+    pon hmac: String = compute_hmac_16(key, msg)
+    // Final body: ver(1) || mt(1) || seq(8) || hmac(16) || payload
+    da ver_b + mt_b + seq_b + hmac + f.payload
+}
+
+// ---------------------------------------------------------------------------
+// DecodeResult — discriminated by ok. On error, err carries the
+// structured NetworkError variant; frame is a placeholder zero value.
+// ---------------------------------------------------------------------------
+
+pub tipo DecodeResult {
+    ok: Bool,
+    err: NetworkError,
+    frame: Frame
+}
+
+fn decode_ok(f: Frame) -> DecodeResult {
+    pon placeholder_err: NetworkError = Internal("")
+    da new DecodeResult { ok: true, err: placeholder_err, frame: f }
+}
+
+fn decode_err(e: NetworkError) -> DecodeResult {
+    pon placeholder_frame: Frame = new_frame(0, 0, "")
+    da new DecodeResult { ok: false, err: e, frame: placeholder_frame }
+}
+
+// ---------------------------------------------------------------------------
+// decode_frame — verify HMAC, parse fields, reject replays/oversize.
+//
+// Order of checks is load-bearing for security:
+//   1. Length sanity (>= HEADER_BYTES) — we cannot even read the
+//      version byte otherwise.
+//   2. Length cap (<= MAX_FRAME_BYTES) — DoS guard. The C layer also
+//      enforces this on read; double-check at the .mn boundary because
+//      a future zero-copy path might bypass the C cap.
+//   3. Version byte must equal 1. Reject before HMAC compute so a
+//      future v2 doesn't waste cycles.
+//   4. msg_type must be valid (1..6). Reject before HMAC compute for
+//      the same reason.
+//   5. HMAC verify FIRST — `constant_time_eq` to avoid the timing
+//      side-channel (PROMPT-locked: never `==` on byte strings).
+//   6. AFTER HMAC verify: replay check. Sequence > last_seen or
+//      reject with Replay.
+// ---------------------------------------------------------------------------
+
+pub fn decode_frame(bytes: String, key: String, last_seen: Int) -> DecodeResult {
+    pon n: Int = len(bytes)
+    si n < 26 {
+        da decode_err(ProtoMalformed("frame body too short: " + str(n) + " < 26"))
+    }
+    si n > 100 * 1024 * 1024 {
+        da decode_err(ProtoOversized("frame body exceeds 100 MB cap: " + str(n)))
+    }
+
+    pon version: Int = __mn_str_byte_at(bytes, 0)
+    si version != 1 {
+        da decode_err(ProtoVersion("frame version " + str(version) + " unsupported (v5.43.0 ships v1)"))
+    }
+
+    pon msg_type: Int = __mn_str_byte_at(bytes, 1)
+    si !is_valid_msg_type(msg_type) {
+        da decode_err(ProtoMalformed("unknown msg_type: " + str(msg_type)))
+    }
+
+    pon sequence: Int = unpack_u64_be(bytes, 2)
+    pon recv_hmac: String = bytes.substr(10, 16)
+    pon payload: String = bytes.substr(26, n - 26)
+
+    // Reconstruct the HMAC input: version || msg_type || sequence_be || payload.
+    pon ver_b: String = __mn_str_chr(version)
+    pon mt_b: String = __mn_str_chr(msg_type)
+    pon seq_b: String = pack_u64_be(sequence)
+    pon msg: String = ver_b + mt_b + seq_b + payload
+    pon expected: String = compute_hmac_16(key, msg)
+
+    // constant_time_eq: timing-safe HMAC compare. Returns 1 iff equal.
+    pon eq: Int = __mn_constant_time_eq(recv_hmac, expected)
+    si eq != 1 {
+        da decode_err(HmacFailed("HMAC mismatch — frame rejected"))
+    }
+
+    // Replay check after HMAC verify so an attacker can't probe seq
+    // numbers without first owning a valid HMAC.
+    si sequence <= last_seen {
+        da decode_err(Replay("sequence " + str(sequence) + " <= last_seen " + str(last_seen)))
+    }
+
+    pon f: Frame = new Frame { version: version, msg_type: msg_type, sequence: sequence, payload: payload }
+    da decode_ok(f)
+}
+
+// ---------------------------------------------------------------------------
+// validate_key — minimum 32 raw bytes for RFC 4868 secure truncation
+// to 16 bytes (HMAC-SHA256 ½-truncation). Returns Ok(key) or
+// Err(NoKey).
+// ---------------------------------------------------------------------------
+
+pub fn validate_key(key: String) -> Result<String, NetworkError> {
+    si len(key) < 32 {
+        da Err(NoKey("MAPANARE_NODE_KEY must be at least 32 raw bytes (got " + str(len(key)) + ")"))
+    }
+    da Ok(key)
+}

@@ -281,20 +281,30 @@ typedef struct ssl_method_st MN_SSL_METHOD;
 
 /* Function pointer types for OpenSSL API */
 typedef MN_SSL_METHOD *(*fn_TLS_client_method)(void);
+typedef MN_SSL_METHOD *(*fn_TLS_server_method)(void);
 typedef MN_SSL_CTX *(*fn_SSL_CTX_new)(const MN_SSL_METHOD *);
 typedef void (*fn_SSL_CTX_free)(MN_SSL_CTX *);
 typedef MN_SSL *(*fn_SSL_new)(MN_SSL_CTX *);
 typedef void (*fn_SSL_free)(MN_SSL *);
 typedef int (*fn_SSL_set_fd)(MN_SSL *, int);
 typedef int (*fn_SSL_connect)(MN_SSL *);
+typedef int (*fn_SSL_accept)(MN_SSL *);
 typedef int (*fn_SSL_read)(MN_SSL *, void *, int);
 typedef int (*fn_SSL_write)(MN_SSL *, const void *, int);
 typedef int (*fn_SSL_shutdown)(MN_SSL *);
 typedef long (*fn_SSL_ctrl)(MN_SSL *, int, long, void *);
 typedef int (*fn_SSL_CTX_set_default_verify_paths)(MN_SSL_CTX *);
+/* v5.43.0 Da.8 — server-side TLS additions. PEM file loaders; the
+ * second argument 1 means SSL_FILETYPE_PEM. SSL_CTX_check_private_key
+ * verifies cert/key match. All optional — clients pre-v5.43.0 don't
+ * need these resolved to keep working. */
+typedef int (*fn_SSL_CTX_use_certificate_file)(MN_SSL_CTX *, const char *, int);
+typedef int (*fn_SSL_CTX_use_PrivateKey_file)(MN_SSL_CTX *, const char *, int);
+typedef int (*fn_SSL_CTX_check_private_key)(const MN_SSL_CTX *);
 
 /* OpenSSL constants */
 #define MN_SSL_CTRL_SET_TLSEXT_HOSTNAME 55
+#define MN_SSL_FILETYPE_PEM             1
 
 /* Dynamic OpenSSL state */
 static struct {
@@ -308,17 +318,22 @@ static struct {
     void *libcrypto;
 #endif
     fn_TLS_client_method    TLS_client_method;
+    fn_TLS_server_method    TLS_server_method;            /* v5.43.0 Da.8 */
     fn_SSL_CTX_new          SSL_CTX_new;
     fn_SSL_CTX_free         SSL_CTX_free;
     fn_SSL_new              SSL_new;
     fn_SSL_free             SSL_free;
     fn_SSL_set_fd           SSL_set_fd;
     fn_SSL_connect          SSL_connect;
+    fn_SSL_accept           SSL_accept;                   /* v5.43.0 Da.8 */
     fn_SSL_read             SSL_read;
     fn_SSL_write            SSL_write;
     fn_SSL_shutdown         SSL_shutdown;
     fn_SSL_ctrl             SSL_ctrl;
     fn_SSL_CTX_set_default_verify_paths SSL_CTX_set_default_verify_paths;
+    fn_SSL_CTX_use_certificate_file     SSL_CTX_use_certificate_file;  /* v5.43.0 Da.8 */
+    fn_SSL_CTX_use_PrivateKey_file      SSL_CTX_use_PrivateKey_file;   /* v5.43.0 Da.8 */
+    fn_SSL_CTX_check_private_key        SSL_CTX_check_private_key;     /* v5.43.0 Da.8 */
 } s_ssl = {0};
 
 /* v4.35.0: thread-safe SSL init via pthread_once / InitOnceExecuteOnce.
@@ -360,22 +375,31 @@ static void ssl_load_library_impl(void) {
 #endif
 
     SSL_SYM(TLS_client_method);
+    SSL_SYM(TLS_server_method);            /* v5.43.0 Da.8 — optional */
     SSL_SYM(SSL_CTX_new);
     SSL_SYM(SSL_CTX_free);
     SSL_SYM(SSL_new);
     SSL_SYM(SSL_free);
     SSL_SYM(SSL_set_fd);
     SSL_SYM(SSL_connect);
+    SSL_SYM(SSL_accept);                   /* v5.43.0 Da.8 — optional */
     SSL_SYM(SSL_read);
     SSL_SYM(SSL_write);
     SSL_SYM(SSL_shutdown);
     SSL_SYM(SSL_ctrl);
     SSL_SYM(SSL_CTX_set_default_verify_paths);
+    SSL_SYM(SSL_CTX_use_certificate_file); /* v5.43.0 Da.8 — optional */
+    SSL_SYM(SSL_CTX_use_PrivateKey_file);  /* v5.43.0 Da.8 — optional */
+    SSL_SYM(SSL_CTX_check_private_key);    /* v5.43.0 Da.8 — optional */
 
     #undef SSL_SYM
     #undef CRYPTO_SYM
 
-    /* Verify all required symbols loaded */
+    /* Verify all required symbols loaded. The v5.43.0 Da.8 server-side
+     * additions are intentionally NOT in the required-symbols gate —
+     * they're optional, callers check at use time. Pre-v5.43.0 client-
+     * only TLS keeps working on libssl builds without TLS_server_method
+     * (rare but possible on stripped libraries). */
     if (!s_ssl.TLS_client_method || !s_ssl.SSL_CTX_new || !s_ssl.SSL_CTX_free ||
         !s_ssl.SSL_new || !s_ssl.SSL_free || !s_ssl.SSL_set_fd ||
         !s_ssl.SSL_connect || !s_ssl.SSL_read || !s_ssl.SSL_write ||
@@ -480,11 +504,122 @@ MN_IO_EXPORT int64_t __mn_tls_write(void *tls_ctx, const void *buf, int64_t len)
 MN_IO_EXPORT void __mn_tls_close(void *tls_ctx) {
     if (!tls_ctx || !s_ssl.available) return;
     MnTlsCtx *tctx = (MnTlsCtx *)tls_ctx;
-    s_ssl.SSL_shutdown(tctx->ssl);
-    s_ssl.SSL_free(tctx->ssl);
-    s_ssl.SSL_CTX_free(tctx->ctx);
+    if (tctx->ssl) {
+        s_ssl.SSL_shutdown(tctx->ssl);
+        s_ssl.SSL_free(tctx->ssl);
+    }
+    /* v5.43.0 Da.8: server-accepted connections share their SSL_CTX
+     * with the listening MnTlsServerCtx and store ctx=NULL here. The
+     * shared ctx is freed via __mn_tls_server_ctx_free at node shutdown. */
+    if (tctx->ctx) s_ssl.SSL_CTX_free(tctx->ctx);
     free(tctx);
 }
+
+/* v5.43.0 Da.8 — server-side TLS additions.
+ *
+ * Server context is a SSL_CTX* loaded once at node_listen time and
+ * reused for every accepted connection. Unlike the client-side ctx
+ * (which lives bundled in MnTlsCtx for the lifetime of one connection),
+ * the server ctx outlives many connections.
+ *
+ * MnTlsServerCtx is the server-context wrapper. It owns the SSL_CTX*
+ * but no SSL* (the per-connection SSL is created at accept time and
+ * bundled into a regular MnTlsCtx so __mn_tls_read / _write / _close
+ * work uniformly across client and server connections). */
+
+typedef struct {
+    MN_SSL_CTX *ctx;
+} MnTlsServerCtx;
+
+MN_IO_EXPORT void *__mn_tls_server_ctx_new(const char *cert_path,
+                                            const char *key_path) {
+    if (!cert_path || !key_path) return NULL;
+    if (!s_ssl.available) {
+        if (ssl_load_library() < 0) return NULL;
+    }
+    /* Server-side dlopen symbols are optional; verify here, not in the
+     * load gate. A libssl build without TLS_server_method or PEM loaders
+     * means the user can't run a TLS listener but client TLS still works. */
+    if (!s_ssl.TLS_server_method || !s_ssl.SSL_CTX_use_certificate_file ||
+        !s_ssl.SSL_CTX_use_PrivateKey_file ||
+        !s_ssl.SSL_CTX_check_private_key) {
+        return NULL;
+    }
+
+    MN_SSL_CTX *ctx = s_ssl.SSL_CTX_new(s_ssl.TLS_server_method());
+    if (!ctx) return NULL;
+
+    if (s_ssl.SSL_CTX_use_certificate_file(ctx, cert_path,
+                                            MN_SSL_FILETYPE_PEM) != 1) {
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+    if (s_ssl.SSL_CTX_use_PrivateKey_file(ctx, key_path,
+                                           MN_SSL_FILETYPE_PEM) != 1) {
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+    if (s_ssl.SSL_CTX_check_private_key(ctx) != 1) {
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    MnTlsServerCtx *sctx = (MnTlsServerCtx *)calloc(1, sizeof(MnTlsServerCtx));
+    if (!sctx) {
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+    sctx->ctx = ctx;
+    return sctx;
+}
+
+MN_IO_EXPORT void __mn_tls_server_ctx_free(void *server_ctx) {
+    if (!server_ctx || !s_ssl.available) return;
+    MnTlsServerCtx *sctx = (MnTlsServerCtx *)server_ctx;
+    if (sctx->ctx) s_ssl.SSL_CTX_free(sctx->ctx);
+    free(sctx);
+}
+
+MN_IO_EXPORT void *__mn_tls_accept(int64_t fd, void *server_ctx) {
+    if (!server_ctx || !s_ssl.available || !s_ssl.SSL_accept) return NULL;
+    MnTlsServerCtx *sctx = (MnTlsServerCtx *)server_ctx;
+    if (!sctx->ctx) return NULL;
+
+    MN_SSL *ssl = s_ssl.SSL_new(sctx->ctx);
+    if (!ssl) return NULL;
+    s_ssl.SSL_set_fd(ssl, (int)fd);
+
+    if (s_ssl.SSL_accept(ssl) != 1) {
+        s_ssl.SSL_free(ssl);
+        return NULL;
+    }
+
+    /* Per-connection wrapper compatible with __mn_tls_read / _write /
+     * _close. ctx is set to NULL so __mn_tls_close does NOT free the
+     * shared server SSL_CTX — that lives in MnTlsServerCtx and is
+     * freed via __mn_tls_server_ctx_free. */
+    MnTlsCtx *tctx = (MnTlsCtx *)calloc(1, sizeof(MnTlsCtx));
+    if (!tctx) {
+        s_ssl.SSL_shutdown(ssl);
+        s_ssl.SSL_free(ssl);
+        return NULL;
+    }
+    tctx->ctx = NULL;
+    tctx->ssl = ssl;
+    return tctx;
+}
+
+/* v5.43.0 Da.8: server-accepted connections store ctx==NULL because the
+ * SSL_CTX is shared. Patch __mn_tls_close (above) to skip freeing NULL
+ * ctx — already correct: SSL_CTX_free(NULL) is a no-op per OpenSSL spec
+ * but s_ssl.SSL_CTX_free(NULL) might dereference. Actually we do skip
+ * it because the existing close calls SSL_CTX_free unconditionally; we
+ * fix that here:
+ *
+ *   was: s_ssl.SSL_CTX_free(tctx->ctx);
+ *   now: if (tctx->ctx) s_ssl.SSL_CTX_free(tctx->ctx);
+ *
+ * Apply this fix below. */
 
 /* =======================================================================
  * 3. File I/O (extended)

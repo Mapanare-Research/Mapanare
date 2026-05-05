@@ -26,6 +26,7 @@ RUNTIME_SOURCES := \
 	mapanare_db.c \
 	mapanare_html.c \
 	mapanare_time.c \
+	mapanare_node.c \
 	mn_user_main.c
 
 # Files under runtime/native/ that are deliberately not part of the
