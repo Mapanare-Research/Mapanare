@@ -390,6 +390,10 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_tensor_argmin_i64": {"nounwind"},
     # Tensor slicing (v4.45.0). Returns fresh tensor (noalias).
     "__mn_tensor_slice": {"nounwind", "noalias"},
+    # Tensor reshape (v5.41.0 Ts.1). Returns fresh tensor (noalias) under
+    # the v5.41.0 copy-semantics implementation; v5.41.1 may switch to a
+    # data-sharing implementation, at which point ``noalias`` should drop.
+    "__mn_tensor_reshape": {"nounwind", "noalias"},
     # Agent runtime (v3.43.0). v4.30.0: ``agent_new`` returns a fresh
     # heap agent handle (noalias); dispatch/send/recv do not.
     "mapanare_agent_new": {"nounwind", "noalias", "willreturn"},
@@ -3946,6 +3950,22 @@ class LLVMTextEmitter:
         # Lowerer passes flat args: [tensor, s0, s1, ..., e0, e1, ..., rank]
         # C runtime expects: (ptr tensor, ptr starts_array, ptr ends_array, i64 rank)
         # We pack the individual i64 values into stack-allocated arrays.
+        # Tensor reshape (v5.41.0 Ts.1) — Call(__mn_tensor_reshape, [tensor, shape_list]).
+        # Shape is a List<Int>; pass it by pointer (same pattern as __mn_gpu_tensor_add).
+        if fn == "__mn_tensor_reshape" and len(args) == 2:
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            shape_v = (
+                self._coerce(args[1][0], args[1][1], LIST) if args[1][1] != LIST else args[1][0]
+            )
+            shape_p = self._alloca(LIST, "treshape_shape")
+            self._L(f"store {LIST} {shape_v}, ptr {shape_p}")
+            self._ensure("__mn_tensor_reshape", PTR, [PTR, PTR])
+            r = self._f("treshape")
+            self._L(f"{r} = call noalias ptr @__mn_tensor_reshape(ptr {t_ptr}, ptr {shape_p})")
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+
         if fn == "__mn_tensor_slice" and len(args) >= 3:
             t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
             # Last arg is rank

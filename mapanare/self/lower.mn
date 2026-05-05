@@ -2536,6 +2536,26 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     if method == "push":
         return lower_push_method(s, obj, obj_r, arg_exprs)
 
+    // v5.41.0 Ts.1 — tensor.reshape(shape) routes to __mn_tensor_reshape.
+    // Mirror of mapanare/lower.py reshape branch. Copy semantics at
+    // v5.41.0; v5.41.1 will switch to refcount-based aliasing without
+    // changing this lowering surface.
+    if method == "reshape":
+        if obj_r.value.ty.kind == TK_TENSOR():
+            if len(arg_exprs) >= 1:
+                let shape_r: LowerResult = lower_expr(s, arg_exprs[0])
+                s = shape_r.state
+                let elem_kind_rs: Int = tensor_elem_kind_of(obj_r.value)
+                let mut elem_ty_rs: MIRType = mir_float()
+                if elem_kind_rs == TK_INT() { elem_ty_rs = mir_int() }
+                let res_ty_rs: MIRType = mir_tensor_of(elem_ty_rs)
+                let rs_dest: LowerResult = make_value(s, res_ty_rs, "treshape")
+                let mut rs_args: List<Value> = []
+                rs_args.push(obj_r.value)
+                rs_args.push(shape_r.value)
+                let s_rs: LowerState = emit_instr(rs_dest.state, Instruction::Call(rs_dest.value, "__mn_tensor_reshape", rs_args))
+                return new_lower_result(rs_dest.value, s_rs)
+
     // v5.6.3 Sh.6 Phase 4 — tensor reduction methods
     // `a.sum()/.mean()/.max()/.min()/.argmax()/.argmin()` route to the
     // `__mn_tensor_{method}_{f64,i64}` runtime family. mean always goes

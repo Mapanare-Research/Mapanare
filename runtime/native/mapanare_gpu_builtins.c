@@ -803,3 +803,56 @@ MN_EXPORT mapanare_tensor_t *__mn_tensor_slice(
     }
     return result;
 }
+
+/* ---- Tensor reshape (v5.41.0 Ts.1) ---- */
+
+/** Reshape a tensor to the shape carried by `shape` (List<Int>).
+ *
+ * v5.41.0 ships **copy semantics**: allocates a new tensor with the
+ * given shape and memcpys the source data into it. Aborts with a
+ * structured message if the new shape's element count does not match
+ * the source's. The user-facing surface (`tensor.reshape(shape)`) is
+ * O(N) at this release; v5.41.1 introduces refcount-based aliasing
+ * so reshape can share data in O(1) without changing user-visible
+ * semantics.
+ */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_reshape(
+    const mapanare_tensor_t *src, const MnList *shape) {
+    if (!src || !src->data) {
+        fprintf(stderr, "mapanare: tensor reshape: null source\n");
+        abort();
+    }
+    if (!shape || !shape->data) {
+        fprintf(stderr, "mapanare: tensor reshape: null shape\n");
+        abort();
+    }
+    int64_t new_rank = shape->len;
+    if (new_rank <= 0) {
+        fprintf(stderr,
+                "mapanare: tensor reshape: rank must be positive (got %lld)\n",
+                (long long)new_rank);
+        abort();
+    }
+    const int64_t *new_shape = (const int64_t *)shape->data;
+    int64_t new_size = 1;
+    for (int64_t i = 0; i < new_rank; i++) {
+        if (new_shape[i] <= 0) {
+            fprintf(stderr,
+                    "mapanare: tensor reshape: invalid dim %lld at axis %lld\n",
+                    (long long)new_shape[i], (long long)i);
+            abort();
+        }
+        new_size *= new_shape[i];
+    }
+    if (new_size != src->size) {
+        fprintf(stderr,
+                "mapanare: tensor reshape: cannot reshape size %lld to size %lld\n",
+                (long long)src->size, (long long)new_size);
+        abort();
+    }
+    mapanare_tensor_t *result = mapanare_tensor_alloc(new_rank, new_shape,
+                                                      src->elem_size);
+    if (!result) abort();
+    memcpy(result->data, src->data, (size_t)(src->size * src->elem_size));
+    return result;
+}

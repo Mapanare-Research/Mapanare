@@ -19,6 +19,78 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.41.0** (ready, not tagged) — **Ts.1 — `tensor.reshape`
+  on the LLVM backend (option B part 1).** First half of the
+  longest-standing v5.x parity gap closeout. The language-builtin
+  `Tensor` (`TypeKind.TENSOR`) now has `reshape(shape: List<Int>)
+  -> Tensor` end-to-end through both the Python bootstrap LLVM
+  emitter and the self-hosted compiler (`mnc-stage1`). Validates
+  that the new shape's element count matches `src->size`; aborts
+  with a structured fprintf+abort message on mismatch. **Ships
+  copy semantics** at v5.41.0 — each call allocates a fresh
+  tensor and memcpys; v5.41.1 will swap to refcount-based
+  aliasing under the same surface (the `noalias` attribute on
+  `__mn_tensor_reshape` will drop at that release). Adds **one
+  new C runtime export** (`__mn_tensor_reshape` in
+  `runtime/native/mapanare_gpu_builtins.c`). Adds **zero new
+  MIR ops** — the lower path emits a plain `Call` to the runtime
+  helper (matching the v4.45.0 `__mn_tensor_slice` pattern,
+  not the PLAN's "new MIR op" framing). Strict 3-stage fixed
+  point preserved by construction at **242,338 lines / 0 diff**
+  (43-release strict streak from the v5.7.1 baseline). Goldens
+  **96/96** (95 existing + new `tests/golden/96_tensor_reshape.mn`).
+  **PROMPT/PLAN deviation (load-bearing) — option B scope split.**
+  Phase 0 audit
+  (`docs/roadmap/v5/v5.41.0/PRE_PHASE_AUDIT.md`) surfaced four
+  mismatches between PLAN framing and v5.40.0 HEAD: (1) **grammar
+  does NOT accept `[start..end:step]` at HEAD** (PLAN/PROMPT
+  both said it did; `RangeExpr` and `IndexItem` have no `step`
+  field; `mapanare/mapanare.lark` has only `..` and `..=`);
+  (2) the existing `stdlib/gpu/tensor.mn::reshape` (line 544)
+  is on a stdlib `GpuTensor` struct — different type from the
+  language-builtin `Tensor` that the CLAUDE.md "Not yet on LLVM"
+  line refers to; (3) `mapanare_tensor_t` (the C runtime
+  metadata struct) has no refcount/strides/offset and views
+  need substantial struct surgery — `__mn_tensor_slice` already
+  copies data, not aliases it; (4) realistic budget for full
+  closeout (Ts.1 + Ts.2 + Ts.3 + tests + docs) is ~1,900 LOC
+  across 3–5 working days, not PLAN's ~750 / "1–2 sessions".
+  Lead-approved option B: v5.41.0 = Ts.1 only with copy
+  semantics (~700 LOC); v5.41.1 = Ts.2 (mutable views with
+  refcount-based aliasing) + Ts.3 (stepped slices, including
+  grammar + AST + parser changes for `:step` syntax) +
+  remaining tests/docs (~1,200 LOC). CLAUDE.md "Not yet on
+  LLVM" line **partially closed** at v5.41.0: `tensor reshape`
+  removed; `mutable views, stepped slices` remain with v5.41.1
+  forward link. **Falsifiability** — reverting either lowering
+  branch (Python `lower.py::_lower_method_call` or self-host
+  `mapanare/self/lower.mn::lower_method_call`) makes
+  `test_reshape_via_python_emitter` or `test_reshape_via_stage1`
+  respectively fail (the call falls through to the
+  generic-method-call path which emits an unresolved `reshape`
+  symbol; link fails). Reverting either emit branch makes the
+  IR validate but the runtime gets garbage shape data and either
+  aborts on the size check or produces a corrupt tensor.
+  `test_reshape_size_mismatch_aborts` pins the abort path
+  against silent NULL-deref or wrong-behavior regressions on
+  shape mismatch. Source delta: ~58 LOC C runtime + ~15 LOC
+  `emit_llvm_text.py` + ~10 LOC `lower.py` + ~9 LOC
+  `mapanare/self/emit_llvm.mn` + ~14 LOC
+  `mapanare/self/lower.mn` + ~85 LOC golden + ~225 LOC pytest
+  + ~125 LOC `PRE_PHASE_AUDIT.md` + ~150 LOC SESSION_REPORT +
+  ~85 LOC CHANGELOG + ~50 LOC SPEC sync + this CLAUDE.md
+  release-notes entry + mechanical bump_version.py edits.
+  Aggregate state entering v5.41.1: **0 HIGH** / **2 MEDIUM**
+  (Ts.2 + Ts.3 — option-B contract is to close at v5.41.1;
+  escalates to HIGH at v5.42.0 if not landed; macOS
+  notarization carry from v5.33.0 Nu.2) / **~5 LOW**
+  (copy-semantics-to-refcount swap planned v5.41.1; cookbook
+  + SPEC examples deferred to v5.41.1 once full surface is
+  closed; stdlib `GpuTensor.reshape` vs builtin
+  `Tensor.reshape` namespace coexistence audit; carries from
+  v5.40.0). See `docs/roadmap/v5/v5.41.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.40.0** (ready, not tagged) — **Ai.\* — `ask` runtime
   adapter; manifesto-arc kickoff.** First release in the
   manifesto arc; the AI-native pitch graduates from "library
@@ -2483,8 +2555,10 @@ maps (Robin Hood), agents, signals (full reactivity), streams,
 closures (env struct capture), traits, module imports, pipes,
 multi-agent pipe definitions, string methods, GPU kernel dispatch.
 
-**Not yet on LLVM:** tensor reshape, mutable views, stepped slices
-(v5.x). Tensor surface stable since v4.45.0.
+**Not yet on LLVM:** mutable views, stepped slices (v5.41.1). Tensor
+surface stable since v4.45.0; `tensor.reshape` closed at v5.41.0
+(option B part 1, copy semantics — refcount-based aliasing planned
+at v5.41.1 alongside views + stepped slices).
 
 New LLVM features target `emit_llvm_text.py` (sole LLVM emitter).
 
@@ -2604,7 +2678,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (31972 symbols, 67172 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (32037 symbols, 67236 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

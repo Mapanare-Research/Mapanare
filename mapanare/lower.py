@@ -4057,6 +4057,18 @@ class MIRLowerer:
             self._emit(SignalGet(dest=dest, signal=obj))
             return dest
 
+        # Tensor reshape (v5.41.0 Ts.1) — copy-semantics reshape via runtime
+        # helper. v5.41.1 will swap to refcount-aliased shared-data reshape
+        # behind the same surface; user code does not change.
+        if obj.ty.kind == TypeKind.TENSOR and expr.method == "reshape" and len(args) >= 1:
+            elem_ti = (
+                obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
+            )
+            result_ty = MIRType(TypeInfo(kind=TypeKind.TENSOR, args=[elem_ti]))
+            dest = self._make_value(ty=result_ty, prefix="treshape")
+            self._emit(Call(dest=dest, fn_name="__mn_tensor_reshape", args=[obj, args[0]]))
+            return dest
+
         # Tensor reduction methods (v4.45.0)
         _TENSOR_REDUCTIONS_SCALAR = {"sum", "mean", "max", "min"}
         _TENSOR_REDUCTIONS_IDX = {"argmax", "argmin"}

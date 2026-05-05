@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.41.0] - 2026-05-04
+
+**Ts.1 — `tensor.reshape` on the LLVM backend (option B part 1).**
+First half of the longest-standing v5.x parity gap: the
+language-builtin `Tensor` (`TypeKind.TENSOR`) now has `reshape`
+on the LLVM backend, end-to-end through both the Python
+bootstrap emitter and the self-hosted compiler. Strict 3-stage
+fixed point preserved at **242,338 lines / 0 diff** (43-release
+strict streak from the v5.7.1 baseline). Goldens **96/96** (95
+existing preserved + new `tests/golden/96_tensor_reshape.mn`).
+
+### Added
+
+- `runtime/native/mapanare_gpu_builtins.c::__mn_tensor_reshape`
+  — copy-semantics reshape for the language-builtin `Tensor`.
+  Validates that the new shape's element count matches
+  `src->size`; aborts with a structured fprintf+abort message
+  on mismatch.
+- `mapanare/lower.py::_lower_method_call` reshape branch
+  (Python bootstrap path).
+- `mapanare/self/lower.mn::lower_method_call` reshape branch
+  (self-host path; mirror of Python).
+- `mapanare/emit_llvm_text.py` and
+  `mapanare/self/emit_llvm.mn` runtime-call dispatch for
+  `__mn_tensor_reshape` — stack-allocates a `LIST`-shaped slot,
+  stores the shape value, calls `__mn_tensor_reshape(ptr
+  tensor, ptr shape_alloca)` (matches the `__mn_gpu_tensor_add`
+  by-pointer ABI). Result tracked in `_tensor_vars` for
+  drop-glue.
+- `tests/golden/96_tensor_reshape.mn` (7 reshape scenarios:
+  1D↔2D, 2D→2D, Int reshape, chained reshape,
+  source-unmodified-after-reshape — locks copy semantics).
+- `tests/llvm/test_tensor_reshape.py` (3 cases: end-to-end via
+  Python emitter, end-to-end via stage1, size-mismatch aborts
+  with structured message). Falsifiability documented per
+  case.
+- `docs/roadmap/v5/v5.41.0/PRE_PHASE_AUDIT.md` documenting
+  the existing tensor surface, the corrected LOC budget, and
+  the option-A / option-B / option-C scope split.
+- `docs/roadmap/v5/v5.41.0/SESSION_REPORT.md`.
+
+### Changed
+
+- **CLAUDE.md "LLVM Backend Status"**: removed `tensor reshape`
+  from the "Not yet on LLVM" line. Mutable views and stepped
+  slices remain listed and point to v5.41.1.
+- **PROMPT/PLAN deviation, lead-approved at Phase 0
+  (option B).** PLAN scoped Ts.1 + Ts.2 + Ts.3 in one v5.41.0
+  release at "1–2 sessions". Phase 0 audit surfaced four
+  load-bearing scope corrections: (1) the grammar does NOT
+  accept `[start..end:step]` at HEAD (PLAN said it did); (2)
+  the existing `stdlib/gpu/tensor.mn` `reshape` is on the
+  stdlib `GpuTensor` struct, a different type from the
+  language-builtin `Tensor`; (3) `mapanare_tensor_t` (the C
+  runtime metadata struct) has no refcount/strides/offset and
+  needs struct surgery for view aliasing; (4) realistic budget
+  is ~1,900 LOC across 3–5 working days. Lead chose option B:
+  v5.41.0 = Ts.1 only with **copy semantics** (~700 LOC);
+  v5.41.1 = Ts.2 + Ts.3 + grammar work + refcount + remaining
+  tests/docs (~1,200 LOC).
+- **Reshape ships copy semantics at v5.41.0.** Each
+  `tensor.reshape(shape)` allocates a fresh tensor and memcpys
+  the source data. v5.41.1 will swap to refcount-based
+  aliasing under the same surface; user code does not change,
+  but the `noalias` attribute on `__mn_tensor_reshape` will
+  drop at that release. The contract is locked by
+  `test_reshape_via_python_emitter` (line that asserts
+  `dst->data != src->data` post-fix; this assertion is
+  expected to flip at v5.41.1).
+- `docs/SPEC.md` header re-synced from "v5.40.0 cut" to
+  "v5.41.0 cut" with new sync block documenting the Ts.1
+  addition + the option-B split + the v5.41.1 forward link
+  for views and stepped slices.
+
+
 ## [5.40.0] - 2026-05-04
 
 **Ai.\* — `ask` runtime adapter; manifesto-arc kickoff.** First
@@ -11259,7 +11334,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.40.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.41.0...HEAD
+[5.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.40.0...v5.41.0
 [5.40.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.7...v5.40.0
 [5.39.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.6...v5.39.7
 [5.39.6]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.5...v5.39.6

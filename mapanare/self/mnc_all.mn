@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: bash scripts/concat_self.sh
+// Do not edit — regenerate with: python scripts/concat_self.py
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -9950,6 +9950,26 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     if method == "push":
         return lower_push_method(s, obj, obj_r, arg_exprs)
 
+    // v5.41.0 Ts.1 — tensor.reshape(shape) routes to __mn_tensor_reshape.
+    // Mirror of mapanare/lower.py reshape branch. Copy semantics at
+    // v5.41.0; v5.41.1 will switch to refcount-based aliasing without
+    // changing this lowering surface.
+    if method == "reshape":
+        if obj_r.value.ty.kind == TK_TENSOR():
+            if len(arg_exprs) >= 1:
+                let shape_r: LowerResult = lower_expr(s, arg_exprs[0])
+                s = shape_r.state
+                let elem_kind_rs: Int = tensor_elem_kind_of(obj_r.value)
+                let mut elem_ty_rs: MIRType = mir_float()
+                if elem_kind_rs == TK_INT() { elem_ty_rs = mir_int() }
+                let res_ty_rs: MIRType = mir_tensor_of(elem_ty_rs)
+                let rs_dest: LowerResult = make_value(s, res_ty_rs, "treshape")
+                let mut rs_args: List<Value> = []
+                rs_args.push(obj_r.value)
+                rs_args.push(shape_r.value)
+                let s_rs: LowerState = emit_instr(rs_dest.state, Instruction::Call(rs_dest.value, "__mn_tensor_reshape", rs_args))
+                return new_lower_result(rs_dest.value, s_rs)
+
     // v5.6.3 Sh.6 Phase 4 — tensor reduction methods
     // `a.sum()/.mean()/.max()/.min()/.argmax()/.argmin()` route to the
     // `__mn_tensor_{method}_{f64,i64}` runtime family. mean always goes
@@ -15296,6 +15316,7 @@ fn get_fn_ret_prefix(name: String) -> String:
     if name == "__mn_tensor_rdiv_scalar_i64" { return "noalias " }
     // v5.6.3 Sh.6 Phase 4 — slice returns a fresh heap tensor (noalias).
     if name == "__mn_tensor_slice" { return "noalias " }
+    if name == "__mn_tensor_reshape" { return "noalias " }
     return ""
 
 // Function-attribute suffix. Mirrors the Python `_RUNTIME_FN_ATTRS`
@@ -15471,6 +15492,7 @@ fn get_fn_attrs(name: String) -> String:
     if name == "__mn_tensor_argmax_i64" { return " nounwind readonly" }
     if name == "__mn_tensor_argmin_i64" { return " nounwind readonly" }
     if name == "__mn_tensor_slice" { return " nounwind" }
+    if name == "__mn_tensor_reshape" { return " nounwind" }
     // -- Agent runtime (v3.43.0) --
     if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
     if name == "mapanare_agent_send" { return " nounwind willreturn" }
@@ -15705,6 +15727,7 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     // passes flat args [tensor, s0..., e0..., rank]; emit_mir_call
     // repackages into stack allocated arrays before the call.
     s = declare_runtime_fn(s, "__mn_tensor_slice", "ptr", "ptr, ptr, ptr, i64")
+    s = declare_runtime_fn(s, "__mn_tensor_reshape", "ptr", "ptr, ptr")
 
     // Agent runtime
     s = declare_runtime_fn(s, "__mn_agent_spawn", "ptr", "ptr, ptr")
@@ -18411,6 +18434,23 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         if nargs_s >= 3:
             inner_s = inner_s + ", double " + args[last_s].name
         return emit_line(st, "  call void (ptr, i64, ...) @__mn_tensor_set_f64_nd(" + inner_s + ")")
+    // v5.41.0 Ts.1 — `__mn_tensor_reshape` special case. Lowerer emits
+    // Call(__mn_tensor_reshape, [tensor, shape: List<Int>]). The runtime
+    // expects (ptr tensor, ptr shape_list). We alloca a list-shaped slot,
+    // store the list value into it, and call with the alloca ptr —
+    // mirrors the gpu_tensor_add pattern. Returns a fresh tensor (noalias)
+    // under v5.41.0 copy semantics; v5.41.1 may switch to data-sharing.
+    if fn_name == "__mn_tensor_reshape":
+        let cnt_rs: String = toString(st.counter)
+        let mut s_rs: EmitState = st
+        s_rs.counter = s_rs.counter + 1
+        let shp_p: String = "%treshape_shape" + cnt_rs
+        s_rs = emit_line(s_rs, "  " + shp_p + " = alloca " + llvm_list_rt())
+        s_rs = emit_line(s_rs, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + shp_p)
+        s_rs = emit_line(s_rs, "  " + dn + " = call noalias ptr @__mn_tensor_reshape(ptr " + args[0].name + ", ptr " + shp_p + ")")
+        s_rs = emit_track_tensor(s_rs, dn)
+        return s_rs
+
     // v5.6.3 Sh.6 Phase 4 — `__mn_tensor_slice` special case. Lowerer passes
     // flat args [tensor, s0, s1, ..., e0, e1, ..., rank]; the runtime
     // expects (ptr tensor, ptr starts_arr, ptr ends_arr, i64 rank). We
@@ -19051,6 +19091,7 @@ fn emit_track_tensor(st: EmitState, ptr_val: String) -> EmitState:
 fn is_tensor_allocating_fn(fn_name: String) -> Bool:
     if fn_name == "__mn_tensor_alloc" { return true }
     if fn_name == "__mn_tensor_slice" { return true }
+    if fn_name == "__mn_tensor_reshape" { return true }
     if fn_name == "__mn_tensor_add_broadcast_f64" { return true }
     if fn_name == "__mn_tensor_sub_broadcast_f64" { return true }
     if fn_name == "__mn_tensor_mul_broadcast_f64" { return true }
@@ -21446,4 +21487,3 @@ fn mn_main():
     __mn_str_eprint("       Use 'mnc emit-llvm <file>' for raw IR emission, or\n")
     __mn_str_eprint("       'mnc compile <file>' for transpilation (.py/.php/.ts/.go).\n")
     __mn_exit(1)
-

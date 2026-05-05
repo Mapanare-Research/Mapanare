@@ -1,7 +1,51 @@
 # Mapanare Language Specification
 
-**Version:** 5.40.0
-**Status:** Live — synced to the v5.40.0 cut (2026-05-04)
+**Version:** 5.41.0
+**Status:** Live — synced to the v5.41.0 cut (2026-05-04)
+
+> **v5.41.0 — Ts.1 — `tensor.reshape` on the LLVM backend
+> (option B part 1).** SPEC body unchanged from the v5.21.0
+> cut. v5.41.0 closes part 1 of the longest-standing v5.x
+> tensor parity gap: the language-builtin `Tensor`
+> (`TypeKind.TENSOR`) now has `reshape(shape: List<Int>) ->
+> Tensor` end-to-end through both the Python bootstrap LLVM
+> emitter and the self-hosted compiler (`mnc-stage1`).
+> Validates that the new shape's element count matches the
+> source's `size`; aborts with a structured fprintf+abort
+> message on mismatch. **Ships copy semantics** at v5.41.0:
+> each call allocates a fresh tensor and memcpys the source
+> data; v5.41.1 will swap to refcount-based aliasing under
+> the same surface. Adds **one new C runtime export** —
+> `__mn_tensor_reshape(const mapanare_tensor_t *,
+> const MnList *) -> mapanare_tensor_t *` in
+> `runtime/native/mapanare_gpu_builtins.c`. Adds **zero new
+> MIR ops** — the lower path emits a plain `Call` to the
+> runtime helper (matching the `__mn_tensor_slice` pattern,
+> not the PLAN's "new MIR op" framing). Strict 3-stage
+> fixed point preserved by construction at **242,338 lines /
+> 0 diff** (43-release strict streak from the v5.7.1
+> baseline). Goldens **96/96** (95 existing + new
+> `tests/golden/96_tensor_reshape.mn`).
+>
+> **PROMPT/PLAN deviation (load-bearing) — option B scope
+> split.** Phase 0 audit
+> (`docs/roadmap/v5/v5.41.0/PRE_PHASE_AUDIT.md`) surfaced
+> four mismatches between PLAN framing and v5.40.0 HEAD: (1)
+> grammar does NOT accept `[start..end:step]` (PLAN said it
+> did); (2) the existing `stdlib/gpu/tensor.mn` `reshape` is
+> on a stdlib `GpuTensor` struct — different type from the
+> language-builtin `Tensor`; (3) `mapanare_tensor_t` has no
+> refcount/strides/offset and views need struct surgery; (4)
+> realistic budget for full closeout is ~1,900 LOC across
+> 3–5 working days, not the PLAN's ~750 / 1–2 sessions.
+> Lead-approved option B: v5.41.0 = Ts.1 only with copy
+> semantics (~700 LOC); v5.41.1 = Ts.2 (mutable views) +
+> Ts.3 (stepped slices, including grammar + AST + parser
+> changes for `:step`) + refcount infrastructure +
+> remaining tests/docs (~1,200 LOC). CLAUDE.md "Not yet on
+> LLVM" line partially closed at v5.41.0: `tensor reshape`
+> removed; `mutable views, stepped slices` remain with
+> v5.41.1 forward link.
 
 > **v5.40.0 — Ai.\* — `ask` runtime adapter; manifesto-arc
 > kickoff.** SPEC body unchanged from the v5.21.0 cut. v5.40.0
