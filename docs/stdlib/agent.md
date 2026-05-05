@@ -208,12 +208,253 @@ slot but explicitly deferred during Phase 0 audit:
   by `mapanare_agent_init`'s `memset`; the `if (agent->on_exit)`
   guard at every FAILED transition site keeps the path empty.
 
+## Distributed agents (v5.43.0 Da.\*)
+
+> **v0 caveat.** v5.43.0 ships *distributed messaging*, not
+> distributed *state*. There is no service registry, no
+> replication, no consensus, no anycast across multiple nodes
+> hosting the same agent-id. Static URLs only. Don't build a
+> database with this. v5.44+ adds richer primitives in
+> downstream packages.
+
+v5.43.0 makes `agent.send` network-transparent. A `RemoteAgent`
+is a typed handle to an agent on another machine, addressed by
+URL:
+
+```mn
+let r = remote_agent_connect("tcp://10.0.0.7:9090/worker-1", key)
+let payload: String = to_json::<Task>(my_task)
+let r2 = remote_agent_send(r.handle, payload)
+let recv = remote_agent_recv(r2.handle)
+let reply: Reply = from_json::<Reply>(recv.frame.payload)
+remote_agent_disconnect(recv.handle)
+```
+
+The same supervision semantics — a remote child can be supervised
+by a local supervisor. Transport failures become structured
+`RemoteExitReason` values that the supervisor's strategy function
+matches on.
+
+### URL syntax + scheme matrix
+
+| Scheme   | Status at v5.43.0 | Notes                                  |
+|----------|-------------------|----------------------------------------|
+| `tcp://` | Supported         | Plaintext over TCP                     |
+| `tls://` | Supported         | TLS via system OpenSSL (dlopen)        |
+| `unix://`| Reserved          | Returns `UnsupportedScheme` at runtime |
+
+URL form: `<scheme>://<host>:<port>/<agent-id>`. The agent-id is
+a path segment; v5.43.0 rejects embedded `/` characters.
+
+### MAPANARE_NODE_KEY — HMAC keying is mandatory
+
+Every frame on the wire is signed with HMAC-SHA256 truncated to
+16 bytes. The shared key comes from `MAPANARE_NODE_KEY` in the
+environment and **must be at least 32 raw bytes**. Both endpoints
+of a connection need the same key; mismatch is rejected before
+any deserialization.
+
+Generate a fresh key:
+
+```bash
+MAPANARE_NODE_KEY=$(openssl rand -hex 32)
+```
+
+The 16-byte HMAC truncation is RFC 4868 secure for keys ≥ 32
+bytes. **Never** use a shorter key — `node_listen` and
+`remote_agent_connect` reject sub-32-byte keys with `kind=3
+NoKey`.
+
+**Key rotation at v5.43.0**: deploy the new key in parallel
+(both nodes get the updated env var simultaneously) then
+restart. There is no in-band key-rotation handshake at v5.43.0
+— that requires registry coordination and is downstream
+package territory.
+
+### Wire format (v1)
+
+```
++-------+--------+----------+-----------+----------+
+| u32   | u8 v=1 | u8 mt    | u64 seq   | 16 b hmac| <body>
+| length|         |          | (BE)      | sha256-  |
+| (BE)  |         |          |           | trunc16  |
++-------+--------+----------+-----------+----------+
+                           [ body — JSON payload   ]
+```
+
+- `length` (u32 BE) covers everything after itself. Capped at
+  100 MB; oversize frames rejected before allocation.
+- `version` byte is the only escape hatch. v5.43.0 ships v1; v2
+  reserves the right to change anything after the version byte.
+- `msg_type` enum (append-only):
+  `1=Send | 2=Reply | 3=Ping | 4=Pong | 5=ChildExited | 6=ProtoError`.
+  Values 7–15 reserved for v1.x. 16+ require a v2 frame.
+- `sequence` is a per-connection u64 monotonic counter starting
+  at 1. Receivers track `last_seen` and reject `seq <= last_seen`
+  with `kind=7 Replay`.
+- `hmac` is the first 16 bytes of HMAC-SHA256(key, version ||
+  msg_type || sequence_be || payload). Verified with
+  `constant_time_eq` (timing-safe).
+
+### Failure-mode matrix
+
+| Variant                  | When                                  | Recommended action            |
+|--------------------------|---------------------------------------|-------------------------------|
+| `RemoteCrashed(msg)`     | Remote handler returned rc != 0       | Restart per child policy      |
+| `RemoteUnreachable(msg)` | Heartbeat missed; transport dead      | Restart + attempt reconnect   |
+| `RemoteShutdown`         | Remote agent exited cleanly           | Don't restart Transient policy|
+
+The variant `RemoteUnreachable` is named distinctly from
+NetworkError's `TransportLost` to avoid match-pattern collision
+in concat-mode (the v5.43.0 lowerer disambiguates by name only).
+Both names refer to the same operational event from different
+layers.
+
+The bridge to v5.42.0 supervision:
+
+```mn
+let exit_reason: RemoteExitReason = ...
+let ce: ClassifiedExit = classify_remote_exit(exit_reason)
+let transition = supervisor_handle_exit(sup, child_id, ce.exit_kind, ce.reason)
+```
+
+`RemoteCrashed` and `RemoteUnreachable` both classify as
+`EXIT_CRASHED` so the supervisor's strategy decides per its
+configured restart policy; the unreachable case adds a
+`"transport-lost: "` prefix to `reason` for downstream telemetry.
+`RemoteShutdown` classifies as `EXIT_SHUTDOWN` — `Transient`
+policy treats this as no-op; `Permanent` restarts; `Temporary`
+no-ops as well.
+
+### Cookbook
+
+#### 1. Two-node setup
+
+Worker side (binds + accepts):
+
+```mn
+fn main() {
+    let key = node_key_from_env()
+    let listener = node_listen("0.0.0.0", 9090, key)
+    if !listener.ok { print(listener.err_msg); return }
+    loop {
+        let acc = node_accept_one(listener.handle)
+        if !acc.ok { continue }
+        // dispatch via conn_recv_frame ...
+    }
+}
+```
+
+Coordinator side (connects + sends):
+
+```mn
+fn main() {
+    let key = node_key_from_env()
+    let r = remote_agent_connect("tcp://10.0.0.7:9090/worker-1", key)
+    if !r.ok { print(r.err_msg); return }
+    let task_json = to_json::<Task>(my_task)
+    let r2 = remote_agent_send(r.handle, task_json)
+    if !r2.ok { print(r2.err_msg); return }
+    remote_agent_disconnect(r2.handle)
+}
+```
+
+Both processes run with the same `MAPANARE_NODE_KEY` env var.
+
+#### 2. Supervised remote worker
+
+```mn
+let sup = add_child(
+    new_supervisor(STRATEGY_ONE_FOR_ONE(), 5, 60),
+    new_child_spec(701, "remote-worker", RESTART_PERMANENT())
+)
+
+// On a heartbeat miss or crash detection:
+let reason = RemoteUnreachable("pong window expired")
+let ce = classify_remote_exit(reason)
+let transition = supervisor_handle_exit(sup, 701, ce.exit_kind, ce.reason)
+if !transition.decision.no_op {
+    // Reconnect to the remote node + respawn the worker logic.
+}
+```
+
+#### 3. Graceful shutdown across nodes
+
+```mn
+// Coordinator initiates shutdown by sending a typed shutdown msg.
+let payload = to_json::<ShutdownCmd>(my_shutdown)
+let r = remote_agent_send(handle, payload)
+
+// Worker side (reading the frame, handling shutdown):
+//   on receipt of ShutdownCmd, return rc == 0 to trigger
+//   RemoteShutdown classification at the coordinator's
+//   supervisor layer.
+```
+
+#### 4. Synchronous heartbeat watcher
+
+```mn
+// Periodic check (the user's cadence — typically PING_INTERVAL_MS):
+let hb = remote_agent_heartbeat_check(handle)
+if !hb.ok {
+    // Treat as RemoteUnreachable; route through supervisor.
+    let reason = RemoteUnreachable(hb.err_msg)
+    let ce = classify_remote_exit(reason)
+    supervisor_handle_exit(sup, child_id, ce.exit_kind, ce.reason)
+}
+```
+
+### What's not here yet (v5.43.x candidates)
+
+- **Async per-connection heartbeat task.** v5.43.0 ships the
+  synchronous `remote_agent_heartbeat_check` primitive. v5.43.x
+  auto-fires per-connection at `MAPANARE_NODE_PING_INTERVAL_MS`
+  cadence once the agent runtime can spawn nameless background
+  tasks reliably.
+- **Auto-routing of inbound `MSG_CHILD_EXITED` frames** into a
+  parent supervisor's inbox. v5.43.0 ships the conversion
+  helpers (`encode_child_exited`, `decode_child_exited`,
+  `classify_remote_exit`); the auto-route is v5.43.x.
+- **Generic `RemoteAgent<T>` with auto-`to_json`.** v5.43.0
+  takes the explicit-`to_json::<T>(msg)`-at-call-site fallback
+  authorized by v5.40.0 PROMPT (the `_specialize_fn` body-walk
+  fix is the v5.43.x prerequisite).
+- **Result<T, NetworkError> at every API boundary.** v5.43.0
+  uses flat `(ok, value, err_kind, err_msg)` result structs to
+  sidestep three v5.x lowerer bugs (Result wrap-shape mismatch
+  with complex Ok types; variant-tag corruption on Err rewrap;
+  nested 15-arm match silent-no-fire). v5.43.x picks up
+  Result-based ergonomics once the lowerer fixes land.
+- **Service registry / discovery, replication, consensus,
+  mTLS, dynamic key rotation, binary serde fast path.**
+  Downstream package territory — v5.43.0 is "distributed v0".
+
+### Performance characteristics
+
+- Per-frame overhead: 26 bytes header + JSON payload. Round-trip
+  latency on localhost loopback is ~1 ms for small messages.
+- 1 MB messages round-trip cleanly through both the C transport
+  layer and the JSON serde path. Larger messages need
+  application-level chunking until v5.43.x ships a binary serde
+  fast path.
+- HMAC-SHA256 throughput: ~2 GB/s on a modern x86_64. At v5.43.0
+  the HMAC is computed twice per frame (once at send, once at
+  recv-side verify) — both are well below transport bandwidth.
+
 ## See also
 
 - `runtime/native/mapanare_runtime.h` — full C runtime API
+- `runtime/native/mapanare_node.h` — distributed-agents transport
+  API (v5.43.0)
 - `examples/agents/supervisor_strategy_demo.mn` — strategy library
   exercise
 - `examples/agents/worker_pool_supervised.mn` — orchestration
   pattern
+- `examples/agents/distributed_pool.mn` — coordinator + workers
+  topology (v5.43.0)
+- `examples/agents/heartbeat_demo.mn` — supervision interop with
+  `RemoteCrashed` / `RemoteUnreachable` / `RemoteShutdown` (v5.43.0)
 - `docs/roadmap/v5/v5.42.0/SESSION_REPORT.md` — v5.42.0 release
   notes including the Phase 0 PROMPT-deviation audit
+- `docs/roadmap/v5/v5.43.0/PRE_PHASE_AUDIT.md` — v5.43.0 audit
+  surfacing the server-side TLS gap + lowerer-bug findings

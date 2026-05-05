@@ -1,0 +1,132 @@
+// distributed_pool.mn — v5.43.0 Da.9
+//
+// Sketches a coordinator that distributes work to N workers across
+// multiple Node instances. Each worker is a `RemoteAgent` addressed
+// by a `tcp://host:port/agent-id` URL.
+//
+// SHAPE: this is a SURFACE demonstration, not an end-to-end
+// runnable program. Real two-node distribution requires:
+//   - One process running `node_listen` and `node_accept_one` in a
+//     loop on the worker side, dispatching incoming MSG_SEND
+//     frames to the local agent's handler.
+//   - One process building RemoteAgent handles via
+//     `remote_agent_connect` and calling `remote_agent_send` to
+//     dispatch work.
+//
+// Both processes need a shared HMAC key in MAPANARE_NODE_KEY.
+//
+// At v5.43.0 the @agent surface does not directly bind a registered
+// agent_id to incoming RemoteAgent frames — the orchestrator
+// dispatches manually (pseudocode below). v5.43.x ships the
+// auto-dispatch via the Da.6 inbox bridge.
+//
+// Run (sketches the topology, doesn't actually start two processes):
+//   cat stdlib/agent/url.mn stdlib/agent/remote_proto.mn \
+//       stdlib/agent/node.mn stdlib/agent/remote.mn \
+//       stdlib/agent/supervisor.mn stdlib/agent/supervision.mn \
+//       examples/agents/distributed_pool.mn > /tmp/dp.mn
+//   python3 -m mapanare run /tmp/dp.mn
+//
+// Real production deployment runs:
+//   # On worker host (10.0.0.7):
+//   MAPANARE_NODE_KEY=$(openssl rand -hex 32) \
+//       mnc run worker.mn  # binds to tcp://0.0.0.0:9090/worker-N
+//
+//   # On coordinator host:
+//   MAPANARE_NODE_KEY=<same-key> \
+//       mnc run coordinator.mn
+
+// ---------------------------------------------------------------------------
+// Coordinator side — connect to N workers, dispatch tasks.
+// ---------------------------------------------------------------------------
+
+fn make_worker_url(host: String, port: Int, worker_index: Int) -> String {
+    da "tcp://" + host + ":" + str(port) + "/worker-" + str(worker_index)
+}
+
+fn dispatch_to_worker(url: String, key: String, task_json: String) -> Bool {
+    pon r1: RemoteConnectResult = remote_agent_connect(url, key)
+    si !r1.ok {
+        print("connect failed: " + r1.err_msg)
+        da false
+    }
+    pon r2: RemoteSendResult = remote_agent_send(r1.handle, task_json)
+    si !r2.ok {
+        print("send failed: " + r2.err_msg)
+        remote_agent_disconnect(r1.handle)
+        da false
+    }
+    // In a real example we'd remote_agent_recv() the reply here.
+    // For demo purposes we just close.
+    remote_agent_disconnect(r2.handle)
+    da true
+}
+
+// ---------------------------------------------------------------------------
+// Demo entry — exercises the API surface against a non-existent
+// peer (which fails predictably; this validates the API shape, not
+// end-to-end transport).
+// ---------------------------------------------------------------------------
+
+fn main() {
+    pon key: String = node_key_from_env()
+    si len(key) < 32 {
+        print("set MAPANARE_NODE_KEY to a >= 32-byte hex string before running")
+        // For the demo, fall back to a fixed dev-only key so the API
+        // path completes. Production must set the env var.
+        pon dev_key: String = "0123456789abcdef0123456789abcdef"
+        print("(using dev key; do NOT use in production)")
+        run_demo(dev_key)
+        return
+    }
+    run_demo(key)
+}
+
+fn run_demo(key: String) {
+    pon worker_count: Int = 3
+    pon worker_host: String = "127.0.0.1"
+    pon worker_port: Int = 9090
+
+    print("dispatching to " + str(worker_count) + " workers at " + worker_host + ":" + str(worker_port))
+
+    pon mut i: Int = 1
+    mien i <= worker_count {
+        pon url: String = make_worker_url(worker_host, worker_port, i)
+        pon task: String = "{\"task_id\":" + str(i) + ",\"payload\":\"hello-from-coordinator\"}"
+        pon ok: Bool = dispatch_to_worker(url, key, task)
+        si ok {
+            print("worker " + str(i) + ": dispatched ok")
+        } sino {
+            print("worker " + str(i) + ": failed (expected unless workers are running)")
+        }
+        i = i + 1
+    }
+    print("done")
+}
+
+// ---------------------------------------------------------------------------
+// Worker side — pseudocode (the worker process binds and serves).
+// Not directly callable from this single-file example; shipped here
+// as the canonical pattern.
+// ---------------------------------------------------------------------------
+//
+//   fn worker_main(worker_id: Int) {
+//       let key = node_key_from_env()
+//       let listener = node_listen("0.0.0.0", 9090, key)
+//       if !listener.ok {
+//           print("listen failed: " + listener.err_msg); return
+//       }
+//
+//       // Accept loop. In production you'd run this in an agent
+//       // and dispatch each connection to a per-conn agent.
+//       loop {
+//           let acc = node_accept_one(listener.handle)
+//           if !acc.ok { continue }
+//           let recv = conn_recv_frame(acc.conn)
+//           if recv.ok && recv.frame.msg_type == MSG_SEND() {
+//               // Decode the typed task via from_json::<Task> at v5.43.x.
+//               // Process; reply with conn_send_frame(MSG_REPLY, ...).
+//           }
+//           conn_close(acc.conn)
+//       }
+//   }
