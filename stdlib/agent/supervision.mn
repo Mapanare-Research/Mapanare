@@ -1,0 +1,411 @@
+// supervision.mn — distributed-agents heartbeats + supervision interop
+//
+// v5.43.0 Da.5 (heartbeats) + Da.6 (supervision interop) — third
+// manifesto-arc release.
+//
+// SHAPE: provides primitives for the v5.42.0 supervisor.mn strategy
+// library to participate in cross-machine supervision. The
+// orchestrating agent owns the actual restart loop; this module
+// supplies the bridge:
+//
+//   - RemoteExitReason: 3-variant enum (RemoteCrashed, RemoteUnreachable,
+//     RemoteShutdown). Well below the 15-arm match-corruption
+//     threshold; safe to nested-match on.
+//   - ChildExitedMsg encode/decode for the wire protocol's MSG=5
+//     ChildExited frames.
+//   - classify_remote_exit: RemoteExitReason -> (exit_kind, reason)
+//     compatible with supervisor_handle_exit's parameter shape.
+//   - Synchronous heartbeat helper: send Ping, recv Pong, return
+//     timeout/transport-lost on miss.
+//   - Env-driven config: MAPANARE_NODE_PING_INTERVAL_MS,
+//     MAPANARE_NODE_PING_TIMEOUT_MS, MAPANARE_NODE_KEY.
+//
+// PROMPT/PLAN deviation (load-bearing): the PLAN scopes a per-
+// connection async heartbeat task that fires independently and
+// invalidates in-flight handles on Pong miss. That requires either
+// a dedicated agent-runtime thread per connection or fn-typed
+// callbacks (both exercise lowerer paths v5.43.0 has not stress-
+// tested at this stage of the arc). v5.43.0 v0 ships the
+// SYNCHRONOUS heartbeat primitive: the user invokes
+// remote_agent_heartbeat_check(r) at their own cadence (typical
+// idiom: a lightweight watcher loop that wakes every
+// PING_INTERVAL_MS and calls this on each remote child). v5.43.x
+// auto-fires it on a per-connection timer once the agent runtime
+// can spawn nameless background tasks reliably.
+//
+// Similarly, Da.6 supervision interop ships the CONVERSION helpers
+// (RemoteExitReason -> v5.42.0 supervisor exit_kind; ChildExitedMsg
+// encode/decode) but NOT the auto-routing of inbound remote
+// ChildExited frames into a parent supervisor's inbox. The user
+// orchestrates: read frame, classify, call supervisor_handle_exit,
+// act on RestartDecision. v5.43.x adds the auto-route once the
+// inbox bridge is wired to the agent runtime's child-hook
+// trampoline (v5.42.0 As.6 substrate).
+//
+// Depends on (in concat order):
+//   - url.mn (NetworkError, AgentUrl, parse_agent_url, UrlParseResult)
+//   - remote_proto.mn (Frame, MSG_PING, MSG_PONG, MSG_CHILD_EXITED,
+//     encode_frame, decode_frame, ne_kind_*, ne_msg_*)
+//   - node.mn (ne_kind, ne_msg, NodeConnection, conn_send_frame,
+//     conn_recv_frame)
+//   - remote.mn (RemoteAgent, remote_agent_send_typed_msg,
+//     remote_agent_recv, RemoteSendResult, RemoteRecvResult)
+
+// ---------------------------------------------------------------------------
+// RemoteExitReason — 3-variant tagged-union enum.
+//
+// Crashed/Killed semantics on the remote side are conveyed via the
+// inner String (typically a brief reason code like "panic: index out
+// of bounds"). RemoteUnreachable is distinct from RemoteCrashed: the
+// supervisor's strategy function decides differently for "child
+// broken" (restart per policy) vs "I can't reach child" (restartable
+// without per-policy delay; the network may have just hiccuped).
+// RemoteShutdown is the clean-exit case (no restart needed for
+// Transient policy).
+// ---------------------------------------------------------------------------
+
+pub tipo RemoteExitReason {
+    | RemoteCrashed(String)
+    | RemoteUnreachable(String)
+    | RemoteShutdown
+}
+
+pub fn remote_exit_reason_name(r: RemoteExitReason) -> String {
+    pon mut out: String = ""
+    match r {
+        RemoteCrashed(s) => { out = "RemoteCrashed" },
+        RemoteUnreachable(s) => { out = "RemoteUnreachable" },
+        RemoteShutdown => { out = "RemoteShutdown" }
+    }
+    da out
+}
+
+pub fn remote_exit_reason_msg(r: RemoteExitReason) -> String {
+    pon mut out: String = ""
+    match r {
+        RemoteCrashed(s) => { out = s },
+        RemoteUnreachable(s) => { out = s },
+        RemoteShutdown => { out = "" }
+    }
+    da out
+}
+
+// classify_remote_exit — convert a RemoteExitReason into the
+// (exit_kind, reason) tuple shape that v5.42.0 supervisor_handle_exit
+// consumes. Mapping:
+//
+//   RemoteCrashed(msg)     -> (EXIT_CRASHED, msg)
+//   RemoteUnreachable(msg) -> (EXIT_CRASHED, "transport-lost: " + msg)
+//                             — supervisor restarts per policy; the
+//                               recommended pattern (see Da.10 docs)
+//                               is to attempt reconnect before
+//                               escalating.
+//   RemoteShutdown         -> (EXIT_SHUTDOWN, "")
+//
+// Returns a flat ClassifiedExit struct so the call site doesn't need
+// to destructure.
+//
+// EXIT_NORMAL / EXIT_SHUTDOWN / EXIT_KILLED / EXIT_CRASHED come from
+// supervisor.mn (concat order ensures the constants are visible).
+// ---------------------------------------------------------------------------
+
+pub tipo ClassifiedExit {
+    exit_kind: Int,
+    reason: String
+}
+
+pub fn classify_remote_exit(r: RemoteExitReason) -> ClassifiedExit {
+    pon mut k: Int = 0
+    pon mut m: String = ""
+    match r {
+        RemoteCrashed(s) => { k = EXIT_CRASHED(); m = s },
+        RemoteUnreachable(s) => { k = EXIT_CRASHED(); m = "transport-lost: " + s },
+        RemoteShutdown => { k = EXIT_SHUTDOWN(); m = "" }
+    }
+    da new ClassifiedExit { exit_kind: k, reason: m }
+}
+
+// ---------------------------------------------------------------------------
+// ChildExitedMsg — payload shape for MSG=5 ChildExited frames.
+//
+// Wire form: JSON object
+//   { "child_id": "<agent-id-string>",
+//     "kind":     <0|1|2|3>,        // 0=Crashed, 1=Unreachable, 2=Shutdown
+//     "reason":   "<message>" }
+//
+// The kind is a small int instead of a string for compactness.
+// Decoder maps back to RemoteExitReason.
+//
+// Encoded by hand (no Js.4 typed-serde here) to keep this self-
+// contained — the v5.40.0 typed-serde issue with generic intrinsics
+// applies if we tried to use to_json::<ChildExitedMsg> here.
+// ---------------------------------------------------------------------------
+
+pub tipo ChildExitedMsg {
+    child_id: String,
+    kind: Int,
+    reason: String
+}
+
+pub fn new_child_exited_msg(child_id: String, kind: Int, reason: String) -> ChildExitedMsg {
+    da new ChildExitedMsg { child_id: child_id, kind: kind, reason: reason }
+}
+
+// JSON-string-escape: we keep the encoder simple and require that
+// payload reasons + child_ids contain no double-quote, backslash, or
+// control characters. v5.43.x adds proper escaping; v5.43.0 takes
+// the strict-input invariant and documents it. Validation rejects
+// any reason/child_id with embedded `"` or `\` characters.
+fn json_safe(s: String) -> Bool {
+    pon n: Int = len(s)
+    pon mut i: Int = 0
+    mien i < n {
+        pon ch: String = s.char_at(i)
+        si ch == "\"" || ch == "\\" {
+            da false
+        }
+        i = i + 1
+    }
+    da true
+}
+
+pub fn encode_child_exited(m: ChildExitedMsg) -> String {
+    si !json_safe(m.child_id) || !json_safe(m.reason) {
+        // Unsafe input — replace with a placeholder so the wire
+        // format stays valid. Real encoder would escape.
+        da "{\"child_id\":\"<unsafe>\",\"kind\":0,\"reason\":\"<unsafe>\"}"
+    }
+    da "{\"child_id\":\"" + m.child_id + "\",\"kind\":" + str(m.kind) + ",\"reason\":\"" + m.reason + "\"}"
+}
+
+// Reason-extract: this is a hand-rolled parser for the strict shape
+// above. Returns ChildExitedMsg with empty fields on parse failure
+// (caller should treat as RemoteCrashed("decode-failed")). v5.43.x
+// switches to from_json::<ChildExitedMsg> when typed-serde + non-
+// flat shapes work cleanly.
+pub fn decode_child_exited(s: String) -> ChildExitedMsg {
+    pon empty: ChildExitedMsg = new_child_exited_msg("", 0, "")
+    pon n: Int = len(s)
+    si n < 30 {
+        da empty
+    }
+
+    // Find "child_id":"...".
+    pon ci_start: Int = find_after(s, "\"child_id\":\"", 0)
+    si ci_start < 0 {
+        da empty
+    }
+    pon ci_end: Int = find_quote(s, ci_start)
+    si ci_end < 0 {
+        da empty
+    }
+    pon child_id: String = s.substr(ci_start, ci_end - ci_start)
+
+    // Find "kind":<int>.
+    pon k_start: Int = find_after(s, "\"kind\":", ci_end)
+    si k_start < 0 {
+        da empty
+    }
+    pon kind: Int = parse_int_to_comma(s, k_start)
+    si kind < 0 || kind > 2 {
+        da empty
+    }
+
+    // Find "reason":"...".
+    pon r_start: Int = find_after(s, "\"reason\":\"", k_start)
+    si r_start < 0 {
+        da empty
+    }
+    pon r_end: Int = find_quote(s, r_start)
+    si r_end < 0 {
+        da empty
+    }
+    pon reason: String = s.substr(r_start, r_end - r_start)
+
+    da new_child_exited_msg(child_id, kind, reason)
+}
+
+// child_kind <-> RemoteExitReason
+pub fn child_kind_to_reason(k: Int, msg: String) -> RemoteExitReason {
+    si k == 0 { da RemoteCrashed(msg) }
+    si k == 1 { da RemoteUnreachable(msg) }
+    da RemoteShutdown
+}
+
+pub fn remote_exit_reason_to_kind(r: RemoteExitReason) -> Int {
+    pon mut k: Int = 0
+    match r {
+        RemoteCrashed(s) => { k = 0 },
+        RemoteUnreachable(s) => { k = 1 },
+        RemoteShutdown => { k = 2 }
+    }
+    da k
+}
+
+// ---------------------------------------------------------------------------
+// String helpers (local, non-public — duplicated from existing stdlib
+// where possible to keep this module concat-portable).
+// ---------------------------------------------------------------------------
+
+// Find the first occurrence of `needle` at or after `start`. Returns
+// the index AFTER the needle on success, or -1 if not found. (After
+// the needle is the more useful position for parsing a value that
+// follows a key.)
+fn find_after(s: String, needle: String, start: Int) -> Int {
+    pon slen: Int = len(s)
+    pon nlen: Int = len(needle)
+    si nlen == 0 || start < 0 || start + nlen > slen {
+        da -1
+    }
+    pon mut i: Int = start
+    mien i + nlen <= slen {
+        pon mut matched: Bool = true
+        pon mut j: Int = 0
+        mien j < nlen {
+            si s.char_at(i + j) != needle.char_at(j) {
+                matched = false
+                j = nlen
+            }
+            j = j + 1
+        }
+        si matched {
+            da i + nlen
+        }
+        i = i + 1
+    }
+    da -1
+}
+
+fn find_quote(s: String, start: Int) -> Int {
+    pon slen: Int = len(s)
+    pon mut i: Int = start
+    mien i < slen {
+        si s.char_at(i) == "\"" {
+            da i
+        }
+        i = i + 1
+    }
+    da -1
+}
+
+fn parse_int_to_comma(s: String, start: Int) -> Int {
+    pon slen: Int = len(s)
+    pon mut i: Int = start
+    pon mut result: Int = 0
+    pon mut have_digit: Bool = false
+    mien i < slen {
+        pon ch: String = s.char_at(i)
+        si ch == "," || ch == "}" {
+            si !have_digit { da -1 }
+            da result
+        }
+        pon mut digit: Int = -1
+        si ch == "0" { digit = 0
+        } sino { si ch == "1" { digit = 1
+        } sino { si ch == "2" { digit = 2
+        } sino { si ch == "3" { digit = 3
+        } sino { si ch == "4" { digit = 4
+        } sino { si ch == "5" { digit = 5
+        } sino { si ch == "6" { digit = 6
+        } sino { si ch == "7" { digit = 7
+        } sino { si ch == "8" { digit = 8
+        } sino { si ch == "9" { digit = 9
+        } } } } } } } } } }
+        si digit < 0 {
+            da -1
+        }
+        result = result * 10 + digit
+        have_digit = true
+        i = i + 1
+    }
+    da -1
+}
+
+// ---------------------------------------------------------------------------
+// Heartbeat — synchronous helper.
+//
+// remote_agent_heartbeat_check(r) sends a Ping and waits for a Pong
+// frame. The user runs this at their own cadence; recommended:
+// every PING_INTERVAL_MS milliseconds. Returns:
+//
+//   RemoteSendResult { ok: true,  agent: <updated handle> }   — Pong received
+//   RemoteSendResult { ok: false, agent: <input handle>,
+//                      err_kind: 11 (Timeout) | 12 (TransportLost),
+//                      err_msg: ... }                          — failure
+//
+// On success, the agent handle's last_seen_recv watermark is
+// advanced and next_seq_send is incremented, which the caller can
+// reflect back into their state.
+//
+// PROMPT-spec async per-connection task with auto-invalidation
+// deferred to v5.43.x — see the SHAPE note at the top.
+// ---------------------------------------------------------------------------
+
+pub fn remote_agent_heartbeat_check(r: RemoteAgent) -> RemoteSendResult {
+    da remote_agent_ping(r)
+}
+
+// ---------------------------------------------------------------------------
+// Env-driven config.
+//
+// MAPANARE_NODE_KEY                - HMAC key (must be >= 32 raw bytes)
+// MAPANARE_NODE_PING_INTERVAL_MS   - ping cadence; default 10000
+// MAPANARE_NODE_PING_TIMEOUT_MS    - pong-await window; default 5000
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_env_get(name: String) -> String
+
+pub fn node_key_from_env() -> String {
+    da __mn_env_get("MAPANARE_NODE_KEY")
+}
+
+pub fn node_ping_interval_ms() -> Int {
+    pon raw: String = __mn_env_get("MAPANARE_NODE_PING_INTERVAL_MS")
+    si len(raw) == 0 {
+        da 10000
+    }
+    pon n: Int = parse_pos_int(raw)
+    si n < 1 {
+        da 10000
+    }
+    da n
+}
+
+pub fn node_ping_timeout_ms() -> Int {
+    pon raw: String = __mn_env_get("MAPANARE_NODE_PING_TIMEOUT_MS")
+    si len(raw) == 0 {
+        da 5000
+    }
+    pon n: Int = parse_pos_int(raw)
+    si n < 1 {
+        da 5000
+    }
+    da n
+}
+
+fn parse_pos_int(s: String) -> Int {
+    pon n: Int = len(s)
+    pon mut result: Int = 0
+    pon mut i: Int = 0
+    mien i < n {
+        pon ch: String = s.char_at(i)
+        pon mut digit: Int = -1
+        si ch == "0" { digit = 0
+        } sino { si ch == "1" { digit = 1
+        } sino { si ch == "2" { digit = 2
+        } sino { si ch == "3" { digit = 3
+        } sino { si ch == "4" { digit = 4
+        } sino { si ch == "5" { digit = 5
+        } sino { si ch == "6" { digit = 6
+        } sino { si ch == "7" { digit = 7
+        } sino { si ch == "8" { digit = 8
+        } sino { si ch == "9" { digit = 9
+        } } } } } } } } } }
+        si digit < 0 {
+            da -1
+        }
+        result = result * 10 + digit
+        i = i + 1
+    }
+    da result
+}
