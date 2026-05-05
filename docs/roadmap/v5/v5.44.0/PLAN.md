@@ -51,6 +51,34 @@ The important rule: packages that require native runtime ABI support
 runtime requirement is explicit in package metadata and CI. Pure `.mn`
 packages move first.
 
+The package-management stance should be different from a Node-style
+vendor tree. Deno is the useful reference point here: project-local
+configuration and lockfiles, shared global dependency cache by default,
+and local `node_modules` only when compatibility requires it. Mapanare
+should copy that boundary, not Deno's surface syntax.
+
+For v5.44.0, keep `mn_modules/` as the concrete project dependency view
+because the installer already writes it. Architecturally, though,
+`mn_modules/` is not the forever storage model. The compiler should
+consume `PackageRoot` records produced by package discovery and should
+not care whether the package bytes came from:
+
+- a local `mn_modules/<name>-<version>/` directory;
+- a path dependency checkout;
+- a git dependency checkout;
+- a future global, immutable package cache keyed by name, version,
+  source, and integrity.
+
+That gives Mapanare a local-vs-global split that is reproducible without
+copying every dependency into every project forever:
+
+- **Local:** `mapanare.toml`, `mapanare.lock`, path overrides, and an
+  optional project dependency view.
+- **Global:** immutable downloaded artifacts/cache entries that can be
+  shared across projects.
+- **Compiler:** package roots selected by the project manifest/lock, not
+  opportunistic scans of whatever happens to exist globally.
+
 ---
 
 ## Goals
@@ -78,10 +106,10 @@ packages move first.
 
 | ID | Severity | Description | Effort |
 |---|---|---|---|
-| **Ps.1** | HIGH | **Package import roots.** Extend `ModuleResolver` construction so project builds include installed package roots from `mn_modules/`, derived from `mapanare.lock` when present and directory scan fallback otherwise. Keep search order deterministic: source-local, explicit `--stdlib-path`/extra paths, installed packages, bundled stdlib. | 3h |
+| **Ps.1** | HIGH | **Package import roots.** Extend `ModuleResolver` construction so project builds include installed package roots from a centralized package-discovery helper. In v5.44.0 those roots come from `mn_modules/`, derived from `mapanare.lock` when present and directory scan fallback otherwise. Do not bake direct `mn_modules/` scans into resolver call sites; the helper should be able to point at a future global cache without changing compiler entry points. Keep search order deterministic: source-local, explicit `--stdlib-path`/extra paths, installed packages, bundled stdlib. | 3h |
 | **Ps.2** | HIGH | **Package name to import root mapping.** Define how `mn_collections-0.1.0/` maps to imports. Preferred v0: package root exports `mod.mn` or `main.mn`; package name import aliases hyphen to underscore (`mn-foo` importable as `mn_foo`). Document the rule and add tests for exact-version dirs. | 2h |
 | **Ps.3** | HIGH | **CLI integration.** Ensure `mnc run`, `mnc build`, `mnc emit-llvm`, `mnc emit-mir`, and test runner paths all construct resolvers with the same package roots. Today `build` has `--stdlib-path`; `emit-llvm` still uses a plain resolver. Remove that inconsistency. | 3h |
-| **Ps.4** | HIGH | **Lockfile/install tracking in build diagnostics.** When a package import resolves through `mn_modules`, record package name/version/source in the module cache or diagnostics surface. This gives reproducible-build breadcrumbs and lets future `mnc package graph` report actual deps. | 2h |
+| **Ps.4** | HIGH | **Lockfile/install tracking in build diagnostics.** When a package import resolves through an installed package root, record package name/version/source/storage in the module cache or diagnostics surface. For v5.44.0 the storage will normally be `mn_modules`; keep the field general enough for future `path`, `git`, and `global-cache` roots. This gives reproducible-build breadcrumbs and lets future `mnc package graph` report actual deps. | 2h |
 | **Ps.5** | MEDIUM | **Pure package exemplar.** Promote `examples/packages/mn_collections` into the blessed example, because it is pure `.mn` and does not depend on removed Python interop. Add a consumer example with `[dependencies] mn_collections = "0.1.0"` and an import that compiles through `mn_modules`. | 2h |
 | **Ps.6** | MEDIUM | **HTTP/time policy note.** Document why `examples/packages/mn_http` is not the model: it uses removed `extern "Python"` and the real `stdlib/net/http.mn` is runtime-bound. `net/http` remains bundled until packages can declare native runtime ABI requirements. Same policy applies to v5.34.0 time shims. | 1h |
 | **Ps.7** | MEDIUM | **External stdlib classification doc.** Add `docs/guides/stdlib-packaging.md` or extend package docs with a table: bundled-core, pure package candidate, runtime-bound candidate, downstream-only. Initial candidates: `text`, `encoding/csv`, collection helpers = pure; `net/http`, `time`, sqlite/crypto = runtime-bound; calendars beyond Gregorian = downstream-only. | 2h |
@@ -94,9 +122,12 @@ packages move first.
 ## Phase plan
 
 - **Phase 0** — Pre-flight; v5.43.0 HEAD clean. Confirm package
-  manager tests and module-resolution tests baseline.
+  manager tests and module-resolution tests baseline. Audit whether any
+  existing package code already has a cache/root abstraction before
+  adding a new one.
 - **Phase 1** — Ps.1 + Ps.2 resolver design and package-root
-  discovery. Keep it deterministic and tiny.
+  discovery. Keep it deterministic and tiny. The key interface is
+  `PackageRoot`, not `mn_modules` path math spread across the compiler.
 - **Phase 2** — Ps.3 CLI parity: all compile/test entry points use
   the same resolver construction.
 - **Phase 3** — Ps.4 build diagnostics / install tracking surface.
@@ -114,6 +145,11 @@ packages move first.
   safe later. Bundled stdlib remains the default user experience.
 - **Registry server changes.** Use existing registry-first + git
   fallback behavior. Server-side metadata improvements can follow.
+- **Full global package cache.** v5.44.0 may name the design boundary,
+  but it does not implement cache population, garbage collection,
+  eviction, offline mirrors, or cross-project sharing. The only required
+  work is keeping package discovery abstract enough that a global cache
+  can back `PackageRoot` later.
 - **Native ABI dependency metadata.** This release documents the
   requirement but does not design the full ABI declaration format.
 - **Making `net/http` external.** It is runtime-bound and should stay
@@ -145,6 +181,15 @@ packages move first.
 5. **Panel scope drift.** Adding v5.44.0 before the closeout means the
    panel has one more release to audit. Mitigation: v5.45.0 panel plan
    explicitly includes Ps.* in its audit list.
+6. **Local `mn_modules` becomes accidental architecture.** If resolver
+   construction scans `mn_modules/` directly in multiple places, a future
+   global cache will require another broad refactor. Mitigation: one
+   package-discovery helper returns `PackageRoot` records; resolver and
+   CLI entry points consume those records only.
+7. **Global cache creates spooky imports.** A compiler that searches a
+   user-wide cache directly can make builds depend on unrelated projects.
+   Mitigation: global storage, when it exists, is only selected through
+   the project manifest/lock and never searched opportunistically.
 
 ---
 
@@ -152,6 +197,8 @@ packages move first.
 
 - ✅ A project with `mapanare.toml` + `mapanare.lock` can import a
   package installed under `mn_modules/<name>-<version>/`.
+- ✅ Package discovery is centralized behind a `PackageRoot` interface,
+  so future global-cache storage does not change resolver call sites.
 - ✅ `mnc build`, `mnc emit-llvm`, `mnc emit-mir`, and test runner use
   the same package-aware resolver behavior.
 - ✅ Lockfile-installed version is visible in build diagnostics or
@@ -185,6 +232,8 @@ packages move first.
 **Inherits to v6.0 or later:**
 - Native ABI dependency metadata for packages.
 - First-class `mnc package graph` / dependency tree UI.
+- Global content-addressed package cache with a project-local dependency
+  view, so Mapanare avoids a permanent Node-style copied dependency tree.
 - Actual `mapanare-research/stdlib` repo split once package imports
   have soaked.
 - Registry-side package provenance/signing hardening.
