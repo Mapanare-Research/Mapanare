@@ -19,6 +19,182 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.43.0** (ready, not tagged) — **Da.\* — distributed agents
+  v0; manifesto arc CLOSED for v5.x.** Third and final
+  manifesto-arc release after v5.40.0 `ask` and v5.42.0 As.\*
+  supervision. Ships network-transparent `agent.send` over
+  TCP/TLS: `RemoteAgent` handles addressed by
+  `tcp://host:port/agent-id` (or `tls://...`), versioned
+  length-prefixed HMAC-SHA256-signed wire protocol, Node
+  listener with per-connection state, supervision interop
+  bridging remote `ChildExited` frames into the v5.42.0
+  `supervisor_handle_exit` strategy library. After v5.43.0 the
+  manifesto's "first-class agents" pitch is no longer
+  library-class-with-extra-steps — agents span machines.
+  Adds two new stdlib modules (`stdlib/agent/node.mn` ~340 LOC
+  shipping `NodeHandle`, `node_listen` / `_listen_tls` /
+  `_accept_one` / `_shutdown`, `NodeConnection`,
+  `conn_send_frame` / `_recv_frame` / `_close`, `ne_kind` /
+  `ne_msg`; `stdlib/agent/remote.mn` ~225 LOC shipping
+  `RemoteAgent`, `remote_agent_connect` / `_send` / `_recv` /
+  `_disconnect` / `_ping`) plus extensions to two existing
+  modules (`stdlib/agent/url.mn` shipping `NetworkError`
+  15-variant enum + `AgentUrl` + `parse_agent_url` returning
+  flat `UrlParseResult`; `stdlib/agent/supervision.mn` net-new
+  ~410 LOC shipping `RemoteExitReason` 3-variant enum +
+  `ChildExitedMsg` encode/decode + `classify_remote_exit` +
+  synchronous `remote_agent_heartbeat_check` +
+  `node_key_from_env` / `node_ping_interval_ms` /
+  `node_ping_timeout_ms` env config readers).
+  **Adds one new C runtime file** (`runtime/native/mapanare_node.c`
+  ~360 LOC) with **5 new public exports**
+  (`__mn_node_listen_str`, `__mn_node_accept`,
+  `__mn_node_connect_str`, `__mn_node_write_str`,
+  `__mn_node_read_frame_str`, `__mn_node_close`,
+  `__mn_node_get_fd`, plus 2 MnString TLS server ctx
+  wrappers). Plus **server-side TLS additions** to
+  `mapanare_io.{c,h}` — 5 new dlopen symbols
+  (`TLS_server_method`, `SSL_accept`,
+  `SSL_CTX_use_certificate_file`,
+  `SSL_CTX_use_PrivateKey_file`,
+  `SSL_CTX_check_private_key`) + 3 new public exports
+  (`__mn_tls_server_ctx_new`, `__mn_tls_server_ctx_free`,
+  `__mn_tls_accept`). **Adds zero new MIR ops, zero compiler
+  edits, zero `mapanare/self/*.mn` source touches.** Strict
+  3-stage fixed point preserved by construction at v5.42.0's
+  **242,338 lines / 0 diff** (45-release strict streak from
+  the v5.7.1 baseline). Goldens **96/96** (no new goldens —
+  distributed agents tested via 4 link-and-run cases under
+  `stdlib/agent/tests/test_dist_*.mn`).
+  **Wire format (v1, locked at PRE_PHASE_AUDIT):**
+  `[u32 length BE][u8 v=1][u8 mt][u64 seq BE][16 b hmac][JSON]`.
+  HMAC-SHA256(key, version || msg_type || sequence_be ||
+  payload) truncated to 16 bytes (RFC 4868 secure for keys ≥
+  32 raw bytes). Replay rejection via per-connection
+  last_seen watermark. Six msg_types locked append-only
+  (Send / Reply / Ping / Pong / ChildExited / ProtoError;
+  7-15 reserved for v1.x; 16+ require v2 frame). DoS guard at
+  100 MB. The version byte is the only escape hatch.
+  **PROMPT/PLAN deviation (load-bearing) — server-side TLS.**
+  Phase 0 audit surfaced that the existing OpenSSL dlopen
+  plumbing was client-only (`SSL_connect`, no `SSL_accept`).
+  PLAN/PROMPT both presumed server-side TLS was available.
+  Lead-approved Option B: expand Da.8 by ~95 LOC C to add the
+  5 missing dlopen symbols + 3 new exports + an MnString-form
+  wrapper. Rejected Option A (defer `tls://` to v5.43.1)
+  because plaintext-only would have undermined the security
+  gate the PROMPT itself names.
+  **PROMPT/PLAN deviations — three v5.x lowerer bugs surfaced
+  + worked around (load-bearing).** All documented in commit
+  messages with falsifiability repros at /tmp/diag_\*.mn:
+  (1) `Result<COMPLEX_OK, NetworkError>` destructure corrupts
+  the Err variant tag when Ok is a non-trivial struct (v5.36.0
+  Js.0.B class — Result wrap-shape mismatch). `Result<Int, X>`
+  works; `Result<NodeHandle, X>` returns Err with tag=0
+  (BadUrl) regardless of constructed value.
+  (2) `match Err(e) { da Err(e) }` propagation rewrap also
+  corrupts the variant tag — same root cause as (1) plus an
+  additional rewrap step.
+  (3) Nested 15-arm match on a destructured `e` from outer
+  `Err(e)` silently fails to fire any inner arm. 3-arm and
+  10-arm matches in the same position work; 15+-arm matches
+  silently no-fire.
+  **First-cut workaround**: every public function returning a
+  struct on success uses a flat
+  `(ok: Bool, value, err_kind: Int, err_msg: String)` shape
+  instead of `Result<T, NetworkError>`. The 15 NetworkError
+  variants are encoded as integer kinds (1..15) at the API
+  boundary; the structured enum is preserved internally for
+  local matches. v5.43.x picks up `Result<T, NetworkError>`
+  ergonomics once the lowerer fixes land. Tracked as v5.43.x
+  candidate; out of scope here because (a) Phase 3 needed to
+  ship the surface for Phases 4-7 to build on, (b) `lower.py`
+  edits put STRICT 3-stage fixed point at risk, (c) any
+  compiler edit triggers self-host mirror review.
+  **Variant rename** `TransportLost` → `RemoteUnreachable` in
+  `RemoteExitReason`. NetworkError already has `TransportLost`
+  (Phase 1, url.mn); concat-pattern with both enums in scope
+  resolves "TransportLost" to the wrong enum's variant tag —
+  the v5.x lowerer disambiguates by name only at match-pattern
+  resolution. The semantic supervision distinction
+  ("can't reach child" vs "child crashed") is preserved.
+  **Async per-connection heartbeat task** and **auto-routing
+  of inbound `MSG_CHILD_EXITED` frames** through a parent
+  supervisor's inbox both deferred to v5.43.x — both require
+  fn-typed callbacks or dedicated agent-runtime threads (paths
+  v5.43.0 has not stress-tested at this stage). v5.43.0 ships
+  the synchronous heartbeat primitive
+  (`remote_agent_heartbeat_check`) + the conversion helpers
+  (`encode_child_exited`, `decode_child_exited`,
+  `classify_remote_exit`) that make user-side orchestration
+  tractable. **Generic `RemoteAgent<T>` with auto-`to_json`**
+  deferred behind v5.40.0 Ai.1 prerequisite (the
+  `_specialize_fn` body-walk fix); v5.43.0 takes the
+  explicit-`to_json::<T>(msg)`-at-call-site fallback the
+  v5.40.0 PROMPT authorized.
+  **Da.0 runtime fix (latent bug).** `__mn_str_chr` in
+  `mapanare_core.c` accepted only 0..127. Per the file-header
+  note, Mapanare strings are explicitly byte arrays — the
+  0..127 cap was defensive coding that confused
+  byte-strings-as-UTF-8. Made any pure-Mapanare binary
+  protocol impossible (every header byte ≥ 128 silently became
+  empty). Latent because `stdlib/net/websocket.mn` uses
+  `str(byte)` decimal stringification instead of
+  `__mn_str_chr` and the websocket tests are compile-only.
+  Fix extends range to 0..255 + uses `__mn_str_from_parts` to
+  preserve byte 0x00. Goldens 96/96 preserved.
+  **Test infrastructure.** New
+  `tests/stdlib/test_distributed_agents.py` pytest harness
+  mirrors the v5.42.0 `test_supervisor.py` concat-pattern.
+  4 link-and-run cases at HEAD covering the 10 PROMPT-spec
+  Da.7 cases (cases 2 + 3 are covered by the C smoke
+  /tmp/da8_smoke.c). **4/4 GREEN.** v5.42.0 supervision
+  suite **9/9 GREEN.**
+  **Sanitizer + fuzz gates (UB-risk + network-risk tier):**
+  TSan run of /tmp/da8_smoke.c — 0 data races. ASan run — 0
+  leaks. Network fuzz `/tmp/da_fuzz.c` — 1000 iterations of
+  randomized inputs (8 variants: oversize length, length=0,
+  truncated, random body, sub-header, length-without-body,
+  all-random, immediate close); 1001 accepts, 0 crashes, 0
+  hangs. The DoS guard + length validation in
+  `__mn_node_read_frame_str` held through every variant.
+  Binary-compat regression
+  `tests/runtime/test_agent_struct_compat.py` — 4/4 GREEN.
+  v5.43.0 adds zero new fields to `mapanare_agent_t`; binary
+  compat trivially preserved.
+  **Hd-class preventative.** `docs/SPEC.md` header re-synced
+  from "v5.42.0 cut" to "v5.43.0 cut" with new sync block
+  documenting the wire-format invariants + the 5 new dlopen
+  symbols + 3 new public exports + the three v5.x lowerer
+  bugs. `check_doc_freshness.py` GREEN.
+  `check_changelog_honesty.py` GREEN.
+  **Source delta:** ~95 LOC C (mapanare_io server-side TLS) +
+  ~360 LOC C (mapanare_node net-new) + ~200 LOC url.mn +
+  ~290 LOC remote_proto.mn + ~340 LOC node.mn + ~225 LOC
+  remote.mn + ~410 LOC supervision.mn + ~270 LOC `.mn` test
+  cases (4 files) + ~250 LOC pytest harness + ~195 LOC
+  examples (distributed_pool.mn + heartbeat_demo.mn) + ~210
+  LOC `docs/stdlib/agent.md` Distributed-agents extension +
+  ~430 LOC PRE_PHASE_AUDIT.md + ~200 LOC SESSION_REPORT.md +
+  ~200 LOC CHANGELOG + ~75 LOC SPEC sync + this CLAUDE.md
+  release-notes entry + mechanical bump_version.py edits.
+  Aggregate state entering v5.44.0 (package-system runway):
+  **0 HIGH** (manifesto arc CLOSED) / **3 MEDIUM** (lowerer
+  fixes for Result<T, complex Err> + variant rewrap + nested
+  15-arm match — three documented bugs blocking ergonomic
+  v5.43.x; macOS notarization carry from v5.33.0 Nu.2; Ai.1
+  `_specialize_fn` body-walk for generic stdlib functions
+  calling generic intrinsics) / ~10 LOW (async heartbeat
+  task, auto-route of MSG_CHILD_EXITED, generic
+  RemoteAgent<T>, service registry / discovery, replication
+  / consensus, mTLS, dynamic key rotation, binary serde fast
+  path, IPv6 bracket URL syntax, websocket.mn `str(byte)`
+  decimal-stringification latent bug). **Manifesto arc
+  CLOSED for v5.x.** v5.44.0 package-system runway begins;
+  v5.45.0 panel green-lights v6.0. See
+  `docs/roadmap/v5/v5.43.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.42.0** (ready, not tagged) — **As.\* — agent supervision
   trees.** Second manifesto-arc release after v5.40.0 `ask`. Ships
   Erlang/OTP-style supervision: the strategy library
@@ -2814,7 +2990,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (32081 symbols, 67276 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (32160 symbols, 67398 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

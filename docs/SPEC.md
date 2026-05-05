@@ -1,7 +1,72 @@
 # Mapanare Language Specification
 
-**Version:** 5.42.0
-**Status:** Live — synced to the v5.42.0 cut (2026-05-05)
+**Version:** 5.43.0
+**Status:** Live — synced to the v5.43.0 cut (2026-05-05)
+
+> **v5.43.0 — Da.\* — distributed agents v0; manifesto arc
+> CLOSED for v5.x.** Third and final manifesto-arc release
+> (after v5.40.0 `ask` and v5.42.0 As.\* supervision). Ships
+> network-transparent `agent.send` over TCP/TLS:
+> `RemoteAgent` handles addressed by
+> `tcp://host:port/agent-id` (or `tls://...`), versioned
+> length-prefixed HMAC-SHA256-signed wire protocol, Node
+> listener with per-connection state, supervision interop
+> bridging remote `ChildExited` frames into the v5.42.0
+> `supervisor_handle_exit` strategy library. After v5.43.0
+> Mapanare's "first-class agents" pitch is no longer
+> library-class-with-extra-steps — agents span machines.
+>
+> Adds two new stdlib modules (`stdlib/agent/node.mn`,
+> `stdlib/agent/remote.mn`) plus extensions to two existing
+> modules (`stdlib/agent/url.mn` shipping `NetworkError` /
+> `AgentUrl` / `parse_agent_url`; `stdlib/agent/supervision.mn`
+> shipping `RemoteExitReason` / `ChildExitedMsg` / heartbeat
+> helpers). One new C runtime file
+> (`runtime/native/mapanare_node.c` ~360 LOC) plus
+> server-side TLS additions to `mapanare_io.{c,h}` (5 new
+> dlopen symbols + 3 new public exports). **Adds zero new
+> MIR ops, zero compiler edits, zero `mapanare/self/*.mn`
+> source touches.** Strict 3-stage fixed point preserved by
+> construction at v5.42.0's **242,338 lines / 0 diff**
+> (45-release strict streak from the v5.7.1 baseline).
+> Goldens **96/96** (no new goldens — distributed agents
+> tested via 4 link-and-run cases under
+> `stdlib/agent/tests/test_dist_*.mn`).
+>
+> **Wire format (v1, locked at PRE_PHASE_AUDIT):**
+> `[u32 length BE][u8 v=1][u8 mt][u64 seq BE][16 b hmac][JSON]`.
+> HMAC-SHA256(key, version || msg_type || sequence_be ||
+> payload) truncated to 16 bytes (RFC 4868 secure for keys
+> ≥ 32 bytes; KEY_MIN_BYTES). Replay rejection via
+> per-connection last_seen watermark. Six msg_types locked
+> append-only (Send / Reply / Ping / Pong / ChildExited /
+> ProtoError; 7-15 reserved for v1.x; 16+ require v2 frame).
+> DoS guard at 100 MB.
+>
+> **PROMPT/PLAN deviation (load-bearing).** Phase 0 audit
+> surfaced server-side TLS gap (existing dlopen plumbing was
+> client-only); lead-approved Option B added the 5 missing
+> dlopen symbols + 3 exports. Three v5.x lowerer bugs
+> surfaced + worked around via flat result structs at every
+> public boundary (Result wrap-shape mismatch with complex
+> Ok types; variant-tag corruption on Err rewrap; nested
+> 15-arm match silent-no-fire). Variant rename
+> `TransportLost` → `RemoteUnreachable` to avoid collision
+> with NetworkError's `TransportLost`. Async per-connection
+> heartbeat task and auto-routing of inbound
+> `MSG_CHILD_EXITED` frames deferred to v5.43.x; v5.43.0
+> ships the synchronous heartbeat primitive + conversion
+> helpers. Generic `RemoteAgent<T>` deferred behind v5.40.0
+> Ai.1 prerequisite.
+>
+> **Da.0 runtime fix:** `__mn_str_chr` extended from 0..127
+> to 0..255 (Mapanare strings are byte arrays, not UTF-8;
+> the previous range blocked any pure-Mapanare binary
+> protocol). Goldens 96/96 preserved post-fix.
+>
+> SPEC body unchanged from the v5.21.0 cut. v5.43.0 ships
+> entirely as runtime + stdlib + tests + docs + examples; no
+> SPEC-level surface changes.
 
 > **v5.42.0 — As.\* — agent supervision trees.** Second
 > manifesto-arc release after v5.40.0 `ask`. Ships

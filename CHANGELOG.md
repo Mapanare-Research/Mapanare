@@ -7,6 +7,238 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.43.0] - 2026-05-05
+
+**Da.\* — distributed agents v0; manifesto arc CLOSED for v5.x.**
+Third and final manifesto-arc release (after v5.40.0 `ask` and
+v5.42.0 As.\* supervision). Ships network-transparent
+`agent.send` over TCP/TLS: `RemoteAgent` handles addressed by
+`tcp://host:port/agent-id` (or `tls://...`), versioned length-
+prefixed HMAC-signed wire protocol, Node listener with per-
+connection state, supervision interop bridging remote
+`ChildExited` frames into the v5.42.0 `supervisor_handle_exit`
+strategy library. After v5.43.0 the manifesto's "first-class
+agents" pitch is no longer library-class-with-extra-steps —
+agents span machines.
+
+Adds **two new stdlib modules** (`stdlib/agent/node.mn`,
+`stdlib/agent/remote.mn`) plus extensions to two existing
+modules (`stdlib/agent/url.mn` shipping `NetworkError` /
+`AgentUrl` / `parse_agent_url`; `stdlib/agent/supervision.mn`
+shipping `RemoteExitReason` / `ChildExitedMsg` / heartbeat
+helpers). One new C runtime file
+(`runtime/native/mapanare_node.c` ~360 LOC, 7 new exports +
+2 helper exports for MnString-form TLS server ctx wrappers)
+plus server-side TLS additions to `mapanare_io.{c,h}` (5 new
+dlopen symbols: `TLS_server_method`, `SSL_accept`,
+`SSL_CTX_use_certificate_file`, `SSL_CTX_use_PrivateKey_file`,
+`SSL_CTX_check_private_key`; 3 new public exports:
+`__mn_tls_server_ctx_new`, `__mn_tls_server_ctx_free`,
+`__mn_tls_accept`). Strict 3-stage fixed point preserved by
+construction at v5.42.0's **242,338 lines / 0 diff**
+(45-release strict streak from the v5.7.1 baseline; zero
+`mapanare/self/*.mn` source touches). Goldens **96/96**.
+
+**PROMPT/PLAN deviations (load-bearing).** Phase 0 audit
+(`docs/roadmap/v5/v5.43.0/PRE_PHASE_AUDIT.md`) surfaced:
+(1) PLAN/PROMPT premise that server-side TLS was already in
+the dlopen pattern was wrong — the existing OpenSSL plumbing
+was client-only (`SSL_connect`, no `SSL_accept`). Lead-
+approved Option B: expand Da.8 by ~95 LOC C to add the 5
+missing dlopen symbols + 3 new exports + an MnString-form
+wrapper. Rejected Option A (defer `tls://` to v5.43.1) because
+plaintext-only would have undermined the security gate the
+PROMPT itself names. (2) Generic `RemoteAgent<T>` with auto-
+`to_json::<T>(msg)` requires the v5.40.0-deferred Ai.1
+`_specialize_fn` body-walk fix; v5.43.0 takes the explicit-
+`to_json`-at-call-site fallback the v5.40.0 PROMPT authorized
+under the same conditions. (3) Async per-connection
+heartbeat task and auto-routing of inbound `MSG_CHILD_EXITED`
+frames through a parent supervisor's inbox both require fn-
+typed callbacks or dedicated agent-runtime threads (paths
+v5.43.0 has not stress-tested at this stage); v5.43.0 ships
+the SYNCHRONOUS heartbeat primitive + the conversion helpers
+that make the user-side orchestration tractable. v5.43.x
+auto-fires both.
+
+**Three v5.x lowerer bugs surfaced + worked around (load-
+bearing).** All documented in commit messages with
+falsifiability repros:
+(1) `Result<COMPLEX_OK, NetworkError>` destructure corrupts
+the Err variant tag when Ok is a non-trivial struct. v5.36.0
+Js.0.B class — Result wrap-shape mismatch. `Result<Int, X>`
+works; `Result<NodeHandle, X>` doesn't (Err variant always
+reads as tag=0 / `BadUrl` regardless of constructed value).
+(2) `match Err(e) { da Err(e) }` propagation rewrap also
+corrupts the variant tag — the destructured `e` carries wrong
+variant. Same root cause as (1) plus an additional rewrap
+step.
+(3) Nested 15-arm match on a destructured `e` from outer
+`Err(e)` silently fails to fire any inner arm. 3-arm and
+10-arm matches in the same position work; 15+-arm matches
+silently no-fire.
+v5.43.0 first-cut workaround: every public function returning
+a struct on success uses a flat
+`(ok: Bool, value, err_kind: Int, err_msg: String)` shape
+instead of `Result<T, NetworkError>`. The 15 NetworkError
+variants are encoded as integer kinds (1..15) at the API
+boundary; the structured enum is preserved internally for
+local matches. v5.43.x picks up `Result<T, NetworkError>`
+ergonomics once the lowerer fixes land. Tracked as v5.43.x
+candidate; out of scope here because (a) Phase 3 needed to
+ship the surface for Phases 4-7 to build on, (b) `lower.py`
+edits put STRICT 3-stage fixed point at risk, (c) any
+compiler edit triggers self-host mirror review.
+
+**Variant rename: `TransportLost` → `RemoteUnreachable`** in
+`RemoteExitReason`. NetworkError already has `TransportLost`
+(v5.43.0 Phase 1, url.mn); when both enums are in scope under
+the concat-pattern, match arms resolve "TransportLost" to the
+wrong enum's variant tag — the lowerer disambiguates by name
+only at match-pattern resolution. Same bug class as v5.39.7's
+variant-name collision finding. The semantic supervision
+distinction ("can't reach child" vs "child crashed") is
+preserved; only the variant name differs.
+
+**Da.0 — runtime fix (latent bug).** `__mn_str_chr` in
+`mapanare_core.c` accepted only 0..127 — the 0..127 bound was
+defensive coding that confused Mapanare strings with UTF-8.
+Per the file-header note, Mapanare strings are explicitly byte
+arrays. The 0..127 range made any pure-Mapanare binary
+protocol impossible — every header byte ≥ 128 silently became
+empty. Latent because the only existing pure-Mapanare framing
+module (`stdlib/net/websocket.mn`) uses `str(byte)` (decimal
+stringification) instead of `__mn_str_chr` and the websocket
+tests are compile-only — never validating the wire format. Fix
+extends the range to 0..255 + uses `__mn_str_from_parts` to
+preserve byte 0x00 (which `__mn_str_from_cstr` would NUL-
+truncate). The websocket.mn bug is structurally adjacent but
+tracked separately as v5.44+; v5.43.0 only fixes the runtime
+primitive. Goldens 96/96 preserved post-fix.
+
+**Wire format (v1, locked at PRE_PHASE_AUDIT):**
+`[u32 length BE][u8 v=1][u8 mt][u64 seq BE][16 b hmac][JSON]`.
+HMAC-SHA256(key, version || msg_type || sequence_be || payload)
+truncated to 16 bytes (RFC 4868 secure for keys ≥ 32 raw bytes;
+KEY_MIN_BYTES). Replay rejection via per-connection last_seen
+watermark. Six msg_types locked append-only (Send / Reply /
+Ping / Pong / ChildExited / ProtoError; 7-15 reserved for v1.x;
+16+ require v2 frame). DoS guard at 100 MB.
+
+**Test infrastructure.** New
+`tests/stdlib/test_distributed_agents.py` pytest harness mirrors
+the v5.42.0 `test_supervisor.py` concat-pattern: reads the
+6-module distributed-agents stdlib in concat order (url →
+remote_proto → node → remote → supervisor → supervision),
+prepends each test main body, compiles via Python LLVM
+emitter, links against `libmapanare_rt.a`, runs, asserts
+"PASSED" + no "FAIL". 4 link-and-run cases at HEAD covering the
+10 PROMPT-spec Da.7 cases. **4/4 GREEN.** v5.42.0 supervision
+suite **9/9 GREEN.**
+
+**Sanitizer + fuzz gates (UB-risk + network-risk tier):**
+- TSan run of /tmp/da8_smoke.c — **0 data races**.
+- ASan run of /tmp/da8_smoke.c — **0 leaks**.
+- Network fuzz `/tmp/da_fuzz.c` — 1000 iterations of randomized
+  inputs (8 variants: oversize length, length=0, truncated
+  reads, random body, sub-header, length-without-body, all-
+  random, immediate close). **1001 accepts, 0 crashes, 0
+  hangs.** The DoS guard + length validation in
+  `__mn_node_read_frame_str` held through every variant.
+- Binary-compat regression
+  `tests/runtime/test_agent_struct_compat.py` — **4/4 GREEN.**
+  v5.43.0 adds zero new fields to `mapanare_agent_t`; binary
+  compat trivially preserved by construction.
+
+**Source delta:** ~95 LOC C (mapanare_io server-side TLS
+extensions) + ~360 LOC C (mapanare_node net-new) + ~200 LOC
+`stdlib/agent/url.mn` (NetworkError + AgentUrl + parse_agent_url
+with flat result shape) + ~290 LOC `stdlib/agent/remote_proto.mn`
+(Frame + encode/decode + HMAC + replay) + ~340 LOC
+`stdlib/agent/node.mn` (NodeHandle + NodeConnection + listener
++ accept + frame send/recv) + ~225 LOC `stdlib/agent/remote.mn`
+(RemoteAgent + connect/send/recv/disconnect + ping helpers) +
+~410 LOC `stdlib/agent/supervision.mn` (RemoteExitReason +
+ChildExitedMsg + classify + heartbeat sync helper + env config)
++ ~270 LOC test cases (4 files in
+`stdlib/agent/tests/`: test_dist_proto, test_dist_url,
+test_dist_node, test_dist_supervision) + ~250 LOC pytest harness
++ ~195 LOC examples (distributed_pool.mn + heartbeat_demo.mn)
++ ~210 LOC `docs/stdlib/agent.md` Distributed-agents extension
++ ~430 LOC PRE_PHASE_AUDIT.md + this CHANGELOG entry +
+mechanical bump_version.py edits.
+
+Aggregate state entering v5.44.0 (package-system runway):
+**0 HIGH** (manifesto arc CLOSED) / **3 MEDIUM** (lowerer
+fixes for Result<T, complex Err> + variant rewrap + nested
+15-arm match — three documented bugs blocking ergonomic
+v5.43.x; macOS notarization carry from v5.33.0 Nu.2; Ai.1
+`_specialize_fn` body-walk for generic stdlib functions
+calling generic intrinsics) / ~10 LOW (async heartbeat task,
+auto-route of MSG_CHILD_EXITED, generic RemoteAgent<T>,
+service registry / discovery, replication / consensus, mTLS,
+dynamic key rotation, binary serde fast path, IPv6 bracket
+URL syntax, websocket.mn `str(byte)` decimal-stringification
+latent bug). **Manifesto arc CLOSED for v5.x.** v5.44.0
+package-system runway begins; v5.45.0 panel green-lights
+v6.0. See `docs/roadmap/v5/v5.43.0/{PLAN.md, PROMPT.md,
+PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
+### Added
+
+- `stdlib/agent/url.mn` — `AgentUrl`, `NetworkError` (15
+  variants), `parse_agent_url` returning flat `UrlParseResult`
+- `stdlib/agent/remote_proto.mn` — `Frame`, `encode_frame`,
+  `decode_frame`, `validate_key`, msg_type + wire-format
+  constants
+- `stdlib/agent/node.mn` — `NodeHandle`, `NodeConnection`,
+  `node_listen`, `node_listen_tls`, `node_accept_one`,
+  `node_shutdown`, `conn_send_frame`, `conn_recv_frame`,
+  `conn_close`, `ne_kind`, `ne_msg`
+- `stdlib/agent/remote.mn` — `RemoteAgent`,
+  `remote_agent_connect`, `remote_agent_send`,
+  `remote_agent_recv`, `remote_agent_disconnect`,
+  `remote_agent_ping`, `remote_agent_send_typed_msg`
+- `stdlib/agent/supervision.mn` — `RemoteExitReason`,
+  `ClassifiedExit`, `classify_remote_exit`, `ChildExitedMsg`,
+  `encode_child_exited`, `decode_child_exited`,
+  `child_kind_to_reason`, `remote_exit_reason_to_kind`,
+  `remote_agent_heartbeat_check`, `node_key_from_env`,
+  `node_ping_interval_ms`, `node_ping_timeout_ms`
+- `runtime/native/mapanare_node.{c,h}` — net-new transport
+  layer (5 public exports + 2 MnString TLS wrappers)
+- `runtime/native/mapanare_io.{c,h}` — server-side TLS
+  additions (3 new exports + 5 new dlopen symbols)
+- `tests/stdlib/test_distributed_agents.py` — Da.7 link-and-
+  run pytest harness
+- `stdlib/agent/tests/test_dist_*.mn` — 4 link-and-run cases
+- `examples/agents/distributed_pool.mn` — coordinator + N
+  workers topology
+- `examples/agents/heartbeat_demo.mn` — supervision interop
+  with all 3 RemoteExitReason variants
+- `docs/stdlib/agent.md` — Distributed-agents extension
+  (~210 LOC: URL syntax, key management, wire format,
+  failure-mode matrix, 4 cookbook recipes, v5.43.x roadmap,
+  performance notes)
+- `docs/roadmap/v5/v5.43.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}` — release artifacts
+
+### Changed
+
+- `runtime/native/mapanare_core.c`: `__mn_str_chr` accepts
+  0..255 (was 0..127). Mapanare strings are byte arrays per
+  the file-header note; the previous 0..127 cap blocked any
+  pure-Mapanare binary protocol implementation. Uses
+  `__mn_str_from_parts` to preserve byte 0x00. Goldens 96/96
+  preserved post-fix.
+
+### Fixed
+
+- (none — v5.43.0 is a feature release; the lowerer bugs
+  surfaced during Phase 3 are tracked as v5.43.x candidates,
+  not fixed in scope)
+
+
 ## [5.42.0] - 2026-05-05
 
 **As.\* — agent supervision trees.** Second manifesto-arc release
@@ -11437,7 +11669,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.42.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.43.0...HEAD
+[5.43.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.42.0...v5.43.0
 [5.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.41.0...v5.42.0
 [5.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.40.0...v5.41.0
 [5.40.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.7...v5.40.0
