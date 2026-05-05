@@ -241,3 +241,23 @@ MN_NODE_EXPORT int64_t __mn_node_get_fd(int64_t conn_handle) {
     mn_node_conn_t *c = (mn_node_conn_t *)(uintptr_t)conn_handle;
     return c->fd;
 }
+
+MN_NODE_EXPORT int64_t __mn_tls_server_ctx_new_str(MnString cert_path,
+                                                     MnString key_path) {
+    char *cert_cstr = mnstring_to_cstr(cert_path);
+    char *key_cstr = mnstring_to_cstr(key_path);
+    if (!cert_cstr || !key_cstr) {
+        if (cert_cstr) free(cert_cstr);
+        if (key_cstr) free(key_cstr);
+        return 0;
+    }
+    void *ctx = __mn_tls_server_ctx_new(cert_cstr, key_cstr);
+    free(cert_cstr);
+    free(key_cstr);
+    return (int64_t)(uintptr_t)ctx;
+}
+
+MN_NODE_EXPORT void __mn_tls_server_ctx_free_handle(int64_t server_ctx) {
+    if (!server_ctx) return;
+    __mn_tls_server_ctx_free((void *)(uintptr_t)server_ctx);
+}

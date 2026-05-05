@@ -92,4 +92,16 @@ MN_NODE_EXPORT void __mn_node_close(int64_t conn);
  * Useful for wiring connections into __mn_event_loop_add_fd. */
 MN_NODE_EXPORT int64_t __mn_node_get_fd(int64_t conn);
 
+/* MnString-form wrapper for __mn_tls_server_ctx_new. Mapanare extern
+ * declarations cannot pass `const char *` directly; this materialises
+ * cert + key path strings and delegates. Returns the opaque server
+ * context cast to int64_t, or 0 on failure (missing OpenSSL, bad
+ * cert/key, mismatch, etc.). */
+MN_NODE_EXPORT int64_t __mn_tls_server_ctx_new_str(MnString cert_path,
+                                                     MnString key_path);
+
+/* MnString-form alias for __mn_tls_server_ctx_free (same address
+ * spec — int64_t-cast pointer). */
+MN_NODE_EXPORT void __mn_tls_server_ctx_free_handle(int64_t server_ctx);
+
 #endif /* MAPANARE_NODE_H */

@@ -176,86 +176,99 @@ fn find_scheme_separator(s: String) -> Int {
 // here flips a parametrized case in the test from PASS to FAIL.
 // ---------------------------------------------------------------------------
 
-pub fn parse_agent_url(s: String) -> Result<AgentUrl, NetworkError> {
+// v5.43.0 Da.* lowerer-bug workaround: parse_agent_url returns flat
+// UrlParseResult instead of Result<AgentUrl, NetworkError>. Result
+// with a complex Ok type (struct) corrupts the Err variant tag at
+// destructure time (v5.36.0 Js.0.B class).
+
+pub tipo UrlParseResult {
+    ok: Bool,
+    url: AgentUrl,
+    err_kind: Int,
+    err_msg: String
+}
+
+fn url_parse_ok(u: AgentUrl) -> UrlParseResult {
+    da new UrlParseResult { ok: true, url: u, err_kind: 0, err_msg: "" }
+}
+
+fn url_parse_err(kind: Int, msg: String) -> UrlParseResult {
+    pon empty: AgentUrl = new_agent_url("", "", 0, "")
+    da new UrlParseResult { ok: false, url: empty, err_kind: kind, err_msg: msg }
+}
+
+pub fn parse_agent_url(s: String) -> UrlParseResult {
     pon slen: Int = len(s)
     si slen == 0 {
-        da Err(new_bad_url("empty URL"))
+        da url_parse_err(1, "empty URL")
     }
 
     // 1. Locate "://" separator.
     pon sep: Int = find_scheme_separator(s)
     si sep < 0 {
-        da Err(new_bad_url("missing :// separator"))
+        da url_parse_err(1, "missing :// separator")
     }
     pon scheme: String = s.substr(0, sep)
 
     // 2. Validate scheme.
     si scheme == "unix" {
-        da Err(new_unsupported_scheme("unix:// is reserved for v5.44+; v5.43.0 supports tcp:// and tls:// only"))
+        da url_parse_err(2, "unix:// is reserved for v5.44+; v5.43.0 supports tcp:// and tls:// only")
     }
     si scheme != "tcp" && scheme != "tls" {
-        da Err(new_unsupported_scheme("unknown scheme '" + scheme + "'; expected tcp or tls"))
+        da url_parse_err(2, "unknown scheme '" + scheme + "'; expected tcp or tls")
     }
 
-    // 3. Authority + path. Authority starts at sep+3, ends at the
-    //    first '/' (which begins the path / agent-id).
     pon auth_start: Int = sep + 3
     si auth_start >= slen {
-        da Err(new_bad_url("missing host"))
+        da url_parse_err(1, "missing host")
     }
     pon path_start: Int = index_of_char(s, "/", auth_start)
     si path_start >= slen {
-        da Err(new_bad_url("missing /agent-id path"))
+        da url_parse_err(1, "missing /agent-id path")
     }
     pon authority: String = s.substr(auth_start, path_start - auth_start)
 
-    // 4. Split authority on the LAST ':' (so a future IPv6 bracket
-    //    syntax can be added without changing this branch — for v0
-    //    we only handle hostnames + IPv4 so 'last ':'' is correct).
     pon auth_len: Int = len(authority)
     si auth_len == 0 {
-        da Err(new_bad_url("empty host:port"))
+        da url_parse_err(1, "empty host:port")
     }
     pon colon_idx: Int = last_index_of_char(authority, ":", 0, auth_len)
     si colon_idx < 0 {
-        da Err(new_bad_url("missing port (expected host:port)"))
+        da url_parse_err(1, "missing port (expected host:port)")
     }
     si colon_idx == 0 {
-        da Err(new_bad_url("empty host"))
+        da url_parse_err(1, "empty host")
     }
 
     pon host: String = authority.substr(0, colon_idx)
     pon port_str: String = authority.substr(colon_idx + 1, auth_len - colon_idx - 1)
     si len(port_str) == 0 {
-        da Err(new_bad_url("empty port"))
+        da url_parse_err(1, "empty port")
     }
     pon port: Int = parse_int_local(port_str)
     si port < 0 {
-        da Err(new_bad_url("non-numeric port: '" + port_str + "'"))
+        da url_parse_err(1, "non-numeric port: '" + port_str + "'")
     }
     si port == 0 || port > 65535 {
-        da Err(new_bad_url("port out of range 1..65535: " + port_str))
+        da url_parse_err(1, "port out of range 1..65535: " + port_str)
     }
 
-    // 5. agent-id is everything after the leading '/'.
     pon id_start: Int = path_start + 1
     si id_start >= slen {
-        da Err(new_bad_url("empty agent-id"))
+        da url_parse_err(1, "empty agent-id")
     }
     pon agent_id: String = s.substr(id_start, slen - id_start)
 
-    // Reject agent-id with embedded '/' for v0 — keeps the format
-    // simple. Future versions may support nested paths.
     pon agent_id_len: Int = len(agent_id)
     pon mut k: Int = 0
     mien k < agent_id_len {
         si agent_id.char_at(k) == "/" {
-            da Err(new_bad_url("agent-id must not contain '/' in v5.43.0"))
+            da url_parse_err(1, "agent-id must not contain '/' in v5.43.0")
         }
         k = k + 1
     }
 
-    da Ok(new_agent_url(scheme, host, port, agent_id))
+    da url_parse_ok(new_agent_url(scheme, host, port, agent_id))
 }
 
 // ---------------------------------------------------------------------------
@@ -265,3 +278,4 @@ pub fn parse_agent_url(s: String) -> Result<AgentUrl, NetworkError> {
 pub fn url_is_tls(u: AgentUrl) -> Bool {
     da u.scheme == "tls"
 }
+
