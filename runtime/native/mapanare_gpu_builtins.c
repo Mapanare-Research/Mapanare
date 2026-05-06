@@ -50,11 +50,18 @@ MN_EXPORT int64_t __mn_gpu_device_memory(void) {
  * Helper: MnList<Float> ↔ mapanare_tensor_t conversion
  * ----------------------------------------------------------------------- */
 
-/** Create a temporary 1D tensor that borrows list data. */
+/** Create a temporary 1D tensor that borrows list data.
+ *
+ * v5.45.0 Ts.2.A: zero-init via memset to ensure refcount/is_view/
+ * parent fields are not garbage. Borrow tensors bypass the refcount
+ * machinery entirely (freed via tensor_borrow_free, not
+ * mapanare_tensor_free) — but any inadvertent read of the new fields
+ * would be UB without zero-init. */
 static mapanare_tensor_t *tensor_from_list(const MnList *list) {
     if (!list || !list->data || list->len <= 0) return NULL;
     mapanare_tensor_t *t = (mapanare_tensor_t *)malloc(sizeof(mapanare_tensor_t));
     if (!t) return NULL;
+    memset(t, 0, sizeof(*t));
     t->data = list->data;
     t->ndim = 1;
     t->shape = (int64_t *)malloc(sizeof(int64_t));
@@ -225,13 +232,16 @@ MN_EXPORT MnList __mn_gpu_tensor_matmul(const MnList *a, const MnList *b,
         return __mn_list_new((int64_t)sizeof(double));
     }
 
-    /* Phase 2.1 — struct-header NULL checks (unchanged from v3.47.0). */
+    /* Phase 2.1 — struct-header NULL checks (unchanged from v3.47.0).
+     * v5.45.0 Ts.2.A — zero-init the new refcount/is_view/parent fields. */
     mapanare_tensor_t *ta = (mapanare_tensor_t *)malloc(sizeof(mapanare_tensor_t));
     mapanare_tensor_t *tb = (mapanare_tensor_t *)malloc(sizeof(mapanare_tensor_t));
     if (!ta || !tb) {
         free(ta); free(tb);
         return __mn_list_new((int64_t)sizeof(double));
     }
+    memset(ta, 0, sizeof(*ta));
+    memset(tb, 0, sizeof(*tb));
 
     /* Phase 2.1 — shape-array NULL checks. The panel explicitly called
      * these out: previously the code wrote ``ta->shape[0] = m`` without

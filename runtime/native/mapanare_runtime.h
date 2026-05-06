@@ -418,13 +418,26 @@ MAPANARE_EXPORT void mapanare_registry_destroy(mapanare_agent_registry_t *reg);
  * 5. Tensor operations (Phase 5.1)
  * ----------------------------------------------------------------------- */
 
-/** Tensor struct — contiguous row-major storage. */
+/** Tensor struct — contiguous row-major storage.
+ *
+ * v5.45.0 Ts.2.A append-only extension: refcount + is_view + parent.
+ * Pre-v5.45.0 layout (offsets 0..32) is preserved exactly. Existing
+ * field-by-field consumers see no behavior change. New fields are
+ * initialized by mapanare_tensor_alloc (refcount=1, is_view=0,
+ * parent=NULL). Direct malloc sites (gpu_builtins.c borrow tensors)
+ * zero-init before field-by-field setup to avoid uninitialized reads.
+ */
 typedef struct mapanare_tensor {
-    void    *data;       /* pointer to contiguous element buffer         */
-    int64_t  ndim;       /* number of dimensions                        */
-    int64_t *shape;      /* heap-allocated shape array (ndim elements)   */
-    int64_t  size;       /* total number of elements (product of shape)  */
-    int64_t  elem_size;  /* size of each element in bytes                */
+    void    *data;       /* offset  0 — pointer to element buffer        */
+    int64_t  ndim;       /* offset  8 — number of dimensions             */
+    int64_t *shape;      /* offset 16 — heap-allocated shape array       */
+    int64_t  size;       /* offset 24 — total element count              */
+    int64_t  elem_size;  /* offset 32 — bytes per element                */
+    /* v5.45.0 Ts.2.A — refcount aliasing for views.                     */
+    int64_t  refcount;   /* offset 40 — 1 on alloc; bumped by views      */
+    uint8_t  is_view;    /* offset 48 — 0 = owns data; 1 = view          */
+    uint8_t  _pad[7];    /* offset 49..55 — alignment padding            */
+    struct mapanare_tensor *parent; /* offset 56 — root parent if view   */
 } mapanare_tensor_t;
 
 /** Allocate a tensor with the given shape and element size. Data is zeroed. */

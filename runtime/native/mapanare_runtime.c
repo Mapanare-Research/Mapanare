@@ -1062,6 +1062,12 @@ MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_alloc(
     mapanare_tensor_t *t = (mapanare_tensor_t *)malloc(sizeof(mapanare_tensor_t));
     if (!t) return NULL;
 
+    /* v5.45.0 Ts.2.A — zero-init then field-by-field. Zeroing here
+     * guards against future struct extensions: any new field becomes
+     * zero by default, which is the safe default for refcount-aware
+     * cleanup paths. */
+    memset(t, 0, sizeof(*t));
+
     t->ndim = ndim;
     t->elem_size = elem_size;
 
@@ -1080,14 +1086,40 @@ MAPANARE_EXPORT mapanare_tensor_t *mapanare_tensor_alloc(
     t->data = calloc((size_t)total, (size_t)elem_size);
     if (!t->data) { free(t->shape); free(t); return NULL; }
 
+    /* v5.45.0 Ts.2.A — fresh tensor owns its data; refcount starts at 1. */
+    t->refcount = 1;
+    t->is_view = 0;
+    t->parent = NULL;
+
     return t;
 }
 
 MAPANARE_EXPORT void mapanare_tensor_free(mapanare_tensor_t *t) {
+    /* v5.45.0 Ts.2.A — refcount-aware free.
+     *
+     * Decrement this tensor's refcount; only proceed when it hits zero.
+     * For views (is_view=1): metadata + shape are freed; data is NOT
+     * freed (owned by parent); parent's refcount is decremented
+     * recursively. For owners (is_view=0): data + shape + metadata are
+     * all freed.
+     *
+     * Single-hop semantics: views always point at the root parent
+     * (mapanare_tensor_view sets parent to root, not intermediate).
+     * No view-of-view recursion depth concerns.
+     */
     if (!t) return;
-    if (t->data)  free(t->data);
-    if (t->shape) free(t->shape);
-    free(t);
+    if (--t->refcount > 0) return;
+
+    if (t->is_view) {
+        mapanare_tensor_t *root = t->parent;
+        if (t->shape) free(t->shape);
+        free(t);
+        if (root) mapanare_tensor_free(root);
+    } else {
+        if (t->data)  free(t->data);
+        if (t->shape) free(t->shape);
+        free(t);
+    }
 }
 
 MAPANARE_EXPORT int mapanare_tensor_shape_eq(
