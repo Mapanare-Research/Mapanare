@@ -1,7 +1,44 @@
 # Mapanare Language Specification
 
-**Version:** 5.47.0
-**Status:** Live — synced to the v5.47.0 cut (2026-05-06)
+**Version:** 5.47.5
+**Status:** Live — synced to the v5.47.5 cut (2026-05-06)
+
+> **v5.47.5 — Cp.\* — end-of-v5 closeout panel.** Panel-only
+> release. **Zero compiler edits. Zero runtime edits. Zero
+> `mapanare/self/*.mn` source edits.** No new language surface,
+> no new C runtime exports, no new MIR ops. Strict 3-stage
+> fixed point preserved by construction at v5.47.0's
+> **244,654 lines / 0 diff** (50-release strict streak from
+> v5.7.1 baseline). Goldens **103/103**.
+> **Aggregate panel score 9.76 / 10. Decision: Option A.**
+> 7-reviewer panel (Rattler 9.85 / Viper 9.85 / Anaconda 9.75
+> / Cobra 9.75 / Coral 9.65 PASS WITH NOTES / Boa 9.65 PASS
+> WITH NOTES / Mamba 9.85) reviewed v5.31.0 → v5.47.0
+> (17 substantive releases plus v5.39.1–v5.39.7 sub-releases).
+> Spread 0.20 (well below 0.5 follow-up trigger). 0 HIGH /
+> 6 dedup MEDIUM / 31 LOW findings. Second consecutive
+> Option A under the v5-gate framework; second consecutive
+> panel above the v5.7.1 / v5.8.0 9.66 ceiling (+0.04 vs
+> v5.28.0 RE-PANEL's 9.72 across +9 releases of scope).
+> **v5 series state at panel cut:** Foundation arc CLOSED.
+> Stdlib gap-close arc CLOSED. Manifesto arc CLOSED. Tensor
+> closeout arc CLOSED. Package-system runway CLOSED. v5.43.0
+> lowerer-bug closeout CLOSED at v5.46.0. Pre-panel hygiene
+> cleanup CLOSED at v5.47.0. Mb.\* arc CLOSED (since v5.29.0).
+> Pv.\* arc CLOSED (since v5.32.0/v5.33.0). Js.4 arc CLOSED
+> (v5.39.7). Terseness arc CLOSED (since v5.27.0).
+> **Cadence-gap acknowledgment:** v5.47.5 closes 19 minor
+> versions late on purpose. Per project memory + v5.28.0
+> directive: panels at the end of an arc, not in the middle.
+> **v6.0 PLAN drafting begins** at `docs/roadmap/v6/PLAN.md`
+> per `.reviews/v5.47.5/V5_TO_V6_CARRY.md` inputs. v5.47.x
+> patches recommended pre-v6.0: v5.47.1 (Cl.2 + Cl.3 already
+> named); v5.47.2 (proposed: 5 docs/process polish items).
+> See `.reviews/v5.47.5/{PRE_PANEL_AUDIT.md, V5_DECISION.md,
+> V5_TO_V6_CARRY.md, V5_RETRO.md, README.md,
+> <reviewer>/findings.md}` and
+> `docs/roadmap/v5/v5.47.5/{PLAN.md, PROMPT.md,
+> SESSION_REPORT.md}`.
 
 > **v5.47.0 — Cl.\* — pre-panel hygiene cleanup.** Drains every
 > closeable LOW-tier carry before the v5.47.5 closeout panel sees

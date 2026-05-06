@@ -7,6 +7,121 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.47.5] - 2026-05-06
+
+**Cp.\* — end-of-v5 closeout panel.** Panel-only release.
+**Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** No new features.
+The structural pause before any v6.0 conversation begins.
+Strict 3-stage fixed point preserved by construction at
+v5.47.0's **244,654 lines / 0 diff** (50-release strict
+streak from v5.7.1 baseline). Goldens **103/103**.
+
+**Aggregate panel score: 9.76 / 10. Decision: Option A.**
+7-reviewer panel (Rattler 9.85 PASS, Viper 9.85 PASS,
+Anaconda 9.75 PASS, Cobra 9.75 PASS, Coral 9.65 PASS WITH
+NOTES, Boa 9.65 PASS WITH NOTES, Mamba 9.85 PASS) reviewed
+v5.31.0 → v5.47.0 (17 substantive releases plus
+v5.39.1–v5.39.7 sub-releases). Spread 0.20, well below the
+0.5 follow-up-round trigger. **0 HIGH / 6 dedup MEDIUM /
+31 LOW** findings — all MEDIUMs are either v6.0 PLAN inputs
+or v5.47.x patch candidates. Second consecutive Option A
+under the v5-gate framework; second consecutive panel above
+the v5.7.1 / v5.8.0 9.66 ceiling (+0.04 vs v5.28.0
+RE-PANEL's 9.72 across +9 releases of scope).
+
+**v6.0 green-lit** conditional on 9 v6.0 PLAN inputs
+(borrow checker / multi-level alias analysis; hard removal
+of `{}`; STRICT 3-stage fixed-point gate carve-out; tensor
+surface unification; distributed-supervision orchestration;
+registry-side package signing; `_specialize_fn` body-walk
+fix; PRE_PHASE_AUDIT.md mandatory at every v6.x release;
+convergent-recommendation pattern explicit).
+
+**Cadence-gap acknowledgment.** v5.47.5 closes 19 minor
+versions late on purpose. Per project memory + v5.28.0
+directive: panels at the end of an arc, not in the middle.
+v5.45.0's original panel slot was deferred so v5.45.0
+(tensor closeout) + v5.46.0 (lowerer-bug closeout) + v5.47.0
+(pre-panel hygiene) could close three long-standing debts
+before the panel audited ecosystem readiness for v6.0.
+`check_cadence.py` is informational REMINDER per v5.33.2
+Cd.\* exactly to support this shape.
+
+**v5 series state at panel cut:** Foundation arc CLOSED.
+Stdlib gap-close arc CLOSED. Manifesto arc CLOSED. Tensor
+closeout arc CLOSED. Package-system runway CLOSED. v5.43.0
+lowerer-bug closeout CLOSED at v5.46.0. Pre-panel hygiene
+cleanup CLOSED at v5.47.0. Mb.\* arc CLOSED (since
+v5.29.0). Pv.\* arc CLOSED (since v5.32.0/v5.33.0). Js.4
+arc CLOSED (v5.39.7). Terseness arc CLOSED (since
+v5.27.0).
+
+### Added
+
+- **Cp.1** — `.reviews/v5.47.5/PRE_PANEL_AUDIT.md`. Per-release
+  SHIPPED/PARTIAL/DEFERRED matrix for all 17 substantive
+  releases (v5.31.0 → v5.47.0). Silent-RED gate sweep
+  (clean at HEAD). Arc-completion claims verified at HEAD
+  (every CLAUDE.md "CLOSED" claim cross-checked against
+  symbol/file at HEAD). Carry-forward draft (input to
+  Cp.4). Per-reviewer reading list across 7 axes.
+- **Cp.2** — 7 reviewer findings files under
+  `.reviews/v5.47.5/` (rattler, viper, anaconda, cobra,
+  coral, boa, mamba directories each holding findings.md).
+  Each contains per-category EXCEEDS/MEETS/NEEDS WORK grades, 0.0–10.0
+  numerical score, PASS/PASS WITH NOTES/FAIL recommendation,
+  itemized findings with HIGH/MEDIUM/LOW severity, and
+  carry-forward suggestions. Convergent-recommendation
+  pattern fired across Anaconda + Boa + Rattler
+  (PRE_PHASE_AUDIT promotion) and Anaconda + Boa
+  (KNOWN_FAILURES ledger).
+- **Cp.3** — `.reviews/v5.47.5/V5_DECISION.md`. Aggregate
+  decision applying v5-gate mechanical rule (mean ≥ 9.5 =
+  Option A). Comparison to v5.28.0 RE-PANEL trajectory.
+  v6.0 readiness statement. Followups list ordered by
+  v6.0 PLAN load-bearing-ness.
+- **Cp.4** — `.reviews/v5.47.5/V5_TO_V6_CARRY.md`.
+  Carry-forward ledger with strict three-bucket
+  categorization: (a) v6.0 PLAN inputs (14 items + 7
+  process patterns), (b) v5.47.x patch candidates (5 named
+  + 23 lower-priority), (c) retired (33 items closed in
+  scope). Replaces `.reviews/CARRY_FORWARD.md` as
+  canonical going forward.
+- **Cp.5** — `.reviews/v5.47.5/V5_RETRO.md`. ~1500-word
+  retrospective: what worked, what didn't, what to bring
+  to v6.0.
+- **Cp.6** — CLAUDE.md ledger prune. v5.31.0 → v5.45.0
+  explicit release-notes entries replaced with single
+  closeout summary paragraph pointing at per-release
+  SESSION_REPORTs in roadmap. v5.46.0 / v5.47.0 / v5.47.5
+  entries kept explicit (the bridge to v6.0). CLAUDE.md
+  reduced from ~3300 lines to ~730 lines.
+- **Cp.7** — `docs/roadmap/v5/CLOSEOUT_ARC.md` final
+  update appended. "v5 closed at v5.47.5" section with
+  panel score, Option, all CLOSED arcs listed, v6.0
+  PLAN drafting begins pointer, v5.47.x patch
+  recommendations, cadence-gap closure note.
+- **Cp.8** — gates GREEN at HEAD verification. `make
+  ci-gates` GREEN (9 sub-gates), `make lint` clean,
+  `verify_fixed_point.sh` STRICT (244,654 lines / 0 diff,
+  50-release streak), goldens 103/103, doc freshness +
+  changelog honesty GREEN, cadence informational REMINDER
+  (acknowledged).
+- README.md panel summary at `.reviews/v5.47.5/README.md`.
+
+### Changed
+
+- `docs/roadmap/v5/CLOSEOUT_ARC.md` final section appended
+  marking v5 series CLOSED at v5.47.5; v6.0 PLAN drafting
+  forwarded.
+- `CLAUDE.md` "Most recent releases" section pruned;
+  v5.31.0–v5.45.0 explicit entries replaced with closeout
+  summary paragraph (Cp.6).
+- `docs/SPEC.md` header re-synced from "v5.47.0 cut" to
+  "v5.47.5 cut" with new sync block summarizing v5 closeout.
+
+
 ## [5.47.0] - 2026-05-06
 
 **Cl.\* — pre-panel hygiene cleanup.** v5.47.0 drains every closeable
@@ -12222,7 +12337,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.5...HEAD
+[5.47.5]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.0...v5.47.5
 [5.47.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.46.0...v5.47.0
 [5.46.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.45.0...v5.46.0
 [5.45.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.1...v5.45.0
