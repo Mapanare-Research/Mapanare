@@ -564,6 +564,14 @@ class SemanticChecker:
                 ret = _str_method_types.get(expr.method)
                 if ret is not None:
                     return ret
+            # v5.45.0 Ts.2.B + Ts.3.B — tensor methods that return Tensor.
+            # Without this rule the result type is UNKNOWN, which makes
+            # multi-index writes (`v[i, j] = val`) on a `.view()` result
+            # fail semantic check ("multi-index not supported for UNKNOWN").
+            # Element type carries through from the source tensor.
+            if obj_type.kind == TypeKind.TENSOR and expr.method in ("view", "reshape"):
+                elem = obj_type.args[0] if obj_type.args else FLOAT_TYPE
+                return TypeInfo(kind=TypeKind.TENSOR, args=[elem])
             return UNKNOWN_TYPE
         if isinstance(expr, FieldAccessExpr):
             obj_type = self._infer_expr(expr.object)

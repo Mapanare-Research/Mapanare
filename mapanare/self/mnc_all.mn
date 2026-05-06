@@ -4621,7 +4621,17 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
         let args: List<Expr> = expr_method_args(expr)
         let mut i_method: Int = 0
         for _ in 0..200:
-            if i_method >= len(args) { return new_infer_result(unknown_type(), st_method) }
+            if i_method >= len(args) {
+                // v5.45.0 Ts.2.B + Ts.3.B — `.view()` and `.reshape()` on a
+                // tensor return Tensor<T>. Without this rule the result is
+                // unknown_type and `view[i, j] = val` multi-index writes fail
+                // semantic ("multi-index not supported for UNKNOWN").
+                let m_name: String = expr_method_name(expr)
+                if obj_r.type_info.name == "Tensor":
+                    if m_name == "view" || m_name == "reshape":
+                        return new_infer_result(obj_r.type_info, st_method)
+                return new_infer_result(unknown_type(), st_method)
+            }
             let arg: Expr = args[i_method]
             let ar: InferResult = infer_expr(st_method, arg)
             st_method = ar.st
