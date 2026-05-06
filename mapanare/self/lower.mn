@@ -769,8 +769,26 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
                     s = define_var(s, name, addr2, mutable)
                     return s
 
-    let r: LowerResult = lower_expr(st, value)
+    // v5.47.0 Cl.1 (Lf.4) — set expected-enum-name hint before
+    // lowering when the binding has an enum-typed annotation. This
+    // lets lower_call_by_name disambiguate colliding variant names
+    // (e.g. NetworkError::TransportLost vs ExitReason::TransportLost)
+    // by preferring the enum that matches the binding's declared
+    // type. Restored after lowering.
+    let prev_enum_hint: String = st.expected_enum_name
+    let mut st_hint: LowerState = st
+    match type_ann {
+        Some(te_h) => {
+            let hint_ty: MIRType = lower_resolve_type_checked(st, te_h)
+            if hint_ty.kind == TK_ENUM():
+                if hint_ty.name != "":
+                    st_hint.expected_enum_name = hint_ty.name
+        },
+        _ => {}
+    }
+    let r: LowerResult = lower_expr(st_hint, value)
     let mut s: LowerState = r.state
+    s.expected_enum_name = prev_enum_hint
 
     // Update lambda registration: lower_lambda left var_name empty
     let num_lv: Int = len(s.lambda_vars)
@@ -2337,7 +2355,18 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
 
     // Check if it's an enum variant constructor
     if is_enum_variant(st, fn_name):
-        let enum_name: String = enum_name_for_variant(st, fn_name)
+        let mut enum_name: String = enum_name_for_variant(st, fn_name)
+        // v5.47.0 Cl.1 (Lf.4) — variant-name collision disambiguation.
+        // If lower_let set an expected-enum-name hint AND that enum has
+        // this variant, prefer it over enum_name_for_variant's
+        // first-match result. The first-match policy alone produces
+        // wrong tags when two enums share a variant (the destination
+        // alloca is sized for the binding's declared enum but the
+        // variant tag/payload comes from a different enum's layout).
+        if st.expected_enum_name != "":
+            if st.expected_enum_name != enum_name:
+                if enum_has_variant(st, st.expected_enum_name, fn_name):
+                    enum_name = st.expected_enum_name
         let enum_ty: MIRType = mir_enum(enum_name)
         let dr_enum: LowerResult = make_value(st, enum_ty, "t")
         let s_enum: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, fn_name, args))

@@ -1,8 +1,34 @@
 # Mapanare Language Specification
 
-**Version:** 5.46.0
-**Status:** Live — synced to the v5.46.0 cut (2026-05-06)
+**Version:** 5.47.0
+**Status:** Live — synced to the v5.47.0 cut (2026-05-06)
 
+> **v5.47.0 — Cl.\* — pre-panel hygiene cleanup.** Drains every
+> closeable LOW-tier carry before the v5.47.5 closeout panel sees
+> the docket. Mirrors the v5.28.0 hygiene-before-panel precedent.
+> **Cl.1 (Lf.4) — variant-name collision** closed across both
+> Python bootstrap (`mapanare/semantic.py` `_variant_alternatives`
+> multimap + `_check_let` annotation-as-`_expected_type` context;
+> `_check_call` and Identifier-resolution disambiguation) and
+> self-host stage1 (`mapanare/self/semantic.mn` `expected_type` on
+> `SemState` + `scope_has_variant_for_enum` post-inference helper;
+> `mapanare/self/lower.mn` `expected_enum_name` on `LowerState` +
+> `enum_has_variant` lookup; `lower_let` sets the hint when
+> type_ann is TK_ENUM; `lower_call_by_name` enum-variant branch
+> prefers the hint over `enum_name_for_variant`'s first-match).
+> Self-host stage1 had the bug too (different from v5.46.0
+> Lf.\*); Cl.5 mirror is non-trivial (~80 LOC). **Cl.4** —
+> `stdlib/net/websocket.mn` 11 `str(byte)` decimal-stringification
+> sites replaced with `__mn_str_chr` (v5.43.0 Da.0 export, full
+> 0..255 range). **Two Phase-0-driven scope splits** (Cl.2 agent
+> stdlib refactor → v5.47.1; Cl.3 fs.mn walk_dir IR codegen →
+> v5.47.1); both warrant dedicated focus rather than fitting in
+> the tail of a hygiene release. **STRICT 3-stage fixed point
+> preserved at 244,654 lines / 0 diff** (50-release strict
+> streak from v5.7.1; +889 lines vs v5.46.0's 243,749 from new
+> self-host paths in semantic.mn + lower.mn + lower_state.mn).
+> Goldens **103/103** (102 + `103_variant_name_collision.mn`).
+>
 > **v5.46.0 — Lf.\* — v5.43.0 lowerer-bug closeout.** Closes
 > three v5.x lowerer bugs (Lf.1 + Lf.2 + Lf.3) that v5.43.0
 > SESSION_REPORT documented and worked around with the flat-

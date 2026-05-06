@@ -322,6 +322,11 @@ struct SemState:
     current_span: Span
     current_fn_return: TypeInfo
     current_fn_name: String
+    // v5.47.0 Cl.1 (Lf.4): declared-type context for disambiguating
+    // colliding variant names. Set by check_let_stmt before inference;
+    // read by infer_call when an Identifier callee matches multiple
+    // enum variants.
+    expected_type: TypeInfo
 
 struct InferResult:
     type_info: TypeInfo
@@ -334,7 +339,7 @@ fn new_sem_state(filename: String) -> SemState:
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
     let zero_span: Span = make_span(0, 0, 0, 0)
-    new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "" }
+    new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "", expected_type: unknown_type() }
 
 fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult = new InferResult { type_info: ti, st: st }
 
@@ -348,7 +353,7 @@ fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState:
     let err: SemanticError = new_semantic_error(msg, line, col, st.filename)
     let mut errs: List<SemanticError> = st.errors
     errs.push(err)
-    new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+    new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
 
 fn add_error_here(st: SemState, msg: String) -> SemState = add_error(st, msg, st.current_span.line, st.current_span.column)
 
@@ -360,26 +365,31 @@ fn add_error_msg(st: SemState, msg: String) -> SemState = add_error_here(st, msg
 
 fn push_scope(st: SemState) -> SemState:
     let child: Scope = new_scope(Some(st.scope))
-    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
     new_st
 
 fn pop_scope(st: SemState) -> SemState:
     match st.scope.parent {
         Some(parent) => {
-            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
             return new_st
         },
         _ => { return st }
     }
 
-fn set_span(st: SemState, span: Span) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+fn set_span(st: SemState, span: Span) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
 
 fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState:
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
-    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
     new_st
 
-fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name }
+fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name, expected_type: st.expected_type }
+
+// v5.47.0 Cl.1 (Lf.4): set/restore expected-type context. Used by
+// check_let_stmt before infer_expr so infer_call can disambiguate
+// colliding variant names against the binding's declared type.
+fn set_expected_type(st: SemState, et: TypeInfo) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: et }
 
 // ---------------------------------------------------------------------------
 // Type compatibility checking
@@ -1404,25 +1414,97 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState:
 // ---------------------------------------------------------------------------
 
 fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> SemState:
-    let vr: InferResult = infer_expr(st, value)
     let ann_type: TypeInfo = resolve_type_opt(type_ann)
-    let mut st2: SemState = vr.st
+    // v5.47.0 Cl.1 (Lf.4): thread the binding's annotation type as
+    // expected-type context so infer_call can disambiguate colliding
+    // variant constructors. Mirrors the Python semantic.py fix.
+    let prev_et: TypeInfo = st.expected_type
+    let mut st_et: SemState = st
+    if !type_should_skip(ann_type.name):
+        st_et = set_expected_type(st, ann_type)
+    let vr: InferResult = infer_expr(st_et, value)
+    let mut st2: SemState = set_expected_type(vr.st, prev_et)
+
+    // v5.47.0 Cl.1 (Lf.4): post-inference disambiguation. If the
+    // inferred type's name doesn't match the annotation but the
+    // annotation enum has a same-named variant in the scope, accept
+    // the annotation's type. The lowerer uses return-type context
+    // for the actual variant tag.
+    let mut value_ti: TypeInfo = vr.type_info
+    if !type_should_skip(ann_type.name):
+        if !type_should_skip(value_ti.name):
+            if ann_type.name != value_ti.name:
+                if scope_has_variant_for_enum(st2.scope, callee_name_of(value), ann_type.name):
+                    value_ti = ann_type
 
     // Check annotation matches value type
     // v4.53.0: skip if either side is unknown/error (cascade suppression)
     if !type_should_skip(ann_type.name):
-        if !type_should_skip(vr.type_info.name):
-            if types_compatible(ann_type, vr.type_info) == false:
-                st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name)
+        if !type_should_skip(value_ti.name):
+            if types_compatible(ann_type, value_ti) == false:
+                st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + value_ti.name)
 
     // Use annotation if available, otherwise inferred
     let resolved: TypeInfo = ann_type
     if type_should_skip(ann_type.name):
-        let resolved2: TypeInfo = vr.type_info
+        let resolved2: TypeInfo = value_ti
         let sym: Symbol = new_symbol(name, "variable", resolved2, mutable)
         return define_in_scope(st2, name, sym)
     let sym2: Symbol = new_symbol(name, "variable", resolved, mutable)
     return define_in_scope(st2, name, sym2)
+
+// v5.47.0 Cl.1 (Lf.4): get the callee name of a CallExpr or
+// Identifier, returning "" otherwise. Used by check_let_stmt
+// post-inference disambiguation.
+fn callee_name_of(e: Expr) -> String:
+    let ek: String = expr_kind(e)
+    if ek == "ident":
+        return expr_ident_name(e)
+    if ek == "call":
+        let callee: Expr = expr_call_callee(e)
+        if expr_kind(callee) == "ident":
+            return expr_ident_name(callee)
+    return ""
+
+// v5.47.0 Cl.1 (Lf.4): check whether the scope (including parents)
+// contains a variant constructor symbol named `variant_name` whose
+// type_info.name == `enum_name`. The scope_define helper appends
+// rather than replacing, so all enum-variant collisions are
+// preserved in scope.symbols and only differ in lookup-order.
+fn scope_has_variant_for_enum(scope: Scope, variant_name: String, enum_name: String) -> Bool:
+    if variant_name == "" { return false }
+    if enum_name == "" { return false }
+    let mut i: Int = len(scope.symbols) - 1
+    let mut hit: Bool = false
+    let mut at_root: Bool = false
+    for _ in 0..1000000:
+        if i < 0 { at_root = true }
+        if at_root { i = -1 }
+        if hit { i = -1 }
+        if i >= 0:
+            let sym: Symbol = scope.symbols[i]
+            if sym.name == variant_name:
+                // Variant constructors store the enum's TypeInfo as
+                // their function-type return_type; bare-variant
+                // symbols store the enum's TypeInfo directly. Check
+                // both shapes.
+                if sym.type_info.name == enum_name { hit = true }
+                let ret_opt: Option<TypeInfo> = sym.type_info.return_type
+                let mut got_ret: TypeInfo = unknown_type()
+                let mut have_ret: Bool = false
+                match ret_opt {
+                    Some(rt) => { got_ret = rt; have_ret = true },
+                    _ => { have_ret = false }
+                }
+                if have_ret:
+                    if got_ret.name == enum_name { hit = true }
+            i = i - 1
+    if hit { return true }
+    match scope.parent {
+        Some(parent) => { return scope_has_variant_for_enum(parent, variant_name, enum_name) },
+        _ => { return false }
+    }
+    return false
 
 // v5.20.1 Te.5.F.D — let destructure check: type-infer value, then
 // recursively define each leaf field name in the current scope.

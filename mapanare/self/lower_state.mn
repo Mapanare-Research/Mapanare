@@ -41,6 +41,13 @@ struct LowerState:
     // (`__mn_chain_N`). Same rationale as `struct_update_counter`. Reset
     // per fn alongside the others.
     chain_compare_counter: Int
+    // v5.47.0 Cl.1 (Lf.4) — expected-enum-name hint set by lower_let
+    // when the binding has an enum-typed annotation. Consulted by
+    // lower_call_by_name's enum-variant branch to disambiguate
+    // colliding variant names (e.g. NetworkError::TransportLost +
+    // ExitReason::TransportLost). Empty string = no hint. Cleared
+    // after lowering the let value.
+    expected_enum_name: String
 
 fn new_lower_state(module_name: String) -> LowerState:
     let module: MIRModule = new_mir_module(module_name)
@@ -54,7 +61,7 @@ fn new_lower_state(module_name: String) -> LowerState:
     let generic_fns: List<FnDefData> = []
     let generic_structs: List<StructDefData> = []
     let generic_enums: List<EnumDefData> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none, struct_update_counter: 0, chain_compare_counter: 0 }
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none, struct_update_counter: 0, chain_compare_counter: 0, expected_enum_name: "" }
 
 // Lower result: value + updated state
 struct LowerResult:
@@ -299,6 +306,27 @@ fn enum_name_for_variant(st: LowerState, variant: String) -> String:
                     j = j + 1
             i = i + 1
     return ""
+
+// v5.47.0 Cl.1 (Lf.4) — does the named enum have a variant with the
+// given name? Used by lower_call_by_name's enum-variant branch when
+// st.expected_enum_name disagrees with enum_name_for_variant's
+// first-match result; we still want to verify the hinted enum
+// actually has the variant before using it.
+fn enum_has_variant(st: LowerState, enum_name: String, variant: String) -> Bool:
+    let mut i: Int = 0
+    let nev_h: Int = len(st.enum_variants)
+    for _ in 0..2000:
+        if i < nev_h:
+            let ev: EnumVariantNames = st.enum_variants[i]
+            if ev.enum_name == enum_name:
+                let mut j: Int = 0
+                let nvn_h: Int = len(ev.variant_names)
+                for _ in 0..2000:
+                    if j < nvn_h:
+                        if ev.variant_names[j] == variant { return true }
+                        j = j + 1
+            i = i + 1
+    return false
 
 fn find_impl_method(st: LowerState, type_name: String, method: String) -> Option<String>:
     let key: String = type_name + "." + method

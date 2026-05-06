@@ -327,6 +327,18 @@ class SemanticChecker:
         # v4.69.0: track whether we're inside an async fn body.
         # Set by _check_async_fn, read by the AwaitExpr handler.
         self._in_async: bool = False
+        # v5.47.0 Cl.1 (Lf.4): multimap of variant_name → list of
+        # (enum_name, variant_type_info, has_payload). When two enums
+        # share a variant name (e.g. NetworkError::TransportLost +
+        # ExitReason::TransportLost), the global_scope.define() at
+        # _register_definitions overwrites the first; this multimap
+        # preserves all alternatives for declared-type-aware
+        # disambiguation in _check_call.
+        self._variant_alternatives: dict[str, list[tuple[str, TypeInfo, bool]]] = {}
+        # v5.47.0 Cl.1: declared-type context threaded through
+        # _check_let so _check_call can disambiguate colliding
+        # variant names. None when no annotation context applies.
+        self._expected_type: TypeInfo | None = None
 
         # Register built-in traits
         for trait_name, methods in BUILTIN_TRAITS.items():
@@ -515,6 +527,15 @@ class SemanticChecker:
             if sym is None:
                 self._error(f"Undefined variable '{expr.name}'", expr)
                 return UNKNOWN_TYPE
+            # v5.47.0 Cl.1 (Lf.4): bare-variant collision (no payload)
+            # — same disambiguation logic as in _check_call.
+            alts = self._variant_alternatives.get(expr.name)
+            if alts and len(alts) > 1 and self._expected_type is not None:
+                exp = self._expected_type
+                if exp.kind in (TypeKind.ENUM, TypeKind.STRUCT) and exp.name:
+                    for alt_enum, alt_type, _has_payload in alts:
+                        if alt_enum == exp.name:
+                            return alt_type
             return sym.type_info
         if isinstance(expr, BinaryExpr):
             return self._check_binary(expr)
@@ -1027,6 +1048,26 @@ class SemanticChecker:
             if sym is None:
                 self._error(f"Undefined function '{expr.callee.name}'", expr.callee)
                 return UNKNOWN_TYPE
+            # v5.47.0 Cl.1 (Lf.4): variant-name collision resolution.
+            # If the called name is a variant of multiple enums and we
+            # have a declared-type context (e.g. from let-binding
+            # annotation), pick the matching enum's variant. The
+            # global_scope.define() loop registers each variant by
+            # unqualified name, so the second call shadows the first.
+            # The multimap preserves all alternatives.
+            alts = self._variant_alternatives.get(expr.callee.name)
+            if alts and len(alts) > 1 and self._expected_type is not None:
+                exp = self._expected_type
+                if exp.kind in (TypeKind.ENUM, TypeKind.STRUCT) and exp.name:
+                    for alt_enum, alt_type, _has_payload in alts:
+                        if alt_enum == exp.name:
+                            sym = Symbol(
+                                name=expr.callee.name,
+                                kind=sym.kind,
+                                type_info=alt_type,
+                                node=sym.node,
+                            )
+                            break
             if sym.kind == SymbolKind.FUNCTION:
                 # println is deprecated — use print instead
                 if expr.callee.name == "println":
@@ -1783,8 +1824,17 @@ class SemanticChecker:
             self._check_stream_decl(stmt)
 
     def _check_let(self, let: LetBinding) -> None:
-        value_type = self._infer_expr(let.value)
+        # v5.47.0 Cl.1 (Lf.4): thread the binding's annotation type
+        # as expected-type context so _check_call can disambiguate
+        # colliding variant constructors.
         ann_type = self._resolve_type_expr(let.type_annotation)
+        prev_expected = self._expected_type
+        if ann_type.kind != TypeKind.UNKNOWN:
+            self._expected_type = ann_type
+        try:
+            value_type = self._infer_expr(let.value)
+        finally:
+            self._expected_type = prev_expected
 
         # If both annotation and value type are known, check they match
         if (
@@ -2067,6 +2117,14 @@ class SemanticChecker:
                         type_info=TypeInfo(kind=TypeKind.ENUM, name=defn.name),
                     )
                 self.global_scope.define(variant.name, variant_sym)
+                # v5.47.0 Cl.1 (Lf.4): record this variant in the
+                # multimap so _check_call can disambiguate colliding
+                # variant names (e.g. NetworkError::TransportLost +
+                # ExitReason::TransportLost) using the declared-type
+                # context from a let-binding annotation.
+                self._variant_alternatives.setdefault(variant.name, []).append(
+                    (defn.name, variant_sym.type_info, bool(variant.fields))
+                )
                 # Also register the qualified name (EnumName_VariantName)
                 qualified = f"{defn.name}_{variant.name}"
                 self.global_scope.define(

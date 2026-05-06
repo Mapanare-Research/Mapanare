@@ -1,0 +1,79 @@
+// Golden test: Cl.1 (Lf.4) — variant-name collision across two
+// enums dispatches correctly when the binding's declared type
+// disambiguates (v5.47.0).
+//
+// Pre-fix (both Python bootstrap and self-host stage1): semantic
+// checker registers each enum variant in global_scope by
+// unqualified name; the second `define()` shadows the first.
+// `pon n: NetworkError = TransportLost("net")` rejected with
+//   error: Type mismatch: declared type NetworkError but initial
+//          value is ExitReason
+// Self-host lower.mn's `enum_name_for_variant` did a linear scan
+// and returned the first match, so even constructions inside
+// fns with -> NetworkError return type produced the wrong enum
+// tag layout.
+//
+// Post-fix (v5.47.0 Cl.1):
+//   - mapanare/semantic.py + mapanare/self/semantic.mn build a
+//     multimap-like resolver: the let-binding's annotation type
+//     is threaded as expected_type context; _check_call /
+//     infer_call return the alternative whose enum matches.
+//   - mapanare/self/lower.mn extends LowerState with
+//     expected_enum_name; lower_let sets it from the type_ann;
+//     lower_call_by_name's enum-variant branch prefers that enum
+//     over enum_name_for_variant's first-match result when the
+//     hinted enum has the variant.
+//
+// Falsifiability: revert either layer (semantic-checker resolver
+// OR lowerer hint) and this program fails — semantic-only revert
+// fails compilation; lowerer-only revert produces wrong tag in
+// the corresponding match arm.
+
+pub tipo NetworkError {
+    | TransportLost(String)
+    | BadUrl(String)
+    | NoKey(String)
+}
+
+pub tipo ExitReason {
+    | TransportLost(String)
+    | Crashed(String)
+    | Killed(String)
+}
+
+fn classify_net(e: NetworkError) -> Int {
+    match e {
+        TransportLost(s) => { da 1 },
+        BadUrl(s) => { da 2 },
+        NoKey(s) => { da 3 }
+    }
+}
+
+fn classify_exit(e: ExitReason) -> Int {
+    match e {
+        TransportLost(s) => { da 10 },
+        Crashed(s) => { da 20 },
+        Killed(s) => { da 30 }
+    }
+}
+
+fn main() -> Int {
+    // Construction with declared-type disambiguation. Pre-fix,
+    // semantic check rejected these.
+    pon n: NetworkError = TransportLost("net")
+    pon x: ExitReason = TransportLost("exit")
+
+    // Dispatch must produce the right tag per declared enum.
+    print("net=" + str(classify_net(n)))
+    print("exit=" + str(classify_exit(x)))
+
+    // Non-colliding variants in the same enums (no expected_type
+    // hint needed; sanity check the multimap doesn't break the
+    // common path).
+    pon n2: NetworkError = BadUrl("u")
+    pon x2: ExitReason = Crashed("c")
+    print("net2=" + str(classify_net(n2)))
+    print("exit2=" + str(classify_exit(x2)))
+
+    da 0
+}

@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.47.0] - 2026-05-06
+
+**Cl.\* — pre-panel hygiene cleanup.** v5.47.0 drains every closeable
+LOW-tier carry before the v5.47.5 closeout panel sees the docket.
+Mirrors the v5.28.0 hygiene-before-panel precedent (the +0.31 panel
+recovery there came specifically from H.\* hygiene closures landing
+ahead of panel cut). Substantive Lf.4 fix in compiler + websocket
+str(byte) cleanup. Two Phase-0-driven scope splits (Cl.2 agent
+stdlib refactor → v5.47.1; Cl.3 fs.mn walk_dir IR codegen → v5.47.1)
+keep the hygiene-release scope tight. **Strict 3-stage fixed point
+preserved at 244,654 lines / 0 diff** (v5.46.0 → v5.47.0 the line
+count grew by ~890 from the new self-host paths in semantic.mn,
+lower.mn, lower_state.mn). Goldens **103/103** (102 + 1 new for
+Cl.6). 50-release strict streak from the v5.7.1 baseline.
+
+### Fixed
+
+- **Cl.1 (Lf.4) — Variant-name collision in match patterns.** Two
+  enums sharing a variant name (e.g. `NetworkError::TransportLost`
+  + `ExitReason::TransportLost`) now compile cleanly when the
+  binding's declared type disambiguates. Pre-fix both Python
+  bootstrap (`mapanare/semantic.py:2069` `global_scope.define()`
+  overwrote the first enum's variant) AND self-host stage1
+  (`mapanare/self/lower.mn::enum_name_for_variant` returned the
+  first-registered enum's variant ignoring binding context)
+  rejected the construction with `Type mismatch: declared type
+  NetworkError but initial value is ExitReason`. Post-fix:
+  `mapanare/semantic.py` builds a `_variant_alternatives`
+  multimap during `_register_definitions`; `_check_let` threads
+  the annotation as `_expected_type` context; `_check_call` and
+  the Identifier-resolution path consult both.
+  `mapanare/self/semantic.mn` mirrors with an `expected_type`
+  field on `SemState` (mechanical 7-constructor-site update) +
+  a `scope_has_variant_for_enum` helper that walks `Scope.symbols`
+  matching `(variant_name, enum_name)`. `mapanare/self/lower.mn`
+  extends `LowerState` with `expected_enum_name`; `lower_let` sets
+  it from `type_ann` when TK_ENUM; `lower_call_by_name`'s
+  enum-variant branch prefers the hint over
+  `enum_name_for_variant`'s first-match result when the hinted
+  enum has the variant. New helper `enum_has_variant` in
+  `mapanare/self/lower_state.mn`. **Self-host stage1 also had the
+  bug** (different from v5.46.0 Lf.\*); Cl.5 mirror is non-trivial
+  (~80 LOC). Falsifiability locked: revert either layer
+  (semantic-checker resolver OR lowerer hint) and the new tests
+  fail with the recorded signatures. Locked by `tests/golden/103_
+  variant_name_collision.mn` + `tests/llvm/test_lowerer_fixes.py
+  ::test_lf4_variant_name_collision` + `::test_lf4_minimal_pair`
+  (parametrized).
+- **Cl.4 — `stdlib/net/websocket.mn` `str(byte)` decimal-
+  stringification cleanup** (carry from v5.43.0). Replaced 11
+  `str(byte0)` / `str(byte1)` / `str(0)` / `str(b4..b7)` calls in
+  `read_frame`-equivalent / `build_send_frame` / chunked-send
+  frame-header construction with `__mn_str_chr(...)` (v5.43.0 Da.0
+  C runtime export — already covers bytes 0..255 with byte 0x00
+  preservation). Behavior identical for ASCII bytes; correct for
+  high bytes ≥ 128. The decimal-stringification path was a latent
+  footgun on any future pure-Mapanare binary protocol. New extern
+  declaration `__mn_str_chr(code: Int) -> String` in `stdlib/net/
+  websocket.mn`. Pre-existing `tests/stdlib/test_websocket.py` 61
+  cases preserved GREEN.
+
+### Changed
+
+- **Cl.6 — `tests/llvm/test_llvm_link_all.py::test_golden_corpus_count`**
+  bumped from 102 to 103 (Cl.6 adds `103_variant_name_collision.mn`).
+- **`tests/llvm/test_lowerer_fixes.py`** extended with three new
+  cases (`test_lf4_variant_name_collision`,
+  `test_lf4_minimal_pair[0]`, `test_lf4_minimal_pair[1]`); module
+  docstring updated to reference Cl.1 and the dual-layer Lf.4
+  fix shape (semantic.py + lower.py + their self-host mirrors).
+- **Two Phase-0-driven scope splits** — load-bearing for honest
+  release framing:
+  - **Cl.2 — Agent stdlib ergonomic refactor SPLIT to v5.47.1.**
+    The v5.43.0 distributed-agent APIs in `stdlib/agent/{url,remote,
+    node,supervision}.mn` still return the flat-tuple workaround
+    shape `(ok: Bool, value, err_kind: Int, err_msg: String)`. The
+    Cl.1 fix structurally unblocks the refactor (the original
+    blocker was Lf.1 destructure-tag corruption + Lf.4
+    variant-name collision; both now closed). v5.47.0 ships the
+    enabler; v5.47.1 ships the refactor across the 4 stdlib files
+    + internal-caller migrations + `tests/stdlib/test_distributed_
+    agents.py` updates. Reason for split: the refactor is ~400
+    LOC across public-API surfaces and warrants dedicated focus
+    rather than fitting in the tail of a hygiene release.
+  - **Cl.3 — `stdlib/fs.mn::walk_dir` IR codegen SPLIT to v5.47.1.**
+    Phase 0 verified the v5.40.0 carry is still open; clang
+    rejects the IR with `extractvalue ptr ... 0` then `zext ptr
+    to i64` on the inner `match listing_result { Ok(names) => ... }`
+    where `listing_result: Result<List<String>, FsError>`. The
+    Result aggregate type at the destructure site comes through
+    as `{ptr, i64, i64, i64, i64}` — wrong-shape class similar
+    to Lf.1 but at the receiver side, not the constructor side
+    (v5.46.0 Lf.\* fix did NOT close this as a side-effect). The
+    fix lives in `mapanare/lower.py::_lower_match` for
+    `Result<NonTrivialOk, E>` patterns where the enclosing fn
+    does NOT return Result; the diagnosis-to-fix path is
+    non-trivial and warrants dedicated investigation rather
+    than fitting in the tail of a hygiene release.
+
+
 ## [5.46.0] - 2026-05-06
 
 **Lf.\* — v5.43.0 lowerer-bug closeout; ergonomic Result<T, E> API
@@ -12122,7 +12222,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.46.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.0...HEAD
+[5.47.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.46.0...v5.47.0
 [5.46.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.45.0...v5.46.0
 [5.45.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.1...v5.45.0
 [5.44.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.0...v5.44.1

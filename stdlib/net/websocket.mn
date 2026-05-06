@@ -22,6 +22,7 @@
 // Extern C runtime functions
 // ---------------------------------------------------------------------------
 
+extern "C" fn __mn_str_chr(code: Int) -> String
 extern "C" fn __mn_net_init() -> Int
 extern "C" fn __mn_tcp_connect_str(host: String, port: Int) -> Int
 extern "C" fn __mn_tcp_send_str(fd: Int, data: String) -> Int
@@ -489,13 +490,20 @@ fn encode_frame(frame: WsFrame) -> String {
         byte1 = byte1 + 126
         pon hi: Int = plen / 256
         pon lo: Int = plen - hi * 256
-        ext_len = str(hi) + str(lo)
+        // v5.47.0 Cl.4 — emit raw bytes (was str(hi) decimal-stringification,
+        // a latent footgun on any pure-Mapanare binary protocol). __mn_str_chr
+        // (v5.43.0 Da.0) handles the full 0..255 range with byte 0x00
+        // preservation.
+        ext_len = __mn_str_chr(hi) + __mn_str_chr(lo)
     } sino {
         byte1 = byte1 + 127
-        ext_len = str(0) + str(0) + str(0) + str(0) + str(0) + str(0) + str(0) + str(0)
+        // v5.47.0 Cl.4 — eight zero bytes for the high half of a 64-bit length
+        // (Mapanare ints are 63-bit so the high 32 bits are always zero here).
+        ext_len = __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0)
     } }
 
-    result = str(byte0) + str(byte1) + ext_len + frame.payload
+    // v5.47.0 Cl.4 — emit raw header bytes.
+    result = __mn_str_chr(byte0) + __mn_str_chr(byte1) + ext_len + frame.payload
     da result
 }
 
@@ -513,7 +521,8 @@ fn build_send_frame(opcode: Int, payload: String, do_mask: Bool) -> String {
         byte1 = bitor(byte1, 126)
         pon hi: Int = plen / 256
         pon lo: Int = plen - hi * 256
-        header_extra = str(hi) + str(lo)
+        // v5.47.0 Cl.4 — emit raw bytes (was decimal-stringification).
+        header_extra = __mn_str_chr(hi) + __mn_str_chr(lo)
     } sino {
         byte1 = bitor(byte1, 127)
         pon b4: Int = plen / 16777216
@@ -522,10 +531,13 @@ fn build_send_frame(opcode: Int, payload: String, do_mask: Bool) -> String {
         pon rem2: Int = rem3 - b5 * 65536
         pon b6: Int = rem2 / 256
         pon b7: Int = rem2 - b6 * 256
-        header_extra = str(0) + str(0) + str(0) + str(0) + str(b4) + str(b5) + str(b6) + str(b7)
+        // v5.47.0 Cl.4 — emit raw bytes for 64-bit length (high 32 bits
+        // always zero since Mapanare Int is 63-bit).
+        header_extra = __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(b4) + __mn_str_chr(b5) + __mn_str_chr(b6) + __mn_str_chr(b7)
     } }
 
-    pon mut frame: String = str(byte0) + str(byte1) + header_extra
+    // v5.47.0 Cl.4 — emit raw header bytes.
+    pon mut frame: String = __mn_str_chr(byte0) + __mn_str_chr(byte1) + header_extra
 
     si do_mask {
         pon mask_key: String = __mn_random_bytes_str(4)
@@ -888,7 +900,8 @@ pub fn ws_send_fragmented(conn: WsConnection, msg: WsMessage, max_frag_size: Int
             byte1 = bitor(byte1, 126)
             pon hi: Int = chunk_len / 256
             pon lo: Int = chunk_len - hi * 256
-            header_extra = str(hi) + str(lo)
+            // v5.47.0 Cl.4 — emit raw bytes.
+            header_extra = __mn_str_chr(hi) + __mn_str_chr(lo)
         } sino {
             byte1 = bitor(byte1, 127)
             pon b4: Int = chunk_len / 16777216
@@ -897,10 +910,12 @@ pub fn ws_send_fragmented(conn: WsConnection, msg: WsMessage, max_frag_size: Int
             pon rem2: Int = rem3 - b5 * 65536
             pon b6: Int = rem2 / 256
             pon b7: Int = rem2 - b6 * 256
-            header_extra = str(0) + str(0) + str(0) + str(0) + str(b4) + str(b5) + str(b6) + str(b7)
+            // v5.47.0 Cl.4 — emit raw bytes for 64-bit length.
+            header_extra = __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(0) + __mn_str_chr(b4) + __mn_str_chr(b5) + __mn_str_chr(b6) + __mn_str_chr(b7)
         } }
 
-        pon mut frame_data: String = str(byte0) + str(byte1) + header_extra
+        // v5.47.0 Cl.4 — emit raw header bytes.
+        pon mut frame_data: String = __mn_str_chr(byte0) + __mn_str_chr(byte1) + header_extra
 
         si do_mask {
             pon mask_key: String = __mn_random_bytes_str(4)

@@ -4344,6 +4344,11 @@ struct SemState:
     current_span: Span
     current_fn_return: TypeInfo
     current_fn_name: String
+    // v5.47.0 Cl.1 (Lf.4): declared-type context for disambiguating
+    // colliding variant names. Set by check_let_stmt before inference;
+    // read by infer_call when an Identifier callee matches multiple
+    // enum variants.
+    expected_type: TypeInfo
 
 struct InferResult:
     type_info: TypeInfo
@@ -4356,7 +4361,7 @@ fn new_sem_state(filename: String) -> SemState:
     let scope: Scope = new_scope(none)
     let sem_errs: List<SemanticError> = []
     let zero_span: Span = make_span(0, 0, 0, 0)
-    new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "" }
+    new SemState { errors: sem_errs, scope: scope, filename: filename, current_span: zero_span, current_fn_return: unknown_type(), current_fn_name: "", expected_type: unknown_type() }
 
 fn new_infer_result(ti: TypeInfo, st: SemState) -> InferResult = new InferResult { type_info: ti, st: st }
 
@@ -4370,7 +4375,7 @@ fn add_error(st: SemState, msg: String, line: Int, col: Int) -> SemState:
     let err: SemanticError = new_semantic_error(msg, line, col, st.filename)
     let mut errs: List<SemanticError> = st.errors
     errs.push(err)
-    new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+    new SemState { errors: errs, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
 
 fn add_error_here(st: SemState, msg: String) -> SemState = add_error(st, msg, st.current_span.line, st.current_span.column)
 
@@ -4382,26 +4387,31 @@ fn add_error_msg(st: SemState, msg: String) -> SemState = add_error_here(st, msg
 
 fn push_scope(st: SemState) -> SemState:
     let child: Scope = new_scope(Some(st.scope))
-    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+    let new_st: SemState = new SemState { errors: st.errors, scope: child, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
     new_st
 
 fn pop_scope(st: SemState) -> SemState:
     match st.scope.parent {
         Some(parent) => {
-            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+            let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
             return new_st
         },
         _ => { return st }
     }
 
-fn set_span(st: SemState, span: Span) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+fn set_span(st: SemState, span: Span) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
 
 fn define_in_scope(st: SemState, name: String, sym: Symbol) -> SemState:
     let new_scope_val: Scope = scope_define(st.scope, name, sym)
-    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name }
+    let new_st: SemState = new SemState { errors: st.errors, scope: new_scope_val, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
     new_st
 
-fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name }
+fn set_fn_context(st: SemState, fn_name: String, ret_type: TypeInfo) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: ret_type, current_fn_name: fn_name, expected_type: st.expected_type }
+
+// v5.47.0 Cl.1 (Lf.4): set/restore expected-type context. Used by
+// check_let_stmt before infer_expr so infer_call can disambiguate
+// colliding variant names against the binding's declared type.
+fn set_expected_type(st: SemState, et: TypeInfo) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: et }
 
 // ---------------------------------------------------------------------------
 // Type compatibility checking
@@ -5426,25 +5436,97 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState:
 // ---------------------------------------------------------------------------
 
 fn check_let_stmt(st: SemState, name: String, mutable: Bool, type_ann: Option<TypeExpr>, value: Expr) -> SemState:
-    let vr: InferResult = infer_expr(st, value)
     let ann_type: TypeInfo = resolve_type_opt(type_ann)
-    let mut st2: SemState = vr.st
+    // v5.47.0 Cl.1 (Lf.4): thread the binding's annotation type as
+    // expected-type context so infer_call can disambiguate colliding
+    // variant constructors. Mirrors the Python semantic.py fix.
+    let prev_et: TypeInfo = st.expected_type
+    let mut st_et: SemState = st
+    if !type_should_skip(ann_type.name):
+        st_et = set_expected_type(st, ann_type)
+    let vr: InferResult = infer_expr(st_et, value)
+    let mut st2: SemState = set_expected_type(vr.st, prev_et)
+
+    // v5.47.0 Cl.1 (Lf.4): post-inference disambiguation. If the
+    // inferred type's name doesn't match the annotation but the
+    // annotation enum has a same-named variant in the scope, accept
+    // the annotation's type. The lowerer uses return-type context
+    // for the actual variant tag.
+    let mut value_ti: TypeInfo = vr.type_info
+    if !type_should_skip(ann_type.name):
+        if !type_should_skip(value_ti.name):
+            if ann_type.name != value_ti.name:
+                if scope_has_variant_for_enum(st2.scope, callee_name_of(value), ann_type.name):
+                    value_ti = ann_type
 
     // Check annotation matches value type
     // v4.53.0: skip if either side is unknown/error (cascade suppression)
     if !type_should_skip(ann_type.name):
-        if !type_should_skip(vr.type_info.name):
-            if types_compatible(ann_type, vr.type_info) == false:
-                st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + vr.type_info.name)
+        if !type_should_skip(value_ti.name):
+            if types_compatible(ann_type, value_ti) == false:
+                st2 = add_error_here(st2, "Type mismatch: declared type " + ann_type.name + " but initial value is " + value_ti.name)
 
     // Use annotation if available, otherwise inferred
     let resolved: TypeInfo = ann_type
     if type_should_skip(ann_type.name):
-        let resolved2: TypeInfo = vr.type_info
+        let resolved2: TypeInfo = value_ti
         let sym: Symbol = new_symbol(name, "variable", resolved2, mutable)
         return define_in_scope(st2, name, sym)
     let sym2: Symbol = new_symbol(name, "variable", resolved, mutable)
     return define_in_scope(st2, name, sym2)
+
+// v5.47.0 Cl.1 (Lf.4): get the callee name of a CallExpr or
+// Identifier, returning "" otherwise. Used by check_let_stmt
+// post-inference disambiguation.
+fn callee_name_of(e: Expr) -> String:
+    let ek: String = expr_kind(e)
+    if ek == "ident":
+        return expr_ident_name(e)
+    if ek == "call":
+        let callee: Expr = expr_call_callee(e)
+        if expr_kind(callee) == "ident":
+            return expr_ident_name(callee)
+    return ""
+
+// v5.47.0 Cl.1 (Lf.4): check whether the scope (including parents)
+// contains a variant constructor symbol named `variant_name` whose
+// type_info.name == `enum_name`. The scope_define helper appends
+// rather than replacing, so all enum-variant collisions are
+// preserved in scope.symbols and only differ in lookup-order.
+fn scope_has_variant_for_enum(scope: Scope, variant_name: String, enum_name: String) -> Bool:
+    if variant_name == "" { return false }
+    if enum_name == "" { return false }
+    let mut i: Int = len(scope.symbols) - 1
+    let mut hit: Bool = false
+    let mut at_root: Bool = false
+    for _ in 0..1000000:
+        if i < 0 { at_root = true }
+        if at_root { i = -1 }
+        if hit { i = -1 }
+        if i >= 0:
+            let sym: Symbol = scope.symbols[i]
+            if sym.name == variant_name:
+                // Variant constructors store the enum's TypeInfo as
+                // their function-type return_type; bare-variant
+                // symbols store the enum's TypeInfo directly. Check
+                // both shapes.
+                if sym.type_info.name == enum_name { hit = true }
+                let ret_opt: Option<TypeInfo> = sym.type_info.return_type
+                let mut got_ret: TypeInfo = unknown_type()
+                let mut have_ret: Bool = false
+                match ret_opt {
+                    Some(rt) => { got_ret = rt; have_ret = true },
+                    _ => { have_ret = false }
+                }
+                if have_ret:
+                    if got_ret.name == enum_name { hit = true }
+            i = i - 1
+    if hit { return true }
+    match scope.parent {
+        Some(parent) => { return scope_has_variant_for_enum(parent, variant_name, enum_name) },
+        _ => { return false }
+    }
+    return false
 
 // v5.20.1 Te.5.F.D — let destructure check: type-infer value, then
 // recursively define each leaf field name in the current scope.
@@ -6969,6 +7051,13 @@ struct LowerState:
     // (`__mn_chain_N`). Same rationale as `struct_update_counter`. Reset
     // per fn alongside the others.
     chain_compare_counter: Int
+    // v5.47.0 Cl.1 (Lf.4) — expected-enum-name hint set by lower_let
+    // when the binding has an enum-typed annotation. Consulted by
+    // lower_call_by_name's enum-variant branch to disambiguate
+    // colliding variant names (e.g. NetworkError::TransportLost +
+    // ExitReason::TransportLost). Empty string = no hint. Cleared
+    // after lowering the let value.
+    expected_enum_name: String
 
 fn new_lower_state(module_name: String) -> LowerState:
     let module: MIRModule = new_mir_module(module_name)
@@ -6982,7 +7071,7 @@ fn new_lower_state(module_name: String) -> LowerState:
     let generic_fns: List<FnDefData> = []
     let generic_structs: List<StructDefData> = []
     let generic_enums: List<EnumDefData> = []
-    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none, struct_update_counter: 0, chain_compare_counter: 0 }
+    return new LowerState { module: module, current_fn: none, current_block_idx: 0, tmp_counter: 0, block_counter: 0, vars: vars, scope_stack: scope_stack, impl_methods: impl_methods, struct_fields: struct_fields, enum_variants: enum_variants, lambda_vars: lambda_vars, fn_blocks: fn_blocks, generic_fns: generic_fns, generic_structs: generic_structs, generic_enums: generic_enums, loop_header_label: "", loop_exit_label: "", comp_type_hint: none, struct_update_counter: 0, chain_compare_counter: 0, expected_enum_name: "" }
 
 // Lower result: value + updated state
 struct LowerResult:
@@ -7227,6 +7316,27 @@ fn enum_name_for_variant(st: LowerState, variant: String) -> String:
                     j = j + 1
             i = i + 1
     return ""
+
+// v5.47.0 Cl.1 (Lf.4) — does the named enum have a variant with the
+// given name? Used by lower_call_by_name's enum-variant branch when
+// st.expected_enum_name disagrees with enum_name_for_variant's
+// first-match result; we still want to verify the hinted enum
+// actually has the variant before using it.
+fn enum_has_variant(st: LowerState, enum_name: String, variant: String) -> Bool:
+    let mut i: Int = 0
+    let nev_h: Int = len(st.enum_variants)
+    for _ in 0..2000:
+        if i < nev_h:
+            let ev: EnumVariantNames = st.enum_variants[i]
+            if ev.enum_name == enum_name:
+                let mut j: Int = 0
+                let nvn_h: Int = len(ev.variant_names)
+                for _ in 0..2000:
+                    if j < nvn_h:
+                        if ev.variant_names[j] == variant { return true }
+                        j = j + 1
+            i = i + 1
+    return false
 
 fn find_impl_method(st: LowerState, type_name: String, method: String) -> Option<String>:
     let key: String = type_name + "." + method
@@ -8213,8 +8323,26 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
                     s = define_var(s, name, addr2, mutable)
                     return s
 
-    let r: LowerResult = lower_expr(st, value)
+    // v5.47.0 Cl.1 (Lf.4) — set expected-enum-name hint before
+    // lowering when the binding has an enum-typed annotation. This
+    // lets lower_call_by_name disambiguate colliding variant names
+    // (e.g. NetworkError::TransportLost vs ExitReason::TransportLost)
+    // by preferring the enum that matches the binding's declared
+    // type. Restored after lowering.
+    let prev_enum_hint: String = st.expected_enum_name
+    let mut st_hint: LowerState = st
+    match type_ann {
+        Some(te_h) => {
+            let hint_ty: MIRType = lower_resolve_type_checked(st, te_h)
+            if hint_ty.kind == TK_ENUM():
+                if hint_ty.name != "":
+                    st_hint.expected_enum_name = hint_ty.name
+        },
+        _ => {}
+    }
+    let r: LowerResult = lower_expr(st_hint, value)
     let mut s: LowerState = r.state
+    s.expected_enum_name = prev_enum_hint
 
     // Update lambda registration: lower_lambda left var_name empty
     let num_lv: Int = len(s.lambda_vars)
@@ -9781,7 +9909,18 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
 
     // Check if it's an enum variant constructor
     if is_enum_variant(st, fn_name):
-        let enum_name: String = enum_name_for_variant(st, fn_name)
+        let mut enum_name: String = enum_name_for_variant(st, fn_name)
+        // v5.47.0 Cl.1 (Lf.4) — variant-name collision disambiguation.
+        // If lower_let set an expected-enum-name hint AND that enum has
+        // this variant, prefer it over enum_name_for_variant's
+        // first-match result. The first-match policy alone produces
+        // wrong tags when two enums share a variant (the destination
+        // alloca is sized for the binding's declared enum but the
+        // variant tag/payload comes from a different enum's layout).
+        if st.expected_enum_name != "":
+            if st.expected_enum_name != enum_name:
+                if enum_has_variant(st, st.expected_enum_name, fn_name):
+                    enum_name = st.expected_enum_name
         let enum_ty: MIRType = mir_enum(enum_name)
         let dr_enum: LowerResult = make_value(st, enum_ty, "t")
         let s_enum: LowerState = emit_instr(dr_enum.state, Instruction::EnumInit(dr_enum.value, enum_ty, fn_name, args))
@@ -14687,7 +14826,7 @@ fn build_internal_struct_list() -> List<StructEntry>:
     // insertvalue indices for subsequent make_entry calls.
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"]))
-    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label", "comp_type_hint", "struct_update_counter", "chain_compare_counter"]))
+    list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label", "comp_type_hint", "struct_update_counter", "chain_compare_counter", "expected_enum_name"]))
     list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "is_windows", "win_arch"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
@@ -14727,8 +14866,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState:
     let mut s: EmitState = st
     // MIRModule: name, functions, structs, enums, extern_fns, agents, pipes, imports, trait_names, consts
     s = register_internal_struct(s, "MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"])
-    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks, generic_fns, generic_structs, generic_enums, loop_header_label, loop_exit_label, comp_type_hint, struct_update_counter, chain_compare_counter
-    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label", "comp_type_hint", "struct_update_counter", "chain_compare_counter"])
+    // LowerState: module, current_fn, current_block_idx, tmp_counter, block_counter, vars, scope_stack, impl_methods, struct_fields, enum_variants, lambda_vars, fn_blocks, generic_fns, generic_structs, generic_enums, loop_header_label, loop_exit_label, comp_type_hint, struct_update_counter, chain_compare_counter, expected_enum_name
+    s = register_internal_struct(s, "LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label", "comp_type_hint", "struct_update_counter", "chain_compare_counter", "expected_enum_name"])
     // EmitState: lines, counter, functions, structs, module_name, str_counter, str_globals, current_ret_type, enum_names, enum_infos, enum_inline_slots, str_owned, list_owned, boxed_owned, tensor_owned, moved_locals, entry_prelude_lines, entry_block_body, in_entry_block, loop_depth, str_owned_source, list_owned_source, boxed_owned_source, tensor_owned_source, is_windows, win_arch
     s = register_internal_struct(s, "EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "is_windows", "win_arch"])
     // LowerResult: value, state

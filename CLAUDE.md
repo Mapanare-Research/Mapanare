@@ -19,6 +19,61 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.47.0** (ready, not tagged) — **Cl.\* — pre-panel hygiene
+  cleanup; v5.47.5 closeout panel runway begins.** Drains every
+  closeable LOW-tier carry before the v5.47.5 closeout panel sees
+  the docket. Mirrors the v5.28.0 hygiene-before-panel precedent
+  (the +0.31 panel recovery there came from H.\* hygiene closures
+  landing ahead of panel cut). **Cl.1 (Lf.4) — variant-name
+  collision** closed across both Python bootstrap
+  (`mapanare/semantic.py` `_variant_alternatives` multimap +
+  `_check_let` annotation-as-`_expected_type` context;
+  `_check_call` and Identifier-resolution disambiguation when the
+  name has multiple alternatives) AND self-host stage1
+  (`mapanare/self/semantic.mn` `expected_type` field on `SemState`
+  + `scope_has_variant_for_enum` post-inference helper walking
+  `Scope.symbols` which appends rather than replaces;
+  `mapanare/self/lower.mn` `expected_enum_name` field on
+  `LowerState` + `enum_has_variant` lookup; `lower_let` sets the
+  hint when type_ann is TK_ENUM; `lower_call_by_name` enum-variant
+  branch prefers the hint over `enum_name_for_variant`'s
+  first-match result when the hinted enum has the variant). Phase
+  0 audit verified self-host stage1 had the bug too (different
+  from v5.46.0 where self-host already had Eu.2 fix); Cl.5 mirror
+  is non-trivial (~80 LOC across 4 files). **Cl.4 —
+  `stdlib/net/websocket.mn` `str(byte)` decimal-stringification
+  cleanup** — 11 sites in `read_frame` / `build_send_frame` /
+  chunked-send replaced with `__mn_str_chr` (v5.43.0 Da.0 C
+  runtime export). **Two Phase-0-driven scope splits
+  (load-bearing for honest release framing):** (1) **Cl.2 —
+  agent stdlib ergonomic refactor SPLIT to v5.47.1** — the
+  v5.43.0 distributed-agent flat-tuple shape across
+  `stdlib/agent/{url,remote,node,supervision}.mn` is structurally
+  unblocked by Cl.1 but the refactor is ~400 LOC across
+  public-API surfaces + ~50 internal callers + test updates;
+  warrants dedicated focus; (2) **Cl.3 — fs.mn walk_dir IR
+  codegen SPLIT to v5.47.1** — Phase 0 verified the v5.40.0 carry
+  is still open (clang rejects `extractvalue ptr ... 0` then
+  `zext ptr to i64`); receiver-side wrong-shape Result aggregate
+  bug, different fix-site from v5.46.0's constructor-side
+  wrap-shape default. **STRICT 3-stage fixed point preserved at
+  244,654 lines / 0 diff** (50-release strict streak from v5.7.1;
+  +889 lines vs v5.46.0). Goldens **103/103** (102 + new
+  `103_variant_name_collision.mn`). Falsifiability locked per
+  layer in `tests/llvm/test_lowerer_fixes.py` (8/8 GREEN;
+  +3 new Lf.4 cases). Source delta: ~80 LOC compiler + ~30 LOC
+  stdlib + ~85 LOC golden + ~80 LOC test extension + closeout
+  artifacts. Aggregate state entering v5.47.5: **0 HIGH** /
+  **2 MEDIUM** (Cl.2 + Cl.3 splits to v5.47.1; macOS
+  notarization carry from v5.33.0 Nu.2) / ~6 LOW. **Tensor
+  closeout arc CLOSED at v5.45.0. Manifesto arc CLOSED at
+  v5.43.0. Package-system runway CLOSED at v5.44.0. v5.43.0
+  lowerer-bug closeout CLOSED at v5.46.0. Pre-panel hygiene
+  cleanup CLOSED at v5.47.0** (with two scope splits to v5.47.1).
+  v5.47.5 panel reviews a clean docket. See
+  `docs/roadmap/v5/v5.47.0/{PLAN.md, PROMPT.md, PRE_PHASE_AUDIT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.46.0** (ready, not tagged) — **Lf.\* — v5.43.0 lowerer-bug
   closeout; ergonomic `Result<T, E>` API unblocked.** Closes the
   three v5.x lowerer bugs (Lf.1 + Lf.2 + Lf.3) that v5.43.0
@@ -3498,7 +3553,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (32725 symbols, 68324 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (32756 symbols, 68346 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

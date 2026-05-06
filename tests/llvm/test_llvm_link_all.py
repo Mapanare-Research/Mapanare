@@ -119,8 +119,8 @@ def test_golden_corpus_count() -> None:
     in sync.
     """
     goldens = _all_goldens()
-    assert len(goldens) == 102, (
-        f"Golden corpus drifted from 102 to {len(goldens)}. Update "
+    assert len(goldens) == 103, (
+        f"Golden corpus drifted from 103 to {len(goldens)}. Update "
         f"this test, BENCHMARKS.md, the CLAUDE.md release-notes "
         f"entry, and the most recent SESSION_REPORT."
     )

@@ -223,3 +223,94 @@ fn main() -> Int {{
     rc, out, err = _emit_link_run(src, tmp_path)
     assert rc == 0, f"trivial-Ok regression ({ok_type}) failed: rc={rc}\n{err}"
     assert "k=2" in out, f"trivial-Ok regression ({ok_type}) wrong output: {out!r}"
+
+
+
+# ---------------------------------------------------------------------------
+# v5.47.0 Cl.1 (Lf.4) — variant-name collision regression
+# ---------------------------------------------------------------------------
+#
+# Two enums declaring a variant of the same name (e.g. NetworkError::
+# TransportLost + ExitReason::TransportLost). Pre-fix the semantic
+# checker rejected `pon n: NetworkError = TransportLost("net")` with a
+# Type-mismatch error because variant lookup picked the last-registered
+# enum's variant. Post-fix both Python bootstrap (mapanare/semantic.py
+# multimap + expected_type context) and self-host stage1 (mapanare/
+# self/semantic.mn mirror + mapanare/self/lower.mn LowerState
+# expected_enum_name hint) accept and dispatch correctly.
+#
+# Falsifiability:
+#   - Revert mapanare/semantic.py _variant_alternatives lookup → semantic
+#     check fails with "Type mismatch: declared type NetworkError but
+#     initial value is ExitReason".
+#   - Revert mapanare/self/lower.mn enum_has_variant hint check → stage1
+#     produces wrong-shape IR (`store %enum.ExitReason ... ptr ...
+#     <NetworkError-shaped slot>`).
+
+
+@pytest.mark.skipif(not RUNTIME_LIB.exists(), reason="libmapanare_rt.a not built")
+def test_lf4_variant_name_collision(tmp_path: Path) -> None:
+    """Lf.4: declared-type-aware constructor disambiguation.
+
+    Pre-fix: `pon n: NetworkError = TransportLost("net")` rejected
+    with "Type mismatch: declared type NetworkError but initial
+    value is ExitReason". Post-fix: compiles, dispatches correctly.
+    """
+    rc, out, err = _emit_link_run(
+        ROOT / "tests" / "golden" / "103_variant_name_collision.mn",
+        tmp_path,
+    )
+    assert rc == 0, f"Lf.4 binary exited {rc}\nstdout:{out}\nstderr:{err}"
+    lines = [line for line in out.splitlines() if line.strip()]
+    assert lines == ["net=1", "exit=10", "net2=2", "exit2=20"], (
+        f"Lf.4 output mismatch — pre-fix this would have been a "
+        f"semantic-check rejection (no IR emitted).\nGot: {lines}"
+    )
+
+
+@pytest.mark.skipif(not RUNTIME_LIB.exists(), reason="libmapanare_rt.a not built")
+@pytest.mark.parametrize("variant_idx", [0, 1])
+def test_lf4_minimal_pair(tmp_path: Path, variant_idx: int) -> None:
+    """Lf.4 minimal pair — two enums, one shared variant name.
+
+    Each iteration constructs the same variant-name through a
+    different declared-type. Both must dispatch to the right arm.
+    """
+    src = tmp_path / f"lf4_min_{variant_idx}.mn"
+    src.write_text("""
+pub tipo A {
+    | X(String)
+    | Ay(String)
+}
+pub tipo B {
+    | X(String)
+    | Bee(String)
+}
+
+fn from_a(a: A) -> Int {
+    match a {
+        X(s) => { da 100 },
+        Ay(s) => { da 200 }
+    }
+}
+
+fn from_b(b: B) -> Int {
+    match b {
+        X(s) => { da 1000 },
+        Bee(s) => { da 2000 }
+    }
+}
+
+fn main() -> Int {
+    pon a: A = X("from-a")
+    pon b: B = X("from-b")
+    print("a=" + str(from_a(a)))
+    print("b=" + str(from_b(b)))
+    da 0
+}
+""")
+    rc, out, err = _emit_link_run(src, tmp_path)
+    assert rc == 0, f"Lf.4 minimal failed: rc={rc}\n{err}"
+    assert "a=100" in out and "b=1000" in out, (
+        f"Lf.4 minimal-pair dispatch wrong: {out!r}"
+    )
