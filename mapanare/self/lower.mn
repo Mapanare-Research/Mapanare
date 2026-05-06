@@ -2536,11 +2536,13 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     if method == "push":
         return lower_push_method(s, obj, obj_r, arg_exprs)
 
-    // v5.41.0 Ts.1 — tensor.reshape(shape) routes to __mn_tensor_reshape.
-    // Mirror of mapanare/lower.py reshape branch. Copy semantics at
-    // v5.41.0; v5.41.1 will switch to refcount-based aliasing without
-    // changing this lowering surface.
-    if method == "reshape":
+    // v5.41.0 Ts.1 → v5.45.0 Ts.2.B — tensor.reshape(shape) and tensor.view(shape).
+    // Mirror of mapanare/lower.py unified reshape+view branch. v5.45.0
+    // swap: reshape semantics changed from copy to alias (delegates to
+    // __mn_tensor_view in the runtime). The lowerer emits a Call to the
+    // appropriate runtime fn name; the noalias attribute drop is in
+    // emit_llvm.mn (Phase 5.4).
+    if method == "reshape" || method == "view":
         if obj_r.value.ty.kind == TK_TENSOR():
             if len(arg_exprs) >= 1:
                 let shape_r: LowerResult = lower_expr(s, arg_exprs[0])
@@ -2549,11 +2551,16 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
                 let mut elem_ty_rs: MIRType = mir_float()
                 if elem_kind_rs == TK_INT() { elem_ty_rs = mir_int() }
                 let res_ty_rs: MIRType = mir_tensor_of(elem_ty_rs)
-                let rs_dest: LowerResult = make_value(s, res_ty_rs, "treshape")
+                let mut fn_name_rs: String = "__mn_tensor_reshape"
+                let mut prefix_rs: String = "treshape"
+                if method == "view":
+                    fn_name_rs = "__mn_tensor_view"
+                    prefix_rs = "tview"
+                let rs_dest: LowerResult = make_value(s, res_ty_rs, prefix_rs)
                 let mut rs_args: List<Value> = []
                 rs_args.push(obj_r.value)
                 rs_args.push(shape_r.value)
-                let s_rs: LowerState = emit_instr(rs_dest.state, Instruction::Call(rs_dest.value, "__mn_tensor_reshape", rs_args))
+                let s_rs: LowerState = emit_instr(rs_dest.state, Instruction::Call(rs_dest.value, fn_name_rs, rs_args))
                 return new_lower_result(rs_dest.value, s_rs)
 
     // v5.6.3 Sh.6 Phase 4 — tensor reduction methods
@@ -2894,6 +2901,15 @@ fn lower_tensor_index_get(st: LowerState, obj: Expr, indices: List<Expr>) -> Low
 // special-cases __mn_tensor_slice to repackage the flat args into two
 // stack-allocated [rank × i64] arrays before calling the runtime.
 // Mirrors mapanare/lower.py::_lower_tensor_slice:2788-2835.
+//
+// v5.45.0 Ts.3.B — when any IndexItem has step != Expr::NoneLit, route
+// to __mn_tensor_step_slice with `[obj, s0..e0..k0..rank]` (3*rank+2
+// args). Non-stepped axes use step=1. Step <= 0 is rejected at runtime
+// by __mn_tensor_step_slice (the C runtime backstop). The Python
+// bootstrap also catches literal step <= 0 at lower time; the self-host
+// version skips this check for simplicity (the runtime is sufficient
+// and the literal-vs-non-literal decomposition would touch every Expr
+// match arm).
 fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> LowerResult:
     let obj_r: LowerResult = lower_expr(st, obj)
     let mut s: LowerState = obj_r.state
@@ -2901,6 +2917,8 @@ fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> Lowe
     let rank: Int = len(items)
     let mut starts: List<Value> = []
     let mut ends: List<Value> = []
+    let mut steps: List<Value> = []
+    let mut any_stepped: Bool = false
 
     let mut d: Int = 0
     for _ in 0..128:
@@ -2952,6 +2970,18 @@ fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> Lowe
                     let end_d: LowerResult = make_value(s, mir_int(), "send")
                     s = emit_instr(end_d.state, Instruction::BinOp(end_d.value, BinOpKind::Add, scalar_r.value, one_r.value))
                     ends.push(end_d.value)
+
+            // v5.45.0 Ts.3.B — step (default to const 1 when absent).
+            if expr_kind(it.step) == "none_lit":
+                let kc: LowerResult = make_value(s, mir_int(), "ci")
+                s = emit_instr(kc.state, Instruction::Const(kc.value, mir_int(), "1"))
+                steps.push(kc.value)
+            else:
+                let step_r: LowerResult = lower_expr(s, it.step)
+                s = step_r.state
+                steps.push(step_r.value)
+                any_stepped = true
+
             d = d + 1
 
     // rank constant
@@ -2963,6 +2993,23 @@ fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> Lowe
     let mut elem_ty_sl: MIRType = mir_float()
     if elem_kind_sl == TK_INT() { elem_ty_sl = mir_int() }
     let res_ty: MIRType = mir_tensor_of(elem_ty_sl)
+
+    if any_stepped:
+        // v5.45.0 Ts.3.B — stepped slice (copy semantics).
+        // Flat args: [obj, s0..s_{n-1}, e0..e_{n-1}, k0..k_{n-1}, rank]
+        let dest_ss: LowerResult = make_value(s, res_ty, "tstepslice")
+        s = dest_ss.state
+        let mut ss_args: List<Value> = []
+        ss_args.push(obj_r.value)
+        for a_i in 0..rank:
+            ss_args.push(starts[a_i])
+        for b_i in 0..rank:
+            ss_args.push(ends[b_i])
+        for c_i in 0..rank:
+            ss_args.push(steps[c_i])
+        ss_args.push(rank_r.value)
+        s = emit_instr(s, Instruction::Call(dest_ss.value, "__mn_tensor_step_slice", ss_args))
+        return new_lower_result(dest_ss.value, s)
 
     let dest_sl: LowerResult = make_value(s, res_ty, "tslice")
     s = dest_sl.state

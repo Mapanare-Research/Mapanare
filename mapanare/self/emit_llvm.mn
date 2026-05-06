@@ -863,7 +863,13 @@ fn get_fn_ret_prefix(name: String) -> String:
     if name == "__mn_tensor_rdiv_scalar_i64" { return "noalias " }
     // v5.6.3 Sh.6 Phase 4 — slice returns a fresh heap tensor (noalias).
     if name == "__mn_tensor_slice" { return "noalias " }
-    if name == "__mn_tensor_reshape" { return "noalias " }
+    // v5.45.0 Ts.2.B — __mn_tensor_reshape semantic swap to alias.
+    // The noalias attribute would be a lie under aliasing semantics
+    // (writes to result visible in source). __mn_tensor_view is the
+    // alias-flavor sibling shipped at v5.45.0. __mn_tensor_step_slice
+    // returns a fresh contiguous tensor (copy semantics) — no noalias
+    // for v5.45.0 conservatively (consistent with the rest of the
+    // tensor-producing surface).
     return ""
 
 // Function-attribute suffix. Mirrors the Python `_RUNTIME_FN_ATTRS`
@@ -1040,6 +1046,9 @@ fn get_fn_attrs(name: String) -> String:
     if name == "__mn_tensor_argmin_i64" { return " nounwind readonly" }
     if name == "__mn_tensor_slice" { return " nounwind" }
     if name == "__mn_tensor_reshape" { return " nounwind" }
+    // v5.45.0 Ts.2.B / Ts.3.B — view + step_slice exports.
+    if name == "__mn_tensor_view" { return " nounwind" }
+    if name == "__mn_tensor_step_slice" { return " nounwind" }
     // -- Agent runtime (v3.43.0) --
     if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
     if name == "mapanare_agent_send" { return " nounwind willreturn" }
@@ -1275,6 +1284,9 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     // repackages into stack allocated arrays before the call.
     s = declare_runtime_fn(s, "__mn_tensor_slice", "ptr", "ptr, ptr, ptr, i64")
     s = declare_runtime_fn(s, "__mn_tensor_reshape", "ptr", "ptr, ptr")
+    // v5.45.0 Ts.2.B + Ts.3.B — view (aliasing) + step_slice (copy).
+    s = declare_runtime_fn(s, "__mn_tensor_view", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_step_slice", "ptr", "ptr, ptr, ptr, ptr, i64")
 
     // Agent runtime
     s = declare_runtime_fn(s, "__mn_agent_spawn", "ptr", "ptr, ptr")
@@ -3981,20 +3993,22 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         if nargs_s >= 3:
             inner_s = inner_s + ", double " + args[last_s].name
         return emit_line(st, "  call void (ptr, i64, ...) @__mn_tensor_set_f64_nd(" + inner_s + ")")
-    // v5.41.0 Ts.1 — `__mn_tensor_reshape` special case. Lowerer emits
-    // Call(__mn_tensor_reshape, [tensor, shape: List<Int>]). The runtime
-    // expects (ptr tensor, ptr shape_list). We alloca a list-shaped slot,
-    // store the list value into it, and call with the alloca ptr —
-    // mirrors the gpu_tensor_add pattern. Returns a fresh tensor (noalias)
-    // under v5.41.0 copy semantics; v5.41.1 may switch to data-sharing.
-    if fn_name == "__mn_tensor_reshape":
+    // v5.41.0 Ts.1 → v5.45.0 Ts.2.B — `__mn_tensor_reshape` and
+    // `__mn_tensor_view` share the same call shape. Lowerer emits
+    // Call(fn, [tensor, shape: List<Int>]). Runtime expects (ptr tensor,
+    // ptr shape_list). Alloca a list-shaped slot, store the list value
+    // into it, call with the alloca ptr. Both are aliasing now —
+    // `noalias` dropped from the call (v5.45.0 swap).
+    if fn_name == "__mn_tensor_reshape" || fn_name == "__mn_tensor_view":
         let cnt_rs: String = toString(st.counter)
         let mut s_rs: EmitState = st
         s_rs.counter = s_rs.counter + 1
-        let shp_p: String = "%treshape_shape" + cnt_rs
+        let mut prefix_rs: String = "treshape"
+        if fn_name == "__mn_tensor_view" { prefix_rs = "tview" }
+        let shp_p: String = "%" + prefix_rs + "_shape" + cnt_rs
         s_rs = emit_line(s_rs, "  " + shp_p + " = alloca " + llvm_list_rt())
         s_rs = emit_line(s_rs, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + shp_p)
-        s_rs = emit_line(s_rs, "  " + dn + " = call noalias ptr @__mn_tensor_reshape(ptr " + args[0].name + ", ptr " + shp_p + ")")
+        s_rs = emit_line(s_rs, "  " + dn + " = call ptr @" + fn_name + "(ptr " + args[0].name + ", ptr " + shp_p + ")")
         s_rs = emit_track_tensor(s_rs, dn)
         return s_rs
 
@@ -4040,6 +4054,55 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         // v5.6.4 Rt.06 — track the fresh tensor for drop-glue.
         s_sl = emit_track_tensor(s_sl, dn)
         return s_sl
+
+    // v5.45.0 Ts.3.B — `__mn_tensor_step_slice` special case. Lowerer
+    // passes flat args [tensor, s0..s_{n-1}, e0..e_{n-1}, k0..k_{n-1},
+    // rank] = 3*ndim + 2 args. Runtime expects (ptr tensor, ptr starts,
+    // ptr ends, ptr steps, i64 rank). Alloca three [ndim x i64] arrays,
+    // store each start/end/step value, call the runtime. No `noalias`
+    // — consistent with v5.45.0 conservative omission across tensor-
+    // producing exports. Mirrors emit_llvm_text.py:3992-4054.
+    if fn_name == "__mn_tensor_step_slice":
+        let nargs_ss: Int = len(args)
+        let rank_idx_ss: Int = nargs_ss - 1
+        let ndim_ss: Int = (nargs_ss - 2) / 3
+        let cnt_ss: String = toString(st.counter)
+        let mut s_ss: EmitState = st
+        s_ss.counter = s_ss.counter + 1
+
+        let starts_arr_ss: String = "%starts_arr" + cnt_ss
+        let ends_arr_ss: String = "%ends_arr" + cnt_ss
+        let steps_arr_ss: String = "%steps_arr" + cnt_ss
+        let arr_ty_ss: String = "[" + toString(ndim_ss) + " x i64]"
+        s_ss = emit_line(s_ss, "  " + starts_arr_ss + " = alloca " + arr_ty_ss)
+        s_ss = emit_line(s_ss, "  " + ends_arr_ss + " = alloca " + arr_ty_ss)
+        s_ss = emit_line(s_ss, "  " + steps_arr_ss + " = alloca " + arr_ty_ss)
+
+        let mut d_ss: Int = 0
+        for _ in 0..128:
+            if d_ss < ndim_ss:
+                let d_str_ss: String = toString(d_ss)
+                let cnt_d_ss: String = toString(s_ss.counter)
+                s_ss.counter = s_ss.counter + 1
+                let s_gep_ss: String = "%sgep" + cnt_d_ss
+                let e_gep_ss: String = "%egep" + cnt_d_ss
+                let k_gep_ss: String = "%kgep" + cnt_d_ss
+                s_ss = emit_line(s_ss, "  " + s_gep_ss + " = getelementptr inbounds " + arr_ty_ss + ", ptr " + starts_arr_ss + ", i64 0, i64 " + d_str_ss)
+                s_ss = emit_line(s_ss, "  " + e_gep_ss + " = getelementptr inbounds " + arr_ty_ss + ", ptr " + ends_arr_ss + ", i64 0, i64 " + d_str_ss)
+                s_ss = emit_line(s_ss, "  " + k_gep_ss + " = getelementptr inbounds " + arr_ty_ss + ", ptr " + steps_arr_ss + ", i64 0, i64 " + d_str_ss)
+                let s_val_ss: String = args[1 + d_ss].name
+                let e_val_ss: String = args[1 + ndim_ss + d_ss].name
+                let k_val_ss: String = args[1 + 2 * ndim_ss + d_ss].name
+                s_ss = emit_line(s_ss, "  store i64 " + s_val_ss + ", ptr " + s_gep_ss)
+                s_ss = emit_line(s_ss, "  store i64 " + e_val_ss + ", ptr " + e_gep_ss)
+                s_ss = emit_line(s_ss, "  store i64 " + k_val_ss + ", ptr " + k_gep_ss)
+                d_ss = d_ss + 1
+
+        let t_name_ss: String = args[0].name
+        let rank_name_ss: String = args[rank_idx_ss].name
+        s_ss = emit_line(s_ss, "  " + dn + " = call ptr @__mn_tensor_step_slice(ptr " + t_name_ss + ", ptr " + starts_arr_ss + ", ptr " + ends_arr_ss + ", ptr " + steps_arr_ss + ", i64 " + rank_name_ss + ")")
+        s_ss = emit_track_tensor(s_ss, dn)
+        return s_ss
 
     if fn_name == "__mn_tensor_set_i64_nd":
         let nargs_si: Int = len(args)
@@ -4639,6 +4702,12 @@ fn is_tensor_allocating_fn(fn_name: String) -> Bool:
     if fn_name == "__mn_tensor_alloc" { return true }
     if fn_name == "__mn_tensor_slice" { return true }
     if fn_name == "__mn_tensor_reshape" { return true }
+    // v5.45.0 Ts.2.B + Ts.3.B — view returns a refcount-aliased view
+    // (still tracked: drop-glue must call __mn_tensor_free which is
+    // refcount-aware as of Ts.2.A). step_slice returns a fresh
+    // contiguous tensor (copy semantics).
+    if fn_name == "__mn_tensor_view" { return true }
+    if fn_name == "__mn_tensor_step_slice" { return true }
     if fn_name == "__mn_tensor_add_broadcast_f64" { return true }
     if fn_name == "__mn_tensor_sub_broadcast_f64" { return true }
     if fn_name == "__mn_tensor_mul_broadcast_f64" { return true }

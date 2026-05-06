@@ -66,11 +66,18 @@ struct MapEntry:
 //
 // Scalar items + 1 item → Expr::Index; scalar items + ≥2 items → Expr::TensorIndex;
 // any range/wildcard items → Expr::TensorSlice.
+// v5.45.0 Ts.3.A — `step: Expr` field for stepped range form
+// `[start..end:step]`. Expr::NoneLit means "no explicit step" (i.e.
+// step=1 / non-stepped slice). Bare stepped ranges outside `[...]`
+// are not supported in the self-host parser at v5.45.0; the field
+// only carries meaning when an IndexItem is built from inside a
+// tensor index. Mirrors mapanare/ast_nodes.py::IndexItem.step.
 struct IndexItem:
     kind: String
     expr: Expr
     start: Expr
     end: Expr
+    step: Expr
 
 enum Expr:
     IntLit(Int)
@@ -468,12 +475,16 @@ pub fn expr_ti_indices(e: Expr) -> List<Expr>:
         _ => { let empty: List<Expr> = []; return empty }
 
 // v5.6.3 Sh.6 Phase 4 — IndexItem constructors + TensorSlice accessors.
+// v5.45.0 Ts.3.A — step field added; constructors default to NoneLit.
+// New range_step_index_item constructor for stepped indexing.
 pub fn scalar_index_item(e: Expr) -> IndexItem:
-    return new IndexItem { kind: "scalar", expr: e, start: Expr::NoneLit, end: Expr::NoneLit }
+    return new IndexItem { kind: "scalar", expr: e, start: Expr::NoneLit, end: Expr::NoneLit, step: Expr::NoneLit }
 pub fn range_index_item(s: Expr, x: Expr) -> IndexItem:
-    return new IndexItem { kind: "range", expr: Expr::NoneLit, start: s, end: x }
+    return new IndexItem { kind: "range", expr: Expr::NoneLit, start: s, end: x, step: Expr::NoneLit }
+pub fn range_step_index_item(s: Expr, x: Expr, k: Expr) -> IndexItem:
+    return new IndexItem { kind: "range", expr: Expr::NoneLit, start: s, end: x, step: k }
 pub fn wildcard_index_item() -> IndexItem:
-    return new IndexItem { kind: "wildcard", expr: Expr::NoneLit, start: Expr::NoneLit, end: Expr::NoneLit }
+    return new IndexItem { kind: "wildcard", expr: Expr::NoneLit, start: Expr::NoneLit, end: Expr::NoneLit, step: Expr::NoneLit }
 
 // TensorSlice (v5.6.3 — range/wildcard in subscript `a[1..3, _]`)
 pub fn expr_slice_obj(e: Expr) -> Expr:
@@ -3087,8 +3098,11 @@ fn parse_index_item(tokens: List<Token>, pos: Int, filename: String) -> IndexIte
     if peek_type(tokens, pos) == "UNDERSCORE":
         return new IndexItemResult { item: wildcard_index_item(), pos: pos + 1 }
     if peek_type(tokens, pos) == "RANGE":
-        // `..end` — open start
+        // `..end` — open start. Check for trailing `:step` (v5.45.0 Ts.3.A).
         let end_r: ExprResult = parse_expr(tokens, pos + 1, filename, 7)
+        if peek_type(tokens, end_r.pos) == "COLON":
+            let step_r: ExprResult = parse_expr(tokens, end_r.pos + 1, filename, 7)
+            return new IndexItemResult { item: range_step_index_item(Expr::NoneLit, end_r.expr, step_r.expr), pos: step_r.pos }
         return new IndexItemResult { item: range_index_item(Expr::NoneLit, end_r.expr), pos: end_r.pos }
     let first: ExprResult = parse_expr(tokens, pos, filename, 7)
     if peek_type(tokens, first.pos) == "RANGE":
@@ -3099,6 +3113,12 @@ fn parse_index_item(tokens: List<Token>, pos: Int, filename: String) -> IndexIte
         if close == "RBRACKET":
             return new IndexItemResult { item: range_index_item(first.expr, Expr::NoneLit), pos: after_dd }
         let end_r: ExprResult = parse_expr(tokens, after_dd, filename, 7)
+        // v5.45.0 Ts.3.A — `start..end:step`. After the end expr, peek
+        // for COLON; if found, parse the step at the same precedence
+        // (7 to stop before any further `..`).
+        if peek_type(tokens, end_r.pos) == "COLON":
+            let step_r: ExprResult = parse_expr(tokens, end_r.pos + 1, filename, 7)
+            return new IndexItemResult { item: range_step_index_item(first.expr, end_r.expr, step_r.expr), pos: step_r.pos }
         return new IndexItemResult { item: range_index_item(first.expr, end_r.expr), pos: end_r.pos }
     return new IndexItemResult { item: scalar_index_item(first.expr), pos: first.pos }
 
@@ -9950,11 +9970,13 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
     if method == "push":
         return lower_push_method(s, obj, obj_r, arg_exprs)
 
-    // v5.41.0 Ts.1 — tensor.reshape(shape) routes to __mn_tensor_reshape.
-    // Mirror of mapanare/lower.py reshape branch. Copy semantics at
-    // v5.41.0; v5.41.1 will switch to refcount-based aliasing without
-    // changing this lowering surface.
-    if method == "reshape":
+    // v5.41.0 Ts.1 → v5.45.0 Ts.2.B — tensor.reshape(shape) and tensor.view(shape).
+    // Mirror of mapanare/lower.py unified reshape+view branch. v5.45.0
+    // swap: reshape semantics changed from copy to alias (delegates to
+    // __mn_tensor_view in the runtime). The lowerer emits a Call to the
+    // appropriate runtime fn name; the noalias attribute drop is in
+    // emit_llvm.mn (Phase 5.4).
+    if method == "reshape" || method == "view":
         if obj_r.value.ty.kind == TK_TENSOR():
             if len(arg_exprs) >= 1:
                 let shape_r: LowerResult = lower_expr(s, arg_exprs[0])
@@ -9963,11 +9985,16 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
                 let mut elem_ty_rs: MIRType = mir_float()
                 if elem_kind_rs == TK_INT() { elem_ty_rs = mir_int() }
                 let res_ty_rs: MIRType = mir_tensor_of(elem_ty_rs)
-                let rs_dest: LowerResult = make_value(s, res_ty_rs, "treshape")
+                let mut fn_name_rs: String = "__mn_tensor_reshape"
+                let mut prefix_rs: String = "treshape"
+                if method == "view":
+                    fn_name_rs = "__mn_tensor_view"
+                    prefix_rs = "tview"
+                let rs_dest: LowerResult = make_value(s, res_ty_rs, prefix_rs)
                 let mut rs_args: List<Value> = []
                 rs_args.push(obj_r.value)
                 rs_args.push(shape_r.value)
-                let s_rs: LowerState = emit_instr(rs_dest.state, Instruction::Call(rs_dest.value, "__mn_tensor_reshape", rs_args))
+                let s_rs: LowerState = emit_instr(rs_dest.state, Instruction::Call(rs_dest.value, fn_name_rs, rs_args))
                 return new_lower_result(rs_dest.value, s_rs)
 
     // v5.6.3 Sh.6 Phase 4 — tensor reduction methods
@@ -10308,6 +10335,15 @@ fn lower_tensor_index_get(st: LowerState, obj: Expr, indices: List<Expr>) -> Low
 // special-cases __mn_tensor_slice to repackage the flat args into two
 // stack-allocated [rank × i64] arrays before calling the runtime.
 // Mirrors mapanare/lower.py::_lower_tensor_slice:2788-2835.
+//
+// v5.45.0 Ts.3.B — when any IndexItem has step != Expr::NoneLit, route
+// to __mn_tensor_step_slice with `[obj, s0..e0..k0..rank]` (3*rank+2
+// args). Non-stepped axes use step=1. Step <= 0 is rejected at runtime
+// by __mn_tensor_step_slice (the C runtime backstop). The Python
+// bootstrap also catches literal step <= 0 at lower time; the self-host
+// version skips this check for simplicity (the runtime is sufficient
+// and the literal-vs-non-literal decomposition would touch every Expr
+// match arm).
 fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> LowerResult:
     let obj_r: LowerResult = lower_expr(st, obj)
     let mut s: LowerState = obj_r.state
@@ -10315,6 +10351,8 @@ fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> Lowe
     let rank: Int = len(items)
     let mut starts: List<Value> = []
     let mut ends: List<Value> = []
+    let mut steps: List<Value> = []
+    let mut any_stepped: Bool = false
 
     let mut d: Int = 0
     for _ in 0..128:
@@ -10366,6 +10404,18 @@ fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> Lowe
                     let end_d: LowerResult = make_value(s, mir_int(), "send")
                     s = emit_instr(end_d.state, Instruction::BinOp(end_d.value, BinOpKind::Add, scalar_r.value, one_r.value))
                     ends.push(end_d.value)
+
+            // v5.45.0 Ts.3.B — step (default to const 1 when absent).
+            if expr_kind(it.step) == "none_lit":
+                let kc: LowerResult = make_value(s, mir_int(), "ci")
+                s = emit_instr(kc.state, Instruction::Const(kc.value, mir_int(), "1"))
+                steps.push(kc.value)
+            else:
+                let step_r: LowerResult = lower_expr(s, it.step)
+                s = step_r.state
+                steps.push(step_r.value)
+                any_stepped = true
+
             d = d + 1
 
     // rank constant
@@ -10377,6 +10427,23 @@ fn lower_tensor_slice(st: LowerState, obj: Expr, items: List<IndexItem>) -> Lowe
     let mut elem_ty_sl: MIRType = mir_float()
     if elem_kind_sl == TK_INT() { elem_ty_sl = mir_int() }
     let res_ty: MIRType = mir_tensor_of(elem_ty_sl)
+
+    if any_stepped:
+        // v5.45.0 Ts.3.B — stepped slice (copy semantics).
+        // Flat args: [obj, s0..s_{n-1}, e0..e_{n-1}, k0..k_{n-1}, rank]
+        let dest_ss: LowerResult = make_value(s, res_ty, "tstepslice")
+        s = dest_ss.state
+        let mut ss_args: List<Value> = []
+        ss_args.push(obj_r.value)
+        for a_i in 0..rank:
+            ss_args.push(starts[a_i])
+        for b_i in 0..rank:
+            ss_args.push(ends[b_i])
+        for c_i in 0..rank:
+            ss_args.push(steps[c_i])
+        ss_args.push(rank_r.value)
+        s = emit_instr(s, Instruction::Call(dest_ss.value, "__mn_tensor_step_slice", ss_args))
+        return new_lower_result(dest_ss.value, s)
 
     let dest_sl: LowerResult = make_value(s, res_ty, "tslice")
     s = dest_sl.state
@@ -15316,7 +15383,13 @@ fn get_fn_ret_prefix(name: String) -> String:
     if name == "__mn_tensor_rdiv_scalar_i64" { return "noalias " }
     // v5.6.3 Sh.6 Phase 4 — slice returns a fresh heap tensor (noalias).
     if name == "__mn_tensor_slice" { return "noalias " }
-    if name == "__mn_tensor_reshape" { return "noalias " }
+    // v5.45.0 Ts.2.B — __mn_tensor_reshape semantic swap to alias.
+    // The noalias attribute would be a lie under aliasing semantics
+    // (writes to result visible in source). __mn_tensor_view is the
+    // alias-flavor sibling shipped at v5.45.0. __mn_tensor_step_slice
+    // returns a fresh contiguous tensor (copy semantics) — no noalias
+    // for v5.45.0 conservatively (consistent with the rest of the
+    // tensor-producing surface).
     return ""
 
 // Function-attribute suffix. Mirrors the Python `_RUNTIME_FN_ATTRS`
@@ -15493,6 +15566,9 @@ fn get_fn_attrs(name: String) -> String:
     if name == "__mn_tensor_argmin_i64" { return " nounwind readonly" }
     if name == "__mn_tensor_slice" { return " nounwind" }
     if name == "__mn_tensor_reshape" { return " nounwind" }
+    // v5.45.0 Ts.2.B / Ts.3.B — view + step_slice exports.
+    if name == "__mn_tensor_view" { return " nounwind" }
+    if name == "__mn_tensor_step_slice" { return " nounwind" }
     // -- Agent runtime (v3.43.0) --
     if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
     if name == "mapanare_agent_send" { return " nounwind willreturn" }
@@ -15728,6 +15804,9 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     // repackages into stack allocated arrays before the call.
     s = declare_runtime_fn(s, "__mn_tensor_slice", "ptr", "ptr, ptr, ptr, i64")
     s = declare_runtime_fn(s, "__mn_tensor_reshape", "ptr", "ptr, ptr")
+    // v5.45.0 Ts.2.B + Ts.3.B — view (aliasing) + step_slice (copy).
+    s = declare_runtime_fn(s, "__mn_tensor_view", "ptr", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_tensor_step_slice", "ptr", "ptr, ptr, ptr, ptr, i64")
 
     // Agent runtime
     s = declare_runtime_fn(s, "__mn_agent_spawn", "ptr", "ptr, ptr")
@@ -18434,20 +18513,22 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         if nargs_s >= 3:
             inner_s = inner_s + ", double " + args[last_s].name
         return emit_line(st, "  call void (ptr, i64, ...) @__mn_tensor_set_f64_nd(" + inner_s + ")")
-    // v5.41.0 Ts.1 — `__mn_tensor_reshape` special case. Lowerer emits
-    // Call(__mn_tensor_reshape, [tensor, shape: List<Int>]). The runtime
-    // expects (ptr tensor, ptr shape_list). We alloca a list-shaped slot,
-    // store the list value into it, and call with the alloca ptr —
-    // mirrors the gpu_tensor_add pattern. Returns a fresh tensor (noalias)
-    // under v5.41.0 copy semantics; v5.41.1 may switch to data-sharing.
-    if fn_name == "__mn_tensor_reshape":
+    // v5.41.0 Ts.1 → v5.45.0 Ts.2.B — `__mn_tensor_reshape` and
+    // `__mn_tensor_view` share the same call shape. Lowerer emits
+    // Call(fn, [tensor, shape: List<Int>]). Runtime expects (ptr tensor,
+    // ptr shape_list). Alloca a list-shaped slot, store the list value
+    // into it, call with the alloca ptr. Both are aliasing now —
+    // `noalias` dropped from the call (v5.45.0 swap).
+    if fn_name == "__mn_tensor_reshape" || fn_name == "__mn_tensor_view":
         let cnt_rs: String = toString(st.counter)
         let mut s_rs: EmitState = st
         s_rs.counter = s_rs.counter + 1
-        let shp_p: String = "%treshape_shape" + cnt_rs
+        let mut prefix_rs: String = "treshape"
+        if fn_name == "__mn_tensor_view" { prefix_rs = "tview" }
+        let shp_p: String = "%" + prefix_rs + "_shape" + cnt_rs
         s_rs = emit_line(s_rs, "  " + shp_p + " = alloca " + llvm_list_rt())
         s_rs = emit_line(s_rs, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + shp_p)
-        s_rs = emit_line(s_rs, "  " + dn + " = call noalias ptr @__mn_tensor_reshape(ptr " + args[0].name + ", ptr " + shp_p + ")")
+        s_rs = emit_line(s_rs, "  " + dn + " = call ptr @" + fn_name + "(ptr " + args[0].name + ", ptr " + shp_p + ")")
         s_rs = emit_track_tensor(s_rs, dn)
         return s_rs
 
@@ -18493,6 +18574,55 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         // v5.6.4 Rt.06 — track the fresh tensor for drop-glue.
         s_sl = emit_track_tensor(s_sl, dn)
         return s_sl
+
+    // v5.45.0 Ts.3.B — `__mn_tensor_step_slice` special case. Lowerer
+    // passes flat args [tensor, s0..s_{n-1}, e0..e_{n-1}, k0..k_{n-1},
+    // rank] = 3*ndim + 2 args. Runtime expects (ptr tensor, ptr starts,
+    // ptr ends, ptr steps, i64 rank). Alloca three [ndim x i64] arrays,
+    // store each start/end/step value, call the runtime. No `noalias`
+    // — consistent with v5.45.0 conservative omission across tensor-
+    // producing exports. Mirrors emit_llvm_text.py:3992-4054.
+    if fn_name == "__mn_tensor_step_slice":
+        let nargs_ss: Int = len(args)
+        let rank_idx_ss: Int = nargs_ss - 1
+        let ndim_ss: Int = (nargs_ss - 2) / 3
+        let cnt_ss: String = toString(st.counter)
+        let mut s_ss: EmitState = st
+        s_ss.counter = s_ss.counter + 1
+
+        let starts_arr_ss: String = "%starts_arr" + cnt_ss
+        let ends_arr_ss: String = "%ends_arr" + cnt_ss
+        let steps_arr_ss: String = "%steps_arr" + cnt_ss
+        let arr_ty_ss: String = "[" + toString(ndim_ss) + " x i64]"
+        s_ss = emit_line(s_ss, "  " + starts_arr_ss + " = alloca " + arr_ty_ss)
+        s_ss = emit_line(s_ss, "  " + ends_arr_ss + " = alloca " + arr_ty_ss)
+        s_ss = emit_line(s_ss, "  " + steps_arr_ss + " = alloca " + arr_ty_ss)
+
+        let mut d_ss: Int = 0
+        for _ in 0..128:
+            if d_ss < ndim_ss:
+                let d_str_ss: String = toString(d_ss)
+                let cnt_d_ss: String = toString(s_ss.counter)
+                s_ss.counter = s_ss.counter + 1
+                let s_gep_ss: String = "%sgep" + cnt_d_ss
+                let e_gep_ss: String = "%egep" + cnt_d_ss
+                let k_gep_ss: String = "%kgep" + cnt_d_ss
+                s_ss = emit_line(s_ss, "  " + s_gep_ss + " = getelementptr inbounds " + arr_ty_ss + ", ptr " + starts_arr_ss + ", i64 0, i64 " + d_str_ss)
+                s_ss = emit_line(s_ss, "  " + e_gep_ss + " = getelementptr inbounds " + arr_ty_ss + ", ptr " + ends_arr_ss + ", i64 0, i64 " + d_str_ss)
+                s_ss = emit_line(s_ss, "  " + k_gep_ss + " = getelementptr inbounds " + arr_ty_ss + ", ptr " + steps_arr_ss + ", i64 0, i64 " + d_str_ss)
+                let s_val_ss: String = args[1 + d_ss].name
+                let e_val_ss: String = args[1 + ndim_ss + d_ss].name
+                let k_val_ss: String = args[1 + 2 * ndim_ss + d_ss].name
+                s_ss = emit_line(s_ss, "  store i64 " + s_val_ss + ", ptr " + s_gep_ss)
+                s_ss = emit_line(s_ss, "  store i64 " + e_val_ss + ", ptr " + e_gep_ss)
+                s_ss = emit_line(s_ss, "  store i64 " + k_val_ss + ", ptr " + k_gep_ss)
+                d_ss = d_ss + 1
+
+        let t_name_ss: String = args[0].name
+        let rank_name_ss: String = args[rank_idx_ss].name
+        s_ss = emit_line(s_ss, "  " + dn + " = call ptr @__mn_tensor_step_slice(ptr " + t_name_ss + ", ptr " + starts_arr_ss + ", ptr " + ends_arr_ss + ", ptr " + steps_arr_ss + ", i64 " + rank_name_ss + ")")
+        s_ss = emit_track_tensor(s_ss, dn)
+        return s_ss
 
     if fn_name == "__mn_tensor_set_i64_nd":
         let nargs_si: Int = len(args)
@@ -19092,6 +19222,12 @@ fn is_tensor_allocating_fn(fn_name: String) -> Bool:
     if fn_name == "__mn_tensor_alloc" { return true }
     if fn_name == "__mn_tensor_slice" { return true }
     if fn_name == "__mn_tensor_reshape" { return true }
+    // v5.45.0 Ts.2.B + Ts.3.B — view returns a refcount-aliased view
+    // (still tracked: drop-glue must call __mn_tensor_free which is
+    // refcount-aware as of Ts.2.A). step_slice returns a fresh
+    // contiguous tensor (copy semantics).
+    if fn_name == "__mn_tensor_view" { return true }
+    if fn_name == "__mn_tensor_step_slice" { return true }
     if fn_name == "__mn_tensor_add_broadcast_f64" { return true }
     if fn_name == "__mn_tensor_sub_broadcast_f64" { return true }
     if fn_name == "__mn_tensor_mul_broadcast_f64" { return true }

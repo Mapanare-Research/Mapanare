@@ -1698,8 +1698,11 @@ fn parse_index_item(tokens: List<Token>, pos: Int, filename: String) -> IndexIte
     if peek_type(tokens, pos) == "UNDERSCORE":
         return new IndexItemResult { item: wildcard_index_item(), pos: pos + 1 }
     if peek_type(tokens, pos) == "RANGE":
-        // `..end` — open start
+        // `..end` — open start. Check for trailing `:step` (v5.45.0 Ts.3.A).
         let end_r: ExprResult = parse_expr(tokens, pos + 1, filename, 7)
+        if peek_type(tokens, end_r.pos) == "COLON":
+            let step_r: ExprResult = parse_expr(tokens, end_r.pos + 1, filename, 7)
+            return new IndexItemResult { item: range_step_index_item(Expr::NoneLit, end_r.expr, step_r.expr), pos: step_r.pos }
         return new IndexItemResult { item: range_index_item(Expr::NoneLit, end_r.expr), pos: end_r.pos }
     let first: ExprResult = parse_expr(tokens, pos, filename, 7)
     if peek_type(tokens, first.pos) == "RANGE":
@@ -1710,6 +1713,12 @@ fn parse_index_item(tokens: List<Token>, pos: Int, filename: String) -> IndexIte
         if close == "RBRACKET":
             return new IndexItemResult { item: range_index_item(first.expr, Expr::NoneLit), pos: after_dd }
         let end_r: ExprResult = parse_expr(tokens, after_dd, filename, 7)
+        // v5.45.0 Ts.3.A — `start..end:step`. After the end expr, peek
+        // for COLON; if found, parse the step at the same precedence
+        // (7 to stop before any further `..`).
+        if peek_type(tokens, end_r.pos) == "COLON":
+            let step_r: ExprResult = parse_expr(tokens, end_r.pos + 1, filename, 7)
+            return new IndexItemResult { item: range_step_index_item(first.expr, end_r.expr, step_r.expr), pos: step_r.pos }
         return new IndexItemResult { item: range_index_item(first.expr, end_r.expr), pos: end_r.pos }
     return new IndexItemResult { item: scalar_index_item(first.expr), pos: first.pos }
 
