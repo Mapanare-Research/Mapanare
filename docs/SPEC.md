@@ -1,8 +1,35 @@
 # Mapanare Language Specification
 
-**Version:** 5.45.0
-**Status:** Live — synced to the v5.45.0 cut (2026-05-06)
+**Version:** 5.46.0
+**Status:** Live — synced to the v5.46.0 cut (2026-05-06)
 
+> **v5.46.0 — Lf.\* — v5.43.0 lowerer-bug closeout.** Closes
+> three v5.x lowerer bugs (Lf.1 + Lf.2 + Lf.3) that v5.43.0
+> SESSION_REPORT documented and worked around with the flat-
+> tuple `(ok: Bool, value, err_kind: Int, err_msg: String)`
+> shape. Phase 0 audit established that **all three bugs share
+> one root cause and that root cause exists only in the Python
+> bootstrap lowerer** — the self-host (`mapanare/self/lower.mn`)
+> already had the v5.26.1 Eu.2 fix consulting
+> `current_fn.return_type`. v5.46.0 backports the same logic
+> into Python (~30-LOC edit at `mapanare/lower.py:2398-2429`
+> Ok/Err constructor branches). Pre-fix: `Result<T, E>` returns
+> with non-trivial `T` and `Err(VARIANT(...))` body produced
+> the small `Result<Int, E>` wrapper shape, stored 32 bytes
+> into the larger sret slot, and consumers read garbage from
+> the trailing zero-filled bytes (Lf.1 silent variant tag
+> corruption; Lf.2 IR-validation failure on rewrap; Lf.3
+> silent no-fire on nested 15+-arm match). **Zero
+> `mapanare/self/*.mn` source touches** — STRICT 3-stage fixed
+> point preserved by construction at v5.45.0's **243,749
+> lines / 0 diff** (49-release strict streak from v5.7.1).
+> Goldens **102/102** (99 + 3 new). All three Fixed entries
+> are potentially behavior-changing (pre-fix paths produced
+> wrong values; v5.46.0 produces correct values). **Lf.4
+> variant-name collision split to v5.46.x** per Phase 0 LOC
+> measurement (≥50 LOC fix exceeds bundle threshold;
+> needs multimap-of-variants infrastructure).
+>
 > **v5.45.0 — Ts.\* — tensor closeout arc CLOSED.** Closes
 > the v5.41.0 option-B contract carried 4 releases past slot.
 > Mutable views (`t.view(shape)`), stepped slices

@@ -19,6 +19,140 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.46.0** (ready, not tagged) — **Lf.\* — v5.43.0 lowerer-bug
+  closeout; ergonomic `Result<T, E>` API unblocked.** Closes the
+  three v5.x lowerer bugs (Lf.1 + Lf.2 + Lf.3) that v5.43.0
+  SESSION_REPORT documented and worked around with the flat
+  `(ok: Bool, value, err_kind: Int, err_msg: String)` tuple.
+  After v5.46.0, the v5.43.0 distributed-agent APIs *can* be
+  refactored back to ergonomic `Result<T, NetworkError>` shape
+  — that ergonomic refactor is v5.46.x scope, not v5.46.0.
+  v5.46.0 ships the codegen fixes that unblock the refactor.
+  **Phase 0 audit (load-bearing finding):** all three bugs
+  share **one** root cause and that root cause exists **only
+  in the Python bootstrap lowerer** (`mapanare/lower.py`). The
+  self-host mirror (`mapanare/self/lower.mn`) **already had
+  the fix** — v5.26.1 Eu.2 introduced
+  `current_fn.return_type` consultation on the self-host side
+  at lines 2259-2306; the same fix was never backported to
+  the Python bootstrap. Self-host `mapanare/self/mnc-stage1`
+  produced correct output for all three repros at v5.45.0
+  HEAD (Lf.1 `kind=3` ✓, Lf.2 `kind=3` ✓, Lf.3 `got NoKey` ✓);
+  Python bootstrap printed wrong values, failed at IR
+  validation, or silently no-fired the inner match. v5.46.0
+  backports the self-host's logic into the Python `Ok`/`Err`
+  constructor lowering branches at
+  `mapanare/lower.py:2398-2453` — **single ~30-LOC edit
+  closes all three bugs**.
+  **Strict 3-stage fixed point preserved by construction at
+  v5.45.0's 243,749 lines / 0 diff** (49-release strict
+  streak from the v5.7.1 baseline; **zero
+  `mapanare/self/*.mn` source touches** because the self-host
+  already had the fix). Goldens **102/102** (99 existing + 3
+  new: `100_result_complex_destructure`,
+  `101_match_rewrap_propagation`, `102_nested_15arm_match`).
+  Plus `tests/llvm/test_lowerer_fixes.py` (5 cases — Lf.1 +
+  Lf.2 + Lf.3 + 2 trivial-Ok regression cases) with
+  falsifiability protocol documented in module docstring.
+  **PROMPT/PLAN deviations surfaced at Phase 0** (load-bearing,
+  documented in `PRE_PHASE_AUDIT.md`): (1) Lf.5 self-host
+  mirror is a **no-op gate** — PLAN budgeted ~4h, actual
+  work is zero `.mn` edits; STRICT preserved trivially.
+  (2) **Lf.1 + Lf.2 + Lf.3 share one root cause** — PLAN
+  hypothesized Lf.1 + Lf.2 may share with Lf.3 independent;
+  IR diagnosis confirms one common cause (the Python
+  Ok/Err constructor wrap-shape default). One fix, three
+  regressions. (3) **Lf.4 splits to v5.46.x** — Phase 0 LOC
+  measurement put the variant-name disambiguation fix at
+  ≥50 LOC (multimap-of-variants infrastructure across
+  `mapanare/semantic.py` + `mapanare/lower.py`); exceeds
+  PLAN's ≤30 LOC bundle threshold. (4) Pre-existing test
+  bookkeeping: `tests/llvm/test_llvm_link_all.py::test_golden_corpus_count`
+  asserted 95 (pre-v5.34.0 number); v5.46.0 bumps to 102
+  and extends the glob from `[0-9][0-9]_*.mn` to also match
+  3-digit prefixes. (5) Pre-existing failures —
+  `test_run_hello` (gcc.exe env issue),
+  `test_reshape_size_mismatch_aborts`,
+  `test_link_and_run[98_*/99_*]` — all fail at v5.45.0
+  baseline pre-v5.46.0 changes; not regressions from this
+  release.
+  **Lf.0 — Phase 0 audit.** Reconstructed all 4 v5.43.0
+  `/tmp/diag_*.mn` repros at v5.45.0 HEAD; captured IR-level
+  diff per bug; localized fix sites; verified self-host
+  produces correct output for all three; decided Lf.4
+  bundle/split. Audited `mapanare/self/*.mn` for affected
+  patterns (no `Err`/`Ok` returns in self-host, no
+  Result<NonTrivialOk, NonTrivialErr> usage, max match arms
+  in self-host = 12 in `lower.mn` chained_cmp + 184/241 in
+  `mnc_all.mn` chained_cmp tables but none nested under
+  Err destructure with mismatched Result wrap shape). Output:
+  `docs/roadmap/v5/v5.46.0/PRE_PHASE_AUDIT.md`.
+  **Lf.1 + Lf.2 + Lf.3 — single fix at `mapanare/lower.py`.**
+  In the `Ok` and `Err` constructor lowering branches, when
+  the enclosing function returns `Result<T, E>`, default the
+  unfilled side of the wrapper to `T` (for Err's Ok-default)
+  / `E` (for Ok's Err-default) instead of the legacy `Int` /
+  `String` defaults. Mirrors the v5.26.1 Eu.2 fix that the
+  self-host already had. Pre-fix the small 32-byte `Result<Int,
+  E>` wrapper was stored into the function's larger `__sret__`
+  slot; bytes past 32 stayed zero; consumer reads NetworkError
+  at the big-layout offset (e.g. 72 for `Result<NodeHandle,
+  NetworkError>`) and got tag=0 = BadUrl regardless of which
+  variant was actually constructed (Lf.1); rewrap chains
+  inherited the wrong shape and IR validation failed (Lf.2);
+  nested 15-arm match fired none of the arms because the
+  corrupt tag matched no case (Lf.3 — the 15-arm threshold
+  reported at v5.43.0 was a red herring). Falsifiability
+  locked per fix in `tests/llvm/test_lowerer_fixes.py`
+  module docstring + per-test docstring; revert the fix and
+  the corresponding pytest case fails with the recorded
+  signature.
+  **Lf.5 — self-host mirror.** No-op gate. Self-host already
+  has the v5.26.1 Eu.2 fix; STRICT 3-stage fixed point
+  preserved by construction.
+  **Lf.6 — broader sweep.** Audited 237 non-trivial-Ok
+  Result-returning functions across `stdlib/`, `examples/`,
+  `tests/`. The v5.43.0 `stdlib/agent/` distributed-agent
+  surface uses the flat-tuple workaround (per the v5.43.0
+  SESSION_REPORT) — the only Result-returning function that
+  could have been silently corrupting is
+  `stdlib/agent/remote_proto.mn::validate_key`
+  (`Result<String, NetworkError>`), but its sole caller is
+  internal and exercised through pytest; verified post-fix.
+  Existing `tests/stdlib/` regression suite (1043 cases) all
+  GREEN — most stdlib Result-returning callers don't trigger
+  the bug because their Ok/Err sizes match the inferred
+  defaults (e.g., `Result<String, JsonError>` has 16-byte
+  ok/err so the small-shape default coincidentally matched).
+  No production caller relied on the wrong output.
+  **Source delta:** ~30 LOC `mapanare/lower.py` (Ok + Err
+  branches) + ~50 LOC `tests/golden/100_*.mn` + ~70 LOC
+  `tests/golden/101_*.mn` + ~80 LOC `tests/golden/102_*.mn`
+  + ~190 LOC `tests/llvm/test_lowerer_fixes.py` + ~5 LOC
+  `tests/llvm/test_llvm_link_all.py` (count + glob) + ~370
+  LOC PRE_PHASE_AUDIT.md + SESSION_REPORT.md + ~120 LOC
+  CHANGELOG `### Fixed` (3 entries with potentially-
+  behavior-changing annotations) + ~25 LOC SPEC sync + this
+  CLAUDE.md release-notes entry + mechanical
+  bump_version.py edits.
+  Aggregate state entering v5.47.0 (closeout panel):
+  **0 HIGH** (Lf.\* arc CLOSED) / **2 MEDIUM** (macOS
+  notarization carry from v5.33.0 Nu.2; Ai.1
+  `_specialize_fn` body-walk fix gating Ai.1+Ai.2 keyword
+  sugar, carry from v5.40.0) / ~7 LOW (Lf.4 variant-name
+  collision split to v5.46.x; ergonomic refactor of
+  v5.43.0 distributed-agent APIs from flat tuple to
+  `Result<T, NetworkError>` v5.46.x; fs.mn `walk_dir` IR
+  codegen carry from v5.40.0; websocket.mn `str(byte)`
+  decimal-stringification carry from v5.43.0; carries
+  from v5.45.0). **Tensor closeout arc CLOSED at v5.45.0.
+  Manifesto arc CLOSED at v5.43.0. Package-system runway
+  CLOSED at v5.44.0. v5.43.0 lowerer-bug closeout CLOSED at
+  v5.46.0.** v5.47.0 closeout panel green-lights v6.0 (or
+  doesn't). See
+  `docs/roadmap/v5/v5.46.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.45.0** (ready, not tagged) — **Ts.\* — tensor closeout arc
   CLOSED.** Closes the v5.41.0 option-B contract carried 4
   releases past slot. Mutable views (`t.view(shape)`), stepped
@@ -3364,7 +3498,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (32660 symbols, 68251 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (32673 symbols, 68265 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

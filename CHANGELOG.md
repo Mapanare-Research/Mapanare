@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.46.0] - 2026-05-06
+
+**Lf.\* — v5.43.0 lowerer-bug closeout; ergonomic Result<T, E> API
+unblocked.** Closes the three v5.x lowerer bugs that v5.43.0
+SESSION_REPORT documented and worked around with the flat
+`(ok: Bool, value, err_kind: Int, err_msg: String)` tuple shape.
+After v5.46.0 the v5.43.0 distributed-agent APIs in
+`stdlib/agent/` *can* be refactored back to ergonomic
+`Result<T, NetworkError>` shape — that ergonomic refactor is
+v5.46.x scope, not v5.46.0. **Phase 0 audit** surfaced the load-
+bearing finding: all three bugs (Lf.1 + Lf.2 + Lf.3) share **one**
+root cause, and the root cause lives **only in the Python
+bootstrap lowerer** (`mapanare/lower.py`). The self-host mirror
+(`mapanare/self/lower.mn`) **already had the fix** — v5.26.1
+Eu.2 introduced `current_fn.return_type` consultation on the
+self-host side at lines 2259-2306; the same fix was never
+backported to the Python bootstrap. Self-host `mnc-stage1`
+produced correct output for all three repros at v5.45.0 HEAD;
+Python bootstrap printed wrong values (Lf.1), failed at IR
+validation (Lf.2), or silently no-fired the inner match (Lf.3).
+v5.46.0 backports the self-host's logic into Python — single
+~30-LOC edit closes all three.
+**Strict 3-stage fixed point preserved by construction at
+v5.45.0's 243,749 lines / 0 diff** (49-release strict streak from
+the v5.7.1 baseline; **zero `mapanare/self/*.mn` source touches**
+because the self-host already had the fix). Goldens **102/102**
+(99 existing + 3 new: `100_result_complex_destructure`,
+`101_match_rewrap_propagation`, `102_nested_15arm_match`).
+**Lf.4 (variant-name collision) split to v5.46.x** per Phase 0
+LOC measurement (≥50 LOC fix exceeds PLAN's ≤30 LOC bundle
+threshold; needs multimap-of-variants infrastructure across
+`mapanare/semantic.py` + `mapanare/lower.py`). Per-bug detail
+follows.
+
+### Added
+
+- `tests/golden/100_result_complex_destructure.mn` — Lf.1 regression
+  golden. `Result<NodeHandle, NetworkError>` returned from a function
+  larger than the MIR optimizer's inline threshold; outer match
+  destructures correctly.
+- `tests/golden/101_match_rewrap_propagation.mn` — Lf.2 regression
+  golden. 3-hop rewrap chain through `match Err(e) { da Err(e) }`
+  preserves variant tag.
+- `tests/golden/102_nested_15arm_match.mn` — Lf.3 regression golden.
+  Outer `match r { Err(e) => match e { 15 arms } }` on
+  `Result<String, NetworkError>` fires the correct inner arm for
+  variants at indices 2 (NoKey), 11 (TransportLost), 14 (Internal).
+- `tests/llvm/test_lowerer_fixes.py` — pytest harness with
+  falsifiability protocol documented in module docstring (5 cases:
+  Lf.1 + Lf.2 + Lf.3 + 2 trivial-Ok regression cases). Each test
+  records the pre-fix failure signature so that reverting
+  `mapanare/lower.py` reproduces the documented bug shape.
+
+### Changed
+
+- `tests/llvm/test_llvm_link_all.py::_all_goldens` glob extended
+  from `[0-9][0-9]_*.mn` to also match `[0-9][0-9][0-9]_*.mn` —
+  the corpus crossed 99 at v5.46.0 with the Lf.\* regression
+  goldens. Drift gate count bumped from 95 to 102.
+
+### Fixed
+
+- **Lf.1** — `Result<COMPLEX_OK, COMPLEX_ERR>` destructure tag
+  corruption. When a function returned `Result<T, E>` with non-
+  trivial `T` (e.g. a 6-field 64-byte struct like `NodeHandle`)
+  and the body emitted `da Err(VARIANT(...))`, `mapanare/lower.py`
+  defaulted the wrap to the small `Result<Int, E>` shape
+  (32 bytes); the function body stored that 32-byte value into
+  the `__sret__` slot sized for the real `Result<T, E>` (≥ 88
+  bytes); bytes past 32 stayed zero. Consumer reads NetworkError
+  at the big-layout offset (e.g. 72 for NodeHandle Ok side) and
+  got tag=0 = BadUrl regardless of which variant was actually
+  constructed. **Potentially behavior-changing** — code that
+  exercised the buggy path got wrong variant tags pre-v5.46.0;
+  v5.46.0 makes those paths produce the correct values. The
+  v5.43.0 distributed-agent stdlib worked around this with the
+  flat-tuple shape, so no production caller actually relied on
+  the wrong output.
+- **Lf.2** — Variant rewrap through `match Err(e) { da Err(e) }`
+  propagation. Same root cause as Lf.1: the inner function's
+  WrapErr produced the small Result<Int, ?> shape; the outer
+  function's destructure expected the real `Result<T, E>`; LLVM
+  IR validation rejected the program with
+  `'%ok.NN' defined with type 'i64' but expected '{ ... }'`.
+  **Potentially behavior-changing** at the IR level — pre-v5.46.0
+  the program failed to link; post-fix it links and runs
+  correctly.
+- **Lf.3** — Nested 15+-arm match silent no-fire. Same root
+  cause as Lf.1 + Lf.2: the corrupt NetworkError tag (read from
+  the wrong byte offset due to the Result wrap-shape mismatch)
+  matched none of the 15 inner arms — control flow exited the
+  match silently. The 15-arm threshold reported at v5.43.0 was a
+  red herring: standalone 15-arm matches always worked; the bug
+  was always upstream Lf.1, surfacing as a silent no-fire only
+  when the outer Result wrap shape didn't match the inner
+  destructure. **Potentially behavior-changing** — pre-v5.46.0
+  programs with this shape produced empty output; post-fix they
+  print the correct arm.
+
 ## [5.45.0] - 2026-05-06
 
 **Ts.\* — tensor closeout arc CLOSED.** Closes the v5.41.0
@@ -12023,7 +12122,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.45.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.46.0...HEAD
+[5.46.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.45.0...v5.46.0
 [5.45.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.1...v5.45.0
 [5.44.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.0...v5.44.1
 [5.44.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.43.0...v5.44.0
