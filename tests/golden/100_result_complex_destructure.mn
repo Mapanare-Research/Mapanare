@@ -1,0 +1,72 @@
+// Golden test: Lf.1 — Result<COMPLEX_OK, COMPLEX_ERR> destructure (v5.46.0).
+//
+// Pre-fix (v5.45.0 and earlier, Python bootstrap only): when a function
+// returned Result<T, E> with non-trivial T (e.g. a 6-field struct) and
+// the body emitted `da Err(VARIANT(...))`, the WrapErr literal was
+// lowered with default Result<Int, E> shape (32 bytes) and stored into
+// the function's __sret__ slot sized for Result<T, E> (≥ 88 bytes for
+// NodeHandle). Bytes past 32 stayed zero; consumer reads NetworkError
+// at offset 72 (big layout) and got tag=0 = BadUrl regardless of the
+// constructed variant.
+//
+// Self-host stage1 was unaffected (mapanare/self/lower.mn already had
+// the v5.26.1 Eu.2 fix consulting current_fn.return_type). v5.46.0
+// backports the same fix into mapanare/lower.py so both paths agree.
+//
+// The helper function is intentionally large (branches + string concat
+// with len()) to push it past the MIR optimizer's inline-small-functions
+// threshold; inlined helpers sidestep the bug because the wrap and
+// destructure happen in the same function context. The v5.43.0 repro
+// shape (validate_key / fake_node_listen) is the load-bearing path
+// where the bug manifests cross-function.
+//
+// Falsifiability: revert the Lf.1 fix at mapanare/lower.py (the
+// `ok_default_ti = self._fn.return_type.type_info.args[0]` branch),
+// re-emit IR via the Python bootstrap, link, run; pre-fix the Err
+// arm reads tag=0 (BadUrl) and prints "k=1" / "k=1" instead of
+// "k=3" / "k=5".
+
+pub tipo NetworkError:
+    | BadUrl(String)
+    | UnsupportedScheme(String)
+    | NoKey(String)
+    | ConnectFailed(String)
+    | ListenFailed(String)
+
+pub tipo NodeHandle:
+    listen_fd: Int,
+    bind_addr: String,
+    bind_port: Int,
+    key: String,
+    is_tls: Bool,
+    server_ctx: Int
+
+fn ne_kind(e: NetworkError) -> Int:
+    pon mut k: Int = 0
+    match e:
+        BadUrl(s) => { k = 1 }
+        UnsupportedScheme(s) => { k = 2 }
+        NoKey(s) => { k = 3 }
+        ConnectFailed(s) => { k = 4 }
+        ListenFailed(s) => { k = 5 }
+    da k
+
+pub fn fake_listen(addr: String, port: Int, key: String) -> Result<NodeHandle, NetworkError>:
+    si len(key) < 32:
+        da Err(NoKey("key too short, got " + str(len(key))))
+    si port < 0 || port > 65535:
+        da Err(ListenFailed("port out of range: " + str(port)))
+    si len(addr) == 0:
+        da Err(BadUrl("empty addr"))
+    da Ok(new NodeHandle { listen_fd: 42, bind_addr: addr, bind_port: port, key: key, is_tls: false, server_ctx: 0 })
+
+fn main() -> Int:
+    pon r1: Result<NodeHandle, NetworkError> = fake_listen("127.0.0.1", 0, "shortkey")
+    match r1:
+        Ok(_) => { print("FAIL r1 was Ok") }
+        Err(e) => { print("k=" + str(ne_kind(e))) }
+    pon r2: Result<NodeHandle, NetworkError> = fake_listen("127.0.0.1", 99999, "this_is_a_very_long_key_with_more_than_32_bytes_yes")
+    match r2:
+        Ok(_) => { print("FAIL r2 was Ok") }
+        Err(e) => { print("k=" + str(ne_kind(e))) }
+    da 0

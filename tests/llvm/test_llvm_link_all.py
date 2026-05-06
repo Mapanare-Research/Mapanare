@@ -64,11 +64,14 @@ RT_ARCHIVE = REPO_ROOT / "runtime" / "native" / "libmapanare_rt.a"
 def _all_goldens() -> list[Path]:
     """Discover every numbered golden in tests/golden/.
 
-    The glob pattern `[0-9][0-9]_*.mn` matches the 95-file numbered
-    corpus and excludes any non-numbered helpers (e.g. `.ref.ll`
-    reference files, README, BENCHMARKS).
+    The glob pattern matches 2-digit and 3-digit prefixes (the corpus
+    crossed 99 at v5.46.0 with the Lf.\\* regression goldens) while
+    excluding non-numbered helpers (e.g. `.ref.ll` reference files,
+    README, BENCHMARKS).
     """
-    return sorted(GOLDEN_DIR.glob("[0-9][0-9]_*.mn"))
+    two_digit = GOLDEN_DIR.glob("[0-9][0-9]_*.mn")
+    three_digit = GOLDEN_DIR.glob("[0-9][0-9][0-9]_*.mn")
+    return sorted(set(two_digit) | set(three_digit))
 
 
 @pytest.fixture(scope="module")
@@ -116,8 +119,8 @@ def test_golden_corpus_count() -> None:
     in sync.
     """
     goldens = _all_goldens()
-    assert len(goldens) == 95, (
-        f"Golden corpus drifted from 95 to {len(goldens)}. Update "
+    assert len(goldens) == 102, (
+        f"Golden corpus drifted from 102 to {len(goldens)}. Update "
         f"this test, BENCHMARKS.md, the CLAUDE.md release-notes "
         f"entry, and the most recent SESSION_REPORT."
     )

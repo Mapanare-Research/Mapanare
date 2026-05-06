@@ -1,0 +1,78 @@
+// Golden test: Lf.3 — nested 15-arm match on a destructured `Err(e)`
+// from a Result<NonTrivialOk, ManyVariants> fires the correct inner
+// arm (v5.46.0).
+//
+// Pre-fix (Python bootstrap only): same root cause as Lf.1 + Lf.2.
+// When the outer Result was Result<String, NetworkError> (or any
+// Ok side that differs in size from Int), the WrapErr literal in
+// the inner function's body produced the small Result<Int, ...>
+// shape, the receiver's match-arm extracted the Err's NetworkError
+// from the wrong byte offset, and the resulting tag matched none
+// of the 15 inner arms — silent no-fire (empty output).
+//
+// This file exercises the nested-match-on-Err with the full 15-
+// variant NetworkError. arm-count = 15 was the v5.43.0-reported
+// boundary; the fix restores correct dispatch for arm counts
+// {3, 10, 15, 20, 50, ...} since the bug was never in switch
+// generation — it was always upstream Result wrap-shape.
+//
+// Falsifiability: revert the Lf.1 fix at mapanare/lower.py → this
+// program prints nothing (silent no-fire on the inner match).
+
+pub tipo NetworkError:
+    | BadUrl(String)
+    | UnsupportedScheme(String)
+    | NoKey(String)
+    | ConnectFailed(String)
+    | ListenFailed(String)
+    | HmacFailed(String)
+    | Replay(String)
+    | ProtoVersion(String)
+    | ProtoOversized(String)
+    | ProtoMalformed(String)
+    | Timeout(String)
+    | TransportLost(String)
+    | AgentNotFound(String)
+    | SerdeError(String)
+    | Internal(String)
+
+pub fn validate_key(key: String) -> Result<String, NetworkError>:
+    si len(key) < 32:
+        da Err(NoKey("key too short"))
+    da Ok(key)
+
+pub fn make_transport_lost() -> Result<String, NetworkError>:
+    da Err(TransportLost("conn died"))
+
+pub fn make_internal() -> Result<String, NetworkError>:
+    da Err(Internal("oops"))
+
+fn classify(vk: Result<String, NetworkError>):
+    match vk {
+        Ok(k) => { print("UNEXPECTED Ok: " + k) },
+        Err(e) => {
+            match e {
+                BadUrl(s) => { print("k=1") },
+                UnsupportedScheme(s) => { print("k=2") },
+                NoKey(s) => { print("k=3") },
+                ConnectFailed(s) => { print("k=4") },
+                ListenFailed(s) => { print("k=5") },
+                HmacFailed(s) => { print("k=6") },
+                Replay(s) => { print("k=7") },
+                ProtoVersion(s) => { print("k=8") },
+                ProtoOversized(s) => { print("k=9") },
+                ProtoMalformed(s) => { print("k=10") },
+                Timeout(s) => { print("k=11") },
+                TransportLost(s) => { print("k=12") },
+                AgentNotFound(s) => { print("k=13") },
+                SerdeError(s) => { print("k=14") },
+                Internal(s) => { print("k=15") }
+            }
+        }
+    }
+
+fn main() -> Int:
+    classify(validate_key("short"))
+    classify(make_transport_lost())
+    classify(make_internal())
+    da 0

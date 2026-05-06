@@ -1,0 +1,60 @@
+// Golden test: Lf.2 — variant rewrap through `match Err(e) { da Err(e) }`
+// preserves variant tag (v5.46.0).
+//
+// Pre-fix (Python bootstrap only): when an inner function returned
+// Result<NonTrivialOk, NetworkError> via `da Err(VARIANT(...))`, the
+// WrapErr literal used default Result<Int, NetworkError> shape (32
+// bytes). The receiver's `pon r: Result<NonTrivialOk, NetworkError>
+// = inner()` allocated `r` with the same buggy shape from the call
+// site, and downstream destructure → rewrap propagated the wrong
+// shape through the second function's match arms — the IR validator
+// rejected the program at link time with type mismatches.
+//
+// Same root cause as Lf.1 — fixed by the single edit to
+// mapanare/lower.py Ok/Err branches. v5.46.0 ships both.
+//
+// Falsifiability: revert the fix → IR validation fails with
+// `'%ok.NN' defined with type 'i64' but expected '{ ... }'`.
+
+pub tipo NetworkError:
+    | BadUrl(String)
+    | NoKey(String)
+    | TransportLost(String)
+
+pub tipo NodeHandle:
+    listen_fd: Int,
+    bind_addr: String,
+    bind_port: Int,
+    key: String,
+    is_tls: Bool,
+    server_ctx: Int
+
+fn ne_kind(e: NetworkError) -> Int:
+    pon mut k: Int = 0
+    match e:
+        BadUrl(s) => { k = 1 }
+        NoKey(s) => { k = 2 }
+        TransportLost(s) => { k = 3 }
+    da k
+
+fn first() -> Result<NodeHandle, NetworkError>:
+    da Err(NoKey("rewrap-1"))
+
+fn second() -> Result<NodeHandle, NetworkError>:
+    pon r: Result<NodeHandle, NetworkError> = first()
+    match r:
+        Ok(v) => { da Ok(v) }
+        Err(e) => { da Err(e) }
+
+fn third() -> Result<NodeHandle, NetworkError>:
+    pon r: Result<NodeHandle, NetworkError> = second()
+    match r:
+        Ok(v) => { da Ok(v) }
+        Err(e) => { da Err(e) }
+
+fn main() -> Int:
+    pon r: Result<NodeHandle, NetworkError> = third()
+    match r:
+        Ok(_) => { print("FAIL was Ok") }
+        Err(e) => { print("k=" + str(ne_kind(e))) }
+    da 0
