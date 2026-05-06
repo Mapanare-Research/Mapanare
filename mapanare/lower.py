@@ -2407,9 +2407,22 @@ class MIRLowerer:
                     if args[0].ty.type_info.kind != TypeKind.UNKNOWN
                     else TypeInfo(kind=TypeKind.INT)
                 )
-                res_ty = MIRType(
-                    TypeInfo(kind=TypeKind.RESULT, args=[ok_ti, TypeInfo(kind=TypeKind.STRING)])
-                )
+                # Lf.1/Lf.2/Lf.3 (v5.46.0): when the enclosing function
+                # returns Result<T, E>, default the Err side to E so the
+                # wrap shape matches the sret slot. Without this, a literal
+                # `Ok(x)` wraps as Result<ok_ti, String> regardless of the
+                # function's declared E, the sized small struct gets stored
+                # into the larger sret slot, and consumers read garbage from
+                # the unwritten trailing bytes. Mirrors the v5.26.1 Eu.2 fix
+                # in mapanare/self/lower.mn:2259-2284.
+                err_default_ti: TypeInfo = TypeInfo(kind=TypeKind.STRING)
+                if (
+                    self._fn is not None
+                    and self._fn.return_type.kind == TypeKind.RESULT
+                    and len(self._fn.return_type.type_info.args) >= 2
+                ):
+                    err_default_ti = self._fn.return_type.type_info.args[1]
+                res_ty = MIRType(TypeInfo(kind=TypeKind.RESULT, args=[ok_ti, err_default_ti]))
                 dest = self._make_value(ty=res_ty)
                 self._emit(WrapOk(dest=dest, val=args[0]))
                 self._emit(Move(value=args[0]))
@@ -2420,9 +2433,19 @@ class MIRLowerer:
                     if args[0].ty.type_info.kind != TypeKind.UNKNOWN
                     else TypeInfo(kind=TypeKind.STRING)
                 )
-                res_ty = MIRType(
-                    TypeInfo(kind=TypeKind.RESULT, args=[TypeInfo(kind=TypeKind.INT), err_ti])
-                )
+                # Lf.1/Lf.2/Lf.3 (v5.46.0): when the enclosing function
+                # returns Result<T, E>, default the Ok side to T so the wrap
+                # shape matches the sret slot. See the Ok branch above for
+                # the full failure mode. Mirrors v5.26.1 Eu.2 on the
+                # self-host side at mapanare/self/lower.mn:2285-2306.
+                ok_default_ti: TypeInfo = TypeInfo(kind=TypeKind.INT)
+                if (
+                    self._fn is not None
+                    and self._fn.return_type.kind == TypeKind.RESULT
+                    and len(self._fn.return_type.type_info.args) >= 2
+                ):
+                    ok_default_ti = self._fn.return_type.type_info.args[0]
+                res_ty = MIRType(TypeInfo(kind=TypeKind.RESULT, args=[ok_default_ti, err_ti]))
                 dest = self._make_value(ty=res_ty)
                 self._emit(WrapErr(dest=dest, val=args[0]))
                 self._emit(Move(value=args[0]))
