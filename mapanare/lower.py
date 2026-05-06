@@ -4057,16 +4057,20 @@ class MIRLowerer:
             self._emit(SignalGet(dest=dest, signal=obj))
             return dest
 
-        # Tensor reshape (v5.41.0 Ts.1) — copy-semantics reshape via runtime
-        # helper. v5.41.1 will swap to refcount-aliased shared-data reshape
-        # behind the same surface; user code does not change.
-        if obj.ty.kind == TypeKind.TENSOR and expr.method == "reshape" and len(args) >= 1:
+        # Tensor reshape (v5.41.0 Ts.1 → v5.45.0 Ts.2.B) and tensor view
+        # (v5.45.0 Ts.2.B). Both route to refcount-aliased shared-data
+        # implementations — reshape internally calls __mn_tensor_view in
+        # the runtime. user-visible API unchanged for reshape; semantics
+        # changed (writes to result visible in source).
+        if obj.ty.kind == TypeKind.TENSOR and expr.method in ("reshape", "view") and len(args) >= 1:
             elem_ti = (
                 obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
             )
             result_ty = MIRType(TypeInfo(kind=TypeKind.TENSOR, args=[elem_ti]))
-            dest = self._make_value(ty=result_ty, prefix="treshape")
-            self._emit(Call(dest=dest, fn_name="__mn_tensor_reshape", args=[obj, args[0]]))
+            fn_name = "__mn_tensor_view" if expr.method == "view" else "__mn_tensor_reshape"
+            prefix = "tview" if expr.method == "view" else "treshape"
+            dest = self._make_value(ty=result_ty, prefix=prefix)
+            self._emit(Call(dest=dest, fn_name=fn_name, args=[obj, args[0]]))
             return dest
 
         # Tensor reduction methods (v4.45.0)

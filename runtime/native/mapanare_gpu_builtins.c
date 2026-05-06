@@ -818,28 +818,54 @@ MN_EXPORT mapanare_tensor_t *__mn_tensor_slice(
 
 /** Reshape a tensor to the shape carried by `shape` (List<Int>).
  *
- * v5.41.0 ships **copy semantics**: allocates a new tensor with the
- * given shape and memcpys the source data into it. Aborts with a
- * structured message if the new shape's element count does not match
- * the source's. The user-facing surface (`tensor.reshape(shape)`) is
- * O(N) at this release; v5.41.1 introduces refcount-based aliasing
- * so reshape can share data in O(1) without changing user-visible
- * semantics.
+ * v5.41.0 shipped **copy semantics**: allocate fresh tensor + memcpy.
+ * v5.45.0 Ts.2.B swaps to **alias semantics**: returns a view sharing
+ * the source's data buffer with refcount-managed lifetime. Surface
+ * API unchanged; semantics changed (writes to reshaped tensor visible
+ * in source). The `noalias` attribute on the LLVM declaration drops
+ * here — it is now a lie under aliasing. Body delegates to
+ * __mn_tensor_view which performs the same element-count validation.
+ *
+ * Migration note: callers that depended on v5.41.0 copy semantics
+ * must explicitly construct an independent tensor (no `t.copy()` API
+ * yet — tracked as a v5.47.0+ ergonomic; the cookbook documents the
+ * manual workaround using __mn_tensor_alloc + element-by-element
+ * copy). Phase 0 audit verified zero production callers relied on
+ * copy semantics.
  */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_view(
+    mapanare_tensor_t *parent, const MnList *shape);
+
 MN_EXPORT mapanare_tensor_t *__mn_tensor_reshape(
-    const mapanare_tensor_t *src, const MnList *shape) {
-    if (!src || !src->data) {
-        fprintf(stderr, "mapanare: tensor reshape: null source\n");
+    mapanare_tensor_t *src, const MnList *shape) {
+    return __mn_tensor_view(src, shape);
+}
+
+/* v5.45.0 Ts.2.B — mutable view surface.
+ *
+ * Returns a new tensor metadata that shares the parent's data buffer.
+ * View has its own ndim/shape/size; element count must match parent's.
+ * Single-hop: when parent is itself a view, the new view points at
+ * parent's root parent (not the intermediate). The root's refcount
+ * counts every live view; intermediate views never get their refcount
+ * bumped by descendant views. This keeps drop-glue O(1) per view —
+ * mapanare_tensor_free(leaf) recurses once into root, never through
+ * a view chain.
+ */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_view(
+    mapanare_tensor_t *parent, const MnList *shape) {
+    if (!parent || !parent->data) {
+        fprintf(stderr, "mapanare: tensor view: null parent\n");
         abort();
     }
     if (!shape || !shape->data) {
-        fprintf(stderr, "mapanare: tensor reshape: null shape\n");
+        fprintf(stderr, "mapanare: tensor view: null shape\n");
         abort();
     }
     int64_t new_rank = shape->len;
     if (new_rank <= 0) {
         fprintf(stderr,
-                "mapanare: tensor reshape: rank must be positive (got %lld)\n",
+                "mapanare: tensor view: rank must be positive (got %lld)\n",
                 (long long)new_rank);
         abort();
     }
@@ -848,21 +874,36 @@ MN_EXPORT mapanare_tensor_t *__mn_tensor_reshape(
     for (int64_t i = 0; i < new_rank; i++) {
         if (new_shape[i] <= 0) {
             fprintf(stderr,
-                    "mapanare: tensor reshape: invalid dim %lld at axis %lld\n",
+                    "mapanare: tensor view: invalid dim %lld at axis %lld\n",
                     (long long)new_shape[i], (long long)i);
             abort();
         }
         new_size *= new_shape[i];
     }
-    if (new_size != src->size) {
+    if (new_size != parent->size) {
         fprintf(stderr,
-                "mapanare: tensor reshape: cannot reshape size %lld to size %lld\n",
-                (long long)src->size, (long long)new_size);
+                "mapanare: tensor view: cannot view size %lld as size %lld\n",
+                (long long)parent->size, (long long)new_size);
         abort();
     }
-    mapanare_tensor_t *result = mapanare_tensor_alloc(new_rank, new_shape,
-                                                      src->elem_size);
-    if (!result) abort();
-    memcpy(result->data, src->data, (size_t)(src->size * src->elem_size));
-    return result;
+
+    /* Single-hop: walk parent->parent until NULL to find the root. */
+    mapanare_tensor_t *root = parent;
+    while (root->parent) root = root->parent;
+
+    mapanare_tensor_t *v = (mapanare_tensor_t *)malloc(sizeof(*v));
+    if (!v) abort();
+    memset(v, 0, sizeof(*v));
+    v->data = root->data;       /* alias the data-owning buffer */
+    v->ndim = new_rank;
+    v->shape = (int64_t *)malloc((size_t)new_rank * sizeof(int64_t));
+    if (!v->shape) { free(v); abort(); }
+    for (int64_t i = 0; i < new_rank; i++) v->shape[i] = new_shape[i];
+    v->size = new_size;
+    v->elem_size = parent->elem_size;
+    v->refcount = 1;
+    v->is_view = 1;
+    v->parent = root;
+    root->refcount++;
+    return v;
 }
