@@ -1,75 +1,113 @@
-# v5.47.0 — Cp.\* — end-of-v5 closeout panel
+# v5.47.0 — Cl.\* — pre-panel hygiene cleanup
 
 **Status:** PLANNING
-**Type:** Panel-only release. **Zero compiler edits. Zero runtime
-edits. Zero `mapanare/self/*.mn` source edits.** No new features.
-This is the structural pause before any v6.0 conversation begins.
-**Breaking:** No.
-**Prerequisite:** v5.46.0 shipped (v5.43.0 lowerer-bug closeout —
-`Result<T, complex Err>` destructure + variant rewrap + nested
-15-arm match). All v5.31.0 → v5.46.0 releases shipped: foundation
-arc (banner, native binaries x3), stdlib arc (date/time, sqlite,
-JSON, HTTP, regex, crypto), manifesto arc (`ask`, supervision,
-distributed agents), tensor closeout arc (Ts.1 reshape at v5.41.0,
-Ts.2 mutable views + Ts.3 stepped slices at v5.47.0), the
-package-system runway at v5.44.0, and the v5.43.0 lowerer-bug
-closeout at v5.46.0.
-**Estimated effort:** 2–3 sessions. Pre-panel audit, 7-reviewer
-panel, decision document, carry-forward to v6.0. Mirrors the shape
-of v5.28.0 RE-PANEL. **Note:** the original v5.45.0 panel slot was
-deferred two minors so v5.45.0 + v5.46.0 could close two long-standing
-debts (Ts.2/Ts.3 tensor surface; v5.43.0 lowerer bugs) before the
-panel audits ecosystem readiness for v6.0. Cadence-gap is now
-deliberately 19 minors past v5.28.0; PLAN documents this so the
-panel doesn't dock for it.
+**Type:** Hygiene release. **Drains every closeable LOW-tier
+carry before the v5.47.5 closeout panel sees the docket.**
+Substantive Lf.4 fix in `mapanare/semantic.py` /
+`mapanare/lower.py`; ergonomic stdlib refactor of v5.43.0
+distributed-agent APIs from flat tuple to `Result<T,
+NetworkError>` (now unblocked by v5.46.0); two small stdlib
+bug fixes if cheap.
+**Breaking:** No, in the surface sense. The agent stdlib
+refactor changes public function signatures in `stdlib/agent/`
+from flat-tuple shape `(ok: Bool, value, err_kind: Int,
+err_msg: String)` back to ergonomic `Result<T, NetworkError>`.
+This is a stdlib API surface change — flagged in CHANGELOG
+`### Changed` (potentially breaking-ish for any caller that
+adopted the v5.43.0 flat-tuple shape; in practice the surface
+shipped as a workaround that was always intended to revert).
+**Prerequisite:** v5.46.0 shipped (Lf.\* — three lowerer bugs
+closed; the agent refactor is structurally unblocked because
+`Result<NodeHandle, NetworkError>` destructure now works).
+**Estimated effort:** 1–2 sessions. Smaller than v5.46.0; the
+work is structurally well-understood (Lf.4 was scoped at Phase
+0; the agent refactor is the "remove the workaround" follow-on).
 
 ---
 
 ## Why this exists
 
-v5 has been a long, dense series. The user's directive was
-explicit: **panels at the end of the series, not in the middle.**
-v5.47.0 is that panel — the single closeout review of everything
-v5.31.0 through v5.46.0 shipped, which transitively reviews the
-entire v5 series since the last panel at v5.28.0 RE-PANEL.
+The v5.28.0 RE-PANEL precedent is load-bearing here. That
+panel scored 9.72 (the +0.31 recovery) specifically because
+Phase 2 H.\* hygiene closures landed *ahead of panel cut* —
+25/25 docket items closed before the panel saw the docket.
+Reviewers can't dock for items that no longer exist.
 
-Three decisions need to land here:
+Going straight from v5.46.0 to the closeout panel means the
+panel sees:
 
-1. **Has the v5 thesis delivered?** The terseness arc, the
-   stdlib gap-close, the manifesto items. Did they ship at the
-   quality the project promised?
-2. **Is v6.0 ready to start?** v6.0 is the borrow-checker arc.
-   It requires the v5 stdlib to be solid (so users have
-   somewhere to land) and the v5 type system to be
-   well-understood (so the borrow checker has stable ground to
-   build on).
-3. **What carries forward to v6.0?** Every release through
-   v5.46.0 deferred items to "v6.0 carry." Audit them; the ones
-   still relevant become v6.0 PLAN inputs; the ones that don't
-   become v5.47.x patches or get explicitly retired.
+1. **Lf.4 split** — explicitly named in v5.46.0 SESSION_REPORT
+   as v5.46.x scope. One release later it's still open.
+2. **Flat-tuple → `Result<T, NetworkError>` ergonomic refactor**
+   — explicitly named in the v5.46.0 SESSION_REPORT carry-
+   forward as v5.46.x. The v5.46.0 PROMPT itself called the
+   flat-tuple shape "documented as ugly" and committed v5.46.x
+   to the refactor. One release later it's still open.
+3. **`stdlib/fs.mn::walk_dir` IR codegen issue** — v5.40.0
+   carry, never picked up.
+4. **`stdlib/net/websocket.mn` `str(byte)` decimal-stringification**
+   — v5.43.0 carry, never picked up.
+
+These are LOW carries; no individual one threatens v6.0
+readiness. But four LOW carries on a closeout-panel docket is
+~8 reviewer-comments waiting to happen. v5.47.0 closes them
+before the panel runs.
+
+The split — v5.47.0 hygiene + v5.47.5 panel — mirrors the
+v5.28.0 precedent exactly. The cost is one extra release;
+the benefit is a clean docket and (per the v5.28.0 +0.31
+recovery shape) a higher panel score that reflects actual
+state, not paperwork.
 
 ---
 
 ## Goals
 
-1. **Cp.1** — Pre-panel audit: enumerate every shipped item in
-   v5.31.0 → v5.46.0; identify silent-RED gates if any (the
-   v5.28.0 RE-PANEL caught 3 of these for v5.22.0).
-2. **Cp.2** — 7-reviewer panel: Rattler, Viper, Anaconda, Cobra,
-   Coral, Boa, Mamba (the standard v5 panel composition; see
-   `.reviews/PANEL_AUDIT_TEMPLATE.md`).
-3. **Cp.3** — Aggregate decision: Option A (v5 ships clean,
-   ready for v6.0) / Option B (v5 ships with caveats; v6.0
-   gated on v5.47.x patches) / Option C (recovery arc needed
-   before v6.0).
-4. **Cp.4** — Carry-forward ledger: v6.0 PLAN inputs from v5
-   carries; explicit "retired" list for items no longer
-   relevant.
-5. **Cp.5** — v5 retrospective: what worked, what didn't, what
-   to repeat in v6.0 process.
-6. **Cp.6** — CLAUDE.md ledger update: prune the "Most recent
-   releases" section; promote v5 closeout summary; archive
-   per-release entries to roadmap-only.
+1. **Cl.0** — Phase 0 audit: confirm each Cl.\* item is
+   actually still open at v5.47.0 HEAD; verify the v5.46.0
+   Lf.\* fix didn't accidentally close any of them; localize
+   each fix site; size the diff per item.
+2. **Cl.1** — **Lf.4 — variant-name collision.** Match-pattern
+   resolution keys on `(subject_type, variant_name)` instead
+   of just `variant_name`. Lock with regression test.
+3. **Cl.2** — **Agent stdlib ergonomic refactor.** Convert
+   `stdlib/agent/url.mn` + `stdlib/agent/remote.mn` +
+   `stdlib/agent/node.mn` + `stdlib/agent/supervision.mn` from
+   flat tuple `(ok, value, err_kind, err_msg)` to ergonomic
+   `Result<T, NetworkError>`. The v5.46.0 Lf.\* fix unblocked
+   this; v5.47.0 picks it up.
+4. **Cl.3** — **`stdlib/fs.mn::walk_dir` IR codegen** (carry
+   from v5.40.0). Match-on `Result<List<String>, FsError>`
+   produces `extractvalue ptr ... 0` then `zext ptr to i64`
+   which clang rejects. Phase 0 confirms whether the v5.46.0
+   Lf.\* fix coincidentally closed this; if not, fix.
+5. **Cl.4** — **`stdlib/net/websocket.mn` `str(byte)`
+   decimal-stringification** (carry from v5.43.0). The
+   websocket frame-header path uses `str(byte)` decimal-
+   stringification where it should use `__mn_str_chr` (now
+   that v5.43.0 Da.0 extended the latter to cover bytes
+   0..255). Cosmetic but a latent footgun on any future
+   pure-Mapanare binary protocol.
+6. **Cl.5** — **Self-host mirror gate.** Cl.1 lives in
+   `mapanare/semantic.py` + `mapanare/lower.py` + their
+   self-host mirrors at `mapanare/self/semantic.mn` +
+   `mapanare/self/lower.mn`. STRICT 3-stage fixed point
+   preserved by stage1 rebuild after each mirror edit.
+   Cl.2 / Cl.3 / Cl.4 don't touch the self-host (stdlib /
+   agent stdlib edits only) — STRICT preserved by
+   construction for those.
+7. **Cl.6** — **Test corpus.** Cl.1 regression in
+   `tests/llvm/test_lowerer_fixes.py` (extend the v5.46.0
+   harness with Lf.4 cases) + at least one new golden
+   (`103_variant_name_collision.mn`). Cl.2 regression locks
+   the new agent API surface — pytest harness in
+   `tests/stdlib/test_distributed_agents.py` (which already
+   exists from v5.43.0; updates to assert the new
+   `Result<T, NetworkError>` return shape). Cl.3 / Cl.4
+   regression in their respective module test files.
+8. **Cl.7** — **Closeout artifacts.** CHANGELOG `### Fixed`
+   per item; CLAUDE.md release-notes entry; SPEC.md sync;
+   carry-forward delta.
 
 ---
 
@@ -77,88 +115,109 @@ Three decisions need to land here:
 
 | ID | Severity | Description | Effort |
 |---|---|---|---|
-| **Cp.1** | HIGH | **Pre-panel audit (`PRE_PANEL_AUDIT.md`).** Enumerate every numbered item that shipped in v5.31.0 → v5.46.0 (every Bn., Nw., Nu., Dt., Sq., Js., Ht., Re., Cr., Ai., Ts., As., Da., Ps. ID). For each: state at HEAD = SHIPPED / PARTIAL / DEFERRED. Cross-check CI gates: every gate in `make ci-gates` actually GREEN at HEAD (catches silent-RED). | 4h |
-| **Cp.2** | HIGH (load-bearing) | **7-reviewer panel.** Use the existing `/code-review` skill. Each reviewer reads PRE_PANEL_AUDIT.md + relevant SESSION_REPORTs and produces `findings.md` with EXCEEDS / MEETS / NEEDS WORK grade per category, plus PASS / PASS WITH NOTES / FAIL recommendation. Standard v5 composition: Rattler (mechanical correctness), Viper (perf), Anaconda (process / test discipline), Cobra (architecture), Coral (UX / docs), Boa (long-tail bug closure), Mamba (security). | 6h (panel runs in parallel) |
-| **Cp.3** | HIGH | **Decision document (`V5_DECISION.md`).** Aggregate panel scores; apply the v5-gate mechanical decision rule (mean ≥ 9.5 = Option A green-light; 9.0-9.5 = Option A with notes; <9.0 = Option B or C). Document the chosen path. v5.28.0 RE-PANEL hit 9.72 (Option A); v5.47.0 expectation is similar quality given the structural arc completion, but the panel decides, not the lead. | 2h |
-| **Cp.4** | HIGH | **Carry-forward ledger (`V5_TO_V6_CARRY.md`).** Every "carry forward" line from v5.31.0+ PLANs becomes an entry. Categorize: (a) becomes v6.0 PLAN input (real work for v6.0), (b) becomes a v5.47.x patch candidate (small, doesn't need v6.0 scope), (c) retired (no longer relevant). Examples: `Tn.1` (95-golden link gate) — retire if v5.36.0 finally landed it, otherwise v5.47.x. macOS notarization — v5.47.x. Borrow checker — v6.0 PLAN input. Hard removal of `{}` — v6.0 PLAN input. | 3h |
-| **Cp.5** | MEDIUM | **v5 retrospective (`V5_RETRO.md`).** What worked: structural fix discipline, panel cadence (when followed), strict fixed-point gate. What didn't: mid-arc panels causing rebumps, SDK-bundle scope creep at v5.12.0 (caught only at v5.31.0), the Tn.1 N-release overrun. What to bring to v6.0: tighter PLAN sizing (v5.43.0 was too big for one release; v6.0 borrow checker should split into Bc.1.0 / Bc.2.0 / Bc.3.0 sub-releases). ~1500 words. | 3h |
-| **Cp.6** | MEDIUM | **CLAUDE.md ledger update.** Prune "Most recent releases" — keep only v5.45.0, v5.46.0, v5.47.0 explicit; archive v5.31.0 through v5.44.0 to a "v5 closeout summary" paragraph that references roadmap. Add a v5.47.0 closeout entry with panel score + Option chosen + v6.0 readiness statement. | 1h |
-| **Cp.7** | MEDIUM | **`docs/roadmap/v5/CLOSEOUT_ARC.md` final update.** Existing file tracks the v5 closeout arc; v5.47.0 is the actual closeout. Final paragraph: "v5 closed at v5.47.0 with panel decision X. v6.0 PLAN draft begins at v6.0/PLAN.md per V5_TO_V6_CARRY.md inputs." | 30 min |
-| **Cp.8** | HIGH (gate) | **Cadence-check + ci-gates GREEN at HEAD.** v5.47.0 is panel-only; the substantive gate is "everything that was supposed to ship in v5 actually shipped and stayed green." `make ci-gates` GREEN; `make lint` clean; goldens 95/95; STRICT 3-stage fixed point preserved. | 30 min |
+| **Cl.0** | HIGH (gate) | **Phase 0 audit.** For each Cl.\* item: confirm still-open at v5.47.0 HEAD via repro; localize fix site; estimate LOC. Output: `docs/roadmap/v5/v5.47.0/PRE_PHASE_AUDIT.md`. Surface any deviation from PLAN before any code edits land. Critical Cl.1 LOC measurement: ≤ 60 LOC = bundle; > 60 LOC = re-split (the v5.46.0 PLAN's ≤30 LOC bundle threshold doesn't apply because v5.47.0 is itself the bundling release). | 3h |
+| **Cl.1** | HIGH | **Lf.4 — variant-name collision.** Multimap of `variant_name → list[(enum_name, return_type, arity)]` built during semantic checker registration. Constructor expression resolution consults the binding's declared type when present (e.g. `pon n: NetworkError = TransportLost("...")`); falls back to single-match path when context is absent. Match-pattern resolution keys on `(subject_type, variant_name)`. Mirror in `mapanare/self/semantic.mn` + `mapanare/self/lower.mn`. Estimated 50-80 LOC across the two files; falsifiability locked with `/tmp/diag_lf4.mn` repro from v5.46.0 PRE_PHASE_AUDIT. | 5h |
+| **Cl.2** | HIGH | **Agent stdlib ergonomic refactor.** Convert all v5.43.0 functions returning the flat-tuple workaround back to `Result<T, NetworkError>`. Affected files: `stdlib/agent/url.mn`, `stdlib/agent/remote.mn`, `stdlib/agent/node.mn`, `stdlib/agent/supervision.mn`. `parse_agent_url`, `node_listen`, `node_connect`, `remote_agent_connect`, `remote_agent_send`, etc. The `UrlParseResult` flat-tuple intermediate type goes away (or stays internal-only). Existing `test_distributed_agents.py` updates to assert the new shape. Zero compiler edits — purely stdlib. | 4h |
+| **Cl.3** | MEDIUM | **`stdlib/fs.mn::walk_dir` IR codegen.** v5.40.0 SESSION_REPORT documented this; v5.46.0 Lf.\* may have closed it as a side-effect (the failure mode `extractvalue ptr ... 0` then `zext ptr to i64` is the same wrong-IR-shape class as Lf.1). Phase 0 verifies. If still open, fix in `mapanare/lower.py` `_lower_match` for `Result<NonTrivialOk, E>` patterns. If v5.46.0 closed it, document and skip. | 2h (+ 0h if v5.46.0 closed it) |
+| **Cl.4** | LOW | **`stdlib/net/websocket.mn` `str(byte)` cleanup.** Replace decimal-stringification calls with `__mn_str_chr` (v5.43.0 Da.0 extended this to bytes 0..255 with byte 0x00 preservation). Cosmetic; behavior identical for ASCII bytes; correct for high bytes. Pure stdlib; zero compiler edits. | 1h |
+| **Cl.5** | HIGH (gate) | **Self-host mirror.** Cl.1 requires mirror in `mapanare/self/semantic.mn` + `mapanare/self/lower.mn`. Cl.2 / Cl.3 / Cl.4 don't touch self-host. Stage1 rebuild after each Cl.1 mirror edit; STRICT 3-stage fixed point preserved at v5.46.0's 243,749 lines / 0 diff (50-release strict streak target). | 3h |
+| **Cl.6** | HIGH (gate) | **Test corpus.** New golden `103_variant_name_collision.mn` (~50 LOC); extend `tests/llvm/test_lowerer_fixes.py` with `test_lf4_variant_name_collision` parametrized over enum-pair shapes (NetworkError + ExitReason from v5.43.0 supervision; minimum 2 enums, possibly 3 for the multi-collision case). Update `tests/stdlib/test_distributed_agents.py` to assert the new `Result<T, NetworkError>` return shape (not the flat tuple). New golden brings count 102 → 103. | 3h |
+| **Cl.7** | HIGH (gate) | **Closeout artifacts.** Bump VERSION to 5.47.0; CHANGELOG `### Fixed` per Cl.\* item (4 entries: Lf.4, agent refactor, fs.mn walk_dir if still applicable, websocket str(byte)); CLAUDE.md release-notes; SPEC.md header re-synced from "v5.46.0 cut" to "v5.47.0 cut" with new sync block; SESSION_REPORT.md; PR_BODY.md if requested. | 1h |
 
 ---
 
 ## Phase plan
 
-- **Phase 0** — Pre-flight; v5.46.0 HEAD clean.
-- **Phase 1** — Cp.1 PRE_PANEL_AUDIT.md (must precede panel —
-  reviewers need the artifact).
-- **Phase 2** — Cp.2 panel runs (parallel; ~6h wall but each
-  reviewer is independent). Use `/code-review v5_45_closeout` to
-  drive.
-- **Phase 3** — Cp.3 V5_DECISION.md once findings land. Apply
-  the mechanical decision rule.
-- **Phase 4** — Cp.4 carry-forward ledger.
-- **Phase 5** — Cp.5 retrospective; Cp.6 CLAUDE.md prune;
-  Cp.7 CLOSEOUT_ARC update.
-- **Phase 6** — Cp.8 ci-gates + bump.
+- **Phase 0** — Pre-flight; v5.46.0 HEAD clean (post-`commit`).
+  Reproduce each Cl.\* item; verify still-open. Decide whether
+  Cl.3 was closed by Lf.\*. Write PRE_PHASE_AUDIT.md.
+- **Phase 1** — Cl.1 Lf.4 fix (semantic checker + lowerer).
+  This is the biggest item; do it first while context is
+  fresh.
+- **Phase 2** — Cl.2 agent stdlib refactor. Pure stdlib; can
+  parallelize with Phase 1 review if desired.
+- **Phase 3** — Cl.3 (if still applicable) + Cl.4. Both
+  small.
+- **Phase 4** — Cl.5 self-host mirror. Stage1 rebuild after
+  each Cl.1 mirror edit per the v5.45.0 / v5.46.0 ordering.
+- **Phase 5** — Cl.6 test corpus.
+- **Phase 6** — Cl.7 closeout (bump + verify + STRICT check).
 
 ---
 
 ## Out of scope
 
-- **Compiler edits.** Panel-only by construction.
-- **v6.0 PLAN drafting.** That happens in `docs/roadmap/v6/`
-  after v5.47.0 ships and the carry-forward ledger is set;
-  v5.47.0 produces the *inputs* to that PLAN, not the PLAN
-  itself.
-- **New features.** Anything that surfaces during panel as
-  "needs work" routes to a v5.47.x patch or to v6.0, not to
-  v5.47.0 itself.
-- **Hard removal of `{}` syntax.** v6.0; soft deprecation since
-  v5.19.0 holds for now.
+- **macOS notarization** (carry from v5.33.0 Nu.2). Needs paid
+  Apple Developer cert + signing infrastructure. v6.0+ when
+  paid distribution makes it worthwhile.
+- **Ai.1 `_specialize_fn` body-walk for generic stdlib calling
+  generic intrinsics** (carry from v5.40.0). Structural
+  compiler work; v6.0 PLAN input.
+- **Borrow checker.** v6.0 thesis. Not v5.47.0 scope.
+- **Hard removal of `{}`.** v6.0. Soft deprecation since
+  v5.19.0 holds.
+- **The closeout panel itself.** v5.47.5.
 
 ---
 
 ## Risk
 
-1. **Panel finds NEEDS WORK on a load-bearing item.** v5.28.0
-   RE-PANEL caught Anaconda's 3 silent-RED CI gates. Panel can
-   surprise. Mitigation: Cp.1 audit pre-empts most of this; if
-   panel still flags something serious, Option B/C handles it
-   (ship v5.47.x patches before v6.0 starts).
-2. **Reviewers disagree sharply.** Panel has produced consistent
-   results historically (mean ± 0.3 across 7 reviewers); larger
-   spreads usually surface real ambiguity. Mitigation: spread
-   ≥ 0.5 triggers a follow-up review round before deciding.
-3. **The v5.28.0 9.72 ceiling.** v5.47.0 might score lower
-   simply because v5.31.0–v5.46.0 covered more ambitious scope
-   (manifesto arc) than the v5.23-v5.27 recovery arc. Lower
-   score isn't necessarily a problem; it just means
-   v5.47.x/v6.0 inherits more carry. Mitigation: judge against
-   absolute decision rule, not ceiling-relative.
-4. **Cadence drift.** v5.47.0 is the first panel since v5.28.0,
-   covering 14 substantive releases. The cadence-check gate
-   would have fired at v5.34.0+ if mid-arc panels were the
-   policy; user explicitly directed otherwise. Mitigation:
-   v5.47.0 PLAN documents the deliberate cadence choice up
-   front so the panel doesn't dock for it.
+1. **Cl.1 LOC overshoots.** v5.46.0 Phase 0 estimated ≥ 50 LOC
+   for Lf.4. If v5.47.0 Phase 0 finds it's actually 100+ LOC
+   across semantic.py + lower.py + their self-host mirrors,
+   Cl.1 could split further. Mitigation: explicit Phase 0
+   sizing decision; if > 100 LOC, defer Cl.1 to v5.47.1 and
+   ship v5.47.0 with Cl.2 + Cl.4 only.
+2. **Cl.2 surfaces NEW v5.x bugs.** Removing the flat-tuple
+   workaround means user code paths exercise `Result<T,
+   NetworkError>` destructure shapes that v5.46.0 fixed.
+   If any of those shapes hit a *different* lowerer bug,
+   v5.47.0 surfaces it. Mitigation: Phase 0 includes a quick
+   sweep of the v5.43.0 `stdlib/agent/` callers; flag any
+   suspicious patterns; if a new bug surfaces, scope decision
+   between fix-in-v5.47.0 vs split-to-v5.47.1.
+3. **STRICT preservation.** Cl.1 mirror touches
+   `mapanare/self/semantic.mn` + `mapanare/self/lower.mn` —
+   the highest-risk paths for STRICT divergence (the v5.45.0
+   tensor work broke the streak; v5.46.0 had no self-host
+   touches and trivially preserved). Mitigation: stage1
+   rebuild after each mirror edit; halt if STRICT diverges;
+   investigate before continuing.
+4. **Cl.3 false-positive close.** v5.46.0 Lf.\* fix touched
+   `mapanare/lower.py` Ok/Err branches; it's plausible but
+   not certain that fs.mn `walk_dir` works now. Phase 0 must
+   verify with the actual v5.40.0 repro, not guess.
+5. **Panel score erosion.** If v5.47.0 ships and the panel
+   still scores < 9.5, the split was wasted. Mitigation: the
+   v5.28.0 +0.31 recovery shape is the precedent; the
+   structural argument for hygiene-before-panel is sound;
+   trust the precedent.
 
 ---
 
 ## Success criteria
 
-- ✅ PRE_PANEL_AUDIT.md complete, all v5.31-v5.46 items
-  classified.
-- ✅ 7 reviewer findings.md files in
-  `.reviews/v5.47.0/<reviewer>/findings.md`.
-- ✅ V5_DECISION.md with explicit Option A/B/C and aggregate
-  score.
-- ✅ V5_TO_V6_CARRY.md complete with v6.0 PLAN inputs ready.
-- ✅ V5_RETRO.md captures lessons.
-- ✅ CLAUDE.md pruned + v5 closeout entry added.
-- ✅ Goldens 95/95.
-- ✅ STRICT 3-stage fixed point preserved.
+- ✅ Lf.4 closed: `/tmp/diag_lf4.mn` (or successor) compiles
+  and prints `n=1\nx=1` (or whatever the post-fix correct
+  output is).
+- ✅ Agent stdlib API surface: every public `pub fn` in
+  `stdlib/agent/{url,remote,node,supervision}.mn` returning
+  the v5.43.0 flat-tuple shape now returns `Result<T,
+  NetworkError>`. Existing `test_distributed_agents.py`
+  GREEN against the new shape.
+- ✅ Cl.3 closed (if applicable) or documented closed.
+- ✅ Cl.4 closed: `stdlib/net/websocket.mn` no longer uses
+  `str(byte)` decimal-stringification on byte values.
+- ✅ Self-host mirror landed; STRICT 3-stage fixed point
+  preserved.
+- ✅ Goldens 102/102 → 103/103 (Cl.6 adds one).
+- ✅ `tests/llvm/test_lowerer_fixes.py` extended with Lf.4
+  cases; falsifiability per case documented.
+- ✅ CHANGELOG `### Fixed` per item; check_changelog_honesty
+  GREEN.
+- ✅ CLAUDE.md release-notes entry; check_doc_freshness
+  GREEN.
+- ✅ SPEC.md header re-synced.
 - ✅ `make ci-gates` GREEN; `make lint` clean.
 
 ---
@@ -166,35 +225,31 @@ Three decisions need to land here:
 ## Carry-forward delta
 
 **Closes:**
-- v5 series. The longest-running major version arc in the
-  project's history.
+- Lf.4 variant-name collision (split from v5.46.0).
+- Flat-tuple → `Result<T, NetworkError>` ergonomic refactor in
+  `stdlib/agent/` (commitment from v5.46.0 SESSION_REPORT).
+- `stdlib/fs.mn::walk_dir` IR codegen (carry from v5.40.0; if
+  Phase 0 confirms still-open).
+- `stdlib/net/websocket.mn` `str(byte)` decimal-stringification
+  (carry from v5.43.0).
+
+**Inherits to v5.47.5 panel:**
+- Whatever Cp.4 carry-forward ledger surfaces; expected count
+  is much smaller after v5.47.0 hygiene drains the LOW tier.
 
 **Inherits to v6.0:**
-- Whatever Cp.4 carry-forward ledger surfaces. Expected:
-  borrow checker (the v6.0 thesis), hard removal of `{}`,
-  multi-level alias analysis, any panel-surfaced "MEDIUM"
-  that's a v6.0 scope item. (Ts.2 view-aliasing safety
-  closes at v5.45.0, so it should NOT be on the carry list
-  by the time the panel runs — verify in Cp.4.)
+- macOS notarization (paid infrastructure dependency).
+- Ai.1 `_specialize_fn` body-walk (structural compiler work).
+- Borrow checker (the v6.0 thesis).
+- Hard removal of `{}` (carry from v5.19.0).
+- Multi-level alias analysis.
 
-**Inherits to v5.47.x patches (if any):**
-- Per panel findings; small structural items that don't need
-  v6.0 scope.
-
-**v5 series state at HEAD:**
-- Foundation arc CLOSED (banner + 3 prebuilt binary releases).
-- Stdlib gap-close arc CLOSED (date/time, sqlite, JSON, HTTP,
-  regex, crypto).
-- Manifesto arc CLOSED (`ask`, supervision, distributed agents).
-- Tensor closeout arc CLOSED (Ts.1 reshape v5.41.0, Ts.2 mutable
-  views + Ts.3 stepped slices v5.45.0).
-- Package-system runway CLOSED (installed packages compile as
-  normal dependencies).
-- v5.43.0 lowerer-bug closeout CLOSED at v5.46.0 (Result<T,
-  complex Err> destructure + variant rewrap + nested 15-arm
-  match) — unblocks ergonomic cleanup of v5.43.0 distributed-
-  agent APIs.
-- Terseness arc CLOSED (since v5.27.0).
-- Mb.\* arc CLOSED (since v5.29.0).
-- Pv.\* arc CLOSED (since v5.32.0 / v5.33.0).
-- v6.0 begins.
+**Aggregate state entering v5.47.5:**
+- Tensor closeout arc CLOSED (v5.45.0).
+- Manifesto arc CLOSED (v5.43.0).
+- Package-system runway CLOSED (v5.44.0).
+- v5.43.0 lowerer-bug closeout CLOSED at v5.46.0.
+- Pre-panel hygiene cleanup CLOSED at v5.47.0.
+- 0 HIGH carries; ≤ 2 MEDIUM carries (the two structural items
+  legitimately deferrable to v6.0); ≤ 4 LOW carries.
+- v5.47.5 panel reviews a clean docket.
