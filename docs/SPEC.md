@@ -1,8 +1,40 @@
 # Mapanare Language Specification
 
-**Version:** 5.44.1
-**Status:** Live — synced to the v5.44.1 cut (2026-05-05)
+**Version:** 5.45.0
+**Status:** Live — synced to the v5.45.0 cut (2026-05-06)
 
+> **v5.45.0 — Ts.\* — tensor closeout arc CLOSED.** Closes
+> the v5.41.0 option-B contract carried 4 releases past slot.
+> Mutable views (`t.view(shape)`), stepped slices
+> (`t[start..end:step]`), and an aliasing-flavor reshape ship
+> together. **`mapanare_tensor_t` grows from 40 → 64 bytes**
+> (append-only: `int64_t refcount` + `uint8_t is_view` + 7
+> padding bytes + `mapanare_tensor_t *parent`). Pre-v5.45.0
+> fields preserved at original offsets 0/8/16/24/32. Two new
+> C runtime exports: `__mn_tensor_view`,
+> `__mn_tensor_step_slice`, plus internal delegation of
+> `__mn_tensor_reshape` → `__mn_tensor_view`. Drops the
+> `noalias` LLVM attribute on `__mn_tensor_reshape` —
+> potentially breaking semantic change for any code that
+> relied on v5.41.0 copy semantics (Phase 0 audit confirmed
+> zero production callers did). Stepped slice grammar adds
+> two new productions in `mapanare/mapanare.lark` and
+> `bootstrap/mapanare.lark` (range_step_op +
+> range_incl_step_op) using the existing COLON token. New
+> `step: Expr | None` field on `RangeExpr` and `IndexItem`.
+> First v5.45.0 release to touch `mapanare/self/*.mn` source;
+> STRICT 3-stage fixed point preserved at **243,749 lines /
+> 0 diff** (48-release strict streak from v5.7.1; +1,411
+> lines vs v5.44.1's 242,338). Goldens **99/99** (96 +
+> `97_tensor_view_aliasing` + `98_tensor_stepped_slice` +
+> `99_tensor_reshape_aliased`). UB-risk tier complete: 14
+> ASan + valgrind sweeps (0 leaks 0 errors); binary-compat
+> regression `tests/runtime/test_tensor_struct_compat.py`
+> pinning `sizeof = 64` and field offsets. After v5.45.0 the
+> "Not yet on LLVM" line in CLAUDE.md no longer mentions
+> tensor mutable views or stepped slices — the line is
+> removed entirely.
+>
 > **v5.44.1 — Ps.11 + Ps.12 — scripts parity + gitignore
 > template.** Tactical hotfix completing the v5.44.0 Ps.\*
 > arc end-to-end. Extends the v5.44.0 Ps.3 resolver-parity

@@ -21,6 +21,7 @@ free ordering that the language-level `let` scope doesn't expose,
 the same shape as the Phase 1 / Phase 2 /tmp/ts2[ab]_smoke.c
 harnesses but committed to the test suite for CI.
 """
+
 from __future__ import annotations
 
 import os
@@ -30,7 +31,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -56,8 +56,7 @@ def valgrind_bin() -> str | None:
     return shutil.which("valgrind")
 
 
-_C_HARNESS = textwrap.dedent(
-    """\
+_C_HARNESS = textwrap.dedent("""\
     #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
@@ -87,8 +86,7 @@ _C_HARNESS = textwrap.dedent(
     %BODY%
         return 0;
     }
-    """
-)
+    """)
 
 
 _SCENARIOS = {
@@ -215,8 +213,12 @@ def test_view_scenario_asan(
 ) -> None:
     """Each scenario must run cleanly under ASan: 0 leaks, 0 errors."""
     rc, stdout, stderr = _build_and_run(
-        _SCENARIOS[scenario], gcc_bin, runtime_archive, tmp_path,
-        sanitizer="asan", valgrind=None,
+        _SCENARIOS[scenario],
+        gcc_bin,
+        runtime_archive,
+        tmp_path,
+        sanitizer="asan",
+        valgrind=None,
     )
     assert rc == 0, f"ASan failure on {scenario}: rc={rc}\nstdout={stdout}\nstderr={stderr}"
     # ASan exits non-zero on detected issues; if rc==0, scenario is clean.
@@ -235,10 +237,11 @@ def test_view_scenario_valgrind(
     if valgrind_bin is None:
         pytest.skip("valgrind not on PATH")
     rc, stdout, stderr = _build_and_run(
-        _SCENARIOS[scenario], gcc_bin, runtime_archive, tmp_path,
-        sanitizer=None, valgrind=valgrind_bin,
+        _SCENARIOS[scenario],
+        gcc_bin,
+        runtime_archive,
+        tmp_path,
+        sanitizer=None,
+        valgrind=valgrind_bin,
     )
-    assert rc == 0, (
-        f"valgrind failure on {scenario}: rc={rc}\nstdout={stdout}\n"
-        f"stderr={stderr}"
-    )
+    assert rc == 0, f"valgrind failure on {scenario}: rc={rc}\nstdout={stdout}\n" f"stderr={stderr}"

@@ -16,6 +16,7 @@ Drop the refcount field and the alloc-init test fails. Make
 mapanare_tensor_free unconditional (pre-v5.45.0 behavior) and the
 no-op-on-still-aliased test fails.
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -25,7 +26,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -39,7 +39,7 @@ def runtime_lib(gcc_bin: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
     bare .so doesn't link in)."""
     archive = REPO_ROOT / "runtime" / "native" / "libmapanare_rt.a"
     if not archive.is_file():
-        pytest.skip(f"libmapanare_rt.a not present; run `make build-rt`")
+        pytest.skip("libmapanare_rt.a not present; run `make build-rt`")
     tmp = tmp_path_factory.mktemp("tensor_compat")
     stub_c = tmp / "stub.c"
     # Stub for mn_main referenced by mn_user_main.c in the archive;
@@ -47,11 +47,19 @@ def runtime_lib(gcc_bin: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
     stub_c.write_text("int mn_main(int argc, char **argv) { return 0; }\n")
     so_path = tmp / "libmapanare_tensor_test.so"
     cmd = [
-        gcc_bin, "-shared", "-fPIC", "-O0",
+        gcc_bin,
+        "-shared",
+        "-fPIC",
+        "-O0",
         str(stub_c),
-        "-Wl,--whole-archive", str(archive), "-Wl,--no-whole-archive",
-        "-lm", "-lpthread", "-ldl",
-        "-o", str(so_path),
+        "-Wl,--whole-archive",
+        str(archive),
+        "-Wl,--no-whole-archive",
+        "-lm",
+        "-lpthread",
+        "-ldl",
+        "-o",
+        str(so_path),
     ]
     subprocess.run(cmd, check=True, capture_output=True)
     return so_path
@@ -67,8 +75,7 @@ def gcc_bin() -> str:
 
 # --- Direct sizeof + offsetof check via a tiny C probe -----------------
 
-_SIZEOF_PROBE = textwrap.dedent(
-    """\
+_SIZEOF_PROBE = textwrap.dedent("""\
     #include <stddef.h>
     #include <stdint.h>
     #include <stdio.h>
@@ -91,8 +98,7 @@ _SIZEOF_PROBE = textwrap.dedent(
         printf("parent=%zu\\n", offsetof(mapanare_tensor_t, parent));
         return 0;
     }
-    """
-)
+    """)
 
 
 def test_sizeof_pinned_at_64(gcc_bin: str, tmp_path: Path) -> None:
@@ -102,8 +108,9 @@ def test_sizeof_pinned_at_64(gcc_bin: str, tmp_path: Path) -> None:
     src_path = tmp_path / "probe.c"
     src_path.write_text(_SIZEOF_PROBE)
     bin_path = tmp_path / "probe"
-    subprocess.run([gcc_bin, "-O0", str(src_path), "-o", str(bin_path)],
-                   check=True, capture_output=True)
+    subprocess.run(
+        [gcc_bin, "-O0", str(src_path), "-o", str(bin_path)], check=True, capture_output=True
+    )
     out = subprocess.run([str(bin_path)], capture_output=True, text=True, check=True).stdout
     fields = dict(line.split("=") for line in out.strip().splitlines())
     assert fields["size"] == "64", (
@@ -121,8 +128,9 @@ def test_pre_v5_45_0_field_offsets_preserved(gcc_bin: str, tmp_path: Path) -> No
     src_path = tmp_path / "probe.c"
     src_path.write_text(_SIZEOF_PROBE)
     bin_path = tmp_path / "probe"
-    subprocess.run([gcc_bin, "-O0", str(src_path), "-o", str(bin_path)],
-                   check=True, capture_output=True)
+    subprocess.run(
+        [gcc_bin, "-O0", str(src_path), "-o", str(bin_path)], check=True, capture_output=True
+    )
     out = subprocess.run([str(bin_path)], capture_output=True, text=True, check=True).stdout
     fields = dict(line.split("=") for line in out.strip().splitlines())
     # Pre-v5.45.0 layout — locked at v4.x and never reorderable.
@@ -138,8 +146,9 @@ def test_v5_45_0_new_field_offsets(gcc_bin: str, tmp_path: Path) -> None:
     src_path = tmp_path / "probe.c"
     src_path.write_text(_SIZEOF_PROBE)
     bin_path = tmp_path / "probe"
-    subprocess.run([gcc_bin, "-O0", str(src_path), "-o", str(bin_path)],
-                   check=True, capture_output=True)
+    subprocess.run(
+        [gcc_bin, "-O0", str(src_path), "-o", str(bin_path)], check=True, capture_output=True
+    )
     out = subprocess.run([str(bin_path)], capture_output=True, text=True, check=True).stdout
     fields = dict(line.split("=") for line in out.strip().splitlines())
     assert fields["refcount"] == "40"
@@ -186,9 +195,9 @@ def test_alloc_initializes_refcount_to_1(runtime_lib: Path) -> None:
     t = lib.mapanare_tensor_alloc(1, shape, 8)
     try:
         assert t, "alloc returned NULL"
-        assert t.contents.refcount == 1, (
-            f"refcount must initialize to 1; observed {t.contents.refcount}"
-        )
+        assert (
+            t.contents.refcount == 1
+        ), f"refcount must initialize to 1; observed {t.contents.refcount}"
         assert t.contents.is_view == 0, "fresh tensor is not a view"
         assert not t.contents.parent, "fresh tensor has no parent"
     finally:

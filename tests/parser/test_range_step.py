@@ -12,6 +12,7 @@ the new productions) and every test fails with a parse error;
 revert mapanare/parser.py::range_step_op constructor and the AST
 shape tests fail (RangeExpr.step stays None).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -88,11 +89,7 @@ def test_step_propagates_through_index() -> None:
 
 def test_index_without_step_has_step_none() -> None:
     """`arr[a..b]` — IndexItem.step stays None on non-stepped index."""
-    src = (
-        "fn main():\n"
-        "    let t = Tensor<Float>[1.0, 2.0, 3.0, 4.0]\n"
-        "    let s = t[0..4]\n"
-    )
+    src = "fn main():\n" "    let t = Tensor<Float>[1.0, 2.0, 3.0, 4.0]\n" "    let s = t[0..4]\n"
     val = _let_at(src, 1)
     assert isinstance(val, IndexExpr)
     idx = val.indices[0]
@@ -111,11 +108,7 @@ def test_index_without_step_has_step_none() -> None:
 def test_step_accepts_expressions(step_expr: str, expected_step_kind: type | None) -> None:
     """The grammar accepts any `add_expr` for step; lower-time check
     handles literal-vs-non-literal step validation."""
-    src = (
-        "fn main():\n"
-        "    let step = 2\n"
-        f"    let r = 0..10:{step_expr}\n"
-    )
+    src = "fn main():\n" "    let step = 2\n" f"    let r = 0..10:{step_expr}\n"
     val = _let_at(src, 1)
     assert isinstance(val, RangeExpr)
     assert val.step is not None

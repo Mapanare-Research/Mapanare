@@ -19,6 +19,145 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.45.0** (ready, not tagged) — **Ts.\* — tensor closeout arc
+  CLOSED.** Closes the v5.41.0 option-B contract carried 4
+  releases past slot. Mutable views (`t.view(shape)`), stepped
+  slices (`t[start..end:step]`), and an aliasing-flavor reshape
+  ship together. After v5.45.0 the "Not yet on LLVM" line in
+  CLAUDE.md no longer mentions tensor mutable views or stepped
+  slices — the line is removed entirely.
+  **`mapanare_tensor_t` grows from 40 → 64 bytes** (append-only
+  extension: `int64_t refcount`, `uint8_t is_view`, 7 padding
+  bytes, `mapanare_tensor_t *parent`). Pre-v5.45.0 fields preserved
+  at original offsets 0/8/16/24/32. Strict 3-stage fixed point
+  preserved at **243,749 lines / 0 diff** (48-release strict
+  streak from the v5.7.1 baseline; +1,411 lines vs v5.44.1's
+  242,338 from new self-host code). Goldens **99/99** (96 existing
+  + 3 new: `97_tensor_view_aliasing`, `98_tensor_stepped_slice`,
+  `99_tensor_reshape_aliased`).
+  **PROMPT/PLAN deviations surfaced at Phase 0** (load-bearing,
+  documented in `PRE_PHASE_AUDIT.md`): (1) golden 96 does NOT
+  flip on the semantic swap — it never writes to either tensor
+  between reshape and read, so output is identical under either
+  regime; aliasing-visible test ships as net-new golden 99 using
+  multi-index writes via `t[i, j] = val`. (2) Bootstrap grammar
+  update is optional, not lockstep — `bootstrap/parser.py` is
+  frozen at v0.6.0 and not in v5.45.0's build flow; updated for
+  consistency. (3) Three direct-malloc tensor sites in
+  `mapanare_gpu_builtins.c` (`tensor_from_list` + matmul ta/tb
+  pair) need explicit `memset` zero-init to avoid UB on uninit
+  reads of new struct fields. (4) Struct grows by +24 bytes, not
+  PLAN's stated +16 (8-byte alignment padding for `parent` ptr
+  was overlooked). (5) `IndexItem` loses `RangeExpr.inclusive`
+  through translation — pre-existing latent inconsistency since
+  v4.45.0; not v5.45.0 introduction.
+  **Ts.2.A — refcount on `mapanare_tensor_t`.** Append-only
+  struct extension with `int64_t refcount` + `uint8_t is_view` +
+  pad + `parent` pointer. `mapanare_tensor_alloc` initializes
+  refcount=1; `mapanare_tensor_free` is now refcount-aware:
+  decrements; on zero, frees data + shape + metadata for owners
+  or just metadata for views (then recurses on parent).
+  Single-hop semantics: views always point at the root parent,
+  never intermediate views — drop-glue stays O(1) per view. C
+  smoke harness `/tmp/ts2a_smoke.c` (8 cases / 22 assertions)
+  PASS; ASan 0 leaks 0 errors; valgrind 138 allocs / 138 frees /
+  0 leaks / 0 errors.
+  **Ts.2.B — `t.view(shape)` + reshape semantic swap.** New
+  runtime export `__mn_tensor_view(parent, shape: const MnList *)`
+  allocates view metadata sharing parent's data buffer. Element
+  count must match parent's; aborts on mismatch with structured
+  message. Reshape semantic swap: `__mn_tensor_reshape` body
+  delegates to `__mn_tensor_view` — surface API unchanged, but
+  semantics changed (writes to reshape result visible in source).
+  The `noalias` LLVM attribute drops — would be a lie under
+  aliasing. Phase 0 audit confirmed zero production callers
+  relied on copy semantics. **Migration:** if your code requires
+  v5.41.0 copy semantics, v5.45.0 ships no `.copy()` method
+  (deferred to v5.47.0+); cookbook documents the manual
+  fresh-tensor-construction workaround.
+  **Ts.3.A — grammar/AST/parser for `:step`.** Two new
+  productions in `mapanare/mapanare.lark` and
+  `bootstrap/mapanare.lark` (range_step_op + range_incl_step_op)
+  using the existing COLON token (no new lexer token needed —
+  PROMPT proposed RANGE_STEP_SEP; existing COLON works cleanly
+  because LALR(1) lookahead disambiguates against type-annotation
+  positions). New `step: Expr | None` field on `RangeExpr` and
+  `IndexItem`; parser propagates step through `index_expr`'s
+  RangeExpr → IndexItem translation. Backward-compatible
+  defaults; 256/256 parser regression tests GREEN.
+  **Ts.3.B — stepped slice runtime + lower + emit.** New runtime
+  export `__mn_tensor_step_slice(t, starts[], ends[], steps[],
+  rank)` returns a fresh contiguous tensor (copy semantics, NOT
+  a view). Multi-axis: non-stepped axes pass step=1 transparently.
+  Literal step ≤ 0 rejected at lower time (catches both
+  `IntLiteral(0)` and `UnaryExpr(-, IntLiteral(N))`); non-literal
+  step backstopped at runtime with structured error message.
+  C smoke `/tmp/ts3b_smoke.c` (4 cases / 19 assertions) PASS;
+  ASan 0 leaks 0 errors; valgrind 25 allocs / 25 frees / 0 leaks
+  / 0 errors.
+  **Ts.4 — test corpus.** 3 new goldens (97/98/99); pytest
+  extensions `tests/llvm/test_tensor_views.py` (4 cases),
+  `tests/llvm/test_tensor_stepped_slice.py` (8 cases),
+  `tests/llvm/test_tensor_views_sanitized.py` (14 ASan + valgrind
+  cases — UB-risk tier). All GREEN.
+  **Ts.5 — `docs/stdlib/tensor.md` cookbook** (~325 LOC). Quick
+  reference, type/API table, lifetime model, six recipes,
+  aliasing-safety note explicitly documenting that v5.45.0 ships
+  the runtime substrate for view aliasing but NOT static
+  borrow-checking (v6.0 deliverable).
+  **Ts.7 — self-host mirror.** First v5.45.0 release to touch
+  `mapanare/self/*.mn` source. Mirror across `ast.mn`,
+  `parser.mn`, `lower.mn`, `emit_llvm.mn`, `semantic.mn` with
+  stage1 rebuild + goldens GREEN after each milestone. STRICT
+  preserved structurally. **Lesson captured:**
+  `scripts/build_stage1.py` does NOT auto-regenerate
+  `mnc_all.mn`. First fixed-point check showed NEAR (6 diff
+  lines) because stage1 was still compiled from a stale
+  `mnc_all.mn`; after running `scripts/concat_self.py` + rebuild,
+  STRICT cleanly reached. Future self-host edits must run
+  `scripts/concat_self.py` before `scripts/build_stage1.py` —
+  same lesson as v5.31.0's stage1-rebuild discipline applied to
+  a different layer.
+  **Ts.8 — binary-compat regression test.**
+  `tests/runtime/test_tensor_struct_compat.py` (5 cases) pins
+  `sizeof(mapanare_tensor_t) = 64`, pre-v5.45.0 field offsets at
+  0/8/16/24/32, new field offsets at 40/48/56, alloc-init-to-1
+  invariant, free-no-op-on-still-aliased. Same pattern as
+  v5.42.0 As.6 binary-compat regression for `mapanare_agent_t`.
+  **Pre-existing v5.44.1 parser bug surfaced (out-of-scope).**
+  `Tensor<Int>` slice + tensor builtin call (e.g.,
+  `tensor_size(int_slice_result)`) triggers a parse error.
+  Verified the same code fails on the v5.44.1 baseline before
+  any v5.45.0 changes. Golden 98 worked around by skipping the
+  Int section. Tracked as v5.46.0+ LOW carry. Float-element
+  tensors are unaffected.
+  **Source delta:** ~80 LOC C in `mapanare_gpu_builtins.c` (Ts.2.A
+  + Ts.2.B + Ts.3.B exports) + ~30 LOC C in `mapanare_runtime.c`
+  (refcount-aware alloc/free) + ~10 LOC `mapanare_runtime.h`
+  (struct extension) + ~70 LOC `mapanare/lower.py` (view branch
+  + step routing) + ~75 LOC `mapanare/emit_llvm_text.py` (view +
+  step_slice handlers + reshape noalias drop) + ~10 LOC grammar
+  (mapanare.lark + bootstrap copy) + ~5 LOC `mapanare/ast_nodes.py`
+  + ~30 LOC `mapanare/parser.py` + ~10 LOC `mapanare/semantic.py`
+  + ~140 LOC self-host mirror across 5 `.mn` files + ~325 LOC
+  cookbook + 3 net-new goldens (~220 LOC) + 3 net-new pytest
+  modules (~660 LOC) + binary-compat regression (~195 LOC) +
+  CHANGELOG + SPEC sync + this CLAUDE.md release-notes entry +
+  mechanical bump_version.py edits + SESSION_REPORT +
+  PRE_PHASE_AUDIT.
+  Aggregate state entering v5.46.0: **0 HIGH** (tensor closeout
+  arc CLOSED) / **2 MEDIUM** (three v5.43.0 lowerer bugs carry —
+  v5.46.0's whole release; macOS notarization carry from v5.33.0
+  Nu.2) / ~7 LOW (added `.copy()` ergonomic for v5.47.0+; the
+  v5.44.1 `Tensor<Int>` parser bug; strided / non-contiguous
+  tensors carry to v6.0+; reverse-step carry to v6.0+; GPU
+  tensor surface unification carry to v6.0+). **Tensor closeout
+  arc CLOSED.** Manifesto arc CLOSED at v5.43.0. Package-system
+  runway CLOSED at v5.44.0. v5.46.0 picks up the three lowerer
+  bug closeouts; v5.47.0 closeout panel green-lights v6.0. See
+  `docs/roadmap/v5/v5.45.0/{PLAN.md, PROMPT.md, PRE_PHASE_AUDIT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.44.1** (ready, not tagged) — **Ps.11 + Ps.12 —
   scripts parity + gitignore template; tactical hotfix
   completing the v5.44.0 Ps.\* arc end-to-end.** Two real
@@ -3102,10 +3241,10 @@ maps (Robin Hood), agents, signals (full reactivity), streams,
 closures (env struct capture), traits, module imports, pipes,
 multi-agent pipe definitions, string methods, GPU kernel dispatch.
 
-**Not yet on LLVM:** mutable views, stepped slices (v5.41.1). Tensor
-surface stable since v4.45.0; `tensor.reshape` closed at v5.41.0
-(option B part 1, copy semantics — refcount-based aliasing planned
-at v5.41.1 alongside views + stepped slices).
+Tensor surface complete as of v5.45.0 (Ts.\* — closeout arc CLOSED):
+reshape (aliasing), view (aliasing), stepped slice (copy). Strided /
+non-contiguous tensors reserved for v6.0+ (would force ABI change on
+`mapanare_tensor_t` for transpose / permute / reverse step).
 
 New LLVM features target `emit_llvm_text.py` (sole LLVM emitter).
 
@@ -3225,7 +3364,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (32489 symbols, 68039 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (32660 symbols, 68251 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
