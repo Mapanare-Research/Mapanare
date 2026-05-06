@@ -231,6 +231,7 @@ class IndexItem(ASTNode):
     """An item in a multi-index: scalar, range (N..M), or wildcard (:).
 
     v4.45.0: Added for tensor slicing.
+    v5.45.0 Ts.3.A: optional `step` for `[start..end:step]` syntax.
     kind: "scalar" | "range" | "wildcard"
     """
 
@@ -238,6 +239,7 @@ class IndexItem(ASTNode):
     expr: Expr | None = None  # scalar value
     start: Expr | None = None  # range start
     end: Expr | None = None  # range end
+    step: Expr | None = None  # v5.45.0 Ts.3.A — None for non-stepped ranges
 
 
 @dataclass
@@ -262,11 +264,17 @@ class PipeExpr(Expr):
 
 @dataclass
 class RangeExpr(Expr):
-    """Range expression: `a..b` or `a..=b`."""
+    """Range expression: `a..b`, `a..=b`, `a..b:s`, or `a..=b:s`.
+
+    v5.45.0 Ts.3.A: optional `step` for stepped ranges. Negative or
+    zero step is rejected at lower time (literal) or runtime (non-
+    literal); reverse iteration is reserved for v6.0+.
+    """
 
     start: Expr = field(default_factory=Expr)
     end: Expr = field(default_factory=Expr)
     inclusive: bool = False
+    step: Expr | None = None
 
 
 @dataclass

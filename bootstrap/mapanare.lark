@@ -201,7 +201,9 @@ expr_stmt: expr
 
 ?range_expr: add_expr
            | add_expr RANGE add_expr -> range_op
+           | add_expr RANGE add_expr COLON add_expr -> range_step_op
            | add_expr RANGE_INCL add_expr -> range_incl_op
+           | add_expr RANGE_INCL add_expr COLON add_expr -> range_incl_step_op
 
 ?add_expr: mul_expr
          | add_expr PLUS mul_expr -> add_op

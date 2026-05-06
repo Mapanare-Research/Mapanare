@@ -868,10 +868,32 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             start=items[0], end=items[1], inclusive=False, span=_span_from_children(children)
         )
 
+    def range_step_op(self, children: list[Any]) -> RangeExpr:
+        # v5.45.0 Ts.3.A — `start..end:step`.
+        items = _filter(children)
+        return RangeExpr(
+            start=items[0],
+            end=items[1],
+            inclusive=False,
+            step=items[2],
+            span=_span_from_children(children),
+        )
+
     def range_incl_op(self, children: list[Any]) -> RangeExpr:
         items = _filter(children)
         return RangeExpr(
             start=items[0], end=items[1], inclusive=True, span=_span_from_children(children)
+        )
+
+    def range_incl_step_op(self, children: list[Any]) -> RangeExpr:
+        # v5.45.0 Ts.3.A — `start..=end:step`.
+        items = _filter(children)
+        return RangeExpr(
+            start=items[0],
+            end=items[1],
+            inclusive=True,
+            step=items[2],
+            span=_span_from_children(children),
         )
 
     # ------------------------------------------------------------------
@@ -942,6 +964,7 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
                         kind="range",
                         start=c.start,
                         end=c.end,
+                        step=c.step,
                         span=getattr(c, "span", Span()),
                     )
                 )
