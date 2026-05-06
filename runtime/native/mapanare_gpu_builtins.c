@@ -758,6 +758,77 @@ MN_EXPORT int64_t __mn_tensor_argmin_i64(const mapanare_tensor_t *t) {
     return idx;
 }
 
+/* ---- Tensor stepped slice (v5.45.0 Ts.3.B) ----
+ *
+ * `t[start..end:step]` (and per-axis combinations). Returns a fresh
+ * contiguous row-major tensor — copy semantics, NOT a view. Stepped
+ * data is non-contiguous in the source; making it a view would
+ * require strides on `mapanare_tensor_t` which is a v6.0+ ABI item.
+ *
+ * Multi-axis: caller passes per-axis starts[], ends[], steps[]. For
+ * non-stepped axes pass step=1 (equivalent to __mn_tensor_slice on
+ * those axes; if all steps==1, lower picks __mn_tensor_slice
+ * instead).
+ *
+ * Per-axis result count: ceil((end - start) / step) =
+ * (end - start + step - 1) / step. Aborts on step <= 0 (negative /
+ * zero step is reserved syntax for v6.0; lower-time check catches
+ * literal violations, runtime backstops non-literal step).
+ */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_step_slice(
+    const mapanare_tensor_t *t, const int64_t *starts,
+    const int64_t *ends, const int64_t *steps, int64_t rank) {
+    if (!t || !t->data || rank != t->ndim) {
+        fprintf(stderr, "mapanare: invalid tensor step slice\n"); abort();
+    }
+    int64_t out_shape[MN_TENSOR_MAX_RANK];
+    for (int64_t d = 0; d < rank; d++) {
+        int64_t s = starts[d], e = ends[d], k = steps[d];
+        if (k <= 0) {
+            fprintf(stderr,
+                    "mapanare: tensor step slice: step must be positive "
+                    "(got %lld at axis %lld)\n",
+                    (long long)k, (long long)d);
+            abort();
+        }
+        if (s < 0) s = 0;
+        if (e > t->shape[d]) e = t->shape[d];
+        if (e <= s) { out_shape[d] = 0; }
+        else { out_shape[d] = (e - s + k - 1) / k; }
+    }
+    mapanare_tensor_t *result = mapanare_tensor_alloc(rank, out_shape,
+                                                      t->elem_size);
+    if (!result) abort();
+
+    /* Source strides (row-major). */
+    int64_t src_strides[MN_TENSOR_MAX_RANK];
+    src_strides[rank - 1] = 1;
+    for (int64_t d = rank - 2; d >= 0; d--)
+        src_strides[d] = src_strides[d + 1] * t->shape[d + 1];
+
+    /* Output strides. */
+    int64_t out_strides[MN_TENSOR_MAX_RANK];
+    out_strides[rank - 1] = 1;
+    for (int64_t d = rank - 2; d >= 0; d--)
+        out_strides[d] = out_strides[d + 1] * out_shape[d + 1];
+
+    int64_t total = result->size;
+    for (int64_t i = 0; i < total; i++) {
+        int64_t rem = i;
+        int64_t src_flat = 0;
+        for (int64_t d = 0; d < rank; d++) {
+            int64_t out_coord = rem / out_strides[d];
+            rem %= out_strides[d];
+            int64_t src_coord = starts[d] + out_coord * steps[d];
+            src_flat += src_coord * src_strides[d];
+        }
+        const char *src = (const char *)t->data + src_flat * t->elem_size;
+        char *dst = (char *)result->data + i * t->elem_size;
+        for (int64_t b = 0; b < t->elem_size; b++) dst[b] = src[b];
+    }
+    return result;
+}
+
 /* ---- Tensor slicing (v4.45.0) ---- */
 
 MN_EXPORT mapanare_tensor_t *__mn_tensor_slice(

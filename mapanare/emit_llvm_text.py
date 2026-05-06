@@ -390,6 +390,10 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_tensor_argmin_i64": {"nounwind"},
     # Tensor slicing (v4.45.0). Returns fresh tensor (noalias).
     "__mn_tensor_slice": {"nounwind", "noalias"},
+    # Tensor stepped slice (v5.45.0 Ts.3.B). Copy semantics — fresh
+    # contiguous tensor; conservative omission of noalias to match the
+    # rest of the v5.45.0 tensor-producing surface.
+    "__mn_tensor_step_slice": {"nounwind"},
     # Tensor reshape (v5.41.0 Ts.1 → v5.45.0 Ts.2.B). Aliases parent's
     # data buffer under the new view-based implementation; ``noalias``
     # is now a lie and is omitted. Refcount-managed lifetime.
@@ -4013,6 +4017,68 @@ class LLVMTextEmitter:
             r = self._f("tslice")
             self._L(
                 f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, i64 {rank_v})"  # noqa: E501
+            )
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+
+        # v5.45.0 Ts.3.B — stepped slice: t[start..end:step] (and per-axis
+        # combinations). Args layout from the lowerer:
+        #   [obj, s0..s_{n-1}, e0..e_{n-1}, k0..k_{n-1}, rank]
+        # so total = 3*ndim + 2. Result is a fresh contiguous tensor (copy
+        # semantics, not view) — no `noalias` because v5.45.0 conservatively
+        # omits noalias on tensor-producing exports; the runtime returns a
+        # genuinely fresh tensor here so callers can rely on disjoint data.
+        if fn == "__mn_tensor_step_slice" and len(args) >= 5:
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            rank_idx = len(args) - 1
+            rank_v = (
+                self._coerce(args[rank_idx][0], args[rank_idx][1], I64)
+                if args[rank_idx][1] != I64
+                else args[rank_idx][0]
+            )
+            ndim = (len(args) - 2) // 3  # (total - tensor - rank) / 3
+            starts_arr = self._f("starts_arr")
+            ends_arr = self._f("ends_arr")
+            steps_arr = self._f("steps_arr")
+            self._L(f"{starts_arr} = alloca [{ndim} x i64]")
+            self._L(f"{ends_arr} = alloca [{ndim} x i64]")
+            self._L(f"{steps_arr} = alloca [{ndim} x i64]")
+            for d in range(ndim):
+                s_val = (
+                    self._coerce(args[1 + d][0], args[1 + d][1], I64)
+                    if args[1 + d][1] != I64
+                    else args[1 + d][0]
+                )
+                e_val = (
+                    self._coerce(args[1 + ndim + d][0], args[1 + ndim + d][1], I64)
+                    if args[1 + ndim + d][1] != I64
+                    else args[1 + ndim + d][0]
+                )
+                k_val = (
+                    self._coerce(args[1 + 2 * ndim + d][0], args[1 + 2 * ndim + d][1], I64)
+                    if args[1 + 2 * ndim + d][1] != I64
+                    else args[1 + 2 * ndim + d][0]
+                )
+                s_gep = self._f("sgep")
+                e_gep = self._f("egep")
+                k_gep = self._f("kgep")
+                self._L(
+                    f"{s_gep} = getelementptr inbounds [{ndim} x i64], ptr {starts_arr}, i64 0, i64 {d}"  # noqa: E501
+                )
+                self._L(
+                    f"{e_gep} = getelementptr inbounds [{ndim} x i64], ptr {ends_arr}, i64 0, i64 {d}"  # noqa: E501
+                )
+                self._L(
+                    f"{k_gep} = getelementptr inbounds [{ndim} x i64], ptr {steps_arr}, i64 0, i64 {d}"  # noqa: E501
+                )
+                self._L(f"store i64 {s_val}, ptr {s_gep}")
+                self._L(f"store i64 {e_val}, ptr {e_gep}")
+                self._L(f"store i64 {k_val}, ptr {k_gep}")
+            self._ensure("__mn_tensor_step_slice", PTR, [PTR, PTR, PTR, PTR, I64])
+            r = self._f("tstepslice")
+            self._L(
+                f"{r} = call ptr @__mn_tensor_step_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, ptr {steps_arr}, i64 {rank_v})"  # noqa: E501
             )
             self._tensor_vars.append(i.dest.name)
             self._put(i.dest, r, PTR)

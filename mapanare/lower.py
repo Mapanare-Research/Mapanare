@@ -4359,16 +4359,51 @@ class MIRLowerer:
         self._emit(Call(dest=void_dest, fn_name=fn_name, args=[obj, rank_val] + indices + [val]))
 
     def _lower_tensor_slice(self, obj: Value, items: list[Any]) -> Value:
-        """Lower tensor[0..2, :] to __mn_tensor_slice call (v4.45.0)."""
-        from mapanare.ast_nodes import IndexItem
+        """Lower tensor[0..2, :] (and v5.45.0 stepped form) to runtime call.
+
+        Picks `__mn_tensor_slice` when no axis has a step expression;
+        picks `__mn_tensor_step_slice` when any axis does. Step defaults
+        to 1 on axes without one. Literal step <= 0 is rejected at lower
+        time (a diagnostic; reverse iteration is reserved for v6.0).
+        Non-literal step is backstopped by a runtime check in the C
+        runtime — see __mn_tensor_step_slice.
+        """
+        from mapanare.ast_nodes import IndexItem, IntLiteral, UnaryExpr
+
+        def _literal_step_value(step_expr: Any) -> int | None:
+            """Extract a literal int from `N` or `-N`. None means non-literal."""
+            if isinstance(step_expr, IntLiteral):
+                return step_expr.value
+            if (
+                isinstance(step_expr, UnaryExpr)
+                and step_expr.op == "-"
+                and isinstance(step_expr.operand, IntLiteral)
+            ):
+                return -step_expr.operand.value
+            return None
 
         rank = len(items)
-        # Build starts and ends arrays
+        # Build starts, ends, steps arrays. Detect any explicit step
+        # to decide which runtime function to call.
         start_vals: list[Value] = []
         end_vals: list[Value] = []
+        step_vals: list[Value] = []
+        any_stepped = False
 
         for d, it in enumerate(items):
             if isinstance(it, IndexItem):
+                # Literal step <= 0 — reject at lower time. Catches both
+                # `0` (IntLiteral) and `-N` (UnaryExpr(-, IntLiteral)).
+                # Non-literal step gets a runtime check. Reverse iteration
+                # is reserved for v6.0+ (needs strides).
+                if it.step is not None:
+                    lit = _literal_step_value(it.step)
+                    if lit is not None and lit <= 0:
+                        raise RuntimeError(
+                            f"stepped slice requires positive integer step; "
+                            f"got {lit} at axis {d}"
+                        )
+
                 if it.kind == "range":
                     start_vals.append(
                         self._lower_expr(it.start) if it.start else self._const_int(0)
@@ -4391,20 +4426,39 @@ class MIRLowerer:
                     self._emit(BinOp(dest=end_dest, op=BinOpKind.ADD, lhs=sv, rhs=one))
                     end_vals.append(end_dest)
 
+                # v5.45.0 Ts.3.B — step (1 if absent).
+                if it.step is not None:
+                    step_vals.append(self._lower_expr(it.step))
+                    any_stepped = True
+                else:
+                    step_vals.append(self._const_int(1))
+
         # Build result tensor type
         elem_ti = (
             obj.ty.type_info.args[0] if obj.ty.type_info.args else TypeInfo(kind=TypeKind.FLOAT)
         )
         result_ty = MIRType(TypeInfo(kind=TypeKind.TENSOR, args=[elem_ti]))
-        dest = self._make_value(ty=result_ty, prefix="tslice")
         rank_val = self._const_int(rank)
-        self._emit(
-            Call(
-                dest=dest,
-                fn_name="__mn_tensor_slice",
-                args=[obj] + start_vals + end_vals + [rank_val],
+
+        if any_stepped:
+            # v5.45.0 Ts.3.B — stepped slice (copy semantics).
+            dest = self._make_value(ty=result_ty, prefix="tstepslice")
+            self._emit(
+                Call(
+                    dest=dest,
+                    fn_name="__mn_tensor_step_slice",
+                    args=[obj] + start_vals + end_vals + step_vals + [rank_val],
+                )
             )
-        )
+        else:
+            dest = self._make_value(ty=result_ty, prefix="tslice")
+            self._emit(
+                Call(
+                    dest=dest,
+                    fn_name="__mn_tensor_slice",
+                    args=[obj] + start_vals + end_vals + [rank_val],
+                )
+            )
         return dest
 
     def _const_int(self, val: int) -> Value:
