@@ -33,7 +33,29 @@ Requirements: `gcc`, `llvm` (llvm-as, llc). No Python.
 
 ## Updating the Seed
 
-When the self-hosted compiler changes, update the seed:
+When a syntax change in `mapanare/self/*.mn` lands that the current
+seed can't parse — e.g. v5.48.1's Te.3.D.5 migration of
+`mnc_all.mn` to colon-block syntax which the v0.6.0 seed segfaulted
+on — update the seed.
+
+### Automated (preferred)
+
+Trigger `.github/workflows/update-bootstrap-seed.yml` from the
+GitHub Actions UI ("Update Bootstrap Seed"). The workflow:
+
+1. Builds `mapanare/self/mnc-stage1` on an `ubuntu-latest` runner via
+   `python scripts/build_stage1.py`.
+2. Verifies the new binary compiles colon-block source AND
+   `mapanare/self/mnc_all.mn` to valid IR.
+3. Runs `bash scripts/build_from_seed.sh` end-to-end with the new
+   seed staged — falsifies any case where the seed wouldn't make the
+   bootstrap CI gate green.
+4. Strips + checksums, then opens a PR against the triggering branch
+   with `bootstrap/seed/linux-x86_64/{mnc,mnc.sha256}` updated.
+
+Review the PR (the workflow log shows verification output) and merge.
+
+### Manual (when CI isn't available)
 
 1. **Verify correctness first:**
    ```bash

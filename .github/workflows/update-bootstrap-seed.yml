@@ -1,0 +1,181 @@
+name: Update Bootstrap Seed
+
+# Manually-triggered workflow that rebuilds the
+# ``bootstrap/seed/linux-x86_64/mnc`` binary from current self-host
+# sources and opens a PR with the new binary + sha256.
+#
+# Origin: v5.49.0 / v5.48.2 — the v0.6.0 frozen seed predates
+# colon-block syntax (introduced via the v5.13–v5.21 terseness arc and
+# extended by v5.48.0 Te.3.D for single-line stmt-block colon shorthand).
+# v5.48.1's Te.3.D.5 migrated ``mapanare/self/mnc_all.mn`` to colon-block;
+# the seed segfaulted parsing it on every CI run thereafter. This
+# workflow promotes a fresh ``mnc-stage1`` (built via Python bootstrap on
+# the runner) to the new seed, restoring the bootstrap-from-seed CI gate.
+#
+# Trigger: GitHub Actions UI → Workflows → Update Bootstrap Seed → Run
+# workflow. Provide a short reason (becomes the commit / PR body).
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why update the seed? (commit context, e.g. "v5.48.2 colon-block compat")'
+        required: true
+        default: 'v5.48.2 — bootstrap seed update for Te.3.D colon-block compat'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build-linux-x86_64:
+    name: Build Linux x86_64 seed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install LLVM + clang + gcc
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y llvm clang gcc
+          # Resolve a generic ``clang`` symlink — Ubuntu installs as
+          # ``clang-18`` per the repo metadata.
+          if ! command -v clang >/dev/null; then
+              sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+          fi
+          clang --version | head -1
+          gcc --version | head -1
+
+      - name: Install Mapanare (editable)
+        run: pip install -e ".[dev]"
+
+      - name: Build stage1 via Python bootstrap
+        run: python scripts/build_stage1.py
+
+      - name: Verify stage1 compiles + handles colon-block syntax
+        run: |
+          set -euo pipefail
+          ./mapanare/self/mnc-stage1 --version
+          # Smoke: emit IR for a colon-block-only source. v0.6.0 seed
+          # would segfault on this; the new seed must succeed.
+          cat > /tmp/colon_smoke.mn <<'EOF'
+          fn main():
+              if 1 == 1: print("colon-block ok")
+              for i in 0..3:
+                  print(str(i))
+          EOF
+          ./mapanare/self/mnc-stage1 emit-llvm /tmp/colon_smoke.mn > /tmp/colon_smoke.ll
+          test -s /tmp/colon_smoke.ll
+          echo "  colon-block smoke OK ($(wc -l < /tmp/colon_smoke.ll) lines IR)"
+          # Also smoke against the actual source the seed has to parse —
+          # mnc_all.mn after v5.48.1's Te.3.D.5 migration.
+          ./mapanare/self/mnc-stage1 emit-llvm mapanare/self/mnc_all.mn > /tmp/full_smoke.ll
+          test -s /tmp/full_smoke.ll
+          echo "  mnc_all.mn smoke OK ($(wc -l < /tmp/full_smoke.ll) lines IR)"
+
+      - name: Stage seed binary + sha256
+        run: |
+          set -euo pipefail
+          mkdir -p bootstrap/seed/linux-x86_64
+          # Strip per the bootstrap/seed/README.md procedure (step 2).
+          strip -o bootstrap/seed/linux-x86_64/mnc mapanare/self/mnc-stage1
+          chmod +x bootstrap/seed/linux-x86_64/mnc
+          cd bootstrap/seed/linux-x86_64
+          sha256sum mnc > mnc.sha256
+          ls -la
+          echo "--- new seed metadata ---"
+          file mnc
+          du -h mnc
+          cat mnc.sha256
+
+      - name: Sanity — new seed reproduces the bootstrap pipeline
+        run: |
+          set -euo pipefail
+          # The whole point: ``build_from_seed.sh`` should now succeed
+          # with the new seed in place. This test is the falsifiability
+          # anchor for the workflow's correctness.
+          bash scripts/build_from_seed.sh
+          ./mnc --version
+          echo "  bootstrap-from-seed pipeline GREEN with new seed"
+
+      - name: Upload seed artifact (for manual download / inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-seed-linux-x86_64
+          path: |
+            bootstrap/seed/linux-x86_64/mnc
+            bootstrap/seed/linux-x86_64/mnc.sha256
+          retention-days: 14
+
+      - name: Open PR with the new seed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REASON: ${{ github.event.inputs.reason }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="bot/update-bootstrap-seed-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git add bootstrap/seed/linux-x86_64/mnc bootstrap/seed/linux-x86_64/mnc.sha256
+          git commit -m "Update bootstrap seed (linux-x86_64) — $REASON
+
+          Built by .github/workflows/update-bootstrap-seed.yml on
+          ubuntu-latest GitHub Actions runner.
+
+          Verification (in workflow log):
+            - Stage1 builds via python scripts/build_stage1.py
+            - Compiles colon-block test source to valid IR
+            - Compiles mapanare/self/mnc_all.mn to valid IR
+            - bash scripts/build_from_seed.sh succeeds end-to-end with
+              the new seed (the bootstrap-from-seed CI gate that the
+              v0.6.0 seed failed)
+
+          Triggered by: @$ACTOR"
+
+          git push -u origin "$BRANCH"
+
+          gh pr create \
+            --base "${{ github.ref_name }}" \
+            --head "$BRANCH" \
+            --title "Update bootstrap seed (linux-x86_64): $REASON" \
+            --body "## Why
+
+          $REASON
+
+          ## What changed
+
+          - \`bootstrap/seed/linux-x86_64/mnc\` rebuilt from current
+            self-host sources via \`python scripts/build_stage1.py\` on
+            an \`ubuntu-latest\` GitHub Actions runner.
+          - \`bootstrap/seed/linux-x86_64/mnc.sha256\` refreshed.
+
+          ## Verification (workflow log)
+
+          - \`./mnc --version\` returns the expected version.
+          - Compiles a colon-block-only test source to valid IR
+            (the v0.6.0 seed would segfault on this).
+          - Compiles \`mapanare/self/mnc_all.mn\` (post-v5.48.1
+            Te.3.D.5 migration) to valid IR.
+          - \`bash scripts/build_from_seed.sh\` succeeds end-to-end —
+            the bootstrap-from-seed CI gate that the v0.6.0 seed failed.
+
+          ## Followups
+
+          - \`darwin-arm64\` and \`darwin-x86_64\` seeds are not present
+            in \`bootstrap/seed/\` today; if/when those platforms need
+            bootstrap-without-Python support, this workflow can be
+            extended with matching \`runs-on: macos-14\` and
+            \`runs-on: macos-13\` jobs. \`build_from_seed.sh\` falls
+            back to \`scripts/build_stage1.py\` on platforms missing
+            a seed.
+
+          Triggered by: @$ACTOR
+          Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
