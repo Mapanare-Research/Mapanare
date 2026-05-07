@@ -242,6 +242,49 @@ FIXTURES: list[tuple[str, str]] = [
         "v5481_brace_in_string_literal",
         "fn classify(ch: String) -> String:\n    if ch == \"{\": return \"LBRACE\"\n    return \"OTHER\"\n",
     ),
+    # ---- v5.50.0 Te.3.E.1 — multi-stmt `;`-bearing single-line arm ----
+    (
+        "v550_arm_semi_let_return",
+        "fn f(e: Int) -> List<Int>:\n    match e:\n        1 => let x: Int = 1; return [x]\n        _ => return []\n",
+    ),
+    (
+        "v550_arm_semi_assign_return",
+        "fn f(e: Int) -> Int:\n    let mut r: Int = 0\n    match e:\n        1 => r = 10; return r\n        _ => return 0\n",
+    ),
+    (
+        "v550_arm_semi_in_brace_form",
+        "fn f(e: Int) -> List<Int> {\n    match e {\n        1 => { let x: Int = 1; return [x] },\n        _ => return []\n    }\n}\n",
+    ),
+    # ---- v5.50.0 Te.3.E.2 — multi-line `Pat =>:` colon form ----
+    (
+        "v550_arm_open_basic",
+        "fn f(x: Int) -> Int:\n    match x:\n        1 =>:\n            let r: Int = 10\n            return r\n        _ => return 0\n",
+    ),
+    (
+        "v550_arm_open_two_arms",
+        "fn f(x: Int) -> Int:\n    match x:\n        1 =>:\n            let r: Int = 10\n            return r\n        2 =>:\n            let s: Int = 20\n            return s\n        _ => return 0\n",
+    ),
+    (
+        "v550_arm_open_mixed_with_singleline",
+        "fn f(x: Int) -> Int:\n    match x:\n        1 => return 1\n        2 =>:\n            let r: Int = 0\n            return r\n        _ => return 0\n",
+    ),
+    # ---- v5.50.0 Te.3.E.2 — comma-tracking on dedent close ----
+    # Pre-fix the comma was attached to the OPENER line `Pat => {,`
+    # instead of the closer `},` — the LALR parser then rejected.
+    (
+        "v550_comma_on_closer_not_opener",
+        "match x:\n    1 =>:\n        return 1\n    2 => return 2\n",
+    ),
+    # ---- v5.50.0 — combined Te.3.E.1 + Te.3.E.2 in same match ----
+    (
+        "v550_combined_e1_e2",
+        "fn classify(x: Int) -> String:\n    match x:\n        0 => return \"zero\"\n        1 =>:\n            let s: String = \"one\"\n            return s\n        _ => let label: String = \"other\"; return label\n",
+    ),
+    # ---- v5.50.0 — multi-line arm body with nested if (cascade) ----
+    (
+        "v550_arm_open_nested_if",
+        "fn f(d: Int) -> Bool:\n    match d:\n        1 =>:\n            if d == 1:\n                return true\n            return false\n        _ => return false\n",
+    ),
 ]
 
 

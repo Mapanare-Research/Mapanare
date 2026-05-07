@@ -478,7 +478,9 @@ class TestFormatterMigration:
         out = to_terse(src)
         assert _norm(parse(src)) == _norm(parse(out))
 
-    def test_multi_stmt_arm_kept_as_brace(self) -> None:
+    def test_multi_stmt_arm_migrates_to_semicolon_form(self) -> None:
+        # v5.48.0 Te.3.D kept ``;``-bearing arm bodies as brace form;
+        # v5.50.0 Te.3.E.1 introduces the ``;``-separated colon form.
         from mapanare.format import to_terse
 
         src = (
@@ -489,8 +491,7 @@ class TestFormatterMigration:
             "}\n"
         )
         out = to_terse(src)
-        # Multi-stmt arm body has no shorthand; brace form preserved.
-        assert "{ let empty: List<Int> = []; return empty }" in out
+        assert "_ => let empty: List<Int> = []; return empty" in out
 
     def test_if_else_inline_kept_as_brace(self) -> None:
         from mapanare.format import to_terse

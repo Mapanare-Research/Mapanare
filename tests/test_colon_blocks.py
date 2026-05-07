@@ -163,13 +163,15 @@ class TestToTerseRules:
         out = to_terse(src)
         assert out == format_source(src)
 
-    # v5.17.0 Sh.A.1: regression — match arms must not be rewritten to
-    # `=>:`, which is invalid syntax. Multi-line arms keep braces;
-    # empty arms `=> {}` keep braces. Matches that contain any
-    # multi-line arm body stay entirely in brace form because the
-    # `_indent_to_braces` preprocessor cannot track brace nesting
-    # inside match bodies.
-    def test_to_terse_preserves_multiline_match_arm(self) -> None:
+    # v5.17.0 Sh.A.1 → v5.50.0 Te.3.E.2: multi-line arm bodies now have
+    # a colon form (``Pat =>:``) and migrate cleanly. The pre-v5.50.0
+    # invariant ("matches with multi-line arms stay verbatim") is
+    # explicitly retired by Te.3.E.2 — the ``=>:`` token sequence is
+    # the new grammar, and the verbatim workaround in
+    # ``_find_match_verbatim_lines`` was rescoped to expression-context
+    # openers only. Empty arms (``Pat => {}``) still keep brace form
+    # because there is no semantically equivalent colon form.
+    def test_to_terse_migrates_multiline_match_arm(self) -> None:
         src = (
             "fn f(d: Definition) -> Bool {\n"
             "    match d {\n"
@@ -184,11 +186,12 @@ class TestToTerseRules:
             "}\n"
         )
         out = to_terse(src)
-        # Match block stayed in brace form (entire match was multi-line)
-        assert "match d {" in out
-        assert "FnDef(fd) => {" in out
-        # The invalid `=>:` form must NEVER appear
-        assert "=>:" not in out
+        # Multi-line arm body migrated to colon form
+        assert "FnDef(fd) =>:" in out
+        # Outer match also in colon form now
+        assert "match d:" in out
+        # Empty arm body still keeps brace form (no colon equivalent)
+        assert "_ => {}" in out
         # Round-trips to a parseable AST.
         from mapanare.parser import parse
 

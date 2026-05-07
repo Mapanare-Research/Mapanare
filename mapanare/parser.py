@@ -2411,6 +2411,7 @@ def _indent_to_braces(source: str) -> str:
                 indent_stack.pop()
                 close_indent = "    " * indent_stack[-1][0]
                 out.append(f"{close_indent}}}")
+                indent_stack[-1][2] = len(out) - 1  # v5.50.0 Te.3.E.2
             out.append(raw)
             i += 1
             continue
@@ -2438,6 +2439,7 @@ def _indent_to_braces(source: str) -> str:
                 indent_stack.pop()
                 close_indent = "    " * indent_stack[-1][0]
                 out.append(f"{close_indent}}}")
+                indent_stack[-1][2] = len(out) - 1  # v5.50.0 Te.3.E.2
             if indent_stack[-1][0] > level:
                 indent_stack.pop()
                 prefix = "    " * level
@@ -2469,6 +2471,12 @@ def _indent_to_braces(source: str) -> str:
             indent_stack.pop()
             close_indent = "    " * indent_stack[-1][0]
             out.append(f"{close_indent}}}")
+            # v5.50.0 Te.3.E.2: a closer line is the new "last child" of
+            # its parent block. Without this, when a multi-line arm body
+            # (``Pat =>:`` ... dedent) closes inside a comma-body match,
+            # the next sibling's comma would be appended to the OPENER
+            # line (``Pat => {,``) instead of the closer (``},``).
+            indent_stack[-1][2] = len(out) - 1
 
         if stripped.endswith(":"):
             body = content[:-1].rstrip()
@@ -2646,18 +2654,23 @@ def _rewrite_arm_stmts_in_line(line: str) -> str:
         while word_end < n and (shadow[word_end].isalpha() or shadow[word_end] == "_"):
             word_end += 1
         word = shadow[body_start:word_end]
-        if word not in _ARM_STMT_KEYWORDS:
-            continue
         # The next char after the keyword must be a word-boundary
         # (whitespace, comma, brace, paren, end-of-line). Reject if it
         # is a word continuation (``return_value``).
         if word_end < n and (shadow[word_end].isalnum() or shadow[word_end] == "_"):
             continue
-        # Walk the body to its close (depth-0 ``,`` or ``}`` or EOL).
+        # v5.50.0 Te.3.E.1: walk the body and detect any depth-0 ``;``.
+        # A multi-stmt body (``Pat => let X = []; return X``) is a
+        # statement-arm regardless of first keyword and must be wrapped
+        # in braces for the LALR parser. Single-stmt bodies still
+        # require the first word to be in ``_ARM_STMT_KEYWORDS``
+        # (``return``, ``break``, ...) — bare expressions like
+        # ``Pat => 1 + 2`` remain expression-arms.
         depth = 0
         body_end = word_end
         in_b_str = False
         in_b_char = False
+        has_semi_at_depth0 = False
         while body_end < n:
             bc = line[body_end]
             if in_b_str:
@@ -2694,7 +2707,11 @@ def _rewrite_arm_stmts_in_line(line: str) -> str:
                 depth -= 1
             elif bc == "," and depth == 0:
                 break
+            elif bc == ";" and depth == 0:
+                has_semi_at_depth0 = True
             body_end += 1
+        if word not in _ARM_STMT_KEYWORDS and not has_semi_at_depth0:
+            continue
         body_text = line[body_start:body_end].rstrip()
         if not body_text:
             continue
@@ -2760,6 +2777,24 @@ def count_user_brace_block_openers(source: str) -> int:
     (``let p = Point {`` on a line by itself), which are absent from
     the corpus and vanishingly rare in canonical style. Block
     comments (``/* ... */``) are not stripped.
+
+    v5.50.0 Te.3.E.X — exclude non-deprecated forms that have no
+    colon migration target:
+
+    - Rule (b) refinement: single-line ``match X { ... }`` (kw is
+      ``match`` AND the matching ``}`` is on the same line). Inline
+      match expressions / statements have no single-line colon form;
+      forcing ``match X:`` multi-line would lose density.
+    - Rule (b) refinement: single-line chained ``if X { ... } else { ... }``
+      (kw is ``if`` / ``else`` AND matching ``}`` is on the same line
+      AND the chain extends past the close). Single-line
+      ``if`` / ``else`` shorthand only handles a single tail; the
+      chained form has no equivalent.
+    - Rule (b) refinement: expression-context ``if`` (preceded by
+      ``=`` / ``->`` / ``,`` / ``(`` / ``[`` / ``return`` / ``da``).
+      Expression-position if-else requires braces.
+    - Rule (c) refinement: ``Pat => {}`` empty arm body. No
+      semantically equivalent colon form (``Pat =>:`` followed by what?).
     """
     count = 0
     in_str = False
@@ -2834,6 +2869,10 @@ def count_user_brace_block_openers(source: str) -> int:
             # Rule (c): immediately preceded by `=>` (WS only between).
             rstripped = prefix.rstrip()
             if rstripped.endswith("=>"):
+                # v5.50.0 Te.3.E.X: exclude ``Pat => {}`` empty arm
+                # body — no colon form is semantically equivalent.
+                if tail < len(line_code) and line_code[tail] == "}":
+                    continue
                 count += 1
                 continue
 
@@ -2886,6 +2925,59 @@ def count_user_brace_block_openers(source: str) -> int:
                     break
                 k += 1
             if not saw_eq:
+                # v5.50.0 Te.3.E.X — counter refinements per audit §5.3.
+                # Find the matching ``}`` at depth 0 on this same
+                # line. Returns -1 if the close is on a later line.
+                close_idx = -1
+                d = 1
+                jj = idx + 1
+                while jj < len(line_code):
+                    cc = line_code[jj]
+                    if cc == "{":
+                        d += 1
+                    elif cc == "}":
+                        d -= 1
+                        if d == 0:
+                            close_idx = jj
+                            break
+                    jj += 1
+
+                # Re-extract the kw word — it lives at latest_kw_pos.
+                kw_end = latest_kw_pos
+                while kw_end < idx and (line_code[kw_end].isalnum() or line_code[kw_end] == "_"):
+                    kw_end += 1
+                kw = line_code[latest_kw_pos:kw_end]
+
+                # Rule (b) refinement 1: single-line ``match X { ... }``.
+                if kw == "match" and close_idx >= 0:
+                    continue
+
+                # Rule (b) refinement 2: single-line chained
+                # ``if X { ... } else { ... }``. Triggers when (a) the
+                # matching ``}`` is on this line, AND (b) the next
+                # non-WS chars after the close are ``else``. The
+                # ``else { ... }`` half is also excluded because it
+                # too has its match on the same line and is part of
+                # the chain.
+                if kw in ("if", "else") and close_idx >= 0:
+                    after = line_code[close_idx + 1 :].lstrip()
+                    if after.startswith("else") or kw == "else":
+                        continue
+
+                # Rule (b) refinement 3: expression-context ``if``.
+                # Look at chars before the kw position (after the
+                # current scope_start). If the immediately-prior
+                # non-WS token is ``=`` / ``->`` / ``,`` / ``(`` /
+                # ``[`` / ``return`` / ``da``, this is an expr-position
+                # ``if`` (e.g. ``let r = if c { 1 } else { 2 }``).
+                if kw == "if":
+                    before_kw = line_code[scope_start:latest_kw_pos].rstrip()
+                    if (
+                        before_kw.endswith(("=", "->", ",", "(", "[", "return", " da"))
+                        or before_kw == "da"
+                    ):
+                        continue
+
                 count += 1
 
     return count

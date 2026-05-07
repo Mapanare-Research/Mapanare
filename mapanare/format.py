@@ -302,10 +302,11 @@ def _migrate_one_line_arm_body(content: str) -> str:
         if "{" in body_shadow or "}" in body_shadow:
             pos = close + 1
             continue
-        # Skip multi-statement bodies (top-level `;`).
-        if ";" in body_shadow:
-            pos = close + 1
-            continue
+        # v5.50.0 Te.3.E.1: ``;``-bearing multi-stmt bodies are
+        # accepted. The parser's ``_rewrite_arm_stmt_shorthand``
+        # re-wraps them in ``{ }`` on round-trip via the depth-0
+        # ``;`` detection. Pre-v5.50.0 this branch rejected ``;``
+        # bodies because the parser didn't accept the colon form.
         # Build replacement: from arrow+2 (after `=>`) through close+1
         # (after `}`). Replace ``{ body }`` with `` body``.
         replacement = " " + body
@@ -361,8 +362,11 @@ def _migrate_one_line_stmt_block(leading: str, content: str) -> str | None:
     body_shadow = shadow[open_idx + 1 : close_idx]
     if "{" in body_shadow or "}" in body_shadow:
         return None
-    if ";" in body_shadow:
-        return None
+    # v5.50.0 Te.3.E.1: ``;``-bearing multi-stmt bodies migrate
+    # symmetrically with arm bodies. ``if X { a = 1; b = 2 }`` →
+    # ``if X: a = 1; b = 2`` round-trips through
+    # ``_indent_to_braces`` + grammar BLOCK rule (which accepts
+    # ``;``-separated statements).
     # Reject match-arm shape (``Pat =>``); arm migration is handled
     # separately by ``_migrate_one_line_arm_body``.
     if head.endswith("=>"):
@@ -502,26 +506,23 @@ def _find_brace_close(lines: list[str], start_idx: int, opener_indent: int) -> i
 
 
 def _find_match_verbatim_lines(lines: list[str]) -> set[int]:
-    """Return line indices that lie within ``match`` blocks containing
-    at least one multi-line arm body.
+    """Return line indices inside expression-context brace blocks that
+    must stay verbatim under ``to_terse``.
 
-    Such matches must be preserved verbatim by ``to_terse`` because
-    ``_indent_to_braces`` does not track brace nesting inside match
-    bodies — converting the outer ``match X {`` to ``match X:`` while
-    keeping the inner multi-line arm in brace form would cause the
-    preprocessor to insert a spurious ``,`` after every nested colon
-    opener, producing ``match X { ... { Pat => {, ... }`` (invalid).
+    v5.50.0 Te.3.E.3 rescoped: the only verbatim case left is
+    expression-position openers like ``let x = if cond {`` or
+    ``let m: Map<K,V> = #{`` — the grammar requires braces in those
+    positions. The previous match-with-multiline-arm verbatim mark
+    was a workaround for the missing multi-line arm-body grammar;
+    Te.3.E.2 added ``Pat =>:`` colon form, so match blocks (statement
+    or expression context) and their arm bodies now rewrite cleanly
+    via the main ``to_terse`` loop.
 
     Detection is line-based and trusts canonical formatting (4-space
-    indent, no inline ``{``/``}`` in unusual positions). For a
-    ``match X {`` opener at column ``k``, the match body lives at
-    column ``k+4``. A multi-line arm opener is any body-level line
-    ending with `` {`` whose stripped content (minus the trailing
-    `` {``) ends with ``=>``. The match block ends at the first line
-    at column ``k`` or less whose content begins with ``}``.
-
-    The returned set covers every line from the ``match`` opener
-    through its closing ``}`` inclusive.
+    indent, no inline ``{``/``}`` in unusual positions). For an
+    expression-context opener at column ``k``, the verbatim range
+    runs from the opener line through the matching ``}`` closer
+    inclusive.
     """
     verbatim: set[int] = set()
     n = len(lines)
@@ -537,12 +538,12 @@ def _find_match_verbatim_lines(lines: list[str]) -> set[int]:
         # Strip the leading indent off the opener body to test prefix
         body_text = opener_body[leading_len:] if len(opener_body) >= leading_len else opener_body
 
-        # Non-statement-block opener (e.g. ``let x = if cond {`` —
-        # an expression-context if). The grammar requires braces here,
+        # Expression-context opener (e.g. ``let x = if cond {``,
+        # ``let m: Map<K,V> = #{``). The grammar requires braces here,
         # so mark the entire ``{ ... }`` range as verbatim. ``=>``
-        # arm bodies and continuation lines (``} else {``) inside the
-        # range are also kept verbatim by the main loop's verbatim
-        # propagation.
+        # arm bodies are NOT expression-context openers — they are
+        # statement-or-expression contexts handled by the colon-form
+        # rewrite (Te.3.E.2).
         if not _looks_like_stmt_block_opener(body_text) and not body_text.endswith("=>"):
             end_idx = _find_brace_close(lines, i, leading_len)
             if end_idx >= 0:
@@ -550,43 +551,7 @@ def _find_match_verbatim_lines(lines: list[str]) -> set[int]:
                     verbatim.add(k)
                 i = end_idx + 1
                 continue
-            i += 1
-            continue
-
-        if not body_text.startswith("match "):
-            i += 1
-            continue
-        # Scan the match body. Body lines start at leading_len + 4.
-        # The match closes at a line whose content starts with `}` at
-        # column leading_len.
-        body_indent = leading_len + 4
-        has_multiline_arm = False
-        end_idx = -1
-        for j in range(i + 1, n):
-            t = lines[j].rstrip()
-            if not t:
-                continue
-            t_lstripped = t.lstrip()
-            t_indent = len(t) - len(t_lstripped)
-            if t_lstripped.startswith(("//", "#")):
-                continue
-            # Closer of the match block?
-            if t_indent <= leading_len and t_lstripped.startswith("}"):
-                end_idx = j
-                break
-            # Multi-line arm opener at body level?
-            if t_indent == body_indent and t.endswith(" {"):
-                arm_opener = t[:-2].rstrip()
-                if arm_opener.endswith("=>"):
-                    has_multiline_arm = True
-            # Don't break on multi-line arm; keep scanning to find
-            # the close so we can mark the entire range.
-        if has_multiline_arm and end_idx >= 0:
-            for k in range(i, end_idx + 1):
-                verbatim.add(k)
-            i = end_idx + 1
-        else:
-            i += 1
+        i += 1
     return verbatim
 
 
@@ -703,13 +668,14 @@ def to_terse(source: str) -> str:
 
         if content.endswith(" {"):
             opener = content[:-2].rstrip()
-            # Match-arm body (``Pat => {``): grammar requires brace or
-            # single-expr arm, so leave the line alone and track the
-            # block as verbatim. Inner content (e.g. ``if x {`` inside
-            # the arm) still gets the normal colon-block rewrite.
+            # v5.50.0 Te.3.E.2 + Te.3.E.3: multi-line arm body
+            # (``Pat => {``) becomes colon form (``Pat =>:``). Pre-
+            # v5.50.0 this branch kept the brace and pushed a verbatim
+            # block; the verbatim mark was a workaround for the
+            # missing multi-line arm-body grammar, now obsolete.
             if opener.endswith("=>"):
-                out.append(f"{leading}{content}")
-                block_stack.append((leading, False, "verbatim"))
+                out.append(f"{leading}{opener}:")
+                block_stack.append((leading, False, "colon"))
                 continue
             comma_body = any(opener.startswith(p) for p in _COMMA_BODY_OPENERS)
             out.append(f"{leading}{opener}:")
@@ -782,15 +748,19 @@ def to_terse(source: str) -> str:
 def to_braces(source: str) -> str:
     """Rewrite colon-block syntax to brace-block syntax.
 
-    Thin wrapper around the parser's ``_indent_to_braces``
-    preprocessor, then ``format_source`` for canonical whitespace.
-    Idempotent on already-brace-style source (the preprocessor's
-    fast path returns unchanged input when no ``:``-suffixed lines
-    are present).
-    """
-    from mapanare.parser import _indent_to_braces
+    Thin wrapper around the parser's ``_indent_to_braces`` +
+    ``_rewrite_arm_stmt_shorthand`` preprocessors, then
+    ``format_source`` for canonical whitespace. Idempotent on
+    already-brace-style source (the preprocessors' fast paths
+    return unchanged input).
 
-    return format_source(_indent_to_braces(source))
+    v5.50.0 Te.3.E.3: also runs ``_rewrite_arm_stmt_shorthand`` so
+    arm-body sugar (``Pat => return X``, ``Pat => let X = []; return X``)
+    is restored to brace form on round-trip.
+    """
+    from mapanare.parser import _indent_to_braces, _rewrite_arm_stmt_shorthand
+
+    return format_source(_rewrite_arm_stmt_shorthand(_indent_to_braces(source)))
 
 
 # ---------------------------------------------------------------------------

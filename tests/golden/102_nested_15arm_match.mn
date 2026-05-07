@@ -48,28 +48,25 @@ pub fn make_internal() -> Result<String, NetworkError>:
     da Err(Internal("oops"))
 
 fn classify(vk: Result<String, NetworkError>):
-    match vk {
-        Ok(k) => { print("UNEXPECTED Ok: " + k) },
-        Err(e) => {
-            match e {
-                BadUrl(s) => { print("k=1") },
-                UnsupportedScheme(s) => { print("k=2") },
-                NoKey(s) => { print("k=3") },
-                ConnectFailed(s) => { print("k=4") },
-                ListenFailed(s) => { print("k=5") },
-                HmacFailed(s) => { print("k=6") },
-                Replay(s) => { print("k=7") },
-                ProtoVersion(s) => { print("k=8") },
-                ProtoOversized(s) => { print("k=9") },
-                ProtoMalformed(s) => { print("k=10") },
-                Timeout(s) => { print("k=11") },
-                TransportLost(s) => { print("k=12") },
-                AgentNotFound(s) => { print("k=13") },
-                SerdeError(s) => { print("k=14") },
-                Internal(s) => { print("k=15") }
-            }
-        }
-    }
+    match vk:
+        Ok(k) => print("UNEXPECTED Ok: " + k)
+        Err(e) =>:
+            match e:
+                BadUrl(s) => print("k=1")
+                UnsupportedScheme(s) => print("k=2")
+                NoKey(s) => print("k=3")
+                ConnectFailed(s) => print("k=4")
+                ListenFailed(s) => print("k=5")
+                HmacFailed(s) => print("k=6")
+                Replay(s) => print("k=7")
+                ProtoVersion(s) => print("k=8")
+                ProtoOversized(s) => print("k=9")
+                ProtoMalformed(s) => print("k=10")
+                Timeout(s) => print("k=11")
+                TransportLost(s) => print("k=12")
+                AgentNotFound(s) => print("k=13")
+                SerdeError(s) => print("k=14")
+                Internal(s) => print("k=15")
 
 fn main() -> Int:
     classify(validate_key("short"))

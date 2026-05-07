@@ -4336,6 +4336,10 @@ MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
                 mn_ib_buf_append(&cl, indent_buf.data, indent_buf.len);
                 mn_ib_buf_append_char(&cl, '}');
                 mn_ib_lines_push(&out, &cl);
+                /* v5.50.0 Te.3.E.2: closer is the new last child of
+                 * the parent block — without this the next sibling's
+                 * comma lands on the opener line, not the closer. */
+                stack.items[stack.len - 1].prev_child_idx = out.len - 1;
             }
             MnIB_LineBuf line;
             mn_ib_buf_init(&line);
@@ -4365,6 +4369,7 @@ MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
                 mn_ib_buf_append(&cl, indent_buf.data, indent_buf.len);
                 mn_ib_buf_append_char(&cl, '}');
                 mn_ib_lines_push(&out, &cl);
+                stack.items[stack.len - 1].prev_child_idx = out.len - 1;  /* v5.50.0 Te.3.E.2 */
             }
             MnIB_Frame *top = &stack.items[stack.len - 1];
             if (top->level > level) {
@@ -4438,6 +4443,7 @@ MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
             mn_ib_buf_append(&cl, indent_buf.data, indent_buf.len);
             mn_ib_buf_append_char(&cl, '}');
             mn_ib_lines_push(&out, &cl);
+            stack.items[stack.len - 1].prev_child_idx = out.len - 1;  /* v5.50.0 Te.3.E.2 */
         }
 
         /* v5.48.1 Te.3.D.4.3: single-line statement-block colon
@@ -4722,16 +4728,20 @@ static void mn_arm_rewrite_line(MnIB_LineBuf *out, const char *line, int64_t n) 
         int64_t word_end = body_start;
         while (word_end < n && mn_arm_is_alpha_underscore(shadow[word_end]))
             word_end += 1;
-        if (!mn_arm_is_stmt_kw(shadow + body_start, word_end - body_start))
-            continue;
+        int is_kw = mn_arm_is_stmt_kw(shadow + body_start, word_end - body_start);
         /* Word-boundary check after keyword: reject if the next char is
          * an id continuation (e.g. `return_value`). */
         if (word_end < n && mn_arm_is_id_char(shadow[word_end])) continue;
 
-        /* Walk body to first depth-0 `,` / `)`/`]`/`}` / `//` / EOL. */
+        /* v5.50.0 Te.3.E.1: walk the body and detect any depth-0 `;`.
+         * Multi-stmt bodies (`Pat => let x = []; return x`) wrap to
+         * brace form regardless of first keyword; bare expressions
+         * (`Pat => 1 + 2`) are NOT statement-arms unless they begin
+         * with a stmt keyword. */
         int64_t depth = 0;
         int64_t body_end = word_end;
         int in_b_str = 0, in_b_char = 0;
+        int has_semi_at_depth0 = 0;
         while (body_end < n) {
             char bc = line[body_end];
             if (in_b_str) {
@@ -4756,9 +4766,12 @@ static void mn_arm_rewrite_line(MnIB_LineBuf *out, const char *line, int64_t n) 
                 depth -= 1;
             } else if (bc == ',' && depth == 0) {
                 break;
+            } else if (bc == ';' && depth == 0) {
+                has_semi_at_depth0 = 1;
             }
             body_end += 1;
         }
+        if (!is_kw && !has_semi_at_depth0) continue;
 
         /* body_text = line[body_start:body_end].rstrip() — verify
          * non-empty before recording. */
@@ -5047,6 +5060,11 @@ MN_EXPORT int64_t __mn_count_user_brace_block_openers(MnString source) {
             }
             if (back >= line_start + 1 &&
                 masked[back] == '>' && masked[back - 1] == '=') {
+                /* v5.50.0 Te.3.E.X: exclude ``Pat => {}`` empty arm
+                 * body — no semantically equivalent colon form. */
+                if (tail < line_end && masked[tail] == '}') {
+                    continue;
+                }
                 count += 1;
                 continue;
             }
@@ -5082,6 +5100,82 @@ MN_EXPORT int64_t __mn_count_user_brace_block_openers(MnString source) {
             if (mn_bd_has_standalone_eq(masked, latest_kw_pos, idx)) {
                 continue;
             }
+
+            /* v5.50.0 Te.3.E.X — counter refinements per audit §5.3. */
+            /* Find matching `}` at depth 0 on this line. */
+            int64_t close_idx = -1;
+            {
+                int64_t d = 1;
+                int64_t jj = idx + 1;
+                while (jj < line_end) {
+                    char cc = masked[jj];
+                    if (cc == '{') {
+                        d += 1;
+                    } else if (cc == '}') {
+                        d -= 1;
+                        if (d == 0) { close_idx = jj; break; }
+                    }
+                    jj += 1;
+                }
+            }
+
+            /* Re-extract kw at latest_kw_pos. */
+            int64_t kw_end = latest_kw_pos;
+            while (kw_end < idx && mn_bd_is_id_char(masked[kw_end])) kw_end += 1;
+            int64_t kw_len = kw_end - latest_kw_pos;
+            const char *kw_str = masked + latest_kw_pos;
+            int kw_is_match = (kw_len == 5 && memcmp(kw_str, "match", 5) == 0);
+            int kw_is_if    = (kw_len == 2 && memcmp(kw_str, "if", 2) == 0);
+            int kw_is_else  = (kw_len == 4 && memcmp(kw_str, "else", 4) == 0);
+
+            /* Refinement 1: single-line ``match X { ... }``. */
+            if (kw_is_match && close_idx >= 0) continue;
+
+            /* Refinement 2: single-line chained ``if X { ... } else { ... }``. */
+            if ((kw_is_if || kw_is_else) && close_idx >= 0) {
+                if (kw_is_else) {
+                    continue;
+                }
+                /* For if: check whether content after the close
+                 * starts with ``else`` (chain continuation). */
+                int64_t after = close_idx + 1;
+                while (after < line_end &&
+                       (masked[after] == ' ' || masked[after] == '\t')) after += 1;
+                if (after + 4 <= line_end &&
+                    memcmp(masked + after, "else", 4) == 0) {
+                    continue;
+                }
+            }
+
+            /* Refinement 3: expression-context ``if`` — preceded by
+             * ``=`` / ``->`` / ``,`` / ``(`` / ``[`` / ``return`` / ``da``. */
+            if (kw_is_if) {
+                int64_t bk = latest_kw_pos - 1;
+                while (bk >= scope_start &&
+                       (masked[bk] == ' ' || masked[bk] == '\t')) bk -= 1;
+                if (bk >= scope_start) {
+                    char bc = masked[bk];
+                    if (bc == '=' || bc == ',' || bc == '(' || bc == '[') {
+                        continue;
+                    }
+                    if (bc == '>' && bk - 1 >= scope_start && masked[bk - 1] == '-') {
+                        continue;  /* `->` */
+                    }
+                    /* `return` / `da` — id token immediately preceding. */
+                    if (mn_bd_is_id_char(bc)) {
+                        int64_t wend = bk + 1;
+                        int64_t ws = bk;
+                        while (ws >= scope_start && mn_bd_is_id_char(masked[ws])) ws -= 1;
+                        ws += 1;
+                        int64_t wl = wend - ws;
+                        if ((wl == 6 && memcmp(masked + ws, "return", 6) == 0) ||
+                            (wl == 2 && memcmp(masked + ws, "da", 2) == 0)) {
+                            continue;
+                        }
+                    }
+                }
+            }
+
             count += 1;
         }
         if (pos >= n) break;
