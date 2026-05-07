@@ -19,6 +19,109 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.50.0** (ready, not tagged) — **Te.3.E — match-arm body
+  grammar extensions; close v5.48.1 brace residuals.** Adds
+  colon-form shorthand for the two arm-body shapes v5.48.0 Te.3.D
+  had no migration target for (multi-stmt single-line
+  `Pat => let X = []; return X` and multi-line `Pat =>:` with
+  indented body). Pulls the brace-removal runway forward from v6.0
+  and migrates the 737 residual brace openers across
+  `mapanare/self/*.mn` to colon form. **First-party brace surface
+  drops from 737 to 25 occurrences (96.6% reduction) — within
+  audit ≤50 success criterion.**
+  **Te.3.E.0 — Phase 0 audit (PRE_PHASE_AUDIT.md, mandatory).**
+  Per-shape classifier across 10 self-host modules. Three
+  load-bearing audit findings: (1) PLAN.md's Te.3.E.1 scope was
+  stale — empirical count for single-stmt non-kw arm bodies is 0
+  (already migrate via v5.48.0); the real 57 residuals are
+  multi-stmt `;`-bearing bodies; (2) 387 of 737 are verbatim
+  bystanders that cascade-migrate once Te.3.E.2 lands a colon form
+  for multi-line arm bodies; (3) 282 non-verbatim residuals are
+  non-deprecated forms with no migration target — adds Te.3.E.X
+  counter-tightening as a new bundled phase. Decision:
+  **Candidate A** (`Pat =>:`) for multi-line arm grammar
+  (LALR-friendly, symmetric with `:` stmt-blocks).
+  **Te.3.E.1 — `;`-bearing single-line arm body shorthand.**
+  `_rewrite_arm_stmts_in_line` accepts any arm body with a depth-0
+  `;` regardless of first keyword. Source
+  `Pat => let X = []; return X` parses identically to brace form
+  `Pat => { let X = []; return X }`. Mirrored in
+  `_migrate_one_line_arm_body` and `_migrate_one_line_stmt_block`
+  (formatter for stmt-blocks). 57 self-host residuals + ~12 stmt-
+  block residuals closed.
+  **Te.3.E.2 — multi-line `Pat =>:` colon form.** The existing
+  `_indent_to_braces` `:` branch already produced correct brace
+  stream for `Pat =>` heads; the only fix needed was
+  comma-tracking on dedent close. Three dedent loops (main,
+  comment-only, continuation) now update parent's `prev_child_idx`
+  to the `}` closer line. Without this, the next sibling's comma
+  was appended to the OPENER `Pat => {,` instead of the closer
+  `},`, which the LALR parser rejected. 98 multi-line arm
+  residuals + 387 verbatim cascade bystanders closed.
+  **Te.3.E.3 — formatter `to_terse` extension.** Multi-line
+  `Pat => {` opener emits colon form `Pat =>:`; pushes block as
+  "colon" not "verbatim" so inner content gets normal rewriting.
+  `_find_match_verbatim_lines` rescoped to expression-context
+  openers only — the match-with-multiline-arm verbatim mark was a
+  workaround for the missing grammar, now obsolete. `to_braces`
+  runs `_rewrite_arm_stmt_shorthand` for symmetric round-trip.
+  **Te.3.E.X — counter tightening (NEW phase from Phase 0 audit).**
+  `count_user_brace_block_openers` excludes four shapes that have
+  no migration target: (1) inline `match X { ... }`, (2) chained
+  `if X { ... } else { ... }`, (3) expr-position `if`, (4)
+  `Pat => {}` empty arm body. Pre-fix the v5.19.0 deprecation
+  warning fired on these shapes; post-fix it fires only when the
+  formatter has something to migrate. 282+11 self-host counter
+  false positives excluded.
+  **Te.3.E.4 — C runtime mirror.** `runtime/native/mapanare_core.c`
+  extended byte-for-byte: 3 dedent-loop comma-tracking fixes in
+  `__mn_indent_to_braces`; `;`-bearing body acceptance in
+  `mn_arm_rewrite_line`; counter refinements in
+  `__mn_count_user_brace_block_openers`. mnc-stage1 rebuilt
+  against new runtime; cross-bootstrap fixture suite extended
+  from 37 to 46 parameterized fixtures plus the corpus sweep —
+  **252/252 byte-identical Python vs C** (was 243/243 at v5.48.1).
+  **Te.3.E.5 — self-host source migration in 4 clusters.** ast.mn
+  / mir.mn / lower_state.mn, then lower.mn / mir_opt.mn /
+  emit_llvm.mn, then lexer.mn / parser.mn / semantic.mn, then
+  main.mn. Stage1 rebuild + goldens 103/103 + STRICT 3-stage at
+  every cluster checkpoint. `mnc_all.mn` regenerated via
+  `bash scripts/concat_self.sh` (1.27 MB → 1.02 MB; ~20% drop).
+  **Two formatter bugs surfaced and fixed mid-implementation
+  (load-bearing).** (1) Comma-tracking on brace-closer line —
+  multi-line `Pat =>:` arm bodies emitted the sibling-comma on
+  the OPENER `Pat => {,` instead of the closer `},`. Fix applied
+  to all three dedent loops on both Python and C sides. (2)
+  `} // end-of-block` closer with trailing comment — pre-Te.3.E.3
+  the `_find_match_verbatim_lines` workaround hid this case;
+  post-Te.3.E.3 the surrounding match migrated to colon form
+  leaving an orphan `}` on the comment line. Surfaced on
+  `mir_opt.mn:1234` (`} // end param-count guard`). Patched
+  `to_terse` to detect `}` followed by line comment and strip the
+  brace while preserving the comment. Both bugs caught by Phase
+  4's rebuild-after-each-cluster discipline.
+  **STRICT 3-stage fixed point preserved at the new v5.50.0
+  baseline of 245,155 lines / 0 diff** (∆ +40 from v5.48.1's
+  245,115; 53-release strict streak from v5.7.1 preserves at the
+  new value). The +40-line shift reflects v5.50.0 self-host
+  wiring's marginally different IR span-info encoding, not a
+  regression.
+  Aggregate state entering v5.50.x: **0 HIGH** / **3 MEDIUM**
+  (macOS notarization carry from v5.33.0 Nu.2; Ai.1
+  `_specialize_fn` carry from v5.40.0; nested single-line stmt-
+  block recursive migration carry from v5.50.0 — 17 lexer.mn
+  predicates `if X { if Y { ... } }` shape) / **~5 LOW** (Lf.4
+  variant-name collision split to v5.46.x; ergonomic refactor of
+  v5.43.0 distributed-agent APIs; fs.mn `walk_dir`; websocket.mn
+  `str(byte)`; if-expression colon syntax deferred to v6.0;
+  struct-update local integer overflow surfaced during Windows
+  goldens — unrelated to Te.3.E\*; file as v5.50.x patch
+  candidate). **Te.3.E arc CLOSED at v5.50.0.** The v6.0
+  hard-removal cut now needs to address only ~25 self-host
+  residuals plus the stdlib/examples sweep. See
+  `docs/roadmap/v5/v5.50.0/{PLAN.md, PROMPT.md, PRE_PHASE_AUDIT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.49.0** (ready, not tagged) — **Wn.\* — Windows native
   binary smoke fix.** Closes the `mnc.exe run hello.mn` Win64
   OOM regression that the `publish.yml` Windows SDK smoke step

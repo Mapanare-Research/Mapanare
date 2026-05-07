@@ -1,7 +1,27 @@
 # Mapanare Language Specification
 
-**Version:** 5.49.0
-**Status:** Live — synced to the v5.49.0 cut (2026-05-07)
+**Version:** 5.50.0
+**Status:** Live — synced to the v5.50.0 cut (2026-05-07)
+
+> **v5.50.0 — Te.3.E — match-arm body grammar extensions; close
+> v5.48.1 brace residuals.** Adds colon-form shorthand for the two
+> arm-body shapes v5.48.0 Te.3.D had no migration target for:
+> multi-stmt single-line `Pat => let X = []; return X` (Te.3.E.1)
+> and multi-line `Pat =>:` with indented body (Te.3.E.2). Pulls the
+> brace-form removal runway forward from v6.0; legacy brace source
+> still parses with the v5.19.0 deprecation warning unchanged.
+> Te.3.E.X tightens `count_user_brace_block_openers` to stop
+> flagging non-deprecated forms (inline match, chained if-else,
+> expr-position if, empty arm). Te.3.E.4 mirrors all changes
+> byte-for-byte to `runtime/native/mapanare_core.c`; cross-bootstrap
+> fixture suite extended from 37 to 46 + corpus sweep — 252/252
+> Python ≡ C. Te.3.E.5 migrates `mapanare/self/*.mn` to colon-form
+> arm bodies in 4 clusters; **first-party brace surface drops from
+> 737 to 25 (96.6% reduction)** within audit ≤50 success criterion.
+> STRICT 3-stage fixed point preserves at the new v5.50.0 baseline
+> of 245,155 lines / 0 diff (∆ +40 from v5.48.1's 245,115;
+> 53-release strict streak from v5.7.1). Goldens 103/103 at every
+> cluster checkpoint. **Te.3.E arc CLOSED.**
 
 > **v5.49.0 — Wn.\* — Windows native binary smoke fix.** Closes
 > the `mnc.exe run hello.mn` Win64 OOM regression on every

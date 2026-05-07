@@ -7,6 +7,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.50.0] - 2026-05-07
+
+**Te.3.E — match-arm body grammar extensions; close v5.48.1 brace
+residuals.** Adds colon-form shorthand for the two arm-body shapes
+v5.48.0 Te.3.D had no migration target for: multi-stmt single-line
+arm bodies (`Pat => let X = []; return X`) and multi-line arm
+bodies (`Pat =>:` followed by indented body). Pulls the brace-form
+removal runway forward from v6.0 and migrates the 737 residual
+brace openers across `mapanare/self/*.mn` to colon form.
+**First-party brace surface drops from 737 to 25 occurrences across
+10 self-host modules — 96.6% reduction.**
+
+The user-facing intent: "fix the warnings, don't suppress them."
+v5.49.0 made the deprecation warning smarter (skip when formatter
+is a fixed point); v5.50.0 makes the formerly-non-migratable
+shapes migratable. Legacy brace source still parses with the
+v5.19.0 deprecation warning unchanged; v6.0 hard-removal is the
+cut date.
+
+### Added
+
+- **Te.3.E.1 — multi-stmt `;`-bearing single-line arm body
+  shorthand.** `_rewrite_arm_stmts_in_line` accepts any arm body
+  with a depth-0 `;` (multi-stmt) regardless of first keyword.
+  Source `Pat => let X = []; return X` parses identically to brace
+  form `Pat => { let X = []; return X }`. Mirrored in
+  `_migrate_one_line_arm_body` (formatter) and
+  `_migrate_one_line_stmt_block` (formatter for stmt-blocks).
+  ~30 LOC parser + ~20 LOC formatter. 57 self-host residuals
+  closed.
+- **Te.3.E.2 — multi-line `Pat =>:` colon form.** The existing
+  `_indent_to_braces` `:` branch already produced correct brace
+  stream for `Pat =>` heads; the only required fix was
+  comma-tracking on dedent close. Three dedent loops (main,
+  comment-only, continuation) now update parent's `prev_child_idx`
+  to the `}` closer line. Without this, multi-line arm bodies
+  emitted the sibling-comma on the OPENER `Pat => {,` instead of
+  the closer `},`, which the LALR parser rejected. ~6 LOC parser
+  + ~80 LOC formatter (drops the `_find_match_verbatim_lines`
+  match-with-multiline-arm path, rescoped to expression-context
+  openers only). 98 multi-line arm residuals + 387 verbatim
+  cascade bystanders closed.
+- **Te.3.E.X — counter tightening.** New phase added by Phase 0
+  audit per §5.3. `count_user_brace_block_openers` excludes four
+  shapes that have no migration target: (1) inline `match X { ... }`,
+  (2) chained `if X { ... } else { ... }` on one line, (3)
+  expression-context `if` (preceded by `=` / `->` / `,` / `(` /
+  `[` / `return` / `da`), (4) `Pat => {}` empty arm body. Pre-fix
+  the v5.19.0 deprecation warning fired on these shapes; post-fix
+  it fires only when the formatter has something to migrate to.
+  ~30 LOC parser. 282+11 self-host counter false positives closed.
+- **`_migrate_one_line_stmt_block` `;`-filter relaxed** for stmt-
+  blocks (additional Te.3.E.1 extension). `if X: a = 1; b = 2`
+  round-trips through `_indent_to_braces` to brace stream
+  `if X { a = 1; b = 2 }` which the grammar accepts. Closed
+  ~12 self-host residuals (parser.mn / lower.mn / lexer.mn
+  guards).
+- **C runtime mirror** (`runtime/native/mapanare_core.c`).
+  `__mn_indent_to_braces`, `mn_arm_rewrite_line`, and
+  `__mn_count_user_brace_block_openers` extended byte-for-byte
+  with the Python changes. mnc-stage1 rebuilt with new runtime;
+  cross-bootstrap fixture suite extended from 37 to 46
+  parameterized fixtures plus the corpus sweep — 252/252
+  byte-identical Python vs C.
+- **`tests/test_arm_body_shorthand.py`** — 11 new falsifiability
+  tests for Te.3.E.1 + Te.3.E.2 (round-trip AST equivalence,
+  comma-on-closer-not-opener, mixed single/multi-line arms).
+- **`tests/test_brace_counter.py`** — 14 new falsifiability tests
+  for Te.3.E.X counter refinements (per-rule positive + negative
+  cases, regression safety for shapes that must still count).
+- **9 new cross-bootstrap fixtures** in
+  `tests/bootstrap/test_indent_preprocessor.py` covering every
+  v5.50.0 shape under English + Spanish keyword variants.
+- **`tests/golden/102_nested_15arm_match.mn`** auto-reformatted
+  by `mnc fmt` to new colon form (IR equivalent — golden link
+  test passes 104/104).
+
+### Changed
+
+- **STRICT 3-stage fixed-point baseline** raised from v5.48.1's
+  245,115 lines to **245,155 lines** (∆ +40, 0 diff). The
+  53-release strict streak from v5.7.1 preserves at the new
+  value. v5.50.0+ preserves from here. The +40-line shift
+  reflects v5.50.0 self-host wiring (the `=>:` colon form
+  output is more compact than `Pat => {` brace form, but the
+  IR generated for the migrated source is marginally larger
+  due to slightly different span-info encoding).
+- **`mapanare/self/*.mn` self-host source migrated** to v5.50.0
+  colon-form arm bodies in 4 clusters (`ast.mn` / `mir.mn` /
+  `lower_state.mn`, then `lower.mn` / `mir_opt.mn` / `emit_llvm.mn`,
+  then `lexer.mn` / `parser.mn` / `semantic.mn`, then `main.mn`).
+  Stage1 rebuild + goldens 103/103 + STRICT verification at every
+  cluster checkpoint. `mnc_all.mn` regenerated via
+  `scripts/concat_self.sh` (1.27 MB → 1.02 MB; ~20% drop in
+  concatenated source).
+- **`_find_match_verbatim_lines` rescoped** to expression-context
+  openers only. The match-with-multiline-arm verbatim mark was a
+  workaround for the missing grammar — Te.3.E.2 makes it dead
+  code for arm bodies. The function still handles
+  `let x = if cond { ... }` / `let m = #{ ... }` expression-context
+  openers where the grammar requires braces.
+- **`to_braces` runs `_rewrite_arm_stmt_shorthand` after
+  `_indent_to_braces`** for symmetric round-trip. Arm-body sugar
+  (`Pat => return X`, `Pat => let X = []; return X`) is now
+  restored to brace form on `to_braces(to_terse(s))`.
+
+### Fixed
+
+- **`} // end-of-block` closer with trailing comment** (formatter).
+  Pre-Te.3.E.3 the `_find_match_verbatim_lines` workaround hid
+  this case (the whole match block stayed verbatim). After
+  Te.3.E.3 the surrounding match migrated to colon form, leaving
+  an orphan `}` on the comment line. Surfaced mid-Phase 4 on
+  `mir_opt.mn:1234` (`} // end param-count guard`). Patched
+  `to_terse` to detect `}` followed by `//`/`#` line comment and
+  strip the brace while preserving the comment indented at the
+  parent block's level.
+- **Comma-tracking on brace-closer line** in `_indent_to_braces`.
+  Pre-Te.3.E.2 the dedent loop emitted `}` without updating the
+  parent's `prev_child_idx`. For multi-line `Pat =>:` arm bodies
+  with single-line sibling arms, the next sibling's comma was
+  appended to the OPENER `Pat => {,` instead of the closer `},`.
+  Fix applied to all three dedent loops (main, comment-only,
+  continuation); mirrored in C runtime.
+
+**Te.3.E arc CLOSED at v5.50.0.** The remaining 25 residuals are
+nested single-line stmt-blocks (`if X { if Y { ... } }` shapes —
+character-class predicates in `lexer.mn`) that require recursive
+migration of nested stmt-blocks; bounded as v5.50.x patch or v6.0
+PLAN input. Aggregate state entering v5.50.x: **0 HIGH** /
+**3 MEDIUM** (macOS notarization carry from v5.33.0 Nu.2; Ai.1
+`_specialize_fn` carry from v5.40.0; nested single-line stmt-block
+recursive migration carry from v5.50.0) / **~5 LOW**.
+
+See `docs/roadmap/v5/v5.50.0/{PLAN.md, PROMPT.md, PRE_PHASE_AUDIT.md,
+SESSION_REPORT.md}`.
+
+
 ## [5.49.0] - 2026-05-07
 
 **Wn.\* — Windows native binary smoke fix.** Closes the
@@ -12747,7 +12885,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.49.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.50.0...HEAD
+[5.50.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.49.0...v5.50.0
 [5.49.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.1...v5.49.0
 [5.48.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.0...v5.48.1
 [5.48.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.5...v5.48.0
