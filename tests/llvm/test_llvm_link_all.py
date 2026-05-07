@@ -59,6 +59,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 from _link_compat import darwin_link_extras  # noqa: E402, I001
+
 GOLDEN_DIR = REPO_ROOT / "tests" / "golden"
 STAGE1 = REPO_ROOT / "mapanare" / "self" / "mnc-stage1"
 RT_ARCHIVE = REPO_ROOT / "runtime" / "native" / "libmapanare_rt.a"
