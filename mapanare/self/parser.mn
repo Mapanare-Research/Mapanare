@@ -345,14 +345,11 @@ fn is_definition_start(tt: String) -> Bool:
 fn has_explicit_main(defs: List<Definition>) -> Bool:
     for i in 0..len(defs):
         let d: Definition = defs[i]
-        match d {
-            FnDef(fd) => {
-                if fd.name == "main" {
+        match d:
+            FnDef(fd) =>:
+                if fd.name == "main":
                     return true
-                }
-            },
             _ => {}
-        }
     return false
 
 pub fn parse(source: String, filename: String) -> Program:
@@ -1026,7 +1023,7 @@ struct FnDataResult:
 fn parse_fn_def_as_data(tokens: List<Token>, pos: Int, filename: String) -> FnDataResult:
     let mut p: Int = pos
     let mut is_pub: Bool = false
-    if peek_type(tokens, p) == "KW_PUB" { is_pub = true; p = p + 1 }
+    if peek_type(tokens, p) == "KW_PUB": is_pub = true; p = p + 1
     p = expect(tokens, p, "KW_FN")
     let name: String = peek_value(tokens, p)
     p = p + 1
@@ -1113,7 +1110,7 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
         let mut done_tp: Bool = false
         for _ in 0..20:
             if !done_tp:
-                if peek_type(tokens, p) == "GT" { p = p + 1; done_tp = true }
+                if peek_type(tokens, p) == "GT": p = p + 1; done_tp = true
                 if !done_tp: p = p + 1
 
     let first_name: String = peek_value(tokens, p)
@@ -1125,7 +1122,7 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
         let mut done_ta: Bool = false
         for _ in 0..20:
             if !done_ta:
-                if peek_type(tokens, p) == "GT" { p = p + 1; done_ta = true }
+                if peek_type(tokens, p) == "GT": p = p + 1; done_ta = true
                 if !done_ta: p = p + 1
 
     // Check for "impl Trait for Type { ... }" syntax
@@ -1528,23 +1525,18 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
             // multi-param lambdas with zero params and undefined-variable
             // errors when their bodies referenced a, b, ...
             let mut params: List<Param> = []
-            match left {
-                Ident(name) => {
+            match left:
+                Ident(name) =>:
                     params.push(new_param(name, none))
-                },
-                ListLit(elems) => {
+                ListLit(elems) =>:
                     let mut li: Int = 0
-                    for _ in 0..32 {
-                        if li >= len(elems) { break }
+                    for _ in 0..32:
+                        if li >= len(elems): break
                         let elem: Expr = elems[li]
-                        if expr_kind(elem) == "ident" {
+                        if expr_kind(elem) == "ident":
                             params.push(new_param(expr_ident_name(elem), none))
-                        }
                         li = li + 1
-                    }
-                },
                 _ => {}
-            }
             return new_expr_result(Expr::Lambda(params, LambdaBody::ExprBody(body.expr)), body.pos)
 
     // Binary operator loop
@@ -1868,7 +1860,7 @@ fn split_interp_parts(s: String, filename: String) -> List<Expr>:
                     else:
                         if cj == "}":
                             depth = depth - 1
-                            if depth == 0 { found_close = true; break }
+                            if depth == 0: found_close = true; break
                     j = j + 1
                 if found_close == false:
                     // Unterminated `${...}` — fold the `$` into the

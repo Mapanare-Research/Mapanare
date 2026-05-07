@@ -546,7 +546,7 @@ pub fn instr_unaryop_operand(i: Instruction) -> Value:
 pub fn instr_struct_type(i: Instruction) -> MIRType:
     match i { StructInit(_, t, _) => return t, _ => return mir_void() }
 pub fn instr_struct_fields(i: Instruction) -> List<FieldPair>:
-    match i { StructInit(_, _, f) => return f, _ => { let empty: List<FieldPair> = []; return empty } }
+    match i { StructInit(_, _, f) => return f, _ => let empty: List<FieldPair> = []; return empty }
 
 // FieldGet
 pub fn instr_fieldget_obj(i: Instruction) -> Value:
@@ -566,15 +566,15 @@ pub fn instr_fieldset_val(i: Instruction) -> Value:
 pub fn instr_list_type(i: Instruction) -> MIRType:
     match i { ListInit(_, t, _) => return t, _ => return mir_void() }
 pub fn instr_list_elements(i: Instruction) -> List<Value>:
-    match i { ListInit(_, _, e) => return e, _ => { let empty: List<Value> = []; return empty } }
+    match i { ListInit(_, _, e) => return e, _ => let empty: List<Value> = []; return empty }
 
 // TensorInit (v4.42.0)
 pub fn instr_tensor_type(i: Instruction) -> MIRType:
     match i { TensorInit(_, t, _, _) => return t, _ => return mir_void() }
 pub fn instr_tensor_shape(i: Instruction) -> List<Int>:
-    match i { TensorInit(_, _, s, _) => return s, _ => { let empty: List<Int> = []; return empty } }
+    match i { TensorInit(_, _, s, _) => return s, _ => let empty: List<Int> = []; return empty }
 pub fn instr_tensor_elements(i: Instruction) -> List<Value>:
-    match i { TensorInit(_, _, _, e) => return e, _ => { let empty: List<Value> = []; return empty } }
+    match i { TensorInit(_, _, _, e) => return e, _ => let empty: List<Value> = []; return empty }
 
 // IndexGet
 pub fn instr_indexget_obj(i: Instruction) -> Value:
@@ -610,7 +610,7 @@ pub fn instr_map_key_type(i: Instruction) -> MIRType:
 pub fn instr_map_val_type(i: Instruction) -> MIRType:
     match i { MapInit(_, _, v, _) => return v, _ => return mir_void() }
 pub fn instr_map_pairs(i: Instruction) -> List<KVPair>:
-    match i { MapInit(_, _, _, p) => return p, _ => { let empty: List<KVPair> = []; return empty } }
+    match i { MapInit(_, _, _, p) => return p, _ => let empty: List<KVPair> = []; return empty }
 
 // EnumInit
 pub fn instr_enum_type(i: Instruction) -> MIRType:
@@ -618,7 +618,7 @@ pub fn instr_enum_type(i: Instruction) -> MIRType:
 pub fn instr_enum_variant(i: Instruction) -> String:
     match i { EnumInit(_, _, v, _) => return v, _ => return "" }
 pub fn instr_enum_payload(i: Instruction) -> List<Value>:
-    match i { EnumInit(_, _, _, p) => return p, _ => { let empty: List<Value> = []; return empty } }
+    match i { EnumInit(_, _, _, p) => return p, _ => let empty: List<Value> = []; return empty }
 
 // EnumTag
 pub fn instr_enumtag_val(i: Instruction) -> Value:
@@ -647,7 +647,7 @@ pub fn instr_wrapnone_type(i: Instruction) -> MIRType:
 pub fn instr_call_fn(i: Instruction) -> String:
     match i { Call(_, f, _) => return f, _ => return "" }
 pub fn instr_call_args(i: Instruction) -> List<Value>:
-    match i { Call(_, _, a) => return a, _ => { let empty: List<Value> = []; return empty } }
+    match i { Call(_, _, a) => return a, _ => let empty: List<Value> = []; return empty }
 
 // Return
 pub fn instr_return_val(i: Instruction) -> Option<Value>:
@@ -669,7 +669,7 @@ pub fn instr_branch_false(i: Instruction) -> String:
 pub fn instr_switch_tag(i: Instruction) -> Value:
     match i { Switch(t, _, _) => return t, _ => return void_value() }
 pub fn instr_switch_cases(i: Instruction) -> List<SwitchCase>:
-    match i { Switch(_, c, _) => return c, _ => { let empty: List<SwitchCase> = []; return empty } }
+    match i { Switch(_, c, _) => return c, _ => let empty: List<SwitchCase> = []; return empty }
 pub fn instr_switch_default(i: Instruction) -> String:
     match i { Switch(_, _, d) => return d, _ => return "" }
 
@@ -677,7 +677,7 @@ pub fn instr_switch_default(i: Instruction) -> String:
 pub fn instr_agent_type(i: Instruction) -> MIRType:
     match i { AgentSpawn(_, t, _) => return t, _ => return mir_void() }
 pub fn instr_agent_args(i: Instruction) -> List<Value>:
-    match i { AgentSpawn(_, _, a) => return a, _ => { let empty: List<Value> = []; return empty } }
+    match i { AgentSpawn(_, _, a) => return a, _ => let empty: List<Value> = []; return empty }
 
 // AgentSend
 pub fn instr_agentsend_agent(i: Instruction) -> Value:
@@ -715,15 +715,15 @@ pub fn instr_streamop_kind(i: Instruction) -> StreamOpKind:
 pub fn instr_streamop_source(i: Instruction) -> Value:
     match i { StreamOp(_, _, s, _) => return s, _ => return void_value() }
 pub fn instr_streamop_args(i: Instruction) -> List<Value>:
-    match i { StreamOp(_, _, _, a) => return a, _ => { let empty: List<Value> = []; return empty } }
+    match i { StreamOp(_, _, _, a) => return a, _ => let empty: List<Value> = []; return empty }
 
 // InterpConcat
 pub fn instr_concat_parts(i: Instruction) -> List<Value>:
-    match i { InterpConcat(_, p) => return p, _ => { let empty: List<Value> = []; return empty } }
+    match i { InterpConcat(_, p) => return p, _ => let empty: List<Value> = []; return empty }
 
 // Phi
 pub fn instr_phi_entries(i: Instruction) -> List<PhiEntry>:
-    match i { Phi(_, e) => return e, _ => { let empty: List<PhiEntry> = []; return empty } }
+    match i { Phi(_, e) => return e, _ => let empty: List<PhiEntry> = []; return empty }
 
 // Move (v5.4.0 Own.1 Phase 2)
 pub fn instr_move_val(i: Instruction) -> Value:

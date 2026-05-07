@@ -35,12 +35,10 @@ fn try_fold_instruction(inst: Instruction) -> Option<Instruction>:
     let a: Int = int(lhs.name)
     let b: Int = int(rhs.name)
     let result_opt: Option<Int> = fold_int_binop(op, a, b)
-    match result_opt {
-        Some(r) => {
+    match result_opt:
+        Some(r) =>:
             return Some(Instruction::Const(dest, mir_int(), toString(r)))
-        },
-        _ => { return none }
-    }
+        _ => return none
 
 fn constant_fold_block(bb: BasicBlock) -> BasicBlock:
     let mut new_instrs: List<Instruction> = []
@@ -53,13 +51,11 @@ fn constant_fold_block(bb: BasicBlock) -> BasicBlock:
             return bb
         let inst: Instruction = bb.instructions[i]
         let folded: Option<Instruction> = try_fold_instruction(inst)
-        match folded {
-            Some(new_inst) => {
+        match folded:
+            Some(new_inst) =>:
                 new_instrs.push(new_inst)
                 changed = true
-            },
-            _ => { new_instrs.push(inst) }
-        }
+            _ => new_instrs.push(inst)
         i = i + 1
     return bb
 
@@ -101,13 +97,11 @@ fn find_const_ty(consts: List<ConstEntry>, name: String) -> MIRType:
 
 fn replace_value(v: Value, consts: List<ConstEntry>) -> Value:
     let opt: Option<String> = find_const(consts, v.name)
-    match opt {
-        Some(cv) => {
+    match opt:
+        Some(cv) =>:
             let ct: MIRType = find_const_ty(consts, v.name)
             return new Value { name: cv, ty: ct }
-        },
-        _ => { return v }
-    }
+        _ => return v
 
 fn propagate_in_instruction(inst: Instruction, consts: List<ConstEntry>) -> Instruction:
     let ik: String = instr_kind(inst)
@@ -382,23 +376,20 @@ fn try_strength_reduce(inst: Instruction) -> Option<Instruction>:
     if ik != "binop": return none
     let op: BinOpKind = instr_binop_op(inst)
     // Only reduce Mod operations
-    match op {
-        Mod => {
+    match op:
+        Mod =>:
             let rhs: Value = instr_binop_rhs(inst)
             // RHS must be a constant integer
-            if rhs.ty.kind != TK_INT() { return none }
-            if rhs.name.starts_with("%") { return none }
+            if rhs.ty.kind != TK_INT(): return none
+            if rhs.name.starts_with("%"): return none
             let n: Int = int(rhs.name)
-            if is_power_of_two(n) {
+            if is_power_of_two(n):
                 let mask: Int = power_of_two_mask(n)
                 let mask_val: Value = new Value { name: toString(mask), ty: rhs.ty }
                 // x % 2^n → x & (2^n - 1)
                 return Some(Instruction::BinOp(instr_dest(inst), BinOpKind::And, instr_binop_lhs(inst), mask_val))
-            }
             return none
-        },
-        _ => { return none }
-    }
+        _ => return none
 
 fn strength_reduce_block(bb: BasicBlock) -> BasicBlock:
     let mut new_instrs: List<Instruction> = []
@@ -411,13 +402,11 @@ fn strength_reduce_block(bb: BasicBlock) -> BasicBlock:
             return bb
         let inst: Instruction = bb.instructions[i]
         let reduced: Option<Instruction> = try_strength_reduce(inst)
-        match reduced {
-            Some(new_inst) => {
+        match reduced:
+            Some(new_inst) =>:
                 new_instrs.push(new_inst)
                 changed = true
-            },
-            _ => { new_instrs.push(inst) }
-        }
+            _ => new_instrs.push(inst)
         i = i + 1
     return bb
 
@@ -521,26 +510,21 @@ fn count_calls(f: MIRFunction, lookup: List<FnLookupEntry>) -> List<CallCount>:
                 let fn_name: String = instr_call_fn(inst)
                 // Check if this function exists in lookup
                 let fn_opt: Option<MIRFunction> = find_fn_by_name(lookup, fn_name)
-                match fn_opt {
-                    Some(_) => {
+                match fn_opt:
+                    Some(_) =>:
                         // Find or create count entry
                         let mut found: Bool = false
                         let mut ci: Int = 0
-                        for _ in 0..1000 {
-                            if ci >= len(counts) { break }
-                            if counts[ci].name == fn_name {
+                        for _ in 0..1000:
+                            if ci >= len(counts): break
+                            if counts[ci].name == fn_name:
                                 counts[ci] = new CallCount { name: fn_name, count: counts[ci].count + 1 }
                                 found = true
                                 break
-                            }
                             ci = ci + 1
-                        }
-                        if found == false {
+                        if found == false:
                             counts.push(new CallCount { name: fn_name, count: 1 })
-                        }
-                    },
                     _ => {}
-                }
             ii = ii + 1
         bi = bi + 1
     counts
@@ -557,17 +541,14 @@ fn get_call_count(counts: List<CallCount>, name: String) -> Int:
 fn rename_value(v: Value, prefix: String, renames: List<ConstEntry>) -> Value:
     // Check if this value has been renamed
     let opt: Option<String> = find_const(renames, v.name)
-    match opt {
-        Some(new_name) => { return new Value { name: new_name, ty: v.ty } },
-        _ => {
+    match opt:
+        Some(new_name) => { return new Value { name: new_name, ty: v.ty } }
+        _ =>:
             // If it starts with %, rename with prefix
-            if v.name.starts_with("%") {
+            if v.name.starts_with("%"):
                 let new_name: String = "%" + prefix + v.name.substr(1, len(v.name) - 1)
                 return new Value { name: new_name, ty: v.ty }
-            }
             return v
-        }
-    }
 
 // v5.1.2 In.1: Replace one value name if it matches old_name.
 fn replace_use(v: Value, old_name: String, new_name: String) -> Value:
@@ -632,12 +613,10 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
     // Return
     if ik == "return":
         let rv: Option<Value> = instr_return_val(inst)
-        match rv {
-            Some(val) => {
+        match rv:
+            Some(val) =>:
                 return Instruction::Return(Some(replace_use(val, old_name, new_name)))
-            },
-            _ => { return inst }
-        }
+            _ => return inst
     // Call — rename args (and fn_name when it's an indirect-call SSA value)
     if ik == "call":
         let args: List<Value> = instr_call_args(inst)
@@ -725,14 +704,12 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
     // Return → Copy + Jump to merge
     if ik == "return":
         let ret_val: Option<Value> = instr_return_val(inst)
-        match ret_val {
-            Some(rv) => {
+        match ret_val:
+            Some(rv) =>:
                 let renamed_rv: Value = rename_value(rv, prefix, renames)
                 let ret_dest: Value = new Value { name: "%" + prefix + "retval", ty: renamed_rv.ty }
                 result.push(Instruction::Copy(ret_dest, renamed_rv))
-            },
             _ => {}
-        }
         result.push(Instruction::Jump(merge_label))
         return result
 
@@ -1123,14 +1100,11 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
         if ci >= len(call_counts): break
         let cc: CallCount = call_counts[ci]
         let callee_opt: Option<MIRFunction> = find_fn_by_name(lookup, cc.name)
-        match callee_opt {
-            Some(callee) => {
-                if should_inline(callee, cc.count) {
+        match callee_opt:
+            Some(callee) =>:
+                if should_inline(callee, cc.count):
                     eligible.push(cc.name)
-                }
-            },
             _ => {}
-        }
         ci = ci + 1
     if len(eligible) == 0: return f
 
@@ -1148,11 +1122,11 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                 if is_in_list(callee_name, eligible):
                     // Found an eligible call site — inline it
                     let callee_opt2: Option<MIRFunction> = find_fn_by_name(lookup, callee_name)
-                    match callee_opt2 {
-                        Some(callee) => {
+                    match callee_opt2:
+                        Some(callee) =>:
                             // Safety: skip if arg count != param count (name collision)
                             let call_args_pre: List<Value> = instr_call_args(inst)
-                            if len(call_args_pre) == len(callee.params) {
+                            if len(call_args_pre) == len(callee.params):
 
                             // Use block index + instruction index for unique prefix
                             let prefix: String = "_inl" + toString(bi) + "_" + toString(ii) + "_"
@@ -1162,22 +1136,19 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             let mut renames: List<ConstEntry> = []
                             let call_args: List<Value> = call_args_pre
                             let mut pi2: Int = 0
-                            for _ in 0..100 {
-                                if pi2 >= len(callee.params) { break }
-                                if pi2 < len(call_args) {
+                            for _ in 0..100:
+                                if pi2 >= len(callee.params): break
+                                if pi2 < len(call_args):
                                     renames.push(new ConstEntry { name: "%" + callee.params[pi2].name, value: call_args[pi2].name, ty: call_args[pi2].ty })
-                                }
                                 pi2 = pi2 + 1
-                            }
 
                             // Split: pre-call instructions
                             let mut pre_insts: List<Instruction> = []
                             let mut ki: Int = 0
-                            for _ in 0..10000 {
-                                if ki >= ii { break }
+                            for _ in 0..10000:
+                                if ki >= ii: break
                                 pre_insts.push(bb.instructions[ki])
                                 ki = ki + 1
-                            }
 
                             // Clone callee's single block instructions
                             let callee_entry: String = prefix + callee.blocks[0].label
@@ -1186,17 +1157,15 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             // Clone callee block
                             let mut cloned_insts: List<Instruction> = []
                             let mut cli: Int = 0
-                            for _ in 0..10000 {
-                                if cli >= len(callee.blocks[0].instructions) { break }
+                            for _ in 0..10000:
+                                if cli >= len(callee.blocks[0].instructions): break
                                 let cloned: List<Instruction> = clone_instr_for_inline(callee.blocks[0].instructions[cli], prefix, renames, merge_label)
                                 let mut cj: Int = 0
-                                for _ in 0..10 {
-                                    if cj >= len(cloned) { break }
+                                for _ in 0..10:
+                                    if cj >= len(cloned): break
                                     cloned_insts.push(cloned[cj])
                                     cj = cj + 1
-                                }
                                 cli = cli + 1
-                            }
 
                             // Post-call instructions
                             // v5.1.2 In.1: use a fresh dest name for the inlined result
@@ -1208,21 +1177,18 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             let call_dest: Value = instr_dest(inst)
                             let do_rename: Bool = call_dest.name.starts_with("%")
                             let fresh_dest_name: String = "%" + prefix + "dst"
-                            if do_rename {
+                            if do_rename:
                                 let fresh_dest: Value = new Value { name: fresh_dest_name, ty: call_dest.ty }
                                 let ret_val: Value = new Value { name: "%" + prefix + "retval", ty: call_dest.ty }
                                 post_insts.push(Instruction::Copy(fresh_dest, ret_val))
-                            }
                             let mut pi3: Int = ii + 1
-                            for _ in 0..10000 {
-                                if pi3 >= len(bb.instructions) { break }
-                                if do_rename {
+                            for _ in 0..10000:
+                                if pi3 >= len(bb.instructions): break
+                                if do_rename:
                                     post_insts.push(replace_uses_in_instr(bb.instructions[pi3], call_dest.name, fresh_dest_name))
-                                } else {
+                                else:
                                     post_insts.push(bb.instructions[pi3])
-                                }
                                 pi3 = pi3 + 1
-                            }
 
                             // Build new block list
                             let mut new_blocks: List<BasicBlock> = []
@@ -1236,44 +1202,37 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             // and fix PHI predecessors (bb.label → merge_label)
                             let orig_label: String = bb.label
                             let mut ri: Int = bi + 1
-                            for _ in 0..5000 {
-                                if ri >= len(f.blocks) { break }
+                            for _ in 0..5000:
+                                if ri >= len(f.blocks): break
                                 let rbb: BasicBlock = f.blocks[ri]
                                 let mut renamed_instrs: List<Instruction> = []
                                 let mut rii: Int = 0
-                                for _ in 0..10000 {
-                                    if rii >= len(rbb.instructions) { break }
+                                for _ in 0..10000:
+                                    if rii >= len(rbb.instructions): break
                                     let mut rinst: Instruction = rbb.instructions[rii]
-                                    if do_rename {
+                                    if do_rename:
                                         rinst = replace_uses_in_instr(rinst, call_dest.name, fresh_dest_name)
-                                    }
                                     rinst = rename_phi_pred(rinst, orig_label, merge_label)
                                     renamed_instrs.push(rinst)
                                     rii = rii + 1
-                                }
                                 new_blocks.push(new BasicBlock { label: rbb.label, instructions: renamed_instrs })
                                 ri = ri + 1
-                            }
                             // Prepend blocks before current
                             let mut final_blocks: List<BasicBlock> = []
                             let mut fi: Int = 0
-                            for _ in 0..5000 {
-                                if fi >= bi { break }
+                            for _ in 0..5000:
+                                if fi >= bi: break
                                 final_blocks.push(f.blocks[fi])
                                 fi = fi + 1
-                            }
                             let mut ni: Int = 0
-                            for _ in 0..5000 {
-                                if ni >= len(new_blocks) { break }
+                            for _ in 0..5000:
+                                if ni >= len(new_blocks): break
                                 final_blocks.push(new_blocks[ni])
                                 ni = ni + 1
-                            }
 
                             return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: final_blocks, decorators: f.decorators, is_public: f.is_public }
-                            } // end param-count guard
-                        },
+                            // end param-count guard
                         _ => {}
-                    }
             ii = ii + 1
         bi = bi + 1
     return f
@@ -1474,12 +1433,10 @@ fn check_escape(f: MIRFunction, alloc_name: String) -> Bool:
             // Returned — escapes
             if ik == "return":
                 let rv: Option<Value> = instr_return_val(inst)
-                match rv {
-                    Some(val) => {
-                        if val.name == alloc_name { return true }
-                    },
+                match rv:
+                    Some(val) =>:
+                        if val.name == alloc_name: return true
                     _ => {}
-                }
             // Stored in a struct field — escapes
             if ik == "field_set":
                 if instr_fieldset_val(inst).name == alloc_name: return true

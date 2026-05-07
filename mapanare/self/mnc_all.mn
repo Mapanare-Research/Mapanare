@@ -392,7 +392,7 @@ pub fn expr_kind(e: Expr) -> String:
 pub fn expr_interp_parts(e: Expr) -> List<Expr>:
     match e:
         InterpString(p) => return p
-        _ => { let empty: List<Expr> = []; return empty }
+        _ => let empty: List<Expr> = []; return empty
 
 // Literal accessors
 pub fn expr_int_val(e: Expr) -> Int:
@@ -422,11 +422,11 @@ pub fn expr_binary_right(e: Expr) -> Expr:
 pub fn expr_chained_operands(e: Expr) -> List<Expr>:
     match e:
         ChainedCmp(operands, _) => return operands
-        _ => { let empty: List<Expr> = []; return empty }
+        _ => let empty: List<Expr> = []; return empty
 pub fn expr_chained_ops(e: Expr) -> List<String>:
     match e:
         ChainedCmp(_, ops) => return ops
-        _ => { let empty: List<String> = []; return empty }
+        _ => let empty: List<String> = []; return empty
 
 // Unary
 pub fn expr_unary_op(e: Expr) -> String:
@@ -438,7 +438,7 @@ pub fn expr_unary_operand(e: Expr) -> Expr:
 pub fn expr_call_callee(e: Expr) -> Expr:
     match e { Call(c, _) => return c, _ => return Expr::NoneLit }
 pub fn expr_call_args(e: Expr) -> List<Expr>:
-    match e { Call(_, a) => return a, _ => { let empty: List<Expr> = []; return empty } }
+    match e { Call(_, a) => return a, _ => let empty: List<Expr> = []; return empty }
 
 // MethodCall
 pub fn expr_method_obj(e: Expr) -> Expr:
@@ -446,7 +446,7 @@ pub fn expr_method_obj(e: Expr) -> Expr:
 pub fn expr_method_name(e: Expr) -> String:
     match e { MethodCall(_, n, _) => return n, _ => return "" }
 pub fn expr_method_args(e: Expr) -> List<Expr>:
-    match e { MethodCall(_, _, a) => return a, _ => { let empty: List<Expr> = []; return empty } }
+    match e { MethodCall(_, _, a) => return a, _ => let empty: List<Expr> = []; return empty }
 
 // FieldAccess
 pub fn expr_field_obj(e: Expr) -> Expr:
@@ -472,7 +472,7 @@ pub fn expr_ti_obj(e: Expr) -> Expr:
 pub fn expr_ti_indices(e: Expr) -> List<Expr>:
     match e:
         TensorIndex(_, xs) => return xs
-        _ => { let empty: List<Expr> = []; return empty }
+        _ => let empty: List<Expr> = []; return empty
 
 // v5.6.3 Sh.6 Phase 4 — IndexItem constructors + TensorSlice accessors.
 // v5.45.0 Ts.3.A — step field added; constructors default to NoneLit.
@@ -492,7 +492,7 @@ pub fn expr_slice_obj(e: Expr) -> Expr:
 pub fn expr_slice_items(e: Expr) -> List<IndexItem>:
     match e:
         TensorSlice(_, xs) => return xs
-        _ => { let empty: List<IndexItem> = []; return empty }
+        _ => let empty: List<IndexItem> = []; return empty
 
 // Pipe
 pub fn expr_pipe_left(e: Expr) -> Expr:
@@ -510,15 +510,15 @@ pub fn expr_range_inclusive(e: Expr) -> Bool:
 
 // Lambda
 pub fn expr_lambda_params(e: Expr) -> List<Param>:
-    match e { Lambda(p, _) => return p, _ => { let empty: List<Param> = []; return empty } }
+    match e { Lambda(p, _) => return p, _ => let empty: List<Param> = []; return empty }
 pub fn expr_lambda_body(e: Expr) -> LambdaBody:
-    match e { Lambda(_, b) => return b, _ => { let s: List<Stmt> = []; return LambdaBody::BlockBody(new_block(make_span(0,0,0,0), s)) } }
+    match e { Lambda(_, b) => return b, _ => let s: List<Stmt> = []; return LambdaBody::BlockBody(new_block(make_span(0,0,0,0), s)) }
 
 // Spawn
 pub fn expr_spawn_callee(e: Expr) -> Expr:
     match e { Spawn(c, _) => return c, _ => return Expr::NoneLit }
 pub fn expr_spawn_args(e: Expr) -> List<Expr>:
-    match e { Spawn(_, a) => return a, _ => { let empty: List<Expr> = []; return empty } }
+    match e { Spawn(_, a) => return a, _ => let empty: List<Expr> = []; return empty }
 
 // Sync
 pub fn expr_sync_inner(e: Expr) -> Expr:
@@ -540,26 +540,26 @@ pub fn expr_errorprop_inner(e: Expr) -> Expr:
 
 // ListLit
 pub fn expr_list_elements(e: Expr) -> List<Expr>:
-    match e { ListLit(l) => return l, _ => { let empty: List<Expr> = []; return empty } }
+    match e { ListLit(l) => return l, _ => let empty: List<Expr> = []; return empty }
 // TensorLit (v4.42.0)
 pub fn expr_tensor_elements(e: Expr) -> List<Expr>:
-    match e { TensorLit(l, _) => return l, _ => { let empty: List<Expr> = []; return empty } }
+    match e { TensorLit(l, _) => return l, _ => let empty: List<Expr> = []; return empty }
 pub fn expr_tensor_shape(e: Expr) -> List<Int>:
-    match e { TensorLit(_, s) => return s, _ => { let empty: List<Int> = []; return empty } }
+    match e { TensorLit(_, s) => return s, _ => let empty: List<Int> = []; return empty }
 pub fn expr_map_entries(e: Expr) -> List<MapEntry>:
-    match e { MapLit(m) => return m, _ => { let empty: List<MapEntry> = []; return empty } }
+    match e { MapLit(m) => return m, _ => let empty: List<MapEntry> = []; return empty }
 
 // Construct
 pub fn expr_construct_name(e: Expr) -> String:
     match e { Construct(n, _) => return n, _ => return "" }
 pub fn expr_construct_fields(e: Expr) -> List<FieldInit>:
-    match e { Construct(_, f) => return f, _ => { let empty: List<FieldInit> = []; return empty } }
+    match e { Construct(_, f) => return f, _ => let empty: List<FieldInit> = []; return empty }
 
 // ConstructUpdate (v5.20.1 Te.5.F.C)
 pub fn expr_construct_update_name(e: Expr) -> String:
     match e { ConstructUpdate(n, _, _) => return n, _ => return "" }
 pub fn expr_construct_update_overrides(e: Expr) -> List<FieldInit>:
-    match e { ConstructUpdate(_, f, _) => return f, _ => { let empty: List<FieldInit> = []; return empty } }
+    match e { ConstructUpdate(_, f, _) => return f, _ => let empty: List<FieldInit> = []; return empty }
 pub fn expr_construct_update_base(e: Expr) -> Expr:
     match e { ConstructUpdate(_, _, b) => return b, _ => return Expr::NoneLit }
 
@@ -569,7 +569,7 @@ pub fn expr_iflet_pattern(e: Expr) -> Pattern:
 pub fn expr_iflet_scrutinee(e: Expr) -> Expr:
     match e { IfLet(_, s, _, _) => return s, _ => return Expr::NoneLit }
 pub fn expr_iflet_then(e: Expr) -> Block:
-    match e { IfLet(_, _, t, _) => return t, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+    match e { IfLet(_, _, t, _) => return t, _ => let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) }
 pub fn expr_iflet_else(e: Expr) -> Option<Block>:
     match e { IfLet(_, _, _, eb) => return eb, _ => return none }
 
@@ -599,7 +599,7 @@ pub fn expr_assign_value(e: Expr) -> Expr:
 pub fn expr_if_cond(e: Expr) -> Expr:
     match e { If(c, _, _) => return c, _ => return Expr::NoneLit }
 pub fn expr_if_then(e: Expr) -> Block:
-    match e { If(_, b, _) => return b, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+    match e { If(_, b, _) => return b, _ => let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) }
 pub fn expr_if_else(e: Expr) -> Option<ElseClause>:
     match e { If(_, _, ec) => return ec, _ => return none }
 
@@ -607,7 +607,7 @@ pub fn expr_if_else(e: Expr) -> Option<ElseClause>:
 pub fn expr_match_subject(e: Expr) -> Expr:
     match e { Match(s, _) => return s, _ => return Expr::NoneLit }
 pub fn expr_match_arms(e: Expr) -> List<MatchArm>:
-    match e { Match(_, a) => return a, _ => { let empty: List<MatchArm> = []; return empty } }
+    match e { Match(_, a) => return a, _ => let empty: List<MatchArm> = []; return empty }
 
 // Comprehension (v5.15.1)
 pub fn expr_comp_kind(e: Expr) -> String:
@@ -619,7 +619,7 @@ pub fn expr_comp_key(e: Expr) -> Option<Expr>:
 pub fn expr_comp_value(e: Expr) -> Option<Expr>:
     match e { Comprehension(_, _, _, v, _) => return v, _ => return none }
 pub fn expr_comp_clauses(e: Expr) -> List<CompClause>:
-    match e { Comprehension(_, _, _, _, cs) => return cs, _ => { let empty: List<CompClause> = []; return empty } }
+    match e { Comprehension(_, _, _, _, cs) => return cs, _ => let empty: List<CompClause> = []; return empty }
 
 pub fn new_comp_clause(target: String, iter: Expr, conditions: List<Expr>) -> CompClause:
     return new CompClause { span: make_span(0, 0, 0, 0), target: target, iter: iter, conditions: conditions }
@@ -660,11 +660,11 @@ pub fn stmt_for_var(s: Stmt) -> String:
 pub fn stmt_for_iter(s: Stmt) -> Expr:
     match s { For(_, e, _) => return e, _ => return Expr::NoneLit }
 pub fn stmt_for_body(s: Stmt) -> Block:
-    match s { For(_, _, b) => return b, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+    match s { For(_, _, b) => return b, _ => let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) }
 pub fn stmt_while_cond(s: Stmt) -> Expr:
     match s { While(c, _) => return c, _ => return Expr::NoneLit }
 pub fn stmt_while_body(s: Stmt) -> Block:
-    match s { While(_, b) => return b, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+    match s { While(_, b) => return b, _ => let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) }
 pub fn stmt_assert_expr(s: Stmt) -> Expr:
     match s { Assert(e, _) => return e, _ => return Expr::NoneLit }
 pub fn stmt_assert_msg(s: Stmt) -> Option<String>:
@@ -690,7 +690,7 @@ pub fn stmt_stream_value(s: Stmt) -> Expr:
 pub fn stmt_letdest_pattern(s: Stmt) -> StructPattern:
     match s:
         LetDestructure(p, _, _, _) => return p
-        _ => { let f: List<FieldPattern> = []; return new_struct_pattern("", f, false) }
+        _ => let f: List<FieldPattern> = []; return new_struct_pattern("", f, false)
 pub fn stmt_letdest_mutable(s: Stmt) -> Bool:
     match s { LetDestructure(_, m, _, _) => return m, _ => return false }
 pub fn stmt_letdest_type(s: Stmt) -> Option<TypeExpr>:
@@ -704,7 +704,7 @@ pub fn stmt_letelse_pattern(s: Stmt) -> Pattern:
 pub fn stmt_letelse_scrutinee(s: Stmt) -> Expr:
     match s { LetElse(_, e, _) => return e, _ => return Expr::NoneLit }
 pub fn stmt_letelse_else(s: Stmt) -> Block:
-    match s { LetElse(_, _, b) => return b, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+    match s { LetElse(_, _, b) => return b, _ => let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) }
 
 // v5.20.1 Te.5.F.E — WhileLet accessors
 pub fn stmt_whilelet_pattern(s: Stmt) -> Pattern:
@@ -712,7 +712,7 @@ pub fn stmt_whilelet_pattern(s: Stmt) -> Pattern:
 pub fn stmt_whilelet_scrutinee(s: Stmt) -> Expr:
     match s { WhileLet(_, e, _) => return e, _ => return Expr::NoneLit }
 pub fn stmt_whilelet_body(s: Stmt) -> Block:
-    match s { WhileLet(_, _, b) => return b, _ => { let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) } }
+    match s { WhileLet(_, _, b) => return b, _ => let st: List<Stmt> = []; return new_block(make_span(0,0,0,0), st) }
 
 // ---- Definition kind + accessors ------------------------------------------
 
@@ -733,7 +733,7 @@ pub fn def_kind(d: Definition) -> String:
         ConstDef(_, _, _) => return "const_def"
 
 pub fn def_fn_data(d: Definition) -> FnDefData:
-    match d { FnDef(data) => return data, _ => { let e: List<String> = []; let p: List<Param> = []; let dc: List<Decorator> = []; let st: List<Stmt> = []; return new_fn_def_data(make_span(0,0,0,0), "", false, e, p, none, new_block(make_span(0,0,0,0), st), dc) } }
+    match d { FnDef(data) => return data, _ => let e: List<String> = []; let p: List<Param> = []; let dc: List<Decorator> = []; let st: List<Stmt> = []; return new_fn_def_data(make_span(0,0,0,0), "", false, e, p, none, new_block(make_span(0,0,0,0), st), dc) }
 pub fn def_agent_data(d: Definition) -> AgentDefData:
     match d { AgentDef(data) => return data, _ => { let i: List<AgentInput> = []; let o: List<AgentOutput> = []; let s: List<Stmt> = []; let m: List<FnDefData> = []; let dc: List<Decorator> = []; return new AgentDefData { span: make_span(0,0,0,0), name: "", public: false, inputs: i, outputs: o, state: s, methods: m, decorators: dc } } }
 pub fn def_pipe_data(d: Definition) -> PipeDefData:
@@ -747,15 +747,15 @@ pub fn def_impl_target(d: Definition) -> String:
 pub fn def_impl_trait_name(d: Definition) -> Option<String>:
     match d { ImplDef(_, tn, _) => return tn, _ => return none }
 pub fn def_impl_methods(d: Definition) -> List<FnDefData>:
-    match d { ImplDef(_, _, m) => return m, _ => { let empty: List<FnDefData> = []; return empty } }
+    match d { ImplDef(_, _, m) => return m, _ => let empty: List<FnDefData> = []; return empty }
 pub fn def_import_path(d: Definition) -> List<String>:
-    match d { ImportDef(p, _) => return p, _ => { let empty: List<String> = []; return empty } }
+    match d { ImportDef(p, _) => return p, _ => let empty: List<String> = []; return empty }
 pub fn def_import_items(d: Definition) -> List<String>:
-    match d { ImportDef(_, i) => return i, _ => { let empty: List<String> = []; return empty } }
+    match d { ImportDef(_, i) => return i, _ => let empty: List<String> = []; return empty }
 pub fn def_export_inner(d: Definition) -> Option<Definition>:
     match d { ExportDef(i, _) => return i, _ => return none }
 pub fn def_export_names(d: Definition) -> List<String>:
-    match d { ExportDef(_, n) => return n, _ => { let empty: List<String> = []; return empty } }
+    match d { ExportDef(_, n) => return n, _ => let empty: List<String> = []; return empty }
 pub fn def_type_alias_name(d: Definition) -> String:
     match d { TypeAlias(n, _) => return n, _ => return "" }
 pub fn def_type_alias_type(d: Definition) -> TypeExpr:
@@ -765,13 +765,13 @@ pub fn def_extern_abi(d: Definition) -> String:
 pub fn def_extern_name(d: Definition) -> String:
     match d { ExternFnDef(_, n, _, _) => return n, _ => return "" }
 pub fn def_extern_params(d: Definition) -> List<Param>:
-    match d { ExternFnDef(_, _, p, _) => return p, _ => { let empty: List<Param> = []; return empty } }
+    match d { ExternFnDef(_, _, p, _) => return p, _ => let empty: List<Param> = []; return empty }
 pub fn def_extern_return_type(d: Definition) -> Option<TypeExpr>:
     match d { ExternFnDef(_, _, _, r) => return r, _ => return none }
 pub fn def_trait_name(d: Definition) -> String:
     match d { TraitDef(n, _) => return n, _ => return "" }
 pub fn def_trait_methods(d: Definition) -> List<FnDefData>:
-    match d { TraitDef(_, m) => return m, _ => { let empty: List<FnDefData> = []; return empty } }
+    match d { TraitDef(_, m) => return m, _ => let empty: List<FnDefData> = []; return empty }
 pub fn def_let_name(d: Definition) -> String:
     match d { LetDef(n, _, _) => return n, _ => return "" }
 pub fn def_let_type(d: Definition) -> String:
@@ -802,9 +802,9 @@ pub fn type_expr_name(te: TypeExpr) -> String:
         Generic(n, _) => return n
         _ => return ""
 pub fn type_expr_args(te: TypeExpr) -> List<TypeExpr>:
-    match te { Generic(_, a) => return a, _ => { let empty: List<TypeExpr> = []; return empty } }
+    match te { Generic(_, a) => return a, _ => let empty: List<TypeExpr> = []; return empty }
 pub fn type_expr_fn_params(te: TypeExpr) -> List<TypeExpr>:
-    match te { FnTy(p, _) => return p, _ => { let empty: List<TypeExpr> = []; return empty } }
+    match te { FnTy(p, _) => return p, _ => let empty: List<TypeExpr> = []; return empty }
 pub fn type_expr_fn_ret(te: TypeExpr) -> TypeExpr:
     match te { FnTy(_, r) => return r, _ => return TypeExpr::Named("Void") }
 
@@ -825,9 +825,9 @@ pub fn pattern_literal_expr(p: Pattern) -> Expr:
 pub fn pattern_ctor_name(p: Pattern) -> String:
     match p { ConstructorPat(n, _) => return n, _ => return "" }
 pub fn pattern_ctor_args(p: Pattern) -> List<Pattern>:
-    match p { ConstructorPat(_, a) => return a, _ => { let empty: List<Pattern> = []; return empty } }
+    match p { ConstructorPat(_, a) => return a, _ => let empty: List<Pattern> = []; return empty }
 pub fn pattern_or_alts(p: Pattern) -> List<Pattern>:
-    match p { OrPat(alts) => return alts, _ => { let empty: List<Pattern> = []; return empty } }
+    match p { OrPat(alts) => return alts, _ => let empty: List<Pattern> = []; return empty }
 
 // ---- MatchArmBody kind + accessors ----------------------------------------
 
@@ -839,7 +839,7 @@ pub fn match_arm_body_kind(b: MatchArmBody) -> String:
 pub fn match_arm_body_expr(b: MatchArmBody) -> Expr:
     match b { ExprBody(e) => return e, _ => return Expr::NoneLit }
 pub fn match_arm_body_block(b: MatchArmBody) -> Block:
-    match b { BlockBody(bl) => return bl, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+    match b { BlockBody(bl) => return bl, _ => let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) }
 
 // ---- LambdaBody kind + accessors ------------------------------------------
 
@@ -851,7 +851,7 @@ pub fn lambda_body_kind(b: LambdaBody) -> String:
 pub fn lambda_body_expr(b: LambdaBody) -> Expr:
     match b { ExprBody(e) => return e, _ => return Expr::NoneLit }
 pub fn lambda_body_block(b: LambdaBody) -> Block:
-    match b { BlockBody(bl) => return bl, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+    match b { BlockBody(bl) => return bl, _ => let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) }
 
 // ---- ElseClause kind + accessors ------------------------------------------
 
@@ -861,11 +861,11 @@ pub fn else_clause_kind(ec: ElseClause) -> String:
         ElseIf(_, _, _) => return "else_if"
 
 pub fn else_clause_block(ec: ElseClause) -> Block:
-    match ec { ElseBlock(b) => return b, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+    match ec { ElseBlock(b) => return b, _ => let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) }
 pub fn else_clause_cond(ec: ElseClause) -> Expr:
     match ec { ElseIf(c, _, _) => return c, _ => return Expr::NoneLit }
 pub fn else_clause_then(ec: ElseClause) -> Block:
-    match ec { ElseIf(_, b, _) => return b, _ => { let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) } }
+    match ec { ElseIf(_, b, _) => return b, _ => let s: List<Stmt> = []; return new_block(make_span(0,0,0,0), s) }
 pub fn else_clause_else(ec: ElseClause) -> Option<ElseClause>:
     match ec { ElseIf(_, _, e) => return e, _ => return none }
 
@@ -1335,10 +1335,10 @@ fn tokenize(source: String, filename: String) -> List<Token>:
 
         // --- Whitespace (one char per iteration, main loop repeats) ---
         let mut skip: Bool = false
-        if c == " " { pos = pos + 1; col = col + 1; skip = true }
-        if c == "\t" { pos = pos + 1; col = col + 1; skip = true }
-        if c == "\r" { pos = pos + 1; skip = true }
-        if c == "\n" { pos = pos + 1; line = line + 1; col = 1; skip = true }
+        if c == " ": pos = pos + 1; col = col + 1; skip = true
+        if c == "\t": pos = pos + 1; col = col + 1; skip = true
+        if c == "\r": pos = pos + 1; skip = true
+        if c == "\n": pos = pos + 1; line = line + 1; col = 1; skip = true
 
         // --- Line comment (// to end of line) ---
         if c == "/":
@@ -1745,28 +1745,27 @@ fn is_definition_start(tt: String) -> Bool:
 fn has_explicit_main(defs: List<Definition>) -> Bool:
     for i in 0..len(defs):
         let d: Definition = defs[i]
-        match d {
-            FnDef(fd) => {
-                if fd.name == "main" {
+        match d:
+            FnDef(fd) =>:
+                if fd.name == "main":
                     return true
-                }
-            },
             _ => {}
-        }
     return false
 
 pub fn parse(source: String, filename: String) -> Program:
-    // v5.23.2 Te.3.B.2: brace-block deprecation warning. Runs **before**
-    // __mn_indent_to_braces so the detector sees the source as the user
-    // wrote it (the preprocessor would otherwise convert every colon
-    // block into brace form, making the two indistinguishable).
-    // Mirrors mapanare/parser.py::parse — same call shape, byte-identical
-    // warning text. Honors MAPANARE_NO_BRACE_WARNING=1 (handled inside
-    // the C runtime). See runtime/native/mapanare_core.c::
-    // __mn_count_user_brace_block_openers for the algorithm.
-    let brace_count: Int = __mn_count_user_brace_block_openers(source)
-    if brace_count > 0:
-        __mn_emit_brace_deprecation_warning(filename, brace_count)
+    // v5.49.0 — brace-deprecation warning relegated to Python tooling
+    // (`mnc fmt`, the CLI bootstrap parser). The native self-host
+    // compiler is not a linter — its job is to compile, not advise.
+    // Pre-v5.49.0 the warning emitted from BOTH paths (Python parser
+    // AND self-host parser via this site), producing duplicate noise
+    // in CI logs and emitting on every brace including the
+    // ``match_arm_open`` / ``one_line_arm_other`` shapes that have no
+    // v5.48.0 colon shorthand (~700+ false-positive warnings across
+    // mapanare/self/*.mn after v5.48.1's migration). v5.49.0 fixes
+    // both: the Python parser only warns when ``mnc fmt --to-terse``
+    // would actually migrate something; the self-host parser stops
+    // warning entirely. The v6.0 hard-removal cut surfaces residuals
+    // via the parser's grammar error, not via an advisory warning.
     // v5.14.1 B.5/B.6: colon-block preprocessor lives in the C runtime
     // (`runtime/native/mapanare_core.c::__mn_indent_to_braces`) and is
     // wired into the self-host as a builtin (semantic.mn::is_builtin_function,
@@ -2424,7 +2423,7 @@ struct FnDataResult:
 fn parse_fn_def_as_data(tokens: List<Token>, pos: Int, filename: String) -> FnDataResult:
     let mut p: Int = pos
     let mut is_pub: Bool = false
-    if peek_type(tokens, p) == "KW_PUB" { is_pub = true; p = p + 1 }
+    if peek_type(tokens, p) == "KW_PUB": is_pub = true; p = p + 1
     p = expect(tokens, p, "KW_FN")
     let name: String = peek_value(tokens, p)
     p = p + 1
@@ -2511,7 +2510,7 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
         let mut done_tp: Bool = false
         for _ in 0..20:
             if !done_tp:
-                if peek_type(tokens, p) == "GT" { p = p + 1; done_tp = true }
+                if peek_type(tokens, p) == "GT": p = p + 1; done_tp = true
                 if !done_tp: p = p + 1
 
     let first_name: String = peek_value(tokens, p)
@@ -2523,7 +2522,7 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
         let mut done_ta: Bool = false
         for _ in 0..20:
             if !done_ta:
-                if peek_type(tokens, p) == "GT" { p = p + 1; done_ta = true }
+                if peek_type(tokens, p) == "GT": p = p + 1; done_ta = true
                 if !done_ta: p = p + 1
 
     // Check for "impl Trait for Type { ... }" syntax
@@ -2926,23 +2925,18 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
             // multi-param lambdas with zero params and undefined-variable
             // errors when their bodies referenced a, b, ...
             let mut params: List<Param> = []
-            match left {
-                Ident(name) => {
+            match left:
+                Ident(name) =>:
                     params.push(new_param(name, none))
-                },
-                ListLit(elems) => {
+                ListLit(elems) =>:
                     let mut li: Int = 0
-                    for _ in 0..32 {
-                        if li >= len(elems) { break }
+                    for _ in 0..32:
+                        if li >= len(elems): break
                         let elem: Expr = elems[li]
-                        if expr_kind(elem) == "ident" {
+                        if expr_kind(elem) == "ident":
                             params.push(new_param(expr_ident_name(elem), none))
-                        }
                         li = li + 1
-                    }
-                },
                 _ => {}
-            }
             return new_expr_result(Expr::Lambda(params, LambdaBody::ExprBody(body.expr)), body.pos)
 
     // Binary operator loop
@@ -3266,7 +3260,7 @@ fn split_interp_parts(s: String, filename: String) -> List<Expr>:
                     else:
                         if cj == "}":
                             depth = depth - 1
-                            if depth == 0 { found_close = true; break }
+                            if depth == 0: found_close = true; break
                     j = j + 1
                 if found_close == false:
                     // Unterminated `${...}` — fold the `$` into the
@@ -4399,13 +4393,11 @@ fn push_scope(st: SemState) -> SemState:
     new_st
 
 fn pop_scope(st: SemState) -> SemState:
-    match st.scope.parent {
-        Some(parent) => {
+    match st.scope.parent:
+        Some(parent) =>:
             let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
             return new_st
-        },
-        _ => { return st }
-    }
+        _ => return st
 
 fn set_span(st: SemState, span: Span) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
 
@@ -4450,17 +4442,13 @@ fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool:
                 if types_compatible(a.param_types[j], b.param_types[j]) == false: return false
                 j = j + 1
             // Compare return types
-            match a.return_type {
-                Some(a_ret) => {
-                    match b.return_type {
-                        Some(b_ret) => {
-                            if types_compatible(a_ret, b_ret) == false { return false }
-                        },
+            match a.return_type:
+                Some(a_ret) =>:
+                    match b.return_type:
+                        Some(b_ret) =>:
+                            if types_compatible(a_ret, b_ret) == false: return false
                         _ => {}
-                    }
-                },
                 _ => {}
-            }
             return true
         return false
     if a.name != b.name: return false
@@ -4484,16 +4472,14 @@ fn type_exists(st: SemState, t: TypeInfo) -> Bool:
     if is_primitive_type(t.name): return true
     if is_builtin_generic(t.name): return true
     let sym: Option<Symbol> = scope_lookup(st.scope, t.name)
-    match sym {
-        Some(s) => {
-            if s.kind == "struct" { return true }
-            if s.kind == "enum" { return true }
-            if s.kind == "agent" { return true }
-            if s.kind == "type_alias" { return true }
+    match sym:
+        Some(s) =>:
+            if s.kind == "struct": return true
+            if s.kind == "enum": return true
+            if s.kind == "agent": return true
+            if s.kind == "type_alias": return true
             return false
-        },
-        _ => { return false }
-    }
+        _ => return false
 
 // ---------------------------------------------------------------------------
 // Binary operator type rules
@@ -4603,13 +4589,11 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
         // variable 'None'" at mnc_all.mn:3504 (`let mut guard: Option<Expr> = None`).
         if name == "None": return new_infer_result(make_type("Option"), st)
         let result: Option<Symbol> = scope_lookup(st.scope, name)
-        match result {
-            Some(sym) => { return new_infer_result(sym.type_info, st) },
-            _ => {
+        match result:
+            Some(sym) => return new_infer_result(sym.type_info, st)
+            _ =>:
                 let st_ident_err: SemState = add_error_here(st, "Undefined variable '" + name + "'")
                 return new_infer_result(error_type(), st_ident_err)
-            }
-        }
 
     if ek == "binary": return check_binary_expr(st, expr_binary_left(expr), expr_binary_op(expr), expr_binary_right(expr))
     if ek == "chained_cmp":
@@ -4905,14 +4889,12 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
                 j_il = j_il + 1
         let after_il: SemState = check_block(bound_il, il_then)
         let mut after2_il: SemState = pop_scope(after_il)
-        match il_else {
-            Some(eb) => {
+        match il_else:
+            Some(eb) =>:
                 let inner2_il: SemState = push_scope(after2_il)
                 let after3_il: SemState = check_block(inner2_il, eb)
                 after2_il = pop_scope(after3_il)
-            },
             _ => {}
-        }
         return new_infer_result(unknown_type(), after2_il)
     if ek == "match": return check_match_expr(st, expr_match_subject(expr), expr_match_arms(expr))
 
@@ -5074,38 +5056,27 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
     if expr_kind(callee) == "ident":
         let name: String = expr_ident_name(callee)
         let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
-        match sym_opt {
-            Some(sym) => {
-                if sym.kind == "function" {
-                    if sym.type_info.is_function {
-                        match sym.type_info.return_type {
-                            Some(ret) => {
-                                if len(sym.type_info.param_types) > 0 {
-                                    if len(arg_types) != len(sym.type_info.param_types) {
+        match sym_opt:
+            Some(sym) =>:
+                if sym.kind == "function":
+                    if sym.type_info.is_function:
+                        match sym.type_info.return_type:
+                            Some(ret) =>:
+                                if len(sym.type_info.param_types) > 0:
+                                    if len(arg_types) != len(sym.type_info.param_types):
                                         let st_argc: SemState = add_error_here(st, "Function '" + name + "' argument count mismatch")
                                         return new_infer_result(ret, st_argc)
-                                    }
-                                }
                                 return new_infer_result(ret, st)
-                            },
-                            _ => { return new_infer_result(unknown_type(), st) }
-                        }
-                    }
+                            _ => return new_infer_result(unknown_type(), st)
                     return new_infer_result(unknown_type(), st)
-                }
-                if sym.kind == "agent" {
+                if sym.kind == "agent":
                     return new_infer_result(make_type(sym.name), st)
-                }
-                if sym.kind == "struct" {
+                if sym.kind == "struct":
                     return new_infer_result(make_type(sym.name), st)
-                }
                 return new_infer_result(unknown_type(), st)
-            },
-            _ => {
+            _ =>:
                 let st_undef: SemState = add_error_here(st, "Undefined function '" + name + "'")
                 return new_infer_result(error_type(), st_undef)
-            }
-        }
     let cr: InferResult = infer_expr(st, callee)
     // v4.53.0: cascade suppression — ERROR callee propagates
     if type_is_error(cr.type_info): return new_infer_result(error_type(), cr.st)
@@ -5121,27 +5092,20 @@ fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> Inf
     if expr_kind(target) == "ident":
         let name: String = expr_ident_name(target)
         let sym_opt: Option<Symbol> = scope_lookup(vr.st.scope, name)
-        match sym_opt {
-            Some(sym) => {
+        match sym_opt:
+            Some(sym) =>:
                 let mut st_assign: SemState = vr.st
-                if sym.mutable == false {
+                if sym.mutable == false:
                     st_assign = add_error_here(st_assign, "Cannot assign to immutable variable '" + name + "'")
-                }
                 // v4.53.0: skip type check if either side is error/unknown
-                if !type_should_skip(sym.type_info.name) {
-                    if !type_should_skip(vr.type_info.name) {
-                        if types_compatible(sym.type_info, vr.type_info) == false {
+                if !type_should_skip(sym.type_info.name):
+                    if !type_should_skip(vr.type_info.name):
+                        if types_compatible(sym.type_info, vr.type_info) == false:
                             st_assign = add_error_here(st_assign, "Type mismatch in assignment to '" + name + "'")
-                        }
-                    }
-                }
                 return new_infer_result(void_type(), st_assign)
-            },
-            _ => {
+            _ =>:
                 let st_assign_undef: SemState = add_error_here(vr.st, "Undefined variable '" + name + "'")
                 return new_infer_result(void_type(), st_assign_undef)
-            }
-        }
     // Field or index target — infer both sides
     let tr: InferResult = infer_expr(vr.st, target)
     return new_infer_result(void_type(), tr.st)
@@ -5165,12 +5129,10 @@ fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Optio
     st2 = pop_scope(after_then)
 
     // Check else clause
-    match else_clause {
-        Some(ec) => {
+    match else_clause:
+        Some(ec) =>:
             st2 = check_else_clause(st2, ec)
-        },
         _ => {}
-    }
 
     return new_infer_result(unknown_type(), st2)
 
@@ -5198,18 +5160,14 @@ fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferR
         // v4.35.0: type-check optional guard (must be Bool)
         // v4.52.0: actually enforce Bool type (D2 fix)
         let mut guarded_st: SemState = bound_st
-        match arm.guard {
-            Some(g) => {
+        match arm.guard:
+            Some(g) =>:
                 let gr: InferResult = infer_expr(bound_st, g)
                 guarded_st = gr.st
-                if !type_should_skip(gr.type_info.name) {
-                    if gr.type_info.name != "Bool" {
+                if !type_should_skip(gr.type_info.name):
+                    if gr.type_info.name != "Bool":
                         guarded_st = add_error_here(guarded_st, "match guard must be a Bool expression, got " + gr.type_info.name)
-                    }
-                }
-            },
             None => {}
-        }
         let after_arm: SemState = check_match_arm_body(guarded_st, arm.body)
         st2 = pop_scope(after_arm)
         i = i + 1
@@ -5287,21 +5245,16 @@ fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult:
     if expr_kind(callee) == "ident":
         let name: String = expr_ident_name(callee)
         let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
-        match sym_opt {
-            Some(sym) => {
+        match sym_opt:
+            Some(sym) =>:
                 let mut st2: SemState = st
-                if sym.kind != "agent" {
-                    if sym.kind != "variable" {
+                if sym.kind != "agent":
+                    if sym.kind != "variable":
                         st2 = add_error_here(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind)
-                    }
-                }
                 return new_infer_result(make_type(sym.name), st2)
-            },
-            _ => {
+            _ =>:
                 let st_err: SemState = add_error_here(st, "Undefined agent '" + name + "'")
                 return new_infer_result(error_type(), st_err)
-            }
-        }
     return new_infer_result(unknown_type(), st)
 
 fn check_spawn_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult:
@@ -5334,40 +5287,28 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult:
     if rk == "ident":
         let name: String = expr_ident_name(right)
         let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
-        match sym_opt {
-            Some(sym) => {
-                if sym.kind == "function" {
-                    if sym.type_info.is_function {
-                        if len(sym.type_info.param_types) > 0 {
+        match sym_opt:
+            Some(sym) =>:
+                if sym.kind == "function":
+                    if sym.type_info.is_function:
+                        if len(sym.type_info.param_types) > 0:
                             let expected: TypeInfo = sym.type_info.param_types[0]
-                            if !type_should_skip(expected.name) {
-                                if !type_should_skip(lr.type_info.name) {
-                                    if types_compatible(expected, lr.type_info) == false {
+                            if !type_should_skip(expected.name):
+                                if !type_should_skip(lr.type_info.name):
+                                    if types_compatible(expected, lr.type_info) == false:
                                         let st3_mismatch: SemState = add_error_here(st2, "Pipe type mismatch: piped to '" + name + "'")
-                                        match sym.type_info.return_type {
-                                            Some(ret) => { return new_infer_result(ret, st3_mismatch) },
-                                            _ => { return new_infer_result(unknown_type(), st3_mismatch) }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        match sym.type_info.return_type {
-                            Some(ret) => { return new_infer_result(ret, st2) },
-                            _ => { return new_infer_result(unknown_type(), st2) }
-                        }
-                    }
-                }
-                if sym.kind == "agent" {
+                                        match sym.type_info.return_type:
+                                            Some(ret) => return new_infer_result(ret, st3_mismatch)
+                                            _ => return new_infer_result(unknown_type(), st3_mismatch)
+                        match sym.type_info.return_type:
+                            Some(ret) => return new_infer_result(ret, st2)
+                            _ => return new_infer_result(unknown_type(), st2)
+                if sym.kind == "agent":
                     return new_infer_result(make_type(sym.name), st2)
-                }
                 return new_infer_result(unknown_type(), st2)
-            },
-            _ => {
+            _ =>:
                 let st3_undef: SemState = add_error_here(st2, "Undefined function '" + name + "'")
                 return new_infer_result(error_type(), st3_undef)
-            }
-        }
     if rk == "call":
         return check_call_expr(st2, expr_call_callee(right), expr_call_args(right))
     let rr: InferResult = infer_expr(st2, right)
@@ -5396,13 +5337,11 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState:
         return r_expr.st
     if sk == "return":
         let value_opt: Option<Expr> = stmt_return_val(stmt)
-        match value_opt {
-            Some(value) => {
+        match value_opt:
+            Some(value) =>:
                 let r_ret: InferResult = infer_expr(st, value)
                 return r_ret.st
-            },
-            _ => { return st }
-        }
+            _ => return st
     if sk == "for":
         return check_for_stmt(st, stmt_for_var(stmt), stmt_for_iter(stmt), stmt_for_body(stmt))
     if sk == "while":
@@ -5522,7 +5461,7 @@ fn scope_has_variant_for_enum(scope: Scope, variant_name: String, enum_name: Str
                 let mut got_ret: TypeInfo = unknown_type()
                 let mut have_ret: Bool = false
                 match ret_opt:
-                    Some(rt) => { got_ret = rt; have_ret = true }
+                    Some(rt) => got_ret = rt; have_ret = true
                     _ => have_ret = false
                 if have_ret:
                     if got_ret.name == enum_name: hit = true
@@ -5547,17 +5486,14 @@ fn define_pattern_bindings(st: SemState, pattern: StructPattern, outer_mut: Bool
     for _ in 0..200:
         if i >= n: return s
         let fp: FieldPattern = pattern.fields[i]
-        match fp.sub_pattern {
-            Some(sub) => {
+        match fp.sub_pattern:
+            Some(sub) =>:
                 s = define_pattern_bindings(s, sub, outer_mut)
-            },
-            _ => {
+            _ =>:
                 let mut leaf_mut: Bool = outer_mut
-                if fp.mutable { leaf_mut = true }
+                if fp.mutable: leaf_mut = true
                 let sym: Symbol = new_symbol(fp.name, "variable", unknown_type(), leaf_mut)
                 s = define_in_scope(s, fp.name, sym)
-            }
-        }
         i = i + 1
     return s
 
@@ -5900,32 +5836,24 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState:
 fn check_impl_body(st: SemState, target: String, trait_name_opt: Option<String>, methods: List<FnDefData>) -> SemState:
     let sym_opt: Option<Symbol> = scope_lookup(st.scope, target)
     let mut st2: SemState = st
-    match sym_opt {
-        Some(_) => {},
-        _ => {
+    match sym_opt:
+        Some(_) => {}
+        _ =>:
             st2 = add_error_here(st2, "Undefined type '" + target + "' in impl block")
-        }
-    }
 
     // Validate trait requirements if this is "impl Trait for Type"
-    match trait_name_opt {
-        Some(trait_name) => {
+    match trait_name_opt:
+        Some(trait_name) =>:
             let trait_sym: Option<Symbol> = scope_lookup(st2.scope, trait_name)
-            match trait_sym {
-                Some(ts) => {
-                    if ts.kind != "trait" {
+            match trait_sym:
+                Some(ts) =>:
+                    if ts.kind != "trait":
                         st2 = add_error_here(st2, "'" + trait_name + "' is not a trait")
-                    }
                     // Check each trait method is implemented
                     st2 = validate_trait_methods(st2, trait_name, target, methods)
-                },
-                _ => {
+                _ =>:
                     st2 = add_error_here(st2, "Undefined trait '" + trait_name + "'")
-                }
-            }
-        },
         _ => {}
-    }
 
     let mut mi: Int = 0
     for _ in 0..200:
@@ -5981,12 +5909,10 @@ fn check_pipe_stage_type(st: SemState, stage: Expr, pipe_name: String) -> TypeIn
 
 fn resolve_pipe_ident_type(st: SemState, name: String) -> TypeInfo:
     let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
-    match sym_opt {
-        Some(sym) => {
+    match sym_opt:
+        Some(sym) =>:
             return resolve_sym_output_type(sym)
-        },
-        _ => { return unknown_type() }
-    }
+        _ => return unknown_type()
 
 fn resolve_sym_output_type(sym: Symbol) -> TypeInfo:
     if sym.kind != "function": return unknown_type()
@@ -6815,7 +6741,7 @@ pub fn instr_unaryop_operand(i: Instruction) -> Value:
 pub fn instr_struct_type(i: Instruction) -> MIRType:
     match i { StructInit(_, t, _) => return t, _ => return mir_void() }
 pub fn instr_struct_fields(i: Instruction) -> List<FieldPair>:
-    match i { StructInit(_, _, f) => return f, _ => { let empty: List<FieldPair> = []; return empty } }
+    match i { StructInit(_, _, f) => return f, _ => let empty: List<FieldPair> = []; return empty }
 
 // FieldGet
 pub fn instr_fieldget_obj(i: Instruction) -> Value:
@@ -6835,15 +6761,15 @@ pub fn instr_fieldset_val(i: Instruction) -> Value:
 pub fn instr_list_type(i: Instruction) -> MIRType:
     match i { ListInit(_, t, _) => return t, _ => return mir_void() }
 pub fn instr_list_elements(i: Instruction) -> List<Value>:
-    match i { ListInit(_, _, e) => return e, _ => { let empty: List<Value> = []; return empty } }
+    match i { ListInit(_, _, e) => return e, _ => let empty: List<Value> = []; return empty }
 
 // TensorInit (v4.42.0)
 pub fn instr_tensor_type(i: Instruction) -> MIRType:
     match i { TensorInit(_, t, _, _) => return t, _ => return mir_void() }
 pub fn instr_tensor_shape(i: Instruction) -> List<Int>:
-    match i { TensorInit(_, _, s, _) => return s, _ => { let empty: List<Int> = []; return empty } }
+    match i { TensorInit(_, _, s, _) => return s, _ => let empty: List<Int> = []; return empty }
 pub fn instr_tensor_elements(i: Instruction) -> List<Value>:
-    match i { TensorInit(_, _, _, e) => return e, _ => { let empty: List<Value> = []; return empty } }
+    match i { TensorInit(_, _, _, e) => return e, _ => let empty: List<Value> = []; return empty }
 
 // IndexGet
 pub fn instr_indexget_obj(i: Instruction) -> Value:
@@ -6879,7 +6805,7 @@ pub fn instr_map_key_type(i: Instruction) -> MIRType:
 pub fn instr_map_val_type(i: Instruction) -> MIRType:
     match i { MapInit(_, _, v, _) => return v, _ => return mir_void() }
 pub fn instr_map_pairs(i: Instruction) -> List<KVPair>:
-    match i { MapInit(_, _, _, p) => return p, _ => { let empty: List<KVPair> = []; return empty } }
+    match i { MapInit(_, _, _, p) => return p, _ => let empty: List<KVPair> = []; return empty }
 
 // EnumInit
 pub fn instr_enum_type(i: Instruction) -> MIRType:
@@ -6887,7 +6813,7 @@ pub fn instr_enum_type(i: Instruction) -> MIRType:
 pub fn instr_enum_variant(i: Instruction) -> String:
     match i { EnumInit(_, _, v, _) => return v, _ => return "" }
 pub fn instr_enum_payload(i: Instruction) -> List<Value>:
-    match i { EnumInit(_, _, _, p) => return p, _ => { let empty: List<Value> = []; return empty } }
+    match i { EnumInit(_, _, _, p) => return p, _ => let empty: List<Value> = []; return empty }
 
 // EnumTag
 pub fn instr_enumtag_val(i: Instruction) -> Value:
@@ -6916,7 +6842,7 @@ pub fn instr_wrapnone_type(i: Instruction) -> MIRType:
 pub fn instr_call_fn(i: Instruction) -> String:
     match i { Call(_, f, _) => return f, _ => return "" }
 pub fn instr_call_args(i: Instruction) -> List<Value>:
-    match i { Call(_, _, a) => return a, _ => { let empty: List<Value> = []; return empty } }
+    match i { Call(_, _, a) => return a, _ => let empty: List<Value> = []; return empty }
 
 // Return
 pub fn instr_return_val(i: Instruction) -> Option<Value>:
@@ -6938,7 +6864,7 @@ pub fn instr_branch_false(i: Instruction) -> String:
 pub fn instr_switch_tag(i: Instruction) -> Value:
     match i { Switch(t, _, _) => return t, _ => return void_value() }
 pub fn instr_switch_cases(i: Instruction) -> List<SwitchCase>:
-    match i { Switch(_, c, _) => return c, _ => { let empty: List<SwitchCase> = []; return empty } }
+    match i { Switch(_, c, _) => return c, _ => let empty: List<SwitchCase> = []; return empty }
 pub fn instr_switch_default(i: Instruction) -> String:
     match i { Switch(_, _, d) => return d, _ => return "" }
 
@@ -6946,7 +6872,7 @@ pub fn instr_switch_default(i: Instruction) -> String:
 pub fn instr_agent_type(i: Instruction) -> MIRType:
     match i { AgentSpawn(_, t, _) => return t, _ => return mir_void() }
 pub fn instr_agent_args(i: Instruction) -> List<Value>:
-    match i { AgentSpawn(_, _, a) => return a, _ => { let empty: List<Value> = []; return empty } }
+    match i { AgentSpawn(_, _, a) => return a, _ => let empty: List<Value> = []; return empty }
 
 // AgentSend
 pub fn instr_agentsend_agent(i: Instruction) -> Value:
@@ -6984,15 +6910,15 @@ pub fn instr_streamop_kind(i: Instruction) -> StreamOpKind:
 pub fn instr_streamop_source(i: Instruction) -> Value:
     match i { StreamOp(_, _, s, _) => return s, _ => return void_value() }
 pub fn instr_streamop_args(i: Instruction) -> List<Value>:
-    match i { StreamOp(_, _, _, a) => return a, _ => { let empty: List<Value> = []; return empty } }
+    match i { StreamOp(_, _, _, a) => return a, _ => let empty: List<Value> = []; return empty }
 
 // InterpConcat
 pub fn instr_concat_parts(i: Instruction) -> List<Value>:
-    match i { InterpConcat(_, p) => return p, _ => { let empty: List<Value> = []; return empty } }
+    match i { InterpConcat(_, p) => return p, _ => let empty: List<Value> = []; return empty }
 
 // Phi
 pub fn instr_phi_entries(i: Instruction) -> List<PhiEntry>:
-    match i { Phi(_, e) => return e, _ => { let empty: List<PhiEntry> = []; return empty } }
+    match i { Phi(_, e) => return e, _ => let empty: List<PhiEntry> = []; return empty }
 
 // Move (v5.4.0 Own.1 Phase 2)
 pub fn instr_move_val(i: Instruction) -> Value:
@@ -7370,33 +7296,26 @@ fn find_lambda(st: LowerState, name: String) -> Option<String>:
 // ---------------------------------------------------------------------------
 
 fn lower_resolve_type_expr(te: TypeExpr) -> MIRType:
-    match te {
-        Named(name) => {
+    match te:
+        Named(name) =>:
             return resolve_type_name(name)
-        },
-        Generic(name, args) => {
+        Generic(name, args) =>:
             let mut resolved_args: List<MIRType> = []
             let mut i: Int = 0
-            for _ in 0..100 {
-                if i >= len(args) {
+            for _ in 0..100:
+                if i >= len(args):
                     let kind: Int = kind_from_name(name)
-                    if kind != TK_UNKNOWN() {
+                    if kind != TK_UNKNOWN():
                         return new_mir_type_with_args(name, kind, resolved_args)
-                    }
                     return new_mir_type_with_args(name, TK_STRUCT(), resolved_args)
-                }
                 let arg: TypeExpr = args[i]
                 let resolved: MIRType = lower_resolve_type_expr(arg)
                 resolved_args.push(resolved)
                 i = i + 1
-            }
             return mir_unknown()
-        },
-        FnTy(param_types, return_type) => {
+        FnTy(param_types, return_type) =>:
             return mir_fn_type()
-        },
-        _ => { return mir_unknown() }
-    }
+        _ => return mir_unknown()
 
 fn resolve_type_name(name: String) -> MIRType:
     if name == "Int": return mir_int()
@@ -7477,26 +7396,21 @@ fn resolve_generic_args_rec(st: LowerState, args: List<TypeExpr>, idx: Int, acc:
     return resolve_generic_args_rec(st, args, idx + 1, acc)
 
 fn lower_resolve_type_checked(st: LowerState, te: TypeExpr) -> MIRType:
-    match te {
-        Named(name) => {
+    match te:
+        Named(name) =>:
             return resolve_type_name_checked(st, name)
-        },
-        Generic(name, args) => {
+        Generic(name, args) =>:
             // Use recursion instead of for-loop to avoid the alloca aliasing bug
             let init_args: List<MIRType> = []
             let resolved_args: List<MIRType> = resolve_generic_args_rec(st, args, 0, init_args)
             let kind: Int = kind_from_name(name)
-            if kind != TK_UNKNOWN() {
+            if kind != TK_UNKNOWN():
                 return new_mir_type_with_args(name, kind, resolved_args)
-            }
             let checked: MIRType = resolve_type_name_checked(st, name)
             return new_mir_type_with_args(name, checked.kind, resolved_args)
-        },
-        FnTy(param_types, return_type) => {
+        FnTy(param_types, return_type) =>:
             return mir_fn_type()
-        },
-        _ => { return mir_unknown() }
-    }
+        _ => return mir_unknown()
 
 fn resolve_return_type_checked(st: LowerState, te: Option<TypeExpr>) -> MIRType:
     match te:
@@ -7648,14 +7562,14 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState:
         let impl_target: String = def_impl_target(defn)
         // Check if target is a generic struct — if so, store methods for later monomorphization
         let gs_check: Option<StructDefData> = find_generic_struct(st, impl_target)
-        match gs_check {
-            Some(gs_data) => {
+        match gs_check:
+            Some(gs_data) =>:
                 // Store each method in generic_fns with target prefix and struct's type_params
                 let mut s_gi: LowerState = st
                 let gi_methods: List<FnDefData> = def_impl_methods(defn)
                 let mut gi: Int = 0
-                for _ in 0..500 {
-                    if gi >= len(gi_methods) { return s_gi }
+                for _ in 0..500:
+                    if gi >= len(gi_methods): return s_gi
                     let gm: FnDefData = gi_methods[gi]
                     // Create a copy with prefixed name and struct type params
                     let prefixed_name: String = impl_target + "_" + gm.name
@@ -7664,11 +7578,8 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState:
                     gfn_list.push(impl_fn)
                     s_gi.generic_fns = gfn_list
                     gi = gi + 1
-                }
                 return s_gi
-            },
-            _ => { return register_impl(st, impl_target, def_impl_methods(defn)) }
-        }
+            _ => return register_impl(st, impl_target, def_impl_methods(defn))
     if dk == "import_def":
         let info: ImportInfo = new_import_info(def_import_path(defn), def_import_items(defn))
         let mut new_st_imp: LowerState = st
@@ -7819,14 +7730,11 @@ fn register_extern_fn(st: LowerState, defn: Definition) -> LowerState:
             s.module = mod_tmp
             return s
         let p: Param = params[i]
-        match p.type_annotation {
-            Some(te) => {
+        match p.type_annotation:
+            Some(te) =>:
                 param_types.push(lower_resolve_type_checked(s, te))
-            },
-            _ => {
+            _ =>:
                 param_types.push(mir_unknown())
-            }
-        }
         i = i + 1
 
     // Fallback: push whatever we have
@@ -7953,13 +7861,11 @@ fn lower_definition(st: LowerState, defn: Definition) -> LowerState:
             _ => return lower_impl(st, impl_tgt, def_impl_methods(defn))
     if dk == "export_def":
         let inner_opt: Option<Definition> = def_export_inner(defn)
-        match inner_opt {
-            Some(inner) => {
+        match inner_opt:
+            Some(inner) =>:
                 let s: LowerState = lower_definition(st, inner)
                 return s
-            },
-            _ => { return st }
-        }
+            _ => return st
     return st
 
 // ---------------------------------------------------------------------------
@@ -8273,15 +8179,12 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
         // Resolve declared val_ty (List<T>). Carries the element-type
         // arg for downstream lookups (e.g. method dispatch).
         let mut val_ty: MIRType = mir_list()
-        match type_ann {
-            Some(te) => {
+        match type_ann:
+            Some(te) =>:
                 let declared: MIRType = lower_resolve_type_checked(s, te)
-                if declared.kind != TK_UNKNOWN() {
+                if declared.kind != TK_UNKNOWN():
                     val_ty = declared
-                }
-            },
             _ => {}
-        }
 
         // Lower into var_base. The emitter hoists the alloca + zero-init
         // into the entry prelude AND stores the new list into it; no
@@ -8339,15 +8242,13 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
     // type. Restored after lowering.
     let prev_enum_hint: String = st.expected_enum_name
     let mut st_hint: LowerState = st
-    match type_ann {
-        Some(te_h) => {
+    match type_ann:
+        Some(te_h) =>:
             let hint_ty: MIRType = lower_resolve_type_checked(st, te_h)
             if hint_ty.kind == TK_ENUM():
                 if hint_ty.name != "":
                     st_hint.expected_enum_name = hint_ty.name
-        },
         _ => {}
-    }
     let r: LowerResult = lower_expr(st_hint, value)
     let mut s: LowerState = r.state
     s.expected_enum_name = prev_enum_hint
@@ -8365,17 +8266,14 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
     // type (e.g., `let ch: String = lexer_peek(source)`) carries the real type.
     let mut val_ty: MIRType = r.value.ty
     let mut val: Value = r.value
-    match type_ann {
-        Some(te) => {
+    match type_ann:
+        Some(te) =>:
             let declared: MIRType = lower_resolve_type_checked(s, te)
-            if declared.kind != TK_UNKNOWN() {
+            if declared.kind != TK_UNKNOWN():
                 val_ty = declared
                 // Patch the value to carry the declared type (same SSA name, correct type)
                 val = new_value(r.value.name, declared)
-            }
-        },
         _ => {}
-    }
 
     // Find or create alloca for this variable (use counter for uniqueness
     // when the same variable name appears in different branches)
@@ -8411,17 +8309,14 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
 // ---------------------------------------------------------------------------
 
 fn lower_return(st: LowerState, value_opt: Option<Expr>) -> LowerState:
-    match value_opt {
-        Some(expr) => {
+    match value_opt:
+        Some(expr) =>:
             let r: LowerResult = lower_expr(st, expr)
             // Return the value directly — no Copy needed.
             // (Avoids `add i64 0, %struct_val` type mismatch for struct returns.)
             return emit_instr(r.state, Instruction::Return(Some(r.value)))
-        },
-        _ => {
+        _ =>:
             return emit_instr(st, Instruction::Return(none))
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // For loop
@@ -8927,42 +8822,35 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult:
 
     // Check variable scope
     let var_opt: Option<Value> = lookup_var(st, name)
-    match var_opt {
-        Some(addr) => {
+    match var_opt:
+        Some(addr) =>:
             // var_opt now returns the alloca address. Emit a Load to get the value.
             let r_var: LowerResult = make_value(st, addr.ty, name + "_val")
             let s_var: LowerState = emit_instr(r_var.state, Instruction::Load(r_var.value, addr))
             return new_lower_result(r_var.value, s_var)
-        },
         _ => {}
-    }
 
     // Check if it's a module-level constant
     let const_key: String = "__const__" + name
     let const_opt: Option<String> = find_lambda(st, const_key)
-    match const_opt {
-        Some(const_val) => {
-            if const_val.starts_with("int:") {
+    match const_opt:
+        Some(const_val) =>:
+            if const_val.starts_with("int:"):
                 let iv_str: String = const_val.substr(4, len(const_val) - 4)
                 let r_const: LowerResult = make_value(st, mir_int(), name)
                 let s_const: LowerState = emit_instr(r_const.state, Instruction::Const(r_const.value, mir_int(), iv_str))
                 return new_lower_result(r_const.value, s_const)
-            }
-            if const_val.starts_with("string:") {
+            if const_val.starts_with("string:"):
                 let sv: String = const_val.substr(7, len(const_val) - 7)
                 let r_const: LowerResult = make_value(st, mir_string(), name)
                 let s_const: LowerState = emit_instr(r_const.state, Instruction::Const(r_const.value, mir_string(), sv))
                 return new_lower_result(r_const.value, s_const)
-            }
-            if const_val.starts_with("bool:") {
+            if const_val.starts_with("bool:"):
                 let bv_str: String = const_val.substr(5, len(const_val) - 5)
                 let r_const: LowerResult = make_value(st, mir_bool(), name)
                 let s_const: LowerState = emit_instr(r_const.state, Instruction::Const(r_const.value, mir_bool(), bv_str))
                 return new_lower_result(r_const.value, s_const)
-            }
-        },
         _ => {}
-    }
 
     // Check if it's a bare enum variant (no payload)
     if is_enum_variant(st, name):
@@ -9062,18 +8950,17 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
             return lower_tensor_binop(rhs_r.state, op, lhs_val, rhs_val)
 
     let binop_opt: Option<BinOpKind> = binop_from_str(op)
-    match binop_opt {
-        Some(binop) => {
+    match binop_opt:
+        Some(binop) =>:
             // Use string comparison on the operator (not enum match on BinOpKind)
             // because enum match falls through in the compiled binary
             let is_cmp: Bool = op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" || op == "and" || op == "or"
             let mut result_ty: MIRType = lhs_val.ty
-            if is_cmp { result_ty = mir_bool() }
+            if is_cmp: result_ty = mir_bool()
             let dr_binop: LowerResult = make_value(rhs_r.state, result_ty, "t")
             let s_binop: LowerState = emit_instr(dr_binop.state, Instruction::BinOp(dr_binop.value, binop, lhs_val, rhs_val))
             return new_lower_result(dr_binop.value, s_binop)
-        },
-        _ => {
+        _ =>:
             // Unknown operator — emit as call
             let dr_opcall: LowerResult = make_value(rhs_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
@@ -9081,8 +8968,6 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
             args.push(rhs_r.value)
             let s_opcall: LowerState = emit_instr(dr_opcall.state, Instruction::Call(dr_opcall.value, "__op_" + op, args))
             return new_lower_result(dr_opcall.value, s_opcall)
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // v5.21.0 Te.6 — chained comparison lowering
@@ -9152,21 +9037,18 @@ fn resolve_unary_result_type(uop: UnaryOpKind, operand_ty: MIRType) -> MIRType:
 fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult:
     let op_r: LowerResult = lower_expr(st, operand)
     let uop_opt: Option<UnaryOpKind> = unaryop_from_str(op)
-    match uop_opt {
-        Some(uop) => {
+    match uop_opt:
+        Some(uop) =>:
             let result_ty: MIRType = resolve_unary_result_type(uop, op_r.value.ty)
             let dr_uop: LowerResult = make_value(op_r.state, result_ty, "t")
             let s_uop: LowerState = emit_instr(dr_uop.state, Instruction::UnaryOp(dr_uop.value, uop, op_r.value))
             return new_lower_result(dr_uop.value, s_uop)
-        },
-        _ => {
+        _ =>:
             let dr_ucall: LowerResult = make_value(op_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
             args.push(op_r.value)
             let s_ucall: LowerState = emit_instr(dr_ucall.state, Instruction::Call(dr_ucall.value, "__unary_" + op, args))
             return new_lower_result(dr_ucall.value, s_ucall)
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // Call lowering
@@ -9289,44 +9171,34 @@ fn infer_type_args_from_call(gfn: FnDefData, arg_types: List<MIRType>) -> List<M
             for _ in 0..50:
                 if pi < len(gfn.params) && !found:
                     let p: Param = gfn.params[pi]
-                    match p.type_annotation {
-                        Some(ann) => {
-                            if type_expr_name(ann) == tp_name {
-                                if pi < len(arg_types) {
+                    match p.type_annotation:
+                        Some(ann) =>:
+                            if type_expr_name(ann) == tp_name:
+                                if pi < len(arg_types):
                                     result.push(arg_types[pi])
                                     found = true
-                                }
-                            }
-                        },
                         _ => {}
-                    }
                     pi = pi + 1
             if !found: result.push(mir_unknown())
             ti = ti + 1
     result
 
 fn substitute_type_annotation(ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> Option<TypeExpr>:
-    match ann {
-        Some(te) => {
+    match ann:
+        Some(te) =>:
             let te_name: String = type_expr_name(te)
             let mut i: Int = 0
-            for _ in 0..20 {
-                if i < len(type_params) {
-                    if type_params[i] == te_name {
-                        if i < len(concrete) {
+            for _ in 0..20:
+                if i < len(type_params):
+                    if type_params[i] == te_name:
+                        if i < len(concrete):
                             // Replace with concrete type name
                             let mut cname: String = concrete[i].name
-                            if cname == "" { cname = kind_to_type_name(concrete[i].kind) }
+                            if cname == "": cname = kind_to_type_name(concrete[i].kind)
                             return Some(TypeExpr::Named(cname))
-                        }
-                    }
                     i = i + 1
-                }
-            }
             return ann
-        },
-        _ => { return none }
-    }
+        _ => return none
 
 fn specialize_fn(gfn: FnDefData, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> FnDefData:
     // Build new params with substituted type annotations
@@ -9353,26 +9225,23 @@ fn is_already_specialized(st: LowerState, mangled: String) -> Bool:
 
 fn try_monomorphize_call(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult:
     let gfn_opt: Option<FnDefData> = find_generic_fn(st, fn_name)
-    match gfn_opt {
-        Some(gfn) => {
+    match gfn_opt:
+        Some(gfn) =>:
             // Infer concrete types from argument types
             let mut arg_types: List<MIRType> = []
             let mut ai: Int = 0
-            for _ in 0..50 {
-                if ai < len(args) {
+            for _ in 0..50:
+                if ai < len(args):
                     arg_types.push(args[ai].ty)
                     ai = ai + 1
-                }
-            }
             let concrete: List<MIRType> = infer_type_args_from_call(gfn, arg_types)
             let mangled: String = mangle_generic_name(fn_name, concrete)
 
             let mut s: LowerState = st
-            if !is_already_specialized(s, mangled) {
+            if !is_already_specialized(s, mangled):
                 // Specialize and lower the function
                 let specialized: FnDefData = specialize_fn(gfn, mangled, gfn.type_params, concrete)
                 s = lower_fn(s, specialized, "")
-            }
 
             // Look up return type and emit call
             let ret_key: String = "__ret__" + mangled
@@ -9381,12 +9250,9 @@ fn try_monomorphize_call(st: LowerState, fn_name: String, args: List<Value>) -> 
             let dr: LowerResult = make_value(s, ret_ty, "t")
             let s2: LowerState = emit_instr(dr.state, Instruction::Call(dr.value, mangled, args))
             return new_lower_result(dr.value, s2)
-        },
-        _ => {
+        _ =>:
             // Not a generic function — return sentinel
             return new_lower_result(void_value(), st)
-        }
-    }
 
 fn find_type_param_index(type_params: List<String>, name: String) -> Int:
     let mut i: Int = 0
@@ -9398,16 +9264,13 @@ fn find_type_param_index(type_params: List<String>, name: String) -> Int:
 
 fn substitute_field_type(st: LowerState, ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> MIRType:
     let fty: MIRType = lower_resolve_type_opt_checked(st, ann)
-    match ann {
-        Some(a) => {
+    match ann:
+        Some(a) =>:
             let idx: Int = find_type_param_index(type_params, type_expr_name(a))
-            if idx >= 0 {
-                if idx < len(concrete) { return concrete[idx] }
-            }
+            if idx >= 0:
+                if idx < len(concrete): return concrete[idx]
             return fty
-        },
-        _ => { return fty }
-    }
+        _ => return fty
 
 fn find_generic_struct(st: LowerState, name: String) -> Option<StructDefData>:
     let mut i: Int = 0
@@ -9440,27 +9303,25 @@ fn find_struct_field_for_tp(gs: StructDefData, tp_name: String) -> Int:
 
 fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value>) -> LowerResult:
     let gs_opt: Option<StructDefData> = find_generic_struct(st, struct_name)
-    match gs_opt {
-        Some(gs) => {
+    match gs_opt:
+        Some(gs) =>:
             let concrete: List<MIRType> = infer_struct_type_args(gs, args)
             let mangled: String = mangle_generic_name(struct_name, concrete)
 
             let mut s: LowerState = st
-            if !is_struct_name(s, mangled) {
+            if !is_struct_name(s, mangled):
                 let mut fields: List<FieldPair> = []
                 let mut field_names: List<String> = []
                 let mut field_types: List<MIRType> = []
                 let mut fi: Int = 0
-                for _ in 0..500 {
-                    if fi < len(gs.fields) {
+                for _ in 0..500:
+                    if fi < len(gs.fields):
                         let sf: StructField = gs.fields[fi]
                         let fty: MIRType = substitute_field_type(s, Some(sf.type_annotation), gs.type_params, concrete)
                         fields.push(new_field_pair(sf.name, new_value("", fty)))
                         field_names.push(sf.name)
                         field_types.push(fty)
                         fi = fi + 1
-                    }
-                }
                 let info: StructInfo = new_struct_info(mangled, fields)
                 s.module = module_push_struct(s.module, info)
                 let sfi: StructFieldInfo = new_struct_field_info(mangled, field_names, field_types)
@@ -9474,25 +9335,20 @@ fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value
 
                 // Monomorphize generic impl methods for this struct
                 s = monomorphize_impl_methods(s, struct_name, mangled, gs.type_params, concrete)
-            }
             let fnames: List<String> = get_struct_field_names(s, mangled)
             let mut init_pairs: List<FieldPair> = []
             let mut pi: Int = 0
-            for _ in 0..500 {
-                if pi < len(fnames) {
-                    if pi < len(args) { init_pairs.push(new_field_pair(fnames[pi], args[pi])) }
+            for _ in 0..500:
+                if pi < len(fnames):
+                    if pi < len(args): init_pairs.push(new_field_pair(fnames[pi], args[pi]))
                     pi = pi + 1
-                }
-            }
             let struct_ty: MIRType = mir_struct(mangled)
             let dr: LowerResult = make_value(s, struct_ty, "t")
             let s2: LowerState = emit_instr(dr.state, Instruction::StructInit(dr.value, struct_ty, init_pairs))
             // v5.4.4 — StructInit takes ownership of each field value.
             let s3: LowerState = emit_move_fields(s2, init_pairs)
             return new_lower_result(dr.value, s3)
-        },
-        _ => { return new_lower_result(void_value(), st) }
-    }
+        _ => return new_lower_result(void_value(), st)
 
 fn monomorphize_impl_methods(st: LowerState, base_name: String, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> LowerState:
     // Find generic impl methods stored as "Base_method" in generic_fns
@@ -9602,38 +9458,34 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
     if len(enum_name) == 0: return new_lower_result(void_value(), st)
 
     let ge_opt: Option<EnumDefData> = find_generic_enum(st, enum_name)
-    match ge_opt {
-        Some(ge) => {
+    match ge_opt:
+        Some(ge) =>:
             let v_opt: Option<EnumVariant> = find_variant_in_enum(ge, variant_name)
-            match v_opt {
-                Some(variant) => {
+            match v_opt:
+                Some(variant) =>:
                     let concrete: List<MIRType> = infer_enum_type_args(ge, variant, args)
                     let mangled: String = mangle_generic_name(enum_name, concrete)
 
                     let mut s: LowerState = st
-                    if !is_enum_name(s, mangled) {
+                    if !is_enum_name(s, mangled):
                         // Monomorphize: create EnumInfo with substituted variant types
                         let mut new_variants: List<EnumVariantInfo> = []
                         let mut new_variant_names: List<String> = []
                         let mut vi: Int = 0
-                        for _ in 0..500 {
-                            if vi < len(ge.variants) {
+                        for _ in 0..500:
+                            if vi < len(ge.variants):
                                 let orig_v: EnumVariant = ge.variants[vi]
                                 let mut payload_types: List<MIRType> = []
                                 let mut fi: Int = 0
-                                for _ in 0..100 {
-                                    if fi < len(orig_v.fields) {
+                                for _ in 0..100:
+                                    if fi < len(orig_v.fields):
                                         let fty: MIRType = substitute_field_type(s, Some(orig_v.fields[fi]), ge.type_params, concrete)
                                         payload_types.push(fty)
                                         fi = fi + 1
-                                    }
-                                }
                                 let vi_info: EnumVariantInfo = new_enum_variant_info(orig_v.name, payload_types)
                                 new_variants.push(vi_info)
                                 new_variant_names.push(orig_v.name)
                                 vi = vi + 1
-                            }
-                        }
                         let info: EnumInfo = new_enum_info(mangled, new_variants)
                         s.module = module_push_enum(s.module, info)
                         let evn: EnumVariantNames = new_enum_variant_names(mangled, new_variant_names)
@@ -9646,7 +9498,6 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
                         // buffers while the emitter still needs them.
                         new_variants = []
                         new_variant_names = []
-                    }
 
                     // Emit EnumInit with mangled type name
                     let enum_ty: MIRType = mir_enum(mangled)
@@ -9655,12 +9506,8 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
                     // v5.4.4 — enum variant takes ownership of each arg.
                     let s3: LowerState = emit_move_vals(s2, args)
                     return new_lower_result(dr_enum.value, s3)
-                },
-                _ => { return new_lower_result(void_value(), st) }
-            }
-        },
-        _ => { return new_lower_result(void_value(), st) }
-    }
+                _ => return new_lower_result(void_value(), st)
+        _ => return new_lower_result(void_value(), st)
 
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult:
     // v5.5.1 Sh.4 Phase 2: block_on(future) — drive a coroutine to
@@ -9846,14 +9693,11 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         if len(args) == 1:
             // Use the function's return type (with generic args) if available
             let mut res_ty_ok: MIRType = mir_result()
-            match st.current_fn {
-                Some(cf) => {
-                    if cf.return_type.kind == TK_RESULT() {
+            match st.current_fn:
+                Some(cf) =>:
+                    if cf.return_type.kind == TK_RESULT():
                         res_ty_ok = cf.return_type
-                    }
-                },
                 _ => {}
-            }
             // Eu.2 (v5.26.1): if no enclosing Result type was found, default
             // args to <ok_arg_ty, String> mirroring mapanare/lower.py:2398.
             // Without this, dest.ty.args is empty and emit_wrap_ok's outer
@@ -9871,14 +9715,11 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     if fn_name == "Err":
         if len(args) == 1:
             let mut res_ty_err: MIRType = mir_result()
-            match st.current_fn {
-                Some(cf) => {
-                    if cf.return_type.kind == TK_RESULT() {
+            match st.current_fn:
+                Some(cf) =>:
+                    if cf.return_type.kind == TK_RESULT():
                         res_ty_err = cf.return_type
-                    }
-                },
                 _ => {}
-            }
             // Eu.2 (v5.26.1): default args to <Int, err_arg_ty> when no
             // enclosing Result type. Mirrors mapanare/lower.py:2411.
             if len(res_ty_err.args) < 2:
@@ -9971,18 +9812,15 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     // emit_call_ir / emit_call_void recognise the leading `%` and
     // emit `call <ret_ty> %fn(<args>)` rather than `call ... @<name>`.
     let var_lookup: Option<Value> = lookup_var(st, fn_name)
-    match var_lookup {
-        Some(addr_v) => {
-            if addr_v.ty.kind == TK_FN() {
+    match var_lookup:
+        Some(addr_v) =>:
+            if addr_v.ty.kind == TK_FN():
                 let load_r: LowerResult = make_value(st, addr_v.ty, fn_name + "_val")
                 let load_s: LowerState = emit_instr(load_r.state, Instruction::Load(load_r.value, addr_v))
                 let dr_ind: LowerResult = make_value(load_s, mir_unknown(), "t")
                 let s_ind: LowerState = emit_instr(dr_ind.state, Instruction::Call(dr_ind.value, load_r.value.name, args))
                 return new_lower_result(dr_ind.value, s_ind)
-            }
-        },
         _ => {}
-    }
 
     // Resolve lambda variable names to actual function names
     let resolved: String = unwrap_or_default(find_lambda(st, fn_name), fn_name)
@@ -9993,45 +9831,38 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let mut call_ret: MIRType = mir_unknown()
         let ret_key: String = "__ret__" + resolved
         let ret_opt: Option<String> = find_lambda(st, ret_key)
-        match ret_opt {
-            Some(ret_encoded) => {
+        match ret_opt:
+            Some(ret_encoded) =>:
                 // Decode "kind:name" → MIRType
                 let colon: Int = ret_encoded.find(":")
-                if colon >= 0 {
+                if colon >= 0:
                     let kind: String = ret_encoded.substr(0, colon)
                     // substr(start, count) — count is clamped to s.len
                     let name: String = ret_encoded.substr(colon + 1, len(ret_encoded))
-                    if kind == "struct" { call_ret = mir_struct(name) }
-                    if kind == "enum" { call_ret = mir_enum(name) }
-                    if kind == "int" { call_ret = mir_int() }
-                    if kind == "float" { call_ret = mir_float() }
-                    if kind == "string" { call_ret = mir_string() }
-                    if kind == "bool" { call_ret = mir_bool() }
-                    if kind == "void" { call_ret = mir_void() }
-                    if kind == "option" { call_ret = mir_option() }
-                    if kind == "result" {
+                    if kind == "struct": call_ret = mir_struct(name)
+                    if kind == "enum": call_ret = mir_enum(name)
+                    if kind == "int": call_ret = mir_int()
+                    if kind == "float": call_ret = mir_float()
+                    if kind == "string": call_ret = mir_string()
+                    if kind == "bool": call_ret = mir_bool()
+                    if kind == "void": call_ret = mir_void()
+                    if kind == "option": call_ret = mir_option()
+                    if kind == "result":
                         // Look up the FULL parameterized return type from the
                         // module's function list (preserves generic args).
                         let mut found_full: Bool = false
                         let mut fk: Int = 0
-                        for _ in 0..5000 {
-                            if fk < len(st.module.functions) {
-                                if st.module.functions[fk].name == resolved {
+                        for _ in 0..5000:
+                            if fk < len(st.module.functions):
+                                if st.module.functions[fk].name == resolved:
                                     call_ret = st.module.functions[fk].return_type
                                     found_full = true
                                     fk = len(st.module.functions)
-                                }
                                 fk = fk + 1
-                            }
-                        }
-                        if found_full == false { call_ret = mir_result() }
-                    }
-                    if kind == "list" { call_ret = mir_list() }
-                    if kind == "map" { call_ret = mir_map() }
-                }
-            },
+                        if found_full == false: call_ret = mir_result()
+                    if kind == "list": call_ret = mir_list()
+                    if kind == "map": call_ret = mir_map()
             _ => {}
-        }
         let dr_call: LowerResult = make_value(st, call_ret, "t")
         let s_call: LowerState = emit_instr(dr_call.state, Instruction::Call(dr_call.value, resolved, args))
         return new_lower_result(dr_call.value, s_call)
@@ -10054,17 +9885,14 @@ fn lower_call_with_captures(st: LowerState, fn_name: String, args: List<Value>, 
     // Load one captured variable and recurse
     let cap_name: String = captures[idx]
     let var_opt: Option<Value> = lookup_var(st, cap_name)
-    match var_opt {
-        Some(addr) => {
+    match var_opt:
+        Some(addr) =>:
             let lr: LowerResult = make_value(st, addr.ty, "cap")
             let ns: LowerState = emit_instr(lr.state, Instruction::Load(lr.value, addr))
             args.push(lr.value)
             return lower_call_with_captures(ns, fn_name, args, captures, idx + 1)
-        },
-        _ => {
+        _ =>:
             return lower_call_with_captures(st, fn_name, args, captures, idx + 1)
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // Method call lowering
@@ -10295,16 +10123,14 @@ fn find_field_alloca(st: LowerState, inner: Expr, field_name: String, obj_r: Low
     if expr_kind(inner) == "ident":
         let name: String = expr_ident_name(inner)
         let var_opt: Option<Value> = lookup_var(st, name)
-        match var_opt {
-            Some(addr) => {
+        match var_opt:
+            Some(addr) =>:
                 // Encode the field name in the Value's type name
                 // so the emitter can find the correct field index.
                 // Convention: ty.name = "StructName:field_name"
                 let combined: MIRType = new_mir_type(addr.ty.name + ":" + field_name, addr.ty.kind)
                 return new_value(addr.name, combined)
-            },
-            _ => { return obj_r.value }
-        }
+            _ => return obj_r.value
     return obj_r.value
 
 // ---------------------------------------------------------------------------
@@ -11026,15 +10852,12 @@ fn lower_list_typed_into(st: LowerState, elements: List<Expr>, hinted_elem_ty: M
 // recognized list generic; callers use the UNKNOWN sentinel to mean
 // "no hint available".
 fn extract_list_elem_ty(st: LowerState, te: TypeExpr) -> MIRType:
-    match te {
-        Generic(name, args) => {
-            if name == "List" && len(args) >= 1 {
+    match te:
+        Generic(name, args) =>:
+            if name == "List" && len(args) >= 1:
                 return lower_resolve_type_checked(st, args[0])
-            }
             return mir_unknown()
-        },
-        _ => { return mir_unknown() }
-    }
+        _ => return mir_unknown()
 
 // v5.6.7 Ve.2 helper — resolve a `let x: List<T> = []` pattern to its
 // element type hint for `lower_list_typed`. Returns mir_unknown() when
@@ -11272,8 +11095,8 @@ fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState:
     for _ in 0..512:
         if j < 0: return st
         let inst: Instruction = instrs[j]
-        match inst {
-            MapInit(dest, _, _, pairs) => {
+        match inst:
+            MapInit(dest, _, _, pairs) =>:
                 instrs[j] = Instruction::MapInit(dest, k_ty, v_ty, pairs)
                 let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
                 let mut blocks: List<BasicBlock> = st.fn_blocks
@@ -11281,9 +11104,7 @@ fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState:
                 let mut new_st: LowerState = st
                 new_st.fn_blocks = blocks
                 return new_st
-            },
             _ => {}
-        }
         j = j - 1
     return st
 
@@ -11302,12 +11123,10 @@ fn lower_let_destructure(st: LowerState, pattern: StructPattern, outer_mut: Bool
     if expr_kind(value) == "ident":
         let src_name: String = expr_ident_name(value)
         let lookup: Option<Value> = lookup_var(s, src_name)
-        match lookup {
-            Some(_) => {
+        match lookup:
+            Some(_) =>:
                 return emit_destructure_pattern(s, pattern, src_name, outer_mut)
-            },
             _ => {}
-        }
 
     // General case: synthesize `let __mn_dst_N = value` first.
     let tmp_idx: Int = s.struct_update_counter
@@ -11326,22 +11145,19 @@ fn emit_destructure_pattern(st: LowerState, pattern: StructPattern, base_name: S
         if i >= n: return s
         let fp: FieldPattern = pattern.fields[i]
         let fa: Expr = Expr::FieldAccess(Expr::Ident(base_name), fp.name)
-        match fp.sub_pattern {
-            Some(sub) => {
+        match fp.sub_pattern:
+            Some(sub) =>:
                 let nested_idx: Int = s.struct_update_counter
                 s.struct_update_counter = nested_idx + 1
                 let nested_base: String = "__mn_dst_" + toString(nested_idx)
                 let none_t: Option<TypeExpr> = none
                 s = lower_let(s, nested_base, false, none_t, fa)
                 s = emit_destructure_pattern(s, sub, nested_base, outer_mut)
-            },
-            _ => {
+            _ =>:
                 let mut leaf_mut: Bool = outer_mut
-                if fp.mutable { leaf_mut = true }
+                if fp.mutable: leaf_mut = true
                 let none_t2: Option<TypeExpr> = none
                 s = lower_let(s, fp.name, leaf_mut, none_t2, fa)
-            }
-        }
         i = i + 1
     return s
 
@@ -11487,15 +11303,13 @@ fn stmt_diverges(s: Stmt) -> Bool:
             let then_b: Block = expr_if_then(e)
             if !block_diverges(then_b): return false
             let else_opt: Option<ElseClause> = expr_if_else(e)
-            match else_opt {
-                Some(ec) => {
+            match else_opt:
+                Some(ec) =>:
                     let eck: String = else_clause_kind(ec)
                     if eck == "else_block":
                         return block_diverges(else_clause_block(ec))
                     return false
-                },
-                _ => { return false }
-            }
+                _ => return false
     return false
 
 fn match_arm_body_diverges(body: MatchArmBody) -> Bool:
@@ -11677,15 +11491,12 @@ fn lower_assign_list_hint(st: LowerState, target: Expr, value: Expr) -> MIRType:
     if expr_kind(target) != "ident": return mir_unknown()
     let tname: String = expr_ident_name(target)
     let opt_addr: Option<Value> = lookup_var(st, tname)
-    match opt_addr {
-        Some(addr) => {
-            if addr.ty.kind == TK_LIST() && len(addr.ty.args) > 0 {
+    match opt_addr:
+        Some(addr) =>:
+            if addr.ty.kind == TK_LIST() && len(addr.ty.args) > 0:
                 return addr.ty.args[0]
-            }
             return mir_unknown()
-        },
-        _ => { return mir_unknown() }
-    }
+        _ => return mir_unknown()
 
 fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerResult:
     // v5.6.10 — empty-list reassignment elem_ty hint. Same pattern as
@@ -11710,38 +11521,31 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
             s = old_r.state
             let op_str: String = strip_assign_op(op)
             let binop_opt: Option<BinOpKind> = binop_from_str(op_str)
-            match binop_opt {
-                Some(binop) => {
+            match binop_opt:
+                Some(binop) =>:
                     let result_r: LowerResult = make_value(s, old_r.value.ty, "t")
                     s = emit_instr(result_r.state, Instruction::BinOp(result_r.value, binop, old_r.value, val_r.value))
 
                     let var_opt_cmp: Option<Value> = lookup_var(s, name)
-                    match var_opt_cmp {
-                        Some(addr) => {
+                    match var_opt_cmp:
+                        Some(addr) =>:
                             s = emit_instr(s, Instruction::Store(addr, result_r.value))
                             return new_lower_result(result_r.value, s)
-                        },
                         _ => {}
-                    }
-                },
                 _ => {}
-            }
 
         let var_opt_asgn: Option<Value> = lookup_var(s, name)
-        match var_opt_asgn {
-            Some(addr) => {
+        match var_opt_asgn:
+            Some(addr) =>:
                 // Update var type if the new value is more specific
                 // (e.g. from unknown/i64 to a concrete struct type)
                 let mut store_addr: Value = addr
-                if addr.ty.kind == TK_UNKNOWN() && val_r.value.ty.kind != TK_UNKNOWN() {
+                if addr.ty.kind == TK_UNKNOWN() && val_r.value.ty.kind != TK_UNKNOWN():
                     store_addr = new_value(addr.name, val_r.value.ty)
                     s = define_var(s, name, store_addr, true)
-                }
                 s = emit_instr(s, Instruction::Store(store_addr, val_r.value))
                 return new_lower_result(val_r.value, s)
-            },
             _ => {}
-        }
         return new_lower_result(val_r.value, s)
     if tk == "field_access":
         // Pass the ALLOCA address (not loaded value) so the emitter
@@ -11905,12 +11709,10 @@ fn is_some_else_clause(clause: Option<ElseClause>) -> Bool:
         _ => return false
 
 fn lower_else_clause(st: LowerState, clause_opt: Option<ElseClause>) -> LowerResult:
-    match clause_opt {
-        Some(clause) => {
+    match clause_opt:
+        Some(clause) =>:
             return lower_else_clause_inner(st, clause)
-        },
-        _ => { return new_lower_result(void_value(), st) }
-    }
+        _ => return new_lower_result(void_value(), st)
 
 fn lower_else_clause_inner(st: LowerState, clause: ElseClause) -> LowerResult:
     if else_clause_kind(clause) == "else_block":
@@ -12176,9 +11978,9 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
                         cases.push(new_switch_case(pn, label))
                         seen_tags.push(pn)
                 else:
-                    if !default_set { default_lbl = label; default_set = true }
+                    if !default_set: default_lbl = label; default_set = true
             if pk_arm == "wildcard":
-                if !default_set { default_lbl = label; default_set = true }
+                if !default_set: default_lbl = label; default_set = true
             // v4.35.0: or-patterns — add one switch case per alternative
             if pk_arm == "or":
                 let alts: List<Pattern> = pattern_or_alts(arm.pattern)
@@ -12204,9 +12006,9 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
                                     cases.push(new_switch_case(apn, label))
                                     seen_tags.push(apn)
                             else:
-                                if !default_set { default_lbl = label; default_set = true }
+                                if !default_set: default_lbl = label; default_set = true
                         if apk == "wildcard":
-                            if !default_set { default_lbl = label; default_set = true }
+                            if !default_set: default_lbl = label; default_set = true
                         oi = oi + 1
             i = i + 1
     // Build result ONLY after all mutations are done — avoids aliasing
@@ -12399,8 +12201,8 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             // where the next arm's constructor pattern differs. Porting
             // the full decision-tree approach requires build_decision_tree
             // in the self-hosted lowerer (future work).
-            match arm.guard {
-                Some(guard_expr) => {
+            match arm.guard:
+                Some(guard_expr) =>:
                     let guard_r: LowerResult = lower_expr(s, guard_expr)
                     s = guard_r.state
                     let pass_r: LowerResult = fresh_block_label(s, "guard_pass")
@@ -12413,17 +12215,14 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                     // Guard fail: jump to next arm (re-bind + re-check)
                     // or to merge if this is the last arm.
                     s = add_block(s, fail_label)
-                    if ai + 1 < na_match {
+                    if ai + 1 < na_match:
                         let next_label: String = arm_labels[ai + 1]
                         s = emit_instr(s, Instruction::Jump(next_label))
-                    } else {
+                    else:
                         s = emit_instr(s, Instruction::Jump(merge_label))
-                    }
                     // Guard pass: continue to body
                     s = add_block(s, pass_label)
-                },
                 None => {}
-            }
 
             // Lower arm body
             let arm_val_r: LowerResult = lower_arm_body(s, arm.body)
@@ -13119,12 +12918,10 @@ fn try_fold_instruction(inst: Instruction) -> Option<Instruction>:
     let a: Int = int(lhs.name)
     let b: Int = int(rhs.name)
     let result_opt: Option<Int> = fold_int_binop(op, a, b)
-    match result_opt {
-        Some(r) => {
+    match result_opt:
+        Some(r) =>:
             return Some(Instruction::Const(dest, mir_int(), toString(r)))
-        },
-        _ => { return none }
-    }
+        _ => return none
 
 fn constant_fold_block(bb: BasicBlock) -> BasicBlock:
     let mut new_instrs: List<Instruction> = []
@@ -13137,13 +12934,11 @@ fn constant_fold_block(bb: BasicBlock) -> BasicBlock:
             return bb
         let inst: Instruction = bb.instructions[i]
         let folded: Option<Instruction> = try_fold_instruction(inst)
-        match folded {
-            Some(new_inst) => {
+        match folded:
+            Some(new_inst) =>:
                 new_instrs.push(new_inst)
                 changed = true
-            },
-            _ => { new_instrs.push(inst) }
-        }
+            _ => new_instrs.push(inst)
         i = i + 1
     return bb
 
@@ -13185,13 +12980,11 @@ fn find_const_ty(consts: List<ConstEntry>, name: String) -> MIRType:
 
 fn replace_value(v: Value, consts: List<ConstEntry>) -> Value:
     let opt: Option<String> = find_const(consts, v.name)
-    match opt {
-        Some(cv) => {
+    match opt:
+        Some(cv) =>:
             let ct: MIRType = find_const_ty(consts, v.name)
             return new Value { name: cv, ty: ct }
-        },
-        _ => { return v }
-    }
+        _ => return v
 
 fn propagate_in_instruction(inst: Instruction, consts: List<ConstEntry>) -> Instruction:
     let ik: String = instr_kind(inst)
@@ -13466,23 +13259,20 @@ fn try_strength_reduce(inst: Instruction) -> Option<Instruction>:
     if ik != "binop": return none
     let op: BinOpKind = instr_binop_op(inst)
     // Only reduce Mod operations
-    match op {
-        Mod => {
+    match op:
+        Mod =>:
             let rhs: Value = instr_binop_rhs(inst)
             // RHS must be a constant integer
-            if rhs.ty.kind != TK_INT() { return none }
-            if rhs.name.starts_with("%") { return none }
+            if rhs.ty.kind != TK_INT(): return none
+            if rhs.name.starts_with("%"): return none
             let n: Int = int(rhs.name)
-            if is_power_of_two(n) {
+            if is_power_of_two(n):
                 let mask: Int = power_of_two_mask(n)
                 let mask_val: Value = new Value { name: toString(mask), ty: rhs.ty }
                 // x % 2^n → x & (2^n - 1)
                 return Some(Instruction::BinOp(instr_dest(inst), BinOpKind::And, instr_binop_lhs(inst), mask_val))
-            }
             return none
-        },
-        _ => { return none }
-    }
+        _ => return none
 
 fn strength_reduce_block(bb: BasicBlock) -> BasicBlock:
     let mut new_instrs: List<Instruction> = []
@@ -13495,13 +13285,11 @@ fn strength_reduce_block(bb: BasicBlock) -> BasicBlock:
             return bb
         let inst: Instruction = bb.instructions[i]
         let reduced: Option<Instruction> = try_strength_reduce(inst)
-        match reduced {
-            Some(new_inst) => {
+        match reduced:
+            Some(new_inst) =>:
                 new_instrs.push(new_inst)
                 changed = true
-            },
-            _ => { new_instrs.push(inst) }
-        }
+            _ => new_instrs.push(inst)
         i = i + 1
     return bb
 
@@ -13605,26 +13393,21 @@ fn count_calls(f: MIRFunction, lookup: List<FnLookupEntry>) -> List<CallCount>:
                 let fn_name: String = instr_call_fn(inst)
                 // Check if this function exists in lookup
                 let fn_opt: Option<MIRFunction> = find_fn_by_name(lookup, fn_name)
-                match fn_opt {
-                    Some(_) => {
+                match fn_opt:
+                    Some(_) =>:
                         // Find or create count entry
                         let mut found: Bool = false
                         let mut ci: Int = 0
-                        for _ in 0..1000 {
-                            if ci >= len(counts) { break }
-                            if counts[ci].name == fn_name {
+                        for _ in 0..1000:
+                            if ci >= len(counts): break
+                            if counts[ci].name == fn_name:
                                 counts[ci] = new CallCount { name: fn_name, count: counts[ci].count + 1 }
                                 found = true
                                 break
-                            }
                             ci = ci + 1
-                        }
-                        if found == false {
+                        if found == false:
                             counts.push(new CallCount { name: fn_name, count: 1 })
-                        }
-                    },
                     _ => {}
-                }
             ii = ii + 1
         bi = bi + 1
     counts
@@ -13641,17 +13424,14 @@ fn get_call_count(counts: List<CallCount>, name: String) -> Int:
 fn rename_value(v: Value, prefix: String, renames: List<ConstEntry>) -> Value:
     // Check if this value has been renamed
     let opt: Option<String> = find_const(renames, v.name)
-    match opt {
-        Some(new_name) => { return new Value { name: new_name, ty: v.ty } },
-        _ => {
+    match opt:
+        Some(new_name) => { return new Value { name: new_name, ty: v.ty } }
+        _ =>:
             // If it starts with %, rename with prefix
-            if v.name.starts_with("%") {
+            if v.name.starts_with("%"):
                 let new_name: String = "%" + prefix + v.name.substr(1, len(v.name) - 1)
                 return new Value { name: new_name, ty: v.ty }
-            }
             return v
-        }
-    }
 
 // v5.1.2 In.1: Replace one value name if it matches old_name.
 fn replace_use(v: Value, old_name: String, new_name: String) -> Value:
@@ -13716,12 +13496,10 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
     // Return
     if ik == "return":
         let rv: Option<Value> = instr_return_val(inst)
-        match rv {
-            Some(val) => {
+        match rv:
+            Some(val) =>:
                 return Instruction::Return(Some(replace_use(val, old_name, new_name)))
-            },
-            _ => { return inst }
-        }
+            _ => return inst
     // Call — rename args (and fn_name when it's an indirect-call SSA value)
     if ik == "call":
         let args: List<Value> = instr_call_args(inst)
@@ -13809,14 +13587,12 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
     // Return → Copy + Jump to merge
     if ik == "return":
         let ret_val: Option<Value> = instr_return_val(inst)
-        match ret_val {
-            Some(rv) => {
+        match ret_val:
+            Some(rv) =>:
                 let renamed_rv: Value = rename_value(rv, prefix, renames)
                 let ret_dest: Value = new Value { name: "%" + prefix + "retval", ty: renamed_rv.ty }
                 result.push(Instruction::Copy(ret_dest, renamed_rv))
-            },
             _ => {}
-        }
         result.push(Instruction::Jump(merge_label))
         return result
 
@@ -14207,14 +13983,11 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
         if ci >= len(call_counts): break
         let cc: CallCount = call_counts[ci]
         let callee_opt: Option<MIRFunction> = find_fn_by_name(lookup, cc.name)
-        match callee_opt {
-            Some(callee) => {
-                if should_inline(callee, cc.count) {
+        match callee_opt:
+            Some(callee) =>:
+                if should_inline(callee, cc.count):
                     eligible.push(cc.name)
-                }
-            },
             _ => {}
-        }
         ci = ci + 1
     if len(eligible) == 0: return f
 
@@ -14232,11 +14005,11 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                 if is_in_list(callee_name, eligible):
                     // Found an eligible call site — inline it
                     let callee_opt2: Option<MIRFunction> = find_fn_by_name(lookup, callee_name)
-                    match callee_opt2 {
-                        Some(callee) => {
+                    match callee_opt2:
+                        Some(callee) =>:
                             // Safety: skip if arg count != param count (name collision)
                             let call_args_pre: List<Value> = instr_call_args(inst)
-                            if len(call_args_pre) == len(callee.params) {
+                            if len(call_args_pre) == len(callee.params):
 
                             // Use block index + instruction index for unique prefix
                             let prefix: String = "_inl" + toString(bi) + "_" + toString(ii) + "_"
@@ -14246,22 +14019,19 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             let mut renames: List<ConstEntry> = []
                             let call_args: List<Value> = call_args_pre
                             let mut pi2: Int = 0
-                            for _ in 0..100 {
-                                if pi2 >= len(callee.params) { break }
-                                if pi2 < len(call_args) {
+                            for _ in 0..100:
+                                if pi2 >= len(callee.params): break
+                                if pi2 < len(call_args):
                                     renames.push(new ConstEntry { name: "%" + callee.params[pi2].name, value: call_args[pi2].name, ty: call_args[pi2].ty })
-                                }
                                 pi2 = pi2 + 1
-                            }
 
                             // Split: pre-call instructions
                             let mut pre_insts: List<Instruction> = []
                             let mut ki: Int = 0
-                            for _ in 0..10000 {
-                                if ki >= ii { break }
+                            for _ in 0..10000:
+                                if ki >= ii: break
                                 pre_insts.push(bb.instructions[ki])
                                 ki = ki + 1
-                            }
 
                             // Clone callee's single block instructions
                             let callee_entry: String = prefix + callee.blocks[0].label
@@ -14270,17 +14040,15 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             // Clone callee block
                             let mut cloned_insts: List<Instruction> = []
                             let mut cli: Int = 0
-                            for _ in 0..10000 {
-                                if cli >= len(callee.blocks[0].instructions) { break }
+                            for _ in 0..10000:
+                                if cli >= len(callee.blocks[0].instructions): break
                                 let cloned: List<Instruction> = clone_instr_for_inline(callee.blocks[0].instructions[cli], prefix, renames, merge_label)
                                 let mut cj: Int = 0
-                                for _ in 0..10 {
-                                    if cj >= len(cloned) { break }
+                                for _ in 0..10:
+                                    if cj >= len(cloned): break
                                     cloned_insts.push(cloned[cj])
                                     cj = cj + 1
-                                }
                                 cli = cli + 1
-                            }
 
                             // Post-call instructions
                             // v5.1.2 In.1: use a fresh dest name for the inlined result
@@ -14292,21 +14060,18 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             let call_dest: Value = instr_dest(inst)
                             let do_rename: Bool = call_dest.name.starts_with("%")
                             let fresh_dest_name: String = "%" + prefix + "dst"
-                            if do_rename {
+                            if do_rename:
                                 let fresh_dest: Value = new Value { name: fresh_dest_name, ty: call_dest.ty }
                                 let ret_val: Value = new Value { name: "%" + prefix + "retval", ty: call_dest.ty }
                                 post_insts.push(Instruction::Copy(fresh_dest, ret_val))
-                            }
                             let mut pi3: Int = ii + 1
-                            for _ in 0..10000 {
-                                if pi3 >= len(bb.instructions) { break }
-                                if do_rename {
+                            for _ in 0..10000:
+                                if pi3 >= len(bb.instructions): break
+                                if do_rename:
                                     post_insts.push(replace_uses_in_instr(bb.instructions[pi3], call_dest.name, fresh_dest_name))
-                                } else {
+                                else:
                                     post_insts.push(bb.instructions[pi3])
-                                }
                                 pi3 = pi3 + 1
-                            }
 
                             // Build new block list
                             let mut new_blocks: List<BasicBlock> = []
@@ -14320,44 +14085,37 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             // and fix PHI predecessors (bb.label → merge_label)
                             let orig_label: String = bb.label
                             let mut ri: Int = bi + 1
-                            for _ in 0..5000 {
-                                if ri >= len(f.blocks) { break }
+                            for _ in 0..5000:
+                                if ri >= len(f.blocks): break
                                 let rbb: BasicBlock = f.blocks[ri]
                                 let mut renamed_instrs: List<Instruction> = []
                                 let mut rii: Int = 0
-                                for _ in 0..10000 {
-                                    if rii >= len(rbb.instructions) { break }
+                                for _ in 0..10000:
+                                    if rii >= len(rbb.instructions): break
                                     let mut rinst: Instruction = rbb.instructions[rii]
-                                    if do_rename {
+                                    if do_rename:
                                         rinst = replace_uses_in_instr(rinst, call_dest.name, fresh_dest_name)
-                                    }
                                     rinst = rename_phi_pred(rinst, orig_label, merge_label)
                                     renamed_instrs.push(rinst)
                                     rii = rii + 1
-                                }
                                 new_blocks.push(new BasicBlock { label: rbb.label, instructions: renamed_instrs })
                                 ri = ri + 1
-                            }
                             // Prepend blocks before current
                             let mut final_blocks: List<BasicBlock> = []
                             let mut fi: Int = 0
-                            for _ in 0..5000 {
-                                if fi >= bi { break }
+                            for _ in 0..5000:
+                                if fi >= bi: break
                                 final_blocks.push(f.blocks[fi])
                                 fi = fi + 1
-                            }
                             let mut ni: Int = 0
-                            for _ in 0..5000 {
-                                if ni >= len(new_blocks) { break }
+                            for _ in 0..5000:
+                                if ni >= len(new_blocks): break
                                 final_blocks.push(new_blocks[ni])
                                 ni = ni + 1
-                            }
 
                             return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: final_blocks, decorators: f.decorators, is_public: f.is_public }
-                            } // end param-count guard
-                        },
+                            // end param-count guard
                         _ => {}
-                    }
             ii = ii + 1
         bi = bi + 1
     return f
@@ -14558,12 +14316,10 @@ fn check_escape(f: MIRFunction, alloc_name: String) -> Bool:
             // Returned — escapes
             if ik == "return":
                 let rv: Option<Value> = instr_return_val(inst)
-                match rv {
-                    Some(val) => {
-                        if val.name == alloc_name { return true }
-                    },
+                match rv:
+                    Some(val) =>:
+                        if val.name == alloc_name: return true
                     _ => {}
-                }
             // Stored in a struct field — escapes
             if ik == "field_set":
                 if instr_fieldset_val(inst).name == alloc_name: return true
@@ -17070,13 +16826,12 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
 
     // Look up field index from registered structs (internal + module)
     let struct_opt: Option<StructEntry> = find_struct_entry(s, obj.ty.name)
-    match struct_opt {
-        Some(se) => {
+    match struct_opt:
+        Some(se) =>:
             let idx: Int = find_field_index(se.field_names, field_name)
             s = emit_line(s, emit_extractvalue(dn, obj_ty, on, toString(idx)))
             return s
-        },
-        _ => {
+        _ =>:
             // Struct not registered — emit index 0 with error to stderr
             __mn_str_eprint("ERROR: struct not registered: ")
             __mn_str_eprint(obj.ty.name)
@@ -17085,8 +16840,6 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
             __mn_str_eprint("\n")
             s = emit_line(s, emit_extractvalue(dn, obj_ty, on, "0"))
             return s
-        }
-    }
 
 fn find_field_index_placeholder_deleted() -> Int: return 0
 
@@ -17110,18 +16863,15 @@ fn emit_field_set(st: EmitState, obj: Value, field_name: String, val: Value) -> 
     // Look up field index from registered structs
     let struct_opt: Option<StructEntry> = find_struct_entry(s, obj.ty.name)
     let mut idx: Int = 0
-    match struct_opt {
-        Some(se) => {
+    match struct_opt:
+        Some(se) =>:
             idx = find_field_index(se.field_names, field_name)
-        },
-        _ => {
+        _ =>:
             __mn_str_eprint("ERROR: struct not registered for field_set: ")
             __mn_str_eprint(obj.ty.name)
             __mn_str_eprint(".")
             __mn_str_eprint(field_name)
             __mn_str_eprint("\n")
-        }
-    }
     let struct_ty: String = resolve_type(s, obj.ty)
     if obj.name.contains(".addr"):
         let gep: String = "%" + strip_percent(obj.name) + "_fp" + toString(s.counter)
@@ -17211,13 +16961,11 @@ fn find_list_field_index(st: EmitState, struct_name: String, dest: Value) -> Str
         let base: String = strip_colon_suffix(struct_name)
         let field: String = extract_after_colon(struct_name, colon_pos)
         let opt: Option<StructEntry> = find_struct_entry(st, base)
-        match opt {
-            Some(se) => {
+        match opt:
+            Some(se) =>:
                 let idx: Int = find_field_index(se.field_names, field)
                 return toString(idx)
-            },
-            _ => { return "0" }
-        }
+            _ => return "0"
     return "0"
 
 fn find_alloca_by_search(lines: List<String>, value_name: String) -> String:
@@ -18527,6 +18275,28 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         let as_rass: String = llvm_string() + " " + args[0].name
         return emit_rt_call(st, dn, llvm_string(), "__mn_rewrite_arm_stmt_shorthand", as_rass)
 
+    // v5.49.0 Wn.2 — Win64 ABI routing for `__mn_file_exists`. Same
+    // rationale as the Mb.9 / Mb.10 / Te.3.D.4.4 entries above:
+    // without this routing, `find_clang()` at
+    // `mapanare/self/main.mn:80` falls through to the default-path
+    // emission which uses `is_byref_type_st` (64-byte threshold for
+    // user-fn ABI). MnString is 16 bytes, so on Win64 the call site
+    // emitted `{ptr, i64}` aggregate-by-value while
+    // `declare_runtime_fn` had already emitted `ptr` per Win64
+    // (8-byte threshold). gcc lowered the C side as
+    // pass-by-hidden-pointer and dereferenced rcx as a
+    // struct-pointer pointing into the path data buffer →
+    // garbage `path.len` → `__mn_alloc` 8 EB OOM. See
+    // `docs/roadmap/v5/v5.49.0/PRE_PHASE_AUDIT.md`. Scope is
+    // deliberately narrow to match the established
+    // one-symbol-per-release precedent and keep the IR-size gate
+    // green; the broader sweep across every MnString-arg
+    // `__mn_*` symbol is a v5.49.x carry candidate (registry-driven
+    // refactor preferred over more inline branches).
+    if fn_name == "__mn_file_exists":
+        let as_fe: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_file_exists", as_fe)
+
     // chr/ord builtins
     if fn_name == "chr":
         return emit_rt_call(st, dn, llvm_string(), "__mn_str_chr", "i64 " + args[0].name)
@@ -19035,60 +18805,51 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
 
     // Look up return type and handle sret for large struct returns
     let fn_opt: Option<FnEntry> = find_function(s, fn_name)
-    match fn_opt {
-        Some(fe) => {
-            if fe.ret_type == "void" {
+    match fn_opt:
+        Some(fe) =>:
+            if fe.ret_type == "void":
                 return emit_line(s, emit_call_void(fn_name, args_str))
-            }
             // v5.0.4 Cb.15: sret via per-target ABI classifier
-            if use_sret_return(s, fe.ret_type) {
+            if use_sret_return(s, fe.ret_type):
                 let sret_a: String = "%sret" + toString(s.counter)
                 s.counter = s.counter + 1
                 s = emit_line(s, "  " + sret_a + " = alloca " + fe.ret_type)
                 s = emit_line(s, "  store " + fe.ret_type + " zeroinitializer, ptr " + sret_a)
                 let sret_arg: String = "ptr sret(" + fe.ret_type + ") " + sret_a
                 let mut full_args: String = sret_arg
-                if len(args_str) > 0 { full_args = sret_arg + ", " + args_str }
+                if len(args_str) > 0: full_args = sret_arg + ", " + args_str
                 s = emit_line(s, "  call void @" + fn_name + "(" + full_args + ")")
                 s = emit_line(s, "  " + dn + " = load " + fe.ret_type + ", ptr " + sret_a)
                 return s
-            }
             s = emit_line(s, emit_call_ir(dn, fe.ret_type, fn_name, args_str))
             // v5.6.4 Rt.06 — attach tensor drop-glue tracking for the
             // 20 tensor binop runtime fns (broadcast / scalar / rscalar).
             // The non-Some arm (below) mirrors this injection for fns
             // not present in st.functions.
-            if is_tensor_allocating_fn(fn_name) {
+            if is_tensor_allocating_fn(fn_name):
                 s = emit_track_tensor(s, dn)
-            }
             return s
-        },
-        _ => {
+        _ =>:
             let ret_ty: String = resolve_mir_type(dest.ty)
-            if ret_ty == "void" {
+            if ret_ty == "void":
                 return emit_line(s, emit_call_void(fn_name, args_str))
-            }
             // v5.0.4 Cb.15: sret via per-target ABI classifier
-            if use_sret_return(s, ret_ty) {
+            if use_sret_return(s, ret_ty):
                 let sret_b: String = "%sret" + toString(s.counter)
                 s.counter = s.counter + 1
                 s = emit_line(s, "  " + sret_b + " = alloca " + ret_ty)
                 s = emit_line(s, "  store " + ret_ty + " zeroinitializer, ptr " + sret_b)
                 let sret_arg_b: String = "ptr sret(" + ret_ty + ") " + sret_b
                 let mut full_args_b: String = sret_arg_b
-                if len(args_str) > 0 { full_args_b = sret_arg_b + ", " + args_str }
+                if len(args_str) > 0: full_args_b = sret_arg_b + ", " + args_str
                 s = emit_line(s, "  call void @" + fn_name + "(" + full_args_b + ")")
                 s = emit_line(s, "  " + dn + " = load " + ret_ty + ", ptr " + sret_b)
                 return s
-            }
             s = emit_line(s, emit_call_ir(dn, ret_ty, fn_name, args_str))
             // v5.6.4 Rt.06 — tensor tracking for non-FnEntry-registered calls.
-            if is_tensor_allocating_fn(fn_name) {
+            if is_tensor_allocating_fn(fn_name):
                 s = emit_track_tensor(s, dn)
-            }
             return s
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // Built-in function emission
@@ -19830,13 +19591,13 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
     if ret_ty.starts_with("%struct.") && len(ret_val) > 0:
         let sname: String = ret_ty.substr(8, len(ret_ty) - 8)
         let sopt: Option<StructEntry> = find_struct_entry(s, sname)
-        match sopt {
-            Some(sent) => {
+        match sopt:
+            Some(sent) =>:
                 let nf: Int = len(sent.field_types)
                 let mut fi: Int = 0
-                while fi < nf {
+                while fi < nf:
                     let ft: String = sent.field_types[fi]
-                    if ft == llvm_string() {
+                    if ft == llvm_string():
                         let cnt: Int = s.counter
                         s.counter = s.counter + 1
                         let fval: String = "%ret.ssf" + toString(cnt)
@@ -19844,7 +19605,7 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
                         s = emit_line(s, "  " + fval + " = extractvalue " + ret_ty + " " + ret_val + ", " + toString(fi))
                         s = emit_line(s, "  " + fp + " = extractvalue {ptr, i64} " + fval + ", 0")
                         ret_str_ptrs.push(fp)
-                    } else if ft == llvm_list_rt() {
+                    else if ft == llvm_list_rt():
                         let cnt: Int = s.counter
                         s.counter = s.counter + 1
                         let fval: String = "%ret.slf" + toString(cnt)
@@ -19852,7 +19613,7 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
                         s = emit_line(s, "  " + fval + " = extractvalue " + ret_ty + " " + ret_val + ", " + toString(fi))
                         s = emit_line(s, "  " + fp + " = extractvalue " + llvm_list_rt() + " " + fval + ", 0")
                         ret_list_ptrs.push(fp)
-                    } else if ft == "ptr" {
+                    else if ft == "ptr":
                         let cnt: Int = s.counter
                         s.counter = s.counter + 1
                         let fp: String = "%ret.sbp" + toString(cnt)
@@ -19862,12 +19623,8 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
                         // to both escape lists.
                         ret_box_ptrs.push(fp)
                         ret_tensor_ptrs.push(fp)
-                    }
                     fi = fi + 1
-                }
-            },
             _ => {}
-        }
 
     s = emit_drop_glue_strings(s, ret_str_ptrs)
     s = emit_drop_glue_lists(s, ret_list_ptrs)
@@ -19876,8 +19633,8 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
     return s
 
 fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState:
-    match val_opt {
-        Some(val) => {
+    match val_opt:
+        Some(val) =>:
             let ty: String = st.current_ret_type
             // v5.5.4 Sh.4 Phase 2 — async fn ret rewrite. The
             // current_ret_type was set to "ASYNC_PTR:" + inner_ty by
@@ -19886,7 +19643,7 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState:
             // Future as Ready, store the box into the payload slot,
             // and branch to %coro.final (the shared epilogue block).
             // Mirrors emit_llvm_text.py:2613–2628.
-            if ty.starts_with("ASYNC_PTR:") {
+            if ty.starts_with("ASYNC_PTR:"):
                 let inner_ty: String = ty.substr(10, len(ty) - 10)
                 let mut sa: EmitState = emit_drop_glue(st, val.name, inner_ty)
                 let n: Int = sa.counter
@@ -19899,67 +19656,56 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState:
                 sa = emit_line(sa, "  " + slot_name + " = getelementptr inbounds {i8, ptr}, ptr %future, i32 0, i32 1")
                 sa = emit_line(sa, "  store ptr " + box_name + ", ptr " + slot_name)
                 return emit_line(sa, "  br label %coro.final")
-            }
-            if ty == "void" {
+            if ty == "void":
                 let mut sv: EmitState = emit_drop_glue(st, "", ty)
                 return emit_line(sv, emit_ret_void())
-            }
             // v5.0.4 Cb.15: sret via per-target ABI classifier
-            if use_sret_return(st, ty) {
+            if use_sret_return(st, ty):
                 let mut s0: EmitState = emit_drop_glue(st, val.name, ty)
                 let mut s: EmitState = emit_line(s0, "  store " + ty + " " + val.name + ", ptr %__sret__")
                 return emit_line(s, emit_ret_void())
-            }
             // main() returns i32 but Mapanare Int is i64 — truncate
-            if ty == "i32" {
+            if ty == "i32":
                 let mut s1: EmitState = emit_drop_glue(st, val.name, ty)
                 let trunc_name: String = val.name + ".trunc"
                 let mut s: EmitState = emit_line(s1, "  " + trunc_name + " = trunc i64 " + val.name + " to i32")
                 return emit_line(s, emit_ret("i32", trunc_name))
-            }
             // v5.5.6 Sh.4 Phase 3: async-aware main — prepend
             // `call void @__mn_coro_scheduler_destroy()` so worker
             // threads are joined and mutexes / overflow queue freed
             // before the C ABI-level `ret i32`. Parallel to the
             // "i32" branch above. Drop-glue fires first (already the
             // pattern); destroy is idempotent per v5.1.4 runtime.
-            if ty == "i32_async" {
+            if ty == "i32_async":
                 let mut sa2: EmitState = emit_drop_glue(st, val.name, "i32")
                 sa2 = emit_line(sa2, "  call void @__mn_coro_scheduler_destroy()")
                 let trunc_name_a: String = val.name + ".trunc"
                 let mut sa3: EmitState = emit_line(sa2, "  " + trunc_name_a + " = trunc i64 " + val.name + " to i32")
                 return emit_line(sa3, emit_ret("i32", trunc_name_a))
-            }
             let mut s2: EmitState = emit_drop_glue(st, val.name, ty)
             return emit_line(s2, emit_ret(ty, val.name))
-        },
-        _ => {
+        _ =>:
             // For non-void functions, emit zeroinitializer return (dead code from
             // match arms that all terminate). For void functions, emit ret void.
             let ret_ty: String = st.current_ret_type
             // v5.5.4 Sh.4 Phase 2 — async fn ret void rewrite.
             // No value to box; just mark the Future as Ready (null
             // payload) and branch to the epilogue.
-            if ret_ty.starts_with("ASYNC_PTR:") {
+            if ret_ty.starts_with("ASYNC_PTR:"):
                 let mut svn: EmitState = emit_drop_glue(st, "", "void")
                 svn = emit_line(svn, "  store i8 1, ptr %future")
                 return emit_line(svn, "  br label %coro.final")
-            }
             // v5.5.6 Sh.4 Phase 3: dead-code fallback for async-aware
             // main (mirror of the value-carrying path above). Every
             // main exit must hit scheduler_destroy before the i32 ret.
-            if ret_ty == "i32_async" {
+            if ret_ty == "i32_async":
                 let mut svna: EmitState = emit_drop_glue(st, "", "i32")
                 svna = emit_line(svna, "  call void @__mn_coro_scheduler_destroy()")
                 return emit_line(svna, "  ret i32 0")
-            }
             let mut sv2: EmitState = emit_drop_glue(st, "", ret_ty)
-            if ret_ty != "void" {
+            if ret_ty != "void":
                 return emit_line(sv2, "  ret " + ret_ty + " zeroinitializer")
-            }
             return emit_line(sv2, emit_ret_void())
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // Switch instruction

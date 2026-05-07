@@ -86,14 +86,14 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState:
         let impl_target: String = def_impl_target(defn)
         // Check if target is a generic struct — if so, store methods for later monomorphization
         let gs_check: Option<StructDefData> = find_generic_struct(st, impl_target)
-        match gs_check {
-            Some(gs_data) => {
+        match gs_check:
+            Some(gs_data) =>:
                 // Store each method in generic_fns with target prefix and struct's type_params
                 let mut s_gi: LowerState = st
                 let gi_methods: List<FnDefData> = def_impl_methods(defn)
                 let mut gi: Int = 0
-                for _ in 0..500 {
-                    if gi >= len(gi_methods) { return s_gi }
+                for _ in 0..500:
+                    if gi >= len(gi_methods): return s_gi
                     let gm: FnDefData = gi_methods[gi]
                     // Create a copy with prefixed name and struct type params
                     let prefixed_name: String = impl_target + "_" + gm.name
@@ -102,11 +102,8 @@ fn register_definition(st: LowerState, defn: Definition) -> LowerState:
                     gfn_list.push(impl_fn)
                     s_gi.generic_fns = gfn_list
                     gi = gi + 1
-                }
                 return s_gi
-            },
-            _ => { return register_impl(st, impl_target, def_impl_methods(defn)) }
-        }
+            _ => return register_impl(st, impl_target, def_impl_methods(defn))
     if dk == "import_def":
         let info: ImportInfo = new_import_info(def_import_path(defn), def_import_items(defn))
         let mut new_st_imp: LowerState = st
@@ -257,14 +254,11 @@ fn register_extern_fn(st: LowerState, defn: Definition) -> LowerState:
             s.module = mod_tmp
             return s
         let p: Param = params[i]
-        match p.type_annotation {
-            Some(te) => {
+        match p.type_annotation:
+            Some(te) =>:
                 param_types.push(lower_resolve_type_checked(s, te))
-            },
-            _ => {
+            _ =>:
                 param_types.push(mir_unknown())
-            }
-        }
         i = i + 1
 
     // Fallback: push whatever we have
@@ -391,13 +385,11 @@ fn lower_definition(st: LowerState, defn: Definition) -> LowerState:
             _ => return lower_impl(st, impl_tgt, def_impl_methods(defn))
     if dk == "export_def":
         let inner_opt: Option<Definition> = def_export_inner(defn)
-        match inner_opt {
-            Some(inner) => {
+        match inner_opt:
+            Some(inner) =>:
                 let s: LowerState = lower_definition(st, inner)
                 return s
-            },
-            _ => { return st }
-        }
+            _ => return st
     return st
 
 // ---------------------------------------------------------------------------
@@ -711,15 +703,12 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
         // Resolve declared val_ty (List<T>). Carries the element-type
         // arg for downstream lookups (e.g. method dispatch).
         let mut val_ty: MIRType = mir_list()
-        match type_ann {
-            Some(te) => {
+        match type_ann:
+            Some(te) =>:
                 let declared: MIRType = lower_resolve_type_checked(s, te)
-                if declared.kind != TK_UNKNOWN() {
+                if declared.kind != TK_UNKNOWN():
                     val_ty = declared
-                }
-            },
             _ => {}
-        }
 
         // Lower into var_base. The emitter hoists the alloca + zero-init
         // into the entry prelude AND stores the new list into it; no
@@ -777,15 +766,13 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
     // type. Restored after lowering.
     let prev_enum_hint: String = st.expected_enum_name
     let mut st_hint: LowerState = st
-    match type_ann {
-        Some(te_h) => {
+    match type_ann:
+        Some(te_h) =>:
             let hint_ty: MIRType = lower_resolve_type_checked(st, te_h)
             if hint_ty.kind == TK_ENUM():
                 if hint_ty.name != "":
                     st_hint.expected_enum_name = hint_ty.name
-        },
         _ => {}
-    }
     let r: LowerResult = lower_expr(st_hint, value)
     let mut s: LowerState = r.state
     s.expected_enum_name = prev_enum_hint
@@ -803,17 +790,14 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
     // type (e.g., `let ch: String = lexer_peek(source)`) carries the real type.
     let mut val_ty: MIRType = r.value.ty
     let mut val: Value = r.value
-    match type_ann {
-        Some(te) => {
+    match type_ann:
+        Some(te) =>:
             let declared: MIRType = lower_resolve_type_checked(s, te)
-            if declared.kind != TK_UNKNOWN() {
+            if declared.kind != TK_UNKNOWN():
                 val_ty = declared
                 // Patch the value to carry the declared type (same SSA name, correct type)
                 val = new_value(r.value.name, declared)
-            }
-        },
         _ => {}
-    }
 
     // Find or create alloca for this variable (use counter for uniqueness
     // when the same variable name appears in different branches)
@@ -849,17 +833,14 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
 // ---------------------------------------------------------------------------
 
 fn lower_return(st: LowerState, value_opt: Option<Expr>) -> LowerState:
-    match value_opt {
-        Some(expr) => {
+    match value_opt:
+        Some(expr) =>:
             let r: LowerResult = lower_expr(st, expr)
             // Return the value directly — no Copy needed.
             // (Avoids `add i64 0, %struct_val` type mismatch for struct returns.)
             return emit_instr(r.state, Instruction::Return(Some(r.value)))
-        },
-        _ => {
+        _ =>:
             return emit_instr(st, Instruction::Return(none))
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // For loop
@@ -1365,42 +1346,35 @@ fn lower_identifier(st: LowerState, name: String) -> LowerResult:
 
     // Check variable scope
     let var_opt: Option<Value> = lookup_var(st, name)
-    match var_opt {
-        Some(addr) => {
+    match var_opt:
+        Some(addr) =>:
             // var_opt now returns the alloca address. Emit a Load to get the value.
             let r_var: LowerResult = make_value(st, addr.ty, name + "_val")
             let s_var: LowerState = emit_instr(r_var.state, Instruction::Load(r_var.value, addr))
             return new_lower_result(r_var.value, s_var)
-        },
         _ => {}
-    }
 
     // Check if it's a module-level constant
     let const_key: String = "__const__" + name
     let const_opt: Option<String> = find_lambda(st, const_key)
-    match const_opt {
-        Some(const_val) => {
-            if const_val.starts_with("int:") {
+    match const_opt:
+        Some(const_val) =>:
+            if const_val.starts_with("int:"):
                 let iv_str: String = const_val.substr(4, len(const_val) - 4)
                 let r_const: LowerResult = make_value(st, mir_int(), name)
                 let s_const: LowerState = emit_instr(r_const.state, Instruction::Const(r_const.value, mir_int(), iv_str))
                 return new_lower_result(r_const.value, s_const)
-            }
-            if const_val.starts_with("string:") {
+            if const_val.starts_with("string:"):
                 let sv: String = const_val.substr(7, len(const_val) - 7)
                 let r_const: LowerResult = make_value(st, mir_string(), name)
                 let s_const: LowerState = emit_instr(r_const.state, Instruction::Const(r_const.value, mir_string(), sv))
                 return new_lower_result(r_const.value, s_const)
-            }
-            if const_val.starts_with("bool:") {
+            if const_val.starts_with("bool:"):
                 let bv_str: String = const_val.substr(5, len(const_val) - 5)
                 let r_const: LowerResult = make_value(st, mir_bool(), name)
                 let s_const: LowerState = emit_instr(r_const.state, Instruction::Const(r_const.value, mir_bool(), bv_str))
                 return new_lower_result(r_const.value, s_const)
-            }
-        },
         _ => {}
-    }
 
     // Check if it's a bare enum variant (no payload)
     if is_enum_variant(st, name):
@@ -1500,18 +1474,17 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
             return lower_tensor_binop(rhs_r.state, op, lhs_val, rhs_val)
 
     let binop_opt: Option<BinOpKind> = binop_from_str(op)
-    match binop_opt {
-        Some(binop) => {
+    match binop_opt:
+        Some(binop) =>:
             // Use string comparison on the operator (not enum match on BinOpKind)
             // because enum match falls through in the compiled binary
             let is_cmp: Bool = op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" || op == "and" || op == "or"
             let mut result_ty: MIRType = lhs_val.ty
-            if is_cmp { result_ty = mir_bool() }
+            if is_cmp: result_ty = mir_bool()
             let dr_binop: LowerResult = make_value(rhs_r.state, result_ty, "t")
             let s_binop: LowerState = emit_instr(dr_binop.state, Instruction::BinOp(dr_binop.value, binop, lhs_val, rhs_val))
             return new_lower_result(dr_binop.value, s_binop)
-        },
-        _ => {
+        _ =>:
             // Unknown operator — emit as call
             let dr_opcall: LowerResult = make_value(rhs_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
@@ -1519,8 +1492,6 @@ fn lower_binary(st: LowerState, left: Expr, op: String, right: Expr) -> LowerRes
             args.push(rhs_r.value)
             let s_opcall: LowerState = emit_instr(dr_opcall.state, Instruction::Call(dr_opcall.value, "__op_" + op, args))
             return new_lower_result(dr_opcall.value, s_opcall)
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // v5.21.0 Te.6 — chained comparison lowering
@@ -1590,21 +1561,18 @@ fn resolve_unary_result_type(uop: UnaryOpKind, operand_ty: MIRType) -> MIRType:
 fn lower_unary(st: LowerState, op: String, operand: Expr) -> LowerResult:
     let op_r: LowerResult = lower_expr(st, operand)
     let uop_opt: Option<UnaryOpKind> = unaryop_from_str(op)
-    match uop_opt {
-        Some(uop) => {
+    match uop_opt:
+        Some(uop) =>:
             let result_ty: MIRType = resolve_unary_result_type(uop, op_r.value.ty)
             let dr_uop: LowerResult = make_value(op_r.state, result_ty, "t")
             let s_uop: LowerState = emit_instr(dr_uop.state, Instruction::UnaryOp(dr_uop.value, uop, op_r.value))
             return new_lower_result(dr_uop.value, s_uop)
-        },
-        _ => {
+        _ =>:
             let dr_ucall: LowerResult = make_value(op_r.state, mir_unknown(), "t")
             let mut args: List<Value> = []
             args.push(op_r.value)
             let s_ucall: LowerState = emit_instr(dr_ucall.state, Instruction::Call(dr_ucall.value, "__unary_" + op, args))
             return new_lower_result(dr_ucall.value, s_ucall)
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // Call lowering
@@ -1727,44 +1695,34 @@ fn infer_type_args_from_call(gfn: FnDefData, arg_types: List<MIRType>) -> List<M
             for _ in 0..50:
                 if pi < len(gfn.params) && !found:
                     let p: Param = gfn.params[pi]
-                    match p.type_annotation {
-                        Some(ann) => {
-                            if type_expr_name(ann) == tp_name {
-                                if pi < len(arg_types) {
+                    match p.type_annotation:
+                        Some(ann) =>:
+                            if type_expr_name(ann) == tp_name:
+                                if pi < len(arg_types):
                                     result.push(arg_types[pi])
                                     found = true
-                                }
-                            }
-                        },
                         _ => {}
-                    }
                     pi = pi + 1
             if !found: result.push(mir_unknown())
             ti = ti + 1
     result
 
 fn substitute_type_annotation(ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> Option<TypeExpr>:
-    match ann {
-        Some(te) => {
+    match ann:
+        Some(te) =>:
             let te_name: String = type_expr_name(te)
             let mut i: Int = 0
-            for _ in 0..20 {
-                if i < len(type_params) {
-                    if type_params[i] == te_name {
-                        if i < len(concrete) {
+            for _ in 0..20:
+                if i < len(type_params):
+                    if type_params[i] == te_name:
+                        if i < len(concrete):
                             // Replace with concrete type name
                             let mut cname: String = concrete[i].name
-                            if cname == "" { cname = kind_to_type_name(concrete[i].kind) }
+                            if cname == "": cname = kind_to_type_name(concrete[i].kind)
                             return Some(TypeExpr::Named(cname))
-                        }
-                    }
                     i = i + 1
-                }
-            }
             return ann
-        },
-        _ => { return none }
-    }
+        _ => return none
 
 fn specialize_fn(gfn: FnDefData, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> FnDefData:
     // Build new params with substituted type annotations
@@ -1791,26 +1749,23 @@ fn is_already_specialized(st: LowerState, mangled: String) -> Bool:
 
 fn try_monomorphize_call(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult:
     let gfn_opt: Option<FnDefData> = find_generic_fn(st, fn_name)
-    match gfn_opt {
-        Some(gfn) => {
+    match gfn_opt:
+        Some(gfn) =>:
             // Infer concrete types from argument types
             let mut arg_types: List<MIRType> = []
             let mut ai: Int = 0
-            for _ in 0..50 {
-                if ai < len(args) {
+            for _ in 0..50:
+                if ai < len(args):
                     arg_types.push(args[ai].ty)
                     ai = ai + 1
-                }
-            }
             let concrete: List<MIRType> = infer_type_args_from_call(gfn, arg_types)
             let mangled: String = mangle_generic_name(fn_name, concrete)
 
             let mut s: LowerState = st
-            if !is_already_specialized(s, mangled) {
+            if !is_already_specialized(s, mangled):
                 // Specialize and lower the function
                 let specialized: FnDefData = specialize_fn(gfn, mangled, gfn.type_params, concrete)
                 s = lower_fn(s, specialized, "")
-            }
 
             // Look up return type and emit call
             let ret_key: String = "__ret__" + mangled
@@ -1819,12 +1774,9 @@ fn try_monomorphize_call(st: LowerState, fn_name: String, args: List<Value>) -> 
             let dr: LowerResult = make_value(s, ret_ty, "t")
             let s2: LowerState = emit_instr(dr.state, Instruction::Call(dr.value, mangled, args))
             return new_lower_result(dr.value, s2)
-        },
-        _ => {
+        _ =>:
             // Not a generic function — return sentinel
             return new_lower_result(void_value(), st)
-        }
-    }
 
 fn find_type_param_index(type_params: List<String>, name: String) -> Int:
     let mut i: Int = 0
@@ -1836,16 +1788,13 @@ fn find_type_param_index(type_params: List<String>, name: String) -> Int:
 
 fn substitute_field_type(st: LowerState, ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> MIRType:
     let fty: MIRType = lower_resolve_type_opt_checked(st, ann)
-    match ann {
-        Some(a) => {
+    match ann:
+        Some(a) =>:
             let idx: Int = find_type_param_index(type_params, type_expr_name(a))
-            if idx >= 0 {
-                if idx < len(concrete) { return concrete[idx] }
-            }
+            if idx >= 0:
+                if idx < len(concrete): return concrete[idx]
             return fty
-        },
-        _ => { return fty }
-    }
+        _ => return fty
 
 fn find_generic_struct(st: LowerState, name: String) -> Option<StructDefData>:
     let mut i: Int = 0
@@ -1878,27 +1827,25 @@ fn find_struct_field_for_tp(gs: StructDefData, tp_name: String) -> Int:
 
 fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value>) -> LowerResult:
     let gs_opt: Option<StructDefData> = find_generic_struct(st, struct_name)
-    match gs_opt {
-        Some(gs) => {
+    match gs_opt:
+        Some(gs) =>:
             let concrete: List<MIRType> = infer_struct_type_args(gs, args)
             let mangled: String = mangle_generic_name(struct_name, concrete)
 
             let mut s: LowerState = st
-            if !is_struct_name(s, mangled) {
+            if !is_struct_name(s, mangled):
                 let mut fields: List<FieldPair> = []
                 let mut field_names: List<String> = []
                 let mut field_types: List<MIRType> = []
                 let mut fi: Int = 0
-                for _ in 0..500 {
-                    if fi < len(gs.fields) {
+                for _ in 0..500:
+                    if fi < len(gs.fields):
                         let sf: StructField = gs.fields[fi]
                         let fty: MIRType = substitute_field_type(s, Some(sf.type_annotation), gs.type_params, concrete)
                         fields.push(new_field_pair(sf.name, new_value("", fty)))
                         field_names.push(sf.name)
                         field_types.push(fty)
                         fi = fi + 1
-                    }
-                }
                 let info: StructInfo = new_struct_info(mangled, fields)
                 s.module = module_push_struct(s.module, info)
                 let sfi: StructFieldInfo = new_struct_field_info(mangled, field_names, field_types)
@@ -1912,25 +1859,20 @@ fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value
 
                 // Monomorphize generic impl methods for this struct
                 s = monomorphize_impl_methods(s, struct_name, mangled, gs.type_params, concrete)
-            }
             let fnames: List<String> = get_struct_field_names(s, mangled)
             let mut init_pairs: List<FieldPair> = []
             let mut pi: Int = 0
-            for _ in 0..500 {
-                if pi < len(fnames) {
-                    if pi < len(args) { init_pairs.push(new_field_pair(fnames[pi], args[pi])) }
+            for _ in 0..500:
+                if pi < len(fnames):
+                    if pi < len(args): init_pairs.push(new_field_pair(fnames[pi], args[pi]))
                     pi = pi + 1
-                }
-            }
             let struct_ty: MIRType = mir_struct(mangled)
             let dr: LowerResult = make_value(s, struct_ty, "t")
             let s2: LowerState = emit_instr(dr.state, Instruction::StructInit(dr.value, struct_ty, init_pairs))
             // v5.4.4 — StructInit takes ownership of each field value.
             let s3: LowerState = emit_move_fields(s2, init_pairs)
             return new_lower_result(dr.value, s3)
-        },
-        _ => { return new_lower_result(void_value(), st) }
-    }
+        _ => return new_lower_result(void_value(), st)
 
 fn monomorphize_impl_methods(st: LowerState, base_name: String, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> LowerState:
     // Find generic impl methods stored as "Base_method" in generic_fns
@@ -2040,38 +1982,34 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
     if len(enum_name) == 0: return new_lower_result(void_value(), st)
 
     let ge_opt: Option<EnumDefData> = find_generic_enum(st, enum_name)
-    match ge_opt {
-        Some(ge) => {
+    match ge_opt:
+        Some(ge) =>:
             let v_opt: Option<EnumVariant> = find_variant_in_enum(ge, variant_name)
-            match v_opt {
-                Some(variant) => {
+            match v_opt:
+                Some(variant) =>:
                     let concrete: List<MIRType> = infer_enum_type_args(ge, variant, args)
                     let mangled: String = mangle_generic_name(enum_name, concrete)
 
                     let mut s: LowerState = st
-                    if !is_enum_name(s, mangled) {
+                    if !is_enum_name(s, mangled):
                         // Monomorphize: create EnumInfo with substituted variant types
                         let mut new_variants: List<EnumVariantInfo> = []
                         let mut new_variant_names: List<String> = []
                         let mut vi: Int = 0
-                        for _ in 0..500 {
-                            if vi < len(ge.variants) {
+                        for _ in 0..500:
+                            if vi < len(ge.variants):
                                 let orig_v: EnumVariant = ge.variants[vi]
                                 let mut payload_types: List<MIRType> = []
                                 let mut fi: Int = 0
-                                for _ in 0..100 {
-                                    if fi < len(orig_v.fields) {
+                                for _ in 0..100:
+                                    if fi < len(orig_v.fields):
                                         let fty: MIRType = substitute_field_type(s, Some(orig_v.fields[fi]), ge.type_params, concrete)
                                         payload_types.push(fty)
                                         fi = fi + 1
-                                    }
-                                }
                                 let vi_info: EnumVariantInfo = new_enum_variant_info(orig_v.name, payload_types)
                                 new_variants.push(vi_info)
                                 new_variant_names.push(orig_v.name)
                                 vi = vi + 1
-                            }
-                        }
                         let info: EnumInfo = new_enum_info(mangled, new_variants)
                         s.module = module_push_enum(s.module, info)
                         let evn: EnumVariantNames = new_enum_variant_names(mangled, new_variant_names)
@@ -2084,7 +2022,6 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
                         // buffers while the emitter still needs them.
                         new_variants = []
                         new_variant_names = []
-                    }
 
                     // Emit EnumInit with mangled type name
                     let enum_ty: MIRType = mir_enum(mangled)
@@ -2093,12 +2030,8 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
                     // v5.4.4 — enum variant takes ownership of each arg.
                     let s3: LowerState = emit_move_vals(s2, args)
                     return new_lower_result(dr_enum.value, s3)
-                },
-                _ => { return new_lower_result(void_value(), st) }
-            }
-        },
-        _ => { return new_lower_result(void_value(), st) }
-    }
+                _ => return new_lower_result(void_value(), st)
+        _ => return new_lower_result(void_value(), st)
 
 fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> LowerResult:
     // v5.5.1 Sh.4 Phase 2: block_on(future) — drive a coroutine to
@@ -2284,14 +2217,11 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         if len(args) == 1:
             // Use the function's return type (with generic args) if available
             let mut res_ty_ok: MIRType = mir_result()
-            match st.current_fn {
-                Some(cf) => {
-                    if cf.return_type.kind == TK_RESULT() {
+            match st.current_fn:
+                Some(cf) =>:
+                    if cf.return_type.kind == TK_RESULT():
                         res_ty_ok = cf.return_type
-                    }
-                },
                 _ => {}
-            }
             // Eu.2 (v5.26.1): if no enclosing Result type was found, default
             // args to <ok_arg_ty, String> mirroring mapanare/lower.py:2398.
             // Without this, dest.ty.args is empty and emit_wrap_ok's outer
@@ -2309,14 +2239,11 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     if fn_name == "Err":
         if len(args) == 1:
             let mut res_ty_err: MIRType = mir_result()
-            match st.current_fn {
-                Some(cf) => {
-                    if cf.return_type.kind == TK_RESULT() {
+            match st.current_fn:
+                Some(cf) =>:
+                    if cf.return_type.kind == TK_RESULT():
                         res_ty_err = cf.return_type
-                    }
-                },
                 _ => {}
-            }
             // Eu.2 (v5.26.1): default args to <Int, err_arg_ty> when no
             // enclosing Result type. Mirrors mapanare/lower.py:2411.
             if len(res_ty_err.args) < 2:
@@ -2409,18 +2336,15 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
     // emit_call_ir / emit_call_void recognise the leading `%` and
     // emit `call <ret_ty> %fn(<args>)` rather than `call ... @<name>`.
     let var_lookup: Option<Value> = lookup_var(st, fn_name)
-    match var_lookup {
-        Some(addr_v) => {
-            if addr_v.ty.kind == TK_FN() {
+    match var_lookup:
+        Some(addr_v) =>:
+            if addr_v.ty.kind == TK_FN():
                 let load_r: LowerResult = make_value(st, addr_v.ty, fn_name + "_val")
                 let load_s: LowerState = emit_instr(load_r.state, Instruction::Load(load_r.value, addr_v))
                 let dr_ind: LowerResult = make_value(load_s, mir_unknown(), "t")
                 let s_ind: LowerState = emit_instr(dr_ind.state, Instruction::Call(dr_ind.value, load_r.value.name, args))
                 return new_lower_result(dr_ind.value, s_ind)
-            }
-        },
         _ => {}
-    }
 
     // Resolve lambda variable names to actual function names
     let resolved: String = unwrap_or_default(find_lambda(st, fn_name), fn_name)
@@ -2431,45 +2355,38 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let mut call_ret: MIRType = mir_unknown()
         let ret_key: String = "__ret__" + resolved
         let ret_opt: Option<String> = find_lambda(st, ret_key)
-        match ret_opt {
-            Some(ret_encoded) => {
+        match ret_opt:
+            Some(ret_encoded) =>:
                 // Decode "kind:name" → MIRType
                 let colon: Int = ret_encoded.find(":")
-                if colon >= 0 {
+                if colon >= 0:
                     let kind: String = ret_encoded.substr(0, colon)
                     // substr(start, count) — count is clamped to s.len
                     let name: String = ret_encoded.substr(colon + 1, len(ret_encoded))
-                    if kind == "struct" { call_ret = mir_struct(name) }
-                    if kind == "enum" { call_ret = mir_enum(name) }
-                    if kind == "int" { call_ret = mir_int() }
-                    if kind == "float" { call_ret = mir_float() }
-                    if kind == "string" { call_ret = mir_string() }
-                    if kind == "bool" { call_ret = mir_bool() }
-                    if kind == "void" { call_ret = mir_void() }
-                    if kind == "option" { call_ret = mir_option() }
-                    if kind == "result" {
+                    if kind == "struct": call_ret = mir_struct(name)
+                    if kind == "enum": call_ret = mir_enum(name)
+                    if kind == "int": call_ret = mir_int()
+                    if kind == "float": call_ret = mir_float()
+                    if kind == "string": call_ret = mir_string()
+                    if kind == "bool": call_ret = mir_bool()
+                    if kind == "void": call_ret = mir_void()
+                    if kind == "option": call_ret = mir_option()
+                    if kind == "result":
                         // Look up the FULL parameterized return type from the
                         // module's function list (preserves generic args).
                         let mut found_full: Bool = false
                         let mut fk: Int = 0
-                        for _ in 0..5000 {
-                            if fk < len(st.module.functions) {
-                                if st.module.functions[fk].name == resolved {
+                        for _ in 0..5000:
+                            if fk < len(st.module.functions):
+                                if st.module.functions[fk].name == resolved:
                                     call_ret = st.module.functions[fk].return_type
                                     found_full = true
                                     fk = len(st.module.functions)
-                                }
                                 fk = fk + 1
-                            }
-                        }
-                        if found_full == false { call_ret = mir_result() }
-                    }
-                    if kind == "list" { call_ret = mir_list() }
-                    if kind == "map" { call_ret = mir_map() }
-                }
-            },
+                        if found_full == false: call_ret = mir_result()
+                    if kind == "list": call_ret = mir_list()
+                    if kind == "map": call_ret = mir_map()
             _ => {}
-        }
         let dr_call: LowerResult = make_value(st, call_ret, "t")
         let s_call: LowerState = emit_instr(dr_call.state, Instruction::Call(dr_call.value, resolved, args))
         return new_lower_result(dr_call.value, s_call)
@@ -2492,17 +2409,14 @@ fn lower_call_with_captures(st: LowerState, fn_name: String, args: List<Value>, 
     // Load one captured variable and recurse
     let cap_name: String = captures[idx]
     let var_opt: Option<Value> = lookup_var(st, cap_name)
-    match var_opt {
-        Some(addr) => {
+    match var_opt:
+        Some(addr) =>:
             let lr: LowerResult = make_value(st, addr.ty, "cap")
             let ns: LowerState = emit_instr(lr.state, Instruction::Load(lr.value, addr))
             args.push(lr.value)
             return lower_call_with_captures(ns, fn_name, args, captures, idx + 1)
-        },
-        _ => {
+        _ =>:
             return lower_call_with_captures(st, fn_name, args, captures, idx + 1)
-        }
-    }
 
 // ---------------------------------------------------------------------------
 // Method call lowering
@@ -2733,16 +2647,14 @@ fn find_field_alloca(st: LowerState, inner: Expr, field_name: String, obj_r: Low
     if expr_kind(inner) == "ident":
         let name: String = expr_ident_name(inner)
         let var_opt: Option<Value> = lookup_var(st, name)
-        match var_opt {
-            Some(addr) => {
+        match var_opt:
+            Some(addr) =>:
                 // Encode the field name in the Value's type name
                 // so the emitter can find the correct field index.
                 // Convention: ty.name = "StructName:field_name"
                 let combined: MIRType = new_mir_type(addr.ty.name + ":" + field_name, addr.ty.kind)
                 return new_value(addr.name, combined)
-            },
-            _ => { return obj_r.value }
-        }
+            _ => return obj_r.value
     return obj_r.value
 
 // ---------------------------------------------------------------------------
@@ -3464,15 +3376,12 @@ fn lower_list_typed_into(st: LowerState, elements: List<Expr>, hinted_elem_ty: M
 // recognized list generic; callers use the UNKNOWN sentinel to mean
 // "no hint available".
 fn extract_list_elem_ty(st: LowerState, te: TypeExpr) -> MIRType:
-    match te {
-        Generic(name, args) => {
-            if name == "List" && len(args) >= 1 {
+    match te:
+        Generic(name, args) =>:
+            if name == "List" && len(args) >= 1:
                 return lower_resolve_type_checked(st, args[0])
-            }
             return mir_unknown()
-        },
-        _ => { return mir_unknown() }
-    }
+        _ => return mir_unknown()
 
 // v5.6.7 Ve.2 helper — resolve a `let x: List<T> = []` pattern to its
 // element type hint for `lower_list_typed`. Returns mir_unknown() when
@@ -3710,8 +3619,8 @@ fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState:
     for _ in 0..512:
         if j < 0: return st
         let inst: Instruction = instrs[j]
-        match inst {
-            MapInit(dest, _, _, pairs) => {
+        match inst:
+            MapInit(dest, _, _, pairs) =>:
                 instrs[j] = Instruction::MapInit(dest, k_ty, v_ty, pairs)
                 let new_bb: BasicBlock = new BasicBlock { label: bb.label, instructions: instrs }
                 let mut blocks: List<BasicBlock> = st.fn_blocks
@@ -3719,9 +3628,7 @@ fn patch_last_mapinit_types(st: LowerState, te: TypeExpr) -> LowerState:
                 let mut new_st: LowerState = st
                 new_st.fn_blocks = blocks
                 return new_st
-            },
             _ => {}
-        }
         j = j - 1
     return st
 
@@ -3740,12 +3647,10 @@ fn lower_let_destructure(st: LowerState, pattern: StructPattern, outer_mut: Bool
     if expr_kind(value) == "ident":
         let src_name: String = expr_ident_name(value)
         let lookup: Option<Value> = lookup_var(s, src_name)
-        match lookup {
-            Some(_) => {
+        match lookup:
+            Some(_) =>:
                 return emit_destructure_pattern(s, pattern, src_name, outer_mut)
-            },
             _ => {}
-        }
 
     // General case: synthesize `let __mn_dst_N = value` first.
     let tmp_idx: Int = s.struct_update_counter
@@ -3764,22 +3669,19 @@ fn emit_destructure_pattern(st: LowerState, pattern: StructPattern, base_name: S
         if i >= n: return s
         let fp: FieldPattern = pattern.fields[i]
         let fa: Expr = Expr::FieldAccess(Expr::Ident(base_name), fp.name)
-        match fp.sub_pattern {
-            Some(sub) => {
+        match fp.sub_pattern:
+            Some(sub) =>:
                 let nested_idx: Int = s.struct_update_counter
                 s.struct_update_counter = nested_idx + 1
                 let nested_base: String = "__mn_dst_" + toString(nested_idx)
                 let none_t: Option<TypeExpr> = none
                 s = lower_let(s, nested_base, false, none_t, fa)
                 s = emit_destructure_pattern(s, sub, nested_base, outer_mut)
-            },
-            _ => {
+            _ =>:
                 let mut leaf_mut: Bool = outer_mut
-                if fp.mutable { leaf_mut = true }
+                if fp.mutable: leaf_mut = true
                 let none_t2: Option<TypeExpr> = none
                 s = lower_let(s, fp.name, leaf_mut, none_t2, fa)
-            }
-        }
         i = i + 1
     return s
 
@@ -3925,15 +3827,13 @@ fn stmt_diverges(s: Stmt) -> Bool:
             let then_b: Block = expr_if_then(e)
             if !block_diverges(then_b): return false
             let else_opt: Option<ElseClause> = expr_if_else(e)
-            match else_opt {
-                Some(ec) => {
+            match else_opt:
+                Some(ec) =>:
                     let eck: String = else_clause_kind(ec)
                     if eck == "else_block":
                         return block_diverges(else_clause_block(ec))
                     return false
-                },
-                _ => { return false }
-            }
+                _ => return false
     return false
 
 fn match_arm_body_diverges(body: MatchArmBody) -> Bool:
@@ -4115,15 +4015,12 @@ fn lower_assign_list_hint(st: LowerState, target: Expr, value: Expr) -> MIRType:
     if expr_kind(target) != "ident": return mir_unknown()
     let tname: String = expr_ident_name(target)
     let opt_addr: Option<Value> = lookup_var(st, tname)
-    match opt_addr {
-        Some(addr) => {
-            if addr.ty.kind == TK_LIST() && len(addr.ty.args) > 0 {
+    match opt_addr:
+        Some(addr) =>:
+            if addr.ty.kind == TK_LIST() && len(addr.ty.args) > 0:
                 return addr.ty.args[0]
-            }
             return mir_unknown()
-        },
-        _ => { return mir_unknown() }
-    }
+        _ => return mir_unknown()
 
 fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerResult:
     // v5.6.10 — empty-list reassignment elem_ty hint. Same pattern as
@@ -4148,38 +4045,31 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
             s = old_r.state
             let op_str: String = strip_assign_op(op)
             let binop_opt: Option<BinOpKind> = binop_from_str(op_str)
-            match binop_opt {
-                Some(binop) => {
+            match binop_opt:
+                Some(binop) =>:
                     let result_r: LowerResult = make_value(s, old_r.value.ty, "t")
                     s = emit_instr(result_r.state, Instruction::BinOp(result_r.value, binop, old_r.value, val_r.value))
 
                     let var_opt_cmp: Option<Value> = lookup_var(s, name)
-                    match var_opt_cmp {
-                        Some(addr) => {
+                    match var_opt_cmp:
+                        Some(addr) =>:
                             s = emit_instr(s, Instruction::Store(addr, result_r.value))
                             return new_lower_result(result_r.value, s)
-                        },
                         _ => {}
-                    }
-                },
                 _ => {}
-            }
 
         let var_opt_asgn: Option<Value> = lookup_var(s, name)
-        match var_opt_asgn {
-            Some(addr) => {
+        match var_opt_asgn:
+            Some(addr) =>:
                 // Update var type if the new value is more specific
                 // (e.g. from unknown/i64 to a concrete struct type)
                 let mut store_addr: Value = addr
-                if addr.ty.kind == TK_UNKNOWN() && val_r.value.ty.kind != TK_UNKNOWN() {
+                if addr.ty.kind == TK_UNKNOWN() && val_r.value.ty.kind != TK_UNKNOWN():
                     store_addr = new_value(addr.name, val_r.value.ty)
                     s = define_var(s, name, store_addr, true)
-                }
                 s = emit_instr(s, Instruction::Store(store_addr, val_r.value))
                 return new_lower_result(val_r.value, s)
-            },
             _ => {}
-        }
         return new_lower_result(val_r.value, s)
     if tk == "field_access":
         // Pass the ALLOCA address (not loaded value) so the emitter
@@ -4343,12 +4233,10 @@ fn is_some_else_clause(clause: Option<ElseClause>) -> Bool:
         _ => return false
 
 fn lower_else_clause(st: LowerState, clause_opt: Option<ElseClause>) -> LowerResult:
-    match clause_opt {
-        Some(clause) => {
+    match clause_opt:
+        Some(clause) =>:
             return lower_else_clause_inner(st, clause)
-        },
-        _ => { return new_lower_result(void_value(), st) }
-    }
+        _ => return new_lower_result(void_value(), st)
 
 fn lower_else_clause_inner(st: LowerState, clause: ElseClause) -> LowerResult:
     if else_clause_kind(clause) == "else_block":
@@ -4614,9 +4502,9 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
                         cases.push(new_switch_case(pn, label))
                         seen_tags.push(pn)
                 else:
-                    if !default_set { default_lbl = label; default_set = true }
+                    if !default_set: default_lbl = label; default_set = true
             if pk_arm == "wildcard":
-                if !default_set { default_lbl = label; default_set = true }
+                if !default_set: default_lbl = label; default_set = true
             // v4.35.0: or-patterns — add one switch case per alternative
             if pk_arm == "or":
                 let alts: List<Pattern> = pattern_or_alts(arm.pattern)
@@ -4642,9 +4530,9 @@ fn build_match_arms(st: LowerState, arms: List<MatchArm>, merge_label: String) -
                                     cases.push(new_switch_case(apn, label))
                                     seen_tags.push(apn)
                             else:
-                                if !default_set { default_lbl = label; default_set = true }
+                                if !default_set: default_lbl = label; default_set = true
                         if apk == "wildcard":
-                            if !default_set { default_lbl = label; default_set = true }
+                            if !default_set: default_lbl = label; default_set = true
                         oi = oi + 1
             i = i + 1
     // Build result ONLY after all mutations are done — avoids aliasing
@@ -4837,8 +4725,8 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
             // where the next arm's constructor pattern differs. Porting
             // the full decision-tree approach requires build_decision_tree
             // in the self-hosted lowerer (future work).
-            match arm.guard {
-                Some(guard_expr) => {
+            match arm.guard:
+                Some(guard_expr) =>:
                     let guard_r: LowerResult = lower_expr(s, guard_expr)
                     s = guard_r.state
                     let pass_r: LowerResult = fresh_block_label(s, "guard_pass")
@@ -4851,17 +4739,14 @@ fn lower_match(st: LowerState, subject: Expr, arms: List<MatchArm>) -> LowerResu
                     // Guard fail: jump to next arm (re-bind + re-check)
                     // or to merge if this is the last arm.
                     s = add_block(s, fail_label)
-                    if ai + 1 < na_match {
+                    if ai + 1 < na_match:
                         let next_label: String = arm_labels[ai + 1]
                         s = emit_instr(s, Instruction::Jump(next_label))
-                    } else {
+                    else:
                         s = emit_instr(s, Instruction::Jump(merge_label))
-                    }
                     // Guard pass: continue to body
                     s = add_block(s, pass_label)
-                },
                 None => {}
-            }
 
             // Lower arm body
             let arm_val_r: LowerResult = lower_arm_body(s, arm.body)

@@ -352,33 +352,26 @@ fn find_lambda(st: LowerState, name: String) -> Option<String>:
 // ---------------------------------------------------------------------------
 
 fn lower_resolve_type_expr(te: TypeExpr) -> MIRType:
-    match te {
-        Named(name) => {
+    match te:
+        Named(name) =>:
             return resolve_type_name(name)
-        },
-        Generic(name, args) => {
+        Generic(name, args) =>:
             let mut resolved_args: List<MIRType> = []
             let mut i: Int = 0
-            for _ in 0..100 {
-                if i >= len(args) {
+            for _ in 0..100:
+                if i >= len(args):
                     let kind: Int = kind_from_name(name)
-                    if kind != TK_UNKNOWN() {
+                    if kind != TK_UNKNOWN():
                         return new_mir_type_with_args(name, kind, resolved_args)
-                    }
                     return new_mir_type_with_args(name, TK_STRUCT(), resolved_args)
-                }
                 let arg: TypeExpr = args[i]
                 let resolved: MIRType = lower_resolve_type_expr(arg)
                 resolved_args.push(resolved)
                 i = i + 1
-            }
             return mir_unknown()
-        },
-        FnTy(param_types, return_type) => {
+        FnTy(param_types, return_type) =>:
             return mir_fn_type()
-        },
-        _ => { return mir_unknown() }
-    }
+        _ => return mir_unknown()
 
 fn resolve_type_name(name: String) -> MIRType:
     if name == "Int": return mir_int()
@@ -459,26 +452,21 @@ fn resolve_generic_args_rec(st: LowerState, args: List<TypeExpr>, idx: Int, acc:
     return resolve_generic_args_rec(st, args, idx + 1, acc)
 
 fn lower_resolve_type_checked(st: LowerState, te: TypeExpr) -> MIRType:
-    match te {
-        Named(name) => {
+    match te:
+        Named(name) =>:
             return resolve_type_name_checked(st, name)
-        },
-        Generic(name, args) => {
+        Generic(name, args) =>:
             // Use recursion instead of for-loop to avoid the alloca aliasing bug
             let init_args: List<MIRType> = []
             let resolved_args: List<MIRType> = resolve_generic_args_rec(st, args, 0, init_args)
             let kind: Int = kind_from_name(name)
-            if kind != TK_UNKNOWN() {
+            if kind != TK_UNKNOWN():
                 return new_mir_type_with_args(name, kind, resolved_args)
-            }
             let checked: MIRType = resolve_type_name_checked(st, name)
             return new_mir_type_with_args(name, checked.kind, resolved_args)
-        },
-        FnTy(param_types, return_type) => {
+        FnTy(param_types, return_type) =>:
             return mir_fn_type()
-        },
-        _ => { return mir_unknown() }
-    }
+        _ => return mir_unknown()
 
 fn resolve_return_type_checked(st: LowerState, te: Option<TypeExpr>) -> MIRType:
     match te:

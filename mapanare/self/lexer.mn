@@ -464,10 +464,10 @@ fn tokenize(source: String, filename: String) -> List<Token>:
 
         // --- Whitespace (one char per iteration, main loop repeats) ---
         let mut skip: Bool = false
-        if c == " " { pos = pos + 1; col = col + 1; skip = true }
-        if c == "\t" { pos = pos + 1; col = col + 1; skip = true }
-        if c == "\r" { pos = pos + 1; skip = true }
-        if c == "\n" { pos = pos + 1; line = line + 1; col = 1; skip = true }
+        if c == " ": pos = pos + 1; col = col + 1; skip = true
+        if c == "\t": pos = pos + 1; col = col + 1; skip = true
+        if c == "\r": pos = pos + 1; skip = true
+        if c == "\n": pos = pos + 1; line = line + 1; col = 1; skip = true
 
         // --- Line comment (// to end of line) ---
         if c == "/":

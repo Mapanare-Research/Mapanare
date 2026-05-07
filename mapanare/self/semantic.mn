@@ -372,13 +372,11 @@ fn push_scope(st: SemState) -> SemState:
     new_st
 
 fn pop_scope(st: SemState) -> SemState:
-    match st.scope.parent {
-        Some(parent) => {
+    match st.scope.parent:
+        Some(parent) =>:
             let new_st: SemState = new SemState { errors: st.errors, scope: parent, filename: st.filename, current_span: st.current_span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
             return new_st
-        },
-        _ => { return st }
-    }
+        _ => return st
 
 fn set_span(st: SemState, span: Span) -> SemState = new SemState { errors: st.errors, scope: st.scope, filename: st.filename, current_span: span, current_fn_return: st.current_fn_return, current_fn_name: st.current_fn_name, expected_type: st.expected_type }
 
@@ -423,17 +421,13 @@ fn types_compatible(a: TypeInfo, b: TypeInfo) -> Bool:
                 if types_compatible(a.param_types[j], b.param_types[j]) == false: return false
                 j = j + 1
             // Compare return types
-            match a.return_type {
-                Some(a_ret) => {
-                    match b.return_type {
-                        Some(b_ret) => {
-                            if types_compatible(a_ret, b_ret) == false { return false }
-                        },
+            match a.return_type:
+                Some(a_ret) =>:
+                    match b.return_type:
+                        Some(b_ret) =>:
+                            if types_compatible(a_ret, b_ret) == false: return false
                         _ => {}
-                    }
-                },
                 _ => {}
-            }
             return true
         return false
     if a.name != b.name: return false
@@ -457,16 +451,14 @@ fn type_exists(st: SemState, t: TypeInfo) -> Bool:
     if is_primitive_type(t.name): return true
     if is_builtin_generic(t.name): return true
     let sym: Option<Symbol> = scope_lookup(st.scope, t.name)
-    match sym {
-        Some(s) => {
-            if s.kind == "struct" { return true }
-            if s.kind == "enum" { return true }
-            if s.kind == "agent" { return true }
-            if s.kind == "type_alias" { return true }
+    match sym:
+        Some(s) =>:
+            if s.kind == "struct": return true
+            if s.kind == "enum": return true
+            if s.kind == "agent": return true
+            if s.kind == "type_alias": return true
             return false
-        },
-        _ => { return false }
-    }
+        _ => return false
 
 // ---------------------------------------------------------------------------
 // Binary operator type rules
@@ -576,13 +568,11 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
         // variable 'None'" at mnc_all.mn:3504 (`let mut guard: Option<Expr> = None`).
         if name == "None": return new_infer_result(make_type("Option"), st)
         let result: Option<Symbol> = scope_lookup(st.scope, name)
-        match result {
-            Some(sym) => { return new_infer_result(sym.type_info, st) },
-            _ => {
+        match result:
+            Some(sym) => return new_infer_result(sym.type_info, st)
+            _ =>:
                 let st_ident_err: SemState = add_error_here(st, "Undefined variable '" + name + "'")
                 return new_infer_result(error_type(), st_ident_err)
-            }
-        }
 
     if ek == "binary": return check_binary_expr(st, expr_binary_left(expr), expr_binary_op(expr), expr_binary_right(expr))
     if ek == "chained_cmp":
@@ -878,14 +868,12 @@ fn infer_expr(st: SemState, expr: Expr) -> InferResult:
                 j_il = j_il + 1
         let after_il: SemState = check_block(bound_il, il_then)
         let mut after2_il: SemState = pop_scope(after_il)
-        match il_else {
-            Some(eb) => {
+        match il_else:
+            Some(eb) =>:
                 let inner2_il: SemState = push_scope(after2_il)
                 let after3_il: SemState = check_block(inner2_il, eb)
                 after2_il = pop_scope(after3_il)
-            },
             _ => {}
-        }
         return new_infer_result(unknown_type(), after2_il)
     if ek == "match": return check_match_expr(st, expr_match_subject(expr), expr_match_arms(expr))
 
@@ -1047,38 +1035,27 @@ fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) ->
     if expr_kind(callee) == "ident":
         let name: String = expr_ident_name(callee)
         let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
-        match sym_opt {
-            Some(sym) => {
-                if sym.kind == "function" {
-                    if sym.type_info.is_function {
-                        match sym.type_info.return_type {
-                            Some(ret) => {
-                                if len(sym.type_info.param_types) > 0 {
-                                    if len(arg_types) != len(sym.type_info.param_types) {
+        match sym_opt:
+            Some(sym) =>:
+                if sym.kind == "function":
+                    if sym.type_info.is_function:
+                        match sym.type_info.return_type:
+                            Some(ret) =>:
+                                if len(sym.type_info.param_types) > 0:
+                                    if len(arg_types) != len(sym.type_info.param_types):
                                         let st_argc: SemState = add_error_here(st, "Function '" + name + "' argument count mismatch")
                                         return new_infer_result(ret, st_argc)
-                                    }
-                                }
                                 return new_infer_result(ret, st)
-                            },
-                            _ => { return new_infer_result(unknown_type(), st) }
-                        }
-                    }
+                            _ => return new_infer_result(unknown_type(), st)
                     return new_infer_result(unknown_type(), st)
-                }
-                if sym.kind == "agent" {
+                if sym.kind == "agent":
                     return new_infer_result(make_type(sym.name), st)
-                }
-                if sym.kind == "struct" {
+                if sym.kind == "struct":
                     return new_infer_result(make_type(sym.name), st)
-                }
                 return new_infer_result(unknown_type(), st)
-            },
-            _ => {
+            _ =>:
                 let st_undef: SemState = add_error_here(st, "Undefined function '" + name + "'")
                 return new_infer_result(error_type(), st_undef)
-            }
-        }
     let cr: InferResult = infer_expr(st, callee)
     // v4.53.0: cascade suppression — ERROR callee propagates
     if type_is_error(cr.type_info): return new_infer_result(error_type(), cr.st)
@@ -1094,27 +1071,20 @@ fn check_assign_expr(st: SemState, target: Expr, op: String, value: Expr) -> Inf
     if expr_kind(target) == "ident":
         let name: String = expr_ident_name(target)
         let sym_opt: Option<Symbol> = scope_lookup(vr.st.scope, name)
-        match sym_opt {
-            Some(sym) => {
+        match sym_opt:
+            Some(sym) =>:
                 let mut st_assign: SemState = vr.st
-                if sym.mutable == false {
+                if sym.mutable == false:
                     st_assign = add_error_here(st_assign, "Cannot assign to immutable variable '" + name + "'")
-                }
                 // v4.53.0: skip type check if either side is error/unknown
-                if !type_should_skip(sym.type_info.name) {
-                    if !type_should_skip(vr.type_info.name) {
-                        if types_compatible(sym.type_info, vr.type_info) == false {
+                if !type_should_skip(sym.type_info.name):
+                    if !type_should_skip(vr.type_info.name):
+                        if types_compatible(sym.type_info, vr.type_info) == false:
                             st_assign = add_error_here(st_assign, "Type mismatch in assignment to '" + name + "'")
-                        }
-                    }
-                }
                 return new_infer_result(void_type(), st_assign)
-            },
-            _ => {
+            _ =>:
                 let st_assign_undef: SemState = add_error_here(vr.st, "Undefined variable '" + name + "'")
                 return new_infer_result(void_type(), st_assign_undef)
-            }
-        }
     // Field or index target — infer both sides
     let tr: InferResult = infer_expr(vr.st, target)
     return new_infer_result(void_type(), tr.st)
@@ -1138,12 +1108,10 @@ fn check_if_expr(st: SemState, cond: Expr, then_block: Block, else_clause: Optio
     st2 = pop_scope(after_then)
 
     // Check else clause
-    match else_clause {
-        Some(ec) => {
+    match else_clause:
+        Some(ec) =>:
             st2 = check_else_clause(st2, ec)
-        },
         _ => {}
-    }
 
     return new_infer_result(unknown_type(), st2)
 
@@ -1171,18 +1139,14 @@ fn check_match_expr(st: SemState, subject: Expr, arms: List<MatchArm>) -> InferR
         // v4.35.0: type-check optional guard (must be Bool)
         // v4.52.0: actually enforce Bool type (D2 fix)
         let mut guarded_st: SemState = bound_st
-        match arm.guard {
-            Some(g) => {
+        match arm.guard:
+            Some(g) =>:
                 let gr: InferResult = infer_expr(bound_st, g)
                 guarded_st = gr.st
-                if !type_should_skip(gr.type_info.name) {
-                    if gr.type_info.name != "Bool" {
+                if !type_should_skip(gr.type_info.name):
+                    if gr.type_info.name != "Bool":
                         guarded_st = add_error_here(guarded_st, "match guard must be a Bool expression, got " + gr.type_info.name)
-                    }
-                }
-            },
             None => {}
-        }
         let after_arm: SemState = check_match_arm_body(guarded_st, arm.body)
         st2 = pop_scope(after_arm)
         i = i + 1
@@ -1260,21 +1224,16 @@ fn check_spawn_callee(st: SemState, callee: Expr) -> InferResult:
     if expr_kind(callee) == "ident":
         let name: String = expr_ident_name(callee)
         let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
-        match sym_opt {
-            Some(sym) => {
+        match sym_opt:
+            Some(sym) =>:
                 let mut st2: SemState = st
-                if sym.kind != "agent" {
-                    if sym.kind != "variable" {
+                if sym.kind != "agent":
+                    if sym.kind != "variable":
                         st2 = add_error_here(st2, "'spawn' requires an agent, but '" + name + "' is a " + sym.kind)
-                    }
-                }
                 return new_infer_result(make_type(sym.name), st2)
-            },
-            _ => {
+            _ =>:
                 let st_err: SemState = add_error_here(st, "Undefined agent '" + name + "'")
                 return new_infer_result(error_type(), st_err)
-            }
-        }
     return new_infer_result(unknown_type(), st)
 
 fn check_spawn_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult:
@@ -1307,40 +1266,28 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult:
     if rk == "ident":
         let name: String = expr_ident_name(right)
         let sym_opt: Option<Symbol> = scope_lookup(st2.scope, name)
-        match sym_opt {
-            Some(sym) => {
-                if sym.kind == "function" {
-                    if sym.type_info.is_function {
-                        if len(sym.type_info.param_types) > 0 {
+        match sym_opt:
+            Some(sym) =>:
+                if sym.kind == "function":
+                    if sym.type_info.is_function:
+                        if len(sym.type_info.param_types) > 0:
                             let expected: TypeInfo = sym.type_info.param_types[0]
-                            if !type_should_skip(expected.name) {
-                                if !type_should_skip(lr.type_info.name) {
-                                    if types_compatible(expected, lr.type_info) == false {
+                            if !type_should_skip(expected.name):
+                                if !type_should_skip(lr.type_info.name):
+                                    if types_compatible(expected, lr.type_info) == false:
                                         let st3_mismatch: SemState = add_error_here(st2, "Pipe type mismatch: piped to '" + name + "'")
-                                        match sym.type_info.return_type {
-                                            Some(ret) => { return new_infer_result(ret, st3_mismatch) },
-                                            _ => { return new_infer_result(unknown_type(), st3_mismatch) }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        match sym.type_info.return_type {
-                            Some(ret) => { return new_infer_result(ret, st2) },
-                            _ => { return new_infer_result(unknown_type(), st2) }
-                        }
-                    }
-                }
-                if sym.kind == "agent" {
+                                        match sym.type_info.return_type:
+                                            Some(ret) => return new_infer_result(ret, st3_mismatch)
+                                            _ => return new_infer_result(unknown_type(), st3_mismatch)
+                        match sym.type_info.return_type:
+                            Some(ret) => return new_infer_result(ret, st2)
+                            _ => return new_infer_result(unknown_type(), st2)
+                if sym.kind == "agent":
                     return new_infer_result(make_type(sym.name), st2)
-                }
                 return new_infer_result(unknown_type(), st2)
-            },
-            _ => {
+            _ =>:
                 let st3_undef: SemState = add_error_here(st2, "Undefined function '" + name + "'")
                 return new_infer_result(error_type(), st3_undef)
-            }
-        }
     if rk == "call":
         return check_call_expr(st2, expr_call_callee(right), expr_call_args(right))
     let rr: InferResult = infer_expr(st2, right)
@@ -1369,13 +1316,11 @@ fn check_stmt(st: SemState, stmt: Stmt) -> SemState:
         return r_expr.st
     if sk == "return":
         let value_opt: Option<Expr> = stmt_return_val(stmt)
-        match value_opt {
-            Some(value) => {
+        match value_opt:
+            Some(value) =>:
                 let r_ret: InferResult = infer_expr(st, value)
                 return r_ret.st
-            },
-            _ => { return st }
-        }
+            _ => return st
     if sk == "for":
         return check_for_stmt(st, stmt_for_var(stmt), stmt_for_iter(stmt), stmt_for_body(stmt))
     if sk == "while":
@@ -1495,7 +1440,7 @@ fn scope_has_variant_for_enum(scope: Scope, variant_name: String, enum_name: Str
                 let mut got_ret: TypeInfo = unknown_type()
                 let mut have_ret: Bool = false
                 match ret_opt:
-                    Some(rt) => { got_ret = rt; have_ret = true }
+                    Some(rt) => got_ret = rt; have_ret = true
                     _ => have_ret = false
                 if have_ret:
                     if got_ret.name == enum_name: hit = true
@@ -1520,17 +1465,14 @@ fn define_pattern_bindings(st: SemState, pattern: StructPattern, outer_mut: Bool
     for _ in 0..200:
         if i >= n: return s
         let fp: FieldPattern = pattern.fields[i]
-        match fp.sub_pattern {
-            Some(sub) => {
+        match fp.sub_pattern:
+            Some(sub) =>:
                 s = define_pattern_bindings(s, sub, outer_mut)
-            },
-            _ => {
+            _ =>:
                 let mut leaf_mut: Bool = outer_mut
-                if fp.mutable { leaf_mut = true }
+                if fp.mutable: leaf_mut = true
                 let sym: Symbol = new_symbol(fp.name, "variable", unknown_type(), leaf_mut)
                 s = define_in_scope(s, fp.name, sym)
-            }
-        }
         i = i + 1
     return s
 
@@ -1873,32 +1815,24 @@ fn check_agent_body(st: SemState, data: AgentDefData) -> SemState:
 fn check_impl_body(st: SemState, target: String, trait_name_opt: Option<String>, methods: List<FnDefData>) -> SemState:
     let sym_opt: Option<Symbol> = scope_lookup(st.scope, target)
     let mut st2: SemState = st
-    match sym_opt {
-        Some(_) => {},
-        _ => {
+    match sym_opt:
+        Some(_) => {}
+        _ =>:
             st2 = add_error_here(st2, "Undefined type '" + target + "' in impl block")
-        }
-    }
 
     // Validate trait requirements if this is "impl Trait for Type"
-    match trait_name_opt {
-        Some(trait_name) => {
+    match trait_name_opt:
+        Some(trait_name) =>:
             let trait_sym: Option<Symbol> = scope_lookup(st2.scope, trait_name)
-            match trait_sym {
-                Some(ts) => {
-                    if ts.kind != "trait" {
+            match trait_sym:
+                Some(ts) =>:
+                    if ts.kind != "trait":
                         st2 = add_error_here(st2, "'" + trait_name + "' is not a trait")
-                    }
                     // Check each trait method is implemented
                     st2 = validate_trait_methods(st2, trait_name, target, methods)
-                },
-                _ => {
+                _ =>:
                     st2 = add_error_here(st2, "Undefined trait '" + trait_name + "'")
-                }
-            }
-        },
         _ => {}
-    }
 
     let mut mi: Int = 0
     for _ in 0..200:
@@ -1954,12 +1888,10 @@ fn check_pipe_stage_type(st: SemState, stage: Expr, pipe_name: String) -> TypeIn
 
 fn resolve_pipe_ident_type(st: SemState, name: String) -> TypeInfo:
     let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
-    match sym_opt {
-        Some(sym) => {
+    match sym_opt:
+        Some(sym) =>:
             return resolve_sym_output_type(sym)
-        },
-        _ => { return unknown_type() }
-    }
+        _ => return unknown_type()
 
 fn resolve_sym_output_type(sym: Symbol) -> TypeInfo:
     if sym.kind != "function": return unknown_type()

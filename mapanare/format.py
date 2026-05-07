@@ -658,6 +658,24 @@ def to_terse(source: str) -> str:
                 out.append(f"{leading}}}")
             continue
 
+        # v5.50.0 Te.3.E.3: ``}`` followed by a trailing line comment
+        # (``} // end of foo``) is a closer with a trailing comment.
+        # Pre-Te.3.E.3 this case was hidden by the
+        # ``_find_match_verbatim_lines`` workaround (which kept the
+        # whole match block in brace form). After Te.3.E.3 the surrounding
+        # match migrates, leaving the closer's comment as an orphan ``}``
+        # in colon-form output. Strip the brace, preserve the comment.
+        if content.startswith("}") and len(content) >= 2:
+            after = content[1:].lstrip()
+            if after.startswith(("//", "#")):
+                if popped_verbatim:
+                    out.append(f"{leading}{content}")
+                else:
+                    # Drop the leading ``}``, keep the comment indented
+                    # at the parent block's level.
+                    out.append(f"{leading}{after}")
+                continue
+
         if content.startswith("} ") and content.endswith(" {"):
             # Pattern: ``} CONTINUATION {`` — rewrite as ``CONTINUATION:``
             mid = content[2:-2].strip()
