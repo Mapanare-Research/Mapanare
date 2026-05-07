@@ -57,18 +57,26 @@ Most recent releases. Full history at
   SysV ABI coincidentally puts the data ptr in RDI either
   way; the bug was Win64-only.
   **Wn.2 — Self-host mirror.** Extended
-  `mapanare/self/emit_llvm.mn::emit_mir_call` with explicit
-  `emit_rt_call` / `emit_rt_call_void` routing branches for
-  the same runtime symbol set, mirroring the established
-  v5.26.0 Mb.9 / v5.29.0 Mb.10 / v5.48.1 Te.3.D.4.4 pattern.
-  The self-host's `emit_rt_call` already had correct Win64
-  sarg lowering (Wb.2 closed it for sret, Wb.4/We.1 covered
-  the existing sarg surface); v5.49.0 just extends the
-  explicit-routing list to include `__mn_file_exists`,
-  the file/dir helpers, the no-arg String-sret helpers,
-  the I/O void helpers, and the crypto/regex/encoding
-  family. Goldens **100/103** locally on Windows (3
-  pre-existing failures in `82_struct_update`,
+  `mapanare/self/emit_llvm.mn::emit_mir_call` with one
+  `if fn_name == "__mn_file_exists"` →
+  `emit_rt_call(..., "i64", "__mn_file_exists", ...)`
+  routing branch, mirroring the established v5.26.0 Mb.9 /
+  v5.29.0 Mb.10 / v5.48.1 Te.3.D.4.4 precedent (each release
+  added one or two routing branches for the specific symbol
+  that surfaced). Initial scope was a sweep across ~30
+  MnString-arg `__mn_*` symbols, but that pushed the
+  generated IR from 2.46M to 3.05M lines and tripped the
+  `tests/bench/bench_compile.sh --gate` threshold (2.5M).
+  Trimmed to the single bug-confirmed symbol; broader sweep
+  becomes a v5.49.x carry candidate (registry-driven
+  dispatch preferred over more inline branches). With the
+  trim, IR is 2,478,086 lines (~22K headroom under the
+  2.5M gate). The self-host's `emit_rt_call` already had
+  correct Win64 sarg lowering (Wb.2 closed it for sret,
+  Wb.4/We.1 covered the existing sarg surface);
+  Wn.2 just adds `__mn_file_exists` to the explicit-
+  routing list. Goldens **100/103** locally on Windows
+  (3 pre-existing failures in `82_struct_update`,
   `83_struct_update_partial`, `51_match_guards_and_or` —
   all unrelated to Wn.\*; struct-update integer-overflow
   is a pre-existing Windows local-build issue, not

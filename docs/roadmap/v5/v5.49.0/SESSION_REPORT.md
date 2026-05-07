@@ -115,37 +115,45 @@ the SDK staging step at `publish.yml:543-562`).
 
 ### Wn.2 — Self-host mirror (`mapanare/self/emit_llvm.mn`)
 
-Extended `emit_mir_call` with explicit `emit_rt_call` /
-`emit_rt_call_void` routing branches for the same runtime symbol
-set the Python registry covers. Mirrors the pattern established
-by v5.26.0 Mb.9 / v5.29.0 Mb.10 / v5.48.1 Te.3.D.4.4 (each of
-which added one or two routing branches when a specific symbol's
-Win64 sarg bug surfaced). v5.49.0 extends the list to:
+Initial scope (drafted): explicit `emit_rt_call` /
+`emit_rt_call_void` routing branches for ~30 runtime symbols
+covering the file/dir helpers, no-arg String-sret helpers, I/O
+void helpers, and crypto/regex/encoding wrappers — every
+MnString-arg `__mn_*` symbol that .mn source might call direct.
 
-- File / directory helpers: `__mn_file_exists`, `__mn_file_remove`,
-  `__mn_file_size`, `__mn_file_mtime`, `__mn_file_rename`,
-  `__mn_file_copy`, `__mn_file_append`, `__mn_dir_create`,
-  `__mn_dir_remove`, `__mn_dir_remove_recursive`,
-  `__mn_dir_count_files`, `__mn_dir_total_size`,
-  `__mn_dir_list_strings`, `__mn_realpath`, `__mn_tmpfile_path`.
-- No-arg String-sret helpers: `__mn_executable_dir`,
-  `__mn_clang_err_path`, `__mn_dev_null_redirect`,
-  `__mn_version_string`, `__mn_read_line`.
-- I/O void helpers: `__mn_str_print`, `__mn_str_println`,
-  `__mn_str_eprintln`.
-- Crypto / regex / encoding wrappers: `__mn_http_get`,
-  `__mn_sha256_str`, `__mn_base64_encode_str`,
-  `__mn_base64_decode_str`, `__mn_hmac_sha256_str`,
-  `__mn_hex_encode_str`, `__mn_random_bytes_str`,
-  `__mn_regex_compile_str`, `__mn_regex_replace_str`.
+**Trimmed scope (shipped):** one routing branch for
+`__mn_file_exists` only. Reason: the broader sweep added 30
+inline `if fn_name == ...` branches in `emit_mir_call`, each
+contributing ~20K lines of generated IR. The Python bootstrap
+emitter compiled `emit_llvm.mn` to 3,084,831 lines of `main.ll`
+— 619K over the v5.48.1 baseline of 2,464,707 — and tripped the
+`tests/bench/bench_compile.sh --gate` threshold (2.5M lines).
 
-The self-host's `emit_rt_call` and `emit_rt_call_void` already
-have correct Win64 sarg / sret lowering (Wb.2 closed sret, the
-existing pattern handles `{ptr, i64}` / `{ptr, i64, i64, i64, i64}`
-arg spill). v5.49.0 just extends the explicit-routing list so the
-default-path emission (which uses `is_byref_type_st` with the
-64-byte threshold for user-fn ABI) doesn't get to handle these
-runtime calls.
+The narrow scope matches the established v5.26.0 Mb.9 /
+v5.29.0 Mb.10 / v5.48.1 Te.3.D.4.4 precedent: each of those
+releases added exactly one or two routing branches for the
+specific symbol that surfaced. v5.49.0's surfaced symbol is
+`__mn_file_exists`; the rest of the family (`__mn_dir_*`,
+`__mn_file_*`, `__mn_regex_*_str`, etc.) becomes a v5.49.x
+carry candidate.
+
+**Architectural note for the v5.49.x carry:** the inline-branch
+form is structurally O(N) in IR cost per release. A
+registry-driven dispatch (single function looking up
+`(ret, [pts])` from a table, single `emit_rt_call` invocation)
+would be O(1). The Python emitter's `_RUNTIME_FN_SIGS` is
+exactly this shape; the self-host equivalent would need a
+parallel structure. Defer to v5.49.x where the IR-budget
+constraint can be addressed as a first-class concern rather
+than a forced trim.
+
+**Trimmed-build IR:** 2,478,086 lines (~22K headroom under
+the 2.5M gate; +13K vs the v5.48.1 baseline for the one new
+branch). Bench gate passes. The self-host's `emit_rt_call`
+and `emit_rt_call_void` already have correct Win64 sarg /
+sret lowering (Wb.2 closed sret, the existing routing-branch
+pattern at lines 3773-3827 covers the surface known to be
+called direct from `mapanare/self/*.mn` pre-v5.49.0).
 
 **Goldens (Windows local):** **100/103**. Pre-existing failures:
 `82_struct_update` and `83_struct_update_partial` fail with
@@ -244,7 +252,7 @@ on default PATH for the end-to-end smoke).
   body-walk (v5.40.0 carry; structural compiler work),
   `match_arm_open` + `one_line_arm_other` v6.0 grammar
   revisit (v5.48.1 carry).
-- **~6 LOW:** Lf.4 variant-name collision (v5.46.x split);
+- **~7 LOW:** Lf.4 variant-name collision (v5.46.x split);
   ergonomic refactor of v5.43.0 distributed-agent APIs from
   flat-tuple to `Result<T, NetworkError>` (v5.46.x candidate);
   fs.mn `walk_dir` IR codegen (v5.40.0 carry); websocket.mn
@@ -252,7 +260,10 @@ on default PATH for the end-to-end smoke).
   if-expression colon syntax (v6.0 deferred);
   struct-update integer-overflow on Windows local build
   (surfaced during v5.49.0 Windows goldens, unrelated to
-  Wn.\* — file as v5.49.x patch candidate).
+  Wn.\* — file as v5.49.x patch candidate);
+  **broader self-host Win64 sarg routing sweep**
+  (Wn.2-trimmed-scope; needs registry-driven dispatch to
+  fit under the 2.5M IR gate).
 
 ---
 

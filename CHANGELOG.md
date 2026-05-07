@@ -57,27 +57,21 @@ Wn.2 self-host registry routing).
   catchall path is bypassed, so MIR-derived type guessing
   cannot drift from the canonical C signature.
 
-- **Self-host `emit_llvm.mn` routing** for the same set of
-  runtime symbols (Wn.2 mirror). Extends the v5.26.0 Mb.9 /
-  v5.29.0 Mb.10 / v5.48.1 Te.3.D.4.4 pattern (explicit
-  `if fn_name == "__mn_..."` branches that route through
-  `emit_rt_call` / `emit_rt_call_void`) to cover
-  `__mn_file_exists`, the file/dir helpers (`__mn_file_remove`,
-  `__mn_file_size`, `__mn_file_mtime`, `__mn_file_rename`,
-  `__mn_file_copy`, `__mn_file_append`, `__mn_dir_create`,
-  `__mn_dir_remove`, `__mn_dir_remove_recursive`,
-  `__mn_dir_count_files`, `__mn_dir_total_size`,
-  `__mn_dir_list_strings`, `__mn_realpath`,
-  `__mn_tmpfile_path`), the no-arg String-sret helpers
-  (`__mn_executable_dir`, `__mn_clang_err_path`,
-  `__mn_dev_null_redirect`, `__mn_version_string`,
-  `__mn_read_line`), the I/O void helpers
-  (`__mn_str_print`, `__mn_str_println`,
-  `__mn_str_eprintln`), and the crypto/regex/encoding family.
-  Without these, the default-path emission used
-  `is_byref_type_st` (64-byte threshold) and emitted
-  `{ptr, i64}` aggregate-by-value at the call site — same Win64
-  ABI mismatch class as the Python-side bug.
+- **Self-host `emit_llvm.mn` routing for `__mn_file_exists`**
+  (Wn.2 mirror, narrow scope). Extends the v5.26.0 Mb.9 /
+  v5.29.0 Mb.10 / v5.48.1 Te.3.D.4.4 precedent (one routing
+  branch per release for the specific symbol that surfaced) by
+  adding `if fn_name == "__mn_file_exists"` → `emit_rt_call(...,
+  "i64", "__mn_file_exists", ...)`. This covers user-program
+  emission via mnc-stage1: when `mnc.exe build user.mn` compiles
+  a program that calls `__mn_file_exists` direct, the resulting
+  IR uses Win64 sarg shape, not by-value aggregate. The broader
+  sweep across every MnString-arg `__mn_*` symbol called from
+  .mn source (file/dir/regex/crypto family) is a v5.49.x carry
+  candidate — preferred form is a registry-driven dispatch
+  rather than ~30 more inline if-branches (the inline form
+  would push IR past the 2.5M `tests/bench/bench_compile.sh
+  --gate` threshold).
 
 - **`tests/native/test_windows_run_smoke.py`** (Wn.4
   falsifiability anchor). Five IR-shape tests (cross-platform)
@@ -123,7 +117,9 @@ Wn.2 self-host registry routing).
   Linux + macOS unaffected (the SysV ABI coincidentally
   agrees on register layout for 16-byte aggregates passed
   either way). Self-host mirror in `mapanare/self/emit_llvm.mn`
-  via explicit `emit_rt_call` routing branches.
+  via the same `if fn_name == "__mn_file_exists"` →
+  `emit_rt_call` routing branch the v5.26.0 / v5.29.0 / v5.48.1
+  pattern uses.
 
 
 ## [5.48.1] - 2026-05-07
