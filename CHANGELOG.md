@@ -63,7 +63,7 @@ Wn.2 self-host registry routing).
   branch per release for the specific symbol that surfaced) by
   adding `if fn_name == "__mn_file_exists"` → `emit_rt_call(...,
   "i64", "__mn_file_exists", ...)`. This covers user-program
-  emission via mnc-stage1: when `mnc.exe build user.mn` compiles
+  emission via mnc-stage1: when <!-- no-check -->`mnc.exe build user.mn` compiles
   a program that calls `__mn_file_exists` direct, the resulting
   IR uses Win64 sarg shape, not by-value aggregate. The broader
   sweep across every MnString-arg `__mn_*` symbol called from
