@@ -32,9 +32,9 @@ pub tipo NodeHandle:
 fn ne_kind(e: NetworkError) -> Int:
     pon mut k: Int = 0
     match e:
-        BadUrl(s) => { k = 1 }
-        NoKey(s) => { k = 2 }
-        TransportLost(s) => { k = 3 }
+        BadUrl(s) => k = 1
+        NoKey(s) => k = 2
+        TransportLost(s) => k = 3
     da k
 
 fn first() -> Result<NodeHandle, NetworkError>:
@@ -43,18 +43,18 @@ fn first() -> Result<NodeHandle, NetworkError>:
 fn second() -> Result<NodeHandle, NetworkError>:
     pon r: Result<NodeHandle, NetworkError> = first()
     match r:
-        Ok(v) => { da Ok(v) }
-        Err(e) => { da Err(e) }
+        Ok(v) => da Ok(v)
+        Err(e) => da Err(e)
 
 fn third() -> Result<NodeHandle, NetworkError>:
     pon r: Result<NodeHandle, NetworkError> = second()
     match r:
-        Ok(v) => { da Ok(v) }
-        Err(e) => { da Err(e) }
+        Ok(v) => da Ok(v)
+        Err(e) => da Err(e)
 
 fn main() -> Int:
     pon r: Result<NodeHandle, NetworkError> = third()
     match r:
-        Ok(_) => { print("FAIL was Ok") }
-        Err(e) => { print("k=" + str(ne_kind(e))) }
+        Ok(_) => print("FAIL was Ok")
+        Err(e) => print("k=" + str(ne_kind(e)))
     da 0

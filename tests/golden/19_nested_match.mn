@@ -4,8 +4,8 @@ enum Shape:
 
 fn area(s: Shape) -> Int:
     match s:
-        Circle(r) => { return r * r * 3 }
-        Rect(w, h) => { return w * h }
+        Circle(r) => return r * r * 3
+        Rect(w, h) => return w * h
 
 fn main():
     let c: Shape = Circle(5)

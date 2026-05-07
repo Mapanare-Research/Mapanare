@@ -5,9 +5,9 @@ enum Color:
 
 fn color_name(c: Color) -> String:
     match c:
-        Red => { return "red" }
-        Green => { return "green" }
-        Blue => { return "blue" }
+        Red => return "red"
+        Green => return "green"
+        Blue => return "blue"
 
 fn main():
     let c1: Color = Red

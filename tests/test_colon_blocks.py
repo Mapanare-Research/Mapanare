@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from mapanare.ast_nodes import Block, PassStmt, Span
+from mapanare.ast_nodes import Block, ExprStmt, PassStmt, Span
 from mapanare.format import format_source, to_braces, to_terse
 from mapanare.parser import ParseError, parse
 
@@ -24,28 +24,44 @@ GOLDEN_DIR = Path(__file__).parent / "golden"
 GOLDEN_FILES = sorted(GOLDEN_DIR.glob("*.mn"))
 
 
-def _normalize(node: Any) -> Any:
+def _normalize(node: Any, *, in_arm_body: bool = False) -> Any:
     """Recursively strip ``span`` fields and treat a single-``PassStmt``
     body as equivalent to an empty body. Used to compare ASTs across
     surface-syntax rewrites where line/column shift and ``fn empty() {}``
     expands to ``fn empty(): pass``.
+
+    v5.48.0 Te.3.D.3: also collapse a match-arm body that is a Block
+    containing a single ExprStmt to the bare expression. This mirrors
+    the formatter's ``Pat => { expr }`` -> ``Pat => expr`` rewrite,
+    which changes AST shape (block-of-expr-stmt to expression-arm) but
+    preserves runtime semantics.
     """
     if isinstance(node, Span):
         return None
     if isinstance(node, list):
-        return [_normalize(x) for x in node]
+        return [_normalize(x, in_arm_body=in_arm_body) for x in node]
     if isinstance(node, tuple):
-        return tuple(_normalize(x) for x in node)
+        return tuple(_normalize(x, in_arm_body=in_arm_body) for x in node)
     if isinstance(node, Block):
         # Collapse a body of [PassStmt] to [] for cross-style equivalence.
         stmts = [s for s in node.stmts if not isinstance(s, PassStmt)]
+        # v5.48.0: in match-arm body context, a single ExprStmt block
+        # is equivalent to the bare expression arm. Unwrap to the
+        # expression so ``Pat => { expr }`` and ``Pat => expr`` compare
+        # equal under this normalizer.
+        if in_arm_body and len(stmts) == 1 and isinstance(stmts[0], ExprStmt):
+            return _normalize(stmts[0].expr)
         return ("Block", _normalize(stmts))
     if is_dataclass(node):
         out: dict[str, Any] = {}
         for f in fields(node):
             if f.name == "span":
                 continue
-            out[f.name] = _normalize(getattr(node, f.name))
+            value = getattr(node, f.name)
+            # Mark arm body context so the Block visitor can collapse
+            # single-ExprStmt blocks to the bare expression.
+            child_in_arm = type(node).__name__ == "MatchArm" and f.name == "body"
+            out[f.name] = _normalize(value, in_arm_body=child_in_arm)
         return (type(node).__name__, out)
     return node
 

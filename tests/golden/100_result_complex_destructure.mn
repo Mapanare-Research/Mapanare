@@ -44,11 +44,11 @@ pub tipo NodeHandle:
 fn ne_kind(e: NetworkError) -> Int:
     pon mut k: Int = 0
     match e:
-        BadUrl(s) => { k = 1 }
-        UnsupportedScheme(s) => { k = 2 }
-        NoKey(s) => { k = 3 }
-        ConnectFailed(s) => { k = 4 }
-        ListenFailed(s) => { k = 5 }
+        BadUrl(s) => k = 1
+        UnsupportedScheme(s) => k = 2
+        NoKey(s) => k = 3
+        ConnectFailed(s) => k = 4
+        ListenFailed(s) => k = 5
     da k
 
 pub fn fake_listen(addr: String, port: Int, key: String) -> Result<NodeHandle, NetworkError>:
@@ -63,10 +63,10 @@ pub fn fake_listen(addr: String, port: Int, key: String) -> Result<NodeHandle, N
 fn main() -> Int:
     pon r1: Result<NodeHandle, NetworkError> = fake_listen("127.0.0.1", 0, "shortkey")
     match r1:
-        Ok(_) => { print("FAIL r1 was Ok") }
-        Err(e) => { print("k=" + str(ne_kind(e))) }
+        Ok(_) => print("FAIL r1 was Ok")
+        Err(e) => print("k=" + str(ne_kind(e)))
     pon r2: Result<NodeHandle, NetworkError> = fake_listen("127.0.0.1", 99999, "this_is_a_very_long_key_with_more_than_32_bytes_yes")
     match r2:
-        Ok(_) => { print("FAIL r2 was Ok") }
-        Err(e) => { print("k=" + str(ne_kind(e))) }
+        Ok(_) => print("FAIL r2 was Ok")
+        Err(e) => print("k=" + str(ne_kind(e)))
     da 0

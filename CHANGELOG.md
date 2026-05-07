@@ -7,6 +7,167 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.48.0] - 2026-05-07
+
+**Te.3.D — single-line colon blocks and match-arm statement
+shorthand.** Pulls the brace-removal runway forward from v6.0
+because the language is still beta and there is no external
+compatibility burden worth preserving. The objective is not
+to keep `{}` as a special one-line exception; the objective
+is to make the compact brace forms migrate to a compact
+colon/direct-arm form. Legacy braces still parse with the
+v5.19.0 deprecation warning unchanged. v6.0 may flip that
+warning to a hard error after v5.48.x soak.
+
+**Phase 0 audit (PRE_PHASE_AUDIT.md, mandatory).** Counted
+and classified every brace-block opener across the repo:
+**6826 in `mapanare/self/`** (3675 in module sources, the
+rest a snapshot in `mnc_all.mn`); **6116 in `stdlib/`**;
+**63 in `tests/golden/`**; **15,537 across 237 files**
+total. Shape classification: dominant pattern in
+`mapanare/self/` is `one_line_stmt` (2653) — guard clauses
+like `if total_size <= 16 { return false }` — followed by
+`one_line_arm_return` (293) — match-arm bodies like
+`IntLit(_) => { return "int_lit" }`. Together these are
+**82.5%** of self-host brace openers and they were the
+shapes the formatter could not previously migrate without
+expanding to multi-line. v5.48.0 makes them migratable.
+
+### Added
+
+- **Te.3.D.1 — single-line statement-block colon syntax.**
+  `_indent_to_braces` (Python) accepts
+  `<head>: <body>` as a single-line block when `<head>` is
+  a statement-block opener. Supported heads: `fn`, `if`,
+  `si`, `while`, `mien`, `for`, `cada`; with optional
+  modifier prefixes `pub`, `async`, `extern`; plus
+  continuations `else`, `sino`, `else if`, `sino si`. The
+  preprocessor rewrites `if x: stmt` to brace stream
+  `if x { stmt }` inline (no indent_stack push). Comma-body
+  openers (`struct`, `enum`, `match`, `tipo`, `modo`, `way`)
+  and block-only openers (`trait`, `impl`, `agent`) are
+  excluded — their bodies need multi-line grammar.
+  `fn name(): stmt` (zero-arg) gets the same `()` insertion
+  as multi-line `fn name:`.
+- **Te.3.D.2 — match-arm statement shorthand.**
+  `_rewrite_arm_stmt_shorthand` runs after
+  `_indent_to_braces` and rewrites
+  `Pat => <stmt_kw> ...` arm bodies to brace form
+  `Pat => { <stmt_kw> ... }`. Supported keywords: `return`,
+  `da`, `break`, `sal`, `continue`, `sigue`, `pass`. Body
+  extent reaches the first depth-0 `,` or `}` or
+  end-of-line. Strings, char literals, and `//` line
+  comments are masked so the scanner does not mistake their
+  content for an arm body. Identifier continuations like
+  `return_value` are not matched (word-boundary check).
+  AST-equivalent to writing `Pat => { return X }` because
+  the rewrite happens before parsing.
+- **Te.3.D.3 — formatter migration (`to_terse`).**
+  `_migrate_one_line_stmt_block` rewrites
+  `<head> { <body> }` to `<head>: <body>` when the head is
+  a stmt-block opener. `_migrate_one_line_arm_body` rewrites
+  `Pat => { <body> }` to `Pat => <body>` for any single-stmt
+  body (no top-level `;`, no nested `{}`). The two are
+  composed in `to_terse` after the existing comma-strip and
+  multi-line block-opener handling. Trailing commas on
+  match-arm siblings are preserved across the rewrite. The
+  v5.27.0 Tk.1 expression-context filters
+  (`_looks_like_stmt_block_opener`) keep struct literals,
+  empty maps `#{}`, and if-expression braces from being
+  migrated.
+- **103 new pytest cases** in
+  `tests/test_single_line_colon_blocks.py` covering the
+  Phase 1 / Phase 2 / Phase 3 contract: colon-body
+  splitter unit tests; positive parses for every supported
+  head (English + Spanish); negative parses for excluded
+  heads (`struct Point: x: Int`, `enum Color: Red`,
+  `match e: Pat => 1`); arm-shorthand for every supported
+  keyword; formatter migration including AST-preservation
+  checks; idempotence; expression-context passthroughs.
+
+### Changed
+
+- **`tests/golden/*.mn`** — 11 files automatically migrated
+  by `mnc fmt tests/golden` to the new compact arm forms
+  (`07_enum_match.mn`, `100_result_complex_destructure.mn`,
+  `101_match_rewrap_propagation.mn`,
+  `103_variant_name_collision.mn`, `10_result.mn`,
+  `17_option.mn`, `19_nested_match.mn`,
+  `24_enum_methods.mn`, `45_ffi_bind.mn`,
+  `47_try_operator.mn`, `48_match_nested_exhaustive.mn`).
+  IR equivalence preserved: `to_terse` does not change AST
+  shape for stmt-keyword arm bodies (the brace form is
+  re-introduced by the parser before lowering); for
+  expression-arm rewrites (`=> { print(x) }` →
+  `=> print(x)`) the AST shape changes from
+  block-of-ExprStmt to expression-arm but runtime semantics
+  are identical, and the cross-style equivalence test in
+  `tests/test_colon_blocks.py::_normalize` collapses these
+  shapes for AST comparison.
+- **`mapanare/parser.py`** — added
+  `_split_inline_colon_body`,
+  `_is_single_line_stmt_head`,
+  `_rewrite_inline_colon_body`,
+  `_normalize_fn_zero_arg_head`,
+  `_rewrite_arm_stmt_shorthand`. The fast-path detector
+  `mn_ib_has_colon_blocks` now also routes lines whose
+  content starts with one of `_SINGLE_LINE_PREFIX_HINT`
+  (a stmt-block keyword + `:` substring) through the
+  full preprocessor.
+- **`mapanare/format.py`** — added `_mask_strings`,
+  `_find_matching_close`,
+  `_migrate_one_line_arm_body`,
+  `_migrate_one_line_stmt_block` and integrated both rules
+  into `to_terse` after comma handling.
+
+### Deferred to v5.48.1
+
+- **Te.3.D.4 — bootstrap mirror in
+  `runtime/native/mapanare_core.c::__mn_indent_to_braces`
+  and `mapanare/self/parser.mn`.** v5.48.0 ships the Python
+  side of the preprocessor only. The C runtime preprocessor
+  is unchanged, which means stage1 / stage2 / native `mnc`
+  do not yet accept the new single-line colon shapes
+  programmatically — but legacy brace forms still parse
+  unchanged, so the self-host continues to build via the
+  existing brace-form sources. The cross-bootstrap test
+  (`tests/bootstrap/test_indent_preprocessor.py`) must stay
+  green until the C runtime mirror lands; the v5.48.0
+  Python-only changes do not affect that test because the
+  cross-bootstrap fixtures are pure colon-style sources
+  whose preprocessor output is identical with or without the
+  new single-line rules. Phase 4 is scheduled for v5.48.1
+  alongside Phase 5.
+- **Te.3.D.4 — internal source migration.** Migration of
+  `mapanare/self/*.mn` sources is gated on the bootstrap
+  mirror landing first (otherwise stage1 cannot reparse the
+  migrated sources). The 2946 single-line brace openers in
+  `mapanare/self/` modules remain in legacy brace form for
+  v5.48.0 and continue to fire the v5.19.0 deprecation
+  warning; they are scheduled for v5.48.1 once the C runtime
+  mirror is verified.
+- **Te.3.D.7 — strict 3-stage fixed point** preserved by
+  construction at v5.47.0's 244,654 lines / 0 diff: this
+  release does not edit any `mapanare/self/*.mn` source
+  (51-release strict streak from the v5.7.1 baseline).
+
+### Aggregate state
+
+**0 HIGH** (panel docket clean per v5.47.5) /
+**3 MEDIUM** (Te.3.D.4 bootstrap mirror split to v5.48.1;
+Te.3.D.5 self-host source migration split to v5.48.1;
+macOS notarization carry from v5.33.0 Nu.2) /
+**~6 LOW** (Cl.2 distributed-agent ergonomic refactor +
+Cl.3 fs.mn `walk_dir` IR codegen carry from v5.47.0;
+multi-stmt single-line arm bodies have no shorthand —
+v6.0 grammar may revisit; Ai.1 `_specialize_fn` body-walk
+fix carry from v5.40.0; expression-context if-syntax via
+colon `let x = if cond: 1 else: 2` deferred per
+PRE_PHASE_AUDIT Decision).
+
+See `docs/roadmap/v5/v5.48.0/{PLAN.md, PROMPT.md,
+PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 ## [5.47.5] - 2026-05-06
 
 **Cp.\* — end-of-v5 closeout panel.** Panel-only release.
@@ -12337,7 +12498,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.5...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.0...HEAD
+[5.48.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.5...v5.48.0
 [5.47.5]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.0...v5.47.5
 [5.47.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.46.0...v5.47.0
 [5.46.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.45.0...v5.46.0

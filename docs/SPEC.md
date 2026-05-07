@@ -1831,14 +1831,44 @@ Rules for colon style:
   fn empty():
       pass
   ```
-- Single-line `if x: y` form is **not** supported. The v5.14.0
-  SPEC incorrectly promised this form for v5.21.0; the v5.21.0
-  small-ergonomic-wins cycle shipped chained comparisons (Te.6)
-  instead, and the single-line form was rescoped at v5.21.1 to
-  v6.0 — when the brace-form removal will eliminate the parser
-  ambiguity that makes single-line colon-form complex to integrate
-  cleanly with brace shape. Until v6.0, put the body on the next
-  line.
+- **Single-line colon blocks (since v5.48.0):** a statement-block
+  opener followed by `: <body>` on the same line is accepted as
+  long as `<body>` is a single statement. Supported heads: `fn`,
+  `if`, `si`, `while`, `mien`, `for`, `cada`; with optional
+  `pub`/`async`/`extern` modifier prefixes; plus continuations
+  `else`, `sino`, `else if`, `sino si`. Examples:
+  <!-- pseudo -->
+  ```mn
+  fn main(): print("hi")
+  if total_size <= 16: return false
+  si total_size <= 16: da false
+  while ready(): break
+  for x in xs: print(x)
+  else: return fallback()
+  sino: da fallback()
+  ```
+  Comma-body openers (`struct`, `enum`, `match`, `tipo`, `modo`,
+  `way`) and block-only openers (`trait`, `impl`, `agent`) are
+  excluded — their bodies need multi-line grammar.
+- A single-line `if x: stmt` followed by an `else` continuation on
+  a *separate* line does **not** chain — the brace stream emits
+  the single-line as a fully-closed inline block. If the user
+  wants a chain, they use multi-line on both branches. This
+  matches the guard-clause / early-return pattern that dominates
+  the audit at v5.48.0.
+- **Match-arm statement shorthand (since v5.48.0):** match arms
+  may use a bare statement keyword after `=>` instead of a brace
+  block. Supported keywords: `return`, `da`, `break`, `sal`,
+  `continue`, `sigue`, `pass`. Examples:
+  ```mn
+  match e:
+      IntLit(n) => return n
+      FloatLit(f) => da f
+      _ => return 0
+  ```
+  Multi-statement bodies (`Pat => { let x = 1; return x }`) have
+  no shorthand in v5.48.0 — keep them in brace form or expand to
+  a multi-line colon arm body.
 
 **Brace style** (legacy, soft-deprecated since v5.19.0; hard
 removal at v6.0):
@@ -2091,6 +2121,26 @@ match expr:
 ```
 
 Match arms are separated by commas. Each arm consists of a pattern, `=>`, and either an expression or a block.
+
+**Statement shorthand (since v5.48.0):** an arm may use a bare
+statement keyword after `=>` instead of wrapping it in a brace
+block. Supported keywords: `return`, `da`, `break`, `sal`,
+`continue`, `sigue`, `pass`. The shorthand is AST-equivalent to
+the brace form because the preprocessor wraps the body in `{ ... }`
+before parsing.
+
+```mn
+match err:
+    BadUrl(s) => return -1
+    Timeout(s) => da -2
+    _ => break
+```
+
+Multi-statement bodies (`Pat => { let x = 1; return x }`) have no
+shorthand in v5.48.0 — keep them in brace form or expand to a
+multi-line colon arm body. Expression arms (`Pat => k = 1`,
+`Pat => some_func()`) continue to parse through the existing
+expression-arm path.
 
 ### 5.2 Pattern Kinds
 

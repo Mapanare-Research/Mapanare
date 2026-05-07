@@ -157,6 +157,226 @@ _STMT_BLOCK_PREFIXES = ("pub ", "async ", "extern ")
 _CONTINUATION_PREFIXES = ("else", "sino")
 
 
+# v5.48.0 Te.3.D.3: stmt keywords accepted as match-arm bodies in
+# the new colon shorthand (``Pat => return x``, ``Pat => break``).
+# Mirrors the parser's ``_ARM_STMT_KEYWORDS``.
+_ARM_STMT_KEYWORDS_FMT = (
+    "return",
+    "da",
+    "break",
+    "sal",
+    "continue",
+    "sigue",
+    "pass",
+)
+
+
+def _mask_strings(line: str) -> str:
+    """Return a shadow copy of ``line`` with string / char literals and
+    line comments masked to spaces, so brace / colon scanners ignore
+    content inside them. Used by the v5.48.0 one-line migration
+    helpers.
+    """
+    out = list(line)
+    in_str = False
+    in_char = False
+    n = len(line)
+    i = 0
+    while i < n:
+        ch = line[i]
+        if in_str:
+            out[i] = " "
+            if ch == "\\" and i + 1 < n:
+                out[i + 1] = " "
+                i += 2
+                continue
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if in_char:
+            out[i] = " "
+            if ch == "\\" and i + 1 < n:
+                out[i + 1] = " "
+                i += 2
+                continue
+            if ch == "'":
+                in_char = False
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and line[i + 1] == "/":
+            for j in range(i, n):
+                out[j] = " "
+            break
+        if ch == '"':
+            out[i] = " "
+            in_str = True
+            i += 1
+            continue
+        if ch == "'":
+            out[i] = " "
+            in_char = True
+            i += 1
+            continue
+        i += 1
+    return "".join(out)
+
+
+def _find_matching_close(shadow: str, open_idx: int) -> int:
+    """Given an opening ``{`` at ``shadow[open_idx]``, return the index
+    of the matching ``}`` at the same depth, or ``-1`` if none on the
+    same string. ``shadow`` must be string-masked (see ``_mask_strings``).
+    """
+    depth = 1
+    n = len(shadow)
+    i = open_idx + 1
+    while i < n:
+        c = shadow[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+
+def _migrate_one_line_arm_body(content: str) -> str:
+    """Rewrite ``Pat => { body }`` arm bodies to compact form.
+
+    v5.48.0 Te.3.D.3. Operates on a single line of brace-form source.
+    Produces:
+
+    - ``Pat => { return x }`` -> ``Pat => return x``
+    - ``Pat => { da x }`` -> ``Pat => da x``
+    - ``Pat => { break }`` -> ``Pat => break``
+    - ``Pat => { print(x) }`` -> ``Pat => print(x)``
+    - ``Pat => { k = 1 }`` -> ``Pat => k = 1``
+
+    Skips when:
+
+    - body contains a top-level ``;`` (multi-stmt, no shorthand)
+    - body itself contains a nested ``{`` block (would break parse)
+    - body is empty (``Pat => {}`` — no shorthand exists)
+
+    Trailing ``,`` (sibling separator) is preserved. Leading whitespace
+    is preserved. Idempotent: a line already in shorthand form is
+    returned unchanged.
+    """
+    if "=>" not in content or "{" not in content:
+        return content
+    shadow = _mask_strings(content)
+
+    # Walk left-to-right to find ``=> { body }`` segments. Each match
+    # is replaced from the position of ``{`` through the matching ``}``
+    # (and the leading space before ``{``).
+    edits: list[tuple[int, int, str]] = []
+    pos = 0
+    n = len(shadow)
+    while True:
+        arrow = shadow.find("=>", pos)
+        if arrow < 0:
+            break
+        # advance past `=>`
+        body_pos = arrow + 2
+        # skip whitespace
+        while body_pos < n and shadow[body_pos] in (" ", "\t"):
+            body_pos += 1
+        if body_pos >= n or shadow[body_pos] != "{":
+            pos = arrow + 2
+            continue
+        close = _find_matching_close(shadow, body_pos)
+        if close < 0:
+            pos = arrow + 2
+            continue
+        # Body is content[body_pos+1 : close], stripped.
+        body = content[body_pos + 1 : close].strip()
+        # Skip empty body — keep brace form.
+        if not body:
+            pos = close + 1
+            continue
+        # Skip nested brace (a sub-block inside the arm body — too
+        # risky to flatten textually).
+        body_shadow = shadow[body_pos + 1 : close]
+        if "{" in body_shadow or "}" in body_shadow:
+            pos = close + 1
+            continue
+        # Skip multi-statement bodies (top-level `;`).
+        if ";" in body_shadow:
+            pos = close + 1
+            continue
+        # Build replacement: from arrow+2 (after `=>`) through close+1
+        # (after `}`). Replace ``{ body }`` with `` body``.
+        replacement = " " + body
+        edits.append((arrow + 2, close + 1, replacement))
+        pos = close + 1
+
+    if not edits:
+        return content
+    result = content
+    for s, e, r in reversed(edits):
+        result = result[:s] + r + result[e:]
+    return result
+
+
+def _migrate_one_line_stmt_block(leading: str, content: str) -> str | None:
+    """Rewrite a single-line statement-block brace to colon form.
+
+    v5.48.0 Te.3.D.3. Returns the rewritten line (with ``leading``
+    re-applied) if migration succeeds, or ``None`` if the content
+    does not match the single-line pattern or is unsafe to migrate.
+
+    Pattern: ``<head> { <body> }`` where ``<head>`` is a stmt-block
+    opener (``if x``, ``fn name()``, ``while x``, ``for x in xs``,
+    Spanish forms, continuations like ``} else``, ``} else if x``).
+    Body must be a single statement (no top-level ``;``) and must not
+    contain nested ``{...}``.
+
+    Special-case: ``} else { body }`` and ``} else if X { body }``
+    continuation forms are also accepted; they require the previous
+    line to be the ``}`` closer of an if-block, which the formatter's
+    line-by-line architecture has already produced as a separate
+    line (the ``content == "}"`` branch).
+    """
+    if "{" not in content or not content.endswith("}"):
+        return None
+    shadow = _mask_strings(content)
+    open_idx = shadow.find("{")
+    if open_idx < 0:
+        return None
+    close_idx = _find_matching_close(shadow, open_idx)
+    if close_idx < 0:
+        return None
+    # Anything after the matching close (other than trailing whitespace)?
+    # If yes, this is not a clean single-line brace (e.g. inline if-else
+    # ``if x { 1 } else { 2 }`` or arm with trailing comma).
+    tail = content[close_idx + 1 :]
+    if tail.strip():
+        return None
+    head = content[:open_idx].rstrip()
+    body = content[open_idx + 1 : close_idx].strip()
+    if not body:
+        return None
+    body_shadow = shadow[open_idx + 1 : close_idx]
+    if "{" in body_shadow or "}" in body_shadow:
+        return None
+    if ";" in body_shadow:
+        return None
+    # Reject match-arm shape (``Pat =>``); arm migration is handled
+    # separately by ``_migrate_one_line_arm_body``.
+    if head.endswith("=>"):
+        return None
+    if not _looks_like_stmt_block_opener(head):
+        return None
+    # Reject comma-body openers — their bodies need multi-line grammar.
+    if any(head.startswith(p) for p in _COMMA_BODY_OPENERS):
+        return None
+    # Reject ``} else { body }`` chained with a trailing continuation
+    # (we already filtered ``tail.strip()`` so we know nothing follows).
+    return f"{leading}{head}: {body}"
+
+
 def _looks_like_stmt_block_opener(opener_body: str) -> bool:
     """Return True if ``opener_body`` (line content with the trailing
     `` {`` already stripped) is a statement-level block opener that can
@@ -489,14 +709,33 @@ def to_terse(source: str) -> str:
             del comma_body  # not relevant here
             continue
 
+        # v5.48.0 Te.3.D.3: rewrite single-line match-arm brace bodies
+        # to compact form (``Pat => { return x }`` -> ``Pat => return x``).
+        # Runs before comma-stripping so the comma logic still sees the
+        # final shape.
+        content = _migrate_one_line_arm_body(content)
+
         # Inside a comma-body block, strip trailing comma from members.
-        if (
+        # Snapshot whether the line carried a trailing comma so the
+        # single-line stmt-block migration below can reattach it.
+        had_trailing_comma = (
             block_stack
             and block_stack[-1][1]
             and content.endswith(",")
             and len(leading) > len(block_stack[-1][0])
-        ):
+        )
+        if had_trailing_comma:
             content = content[:-1].rstrip()
+
+        # v5.48.0 Te.3.D.3: rewrite single-line statement-block braces
+        # to colon form (``if x { return y }`` -> ``if x: return y``).
+        # Runs after comma-strip so we operate on the bare content.
+        migrated = _migrate_one_line_stmt_block(leading, content)
+        if migrated is not None:
+            if had_trailing_comma:
+                migrated = migrated + ","
+            out.append(migrated)
+            continue
 
         out.append(f"{leading}{content}")
 

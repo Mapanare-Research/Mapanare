@@ -19,6 +19,107 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.48.0** (ready, not tagged) — **Te.3.D — single-line
+  colon blocks and match-arm statement shorthand (Python-side).**
+  Pulls the brace-removal runway forward from v6.0 because the
+  language is still beta and there is no external compatibility
+  burden worth preserving. The objective is not to keep `{}` as
+  a special one-line exception. The objective is to make the
+  compact brace forms migrate to a compact colon/direct-arm
+  form: `if x { return y }` -> `if x: return y`,
+  `Pat => { return x }` -> `Pat => return x`,
+  `fn main() { print(x) }` -> `fn main(): print(x)`. Legacy
+  brace source still parses in v5.48.0 with the v5.19.0
+  deprecation warning unchanged; v6.0 may flip the warning to a
+  hard error after v5.48.x soak. **Phase 0 audit
+  (PRE_PHASE_AUDIT.md, mandatory)** measured 15,537 brace
+  openers across 237 files and classified them: dominant
+  pattern in `mapanare/self/` is `one_line_stmt` (2653) — guard
+  clauses like `if total_size <= 16 { return false }` —
+  followed by `one_line_arm_return` (293) — match-arm bodies
+  like `IntLit(_) => { return "int_lit" }`. Together these are
+  **82.5% of self-host brace openers** and are the shapes the
+  formatter could not previously migrate without expanding to
+  multi-line. v5.48.0 makes them migratable.
+  **Te.3.D.1 — single-line statement-block colon syntax.**
+  `_indent_to_braces` (Python) accepts `<head>: <body>` as a
+  single-line block when `<head>` is a statement-block opener
+  (`fn`, `if`, `si`, `while`, `mien`, `for`, `cada`; with
+  optional `pub`/`async`/`extern` modifier prefixes; plus
+  continuations `else`, `sino`, `else if`, `sino si`). The
+  preprocessor rewrites `if x: stmt` to brace stream
+  `if x { stmt }` inline (no indent_stack push). Comma-body
+  openers (`struct`, `enum`, `match`, `tipo`, `modo`, `way`)
+  and block-only openers (`trait`, `impl`, `agent`) are
+  excluded because their bodies need multi-line grammar.
+  **Te.3.D.2 — match-arm statement shorthand.**
+  `_rewrite_arm_stmt_shorthand` runs after `_indent_to_braces`
+  and rewrites `Pat => <stmt_kw> ...` arm bodies to brace form
+  `Pat => { <stmt_kw> ... }` for keywords `return`, `da`,
+  `break`, `sal`, `continue`, `sigue`, `pass`. AST-equivalent
+  to writing the brace form directly because the rewrite
+  happens before parsing.
+  **Te.3.D.3 — formatter migration (`to_terse`).** Two new
+  rewrite rules: `_migrate_one_line_stmt_block` rewrites
+  `<head> { <body> }` to `<head>: <body>` for stmt-block heads;
+  `_migrate_one_line_arm_body` rewrites `Pat => { <body> }` to
+  `Pat => <body>` for any single-stmt body. Trailing commas on
+  match-arm siblings are preserved across the rewrite.
+  Expression-context braces (struct literals `Foo { ... }`,
+  empty maps `#{}`, if-expression braces, FFI `extern "C" { ... }`
+  blocks) are correctly NOT migrated.
+  **Tests:** 81 new pytest cases in
+  `tests/test_single_line_colon_blocks.py` covering colon-body
+  splitter unit tests, positive parses for every supported head
+  (English + Spanish), negative parses for excluded heads,
+  arm-shorthand for every supported keyword, formatter
+  migration with AST-preservation checks, idempotence, and
+  expression-context passthroughs. All 1353 existing pytest
+  cases still green; 11 golden corpus files automatically
+  migrated by `mnc fmt tests/golden` to the new compact arm
+  forms (IR equivalence preserved — `to_terse` does not change
+  AST shape for stmt-keyword arm bodies; for expression-arm
+  rewrites the AST shape changes from block-of-ExprStmt to
+  expression-arm but runtime semantics are identical and the
+  cross-style equivalence test in
+  `tests/test_colon_blocks.py::_normalize` is extended to
+  collapse these shapes for AST comparison).
+  **Te.3.D.4 — bootstrap mirror (C runtime + self-host parser)
+  SPLIT to v5.48.1.** Python-side complete; the C runtime
+  `__mn_indent_to_braces` and the new
+  `__mn_rewrite_arm_stmt_shorthand` are not yet ported. Stage1
+  / stage2 / native `mnc` continue to accept legacy brace forms
+  via the existing C path, so the self-host continues to build
+  and the v5.14.1 cross-bootstrap test
+  (`tests/bootstrap/test_indent_preprocessor.py`) stays green.
+  **Te.3.D.5 — internal source migration (`mapanare/self/*.mn`)
+  SPLIT to v5.48.1.** Gated on Te.3.D.4 landing first
+  (otherwise stage1 cannot reparse the migrated sources). The
+  2946 single-line brace openers in `mapanare/self/` modules
+  remain in legacy brace form for v5.48.0 and continue to fire
+  the v5.19.0 deprecation warning.
+  **STRICT 3-stage fixed point preserved by construction at
+  v5.47.0's 244,654 lines / 0 diff** (51-release strict streak
+  from v5.7.1 baseline; **zero `mapanare/self/*.mn` source
+  edits** in v5.48.0). Goldens **103/103** (no count change;
+  11 files auto-migrated to v5.48.0 shorthand).
+  Aggregate state entering v5.48.1: **0 HIGH** / **3 MEDIUM**
+  (Te.3.D.4 bootstrap mirror split to v5.48.1; Te.3.D.5
+  self-host source migration split to v5.48.1; macOS
+  notarization carry from v5.33.0 Nu.2) / **~6 LOW** (Cl.2 +
+  Cl.3 carry from v5.47.0; multi-stmt single-line arm grammar
+  deferred to v6.0; if-expression colon syntax deferred to
+  v6.0; Ai.1 `_specialize_fn` carry from v5.40.0).
+  **Tensor closeout arc CLOSED at v5.45.0. Manifesto arc
+  CLOSED at v5.43.0. Package-system runway CLOSED at v5.44.0.
+  Lowerer-bug closeout CLOSED at v5.46.0. Pre-panel hygiene
+  CLOSED at v5.47.0. v5 closeout panel CLOSED at v5.47.5.**
+  v5.48.0 begins post-panel terseness work pulling brace-form
+  removal forward into v5.48.x with v6.0 hard removal still
+  the gate. See
+  `docs/roadmap/v5/v5.48.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.47.5** (ready, not tagged) — **Cp.\* — end-of-v5 closeout
   panel.** Panel-only release. **Zero compiler edits. Zero
   runtime edits. Zero `mapanare/self/*.mn` source edits.**
@@ -629,7 +730,7 @@ GitHub Actions on push/PR to `dev`:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Mapanare** (32791 symbols, 68411 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Mapanare** (32815 symbols, 68439 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

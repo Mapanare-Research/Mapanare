@@ -41,15 +41,15 @@ pub tipo ExitReason:
 
 fn classify_net(e: NetworkError) -> Int:
     match e:
-        TransportLost(s) => { da 1 }
-        BadUrl(s) => { da 2 }
-        NoKey(s) => { da 3 }
+        TransportLost(s) => da 1
+        BadUrl(s) => da 2
+        NoKey(s) => da 3
 
 fn classify_exit(e: ExitReason) -> Int:
     match e:
-        TransportLost(s) => { da 10 }
-        Crashed(s) => { da 20 }
-        Killed(s) => { da 30 }
+        TransportLost(s) => da 10
+        Crashed(s) => da 20
+        Killed(s) => da 30
 
 fn main() -> Int:
     // Construction with declared-type disambiguation. Pre-fix,
