@@ -2102,6 +2102,61 @@ _ARM_STMT_KEYWORDS = (
 )
 
 
+def _mask_strings_chars(line: str) -> str:
+    """Return a copy of ``line`` with string and char literal contents
+    (and ``//`` line comments) masked to spaces. Punctuation outside
+    string/char/comment is preserved at original column positions.
+
+    v5.48.1 Te.3.D.5.1: shared helper used by the preprocessor's
+    ``'{' not in content`` guard so lines like
+    ``if ch == "{": return X`` (with ``{`` inside a string literal)
+    are still recognised as single-line colon shapes.
+    """
+    chars = list(line)
+    in_str = False
+    in_char = False
+    n = len(line)
+    i = 0
+    while i < n:
+        ch = line[i]
+        if in_str:
+            chars[i] = " "
+            if ch == "\\" and i + 1 < n:
+                chars[i + 1] = " "
+                i += 2
+                continue
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if in_char:
+            chars[i] = " "
+            if ch == "\\" and i + 1 < n:
+                chars[i + 1] = " "
+                i += 2
+                continue
+            if ch == "'":
+                in_char = False
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and line[i + 1] == "/":
+            for j in range(i, n):
+                chars[j] = " "
+            break
+        if ch == '"':
+            chars[i] = " "
+            in_str = True
+            i += 1
+            continue
+        if ch == "'":
+            chars[i] = " "
+            in_char = True
+            i += 1
+            continue
+        i += 1
+    return "".join(chars)
+
+
 def _split_inline_colon_body(content: str) -> tuple[str, str] | None:
     """Detect ``<head>: <body>`` shape on a single logical line.
 
@@ -2449,12 +2504,21 @@ def _indent_to_braces(source: str) -> str:
             # are excluded by ``_is_single_line_stmt_head`` because their
             # bodies require multi-line grammar.
             #
-            # Lines containing ``{`` are skipped — they are brace-form
-            # (single- or multi-line opener, struct literal, type
-            # generic with `:` as field annotation like
-            # ``fn max<T: Ord>(...)`` etc.) and must not be confused
-            # with the single-line colon-block shape.
-            single = _split_inline_colon_body(content) if "{" not in content else None
+            # Lines containing ``{`` (outside string/char literals) are
+            # skipped — they are brace-form (single- or multi-line
+            # opener, struct literal, type generic with `:` as field
+            # annotation like ``fn max<T: Ord>(...)``) and must not be
+            # confused with the single-line colon-block shape.
+            #
+            # v5.48.1 Te.3.D.5.1: shadow-mask before checking. Lines
+            # like ``if ch == "{": return X`` legitimately have ``{``
+            # inside a string literal — those should still single-line-
+            # migrate. Without masking, the lexer.mn line
+            # ``if ch == "{": return new_token(...)`` was preserved as
+            # colon form by the preprocessor, then rejected by the LALR
+            # parser which only accepts brace-form ``if``.
+            content_shadow = _mask_strings_chars(content)
+            single = _split_inline_colon_body(content) if "{" not in content_shadow else None
             if single is not None and _is_single_line_stmt_head(single[0]):
                 s_head, s_body = single
                 s_head = _normalize_fn_zero_arg_head(s_head)

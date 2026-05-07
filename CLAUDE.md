@@ -19,8 +19,118 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.48.1** (ready, not tagged) — **Te.3.D.4 / Te.3.D.5 —
+  bootstrap mirror + self-host source migration.** Closes the
+  v5.48.0 carry-forward end-to-end. v5.48.0 shipped the Python
+  parser/formatter for single-line colon blocks
+  (`if x: stmt`, `fn main(): print(1)`) and match-arm statement
+  shorthand (`Pat => return n`); the C runtime mirror and the
+  migration of `mapanare/self/*.mn` were explicitly split to
+  v5.48.1. v5.48.1 brings the native side to byte-identity with
+  the Python side and migrates all 17 self-host modules (plus
+  `mnc_all.mn`) to the new shorthand. **First-party brace
+  surface drops 78%: 6,826 → 1,474 occurrences.** 7 of 18
+  self-host files silence the v5.19.0 deprecation warning
+  completely (`abi.mn`, `emit_llvm_ir.mn`, `from_go.mn`,
+  `from_php.mn`, `from_python.mn`, `from_typescript.mn`,
+  `transpiler.mn`); 9 files retain residuals (`match_arm_open`
+  multi-line arm bodies and `one_line_arm_other` multi-stmt arm
+  bodies — neither has a v5.48.0 shorthand). Legacy braces still
+  parse with the v5.19.0 warning unchanged; v6.0 may flip to a
+  hard error after v5.48.x soak.
+  **Te.3.D.4.0 — Phase 0 audit (PRE_PHASE_AUDIT.md, mandatory).**
+  Re-confirmed v5.48.0's 6,826-opener total at HEAD. Per-module
+  shape breakdown across 18 files. Empirical migration projection
+  via `mapanare.format.to_terse`: 3,675 → 737 across the 17
+  modules (80% drop), 8 modules silence completely. 4-cluster
+  migration plan locked. 27 cross-bootstrap fixture shapes
+  enumerated (positive + negative).
+  **Te.3.D.4.1 — C runtime helpers** ported from Python:
+  `mn_ib_split_inline_colon`, `mn_ib_is_single_line_stmt_head`,
+  `mn_ib_rewrite_inline_colon_body`,
+  `mn_ib_normalize_fn_zero_arg_head`, `mn_ib_contains_byte_unquoted`.
+  Pure additions to `runtime/native/mapanare_core.c`; mirror
+  Python helpers byte-for-byte; cross-bootstrap test is the
+  oracle.
+  **Te.3.D.4.2 — `mn_ib_has_colon_blocks` extended** with
+  prefix-hint check on 14 prefixes (`if /si /while /mien /for /
+  cada /fn /pub /async /extern /else /sino /} else /} sino`)
+  AND contains `:`. Mirrors Python `_SINGLE_LINE_PREFIX_HINT`.
+  **Te.3.D.4.3 — `__mn_indent_to_braces` main loop extended**
+  with single-line detection in both branches. Continuation:
+  `} else: stmt` -> `} else { stmt }` inline, no indent_stack
+  push. Non-continuation: `if x: stmt` -> `if x { stmt }`
+  inline. The `'{' not in content` guard uses
+  `mn_ib_contains_byte_unquoted` so lines like `if ch == "{":
+  stmt` (the `{` is in a string literal in lexer.mn) still
+  single-line-migrate.
+  **Te.3.D.4.4 — `__mn_rewrite_arm_stmt_shorthand` C export.**
+  New `MN_EXPORT MnString` mirrors Python: per-line shadow
+  buffer, scan for `=>`, identify keyword
+  (`return`/`da`/`break`/`sal`/`continue`/`sigue`/`pass`),
+  word-boundary-after check, walk body to first depth-0 `,`/
+  `}`/`//`/EOL, emit `{ <body rstripped> }`.
+  **Te.3.D.4.5 — self-host wire-up.** `parser.mn::parse` calls
+  `__mn_rewrite_arm_stmt_shorthand` after `__mn_indent_to_braces`.
+  `main.mn::run_preprocess` mirrors so the cross-bootstrap test
+  compares the full pipeline. Registration symmetric with
+  `__mn_indent_to_braces` in `semantic.mn`, `lower.mn`, and
+  `emit_llvm.mn`. Python bootstrap parity: `types.py`,
+  `lower.py`, and `emit_llvm_text.py` (drop-glue tracking +
+  Win64 routing matching v5.23.1 Mb.1).
+  **Te.3.D.4.6 — cross-bootstrap test extended.** 27 new
+  fixtures cover every accepted single-line stmt-block head
+  (English + Spanish), every continuation, every arm-shorthand
+  keyword, and the negative shapes (struct/enum inline,
+  struct literal, namespace `::`, generic `<T: Ord>`,
+  `if ch == "{":`). **243/243 passing byte-identically** Python
+  vs C.
+  **Te.3.D.5.1 — module-by-module migration.** All 17 modules
+  in `mapanare/self/*.mn` migrated via `mnc fmt` in 4 clusters
+  (10 + 3 + 3 + 1) with rebuild + goldens validation after
+  each. Goldens **103/103** at every checkpoint.
+  **Te.3.D.5.2 — `mnc_all.mn` regenerated** via
+  `bash scripts/concat_self.sh`.
+  **Te.3.D.5.3 — STRICT 3-stage fixed-point at the new
+  baseline.** Old: 244,654 lines (v5.47.0 → v5.48.0 baseline).
+  **New: 245,115 lines** (52-release strict streak from v5.7.1
+  preserved at the new value; +461 lines reflect the v5.48.1
+  self-host wiring). v5.48.x onward preserves from here.
+  **Two v5.48.0 bugs surfaced and fixed mid-implementation
+  (load-bearing).** (1) `_migrate_one_line_stmt_block`
+  migrated `fn make() -> Point = Point { x }` (implicit-return
+  expression with struct literal) to
+  `fn make() -> Point: Point: x` — collapsing two distinct
+  semantic levels. Fixed via `_has_standalone_eq` guard
+  mirroring `count_user_brace_block_openers` Rule (b)'s `=`
+  filter. (2) `_indent_to_braces`'s `'{' not in content` guard
+  treated `{` inside string literals as a real `{`, preserving
+  `if ch == "{": stmt` as colon form which the LALR parser
+  then rejected. Fixed via `_mask_strings_chars` (Python) +
+  `mn_ib_contains_byte_unquoted` (C) applying the guard against
+  the masked shadow. Both bugs were caught by Phase 5's
+  rebuild-after-each-cluster discipline.
+  Aggregate state entering v5.48.2: **0 HIGH** / **3 MEDIUM**
+  (macOS notarization carry from v5.33.0 Nu.2; Ai.1
+  `_specialize_fn` carry from v5.40.0; **NEW** —
+  `match_arm_open` + `one_line_arm_other` keep brace form and
+  warn, v6.0 grammar revisit recommended) / **~7 LOW** (Lf.4
+  variant-name collision split to v5.46.x; ergonomic refactor
+  of v5.43.0 distributed-agent APIs; fs.mn `walk_dir`;
+  websocket.mn `str(byte)`; if-expression colon syntax deferred
+  to v6.0).
+  **Te.3.D arc CLOSED at v5.48.1.**
+  v5.48.x soak begins; v6.0 hard removal of brace parsing
+  remains the v6.0 PLAN input it has been since v5.19.0;
+  v5.48.1 makes the self-host first-party brace surface 78%
+  smaller, so the v6.0 cut only needs to address the ~1,474
+  residual + stdlib/examples migration. See
+  `docs/roadmap/v5/v5.48.1/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.48.0** (ready, not tagged) — **Te.3.D — single-line
-  colon blocks and match-arm statement shorthand (Python-side).**
+  colon blocks and match-arm statement shorthand (Python-side; C
+  runtime + self-host migration shipped at v5.48.1).**
   Pulls the brace-removal runway forward from v6.0 because the
   language is still beta and there is no external compatibility
   burden worth preserving. The objective is not to keep `{}` as
@@ -85,19 +195,18 @@ Most recent releases. Full history at
   `tests/test_colon_blocks.py::_normalize` is extended to
   collapse these shapes for AST comparison).
   **Te.3.D.4 — bootstrap mirror (C runtime + self-host parser)
-  SPLIT to v5.48.1.** Python-side complete; the C runtime
-  `__mn_indent_to_braces` and the new
-  `__mn_rewrite_arm_stmt_shorthand` are not yet ported. Stage1
-  / stage2 / native `mnc` continue to accept legacy brace forms
-  via the existing C path, so the self-host continues to build
-  and the v5.14.1 cross-bootstrap test
-  (`tests/bootstrap/test_indent_preprocessor.py`) stays green.
+  shipped at v5.48.1.** v5.48.0 left the C runtime's
+  `__mn_indent_to_braces` accepting only the v5.14.1 colon-block
+  shapes; v5.48.1 brings it to byte-identity with the v5.48.0
+  Python preprocessor and adds the new
+  `__mn_rewrite_arm_stmt_shorthand` C export. v5.48.0 stage1
+  continues to accept legacy brace forms unchanged.
   **Te.3.D.5 — internal source migration (`mapanare/self/*.mn`)
-  SPLIT to v5.48.1.** Gated on Te.3.D.4 landing first
-  (otherwise stage1 cannot reparse the migrated sources). The
-  2946 single-line brace openers in `mapanare/self/` modules
-  remain in legacy brace form for v5.48.0 and continue to fire
-  the v5.19.0 deprecation warning.
+  shipped at v5.48.1.** Gated on Te.3.D.4 landing first
+  (otherwise stage1 cannot reparse the migrated sources). At
+  v5.48.0 the 6,826 brace openers across `mapanare/self/` remain
+  in legacy form and continue to fire the v5.19.0 deprecation
+  warning; v5.48.1 migrates them.
   **STRICT 3-stage fixed point preserved by construction at
   v5.47.0's 244,654 lines / 0 diff** (51-release strict streak
   from v5.7.1 baseline; **zero `mapanare/self/*.mn` source

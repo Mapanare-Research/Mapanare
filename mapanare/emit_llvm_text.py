@@ -3649,6 +3649,18 @@ class LLVMTextEmitter:
             self._last_tracked_str_slot = None
             self._put(i.dest, r, STR)
             return
+        # v5.48.1 Te.3.D.4.4: match-arm statement-shorthand rewriter.
+        # Same routing rationale as __mn_indent_to_braces above —
+        # returns an owned MnString that needs drop-glue tracking, and
+        # routing through `_rt` ensures the Win64 ABI uses the correct
+        # 8-byte large-struct threshold (MnString is 16 B).
+        if fn == "__mn_rewrite_arm_stmt_shorthand" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_rewrite_arm_stmt_shorthand", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._last_tracked_str_slot = None
+            self._put(i.dest, r, STR)
+            return
         # v5.26.0 Mb.9: route the v5.23.2 Te.3.B.2 brace-deprecation
         # functions through `_rt` for the same reason the
         # `__mn_indent_to_braces` handler above exists — without it

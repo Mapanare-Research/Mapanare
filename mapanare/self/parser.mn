@@ -32,65 +32,65 @@ struct Parser:
 // ---------------------------------------------------------------------------
 
 fn is_skip_token(tok_type: String) -> Bool:
-    if tok_type == "KW_FN" { return true }
-    if tok_type == "KW_ASYNC" { return true }
-    if tok_type == "KW_LET" { return true }
-    if tok_type == "KW_AGENT" { return true }
-    if tok_type == "KW_PIPE" { return true }
-    if tok_type == "KW_STRUCT" { return true }
-    if tok_type == "KW_ENUM" { return true }
-    if tok_type == "KW_TYPE" { return true }
-    if tok_type == "KW_IMPL" { return true }
-    if tok_type == "KW_IF" { return true }
-    if tok_type == "KW_ELSE" { return true }
-    if tok_type == "KW_MATCH" { return true }
-    if tok_type == "KW_FOR" { return true }
-    if tok_type == "KW_IN" { return true }
-    if tok_type == "KW_RETURN" { return true }
-    if tok_type == "KW_IMPORT" { return true }
-    if tok_type == "KW_EXPORT" { return true }
-    if tok_type == "KW_SPAWN" { return true }
-    if tok_type == "KW_SYNC" { return true }
-    if tok_type == "KW_SIGNAL" { return true }
-    if tok_type == "KW_STREAM" { return true }
-    if tok_type == "KW_INPUT" { return true }
-    if tok_type == "KW_OUTPUT" { return true }
-    if tok_type == "KW_TENSOR" { return true }
-    if tok_type == "KW_WILDCARD" { return true }
-    if tok_type == "KW_TRUE" { return true }
-    if tok_type == "KW_FALSE" { return true }
-    if tok_type == "KW_NONE" { return true }
-    if tok_type == "LPAREN" { return true }
-    if tok_type == "RPAREN" { return true }
-    if tok_type == "LBRACE" { return true }
-    if tok_type == "RBRACE" { return true }
-    if tok_type == "LBRACKET" { return true }
-    if tok_type == "RBRACKET" { return true }
-    if tok_type == "COMMA" { return true }
-    if tok_type == "COLON" { return true }
-    if tok_type == "SEMICOLON" { return true }
-    if tok_type == "ASSIGN" { return true }
-    if tok_type == "ARROW" { return true }
-    if tok_type == "FAT_ARROW" { return true }
-    if tok_type == "PIPE_OP" { return true }
-    if tok_type == "DOUBLE_COLON" { return true }
-    if tok_type == "DOT" { return true }
-    if tok_type == "QUESTION" { return true }
-    if tok_type == "SEND" { return true }
+    if tok_type == "KW_FN": return true
+    if tok_type == "KW_ASYNC": return true
+    if tok_type == "KW_LET": return true
+    if tok_type == "KW_AGENT": return true
+    if tok_type == "KW_PIPE": return true
+    if tok_type == "KW_STRUCT": return true
+    if tok_type == "KW_ENUM": return true
+    if tok_type == "KW_TYPE": return true
+    if tok_type == "KW_IMPL": return true
+    if tok_type == "KW_IF": return true
+    if tok_type == "KW_ELSE": return true
+    if tok_type == "KW_MATCH": return true
+    if tok_type == "KW_FOR": return true
+    if tok_type == "KW_IN": return true
+    if tok_type == "KW_RETURN": return true
+    if tok_type == "KW_IMPORT": return true
+    if tok_type == "KW_EXPORT": return true
+    if tok_type == "KW_SPAWN": return true
+    if tok_type == "KW_SYNC": return true
+    if tok_type == "KW_SIGNAL": return true
+    if tok_type == "KW_STREAM": return true
+    if tok_type == "KW_INPUT": return true
+    if tok_type == "KW_OUTPUT": return true
+    if tok_type == "KW_TENSOR": return true
+    if tok_type == "KW_WILDCARD": return true
+    if tok_type == "KW_TRUE": return true
+    if tok_type == "KW_FALSE": return true
+    if tok_type == "KW_NONE": return true
+    if tok_type == "LPAREN": return true
+    if tok_type == "RPAREN": return true
+    if tok_type == "LBRACE": return true
+    if tok_type == "RBRACE": return true
+    if tok_type == "LBRACKET": return true
+    if tok_type == "RBRACKET": return true
+    if tok_type == "COMMA": return true
+    if tok_type == "COLON": return true
+    if tok_type == "SEMICOLON": return true
+    if tok_type == "ASSIGN": return true
+    if tok_type == "ARROW": return true
+    if tok_type == "FAT_ARROW": return true
+    if tok_type == "PIPE_OP": return true
+    if tok_type == "DOUBLE_COLON": return true
+    if tok_type == "DOT": return true
+    if tok_type == "QUESTION": return true
+    if tok_type == "SEND": return true
     return false
 
 fn is_keep_token(tok_type: String) -> Bool:
-    if tok_type == "KW_PUB" { return true }
-    if tok_type == "KW_MUT" { return true }
-    if tok_type == "KW_SELF" { return true }
-    if tok_type == "NAME" { return true }
-    if tok_type == "DEC_INT" { return true }
-    if tok_type == "HEX_INT" { return true }
-    if tok_type == "BIN_INT" { return true }
-    if tok_type == "OCT_INT" { return true }
-    if tok_type == "FLOAT_LIT" { return true }
-    if tok_type == "STRING_LIT" { return true }
-    if tok_type == "CHAR_LIT" { return true }
+    if tok_type == "KW_PUB": return true
+    if tok_type == "KW_MUT": return true
+    if tok_type == "KW_SELF": return true
+    if tok_type == "NAME": return true
+    if tok_type == "DEC_INT": return true
+    if tok_type == "HEX_INT": return true
+    if tok_type == "BIN_INT": return true
+    if tok_type == "OCT_INT": return true
+    if tok_type == "FLOAT_LIT": return true
+    if tok_type == "STRING_LIT": return true
+    if tok_type == "CHAR_LIT": return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -104,34 +104,34 @@ fn parse_int_token(tok_type: String, value: String) -> Int = 0
 // ---------------------------------------------------------------------------
 
 fn is_arithmetic_op(op: String) -> Bool:
-    if op == "+" { return true }
-    if op == "-" { return true }
-    if op == "*" { return true }
-    if op == "/" { return true }
-    if op == "%" { return true }
-    if op == "@" { return true }
+    if op == "+": return true
+    if op == "-": return true
+    if op == "*": return true
+    if op == "/": return true
+    if op == "%": return true
+    if op == "@": return true
     return false
 
 fn is_comparison_op(op: String) -> Bool:
-    if op == "<" { return true }
-    if op == ">" { return true }
-    if op == "<=" { return true }
-    if op == ">=" { return true }
-    if op == "==" { return true }
-    if op == "!=" { return true }
+    if op == "<": return true
+    if op == ">": return true
+    if op == "<=": return true
+    if op == ">=": return true
+    if op == "==": return true
+    if op == "!=": return true
     return false
 
 fn is_logical_op(op: String) -> Bool:
-    if op == "&&" { return true }
-    if op == "||" { return true }
+    if op == "&&": return true
+    if op == "||": return true
     return false
 
 fn is_assign_op(op: String) -> Bool:
-    if op == "=" { return true }
-    if op == "+=" { return true }
-    if op == "-=" { return true }
-    if op == "*=" { return true }
-    if op == "/=" { return true }
+    if op == "=": return true
+    if op == "+=": return true
+    if op == "-=": return true
+    if op == "*=": return true
+    if op == "/=": return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -220,12 +220,12 @@ fn new_decorator(name: String, args: List<Expr>) -> Decorator = new Decorator { 
 // ---------------------------------------------------------------------------
 
 fn peek_type(tokens: List<Token>, pos: Int) -> String:
-    if pos >= len(tokens) { return "EOF" }
+    if pos >= len(tokens): return "EOF"
     let tok: Token = tokens[pos]
     return tok.tok_type
 
 fn peek_value(tokens: List<Token>, pos: Int) -> String:
-    if pos >= len(tokens) { return "" }
+    if pos >= len(tokens): return ""
     let tok: Token = tokens[pos]
     return tok.value
 
@@ -244,7 +244,7 @@ fn expect(tokens: List<Token>, pos: Int, expected: String) -> Int:
 fn skip_semis(tokens: List<Token>, pos: Int) -> Int:
     let mut p: Int = pos
     for _ in 0..100000:
-        if p >= len(tokens) { return p }
+        if p >= len(tokens): return p
         if peek_type(tokens, p) == "SEMICOLON":
             p = p + 1
         else:
@@ -256,62 +256,62 @@ fn skip_semis(tokens: List<Token>, pos: Int) -> Int:
 // ---------------------------------------------------------------------------
 
 fn tok_to_binop(tt: String) -> String:
-    if tt == "PLUS" { return "+" }
-    if tt == "MINUS" { return "-" }
-    if tt == "STAR" { return "*" }
-    if tt == "SLASH" { return "/" }
-    if tt == "PERCENT" { return "%" }
-    if tt == "AT" { return "@" }
-    if tt == "EQEQ" { return "==" }
-    if tt == "NEQ" { return "!=" }
-    if tt == "LT" { return "<" }
-    if tt == "GT" { return ">" }
-    if tt == "LTE" { return "<=" }
-    if tt == "GTE" { return ">=" }
-    if tt == "AND" { return "&&" }
-    if tt == "OR" { return "||" }
-    if tt == "PIPE_OP" { return "|>" }
-    if tt == "RANGE" { return ".." }
-    if tt == "RANGE_INCL" { return "..=" }
+    if tt == "PLUS": return "+"
+    if tt == "MINUS": return "-"
+    if tt == "STAR": return "*"
+    if tt == "SLASH": return "/"
+    if tt == "PERCENT": return "%"
+    if tt == "AT": return "@"
+    if tt == "EQEQ": return "=="
+    if tt == "NEQ": return "!="
+    if tt == "LT": return "<"
+    if tt == "GT": return ">"
+    if tt == "LTE": return "<="
+    if tt == "GTE": return ">="
+    if tt == "AND": return "&&"
+    if tt == "OR": return "||"
+    if tt == "PIPE_OP": return "|>"
+    if tt == "RANGE": return ".."
+    if tt == "RANGE_INCL": return "..="
     return ""
 
 fn op_precedence(op: String) -> Int:
-    if op == "||" { return 1 }
-    if op == "&&" { return 2 }
+    if op == "||": return 1
+    if op == "&&": return 2
     // v5.21.0 Te.6 — D1: merge `==`/`!=` with ordering ops at single
     // precedence level (was 3; now 4). Required so `a == b < c` chains
     // as `(a == b) && (b < c)`. Audit confirmed no existing code relies
     // on the prior asymmetric precedence.
-    if op == "==" { return 4 }
-    if op == "!=" { return 4 }
-    if op == "<" { return 4 }
-    if op == ">" { return 4 }
-    if op == "<=" { return 4 }
-    if op == ">=" { return 4 }
-    if op == "|>" { return 5 }
-    if op == ".." { return 6 }
-    if op == "..=" { return 6 }
-    if op == "+" { return 7 }
-    if op == "-" { return 7 }
-    if op == "*" { return 8 }
-    if op == "/" { return 8 }
-    if op == "%" { return 8 }
-    if op == "@" { return 8 }
+    if op == "==": return 4
+    if op == "!=": return 4
+    if op == "<": return 4
+    if op == ">": return 4
+    if op == "<=": return 4
+    if op == ">=": return 4
+    if op == "|>": return 5
+    if op == "..": return 6
+    if op == "..=": return 6
+    if op == "+": return 7
+    if op == "-": return 7
+    if op == "*": return 8
+    if op == "/": return 8
+    if op == "%": return 8
+    if op == "@": return 8
     return 0
 
 fn is_right_assoc(op: String) -> Bool:
-    if op == ".." { return true }
-    if op == "..=" { return true }
+    if op == "..": return true
+    if op == "..=": return true
     return false
 
 // v5.21.0 Te.6 — D1 chain operator set. Pure comparison only.
 fn is_cmp_op(op: String) -> Bool:
-    if op == "==" { return true }
-    if op == "!=" { return true }
-    if op == "<" { return true }
-    if op == ">" { return true }
-    if op == "<=" { return true }
-    if op == ">=" { return true }
+    if op == "==": return true
+    if op == "!=": return true
+    if op == "<": return true
+    if op == ">": return true
+    if op == "<=": return true
+    if op == ">=": return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -319,27 +319,27 @@ fn is_cmp_op(op: String) -> Bool:
 // ---------------------------------------------------------------------------
 
 fn is_definition_start(tt: String) -> Bool:
-    if tt == "KW_IMPORT" { return true }
-    if tt == "KW_EXPORT" { return true }
-    if tt == "KW_PUB" { return true }
-    if tt == "KW_FN" { return true }
-    if tt == "KW_ASYNC" { return true }
-    if tt == "KW_STRUCT" { return true }
-    if tt == "KW_ENUM" { return true }
-    if tt == "KW_AGENT" { return true }
-    if tt == "KW_PIPE" { return true }
-    if tt == "KW_TYPE" { return true }
-    if tt == "KW_IMPL" { return true }
-    if tt == "KW_EXTERN" { return true }
-    if tt == "KW_LET" { return true }
+    if tt == "KW_IMPORT": return true
+    if tt == "KW_EXPORT": return true
+    if tt == "KW_PUB": return true
+    if tt == "KW_FN": return true
+    if tt == "KW_ASYNC": return true
+    if tt == "KW_STRUCT": return true
+    if tt == "KW_ENUM": return true
+    if tt == "KW_AGENT": return true
+    if tt == "KW_PIPE": return true
+    if tt == "KW_TYPE": return true
+    if tt == "KW_IMPL": return true
+    if tt == "KW_EXTERN": return true
+    if tt == "KW_LET": return true
     // v4.126.0: KW_CONST + KW_TRAIT were missing — module-level const
     // and trait declarations were being misparsed as statements
     // (silently consumed, no scope binding). Closes 54_const_basic and
     // 58_const_scope golden tests; parse_definition already handles
     // both keywords via parse_const_def / inline parse path.
-    if tt == "KW_CONST" { return true }
-    if tt == "KW_TRAIT" { return true }
-    if tt == "AT" { return true }
+    if tt == "KW_CONST": return true
+    if tt == "KW_TRAIT": return true
+    if tt == "AT": return true
     return false
 
 fn has_explicit_main(defs: List<Definition>) -> Bool:
@@ -377,7 +377,12 @@ pub fn parse(source: String, filename: String) -> Program:
     // uniformly. Routed through C rather than .mn because the
     // bootstrap lower has pathologies on a .mn port of the algorithm.
     let preprocessed: String = __mn_indent_to_braces(source)
-    let tokens: List<Token> = tokenize(preprocessed, filename)
+    // v5.48.1 Te.3.D.4.4: match-arm statement-shorthand rewriter.
+    // Runs after __mn_indent_to_braces (which produces the brace stream).
+    // Wraps `Pat => return X` -> `Pat => { return X }` for stmt-keyword
+    // arm bodies. Mirrors mapanare/parser.py::parse line ordering.
+    let preprocessed2: String = __mn_rewrite_arm_stmt_shorthand(preprocessed)
+    let tokens: List<Token> = tokenize(preprocessed2, filename)
     let mut pos: Int = 0
     let mut defs: List<Definition> = []
     let mut top_stmts: List<Stmt> = []
@@ -429,26 +434,26 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
         return parse_export_def(tokens, pos, filename)
     if tt == "KW_PUB":
         let next_tt: String = peek_type(tokens, pos + 1)
-        if next_tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
+        if next_tt == "KW_FN": return parse_fn_def(tokens, pos, filename)
         // v4.68.0: ``KW_ASYNC`` dispatch restored (Arc 8).
-        if next_tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
-        if next_tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
-        if next_tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
-        if next_tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
-        if next_tt == "KW_PIPE" { return parse_pipe_def(tokens, pos, filename) }
+        if next_tt == "KW_ASYNC": return parse_fn_def(tokens, pos, filename)
+        if next_tt == "KW_STRUCT": return parse_struct_def(tokens, pos, filename)
+        if next_tt == "KW_ENUM": return parse_enum_def(tokens, pos, filename)
+        if next_tt == "KW_AGENT": return parse_agent_def(tokens, pos, filename)
+        if next_tt == "KW_PIPE": return parse_pipe_def(tokens, pos, filename)
     // v4.68.0: ``KW_ASYNC`` top-level dispatch restored (Arc 8).
-    if tt == "KW_ASYNC" { return parse_fn_def(tokens, pos, filename) }
-    if tt == "KW_FN" { return parse_fn_def(tokens, pos, filename) }
+    if tt == "KW_ASYNC": return parse_fn_def(tokens, pos, filename)
+    if tt == "KW_FN": return parse_fn_def(tokens, pos, filename)
     // v4.78.0 (CARRY_FORWARD A10b): const handled early — the compiled
     // binary has a codegen issue where checks late in long if-chains are
     // unreachable. Placed right after KW_FN which is known to work.
-    if tt == "KW_CONST" { return parse_const_def(tokens, pos, filename) }
+    if tt == "KW_CONST": return parse_const_def(tokens, pos, filename)
     if tt == "NAME":
-        if peek_value(tokens, pos) == "const" { return parse_const_def(tokens, pos, filename) }
-    if tt == "KW_STRUCT" { return parse_struct_def(tokens, pos, filename) }
-    if tt == "KW_ENUM" { return parse_enum_def(tokens, pos, filename) }
-    if tt == "KW_AGENT" { return parse_agent_def(tokens, pos, filename) }
-    if tt == "KW_PIPE" { return parse_pipe_def(tokens, pos, filename) }
+        if peek_value(tokens, pos) == "const": return parse_const_def(tokens, pos, filename)
+    if tt == "KW_STRUCT": return parse_struct_def(tokens, pos, filename)
+    if tt == "KW_ENUM": return parse_enum_def(tokens, pos, filename)
+    if tt == "KW_AGENT": return parse_agent_def(tokens, pos, filename)
+    if tt == "KW_PIPE": return parse_pipe_def(tokens, pos, filename)
     if tt == "KW_TYPE":
         // tipo/type can be either a type alias (type Foo = Bar) or
         // a tipo definition (tipo Foo { fields/variants }). Peek ahead
@@ -459,7 +464,7 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
             if after_name_tt == "LBRACE":
                 return parse_tipo_def(tokens, pos, filename)
         return parse_type_alias_def(tokens, pos, filename)
-    if tt == "KW_IMPL" { return parse_impl_def(tokens, pos, filename) }
+    if tt == "KW_IMPL": return parse_impl_def(tokens, pos, filename)
     if tt == "KW_TRAIT":
         let mut tp: Int = pos + 1
         let trait_name: String = peek_value(tokens, tp)
@@ -479,10 +484,10 @@ fn parse_definition(tokens: List<Token>, pos: Int, filename: String) -> DefResul
                     tp = tp + 1
             return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
         return new_def_result(Definition::TraitDef(trait_name, trait_methods), tp)
-    if tt == "KW_EXTERN" { return parse_extern_def(tokens, pos, filename) }
-    if tt == "KW_LET" { return parse_module_let(tokens, pos, filename) }
-    if tt == "KW_CONST" { return parse_const_def(tokens, pos, filename) }
-    if tt == "AT" { return parse_decorated_def(tokens, pos, filename) }
+    if tt == "KW_EXTERN": return parse_extern_def(tokens, pos, filename)
+    if tt == "KW_LET": return parse_module_let(tokens, pos, filename)
+    if tt == "KW_CONST": return parse_const_def(tokens, pos, filename)
+    if tt == "AT": return parse_decorated_def(tokens, pos, filename)
 
     // Fallback: skip unknown token
     let empty_path: List<String> = []
@@ -531,7 +536,7 @@ fn parse_const_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
         type_name = peek_value(tokens, p)
         p = p + 1
     // Expect "="
-    if peek_type(tokens, p) == "ASSIGN" { p = p + 1 }
+    if peek_type(tokens, p) == "ASSIGN": p = p + 1
     // Parse value expression
     let er: ExprResult = parse_expr(tokens, p, filename)
     p = er.pos
@@ -546,7 +551,7 @@ fn parse_module_let(tokens: List<Token>, pos: Int, filename: String) -> DefResul
     // let NAME: TYPE = EXPR
     let mut p: Int = pos + 1
     // Skip optional 'mut' (module-level let is always immutable, but tolerate it)
-    if peek_type(tokens, p) == "KW_MUT" { p = p + 1 }
+    if peek_type(tokens, p) == "KW_MUT": p = p + 1
     let name: String = peek_value(tokens, p)
     p = p + 1
     // Optional type annotation: ": TYPE"
@@ -798,7 +803,7 @@ fn parse_struct_fields(tokens: List<Token>, pos: Int, filename: String, name: St
         let field: StructField = new_struct_field(fname, tr.type_expr)
         fields.push(field)
 
-        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        if peek_type(tokens, p) == "COMMA": p = p + 1
 
     let sd_final: StructDefData = new_struct_def_data(name, is_pub, type_params, fields)
     return new_def_result(Definition::StructDef(sd_final), p)
@@ -862,7 +867,7 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
                         p = expect(tokens, p, "RPAREN")
                         let v_inner: EnumVariant = new_enum_variant(vname, vtypes)
                         variants.push(v_inner)
-                        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+                        if peek_type(tokens, p) == "COMMA": p = p + 1
                         // Continue loop
                         return parse_enum_body_continue(tokens, p, filename, name, is_pub, type_params, variants)
                     p = p + 1
@@ -874,7 +879,7 @@ fn parse_enum_body(tokens: List<Token>, pos: Int, filename: String, name: String
         let v_outer: EnumVariant = new_enum_variant(vname, vtypes)
         variants.push(v_outer)
 
-        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        if peek_type(tokens, p) == "COMMA": p = p + 1
 
     let ed_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
     return new_def_result(Definition::EnumDef(ed_final), p)
@@ -905,7 +910,7 @@ fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, nam
                         p = expect(tokens, p, "RPAREN")
                         let v2: EnumVariant = new_enum_variant(vn, vt)
                         vars.push(v2)
-                        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+                        if peek_type(tokens, p) == "COMMA": p = p + 1
                         return parse_enum_body_continue(tokens, p, filename, name, is_pub, type_params, vars)
                     p = p + 1
                     let tr2: TypeResult = parse_type_expr(tokens, p, filename)
@@ -916,7 +921,7 @@ fn parse_enum_body_continue(tokens: List<Token>, pos: Int, filename: String, nam
         let v: EnumVariant = new_enum_variant(vn, vt)
         vars.push(v)
 
-        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        if peek_type(tokens, p) == "COMMA": p = p + 1
 
     let ed_c_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, vars)
     return new_def_result(Definition::EnumDef(ed_c_final), p)
@@ -999,7 +1004,7 @@ fn parse_tipo_enum(tokens: List<Token>, pos: Int, filename: String, name: String
                     let tr: TypeResult = parse_type_expr(tokens, p, filename)
                     vtypes.push(tr.type_expr)
                     p = tr.pos
-                    if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+                    if peek_type(tokens, p) == "COMMA": p = p + 1
         let v_parsed: EnumVariant = new_enum_variant(vname, vtypes)
         variants.push(v_parsed)
     let ed_final: EnumDefData = new_enum_def_data(name, is_pub, type_params, variants)
@@ -1091,9 +1096,9 @@ fn skip_brace_block(tokens: List<Token>, pos: Int) -> Int:
         p = p + 1
         let mut depth: Int = 1
         for _ in 0..500:
-            if depth == 0 { return p }
-            if peek_type(tokens, p) == "LBRACE" { depth = depth + 1 }
-            if peek_type(tokens, p) == "RBRACE" { depth = depth - 1 }
+            if depth == 0: return p
+            if peek_type(tokens, p) == "LBRACE": depth = depth + 1
+            if peek_type(tokens, p) == "RBRACE": depth = depth - 1
             p = p + 1
     return p
 
@@ -1107,7 +1112,7 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
         for _ in 0..20:
             if !done_tp:
                 if peek_type(tokens, p) == "GT" { p = p + 1; done_tp = true }
-                if !done_tp { p = p + 1 }
+                if !done_tp: p = p + 1
 
     let first_name: String = peek_value(tokens, p)
     p = p + 1
@@ -1119,7 +1124,7 @@ fn parse_impl_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
         for _ in 0..20:
             if !done_ta:
                 if peek_type(tokens, p) == "GT" { p = p + 1; done_ta = true }
-                if !done_ta { p = p + 1 }
+                if !done_ta: p = p + 1
 
     // Check for "impl Trait for Type { ... }" syntax
     let mut target: String = first_name
@@ -1170,7 +1175,7 @@ fn parse_agent_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult
             let ad_eof: AgentDefData = new_agent_def_data(name, is_pub, no_inputs, no_outputs, no_state, no_methods, no_adecs)
             return new_def_result(Definition::AgentDef(ad_eof), p)
         let tt: String = peek_type(tokens, p)
-        if tt == "LBRACE" { depth = depth + 1 }
+        if tt == "LBRACE": depth = depth + 1
         if tt == "RBRACE":
             depth = depth - 1
             if depth == 0:
@@ -1202,7 +1207,7 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
             let pd_eof: PipeDefData = new_pipe_def_data(name, is_pub, no_stages)
             return new_def_result(Definition::PipeDef(pd_eof), p)
         let tt: String = peek_type(tokens, p)
-        if tt == "LBRACE" { depth = depth + 1 }
+        if tt == "LBRACE": depth = depth + 1
         if tt == "RBRACE":
             depth = depth - 1
             if depth == 0:
@@ -1220,15 +1225,15 @@ fn parse_pipe_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
 fn parse_decorated_def(tokens: List<Token>, pos: Int, filename: String) -> DefResult:
     let mut p: Int = pos
     for _ in 0..10:
-        if peek_type(tokens, p) != "AT" { return parse_definition(tokens, p, filename) }
+        if peek_type(tokens, p) != "AT": return parse_definition(tokens, p, filename)
         p = p + 1
         p = p + 1
         if peek_type(tokens, p) == "LPAREN":
             p = p + 1
             let mut depth: Int = 1
             for _ in 0..1000:
-                if p >= len(tokens) { return parse_definition(tokens, p, filename) }
-                if peek_type(tokens, p) == "LPAREN" { depth = depth + 1 }
+                if p >= len(tokens): return parse_definition(tokens, p, filename)
+                if peek_type(tokens, p) == "LPAREN": depth = depth + 1
                 if peek_type(tokens, p) == "RPAREN":
                     depth = depth - 1
                     if depth == 0:
@@ -1270,15 +1275,15 @@ fn parse_block(tokens: List<Token>, pos: Int, filename: String) -> BlockResult:
 fn parse_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtResult:
     let tt: String = peek_type(tokens, pos)
 
-    if tt == "KW_LET" { return parse_let_stmt(tokens, pos, filename) }
-    if tt == "KW_RETURN" { return parse_return_stmt(tokens, pos, filename) }
-    if tt == "KW_FOR" { return parse_for_stmt(tokens, pos, filename) }
-    if tt == "KW_WHILE" { return parse_while_stmt(tokens, pos, filename) }
-    if tt == "KW_BREAK" { return new_stmt_result(Stmt::Break, pos + 1) }
-    if tt == "KW_CONTINUE" { return new_stmt_result(Stmt::Continue, pos + 1) }
+    if tt == "KW_LET": return parse_let_stmt(tokens, pos, filename)
+    if tt == "KW_RETURN": return parse_return_stmt(tokens, pos, filename)
+    if tt == "KW_FOR": return parse_for_stmt(tokens, pos, filename)
+    if tt == "KW_WHILE": return parse_while_stmt(tokens, pos, filename)
+    if tt == "KW_BREAK": return new_stmt_result(Stmt::Break, pos + 1)
+    if tt == "KW_CONTINUE": return new_stmt_result(Stmt::Continue, pos + 1)
     // v5.14.1 B.2: pass lowers to a no-op statement (mirror Python bootstrap).
-    if tt == "KW_PASS" { return new_stmt_result(Stmt::Pass, pos + 1) }
-    if tt == "KW_ASSERT" { return parse_assert_stmt(tokens, pos, filename) }
+    if tt == "KW_PASS": return new_stmt_result(Stmt::Pass, pos + 1)
+    if tt == "KW_ASSERT": return parse_assert_stmt(tokens, pos, filename)
 
     let er: ExprResult = parse_expr(tokens, pos, filename, 0)
     return new_stmt_result(Stmt::ExprStmt(er.expr), er.pos)
@@ -1366,13 +1371,13 @@ fn parse_struct_dest_pat(tokens: List<Token>, pos: Int, filename: String) -> Str
         if peek_type(tokens, p) == "RANGE":
             has_rest = true
             p = p + 1
-            if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+            if peek_type(tokens, p) == "COMMA": p = p + 1
             p = expect(tokens, p, "RBRACE")
             break
         let fr: FieldPatResult = parse_field_dest(tokens, p, filename)
         fields.push(fr.field_pattern)
         p = fr.pos
-        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        if peek_type(tokens, p) == "COMMA": p = p + 1
     return new_struct_pat_result(new_struct_pattern(name, fields, has_rest), p)
 
 struct FieldPatResult:
@@ -1421,9 +1426,9 @@ fn parse_return_stmt(tokens: List<Token>, pos: Int, filename: String) -> StmtRes
     let mut p: Int = pos + 1
 
     let tt: String = peek_type(tokens, p)
-    if tt == "RBRACE" { return new_stmt_result(Stmt::Return(none), p) }
-    if tt == "SEMICOLON" { return new_stmt_result(Stmt::Return(none), p) }
-    if at_end(tokens, p) { return new_stmt_result(Stmt::Return(none), p) }
+    if tt == "RBRACE": return new_stmt_result(Stmt::Return(none), p)
+    if tt == "SEMICOLON": return new_stmt_result(Stmt::Return(none), p)
+    if at_end(tokens, p): return new_stmt_result(Stmt::Return(none), p)
 
     let er: ExprResult = parse_expr(tokens, p, filename, 0)
     return new_stmt_result(Stmt::Return(Some(er.expr)), er.pos)
@@ -1542,19 +1547,19 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
 
     // Binary operator loop
     for _ in 0..10000:
-        if at_end(tokens, p) { return new_expr_result(left, p) }
+        if at_end(tokens, p): return new_expr_result(left, p)
 
         let op_tt: String = peek_type(tokens, p)
         let op: String = tok_to_binop(op_tt)
-        if op == "" { return new_expr_result(left, p) }
+        if op == "": return new_expr_result(left, p)
 
         let prec: Int = op_precedence(op)
-        if prec < min_prec { return new_expr_result(left, p) }
+        if prec < min_prec: return new_expr_result(left, p)
 
         p = p + 1
 
         let mut next_prec: Int = prec + 1
-        if is_right_assoc(op) { next_prec = prec }
+        if is_right_assoc(op): next_prec = prec
 
         let right_r: ExprResult = parse_expr(tokens, p, filename, next_prec)
         p = right_r.pos
@@ -1578,12 +1583,12 @@ fn parse_expr(tokens: List<Token>, pos: Int, filename: String, min_prec: Int) ->
                         operands.push(right_r.expr)
                         ops.push(op)
                         for _ in 0..1000:
-                            if at_end(tokens, p) { break }
+                            if at_end(tokens, p): break
                             let nt: String = peek_type(tokens, p)
                             let n_op: String = tok_to_binop(nt)
-                            if !is_cmp_op(n_op) { break }
+                            if !is_cmp_op(n_op): break
                             let n_prec: Int = op_precedence(n_op)
-                            if n_prec < min_prec { break }
+                            if n_prec < min_prec: break
                             p = p + 1
                             let n_next_prec: Int = n_prec + 1
                             let n_right_r: ExprResult = parse_expr(tokens, p, filename, n_next_prec)
@@ -1629,7 +1634,7 @@ fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let mut p: Int = ar.pos
 
     for _ in 0..10000:
-        if at_end(tokens, p) { return new_expr_result(left, p) }
+        if at_end(tokens, p): return new_expr_result(left, p)
 
         let tt: String = peek_type(tokens, p)
 
@@ -1727,7 +1732,7 @@ fn any_nonscalar_item(items: List<IndexItem>) -> Bool:
     let n: Int = len(items)
     for _ in 0..128:
         if i < n:
-            if items[i].kind != "scalar" { return true }
+            if items[i].kind != "scalar": return true
             i = i + 1
     return false
 
@@ -1810,8 +1815,8 @@ fn has_interpolation(s: String) -> Bool:
         if s.char_at(i) == "$":
             if i + 1 < n:
                 if s.char_at(i + 1) == "{":
-                    if i == 0 { return true }
-                    if s.char_at(i - 1) != "\\" { return true }
+                    if i == 0: return true
+                    if s.char_at(i - 1) != "\\": return true
     return false
 
 // v5.16.0 Te.4.B/C — split a STRING_LIT value into a sequence of
@@ -1835,7 +1840,7 @@ fn split_interp_parts(s: String, filename: String) -> List<Expr>:
     let mut i: Int = 0
     let n: Int = len(s)
     for _ in 0..100000:
-        if i >= n { break }
+        if i >= n: break
         let ch: String = s.char_at(i)
         if ch == "\\":
             // Skip the escape and its next char so `\$` doesn't trip
@@ -1854,7 +1859,7 @@ fn split_interp_parts(s: String, filename: String) -> List<Expr>:
                 let mut j: Int = i + 2
                 let mut found_close: Bool = false
                 for _ in 0..100000:
-                    if j >= n { break }
+                    if j >= n: break
                     let cj: String = s.char_at(j)
                     if cj == "{":
                         depth = depth + 1
@@ -1907,7 +1912,7 @@ fn parse_struct_fields_to_list(tokens: List<Token>, pos: Int, filename: String) 
             vals.push(er.expr)
         else:
             vals.push(Expr::Ident(fname))
-        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        if peek_type(tokens, p) == "COMMA": p = p + 1
     return new_expr_result(Expr::ListLit(vals), p)
 
 fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
@@ -1939,7 +1944,7 @@ fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> Ex
         let bre: ExprResult = parse_expr(tokens, p, filename, 0)
         base_expr = bre.expr
         p = bre.pos
-        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        if peek_type(tokens, p) == "COMMA": p = p + 1
         p = expect(tokens, p, "RBRACE")
         return new_expr_result(Expr::ConstructUpdate(struct_name, overrides, base_expr), p)
 
@@ -1954,7 +1959,7 @@ fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> Ex
             base_expr = bre2.expr
             p = bre2.pos
             has_base = true
-            if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+            if peek_type(tokens, p) == "COMMA": p = p + 1
             p = expect(tokens, p, "RBRACE")
             break
         let fname: String = peek_value(tokens, p)
@@ -1967,7 +1972,7 @@ fn parse_struct_construct(tokens: List<Token>, pos: Int, filename: String) -> Ex
             p = ver.pos
         let fi: FieldInit = new FieldInit { span: new_span(0, 0, 0, 0), name: fname, value: val_expr }
         overrides.push(fi)
-        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        if peek_type(tokens, p) == "COMMA": p = p + 1
 
     if has_base:
         return new_expr_result(Expr::ConstructUpdate(struct_name, overrides, base_expr), p)
@@ -1990,13 +1995,13 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     let val: String = peek_value(tokens, pos)
 
     // Integer literals
-    if tt == "DEC_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
-    if tt == "HEX_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
-    if tt == "BIN_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
-    if tt == "OCT_INT" { return new_expr_result(Expr::IntLit(int(val)), pos + 1) }
+    if tt == "DEC_INT": return new_expr_result(Expr::IntLit(int(val)), pos + 1)
+    if tt == "HEX_INT": return new_expr_result(Expr::IntLit(int(val)), pos + 1)
+    if tt == "BIN_INT": return new_expr_result(Expr::IntLit(int(val)), pos + 1)
+    if tt == "OCT_INT": return new_expr_result(Expr::IntLit(int(val)), pos + 1)
 
     // Float literal
-    if tt == "FLOAT_LIT" { return new_expr_result(Expr::FloatLit(float(val)), pos + 1) }
+    if tt == "FLOAT_LIT": return new_expr_result(Expr::FloatLit(float(val)), pos + 1)
 
     // String literal — check for interpolation ${...}
     if tt == "STRING_LIT":
@@ -2011,26 +2016,26 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
         return new_expr_result(Expr::StringLit(val), pos + 1)
 
     // Char literal
-    if tt == "CHAR_LIT" { return new_expr_result(Expr::CharLit(val), pos + 1) }
+    if tt == "CHAR_LIT": return new_expr_result(Expr::CharLit(val), pos + 1)
 
     // Bool literals
-    if tt == "KW_TRUE" { return new_expr_result(Expr::BoolLit(true), pos + 1) }
-    if tt == "KW_FALSE" { return new_expr_result(Expr::BoolLit(false), pos + 1) }
+    if tt == "KW_TRUE": return new_expr_result(Expr::BoolLit(true), pos + 1)
+    if tt == "KW_FALSE": return new_expr_result(Expr::BoolLit(false), pos + 1)
 
     // None literal
-    if tt == "KW_NONE" { return new_expr_result(Expr::NoneLit, pos + 1) }
+    if tt == "KW_NONE": return new_expr_result(Expr::NoneLit, pos + 1)
 
     // Self
-    if tt == "KW_SELF" { return new_expr_result(Expr::Ident("self"), pos + 1) }
+    if tt == "KW_SELF": return new_expr_result(Expr::Ident("self"), pos + 1)
 
     // If expression
-    if tt == "KW_IF" { return parse_if_expr(tokens, pos, filename) }
+    if tt == "KW_IF": return parse_if_expr(tokens, pos, filename)
 
     // Match expression
-    if tt == "KW_MATCH" { return parse_match_expr(tokens, pos, filename) }
+    if tt == "KW_MATCH": return parse_match_expr(tokens, pos, filename)
 
     // Spawn expression
-    if tt == "KW_SPAWN" { return parse_spawn_expr(tokens, pos, filename) }
+    if tt == "KW_SPAWN": return parse_spawn_expr(tokens, pos, filename)
 
     // Sync expression
     if tt == "KW_SYNC":
@@ -2038,7 +2043,7 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
         return new_expr_result(Expr::Sync(sr.expr), sr.pos)
 
     // Signal expression
-    if tt == "KW_SIGNAL" { return parse_signal_expr(tokens, pos, filename) }
+    if tt == "KW_SIGNAL": return parse_signal_expr(tokens, pos, filename)
 
     // Tensor literal: Tensor<Type>[elements]  (v4.42.0)
     if tt == "KW_TENSOR":
@@ -2048,10 +2053,10 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
                 return parse_tensor_lit(tokens, pos, filename)
 
     // Map literal: #{ key: val, ... }
-    if tt == "MAP_OPEN" { return parse_map_lit(tokens, pos, filename) }
+    if tt == "MAP_OPEN": return parse_map_lit(tokens, pos, filename)
 
     // List literal
-    if tt == "LBRACKET" { return parse_list_lit(tokens, pos, filename) }
+    if tt == "LBRACKET": return parse_list_lit(tokens, pos, filename)
 
     // v5.15.0 Te.2.F — terse lambda: ``|x| body``, ``|x, y| body``, ``|| body``.
     // BAR is never the start of an expression elsewhere, so this is
@@ -2064,7 +2069,7 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
             params.push(new_param(n0, none))
             p = p + 1
             for _ in 0..32:
-                if peek_type(tokens, p) != "COMMA" { break }
+                if peek_type(tokens, p) != "COMMA": break
                 p = p + 1
                 let nn: String = peek_value(tokens, p)
                 params.push(new_param(nn, none))
@@ -2074,7 +2079,7 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
         return new_expr_result(Expr::Lambda(params, LambdaBody::ExprBody(body_r.expr)), body_r.pos)
 
     // Parenthesized expression
-    if tt == "LPAREN" { return parse_paren_expr(tokens, pos, filename) }
+    if tt == "LPAREN": return parse_paren_expr(tokens, pos, filename)
 
     // Struct constructor: new Name { field: val, ... }
     // Emits as Call(Ident("__new_Name"), [val1, val2, ...]).
@@ -2164,7 +2169,7 @@ fn parse_match_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
         arms.push(mar.arm)
         p = mar.pos
 
-        if peek_type(tokens, p) == "COMMA" { p = p + 1 }
+        if peek_type(tokens, p) == "COMMA": p = p + 1
 
     return new_expr_result(Expr::Match(subj_r.expr, arms), p)
 
@@ -2218,11 +2223,11 @@ fn parse_pattern_alt(tokens: List<Token>, pos: Int, filename: String) -> Pattern
     if val == "_":
         return new_pattern_result(Pattern::Wildcard, pos + 1)
 
-    if tt == "DEC_INT" { return new_pattern_result(Pattern::LiteralPat(Expr::IntLit(int(val))), pos + 1) }
-    if tt == "FLOAT_LIT" { return new_pattern_result(Pattern::LiteralPat(Expr::FloatLit(float(val))), pos + 1) }
-    if tt == "STRING_LIT" { return new_pattern_result(Pattern::LiteralPat(Expr::StringLit(val)), pos + 1) }
-    if tt == "KW_TRUE" { return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(true)), pos + 1) }
-    if tt == "KW_FALSE" { return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(false)), pos + 1) }
+    if tt == "DEC_INT": return new_pattern_result(Pattern::LiteralPat(Expr::IntLit(int(val))), pos + 1)
+    if tt == "FLOAT_LIT": return new_pattern_result(Pattern::LiteralPat(Expr::FloatLit(float(val))), pos + 1)
+    if tt == "STRING_LIT": return new_pattern_result(Pattern::LiteralPat(Expr::StringLit(val)), pos + 1)
+    if tt == "KW_TRUE": return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(true)), pos + 1)
+    if tt == "KW_FALSE": return new_pattern_result(Pattern::LiteralPat(Expr::BoolLit(false)), pos + 1)
 
     if tt == "NAME":
         if peek_type(tokens, pos + 1) == "LPAREN":
@@ -2404,7 +2409,7 @@ fn parse_comp_clause(tokens: List<Token>, pos: Int, filename: String) -> CompCla
 
     let mut conditions: List<Expr> = []
     for _ in 0..32:
-        if peek_type(tokens, p) != "KW_IF" { break }
+        if peek_type(tokens, p) != "KW_IF": break
         p = p + 1
         let cond_r: ExprResult = parse_expr(tokens, p, filename, 0)
         conditions.push(cond_r.expr)
@@ -2416,7 +2421,7 @@ fn parse_list_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_e
     let mut p: Int = pos
     let mut clauses: List<CompClause> = []
     for _ in 0..32:
-        if peek_type(tokens, p) != "KW_FOR" { break }
+        if peek_type(tokens, p) != "KW_FOR": break
         let cr: CompClauseResult = parse_comp_clause(tokens, p, filename)
         clauses.push(cr.clause)
         p = cr.pos
@@ -2427,7 +2432,7 @@ fn parse_map_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_ke
     let mut p: Int = pos
     let mut clauses: List<CompClause> = []
     for _ in 0..32:
-        if peek_type(tokens, p) != "KW_FOR" { break }
+        if peek_type(tokens, p) != "KW_FOR": break
         let cr: CompClauseResult = parse_comp_clause(tokens, p, filename)
         clauses.push(cr.clause)
         p = cr.pos
@@ -2460,7 +2465,7 @@ fn parse_map_comp_tail(tokens: List<Token>, pos: Int, filename: String, first_ke
 fn _tensor_pad_list(list: List<Int>, min_len: Int) -> List<Int>:
     let mut out: List<Int> = list
     for _ in 0..64:
-        if len(out) > min_len { break }
+        if len(out) > min_len: break
         out.push(0)
     out
 
@@ -2552,7 +2557,7 @@ fn parse_paren_expr(tokens: List<Token>, pos: Int, filename: String) -> ExprResu
 fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResult:
     let tt: String = peek_type(tokens, pos)
 
-    if tt == "KW_FN" { return parse_fn_type(tokens, pos, filename) }
+    if tt == "KW_FN": return parse_fn_type(tokens, pos, filename)
 
     // v5.6.0 (Sh.6): KW_TENSOR treated as a type name in type position, so
     // `let x: Tensor<Int>` still parses (Tensor became a keyword to
@@ -2561,8 +2566,8 @@ fn parse_type_expr(tokens: List<Token>, pos: Int, filename: String) -> TypeResul
         let mut name: String = peek_value(tokens, pos)
         let mut p: Int = pos + 1
         for _ in 0..10:
-            if peek_type(tokens, p) != "DOT" { break }
-            if peek_type(tokens, p + 1) != "NAME" { break }
+            if peek_type(tokens, p) != "DOT": break
+            if peek_type(tokens, p + 1) != "NAME": break
             name = name + "." + peek_value(tokens, p + 1)
             p = p + 2
         if peek_type(tokens, p) == "LT":

@@ -7,6 +7,140 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.48.1] - 2026-05-07
+
+**Te.3.D.4 / Te.3.D.5 — bootstrap mirror + self-host source migration.**
+Closes the v5.48.0 carry-forward. v5.48.0 shipped the Python parser
+extension and formatter for single-line colon blocks
+(`if x: stmt`, `fn main(): print(1)`) and match-arm statement
+shorthand (`Pat => return n`); the C runtime mirror and the migration
+of `mapanare/self/*.mn` were explicitly split to v5.48.1. v5.48.1
+brings the native side to parity and migrates 17 self-host modules to
+the new shorthand. The v5.19.0 brace-deprecation warning silences on
+7 of 18 self-host files (`abi.mn`, `emit_llvm_ir.mn`,
+`from_go.mn`, `from_php.mn`, `from_python.mn`, `from_typescript.mn`,
+`transpiler.mn`); first-party brace surface drops from **6,826 to
+1,474 occurrences (78% reduction)**. Legacy braces still parse with
+the v5.19.0 warning unchanged. **STRICT 3-stage fixed-point hits at
+245,115 lines / 0 diff — new v5.48.x baseline; v6.x preserves from
+here.** Goldens **103/103**.
+
+### Added
+
+- **Te.3.D.4.1 — C runtime helpers in
+  `runtime/native/mapanare_core.c`.** Four new statics mirror the
+  Python helpers v5.48.0 added at `mapanare/parser.py:2105-2257`:
+  `mn_ib_split_inline_colon`, `mn_ib_is_single_line_stmt_head`,
+  `mn_ib_rewrite_inline_colon_body`,
+  `mn_ib_normalize_fn_zero_arg_head`. Pure additions; no behavioral
+  change yet because the main loop hasn't been extended to call them.
+- **Te.3.D.4.2 — extended `mn_ib_has_colon_blocks` fast-path.** The
+  existing fast path triggered only on lines ending with `:`. v5.48.1
+  also triggers when the stripped content begins with one of the
+  known stmt-keyword prefix hints (`if `, `si `, `while `, `mien `,
+  `for `, `cada `, `fn `, `pub `, `async `, `extern `, `else`,
+  `sino`, `} else`, `} sino`) AND contains `:`. Mirrors the Python
+  `_SINGLE_LINE_PREFIX_HINT` extension in `_indent_to_braces`.
+- **Te.3.D.4.3 — main-loop extension in `__mn_indent_to_braces`.**
+  Single-line detection in both branches: continuation
+  (`} else: stmt`, `} else if x: stmt`) emits
+  `<indent>} <head> { <body> }` inline without an indent_stack push;
+  non-continuation (`if x: stmt`, `fn main(): print(1)`) emits
+  `<indent><head> { <body> }` inline. The `'{' not in content` guard
+  uses `mn_ib_contains_byte_unquoted` (string/char-literal-aware)
+  so `if ch == "{": stmt` shapes (real lexer.mn line) still
+  single-line-migrate.
+- **Te.3.D.4.4 — `__mn_rewrite_arm_stmt_shorthand` C export.** New
+  `MN_EXPORT MnString` function mirrors
+  `mapanare/parser.py::_rewrite_arm_stmt_shorthand` line-for-line:
+  per-line shadow buffer (string/char/`//` masked to spaces),
+  scan for `=>` positions, identify keyword
+  (`return`/`da`/`break`/`sal`/`continue`/`sigue`/`pass`),
+  word-boundary-after check, walk body to first depth-0 `,` / `}` /
+  `//` / EOL, emit `{ <body rstripped> }`. Replacements applied
+  left-to-right because we stream into a fresh output buffer.
+- **Te.3.D.4.5 — self-host wire-up.** `mapanare/self/parser.mn::parse`
+  now calls `__mn_rewrite_arm_stmt_shorthand(__mn_indent_to_braces(...))`
+  before `tokenize`; `mapanare/self/main.mn::run_preprocess` calls
+  the same pair so the cross-bootstrap test compares against the full
+  pipeline. Registration mirrors v5.14.1's `__mn_indent_to_braces`
+  pattern in `semantic.mn::is_builtin_function` /
+  `register_builtins`, `lower.mn::lower_call`, and
+  `emit_llvm.mn::declare_runtime_fn` / `emit_call_by_name` /
+  `is_returns_string_runtime`. Python bootstrap parity:
+  `mapanare/types.py::BUILTIN_RETURN_TYPES`,
+  `mapanare/lower.py::_BUILTIN_RET`, and a new
+  `__mn_rewrite_arm_stmt_shorthand` handler in
+  `mapanare/emit_llvm_text.py` (mirroring the v5.23.1 Mb.1
+  `__mn_indent_to_braces` route — same drop-glue tracking, same Win64
+  ABI threshold).
+- **Te.3.D.4.6 — cross-bootstrap fixture set.** 27 new fixtures in
+  `tests/bootstrap/test_indent_preprocessor.py`: every accepted
+  single-line stmt-block head (English + Spanish), every
+  continuation, every arm-shorthand keyword (all 7), and the negative
+  shapes (struct/enum inline rejection, struct literal, namespace
+  `::` operator, generic `<T: Ord>` opener with same-line `{`,
+  `if ch == "{":` shape with `{` inside a string literal). The test
+  now asserts byte-identity against the full pipeline
+  (`_rewrite_arm_stmt_shorthand(_indent_to_braces(src))`) on Python
+  side; C side runs the same pair via `mnc-stage1 preprocess`.
+  **243 passing.**
+
+### Changed
+
+- **Self-host source migration (Te.3.D.5).** All 17 modules in
+  `mapanare/self/*.mn` migrated via `mnc fmt` in 4 clusters with
+  rebuild-and-goldens validation after each: cluster A (10 trivial
+  modules), cluster B (`mir`, `mir_opt`, `ast`), cluster C
+  (`semantic`, `lower`, `parser`), cluster D (`emit_llvm`).
+  `mnc_all.mn` regenerated via `bash scripts/concat_self.sh`.
+  Per-file residual brace counts after migration:
+  `abi.mn` 13→0, `ast.mn` 515→182, `emit_llvm.mn` 569→65,
+  `emit_llvm_ir.mn` 16→0, `from_go.mn` 128→0, `from_php.mn` 118→0,
+  `from_python.mn` 53→0, `from_typescript.mn` 172→0, `lexer.mn`
+  205→31, `lower.mn` 463→181, `lower_state.mn` 119→14, `main.mn`
+  60→2, `mir.mn` 371→83, `mir_opt.mn` 208→70, `parser.mn` 251→17,
+  `semantic.mn` 361→92, `transpiler.mn` 53→0. Total 3,675→737 across
+  the 17 modules; +`mnc_all.mn` at 737. Residuals are
+  `match_arm_open` multi-line arm bodies and `one_line_arm_other`
+  multi-stmt arm bodies — neither shape has a v5.48.0 shorthand.
+  v6.0 grammar may revisit.
+- **STRICT 3-stage fixed-point baseline.** Old: 244,654 lines (v5.47.0
+  through v5.48.0). New: **245,115 lines** at v5.48.1. The +461 lines
+  reflect the v5.48.1 self-host registration wiring
+  (`__mn_rewrite_arm_stmt_shorthand` builtin entries in
+  `semantic.mn` / `lower.mn` / `emit_llvm.mn`,
+  `run_preprocess` second call in `main.mn`, the new builtin pump in
+  `parser.mn`). 52-release strict streak from v5.7.1 baseline
+  preserved at the new value. v5.48.x onward preserves from here.
+
+### Fixed
+
+- **`mapanare/format.py::_migrate_one_line_stmt_block` —
+  implicit-return regression (Te.3.D.5.1).** The v5.48.0 formatter
+  migrated `fn make() -> Point = Point { x }` (implicit-return
+  expression with struct literal) to `fn make() -> Point: Point: x`
+  — collapsing two distinct semantic levels into a single
+  unparseable colon-form. Surfaced when running `mnc fmt
+  mapanare/self/lexer.mn` on the v5.48.0 → v5.48.1 migration: 88
+  `fn new_token(...) -> Token = new Token { ... }` shapes corrupted
+  the file. v5.48.1 adds a `_has_standalone_eq` guard mirroring
+  `count_user_brace_block_openers` Rule (b) — if the head contains
+  a standalone `=` between the latest stmt keyword and `{`, refuse
+  migration.
+- **`mapanare/parser.py::_indent_to_braces` —
+  `'{' not in content` guard masking (Te.3.D.5.1).** The v5.48.0
+  guard at line 2457 used `'{' not in content` directly, which
+  treated `{` inside a string literal (e.g.
+  `if ch == "{": return new_token(...)` — real shape from
+  `mapanare/self/lexer.mn`) as if it were a block opener and
+  preserved the line as colon form. The LALR grammar then rejected
+  it with `Unexpected ':' — expected '{'`. v5.48.1 introduces
+  `_mask_strings_chars` and applies the guard against the masked
+  shadow on both Python and C sides. New cross-bootstrap fixture
+  `v5481_brace_in_string_literal` locks the regression.
+
+
 ## [5.48.0] - 2026-05-07
 
 **Te.3.D — single-line colon blocks and match-arm statement
@@ -12498,7 +12632,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.1...HEAD
+[5.48.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.0...v5.48.1
 [5.48.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.5...v5.48.0
 [5.47.5]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.0...v5.47.5
 [5.47.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.46.0...v5.47.0

@@ -44,14 +44,14 @@ fn llvm_list_rt() -> String = "{ptr, i64, i64, i64, i64}"
 // ---------------------------------------------------------------------------
 
 fn resolve_mir_type(t: MIRType) -> String:
-    if t.kind == TK_INT() { return llvm_int() }
-    if t.kind == TK_FLOAT() { return llvm_float() }
-    if t.kind == TK_BOOL() { return llvm_bool() }
-    if t.kind == TK_STRING() { return llvm_string() }
-    if t.kind == TK_VOID() { return llvm_void() }
-    if t.kind == TK_CHAR() { return llvm_char() }
-    if t.kind == TK_LIST() { return llvm_list_rt() }
-    if t.kind == TK_MAP() { return llvm_map_type() }
+    if t.kind == TK_INT(): return llvm_int()
+    if t.kind == TK_FLOAT(): return llvm_float()
+    if t.kind == TK_BOOL(): return llvm_bool()
+    if t.kind == TK_STRING(): return llvm_string()
+    if t.kind == TK_VOID(): return llvm_void()
+    if t.kind == TK_CHAR(): return llvm_char()
+    if t.kind == TK_LIST(): return llvm_list_rt()
+    if t.kind == TK_MAP(): return llvm_map_type()
     if t.kind == TK_OPTION():
         // Universal type erasure: all Option types use {i1, ptr}.
         // The payload is stored via alloca and accessed through the ptr.
@@ -64,16 +64,16 @@ fn resolve_mir_type(t: MIRType) -> String:
             let err_ty: String = resolve_mir_type(t.args[1])
             return llvm_result_type(ok_ty, err_ty)
         return llvm_result_type(llvm_ptr(), llvm_ptr())
-    if t.kind == TK_SIGNAL() { return llvm_ptr() }
-    if t.kind == TK_AGENT() { return llvm_ptr() }
-    if t.kind == TK_STRUCT() { return "%struct." + t.name }
-    if t.kind == TK_ENUM() { return "%enum." + t.name }
-    if t.kind == TK_RANGE() { return "{i64, i64}" }
-    if t.kind == TK_FN() { return llvm_ptr() }
-    if t.kind == TK_UNKNOWN() { return llvm_int() }
+    if t.kind == TK_SIGNAL(): return llvm_ptr()
+    if t.kind == TK_AGENT(): return llvm_ptr()
+    if t.kind == TK_STRUCT(): return "%struct." + t.name
+    if t.kind == TK_ENUM(): return "%enum." + t.name
+    if t.kind == TK_RANGE(): return "{i64, i64}"
+    if t.kind == TK_FN(): return llvm_ptr()
+    if t.kind == TK_UNKNOWN(): return llvm_int()
     // v5.6.0 Sh.6: tensor values travel as opaque pointer (__mn_tensor_alloc
     // returns ptr; all __mn_tensor_* builtins accept ptr).
-    if t.kind == TK_TENSOR() { return llvm_ptr() }
+    if t.kind == TK_TENSOR(): return llvm_ptr()
     return llvm_int()
 
 // ---------------------------------------------------------------------------

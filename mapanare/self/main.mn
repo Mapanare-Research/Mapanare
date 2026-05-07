@@ -148,7 +148,7 @@ fn count_lines(s: String) -> Int:
     let mut count: Int = 0
     let mut i: Int = 0
     for _ in 0..1000000:
-        if i >= n { break }
+        if i >= n: break
         if s.substr(i, 1) == "\n":
             count = count + 1
         i = i + 1
@@ -203,10 +203,10 @@ fn print_subcommand_help(cmd: String):
 // Scans from end to find last separator (avoids nested-assign MIR bug).
 fn dir_of_path(path: String) -> String:
     let slen: Int = len(path)
-    if slen == 0 { return "" }
+    if slen == 0: return ""
     let mut i: Int = slen - 1
     for _ in 0..4096:
-        if i < 0 { return "" }
+        if i < 0: return ""
         let ch: String = path.substr(i, 1)
         if ch == "/":
             return path.substr(0, i + 1)
@@ -219,7 +219,7 @@ fn join_import_path(segments: List<String>) -> String:
     let mut i: Int = 0
     let n: Int = len(segments)
     for _ in 0..20:
-        if i >= n { return result }
+        if i >= n: return result
         if i > 0:
             result = result + "/" + segments[i]
         else:
@@ -230,10 +230,10 @@ fn join_import_path(segments: List<String>) -> String:
 // Extract last path component: "stdlib/text" -> "text", "math" -> "math"
 fn basename_of(path: String) -> String:
     let slen: Int = len(path)
-    if slen == 0 { return "" }
+    if slen == 0: return ""
     let mut i: Int = slen - 1
     for _ in 0..256:
-        if i < 0 { return path }
+        if i < 0: return path
         let ch: String = path.substr(i, 1)
         if ch == "/":
             return path.substr(i + 1, slen - i - 1)
@@ -245,7 +245,7 @@ fn file_extension(filename: String) -> String:
     let flen: Int = len(filename)
     let mut i: Int = flen - 1
     for _ in 0..20:
-        if i < 0 { return "" }
+        if i < 0: return ""
         if filename.substr(i, 1) == ".":
             return filename.substr(i, flen - i)
         i = i - 1
@@ -256,16 +256,16 @@ fn file_extension(filename: String) -> String:
 fn try_resolve(dir: String, rel: String) -> String:
     let c1: String = dir + rel + ".mn"
     let r1: String = __mn_file_read_or_empty(c1)
-    if len(r1) > 0 { return c1 }
+    if len(r1) > 0: return c1
     let c2: String = dir + rel + "/mod.mn"
     let r2: String = __mn_file_read_or_empty(c2)
-    if len(r2) > 0 { return c2 }
+    if len(r2) > 0: return c2
     // Try <rel>/<basename>.mn (e.g., stdlib/text -> stdlib/text/text.mn)
     let base: String = basename_of(rel)
     if len(base) > 0:
         let c3: String = dir + rel + "/" + base + ".mn"
         let r3: String = __mn_file_read_or_empty(c3)
-        if len(r3) > 0 { return c3 }
+        if len(r3) > 0: return c3
     return ""
 
 // Resolve an import path to a file path, reading to check existence.
@@ -279,10 +279,10 @@ fn resolve_import_file(segments: List<String>, source_dir: String) -> String:
         if len(dir) == 0:
             // Try CWD-relative (empty prefix)
             let cwd_result: String = try_resolve("", rel)
-            if len(cwd_result) > 0 { return cwd_result }
+            if len(cwd_result) > 0: return cwd_result
             return ""
         let result: String = try_resolve(dir, rel)
-        if len(result) > 0 { return result }
+        if len(result) > 0: return result
         // Climb to parent: strip trailing slash, then find last slash
         let trimmed: String = dir.substr(0, len(dir) - 1)
         dir = dir_of_path(trimmed)
@@ -296,10 +296,10 @@ fn resolve_import_file(segments: List<String>, source_dir: String) -> String:
 
 fn definition_name(defn: Definition) -> String:
     let dk: String = def_kind(defn)
-    if dk == "fn_def" { return "__fn__" + def_fn_data(defn).name }
-    if dk == "struct_def" { return "__st__" + def_struct_data(defn).name }
-    if dk == "enum_def" { return "__en__" + def_enum_data(defn).name }
-    if dk == "extern_fn_def" { return "__ex__" + def_extern_name(defn) }
+    if dk == "fn_def": return "__fn__" + def_fn_data(defn).name
+    if dk == "struct_def": return "__st__" + def_struct_data(defn).name
+    if dk == "enum_def": return "__en__" + def_enum_data(defn).name
+    if dk == "extern_fn_def": return "__ex__" + def_extern_name(defn)
     return ""
 
 fn has_later_def(defs: List<Definition>, idx: Int, name: String, total: Int) -> Bool:
@@ -380,7 +380,7 @@ fn resolve_imports(program: Program, filename: String, visited: List<String>) ->
                             let mut k: Int = 0
                             let nimp: Int = len(resolved_imp.definitions)
                             for _ in 0..10000:
-                                if k >= nimp { k = nimp + 1 }
+                                if k >= nimp: k = nimp + 1
                                 if k < nimp:
                                     all_defs.push(resolved_imp.definitions[k])
                                     k = k + 1
@@ -391,8 +391,8 @@ fn is_visited(visited: List<String>, path: String) -> Bool:
     let mut i: Int = 0
     let n: Int = len(visited)
     for _ in 0..100:
-        if i >= n { return false }
-        if visited[i] == path { return true }
+        if i >= n: return false
+        if visited[i] == path: return true
         i = i + 1
     return false
 
@@ -509,7 +509,7 @@ fn link_with_runtime(obj_path: String, out_path: String) -> Int:
     let null_r: String = __mn_dev_null_redirect()
     let link_pre: String = "gcc " + obj_path + " runtime/native/libmapanare_rt.a -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
     let r: Int = __mn_system(link_pre)
-    if r == 0 { return 0 }
+    if r == 0: return 0
     let link_src: String = "gcc " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
     return __mn_system(link_src)
 
@@ -520,10 +520,10 @@ fn link_with_runtime(obj_path: String, out_path: String) -> Int:
 // AST walk, but `mnc test` only has the source string in scope.
 // Skips blank lines and `//` comments between `@test` and `fn`.
 fn is_test_name_char(ch: String) -> Bool:
-    if ch == "_" { return true }
-    if ch >= "0" && ch <= "9" { return true }
-    if ch >= "a" && ch <= "z" { return true }
-    if ch >= "A" && ch <= "Z" { return true }
+    if ch == "_": return true
+    if ch >= "0" && ch <= "9": return true
+    if ch >= "a" && ch <= "z": return true
+    if ch >= "A" && ch <= "Z": return true
     return false
 
 fn extract_fn_name(line: String) -> String:
@@ -532,9 +532,9 @@ fn extract_fn_name(line: String) -> String:
     let mut i: Int = 3
     let mut start: Int = 3
     for _ in 0..n:
-        if i >= n { break }
+        if i >= n: break
         let ch: String = line.substr(i, 1)
-        if !is_test_name_char(ch) { break }
+        if !is_test_name_char(ch): break
         i = i + 1
     line.substr(start, i - start)
 
@@ -544,20 +544,20 @@ fn extract_fn_name(line: String) -> String:
 // emitted last (no module-prefixed call sites for ws_trim available).
 fn _trim_line(s: String) -> String:
     let n: Int = len(s)
-    if n == 0 { return s }
+    if n == 0: return s
     let mut start: Int = 0
     for _ in 0..10000:
-        if start >= n { break }
+        if start >= n: break
         let c0: String = s.substr(start, 1)
-        if c0 != " " && c0 != "\t" && c0 != "\r" { break }
+        if c0 != " " && c0 != "\t" && c0 != "\r": break
         start = start + 1
     let mut end: Int = n
     for _ in 0..10000:
-        if end <= start { break }
+        if end <= start: break
         let c1: String = s.substr(end - 1, 1)
-        if c1 != " " && c1 != "\t" && c1 != "\r" { break }
+        if c1 != " " && c1 != "\t" && c1 != "\r": break
         end = end - 1
-    if start == 0 && end == n { return s }
+    if start == 0 && end == n: return s
     return s.substr(start, end - start)
 
 // v5.13.1 At.2: manual line-by-line scan via substr instead of
@@ -571,22 +571,22 @@ fn discover_test_names(source: String) -> List<String>:
     let n: Int = len(source)
     let mut pos: Int = 0
     for _ in 0..n:
-        if pos >= n { break }
+        if pos >= n: break
         let mut eol: Int = pos
         for _ in 0..n:
-            if eol >= n { break }
-            if source.substr(eol, 1) == "\n" { break }
+            if eol >= n: break
+            if source.substr(eol, 1) == "\n": break
             eol = eol + 1
         let line: String = _trim_line(source.substr(pos, eol - pos))
         if line == "@test":
             // Scan forward for the next non-blank, non-comment line
             let mut q: Int = eol + 1
             for _ in 0..n:
-                if q >= n { break }
+                if q >= n: break
                 let mut q_eol: Int = q
                 for _ in 0..n:
-                    if q_eol >= n { break }
-                    if source.substr(q_eol, 1) == "\n" { break }
+                    if q_eol >= n: break
+                    if source.substr(q_eol, 1) == "\n": break
                     q_eol = q_eol + 1
                 let nl: String = _trim_line(source.substr(q, q_eol - q))
                 let mut consumed: Bool = false
@@ -600,10 +600,10 @@ fn discover_test_names(source: String) -> List<String>:
                 if !consumed:
                     if nl.starts_with("fn "):
                         let nm: String = extract_fn_name(nl)
-                        if len(nm) > 0 { names.push(nm) }
+                        if len(nm) > 0: names.push(nm)
                     if nl.starts_with("pub fn "):
                         let nm2: String = extract_fn_name(nl.substr(4, len(nl) - 4))
-                        if len(nm2) > 0 { names.push(nm2) }
+                        if len(nm2) > 0: names.push(nm2)
                     break
         pos = eol + 1
     names
@@ -680,14 +680,14 @@ fn run_test(filename: String):
     let mut i: Int = 0
     let n: Int = len(test_names)
     for _ in 0..n:
-        if i >= n { break }
+        if i >= n: break
         let name: String = test_names[i]
         let ok: Bool = run_one_test(base_ir, name, clang_bin)
         if ok { passed = passed + 1 } else { failed = failed + 1 }
         i = i + 1
     print("")
     print("result: " + str(passed) + " passed, " + str(failed) + " failed (" + str(n) + " total)")
-    if failed > 0 { __mn_exit(1) }
+    if failed > 0: __mn_exit(1)
 
 // ---------------------------------------------------------------------------
 // build — compile, link, produce executable
@@ -708,12 +708,12 @@ fn run_build(filename: String):
         // Forward remaining args (e.g., -o output --timing)
         let mut ai: Int = 3
         for _ in 0..20:
-            if ai >= __mn_argc() { ai = __mn_argc() + 1 }
+            if ai >= __mn_argc(): ai = __mn_argc() + 1
             if ai < __mn_argc():
                 cmd = cmd + " " + __mn_argv(ai)
                 ai = ai + 1
         let r: Int = __mn_system(cmd)
-        if r != 0 { __mn_exit(r) }
+        if r != 0: __mn_exit(r)
         return
 
     // Single-file build
@@ -724,7 +724,7 @@ fn run_build(filename: String):
     let mut lto_flag: String = ""
     let mut ai2: Int = 3
     for _ in 0..20:
-        if ai2 >= __mn_argc() { ai2 = __mn_argc() + 1 }
+        if ai2 >= __mn_argc(): ai2 = __mn_argc() + 1
         if ai2 < __mn_argc():
             let fl: String = __mn_argv(ai2)
             if fl == "-o" && ai2 + 1 < __mn_argc():
@@ -825,7 +825,7 @@ fn run_program(filename: String):
     let mut cmd: String = "/tmp/mnc_run"
     let mut ai: Int = 3
     for _ in 0..100:
-        if ai >= __mn_argc() { ai = __mn_argc() + 1 }
+        if ai >= __mn_argc(): ai = __mn_argc() + 1
         if ai < __mn_argc():
             cmd = cmd + " " + __mn_argv(ai)
             ai = ai + 1
@@ -844,6 +844,12 @@ fn run_program(filename: String):
 // over a source file. Used by tests/bootstrap/test_indent_preprocessor.py
 // to assert byte-identical output between the Python and C
 // implementations on every parseable golden.
+//
+// v5.48.1 Te.3.D.4.4: also runs __mn_rewrite_arm_stmt_shorthand after
+// __mn_indent_to_braces, mirroring the parser.mn::parse pipeline.
+// The cross-bootstrap test compares against the full pipeline
+// (_rewrite_arm_stmt_shorthand(_indent_to_braces(src))) so this single
+// subcommand is the byte-identity oracle for both Python and C sides.
 fn run_preprocess(filename: String):
     let source: String = __mn_file_read_or_empty(filename)
     if len(source) <= 0:
@@ -852,7 +858,8 @@ fn run_preprocess(filename: String):
         __mn_str_eprint("'\n")
         __mn_exit(1)
     let preprocessed: String = __mn_indent_to_braces(source)
-    print(preprocessed)
+    let preprocessed2: String = __mn_rewrite_arm_stmt_shorthand(preprocessed)
+    print(preprocessed2)
 
 fn run_emit_llvm(filename: String):
     let source: String = __mn_file_read_or_empty(filename)
@@ -927,10 +934,10 @@ fn run_compile(filename: String):
 
     // Foreign source: transpile via mapanare CLI, then compile the .mn result
     let mut ok: Bool = false
-    if ext == ".py" { ok = true }
-    if ext == ".php" { ok = true }
-    if ext == ".ts" { ok = true }
-    if ext == ".go" { ok = true }
+    if ext == ".py": ok = true
+    if ext == ".php": ok = true
+    if ext == ".ts": ok = true
+    if ext == ".go": ok = true
     if !ok:
         __mn_str_eprint("error: unsupported file type '")
         __mn_str_eprint(ext)
@@ -1099,12 +1106,12 @@ fn mn_main():
         let mut fmt_cmd: String = "mapanare fmt"
         let mut fa: Int = 2
         for _ in 0..64:
-            if fa >= __mn_argc() { fa = __mn_argc() + 1 }
+            if fa >= __mn_argc(): fa = __mn_argc() + 1
             if fa < __mn_argc():
                 fmt_cmd = fmt_cmd + " " + __mn_argv(fa)
                 fa = fa + 1
         let fr: Int = __mn_system(fmt_cmd)
-        if fr != 0 { __mn_exit(fr) }
+        if fr != 0: __mn_exit(fr)
         return
     // v5.18.0 Mc.4: check — shell out to ``mapanare check``. Native port
     // tracked on the follow-up docket; the Python implementation drives
@@ -1113,12 +1120,12 @@ fn mn_main():
         let mut chk_cmd: String = "mapanare check"
         let mut ca: Int = 2
         for _ in 0..64:
-            if ca >= __mn_argc() { ca = __mn_argc() + 1 }
+            if ca >= __mn_argc(): ca = __mn_argc() + 1
             if ca < __mn_argc():
                 chk_cmd = chk_cmd + " " + __mn_argv(ca)
                 ca = ca + 1
         let cr_check: Int = __mn_system(chk_cmd)
-        if cr_check != 0 { __mn_exit(cr_check) }
+        if cr_check != 0: __mn_exit(cr_check)
         return
     // v5.18.0 Mc.3: init — shell out to ``mapanare init``. Scaffolds a
     // new project from mapanare/templates/init/<template>/. Native port
@@ -1127,12 +1134,12 @@ fn mn_main():
         let mut init_cmd: String = "mapanare init"
         let mut ia: Int = 2
         for _ in 0..64:
-            if ia >= __mn_argc() { ia = __mn_argc() + 1 }
+            if ia >= __mn_argc(): ia = __mn_argc() + 1
             if ia < __mn_argc():
                 init_cmd = init_cmd + " " + __mn_argv(ia)
                 ia = ia + 1
         let ir_init: Int = __mn_system(init_cmd)
-        if ir_init != 0 { __mn_exit(ir_init) }
+        if ir_init != 0: __mn_exit(ir_init)
         return
     // v5.18.0 Mc.1: lsp — shell out to the pygls-based language server.
     // Editor extensions launching ``mnc lsp`` get the same protocol they
@@ -1142,12 +1149,12 @@ fn mn_main():
         let mut lsp_cmd: String = "mapanare lsp"
         let mut la: Int = 2
         for _ in 0..64:
-            if la >= __mn_argc() { la = __mn_argc() + 1 }
+            if la >= __mn_argc(): la = __mn_argc() + 1
             if la < __mn_argc():
                 lsp_cmd = lsp_cmd + " " + __mn_argv(la)
                 la = la + 1
         let lr: Int = __mn_system(lsp_cmd)
-        if lr != 0 { __mn_exit(lr) }
+        if lr != 0: __mn_exit(lr)
         return
     if arg1 == "compile":
         if __mn_argc() < 3:

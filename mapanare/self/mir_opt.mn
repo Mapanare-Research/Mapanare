@@ -13,25 +13,25 @@ import self::mir
 
 fn fold_int_binop(op: BinOpKind, a: Int, b: Int) -> Option<Int>:
     match op:
-        Add => { return Some(a + b) }
-        Sub => { return Some(a - b) }
-        Mul => { return Some(a * b) }
-        _ => { return none }
+        Add => return Some(a + b)
+        Sub => return Some(a - b)
+        Mul => return Some(a * b)
+        _ => return none
 
 fn try_fold_instruction(inst: Instruction) -> Option<Instruction>:
     let ik: String = instr_kind(inst)
-    if ik != "binop" { return none }
+    if ik != "binop": return none
     let lhs: Value = instr_binop_lhs(inst)
     let rhs: Value = instr_binop_rhs(inst)
     let op: BinOpKind = instr_binop_op(inst)
     let dest: Value = instr_dest(inst)
     // Both operands must be named constants (format: literal value string)
     // Check if lhs and rhs names are integer literals
-    if lhs.ty.kind != TK_INT() { return none }
-    if rhs.ty.kind != TK_INT() { return none }
+    if lhs.ty.kind != TK_INT(): return none
+    if rhs.ty.kind != TK_INT(): return none
     // Names that start with % are SSA temps, not constants
-    if lhs.name.starts_with("%") { return none }
-    if rhs.name.starts_with("%") { return none }
+    if lhs.name.starts_with("%"): return none
+    if rhs.name.starts_with("%"): return none
     let a: Int = int(lhs.name)
     let b: Int = int(rhs.name)
     let result_opt: Option<Int> = fold_int_binop(op, a, b)
@@ -86,16 +86,16 @@ struct ConstEntry:
 fn find_const(consts: List<ConstEntry>, name: String) -> Option<String>:
     let mut i: Int = 0
     for _ in 0..5000:
-        if i >= len(consts) { return none }
-        if consts[i].name == name { return Some(consts[i].value) }
+        if i >= len(consts): return none
+        if consts[i].name == name: return Some(consts[i].value)
         i = i + 1
     return none
 
 fn find_const_ty(consts: List<ConstEntry>, name: String) -> MIRType:
     let mut i: Int = 0
     for _ in 0..5000:
-        if i >= len(consts) { return mir_unknown() }
-        if consts[i].name == name { return consts[i].ty }
+        if i >= len(consts): return mir_unknown()
+        if consts[i].name == name: return consts[i].ty
         i = i + 1
     return mir_unknown()
 
@@ -127,11 +127,11 @@ fn const_prop_function(f: MIRFunction) -> MIRFunction:
     let mut consts: List<ConstEntry> = []
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { break }
+        if bi >= len(f.blocks): break
         let bb: BasicBlock = f.blocks[bi]
         let mut ii: Int = 0
         for _ in 0..10000:
-            if ii >= len(bb.instructions) { break }
+            if ii >= len(bb.instructions): break
             let inst: Instruction = bb.instructions[ii]
             if instr_kind(inst) == "const":
                 let dest: Value = instr_dest(inst)
@@ -142,17 +142,17 @@ fn const_prop_function(f: MIRFunction) -> MIRFunction:
                     consts.push(entry)
             ii = ii + 1
         bi = bi + 1
-    if len(consts) == 0 { return f }
+    if len(consts) == 0: return f
     // Propagate constants through instructions
     let mut new_blocks: List<BasicBlock> = []
     let mut bi2: Int = 0
     for _ in 0..5000:
-        if bi2 >= len(f.blocks) { break }
+        if bi2 >= len(f.blocks): break
         let bb: BasicBlock = f.blocks[bi2]
         let mut new_instrs: List<Instruction> = []
         let mut ji: Int = 0
         for _ in 0..10000:
-            if ji >= len(bb.instructions) { break }
+            if ji >= len(bb.instructions): break
             new_instrs.push(propagate_in_instruction(bb.instructions[ji], consts))
             ji = ji + 1
         new_blocks.push(new BasicBlock { label: bb.label, instructions: new_instrs })
@@ -177,7 +177,7 @@ fn collect_targets(inst: Instruction) -> List<String>:
         let cases: List<SwitchCase> = instr_switch_cases(inst)
         let mut ci: Int = 0
         for _ in 0..200:
-            if ci >= len(cases) { break }
+            if ci >= len(cases): break
             targets.push(cases[ci].block_label)
             ci = ci + 1
         targets.push(instr_switch_default(inst))
@@ -186,8 +186,8 @@ fn collect_targets(inst: Instruction) -> List<String>:
 fn is_in_list(name: String, lst: List<String>) -> Bool:
     let mut i: Int = 0
     for _ in 0..5000:
-        if i >= len(lst) { return false }
-        if lst[i] == name { return true }
+        if i >= len(lst): return false
+        if lst[i] == name: return true
         i = i + 1
     return false
 
@@ -196,24 +196,24 @@ fn clean_phi_entries(inst: Instruction, reachable: List<String>) -> Instruction:
     let mut kept: List<PhiEntry> = []
     let mut ei: Int = 0
     for _ in 0..200:
-        if ei >= len(entries) { break }
+        if ei >= len(entries): break
         if is_in_list(entries[ei].block_label, reachable):
             kept.push(entries[ei])
         ei = ei + 1
-    if len(kept) == len(entries) { return inst }
+    if len(kept) == len(entries): return inst
     return Instruction::Phi(instr_dest(inst), kept)
 
 fn phi_needs_cleaning(bb: BasicBlock, reachable: List<String>) -> Bool:
     // Check if any PHI in this block references a non-reachable block
     let mut ji: Int = 0
     for _ in 0..10000:
-        if ji >= len(bb.instructions) { break }
+        if ji >= len(bb.instructions): break
         let inst: Instruction = bb.instructions[ji]
         if instr_kind(inst) == "phi":
             let entries: List<PhiEntry> = instr_phi_entries(inst)
             let mut ei: Int = 0
             for _ in 0..200:
-                if ei >= len(entries) { break }
+                if ei >= len(entries): break
                 if is_in_list(entries[ei].block_label, reachable) == false:
                     return true
                 ei = ei + 1
@@ -222,12 +222,12 @@ fn phi_needs_cleaning(bb: BasicBlock, reachable: List<String>) -> Bool:
 
 fn clean_phis_in_block(bb: BasicBlock, reachable: List<String>) -> BasicBlock:
     // Only rebuild if this block actually has PHIs referencing removed blocks
-    if phi_needs_cleaning(bb, reachable) == false { return bb }
+    if phi_needs_cleaning(bb, reachable) == false: return bb
     let saved_label: String = bb.label
     let mut new_instrs: List<Instruction> = []
     let mut ji: Int = 0
     for _ in 0..10000:
-        if ji >= len(bb.instructions) { break }
+        if ji >= len(bb.instructions): break
         let inst: Instruction = bb.instructions[ji]
         if instr_kind(inst) == "phi":
             let cleaned: Instruction = clean_phi_entries(inst, reachable)
@@ -248,8 +248,8 @@ fn block_terminator_targets(bb: BasicBlock) -> List<String>:
 fn find_block_by_label(blocks: List<BasicBlock>, label: String) -> Option<BasicBlock>:
     let mut i: Int = 0
     for _ in 0..5000:
-        if i >= len(blocks) { return none }
-        if blocks[i].label == label { return Some(blocks[i]) }
+        if i >= len(blocks): return none
+        if blocks[i].label == label: return Some(blocks[i])
         i = i + 1
     return none
 
@@ -257,7 +257,7 @@ fn add_targets_to_worklist(targets: List<String>, reachable: List<String>, workl
     let mut ti: Int = 0
     let mut added: Bool = false
     for _ in 0..500:
-        if ti >= len(targets) { break }
+        if ti >= len(targets): break
         if is_in_list(targets[ti], reachable) == false:
             reachable.push(targets[ti])
             worklist.push(targets[ti])
@@ -270,15 +270,15 @@ fn collect_phi_refs(f: MIRFunction) -> List<String>:
     let mut refs: List<String> = []
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { break }
+        if bi >= len(f.blocks): break
         let mut ii: Int = 0
         for _ in 0..10000:
-            if ii >= len(f.blocks[bi].instructions) { break }
+            if ii >= len(f.blocks[bi].instructions): break
             if instr_kind(f.blocks[bi].instructions[ii]) == "phi":
                 let entries: List<PhiEntry> = instr_phi_entries(f.blocks[bi].instructions[ii])
                 let mut ei: Int = 0
                 for _ in 0..200:
-                    if ei >= len(entries) { break }
+                    if ei >= len(entries): break
                     if is_in_list(entries[ei].block_label, refs) == false:
                         refs.push(entries[ei].block_label)
                     ei = ei + 1
@@ -287,22 +287,22 @@ fn collect_phi_refs(f: MIRFunction) -> List<String>:
     refs
 
 fn dead_block_elim_function(f: MIRFunction) -> MIRFunction:
-    if len(f.blocks) <= 1 { return f }
+    if len(f.blocks) <= 1: return f
     // Fixed-point reachability: start with entry, iterate until stable
     let mut reachable: List<String> = []
     reachable.push(f.blocks[0].label)
     let mut changed: Bool = true
     for _ in 0..1000:
-        if changed == false { break }
+        if changed == false: break
         changed = false
         let mut bi: Int = 0
         for _ in 0..5000:
-            if bi >= len(f.blocks) { break }
+            if bi >= len(f.blocks): break
             if is_in_list(f.blocks[bi].label, reachable):
                 let targets: List<String> = block_terminator_targets(f.blocks[bi])
                 let mut ti: Int = 0
                 for _ in 0..500:
-                    if ti >= len(targets) { break }
+                    if ti >= len(targets): break
                     if is_in_list(targets[ti], reachable) == false:
                         reachable.push(targets[ti])
                         changed = true
@@ -312,23 +312,23 @@ fn dead_block_elim_function(f: MIRFunction) -> MIRFunction:
     let phi_refs: List<String> = collect_phi_refs(f)
     let mut pi: Int = 0
     for _ in 0..5000:
-        if pi >= len(phi_refs) { break }
+        if pi >= len(phi_refs): break
         if is_in_list(phi_refs[pi], reachable) == false:
             reachable.push(phi_refs[pi])
         pi = pi + 1
     // Extend reachability from PHI-preserved blocks (they may jump to other blocks)
     let mut changed2: Bool = true
     for _ in 0..1000:
-        if changed2 == false { break }
+        if changed2 == false: break
         changed2 = false
         let mut bi2: Int = 0
         for _ in 0..5000:
-            if bi2 >= len(f.blocks) { break }
+            if bi2 >= len(f.blocks): break
             if is_in_list(f.blocks[bi2].label, reachable):
                 let targets2: List<String> = block_terminator_targets(f.blocks[bi2])
                 let mut ti2: Int = 0
                 for _ in 0..500:
-                    if ti2 >= len(targets2) { break }
+                    if ti2 >= len(targets2): break
                     if is_in_list(targets2[ti2], reachable) == false:
                         reachable.push(targets2[ti2])
                         changed2 = true
@@ -344,7 +344,7 @@ fn dead_block_elim_function(f: MIRFunction) -> MIRFunction:
     let mut cleaned_blocks: List<BasicBlock> = []
     let mut ki: Int = 0
     for _ in 0..5000:
-        if ki >= len(f.blocks) { break }
+        if ki >= len(f.blocks): break
         if is_in_list(f.blocks[ki].label, reachable):
             let cleaned: BasicBlock = clean_phis_in_block(f.blocks[ki], reachable)
             cleaned_blocks.push(cleaned)
@@ -363,14 +363,14 @@ fn dead_block_elim_function(f: MIRFunction) -> MIRFunction:
 // ---------------------------------------------------------------------------
 
 fn is_power_of_two(n: Int) -> Bool:
-    if n <= 0 { return false }
+    if n <= 0: return false
     // n & (n-1) == 0 means n is a power of 2
     let check: Int = n - 1
     // Mapanare doesn't have bitwise AND on Int, so check manually
     // Powers of 2: 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, ...
     let mut p: Int = 1
     for _ in 0..63:
-        if p == n { return true }
+        if p == n: return true
         p = p * 2
     return false
 
@@ -379,7 +379,7 @@ fn power_of_two_mask(n: Int) -> Int = n - 1
 
 fn try_strength_reduce(inst: Instruction) -> Option<Instruction>:
     let ik: String = instr_kind(inst)
-    if ik != "binop" { return none }
+    if ik != "binop": return none
     let op: BinOpKind = instr_binop_op(inst)
     // Only reduce Mod operations
     match op {
@@ -452,8 +452,8 @@ struct FnLookupEntry:
 fn find_fn_by_name(lookup: List<FnLookupEntry>, name: String) -> Option<MIRFunction>:
     let mut i: Int = 0
     for _ in 0..5000:
-        if i >= len(lookup) { return none }
-        if lookup[i].name == name { return Some(lookup[i].func) }
+        if i >= len(lookup): return none
+        if lookup[i].name == name: return Some(lookup[i].func)
         i = i + 1
     return none
 
@@ -461,7 +461,7 @@ fn instruction_count(f: MIRFunction) -> Int:
     let mut count: Int = 0
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { return count }
+        if bi >= len(f.blocks): return count
         count = count + len(f.blocks[bi].instructions)
         bi = bi + 1
     return count
@@ -469,22 +469,22 @@ fn instruction_count(f: MIRFunction) -> Int:
 fn is_recursive(f: MIRFunction) -> Bool:
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { return false }
+        if bi >= len(f.blocks): return false
         let mut ii: Int = 0
         for _ in 0..10000:
-            if ii >= len(f.blocks[bi].instructions) { break }
+            if ii >= len(f.blocks[bi].instructions): break
             let inst: Instruction = f.blocks[bi].instructions[ii]
             if instr_kind(inst) == "call":
-                if instr_call_fn(inst) == f.name { return true }
+                if instr_call_fn(inst) == f.name: return true
             ii = ii + 1
         bi = bi + 1
     return false
 
 fn should_inline(callee: MIRFunction, call_count: Int) -> Bool:
     // Only single-block callees (no branches, no phi, no switch)
-    if len(callee.blocks) != 1 { return false }
-    if is_recursive(callee) { return false }
-    if callee.name == "main" { return false }
+    if len(callee.blocks) != 1: return false
+    if is_recursive(callee): return false
+    if callee.name == "main": return false
     // v5.5.4 Sh.4 Phase 1: never inline async fns. In v5.5.4+ the
     // emitter wraps every async fn with coroutine scaffolding
     // (presplitcoroutine attr + coro.id/begin prologue + future
@@ -496,11 +496,11 @@ fn should_inline(callee: MIRFunction, call_count: Int) -> Bool:
     // because async fns are called via BlockOn or AwaitSuspend
     // (which handle the future extraction), never invoked as a
     // plain call whose result is used directly.
-    if fn_is_async(callee) { return false }
+    if fn_is_async(callee): return false
     let body_size: Int = instruction_count(callee)
-    if body_size == 0 { return false }
-    if body_size > 20 { return false }
-    if call_count * body_size > 200 { return false }
+    if body_size == 0: return false
+    if body_size > 20: return false
+    if call_count * body_size > 200: return false
     return true
 
 // Count how many times each function is called within fn
@@ -512,10 +512,10 @@ fn count_calls(f: MIRFunction, lookup: List<FnLookupEntry>) -> List<CallCount>:
     let mut counts: List<CallCount> = []
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { break }
+        if bi >= len(f.blocks): break
         let mut ii: Int = 0
         for _ in 0..10000:
-            if ii >= len(f.blocks[bi].instructions) { break }
+            if ii >= len(f.blocks[bi].instructions): break
             let inst: Instruction = f.blocks[bi].instructions[ii]
             if instr_kind(inst) == "call":
                 let fn_name: String = instr_call_fn(inst)
@@ -548,8 +548,8 @@ fn count_calls(f: MIRFunction, lookup: List<FnLookupEntry>) -> List<CallCount>:
 fn get_call_count(counts: List<CallCount>, name: String) -> Int:
     let mut i: Int = 0
     for _ in 0..1000:
-        if i >= len(counts) { return 0 }
-        if counts[i].name == name { return counts[i].count }
+        if i >= len(counts): return 0
+        if counts[i].name == name: return counts[i].count
         i = i + 1
     return 0
 
@@ -582,10 +582,10 @@ fn replace_use(v: Value, old_name: String, new_name: String) -> Value:
 fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) -> Instruction:
     let ik: String = instr_kind(inst)
     // No value uses
-    if ik == "const" { return inst }
-    if ik == "alloca" { return inst }
-    if ik == "jump" { return inst }
-    if ik == "wrap_none" { return inst }
+    if ik == "const": return inst
+    if ik == "alloca": return inst
+    if ik == "jump": return inst
+    if ik == "wrap_none": return inst
     // Single-use instructions
     if ik == "copy":
         return Instruction::Copy(instr_dest(inst), replace_use(instr_copy_src(inst), old_name, new_name))
@@ -644,14 +644,14 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
         let mut new_args: List<Value> = []
         let mut ai: Int = 0
         for _ in 0..100:
-            if ai >= len(args) { break }
+            if ai >= len(args): break
             new_args.push(replace_use(args[ai], old_name, new_name))
             ai = ai + 1
         // v5.7.0 Sh.7: indirect calls store the loaded SSA name as fn_name
         // (e.g. "%f_val0"). When the caller's dest is renamed downstream,
         // the indirect call's fn_name must follow.
         let mut new_fn: String = instr_call_fn(inst)
-        if new_fn == old_name { new_fn = new_name }
+        if new_fn == old_name: new_fn = new_name
         return Instruction::Call(instr_dest(inst), new_fn, new_args)
     // Phi — rename incoming values
     if ik == "phi":
@@ -659,7 +659,7 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
         let mut new_entries: List<PhiEntry> = []
         let mut pi: Int = 0
         for _ in 0..100:
-            if pi >= len(entries) { break }
+            if pi >= len(entries): break
             new_entries.push(new PhiEntry { block_label: entries[pi].block_label, val: replace_use(entries[pi].val, old_name, new_name) })
             pi = pi + 1
         return Instruction::Phi(instr_dest(inst), new_entries)
@@ -669,7 +669,7 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
         let mut new_parts: List<Value> = []
         let mut ci: Int = 0
         for _ in 0..100:
-            if ci >= len(parts) { break }
+            if ci >= len(parts): break
             new_parts.push(replace_use(parts[ci], old_name, new_name))
             ci = ci + 1
         return Instruction::InterpConcat(instr_dest(inst), new_parts)
@@ -679,7 +679,7 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
         let mut new_fields: List<FieldPair> = []
         let mut fi: Int = 0
         for _ in 0..100:
-            if fi >= len(fields) { break }
+            if fi >= len(fields): break
             new_fields.push(new FieldPair { name: fields[fi].name, val: replace_use(fields[fi].val, old_name, new_name) })
             fi = fi + 1
         return Instruction::StructInit(instr_dest(inst), instr_struct_type(inst), new_fields)
@@ -689,7 +689,7 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
         let mut new_elems: List<Value> = []
         let mut ei: Int = 0
         for _ in 0..100:
-            if ei >= len(elems) { break }
+            if ei >= len(elems): break
             new_elems.push(replace_use(elems[ei], old_name, new_name))
             ei = ei + 1
         return Instruction::ListInit(instr_dest(inst), instr_list_type(inst), new_elems)
@@ -699,7 +699,7 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
         let mut new_payload: List<Value> = []
         let mut epi: Int = 0
         for _ in 0..100:
-            if epi >= len(payload) { break }
+            if epi >= len(payload): break
             new_payload.push(replace_use(payload[epi], old_name, new_name))
             epi = epi + 1
         return Instruction::EnumInit(instr_dest(inst), instr_enum_type(inst), instr_enum_variant(inst), new_payload)
@@ -764,7 +764,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_args: List<Value> = []
         let mut ai: Int = 0
         for _ in 0..100:
-            if ai >= len(args) { break }
+            if ai >= len(args): break
             new_args.push(rename_value(args[ai], prefix, renames))
             ai = ai + 1
         // v5.7.0 Sh.7: indirect calls have fn_name == "%localval" and
@@ -776,8 +776,8 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
             let bare: String = fn_str.substr(1, len(fn_str) - 1)
             let rn_opt: Option<String> = find_const(renames, fn_str)
             match rn_opt:
-                Some(rn) => { new_fn_str = rn }
-                _ => { new_fn_str = "%" + prefix + bare }
+                Some(rn) => new_fn_str = rn
+                _ => new_fn_str = "%" + prefix + bare
         result.push(Instruction::Call(new_dest, new_fn_str, new_args))
         return result
 
@@ -836,7 +836,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_fields: List<FieldPair> = []
         let mut fi2: Int = 0
         for _ in 0..100:
-            if fi2 >= len(fields) { break }
+            if fi2 >= len(fields): break
             new_fields.push(new FieldPair { name: fields[fi2].name, val: rename_value(fields[fi2].val, prefix, renames) })
             fi2 = fi2 + 1
         result.push(Instruction::StructInit(new_dest, instr_struct_type(inst), new_fields))
@@ -849,7 +849,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_elems: List<Value> = []
         let mut ei2: Int = 0
         for _ in 0..100:
-            if ei2 >= len(elems) { break }
+            if ei2 >= len(elems): break
             new_elems.push(rename_value(elems[ei2], prefix, renames))
             ei2 = ei2 + 1
         result.push(Instruction::ListInit(new_dest, instr_list_type(inst), new_elems))
@@ -862,7 +862,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_t_elems: List<Value> = []
         let mut ti2: Int = 0
         for _ in 0..100:
-            if ti2 >= len(t_elems) { break }
+            if ti2 >= len(t_elems): break
             new_t_elems.push(rename_value(t_elems[ti2], prefix, renames))
             ti2 = ti2 + 1
         result.push(Instruction::TensorInit(new_dest, instr_tensor_type(inst), instr_tensor_shape(inst), new_t_elems))
@@ -891,7 +891,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_pairs: List<KVPair> = []
         let mut mi2: Int = 0
         for _ in 0..100:
-            if mi2 >= len(pairs) { break }
+            if mi2 >= len(pairs): break
             new_pairs.push(new KVPair { key: rename_value(pairs[mi2].key, prefix, renames), val: rename_value(pairs[mi2].val, prefix, renames) })
             mi2 = mi2 + 1
         result.push(Instruction::MapInit(new_dest, instr_map_key_type(inst), instr_map_val_type(inst), new_pairs))
@@ -904,7 +904,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_payload: List<Value> = []
         let mut epi2: Int = 0
         for _ in 0..100:
-            if epi2 >= len(payload) { break }
+            if epi2 >= len(payload): break
             new_payload.push(rename_value(payload[epi2], prefix, renames))
             epi2 = epi2 + 1
         result.push(Instruction::EnumInit(new_dest, instr_enum_type(inst), instr_enum_variant(inst), new_payload))
@@ -965,7 +965,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_parts: List<Value> = []
         let mut ci2: Int = 0
         for _ in 0..100:
-            if ci2 >= len(parts) { break }
+            if ci2 >= len(parts): break
             new_parts.push(rename_value(parts[ci2], prefix, renames))
             ci2 = ci2 + 1
         result.push(Instruction::InterpConcat(new_dest, new_parts))
@@ -978,7 +978,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_entries: List<PhiEntry> = []
         let mut pi4: Int = 0
         for _ in 0..100:
-            if pi4 >= len(entries) { break }
+            if pi4 >= len(entries): break
             new_entries.push(new PhiEntry { block_label: prefix + entries[pi4].block_label, val: rename_value(entries[pi4].val, prefix, renames) })
             pi4 = pi4 + 1
         result.push(Instruction::Phi(new_dest, new_entries))
@@ -991,7 +991,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_a_args: List<Value> = []
         let mut ai2: Int = 0
         for _ in 0..100:
-            if ai2 >= len(a_args) { break }
+            if ai2 >= len(a_args): break
             new_a_args.push(rename_value(a_args[ai2], prefix, renames))
             ai2 = ai2 + 1
         result.push(Instruction::AgentSpawn(new_dest, instr_agent_type(inst), new_a_args))
@@ -1040,7 +1040,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_s_args: List<Value> = []
         let mut si2: Int = 0
         for _ in 0..100:
-            if si2 >= len(s_args) { break }
+            if si2 >= len(s_args): break
             new_s_args.push(rename_value(s_args[si2], prefix, renames))
             si2 = si2 + 1
         result.push(Instruction::StreamOp(new_dest, instr_streamop_kind(inst), new_src, new_s_args))
@@ -1064,7 +1064,7 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
         let mut new_cases: List<SwitchCase> = []
         let mut sci: Int = 0
         for _ in 0..100:
-            if sci >= len(cases) { break }
+            if sci >= len(cases): break
             new_cases.push(new SwitchCase { tag_value: cases[sci].tag_value, block_label: prefix + cases[sci].block_label })
             sci = sci + 1
         result.push(Instruction::Switch(new_tag, new_cases, prefix + instr_switch_default(inst)))
@@ -1093,13 +1093,13 @@ fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<Const
 
 // Rename PHI predecessor labels: old_label → new_label
 fn rename_phi_pred(inst: Instruction, old_label: String, new_label: String) -> Instruction:
-    if instr_kind(inst) != "phi" { return inst }
+    if instr_kind(inst) != "phi": return inst
     let entries: List<PhiEntry> = instr_phi_entries(inst)
     let mut new_entries: List<PhiEntry> = []
     let mut changed: Bool = false
     let mut i: Int = 0
     for _ in 0..100:
-        if i >= len(entries) { break }
+        if i >= len(entries): break
         if entries[i].block_label == old_label:
             new_entries.push(new PhiEntry { block_label: new_label, val: entries[i].val })
             changed = true
@@ -1114,13 +1114,13 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
 
     // Count calls per callee
     let call_counts: List<CallCount> = count_calls(f, lookup)
-    if len(call_counts) == 0 { return f }
+    if len(call_counts) == 0: return f
 
     // Find eligible callees
     let mut eligible: List<String> = []
     let mut ci: Int = 0
     for _ in 0..1000:
-        if ci >= len(call_counts) { break }
+        if ci >= len(call_counts): break
         let cc: CallCount = call_counts[ci]
         let callee_opt: Option<MIRFunction> = find_fn_by_name(lookup, cc.name)
         match callee_opt {
@@ -1132,16 +1132,16 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
             _ => {}
         }
         ci = ci + 1
-    if len(eligible) == 0 { return f }
+    if len(eligible) == 0: return f
 
     // Find first eligible call site and inline it
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { return f }
+        if bi >= len(f.blocks): return f
         let bb: BasicBlock = f.blocks[bi]
         let mut ii: Int = 0
         for _ in 0..10000:
-            if ii >= len(bb.instructions) { break }
+            if ii >= len(bb.instructions): break
             let inst: Instruction = bb.instructions[ii]
             if instr_kind(inst) == "call":
                 let callee_name: String = instr_call_fn(inst)
@@ -1295,38 +1295,38 @@ fn block_successors(bb: BasicBlock) -> List<String>:
 fn is_pure_instruction(inst: Instruction) -> Bool:
     let ik: String = instr_kind(inst)
     // Pure: const, copy, binop, unaryop, cast
-    if ik == "const" { return true }
-    if ik == "copy" { return true }
-    if ik == "binop" { return true }
-    if ik == "unaryop" { return true }
-    if ik == "cast" { return true }
+    if ik == "const": return true
+    if ik == "copy": return true
+    if ik == "binop": return true
+    if ik == "unaryop": return true
+    if ik == "cast": return true
     // Not pure: call, store, load (may have side effects), control flow
     return false
 
 // Check if all uses of an instruction are defined outside the loop
 fn is_loop_invariant(inst: Instruction, loop_body: List<String>, loop_defs: List<String>) -> Bool:
-    if is_pure_instruction(inst) == false { return false }
+    if is_pure_instruction(inst) == false: return false
     let ik: String = instr_kind(inst)
     // Check operands
     if ik == "binop":
         let lhs: Value = instr_binop_lhs(inst)
         let rhs: Value = instr_binop_rhs(inst)
-        if lhs.name.starts_with("%") && is_in_list(lhs.name, loop_defs) { return false }
-        if rhs.name.starts_with("%") && is_in_list(rhs.name, loop_defs) { return false }
+        if lhs.name.starts_with("%") && is_in_list(lhs.name, loop_defs): return false
+        if rhs.name.starts_with("%") && is_in_list(rhs.name, loop_defs): return false
         return true
     if ik == "copy":
         let src: Value = instr_copy_src(inst)
-        if src.name.starts_with("%") && is_in_list(src.name, loop_defs) { return false }
+        if src.name.starts_with("%") && is_in_list(src.name, loop_defs): return false
         return true
     if ik == "unaryop":
         let operand: Value = instr_unaryop_operand(inst)
-        if operand.name.starts_with("%") && is_in_list(operand.name, loop_defs) { return false }
+        if operand.name.starts_with("%") && is_in_list(operand.name, loop_defs): return false
         return true
     if ik == "cast":
         let src: Value = instr_cast_src(inst)
-        if src.name.starts_with("%") && is_in_list(src.name, loop_defs) { return false }
+        if src.name.starts_with("%") && is_in_list(src.name, loop_defs): return false
         return true
-    if ik == "const" { return true }
+    if ik == "const": return true
     return false
 
 // Collect all definitions (dest names) in loop body blocks
@@ -1334,11 +1334,11 @@ fn collect_loop_defs(f: MIRFunction, loop_body: List<String>) -> List<String>:
     let mut defs: List<String> = []
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { break }
+        if bi >= len(f.blocks): break
         if is_in_list(f.blocks[bi].label, loop_body):
             let mut ii: Int = 0
             for _ in 0..10000:
-                if ii >= len(f.blocks[bi].instructions) { break }
+                if ii >= len(f.blocks[bi].instructions): break
                 let inst: Instruction = f.blocks[bi].instructions[ii]
                 let dest: Value = instr_dest(inst)
                 if len(dest.name) > 0 && dest.name.starts_with("%"):
@@ -1352,8 +1352,8 @@ fn collect_loop_defs(f: MIRFunction, loop_body: List<String>) -> List<String>:
 fn find_earlier_block(blocks: List<BasicBlock>, label: String, before_idx: Int) -> Int:
     let mut i: Int = 0
     for _ in 0..5000:
-        if i >= before_idx { return -1 }
-        if blocks[i].label == label { return i }
+        if i >= before_idx: return -1
+        if blocks[i].label == label: return i
         i = i + 1
     return -1
 
@@ -1363,10 +1363,10 @@ fn find_earlier_block(blocks: List<BasicBlock>, label: String, before_idx: Int) 
 fn find_invariant_in_loop(f: MIRFunction, header_idx: Int, back_idx: Int, loop_body: List<String>, loop_defs: List<String>) -> Int:
     let mut lbi: Int = header_idx + 1
     for _ in 0..5000:
-        if lbi > back_idx { return -1 }
+        if lbi > back_idx: return -1
         let mut lii: Int = 0
         for _ in 0..10000:
-            if lii >= len(f.blocks[lbi].instructions) { break }
+            if lii >= len(f.blocks[lbi].instructions): break
             let linst: Instruction = f.blocks[lbi].instructions[lii]
             if is_loop_invariant(linst, loop_body, loop_defs):
                 let dest: Value = instr_dest(linst)
@@ -1383,7 +1383,7 @@ fn hoist_instruction(f: MIRFunction, header_idx: Int, src_block_idx: Int, src_in
     let mut src_instrs: List<Instruction> = []
     let mut ri: Int = 0
     for _ in 0..10000:
-        if ri >= len(f.blocks[src_block_idx].instructions) { break }
+        if ri >= len(f.blocks[src_block_idx].instructions): break
         if ri != src_inst_idx:
             src_instrs.push(f.blocks[src_block_idx].instructions[ri])
         ri = ri + 1
@@ -1393,7 +1393,7 @@ fn hoist_instruction(f: MIRFunction, header_idx: Int, src_block_idx: Int, src_in
     let insert_pos: Int = len(header_bb.instructions) - 1
     let mut hi2: Int = 0
     for _ in 0..10000:
-        if hi2 >= len(header_bb.instructions) { break }
+        if hi2 >= len(header_bb.instructions): break
         if hi2 == insert_pos:
             hdr_instrs.push(hoisted)
         hdr_instrs.push(header_bb.instructions[hi2])
@@ -1402,7 +1402,7 @@ fn hoist_instruction(f: MIRFunction, header_idx: Int, src_block_idx: Int, src_in
     let mut new_blocks: List<BasicBlock> = []
     let mut nbi: Int = 0
     for _ in 0..5000:
-        if nbi >= len(f.blocks) { break }
+        if nbi >= len(f.blocks): break
         if nbi == header_idx:
             new_blocks.push(new BasicBlock { label: header_bb.label, instructions: hdr_instrs })
         else if nbi == src_block_idx:
@@ -1416,19 +1416,19 @@ fn hoist_instruction(f: MIRFunction, header_idx: Int, src_block_idx: Int, src_in
 fn licm_function(f: MIRFunction) -> MIRFunction:
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { return f }
+        if bi >= len(f.blocks): return f
         let bb: BasicBlock = f.blocks[bi]
         let succs: List<String> = block_successors(bb)
         let mut s_idx: Int = 0
         for _ in 0..10:
-            if s_idx >= len(succs) { break }
+            if s_idx >= len(succs): break
             let header_idx: Int = find_earlier_block(f.blocks, succs[s_idx], bi)
             if header_idx >= 0:
                 // Found a back edge: bi → header_idx
                 let mut loop_body: List<String> = []
                 let mut li: Int = header_idx
                 for _ in 0..5000:
-                    if li > bi { break }
+                    if li > bi: break
                     loop_body.push(f.blocks[li].label)
                     li = li + 1
                 let loop_defs: List<String> = collect_loop_defs(f, loop_body)
@@ -1450,25 +1450,25 @@ fn licm_function(f: MIRFunction) -> MIRFunction:
 
 fn is_alloc_instruction(inst: Instruction) -> Bool:
     let ik: String = instr_kind(inst)
-    if ik == "struct_init" { return true }
-    if ik == "enum_init" { return true }
-    if ik == "list_init" { return true }
-    if ik == "map_init" { return true }
-    if ik == "wrap_some" { return true }
-    if ik == "wrap_none" { return true }
-    if ik == "wrap_ok" { return true }
-    if ik == "wrap_err" { return true }
-    if ik == "interp_concat" { return true }
+    if ik == "struct_init": return true
+    if ik == "enum_init": return true
+    if ik == "list_init": return true
+    if ik == "map_init": return true
+    if ik == "wrap_some": return true
+    if ik == "wrap_none": return true
+    if ik == "wrap_ok": return true
+    if ik == "wrap_err": return true
+    if ik == "interp_concat": return true
     return false
 
 // Check if a value name is used in ways that cause it to escape
 fn check_escape(f: MIRFunction, alloc_name: String) -> Bool:
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { break }
+        if bi >= len(f.blocks): break
         let mut ii: Int = 0
         for _ in 0..10000:
-            if ii >= len(f.blocks[bi].instructions) { break }
+            if ii >= len(f.blocks[bi].instructions): break
             let inst: Instruction = f.blocks[bi].instructions[ii]
             let ik: String = instr_kind(inst)
             // Returned — escapes
@@ -1482,21 +1482,21 @@ fn check_escape(f: MIRFunction, alloc_name: String) -> Bool:
                 }
             // Stored in a struct field — escapes
             if ik == "field_set":
-                if instr_fieldset_val(inst).name == alloc_name { return true }
+                if instr_fieldset_val(inst).name == alloc_name: return true
             // Stored in a container — escapes
             if ik == "index_set":
-                if instr_indexset_val(inst).name == alloc_name { return true }
+                if instr_indexset_val(inst).name == alloc_name: return true
             // Passed to a call (conservative: any call = escape)
             if ik == "call":
                 let args: List<Value> = instr_call_args(inst)
                 let mut ai: Int = 0
                 for _ in 0..100:
-                    if ai >= len(args) { break }
-                    if args[ai].name == alloc_name { return true }
+                    if ai >= len(args): break
+                    if args[ai].name == alloc_name: return true
                     ai = ai + 1
             // Agent send — escapes
             if ik == "agent_send":
-                if instr_agentsend_val(inst).name == alloc_name { return true }
+                if instr_agentsend_val(inst).name == alloc_name: return true
             ii = ii + 1
         bi = bi + 1
     return false
@@ -1517,10 +1517,10 @@ fn escape_analysis_function(f: MIRFunction) -> MIRFunction:
     let mut alloc_names: List<String> = []
     let mut bi: Int = 0
     for _ in 0..5000:
-        if bi >= len(f.blocks) { break }
+        if bi >= len(f.blocks): break
         let mut ii: Int = 0
         for _ in 0..10000:
-            if ii >= len(f.blocks[bi].instructions) { break }
+            if ii >= len(f.blocks[bi].instructions): break
             let inst: Instruction = f.blocks[bi].instructions[ii]
             if is_alloc_instruction(inst):
                 let dest: Value = instr_dest(inst)
@@ -1528,13 +1528,13 @@ fn escape_analysis_function(f: MIRFunction) -> MIRFunction:
                     alloc_names.push(dest.name)
             ii = ii + 1
         bi = bi + 1
-    if len(alloc_names) == 0 { return f }
+    if len(alloc_names) == 0: return f
 
     // Run escape analysis for each allocation
     let mut non_escaping: Int = 0
     let mut ai: Int = 0
     for _ in 0..10000:
-        if ai >= len(alloc_names) { break }
+        if ai >= len(alloc_names): break
         let escapes: Bool = check_escape(f, alloc_names[ai])
         if escapes == false:
             non_escaping = non_escaping + 1
@@ -1555,7 +1555,7 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule:
     let mut lookup: List<FnLookupEntry> = []
     let mut li: Int = 0
     for _ in 0..5000:
-        if li >= len(module.functions) { break }
+        if li >= len(module.functions): break
         lookup.push(new FnLookupEntry { name: module.functions[li].name, func: module.functions[li] })
         li = li + 1
     let mut new_fns: List<MIRFunction> = []

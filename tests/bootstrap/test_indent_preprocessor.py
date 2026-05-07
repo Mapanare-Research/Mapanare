@@ -19,7 +19,19 @@ import subprocess
 
 import pytest
 
-from mapanare.parser import _indent_to_braces
+from mapanare.parser import _indent_to_braces, _rewrite_arm_stmt_shorthand
+
+
+def _python_preprocess(source: str) -> str:
+    """v5.48.1 Te.3.D.4.6: full Python preprocessor pipeline.
+
+    Mirrors what `mapanare/parser.py::parse` runs and what the
+    self-host `run_preprocess` runs on the C side: first
+    `_indent_to_braces` then `_rewrite_arm_stmt_shorthand`. The
+    cross-bootstrap byte-identity contract is asserted on the full
+    pipeline output.
+    """
+    return _rewrite_arm_stmt_shorthand(_indent_to_braces(source))
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 STAGE1 = ROOT / "mapanare" / "self" / "mnc-stage1"
@@ -111,6 +123,125 @@ FIXTURES: list[tuple[str, str]] = [
         "    else:\n"
         "        return 3\n",
     ),
+    # v5.48.1 Te.3.D.4.6: single-line statement-block colon body
+    # (positive). Each new accepted head shape gets one fixture. The
+    # byte-identity contract is asserted against the full pipeline
+    # (_indent_to_braces + _rewrite_arm_stmt_shorthand on Python side;
+    # __mn_indent_to_braces + __mn_rewrite_arm_stmt_shorthand via
+    # `mnc-stage1 preprocess` on the C side).
+    (
+        "v5481_inline_if",
+        "fn f(x: Int) -> Int:\n    if x > 0: return 1\n    return 0\n",
+    ),
+    (
+        "v5481_inline_si",
+        "fn f(x: Int) -> Int:\n    si x > 0: da 1\n    da 0\n",
+    ),
+    (
+        "v5481_inline_while",
+        "fn f():\n    while ready(): step()\n",
+    ),
+    (
+        "v5481_inline_mien",
+        "fn f():\n    mien ready(): step()\n",
+    ),
+    (
+        "v5481_inline_for",
+        "fn f(xs: List<Int>):\n    for x in xs: print(x)\n",
+    ),
+    (
+        "v5481_inline_cada",
+        "fn f(xs: List<Int>):\n    cada x in xs: print(x)\n",
+    ),
+    (
+        "v5481_inline_fn_zero_arg",
+        "fn main(): print(1)\n",
+    ),
+    (
+        "v5481_inline_fn_zero_arg_ret",
+        "fn pi() -> Float: return 3.14\n",
+    ),
+    (
+        "v5481_inline_pub_fn",
+        "pub fn ping(): print(1)\n",
+    ),
+    (
+        "v5481_inline_async_fn",
+        "async fn run(): print(1)\n",
+    ),
+    # v5.48.1 single-line continuation body
+    (
+        "v5481_inline_else",
+        "fn f(x: Int) -> Int:\n    if x > 0:\n        return 1\n    else: return 0\n",
+    ),
+    (
+        "v5481_inline_sino",
+        "fn f(x: Int) -> Int:\n    si x > 0:\n        da 1\n    sino: da 0\n",
+    ),
+    (
+        "v5481_inline_else_if",
+        "fn f(x: Int) -> Int:\n    if x > 0:\n        return 1\n    else if x < 0: return -1\n    return 0\n",
+    ),
+    (
+        "v5481_inline_sino_si",
+        "fn f(x: Int) -> Int:\n    si x > 0:\n        da 1\n    sino si x < 0: da -1\n    da 0\n",
+    ),
+    # v5.48.1 match-arm statement shorthand — all 7 keywords
+    (
+        "v5481_arm_short_return",
+        "fn f(e: Expr) -> Int:\n    match e:\n        IntLit(n) => return n\n        _ => return 0\n",
+    ),
+    (
+        "v5481_arm_short_da",
+        "fn f(e: Expr) -> Int:\n    match e:\n        IntLit(n) => da n\n        _ => da 0\n",
+    ),
+    (
+        "v5481_arm_short_break",
+        "fn f():\n    while ready():\n        match e:\n            X => break\n            _ => sigue\n",
+    ),
+    (
+        "v5481_arm_short_sal",
+        "fn f():\n    while ready():\n        match e:\n            X => sal\n            _ => sigue\n",
+    ),
+    (
+        "v5481_arm_short_continue",
+        "fn f():\n    while ready():\n        match e:\n            X => continue\n            _ => break\n",
+    ),
+    (
+        "v5481_arm_short_sigue",
+        "fn f():\n    while ready():\n        match e:\n            X => sigue\n            _ => sal\n",
+    ),
+    (
+        "v5481_arm_short_pass",
+        "fn f(e: Expr):\n    match e:\n        X => pass\n        _ => pass\n",
+    ),
+    # v5.48.1 negative shapes — must NOT migrate / must NOT trigger
+    (
+        "v5481_neg_let_with_type_ann",
+        "fn f():\n    let x: Int = 5\n    print(x)\n",
+    ),
+    (
+        "v5481_neg_struct_literal",
+        "fn f():\n    let p = Point { x: 1, y: 2 }\n",
+    ),
+    (
+        "v5481_neg_namespace_op",
+        "fn f():\n    let r = X::Y::Z\n    print(r)\n",
+    ),
+    (
+        "v5481_neg_generic_with_colon_open",
+        "fn max<T: Ord>(a: T, b: T) -> T {\n    return a\n}\n",
+    ),
+    # v5.48.1 Te.3.D.5.1: `{` inside a string literal must NOT
+    # disable single-line detection. Real shape from
+    # mapanare/self/lexer.mn — `if ch == "{": stmt` was preserved
+    # as colon form by the unguarded `'{' not in content` check,
+    # then rejected by the LALR parser. Both Python and C must mask
+    # strings before the guard.
+    (
+        "v5481_brace_in_string_literal",
+        "fn classify(ch: String) -> String:\n    if ch == \"{\": return \"LBRACE\"\n    return \"OTHER\"\n",
+    ),
 ]
 
 
@@ -120,7 +251,7 @@ FIXTURES: list[tuple[str, str]] = [
     ids=[name for name, _ in FIXTURES],
 )
 def test_fixture_matches_python(name: str, src: str) -> None:
-    py = _indent_to_braces(src)
+    py = _python_preprocess(src)
     c = _bootstrap_preprocess(src)
     assert py == c, (
         f"divergence on fixture {name!r}\n"
@@ -146,7 +277,7 @@ def test_brace_form_passes_through(path: pathlib.Path) -> None:
     """Every brace-form golden should hit the fast path on both sides
     and emerge byte-identical."""
     src = path.read_text(encoding="utf-8")
-    py = _indent_to_braces(src)
+    py = _python_preprocess(src)
     c = _bootstrap_preprocess(src)
     assert py == c, f"divergence on brace-form {path.name}"
 
@@ -166,7 +297,7 @@ def test_colon_form_round_trip(path: pathlib.Path) -> None:
     from mapanare.format import to_terse
 
     terse = to_terse(src)
-    py = _indent_to_braces(terse)
+    py = _python_preprocess(terse)
     c = _bootstrap_preprocess(terse)
     assert py == c, (
         f"divergence on colon-form {path.name}\n"

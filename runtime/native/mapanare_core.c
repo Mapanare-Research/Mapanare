@@ -3925,6 +3925,259 @@ static int mn_ib_opener_needs_comma(const char *body, int64_t n) {
     return 0;
 }
 
+/* True if (s, n) contains byte c. */
+static int mn_ib_contains_byte(const char *s, int64_t n, char c) {
+    for (int64_t i = 0; i < n; i++) if (s[i] == c) return 1;
+    return 0;
+}
+
+/* True if (s, n) contains byte c OUTSIDE string/char literals and
+ * outside `//` line comments. v5.48.1 Te.3.D.5.1: used by the
+ * single-line guard to ignore `{` that appears only inside a string
+ * literal (e.g. `if ch == "{": stmt`). Mirrors the Python
+ * `_mask_strings_chars` walk inline without allocating a shadow buffer.
+ */
+static int mn_ib_contains_byte_unquoted(const char *s, int64_t n, char c) {
+    int in_str = 0, in_char = 0;
+    int64_t i = 0;
+    while (i < n) {
+        char ch = s[i];
+        if (in_str) {
+            if (ch == '\\' && i + 1 < n) { i += 2; continue; }
+            if (ch == '"') in_str = 0;
+            i += 1;
+            continue;
+        }
+        if (in_char) {
+            if (ch == '\\' && i + 1 < n) { i += 2; continue; }
+            if (ch == '\'') in_char = 0;
+            i += 1;
+            continue;
+        }
+        if (ch == '/' && i + 1 < n && s[i + 1] == '/') return 0;
+        if (ch == '"') { in_str = 1; i += 1; continue; }
+        if (ch == '\'') { in_char = 1; i += 1; continue; }
+        if (ch == c) return 1;
+        i += 1;
+    }
+    return 0;
+}
+
+/* -----------------------------------------------------------------------
+ * v5.48.1 Te.3.D.4.1: single-line colon block helpers (C mirror of the
+ * Python helpers added in v5.48.0 at mapanare/parser.py:2105-2257).
+ *
+ * These mirror the Python helpers byte-for-byte. The cross-bootstrap
+ * test (tests/bootstrap/test_indent_preprocessor.py) is the oracle —
+ * if any helper diverges from its Python counterpart on any v5.48.1
+ * fixture, the C side has the bug.
+ * ----------------------------------------------------------------------- */
+
+/* Detect `<head>: <body>` shape on a single logical line.
+ *
+ * Returns 1 if a top-level (depth-0) `:` splits the (content, n) slice
+ * into a non-empty head and a non-empty body. Out-pointers receive
+ * head_off / head_len (head is content[:i].rstrip()) and body_off /
+ * body_len (body is content[i+1:].lstrip()). Returns 0 otherwise.
+ *
+ * Skips colons inside parentheses / brackets / braces, string literals,
+ * and char literals. Bails on `//` line comments. Skips `::` namespace
+ * operator (both prefix and suffix forms).
+ *
+ * Caller decides whether the returned head is a statement-block opener
+ * via mn_ib_is_single_line_stmt_head and whether to migrate.
+ *
+ * Mirrors mapanare/parser.py::_split_inline_colon_body.
+ */
+static int mn_ib_split_inline_colon(const char *content, int64_t n,
+                                     int64_t *out_head_off, int64_t *out_head_len,
+                                     int64_t *out_body_off, int64_t *out_body_len)
+{
+    int64_t depth = 0;
+    int in_str = 0, in_char = 0;
+    int64_t i = 0;
+    while (i < n) {
+        char ch = content[i];
+        if (in_str) {
+            if (ch == '\\' && i + 1 < n) { i += 2; continue; }
+            if (ch == '"') in_str = 0;
+            i += 1;
+            continue;
+        }
+        if (in_char) {
+            if (ch == '\\' && i + 1 < n) { i += 2; continue; }
+            if (ch == '\'') in_char = 0;
+            i += 1;
+            continue;
+        }
+        if (ch == '"') { in_str = 1; i += 1; continue; }
+        if (ch == '\'') { in_char = 1; i += 1; continue; }
+        if (ch == '/' && i + 1 < n && content[i + 1] == '/') return 0;
+        if (ch == '(' || ch == '[' || ch == '{') {
+            depth += 1;
+        } else if (ch == ')' || ch == ']' || ch == '}') {
+            if (depth > 0) depth -= 1;
+        } else if (ch == ':' && depth == 0) {
+            /* Skip `::` namespace operator (symmetric: a colon adjacent
+             * to another colon either side is part of an operator). */
+            if (i + 1 < n && content[i + 1] == ':') { i += 2; continue; }
+            if (i > 0 && content[i - 1] == ':') { i += 1; continue; }
+            int64_t head_len = mn_ib_rstrip_len(content, i);
+            int64_t body_off_raw = i + 1;
+            int64_t body_lstrip = mn_ib_lstrip_off(content + body_off_raw, n - body_off_raw);
+            int64_t body_off = body_off_raw + body_lstrip;
+            int64_t body_len = n - body_off;
+            if (head_len <= 0 || body_len <= 0) return 0;
+            *out_head_off = 0;
+            *out_head_len = head_len;
+            *out_body_off = body_off;
+            *out_body_len = body_len;
+            return 1;
+        }
+        i += 1;
+    }
+    return 0;
+}
+
+/* True iff (head, hn) is the head of a single-line statement block
+ * (`if x`, `fn main()`, `while ready()`) or a continuation
+ * (`else`, `else if x`, `sino si x`). Comma-body heads (struct/enum/
+ * match/tipo/modo/way) and block-only heads (trait/impl/agent) return
+ * false — those bodies need the multi-line block grammar.
+ *
+ * Mirrors mapanare/parser.py::_is_single_line_stmt_head.
+ */
+static int mn_ib_is_single_line_stmt_head(const char *head, int64_t hn) {
+    /* strip */
+    int64_t lo = mn_ib_lstrip_off(head, hn);
+    const char *s = head + lo;
+    int64_t n = mn_ib_rstrip_len(s, hn - lo);
+
+    /* Strip a leading "} " continuation closer if present. */
+    if (n >= 2 && s[0] == '}' && s[1] == ' ') {
+        s += 2; n -= 2;
+        int64_t off = mn_ib_lstrip_off(s, n);
+        s += off; n -= off;
+    }
+
+    /* Strip optional modifier prefixes (`pub `, `async `, `extern `).
+     * Loop because they may stack (`pub async fn`). */
+    static const char *prefs[] = { "pub ", "async ", "extern ", NULL };
+    int changed = 1;
+    while (changed) {
+        changed = 0;
+        for (int pi = 0; prefs[pi]; pi++) {
+            if (mn_ib_starts_with(s, n, prefs[pi])) {
+                int64_t k = (int64_t)strlen(prefs[pi]);
+                s += k; n -= k;
+                int64_t off = mn_ib_lstrip_off(s, n);
+                s += off; n -= off;
+                changed = 1;
+                break;
+            }
+        }
+    }
+
+    static const char *stmt_kws[] = {
+        "fn", "if", "si", "while", "mien", "for", "cada", NULL
+    };
+    for (int ki = 0; stmt_kws[ki]; ki++) {
+        const char *kw = stmt_kws[ki];
+        int64_t k = (int64_t)strlen(kw);
+        if (n == k && memcmp(s, kw, (size_t)k) == 0) return 1;
+        if (n > k && memcmp(s, kw, (size_t)k) == 0) {
+            char nc = s[k];
+            if (nc == ' ' || nc == '(' || nc == '<') return 1;
+        }
+    }
+
+    static const char *cont_kws[] = { "else", "sino", NULL };
+    for (int ki = 0; cont_kws[ki]; ki++) {
+        const char *kw = cont_kws[ki];
+        int64_t k = (int64_t)strlen(kw);
+        if (n == k && memcmp(s, kw, (size_t)k) == 0) return 1;
+        if (n > k && memcmp(s, kw, (size_t)k) == 0 && s[k] == ' ') return 1;
+    }
+    return 0;
+}
+
+/* Append the recursive rewrite of (body, body_n) to `out`.
+ * If body itself parses as `<head>: <body2>` with a stmt-block head,
+ * emits `<head> { <rewrite(body2)> }`. Otherwise appends body verbatim.
+ * Bounded recursion: each level strips one `<head>:` prefix.
+ *
+ * Mirrors mapanare/parser.py::_rewrite_inline_colon_body.
+ */
+static void mn_ib_rewrite_inline_colon_body(MnIB_LineBuf *out,
+                                             const char *body, int64_t body_n)
+{
+    int64_t h_off, h_len, b_off, b_len;
+    if (!mn_ib_split_inline_colon(body, body_n, &h_off, &h_len, &b_off, &b_len)) {
+        mn_ib_buf_append(out, body, body_n);
+        return;
+    }
+    if (!mn_ib_is_single_line_stmt_head(body + h_off, h_len)) {
+        mn_ib_buf_append(out, body, body_n);
+        return;
+    }
+    mn_ib_buf_append(out, body + h_off, h_len);
+    mn_ib_buf_append(out, " { ", 3);
+    mn_ib_rewrite_inline_colon_body(out, body + b_off, b_len);
+    mn_ib_buf_append(out, " }", 2);
+}
+
+/* Append normalized `<head>` to `out`. If head is `fn name` or
+ * `fn name -> Ret`, emits `fn name()` or `fn name() -> Ret`; otherwise
+ * appends head verbatim.
+ *
+ * Mirrors mapanare/parser.py::_normalize_fn_zero_arg_head.
+ */
+static void mn_ib_normalize_fn_zero_arg_head(MnIB_LineBuf *out,
+                                              const char *head, int64_t hn)
+{
+    if (!mn_ib_starts_with(head, hn, "fn ")) {
+        mn_ib_buf_append(out, head, hn);
+        return;
+    }
+    if (mn_ib_contains_byte(head, hn, '(')) {
+        mn_ib_buf_append(out, head, hn);
+        return;
+    }
+    /* Skip "fn ", lstrip whitespace. */
+    int64_t off = 3;
+    while (off < hn && (head[off] == ' ' || head[off] == '\t')) off++;
+    /* fn_name spans [off, end) where end is the rstripped boundary. */
+    int64_t end = mn_ib_rstrip_len(head, hn);
+    if (end < off) end = off;
+    int64_t fn_len = end - off;
+    /* Search for "->" inside fn_name. */
+    int64_t arrow_idx = -1;
+    for (int64_t j = 0; j + 1 < fn_len; j++) {
+        if (head[off + j] == '-' && head[off + j + 1] == '>') {
+            arrow_idx = j;
+            break;
+        }
+    }
+    if (arrow_idx >= 0) {
+        const char *np = head + off;
+        int64_t np_len = arrow_idx;
+        int64_t np_lo = mn_ib_lstrip_off(np, np_len);
+        int64_t np_hi = mn_ib_rstrip_len(np + np_lo, np_len - np_lo);
+        const char *rp = head + off + arrow_idx + 2;
+        int64_t rp_len = fn_len - arrow_idx - 2;
+        int64_t rp_lo = mn_ib_lstrip_off(rp, rp_len);
+        int64_t rp_hi = mn_ib_rstrip_len(rp + rp_lo, rp_len - rp_lo);
+        mn_ib_buf_append(out, "fn ", 3);
+        mn_ib_buf_append(out, np + np_lo, np_hi);
+        mn_ib_buf_append(out, "() -> ", 6);
+        mn_ib_buf_append(out, rp + rp_lo, rp_hi);
+    } else {
+        mn_ib_buf_append(out, "fn ", 3);
+        mn_ib_buf_append(out, head + off, fn_len);
+        mn_ib_buf_append(out, "()", 2);
+    }
+}
+
 /* Emit `level` 4-space indent groups into `out`. */
 static void mn_ib_emit_indent(MnIB_LineBuf *out, int64_t level) {
     for (int64_t i = 0; i < level; i++) {
@@ -3932,10 +4185,29 @@ static void mn_ib_emit_indent(MnIB_LineBuf *out, int64_t level) {
     }
 }
 
-/* Fast-path detector: any non-comment line ending in ':'. Walks the
+/* Fast-path detector: any non-comment line ending in ':' OR any
+ * non-comment line whose stripped content begins with a known
+ * single-line statement-keyword prefix hint AND contains ':'. Walks the
  * source byte-by-byte; matches the Python `any(...)` pre-check at the
- * top of `_indent_to_braces`. */
+ * top of `_indent_to_braces`.
+ *
+ * v5.48.1 Te.3.D.4.2: extended with prefix-hint check so that lines
+ * like `if x: stmt`, `fn main(): print(1)`, `else: stmt` route through
+ * the slow path even though they do not end with ':'. The check
+ * mirrors the Python `_SINGLE_LINE_PREFIX_HINT` tuple.
+ */
 static int mn_ib_has_colon_blocks(const char *src, int64_t n) {
+    /* Order: longer prefixes first where ambiguous. The list mirrors
+     * the Python _SINGLE_LINE_PREFIX_HINT verbatim. */
+    static const char *PREFIX_HINT[] = {
+        "if ", "si ", "while ", "mien ", "for ", "cada ",
+        "fn ", "pub ", "async ", "extern ",
+        /* `else`/`sino` matched without trailing space because they may
+         * be followed by `:` directly (`else:` / `sino:`) or by `if`/
+         * `si` (`else if x: ...` / `sino si x: ...`). */
+        "else", "sino", "} else", "} sino",
+        NULL
+    };
     int64_t i = 0;
     while (i < n) {
         int64_t line_start = i;
@@ -3953,6 +4225,14 @@ static int mn_ib_has_colon_blocks(const char *src, int64_t n) {
                 else if (inner_len >= 2 && content[0] == '/' && content[1] == '/') is_comment = 1;
                 if (!is_comment) {
                     if (mn_ib_ends_with_byte(src + line_start, end, ':')) return 1;
+                    /* v5.48.1 Te.3.D.4.2: prefix-hint + contains-colon. */
+                    if (mn_ib_contains_byte(content, inner_len, ':')) {
+                        for (int pi = 0; PREFIX_HINT[pi]; pi++) {
+                            if (mn_ib_starts_with(content, inner_len, PREFIX_HINT[pi])) {
+                                return 1;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -4092,22 +4372,48 @@ MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
                 indent_buf.len = 0;
                 mn_ib_emit_indent(&indent_buf, level);
                 int line_ends_colon = mn_ib_ends_with_byte(raw, stripped_len, ':');
-                MnIB_LineBuf line;
-                mn_ib_buf_init(&line);
-                mn_ib_buf_append(&line, indent_buf.data, indent_buf.len);
-                if (line_ends_colon) {
-                    /* `} body {` */
-                    int64_t body_len = mn_ib_rstrip_len(content, content_len - 1);
-                    mn_ib_buf_append(&line, "} ", 2);
-                    mn_ib_buf_append(&line, content, body_len);
-                    mn_ib_buf_append(&line, " {", 2);
-                    mn_ib_lines_push(&out, &line);
-                    /* Push frame with needs_comma=false. */
-                    mn_ib_stack_push(&stack, level + 1, 0, -1);
-                } else {
-                    mn_ib_buf_append(&line, "} ", 2);
-                    mn_ib_buf_append(&line, content, content_len);
-                    mn_ib_lines_push(&out, &line);
+                /* v5.48.1 Te.3.D.4.3: single-line continuation body
+                 * (`else: stmt`, `else if x: stmt`). Mirrors the
+                 * Python pre-check in the continuation branch of
+                 * _indent_to_braces — emits `} <head> { <body> }`
+                 * inline, no indent_stack push. */
+                int handled_single_line = 0;
+                if (!line_ends_colon) {
+                    int64_t h_off, h_len, b_off, b_len;
+                    if (mn_ib_split_inline_colon(content, content_len,
+                                                  &h_off, &h_len,
+                                                  &b_off, &b_len)
+                        && mn_ib_is_single_line_stmt_head(content + h_off, h_len)) {
+                        MnIB_LineBuf line;
+                        mn_ib_buf_init(&line);
+                        mn_ib_buf_append(&line, indent_buf.data, indent_buf.len);
+                        mn_ib_buf_append(&line, "} ", 2);
+                        mn_ib_normalize_fn_zero_arg_head(&line, content + h_off, h_len);
+                        mn_ib_buf_append(&line, " { ", 3);
+                        mn_ib_rewrite_inline_colon_body(&line, content + b_off, b_len);
+                        mn_ib_buf_append(&line, " }", 2);
+                        mn_ib_lines_push(&out, &line);
+                        handled_single_line = 1;
+                    }
+                }
+                if (!handled_single_line) {
+                    MnIB_LineBuf line;
+                    mn_ib_buf_init(&line);
+                    mn_ib_buf_append(&line, indent_buf.data, indent_buf.len);
+                    if (line_ends_colon) {
+                        /* `} body {` */
+                        int64_t body_len = mn_ib_rstrip_len(content, content_len - 1);
+                        mn_ib_buf_append(&line, "} ", 2);
+                        mn_ib_buf_append(&line, content, body_len);
+                        mn_ib_buf_append(&line, " {", 2);
+                        mn_ib_lines_push(&out, &line);
+                        /* Push frame with needs_comma=false. */
+                        mn_ib_stack_push(&stack, level + 1, 0, -1);
+                    } else {
+                        mn_ib_buf_append(&line, "} ", 2);
+                        mn_ib_buf_append(&line, content, content_len);
+                        mn_ib_lines_push(&out, &line);
+                    }
                 }
             } else {
                 /* Continuation at same level: emit as content. */
@@ -4132,6 +4438,53 @@ MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
             mn_ib_buf_append(&cl, indent_buf.data, indent_buf.len);
             mn_ib_buf_append_char(&cl, '}');
             mn_ib_lines_push(&out, &cl);
+        }
+
+        /* v5.48.1 Te.3.D.4.3: single-line statement-block colon
+         * detection. If the line is `<head>: <body>` where the head
+         * is a known stmt-block opener and the body is a single
+         * statement, rewrite to `<head> { <body> }` inline (no
+         * indent_stack push). The `'{' not in content` guard mirrors
+         * the Python protection — handles `fn max<T: Ord>(...) {`
+         * (multi-line opener with type-param colon) correctly.
+         *
+         * v5.48.1 Te.3.D.5.1: guard checks `{` OUTSIDE string/char
+         * literals so lines like `if ch == "{": stmt` (the `{` is
+         * inside a string literal in `lexer.mn`) still single-line-
+         * migrate. Without the unquoted check the preprocessor
+         * preserved them as colon form which the LALR parser then
+         * rejected with `Unexpected ':' — expected '{'`. */
+        if (!mn_ib_ends_with_byte(raw, stripped_len, ':') &&
+            !mn_ib_contains_byte_unquoted(content, content_len, '{'))
+        {
+            int64_t h_off, h_len, b_off, b_len;
+            if (mn_ib_split_inline_colon(content, content_len,
+                                          &h_off, &h_len, &b_off, &b_len)
+                && mn_ib_is_single_line_stmt_head(content + h_off, h_len)) {
+                indent_buf.len = 0;
+                mn_ib_emit_indent(&indent_buf, level);
+                MnIB_LineBuf line;
+                mn_ib_buf_init(&line);
+                mn_ib_buf_append(&line, indent_buf.data, indent_buf.len);
+                mn_ib_normalize_fn_zero_arg_head(&line, content + h_off, h_len);
+                mn_ib_buf_append(&line, " { ", 3);
+                mn_ib_rewrite_inline_colon_body(&line, content + b_off, b_len);
+                mn_ib_buf_append(&line, " }", 2);
+                /* Sibling-comma back-patch if parent block is comma-
+                 * separated (rare for single-line, kept for symmetry
+                 * with the Python implementation). */
+                MnIB_Frame *top = &stack.items[stack.len - 1];
+                if (top->needs_comma && top->prev_child_idx >= 0) {
+                    if (!mn_ib_line_rstripped_ends_with_comma(&out, top->prev_child_idx)) {
+                        mn_ib_lines_append_comma_to(&out, top->prev_child_idx);
+                    }
+                }
+                mn_ib_lines_push(&out, &line);
+                top->prev_child_idx = out.len - 1;
+                if (i >= n_src) break;
+                pos = i + 1;
+                continue;
+            }
         }
 
         if (mn_ib_ends_with_byte(raw, stripped_len, ':')) {
@@ -4248,6 +4601,254 @@ MN_EXPORT MnString __mn_indent_to_braces(MnString source) {
     MnString result;
     result.data = joined;
     result.len = total;
+    result.is_heap = 1;
+    return result;
+}
+
+/* -----------------------------------------------------------------------
+ * v5.48.1 Te.3.D.4.4: __mn_rewrite_arm_stmt_shorthand.
+ *
+ * Bootstrap mirror of mapanare/parser.py::_rewrite_arm_stmt_shorthand.
+ * Wraps `Pat => return X` -> `Pat => { return X }` for stmt-keyword
+ * arm bodies (return/da/break/sal/continue/sigue/pass). Runs after
+ * __mn_indent_to_braces — operates on the brace stream.
+ *
+ * Per-line: mask strings/chars/// to spaces in a shadow buffer; walk
+ * for `=>` positions; for each, identify the keyword at body_start;
+ * if the keyword matches and word-boundary-after holds, walk the body
+ * to first depth-0 `,` / `}` / `//` / EOL; emit the replacement
+ * `{ <body_text rstripped> }`. Replacements applied left-to-right
+ * (collected left-to-right; reverse-apply not needed because we
+ * stream into a fresh output buffer rather than splice in place).
+ *
+ * Lives in C alongside __mn_indent_to_braces — same rationale (the
+ * bootstrap lower has pathologies on a .mn port of complex string-
+ * walking logic). The byte-identity contract is enforced by
+ * tests/bootstrap/test_indent_preprocessor.py v5.48.1 fixtures.
+ * ----------------------------------------------------------------------- */
+
+static int mn_arm_is_id_char(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+static int mn_arm_is_alpha_underscore(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+static int mn_arm_is_stmt_kw(const char *s, int64_t n) {
+    static const char *kws[] = {
+        "return", "da", "break", "sal", "continue", "sigue", "pass", NULL
+    };
+    for (int i = 0; kws[i]; i++) {
+        int64_t k = (int64_t)strlen(kws[i]);
+        if (n == k && memcmp(s, kws[i], (size_t)k) == 0) return 1;
+    }
+    return 0;
+}
+
+/* Process one (line, n) and append the rewrite to `out`. Mirrors the
+ * Python `_rewrite_arm_stmts_in_line` line-for-line. */
+static void mn_arm_rewrite_line(MnIB_LineBuf *out, const char *line, int64_t n) {
+    /* Fast skip: no `=>` on this line. */
+    int has_arrow = 0;
+    for (int64_t i = 0; i + 1 < n; i++) {
+        if (line[i] == '=' && line[i + 1] == '>') { has_arrow = 1; break; }
+    }
+    if (!has_arrow) {
+        mn_ib_buf_append(out, line, n);
+        return;
+    }
+
+    /* Build shadow buffer (string/char/// → space). */
+    char *shadow = (char *)malloc((size_t)(n > 0 ? n : 1));
+    if (!shadow) {
+        fprintf(stderr, "mapanare: oom in arm_rewrite_line\n");
+        exit(1);
+    }
+    if (n > 0) memcpy(shadow, line, (size_t)n);
+
+    {
+        int in_str = 0, in_char = 0;
+        int64_t i = 0;
+        while (i < n) {
+            char ch = line[i];
+            if (in_str) {
+                shadow[i] = ' ';
+                if (ch == '\\' && i + 1 < n) { shadow[i + 1] = ' '; i += 2; continue; }
+                if (ch == '"') in_str = 0;
+                i += 1;
+                continue;
+            }
+            if (in_char) {
+                shadow[i] = ' ';
+                if (ch == '\\' && i + 1 < n) { shadow[i + 1] = ' '; i += 2; continue; }
+                if (ch == '\'') in_char = 0;
+                i += 1;
+                continue;
+            }
+            if (ch == '/' && i + 1 < n && line[i + 1] == '/') {
+                for (int64_t j = i; j < n; j++) shadow[j] = ' ';
+                break;
+            }
+            if (ch == '"') { shadow[i] = ' '; in_str = 1; i += 1; continue; }
+            if (ch == '\'') { shadow[i] = ' '; in_char = 1; i += 1; continue; }
+            i += 1;
+        }
+    }
+
+    /* Replacement records: (body_start, body_end). Collected in source
+     * order; applied as we stream into `out`. */
+    typedef struct { int64_t s; int64_t e; } MnArmRep;
+    MnArmRep *reps = NULL;
+    int64_t reps_len = 0, reps_cap = 0;
+
+    int64_t pos = 0;
+    while (pos + 1 < n) {
+        int64_t idx = -1;
+        for (int64_t k = pos; k + 1 < n; k++) {
+            if (shadow[k] == '=' && shadow[k + 1] == '>') { idx = k; break; }
+        }
+        if (idx < 0) break;
+        pos = idx + 2;
+
+        int64_t body_start = idx + 2;
+        while (body_start < n &&
+               (shadow[body_start] == ' ' || shadow[body_start] == '\t'))
+            body_start += 1;
+        if (body_start >= n) continue;
+        if (shadow[body_start] == '{') continue;
+
+        int64_t word_end = body_start;
+        while (word_end < n && mn_arm_is_alpha_underscore(shadow[word_end]))
+            word_end += 1;
+        if (!mn_arm_is_stmt_kw(shadow + body_start, word_end - body_start))
+            continue;
+        /* Word-boundary check after keyword: reject if the next char is
+         * an id continuation (e.g. `return_value`). */
+        if (word_end < n && mn_arm_is_id_char(shadow[word_end])) continue;
+
+        /* Walk body to first depth-0 `,` / `)`/`]`/`}` / `//` / EOL. */
+        int64_t depth = 0;
+        int64_t body_end = word_end;
+        int in_b_str = 0, in_b_char = 0;
+        while (body_end < n) {
+            char bc = line[body_end];
+            if (in_b_str) {
+                if (bc == '\\' && body_end + 1 < n) { body_end += 2; continue; }
+                if (bc == '"') in_b_str = 0;
+                body_end += 1;
+                continue;
+            }
+            if (in_b_char) {
+                if (bc == '\\' && body_end + 1 < n) { body_end += 2; continue; }
+                if (bc == '\'') in_b_char = 0;
+                body_end += 1;
+                continue;
+            }
+            if (bc == '"') { in_b_str = 1; body_end += 1; continue; }
+            if (bc == '\'') { in_b_char = 1; body_end += 1; continue; }
+            if (bc == '/' && body_end + 1 < n && line[body_end + 1] == '/') break;
+            if (bc == '(' || bc == '[' || bc == '{') {
+                depth += 1;
+            } else if (bc == ')' || bc == ']' || bc == '}') {
+                if (depth == 0) break;
+                depth -= 1;
+            } else if (bc == ',' && depth == 0) {
+                break;
+            }
+            body_end += 1;
+        }
+
+        /* body_text = line[body_start:body_end].rstrip() — verify
+         * non-empty before recording. */
+        int64_t bt_len = mn_ib_rstrip_len(line + body_start, body_end - body_start);
+        if (bt_len <= 0) continue;
+
+        if (reps_len >= reps_cap) {
+            int64_t new_cap = reps_cap < 4 ? 4 : reps_cap * 2;
+            reps = (MnArmRep *)realloc(reps, (size_t)new_cap * sizeof(MnArmRep));
+            if (!reps) { fprintf(stderr, "mapanare: oom\n"); exit(1); }
+            reps_cap = new_cap;
+        }
+        reps[reps_len].s = body_start;
+        reps[reps_len].e = body_end;
+        reps_len += 1;
+    }
+
+    if (reps_len == 0) {
+        mn_ib_buf_append(out, line, n);
+        free(shadow);
+        if (reps) free(reps);
+        return;
+    }
+
+    /* Stream into out: copy line[cur..reps[r].s], then `{ rstripped(body) }`,
+     * advance cur to reps[r].e. Final tail copy. */
+    int64_t cur = 0;
+    for (int64_t r = 0; r < reps_len; r++) {
+        int64_t bs = reps[r].s;
+        int64_t be = reps[r].e;
+        if (cur < bs) mn_ib_buf_append(out, line + cur, bs - cur);
+        int64_t bt_len = mn_ib_rstrip_len(line + bs, be - bs);
+        mn_ib_buf_append(out, "{ ", 2);
+        mn_ib_buf_append(out, line + bs, bt_len);
+        mn_ib_buf_append(out, " }", 2);
+        cur = be;
+    }
+    if (cur < n) mn_ib_buf_append(out, line + cur, n - cur);
+
+    free(shadow);
+    free(reps);
+}
+
+MN_EXPORT MnString __mn_rewrite_arm_stmt_shorthand(MnString source) {
+    int64_t n_src = (int64_t)source.len;
+    const char *src = source.data;
+
+    /* Fast path: no `=>` anywhere — return a fresh copy. (See
+     * __mn_indent_to_braces fast-path note about why we don't return
+     * the input MnString aliased: callers treat the result as a
+     * separately-tracked String, and aliasing produced double-free
+     * at function-end drop glue.) */
+    int has_arrow = 0;
+    for (int64_t i = 0; i + 1 < n_src; i++) {
+        if (src[i] == '=' && src[i + 1] == '>') { has_arrow = 1; break; }
+    }
+    if (!has_arrow) {
+        return __mn_str_from_parts(src, n_src);
+    }
+
+    /* Process line-by-line, joining with '\n' (mirrors Python's
+     * `"\n".join(out_lines)` — no trailing newline added). */
+    MnIB_LineBuf out;
+    mn_ib_buf_init(&out);
+
+    int64_t pos = 0;
+    int first = 1;
+    while (pos <= n_src) {
+        int64_t line_start = pos;
+        int64_t i = pos;
+        while (i < n_src && src[i] != '\n') i++;
+        int64_t line_len = i - line_start;
+        if (!first) mn_ib_buf_append_char(&out, '\n');
+        first = 0;
+        mn_arm_rewrite_line(&out, src + line_start, line_len);
+        if (i >= n_src) break;
+        pos = i + 1;
+    }
+
+    /* Always return a heap-owned MnString so caller drop-glue is
+     * symmetric with __mn_indent_to_braces. Allocate at least 1 byte
+     * so result.data is never NULL. */
+    if (out.data == NULL) {
+        out.data = (char *)malloc(1);
+        if (!out.data) { fprintf(stderr, "mapanare: oom\n"); exit(1); }
+        out.cap = 1;
+    }
+    MnString result;
+    result.data = out.data;
+    result.len = out.len;
     result.is_heap = 1;
     return result;
 }

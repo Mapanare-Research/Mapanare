@@ -372,9 +372,43 @@ def _migrate_one_line_stmt_block(leading: str, content: str) -> str | None:
     # Reject comma-body openers — their bodies need multi-line grammar.
     if any(head.startswith(p) for p in _COMMA_BODY_OPENERS):
         return None
+    # v5.48.1 Te.3.D.5.1: reject implicit-return shapes like
+    # ``fn make() -> Point = Point { x }`` — that's an expression-binding
+    # whose `{...}` is a struct literal, not a stmt block. Mirrors the
+    # `=` filter in count_user_brace_block_openers Rule (b). Without
+    # this, the formatter migrates ``fn new_token(...) -> Token = new
+    # Token { ... }`` to ``fn new_token(...) -> Token: new Token: ...``,
+    # which collapses two distinct semantic levels and is unparseable.
+    head_shadow = _mask_strings(head)
+    if _has_standalone_eq(head_shadow):
+        return None
     # Reject ``} else { body }`` chained with a trailing continuation
     # (we already filtered ``tail.strip()`` so we know nothing follows).
     return f"{leading}{head}: {body}"
+
+
+def _has_standalone_eq(s: str) -> bool:
+    """Return True if ``s`` contains a ``=`` that is NOT part of any of
+    ``==``, ``!=``, ``<=``, ``>=``, ``=>``, ``+=``, ``-=``, ``*=``,
+    ``/=``, ``%=``. Used to detect implicit-return / assignment shapes
+    that disqualify single-line stmt-block migration. Mirrors
+    ``count_user_brace_block_openers`` Rule (b)'s filter.
+    """
+    n = len(s)
+    i = 0
+    while i < n:
+        if s[i] == "=":
+            prev_ch = s[i - 1] if i > 0 else " "
+            next_ch = s[i + 1] if i + 1 < n else " "
+            if next_ch in ("=", ">"):
+                i += 2
+                continue
+            if prev_ch in ("=", "!", "<", ">", "+", "-", "*", "/", "%"):
+                i += 1
+                continue
+            return True
+        i += 1
+    return False
 
 
 def _looks_like_stmt_block_opener(opener_body: str) -> bool:

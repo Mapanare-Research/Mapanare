@@ -2367,6 +2367,8 @@ class MIRLowerer:
             "__mn_host_arch_bits": mir_int(),
             # v5.14.1 B.5/B.6: colon-block preprocessor (in C runtime).
             "__mn_indent_to_braces": mir_string(),
+            # v5.48.1 Te.3.D.4.4: match-arm shorthand rewriter (C runtime).
+            "__mn_rewrite_arm_stmt_shorthand": mir_string(),
         }
         _call_ret_ty = mir_unknown()
         if isinstance(expr.callee, Identifier):

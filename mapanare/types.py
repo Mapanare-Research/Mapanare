@@ -332,6 +332,8 @@ BUILTIN_FUNCTIONS: dict[str, TypeInfo] = {
     "__mn_host_arch_bits": INT_TYPE,
     # v5.14.1 B.5/B.6: colon-block preprocessor (in C runtime).
     "__mn_indent_to_braces": STRING_TYPE,
+    # v5.48.1 Te.3.D.4.4: match-arm statement-shorthand rewriter.
+    "__mn_rewrite_arm_stmt_shorthand": STRING_TYPE,
     # High-level I/O builtins (v3.41.0)
     "read_line": STRING_TYPE,
     "read_file": STRING_TYPE,

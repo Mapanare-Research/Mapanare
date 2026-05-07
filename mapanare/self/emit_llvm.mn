@@ -283,18 +283,18 @@ fn next_str_name(st: EmitState) -> String = "@str." + toString(st.str_counter)
 fn find_function(st: EmitState, name: String) -> Option<FnEntry>:
     let mut i: Int = len(st.functions) - 1
     for _ in 0..2000:
-        if i < 0 { return none }
+        if i < 0: return none
         let f: FnEntry = st.functions[i]
-        if f.name == name { return Some(f) }
+        if f.name == name: return Some(f)
         i = i - 1
     return none
 
 fn find_struct_entry(st: EmitState, name: String) -> Option<StructEntry>:
     let mut i: Int = len(st.structs) - 1
     for _ in 0..2000:
-        if i < 0 { return none }
+        if i < 0: return none
         let s: StructEntry = st.structs[i]
-        if s.name == name { return Some(s) }
+        if s.name == name: return Some(s)
         i = i - 1
     return none
 
@@ -434,13 +434,13 @@ fn win64_rewrite_decl_params(params: String) -> String:
 // implementation — no runtime help needed.
 fn replace_all_str(haystack: String, needle: String, repl: String) -> String:
     let nlen: Int = len(needle)
-    if nlen == 0 { return haystack }
+    if nlen == 0: return haystack
     let mut out: String = ""
     let mut start: Int = 0
     let hlen: Int = len(haystack)
     let mut i: Int = 0
     for _ in 0..10000:
-        if i + nlen > hlen { break }
+        if i + nlen > hlen: break
         let candidate: String = haystack.substr(i, nlen)
         if candidate == needle:
             out = out + haystack.substr(start, i - start) + repl
@@ -455,8 +455,8 @@ fn replace_all_str(haystack: String, needle: String, repl: String) -> String:
 // True iff `ty` is an aggregate value > 8 bytes — the Win64 threshold
 // for sret/sarg lowering. Mirrors Python emit_llvm_text._is_large_struct.
 fn is_large_aggregate(ty: String) -> Bool:
-    if !ty.starts_with("{") { return false }
-    if !ty.ends_with("}") { return false }
+    if !ty.starts_with("{"): return false
+    if !ty.ends_with("}"): return false
     return llvm_type_size(ty) > 8
 
 // v5.8.6 We.1: ABI-mode dispatch helpers. Replace the v5.8.4 single
@@ -479,13 +479,13 @@ fn is_large_aggregate(ty: String) -> Bool:
 //   Default (neither): SysV / AAPCS64 — pass and return aggregates
 //   by value as today.
 fn use_win64_abi(st: EmitState) -> Bool:
-    if !st.is_windows { return false }
-    if st.win_arch != 64 { return false }
+    if !st.is_windows: return false
+    if st.win_arch != 64: return false
     return true
 
 fn use_i686_abi(st: EmitState) -> Bool:
-    if !st.is_windows { return false }
-    if st.win_arch != 32 { return false }
+    if !st.is_windows: return false
+    if st.win_arch != 32: return false
     return true
 
 // v5.8.6 We.1: rewrites a comma-separated declaration param list for
@@ -519,24 +519,24 @@ fn i686_rewrite_decl_params(params: String) -> String:
 // to keep counter / alloca / store emission in sync.
 fn i686_sarg_rewrite_args(args_text: String, agg_ty: String, st: EmitState) -> String:
     let aty_len: Int = len(agg_ty)
-    if aty_len == 0 { return args_text }
+    if aty_len == 0: return args_text
     let h_len: Int = len(args_text)
-    if h_len == 0 { return args_text }
+    if h_len == 0: return args_text
     let mut out: String = ""
     let mut start: Int = 0
     let mut i: Int = 0
     let mut sarg_n: Int = st.counter
     for _ in 0..1000:
-        if i + aty_len > h_len { break }
+        if i + aty_len > h_len: break
         let head: String = args_text.substr(i, aty_len)
         if head == agg_ty:
             let mut j: Int = i + aty_len
-            if j < h_len && args_text.substr(j, 1) == " " { j = j + 1 }
+            if j < h_len && args_text.substr(j, 1) == " ": j = j + 1
             let mut k: Int = j
             for _ in 0..1000:
-                if k >= h_len { break }
+                if k >= h_len: break
                 let c: String = args_text.substr(k, 1)
-                if c == "," { break }
+                if c == ",": break
                 k = k + 1
             out = out + args_text.substr(start, i - start)
             out = out + "ptr byval(" + agg_ty + ") align 4 %sarg." + toString(sarg_n)
@@ -559,22 +559,22 @@ fn i686_sarg_rewrite_args(args_text: String, agg_ty: String, st: EmitState) -> S
 // those consumed by i686_sarg_rewrite_args on the same input.
 fn i686_sarg_advance_state(st: EmitState, args_text: String, agg_ty: String) -> EmitState:
     let aty_len: Int = len(agg_ty)
-    if aty_len == 0 { return st }
+    if aty_len == 0: return st
     let h_len: Int = len(args_text)
-    if h_len == 0 { return st }
+    if h_len == 0: return st
     let mut s: EmitState = st
     let mut i: Int = 0
     for _ in 0..1000:
-        if i + aty_len > h_len { break }
+        if i + aty_len > h_len: break
         let head: String = args_text.substr(i, aty_len)
         if head == agg_ty:
             let mut j: Int = i + aty_len
-            if j < h_len && args_text.substr(j, 1) == " " { j = j + 1 }
+            if j < h_len && args_text.substr(j, 1) == " ": j = j + 1
             let mut k: Int = j
             for _ in 0..1000:
-                if k >= h_len { break }
+                if k >= h_len: break
                 let c: String = args_text.substr(k, 1)
-                if c == "," { break }
+                if c == ",": break
                 k = k + 1
             let aval: String = ws_trim(args_text.substr(j, k - j))
             let sarg_n: Int = s.counter
@@ -593,20 +593,20 @@ fn i686_sarg_advance_state(st: EmitState, args_text: String, agg_ty: String) -> 
 // String method.
 fn ws_trim(s: String) -> String:
     let n: Int = len(s)
-    if n == 0 { return s }
+    if n == 0: return s
     let mut start: Int = 0
     for _ in 0..10000:
-        if start >= n { break }
+        if start >= n: break
         let c0: String = s.substr(start, 1)
-        if c0 != " " && c0 != "\t" { break }
+        if c0 != " " && c0 != "\t": break
         start = start + 1
     let mut end: Int = n
     for _ in 0..10000:
-        if end <= start { break }
+        if end <= start: break
         let c1: String = s.substr(end - 1, 1)
-        if c1 != " " && c1 != "\t" { break }
+        if c1 != " " && c1 != "\t": break
         end = end - 1
-    if start == 0 && end == n { return s }
+    if start == 0 && end == n: return s
     return s.substr(start, end - start)
 
 // v5.8.4 Wb.2: emit a runtime function call with target-aware ABI
@@ -752,27 +752,27 @@ fn emit_rt_call_void(st: EmitState, fn_name: String, args_text: String) -> EmitS
 // concatenation and integer arithmetic which is well-tested.
 fn win64_sarg_rewrite_args(args_text: String, agg_ty: String, st: EmitState) -> String:
     let aty_len: Int = len(agg_ty)
-    if aty_len == 0 { return args_text }
+    if aty_len == 0: return args_text
     let h_len: Int = len(args_text)
-    if h_len == 0 { return args_text }
+    if h_len == 0: return args_text
     let mut out: String = ""
     let mut start: Int = 0
     let mut i: Int = 0
     let mut sarg_n: Int = st.counter
     for _ in 0..1000:
-        if i + aty_len > h_len { break }
+        if i + aty_len > h_len: break
         let head: String = args_text.substr(i, aty_len)
         if head == agg_ty:
             // After the type, expect " <value>" where <value> ends at
             // ',' or end-of-string.
             let mut j: Int = i + aty_len
             // Skip the leading space (LLVM IR convention "{ty} %v").
-            if j < h_len && args_text.substr(j, 1) == " " { j = j + 1 }
+            if j < h_len && args_text.substr(j, 1) == " ": j = j + 1
             let mut k: Int = j
             for _ in 0..1000:
-                if k >= h_len { break }
+                if k >= h_len: break
                 let c: String = args_text.substr(k, 1)
-                if c == "," { break }
+                if c == ",": break
                 k = k + 1
             // Append [start, i), then "ptr %sarg.N", then advance.
             out = out + args_text.substr(start, i - start)
@@ -791,23 +791,23 @@ fn win64_sarg_rewrite_args(args_text: String, agg_ty: String, st: EmitState) -> 
 // by win64_sarg_rewrite_args. Bumps `st.counter` once per occurrence.
 fn win64_sarg_advance_state(st: EmitState, args_text: String, agg_ty: String) -> EmitState:
     let aty_len: Int = len(agg_ty)
-    if aty_len == 0 { return st }
+    if aty_len == 0: return st
     let h_len: Int = len(args_text)
-    if h_len == 0 { return st }
+    if h_len == 0: return st
     let mut s: EmitState = st
     let mut i: Int = 0
     for _ in 0..1000:
-        if i + aty_len > h_len { break }
+        if i + aty_len > h_len: break
         let head: String = args_text.substr(i, aty_len)
         if head == agg_ty:
             // Extract the value name immediately following.
             let mut j: Int = i + aty_len
-            if j < h_len && args_text.substr(j, 1) == " " { j = j + 1 }
+            if j < h_len && args_text.substr(j, 1) == " ": j = j + 1
             let mut k: Int = j
             for _ in 0..1000:
-                if k >= h_len { break }
+                if k >= h_len: break
                 let c: String = args_text.substr(k, 1)
-                if c == "," { break }
+                if c == ",": break
                 k = k + 1
             let aval: String = ws_trim(args_text.substr(j, k - j))
             let sarg_n: Int = s.counter
@@ -826,43 +826,43 @@ fn win64_sarg_advance_state(st: EmitState, args_text: String, agg_ty: String) ->
 // non-pointer return type; the caller (``declare_runtime_fn``) guards
 // this with ``if ret == "ptr"`` before invoking us.
 fn get_fn_ret_prefix(name: String) -> String:
-    if name == "malloc" { return "noalias " }
-    if name == "__mn_alloc" { return "noalias " }
-    if name == "__mn_map_new" { return "noalias " }
-    if name == "__mn_signal_new" { return "noalias " }
-    if name == "mapanare_agent_new" { return "noalias " }
-    if name == "mn_arena_create" { return "noalias " }
-    if name == "mn_arena_alloc" { return "noalias " }
-    if name == "__mapanare_tensor_alloc" { return "noalias " }
-    if name == "__mapanare_tensor_add" { return "noalias " }
-    if name == "__mapanare_tensor_sub" { return "noalias " }
-    if name == "__mapanare_tensor_mul" { return "noalias " }
-    if name == "__mapanare_tensor_div" { return "noalias " }
-    if name == "__mapanare_matmul" { return "noalias " }
+    if name == "malloc": return "noalias "
+    if name == "__mn_alloc": return "noalias "
+    if name == "__mn_map_new": return "noalias "
+    if name == "__mn_signal_new": return "noalias "
+    if name == "mapanare_agent_new": return "noalias "
+    if name == "mn_arena_create": return "noalias "
+    if name == "mn_arena_alloc": return "noalias "
+    if name == "__mapanare_tensor_alloc": return "noalias "
+    if name == "__mapanare_tensor_add": return "noalias "
+    if name == "__mapanare_tensor_sub": return "noalias "
+    if name == "__mapanare_tensor_mul": return "noalias "
+    if name == "__mapanare_tensor_div": return "noalias "
+    if name == "__mapanare_matmul": return "noalias "
     // v5.6.2 Sh.6 Phase 3 — broadcast / scalar / reverse-scalar binops
     // return a fresh heap-allocated tensor pointer (noalias).
-    if name == "__mn_tensor_add_broadcast_f64" { return "noalias " }
-    if name == "__mn_tensor_sub_broadcast_f64" { return "noalias " }
-    if name == "__mn_tensor_mul_broadcast_f64" { return "noalias " }
-    if name == "__mn_tensor_div_broadcast_f64" { return "noalias " }
-    if name == "__mn_tensor_add_broadcast_i64" { return "noalias " }
-    if name == "__mn_tensor_sub_broadcast_i64" { return "noalias " }
-    if name == "__mn_tensor_mul_broadcast_i64" { return "noalias " }
-    if name == "__mn_tensor_div_broadcast_i64" { return "noalias " }
-    if name == "__mn_tensor_add_scalar_f64" { return "noalias " }
-    if name == "__mn_tensor_sub_scalar_f64" { return "noalias " }
-    if name == "__mn_tensor_mul_scalar_f64" { return "noalias " }
-    if name == "__mn_tensor_div_scalar_f64" { return "noalias " }
-    if name == "__mn_tensor_add_scalar_i64" { return "noalias " }
-    if name == "__mn_tensor_sub_scalar_i64" { return "noalias " }
-    if name == "__mn_tensor_mul_scalar_i64" { return "noalias " }
-    if name == "__mn_tensor_div_scalar_i64" { return "noalias " }
-    if name == "__mn_tensor_rsub_scalar_f64" { return "noalias " }
-    if name == "__mn_tensor_rdiv_scalar_f64" { return "noalias " }
-    if name == "__mn_tensor_rsub_scalar_i64" { return "noalias " }
-    if name == "__mn_tensor_rdiv_scalar_i64" { return "noalias " }
+    if name == "__mn_tensor_add_broadcast_f64": return "noalias "
+    if name == "__mn_tensor_sub_broadcast_f64": return "noalias "
+    if name == "__mn_tensor_mul_broadcast_f64": return "noalias "
+    if name == "__mn_tensor_div_broadcast_f64": return "noalias "
+    if name == "__mn_tensor_add_broadcast_i64": return "noalias "
+    if name == "__mn_tensor_sub_broadcast_i64": return "noalias "
+    if name == "__mn_tensor_mul_broadcast_i64": return "noalias "
+    if name == "__mn_tensor_div_broadcast_i64": return "noalias "
+    if name == "__mn_tensor_add_scalar_f64": return "noalias "
+    if name == "__mn_tensor_sub_scalar_f64": return "noalias "
+    if name == "__mn_tensor_mul_scalar_f64": return "noalias "
+    if name == "__mn_tensor_div_scalar_f64": return "noalias "
+    if name == "__mn_tensor_add_scalar_i64": return "noalias "
+    if name == "__mn_tensor_sub_scalar_i64": return "noalias "
+    if name == "__mn_tensor_mul_scalar_i64": return "noalias "
+    if name == "__mn_tensor_div_scalar_i64": return "noalias "
+    if name == "__mn_tensor_rsub_scalar_f64": return "noalias "
+    if name == "__mn_tensor_rdiv_scalar_f64": return "noalias "
+    if name == "__mn_tensor_rsub_scalar_i64": return "noalias "
+    if name == "__mn_tensor_rdiv_scalar_i64": return "noalias "
     // v5.6.3 Sh.6 Phase 4 — slice returns a fresh heap tensor (noalias).
-    if name == "__mn_tensor_slice" { return "noalias " }
+    if name == "__mn_tensor_slice": return "noalias "
     // v5.45.0 Ts.2.B — __mn_tensor_reshape semantic swap to alias.
     // The noalias attribute would be a lie under aliasing semantics
     // (writes to result visible in source). __mn_tensor_view is the
@@ -880,192 +880,193 @@ fn get_fn_ret_prefix(name: String) -> String:
 // won't fire the branches, and the cost of an unused branch is ~0.
 fn get_fn_attrs(name: String) -> String:
     // -- Read-only string/collection queries --
-    if name == "__mn_str_len" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_eq" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_cmp" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_hash" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_byte_at" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_starts_with" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_ends_with" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_find" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_contains" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_to_int" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_to_float" { return " nounwind readonly willreturn" }
-    if name == "__mn_str_ord" { return " nounwind readonly willreturn" }
-    if name == "__mn_list_len" { return " nounwind readonly willreturn" }
-    if name == "__mn_list_get" { return " nounwind readonly willreturn" }
-    if name == "__mn_map_len" { return " nounwind readonly willreturn" }
-    if name == "__mn_map_contains" { return " nounwind readonly willreturn" }
-    if name == "__mn_range" { return " nounwind readonly willreturn" }
+    if name == "__mn_str_len": return " nounwind readonly willreturn"
+    if name == "__mn_str_eq": return " nounwind readonly willreturn"
+    if name == "__mn_str_cmp": return " nounwind readonly willreturn"
+    if name == "__mn_str_hash": return " nounwind readonly willreturn"
+    if name == "__mn_str_byte_at": return " nounwind readonly willreturn"
+    if name == "__mn_str_starts_with": return " nounwind readonly willreturn"
+    if name == "__mn_str_ends_with": return " nounwind readonly willreturn"
+    if name == "__mn_str_find": return " nounwind readonly willreturn"
+    if name == "__mn_str_contains": return " nounwind readonly willreturn"
+    if name == "__mn_str_to_int": return " nounwind readonly willreturn"
+    if name == "__mn_str_to_float": return " nounwind readonly willreturn"
+    if name == "__mn_str_ord": return " nounwind readonly willreturn"
+    if name == "__mn_list_len": return " nounwind readonly willreturn"
+    if name == "__mn_list_get": return " nounwind readonly willreturn"
+    if name == "__mn_map_len": return " nounwind readonly willreturn"
+    if name == "__mn_map_contains": return " nounwind readonly willreturn"
+    if name == "__mn_range": return " nounwind readonly willreturn"
     // -- Allocators (noalias in prefix; suffix = nounwind willreturn) --
-    if name == "malloc" { return " nounwind willreturn" }
-    if name == "__mn_alloc" { return " nounwind willreturn" }
-    if name == "__mn_str_concat" { return " nounwind willreturn" }
-    if name == "__mn_str_from_int" { return " nounwind willreturn" }
-    if name == "__mn_str_from_float" { return " nounwind willreturn" }
-    if name == "__mn_str_from_bool" { return " nounwind willreturn" }
-    if name == "__mn_str_substr" { return " nounwind willreturn" }
-    if name == "__mn_str_chr" { return " nounwind willreturn" }
-    if name == "__mn_str_to_upper" { return " nounwind willreturn" }
-    if name == "__mn_str_to_lower" { return " nounwind willreturn" }
-    if name == "__mn_str_replace" { return " nounwind willreturn" }
-    if name == "__mn_str_split" { return " nounwind willreturn" }
-    if name == "__mn_str_trim" { return " nounwind willreturn" }
-    if name == "__mn_str_join" { return " nounwind willreturn" }
-    if name == "__mn_list_new" { return " nounwind willreturn" }
-    if name == "__mn_list_concat" { return " nounwind willreturn" }
-    if name == "__mn_map_new" { return " nounwind willreturn" }
-    if name == "__mn_map_keys" { return " nounwind willreturn" }
-    if name == "__mn_signal_new" { return " nounwind willreturn" }
-    if name == "mapanare_agent_new" { return " nounwind willreturn" }
-    if name == "mn_arena_create" { return " nounwind willreturn" }
-    if name == "mn_arena_alloc" { return " nounwind willreturn" }
+    if name == "malloc": return " nounwind willreturn"
+    if name == "__mn_alloc": return " nounwind willreturn"
+    if name == "__mn_str_concat": return " nounwind willreturn"
+    if name == "__mn_str_from_int": return " nounwind willreturn"
+    if name == "__mn_str_from_float": return " nounwind willreturn"
+    if name == "__mn_str_from_bool": return " nounwind willreturn"
+    if name == "__mn_str_substr": return " nounwind willreturn"
+    if name == "__mn_str_chr": return " nounwind willreturn"
+    if name == "__mn_str_to_upper": return " nounwind willreturn"
+    if name == "__mn_str_to_lower": return " nounwind willreturn"
+    if name == "__mn_str_replace": return " nounwind willreturn"
+    if name == "__mn_str_split": return " nounwind willreturn"
+    if name == "__mn_str_trim": return " nounwind willreturn"
+    if name == "__mn_str_join": return " nounwind willreturn"
+    if name == "__mn_list_new": return " nounwind willreturn"
+    if name == "__mn_list_concat": return " nounwind willreturn"
+    if name == "__mn_map_new": return " nounwind willreturn"
+    if name == "__mn_map_keys": return " nounwind willreturn"
+    if name == "__mn_signal_new": return " nounwind willreturn"
+    if name == "mapanare_agent_new": return " nounwind willreturn"
+    if name == "mn_arena_create": return " nounwind willreturn"
+    if name == "mn_arena_alloc": return " nounwind willreturn"
     // -- Cleanup / free (willreturn, no readonly — frees memory) --
-    if name == "free" { return " nounwind willreturn" }
-    if name == "__mn_str_free" { return " nounwind willreturn" }
-    if name == "__mn_list_free" { return " nounwind willreturn" }
-    if name == "__mn_map_free" { return " nounwind willreturn" }
-    if name == "__mn_map_free_deep" { return " nounwind willreturn" }
-    if name == "__mn_stream_free" { return " nounwind willreturn" }
-    if name == "__mn_stream_free_chain" { return " nounwind willreturn" }
-    if name == "__mn_range_free" { return " nounwind willreturn" }
-    if name == "__mn_signal_free" { return " nounwind willreturn" }
-    if name == "mn_arena_destroy" { return " nounwind willreturn" }
-    if name == "__mapanare_tensor_free" { return " nounwind willreturn" }
+    if name == "free": return " nounwind willreturn"
+    if name == "__mn_str_free": return " nounwind willreturn"
+    if name == "__mn_list_free": return " nounwind willreturn"
+    if name == "__mn_map_free": return " nounwind willreturn"
+    if name == "__mn_map_free_deep": return " nounwind willreturn"
+    if name == "__mn_stream_free": return " nounwind willreturn"
+    if name == "__mn_stream_free_chain": return " nounwind willreturn"
+    if name == "__mn_range_free": return " nounwind willreturn"
+    if name == "__mn_signal_free": return " nounwind willreturn"
+    if name == "mn_arena_destroy": return " nounwind willreturn"
+    if name == "__mapanare_tensor_free": return " nounwind willreturn"
     // -- Mutation (nounwind only — writes through caller-owned memory) --
-    if name == "__mn_list_push" { return " nounwind" }
-    if name == "__mn_list_set" { return " nounwind" }
-    if name == "__mn_map_set" { return " nounwind" }
-    if name == "__mn_map_get" { return " nounwind" }
+    if name == "__mn_list_push": return " nounwind"
+    if name == "__mn_list_set": return " nounwind"
+    if name == "__mn_map_set": return " nounwind"
+    if name == "__mn_map_get": return " nounwind"
     // -- Print / I/O writes (observable but terminate) --
-    if name == "__mn_print" { return " nounwind willreturn" }
-    if name == "__mn_println" { return " nounwind willreturn" }
-    if name == "__mn_str_print" { return " nounwind willreturn" }
-    if name == "__mn_str_println" { return " nounwind willreturn" }
-    if name == "__mn_str_eprint" { return " nounwind willreturn" }
-    if name == "__mn_indent_to_braces" { return " nounwind willreturn" }
-    if name == "__mn_count_user_brace_block_openers" { return " nounwind willreturn" }
-    if name == "__mn_emit_brace_deprecation_warning" { return " nounwind willreturn" }
-    if name == "__mn_str_eprintln" { return " nounwind willreturn" }
+    if name == "__mn_print": return " nounwind willreturn"
+    if name == "__mn_println": return " nounwind willreturn"
+    if name == "__mn_str_print": return " nounwind willreturn"
+    if name == "__mn_str_println": return " nounwind willreturn"
+    if name == "__mn_str_eprint": return " nounwind willreturn"
+    if name == "__mn_indent_to_braces": return " nounwind willreturn"
+    if name == "__mn_rewrite_arm_stmt_shorthand": return " nounwind willreturn"
+    if name == "__mn_count_user_brace_block_openers": return " nounwind willreturn"
+    if name == "__mn_emit_brace_deprecation_warning": return " nounwind willreturn"
+    if name == "__mn_str_eprintln": return " nounwind willreturn"
     // -- I/O (v3.41.0) --
-    if name == "__mn_read_line" { return " nounwind willreturn" }
-    if name == "__mn_file_append" { return " nounwind willreturn" }
-    if name == "__mn_dir_list_strings" { return " nounwind willreturn" }
-    if name == "__mn_file_exists" { return " nounwind readonly willreturn" }
-    if name == "__mn_file_remove" { return " nounwind willreturn" }
-    if name == "__mn_file_size" { return " nounwind readonly willreturn" }
-    if name == "__mn_file_mtime" { return " nounwind readonly willreturn" }
-    if name == "__mn_dir_create" { return " nounwind willreturn" }
-    if name == "__mn_dir_remove" { return " nounwind willreturn" }
-    if name == "__mn_file_rename" { return " nounwind willreturn" }
-    if name == "__mn_file_copy" { return " nounwind willreturn" }
-    if name == "__mn_realpath" { return " nounwind willreturn" }
-    if name == "__mn_tmpfile_path" { return " nounwind willreturn" }
+    if name == "__mn_read_line": return " nounwind willreturn"
+    if name == "__mn_file_append": return " nounwind willreturn"
+    if name == "__mn_dir_list_strings": return " nounwind willreturn"
+    if name == "__mn_file_exists": return " nounwind readonly willreturn"
+    if name == "__mn_file_remove": return " nounwind willreturn"
+    if name == "__mn_file_size": return " nounwind readonly willreturn"
+    if name == "__mn_file_mtime": return " nounwind readonly willreturn"
+    if name == "__mn_dir_create": return " nounwind willreturn"
+    if name == "__mn_dir_remove": return " nounwind willreturn"
+    if name == "__mn_file_rename": return " nounwind willreturn"
+    if name == "__mn_file_copy": return " nounwind willreturn"
+    if name == "__mn_realpath": return " nounwind willreturn"
+    if name == "__mn_tmpfile_path": return " nounwind willreturn"
     // -- Network / crypto / regex (v3.42.0) --
-    if name == "__mn_http_get" { return " nounwind willreturn" }
-    if name == "__mn_sha256_str" { return " nounwind willreturn" }
-    if name == "__mn_base64_encode_str" { return " nounwind willreturn" }
-    if name == "__mn_base64_decode_str" { return " nounwind willreturn" }
-    if name == "__mn_hmac_sha256_str" { return " nounwind willreturn" }
-    if name == "__mn_hex_encode_str" { return " nounwind willreturn" }
-    if name == "__mn_random_bytes_str" { return " nounwind willreturn" }
-    if name == "__mn_regex_compile_str" { return " nounwind willreturn" }
-    if name == "__mn_regex_exec_str" { return " nounwind willreturn" }
-    if name == "__mn_regex_replace_str" { return " nounwind willreturn" }
-    if name == "__mn_regex_free" { return " nounwind willreturn" }
+    if name == "__mn_http_get": return " nounwind willreturn"
+    if name == "__mn_sha256_str": return " nounwind willreturn"
+    if name == "__mn_base64_encode_str": return " nounwind willreturn"
+    if name == "__mn_base64_decode_str": return " nounwind willreturn"
+    if name == "__mn_hmac_sha256_str": return " nounwind willreturn"
+    if name == "__mn_hex_encode_str": return " nounwind willreturn"
+    if name == "__mn_random_bytes_str": return " nounwind willreturn"
+    if name == "__mn_regex_compile_str": return " nounwind willreturn"
+    if name == "__mn_regex_exec_str": return " nounwind willreturn"
+    if name == "__mn_regex_replace_str": return " nounwind willreturn"
+    if name == "__mn_regex_free": return " nounwind willreturn"
     // -- GPU (v3.46.0) --
-    if name == "__mn_gpu_available" { return " nounwind readonly willreturn" }
-    if name == "__mn_gpu_device_name" { return " nounwind willreturn" }
-    if name == "__mn_gpu_device_memory" { return " nounwind readonly willreturn" }
-    if name == "__mn_gpu_tensor_add" { return " nounwind willreturn" }
-    if name == "__mn_gpu_tensor_sub" { return " nounwind willreturn" }
-    if name == "__mn_gpu_tensor_mul" { return " nounwind willreturn" }
-    if name == "__mn_gpu_tensor_div" { return " nounwind willreturn" }
-    if name == "__mn_gpu_tensor_matmul" { return " nounwind willreturn" }
+    if name == "__mn_gpu_available": return " nounwind readonly willreturn"
+    if name == "__mn_gpu_device_name": return " nounwind willreturn"
+    if name == "__mn_gpu_device_memory": return " nounwind readonly willreturn"
+    if name == "__mn_gpu_tensor_add": return " nounwind willreturn"
+    if name == "__mn_gpu_tensor_sub": return " nounwind willreturn"
+    if name == "__mn_gpu_tensor_mul": return " nounwind willreturn"
+    if name == "__mn_gpu_tensor_div": return " nounwind willreturn"
+    if name == "__mn_gpu_tensor_matmul": return " nounwind willreturn"
     // -- Tensor runtime --
-    if name == "__mapanare_tensor_add" { return " nounwind willreturn" }
-    if name == "__mapanare_tensor_sub" { return " nounwind willreturn" }
-    if name == "__mapanare_tensor_mul" { return " nounwind willreturn" }
-    if name == "__mapanare_tensor_div" { return " nounwind willreturn" }
-    if name == "__mapanare_matmul" { return " nounwind willreturn" }
-    if name == "__mapanare_tensor_alloc" { return " nounwind willreturn" }
-    if name == "__mapanare_tensor_shape_eq" { return " nounwind readonly willreturn" }
+    if name == "__mapanare_tensor_add": return " nounwind willreturn"
+    if name == "__mapanare_tensor_sub": return " nounwind willreturn"
+    if name == "__mapanare_tensor_mul": return " nounwind willreturn"
+    if name == "__mapanare_tensor_div": return " nounwind willreturn"
+    if name == "__mapanare_matmul": return " nounwind willreturn"
+    if name == "__mapanare_tensor_alloc": return " nounwind willreturn"
+    if name == "__mapanare_tensor_shape_eq": return " nounwind readonly willreturn"
     // v5.6.0 Sh.6 __mn_tensor_* attrs (mirrors emit_llvm_text.py RUNTIME_ATTRS).
-    if name == "__mn_tensor_alloc" { return " nounwind willreturn" }
-    if name == "__mn_tensor_free" { return " nounwind willreturn" }
-    if name == "__mn_tensor_store_f64" { return " nounwind willreturn" }
-    if name == "__mn_tensor_store_i64" { return " nounwind willreturn" }
-    if name == "__mn_tensor_get_f64" { return " nounwind readonly willreturn" }
-    if name == "__mn_tensor_get_i64" { return " nounwind readonly willreturn" }
-    if name == "__mn_tensor_rank" { return " nounwind readonly willreturn" }
-    if name == "__mn_tensor_size" { return " nounwind readonly willreturn" }
-    if name == "__mn_tensor_shape_dim" { return " nounwind readonly willreturn" }
-    if name == "__mn_tensor_print_f64" { return " nounwind willreturn" }
+    if name == "__mn_tensor_alloc": return " nounwind willreturn"
+    if name == "__mn_tensor_free": return " nounwind willreturn"
+    if name == "__mn_tensor_store_f64": return " nounwind willreturn"
+    if name == "__mn_tensor_store_i64": return " nounwind willreturn"
+    if name == "__mn_tensor_get_f64": return " nounwind readonly willreturn"
+    if name == "__mn_tensor_get_i64": return " nounwind readonly willreturn"
+    if name == "__mn_tensor_rank": return " nounwind readonly willreturn"
+    if name == "__mn_tensor_size": return " nounwind readonly willreturn"
+    if name == "__mn_tensor_shape_dim": return " nounwind readonly willreturn"
+    if name == "__mn_tensor_print_f64": return " nounwind willreturn"
     // v5.6.1 Sh.6 Phase 2 — variadic nd getters/setters; nounwind only,
     // no `readonly` because LLVM varargs intrinsics are conservative.
-    if name == "__mn_tensor_get_f64_nd" { return " nounwind" }
-    if name == "__mn_tensor_get_i64_nd" { return " nounwind" }
-    if name == "__mn_tensor_set_f64_nd" { return " nounwind" }
-    if name == "__mn_tensor_set_i64_nd" { return " nounwind" }
+    if name == "__mn_tensor_get_f64_nd": return " nounwind"
+    if name == "__mn_tensor_get_i64_nd": return " nounwind"
+    if name == "__mn_tensor_set_f64_nd": return " nounwind"
+    if name == "__mn_tensor_set_i64_nd": return " nounwind"
     // v5.6.2 Sh.6 Phase 3 — broadcast / scalar / reverse-scalar binops
     // (mirrors emit_llvm_text.py:357-377). `noalias` is emitted as a
     // return-value prefix by get_fn_ret_prefix; the fn-attr suffix is
     // just `nounwind`.
-    if name == "__mn_tensor_add_broadcast_f64" { return " nounwind" }
-    if name == "__mn_tensor_sub_broadcast_f64" { return " nounwind" }
-    if name == "__mn_tensor_mul_broadcast_f64" { return " nounwind" }
-    if name == "__mn_tensor_div_broadcast_f64" { return " nounwind" }
-    if name == "__mn_tensor_add_broadcast_i64" { return " nounwind" }
-    if name == "__mn_tensor_sub_broadcast_i64" { return " nounwind" }
-    if name == "__mn_tensor_mul_broadcast_i64" { return " nounwind" }
-    if name == "__mn_tensor_div_broadcast_i64" { return " nounwind" }
-    if name == "__mn_tensor_add_scalar_f64" { return " nounwind" }
-    if name == "__mn_tensor_sub_scalar_f64" { return " nounwind" }
-    if name == "__mn_tensor_mul_scalar_f64" { return " nounwind" }
-    if name == "__mn_tensor_div_scalar_f64" { return " nounwind" }
-    if name == "__mn_tensor_add_scalar_i64" { return " nounwind" }
-    if name == "__mn_tensor_sub_scalar_i64" { return " nounwind" }
-    if name == "__mn_tensor_mul_scalar_i64" { return " nounwind" }
-    if name == "__mn_tensor_div_scalar_i64" { return " nounwind" }
-    if name == "__mn_tensor_rsub_scalar_f64" { return " nounwind" }
-    if name == "__mn_tensor_rdiv_scalar_f64" { return " nounwind" }
-    if name == "__mn_tensor_rsub_scalar_i64" { return " nounwind" }
-    if name == "__mn_tensor_rdiv_scalar_i64" { return " nounwind" }
+    if name == "__mn_tensor_add_broadcast_f64": return " nounwind"
+    if name == "__mn_tensor_sub_broadcast_f64": return " nounwind"
+    if name == "__mn_tensor_mul_broadcast_f64": return " nounwind"
+    if name == "__mn_tensor_div_broadcast_f64": return " nounwind"
+    if name == "__mn_tensor_add_broadcast_i64": return " nounwind"
+    if name == "__mn_tensor_sub_broadcast_i64": return " nounwind"
+    if name == "__mn_tensor_mul_broadcast_i64": return " nounwind"
+    if name == "__mn_tensor_div_broadcast_i64": return " nounwind"
+    if name == "__mn_tensor_add_scalar_f64": return " nounwind"
+    if name == "__mn_tensor_sub_scalar_f64": return " nounwind"
+    if name == "__mn_tensor_mul_scalar_f64": return " nounwind"
+    if name == "__mn_tensor_div_scalar_f64": return " nounwind"
+    if name == "__mn_tensor_add_scalar_i64": return " nounwind"
+    if name == "__mn_tensor_sub_scalar_i64": return " nounwind"
+    if name == "__mn_tensor_mul_scalar_i64": return " nounwind"
+    if name == "__mn_tensor_div_scalar_i64": return " nounwind"
+    if name == "__mn_tensor_rsub_scalar_f64": return " nounwind"
+    if name == "__mn_tensor_rdiv_scalar_f64": return " nounwind"
+    if name == "__mn_tensor_rsub_scalar_i64": return " nounwind"
+    if name == "__mn_tensor_rdiv_scalar_i64": return " nounwind"
     // v5.6.3 Sh.6 Phase 4 — reductions are readonly (pure over tensor data);
     // slice returns a new tensor (nounwind + noalias via ret prefix).
-    if name == "__mn_tensor_sum_f64" { return " nounwind readonly" }
-    if name == "__mn_tensor_mean_f64" { return " nounwind readonly" }
-    if name == "__mn_tensor_max_f64" { return " nounwind readonly" }
-    if name == "__mn_tensor_min_f64" { return " nounwind readonly" }
-    if name == "__mn_tensor_argmax_f64" { return " nounwind readonly" }
-    if name == "__mn_tensor_argmin_f64" { return " nounwind readonly" }
-    if name == "__mn_tensor_sum_i64" { return " nounwind readonly" }
-    if name == "__mn_tensor_max_i64" { return " nounwind readonly" }
-    if name == "__mn_tensor_min_i64" { return " nounwind readonly" }
-    if name == "__mn_tensor_argmax_i64" { return " nounwind readonly" }
-    if name == "__mn_tensor_argmin_i64" { return " nounwind readonly" }
-    if name == "__mn_tensor_slice" { return " nounwind" }
-    if name == "__mn_tensor_reshape" { return " nounwind" }
+    if name == "__mn_tensor_sum_f64": return " nounwind readonly"
+    if name == "__mn_tensor_mean_f64": return " nounwind readonly"
+    if name == "__mn_tensor_max_f64": return " nounwind readonly"
+    if name == "__mn_tensor_min_f64": return " nounwind readonly"
+    if name == "__mn_tensor_argmax_f64": return " nounwind readonly"
+    if name == "__mn_tensor_argmin_f64": return " nounwind readonly"
+    if name == "__mn_tensor_sum_i64": return " nounwind readonly"
+    if name == "__mn_tensor_max_i64": return " nounwind readonly"
+    if name == "__mn_tensor_min_i64": return " nounwind readonly"
+    if name == "__mn_tensor_argmax_i64": return " nounwind readonly"
+    if name == "__mn_tensor_argmin_i64": return " nounwind readonly"
+    if name == "__mn_tensor_slice": return " nounwind"
+    if name == "__mn_tensor_reshape": return " nounwind"
     // v5.45.0 Ts.2.B / Ts.3.B — view + step_slice exports.
-    if name == "__mn_tensor_view" { return " nounwind" }
-    if name == "__mn_tensor_step_slice" { return " nounwind" }
+    if name == "__mn_tensor_view": return " nounwind"
+    if name == "__mn_tensor_step_slice": return " nounwind"
     // -- Agent runtime (v3.43.0) --
-    if name == "mapanare_agent_spawn" { return " nounwind willreturn" }
-    if name == "mapanare_agent_send" { return " nounwind willreturn" }
-    if name == "mapanare_agent_recv_blocking" { return " nounwind" }
-    if name == "mapanare_agent_stop" { return " nounwind willreturn" }
-    if name == "mapanare_agent_destroy" { return " nounwind willreturn" }
-    if name == "__mn_agent_spawn" { return " nounwind willreturn" }
-    if name == "__mn_agent_send" { return " nounwind willreturn" }
-    if name == "__mn_agent_sync" { return " nounwind willreturn" }
+    if name == "mapanare_agent_spawn": return " nounwind willreturn"
+    if name == "mapanare_agent_send": return " nounwind willreturn"
+    if name == "mapanare_agent_recv_blocking": return " nounwind"
+    if name == "mapanare_agent_stop": return " nounwind willreturn"
+    if name == "mapanare_agent_destroy": return " nounwind willreturn"
+    if name == "__mn_agent_spawn": return " nounwind willreturn"
+    if name == "__mn_agent_send": return " nounwind willreturn"
+    if name == "__mn_agent_sync": return " nounwind willreturn"
     // -- Signal runtime --
-    if name == "__mn_signal_get" { return " nounwind" }
-    if name == "__mn_signal_set" { return " nounwind willreturn" }
+    if name == "__mn_signal_get": return " nounwind"
+    if name == "__mn_signal_set": return " nounwind willreturn"
     // -- Iterator --
-    if name == "__iter_has_next" { return " nounwind readonly willreturn" }
-    if name == "__iter_next" { return " nounwind" }
+    if name == "__iter_has_next": return " nounwind readonly willreturn"
+    if name == "__iter_next": return " nounwind"
     // v5.1.0 Perf.1: inline list access emits bounds-check trap via abort()
-    if name == "abort" { return " noreturn nounwind" }
+    if name == "abort": return " noreturn nounwind"
     return ""
 
 fn declare_all_runtime(st: EmitState) -> EmitState:
@@ -1159,6 +1160,13 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     // emits into compiled programs (see emit_metadata_node below).
     s = declare_runtime_fn(s, "__mn_version_string", llvm_string(), "")
     s = declare_runtime_fn(s, "__mn_indent_to_braces", llvm_string(), llvm_string())
+    // v5.48.1 Te.3.D.4.4: match-arm statement-shorthand rewriter.
+    // Wraps `Pat => return X` -> `Pat => { return X }` for stmt-keyword
+    // arm bodies (return/da/break/sal/continue/sigue/pass). Runs after
+    // __mn_indent_to_braces. Mirrors mapanare/parser.py::
+    // _rewrite_arm_stmt_shorthand byte-for-byte; lives in the C runtime
+    // for the same reason (bootstrap lower pathologies on a .mn port).
+    s = declare_runtime_fn(s, "__mn_rewrite_arm_stmt_shorthand", llvm_string(), llvm_string())
     // v5.23.2 Te.3.B.2: brace-deprecation detector + warning emitter.
     // Counts user-written `{` block openers (excluding struct/map literals)
     // and emits a single stderr warning with `mnc fmt` migration hint.
@@ -1415,43 +1423,43 @@ fn register_mir_struct(st: EmitState, info: StructInfo) -> EmitState:
 fn is_enum_type(st: EmitState, name: String) -> Bool:
     let mut i: Int = 0
     for _ in 0..10000:
-        if i >= len(st.enum_names) { return false }
-        if st.enum_names[i] == name { return true }
+        if i >= len(st.enum_names): return false
+        if st.enum_names[i] == name: return true
         i = i + 1
     return false
 
 fn is_struct_type(st: EmitState, name: String) -> Bool:
     let mut i: Int = 0
     for _ in 0..10000:
-        if i >= len(st.structs) { return false }
-        if st.structs[i].name == name { return true }
+        if i >= len(st.structs): return false
+        if st.structs[i].name == name: return true
         i = i + 1
     return false
 
 // Compute size of an LLVM type in i64 units (8-byte slots)
 fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int:
     let resolved: String = resolve_mir_type(ty)
-    if resolved == "i64" { return 1 }
-    if resolved == "double" { return 1 }
-    if resolved == "i1" { return 1 }
-    if resolved == "i8" { return 1 }
-    if resolved == "ptr" { return 1 }
-    if resolved == "void" { return 0 }
+    if resolved == "i64": return 1
+    if resolved == "double": return 1
+    if resolved == "i1": return 1
+    if resolved == "i8": return 1
+    if resolved == "ptr": return 1
+    if resolved == "void": return 0
     // String: {ptr, i64} = 2 slots
-    if resolved == "{ptr, i64}" { return 2 }
+    if resolved == "{ptr, i64}": return 2
     // List: {ptr, i64, i64, i64, i64} = 5 slots (data, len, cap, elem_size, managed)
-    if resolved == "{ptr, i64, i64, i64, i64}" { return 5 }
+    if resolved == "{ptr, i64, i64, i64, i64}": return 5
     // Range: {i64, i64} = 2 slots
-    if resolved == "{i64, i64}" { return 2 }
+    if resolved == "{i64, i64}": return 2
     // Option: {i1, T} ≈ 2 slots minimum
     if ty.kind == TK_OPTION():
         if len(ty.args) > 0:
             return 1 + type_size_in_slots(st, ty.args[0])
         return 2
     // Result: {i1, {T, E}}
-    if ty.kind == TK_RESULT() { return 4 }
+    if ty.kind == TK_RESULT(): return 4
     // Map: {ptr, i64} = 2 slots
-    if ty.kind == TK_MAP() { return 2 }
+    if ty.kind == TK_MAP(): return 2
     // Enum: 1 (tag) + max_payload_slots.
     // If registered, look up; otherwise return 48 (conservative for recursive enums).
     if ty.kind == TK_ENUM():
@@ -1470,8 +1478,8 @@ fn type_size_in_slots(st: EmitState, ty: MIRType) -> Int:
     if ty.kind == TK_STRUCT():
         let struct_opt: Option<StructEntry> = find_struct_entry(st, ty.name)
         match struct_opt:
-            Some(se) => { return len(se.field_types) * 4 }
-            _ => { return 8 }
+            Some(se) => return len(se.field_types) * 4
+            _ => return 8
     // Default: 8 slots (conservative fallback)
     return 8
 
@@ -1482,13 +1490,13 @@ fn variant_payload_slots(st: EmitState, variant: EnumVariantInfo) -> Int:
     let mut total: Int = 0
     let mut pi: Int = 0
     for _ in 0..100:
-        if pi >= len(variant.payload_types) { return total }
+        if pi >= len(variant.payload_types): return total
         total = total + type_size_in_slots(st, variant.payload_types[pi])
         pi = pi + 1
     return total
 
 fn max_int(a: Int, b: Int) -> Int:
-    if a > b { return a }
+    if a > b: return a
     return b
 
 // Max payload slots across all variants of an enum.
@@ -1496,7 +1504,7 @@ fn variant_payload_slots_max(st: EmitState, info: EnumInfo) -> Int:
     let mut mx: Int = 0
     let mut vi: Int = 0
     for _ in 0..500:
-        if vi >= len(info.variants) { return mx }
+        if vi >= len(info.variants): return mx
         let count: Int = variant_payload_slots(st, info.variants[vi])
         // Use max_int instead of `if count > mx { mx = count }` because
         // the Python lowerer generates `store i64 0` for conditional
@@ -1512,26 +1520,26 @@ fn type_fits_inline_slot(resolved: String) -> Bool:
     // in the caller or a stale type string from a legacy path.
     if resolved.ends_with("*"):
         return false
-    if resolved == "i64" { return true }
-    if resolved == "double" { return true }
-    if resolved == "i1" { return true }
-    if resolved == "i8" { return true }
-    if resolved == "i16" { return true }
-    if resolved == "i32" { return true }
-    if resolved == "ptr" { return true }
+    if resolved == "i64": return true
+    if resolved == "double": return true
+    if resolved == "i1": return true
+    if resolved == "i8": return true
+    if resolved == "i16": return true
+    if resolved == "i32": return true
+    if resolved == "ptr": return true
     return false
 
 fn is_enum_self_ref(enum_name: String, ty: MIRType) -> Bool:
     if ty.name == enum_name:
-        if ty.kind == TK_ENUM() || ty.kind == TK_STRUCT() { return true }
+        if ty.kind == TK_ENUM() || ty.kind == TK_STRUCT(): return true
     if ty.kind == TK_OPTION():
         if len(ty.args) > 0:
-            if ty.args[0].name == enum_name { return true }
+            if ty.args[0].name == enum_name: return true
     if ty.kind == TK_RESULT():
         let mut ai: Int = 0
         for _ in 0..2:
             if ai < len(ty.args):
-                if ty.args[ai].name == enum_name { return true }
+                if ty.args[ai].name == enum_name: return true
                 ai = ai + 1
     return false
 
@@ -1543,17 +1551,17 @@ fn compute_enum_inline_slots(st: EmitState, info: EnumInfo) -> Int:
     let mut max_fields: Int = 0
     let mut vi: Int = 0
     for _ in 0..500:
-        if vi >= len(info.variants) { return max_fields }
+        if vi >= len(info.variants): return max_fields
         let variant: EnumVariantInfo = info.variants[vi]
         let npt: Int = len(variant.payload_types)
-        if npt > max_inline { return 0 }
-        if npt > max_fields { max_fields = npt }
+        if npt > max_inline: return 0
+        if npt > max_fields: max_fields = npt
         let mut fi: Int = 0
         for _ in 0..100:
             if fi < npt:
-                if is_enum_self_ref(info.name, variant.payload_types[fi]) { return 0 }
+                if is_enum_self_ref(info.name, variant.payload_types[fi]): return 0
                 let ft: String = resolve_mir_type(variant.payload_types[fi])
-                if !type_fits_inline_slot(ft) { return 0 }
+                if !type_fits_inline_slot(ft): return 0
                 fi = fi + 1
         vi = vi + 1
     return max_fields
@@ -1561,14 +1569,14 @@ fn compute_enum_inline_slots(st: EmitState, info: EnumInfo) -> Int:
 fn lookup_enum_inline(st: EmitState, enum_name: String) -> Int:
     let mut i: Int = 0
     for _ in 0..10000:
-        if i >= len(st.enum_names) { return 0 }
-        if st.enum_names[i] == enum_name { return st.enum_inline_slots[i] }
+        if i >= len(st.enum_names): return 0
+        if st.enum_names[i] == enum_name: return st.enum_inline_slots[i]
         i = i + 1
     return 0
 
 fn enum_inline_type(slots: Int) -> String:
     let n: Int = max_int(slots, 1)
-    if n == 1 { return "{i64, i64}" }
+    if n == 1: return "{i64, i64}"
     return "{i64, i64, i64}"
 
 fn register_mir_enum(st: EmitState, info: EnumInfo) -> EmitState:
@@ -1593,7 +1601,7 @@ fn is_already_declared(st: EmitState, name: String) -> Bool:
     let mut i: Int = 0
     let n: Int = len(st.lines)
     for _ in 0..10000:
-        if i >= n { return false }
+        if i >= n: return false
         let line: String = st.lines[i]
         if line.starts_with("declare ") && line.contains(needle):
             return true
@@ -1602,7 +1610,7 @@ fn is_already_declared(st: EmitState, name: String) -> Bool:
 
 fn declare_mir_extern(st: EmitState, info: ExternFnInfo) -> EmitState:
     // Skip if already declared (avoids duplicate declarations)
-    if is_already_declared(st, info.fn_name) { return st }
+    if is_already_declared(st, info.fn_name): return st
     let ret_ty: String = resolve_mir_type(info.return_type)
     let mut params_str: String = ""
     let mut i: Int = 0
@@ -1630,30 +1638,30 @@ fn emit_mir_instruction(st: EmitState, inst: Instruction) -> EmitState:
     emit_mir_by_kind(st, inst, kind)
 
 fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState:
-    if kind == "const" { return emit_const(st, instr_dest(inst), instr_const_type(inst), instr_const_val(inst)) }
-    if kind == "copy" { return emit_copy(st, instr_dest(inst), instr_copy_src(inst)) }
-    if kind == "cast" { return emit_cast(st, instr_dest(inst), instr_cast_src(inst), instr_cast_type(inst)) }
-    if kind == "binop" { return emit_binop(st, instr_dest(inst), instr_binop_op(inst), instr_binop_lhs(inst), instr_binop_rhs(inst)) }
-    if kind == "unaryop" { return emit_unaryop(st, instr_dest(inst), instr_unaryop_op(inst), instr_unaryop_operand(inst)) }
-    if kind == "struct_init" { return emit_struct_init(st, instr_dest(inst), instr_struct_type(inst), instr_struct_fields(inst)) }
-    if kind == "field_get" { return emit_field_get(st, instr_dest(inst), instr_fieldget_obj(inst), instr_fieldget_name(inst)) }
-    if kind == "field_set" { return emit_field_set(st, instr_fieldset_obj(inst), instr_fieldset_name(inst), instr_fieldset_val(inst)) }
-    if kind == "list_init" { return emit_list_init_checked(st, inst) }
-    if kind == "tensor_init" { return emit_tensor_init(st, inst) }
-    if kind == "index_get" { return emit_index_get(st, instr_dest(inst), instr_indexget_obj(inst), instr_indexget_idx(inst)) }
-    if kind == "index_set" { return emit_index_set(st, instr_indexset_obj(inst), instr_indexset_idx(inst), instr_indexset_val(inst)) }
-    if kind == "alloca" { return emit_alloca(st, instr_dest(inst), instr_alloca_type(inst)) }
-    if kind == "load" { return emit_load(st, instr_dest(inst), instr_load_ptr(inst)) }
-    if kind == "store" { return emit_store(st, instr_store_ptr(inst), instr_store_val(inst)) }
-    if kind == "map_init" { return emit_map_init(st, instr_dest(inst), instr_map_key_type(inst), instr_map_val_type(inst), instr_map_pairs(inst)) }
-    if kind == "enum_init" { return emit_enum_init(st, instr_dest(inst), instr_enum_type(inst), instr_enum_variant(inst), instr_enum_payload(inst)) }
-    if kind == "enum_tag" { return emit_enum_tag(st, instr_dest(inst), instr_enumtag_val(inst)) }
-    if kind == "enum_payload" { return emit_enum_payload(st, instr_dest(inst), instr_enumpayload_val(inst), instr_enumpayload_variant(inst)) }
-    if kind == "wrap_some" { return emit_wrap_some(st, instr_dest(inst), instr_wrap_val(inst)) }
-    if kind == "wrap_none" { return emit_wrap_none(st, instr_dest(inst), instr_wrapnone_type(inst)) }
-    if kind == "wrap_ok" { return emit_wrap_ok(st, instr_dest(inst), instr_wrap_val(inst)) }
-    if kind == "wrap_err" { return emit_wrap_err(st, instr_dest(inst), instr_wrap_val(inst)) }
-    if kind == "unwrap" { return emit_unwrap(st, instr_dest(inst), instr_wrap_val(inst)) }
+    if kind == "const": return emit_const(st, instr_dest(inst), instr_const_type(inst), instr_const_val(inst))
+    if kind == "copy": return emit_copy(st, instr_dest(inst), instr_copy_src(inst))
+    if kind == "cast": return emit_cast(st, instr_dest(inst), instr_cast_src(inst), instr_cast_type(inst))
+    if kind == "binop": return emit_binop(st, instr_dest(inst), instr_binop_op(inst), instr_binop_lhs(inst), instr_binop_rhs(inst))
+    if kind == "unaryop": return emit_unaryop(st, instr_dest(inst), instr_unaryop_op(inst), instr_unaryop_operand(inst))
+    if kind == "struct_init": return emit_struct_init(st, instr_dest(inst), instr_struct_type(inst), instr_struct_fields(inst))
+    if kind == "field_get": return emit_field_get(st, instr_dest(inst), instr_fieldget_obj(inst), instr_fieldget_name(inst))
+    if kind == "field_set": return emit_field_set(st, instr_fieldset_obj(inst), instr_fieldset_name(inst), instr_fieldset_val(inst))
+    if kind == "list_init": return emit_list_init_checked(st, inst)
+    if kind == "tensor_init": return emit_tensor_init(st, inst)
+    if kind == "index_get": return emit_index_get(st, instr_dest(inst), instr_indexget_obj(inst), instr_indexget_idx(inst))
+    if kind == "index_set": return emit_index_set(st, instr_indexset_obj(inst), instr_indexset_idx(inst), instr_indexset_val(inst))
+    if kind == "alloca": return emit_alloca(st, instr_dest(inst), instr_alloca_type(inst))
+    if kind == "load": return emit_load(st, instr_dest(inst), instr_load_ptr(inst))
+    if kind == "store": return emit_store(st, instr_store_ptr(inst), instr_store_val(inst))
+    if kind == "map_init": return emit_map_init(st, instr_dest(inst), instr_map_key_type(inst), instr_map_val_type(inst), instr_map_pairs(inst))
+    if kind == "enum_init": return emit_enum_init(st, instr_dest(inst), instr_enum_type(inst), instr_enum_variant(inst), instr_enum_payload(inst))
+    if kind == "enum_tag": return emit_enum_tag(st, instr_dest(inst), instr_enumtag_val(inst))
+    if kind == "enum_payload": return emit_enum_payload(st, instr_dest(inst), instr_enumpayload_val(inst), instr_enumpayload_variant(inst))
+    if kind == "wrap_some": return emit_wrap_some(st, instr_dest(inst), instr_wrap_val(inst))
+    if kind == "wrap_none": return emit_wrap_none(st, instr_dest(inst), instr_wrapnone_type(inst))
+    if kind == "wrap_ok": return emit_wrap_ok(st, instr_dest(inst), instr_wrap_val(inst))
+    if kind == "wrap_err": return emit_wrap_err(st, instr_dest(inst), instr_wrap_val(inst))
+    if kind == "unwrap": return emit_unwrap(st, instr_dest(inst), instr_wrap_val(inst))
     if kind == "call":
         let call_dest: Value = instr_dest(inst)
         let call_fn_name: String = instr_call_fn(inst)
@@ -1677,19 +1685,19 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         if call_dest.ty.kind == TK_STRING() || is_string_returning_builtin(call_fn_name):
             s_call = emit_track_string(s_call, call_dest.name)
         return s_call
-    if kind == "return" { return emit_mir_return(st, instr_return_val(inst)) }
-    if kind == "jump" { return emit_line(st, emit_br(instr_jump_target(inst))) }
-    if kind == "branch" { return emit_mir_branch(st, inst) }
-    if kind == "switch" { return emit_mir_switch(st, instr_switch_tag(inst), instr_switch_cases(inst), instr_switch_default(inst)) }
-    if kind == "agent_spawn" { return emit_agent_spawn(st, instr_dest(inst), instr_agent_type(inst), instr_agent_args(inst)) }
-    if kind == "agent_send" { return emit_agent_send(st, instr_agentsend_agent(inst), instr_agentsend_channel(inst), instr_agentsend_val(inst)) }
-    if kind == "agent_sync" { return emit_agent_sync(st, instr_dest(inst), instr_agentsync_agent(inst), instr_agentsync_channel(inst)) }
-    if kind == "signal_init" { return emit_signal_init(st, instr_dest(inst), instr_signal_type(inst), instr_signal_val(inst)) }
-    if kind == "signal_get" { return emit_signal_get(st, instr_dest(inst), instr_signalget_sig(inst)) }
-    if kind == "signal_set" { return emit_signal_set(st, instr_signalset_sig(inst), instr_signalset_val(inst)) }
-    if kind == "stream_op" { return emit_stream_op(st, instr_dest(inst), instr_streamop_kind(inst), instr_streamop_source(inst), instr_streamop_args(inst)) }
-    if kind == "interp_concat" { return emit_interp_concat(st, instr_dest(inst), instr_concat_parts(inst)) }
-    if kind == "phi" { return emit_mir_phi(st, instr_dest(inst), instr_phi_entries(inst)) }
+    if kind == "return": return emit_mir_return(st, instr_return_val(inst))
+    if kind == "jump": return emit_line(st, emit_br(instr_jump_target(inst)))
+    if kind == "branch": return emit_mir_branch(st, inst)
+    if kind == "switch": return emit_mir_switch(st, instr_switch_tag(inst), instr_switch_cases(inst), instr_switch_default(inst))
+    if kind == "agent_spawn": return emit_agent_spawn(st, instr_dest(inst), instr_agent_type(inst), instr_agent_args(inst))
+    if kind == "agent_send": return emit_agent_send(st, instr_agentsend_agent(inst), instr_agentsend_channel(inst), instr_agentsend_val(inst))
+    if kind == "agent_sync": return emit_agent_sync(st, instr_dest(inst), instr_agentsync_agent(inst), instr_agentsync_channel(inst))
+    if kind == "signal_init": return emit_signal_init(st, instr_dest(inst), instr_signal_type(inst), instr_signal_val(inst))
+    if kind == "signal_get": return emit_signal_get(st, instr_dest(inst), instr_signalget_sig(inst))
+    if kind == "signal_set": return emit_signal_set(st, instr_signalset_sig(inst), instr_signalset_val(inst))
+    if kind == "stream_op": return emit_stream_op(st, instr_dest(inst), instr_streamop_kind(inst), instr_streamop_source(inst), instr_streamop_args(inst))
+    if kind == "interp_concat": return emit_interp_concat(st, instr_dest(inst), instr_concat_parts(inst))
+    if kind == "phi": return emit_mir_phi(st, instr_dest(inst), instr_phi_entries(inst))
     if kind == "move":
         // v5.4.0 Own.1 Phase 2 — record an explicit ownership transfer.
         // Push the stripped local name onto st.moved_locals so
@@ -1699,8 +1707,8 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         // installed in Phase 1 and ready to consume lowerer output.
         let mv_val: Value = instr_move_val(inst)
         let stripped: String = ret_val_base(mv_val.name)
-        if stripped == "" { return st }
-        if list_has_string(st.moved_locals, stripped) { return st }
+        if stripped == "": return st
+        if list_has_string(st.moved_locals, stripped): return st
         let mut s: EmitState = st
         s.moved_locals.push(stripped)
         return s
@@ -1909,10 +1917,10 @@ fn emit_list_init_checked(st: EmitState, inst: Instruction) -> EmitState:
     let struct_check: Option<StructEntry> = find_struct_entry(st, dest.ty.name)
     let struct_check2: Option<StructEntry> = find_struct_entry(st, elem_ty.name)
     match struct_check:
-        Some(_) => { return emit_struct_init_from_values(st, dest, dest.ty, elements) }
+        Some(_) => return emit_struct_init_from_values(st, dest, dest.ty, elements)
         _ => {}
     match struct_check2:
-        Some(_) => { return emit_struct_init_from_values(st, dest, elem_ty, elements) }
+        Some(_) => return emit_struct_init_from_values(st, dest, elem_ty, elements)
         _ => {}
     return emit_list_init(st, dest, elem_ty, elements)
 
@@ -1949,7 +1957,7 @@ fn emit_tensor_init(st: EmitState, inst: Instruction) -> EmitState:
     // Step 2: store each dim value. Stays at emission point.
     let mut i_dim: Int = 0
     for _ in 0..32:
-        if i_dim >= rank { break }
+        if i_dim >= rank: break
         let gep: String = dn + ".sd" + toString(i_dim)
         s = emit_line(s, "  " + gep + " = getelementptr inbounds " + shape_arr_ty + ", ptr " + shape_a + ", i64 0, i64 " + toString(i_dim))
         s = emit_line(s, "  store i64 " + toString(shape[i_dim]) + ", ptr " + gep)
@@ -1976,7 +1984,7 @@ fn emit_tensor_init(st: EmitState, inst: Instruction) -> EmitState:
     // names; types match elem_type by construction in lower_tensor.
     let mut j: Int = 0
     for _ in 0..100000:
-        if j >= len(elements) { break }
+        if j >= len(elements): break
         let elem: Value = elements[j]
         // Note: "en" is a Mapanare keyword (Spanish "in"), so use `elem_val`
         // for the SSA name — identifiers that collide with keywords cause
@@ -2033,7 +2041,7 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
     // Bool constant
     if ty.kind == TK_BOOL():
         let mut bval: String = "0"
-        if val == "true" { bval = "1" }
+        if val == "true": bval = "1"
         s = emit_line(s, "  " + dn + " = add i1 0, " + bval)
         return s
 
@@ -2052,10 +2060,10 @@ fn emit_const(st: EmitState, dest: Value, ty: MIRType, val: String) -> EmitState
             if !fval.contains("."):
                 let mut ei: Int = 0
                 for ci in 0..len(fval):
-                    if fval.char_at(ci) == "e" { ei = ci }
+                    if fval.char_at(ci) == "e": ei = ci
                 fval = fval.substr(0, ei) + ".0" + fval.substr(ei, len(fval) - ei)
         else:
-            if !fval.contains(".") { fval = fval + ".0" }
+            if !fval.contains("."): fval = fval + ".0"
         s = emit_line(s, "  " + dn + " = fadd double 0.0, " + fval)
         return s
 
@@ -2171,7 +2179,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
     let is_string: Bool = lhs.ty.kind == TK_STRING()
     let is_bool: Bool = lhs.ty.kind == TK_BOOL()
     let mut cmp_ty: String = llvm_int()
-    if is_bool { cmp_ty = "i1" }
+    if is_bool: cmp_ty = "i1"
 
     // Use binop_kind_to_str (defined in lower.mn where BinOpKind is local)
     // to convert the enum tag to a string, then dispatch with if/else
@@ -2379,13 +2387,13 @@ fn emit_field_get(st: EmitState, dest: Value, obj: Value, field_name: String) ->
         }
     }
 
-fn find_field_index_placeholder_deleted() -> Int { return 0 }
+fn find_field_index_placeholder_deleted() -> Int: return 0
 
 fn find_field_index(fields: List<String>, name: String) -> Int:
     let mut i: Int = 0
     for _ in 0..500:
-        if i >= len(fields) { return 0 }
-        if fields[i] == name { return i }
+        if i >= len(fields): return 0
+        if fields[i] == name: return i
         i = i + 1
     return 0
 
@@ -2437,21 +2445,21 @@ fn strip_percent(name: String) -> String:
 fn has_struct(st: EmitState, name: String) -> Bool:
     let opt: Option<StructEntry> = find_struct_entry(st, name)
     match opt:
-        Some(_) => { return true }
-        _ => { return false }
+        Some(_) => return true
+        _ => return false
 
 fn try_emit_struct_construct(st: EmitState, dest: Value, fn_name: String, args: List<Value>) -> EmitState:
     // Check if fn_name is "__new_<StructName>" and emit struct construction.
     // Uses ternary expressions to avoid early returns inside if/match.
     let is_new: Bool = len(fn_name) > 6
     let mut prefix: String = ""
-    if is_new { prefix = fn_name.substr(0, 6) }
+    if is_new: prefix = fn_name.substr(0, 6)
     let mut struct_name: String = ""
-    if prefix == "__new_" { struct_name = fn_name.substr(6, len(fn_name) - 6) }
+    if prefix == "__new_": struct_name = fn_name.substr(6, len(fn_name) - 6)
     let mut found: Bool = false
-    if struct_name != "" { found = has_struct(st, struct_name) }
+    if struct_name != "": found = has_struct(st, struct_name)
     let mut result: EmitState = st
-    if found { result = emit_struct_init_from_values(st, dest, dest.ty, args) }
+    if found: result = emit_struct_init_from_values(st, dest, dest.ty, args)
     return result
 
 fn emit_struct_init_from_values(st: EmitState, dest: Value, ty: MIRType, values: List<Value>) -> EmitState:
@@ -2519,7 +2527,7 @@ fn find_alloca_by_search(lines: List<String>, value_name: String) -> String:
     let mut result: String = ""
     let mut i: Int = 0
     for _ in 0..2000:
-        if i >= n { return result }
+        if i >= n: return result
         let line: String = lines[i]
         if line.contains(search_pat):
             let pp: Int = line.find(", ptr ")
@@ -2534,11 +2542,11 @@ fn is_name_in_byref(byref_names: List<String>, name: String) -> Bool:
     // Local vars: "%{name}{counter}.addr" — these should NOT match.
     let mut i: Int = 0
     for _ in 0..100:
-        if i >= len(byref_names) { return false }
+        if i >= len(byref_names): return false
         let bn: String = byref_names[i]
         // Exact match: the alloca is %{param_name}.addr
         let expected: String = "%" + bn + ".addr"
-        if name == expected { return true }
+        if name == expected: return true
         i = i + 1
     return false
 
@@ -2552,12 +2560,12 @@ fn is_byref_type_st(st: EmitState, ty: String) -> Bool:
     // Named struct: resolve to inline {...} form via registered entry.
     if ty.starts_with("%struct."):
         let sz_real: Int = struct_byte_size(st, ty)
-        if sz_real > 64 { return true }
+        if sz_real > 64: return true
         return false
     // Inline struct: compute directly.
     if ty.starts_with("{"):
         let sz_lit: Int = llvm_type_size(ty)
-        if sz_lit > 64 { return true }
+        if sz_lit > 64: return true
     return false
 
 // Back-compat wrapper for any call site that lacks EmitState access.
@@ -2566,11 +2574,11 @@ fn is_byref_type_st(st: EmitState, ty: String) -> Bool:
 fn is_byref_type(ty: String) -> Bool:
     if ty.starts_with("%struct."):
         let sz_st: Int = llvm_type_size(ty)
-        if sz_st > 64 { return true }
+        if sz_st > 64: return true
         return false
     if ty.starts_with("{"):
         let sz_lit: Int = llvm_type_size(ty)
-        if sz_lit > 64 { return true }
+        if sz_lit > 64: return true
     return false
 
 // Compute real byte size of a named struct type by looking up its
@@ -2603,12 +2611,12 @@ fn struct_byte_size(st: EmitState, ty: String) -> Int = llvm_sizeof_st(st, ty)
 // Boxed enums: {i64, ptr} = 16 bytes.
 // Returns 16 as default if not found (all boxed enums are 16B).
 fn enum_byte_size(st: EmitState, ty: String) -> Int:
-    if !ty.starts_with("%enum.") { return llvm_type_size(ty) }
+    if !ty.starts_with("%enum."): return llvm_type_size(ty)
     let name: String = ty.substr(6, len(ty) - 6)
     let mut i: Int = 0
     let n: Int = len(st.enum_names)
     for _ in 0..10000:
-        if i >= n { return 16 }
+        if i >= n: return 16
         if st.enum_names[i] == name:
             if i < len(st.enum_inline_slots):
                 let slots: Int = st.enum_inline_slots[i]
@@ -2628,7 +2636,7 @@ fn enum_byte_size(st: EmitState, ty: String) -> Int:
 fn use_sret_return(st: EmitState, ty: String) -> Bool:
     // Scalars: never sret
     let is_agg: Bool = ty.starts_with("{") || ty.starts_with("%struct.") || ty.starts_with("%enum.")
-    if !is_agg { return false }
+    if !is_agg: return false
     // Compute byte size — resolve named types through tables
     let mut sz: Int = 0
     if ty.starts_with("%struct."):
@@ -2659,7 +2667,7 @@ fn find_alloca_for_value(st: EmitState, value_name: String) -> String:
     let n: Int = len(st.lines)
     let mut i: Int = n - 1
     for _ in 0..10000:
-        if i < 0 { return "" }
+        if i < 0: return ""
         let line: String = st.lines[i]
         if line.contains(search):
             if line.contains("load"):
@@ -2672,17 +2680,17 @@ fn find_alloca_for_value(st: EmitState, value_name: String) -> String:
     return ""
 
 fn llvm_type_size(ty: String) -> Int:
-    if ty == "i1" { return 1 }
-    if ty == "i8" { return 1 }
-    if ty == "i32" { return 4 }
-    if ty == "i64" { return 8 }
-    if ty == "double" { return 8 }
-    if ty == "ptr" { return 8 }
-    if ty == "void" { return 0 }
+    if ty == "i1": return 1
+    if ty == "i8": return 1
+    if ty == "i32": return 4
+    if ty == "i64": return 8
+    if ty == "double": return 8
+    if ty == "ptr": return 8
+    if ty == "void": return 0
     // String = {ptr, i64} = 16
-    if ty == llvm_string() { return 16 }
+    if ty == llvm_string(): return 16
     // List = {ptr, i64, i64, i64, i64} = 40 (data, len, cap, elem_size, managed)
-    if ty == llvm_list_rt() { return 40 }
+    if ty == llvm_list_rt(): return 40
     // v5.0.6 Rt.4: enum layouts depend on inline slot count:
     //   boxed        {i64, ptr}        = 16 bytes
     //   1-slot inline {i64, i64}       = 16 bytes
@@ -2692,12 +2700,12 @@ fn llvm_type_size(ty: String) -> Int:
     // sizing; over-allocating by up to 8B is safe, under-allocating is
     // a latent heap overflow. The prior "always 16" hardcode + comment
     // became actively false once Rt.1 landed.
-    if ty.starts_with("%enum.") { return 24 }
+    if ty.starts_with("%enum."): return 24
     // Structs: use field_count * 32 as safe upper bound.
     // This is used for malloc allocation, so must be >= actual size.
-    if ty.starts_with("%struct.") { return 256 }
+    if ty.starts_with("%struct."): return 256
     // Aggregate types: count fields
-    if ty.starts_with("{") { return llvm_aggregate_size(ty) }
+    if ty.starts_with("{"): return llvm_aggregate_size(ty)
     return 8
 
 fn llvm_aggregate_size(ty: String) -> Int:
@@ -2729,10 +2737,10 @@ fn llvm_sizeof_st(st: EmitState, ty: String) -> Int:
         let mut total: Int = 0
         let mut i: Int = 0
         for _ in 0..500:
-            if i >= nf { return total }
+            if i >= nf: return total
             let mut fsz: Int = llvm_sizeof_st(st, ftypes[i])
             let rem: Int = fsz % 8
-            if rem != 0 { fsz = fsz + (8 - rem) }
+            if rem != 0: fsz = fsz + (8 - rem)
             total = total + fsz
             i = i + 1
         return total
@@ -2745,7 +2753,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
         let list_ty_kind: Int = args[0].ty.kind
         let elem_name: String = args[1].name
         let mut elem_ty: String = resolve_type(st, args[1].ty)
-        if elem_ty == "i64" { elem_ty = resolve_mir_type(args[1].ty) }
+        if elem_ty == "i64": elem_ty = resolve_mir_type(args[1].ty)
         // If type is still i64 but the list knows its element type from
         // type args, use that. Handles cross-module field access where the
         // element's own MIR type wasn't fully resolved.
@@ -2777,7 +2785,7 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
             let type_name: String = args[0].ty.name
             let cp: Int = type_name.find(":")
             let mut base_name: String = type_name
-            if cp > 0 { base_name = type_name.substr(0, cp) }
+            if cp > 0: base_name = type_name.substr(0, cp)
             let struct_ty: String = "%struct." + base_name
             let field_idx: String = find_list_field_index(st, type_name, dest)
             let gep: String = "%push_gep" + cnt
@@ -2838,9 +2846,9 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
     let mut use_gep_trick: Bool = false
-    if elem_llvm_ty.starts_with("%struct.") { use_gep_trick = true }
-    if elem_llvm_ty.starts_with("%enum.") { use_gep_trick = true }
-    if elem_llvm_ty.starts_with("{") { use_gep_trick = true }
+    if elem_llvm_ty.starts_with("%struct."): use_gep_trick = true
+    if elem_llvm_ty.starts_with("%enum."): use_gep_trick = true
+    if elem_llvm_ty.starts_with("{"): use_gep_trick = true
     if use_gep_trick:
         let elem_sz: String = dn + ".elem.sz"
         s = emit_line(s, "  " + elem_sz + " = ptrtoint ptr getelementptr (" + elem_llvm_ty + ", ptr null, i32 1) to i64")
@@ -2852,7 +2860,7 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
             // floor. Investigation candidate for v5.6.13: every UNKNOWN
             // here is a potential lowerer-side gap (let lower_let_list_hint
             // failed to propagate the type).
-            if elem_sz_n < 384 { elem_sz_n = 384 }
+            if elem_sz_n < 384: elem_sz_n = 384
         s = emit_rt_call(s, list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n))
 
     // v5.4.1 Phase 3.7 — hoist the alloca to the entry-block prelude
@@ -3126,26 +3134,26 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
 
     // Determine key type tag: 0=int, 1=str, 2=float
     let mut key_tag: String = "1"
-    if key_ty.kind == TK_INT() { key_tag = "0" }
-    if key_ty.kind == TK_FLOAT() { key_tag = "2" }
+    if key_ty.kind == TK_INT(): key_tag = "0"
+    if key_ty.kind == TK_FLOAT(): key_tag = "2"
 
     // v4.32.0 Phase 1.2: val_tag mirrors the Python bootstrap at
     // emit_llvm_text.py:3160 — 1 for String val types (so the runtime
     // knows to apply the heap-tag low-bit strip on reads), 0 otherwise.
     let mut val_tag: String = "0"
-    if val_ty.kind == TK_STRING() { val_tag = "1" }
+    if val_ty.kind == TK_STRING(): val_tag = "1"
 
     // Key/val sizes: strings are 16 bytes ({ptr,i64}), ints are 8 bytes
     // Default val_size = 16 to safely handle enums/strings in untyped empty maps
     let mut key_size: String = "16"
     let mut val_size: String = "16"
-    if key_ty.kind == TK_INT() { key_size = "8" }
-    if key_ty.kind == TK_FLOAT() { key_size = "8" }
-    if val_ty.kind == TK_INT() { val_size = "8" }
-    if val_ty.kind == TK_FLOAT() { val_size = "8" }
-    if val_ty.kind == TK_BOOL() { val_size = "8" }
-    if val_ty.kind == TK_STRUCT() { val_size = "64" }
-    if val_ty.kind == TK_ENUM() { val_size = "64" }
+    if key_ty.kind == TK_INT(): key_size = "8"
+    if key_ty.kind == TK_FLOAT(): key_size = "8"
+    if val_ty.kind == TK_INT(): val_size = "8"
+    if val_ty.kind == TK_FLOAT(): val_size = "8"
+    if val_ty.kind == TK_BOOL(): val_size = "8"
+    if val_ty.kind == TK_STRUCT(): val_size = "64"
+    if val_ty.kind == TK_ENUM(): val_size = "64"
 
     // Call __mn_map_new(key_size, val_size, key_type, val_type) — 4 args
     // (v4.32.0 Phase 1.2 closes the arity mismatch flagged as a 7-cycle
@@ -3189,7 +3197,7 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
 
 fn pack_to_i64(st: EmitState, val: String, ft: String, pk_name: String) -> EmitState:
     let mut s: EmitState = st
-    if ft == "i64" { return s }
+    if ft == "i64": return s
     if ft == "double":
         s = emit_line(s, "  " + pk_name + " = bitcast double " + val + " to i64")
         return next_ssa(s)
@@ -3203,7 +3211,7 @@ fn pack_to_i64(st: EmitState, val: String, ft: String, pk_name: String) -> EmitS
 
 fn unpack_from_i64(st: EmitState, val: String, ft: String, upk_name: String) -> EmitState:
     let mut s: EmitState = st
-    if ft == "i64" { return s }
+    if ft == "i64": return s
     if ft == "double":
         s = emit_line(s, "  " + upk_name + " = bitcast i64 " + val + " to double")
         return next_ssa(s)
@@ -3235,7 +3243,7 @@ fn emit_enum_init(st: EmitState, dest: Value, ty: MIRType, variant: String, payl
             if slot_i < n_slots:
                 // Last slot writes to dn; earlier slots to temporaries.
                 let mut nxt: String = dn + ".ei" + toString(slot_i + 1)
-                if slot_i == n_slots - 1 { nxt = dn }
+                if slot_i == n_slots - 1: nxt = dn
                 if slot_i < len(payload):
                     let p: Value = payload[slot_i]
                     let ft: String = resolve_mir_type(p.ty)
@@ -3331,13 +3339,13 @@ fn build_payload_type_from_variant(st: EmitState, enum_name: String, variant_nam
     let mut ei: Int = 0
     let nenums: Int = len(st.enum_infos)
     for _ in 0..500:
-        if ei >= nenums { return "{ }" }
+        if ei >= nenums: return "{ }"
         let info: EnumInfo = st.enum_infos[ei]
         if info.name == enum_name:
             let mut vi: Int = 0
             let nvar: Int = len(info.variants)
             for _ in 0..500:
-                if vi >= nvar { return "{ }" }
+                if vi >= nvar: return "{ }"
                 if info.variants[vi].name == variant_name:
                     let types: List<MIRType> = info.variants[vi].payload_types
                     let mut result: String = "{ "
@@ -3364,7 +3372,7 @@ fn compute_payload_alloc_size(st: EmitState, payload: List<Value>) -> Int:
     let mut total: Int = 0
     let mut i: Int = 0
     for _ in 0..100:
-        if i >= len(payload) { return total }
+        if i >= len(payload): return total
         let mut pty: String = resolve_mir_type(payload[i].ty)
         // Same struct→enum rewrite as compute_field_offset — ensures
         // the size used here matches the field offsets below.
@@ -3373,7 +3381,7 @@ fn compute_payload_alloc_size(st: EmitState, payload: List<Value>) -> Int:
                 pty = "%enum." + payload[i].ty.name
         let mut psz: Int = llvm_sizeof_st(st, pty)
         let rem: Int = psz % 8
-        if rem != 0 { psz = psz + (8 - rem) }
+        if rem != 0: psz = psz + (8 - rem)
         total = total + psz
         i = i + 1
     return total
@@ -3382,7 +3390,7 @@ fn compute_field_offset(st: EmitState, payload: List<Value>, field_idx: Int) -> 
     let mut offset: Int = 0
     let mut i: Int = 0
     for _ in 0..100:
-        if i >= field_idx { return offset }
+        if i >= field_idx: return offset
         let mut pty: String = resolve_mir_type(payload[i].ty)
         // Fix struct→enum misclassification
         if pty.starts_with("%struct."):
@@ -3390,7 +3398,7 @@ fn compute_field_offset(st: EmitState, payload: List<Value>, field_idx: Int) -> 
                 pty = "%enum." + payload[i].ty.name
         let mut fsz: Int = llvm_sizeof_st(st, pty)
         let rem: Int = fsz % 8
-        if rem != 0 { fsz = fsz + (8 - rem) }
+        if rem != 0: fsz = fsz + (8 - rem)
         offset = offset + fsz
         i = i + 1
     return offset
@@ -3421,21 +3429,21 @@ fn resolve_variant_index(st: EmitState, enum_name: String, variant: String) -> I
 // Uses return instead of conditional assignment (Python lowerer drops if-assignments).
 fn parse_field_index(variant: String) -> Int:
     let colon_pos: Int = variant.find(":")
-    if colon_pos < 0 { return 0 }
+    if colon_pos < 0: return 0
     let idx_char: String = variant.char_at(colon_pos + 1)
     return int(idx_char)
 
 // Strip ":N" suffix from "Variant:N".
 fn strip_colon_suffix(s: String) -> String:
     let colon_pos: Int = s.find(":")
-    if colon_pos < 0 { return s }
+    if colon_pos < 0: return s
     return s.substr(0, colon_pos)
 
 // Extract everything after ":".
 fn extract_after_colon(s: String, colon_pos: Int) -> String:
     let slen: Int = len(s)
     let start: Int = colon_pos + 1
-    if start >= slen { return "" }
+    if start >= slen: return ""
     return s.substr(start, slen - start)
 
 // Compute byte offset to field_idx within a variant's payload.
@@ -3443,12 +3451,12 @@ fn extract_after_colon(s: String, colon_pos: Int) -> String:
 fn compute_payload_offset(st: EmitState, enum_name: String, variant_name: String, field_idx: Int) -> Int:
     let mut ei: Int = 0
     for _ in 0..500:
-        if ei >= len(st.enum_infos) { return 0 }
+        if ei >= len(st.enum_infos): return 0
         let info: EnumInfo = st.enum_infos[ei]
         if info.name == enum_name:
             let mut vi: Int = 0
             for _ in 0..500:
-                if vi >= len(info.variants) { return 0 }
+                if vi >= len(info.variants): return 0
                 if info.variants[vi].name == variant_name:
                     return sum_field_sizes(st, info.variants[vi].payload_types, field_idx)
                 vi = vi + 1
@@ -3461,7 +3469,7 @@ fn sum_field_sizes(st: EmitState, types: List<MIRType>, count: Int) -> Int:
     let mut total: Int = 0
     let mut i: Int = 0
     for _ in 0..100:
-        if i >= count { return total }
+        if i >= count: return total
         let mut pty: String = resolve_mir_type(types[i])
         // Fix struct→enum misclassification: MIR may have kind:"struct" for enums
         if pty.starts_with("%struct."):
@@ -3470,7 +3478,7 @@ fn sum_field_sizes(st: EmitState, types: List<MIRType>, count: Int) -> Int:
                 pty = "%enum." + tname
         let mut fsz: Int = llvm_sizeof_st(st, pty)
         let rem: Int = fsz % 8
-        if rem != 0 { fsz = fsz + (8 - rem) }
+        if rem != 0: fsz = fsz + (8 - rem)
         total = total + fsz
         i = i + 1
     return total
@@ -3480,21 +3488,21 @@ fn sum_field_sizes(st: EmitState, types: List<MIRType>, count: Int) -> Int:
 fn compute_variant_field_offset(st: EmitState, enum_name: String, variant_with_idx: String) -> Int:
     // Parse index from "Variant:N"
     let colon_pos: Int = variant_with_idx.find(":")
-    if colon_pos < 0 { return 0 }
+    if colon_pos < 0: return 0
     let idx_str: String = variant_with_idx.substr(colon_pos + 1, len(variant_with_idx) - colon_pos - 1)
     let field_idx: Int = int(idx_str)
-    if field_idx == 0 { return 0 }
+    if field_idx == 0: return 0
 
     // Look up variant's payload types
     let variant_name: String = variant_with_idx.substr(0, colon_pos)
     let mut ei: Int = 0
     for _ in 0..500:
-        if ei >= len(st.enum_infos) { return 0 }
+        if ei >= len(st.enum_infos): return 0
         let info: EnumInfo = st.enum_infos[ei]
         if info.name == enum_name:
             let mut vi: Int = 0
             for _ in 0..500:
-                if vi >= len(info.variants) { return 0 }
+                if vi >= len(info.variants): return 0
                 if info.variants[vi].name == variant_name:
                     // Sum sizes of fields 0..field_idx-1
                     // v5.6.5 Ve.1: state-aware sizing so %struct.* resolves
@@ -3502,12 +3510,12 @@ fn compute_variant_field_offset(st: EmitState, enum_name: String, variant_with_i
                     let mut offset: Int = 0
                     let mut fi: Int = 0
                     for _ in 0..100:
-                        if fi >= field_idx { return offset }
-                        if fi >= len(info.variants[vi].payload_types) { return offset }
+                        if fi >= field_idx: return offset
+                        if fi >= len(info.variants[vi].payload_types): return offset
                         let fty: String = resolve_mir_type(info.variants[vi].payload_types[fi])
                         let mut fsz: Int = llvm_sizeof_st(st, fty)
                         let rem: Int = fsz % 8
-                        if rem != 0 { fsz = fsz + (8 - rem) }
+                        if rem != 0: fsz = fsz + (8 - rem)
                         offset = offset + fsz
                         fi = fi + 1
                     return offset
@@ -3583,7 +3591,7 @@ fn emit_enum_payload(st: EmitState, dest: Value, val: Value, variant: String) ->
         let slot_idx_i: Int = field_idx_i + 1
         let mut dest_ty_i: String = resolve_mir_type(dest.ty)
         if dest_ty_i.starts_with("%struct."):
-            if is_enum_type(s, dest.ty.name) { dest_ty_i = "%enum." + dest.ty.name }
+            if is_enum_type(s, dest.ty.name): dest_ty_i = "%enum." + dest.ty.name
         let raw_i: String = dn + ".raw"
         s = emit_line(s, "  " + raw_i + " = extractvalue " + enum_ty + " " + val.name + ", " + toString(slot_idx_i))
         if dest_ty_i == "i64":
@@ -3812,6 +3820,11 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "__mn_indent_to_braces":
         let as_itb: String = llvm_string() + " " + args[0].name
         return emit_rt_call(st, dn, llvm_string(), "__mn_indent_to_braces", as_itb)
+    // v5.48.1 Te.3.D.4.4: match-arm shorthand rewriter — same Win64
+    // ABI routing rationale as __mn_indent_to_braces above.
+    if fn_name == "__mn_rewrite_arm_stmt_shorthand":
+        let as_rass: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, llvm_string(), "__mn_rewrite_arm_stmt_shorthand", as_rass)
 
     // chr/ord builtins
     if fn_name == "chr":
@@ -3914,9 +3927,9 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         s_gt = emit_line(s_gt, "  store " + llvm_list_rt() + " " + args[0].name + ", ptr " + pa)
         s_gt = emit_line(s_gt, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + pb)
         let mut rt_name: String = "__mn_gpu_tensor_add"
-        if fn_name == "gpu_tensor_sub" { rt_name = "__mn_gpu_tensor_sub" }
-        if fn_name == "gpu_tensor_mul" { rt_name = "__mn_gpu_tensor_mul" }
-        if fn_name == "gpu_tensor_div" { rt_name = "__mn_gpu_tensor_div" }
+        if fn_name == "gpu_tensor_sub": rt_name = "__mn_gpu_tensor_sub"
+        if fn_name == "gpu_tensor_mul": rt_name = "__mn_gpu_tensor_mul"
+        if fn_name == "gpu_tensor_div": rt_name = "__mn_gpu_tensor_div"
         let as_gt: String = "ptr " + pa + ", ptr " + pb
         s_gt = emit_rt_call(s_gt, dn, llvm_list_rt(), rt_name, as_gt)
         return s_gt
@@ -4004,7 +4017,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         let mut s_rs: EmitState = st
         s_rs.counter = s_rs.counter + 1
         let mut prefix_rs: String = "treshape"
-        if fn_name == "__mn_tensor_view" { prefix_rs = "tview" }
+        if fn_name == "__mn_tensor_view": prefix_rs = "tview"
         let shp_p: String = "%" + prefix_rs + "_shape" + cnt_rs
         s_rs = emit_line(s_rs, "  " + shp_p + " = alloca " + llvm_list_rt())
         s_rs = emit_line(s_rs, "  store " + llvm_list_rt() + " " + args[1].name + ", ptr " + shp_p)
@@ -4147,19 +4160,19 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         let op_ch: String = fn_name.replace("__op_", "")
         let an: String = args[0].name
         let bn: String = args[1].name
-        if op_ch == "+" { return emit_line(st, emit_add(dn, llvm_int(), an, bn)) }
-        if op_ch == "-" { return emit_line(st, emit_sub(dn, llvm_int(), an, bn)) }
-        if op_ch == "*" { return emit_line(st, emit_mul(dn, llvm_int(), an, bn)) }
-        if op_ch == "/" { return emit_line(st, emit_sdiv(dn, llvm_int(), an, bn)) }
-        if op_ch == "%" { return emit_line(st, emit_srem(dn, llvm_int(), an, bn)) }
-        if op_ch == "==" { return emit_line(st, emit_icmp(dn, "eq", llvm_int(), an, bn)) }
-        if op_ch == "!=" { return emit_line(st, emit_icmp(dn, "ne", llvm_int(), an, bn)) }
-        if op_ch == "<" { return emit_line(st, emit_icmp(dn, "slt", llvm_int(), an, bn)) }
-        if op_ch == ">" { return emit_line(st, emit_icmp(dn, "sgt", llvm_int(), an, bn)) }
-        if op_ch == "<=" { return emit_line(st, emit_icmp(dn, "sle", llvm_int(), an, bn)) }
-        if op_ch == ">=" { return emit_line(st, emit_icmp(dn, "sge", llvm_int(), an, bn)) }
-        if op_ch == "&&" { return emit_line(st, emit_and_instr(dn, an, bn)) }
-        if op_ch == "||" { return emit_line(st, emit_or_instr(dn, an, bn)) }
+        if op_ch == "+": return emit_line(st, emit_add(dn, llvm_int(), an, bn))
+        if op_ch == "-": return emit_line(st, emit_sub(dn, llvm_int(), an, bn))
+        if op_ch == "*": return emit_line(st, emit_mul(dn, llvm_int(), an, bn))
+        if op_ch == "/": return emit_line(st, emit_sdiv(dn, llvm_int(), an, bn))
+        if op_ch == "%": return emit_line(st, emit_srem(dn, llvm_int(), an, bn))
+        if op_ch == "==": return emit_line(st, emit_icmp(dn, "eq", llvm_int(), an, bn))
+        if op_ch == "!=": return emit_line(st, emit_icmp(dn, "ne", llvm_int(), an, bn))
+        if op_ch == "<": return emit_line(st, emit_icmp(dn, "slt", llvm_int(), an, bn))
+        if op_ch == ">": return emit_line(st, emit_icmp(dn, "sgt", llvm_int(), an, bn))
+        if op_ch == "<=": return emit_line(st, emit_icmp(dn, "sle", llvm_int(), an, bn))
+        if op_ch == ">=": return emit_line(st, emit_icmp(dn, "sge", llvm_int(), an, bn))
+        if op_ch == "&&": return emit_line(st, emit_and_instr(dn, an, bn))
+        if op_ch == "||": return emit_line(st, emit_or_instr(dn, an, bn))
         // Fallback for unknown operator
         return emit_line(st, emit_add(dn, llvm_int(), an, bn))
 
@@ -4275,7 +4288,7 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     let fn_opt_pre: Option<FnEntry> = find_function(s, fn_name)
     let mut reg_param_types: List<String> = []
     match fn_opt_pre:
-        Some(fe) => { reg_param_types = fe.param_types }
+        Some(fe) => reg_param_types = fe.param_types
         _ => {}
 
     // Build args with byref: large struct args → alloca + pass pointer
@@ -4426,7 +4439,7 @@ fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState:
     return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
 
 fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState:
-    if len(args) == 0 { return st }
+    if len(args) == 0: return st
     let mut s: EmitState = st
     let an: String = args[0].name
     let dn: String = dest.name
@@ -4454,7 +4467,7 @@ fn emit_builtin_len(st: EmitState, dest: Value, args: List<Value>) -> EmitState:
     return s
 
 fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitState:
-    if len(args) == 0 { return st }
+    if len(args) == 0: return st
     let mut s: EmitState = st
     let an: String = args[0].name
     let dn: String = dest.name
@@ -4475,7 +4488,7 @@ fn emit_builtin_tostring(st: EmitState, dest: Value, args: List<Value>) -> EmitS
     return s
 
 fn emit_builtin_int(st: EmitState, dest: Value, args: List<Value>) -> EmitState:
-    if len(args) == 0 { return st }
+    if len(args) == 0: return st
     let mut s: EmitState = st
     let an: String = args[0].name
     let dn: String = dest.name
@@ -4490,7 +4503,7 @@ fn emit_builtin_int(st: EmitState, dest: Value, args: List<Value>) -> EmitState:
     return s
 
 fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitState:
-    if len(args) == 0 { return st }
+    if len(args) == 0: return st
     let mut s: EmitState = st
     let an: String = args[0].name
     let dn: String = dest.name
@@ -4536,8 +4549,8 @@ fn list_has_string(lst: List<String>, name: String) -> Bool:
     let n: Int = len(lst)
     let mut i: Int = 0
     for _ in 0..1024:
-        if i >= n { return false }
-        if lst[i] == name { return true }
+        if i >= n: return false
+        if lst[i] == name: return true
         i = i + 1
     return false
 
@@ -4546,8 +4559,8 @@ fn ret_val_base(ret_val: String) -> String:
     // in st.str_owned / list_owned / boxed_owned.  For non-local returns
     // (constants, SSA temps without a named local) this yields a string
     // that cannot match a local name anyway.
-    if len(ret_val) == 0 { return "" }
-    if ret_val.substr(0, 1) == "%" { return ret_val.substr(1, len(ret_val) - 1) }
+    if len(ret_val) == 0: return ""
+    if ret_val.substr(0, 1) == "%": return ret_val.substr(1, len(ret_val) - 1)
     return ret_val
 
 // ---------------------------------------------------------------------------
@@ -4570,24 +4583,29 @@ fn ret_val_base(ret_val: String) -> String:
 // picks them up directly.
 
 fn is_string_returning_builtin(fn_name: String) -> Bool:
-    if fn_name == "read_line" { return true }
-    if fn_name == "read_file" { return true }
-    if fn_name == "http_get" { return true }
-    if fn_name == "sha256" { return true }
-    if fn_name == "base64_encode" { return true }
-    if fn_name == "base64_decode" { return true }
-    if fn_name == "hmac_sha256" { return true }
-    if fn_name == "hex_encode" { return true }
-    if fn_name == "random_bytes" { return true }
-    if fn_name == "regex_replace" { return true }
-    if fn_name == "gpu_device_name" { return true }
-    if fn_name == "join" { return true }
-    if fn_name == "typeof" { return true }
+    if fn_name == "read_line": return true
+    if fn_name == "read_file": return true
+    if fn_name == "http_get": return true
+    if fn_name == "sha256": return true
+    if fn_name == "base64_encode": return true
+    if fn_name == "base64_decode": return true
+    if fn_name == "hmac_sha256": return true
+    if fn_name == "hex_encode": return true
+    if fn_name == "random_bytes": return true
+    if fn_name == "regex_replace": return true
+    if fn_name == "gpu_device_name": return true
+    if fn_name == "join": return true
+    if fn_name == "typeof": return true
     // v5.23.1 Mb.1: V.9 lifecycle leak — defensive belt-and-suspenders.
     // lower.mn already types the dest as mir_string() so the kind-based
     // branch at line 1650 catches it, but list this name explicitly so
     // any future refactor that loses the mir_string() hint still tracks.
-    if fn_name == "__mn_indent_to_braces" { return true }
+    if fn_name == "__mn_indent_to_braces": return true
+    // v5.48.1 Te.3.D.4.4: same belt-and-suspenders for the new
+    // match-arm shorthand rewriter — lower.mn types its dest as
+    // mir_string() but list explicitly so refactors that drop the
+    // mir_string() hint still tracks.
+    if fn_name == "__mn_rewrite_arm_stmt_shorthand": return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -4699,35 +4717,35 @@ fn emit_track_tensor(st: EmitState, ptr_val: String) -> EmitState:
 // and the __mn_tensor_slice special case): every fn listed here is
 // tracked, every tracked call site is for a fn in this list.
 fn is_tensor_allocating_fn(fn_name: String) -> Bool:
-    if fn_name == "__mn_tensor_alloc" { return true }
-    if fn_name == "__mn_tensor_slice" { return true }
-    if fn_name == "__mn_tensor_reshape" { return true }
+    if fn_name == "__mn_tensor_alloc": return true
+    if fn_name == "__mn_tensor_slice": return true
+    if fn_name == "__mn_tensor_reshape": return true
     // v5.45.0 Ts.2.B + Ts.3.B — view returns a refcount-aliased view
     // (still tracked: drop-glue must call __mn_tensor_free which is
     // refcount-aware as of Ts.2.A). step_slice returns a fresh
     // contiguous tensor (copy semantics).
-    if fn_name == "__mn_tensor_view" { return true }
-    if fn_name == "__mn_tensor_step_slice" { return true }
-    if fn_name == "__mn_tensor_add_broadcast_f64" { return true }
-    if fn_name == "__mn_tensor_sub_broadcast_f64" { return true }
-    if fn_name == "__mn_tensor_mul_broadcast_f64" { return true }
-    if fn_name == "__mn_tensor_div_broadcast_f64" { return true }
-    if fn_name == "__mn_tensor_add_broadcast_i64" { return true }
-    if fn_name == "__mn_tensor_sub_broadcast_i64" { return true }
-    if fn_name == "__mn_tensor_mul_broadcast_i64" { return true }
-    if fn_name == "__mn_tensor_div_broadcast_i64" { return true }
-    if fn_name == "__mn_tensor_add_scalar_f64" { return true }
-    if fn_name == "__mn_tensor_sub_scalar_f64" { return true }
-    if fn_name == "__mn_tensor_mul_scalar_f64" { return true }
-    if fn_name == "__mn_tensor_div_scalar_f64" { return true }
-    if fn_name == "__mn_tensor_add_scalar_i64" { return true }
-    if fn_name == "__mn_tensor_sub_scalar_i64" { return true }
-    if fn_name == "__mn_tensor_mul_scalar_i64" { return true }
-    if fn_name == "__mn_tensor_div_scalar_i64" { return true }
-    if fn_name == "__mn_tensor_rsub_scalar_f64" { return true }
-    if fn_name == "__mn_tensor_rdiv_scalar_f64" { return true }
-    if fn_name == "__mn_tensor_rsub_scalar_i64" { return true }
-    if fn_name == "__mn_tensor_rdiv_scalar_i64" { return true }
+    if fn_name == "__mn_tensor_view": return true
+    if fn_name == "__mn_tensor_step_slice": return true
+    if fn_name == "__mn_tensor_add_broadcast_f64": return true
+    if fn_name == "__mn_tensor_sub_broadcast_f64": return true
+    if fn_name == "__mn_tensor_mul_broadcast_f64": return true
+    if fn_name == "__mn_tensor_div_broadcast_f64": return true
+    if fn_name == "__mn_tensor_add_broadcast_i64": return true
+    if fn_name == "__mn_tensor_sub_broadcast_i64": return true
+    if fn_name == "__mn_tensor_mul_broadcast_i64": return true
+    if fn_name == "__mn_tensor_div_broadcast_i64": return true
+    if fn_name == "__mn_tensor_add_scalar_f64": return true
+    if fn_name == "__mn_tensor_sub_scalar_f64": return true
+    if fn_name == "__mn_tensor_mul_scalar_f64": return true
+    if fn_name == "__mn_tensor_div_scalar_f64": return true
+    if fn_name == "__mn_tensor_add_scalar_i64": return true
+    if fn_name == "__mn_tensor_sub_scalar_i64": return true
+    if fn_name == "__mn_tensor_mul_scalar_i64": return true
+    if fn_name == "__mn_tensor_div_scalar_i64": return true
+    if fn_name == "__mn_tensor_rsub_scalar_f64": return true
+    if fn_name == "__mn_tensor_rdiv_scalar_f64": return true
+    if fn_name == "__mn_tensor_rsub_scalar_i64": return true
+    if fn_name == "__mn_tensor_rdiv_scalar_i64": return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -4783,11 +4801,11 @@ fn emit_drop_glue_strings(st: EmitState, ret_str_ptrs: List<String>) -> EmitStat
     let nret: Int = len(ret_str_ptrs)
     let mut i: Int = 0
     for _ in 0..1024:
-        if i >= n { return s }
+        if i >= n: return s
         let name: String = s.str_owned[i]
         // v5.4.4 — consult str_owned_source[i] instead of the slot name.
         let mut source: String = ""
-        if i < ns { source = s.str_owned_source[i] }
+        if i < ns: source = s.str_owned_source[i]
         let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
         if !is_moved:
             let cnt: Int = s.counter
@@ -4816,10 +4834,10 @@ fn emit_drop_glue_lists(st: EmitState, ret_list_ptrs: List<String>) -> EmitState
     let nret: Int = len(ret_list_ptrs)
     let mut i: Int = 0
     for _ in 0..1024:
-        if i >= n { return s }
+        if i >= n: return s
         let name: String = s.list_owned[i]
         let mut source: String = ""
-        if i < ns { source = s.list_owned_source[i] }
+        if i < ns: source = s.list_owned_source[i]
         let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
         if !is_moved:
             if nret > 0:
@@ -4848,10 +4866,10 @@ fn emit_drop_glue_boxed(st: EmitState, ret_box_ptrs: List<String>) -> EmitState:
     let nret: Int = len(ret_box_ptrs)
     let mut i: Int = 0
     for _ in 0..1024:
-        if i >= n { return s }
+        if i >= n: return s
         let name: String = s.boxed_owned[i]
         let mut source: String = ""
-        if i < ns { source = s.boxed_owned_source[i] }
+        if i < ns: source = s.boxed_owned_source[i]
         let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
         if !is_moved:
             let cnt: Int = s.counter
@@ -4892,10 +4910,10 @@ fn emit_drop_glue_tensors(st: EmitState, ret_tensor_ptrs: List<String>) -> EmitS
     let nret: Int = len(ret_tensor_ptrs)
     let mut i: Int = 0
     for _ in 0..1024:
-        if i >= n { return s }
+        if i >= n: return s
         let name: String = s.tensor_owned[i]
         let mut source: String = ""
-        if i < ns { source = s.tensor_owned_source[i] }
+        if i < ns: source = s.tensor_owned_source[i]
         let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
         if !is_moved:
             let cnt: Int = s.counter
@@ -4941,10 +4959,10 @@ fn emit_drop_glue_destroy(st: EmitState) -> EmitState:
     let nss: Int = len(s.str_owned_source)
     let mut i: Int = 0
     for _ in 0..1024:
-        if i >= ns { break }
+        if i >= ns: break
         let name: String = s.str_owned[i]
         let mut source: String = ""
-        if i < nss { source = s.str_owned_source[i] }
+        if i < nss: source = s.str_owned_source[i]
         let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
         if !is_moved:
             let cnt: Int = s.counter
@@ -4957,10 +4975,10 @@ fn emit_drop_glue_destroy(st: EmitState) -> EmitState:
     let nl: Int = len(s.list_owned)
     let mut j: Int = 0
     for _ in 0..1024:
-        if j >= nl { break }
+        if j >= nl: break
         let lname: String = s.list_owned[j]
         let mut lsource: String = ""
-        if j < len(s.list_owned_source) { lsource = s.list_owned_source[j] }
+        if j < len(s.list_owned_source): lsource = s.list_owned_source[j]
         let l_is_moved: Bool = (len(lsource) > 0) && list_has_string(s.moved_locals, lsource)
         if !l_is_moved:
             s = emit_line(s, "  call void @__mn_list_free(ptr %" + lname + ")")
@@ -4969,10 +4987,10 @@ fn emit_drop_glue_destroy(st: EmitState) -> EmitState:
     let nb: Int = len(s.boxed_owned)
     let mut k: Int = 0
     for _ in 0..1024:
-        if k >= nb { break }
+        if k >= nb: break
         let bname: String = s.boxed_owned[k]
         let mut bsource: String = ""
-        if k < len(s.boxed_owned_source) { bsource = s.boxed_owned_source[k] }
+        if k < len(s.boxed_owned_source): bsource = s.boxed_owned_source[k]
         let b_is_moved: Bool = (len(bsource) > 0) && list_has_string(s.moved_locals, bsource)
         if !b_is_moved:
             let cnt2: Int = s.counter
@@ -4987,10 +5005,10 @@ fn emit_drop_glue_destroy(st: EmitState) -> EmitState:
     let nt: Int = len(s.tensor_owned)
     let mut m: Int = 0
     for _ in 0..1024:
-        if m >= nt { break }
+        if m >= nt: break
         let tname: String = s.tensor_owned[m]
         let mut tsource: String = ""
-        if m < len(s.tensor_owned_source) { tsource = s.tensor_owned_source[m] }
+        if m < len(s.tensor_owned_source): tsource = s.tensor_owned_source[m]
         let t_is_moved: Bool = (len(tsource) > 0) && list_has_string(s.moved_locals, tsource)
         if !t_is_moved:
             let cnt3: Int = s.counter
@@ -5031,8 +5049,8 @@ fn ret_ty_is_aggregate(st: EmitState, ret_ty: String) -> Bool:
     // lift attempts can size-gate without another invasive
     // refactor. The first such attempt landed and reverted in
     // v5.4.4; the second (v5.6.6) lands and reverts here.
-    if ret_ty.starts_with("%struct.") { return true }
-    if ret_ty.starts_with("%enum.") { return true }
+    if ret_ty.starts_with("%struct."): return true
+    if ret_ty.starts_with("%enum."): return true
     if ret_ty.starts_with("{") && ret_ty != llvm_string() && ret_ty != llvm_list_rt():
         return true
     return false
@@ -5347,7 +5365,7 @@ fn emit_interp_concat(st: EmitState, dest: Value, parts: List<Value>) -> EmitSta
         if i < nparts:
             let is_last: Bool = (i == nparts - 1)
             let mut tmp: String = dn + ".c" + toString(i)
-            if is_last { tmp = dn }
+            if is_last: tmp = dn
             s = emit_rt_call(s, tmp, llvm_string(), "__mn_str_concat", llvm_string() + " " + acc + ", " + llvm_string() + " " + parts[i].name)
             // v5.4.1 Phase 3.4 — each __mn_str_concat result is a fresh
             // heap allocation. Track each intermediate so drop-glue
@@ -5368,8 +5386,8 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
 
     let mut s: EmitState = st
     let mut skip: Bool = false
-    if len(incoming) == 0 { skip = true }
-    if ty == "void" { skip = true }
+    if len(incoming) == 0: skip = true
+    if ty == "void": skip = true
     // For Phis with i64 type (unresolved or unknown): recover the actual type.
     // Step 1: check MIR types of incoming values.
     if ty == "i64" && len(incoming) > 0:
@@ -5394,15 +5412,15 @@ fn emit_mir_phi(st: EmitState, dest: Value, incoming: List<PhiEntry>) -> EmitSta
                         if li >= 0 && ty == "i64":
                             let line: String = s.lines[li]
                             // Stop at function boundary
-                            if line.starts_with("define ") { li = -1 }
-                            if line.starts_with("}") { li = -1 }
+                            if line.starts_with("define "): li = -1
+                            if line.starts_with("}"): li = -1
                             if li >= 0 && line.contains(search):
                                 let ppos: Int = line.find(search) + len(search)
                                 let rest: String = line.substr(ppos, len(line) - ppos)
                                 let bpos: Int = rest.find(" [")
                                 if bpos > 0:
                                     let fty: String = rest.substr(0, bpos)
-                                    if fty != "i64" && fty != "void" { ty = fty }
+                                    if fty != "i64" && fty != "void": ty = fty
                             li = li - 1
                 ci2 = ci2 + 1
 
@@ -5438,12 +5456,12 @@ fn emit_mir_basic_block(st: EmitState, bb: BasicBlock) -> EmitState:
     let mut i: Int = 0
     for _ in 0..2000:
         if i >= len(bb.instructions):
-            if bumped { s.loop_depth = s.loop_depth - 1 }
+            if bumped: s.loop_depth = s.loop_depth - 1
             return s
         let inst: Instruction = bb.instructions[i]
         s = emit_mir_instruction(s, inst)
         i = i + 1
-    if bumped { s.loop_depth = s.loop_depth - 1 }
+    if bumped: s.loop_depth = s.loop_depth - 1
     return s
 
 // ---------------------------------------------------------------------------
@@ -5457,8 +5475,8 @@ fn emit_mir_basic_block(st: EmitState, bb: BasicBlock) -> EmitState:
 fn module_has_async(module: MIRModule) -> Bool:
     let mut i: Int = 0
     for _ in 0..5000:
-        if i >= len(module.functions) { return false }
-        if fn_is_async(module.functions[i]) { return true }
+        if i >= len(module.functions): return false
+        if fn_is_async(module.functions[i]): return true
         i = i + 1
     return false
 
@@ -5499,7 +5517,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
             param_types.push(pty_sig)
             let need_sep: Bool = pi > 0 || use_sret
             let mut sep: String = ""
-            if need_sep { sep = ", " }
+            if need_sep: sep = ", "
             if is_byref_type_st(st, pty_sig):
                 // Large param: pass by pointer
                 params_str = params_str + sep + "ptr %" + p_sig.name + ".byref"
@@ -5516,7 +5534,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
     // find_function searches backwards, so this entry overrides the
     // forward-declare entry at emit_mir_module.
     let mut reg_ret_ty: String = ret_ty
-    if is_async { reg_ret_ty = "ptr" }
+    if is_async: reg_ret_ty = "ptr"
     let entry: FnEntry = new_fn_entry(f.name, reg_ret_ty, param_types)
     let mut s: EmitState = st
     s.functions.push(entry)
@@ -5574,9 +5592,9 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
     let is_lambda: Bool = fn_name != f.name
     let visibility: String = if is_lambda { "define internal" } else { "define" }
     let mut abi_ret: String = ret_ty
-    if use_sret { abi_ret = "void" }
+    if use_sret: abi_ret = "void"
     // main() returns i32 (C ABI) instead of void for clean exit codes
-    if fn_name == "main" { abi_ret = "i32" }
+    if fn_name == "main": abi_ret = "i32"
     // v5.5.4 Sh.4 Phase 2 — async fn ABI: return type is always the
     // Future handle (ptr), regardless of declared T.  The actual
     // result is carried inside the Future struct (set in emit_mir_return).
@@ -5705,7 +5723,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
         // v5.4.4 — bumped prelude flush cap (emit_mir_call's drop glue
         // adds ~50 alloca lines on top of tracking-slot allocas).
         for _ in 0..65536:
-            if pk2 >= npre2 { break }
+            if pk2 >= npre2: break
             s.lines.push(s.entry_prelude_lines[pk2])
             pk2 = pk2 + 1
         let mut bk: Int = 0
@@ -5715,7 +5733,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
         // extraction) produces >65k body lines — observed at
         // emit_mir_call in stage2.ll with ~66k lines.
         for _ in 0..1000000:
-            if bk >= nbody { break }
+            if bk >= nbody: break
             s.lines.push(s.entry_block_body[bk])
             bk = bk + 1
 
@@ -5835,8 +5853,8 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String:
             st = register_mir_enum(st, module.enums[ei])
             ei = ei + 1
 
-    if len(module.structs) > 0 { st = emit_blank(st) }
-    if len(module.enums) > 0 { st = emit_blank(st) }
+    if len(module.structs) > 0: st = emit_blank(st)
+    if len(module.enums) > 0: st = emit_blank(st)
 
     // Module-level constants
     let mut ci: Int = 0
@@ -5851,7 +5869,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String:
             else:
                 st = emit_line(st, "@" + mc.name + " = private constant i64 " + toString(mc.int_value))
             ci = ci + 1
-    if nconsts > 0 { st = emit_blank(st) }
+    if nconsts > 0: st = emit_blank(st)
 
     // Declare extern functions
     let mut xi: Int = 0
@@ -5860,7 +5878,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String:
         if xi < nmodexterns:
             st = declare_mir_extern(st, module.extern_fns[xi])
             xi = xi + 1
-    if len(module.extern_fns) > 0 { st = emit_blank(st) }
+    if len(module.extern_fns) > 0: st = emit_blank(st)
 
     // Forward-declare all functions (for mutual recursion)
     let mut dix: Int = 0
