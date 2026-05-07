@@ -1261,6 +1261,13 @@ def cmd_build(args: argparse.Namespace) -> None:
             rt_flags_unix.append("-lm")
         if host_tc is None or host_tc.needs_pthread_flag:
             rt_flags_unix.append("-lpthread")
+        # The runtime archive bundles mapanare_metal.o on Darwin (per
+        # the v5.8.8 Da.2 Makefile fix); that .o calls into the Metal /
+        # Foundation Objective-C runtimes. Without these frameworks the
+        # link fails with `Undefined symbols for architecture arm64:
+        # _MTLCreateSystemDefaultDevice` etc.
+        if sys.platform == "darwin" and rt_archive:
+            rt_flags_unix += ["-framework", "Metal", "-framework", "Foundation", "-fobjc-arc"]
 
         host_env = invocation_env(host_tc) if host_tc else None
 

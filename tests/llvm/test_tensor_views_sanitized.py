@@ -27,12 +27,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+from _link_compat import darwin_link_extras  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -184,6 +187,7 @@ def _build_and_run(
         "-lm",
         "-lpthread",
         "-ldl",
+        *darwin_link_extras(),
         "-o",
         str(bin_path),
     ]
@@ -202,7 +206,10 @@ def _build_and_run(
         run_cmd = [str(bin_path)]
     env = os.environ.copy()
     if sanitizer == "asan":
-        env["ASAN_OPTIONS"] = "detect_leaks=1"
+        # macOS libclang_rt.asan does not implement detect_leaks; setting
+        # it to 1 aborts at startup. Linux still runs leak checks.
+        if sys.platform != "darwin":
+            env["ASAN_OPTIONS"] = "detect_leaks=1"
     result = subprocess.run(run_cmd, capture_output=True, text=True, env=env)
     return result.returncode, result.stdout, result.stderr
 

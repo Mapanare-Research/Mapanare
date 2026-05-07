@@ -34,9 +34,14 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+REPO_ROOT_FOR_HELPER = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT_FOR_HELPER / "tests"))
+from _link_compat import darwin_link_extras  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RUNTIME_H = REPO_ROOT / "runtime" / "native" / "mapanare_runtime.h"
@@ -83,6 +88,7 @@ def test_mapanare_agent_t_size_probe(tmp_path):
             "-lm",
             "-lpthread",
             "-ldl",
+            *darwin_link_extras(),
             "-o",
             str(binary),
         ],

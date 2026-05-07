@@ -23,10 +23,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
 import pytest
+
+REPO_ROOT_FOR_HELPER = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT_FOR_HELPER / "tests"))
+from _link_compat import darwin_link_extras  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -80,6 +85,7 @@ def _emit_link_run(
             "-lm",
             "-lpthread",
             "-ldl",
+            *darwin_link_extras(),
             "-o",
             str(bin_path),
         ],

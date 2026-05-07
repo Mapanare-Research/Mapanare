@@ -51,11 +51,14 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+from _link_compat import darwin_link_extras  # noqa: E402, I001
 GOLDEN_DIR = REPO_ROOT / "tests" / "golden"
 STAGE1 = REPO_ROOT / "mapanare" / "self" / "mnc-stage1"
 RT_ARCHIVE = REPO_ROOT / "runtime" / "native" / "libmapanare_rt.a"
@@ -150,6 +153,13 @@ def test_link_and_run(
     ll_path = tmp_path / f"{golden.stem}.ll"
     bin_path = tmp_path / golden.stem
 
+    # macOS aborts binaries that "load libcrypto in an unsafe way" when a
+    # statically-linked OpenSSL ends up next to a system libcrypto.dylib.
+    # 36_crypto exercises that path; the runtime contract is unchanged on
+    # Linux, so the skip is platform-specific.
+    if sys.platform == "darwin" and golden.stem == "36_crypto":
+        pytest.skip("36_crypto: macOS rejects unsafe libcrypto load")
+
     ll_path.write_text(_emit_ir(stage1_binary, golden))
 
     link = subprocess.run(
@@ -160,6 +170,7 @@ def test_link_and_run(
             "-lm",
             "-lpthread",
             "-ldl",
+            *darwin_link_extras(),
             "-o",
             str(bin_path),
         ],

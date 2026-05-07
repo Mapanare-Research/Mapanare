@@ -27,11 +27,15 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+from _link_compat import darwin_link_extras  # noqa: E402
+
 GOLDEN_DIR = REPO_ROOT / "tests" / "golden"
 STAGE1 = REPO_ROOT / "mapanare" / "self" / "mnc-stage1"
 RT_ARCHIVE = REPO_ROOT / "runtime" / "native" / "libmapanare_rt.a"
@@ -96,7 +100,17 @@ def _link_and_run(ir_path: Path, runtime: Path, clang: str, tmp_path: Path) -> s
     assert llvm_as is not None, "llvm-as required"
     subprocess.run([llvm_as, str(ir_path), "-o", str(bc)], check=True, timeout=30)
     subprocess.run(
-        [clang, str(bc), str(runtime), "-lm", "-lpthread", "-ldl", "-o", str(exe)],
+        [
+            clang,
+            str(bc),
+            str(runtime),
+            "-lm",
+            "-lpthread",
+            "-ldl",
+            *darwin_link_extras(),
+            "-o",
+            str(exe),
+        ],
         check=True,
         capture_output=True,
         text=True,
@@ -207,6 +221,7 @@ def test_reshape_size_mismatch_aborts(
             "-lm",
             "-lpthread",
             "-ldl",
+            *darwin_link_extras(),
             "-o",
             str(exe),
         ],

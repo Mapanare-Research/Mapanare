@@ -22,12 +22,15 @@ from __future__ import annotations
 import ctypes
 import shutil
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+from _link_compat import darwin_link_extras, whole_archive_args  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -45,19 +48,23 @@ def runtime_lib(gcc_bin: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
     # Stub for mn_main referenced by mn_user_main.c in the archive;
     # the test never executes user code, just calls tensor_alloc/free.
     stub_c.write_text("int mn_main(int argc, char **argv) { return 0; }\n")
-    so_path = tmp / "libmapanare_tensor_test.so"
+    so_name = (
+        "libmapanare_tensor_test.dylib"
+        if sys.platform == "darwin"
+        else "libmapanare_tensor_test.so"
+    )
+    so_path = tmp / so_name
     cmd = [
         gcc_bin,
         "-shared",
         "-fPIC",
         "-O0",
         str(stub_c),
-        "-Wl,--whole-archive",
-        str(archive),
-        "-Wl,--no-whole-archive",
+        *whole_archive_args(str(archive)),
         "-lm",
         "-lpthread",
         "-ldl",
+        *darwin_link_extras(),
         "-o",
         str(so_path),
     ]
