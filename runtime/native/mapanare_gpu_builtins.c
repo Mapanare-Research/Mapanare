@@ -909,6 +909,42 @@ MN_EXPORT mapanare_tensor_t *__mn_tensor_view(
 
 MN_EXPORT mapanare_tensor_t *__mn_tensor_reshape(
     mapanare_tensor_t *src, const MnList *shape) {
+    /* Surface-level validation with the user-visible "reshape" prefix.
+     * Without this, errors fall through to __mn_tensor_view's messages
+     * which name the underlying primitive ("tensor view: ...") rather
+     * than the API the user actually called. */
+    if (!src || !src->data) {
+        fprintf(stderr, "mapanare: tensor reshape: null source\n");
+        abort();
+    }
+    if (!shape || !shape->data) {
+        fprintf(stderr, "mapanare: tensor reshape: null shape\n");
+        abort();
+    }
+    int64_t new_rank = shape->len;
+    if (new_rank <= 0) {
+        fprintf(stderr,
+                "mapanare: tensor reshape: rank must be positive (got %lld)\n",
+                (long long)new_rank);
+        abort();
+    }
+    const int64_t *new_shape = (const int64_t *)shape->data;
+    int64_t new_size = 1;
+    for (int64_t i = 0; i < new_rank; i++) {
+        if (new_shape[i] <= 0) {
+            fprintf(stderr,
+                    "mapanare: tensor reshape: invalid dim %lld at axis %lld\n",
+                    (long long)new_shape[i], (long long)i);
+            abort();
+        }
+        new_size *= new_shape[i];
+    }
+    if (new_size != src->size) {
+        fprintf(stderr,
+                "mapanare: tensor reshape: cannot reshape size %lld as size %lld\n",
+                (long long)src->size, (long long)new_size);
+        abort();
+    }
     return __mn_tensor_view(src, shape);
 }
 

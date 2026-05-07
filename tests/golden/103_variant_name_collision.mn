@@ -29,35 +29,29 @@
 // fails compilation; lowerer-only revert produces wrong tag in
 // the corresponding match arm.
 
-pub tipo NetworkError {
+pub tipo NetworkError:
     | TransportLost(String)
     | BadUrl(String)
     | NoKey(String)
-}
 
-pub tipo ExitReason {
+pub tipo ExitReason:
     | TransportLost(String)
     | Crashed(String)
     | Killed(String)
-}
 
-fn classify_net(e: NetworkError) -> Int {
-    match e {
-        TransportLost(s) => { da 1 },
-        BadUrl(s) => { da 2 },
+fn classify_net(e: NetworkError) -> Int:
+    match e:
+        TransportLost(s) => { da 1 }
+        BadUrl(s) => { da 2 }
         NoKey(s) => { da 3 }
-    }
-}
 
-fn classify_exit(e: ExitReason) -> Int {
-    match e {
-        TransportLost(s) => { da 10 },
-        Crashed(s) => { da 20 },
+fn classify_exit(e: ExitReason) -> Int:
+    match e:
+        TransportLost(s) => { da 10 }
+        Crashed(s) => { da 20 }
         Killed(s) => { da 30 }
-    }
-}
 
-fn main() -> Int {
+fn main() -> Int:
     // Construction with declared-type disambiguation. Pre-fix,
     // semantic check rejected these.
     pon n: NetworkError = TransportLost("net")
@@ -76,4 +70,3 @@ fn main() -> Int {
     print("exit2=" + str(classify_exit(x2)))
 
     da 0
-}
