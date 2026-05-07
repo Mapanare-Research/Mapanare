@@ -1,7 +1,30 @@
 # Mapanare Language Specification
 
-**Version:** 5.47.5
-**Status:** Live — synced to the v5.47.5 cut (2026-05-06)
+**Version:** 5.49.0
+**Status:** Live — synced to the v5.49.0 cut (2026-05-07)
+
+> **v5.49.0 — Wn.\* — Windows native binary smoke fix.** Closes
+> the `mnc.exe run hello.mn` Win64 OOM regression on every
+> release tarball's `dist/mapanare/mnc.exe`. Wn.0 Phase 0 audit
+> localized the failure to `find_clang() →
+> __mn_file_exists(MnString)` — Win64 ABI mismatch on a 16-byte
+> `MnString` aggregate-by-value runtime arg passed by a direct
+> `__mn_*` call from .mn source. Wn.1 added `_RUNTIME_FN_SIGS`
+> registry to `mapanare/emit_llvm_text.py` (parallels
+> `_RUNTIME_FN_ATTRS`) and routed direct `__mn_*` calls through
+> `_rt` for ABI-correct sarg lowering. Wn.2 mirrored the fix to
+> `mapanare/self/emit_llvm.mn` via explicit `emit_rt_call`
+> routing branches (extends the v5.26.0 Mb.9 / v5.29.0 Mb.10 /
+> v5.48.1 Te.3.D.4.4 pattern to ~30 more runtime symbols).
+> Wn.3 paid forward a permanent gdb-backtrace wrapper at
+> `publish.yml:596` (PowerShell mirror of the bash Wb.1.dx
+> wrapper at `publish.yml:802-825`). Wn.4 falsifiability anchor
+> at `tests/native/test_windows_run_smoke.py` (5 IR-shape gates
+> + 1 Windows end-to-end smoke). **No language surface change.
+> No C runtime export change.** STRICT 3-stage fixed point
+> preserves at the new v5.49.0 baseline (CI verifies). Goldens
+> 100/103 locally on Windows (3 unrelated pre-existing
+> failures).
 
 > **v5.47.5 — Cp.\* — end-of-v5 closeout panel.** Panel-only
 > release. **Zero compiler edits. Zero runtime edits. Zero

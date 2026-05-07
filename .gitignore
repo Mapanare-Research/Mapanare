@@ -81,7 +81,11 @@ runtime/native/libmapanare_rt.a
 /.tmp-tc/
 /.tmp-toolchain-dl/
 /.tmp-llvm/
+/.tmp-llvm-mingw/
 /.tmp_probe.py
+/.tmp.ll
+/hello.mn
+/hello.exe
 /tmp_smoke_*.mn
 /tmp_smoke_*.py
 /tmp_smoke_*.exe

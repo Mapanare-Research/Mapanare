@@ -3826,6 +3826,106 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         let as_rass: String = llvm_string() + " " + args[0].name
         return emit_rt_call(st, dn, llvm_string(), "__mn_rewrite_arm_stmt_shorthand", as_rass)
 
+    // v5.49.0 Wn.2 — Win64 ABI routing for the remaining MnString-arg
+    // and MnString-return runtime functions that .mn source calls
+    // directly (without going through a Mapanare-level builtin like
+    // ``file_exists`` / ``read_file``). Same rationale as the Mb.9 /
+    // Mb.10 / Te.3.D.4.4 entries above and ``find_clang`` at
+    // ``mapanare/self/main.mn:80`` (the v5.49.0 OOM trigger). Without
+    // this routing the default-path emission at the bottom of
+    // ``emit_mir_call`` uses ``is_byref_type_st`` (64-byte threshold,
+    // intended for user-fn ABI) and emits ``{ptr, i64}`` aggregate-
+    // by-value at the call site, while ``declare_runtime_fn`` already
+    // emitted ``ptr`` per Win64 (8-byte threshold). gcc lowers the C
+    // declaration as pass-by-hidden-pointer and dereferences the
+    // mismatched arg → garbage path bytes interpreted as MnString
+    // fields → __mn_alloc OOM. See
+    // ``docs/roadmap/v5/v5.49.0/PRE_PHASE_AUDIT.md``.
+    if fn_name == "__mn_file_exists":
+        let as_fe: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_file_exists", as_fe)
+    if fn_name == "__mn_file_remove":
+        let as_frm: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_file_remove", as_frm)
+    if fn_name == "__mn_file_size":
+        let as_fsz: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_file_size", as_fsz)
+    if fn_name == "__mn_file_mtime":
+        let as_fmt: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_file_mtime", as_fmt)
+    if fn_name == "__mn_file_rename":
+        let as_frn: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        return emit_rt_call(st, dn, "i64", "__mn_file_rename", as_frn)
+    if fn_name == "__mn_file_copy":
+        let as_fcp: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        return emit_rt_call(st, dn, "i64", "__mn_file_copy", as_fcp)
+    if fn_name == "__mn_file_append":
+        let as_fap: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        return emit_rt_call(st, dn, "i64", "__mn_file_append", as_fap)
+    if fn_name == "__mn_dir_create":
+        let as_dcr: String = llvm_string() + " " + args[0].name + ", i64 " + args[1].name
+        return emit_rt_call(st, dn, "i64", "__mn_dir_create", as_dcr)
+    if fn_name == "__mn_dir_remove":
+        let as_drm: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_dir_remove", as_drm)
+    if fn_name == "__mn_dir_remove_recursive":
+        let as_drmr: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_dir_remove_recursive", as_drmr)
+    if fn_name == "__mn_dir_count_files":
+        let as_dcf: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_dir_count_files", as_dcf)
+    if fn_name == "__mn_dir_total_size":
+        let as_dts: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, "i64", "__mn_dir_total_size", as_dts)
+    if fn_name == "__mn_dir_list_strings":
+        let as_dls: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, llvm_list_rt(), "__mn_dir_list_strings", as_dls)
+    if fn_name == "__mn_realpath":
+        let as_rpa: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, llvm_string(), "__mn_realpath", as_rpa)
+    if fn_name == "__mn_tmpfile_path":
+        let as_tmp: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, llvm_string(), "__mn_tmpfile_path", as_tmp)
+    // String-sret runtime helpers (no args, MnString return).
+    if fn_name == "__mn_executable_dir":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_executable_dir", "")
+    if fn_name == "__mn_clang_err_path":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_clang_err_path", "")
+    if fn_name == "__mn_dev_null_redirect":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_dev_null_redirect", "")
+    if fn_name == "__mn_version_string":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_version_string", "")
+    if fn_name == "__mn_read_line":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_read_line", "")
+    // String-arg I/O void helpers.
+    if fn_name == "__mn_str_print":
+        return emit_rt_call_void(st, "__mn_str_print", llvm_string() + " " + args[0].name)
+    if fn_name == "__mn_str_println":
+        return emit_rt_call_void(st, "__mn_str_println", llvm_string() + " " + args[0].name)
+    if fn_name == "__mn_str_eprintln":
+        return emit_rt_call_void(st, "__mn_str_eprintln", llvm_string() + " " + args[0].name)
+    // Crypto / regex / encoding helpers (all MnString-arg/ret).
+    if fn_name == "__mn_http_get":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_http_get", llvm_string() + " " + args[0].name)
+    if fn_name == "__mn_sha256_str":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_sha256_str", llvm_string() + " " + args[0].name)
+    if fn_name == "__mn_base64_encode_str":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_base64_encode_str", llvm_string() + " " + args[0].name)
+    if fn_name == "__mn_base64_decode_str":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_base64_decode_str", llvm_string() + " " + args[0].name)
+    if fn_name == "__mn_hmac_sha256_str":
+        let as_hmac: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
+        return emit_rt_call(st, dn, llvm_string(), "__mn_hmac_sha256_str", as_hmac)
+    if fn_name == "__mn_hex_encode_str":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_hex_encode_str", llvm_string() + " " + args[0].name)
+    if fn_name == "__mn_random_bytes_str":
+        return emit_rt_call(st, dn, llvm_string(), "__mn_random_bytes_str", "i64 " + args[0].name)
+    if fn_name == "__mn_regex_compile_str":
+        return emit_rt_call(st, dn, "i64", "__mn_regex_compile_str", llvm_string() + " " + args[0].name)
+    if fn_name == "__mn_regex_replace_str":
+        let as_rrs: String = "i64 " + args[0].name + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name + ", i64 " + args[3].name
+        return emit_rt_call(st, dn, llvm_string(), "__mn_regex_replace_str", as_rrs)
+
     // chr/ord builtins
     if fn_name == "chr":
         return emit_rt_call(st, dn, llvm_string(), "__mn_str_chr", "i64 " + args[0].name)

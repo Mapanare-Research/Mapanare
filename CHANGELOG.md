@@ -7,6 +7,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.49.0] - 2026-05-07
+
+**Wn.\* — Windows native binary smoke fix.** Closes the
+<!-- no-check -->`mnc.exe run hello.mn` Win64 OOM regression that the
+`publish.yml` Windows SDK smoke step (line 596) tripped on every
+release tarball's `dist/mapanare/mnc.exe`. Phase 0 audit
+captured a gdb backtrace localizing the failure to
+`find_clang() → __mn_file_exists(MnString) → mn_to_cstr →
+__mn_alloc(garbage_size_t)` — a Win64 ABI mismatch on a 16-byte
+`MnString` aggregate-by-value runtime arg passed by a direct
+`__mn_*` call from .mn source. The Mapanare-side declaration
+correctly emitted `(ptr)` per Win64's >8-byte indirect-arg rule,
+but the call site emitted `{ptr, i64}` aggregate-by-value because
+`_do_call`'s auto-declare path used `_use_byref` (>64-byte
+threshold for user-fn ABI) instead of `_is_large_struct`
+(>8-byte threshold for runtime ABI). gcc-compiled `MnString
+path` dereferenced rcx as struct-pointer and read the data
+buffer's bytes 0..16 as `{data, len}` — yielding garbage path
+fields like `eJuan\Do` and `len=8017634865777560156` →
+`__mn_alloc` OOM. SysV (Linux/macOS) escapes by accident — its
+two-register passing for 16-byte aggregates happens to coincide
+with the registers a hidden-pointer ABI would use. Goldens
+**100/103** locally on Windows (3 pre-existing failures
+unrelated to Wn.\*); IR-shape gate at
+`tests/native/test_windows_run_smoke.py` proves the call shape
+post-fix. **STRICT 3-stage fixed point** preserves at the new
+v5.49.0 baseline (CI verifies; line count grows to reflect the
+Wn.2 self-host registry routing).
+
+### Added
+
+- **`_RUNTIME_FN_SIGS`** registry in `mapanare/emit_llvm_text.py`
+  next to `_RUNTIME_FN_ATTRS`. Pre-registers canonical
+  `(ret_ty, [param_tys])` signatures for ~40 `__mn_*` runtime
+  symbols that .mn source calls directly (without going through
+  a Mapanare-level builtin handler). Entries match the C
+  declarations in `runtime/native/mapanare_core.h`. Without
+  this, `_do_call`'s auto-declare path derived types from MIR
+  context (which for unannotated calls like
+  `if __mn_file_exists(p) != 0` picks `Ptr`) and emitted
+  `declare ptr @__mn_file_exists(ptr)` — wrong return type and
+  wrong arg ABI on Win64.
+
+- **`_RUNTIME_FN_SIGS` early-return path in
+  `_do_call` and `_do_extern`.** For `__mn_*` symbols
+  registered in the new registry, route through `_rt` (which
+  has correct Win64 sarg/sret lowering). The auto-declare /
+  catchall path is bypassed, so MIR-derived type guessing
+  cannot drift from the canonical C signature.
+
+- **Self-host `emit_llvm.mn` routing** for the same set of
+  runtime symbols (Wn.2 mirror). Extends the v5.26.0 Mb.9 /
+  v5.29.0 Mb.10 / v5.48.1 Te.3.D.4.4 pattern (explicit
+  `if fn_name == "__mn_..."` branches that route through
+  `emit_rt_call` / `emit_rt_call_void`) to cover
+  `__mn_file_exists`, the file/dir helpers (`__mn_file_remove`,
+  `__mn_file_size`, `__mn_file_mtime`, `__mn_file_rename`,
+  `__mn_file_copy`, `__mn_file_append`, `__mn_dir_create`,
+  `__mn_dir_remove`, `__mn_dir_remove_recursive`,
+  `__mn_dir_count_files`, `__mn_dir_total_size`,
+  `__mn_dir_list_strings`, `__mn_realpath`,
+  `__mn_tmpfile_path`), the no-arg String-sret helpers
+  (`__mn_executable_dir`, `__mn_clang_err_path`,
+  `__mn_dev_null_redirect`, `__mn_version_string`,
+  `__mn_read_line`), the I/O void helpers
+  (`__mn_str_print`, `__mn_str_println`,
+  `__mn_str_eprintln`), and the crypto/regex/encoding family.
+  Without these, the default-path emission used
+  `is_byref_type_st` (64-byte threshold) and emitted
+  `{ptr, i64}` aggregate-by-value at the call site — same Win64
+  ABI mismatch class as the Python-side bug.
+
+- **`tests/native/test_windows_run_smoke.py`** (Wn.4
+  falsifiability anchor). Five IR-shape tests (cross-platform)
+  emit IR under a forced `x86_64-w64-windows-gnu` triple and
+  assert call sites use the alloca + store + `ptr`-pass pattern,
+  NOT by-value `{ptr, i64}` aggregate passing. Plus one
+  Windows-only end-to-end smoke test that mirrors
+  `publish.yml:596` against a staged `mnc.exe` (skipped if no
+  binary or no clang on PATH; CI has both). Falsifiability
+  round-trip locked in module docstring: revert the registry
+  early-return → IR-shape gate fails with the recorded
+  signature; reapply → passes.
+
+- **Permanent gdb-backtrace wrapper at `publish.yml:596`** (Wn.3
+  hardening). PowerShell mirror of the bash Wb.1.dx wrapper at
+  `publish.yml:802-825` and the v5.8.3 PROMPT Phase 4
+  paid-forward-instrumentation precedent. No-op on success; on
+  the next regression in this class the action log surfaces a
+  call site instead of just an OOM number, eliminating a
+  re-trigger-CI-to-diagnose round trip. `gdb 16.2` is
+  preinstalled on the `windows-latest` runner image.
+
+### Fixed
+
+- **<!-- no-check -->`mnc.exe run hello.mn` aborted with `out of memory
+  (requested <huge> bytes)` on Windows** (call site:
+  `mapanare/self/main.mn:80,84` — `find_clang()` →
+  `__mn_file_exists(MnString)`; fix site:
+  `mapanare/emit_llvm_text.py:_do_call` auto-declare path,
+  routed through `_RUNTIME_FN_SIGS` + `_rt`). The IR
+  declaration was correct on Win64
+  (`declare i64 @__mn_file_exists(ptr)` — large-struct rewrite
+  per `_decl_fn`'s `_is_large_struct` >8-byte threshold) but
+  the call site at `_do_call` line ~4434 used `_use_byref`
+  (>64-byte threshold for user-fn ABI) and emitted
+  `call ptr @__mn_file_exists({ptr, i64} %v)`. LLVM lowered
+  the call's first-class 16-byte aggregate as SysV-style
+  (rcx = data ptr, rdx = len) but the Win64-compiled C side
+  read rcx as a hidden-pointer-to-MnString and dereferenced
+  → garbage path data → 8 EB OOM. Fix routes direct
+  `__mn_*` calls through `_rt` for ABI-correct sarg lowering,
+  using canonical signatures pinned in `_RUNTIME_FN_SIGS`.
+  Linux + macOS unaffected (the SysV ABI coincidentally
+  agrees on register layout for 16-byte aggregates passed
+  either way). Self-host mirror in `mapanare/self/emit_llvm.mn`
+  via explicit `emit_rt_call` routing branches.
+
+
 ## [5.48.1] - 2026-05-07
 
 **Te.3.D.4 / Te.3.D.5 — bootstrap mirror + self-host source migration.**
@@ -12632,7 +12751,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.1...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.49.0...HEAD
+[5.49.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.1...v5.49.0
 [5.48.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.0...v5.48.1
 [5.48.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.5...v5.48.0
 [5.47.5]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.0...v5.47.5

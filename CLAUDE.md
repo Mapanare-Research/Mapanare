@@ -19,6 +19,106 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.49.0** (ready, not tagged) — **Wn.\* — Windows native
+  binary smoke fix.** Closes the `mnc.exe run hello.mn` Win64
+  OOM regression that the `publish.yml` Windows SDK smoke step
+  (line 596) tripped on every release tarball's
+  `dist/mapanare/mnc.exe`.
+  **Wn.0 — Phase 0 audit.** Reproduced the bug locally on
+  Windows 11 x64 (avoiding the `workflow_dispatch` path which
+  would have tagged v5.48.1 as a side effect because
+  `publish.yml`'s `release` job has no `refs/heads/main`
+  guard). gdb backtrace localized:
+  `find_clang() → __mn_file_exists(MnString) → mn_to_cstr →
+  __mn_alloc(8017634865777560157)`. The `path` arg entered
+  `__mn_file_exists` with `data = 0x6f445c6e61754a65` —
+  unmapped — decoded as `"eJuan\Do"`, bytes from
+  `\Users\Juan\Documents\...`. Output:
+  `docs/roadmap/v5/v5.49.0/PRE_PHASE_AUDIT.md`. Bundle/split
+  decision: **bundle** Wn.1 (Python emitter) + Wn.2 (self-host
+  mirror) in v5.49.0 — single-class single-cause bug, ~25 LOC
+  + ~80 LOC respectively, splitting would leave self-host
+  emit half-broken on Win64.
+  **Wn.1 — Python bootstrap fix.** Added `_RUNTIME_FN_SIGS`
+  registry in `mapanare/emit_llvm_text.py` next to the
+  existing `_RUNTIME_FN_ATTRS` table. Pre-registers canonical
+  `(ret_ty, [param_tys])` for ~40 `__mn_*` runtime symbols
+  matching `runtime/native/mapanare_core.h`. Added an
+  early-return path in `_do_call` and `_do_extern` that, for
+  symbols in the registry, routes through `_rt` (which has
+  correct Win64 sarg/sret lowering — alloca + store + pass
+  `ptr` for >8-byte aggregates). The auto-declare /
+  catchall path no longer gets to derive types from MIR
+  context for known runtime symbols, eliminating the
+  return-type smell (`declare ptr @__mn_file_exists(ptr)`
+  vs the canonical `declare i64 @__mn_file_exists(ptr)`)
+  and the call-site ABI mismatch (`call … ({ptr, i64} %v)`
+  vs `call i64 … (ptr %sarg)`). Linux/macOS unchanged —
+  SysV ABI coincidentally puts the data ptr in RDI either
+  way; the bug was Win64-only.
+  **Wn.2 — Self-host mirror.** Extended
+  `mapanare/self/emit_llvm.mn::emit_mir_call` with explicit
+  `emit_rt_call` / `emit_rt_call_void` routing branches for
+  the same runtime symbol set, mirroring the established
+  v5.26.0 Mb.9 / v5.29.0 Mb.10 / v5.48.1 Te.3.D.4.4 pattern.
+  The self-host's `emit_rt_call` already had correct Win64
+  sarg lowering (Wb.2 closed it for sret, Wb.4/We.1 covered
+  the existing sarg surface); v5.49.0 just extends the
+  explicit-routing list to include `__mn_file_exists`,
+  the file/dir helpers, the no-arg String-sret helpers,
+  the I/O void helpers, and the crypto/regex/encoding
+  family. Goldens **100/103** locally on Windows (3
+  pre-existing failures in `82_struct_update`,
+  `83_struct_update_partial`, `51_match_guards_and_or` —
+  all unrelated to Wn.\*; struct-update integer-overflow
+  is a pre-existing Windows local-build issue, not
+  introduced by this change).
+  **Wn.3 — Permanent gdb-backtrace wrapper at
+  `publish.yml:596`.** PowerShell mirror of the bash
+  Wb.1.dx wrapper at `publish.yml:802-825` and the v5.8.3
+  PROMPT Phase 4 paid-forward-instrumentation precedent.
+  No-op on success; on the next regression in this class
+  the action log surfaces the call site instead of just an
+  OOM number, eliminating a re-trigger-CI-to-diagnose round
+  trip. `gdb 16.2` is preinstalled on the `windows-latest`
+  runner image.
+  **Wn.4 — Falsifiability test.**
+  `tests/native/test_windows_run_smoke.py`. Five IR-shape
+  tests (cross-platform; emit IR under
+  `x86_64-w64-windows-gnu` triple and assert call sites use
+  `(ptr %sarg.N)` not `({ptr, i64} %v)`) plus one
+  Windows-only end-to-end smoke against a staged `mnc.exe`
+  (skipped if no binary or no clang on PATH; CI has both).
+  Falsifiability round-trip locked in module docstring:
+  revert the `_RUNTIME_FN_SIGS` early-return →
+  IR-shape gate fails with the recorded by-value-aggregate
+  signature; reapply → passes. **5 passed, 1 skipped**
+  locally.
+  **STRICT 3-stage fixed point** preserves at the new
+  v5.49.0 baseline. Local Windows build can't run the full
+  STRICT verification (no `libmapanare_rt.a` staged
+  locally); CI verifies idempotence.
+  Aggregate state entering v5.49.x: **0 HIGH** /
+  **3 MEDIUM** (macOS notarization carry from v5.33.0
+  Nu.2; Ai.1 `_specialize_fn` carry from v5.40.0;
+  `match_arm_open` + `one_line_arm_other` v6.0 grammar
+  revisit, carry from v5.48.1) / **~6 LOW** (Lf.4
+  variant-name collision split to v5.46.x; ergonomic
+  refactor of v5.43.0 distributed-agent APIs; fs.mn
+  `walk_dir`; websocket.mn `str(byte)`; if-expression
+  colon syntax deferred to v6.0; struct-update local
+  integer overflow surfaced during Windows goldens —
+  unrelated to Wn.\*, file as v5.49.x patch candidate).
+  **Wn.\* arc CLOSED at v5.49.0.** The Windows smoke
+  smoke regression is closed; the registry pattern is
+  the architectural fix for the entire class (the
+  v5.26.0 / v5.29.0 / v5.48.1 ad-hoc routing branches
+  in self-host can themselves be replaced by a registry
+  in a future cleanup, but that's not v5.49.0 scope).
+  See
+  `docs/roadmap/v5/v5.49.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.48.1** (ready, not tagged) — **Te.3.D.4 / Te.3.D.5 —
   bootstrap mirror + self-host source migration.** Closes the
   v5.48.0 carry-forward end-to-end. v5.48.0 shipped the Python

@@ -474,6 +474,88 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
 }
 
 
+# v5.49.0 Wn.1 — canonical signatures for ``__mn_*`` runtime symbols
+# that user .mn source calls directly (i.e. without going through a
+# Mapanare-level builtin handler). Each entry is ``(ret_ty, [param_tys])``
+# matching the C declaration in ``runtime/native/mapanare_core.h``.
+#
+# Why this exists: when .mn source calls ``__mn_file_exists(s)`` (or
+# any ``__mn_*`` runtime fn that takes/returns aggregates) the Call
+# instruction reaches ``_do_call``'s catchall auto-declare path with
+# ``i.dest.ty`` derived from the comparison context (often ``Ptr``
+# instead of ``Int`` for unannotated calls — see ``find_clang`` at
+# ``mapanare/self/main.mn:80``). The auto-declare path then emitted
+# ``declare ptr @__mn_file_exists(ptr)`` (return type wrong) plus a
+# call site of ``call ptr @__mn_file_exists({ptr, i64} %v)`` (caller
+# passes 16-byte aggregate by value, callee per Win64 ABI expects a
+# hidden pointer in RCX) — which on Win64 reads the path string's
+# data bytes as if they were the address of an MnString struct,
+# producing the v5.49.0 OOM regression. SysV/AAPCS happen to pass
+# the same registers and the bug is invisible there. Registry
+# entries supersede the MIR-derived (ret, pts) so direct ``__mn_*``
+# calls route through ``_rt``'s ABI-correct Win64 sarg/sret lowering.
+#
+# Pre-register only what is observed in ``mapanare/self/*.mn`` plus
+# the wider stdlib FFI surface — unregistered ``__mn_*`` calls keep
+# the old auto-declare behavior so this change is non-breaking.
+_RUNTIME_FN_SIGS: dict[str, tuple[str, list[str]]] = {
+    # Process / argv / environment.
+    "__mn_argc": (I64, []),
+    "__mn_argv": (STR, [I64]),
+    "__mn_exit": (VOID, [I64]),
+    "__mn_system": (I64, [STR]),
+    "__mn_version_string": (STR, []),
+    "__mn_executable_dir": (STR, []),
+    "__mn_clang_err_path": (STR, []),
+    "__mn_dev_null_redirect": (STR, []),
+    "__mn_host_is_windows": (I64, []),
+    "__mn_host_is_win64": (I64, []),
+    "__mn_host_arch_bits": (I64, []),
+    # File / directory I/O — all MnString-arg, the Win64-bug shape.
+    "__mn_file_exists": (I64, [STR]),
+    "__mn_file_read_or_empty": (STR, [STR]),
+    "__mn_file_write": (I64, [STR, STR]),
+    "__mn_file_append": (I64, [STR, STR]),
+    "__mn_file_remove": (I64, [STR]),
+    "__mn_file_size": (I64, [STR]),
+    "__mn_file_mtime": (I64, [STR]),
+    "__mn_file_rename": (I64, [STR, STR]),
+    "__mn_file_copy": (I64, [STR, STR]),
+    "__mn_dir_create": (I64, [STR, I64]),
+    "__mn_dir_remove": (I64, [STR]),
+    "__mn_dir_remove_recursive": (I64, [STR]),
+    "__mn_dir_count_files": (I64, [STR]),
+    "__mn_dir_total_size": (I64, [STR]),
+    "__mn_dir_list_strings": (LIST, [STR]),
+    "__mn_realpath": (STR, [STR]),
+    "__mn_tmpfile_path": (STR, [STR]),
+    # String I/O.
+    "__mn_str_eprint": (VOID, [STR]),
+    "__mn_str_eprintln": (VOID, [STR]),
+    "__mn_str_print": (VOID, [STR]),
+    "__mn_str_println": (VOID, [STR]),
+    "__mn_read_line": (STR, []),
+    # Preprocessor / formatter helpers (v5.14.x / v5.48.x).
+    "__mn_indent_to_braces": (STR, [STR]),
+    "__mn_rewrite_arm_stmt_shorthand": (STR, [STR]),
+    "__mn_count_user_brace_block_openers": (I64, [STR]),
+    "__mn_emit_brace_deprecation_warning": (VOID, [STR, I64]),
+    # GPU.
+    "__mn_gpu_available": (I64, []),
+    # Crypto / regex / encoding wrappers (all MnString-arg/return).
+    "__mn_http_get": (STR, [STR]),
+    "__mn_sha256_str": (STR, [STR]),
+    "__mn_base64_encode_str": (STR, [STR]),
+    "__mn_base64_decode_str": (STR, [STR]),
+    "__mn_hmac_sha256_str": (STR, [STR, STR]),
+    "__mn_hex_encode_str": (STR, [STR]),
+    "__mn_random_bytes_str": (STR, [I64]),
+    "__mn_regex_compile_str": (I64, [STR]),
+    "__mn_regex_replace_str": (STR, [I64, STR, STR, I64]),
+    "__mn_regex_free": (I64, [I64]),
+}
+
+
 class LLVMTextEmitter:
     """Emit LLVM IR as text from a MIR module."""
 
@@ -3388,6 +3470,29 @@ class LLVMTextEmitter:
             self._put(i.dest, r, STR)
             return
 
+        # v5.49.0 Wn.1 — direct ``__mn_*`` runtime call from .mn source.
+        # Route through ``_rt`` for ABI-correct Win64 sarg/sret lowering
+        # using the canonical signature from ``_RUNTIME_FN_SIGS``. The
+        # auto-declare path below derives types from MIR context, which
+        # for unannotated calls like ``if __mn_file_exists(p) != 0`` picks
+        # ``Ptr`` and emits the wrong shape on Win64. See
+        # ``docs/roadmap/v5/v5.49.0/PRE_PHASE_AUDIT.md``.
+        if fn in _RUNTIME_FN_SIGS:
+            sig_ret, sig_pts = _RUNTIME_FN_SIGS[fn]
+            sig_coerced: list[tuple[str, str]] = []
+            for j, (v, t) in enumerate(args):
+                et = sig_pts[j] if j < len(sig_pts) else t
+                sig_coerced.append((self._coerce(v, t, et) if t != et else v, et))
+            if sig_ret == VOID:
+                self._rt(fn, sig_ret, list(sig_pts), sig_coerced)
+                self._put(i.dest, "0", I1)
+            else:
+                rsig = self._rt(fn, sig_ret, list(sig_pts), sig_coerced, nm="c")
+                if sig_ret == STR:
+                    self._track_string(rsig)
+                self._put(i.dest, rsig, sig_ret)
+            return
+
         # print / println (both add newline; println is a deprecated alias)
         if fn in ("println", "print"):
             nl = True
@@ -4472,6 +4577,27 @@ class LLVMTextEmitter:
                     self._list_vars.remove(root_s)
                 self._move_resource(src_name)
         full = f"{i.module}__{i.fn_name}" if i.module else i.fn_name
+
+        # v5.49.0 Wn.1 — direct ``__mn_*`` extern call. Same registry
+        # check as ``_do_call``: if the symbol has a canonical signature
+        # registered, route through ``_rt`` for ABI-correct lowering
+        # instead of falling through to the auto-declare path.
+        if not i.module and full in _RUNTIME_FN_SIGS:
+            sig_ret, sig_pts = _RUNTIME_FN_SIGS[full]
+            sig_coerced: list[tuple[str, str]] = []
+            for j, (v, t) in enumerate(args):
+                et = sig_pts[j] if j < len(sig_pts) else t
+                sig_coerced.append((self._coerce(v, t, et) if t != et else v, et))
+            if sig_ret == VOID:
+                self._rt(full, sig_ret, list(sig_pts), sig_coerced)
+                self._put(i.dest, "0", I1)
+            else:
+                rsig = self._rt(full, sig_ret, list(sig_pts), sig_coerced, nm="ec")
+                if sig_ret == STR:
+                    self._track_string(rsig)
+                self._put(i.dest, rsig, sig_ret)
+            return
+
         if full not in self._sigs:
             pts = [self._rty(a.ty) for a in i.args]
             for j, pt in enumerate(pts):

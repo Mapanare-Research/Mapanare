@@ -593,10 +593,42 @@ jobs:
               throw "FATAL: mnc.exe --version spawned a python process (before=$pyBefore, after=$pyAfter). Native binary did not load — pre-v5.32.0 PyInstaller-copy regression."
           }
           Write-Host "OK: mnc.exe --version did not spawn Python (before=$pyBefore, after=$pyAfter)"
+          # v5.49.0 Wn.3 — paid-forward gdb-backtrace wrapper, mirror of
+          # the bash Wb.1.dx instrumentation at `publish.yml:802-825` and
+          # the v5.8.3 PROMPT Phase 4 precedent. No-op on success; on the
+          # next regression in this class (garbage size_t to ``__mn_alloc``
+          # from a Win64 ABI mismatch on an MnString-by-value runtime
+          # call) the action log surfaces the call site instead of just
+          # an OOM number, so we don't have to re-trigger CI to diagnose.
+          # ``gdb 16.2`` is preinstalled on the windows-latest runner image.
           & ./dist/mapanare/mnc.exe run hello.mn
-          if ($LASTEXITCODE -ne 0) { throw "run failed" }
+          $rc_run = $LASTEXITCODE
+          if ($rc_run -ne 0) {
+              Write-Host "=== Wn.3 (paid forward from Wb.1.dx): mnc.exe run exited $rc_run; capturing diagnostics ==="
+              $gdb = Get-Command gdb -ErrorAction SilentlyContinue
+              if ($gdb) {
+                  & gdb -batch -ex 'set pagination off' -ex 'set print elements 0' `
+                      -ex 'break __mn_alloc if size > 1073741824' `
+                      -ex 'run' -ex 'echo === BACKTRACE ===\n' -ex 'bt 80' `
+                      --args ./dist/mapanare/mnc.exe run hello.mn
+              } else {
+                  Write-Host "gdb not on PATH — skipping backtrace capture"
+              }
+              throw "run failed (rc=$rc_run)"
+          }
           & ./dist/mapanare/mnc.exe build hello.mn -o hello.exe
-          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+          $rc_build = $LASTEXITCODE
+          if ($rc_build -ne 0) {
+              Write-Host "=== Wn.3: mnc.exe build exited $rc_build; capturing diagnostics ==="
+              $gdb = Get-Command gdb -ErrorAction SilentlyContinue
+              if ($gdb) {
+                  & gdb -batch -ex 'set pagination off' -ex 'set print elements 0' `
+                      -ex 'break __mn_alloc if size > 1073741824' `
+                      -ex 'run' -ex 'echo === BACKTRACE ===\n' -ex 'bt 80' `
+                      --args ./dist/mapanare/mnc.exe build hello.mn -o hello.exe
+              }
+              throw "build failed (rc=$rc_build)"
+          }
           & ./hello.exe
           if ($LASTEXITCODE -ne 0) { throw "built exe failed" }
           # `mnc test` remains covered by TR.1 and currently lacks a
