@@ -2908,6 +2908,43 @@ def _emit_brace_deprecation_warning(filename: str, count: int) -> None:
     )
 
 
+def _maybe_emit_brace_deprecation_warning(filename: str, source: str) -> None:
+    """v5.49.0 — emit the brace-deprecation warning only when
+    ``mnc fmt --to-terse`` would actually migrate something.
+
+    Pre-fix, the warning fired for every brace, including shapes the
+    v5.48.0 shorthand has no colon form for (``match_arm_open`` multi-
+    line arm bodies, ``one_line_arm_other`` multi-stmt single-line
+    arms — see v5.48.1 SESSION_REPORT). The warning told users to run
+    a tool that's a no-op on those shapes, which generated noise
+    (~700+ warnings across ``mapanare/self/*.mn`` post-v5.48.1 even
+    after every migration mnc fmt could perform).
+
+    Now: if ``to_terse`` is a fixed point on the source (every brace
+    is in a non-migratable shape), skip the warning. The deprecation
+    signal stays honest — it fires only when actionable. v6.0's hard-
+    removal path will surface the residuals via the parser-level
+    error, not via a noise-generating advisory.
+
+    Conservative on formatter exceptions: if ``to_terse`` raises (e.g.
+    a parse-shape it doesn't recognize), keep the legacy warning so
+    real brace-form code isn't silently swallowed. Same fail-open the
+    v5.19.0 path used.
+    """
+    brace_count = count_user_brace_block_openers(source)
+    if brace_count == 0:
+        return
+    try:
+        from mapanare.format import to_terse
+
+        migrated = to_terse(source)
+    except Exception:
+        _emit_brace_deprecation_warning(filename, brace_count)
+        return
+    if migrated != source:
+        _emit_brace_deprecation_warning(filename, brace_count)
+
+
 def parse(source: str, *, filename: str = "<input>") -> Program:
     """Parse Mapanare source code into an AST Program node.
 
@@ -2930,9 +2967,7 @@ def parse(source: str, *, filename: str = "<input>") -> Program:
     # ``parse_expr`` directly and never re-enters ``parse()``, so this
     # filter is Python-side only.
     if not (filename.startswith("<") and filename.endswith(">")):
-        brace_count = count_user_brace_block_openers(source)
-        if brace_count > 0:
-            _emit_brace_deprecation_warning(filename, brace_count)
+        _maybe_emit_brace_deprecation_warning(filename, source)
     source = _indent_to_braces(source)
     source = _rewrite_arm_stmt_shorthand(source)
     try:
@@ -3090,9 +3125,7 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
     # preprocessing so the warning reflects what the user wrote.
     # v5.23.2 Te.3.B.1: skip the warning for synthetic filenames.
     if not (filename.startswith("<") and filename.endswith(">")):
-        brace_count = count_user_brace_block_openers(source)
-        if brace_count > 0:
-            _emit_brace_deprecation_warning(filename, brace_count)
+        _maybe_emit_brace_deprecation_warning(filename, source)
     source = _indent_to_braces(source)
     source = _rewrite_arm_stmt_shorthand(source)
     # Try full parse first — fast path
