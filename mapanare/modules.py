@@ -125,9 +125,7 @@ class ModuleResolver:
         stdlib_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "stdlib"
         )
-        self._bundled_stdlib_dir: str | None = (
-            stdlib_dir if os.path.isdir(stdlib_dir) else None
-        )
+        self._bundled_stdlib_dir: str | None = stdlib_dir if os.path.isdir(stdlib_dir) else None
         # Backward-compat view: combined explicit + bundled stdlib list.
         # No external code grep-uses this in v5.44.0 HEAD; preserved for
         # any unindexed/playground consumer.
@@ -214,9 +212,7 @@ class ModuleResolver:
 
         return None
 
-    def _resolve_in_package(
-        self, pkg: "PackageRoot", import_path: list[str]
-    ) -> str | None:
+    def _resolve_in_package(self, pkg: "PackageRoot", import_path: list[str]) -> str | None:
         """Resolve an ``import_path`` whose head matches ``pkg.import_name``.
 
         Records the resolution in ``_import_log`` (Ps.4) on success.

@@ -69,7 +69,7 @@ def test_source_local_wins_over_package(tmp_path: Path) -> None:
     package whose import_name is `shared`."""
     src = tmp_path / "src"
     src.mkdir()
-    _write(src / "shared.mn", 'pub fn hello() -> Int { return 99 }')
+    _write(src / "shared.mn", "pub fn hello() -> Int { return 99 }")
     pkg = _make_pkg_root(tmp_path)
 
     resolver = ModuleResolver(package_roots=[pkg])
@@ -87,8 +87,8 @@ def test_source_local_wins_over_explicit(tmp_path: Path) -> None:
     src.mkdir()
     extra = tmp_path / "extra"
     extra.mkdir()
-    _write(src / "shared.mn", 'pub fn local() -> Int { return 1 }')
-    _write(extra / "shared.mn", 'pub fn explicit() -> Int { return 2 }')
+    _write(src / "shared.mn", "pub fn local() -> Int { return 1 }")
+    _write(extra / "shared.mn", "pub fn explicit() -> Int { return 2 }")
 
     resolver = ModuleResolver(search_paths=[str(extra)])
     found = resolver.resolve_path(["shared"], str(src))
@@ -107,7 +107,7 @@ def test_explicit_path_wins_over_package(tmp_path: Path) -> None:
     src.mkdir()
     extra = tmp_path / "extra"
     extra.mkdir()
-    _write(extra / "shared.mn", 'pub fn explicit() -> Int { return 1 }')
+    _write(extra / "shared.mn", "pub fn explicit() -> Int { return 1 }")
     pkg = _make_pkg_root(tmp_path)
 
     resolver = ModuleResolver(
@@ -139,7 +139,7 @@ def test_package_wins_over_bundled_stdlib(tmp_path: Path) -> None:
         tmp_path,
         package_name="math",
         version="9.9.9",
-        entry_content='pub fn pi() -> Int { return 314 }',
+        entry_content="pub fn pi() -> Int { return 314 }",
     )
     resolver = ModuleResolver(package_roots=[pkg])
     found = resolver.resolve_path(["math"], str(src))
@@ -260,7 +260,7 @@ def test_bare_constructor_unchanged_behavior(tmp_path: Path) -> None:
     """Pre-v5.44.0 callers using bare `ModuleResolver()` see no change."""
     src = tmp_path / "src"
     src.mkdir()
-    _write(src / "local.mn", 'pub fn x() -> Int { return 1 }')
+    _write(src / "local.mn", "pub fn x() -> Int { return 1 }")
     resolver = ModuleResolver()
     # Source-local resolution still works.
     assert resolver.resolve_path(["local"], str(src)) is not None
@@ -277,6 +277,6 @@ def test_search_paths_kw_unchanged_behavior(tmp_path: Path) -> None:
     src.mkdir()
     extra = tmp_path / "extra"
     extra.mkdir()
-    _write(extra / "ext.mn", 'pub fn x() -> Int { return 1 }')
+    _write(extra / "ext.mn", "pub fn x() -> Int { return 1 }")
     resolver = ModuleResolver(search_paths=[str(extra)])
     assert resolver.resolve_path(["ext"], str(src)) is not None

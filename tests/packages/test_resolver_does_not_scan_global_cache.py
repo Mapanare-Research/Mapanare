@@ -45,9 +45,7 @@ def test_resolver_does_not_scan_user_cache(tmp_path: Path, monkeypatch) -> None:
         '[package]\nname = "secret_pkg"\nversion = "1.0.0"\n',
         encoding="utf-8",
     )
-    (fake_pkg / "main.mn").write_text(
-        'pub fn leak() -> Int { return 999 }\n', encoding="utf-8"
-    )
+    (fake_pkg / "main.mn").write_text("pub fn leak() -> Int { return 999 }\n", encoding="utf-8")
 
     # Set every plausible env var the future cache might honor.
     monkeypatch.setenv("HOME", str(tmp_path / "fake_home"))
@@ -82,9 +80,9 @@ def test_resolver_construction_does_not_inject_packages_from_env(
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     resolver = ModuleResolver()
-    assert resolver.package_roots() == [], (
-        "bare ModuleResolver() must NOT populate package_roots from env vars"
-    )
+    assert (
+        resolver.package_roots() == []
+    ), "bare ModuleResolver() must NOT populate package_roots from env vars"
     assert resolver.import_log() == []
 
 
@@ -100,9 +98,7 @@ def test_resolve_path_does_not_consult_unknown_directories(
     # passed to the resolver.
     orphan = tmp_path / "orphan_dir" / "orphan_pkg-0.1.0"
     orphan.mkdir(parents=True)
-    (orphan / "main.mn").write_text(
-        'pub fn x() -> Int { return 1 }\n', encoding="utf-8"
-    )
+    (orphan / "main.mn").write_text("pub fn x() -> Int { return 1 }\n", encoding="utf-8")
 
     resolver = ModuleResolver()  # no package_roots passed
     found = resolver.resolve_path(["orphan_pkg"], str(src))

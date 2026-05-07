@@ -225,7 +225,6 @@ fn main() -> Int {{
     assert "k=2" in out, f"trivial-Ok regression ({ok_type}) wrong output: {out!r}"
 
 
-
 # ---------------------------------------------------------------------------
 # v5.47.0 Cl.1 (Lf.4) — variant-name collision regression
 # ---------------------------------------------------------------------------
@@ -311,6 +310,4 @@ fn main() -> Int {
 """)
     rc, out, err = _emit_link_run(src, tmp_path)
     assert rc == 0, f"Lf.4 minimal failed: rc={rc}\n{err}"
-    assert "a=100" in out and "b=1000" in out, (
-        f"Lf.4 minimal-pair dispatch wrong: {out!r}"
-    )
+    assert "a=100" in out and "b=1000" in out, f"Lf.4 minimal-pair dispatch wrong: {out!r}"

@@ -22,9 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TEMPLATE_GITIGNORE = (
-    REPO_ROOT / "mapanare" / "templates" / "init" / "default" / ".gitignore"
-)
+TEMPLATE_GITIGNORE = REPO_ROOT / "mapanare" / "templates" / "init" / "default" / ".gitignore"
 
 # Patterns that MUST appear in the template `.gitignore`.
 REQUIRED_PATTERNS = (
@@ -73,10 +71,7 @@ def test_template_gitignore_required_patterns() -> None:
     """Lock the canonical exclude set."""
     lines = _read_pattern_lines()
     missing = [p for p in REQUIRED_PATTERNS if p not in lines]
-    assert not missing, (
-        f"init template `.gitignore` is missing required patterns: "
-        f"{missing}"
-    )
+    assert not missing, f"init template `.gitignore` is missing required patterns: " f"{missing}"
 
 
 def test_template_gitignore_no_forbidden_patterns() -> None:
@@ -113,6 +108,5 @@ def test_init_creates_project_with_gitignore(tmp_path: Path) -> None:
         # Match whole-line so a pattern like `*.mn` doesn't false-match
         # the `myproj.mn` filename if someone adds that to the template.
         assert forbidden not in text.splitlines(), (
-            f"init-produced .gitignore unexpectedly contains "
-            f"forbidden pattern {forbidden!r}"
+            f"init-produced .gitignore unexpectedly contains " f"forbidden pattern {forbidden!r}"
         )

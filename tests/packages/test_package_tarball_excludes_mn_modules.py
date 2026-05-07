@@ -32,15 +32,11 @@ def _make_publishable(tmp_path: Path) -> Path:
         '[package]\nname = "publishable"\nversion = "0.1.0"\n',
         encoding="utf-8",
     )
-    (proj / "main.mn").write_text(
-        'fn main() { print("hi") }\n', encoding="utf-8"
-    )
+    (proj / "main.mn").write_text('fn main() { print("hi") }\n', encoding="utf-8")
     # Stage an installed dependency that MUST NOT appear in the tarball.
     pkg = proj / "mn_modules" / "should_not_publish-0.1.0"
     pkg.mkdir(parents=True)
-    (pkg / "main.mn").write_text(
-        'pub fn dep() -> Int { return 1 }\n', encoding="utf-8"
-    )
+    (pkg / "main.mn").write_text("pub fn dep() -> Int { return 1 }\n", encoding="utf-8")
     (pkg / "mapanare.toml").write_text(
         '[package]\nname = "should_not_publish"\nversion = "0.1.0"\n',
         encoding="utf-8",
@@ -68,9 +64,9 @@ def test_tarball_excludes_mn_modules(tmp_path: Path) -> None:
 
     # The installed dep MUST NOT be present anywhere.
     for name in members:
-        assert "mn_modules" not in name, (
-            f"tarball includes {name!r} — Ps.10 tarball-exclusion violated"
-        )
+        assert (
+            "mn_modules" not in name
+        ), f"tarball includes {name!r} — Ps.10 tarball-exclusion violated"
         assert "should_not_publish" not in name
 
 
@@ -96,6 +92,4 @@ def test_tarball_excludes_hidden_dirs(tmp_path: Path) -> None:
         # No path component starts with "."
         parts = name.split("/")
         for p in parts:
-            assert not p.startswith("."), (
-                f"tarball includes hidden path {name!r}"
-            )
+            assert not p.startswith("."), f"tarball includes hidden path {name!r}"

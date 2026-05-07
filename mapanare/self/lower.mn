@@ -4186,6 +4186,26 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
         return new_lower_result(val_r.value, s)
     if tk == "index":
         let obj_r_idx: LowerResult = lower_expr(s, expr_index_obj(target))
+        // Single-subscript tensor assignment (`t[i] = v`) routes through
+        // __mn_tensor_set_*_nd, mirroring lower_index's read-side
+        // dispatch and Python lower.py:_lower_assign.
+        if obj_r_idx.value.ty.kind == TK_TENSOR():
+            let idx_r_t: LowerResult = lower_expr(obj_r_idx.state, expr_index_idx(target))
+            let mut s_t: LowerState = idx_r_t.state
+            let elem_kind_t: Int = tensor_elem_kind_of(obj_r_idx.value)
+            let mut fn_name_t: String = "__mn_tensor_set_f64_nd"
+            if elem_kind_t == TK_INT():
+                fn_name_t = "__mn_tensor_set_i64_nd"
+            let rank_r_t: LowerResult = make_value(s_t, mir_int(), "trank")
+            s_t = emit_instr(rank_r_t.state, Instruction::Const(rank_r_t.value, mir_int(), "1"))
+            let mut all_args_t: List<Value> = []
+            all_args_t.push(obj_r_idx.value)
+            all_args_t.push(rank_r_t.value)
+            all_args_t.push(idx_r_t.value)
+            all_args_t.push(val_r.value)
+            let void_dest_t: LowerResult = make_value(s_t, mir_void(), "tset")
+            s = emit_instr(void_dest_t.state, Instruction::Call(void_dest_t.value, fn_name_t, all_args_t))
+            return new_lower_result(val_r.value, s)
         let idx_r: LowerResult = lower_expr(obj_r_idx.state, expr_index_idx(target))
         s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r_idx.value, idx_r.value, val_r.value))
         // v5.4.4 — map_set / list_set memcpy key+val into the container;

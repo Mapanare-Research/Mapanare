@@ -711,9 +711,7 @@ def bootstrap_compile(mn_path: str | pathlib.Path) -> str:
             resolver = build_resolver_for_source(str(mn_path))
         except PackageDiscoveryError:
             resolver = ModuleResolver()
-        return compile_multi_module_mir(
-            source, str(mn_path), opt_level=2, resolver=resolver
-        )
+        return compile_multi_module_mir(source, str(mn_path), opt_level=2, resolver=resolver)
     else:
         # Use the CLI-level compile path which handles all wiring
         with tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f:

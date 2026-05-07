@@ -53,6 +53,7 @@ NO_BANNER_COMMANDS = frozenset({"--version", "--help", "-h", "init", "list"})
 # stop — the parametrized parity test in
 # ``tests/packages/test_cli_parity.py`` will catch it.
 
+
 def _collect_explicit_paths(args: argparse.Namespace) -> list[str]:
     """Gather explicit search paths from CLI flags + ``MAPANARE_PATH`` env.
 
@@ -448,9 +449,7 @@ def _compile_multi_module_text(
     )
 
 
-def _check_one(
-    path: str, *, werror: bool, resolver: ModuleResolver | None = None
-) -> bool:
+def _check_one(path: str, *, werror: bool, resolver: ModuleResolver | None = None) -> bool:
     """Type-check a single .mn file. Return True iff it has zero errors.
 
     Prints diagnostics to stderr and an "OK" line to stdout, matching the

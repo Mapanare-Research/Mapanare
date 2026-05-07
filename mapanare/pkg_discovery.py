@@ -204,9 +204,7 @@ def _roots_from_lockfile(
     lockfile = load_lockfile_fn(str(project_dir))
     roots: list[PackageRoot] = []
     for locked in lockfile.packages:
-        candidates = _candidate_install_dirs(
-            packages_dir, locked.name, locked.version
-        )
+        candidates = _candidate_install_dirs(packages_dir, locked.name, locked.version)
         installed_dir = next((d for d in candidates if d.is_dir()), None)
         if installed_dir is None:
             tried = ", ".join(str(c.relative_to(project_dir)) for c in candidates)

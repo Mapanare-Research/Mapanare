@@ -781,7 +781,7 @@ MN_EXPORT mapanare_tensor_t *__mn_tensor_step_slice(
     if (!t || !t->data || rank != t->ndim) {
         fprintf(stderr, "mapanare: invalid tensor step slice\n"); abort();
     }
-    int64_t out_shape[MN_TENSOR_MAX_RANK];
+    int64_t out_shape[MN_TENSOR_MAX_RANK] = {0};
     for (int64_t d = 0; d < rank; d++) {
         int64_t s = starts[d], e = ends[d], k = steps[d];
         if (k <= 0) {

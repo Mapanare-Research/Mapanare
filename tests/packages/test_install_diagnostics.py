@@ -111,9 +111,7 @@ def test_diag_json_records_resolved_packages(tmp_path: Path) -> None:
     """--diag-json writes a JSON file with one entry per (name, version)."""
     diag = tmp_path / "diag.json"
     parser = cli.build_parser()
-    args = parser.parse_args(
-        ["build", "/tmp/x.mn", "--diag-json", str(diag)]
-    )
+    args = parser.parse_args(["build", "/tmp/x.mn", "--diag-json", str(diag)])
     resolver = _make_resolver_with_log()
 
     cli._surface_install_diagnostics(args, resolver)
@@ -143,9 +141,7 @@ def test_diag_json_empty_when_no_imports(tmp_path: Path) -> None:
     """No package imports → diag-json still written, with empty packages list."""
     diag = tmp_path / "diag.json"
     parser = cli.build_parser()
-    args = parser.parse_args(
-        ["build", "/tmp/x.mn", "--diag-json", str(diag)]
-    )
+    args = parser.parse_args(["build", "/tmp/x.mn", "--diag-json", str(diag)])
     resolver = ModuleResolver()
 
     cli._surface_install_diagnostics(args, resolver)
@@ -159,9 +155,7 @@ def test_diag_json_and_verbose_compose(tmp_path: Path, capsys) -> None:
     """Both surfaces fire together cleanly."""
     diag = tmp_path / "diag.json"
     parser = cli.build_parser()
-    args = parser.parse_args(
-        ["build", "/tmp/x.mn", "--verbose", "--diag-json", str(diag)]
-    )
+    args = parser.parse_args(["build", "/tmp/x.mn", "--verbose", "--diag-json", str(diag)])
     resolver = _make_resolver_with_log()
 
     cli._surface_install_diagnostics(args, resolver)
@@ -193,9 +187,7 @@ def test_diag_json_matches_lockfile(tmp_path: Path) -> None:
     (pkg_dir / "mapanare.toml").write_text(
         '[package]\nname = "mn_collections"\nversion = "0.1.0"\n', encoding="utf-8"
     )
-    (pkg_dir / "main.mn").write_text(
-        "pub fn x() -> Int { return 1 }\n", encoding="utf-8"
-    )
+    (pkg_dir / "main.mn").write_text("pub fn x() -> Int { return 1 }\n", encoding="utf-8")
     lockfile_data = {
         "lockfile_version": 1,
         "packages": [
@@ -213,9 +205,7 @@ def test_diag_json_matches_lockfile(tmp_path: Path) -> None:
     )
 
     src = proj / "main.mn"
-    src.write_text(
-        'import mn_collections\n\nfn main() {}\n', encoding="utf-8"
-    )
+    src.write_text("import mn_collections\n\nfn main() {}\n", encoding="utf-8")
 
     # Manually trigger resolution by walking through the resolver.
     resolver = cli._build_resolver_from_args(
@@ -226,9 +216,7 @@ def test_diag_json_matches_lockfile(tmp_path: Path) -> None:
     resolver.resolve_module(["mn_collections"], str(src))
 
     diag = tmp_path / "diag.json"
-    args = cli.build_parser().parse_args(
-        ["build", str(src), "--diag-json", str(diag)]
-    )
+    args = cli.build_parser().parse_args(["build", str(src), "--diag-json", str(diag)])
     cli._surface_install_diagnostics(args, resolver)
 
     payload = json.loads(diag.read_text(encoding="utf-8"))

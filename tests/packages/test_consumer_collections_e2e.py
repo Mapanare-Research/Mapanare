@@ -35,8 +35,7 @@ CONSUMER_DIR = REPO_ROOT / "examples" / "packages" / "consumer_collections"
 
 def test_consumer_dir_exists() -> None:
     assert CONSUMER_DIR.is_dir(), (
-        f"consumer_collections example missing at {CONSUMER_DIR} — "
-        f"v5.44.0 Ps.5 requires it"
+        f"consumer_collections example missing at {CONSUMER_DIR} — " f"v5.44.0 Ps.5 requires it"
     )
 
 
@@ -71,9 +70,7 @@ def test_consumer_main_imports_resolve() -> None:
     resolver = build_resolver_for_source(str(main_mn))
     found = resolver.resolve_path(["mn_collections"], str(main_mn.parent))
     assert found is not None
-    expected = (
-        CONSUMER_DIR / "mn_modules" / "mn_collections-0.1.0" / "main.mn"
-    )
+    expected = CONSUMER_DIR / "mn_modules" / "mn_collections-0.1.0" / "main.mn"
     assert os.path.normpath(found) == os.path.normpath(str(expected))
     log = resolver.import_log()
     assert len(log) == 1
@@ -101,13 +98,9 @@ def test_consumer_main_parses() -> None:
     from mapanare.ast_nodes import FnDef, ImportDef
 
     has_import = any(
-        isinstance(d, ImportDef)
-        and d.path == ["mn_collections"]
-        for d in ast.definitions
+        isinstance(d, ImportDef) and d.path == ["mn_collections"] for d in ast.definitions
     )
-    has_main = any(
-        isinstance(d, FnDef) and d.name == "main" for d in ast.definitions
-    )
+    has_main = any(isinstance(d, FnDef) and d.name == "main" for d in ast.definitions)
     assert has_import, "consumer main.mn must `import mn_collections`"
     assert has_main, "consumer main.mn must define `fn main`"
 
@@ -122,7 +115,7 @@ def test_consumer_legacy_examples_marked() -> None:
         legacy_md = d / "LEGACY.md"
         assert legacy_md.is_file(), (
             f"{legacy_md} missing — v5.44.0 Ps.6 requires it because the "
-            f"example uses extern \"Python\" which was removed at v4.29.0"
+            f'example uses extern "Python" which was removed at v4.29.0'
         )
         text = legacy_md.read_text(encoding="utf-8")
         assert "LEGACY" in text

@@ -37,13 +37,12 @@ COMPILE_SUBCMDS = (
 def test_every_compile_subcmd_has_resolver_args(subcmd: str) -> None:
     """Every compile/test entry point exposes --stdlib-path and --extra-path."""
     import argparse as _ap
+
     parser = cli.build_parser()
     # Find the _SubParsersAction explicitly (other actions can also have
     # a `choices` attr but choices is None for them).
     subparsers_action = next(
-        action
-        for action in parser._actions
-        if isinstance(action, _ap._SubParsersAction)
+        action for action in parser._actions if isinstance(action, _ap._SubParsersAction)
     )
     sp = subparsers_action.choices[subcmd]
     # Extract long-form option strings from the parser's actions.
@@ -104,8 +103,7 @@ def test_no_bare_module_resolver_construction_in_compile_paths() -> None:
             preceding = lines[max(0, lineno - 5) : lineno - 1]
             preceding_text = "\n".join(preceding)
             assert (
-                "resolver is None" in preceding_text
-                or "PackageDiscoveryError" in preceding_text
+                "resolver is None" in preceding_text or "PackageDiscoveryError" in preceding_text
             ), (
                 f"{path}:{lineno}: bare ModuleResolver() construction without "
                 f"a documented fallback guard. Use _build_resolver_from_args "
@@ -129,9 +127,7 @@ SCRIPT_FILES_TO_AUDIT = (
     "scripts/measure_divergence.py",
     "benchmarks/bench_stdlib.py",
 )
-COMPILE_HELPER_CALL_RE = re.compile(
-    r"\b(compile_multi_module_mir|_compile_to_llvm_ir)\s*\("
-)
+COMPILE_HELPER_CALL_RE = re.compile(r"\b(compile_multi_module_mir|_compile_to_llvm_ir)\s*\(")
 
 
 @pytest.mark.parametrize("rel_path", SCRIPT_FILES_TO_AUDIT)
@@ -183,7 +179,7 @@ def test_scripts_pass_resolver_to_compile_helper(rel_path: str) -> None:
             elif ch == ")":
                 depth -= 1
             i += 1
-        call_args = text[start:i - 1]
+        call_args = text[start : i - 1]
         if "resolver=" not in call_args:
             # Compute lineno of the call open-paren.
             lineno = text.count("\n", 0, match.start()) + 1
@@ -205,9 +201,7 @@ def test_scripts_pass_resolver_to_compile_helper(rel_path: str) -> None:
     "subcmd",
     ["check", "build", "emit-llvm", "emit-mir"],
 )
-def test_resolver_construction_parity_in_project(
-    tmp_path: Path, subcmd: str
-) -> None:
+def test_resolver_construction_parity_in_project(tmp_path: Path, subcmd: str) -> None:
     """The same project compiles via each entry point with identical
     package resolution.
 
