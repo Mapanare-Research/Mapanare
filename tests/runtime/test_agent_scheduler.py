@@ -142,9 +142,20 @@ class TestAgentLifecycle:
         await asyncio.sleep(0.05)  # let _run start and pick up channels
 
         await handle.pause()
+        # ``_run``'s ``receive()`` has a 0.05s timeout (see runtime/agent.py
+        # line ~252). After ``pause()`` clears the event, ``_run`` may be
+        # mid-receive on a slow CI runner; we have to wait for that
+        # in-flight receive to time out and the loop to cycle back to the
+        # ``await self._pause_event.wait()`` check before the pause is
+        # observed. 0.15s gives ~3x the receive-timeout slack — fast
+        # locally, robust on a slow runner. Pre-fix this used 0.05s, which
+        # races: ``_run`` could grab the message and process it before
+        # observing the pause.
+        await asyncio.sleep(0.15)
+
         await agent._inputs["in"].send("hello")
-        await asyncio.sleep(0.05)
-        # Message should still be in queue — not processed
+        await asyncio.sleep(0.10)
+        # Message should still be in input queue — not processed.
         assert not agent._outputs["out"]._queue.qsize()
 
         await handle.resume()
