@@ -45,17 +45,17 @@ CASES = [
     # `{` inside a `//` line comment — must NOT count.
     ("brace_in_comment", 'fn main(): // {\n    print("hi")\n', 0),
     # `#{` map literal — must NOT count.
-    ("map_literal", 'fn main():\n    let m = #{ 1: 2 }\n', 0),
+    ("map_literal", "fn main():\n    let m = #{ 1: 2 }\n", 0),
     # `${...}` interpolation inside a string — must NOT count.
     ("interp_inside_string", 'fn main():\n    let n = 5\n    print("${n}")\n', 0),
     # Mixed colon-style fn + brace-style fn in one file — count = 1.
-    ("mixed_colon_brace", 'fn a(): pass\nfn b() { return 1 }\n', 1),
+    ("mixed_colon_brace", "fn a(): pass\nfn b() { return 1 }\n", 1),
     # No braces at all.
     ("no_braces", 'fn main():\n    print("hi")\n', 0),
     # Multiple brace-style fns, one colon-style — count = 3.
     (
         "multiple",
-        'fn a() { 1 }\nfn b() { 2 }\nfn c():\n    pass\nfn d() { 3 }\n',
+        "fn a() { 1 }\nfn b() { 2 }\nfn c():\n    pass\nfn d() { 3 }\n",
         3,
     ),
 ]
@@ -105,30 +105,41 @@ def test_python_native_warning_match(
     py_warning = "\n".join(line for line in py.stderr.splitlines() if "deprecated" in line)
     sh_warning = "\n".join(line for line in sh.stderr.splitlines() if "deprecated" in line)
 
+    # v5.49.0 architectural choice (commit 4e12afb4): the native
+    # compiler does NOT emit deprecation warnings — the deprecation
+    # signal stays in Python tooling (`mnc fmt`, `python -m mapanare`).
+    # ``mapanare/self/parser.mn`` has no warning emission post-v5.49.0.
+    # This test asserts the contract:
+    #
+    # - Native always silent (no `deprecated` in stderr) regardless of
+    #   ``expected_count`` — native is not a linter.
+    # - Python emits when (a) the source has migratable braces AND (b)
+    #   the v5.49.0 smart-skip ``_maybe_emit_brace_deprecation_warning``
+    #   doesn't suppress (i.e., formatter would actually migrate).
+    #
+    # All `expected_count > 0` fixtures here are single-line / multi-line
+    # stmt-block forms that v5.48.0 migrates, so the smart-skip is
+    # inactive and Python warns.
+    assert sh_warning == "", (
+        f"v5.49.0 contract: native must not emit deprecation warning. " f"stderr={sh.stderr!r}"
+    )
+
     if expected_count == 0:
         assert py_warning == "", f"Python: unexpected warning: {py_warning!r}"
-        assert sh_warning == "", f"Native: unexpected warning: {sh_warning!r}"
     else:
         assert "deprecated" in py_warning, f"Python: missing warning. stderr={py.stderr!r}"
-        assert "deprecated" in sh_warning, f"Native: missing warning. stderr={sh.stderr!r}"
-        # Byte-identical text (modulo absolute path, which both use).
-        assert py_warning == sh_warning, (
-            f"Diverged warning text:\n  py: {py_warning!r}\n  sh: {sh_warning!r}"
-        )
         # The count must be embedded as written.
         plural = "occurrence" if expected_count == 1 else "occurrences"
-        assert f"({expected_count} {plural})" in py_warning, (
-            f"Expected '({expected_count} {plural})' in py warning: {py_warning!r}"
-        )
-        assert f"({expected_count} {plural})" in sh_warning, (
-            f"Expected '({expected_count} {plural})' in sh warning: {sh_warning!r}"
-        )
+        assert (
+            f"({expected_count} {plural})" in py_warning
+        ), f"Expected '({expected_count} {plural})' in py warning: {py_warning!r}"
 
 
 @pytest.mark.skipif(not STAGE1.exists(), reason="mnc-stage1 not built")
 def test_no_brace_warning_env_opt_out(tmp_path: Path) -> None:
-    """``MAPANARE_NO_BRACE_WARNING=1`` suppresses the warning in both
-    bootstraps (mirrored opt-out)."""
+    """``MAPANARE_NO_BRACE_WARNING=1`` suppresses the Python warning.
+    Native is silent regardless (v5.49.0 architectural choice — see
+    ``test_python_native_warning_match`` docstring)."""
     fixture = tmp_path / "brace.mn"
     fixture.write_text('fn main() { print("hi") }\n', encoding="utf-8")
     env = {**os.environ, "MAPANARE_NO_BRACE_WARNING": "1"}
@@ -162,4 +173,4 @@ def test_no_brace_warning_env_opt_out(tmp_path: Path) -> None:
         timeout=30,
     )
     assert "deprecated" not in py.stderr, f"Python: opt-out failed. stderr={py.stderr!r}"
-    assert "deprecated" not in sh.stderr, f"Native: opt-out failed. stderr={sh.stderr!r}"
+    assert "deprecated" not in sh.stderr, f"Native: should be silent. stderr={sh.stderr!r}"
