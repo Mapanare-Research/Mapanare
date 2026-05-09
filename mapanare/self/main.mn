@@ -67,6 +67,14 @@ fn print_help_text():
 // ``C:\\Program Files\\Mapanare\\bin``) would otherwise tokenise wrong
 // when concatenated into a __mn_system command string.
 //
+// Probe order mirrors mapanare/toolchain.py::_bundled_sdk_candidates:
+//   1. <exe_dir>/sdk/bin/{clang.exe,clang}     (v5.12.0 SDK split)
+//   2. <exe_dir>/llvm/bin/{clang.exe,clang}    (v5.11.0 layout)
+//   3. <exe_dir>/llvm/{clang.exe,clang}        (legacy v5.10.0)
+//   4. "clang"                                 (PATH fallback)
+// Pre-v5.50.x this only probed (3); post-v5.12.0 Windows SDK ZIPs ship
+// the SDK at (1) and a clean-PATH ``mnc.exe run`` couldn't find clang.
+//
 // Single-return structure (``let mut result``) is deliberate: during
 // v5.10.0 fixed-point validation, the MIR inliner constant-folded an
 // earlier multi-return draft of this function to the fallback
@@ -75,14 +83,37 @@ fn print_help_text():
 // logic intact through inlining + dead-code elimination.
 fn find_clang() -> String:
     let mut result: String = "clang"
+    let mut found: Bool = false
     let exe_dir: String = __mn_executable_dir()
-    let bundled_win: String = exe_dir + "/llvm/clang.exe"
-    if __mn_file_exists(bundled_win) != 0:
-        result = "\"" + bundled_win + "\""
-    else:
+    let sdk_bin_win: String = exe_dir + "/sdk/bin/clang.exe"
+    if __mn_file_exists(sdk_bin_win) != 0:
+        result = "\"" + sdk_bin_win + "\""
+        found = true
+    if !found:
+        let sdk_bin_unix: String = exe_dir + "/sdk/bin/clang"
+        if __mn_file_exists(sdk_bin_unix) != 0:
+            result = "\"" + sdk_bin_unix + "\""
+            found = true
+    if !found:
+        let llvm_bin_win: String = exe_dir + "/llvm/bin/clang.exe"
+        if __mn_file_exists(llvm_bin_win) != 0:
+            result = "\"" + llvm_bin_win + "\""
+            found = true
+    if !found:
+        let llvm_bin_unix: String = exe_dir + "/llvm/bin/clang"
+        if __mn_file_exists(llvm_bin_unix) != 0:
+            result = "\"" + llvm_bin_unix + "\""
+            found = true
+    if !found:
+        let bundled_win: String = exe_dir + "/llvm/clang.exe"
+        if __mn_file_exists(bundled_win) != 0:
+            result = "\"" + bundled_win + "\""
+            found = true
+    if !found:
         let bundled_unix: String = exe_dir + "/llvm/clang"
         if __mn_file_exists(bundled_unix) != 0:
             result = "\"" + bundled_unix + "\""
+            found = true
     result
 
 // v5.9.0 DX.3: probe clang once per invocation. Pre-v5.9.0 a missing

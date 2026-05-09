@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Self-host `find_clang()` now probes the v5.12.0 Windows SDK
+  layout** (`mapanare/self/main.mn`). Pre-fix the function only
+  probed `<exe_dir>/llvm/clang.exe` (the legacy v5.10.0 path).
+  The v5.12.0 SDK split (commit `72d4cdaf`) moved the bundled
+  clang to `<exe_dir>/sdk/bin/clang.exe`; `mapanare/toolchain.py`
+  was updated for the new layout but the self-host
+  `find_clang()` was not, so native `mnc.exe` fell through to
+  PATH and reported `error: clang not found` whenever `$PATH`
+  did not already include the SDK bin (CI smoke at
+  `publish.yml:604` strips PATH; user installs do not add the
+  SDK bin to PATH). Probe order now mirrors
+  `mapanare/toolchain.py::_bundled_sdk_candidates`:
+  `<exe_dir>/sdk/bin/{clang.exe,clang}` →
+  `<exe_dir>/llvm/bin/{clang.exe,clang}` →
+  `<exe_dir>/llvm/{clang.exe,clang}` → PATH `"clang"`. Single-
+  return `let mut result` form preserved per the v5.10.0 inliner
+  workaround. Mirrored in `mapanare/self/mnc_all.mn` via
+  `bash scripts/concat_self.sh`. Closes the publish.yml `build-cli`
+  Windows smoke regression. STRICT 3-stage fixed point preserves
+  at the new baseline (245,543 lines / 0 diff; +388 lines from
+  v5.50.0 baseline of 245,155, accounting for the 4 new probe
+  branches; 53-release strict streak from v5.7.1 holds at the
+  new value). Goldens 103/103 unchanged.
+
+### Added
+
+- **`tests/native/test_find_clang_sdk_probe.py`** — 4 source-level
+  contract tests locking in the probe-path priority and the
+  Python/self-host parity. Fastest falsifiability anchor for
+  this class of regression: revert any of the SDK-bin branches
+  in `find_clang()` and the test fails in <1 ms, before any
+  rebuild or CI cycle. The publish.yml `build-cli` smoke remains
+  the load-bearing end-to-end anchor.
+
 ## [5.50.0] - 2026-05-07
 
 **Te.3.E — match-arm body grammar extensions; close v5.48.1 brace
