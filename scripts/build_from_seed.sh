@@ -145,8 +145,17 @@ if [ "${1:-}" = "--verify" ]; then
         exit 0
     fi
     PASS=0; FAIL=0
+    # v5.9.1 DX.5: explicit `emit-llvm` subcommand. Pre-DX.5 ``mnc <file.mn>``
+    # printed IR; post-DX.5 it compiles + runs the program. Without the
+    # explicit subcommand the per-golden invocation here would attempt to
+    # execute each .mn file (most fail because they have no main, or write
+    # to /tmp paths the verify step never staged), and llvm-as would parse
+    # whatever bytes the run produced. The smoke check at line 128 was
+    # updated for DX.5; this loop was missed and stayed latent until
+    # v5.49.0 lifted the workflow_call guard so the seed-bootstrap job
+    # runs on every push.
     for mn in "${ROOT}"/tests/golden/*.mn; do
-        if "${OUTPUT}" "$mn" 2>/dev/null | llvm-as -o /dev/null 2>/dev/null; then
+        if "${OUTPUT}" emit-llvm "$mn" 2>/dev/null | llvm-as -o /dev/null 2>/dev/null; then
             PASS=$((PASS + 1))
         else
             FAIL=$((FAIL + 1))
