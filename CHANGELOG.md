@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.52.0] - 2026-05-09
+
+**Wn.8 — Windows binary smoke layer 3: runtime-archive lookup +
+clang-as-linker.** Closes the third latent Windows-`mnc.exe` failure
+that v5.51.0 Wn.5/Wn.6 unblocked but did not themselves address.
+After Wn.5 (find_clang sdk/bin) and Wn.6 (`__mn_temp_path`) made
+compile succeed, the publish.yml `build-cli` smoke (run #56) hit
+`error: link failed` because the link step still referenced
+`runtime/native/libmapanare_rt.a` (a gitignored build artifact that
+doesn't exist in fresh CI checkouts) and shelled out to `gcc` (not
+on the windows-latest runner image; only clang from the bundled
+llvm-mingw SDK is staged). Both bugs latent since v5.32.0 made
+mnc.exe the default Windows entry; surfaced once Wn.5+Wn.6 stopped
+masking the link failure with earlier failures. STRICT 3-stage
+fixed point preserved at the new baseline of 246,347 lines / 0 diff
+(was 246,015 at v5.51.0; +332 lines from the new `find_runtime_archive`
+helper + Windows-flag gating; 55-release strict streak from v5.7.1
+holds at the new value). Goldens 103/103 unchanged.
+
+### Fixed
+
+- **Wn.8 — runtime archive lookup via `find_runtime_archive()`**
+  (`mapanare/self/main.mn`). New helper mirrors the v5.51.0
+  `find_clang()` single-return pattern (single `let mut result`
+  to keep the MIR inliner from constant-folding the bundled-path
+  branches away — the v5.10.0 lesson). Probe order:
+    1. `<exe_dir>/sdk/lib/mapanare/libmapanare_rt.a` — v5.12.0 SDK
+    2. `<exe_dir>/lib/mapanare/libmapanare_rt.a` — Linux/macOS install
+    3. `runtime/native/libmapanare_rt.a` — dev-workspace fallback
+  Both call sites updated: `run_program` fast-path
+  (single-step compile+link) and `link_with_runtime`
+  (two-step fallback used when fast-path fails).
+- **Wn.8 — `link_with_runtime` uses clang, not gcc, and skips
+  Linux-only flags on Windows.** Pre-fix it shelled out to literal
+  `gcc` with `-no-pie -rdynamic`. gcc isn't on the
+  `windows-latest` runner PATH (only clang from the bundled
+  llvm-mingw SDK is staged) and clang+lld rejects -no-pie /
+  -rdynamic on Windows. Now invokes `find_clang()` and gates the
+  Linux-only flag block behind `__mn_host_is_windows()`. The
+  source fallback (when the precompiled archive isn't found) uses
+  the same shape so dev workspaces on Windows also link via clang.
+
+### Added
+
+- **3 new contract tests in `tests/native/test_find_clang_sdk_probe.py`**:
+  `test_find_runtime_archive_probes_sdk_install_in_main_mn` (probe
+  order: SDK → Linux/macOS install → dev fallback),
+  `test_link_with_runtime_uses_clang_not_gcc` (asserts
+  `find_clang()` + `__mn_host_is_windows` gating + archive helper
+  use). Falsifiability: revert the helper or the
+  `__mn_host_is_windows` gate and the test fails in <1 ms before
+  any rebuild cycle. publish.yml `build-cli` smoke remains the
+  load-bearing end-to-end anchor.
+
 ## [5.51.0] - 2026-05-09
 
 **Wn.5–Wn.7 / Bs.1–Bs.2 — Windows native binary closeout +
@@ -12988,7 +13042,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.51.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.52.0...HEAD
+[5.52.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.51.0...v5.52.0
 [5.51.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.50.0...v5.51.0
 [5.50.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.49.0...v5.50.0
 [5.49.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.1...v5.49.0
