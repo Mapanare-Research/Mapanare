@@ -7,18 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.51.0] - 2026-05-09
+
+**Wn.5–Wn.7 / Bs.1–Bs.2 — Windows native binary closeout +
+bootstrap-on-every-push gate.** Closes three Windows-`mnc.exe`
+regressions that the v5.49.0 Wn.* fix unblocked but did not
+themselves address, and unbreaks the `bootstrap-from-seed` CI gate
+after the workflow_call guard was lifted (commit `26c62224 — Run
+bootstrap jobs on all events`). Each fix is a layer the v5.49.0
+ABI fix had been masking; landing them in order surfaces the next
+one. STRICT 3-stage fixed point preserved across both self-host
+edits at the new baseline of 246,015 lines / 0 diff (was 245,155
+at v5.50.0; +860 lines from the find_clang + temp_path branches;
+54-release strict streak from v5.7.1 holds at the new value).
+Goldens 103/103 unchanged.
+
 ### Fixed
 
-- **Self-host `find_clang()` now probes the v5.12.0 Windows SDK
-  layout** (`mapanare/self/main.mn`). Pre-fix the function only
-  probed `<exe_dir>/llvm/clang.exe` (the legacy v5.10.0 path).
-  The v5.12.0 SDK split (commit `72d4cdaf`) moved the bundled
-  clang to `<exe_dir>/sdk/bin/clang.exe`; `mapanare/toolchain.py`
-  was updated for the new layout but the self-host
-  `find_clang()` was not, so native `mnc.exe` fell through to
-  PATH and reported `error: clang not found` whenever `$PATH`
-  did not already include the SDK bin (CI smoke at
-  `publish.yml:604` strips PATH; user installs do not add the
+- **Wn.5 — self-host `find_clang()` now probes the v5.12.0 Windows
+  SDK layout** (`mapanare/self/main.mn`). Pre-fix the function only
+  probed `<exe_dir>/llvm/clang.exe` (the legacy v5.10.0 path). The
+  v5.12.0 SDK split (commit `72d4cdaf`) moved the bundled clang to
+  `<exe_dir>/sdk/bin/clang.exe`; `mapanare/toolchain.py` was updated
+  for the new layout but the self-host `find_clang()` was not, so
+  native `mnc.exe` fell through to PATH and reported
+  `error: clang not found` whenever `$PATH` did not already include
+  the SDK bin (publish.yml `build-cli` smoke at line 604 strips
+  PATH; user installs via `packaging/install.ps1` do not add the
   SDK bin to PATH). Probe order now mirrors
   `mapanare/toolchain.py::_bundled_sdk_candidates`:
   `<exe_dir>/sdk/bin/{clang.exe,clang}` →
@@ -26,22 +41,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<exe_dir>/llvm/{clang.exe,clang}` → PATH `"clang"`. Single-
   return `let mut result` form preserved per the v5.10.0 inliner
   workaround. Mirrored in `mapanare/self/mnc_all.mn` via
-  `bash scripts/concat_self.sh`. Closes the publish.yml `build-cli`
-  Windows smoke regression. STRICT 3-stage fixed point preserves
-  at the new baseline (245,543 lines / 0 diff; +388 lines from
-  v5.50.0 baseline of 245,155, accounting for the 4 new probe
-  branches; 53-release strict streak from v5.7.1 holds at the
-  new value). Goldens 103/103 unchanged.
+  `scripts/concat_self.sh`. Closes the publish.yml `build-cli`
+  Windows smoke regression. Affects clean Windows installs too —
+  fresh-install `mnc run` now works without any PATH manipulation.
+- **Wn.6 — platform-aware temp paths for compile/run/build artifacts**
+  (`mapanare/self/main.mn` + `runtime/native/mapanare_core.c`).
+  Latent since the binary moved to native Windows in v5.32.0. Once
+  Wn.5 unblocked clang discovery, the next Windows smoke surfaced
+  `clang-22: error: no such file or directory: '/tmp/mnc_run.ll'`
+  — the self-host had ~15 hardcoded `/tmp/mnc_*.{ll,o}` paths in
+  `run_program` / `build_program` / `compile_program` /
+  `run_one_test`. The v5.9.0 hygiene work added platform-aware
+  `__mn_clang_err_path()` and `__mn_dev_null_redirect()` runtime
+  exports for stderr+null but never fixed the artifact paths
+  themselves. New runtime export `__mn_temp_path(name)` returns
+  `/tmp/<name>` on Linux/macOS, `%TEMP%\<name>` on Windows
+  (env-resolved with `getenv("TEMP")` → `getenv("TMP")` → fallback
+  `C:\Windows\Temp`). All `/tmp/mnc_*` literals replaced with calls
+  to it. Self-host wiring: `_RUNTIME_FN_SIGS` registration in
+  `mapanare/emit_llvm_text.py` (canonical `(STR, [STR])` for Win64
+  sarg ABI correctness — without it the call would emit
+  `{ptr, i64}` by-value against a `ptr` declaration on Win64,
+  reproducing the v5.49.0 Wn.* OOM signature),
+  `is_native_cli_hygiene_export` + builtin symbol-table populator
+  in `mapanare/self/semantic.mn`, MIR lowering in
+  `mapanare/self/lower.mn`, `declare_runtime_fn` +
+  `emit_rt_call` Win64 routing in `mapanare/self/emit_llvm.mn`.
+- **Wn.7 — bootstrap seed refreshed to v5.51.0 stage1**
+  (`bootstrap/seed/linux-x86_64/{mnc,mnc.sha256}`). The previous
+  seed (May 1, post-v5.48.1) segfaulted on current `mnc_all.mn`
+  source after the Te.3.E.5 colon-form migration in v5.50.0 added
+  syntax shapes the seed didn't understand. Surfaced once the
+  workflow_call guard was lifted; refreshed via the standard
+  `strip mnc-stage1 → bootstrap/seed/linux-x86_64/mnc;
+  sha256sum mnc > mnc.sha256` dance per
+  `bootstrap/seed/README.md`. New SHA: `f09cbc3f...`. Closes the
+  bootstrap-from-seed segfault on every push.
+- **Bs.2 — `scripts/build_from_seed.sh --verify` golden loop uses
+  `emit-llvm` subcommand.** Latent since v5.9.1 DX.5 changed the
+  default `mnc <file.mn>` from "emit IR" to "compile and run".
+  The smoke test at line 128 was updated for DX.5 but the
+  per-golden `--verify` loop at line 149 was missed — it kept
+  running `${OUTPUT} <file.mn>` and piping to `llvm-as`, which
+  parsed whatever bytes the program produced (mostly nothing,
+  since goldens lack drivers under "compile and run" semantics)
+  and reported every golden as a fail. Stayed silent because the
+  bootstrap-from-seed job was guarded by
+  `if: github.event_name == 'workflow_call'` until the v5.49.0
+  baseline. With the guard lifted, the broken loop reported 0/103
+  against a working binary. After this fix: 97 pass / 6 fail
+  (within the script's own `EXPECTED_PASS = TOTAL_GOLDENS - 20`
+  envelope; the 6 failures are documented seed-incompatible
+  patterns — generics, struct-update — that postdate the seed).
 
 ### Added
 
 - **`tests/native/test_find_clang_sdk_probe.py`** — 4 source-level
   contract tests locking in the probe-path priority and the
-  Python/self-host parity. Fastest falsifiability anchor for
-  this class of regression: revert any of the SDK-bin branches
-  in `find_clang()` and the test fails in <1 ms, before any
-  rebuild or CI cycle. The publish.yml `build-cli` smoke remains
-  the load-bearing end-to-end anchor.
+  Python/self-host parity for Wn.5. Fastest falsifiability anchor
+  for this class of regression: revert any of the SDK-bin branches
+  in `find_clang()` and the test fails in <1 ms, before any rebuild
+  or CI cycle. The publish.yml `build-cli` smoke remains the
+  load-bearing end-to-end anchor.
+- **Runtime export `__mn_temp_path(name) -> path`**
+  (`runtime/native/mapanare_core.c`). Mirrors
+  `__mn_clang_err_path()`'s pattern. Caller passes a leaf filename
+  (e.g. `"mnc_run.ll"`); returns the platform-correct full path.
+  Result lives in a per-call thread-unsafe static buffer; caller
+  must use immediately.
 
 ## [5.50.0] - 2026-05-07
 
@@ -12921,7 +12988,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.50.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.51.0...HEAD
+[5.51.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.50.0...v5.51.0
 [5.50.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.49.0...v5.50.0
 [5.49.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.1...v5.49.0
 [5.48.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.0...v5.48.1
