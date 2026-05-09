@@ -20946,14 +20946,50 @@ fn print_compile_errors(cr: CompileResult):
 
 fn rename_main(ir: String) -> String = ir.replace("@main(", "@mn_main(")
 
+// v5.51.x: locate the precompiled runtime archive. v5.12.0 SDK split
+// stages it at <exe_dir>/sdk/lib/mapanare/libmapanare_rt.a (Windows)
+// or <exe_dir>/lib/mapanare/libmapanare_rt.a (Linux/macOS); dev
+// workspaces have it at runtime/native/libmapanare_rt.a relative to
+// CWD. Pre-fix every link site hardcoded the relative dev path which
+// doesn't exist in fresh CI checkouts (libmapanare_rt.a is gitignored)
+// — the publish.yml `build-cli` smoke at line 604 hit this after Wn.6
+// unblocked compile. Single-return form per the find_clang precedent.
+fn find_runtime_archive() -> String:
+    let mut result: String = "runtime/native/libmapanare_rt.a"
+    let mut found: Bool = false
+    let exe_dir: String = __mn_executable_dir()
+    let sdk_a: String = exe_dir + "/sdk/lib/mapanare/libmapanare_rt.a"
+    if __mn_file_exists(sdk_a) != 0:
+        result = "\"" + sdk_a + "\""
+        found = true
+    if !found:
+        let lib_a: String = exe_dir + "/lib/mapanare/libmapanare_rt.a"
+        if __mn_file_exists(lib_a) != 0:
+            result = "\"" + lib_a + "\""
+            found = true
+    result
+
 // Link an object file with the Mapanare runtime.
 // Tries precompiled libmapanare_rt.a first, falls back to C source.
+// v5.51.x: use clang as the linker (gcc isn't on Windows runner PATH;
+// llvm-mingw bundle ships clang only), skip -no-pie / -rdynamic on
+// Windows (clang+lld errors out), and locate the archive via
+// find_runtime_archive() so SDK installs work.
 fn link_with_runtime(obj_path: String, out_path: String) -> Int:
     let null_r: String = __mn_dev_null_redirect()
-    let link_pre: String = "gcc " + obj_path + " runtime/native/libmapanare_rt.a -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
+    let clang_bin: String = find_clang()
+    let archive: String = find_runtime_archive()
+    let mut linux_only_flags: String = " -no-pie -rdynamic"
+    if __mn_host_is_windows() != 0:
+        linux_only_flags = ""
+    let link_pre: String = clang_bin + " " + obj_path + " " + archive + " -o " + out_path + linux_only_flags + " -lm -lpthread" + null_r
     let r: Int = __mn_system(link_pre)
     if r == 0: return 0
-    let link_src: String = "gcc " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
+    // Source fallback only works in a dev workspace (the runtime/
+    // sources aren't shipped in install bundles). Match the v5.51.x
+    // clang+platform-flags shape so dev workspaces on Windows still
+    // link via clang instead of unavailable gcc.
+    let link_src: String = clang_bin + " " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + linux_only_flags + " -lm -lpthread" + null_r
     return __mn_system(link_src)
 
 // v5.13.1 At.2: source-text scan for `@test fn NAME(...)`. The native
@@ -21255,8 +21291,11 @@ fn run_program(filename: String):
     // Single-step compile+link via clang (faster than separate clang + gcc).
     // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present,
     // PATH otherwise. Both the fast path and the two-step fallback share it.
+    // v5.51.x: archive resolved via find_runtime_archive() so SDK installs
+    // (Windows) and dev workspaces both work.
     let clang_bin: String = find_clang()
-    let compile_cmd: String = clang_bin + " -O0 " + run_ll + " runtime/native/libmapanare_rt.a -o " + run_exe + " -lm -lpthread" + clang_stderr_redirect()
+    let archive: String = find_runtime_archive()
+    let compile_cmd: String = clang_bin + " -O0 " + run_ll + " " + archive + " -o " + run_exe + " -lm -lpthread" + clang_stderr_redirect()
     let r1: Int = __mn_system(compile_cmd)
     if r1 != 0:
         // Fall back to two-step compile+link

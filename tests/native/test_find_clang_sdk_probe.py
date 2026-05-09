@@ -116,6 +116,73 @@ def test_find_clang_probe_priority_order_in_main_mn() -> None:
     )
 
 
+_REQUIRED_ARCHIVE_PROBES = (
+    '"/sdk/lib/mapanare/libmapanare_rt.a"',
+    '"/lib/mapanare/libmapanare_rt.a"',
+    '"runtime/native/libmapanare_rt.a"',
+)
+
+
+def test_find_runtime_archive_probes_sdk_install_in_main_mn() -> None:
+    """v5.51.x — `find_runtime_archive()` must probe the v5.12.0 SDK
+    install layout (`<exe_dir>/sdk/lib/mapanare/libmapanare_rt.a`) and
+    the Linux/macOS install layout (`<exe_dir>/lib/mapanare/...`)
+    before the dev-workspace fallback. Pre-fix every link site
+    hardcoded the dev-relative path which doesn't exist in fresh CI
+    checkouts (libmapanare_rt.a is gitignored), so the publish.yml
+    `build-cli` Windows smoke link-step failed even after the v5.51.x
+    Wn.5/Wn.6 fixes unblocked clang discovery + temp-path emission.
+    """
+    text = MAIN_MN.read_text(encoding="utf-8")
+    m = re.search(r"^fn find_runtime_archive\(\) -> String:\n", text, flags=re.MULTILINE)
+    assert m, "find_runtime_archive function not defined in main.mn"
+    start = m.end()
+    rest = text[start:]
+    next_fn = re.search(r"^fn ", rest, flags=re.MULTILINE)
+    body = rest[: next_fn.start() if next_fn else len(rest)]
+    missing = [p for p in _REQUIRED_ARCHIVE_PROBES if p not in body]
+    assert not missing, (
+        f"find_runtime_archive() in main.mn missing probe paths: {missing}\n"
+        "Probe order: <exe_dir>/sdk/lib/mapanare/ → <exe_dir>/lib/mapanare/ "
+        "→ dev-workspace runtime/native/ fallback. Without the SDK probe, "
+        "fresh installs cannot link `mnc run`."
+    )
+
+
+def test_link_with_runtime_uses_clang_not_gcc() -> None:
+    """v5.51.x — `link_with_runtime` must invoke clang, not gcc. gcc
+    is not on PATH on the windows-latest runner image (only clang from
+    the bundled llvm-mingw SDK is staged). Pre-fix the function
+    hardcoded `gcc` and `-no-pie -rdynamic` (Linux-only flags clang+lld
+    rejects on Windows). On Linux, find_clang() returns the same
+    behavior as the pre-fix gcc invocation since clang accepts
+    -no-pie -rdynamic on Linux too.
+    """
+    text = MAIN_MN.read_text(encoding="utf-8")
+    m = re.search(
+        r"^fn link_with_runtime\([^)]*\) -> Int:\n", text, flags=re.MULTILINE
+    )
+    assert m, "link_with_runtime function not defined in main.mn"
+    start = m.end()
+    rest = text[start:]
+    next_fn = re.search(r"^fn ", rest, flags=re.MULTILINE)
+    body = rest[: next_fn.start() if next_fn else len(rest)]
+    assert "find_clang()" in body, (
+        "link_with_runtime() must use find_clang() not literal `gcc`. "
+        "On Windows the runner image has no gcc on PATH; only the "
+        "bundled SDK clang resolves."
+    )
+    assert "__mn_host_is_windows" in body, (
+        "link_with_runtime() must skip -no-pie / -rdynamic on Windows "
+        "(clang+lld rejects them). Use __mn_host_is_windows() to gate "
+        "the Linux-only flag block."
+    )
+    assert "find_runtime_archive()" in body, (
+        "link_with_runtime() must use find_runtime_archive() so SDK "
+        "installs can locate the bundled archive."
+    )
+
+
 def test_find_clang_python_self_host_priority_match() -> None:
     """The Python ``mapanare.toolchain._bundled_sdk_candidates`` and
     the self-host ``find_clang()`` must agree on probe order.
