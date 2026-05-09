@@ -287,21 +287,17 @@ jobs:
   # ---------------------------------------------------------------------------
   # Native bootstrap: build from seed binary, no Python
   #
-  # v5.49.0 — this is a release-quality gate, not a per-push gate.
-  # The frozen v0.6.0 seed is replaced manually only when self-host
-  # syntax shifts incompatibly (e.g. v5.48.1 Te.3.D.5 colon-block
-  # migration); blocking every dev push on seed-compat is the wrong
-  # contract. Industry pattern (Go, Rust, OCaml): bootstrap-from-seed
-  # validates the released artifact, not every commit.
-  #
-  # Runs only when invoked from ``publish.yml`` (push to ``main`` or
-  # ``workflow_dispatch`` on the publish workflow) — i.e. at release
-  # time. Updating the seed pre-release is the
-  # ``.github/workflows/update-bootstrap-seed.yml`` workflow.
+  # Runs on every push, PR, and release. The "compiler compiles itself
+  # without Python" invariant is enforced at PR time, not release time.
+  # Trade-off: when self-host grammar evolves incompatibly (e.g. v5.48.1
+  # Te.3.D.5 colon-block migration), this job will fail until the seed
+  # is refreshed via ``.github/workflows/update-bootstrap-seed.yml``.
+  # That refresh dance is the unblock; the gate is a feature, not a bug.
+  # Acceptable trade for a solo project where grammar is still evolving
+  # — flip back to ``workflow_call``-only post-v6.0 once grammar freezes.
   # ---------------------------------------------------------------------------
   bootstrap:
     name: Bootstrap (No Python)
-    if: github.event_name == 'workflow_call'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -839,12 +835,11 @@ jobs:
   # ---------------------------------------------------------------------------
   # Bootstrap from seed — build without Python (gcc + llvm only)
   #
-  # v5.49.0 — release-quality gate, not per-push. See note on the
-  # ``bootstrap`` job above for rationale and seed-update workflow.
+  # Runs on every push, PR, and release. See note on the ``bootstrap``
+  # job above for rationale and seed-update workflow.
   # ---------------------------------------------------------------------------
   bootstrap-from-seed:
     name: Bootstrap from Seed (No Python)
-    if: github.event_name == 'workflow_call'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
