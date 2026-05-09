@@ -1927,6 +1927,34 @@ MN_EXPORT MnString __mn_clang_err_path(void) {
 #endif
 }
 
+/* v5.50.x: platform-portable temp path for compile/run/build/test
+ * artifacts (.ll / .o / output binaries). Pre-fix main.mn hardcoded
+ * "/tmp/mnc_*.ll" everywhere; ``/tmp`` doesn't exist on Windows so
+ * post-v5.49.0 (when the v5.49.0 Wn.* find_clang ABI bug was unblocked)
+ * the next surface to fail was clang complaining "no such file or
+ * directory: '/tmp/mnc_run.ll'". The Windows publish.yml ``build-cli``
+ * smoke at line 604 is the falsifiability anchor.
+ *
+ * Returns ``/tmp/<name>`` on Linux/macOS, ``%TEMP%\<name>`` on
+ * Windows (mirroring __mn_clang_err_path). The ``name`` arg is the
+ * leaf filename (e.g. ``"mnc_run.ll"``); caller is responsible for
+ * not embedding path separators. Result lives in a per-call thread-
+ * unsafe static buffer — caller must use immediately and not stash. */
+MN_EXPORT MnString __mn_temp_path(MnString name) {
+    static char buf[2048];
+    char *cname = mn_to_cstr(name);
+#ifdef _WIN32
+    const char *t = getenv("TEMP");
+    if (!t || !*t) t = getenv("TMP");
+    if (!t || !*t) t = "C:\\Windows\\Temp";
+    snprintf(buf, sizeof(buf), "%s\\%s", t, cname);
+#else
+    snprintf(buf, sizeof(buf), "/tmp/%s", cname);
+#endif
+    __mn_free(cname);
+    return __mn_str_from_cstr(buf);
+}
+
 /* v5.10.0 Win.1b.D: directory containing the running binary. find_clang()
  * in main.mn uses this to prefer a bundled LLVM toolchain at
  * `<exe_dir>/llvm/clang(.exe)` over PATH clang. Returns an empty string

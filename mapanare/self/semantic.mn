@@ -139,6 +139,7 @@ fn is_builtin_function(name: String) -> Bool:
     if name == "__mn_version_string": return true
     if name == "__mn_dev_null_redirect": return true
     if name == "__mn_clang_err_path": return true
+    if name == "__mn_temp_path": return true
     if name == "__mn_dir_count_files": return true
     if name == "__mn_dir_total_size": return true
     if name == "__mn_dir_remove_recursive": return true
@@ -2023,6 +2024,8 @@ fn register_builtins(st: SemState) -> SemState:
     st2 = define_in_scope(st2, "__mn_dev_null_redirect", dnsym)
     let cesym: Symbol = new_symbol("__mn_clang_err_path", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "__mn_clang_err_path", cesym)
+    let tpsym: Symbol = new_symbol("__mn_temp_path", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_temp_path", tpsym)
     let dcfsym: Symbol = new_symbol("__mn_dir_count_files", "function", make_builtin_fn_type(int_type()), false)
     st2 = define_in_scope(st2, "__mn_dir_count_files", dcfsym)
     let dtssym: Symbol = new_symbol("__mn_dir_total_size", "function", make_builtin_fn_type(int_type()), false)

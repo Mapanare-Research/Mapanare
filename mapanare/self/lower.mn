@@ -2146,6 +2146,10 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let dr_ce: LowerResult = make_value(st, mir_string(), "t")
         let s_ce: LowerState = emit_instr(dr_ce.state, Instruction::Call(dr_ce.value, fn_name, args))
         return new_lower_result(dr_ce.value, s_ce)
+    if fn_name == "__mn_temp_path":
+        let dr_tp: LowerResult = make_value(st, mir_string(), "t")
+        let s_tp: LowerState = emit_instr(dr_tp.state, Instruction::Call(dr_tp.value, fn_name, args))
+        return new_lower_result(dr_tp.value, s_tp)
     if fn_name == "__mn_dir_count_files":
         let dr_dcf: LowerResult = make_value(st, mir_int(), "t")
         let s_dcf: LowerState = emit_instr(dr_dcf.state, Instruction::Call(dr_dcf.value, fn_name, args))

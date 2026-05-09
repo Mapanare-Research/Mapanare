@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: python scripts/concat_self.py
+// Do not edit — regenerate with: bash scripts/concat_self.sh
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -4160,6 +4160,7 @@ fn is_builtin_function(name: String) -> Bool:
     if name == "__mn_version_string": return true
     if name == "__mn_dev_null_redirect": return true
     if name == "__mn_clang_err_path": return true
+    if name == "__mn_temp_path": return true
     if name == "__mn_dir_count_files": return true
     if name == "__mn_dir_total_size": return true
     if name == "__mn_dir_remove_recursive": return true
@@ -6044,6 +6045,8 @@ fn register_builtins(st: SemState) -> SemState:
     st2 = define_in_scope(st2, "__mn_dev_null_redirect", dnsym)
     let cesym: Symbol = new_symbol("__mn_clang_err_path", "function", make_builtin_fn_type(string_type()), false)
     st2 = define_in_scope(st2, "__mn_clang_err_path", cesym)
+    let tpsym: Symbol = new_symbol("__mn_temp_path", "function", make_builtin_fn_type(string_type()), false)
+    st2 = define_in_scope(st2, "__mn_temp_path", tpsym)
     let dcfsym: Symbol = new_symbol("__mn_dir_count_files", "function", make_builtin_fn_type(int_type()), false)
     st2 = define_in_scope(st2, "__mn_dir_count_files", dcfsym)
     let dtssym: Symbol = new_symbol("__mn_dir_total_size", "function", make_builtin_fn_type(int_type()), false)
@@ -9622,6 +9625,10 @@ fn lower_call_by_name(st: LowerState, fn_name: String, args: List<Value>) -> Low
         let dr_ce: LowerResult = make_value(st, mir_string(), "t")
         let s_ce: LowerState = emit_instr(dr_ce.state, Instruction::Call(dr_ce.value, fn_name, args))
         return new_lower_result(dr_ce.value, s_ce)
+    if fn_name == "__mn_temp_path":
+        let dr_tp: LowerResult = make_value(st, mir_string(), "t")
+        let s_tp: LowerState = emit_instr(dr_tp.state, Instruction::Call(dr_tp.value, fn_name, args))
+        return new_lower_result(dr_tp.value, s_tp)
     if fn_name == "__mn_dir_count_files":
         let dr_dcf: LowerResult = make_value(st, mir_int(), "t")
         let s_dcf: LowerState = emit_instr(dr_dcf.state, Instruction::Call(dr_dcf.value, fn_name, args))
@@ -15643,6 +15650,11 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     s = declare_runtime_fn(s, "__mn_dir_remove_recursive", "i64", llvm_string())
     // v5.9.0 DX.3: platform-portable temp path for clang stderr capture.
     s = declare_runtime_fn(s, "__mn_clang_err_path", llvm_string(), "")
+    // v5.50.x: platform-portable temp path for compile/run/build/test
+    // artifacts (.ll / .o / output binaries). Returns /tmp/<name> on
+    // Linux/macOS, %TEMP%\<name> on Windows. Replaces hardcoded
+    // /tmp/mnc_*.ll literals throughout main.mn.
+    s = declare_runtime_fn(s, "__mn_temp_path", llvm_string(), llvm_string())
     // v5.10.0 Win.1b.D: directory of the running binary. find_clang()
     // in main.mn calls this to locate a bundled LLVM toolchain at
     // <exe_dir>/llvm/clang(.exe) before falling back to PATH clang.
@@ -18296,6 +18308,14 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "__mn_file_exists":
         let as_fe: String = llvm_string() + " " + args[0].name
         return emit_rt_call(st, dn, "i64", "__mn_file_exists", as_fe)
+
+    // v5.50.x: Win64 ABI routing for `__mn_temp_path`. Same rationale
+    // as `__mn_file_exists` above — MnString-arg runtime call that
+    // would otherwise emit `{ptr, i64}` by-value against a `ptr`
+    // declaration on Win64 and trip the same OOM signature.
+    if fn_name == "__mn_temp_path":
+        let as_tp: String = llvm_string() + " " + args[0].name
+        return emit_rt_call(st, dn, llvm_string(), "__mn_temp_path", as_tp)
 
     // chr/ord builtins
     if fn_name == "chr":
@@ -21043,9 +21063,9 @@ fn build_test_main_ir(test_name: String) -> String:
     return s
 
 fn run_one_test(base_ir: String, test_name: String, clang_bin: String) -> Bool:
-    let ll_path: String = "/tmp/mnc_test_" + test_name + ".ll"
-    let o_path: String = "/tmp/mnc_test_" + test_name + ".o"
-    let exe_path: String = "/tmp/mnc_test_" + test_name
+    let ll_path: String = __mn_temp_path("mnc_test_" + test_name + ".ll")
+    let o_path: String = __mn_temp_path("mnc_test_" + test_name + ".o")
+    let exe_path: String = __mn_temp_path("mnc_test_" + test_name)
     let full_ir: String = base_ir + build_test_main_ir(test_name)
     __mn_file_write(ll_path, full_ir)
 
@@ -21180,21 +21200,23 @@ fn run_build(filename: String):
         print_compile_errors(cr)
         __mn_exit(1)
     // Rename @main → @mn_main so the C wrapper provides the real main()
-    __mn_file_write("/tmp/mnc_build.ll", rename_main(cr.ir_text))
+    let build_ll: String = __mn_temp_path("mnc_build.ll")
+    let build_o: String = __mn_temp_path("mnc_build.o")
+    __mn_file_write(build_ll, rename_main(cr.ir_text))
 
     // Compile with selected optimization level. v5.9.0 DX.3: clang stderr
     // captured to a temp file so report_clang_failure() can surface the
     // real diagnostic instead of bare "clang failed". v5.10.0 Win.1b.D:
     // clang resolved via find_clang() — bundled if present, PATH otherwise.
     let clang_bin: String = find_clang()
-    let clang_cmd: String = clang_bin + " -c " + opt_flag + " /tmp/mnc_build.ll -o /tmp/mnc_build.o" + clang_stderr_redirect()
+    let clang_cmd: String = clang_bin + " -c " + opt_flag + " " + build_ll + " -o " + build_o + clang_stderr_redirect()
     let r1: Int = __mn_system(clang_cmd)
     if r1 != 0:
         report_clang_failure()
         __mn_exit(1)
 
     // Link
-    let r2: Int = link_with_runtime("/tmp/mnc_build.o", out_name)
+    let r2: Int = link_with_runtime(build_o, out_name)
     // Strip if release/small mode
     if len(strip_flag) > 0:
         let strip_cmd: String = "strip " + out_name + __mn_dev_null_redirect()
@@ -21225,27 +21247,30 @@ fn run_program(filename: String):
     if !cr.success:
         print_compile_errors(cr)
         __mn_exit(1)
-    __mn_file_write("/tmp/mnc_run.ll", rename_main(cr.ir_text))
+    let run_ll: String = __mn_temp_path("mnc_run.ll")
+    let run_o: String = __mn_temp_path("mnc_run.o")
+    let run_exe: String = __mn_temp_path("mnc_run")
+    __mn_file_write(run_ll, rename_main(cr.ir_text))
 
     // Single-step compile+link via clang (faster than separate clang + gcc).
     // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present,
     // PATH otherwise. Both the fast path and the two-step fallback share it.
     let clang_bin: String = find_clang()
-    let compile_cmd: String = clang_bin + " -O0 /tmp/mnc_run.ll runtime/native/libmapanare_rt.a -o /tmp/mnc_run -lm -lpthread" + clang_stderr_redirect()
+    let compile_cmd: String = clang_bin + " -O0 " + run_ll + " runtime/native/libmapanare_rt.a -o " + run_exe + " -lm -lpthread" + clang_stderr_redirect()
     let r1: Int = __mn_system(compile_cmd)
     if r1 != 0:
         // Fall back to two-step compile+link
-        let r1b: Int = __mn_system(clang_bin + " -c -O0 /tmp/mnc_run.ll -o /tmp/mnc_run.o" + clang_stderr_redirect())
+        let r1b: Int = __mn_system(clang_bin + " -c -O0 " + run_ll + " -o " + run_o + clang_stderr_redirect())
         if r1b != 0:
             report_clang_failure()
             __mn_exit(1)
-        let r2: Int = link_with_runtime("/tmp/mnc_run.o", "/tmp/mnc_run")
+        let r2: Int = link_with_runtime(run_o, run_exe)
         if r2 != 0:
             __mn_str_eprint("error: link failed\n")
             __mn_exit(1)
 
-    // Build command with forwarded args: /tmp/mnc_run [args...]
-    let mut cmd: String = "/tmp/mnc_run"
+    // Build command with forwarded args: <run_exe> [args...]
+    let mut cmd: String = run_exe
     let mut ai: Int = 3
     for _ in 0..100:
         if ai >= __mn_argc(): ai = __mn_argc() + 1
@@ -21341,14 +21366,16 @@ fn run_compile(filename: String):
             let flag: String = __mn_argv(3)
             if flag == "-o" && __mn_argc() >= 5:
                 out_name = __mn_argv(4)
-        __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr.ir_text))
+        let compile_ll: String = __mn_temp_path("mnc_compile.ll")
+        let compile_o: String = __mn_temp_path("mnc_compile.o")
+        __mn_file_write(compile_ll, rename_main(cr.ir_text))
         // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present.
         let clang_bin: String = find_clang()
-        let r1: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
+        let r1: Int = __mn_system(clang_bin + " -c -O2 " + compile_ll + " -o " + compile_o + clang_stderr_redirect())
         if r1 != 0:
             report_clang_failure()
             __mn_exit(1)
-        let r2: Int = link_with_runtime("/tmp/mnc_compile.o", out_name)
+        let r2: Int = link_with_runtime(compile_o, out_name)
         if r2 != 0:
             __mn_str_eprint("error: link failed\n")
             __mn_exit(1)
@@ -21367,8 +21394,9 @@ fn run_compile(filename: String):
         __mn_str_eprint("' (supported: .mn, .py, .php, .ts, .go)\n")
         __mn_exit(1)
 
-    // Transpile to .mn via the Python CLI (mapanare transpile <file> -o /tmp/mnc_transpiled.mn)
-    let transpile_cmd: String = "mapanare transpile " + filename + " -o /tmp/mnc_transpiled.mn" + __mn_dev_null_redirect()
+    // Transpile to .mn via the Python CLI (mapanare transpile <file> -o <temp>/mnc_transpiled.mn)
+    let transpiled_mn: String = __mn_temp_path("mnc_transpiled.mn")
+    let transpile_cmd: String = "mapanare transpile " + filename + " -o " + transpiled_mn + __mn_dev_null_redirect()
     let rt: Int = __mn_system(transpile_cmd)
     if rt != 0:
         __mn_str_eprint("error: transpilation failed for '")
@@ -21377,7 +21405,7 @@ fn run_compile(filename: String):
         __mn_exit(1)
 
     // Now compile the transpiled .mn source
-    let mn_source: String = __mn_file_read_or_empty("/tmp/mnc_transpiled.mn")
+    let mn_source: String = __mn_file_read_or_empty(transpiled_mn)
     if len(mn_source) == 0:
         __mn_str_eprint("error: transpiler produced empty output\n")
         __mn_exit(1)
@@ -21393,14 +21421,16 @@ fn run_compile(filename: String):
         if flag2 == "-o" && __mn_argc() >= 5:
             out_name2 = __mn_argv(4)
 
-    __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr2.ir_text))
+    let compile_ll2: String = __mn_temp_path("mnc_compile.ll")
+    let compile_o2: String = __mn_temp_path("mnc_compile.o")
+    __mn_file_write(compile_ll2, rename_main(cr2.ir_text))
     // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present.
     let clang_bin: String = find_clang()
-    let r3: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
+    let r3: Int = __mn_system(clang_bin + " -c -O2 " + compile_ll2 + " -o " + compile_o2 + clang_stderr_redirect())
     if r3 != 0:
         report_clang_failure()
         __mn_exit(1)
-    let r4: Int = link_with_runtime("/tmp/mnc_compile.o", out_name2)
+    let r4: Int = link_with_runtime(compile_o2, out_name2)
     if r4 != 0:
         __mn_str_eprint("error: link failed\n")
         __mn_exit(1)
@@ -21606,3 +21636,4 @@ fn mn_main():
     __mn_str_eprint("       Use 'mnc emit-llvm <file>' for raw IR emission, or\n")
     __mn_str_eprint("       'mnc compile <file>' for transpilation (.py/.php/.ts/.go).\n")
     __mn_exit(1)
+

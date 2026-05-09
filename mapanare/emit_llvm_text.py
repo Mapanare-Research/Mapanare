@@ -529,6 +529,7 @@ _RUNTIME_FN_SIGS: dict[str, tuple[str, list[str]]] = {
     "__mn_dir_list_strings": (LIST, [STR]),
     "__mn_realpath": (STR, [STR]),
     "__mn_tmpfile_path": (STR, [STR]),
+    "__mn_temp_path": (STR, [STR]),
     # String I/O.
     "__mn_str_eprint": (VOID, [STR]),
     "__mn_str_eprintln": (VOID, [STR]),
