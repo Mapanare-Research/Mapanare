@@ -43,13 +43,14 @@
 // trampoline (v5.42.0 As.6 substrate).
 //
 // Depends on (in concat order):
-//   - url.mn (NetworkError, AgentUrl, parse_agent_url, UrlParseResult)
+//   - url.mn (NetworkError, AgentUrl, parse_agent_url — returns
+//     Result<AgentUrl, NetworkError> as of v5.54.0 Cl.2)
 //   - remote_proto.mn (Frame, MSG_PING, MSG_PONG, MSG_CHILD_EXITED,
-//     encode_frame, decode_frame, ne_kind_*, ne_msg_*)
+//     encode_frame, decode_frame)
 //   - node.mn (ne_kind, ne_msg, NodeConnection, conn_send_frame,
-//     conn_recv_frame)
-//   - remote.mn (RemoteAgent, remote_agent_send_typed_msg,
-//     remote_agent_recv, RemoteSendResult, RemoteRecvResult)
+//     conn_recv_frame — Result-shaped as of v5.54.0 Cl.2)
+//   - remote.mn (RemoteAgent, RecvOk, remote_agent_send_typed_msg,
+//     remote_agent_recv — Result-shaped as of v5.54.0 Cl.2)
 
 // ---------------------------------------------------------------------------
 // RemoteExitReason — 3-variant tagged-union enum.
@@ -328,20 +329,18 @@ fn parse_int_to_comma(s: String, start: Int) -> Int {
 // frame. The user runs this at their own cadence; recommended:
 // every PING_INTERVAL_MS milliseconds. Returns:
 //
-//   RemoteSendResult { ok: true,  agent: <updated handle> }   — Pong received
-//   RemoteSendResult { ok: false, agent: <input handle>,
-//                      err_kind: 11 (Timeout) | 12 (TransportLost),
-//                      err_msg: ... }                          — failure
+//   Ok(<updated handle>)                  — Pong received (last_seen_recv
+//                                            advanced + next_seq_send++)
+//   Err(Timeout | TransportLost | ...)    — failure (caller still owns r)
 //
-// On success, the agent handle's last_seen_recv watermark is
-// advanced and next_seq_send is incremented, which the caller can
-// reflect back into their state.
+// v5.54.0 Cl.2: refactored from RemoteSendResult flat-tuple to
+// Result<RemoteAgent, NetworkError>; passthrough to remote_agent_ping.
 //
 // PROMPT-spec async per-connection task with auto-invalidation
 // deferred to v5.43.x — see the SHAPE note at the top.
 // ---------------------------------------------------------------------------
 
-pub fn remote_agent_heartbeat_check(r: RemoteAgent) -> RemoteSendResult {
+pub fn remote_agent_heartbeat_check(r: RemoteAgent) -> Result<RemoteAgent, NetworkError> {
     da remote_agent_ping(r)
 }
 

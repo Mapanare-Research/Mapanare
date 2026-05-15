@@ -1,45 +1,95 @@
-// v5.43.0 Da.7 — URL parsing surface.
+// v5.54.0 Cl.2.1 — URL parsing surface (post-refactor to Result<AgentUrl, NetworkError>).
+//
+// Falsifiability: revert stdlib/agent/url.mn's parse_agent_url to the
+// v5.43.0 UrlParseResult flat-tuple shape and the destructure
+// `match parse_agent_url(...)` here fails to typecheck.
+
+fn is_unsupported_scheme(e: NetworkError) -> Bool {
+    pon mut hit: Bool = false
+    match e {
+        UnsupportedScheme(s) => { hit = true },
+        BadUrl(s)            => { hit = false },
+        NoKey(s)             => { hit = false },
+        ConnectFailed(s)     => { hit = false },
+        ListenFailed(s)      => { hit = false },
+        HmacFailed(s)        => { hit = false },
+        Replay(s)            => { hit = false },
+        ProtoVersion(s)      => { hit = false },
+        ProtoOversized(s)    => { hit = false },
+        ProtoMalformed(s)    => { hit = false },
+        Timeout(s)           => { hit = false },
+        TransportLost(s)     => { hit = false },
+        AgentNotFound(s)     => { hit = false },
+        SerdeError(s)        => { hit = false },
+        Internal(s)          => { hit = false }
+    }
+    da hit
+}
 
 fn main() {
     // Happy paths.
-    pon r1: UrlParseResult = parse_agent_url("tcp://127.0.0.1:9090/worker-1")
-    si !r1.ok { print("FAIL: tcp URL: " + r1.err_msg); return }
-    si r1.url.scheme != "tcp" || r1.url.host != "127.0.0.1" || r1.url.port != 9090 || r1.url.agent_id != "worker-1" {
-        print("FAIL: tcp URL fields"); return
+    match parse_agent_url("tcp://127.0.0.1:9090/worker-1") {
+        Ok(u) => {
+            si u.scheme != "tcp" || u.host != "127.0.0.1" || u.port != 9090 || u.agent_id != "worker-1" {
+                print("FAIL: tcp URL fields"); return
+            }
+        },
+        Err(e) => { print("FAIL: tcp URL: " + ne_msg(e)); return }
     }
 
-    pon r2: UrlParseResult = parse_agent_url("tls://example.com:443/api")
-    si !r2.ok { print("FAIL: tls URL: " + r2.err_msg); return }
-    si !url_is_tls(r2.url) { print("FAIL: url_is_tls"); return }
-    si r2.url.port != 443 { print("FAIL: tls port"); return }
+    match parse_agent_url("tls://example.com:443/api") {
+        Ok(u) => {
+            si !url_is_tls(u) { print("FAIL: url_is_tls"); return }
+            si u.port != 443 { print("FAIL: tls port"); return }
+        },
+        Err(e) => { print("FAIL: tls URL: " + ne_msg(e)); return }
+    }
 
-    // unix:// rejected with kind=2 (UnsupportedScheme).
-    pon r3: UrlParseResult = parse_agent_url("unix:///tmp/sock/a")
-    si r3.ok { print("FAIL: unix accepted"); return }
-    si r3.err_kind != 2 { print("FAIL: unix wrong kind: " + str(r3.err_kind)); return }
+    // unix:// rejected with UnsupportedScheme.
+    match parse_agent_url("unix:///tmp/sock/a") {
+        Ok(u) => { print("FAIL: unix accepted"); return },
+        Err(e) => {
+            si !is_unsupported_scheme(e) { print("FAIL: unix wrong kind: " + str(ne_kind(e))); return }
+        }
+    }
 
-    // Bad shapes.
-    pon r4: UrlParseResult = parse_agent_url("nothttp")
-    si r4.ok { print("FAIL: bare URL"); return }
+    // Bad shapes — assert Err side, kind=BadUrl.
+    match parse_agent_url("nothttp") {
+        Ok(u) => { print("FAIL: bare URL"); return },
+        Err(e) => { pon mut _z: Int = 0 }
+    }
 
-    pon r5: UrlParseResult = parse_agent_url("tcp://host:abc/x")
-    si r5.ok { print("FAIL: non-numeric port"); return }
+    match parse_agent_url("tcp://host:abc/x") {
+        Ok(u) => { print("FAIL: non-numeric port"); return },
+        Err(e) => { pon mut _z: Int = 0 }
+    }
 
-    pon r6: UrlParseResult = parse_agent_url("tcp://host:99999/x")
-    si r6.ok { print("FAIL: port out of range"); return }
+    match parse_agent_url("tcp://host:99999/x") {
+        Ok(u) => { print("FAIL: port out of range"); return },
+        Err(e) => { pon mut _z: Int = 0 }
+    }
 
-    pon r7: UrlParseResult = parse_agent_url("tcp://host:0/x")
-    si r7.ok { print("FAIL: port 0"); return }
+    match parse_agent_url("tcp://host:0/x") {
+        Ok(u) => { print("FAIL: port 0"); return },
+        Err(e) => { pon mut _z: Int = 0 }
+    }
 
-    pon r8: UrlParseResult = parse_agent_url("tcp://host:8080/")
-    si r8.ok { print("FAIL: empty agent-id"); return }
+    match parse_agent_url("tcp://host:8080/") {
+        Ok(u) => { print("FAIL: empty agent-id"); return },
+        Err(e) => { pon mut _z: Int = 0 }
+    }
 
-    pon r9: UrlParseResult = parse_agent_url("")
-    si r9.ok { print("FAIL: empty URL"); return }
+    match parse_agent_url("") {
+        Ok(u) => { print("FAIL: empty URL"); return },
+        Err(e) => { pon mut _z: Int = 0 }
+    }
 
-    pon r10: UrlParseResult = parse_agent_url("http://host:8080/x")
-    si r10.ok { print("FAIL: http scheme"); return }
-    si r10.err_kind != 2 { print("FAIL: http wrong kind: " + str(r10.err_kind)); return }
+    match parse_agent_url("http://host:8080/x") {
+        Ok(u) => { print("FAIL: http scheme"); return },
+        Err(e) => {
+            si !is_unsupported_scheme(e) { print("FAIL: http wrong kind: " + str(ne_kind(e))); return }
+        }
+    }
 
     print("PASSED")
 }

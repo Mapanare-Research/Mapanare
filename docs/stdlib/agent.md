@@ -335,12 +335,16 @@ Worker side (binds + accepts):
 ```mn
 fn main() {
     let key = node_key_from_env()
-    let listener = node_listen("0.0.0.0", 9090, key)
-    if !listener.ok { print(listener.err_msg); return }
-    loop {
-        let acc = node_accept_one(listener.handle)
-        if !acc.ok { continue }
-        // dispatch via conn_recv_frame ...
+    match node_listen("0.0.0.0", 9090, key) {
+        Ok(listener) => {
+            loop {
+                match node_accept_one(listener) {
+                    Ok(conn) => { /* dispatch via conn_recv_frame ... */ },
+                    Err(e)   => { /* accept failed; continue */ }
+                }
+            }
+        },
+        Err(e) => { print("listen failed: " + ne_msg(e)); return }
     }
 }
 ```
@@ -350,12 +354,16 @@ Coordinator side (connects + sends):
 ```mn
 fn main() {
     let key = node_key_from_env()
-    let r = remote_agent_connect("tcp://10.0.0.7:9090/worker-1", key)
-    if !r.ok { print(r.err_msg); return }
-    let task_json = to_json::<Task>(my_task)
-    let r2 = remote_agent_send(r.handle, task_json)
-    if !r2.ok { print(r2.err_msg); return }
-    remote_agent_disconnect(r2.handle)
+    match remote_agent_connect("tcp://10.0.0.7:9090/worker-1", key) {
+        Ok(r) => {
+            let task_json = to_json::<Task>(my_task)
+            match remote_agent_send(r, task_json) {
+                Ok(after_send) => { remote_agent_disconnect(after_send) },
+                Err(e)         => { print("send failed: " + ne_msg(e)); remote_agent_disconnect(r) }
+            }
+        },
+        Err(e) => { print("connect failed: " + ne_msg(e)) }
+    }
 }
 ```
 
@@ -395,12 +403,14 @@ let r = remote_agent_send(handle, payload)
 
 ```mn
 // Periodic check (the user's cadence — typically PING_INTERVAL_MS):
-let hb = remote_agent_heartbeat_check(handle)
-if !hb.ok {
-    // Treat as RemoteUnreachable; route through supervisor.
-    let reason = RemoteUnreachable(hb.err_msg)
-    let ce = classify_remote_exit(reason)
-    supervisor_handle_exit(sup, child_id, ce.exit_kind, ce.reason)
+match remote_agent_heartbeat_check(handle) {
+    Ok(updated) => { /* pong received; updated has fresh last_seen_recv */ },
+    Err(e) => {
+        // Treat as RemoteUnreachable; route through supervisor.
+        let reason = RemoteUnreachable(ne_msg(e))
+        let ce = classify_remote_exit(reason)
+        supervisor_handle_exit(sup, child_id, ce.exit_kind, ce.reason)
+    }
 }
 ```
 
@@ -419,12 +429,13 @@ if !hb.ok {
   takes the explicit-`to_json::<T>(msg)`-at-call-site fallback
   authorized by v5.40.0 PROMPT (the `_specialize_fn` body-walk
   fix is the v5.43.x prerequisite).
-- **Result<T, NetworkError> at every API boundary.** v5.43.0
-  uses flat `(ok, value, err_kind, err_msg)` result structs to
-  sidestep three v5.x lowerer bugs (Result wrap-shape mismatch
-  with complex Ok types; variant-tag corruption on Err rewrap;
-  nested 15-arm match silent-no-fire). v5.43.x picks up
-  Result-based ergonomics once the lowerer fixes land.
+- ~~**Result<T, NetworkError> at every API boundary.**~~ **Shipped
+  at v5.54.0 Cl.2** — v5.43.0's flat-tuple workaround
+  (`NodeListenResult`, `RemoteConnectResult`, etc.) was removed
+  after v5.46.0 Lf.\* closed the wrap-shape default bug; the public
+  surface now returns `Result<NodeHandle, NetworkError>` /
+  `Result<RemoteAgent, NetworkError>` / `Result<ConnRecvOk,
+  NetworkError>` etc. **BREAKING** for v5.43.0–v5.53.x callers.
 - **Service registry / discovery, replication, consensus,
   mTLS, dynamic key rotation, binary serde fast path.**
   Downstream package territory — v5.43.0 is "distributed v0".

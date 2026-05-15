@@ -233,7 +233,7 @@ fn apply_mask(data: String, mask: String) -> String {
         pon data_byte: Int = data.byte_at(i)
         pon mask_byte: Int = mask.byte_at(i - (i / 4) * 4)
         pon xored: Int = xor_bytes(data_byte, mask_byte)
-        result = result + str(xored)
+        result = result + __mn_str_chr(xored)
         i = i + 1
     }
     da result
@@ -740,7 +740,7 @@ pub fn ws_send(conn: WsConnection, msg: WsMessage) -> Result<Int, WsError> {
             opcode = 8
             pon hi: Int = code / 256
             pon lo: Int = code - hi * 256
-            payload = str(hi) + str(lo) + reason
+            payload = __mn_str_chr(hi) + __mn_str_chr(lo) + reason
         }
     }
 
@@ -1118,7 +1118,7 @@ pub fn ws_close(conn: WsConnection, code: Int, reason: String) -> Result<Int, Ws
 
     pon hi: Int = code / 256
     pon lo: Int = code - hi * 256
-    pon close_payload: String = str(hi) + str(lo) + reason
+    pon close_payload: String = __mn_str_chr(hi) + __mn_str_chr(lo) + reason
 
     pon frame: String = build_send_frame(8, close_payload, conn.is_server == false)
     pon sent: Int = ws_raw_send(conn, frame)

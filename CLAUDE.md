@@ -19,6 +19,102 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.54.0** (ready, not tagged) — **Cl.2 + Cl.3 + Cl.4r —
+  agent stdlib ergonomic refactor + walk_dir closure anchor +
+  websocket str(byte) sweep.** Ships the v5.47.0 splits that
+  v5.48–v5.53 deferred for the Te.3 brace-removal arc. **Cl.2
+  is BREAKING for stdlib consumers** — refactors
+  `stdlib/agent/{url,remote,node,supervision}.mn` from the
+  v5.43.0 flat-tuple Result workaround (`UrlParseResult`,
+  `NodeListenResult`, `RemoteConnectResult`, etc. — 8 struct
+  types + 16 constructor helpers + the
+  `(ok, value, err_kind, err_msg)` field shape) to ergonomic
+  `Result<T, NetworkError>` at the 12 public-function surface.
+  Structurally unblocked by v5.46.0 Lf.\* (the wrap-shape
+  default fix in `mapanare/lower.py` Ok/Err constructor branches
+  that closed the v5.43.0-era three-bug class). Two companion
+  types added because Mapanare has no first-class tuples:
+  `RecvOk { handle: RemoteAgent, frame: Frame }` for
+  `remote_agent_recv`'s Ok side, `ConnRecvOk
+  { conn: NodeConnection, frame: Frame }` for
+  `conn_recv_frame`'s Ok side.
+  **Cl.2.0 — Phase 0 audit (load-bearing).** Two reversals of
+  v5.47.0/PLAN.md premise documented in `PRE_PHASE_AUDIT.md`:
+  (1) **Cl.3's `walk_dir` does not exist** in `stdlib/fs.mn` at
+  v5.53.0 HEAD; the original v5.40.0 carry's named function was
+  renamed/removed. `walk()` (current name; returns plain
+  `List<String>`) uses the bug-class shape internally via
+  `match list_dir(current)` against
+  `Result<List<String>, FsError>` (line 487) and compiles
+  cleanly via the v5.46.0 Lf.\* fix. The Cl.3 carry was
+  implicitly closed. (2) **Cl.4r residual count is 5 sites**
+  (not 11 per v5.47.0 estimate); v5.47.0 Cl.4 closed 6.
+  Remaining at `stdlib/net/websocket.mn:236, 743 (×2),
+  1121 (×2)`. (3) **Cl.2 LOC sizing**: ~615 LOC, at the
+  600-LOC bundle/split threshold. User authorized atomic
+  bundle.
+  **Cl.2.1–Cl.2.4 — 4-file atomic migration.**
+  url.mn: `parse_agent_url(s) -> Result<AgentUrl, NetworkError>`
+  with `Err(BadUrl(...))` / `Err(UnsupportedScheme(...))`
+  variants; 13 return sites rewritten. node.mn:
+  `node_listen` / `node_listen_tls` / `node_accept_one` /
+  `conn_send_frame` return `Result<T, NetworkError>`;
+  `conn_recv_frame` returns `Result<ConnRecvOk, NetworkError>`;
+  `dr.err` forwarding now uses `Err(dr.err)` directly instead
+  of legacy `ne_kind(dr.err)` / `ne_msg(dr.err)` int-shuttle.
+  remote.mn: 5 pub fns return `Result<RemoteAgent,
+  NetworkError>`; `remote_agent_recv` returns `Result<RecvOk,
+  NetworkError>`. supervision.mn: `remote_agent_heartbeat_check`
+  passthrough to refactored `remote_agent_ping` returns
+  `Result<RemoteAgent, NetworkError>`. **Forward-compatible
+  behavior change at `remote_agent_connect`'s
+  parse_agent_url error path:** Err now carries the precise
+  NetworkError variant (`BadUrl`, `UnsupportedScheme`) instead
+  of an int-encoded round-trip through `ne_kind`/`ne_msg`.
+  **Cl.2.5 — test migration.**
+  `stdlib/agent/tests/test_dist_url.mn` (10 destructures) and
+  `stdlib/agent/tests/test_dist_node.mn` (7 destructures)
+  rewritten to `match` form with inline variant-discriminator
+  helpers (`is_no_key`, `is_connect_failed`,
+  `is_unsupported_scheme`). Proto + supervision tests
+  unchanged.
+  **Cl.2.6 — doc cookbook refresh.** `docs/stdlib/agent.md` 3
+  cookbook snippets migrated; "What's not here yet" section
+  marked Result-API SHIPPED with v5.54.0 cross-reference.
+  Plus `examples/agents/distributed_pool.mn` (unforeseen
+  caller found during Phase 2 grep sweep) migrated for example
+  consistency.
+  **Cl.3 — walk_dir implicit-closure anchor.** New pytest
+  class `tests/stdlib/test_fs.py::TestWalkDirCl3Anchor` (3
+  cases): asserts `match list_dir(...)` compiles, `walk()`
+  compiles, nested `list_dir` destructure compiles.
+  Falsifiability locked: revert v5.46.0 Lf.\* (the Ok/Err
+  wrap-shape default) → recorded `extractvalue ptr ... 0` +
+  `zext ptr to i64` IR pattern resurfaces. Stale `walk_dir`
+  comment in `stdlib/ai/ask_cache.mn:19` refreshed to point
+  at the anchor.
+  **Cl.4r — websocket sweep.** 5 sites at lines 236
+  (`apply_mask` XOR'd byte), 743 (×2: `build_send_frame`
+  Close arm status code hi/lo), 1121 (×2: `ws_close_normal`
+  same shape) replaced with `__mn_str_chr(byte)` per v5.43.0
+  Da.0 extern precedent.
+  **STRICT 3-stage fixed point preserved by construction at
+  v5.53.0's baseline** — zero `mapanare/self/*.mn` edits,
+  zero Python compiler edits, zero runtime edits. **Goldens
+  103/103.** 56-release strict streak from v5.7.1 holds.
+  Source delta: ~ −220 LOC net (Cl.2 removes ~180 LOC of
+  flat-tuple plumbing; Cl.4r line-neutral; Cl.3 adds ~50 LOC
+  pytest anchor). 8 source files modified + 1 example + 1
+  doc cookbook + 1 pytest file extended.
+  Aggregate state entering v5.55.0: **0 HIGH** /
+  **2 MEDIUM** (Ai.1 `_specialize_fn` carry from v5.40.0;
+  Nu.2 macOS notarization carry from v5.33.0) / **~2 LOW**
+  (Lf.4 variant-name collision split to v5.46.x, defer-to-v6.0
+  candidate; Sf.\* Win64 `__mn_str_free` ABI fix carry from
+  v5.53.1). **Cl.\* arc CLOSED at v5.54.0.** See
+  `docs/roadmap/v5/v5.54.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
 - **v5.53.0** (ready, not tagged) — **Te.3.F — nested single-line
   stmt-block recursive migration. Sf.\* split to v5.53.1.**
   Phase 0 audit produced two load-bearing reversals of the v5.53.0

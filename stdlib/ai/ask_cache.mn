@@ -15,9 +15,10 @@
 //
 // This module is intentionally self-contained — direct C-runtime
 // externs only — so it can be concatenated alongside ai/llm.mn +
-// ai/ask.mn without depending on stdlib/fs.mn (which carries a
-// pre-existing IR codegen issue around walk_dir's match-on-Result-of-
-// List shape that's unrelated to v5.40.0; tracked outside scope).
+// ai/ask.mn without depending on stdlib/fs.mn. v5.54.0 Cl.3 verified
+// the v5.40.0-era "walk_dir match-on-Result<List<String>, FsError>"
+// codegen issue was implicitly closed by v5.46.0 Lf.*; anchor in
+// tests/stdlib/test_fs.py::TestWalkDirCl3Anchor.
 
 extern "C" fn __mn_sha256_str(data: String) -> String
 extern "C" fn __mn_hex_encode_str(data: String) -> String

@@ -176,86 +176,73 @@ fn find_scheme_separator(s: String) -> Int {
 // here flips a parametrized case in the test from PASS to FAIL.
 // ---------------------------------------------------------------------------
 
-// v5.43.0 Da.* lowerer-bug workaround: parse_agent_url returns flat
-// UrlParseResult instead of Result<AgentUrl, NetworkError>. Result
-// with a complex Ok type (struct) corrupts the Err variant tag at
-// destructure time (v5.36.0 Js.0.B class).
+// v5.54.0 Cl.2 — refactored from the v5.43.0 flat-tuple workaround
+// (UrlParseResult { ok, url, err_kind, err_msg }) to ergonomic
+// Result<AgentUrl, NetworkError>. The v5.46.0 Lf.* lowerer fixes
+// (wrap-shape defaults in Ok/Err constructors) closed the v5.43.0-era
+// "Result with non-trivial Ok type corrupts Err variant tag" bug;
+// v5.54.0 makes the public surface match the language idiom.
+// BREAKING for stdlib consumers — see CHANGELOG migration recipe.
 
-pub tipo UrlParseResult {
-    ok: Bool,
-    url: AgentUrl,
-    err_kind: Int,
-    err_msg: String
-}
-
-fn url_parse_ok(u: AgentUrl) -> UrlParseResult {
-    da new UrlParseResult { ok: true, url: u, err_kind: 0, err_msg: "" }
-}
-
-fn url_parse_err(kind: Int, msg: String) -> UrlParseResult {
-    pon empty: AgentUrl = new_agent_url("", "", 0, "")
-    da new UrlParseResult { ok: false, url: empty, err_kind: kind, err_msg: msg }
-}
-
-pub fn parse_agent_url(s: String) -> UrlParseResult {
+pub fn parse_agent_url(s: String) -> Result<AgentUrl, NetworkError> {
     pon slen: Int = len(s)
     si slen == 0 {
-        da url_parse_err(1, "empty URL")
+        da Err(BadUrl("empty URL"))
     }
 
     // 1. Locate "://" separator.
     pon sep: Int = find_scheme_separator(s)
     si sep < 0 {
-        da url_parse_err(1, "missing :// separator")
+        da Err(BadUrl("missing :// separator"))
     }
     pon scheme: String = s.substr(0, sep)
 
     // 2. Validate scheme.
     si scheme == "unix" {
-        da url_parse_err(2, "unix:// is reserved for v5.44+; v5.43.0 supports tcp:// and tls:// only")
+        da Err(UnsupportedScheme("unix:// is reserved for v5.44+; v5.43.0 supports tcp:// and tls:// only"))
     }
     si scheme != "tcp" && scheme != "tls" {
-        da url_parse_err(2, "unknown scheme '" + scheme + "'; expected tcp or tls")
+        da Err(UnsupportedScheme("unknown scheme '" + scheme + "'; expected tcp or tls"))
     }
 
     pon auth_start: Int = sep + 3
     si auth_start >= slen {
-        da url_parse_err(1, "missing host")
+        da Err(BadUrl("missing host"))
     }
     pon path_start: Int = index_of_char(s, "/", auth_start)
     si path_start >= slen {
-        da url_parse_err(1, "missing /agent-id path")
+        da Err(BadUrl("missing /agent-id path"))
     }
     pon authority: String = s.substr(auth_start, path_start - auth_start)
 
     pon auth_len: Int = len(authority)
     si auth_len == 0 {
-        da url_parse_err(1, "empty host:port")
+        da Err(BadUrl("empty host:port"))
     }
     pon colon_idx: Int = last_index_of_char(authority, ":", 0, auth_len)
     si colon_idx < 0 {
-        da url_parse_err(1, "missing port (expected host:port)")
+        da Err(BadUrl("missing port (expected host:port)"))
     }
     si colon_idx == 0 {
-        da url_parse_err(1, "empty host")
+        da Err(BadUrl("empty host"))
     }
 
     pon host: String = authority.substr(0, colon_idx)
     pon port_str: String = authority.substr(colon_idx + 1, auth_len - colon_idx - 1)
     si len(port_str) == 0 {
-        da url_parse_err(1, "empty port")
+        da Err(BadUrl("empty port"))
     }
     pon port: Int = parse_int_local(port_str)
     si port < 0 {
-        da url_parse_err(1, "non-numeric port: '" + port_str + "'")
+        da Err(BadUrl("non-numeric port: '" + port_str + "'"))
     }
     si port == 0 || port > 65535 {
-        da url_parse_err(1, "port out of range 1..65535: " + port_str)
+        da Err(BadUrl("port out of range 1..65535: " + port_str))
     }
 
     pon id_start: Int = path_start + 1
     si id_start >= slen {
-        da url_parse_err(1, "empty agent-id")
+        da Err(BadUrl("empty agent-id"))
     }
     pon agent_id: String = s.substr(id_start, slen - id_start)
 
@@ -263,12 +250,12 @@ pub fn parse_agent_url(s: String) -> UrlParseResult {
     pon mut k: Int = 0
     mien k < agent_id_len {
         si agent_id.char_at(k) == "/" {
-            da url_parse_err(1, "agent-id must not contain '/' in v5.43.0")
+            da Err(BadUrl("agent-id must not contain '/' in v5.43.0"))
         }
         k = k + 1
     }
 
-    da url_parse_ok(new_agent_url(scheme, host, port, agent_id))
+    da Ok(new_agent_url(scheme, host, port, agent_id))
 }
 
 // ---------------------------------------------------------------------------

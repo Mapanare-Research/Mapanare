@@ -63,27 +63,11 @@ fn new_node_handle(fd: Int, addr: String, port: Int, key: String, is_tls: Bool, 
 }
 
 // ---------------------------------------------------------------------------
-// v5.43.0 Da.* lowerer-bug workaround — flat result structs.
-//
-// Originally I wanted Result<NodeHandle, NetworkError> at every boundary
-// (PROMPT-spec). At v5.43.0 HEAD the Mapanare lowerer has three known
-// bugs in this combination:
-//
-//   1. Result-wrap-shape mismatch when Ok is a non-trivial struct
-//      (v5.36.0 Js.0.B class). Variant tag of Err corrupts to first
-//      variant index.
-//   2. Variant-tag corruption on `Err(<expr-of-enum-type>)` rewrap
-//      where the expression is a struct field access or match-bound
-//      name. Same root cause; tag becomes 0.
-//   3. Nested match `match Err(e) { ... match e { N-arm } }` silently
-//      fails to fire any inner arm when the enum has 15+ variants.
-//
-// The clean fix lives in the lowerer (v5.43.x candidate). For the
-// v5.43.0 first cut, every public function that returns a struct on
-// success uses a flat `(ok: Bool, ..., err_kind: Int, err_msg: String)`
-// shape. Less elegant than Result<T, E> but sidesteps all three bugs.
-//
-// err_kind values: see ne_kind in url.mn (1=BadUrl ... 15=Internal).
+// v5.54.0 Cl.2 — refactored from v5.43.0 flat-tuple Result workarounds to
+// ergonomic Result<T, NetworkError>. v5.46.0 Lf.* closed the wrap-shape
+// default bug (and the variant-tag-corruption + 15-arm-nested-match
+// followups) that motivated the v5.43.0 workaround.
+// BREAKING for stdlib consumers — see CHANGELOG migration recipe.
 //
 // node_listen — bind a plaintext (tcp://) listener.
 // node_listen_tls — bind a tls:// listener with server cert + private key.
@@ -92,53 +76,37 @@ fn new_node_handle(fd: Int, addr: String, port: Int, key: String, is_tls: Bool, 
 // Pass "127.0.0.1" or "0.0.0.0" or empty for INADDR_ANY.
 // ---------------------------------------------------------------------------
 
-pub tipo NodeListenResult {
-    ok: Bool,
-    handle: NodeHandle,
-    err_kind: Int,
-    err_msg: String
-}
-
-fn listen_ok(h: NodeHandle) -> NodeListenResult {
-    da new NodeListenResult { ok: true, handle: h, err_kind: 0, err_msg: "" }
-}
-
-fn listen_err(kind: Int, msg: String) -> NodeListenResult {
-    pon empty: NodeHandle = new_node_handle(-1, "", 0, "", false, 0)
-    da new NodeListenResult { ok: false, handle: empty, err_kind: kind, err_msg: msg }
-}
-
-pub fn node_listen(addr: String, port: Int, key: String) -> NodeListenResult {
+pub fn node_listen(addr: String, port: Int, key: String) -> Result<NodeHandle, NetworkError> {
     si len(key) < 32 {
-        da listen_err(3, "MAPANARE_NODE_KEY must be at least 32 raw bytes (got " + str(len(key)) + ")")
+        da Err(NoKey("MAPANARE_NODE_KEY must be at least 32 raw bytes (got " + str(len(key)) + ")"))
     }
     si port < 0 || port > 65535 {
-        da listen_err(5, "port out of range 0..65535: " + str(port))
+        da Err(ListenFailed("port out of range 0..65535: " + str(port)))
     }
     pon fd: Int = __mn_node_listen_str(addr, port, 32)
     si fd < 0 {
-        da listen_err(5, "__mn_node_listen_str failed for " + addr + ":" + str(port))
+        da Err(ListenFailed("__mn_node_listen_str failed for " + addr + ":" + str(port)))
     }
-    da listen_ok(new_node_handle(fd, addr, port, key, false, 0))
+    da Ok(new_node_handle(fd, addr, port, key, false, 0))
 }
 
-pub fn node_listen_tls(addr: String, port: Int, key: String, cert_path: String, key_path: String) -> NodeListenResult {
+pub fn node_listen_tls(addr: String, port: Int, key: String, cert_path: String, key_path: String) -> Result<NodeHandle, NetworkError> {
     si len(key) < 32 {
-        da listen_err(3, "MAPANARE_NODE_KEY must be at least 32 raw bytes (got " + str(len(key)) + ")")
+        da Err(NoKey("MAPANARE_NODE_KEY must be at least 32 raw bytes (got " + str(len(key)) + ")"))
     }
     si port < 0 || port > 65535 {
-        da listen_err(5, "port out of range 0..65535: " + str(port))
+        da Err(ListenFailed("port out of range 0..65535: " + str(port)))
     }
     pon ctx: Int = __mn_tls_server_ctx_new_str(cert_path, key_path)
     si ctx == 0 {
-        da listen_err(5, "TLS server context init failed (cert=" + cert_path + ", key=" + key_path + ")")
+        da Err(ListenFailed("TLS server context init failed (cert=" + cert_path + ", key=" + key_path + ")"))
     }
     pon fd: Int = __mn_node_listen_str(addr, port, 32)
     si fd < 0 {
         __mn_tls_server_ctx_free_handle(ctx)
-        da listen_err(5, "__mn_node_listen_str failed for tls://" + addr + ":" + str(port))
+        da Err(ListenFailed("__mn_node_listen_str failed for tls://" + addr + ":" + str(port)))
     }
-    da listen_ok(new_node_handle(fd, addr, port, key, true, ctx))
+    da Ok(new_node_handle(fd, addr, port, key, true, ctx))
 }
 
 // ---------------------------------------------------------------------------
@@ -163,36 +131,19 @@ fn new_connection(conn_handle: Int, key: String) -> NodeConnection {
 // ---------------------------------------------------------------------------
 // node_accept_one — block until one client connects, then perform the
 // TLS handshake (if applicable). Synchronous; user runs the loop.
-// Returns NodeAcceptResult { ok, conn, err_kind, err_msg }.
 // ---------------------------------------------------------------------------
 
-pub tipo NodeAcceptResult {
-    ok: Bool,
-    conn: NodeConnection,
-    err_kind: Int,
-    err_msg: String
-}
-
-fn accept_ok(c: NodeConnection) -> NodeAcceptResult {
-    da new NodeAcceptResult { ok: true, conn: c, err_kind: 0, err_msg: "" }
-}
-
-fn accept_err(kind: Int, msg: String) -> NodeAcceptResult {
-    pon empty: NodeConnection = new NodeConnection { conn: 0, key: "", last_seen_recv: 0, next_seq_send: 1 }
-    da new NodeAcceptResult { ok: false, conn: empty, err_kind: kind, err_msg: msg }
-}
-
-pub fn node_accept_one(n: NodeHandle) -> NodeAcceptResult {
+pub fn node_accept_one(n: NodeHandle) -> Result<NodeConnection, NetworkError> {
     si n.listen_fd < 0 {
-        da accept_err(5, "node already shut down")
+        da Err(ListenFailed("node already shut down"))
     }
     pon mut is_tls_int: Int = 0
     si n.is_tls { is_tls_int = 1 }
     pon conn_handle: Int = __mn_node_accept(n.listen_fd, is_tls_int, n.server_ctx)
     si conn_handle == 0 {
-        da accept_err(4, "accept or TLS handshake failed")
+        da Err(ConnectFailed("accept or TLS handshake failed"))
     }
-    da accept_ok(new_connection(conn_handle, n.key))
+    da Ok(new_connection(conn_handle, n.key))
 }
 
 // ---------------------------------------------------------------------------
@@ -219,77 +170,48 @@ extern "C" fn __mn_tcp_close(fd: Int)
 
 // ---------------------------------------------------------------------------
 // conn_send_frame — encode + write one frame. Updates next_seq_send.
-// Returns the updated NodeConnection on success.
+// Ok = updated NodeConnection (next_seq_send incremented).
 // ---------------------------------------------------------------------------
 
-pub tipo ConnSendResult {
-    ok: Bool,
-    conn: NodeConnection,
-    err_kind: Int,
-    err_msg: String
-}
-
-fn send_ok(c: NodeConnection) -> ConnSendResult {
-    da new ConnSendResult { ok: true, conn: c, err_kind: 0, err_msg: "" }
-}
-
-fn send_err(c: NodeConnection, kind: Int, msg: String) -> ConnSendResult {
-    da new ConnSendResult { ok: false, conn: c, err_kind: kind, err_msg: msg }
-}
-
-pub fn conn_send_frame(c: NodeConnection, msg_type: Int, payload: String) -> ConnSendResult {
+pub fn conn_send_frame(c: NodeConnection, msg_type: Int, payload: String) -> Result<NodeConnection, NetworkError> {
     pon f: Frame = new_frame(msg_type, c.next_seq_send, payload)
     pon body: String = encode_frame(f, c.key)
     pon rc: Int = __mn_node_write_str(c.conn, body)
     si rc == -2 {
-        da send_err(c, 9, "frame body exceeds 100 MB cap")
+        da Err(ProtoOversized("frame body exceeds 100 MB cap"))
     }
     si rc != 0 {
-        da send_err(c, 12, "__mn_node_write_str failed (rc=" + str(rc) + ")")
+        da Err(TransportLost("__mn_node_write_str failed (rc=" + str(rc) + ")"))
     }
     pon updated: NodeConnection = new NodeConnection { conn: c.conn, key: c.key, last_seen_recv: c.last_seen_recv, next_seq_send: c.next_seq_send + 1 }
-    da send_ok(updated)
+    da Ok(updated)
 }
 
 // ---------------------------------------------------------------------------
 // conn_recv_frame — read one frame, verify HMAC, replay-check, update
-// last_seen. Returns ConnRecvResult with flat ok/err shape (per the
-// v5.43.0 Da.* lowerer-bug workaround).
+// last_seen. Ok = ConnRecvOk { conn: <updated>, frame: <decoded> }.
 // ---------------------------------------------------------------------------
 
-pub tipo ConnRecvResult {
-    ok: Bool,
+pub tipo ConnRecvOk {
     conn: NodeConnection,
-    frame: Frame,
-    err_kind: Int,
-    err_msg: String
+    frame: Frame
 }
 
-fn recv_ok(c: NodeConnection, f: Frame) -> ConnRecvResult {
-    da new ConnRecvResult { ok: true, conn: c, frame: f, err_kind: 0, err_msg: "" }
+fn new_conn_recv_ok(c: NodeConnection, f: Frame) -> ConnRecvOk {
+    da new ConnRecvOk { conn: c, frame: f }
 }
 
-fn recv_err(c: NodeConnection, kind: Int, msg: String) -> ConnRecvResult {
-    pon empty: Frame = new_frame(0, 0, "")
-    da new ConnRecvResult { ok: false, conn: c, frame: empty, err_kind: kind, err_msg: msg }
-}
-
-pub fn conn_recv_frame(c: NodeConnection) -> ConnRecvResult {
+pub fn conn_recv_frame(c: NodeConnection) -> Result<ConnRecvOk, NetworkError> {
     pon body: String = __mn_node_read_frame_str(c.conn)
     si len(body) == 0 {
-        da recv_err(c, 12, "__mn_node_read_frame_str returned empty (peer close or error)")
+        da Err(TransportLost("__mn_node_read_frame_str returned empty (peer close or error)"))
     }
     pon dr: DecodeResult = decode_frame(body, c.key, c.last_seen_recv)
     si !dr.ok {
-        // Reclassify dr.err into our flat (kind, msg) shape. dr.err is
-        // a NetworkError; pass through fn-arg extraction (works) to
-        // get the original message + variant kind via ne_kind.
-        pon kind: Int = ne_kind(dr.err)
-        pon msg: String = ne_msg(dr.err)
-        da recv_err(c, kind, msg)
+        da Err(dr.err)
     }
     pon updated: NodeConnection = new NodeConnection { conn: c.conn, key: c.key, last_seen_recv: dr.frame.sequence, next_seq_send: c.next_seq_send }
-    da recv_ok(updated, dr.frame)
+    da Ok(new_conn_recv_ok(updated, dr.frame))
 }
 
 // Helper: extract the message String from a NetworkError variant.

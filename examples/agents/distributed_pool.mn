@@ -45,21 +45,24 @@ fn make_worker_url(host: String, port: Int, worker_index: Int) -> String {
 }
 
 fn dispatch_to_worker(url: String, key: String, task_json: String) -> Bool {
-    pon r1: RemoteConnectResult = remote_agent_connect(url, key)
-    si !r1.ok {
-        print("connect failed: " + r1.err_msg)
-        da false
+    pon mut connected: RemoteAgent = new_remote_agent(0, new_agent_url("", "", 0, ""), "")
+    match remote_agent_connect(url, key) {
+        Ok(r) => { connected = r },
+        Err(e) => { print("connect failed: " + ne_msg(e)); da false }
     }
-    pon r2: RemoteSendResult = remote_agent_send(r1.handle, task_json)
-    si !r2.ok {
-        print("send failed: " + r2.err_msg)
-        remote_agent_disconnect(r1.handle)
-        da false
+    match remote_agent_send(connected, task_json) {
+        Ok(after_send) => {
+            // In a real example we'd remote_agent_recv() the reply here.
+            // For demo purposes we just close.
+            remote_agent_disconnect(after_send)
+            da true
+        },
+        Err(e) => {
+            print("send failed: " + ne_msg(e))
+            remote_agent_disconnect(connected)
+            da false
+        }
     }
-    // In a real example we'd remote_agent_recv() the reply here.
-    // For demo purposes we just close.
-    remote_agent_disconnect(r2.handle)
-    da true
 }
 
 // ---------------------------------------------------------------------------
@@ -112,21 +115,28 @@ fn run_demo(key: String) {
 //
 //   fn worker_main(worker_id: Int) {
 //       let key = node_key_from_env()
-//       let listener = node_listen("0.0.0.0", 9090, key)
-//       if !listener.ok {
-//           print("listen failed: " + listener.err_msg); return
-//       }
-//
-//       // Accept loop. In production you'd run this in an agent
-//       // and dispatch each connection to a per-conn agent.
-//       loop {
-//           let acc = node_accept_one(listener.handle)
-//           if !acc.ok { continue }
-//           let recv = conn_recv_frame(acc.conn)
-//           if recv.ok && recv.frame.msg_type == MSG_SEND() {
-//               // Decode the typed task via from_json::<Task> at v5.43.x.
-//               // Process; reply with conn_send_frame(MSG_REPLY, ...).
-//           }
-//           conn_close(acc.conn)
+//       match node_listen("0.0.0.0", 9090, key) {
+//           Ok(listener) => {
+//               // Accept loop. In production you'd run this in an agent
+//               // and dispatch each connection to a per-conn agent.
+//               loop {
+//                   match node_accept_one(listener) {
+//                       Ok(conn) => {
+//                           match conn_recv_frame(conn) {
+//                               Ok(rok) => {
+//                                   if rok.frame.msg_type == MSG_SEND() {
+//                                       // Decode via from_json::<Task> at v5.43.x.
+//                                       // Reply via conn_send_frame(rok.conn, MSG_REPLY, ...).
+//                                   }
+//                                   conn_close(rok.conn)
+//                               },
+//                               Err(e) => { conn_close(conn) }
+//                           }
+//                       },
+//                       Err(e) => { /* accept failed; continue */ }
+//                   }
+//               }
+//           },
+//           Err(e) => { print("listen failed: " + ne_msg(e)); return }
 //       }
 //   }
