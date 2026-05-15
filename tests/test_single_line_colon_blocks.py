@@ -500,3 +500,103 @@ class TestFormatterMigration:
         out = to_terse(src)
         # Expression-context if must remain in brace form.
         assert "if true { 1 } else { 2 }" in out
+
+
+# ---------------------------------------------------------------------------
+# v5.53.0 Te.3.F — nested single-line stmt-block migration
+# ---------------------------------------------------------------------------
+#
+# Falsifiability anchor — revert ``_migrate_one_line_stmt_block``'s
+# Te.3.F recursive branch (the ``"{" in body_shadow or "}" in body_shadow``
+# branch in mapanare/format.py that calls itself on the body) and the
+# tests below FAIL with the recorded signature:
+#
+#   AssertionError: assert 'if ch >= "a": if ch <= "z": return true' in
+#                          'fn f(ch: String) -> Bool:\n    if ch >= "a"
+#                          { if ch <= "z" { return true } }\n    ...'
+#
+# i.e. ``to_terse`` returns the unchanged brace form because the
+# line-363 ``{`` / ``}`` reject is what gated the recursion.
+#
+# Scope: Te.3.F.1 closes 7 of 11 first-party residuals — the pure-
+# nested-2 shape (``if A { if B { stmt } }``). The 4 chained-if-else
+# shapes (lexer.mn 267/276/285, lower.mn:4843) need a single-line
+# ``else:`` continuation grammar rule that v5.48.0 does NOT support
+# and is deferred to v6.0 PLAN. The deferral tests below assert
+# those shapes are correctly LEFT alone (no half-migration that
+# would crash the parser).
+
+
+class TestNestedStmtBlock:
+    """Nested pure-nested-2 ``if A { if B { stmt } }`` migration."""
+
+    def test_pure_nested_2_lexer_191(self) -> None:
+        from mapanare.format import to_terse
+
+        src = 'fn is_alpha(ch: String) -> Bool:\n    if ch >= "a" { if ch <= "z" { return true } }\n    return false\n'
+        out = to_terse(src)
+        assert 'if ch >= "a": if ch <= "z": return true' in out
+        assert "{ if ch <= " not in out
+
+    def test_pure_nested_2_round_trips_to_same_ast(self) -> None:
+        # AST-equivalence check: the migrated colon form must parse
+        # to the same AST as the original brace form.
+        from mapanare.format import to_terse
+
+        brace_src = 'fn f(ch: String) -> Bool:\n    if ch >= "a" { if ch <= "z" { return true } }\n    return false\n'
+        colon_src = to_terse(brace_src)
+        assert _norm(parse(brace_src)) == _norm(parse(colon_src))
+
+    def test_pure_nested_2_idempotent(self) -> None:
+        from mapanare.format import to_terse
+
+        src = 'fn f(ch: String) -> Bool:\n    if ch >= "a" { if ch <= "z" { return true } }\n    return false\n'
+        out1 = to_terse(src)
+        out2 = to_terse(out1)
+        assert out1 == out2
+
+    def test_pure_nested_2_complex_body(self) -> None:
+        # Inner body with function call + multi-arg
+        from mapanare.format import to_terse
+
+        src = 'fn scan_op() -> Int:\n    if ch == "&" { if ch1 == "&" { return new_token("AND", line, col) } }\n    return 0\n'
+        out = to_terse(src)
+        assert 'if ch == "&": if ch1 == "&": return new_token("AND", line, col)' in out
+
+    def test_pure_nested_2_with_assignment_inner(self) -> None:
+        # Inner body is an assignment, not a return.
+        from mapanare.format import to_terse
+
+        src = 'fn f() -> Int:\n    if p < n { if source.char_at(p) == "\'" { p = p + 1 } }\n    return p\n'
+        out = to_terse(src)
+        assert "if p < n: if source.char_at(p)" in out
+        # No braces left over on that line
+        for line in out.split("\n"):
+            if "p = p + 1" in line:
+                assert "{" not in line and "}" not in line
+
+    def test_chained_if_else_deferred_left_alone(self) -> None:
+        # 4 deferred shapes — to_terse must NOT half-migrate them
+        # (would produce un-parseable output). The body has chained
+        # `else { ... }` which the v5.48.0 grammar doesn't accept in
+        # colon form.
+        from mapanare.format import to_terse
+
+        # lower.mn:4843 shape — single-arm outer + if-else inner
+        src = 'fn f(b: Bool) -> String:\n    if true { if b { return "T" } else { return "F" } }\n    return ""\n'
+        out = to_terse(src)
+        # Body has chained-if-else; migration must reject. The line
+        # stays unchanged.
+        assert "if true { if b { return" in out
+
+    def test_chained_in_else_branch_deferred(self) -> None:
+        # lexer.mn:267 shape — outer if-else with nested-in-else
+        from mapanare.format import to_terse
+
+        src = 'fn f(hc: String) -> String:\n    if hc == "0" { return "Z" } else { if hc != "_" { return "X" } }\n    return ""\n'
+        out = to_terse(src)
+        # Outer is chained-if-else (tail.strip() != ""), so outer
+        # rejects via the existing tail check. Line unchanged.
+        assert "if hc == " in out
+        # Crucially: no half-migration to ``if hc == "0": return "Z" else: ...``
+        assert ': return "Z" else' not in out

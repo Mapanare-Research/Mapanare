@@ -361,7 +361,21 @@ def _migrate_one_line_stmt_block(leading: str, content: str) -> str | None:
         return None
     body_shadow = shadow[open_idx + 1 : close_idx]
     if "{" in body_shadow or "}" in body_shadow:
-        return None
+        # v5.53.0 Te.3.F.1: nested single-line stmt-blocks. Recursively
+        # migrate the body — ``if A { if B { stmt } }`` reduces to
+        # ``if A { if B: stmt }`` then again to ``if A: if B: stmt``.
+        # Inside-out: the inner brace-block is itself a complete
+        # single-line stmt-block, so the same function applied to the
+        # body migrates it. After the recursive call, re-check that
+        # the body no longer contains braces; if it still does (e.g.
+        # chained-if-else inner that this grammar can't reach), abort.
+        migrated_body = _migrate_one_line_stmt_block("", body)
+        if migrated_body is None:
+            return None
+        migrated_shadow = _mask_strings(migrated_body)
+        if "{" in migrated_shadow or "}" in migrated_shadow:
+            return None
+        body = migrated_body
     # v5.50.0 Te.3.E.1: ``;``-bearing multi-stmt bodies migrate
     # symmetrically with arm bodies. ``if X { a = 1; b = 2 }`` →
     # ``if X: a = 1; b = 2`` round-trips through

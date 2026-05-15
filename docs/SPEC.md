@@ -1,7 +1,34 @@
 # Mapanare Language Specification
 
-**Version:** 5.50.0
-**Status:** Live — synced to the v5.50.0 cut (2026-05-07)
+**Version:** 5.53.0
+**Status:** Live — synced to the v5.53.0 cut (2026-05-15)
+
+> **v5.53.0 — Te.3.F — nested single-line stmt-block recursive
+> migration. Sf.\* split to v5.53.1.** Phase 0 audit produced two
+> load-bearing reversals: (1) the Sf.\* PLAN hypothesis (Win64
+> `82_struct_update` overflow lives in `_lower_struct_update`) was
+> wrong — Python-bootstrap IR is structurally correct; the actual
+> root cause is a Win64-ABI mismatch on `__mn_str_free` drop-glue
+> bypassing `_rt`'s sarg lowering, with the same bypass mirrored
+> in `mapanare/self/emit_llvm.mn`. ~100 LOC fix scope + no Windows
+> clang locally to verify → split to v5.53.1 per PLAN.md Risk #1.
+> (2) Te.3.F empirical migration target — only 7 of 11 first-party
+> residuals are migrate-able under v5.48.0 grammar; the 4 chained-
+> if-else cases (lexer.mn 267/276/285 + lower.mn:4843) need a
+> single-line `else:` continuation rule deferred to v6.0 PLAN.
+> v5.53.0 ships Te.3.F.1's inside-out formatter recursion in
+> `mapanare/format.py::_migrate_one_line_stmt_block`. Te.3.F.2
+> migrates 7 sites in `mapanare/self/lexer.mn` via `mnc fmt
+> --to-terse`. `mnc_all.mn` regenerated. **First-party brace
+> surface drops 25 → 18 (28% reduction).** STRICT 3-stage fixed
+> point preserved by construction at v5.52.0's baseline of 246,347
+> lines / 0 diff — the 7 migrations are AST-equivalent (via
+> `to_terse` round-trip through `to_braces` to identical brace
+> stream). Falsifiability locked in
+> `tests/test_single_line_colon_blocks.py::TestNestedStmtBlock`
+> (7 cases — 5 positive, 2 deferred-shape negative); reverting the
+> recursion → 3 of 5 positive tests fail with recorded
+> AssertionError signature. **Te.3.F arc CLOSED; Sf.\* IN-FLIGHT.**
 
 > **v5.50.0 — Te.3.E — match-arm body grammar extensions; close
 > v5.48.1 brace residuals.** Adds colon-form shorthand for the two

@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.53.0] - 2026-05-15
+
+**Te.3.F — nested single-line stmt-block recursive migration (Sf.\*
+split to v5.53.1).** Phase 0 audit found the v5.53.0 PLAN.md Sf.\*
+hypothesis was wrong — the `82_struct_update` / `83_struct_update_partial`
+Win64 integer-overflow symptom is NOT in `_lower_struct_update`
+(Python-bootstrap IR is structurally correct) but in three
+`__mn_str_free` call sites in `mapanare/emit_llvm_text.py` that
+bypass `_rt`'s Win64 sarg lowering, plus four mirrored sites in
+`mapanare/self/emit_llvm.mn`. Without a Windows clang toolchain
+locally to verify a Win64-only fix, Sf.\* split to v5.53.1 per
+PLAN.md Risk #1 mitigation; the localized fix recipe is documented
+in `docs/roadmap/v5/v5.53.0/PRE_PHASE_AUDIT.md` for the v5.53.1
+session input. v5.53.0 ships Te.3.F alone — formatter recursion
+that migrates the 7 pure-nested-2 first-party residuals
+(lexer.mn 191/192/196/212/213/371/386). Phase 0 parser probes
+confirmed the remaining 4 sites (lexer.mn 267/276/285, lower.mn:4843)
+need a single-line `else:` continuation grammar rule that v5.48.0
+does NOT support; deferred to v6.0 PLAN. **First-party brace
+surface drops 25 → 18 (28% reduction).** STRICT 3-stage fixed
+point preserved at v5.52.0's 246,347 lines / 0 diff by
+construction (`mapanare/format.py` + `tests/` + 7 `mapanare/self/lexer.mn`
+line edits are all self-host source-equivalent — the 7
+migrations collapse `if A { if B { stmt } }` to `if A: if B: stmt`,
+producing identical brace stream after `_indent_to_braces`, hence
+identical MIR / LLVM IR). Local STRICT verification can't run
+(no Windows clang); CI is the safety net per v5.49.0 precedent.
+
+### Added
+
+- **Te.3.F.1 — nested single-line stmt-block migration in
+  `mapanare/format.py::_migrate_one_line_stmt_block`.** When the
+  body contains nested `{` / `}`, the function recurses inside-out
+  on the body. The inner stmt-block migrates first
+  (`if B { stmt }` → `if B: stmt`), then the outer's reject at
+  line 363 (`body_shadow has '{' or '}'`) clears and the outer
+  migrates (`if A { if B: stmt }` → `if A: if B: stmt`). If the
+  recursive call returns `None` (e.g. chained-if-else inner that
+  v5.48.0 grammar doesn't accept) or the migrated body still
+  contains braces, the outer aborts and the line stays in brace
+  form — no half-migration.
+- **Te.3.F.3 — falsifiability anchor in
+  `tests/test_single_line_colon_blocks.py::TestNestedStmtBlock`.**
+  7 cases: 5 pure-nested-2 positive (migration + AST round-trip
+  + idempotence + complex inner body + inner-assignment), 2
+  deferred-shape negative (chained-if-else outer stays in brace
+  form). Revert the format.py recursion → 3 of 5 positive tests
+  fail with the recorded `'if X: if Y: ...' in <unchanged brace
+  string>` AssertionError signature (verified).
+
+### Changed
+
+- **`mapanare/self/lexer.mn` — 7 nested-stmt-block predicates
+  migrated to colon form** via `python -m mapanare fmt --to-terse`.
+  Sites: `is_alpha` (lines 191-192), `is_digit` (196), `is_hex_digit`
+  (212-213), `scan_char` close-quote consume (371), `scan_op` AND
+  detect (386). `mapanare/self/mnc_all.mn` regenerated via
+  `bash scripts/concat_self.sh` to track. The cascade match-count
+  in `mnc_all.mn` drops from 11 to 4 (3 from lexer.mn 267/276/285
+  deferred + 1 from lower.mn:4843 deferred). Self-host parser
+  + Python-bootstrap parse of both files verified post-migration.
+
+### Fixed
+
+- **Te.3.F — first-party brace surface across `mapanare/self/*.mn`:
+  25 → 18 (28% drop).** Counted via the v5.50.0 Te.3.E.X-refined
+  `count_user_brace_block_openers`. The deprecation warning emitted
+  by `_emit_brace_deprecation_warning` at v5.19.0 no longer fires
+  for the 7 migrated sites; for the 4 remaining chained-if-else
+  sites it continues to fire pending v6.0 grammar work.
+
+### Pre-phase audit findings (load-bearing)
+
+Documented in `docs/roadmap/v5/v5.53.0/PRE_PHASE_AUDIT.md`:
+
+1. **Sf.\* PLAN hypothesis overturned.** Bug is not in struct-update
+   lowering — Python bootstrap IR for the failing goldens is
+   structurally correct. Actual root cause is Win64-ABI mismatch
+   on `__mn_str_free` drop-glue, three call sites bypass `_rt`'s
+   sarg lowering. Sized at ~100 LOC across Python + self-host;
+   above PLAN.md's 50-LOC bundle threshold; no Win64 clang locally
+   to verify. **Split to v5.53.1** with fix recipe documented.
+2. **Te.3.F empirical recount.** PLAN's "10 lexer + 1 lower = 11"
+   is correct; CLAUDE.md's hint of "17 lexer.mn predicates" was
+   speculative. But only 7 of 11 are migrate-able under v5.48.0
+   grammar — the 4 chained-if-else cases need a single-line `else:`
+   continuation rule (verified empirically — see PRE_PHASE_AUDIT.md
+   Probes 2 and 3).
+3. **Recursion direction: inside-out.** Top-down doesn't fit the
+   existing rejection at line 363; inside-out resolves the gate
+   by migrating the inner body first.
+
+
 ## [5.52.0] - 2026-05-09
 
 **Wn.8 — Windows binary smoke layer 3: runtime-archive lookup +
@@ -13042,7 +13135,8 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.52.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.53.0...HEAD
+[5.53.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.52.0...v5.53.0
 [5.52.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.51.0...v5.52.0
 [5.51.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.50.0...v5.51.0
 [5.50.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.49.0...v5.50.0

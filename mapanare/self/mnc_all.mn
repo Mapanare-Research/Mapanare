@@ -1059,12 +1059,12 @@ fn keyword_token_type(name: String) -> String:
 
 fn is_alpha(ch: String) -> Bool:
     if ch == "_": return true
-    if ch >= "a" { if ch <= "z" { return true } }
-    if ch >= "A" { if ch <= "Z" { return true } }
+    if ch >= "a": if ch <= "z": return true
+    if ch >= "A": if ch <= "Z": return true
     return false
 
 fn is_digit(ch: String) -> Bool:
-    if ch >= "0" { if ch <= "9" { return true } }
+    if ch >= "0": if ch <= "9": return true
     return false
 
 fn is_alnum(ch: String) -> Bool:
@@ -1080,8 +1080,8 @@ fn is_whitespace(ch: String) -> Bool:
 
 fn is_hex_digit(ch: String) -> Bool:
     if is_digit(ch): return true
-    if ch >= "a" { if ch <= "f" { return true } }
-    if ch >= "A" { if ch <= "F" { return true } }
+    if ch >= "a": if ch <= "f": return true
+    if ch >= "A": if ch <= "F": return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -1239,7 +1239,7 @@ fn scan_char(source: String, pos: Int, line: Int, col: Int) -> Token:
     else:
         value = ch
         p = p + 1
-    if p < len(source) { if source.char_at(p) == "'" { p = p + 1 } }
+    if p < len(source): if source.char_at(p) == "'": p = p + 1
     return new_token("CHAR_LIT", value, line, col, line, col + p - pos)
 
 // ---------------------------------------------------------------------------
@@ -1254,7 +1254,7 @@ fn scan_op(source: String, pos: Int, line: Int, col: Int) -> Token:
         if ch1 == ">": return new_token("PIPE_OP", "|>", line, col, line, col + 2)
         if ch1 == "|": return new_token("OR", "||", line, col, line, col + 2)
         return new_token("BAR", "|", line, col, line, col + 1)
-    if ch == "&" { if ch1 == "&" { return new_token("AND", "&&", line, col, line, col + 2) } }
+    if ch == "&": if ch1 == "&": return new_token("AND", "&&", line, col, line, col + 2)
     if ch == "=":
         if ch1 == "=": return new_token("EQEQ", "==", line, col, line, col + 2)
         if ch1 == ">": return new_token("FAT_ARROW", "=>", line, col, line, col + 2)

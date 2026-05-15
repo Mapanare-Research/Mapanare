@@ -19,6 +19,93 @@ Most recent releases. Full history at
 `docs/roadmap/ROADMAP.md` and
 `docs/roadmap/v5/v5.X.Y/SESSION_REPORT.md` per release:
 
+- **v5.53.0** (ready, not tagged) — **Te.3.F — nested single-line
+  stmt-block recursive migration. Sf.\* split to v5.53.1.**
+  Phase 0 audit produced two load-bearing reversals of the v5.53.0
+  PLAN. (1) **Sf.\* PLAN hypothesis was wrong.** PLAN.md hypothesized
+  the `82_struct_update` / `83_struct_update_partial` Win64 integer-
+  overflow lived in `_lower_struct_update`'s base-temp synthesis;
+  IR inspection of the Python-bootstrap output under
+  `target triple = "x86_64-w64-windows-gnu"` shows correct zero-init
+  + per-field GEPs at the right stride/width. The actual root cause
+  is a Win64-ABI mismatch at three `__mn_str_free` drop-glue call
+  sites in `mapanare/emit_llvm_text.py` (lines 1794, 2015, plus the
+  decl at 1881) that bypass `_rt`'s Win64 sarg lowering, mirrored
+  by four sites in `mapanare/self/emit_llvm.mn` (lines 4660, 4840,
+  4844, 4990 + decl at 1101). On SysV the aggregate `{ptr, i64}`
+  decomposes to rdi+rsi by coincidence matching the C runtime's
+  decomposed `(const char*, int64_t)` signature (v5.8.3 Wb.1
+  precedent); on Win64 it becomes sarg and the C function reads
+  garbage for `len_with_heap_bit`, which leaks through downstream
+  `mn_checked_add` calls. Sized at ~100 LOC across Python + self-
+  host emitter + tests; above PLAN.md's 50-LOC bundle threshold
+  AND verification is blocked locally (no Windows clang). **Split
+  to v5.53.1** with fix recipe documented in
+  `docs/roadmap/v5/v5.53.0/PRE_PHASE_AUDIT.md` so the next session
+  begins with the localized fix site, not another root-cause hunt.
+  (2) **Te.3.F empirical recount.** PLAN's 10 lexer + 1 lower = 11
+  residuals stands; CLAUDE.md's "17 lexer.mn predicates" was
+  speculative. But only 7 of 11 are migrate-able under v5.48.0
+  grammar — 4 chained-if-else cases (lexer.mn 267/276/285 and
+  lower.mn:4843) need a single-line `else:` continuation rule
+  that v5.48.0 does NOT support (verified empirically — three
+  parser probes in PRE_PHASE_AUDIT.md rejected the chained-`else:`
+  shapes with `Unexpected 'else' / 'if'` ParseErrors). Defer the
+  4-site closeout to v6.0 PLAN where the grammar extension lands
+  alongside hard removal of `{}`.
+  **Te.3.F.1 — formatter recursion at `mapanare/format.py::_migrate_one_line_stmt_block`.**
+  When `body_shadow` contains nested `{` / `}`, recurse inside-out
+  on the body — the inner stmt-block migrates first
+  (`if B { stmt }` → `if B: stmt`), the outer's line-363 reject
+  clears, the outer migrates (`if A: if B: stmt`). If the recursive
+  call returns `None` (e.g. chained-if-else inner) or the migrated
+  body still contains braces, the outer aborts — no half-migration.
+  **Te.3.F.2 — self-host source migration in `mapanare/self/lexer.mn`.**
+  Single cluster (one file). 7 sites migrated via
+  `python -m mapanare fmt --to-terse mapanare/self/lexer.mn`:
+  `is_alpha` (191-192), `is_digit` (196), `is_hex_digit` (212-213),
+  `scan_char` close-quote consume (371), `scan_op` AND detect (386).
+  `mnc_all.mn` regenerated via `bash scripts/concat_self.sh`.
+  Python-bootstrap parse of both files verified post-migration.
+  Local STRICT 3-stage verification cannot run (no Windows clang
+  for stage1 rebuild + the local stage1 binaries are WSL ELFs
+  that don't execute on Windows-cmd); CI is the safety net per
+  the v5.49.0 SESSION_REPORT precedent. STRICT preserved by
+  construction at v5.52.0's baseline of **246,347 lines / 0 diff**
+  because the 7 migrations are AST-equivalent (verified by
+  `to_terse` round-trip through `to_braces` to identical brace
+  stream → identical MIR / LLVM IR); 55-release strict streak
+  from v5.7.1 holds at the same value.
+  **Te.3.F.3 — falsifiability lock in
+  `tests/test_single_line_colon_blocks.py::TestNestedStmtBlock`.**
+  7 cases: 5 pure-nested-2 positive (migration + AST round-trip +
+  idempotence + complex inner body + inner-assignment), 2
+  deferred-shape negative (chained-if-else outer stays in brace
+  form; no half-migration to invalid colon form). Falsifiability
+  verified empirically by `git stash mapanare/format.py` + re-run
+  → 3 of 5 positive tests fail with the recorded
+  `assert 'if X: if Y: ...' in <unchanged brace string>`
+  AssertionError; `git stash pop` → 7/7 GREEN.
+  **First-party brace surface delta: 25 → 18 (28% reduction).**
+  Original PLAN target was 25 → ~14; the 4-site deferral moves
+  the v6.0 hard-removal cut from ~14 to 18 first-party residuals
+  + chained-if-else grammar work. The 7-site migration silences
+  the v5.19.0 `_emit_brace_deprecation_warning` for the migrated
+  sites; for the 4 remaining sites it continues firing pending
+  v6.0.
+  Aggregate state entering v5.53.1: **0 HIGH** (Sf.\* moves to
+  v5.53.1 docket but is structurally well-localized + sized) /
+  **3 MEDIUM** (Sf.\* Win64 `__mn_str_free` ABI fix to v5.53.1;
+  macOS notarization carry from v5.33.0 Nu.2; Ai.1
+  `_specialize_fn` carry from v5.40.0) / **~5 LOW** (4 chained-
+  if-else residuals to v6.0; Lf.4 variant-name collision to
+  v5.46.x; ergonomic refactor of v5.43.0 distributed-agent APIs;
+  fs.mn `walk_dir`; websocket.mn `str(byte)`). **Te.3.F arc
+  CLOSED at v5.53.0; Sf.\* arc IN-FLIGHT — fix recipe locked,
+  v5.53.1 session input ready.** See
+  `docs/roadmap/v5/v5.53.0/{PLAN.md, PROMPT.md, PRE_PHASE_AUDIT.md,
+  SESSION_REPORT.md}`.
+
 - **v5.50.0** (ready, not tagged) — **Te.3.E — match-arm body
   grammar extensions; close v5.48.1 brace residuals.** Adds
   colon-form shorthand for the two arm-body shapes v5.48.0 Te.3.D
