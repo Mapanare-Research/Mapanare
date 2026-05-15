@@ -533,7 +533,11 @@ class TestNestedStmtBlock:
     def test_pure_nested_2_lexer_191(self) -> None:
         from mapanare.format import to_terse
 
-        src = 'fn is_alpha(ch: String) -> Bool:\n    if ch >= "a" { if ch <= "z" { return true } }\n    return false\n'
+        src = (
+            "fn is_alpha(ch: String) -> Bool:\n"
+            '    if ch >= "a" { if ch <= "z" { return true } }\n'
+            "    return false\n"
+        )
         out = to_terse(src)
         assert 'if ch >= "a": if ch <= "z": return true' in out
         assert "{ if ch <= " not in out
@@ -543,14 +547,22 @@ class TestNestedStmtBlock:
         # to the same AST as the original brace form.
         from mapanare.format import to_terse
 
-        brace_src = 'fn f(ch: String) -> Bool:\n    if ch >= "a" { if ch <= "z" { return true } }\n    return false\n'
+        brace_src = (
+            "fn f(ch: String) -> Bool:\n"
+            '    if ch >= "a" { if ch <= "z" { return true } }\n'
+            "    return false\n"
+        )
         colon_src = to_terse(brace_src)
         assert _norm(parse(brace_src)) == _norm(parse(colon_src))
 
     def test_pure_nested_2_idempotent(self) -> None:
         from mapanare.format import to_terse
 
-        src = 'fn f(ch: String) -> Bool:\n    if ch >= "a" { if ch <= "z" { return true } }\n    return false\n'
+        src = (
+            "fn f(ch: String) -> Bool:\n"
+            '    if ch >= "a" { if ch <= "z" { return true } }\n'
+            "    return false\n"
+        )
         out1 = to_terse(src)
         out2 = to_terse(out1)
         assert out1 == out2
@@ -559,7 +571,11 @@ class TestNestedStmtBlock:
         # Inner body with function call + multi-arg
         from mapanare.format import to_terse
 
-        src = 'fn scan_op() -> Int:\n    if ch == "&" { if ch1 == "&" { return new_token("AND", line, col) } }\n    return 0\n'
+        src = (
+            "fn scan_op() -> Int:\n"
+            '    if ch == "&" { if ch1 == "&" { return new_token("AND", line, col) } }\n'
+            "    return 0\n"
+        )
         out = to_terse(src)
         assert 'if ch == "&": if ch1 == "&": return new_token("AND", line, col)' in out
 
@@ -567,7 +583,11 @@ class TestNestedStmtBlock:
         # Inner body is an assignment, not a return.
         from mapanare.format import to_terse
 
-        src = 'fn f() -> Int:\n    if p < n { if source.char_at(p) == "\'" { p = p + 1 } }\n    return p\n'
+        src = (
+            "fn f() -> Int:\n"
+            '    if p < n { if source.char_at(p) == "\'" { p = p + 1 } }\n'
+            "    return p\n"
+        )
         out = to_terse(src)
         assert "if p < n: if source.char_at(p)" in out
         # No braces left over on that line
@@ -583,7 +603,11 @@ class TestNestedStmtBlock:
         from mapanare.format import to_terse
 
         # lower.mn:4843 shape — single-arm outer + if-else inner
-        src = 'fn f(b: Bool) -> String:\n    if true { if b { return "T" } else { return "F" } }\n    return ""\n'
+        src = (
+            "fn f(b: Bool) -> String:\n"
+            '    if true { if b { return "T" } else { return "F" } }\n'
+            '    return ""\n'
+        )
         out = to_terse(src)
         # Body has chained-if-else; migration must reject. The line
         # stays unchanged.
@@ -593,7 +617,11 @@ class TestNestedStmtBlock:
         # lexer.mn:267 shape — outer if-else with nested-in-else
         from mapanare.format import to_terse
 
-        src = 'fn f(hc: String) -> String:\n    if hc == "0" { return "Z" } else { if hc != "_" { return "X" } }\n    return ""\n'
+        src = (
+            "fn f(hc: String) -> String:\n"
+            '    if hc == "0" { return "Z" } else { if hc != "_" { return "X" } }\n'
+            '    return ""\n'
+        )
         out = to_terse(src)
         # Outer is chained-if-else (tail.strip() != ""), so outer
         # rejects via the existing tail check. Line unchanged.

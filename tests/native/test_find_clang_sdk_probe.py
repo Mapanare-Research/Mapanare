@@ -159,9 +159,7 @@ def test_link_with_runtime_uses_clang_not_gcc() -> None:
     -no-pie -rdynamic on Linux too.
     """
     text = MAIN_MN.read_text(encoding="utf-8")
-    m = re.search(
-        r"^fn link_with_runtime\([^)]*\) -> Int:\n", text, flags=re.MULTILINE
-    )
+    m = re.search(r"^fn link_with_runtime\([^)]*\) -> Int:\n", text, flags=re.MULTILINE)
     assert m, "link_with_runtime function not defined in main.mn"
     start = m.end()
     rest = text[start:]

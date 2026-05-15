@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 closure anchor + websocket str(byte) sweep.** Ships the v5.47.0
 splits that v5.48–v5.53 deferred for the Te.3 brace-removal arc.
 Cl.2 is the load-bearing item: a **BREAKING refactor** of
-`stdlib/agent/{url,remote,node,supervision}.mn` from the v5.43.0
-flat-tuple Result workaround to ergonomic `Result<T, NetworkError>`,
+`stdlib/agent/url.mn`, `stdlib/agent/remote.mn`,
+`stdlib/agent/node.mn`, and `stdlib/agent/supervision.mn` from the
+v5.43.0 flat-tuple Result workaround to ergonomic `Result<T, NetworkError>`,
 structurally unblocked by v5.46.0 Lf.\* lowerer fixes. Cl.3 closes
 the v5.40.0 `walk_dir` carry — Phase 0 audit found the premise
 stale (the function no longer exists by that name; `walk()` uses
@@ -94,8 +95,10 @@ bytes diverge from RFC 6455 close-frame spec.
 **Source delta:** ~ −220 LOC net (Cl.2 removes ~180 LOC of
 flat-tuple plumbing; Cl.4r is line-neutral; Cl.3 adds ~50 LOC
 of pytest anchor). 8 source files modified
-(`stdlib/agent/{url,remote,node,supervision}.mn`,
-`stdlib/agent/tests/test_dist_{url,node}.mn`,
+(`stdlib/agent/url.mn`, `stdlib/agent/remote.mn`,
+`stdlib/agent/node.mn`, `stdlib/agent/supervision.mn`,
+`stdlib/agent/tests/test_dist_url.mn`,
+`stdlib/agent/tests/test_dist_node.mn`,
 `stdlib/net/websocket.mn`, `stdlib/ai/ask_cache.mn`); 1 example
 file modified (`examples/agents/distributed_pool.mn`); 1 doc
 cookbook refreshed (`docs/stdlib/agent.md`); 1 pytest file
@@ -116,8 +119,10 @@ SESSION_REPORT.md}`.
 
 ### Changed
 
-- **BREAKING (stdlib API)** — `stdlib/agent/{url,remote,node,supervision}.mn`
-  public surface now returns `Result<T, NetworkError>` (Cl.2.1–Cl.2.4).
+- **BREAKING (stdlib API)** — `stdlib/agent/url.mn`,
+  `stdlib/agent/remote.mn`, `stdlib/agent/node.mn`, and
+  `stdlib/agent/supervision.mn` public surface now returns
+  `Result<T, NetworkError>` (Cl.2.1–Cl.2.4).
   v5.43.0–v5.53.x callers destructuring the flat tuple
   (`r.ok`, `r.handle`, `r.err_kind`, `r.err_msg`) do not compile against
   v5.54.0 stdlib without refactoring. Migration recipe:
