@@ -1,0 +1,454 @@
+// Cascabel: a small chess engine written entirely in Mapanare.
+// 10x12 mailbox: a1=21, h1=28, a8=91. Border squares contain 99.
+// Pieces: pawn=1, knight=2, bishop=3, rook=4, queen=5, king=6.
+// White is positive, black negative. Moves pack from/to/promotion.
+
+tipo Position:
+    board: List<Int>
+    side: Int
+    rights: Int
+    ep: Int
+    halfmove: Int
+
+fn magnitude(x: Int) -> Int:
+    if x < 0:
+        return -x
+    return x
+
+fn empty_board() -> List<Int>:
+    let mut board: List<Int> = []
+    for i in 0..120:
+        let mut value: Int = 99
+        if i >= 21 && i <= 98 && i % 10 >= 1 && i % 10 <= 8:
+            value = 0
+        board.push(value)
+    return board
+
+fn copy_board(board: List<Int>) -> List<Int>:
+    let mut result: List<Int> = []
+    for i in 0..120:
+        result.push(board[i])
+    return result
+
+fn piece_code(c: String) -> Int:
+    let names: String = "PNBRQKpnbrqk"
+    for i in 0..12:
+        if names.char_at(i) == c:
+            if i < 6:
+                return i + 1
+            return -(i - 5)
+    return 0
+
+fn number(s: String) -> Int:
+    if len(s) == 0 || len(s) > 6:
+        return -1
+    let mut value: Int = 0
+    for i in 0..len(s):
+        let digit: Int = s.byte_at(i) - 48
+        if digit < 0 || digit > 9:
+            return -1
+        value = value * 10 + digit
+    return value
+
+fn square(s: String) -> Int:
+    if len(s) != 2:
+        return 0
+    let file: Int = s.byte_at(0) - 96
+    let rank: Int = s.byte_at(1) - 48
+    if rank < 1 || rank > 8 || file < 1 || file > 8:
+        return 0
+    return 10 + rank * 10 + file
+
+fn square_text(sq: Int) -> String:
+    let files: String = "abcdefgh"
+    return files.char_at(sq % 10 - 1) + str(sq / 10 - 1)
+
+fn field_count(text: String, separator: String) -> Int:
+    let mut count: Int = 1
+    for i in 0..len(text):
+        if text.char_at(i) == separator:
+            count = count + 1
+    return count
+
+fn field(text: String, separator: String, index: Int) -> String:
+    let mut start: Int = 0
+    let mut current: Int = 0
+    for i in 0..len(text):
+        if text.char_at(i) == separator:
+            if current == index:
+                return text.substr(start, i - start)
+            current = current + 1
+            start = i + 1
+    if current == index:
+        return text.substr(start, len(text) - start)
+    return ""
+
+fn invalid_position() -> Position:
+    return new Position { board: empty_board(), side: 0, rights: 0, ep: 0, halfmove: 0 }
+
+fn read_fen(fen: String) -> Position:
+    if field_count(fen, " ") != 6:
+        return invalid_position()
+    let placement: String = field(fen, " ", 0)
+    if field_count(placement, "/") != 8:
+        return invalid_position()
+    let mut board: List<Int> = empty_board()
+    let mut white: Int = 0
+    let mut black: Int = 0
+    for row in 0..8:
+        let mut file: Int = 1
+        let text: String = field(placement, "/", row)
+        for j in 0..len(text):
+            let c: String = text.char_at(j)
+            let count: Int = number(c)
+            if count >= 1 && count <= 8:
+                file = file + count
+            else:
+                let piece: Int = piece_code(c)
+                if piece == 0 || file > 8:
+                    return invalid_position()
+                if magnitude(piece) == 1 && (row == 0 || row == 7):
+                    return invalid_position()
+                board[91 - row * 10 + file - 1] = piece
+                if piece == 6:
+                    white = white + 1
+                if piece == -6:
+                    black = black + 1
+                file = file + 1
+        if file != 9:
+            return invalid_position()
+    if white != 1 || black != 1:
+        return invalid_position()
+    let mut side: Int = 1
+    let active: String = field(fen, " ", 1)
+    if active == "b":
+        side = -1
+    else:
+        if active != "w":
+            return invalid_position()
+    let mut rights: Int = 0
+    let flags: String = "KQkq"
+    let weights: List<Int> = [1, 2, 4, 8]
+    let castle: String = field(fen, " ", 2)
+    if castle != "-":
+        for j in 0..len(castle):
+            let mut found: Bool = false
+            for k in 0..4:
+                if castle.char_at(j) == flags.char_at(k):
+                    if rights / weights[k] % 2 == 1:
+                        return invalid_position()
+                    rights = rights + weights[k]
+                    found = true
+            if !found:
+                return invalid_position()
+    let mut ep: Int = 0
+    let ep_text: String = field(fen, " ", 3)
+    if ep_text != "-":
+        ep = square(ep_text)
+        if ep == 0:
+            return invalid_position()
+        if (side == 1 && ep / 10 != 7) || (side == -1 && ep / 10 != 4):
+            return invalid_position()
+        if board[ep] != 0 || board[ep - side * 10] != -side:
+            return invalid_position()
+    let halfmove: Int = number(field(fen, " ", 4))
+    if halfmove < 0 || number(field(fen, " ", 5)) < 1:
+        return invalid_position()
+    return new Position { board: board, side: side, rights: rights, ep: ep, halfmove: halfmove }
+
+fn start_position() -> Position:
+    return read_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+
+fn attacked(board: List<Int>, sq: Int, by: Int) -> Bool:
+    if board[sq - by * 9] == by || board[sq - by * 11] == by:
+        return true
+    let knights: List<Int> = [-21, -19, -12, -8, 8, 12, 19, 21]
+    for i in 0..8:
+        let target: Int = sq + knights[i]
+        if target >= 0 && target < 120:
+            if board[target] == by * 2:
+                return true
+    let directions: List<Int> = [-11, -9, 9, 11, -10, -1, 1, 10]
+    for i in 0..8:
+        let mut target: Int = sq + directions[i]
+        let mut distance: Int = 1
+        while board[target] != 99:
+            let p: Int = board[target]
+            if p != 0:
+                if p == by * 5 || (distance == 1 && p == by * 6):
+                    return true
+                if (i < 4 && p == by * 3) || (i >= 4 && p == by * 4):
+                    return true
+                break
+            target = target + directions[i]
+            distance = distance + 1
+    return false
+
+fn in_check(pos: Position, side: Int) -> Bool:
+    for sq in 21..99:
+        if pos.board[sq] == side * 6:
+            return attacked(pos.board, sq, -side)
+    return true
+
+fn pack_move(from: Int, to: Int, promotion: Int) -> Int:
+    return from * 10000 + to * 10 + promotion
+
+fn move_text(move: Int) -> String:
+    let mut text: String = square_text(move / 10000) + square_text(move / 10 % 1000)
+    let promotion: Int = move % 10
+    let names: String = "..nbrq"
+    if promotion > 0:
+        text = text + names.char_at(promotion)
+    return text
+
+fn without_right(rights: Int, flag: Int) -> Int:
+    if rights / flag % 2 == 1:
+        return rights - flag
+    return rights
+
+fn make_move(pos: Position, move: Int) -> Position:
+    let from: Int = move / 10000
+    let to: Int = move / 10 % 1000
+    let piece: Int = pos.board[from]
+    let mut board: List<Int> = copy_board(pos.board)
+    let mut halfmove: Int = pos.halfmove + 1
+    if magnitude(piece) == 1 || board[to] != 0:
+        halfmove = 0
+    board[from] = 0
+    board[to] = piece
+    let mut ep: Int = 0
+    if magnitude(piece) == 1:
+        if to == pos.ep:
+            board[to - pos.side * 10] = 0
+        if magnitude(to - from) == 20:
+            ep = from + pos.side * 10
+        if move % 10 != 0:
+            board[to] = pos.side * (move % 10)
+    if magnitude(piece) == 6 && magnitude(to - from) == 2:
+        if to > from:
+            board[from + 1] = board[from + 3]
+            board[from + 3] = 0
+        else:
+            board[from - 1] = board[from - 4]
+            board[from - 4] = 0
+    let mut rights: Int = pos.rights
+    if from == 25 || from == 28 || to == 28:
+        rights = without_right(rights, 1)
+    if from == 25 || from == 21 || to == 21:
+        rights = without_right(rights, 2)
+    if from == 95 || from == 98 || to == 98:
+        rights = without_right(rights, 4)
+    if from == 95 || from == 91 || to == 91:
+        rights = without_right(rights, 8)
+    return new Position { board: board, side: -pos.side, rights: rights, ep: ep, halfmove: halfmove }
+
+fn pawn_moves(from: Int, to: Int) -> List<Int>:
+    let mut moves: List<Int> = []
+    if to / 10 == 2 || to / 10 == 9:
+        for promotion in 2..6:
+            moves.push(pack_move(from, to, promotion))
+    else:
+        moves.push(pack_move(from, to, 0))
+    return moves
+
+fn legal_moves(pos: Position) -> List<Int>:
+    let mut candidates: List<Int> = []
+    let knights: List<Int> = [-21, -19, -12, -8, 8, 12, 19, 21]
+    let rays: List<Int> = [-11, -9, 9, 11, -10, -1, 1, 10]
+    for from in 21..99:
+        let piece: Int = pos.board[from] * pos.side
+        if piece >= 1 && piece <= 6:
+            if piece == 1:
+                let step: Int = pos.side * 10
+                let to: Int = from + step
+                if pos.board[to] == 0:
+                    let singles: List<Int> = pawn_moves(from, to)
+                    for j in 0..len(singles):
+                        candidates.push(singles[j])
+                    if (pos.side == 1 && from / 10 == 3) || (pos.side == -1 && from / 10 == 8):
+                        if pos.board[to + step] == 0:
+                            candidates.push(pack_move(from, to + step, 0))
+                let captures: List<Int> = [to - 1, to + 1]
+                for j in 0..2:
+                    let target: Int = captures[j]
+                    let victim: Int = pos.board[target] * pos.side
+                    if (victim < 0 && victim >= -5) || target == pos.ep:
+                        let promotions: List<Int> = pawn_moves(from, target)
+                        for k in 0..len(promotions):
+                            candidates.push(promotions[k])
+            else:
+                for j in 0..8:
+                    let mut step: Int = rays[j]
+                    if piece == 2:
+                        step = knights[j]
+                    let use_ray: Bool = piece != 3 || j < 4
+                    let use_file: Bool = piece != 4 || j >= 4
+                    if use_ray && use_file:
+                        let mut target: Int = from + step
+                        while target >= 0 && target < 120:
+                            let victim: Int = pos.board[target] * pos.side
+                            if pos.board[target] == 99 || victim > 0 || victim == -6:
+                                break
+                            candidates.push(pack_move(from, target, 0))
+                            if victim != 0 || piece == 2 || piece == 6:
+                                break
+                            target = target + step
+    let mut home: Int = 25
+    let mut king_flag: Int = 1
+    let mut queen_flag: Int = 2
+    if pos.side == -1:
+        home = 95
+        king_flag = 4
+        queen_flag = 8
+    if pos.board[home] == pos.side * 6 && !in_check(pos, pos.side):
+        if pos.rights / king_flag % 2 == 1 && pos.board[home + 3] == pos.side * 4:
+            if pos.board[home + 1] == 0 && pos.board[home + 2] == 0:
+                if !attacked(pos.board, home + 1, -pos.side) && !attacked(pos.board, home + 2, -pos.side):
+                    candidates.push(pack_move(home, home + 2, 0))
+        if pos.rights / queen_flag % 2 == 1 && pos.board[home - 4] == pos.side * 4:
+            if pos.board[home - 1] == 0 && pos.board[home - 2] == 0 && pos.board[home - 3] == 0:
+                if !attacked(pos.board, home - 1, -pos.side) && !attacked(pos.board, home - 2, -pos.side):
+                    candidates.push(pack_move(home, home - 2, 0))
+    let mut result: List<Int> = []
+    for i in 0..len(candidates):
+        let next: Position = make_move(pos, candidates[i])
+        if !in_check(next, pos.side):
+            result.push(candidates[i])
+    return result
+
+fn perft(pos: Position, depth: Int) -> Int:
+    if depth == 0:
+        return 1
+    let moves: List<Int> = legal_moves(pos)
+    if depth == 1:
+        return len(moves)
+    let mut nodes: Int = 0
+    for i in 0..len(moves):
+        let next: Position = make_move(pos, moves[i])
+        nodes = nodes + perft(next, depth - 1)
+    return nodes
+
+fn evaluate(pos: Position) -> Int:
+    let values: List<Int> = [0, 100, 320, 330, 500, 900, 0]
+    let mut score: Int = 0
+    for sq in 21..99:
+        let p: Int = pos.board[sq]
+        if p != 0 && p != 99:
+            let mut value: Int = values[magnitude(p)]
+            if magnitude(p) == 1:
+                if p > 0:
+                    value = value + (sq / 10 - 3) * 5
+                else:
+                    value = value + (8 - sq / 10) * 5
+            if p > 0:
+                score = score + value
+            else:
+                score = score - value
+    return score * pos.side
+
+fn search(pos: Position, depth: Int, alpha: Int, beta: Int, ply: Int) -> Int:
+    let moves: List<Int> = legal_moves(pos)
+    if len(moves) == 0:
+        if in_check(pos, pos.side):
+            return -30000 + ply
+        return 0
+    if pos.halfmove >= 100:
+        return 0
+    if depth == 0:
+        return evaluate(pos)
+    let mut best: Int = alpha
+    for i in 0..len(moves):
+        let next: Position = make_move(pos, moves[i])
+        let score: Int = -search(next, depth - 1, -beta, -best, ply + 1)
+        if score >= beta:
+            return score
+        if score > best:
+            best = score
+    return best
+
+fn best_move(pos: Position, depth: Int) -> Int:
+    let moves: List<Int> = legal_moves(pos)
+    let mut best: Int = 0
+    let mut score: Int = -31000
+    for i in 0..len(moves):
+        let next: Position = make_move(pos, moves[i])
+        let value: Int = -search(next, depth - 1, -31000, -score, 1)
+        if value > score:
+            score = value
+            best = moves[i]
+    return best
+
+fn show_board(pos: Position):
+    let names: String = ".PNBRQK"
+    for row in 0..8:
+        let mut line: String = str(8 - row) + " "
+        for file in 1..9:
+            let p: Int = pos.board[91 - row * 10 + file - 1]
+            let mut name: String = names.char_at(magnitude(p))
+            if p < 0:
+                name = name.to_lower()
+            line = line + name + " "
+        print(line)
+    print("  a b c d e f g h")
+
+fn main():
+    let mut pos: Position = start_position()
+    print("Cascabel 0.1.0 — Mapanare Chess. Type help.")
+    while true:
+        let line: String = read_line()
+        if line == "quit" || len(line) == 0:
+            break
+        let command: String = field(line, " ", 0)
+        let argument: String = field(line, " ", 1)
+        let word_count: Int = field_count(line, " ")
+        if line == "help":
+            print("startpos | fen <six FEN fields> | d | moves | play e2e4 | go 1..4 | perft 0..4 | quit")
+        else if line == "startpos":
+            pos = start_position()
+            print("ok")
+        else if line == "d":
+            show_board(pos)
+        else if line == "moves":
+            let moves: List<Int> = legal_moves(pos)
+            let mut text: String = "moves"
+            for i in 0..len(moves):
+                text = text + " " + move_text(moves[i])
+            print(text)
+        else if command == "fen" && word_count == 7:
+            let fen: String = line.substr(4, len(line) - 4)
+            let next: Position = read_fen(fen)
+            if next.side == 0:
+                print("error invalid FEN")
+            else:
+                pos = next
+                print("ok")
+        else if command == "play" && word_count == 2:
+            let moves: List<Int> = legal_moves(pos)
+            let mut chosen: Int = 0
+            for i in 0..len(moves):
+                if move_text(moves[i]) == argument:
+                    chosen = moves[i]
+            if chosen == 0:
+                print("error illegal move")
+            else:
+                pos = make_move(pos, chosen)
+                print("ok")
+        else if command == "perft" && word_count == 2:
+            let depth: Int = number(argument)
+            if depth >= 0 && depth <= 4:
+                print("nodes " + str(perft(pos, depth)))
+            else:
+                print("error depth must be 0..4")
+        else if command == "go" && word_count == 2:
+            let depth: Int = number(argument)
+            if depth >= 1 && depth <= 4:
+                let move: Int = best_move(pos, depth)
+                if move == 0:
+                    print("bestmove 0000")
+                else:
+                    print("bestmove " + move_text(move))
+                    pos = make_move(pos, move)
+            else:
+                print("error depth must be 1..4")
+        else:
+            print("error unknown command; type help")

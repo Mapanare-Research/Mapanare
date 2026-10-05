@@ -4,6 +4,12 @@ Mapanare programs organized by feature category. Most examples
 compile end-to-end via `python3 -m mapanare emit-llvm <file>` or
 the native `mnc emit-llvm <file>`; runnable demos use `mnc run`.
 
+## Chess
+
+- [Cascabel / mapanare-chess](mapanare-chess/README.md) — a native chess
+  prototype with legal moves, FEN, perft and fixed-depth alpha–beta search.
+  Linux/WSL verified; compiler/runtime limitations are documented with the example.
+
 ## Terseness arc (Te.\*)
 
 Showcases the v5.13–v5.21 terseness arc — the surface forms that
