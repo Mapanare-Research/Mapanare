@@ -96,5 +96,7 @@ def test_overlapping_builds_keep_all_objects(tmp_path):
         expected = {"mapanare_rt_alpha.o", "mapanare_rt_beta.o"}
         if sys.platform == "darwin":
             expected.add("mapanare_rt_mapanare_metal.o")
+            # Apple's ar also lists its archive symbol table, which is not an object.
+            members = [name for name in members if name not in {"__.SYMDEF", "__.SYMDEF SORTED"}]
         assert set(members) == expected
     assert not list(tmp_path.glob(".mapanare-rt.*")), "temporary build directories leaked"
