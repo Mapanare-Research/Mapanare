@@ -13,6 +13,7 @@ The verified development platform is Linux, including Ubuntu under WSL,
 with Mapanare 5.54.0 and clang. From the Mapanare repository root:
 
 ```bash
+mkdir -p build
 ./mapanare/self/mnc-stage1 build examples/mapanare-chess/main.mn -o build/cascabel
 ./build/cascabel
 ```
