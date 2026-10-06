@@ -521,6 +521,8 @@ _RUNTIME_FN_SIGS: dict[str, tuple[str, list[str]]] = {
     "__mn_file_mtime": (I64, [STR]),
     "__mn_file_rename": (I64, [STR, STR]),
     "__mn_file_copy": (I64, [STR, STR]),
+    "__mn_build_cache_lookup": (I64, [STR, STR]),
+    "__mn_build_cache_store": (I64, [STR, STR]),
     "__mn_dir_create": (I64, [STR, I64]),
     "__mn_dir_remove": (I64, [STR]),
     "__mn_dir_remove_recursive": (I64, [STR]),

@@ -10,6 +10,9 @@ import self::lower
 import self::mir_opt
 import self::emit_llvm
 
+extern "C" fn __mn_build_cache_lookup(key: String, output: String) -> Int
+extern "C" fn __mn_build_cache_store(key: String, object_path: String) -> Int
+
 // ---------------------------------------------------------------------------
 // Compilation result
 // ---------------------------------------------------------------------------
@@ -125,10 +128,11 @@ fn find_clang() -> String:
 // the bundled clang and never touch PATH.
 fn check_clang_available() -> Bool:
     let clang_bin: String = find_clang()
+    let tool_id_path: String = __mn_temp_path("mnc_toolchain.txt")
     if __mn_host_is_windows() != 0:
-        let rw: Int = __mn_system(clang_bin + " --version > NUL 2>NUL")
+        let rw: Int = __mn_system(clang_bin + " --version > \"" + tool_id_path + "\" 2>NUL")
         return rw == 0
-    let r: Int = __mn_system(clang_bin + " --version > /dev/null 2>/dev/null")
+    let r: Int = __mn_system(clang_bin + " --version > \"" + tool_id_path + "\" 2>/dev/null")
     return r == 0
 
 fn print_clang_install_help():
@@ -789,11 +793,13 @@ fn run_build(filename: String):
     let mut opt_flag: String = "-O1"
     let mut strip_flag: String = ""
     let mut lto_flag: String = ""
+    let mut use_cache: Bool = true
     let mut ai2: Int = 3
     for _ in 0..20:
         if ai2 >= __mn_argc(): ai2 = __mn_argc() + 1
         if ai2 < __mn_argc():
             let fl: String = __mn_argv(ai2)
+            if fl == "--no-cache": use_cache = false
             if fl == "-o" && ai2 + 1 < __mn_argc():
                 out_name = __mn_argv(ai2 + 1)
                 ai2 = ai2 + 2
@@ -833,14 +839,36 @@ fn run_build(filename: String):
     // real diagnostic instead of bare "clang failed". v5.10.0 Win.1b.D:
     // clang resolved via find_clang() — bundled if present, PATH otherwise.
     let clang_bin: String = find_clang()
-    let clang_cmd: String = clang_bin + " -c " + opt_flag + " " + build_ll + " -o " + build_o + clang_stderr_redirect()
-    let r1: Int = __mn_system(clang_cmd)
+    let clang_cmd: String = clang_bin + " -c " + opt_flag + lto_flag + " " + build_ll + " -o " + build_o + clang_stderr_redirect()
+    // Cache only object generation. Parsing/import resolution still runs, so
+    // dependency edits are reflected in the IR key. Linking always runs and
+    // therefore picks up runtime changes. Toolchain and flags partition keys.
+    let tool_id_path: String = __mn_temp_path("mnc_toolchain.txt")
+    let tool_id: String = __mn_file_read_or_empty(tool_id_path)
+    let cache_key: String = clang_bin + "\n" + tool_id + "\n" + opt_flag + lto_flag + "\n" + cr.ir_text
+    let mut cached: Bool = false
+    if use_cache && len(tool_id) > 0:
+        cached = __mn_build_cache_lookup(cache_key, build_o) == 1
+    let mut r1: Int = 0
+    if !cached: r1 = __mn_system(clang_cmd)
     if r1 != 0:
         report_clang_failure()
         __mn_exit(1)
+    if !cached && use_cache && len(tool_id) > 0:
+        __mn_build_cache_store(cache_key, build_o)
 
     // Link
-    let r2: Int = link_with_runtime(build_o, out_name)
+    // LTO bitcode must reach a link step that also enables LTO. Pass the
+    // optimization level too, including when the runtime source fallback is used.
+    let mut r2: Int = link_with_runtime(build_o + " " + opt_flag + lto_flag, out_name)
+    // A damaged cache object must not make a valid program unbuildable.
+    if r2 != 0 && cached:
+        r1 = __mn_system(clang_cmd)
+        if r1 != 0:
+            report_clang_failure()
+            __mn_exit(1)
+        __mn_build_cache_store(cache_key, build_o)
+        r2 = link_with_runtime(build_o + " " + opt_flag + lto_flag, out_name)
     // Strip if release/small mode
     if len(strip_flag) > 0:
         let strip_cmd: String = "strip " + out_name + __mn_dev_null_redirect()

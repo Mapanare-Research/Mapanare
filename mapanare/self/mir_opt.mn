@@ -1558,18 +1558,11 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule:
         //   passes creates patterns that duplicate defs. Needs proper preheader
         //   insertion + fixpoint to be safe. Li.1 remains OPEN for v5.2.
         let f7: MIRFunction = f6
-        // Pass 7: escape analysis (v4.97.0)
-        // v4.111.0: disabled — +0x3f3 crash on tests with user-defined functions.
-        // v4.152.0: crash GONE (Ge.1 fix). Stub remained (Ea.1).
-        // v5.1.2 Ea.1 CLOSED: escape_analysis_function now runs the full escape
-        //   analysis (check_escape for each allocation site). The self-hosted
-        //   Instruction enum lacks an alloc_kind field, so the result is computed
-        //   but not annotated on instructions. The Python mir_opt.py version
-        //   (escape_analysis_promotion) sets alloc_kind=STACK on the MIR
-        //   dataclasses; the self-hosted path is parity-equivalent in analysis
-        //   but defers codegen annotation to when the Instruction enum gains
-        //   the alloc_kind discriminant (v5.2+ scope). Safe: returns f unchanged.
-        let f8: MIRFunction = escape_analysis_function(f7)
-        new_fns.push(f8)
+        // Escape analysis currently returns its input unchanged: no allocation
+        // decision consumes the computed escape set. Avoid scanning every
+        // function once per allocation until codegen can use that information.
+        // Structs already emit as SSA aggregates / stack storage. Heap-backed
+        // containers still require alias- and lifetime-aware promotion.
+        new_fns.push(f7)
         i = i + 1
     return module

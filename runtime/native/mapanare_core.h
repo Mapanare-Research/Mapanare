@@ -60,6 +60,11 @@ typedef struct {
     uint64_t    is_heap : 1;   /* 1 = heap-owned (freeable), 0 = constant */
 } MnString;
 
+/* Exact-key, best-effort native compiler object cache (1 = hit/stored). */
+MN_EXPORT int64_t __mn_build_cache_lookup(MnString key, MnString output);
+MN_EXPORT int64_t __mn_build_cache_store(MnString key, MnString object_path);
+MN_EXPORT MnString __mn_temp_path(MnString name);
+
 /* Raw-layout constants for LLVM-IR emitters that read the second
  * eightbyte directly and need to recover just the length. Kept here so
  * the C side and the IR emitters stay in sync if the bitfield layout

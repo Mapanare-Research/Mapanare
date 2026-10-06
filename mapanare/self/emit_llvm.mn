@@ -1140,6 +1140,8 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
     s = declare_runtime_fn(s, "__mn_file_read_or_empty", llvm_string(), llvm_string())
     s = declare_runtime_fn(s, "__mn_file_write", "i64", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_build_cache_lookup", "i64", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_build_cache_store", "i64", llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_system", "i64", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
@@ -3777,9 +3779,9 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_rt_call(st, dn, llvm_string(), "__mn_file_read_or_empty", as_fr)
     if fn_name == "__mn_exit":
         return emit_rt_call_void(st, "__mn_exit", "i64 " + args[0].name)
-    if fn_name == "__mn_file_write":
+    if fn_name == "__mn_file_write" || fn_name == "__mn_build_cache_lookup" || fn_name == "__mn_build_cache_store":
         let as_fw: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        return emit_rt_call(st, dn, "i64", "__mn_file_write", as_fw)
+        return emit_rt_call(st, dn, "i64", fn_name, as_fw)
     if fn_name == "__mn_system":
         let as_sys: String = llvm_string() + " " + args[0].name
         return emit_rt_call(st, dn, "i64", "__mn_system", as_sys)
@@ -5483,6 +5485,46 @@ fn module_has_async(module: MIRModule) -> Bool:
         i = i + 1
     return false
 
+// Instructions such as checked list stores split a MIR block into several
+// LLVM blocks. PHI predecessors must name the final emitted block, including
+// backedges and predecessors emitted after the PHI itself.
+fn fix_emitted_phi_predecessors(body: List<String>, blocks: List<BasicBlock>) -> List<String>:
+    let mut phi_prefixes: List<String> = []
+    for bi in 0..len(blocks):
+        let block: BasicBlock = blocks[bi]
+        for ii in 0..len(block.instructions):
+            let inst: Instruction = block.instructions[ii]
+            if instr_kind(inst) == "phi":
+                phi_prefixes.push("  " + instr_dest(inst).name + " = phi ")
+    if len(phi_prefixes) == 0: return body
+    let mut exits: List<String> = []
+    for bi in 0..len(blocks): exits.push(blocks[bi].label)
+    let mut current: Int = 0
+    for li in 0..len(body):
+        let line: String = body[li]
+        if !line.starts_with(" ") && line.ends_with(":"):
+            let label: String = line.substr(0, len(line) - 1)
+            let mut original: Int = -1
+            for i in 0..len(blocks):
+                if blocks[i].label == label: original = i
+            if original >= 0: current = original
+            if current < len(exits): exits[current] = label
+    let mut result: List<String> = []
+    for li in 0..len(body):
+        let line: String = body[li]
+        let mut updated: String = line
+        let mut is_mir_phi: Bool = false
+        if line.contains(" = phi "):
+            for pi in 0..len(phi_prefixes):
+                let prefix: String = phi_prefixes[pi]
+                if line.starts_with(prefix): is_mir_phi = true
+        if is_mir_phi:
+            for i in 0..len(blocks):
+                if blocks[i].label != exits[i]:
+                    updated = updated.replace(", %" + blocks[i].label + " ]", ", %" + exits[i] + " ]")
+        result.push(updated)
+    return result
+
 fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitState:
     // Resolve return type
     let mut ret_ty: String = resolve_mir_type(f.return_type)
@@ -5721,6 +5763,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
     // user instructions and trailing blocks, in correct LLVM order.
     if nblks > 0:
         s.in_entry_block = false
+        s.entry_block_body = fix_emitted_phi_predecessors(s.entry_block_body, f.blocks)
         let mut pk2: Int = 0
         let npre2: Int = len(s.entry_prelude_lines)
         // v5.4.4 — bumped prelude flush cap (emit_mir_call's drop glue

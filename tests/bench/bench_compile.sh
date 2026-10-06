@@ -11,7 +11,7 @@
 #                                   commit 3b5262e untracked main.ll so it is now
 #                                   always emitted fresh from .mn sources, which
 #                                   produces a larger IR than the cached form)
-#   IR blowup ratio         < 25x
+# Source-to-IR ratio is reported for diagnosis, without an absolute gate.
 #
 # Usage:
 #   bash tests/bench/bench_compile.sh              # run benchmarks
@@ -26,7 +26,7 @@ GATE="${1:-}"
 
 if [ ! -f "${MNC}" ]; then
     echo "SKIP: mnc-stage1 not found" >&2
-    exit 0
+    exit 1
 fi
 
 echo "=== Compile-Time Benchmark Suite ==="
@@ -60,13 +60,13 @@ fi
 if [ -f "${HELLO}" ]; then
     echo ""
     START=$(date +%s%3N 2>/dev/null || python3 -c "import time; print(int(time.time()*1000))")
-    "${MNC}" run "${HELLO}" > /dev/null 2>&1 || true
+    "${MNC}" run "${HELLO}" > /dev/null
     END=$(date +%s%3N 2>/dev/null || python3 -c "import time; print(int(time.time()*1000))")
     RUN_MS=$((END - START))
     echo "  mnc run hello:   ${RUN_MS}ms"
 
     START=$(date +%s%3N 2>/dev/null || python3 -c "import time; print(int(time.time()*1000))")
-    "${MNC}" build "${HELLO}" -o /tmp/mnc_bench_hello > /dev/null 2>&1 || true
+    "${MNC}" build "${HELLO}" -o /tmp/mnc_bench_hello > /dev/null
     END=$(date +%s%3N 2>/dev/null || python3 -c "import time; print(int(time.time()*1000))")
     BUILD_MS=$((END - START))
     echo "  mnc build hello: ${BUILD_MS}ms"
@@ -93,6 +93,10 @@ if [ "${GATE}" = "--gate" ]; then
 
     if [ "${RUN_MS:-0}" -gt 5000 ]; then
         echo "FAIL: mnc run ${RUN_MS}ms > 5000ms" >&2
+        FAIL=1
+    fi
+    if [ "${BUILD_MS:-0}" -gt 5000 ]; then
+        echo "FAIL: mnc build ${BUILD_MS}ms > 5000ms" >&2
         FAIL=1
     fi
 

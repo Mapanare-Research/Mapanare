@@ -1,5 +1,5 @@
 // Auto-generated: all self-hosted compiler modules concatenated.
-// Do not edit — regenerate with: bash scripts/concat_self.sh
+// Do not edit — regenerate with: python scripts/concat_self.py
 
 // ===== ast.mn =====
 // ast.mn — AST node definitions for the Mapanare self-hosted compiler.
@@ -4149,6 +4149,8 @@ fn is_builtin_function(name: String) -> Bool:
     if name == "__mn_str_eprintln": return true
     if name == "__mn_system": return true
     if name == "__mn_file_write": return true
+    if name == "__mn_build_cache_lookup": return true
+    if name == "__mn_build_cache_store": return true
     // v5.8.4 Wb.2: host-detect (returns 1 on Windows, 0 elsewhere).
     if name == "__mn_host_is_win64": return true
     // v5.8.6 We.1: refined host-detect — splits Windows-detection
@@ -4217,6 +4219,8 @@ fn is_builtin_function(name: String) -> Bool:
     return false
 
 fn builtin_return_type(name: String) -> String:
+    if name == "__mn_build_cache_lookup": return "Int"
+    if name == "__mn_build_cache_store": return "Int"
     if name == "print": return "Void"
     if name == "println": return "Void"
     if name == "len": return "Int"
@@ -6030,6 +6034,10 @@ fn register_builtins(st: SemState) -> SemState:
     st2 = define_in_scope(st2, "__mn_system", system_sym)
     let fwrite_sym: Symbol = new_symbol("__mn_file_write", "function", make_builtin_fn_type(void_type()), false)
     st2 = define_in_scope(st2, "__mn_file_write", fwrite_sym)
+    let cache_lookup_sym: Symbol = new_symbol("__mn_build_cache_lookup", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_build_cache_lookup", cache_lookup_sym)
+    let cache_store_sym: Symbol = new_symbol("__mn_build_cache_store", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_build_cache_store", cache_store_sym)
     // v5.8.4 Wb.2: host-detect for OS-1 detection mechanism.
     let hostwin_sym: Symbol = new_symbol("__mn_host_is_win64", "function", make_builtin_fn_type(int_type()), false)
     st2 = define_in_scope(st2, "__mn_host_is_win64", hostwin_sym)
@@ -14448,19 +14456,12 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule:
         //   passes creates patterns that duplicate defs. Needs proper preheader
         //   insertion + fixpoint to be safe. Li.1 remains OPEN for v5.2.
         let f7: MIRFunction = f6
-        // Pass 7: escape analysis (v4.97.0)
-        // v4.111.0: disabled — +0x3f3 crash on tests with user-defined functions.
-        // v4.152.0: crash GONE (Ge.1 fix). Stub remained (Ea.1).
-        // v5.1.2 Ea.1 CLOSED: escape_analysis_function now runs the full escape
-        //   analysis (check_escape for each allocation site). The self-hosted
-        //   Instruction enum lacks an alloc_kind field, so the result is computed
-        //   but not annotated on instructions. The Python mir_opt.py version
-        //   (escape_analysis_promotion) sets alloc_kind=STACK on the MIR
-        //   dataclasses; the self-hosted path is parity-equivalent in analysis
-        //   but defers codegen annotation to when the Instruction enum gains
-        //   the alloc_kind discriminant (v5.2+ scope). Safe: returns f unchanged.
-        let f8: MIRFunction = escape_analysis_function(f7)
-        new_fns.push(f8)
+        // Escape analysis currently returns its input unchanged: no allocation
+        // decision consumes the computed escape set. Avoid scanning every
+        // function once per allocation until codegen can use that information.
+        // Structs already emit as SSA aggregates / stack storage. Heap-backed
+        // containers still require alias- and lifetime-aware promotion.
+        new_fns.push(f7)
         i = i + 1
     return module
 
@@ -15604,6 +15605,8 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     s = declare_runtime_fn(s, "__mn_argv", llvm_string(), "i64")
     s = declare_runtime_fn(s, "__mn_file_read_or_empty", llvm_string(), llvm_string())
     s = declare_runtime_fn(s, "__mn_file_write", "i64", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_build_cache_lookup", "i64", llvm_string() + ", " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_build_cache_store", "i64", llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_system", "i64", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprint", "void", llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eprintln", "void", llvm_string())
@@ -18241,9 +18244,9 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
         return emit_rt_call(st, dn, llvm_string(), "__mn_file_read_or_empty", as_fr)
     if fn_name == "__mn_exit":
         return emit_rt_call_void(st, "__mn_exit", "i64 " + args[0].name)
-    if fn_name == "__mn_file_write":
+    if fn_name == "__mn_file_write" || fn_name == "__mn_build_cache_lookup" || fn_name == "__mn_build_cache_store":
         let as_fw: String = llvm_string() + " " + args[0].name + ", " + llvm_string() + " " + args[1].name
-        return emit_rt_call(st, dn, "i64", "__mn_file_write", as_fw)
+        return emit_rt_call(st, dn, "i64", fn_name, as_fw)
     if fn_name == "__mn_system":
         let as_sys: String = llvm_string() + " " + args[0].name
         return emit_rt_call(st, dn, "i64", "__mn_system", as_sys)
@@ -19947,6 +19950,46 @@ fn module_has_async(module: MIRModule) -> Bool:
         i = i + 1
     return false
 
+// Instructions such as checked list stores split a MIR block into several
+// LLVM blocks. PHI predecessors must name the final emitted block, including
+// backedges and predecessors emitted after the PHI itself.
+fn fix_emitted_phi_predecessors(body: List<String>, blocks: List<BasicBlock>) -> List<String>:
+    let mut phi_prefixes: List<String> = []
+    for bi in 0..len(blocks):
+        let block: BasicBlock = blocks[bi]
+        for ii in 0..len(block.instructions):
+            let inst: Instruction = block.instructions[ii]
+            if instr_kind(inst) == "phi":
+                phi_prefixes.push("  " + instr_dest(inst).name + " = phi ")
+    if len(phi_prefixes) == 0: return body
+    let mut exits: List<String> = []
+    for bi in 0..len(blocks): exits.push(blocks[bi].label)
+    let mut current: Int = 0
+    for li in 0..len(body):
+        let line: String = body[li]
+        if !line.starts_with(" ") && line.ends_with(":"):
+            let label: String = line.substr(0, len(line) - 1)
+            let mut original: Int = -1
+            for i in 0..len(blocks):
+                if blocks[i].label == label: original = i
+            if original >= 0: current = original
+            if current < len(exits): exits[current] = label
+    let mut result: List<String> = []
+    for li in 0..len(body):
+        let line: String = body[li]
+        let mut updated: String = line
+        let mut is_mir_phi: Bool = false
+        if line.contains(" = phi "):
+            for pi in 0..len(phi_prefixes):
+                let prefix: String = phi_prefixes[pi]
+                if line.starts_with(prefix): is_mir_phi = true
+        if is_mir_phi:
+            for i in 0..len(blocks):
+                if blocks[i].label != exits[i]:
+                    updated = updated.replace(", %" + blocks[i].label + " ]", ", %" + exits[i] + " ]")
+        result.push(updated)
+    return result
+
 fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitState:
     // Resolve return type
     let mut ret_ty: String = resolve_mir_type(f.return_type)
@@ -20185,6 +20228,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
     // user instructions and trailing blocks, in correct LLVM order.
     if nblks > 0:
         s.in_entry_block = false
+        s.entry_block_body = fix_emitted_phi_predecessors(s.entry_block_body, f.blocks)
         let mut pk2: Int = 0
         let npre2: Int = len(s.entry_prelude_lines)
         // v5.4.4 — bumped prelude flush cap (emit_mir_call's drop glue
@@ -20422,6 +20466,9 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String:
 // Wires the pipeline: source -> parse -> resolve imports -> lower -> emit_llvm -> LLVM IR.
 
 
+extern "C" fn __mn_build_cache_lookup(key: String, output: String) -> Int
+extern "C" fn __mn_build_cache_store(key: String, object_path: String) -> Int
+
 // ---------------------------------------------------------------------------
 // Compilation result
 // ---------------------------------------------------------------------------
@@ -20537,10 +20584,11 @@ fn find_clang() -> String:
 // the bundled clang and never touch PATH.
 fn check_clang_available() -> Bool:
     let clang_bin: String = find_clang()
+    let tool_id_path: String = __mn_temp_path("mnc_toolchain.txt")
     if __mn_host_is_windows() != 0:
-        let rw: Int = __mn_system(clang_bin + " --version > NUL 2>NUL")
+        let rw: Int = __mn_system(clang_bin + " --version > \"" + tool_id_path + "\" 2>NUL")
         return rw == 0
-    let r: Int = __mn_system(clang_bin + " --version > /dev/null 2>/dev/null")
+    let r: Int = __mn_system(clang_bin + " --version > \"" + tool_id_path + "\" 2>/dev/null")
     return r == 0
 
 fn print_clang_install_help():
@@ -21201,11 +21249,13 @@ fn run_build(filename: String):
     let mut opt_flag: String = "-O1"
     let mut strip_flag: String = ""
     let mut lto_flag: String = ""
+    let mut use_cache: Bool = true
     let mut ai2: Int = 3
     for _ in 0..20:
         if ai2 >= __mn_argc(): ai2 = __mn_argc() + 1
         if ai2 < __mn_argc():
             let fl: String = __mn_argv(ai2)
+            if fl == "--no-cache": use_cache = false
             if fl == "-o" && ai2 + 1 < __mn_argc():
                 out_name = __mn_argv(ai2 + 1)
                 ai2 = ai2 + 2
@@ -21245,14 +21295,36 @@ fn run_build(filename: String):
     // real diagnostic instead of bare "clang failed". v5.10.0 Win.1b.D:
     // clang resolved via find_clang() — bundled if present, PATH otherwise.
     let clang_bin: String = find_clang()
-    let clang_cmd: String = clang_bin + " -c " + opt_flag + " " + build_ll + " -o " + build_o + clang_stderr_redirect()
-    let r1: Int = __mn_system(clang_cmd)
+    let clang_cmd: String = clang_bin + " -c " + opt_flag + lto_flag + " " + build_ll + " -o " + build_o + clang_stderr_redirect()
+    // Cache only object generation. Parsing/import resolution still runs, so
+    // dependency edits are reflected in the IR key. Linking always runs and
+    // therefore picks up runtime changes. Toolchain and flags partition keys.
+    let tool_id_path: String = __mn_temp_path("mnc_toolchain.txt")
+    let tool_id: String = __mn_file_read_or_empty(tool_id_path)
+    let cache_key: String = clang_bin + "\n" + tool_id + "\n" + opt_flag + lto_flag + "\n" + cr.ir_text
+    let mut cached: Bool = false
+    if use_cache && len(tool_id) > 0:
+        cached = __mn_build_cache_lookup(cache_key, build_o) == 1
+    let mut r1: Int = 0
+    if !cached: r1 = __mn_system(clang_cmd)
     if r1 != 0:
         report_clang_failure()
         __mn_exit(1)
+    if !cached && use_cache && len(tool_id) > 0:
+        __mn_build_cache_store(cache_key, build_o)
 
     // Link
-    let r2: Int = link_with_runtime(build_o, out_name)
+    // LTO bitcode must reach a link step that also enables LTO. Pass the
+    // optimization level too, including when the runtime source fallback is used.
+    let mut r2: Int = link_with_runtime(build_o + " " + opt_flag + lto_flag, out_name)
+    // A damaged cache object must not make a valid program unbuildable.
+    if r2 != 0 && cached:
+        r1 = __mn_system(clang_cmd)
+        if r1 != 0:
+            report_clang_failure()
+            __mn_exit(1)
+        __mn_build_cache_store(cache_key, build_o)
+        r2 = link_with_runtime(build_o + " " + opt_flag + lto_flag, out_name)
     // Strip if release/small mode
     if len(strip_flag) > 0:
         let strip_cmd: String = "strip " + out_name + __mn_dev_null_redirect()
@@ -21675,4 +21747,3 @@ fn mn_main():
     __mn_str_eprint("       Use 'mnc emit-llvm <file>' for raw IR emission, or\n")
     __mn_str_eprint("       'mnc compile <file>' for transpilation (.py/.php/.ts/.go).\n")
     __mn_exit(1)
-

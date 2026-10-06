@@ -1911,20 +1911,8 @@ MN_EXPORT MnString __mn_dev_null_redirect(void) {
  * surface redirects to this path and reprints contents on non-zero
  * exit. ``/tmp`` doesn't exist on Windows, so resolve %TEMP% there. */
 MN_EXPORT MnString __mn_clang_err_path(void) {
-#ifdef _WIN32
-    static char buf[1024];
-    static int set = 0;
-    if (!set) {
-        const char *t = getenv("TEMP");
-        if (!t || !*t) t = getenv("TMP");
-        if (!t || !*t) t = "C:\\Windows\\Temp";
-        snprintf(buf, sizeof(buf), "%s\\mnc_clang_err.txt", t);
-        set = 1;
-    }
-    return __mn_str_from_cstr(buf);
-#else
-    return __mn_str_from_cstr("/tmp/.mnc_clang_err");
-#endif
+    MnString name = {"mnc_clang_err.txt", 17, 0};
+    return __mn_temp_path(name);
 }
 
 /* v5.50.x: platform-portable temp path for compile/run/build/test
@@ -1935,11 +1923,46 @@ MN_EXPORT MnString __mn_clang_err_path(void) {
  * directory: '/tmp/mnc_run.ll'". The Windows publish.yml ``build-cli``
  * smoke at line 604 is the falsifiability anchor.
  *
- * Returns ``/tmp/<name>`` on Linux/macOS, ``%TEMP%\<name>`` on
- * Windows (mirroring __mn_clang_err_path). The ``name`` arg is the
+ * Returns a process-specific path on Linux/macOS and Windows
+ * (mirroring __mn_clang_err_path). The ``name`` arg is the
  * leaf filename (e.g. ``"mnc_run.ll"``); caller is responsible for
  * not embedding path separators. Result lives in a per-call thread-
  * unsafe static buffer — caller must use immediately and not stash. */
+typedef struct MnCompilerTempPath {
+    char *path;
+    struct MnCompilerTempPath *next;
+} MnCompilerTempPath;
+
+static MnCompilerTempPath *mn_compiler_temp_paths = NULL;
+
+static void mn_remove_compiler_temp_paths(void) {
+    while (mn_compiler_temp_paths) {
+        MnCompilerTempPath *entry = mn_compiler_temp_paths;
+        mn_compiler_temp_paths = entry->next;
+        remove(entry->path);
+        free(entry->path);
+        free(entry);
+    }
+}
+
+/* Like the driver temp-path API itself, registration is single-threaded. */
+static void mn_register_compiler_temp_path(const char *path) {
+    static int registered = 0;
+    if (!registered) {
+        if (atexit(mn_remove_compiler_temp_paths) != 0) return;
+        registered = 1;
+    }
+    for (MnCompilerTempPath *p = mn_compiler_temp_paths; p; p = p->next)
+        if (strcmp(p->path, path) == 0) return;
+    MnCompilerTempPath *entry = malloc(sizeof(*entry));
+    if (!entry) return;
+    entry->path = malloc(strlen(path) + 1);
+    if (!entry->path) { free(entry); return; }
+    strcpy(entry->path, path);
+    entry->next = mn_compiler_temp_paths;
+    mn_compiler_temp_paths = entry;
+}
+
 MN_EXPORT MnString __mn_temp_path(MnString name) {
     static char buf[2048];
     char *cname = mn_to_cstr(name);
@@ -1947,11 +1970,12 @@ MN_EXPORT MnString __mn_temp_path(MnString name) {
     const char *t = getenv("TEMP");
     if (!t || !*t) t = getenv("TMP");
     if (!t || !*t) t = "C:\\Windows\\Temp";
-    snprintf(buf, sizeof(buf), "%s\\%s", t, cname);
+    snprintf(buf, sizeof(buf), "%s\\mnc-%lu-%s", t, (unsigned long)GetCurrentProcessId(), cname);
 #else
-    snprintf(buf, sizeof(buf), "/tmp/%s", cname);
+    snprintf(buf, sizeof(buf), "/tmp/mnc-%ld-%s", (long)getpid(), cname);
 #endif
     __mn_free(cname);
+    mn_register_compiler_temp_path(buf);
     return __mn_str_from_cstr(buf);
 }
 
@@ -2004,6 +2028,112 @@ MN_EXPORT int64_t __mn_file_rename(MnString old_path, MnString new_path) {
     __mn_free(cold);
     __mn_free(cnew);
     return rc == 0 ? 0 : -1;
+}
+
+/* Build object cache. The hash selects a slot; the complete key is compared
+ * before a hit, so hash collisions cannot return a different program. A
+ * per-slot mkdir lock protects readers and writers. Contention, unwritable
+ * caches and interrupted writers degrade to a normal compile, never a hit.
+ * Kept in core so the native Windows compiler needs no crypto/Python library. */
+static int mn_build_cache_mkdir(const char *path) {
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0755);
+#endif
+}
+
+static void mn_build_cache_unlock(const char *path) {
+#ifdef _WIN32
+    _rmdir(path);
+#else
+    rmdir(path);
+#endif
+}
+
+static void mn_build_cache_paths(MnString key, char *base, char *lock) {
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (uint64_t i = 0; i < key.len; ++i) {
+        hash ^= (unsigned char)key.data[i];
+        hash *= UINT64_C(1099511628211);
+    }
+    snprintf(base, 96, ".mnc_cache/objects/%016llx", (unsigned long long)hash);
+    snprintf(lock, 104, "%s.lock", base);
+}
+
+static int mn_build_cache_copy(const char *src, const char *dst) {
+    FILE *in = fopen(src, "rb");
+    if (!in) return 0;
+    FILE *out = fopen(dst, "wb");
+    if (!out) { fclose(in); return 0; }
+    char buf[16384];
+    size_t count;
+    int ok = 1;
+    while ((count = fread(buf, 1, sizeof(buf), in)) != 0) {
+        if (fwrite(buf, 1, count, out) != count) { ok = 0; break; }
+    }
+    if (ferror(in)) ok = 0;
+    if (fclose(in) != 0) ok = 0;
+    if (fclose(out) != 0) ok = 0;
+    if (!ok) remove(dst);
+    return ok;
+}
+
+MN_EXPORT int64_t __mn_build_cache_lookup(MnString key, MnString output) {
+    char base[96], lock[104], meta[104], object[104];
+    mn_build_cache_paths(key, base, lock);
+    if (mn_build_cache_mkdir(lock) != 0) return 0;
+    snprintf(meta, sizeof(meta), "%s.key", base);
+    snprintf(object, sizeof(object), "%s.o", base);
+    FILE *file = fopen(meta, "rb");
+    int matches = file != NULL;
+    uint64_t offset = 0;
+    char buf[16384];
+    while (matches && offset < key.len) {
+        size_t n = (size_t)(key.len - offset);
+        if (n > sizeof(buf)) n = sizeof(buf);
+        if (fread(buf, 1, n, file) != n || memcmp(buf, key.data + offset, n) != 0)
+            matches = 0;
+        offset += n;
+    }
+    if (file) {
+        if (fgetc(file) != EOF || ferror(file)) matches = 0;
+        fclose(file);
+    }
+    int hit = 0;
+    if (matches) {
+        char *dst = mn_to_cstr(output);
+        hit = mn_build_cache_copy(object, dst);
+        __mn_free(dst);
+    }
+    mn_build_cache_unlock(lock);
+    return hit;
+}
+
+MN_EXPORT int64_t __mn_build_cache_store(MnString key, MnString object_path) {
+    mn_build_cache_mkdir(".mnc_cache");
+    mn_build_cache_mkdir(".mnc_cache/objects");
+    char base[96], lock[104], meta[104], object[104];
+    mn_build_cache_paths(key, base, lock);
+    if (mn_build_cache_mkdir(lock) != 0) return 0;
+    snprintf(meta, sizeof(meta), "%s.key", base);
+    snprintf(object, sizeof(object), "%s.o", base);
+    /* Invalidate first. Publish the exact key only after the object is closed. */
+    remove(meta);
+    char *src = mn_to_cstr(object_path);
+    int ok = mn_build_cache_copy(src, object);
+    __mn_free(src);
+    if (ok) {
+        FILE *file = fopen(meta, "wb");
+        if (!file) ok = 0;
+        else {
+            if (fwrite(key.data, 1, (size_t)key.len, file) != key.len) ok = 0;
+            if (fclose(file) != 0) ok = 0;
+        }
+    }
+    if (!ok) { remove(meta); remove(object); }
+    mn_build_cache_unlock(lock);
+    return ok;
 }
 
 MN_EXPORT int64_t __mn_file_copy(MnString src, MnString dst) {

@@ -34,6 +34,7 @@ import argparse
 import json
 import math
 import os
+import platform
 import shutil
 import statistics
 import subprocess
@@ -41,6 +42,7 @@ import sys
 import tempfile
 import time
 from dataclasses import asdict, dataclass, field
+from functools import partial
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -82,7 +84,7 @@ class BenchSpec:
     """Where each language's source for this workload lives + expected output."""
 
     name: str
-    expected: str  # Prefix match against stdout first line.
+    expected: str  # Exact output line; prefixes can hide wrong checksums.
     mn_path: Path
     py_path: Path
     rs_path: Path
@@ -190,7 +192,9 @@ class LangResult:
         self.cpu_median_ms = statistics.median(r.cpu_time_s for r in valid) * 1000.0
         self.mem_peak_kb = max(r.peak_memory_kb for r in valid)
         # Correctness: all runs must have produced the expected output.
-        self.correct = all(r.output.startswith(expected) or expected in r.output for r in valid)
+        self.correct = len(valid) == len(self.runs) and all(
+            expected in r.output.splitlines() for r in valid
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +374,9 @@ def _run_external(cmd: list[str], timeout: int = 120) -> SingleRun:
 # ---------------------------------------------------------------------------
 
 
-def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
+def run_mapanare_o2(
+    spec: BenchSpec, n_runs: int, compiler: str = "native", mnc: Path | None = None
+) -> LangResult:
     """Compile .mn to native via LLVM -O2 pipeline, run, parse __BENCH_METRICS__.
 
     v4.148.0 (E4): Links against mn_bench_main.c instead of mn_user_main.c so
@@ -417,7 +423,22 @@ def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
         bench_main_obj = td / "mn_bench_main.o"
         binary = td / name
 
-        emit_cmd = [sys.executable, "-m", "mapanare", "emit-llvm", str(spec.mn_path), "-o", str(ll)]
+        if compiler == "native":
+            native = (mnc or ROOT / "mapanare" / "self" / "mnc-stage1").resolve()
+            if not native.is_file():
+                result.error = f"native compiler not found: {native}"
+                return result
+            emit_cmd = [str(native), "emit-llvm", str(spec.mn_path), "-o", str(ll)]
+        else:
+            emit_cmd = [
+                sys.executable,
+                "-m",
+                "mapanare",
+                "emit-llvm",
+                str(spec.mn_path),
+                "-o",
+                str(ll),
+            ]
         # Compile the benchmark timing wrapper
         bench_main_cmd = [
             tools["clang"],
@@ -435,7 +456,7 @@ def run_mapanare_o2(spec: BenchSpec, n_runs: int) -> LangResult:
             "-o",
             str(obj),
         ]
-        # The Python bootstrap emitter generates main(), not mn_main().
+        # Both emitters produce main(); the timing wrapper supplies the entry point.
         # Rename main -> mn_main so mn_bench_main.c can wrap it with timing.
         rename_cmd = [objcopy, "--redefine-sym", "main=mn_main", str(obj), str(obj_renamed)]
         link_cmd = [
@@ -678,7 +699,9 @@ LANG_ORDER = [
 ]
 
 
-def run_all(only: str | None, n_runs: int) -> dict:
+def run_all(
+    only: str | None, n_runs: int, compiler: str = "native", mnc: Path | None = None
+) -> dict:
     print("=" * 78)
     print(f"  CROSS-LANGUAGE BENCHMARK SUITE (v{MAPANARE_VERSION}) -- {n_runs} runs per config")
     print("=" * 78)
@@ -690,6 +713,8 @@ def run_all(only: str | None, n_runs: int) -> dict:
         "go": _find_tool("go"),
         "python": sys.executable,
     }
+    if compiler == "native":
+        tool_report["mnc"] = str((mnc or ROOT / "mapanare/self/mnc-stage1").resolve())
     print()
     for name, path in tool_report.items():
         print(f"  {name:<8s} {path or 'NOT FOUND'}")
@@ -701,6 +726,8 @@ def run_all(only: str | None, n_runs: int) -> dict:
             continue
         print(f"[{spec.name}]")
         for label, runner in LANG_ORDER:
+            if label == "Mapanare O2":
+                runner = partial(run_mapanare_o2, compiler=compiler, mnc=mnc)
             _ = label  # display label comes from runner
             res = runner(spec, n_runs)
             all_results.append(res)
@@ -728,9 +755,16 @@ def run_all(only: str | None, n_runs: int) -> dict:
         "version": MAPANARE_VERSION,
         "date": time.strftime("%Y-%m-%d"),
         "runs_per_config": n_runs,
+        "mapanare_compiler": compiler,
         "environment": {
-            "os": "WSL2 (Ubuntu on Windows)",
-            "llvm_version": "18.1.3",
+            "os": platform.platform(),
+            "llvm_version": (
+                subprocess.check_output(
+                    [tool_report["clang"], "--version"], text=True
+                ).splitlines()[0]
+                if tool_report["clang"]
+                else None
+            ),
             "python_version": sys.version.split()[0],
             "tools": {k: v for k, v in tool_report.items()},
         },
@@ -754,16 +788,16 @@ def _compute_geomean_ratios(data: dict) -> dict[str, float]:
     by_bench: dict[str, dict[str, float]] = {}
     for entry in data["results"]:
         wm = entry.get("wall_median_ms", 0)
-        if wm > 0:
+        if wm > 0 and entry.get("correct") and not entry.get("error"):
             by_bench.setdefault(entry["benchmark"], {})[entry["language"]] = wm
 
     ratios_per_lang: dict[str, list[float]] = {}
     for bench_name, lang_times in by_bench.items():
-        mn_time = lang_times.get("Mapanare")
+        mn_time = lang_times.get("Mapanare O2", lang_times.get("Mapanare"))
         if mn_time is None or mn_time <= 0:
             continue
         for lang, lt in lang_times.items():
-            if lang == "Mapanare" or lt <= 0:
+            if lang in ("Mapanare", "Mapanare O2") or lt <= 0:
                 continue
             ratios_per_lang.setdefault(lang, []).append(mn_time / lt)
 
@@ -786,7 +820,9 @@ def _format_summary_table(data: dict) -> str:
         row = [f"{spec.name:<15s}"]
         for ln in langs:
             r = by_bench.get(spec.name, {}).get(ln)
-            if r and r.get("wall_median_ms", 0) > 0:
+            if r and not r.get("correct"):
+                row.append("ERR" if r.get("error") else "FAIL")
+            elif r and r.get("wall_median_ms", 0) > 0:
                 row.append(f"{r['wall_median_ms']:.3f} ms")
             elif r and r.get("error"):
                 row.append("ERR")
@@ -817,9 +853,13 @@ def main() -> None:
         help="substring match against benchmark name",
     )
     parser.add_argument("--output", type=str, default=str(RESULTS_FILE))
+    parser.add_argument("--compiler", choices=("native", "bootstrap"), default="native")
+    parser.add_argument("--mnc", type=Path, help="native compiler binary to measure")
     args = parser.parse_args()
+    if args.runs < 1:
+        parser.error("--runs must be positive")
 
-    data = run_all(only=args.only, n_runs=args.runs)
+    data = run_all(only=args.only, n_runs=args.runs, compiler=args.compiler, mnc=args.mnc)
 
     out_path = Path(args.output)
     out_path.write_text(json.dumps(data, indent=2, default=str) + "\n")
@@ -831,6 +871,8 @@ def main() -> None:
     print(_format_summary_table(data))
     print()
     print(f"Results saved to {out_path}")
+    if not data["results"] or any(not r["correct"] or r["error"] for r in data["results"]):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

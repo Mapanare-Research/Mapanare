@@ -11,7 +11,8 @@
 *Agents. Signals. Streams. Tensors. First-class, not frameworks.*
 
 Compiles to native binaries via LLVM and WebAssembly.
-**~168x faster than Python. On par with Rust and C.**
+**Historical bootstrap benchmarks: ~168x faster than Python.**
+See [current native compiler measurements](docs/guides/performance.md) for workload-specific results.
 
 English | [Español](docs/README.es.md) | [中文版](docs/README.zh-CN.md) | [Português](docs/README.pt.md)
 
@@ -188,7 +189,9 @@ Self-host 3-stage fixed-point: STRICT (stage2.ll == stage3.ll byte-identical at 
 
 ## Benchmarks
 
-Geometric mean across 6 cross-language benchmarks (median of 10 runs):
+Historical geometric mean across 6 cross-language benchmarks using the Python
+bootstrap compiler (median of 10 runs). The native compiler is measured
+separately in the [performance guide](docs/guides/performance.md).
 
 | | vs Python | vs Go | vs Rust | vs C (gcc) |
 |---|---:|---:|---:|---:|

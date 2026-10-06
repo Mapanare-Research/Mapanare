@@ -128,6 +128,8 @@ fn is_builtin_function(name: String) -> Bool:
     if name == "__mn_str_eprintln": return true
     if name == "__mn_system": return true
     if name == "__mn_file_write": return true
+    if name == "__mn_build_cache_lookup": return true
+    if name == "__mn_build_cache_store": return true
     // v5.8.4 Wb.2: host-detect (returns 1 on Windows, 0 elsewhere).
     if name == "__mn_host_is_win64": return true
     // v5.8.6 We.1: refined host-detect — splits Windows-detection
@@ -196,6 +198,8 @@ fn is_builtin_function(name: String) -> Bool:
     return false
 
 fn builtin_return_type(name: String) -> String:
+    if name == "__mn_build_cache_lookup": return "Int"
+    if name == "__mn_build_cache_store": return "Int"
     if name == "print": return "Void"
     if name == "println": return "Void"
     if name == "len": return "Int"
@@ -2009,6 +2013,10 @@ fn register_builtins(st: SemState) -> SemState:
     st2 = define_in_scope(st2, "__mn_system", system_sym)
     let fwrite_sym: Symbol = new_symbol("__mn_file_write", "function", make_builtin_fn_type(void_type()), false)
     st2 = define_in_scope(st2, "__mn_file_write", fwrite_sym)
+    let cache_lookup_sym: Symbol = new_symbol("__mn_build_cache_lookup", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_build_cache_lookup", cache_lookup_sym)
+    let cache_store_sym: Symbol = new_symbol("__mn_build_cache_store", "function", make_builtin_fn_type(int_type()), false)
+    st2 = define_in_scope(st2, "__mn_build_cache_store", cache_store_sym)
     // v5.8.4 Wb.2: host-detect for OS-1 detection mechanism.
     let hostwin_sym: Symbol = new_symbol("__mn_host_is_win64", "function", make_builtin_fn_type(int_type()), false)
     st2 = define_in_scope(st2, "__mn_host_is_win64", hostwin_sym)

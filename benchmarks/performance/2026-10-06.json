@@ -1,0 +1,575 @@
+{
+  "date": "2026-10-06",
+  "version": "5.54.1",
+  "environment": {
+    "os": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "llvm_version": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+    "python_version": "3.12.3",
+    "tools": {
+      "gcc": "/usr/bin/gcc",
+      "clang": "/usr/bin/clang",
+      "rustc": "/home/uan/.cargo/bin/rustc",
+      "go": "/home/uan/go/bin/go",
+      "python": "/usr/bin/python3",
+      "mnc": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1"
+    }
+  },
+  "directory_scan": {
+    "before": {
+      "samples_ms": [
+        6692.411383148283,
+        6192.666755989194,
+        5783.151007024571
+      ],
+      "median_ms": 6192.666755989194
+    },
+    "after": {
+      "samples_ms": [
+        380.87424309924245,
+        415.18017603084445,
+        441.98787584900856
+      ],
+      "median_ms": 415.18017603084445
+    }
+  },
+  "compile_before": {
+    "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "compiler": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/build/perf-baseline/mnc-stage1",
+    "source": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/01_hello.mn",
+    "source_sha256": "2976a380c6fdfee06ca2b9452d65bc6a3514862c2a626d64e982503241ada42a",
+    "compiler_sha256": "58181365fcbede3e2eae82c0b6080c1ecbec410a6c5fd0f26a8ea39ea6770451",
+    "runs": 10,
+    "results": {
+      "emit": {
+        "median_ms": 140.20476897712797,
+        "samples_ms": [
+          136.80178695358336,
+          124.85549715347588,
+          123.539247084409,
+          144.14147497154772,
+          143.60775100067258,
+          113.3555299602449,
+          120.16849615611136,
+          188.59493592754006,
+          167.7814139984548,
+          181.03907397016883
+        ]
+      },
+      "build": {
+        "median_ms": 407.62909897603095,
+        "samples_ms": [
+          412.84029302187264,
+          330.5954218376428,
+          413.32362801767886,
+          443.88251402415335,
+          490.6377368606627,
+          402.41790493018925,
+          350.4670509137213,
+          338.0635988432914,
+          449.59082221612334,
+          331.37043798342347
+        ]
+      },
+      "release": {
+        "median_ms": 384.93826100602746,
+        "samples_ms": [
+          319.3613081239164,
+          316.61362992599607,
+          335.46765614300966,
+          336.58207999542356,
+          397.69921405240893,
+          582.5919138733298,
+          555.8091870043427,
+          576.5533139929175,
+          451.1464878451079,
+          372.177307959646
+        ]
+      },
+      "run": {
+        "median_ms": 363.32373856566846,
+        "samples_ms": [
+          331.0977038927376,
+          304.6597910579294,
+          331.99096797034144,
+          361.9000050239265,
+          364.74747210741043,
+          536.8960341438651,
+          492.5877300556749,
+          448.98379989899695,
+          413.25398394837976,
+          342.6447280216962
+        ]
+      }
+    }
+  },
+  "compile_after": {
+    "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "compiler": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1",
+    "source": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/01_hello.mn",
+    "source_sha256": "2976a380c6fdfee06ca2b9452d65bc6a3514862c2a626d64e982503241ada42a",
+    "compiler_sha256": "b6cc6ccf8689e408b108560b37aa236419673e5e1282658ce00f054fe7799df1",
+    "runs": 10,
+    "results": {
+      "emit": {
+        "median_ms": 132.95551610644907,
+        "samples_ms": [
+          111.41798691824079,
+          110.80200085416436,
+          135.94327913597226,
+          134.17492317967117,
+          139.2019670456648,
+          127.83780810423195,
+          134.8193238954991,
+          131.73610903322697,
+          118.58584103174508,
+          166.2057638168335
+        ]
+      },
+      "build": {
+        "median_ms": 385.9407569980249,
+        "samples_ms": [
+          337.91428501717746,
+          374.12748392671347,
+          366.3733918219805,
+          397.7540300693363,
+          467.69169601611793,
+          517.1234530862421,
+          411.7365558631718,
+          436.08670006506145,
+          340.32555506564677,
+          350.70462198928
+        ]
+      },
+      "release": {
+        "median_ms": 488.2113429484889,
+        "samples_ms": [
+          511.6900149732828,
+          522.2942270338535,
+          460.7359420042485,
+          518.3808968868107,
+          770.8141137845814,
+          674.3178321048617,
+          438.621758017689,
+          464.73267092369497,
+          424.8664102051407,
+          452.7574349194765
+        ]
+      },
+      "run": {
+        "median_ms": 407.33640443068,
+        "samples_ms": [
+          294.459180906415,
+          336.91313210874796,
+          327.9725229367614,
+          382.62997893616557,
+          462.3390280175954,
+          493.89509693719447,
+          402.14035590179265,
+          423.48883114755154,
+          412.5324529595673,
+          464.84742406755686
+        ]
+      },
+      "build_cold": {
+        "median_ms": 406.28659550566226,
+        "samples_ms": [
+          446.7642460949719,
+          349.45051395334303,
+          394.47354804724455,
+          392.3266080673784,
+          372.8241219650954,
+          478.3130818977952,
+          528.050031978637,
+          664.4350581336766,
+          418.09964296408,
+          361.21385591104627
+        ]
+      },
+      "release_cold": {
+        "median_ms": 596.876738476567,
+        "samples_ms": [
+          508.15787399187684,
+          494.52194501645863,
+          476.5585600398481,
+          537.4660689849406,
+          656.2874079681933,
+          700.4990379791707,
+          835.3281929157674,
+          506.91647292114794,
+          659.630784066394,
+          700.270356843248
+        ]
+      }
+    }
+  },
+  "quicksort_compile": {
+    "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "compiler": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1",
+    "source": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/benchmarks/optimizer/quicksort.mn",
+    "source_sha256": "eb498871ea28494e25041d6562f3a79113a86fd9237b63fb72e90dc2f772cee0",
+    "compiler_sha256": "b6cc6ccf8689e408b108560b37aa236419673e5e1282658ce00f054fe7799df1",
+    "runs": 10,
+    "results": {
+      "emit": {
+        "median_ms": 250.63327560201287,
+        "samples_ms": [
+          233.9304550550878,
+          196.62179006263614,
+          178.30609204247594,
+          192.48595391400158,
+          252.18984601087868,
+          262.58066506125033,
+          270.4690881073475,
+          307.8326100949198,
+          291.8767128139734,
+          249.07670519314706
+        ]
+      },
+      "build": {
+        "median_ms": 462.5122525030747,
+        "samples_ms": [
+          489.0419039875269,
+          410.5780979152769,
+          427.55079083144665,
+          421.63024889305234,
+          449.86447901465,
+          477.31733112595975,
+          479.2955310549587,
+          406.2052881345153,
+          475.1600259914994,
+          572.1119318623096
+        ]
+      },
+      "release": {
+        "median_ms": 813.6276069562882,
+        "samples_ms": [
+          602.6690339203924,
+          609.6422229893506,
+          858.7647969834507,
+          578.0358309857547,
+          647.2877331543714,
+          975.7022389676422,
+          829.4973510783166,
+          814.9915188550949,
+          878.0262530781329,
+          812.2636950574815
+        ]
+      },
+      "run": {
+        "median_ms": 503.412171616219,
+        "samples_ms": [
+          509.3852791469544,
+          616.6980471462011,
+          656.8597990553826,
+          474.67382019385695,
+          466.18990204297006,
+          436.8866509757936,
+          496.51410803198814,
+          497.43906408548355,
+          620.6675569992512,
+          566.8272890616208
+        ]
+      },
+      "build_cold": {
+        "median_ms": 447.6606084499508,
+        "samples_ms": [
+          563.1955161225051,
+          605.473545147106,
+          447.89469288662076,
+          419.40551600418985,
+          430.059454170987,
+          517.2239989042282,
+          446.39907381497324,
+          399.11360293626785,
+          447.42652401328087,
+          462.4671710189432
+        ]
+      },
+      "release_cold": {
+        "median_ms": 829.6763190301135,
+        "samples_ms": [
+          683.1463421694934,
+          835.7463590800762,
+          748.5515410080552,
+          626.1523799039423,
+          746.5707610826939,
+          947.7332120295614,
+          1005.0875700544566,
+          833.933724090457,
+          825.4189139697701,
+          846.0962281096727
+        ]
+      }
+    }
+  },
+  "native_runtime": [
+    {
+      "benchmark": "fib_recursive",
+      "language": "C (gcc -O2)",
+      "wall_median_ms": 13.0305,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "fib_recursive",
+      "language": "C (clang -O2)",
+      "wall_median_ms": 19.553,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "fib_recursive",
+      "language": "Rust -O",
+      "wall_median_ms": 19.087988,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "fib_recursive",
+      "language": "Go",
+      "wall_median_ms": 35.556000000000004,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "fib_recursive",
+      "language": "Mapanare O2",
+      "wall_median_ms": 20.057499999999997,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "fib_recursive",
+      "language": "Python 3.12",
+      "wall_median_ms": 892.0285,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "quicksort",
+      "language": "C (gcc -O2)",
+      "wall_median_ms": 0.4375,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "quicksort",
+      "language": "C (clang -O2)",
+      "wall_median_ms": 0.38949999999999996,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "quicksort",
+      "language": "Rust -O",
+      "wall_median_ms": 0.42592949999999996,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "quicksort",
+      "language": "Go",
+      "wall_median_ms": 0.38699999999999996,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "quicksort",
+      "language": "Mapanare O2",
+      "wall_median_ms": 0.8835,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "quicksort",
+      "language": "Python 3.12",
+      "wall_median_ms": 88.557,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "struct_alloc",
+      "language": "C (gcc -O2)",
+      "wall_median_ms": 0.0,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "struct_alloc",
+      "language": "C (clang -O2)",
+      "wall_median_ms": 0.0,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "struct_alloc",
+      "language": "Rust -O",
+      "wall_median_ms": 0.031695,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "struct_alloc",
+      "language": "Go",
+      "wall_median_ms": 0.031,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "struct_alloc",
+      "language": "Mapanare O2",
+      "wall_median_ms": 0.0325,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "struct_alloc",
+      "language": "Python 3.12",
+      "wall_median_ms": 222.0105,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "enum_match",
+      "language": "C (gcc -O2)",
+      "wall_median_ms": 0.142,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "enum_match",
+      "language": "C (clang -O2)",
+      "wall_median_ms": 0.15749999999999997,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "enum_match",
+      "language": "Rust -O",
+      "wall_median_ms": 0.33027049999999997,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "enum_match",
+      "language": "Go",
+      "wall_median_ms": 0.212,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "enum_match",
+      "language": "Mapanare O2",
+      "wall_median_ms": 0.1755,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "enum_match",
+      "language": "Python 3.12",
+      "wall_median_ms": 85.582,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "prime_sieve",
+      "language": "C (gcc -O2)",
+      "wall_median_ms": 2.1029999999999998,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "prime_sieve",
+      "language": "C (clang -O2)",
+      "wall_median_ms": 1.877,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "prime_sieve",
+      "language": "Rust -O",
+      "wall_median_ms": 1.9217119999999999,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "prime_sieve",
+      "language": "Go",
+      "wall_median_ms": 2.1710000000000003,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "prime_sieve",
+      "language": "Mapanare O2",
+      "wall_median_ms": 2.163,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "prime_sieve",
+      "language": "Python 3.12",
+      "wall_median_ms": 397.80899999999997,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "string_concat",
+      "language": "C (gcc -O2)",
+      "wall_median_ms": 0.08650000000000001,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "string_concat",
+      "language": "C (clang -O2)",
+      "wall_median_ms": 0.0725,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "string_concat",
+      "language": "Rust -O",
+      "wall_median_ms": 0.0472805,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "string_concat",
+      "language": "Go",
+      "wall_median_ms": 48.117,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "string_concat",
+      "language": "Mapanare O2",
+      "wall_median_ms": 5.647,
+      "correct": true,
+      "error": ""
+    },
+    {
+      "benchmark": "string_concat",
+      "language": "Python 3.12",
+      "wall_median_ms": 11.981,
+      "correct": true,
+      "error": ""
+    }
+  ],
+  "notes": [
+    "Directory scan: three fresh builds per script, 3000 comment lines plus hello, same final compiler; original script from commit 3a8728012dd3392c3877b5f385cac7a2206e4b8f.",
+    "The original release flag did not enable LTO; before/after release build latency measures different optimization configurations.",
+    "Small single-file cache gains were mixed; do not infer a universal speedup.",
+    "All six native workloads returned correct output. Native string concatenation remains an optimization gap.",
+    "Optimized self-hosted stage2 candidate rejected: 99/103 goldens and stage3 emission crash. The installed compiler was rebuilt with the Python bootstrap and passed 103/103 goldens."
+  ],
+  "validation": {
+    "goldens": "103/103",
+    "llvm_mir_tests_passed": 1101,
+    "self_bootstrap_tests_passed": 823,
+    "self_bootstrap_xfailed": 5,
+    "self_bootstrap_xpassed": 2,
+    "native_integration_passed": 3,
+    "cache_asan_ubsan_passed": 5
+  }
+}
