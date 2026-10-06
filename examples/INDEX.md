@@ -6,9 +6,10 @@ the native `mnc emit-llvm <file>`; runnable demos use `mnc run`.
 
 ## Chess
 
-- [Cascabel / mapanare-chess](mapanare-chess/README.md) — a native chess
-  prototype with legal moves, FEN, perft and fixed-depth alpha–beta search.
-  Linux/WSL verified; compiler/runtime limitations are documented with the example.
+- [Cascabel](https://github.com/Mapanare-Research/cascabel) — a standalone
+  chess engine written in Mapanare, with legal moves, FEN, perft and
+  fixed-depth alpha–beta search. Source, tests, and build instructions live
+  in its own repository.
 
 ## Terseness arc (Te.\*)
 
