@@ -20,6 +20,11 @@ from statistics import median
 
 try:
     from mapanare.cli import _compile_to_llvm_ir
+    from mapanare.modules import ModuleResolver
+    from mapanare.pkg_discovery import (
+        PackageDiscoveryError,
+        build_resolver_for_source,
+    )
 
     HAS_COMPILER = True
 except ImportError:
@@ -47,12 +52,19 @@ class StdlibBenchResult:
     lines_per_second: float
 
 
-def _compile_module(source: str, name: str) -> tuple[str, float]:
+def _compile_module(source: str, name: str, source_path: Path) -> tuple[str, float]:
     """Compile a module source and return (IR output, elapsed_ms)."""
     # Add a main function so the compiler has an entry point
     full_source = source + '\n\nfn main() {\n    print("ok")\n}\n'
+    # v5.44.1 Ps.11.A: per-module resolver construction; benchmark
+    # modules live under different package roots. Tolerant fallback —
+    # benchmarks must keep running on broken lockfiles.
+    try:
+        resolver = build_resolver_for_source(str(source_path))
+    except PackageDiscoveryError:
+        resolver = ModuleResolver()
     start = time.perf_counter()
-    ir_out = _compile_to_llvm_ir(full_source, f"{name}.mn", use_mir=True)
+    ir_out = _compile_to_llvm_ir(full_source, f"{name}.mn", resolver=resolver)
     elapsed = (time.perf_counter() - start) * 1000
     return ir_out, elapsed
 
@@ -75,7 +87,7 @@ def run_stdlib_benchmarks(n_runs: int = 5) -> list[StdlibBenchResult]:
 
         # Warmup
         try:
-            _compile_module(source, name)
+            _compile_module(source, name, path)
         except Exception as e:
             print(f"  SKIP {name} — compilation error: {e}")
             continue
@@ -84,7 +96,7 @@ def run_stdlib_benchmarks(n_runs: int = 5) -> list[StdlibBenchResult]:
         times: list[float] = []
         ir_out = ""
         for _ in range(n_runs):
-            ir_out, elapsed = _compile_module(source, name)
+            ir_out, elapsed = _compile_module(source, name, path)
             times.append(elapsed)
 
         med_time = median(times)

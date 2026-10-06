@@ -94,6 +94,42 @@ MN_DB_EXPORT int64_t __mn_sqlite3_finalize(int64_t stmt);
 /** Get the last error message for a database handle. */
 MN_DB_EXPORT MnString __mn_sqlite3_errmsg(int64_t handle);
 
+/* v5.35.0 Sq.7 — additions for the new stdlib/sql/sqlite/ surface.
+ * All optional at load time; missing symbols (older sqlite3, stripped
+ * library) are surfaced through distinct error codes rather than
+ * masked. The existing v5.34.x exports above are unchanged. */
+
+/** Get the runtime-loaded sqlite3 library version (e.g. "3.31.1").
+ *  Empty string if not loaded. Sq.1 rejects < 3.7.0. */
+MN_DB_EXPORT MnString __mn_sqlite3_libversion(void);
+
+/** Bind a blob to a prepared statement. Bytes are carried as MnString
+ *  (length-prefixed; raw bytes, no encoding). Returns 0 on success. */
+MN_DB_EXPORT int64_t __mn_sqlite3_bind_blob(int64_t stmt, int64_t idx, MnString val);
+
+/** Read a blob column. Returns the bytes as MnString. Empty if NULL. */
+MN_DB_EXPORT MnString __mn_sqlite3_column_blob(int64_t stmt, int64_t idx);
+
+/** Reset a prepared statement back to its initial state. Bound
+ *  parameters are preserved; the Sq.5 cache caller re-binds them.
+ *  Returns 0 on success. */
+MN_DB_EXPORT int64_t __mn_sqlite3_reset(int64_t stmt);
+
+/** Resolve a named parameter (":id", "@name", "$x") to its 1-based
+ *  index. Returns 0 if not found. */
+MN_DB_EXPORT int64_t __mn_sqlite3_bind_parameter_index(int64_t stmt, MnString name);
+
+/** Rows modified by the most recent INSERT/UPDATE/DELETE. */
+MN_DB_EXPORT int64_t __mn_sqlite3_changes(int64_t handle);
+
+/** ROWID of the most recent successful INSERT. 0 if none. */
+MN_DB_EXPORT int64_t __mn_sqlite3_last_insert_rowid(int64_t handle);
+
+/** Extended error code for the most recent error (e.g.
+ *  SQLITE_CONSTRAINT_UNIQUE = 2067, SQLITE_BUSY = 5).
+ *  Used by Sq.1 to map sqlite errors to SqlError variants. */
+MN_DB_EXPORT int64_t __mn_sqlite3_extended_errcode(int64_t handle);
+
 /* =======================================================================
  * 2. PostgreSQL Bindings (libpq)
  *

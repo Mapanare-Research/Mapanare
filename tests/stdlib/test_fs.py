@@ -1306,3 +1306,69 @@ class TestFsIntegration:
             """)
         ir_out = _compile_mir(src)
         assert "main" in ir_out
+
+
+@pytest.mark.skipif(not HAS_LLVMLITE, reason="llvmlite not installed")
+class TestWalkDirCl3Anchor:
+    """v5.54.0 Cl.3 — anchor test locking the v5.46.0 Lf.* implicit closure
+    of the v5.40.0-era "walk_dir IR codegen" carry.
+
+    The original v5.40.0 carry claimed `walk_dir` emitted invalid IR
+    (`extractvalue ptr ... 0` + `zext ptr to i64`) on the
+    `match Result<List<String>, FsError>` destructure shape. At
+    v5.53.0 HEAD `walk_dir` no longer exists as a named function;
+    `walk()` (its successor; returns plain `List<String>`) uses the
+    bug-class shape internally via `match list_dir(current)` and
+    compiles cleanly. This test asserts both shapes compile from
+    user code, locking the implicit closure.
+
+    Falsifiability: revert v5.46.0 Lf.* (the Ok/Err wrap-shape
+    default in `mapanare/lower.py`'s Ok/Err constructor branches)
+    and the IR emit for `list_dir` callers fails at the destructure
+    site with the recorded `extractvalue ptr / zext ptr to i64` IR
+    sequence."""
+
+    def test_list_dir_match_on_result_compiles(self) -> None:
+        """match-on-Result<List<String>, FsError> from list_dir compiles.
+        This is the exact bug-class shape from the v5.40.0 carry."""
+        src = _fs_source_with_main("""\
+            match list_dir("/tmp") {
+                Ok(names) => { print("ok: " + str(len(names))) },
+                Err(e)    => { print("err") }
+            }
+            """)
+        ir_out = _compile_mir(src)
+        assert "main" in ir_out
+        # Falsifiability anchor: assert the Result destructure does NOT
+        # emit the recorded buggy IR pattern (extractvalue ptr ... 0
+        # followed immediately by zext ptr to i64).
+        assert "extractvalue ptr" not in ir_out or "zext ptr to i64" not in ir_out
+
+    def test_walk_uses_list_dir_internally_compiles(self) -> None:
+        """walk() internally `match list_dir(...)`s; compiles end-to-end."""
+        src = _fs_source_with_main("""\
+            let paths: List<String> = walk("/tmp")
+            print("walked: " + str(len(paths)))
+            """)
+        ir_out = _compile_mir(src)
+        assert "main" in ir_out
+
+    def test_nested_result_of_list_destructure_compiles(self) -> None:
+        """Nested destructure: list_dir result fed into a second match;
+        exercises the same wrap-shape default twice."""
+        src = _fs_source_with_main("""\
+            match list_dir(".") {
+                Ok(names) => {
+                    if len(names) > 0 {
+                        let first: String = names[0]
+                        match list_dir(first) {
+                            Ok(_)  => { print("nested ok") },
+                            Err(_) => { print("nested err") }
+                        }
+                    }
+                },
+                Err(_) => { print("outer err") }
+            }
+            """)
+        ir_out = _compile_mir(src)
+        assert "main" in ir_out

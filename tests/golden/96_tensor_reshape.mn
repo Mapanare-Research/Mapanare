@@ -1,0 +1,86 @@
+// Golden test: tensor.reshape (v5.41.0 Ts.1)
+//
+// Exercises tensor.reshape on Float and Int tensors, 1D <-> 2D and 2D -> 2D,
+// element preservation in row-major order, chained reshape, same-shape
+// reshape (degenerate). All assertions print integers / floats so the
+// expected-output block stays mechanically diffable.
+//
+// v5.41.0 ships copy semantics: reshape allocates a fresh tensor and
+// memcpys the source data. v5.41.1 will swap to refcount-based aliasing
+// behind the same surface; this test will remain valid.
+
+fn main():
+    // 1D -> 2D
+    let a = Tensor<Float>[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    let a2 = a.reshape([2, 3])
+    print(str(tensor_rank(a2)))
+    print(str(tensor_size(a2)))
+    print(str(tensor_shape_dim(a2, 0)))
+    print(str(tensor_shape_dim(a2, 1)))
+    print(str(tensor_get_f64(a2, 0)))
+    print(str(tensor_get_f64(a2, 5)))
+
+    // 2D -> 1D (flatten)
+    let b = Tensor<Float>[[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]]
+    let b1 = b.reshape([6])
+    print(str(tensor_rank(b1)))
+    print(str(tensor_size(b1)))
+    print(str(tensor_get_f64(b1, 0)))
+    print(str(tensor_get_f64(b1, 3)))
+    print(str(tensor_get_f64(b1, 5)))
+
+    // 2D -> 2D (different shape, same total)
+    let c = Tensor<Float>[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]
+    let c2 = c.reshape([4, 3])
+    print(str(tensor_shape_dim(c2, 0)))
+    print(str(tensor_shape_dim(c2, 1)))
+    print(str(tensor_get_f64(c2, 0)))
+    print(str(tensor_get_f64(c2, 11)))
+
+    // Int tensor reshape
+    let d = Tensor<Int>[100, 200, 300, 400]
+    let d2 = d.reshape([2, 2])
+    print(str(tensor_rank(d2)))
+    print(str(tensor_get_i64(d2, 0)))
+    print(str(tensor_get_i64(d2, 3)))
+
+    // Chained reshape
+    let e = Tensor<Float>[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+    let e1 = e.reshape([3, 4])
+    let e2 = e1.reshape([2, 2, 3])
+    print(str(tensor_rank(e2)))
+    print(str(tensor_size(e2)))
+    print(str(tensor_get_f64(e2, 0)))
+    print(str(tensor_get_f64(e2, 11)))
+
+    // Source tensor unmodified after reshape (copy semantics)
+    let f = Tensor<Float>[1.0, 2.0, 3.0, 4.0]
+    let f2 = f.reshape([2, 2])
+    print(str(tensor_get_f64(f, 0)))
+    print(str(tensor_get_f64(f2, 0)))
+
+// Expected output:
+// 2
+// 6
+// 2
+// 3
+// 1
+// 6
+// 1
+// 6
+// 10
+// 40
+// 60
+// 4
+// 3
+// 1
+// 12
+// 2
+// 100
+// 400
+// 3
+// 12
+// 1
+// 12
+// 1
+// 1

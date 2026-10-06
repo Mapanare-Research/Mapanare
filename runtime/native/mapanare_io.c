@@ -281,20 +281,30 @@ typedef struct ssl_method_st MN_SSL_METHOD;
 
 /* Function pointer types for OpenSSL API */
 typedef MN_SSL_METHOD *(*fn_TLS_client_method)(void);
+typedef MN_SSL_METHOD *(*fn_TLS_server_method)(void);
 typedef MN_SSL_CTX *(*fn_SSL_CTX_new)(const MN_SSL_METHOD *);
 typedef void (*fn_SSL_CTX_free)(MN_SSL_CTX *);
 typedef MN_SSL *(*fn_SSL_new)(MN_SSL_CTX *);
 typedef void (*fn_SSL_free)(MN_SSL *);
 typedef int (*fn_SSL_set_fd)(MN_SSL *, int);
 typedef int (*fn_SSL_connect)(MN_SSL *);
+typedef int (*fn_SSL_accept)(MN_SSL *);
 typedef int (*fn_SSL_read)(MN_SSL *, void *, int);
 typedef int (*fn_SSL_write)(MN_SSL *, const void *, int);
 typedef int (*fn_SSL_shutdown)(MN_SSL *);
 typedef long (*fn_SSL_ctrl)(MN_SSL *, int, long, void *);
 typedef int (*fn_SSL_CTX_set_default_verify_paths)(MN_SSL_CTX *);
+/* v5.43.0 Da.8 — server-side TLS additions. PEM file loaders; the
+ * second argument 1 means SSL_FILETYPE_PEM. SSL_CTX_check_private_key
+ * verifies cert/key match. All optional — clients pre-v5.43.0 don't
+ * need these resolved to keep working. */
+typedef int (*fn_SSL_CTX_use_certificate_file)(MN_SSL_CTX *, const char *, int);
+typedef int (*fn_SSL_CTX_use_PrivateKey_file)(MN_SSL_CTX *, const char *, int);
+typedef int (*fn_SSL_CTX_check_private_key)(const MN_SSL_CTX *);
 
 /* OpenSSL constants */
 #define MN_SSL_CTRL_SET_TLSEXT_HOSTNAME 55
+#define MN_SSL_FILETYPE_PEM             1
 
 /* Dynamic OpenSSL state */
 static struct {
@@ -308,17 +318,22 @@ static struct {
     void *libcrypto;
 #endif
     fn_TLS_client_method    TLS_client_method;
+    fn_TLS_server_method    TLS_server_method;            /* v5.43.0 Da.8 */
     fn_SSL_CTX_new          SSL_CTX_new;
     fn_SSL_CTX_free         SSL_CTX_free;
     fn_SSL_new              SSL_new;
     fn_SSL_free             SSL_free;
     fn_SSL_set_fd           SSL_set_fd;
     fn_SSL_connect          SSL_connect;
+    fn_SSL_accept           SSL_accept;                   /* v5.43.0 Da.8 */
     fn_SSL_read             SSL_read;
     fn_SSL_write            SSL_write;
     fn_SSL_shutdown         SSL_shutdown;
     fn_SSL_ctrl             SSL_ctrl;
     fn_SSL_CTX_set_default_verify_paths SSL_CTX_set_default_verify_paths;
+    fn_SSL_CTX_use_certificate_file     SSL_CTX_use_certificate_file;  /* v5.43.0 Da.8 */
+    fn_SSL_CTX_use_PrivateKey_file      SSL_CTX_use_PrivateKey_file;   /* v5.43.0 Da.8 */
+    fn_SSL_CTX_check_private_key        SSL_CTX_check_private_key;     /* v5.43.0 Da.8 */
 } s_ssl = {0};
 
 /* v4.35.0: thread-safe SSL init via pthread_once / InitOnceExecuteOnce.
@@ -360,22 +375,31 @@ static void ssl_load_library_impl(void) {
 #endif
 
     SSL_SYM(TLS_client_method);
+    SSL_SYM(TLS_server_method);            /* v5.43.0 Da.8 — optional */
     SSL_SYM(SSL_CTX_new);
     SSL_SYM(SSL_CTX_free);
     SSL_SYM(SSL_new);
     SSL_SYM(SSL_free);
     SSL_SYM(SSL_set_fd);
     SSL_SYM(SSL_connect);
+    SSL_SYM(SSL_accept);                   /* v5.43.0 Da.8 — optional */
     SSL_SYM(SSL_read);
     SSL_SYM(SSL_write);
     SSL_SYM(SSL_shutdown);
     SSL_SYM(SSL_ctrl);
     SSL_SYM(SSL_CTX_set_default_verify_paths);
+    SSL_SYM(SSL_CTX_use_certificate_file); /* v5.43.0 Da.8 — optional */
+    SSL_SYM(SSL_CTX_use_PrivateKey_file);  /* v5.43.0 Da.8 — optional */
+    SSL_SYM(SSL_CTX_check_private_key);    /* v5.43.0 Da.8 — optional */
 
     #undef SSL_SYM
     #undef CRYPTO_SYM
 
-    /* Verify all required symbols loaded */
+    /* Verify all required symbols loaded. The v5.43.0 Da.8 server-side
+     * additions are intentionally NOT in the required-symbols gate —
+     * they're optional, callers check at use time. Pre-v5.43.0 client-
+     * only TLS keeps working on libssl builds without TLS_server_method
+     * (rare but possible on stripped libraries). */
     if (!s_ssl.TLS_client_method || !s_ssl.SSL_CTX_new || !s_ssl.SSL_CTX_free ||
         !s_ssl.SSL_new || !s_ssl.SSL_free || !s_ssl.SSL_set_fd ||
         !s_ssl.SSL_connect || !s_ssl.SSL_read || !s_ssl.SSL_write ||
@@ -480,11 +504,122 @@ MN_IO_EXPORT int64_t __mn_tls_write(void *tls_ctx, const void *buf, int64_t len)
 MN_IO_EXPORT void __mn_tls_close(void *tls_ctx) {
     if (!tls_ctx || !s_ssl.available) return;
     MnTlsCtx *tctx = (MnTlsCtx *)tls_ctx;
-    s_ssl.SSL_shutdown(tctx->ssl);
-    s_ssl.SSL_free(tctx->ssl);
-    s_ssl.SSL_CTX_free(tctx->ctx);
+    if (tctx->ssl) {
+        s_ssl.SSL_shutdown(tctx->ssl);
+        s_ssl.SSL_free(tctx->ssl);
+    }
+    /* v5.43.0 Da.8: server-accepted connections share their SSL_CTX
+     * with the listening MnTlsServerCtx and store ctx=NULL here. The
+     * shared ctx is freed via __mn_tls_server_ctx_free at node shutdown. */
+    if (tctx->ctx) s_ssl.SSL_CTX_free(tctx->ctx);
     free(tctx);
 }
+
+/* v5.43.0 Da.8 — server-side TLS additions.
+ *
+ * Server context is a SSL_CTX* loaded once at node_listen time and
+ * reused for every accepted connection. Unlike the client-side ctx
+ * (which lives bundled in MnTlsCtx for the lifetime of one connection),
+ * the server ctx outlives many connections.
+ *
+ * MnTlsServerCtx is the server-context wrapper. It owns the SSL_CTX*
+ * but no SSL* (the per-connection SSL is created at accept time and
+ * bundled into a regular MnTlsCtx so __mn_tls_read / _write / _close
+ * work uniformly across client and server connections). */
+
+typedef struct {
+    MN_SSL_CTX *ctx;
+} MnTlsServerCtx;
+
+MN_IO_EXPORT void *__mn_tls_server_ctx_new(const char *cert_path,
+                                            const char *key_path) {
+    if (!cert_path || !key_path) return NULL;
+    if (!s_ssl.available) {
+        if (ssl_load_library() < 0) return NULL;
+    }
+    /* Server-side dlopen symbols are optional; verify here, not in the
+     * load gate. A libssl build without TLS_server_method or PEM loaders
+     * means the user can't run a TLS listener but client TLS still works. */
+    if (!s_ssl.TLS_server_method || !s_ssl.SSL_CTX_use_certificate_file ||
+        !s_ssl.SSL_CTX_use_PrivateKey_file ||
+        !s_ssl.SSL_CTX_check_private_key) {
+        return NULL;
+    }
+
+    MN_SSL_CTX *ctx = s_ssl.SSL_CTX_new(s_ssl.TLS_server_method());
+    if (!ctx) return NULL;
+
+    if (s_ssl.SSL_CTX_use_certificate_file(ctx, cert_path,
+                                            MN_SSL_FILETYPE_PEM) != 1) {
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+    if (s_ssl.SSL_CTX_use_PrivateKey_file(ctx, key_path,
+                                           MN_SSL_FILETYPE_PEM) != 1) {
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+    if (s_ssl.SSL_CTX_check_private_key(ctx) != 1) {
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    MnTlsServerCtx *sctx = (MnTlsServerCtx *)calloc(1, sizeof(MnTlsServerCtx));
+    if (!sctx) {
+        s_ssl.SSL_CTX_free(ctx);
+        return NULL;
+    }
+    sctx->ctx = ctx;
+    return sctx;
+}
+
+MN_IO_EXPORT void __mn_tls_server_ctx_free(void *server_ctx) {
+    if (!server_ctx || !s_ssl.available) return;
+    MnTlsServerCtx *sctx = (MnTlsServerCtx *)server_ctx;
+    if (sctx->ctx) s_ssl.SSL_CTX_free(sctx->ctx);
+    free(sctx);
+}
+
+MN_IO_EXPORT void *__mn_tls_accept(int64_t fd, void *server_ctx) {
+    if (!server_ctx || !s_ssl.available || !s_ssl.SSL_accept) return NULL;
+    MnTlsServerCtx *sctx = (MnTlsServerCtx *)server_ctx;
+    if (!sctx->ctx) return NULL;
+
+    MN_SSL *ssl = s_ssl.SSL_new(sctx->ctx);
+    if (!ssl) return NULL;
+    s_ssl.SSL_set_fd(ssl, (int)fd);
+
+    if (s_ssl.SSL_accept(ssl) != 1) {
+        s_ssl.SSL_free(ssl);
+        return NULL;
+    }
+
+    /* Per-connection wrapper compatible with __mn_tls_read / _write /
+     * _close. ctx is set to NULL so __mn_tls_close does NOT free the
+     * shared server SSL_CTX — that lives in MnTlsServerCtx and is
+     * freed via __mn_tls_server_ctx_free. */
+    MnTlsCtx *tctx = (MnTlsCtx *)calloc(1, sizeof(MnTlsCtx));
+    if (!tctx) {
+        s_ssl.SSL_shutdown(ssl);
+        s_ssl.SSL_free(ssl);
+        return NULL;
+    }
+    tctx->ctx = NULL;
+    tctx->ssl = ssl;
+    return tctx;
+}
+
+/* v5.43.0 Da.8: server-accepted connections store ctx==NULL because the
+ * SSL_CTX is shared. Patch __mn_tls_close (above) to skip freeing NULL
+ * ctx — already correct: SSL_CTX_free(NULL) is a no-op per OpenSSL spec
+ * but s_ssl.SSL_CTX_free(NULL) might dereference. Actually we do skip
+ * it because the existing close calls SSL_CTX_free unconditionally; we
+ * fix that here:
+ *
+ *   was: s_ssl.SSL_CTX_free(tctx->ctx);
+ *   now: if (tctx->ctx) s_ssl.SSL_CTX_free(tctx->ctx);
+ *
+ * Apply this fix below. */
 
 /* =======================================================================
  * 3. File I/O (extended)
@@ -1005,6 +1140,17 @@ typedef void* (*fn_HMAC)(const void *evp_md, const void *key, int key_len,
                          const unsigned char *d, size_t n,
                          unsigned char *md, unsigned int *md_len);
 
+/* v5.39.0 Cr.* additions: SHA-3 / BLAKE2 (optional), HMAC streaming, CRYPTO_memcmp */
+typedef void* (*fn_EVP_sha3_256)(void);
+typedef void* (*fn_EVP_blake2b512)(void);
+typedef int   (*fn_CRYPTO_memcmp)(const void *a, const void *b, size_t n);
+typedef void* (*fn_HMAC_CTX_new)(void);
+typedef void  (*fn_HMAC_CTX_free)(void *ctx);
+typedef int   (*fn_HMAC_Init_ex)(void *ctx, const void *key, int len,
+                                 const void *md, void *impl);
+typedef int   (*fn_HMAC_Update)(void *ctx, const unsigned char *data, size_t len);
+typedef int   (*fn_HMAC_Final)(void *ctx, unsigned char *md, unsigned int *len);
+
 static struct {
     int loaded;
     int available;
@@ -1017,6 +1163,15 @@ static struct {
     fn_EVP_DigestUpdate   EVP_DigestUpdate;
     fn_EVP_DigestFinal_ex EVP_DigestFinal_ex;
     fn_HMAC               HMAC;
+    /* v5.39.0 — optional / new */
+    fn_EVP_sha3_256       EVP_sha3_256;       /* OpenSSL 1.1.1+ */
+    fn_EVP_blake2b512     EVP_blake2b512;     /* OpenSSL 1.1.0+ */
+    fn_CRYPTO_memcmp      CRYPTO_memcmp;      /* timing-safe compare */
+    fn_HMAC_CTX_new       HMAC_CTX_new;       /* legacy 1.1.x; works in 3.x */
+    fn_HMAC_CTX_free      HMAC_CTX_free;
+    fn_HMAC_Init_ex       HMAC_Init_ex;
+    fn_HMAC_Update        HMAC_Update;
+    fn_HMAC_Final         HMAC_Final;
 } s_evp = {0};
 
 static int evp_load(void) {
@@ -1047,6 +1202,16 @@ static int evp_load(void) {
     EVP_SYM(EVP_DigestUpdate);
     EVP_SYM(EVP_DigestFinal_ex);
     EVP_SYM(HMAC);
+
+    /* v5.39.0 — optional symbols. NULL is legitimate; callers gate. */
+    EVP_SYM(EVP_sha3_256);
+    EVP_SYM(EVP_blake2b512);
+    EVP_SYM(CRYPTO_memcmp);
+    EVP_SYM(HMAC_CTX_new);
+    EVP_SYM(HMAC_CTX_free);
+    EVP_SYM(HMAC_Init_ex);
+    EVP_SYM(HMAC_Update);
+    EVP_SYM(HMAC_Final);
 
     #undef EVP_SYM
 
@@ -1300,6 +1465,168 @@ MN_IO_EXPORT MnString __mn_random_bytes_str(int64_t n) {
     MnString result = __mn_str_from_parts(buf, n);
     free(buf);
     return result;
+}
+
+/* =======================================================================
+ * 6b. Crypto extensions (v5.39.0 Cr.* — appended for ABI stability).
+ *
+ * SHA-3-256, BLAKE2b: optional symbols; surface empty MnString when
+ * the underlying libcrypto is too old (pre-1.1.0 for BLAKE2b,
+ * pre-1.1.1 for SHA-3). HMAC-SHA512 reuses the existing HMAC()
+ * one-shot. constant_time_eq prefers OpenSSL CRYPTO_memcmp; falls
+ * back to a volatile-masked loop. Streaming digest + HMAC contexts
+ * cast EVP_MD_CTX* / HMAC_CTX* to int64_t handles. Caller MUST call
+ * the matching _finalize exactly once (frees ctx); double-finalize
+ * or finalize-after-update-error returns empty MnString.
+ *
+ * Algo IDs (md_ctx + hmac_ctx):
+ *   1 = SHA-256
+ *   2 = SHA-512
+ *   3 = SHA-3-256  (md_ctx only; HMAC stops at SHA-512 for v5.39.0)
+ *   4 = BLAKE2b-512 (md_ctx only)
+ * ======================================================================= */
+
+MN_IO_EXPORT MnString __mn_sha3_256_str(MnString data) {
+    if (evp_load() < 0) return __mn_str_empty();
+    if (!s_evp.EVP_sha3_256) return __mn_str_empty();
+    return evp_hash(data, s_evp.EVP_sha3_256, 32);
+}
+
+MN_IO_EXPORT MnString __mn_blake2b_str(MnString data) {
+    if (evp_load() < 0) return __mn_str_empty();
+    if (!s_evp.EVP_blake2b512) return __mn_str_empty();
+    return evp_hash(data, s_evp.EVP_blake2b512, 64);
+}
+
+MN_IO_EXPORT MnString __mn_hmac_sha512_str(MnString key, MnString data) {
+    if (evp_load() < 0 || !s_evp.HMAC) return __mn_str_empty();
+
+    unsigned char md[64];
+    unsigned int md_len = 0;
+
+    void *result = s_evp.HMAC(s_evp.EVP_sha512(), key.data, (int)key.len,
+                              (const unsigned char *)data.data, (size_t)data.len,
+                              md, &md_len);
+    if (!result || md_len != 64) return __mn_str_empty();
+
+    return __mn_str_from_parts((const char *)md, 64);
+}
+
+/* Returns 1 if equal (length and content), 0 otherwise. Length
+ * comparison is not constant-time, but for MAC verification both
+ * sides have the algorithm's known output length. */
+MN_IO_EXPORT int64_t __mn_constant_time_eq(MnString a, MnString b) {
+    if (a.len != b.len) return 0;
+    if (a.len == 0) return 1;
+
+    if (evp_load() == 0 && s_evp.CRYPTO_memcmp) {
+        return s_evp.CRYPTO_memcmp(a.data, b.data, (size_t)a.len) == 0 ? 1 : 0;
+    }
+
+    /* Fallback: volatile-masked loop. Aggregates differences without
+     * branching on byte values; the volatile sink discourages the
+     * optimizer from short-circuiting. */
+    volatile unsigned char diff = 0;
+    const unsigned char *pa = (const unsigned char *)a.data;
+    const unsigned char *pb = (const unsigned char *)b.data;
+    uint64_t n = a.len;
+    for (uint64_t i = 0; i < n; i++) {
+        diff = (unsigned char)(diff | (unsigned char)(pa[i] ^ pb[i]));
+    }
+    return diff == 0 ? 1 : 0;
+}
+
+static void *evp_md_for_algo(int64_t algo_id) {
+    switch (algo_id) {
+        case 1: return s_evp.EVP_sha256 ? s_evp.EVP_sha256() : NULL;
+        case 2: return s_evp.EVP_sha512 ? s_evp.EVP_sha512() : NULL;
+        case 3: return s_evp.EVP_sha3_256 ? s_evp.EVP_sha3_256() : NULL;
+        case 4: return s_evp.EVP_blake2b512 ? s_evp.EVP_blake2b512() : NULL;
+        default: return NULL;
+    }
+}
+
+MN_IO_EXPORT int64_t __mn_md_ctx_new(int64_t algo_id) {
+    if (evp_load() < 0) return 0;
+    void *md_type = evp_md_for_algo(algo_id);
+    if (!md_type) return 0;
+
+    void *ctx = s_evp.EVP_MD_CTX_new();
+    if (!ctx) return 0;
+
+    if (s_evp.EVP_DigestInit_ex(ctx, md_type, NULL) != 1) {
+        s_evp.EVP_MD_CTX_free(ctx);
+        return 0;
+    }
+    return (int64_t)(intptr_t)ctx;
+}
+
+MN_IO_EXPORT int64_t __mn_md_ctx_update(int64_t handle, MnString chunk) {
+    if (handle == 0) return 0;
+    if (evp_load() < 0) return 0;
+    void *ctx = (void *)(intptr_t)handle;
+    if (chunk.len == 0) return 1;
+    return s_evp.EVP_DigestUpdate(ctx, chunk.data, (size_t)chunk.len) == 1 ? 1 : 0;
+}
+
+MN_IO_EXPORT MnString __mn_md_ctx_finalize(int64_t handle) {
+    if (handle == 0) return __mn_str_empty();
+    if (evp_load() < 0) return __mn_str_empty();
+    void *ctx = (void *)(intptr_t)handle;
+
+    unsigned char md[64];
+    unsigned int md_len = 0;
+    int ok = s_evp.EVP_DigestFinal_ex(ctx, md, &md_len);
+    s_evp.EVP_MD_CTX_free(ctx);  /* always free, even on error */
+    if (!ok) return __mn_str_empty();
+    return __mn_str_from_parts((const char *)md, (int64_t)md_len);
+}
+
+MN_IO_EXPORT int64_t __mn_hmac_ctx_new(int64_t algo_id, MnString key) {
+    if (evp_load() < 0) return 0;
+    if (!s_evp.HMAC_CTX_new || !s_evp.HMAC_CTX_free ||
+        !s_evp.HMAC_Init_ex) return 0;
+
+    /* HMAC streaming supports SHA-256 and SHA-512 in v5.39.0. */
+    void *md_type = NULL;
+    switch (algo_id) {
+        case 1: md_type = s_evp.EVP_sha256 ? s_evp.EVP_sha256() : NULL; break;
+        case 2: md_type = s_evp.EVP_sha512 ? s_evp.EVP_sha512() : NULL; break;
+        default: return 0;
+    }
+    if (!md_type) return 0;
+
+    void *ctx = s_evp.HMAC_CTX_new();
+    if (!ctx) return 0;
+
+    if (s_evp.HMAC_Init_ex(ctx, key.data, (int)key.len, md_type, NULL) != 1) {
+        s_evp.HMAC_CTX_free(ctx);
+        return 0;
+    }
+    return (int64_t)(intptr_t)ctx;
+}
+
+MN_IO_EXPORT int64_t __mn_hmac_ctx_update(int64_t handle, MnString chunk) {
+    if (handle == 0) return 0;
+    if (evp_load() < 0 || !s_evp.HMAC_Update) return 0;
+    void *ctx = (void *)(intptr_t)handle;
+    if (chunk.len == 0) return 1;
+    return s_evp.HMAC_Update(ctx, (const unsigned char *)chunk.data,
+                             (size_t)chunk.len) == 1 ? 1 : 0;
+}
+
+MN_IO_EXPORT MnString __mn_hmac_ctx_finalize(int64_t handle) {
+    if (handle == 0) return __mn_str_empty();
+    if (evp_load() < 0 || !s_evp.HMAC_Final || !s_evp.HMAC_CTX_free)
+        return __mn_str_empty();
+    void *ctx = (void *)(intptr_t)handle;
+
+    unsigned char md[64];
+    unsigned int md_len = 0;
+    int ok = s_evp.HMAC_Final(ctx, md, &md_len);
+    s_evp.HMAC_CTX_free(ctx);  /* always free */
+    if (!ok) return __mn_str_empty();
+    return __mn_str_from_parts((const char *)md, (int64_t)md_len);
 }
 
 /* =======================================================================

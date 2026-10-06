@@ -1,0 +1,102 @@
+// v5.39.0 Cr.* RFC corpus.
+//
+// Known-answer tests against authoritative vectors:
+//   - RFC 6234 Appendix B: SHA-256 / SHA-512
+//   - FIPS 202 Appendix A: SHA-3-256
+//   - RFC 7693 Appendix A: BLAKE2b-512
+//   - RFC 4231: HMAC-SHA256 + HMAC-SHA512
+//
+// Vectors imported byte-for-byte; do not modify without citing the
+// updated RFC and verifying against an independent reference (Python
+// hashlib / hmac and `openssl dgst`).
+//
+// Mapanare grammar requires single-line argument lists; expected
+// values are bound to local variables before each check.
+
+fn check(label: String, got: String, expected: String, fails_in: Int) -> Int {
+    si got != expected {
+        print("FAIL " + label)
+        print("  got:      " + got)
+        print("  expected: " + expected)
+        da fails_in + 1
+    }
+    da fails_in
+}
+
+fn key_from_hex(label: String, hex_key: String, fails_in: Int) -> String {
+    pon r: Result<String, CryptoError> = hex_decode(hex_key)
+    match r {
+        Ok(k) => { da k },
+        Err(_e) => {
+            print("FAIL hex_decode " + label)
+            da ""
+        }
+    }
+}
+
+fn main() -> Int {
+    pon mut fails: Int = 0
+
+    // ---- RFC 6234 SHA-256 ----
+    pon e_sha256_abc: String = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    fails = check("rfc6234 sha256(abc)", sha256("abc"), e_sha256_abc, fails)
+
+    pon e_sha256_empty: String = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    fails = check("rfc6234 sha256(empty)", sha256(""), e_sha256_empty, fails)
+
+    pon m56: String = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+    pon e_sha256_56: String = "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+    fails = check("rfc6234 sha256(56-byte)", sha256(m56), e_sha256_56, fails)
+
+    // ---- RFC 6234 SHA-512 ----
+    pon e_sha512_abc: String = "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+    fails = check("rfc6234 sha512(abc)", sha512("abc"), e_sha512_abc, fails)
+
+    pon e_sha512_empty: String = "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
+    fails = check("rfc6234 sha512(empty)", sha512(""), e_sha512_empty, fails)
+
+    // ---- FIPS 202 SHA-3-256 ----
+    pon e_sha3_abc: String = "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"
+    fails = check("fips202 sha3_256(abc)", sha3_256("abc"), e_sha3_abc, fails)
+
+    pon e_sha3_empty: String = "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"
+    fails = check("fips202 sha3_256(empty)", sha3_256(""), e_sha3_empty, fails)
+
+    // ---- RFC 7693 BLAKE2b-512 ----
+    pon e_b2_abc: String = "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923"
+    fails = check("rfc7693 blake2b(abc)", blake2b("abc"), e_b2_abc, fails)
+
+    // ---- RFC 4231 HMAC tests ----
+    // Test 1: key=20*0x0b, data="Hi There"
+    pon k1: String = key_from_hex("t1", "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b", fails)
+    pon e_h256_t1: String = "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+    fails = check("rfc4231 t1 hmac_sha256", hmac_sha256(k1, "Hi There"), e_h256_t1, fails)
+    pon e_h512_t1: String = "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854"
+    fails = check("rfc4231 t1 hmac_sha512", hmac_sha512(k1, "Hi There"), e_h512_t1, fails)
+
+    // Test 2: key="Jefe", data="what do ya want for nothing?"
+    pon e_h256_t2: String = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+    fails = check("rfc4231 t2 hmac_sha256", hmac_sha256("Jefe", "what do ya want for nothing?"), e_h256_t2, fails)
+    pon e_h512_t2: String = "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737"
+    fails = check("rfc4231 t2 hmac_sha512", hmac_sha512("Jefe", "what do ya want for nothing?"), e_h512_t2, fails)
+
+    // Test 4: key=hex 0102..0019 (25 bytes), data=50*0xcd
+    pon k4: String = key_from_hex("t4 key", "0102030405060708090a0b0c0d0e0f10111213141516171819", fails)
+    pon d4: String = key_from_hex("t4 data", "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd", fails)
+    pon e_h256_t4: String = "82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b"
+    fails = check("rfc4231 t4 hmac_sha256", hmac_sha256(k4, d4), e_h256_t4, fails)
+    pon e_h512_t4: String = "b0ba465637458c6990e5a8c5f61d4af7e576d97ff94b872de76f8050361ee3dba91ca5c11aa25eb4d679275cc5788063a5f19741120c4f2de2adebeb10a298dd"
+    fails = check("rfc4231 t4 hmac_sha512", hmac_sha512(k4, d4), e_h512_t4, fails)
+
+    // Test 5: key=20*0x0c, data="Test With Truncation"
+    pon k5: String = key_from_hex("t5", "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c", fails)
+    pon e_h256_t5: String = "a3b6167473100ee06e0c796c2955552bfa6f7c0a6a8aef8b93f860aab0cd20c5"
+    fails = check("rfc4231 t5 hmac_sha256", hmac_sha256(k5, "Test With Truncation"), e_h256_t5, fails)
+
+    si fails == 0 {
+        print("PASSED")
+        da 0
+    }
+    print("FAILED")
+    da 1
+}

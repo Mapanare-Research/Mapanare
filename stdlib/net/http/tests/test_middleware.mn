@@ -1,0 +1,118 @@
+// stdlib/net/http/tests/test_middleware.mn — Ht.2 middleware registration
+// table behavior tests.
+//
+// Exercises:
+//   - mw_logger registration is a no-op on outcome (only side-effects)
+//   - mw_body_limit short-circuits to 413 when body exceeds the limit
+//   - mw_body_limit passes through when body fits
+//   - mw_request_id mints a 32-char hex id when none provided
+//   - mw_request_id is a no-op when an id is already present
+//   - mw_cors injects the three Access-Control-* response headers
+//   - chain order preserved (Logger before BodyLimit; BodyLimit short-circuit
+//     skips RequestId mint)
+
+fn t_body_limit_short_circuits() -> Bool {
+    let mut a: App = new_app()
+    a = app_use(a, mw_body_limit(8))
+    let req: Request = new_request("POST", "/upload", "this body is way too long for the limit")
+    let out: MwOutcome = app_run_before(a, req)
+    match out {
+        MwContinue(_) => { return false },
+        MwShortCircuit(r) => {
+            if response_status_code(r) == 413 { return true }
+            return false
+        }
+    }
+}
+
+fn t_body_limit_passes_through() -> Bool {
+    let mut a: App = new_app()
+    a = app_use(a, mw_body_limit(1024))
+    let req: Request = new_request("POST", "/upload", "small body")
+    let out: MwOutcome = app_run_before(a, req)
+    match out {
+        MwContinue(req2) => {
+            if req2.body == "small body" { return true }
+            return false
+        },
+        MwShortCircuit(_) => { return false }
+    }
+}
+
+fn t_request_id_minted() -> Bool {
+    let mut a: App = new_app()
+    a = app_use(a, mw_request_id())
+    let req: Request = new_request("GET", "/", "")
+    let out: MwOutcome = app_run_before(a, req)
+    match out {
+        MwContinue(req2) => {
+            // Hex of 16 random bytes => 32-char id.
+            if len(req2.request_id) == 32 { return true }
+            return false
+        },
+        MwShortCircuit(_) => { return false }
+    }
+}
+
+fn t_request_id_preserved_when_present() -> Bool {
+    let mut a: App = new_app()
+    a = app_use(a, mw_request_id())
+    let mut req: Request = new_request("GET", "/", "")
+    req = request_with_request_id(req, "preserved-id")
+    let out: MwOutcome = app_run_before(a, req)
+    match out {
+        MwContinue(req2) => {
+            if req2.request_id == "preserved-id" { return true }
+            return false
+        },
+        MwShortCircuit(_) => { return false }
+    }
+}
+
+fn t_cors_after_injects_headers() -> Bool {
+    let mut a: App = new_app()
+    a = app_use(a, mw_cors("*", "GET, POST", "Content-Type"))
+    let req: Request = new_request("GET", "/", "")
+    let resp: Response = response_text(200, "hi")
+    let out: Response = app_run_after(a, req, resp)
+    if response_get_header(out, "Access-Control-Allow-Origin") != "*" { return false }
+    if response_get_header(out, "Access-Control-Allow-Methods") != "GET, POST" { return false }
+    if response_get_header(out, "Access-Control-Allow-Headers") != "Content-Type" { return false }
+    return true
+}
+
+fn t_request_id_after_echoes() -> Bool {
+    let mut a: App = new_app()
+    a = app_use(a, mw_request_id())
+    let mut req: Request = new_request("GET", "/", "")
+    req = request_with_request_id(req, "rid-abc-123")
+    let resp: Response = response_text(200, "hi")
+    let out: Response = app_run_after(a, req, resp)
+    if response_get_header(out, "X-Request-Id") == "rid-abc-123" { return true }
+    return false
+}
+
+fn run_one(name: String, ok: Bool) -> Bool {
+    if ok {
+        print(name + " ok")
+        return true
+    }
+    print(name + " FAIL")
+    return false
+}
+
+fn main() -> Int {
+    let mut all_ok: Bool = true
+    if run_one("t_body_limit_short_circuits", t_body_limit_short_circuits()) == false { all_ok = false }
+    if run_one("t_body_limit_passes_through", t_body_limit_passes_through()) == false { all_ok = false }
+    if run_one("t_request_id_minted", t_request_id_minted()) == false { all_ok = false }
+    if run_one("t_request_id_preserved_when_present", t_request_id_preserved_when_present()) == false { all_ok = false }
+    if run_one("t_cors_after_injects_headers", t_cors_after_injects_headers()) == false { all_ok = false }
+    if run_one("t_request_id_after_echoes", t_request_id_after_echoes()) == false { all_ok = false }
+    if all_ok {
+        print("test_middleware PASSED")
+        return 0
+    }
+    print("test_middleware FAILED")
+    return 1
+}

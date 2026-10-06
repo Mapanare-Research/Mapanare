@@ -696,9 +696,22 @@ def bootstrap_compile(mn_path: str | pathlib.Path) -> str:
     source = mn_path.read_text(encoding="utf-8")
     # Use the multi-module compiler for self-hosted sources
     if "import self::" in source or str(mn_path).endswith("mnc_all.mn"):
+        from mapanare.modules import ModuleResolver
         from mapanare.multi_module import compile_multi_module_mir
+        from mapanare.pkg_discovery import (
+            PackageDiscoveryError,
+            build_resolver_for_source,
+        )
 
-        return compile_multi_module_mir(source, str(mn_path), opt_level=2)
+        # v5.44.1 Ps.11.A: build a package-aware resolver so a project
+        # under diff with `mapanare.toml` + `mn_modules/` resolves
+        # imports identically to `mnc emit-llvm`. Tolerant fallback —
+        # diff tooling must keep working on broken lockfiles.
+        try:
+            resolver = build_resolver_for_source(str(mn_path))
+        except PackageDiscoveryError:
+            resolver = ModuleResolver()
+        return compile_multi_module_mir(source, str(mn_path), opt_level=2, resolver=resolver)
     else:
         # Use the CLI-level compile path which handles all wiring
         with tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f:
@@ -727,16 +740,19 @@ def bootstrap_compile(mn_path: str | pathlib.Path) -> str:
             pathlib.Path(out_path).unlink(missing_ok=True)
 
 
-def stage1_compile(mn_path: str | pathlib.Path, stage1_bin: str | pathlib.Path) -> str | None:
+def stage1_compile(
+    mn_path: str | pathlib.Path, stage1_bin: str | pathlib.Path, *, use_cache: bool = True
+) -> str | None:
     """Compile a .mn file via mnc-stage1, return LLVM IR text or None on failure.
 
-    Also checks for pre-generated .ll files next to the .mn file (for cross-platform use).
+    Cached IR is supported for offline comparisons. Validation callers must
+    pass use_cache=False so stale artifacts cannot hide or invent regressions.
     """
     mn_path = pathlib.Path(mn_path)
 
     # Check for pre-generated stage1 IR file: tests/golden/03_function.stage1.ll
     stage1_ll = mn_path.with_suffix(".stage1.ll")
-    if stage1_ll.exists():
+    if use_cache and stage1_ll.exists():
         return stage1_ll.read_text(encoding="utf-8")
 
     try:
@@ -1740,7 +1756,7 @@ def cmd_golden(args: argparse.Namespace) -> int:
         print(f"  {name}...", end=" ", flush=True)
 
         # Compile fresh through stage1
-        ir = stage1_compile(mn_path, stage1)
+        ir = stage1_compile(mn_path, stage1, use_cache=False)
         if ir is None:
             diag = _diagnose_compile_fail(stage1, mn_path)
             crash = diag.get("crash", "unknown")

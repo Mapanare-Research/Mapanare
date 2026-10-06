@@ -128,6 +128,19 @@ typedef int    (*fn_sqlite3_finalize)(mn_sqlite3_stmt *);
 typedef const char *(*fn_sqlite3_errmsg)(mn_sqlite3 *);
 typedef void   (*fn_sqlite3_free)(void *);
 
+/* v5.35.0 Sq.7 additions — version check, blob support, statement
+ * cache reuse (reset), named-parameter binding, change tracking.
+ * All present in the sqlite3 v3.7.0+ API surface (15 years stable). */
+typedef const char *(*fn_sqlite3_libversion)(void);
+typedef int    (*fn_sqlite3_bind_blob)(mn_sqlite3_stmt *, int, const void *, int, void *);
+typedef const void *(*fn_sqlite3_column_blob)(mn_sqlite3_stmt *, int);
+typedef int    (*fn_sqlite3_column_bytes)(mn_sqlite3_stmt *, int);
+typedef int    (*fn_sqlite3_reset)(mn_sqlite3_stmt *);
+typedef int    (*fn_sqlite3_bind_parameter_index)(mn_sqlite3_stmt *, const char *);
+typedef int    (*fn_sqlite3_changes)(mn_sqlite3 *);
+typedef int64_t (*fn_sqlite3_last_insert_rowid)(mn_sqlite3 *);
+typedef int    (*fn_sqlite3_extended_errcode)(mn_sqlite3 *);
+
 /* Dynamic SQLite3 state */
 static struct {
     int loaded;
@@ -151,6 +164,16 @@ static struct {
     fn_sqlite3_finalize       p_finalize;
     fn_sqlite3_errmsg         p_errmsg;
     fn_sqlite3_free           p_free;
+    /* v5.35.0 Sq.7 additions */
+    fn_sqlite3_libversion           p_libversion;
+    fn_sqlite3_bind_blob            p_bind_blob;
+    fn_sqlite3_column_blob          p_column_blob;
+    fn_sqlite3_column_bytes         p_column_bytes;
+    fn_sqlite3_reset                p_reset;
+    fn_sqlite3_bind_parameter_index p_bind_parameter_index;
+    fn_sqlite3_changes              p_changes;
+    fn_sqlite3_last_insert_rowid    p_last_insert_rowid;
+    fn_sqlite3_extended_errcode     p_extended_errcode;
 } s_sqlite = {0};
 
 static MnHandleTable s_sqlite_dbs  = {{0}};
@@ -195,6 +218,22 @@ static int sqlite3_load(void) {
     SQLITE_SYM(p_finalize,       sqlite3_finalize);
     SQLITE_SYM(p_errmsg,         sqlite3_errmsg);
     SQLITE_SYM(p_free,           sqlite3_free);
+
+    /* v5.35.0 Sq.7 — these are optional at load time. The Sq.7
+     * fast-path checks each pointer at call time and returns a
+     * distinct error code if the symbol was missing (library too
+     * old / stripped). The "required" symbols list below is
+     * unchanged so existing v5.34.x callers see no behavior
+     * change. */
+    SQLITE_SYM(p_libversion,           sqlite3_libversion);
+    SQLITE_SYM(p_bind_blob,            sqlite3_bind_blob);
+    SQLITE_SYM(p_column_blob,          sqlite3_column_blob);
+    SQLITE_SYM(p_column_bytes,         sqlite3_column_bytes);
+    SQLITE_SYM(p_reset,                sqlite3_reset);
+    SQLITE_SYM(p_bind_parameter_index, sqlite3_bind_parameter_index);
+    SQLITE_SYM(p_changes,              sqlite3_changes);
+    SQLITE_SYM(p_last_insert_rowid,    sqlite3_last_insert_rowid);
+    SQLITE_SYM(p_extended_errcode,     sqlite3_extended_errcode);
 
     #undef SQLITE_SYM
 
@@ -374,6 +413,116 @@ MN_DB_EXPORT MnString __mn_sqlite3_errmsg(int64_t handle) {
     const char *msg = s_sqlite.p_errmsg(db);
     if (!msg) return __mn_str_empty();
     return __mn_str_from_cstr(msg);
+}
+
+/* v5.35.0 Sq.7 — additions for the new stdlib/sql/sqlite/ surface.
+ * Each wrapper guards on s_sqlite.available AND on the specific
+ * function pointer being non-NULL (the Sq.* surface treats a
+ * missing optional symbol as load-fail rather than masking it). */
+
+/* Get the runtime-loaded sqlite3 library version string (e.g.
+ * "3.31.1"). Empty string if the library wasn't loaded or is
+ * too old to expose sqlite3_libversion (pre-3.0). The Sq.1
+ * Database.open path parses this and rejects libraries below
+ * 3.7.0 with SqlError::VersionTooOld. */
+MN_DB_EXPORT MnString __mn_sqlite3_libversion(void) {
+    if (!s_sqlite.available) {
+        if (sqlite3_load() < 0) return __mn_str_empty();
+    }
+    if (!s_sqlite.p_libversion) return __mn_str_empty();
+    const char *v = s_sqlite.p_libversion();
+    if (!v) return __mn_str_empty();
+    return __mn_str_from_cstr(v);
+}
+
+/* Bind a blob to a prepared statement. The Mapanare surface carries
+ * blobs as MnString since both share the {ptr, len} layout and
+ * sqlite treats them as opaque byte buffers. SQLITE_TRANSIENT tells
+ * sqlite to copy the bytes immediately so the caller can free or
+ * reuse the source buffer. Returns 0 on success, sqlite rc on
+ * failure, -1 if the symbol wasn't resolved. */
+MN_DB_EXPORT int64_t __mn_sqlite3_bind_blob(int64_t stmt, int64_t idx, MnString val) {
+    mn_sqlite3_stmt *s = (mn_sqlite3_stmt *)handle_get(&s_sqlite_stmts, stmt);
+    if (!s || !s_sqlite.available || !s_sqlite.p_bind_blob) return -1;
+    return (int64_t)s_sqlite.p_bind_blob(s, (int)idx, val.data, (int)val.len, MN_SQLITE_TRANSIENT);
+}
+
+/* Read a blob column. Returns the bytes as an MnString (length-
+ * prefixed; raw bytes, no encoding). Empty string if the column
+ * is NULL or the symbol wasn't resolved. The Sq.3 Value::Blob
+ * variant carries this through to the caller. */
+MN_DB_EXPORT MnString __mn_sqlite3_column_blob(int64_t stmt, int64_t idx) {
+    mn_sqlite3_stmt *s = (mn_sqlite3_stmt *)handle_get(&s_sqlite_stmts, stmt);
+    if (!s || !s_sqlite.available || !s_sqlite.p_column_blob || !s_sqlite.p_column_bytes) {
+        return __mn_str_empty();
+    }
+    /* sqlite3 docs: call sqlite3_column_bytes BEFORE sqlite3_column_blob
+     * is most efficient when the column is a TEXT (forces conversion
+     * once); for actual BLOBs the order doesn't matter, but we follow
+     * the docs' pattern to keep behavior consistent across types. */
+    int n = s_sqlite.p_column_bytes(s, (int)idx);
+    if (n <= 0) return __mn_str_empty();
+    const void *data = s_sqlite.p_column_blob(s, (int)idx);
+    if (!data) return __mn_str_empty();
+    return __mn_str_from_parts((const char *)data, (int64_t)n);
+}
+
+/* Reset a prepared statement back to its initial state so it can
+ * be re-bound and re-executed. Used by the Sq.5 statement cache
+ * when handing out a previously-prepared statement on a cache hit.
+ * Does NOT clear bound parameters (sqlite3_reset preserves them);
+ * the Sq.5 cache caller invokes reset followed by re-binding all
+ * params. Returns 0 on success, sqlite rc on failure, -1 if not
+ * resolved. */
+MN_DB_EXPORT int64_t __mn_sqlite3_reset(int64_t stmt) {
+    mn_sqlite3_stmt *s = (mn_sqlite3_stmt *)handle_get(&s_sqlite_stmts, stmt);
+    if (!s || !s_sqlite.available || !s_sqlite.p_reset) return -1;
+    return (int64_t)s_sqlite.p_reset(s);
+}
+
+/* Resolve a named parameter (e.g. ":id", "@name", "$value") to its
+ * 1-based index in the prepared statement. Returns 0 if the name
+ * is not bound — sqlite uses 0 as the not-found sentinel. The Sq.2
+ * bind_named method maps this 0 to SqlError::BadSql with a clear
+ * "no such parameter: NAME" message. */
+MN_DB_EXPORT int64_t __mn_sqlite3_bind_parameter_index(int64_t stmt, MnString name) {
+    mn_sqlite3_stmt *s = (mn_sqlite3_stmt *)handle_get(&s_sqlite_stmts, stmt);
+    if (!s || !s_sqlite.available || !s_sqlite.p_bind_parameter_index) return 0;
+    char *cname = mnstr_to_cstr(name);
+    if (!cname) return 0;
+    int idx = s_sqlite.p_bind_parameter_index(s, cname);
+    free(cname);
+    return (int64_t)idx;
+}
+
+/* Number of rows modified by the most recent INSERT, UPDATE, or
+ * DELETE on this connection. For SELECT, returns the value as of
+ * the previous data-modifying statement. Used by Database.execute
+ * to return rows-affected from the .mn surface. */
+MN_DB_EXPORT int64_t __mn_sqlite3_changes(int64_t handle) {
+    mn_sqlite3 *db = (mn_sqlite3 *)handle_get(&s_sqlite_dbs, handle);
+    if (!db || !s_sqlite.available || !s_sqlite.p_changes) return 0;
+    return (int64_t)s_sqlite.p_changes(db);
+}
+
+/* ROWID of the most recent successful INSERT into a rowid table
+ * on this connection. 0 if no INSERT has occurred. */
+MN_DB_EXPORT int64_t __mn_sqlite3_last_insert_rowid(int64_t handle) {
+    mn_sqlite3 *db = (mn_sqlite3 *)handle_get(&s_sqlite_dbs, handle);
+    if (!db || !s_sqlite.available || !s_sqlite.p_last_insert_rowid) return 0;
+    return s_sqlite.p_last_insert_rowid(db);
+}
+
+/* Extended error code for the most recent error on this connection.
+ * Sqlite's primary rc is coarse (e.g. SQLITE_CONSTRAINT = 19); the
+ * extended code distinguishes specific constraint classes
+ * (SQLITE_CONSTRAINT_UNIQUE = 2067, SQLITE_CONSTRAINT_NOTNULL = 1299,
+ * SQLITE_BUSY = 5, etc.). The Sq.1 from_sqlite_rc helper uses this
+ * to map sqlite errors to specific SqlError variants. */
+MN_DB_EXPORT int64_t __mn_sqlite3_extended_errcode(int64_t handle) {
+    mn_sqlite3 *db = (mn_sqlite3 *)handle_get(&s_sqlite_dbs, handle);
+    if (!db || !s_sqlite.available || !s_sqlite.p_extended_errcode) return 0;
+    return (int64_t)s_sqlite.p_extended_errcode(db);
 }
 
 /* =======================================================================

@@ -157,6 +157,278 @@ _STMT_BLOCK_PREFIXES = ("pub ", "async ", "extern ")
 _CONTINUATION_PREFIXES = ("else", "sino")
 
 
+# v5.48.0 Te.3.D.3: stmt keywords accepted as match-arm bodies in
+# the new colon shorthand (``Pat => return x``, ``Pat => break``).
+# Mirrors the parser's ``_ARM_STMT_KEYWORDS``.
+_ARM_STMT_KEYWORDS_FMT = (
+    "return",
+    "da",
+    "break",
+    "sal",
+    "continue",
+    "sigue",
+    "pass",
+)
+
+
+def _mask_strings(line: str) -> str:
+    """Return a shadow copy of ``line`` with string / char literals and
+    line comments masked to spaces, so brace / colon scanners ignore
+    content inside them. Used by the v5.48.0 one-line migration
+    helpers.
+    """
+    out = list(line)
+    in_str = False
+    in_char = False
+    n = len(line)
+    i = 0
+    while i < n:
+        ch = line[i]
+        if in_str:
+            out[i] = " "
+            if ch == "\\" and i + 1 < n:
+                out[i + 1] = " "
+                i += 2
+                continue
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if in_char:
+            out[i] = " "
+            if ch == "\\" and i + 1 < n:
+                out[i + 1] = " "
+                i += 2
+                continue
+            if ch == "'":
+                in_char = False
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and line[i + 1] == "/":
+            for j in range(i, n):
+                out[j] = " "
+            break
+        if ch == '"':
+            out[i] = " "
+            in_str = True
+            i += 1
+            continue
+        if ch == "'":
+            out[i] = " "
+            in_char = True
+            i += 1
+            continue
+        i += 1
+    return "".join(out)
+
+
+def _find_matching_close(shadow: str, open_idx: int) -> int:
+    """Given an opening ``{`` at ``shadow[open_idx]``, return the index
+    of the matching ``}`` at the same depth, or ``-1`` if none on the
+    same string. ``shadow`` must be string-masked (see ``_mask_strings``).
+    """
+    depth = 1
+    n = len(shadow)
+    i = open_idx + 1
+    while i < n:
+        c = shadow[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+
+def _migrate_one_line_arm_body(content: str) -> str:
+    """Rewrite ``Pat => { body }`` arm bodies to compact form.
+
+    v5.48.0 Te.3.D.3. Operates on a single line of brace-form source.
+    Produces:
+
+    - ``Pat => { return x }`` -> ``Pat => return x``
+    - ``Pat => { da x }`` -> ``Pat => da x``
+    - ``Pat => { break }`` -> ``Pat => break``
+    - ``Pat => { print(x) }`` -> ``Pat => print(x)``
+    - ``Pat => { k = 1 }`` -> ``Pat => k = 1``
+
+    Skips when:
+
+    - body contains a top-level ``;`` (multi-stmt, no shorthand)
+    - body itself contains a nested ``{`` block (would break parse)
+    - body is empty (``Pat => {}`` — no shorthand exists)
+
+    Trailing ``,`` (sibling separator) is preserved. Leading whitespace
+    is preserved. Idempotent: a line already in shorthand form is
+    returned unchanged.
+    """
+    if "=>" not in content or "{" not in content:
+        return content
+    shadow = _mask_strings(content)
+
+    # Walk left-to-right to find ``=> { body }`` segments. Each match
+    # is replaced from the position of ``{`` through the matching ``}``
+    # (and the leading space before ``{``).
+    edits: list[tuple[int, int, str]] = []
+    pos = 0
+    n = len(shadow)
+    while True:
+        arrow = shadow.find("=>", pos)
+        if arrow < 0:
+            break
+        # advance past `=>`
+        body_pos = arrow + 2
+        # skip whitespace
+        while body_pos < n and shadow[body_pos] in (" ", "\t"):
+            body_pos += 1
+        if body_pos >= n or shadow[body_pos] != "{":
+            pos = arrow + 2
+            continue
+        close = _find_matching_close(shadow, body_pos)
+        if close < 0:
+            pos = arrow + 2
+            continue
+        # Body is content[body_pos+1 : close], stripped.
+        body = content[body_pos + 1 : close].strip()
+        # Skip empty body — keep brace form.
+        if not body:
+            pos = close + 1
+            continue
+        # Skip nested brace (a sub-block inside the arm body — too
+        # risky to flatten textually).
+        body_shadow = shadow[body_pos + 1 : close]
+        if "{" in body_shadow or "}" in body_shadow:
+            pos = close + 1
+            continue
+        # v5.50.0 Te.3.E.1: ``;``-bearing multi-stmt bodies are
+        # accepted. The parser's ``_rewrite_arm_stmt_shorthand``
+        # re-wraps them in ``{ }`` on round-trip via the depth-0
+        # ``;`` detection. Pre-v5.50.0 this branch rejected ``;``
+        # bodies because the parser didn't accept the colon form.
+        # Build replacement: from arrow+2 (after `=>`) through close+1
+        # (after `}`). Replace ``{ body }`` with `` body``.
+        replacement = " " + body
+        edits.append((arrow + 2, close + 1, replacement))
+        pos = close + 1
+
+    if not edits:
+        return content
+    result = content
+    for s, e, r in reversed(edits):
+        result = result[:s] + r + result[e:]
+    return result
+
+
+def _migrate_one_line_stmt_block(leading: str, content: str) -> str | None:
+    """Rewrite a single-line statement-block brace to colon form.
+
+    v5.48.0 Te.3.D.3. Returns the rewritten line (with ``leading``
+    re-applied) if migration succeeds, or ``None`` if the content
+    does not match the single-line pattern or is unsafe to migrate.
+
+    Pattern: ``<head> { <body> }`` where ``<head>`` is a stmt-block
+    opener (``if x``, ``fn name()``, ``while x``, ``for x in xs``,
+    Spanish forms, continuations like ``} else``, ``} else if x``).
+    Body must be a single statement (no top-level ``;``) and must not
+    contain nested ``{...}``.
+
+    Special-case: ``} else { body }`` and ``} else if X { body }``
+    continuation forms are also accepted; they require the previous
+    line to be the ``}`` closer of an if-block, which the formatter's
+    line-by-line architecture has already produced as a separate
+    line (the ``content == "}"`` branch).
+    """
+    if "{" not in content or not content.endswith("}"):
+        return None
+    shadow = _mask_strings(content)
+    open_idx = shadow.find("{")
+    if open_idx < 0:
+        return None
+    close_idx = _find_matching_close(shadow, open_idx)
+    if close_idx < 0:
+        return None
+    # Anything after the matching close (other than trailing whitespace)?
+    # If yes, this is not a clean single-line brace (e.g. inline if-else
+    # ``if x { 1 } else { 2 }`` or arm with trailing comma).
+    tail = content[close_idx + 1 :]
+    if tail.strip():
+        return None
+    head = content[:open_idx].rstrip()
+    body = content[open_idx + 1 : close_idx].strip()
+    if not body:
+        return None
+    body_shadow = shadow[open_idx + 1 : close_idx]
+    if "{" in body_shadow or "}" in body_shadow:
+        # v5.53.0 Te.3.F.1: nested single-line stmt-blocks. Recursively
+        # migrate the body — ``if A { if B { stmt } }`` reduces to
+        # ``if A { if B: stmt }`` then again to ``if A: if B: stmt``.
+        # Inside-out: the inner brace-block is itself a complete
+        # single-line stmt-block, so the same function applied to the
+        # body migrates it. After the recursive call, re-check that
+        # the body no longer contains braces; if it still does (e.g.
+        # chained-if-else inner that this grammar can't reach), abort.
+        migrated_body = _migrate_one_line_stmt_block("", body)
+        if migrated_body is None:
+            return None
+        migrated_shadow = _mask_strings(migrated_body)
+        if "{" in migrated_shadow or "}" in migrated_shadow:
+            return None
+        body = migrated_body
+    # v5.50.0 Te.3.E.1: ``;``-bearing multi-stmt bodies migrate
+    # symmetrically with arm bodies. ``if X { a = 1; b = 2 }`` →
+    # ``if X: a = 1; b = 2`` round-trips through
+    # ``_indent_to_braces`` + grammar BLOCK rule (which accepts
+    # ``;``-separated statements).
+    # Reject match-arm shape (``Pat =>``); arm migration is handled
+    # separately by ``_migrate_one_line_arm_body``.
+    if head.endswith("=>"):
+        return None
+    if not _looks_like_stmt_block_opener(head):
+        return None
+    # Reject comma-body openers — their bodies need multi-line grammar.
+    if any(head.startswith(p) for p in _COMMA_BODY_OPENERS):
+        return None
+    # v5.48.1 Te.3.D.5.1: reject implicit-return shapes like
+    # ``fn make() -> Point = Point { x }`` — that's an expression-binding
+    # whose `{...}` is a struct literal, not a stmt block. Mirrors the
+    # `=` filter in count_user_brace_block_openers Rule (b). Without
+    # this, the formatter migrates ``fn new_token(...) -> Token = new
+    # Token { ... }`` to ``fn new_token(...) -> Token: new Token: ...``,
+    # which collapses two distinct semantic levels and is unparseable.
+    head_shadow = _mask_strings(head)
+    if _has_standalone_eq(head_shadow):
+        return None
+    # Reject ``} else { body }`` chained with a trailing continuation
+    # (we already filtered ``tail.strip()`` so we know nothing follows).
+    return f"{leading}{head}: {body}"
+
+
+def _has_standalone_eq(s: str) -> bool:
+    """Return True if ``s`` contains a ``=`` that is NOT part of any of
+    ``==``, ``!=``, ``<=``, ``>=``, ``=>``, ``+=``, ``-=``, ``*=``,
+    ``/=``, ``%=``. Used to detect implicit-return / assignment shapes
+    that disqualify single-line stmt-block migration. Mirrors
+    ``count_user_brace_block_openers`` Rule (b)'s filter.
+    """
+    n = len(s)
+    i = 0
+    while i < n:
+        if s[i] == "=":
+            prev_ch = s[i - 1] if i > 0 else " "
+            next_ch = s[i + 1] if i + 1 < n else " "
+            if next_ch in ("=", ">"):
+                i += 2
+                continue
+            if prev_ch in ("=", "!", "<", ">", "+", "-", "*", "/", "%"):
+                i += 1
+                continue
+            return True
+        i += 1
+    return False
+
+
 def _looks_like_stmt_block_opener(opener_body: str) -> bool:
     """Return True if ``opener_body`` (line content with the trailing
     `` {`` already stripped) is a statement-level block opener that can
@@ -248,26 +520,23 @@ def _find_brace_close(lines: list[str], start_idx: int, opener_indent: int) -> i
 
 
 def _find_match_verbatim_lines(lines: list[str]) -> set[int]:
-    """Return line indices that lie within ``match`` blocks containing
-    at least one multi-line arm body.
+    """Return line indices inside expression-context brace blocks that
+    must stay verbatim under ``to_terse``.
 
-    Such matches must be preserved verbatim by ``to_terse`` because
-    ``_indent_to_braces`` does not track brace nesting inside match
-    bodies — converting the outer ``match X {`` to ``match X:`` while
-    keeping the inner multi-line arm in brace form would cause the
-    preprocessor to insert a spurious ``,`` after every nested colon
-    opener, producing ``match X { ... { Pat => {, ... }`` (invalid).
+    v5.50.0 Te.3.E.3 rescoped: the only verbatim case left is
+    expression-position openers like ``let x = if cond {`` or
+    ``let m: Map<K,V> = #{`` — the grammar requires braces in those
+    positions. The previous match-with-multiline-arm verbatim mark
+    was a workaround for the missing multi-line arm-body grammar;
+    Te.3.E.2 added ``Pat =>:`` colon form, so match blocks (statement
+    or expression context) and their arm bodies now rewrite cleanly
+    via the main ``to_terse`` loop.
 
     Detection is line-based and trusts canonical formatting (4-space
-    indent, no inline ``{``/``}`` in unusual positions). For a
-    ``match X {`` opener at column ``k``, the match body lives at
-    column ``k+4``. A multi-line arm opener is any body-level line
-    ending with `` {`` whose stripped content (minus the trailing
-    `` {``) ends with ``=>``. The match block ends at the first line
-    at column ``k`` or less whose content begins with ``}``.
-
-    The returned set covers every line from the ``match`` opener
-    through its closing ``}`` inclusive.
+    indent, no inline ``{``/``}`` in unusual positions). For an
+    expression-context opener at column ``k``, the verbatim range
+    runs from the opener line through the matching ``}`` closer
+    inclusive.
     """
     verbatim: set[int] = set()
     n = len(lines)
@@ -283,12 +552,12 @@ def _find_match_verbatim_lines(lines: list[str]) -> set[int]:
         # Strip the leading indent off the opener body to test prefix
         body_text = opener_body[leading_len:] if len(opener_body) >= leading_len else opener_body
 
-        # Non-statement-block opener (e.g. ``let x = if cond {`` —
-        # an expression-context if). The grammar requires braces here,
+        # Expression-context opener (e.g. ``let x = if cond {``,
+        # ``let m: Map<K,V> = #{``). The grammar requires braces here,
         # so mark the entire ``{ ... }`` range as verbatim. ``=>``
-        # arm bodies and continuation lines (``} else {``) inside the
-        # range are also kept verbatim by the main loop's verbatim
-        # propagation.
+        # arm bodies are NOT expression-context openers — they are
+        # statement-or-expression contexts handled by the colon-form
+        # rewrite (Te.3.E.2).
         if not _looks_like_stmt_block_opener(body_text) and not body_text.endswith("=>"):
             end_idx = _find_brace_close(lines, i, leading_len)
             if end_idx >= 0:
@@ -296,43 +565,7 @@ def _find_match_verbatim_lines(lines: list[str]) -> set[int]:
                     verbatim.add(k)
                 i = end_idx + 1
                 continue
-            i += 1
-            continue
-
-        if not body_text.startswith("match "):
-            i += 1
-            continue
-        # Scan the match body. Body lines start at leading_len + 4.
-        # The match closes at a line whose content starts with `}` at
-        # column leading_len.
-        body_indent = leading_len + 4
-        has_multiline_arm = False
-        end_idx = -1
-        for j in range(i + 1, n):
-            t = lines[j].rstrip()
-            if not t:
-                continue
-            t_lstripped = t.lstrip()
-            t_indent = len(t) - len(t_lstripped)
-            if t_lstripped.startswith(("//", "#")):
-                continue
-            # Closer of the match block?
-            if t_indent <= leading_len and t_lstripped.startswith("}"):
-                end_idx = j
-                break
-            # Multi-line arm opener at body level?
-            if t_indent == body_indent and t.endswith(" {"):
-                arm_opener = t[:-2].rstrip()
-                if arm_opener.endswith("=>"):
-                    has_multiline_arm = True
-            # Don't break on multi-line arm; keep scanning to find
-            # the close so we can mark the entire range.
-        if has_multiline_arm and end_idx >= 0:
-            for k in range(i, end_idx + 1):
-                verbatim.add(k)
-            i = end_idx + 1
-        else:
-            i += 1
+        i += 1
     return verbatim
 
 
@@ -439,6 +672,24 @@ def to_terse(source: str) -> str:
                 out.append(f"{leading}}}")
             continue
 
+        # v5.50.0 Te.3.E.3: ``}`` followed by a trailing line comment
+        # (``} // end of foo``) is a closer with a trailing comment.
+        # Pre-Te.3.E.3 this case was hidden by the
+        # ``_find_match_verbatim_lines`` workaround (which kept the
+        # whole match block in brace form). After Te.3.E.3 the surrounding
+        # match migrates, leaving the closer's comment as an orphan ``}``
+        # in colon-form output. Strip the brace, preserve the comment.
+        if content.startswith("}") and len(content) >= 2:
+            after = content[1:].lstrip()
+            if after.startswith(("//", "#")):
+                if popped_verbatim:
+                    out.append(f"{leading}{content}")
+                else:
+                    # Drop the leading ``}``, keep the comment indented
+                    # at the parent block's level.
+                    out.append(f"{leading}{after}")
+                continue
+
         if content.startswith("} ") and content.endswith(" {"):
             # Pattern: ``} CONTINUATION {`` — rewrite as ``CONTINUATION:``
             mid = content[2:-2].strip()
@@ -449,13 +700,14 @@ def to_terse(source: str) -> str:
 
         if content.endswith(" {"):
             opener = content[:-2].rstrip()
-            # Match-arm body (``Pat => {``): grammar requires brace or
-            # single-expr arm, so leave the line alone and track the
-            # block as verbatim. Inner content (e.g. ``if x {`` inside
-            # the arm) still gets the normal colon-block rewrite.
+            # v5.50.0 Te.3.E.2 + Te.3.E.3: multi-line arm body
+            # (``Pat => {``) becomes colon form (``Pat =>:``). Pre-
+            # v5.50.0 this branch kept the brace and pushed a verbatim
+            # block; the verbatim mark was a workaround for the
+            # missing multi-line arm-body grammar, now obsolete.
             if opener.endswith("=>"):
-                out.append(f"{leading}{content}")
-                block_stack.append((leading, False, "verbatim"))
+                out.append(f"{leading}{opener}:")
+                block_stack.append((leading, False, "colon"))
                 continue
             comma_body = any(opener.startswith(p) for p in _COMMA_BODY_OPENERS)
             out.append(f"{leading}{opener}:")
@@ -489,14 +741,33 @@ def to_terse(source: str) -> str:
             del comma_body  # not relevant here
             continue
 
+        # v5.48.0 Te.3.D.3: rewrite single-line match-arm brace bodies
+        # to compact form (``Pat => { return x }`` -> ``Pat => return x``).
+        # Runs before comma-stripping so the comma logic still sees the
+        # final shape.
+        content = _migrate_one_line_arm_body(content)
+
         # Inside a comma-body block, strip trailing comma from members.
-        if (
+        # Snapshot whether the line carried a trailing comma so the
+        # single-line stmt-block migration below can reattach it.
+        had_trailing_comma = (
             block_stack
             and block_stack[-1][1]
             and content.endswith(",")
             and len(leading) > len(block_stack[-1][0])
-        ):
+        )
+        if had_trailing_comma:
             content = content[:-1].rstrip()
+
+        # v5.48.0 Te.3.D.3: rewrite single-line statement-block braces
+        # to colon form (``if x { return y }`` -> ``if x: return y``).
+        # Runs after comma-strip so we operate on the bare content.
+        migrated = _migrate_one_line_stmt_block(leading, content)
+        if migrated is not None:
+            if had_trailing_comma:
+                migrated = migrated + ","
+            out.append(migrated)
+            continue
 
         out.append(f"{leading}{content}")
 
@@ -509,15 +780,19 @@ def to_terse(source: str) -> str:
 def to_braces(source: str) -> str:
     """Rewrite colon-block syntax to brace-block syntax.
 
-    Thin wrapper around the parser's ``_indent_to_braces``
-    preprocessor, then ``format_source`` for canonical whitespace.
-    Idempotent on already-brace-style source (the preprocessor's
-    fast path returns unchanged input when no ``:``-suffixed lines
-    are present).
-    """
-    from mapanare.parser import _indent_to_braces
+    Thin wrapper around the parser's ``_indent_to_braces`` +
+    ``_rewrite_arm_stmt_shorthand`` preprocessors, then
+    ``format_source`` for canonical whitespace. Idempotent on
+    already-brace-style source (the preprocessors' fast paths
+    return unchanged input).
 
-    return format_source(_indent_to_braces(source))
+    v5.50.0 Te.3.E.3: also runs ``_rewrite_arm_stmt_shorthand`` so
+    arm-body sugar (``Pat => return X``, ``Pat => let X = []; return X``)
+    is restored to brace form on round-trip.
+    """
+    from mapanare.parser import _indent_to_braces, _rewrite_arm_stmt_shorthand
+
+    return format_source(_rewrite_arm_stmt_shorthand(_indent_to_braces(source)))
 
 
 # ---------------------------------------------------------------------------

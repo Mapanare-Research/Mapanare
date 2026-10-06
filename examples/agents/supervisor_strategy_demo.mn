@@ -1,0 +1,50 @@
+// supervisor_strategy_demo.mn — v5.42.0 As.7
+//
+// Demonstrates the three Erlang/OTP supervision strategies on a
+// simulated 3-child supervision tree. No real agents are spawned —
+// this example exercises the pure strategy library
+// (stdlib/agent/supervisor.mn) directly, simulating a crash and
+// asking the supervisor "which children should I restart?"
+//
+// Run:
+//   bash scripts/build_with_stdlib.sh stdlib/agent/supervisor.mn \
+//        examples/agents/supervisor_strategy_demo.mn -o /tmp/demo
+//   /tmp/demo
+//
+// Or, simpler (concatenation pattern):
+//   cat stdlib/agent/supervisor.mn \
+//       examples/agents/supervisor_strategy_demo.mn > /tmp/all.mn
+//   python3 -m mapanare run /tmp/all.mn
+//
+// Expected output:
+//   OneForOne — failed=2: [2]
+//   RestForOne — failed=2: [2, 3]
+//   OneForAll — failed=2: [1, 2, 3]
+//   PASSED
+
+fn run_strategy(strategy: Int, label: String) {
+    let s0 = new_supervisor(strategy, 10, 60)
+    let s1 = add_child(s0, new_child_spec(1, "alpha", RESTART_PERMANENT()))
+    let s2 = add_child(s1, new_child_spec(2, "beta",  RESTART_PERMANENT()))
+    let s3 = add_child(s2, new_child_spec(3, "gamma", RESTART_PERMANENT()))
+
+    // Simulate child 2 (beta) crashing.
+    let t = supervisor_handle_exit(s3, 2, EXIT_CRASHED(), "deliberate")
+
+    let mut out = label + " — failed=2: ["
+    let mut i: Int = 0
+    while i < len(t.decision.ids_to_restart) {
+        si i > 0 { out = out + ", " }
+        out = out + str(t.decision.ids_to_restart[i])
+        i = i + 1
+    }
+    out = out + "]"
+    print(out)
+}
+
+fn main() {
+    run_strategy(STRATEGY_ONE_FOR_ONE(),  "OneForOne")
+    run_strategy(STRATEGY_REST_FOR_ONE(), "RestForOne")
+    run_strategy(STRATEGY_ONE_FOR_ALL(),  "OneForAll")
+    print("PASSED")
+}

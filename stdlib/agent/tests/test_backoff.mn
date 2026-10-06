@@ -1,0 +1,56 @@
+// As.5 case 5 — Exponential backoff between restarts.
+//
+// initial=100ms, max=800ms; observe doubling sequence.
+
+fn main() {
+    let s0 = new_supervisor(STRATEGY_ONE_FOR_ONE(), 100, 60)
+    let s1 = with_backoff(s0, 100, 800)
+    let mut s = add_child(s1, new_child_spec(501, "a", RESTART_PERMANENT()))
+
+    // No restarts yet → next_backoff returns initial.
+    si next_backoff_ms(s) != 100 {
+        print("FAIL: pre-restart backoff != initial")
+        return
+    }
+
+    // 1st restart: consecutive=1, delay = 100 * 2^0 = 100
+    let t1 = supervisor_handle_exit(s, 501, EXIT_CRASHED(), "1")
+    s = t1.sup
+    si next_backoff_ms(s) != 100 {
+        print("FAIL: backoff 1 != 100, got " + str(next_backoff_ms(s)))
+        return
+    }
+
+    // 2nd restart: consecutive=2, delay = 100 * 2^1 = 200
+    let t2 = supervisor_handle_exit(s, 501, EXIT_CRASHED(), "2")
+    s = t2.sup
+    si next_backoff_ms(s) != 200 {
+        print("FAIL: backoff 2 != 200, got " + str(next_backoff_ms(s)))
+        return
+    }
+
+    // 3rd restart: consecutive=3, delay = 100 * 2^2 = 400
+    let t3 = supervisor_handle_exit(s, 501, EXIT_CRASHED(), "3")
+    s = t3.sup
+    si next_backoff_ms(s) != 400 {
+        print("FAIL: backoff 3 != 400, got " + str(next_backoff_ms(s)))
+        return
+    }
+
+    // 4th restart: consecutive=4, delay = 100 * 2^3 = 800 (cap)
+    let t4 = supervisor_handle_exit(s, 501, EXIT_CRASHED(), "4")
+    s = t4.sup
+    si next_backoff_ms(s) != 800 {
+        print("FAIL: backoff 4 != 800, got " + str(next_backoff_ms(s)))
+        return
+    }
+
+    // 5th restart: would be 1600, capped at max=800
+    let t5 = supervisor_handle_exit(s, 501, EXIT_CRASHED(), "5")
+    s = t5.sup
+    si next_backoff_ms(s) != 800 {
+        print("FAIL: backoff 5 != 800 (cap), got " + str(next_backoff_ms(s)))
+        return
+    }
+    print("PASSED")
+}

@@ -1,0 +1,131 @@
+// test_prepared_reuse.mn — Prepared-statement reuse via reset+rebind+step.
+//
+// The standard sqlite reuse idiom: prepare ONCE outside the loop, call
+// reset+bind+step inside. Each iteration avoids the prepare cost (which
+// is dominated by the SQL parser). v5.35.0 ships without the automatic
+// statement cache (Sq.5 deferred to v5.36.0); this test pins the manual
+// reuse path so the documented benchmark remains valid.
+//
+// The loop count is intentionally small (200 inserts) so the test
+// completes in milliseconds even under valgrind. Functional check:
+// after the loop, COUNT(*) == 200, and the last row's value matches
+// the last bound parameter.
+
+fn fail_with_p(msg: String, fails_in: Int) -> Int {
+    print("FAIL: " + msg)
+    return fails_in + 1
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    let db_r: Result<Database, SqlError> = database_open_memory()
+    match db_r {
+        Ok(db) => {
+            let _r0: Result<Int, SqlError> = database_execute(db, "CREATE TABLE t(v INTEGER)")
+
+            // Wrap the insert loop in a transaction — sqlite's per-INSERT
+            // implicit transaction overhead would dominate otherwise (and
+            // mask the prepared-reuse signal).
+            let _b: Result<Bool, SqlError> = database_begin(db)
+
+            let p_r: Result<Statement, SqlError> = database_prepare(db, "INSERT INTO t(v) VALUES(?)")
+            match p_r {
+                Ok(stmt) => {
+                    let mut i: Int = 0
+                    let mut loop_fails: Int = 0
+                    while i < 200 {
+                        // Reset before re-binding (the established sqlite idiom).
+                        let r1: Result<Bool, SqlError> = statement_reset(stmt)
+                        match r1 {
+                            Ok(_) => {},
+                            Err(_) => { loop_fails = loop_fails + 1 }
+                        }
+                        let r2: Result<Bool, SqlError> = statement_bind_int(stmt, 1, i * 7)
+                        match r2 {
+                            Ok(_) => {},
+                            Err(_) => { loop_fails = loop_fails + 1 }
+                        }
+                        let r3: Result<Int, SqlError> = statement_step(stmt)
+                        match r3 {
+                            Ok(rc) => {
+                                if rc != 101 { loop_fails = loop_fails + 1 }
+                            },
+                            Err(_) => { loop_fails = loop_fails + 1 }
+                        }
+                        i = i + 1
+                    }
+                    if loop_fails != 0 {
+                        fails = fail_with_p("loop had errors", fails)
+                    }
+                    let dropped: Statement = statement_finalize(stmt)
+                },
+                Err(_) => { fails = fail_with_p("prepare failed", fails) }
+            }
+
+            let _c: Result<Bool, SqlError> = database_commit(db)
+
+            // Verify count.
+            let q_r: Result<Statement, SqlError> = database_prepare(db, "SELECT COUNT(*) FROM t")
+            match q_r {
+                Ok(qs) => {
+                    let s_r: Result<Int, SqlError> = statement_step(qs)
+                    match s_r {
+                        Ok(rc) => {
+                            if rc == 100 {
+                                let n_r: Result<Int, SqlError> = statement_column_int(qs, 0)
+                                match n_r {
+                                    Ok(n) => {
+                                        if n != 200 {
+                                            fails = fail_with_p("count != 200", fails)
+                                        }
+                                    },
+                                    Err(_) => { fails = fail_with_p("count column read", fails) }
+                                }
+                            }
+                        },
+                        Err(_) => { fails = fail_with_p("count step", fails) }
+                    }
+                    let dropped2: Statement = statement_finalize(qs)
+                },
+                Err(_) => { fails = fail_with_p("count prepare", fails) }
+            }
+
+            // Verify last row's value (i=199 → v = 1393).
+            let q2_r: Result<Statement, SqlError> = database_prepare(db, "SELECT MAX(v) FROM t")
+            match q2_r {
+                Ok(qs2) => {
+                    let s_r: Result<Int, SqlError> = statement_step(qs2)
+                    match s_r {
+                        Ok(rc) => {
+                            if rc == 100 {
+                                let n_r: Result<Int, SqlError> = statement_column_int(qs2, 0)
+                                match n_r {
+                                    Ok(n) => {
+                                        if n != 1393 {
+                                            fails = fail_with_p("MAX(v) != 1393", fails)
+                                        }
+                                    },
+                                    Err(_) => { fails = fail_with_p("MAX column read", fails) }
+                                }
+                            }
+                        },
+                        Err(_) => { fails = fail_with_p("MAX step", fails) }
+                    }
+                    let dropped3: Statement = statement_finalize(qs2)
+                },
+                Err(_) => { fails = fail_with_p("MAX prepare", fails) }
+            }
+
+            let dropped_db: Database = database_close(db)
+        },
+        Err(_) => { fails = fail_with_p("open :memory: failed", fails) }
+    }
+
+    if fails == 0 {
+        print("test_prepared_reuse PASSED")
+    }
+    if fails != 0 {
+        print("test_prepared_reuse FAILED")
+    }
+}

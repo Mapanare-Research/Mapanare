@@ -1,0 +1,273 @@
+// node.mn — Node listener + per-connection state for distributed agents v0
+//
+// v5.43.0 Da.3 — third manifesto-arc release.
+//
+// SHAPE: synchronous listener API. The user runs the accept loop
+// explicitly via node_accept_one + own loop control. Async / dedicated
+// "node agent" wiring is a v5.43.x ergonomic upgrade — would require
+// reliable fn-typed parameters in the agent runtime (the v5.42.0
+// As.* lesson). For v5.43.0 v0, synchronous accept-then-handle is
+// the right scope.
+//
+// Wire format: every read pulls one length-prefixed Frame body via
+// __mn_node_read_frame_str (handled in C, capped at 100 MB), then
+// decode_frame validates HMAC + sequence in pure Mapanare.
+//
+// Depends on (in concat order):
+//   - url.mn (NetworkError variants, parse_agent_url)
+//   - remote_proto.mn (Frame, encode_frame, decode_frame, validate_key)
+//
+// LANGUAGE QUIRK NOTES:
+//   - Single-line struct literals only (`new T { f: v, ... }`).
+//   - extern declarations: ONE owning module per symbol. node.mn owns
+//     the C-runtime extern declarations for __mn_node_*; remote_proto.mn
+//     owns the crypto + chr externs; url.mn owns nothing C-side. Adding
+//     remote.mn (Phase 3 second module) adds no new externs — it
+//     reuses node.mn's.
+
+// ---------------------------------------------------------------------------
+// C runtime externs
+// ---------------------------------------------------------------------------
+
+extern "C" fn __mn_node_listen_str(host: String, port: Int, backlog: Int) -> Int
+extern "C" fn __mn_node_accept(listen_fd: Int, is_tls: Int, server_ctx: Int) -> Int
+extern "C" fn __mn_node_connect_str(host: String, port: Int, is_tls: Int, sni: String) -> Int
+extern "C" fn __mn_node_write_str(conn: Int, body: String) -> Int
+extern "C" fn __mn_node_read_frame_str(conn: Int) -> String
+extern "C" fn __mn_node_close(conn: Int)
+extern "C" fn __mn_node_get_fd(conn: Int) -> Int
+extern "C" fn __mn_tls_server_ctx_new_str(cert: String, key: String) -> Int
+extern "C" fn __mn_tls_server_ctx_free_handle(ctx: Int)
+
+// ---------------------------------------------------------------------------
+// NodeHandle — opaque listener state.
+//   listen_fd:      kernel socket fd >= 0; -1 after node_shutdown.
+//   bind_addr:      what was passed to node_listen (informational).
+//   bind_port:      same.
+//   key:            HMAC key, validated to be >= 32 raw bytes.
+//   is_tls:         true iff this is a TLS listener (server_ctx != 0).
+//   server_ctx:     pointer to MnTlsServerCtx as i64; 0 for plaintext.
+// ---------------------------------------------------------------------------
+
+pub tipo NodeHandle {
+    listen_fd: Int,
+    bind_addr: String,
+    bind_port: Int,
+    key: String,
+    is_tls: Bool,
+    server_ctx: Int
+}
+
+fn new_node_handle(fd: Int, addr: String, port: Int, key: String, is_tls: Bool, ctx: Int) -> NodeHandle {
+    da new NodeHandle { listen_fd: fd, bind_addr: addr, bind_port: port, key: key, is_tls: is_tls, server_ctx: ctx }
+}
+
+// ---------------------------------------------------------------------------
+// v5.54.0 Cl.2 — refactored from v5.43.0 flat-tuple Result workarounds to
+// ergonomic Result<T, NetworkError>. v5.46.0 Lf.* closed the wrap-shape
+// default bug (and the variant-tag-corruption + 15-arm-nested-match
+// followups) that motivated the v5.43.0 workaround.
+// BREAKING for stdlib consumers — see CHANGELOG migration recipe.
+//
+// node_listen — bind a plaintext (tcp://) listener.
+// node_listen_tls — bind a tls:// listener with server cert + private key.
+//
+// Per v5.43.0 Da.4 invariant, hosts are resolved via __mn_tcp_listen.
+// Pass "127.0.0.1" or "0.0.0.0" or empty for INADDR_ANY.
+// ---------------------------------------------------------------------------
+
+pub fn node_listen(addr: String, port: Int, key: String) -> Result<NodeHandle, NetworkError> {
+    si len(key) < 32 {
+        da Err(NoKey("MAPANARE_NODE_KEY must be at least 32 raw bytes (got " + str(len(key)) + ")"))
+    }
+    si port < 0 || port > 65535 {
+        da Err(ListenFailed("port out of range 0..65535: " + str(port)))
+    }
+    pon fd: Int = __mn_node_listen_str(addr, port, 32)
+    si fd < 0 {
+        da Err(ListenFailed("__mn_node_listen_str failed for " + addr + ":" + str(port)))
+    }
+    da Ok(new_node_handle(fd, addr, port, key, false, 0))
+}
+
+pub fn node_listen_tls(addr: String, port: Int, key: String, cert_path: String, key_path: String) -> Result<NodeHandle, NetworkError> {
+    si len(key) < 32 {
+        da Err(NoKey("MAPANARE_NODE_KEY must be at least 32 raw bytes (got " + str(len(key)) + ")"))
+    }
+    si port < 0 || port > 65535 {
+        da Err(ListenFailed("port out of range 0..65535: " + str(port)))
+    }
+    pon ctx: Int = __mn_tls_server_ctx_new_str(cert_path, key_path)
+    si ctx == 0 {
+        da Err(ListenFailed("TLS server context init failed (cert=" + cert_path + ", key=" + key_path + ")"))
+    }
+    pon fd: Int = __mn_node_listen_str(addr, port, 32)
+    si fd < 0 {
+        __mn_tls_server_ctx_free_handle(ctx)
+        da Err(ListenFailed("__mn_node_listen_str failed for tls://" + addr + ":" + str(port)))
+    }
+    da Ok(new_node_handle(fd, addr, port, key, true, ctx))
+}
+
+// ---------------------------------------------------------------------------
+// NodeConnection — opaque per-connection state.
+//   conn:            mn_node_conn_t * cast to i64 (from C runtime).
+//   key:             HMAC key, copied from NodeHandle at accept time.
+//   last_seen_recv:  watermark for replay rejection; starts at 0.
+//   next_seq_send:   monotonic counter; starts at 1.
+// ---------------------------------------------------------------------------
+
+pub tipo NodeConnection {
+    conn: Int,
+    key: String,
+    last_seen_recv: Int,
+    next_seq_send: Int
+}
+
+fn new_connection(conn_handle: Int, key: String) -> NodeConnection {
+    da new NodeConnection { conn: conn_handle, key: key, last_seen_recv: 0, next_seq_send: 1 }
+}
+
+// ---------------------------------------------------------------------------
+// node_accept_one — block until one client connects, then perform the
+// TLS handshake (if applicable). Synchronous; user runs the loop.
+// ---------------------------------------------------------------------------
+
+pub fn node_accept_one(n: NodeHandle) -> Result<NodeConnection, NetworkError> {
+    si n.listen_fd < 0 {
+        da Err(ListenFailed("node already shut down"))
+    }
+    pon mut is_tls_int: Int = 0
+    si n.is_tls { is_tls_int = 1 }
+    pon conn_handle: Int = __mn_node_accept(n.listen_fd, is_tls_int, n.server_ctx)
+    si conn_handle == 0 {
+        da Err(ConnectFailed("accept or TLS handshake failed"))
+    }
+    da Ok(new_connection(conn_handle, n.key))
+}
+
+// ---------------------------------------------------------------------------
+// node_shutdown — close the listening fd + free the TLS server ctx.
+// Idempotent. Returns false if already shut down.
+// ---------------------------------------------------------------------------
+
+pub fn node_shutdown(n: NodeHandle) -> Bool {
+    si n.listen_fd < 0 {
+        da false
+    }
+    si n.server_ctx != 0 {
+        __mn_tls_server_ctx_free_handle(n.server_ctx)
+    }
+    // The listening socket is just an int64_t fd; close directly via
+    // the existing TCP close runtime entry. node.c does not own
+    // listening-socket lifecycle (it only manages mn_node_conn_t for
+    // accepted connections).
+    __mn_tcp_close(n.listen_fd)
+    da true
+}
+
+extern "C" fn __mn_tcp_close(fd: Int)
+
+// ---------------------------------------------------------------------------
+// conn_send_frame — encode + write one frame. Updates next_seq_send.
+// Ok = updated NodeConnection (next_seq_send incremented).
+// ---------------------------------------------------------------------------
+
+pub fn conn_send_frame(c: NodeConnection, msg_type: Int, payload: String) -> Result<NodeConnection, NetworkError> {
+    pon f: Frame = new_frame(msg_type, c.next_seq_send, payload)
+    pon body: String = encode_frame(f, c.key)
+    pon rc: Int = __mn_node_write_str(c.conn, body)
+    si rc == -2 {
+        da Err(ProtoOversized("frame body exceeds 100 MB cap"))
+    }
+    si rc != 0 {
+        da Err(TransportLost("__mn_node_write_str failed (rc=" + str(rc) + ")"))
+    }
+    pon updated: NodeConnection = new NodeConnection { conn: c.conn, key: c.key, last_seen_recv: c.last_seen_recv, next_seq_send: c.next_seq_send + 1 }
+    da Ok(updated)
+}
+
+// ---------------------------------------------------------------------------
+// conn_recv_frame — read one frame, verify HMAC, replay-check, update
+// last_seen. Ok = ConnRecvOk { conn: <updated>, frame: <decoded> }.
+// ---------------------------------------------------------------------------
+
+pub tipo ConnRecvOk {
+    conn: NodeConnection,
+    frame: Frame
+}
+
+fn new_conn_recv_ok(c: NodeConnection, f: Frame) -> ConnRecvOk {
+    da new ConnRecvOk { conn: c, frame: f }
+}
+
+pub fn conn_recv_frame(c: NodeConnection) -> Result<ConnRecvOk, NetworkError> {
+    pon body: String = __mn_node_read_frame_str(c.conn)
+    si len(body) == 0 {
+        da Err(TransportLost("__mn_node_read_frame_str returned empty (peer close or error)"))
+    }
+    pon dr: DecodeResult = decode_frame(body, c.key, c.last_seen_recv)
+    si !dr.ok {
+        da Err(dr.err)
+    }
+    pon updated: NodeConnection = new NodeConnection { conn: c.conn, key: c.key, last_seen_recv: dr.frame.sequence, next_seq_send: c.next_seq_send }
+    da Ok(new_conn_recv_ok(updated, dr.frame))
+}
+
+// Helper: extract the message String from a NetworkError variant.
+// Single match on parameter — works (v5.x lowerer is fine here).
+pub fn ne_msg(e: NetworkError) -> String {
+    pon mut out: String = ""
+    match e {
+        BadUrl(s) => { out = s },
+        UnsupportedScheme(s) => { out = s },
+        NoKey(s) => { out = s },
+        ConnectFailed(s) => { out = s },
+        ListenFailed(s) => { out = s },
+        HmacFailed(s) => { out = s },
+        Replay(s) => { out = s },
+        ProtoVersion(s) => { out = s },
+        ProtoOversized(s) => { out = s },
+        ProtoMalformed(s) => { out = s },
+        Timeout(s) => { out = s },
+        TransportLost(s) => { out = s },
+        AgentNotFound(s) => { out = s },
+        SerdeError(s) => { out = s },
+        Internal(s) => { out = s }
+    }
+    da out
+}
+
+// Helper: classify a NetworkError into an int kind 1..15. Same shape
+// as the test-side ne_kind in phase3 smoke; defined here too so
+// callers don't need to redefine it. Single match on parameter.
+pub fn ne_kind(e: NetworkError) -> Int {
+    pon mut k: Int = 0
+    match e {
+        BadUrl(s) => { k = 1 },
+        UnsupportedScheme(s) => { k = 2 },
+        NoKey(s) => { k = 3 },
+        ConnectFailed(s) => { k = 4 },
+        ListenFailed(s) => { k = 5 },
+        HmacFailed(s) => { k = 6 },
+        Replay(s) => { k = 7 },
+        ProtoVersion(s) => { k = 8 },
+        ProtoOversized(s) => { k = 9 },
+        ProtoMalformed(s) => { k = 10 },
+        Timeout(s) => { k = 11 },
+        TransportLost(s) => { k = 12 },
+        AgentNotFound(s) => { k = 13 },
+        SerdeError(s) => { k = 14 },
+        Internal(s) => { k = 15 }
+    }
+    da k
+}
+
+// ---------------------------------------------------------------------------
+// conn_close — terminate one connection. Always succeeds.
+// ---------------------------------------------------------------------------
+
+pub fn conn_close(c: NodeConnection) -> Bool {
+    __mn_node_close(c.conn)
+    da true
+}

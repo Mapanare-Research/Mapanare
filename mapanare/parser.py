@@ -868,10 +868,32 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
             start=items[0], end=items[1], inclusive=False, span=_span_from_children(children)
         )
 
+    def range_step_op(self, children: list[Any]) -> RangeExpr:
+        # v5.45.0 Ts.3.A — `start..end:step`.
+        items = _filter(children)
+        return RangeExpr(
+            start=items[0],
+            end=items[1],
+            inclusive=False,
+            step=items[2],
+            span=_span_from_children(children),
+        )
+
     def range_incl_op(self, children: list[Any]) -> RangeExpr:
         items = _filter(children)
         return RangeExpr(
             start=items[0], end=items[1], inclusive=True, span=_span_from_children(children)
+        )
+
+    def range_incl_step_op(self, children: list[Any]) -> RangeExpr:
+        # v5.45.0 Ts.3.A — `start..=end:step`.
+        items = _filter(children)
+        return RangeExpr(
+            start=items[0],
+            end=items[1],
+            inclusive=True,
+            step=items[2],
+            span=_span_from_children(children),
         )
 
     # ------------------------------------------------------------------
@@ -942,6 +964,7 @@ class MapanareTransformer(Transformer):  # type: ignore[type-arg]
                         kind="range",
                         start=c.start,
                         end=c.end,
+                        step=c.step,
                         span=getattr(c, "span", Span()),
                     )
                 )
@@ -2041,6 +2064,253 @@ _COMMA_BODY_OPENERS = ("struct ", "enum ", "match ")
 # logical line (``else``, ``sino``, ``else if``, ``sino si``).
 _CONTINUATION_KW = ("else", "sino", "sino si", "else if")
 
+# v5.48.0 Te.3.D.1: statement-block keywords that may appear as the
+# head of a single-line colon block (``if x: stmt``, ``fn name(): stmt``).
+# Excludes comma-body openers (``struct``, ``enum``, ``match``,
+# ``tipo``, ``modo``, ``way``) and ``trait`` / ``impl`` / ``agent``,
+# whose bodies need the multi-line block grammar.
+_SINGLE_LINE_STMT_KWS = (
+    "fn",
+    "if",
+    "si",
+    "while",
+    "mien",
+    "for",
+    "cada",
+)
+# Modifier prefixes that may appear before the keyword (``pub fn``,
+# ``async fn``, ``extern fn``).
+_SINGLE_LINE_PREFIXES = ("pub ", "async ", "extern ")
+# Continuation heads that may also carry a single-line colon body
+# (``else: stmt``, ``sino: stmt``, ``else if x: stmt``,
+# ``sino si x: stmt``).
+_SINGLE_LINE_CONTINUATIONS = ("else", "sino")
+
+# v5.48.0 Te.3.D.2: statement keywords accepted as match-arm bodies
+# without an enclosing brace (``Pat => return x``, ``Pat => break``).
+# Including English + Spanish aliases. ``return`` / ``da`` may carry
+# an expression; ``break`` / ``sal`` / ``continue`` / ``sigue`` /
+# ``pass`` are bare statements.
+_ARM_STMT_KEYWORDS = (
+    "return",
+    "da",
+    "break",
+    "sal",
+    "continue",
+    "sigue",
+    "pass",
+)
+
+
+def _mask_strings_chars(line: str) -> str:
+    """Return a copy of ``line`` with string and char literal contents
+    (and ``//`` line comments) masked to spaces. Punctuation outside
+    string/char/comment is preserved at original column positions.
+
+    v5.48.1 Te.3.D.5.1: shared helper used by the preprocessor's
+    ``'{' not in content`` guard so lines like
+    ``if ch == "{": return X`` (with ``{`` inside a string literal)
+    are still recognised as single-line colon shapes.
+    """
+    chars = list(line)
+    in_str = False
+    in_char = False
+    n = len(line)
+    i = 0
+    while i < n:
+        ch = line[i]
+        if in_str:
+            chars[i] = " "
+            if ch == "\\" and i + 1 < n:
+                chars[i + 1] = " "
+                i += 2
+                continue
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if in_char:
+            chars[i] = " "
+            if ch == "\\" and i + 1 < n:
+                chars[i + 1] = " "
+                i += 2
+                continue
+            if ch == "'":
+                in_char = False
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and line[i + 1] == "/":
+            for j in range(i, n):
+                chars[j] = " "
+            break
+        if ch == '"':
+            chars[i] = " "
+            in_str = True
+            i += 1
+            continue
+        if ch == "'":
+            chars[i] = " "
+            in_char = True
+            i += 1
+            continue
+        i += 1
+    return "".join(chars)
+
+
+def _split_inline_colon_body(content: str) -> tuple[str, str] | None:
+    """Detect ``<head>: <body>`` shape on a single logical line.
+
+    Returns ``(head, body)`` if a top-level (depth-0) ``:`` splits the
+    line content into a non-empty head and a non-empty body that does
+    not itself end with ``:``. Returns ``None`` otherwise.
+
+    Skips colons inside parentheses / brackets / braces, string
+    literals, and char literals. Bails out if a ``//`` line comment
+    appears before the splitting ``:`` (line comments are line-tail
+    decorations and not safe to recover after a single-line rewrite).
+
+    Caller decides whether the returned ``head`` is a statement-block
+    opener (see ``_is_single_line_stmt_head``) and whether to migrate.
+
+    v5.48.0 Te.3.D.1.
+    """
+    depth = 0
+    in_str = False
+    in_char = False
+    i = 0
+    n = len(content)
+    while i < n:
+        ch = content[i]
+        if in_str:
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if in_char:
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == "'":
+                in_char = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            i += 1
+            continue
+        if ch == "'":
+            in_char = True
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and content[i + 1] == "/":
+            return None
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth > 0:
+                depth -= 1
+        elif ch == ":" and depth == 0:
+            # v5.48.0 Te.3.D.1: skip ``::`` (namespace access) — it is
+            # not a block-opener colon. Same goes for the rare ``:::``
+            # (defensive). The skip is symmetric: a single colon
+            # adjacent to another colon (either side) is part of an
+            # operator, not a block opener.
+            if i + 1 < n and content[i + 1] == ":":
+                i += 2
+                continue
+            if i > 0 and content[i - 1] == ":":
+                i += 1
+                continue
+            head = content[:i].rstrip()
+            body = content[i + 1 :].lstrip()
+            if not head or not body:
+                return None
+            # Disallow body-as-block-opener (caller would have to
+            # recurse). The recursive rewrite happens explicitly via
+            # ``_rewrite_inline_colon_body``.
+            return head, body
+        i += 1
+    return None
+
+
+def _is_single_line_stmt_head(head: str) -> bool:
+    """Return True iff ``head`` is the head of a single-line statement
+    block (``if x``, ``fn main()``, ``while ready()``) or a continuation
+    (``else``, ``else if x``, ``sino si x``). Comma-body heads
+    (``struct``, ``enum``, ``match``, ``tipo``, ``modo``, ``way``) and
+    block-only heads (``trait``, ``impl``, ``agent``) return False —
+    those bodies need the multi-line block grammar.
+
+    v5.48.0 Te.3.D.1.
+    """
+    s = head.strip()
+    # Strip a leading continuation closer ``} `` if present (continuation
+    # form like ``} else if x``).
+    if s.startswith("} "):
+        s = s[2:].lstrip()
+    # Strip optional modifier prefixes (``pub ``, ``async ``,
+    # ``extern ``). Loop because they may stack (``pub async fn``).
+    while True:
+        for prefix in _SINGLE_LINE_PREFIXES:
+            if s.startswith(prefix):
+                s = s[len(prefix) :].lstrip()
+                break
+        else:
+            break
+    for kw in _SINGLE_LINE_STMT_KWS:
+        if s == kw:
+            return True
+        if s.startswith(kw + " ") or s.startswith(kw + "(") or s.startswith(kw + "<"):
+            return True
+    for kw in _SINGLE_LINE_CONTINUATIONS:
+        if s == kw or s.startswith(kw + " "):
+            return True
+    return False
+
+
+def _rewrite_inline_colon_body(body: str) -> str:
+    """If ``body`` is itself a single-line statement-block opener
+    (``if y: stmt``), rewrite it recursively to brace form. Returns the
+    body unchanged otherwise.
+
+    Bounded recursion: each level strips one ``<head>:`` prefix.
+
+    v5.48.0 Te.3.D.1.
+    """
+    nested = _split_inline_colon_body(body)
+    if nested is None:
+        return body
+    nh, nb = nested
+    if not _is_single_line_stmt_head(nh):
+        return body
+    nb_rewritten = _rewrite_inline_colon_body(nb)
+    return f"{nh} {{ {nb_rewritten} }}"
+
+
+def _normalize_fn_zero_arg_head(head: str) -> str:
+    """Rewrite ``fn name`` to ``fn name()`` (zero-arg function), or
+    ``fn name -> Ret`` to ``fn name() -> Ret``. Other heads pass through.
+
+    Mirrors the in-line behavior of the existing multi-line block
+    handler so single-line ``fn main(): stmt`` parses identically to
+    the multi-line form.
+
+    v5.48.0 Te.3.D.1.
+    """
+    if not head.startswith("fn "):
+        return head
+    if "(" in head:
+        return head
+    parts = head.split(None, 1)
+    fn_name = parts[1] if len(parts) > 1 else ""
+    if "->" in fn_name:
+        name_part, ret_part = fn_name.split("->", 1)
+        return f"fn {name_part.strip()}() -> {ret_part.strip()}"
+    return f"fn {fn_name}()"
+
 
 def _indent_to_braces(source: str) -> str:
     """Convert indentation-based syntax to brace-based syntax.
@@ -2060,11 +2330,38 @@ def _indent_to_braces(source: str) -> str:
     Fast path: if no line ends with ``:``, return the source as-is.
     """
     lines = source.split("\n")
-    has_colon_blocks = any(
-        line.rstrip().endswith(":") and not line.lstrip().startswith(("#", "//"))
-        for line in lines
-        if line.strip()
+    # v5.48.0 Te.3.D.1: also trigger the slow path for lines that may
+    # carry a single-line colon block body (``if x: stmt``,
+    # ``fn main(): stmt``). Type-annotated ``let x: Int = 5`` lines also
+    # match this prefix check, but the slow path leaves them unchanged
+    # because ``_is_single_line_stmt_head`` rejects ``let`` heads.
+    _SINGLE_LINE_PREFIX_HINT = (
+        "if ",
+        "si ",
+        "while ",
+        "mien ",
+        "for ",
+        "cada ",
+        "fn ",
+        "pub ",
+        "async ",
+        "extern ",
+        "else",
+        "sino",
+        "} else",
+        "} sino",
     )
+    has_colon_blocks = False
+    for line in lines:
+        s = line.strip()
+        if not s or s.startswith(("#", "//")):
+            continue
+        if s.endswith(":"):
+            has_colon_blocks = True
+            break
+        if ":" in s and any(s.startswith(p) for p in _SINGLE_LINE_PREFIX_HINT):
+            has_colon_blocks = True
+            break
     if not has_colon_blocks:
         return source
 
@@ -2114,6 +2411,7 @@ def _indent_to_braces(source: str) -> str:
                 indent_stack.pop()
                 close_indent = "    " * indent_stack[-1][0]
                 out.append(f"{close_indent}}}")
+                indent_stack[-1][2] = len(out) - 1  # v5.50.0 Te.3.E.2
             out.append(raw)
             i += 1
             continue
@@ -2141,9 +2439,21 @@ def _indent_to_braces(source: str) -> str:
                 indent_stack.pop()
                 close_indent = "    " * indent_stack[-1][0]
                 out.append(f"{close_indent}}}")
+                indent_stack[-1][2] = len(out) - 1  # v5.50.0 Te.3.E.2
             if indent_stack[-1][0] > level:
                 indent_stack.pop()
                 prefix = "    " * level
+                # v5.48.0 Te.3.D.1: single-line continuation body
+                # (``else: stmt``, ``else if x: stmt``).
+                if not stripped.endswith(":"):
+                    single = _split_inline_colon_body(content)
+                    if single is not None and _is_single_line_stmt_head(single[0]):
+                        s_head, s_body = single
+                        s_head = _normalize_fn_zero_arg_head(s_head)
+                        s_body = _rewrite_inline_colon_body(s_body)
+                        out.append(f"{prefix}}} {s_head} {{ {s_body} }}")
+                        i += 1
+                        continue
                 if stripped.endswith(":"):
                     body = content[:-1].rstrip()
                     out.append(f"{prefix}}} {body} {{")
@@ -2161,6 +2471,12 @@ def _indent_to_braces(source: str) -> str:
             indent_stack.pop()
             close_indent = "    " * indent_stack[-1][0]
             out.append(f"{close_indent}}}")
+            # v5.50.0 Te.3.E.2: a closer line is the new "last child" of
+            # its parent block. Without this, when a multi-line arm body
+            # (``Pat =>:`` ... dedent) closes inside a comma-body match,
+            # the next sibling's comma would be appended to the OPENER
+            # line (``Pat => {,``) instead of the closer (``},``).
+            indent_stack[-1][2] = len(out) - 1
 
         if stripped.endswith(":"):
             body = content[:-1].rstrip()
@@ -2188,8 +2504,45 @@ def _indent_to_braces(source: str) -> str:
 
             indent_stack.append([level + 1, _opener_needs_comma(body), -1])
         else:
-            prefix = "    " * level
-            _emit_content(prefix, content)
+            # v5.48.0 Te.3.D.1: single-line colon block detection. If
+            # the line is ``<head>: <body>`` where the head is a known
+            # statement-block opener and the body is a single statement,
+            # rewrite to ``<head> { <body> }`` inline (no indent_stack
+            # push). Comma-body openers (``struct``, ``enum``, ``match``)
+            # are excluded by ``_is_single_line_stmt_head`` because their
+            # bodies require multi-line grammar.
+            #
+            # Lines containing ``{`` (outside string/char literals) are
+            # skipped — they are brace-form (single- or multi-line
+            # opener, struct literal, type generic with `:` as field
+            # annotation like ``fn max<T: Ord>(...)``) and must not be
+            # confused with the single-line colon-block shape.
+            #
+            # v5.48.1 Te.3.D.5.1: shadow-mask before checking. Lines
+            # like ``if ch == "{": return X`` legitimately have ``{``
+            # inside a string literal — those should still single-line-
+            # migrate. Without masking, the lexer.mn line
+            # ``if ch == "{": return new_token(...)`` was preserved as
+            # colon form by the preprocessor, then rejected by the LALR
+            # parser which only accepts brace-form ``if``.
+            content_shadow = _mask_strings_chars(content)
+            single = _split_inline_colon_body(content) if "{" not in content_shadow else None
+            if single is not None and _is_single_line_stmt_head(single[0]):
+                s_head, s_body = single
+                s_head = _normalize_fn_zero_arg_head(s_head)
+                s_body = _rewrite_inline_colon_body(s_body)
+                prefix = "    " * level
+                line_text = f"{prefix}{s_head} {{ {s_body} }}"
+                # Sibling separator if parent is comma-body (rare for
+                # single-line forms but kept for symmetry).
+                top = indent_stack[-1]
+                if top[1] and top[2] >= 0 and not out[top[2]].rstrip().endswith(","):
+                    out[top[2]] = out[top[2]] + ","
+                out.append(line_text)
+                top[2] = len(out) - 1
+            else:
+                prefix = "    " * level
+                _emit_content(prefix, content)
 
         i += 1
 
@@ -2199,6 +2552,177 @@ def _indent_to_braces(source: str) -> str:
         out.append(f"{close_indent}}}")
 
     return "\n".join(out)
+
+
+def _rewrite_arm_stmt_shorthand(source: str) -> str:
+    """Rewrite ``Pat => <stmt_kw> ...`` match-arm bodies to brace form.
+
+    v5.48.0 Te.3.D.2. Operates on the brace stream produced by
+    ``_indent_to_braces`` (or on already-brace source). Each ``=>``
+    whose body begins with one of ``return``, ``da``, ``break``, ``sal``,
+    ``continue``, ``sigue``, ``pass`` is wrapped:
+
+    ::
+
+        IntLit(n) => return n,    ->  IntLit(n) => { return n },
+        Pat => break              ->  Pat => { break }
+
+    Body extent reaches the first depth-0 ``,`` or ``}`` or end-of-line.
+    Strings, char literals, and ``//`` line comments are masked so the
+    scanner does not mistake content inside them for an arm body. Arms
+    already in brace form (``Pat => { ... }``) are skipped.
+    """
+    if "=>" not in source:
+        return source
+    out_lines: list[str] = []
+    for line in source.split("\n"):
+        out_lines.append(_rewrite_arm_stmts_in_line(line))
+    return "\n".join(out_lines)
+
+
+def _rewrite_arm_stmts_in_line(line: str) -> str:
+    if "=>" not in line:
+        return line
+    # Build a shadow string with strings / chars / line comments masked
+    # to spaces so the scanner sees only "code" characters at their
+    # original column positions.
+    shadow_chars = list(line)
+    in_str = False
+    in_char = False
+    n = len(line)
+    i = 0
+    while i < n:
+        ch = line[i]
+        if in_str:
+            shadow_chars[i] = " "
+            if ch == "\\" and i + 1 < n:
+                shadow_chars[i + 1] = " "
+                i += 2
+                continue
+            if ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if in_char:
+            shadow_chars[i] = " "
+            if ch == "\\" and i + 1 < n:
+                shadow_chars[i + 1] = " "
+                i += 2
+                continue
+            if ch == "'":
+                in_char = False
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and line[i + 1] == "/":
+            for j in range(i, n):
+                shadow_chars[j] = " "
+            break
+        if ch == '"':
+            shadow_chars[i] = " "
+            in_str = True
+            i += 1
+            continue
+        if ch == "'":
+            shadow_chars[i] = " "
+            in_char = True
+            i += 1
+            continue
+        i += 1
+
+    shadow = "".join(shadow_chars)
+
+    # Collect (body_start, body_end, body_text) replacements. Apply
+    # right-to-left so earlier indices stay valid.
+    replacements: list[tuple[int, int, str]] = []
+    pos = 0
+    while True:
+        idx = shadow.find("=>", pos)
+        if idx < 0:
+            break
+        pos = idx + 2
+        # Skip whitespace after `=>` in the shadow.
+        body_start = idx + 2
+        while body_start < n and shadow[body_start] in (" ", "\t"):
+            body_start += 1
+        if body_start >= n:
+            continue
+        # Already brace form? Skip.
+        if shadow[body_start] == "{":
+            continue
+        # Identify keyword at body_start in the shadow.
+        word_end = body_start
+        while word_end < n and (shadow[word_end].isalpha() or shadow[word_end] == "_"):
+            word_end += 1
+        word = shadow[body_start:word_end]
+        # The next char after the keyword must be a word-boundary
+        # (whitespace, comma, brace, paren, end-of-line). Reject if it
+        # is a word continuation (``return_value``).
+        if word_end < n and (shadow[word_end].isalnum() or shadow[word_end] == "_"):
+            continue
+        # v5.50.0 Te.3.E.1: walk the body and detect any depth-0 ``;``.
+        # A multi-stmt body (``Pat => let X = []; return X``) is a
+        # statement-arm regardless of first keyword and must be wrapped
+        # in braces for the LALR parser. Single-stmt bodies still
+        # require the first word to be in ``_ARM_STMT_KEYWORDS``
+        # (``return``, ``break``, ...) — bare expressions like
+        # ``Pat => 1 + 2`` remain expression-arms.
+        depth = 0
+        body_end = word_end
+        in_b_str = False
+        in_b_char = False
+        has_semi_at_depth0 = False
+        while body_end < n:
+            bc = line[body_end]
+            if in_b_str:
+                if bc == "\\" and body_end + 1 < n:
+                    body_end += 2
+                    continue
+                if bc == '"':
+                    in_b_str = False
+                body_end += 1
+                continue
+            if in_b_char:
+                if bc == "\\" and body_end + 1 < n:
+                    body_end += 2
+                    continue
+                if bc == "'":
+                    in_b_char = False
+                body_end += 1
+                continue
+            if bc == '"':
+                in_b_str = True
+                body_end += 1
+                continue
+            if bc == "'":
+                in_b_char = True
+                body_end += 1
+                continue
+            if bc == "/" and body_end + 1 < n and line[body_end + 1] == "/":
+                break  # line comment ends the body
+            if bc in "([{":
+                depth += 1
+            elif bc in ")]}":
+                if depth == 0:
+                    break
+                depth -= 1
+            elif bc == "," and depth == 0:
+                break
+            elif bc == ";" and depth == 0:
+                has_semi_at_depth0 = True
+            body_end += 1
+        if word not in _ARM_STMT_KEYWORDS and not has_semi_at_depth0:
+            continue
+        body_text = line[body_start:body_end].rstrip()
+        if not body_text:
+            continue
+        replacements.append((body_start, body_end, "{ " + body_text + " }"))
+
+    if not replacements:
+        return line
+    result = line
+    for s, e, nb in reversed(replacements):
+        result = result[:s] + nb + result[e:]
+    return result
 
 
 _BLOCK_KEYWORDS = frozenset(
@@ -2253,6 +2777,24 @@ def count_user_brace_block_openers(source: str) -> int:
     (``let p = Point {`` on a line by itself), which are absent from
     the corpus and vanishingly rare in canonical style. Block
     comments (``/* ... */``) are not stripped.
+
+    v5.50.0 Te.3.E.X — exclude non-deprecated forms that have no
+    colon migration target:
+
+    - Rule (b) refinement: single-line ``match X { ... }`` (kw is
+      ``match`` AND the matching ``}`` is on the same line). Inline
+      match expressions / statements have no single-line colon form;
+      forcing ``match X:`` multi-line would lose density.
+    - Rule (b) refinement: single-line chained ``if X { ... } else { ... }``
+      (kw is ``if`` / ``else`` AND matching ``}`` is on the same line
+      AND the chain extends past the close). Single-line
+      ``if`` / ``else`` shorthand only handles a single tail; the
+      chained form has no equivalent.
+    - Rule (b) refinement: expression-context ``if`` (preceded by
+      ``=`` / ``->`` / ``,`` / ``(`` / ``[`` / ``return`` / ``da``).
+      Expression-position if-else requires braces.
+    - Rule (c) refinement: ``Pat => {}`` empty arm body. No
+      semantically equivalent colon form (``Pat =>:`` followed by what?).
     """
     count = 0
     in_str = False
@@ -2327,6 +2869,10 @@ def count_user_brace_block_openers(source: str) -> int:
             # Rule (c): immediately preceded by `=>` (WS only between).
             rstripped = prefix.rstrip()
             if rstripped.endswith("=>"):
+                # v5.50.0 Te.3.E.X: exclude ``Pat => {}`` empty arm
+                # body — no colon form is semantically equivalent.
+                if tail < len(line_code) and line_code[tail] == "}":
+                    continue
                 count += 1
                 continue
 
@@ -2379,6 +2925,59 @@ def count_user_brace_block_openers(source: str) -> int:
                     break
                 k += 1
             if not saw_eq:
+                # v5.50.0 Te.3.E.X — counter refinements per audit §5.3.
+                # Find the matching ``}`` at depth 0 on this same
+                # line. Returns -1 if the close is on a later line.
+                close_idx = -1
+                d = 1
+                jj = idx + 1
+                while jj < len(line_code):
+                    cc = line_code[jj]
+                    if cc == "{":
+                        d += 1
+                    elif cc == "}":
+                        d -= 1
+                        if d == 0:
+                            close_idx = jj
+                            break
+                    jj += 1
+
+                # Re-extract the kw word — it lives at latest_kw_pos.
+                kw_end = latest_kw_pos
+                while kw_end < idx and (line_code[kw_end].isalnum() or line_code[kw_end] == "_"):
+                    kw_end += 1
+                kw = line_code[latest_kw_pos:kw_end]
+
+                # Rule (b) refinement 1: single-line ``match X { ... }``.
+                if kw == "match" and close_idx >= 0:
+                    continue
+
+                # Rule (b) refinement 2: single-line chained
+                # ``if X { ... } else { ... }``. Triggers when (a) the
+                # matching ``}`` is on this line, AND (b) the next
+                # non-WS chars after the close are ``else``. The
+                # ``else { ... }`` half is also excluded because it
+                # too has its match on the same line and is part of
+                # the chain.
+                if kw in ("if", "else") and close_idx >= 0:
+                    after = line_code[close_idx + 1 :].lstrip()
+                    if after.startswith("else") or kw == "else":
+                        continue
+
+                # Rule (b) refinement 3: expression-context ``if``.
+                # Look at chars before the kw position (after the
+                # current scope_start). If the immediately-prior
+                # non-WS token is ``=`` / ``->`` / ``,`` / ``(`` /
+                # ``[`` / ``return`` / ``da``, this is an expr-position
+                # ``if`` (e.g. ``let r = if c { 1 } else { 2 }``).
+                if kw == "if":
+                    before_kw = line_code[scope_start:latest_kw_pos].rstrip()
+                    if (
+                        before_kw.endswith(("=", "->", ",", "(", "[", "return", " da"))
+                        or before_kw == "da"
+                    ):
+                        continue
+
                 count += 1
 
     return count
@@ -2399,6 +2998,43 @@ def _emit_brace_deprecation_warning(filename: str, count: int) -> None:
         f"Hard removal in v6.0.",
         file=sys.stderr,
     )
+
+
+def _maybe_emit_brace_deprecation_warning(filename: str, source: str) -> None:
+    """v5.49.0 — emit the brace-deprecation warning only when
+    ``mnc fmt --to-terse`` would actually migrate something.
+
+    Pre-fix, the warning fired for every brace, including shapes the
+    v5.48.0 shorthand has no colon form for (``match_arm_open`` multi-
+    line arm bodies, ``one_line_arm_other`` multi-stmt single-line
+    arms — see v5.48.1 SESSION_REPORT). The warning told users to run
+    a tool that's a no-op on those shapes, which generated noise
+    (~700+ warnings across ``mapanare/self/*.mn`` post-v5.48.1 even
+    after every migration mnc fmt could perform).
+
+    Now: if ``to_terse`` is a fixed point on the source (every brace
+    is in a non-migratable shape), skip the warning. The deprecation
+    signal stays honest — it fires only when actionable. v6.0's hard-
+    removal path will surface the residuals via the parser-level
+    error, not via a noise-generating advisory.
+
+    Conservative on formatter exceptions: if ``to_terse`` raises (e.g.
+    a parse-shape it doesn't recognize), keep the legacy warning so
+    real brace-form code isn't silently swallowed. Same fail-open the
+    v5.19.0 path used.
+    """
+    brace_count = count_user_brace_block_openers(source)
+    if brace_count == 0:
+        return
+    try:
+        from mapanare.format import to_terse
+
+        migrated = to_terse(source)
+    except Exception:
+        _emit_brace_deprecation_warning(filename, brace_count)
+        return
+    if migrated != source:
+        _emit_brace_deprecation_warning(filename, brace_count)
 
 
 def parse(source: str, *, filename: str = "<input>") -> Program:
@@ -2423,10 +3059,9 @@ def parse(source: str, *, filename: str = "<input>") -> Program:
     # ``parse_expr`` directly and never re-enters ``parse()``, so this
     # filter is Python-side only.
     if not (filename.startswith("<") and filename.endswith(">")):
-        brace_count = count_user_brace_block_openers(source)
-        if brace_count > 0:
-            _emit_brace_deprecation_warning(filename, brace_count)
+        _maybe_emit_brace_deprecation_warning(filename, source)
     source = _indent_to_braces(source)
+    source = _rewrite_arm_stmt_shorthand(source)
     try:
         result = _parser.parse(source)
         if isinstance(result, Program):
@@ -2582,10 +3217,9 @@ def parse_recovering(source: str, *, filename: str = "<input>") -> tuple[Program
     # preprocessing so the warning reflects what the user wrote.
     # v5.23.2 Te.3.B.1: skip the warning for synthetic filenames.
     if not (filename.startswith("<") and filename.endswith(">")):
-        brace_count = count_user_brace_block_openers(source)
-        if brace_count > 0:
-            _emit_brace_deprecation_warning(filename, brace_count)
+        _maybe_emit_brace_deprecation_warning(filename, source)
     source = _indent_to_braces(source)
+    source = _rewrite_arm_stmt_shorthand(source)
     # Try full parse first — fast path
     try:
         result = _parser.parse(source)

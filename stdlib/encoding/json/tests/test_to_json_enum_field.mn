@@ -1,0 +1,71 @@
+// v5.39.7 Js.4.F.1 — link-and-run regression for to_json::<T> on a
+// struct with an enum-typed field. Pre-fix this emitted the `<?>`
+// placeholder at the inner field's encoding site (mapanare/lower.py::
+// _encode_field_to_json fell into the str() fallback for any name not
+// in self._module.structs — including all user-defined enums).
+// Post-fix the enum is encoded with the externally-tagged shape via
+// the new _emit_enum_json_body helper:
+//
+//     no-payload      → bare string "VariantName"
+//     single-payload  → {"VariantName": <encoded>}
+//     multi-payload   → {"VariantName": [<p0>, <p1>, ...]}
+//
+// Each sub-case is wrapped in its own helper function per the
+// v5.39.5 caveat about bare from_json_merge / decode_object block
+// labels not fresh_block-prefixed; the same caveat applies to any
+// MIR helper that emits multiple Switch / Phi blocks per call.
+
+enum Status { Active, Pending(Int), Failed(String, Int) }
+struct Record { id: Int, status: Status }
+
+fn case_no_payload() -> Bool {
+    pon r: Record = Record(1, Active)
+    pon encoded: String = to_json::<Record>(r)
+    si encoded.contains("<?>") {
+        return false
+    }
+    si encoded.contains("\"status\": \"Active\"") && encoded.contains("\"id\": 1") {
+        return true
+    }
+    return false
+}
+
+fn case_single_payload() -> Bool {
+    pon r: Record = Record(2, Pending(42))
+    pon encoded: String = to_json::<Record>(r)
+    si encoded.contains("<?>") {
+        return false
+    }
+    si encoded.contains("\"status\": {\"Pending\": 42}") && encoded.contains("\"id\": 2") {
+        return true
+    }
+    return false
+}
+
+fn case_multi_payload() -> Bool {
+    pon r: Record = Record(3, Failed("oops", 500))
+    pon encoded: String = to_json::<Record>(r)
+    si encoded.contains("<?>") {
+        return false
+    }
+    si encoded.contains("\"status\": {\"Failed\": [\"oops\", 500]}") && encoded.contains("\"id\": 3") {
+        return true
+    }
+    return false
+}
+
+fn main() -> Int {
+    pon ok1: Bool = case_no_payload()
+    pon ok2: Bool = case_single_payload()
+    pon ok3: Bool = case_multi_payload()
+    si !ok1 {
+        print("FAIL test_to_json_enum_field case1: no-payload variant not encoded as bare string")
+    } sino si !ok2 {
+        print("FAIL test_to_json_enum_field case2: single-payload variant shape wrong")
+    } sino si !ok3 {
+        print("FAIL test_to_json_enum_field case3: multi-payload variant shape wrong")
+    } sino {
+        print("PASSED test_to_json_enum_field")
+    }
+    return 0
+}

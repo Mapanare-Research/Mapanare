@@ -1,0 +1,106 @@
+// test_format.mn — strftime specifier coverage + parse-then-format round-trip.
+// Concatenated with stdlib/time.mn by tests/stdlib/test_time_dt.py harness.
+
+fn assert_str_eq(label: String, got: String, exp: String, fails: Int) -> Int {
+    if got == exp { return fails }
+    print("FAIL " + label + " got='" + got + "' exp='" + exp + "'")
+    return fails + 1
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    let d_r: Result<Date, String> = date_new(2026, 5, 3)
+    let t_r: Result<Time, String> = time_new(14, 32, 7, 0)
+    let mut date_v: Date = new Date { year: 0, month: 0, day: 0 }
+    let mut time_v: Time = new Time { hour: 0, minute: 0, second: 0, nanos: 0 }
+    match d_r { Ok(d) => { date_v = d }, Err(_) => { fails = fails + 1 } }
+    match t_r { Ok(t) => { time_v = t }, Err(_) => { fails = fails + 1 } }
+
+    // UTC datetime
+    let dt_utc_r: Result<DateTime, String> = datetime_new(date_v, time_v, 0)
+    let mut dt_utc: DateTime = new DateTime { date: date_v, time: time_v, tz_offset_minutes: 0 }
+    match dt_utc_r { Ok(d) => { dt_utc = d }, Err(_) => { fails = fails + 1 } }
+
+    // %Y, %m, %d, %H, %M, %S
+    fails = assert_str_eq("%Y", datetime_format(dt_utc, "%Y"), "2026", fails)
+    fails = assert_str_eq("%m", datetime_format(dt_utc, "%m"), "05", fails)
+    fails = assert_str_eq("%d", datetime_format(dt_utc, "%d"), "03", fails)
+    fails = assert_str_eq("%H", datetime_format(dt_utc, "%H"), "14", fails)
+    fails = assert_str_eq("%M", datetime_format(dt_utc, "%M"), "32", fails)
+    fails = assert_str_eq("%S", datetime_format(dt_utc, "%S"), "07", fails)
+
+    // %z numeric, %Z name
+    fails = assert_str_eq("%z UTC", datetime_format(dt_utc, "%z"), "+0000", fails)
+    fails = assert_str_eq("%Z UTC", datetime_format(dt_utc, "%Z"), "UTC", fails)
+
+    // Composite
+    fails = assert_str_eq("ISO date", datetime_format(dt_utc, "%Y-%m-%d"), "2026-05-03", fails)
+    fails = assert_str_eq("ISO time", datetime_format(dt_utc, "%H:%M:%S"), "14:32:07", fails)
+    fails = assert_str_eq("RFC 3339", datetime_to_rfc3339(dt_utc), "2026-05-03T14:32:07+0000", fails)
+
+    // %% literal
+    fails = assert_str_eq("%%", datetime_format(dt_utc, "%%"), "%", fails)
+
+    // Unknown specifier passes through
+    fails = assert_str_eq("%q passthrough", datetime_format(dt_utc, "%q"), "%q", fails)
+
+    // +05:30 timezone
+    let dt_ist_r: Result<DateTime, String> = datetime_new(date_v, time_v, 330)
+    match dt_ist_r {
+        Ok(dt_ist) => {
+            fails = assert_str_eq("%z +0530", datetime_format(dt_ist, "%z"), "+0530", fails)
+            fails = assert_str_eq("%Z +0530", datetime_format(dt_ist, "%Z"), "+0530", fails)
+        },
+        Err(_) => { fails = fails + 1 }
+    }
+
+    // -05:00 timezone
+    let dt_est_r: Result<DateTime, String> = datetime_new(date_v, time_v, -300)
+    match dt_est_r {
+        Ok(dt_est) => {
+            fails = assert_str_eq("%z -0500", datetime_format(dt_est, "%z"), "-0500", fails)
+        },
+        Err(_) => { fails = fails + 1 }
+    }
+
+    // Default ISO date format
+    fails = assert_str_eq("date_to_iso", date_to_iso(date_v), "2026-05-03", fails)
+
+    // Parse-then-format round-trip
+    let parse_r: Result<DateTime, String> = datetime_parse_rfc3339("2026-05-03T14:32:07Z")
+    match parse_r {
+        Ok(dt) => {
+            let fmt: String = datetime_to_rfc3339(dt)
+            fails = assert_str_eq("rt RFC", fmt, "2026-05-03T14:32:07+0000", fails)
+        },
+        Err(msg) => {
+            print("FAIL parse Z: " + msg)
+            fails = fails + 1
+        }
+    }
+
+    // Parse-then-format with offset
+    let p2_r: Result<DateTime, String> = datetime_parse_rfc3339("2026-05-03T14:32:07+05:30")
+    match p2_r {
+        Ok(dt) => {
+            let fmt: String = datetime_format(dt, "%Y-%m-%d %H:%M:%S %z")
+            fails = assert_str_eq("rt +0530", fmt, "2026-05-03 14:32:07 +0530", fails)
+        },
+        Err(msg) => {
+            print("FAIL parse +0530: " + msg)
+            fails = fails + 1
+        }
+    }
+
+    // pad_zero direct
+    fails = assert_str_eq("pad_zero 7,4",  pad_zero(7, 4),  "0007", fails)
+    fails = assert_str_eq("pad_zero 42,2", pad_zero(42, 2), "42",   fails)
+    fails = assert_str_eq("pad_zero 0,3",  pad_zero(0, 3),  "000",  fails)
+
+    if fails == 0 {
+        print("test_format PASSED")
+    } else {
+        print("test_format FAILED")
+    }
+}

@@ -1,0 +1,93 @@
+// test_arithmetic.mn — Duration arithmetic + DateTime ± Duration with
+// month/day rollover and leap-year boundary handling.
+// Concatenated with stdlib/time.mn by tests/stdlib/test_time_dt.py harness.
+
+fn build_dt(y: Int, mo: Int, d: Int, h: Int, mi: Int, s: Int) -> DateTime {
+    let date: Date = new Date { year: y, month: mo, day: d }
+    let time: Time = new Time { hour: h, minute: mi, second: s, nanos: 0 }
+    return new DateTime { date: date, time: time, tz_offset_minutes: 0 }
+}
+
+fn assert_dt_eq(label: String, r: Result<DateTime, String>, exp: DateTime, fails: Int) -> Int {
+    match r {
+        Ok(got) => {
+            if got.date.year != exp.date.year { print("FAIL " + label + " year"); return fails + 1 }
+            if got.date.month != exp.date.month { print("FAIL " + label + " month"); return fails + 1 }
+            if got.date.day != exp.date.day { print("FAIL " + label + " day"); return fails + 1 }
+            if got.time.hour != exp.time.hour { print("FAIL " + label + " hour"); return fails + 1 }
+            if got.time.minute != exp.time.minute { print("FAIL " + label + " min"); return fails + 1 }
+            if got.time.second != exp.time.second { print("FAIL " + label + " sec"); return fails + 1 }
+            return fails
+        },
+        Err(msg) => {
+            print("FAIL " + label + ": " + msg)
+            return fails + 1
+        }
+    }
+    return fails + 1
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    // Duration arithmetic
+    let a: Duration = duration_seconds(100)
+    let b: Duration = duration_seconds(42)
+    let sum: Duration = duration_add(a, b)
+    if sum.seconds != 142 { print("FAIL dur_add"); fails = fails + 1 }
+    let diff: Duration = duration_sub(a, b)
+    if diff.seconds != 58 { print("FAIL dur_sub"); fails = fails + 1 }
+    let mul: Duration = duration_mul(a, 3)
+    if mul.seconds != 300 { print("FAIL dur_mul"); fails = fails + 1 }
+
+    // DateTime + Duration: simple
+    let base_2026_5_3: DateTime = build_dt(2026, 5, 3, 14, 32, 0)
+    let plus_1h: Result<DateTime, String> = datetime_add_duration(base_2026_5_3, duration_hours(1))
+    fails = assert_dt_eq("base + 1h", plus_1h, build_dt(2026, 5, 3, 15, 32, 0), fails)
+
+    let plus_30m: Result<DateTime, String> = datetime_add_duration(base_2026_5_3, duration_minutes(30))
+    fails = assert_dt_eq("base + 30m", plus_30m, build_dt(2026, 5, 3, 15, 2, 0), fails)
+
+    // Day rollover
+    let base_jan_31: DateTime = build_dt(2026, 1, 31, 0, 0, 0)
+    let jan31_plus1d: Result<DateTime, String> = datetime_add_duration(base_jan_31, duration_days(1))
+    fails = assert_dt_eq("Jan 31 + 1 day = Feb 1", jan31_plus1d, build_dt(2026, 2, 1, 0, 0, 0), fails)
+
+    // Year rollover
+    let nye: DateTime = build_dt(2026, 12, 31, 23, 59, 59)
+    let nye_plus1s: Result<DateTime, String> = datetime_add_duration(nye, duration_seconds(1))
+    fails = assert_dt_eq("Dec 31 23:59:59 + 1s = Jan 1 next year", nye_plus1s, build_dt(2027, 1, 1, 0, 0, 0), fails)
+
+    // Negative duration via datetime_sub_duration
+    let base_apr_1: DateTime = build_dt(2026, 4, 1, 0, 0, 0)
+    let back_1d: Result<DateTime, String> = datetime_sub_duration(base_apr_1, duration_days(1))
+    fails = assert_dt_eq("Apr 1 - 1 day = Mar 31", back_1d, build_dt(2026, 3, 31, 0, 0, 0), fails)
+
+    // Leap-year boundary: Feb 29 + 365 days = Feb 28 (next year, non-leap)
+    let leap_2024: DateTime = build_dt(2024, 2, 29, 0, 0, 0)
+    let leap_plus_365: Result<DateTime, String> = datetime_add_duration(leap_2024, duration_days(365))
+    fails = assert_dt_eq("Feb 29 2024 + 365 = Feb 28 2025", leap_plus_365, build_dt(2025, 2, 28, 0, 0, 0), fails)
+
+    // datetime_diff: 2026-05-10 - 2026-05-03 = 7 days
+    let early: DateTime = build_dt(2026, 5, 3, 0, 0, 0)
+    let late: DateTime = build_dt(2026, 5, 10, 0, 0, 0)
+    let diff_r: Result<Duration, String> = datetime_diff(late, early)
+    match diff_r {
+        Ok(dur) => {
+            if dur.seconds != 604800 {
+                print("FAIL diff 7 days")
+                fails = fails + 1
+            }
+        },
+        Err(msg) => {
+            print("FAIL diff: " + msg)
+            fails = fails + 1
+        }
+    }
+
+    if fails == 0 {
+        print("test_arithmetic PASSED")
+    } else {
+        print("test_arithmetic FAILED")
+    }
+}

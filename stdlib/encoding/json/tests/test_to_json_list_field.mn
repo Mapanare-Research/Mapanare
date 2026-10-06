@@ -1,0 +1,26 @@
+// v5.39.4 Js.4.D.1 — link-and-run regression for to_json::<T> on a
+// struct with a List-typed field. Pre-fix this emitted the `<?>`
+// placeholder at the inner field's encoding site
+// (mapanare/lower.py::_encode_field_to_json fell into the str()
+// fallback for TypeKind.LIST). Post-fix the list is encoded
+// element-by-element via the new _emit_list_json_body helper, with
+// inner-element type recursing through _encode_field_to_json.
+
+struct Bag { name: String, items: List<Int> }
+
+fn main() -> Int {
+    pon b: Bag = Bag("box", [1, 2, 3])
+    pon encoded: String = to_json::<Bag>(b)
+    si encoded.contains("<?>") {
+        print("FAIL test_to_json_list_field: still emits <?> placeholder")
+    } sino si encoded.contains("[1, 2, 3]") {
+        si encoded.contains("\"name\": \"box\"") {
+            print("PASSED test_to_json_list_field")
+        } sino {
+            print("FAIL test_to_json_list_field: missing name field")
+        }
+    } sino {
+        print("FAIL test_to_json_list_field: missing list contents")
+    }
+    return 0
+}

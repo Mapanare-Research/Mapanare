@@ -1,0 +1,12 @@
+{
+  "lockfile_version": 1,
+  "packages": [
+    {
+      "name": "mn_collections",
+      "version": "0.1.0",
+      "git": "examples/packages/mn_collections",
+      "commit": "local",
+      "integrity": ""
+    }
+  ]
+}

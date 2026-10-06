@@ -1,0 +1,180 @@
+// ai/ask.mn — `ask` runtime adapter (v5.40.0 Ai.\*).
+//
+// Manifesto-arc kickoff. Provider-agnostic, env-driven LLM dispatch
+// with typed-output ergonomics on top of v5.39.x's typed-serde
+// round-trip.
+//
+// Surface:
+//   ask_text(prompt)             -> Result<String, AskError>
+//   ask_with_schema(prompt, sch) -> Result<String, AskError>
+//   ask_typed::<T>(prompt)       -> Result<T, AskError>      (Ai.2 intrinsic)
+//   AskError                     enum (v5.39.7 ENUM serde -> JSON-serializable)
+//   build_config_from_env()      -> LLMConfig
+//   map_extract_error(e)         -> AskError
+//
+// Provider config is read from env at every entry-point call — no
+// hidden global state. The intrinsic ask_typed::<T> desugars to the
+// composition:
+//
+//   match ask_with_schema(prompt, __struct_meta::<T>()) {
+//       Ok(json)  => match from_json::<T>(json) {
+//           Ok(v)  => Ok(v),
+//           Err(e) => Err(DeserializeFailed(e.message))
+//       },
+//       Err(e) => Err(e)
+//   }
+//
+// Cache: opt-in via MAPANARE_AI_CACHE_DIR. See ask_cache.mn.
+
+// ---------------------------------------------------------------------------
+// AskError — v5.39.7 ENUM-serde clean. Externally-tagged JSON shape:
+// {"Network": "msg"} for single-payload, "Timeout" for unit variants.
+// ---------------------------------------------------------------------------
+
+pub tipo AskError {
+    | Network(String)
+    | RateLimit(Int)
+    | SchemaMismatch(String)
+    | ContentFiltered(String)
+    | TimedOut
+    | ProviderUnavailable(String)
+    | MalformedResponse(String)
+    | DeserializeFailed(String)
+}
+
+// LLMError already defines a `Timeout(String)` variant. We avoid the
+// collision by naming this `TimedOut`. Same shape information is
+// preserved through `map_extract_error` for round-tripping.
+
+pub fn ask_error_message(e: AskError) -> String {
+    match e {
+        Network(m)             => { da "Network error: " + m },
+        RateLimit(retry)       => { da "Rate limited; retry after " + str(retry) + "s" },
+        SchemaMismatch(m)      => { da "Schema mismatch: " + m },
+        ContentFiltered(m)     => { da "Content filtered: " + m },
+        TimedOut               => { da "Request timed out" },
+        ProviderUnavailable(m) => { da "Provider unavailable: " + m },
+        MalformedResponse(m)   => { da "Malformed response: " + m },
+        DeserializeFailed(m)   => { da "Deserialize failed: " + m }
+    }
+    da "Unknown ask error"
+}
+
+// ---------------------------------------------------------------------------
+// Translate ExtractError -> AskError. ExtractError covers the
+// LLM-call + JSON-shape-validation phase; AskError is the surface
+// type for the full round-trip.
+// ---------------------------------------------------------------------------
+
+pub fn map_extract_error(e: ExtractError) -> AskError {
+    match e {
+        LlmFailed(msg)        => { da Network(msg) },
+        ParseFailed(msg)      => { da MalformedResponse(msg) },
+        ValidationFailed(msg) => { da SchemaMismatch(msg) },
+        RetriesExhausted(msg) => { da MalformedResponse(msg) }
+    }
+    da Network("unknown extract error")
+}
+
+// ---------------------------------------------------------------------------
+// Provider config from env vars. Reads MAPANARE_AI_* with fallback to
+// MAPANARE_LLM_* (existing default_config() vars) for compatibility.
+//
+// MAPANARE_AI_PROVIDER  - "anthropic" | "openai" | "groq" | "ollama" | "local"
+// MAPANARE_AI_MODEL     - e.g. "claude-sonnet-4-20250514", "gpt-4o", "llama3.2"
+// MAPANARE_AI_API_KEY   - provider key (anthropic/openai/groq)
+// MAPANARE_AI_LOCAL_URL - e.g. "http://localhost" for ollama (port 11434 default)
+// ---------------------------------------------------------------------------
+
+fn env_or(primary: String, fallback: String, default_val: String) -> String {
+    pon p: String = __mn_env_get(primary)
+    si len(p) > 0 { da p }
+    pon f: String = __mn_env_get(fallback)
+    si len(f) > 0 { da f }
+    da default_val
+}
+
+pub fn build_config_from_env() -> LLMConfig {
+    pon provider: String = env_or("MAPANARE_AI_PROVIDER", "MAPANARE_LLM_BACKEND", "")
+    pon api_key: String  = env_or("MAPANARE_AI_API_KEY",  "MAPANARE_LLM_API_KEY",  "")
+    pon mut model: String = env_or("MAPANARE_AI_MODEL",   "MAPANARE_LLM_MODEL",    "")
+    pon base_url: String = env_or("MAPANARE_AI_LOCAL_URL", "MAPANARE_LLM_BASE_URL", "")
+
+    pon mut prov: String = provider
+    si len(prov) == 0 {
+        si len(api_key) > 0 { prov = "anthropic" } sino { prov = "ollama" }
+    }
+
+    si prov == "anthropic" {
+        si len(model) == 0 { model = "claude-sonnet-4-20250514" }
+        da anthropic(api_key, model)
+    }
+    si prov == "openai" {
+        si len(model) == 0 { model = "gpt-4o" }
+        da openai(api_key, model)
+    }
+    si prov == "groq" {
+        si len(model) == 0 { model = "llama-3.3-70b-versatile" }
+        da groq(api_key, model)
+    }
+    si prov == "ollama" || prov == "local" {
+        si len(model) == 0 { model = "llama3.2" }
+        si len(base_url) > 0 {
+            da ollama_at(base_url, 11434, model)
+        }
+        da ollama(model)
+    }
+    da ollama("llama3.2")
+}
+
+// ---------------------------------------------------------------------------
+// ask_text(prompt) — free-form chat. No schema, no deserialization.
+// Returns the LLM's raw string response. Error shape mirrors
+// ask_typed for symmetry.
+// ---------------------------------------------------------------------------
+
+pub fn ask_text(prompt: String) -> Result<String, AskError> {
+    pon cfg: LLMConfig = build_config_from_env()
+    pon r: Result<String, LLMError> = ask(cfg, prompt)
+    match r {
+        Ok(s)  => { da Ok(s) },
+        Err(e) => { da Err(Network(error_message(e))) }
+    }
+    da Err(Network("unreachable"))
+}
+
+// ---------------------------------------------------------------------------
+// ask_with_schema(prompt, schema) — call the LLM with a JSON schema
+// constraint and return the validated JSON string. Caller is
+// responsible for passing the schema (use __struct_meta::<T>()) and
+// running from_json::<T> on the result.
+//
+// This is the load-bearing typed-output building block. ask_typed::<T>
+// (Ai.2 intrinsic) desugars to a composition over this.
+// ---------------------------------------------------------------------------
+
+pub fn ask_with_schema(prompt: String, schema: String) -> Result<String, AskError> {
+    pon cfg: LLMConfig = build_config_from_env()
+    pon r: Result<String, ExtractError> = extract_with_schema(cfg, schema, prompt, 2)
+    match r {
+        Ok(json) => { da Ok(json) },
+        Err(e)   => { da Err(map_extract_error(e)) }
+    }
+    da Err(Network("unreachable"))
+}
+
+// ---------------------------------------------------------------------------
+// ask_with_schema_config(cfg, prompt, schema) — same as ask_with_schema
+// but takes an explicit LLMConfig (skip env lookup). Used by tests
+// that construct a deterministic config (e.g. ollama at a known URL),
+// and by callers that want a custom provider.
+// ---------------------------------------------------------------------------
+
+pub fn ask_with_schema_config(cfg: LLMConfig, prompt: String, schema: String) -> Result<String, AskError> {
+    pon r: Result<String, ExtractError> = extract_with_schema(cfg, schema, prompt, 2)
+    match r {
+        Ok(json) => { da Ok(json) },
+        Err(e)   => { da Err(map_extract_error(e)) }
+    }
+    da Err(Network("unreachable"))
+}

@@ -19,46 +19,46 @@ fn new_php_token(kind: String, value: String, line: Int, col: Int) -> PhpToken =
 // ---------------------------------------------------------------------------
 
 fn is_php_keyword(s: String) -> Bool:
-    if s == "function" { return true }
-    if s == "class" { return true }
-    if s == "if" { return true }
-    if s == "else" { return true }
-    if s == "elseif" { return true }
-    if s == "foreach" { return true }
-    if s == "while" { return true }
-    if s == "for" { return true }
-    if s == "return" { return true }
-    if s == "echo" { return true }
-    if s == "public" { return true }
-    if s == "private" { return true }
-    if s == "protected" { return true }
-    if s == "static" { return true }
-    if s == "new" { return true }
-    if s == "null" { return true }
-    if s == "true" { return true }
-    if s == "false" { return true }
-    if s == "array" { return true }
-    if s == "isset" { return true }
-    if s == "empty" { return true }
-    if s == "switch" { return true }
-    if s == "case" { return true }
-    if s == "default" { return true }
-    if s == "break" { return true }
-    if s == "continue" { return true }
-    if s == "try" { return true }
-    if s == "catch" { return true }
-    if s == "throw" { return true }
-    if s == "finally" { return true }
-    if s == "interface" { return true }
-    if s == "extends" { return true }
-    if s == "implements" { return true }
-    if s == "abstract" { return true }
-    if s == "const" { return true }
-    if s == "var" { return true }
-    if s == "use" { return true }
-    if s == "namespace" { return true }
-    if s == "require" { return true }
-    if s == "include" { return true }
+    if s == "function": return true
+    if s == "class": return true
+    if s == "if": return true
+    if s == "else": return true
+    if s == "elseif": return true
+    if s == "foreach": return true
+    if s == "while": return true
+    if s == "for": return true
+    if s == "return": return true
+    if s == "echo": return true
+    if s == "public": return true
+    if s == "private": return true
+    if s == "protected": return true
+    if s == "static": return true
+    if s == "new": return true
+    if s == "null": return true
+    if s == "true": return true
+    if s == "false": return true
+    if s == "array": return true
+    if s == "isset": return true
+    if s == "empty": return true
+    if s == "switch": return true
+    if s == "case": return true
+    if s == "default": return true
+    if s == "break": return true
+    if s == "continue": return true
+    if s == "try": return true
+    if s == "catch": return true
+    if s == "throw": return true
+    if s == "finally": return true
+    if s == "interface": return true
+    if s == "extends": return true
+    if s == "implements": return true
+    if s == "abstract": return true
+    if s == "const": return true
+    if s == "var": return true
+    if s == "use": return true
+    if s == "namespace": return true
+    if s == "require": return true
+    if s == "include": return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -68,8 +68,8 @@ fn is_php_keyword(s: String) -> Bool:
 fn is_php_alpha(c: String) -> Bool = is_transpiler_alpha(c)
 
 fn is_php_alnum(c: String) -> Bool:
-    if is_php_alpha(c) { return true }
-    if is_digit(c) { return true }
+    if is_php_alpha(c): return true
+    if is_digit(c): return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ fn tokenize_php(source: String) -> List<PhpToken>:
             if source[1] == "?":
                 // Skip to end of <?php line
                 while pos < slen:
-                    if source[pos] == "\n" { break }
+                    if source[pos] == "\n": break
                     pos = pos + 1
 
     while pos < slen:
@@ -114,14 +114,14 @@ fn tokenize_php(source: String) -> List<PhpToken>:
             if pos + 1 < slen:
                 if source[pos + 1] == "/":
                     while pos < slen:
-                        if source[pos] == "\n" { break }
+                        if source[pos] == "\n": break
                         pos = pos + 1
                     continue
 
         // Hash comment: # to end of line
         if c == "#":
             while pos < slen:
-                if source[pos] == "\n" { break }
+                if source[pos] == "\n": break
                 pos = pos + 1
             continue
 
@@ -193,9 +193,9 @@ fn tokenize_php(source: String) -> List<PhpToken>:
             let mut has_dot: Bool = false
             while pos < slen:
                 let nc: String = source[pos]
-                if nc == "." { has_dot = true }
+                if nc == ".": has_dot = true
                 if is_digit(nc) || nc == "." || nc == "_":
-                    if nc != "_" { num = num + nc }
+                    if nc != "_": num = num + nc
                     pos = pos + 1
                     col = col + 1
                 else:
@@ -298,7 +298,7 @@ fn php_skip_newlines(p: PhpParser) -> PhpParser:
 
 fn php_skip_semicolons(p: PhpParser) -> PhpParser:
     while php_current(p).kind == "OP":
-        if php_current(p).value != ";" { break }
+        if php_current(p).value != ";": break
         p = php_advance(p)
     p
 
@@ -398,17 +398,17 @@ fn translate_php_expr(p: PhpParser) -> String:
                     p = php_advance(p)
                     let mut args: List<String> = []
                     while php_current(p).value != ")":
-                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).kind == "EOF": break
                         if php_current(p).value == ",":
                             p = php_advance(p)
                             continue
                         let arg: String = translate_php_expr(p)
                         args.push(arg)
                         while php_current(p).value != ",":
-                            if php_current(p).value == ")" { break }
-                            if php_current(p).kind == "EOF" { break }
+                            if php_current(p).value == ")": break
+                            if php_current(p).kind == "EOF": break
                             p = php_advance(p)
-                    if php_current(p).value == ")" { p = php_advance(p) }
+                    if php_current(p).value == ")": p = php_advance(p)
                     return name + "." + method + "(" + join_args(args) + ")"
                 return name + "." + method
         // Check for array access: $arr[idx]
@@ -417,9 +417,9 @@ fn translate_php_expr(p: PhpParser) -> String:
                 p = php_advance(p)
                 let idx: String = translate_php_expr(p)
                 while php_current(p).value != "]":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
-                if php_current(p).value == "]" { p = php_advance(p) }
+                if php_current(p).value == "]": p = php_advance(p)
                 return name + "[" + idx + "]"
         return name
 
@@ -443,17 +443,17 @@ fn translate_php_expr(p: PhpParser) -> String:
                 p = php_advance(p)
                 let mut args: List<String> = []
                 while php_current(p).value != ")":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     if php_current(p).value == ",":
                         p = php_advance(p)
                         continue
                     let arg: String = translate_php_expr(p)
                     args.push(arg)
                     while php_current(p).value != ",":
-                        if php_current(p).value == ")" { break }
-                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).value == ")": break
+                        if php_current(p).kind == "EOF": break
                         p = php_advance(p)
-                if php_current(p).value == ")" { p = php_advance(p) }
+                if php_current(p).value == ")": p = php_advance(p)
                 return cname + "(" + join_args(args) + ")"
             return cname + "()"
         // isset($x) → $x != None
@@ -463,9 +463,9 @@ fn translate_php_expr(p: PhpParser) -> String:
                 p = php_advance(p)
                 let inner: String = translate_php_expr(p)
                 while php_current(p).value != ")":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
-                if php_current(p).value == ")" { p = php_advance(p) }
+                if php_current(p).value == ")": p = php_advance(p)
                 return inner + " != None"
             return "true"
         // empty($x) → len($x) == 0
@@ -475,9 +475,9 @@ fn translate_php_expr(p: PhpParser) -> String:
                 p = php_advance(p)
                 let inner: String = translate_php_expr(p)
                 while php_current(p).value != ")":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
-                if php_current(p).value == ")" { p = php_advance(p) }
+                if php_current(p).value == ")": p = php_advance(p)
                 return "len(" + inner + ") == 0"
             return "true"
         // array(...) → [...]
@@ -488,15 +488,15 @@ fn translate_php_expr(p: PhpParser) -> String:
                 let mut items: String = ""
                 let mut first: Bool = true
                 while php_current(p).value != ")":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     if php_current(p).value == ",":
                         p = php_advance(p)
                         continue
-                    if !first { items = items + ", " }
+                    if !first: items = items + ", "
                     items = items + translate_php_expr(p)
                     first = false
                     p = php_advance(p)
-                if php_current(p).value == ")" { p = php_advance(p) }
+                if php_current(p).value == ")": p = php_advance(p)
                 return "[" + items + "]"
             return "[]"
 
@@ -509,17 +509,17 @@ fn translate_php_expr(p: PhpParser) -> String:
                 p = php_advance(p)
                 let mut args: List<String> = []
                 while php_current(p).value != ")":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     if php_current(p).value == ",":
                         p = php_advance(p)
                         continue
                     let arg: String = translate_php_expr(p)
                     args.push(arg)
                     while php_current(p).value != ",":
-                        if php_current(p).value == ")" { break }
-                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).value == ")": break
+                        if php_current(p).kind == "EOF": break
                         p = php_advance(p)
-                if php_current(p).value == ")" { p = php_advance(p) }
+                if php_current(p).value == ")": p = php_advance(p)
                 let shims: List<StdlibShim> = php_stdlib_shims()
                 return translate_stdlib_call(name, args, shims)
         return name
@@ -532,11 +532,11 @@ fn translate_php_expr(p: PhpParser) -> String:
             let mut first: Bool = true
             let mut is_map: Bool = false
             while php_current(p).value != "]":
-                if php_current(p).kind == "EOF" { break }
+                if php_current(p).kind == "EOF": break
                 if php_current(p).value == ",":
                     p = php_advance(p)
                     continue
-                if !first { items = items + ", " }
+                if !first: items = items + ", "
                 let item: String = translate_php_expr(p)
                 // Check for => (associative array)
                 if php_current(p).value == "=>":
@@ -548,7 +548,7 @@ fn translate_php_expr(p: PhpParser) -> String:
                     items = items + item
                 first = false
                 p = php_advance(p)
-            if php_current(p).value == "]" { p = php_advance(p) }
+            if php_current(p).value == "]": p = php_advance(p)
             if is_map:
                 return "{" + items + "}"
             return "[" + items + "]"
@@ -580,11 +580,11 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
     let mut params: String = ""
     let mut first: Bool = true
     while php_current(p).value != ")":
-        if php_current(p).kind == "EOF" { break }
+        if php_current(p).kind == "EOF": break
         if php_current(p).value == ",":
             p = php_advance(p)
             continue
-        if !first { params = params + ", " }
+        if !first: params = params + ", "
         // Optional type hint before $param
         let mut ptype: String = ""
         if php_current(p).kind == "IDENT" || php_current(p).kind == "KEYWORD":
@@ -637,14 +637,14 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
 
     // Skip opening brace
     p = php_skip_whitespace(p)
-    if php_current(p).value == "{" { p = php_advance(p) }
+    if php_current(p).value == "{": p = php_advance(p)
     p = php_skip_whitespace(p)
 
     // Translate body until matching closing brace
     let mut depth: Int = 1
     let mut body_count: Int = 0
     while php_current(p).kind != "EOF":
-        if depth <= 0 { break }
+        if depth <= 0: break
         let t: PhpToken = php_current(p)
 
         if t.kind == "OP":
@@ -663,8 +663,8 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
                 let expr: String = translate_php_expr(p)
                 out = out + ind + "    return " + expr + "\n"
                 while php_current(p).value != ";":
-                    if php_current(p).kind == "NEWLINE" { break }
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "NEWLINE": break
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
                 p = php_skip_whitespace(p)
                 body_count = body_count + 1
@@ -674,8 +674,8 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
                 let expr: String = translate_php_expr(p)
                 out = out + ind + "    print(" + expr + ")\n"
                 while php_current(p).value != ";":
-                    if php_current(p).kind == "NEWLINE" { break }
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "NEWLINE": break
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
                 p = php_skip_whitespace(p)
                 body_count = body_count + 1
@@ -685,9 +685,9 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
                 p = php_expect_op(p, "(")
                 let cond: String = translate_php_expr(p)
                 while php_current(p).value != ")":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
-                if php_current(p).value == ")" { p = php_advance(p) }
+                if php_current(p).value == ")": p = php_advance(p)
                 out = out + ind + "    if " + cond + " {\n"
                 out = out + ind + "        // ...\n"
                 out = out + ind + "    }\n"
@@ -696,9 +696,9 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
                     p = php_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if php_current(p).kind == "EOF" { break }
-                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if php_current(p).kind == "EOF": break
+                        if php_current(p).value == "{": inner_depth = inner_depth + 1
+                        if php_current(p).value == "}": inner_depth = inner_depth - 1
                         p = php_advance(p)
                 p = php_skip_whitespace(p)
                 body_count = body_count + 1
@@ -709,9 +709,9 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
                 let arr: String = translate_php_expr(p)
                 // Skip "as"
                 while php_current(p).value != ")":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
-                if php_current(p).value == ")" { p = php_advance(p) }
+                if php_current(p).value == ")": p = php_advance(p)
                 out = out + ind + "    for item in " + arr + " {\n"
                 out = out + ind + "        // ...\n"
                 out = out + ind + "    }\n"
@@ -720,9 +720,9 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
                     p = php_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if php_current(p).kind == "EOF" { break }
-                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if php_current(p).kind == "EOF": break
+                        if php_current(p).value == "{": inner_depth = inner_depth + 1
+                        if php_current(p).value == "}": inner_depth = inner_depth - 1
                         p = php_advance(p)
                 p = php_skip_whitespace(p)
                 body_count = body_count + 1
@@ -732,9 +732,9 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
                 p = php_expect_op(p, "(")
                 let cond: String = translate_php_expr(p)
                 while php_current(p).value != ")":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
-                if php_current(p).value == ")" { p = php_advance(p) }
+                if php_current(p).value == ")": p = php_advance(p)
                 out = out + ind + "    while " + cond + " {\n"
                 out = out + ind + "        // ...\n"
                 out = out + ind + "    }\n"
@@ -743,9 +743,9 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
                     p = php_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if php_current(p).kind == "EOF" { break }
-                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if php_current(p).kind == "EOF": break
+                        if php_current(p).value == "{": inner_depth = inner_depth + 1
+                        if php_current(p).value == "}": inner_depth = inner_depth - 1
                         p = php_advance(p)
                 p = php_skip_whitespace(p)
                 body_count = body_count + 1
@@ -761,8 +761,8 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
                 let inferred: String = infer_local_type(expr)
                 out = out + ind + "    let mut " + vname + ": " + inferred + " = " + expr + "\n"
                 while php_current(p).value != ";":
-                    if php_current(p).kind == "NEWLINE" { break }
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "NEWLINE": break
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
                 p = php_skip_whitespace(p)
                 body_count = body_count + 1
@@ -770,12 +770,12 @@ fn translate_php_function(p: PhpParser, ind: String) -> String:
 
         // Skip to next semicolon or newline
         while php_current(p).kind != "NEWLINE":
-            if php_current(p).value == ";" { break }
-            if php_current(p).kind == "EOF" { break }
+            if php_current(p).value == ";": break
+            if php_current(p).kind == "EOF": break
             p = php_advance(p)
         p = php_skip_whitespace(p)
         body_count = body_count + 1
-        if body_count > 100 { break }
+        if body_count > 100: break
 
     out = out + ind + "}\n"
     return out
@@ -798,9 +798,9 @@ fn translate_php_class(p: PhpParser, ind: String) -> String:
 
     // Skip extends/implements
     while php_current(p).kind != "EOF":
-        if php_current(p).value == "{" { break }
+        if php_current(p).value == "{": break
         p = php_advance(p)
-    if php_current(p).value == "{" { p = php_advance(p) }
+    if php_current(p).value == "{": p = php_advance(p)
     p = php_skip_whitespace(p)
 
     let mut fields: List<FieldDef> = []
@@ -810,9 +810,9 @@ fn translate_php_class(p: PhpParser, ind: String) -> String:
     let mut depth: Int = 1
     let mut iter_count: Int = 0
     while depth > 0:
-        if php_current(p).kind == "EOF" { break }
+        if php_current(p).kind == "EOF": break
         iter_count = iter_count + 1
-        if iter_count > 500 { break }
+        if iter_count > 500: break
 
         let t: PhpToken = php_current(p)
         if t.value == "}":
@@ -830,14 +830,14 @@ fn translate_php_class(p: PhpParser, ind: String) -> String:
             if kv == "public" || kv == "private" || kv == "protected":
                 p = php_advance(p)
                 // Skip static
-                if php_current(p).value == "static" { p = php_advance(p) }
+                if php_current(p).value == "static": p = php_advance(p)
                 // Check if next is a variable (property) or function (method)
                 if php_current(p).kind == "VARIABLE":
                     let fname: String = php_current(p).value
                     p = php_advance(p)
                     fields.push(new_field(fname, "any"))
                     while php_current(p).value != ";":
-                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).kind == "EOF": break
                         p = php_advance(p)
                     p = php_skip_whitespace(p)
                     continue
@@ -850,7 +850,7 @@ fn translate_php_class(p: PhpParser, ind: String) -> String:
                         p = php_advance(p)
                         fields.push(new_field(fname, prop_type))
                         while php_current(p).value != ";":
-                            if php_current(p).kind == "EOF" { break }
+                            if php_current(p).kind == "EOF": break
                             p = php_advance(p)
                         p = php_skip_whitespace(p)
                         continue
@@ -876,7 +876,7 @@ fn translate_php_class(p: PhpParser, ind: String) -> String:
                 // Class constant: const NAME = value;
                 p = php_advance(p)
                 while php_current(p).value != ";":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
                 p = php_skip_whitespace(p)
                 continue
@@ -906,7 +906,7 @@ fn translate_php(source: String, filename: String) -> String:
                 p = php_advance(p)
                 let mut ns: String = ""
                 while php_current(p).value != ";":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     ns = ns + php_current(p).value
                     p = php_advance(p)
                 out_text = out_text + "// namespace " + ns + "\n"
@@ -914,7 +914,7 @@ fn translate_php(source: String, filename: String) -> String:
                 continue
             if t.value == "use" || t.value == "require" || t.value == "include":
                 while php_current(p).value != ";":
-                    if php_current(p).kind == "EOF" { break }
+                    if php_current(p).kind == "EOF": break
                     p = php_advance(p)
                 p = php_skip_whitespace(p)
                 out_text = out_text + "// import skipped\n"
@@ -946,20 +946,20 @@ fn translate_php(source: String, filename: String) -> String:
                     p = php_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if php_current(p).kind == "EOF" { break }
-                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if php_current(p).kind == "EOF": break
+                        if php_current(p).value == "{": inner_depth = inner_depth + 1
+                        if php_current(p).value == "}": inner_depth = inner_depth - 1
                         p = php_advance(p)
                 else:
                     while php_current(p).value != "{":
-                        if php_current(p).kind == "EOF" { break }
+                        if php_current(p).kind == "EOF": break
                         p = php_advance(p)
-                    if php_current(p).value == "{" { p = php_advance(p) }
+                    if php_current(p).value == "{": p = php_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if php_current(p).kind == "EOF" { break }
-                        if php_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if php_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if php_current(p).kind == "EOF": break
+                        if php_current(p).value == "{": inner_depth = inner_depth + 1
+                        if php_current(p).value == "}": inner_depth = inner_depth - 1
                         p = php_advance(p)
                 out_text = out_text + "    // methods from interface\n}\n\n"
                 continue

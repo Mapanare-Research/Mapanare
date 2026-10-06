@@ -1,7 +1,842 @@
 # Mapanare Language Specification
 
-**Version:** 5.30.0
-**Status:** Live — synced to the v5.30.0 cut (2026-05-02)
+**Version:** 5.53.0
+**Status:** Live — synced to the v5.53.0 cut (2026-05-15)
+
+> **v5.53.0 — Te.3.F — nested single-line stmt-block recursive
+> migration. Sf.\* split to v5.53.1.** Phase 0 audit produced two
+> load-bearing reversals: (1) the Sf.\* PLAN hypothesis (Win64
+> `82_struct_update` overflow lives in `_lower_struct_update`) was
+> wrong — Python-bootstrap IR is structurally correct; the actual
+> root cause is a Win64-ABI mismatch on `__mn_str_free` drop-glue
+> bypassing `_rt`'s sarg lowering, with the same bypass mirrored
+> in `mapanare/self/emit_llvm.mn`. ~100 LOC fix scope + no Windows
+> clang locally to verify → split to v5.53.1 per PLAN.md Risk #1.
+> (2) Te.3.F empirical migration target — only 7 of 11 first-party
+> residuals are migrate-able under v5.48.0 grammar; the 4 chained-
+> if-else cases (lexer.mn 267/276/285 + lower.mn:4843) need a
+> single-line `else:` continuation rule deferred to v6.0 PLAN.
+> v5.53.0 ships Te.3.F.1's inside-out formatter recursion in
+> `mapanare/format.py::_migrate_one_line_stmt_block`. Te.3.F.2
+> migrates 7 sites in `mapanare/self/lexer.mn` via `mnc fmt
+> --to-terse`. `mnc_all.mn` regenerated. **First-party brace
+> surface drops 25 → 18 (28% reduction).** STRICT 3-stage fixed
+> point preserved by construction at v5.52.0's baseline of 246,347
+> lines / 0 diff — the 7 migrations are AST-equivalent (via
+> `to_terse` round-trip through `to_braces` to identical brace
+> stream). Falsifiability locked in
+> `tests/test_single_line_colon_blocks.py::TestNestedStmtBlock`
+> (7 cases — 5 positive, 2 deferred-shape negative); reverting the
+> recursion → 3 of 5 positive tests fail with recorded
+> AssertionError signature. **Te.3.F arc CLOSED; Sf.\* IN-FLIGHT.**
+
+> **v5.50.0 — Te.3.E — match-arm body grammar extensions; close
+> v5.48.1 brace residuals.** Adds colon-form shorthand for the two
+> arm-body shapes v5.48.0 Te.3.D had no migration target for:
+> multi-stmt single-line `Pat => let X = []; return X` (Te.3.E.1)
+> and multi-line `Pat =>:` with indented body (Te.3.E.2). Pulls the
+> brace-form removal runway forward from v6.0; legacy brace source
+> still parses with the v5.19.0 deprecation warning unchanged.
+> Te.3.E.X tightens `count_user_brace_block_openers` to stop
+> flagging non-deprecated forms (inline match, chained if-else,
+> expr-position if, empty arm). Te.3.E.4 mirrors all changes
+> byte-for-byte to `runtime/native/mapanare_core.c`; cross-bootstrap
+> fixture suite extended from 37 to 46 + corpus sweep — 252/252
+> Python ≡ C. Te.3.E.5 migrates `mapanare/self/*.mn` to colon-form
+> arm bodies in 4 clusters; **first-party brace surface drops from
+> 737 to 25 (96.6% reduction)** within audit ≤50 success criterion.
+> STRICT 3-stage fixed point preserves at the new v5.50.0 baseline
+> of 245,155 lines / 0 diff (∆ +40 from v5.48.1's 245,115;
+> 53-release strict streak from v5.7.1). Goldens 103/103 at every
+> cluster checkpoint. **Te.3.E arc CLOSED.**
+
+> **v5.49.0 — Wn.\* — Windows native binary smoke fix.** Closes
+> the `mnc.exe run hello.mn` Win64 OOM regression on every
+> release tarball's `dist/mapanare/mnc.exe`. Wn.0 Phase 0 audit
+> localized the failure to `find_clang() →
+> __mn_file_exists(MnString)` — Win64 ABI mismatch on a 16-byte
+> `MnString` aggregate-by-value runtime arg passed by a direct
+> `__mn_*` call from .mn source. Wn.1 added `_RUNTIME_FN_SIGS`
+> registry to `mapanare/emit_llvm_text.py` (parallels
+> `_RUNTIME_FN_ATTRS`) and routed direct `__mn_*` calls through
+> `_rt` for ABI-correct sarg lowering. Wn.2 mirrored the fix to
+> `mapanare/self/emit_llvm.mn` via explicit `emit_rt_call`
+> routing branches (extends the v5.26.0 Mb.9 / v5.29.0 Mb.10 /
+> v5.48.1 Te.3.D.4.4 pattern to ~30 more runtime symbols).
+> Wn.3 paid forward a permanent gdb-backtrace wrapper at
+> `publish.yml:596` (PowerShell mirror of the bash Wb.1.dx
+> wrapper at `publish.yml:802-825`). Wn.4 falsifiability anchor
+> at `tests/native/test_windows_run_smoke.py` (5 IR-shape gates
+> + 1 Windows end-to-end smoke). **No language surface change.
+> No C runtime export change.** STRICT 3-stage fixed point
+> preserves at the new v5.49.0 baseline (CI verifies). Goldens
+> 100/103 locally on Windows (3 unrelated pre-existing
+> failures).
+
+> **v5.47.5 — Cp.\* — end-of-v5 closeout panel.** Panel-only
+> release. **Zero compiler edits. Zero runtime edits. Zero
+> `mapanare/self/*.mn` source edits.** No new language surface,
+> no new C runtime exports, no new MIR ops. Strict 3-stage
+> fixed point preserved by construction at v5.47.0's
+> **244,654 lines / 0 diff** (50-release strict streak from
+> v5.7.1 baseline). Goldens **103/103**.
+> **Aggregate panel score 9.76 / 10. Decision: Option A.**
+> 7-reviewer panel (Rattler 9.85 / Viper 9.85 / Anaconda 9.75
+> / Cobra 9.75 / Coral 9.65 PASS WITH NOTES / Boa 9.65 PASS
+> WITH NOTES / Mamba 9.85) reviewed v5.31.0 → v5.47.0
+> (17 substantive releases plus v5.39.1–v5.39.7 sub-releases).
+> Spread 0.20 (well below 0.5 follow-up trigger). 0 HIGH /
+> 6 dedup MEDIUM / 31 LOW findings. Second consecutive
+> Option A under the v5-gate framework; second consecutive
+> panel above the v5.7.1 / v5.8.0 9.66 ceiling (+0.04 vs
+> v5.28.0 RE-PANEL's 9.72 across +9 releases of scope).
+> **v5 series state at panel cut:** Foundation arc CLOSED.
+> Stdlib gap-close arc CLOSED. Manifesto arc CLOSED. Tensor
+> closeout arc CLOSED. Package-system runway CLOSED. v5.43.0
+> lowerer-bug closeout CLOSED at v5.46.0. Pre-panel hygiene
+> cleanup CLOSED at v5.47.0. Mb.\* arc CLOSED (since v5.29.0).
+> Pv.\* arc CLOSED (since v5.32.0/v5.33.0). Js.4 arc CLOSED
+> (v5.39.7). Terseness arc CLOSED (since v5.27.0).
+> **Cadence-gap acknowledgment:** v5.47.5 closes 19 minor
+> versions late on purpose. Per project memory + v5.28.0
+> directive: panels at the end of an arc, not in the middle.
+> **v6.0 PLAN drafting begins** at `docs/roadmap/v6/PLAN.md`
+> per `.reviews/v5.47.5/V5_TO_V6_CARRY.md` inputs. v5.47.x
+> patches recommended pre-v6.0: v5.47.1 (Cl.2 + Cl.3 already
+> named); v5.47.2 (proposed: 5 docs/process polish items).
+> See `.reviews/v5.47.5/{PRE_PANEL_AUDIT.md, V5_DECISION.md,
+> V5_TO_V6_CARRY.md, V5_RETRO.md, README.md,
+> <reviewer>/findings.md}` and
+> `docs/roadmap/v5/v5.47.5/{PLAN.md, PROMPT.md,
+> SESSION_REPORT.md}`.
+
+> **v5.47.0 — Cl.\* — pre-panel hygiene cleanup.** Drains every
+> closeable LOW-tier carry before the v5.47.5 closeout panel sees
+> the docket. Mirrors the v5.28.0 hygiene-before-panel precedent.
+> **Cl.1 (Lf.4) — variant-name collision** closed across both
+> Python bootstrap (`mapanare/semantic.py` `_variant_alternatives`
+> multimap + `_check_let` annotation-as-`_expected_type` context;
+> `_check_call` and Identifier-resolution disambiguation) and
+> self-host stage1 (`mapanare/self/semantic.mn` `expected_type` on
+> `SemState` + `scope_has_variant_for_enum` post-inference helper;
+> `mapanare/self/lower.mn` `expected_enum_name` on `LowerState` +
+> `enum_has_variant` lookup; `lower_let` sets the hint when
+> type_ann is TK_ENUM; `lower_call_by_name` enum-variant branch
+> prefers the hint over `enum_name_for_variant`'s first-match).
+> Self-host stage1 had the bug too (different from v5.46.0
+> Lf.\*); Cl.5 mirror is non-trivial (~80 LOC). **Cl.4** —
+> `stdlib/net/websocket.mn` 11 `str(byte)` decimal-stringification
+> sites replaced with `__mn_str_chr` (v5.43.0 Da.0 export, full
+> 0..255 range). **Two Phase-0-driven scope splits** (Cl.2 agent
+> stdlib refactor → v5.47.1; Cl.3 fs.mn walk_dir IR codegen →
+> v5.47.1); both warrant dedicated focus rather than fitting in
+> the tail of a hygiene release. **STRICT 3-stage fixed point
+> preserved at 244,654 lines / 0 diff** (50-release strict
+> streak from v5.7.1; +889 lines vs v5.46.0's 243,749 from new
+> self-host paths in semantic.mn + lower.mn + lower_state.mn).
+> Goldens **103/103** (102 + `103_variant_name_collision.mn`).
+>
+> **v5.46.0 — Lf.\* — v5.43.0 lowerer-bug closeout.** Closes
+> three v5.x lowerer bugs (Lf.1 + Lf.2 + Lf.3) that v5.43.0
+> SESSION_REPORT documented and worked around with the flat-
+> tuple `(ok: Bool, value, err_kind: Int, err_msg: String)`
+> shape. Phase 0 audit established that **all three bugs share
+> one root cause and that root cause exists only in the Python
+> bootstrap lowerer** — the self-host (`mapanare/self/lower.mn`)
+> already had the v5.26.1 Eu.2 fix consulting
+> `current_fn.return_type`. v5.46.0 backports the same logic
+> into Python (~30-LOC edit at `mapanare/lower.py:2398-2429`
+> Ok/Err constructor branches). Pre-fix: `Result<T, E>` returns
+> with non-trivial `T` and `Err(VARIANT(...))` body produced
+> the small `Result<Int, E>` wrapper shape, stored 32 bytes
+> into the larger sret slot, and consumers read garbage from
+> the trailing zero-filled bytes (Lf.1 silent variant tag
+> corruption; Lf.2 IR-validation failure on rewrap; Lf.3
+> silent no-fire on nested 15+-arm match). **Zero
+> `mapanare/self/*.mn` source touches** — STRICT 3-stage fixed
+> point preserved by construction at v5.45.0's **243,749
+> lines / 0 diff** (49-release strict streak from v5.7.1).
+> Goldens **102/102** (99 + 3 new). All three Fixed entries
+> are potentially behavior-changing (pre-fix paths produced
+> wrong values; v5.46.0 produces correct values). **Lf.4
+> variant-name collision split to v5.46.x** per Phase 0 LOC
+> measurement (≥50 LOC fix exceeds bundle threshold;
+> needs multimap-of-variants infrastructure).
+>
+> **v5.45.0 — Ts.\* — tensor closeout arc CLOSED.** Closes
+> the v5.41.0 option-B contract carried 4 releases past slot.
+> Mutable views (`t.view(shape)`), stepped slices
+> (`t[start..end:step]`), and an aliasing-flavor reshape ship
+> together. **`mapanare_tensor_t` grows from 40 → 64 bytes**
+> (append-only: `int64_t refcount` + `uint8_t is_view` + 7
+> padding bytes + `mapanare_tensor_t *parent`). Pre-v5.45.0
+> fields preserved at original offsets 0/8/16/24/32. Two new
+> C runtime exports: `__mn_tensor_view`,
+> `__mn_tensor_step_slice`, plus internal delegation of
+> `__mn_tensor_reshape` → `__mn_tensor_view`. Drops the
+> `noalias` LLVM attribute on `__mn_tensor_reshape` —
+> potentially breaking semantic change for any code that
+> relied on v5.41.0 copy semantics (Phase 0 audit confirmed
+> zero production callers did). Stepped slice grammar adds
+> two new productions in `mapanare/mapanare.lark` and
+> `bootstrap/mapanare.lark` (range_step_op +
+> range_incl_step_op) using the existing COLON token. New
+> `step: Expr | None` field on `RangeExpr` and `IndexItem`.
+> First v5.45.0 release to touch `mapanare/self/*.mn` source;
+> STRICT 3-stage fixed point preserved at **243,749 lines /
+> 0 diff** (48-release strict streak from v5.7.1; +1,411
+> lines vs v5.44.1's 242,338). Goldens **99/99** (96 +
+> `97_tensor_view_aliasing` + `98_tensor_stepped_slice` +
+> `99_tensor_reshape_aliased`). UB-risk tier complete: 14
+> ASan + valgrind sweeps (0 leaks 0 errors); binary-compat
+> regression `tests/runtime/test_tensor_struct_compat.py`
+> pinning `sizeof = 64` and field offsets. After v5.45.0 the
+> "Not yet on LLVM" line in CLAUDE.md no longer mentions
+> tensor mutable views or stepped slices — the line is
+> removed entirely.
+>
+> **v5.44.1 — Ps.11 + Ps.12 — scripts parity + gitignore
+> template.** Tactical hotfix completing the v5.44.0 Ps.\*
+> arc end-to-end. Extends the v5.44.0 Ps.3 resolver-parity
+> contract beyond the `mapanare/` boundary to
+> `scripts/build_stage1.py`, `scripts/ir_doctor.py`,
+> `scripts/measure_divergence.py`, `benchmarks/bench_stdlib.py`,
+> and adds `mn_modules/` plus canonical build artifacts to
+> the `mnc init` default `.gitignore`. **Zero compiler edits,
+> zero runtime edits, zero self-host source touches, zero
+> language surface changes.** STRICT preserved at v5.44.0's
+> **242,338 lines / 0 diff** (47-release strict streak);
+> goldens 96/96.
+>
+> **v5.44.0 — Ps.\* — package-aware imports + stdlib
+> extraction runway.** First release in the package-system
+> arc. Wires the existing `stdlib/pkg.py` machinery
+> (manifest parser, lockfile, registry+git install,
+> `mn_modules/` layout, publish tarball — all 1037 LOC
+> shipped pre-v5.44.0) into the existing
+> `mapanare/modules.py` resolver. After v5.44.0, a project
+> with `mapanare.toml` + `mapanare.lock` + `mn_modules/`
+> imports installed packages without manual
+> `--stdlib-path` hacks.
+>
+> **Adds zero language features, zero new MIR ops, zero
+> new IR shapes, zero new C runtime exports, zero
+> `mapanare/self/*.mn` source touches.** Strict 3-stage
+> fixed point preserved by construction at v5.43.0's
+> **242,338 lines / 0 diff** (46-release strict streak
+> from the v5.7.1 baseline). Goldens **96/96** (no new
+> goldens; no compiler edits).
+>
+> **Resolver search order (locked):**
+> source-local → explicit (`--stdlib-path` /
+> `--extra-path` / `MAPANARE_PATH`) → installed packages
+> → bundled stdlib. Source-local always wins; explicit
+> overrides outrank packages; packages outrank bundled
+> stdlib. Hyphen→underscore canonicalization for package
+> import names (`mn-foo` → `import mn_foo`).
+>
+> **Lockfile policy:** authoritative when present.
+> Missing install dir → `PackageDiscoveryError(... run
+> mnc install)`. No silent version fallback. Multiple
+> installed versions in scan mode (no lockfile) → error.
+>
+> **Bundled-vs-package classification** documented in
+> `docs/guides/stdlib-packaging.md`: bundled-core /
+> pure-package candidate / runtime-bound (uses `extern
+> "C"` against `__mn_*` runtime symbols — stays bundled
+> until `mapanare.toml` can declare native-ABI deps,
+> deferred to v6.0+) / downstream-only.
+>
+> **CLI parity:** every compile / check / emit / test
+> entry point routes resolver construction through
+> `_build_resolver_from_args(args, source_path)` and
+> exposes identical `--stdlib-path` / `--extra-path` /
+> `--verbose` / `--diag-json` flags. Locked by
+> `tests/packages/test_cli_parity.py`.
+>
+> **Diagnostics:** `--verbose` emits one
+> `[package] <name>@<version> from <source>` line per
+> resolved package import on stderr. `--diag-json PATH`
+> writes a machine-readable JSON record (schema v1) of
+> resolved packages and their import paths. Both
+> surfaces silent when not requested.
+>
+> **What this release does NOT do:** does not move any
+> stdlib module out of the main repo (Ps.\* is the
+> runway, not the migration); does not implement a
+> global package cache (`PackageRoot.source` field
+> reserved for future `"global-cache"` literal); does
+> not design native-ABI dependency metadata (deferred to
+> v6.0+).
+>
+> **v5.45.0 is the closeout panel** auditing v5.31.0 →
+> v5.44.0 and green-lighting v6.0.
+
+> **v5.43.0 — Da.\* — distributed agents v0; manifesto arc
+> CLOSED for v5.x.** Third and final manifesto-arc release
+> (after v5.40.0 `ask` and v5.42.0 As.\* supervision). Ships
+> network-transparent `agent.send` over TCP/TLS:
+> `RemoteAgent` handles addressed by
+> `tcp://host:port/agent-id` (or `tls://...`), versioned
+> length-prefixed HMAC-SHA256-signed wire protocol, Node
+> listener with per-connection state, supervision interop
+> bridging remote `ChildExited` frames into the v5.42.0
+> `supervisor_handle_exit` strategy library. After v5.43.0
+> Mapanare's "first-class agents" pitch is no longer
+> library-class-with-extra-steps — agents span machines.
+>
+> Adds two new stdlib modules (`stdlib/agent/node.mn`,
+> `stdlib/agent/remote.mn`) plus extensions to two existing
+> modules (`stdlib/agent/url.mn` shipping `NetworkError` /
+> `AgentUrl` / `parse_agent_url`; `stdlib/agent/supervision.mn`
+> shipping `RemoteExitReason` / `ChildExitedMsg` / heartbeat
+> helpers). One new C runtime file
+> (`runtime/native/mapanare_node.c` ~360 LOC) plus
+> server-side TLS additions to `mapanare_io.{c,h}` (5 new
+> dlopen symbols + 3 new public exports). **Adds zero new
+> MIR ops, zero compiler edits, zero `mapanare/self/*.mn`
+> source touches.** Strict 3-stage fixed point preserved by
+> construction at v5.42.0's **242,338 lines / 0 diff**
+> (45-release strict streak from the v5.7.1 baseline).
+> Goldens **96/96** (no new goldens — distributed agents
+> tested via 4 link-and-run cases under
+> `stdlib/agent/tests/test_dist_*.mn`).
+>
+> **Wire format (v1, locked at PRE_PHASE_AUDIT):**
+> `[u32 length BE][u8 v=1][u8 mt][u64 seq BE][16 b hmac][JSON]`.
+> HMAC-SHA256(key, version || msg_type || sequence_be ||
+> payload) truncated to 16 bytes (RFC 4868 secure for keys
+> ≥ 32 bytes; KEY_MIN_BYTES). Replay rejection via
+> per-connection last_seen watermark. Six msg_types locked
+> append-only (Send / Reply / Ping / Pong / ChildExited /
+> ProtoError; 7-15 reserved for v1.x; 16+ require v2 frame).
+> DoS guard at 100 MB.
+>
+> **PROMPT/PLAN deviation (load-bearing).** Phase 0 audit
+> surfaced server-side TLS gap (existing dlopen plumbing was
+> client-only); lead-approved Option B added the 5 missing
+> dlopen symbols + 3 exports. Three v5.x lowerer bugs
+> surfaced + worked around via flat result structs at every
+> public boundary (Result wrap-shape mismatch with complex
+> Ok types; variant-tag corruption on Err rewrap; nested
+> 15-arm match silent-no-fire). Variant rename
+> `TransportLost` → `RemoteUnreachable` to avoid collision
+> with NetworkError's `TransportLost`. Async per-connection
+> heartbeat task and auto-routing of inbound
+> `MSG_CHILD_EXITED` frames deferred to v5.43.x; v5.43.0
+> ships the synchronous heartbeat primitive + conversion
+> helpers. Generic `RemoteAgent<T>` deferred behind v5.40.0
+> Ai.1 prerequisite.
+>
+> **Da.0 runtime fix:** `__mn_str_chr` extended from 0..127
+> to 0..255 (Mapanare strings are byte arrays, not UTF-8;
+> the previous range blocked any pure-Mapanare binary
+> protocol). Goldens 96/96 preserved post-fix.
+>
+> SPEC body unchanged from the v5.21.0 cut. v5.43.0 ships
+> entirely as runtime + stdlib + tests + docs + examples; no
+> SPEC-level surface changes.
+
+> **v5.42.0 — As.\* — agent supervision trees.** Second
+> manifesto-arc release after v5.40.0 `ask`. Ships
+> Erlang/OTP-style supervision on top of the existing agent
+> runtime: the strategy library `stdlib/agent/supervisor.mn`
+> (~370 LOC; `Supervisor`, `ChildSpec`, `RestartPolicy`,
+> `RestartStrategy` with the three Erlang-exact strategies
+> `OneForOne` / `RestForOne` / `OneForAll`,
+> `RestartDecision`, `WindowCheck`, `SupervisorTransition`)
+> plus the C runtime substrate for push-based child-exit
+> notifications. **Adds four new C runtime exports**:
+> `mapanare_agent_set_parent`, `mapanare_agent_set_on_exit`,
+> `mapanare_agent_set_exit_reason`,
+> `mapanare_agent_get_exit_reason` — plus the static C
+> trampoline `__mn_supervisor_install_child_hook` and a new
+> `mapanare_exit_reason_kind_t` enum (NORMAL / SHUTDOWN /
+> KILLED / CRASHED). Append-only struct extension on
+> `mapanare_agent_t` (4 fields totalling ~496 bytes,
+> bringing the struct from 488 to 984 bytes on x86_64
+> Linux); zero-init by the existing `memset` in
+> `mapanare_agent_init` keeps pre-v5.42.0 callers working
+> unchanged. Adds **zero new MIR ops, zero compiler edits,
+> zero `mapanare/self/*.mn` source touches**. Strict 3-stage
+> fixed point preserved by construction at v5.41.0's
+> **242,338 lines / 0 diff** (44-release strict streak).
+> Goldens **96/96** (no new goldens — supervision tested
+> via 9 .mn link-and-run cases under `stdlib/agent/tests/`).
+>
+> **PROMPT/PLAN deviation (load-bearing).** Phase 0 audit
+> (`docs/roadmap/v5/v5.42.0/PRE_PHASE_AUDIT.md`) surfaced
+> five premise errors: naming throughout (`MnAgent` /
+> `mn_agent_*` / `MN_MSG_*` don't exist — runtime is
+> `mapanare_agent_t` / `mapanare_agent_*`); no
+> system-message-kind enum exists (PLAN.md Risk #4 cannot
+> materialize as written; re-targeted to lock the struct-
+> extension binary-compat case); no `mn_agent_exit*` API
+> (As.4 structured-payload routing implemented as a
+> side-channel: handler calls
+> `mapanare_agent_set_exit_reason` before returning rc != 0;
+> on_exit reads back via the FAILED state-store release);
+> pre-existing `restart_policy` field is intra-agent
+> handler-error retry, NOT supervisor-driven; v5.42.0 As.6
+> adds the latter on top, leaving the former untouched.
+> Lead-approved Path B (push-driven via opt-in C callback)
+> over Path A (pure-Mapanare poll-based).
+>
+> SPEC body unchanged from the v5.21.0 cut. v5.42.0 ships
+> entirely as runtime + stdlib + tests + docs + examples;
+> no SPEC-level surface changes.
+
+> **v5.41.0 — Ts.1 — `tensor.reshape` on the LLVM backend
+> (option B part 1).** SPEC body unchanged from the v5.21.0
+> cut. v5.41.0 closes part 1 of the longest-standing v5.x
+> tensor parity gap: the language-builtin `Tensor`
+> (`TypeKind.TENSOR`) now has `reshape(shape: List<Int>) ->
+> Tensor` end-to-end through both the Python bootstrap LLVM
+> emitter and the self-hosted compiler (`mnc-stage1`).
+> Validates that the new shape's element count matches the
+> source's `size`; aborts with a structured fprintf+abort
+> message on mismatch. **Ships copy semantics** at v5.41.0:
+> each call allocates a fresh tensor and memcpys the source
+> data; v5.41.1 will swap to refcount-based aliasing under
+> the same surface. Adds **one new C runtime export** —
+> `__mn_tensor_reshape(const mapanare_tensor_t *,
+> const MnList *) -> mapanare_tensor_t *` in
+> `runtime/native/mapanare_gpu_builtins.c`. Adds **zero new
+> MIR ops** — the lower path emits a plain `Call` to the
+> runtime helper (matching the `__mn_tensor_slice` pattern,
+> not the PLAN's "new MIR op" framing). Strict 3-stage
+> fixed point preserved by construction at **242,338 lines /
+> 0 diff** (43-release strict streak from the v5.7.1
+> baseline). Goldens **96/96** (95 existing + new
+> `tests/golden/96_tensor_reshape.mn`).
+>
+> **PROMPT/PLAN deviation (load-bearing) — option B scope
+> split.** Phase 0 audit
+> (`docs/roadmap/v5/v5.41.0/PRE_PHASE_AUDIT.md`) surfaced
+> four mismatches between PLAN framing and v5.40.0 HEAD: (1)
+> grammar does NOT accept `[start..end:step]` (PLAN said it
+> did); (2) the existing `stdlib/gpu/tensor.mn` `reshape` is
+> on a stdlib `GpuTensor` struct — different type from the
+> language-builtin `Tensor`; (3) `mapanare_tensor_t` has no
+> refcount/strides/offset and views need struct surgery; (4)
+> realistic budget for full closeout is ~1,900 LOC across
+> 3–5 working days, not the PLAN's ~750 / 1–2 sessions.
+> Lead-approved option B: v5.41.0 = Ts.1 only with copy
+> semantics (~700 LOC); v5.41.1 = Ts.2 (mutable views) +
+> Ts.3 (stepped slices, including grammar + AST + parser
+> changes for `:step`) + refcount infrastructure +
+> remaining tests/docs (~1,200 LOC). CLAUDE.md "Not yet on
+> LLVM" line partially closed at v5.41.0: `tensor reshape`
+> removed; `mutable views, stepped slices` remain with
+> v5.41.1 forward link.
+
+> **v5.40.0 — Ai.\* — `ask` runtime adapter; manifesto-arc
+> kickoff.** SPEC body unchanged from the v5.21.0 cut. v5.40.0
+> ships `stdlib/ai/ask.mn` (provider-agnostic env-driven LLM
+> dispatch + `AskError` 8-variant enum + `ask_text` +
+> `ask_with_schema` + `map_extract_error`) and
+> `stdlib/ai/ask_cache.mn` (opt-in SHA-256-keyed response cache)
+> on top of v5.36.0's `__struct_meta::<T>()` schema intrinsic and
+> v5.39.x's typed-serde round-trip. **Zero compiler edits, zero
+> new C runtime exports, zero `mapanare/self/*.mn` source
+> touches.** STRICT preserved by construction at v5.39.7's
+> 241,898 lines / 0 diff (42-release strict streak). PROMPT/PLAN
+> deviation (load-bearing): the reserved `ask` keyword + binding-
+> context type inference (Ai.1 + Ai.2) and the
+> `ask_typed::<T>(prompt)` intrinsic (Ai.8) are deferred to
+> v5.41.0 — Phase 0 audit confirmed nested-generic intrinsic
+> dispatch in `mapanare/lower.py::_specialize_fn` does NOT
+> propagate substituted type arguments to inner intrinsic call
+> sites (e.g., `from_json::<T>` lowered with literal "T" instead
+> of the substituted struct), so a user-level
+> `pub fn ask_typed<T>` cannot work without a structural fix that
+> threatens the strict streak. v5.40.0 ships function-syntax
+> (`ask_with_schema(prompt, __struct_meta::<T>())` paired with
+> `from_json::<T>`); v5.41.0 picks up the keyword on the back of
+> the `_specialize_fn` body-walk fix. Manifesto demo:
+> `examples/ai/plan_generator.mn` (Plan with steps + ETA from a
+> goal string). Goldens 95/95.
+
+> **v5.39.7 — Js.4.F.1 + Js.4.F.2 — typed-serde ENUM encode +
+> decode; round-trip closure for enum-typed fields. Final
+> release in the v5.39.x typed-serde arc; Js.4.\* arc CLOSED.**
+> SPEC body unchanged from the v5.21.0 cut. After v5.39.7 the
+> typed-serde round-trip `to_json::<T>` ↔ `from_json::<T>`
+> closes for every common LLM JSON response shape (primitive,
+> struct, nested struct, `List<X>`, `Map<String, V>`, and
+> tagged-union enums). **Js.4.F.1**: added missing
+> `TypeKind.ENUM` branch in
+> `mapanare/lower.py::_encode_field_to_json` (routed inside the
+> existing STRUCT branch since `_resolve_type_expr` cannot
+> distinguish enum from struct at parse time; skip list
+> `{Option, Result, JsonValue}` keeps compiler-internal enums on
+> their existing paths); new `_emit_enum_json_body` helper
+> switches on `EnumTag` with one block per variant + default,
+> merges via Phi. Per-variant payload shape: no-payload → bare
+> string `"VariantName"`; single-payload →
+> `{"VariantName": <encoded>}`; multi-payload →
+> `{"VariantName": [<p0>, <p1>, ...]}` (positional tuple → JSON
+> array). **Js.4.F.2**: added missing `TypeKind.ENUM` branch in
+> `mapanare/lower.py::_decode_json_field`; new
+> `_emit_enum_decode_body` helper switches on JsonValue tag
+> (Str / Object / default), then runs a string-cascade compare
+> against each variant name. For Str: each no-payload variant
+> gets one `if jstr == "VariantName" { EnumInit(VariantName) }`
+> arm. For Object: extract `Map<String, JsonValue>` entries via
+> `EnumPayload(variant="Object")`, pull the single variant key
+> via `__mn_map_keys`+`keys[0]`, cascade-compare against each
+> payload-bearing variant, decode payload(s) positionally
+> (1-tuple → recurse `_decode_json_field`; n-tuple → extract
+> `JsonValue::Array`'s inner `List<JsonValue>` and decode each
+> element by its declared payload type), then `EnumInit`.
+> **Externally-tagged JSON shape locked at PLAN** —
+> `{"VariantName": payload}` with bare-string for unit variants;
+> matches Rust serde's default derive output and what most LLMs
+> produce in function-call responses. Adds **zero language
+> features, zero new MIR ops, zero new IR shapes, zero new C
+> runtime exports**. Strict 3-stage fixed point preserved by
+> construction at v5.39.6's 241,898 lines / 0 diff (41-release
+> strict streak from v5.7.1; zero `mapanare/self/*.mn` source
+> touches — Phase 0 grep returned 0 matches; mirror is
+> structurally N/A). **Js.4.\* arc CLOSED.** v5.40.0 manifesto-
+> arc kickoff (`ask` / `ask_typed::<T>`) fully unblocked.
+
+> **v5.39.6 — Js.4.E.1 + Js.4.E.2 — typed-serde MAP encode +
+> decode; round-trip closure for `Map<String, V>`-typed fields.**
+> SPEC body unchanged from the v5.21.0 cut. Sibling release to
+> v5.39.5 (LIST decode); bundles encode + decode in one release
+> because Map's invariant decision is simpler than LIST's was
+> (string-key only — JSON object keys are strings per RFC 8259
+> §4) and both halves are mechanical mirrors of v5.39.4 +
+> v5.39.5 patterns. **Js.4.E.1**: added missing `TypeKind.MAP`
+> branch in `mapanare/lower.py::_encode_field_to_json`; new
+> `_emit_map_json_body` helper iterates via `__mn_map_keys` +
+> per-key IndexGet on the map, emits `"key": value` pairs
+> separated by `, `, recurses through `_encode_field_to_json`
+> per value. Pre-fix `Bag("box", #{"a": 1})` encoded as
+> `{"name": "box", "lookup": <?>}`. **Js.4.E.2**: added missing
+> `TypeKind.MAP` branch in `mapanare/lower.py::_decode_json_field`;
+> new `_emit_map_decode_body` helper extracts inner
+> `Map<String, JsonValue>` from the Object variant, initializes
+> empty `Map<String, V>` accumulator (relies on v5.39.2's
+> `_do_map_init` empty-literal fix), iterates keys, recurse-decodes
+> per value, accumulates via `IndexSet` (lowered to
+> `__mn_map_set`). Unlike v5.39.5 LIST decode, no SSA-name-reuse
+> trick needed: MAP lowers to `PTR` and `__mn_map_set` mutates the
+> bucket array in place without changing the outer pointer.
+> **Invariant decision (locked at PLAN):** `Map<K, V>` fields with
+> non-String K → compile-time error (rejected over silent lossy
+> coercion via `str(key)` and runtime error). Diagnostic shape:
+> `to_json/from_json: Map<K, V> requires K = String (got <KIND>)`.
+> ENUM encoding (tagged-union shape) and ENUM decoding remain
+> held — last typed-serde piece, scoped for v5.39.7. Adds **zero
+> language features, zero new MIR ops, zero new IR shapes, zero
+> new C runtime exports**. Strict 3-stage fixed point preserved
+> by construction at v5.39.5's 241,898 lines / 0 diff
+> (40-release strict streak from v5.7.1; zero
+> `mapanare/self/*.mn` source touches — Phase 0 grep returned
+> 0 matches; mirror is structurally N/A).
+
+> **v5.39.5 — Js.4.D.3 — typed-serde LIST decode (round-trip
+> closure for List-typed fields); v5.39.x arc CLOSED.** SPEC body
+> unchanged from the v5.21.0 cut. Symmetric pair to v5.39.4
+> Js.4.D.1 (LIST encode). Closes the last v5.39.x-deferred
+> typed-serde gap before the v5.40.0 manifesto-arc kickoff. After
+> this release, the typed-serde round-trip
+> `to_json::<T>` ↔ `from_json::<T>` closes for **every shape
+> v5.40.0 Ai.\* (`ask_typed::<T>`) actually returns** from typical
+> LLM responses (primitive, struct, nested struct,
+> `List<primitive>`, `List<struct>`). Single load-bearing fix in
+> `mapanare/lower.py::_decode_json_field`: added the missing
+> `TypeKind.LIST` branch (the dispatch had
+> `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT` (the latter from
+> v5.39.4) but fell through to the raw-jval return for LIST). New
+> `_emit_list_decode_body(arr_jval, inner_type) -> Value` helper
+> mirrors v5.39.4's `_emit_list_json_body` shape on the decode
+> side: extract `List<JsonValue>` from the `Array` variant via
+> `EnumPayload(variant="Array", payload_idx=0)`, initialize an
+> empty typed accumulator, loop over the inner array, recurse
+> through `_decode_json_field` per element, accumulate via
+> in-place `ListPush` (mirrors `_lower_method_call`'s `.push()`
+> SSA name-reuse pattern at `mapanare/lower.py:3298`). MAP
+> encoding (string-key invariant), ENUM encoding (tagged-union
+> shape), and MAP/ENUM decoding remain held with documented
+> invariant questions — none load-bearing for v5.40.0 Ai.\*. Adds
+> **zero language features, zero new MIR ops, zero new IR
+> shapes, zero new C runtime exports**. Strict 3-stage fixed
+> point preserved by construction at v5.39.4's 241,898 lines / 0
+> diff (39-release strict streak from v5.7.1; zero
+> `mapanare/self/*.mn` source touches — Phase 0 grep returned 0
+> matches, mirror is structurally N/A). **Js.4.\* arc CLOSED
+> for v5.40.0 dependencies.**
+
+> **v5.39.4 — Js.4.D.1 + Js.4.D.2 — typed-serde round-trip closure
+> for nested-struct + List-typed fields.** SPEC body unchanged from
+> the v5.21.0 cut. Two siblings to v5.39.3's STRUCT encoding (Js.4.C),
+> bundled because together they unlock the `to_json::<T>` ↔
+> `from_json::<T>` round-trip for the shapes v5.40.0 Ai.\*
+> (`ask_typed::<T>`) actually returns. **Js.4.D.1**: added the
+> missing `TypeKind.LIST` branch in
+> `mapanare/lower.py::_encode_field_to_json` (sibling to v5.39.3's
+> STRUCT branch); the new `_emit_list_json_body` helper emits a
+> counter+phi loop calling `_encode_field_to_json` per element, so
+> nested `List<List<T>>` and `List<Struct>` recurse uniformly through
+> the existing branches. Pre-fix `Bag("box", [1, 2, 3])` encoded as
+> `{"name": "box", "items": <?>}`. **Js.4.D.2**: added the missing
+> `TypeKind.STRUCT` branch in
+> `mapanare/lower.py::_decode_json_field`. Sibling factoring to
+> v5.39.3 on the encode side: extracted
+> `_emit_decode_struct_inline(json_val, struct_name) -> Value` from
+> `_lower_decode_to`'s Object branch; the helper is shared between
+> the top-level `decode_to::<T>` / `from_json::<T>` Ok-path and the
+> new STRUCT field-recursion. Pre-fix nested struct fields decoded
+> to garbage (silent shape mismatch — fallback returned the raw
+> `JsonValue` enum). Bundle scope locked: STRUCT-decode + LIST-encode
+> only; MAP encoding (string-key invariant), ENUM encoding (tagged-
+> union shape), and LIST/MAP/ENUM decoding held for v5.39.5+ — each
+> deserves its own Phase 0 audit. Adds **zero language features,
+> zero new MIR ops, zero new IR shapes, zero new C runtime exports**.
+> Strict 3-stage fixed point preserved by construction at v5.39.3's
+> 241,898 lines / 0 diff (38-release strict streak from v5.7.1;
+> zero `mapanare/self/*.mn` source touches — Phase 0 grep returned
+> 0 matches, mirror is structurally N/A).
+
+> **v5.39.3 — Js.4.C — `to_json::<T>` nested-struct recursion.**
+> SPEC body unchanged from the v5.21.0 cut. Split-from-v5.39.2
+> follow-on. v5.39.2 closed the runtime SEGV in `from_json::<T>`
+> (Js.4.B.2) but explicitly held back the `to_json::<T>` nested-
+> struct fix because it lives in a different code path. v5.39.3
+> closes that hole. Single load-bearing fix in
+> `mapanare/lower.py::_encode_field_to_json`: added the missing
+> `TypeKind.STRUCT` branch (the dispatch had `STRING` / `INT` /
+> `FLOAT` / `BOOL` / `OPTION` but fell through to the `str()`
+> fallback for STRUCT, producing the `<?>` placeholder via
+> `mapanare/emit_llvm_text.py:3465`). Refactored
+> `_lower_encode_struct` to share `_emit_struct_json_body(struct_val,
+> struct_name) -> Value` with the new STRUCT branch — both the
+> top-level intrinsic and the field-recursion call the same
+> emitter. Bundle scope: STRUCT only; LIST/MAP/ENUM held for
+> v5.39.4 (LIST runtime-iteration MIR exceeded ~20 LOC bundle
+> threshold; MAP/ENUM have invariant questions deserving their
+> own session). After v5.39.3 ships, the typed-serde encode path
+> (`to_json::<T>`) handles nested structs end-to-end; the manifesto-
+> arc ergonomic v5.40.0 Ai.\* will exercise via `ask_typed::<T>`.
+> Adds **zero language features, zero new MIR ops, zero new IR
+> shapes, zero new C runtime exports**. Strict 3-stage fixed point
+> preserved by construction at v5.39.2's 241,898 lines / 0 diff
+> (37-release strict streak from v5.7.1; zero
+> `mapanare/self/*.mn` source touches — Phase 0 verified the
+> typed-serde surface remains Python-bootstrap-only, so the
+> PROMPT-scoped mirror is structurally N/A).
+
+> **v5.39.2 — Js.4.B.2 — `from_json::<T>` runtime SEGV closeout +
+> link-and-run regression suite. v5.39.1+v5.39.2 arc CLOSED.** SPEC
+> body unchanged from the v5.21.0 cut. Second of two release
+> sessions on Js.4.B; together they close the v5.36.0-deferred
+> typed-serde defect surfaced at v5.40.0 Phase 0 audit. Single
+> load-bearing fix in `mapanare/emit_llvm_text.py::_do_map_init`:
+> empty-literal `Map<K, V> = #{}` now derives `key_size` /
+> `val_size` / `key_tag` from the declared `MapInit.key_type` /
+> `MapInit.val_type` regardless of pair count, instead of
+> hardcoding `(8, 8, 0)`. The hardcoded defaults silently broke
+> any non-Int-keyed empty map (`Map<String, X>` was the load-
+> bearing case via `decode_object_inner`'s `entries: Map<String,
+> JsonValue> = #{}`). Defensive symmetry fix in
+> `_do_enum_init`: Map values consumed as enum payloads now also
+> drain from `_map_vars` (was: only `_list_vars`). New link-and-run
+> regression harness `tests/stdlib/test_struct_json_runtime.py`
+> with 6 .mn cases under `stdlib/encoding/json/tests/` — the
+> infrastructure that should have existed since v5.36.0; the
+> compile-only carry `tests/stdlib/test_struct_json.py` is what
+> kept Js.4.B latent for 4 releases. Adds **zero language features,
+> zero new MIR ops, zero new IR shapes, zero new C runtime
+> exports**. Strict 3-stage fixed point preserved by construction
+> at v5.39.1's 241,898 lines / 0 diff (36-release strict streak
+> from v5.7.1; zero `mapanare/self/*.mn` source touches — self-host
+> `emit_map_init` already had the correct shape, so PROMPT-scoped
+> mirror is structurally N/A). `to_json::<T>` nested-struct
+> serialization (`<?>` placeholder for struct-typed fields) split
+> to v5.39.3; different code path. v5.40.0 (Ai.\* — `ask` keyword
+> manifesto-arc kickoff) unblocked.
+
+> **v5.39.1 — Js.4.B.1 — `from_json::<T>` IR-emission shape fix
+> (no-import case).** SPEC body unchanged from the v5.21.0 cut.
+> First of two release sessions dedicated to closing **Js.4.B**
+> (the v5.36.0-deferred typed-serde defect). v5.39.1 closes the
+> **IR-emission shape mismatch** when user code calls
+> `from_json::<T>(s)` without importing `stdlib/encoding/json`;
+> the lowerer's new `_ensure_json_types_registered()` helper
+> (`mapanare/lower.py`) injects canonical `JsonValue` (7 variants)
+> and `JsonError` (3 fields) layouts into `self._module.enums` /
+> `self._module.structs` when missing, so the emitter's proper
+> boxed-enum extraction path fires instead of the Result/Option
+> fallback. v5.39.2 will close the remaining runtime SEGV in
+> `__mn_map_get` when the json import IS present. Adds **zero
+> language features, zero new MIR ops, zero new IR shapes, zero
+> new C runtime exports**. Strict 3-stage fixed point preserved
+> by construction at v5.39.0's 241,898 lines / 0 diff (35-release
+> strict streak from v5.7.1; zero `mapanare/self/*.mn` source
+> touches — the self-host has no `from_json` / `decode_to`
+> lowering, so the PROMPT-scoped mirror is structurally N/A).
+
+> **v5.39.0 — Cr.\* — crypto stdlib hashing/MAC/random extensions.**
+> SPEC body unchanged from the v5.21.0 cut. v5.39.0 audits + extends
+> the existing `stdlib/crypto.mn` (283 LOC; SHA-1/256/512 + HMAC-SHA256
+> + Base64 + Hex + JWT HS256 + random_bytes already shipped) with
+> SHA-3-256, BLAKE2b-512, HMAC-SHA512, `constant_time_eq`, streaming
+> `DigestCtx` + `HmacCtx`, `random_u64`, `random_range`. Eight new
+> `__mn_*` C runtime exports appended at the end of the existing
+> crypto block in `runtime/native/mapanare_io.c`:
+> `__mn_sha3_256_str`, `__mn_blake2b_str`, `__mn_hmac_sha512_str`,
+> `__mn_constant_time_eq`, `__mn_md_ctx_new` /
+> `__mn_md_ctx_update` / `__mn_md_ctx_finalize`,
+> `__mn_hmac_ctx_new` / `__mn_hmac_ctx_update` /
+> `__mn_hmac_ctx_finalize`. ABI-stable: appended, not inserted.
+> SHA-3 / BLAKE2 / HMAC_CTX symbols probed as **optional** in
+> `evp_load()` — NULL is legitimate; callers gate. Pre-existing
+> SHA-1/256/512 + HMAC-SHA256 + Base64 + Hex + JWT surface preserved
+> unchanged. **Cr.0 emitter shortcut fix (load-bearing):** the
+> Python LLVM emitter at `mapanare/emit_llvm_text.py` had
+> unconditional builtin shortcuts for `sha256` / `hmac_sha256` /
+> `base64_*` / `hex_encode` / `random_bytes` / `regex_match` /
+> `regex_replace` that bypassed user-defined wrappers when MIR
+> inlining failed (high call-site count). Now gated on `fn not in
+> self._sigs`; user-defined wrappers win when present. AEAD,
+> Ed25519/X25519, KDFs (PBKDF2/HKDF/Argon2id) explicitly deferred to
+> v5.39.1 — staged scope per Phase-0 audit; each has its own
+> correctness trap (GCM nonce reuse, Ed25519 key serialization,
+> Argon2 availability skew across OpenSSL major versions).
+> **Stdlib gap-close arc CLOSED** — v5.34.0 (date/time) → v5.35.0
+> (sqlite) → v5.36.0 (JSON) → v5.37.0 (HTTP App) → v5.38.0 (regex
+> closeout) → v5.39.0 (crypto extensions). Manifesto arc begins
+> v5.40.0 with `ask`.
+
+> **v5.38.0 — Re.\* — regex stdlib closeout.** SPEC body unchanged
+> from the v5.21.0 cut. v5.38.0 audits + extends the existing
+> `stdlib/text/regex.mn` (PCRE2 wrapper shipped at v0.9.0): adds the
+> `Regex`-first compile-once API (`regex_is_match` / `regex_find` /
+> `regex_find_all` / `regex_replace` / `regex_replace_all` /
+> `regex_captures` / `regex_captures_iter` / `regex_free`) plus a
+> `Captures` type with named-group lookup (`captures_get`,
+> `captures_get_named`, `captures_count`). Named groups parse
+> `(?P<name>...)` / `(?<name>...)` in the pattern source via the
+> new `parse_named_groups` walker — **no new C runtime exports**.
+> Backref-bearing replacements (`$0..$9`, `${name}`, `$$`) work
+> through PCRE2's default substitute mode. PLAN-deviated from a
+> Pike VM rewrite (kept PCRE2; rewrite is a v6.0+ candidate).
+> Source: `stdlib/text/regex.mn` extended; new
+> `stdlib/text/tests/test_regex_smoke.mn` (10 sections) +
+> `stdlib/text/tests/test_regex_corpus.mn` (~40 cases) +
+> `tests/stdlib/test_text_regex.py` harness; new
+> `docs/stdlib/regex.md`. Adds **zero language features, zero
+> new MIR ops, zero new IR shapes, zero new runtime functions**.
+> Strict 3-stage fixed point preserved by construction at
+> v5.37.0's 241,898 lines / 0 diff; 33-release strict streak from
+> v5.7.1.
+
+> **v5.37.0 — Ht.\* — HTTP App / router / middleware / streaming
+> encoders.** SPEC body unchanged from the v5.21.0 cut. v5.37.0 adds
+> two new stdlib modules under `stdlib/net/http/`: **`router.mn`**
+> ships an opt-in `App` container with a path-pattern router
+> (`:name` parameters, `*name` wildcards alongside literals; method
+> dispatch GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS) and a
+> **registration-table middleware** list (Logger, Cors, BodyLimit,
+> RequestId, Custom). **`streaming.mn`** ships RFC 7230 §4.1 chunked
+> transfer encoding (`chunked_encode`, `build_chunked_response`,
+> `int_to_hex`) and a Server-Sent Events encoder (`SseLite`,
+> `sse_lite_encode`, `sse_lite_encode_stream`). Adds **zero language
+> features, zero new MIR ops, zero new IR shapes, zero new runtime
+> functions**. The legacy `stdlib/net/http/server.mn` `Router`
+> (string-named handlers, `${name}` syntax) is preserved unchanged.
+> Three PROMPT deviations documented in `### Changed` /
+> `### Deviations from PROMPT`: middleware as registration table
+> (not closure chain — fn-value calls broken in both backends);
+> ordered list of compiled patterns (not recursive trie); Ht.3
+> ships as documentation only since `stdlib/net/websocket.mn`
+> already has a complete RFC 6455 server; Ht.4 ships encoders, not
+> a bounded-RSS streamer (needs new `__mn_tcp_send_bytes` C
+> export). Ht.5 typed-handler-shorthand deferred to v5.38.0+
+> pending Js.4.B drop-glue fix from v5.36.0 carry. Strict 3-stage
+> fixed point preserved at v5.36.0's 241,898 lines / 0 diff;
+> 32-release strict streak from v5.7.1.
+
+> **v5.36.0 — Js.\* — JSON completeness arc.** SPEC body unchanged
+> from the v5.21.0 cut. v5.36.0 makes `stdlib/encoding/json.mn`
+> RFC 8259 strict — inputs that previously parsed silently and now
+> error: leading-zero numbers (`01`, `-01`), unescaped control
+> characters in strings (bytes U+0000..U+001F including embedded
+> `\n` / `\t` / `\r`), and documents nesting deeper than 256 levels.
+> Surface additions: `parse` / `to_json` / `to_json_pretty` aliases;
+> `to_json_pretty(value, indent: Int)` with configurable indent
+> (was hardcoded 2-space pre-fix); pull-based streaming API
+> (`json_stream_open` / `json_stream_next` / `JsonStreamParser`);
+> typed serde intrinsics `to_json::<T>` / `from_json::<T>` —
+> compile-time monomorphized, sister to existing
+> `encode_struct::<T>` / `decode_to::<T>`. **Js.4 caveat:**
+> `to_json::<T>` ships fully working at runtime; `from_json::<T>`
+> ships compile-tested, runtime SEGV deferred to v5.36.1 as Js.4.B
+> (a pre-existing v5.x drop-glue bug uncovered by the fix). Adds
+> **zero language features, zero new MIR ops, zero new IR shapes,
+> zero new runtime functions**. Two compiler-side bug-fixes
+> (Js.0, Js.0.B) in `mapanare/emit_llvm_text.py` and
+> `mapanare/lower.py` that were required for end-to-end JSON build.
+> Goldens 95/95. Strict 3-stage fixed point preserved by
+> construction at v5.35.0's 241,898 lines / 0 diff (31-release
+> strict streak from v5.7.1).
+
+> **v5.35.0 — Sq.\* — first-class SQLite3 stdlib driver + Tn.1
+> closure.** SPEC body unchanged from the v5.21.0 cut. v5.35.0 ships
+> net-new `stdlib/sql/sqlite.mn` surface (`Database`, `Statement`,
+> `Value`, `SqlError`, `SavepointHandle` types; typed `column<T>`
+> with mismatch detection; named parameter binding via `:name` /
+> `@name` / `$name`; explicit transaction primitives + nested
+> SAVEPOINTs; blob support carrying raw bytes through `String`)
+> backed by `dlopen(libsqlite3)` wrappers in
+> `runtime/native/mapanare_db.c`. Adds **zero language features,
+> zero new MIR ops, zero new IR shapes** but DOES add **eight new C
+> runtime functions** in `mapanare_db.c` extending the v5.34.x
+> sqlite3 surface: `__mn_sqlite3_libversion`,
+> `__mn_sqlite3_bind_blob`, `__mn_sqlite3_column_blob`,
+> `__mn_sqlite3_reset`, `__mn_sqlite3_bind_parameter_index`,
+> `__mn_sqlite3_changes`, `__mn_sqlite3_last_insert_rowid`,
+> `__mn_sqlite3_extended_errcode`. Also lands **Sq.0 (formerly
+> Tn.1)** — `tests/llvm/test_llvm_link_all.py` — closing the
+> v5.28.0 RE-PANEL convergent recommendation that had carried 6
+> releases. Strict 3-stage fixed point preserved by construction at
+> v5.34.0's 241,898 lines / 0 diff (30-release strict streak from
+> v5.7.1). Goldens 95/95.
+
+> **v5.34.0 — Dt.\* — first-class date / time stdlib.** SPEC body
+> unchanged from the v5.21.0 cut. v5.34.0 ships net-new
+> `stdlib/time.mn` surface (`Date`, `Time`, `DateTime`, `Duration`,
+> `Timezone` types; ISO 8601 + RFC 3339 parse / format; arithmetic
+> with month/day rollover; v0 timezone surface — UTC + system-local
+> only, named tzdb deferred to v5.34.1+) on top of a new portable C
+> shim at `runtime/native/mapanare_time.c`. Adds **zero language
+> features, zero new MIR ops, zero new IR shapes** but DOES add
+> **six new C runtime functions** (the first SPEC-scoped runtime
+> additions since v5.21.0): `__mn_now_realtime_ns`,
+> `__mn_utc_pack`, `__mn_local_pack`, `__mn_local_offset_minutes`,
+> `__mn_timegm`, `__mn_normalize_pack`. Strict 3-stage fixed point
+> preserved by construction at v5.33.x's 241,898 lines / 0 diff
+> (29-release strict streak from v5.7.1). Goldens 95/95. v5.34.0
+> closes the v5.33.0 cadence-gap-acknowledged carry.
+
+> **v5.31.0 → v5.33.2 — banner UX hotfix + native `mnc` desktop
+> distribution + SPEC header re-sync + cadence-gate relaxation.**
+> SPEC body unchanged from the v5.21.0 cut. v5.31.0 (Bn.\* — banner
+> hotfix; "[dev mode]" lie killed on release installs), v5.32.0
+> (Nw.\* — native `mnc.exe` shipped in Windows SDK ZIP; Python
+> becomes bootstrap-only on Windows release installs), v5.33.0
+> (Nu.\* — native `mnc` shipped in Linux x86_64 + macOS arm64
+> release tarballs; Linux aarch64 + macOS x86_64 deferred to
+> v5.34.0+), v5.33.1 (Hd.\* — SPEC header drift hotfix), and
+> v5.33.2 (Cd.\* — relax panel-cadence enforcement to
+> informational-only) together added **zero language features,
+> zero new MIR ops, zero new IR shapes, zero new runtime
+> functions** — packaging / hotfix / tooling-policy releases only.
+> The v5.21.0 sync block below remains authoritative for language
+> semantics.
 
 > **v5.28.0 → v5.30.0 — RE-PANEL + Win64 ABI closeout +
 > packaging.** SPEC body unchanged from the v5.21.0 cut.
@@ -1066,14 +1901,44 @@ Rules for colon style:
   fn empty():
       pass
   ```
-- Single-line `if x: y` form is **not** supported. The v5.14.0
-  SPEC incorrectly promised this form for v5.21.0; the v5.21.0
-  small-ergonomic-wins cycle shipped chained comparisons (Te.6)
-  instead, and the single-line form was rescoped at v5.21.1 to
-  v6.0 — when the brace-form removal will eliminate the parser
-  ambiguity that makes single-line colon-form complex to integrate
-  cleanly with brace shape. Until v6.0, put the body on the next
-  line.
+- **Single-line colon blocks (since v5.48.0):** a statement-block
+  opener followed by `: <body>` on the same line is accepted as
+  long as `<body>` is a single statement. Supported heads: `fn`,
+  `if`, `si`, `while`, `mien`, `for`, `cada`; with optional
+  `pub`/`async`/`extern` modifier prefixes; plus continuations
+  `else`, `sino`, `else if`, `sino si`. Examples:
+  <!-- pseudo -->
+  ```mn
+  fn main(): print("hi")
+  if total_size <= 16: return false
+  si total_size <= 16: da false
+  while ready(): break
+  for x in xs: print(x)
+  else: return fallback()
+  sino: da fallback()
+  ```
+  Comma-body openers (`struct`, `enum`, `match`, `tipo`, `modo`,
+  `way`) and block-only openers (`trait`, `impl`, `agent`) are
+  excluded — their bodies need multi-line grammar.
+- A single-line `if x: stmt` followed by an `else` continuation on
+  a *separate* line does **not** chain — the brace stream emits
+  the single-line as a fully-closed inline block. If the user
+  wants a chain, they use multi-line on both branches. This
+  matches the guard-clause / early-return pattern that dominates
+  the audit at v5.48.0.
+- **Match-arm statement shorthand (since v5.48.0):** match arms
+  may use a bare statement keyword after `=>` instead of a brace
+  block. Supported keywords: `return`, `da`, `break`, `sal`,
+  `continue`, `sigue`, `pass`. Examples:
+  ```mn
+  match e:
+      IntLit(n) => return n
+      FloatLit(f) => da f
+      _ => return 0
+  ```
+  Multi-statement bodies (`Pat => { let x = 1; return x }`) have
+  no shorthand in v5.48.0 — keep them in brace form or expand to
+  a multi-line colon arm body.
 
 **Brace style** (legacy, soft-deprecated since v5.19.0; hard
 removal at v6.0):
@@ -1326,6 +2191,26 @@ match expr:
 ```
 
 Match arms are separated by commas. Each arm consists of a pattern, `=>`, and either an expression or a block.
+
+**Statement shorthand (since v5.48.0):** an arm may use a bare
+statement keyword after `=>` instead of wrapping it in a brace
+block. Supported keywords: `return`, `da`, `break`, `sal`,
+`continue`, `sigue`, `pass`. The shorthand is AST-equivalent to
+the brace form because the preprocessor wraps the body in `{ ... }`
+before parsing.
+
+```mn
+match err:
+    BadUrl(s) => return -1
+    Timeout(s) => da -2
+    _ => break
+```
+
+Multi-statement bodies (`Pat => { let x = 1; return x }`) have no
+shorthand in v5.48.0 — keep them in brace form or expand to a
+multi-line colon arm body. Expression arms (`Pat => k = 1`,
+`Pat => some_func()`) continue to parse through the existing
+expression-arm path.
 
 ### 5.2 Pattern Kinds
 

@@ -1,0 +1,154 @@
+# v5.44.0 Ps.9 — CI contract template for an external Mapanare package repo.
+#
+# This is REFERENCE YAML, not active CI. It is shipped here as the
+# template for the future `mapanare-research/stdlib` repo split (and any
+# downstream package repo that wants the same shape).
+#
+# Goals:
+#   1. Test against the latest released `mnc` (stable signal).
+#   2. Test against the current `main` branch `mnc` artifact (early
+#      warning — catches regressions before they ship).
+#   3. Multi-OS matrix: Linux, macOS, Windows.
+#   4. Stages: install, build, test, package tarball smoke.
+#
+# When the actual `mapanare-research/stdlib` repo is created, copy this
+# file to its `.github/workflows/ci.yml` and adapt:
+#   - PACKAGE_PATHS: list of package subdirs to test.
+#   - matrix.mnc-channel: which compiler builds to test against.
+#   - The "Install mnc" steps need to know how to fetch each channel.
+
+name: Mapanare package CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+env:
+  # Update when the package layout changes. Each path is a directory
+  # containing a mapanare.toml at its root.
+  PACKAGE_PATHS: |
+    packages/my-pkg
+    packages/another-pkg
+
+jobs:
+  test-against-released:
+    name: ${{ matrix.os }} / mnc=released
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mnc (latest released)
+        # Pin a specific tag here once releases are stable; otherwise the
+        # GitHub Releases API gives the most recent tag.
+        run: |
+          # Linux / macOS:
+          curl -fsSL https://mapanare.dev/install.sh | bash
+          echo "$HOME/.mapanare/bin" >> $GITHUB_PATH
+        if: runner.os != 'Windows'
+
+      - name: Install mnc (latest released — Windows)
+        run: |
+          # Replace with the actual release-tarball URL pattern.
+          $url = "https://github.com/Mapanare/Mapanare/releases/latest/download/mapanare-win-x64-sdk.zip"
+          Invoke-WebRequest -Uri $url -OutFile mnc.zip
+          Expand-Archive mnc.zip -DestinationPath $env:USERPROFILE\.mapanare
+          echo "$env:USERPROFILE\.mapanare\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+        if: runner.os == 'Windows'
+
+      - name: Verify mnc
+        run: mnc --version
+
+      - name: Test each package
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pkg in $PACKAGE_PATHS; do
+            echo "=== Testing $pkg against released mnc ==="
+            (
+              cd "$pkg"
+              mnc check --all
+              mnc test ./tests/ || (echo "::error::Tests failed in $pkg" && exit 1)
+            )
+          done
+
+      - name: Smoke-test package tarballs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pkg in $PACKAGE_PATHS; do
+            echo "=== Packing $pkg ==="
+            (
+              cd "$pkg"
+              mnc package
+              # Verify the tarball has no mn_modules/ entries (Ps.10
+              # tarball-exclusion contract).
+              tarball=$(ls *-*.tar.gz | head -1)
+              if tar tzf "$tarball" | grep -q "^mn_modules/"; then
+                echo "::error::tarball $tarball includes mn_modules/"
+                exit 1
+              fi
+            )
+          done
+
+  test-against-main:
+    name: ${{ matrix.os }} / mnc=main (early warning)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # Windows main builds are slower; opt-in only.
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true   # don't block PRs on main-branch breakage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build mnc from source (main)
+        shell: bash
+        run: |
+          git clone --depth 1 --branch main https://github.com/Mapanare/Mapanare.git /tmp/mapanare-main
+          cd /tmp/mapanare-main
+          # Use the project's own bootstrap script.
+          bash scripts/build_from_seed.sh
+          echo "/tmp/mapanare-main/dist/mapanare/bin" >> $GITHUB_PATH
+
+      - name: Verify mnc (main)
+        run: mnc --version
+
+      - name: Test each package against main
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          for pkg in $PACKAGE_PATHS; do
+            echo "=== Testing $pkg against main mnc ==="
+            (
+              cd "$pkg"
+              mnc check --all || failed=1
+              mnc test ./tests/ || failed=1
+            ) || failed=1
+          done
+          if [ $failed -ne 0 ]; then
+            echo "::warning::At least one package failed against main mnc"
+            # Don't `exit 1` — this is an early-warning job, not a gate.
+          fi
+
+  # Optional: lint pass for the package metadata itself.
+  manifest-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate every mapanare.toml
+        shell: bash
+        run: |
+          for pkg in $PACKAGE_PATHS; do
+            if [ ! -f "$pkg/mapanare.toml" ]; then
+              echo "::error::$pkg/mapanare.toml missing"
+              exit 1
+            fi
+            # Add semver / name-pattern checks here as they stabilize.
+          done

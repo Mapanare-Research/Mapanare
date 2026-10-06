@@ -7,6 +7,3845 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.54.1] - 2026-10-05
+
+### Added
+
+- Cascabel (`examples/mapanare-chess`), a Mapanare chess prototype with
+  legal move generation, FEN input, perft and fixed-depth alpha–beta search.
+  Linux/WSL execution is covered on both compiler paths. The example README
+  records memory-retention and native Windows limitations; this is not yet
+  a UCI or tournament engine.
+
+### Fixed
+
+- `scripts/ir_doctor.py` now bypasses cached stage1 IR for golden validation.
+  Offline comparison commands retain their existing cache behavior.
+- Runtime archive builds use isolated object directories and atomic
+  publication, preventing concurrent builds from deleting each other's objects.
+- Unix toolchain discovery ignores bundled Windows SDKs in shared checkouts.
+- Android CI installs platform-tools explicitly instead of the retired
+  SDK tools package requested by the setup action's default configuration.
+
+## [5.54.0] - 2026-05-15
+
+**Cl.2 + Cl.3 + Cl.4r — agent stdlib ergonomic refactor + walk_dir
+closure anchor + websocket str(byte) sweep.** Ships the v5.47.0
+splits that v5.48–v5.53 deferred for the Te.3 brace-removal arc.
+Cl.2 is the load-bearing item: a **BREAKING refactor** of
+`stdlib/agent/url.mn`, `stdlib/agent/remote.mn`,
+`stdlib/agent/node.mn`, and `stdlib/agent/supervision.mn` from the
+v5.43.0 flat-tuple Result workaround to ergonomic `Result<T, NetworkError>`,
+structurally unblocked by v5.46.0 Lf.\* lowerer fixes. Cl.3 closes
+the v5.40.0 `walk_dir` carry — Phase 0 audit found the premise
+stale (the function no longer exists by that name; `walk()` uses
+the bug-class shape and compiles cleanly at HEAD; v5.46.0 Lf.\*
+implicitly closed it). Cl.4r sweeps 5 residual `str(byte)` sites
+in `stdlib/net/websocket.mn`.
+**Cl.2.0 — Phase 0 audit (load-bearing).** Two reversals of the
+v5.47.0/PLAN.md premise: (1) Cl.3's `walk_dir` does not exist in
+`stdlib/fs.mn` at HEAD; the original v5.40.0 carry's named function
+was renamed/removed. `walk()` (its successor; returns
+`List<String>`) uses the bug-class shape internally via
+`match list_dir(...)` against `Result<List<String>, FsError>` and
+compiles cleanly via the v5.46.0 Lf.\* wrap-shape default fix.
+Closure is implicit. (2) Cl.4r residual count is 5 sites (not 11
+per v5.47.0 estimate); v5.47.0 Cl.4 closed 6 of 11. See
+`docs/roadmap/v5/v5.54.0/PRE_PHASE_AUDIT.md` for surface tables and
+bundle/split sizing.
+**Cl.2.1–Cl.2.4 — 4-file atomic migration.**
+`stdlib/agent/url.mn`: deletes `UrlParseResult` + `url_parse_ok` +
+`url_parse_err`; `parse_agent_url(s) -> Result<AgentUrl, NetworkError>`
+with `Err(BadUrl(...))` / `Err(UnsupportedScheme(...))` variants.
+`stdlib/agent/node.mn`: deletes `NodeListenResult`, `NodeAcceptResult`,
+`ConnSendResult`, `ConnRecvResult` + 8 constructor helpers;
+`node_listen` / `node_listen_tls` / `node_accept_one` /
+`conn_send_frame` return `Result<T, NetworkError>`; `conn_recv_frame`
+returns `Result<ConnRecvOk, NetworkError>` with new `ConnRecvOk
+{ conn, frame }` companion (Mapanare has no first-class tuples).
+`stdlib/agent/remote.mn`: deletes `RemoteConnectResult`,
+`RemoteSendResult`, `RemoteRecvResult` + 6 constructor helpers;
+`remote_agent_connect` / `remote_agent_send` /
+`remote_agent_send_typed_msg` / `remote_agent_ping` return
+`Result<RemoteAgent, NetworkError>`; `remote_agent_recv` returns
+`Result<RecvOk, NetworkError>` with new `RecvOk { handle, frame }`
+companion. `stdlib/agent/supervision.mn`:
+`remote_agent_heartbeat_check` returns
+`Result<RemoteAgent, NetworkError>`; doc comment refreshed.
+**Cl.2.5 — test migration.** `stdlib/agent/tests/test_dist_url.mn`
+and `stdlib/agent/tests/test_dist_node.mn` rewritten to use
+`match result { Ok(v) => ..., Err(e) => ... }` shape with
+inline variant-discriminator helpers (`is_no_key`,
+`is_connect_failed`, `is_unsupported_scheme`) for kind checks.
+The 4-case shape change per v5.47.0 Phase 0 enumeration landed
+across the 2 affected test files (proto + supervision tests
+untouched). Falsifiability: revert any one Result return site →
+the `match` destructure shape in the test fails to typecheck
+against the still-named-`*Result` flat tuple.
+**Cl.2.6 — doc cookbook refresh.** `docs/stdlib/agent.md` 3
+cookbook snippets migrated from `.ok` / `.err_msg` destructure to
+`match` form; "What's not here yet" section's "Result<T,
+NetworkError> at every API boundary" entry marked SHIPPED with
+v5.54.0 cross-reference and BREAKING annotation.
+**Cl.3 — walk_dir implicit-closure anchor.** New pytest class
+`tests/stdlib/test_fs.py::TestWalkDirCl3Anchor` (3 cases): asserts
+`match list_dir(...)` against `Result<List<String>, FsError>`
+compiles cleanly; `walk()` (which uses that destructure internally)
+compiles cleanly; nested-destructure case (`list_dir` result fed
+into a second `list_dir` call) compiles cleanly. Falsifiability
+locked in class docstring + per-test docstring: revert v5.46.0
+Lf.\* (the Ok/Err wrap-shape default in `mapanare/lower.py`) and
+the recorded `extractvalue ptr ... 0` + `zext ptr to i64` IR
+sequence resurfaces. Stale `walk_dir` comment in
+`stdlib/ai/ask_cache.mn:19` refreshed.
+**Cl.4r — `stdlib/net/websocket.mn` `str(byte)` sweep.** 5 bug
+sites at lines 236 (mask-XOR'd byte in `apply_mask`), 743 (×2:
+close-frame status code hi/lo bytes in `build_send_frame`'s
+Close arm), 1121 (×2: same shape in `ws_close_normal`'s close
+payload). Replaced with `__mn_str_chr(byte)` per v5.43.0 Da.0
+extern precedent. Mechanical 0-defect sweep; existing
+`tests/stdlib/test_websocket.py` (147 cases) GREEN, the byte
+sites are on hot paths (masked-frame branch + close-frame branch).
+**Falsifiability anchors:** revert `mapanare/lower.py` Ok/Err
+wrap-shape default → TestWalkDirCl3Anchor IR-shape assertion fails
+with `extractvalue ptr + zext ptr to i64`. Revert any Cl.2 Result
+return site → corresponding `tests/stdlib/test_distributed_agents.py`
+case fails to typecheck. Revert any `__mn_str_chr` site → wire
+bytes diverge from RFC 6455 close-frame spec.
+**Source delta:** ~ −220 LOC net (Cl.2 removes ~180 LOC of
+flat-tuple plumbing; Cl.4r is line-neutral; Cl.3 adds ~50 LOC
+of pytest anchor). 8 source files modified
+(`stdlib/agent/url.mn`, `stdlib/agent/remote.mn`,
+`stdlib/agent/node.mn`, `stdlib/agent/supervision.mn`,
+`stdlib/agent/tests/test_dist_url.mn`,
+`stdlib/agent/tests/test_dist_node.mn`,
+`stdlib/net/websocket.mn`, `stdlib/ai/ask_cache.mn`); 1 example
+file modified (`examples/agents/distributed_pool.mn`); 1 doc
+cookbook refreshed (`docs/stdlib/agent.md`); 1 pytest file
+extended (`tests/stdlib/test_fs.py`).
+**STRICT 3-stage fixed point preserved by construction at
+v5.53.0's baseline** — zero `mapanare/self/*.mn` edits, zero
+`mapanare/*.py` edits, zero `runtime/native/*` edits. Goldens
+103/103. **56-release strict streak from v5.7.1 holds.**
+**Aggregate state entering v5.55.0: 0 HIGH / 2 MEDIUM** (Ai.1
+`_specialize_fn` body-walk fix gating Ai.1+Ai.2 keyword sugar,
+carry from v5.40.0; Nu.2 macOS notarization carry from v5.33.0)
+**/ ~2 LOW** (Lf.4 variant-name collision, defer-to-v6.0
+candidate; Sf.\* Win64 `__mn_str_free` ABI fix carry from
+v5.53.1).
+**Cl.\* arc CLOSED at v5.54.0.** See
+`docs/roadmap/v5/v5.54.0/{PLAN.md, PROMPT.md, PRE_PHASE_AUDIT.md,
+SESSION_REPORT.md}`.
+
+### Changed
+
+- **BREAKING (stdlib API)** — `stdlib/agent/url.mn`,
+  `stdlib/agent/remote.mn`, `stdlib/agent/node.mn`, and
+  `stdlib/agent/supervision.mn` public surface now returns
+  `Result<T, NetworkError>` (Cl.2.1–Cl.2.4).
+  v5.43.0–v5.53.x callers destructuring the flat tuple
+  (`r.ok`, `r.handle`, `r.err_kind`, `r.err_msg`) do not compile against
+  v5.54.0 stdlib without refactoring. Migration recipe:
+
+  ```mn
+  // v5.43.0 – v5.53.x (flat-tuple workaround):
+  let r = remote_agent_connect(url, key)
+  if !r.ok { print("connect failed: " + r.err_msg); return }
+  let r2 = remote_agent_send(r.handle, payload)
+  if !r2.ok { print("send failed: " + r2.err_msg); return }
+  remote_agent_disconnect(r2.handle)
+
+  // v5.54.0+ (ergonomic Result<T, NetworkError>):
+  match remote_agent_connect(url, key) {
+      Ok(r) => {
+          match remote_agent_send(r, payload) {
+              Ok(after_send) => { remote_agent_disconnect(after_send) },
+              Err(e)         => { print("send failed: " + ne_msg(e)); remote_agent_disconnect(r) }
+          }
+      },
+      Err(e) => { print("connect failed: " + ne_msg(e)) }
+  }
+  ```
+
+  Pattern applies symmetrically to `parse_agent_url`, `node_listen`,
+  `node_listen_tls`, `node_accept_one`, `conn_send_frame`,
+  `conn_recv_frame` (Ok side is now `ConnRecvOk { conn, frame }`),
+  `remote_agent_recv` (Ok side is now `RecvOk { handle, frame }`),
+  `remote_agent_send_typed_msg`, `remote_agent_ping`, and
+  `remote_agent_heartbeat_check`. `ne_kind(e)` and `ne_msg(e)`
+  helpers in `node.mn` are unchanged for callers that still need
+  the legacy integer-kind/string-message shape.
+
+### Fixed
+
+- **Cl.3** — `stdlib/fs.mn::walk_dir` v5.40.0-era IR codegen carry
+  closed as OBSOLETE — implicitly fixed by v5.46.0 Lf.\* (Ok/Err
+  wrap-shape default in `mapanare/lower.py`'s constructor branches).
+  Lock anchor: `tests/stdlib/test_fs.py::TestWalkDirCl3Anchor`
+  (3 cases). The function the carry references no longer exists by
+  that name; current `walk()` uses the bug-class shape internally
+  and compiles cleanly. Stale comment in `stdlib/ai/ask_cache.mn`
+  refreshed.
+- **Cl.4r** — `stdlib/net/websocket.mn` decimal-stringification of
+  byte values replaced with `__mn_str_chr(byte)` at 5 sites:
+  `apply_mask` line 236 (XOR'd masked byte), `build_send_frame`
+  Close arm line 743 (×2: status code hi/lo), `ws_close_normal`
+  line 1121 (×2: same shape). Wire bytes now match RFC 6455 close
+  frame spec on those hot paths.
+
+
+
+## [5.53.0] - 2026-05-15
+
+**Te.3.F — nested single-line stmt-block recursive migration (Sf.\*
+split to v5.53.1).** Phase 0 audit found the v5.53.0 PLAN.md Sf.\*
+hypothesis was wrong — the `82_struct_update` / `83_struct_update_partial`
+Win64 integer-overflow symptom is NOT in `_lower_struct_update`
+(Python-bootstrap IR is structurally correct) but in three
+`__mn_str_free` call sites in `mapanare/emit_llvm_text.py` that
+bypass `_rt`'s Win64 sarg lowering, plus four mirrored sites in
+`mapanare/self/emit_llvm.mn`. Without a Windows clang toolchain
+locally to verify a Win64-only fix, Sf.\* split to v5.53.1 per
+PLAN.md Risk #1 mitigation; the localized fix recipe is documented
+in `docs/roadmap/v5/v5.53.0/PRE_PHASE_AUDIT.md` for the v5.53.1
+session input. v5.53.0 ships Te.3.F alone — formatter recursion
+that migrates the 7 pure-nested-2 first-party residuals
+(lexer.mn 191/192/196/212/213/371/386). Phase 0 parser probes
+confirmed the remaining 4 sites (lexer.mn 267/276/285, lower.mn:4843)
+need a single-line `else:` continuation grammar rule that v5.48.0
+does NOT support; deferred to v6.0 PLAN. **First-party brace
+surface drops 25 → 18 (28% reduction).** STRICT 3-stage fixed
+point preserved at v5.52.0's 246,347 lines / 0 diff by
+construction (`mapanare/format.py` + `tests/` + 7 `mapanare/self/lexer.mn`
+line edits are all self-host source-equivalent — the 7
+migrations collapse `if A { if B { stmt } }` to `if A: if B: stmt`,
+producing identical brace stream after `_indent_to_braces`, hence
+identical MIR / LLVM IR). Local STRICT verification can't run
+(no Windows clang); CI is the safety net per v5.49.0 precedent.
+
+### Added
+
+- **Te.3.F.1 — nested single-line stmt-block migration in
+  `mapanare/format.py::_migrate_one_line_stmt_block`.** When the
+  body contains nested `{` / `}`, the function recurses inside-out
+  on the body. The inner stmt-block migrates first
+  (`if B { stmt }` → `if B: stmt`), then the outer's reject at
+  line 363 (`body_shadow has '{' or '}'`) clears and the outer
+  migrates (`if A { if B: stmt }` → `if A: if B: stmt`). If the
+  recursive call returns `None` (e.g. chained-if-else inner that
+  v5.48.0 grammar doesn't accept) or the migrated body still
+  contains braces, the outer aborts and the line stays in brace
+  form — no half-migration.
+- **Te.3.F.3 — falsifiability anchor in
+  `tests/test_single_line_colon_blocks.py::TestNestedStmtBlock`.**
+  7 cases: 5 pure-nested-2 positive (migration + AST round-trip
+  + idempotence + complex inner body + inner-assignment), 2
+  deferred-shape negative (chained-if-else outer stays in brace
+  form). Revert the format.py recursion → 3 of 5 positive tests
+  fail with the recorded `'if X: if Y: ...' in <unchanged brace
+  string>` AssertionError signature (verified).
+
+### Changed
+
+- **`mapanare/self/lexer.mn` — 7 nested-stmt-block predicates
+  migrated to colon form** via `python -m mapanare fmt --to-terse`.
+  Sites: `is_alpha` (lines 191-192), `is_digit` (196), `is_hex_digit`
+  (212-213), `scan_char` close-quote consume (371), `scan_op` AND
+  detect (386). `mapanare/self/mnc_all.mn` regenerated via
+  `bash scripts/concat_self.sh` to track. The cascade match-count
+  in `mnc_all.mn` drops from 11 to 4 (3 from lexer.mn 267/276/285
+  deferred + 1 from lower.mn:4843 deferred). Self-host parser
+  + Python-bootstrap parse of both files verified post-migration.
+
+### Fixed
+
+- **Te.3.F — first-party brace surface across `mapanare/self/*.mn`:
+  25 → 18 (28% drop).** Counted via the v5.50.0 Te.3.E.X-refined
+  `count_user_brace_block_openers`. The deprecation warning emitted
+  by `_emit_brace_deprecation_warning` at v5.19.0 no longer fires
+  for the 7 migrated sites; for the 4 remaining chained-if-else
+  sites it continues to fire pending v6.0 grammar work.
+
+### Pre-phase audit findings (load-bearing)
+
+Documented in `docs/roadmap/v5/v5.53.0/PRE_PHASE_AUDIT.md`:
+
+1. **Sf.\* PLAN hypothesis overturned.** Bug is not in struct-update
+   lowering — Python bootstrap IR for the failing goldens is
+   structurally correct. Actual root cause is Win64-ABI mismatch
+   on `__mn_str_free` drop-glue, three call sites bypass `_rt`'s
+   sarg lowering. Sized at ~100 LOC across Python + self-host;
+   above PLAN.md's 50-LOC bundle threshold; no Win64 clang locally
+   to verify. **Split to v5.53.1** with fix recipe documented.
+2. **Te.3.F empirical recount.** PLAN's "10 lexer + 1 lower = 11"
+   is correct; CLAUDE.md's hint of "17 lexer.mn predicates" was
+   speculative. But only 7 of 11 are migrate-able under v5.48.0
+   grammar — the 4 chained-if-else cases need a single-line `else:`
+   continuation rule (verified empirically — see PRE_PHASE_AUDIT.md
+   Probes 2 and 3).
+3. **Recursion direction: inside-out.** Top-down doesn't fit the
+   existing rejection at line 363; inside-out resolves the gate
+   by migrating the inner body first.
+
+
+## [5.52.0] - 2026-05-09
+
+**Wn.8 — Windows binary smoke layer 3: runtime-archive lookup +
+clang-as-linker.** Closes the third latent Windows-`mnc.exe` failure
+that v5.51.0 Wn.5/Wn.6 unblocked but did not themselves address.
+After Wn.5 (find_clang sdk/bin) and Wn.6 (`__mn_temp_path`) made
+compile succeed, the publish.yml `build-cli` smoke (run #56) hit
+`error: link failed` because the link step still referenced
+`runtime/native/libmapanare_rt.a` (a gitignored build artifact that
+doesn't exist in fresh CI checkouts) and shelled out to `gcc` (not
+on the windows-latest runner image; only clang from the bundled
+llvm-mingw SDK is staged). Both bugs latent since v5.32.0 made
+mnc.exe the default Windows entry; surfaced once Wn.5+Wn.6 stopped
+masking the link failure with earlier failures. STRICT 3-stage
+fixed point preserved at the new baseline of 246,347 lines / 0 diff
+(was 246,015 at v5.51.0; +332 lines from the new `find_runtime_archive`
+helper + Windows-flag gating; 55-release strict streak from v5.7.1
+holds at the new value). Goldens 103/103 unchanged.
+
+### Fixed
+
+- **Wn.8 — runtime archive lookup via `find_runtime_archive()`**
+  (`mapanare/self/main.mn`). New helper mirrors the v5.51.0
+  `find_clang()` single-return pattern (single `let mut result`
+  to keep the MIR inliner from constant-folding the bundled-path
+  branches away — the v5.10.0 lesson). Probe order:
+    1. `<exe_dir>/sdk/lib/mapanare/libmapanare_rt.a` — v5.12.0 SDK
+    2. `<exe_dir>/lib/mapanare/libmapanare_rt.a` — Linux/macOS install
+    3. `runtime/native/libmapanare_rt.a` — dev-workspace fallback
+  Both call sites updated: `run_program` fast-path
+  (single-step compile+link) and `link_with_runtime`
+  (two-step fallback used when fast-path fails).
+- **Wn.8 — `link_with_runtime` uses clang, not gcc, and skips
+  Linux-only flags on Windows.** Pre-fix it shelled out to literal
+  `gcc` with `-no-pie -rdynamic`. gcc isn't on the
+  `windows-latest` runner PATH (only clang from the bundled
+  llvm-mingw SDK is staged) and clang+lld rejects -no-pie /
+  -rdynamic on Windows. Now invokes `find_clang()` and gates the
+  Linux-only flag block behind `__mn_host_is_windows()`. The
+  source fallback (when the precompiled archive isn't found) uses
+  the same shape so dev workspaces on Windows also link via clang.
+
+### Added
+
+- **3 new contract tests in `tests/native/test_find_clang_sdk_probe.py`**:
+  `test_find_runtime_archive_probes_sdk_install_in_main_mn` (probe
+  order: SDK → Linux/macOS install → dev fallback),
+  `test_link_with_runtime_uses_clang_not_gcc` (asserts
+  `find_clang()` + `__mn_host_is_windows` gating + archive helper
+  use). Falsifiability: revert the helper or the
+  `__mn_host_is_windows` gate and the test fails in <1 ms before
+  any rebuild cycle. publish.yml `build-cli` smoke remains the
+  load-bearing end-to-end anchor.
+
+## [5.51.0] - 2026-05-09
+
+**Wn.5–Wn.7 / Bs.1–Bs.2 — Windows native binary closeout +
+bootstrap-on-every-push gate.** Closes three Windows-`mnc.exe`
+regressions that the v5.49.0 Wn.* fix unblocked but did not
+themselves address, and unbreaks the `bootstrap-from-seed` CI gate
+after the workflow_call guard was lifted (commit `26c62224 — Run
+bootstrap jobs on all events`). Each fix is a layer the v5.49.0
+ABI fix had been masking; landing them in order surfaces the next
+one. STRICT 3-stage fixed point preserved across both self-host
+edits at the new baseline of 246,015 lines / 0 diff (was 245,155
+at v5.50.0; +860 lines from the find_clang + temp_path branches;
+54-release strict streak from v5.7.1 holds at the new value).
+Goldens 103/103 unchanged.
+
+### Fixed
+
+- **Wn.5 — self-host `find_clang()` now probes the v5.12.0 Windows
+  SDK layout** (`mapanare/self/main.mn`). Pre-fix the function only
+  probed `<exe_dir>/llvm/clang.exe` (the legacy v5.10.0 path). The
+  v5.12.0 SDK split (commit `72d4cdaf`) moved the bundled clang to
+  `<exe_dir>/sdk/bin/clang.exe`; `mapanare/toolchain.py` was updated
+  for the new layout but the self-host `find_clang()` was not, so
+  native `mnc.exe` fell through to PATH and reported
+  `error: clang not found` whenever `$PATH` did not already include
+  the SDK bin (publish.yml `build-cli` smoke at line 604 strips
+  PATH; user installs via `packaging/install.ps1` do not add the
+  SDK bin to PATH). Probe order now mirrors
+  `mapanare/toolchain.py::_bundled_sdk_candidates`:
+  `<exe_dir>/sdk/bin/{clang.exe,clang}` →
+  `<exe_dir>/llvm/bin/{clang.exe,clang}` →
+  `<exe_dir>/llvm/{clang.exe,clang}` → PATH `"clang"`. Single-
+  return `let mut result` form preserved per the v5.10.0 inliner
+  workaround. Mirrored in `mapanare/self/mnc_all.mn` via
+  `scripts/concat_self.sh`. Closes the publish.yml `build-cli`
+  Windows smoke regression. Affects clean Windows installs too —
+  fresh-install `mnc run` now works without any PATH manipulation.
+- **Wn.6 — platform-aware temp paths for compile/run/build artifacts**
+  (`mapanare/self/main.mn` + `runtime/native/mapanare_core.c`).
+  Latent since the binary moved to native Windows in v5.32.0. Once
+  Wn.5 unblocked clang discovery, the next Windows smoke surfaced
+  `clang-22: error: no such file or directory: '/tmp/mnc_run.ll'`
+  — the self-host had ~15 hardcoded `/tmp/mnc_*.{ll,o}` paths in
+  `run_program` / `build_program` / `compile_program` /
+  `run_one_test`. The v5.9.0 hygiene work added platform-aware
+  `__mn_clang_err_path()` and `__mn_dev_null_redirect()` runtime
+  exports for stderr+null but never fixed the artifact paths
+  themselves. New runtime export `__mn_temp_path(name)` returns
+  `/tmp/<name>` on Linux/macOS, `%TEMP%\<name>` on Windows
+  (env-resolved with `getenv("TEMP")` → `getenv("TMP")` → fallback
+  `C:\Windows\Temp`). All `/tmp/mnc_*` literals replaced with calls
+  to it. Self-host wiring: `_RUNTIME_FN_SIGS` registration in
+  `mapanare/emit_llvm_text.py` (canonical `(STR, [STR])` for Win64
+  sarg ABI correctness — without it the call would emit
+  `{ptr, i64}` by-value against a `ptr` declaration on Win64,
+  reproducing the v5.49.0 Wn.* OOM signature),
+  `is_native_cli_hygiene_export` + builtin symbol-table populator
+  in `mapanare/self/semantic.mn`, MIR lowering in
+  `mapanare/self/lower.mn`, `declare_runtime_fn` +
+  `emit_rt_call` Win64 routing in `mapanare/self/emit_llvm.mn`.
+- **Wn.7 — bootstrap seed refreshed to v5.51.0 stage1**
+  (`bootstrap/seed/linux-x86_64/{mnc,mnc.sha256}`). The previous
+  seed (May 1, post-v5.48.1) segfaulted on current `mnc_all.mn`
+  source after the Te.3.E.5 colon-form migration in v5.50.0 added
+  syntax shapes the seed didn't understand. Surfaced once the
+  workflow_call guard was lifted; refreshed via the standard
+  `strip mnc-stage1 → bootstrap/seed/linux-x86_64/mnc;
+  sha256sum mnc > mnc.sha256` dance per
+  `bootstrap/seed/README.md`. New SHA: `f09cbc3f...`. Closes the
+  bootstrap-from-seed segfault on every push.
+- **Bs.2 — `scripts/build_from_seed.sh --verify` golden loop uses
+  `emit-llvm` subcommand.** Latent since v5.9.1 DX.5 changed the
+  default `mnc <file.mn>` from "emit IR" to "compile and run".
+  The smoke test at line 128 was updated for DX.5 but the
+  per-golden `--verify` loop at line 149 was missed — it kept
+  running `${OUTPUT} <file.mn>` and piping to `llvm-as`, which
+  parsed whatever bytes the program produced (mostly nothing,
+  since goldens lack drivers under "compile and run" semantics)
+  and reported every golden as a fail. Stayed silent because the
+  bootstrap-from-seed job was guarded by
+  `if: github.event_name == 'workflow_call'` until the v5.49.0
+  baseline. With the guard lifted, the broken loop reported 0/103
+  against a working binary. After this fix: 97 pass / 6 fail
+  (within the script's own `EXPECTED_PASS = TOTAL_GOLDENS - 20`
+  envelope; the 6 failures are documented seed-incompatible
+  patterns — generics, struct-update — that postdate the seed).
+
+### Added
+
+- **`tests/native/test_find_clang_sdk_probe.py`** — 4 source-level
+  contract tests locking in the probe-path priority and the
+  Python/self-host parity for Wn.5. Fastest falsifiability anchor
+  for this class of regression: revert any of the SDK-bin branches
+  in `find_clang()` and the test fails in <1 ms, before any rebuild
+  or CI cycle. The publish.yml `build-cli` smoke remains the
+  load-bearing end-to-end anchor.
+- **Runtime export `__mn_temp_path(name) -> path`**
+  (`runtime/native/mapanare_core.c`). Mirrors
+  `__mn_clang_err_path()`'s pattern. Caller passes a leaf filename
+  (e.g. `"mnc_run.ll"`); returns the platform-correct full path.
+  Result lives in a per-call thread-unsafe static buffer; caller
+  must use immediately.
+
+## [5.50.0] - 2026-05-07
+
+**Te.3.E — match-arm body grammar extensions; close v5.48.1 brace
+residuals.** Adds colon-form shorthand for the two arm-body shapes
+v5.48.0 Te.3.D had no migration target for: multi-stmt single-line
+arm bodies (`Pat => let X = []; return X`) and multi-line arm
+bodies (`Pat =>:` followed by indented body). Pulls the brace-form
+removal runway forward from v6.0 and migrates the 737 residual
+brace openers across `mapanare/self/*.mn` to colon form.
+**First-party brace surface drops from 737 to 25 occurrences across
+10 self-host modules — 96.6% reduction.**
+
+The user-facing intent: "fix the warnings, don't suppress them."
+v5.49.0 made the deprecation warning smarter (skip when formatter
+is a fixed point); v5.50.0 makes the formerly-non-migratable
+shapes migratable. Legacy brace source still parses with the
+v5.19.0 deprecation warning unchanged; v6.0 hard-removal is the
+cut date.
+
+### Added
+
+- **Te.3.E.1 — multi-stmt `;`-bearing single-line arm body
+  shorthand.** `_rewrite_arm_stmts_in_line` accepts any arm body
+  with a depth-0 `;` (multi-stmt) regardless of first keyword.
+  Source `Pat => let X = []; return X` parses identically to brace
+  form `Pat => { let X = []; return X }`. Mirrored in
+  `_migrate_one_line_arm_body` (formatter) and
+  `_migrate_one_line_stmt_block` (formatter for stmt-blocks).
+  ~30 LOC parser + ~20 LOC formatter. 57 self-host residuals
+  closed.
+- **Te.3.E.2 — multi-line `Pat =>:` colon form.** The existing
+  `_indent_to_braces` `:` branch already produced correct brace
+  stream for `Pat =>` heads; the only required fix was
+  comma-tracking on dedent close. Three dedent loops (main,
+  comment-only, continuation) now update parent's `prev_child_idx`
+  to the `}` closer line. Without this, multi-line arm bodies
+  emitted the sibling-comma on the OPENER `Pat => {,` instead of
+  the closer `},`, which the LALR parser rejected. ~6 LOC parser
+  + ~80 LOC formatter (drops the `_find_match_verbatim_lines`
+  match-with-multiline-arm path, rescoped to expression-context
+  openers only). 98 multi-line arm residuals + 387 verbatim
+  cascade bystanders closed.
+- **Te.3.E.X — counter tightening.** New phase added by Phase 0
+  audit per §5.3. `count_user_brace_block_openers` excludes four
+  shapes that have no migration target: (1) inline `match X { ... }`,
+  (2) chained `if X { ... } else { ... }` on one line, (3)
+  expression-context `if` (preceded by `=` / `->` / `,` / `(` /
+  `[` / `return` / `da`), (4) `Pat => {}` empty arm body. Pre-fix
+  the v5.19.0 deprecation warning fired on these shapes; post-fix
+  it fires only when the formatter has something to migrate to.
+  ~30 LOC parser. 282+11 self-host counter false positives closed.
+- **`_migrate_one_line_stmt_block` `;`-filter relaxed** for stmt-
+  blocks (additional Te.3.E.1 extension). `if X: a = 1; b = 2`
+  round-trips through `_indent_to_braces` to brace stream
+  `if X { a = 1; b = 2 }` which the grammar accepts. Closed
+  ~12 self-host residuals (parser.mn / lower.mn / lexer.mn
+  guards).
+- **C runtime mirror** (`runtime/native/mapanare_core.c`).
+  `__mn_indent_to_braces`, `mn_arm_rewrite_line`, and
+  `__mn_count_user_brace_block_openers` extended byte-for-byte
+  with the Python changes. mnc-stage1 rebuilt with new runtime;
+  cross-bootstrap fixture suite extended from 37 to 46
+  parameterized fixtures plus the corpus sweep — 252/252
+  byte-identical Python vs C.
+- **`tests/test_arm_body_shorthand.py`** — 11 new falsifiability
+  tests for Te.3.E.1 + Te.3.E.2 (round-trip AST equivalence,
+  comma-on-closer-not-opener, mixed single/multi-line arms).
+- **`tests/test_brace_counter.py`** — 14 new falsifiability tests
+  for Te.3.E.X counter refinements (per-rule positive + negative
+  cases, regression safety for shapes that must still count).
+- **9 new cross-bootstrap fixtures** in
+  `tests/bootstrap/test_indent_preprocessor.py` covering every
+  v5.50.0 shape under English + Spanish keyword variants.
+- **`tests/golden/102_nested_15arm_match.mn`** auto-reformatted
+  by `mnc fmt` to new colon form (IR equivalent — golden link
+  test passes 104/104).
+
+### Changed
+
+- **STRICT 3-stage fixed-point baseline** raised from v5.48.1's
+  245,115 lines to **245,155 lines** (∆ +40, 0 diff). The
+  53-release strict streak from v5.7.1 preserves at the new
+  value. v5.50.0+ preserves from here. The +40-line shift
+  reflects v5.50.0 self-host wiring (the `=>:` colon form
+  output is more compact than `Pat => {` brace form, but the
+  IR generated for the migrated source is marginally larger
+  due to slightly different span-info encoding).
+- **`mapanare/self/*.mn` self-host source migrated** to v5.50.0
+  colon-form arm bodies in 4 clusters (`ast.mn` / `mir.mn` /
+  `lower_state.mn`, then `lower.mn` / `mir_opt.mn` / `emit_llvm.mn`,
+  then `lexer.mn` / `parser.mn` / `semantic.mn`, then `main.mn`).
+  Stage1 rebuild + goldens 103/103 + STRICT verification at every
+  cluster checkpoint. `mnc_all.mn` regenerated via
+  `scripts/concat_self.sh` (1.27 MB → 1.02 MB; ~20% drop in
+  concatenated source).
+- **`_find_match_verbatim_lines` rescoped** to expression-context
+  openers only. The match-with-multiline-arm verbatim mark was a
+  workaround for the missing grammar — Te.3.E.2 makes it dead
+  code for arm bodies. The function still handles
+  `let x = if cond { ... }` / `let m = #{ ... }` expression-context
+  openers where the grammar requires braces.
+- **`to_braces` runs `_rewrite_arm_stmt_shorthand` after
+  `_indent_to_braces`** for symmetric round-trip. Arm-body sugar
+  (`Pat => return X`, `Pat => let X = []; return X`) is now
+  restored to brace form on `to_braces(to_terse(s))`.
+
+### Fixed
+
+- **`} // end-of-block` closer with trailing comment** (formatter).
+  Pre-Te.3.E.3 the `_find_match_verbatim_lines` workaround hid
+  this case (the whole match block stayed verbatim). After
+  Te.3.E.3 the surrounding match migrated to colon form, leaving
+  an orphan `}` on the comment line. Surfaced mid-Phase 4 on
+  `mir_opt.mn:1234` (`} // end param-count guard`). Patched
+  `to_terse` to detect `}` followed by `//`/`#` line comment and
+  strip the brace while preserving the comment indented at the
+  parent block's level.
+- **Comma-tracking on brace-closer line** in `_indent_to_braces`.
+  Pre-Te.3.E.2 the dedent loop emitted `}` without updating the
+  parent's `prev_child_idx`. For multi-line `Pat =>:` arm bodies
+  with single-line sibling arms, the next sibling's comma was
+  appended to the OPENER `Pat => {,` instead of the closer `},`.
+  Fix applied to all three dedent loops (main, comment-only,
+  continuation); mirrored in C runtime.
+
+**Te.3.E arc CLOSED at v5.50.0.** The remaining 25 residuals are
+nested single-line stmt-blocks (`if X { if Y { ... } }` shapes —
+character-class predicates in `lexer.mn`) that require recursive
+migration of nested stmt-blocks; bounded as v5.50.x patch or v6.0
+PLAN input. Aggregate state entering v5.50.x: **0 HIGH** /
+**3 MEDIUM** (macOS notarization carry from v5.33.0 Nu.2; Ai.1
+`_specialize_fn` carry from v5.40.0; nested single-line stmt-block
+recursive migration carry from v5.50.0) / **~5 LOW**.
+
+See `docs/roadmap/v5/v5.50.0/{PLAN.md, PROMPT.md, PRE_PHASE_AUDIT.md,
+SESSION_REPORT.md}`.
+
+
+## [5.49.0] - 2026-05-07
+
+**Wn.\* — Windows native binary smoke fix.** Closes the
+<!-- no-check -->`mnc.exe run hello.mn` Win64 OOM regression that the
+`publish.yml` Windows SDK smoke step (line 596) tripped on every
+release tarball's `dist/mapanare/mnc.exe`. Phase 0 audit
+captured a gdb backtrace localizing the failure to
+`find_clang() → __mn_file_exists(MnString) → mn_to_cstr →
+__mn_alloc(garbage_size_t)` — a Win64 ABI mismatch on a 16-byte
+`MnString` aggregate-by-value runtime arg passed by a direct
+`__mn_*` call from .mn source. The Mapanare-side declaration
+correctly emitted `(ptr)` per Win64's >8-byte indirect-arg rule,
+but the call site emitted `{ptr, i64}` aggregate-by-value because
+`_do_call`'s auto-declare path used `_use_byref` (>64-byte
+threshold for user-fn ABI) instead of `_is_large_struct`
+(>8-byte threshold for runtime ABI). gcc-compiled `MnString
+path` dereferenced rcx as struct-pointer and read the data
+buffer's bytes 0..16 as `{data, len}` — yielding garbage path
+fields like `eJuan\Do` and `len=8017634865777560156` →
+`__mn_alloc` OOM. SysV (Linux/macOS) escapes by accident — its
+two-register passing for 16-byte aggregates happens to coincide
+with the registers a hidden-pointer ABI would use. Goldens
+**100/103** locally on Windows (3 pre-existing failures
+unrelated to Wn.\*); IR-shape gate at
+`tests/native/test_windows_run_smoke.py` proves the call shape
+post-fix. **STRICT 3-stage fixed point** preserves at the new
+v5.49.0 baseline (CI verifies; line count grows to reflect the
+Wn.2 self-host registry routing).
+
+### Added
+
+- **`_RUNTIME_FN_SIGS`** registry in `mapanare/emit_llvm_text.py`
+  next to `_RUNTIME_FN_ATTRS`. Pre-registers canonical
+  `(ret_ty, [param_tys])` signatures for ~40 `__mn_*` runtime
+  symbols that .mn source calls directly (without going through
+  a Mapanare-level builtin handler). Entries match the C
+  declarations in `runtime/native/mapanare_core.h`. Without
+  this, `_do_call`'s auto-declare path derived types from MIR
+  context (which for unannotated calls like
+  `if __mn_file_exists(p) != 0` picks `Ptr`) and emitted
+  `declare ptr @__mn_file_exists(ptr)` — wrong return type and
+  wrong arg ABI on Win64.
+
+- **`_RUNTIME_FN_SIGS` early-return path in
+  `_do_call` and `_do_extern`.** For `__mn_*` symbols
+  registered in the new registry, route through `_rt` (which
+  has correct Win64 sarg/sret lowering). The auto-declare /
+  catchall path is bypassed, so MIR-derived type guessing
+  cannot drift from the canonical C signature.
+
+- **Self-host `emit_llvm.mn` routing for `__mn_file_exists`**
+  (Wn.2 mirror, narrow scope). Extends the v5.26.0 Mb.9 /
+  v5.29.0 Mb.10 / v5.48.1 Te.3.D.4.4 precedent (one routing
+  branch per release for the specific symbol that surfaced) by
+  adding `if fn_name == "__mn_file_exists"` → `emit_rt_call(...,
+  "i64", "__mn_file_exists", ...)`. This covers user-program
+  emission via mnc-stage1: when <!-- no-check -->`mnc.exe build user.mn` compiles
+  a program that calls `__mn_file_exists` direct, the resulting
+  IR uses Win64 sarg shape, not by-value aggregate. The broader
+  sweep across every MnString-arg `__mn_*` symbol called from
+  .mn source (file/dir/regex/crypto family) is a v5.49.x carry
+  candidate — preferred form is a registry-driven dispatch
+  rather than ~30 more inline if-branches (the inline form
+  would push IR past the 2.5M `tests/bench/bench_compile.sh
+  --gate` threshold).
+
+- **`tests/native/test_windows_run_smoke.py`** (Wn.4
+  falsifiability anchor). Five IR-shape tests (cross-platform)
+  emit IR under a forced `x86_64-w64-windows-gnu` triple and
+  assert call sites use the alloca + store + `ptr`-pass pattern,
+  NOT by-value `{ptr, i64}` aggregate passing. Plus one
+  Windows-only end-to-end smoke test that mirrors
+  `publish.yml:596` against a staged `mnc.exe` (skipped if no
+  binary or no clang on PATH; CI has both). Falsifiability
+  round-trip locked in module docstring: revert the registry
+  early-return → IR-shape gate fails with the recorded
+  signature; reapply → passes.
+
+- **Permanent gdb-backtrace wrapper at `publish.yml:596`** (Wn.3
+  hardening). PowerShell mirror of the bash Wb.1.dx wrapper at
+  `publish.yml:802-825` and the v5.8.3 PROMPT Phase 4
+  paid-forward-instrumentation precedent. No-op on success; on
+  the next regression in this class the action log surfaces a
+  call site instead of just an OOM number, eliminating a
+  re-trigger-CI-to-diagnose round trip. `gdb 16.2` is
+  preinstalled on the `windows-latest` runner image.
+
+### Fixed
+
+- **<!-- no-check -->`mnc.exe run hello.mn` aborted with `out of memory
+  (requested <huge> bytes)` on Windows** (call site:
+  `mapanare/self/main.mn:80,84` — `find_clang()` →
+  `__mn_file_exists(MnString)`; fix site:
+  `mapanare/emit_llvm_text.py:_do_call` auto-declare path,
+  routed through `_RUNTIME_FN_SIGS` + `_rt`). The IR
+  declaration was correct on Win64
+  (`declare i64 @__mn_file_exists(ptr)` — large-struct rewrite
+  per `_decl_fn`'s `_is_large_struct` >8-byte threshold) but
+  the call site at `_do_call` line ~4434 used `_use_byref`
+  (>64-byte threshold for user-fn ABI) and emitted
+  `call ptr @__mn_file_exists({ptr, i64} %v)`. LLVM lowered
+  the call's first-class 16-byte aggregate as SysV-style
+  (rcx = data ptr, rdx = len) but the Win64-compiled C side
+  read rcx as a hidden-pointer-to-MnString and dereferenced
+  → garbage path data → 8 EB OOM. Fix routes direct
+  `__mn_*` calls through `_rt` for ABI-correct sarg lowering,
+  using canonical signatures pinned in `_RUNTIME_FN_SIGS`.
+  Linux + macOS unaffected (the SysV ABI coincidentally
+  agrees on register layout for 16-byte aggregates passed
+  either way). Self-host mirror in `mapanare/self/emit_llvm.mn`
+  via the same `if fn_name == "__mn_file_exists"` →
+  `emit_rt_call` routing branch the v5.26.0 / v5.29.0 / v5.48.1
+  pattern uses.
+
+
+## [5.48.1] - 2026-05-07
+
+**Te.3.D.4 / Te.3.D.5 — bootstrap mirror + self-host source migration.**
+Closes the v5.48.0 carry-forward. v5.48.0 shipped the Python parser
+extension and formatter for single-line colon blocks
+(`if x: stmt`, `fn main(): print(1)`) and match-arm statement
+shorthand (`Pat => return n`); the C runtime mirror and the migration
+of `mapanare/self/*.mn` were explicitly split to v5.48.1. v5.48.1
+brings the native side to parity and migrates 17 self-host modules to
+the new shorthand. The v5.19.0 brace-deprecation warning silences on
+7 of 18 self-host files (`abi.mn`, `emit_llvm_ir.mn`,
+`from_go.mn`, `from_php.mn`, `from_python.mn`, `from_typescript.mn`,
+`transpiler.mn`); first-party brace surface drops from **6,826 to
+1,474 occurrences (78% reduction)**. Legacy braces still parse with
+the v5.19.0 warning unchanged. **STRICT 3-stage fixed-point hits at
+245,115 lines / 0 diff — new v5.48.x baseline; v6.x preserves from
+here.** Goldens **103/103**.
+
+### Added
+
+- **Te.3.D.4.1 — C runtime helpers in
+  `runtime/native/mapanare_core.c`.** Four new statics mirror the
+  Python helpers v5.48.0 added at `mapanare/parser.py:2105-2257`:
+  `mn_ib_split_inline_colon`, `mn_ib_is_single_line_stmt_head`,
+  `mn_ib_rewrite_inline_colon_body`,
+  `mn_ib_normalize_fn_zero_arg_head`. Pure additions; no behavioral
+  change yet because the main loop hasn't been extended to call them.
+- **Te.3.D.4.2 — extended `mn_ib_has_colon_blocks` fast-path.** The
+  existing fast path triggered only on lines ending with `:`. v5.48.1
+  also triggers when the stripped content begins with one of the
+  known stmt-keyword prefix hints (`if `, `si `, `while `, `mien `,
+  `for `, `cada `, `fn `, `pub `, `async `, `extern `, `else`,
+  `sino`, `} else`, `} sino`) AND contains `:`. Mirrors the Python
+  `_SINGLE_LINE_PREFIX_HINT` extension in `_indent_to_braces`.
+- **Te.3.D.4.3 — main-loop extension in `__mn_indent_to_braces`.**
+  Single-line detection in both branches: continuation
+  (`} else: stmt`, `} else if x: stmt`) emits
+  `<indent>} <head> { <body> }` inline without an indent_stack push;
+  non-continuation (`if x: stmt`, `fn main(): print(1)`) emits
+  `<indent><head> { <body> }` inline. The `'{' not in content` guard
+  uses `mn_ib_contains_byte_unquoted` (string/char-literal-aware)
+  so `if ch == "{": stmt` shapes (real lexer.mn line) still
+  single-line-migrate.
+- **Te.3.D.4.4 — `__mn_rewrite_arm_stmt_shorthand` C export.** New
+  `MN_EXPORT MnString` function mirrors
+  `mapanare/parser.py::_rewrite_arm_stmt_shorthand` line-for-line:
+  per-line shadow buffer (string/char/`//` masked to spaces),
+  scan for `=>` positions, identify keyword
+  (`return`/`da`/`break`/`sal`/`continue`/`sigue`/`pass`),
+  word-boundary-after check, walk body to first depth-0 `,` / `}` /
+  `//` / EOL, emit `{ <body rstripped> }`. Replacements applied
+  left-to-right because we stream into a fresh output buffer.
+- **Te.3.D.4.5 — self-host wire-up.** `mapanare/self/parser.mn::parse`
+  now calls `__mn_rewrite_arm_stmt_shorthand(__mn_indent_to_braces(...))`
+  before `tokenize`; `mapanare/self/main.mn::run_preprocess` calls
+  the same pair so the cross-bootstrap test compares against the full
+  pipeline. Registration mirrors v5.14.1's `__mn_indent_to_braces`
+  pattern in `semantic.mn::is_builtin_function` /
+  `register_builtins`, `lower.mn::lower_call`, and
+  `emit_llvm.mn::declare_runtime_fn` / `emit_call_by_name` /
+  `is_returns_string_runtime`. Python bootstrap parity:
+  `mapanare/types.py::BUILTIN_RETURN_TYPES`,
+  `mapanare/lower.py::_BUILTIN_RET`, and a new
+  `__mn_rewrite_arm_stmt_shorthand` handler in
+  `mapanare/emit_llvm_text.py` (mirroring the v5.23.1 Mb.1
+  `__mn_indent_to_braces` route — same drop-glue tracking, same Win64
+  ABI threshold).
+- **Te.3.D.4.6 — cross-bootstrap fixture set.** 27 new fixtures in
+  `tests/bootstrap/test_indent_preprocessor.py`: every accepted
+  single-line stmt-block head (English + Spanish), every
+  continuation, every arm-shorthand keyword (all 7), and the negative
+  shapes (struct/enum inline rejection, struct literal, namespace
+  `::` operator, generic `<T: Ord>` opener with same-line `{`,
+  `if ch == "{":` shape with `{` inside a string literal). The test
+  now asserts byte-identity against the full pipeline
+  (`_rewrite_arm_stmt_shorthand(_indent_to_braces(src))`) on Python
+  side; C side runs the same pair via `mnc-stage1 preprocess`.
+  **243 passing.**
+
+### Changed
+
+- **Self-host source migration (Te.3.D.5).** All 17 modules in
+  `mapanare/self/*.mn` migrated via `mnc fmt` in 4 clusters with
+  rebuild-and-goldens validation after each: cluster A (10 trivial
+  modules), cluster B (`mir`, `mir_opt`, `ast`), cluster C
+  (`semantic`, `lower`, `parser`), cluster D (`emit_llvm`).
+  `mnc_all.mn` regenerated via `bash scripts/concat_self.sh`.
+  Per-file residual brace counts after migration:
+  `abi.mn` 13→0, `ast.mn` 515→182, `emit_llvm.mn` 569→65,
+  `emit_llvm_ir.mn` 16→0, `from_go.mn` 128→0, `from_php.mn` 118→0,
+  `from_python.mn` 53→0, `from_typescript.mn` 172→0, `lexer.mn`
+  205→31, `lower.mn` 463→181, `lower_state.mn` 119→14, `main.mn`
+  60→2, `mir.mn` 371→83, `mir_opt.mn` 208→70, `parser.mn` 251→17,
+  `semantic.mn` 361→92, `transpiler.mn` 53→0. Total 3,675→737 across
+  the 17 modules; +`mnc_all.mn` at 737. Residuals are
+  `match_arm_open` multi-line arm bodies and `one_line_arm_other`
+  multi-stmt arm bodies — neither shape has a v5.48.0 shorthand.
+  v6.0 grammar may revisit.
+- **STRICT 3-stage fixed-point baseline.** Old: 244,654 lines (v5.47.0
+  through v5.48.0). New: **245,115 lines** at v5.48.1. The +461 lines
+  reflect the v5.48.1 self-host registration wiring
+  (`__mn_rewrite_arm_stmt_shorthand` builtin entries in
+  `semantic.mn` / `lower.mn` / `emit_llvm.mn`,
+  `run_preprocess` second call in `main.mn`, the new builtin pump in
+  `parser.mn`). 52-release strict streak from v5.7.1 baseline
+  preserved at the new value. v5.48.x onward preserves from here.
+
+### Fixed
+
+- **`mapanare/format.py::_migrate_one_line_stmt_block` —
+  implicit-return regression (Te.3.D.5.1).** The v5.48.0 formatter
+  migrated `fn make() -> Point = Point { x }` (implicit-return
+  expression with struct literal) to `fn make() -> Point: Point: x`
+  — collapsing two distinct semantic levels into a single
+  unparseable colon-form. Surfaced when running `mnc fmt
+  mapanare/self/lexer.mn` on the v5.48.0 → v5.48.1 migration: 88
+  `fn new_token(...) -> Token = new Token { ... }` shapes corrupted
+  the file. v5.48.1 adds a `_has_standalone_eq` guard mirroring
+  `count_user_brace_block_openers` Rule (b) — if the head contains
+  a standalone `=` between the latest stmt keyword and `{`, refuse
+  migration.
+- **`mapanare/parser.py::_indent_to_braces` —
+  `'{' not in content` guard masking (Te.3.D.5.1).** The v5.48.0
+  guard at line 2457 used `'{' not in content` directly, which
+  treated `{` inside a string literal (e.g.
+  `if ch == "{": return new_token(...)` — real shape from
+  `mapanare/self/lexer.mn`) as if it were a block opener and
+  preserved the line as colon form. The LALR grammar then rejected
+  it with `Unexpected ':' — expected '{'`. v5.48.1 introduces
+  `_mask_strings_chars` and applies the guard against the masked
+  shadow on both Python and C sides. New cross-bootstrap fixture
+  `v5481_brace_in_string_literal` locks the regression.
+
+
+## [5.48.0] - 2026-05-07
+
+**Te.3.D — single-line colon blocks and match-arm statement
+shorthand.** Pulls the brace-removal runway forward from v6.0
+because the language is still beta and there is no external
+compatibility burden worth preserving. The objective is not
+to keep `{}` as a special one-line exception; the objective
+is to make the compact brace forms migrate to a compact
+colon/direct-arm form. Legacy braces still parse with the
+v5.19.0 deprecation warning unchanged. v6.0 may flip that
+warning to a hard error after v5.48.x soak.
+
+**Phase 0 audit (PRE_PHASE_AUDIT.md, mandatory).** Counted
+and classified every brace-block opener across the repo:
+**6826 in `mapanare/self/`** (3675 in module sources, the
+rest a snapshot in `mnc_all.mn`); **6116 in `stdlib/`**;
+**63 in `tests/golden/`**; **15,537 across 237 files**
+total. Shape classification: dominant pattern in
+`mapanare/self/` is `one_line_stmt` (2653) — guard clauses
+like `if total_size <= 16 { return false }` — followed by
+`one_line_arm_return` (293) — match-arm bodies like
+`IntLit(_) => { return "int_lit" }`. Together these are
+**82.5%** of self-host brace openers and they were the
+shapes the formatter could not previously migrate without
+expanding to multi-line. v5.48.0 makes them migratable.
+
+### Added
+
+- **Te.3.D.1 — single-line statement-block colon syntax.**
+  `_indent_to_braces` (Python) accepts
+  `<head>: <body>` as a single-line block when `<head>` is
+  a statement-block opener. Supported heads: `fn`, `if`,
+  `si`, `while`, `mien`, `for`, `cada`; with optional
+  modifier prefixes `pub`, `async`, `extern`; plus
+  continuations `else`, `sino`, `else if`, `sino si`. The
+  preprocessor rewrites `if x: stmt` to brace stream
+  `if x { stmt }` inline (no indent_stack push). Comma-body
+  openers (`struct`, `enum`, `match`, `tipo`, `modo`, `way`)
+  and block-only openers (`trait`, `impl`, `agent`) are
+  excluded — their bodies need multi-line grammar.
+  `fn name(): stmt` (zero-arg) gets the same `()` insertion
+  as multi-line `fn name:`.
+- **Te.3.D.2 — match-arm statement shorthand.**
+  `_rewrite_arm_stmt_shorthand` runs after
+  `_indent_to_braces` and rewrites
+  `Pat => <stmt_kw> ...` arm bodies to brace form
+  `Pat => { <stmt_kw> ... }`. Supported keywords: `return`,
+  `da`, `break`, `sal`, `continue`, `sigue`, `pass`. Body
+  extent reaches the first depth-0 `,` or `}` or
+  end-of-line. Strings, char literals, and `//` line
+  comments are masked so the scanner does not mistake their
+  content for an arm body. Identifier continuations like
+  `return_value` are not matched (word-boundary check).
+  AST-equivalent to writing `Pat => { return X }` because
+  the rewrite happens before parsing.
+- **Te.3.D.3 — formatter migration (`to_terse`).**
+  `_migrate_one_line_stmt_block` rewrites
+  `<head> { <body> }` to `<head>: <body>` when the head is
+  a stmt-block opener. `_migrate_one_line_arm_body` rewrites
+  `Pat => { <body> }` to `Pat => <body>` for any single-stmt
+  body (no top-level `;`, no nested `{}`). The two are
+  composed in `to_terse` after the existing comma-strip and
+  multi-line block-opener handling. Trailing commas on
+  match-arm siblings are preserved across the rewrite. The
+  v5.27.0 Tk.1 expression-context filters
+  (`_looks_like_stmt_block_opener`) keep struct literals,
+  empty maps `#{}`, and if-expression braces from being
+  migrated.
+- **103 new pytest cases** in
+  `tests/test_single_line_colon_blocks.py` covering the
+  Phase 1 / Phase 2 / Phase 3 contract: colon-body
+  splitter unit tests; positive parses for every supported
+  head (English + Spanish); negative parses for excluded
+  heads (`struct Point: x: Int`, `enum Color: Red`,
+  `match e: Pat => 1`); arm-shorthand for every supported
+  keyword; formatter migration including AST-preservation
+  checks; idempotence; expression-context passthroughs.
+
+### Changed
+
+- **`tests/golden/*.mn`** — 11 files automatically migrated
+  by `mnc fmt tests/golden` to the new compact arm forms
+  (`07_enum_match.mn`, `100_result_complex_destructure.mn`,
+  `101_match_rewrap_propagation.mn`,
+  `103_variant_name_collision.mn`, `10_result.mn`,
+  `17_option.mn`, `19_nested_match.mn`,
+  `24_enum_methods.mn`, `45_ffi_bind.mn`,
+  `47_try_operator.mn`, `48_match_nested_exhaustive.mn`).
+  IR equivalence preserved: `to_terse` does not change AST
+  shape for stmt-keyword arm bodies (the brace form is
+  re-introduced by the parser before lowering); for
+  expression-arm rewrites (`=> { print(x) }` →
+  `=> print(x)`) the AST shape changes from
+  block-of-ExprStmt to expression-arm but runtime semantics
+  are identical, and the cross-style equivalence test in
+  `tests/test_colon_blocks.py::_normalize` collapses these
+  shapes for AST comparison.
+- **`mapanare/parser.py`** — added
+  `_split_inline_colon_body`,
+  `_is_single_line_stmt_head`,
+  `_rewrite_inline_colon_body`,
+  `_normalize_fn_zero_arg_head`,
+  `_rewrite_arm_stmt_shorthand`. The fast-path detector
+  `mn_ib_has_colon_blocks` now also routes lines whose
+  content starts with one of `_SINGLE_LINE_PREFIX_HINT`
+  (a stmt-block keyword + `:` substring) through the
+  full preprocessor.
+- **`mapanare/format.py`** — added `_mask_strings`,
+  `_find_matching_close`,
+  `_migrate_one_line_arm_body`,
+  `_migrate_one_line_stmt_block` and integrated both rules
+  into `to_terse` after comma handling.
+
+### Deferred to v5.48.1
+
+- **Te.3.D.4 — bootstrap mirror in
+  `runtime/native/mapanare_core.c::__mn_indent_to_braces`
+  and `mapanare/self/parser.mn`.** v5.48.0 ships the Python
+  side of the preprocessor only. The C runtime preprocessor
+  is unchanged, which means stage1 / stage2 / native `mnc`
+  do not yet accept the new single-line colon shapes
+  programmatically — but legacy brace forms still parse
+  unchanged, so the self-host continues to build via the
+  existing brace-form sources. The cross-bootstrap test
+  (`tests/bootstrap/test_indent_preprocessor.py`) must stay
+  green until the C runtime mirror lands; the v5.48.0
+  Python-only changes do not affect that test because the
+  cross-bootstrap fixtures are pure colon-style sources
+  whose preprocessor output is identical with or without the
+  new single-line rules. Phase 4 is scheduled for v5.48.1
+  alongside Phase 5.
+- **Te.3.D.4 — internal source migration.** Migration of
+  `mapanare/self/*.mn` sources is gated on the bootstrap
+  mirror landing first (otherwise stage1 cannot reparse the
+  migrated sources). The 2946 single-line brace openers in
+  `mapanare/self/` modules remain in legacy brace form for
+  v5.48.0 and continue to fire the v5.19.0 deprecation
+  warning; they are scheduled for v5.48.1 once the C runtime
+  mirror is verified.
+- **Te.3.D.7 — strict 3-stage fixed point** preserved by
+  construction at v5.47.0's 244,654 lines / 0 diff: this
+  release does not edit any `mapanare/self/*.mn` source
+  (51-release strict streak from the v5.7.1 baseline).
+
+### Aggregate state
+
+**0 HIGH** (panel docket clean per v5.47.5) /
+**3 MEDIUM** (Te.3.D.4 bootstrap mirror split to v5.48.1;
+Te.3.D.5 self-host source migration split to v5.48.1;
+macOS notarization carry from v5.33.0 Nu.2) /
+**~6 LOW** (Cl.2 distributed-agent ergonomic refactor +
+Cl.3 fs.mn `walk_dir` IR codegen carry from v5.47.0;
+multi-stmt single-line arm bodies have no shorthand —
+v6.0 grammar may revisit; Ai.1 `_specialize_fn` body-walk
+fix carry from v5.40.0; expression-context if-syntax via
+colon `let x = if cond: 1 else: 2` deferred per
+PRE_PHASE_AUDIT Decision).
+
+See `docs/roadmap/v5/v5.48.0/{PLAN.md, PROMPT.md,
+PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
+## [5.47.5] - 2026-05-06
+
+**Cp.\* — end-of-v5 closeout panel.** Panel-only release.
+**Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** No new features.
+The structural pause before any v6.0 conversation begins.
+Strict 3-stage fixed point preserved by construction at
+v5.47.0's **244,654 lines / 0 diff** (50-release strict
+streak from v5.7.1 baseline). Goldens **103/103**.
+
+**Aggregate panel score: 9.76 / 10. Decision: Option A.**
+7-reviewer panel (Rattler 9.85 PASS, Viper 9.85 PASS,
+Anaconda 9.75 PASS, Cobra 9.75 PASS, Coral 9.65 PASS WITH
+NOTES, Boa 9.65 PASS WITH NOTES, Mamba 9.85 PASS) reviewed
+v5.31.0 → v5.47.0 (17 substantive releases plus
+v5.39.1–v5.39.7 sub-releases). Spread 0.20, well below the
+0.5 follow-up-round trigger. **0 HIGH / 6 dedup MEDIUM /
+31 LOW** findings — all MEDIUMs are either v6.0 PLAN inputs
+or v5.47.x patch candidates. Second consecutive Option A
+under the v5-gate framework; second consecutive panel above
+the v5.7.1 / v5.8.0 9.66 ceiling (+0.04 vs v5.28.0
+RE-PANEL's 9.72 across +9 releases of scope).
+
+**v6.0 green-lit** conditional on 9 v6.0 PLAN inputs
+(borrow checker / multi-level alias analysis; hard removal
+of `{}`; STRICT 3-stage fixed-point gate carve-out; tensor
+surface unification; distributed-supervision orchestration;
+registry-side package signing; `_specialize_fn` body-walk
+fix; PRE_PHASE_AUDIT.md mandatory at every v6.x release;
+convergent-recommendation pattern explicit).
+
+**Cadence-gap acknowledgment.** v5.47.5 closes 19 minor
+versions late on purpose. Per project memory + v5.28.0
+directive: panels at the end of an arc, not in the middle.
+v5.45.0's original panel slot was deferred so v5.45.0
+(tensor closeout) + v5.46.0 (lowerer-bug closeout) + v5.47.0
+(pre-panel hygiene) could close three long-standing debts
+before the panel audited ecosystem readiness for v6.0.
+`check_cadence.py` is informational REMINDER per v5.33.2
+Cd.\* exactly to support this shape.
+
+**v5 series state at panel cut:** Foundation arc CLOSED.
+Stdlib gap-close arc CLOSED. Manifesto arc CLOSED. Tensor
+closeout arc CLOSED. Package-system runway CLOSED. v5.43.0
+lowerer-bug closeout CLOSED at v5.46.0. Pre-panel hygiene
+cleanup CLOSED at v5.47.0. Mb.\* arc CLOSED (since
+v5.29.0). Pv.\* arc CLOSED (since v5.32.0/v5.33.0). Js.4
+arc CLOSED (v5.39.7). Terseness arc CLOSED (since
+v5.27.0).
+
+### Added
+
+- **Cp.1** — `.reviews/v5.47.5/PRE_PANEL_AUDIT.md`. Per-release
+  SHIPPED/PARTIAL/DEFERRED matrix for all 17 substantive
+  releases (v5.31.0 → v5.47.0). Silent-RED gate sweep
+  (clean at HEAD). Arc-completion claims verified at HEAD
+  (every CLAUDE.md "CLOSED" claim cross-checked against
+  symbol/file at HEAD). Carry-forward draft (input to
+  Cp.4). Per-reviewer reading list across 7 axes.
+- **Cp.2** — 7 reviewer findings files under
+  `.reviews/v5.47.5/` (rattler, viper, anaconda, cobra,
+  coral, boa, mamba directories each holding findings.md).
+  Each contains per-category EXCEEDS/MEETS/NEEDS WORK grades, 0.0–10.0
+  numerical score, PASS/PASS WITH NOTES/FAIL recommendation,
+  itemized findings with HIGH/MEDIUM/LOW severity, and
+  carry-forward suggestions. Convergent-recommendation
+  pattern fired across Anaconda + Boa + Rattler
+  (PRE_PHASE_AUDIT promotion) and Anaconda + Boa
+  (KNOWN_FAILURES ledger).
+- **Cp.3** — `.reviews/v5.47.5/V5_DECISION.md`. Aggregate
+  decision applying v5-gate mechanical rule (mean ≥ 9.5 =
+  Option A). Comparison to v5.28.0 RE-PANEL trajectory.
+  v6.0 readiness statement. Followups list ordered by
+  v6.0 PLAN load-bearing-ness.
+- **Cp.4** — `.reviews/v5.47.5/V5_TO_V6_CARRY.md`.
+  Carry-forward ledger with strict three-bucket
+  categorization: (a) v6.0 PLAN inputs (14 items + 7
+  process patterns), (b) v5.47.x patch candidates (5 named
+  + 23 lower-priority), (c) retired (33 items closed in
+  scope). Replaces `.reviews/CARRY_FORWARD.md` as
+  canonical going forward.
+- **Cp.5** — `.reviews/v5.47.5/V5_RETRO.md`. ~1500-word
+  retrospective: what worked, what didn't, what to bring
+  to v6.0.
+- **Cp.6** — CLAUDE.md ledger prune. v5.31.0 → v5.45.0
+  explicit release-notes entries replaced with single
+  closeout summary paragraph pointing at per-release
+  SESSION_REPORTs in roadmap. v5.46.0 / v5.47.0 / v5.47.5
+  entries kept explicit (the bridge to v6.0). CLAUDE.md
+  reduced from ~3300 lines to ~730 lines.
+- **Cp.7** — `docs/roadmap/v5/CLOSEOUT_ARC.md` final
+  update appended. "v5 closed at v5.47.5" section with
+  panel score, Option, all CLOSED arcs listed, v6.0
+  PLAN drafting begins pointer, v5.47.x patch
+  recommendations, cadence-gap closure note.
+- **Cp.8** — gates GREEN at HEAD verification. `make
+  ci-gates` GREEN (9 sub-gates), `make lint` clean,
+  `verify_fixed_point.sh` STRICT (244,654 lines / 0 diff,
+  50-release streak), goldens 103/103, doc freshness +
+  changelog honesty GREEN, cadence informational REMINDER
+  (acknowledged).
+- README.md panel summary at `.reviews/v5.47.5/README.md`.
+
+### Changed
+
+- `docs/roadmap/v5/CLOSEOUT_ARC.md` final section appended
+  marking v5 series CLOSED at v5.47.5; v6.0 PLAN drafting
+  forwarded.
+- `CLAUDE.md` "Most recent releases" section pruned;
+  v5.31.0–v5.45.0 explicit entries replaced with closeout
+  summary paragraph (Cp.6).
+- `docs/SPEC.md` header re-synced from "v5.47.0 cut" to
+  "v5.47.5 cut" with new sync block summarizing v5 closeout.
+
+
+## [5.47.0] - 2026-05-06
+
+**Cl.\* — pre-panel hygiene cleanup.** v5.47.0 drains every closeable
+LOW-tier carry before the v5.47.5 closeout panel sees the docket.
+Mirrors the v5.28.0 hygiene-before-panel precedent (the +0.31 panel
+recovery there came specifically from H.\* hygiene closures landing
+ahead of panel cut). Substantive Lf.4 fix in compiler + websocket
+str(byte) cleanup. Two Phase-0-driven scope splits (Cl.2 agent
+stdlib refactor → v5.47.1; Cl.3 fs.mn walk_dir IR codegen → v5.47.1)
+keep the hygiene-release scope tight. **Strict 3-stage fixed point
+preserved at 244,654 lines / 0 diff** (v5.46.0 → v5.47.0 the line
+count grew by ~890 from the new self-host paths in semantic.mn,
+lower.mn, lower_state.mn). Goldens **103/103** (102 + 1 new for
+Cl.6). 50-release strict streak from the v5.7.1 baseline.
+
+### Fixed
+
+- **Cl.1 (Lf.4) — Variant-name collision in match patterns.** Two
+  enums sharing a variant name (e.g. `NetworkError::TransportLost`
+  + `ExitReason::TransportLost`) now compile cleanly when the
+  binding's declared type disambiguates. Pre-fix both Python
+  bootstrap (`mapanare/semantic.py:2069` `global_scope.define()`
+  overwrote the first enum's variant) AND self-host stage1
+  (`mapanare/self/lower.mn::enum_name_for_variant` returned the
+  first-registered enum's variant ignoring binding context)
+  rejected the construction with `Type mismatch: declared type
+  NetworkError but initial value is ExitReason`. Post-fix:
+  `mapanare/semantic.py` builds a `_variant_alternatives`
+  multimap during `_register_definitions`; `_check_let` threads
+  the annotation as `_expected_type` context; `_check_call` and
+  the Identifier-resolution path consult both.
+  `mapanare/self/semantic.mn` mirrors with an `expected_type`
+  field on `SemState` (mechanical 7-constructor-site update) +
+  a `scope_has_variant_for_enum` helper that walks `Scope.symbols`
+  matching `(variant_name, enum_name)`. `mapanare/self/lower.mn`
+  extends `LowerState` with `expected_enum_name`; `lower_let` sets
+  it from `type_ann` when TK_ENUM; `lower_call_by_name`'s
+  enum-variant branch prefers the hint over
+  `enum_name_for_variant`'s first-match result when the hinted
+  enum has the variant. New helper `enum_has_variant` in
+  `mapanare/self/lower_state.mn`. **Self-host stage1 also had the
+  bug** (different from v5.46.0 Lf.\*); Cl.5 mirror is non-trivial
+  (~80 LOC). Falsifiability locked: revert either layer
+  (semantic-checker resolver OR lowerer hint) and the new tests
+  fail with the recorded signatures. Locked by `tests/golden/103_
+  variant_name_collision.mn` + `tests/llvm/test_lowerer_fixes.py
+  ::test_lf4_variant_name_collision` + `::test_lf4_minimal_pair`
+  (parametrized).
+- **Cl.4 — `stdlib/net/websocket.mn` `str(byte)` decimal-
+  stringification cleanup** (carry from v5.43.0). Replaced 11
+  `str(byte0)` / `str(byte1)` / `str(0)` / `str(b4..b7)` calls in
+  `read_frame`-equivalent / `build_send_frame` / chunked-send
+  frame-header construction with `__mn_str_chr(...)` (v5.43.0 Da.0
+  C runtime export — already covers bytes 0..255 with byte 0x00
+  preservation). Behavior identical for ASCII bytes; correct for
+  high bytes ≥ 128. The decimal-stringification path was a latent
+  footgun on any future pure-Mapanare binary protocol. New extern
+  declaration `__mn_str_chr(code: Int) -> String` in `stdlib/net/
+  websocket.mn`. Pre-existing `tests/stdlib/test_websocket.py` 61
+  cases preserved GREEN.
+
+### Changed
+
+- **Cl.6 — `tests/llvm/test_llvm_link_all.py::test_golden_corpus_count`**
+  bumped from 102 to 103 (Cl.6 adds `103_variant_name_collision.mn`).
+- **`tests/llvm/test_lowerer_fixes.py`** extended with three new
+  cases (`test_lf4_variant_name_collision`,
+  `test_lf4_minimal_pair[0]`, `test_lf4_minimal_pair[1]`); module
+  docstring updated to reference Cl.1 and the dual-layer Lf.4
+  fix shape (semantic.py + lower.py + their self-host mirrors).
+- **Two Phase-0-driven scope splits** — load-bearing for honest
+  release framing:
+  - **Cl.2 — Agent stdlib ergonomic refactor SPLIT to v5.47.1.**
+    The v5.43.0 distributed-agent APIs in `stdlib/agent/{url,remote,
+    node,supervision}.mn` still return the flat-tuple workaround
+    shape `(ok: Bool, value, err_kind: Int, err_msg: String)`. The
+    Cl.1 fix structurally unblocks the refactor (the original
+    blocker was Lf.1 destructure-tag corruption + Lf.4
+    variant-name collision; both now closed). v5.47.0 ships the
+    enabler; v5.47.1 ships the refactor across the 4 stdlib files
+    + internal-caller migrations + `tests/stdlib/test_distributed_
+    agents.py` updates. Reason for split: the refactor is ~400
+    LOC across public-API surfaces and warrants dedicated focus
+    rather than fitting in the tail of a hygiene release.
+  - **Cl.3 — `stdlib/fs.mn::walk_dir` IR codegen SPLIT to v5.47.1.**
+    Phase 0 verified the v5.40.0 carry is still open; clang
+    rejects the IR with `extractvalue ptr ... 0` then `zext ptr
+    to i64` on the inner `match listing_result { Ok(names) => ... }`
+    where `listing_result: Result<List<String>, FsError>`. The
+    Result aggregate type at the destructure site comes through
+    as `{ptr, i64, i64, i64, i64}` — wrong-shape class similar
+    to Lf.1 but at the receiver side, not the constructor side
+    (v5.46.0 Lf.\* fix did NOT close this as a side-effect). The
+    fix lives in `mapanare/lower.py::_lower_match` for
+    `Result<NonTrivialOk, E>` patterns where the enclosing fn
+    does NOT return Result; the diagnosis-to-fix path is
+    non-trivial and warrants dedicated investigation rather
+    than fitting in the tail of a hygiene release.
+
+
+## [5.46.0] - 2026-05-06
+
+**Lf.\* — v5.43.0 lowerer-bug closeout; ergonomic Result<T, E> API
+unblocked.** Closes the three v5.x lowerer bugs that v5.43.0
+SESSION_REPORT documented and worked around with the flat
+`(ok: Bool, value, err_kind: Int, err_msg: String)` tuple shape.
+After v5.46.0 the v5.43.0 distributed-agent APIs in
+`stdlib/agent/` *can* be refactored back to ergonomic
+`Result<T, NetworkError>` shape — that ergonomic refactor is
+v5.46.x scope, not v5.46.0. **Phase 0 audit** surfaced the load-
+bearing finding: all three bugs (Lf.1 + Lf.2 + Lf.3) share **one**
+root cause, and the root cause lives **only in the Python
+bootstrap lowerer** (`mapanare/lower.py`). The self-host mirror
+(`mapanare/self/lower.mn`) **already had the fix** — v5.26.1
+Eu.2 introduced `current_fn.return_type` consultation on the
+self-host side at lines 2259-2306; the same fix was never
+backported to the Python bootstrap. Self-host `mnc-stage1`
+produced correct output for all three repros at v5.45.0 HEAD;
+Python bootstrap printed wrong values (Lf.1), failed at IR
+validation (Lf.2), or silently no-fired the inner match (Lf.3).
+v5.46.0 backports the self-host's logic into Python — single
+~30-LOC edit closes all three.
+**Strict 3-stage fixed point preserved by construction at
+v5.45.0's 243,749 lines / 0 diff** (49-release strict streak from
+the v5.7.1 baseline; **zero `mapanare/self/*.mn` source touches**
+because the self-host already had the fix). Goldens **102/102**
+(99 existing + 3 new: `100_result_complex_destructure`,
+`101_match_rewrap_propagation`, `102_nested_15arm_match`).
+**Lf.4 (variant-name collision) split to v5.46.x** per Phase 0
+LOC measurement (≥50 LOC fix exceeds PLAN's ≤30 LOC bundle
+threshold; needs multimap-of-variants infrastructure across
+`mapanare/semantic.py` + `mapanare/lower.py`). Per-bug detail
+follows.
+
+### Added
+
+- `tests/golden/100_result_complex_destructure.mn` — Lf.1 regression
+  golden. `Result<NodeHandle, NetworkError>` returned from a function
+  larger than the MIR optimizer's inline threshold; outer match
+  destructures correctly.
+- `tests/golden/101_match_rewrap_propagation.mn` — Lf.2 regression
+  golden. 3-hop rewrap chain through `match Err(e) { da Err(e) }`
+  preserves variant tag.
+- `tests/golden/102_nested_15arm_match.mn` — Lf.3 regression golden.
+  Outer `match r { Err(e) => match e { 15 arms } }` on
+  `Result<String, NetworkError>` fires the correct inner arm for
+  variants at indices 2 (NoKey), 11 (TransportLost), 14 (Internal).
+- `tests/llvm/test_lowerer_fixes.py` — pytest harness with
+  falsifiability protocol documented in module docstring (5 cases:
+  Lf.1 + Lf.2 + Lf.3 + 2 trivial-Ok regression cases). Each test
+  records the pre-fix failure signature so that reverting
+  `mapanare/lower.py` reproduces the documented bug shape.
+
+### Changed
+
+- `tests/llvm/test_llvm_link_all.py::_all_goldens` glob extended
+  from `[0-9][0-9]_*.mn` to also match `[0-9][0-9][0-9]_*.mn` —
+  the corpus crossed 99 at v5.46.0 with the Lf.\* regression
+  goldens. Drift gate count bumped from 95 to 102.
+
+### Fixed
+
+- **Lf.1** — `Result<COMPLEX_OK, COMPLEX_ERR>` destructure tag
+  corruption. When a function returned `Result<T, E>` with non-
+  trivial `T` (e.g. a 6-field 64-byte struct like `NodeHandle`)
+  and the body emitted `da Err(VARIANT(...))`, `mapanare/lower.py`
+  defaulted the wrap to the small `Result<Int, E>` shape
+  (32 bytes); the function body stored that 32-byte value into
+  the `__sret__` slot sized for the real `Result<T, E>` (≥ 88
+  bytes); bytes past 32 stayed zero. Consumer reads NetworkError
+  at the big-layout offset (e.g. 72 for NodeHandle Ok side) and
+  got tag=0 = BadUrl regardless of which variant was actually
+  constructed. **Potentially behavior-changing** — code that
+  exercised the buggy path got wrong variant tags pre-v5.46.0;
+  v5.46.0 makes those paths produce the correct values. The
+  v5.43.0 distributed-agent stdlib worked around this with the
+  flat-tuple shape, so no production caller actually relied on
+  the wrong output.
+- **Lf.2** — Variant rewrap through `match Err(e) { da Err(e) }`
+  propagation. Same root cause as Lf.1: the inner function's
+  WrapErr produced the small Result<Int, ?> shape; the outer
+  function's destructure expected the real `Result<T, E>`; LLVM
+  IR validation rejected the program with
+  `'%ok.NN' defined with type 'i64' but expected '{ ... }'`.
+  **Potentially behavior-changing** at the IR level — pre-v5.46.0
+  the program failed to link; post-fix it links and runs
+  correctly.
+- **Lf.3** — Nested 15+-arm match silent no-fire. Same root
+  cause as Lf.1 + Lf.2: the corrupt NetworkError tag (read from
+  the wrong byte offset due to the Result wrap-shape mismatch)
+  matched none of the 15 inner arms — control flow exited the
+  match silently. The 15-arm threshold reported at v5.43.0 was a
+  red herring: standalone 15-arm matches always worked; the bug
+  was always upstream Lf.1, surfacing as a silent no-fire only
+  when the outer Result wrap shape didn't match the inner
+  destructure. **Potentially behavior-changing** — pre-v5.46.0
+  programs with this shape produced empty output; post-fix they
+  print the correct arm.
+
+## [5.45.0] - 2026-05-06
+
+**Ts.\* — tensor closeout arc CLOSED.** Closes the v5.41.0
+option-B contract carried 4 releases past slot. Mutable views
+(`t.view(shape)`), stepped slices (`t[start..end:step]`), and an
+aliasing-flavor reshape ship together. After v5.45.0 the "Not yet
+on LLVM" line in CLAUDE.md no longer mentions tensor mutable views
+or stepped slices.
+
+`mapanare_tensor_t` grows from 40 → 64 bytes (append-only
+extension: `int64_t refcount`, `uint8_t is_view`, 7 padding bytes,
+`mapanare_tensor_t *parent`). Pre-v5.45.0 fields preserved at
+original offsets 0/8/16/24/32. Strict 3-stage fixed point
+preserved at **243,749 lines / 0 diff** (48-release strict streak
+from the v5.7.1 baseline; +1,411 lines vs v5.44.1's 242,338 from
+the new self-host code). Goldens **99/99** (96 existing + 3 new:
+`97_tensor_view_aliasing`, `98_tensor_stepped_slice`,
+`99_tensor_reshape_aliased`).
+
+### Added
+
+- **Ts.2.A** — refcount on `mapanare_tensor_t`. Append-only
+  struct extension (40 → 64 bytes). `mapanare_tensor_alloc`
+  initializes refcount=1, is_view=0, parent=NULL.
+  `mapanare_tensor_free` is now refcount-aware: decrements; on
+  zero, frees data + shape + metadata for owners or just metadata
+  for views (then recurses on parent). Three borrow-tensor sites
+  in `mapanare_gpu_builtins.c` zero-init via `memset` to avoid UB
+  on uninit reads of new fields.
+- **Ts.2.B** — `t.view(shape)` method. New runtime export
+  `__mn_tensor_view(parent, shape: const MnList *)` allocates view
+  metadata sharing parent's data buffer. Single-hop: views always
+  refcount the root parent, never intermediate views (drop-glue
+  stays O(1) per view). Element count must match parent's size;
+  aborts on mismatch.
+- **Ts.3.A** — `[start..end:step]` grammar. Two new productions
+  in `mapanare/mapanare.lark` and `bootstrap/mapanare.lark`
+  (range_step_op + range_incl_step_op) using the existing COLON
+  token. New `step: Expr | None` field on `RangeExpr` and
+  `IndexItem` (defaults to `None`); parser propagates step through
+  `index_expr`'s RangeExpr → IndexItem translation.
+- **Ts.3.B** — stepped slice on `Tensor`. New runtime export
+  `__mn_tensor_step_slice(t, starts[], ends[], steps[], rank)`
+  returning a fresh contiguous tensor (copy semantics, NOT a view).
+  Multi-axis: non-stepped axes pass step=1 transparently. Literal
+  step ≤ 0 rejected at lower time (catches both `IntLiteral(0)`
+  and `UnaryExpr(-, IntLiteral(N))`); non-literal step backstopped
+  at runtime.
+- **Ts.4** — test corpus. 3 new goldens; pytest extensions
+  `tests/llvm/test_tensor_views.py` (4 cases),
+  `tests/llvm/test_tensor_stepped_slice.py` (8 cases),
+  `tests/llvm/test_tensor_views_sanitized.py` (14 ASan +
+  valgrind cases — UB-risk tier).
+- **Ts.5** — `docs/stdlib/tensor.md` cookbook (~325 LOC):
+  quick reference, type/API table, lifetime model, six recipes
+  (reshape alias, view explicit, stepped-slice sliding window,
+  explicit copy workaround, refcount mental model, drop-glue
+  discipline), aliasing-safety note, "what's not here yet."
+- **Ts.7** — self-host mirror across `ast.mn`, `parser.mn`,
+  `lower.mn`, `emit_llvm.mn`, `semantic.mn`. First v5.45.0
+  release to touch `mapanare/self/*.mn` source. Stage1 rebuild
+  + goldens GREEN after each milestone.
+- **Ts.8** — binary-compat regression test
+  `tests/runtime/test_tensor_struct_compat.py` (5 cases):
+  pins `sizeof(mapanare_tensor_t) = 64`, pre-v5.45.0 field
+  offsets at 0/8/16/24/32, new field offsets at 40/48/56,
+  alloc-init-to-1 invariant, free-no-op-on-still-aliased.
+- Semantic.py + semantic.mn TENSOR method-return-type rule for
+  `.view()` and `.reshape()`. Element type carries through from
+  source. Without this rule, multi-index writes (`view[i, j] =
+  val`) on the result fail semantic check ("multi-index not
+  supported for UNKNOWN").
+
+### Changed
+
+- **`t.reshape(shape)` semantics swap from copy to alias
+  (potentially breaking).** v5.41.0 shipped reshape with copy
+  semantics (allocate fresh tensor + memcpy). v5.45.0 swaps to
+  alias semantics: the result shares the source's data buffer,
+  and writes are visible in both. Surface API unchanged.
+  `__mn_tensor_reshape` body now delegates to
+  `__mn_tensor_view` in the runtime; the `noalias` LLVM
+  attribute drops (would be a lie under aliasing). Phase 0 audit
+  confirmed zero production callers relied on copy semantics —
+  golden 96 (the v5.41.0 reshape test) does not write to either
+  tensor between the reshape and the read, so it stays robust to
+  the swap. **Migration:** if your code requires v5.41.0 copy
+  semantics, the v5.45.0 release ships no `.copy()` method
+  (deferred to v5.47.0+). The cookbook documents the manual
+  fresh-tensor-construction workaround.
+- `mapanare_tensor_t` size grows from 40 → 64 bytes (Ts.2.A
+  append-only extension). Pre-v5.45.0 stage1 binaries linking
+  against post-v5.45.0 runtime fail loudly on size mismatch —
+  the desired failure mode (better than silent corruption from a
+  field reorder). Same pattern as v5.42.0 As.6 binary-compat
+  shape change.
+
+### Fixed
+
+- Three borrow-tensor sites in `mapanare_gpu_builtins.c`
+  (`tensor_from_list` + matmul ta/tb pair) previously did
+  `malloc(sizeof(mapanare_tensor_t))` followed by field-by-field
+  init, bypassing the alloc helper. Post-v5.45.0 the new fields
+  (refcount/is_view/parent) would have been uninitialized memory.
+  Added explicit `memset(t, 0, sizeof(*t))` zero-init at each
+  site.
+
+### Notes
+
+- **Pre-existing v5.44.1 parser bug surfaced (out-of-scope).**
+  `Tensor<Int>` slice + tensor builtin call (e.g.,
+  `tensor_size(int_slice_result)`) triggers a parse error.
+  Verified the same code fails on the v5.44.1 baseline before
+  any v5.45.0 changes. Golden 98 worked around by skipping the
+  Int section. Tracked as v5.46.0+ LOW carry. Float-element
+  tensors are unaffected.
+- **Self-host build discipline lesson.** `scripts/build_stage1.py`
+  does NOT auto-regenerate `mnc_all.mn` from modular
+  `mapanare/self/*.mn` files. First STRICT check after Phase 5
+  showed NEAR (6 diff lines) because stage1 was still compiled
+  from a stale `mnc_all.mn`. After running `scripts/concat_self.py`
+  + rebuild, STRICT cleanly reached. Future self-host edits must
+  run `scripts/concat_self.py` before `scripts/build_stage1.py` —
+  same lesson as v5.31.0's stage1-rebuild discipline applied to a
+  different layer.
+
+
+
+## [5.44.1] - 2026-05-05
+
+**Ps.11 + Ps.12 — scripts parity + gitignore template; tactical
+hotfix completing v5.44.0 Ps.\* arc.** Two real edits, one nit,
+four tests, one commit. v5.44.0 closed package-aware import
+resolution inside `mapanare/`; v5.44.1 closes the parity gap
+beyond that boundary so scripts and benchmarks honor `mn_modules/`
+identically, and `mnc init`-created projects exclude
+`mn_modules/` by default.
+
+**Zero compiler edits, zero runtime edits, zero new C-runtime
+exports, zero `mapanare/self/*.mn` source touches, zero language
+surface changes.** Strict 3-stage fixed point preserved by
+construction at v5.44.0's **242,338 lines / 0 diff**
+(47-release strict streak from the v5.7.1 baseline). Goldens
+**96/96**.
+
+### Added
+
+- **Ps.11.A** — `scripts/build_stage1.py`, `scripts/ir_doctor.py`,
+  `scripts/measure_divergence.py`, `benchmarks/bench_stdlib.py`
+  now build resolvers via `build_resolver_for_source` with a
+  tolerant `PackageDiscoveryError` fallback (LSP/test-runner
+  pattern) and pass `resolver=` explicitly to
+  `compile_multi_module_mir` / `_compile_to_llvm_ir`. Pre-fix
+  these helpers fell through to the in-helper bare-resolver
+  fallback, silently bypassing package-aware import resolution
+  for any project with `mapanare.toml` + `mn_modules/`. After
+  this release the stage1 bootstrap, ir-doctor diff, divergence
+  sweep, and stdlib benchmarks all see the same package roots
+  `mnc build` does.
+- **Ps.11.B** — `tests/packages/test_cli_parity.py` audit list
+  extended to the four scripts/benchmarks files. Added
+  complementary `test_scripts_pass_resolver_to_compile_helper`
+  parametrized gate that locks the script-shape parity
+  invariant (every `compile_multi_module_mir` /
+  `_compile_to_llvm_ir` call passes an explicit `resolver=`
+  kwarg). The pre-existing bare-`ModuleResolver()` regex didn't
+  catch this surface because the four files don't construct
+  resolvers directly — they relied on the helper's internal
+  fallback. Falsifiability verified: reverting the
+  `resolver=resolver` kwarg in `build_stage1.py` fails the new
+  gate with the exact file:line.
+- **Ps.12.A** — `mapanare/templates/init/default/.gitignore`
+  now excludes `mn_modules/`, `__pycache__/`, `*.pyc`,
+  `*.diag.json`, `*.a`, `*.so`, `*.dylib`, `*.dll` (in addition
+  to the v5.44.0 baseline). `mapanare.toml` and `mapanare.lock`
+  remain committed per Cargo / npm / pip convention; `*.mn`
+  remains committed (excluding it would mask every Mapanare
+  source file).
+- **Ps.12.B** — net-new
+  `tests/packages/test_init_template_gitignore.py` (4 cases):
+  required-patterns presence, forbidden-patterns absence,
+  load-bearing `mn_modules/` exclusion, and an end-to-end test
+  running `init_project` against `tmp_path` and verifying the
+  produced `.gitignore` matches the canonical template
+  (placeholder substituted, forbidden patterns absent).
+
+### Changed
+
+- **Ps.13** — hoisted `from typing import Any` from inside
+  `_surface_install_diagnostics`'s `if diag_json:` body to
+  `mapanare/cli.py`'s module-top imports. No behavior change;
+  cleanup nit deferred from v5.44.0.
+- **`benchmarks/bench_stdlib.py`** — removed the pre-existing
+  invalid `use_mir=True` kwarg from the `_compile_to_llvm_ir`
+  call site. The kwarg has not been a valid `_compile_to_llvm_ir`
+  signature parameter for many releases; the benchmark would
+  have raised `TypeError` if anyone ran it. Same edit replaces
+  the call with the canonical signature plus the v5.44.1 Ps.11.A
+  `resolver=` kwarg.
+
+### Fixed
+
+- **`scripts/build_stage1.py` package-aware bootstrap** — the
+  self-host stage1 build now honors a `mapanare.toml` +
+  `mn_modules/` checkout of `mapanare/self/`. Pre-fix the
+  bootstrap silently fell through to bare resolution; post-fix
+  it routes through `build_resolver_for_source` with a tolerant
+  fallback so a malformed lockfile still produces a working
+  stage1.
+
+
+
+## [5.44.0] - 2026-05-05
+
+**Ps.\* — package-aware imports + stdlib extraction runway;
+ecosystem-bridge gap closed before v5.45.0 panel.** First release
+in the package-system arc. After v5.43.0 closed the manifesto arc,
+v5.44.0 wires the existing package machinery
+(`stdlib/pkg.py` — manifest parser, lockfile, registry+git install,
+`mn_modules/` layout, publish tarball — all 1037 LOC shipped pre-v5.44.0)
+into the existing import resolver (`mapanare/modules.py`). Result:
+a project with `mapanare.toml` + `mapanare.lock` + `mn_modules/`
+imports installed packages without manual `--stdlib-path` hacks.
+Strict 3-stage fixed point preserved by construction at v5.43.0's
+**242,338 lines / 0 diff** (46-release strict streak from the
+v5.7.1 baseline; zero `mapanare/self/*.mn` source touches; zero
+compiler edits; zero runtime edits). Goldens **96/96**.
+
+### Added
+
+- **Ps.1** — `mapanare/pkg_discovery.py` (~280 LOC, net-new):
+  `PackageRoot` frozen dataclass + `discover_package_roots()` +
+  `find_project_dir()` + `package_name_to_import_name()` +
+  `build_resolver_for_source()`. The resolver consumes
+  `PackageRoot` records produced here; storage layout
+  (`mn_modules/<name>-<version>/` today, future global cache
+  later) stays inside discovery. Lockfile-authoritative when
+  present; alphabetical scan fallback otherwise. Reserved
+  `source` literals: `"mn_modules"` (v5.44.0), `"path"`, `"git"`,
+  `"global-cache"` (forward-compat for v6.0+).
+- **Ps.1+Ps.2** — `ModuleResolver.__init__` extended with kw-only
+  `package_roots: list[PackageRoot] | None = None`. Search-order
+  policy (locked by tests): source-local → explicit
+  (`--stdlib-path`/`--extra-path`/`MAPANARE_PATH`) → installed
+  packages → bundled stdlib. Hyphen→underscore canonicalization
+  for package import names (`mn-foo` → `import mn_foo`). Bare
+  package import (`import mn_collections`) resolves to package
+  entry module (mod.mn convention, else main.mn). Subpath imports
+  (`import mn_collections::utils`) resolve under `root_dir`.
+- **Ps.4** — `ImportRecord` dataclass + `_import_log` on
+  `ModuleResolver`: every package-resolved import records
+  `(package_name, import_name, version, source, integrity,
+  import_path, resolved_filepath)`.
+- **Ps.3** — `mapanare/cli.py`: new
+  `_build_resolver_from_args(args, source_path)`,
+  `_collect_explicit_paths(args)`, `_add_resolver_args(parser)`
+  helpers. Every compile/check/emit/test entry point routes
+  resolver construction through the helper: `cmd_check`,
+  `cmd_run`, `cmd_build`, `cmd_emit_llvm`, `cmd_emit_c`,
+  `cmd_emit_mir`, `cmd_emit_wasm`, `cmd_build_multi`, `cmd_test`.
+  All 9 entry points expose identical `--stdlib-path` and
+  `--extra-path` flags (parity locked by
+  `tests/packages/test_cli_parity.py`).
+- **Ps.4** — `_surface_install_diagnostics(args, resolver)` helper
+  + `--verbose` (one `[package] <name>@<version> from <source>`
+  line per resolved import on stderr, deduped on `(name, version)`)
+  + `--diag-json PATH` (machine-readable JSON: `{schema_version: 1,
+  packages: [{name, import_name, version, source, integrity,
+  imports: [{import_path, resolved}, ...]}]}`). Both surfaces
+  silent when not requested. Always called AFTER successful
+  compilation.
+- **Ps.5** — `examples/packages/consumer_collections/`: net-new
+  pure-Mapanare consumer demo with `mapanare.toml`, `mapanare.lock`,
+  `main.mn`, README, and pre-staged `mn_modules/mn_collections-0.1.0/`
+  (so the example runs out-of-the-box). Demonstrates the v5.44.0
+  end-to-end consumer flow.
+- **Ps.6** — `examples/packages/mn_http/LEGACY.md` and
+  `examples/packages/mn_json/LEGACY.md`: explicit legacy markers
+  documenting why these examples don't compile (use removed
+  `extern "Python"`) and why HTTP / JSON-via-Python aren't the
+  model (HTTP is runtime-bound; JSON ships natively as
+  `stdlib/encoding/json.mn`).
+- **Ps.7** — `docs/guides/stdlib-packaging.md` (~290 LOC, net-new):
+  classification table (bundled-core / pure-package candidate /
+  runtime-bound / downstream-only) + per-class definitions +
+  initial inventory of every stdlib module + the migration-path
+  prerequisites (native-ABI declaration in `mapanare.toml` +
+  runtime-export ABI versioning, both deferred to v6.0+).
+- **Ps.8** — `docs/guides/external-package-workflow.md` (~230 LOC,
+  net-new): path/git/registry dependency dev loops, daily
+  iteration recipe, hyphen-mapping rule, publishing flow,
+  diagnosis guide. Reference for the future
+  `mapanare-research/stdlib` repo split workflow.
+- **Ps.9** — `docs/guides/stdlib-ci-template.yml` (~140 LOC,
+  net-new): reference YAML for the future
+  `mapanare-research/stdlib` repo's CI. Multi-OS matrix
+  (Linux/macOS/Windows) × dual-channel (latest released + main
+  artifact) + tarball-exclusion smoke gate. Not active CI; copy
+  to the actual stdlib repo when it splits.
+- **Ps.10** — `tests/packages/` (net-new directory; 65 cases
+  across 7 files):
+  `test_resolver_search_order.py` (12) — locks the four-step
+  search-order contract;
+  `test_resolver_lockfile.py` (15) — locks the lockfile-
+  authoritative contract + hyphen mapping + project-dir walk;
+  `test_cli_parity.py` (17) — every compile subcommand exposes
+  resolver flags + grep-gate against bare `ModuleResolver()`
+  reintroductions;
+  `test_install_diagnostics.py` (7) — `--verbose` and
+  `--diag-json` surfaces;
+  `test_consumer_collections_e2e.py` (8) — staged exemplar
+  end-to-end + LEGACY.md presence check;
+  `test_package_tarball_excludes_mn_modules.py` (3) — locks
+  already-correct tarball exclusion as a regression gate;
+  `test_resolver_does_not_scan_global_cache.py` (3) — locks
+  the local-storage / shared-storage / project-scoped boundary.
+
+### Changed
+
+- `mapanare/multi_module.py:compile_multi_module_mir` — new
+  optional `resolver: ModuleResolver | None = None` kw param.
+  Backward-compatible: if not passed, constructs a bare
+  `ModuleResolver()` (legacy behavior). CLI callers in
+  `cli.py` now thread the package-aware resolver through.
+- `mapanare/test_runner.py:_compile_test_to_llvm` — uses
+  `build_resolver_for_source(filename)` for package-aware
+  resolution; falls back to bare `ModuleResolver()` on
+  `PackageDiscoveryError` (LSP-style tolerance — test
+  running shouldn't sys.exit on a malformed lockfile).
+- `mapanare/lsp/analysis.py:_resolve_imported_symbols` — same
+  pattern as test_runner: package-aware with tolerant fallback.
+- `mapanare/cli.py:_check_one` — new optional `resolver` kw arg
+  (defaults to bare `ModuleResolver()` for legacy callers);
+  `cmd_check` passes the package-aware one.
+- `mapanare/cli.py:_compile_to_c` — new optional `resolver` kw
+  arg threaded to `check_or_raise(...)`; `cmd_run`, `cmd_emit_c`,
+  and the C-fallback path in `cmd_build` all pass the
+  package-aware resolver.
+- `mapanare/cli.py:_compile_multi_module_text` — same shape;
+  threads the resolver through to `compile_multi_module_mir`.
+- `mapanare/cli.py` `--stdlib-path` previously lived only on
+  `mnc build`. Now lives on every compile subcommand via
+  `_add_resolver_args(parser)`. Existing single-site flag was
+  removed from the inline `p_build` definition (replaced by
+  `_add_resolver_args(p_build)`); identical surface for users.
+
+### Fixed
+
+(No bugs fixed — v5.44.0 is structural / packaging work only.
+Existing test suites for module resolution, CLI, cross-module
+compilation all green at v5.44.0 HEAD with the additive resolver
+extension.)
+
+
+## [5.43.0] - 2026-05-05
+
+**Da.\* — distributed agents v0; manifesto arc CLOSED for v5.x.**
+Third and final manifesto-arc release (after v5.40.0 `ask` and
+v5.42.0 As.\* supervision). Ships network-transparent
+`agent.send` over TCP/TLS: `RemoteAgent` handles addressed by
+`tcp://host:port/agent-id` (or `tls://...`), versioned length-
+prefixed HMAC-signed wire protocol, Node listener with per-
+connection state, supervision interop bridging remote
+`ChildExited` frames into the v5.42.0 `supervisor_handle_exit`
+strategy library. After v5.43.0 the manifesto's "first-class
+agents" pitch is no longer library-class-with-extra-steps —
+agents span machines.
+
+Adds **two new stdlib modules** (`stdlib/agent/node.mn`,
+`stdlib/agent/remote.mn`) plus extensions to two existing
+modules (`stdlib/agent/url.mn` shipping `NetworkError` /
+`AgentUrl` / `parse_agent_url`; `stdlib/agent/supervision.mn`
+shipping `RemoteExitReason` / `ChildExitedMsg` / heartbeat
+helpers). One new C runtime file
+(`runtime/native/mapanare_node.c` ~360 LOC, 7 new exports +
+2 helper exports for MnString-form TLS server ctx wrappers)
+plus server-side TLS additions to `mapanare_io.{c,h}` (5 new
+dlopen symbols: `TLS_server_method`, `SSL_accept`,
+`SSL_CTX_use_certificate_file`, `SSL_CTX_use_PrivateKey_file`,
+`SSL_CTX_check_private_key`; 3 new public exports:
+`__mn_tls_server_ctx_new`, `__mn_tls_server_ctx_free`,
+`__mn_tls_accept`). Strict 3-stage fixed point preserved by
+construction at v5.42.0's **242,338 lines / 0 diff**
+(45-release strict streak from the v5.7.1 baseline; zero
+`mapanare/self/*.mn` source touches). Goldens **96/96**.
+
+**PROMPT/PLAN deviations (load-bearing).** Phase 0 audit
+(`docs/roadmap/v5/v5.43.0/PRE_PHASE_AUDIT.md`) surfaced:
+(1) PLAN/PROMPT premise that server-side TLS was already in
+the dlopen pattern was wrong — the existing OpenSSL plumbing
+was client-only (`SSL_connect`, no `SSL_accept`). Lead-
+approved Option B: expand Da.8 by ~95 LOC C to add the 5
+missing dlopen symbols + 3 new exports + an MnString-form
+wrapper. Rejected Option A (defer `tls://` to v5.43.1) because
+plaintext-only would have undermined the security gate the
+PROMPT itself names. (2) Generic `RemoteAgent<T>` with auto-
+`to_json::<T>(msg)` requires the v5.40.0-deferred Ai.1
+`_specialize_fn` body-walk fix; v5.43.0 takes the explicit-
+`to_json`-at-call-site fallback the v5.40.0 PROMPT authorized
+under the same conditions. (3) Async per-connection
+heartbeat task and auto-routing of inbound `MSG_CHILD_EXITED`
+frames through a parent supervisor's inbox both require fn-
+typed callbacks or dedicated agent-runtime threads (paths
+v5.43.0 has not stress-tested at this stage); v5.43.0 ships
+the SYNCHRONOUS heartbeat primitive + the conversion helpers
+that make the user-side orchestration tractable. v5.43.x
+auto-fires both.
+
+**Three v5.x lowerer bugs surfaced + worked around (load-
+bearing).** All documented in commit messages with
+falsifiability repros:
+(1) `Result<COMPLEX_OK, NetworkError>` destructure corrupts
+the Err variant tag when Ok is a non-trivial struct. v5.36.0
+Js.0.B class — Result wrap-shape mismatch. `Result<Int, X>`
+works; `Result<NodeHandle, X>` doesn't (Err variant always
+reads as tag=0 / `BadUrl` regardless of constructed value).
+(2) `match Err(e) { da Err(e) }` propagation rewrap also
+corrupts the variant tag — the destructured `e` carries wrong
+variant. Same root cause as (1) plus an additional rewrap
+step.
+(3) Nested 15-arm match on a destructured `e` from outer
+`Err(e)` silently fails to fire any inner arm. 3-arm and
+10-arm matches in the same position work; 15+-arm matches
+silently no-fire.
+v5.43.0 first-cut workaround: every public function returning
+a struct on success uses a flat
+`(ok: Bool, value, err_kind: Int, err_msg: String)` shape
+instead of `Result<T, NetworkError>`. The 15 NetworkError
+variants are encoded as integer kinds (1..15) at the API
+boundary; the structured enum is preserved internally for
+local matches. v5.43.x picks up `Result<T, NetworkError>`
+ergonomics once the lowerer fixes land. Tracked as v5.43.x
+candidate; out of scope here because (a) Phase 3 needed to
+ship the surface for Phases 4-7 to build on, (b) `lower.py`
+edits put STRICT 3-stage fixed point at risk, (c) any
+compiler edit triggers self-host mirror review.
+
+**Variant rename: `TransportLost` → `RemoteUnreachable`** in
+`RemoteExitReason`. NetworkError already has `TransportLost`
+(v5.43.0 Phase 1, url.mn); when both enums are in scope under
+the concat-pattern, match arms resolve "TransportLost" to the
+wrong enum's variant tag — the lowerer disambiguates by name
+only at match-pattern resolution. Same bug class as v5.39.7's
+variant-name collision finding. The semantic supervision
+distinction ("can't reach child" vs "child crashed") is
+preserved; only the variant name differs.
+
+**Da.0 — runtime fix (latent bug).** `__mn_str_chr` in
+`mapanare_core.c` accepted only 0..127 — the 0..127 bound was
+defensive coding that confused Mapanare strings with UTF-8.
+Per the file-header note, Mapanare strings are explicitly byte
+arrays. The 0..127 range made any pure-Mapanare binary
+protocol impossible — every header byte ≥ 128 silently became
+empty. Latent because the only existing pure-Mapanare framing
+module (`stdlib/net/websocket.mn`) uses `str(byte)` (decimal
+stringification) instead of `__mn_str_chr` and the websocket
+tests are compile-only — never validating the wire format. Fix
+extends the range to 0..255 + uses `__mn_str_from_parts` to
+preserve byte 0x00 (which `__mn_str_from_cstr` would NUL-
+truncate). The websocket.mn bug is structurally adjacent but
+tracked separately as v5.44+; v5.43.0 only fixes the runtime
+primitive. Goldens 96/96 preserved post-fix.
+
+**Wire format (v1, locked at PRE_PHASE_AUDIT):**
+`[u32 length BE][u8 v=1][u8 mt][u64 seq BE][16 b hmac][JSON]`.
+HMAC-SHA256(key, version || msg_type || sequence_be || payload)
+truncated to 16 bytes (RFC 4868 secure for keys ≥ 32 raw bytes;
+KEY_MIN_BYTES). Replay rejection via per-connection last_seen
+watermark. Six msg_types locked append-only (Send / Reply /
+Ping / Pong / ChildExited / ProtoError; 7-15 reserved for v1.x;
+16+ require v2 frame). DoS guard at 100 MB.
+
+**Test infrastructure.** New
+`tests/stdlib/test_distributed_agents.py` pytest harness mirrors
+the v5.42.0 `test_supervisor.py` concat-pattern: reads the
+6-module distributed-agents stdlib in concat order (url →
+remote_proto → node → remote → supervisor → supervision),
+prepends each test main body, compiles via Python LLVM
+emitter, links against `libmapanare_rt.a`, runs, asserts
+"PASSED" + no "FAIL". 4 link-and-run cases at HEAD covering the
+10 PROMPT-spec Da.7 cases. **4/4 GREEN.** v5.42.0 supervision
+suite **9/9 GREEN.**
+
+**Sanitizer + fuzz gates (UB-risk + network-risk tier):**
+- TSan run of /tmp/da8_smoke.c — **0 data races**.
+- ASan run of /tmp/da8_smoke.c — **0 leaks**.
+- Network fuzz `/tmp/da_fuzz.c` — 1000 iterations of randomized
+  inputs (8 variants: oversize length, length=0, truncated
+  reads, random body, sub-header, length-without-body, all-
+  random, immediate close). **1001 accepts, 0 crashes, 0
+  hangs.** The DoS guard + length validation in
+  `__mn_node_read_frame_str` held through every variant.
+- Binary-compat regression
+  `tests/runtime/test_agent_struct_compat.py` — **4/4 GREEN.**
+  v5.43.0 adds zero new fields to `mapanare_agent_t`; binary
+  compat trivially preserved by construction.
+
+**Source delta:** ~95 LOC C (mapanare_io server-side TLS
+extensions) + ~360 LOC C (mapanare_node net-new) + ~200 LOC
+`stdlib/agent/url.mn` (NetworkError + AgentUrl + parse_agent_url
+with flat result shape) + ~290 LOC `stdlib/agent/remote_proto.mn`
+(Frame + encode/decode + HMAC + replay) + ~340 LOC
+`stdlib/agent/node.mn` (NodeHandle + NodeConnection + listener
++ accept + frame send/recv) + ~225 LOC `stdlib/agent/remote.mn`
+(RemoteAgent + connect/send/recv/disconnect + ping helpers) +
+~410 LOC `stdlib/agent/supervision.mn` (RemoteExitReason +
+ChildExitedMsg + classify + heartbeat sync helper + env config)
++ ~270 LOC test cases (4 files in
+`stdlib/agent/tests/`: test_dist_proto, test_dist_url,
+test_dist_node, test_dist_supervision) + ~250 LOC pytest harness
++ ~195 LOC examples (distributed_pool.mn + heartbeat_demo.mn)
++ ~210 LOC `docs/stdlib/agent.md` Distributed-agents extension
++ ~430 LOC PRE_PHASE_AUDIT.md + this CHANGELOG entry +
+mechanical bump_version.py edits.
+
+Aggregate state entering v5.44.0 (package-system runway):
+**0 HIGH** (manifesto arc CLOSED) / **3 MEDIUM** (lowerer
+fixes for Result<T, complex Err> + variant rewrap + nested
+15-arm match — three documented bugs blocking ergonomic
+v5.43.x; macOS notarization carry from v5.33.0 Nu.2; Ai.1
+`_specialize_fn` body-walk for generic stdlib functions
+calling generic intrinsics) / ~10 LOW (async heartbeat task,
+auto-route of MSG_CHILD_EXITED, generic RemoteAgent<T>,
+service registry / discovery, replication / consensus, mTLS,
+dynamic key rotation, binary serde fast path, IPv6 bracket
+URL syntax, websocket.mn `str(byte)` decimal-stringification
+latent bug). **Manifesto arc CLOSED for v5.x.** v5.44.0
+package-system runway begins; v5.45.0 panel green-lights
+v6.0. See `docs/roadmap/v5/v5.43.0/{PLAN.md, PROMPT.md,
+PRE_PHASE_AUDIT.md, SESSION_REPORT.md}`.
+
+### Added
+
+- `stdlib/agent/url.mn` — `AgentUrl`, `NetworkError` (15
+  variants), `parse_agent_url` returning flat `UrlParseResult`
+- `stdlib/agent/remote_proto.mn` — `Frame`, `encode_frame`,
+  `decode_frame`, `validate_key`, msg_type + wire-format
+  constants
+- `stdlib/agent/node.mn` — `NodeHandle`, `NodeConnection`,
+  `node_listen`, `node_listen_tls`, `node_accept_one`,
+  `node_shutdown`, `conn_send_frame`, `conn_recv_frame`,
+  `conn_close`, `ne_kind`, `ne_msg`
+- `stdlib/agent/remote.mn` — `RemoteAgent`,
+  `remote_agent_connect`, `remote_agent_send`,
+  `remote_agent_recv`, `remote_agent_disconnect`,
+  `remote_agent_ping`, `remote_agent_send_typed_msg`
+- `stdlib/agent/supervision.mn` — `RemoteExitReason`,
+  `ClassifiedExit`, `classify_remote_exit`, `ChildExitedMsg`,
+  `encode_child_exited`, `decode_child_exited`,
+  `child_kind_to_reason`, `remote_exit_reason_to_kind`,
+  `remote_agent_heartbeat_check`, `node_key_from_env`,
+  `node_ping_interval_ms`, `node_ping_timeout_ms`
+- `runtime/native/mapanare_node.{c,h}` — net-new transport
+  layer (5 public exports + 2 MnString TLS wrappers)
+- `runtime/native/mapanare_io.{c,h}` — server-side TLS
+  additions (3 new exports + 5 new dlopen symbols)
+- `tests/stdlib/test_distributed_agents.py` — Da.7 link-and-
+  run pytest harness
+- `stdlib/agent/tests/test_dist_*.mn` — 4 link-and-run cases
+- `examples/agents/distributed_pool.mn` — coordinator + N
+  workers topology
+- `examples/agents/heartbeat_demo.mn` — supervision interop
+  with all 3 RemoteExitReason variants
+- `docs/stdlib/agent.md` — Distributed-agents extension
+  (~210 LOC: URL syntax, key management, wire format,
+  failure-mode matrix, 4 cookbook recipes, v5.43.x roadmap,
+  performance notes)
+- `docs/roadmap/v5/v5.43.0/{PLAN.md, PROMPT.md,
+  PRE_PHASE_AUDIT.md, SESSION_REPORT.md}` — release artifacts
+
+### Changed
+
+- `runtime/native/mapanare_core.c`: `__mn_str_chr` accepts
+  0..255 (was 0..127). Mapanare strings are byte arrays per
+  the file-header note; the previous 0..127 cap blocked any
+  pure-Mapanare binary protocol implementation. Uses
+  `__mn_str_from_parts` to preserve byte 0x00. Goldens 96/96
+  preserved post-fix.
+
+### Fixed
+
+- (none — v5.43.0 is a feature release; the lowerer bugs
+  surfaced during Phase 3 are tracked as v5.43.x candidates,
+  not fixed in scope)
+
+
+## [5.42.0] - 2026-05-05
+
+**As.\* — agent supervision trees.** Second manifesto-arc release
+(after v5.40.0 `ask`). Ships Erlang/OTP-style supervision on top of
+the existing agent runtime: the strategy library
+`stdlib/agent/supervisor.mn` plus the C runtime substrate for
+push-based child-exit notifications in
+`runtime/native/mapanare_runtime.{c,h}`.
+
+**Strict 3-stage fixed point preserved** at v5.41.0's **242,338 lines
+/ 0 diff** (44-release strict streak from the v5.7.1 baseline; zero
+`mapanare/self/*.mn` source touches). Goldens **96/96** (no new
+goldens — supervision tested via 9 .mn link-and-run cases under
+`stdlib/agent/tests/`).
+
+**PROMPT/PLAN deviations (load-bearing).** Phase 0 audit
+(`docs/roadmap/v5/v5.42.0/PRE_PHASE_AUDIT.md`) surfaced five premise
+errors: (1) the runtime is `mapanare_agent_t` / `mapanare_agent_*`,
+not `MnAgent` / `mn_agent_*` as the prompt claimed; (2) there is no
+system-message-kind enum at the C runtime level — inbox messages are
+opaque `void *`, so PLAN.md Risk #4 (binary-compat regression on
+enum shifting) cannot materialize as written; re-targeted to lock
+the struct-extension case; (3) there is no `mn_agent_exit*` API;
+(4) the pre-existing restart_policy field on the agent struct is
+intra-agent handler-error retry, NOT supervisor-driven restart;
+v5.42.0 As.6 adds the latter on top, leaving the former untouched;
+(5) goldens at v5.41.0 HEAD are 96/96, not 98/98 as the prompt
+claimed. Lead-approved Path B (push-driven via opt-in C callback)
+over Path A (pure-Mapanare poll-based). Documented in the
+SESSION_REPORT.
+
+### Added
+
+- **As.6 — runtime supervision substrate.** Four append-only fields
+  on `mapanare_agent_t` (`parent`, `on_exit` callback fn-pointer,
+  `on_exit_cb_data`, `last_exit_kind` + `last_exit_reason[256]`),
+  zero-initialized by the existing `memset` in `mapanare_agent_init`
+  so pre-v5.42.0 `mapanare_agent_new` callers (the two stage1
+  emitters) keep working unchanged. Four new `MAPANARE_EXPORT`
+  helpers: `mapanare_agent_set_parent`, `mapanare_agent_set_on_exit`,
+  `mapanare_agent_set_exit_reason`,
+  `mapanare_agent_get_exit_reason`. Three FAILED-transition sites
+  (`mapanare_runtime.c:606,612` coop scheduler;
+  `mapanare_runtime.c:1411` pthread worker) invoke `on_exit` after
+  the state store, before the worker thread exits.
+- **As.6 — `__mn_supervisor_install_child_hook`** static C trampoline
+  (in `mapanare_runtime.c`) wires a child agent's `on_exit` to a
+  callback which builds a heap-allocated `__mn_child_exit_msg_t` and
+  `mapanare_agent_send`s it to the parent supervisor's inbox.
+- **As.4 — `mapanare_exit_reason_kind_t` enum** (NORMAL / SHUTDOWN /
+  KILLED / CRASHED). Fixed-size 256-byte reason string avoids
+  per-FAILED malloc.
+- **As.1 + As.2 — `stdlib/agent/supervisor.mn`** (~370 LOC). Strategy
+  library shape (NOT an agent itself — sidesteps the v5.x
+  fn-typed-parameter-invocation quirk and the cross-typed-children
+  problem). Public surface: `Supervisor`, `ChildSpec`,
+  `RestartPolicy` constants (`Permanent` / `Temporary` /
+  `Transient`), `RestartStrategy` constants (`OneForOne` /
+  `RestForOne` / `OneForAll`), `RestartDecision`, `WindowCheck`,
+  `SupervisorTransition`. Core operation:
+  `supervisor_handle_exit(s, agent_id, exit_kind, reason)` returns a
+  `SupervisorTransition { sup, decision }`. Erlang/OTP semantics
+  exactly for all three strategies.
+- **As.3 — restart limits + backoff.** Sliding-window discrete
+  approximation. Optional exponential backoff
+  (`backoff_initial_ms` × 2^(consecutive_restarts-1), capped at
+  `backoff_max_ms`); default 0 = disabled.
+- **As.5 — 9 link-and-run tests** under `stdlib/agent/tests/`
+  + pytest harness `tests/stdlib/test_supervisor.py`. Cover the
+  three strategies, restart-limit exhaustion, backoff progression
+  with cap, normal-exit + per-policy matrix, child-id remapping,
+  window reset, stale-notification no-op. **9/9 GREEN** at HEAD in
+  3.44s.
+- **As.5 — binary-compat regression test**
+  `tests/runtime/test_agent_struct_compat.py` (4 cases). Locks
+  `sizeof(mapanare_agent_t)` ≤ 1024, opaque-PTR emitter declarations,
+  append-only field placement, and the on_exit invocation at every
+  FAILED-transition site.
+- **As.6 — C smoke harness** at `/tmp/as6_smoke.c`. PASSED. TSan
+  compile-clean.
+- **As.7 — examples** `examples/agents/supervisor_strategy_demo.mn`
+  (all three strategies on a 3-child tree, end-to-end through LLVM
+  emitter + clang) and `examples/agents/worker_pool_supervised.mn`
+  (orchestration sketch).
+- **As.8 — `docs/stdlib/agent.md`** (~250 LOC). Quick reference,
+  strategy table, RestartPolicy semantics, backoff, push-based
+  notification substrate, four cookbook recipes, deferred items,
+  migration/coexistence note explaining pre-v5.42.0 `restart_policy`
+  (intra-agent retry) is orthogonal to v5.42.0 supervision (parent
+  decides what to do once FAILED).
+
+### Changed
+
+- **`mapanare_agent_t` struct grew by ~496 bytes** (488 → 984 bytes
+  on x86_64 Linux). Append-only — every existing caller still works
+  unchanged because: (1) emitters never inline
+  `sizeof(mapanare_agent_t)`; (2) the only allocator is
+  `mapanare_agent_new` (heap, owned by the v5.42.0 runtime);
+  (3) `mapanare_agent_init`'s `memset` zero-inits the new fields,
+  leaving `on_exit = NULL` so the new `if (agent->on_exit)` guards
+  at FAILED sites are no-ops in the pre-v5.42.0 path.
+
+
+## [5.41.0] - 2026-05-04
+
+**Ts.1 — `tensor.reshape` on the LLVM backend (option B part 1).**
+First half of the longest-standing v5.x parity gap: the
+language-builtin `Tensor` (`TypeKind.TENSOR`) now has `reshape`
+on the LLVM backend, end-to-end through both the Python
+bootstrap emitter and the self-hosted compiler. Strict 3-stage
+fixed point preserved at **242,338 lines / 0 diff** (43-release
+strict streak from the v5.7.1 baseline). Goldens **96/96** (95
+existing preserved + new `tests/golden/96_tensor_reshape.mn`).
+
+### Added
+
+- `runtime/native/mapanare_gpu_builtins.c::__mn_tensor_reshape`
+  — copy-semantics reshape for the language-builtin `Tensor`.
+  Validates that the new shape's element count matches
+  `src->size`; aborts with a structured fprintf+abort message
+  on mismatch.
+- `mapanare/lower.py::_lower_method_call` reshape branch
+  (Python bootstrap path).
+- `mapanare/self/lower.mn::lower_method_call` reshape branch
+  (self-host path; mirror of Python).
+- `mapanare/emit_llvm_text.py` and
+  `mapanare/self/emit_llvm.mn` runtime-call dispatch for
+  `__mn_tensor_reshape` — stack-allocates a `LIST`-shaped slot,
+  stores the shape value, calls `__mn_tensor_reshape(ptr
+  tensor, ptr shape_alloca)` (matches the `__mn_gpu_tensor_add`
+  by-pointer ABI). Result tracked in `_tensor_vars` for
+  drop-glue.
+- `tests/golden/96_tensor_reshape.mn` (7 reshape scenarios:
+  1D↔2D, 2D→2D, Int reshape, chained reshape,
+  source-unmodified-after-reshape — locks copy semantics).
+- `tests/llvm/test_tensor_reshape.py` (3 cases: end-to-end via
+  Python emitter, end-to-end via stage1, size-mismatch aborts
+  with structured message). Falsifiability documented per
+  case.
+- `docs/roadmap/v5/v5.41.0/PRE_PHASE_AUDIT.md` documenting
+  the existing tensor surface, the corrected LOC budget, and
+  the option-A / option-B / option-C scope split.
+- `docs/roadmap/v5/v5.41.0/SESSION_REPORT.md`.
+
+### Changed
+
+- **CLAUDE.md "LLVM Backend Status"**: removed `tensor reshape`
+  from the "Not yet on LLVM" line. Mutable views and stepped
+  slices remain listed and point to v5.41.1.
+- **PROMPT/PLAN deviation, lead-approved at Phase 0
+  (option B).** PLAN scoped Ts.1 + Ts.2 + Ts.3 in one v5.41.0
+  release at "1–2 sessions". Phase 0 audit surfaced four
+  load-bearing scope corrections: (1) the grammar does NOT
+  accept `[start..end:step]` at HEAD (PLAN said it did); (2)
+  the existing `stdlib/gpu/tensor.mn` `reshape` is on the
+  stdlib `GpuTensor` struct, a different type from the
+  language-builtin `Tensor`; (3) `mapanare_tensor_t` (the C
+  runtime metadata struct) has no refcount/strides/offset and
+  needs struct surgery for view aliasing; (4) realistic budget
+  is ~1,900 LOC across 3–5 working days. Lead chose option B:
+  v5.41.0 = Ts.1 only with **copy semantics** (~700 LOC);
+  v5.41.1 = Ts.2 + Ts.3 + grammar work + refcount + remaining
+  tests/docs (~1,200 LOC).
+- **Reshape ships copy semantics at v5.41.0.** Each
+  `tensor.reshape(shape)` allocates a fresh tensor and memcpys
+  the source data. v5.41.1 will swap to refcount-based
+  aliasing under the same surface; user code does not change,
+  but the `noalias` attribute on `__mn_tensor_reshape` will
+  drop at that release. The contract is locked by
+  `test_reshape_via_python_emitter` (line that asserts
+  `dst->data != src->data` post-fix; this assertion is
+  expected to flip at v5.41.1).
+- `docs/SPEC.md` header re-synced from "v5.40.0 cut" to
+  "v5.41.0 cut" with new sync block documenting the Ts.1
+  addition + the option-B split + the v5.41.1 forward link
+  for views and stepped slices.
+
+
+## [5.40.0] - 2026-05-04
+
+**Ai.\* — `ask` runtime adapter; manifesto-arc kickoff.** First
+release in the manifesto arc. Ships
+`stdlib/ai/ask.mn` (env-driven config + `AskError` + `ask_text` +
+`ask_with_schema`) and `stdlib/ai/ask_cache.mn` (opt-in SHA-256-keyed
+response cache) on top of v5.36.0's `__struct_meta::<T>()` schema
+intrinsic and v5.39.x's typed-serde round-trip
+(`to_json::<T>` ↔ `from_json::<T>`). **Zero compiler edits. Zero new
+C runtime exports. Zero `mapanare/self/*.mn` source touches.** Strict
+3-stage fixed point preserved by construction at v5.39.7's **241,898
+lines / 0 diff** (42-release strict streak from the v5.7.1 baseline).
+Goldens **95/95**.
+
+### Added
+
+- **Ai.4 / Ai.5 — `stdlib/ai/ask.mn`** — provider-agnostic env-driven
+  LLM dispatch. `build_config_from_env()` reads `MAPANARE_AI_PROVIDER`
+  / `MAPANARE_AI_MODEL` / `MAPANARE_AI_API_KEY` /
+  `MAPANARE_AI_LOCAL_URL` with fallback to `MAPANARE_LLM_*`
+  (existing `default_config()` vars) for compatibility. Recognised
+  providers: `anthropic`, `openai`, `groq`, `ollama`, `local` (alias
+  for ollama). `ask_text(prompt) -> Result<String, AskError>` for
+  free-form chat; `ask_with_schema(prompt, schema) -> Result<String,
+  AskError>` for typed-output extraction (pair with
+  `__struct_meta::<T>()` and `from_json::<T>` at the call site).
+  `AskError` is a v5.39.7-clean enum (8 variants:
+  `Network(String)`, `RateLimit(Int)`, `SchemaMismatch(String)`,
+  `ContentFiltered(String)`, `TimedOut`, `ProviderUnavailable(String)`,
+  `MalformedResponse(String)`, `DeserializeFailed(String)`). The
+  `TimedOut` variant is named to avoid colliding with the existing
+  `LLMError::Timeout(String)` in `stdlib/ai/llm.mn`.
+  `map_extract_error(e: ExtractError) -> AskError` translates the
+  underlying `extract_with_schema` error family.
+- **Ai.6 — `stdlib/ai/ask_cache.mn`** — opt-in response cache.
+  Cache key is SHA-256 over
+  `(provider || "|" || model || "|" || prompt || "|" || schema)`.
+  Cache files live under `MAPANARE_AI_CACHE_DIR` (absent disables);
+  TTL default 86400 seconds, override via
+  `MAPANARE_AI_CACHE_TTL_SECONDS` (`0` disables expiry). Atomic writes
+  via temp + rename. Self-contained (direct C-runtime externs only) so
+  it concatenates alongside `stdlib/ai/llm.mn` + `stdlib/ai/ask.mn` without
+  dragging in `stdlib/fs.mn` (the latter carries a pre-existing IR
+  codegen issue around `walk_dir`'s match-on-Result-of-List shape that's
+  unrelated to v5.40.0; tracked outside scope as a v5.41.0+ LOW).
+- **Ai.7 — link-and-run regression suite** at
+  `tests/stdlib/test_ai_ask.py` — 5 deterministic Mapanare test cases
+  (`test_ask_error_variants` covers all 8 AskError variants +
+  `map_extract_error` translation; `test_ask_config_env` covers
+  default / unset env path; `test_ask_config_env_anthropic` covers
+  `MAPANARE_AI_PROVIDER=anthropic` + API key + model; `test_ask_cache_roundtrip`
+  covers store / hit / miss-on-different-key; `test_ask_schema_shapes`
+  covers 7 struct shapes including nested + Option + List + Map). Plus
+  a live-gated `test_ai_ask_live` skipped unless
+  `MAPANARE_AI_API_KEY` is present. **5/5 deterministic GREEN at HEAD;
+  live test skipped in CI as designed**. Concatenation harness
+  pattern mirrors v5.34.0 / v5.35.0 / v5.39.x.
+- **Ai.9 — `examples/ai/plan_generator.mn`** — manifesto demo. Takes
+  a goal string, asks the configured provider for a structured `Plan
+  { goal: String, steps: List<Step>, eta_days: Int }` (where `Step
+  { title: String, detail: String }`), decodes via `from_json::<Plan>`,
+  renders the steps. Run with
+  `MAPANARE_AI_PROVIDER=anthropic MAPANARE_AI_API_KEY=sk-ant-...`.
+- **Ai.10 — `docs/stdlib/ai.md`** (~340 LOC). Quick reference, type
+  / API reference, provider configuration matrix, typed-output
+  pattern, AskError variants, cache configuration, 5 cookbook recipes
+  (plan generator, code reviewer, free-form chat, switching providers
+  via env, deterministic test runs via cache), explicit "what's not
+  here yet" list, migration / coexistence note from `ai::llm::ask`.
+- **`docs/manifesto.md`** gains a "first manifesto item shipped at
+  the syntax level" section explicitly calling out v5.40.0 as the
+  arc-kickoff release and v5.41.0 as the keyword candidate.
+
+### Changed
+
+- **PROMPT/PLAN deviation (load-bearing) — Ai.1 + Ai.2 + Ai.8 deferred
+  to v5.41.0.** PROMPT scoped a reserved `ask` keyword with binding-
+  context type inference (`let plan: Plan = ask("...")`) plus an
+  `ask_typed::<T>(prompt)` intrinsic. Phase 0 audit at v5.39.7 HEAD
+  surfaced two structural blockers: (1) Mapanare's existing
+  `pub fn ask(config, prompt)` in `stdlib/ai/llm.mn` would collide
+  with a reserved keyword — keyword-form parsing would shadow the
+  2-arg form across the entire ecosystem; (2) a user-level generic
+  `pub fn ask_typed<T>(prompt) -> Result<T, JsonError> { da
+  from_json::<T>(...) }` does NOT propagate the substituted type
+  parameter to the inner `from_json::<T>` intrinsic call site —
+  `_specialize_fn` substitutes parameter and return types but does
+  not walk the body to substitute nested `type_args` in `CallExpr`
+  nodes. Confirmed empirically: a test calling
+  `parse_typed::<P>("{\"x\": 42}")` with `P { x: Int }` returns 0
+  (default-init) instead of 42 because the inner `from_json::<T>`
+  was lowered with the literal type-variable name "T" rather than
+  the substituted "P". The intrinsic-form fix would require
+  `_specialize_fn` to recursively rewrite `CallExpr.type_args`
+  through the body — perturbs the IR and threatens the 42-release
+  STRICT streak. v5.40.0 ships the runtime adapter at function-syntax;
+  the keyword + binding-context inference is v5.41.0 on the back of
+  a `_specialize_fn` body-walk fix.
+- **`AskError::TimedOut` (not `Timeout`)** to avoid collision with
+  `LLMError::Timeout(String)` in `stdlib/ai/llm.mn`. Match patterns
+  on `Timeout` from a concatenated source SEGV'd silently because the
+  pattern-matcher resolved to the wrong enum's variant. Documented
+  in source preamble.
+- **`ai::ask::ask_text` / `ai::ask::ask_with_schema` are additive.**
+  The existing `ai::llm::ask(config, prompt)` (explicit-config form)
+  and `ai::llm::extract_with_schema(config, schema, text, retries)`
+  are preserved unchanged.
+- **`docs/SPEC.md`** header re-synced from "v5.39.7 cut" to "v5.40.0
+  cut" with a new sync block summarizing the manifesto-arc kickoff.
+- **`docs/manifesto.md`** updated.
+
+### Fixed
+
+- *(none — packaging-and-stdlib release; no compiler / runtime fixes)*
+
+
+
+## [5.39.7] - 2026-05-04
+
+**Js.4.F.1 + Js.4.F.2 — typed-serde ENUM encode + decode;
+round-trip closure for enum-typed fields. Final release in the
+v5.39.x typed-serde arc; Js.4.\* arc CLOSED.** After v5.39.7 the
+typed-serde round-trip
+`to_json::<T>` ↔ `from_json::<T>` closes for **every common LLM
+JSON response shape** (primitive, struct, nested struct,
+`List<X>`, `Map<String, V>`, and tagged-union enums). Adds
+**zero language features, zero new MIR ops, zero new IR shapes,
+zero new C runtime exports**. Strict 3-stage fixed point
+preserved by construction at v5.39.6's **241,898 lines / 0
+diff** (41-release strict streak from v5.7.1; zero
+`mapanare/self/*.mn` source touches — Phase 0 verified
+`grep -rn "from_json|decode_to|encode_struct|to_json"
+mapanare/self/` returned 0 matches). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.F.1 — `to_json::<T>` ENUM encode**:
+  `mapanare/lower.py:_encode_field_to_json` had explicit handlers
+  for primitives + OPTION + STRUCT (v5.39.3) + LIST (v5.39.4) +
+  MAP (v5.39.6) but no branch for `TypeKind.ENUM`. Pre-fix the
+  fallback at `Call(fn_name="str", args=[field_val])` emitted
+  the literal `<?>` placeholder for any enum-typed struct field.
+  `Record(2, Pending(42))` encoded as
+  `{"id": 2, "status": <?>}`; post-fix encodes as
+  `{"id": 2, "status": {"Pending": 42}}`. Fix adds a new
+  `_emit_enum_json_body(enum_val, enum_name) -> Value` helper
+  (~120 LOC) that switches on `EnumTag(enum_val)` with one block
+  per variant + a default block, merges the per-variant strings
+  via a Phi. Per-variant payload shape: no-payload → bare string
+  `"VariantName"`; single-payload → `{"VariantName": <encoded>}`;
+  multi-payload → `{"VariantName": [<p0>, <p1>, ...]}` (positional
+  tuple → JSON array). Recurses through `_encode_field_to_json`
+  per payload type so nested struct / list / map / enum payloads
+  fall through uniformly.
+
+- **Js.4.F.2 — `from_json::<T>` ENUM decode**:
+  `mapanare/lower.py:_decode_json_field` had explicit handlers
+  for primitives + OPTION + STRUCT (v5.39.4) + LIST (v5.39.5) +
+  MAP (v5.39.6) but no branch for `TypeKind.ENUM`. Pre-fix the
+  raw-jval fallback returned the JsonValue enum where the typed
+  enum value was expected — silent shape mismatch on the
+  consumer side. Fix adds a new
+  `_emit_enum_decode_body(jval, enum_name) -> Value` helper
+  (~190 LOC) that switches on the JsonValue tag (Str / Object /
+  default), then runs a string-cascade compare against each
+  variant name. For the Str path: each no-payload variant gets
+  one `if jstr == "VariantName" { EnumInit(VariantName) }`
+  arm. For the Object path: extract the
+  `Map<String, JsonValue>` entries via
+  `EnumPayload(variant="Object")`, pull the single variant key
+  via `__mn_map_keys`+`keys[0]`, cascade-compare against each
+  payload-bearing variant, decode the payload(s) positionally
+  (1-tuple → recurse `_decode_json_field`; n-tuple → extract
+  `JsonValue::Array`'s inner `List<JsonValue>` and decode each
+  element by its declared payload type), then `EnumInit` with
+  the decoded payloads. Linear cascade — fast enough for typical
+  enums (< 20 variants); hash-based dispatch is a v5.40+
+  candidate if benchmarks show need.
+
+- **Js.4.F.0 — enum/struct disambiguation in
+  `_encode_field_to_json` + `_decode_json_field`**:
+  `_resolve_type_expr` cannot distinguish enum from struct at
+  parse time — both come through as `TypeKind.STRUCT` with the
+  user-supplied name. The Js.4.F.1 + Js.4.F.2 branches are
+  routed inside the existing STRUCT branches: check
+  `self._module.enums` first (with the skip list
+  `{Option, Result, JsonValue}` keeping compiler-internal enums
+  on their existing paths — OPTION is handled separately, Result
+  is the parent context never reached as a struct field,
+  JsonValue is the recursive case routed via
+  `_ensure_json_types_registered`), fall through to the struct
+  path only if the name is genuinely a struct.
+
+### Changed
+
+- **Externally-tagged JSON shape locked for enum encoding.**
+  Three shapes were on the table (externally tagged
+  `{"V": payload}`, internally tagged `{"tag": "V", ...}`,
+  adjacently tagged `{"tag": "V", "payload": ...}`); externally
+  tagged was chosen at PLAN — most common in JSON-RPC, OpenAI /
+  Anthropic function-calling schemas, and Rust serde's default
+  derive output; round-trips trivially through the existing
+  `_emit_list_decode_body` for multi-payload variants. Special
+  case: no-payload variants encode as the bare string
+  `"VariantName"` (not `{"VariantName": null}`) — matches Rust
+  serde's `untagged()` for unit variants and is what most LLMs
+  produce in function-call responses. Documented in
+  `docs/SPEC.md` v5.39.7 sync block.
+
+- **`Js.4.*` typed-serde arc CLOSED.** v5.39.0 → v5.39.7 closed
+  every `TypeKind` branch in `_encode_field_to_json` /
+  `_decode_json_field` that v5.36.0's Phase-0 audit identified as
+  structurally incomplete. Round-trip now works end-to-end for:
+  primitives (v5.39.2), multi-field structs (v5.39.2), nested
+  structs (v5.39.3 + v5.39.4), `List<X>` (v5.39.4 + v5.39.5),
+  `Map<String, V>` (v5.39.6), and tagged-union enums (v5.39.7).
+  v5.40.0 manifesto-arc kickoff (`ask` / `ask_typed::<T>`) fully
+  unblocked.
+
+
+## [5.39.6] - 2026-05-04
+
+**Js.4.E.1 + Js.4.E.2 — typed-serde MAP encode + decode; round-trip
+closure for `Map<String, V>`-typed fields.** Sibling release to
+v5.39.5 (LIST decode). Bundles encode + decode in one release
+because Map's invariant decision is simpler than LIST's was
+(string-key only — JSON objects per RFC 8259 §4) and both halves
+are mechanical mirrors of v5.39.4 (LIST encode) + v5.39.5 (LIST
+decode) patterns. Adds **zero language features, zero new MIR
+ops, zero new IR shapes, zero new C runtime exports**. Strict
+3-stage fixed point preserved by construction at v5.39.5's
+**241,898 lines / 0 diff** (40-release strict streak from
+v5.7.1; zero `mapanare/self/*.mn` source touches — Phase 0
+verified `grep -rn "from_json\|decode_to\|encode_struct\|to_json"
+mapanare/self/` returned 0 matches).
+
+### Changed
+
+- **Compile-time error: `Map<K, V>` fields with non-String K are
+  rejected by `to_json::<T>` and `from_json::<T>`.** JSON object
+  keys must be strings (RFC 8259 §4); `Map<Int, X>` and
+  `Map<Float, X>` have no canonical JSON projection. The PLAN
+  invariant decision picked compile-time rejection over silent
+  lossy coercion (`str(key)` → asymmetric round-trip) and over
+  runtime error (surfaced too late). Diagnostic shape:
+  `to_json: Map<K, V> requires K = String (got <KIND>)` and
+  `from_json: Map<K, V> requires K = String (got <KIND>)`.
+  Potentially breaking-ish, but no production user has exercised
+  this path — pre-fix `to_json::<T>` emitted the `<?>` placeholder
+  for any Map-typed field, and `from_json::<T>` fell into the
+  raw-jval fallback (silent shape mismatch / SEGV).
+
+### Fixed
+
+- **Js.4.E.1 — `to_json::<T>` MAP encode.**
+  `mapanare/lower.py:2689::_encode_field_to_json` had explicit
+  handlers for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT`
+  (the latter from v5.39.3) and `LIST` (from v5.39.4) but no
+  branch for `TypeKind.MAP`. The fallback at
+  `Call(fn_name="str", args=[field_val])` emitted the literal
+  `<?>` placeholder via `mapanare/emit_llvm_text.py`'s
+  `_mkstr("<?>")`. Pre-fix `Bag("box", #{"a": 1, "b": 2})` encoded
+  as `{"name": "box", "lookup": <?>}`. Fix adds a new
+  `_emit_map_json_body(map_val, val_type) -> Value` helper
+  mirroring v5.39.4's `_emit_list_json_body` shape: iterate via
+  `__mn_map_keys` (returns `List<String>`) + per-key IndexGet on
+  the map (lowered to `__mn_map_get`), emit
+  `"key": value` pairs separated by `, `, recurse through
+  `_encode_field_to_json` per value so nested
+  `Map<String, Struct>` / `Map<String, List>` / `Map<String, Map>`
+  fall through STRUCT / LIST / MAP / primitive branches uniformly.
+  Mutable-Phi loop pattern matches v5.39.4. Empty `#{}`,
+  primitive-value, and string-value cases all encode correctly
+  post-fix. Key ordering is unspecified (JSON objects are
+  unordered per RFC 8259 §4); tests assert via `contains`
+  patterns rather than positional equality.
+
+- **Js.4.E.2 — `from_json::<T>` MAP decode.**
+  `mapanare/lower.py:3166::_decode_json_field` had explicit
+  handlers for primitives + OPTION + STRUCT (v5.39.4) + LIST
+  (v5.39.5) but no branch for `TypeKind.MAP`. The fallback
+  `return jval` returned the raw `JsonValue::Object` enum where
+  the consumer expected the typed `Map<String, V>` shape — silent
+  shape mismatch surfaced as wrong field contents (or downstream
+  segfault on Map access via `__mn_map_get` against the
+  JsonValue enum's unrelated bytes). Pre-fix
+  `from_json::<Bag>("{\"lookup\": {\"a\": 1}}")` SEGV'd before
+  printing anything. Fix adds a new
+  `_emit_map_decode_body(jval, val_type) -> Value` helper
+  mirroring v5.39.5's `_emit_list_decode_body` decode-side shape:
+  extract `Map<String, JsonValue>` from the `Object` variant via
+  `EnumPayload(variant="Object", payload_idx=0)`, initialize an
+  empty `Map<String, V>` accumulator (relies on v5.39.2's
+  `_do_map_init` empty-literal type-derivation fix for correct
+  bucket sizing), iterate keys via `__mn_map_keys` + per-key
+  IndexGet on the inner map, recurse through `_decode_json_field`
+  per value, accumulate via `IndexSet` (lowered to
+  `__mn_map_set`).
+
+- **No SSA-name-reuse trick needed (vs. v5.39.5 ListPush).**
+  Phase 1 audit confirmed `MAP` lowers to `PTR` in the IR
+  (`emit_llvm_text._rty`), and `__mn_map_set` mutates the bucket
+  array in place without changing the outer `MnMap*`. The
+  accumulator value is invariant across loop iterations, so the
+  decode helper uses a single counter phi (no acc phi). This is
+  simpler than the LIST decode case where ListPush could grow
+  the buffer (and v5.39.5's SSA-name-reuse trick was
+  load-bearing).
+
+- **Self-host mirror N/A by construction.** Phase 0 grep returned
+  0 matches. The Js.4 typed-serde surface shipped Python-
+  bootstrap-only at v5.36.0 and has not been mirrored. STRICT
+  preserved trivially; v5.39.6 makes zero `mapanare/self/*.mn`
+  source touches.
+
+<!-- no-check --> - **Test infrastructure extension.** Two new test files (.mn)
+  appended to `TEST_FILES` in
+  `tests/stdlib/test_struct_json_runtime.py`:
+  `test_to_json_map_field.mn` (Js.4.E.1 single-direction encode,
+  3 sub-cases: `Map<String, Int>` two entries, empty map encodes
+  as `{}`, `Map<String, String>` value-side recursion) and
+  `test_from_json_map_field.mn` (Js.4.E.2 single-direction
+  decode, 3 sub-cases mirroring the encode-side shapes). Each
+  sub-case wrapped in its own helper function (same caveat as
+  v5.39.5 LIST tests — `from_json_merge` / `decode_object` block
+  labels are bare; multiple invocations in one function body
+  collide pre-MIR-verifier). 13/13 GREEN at HEAD (was 11 at
+  v5.39.5; +2). Added 2 parametrized rejection cases
+  (`test_typed_serde_map_nonstring_key_rejected`) asserting
+  `RuntimeError` with the expected diagnostic for
+  `Map<Int, V>` and `Map<Float, V>` fields. 15/15 total GREEN.
+
+- **Falsifiability locked per fix** — disabling either MAP branch
+  in `lower.py` makes the corresponding test fail; reapplying
+  restores GREEN. Aggregate state entering v5.39.7: **0 HIGH** /
+  **1 MEDIUM** (macOS notarization carry from v5.33.0 Nu.2) /
+  ~6 LOW (added ENUM encode/decode as v5.39.7 candidate;
+  prior carries unchanged). See
+  `docs/roadmap/v5/v5.39.6/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
+
+## [5.39.5] - 2026-05-03
+
+**Js.4.D.3 — `from_json::<T>` LIST nested decoding; v5.39.x arc
+CLOSED.** Symmetric pair to v5.39.4's Js.4.D.1 (LIST encode).
+Closes the last v5.39.x-deferred typed-serde gap before the
+v5.40.0 manifesto-arc kickoff. After this release, the typed-serde
+round-trip `to_json::<T>` ↔ `from_json::<T>` closes for **every
+shape v5.40.0 Ai.\* (`ask_typed::<T>`) actually returns** from
+typical LLM responses (primitive, struct, nested struct,
+`List<primitive>`, `List<struct>`). Adds **zero language features,
+zero new MIR ops, zero new IR shapes, zero new C runtime exports**.
+**Strict 3-stage fixed point preserved by construction** at
+v5.39.4's **241,898 lines / 0 diff** (39-release strict streak
+from v5.7.1; zero `mapanare/self/*.mn` source touches — Phase 0
+verified `grep -rn "from_json\|decode_to\|encode_struct\|to_json" mapanare/self/`
+returned 0 matches). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.D.3 — `from_json::<T>` LIST nested decoding.**
+  `mapanare/lower.py::_decode_json_field` had explicit handlers
+  for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT` (the latter
+  shipped in v5.39.4) but no branch for `TypeKind.LIST`. The
+  fallback `return jval` returned the raw `JsonValue::Array`
+  enum where the consumer expected the typed `List<X>` value —
+  silent shape mismatch surfaced as wrong list contents (or
+  downstream segfault on element access). Pre-fix
+  `from_json::<Bag>("{\"items\": [1, 2, 3]}")` printed garbage
+  `94467072822368` for `len(b.items)`; post-fix prints `3`. Fix
+  adds a new `_emit_list_decode_body(arr_jval, inner_type) -> Value`
+  helper mirroring v5.39.4's `_emit_list_json_body` shape on the
+  decode side: extract the inner `List<JsonValue>` from the
+  `Array` variant via `EnumPayload(variant="Array", payload_idx=0)`,
+  initialize an empty `List<inner>` accumulator, loop over the
+  inner array length, recurse through `_decode_json_field` per
+  element, accumulate via in-place `ListPush` (mirrors
+  `_lower_method_call`'s `.push()` SSA name-reuse pattern at
+  `mapanare/lower.py:3298` — the dest reuses `acc_phi_dest`'s name
+  so the emitter's phi alloca acts as the single mutable list
+  slot across iterations). The mutable-Phi loop pattern is the
+  same shape as v5.39.4's encode-side helper. Element type from
+  `target_type.type_info.args[0]`; recursion handles nested
+  `List<List<X>>`, `List<Struct>`, etc. uniformly through the
+  existing dispatch.
+
+  **In-place ListPush across the loop boundary** — Phase 1
+  audit confirmed Option A (in-place push reusing the phi dest's
+  SSA name) works. The phi alloca system at
+  `mapanare/emit_llvm_text.py:2461-2473` registers
+  `_alloc[acc_phi_dest.name] = (%phi.<name>, ty)`; ListPush at
+  `:4761` finds the alloca via `_get_ptr`, calls
+  `__mn_list_push` which mutates the buffer in place, then
+  reloads. The deferred phi store from the body-exit incoming
+  becomes a no-op load-from-self / store-to-self because
+  `new_acc.name == acc_phi_dest.name`. Option B fallback
+  (`Copy`-then-`ListPush`) was on the table but Phase 1 spike
+  produced valid IR for Option A, so Option A shipped.
+
+- **Test infrastructure extension.** New
+  `stdlib/encoding/json/tests/test_from_json_list_field.mn`
+  (~80 LOC, 3 sub-cases: `List<Int>` with 3 elements, empty
+  list, `List<String>` with 2 elements) — symmetric pair to
+  v5.39.4's `test_to_json_list_field.mn`. Each sub-case is
+  wrapped in its own helper function because
+  `_lower_from_json`'s `from_json_merge` / `decode_object`
+  block labels are bare (not `_fresh_block`-prefixed); multiple
+  `from_json::<T>` calls in one function body collide
+  pre-MIR-verifier. Documented as a v5.39.6+ LOW (cosmetic;
+  surfaced because v5.39.5's test exercised the multi-decode
+  shape that prior tests didn't). Test added to
+  `tests/stdlib/test_struct_json_runtime.py::TEST_FILES`. 11/11
+  GREEN at HEAD (was 10 at v5.39.4 HEAD; +1).
+
+  **Strengthened `test_to_from_nested_roundtrip.mn`** with
+  three new assertions: `len(decoded.inner.ints) == 3`,
+  `decoded.inner.ints[0] == 10`, `decoded.inner.ints[2] == 30`.
+  v5.39.4 deliberately omitted these because the embedded
+  `List<Int>` field would have failed on the decode side;
+  v5.39.5 strengthens the test, making it stricter going
+  forward. Falsifiability locked per fix — reverting the
+  `TypeKind.LIST` branch in `_decode_json_field` makes
+  `test_from_json_list_field` SEGV (exit -11) and the
+  strengthened nested round-trip fail on the new
+  `inner.ints` assertions; reapplying restores both to GREEN.
+
+### Changed
+
+- **Self-host mirror N/A by construction.** Phase 0 grep for
+  `from_json|decode_to|encode_struct|to_json` in
+  `mapanare/self/` returned 0 matches. The Js.4 typed-serde
+  surface shipped Python-bootstrap-only at v5.36.0 and has
+  not been mirrored. STRICT preserved trivially.
+
+- **`docs/SPEC.md` header re-synced** from "v5.39.4 cut" to
+  "v5.39.5 cut" with new sync block summarizing Js.4.D.3 and
+  the v5.39.x arc closeout (MAP encode/decode + ENUM
+  encode/decode held with documented invariant questions —
+  none load-bearing for v5.40.0 Ai.\*).
+
+### Out of scope (deferred to v5.40.x+)
+
+- **MAP encode/decode** — string-key invariant question: reject
+  non-string keys / coerce / runtime-error?
+- **ENUM encode/decode** — tagged-union shape question:
+  `"VariantName"` vs `{"Variant": payload}` vs
+  `{"tag": ..., "payload": ...}`?
+
+Each carries forward as LOW. None block v5.40.0.
+
+### Aggregate state entering v5.40.0
+
+- **0 HIGH** — typed-serde round-trip closed for the v5.40.0
+  Ai.\* call shapes
+- **1 MEDIUM** — macOS notarization (carry from v5.33.0 Nu.2,
+  unchanged across the v5.39.x arc)
+- **~10 LOW** — MAP encode/decode (paired with invariant
+  decision), ENUM encode/decode (paired with shape decision),
+  bare block labels in `_lower_from_json` (cosmetic; surfaced
+  by v5.39.5 multi-decode test — restructured around it), plus
+  prior carries
+
+**Js.4.\* arc CLOSED for v5.40.0 dependencies. Manifesto-arc
+kickoff (v5.40.0 Ai.\* — `ask`/`ask_typed::<T>`) unblocked for
+all common LLM response shapes.**
+
+
+## [5.39.4] - 2026-05-03
+
+**Js.4.D.1 + Js.4.D.2 — typed-serde round-trip closure for nested
+struct + List-typed fields.** Two siblings to v5.39.3's STRUCT
+encoding (Js.4.C), bundled in one release because together they
+unlock the `to_json::<T>` ↔ `from_json::<T>` round-trip for the
+shapes v5.40.0 Ai.\* (`ask_typed::<T>`) actually returns. Adds
+**zero language features, zero new MIR ops, zero new IR shapes,
+zero new C runtime exports**. **Strict 3-stage fixed point
+preserved by construction** at v5.39.3's **241,898 lines / 0 diff**
+(38-release strict streak from v5.7.1; zero `mapanare/self/*.mn`
+source touches — Phase 0 verified `grep -rn "from_json\|decode_to\|encode_struct\|to_json" mapanare/self/`
+returned 0 matches). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.D.1 — `to_json::<T>` LIST nested encoding.**
+  `mapanare/lower.py::_encode_field_to_json` had explicit handlers
+  for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION`/`STRUCT` (the latter
+  shipped in v5.39.3) but no branch for `TypeKind.LIST`. The
+  fallback `Call(fn_name="str", args=[field_val])` emitted the
+  literal `<?>` placeholder via `mapanare/emit_llvm_text.py`'s
+  `r, _ = self._mkstr("<?>")`. Pre-fix `Bag("box", [1, 2, 3])`
+  encoded as `{"name": "box", "items": <?>}`. Fix adds a new
+  `_emit_list_json_body(list_val, inner_type) -> Value` helper
+  emitting a counter+phi loop that calls `_encode_field_to_json`
+  per element, recursing through STRUCT / LIST / primitive
+  branches uniformly. Post-fix `[1, 2, 3]`, `["foo", "bar"]`,
+  `[{"id": 1, "name": "a"}]`, and the empty-list `[]` cases all
+  encode correctly. Latent since v5.36.0 Js.4 ship; the v5.36.0
+  `tests/stdlib/test_struct_json.py` was compile-only — the
+  placeholder text was syntactically present in IR but never
+  link-tested. Same bug class as v5.39.3 Js.4.C (missing
+  TypeKind branch in the encoder dispatch).
+
+- **Js.4.D.2 — `from_json::<T>` nested struct decoding.**
+  `mapanare/lower.py::_decode_json_field` had explicit handlers
+  for `STRING`/`INT`/`FLOAT`/`BOOL`/`OPTION` but no branch for
+  `TypeKind.STRUCT`. The fallback returned the raw `JsonValue`
+  enum where the consumer expected the struct shape — silent
+  shape mismatch surfaced as wrong field values after decode
+  (no link error, no SEGV — just garbage data). Pre-fix
+  `from_json::<Wrap>("{\"name\": \"ok\", \"inner\": {\"x\": 42, \"y\": \"hi\"}}")`
+  returned a Wrap with `inner.x=0` / `inner.y=""`. Fix extracts
+  the field-extraction body of `_lower_decode_to` into a new
+  `_emit_decode_struct_inline(json_val, struct_name) -> Value`
+  helper (sibling factoring to v5.39.3's `_emit_struct_json_body`
+  on the encode side). The new helper is called from both the
+  top-level `_lower_decode_to` Object branch (replacing the
+  inline body — same external behavior) and the new STRUCT
+  branch in `_decode_json_field` (which trusts the JsonValue is
+  an Object variant, consistent with the no-tag-check behavior
+  of the primitive branches).
+
+### Changed
+
+- **Bundle scope: STRUCT decode + LIST encode only.** MAP encoding
+  has the JSON-string-key invariant question (reject vs coerce vs
+  runtime-error); ENUM encoding has the tagged-union shape question
+  (`"VariantName"` vs `{"Variant": payload}` vs `{"tag": ..., "payload": ...}`);
+  LIST/MAP/ENUM decoding mirrors the same questions on the parse
+  side. Each deserves its own Phase 0 audit and lead-approved
+  invariant decision; v5.39.5+ picks them up.
+
+- **Self-host mirror N/A**: Phase 0 grep for
+  `from_json|decode_to|encode_struct|to_json` in `mapanare/self/`
+  returned 0 matches. The Js.4 typed-serde surface shipped
+  Python-bootstrap-only at v5.36.0 and has not been mirrored.
+  STRICT preserved trivially by construction.
+
+- **Test infrastructure extension.** Three new Mapanare test
+  fixtures appended to `TEST_FILES` in
+  `tests/stdlib/test_struct_json_runtime.py`:
+  `test_to_json_list_field.mn` (Js.4.D.1 single-direction encode),
+  `test_from_json_nested_struct.mn` (Js.4.D.2 single-direction
+  decode), and `test_to_from_nested_roundtrip.mn` (load-bearing
+  round-trip with embedded `List<Int>` field exercising both
+  fixes). 10/10 GREEN at HEAD (was 7 at v5.39.3 HEAD; +3).
+  Falsifiability locked per fix — reverting either branch fails
+  the corresponding single-direction test; reverting both fails
+  the round-trip with the diverging-field signature.
+
+- **Hd-class preventative.** `docs/SPEC.md` header re-synced from
+  "v5.39.3 cut" to "v5.39.4 cut" with new sync block.
+  `check_doc_freshness.py` GREEN; `check_changelog_honesty.py`
+  GREEN.
+
+
+## [5.39.3] - 2026-05-03
+
+**Js.4.C — `to_json::<T>` nested-struct recursion.** Split-from-v5.39.2
+follow-on. v5.39.2 closed the runtime SEGV in `from_json::<T>`
+(Js.4.B.2) but explicitly held back the `to_json::<T>` nested-struct
+fix — different code path, bundling would have inflated v5.39.2's
+scope. v5.39.3 closes that hole. After this release, the typed-serde
+surface (`to_json::<T>` ↔ `from_json::<T>`) round-trips cleanly for
+nested struct shapes — the manifesto-arc ergonomic v5.40.0 Ai.\* will
+exercise via `ask_typed::<T>`. Adds **zero language features, zero
+new MIR ops, zero new IR shapes, zero new C runtime exports**.
+**Strict 3-stage fixed point preserved by construction** at v5.39.2's
+**241,898 lines / 0 diff** (37-release strict streak from v5.7.1;
+zero `mapanare/self/*.mn` source touches — Phase 0 verified
+`grep -rn "from_json\|decode_to\|encode_struct\|to_json" mapanare/self/`
+returned 0 matches, so the typed-serde surface remains
+Python-bootstrap-only). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.C (`mapanare/lower.py::_encode_field_to_json`)** — added
+  the missing `TypeKind.STRUCT` branch. Pre-fix `to_json::<Wrap>(w)`
+  with `struct Wrap { name: String, inner: Inner }` emitted
+  `{"name": "ok", "inner": <?>}` because the type-dispatch had
+  explicit handlers for `STRING` / `INT` / `FLOAT` / `BOOL` /
+  `OPTION` (the latter recursing on the inner type) but no branch
+  for `STRUCT`. The fallback at line 2762 (`Call(fn_name="str",
+  args=[field_val])`) emitted the `<?>` placeholder via
+  `mapanare/emit_llvm_text.py:3465`. Post-fix the new STRUCT
+  branch recurses through the shared `_emit_struct_json_body`
+  helper (extracted from `_lower_encode_struct`) so nested
+  structs produce real JSON. Latent since v5.36.0 Js.4 ship; the
+  v5.36.0 `tests/stdlib/test_struct_json.py` was compile-only —
+  the placeholder text was syntactically present in IR but never
+  link-tested.
+
+### Changed
+
+- **Refactored `mapanare/lower.py::_lower_encode_struct`** to
+  delegate to the new `_emit_struct_json_body(struct_val,
+  struct_name) -> Value` helper. Both the top-level
+  `encode_struct::<T>` / `to_json::<T>` intrinsic and the new
+  STRUCT-typed-field recursion share the same JSON body emission;
+  the previous duplication-by-extraction-pattern is now a single
+  load-bearing function. External API of `_lower_encode_struct`
+  unchanged.
+- **Bundle scope decision (Phase 1).** Default per PLAN was
+  STRUCT-first with optional LIST bundling if the runtime
+  list-iteration MIR sketch fit in ~20 LOC. Phase 1 review of
+  the iteration shape (counter alloca + `len()` runtime call +
+  comparison + `IndexGet` + accumulator) put the LIST branch at
+  ~30-50 LOC; v5.39.3 stayed strict with PLAN's bundle threshold
+  and held LIST for v5.39.4. MAP and ENUM also held: MAP has the
+  string-key invariant question (JSON requires string keys; need
+  to decide reject-at-typecheck vs coerce vs runtime-error); ENUM
+  has the tagged-union shape question (`"VariantName"` vs
+  `{"Variant": payload}` vs `{"tag": ..., "payload": ...}`).
+  v5.39.4 will pick these up together once the ENUM shape decision
+  aligns with `from_json::<T>` round-trip semantics.
+
+### Added
+
+- **`stdlib/encoding/json/tests/test_to_json_nested_struct.mn`** —
+  appended to `tests/stdlib/test_struct_json_runtime.py`'s
+  `TEST_FILES`. Encode-and-inspect single-direction test
+  (`to_json::<Wrap>(w)` then `String.contains` checks for the
+  three field substrings + the `<?>` placeholder anti-substring).
+  Single-direction on purpose: the `from_json::<T>` decoder
+  (`mapanare/lower.py::_decode_json_field`) only handles primitive
+  field types at v5.39.3 HEAD — a round-trip equality test would
+  fail on the decode side, not the v5.39.3 fix. Encode-decode
+  round-trip for nested structs is tracked as a v5.39.4 candidate.
+  **Falsifiability locked**: reverting the new STRUCT branch in
+  `_encode_field_to_json` reproduces the `<?>` placeholder; the
+  new test fails with the recorded
+  `FAIL test_to_json_nested_struct: still emits <?> placeholder`
+  signature. One Edit-and-pytest cycle reproduces.
+
+
+## [5.39.2] - 2026-05-03
+
+**Js.4.B.2 — `from_json::<T>` runtime SEGV closeout + link-and-run
+regression suite. v5.39.1 + v5.39.2 arc CLOSED.** Second of two
+release sessions on Js.4.B; together they close the v5.36.0-deferred
+typed-serde defect that v5.40.0 Phase 0 audit re-diagnosed as two
+structurally distinct failure modes. After v5.39.2 ships, v5.40.0
+(Ai.\* — `ask` keyword, manifesto-arc kickoff) picks up cleanly with
+the typed-output ergonomic intact. Adds **zero language features,
+zero new MIR ops, zero new IR shapes, zero new C runtime exports**.
+**Strict 3-stage fixed point preserved by construction** at v5.39.1's
+**241,898 lines / 0 diff** (36-release strict streak from v5.7.1;
+zero `mapanare/self/*.mn` source touches — see "Self-host mirror
+N/A" below). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.B.2 (`mapanare/emit_llvm_text.py::_do_map_init`)** — when
+  a `Map<K, V>` literal had no initial pairs (`#{}`), the empty
+  branch hardcoded `(ksz=8, vsz=8, ktag=0)` instead of deriving
+  sizes and tags from the declared `MapInit.key_type` /
+  `MapInit.val_type`. Any `Map<String, X> = #{}` (or
+  `Map<Float, X> = #{}`) was created with 8-byte buckets and
+  `key_type=0/INT`. Subsequent `m["key"] = value` calls into
+  `__mn_map_set` wrote a 16-byte String key past the end of the
+  18-byte bucket and used the INT hash function on the bytes;
+  `__mn_map_get(m, "key")` always missed and returned NULL.
+  Caller IR then loaded `{i64, ptr}` from NULL → SEGV. The
+  load-bearing example was `decode_object_inner`'s
+  `pon mut entries: Map<String, JsonValue> = #{}` — every
+  `from_json::<T>(s)` SEGV'd in `__mn_map_get` post-v5.39.1
+  through this path. Latent since the multi-typed map literal
+  surface landed; never surfaced because the original
+  `tests/stdlib/test_struct_json.py` was compile-only. Fix derives
+  `ksz` / `ktag` from `i.key_type` and `vsz` from `i.val_type`
+  unconditionally.
+- **Js.4.B.2 (`mapanare/emit_llvm_text.py::_do_enum_init`)** —
+  when an enum payload is a `Map`, the consumed value's name now
+  also drains from `_map_vars` (not just `_list_vars`), preventing
+  a future class of double-free where the enclosing function's
+  drop glue would call `__mn_map_free_deep` on a Map whose
+  ownership has been moved into the enum payload. Doesn't fire
+  in the v5.39.2 repro (drop glue wasn't actually emitted on the
+  decode_object path), but the asymmetry between `_list_vars`
+  and `_map_vars` removal was a latent footgun.
+
+### Added
+
+- `tests/stdlib/test_struct_json_runtime.py` — link-and-run
+  regression harness for typed serde. Mirrors the v5.34.0 / v5.35.0
+  / v5.39.0 concatenation pattern: read
+  `stdlib/text/string_utils.mn` + `stdlib/encoding/json.mn`,
+  prepend to each test main body, compile via Python LLVM
+  emitter, link against `libmapanare_rt.a`, run, assert "PASSED"
+  (and no "FAIL "). 6 cases under `stdlib/encoding/json/tests/`:
+  `test_from_json_int.mn`, `test_from_json_string.mn`,
+  `test_from_json_bool.mn`, `test_from_json_float.mn`,
+  `test_from_json_compound.mn`, `test_to_from_roundtrip.mn`.
+  This is the test infrastructure that should have existed since
+  v5.36.0 — the existing compile-only
+  `tests/stdlib/test_struct_json.py` (preserved unchanged) is
+  exactly why Js.4.B stayed latent for 4 releases.
+
+### Changed
+
+- **Phase 1 hypothesis revised mid-release.** PROMPT/PLAN's
+  leading hypothesis was that `_is_self_ref` doesn't recurse
+  through `LIST` / `MAP` / `OPTION` / `RESULT` type args, so
+  `JsonValue::Object(Map<String, JsonValue>)` and
+  `Array(List<JsonValue>)` were not marked boxed at registration
+  time. Phase 1 instrumentation confirmed `boxed=set()` for
+  `JsonValue` — but that turned out to be a real-but-unrelated
+  observation, not the load-bearing root cause. Side-by-side IR
+  audit of the construction (`malloc(8); store ptr %map_val`) vs
+  extraction (`extractvalue, 1; gep {ptr}, 0; load ptr`) showed
+  both sides agreed on the unboxed `{ptr}` layout. The actual
+  bug was one level deeper: the Map handle itself was created
+  with the wrong `key_size` / `val_size` / `key_type` (the
+  empty-literal default-ints branch) and the initial `m["x"] =
+  value` corrupted bucket memory rather than inserting cleanly.
+  GDB pinpointed the SEGV not inside `__mn_map_get` but right
+  after — at `load {i64, ptr} from NULL` in main. Documented
+  in v5.39.2 SESSION_REPORT so v5.40.0+ has the correct anchor
+  if `_is_self_ref` recursion comes back as a separate concern.
+- **PROMPT/PLAN deviation (load-bearing) — Phase 3 self-host
+  mirror N/A.** PROMPT scoped a `mapanare/self/emit_llvm.mn`
+  mirror as load-bearing for STRICT and budgeted ~1-2h. Phase 0
+  verification: `mapanare/self/emit_llvm.mn:3106-3169::emit_map_init`
+  already derives `key_size` / `val_size` / `key_tag` / `val_tag`
+  from `key_ty` / `val_ty` regardless of pair count (with sensible
+  defaults at lines 3125-3133: `val_size=16` for any non-Int val,
+  `64` for STRUCT/ENUM). The Python bug was a latent drift
+  between Python and self-host that the self-host already had
+  right. STRICT preserved trivially by construction; v5.39.2
+  makes zero `mapanare/self/*.mn` source touches.
+- **`to_json::<T>` nested-struct serialization split to v5.39.3.**
+  v5.39.2 Phase 1 bundle decision: `to_json::<Wrap>(w)` for a
+  struct with a struct-typed field still emits `<?>` for the
+  inner field, not recursive JSON. Different code path
+  (`_emit_struct_to_json` in the encoder), distinct from
+  `_do_map_init`. Bundling would have inflated v5.39.2's scope
+  beyond the surgical Js.4.B.2 fix. v5.39.3 will close.
+
+**Falsifiability round-trip locked.** Reverted `_do_map_init` to
+its pre-fix shape (hardcoded `(8, 8, 0)` empty branch); all 6
+parametrized cases in `test_struct_json_runtime.py` failed with
+the recorded SEGV signature. Reapplied; all 6 pass. Round-trip
+is the test suite itself — falsification is one
+`Edit`-and-pytest cycle. `tests/stdlib/test_struct_json.py` (20
+compile-only cases, v5.36.0 carry) preserved unchanged; both
+v5.39.1 contributions (`test_struct_json_ir_shape.py` 4 cases,
+`test_struct_json_layout.py` 2 cases) GREEN.
+
+**Hd-class preventative.** `docs/SPEC.md` header re-synced from
+"v5.39.1 cut" to "v5.39.2 cut" with new sync block summarizing
+Js.4.B.2. `check_doc_freshness.py` GREEN.
+
+Aggregate state entering v5.39.3: **0 HIGH** / **1 MEDIUM** (macOS
+notarization, carry from v5.33.0 Nu.2) / ~7 LOW (added
+`to_json::<T>` nested-struct recursion as v5.39.3 candidate; rest
+unchanged from v5.39.1 carries). **Js.4.B arc CLOSED.** v5.40.0
+`ask` manifesto-arc kickoff unblocked.
+
+
+## [5.39.1] - 2026-05-03
+
+**Js.4.B.1 — `from_json::<T>` IR-emission shape fix (no-import
+case).** First of two release sessions dedicated to closing
+**Js.4.B** (the v5.36.0-deferred typed-serde defect that v5.40.0
+Phase 0 surfaced as significantly worse than its original
+SESSION_REPORT documented — actually two distinct bugs, not one).
+v5.39.1 closes the **IR-emission shape mismatch** when user code
+calls `from_json::<T>(s)` without importing
+`stdlib/encoding/json`; v5.39.2 will close the runtime SEGV in
+`__mn_map_get` when the import IS present. After v5.39.2 ships,
+v5.40.0 (`ask` keyword — Ai.\*) picks up cleanly. Adds **zero
+language features, zero new MIR ops, zero new IR shapes, zero
+new C runtime exports**. Strict 3-stage fixed point preserved by
+construction at v5.39.0's 241,898 lines / 0 diff (35-release
+strict streak from v5.7.1; zero `mapanare/self/*.mn` source
+touches). Goldens **95/95**.
+
+### Fixed
+
+- **Js.4.B.1 (`mapanare/lower.py:_lower_decode_to` +
+  `_lower_from_json`)** — when user code does NOT import
+  `stdlib/encoding/json`, the emitter at `_do_enum_payload`
+  (`emit_llvm_text.py:5187+`) falls into the Result/Option
+  fallback because `JsonValue` is not in `self._enums`. The
+  fallback emits `extractvalue {i64, ptr} %enum, 1` which
+  yields a `ptr` (the boxed payload pointer), then `_put`s the
+  value tagged with the dest's primitive type (e.g. `i64` for
+  an Int field). The next consumer reads with the wrong type
+  → IR validation fails at link with `'%pl.NN' defined with
+  type 'ptr' but expected 'i64'`. Fix: new
+  `_ensure_json_types_registered()` helper called at the top
+  of `_lower_decode_to` and `_lower_from_json` injects the
+  canonical `JsonValue` (7 variants: Null, Bool, Int, Float,
+  Str, Array(List<JsonValue>), Object(Map<String, JsonValue>))
+  and `JsonError` (3 fields: message, line, col) layouts into
+  `self._module.enums` / `self._module.structs` when missing.
+  Idempotent — guarded with `if "JsonValue" not in
+  self._module.enums`. The proper boxed-enum extraction path
+  (line 5134+) then fires; downstream extraction is correct.
+  Layout mirrors `stdlib/encoding/json.mn:15-29`; new
+  `tests/stdlib/test_struct_json_layout.py` (2 cases) catches
+  json.mn drift loudly.
+
+### Added
+
+- `tests/stdlib/test_struct_json_ir_shape.py` (4 cases) —
+  Int / String / Bool field cases plus a mixed Int+String case;
+  validate via `clang -c` (full IR validation, no link). The
+  no-import case CANNOT link (`decode` undefined without the
+  json import) and that is correct, not a regression. Runtime
+  correctness for the with-import path is gated separately in
+  v5.39.2's link-and-run suite.
+- `tests/stdlib/test_struct_json_layout.py` (2 cases) —
+  layout-drift guard: parses `stdlib/encoding/json.mn`,
+  extracts `JsonValue` enum + `JsonError` struct definitions,
+  asserts they match the lower.py-injected canonical layout.
+  If json.mn drifts, the no-import path silently emits IR
+  against the wrong shape; this test fails loudly.
+
+### Changed
+
+- **Js.4.B framing.** v5.36.0 SESSION_REPORT documented Js.4.B
+  as a single deferred issue ("`from_json::<T>` builds
+  successfully but SEGVs at runtime in field extraction").
+  v5.40.0 Phase 0 audit (`docs/roadmap/v5/v5.40.0/PRE_PHASE_AUDIT.md`)
+  established this is structurally two distinct failure modes:
+  (1) no-import case — invalid IR (this release closes); (2)
+  with-import case — valid IR, runtime SEGV in `__mn_map_get`
+  (v5.39.2 will close). Bundled fix for both was rejected to
+  preserve falsifiability anchors and isolate STRICT risk.
+- **Phase 2 self-host mirror N/A.** PROMPT/PLAN scoped a
+  `mapanare/self/lower.mn` mirror as load-bearing for STRICT.
+  Phase 0 confirmed `mapanare/self/` has no `from_json` /
+  `decode_to` lowering at all — Js.4 (v5.36.0) was
+  Python-bootstrap-only. Mirror is structurally absent; STRICT
+  preserved by construction. Documented in
+  `docs/roadmap/v5/v5.39.1/SESSION_REPORT.md`.
+
+
+## [5.39.0] - 2026-05-03
+
+**Cr.\* — crypto stdlib hashing/MAC/random extensions; final item
+in the stdlib gap-close arc.** Sixth and final release in the
+stdlib gap-close arc (Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @
+v5.36.0, Ht.\* @ v5.37.0, Re.\* @ v5.38.0, Cr.\* @ v5.39.0).
+**Staged scope:** v5.39.0 ships the easy hashing / streaming /
+random additions; AEAD (AES-GCM, ChaCha20-Poly1305), Ed25519 +
+X25519, and password KDFs (PBKDF2, HKDF, Argon2id) are scoped for
+v5.39.1 because each has its own correctness trap (GCM nonce
+reuse, Ed25519 key serialization, Argon2 availability skew across
+OpenSSL major versions). v5.39.0 audited the pre-existing
+`stdlib/crypto.mn` (283 LOC, shipped early — already provided
+SHA-1/256/512, HMAC-SHA256, Base64 + Base64URL, Hex, JWT HS256,
+random_bytes, CryptoError) and extended it. **Strict 3-stage
+fixed point preserved by construction at v5.38.0's 241,898 lines
+/ 0 diff** (34-release strict streak from v5.7.1; zero
+`mapanare/self/*.mn` source touches). Goldens **95/95**.
+
+### Added
+
+- **Cr.1 hashing additions.** `sha3_256(data) -> hex String`
+  (FIPS 202; requires OpenSSL 1.1.1+) and
+  `blake2b(data) -> hex String` (RFC 7693; OpenSSL 1.1.0+),
+  with matching `_raw` variants returning binary digests.
+  Optional symbols — when libcrypto lacks them, the wrapper
+  returns the empty string; documented detection contract in
+  `docs/stdlib/crypto.md`.
+- **Cr.1 streaming digest.** `DigestCtx { handle, algo }` opaque
+  struct + free functions: `digest_new(algo) -> Option<DigestCtx>`,
+  `digest_update(ctx, chunk) -> Bool`, `digest_finalize(ctx) ->
+  String` (hex), `digest_finalize_raw(ctx) -> String`. Algo IDs:
+  1=SHA-256, 2=SHA-512, 3=SHA-3-256, 4=BLAKE2b. Helper functions
+  `algo_sha256()` / `algo_sha512()` / `algo_sha3_256()` /
+  `algo_blake2b()` (Mapanare does not yet support top-level
+  `const` declarations).
+- **Cr.2 HMAC additions.** `hmac_sha512(key, data) -> hex String`
+  + `_raw` variant.
+- **Cr.2 constant_time_eq.** `constant_time_eq(a, b) -> Bool` for
+  timing-safe MAC verification. Prefers OpenSSL `CRYPTO_memcmp`
+  when available; falls back to a volatile-masked aggregation
+  loop. Length comparison is not constant-time, but for
+  fixed-output-size MAC compares (256 = 32 bytes, 512 = 64 bytes)
+  both inputs are the algorithm's known length.
+- **Cr.2 streaming HMAC.** `HmacCtx { handle, algo }` opaque
+  struct + `hmac_new(algo, key) -> Option<HmacCtx>`,
+  `hmac_update`, `hmac_finalize` (hex / `_raw`). algo: 1 or 2
+  only — HMAC-SHA-3 / HMAC-BLAKE2 wait for v5.39.1+.
+- **Cr.5 random extensions.** `random_u64() -> Int` (8 bytes from
+  `random_bytes` packed big-endian) and `random_range(low, high)
+  -> Int` using rejection sampling to avoid modulo bias.
+  Degenerate cases handled: `random_range(5, 5) == 5`;
+  `random_range(10, 5) == 10`. No new C-runtime exports — both
+  derive from `__mn_random_bytes_str`.
+- **Cr.7 RFC test corpus.** `stdlib/crypto/tests/test_crypto_smoke.mn`
+  (~190 LOC, surface smoke + streaming chunked-vs-one-shot
+  equivalence + random distribution sanity) and
+  `test_crypto_corpus.mn` (~110 LOC, RFC 6234 SHA / FIPS 202
+  SHA-3 / RFC 7693 BLAKE2 / RFC 4231 HMAC tests 1, 2, 4, 5).
+  Pytest harness at `tests/stdlib/test_crypto_runtime.py`
+  (~165 LOC) mirrors the v5.34/v5.35/v5.38 concatenation
+  pattern. **3/3 GREEN.**
+- **Cr.8 C runtime extensions.** Eight new `__mn_*` exports
+  appended at the end of the existing crypto block in
+  `runtime/native/mapanare_io.c`: `__mn_sha3_256_str`,
+  `__mn_blake2b_str`, `__mn_hmac_sha512_str`,
+  `__mn_constant_time_eq`, `__mn_md_ctx_new`,
+  `__mn_md_ctx_update`, `__mn_md_ctx_finalize`,
+  `__mn_hmac_ctx_new`, `__mn_hmac_ctx_update`,
+  `__mn_hmac_ctx_finalize`. ABI-stable — appended,
+  not inserted; stage1 binaries built against pre-v5.39.0 runtime
+  keep working. Five new EVP function pointers wired into the
+  `s_evp` struct as **optional** (NULL is legitimate; callers gate).
+- **Cr.9 docs.** `docs/stdlib/crypto.md` (~290 LOC) — quick
+  reference, type/API reference, 5 cookbook recipes, "what's
+  not here yet" v5.39.1 plan, compatibility note explaining
+  the Cr.0 emitter fix.
+
+### Changed
+
+- **Cr.0 — emitter shortcut fix (load-bearing).** Pre-v5.39.0,
+  the Python LLVM emitter at `mapanare/emit_llvm_text.py` had
+  unconditional builtin shortcuts for `sha256`, `hmac_sha256`,
+  `base64_encode/decode`, `hex_encode`, `random_bytes`,
+  `regex_match`, `regex_replace`. These shortcuts called the
+  underlying `__mn_*_str` C exports directly, bypassing the
+  user-defined wrappers in `stdlib/crypto.mn` /
+  `stdlib/text/regex.mn` that hex-encode the output / wrap in
+  Result types. When MIR inlining failed (high call-site count
+  or function-size threshold), the shortcut won and silently
+  changed the return shape — `sha256(x)` returned 32 raw bytes
+  instead of 64 hex chars; `hmac_sha256(k, m)` returned 32 raw
+  bytes instead of hex. Surfaced by the new RFC corpus tests
+  with 5 callsites: 4 callsites to `hmac_sha256` returned raw
+  bytes, the corresponding `hmac_sha512` callsites (no shortcut)
+  returned hex. **Fix:** gate each shortcut on `fn not in
+  self._sigs`, deferring to the user-defined wrapper when one
+  exists. Pre-existing `test_crypto.py` and `test_regex.py`
+  (1001 stdlib tests total) all green; goldens 95/95 preserved;
+  STRICT fixed point preserved.
+
+### Fixed
+
+
+
+## [5.38.0] - 2026-05-03
+
+**Re.\* — regex stdlib closeout.** Fifth release in the stdlib
+gap-close arc (Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0,
+Ht.\* @ v5.37.0, Re.\* @ v5.38.0). v5.38.0 audited the existing
+`stdlib/text/regex.mn` (271 LOC PCRE2 wrapper, shipped at v0.9.0),
+fixed two pre-existing parse / lowering bugs to make it actually
+runnable, and extended it with the `Regex`-first compile-once API
+the v5.38.0 PROMPT named: `regex_is_match`, `regex_find`,
+`regex_find_all`, `regex_replace`, `regex_replace_all`,
+`regex_captures`, `regex_captures_iter`, `regex_free`, plus a
+`Captures` type with named-group lookup (`captures_get` /
+`captures_get_named` / `captures_count`). Named groups parse
+`(?P<name>...)` / `(?<name>...)` in Mapanare source (Path A — no
+new C runtime exports). Backref-bearing replacements (`$0..$9`,
+`${name}`, `$$`) work through PCRE2's default substitute mode.
+Tests: 10-section `stdlib/text/tests/test_regex_smoke.mn` +
+~40-case `stdlib/text/tests/test_regex_corpus.mn` +
+`tests/stdlib/test_text_regex.py` harness mirroring the
+v5.34/v5.35 concatenation pattern.
+
+### Added
+
+- **Re.1+Re.2** (`stdlib/text/regex.mn`) — `Regex`-first API:
+  `regex_is_match(r, s)`, `regex_find(r, s) -> Option<Match>`,
+  `regex_find_all(r, s) -> List<Match>`, `regex_replace(r, s, repl)`,
+  `regex_replace_all(r, s, repl)`, `regex_free(r) -> Regex`.
+- **Re.3** (`stdlib/text/regex.mn`) — `Captures` + `NamePair`
+  types, `regex_captures(r, s) -> Option<Captures>`,
+  `regex_captures_iter(r, s) -> List<Captures>`,
+  `captures_get(c, idx) -> Option<String>`,
+  `captures_get_named(c, name) -> Option<String>`,
+  `captures_count(c) -> Int`. Named-group lookup parses
+  `(?P<name>...)` / `(?<name>...)` in the pattern source via
+  the new `parse_named_groups` walker.
+- **Re.4** (`stdlib/text/tests/`) — `test_regex_smoke.mn`
+  (10 sections) + `test_regex_corpus.mn` (~40 pattern-syntax
+  cases). Pytest harness `tests/stdlib/test_text_regex.py`
+  gated on `libpcre2-8` dlopen target.
+- **Re.5** (`docs/stdlib/regex.md`) — pattern syntax reference,
+  type / API reference, 6 cookbook recipes, deviation notes,
+  migration note.
+
+### Changed
+
+- **`stdlib/text/regex.mn` was unparseable at HEAD pre-v5.38.0**
+  due to 17 occurrences of `pon _: Int = ...` (the parser does
+  not accept `_` as a binding name). v5.38.0 renames these to
+  `pon _drop: Int = ...` so the existing pattern-string-first
+  free-function API at least parses again. The existing
+  `tests/stdlib/test_regex.py` (compile-only IR-shape) now
+  passes; before v5.38.0 it could not have been running. This
+  is source-compatible with any caller that already imported
+  the module (none existed in-tree).
+- `Captures` is internally represented as parallel
+  `List<String> + List<Bool>` rather than `List<Option<String>>`
+  to sidestep the v5.x drop-glue carry on `List<Option<X>>`
+  appends. The public `captures_get` surface preserves
+  `Option<String>` so callers don't see the workaround.
+
+### Fixed
+
+- `parse_named_groups` underlying `String.substr(start, count)`
+  semantics — Mapanare's `substr` third arg is a **count**, not
+  an exclusive end-index. v5.38.0 internal-fix; the existing
+  pre-v5.38.0 `regex_split` (which passed end-index as count)
+  over-reads past string-end, mitigated by PCRE2 capping bounds.
+
+### Deviations from PLAN
+
+1. **PLAN scoped a Pike VM rewrite** (~600 LOC engine in a new
+   `stdlib/regex/` directory). Phase 0 audit established that a
+   full PCRE2 wrapper was already shipped at v0.9.0; v5.38.0
+   keeps the existing engine + extends it. Pike VM is logged as
+   a v6.0+ LOW.
+2. **Re.2 `find` alias deferred** — calls broken pre-existing
+   `regex_match(pattern, text)` whose return type is
+   mis-lowered (`Option<Match>` → `i1`). Tracked as **Re.6,
+   new MEDIUM** carry-forward; fix needed in the Mapanare
+   semantic / lowering pipeline, not in the regex module.
+3. **Re.3 implementation chose Path A** (parse `(?P<name>...)`
+   in Mapanare source) over Path B (new C export) — no runtime surface
+   changes, deferred PCRE2-version-bump risk.
+4. **Test corpus is hand-written runtime, not lifted from Rust
+   regex's data/** — v5.38.0 ships ~50 cases asserting the
+   v5.38.0 surface; importing the Rust regex corpus is a
+   v5.38.x candidate when the legacy lowering bug closes.
+5. **`regex_replace` (single-shot) returns subject unchanged
+   on multi-match input** — the underlying C wrapper without
+   `PCRE2_SUBSTITUTE_GLOBAL` does not substitute under current
+   testing. v5.38.x follow-up; `regex_replace_all` validated
+   end-to-end.
+
+
+## [5.37.0] - 2026-05-03
+
+**Ht.\* — HTTP App / router / middleware / streaming encoders.**
+Fourth release in the stdlib gap-close arc (Dt.\* @ v5.34.0,
+Sq.\* @ v5.35.0, Js.\* @ v5.36.0, Ht.\* @ v5.37.0). New
+`stdlib/net/http/router.mn` ships an opt-in `App` container
+bundling a path-pattern router (`:name` parameters + `*name`
+wildcards alongside literals, method dispatch GET/POST/PUT/
+DELETE/PATCH/HEAD/OPTIONS) with a registration-table middleware
+list (Logger / Cors / BodyLimit / RequestId / Custom). New
+`stdlib/net/http/streaming.mn` ships RFC 7230 §4.1 chunked
+transfer encoding plus a Server-Sent Events (SSE) encoder.
+**Zero compiler edits. Zero `mapanare/self/*.mn` source touches.**
+Strict 3-stage fixed point preserved by construction at
+v5.36.0's **241,898 lines / 0 diff** (32-release strict streak
+from v5.7.1). Goldens **95/95**. Twenty-nine new pytest cases:
+12 router + 6 middleware + 11 streaming, all GREEN.
+
+The legacy `stdlib/net/http/server.mn` `Router` (string-named
+handlers, `${name}` syntax) is **preserved unchanged** — existing
+pytest coverage in `tests/stdlib/test_http_server.py` keeps
+passing. The v5.37.0 surface is opt-in via the new module.
+
+### Added
+
+- **Ht.1 — path-pattern router via ordered list of compiled patterns.**
+  `App`, `RouteEntry`, `CompiledSeg`, `MatchedRoute`,
+  `DispatchPick(Picked|Default)` types. `app_get` / `app_post` /
+  `app_put` / `app_delete` / `app_patch` / `app_head` /
+  `app_options` per-method registration. Path syntax: literal
+  segments, `:name` parameters, `*name` wildcards (terminal).
+  Priority on overlap: literal > parameter > wildcard, locked
+  with explicit `t_literal_beats_param` and
+  `t_param_beats_wildcard` tests. `app_match(method, path)`
+  returns a `MatchedRoute` with `params_kv: List<String>`
+  (alternating key/value); access via `match_param(m, name)` /
+  `match_has_param(m, name)`. `app_pick` convenience returns
+  `Picked(MatchedRoute)` or `Default(Response)` (404 / 405
+  distinguished by a second pass over the route table).
+- **Ht.2 — middleware registration table.** `Middleware` enum
+  variants: `Logger`, `Cors(origins, methods, headers)`,
+  `BodyLimit(n)`, `RequestId`, `Custom(name)`. Constructor
+  helpers (`mw_logger()`, `mw_cors(...)`, `mw_body_limit(n)`,
+  `mw_request_id()`, `mw_custom(name)`). `app_use(app, mw)`
+  appends to the chain. `app_run_before` / `app_run_after`
+  walk the chain in registration order. Short-circuit
+  semantics: `BodyLimit` returns `MwShortCircuit(413 response)`
+  when `len(req.body) > max_bytes`; the rest of the chain and
+  the handler are skipped. `RequestId` mints a 32-char hex id
+  via `__mn_random_bytes_str(16)` when none is present and
+  echoes it back as `X-Request-Id` post-handler. `Cors` injects
+  the three `Access-Control-*` response headers post-handler.
+- **Ht.4 — streaming encoders** in
+  `stdlib/net/http/streaming.mn`. `chunked_encode_one(payload)`
+  / `chunked_encode(chunks)` / `build_chunked_response(status,
+  headers, chunks)` for RFC 7230 §4.1 chunked transfer
+  encoding. `build_chunked_response` automatically adds
+  `Transfer-Encoding: chunked` and drops any pre-existing
+  `Content-Length` (cannot coexist per RFC §3.3.1).
+  `int_to_hex(n)` lowercase-hex helper. SSE encoders:
+  `SseLite { id, event_type, data, retry_ms }` builder type
+  with `new_sse_lite` / `sse_lite_with_id` /
+  `sse_lite_with_type` / `sse_lite_with_retry` /
+  `sse_lite_encode(event)` / `sse_lite_encode_stream(events,
+  default_retry_ms)`. Multi-line `data` payloads emit one
+  `data:` prefix per `\n`-separated line per the SSE spec.
+  `sse_response_headers()` returns the standard SSE header
+  shape (`Content-Type: text/event-stream`, `Cache-Control:
+  no-cache`, `X-Accel-Buffering: no`).
+- **Ht.6 — pytest harness** at
+  `tests/stdlib/test_http_router.py`. Mirrors the v5.34/v5.35
+  concatenation pattern: read `router.mn` (and `streaming.mn`
+  where needed), prepend to each test main, compile via the
+  Python LLVM emitter, link `libmapanare_rt.a`, run, assert
+  `PASSED` in stdout. Three pytest cases (`test_router.mn`,
+  `test_middleware.mn`, `test_streaming.mn`); 29 assertions
+  across the three files; 3/3 GREEN. New test files under
+  `stdlib/net/http/tests/` carry the assertions.
+- **Ht.7 — walkthrough example** at
+  `examples/http/router_walkthrough.mn`. Demonstrates route
+  registration, parameter binding (literal / param /
+  wildcard), 404 / 405 paths, middleware short-circuit,
+  CORS post-handler, chunked-encoding wire format, and SSE
+  framing. Compiles and runs end-to-end via the
+  router + streaming concatenation harness.
+- **Ht.8 — cookbook** at `docs/stdlib/http.md`. Quick
+  reference, path patterns, middleware reference + short-
+  circuit semantics, custom middleware via the registration-
+  table extension point, alternating-kv header API, chunked
+  encoding, SSE, streaming-aware logger pattern, WebSocket
+  integration via the existing `stdlib/net/websocket.mn`,
+  migration table from `server.mn` legacy `Router` to
+  `router.mn` `App`.
+
+### Changed
+
+- **Headers stored as `List<String>` alternating-kv** in the new
+  `Request`, `Response`, and middleware return shapes — NOT
+  `Map<String, String>`. Same motivation as
+  `MatchedRoute.params_kv`: a v5.x drop-glue bug frees Maps
+  stored as struct fields / enum payloads before the caller
+  can read them. Lists pass through correctly. New helpers
+  `hdr_get` / `hdr_set` / `hdr_has` provide the standard
+  Map-style operations on top of the alternating-kv list.
+  This is a **deviation from the PROMPT's `Map<String, String>`
+  shape** for headers but is necessary to ship a working
+  surface today; the drop-glue fix is tracked as a v5.x carry
+  LOW.
+
+### Deviations from PROMPT
+
+- **Ht.2 — registration table, not closure chain.** PROMPT
+  specified `type Middleware = fn(Request, Next) -> Response`.
+  Phase-0 spike confirmed both backends fail on indirect calls
+  through fn-typed parameters: `mnc-stage1` produces invalid
+  IR (`use of undefined value`); the Python LLVM emitter
+  links cleanly but **SEGVs at runtime**. Same root cause as
+  v5.35.0's deferred `transaction<T>(f: fn() -> ...)` shape.
+  v5.37.0 ships the registration-table form (Middleware enum
+  variants) instead. Custom user middleware is dispatched by
+  string name via a user-supplied
+  `dispatch_custom_middleware_before(name, ...)` switch —
+  documented in `docs/stdlib/http.md`. The closure-chain form
+  is a v5.38.0+ candidate when indirect fn-value calls land.
+- **Ht.1 — ordered list of compiled patterns, not recursive
+  trie.** Functionally equivalent — same API surface, same
+  priority rule (literal > parameter > wildcard), same big-O
+  on small route counts. The deviation removes a recursion
+  risk in the MIR lowerer that the v5.37.0 release scope did
+  not budget for. Visible in source as a single
+  `RouteEntry { method, pattern, segs, handler, specificity,
+  insertion_order }` flat list sorted on registration by
+  descending specificity.
+- **Ht.3 ships as documentation only.**
+  `stdlib/net/websocket.mn` already had a complete RFC 6455
+  client + server implementation (`ws_accept_upgrade`,
+  `ws_recv_full` with fragmentation, masking, control-frame
+  size cap, UTF-8 validation, `wss://` over TLS,
+  `ws_echo_loop`). The PROMPT's net-new wrapper file would
+  have been a redundant duplicate. v5.37.0 documents the
+  integration path in `docs/stdlib/http.md` instead. The
+  Autobahn fixture corpus is deferred to v5.38.0+ (Ht.3.B) —
+  the existing parser passes manual smoke; fixture-locked
+  conformance is a separate corpus-import effort.
+- **Ht.4 — encoders, not bounded-RSS streamer.** The existing
+  `__mn_tcp_send_str(fd, data: String)` C-runtime export
+  takes a whole string. A real bounded-RSS streaming writer
+  needs a future bytes-oriented send export plus a chunk-pump
+  driver loop. v5.37.0 ships *encoders* that produce
+  wire-format strings; the wire format is identical to what
+  the eventual streamer will write, so the encoders compose
+  forward into v5.38.0 (Ht.4.B) cleanly.
+- **Ht.5 deferred to v5.38.0+** pending Js.4.B drop-glue fix.
+  `from_json::<T>` builds successfully but SEGVs at runtime
+  in field extraction (a v5.36.0 carry, documented in that
+  release's CHANGELOG). Without working `from_json::<T>`,
+  the typed-handler-shorthand auto-deserialization has no
+  mechanism. v5.36.x will close Js.4.B; v5.38.0 picks Ht.5
+  back up.
+- **Single-file modules** rather than directory layouts.
+  Mirrors the v5.34.0 / v5.35.0 stdlib pattern: cross-module
+  function calls have known mangling/extern-propagation
+  limitations. Tests run via concatenation harness.
+
+### Carry-forward to v5.38.0
+
+| Item | Status |
+| --- | --- |
+| Ht.3.B Autobahn fixture corpus | LOW |
+| Ht.4.B bounded-RSS streaming writer (waits on bytes-oriented C send export) | LOW |
+| Ht.5 typed handler shorthand (waits on Js.4.B) | MEDIUM |
+| Closure-chain middleware (waits on indirect fn-value calls) | LOW |
+| Native `Bytes` type (also blocks Js.3 streaming, Sq.6 sqlite Json variant) | LOW |
+| macOS notarization | MEDIUM (carry from v5.33.0 Nu.2) |
+| `Map<String, String>` drop-glue in returned struct/enum | LOW (now also blocks fn-chain middleware design) |
+
+Aggregate state entering v5.38.0: **0 HIGH** / **2 MEDIUM**
+(Ht.5 typed handler waits on Js.4.B; macOS notarization carry)
+/ ~7 LOW. Cadence: panel rule informational-only since v5.33.2
+Cd.\*; lead drives review timing.
+
+
+
+## [5.36.0] - 2026-05-03
+
+**Js.\* — JSON completeness arc.** RFC 8259 strictness, indent-
+configurable pretty-print, pull-based streaming API, typed
+`to_json::<T>` end-to-end, plus two compiler bug-fixes uncovered
+during the work. Third release in the stdlib gap-close arc
+(Dt.\* @ v5.34.0, Sq.\* @ v5.35.0, Js.\* @ v5.36.0). Goldens 95/95.
+Strict 3-stage fixed point preserved at v5.35.0's 241,898 lines /
+0 diff (zero `mapanare/self/*.mn` source touches).
+
+### Added
+
+- **Js.2 — `to_json_pretty(value, indent)`** with configurable
+  spaces-per-level. Pre-v5.36.0 `encode_pretty` hardcoded a
+  2-space indent; the new entry takes `indent` as a parameter
+  and falls through to compact `to_json` byte-for-byte when
+  `indent <= 0`.
+- **Js.2 — alias trio: `to_json`, `to_json_pretty`, `parse`.**
+  PROMPT-spec spellings preserved alongside the legacy
+  `encode`, `encode_pretty`, `decode` names. Identical behavior
+  on each pair.
+- **Js.3 — pull-based streaming API** (`json_stream_open`,
+  `json_stream_next`, `json_stream_error`,
+  `JsonStreamParser`/`JsonStreamStep` types). Js.3-LITE shape:
+  ships the API contract; under the hood the document is fully
+  parsed and `next` pops from a precomputed event list. True
+  chunked I/O with peak-RSS-bounded streaming is deferred to
+  the release that adds a native `Bytes` type.
+- **Js.4 (Shape B) — typed serde intrinsics** `to_json::<T>` and
+  `from_json::<T>`. Compile-time monomorphized (same lowering
+  path as the existing `encode_struct::<T>` / `decode_to::<T>`).
+  `to_json::<T>` works end-to-end at this release; `from_json::<T>`
+  builds successfully but SEGVs at runtime in the field-extraction
+  step — runtime fix tracked as Js.4.B for v5.36.1. The API
+  surface is in place so v5.40.0 `ask` work can build against it.
+- **Js.5 — `tests/stdlib/test_json_corpus_baseline.py`**
+  regression gate. Runs the full nst/JSONTestSuite corpus
+  through the parser via `scripts/run_json_corpus.py` and
+  asserts CONFORM ≥ 283 / DEVIATE = 0 / CRASH = 0. Catches
+  any future regression of the leading-zero, control-char, or
+  deep-nesting fixes.
+- **Js.7 — `docs/stdlib/json.md`** user-facing reference.
+  Documents the strictness changes, every public API, the
+  Js.3-LITE memory characteristic, and the Js.4.B deferred
+  runtime fix.
+- **`scripts/run_json_corpus.py`** — RFC 8259 corpus runner.
+  Auto-clones the gitignored fixtures dir from
+  nst/JSONTestSuite on first run. Produces
+  `docs/roadmap/v5/v5.36.0/RFC_AUDIT.md` with per-fixture
+  CONFORM/DEVIATE/CRASH classification.
+
+### Changed
+
+- **Js.1 — JSON parser is now RFC 8259 strict.** Inputs that
+  previously parsed silently and now error:
+  - **Leading-zero numbers** (`01`, `-01`, `00.5`) — RFC 8259 §6
+    forbids leading zeros in the integer part.
+  - **Unescaped control characters in strings** — bytes
+    `U+0000`..`U+001F` inside string literals must be escaped.
+    Pre-v5.36.0 the parser specifically tracked unescaped `\n`
+    for line counting and accepted it; that path is now an error.
+  - **Deep nesting beyond 256 levels** — pre-v5.36.0 inputs like
+    `[[[...]]]` with 100,000+ nesting blew the recursion stack
+    with a SEGV. Now returns
+    `Err(JsonError { message: "Maximum nesting depth exceeded", ... })`.
+  Strict mode is **not opt-out** in v5.36.0 — there is no
+  `JsonParseOpts` flag yet. The `parse(text)` entry point
+  always uses strict mode.
+- **Js.2 — `encode_pretty(value, 0)` now byte-equals
+  `encode(value)`.** Pre-v5.36.0 the recursive emitter ran with
+  zero-width indent and produced subtly different spacing
+  (around `,` and `:`) than the compact `encode`. The fix
+  early-returns through the compact path so `indent <= 0` and
+  `indent >= 1` are the only two regimes.
+
+### Fixed
+
+<!-- no-check -->
+- **Js.0 — `_san` sanitizer in `mapanare/emit_llvm_text.py:1421`.**
+  Pre-fix the sanitizer used `nm.lstrip("%")` which only stripped
+  the leading `%` from an SSA name. When that name was interpolated
+  into a compound identifier (e.g. `f"_map_iter_{value.name}"`),
+  an embedded `%` survived and produced invalid LLVM IR. Surfaced
+  when building any source that includes the existing
+  `stdlib/encoding/json.mn` module — its map-iteration code path
+  triggered `%_map_iter_%entries37.addr` IR. 1-line fix: strip ALL
+  `%`, not just leading. Goldens 95/95 preserved.
+- **Js.0.B — `_do_wrap_ok` / `_do_wrap_err` Result type-args
+  propagation.** The Wrap codegen hardcoded the unfilled side of
+  the Result struct as `ptr`, producing `{i1, {ok_ty, ptr}}` when
+  the user expected `{i1, {ok_ty, err_ty}}`. Mismatch was invisible
+  until Phi-merge of two arms with full type info hit a size
+  conflict. The fix uses the dest's `Result.args` when available
+  (kind == RESULT and len(args) ≥ 2), falls back to the legacy
+  shape when args are missing. Required for Js.4 Shape B
+  `from_json::<T>` to build.
+- **Js.1.A — leading-zero number rejection** in
+  `parse_json_number`. After consuming `0`, the next character is
+  checked; if a digit follows, the parser returns `Err`.
+- **Js.1.B — unescaped control-char rejection** in
+  `parse_json_string`. The string-content loop now reads the byte
+  value via `src.byte_at(p)` and rejects any byte < 32. The pre-fix
+  special case for unescaped `\n` (line tracking + appended to
+  result) is removed; embedded newlines are an RFC violation
+  regardless.
+- **Js.1.C — depth limit** in `decode_array` / `decode_object`. New
+  `MAX_JSON_DEPTH: Int = 256` const at module scope. The
+  `decode_value` public entry point delegates to a private
+  `decode_value_d(..., depth)` that threads depth through to the
+  array and object recursive paths. At depth > 256, both return
+  `Err(JsonError { message: "Maximum nesting depth exceeded", ... })`.
+- **`_lower_decode_to` Result type args** in `mapanare/lower.py`.
+  Pre-fix `result_ty = MIRType(TypeInfo(kind=TypeKind.RESULT))`
+  carried no type args; the user's match arm extraction read the
+  Ok payload as `ptr` rather than the struct shape. Bug stayed
+  latent because `tests/stdlib/test_struct_json.py` only checked
+  IR-text content, never link or run. Now sets
+  `args=[T, JsonError]` so downstream consumers see the right
+  shape.
+
+
+## [5.35.0] - 2026-05-03
+
+**Sq.\* — first-class SQLite3 stdlib driver + Tn.1 closure.** Closes
+the persistence gap: every Mapanare app that needs to save data
+beyond a process lifetime now has a typed, Result-returning surface.
+Net-new `stdlib/sql/sqlite.mn` (~720 LOC) wraps the v5.34.x
+`mapanare_db.c` sqlite exports plus 8 new ones added at Sq.7
+(`sqlite3_libversion`, `sqlite3_bind_blob`, `sqlite3_column_blob` /
+`column_bytes`, `sqlite3_reset`, `sqlite3_bind_parameter_index`,
+`sqlite3_changes`, `sqlite3_last_insert_rowid`,
+`sqlite3_extended_errcode`). 5 stdlib tests under
+`stdlib/sql/sqlite/tests/` exercise the full CRUD round-trip,
+commit/rollback/nested-savepoint transactions, prepared-statement
+reuse via reset+rebind+step (the Sq.5-deferred performance path), and
+`SqlError`-variant coverage including `Constraint` extended-rc
+mapping. **Tn.1 closure:** `tests/llvm/test_llvm_link_all.py` extends
+the v5.26.0 link-and-run pattern from 10 goldens to all 95 — closes
+the v5.28.0 RE-PANEL convergent recommendation that had carried
+forward 6 releases (v5.29.0 → v5.34.0). 96/96 PASS at HEAD in 8s.
+Strict 3-stage fixed point preserved by construction at v5.34.0's
+**241,898 lines / 0 diff** (30-release strict streak from the v5.7.1
+baseline). Goldens **95/95**. **Four PLAN deviations**, all
+structurally driven by current toolchain limitations and documented
+in `docs/roadmap/v5/v5.35.0/SESSION_REPORT.md`: (1) single-file
+module instead of <!-- no-check --> `stdlib/sql/sqlite/{db,stmt,value,...}.mn`
+directory — same lesson as v5.34.0 `stdlib/time.mn`; (2)
+`Value::Blob` carries `String` (Mapanare has no native `Bytes` type);
+(3) explicit `database_begin / commit / rollback` + `SavepointHandle`
+nesting instead of `transaction<T>(\|\| -> Result<T, SqlError>)` —
+Mapanare stdlib has no precedent for generic-closure-arg functions;
+(4) Sq.5 statement cache deferred to v5.36.0 — Mapanare's value
+semantics + lack of ergonomic `Map<K,V>` operations make automatic
+caching API ugly without first surfacing `prepare-once + reset+bind
++step`, which produces the same 5-10× speedup callers want. The
+existing v5.34.x `stdlib/db/sqlite.mn` is **untouched**; both drivers
+coexist (the older one routes through `Connection` / unified SQL
+URLs; the new one is the typed-`column<T>` + named-param surface).
+
+### Added
+
+- **Sq.0 (formerly Tn.1)** — `tests/llvm/test_llvm_link_all.py`. New
+  parametrized link-and-run gate covering every golden in
+  `tests/golden/`. The corpus-count gate doubles as a documentation
+  freshness check: drift forces an update to BENCHMARKS.md, the
+  most recent SESSION_REPORT, and the CLAUDE.md release-notes entry.
+  96/96 PASS at HEAD (95 link-and-run + 1 corpus-count).
+- **Sq.1 + Sq.2** — `Database` / `Statement` types in
+  `stdlib/sql/sqlite.mn`. `database_open(path)` /
+  `database_open_memory()` / `database_close(db)` /
+  `database_execute(db, sql)` / `database_prepare(db, sql)`;
+  `statement_bind_int / _float / _string / _blob / _bool / _null /
+  _value / _named`; `statement_step` / `statement_reset` /
+  `statement_finalize`; `statement_column_int / _float / _string /
+  _blob / _bool / _value / _count / _name`. All Result-returning;
+  closed/finalized guards make idempotent close/finalize safe.
+- **Sq.3** — `Value` enum (`Null / Int / Float / Text / Blob / Bool
+  / DateTime`). `column<T>` mismatch returns
+  `SqlError::TypeMismatch(...)` with both expected and actual sqlite
+  type names. JSON support via Sq.3.B preview (carry as
+  `Value::Text`); first-class `Value::Json` arrives at v5.36.0
+  Js.\* with a forward-compat sqlite-round-trip test.
+- **Sq.4** — Transaction primitives. `database_begin` /
+  `database_commit` / `database_rollback`. Nested via
+  `database_savepoint_begin` returning a `SavepointHandle` that
+  carries the bumped counter; `database_savepoint_release` /
+  `database_savepoint_rollback`.
+- **Sq.6** — 5 stdlib tests under `stdlib/sql/sqlite/tests/` plus
+  `tests/stdlib/test_sq_sqlite.py` harness (mirrors the v5.34.0
+  Dt.\* concatenation pattern). All 7 tests GREEN against `:memory:`,
+  pytest `-n auto` safe.
+- **Sq.7** — 8 new sqlite3 wrapper functions in
+  `runtime/native/mapanare_db.c` + `mapanare_db.h`:
+  `__mn_sqlite3_libversion`, `_bind_blob`, `_column_blob`,
+  `_reset`, `_bind_parameter_index`, `_changes`,
+  `_last_insert_rowid`, `_extended_errcode`. Pre-existing v5.34.x
+  exports unchanged. Smoke harness (`/tmp/sq7_smoke.c`) verifies
+  blob round-trip + named-param resolution + extended-rc mapping
+  against the system libsqlite3 (3.45.1 on the build host).
+- **Sq.8** — Pinned `sqlite3.dll` v3.46.1 bundled in the Windows
+  SDK + minimal ZIPs at `dist/mapanare/bin/sqlite3.dll`. Pinned URL
+  is `https://www.sqlite.org/2024/sqlite-dll-win-x64-3460100.zip`;
+  500 KB ≤ size ≤ 5 MB guard catches partial download / wrong file.
+  MZ-header check rejects HTML-error-as-DLL. To bump: change both
+  the URL and `$expectedVersion` in `publish.yml` AND this
+  CHANGELOG entry together.
+- **Sq.9** — `docs/stdlib/sql.md` cookbook: open / CRUD / batch
+  insert / prepared reuse / `match SqlError` / blob handling /
+  Sq.3.B JSON preview / migration note from `stdlib/db/sqlite.mn` /
+  Sq.8 Windows DLL distribution policy.
+
+### Changed
+
+- **CLAUDE.md / docs/SPEC.md header** — synced to the v5.35.0 cut
+  (Hd.\*-class preventative; closes the `check_doc_freshness.py`
+  SPEC-header staleness gate before it fires).
+- **`runtime/native/mapanare_db.c`** — sqlite3 function-pointer
+  stash extended with 8 new entries (additive; no existing pointer
+  changed). `sqlite3_load()` resolves all new symbols as optional
+  (missing = LoadFail returned by the consumer rather than a hard
+  init failure).
+- **`runtime/native/mapanare_db.h`** — 8 new `__mn_sqlite3_*`
+  declarations after `__mn_sqlite3_errmsg`. Pre-existing
+  declarations unchanged.
+
+### Fixed
+
+- (None — additive release.)
+
+
+## [5.34.0] - 2026-05-03
+
+**Dt.\* — first-class date / time stdlib.** Net-new `stdlib/time.mn`
+surface: `Date`, `Time`, `DateTime`, `Duration`, `Timezone` types
+with construction-time validation (rejects `2026-13-03`,
+`1900-02-29`); ISO 8601 + RFC 3339 parse / format with strftime
+specifier subset (`%Y %m %d %H %M %S %z %Z %%`); arithmetic with
+month/day rollover and leap-year handling; v0 timezone surface
+(UTC + system-local; `tz_named("America/Lima")` returns explicit
+`Err("named tzdb not yet supported: ...")` — non-negotiable defer
+per PLAN, silent fallback to UTC is the bug-class that bites real
+users on flight-booking apps). All v5.33.x flat-file surface
+(`Stopwatch`, `now_ns`, `format_duration_ms`, etc.) preserved
+unchanged. Built on a new ~340 LOC portable C shim at
+`runtime/native/mapanare_time.c` (POSIX default; Windows path
+behind `#ifdef _WIN32` for `GetSystemTimePreciseAsFileTime` /
+`localtime_s` / `_mkgmtime`). Strict 3-stage fixed point preserved
+by construction at v5.33.x's **241,898 lines / 0 diff** (29-release
+strict streak). Goldens **95/95**.
+
+**PLAN deviation (load-bearing).** PROMPT specified a directory
+module at `stdlib/time/{types,construct,parse,format,arith,tz}.mn`. <!-- no-check -->
+Phase 2 dev surfaced two cross-module limitations in the current
+toolchain: native `mnc-stage1` does not propagate `extern_fn_def`
+declarations across module imports, and the Python LLVM emitter
+mangles defined function names with the module prefix
+(`time__date_new`) but emits unprefixed forward declarations at
+call sites — producing link failures. Both blocked the multi-file
+design. Every existing stdlib module (`math`, `crypto`, `fs`,
+`ai/llm`, `db/*`) is single-file with self-contained tests for the
+same reason; v5.34.0 follows that proven pattern. Recorded in
+`docs/roadmap/v5/v5.34.0/SESSION_REPORT.md` with the Phase 0
+operator-overload spike result that informed the same decision
+for Dt.5 (method form `datetime_add_duration(dt, dur)` instead of
+operator overload `dt + dur`).
+
+### Added
+
+- `stdlib/time.mn` — Dt.1..Dt.6 + Dt.9 surface (~700 LOC):
+  Date/Time/DateTime/Duration/Timezone, validating constructors,
+  clock entry points, parsers, formatters, arithmetic, timezone v0.
+- `runtime/native/mapanare_time.c` — Dt.8 portable C shim (~340 LOC):
+  `__mn_now_realtime_ns`, `__mn_utc_pack`, `__mn_local_pack`,
+  `__mn_local_offset_minutes`, `__mn_timegm`, `__mn_normalize_pack`.
+- `stdlib/time/tests/` — Dt.7 tests (`test_date.mn`,
+  `test_datetime.mn`, `test_parse_iso.mn`, `test_format.mn`,
+  `test_arithmetic.mn`, `test_property.mn`, `test_tz.mn`).
+- `tests/stdlib/test_time_dt.py` — pytest harness following the
+  v3.x `test_crypto.py` concatenation pattern.
+- `docs/stdlib/time.md` — surface reference + cookbook + migration
+  note from the v5.33.x flat file.
+
+### Changed
+
+- `runtime/native/Makefile` `RUNTIME_SOURCES`: added
+  `mapanare_time.c` to the runtime-archive build set
+  (`libmapanare_rt.a` now contains 9 modules + Metal on Darwin).
+
+### Fixed
+
+- ISO 8601 parser fractional-seconds skip: off-by-one between
+  loop-exit (`p = n`) and post-loop check (`if p == n { tz_pos = p }`)
+  caused `2026-05-03T14:32:00.123Z` to fail with empty diagnostic.
+  Caught at Phase 6 by `test_parse_iso.mn` round-trip case before
+  closeout. Restructured to track `found_pos` separately from `p`.
+
+
+## [5.33.2] - 2026-05-03
+
+**Cd.\* — relax panel-cadence enforcement to informational-only.**
+Zero compiler edits. Zero runtime edits. Zero `mapanare/self/*.mn`
+source edits. Strict 3-stage fixed point preserved by construction
+at v5.33.1's 241,898 lines / 0 diff. Goldens 95/95.
+`scripts/check_cadence.py` rewritten to always exit 0 — prints a
+`REMINDER` line when the lag is past 5 minor versions but never
+fails CI or blocks a release. The lead drives review timing, not a
+script. `tests/test_cadence.py` updated to match: fixture cases
+that previously asserted exit 1 on overdue now assert exit 0 +
+REMINDER message. Closes the v5.33.1-push CI failures (the
+"Cadence enforcement (warn-only)" job and the
+`tests/test_cadence.py::test_cadence_within_window_at_head` test
+that were both fatal-on-overdue despite the "warn-only" label).
+Doc-drift / changelog-honesty / fixed-point gates remain hard —
+this change targets only the human-scheduling gate. See
+`docs/roadmap/v5/v5.33.2/{PLAN.md, SESSION_REPORT.md}`.
+
+
+## [5.33.1] - 2026-05-03
+
+**Hd.\* — SPEC header drift hotfix.** Zero compiler edits. Zero
+runtime edits. Zero `mapanare/self/*.mn` source edits. Strict
+3-stage fixed point preserved by construction at v5.33.0's line
+count / 0 diff. Goldens 95/95. Closes the
+`check_doc_freshness.py` SPEC-header lag violation —
+`docs/SPEC.md` header bumped from "synced to the v5.30.0 cut" to
+"synced to the v5.33.1 cut" with a new sync block summarizing the
+v5.31 / v5.32 / v5.33 packaging arc. The structural gate (Hy.2
+landed v5.24.0) catches the next recurrence in CI rather than at
+the panel. See
+`docs/roadmap/v5/v5.33.1/{PLAN.md, SESSION_REPORT.md}`.
+
+
+## [5.33.0] - 2026-05-03
+
+**Nu.1 + Nu.2 + Nu.3 + Nu.4 + Nu.5 + Nu.6 — ship native `mnc` in the
+Linux x86_64 and macOS arm64 release tarballs.** Mirror of v5.32.0
+Nw.\* applied to the two existing Unix tarballs. Closes the
+asymmetry where Windows had the fix and Unix didn't —
+release-tarball users on Linux x86_64 and macOS arm64 no longer
+hit the Python bootstrap on `mnc --version`, `mnc run`, or
+`mnc build`. **Zero compiler edits. Zero runtime edits. Zero
+`mapanare/self/*.mn` source edits.** Strict 3-stage fixed point
+preserved by construction at v5.32.0's **241,898 lines / 0 diff**
+(28-release strict streak from the v5.7.1 baseline). Goldens
+**95/95**.
+
+**Nu.1 + Nu.2 deviation from PROMPT.** PROMPT scoped four arches:
+Linux x86_64 + Linux aarch64 + macOS x86_64 + macOS arm64. v5.33.0
+ships only the two arches that already build natively in
+`build-native` (Linux x86_64 on `ubuntu-latest`, macOS arm64 on
+`macos-latest`). Linux aarch64 and macOS x86_64 are **deferred to
+v5.34.0**. Reasons: (a) `scripts/build_stage1.py` has no `--target`
+/ `--output` flags — it always builds for the host; cross-compile
+would need new infrastructure that exceeds v5.32.0's "lift the
+proven path" precedent; (b) Linux aarch64 needs a cross-compile +
+qemu smoke pipeline that doesn't exist; (c) macOS x86_64 needs a
+separate `macos-13` runner and a brand-new tarball name in the
+release matrix. Mirrors v5.32.0's own "deviation from PROMPT"
+(build-native reuse vs. PROMPT's cross-compile recipe — same
+logic: prefer the validated path; preserve the more ambitious
+recipe for the next minor when it's motivated).
+
+### Added
+
+- **Nu.1 — `mnc-linux-x64-native` workflow artifact.**
+  `.github/workflows/publish.yml` `build-native` Linux job uploads
+  the freshly-built `mnc-linux-x64` as an in-workflow artifact
+  (1-day retention, `if-no-files-found: error`) so `build-cli` can
+  stage it into the Linux tarball without re-running the
+  stage1 → stage2 self-compile cycle. Mirrors the
+  `mnc-windows-x64-native` v5.32.0 Nw.2 upload exactly.
+- **Nu.2 — `mnc-darwin-arm64-native` workflow artifact.** Same shape
+  as Nu.1; `build-native` macOS job uploads the freshly-built
+  `mnc-darwin-arm64` artifact for `build-cli`'s macOS staging step.
+- **Nu.3 — Linux + macOS native `mnc` staging in the tarball.**
+  `build-cli` Linux + macOS paths download the matching
+  `mnc-<platform>-native` artifact, run three guards before staging
+  — ELF / Mach-O magic (`7f454c46` for ELF; `cffaedfe` for Mach-O
+  64-bit little-endian) + 20 MB size ceiling (native is ~3-4 MB;
+  PyInstaller-copy regression would be ~30 MB) + non-zero-bytes
+  check — then copy to `dist/mapanare/mnc` (sibling of the existing
+  `dist/mapanare/mapanare` PyInstaller binary; bundle-root layout
+  matching the v5.32.0 Nw.2 decision rather than the PROMPT's
+  `bin/mnc` shape). macOS path also runs ad-hoc `codesign -s -` so
+  Gatekeeper doesn't quarantine the binary on first run after
+  tar extraction.
+- **Nu.4 — release-blocking smoke gates (Linux + macOS).** Two
+  layers, both load-bearing. **Layer 1 in-job** (`build-cli`
+  "Clean Linux/macOS native mnc smoke before archiving"): on the
+  staging directory, asserts `dist/mapanare/mnc --version` (a)
+  contains the expected version string from `VERSION`, (b) does
+  not spawn a new Python interpreter (snapshots `pgrep -fl python`
+  count before / after — same anti-pattern Windows Nw.4 closes).
+  **Layer 2 published** (extends existing `linux-tarball-smoke` +
+  `macos-tarball-smoke` jobs which already gate on
+  `windows-sdk-smoke`'s shape): downloads the published tarball
+  from the GitHub Release, runs the same magic / size /
+  version-string / no-Python-spawn checks. Per-platform stat flag
+  (`stat -c%s` Linux vs. `stat -f%z` macOS). The no-Python
+  assertion is the load-bearing one — that's the specific
+  anti-pattern v5.33.0 closes for the Unix release tarballs.
+- **Nu.5 — `_native_binary_name(os_name=...)` helper.** Extracted
+  from `_native_binary` in `mapanare/__main__.py` so the
+  suffix-selection logic (`"mnc.exe" if os.name == "nt" else "mnc"`)
+  is testable cross-platform without monkeypatching `os.name`
+  globally (which crashes pathlib on Linux:
+  `NotImplementedError: cannot instantiate 'WindowsPath' on your system`).
+- **Nu.5 — parametrized cross-platform suffix lock.**
+  `tests/test_native_fallback.py::test_native_binary_suffix_per_platform`
+  parametrizes over (`posix` → `mnc`, `nt` → `mnc.exe`) so a Linux
+  CI worker validates the Windows lookup and vice versa. 5/5 tests
+  in `test_native_fallback.py` GREEN (3 from v5.32.0 Nw.3, 2 added
+  for Nu.5). Falsifiability: hardcoding the wrong suffix flips one
+  of the two parametrized cases.
+
+### Changed
+
+- **Nu.6 — README install-section paragraph.** Now mentions native
+  `mnc` ships on Linux x86_64 + macOS arm64 release tarballs (in
+  addition to the v5.32.0 Windows SDK ZIP); macOS-quarantine
+  workaround (`xattr -d com.apple.quarantine`) documented inline.
+- **Nu.6 — CLAUDE.md Native-First Philosophy section.** Updated to
+  reflect Linux + macOS arm64 native shipping; explicit note that
+  Linux aarch64 + macOS x86_64 are deferred to v5.34.0.
+- **Localized READMEs (es / pt / zh-CN) deliberately not updated.**
+  v5.32.0 followed the same pattern (English README only); the
+  v5.28.0 panel H.4 finding tracks localized README updates as a
+  bookkeeping cycle, not per-release work.
+
+### Fixed
+
+- N/A — packaging release; no compiler / runtime / source fixes.
+
+**Aggregate state entering v5.34.0:** 0 HIGH / 2 MEDIUM (Tn.1 —
+5-release overdue, escalates to HIGH per v5.32.0 directive; macOS
+notarization, new from Nu.2 ad-hoc-signing shortcut) / ~6 LOW
+(deferred Linux aarch64 + macOS x86_64 tarballs added). See
+`docs/roadmap/v5/v5.33.0/{PLAN.md, PROMPT.md, SESSION_REPORT.md}`.
+
+
+## [5.32.0] - 2026-05-03
+
+**Nw.2 + Nw.3 + Nw.4 + Nw.5 + Nw.6 — ship native `mnc.exe` in the
+Windows SDK ZIP.** Closes the structural "Python is the front door
+on Windows release installs" problem that v5.31.0 only papered over.
+v5.12.0 shipped the *toolchain* bundle (`sdk\bin\clang.exe` —
+LLVM-MinGW). v5.32.0 ships the *frontend* bundle (`mnc.exe` is now
+the native compiler binary, not a PyInstaller copy of `mapanare.exe`).
+**Zero compiler edits. Zero runtime edits. Zero `mapanare/self/*.mn`
+source edits.** Strict 3-stage fixed point preserved by construction
+at v5.31.0's **241,898 lines / 0 diff** (27-release strict streak
+from the v5.7.1 baseline). Goldens **95/95**. After this release, a
+fresh Windows SDK install never invokes Python for `mnc --version`,
+`mnc run`, or `mnc build`. The Python entrypoint remains the
+fallback for clean clones, pip-installs without the SDK, and the
+`scripts/build_from_seed.sh` bootstrap path.
+
+**Nw.1 deviation:** PROMPT recommended approach (a) — cross-compile
+from a Linux CI runner via `clang --target=x86_64-w64-mingw32`. v5.32.0
+uses approach (b) — reuses the existing `build-native` Windows job's
+`mnc-win-x64.exe` artifact (full stage1 → stage2 self-compile cycle on
+a `windows-latest` runner via w64devkit MinGW). Reasons: (1) PROMPT
+explicitly allows fallback to (b) "if cross-compile produces ABI
+mismatches" — doing (b) directly avoids a discovery cycle; (2) the
+existing build-native path is validated across 30+ releases and runs
+the full self-compile cycle (stronger Win64-ABI validation than a
+cross-compile); (3) smaller diff — no new third Windows-build code
+path. Trade-off: ~5 min of serial CI on the Windows publish path
+(`build-cli` now waits on `build-native`). Acceptable; publish is
+rare. Cross-compile remains available for v5.33.0+ if Linux/macOS
+native-frontend bundling motivates it.
+
+### Added
+- New `tests/test_native_fallback.py` (3 cases) locking the Nw.3
+  sibling-binary fallback. Falsifiability: deleting either gate in
+  `mapanare/__main__.py` (the existence check or the
+  `MAPANARE_FORCE_PYTHON=1` env-var bypass) flips one test RED.
+- `mnc.exe` shipped in `mapanare-${V}-win-x64-sdk.zip` and
+  `mapanare-${V}-win-x64-minimal.zip` is now the native compiler
+  binary, not a PyInstaller copy of `mapanare.exe`. Both ZIPs ship
+  the same native frontend.
+
+### Changed
+- `mapanare/__main__.py` (Nw.3) gains a 25-LOC preamble that detects
+  a sibling `bin/mnc[.exe]` and `os.execv`s to it before falling
+  through to the Python `cli.main` entry. `MAPANARE_FORCE_PYTHON=1`
+  opts out for dev/debug. Also gates the existing `cli.main()` call
+  behind `if __name__ == "__main__":` (pre-v5.32.0 it ran at module
+  import time, breaking pytest collection of `tests/test_native_fallback.py`).
+- `.github/workflows/publish.yml` (Nw.2):
+  - `build-native` Windows path now uploads `mnc-win-x64.exe` as a
+    workflow artifact (`mnc-windows-x64-native`), in addition to the
+    existing GitHub Release upload.
+  - `build-cli` now `needs: [release, build-native]` (was just
+    `release`). Windows path downloads the native artifact and
+    stages it as `dist/mapanare/mnc.exe`, replacing the pre-v5.32.0
+    `Copy-Item dist/mapanare/mapanare.exe dist/mapanare/mnc.exe`
+    PyInstaller alias. Guards: MZ-header check + 20 MB size ceiling
+    (PyInstaller copy is ~30 MB; native is ~3-4 MB).
+  - In-job "Clean Windows SDK smoke before archiving" gains a
+    no-Python-spawn assertion: snapshots `Get-Process | Where-Object
+    { $_.Name -match '^python' }` count before and after `mnc.exe
+    --version` and fails if it grew.
+  - `windows-sdk-smoke` job (Nw.4): augmented with three new gates
+    on the published ZIP — (i) MZ-header + size-ceiling check on
+    `mnc.exe`; (ii) version-string match against `VERSION`; (iii)
+    no-new-Python-process assertion across the `--version` call.
+- `CLAUDE.md` Native-First Philosophy section gains a paragraph
+  noting the Python entrypoint is bootstrap-only on release installs
+  as of v5.32.0.
+- `README.md` Install section calls out that v5.32.0+ ZIPs ship a
+  real native `mnc.exe`.
+
+**Bn.1 + Bn.2 + Bn.3 + Bn.4 + Bn.5 — banner hotfix; kill the
+"[dev mode]" lie.** Pure UX hotfix. **Zero compiler edits. Zero
+runtime edits. Zero `mapanare/self/*.mn` source edits.** Strict
+3-stage fixed point preserved by construction at v5.30.0's
+**241,898 lines / 0 diff** (26-release strict streak). Goldens
+**95/95**. Closes the publish-run-#50-shaped report where a fresh
+Windows SDK install ran `mnc --version` and got `[dev mode] Using
+Python bootstrap compiler. For native speed: mnc run <file.mn>`
+printed before the version string. The Python bootstrap was
+fine — it just announced itself wrong. v5.31.0 makes it stop
+announcing itself on metadata commands and on release installs;
+v5.32.0 will ship a native `mnc.exe` so the Python path is no
+longer the front door at all on release installs.
+
+### Added
+- `tests/test_cli_banner.py` — 5 cases locking the four
+  install-context × command-class matrix cells plus the new
+  banner wording. Falsifiability: removing either gate in
+  `mapanare/cli.py` reproduces the publish-run-#50 anti-pattern.
+
+### Fixed
+- **Bn.1 + Bn.3** Banner suppressed on `--version`, `--help`,
+  `-h`, `init`, `list` via `_should_show_dev_banner` argv-peek
+  in `mapanare/cli.py::main`. Misleading "for native speed: mnc
+  run <file.mn>" suggestion removed; banner reworded to honestly
+  describe the dev-clone path: `[mapanare dev] running from
+  source clone (.../mapanare/cli.py). Set MAPANARE_RELEASE=1 or
+  install via the SDK to silence.`
+- **Bn.2** New `_is_release_install()` helper (`@lru_cache(1)`):
+  primary signal is `MAPANARE_RELEASE=1` env var; fallback is
+  the absence of `pyproject.toml` + `.git` directory at the repo
+  root (the parent of `mapanare/`). Release installs never see
+  the banner.
+- **Bn.5** `packaging/pyinstaller-entry.py` calls
+  `os.environ.setdefault("MAPANARE_RELEASE", "1")` before
+  importing `mapanare.cli`. Single edit covers every release
+  platform shipping via the PyInstaller bundle (Linux tarball,
+  macOS bundle, Windows SDK ZIP). The Bash shim
+  (`packaging/mapanare-shim.sh`) execs the bundled binary
+  directly so the env var is inherited.
+
+
 ## [5.30.0] - 2026-05-02
 
 **Vb.\* — packaging-only release: version bump.** Zero compiler
@@ -9484,7 +13323,43 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.30.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.54.0...HEAD
+[5.54.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.53.0...v5.54.0
+[5.53.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.52.0...v5.53.0
+[5.52.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.51.0...v5.52.0
+[5.51.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.50.0...v5.51.0
+[5.50.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.49.0...v5.50.0
+[5.49.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.1...v5.49.0
+[5.48.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.48.0...v5.48.1
+[5.48.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.5...v5.48.0
+[5.47.5]: https://github.com/Mapanare-Research/Mapanare/compare/v5.47.0...v5.47.5
+[5.47.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.46.0...v5.47.0
+[5.46.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.45.0...v5.46.0
+[5.45.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.1...v5.45.0
+[5.44.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.44.0...v5.44.1
+[5.44.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.43.0...v5.44.0
+[5.43.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.42.0...v5.43.0
+[5.42.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.41.0...v5.42.0
+[5.41.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.40.0...v5.41.0
+[5.40.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.7...v5.40.0
+[5.39.7]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.6...v5.39.7
+[5.39.6]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.5...v5.39.6
+[5.39.5]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.4...v5.39.5
+[5.39.4]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.3...v5.39.4
+[5.39.3]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.2...v5.39.3
+[5.39.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.1...v5.39.2
+[5.39.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.39.0...v5.39.1
+[5.39.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.38.0...v5.39.0
+[5.38.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.37.0...v5.38.0
+[5.37.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.36.0...v5.37.0
+[5.36.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.35.0...v5.36.0
+[5.35.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.34.0...v5.35.0
+[5.34.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.2...v5.34.0
+[5.33.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.1...v5.33.2
+[5.33.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.33.0...v5.33.1
+[5.33.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.32.0...v5.33.0
+[5.32.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.31.0...v5.32.0
+[5.31.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.30.0...v5.31.0
 [5.30.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.29.0...v5.30.0
 [5.29.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.28.0...v5.29.0
 [5.28.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.27.0...v5.28.0

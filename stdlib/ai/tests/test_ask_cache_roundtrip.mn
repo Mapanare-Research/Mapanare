@@ -1,0 +1,45 @@
+// v5.40.0 Ai.6 — store -> lookup -> miss-on-different-key cache
+// round-trip. Harness sets MAPANARE_AI_CACHE_DIR to a tmpdir; if
+// unset, both branches return None and "MISS_AS_EXPECTED" /
+// "MISS_2_AS_EXPECTED" still hold (the store path returns false on
+// an unset cache dir; lookup returns None). The harness assertion
+// "STORE_OK" only fires when the dir is set, so the pytest fixture
+// is the load-bearing signal.
+
+fn main() -> Int {
+    pon k1: String = ask_cache_key("anthropic", "claude-sonnet-4", "What is Mapanare?", "{}")
+    pon k2: String = ask_cache_key("anthropic", "claude-sonnet-4", "Different prompt",  "{}")
+
+    si k1 == k2 {
+        print("FAIL test_ask_cache_roundtrip: keys collided")
+        return 0
+    }
+
+    pon stored: Bool = ask_cache_store(k1, "{\"answer\": \"AI-native compiled lang\"}")
+    si stored {
+        print("STORE_OK")
+    } sino {
+        print("STORE_NOOP_NO_DIR")
+    }
+
+    pon found1: Option<String> = ask_cache_lookup(k1)
+    match found1 {
+        Some(v) => {
+            si v == "{\"answer\": \"AI-native compiled lang\"}" {
+                print("HIT_K1")
+            } sino {
+                print("FAIL test_ask_cache_roundtrip: payload diverged: " + v)
+            }
+        },
+        None    => print("MISS_K1")
+    }
+
+    pon found2: Option<String> = ask_cache_lookup(k2)
+    match found2 {
+        Some(v) => print("FAIL test_ask_cache_roundtrip: unexpected hit on different key"),
+        None    => print("MISS_K2_AS_EXPECTED")
+    }
+
+    print("PASSED test_ask_cache_roundtrip")
+    return 0
+}

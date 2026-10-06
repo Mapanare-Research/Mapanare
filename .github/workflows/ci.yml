@@ -286,6 +286,15 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Native bootstrap: build from seed binary, no Python
+  #
+  # Runs on every push, PR, and release. The "compiler compiles itself
+  # without Python" invariant is enforced at PR time, not release time.
+  # Trade-off: when self-host grammar evolves incompatibly (e.g. v5.48.1
+  # Te.3.D.5 colon-block migration), this job will fail until the seed
+  # is refreshed via ``.github/workflows/update-bootstrap-seed.yml``.
+  # That refresh dance is the unblock; the gate is a feature, not a bug.
+  # Acceptable trade for a solo project where grammar is still evolving
+  # — flip back to ``workflow_call``-only post-v6.0 once grammar freezes.
   # ---------------------------------------------------------------------------
   bootstrap:
     name: Bootstrap (No Python)
@@ -548,6 +557,9 @@ jobs:
 
       - name: Setup Android NDK
         uses: android-actions/setup-android@v3
+        with:
+          # The action defaults to the retired Android SDK "tools" package.
+          packages: platform-tools
 
       - name: Install NDK via sdkmanager
         run: |
@@ -825,6 +837,9 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Bootstrap from seed — build without Python (gcc + llvm only)
+  #
+  # Runs on every push, PR, and release. See note on the ``bootstrap``
+  # job above for rationale and seed-update workflow.
   # ---------------------------------------------------------------------------
   bootstrap-from-seed:
     name: Bootstrap from Seed (No Python)

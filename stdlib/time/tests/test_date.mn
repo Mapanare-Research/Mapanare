@@ -1,0 +1,77 @@
+// test_date.mn — Date construction + leap-year boundary cases.
+//
+// Concatenated by tests/stdlib/test_time_dt.py harness, which reads
+// stdlib/time.mn and prepends it before this file so the surface symbols
+// (date_new, is_leap_year, days_in_month) resolve at compile time.
+// Self-contained execution: 0 = all pass; nonzero = first failure index.
+
+fn check_ok_date(label: String, r: Result<Date, String>) -> Int {
+    match r {
+        Ok(_) => { return 0 },
+        Err(msg) => {
+            print("FAIL " + label + ": " + msg)
+            return 1
+        }
+    }
+    return 1
+}
+
+fn check_err_date(label: String, r: Result<Date, String>) -> Int {
+    match r {
+        Ok(_) => {
+            print("FAIL " + label + ": expected Err, got Ok")
+            return 1
+        },
+        Err(_) => { return 0 }
+    }
+    return 1
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    // Valid dates
+    fails = fails + check_ok_date("2026-05-03", date_new(2026, 5, 3))
+    fails = fails + check_ok_date("2026-01-01", date_new(2026, 1, 1))
+    fails = fails + check_ok_date("2026-12-31", date_new(2026, 12, 31))
+
+    // Leap-year boundaries — the bug class that bites every date library.
+    // Rule: divisible by 4, EXCEPT divisible by 100, EXCEPT divisible by 400.
+    fails = fails + check_err_date("1900-02-29 (NOT leap, div-100 not div-400)", date_new(1900, 2, 29))
+    fails = fails + check_ok_date( "2000-02-29 (leap, div-400)",                date_new(2000, 2, 29))
+    fails = fails + check_ok_date( "2024-02-29 (leap, div-4)",                  date_new(2024, 2, 29))
+    fails = fails + check_err_date("2100-02-29 (NOT leap, div-100 not div-400)", date_new(2100, 2, 29))
+    fails = fails + check_ok_date( "2400-02-29 (leap, div-400)",                date_new(2400, 2, 29))
+
+    // Boundary year, month, day
+    fails = fails + check_ok_date("0001-01-01 (min year)",   date_new(1, 1, 1))
+    fails = fails + check_ok_date("9999-12-31 (max year)",   date_new(9999, 12, 31))
+    fails = fails + check_err_date("0000-01-01 (year 0)",    date_new(0, 1, 1))
+    fails = fails + check_err_date("10000-01-01 (year 10k)", date_new(10000, 1, 1))
+    fails = fails + check_err_date("month 0",                date_new(2026, 0, 1))
+    fails = fails + check_err_date("month 13",               date_new(2026, 13, 1))
+    fails = fails + check_err_date("day 0",                  date_new(2026, 1, 0))
+    fails = fails + check_err_date("Jan day 32",             date_new(2026, 1, 32))
+    fails = fails + check_err_date("Feb non-leap day 29",    date_new(2026, 2, 29))
+    fails = fails + check_err_date("Feb non-leap day 30",    date_new(2026, 2, 30))
+    fails = fails + check_err_date("Apr day 31",             date_new(2026, 4, 31))
+
+    // is_leap_year direct
+    if is_leap_year(1900) { print("FAIL is_leap 1900"); fails = fails + 1 }
+    if is_leap_year(2000) == false { print("FAIL is_leap 2000"); fails = fails + 1 }
+    if is_leap_year(2024) == false { print("FAIL is_leap 2024"); fails = fails + 1 }
+    if is_leap_year(2100) { print("FAIL is_leap 2100"); fails = fails + 1 }
+    if is_leap_year(2400) == false { print("FAIL is_leap 2400"); fails = fails + 1 }
+
+    // days_in_month direct
+    if days_in_month(2024, 2) != 29 { print("FAIL days_in_month 2024-2"); fails = fails + 1 }
+    if days_in_month(1900, 2) != 28 { print("FAIL days_in_month 1900-2"); fails = fails + 1 }
+    if days_in_month(2026, 4) != 30 { print("FAIL days_in_month 2026-4"); fails = fails + 1 }
+    if days_in_month(2026, 7) != 31 { print("FAIL days_in_month 2026-7"); fails = fails + 1 }
+
+    if fails == 0 {
+        print("test_date PASSED")
+    } else {
+        print("test_date FAILED")
+    }
+}

@@ -1,0 +1,34 @@
+// As.5 case 4 — Restart-limit exhaustion escalates.
+//
+// max_restarts=2 within max_window_secs=60 — after 3 crashes in
+// quick succession the supervisor's window count is 3 > 2, so the
+// THIRD call to supervisor_handle_exit returns escalate=true.
+
+fn main() {
+    let s0 = new_supervisor(STRATEGY_ONE_FOR_ONE(), 2, 60)
+    let mut s = add_child(s0, new_child_spec(401, "a", RESTART_PERMANENT()))
+
+    // Crash 1: count=1, OK
+    let t1 = supervisor_handle_exit(s, 401, EXIT_CRASHED(), "crash 1")
+    si t1.decision.escalate {
+        print("FAIL: escalate on crash 1")
+        return
+    }
+    s = t1.sup
+
+    // Crash 2: count=2, OK
+    let t2 = supervisor_handle_exit(s, 401, EXIT_CRASHED(), "crash 2")
+    si t2.decision.escalate {
+        print("FAIL: escalate on crash 2")
+        return
+    }
+    s = t2.sup
+
+    // Crash 3: count=3 > 2 = max_restarts, ESCALATE
+    let t3 = supervisor_handle_exit(s, 401, EXIT_CRASHED(), "crash 3")
+    si !t3.decision.escalate {
+        print("FAIL: expected escalate on crash 3, got count=" + str(t3.sup.restart_count_in_window))
+        return
+    }
+    print("PASSED")
+}

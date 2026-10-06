@@ -1,0 +1,21 @@
+// v5.39.2 Js.4.B.2 — to_json/from_json round-trip on a flat struct.
+// Nested-struct to_json (the `<?>` placeholder) is split to v5.39.3.
+
+struct PRT { x: Int, y: Int }
+
+fn main() -> Int {
+    pon original: PRT = PRT(7, 11)
+    pon encoded: String = to_json::<PRT>(original)
+    pon r: Result<PRT, JsonError> = from_json::<PRT>(encoded)
+    match r {
+        Ok(decoded) => {
+            si decoded.x == 7 && decoded.y == 11 {
+                print("PASSED test_to_from_roundtrip")
+            } sino {
+                print("FAIL test_to_from_roundtrip: wrong values after roundtrip")
+            }
+        },
+        Err(e) => print("FAIL test_to_from_roundtrip: decode error")
+    }
+    return 0
+}

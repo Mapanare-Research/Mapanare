@@ -1,0 +1,85 @@
+// heartbeat_demo.mn — v5.43.0 Da.9
+//
+// Sketches the v5.43.0 heartbeat + supervision-interop pattern:
+// a coordinator with a remote child decides whether to restart on
+// (a) RemoteCrashed (child handler returned rc != 0), (b)
+// RemoteUnreachable (heartbeat missed), or (c) RemoteShutdown
+// (clean exit, no restart for Transient policy).
+//
+// SHAPE: API surface demonstration. Real two-node deployment runs
+// the worker on one host and the coordinator on another; the
+// coordinator polls heartbeats at MAPANARE_NODE_PING_INTERVAL_MS
+// cadence and routes ChildExited frames through the v5.42.0
+// supervisor strategy library.
+//
+// At v5.43.0 the heartbeat is SYNCHRONOUS: the coordinator invokes
+// remote_agent_heartbeat_check at its own cadence (typical idiom:
+// a watcher loop with `sleep(node_ping_interval_ms())`). v5.43.x
+// adds the auto-fired per-connection heartbeat task.
+//
+// Run:
+//   cat stdlib/agent/url.mn stdlib/agent/remote_proto.mn \
+//       stdlib/agent/node.mn stdlib/agent/remote.mn \
+//       stdlib/agent/supervisor.mn stdlib/agent/supervision.mn \
+//       examples/agents/heartbeat_demo.mn > /tmp/hb.mn
+//   python3 -m mapanare run /tmp/hb.mn
+
+fn classify_failure(err_kind: Int) -> RemoteExitReason {
+    // Map a NetworkError kind from heartbeat/send/recv failure into
+    // a RemoteExitReason. The recommended pattern (PROMPT spec):
+    //   - kind 11 (Timeout) or 12 (TransportLost) -> RemoteUnreachable
+    //   - anything else                            -> RemoteCrashed
+    si err_kind == 11 || err_kind == 12 {
+        da RemoteUnreachable("heartbeat timed out")
+    }
+    da RemoteCrashed("transport-level error: kind=" + str(err_kind))
+}
+
+fn supervise_remote_child(s: Supervisor, child_id: Int, exit_reason: RemoteExitReason) -> SupervisorTransition {
+    // Bridge: classify_remote_exit converts to (kind, reason) tuple
+    // which feeds into v5.42.0 supervisor_handle_exit unchanged.
+    pon ce: ClassifiedExit = classify_remote_exit(exit_reason)
+    da supervisor_handle_exit(s, child_id, ce.exit_kind, ce.reason)
+}
+
+fn print_decision(d: RestartDecision) {
+    si d.escalate {
+        print("decision: ESCALATE — " + d.reason)
+        return
+    }
+    si d.no_op {
+        print("decision: NO_OP — " + d.reason)
+        return
+    }
+    print("decision: RESTART " + str(len(d.ids_to_restart)) + " child(ren) — " + d.reason)
+}
+
+fn main() {
+    // Build a 1-supervisor-with-1-remote-child tree.
+    pon sup0: Supervisor = new_supervisor(STRATEGY_ONE_FOR_ONE(), 5, 60)
+    pon sup1: Supervisor = add_child(sup0, new_child_spec(701, "remote-worker", RESTART_PERMANENT()))
+
+    print("--- Scenario 1: remote child crashes ---")
+    pon t1: SupervisorTransition = supervise_remote_child(sup1, 701, RemoteCrashed("panic: index out of bounds"))
+    print_decision(t1.decision)
+
+    print("--- Scenario 2: remote child unreachable (heartbeat miss) ---")
+    pon t2: SupervisorTransition = supervise_remote_child(t1.sup, 701, RemoteUnreachable("pong window expired"))
+    print_decision(t2.decision)
+
+    print("--- Scenario 3: remote child clean shutdown ---")
+    pon t3: SupervisorTransition = supervise_remote_child(t2.sup, 701, RemoteShutdown)
+    print_decision(t3.decision)
+
+    print("--- Env config ---")
+    print("ping interval ms: " + str(node_ping_interval_ms()))
+    print("ping timeout ms:  " + str(node_ping_timeout_ms()))
+    pon key: String = node_key_from_env()
+    si len(key) >= 32 {
+        print("MAPANARE_NODE_KEY set (>= 32 bytes)")
+    } sino {
+        print("MAPANARE_NODE_KEY not set or too short")
+    }
+
+    print("done")
+}

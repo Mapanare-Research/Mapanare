@@ -1,0 +1,114 @@
+// test_datetime.mn — DateTime construction + epoch round-trip.
+// Concatenated by tests/stdlib/test_time_dt.py harness with stdlib/time.mn.
+
+fn main() {
+    let mut fails: Int = 0
+
+    // datetime_now: returns Ok with a year >= 2026 (this session's date).
+    let now_r: Result<DateTime, String> = datetime_now()
+    match now_r {
+        Ok(dt) => {
+            if dt.date.year < 2020 {
+                print("FAIL datetime_now year too low")
+                fails = fails + 1
+            }
+            if dt.date.year > 2100 {
+                print("FAIL datetime_now year too high")
+                fails = fails + 1
+            }
+            if dt.tz_offset_minutes != 0 {
+                print("FAIL datetime_now should be UTC")
+                fails = fails + 1
+            }
+        },
+        Err(msg) => {
+            print("FAIL datetime_now: " + msg)
+            fails = fails + 1
+        }
+    }
+
+    // datetime_from_epoch(0) == 1970-01-01 00:00:00 UTC
+    let r1970: Result<DateTime, String> = datetime_from_epoch(0)
+    match r1970 {
+        Ok(dt) => {
+            if dt.date.year != 1970   { print("FAIL epoch0 year"); fails = fails + 1 }
+            if dt.date.month != 1     { print("FAIL epoch0 month"); fails = fails + 1 }
+            if dt.date.day != 1       { print("FAIL epoch0 day"); fails = fails + 1 }
+            if dt.time.hour != 0      { print("FAIL epoch0 hour"); fails = fails + 1 }
+            if dt.time.minute != 0    { print("FAIL epoch0 minute"); fails = fails + 1 }
+            if dt.time.second != 0    { print("FAIL epoch0 second"); fails = fails + 1 }
+        },
+        Err(msg) => {
+            print("FAIL epoch0: " + msg)
+            fails = fails + 1
+        }
+    }
+
+    // Round-trip: from_epoch(N) → to_epoch == N for N = 1700000000 (2023-11-14).
+    let mid_r: Result<DateTime, String> = datetime_from_epoch(1700000000)
+    match mid_r {
+        Ok(dt) => {
+            let back_r: Result<Int, String> = datetime_to_epoch(dt)
+            match back_r {
+                Ok(secs) => {
+                    if secs != 1700000000 {
+                        print("FAIL roundtrip drift")
+                        fails = fails + 1
+                    }
+                },
+                Err(_) => {
+                    print("FAIL to_epoch")
+                    fails = fails + 1
+                }
+            }
+        },
+        Err(_) => {
+            print("FAIL from_epoch mid")
+            fails = fails + 1
+        }
+    }
+
+    // Duration constructors
+    let d_secs: Duration = duration_seconds(42)
+    if d_secs.seconds != 42 { print("FAIL duration_seconds"); fails = fails + 1 }
+    let d_mins: Duration = duration_minutes(2)
+    if d_mins.seconds != 120 { print("FAIL duration_minutes"); fails = fails + 1 }
+    let d_hrs: Duration = duration_hours(3)
+    if d_hrs.seconds != 10800 { print("FAIL duration_hours"); fails = fails + 1 }
+    let d_days: Duration = duration_days(7)
+    if d_days.seconds != 604800 { print("FAIL duration_days"); fails = fails + 1 }
+
+    // datetime_new accepts pre-validated Date+Time, validates tz offset
+    let dr: Result<Date, String> = date_new(2026, 5, 3)
+    let tr: Result<Time, String> = time_new(14, 32, 0, 0)
+    match dr {
+        Ok(d) => {
+            match tr {
+                Ok(t) => {
+                    let dt_ok: Result<DateTime, String> = datetime_new(d, t, 330)
+                    match dt_ok {
+                        Ok(dt) => {
+                            if dt.tz_offset_minutes != 330 {
+                                print("FAIL tz +330 lost"); fails = fails + 1
+                            }
+                        },
+                        Err(_) => { print("FAIL datetime_new +330"); fails = fails + 1 }
+                    }
+                    let dt_bad: Result<DateTime, String> = datetime_new(d, t, 99999)
+                    match dt_bad {
+                        Ok(_) => { print("FAIL tz 99999 accepted"); fails = fails + 1 },
+                        Err(_) => { }
+                    }
+                },
+                Err(_) => { print("FAIL time_new"); fails = fails + 1 }
+            }
+        },
+        Err(_) => { print("FAIL date_new"); fails = fails + 1 }
+    }
+
+    if fails == 0 {
+        print("test_datetime PASSED")
+    } else {
+        print("test_datetime FAILED")
+    }
+}

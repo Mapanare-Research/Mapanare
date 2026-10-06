@@ -50,7 +50,12 @@ def build() -> pathlib.Path:
         print(f"  IR: {ir.count(chr(10))} lines <- {ir_path}")
     else:
         print("[1/6] Generating LLVM IR from mapanare/self/*.mn ...")
+        from mapanare.modules import ModuleResolver
         from mapanare.multi_module import compile_multi_module_mir
+        from mapanare.pkg_discovery import (
+            PackageDiscoveryError,
+            build_resolver_for_source,
+        )
 
         # v5.9.0 DX.2: compile directly from SELF_DIR. Pre-v5.9.0 this step
         # mirrored SELF_DIR into a tempdir to substitute the __MN_VERSION__
@@ -60,11 +65,21 @@ def build() -> pathlib.Path:
         # __mn_version_string() — so the tempdir step is unnecessary.
         root_file = SELF_DIR / "main.mn"
         source = root_file.read_text(encoding="utf-8")
+        # v5.44.1 Ps.11.A: construct a package-aware resolver so a
+        # `mapanare.toml` + `mn_modules/` checkout of self-host sources
+        # resolves identically to `mnc build`. Tolerant fallback (no
+        # sys.exit) — a malformed lockfile must not break the bootstrap
+        # loop; bare resolution still produces a working stage1.
+        try:
+            resolver = build_resolver_for_source(str(root_file))
+        except PackageDiscoveryError:
+            resolver = ModuleResolver()
         ir = compile_multi_module_mir(
             root_source=source,
             root_file=str(root_file),
             opt_level=2,
             skip_check=True,
+            resolver=resolver,
         )
 
     # 2. Post-process: make compile() and format_error() externally visible

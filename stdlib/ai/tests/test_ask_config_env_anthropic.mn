@@ -1,0 +1,24 @@
+// v5.40.0 Ai.4 — env=anthropic + API key present routes to anthropic
+// provider with claude-sonnet default model.
+
+fn main() -> Int {
+    pon cfg: LLMConfig = build_config_from_env()
+    si cfg.host != "api.anthropic.com" {
+        print("FAIL test_ask_config_env_anthropic: host=" + cfg.host)
+        return 0
+    }
+    si cfg.port != 443 {
+        print("FAIL test_ask_config_env_anthropic: port=" + str(cfg.port))
+        return 0
+    }
+    si cfg.api_key != "test-key" {
+        print("FAIL test_ask_config_env_anthropic: key not propagated")
+        return 0
+    }
+    si len(cfg.model) == 0 {
+        print("FAIL test_ask_config_env_anthropic: model empty")
+        return 0
+    }
+    print("PASSED test_ask_config_env_anthropic")
+    return 0
+}

@@ -1,11 +1,28 @@
+# Installed packages — populated by `mnc install`. Excluded by default
+# per package-management convention (Cargo / npm / pip): `mapanare.lock`
+# is the reproducibility source of truth and IS committed; the
+# realized files under `mn_modules/` are not.
+mn_modules/
+
 # Build artifacts
 dist/
 build/
 *.ll
 *.bc
 *.o
+*.a
+*.so
+*.dylib
+*.dll
 *.wasm
 *.wat
+
+# Build diagnostics (`mnc --diag-json`)
+*.diag.json
+
+# Python tooling artifacts (only relevant for mixed-language projects)
+__pycache__/
+*.pyc
 
 # Native binaries
 {{NAME}}

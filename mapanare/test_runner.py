@@ -102,14 +102,24 @@ def _compile_test_to_llvm(source: str, filename: str, test_names: list[str]) -> 
     """Compile a .mn file to LLVM IR for JIT execution.
 
     Test functions are marked public so the JIT engine can resolve them by name.
+
+    Resolves through a package-aware ``ModuleResolver`` (Ps.3) so test
+    files in a project with installed packages can ``import`` them just
+    like ``mnc run`` and ``mnc build``. Falls back to a bare resolver
+    if package discovery raises (LSP-style tolerance — test running
+    shouldn't sys.exit on a malformed lockfile).
     """
     from mapanare.emit_llvm_text import LLVMTextEmitter
     from mapanare.lower import lower as build_mir
     from mapanare.mir_opt import MIROptLevel
     from mapanare.mir_opt import optimize_module as mir_optimize
     from mapanare.modules import ModuleResolver
+    from mapanare.pkg_discovery import PackageDiscoveryError, build_resolver_for_source
 
-    resolver = ModuleResolver()
+    try:
+        resolver = build_resolver_for_source(filename)
+    except PackageDiscoveryError:
+        resolver = ModuleResolver()
     ast = parse(source, filename=filename)
     check_or_raise(ast, filename=filename, resolver=resolver)
 

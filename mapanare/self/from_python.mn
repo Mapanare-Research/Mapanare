@@ -19,41 +19,41 @@ fn new_token(kind: String, value: String, line: Int, col: Int) -> PyToken = new 
 // ---------------------------------------------------------------------------
 
 fn is_py_keyword(s: String) -> Bool:
-    if s == "def" { return true }
-    if s == "class" { return true }
-    if s == "if" { return true }
-    if s == "elif" { return true }
-    if s == "else" { return true }
-    if s == "for" { return true }
-    if s == "while" { return true }
-    if s == "return" { return true }
-    if s == "import" { return true }
-    if s == "from" { return true }
-    if s == "as" { return true }
-    if s == "try" { return true }
-    if s == "except" { return true }
-    if s == "finally" { return true }
-    if s == "raise" { return true }
-    if s == "pass" { return true }
-    if s == "break" { return true }
-    if s == "continue" { return true }
-    if s == "and" { return true }
-    if s == "or" { return true }
-    if s == "not" { return true }
-    if s == "in" { return true }
-    if s == "is" { return true }
-    if s == "None" { return true }
-    if s == "True" { return true }
-    if s == "False" { return true }
-    if s == "lambda" { return true }
-    if s == "with" { return true }
-    if s == "assert" { return true }
-    if s == "del" { return true }
-    if s == "async" { return true }
-    if s == "await" { return true }
-    if s == "yield" { return true }
-    if s == "global" { return true }
-    if s == "nonlocal" { return true }
+    if s == "def": return true
+    if s == "class": return true
+    if s == "if": return true
+    if s == "elif": return true
+    if s == "else": return true
+    if s == "for": return true
+    if s == "while": return true
+    if s == "return": return true
+    if s == "import": return true
+    if s == "from": return true
+    if s == "as": return true
+    if s == "try": return true
+    if s == "except": return true
+    if s == "finally": return true
+    if s == "raise": return true
+    if s == "pass": return true
+    if s == "break": return true
+    if s == "continue": return true
+    if s == "and": return true
+    if s == "or": return true
+    if s == "not": return true
+    if s == "in": return true
+    if s == "is": return true
+    if s == "None": return true
+    if s == "True": return true
+    if s == "False": return true
+    if s == "lambda": return true
+    if s == "with": return true
+    if s == "assert": return true
+    if s == "del": return true
+    if s == "async": return true
+    if s == "await": return true
+    if s == "yield": return true
+    if s == "global": return true
+    if s == "nonlocal": return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -63,8 +63,8 @@ fn is_py_keyword(s: String) -> Bool:
 fn is_py_alpha(c: String) -> Bool = is_transpiler_alpha(c)
 
 fn is_py_alnum(c: String) -> Bool:
-    if is_py_alpha(c) { return true }
-    if is_digit(c) { return true }
+    if is_py_alpha(c): return true
+    if is_digit(c): return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ fn tokenize_python(source: String) -> List<PyToken>:
         // Comment: # to end of line
         if c == "#":
             while pos < slen:
-                if source[pos] == "\n" { break }
+                if source[pos] == "\n": break
                 pos = pos + 1
             continue
 
@@ -136,9 +136,9 @@ fn tokenize_python(source: String) -> List<PyToken>:
             let mut has_dot: Bool = false
             while pos < slen:
                 let nc: String = source[pos]
-                if nc == "." { has_dot = true }
+                if nc == ".": has_dot = true
                 if is_digit(nc) || nc == "." || nc == "_":
-                    if nc != "_" { num = num + nc }
+                    if nc != "_": num = num + nc
                     pos = pos + 1
                     col = col + 1
                 else:
@@ -312,7 +312,7 @@ fn translate_py_expr(p: PyParser) -> String:
                 p = advance(p)
                 let mut args: List<String> = []
                 while current(p).value != ")":
-                    if current(p).kind == "EOF" { break }
+                    if current(p).kind == "EOF": break
                     if current(p).value == ",":
                         p = advance(p)
                         continue
@@ -320,10 +320,10 @@ fn translate_py_expr(p: PyParser) -> String:
                     args.push(arg)
                     // Advance past the expression tokens
                     while current(p).value != ",":
-                        if current(p).value == ")" { break }
-                        if current(p).kind == "EOF" { break }
+                        if current(p).value == ")": break
+                        if current(p).kind == "EOF": break
                         p = advance(p)
-                if current(p).value == ")" { p = advance(p) }
+                if current(p).value == ")": p = advance(p)
                 let shims: List<StdlibShim> = python_stdlib_shims()
                 return translate_stdlib_call(name, args, shims)
         return name
@@ -335,15 +335,15 @@ fn translate_py_expr(p: PyParser) -> String:
             let mut items: String = ""
             let mut first: Bool = true
             while current(p).value != "]":
-                if current(p).kind == "EOF" { break }
+                if current(p).kind == "EOF": break
                 if current(p).value == ",":
                     p = advance(p)
                     continue
-                if !first { items = items + ", " }
+                if !first: items = items + ", "
                 items = items + translate_py_expr(p)
                 first = false
                 p = advance(p)
-            if current(p).value == "]" { p = advance(p) }
+            if current(p).value == "]": p = advance(p)
             return "[" + items + "]"
 
     // Fallback
@@ -365,11 +365,11 @@ fn translate_py_function(p: PyParser, ind: String) -> String:
     let mut params: String = ""
     let mut first: Bool = true
     while current(p).value != ")":
-        if current(p).kind == "EOF" { break }
+        if current(p).kind == "EOF": break
         if current(p).value == ",":
             p = advance(p)
             continue
-        if !first { params = params + ", " }
+        if !first: params = params + ", "
         let pname: String = current(p).value
         p = advance(p)
         // Check for type annotation: param: type
@@ -415,7 +415,7 @@ fn translate_py_function(p: PyParser, ind: String) -> String:
                 out = out + ind + "    return " + expr + "\n"
                 // Skip to next newline
                 while current(p).kind != "NEWLINE":
-                    if current(p).kind == "EOF" { break }
+                    if current(p).kind == "EOF": break
                     p = advance(p)
                 p = skip_newlines(p)
                 body_count = body_count + 1
@@ -426,11 +426,11 @@ fn translate_py_function(p: PyParser, ind: String) -> String:
                 continue
         // Skip unrecognized tokens to next newline
         while current(p).kind != "NEWLINE":
-            if current(p).kind == "EOF" { break }
+            if current(p).kind == "EOF": break
             p = advance(p)
         p = skip_newlines(p)
         body_count = body_count + 1
-        if body_count > 50 { break }
+        if body_count > 50: break
 
     out = out + ind + "}\n"
     return out
@@ -463,7 +463,7 @@ fn translate_python(source: String, filename: String) -> String:
             if t.value == "import" || t.value == "from":
                 // Skip import statements
                 while current(p).kind != "NEWLINE":
-                    if current(p).kind == "EOF" { break }
+                    if current(p).kind == "EOF": break
                     p = advance(p)
                 p = skip_newlines(p)
                 out_text = out_text + "// import skipped\n"

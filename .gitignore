@@ -1,3 +1,8 @@
+# v5.36.0: vendored RFC 8259 corpus is fetched on demand by
+# scripts/run_json_corpus.py — clones nst/JSONTestSuite if the
+# fixtures dir is missing. Not stored in-tree (318 files).
+stdlib/json/tests/fixtures/rfc8259/
+
 # Built compiler binary (output of build_from_seed.sh)
 /mnc
 
@@ -76,7 +81,11 @@ runtime/native/libmapanare_rt.a
 /.tmp-tc/
 /.tmp-toolchain-dl/
 /.tmp-llvm/
+/.tmp-llvm-mingw/
 /.tmp_probe.py
+/.tmp.ll
+/hello.mn
+/hello.exe
 /tmp_smoke_*.mn
 /tmp_smoke_*.py
 /tmp_smoke_*.exe
@@ -118,3 +127,4 @@ docs/roadmap/v4/v4.141.0/session.md
 # `tests/golden/*.ll` (ignored, except `*.ref.ll`) and
 # `mapanare/self/{main,stage2,stage3}.ll` patterns above.
 benchmarks/**/*.ll
+/.agents

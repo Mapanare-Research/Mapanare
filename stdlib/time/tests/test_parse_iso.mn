@@ -1,0 +1,124 @@
+// test_parse_iso.mn — ISO 8601 + RFC 3339 + ISO 8601 duration parsing.
+// Pinned at Phase 3 BEFORE parsers were written so the impl had a moving
+// target. Concatenated with stdlib/time.mn by the pytest harness.
+
+fn assert_date(s: String, exp_y: Int, exp_m: Int, exp_d: Int, fails: Int) -> Int {
+    let r: Result<Date, String> = date_parse_iso(s)
+    match r {
+        Ok(d) => {
+            if d.year != exp_y { print("FAIL " + s + " year"); return fails + 1 }
+            if d.month != exp_m { print("FAIL " + s + " month"); return fails + 1 }
+            if d.day != exp_d { print("FAIL " + s + " day"); return fails + 1 }
+            return fails
+        },
+        Err(msg) => {
+            print("FAIL " + s + ": " + msg)
+            return fails + 1
+        }
+    }
+    return fails + 1
+}
+
+fn assert_date_err(s: String, fails: Int) -> Int {
+    let r: Result<Date, String> = date_parse_iso(s)
+    match r {
+        Ok(_) => {
+            print("FAIL " + s + ": expected Err")
+            return fails + 1
+        },
+        Err(_) => { return fails }
+    }
+    return fails + 1
+}
+
+fn assert_dt(s: String, exp_y: Int, exp_m: Int, exp_d: Int, exp_h: Int, exp_mi: Int, exp_s: Int, exp_off: Int, fails: Int) -> Int {
+    let r: Result<DateTime, String> = datetime_parse_rfc3339(s)
+    match r {
+        Ok(dt) => {
+            if dt.date.year != exp_y { print("FAIL " + s + " year"); return fails + 1 }
+            if dt.date.month != exp_m { print("FAIL " + s + " month"); return fails + 1 }
+            if dt.date.day != exp_d { print("FAIL " + s + " day"); return fails + 1 }
+            if dt.time.hour != exp_h { print("FAIL " + s + " hour"); return fails + 1 }
+            if dt.time.minute != exp_mi { print("FAIL " + s + " min"); return fails + 1 }
+            if dt.time.second != exp_s { print("FAIL " + s + " sec"); return fails + 1 }
+            if dt.tz_offset_minutes != exp_off { print("FAIL " + s + " offset"); return fails + 1 }
+            return fails
+        },
+        Err(msg) => {
+            print("FAIL " + s + ": " + msg)
+            return fails + 1
+        }
+    }
+    return fails + 1
+}
+
+fn assert_dur(s: String, exp_secs: Int, fails: Int) -> Int {
+    let r: Result<Duration, String> = duration_parse_iso(s)
+    match r {
+        Ok(d) => {
+            if d.seconds != exp_secs {
+                print("FAIL " + s + " secs")
+                return fails + 1
+            }
+            return fails
+        },
+        Err(msg) => {
+            print("FAIL " + s + ": " + msg)
+            return fails + 1
+        }
+    }
+    return fails + 1
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    // Valid dates
+    fails = assert_date("2026-05-03", 2026, 5, 3, fails)
+    fails = assert_date("1970-01-01", 1970, 1, 1, fails)
+    fails = assert_date("9999-12-31", 9999, 12, 31, fails)
+    fails = assert_date("2024-02-29", 2024, 2, 29, fails)
+
+    // Invalid dates
+    fails = assert_date_err("2026-13-03", fails)
+    fails = assert_date_err("2026-02-29", fails)
+    fails = assert_date_err("2026-04-31", fails)
+    fails = assert_date_err("not-a-date", fails)
+    fails = assert_date_err("2026/05/03", fails)
+    fails = assert_date_err("short", fails)
+
+    // RFC 3339 datetimes — both Z and +HH:MM forms.
+    fails = assert_dt("2026-05-03T14:32:00Z",      2026, 5, 3, 14, 32, 0, 0,    fails)
+    fails = assert_dt("2026-05-03T14:32:00+00:00", 2026, 5, 3, 14, 32, 0, 0,    fails)
+    fails = assert_dt("2026-05-03T14:32:00+0000",  2026, 5, 3, 14, 32, 0, 0,    fails)
+    fails = assert_dt("2026-05-03T14:32:00+05:30", 2026, 5, 3, 14, 32, 0, 330,  fails)
+    fails = assert_dt("2026-05-03T14:32:00-05:00", 2026, 5, 3, 14, 32, 0, -300, fails)
+    fails = assert_dt("2026-05-03t14:32:00z",      2026, 5, 3, 14, 32, 0, 0,    fails)
+    fails = assert_dt("2026-05-03 14:32:00Z",      2026, 5, 3, 14, 32, 0, 0,    fails)
+    fails = assert_dt("2026-05-03T14:32:00.123Z",  2026, 5, 3, 14, 32, 0, 0,    fails)
+
+    // ISO 8601 durations
+    fails = assert_dur("PT1H30M", 5400, fails)
+    fails = assert_dur("PT45S", 45, fails)
+    fails = assert_dur("PT2H", 7200, fails)
+    fails = assert_dur("PT1H30M0S", 5400, fails)
+    fails = assert_dur("PT0S", 0, fails)
+
+    // Invalid durations
+    let bad1: Result<Duration, String> = duration_parse_iso("P1D")
+    match bad1 {
+        Ok(_) => { print("FAIL P1D should not parse"); fails = fails + 1 },
+        Err(_) => { }
+    }
+    let bad2: Result<Duration, String> = duration_parse_iso("1H")
+    match bad2 {
+        Ok(_) => { print("FAIL 1H should not parse"); fails = fails + 1 },
+        Err(_) => { }
+    }
+
+    if fails == 0 {
+        print("test_parse_iso PASSED")
+    } else {
+        print("test_parse_iso FAILED")
+    }
+}

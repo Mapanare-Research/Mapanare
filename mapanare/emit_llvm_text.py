@@ -390,6 +390,16 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_tensor_argmin_i64": {"nounwind"},
     # Tensor slicing (v4.45.0). Returns fresh tensor (noalias).
     "__mn_tensor_slice": {"nounwind", "noalias"},
+    # Tensor stepped slice (v5.45.0 Ts.3.B). Copy semantics — fresh
+    # contiguous tensor; conservative omission of noalias to match the
+    # rest of the v5.45.0 tensor-producing surface.
+    "__mn_tensor_step_slice": {"nounwind"},
+    # Tensor reshape (v5.41.0 Ts.1 → v5.45.0 Ts.2.B). Aliases parent's
+    # data buffer under the new view-based implementation; ``noalias``
+    # is now a lie and is omitted. Refcount-managed lifetime.
+    "__mn_tensor_reshape": {"nounwind"},
+    # Tensor view (v5.45.0 Ts.2.B). Aliasing — never noalias.
+    "__mn_tensor_view": {"nounwind"},
     # Agent runtime (v3.43.0). v4.30.0: ``agent_new`` returns a fresh
     # heap agent handle (noalias); dispatch/send/recv do not.
     "mapanare_agent_new": {"nounwind", "noalias", "willreturn"},
@@ -461,6 +471,89 @@ _RUNTIME_FN_ATTRS: dict[str, set[str]] = {
     "__mn_url_parse_path": {"nounwind"},
     # v5.1.0 Perf.1: inline list access emits bounds-check trap via abort().
     "abort": {"nounwind", "noreturn"},
+}
+
+
+# v5.49.0 Wn.1 — canonical signatures for ``__mn_*`` runtime symbols
+# that user .mn source calls directly (i.e. without going through a
+# Mapanare-level builtin handler). Each entry is ``(ret_ty, [param_tys])``
+# matching the C declaration in ``runtime/native/mapanare_core.h``.
+#
+# Why this exists: when .mn source calls ``__mn_file_exists(s)`` (or
+# any ``__mn_*`` runtime fn that takes/returns aggregates) the Call
+# instruction reaches ``_do_call``'s catchall auto-declare path with
+# ``i.dest.ty`` derived from the comparison context (often ``Ptr``
+# instead of ``Int`` for unannotated calls — see ``find_clang`` at
+# ``mapanare/self/main.mn:80``). The auto-declare path then emitted
+# ``declare ptr @__mn_file_exists(ptr)`` (return type wrong) plus a
+# call site of ``call ptr @__mn_file_exists({ptr, i64} %v)`` (caller
+# passes 16-byte aggregate by value, callee per Win64 ABI expects a
+# hidden pointer in RCX) — which on Win64 reads the path string's
+# data bytes as if they were the address of an MnString struct,
+# producing the v5.49.0 OOM regression. SysV/AAPCS happen to pass
+# the same registers and the bug is invisible there. Registry
+# entries supersede the MIR-derived (ret, pts) so direct ``__mn_*``
+# calls route through ``_rt``'s ABI-correct Win64 sarg/sret lowering.
+#
+# Pre-register only what is observed in ``mapanare/self/*.mn`` plus
+# the wider stdlib FFI surface — unregistered ``__mn_*`` calls keep
+# the old auto-declare behavior so this change is non-breaking.
+_RUNTIME_FN_SIGS: dict[str, tuple[str, list[str]]] = {
+    # Process / argv / environment.
+    "__mn_argc": (I64, []),
+    "__mn_argv": (STR, [I64]),
+    "__mn_exit": (VOID, [I64]),
+    "__mn_system": (I64, [STR]),
+    "__mn_version_string": (STR, []),
+    "__mn_executable_dir": (STR, []),
+    "__mn_clang_err_path": (STR, []),
+    "__mn_dev_null_redirect": (STR, []),
+    "__mn_host_is_windows": (I64, []),
+    "__mn_host_is_win64": (I64, []),
+    "__mn_host_arch_bits": (I64, []),
+    # File / directory I/O — all MnString-arg, the Win64-bug shape.
+    "__mn_file_exists": (I64, [STR]),
+    "__mn_file_read_or_empty": (STR, [STR]),
+    "__mn_file_write": (I64, [STR, STR]),
+    "__mn_file_append": (I64, [STR, STR]),
+    "__mn_file_remove": (I64, [STR]),
+    "__mn_file_size": (I64, [STR]),
+    "__mn_file_mtime": (I64, [STR]),
+    "__mn_file_rename": (I64, [STR, STR]),
+    "__mn_file_copy": (I64, [STR, STR]),
+    "__mn_dir_create": (I64, [STR, I64]),
+    "__mn_dir_remove": (I64, [STR]),
+    "__mn_dir_remove_recursive": (I64, [STR]),
+    "__mn_dir_count_files": (I64, [STR]),
+    "__mn_dir_total_size": (I64, [STR]),
+    "__mn_dir_list_strings": (LIST, [STR]),
+    "__mn_realpath": (STR, [STR]),
+    "__mn_tmpfile_path": (STR, [STR]),
+    "__mn_temp_path": (STR, [STR]),
+    # String I/O.
+    "__mn_str_eprint": (VOID, [STR]),
+    "__mn_str_eprintln": (VOID, [STR]),
+    "__mn_str_print": (VOID, [STR]),
+    "__mn_str_println": (VOID, [STR]),
+    "__mn_read_line": (STR, []),
+    # Preprocessor / formatter helpers (v5.14.x / v5.48.x).
+    "__mn_indent_to_braces": (STR, [STR]),
+    "__mn_rewrite_arm_stmt_shorthand": (STR, [STR]),
+    "__mn_count_user_brace_block_openers": (I64, [STR]),
+    "__mn_emit_brace_deprecation_warning": (VOID, [STR, I64]),
+    # GPU.
+    "__mn_gpu_available": (I64, []),
+    # Crypto / regex / encoding wrappers (all MnString-arg/return).
+    "__mn_http_get": (STR, [STR]),
+    "__mn_sha256_str": (STR, [STR]),
+    "__mn_base64_encode_str": (STR, [STR]),
+    "__mn_base64_decode_str": (STR, [STR]),
+    "__mn_hmac_sha256_str": (STR, [STR, STR]),
+    "__mn_hex_encode_str": (STR, [STR]),
+    "__mn_random_bytes_str": (STR, [I64]),
+    "__mn_regex_compile_str": (I64, [STR]),
+    "__mn_regex_replace_str": (STR, [I64, STR, STR, I64]),
+    "__mn_regex_free": (I64, [I64]),
 }
 
 
@@ -1418,7 +1511,10 @@ class LLVMTextEmitter:
 
     @staticmethod
     def _san(nm: str) -> str:
-        return nm.lstrip("%").replace(".", "_").replace("-", "_")
+        # v5.36.0 Js.0: strip all '%' (not just leading) so compound names
+        # like f"_map_iter_{value.name}" don't preserve embedded sigils
+        # when value.name itself starts with '%' (e.g., "%entries37").
+        return nm.replace("%", "").replace(".", "_").replace("-", "_")
 
     def _get(self, v: Value) -> tuple[str, str]:
         """Load MIR value from alloca → (tmp, type)."""
@@ -3375,6 +3471,29 @@ class LLVMTextEmitter:
             self._put(i.dest, r, STR)
             return
 
+        # v5.49.0 Wn.1 — direct ``__mn_*`` runtime call from .mn source.
+        # Route through ``_rt`` for ABI-correct Win64 sarg/sret lowering
+        # using the canonical signature from ``_RUNTIME_FN_SIGS``. The
+        # auto-declare path below derives types from MIR context, which
+        # for unannotated calls like ``if __mn_file_exists(p) != 0`` picks
+        # ``Ptr`` and emits the wrong shape on Win64. See
+        # ``docs/roadmap/v5/v5.49.0/PRE_PHASE_AUDIT.md``.
+        if fn in _RUNTIME_FN_SIGS:
+            sig_ret, sig_pts = _RUNTIME_FN_SIGS[fn]
+            sig_coerced: list[tuple[str, str]] = []
+            for j, (v, t) in enumerate(args):
+                et = sig_pts[j] if j < len(sig_pts) else t
+                sig_coerced.append((self._coerce(v, t, et) if t != et else v, et))
+            if sig_ret == VOID:
+                self._rt(fn, sig_ret, list(sig_pts), sig_coerced)
+                self._put(i.dest, "0", I1)
+            else:
+                rsig = self._rt(fn, sig_ret, list(sig_pts), sig_coerced, nm="c")
+                if sig_ret == STR:
+                    self._track_string(rsig)
+                self._put(i.dest, rsig, sig_ret)
+            return
+
         # print / println (both add newline; println is a deprecated alias)
         if fn in ("println", "print"):
             nl = True
@@ -3636,6 +3755,18 @@ class LLVMTextEmitter:
             self._last_tracked_str_slot = None
             self._put(i.dest, r, STR)
             return
+        # v5.48.1 Te.3.D.4.4: match-arm statement-shorthand rewriter.
+        # Same routing rationale as __mn_indent_to_braces above —
+        # returns an owned MnString that needs drop-glue tracking, and
+        # routing through `_rt` ensures the Win64 ABI uses the correct
+        # 8-byte large-struct threshold (MnString is 16 B).
+        if fn == "__mn_rewrite_arm_stmt_shorthand" and args:
+            a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
+            r = self._rt("__mn_rewrite_arm_stmt_shorthand", STR, [STR], [(a, STR)])
+            self._track_string(r)
+            self._last_tracked_str_slot = None
+            self._put(i.dest, r, STR)
+            return
         # v5.26.0 Mb.9: route the v5.23.2 Te.3.B.2 brace-deprecation
         # functions through `_rt` for the same reason the
         # `__mn_indent_to_braces` handler above exists — without it
@@ -3700,51 +3831,62 @@ class LLVMTextEmitter:
             self._put(i.dest, r, LIST)
             return
 
-        # Network, crypto, regex builtins (v3.42.0)
-        if fn == "http_get" and args:
+        # Network, crypto, regex builtins (v3.42.0).
+        #
+        # v5.39.0 Cr.* fix: defer to user-defined wrappers when present.
+        # The stdlib/crypto.mn wrappers `sha256` / `hmac_sha256` /
+        # `random_bytes` etc. produce hex / List-of-Int returns, while
+        # the raw shortcuts here produce raw bytes / String. Without
+        # this gate, user code that imports the stdlib gets the wrong
+        # return shape any time the MIR inliner fails to inline (e.g.
+        # high call-site count). Same gate applies to `regex_match` /
+        # `regex_replace` — stdlib/text/regex.mn defines its own
+        # wrappers.
+        is_user_defined = fn in self._sigs
+        if fn == "http_get" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_http_get", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "sha256" and args:
+        if fn == "sha256" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_sha256_str", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "base64_encode" and args:
+        if fn == "base64_encode" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_base64_encode_str", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "base64_decode" and args:
+        if fn == "base64_decode" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_base64_decode_str", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "hmac_sha256" and len(args) >= 2:
+        if fn == "hmac_sha256" and len(args) >= 2 and not is_user_defined:
             a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
             r = self._rt("__mn_hmac_sha256_str", STR, [STR, STR], [(a0, STR), (a1, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "hex_encode" and args:
+        if fn == "hex_encode" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             r = self._rt("__mn_hex_encode_str", STR, [STR], [(a, STR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "random_bytes" and args:
+        if fn == "random_bytes" and args and not is_user_defined:
             a = self._coerce(args[0][0], args[0][1], I64) if args[0][1] != I64 else args[0][0]
             r = self._rt("__mn_random_bytes_str", STR, [I64], [(a, I64)])
             self._track_string(r)
             self._put(i.dest, r, STR)
             return
-        if fn == "regex_match" and len(args) >= 2:
+        if fn == "regex_match" and len(args) >= 2 and not is_user_defined:
             a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
             h = self._rt("__mn_regex_compile_str", I64, [STR], [(a0, STR)])
@@ -3756,7 +3898,7 @@ class LLVMTextEmitter:
             self._L(f"{tb} = icmp sgt i64 {r}, 0")
             self._put(i.dest, tb, I1)
             return
-        if fn == "regex_replace" and len(args) >= 3:
+        if fn == "regex_replace" and len(args) >= 3 and not is_user_defined:
             a0 = self._coerce(args[0][0], args[0][1], STR) if args[0][1] != STR else args[0][0]
             a1 = self._coerce(args[1][0], args[1][1], STR) if args[1][1] != STR else args[1][0]
             a2 = self._coerce(args[2][0], args[2][1], STR) if args[2][1] != STR else args[2][0]
@@ -3932,6 +4074,26 @@ class LLVMTextEmitter:
         # Lowerer passes flat args: [tensor, s0, s1, ..., e0, e1, ..., rank]
         # C runtime expects: (ptr tensor, ptr starts_array, ptr ends_array, i64 rank)
         # We pack the individual i64 values into stack-allocated arrays.
+        # Tensor reshape (v5.41.0 Ts.1 → v5.45.0 Ts.2.B alias swap) and
+        # tensor view (v5.45.0 Ts.2.B). Both share the same call shape:
+        # Call(fn, [tensor, shape_list]). Shape is a List<Int>; pass it
+        # by pointer (same pattern as __mn_gpu_tensor_add). The result
+        # aliases the source's data buffer — no `noalias` attribute.
+        if fn in ("__mn_tensor_reshape", "__mn_tensor_view") and len(args) == 2:
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            shape_v = (
+                self._coerce(args[1][0], args[1][1], LIST) if args[1][1] != LIST else args[1][0]
+            )
+            prefix = "tview" if fn == "__mn_tensor_view" else "treshape"
+            shape_p = self._alloca(LIST, f"{prefix}_shape")
+            self._L(f"store {LIST} {shape_v}, ptr {shape_p}")
+            self._ensure(fn, PTR, [PTR, PTR])
+            r = self._f(prefix)
+            self._L(f"{r} = call ptr @{fn}(ptr {t_ptr}, ptr {shape_p})")
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+
         if fn == "__mn_tensor_slice" and len(args) >= 3:
             t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
             # Last arg is rank
@@ -3973,6 +4135,68 @@ class LLVMTextEmitter:
             r = self._f("tslice")
             self._L(
                 f"{r} = call noalias ptr @__mn_tensor_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, i64 {rank_v})"  # noqa: E501
+            )
+            self._tensor_vars.append(i.dest.name)
+            self._put(i.dest, r, PTR)
+            return
+
+        # v5.45.0 Ts.3.B — stepped slice: t[start..end:step] (and per-axis
+        # combinations). Args layout from the lowerer:
+        #   [obj, s0..s_{n-1}, e0..e_{n-1}, k0..k_{n-1}, rank]
+        # so total = 3*ndim + 2. Result is a fresh contiguous tensor (copy
+        # semantics, not view) — no `noalias` because v5.45.0 conservatively
+        # omits noalias on tensor-producing exports; the runtime returns a
+        # genuinely fresh tensor here so callers can rely on disjoint data.
+        if fn == "__mn_tensor_step_slice" and len(args) >= 5:
+            t_ptr = self._coerce(args[0][0], args[0][1], PTR) if args[0][1] != PTR else args[0][0]
+            rank_idx = len(args) - 1
+            rank_v = (
+                self._coerce(args[rank_idx][0], args[rank_idx][1], I64)
+                if args[rank_idx][1] != I64
+                else args[rank_idx][0]
+            )
+            ndim = (len(args) - 2) // 3  # (total - tensor - rank) / 3
+            starts_arr = self._f("starts_arr")
+            ends_arr = self._f("ends_arr")
+            steps_arr = self._f("steps_arr")
+            self._L(f"{starts_arr} = alloca [{ndim} x i64]")
+            self._L(f"{ends_arr} = alloca [{ndim} x i64]")
+            self._L(f"{steps_arr} = alloca [{ndim} x i64]")
+            for d in range(ndim):
+                s_val = (
+                    self._coerce(args[1 + d][0], args[1 + d][1], I64)
+                    if args[1 + d][1] != I64
+                    else args[1 + d][0]
+                )
+                e_val = (
+                    self._coerce(args[1 + ndim + d][0], args[1 + ndim + d][1], I64)
+                    if args[1 + ndim + d][1] != I64
+                    else args[1 + ndim + d][0]
+                )
+                k_val = (
+                    self._coerce(args[1 + 2 * ndim + d][0], args[1 + 2 * ndim + d][1], I64)
+                    if args[1 + 2 * ndim + d][1] != I64
+                    else args[1 + 2 * ndim + d][0]
+                )
+                s_gep = self._f("sgep")
+                e_gep = self._f("egep")
+                k_gep = self._f("kgep")
+                self._L(
+                    f"{s_gep} = getelementptr inbounds [{ndim} x i64], ptr {starts_arr}, i64 0, i64 {d}"  # noqa: E501
+                )
+                self._L(
+                    f"{e_gep} = getelementptr inbounds [{ndim} x i64], ptr {ends_arr}, i64 0, i64 {d}"  # noqa: E501
+                )
+                self._L(
+                    f"{k_gep} = getelementptr inbounds [{ndim} x i64], ptr {steps_arr}, i64 0, i64 {d}"  # noqa: E501
+                )
+                self._L(f"store i64 {s_val}, ptr {s_gep}")
+                self._L(f"store i64 {e_val}, ptr {e_gep}")
+                self._L(f"store i64 {k_val}, ptr {k_gep}")
+            self._ensure("__mn_tensor_step_slice", PTR, [PTR, PTR, PTR, PTR, I64])
+            r = self._f("tstepslice")
+            self._L(
+                f"{r} = call ptr @__mn_tensor_step_slice(ptr {t_ptr}, ptr {starts_arr}, ptr {ends_arr}, ptr {steps_arr}, i64 {rank_v})"  # noqa: E501
             )
             self._tensor_vars.append(i.dest.name)
             self._put(i.dest, r, PTR)
@@ -4354,6 +4578,27 @@ class LLVMTextEmitter:
                     self._list_vars.remove(root_s)
                 self._move_resource(src_name)
         full = f"{i.module}__{i.fn_name}" if i.module else i.fn_name
+
+        # v5.49.0 Wn.1 — direct ``__mn_*`` extern call. Same registry
+        # check as ``_do_call``: if the symbol has a canonical signature
+        # registered, route through ``_rt`` for ABI-correct lowering
+        # instead of falling through to the auto-declare path.
+        if not i.module and full in _RUNTIME_FN_SIGS:
+            sig_ret, sig_pts = _RUNTIME_FN_SIGS[full]
+            sig_coerced: list[tuple[str, str]] = []
+            for j, (v, t) in enumerate(args):
+                et = sig_pts[j] if j < len(sig_pts) else t
+                sig_coerced.append((self._coerce(v, t, et) if t != et else v, et))
+            if sig_ret == VOID:
+                self._rt(full, sig_ret, list(sig_pts), sig_coerced)
+                self._put(i.dest, "0", I1)
+            else:
+                rsig = self._rt(full, sig_ret, list(sig_pts), sig_coerced, nm="ec")
+                if sig_ret == STR:
+                    self._track_string(rsig)
+                self._put(i.dest, rsig, sig_ret)
+            return
+
         if full not in self._sigs:
             pts = [self._rty(a.ty) for a in i.args]
             for j, pt in enumerate(pts):
@@ -4949,18 +5194,26 @@ class LLVMTextEmitter:
 
     # --- MapInit ---
     def _do_map_init(self, i: MapInit) -> None:
+        # v5.39.2 Js.4.B.2: derive ksz / vsz / ktag from MapInit's declared
+        # key/val MIRTypes regardless of whether the literal has initial
+        # pairs. Pre-fix the empty-literal branch hardcoded (8, 8, 0)
+        # which mis-sized any non-Int-keyed empty map (e.g.
+        # `Map<String, JsonValue> = #{}` got 8-byte buckets and key_type
+        # tag 0/INT, so subsequent String inserts wrote past the bucket
+        # and lookups missed). decode_object's `entries: Map<String,
+        # JsonValue> = #{}` was the load-bearing example.
+        ksz = _tsz(self._rty(i.key_type))
+        ktag = (
+            1
+            if i.key_type.kind == TypeKind.STRING
+            else (2 if i.key_type.kind == TypeKind.FLOAT else 0)
+        )
         if i.pairs:
             fk, _ = self._get(i.pairs[0][0])
             fv, fvt = self._get(i.pairs[0][1])
-            ksz = _tsz(self._rty(i.key_type))
             vsz = _tsz(fvt)
-            ktag = (
-                1
-                if i.key_type.kind == TypeKind.STRING
-                else (2 if i.key_type.kind == TypeKind.FLOAT else 0)
-            )
         else:
-            ksz, vsz, ktag = 8, 8, 0
+            vsz = _tsz(self._rty(i.val_type))
         vtag = 1 if i.val_type.kind == TypeKind.STRING else 0
         mp = self._rt(
             "__mn_map_new",
@@ -5004,10 +5257,14 @@ class LLVMTextEmitter:
                         ft = self._rty(ptypes[j])
                         if pval.name in self._list_vars:
                             self._list_vars.remove(pval.name)
+                        if pval.name in self._map_vars:
+                            self._map_vars.remove(pval.name)
                         self._move_resource(pval.name)
                         root_name = self._lroots.get(pval.name)
                         if root_name and root_name in self._list_vars:
                             self._list_vars.remove(root_name)
+                        if root_name and root_name in self._map_vars:
+                            self._map_vars.remove(root_name)
                         v, t = self._get(pval)
                         if t != ft:
                             v = self._coerce(v, t, ft)
@@ -5038,14 +5295,22 @@ class LLVMTextEmitter:
                 self._track_boxed(raw)
                 tp = raw  # opaque ptr, no bitcast
                 for j, pval in enumerate(i.payload):
-                    # Move semantics: payloads are consumed by the enum
+                    # Move semantics: payloads are consumed by the enum.
+                    # v5.39.2 Js.4.B.2: also drain _map_vars so a Map
+                    # payload (e.g. JsonValue::Object) isn't deep-freed
+                    # by the enclosing function's drop glue while it's
+                    # still owned by the enum payload.
                     if pval.name in self._list_vars:
                         self._list_vars.remove(pval.name)
+                    if pval.name in self._map_vars:
+                        self._map_vars.remove(pval.name)
                     self._move_resource(pval.name)
                     # Also check root alias (push write-backs)
                     root_name = self._lroots.get(pval.name)
                     if root_name and root_name in self._list_vars:
                         self._list_vars.remove(root_name)
+                    if root_name and root_name in self._map_vars:
+                        self._map_vars.remove(root_name)
                     # For list values, check if there's a root alloca from push
                     # write-backs (the copy alias may be stale)
                     if root_name and root_name in self._alloc:
@@ -5209,7 +5474,25 @@ class LLVMTextEmitter:
         self._put(i.dest, _zero(ty), ty)
 
     def _do_wrap_ok(self, i: WrapOk) -> None:
+        # v5.36.0 Js.0.B: when dest carries full Result<Ok, Err> type info,
+        # use it so the produced struct shape matches downstream consumers.
+        # Pre-fix the Err slot was hardcoded as `ptr`, which mismatched the
+        # alloca size when the consumer (e.g. Js.4 from_json) uses the full
+        # typed alloca. Falls back to legacy `{i1, {t, ptr}}` shape when the
+        # dest is a generic Result with no args (existing behavior).
         v, t = self._get(i.val)
+        if i.dest.ty.kind == TypeKind.RESULT:
+            a = i.dest.ty.type_info.args
+            if len(a) >= 2:
+                ok_ty = self._rti(a[0])
+                err_ty = self._rti(a[1])
+                rt = f"{{i1, {{{ok_ty}, {err_ty}}}}}"
+                s0 = self._f("wo")
+                self._L(f"{s0} = insertvalue {rt} undef, i1 1, 0")
+                s1 = self._f("wo")
+                self._L(f"{s1} = insertvalue {rt} {s0}, {ok_ty} {v}, 1, 0")
+                self._put(i.dest, s1, rt)
+                return
         rt = f"{{i1, {{{t}, ptr}}}}"
         s0 = self._f("wo")
         self._L(f"{s0} = insertvalue {rt} undef, i1 1, 0")
@@ -5218,7 +5501,20 @@ class LLVMTextEmitter:
         self._put(i.dest, s1, rt)
 
     def _do_wrap_err(self, i: WrapErr) -> None:
+        # v5.36.0 Js.0.B: sister fix to _do_wrap_ok. Same shape rationale.
         v, t = self._get(i.val)
+        if i.dest.ty.kind == TypeKind.RESULT:
+            a = i.dest.ty.type_info.args
+            if len(a) >= 2:
+                ok_ty = self._rti(a[0])
+                err_ty = self._rti(a[1])
+                rt = f"{{i1, {{{ok_ty}, {err_ty}}}}}"
+                s0 = self._f("we")
+                self._L(f"{s0} = insertvalue {rt} undef, i1 0, 0")
+                s1 = self._f("we")
+                self._L(f"{s1} = insertvalue {rt} {s0}, {err_ty} {v}, 1, 1")
+                self._put(i.dest, s1, rt)
+                return
         rt = f"{{i1, {{ptr, {t}}}}}"
         s0 = self._f("we")
         self._L(f"{s0} = insertvalue {rt} undef, i1 0, 0")

@@ -67,6 +67,14 @@ fn print_help_text():
 // ``C:\\Program Files\\Mapanare\\bin``) would otherwise tokenise wrong
 // when concatenated into a __mn_system command string.
 //
+// Probe order mirrors mapanare/toolchain.py::_bundled_sdk_candidates:
+//   1. <exe_dir>/sdk/bin/{clang.exe,clang}     (v5.12.0 SDK split)
+//   2. <exe_dir>/llvm/bin/{clang.exe,clang}    (v5.11.0 layout)
+//   3. <exe_dir>/llvm/{clang.exe,clang}        (legacy v5.10.0)
+//   4. "clang"                                 (PATH fallback)
+// Pre-v5.50.x this only probed (3); post-v5.12.0 Windows SDK ZIPs ship
+// the SDK at (1) and a clean-PATH ``mnc.exe run`` couldn't find clang.
+//
 // Single-return structure (``let mut result``) is deliberate: during
 // v5.10.0 fixed-point validation, the MIR inliner constant-folded an
 // earlier multi-return draft of this function to the fallback
@@ -75,14 +83,37 @@ fn print_help_text():
 // logic intact through inlining + dead-code elimination.
 fn find_clang() -> String:
     let mut result: String = "clang"
+    let mut found: Bool = false
     let exe_dir: String = __mn_executable_dir()
-    let bundled_win: String = exe_dir + "/llvm/clang.exe"
-    if __mn_file_exists(bundled_win) != 0:
-        result = "\"" + bundled_win + "\""
-    else:
+    let sdk_bin_win: String = exe_dir + "/sdk/bin/clang.exe"
+    if __mn_file_exists(sdk_bin_win) != 0:
+        result = "\"" + sdk_bin_win + "\""
+        found = true
+    if !found:
+        let sdk_bin_unix: String = exe_dir + "/sdk/bin/clang"
+        if __mn_file_exists(sdk_bin_unix) != 0:
+            result = "\"" + sdk_bin_unix + "\""
+            found = true
+    if !found:
+        let llvm_bin_win: String = exe_dir + "/llvm/bin/clang.exe"
+        if __mn_file_exists(llvm_bin_win) != 0:
+            result = "\"" + llvm_bin_win + "\""
+            found = true
+    if !found:
+        let llvm_bin_unix: String = exe_dir + "/llvm/bin/clang"
+        if __mn_file_exists(llvm_bin_unix) != 0:
+            result = "\"" + llvm_bin_unix + "\""
+            found = true
+    if !found:
+        let bundled_win: String = exe_dir + "/llvm/clang.exe"
+        if __mn_file_exists(bundled_win) != 0:
+            result = "\"" + bundled_win + "\""
+            found = true
+    if !found:
         let bundled_unix: String = exe_dir + "/llvm/clang"
         if __mn_file_exists(bundled_unix) != 0:
             result = "\"" + bundled_unix + "\""
+            found = true
     result
 
 // v5.9.0 DX.3: probe clang once per invocation. Pre-v5.9.0 a missing
@@ -148,7 +179,7 @@ fn count_lines(s: String) -> Int:
     let mut count: Int = 0
     let mut i: Int = 0
     for _ in 0..1000000:
-        if i >= n { break }
+        if i >= n: break
         if s.substr(i, 1) == "\n":
             count = count + 1
         i = i + 1
@@ -203,10 +234,10 @@ fn print_subcommand_help(cmd: String):
 // Scans from end to find last separator (avoids nested-assign MIR bug).
 fn dir_of_path(path: String) -> String:
     let slen: Int = len(path)
-    if slen == 0 { return "" }
+    if slen == 0: return ""
     let mut i: Int = slen - 1
     for _ in 0..4096:
-        if i < 0 { return "" }
+        if i < 0: return ""
         let ch: String = path.substr(i, 1)
         if ch == "/":
             return path.substr(0, i + 1)
@@ -219,7 +250,7 @@ fn join_import_path(segments: List<String>) -> String:
     let mut i: Int = 0
     let n: Int = len(segments)
     for _ in 0..20:
-        if i >= n { return result }
+        if i >= n: return result
         if i > 0:
             result = result + "/" + segments[i]
         else:
@@ -230,10 +261,10 @@ fn join_import_path(segments: List<String>) -> String:
 // Extract last path component: "stdlib/text" -> "text", "math" -> "math"
 fn basename_of(path: String) -> String:
     let slen: Int = len(path)
-    if slen == 0 { return "" }
+    if slen == 0: return ""
     let mut i: Int = slen - 1
     for _ in 0..256:
-        if i < 0 { return path }
+        if i < 0: return path
         let ch: String = path.substr(i, 1)
         if ch == "/":
             return path.substr(i + 1, slen - i - 1)
@@ -245,7 +276,7 @@ fn file_extension(filename: String) -> String:
     let flen: Int = len(filename)
     let mut i: Int = flen - 1
     for _ in 0..20:
-        if i < 0 { return "" }
+        if i < 0: return ""
         if filename.substr(i, 1) == ".":
             return filename.substr(i, flen - i)
         i = i - 1
@@ -256,16 +287,16 @@ fn file_extension(filename: String) -> String:
 fn try_resolve(dir: String, rel: String) -> String:
     let c1: String = dir + rel + ".mn"
     let r1: String = __mn_file_read_or_empty(c1)
-    if len(r1) > 0 { return c1 }
+    if len(r1) > 0: return c1
     let c2: String = dir + rel + "/mod.mn"
     let r2: String = __mn_file_read_or_empty(c2)
-    if len(r2) > 0 { return c2 }
+    if len(r2) > 0: return c2
     // Try <rel>/<basename>.mn (e.g., stdlib/text -> stdlib/text/text.mn)
     let base: String = basename_of(rel)
     if len(base) > 0:
         let c3: String = dir + rel + "/" + base + ".mn"
         let r3: String = __mn_file_read_or_empty(c3)
-        if len(r3) > 0 { return c3 }
+        if len(r3) > 0: return c3
     return ""
 
 // Resolve an import path to a file path, reading to check existence.
@@ -279,10 +310,10 @@ fn resolve_import_file(segments: List<String>, source_dir: String) -> String:
         if len(dir) == 0:
             // Try CWD-relative (empty prefix)
             let cwd_result: String = try_resolve("", rel)
-            if len(cwd_result) > 0 { return cwd_result }
+            if len(cwd_result) > 0: return cwd_result
             return ""
         let result: String = try_resolve(dir, rel)
-        if len(result) > 0 { return result }
+        if len(result) > 0: return result
         // Climb to parent: strip trailing slash, then find last slash
         let trimmed: String = dir.substr(0, len(dir) - 1)
         dir = dir_of_path(trimmed)
@@ -296,10 +327,10 @@ fn resolve_import_file(segments: List<String>, source_dir: String) -> String:
 
 fn definition_name(defn: Definition) -> String:
     let dk: String = def_kind(defn)
-    if dk == "fn_def" { return "__fn__" + def_fn_data(defn).name }
-    if dk == "struct_def" { return "__st__" + def_struct_data(defn).name }
-    if dk == "enum_def" { return "__en__" + def_enum_data(defn).name }
-    if dk == "extern_fn_def" { return "__ex__" + def_extern_name(defn) }
+    if dk == "fn_def": return "__fn__" + def_fn_data(defn).name
+    if dk == "struct_def": return "__st__" + def_struct_data(defn).name
+    if dk == "enum_def": return "__en__" + def_enum_data(defn).name
+    if dk == "extern_fn_def": return "__ex__" + def_extern_name(defn)
     return ""
 
 fn has_later_def(defs: List<Definition>, idx: Int, name: String, total: Int) -> Bool:
@@ -380,7 +411,7 @@ fn resolve_imports(program: Program, filename: String, visited: List<String>) ->
                             let mut k: Int = 0
                             let nimp: Int = len(resolved_imp.definitions)
                             for _ in 0..10000:
-                                if k >= nimp { k = nimp + 1 }
+                                if k >= nimp: k = nimp + 1
                                 if k < nimp:
                                     all_defs.push(resolved_imp.definitions[k])
                                     k = k + 1
@@ -391,8 +422,8 @@ fn is_visited(visited: List<String>, path: String) -> Bool:
     let mut i: Int = 0
     let n: Int = len(visited)
     for _ in 0..100:
-        if i >= n { return false }
-        if visited[i] == path { return true }
+        if i >= n: return false
+        if visited[i] == path: return true
         i = i + 1
     return false
 
@@ -503,14 +534,50 @@ fn print_compile_errors(cr: CompileResult):
 
 fn rename_main(ir: String) -> String = ir.replace("@main(", "@mn_main(")
 
+// v5.51.x: locate the precompiled runtime archive. v5.12.0 SDK split
+// stages it at <exe_dir>/sdk/lib/mapanare/libmapanare_rt.a (Windows)
+// or <exe_dir>/lib/mapanare/libmapanare_rt.a (Linux/macOS); dev
+// workspaces have it at runtime/native/libmapanare_rt.a relative to
+// CWD. Pre-fix every link site hardcoded the relative dev path which
+// doesn't exist in fresh CI checkouts (libmapanare_rt.a is gitignored)
+// — the publish.yml `build-cli` smoke at line 604 hit this after Wn.6
+// unblocked compile. Single-return form per the find_clang precedent.
+fn find_runtime_archive() -> String:
+    let mut result: String = "runtime/native/libmapanare_rt.a"
+    let mut found: Bool = false
+    let exe_dir: String = __mn_executable_dir()
+    let sdk_a: String = exe_dir + "/sdk/lib/mapanare/libmapanare_rt.a"
+    if __mn_file_exists(sdk_a) != 0:
+        result = "\"" + sdk_a + "\""
+        found = true
+    if !found:
+        let lib_a: String = exe_dir + "/lib/mapanare/libmapanare_rt.a"
+        if __mn_file_exists(lib_a) != 0:
+            result = "\"" + lib_a + "\""
+            found = true
+    result
+
 // Link an object file with the Mapanare runtime.
 // Tries precompiled libmapanare_rt.a first, falls back to C source.
+// v5.51.x: use clang as the linker (gcc isn't on Windows runner PATH;
+// llvm-mingw bundle ships clang only), skip -no-pie / -rdynamic on
+// Windows (clang+lld errors out), and locate the archive via
+// find_runtime_archive() so SDK installs work.
 fn link_with_runtime(obj_path: String, out_path: String) -> Int:
     let null_r: String = __mn_dev_null_redirect()
-    let link_pre: String = "gcc " + obj_path + " runtime/native/libmapanare_rt.a -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
+    let clang_bin: String = find_clang()
+    let archive: String = find_runtime_archive()
+    let mut linux_only_flags: String = " -no-pie -rdynamic"
+    if __mn_host_is_windows() != 0:
+        linux_only_flags = ""
+    let link_pre: String = clang_bin + " " + obj_path + " " + archive + " -o " + out_path + linux_only_flags + " -lm -lpthread" + null_r
     let r: Int = __mn_system(link_pre)
-    if r == 0 { return 0 }
-    let link_src: String = "gcc " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + " -no-pie -rdynamic -lm -lpthread" + null_r
+    if r == 0: return 0
+    // Source fallback only works in a dev workspace (the runtime/
+    // sources aren't shipped in install bundles). Match the v5.51.x
+    // clang+platform-flags shape so dev workspaces on Windows still
+    // link via clang instead of unavailable gcc.
+    let link_src: String = clang_bin + " " + obj_path + " runtime/native/mapanare_core.c runtime/native/mn_user_main.c -I runtime/native -o " + out_path + linux_only_flags + " -lm -lpthread" + null_r
     return __mn_system(link_src)
 
 // v5.13.1 At.2: source-text scan for `@test fn NAME(...)`. The native
@@ -520,10 +587,10 @@ fn link_with_runtime(obj_path: String, out_path: String) -> Int:
 // AST walk, but `mnc test` only has the source string in scope.
 // Skips blank lines and `//` comments between `@test` and `fn`.
 fn is_test_name_char(ch: String) -> Bool:
-    if ch == "_" { return true }
-    if ch >= "0" && ch <= "9" { return true }
-    if ch >= "a" && ch <= "z" { return true }
-    if ch >= "A" && ch <= "Z" { return true }
+    if ch == "_": return true
+    if ch >= "0" && ch <= "9": return true
+    if ch >= "a" && ch <= "z": return true
+    if ch >= "A" && ch <= "Z": return true
     return false
 
 fn extract_fn_name(line: String) -> String:
@@ -532,9 +599,9 @@ fn extract_fn_name(line: String) -> String:
     let mut i: Int = 3
     let mut start: Int = 3
     for _ in 0..n:
-        if i >= n { break }
+        if i >= n: break
         let ch: String = line.substr(i, 1)
-        if !is_test_name_char(ch) { break }
+        if !is_test_name_char(ch): break
         i = i + 1
     line.substr(start, i - start)
 
@@ -544,20 +611,20 @@ fn extract_fn_name(line: String) -> String:
 // emitted last (no module-prefixed call sites for ws_trim available).
 fn _trim_line(s: String) -> String:
     let n: Int = len(s)
-    if n == 0 { return s }
+    if n == 0: return s
     let mut start: Int = 0
     for _ in 0..10000:
-        if start >= n { break }
+        if start >= n: break
         let c0: String = s.substr(start, 1)
-        if c0 != " " && c0 != "\t" && c0 != "\r" { break }
+        if c0 != " " && c0 != "\t" && c0 != "\r": break
         start = start + 1
     let mut end: Int = n
     for _ in 0..10000:
-        if end <= start { break }
+        if end <= start: break
         let c1: String = s.substr(end - 1, 1)
-        if c1 != " " && c1 != "\t" && c1 != "\r" { break }
+        if c1 != " " && c1 != "\t" && c1 != "\r": break
         end = end - 1
-    if start == 0 && end == n { return s }
+    if start == 0 && end == n: return s
     return s.substr(start, end - start)
 
 // v5.13.1 At.2: manual line-by-line scan via substr instead of
@@ -571,22 +638,22 @@ fn discover_test_names(source: String) -> List<String>:
     let n: Int = len(source)
     let mut pos: Int = 0
     for _ in 0..n:
-        if pos >= n { break }
+        if pos >= n: break
         let mut eol: Int = pos
         for _ in 0..n:
-            if eol >= n { break }
-            if source.substr(eol, 1) == "\n" { break }
+            if eol >= n: break
+            if source.substr(eol, 1) == "\n": break
             eol = eol + 1
         let line: String = _trim_line(source.substr(pos, eol - pos))
         if line == "@test":
             // Scan forward for the next non-blank, non-comment line
             let mut q: Int = eol + 1
             for _ in 0..n:
-                if q >= n { break }
+                if q >= n: break
                 let mut q_eol: Int = q
                 for _ in 0..n:
-                    if q_eol >= n { break }
-                    if source.substr(q_eol, 1) == "\n" { break }
+                    if q_eol >= n: break
+                    if source.substr(q_eol, 1) == "\n": break
                     q_eol = q_eol + 1
                 let nl: String = _trim_line(source.substr(q, q_eol - q))
                 let mut consumed: Bool = false
@@ -600,10 +667,10 @@ fn discover_test_names(source: String) -> List<String>:
                 if !consumed:
                     if nl.starts_with("fn "):
                         let nm: String = extract_fn_name(nl)
-                        if len(nm) > 0 { names.push(nm) }
+                        if len(nm) > 0: names.push(nm)
                     if nl.starts_with("pub fn "):
                         let nm2: String = extract_fn_name(nl.substr(4, len(nl) - 4))
-                        if len(nm2) > 0 { names.push(nm2) }
+                        if len(nm2) > 0: names.push(nm2)
                     break
         pos = eol + 1
     names
@@ -620,9 +687,9 @@ fn build_test_main_ir(test_name: String) -> String:
     return s
 
 fn run_one_test(base_ir: String, test_name: String, clang_bin: String) -> Bool:
-    let ll_path: String = "/tmp/mnc_test_" + test_name + ".ll"
-    let o_path: String = "/tmp/mnc_test_" + test_name + ".o"
-    let exe_path: String = "/tmp/mnc_test_" + test_name
+    let ll_path: String = __mn_temp_path("mnc_test_" + test_name + ".ll")
+    let o_path: String = __mn_temp_path("mnc_test_" + test_name + ".o")
+    let exe_path: String = __mn_temp_path("mnc_test_" + test_name)
     let full_ir: String = base_ir + build_test_main_ir(test_name)
     __mn_file_write(ll_path, full_ir)
 
@@ -680,14 +747,14 @@ fn run_test(filename: String):
     let mut i: Int = 0
     let n: Int = len(test_names)
     for _ in 0..n:
-        if i >= n { break }
+        if i >= n: break
         let name: String = test_names[i]
         let ok: Bool = run_one_test(base_ir, name, clang_bin)
         if ok { passed = passed + 1 } else { failed = failed + 1 }
         i = i + 1
     print("")
     print("result: " + str(passed) + " passed, " + str(failed) + " failed (" + str(n) + " total)")
-    if failed > 0 { __mn_exit(1) }
+    if failed > 0: __mn_exit(1)
 
 // ---------------------------------------------------------------------------
 // build — compile, link, produce executable
@@ -708,12 +775,12 @@ fn run_build(filename: String):
         // Forward remaining args (e.g., -o output --timing)
         let mut ai: Int = 3
         for _ in 0..20:
-            if ai >= __mn_argc() { ai = __mn_argc() + 1 }
+            if ai >= __mn_argc(): ai = __mn_argc() + 1
             if ai < __mn_argc():
                 cmd = cmd + " " + __mn_argv(ai)
                 ai = ai + 1
         let r: Int = __mn_system(cmd)
-        if r != 0 { __mn_exit(r) }
+        if r != 0: __mn_exit(r)
         return
 
     // Single-file build
@@ -724,7 +791,7 @@ fn run_build(filename: String):
     let mut lto_flag: String = ""
     let mut ai2: Int = 3
     for _ in 0..20:
-        if ai2 >= __mn_argc() { ai2 = __mn_argc() + 1 }
+        if ai2 >= __mn_argc(): ai2 = __mn_argc() + 1
         if ai2 < __mn_argc():
             let fl: String = __mn_argv(ai2)
             if fl == "-o" && ai2 + 1 < __mn_argc():
@@ -757,21 +824,23 @@ fn run_build(filename: String):
         print_compile_errors(cr)
         __mn_exit(1)
     // Rename @main → @mn_main so the C wrapper provides the real main()
-    __mn_file_write("/tmp/mnc_build.ll", rename_main(cr.ir_text))
+    let build_ll: String = __mn_temp_path("mnc_build.ll")
+    let build_o: String = __mn_temp_path("mnc_build.o")
+    __mn_file_write(build_ll, rename_main(cr.ir_text))
 
     // Compile with selected optimization level. v5.9.0 DX.3: clang stderr
     // captured to a temp file so report_clang_failure() can surface the
     // real diagnostic instead of bare "clang failed". v5.10.0 Win.1b.D:
     // clang resolved via find_clang() — bundled if present, PATH otherwise.
     let clang_bin: String = find_clang()
-    let clang_cmd: String = clang_bin + " -c " + opt_flag + " /tmp/mnc_build.ll -o /tmp/mnc_build.o" + clang_stderr_redirect()
+    let clang_cmd: String = clang_bin + " -c " + opt_flag + " " + build_ll + " -o " + build_o + clang_stderr_redirect()
     let r1: Int = __mn_system(clang_cmd)
     if r1 != 0:
         report_clang_failure()
         __mn_exit(1)
 
     // Link
-    let r2: Int = link_with_runtime("/tmp/mnc_build.o", out_name)
+    let r2: Int = link_with_runtime(build_o, out_name)
     // Strip if release/small mode
     if len(strip_flag) > 0:
         let strip_cmd: String = "strip " + out_name + __mn_dev_null_redirect()
@@ -802,30 +871,36 @@ fn run_program(filename: String):
     if !cr.success:
         print_compile_errors(cr)
         __mn_exit(1)
-    __mn_file_write("/tmp/mnc_run.ll", rename_main(cr.ir_text))
+    let run_ll: String = __mn_temp_path("mnc_run.ll")
+    let run_o: String = __mn_temp_path("mnc_run.o")
+    let run_exe: String = __mn_temp_path("mnc_run")
+    __mn_file_write(run_ll, rename_main(cr.ir_text))
 
     // Single-step compile+link via clang (faster than separate clang + gcc).
     // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present,
     // PATH otherwise. Both the fast path and the two-step fallback share it.
+    // v5.51.x: archive resolved via find_runtime_archive() so SDK installs
+    // (Windows) and dev workspaces both work.
     let clang_bin: String = find_clang()
-    let compile_cmd: String = clang_bin + " -O0 /tmp/mnc_run.ll runtime/native/libmapanare_rt.a -o /tmp/mnc_run -lm -lpthread" + clang_stderr_redirect()
+    let archive: String = find_runtime_archive()
+    let compile_cmd: String = clang_bin + " -O0 " + run_ll + " " + archive + " -o " + run_exe + " -lm -lpthread" + clang_stderr_redirect()
     let r1: Int = __mn_system(compile_cmd)
     if r1 != 0:
         // Fall back to two-step compile+link
-        let r1b: Int = __mn_system(clang_bin + " -c -O0 /tmp/mnc_run.ll -o /tmp/mnc_run.o" + clang_stderr_redirect())
+        let r1b: Int = __mn_system(clang_bin + " -c -O0 " + run_ll + " -o " + run_o + clang_stderr_redirect())
         if r1b != 0:
             report_clang_failure()
             __mn_exit(1)
-        let r2: Int = link_with_runtime("/tmp/mnc_run.o", "/tmp/mnc_run")
+        let r2: Int = link_with_runtime(run_o, run_exe)
         if r2 != 0:
             __mn_str_eprint("error: link failed\n")
             __mn_exit(1)
 
-    // Build command with forwarded args: /tmp/mnc_run [args...]
-    let mut cmd: String = "/tmp/mnc_run"
+    // Build command with forwarded args: <run_exe> [args...]
+    let mut cmd: String = run_exe
     let mut ai: Int = 3
     for _ in 0..100:
-        if ai >= __mn_argc() { ai = __mn_argc() + 1 }
+        if ai >= __mn_argc(): ai = __mn_argc() + 1
         if ai < __mn_argc():
             cmd = cmd + " " + __mn_argv(ai)
             ai = ai + 1
@@ -844,6 +919,12 @@ fn run_program(filename: String):
 // over a source file. Used by tests/bootstrap/test_indent_preprocessor.py
 // to assert byte-identical output between the Python and C
 // implementations on every parseable golden.
+//
+// v5.48.1 Te.3.D.4.4: also runs __mn_rewrite_arm_stmt_shorthand after
+// __mn_indent_to_braces, mirroring the parser.mn::parse pipeline.
+// The cross-bootstrap test compares against the full pipeline
+// (_rewrite_arm_stmt_shorthand(_indent_to_braces(src))) so this single
+// subcommand is the byte-identity oracle for both Python and C sides.
 fn run_preprocess(filename: String):
     let source: String = __mn_file_read_or_empty(filename)
     if len(source) <= 0:
@@ -852,7 +933,8 @@ fn run_preprocess(filename: String):
         __mn_str_eprint("'\n")
         __mn_exit(1)
     let preprocessed: String = __mn_indent_to_braces(source)
-    print(preprocessed)
+    let preprocessed2: String = __mn_rewrite_arm_stmt_shorthand(preprocessed)
+    print(preprocessed2)
 
 fn run_emit_llvm(filename: String):
     let source: String = __mn_file_read_or_empty(filename)
@@ -911,14 +993,16 @@ fn run_compile(filename: String):
             let flag: String = __mn_argv(3)
             if flag == "-o" && __mn_argc() >= 5:
                 out_name = __mn_argv(4)
-        __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr.ir_text))
+        let compile_ll: String = __mn_temp_path("mnc_compile.ll")
+        let compile_o: String = __mn_temp_path("mnc_compile.o")
+        __mn_file_write(compile_ll, rename_main(cr.ir_text))
         // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present.
         let clang_bin: String = find_clang()
-        let r1: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
+        let r1: Int = __mn_system(clang_bin + " -c -O2 " + compile_ll + " -o " + compile_o + clang_stderr_redirect())
         if r1 != 0:
             report_clang_failure()
             __mn_exit(1)
-        let r2: Int = link_with_runtime("/tmp/mnc_compile.o", out_name)
+        let r2: Int = link_with_runtime(compile_o, out_name)
         if r2 != 0:
             __mn_str_eprint("error: link failed\n")
             __mn_exit(1)
@@ -927,18 +1011,19 @@ fn run_compile(filename: String):
 
     // Foreign source: transpile via mapanare CLI, then compile the .mn result
     let mut ok: Bool = false
-    if ext == ".py" { ok = true }
-    if ext == ".php" { ok = true }
-    if ext == ".ts" { ok = true }
-    if ext == ".go" { ok = true }
+    if ext == ".py": ok = true
+    if ext == ".php": ok = true
+    if ext == ".ts": ok = true
+    if ext == ".go": ok = true
     if !ok:
         __mn_str_eprint("error: unsupported file type '")
         __mn_str_eprint(ext)
         __mn_str_eprint("' (supported: .mn, .py, .php, .ts, .go)\n")
         __mn_exit(1)
 
-    // Transpile to .mn via the Python CLI (mapanare transpile <file> -o /tmp/mnc_transpiled.mn)
-    let transpile_cmd: String = "mapanare transpile " + filename + " -o /tmp/mnc_transpiled.mn" + __mn_dev_null_redirect()
+    // Transpile to .mn via the Python CLI (mapanare transpile <file> -o <temp>/mnc_transpiled.mn)
+    let transpiled_mn: String = __mn_temp_path("mnc_transpiled.mn")
+    let transpile_cmd: String = "mapanare transpile " + filename + " -o " + transpiled_mn + __mn_dev_null_redirect()
     let rt: Int = __mn_system(transpile_cmd)
     if rt != 0:
         __mn_str_eprint("error: transpilation failed for '")
@@ -947,7 +1032,7 @@ fn run_compile(filename: String):
         __mn_exit(1)
 
     // Now compile the transpiled .mn source
-    let mn_source: String = __mn_file_read_or_empty("/tmp/mnc_transpiled.mn")
+    let mn_source: String = __mn_file_read_or_empty(transpiled_mn)
     if len(mn_source) == 0:
         __mn_str_eprint("error: transpiler produced empty output\n")
         __mn_exit(1)
@@ -963,14 +1048,16 @@ fn run_compile(filename: String):
         if flag2 == "-o" && __mn_argc() >= 5:
             out_name2 = __mn_argv(4)
 
-    __mn_file_write("/tmp/mnc_compile.ll", rename_main(cr2.ir_text))
+    let compile_ll2: String = __mn_temp_path("mnc_compile.ll")
+    let compile_o2: String = __mn_temp_path("mnc_compile.o")
+    __mn_file_write(compile_ll2, rename_main(cr2.ir_text))
     // v5.10.0 Win.1b.D: clang resolved via find_clang() — bundled if present.
     let clang_bin: String = find_clang()
-    let r3: Int = __mn_system(clang_bin + " -c -O2 /tmp/mnc_compile.ll -o /tmp/mnc_compile.o" + clang_stderr_redirect())
+    let r3: Int = __mn_system(clang_bin + " -c -O2 " + compile_ll2 + " -o " + compile_o2 + clang_stderr_redirect())
     if r3 != 0:
         report_clang_failure()
         __mn_exit(1)
-    let r4: Int = link_with_runtime("/tmp/mnc_compile.o", out_name2)
+    let r4: Int = link_with_runtime(compile_o2, out_name2)
     if r4 != 0:
         __mn_str_eprint("error: link failed\n")
         __mn_exit(1)
@@ -1099,12 +1186,12 @@ fn mn_main():
         let mut fmt_cmd: String = "mapanare fmt"
         let mut fa: Int = 2
         for _ in 0..64:
-            if fa >= __mn_argc() { fa = __mn_argc() + 1 }
+            if fa >= __mn_argc(): fa = __mn_argc() + 1
             if fa < __mn_argc():
                 fmt_cmd = fmt_cmd + " " + __mn_argv(fa)
                 fa = fa + 1
         let fr: Int = __mn_system(fmt_cmd)
-        if fr != 0 { __mn_exit(fr) }
+        if fr != 0: __mn_exit(fr)
         return
     // v5.18.0 Mc.4: check — shell out to ``mapanare check``. Native port
     // tracked on the follow-up docket; the Python implementation drives
@@ -1113,12 +1200,12 @@ fn mn_main():
         let mut chk_cmd: String = "mapanare check"
         let mut ca: Int = 2
         for _ in 0..64:
-            if ca >= __mn_argc() { ca = __mn_argc() + 1 }
+            if ca >= __mn_argc(): ca = __mn_argc() + 1
             if ca < __mn_argc():
                 chk_cmd = chk_cmd + " " + __mn_argv(ca)
                 ca = ca + 1
         let cr_check: Int = __mn_system(chk_cmd)
-        if cr_check != 0 { __mn_exit(cr_check) }
+        if cr_check != 0: __mn_exit(cr_check)
         return
     // v5.18.0 Mc.3: init — shell out to ``mapanare init``. Scaffolds a
     // new project from mapanare/templates/init/<template>/. Native port
@@ -1127,12 +1214,12 @@ fn mn_main():
         let mut init_cmd: String = "mapanare init"
         let mut ia: Int = 2
         for _ in 0..64:
-            if ia >= __mn_argc() { ia = __mn_argc() + 1 }
+            if ia >= __mn_argc(): ia = __mn_argc() + 1
             if ia < __mn_argc():
                 init_cmd = init_cmd + " " + __mn_argv(ia)
                 ia = ia + 1
         let ir_init: Int = __mn_system(init_cmd)
-        if ir_init != 0 { __mn_exit(ir_init) }
+        if ir_init != 0: __mn_exit(ir_init)
         return
     // v5.18.0 Mc.1: lsp — shell out to the pygls-based language server.
     // Editor extensions launching ``mnc lsp`` get the same protocol they
@@ -1142,12 +1229,12 @@ fn mn_main():
         let mut lsp_cmd: String = "mapanare lsp"
         let mut la: Int = 2
         for _ in 0..64:
-            if la >= __mn_argc() { la = __mn_argc() + 1 }
+            if la >= __mn_argc(): la = __mn_argc() + 1
             if la < __mn_argc():
                 lsp_cmd = lsp_cmd + " " + __mn_argv(la)
                 la = la + 1
         let lr: Int = __mn_system(lsp_cmd)
-        if lr != 0 { __mn_exit(lr) }
+        if lr != 0: __mn_exit(lr)
         return
     if arg1 == "compile":
         if __mn_argc() < 3:

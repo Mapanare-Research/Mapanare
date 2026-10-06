@@ -19,50 +19,50 @@ fn new_ts_token(kind: String, value: String, line: Int, col: Int) -> TsToken = n
 // ---------------------------------------------------------------------------
 
 fn is_ts_keyword(s: String) -> Bool:
-    if s == "function" { return true }
-    if s == "class" { return true }
-    if s == "if" { return true }
-    if s == "else" { return true }
-    if s == "for" { return true }
-    if s == "while" { return true }
-    if s == "return" { return true }
-    if s == "const" { return true }
-    if s == "let" { return true }
-    if s == "var" { return true }
-    if s == "interface" { return true }
-    if s == "type" { return true }
-    if s == "export" { return true }
-    if s == "import" { return true }
-    if s == "async" { return true }
-    if s == "await" { return true }
-    if s == "new" { return true }
-    if s == "null" { return true }
-    if s == "undefined" { return true }
-    if s == "true" { return true }
-    if s == "false" { return true }
-    if s == "extends" { return true }
-    if s == "implements" { return true }
-    if s == "enum" { return true }
-    if s == "as" { return true }
-    if s == "from" { return true }
-    if s == "of" { return true }
-    if s == "in" { return true }
-    if s == "switch" { return true }
-    if s == "case" { return true }
-    if s == "default" { return true }
-    if s == "break" { return true }
-    if s == "continue" { return true }
-    if s == "try" { return true }
-    if s == "catch" { return true }
-    if s == "throw" { return true }
-    if s == "finally" { return true }
-    if s == "typeof" { return true }
-    if s == "instanceof" { return true }
-    if s == "this" { return true }
-    if s == "super" { return true }
-    if s == "void" { return true }
-    if s == "delete" { return true }
-    if s == "do" { return true }
+    if s == "function": return true
+    if s == "class": return true
+    if s == "if": return true
+    if s == "else": return true
+    if s == "for": return true
+    if s == "while": return true
+    if s == "return": return true
+    if s == "const": return true
+    if s == "let": return true
+    if s == "var": return true
+    if s == "interface": return true
+    if s == "type": return true
+    if s == "export": return true
+    if s == "import": return true
+    if s == "async": return true
+    if s == "await": return true
+    if s == "new": return true
+    if s == "null": return true
+    if s == "undefined": return true
+    if s == "true": return true
+    if s == "false": return true
+    if s == "extends": return true
+    if s == "implements": return true
+    if s == "enum": return true
+    if s == "as": return true
+    if s == "from": return true
+    if s == "of": return true
+    if s == "in": return true
+    if s == "switch": return true
+    if s == "case": return true
+    if s == "default": return true
+    if s == "break": return true
+    if s == "continue": return true
+    if s == "try": return true
+    if s == "catch": return true
+    if s == "throw": return true
+    if s == "finally": return true
+    if s == "typeof": return true
+    if s == "instanceof": return true
+    if s == "this": return true
+    if s == "super": return true
+    if s == "void": return true
+    if s == "delete": return true
+    if s == "do": return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -70,12 +70,12 @@ fn is_ts_keyword(s: String) -> Bool:
 // ---------------------------------------------------------------------------
 
 fn is_ts_alpha(c: String) -> Bool:
-    if c == "$" { return true }
+    if c == "$": return true
     return is_transpiler_alpha(c)
 
 fn is_ts_alnum(c: String) -> Bool:
-    if is_ts_alpha(c) { return true }
-    if is_digit(c) { return true }
+    if is_ts_alpha(c): return true
+    if is_digit(c): return true
     return false
 
 // ---------------------------------------------------------------------------
@@ -111,7 +111,7 @@ fn tokenize_typescript(source: String) -> List<TsToken>:
             if pos + 1 < slen:
                 if source[pos + 1] == "/":
                     while pos < slen:
-                        if source[pos] == "\n" { break }
+                        if source[pos] == "\n": break
                         pos = pos + 1
                     continue
 
@@ -163,7 +163,7 @@ fn tokenize_typescript(source: String) -> List<TsToken>:
                             let mut expr: String = ""
                             let mut tdepth: Int = 1
                             while pos < slen:
-                                if source[pos] == "{" { tdepth = tdepth + 1 }
+                                if source[pos] == "{": tdepth = tdepth + 1
                                 if source[pos] == "}":
                                     tdepth = tdepth - 1
                                     if tdepth == 0:
@@ -213,9 +213,9 @@ fn tokenize_typescript(source: String) -> List<TsToken>:
             let mut has_dot: Bool = false
             while pos < slen:
                 let nc: String = source[pos]
-                if nc == "." { has_dot = true }
+                if nc == ".": has_dot = true
                 if is_digit(nc) || nc == "." || nc == "_":
-                    if nc != "_" { num = num + nc }
+                    if nc != "_": num = num + nc
                     pos = pos + 1
                     col = col + 1
                 else:
@@ -318,7 +318,7 @@ fn ts_skip_newlines(p: TsParser) -> TsParser:
 
 fn ts_skip_semicolons(p: TsParser) -> TsParser:
     while ts_current(p).kind == "OP":
-        if ts_current(p).value != ";" { break }
+        if ts_current(p).value != ";": break
         p = ts_advance(p)
     p
 
@@ -337,7 +337,7 @@ fn translate_ts_type(type_str: String) -> String:
 
 // Skip a TS type annotation after ":" (handles generics with angle brackets)
 fn ts_skip_type_annotation(p: TsParser) -> TsParser:
-    if ts_current(p).value != ":" { return p }
+    if ts_current(p).value != ":": return p
     p = ts_advance(p)
     // Skip the type expression (handle generic brackets)
     let mut angle_depth: Int = 0
@@ -356,13 +356,13 @@ fn ts_skip_type_annotation(p: TsParser) -> TsParser:
         if angle_depth == 0:
             if v == "," || v == ")" || v == "{" || v == "=" || v == ";":
                 break
-            if ts_current(p).kind == "NEWLINE" { break }
+            if ts_current(p).kind == "NEWLINE": break
         p = ts_advance(p)
     return p
 
 // Read a TS type annotation after ":" and return the mapped type
 fn ts_read_type(p: TsParser) -> String:
-    if ts_current(p).value != ":" { return "any" }
+    if ts_current(p).value != ":": return "any"
     p = ts_advance(p)
     let tname: String = ts_current(p).value
     p = ts_advance(p)
@@ -373,9 +373,9 @@ fn ts_read_type(p: TsParser) -> String:
         // Skip to closing >
         let mut angle_depth: Int = 1
         while angle_depth > 0:
-            if ts_current(p).kind == "EOF" { break }
-            if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
-            if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+            if ts_current(p).kind == "EOF": break
+            if ts_current(p).value == "<": angle_depth = angle_depth + 1
+            if ts_current(p).value == ">": angle_depth = angle_depth - 1
             p = ts_advance(p)
         let mapped_base: String = translate_ts_type(tname)
         let mapped_inner: String = translate_ts_type(inner)
@@ -473,25 +473,25 @@ fn translate_ts_expr(p: TsParser) -> String:
                 let mut angle_depth: Int = 1
                 p = ts_advance(p)
                 while angle_depth > 0:
-                    if ts_current(p).kind == "EOF" { break }
-                    if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
-                    if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+                    if ts_current(p).kind == "EOF": break
+                    if ts_current(p).value == "<": angle_depth = angle_depth + 1
+                    if ts_current(p).value == ">": angle_depth = angle_depth - 1
                     p = ts_advance(p)
             if ts_current(p).value == "(":
                 p = ts_advance(p)
                 let mut args: List<String> = []
                 while ts_current(p).value != ")":
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "EOF": break
                     if ts_current(p).value == ",":
                         p = ts_advance(p)
                         continue
                     let arg: String = translate_ts_expr(p)
                     args.push(arg)
                     while ts_current(p).value != ",":
-                        if ts_current(p).value == ")" { break }
-                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).value == ")": break
+                        if ts_current(p).kind == "EOF": break
                         p = ts_advance(p)
-                if ts_current(p).value == ")" { p = ts_advance(p) }
+                if ts_current(p).value == ")": p = ts_advance(p)
                 return cname + "(" + join_args(args) + ")"
             return cname + "()"
         if t.value == "typeof":
@@ -520,17 +520,17 @@ fn translate_ts_expr(p: TsParser) -> String:
                 p = ts_advance(p)
                 let mut args: List<String> = []
                 while ts_current(p).value != ")":
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "EOF": break
                     if ts_current(p).value == ",":
                         p = ts_advance(p)
                         continue
                     let arg: String = translate_ts_expr(p)
                     args.push(arg)
                     while ts_current(p).value != ",":
-                        if ts_current(p).value == ")" { break }
-                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).value == ")": break
+                        if ts_current(p).kind == "EOF": break
                         p = ts_advance(p)
-                if ts_current(p).value == ")" { p = ts_advance(p) }
+                if ts_current(p).value == ")": p = ts_advance(p)
                 let shims: List<StdlibShim> = ts_stdlib_shims()
                 let dotted: String = name + "." + member
                 let shimmed: String = translate_stdlib_call(dotted, args, shims)
@@ -549,17 +549,17 @@ fn translate_ts_expr(p: TsParser) -> String:
             p = ts_advance(p)
             let mut args: List<String> = []
             while ts_current(p).value != ")":
-                if ts_current(p).kind == "EOF" { break }
+                if ts_current(p).kind == "EOF": break
                 if ts_current(p).value == ",":
                     p = ts_advance(p)
                     continue
                 let arg: String = translate_ts_expr(p)
                 args.push(arg)
                 while ts_current(p).value != ",":
-                    if ts_current(p).value == ")" { break }
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).value == ")": break
+                    if ts_current(p).kind == "EOF": break
                     p = ts_advance(p)
-            if ts_current(p).value == ")" { p = ts_advance(p) }
+            if ts_current(p).value == ")": p = ts_advance(p)
             let shims: List<StdlibShim> = ts_stdlib_shims()
             return translate_stdlib_call(name, args, shims)
         return name
@@ -571,15 +571,15 @@ fn translate_ts_expr(p: TsParser) -> String:
             let mut items: String = ""
             let mut first: Bool = true
             while ts_current(p).value != "]":
-                if ts_current(p).kind == "EOF" { break }
+                if ts_current(p).kind == "EOF": break
                 if ts_current(p).value == ",":
                     p = ts_advance(p)
                     continue
-                if !first { items = items + ", " }
+                if !first: items = items + ", "
                 items = items + translate_ts_expr(p)
                 first = false
                 p = ts_advance(p)
-            if ts_current(p).value == "]" { p = ts_advance(p) }
+            if ts_current(p).value == "]": p = ts_advance(p)
             return "[" + items + "]"
         // Object literal
         if t.value == "{":
@@ -587,11 +587,11 @@ fn translate_ts_expr(p: TsParser) -> String:
             let mut items: String = ""
             let mut first: Bool = true
             while ts_current(p).value != "}":
-                if ts_current(p).kind == "EOF" { break }
+                if ts_current(p).kind == "EOF": break
                 if ts_current(p).value == ",":
                     p = ts_advance(p)
                     continue
-                if !first { items = items + ", " }
+                if !first: items = items + ", "
                 let key: String = ts_current(p).value
                 p = ts_advance(p)
                 if ts_current(p).value == ":":
@@ -602,7 +602,7 @@ fn translate_ts_expr(p: TsParser) -> String:
                     items = items + key
                 first = false
                 p = ts_advance(p)
-            if ts_current(p).value == "}" { p = ts_advance(p) }
+            if ts_current(p).value == "}": p = ts_advance(p)
             return "{" + items + "}"
         // Arrow function: (params) => expr
         if t.value == "(":
@@ -612,15 +612,15 @@ fn translate_ts_expr(p: TsParser) -> String:
             let mut items: String = ""
             let mut first: Bool = true
             while ts_current(p).value != ")":
-                if ts_current(p).kind == "EOF" { break }
+                if ts_current(p).kind == "EOF": break
                 if ts_current(p).value == ",":
                     p = ts_advance(p)
                     continue
-                if !first { items = items + ", " }
+                if !first: items = items + ", "
                 items = items + ts_current(p).value
                 first = false
                 p = ts_advance(p)
-            if ts_current(p).value == ")" { p = ts_advance(p) }
+            if ts_current(p).value == ")": p = ts_advance(p)
             // Check if arrow follows
             if ts_current(p).value == "=>":
                 p = ts_advance(p)
@@ -653,7 +653,7 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
     p = ts_expect_kw(p, "function")
 
     // Handle generator: function*
-    if ts_current(p).value == "*" { p = ts_advance(p) }
+    if ts_current(p).value == "*": p = ts_advance(p)
 
     let name_tok: TsToken = ts_current(p)
     let name: String = name_tok.value
@@ -664,9 +664,9 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
         let mut angle_depth: Int = 1
         p = ts_advance(p)
         while angle_depth > 0:
-            if ts_current(p).kind == "EOF" { break }
-            if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
-            if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+            if ts_current(p).kind == "EOF": break
+            if ts_current(p).value == "<": angle_depth = angle_depth + 1
+            if ts_current(p).value == ">": angle_depth = angle_depth - 1
             p = ts_advance(p)
 
     p = ts_expect_op(p, "(")
@@ -675,17 +675,17 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
     let mut params: String = ""
     let mut first: Bool = true
     while ts_current(p).value != ")":
-        if ts_current(p).kind == "EOF" { break }
+        if ts_current(p).kind == "EOF": break
         if ts_current(p).value == ",":
             p = ts_advance(p)
             continue
-        if !first { params = params + ", " }
+        if !first: params = params + ", "
         // Handle destructuring — skip for now
         if ts_current(p).value == "{" || ts_current(p).value == "[":
             p = ts_advance(p)
             while ts_current(p).value != "}":
-                if ts_current(p).value == "]" { break }
-                if ts_current(p).kind == "EOF" { break }
+                if ts_current(p).value == "]": break
+                if ts_current(p).kind == "EOF": break
                 p = ts_advance(p)
             p = ts_advance(p)
             params = params + "args"
@@ -700,7 +700,7 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
             let pname: String = ts_current(p).value
             p = ts_advance(p)
             // Optional param: name?
-            if ts_current(p).value == "?" { p = ts_advance(p) }
+            if ts_current(p).value == "?": p = ts_advance(p)
             // Type annotation: name: type
             if ts_current(p).value == ":":
                 let ptype: String = ts_read_type(p)
@@ -728,14 +728,14 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
 
     // Skip opening brace
     p = ts_skip_whitespace(p)
-    if ts_current(p).value == "{" { p = ts_advance(p) }
+    if ts_current(p).value == "{": p = ts_advance(p)
     p = ts_skip_whitespace(p)
 
     // Translate body until matching closing brace
     let mut depth: Int = 1
     let mut body_count: Int = 0
     while ts_current(p).kind != "EOF":
-        if depth <= 0 { break }
+        if depth <= 0: break
         let t: TsToken = ts_current(p)
 
         if t.kind == "OP":
@@ -754,8 +754,8 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
                 let expr: String = translate_ts_expr(p)
                 out = out + ind + "    return " + expr + "\n"
                 while ts_current(p).value != ";":
-                    if ts_current(p).kind == "NEWLINE" { break }
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "NEWLINE": break
+                    if ts_current(p).kind == "EOF": break
                     p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 body_count = body_count + 1
@@ -774,20 +774,20 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
                 if ts_current(p).value == "=":
                     p = ts_advance(p)
                     let expr: String = translate_ts_expr(p)
-                    if len(vtype) == 0 { vtype = infer_local_type(expr) }
+                    if len(vtype) == 0: vtype = infer_local_type(expr)
                     if is_mut:
                         out = out + ind + "    let mut " + vname + ": " + vtype + " = " + expr + "\n"
                     else:
                         out = out + ind + "    let " + vname + ": " + vtype + " = " + expr + "\n"
                 else:
-                    if len(vtype) == 0 { vtype = "any" }
+                    if len(vtype) == 0: vtype = "any"
                     if is_mut:
                         out = out + ind + "    let mut " + vname + ": " + vtype + "\n"
                     else:
                         out = out + ind + "    let " + vname + ": " + vtype + "\n"
                 while ts_current(p).value != ";":
-                    if ts_current(p).kind == "NEWLINE" { break }
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "NEWLINE": break
+                    if ts_current(p).kind == "EOF": break
                     p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 body_count = body_count + 1
@@ -797,9 +797,9 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
                 p = ts_expect_op(p, "(")
                 let cond: String = translate_ts_expr(p)
                 while ts_current(p).value != ")":
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "EOF": break
                     p = ts_advance(p)
-                if ts_current(p).value == ")" { p = ts_advance(p) }
+                if ts_current(p).value == ")": p = ts_advance(p)
                 out = out + ind + "    if " + cond + " {\n"
                 out = out + ind + "        // ...\n"
                 out = out + ind + "    }\n"
@@ -808,9 +808,9 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
                     p = ts_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if ts_current(p).kind == "EOF" { break }
-                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if ts_current(p).kind == "EOF": break
+                        if ts_current(p).value == "{": inner_depth = inner_depth + 1
+                        if ts_current(p).value == "}": inner_depth = inner_depth - 1
                         p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 body_count = body_count + 1
@@ -822,15 +822,15 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
                 out = out + ind + "    }\n"
                 // Skip for header + body
                 while ts_current(p).value != "{":
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "EOF": break
                     p = ts_advance(p)
                 if ts_current(p).value == "{":
                     p = ts_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if ts_current(p).kind == "EOF" { break }
-                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if ts_current(p).kind == "EOF": break
+                        if ts_current(p).value == "{": inner_depth = inner_depth + 1
+                        if ts_current(p).value == "}": inner_depth = inner_depth - 1
                         p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 body_count = body_count + 1
@@ -840,9 +840,9 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
                 p = ts_expect_op(p, "(")
                 let cond: String = translate_ts_expr(p)
                 while ts_current(p).value != ")":
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "EOF": break
                     p = ts_advance(p)
-                if ts_current(p).value == ")" { p = ts_advance(p) }
+                if ts_current(p).value == ")": p = ts_advance(p)
                 out = out + ind + "    while " + cond + " {\n"
                 out = out + ind + "        // ...\n"
                 out = out + ind + "    }\n"
@@ -850,9 +850,9 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
                     p = ts_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if ts_current(p).kind == "EOF" { break }
-                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if ts_current(p).kind == "EOF": break
+                        if ts_current(p).value == "{": inner_depth = inner_depth + 1
+                        if ts_current(p).value == "}": inner_depth = inner_depth - 1
                         p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 body_count = body_count + 1
@@ -860,12 +860,12 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
 
         // Skip to next semicolon or newline
         while ts_current(p).kind != "NEWLINE":
-            if ts_current(p).value == ";" { break }
-            if ts_current(p).kind == "EOF" { break }
+            if ts_current(p).value == ";": break
+            if ts_current(p).kind == "EOF": break
             p = ts_advance(p)
         p = ts_skip_whitespace(p)
         body_count = body_count + 1
-        if body_count > 100 { break }
+        if body_count > 100: break
 
     out = out + ind + "}\n"
     return out
@@ -876,7 +876,7 @@ fn translate_ts_function(p: TsParser, ind: String) -> String:
 
 fn translate_ts_interface(p: TsParser, ind: String) -> String:
     // Skip export
-    if ts_current(p).value == "export" { p = ts_advance(p) }
+    if ts_current(p).value == "export": p = ts_advance(p)
     p = ts_expect_kw(p, "interface")
     let iname: String = ts_current(p).value
     p = ts_advance(p)
@@ -886,28 +886,28 @@ fn translate_ts_interface(p: TsParser, ind: String) -> String:
         let mut angle_depth: Int = 1
         p = ts_advance(p)
         while angle_depth > 0:
-            if ts_current(p).kind == "EOF" { break }
-            if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
-            if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+            if ts_current(p).kind == "EOF": break
+            if ts_current(p).value == "<": angle_depth = angle_depth + 1
+            if ts_current(p).value == ">": angle_depth = angle_depth - 1
             p = ts_advance(p)
 
     // Skip extends
     if ts_current(p).value == "extends":
         p = ts_advance(p)
         while ts_current(p).value != "{":
-            if ts_current(p).kind == "EOF" { break }
+            if ts_current(p).kind == "EOF": break
             p = ts_advance(p)
 
     let mut out: String = ind + "trait " + iname + " {\n"
 
     // Parse interface body
-    if ts_current(p).value == "{" { p = ts_advance(p) }
+    if ts_current(p).value == "{": p = ts_advance(p)
     p = ts_skip_whitespace(p)
 
     let mut depth: Int = 1
     let mut method_count: Int = 0
     while depth > 0:
-        if ts_current(p).kind == "EOF" { break }
+        if ts_current(p).kind == "EOF": break
         if ts_current(p).value == "}":
             depth = depth - 1
             p = ts_advance(p)
@@ -922,31 +922,31 @@ fn translate_ts_interface(p: TsParser, ind: String) -> String:
             let mname: String = ts_current(p).value
             p = ts_advance(p)
             // Optional: name?
-            if ts_current(p).value == "?" { p = ts_advance(p) }
+            if ts_current(p).value == "?": p = ts_advance(p)
             if ts_current(p).value == "(":
                 // Method signature
                 p = ts_advance(p)
                 let mut params: String = "self"
                 while ts_current(p).value != ")":
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "EOF": break
                     if ts_current(p).value == ",":
                         p = ts_advance(p)
                         continue
                     let pname: String = ts_current(p).value
                     p = ts_advance(p)
-                    if ts_current(p).value == "?" { p = ts_advance(p) }
+                    if ts_current(p).value == "?": p = ts_advance(p)
                     if ts_current(p).value == ":":
                         let ptype: String = ts_read_type(p)
                         p = ts_skip_type_annotation(p)
                         params = params + ", " + pname + ": " + ptype
                     else:
                         params = params + ", " + pname
-                if ts_current(p).value == ")" { p = ts_advance(p) }
+                if ts_current(p).value == ")": p = ts_advance(p)
                 let mut ret: String = ""
                 if ts_current(p).value == ":":
                     let rtype: String = ts_read_type(p)
                     p = ts_skip_type_annotation(p)
-                    if rtype != "Void" { ret = " -> " + rtype }
+                    if rtype != "Void": ret = " -> " + rtype
                 out = out + ind + "    fn " + mname + "(" + params + ")" + ret + "\n"
                 method_count = method_count + 1
             else:
@@ -959,7 +959,7 @@ fn translate_ts_interface(p: TsParser, ind: String) -> String:
         while ts_current(p).value == ";" || ts_current(p).value == "," || ts_current(p).kind == "NEWLINE":
             p = ts_advance(p)
         method_count = method_count + 1
-        if method_count > 100 { break }
+        if method_count > 100: break
 
     out = out + ind + "}\n"
     return out
@@ -982,9 +982,9 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
 
     // Skip generic type params, extends, implements
     while ts_current(p).kind != "EOF":
-        if ts_current(p).value == "{" { break }
+        if ts_current(p).value == "{": break
         p = ts_advance(p)
-    if ts_current(p).value == "{" { p = ts_advance(p) }
+    if ts_current(p).value == "{": p = ts_advance(p)
     p = ts_skip_whitespace(p)
 
     let mut fields: List<FieldDef> = []
@@ -993,9 +993,9 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
     let mut depth: Int = 1
     let mut iter_count: Int = 0
     while depth > 0:
-        if ts_current(p).kind == "EOF" { break }
+        if ts_current(p).kind == "EOF": break
         iter_count = iter_count + 1
-        if iter_count > 500 { break }
+        if iter_count > 500: break
 
         let t: TsToken = ts_current(p)
         if t.value == "}":
@@ -1028,7 +1028,7 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
                 if ts_current(p).value == "(":
                     p = ts_advance(p)
                     while ts_current(p).value != ")":
-                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).kind == "EOF": break
                         if ts_current(p).value == ",":
                             p = ts_advance(p)
                             continue
@@ -1038,7 +1038,7 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
                             continue
                         let fname: String = ts_current(p).value
                         p = ts_advance(p)
-                        if ts_current(p).value == "?" { p = ts_advance(p) }
+                        if ts_current(p).value == "?": p = ts_advance(p)
                         let mut ftype: String = "any"
                         if ts_current(p).value == ":":
                             ftype = ts_read_type(p)
@@ -1047,15 +1047,15 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
                             p = ts_advance(p)
                             p = ts_advance(p)
                         fields.push(new_field(fname, ftype))
-                    if ts_current(p).value == ")" { p = ts_advance(p) }
+                    if ts_current(p).value == ")": p = ts_advance(p)
                 // Skip constructor body
                 if ts_current(p).value == "{":
                     p = ts_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if ts_current(p).kind == "EOF" { break }
-                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if ts_current(p).kind == "EOF": break
+                        if ts_current(p).value == "{": inner_depth = inner_depth + 1
+                        if ts_current(p).value == "}": inner_depth = inner_depth - 1
                         p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 continue
@@ -1064,7 +1064,7 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
         if ts_current(p).kind == "IDENT":
             let mname: String = ts_current(p).value
             p = ts_advance(p)
-            if ts_current(p).value == "?" { p = ts_advance(p) }
+            if ts_current(p).value == "?": p = ts_advance(p)
             // Method: name(...) { ... }
             if ts_current(p).value == "(" || ts_current(p).value == "<":
                 let m: MethodDef = new_method(mname, "any")
@@ -1076,17 +1076,17 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
                     let mut angle_depth: Int = 1
                     p = ts_advance(p)
                     while angle_depth > 0:
-                        if ts_current(p).kind == "EOF" { break }
-                        if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
-                        if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+                        if ts_current(p).kind == "EOF": break
+                        if ts_current(p).value == "<": angle_depth = angle_depth + 1
+                        if ts_current(p).value == ">": angle_depth = angle_depth - 1
                         p = ts_advance(p)
                 // Skip params
                 if ts_current(p).value == "(":
                     p = ts_advance(p)
                     while ts_current(p).value != ")":
-                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).kind == "EOF": break
                         p = ts_advance(p)
-                    if ts_current(p).value == ")" { p = ts_advance(p) }
+                    if ts_current(p).value == ")": p = ts_advance(p)
                 // Skip return type
                 p = ts_skip_type_annotation(p)
                 // Skip method body
@@ -1094,9 +1094,9 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
                     p = ts_advance(p)
                     let mut inner_depth: Int = 1
                     while inner_depth > 0:
-                        if ts_current(p).kind == "EOF" { break }
-                        if ts_current(p).value == "{" { inner_depth = inner_depth + 1 }
-                        if ts_current(p).value == "}" { inner_depth = inner_depth - 1 }
+                        if ts_current(p).kind == "EOF": break
+                        if ts_current(p).value == "{": inner_depth = inner_depth + 1
+                        if ts_current(p).value == "}": inner_depth = inner_depth - 1
                         p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 continue
@@ -1111,8 +1111,8 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
                 if ts_current(p).value == "=":
                     p = ts_advance(p)
                     while ts_current(p).value != ";":
-                        if ts_current(p).kind == "NEWLINE" { break }
-                        if ts_current(p).kind == "EOF" { break }
+                        if ts_current(p).kind == "NEWLINE": break
+                        if ts_current(p).kind == "EOF": break
                         p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 continue
@@ -1127,20 +1127,20 @@ fn translate_ts_class(p: TsParser, ind: String) -> String:
 // ---------------------------------------------------------------------------
 
 fn translate_ts_enum(p: TsParser, ind: String) -> String:
-    if ts_current(p).value == "export" { p = ts_advance(p) }
-    if ts_current(p).value == "const" { p = ts_advance(p) }
+    if ts_current(p).value == "export": p = ts_advance(p)
+    if ts_current(p).value == "const": p = ts_advance(p)
     p = ts_expect_kw(p, "enum")
     let ename: String = ts_current(p).value
     p = ts_advance(p)
 
     let mut out: String = ind + "enum " + ename + " {\n"
 
-    if ts_current(p).value == "{" { p = ts_advance(p) }
+    if ts_current(p).value == "{": p = ts_advance(p)
     p = ts_skip_whitespace(p)
 
     let mut member_count: Int = 0
     while ts_current(p).value != "}":
-        if ts_current(p).kind == "EOF" { break }
+        if ts_current(p).kind == "EOF": break
         if ts_current(p).value == ",":
             p = ts_advance(p)
             p = ts_skip_whitespace(p)
@@ -1154,8 +1154,8 @@ fn translate_ts_enum(p: TsParser, ind: String) -> String:
         out = out + ind + "    " + mname + "\n"
         member_count = member_count + 1
         p = ts_skip_whitespace(p)
-        if member_count > 100 { break }
-    if ts_current(p).value == "}" { p = ts_advance(p) }
+        if member_count > 100: break
+    if ts_current(p).value == "}": p = ts_advance(p)
 
     out = out + ind + "}\n"
     return out
@@ -1165,7 +1165,7 @@ fn translate_ts_enum(p: TsParser, ind: String) -> String:
 // ---------------------------------------------------------------------------
 
 fn translate_ts_type_alias(p: TsParser, ind: String) -> String:
-    if ts_current(p).value == "export" { p = ts_advance(p) }
+    if ts_current(p).value == "export": p = ts_advance(p)
     p = ts_expect_kw(p, "type")
     let tname: String = ts_current(p).value
     p = ts_advance(p)
@@ -1174,17 +1174,17 @@ fn translate_ts_type_alias(p: TsParser, ind: String) -> String:
         let mut angle_depth: Int = 1
         p = ts_advance(p)
         while angle_depth > 0:
-            if ts_current(p).kind == "EOF" { break }
-            if ts_current(p).value == "<" { angle_depth = angle_depth + 1 }
-            if ts_current(p).value == ">" { angle_depth = angle_depth - 1 }
+            if ts_current(p).kind == "EOF": break
+            if ts_current(p).value == "<": angle_depth = angle_depth + 1
+            if ts_current(p).value == ">": angle_depth = angle_depth - 1
             p = ts_advance(p)
     // Skip = and type expression
     let mut out: String = ind + "// type alias " + tname + " = "
-    if ts_current(p).value == "=" { p = ts_advance(p) }
+    if ts_current(p).value == "=": p = ts_advance(p)
     let mut type_text: String = ""
     while ts_current(p).value != ";":
-        if ts_current(p).kind == "NEWLINE" { break }
-        if ts_current(p).kind == "EOF" { break }
+        if ts_current(p).kind == "NEWLINE": break
+        if ts_current(p).kind == "EOF": break
         type_text = type_text + ts_current(p).value + " "
         p = ts_advance(p)
     out = out + type_text + "\n"
@@ -1218,8 +1218,8 @@ fn translate_typescript(source: String, filename: String) -> String:
                 // Don't consume — let individual translators handle it
             if t.value == "import":
                 while ts_current(p).value != ";":
-                    if ts_current(p).kind == "NEWLINE" { break }
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "NEWLINE": break
+                    if ts_current(p).kind == "EOF": break
                     p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 out_text = out_text + "// import skipped\n"
@@ -1232,8 +1232,8 @@ fn translate_typescript(source: String, filename: String) -> String:
                     if p.tokens[look].value == "function":
                         is_fn = true
                         break
-                    if p.tokens[look].value == "{" { break }
-                    if p.tokens[look].kind == "NEWLINE" { break }
+                    if p.tokens[look].value == "{": break
+                    if p.tokens[look].kind == "NEWLINE": break
                     look = look + 1
                 if is_fn:
                     out_text = out_text + translate_ts_function(p, "") + "\n"
@@ -1274,8 +1274,8 @@ fn translate_typescript(source: String, filename: String) -> String:
             if t.value == "type" || (t.value == "export" && p.pos + 1 < len(p.tokens) && p.tokens[p.pos + 1].value == "type"):
                 out_text = out_text + translate_ts_type_alias(p, "") + "\n"
                 while ts_current(p).value != ";":
-                    if ts_current(p).kind == "NEWLINE" { break }
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "NEWLINE": break
+                    if ts_current(p).kind == "EOF": break
                     p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 continue
@@ -1292,14 +1292,14 @@ fn translate_typescript(source: String, filename: String) -> String:
                 if ts_current(p).value == "=":
                     p = ts_advance(p)
                     let expr: String = translate_ts_expr(p)
-                    if len(vtype) == 0 { vtype = infer_local_type(expr) }
+                    if len(vtype) == 0: vtype = infer_local_type(expr)
                     if is_mut:
                         out_text = out_text + "let mut " + vname + ": " + vtype + " = " + expr + "\n"
                     else:
                         out_text = out_text + "let " + vname + ": " + vtype + " = " + expr + "\n"
                 while ts_current(p).value != ";":
-                    if ts_current(p).kind == "NEWLINE" { break }
-                    if ts_current(p).kind == "EOF" { break }
+                    if ts_current(p).kind == "NEWLINE": break
+                    if ts_current(p).kind == "EOF": break
                     p = ts_advance(p)
                 p = ts_skip_whitespace(p)
                 continue

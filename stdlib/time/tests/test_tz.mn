@@ -1,0 +1,124 @@
+// test_tz.mn — Dt.6 timezone v0 surface.
+// Concatenated with stdlib/time.mn by tests/stdlib/test_time_dt.py harness.
+//
+// Critical assertion: tz_named MUST return explicit Err with a message
+// containing "named tzdb not yet supported". This is non-negotiable per
+// PLAN — silent fallback to UTC is the bug-class that bites real users
+// on flight-booking apps.
+
+fn str_contains(haystack: String, needle: String) -> Bool {
+    let hn: Int = len(haystack)
+    let nn: Int = len(needle)
+    if nn == 0 { return true }
+    if nn > hn { return false }
+    let mut i: Int = 0
+    let last: Int = hn - nn
+    while i <= last {
+        let chunk: String = haystack.substr(i, nn)
+        if chunk == needle { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    // tz_utc and tz_local are constructible.
+    let utc_tz: Timezone = tz_utc()
+    let local_tz: Timezone = tz_local()
+    let fixed_tz: Timezone = tz_fixed(330)
+
+    // tz_named MUST reject any name with explicit Err.
+    let lima_r: Result<Timezone, String> = tz_named("America/Lima")
+    match lima_r {
+        Ok(_) => {
+            print("FAIL America/Lima accepted (would silently fallback to UTC)")
+            fails = fails + 1
+        },
+        Err(msg) => {
+            if str_contains(msg, "named tzdb not yet supported") == false {
+                print("FAIL message lacks 'named tzdb not yet supported': " + msg)
+                fails = fails + 1
+            }
+            if str_contains(msg, "America/Lima") == false {
+                print("FAIL message should echo input name")
+                fails = fails + 1
+            }
+        }
+    }
+
+    let madrid_r: Result<Timezone, String> = tz_named("Europe/Madrid")
+    match madrid_r {
+        Ok(_) => {
+            print("FAIL Europe/Madrid accepted")
+            fails = fails + 1
+        },
+        Err(_) => { }
+    }
+
+    // tz_offset_minutes_for(UTC, *) == 0 always.
+    let utc_off_r: Result<Int, String> = tz_offset_minutes_for(utc_tz, 1700000000)
+    match utc_off_r {
+        Ok(off) => {
+            if off != 0 {
+                print("FAIL UTC offset not 0")
+                fails = fails + 1
+            }
+        },
+        Err(_) => {
+            print("FAIL UTC offset failed")
+            fails = fails + 1
+        }
+    }
+
+    // FixedOffset(330) returns 330.
+    let fixed_off_r: Result<Int, String> = tz_offset_minutes_for(fixed_tz, 1700000000)
+    match fixed_off_r {
+        Ok(off) => {
+            if off != 330 {
+                print("FAIL fixed offset not 330")
+                fails = fails + 1
+            }
+        },
+        Err(_) => {
+            print("FAIL fixed offset failed")
+            fails = fails + 1
+        }
+    }
+
+    // datetime_to_local should return a DateTime with a real offset
+    // (assertion is loose: just that it succeeds; CI runners may be UTC).
+    let utc_dt_r: Result<DateTime, String> = datetime_from_epoch(1700000000)
+    match utc_dt_r {
+        Ok(utc_dt) => {
+            let local_r: Result<DateTime, String> = datetime_to_local(utc_dt)
+            match local_r {
+                Ok(local_dt) => {
+                    if local_dt.tz_offset_minutes < -1440 {
+                        print("FAIL local offset out of range")
+                        fails = fails + 1
+                    }
+                    if local_dt.tz_offset_minutes > 1440 {
+                        print("FAIL local offset out of range high")
+                        fails = fails + 1
+                    }
+                },
+                Err(msg) => {
+                    print("FAIL datetime_to_local: " + msg)
+                    fails = fails + 1
+                }
+            }
+        },
+        Err(_) => {
+            print("FAIL from_epoch")
+            fails = fails + 1
+        }
+    }
+
+    if fails == 0 {
+        print("test_tz PASSED")
+    } else {
+        print("test_tz FAILED")
+    }
+}

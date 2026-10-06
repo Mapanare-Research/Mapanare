@@ -1,0 +1,9 @@
+[package]
+name = "mn_collections"
+version = "0.1.0"
+description = "Extended collection types and utilities for Mapanare"
+authors = ["Mapanare Research"]
+license = "MIT"
+mapanare_version = ">=0.4.0"
+keywords = ["collections", "data-structures", "stdlib"]
+entry = "main.mn"

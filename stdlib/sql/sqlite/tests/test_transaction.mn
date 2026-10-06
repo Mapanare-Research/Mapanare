@@ -1,0 +1,136 @@
+// test_transaction.mn — BEGIN / COMMIT / ROLLBACK + nested SAVEPOINTs.
+//
+// Concatenated by tests/stdlib/test_sql_sqlite.py.
+
+fn fail_with_t(msg: String, fails_in: Int) -> Int {
+    print("FAIL: " + msg)
+    return fails_in + 1
+}
+
+// Helper: count rows in `t`. Returns -1 on any error.
+fn count_t(db: Database) -> Int {
+    let q_r: Result<Statement, SqlError> = database_prepare(db, "SELECT COUNT(*) FROM t")
+    match q_r {
+        Ok(stmt) => {
+            let s_r: Result<Int, SqlError> = statement_step(stmt)
+            let mut n: Int = -1
+            match s_r {
+                Ok(rc) => {
+                    if rc == 100 {
+                        let nr: Result<Int, SqlError> = statement_column_int(stmt, 0)
+                        match nr {
+                            Ok(v) => { n = v },
+                            Err(_) => { n = -1 }
+                        }
+                    }
+                },
+                Err(_) => { n = -1 }
+            }
+            let dropped: Statement = statement_finalize(stmt)
+            return n
+        },
+        Err(_) => { return -1 }
+    }
+    return -1
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    let db_r: Result<Database, SqlError> = database_open_memory()
+    match db_r {
+        Ok(db) => {
+            let _r0: Result<Int, SqlError> = database_execute(db, "CREATE TABLE t(v INTEGER)")
+
+            // 1. COMMIT path: insert 2 rows in a tx, commit, count == 2.
+            let b1: Result<Bool, SqlError> = database_begin(db)
+            match b1 {
+                Ok(_) => {},
+                Err(_) => { fails = fail_with_t("begin#1 failed", fails) }
+            }
+            let _i1: Result<Int, SqlError> = database_execute(db, "INSERT INTO t VALUES(1)")
+            let _i2: Result<Int, SqlError> = database_execute(db, "INSERT INTO t VALUES(2)")
+            let c1: Result<Bool, SqlError> = database_commit(db)
+            match c1 {
+                Ok(_) => {},
+                Err(_) => { fails = fail_with_t("commit#1 failed", fails) }
+            }
+            if count_t(db) != 2 {
+                fails = fail_with_t("post-commit count != 2", fails)
+            }
+
+            // 2. ROLLBACK path: insert 1 more row in a tx, rollback, count still == 2.
+            let b2: Result<Bool, SqlError> = database_begin(db)
+            match b2 {
+                Ok(_) => {},
+                Err(_) => { fails = fail_with_t("begin#2 failed", fails) }
+            }
+            let _i3: Result<Int, SqlError> = database_execute(db, "INSERT INTO t VALUES(3)")
+            if count_t(db) != 3 {
+                fails = fail_with_t("mid-tx count != 3", fails)
+            }
+            let r2: Result<Bool, SqlError> = database_rollback(db)
+            match r2 {
+                Ok(_) => {},
+                Err(_) => { fails = fail_with_t("rollback#2 failed", fails) }
+            }
+            if count_t(db) != 2 {
+                fails = fail_with_t("post-rollback count != 2", fails)
+            }
+
+            // 3. Nested SAVEPOINTs: outer commit + inner rollback.
+            //    BEGIN outer
+            //      INSERT(10)
+            //      SAVEPOINT inner
+            //        INSERT(11)
+            //        ROLLBACK TO inner   -> 11 discarded
+            //      RELEASE inner — n/a (rollback also released)
+            //      INSERT(12)
+            //    COMMIT outer
+            //    Expected: t now has {1, 2, 10, 12} → count = 4.
+            let b3: Result<Bool, SqlError> = database_begin(db)
+            match b3 {
+                Ok(_) => {},
+                Err(_) => { fails = fail_with_t("begin#3 failed", fails) }
+            }
+            let _i10: Result<Int, SqlError> = database_execute(db, "INSERT INTO t VALUES(10)")
+            let sph_r: Result<SavepointHandle, SqlError> = database_savepoint_begin(db)
+            match sph_r {
+                Ok(sph) => {
+                    let _i11: Result<Int, SqlError> = database_execute(sph.db, "INSERT INTO t VALUES(11)")
+                    if count_t(sph.db) != 4 {
+                        fails = fail_with_t("mid-savepoint count != 4", fails)
+                    }
+                    let rb_r: Result<Bool, SqlError> = database_savepoint_rollback(sph)
+                    match rb_r {
+                        Ok(_) => {},
+                        Err(_) => { fails = fail_with_t("savepoint rollback failed", fails) }
+                    }
+                    if count_t(sph.db) != 3 {
+                        fails = fail_with_t("post-savepoint-rollback count != 3", fails)
+                    }
+                    let _i12: Result<Int, SqlError> = database_execute(sph.db, "INSERT INTO t VALUES(12)")
+                    let c3: Result<Bool, SqlError> = database_commit(sph.db)
+                    match c3 {
+                        Ok(_) => {},
+                        Err(_) => { fails = fail_with_t("commit#3 failed", fails) }
+                    }
+                    if count_t(sph.db) != 4 {
+                        fails = fail_with_t("post-outer-commit count != 4", fails)
+                    }
+                },
+                Err(_) => { fails = fail_with_t("savepoint begin failed", fails) }
+            }
+
+            let dropped: Database = database_close(db)
+        },
+        Err(_) => { fails = fail_with_t("open :memory: failed", fails) }
+    }
+
+    if fails == 0 {
+        print("test_transaction PASSED")
+    }
+    if fails != 0 {
+        print("test_transaction FAILED")
+    }
+}

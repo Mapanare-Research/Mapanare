@@ -1,0 +1,11 @@
+[package]
+name = "consumer_collections"
+version = "0.1.0"
+description = "v5.44.0 Ps.5 — consumer of mn_collections demonstrating package-aware imports"
+authors = ["Mapanare Research"]
+license = "MIT"
+mapanare_version = ">=5.44.0"
+entry = "main.mn"
+
+[dependencies]
+mn_collections = "0.1.0"

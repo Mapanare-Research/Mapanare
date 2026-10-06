@@ -195,3 +195,89 @@ clean compiler-side fixes that retire Docker-side workarounds:
 Both items are small, additive, and don't conflict with
 v5.20.0's Te.5 (struct ergonomics) — they can ship in parallel
 as a v5.20.x patch or alongside Te.5.
+
+---
+
+## v5 closed at v5.47.5
+
+Aggregate panel score: **9.76 / 10**. Decision: **Option A**
+(v5 ships clean; v6.0 green-lit). Per-reviewer: Rattler 9.85
+PASS, Viper 9.85 PASS, Anaconda 9.75 PASS, Cobra 9.75 PASS,
+Coral 9.65 PASS WITH NOTES, Boa 9.65 PASS WITH NOTES, Mamba
+9.85 PASS. Spread 0.20 (well below 0.5 follow-up trigger).
+Second consecutive Option A under the v5-gate framework;
+second consecutive panel above the v5.7.1 / v5.8.0 9.66
+ceiling. v5.47.5 covers v5.31.0 → v5.47.0 (17 substantive
+releases plus v5.39.1 → v5.39.7 sub-releases) — the longest
+single-panel scope in project history.
+
+**v5 series state at panel cut:**
+
+- ✅ **Foundation arc CLOSED** (banner + 3 prebuilt binary
+  releases — v5.31.0 Bn.\*, v5.32.0 Nw.\*, v5.33.0 Nu.\*,
+  v5.33.1 Hd.\*, v5.33.2 Cd.\*)
+- ✅ **Stdlib gap-close arc CLOSED** (date/time, sqlite,
+  JSON, HTTP, regex, crypto — v5.34.0 → v5.39.0; Js.4 staged
+  closure across v5.39.1 → v5.39.7)
+- ✅ **Manifesto arc CLOSED** (`ask`, supervision,
+  distributed agents — v5.40.0 Ai.\*, v5.42.0 As.\*, v5.43.0
+  Da.\*)
+- ✅ **Tensor closeout arc CLOSED** (Ts.1 reshape v5.41.0;
+  Ts.2 mutable views + Ts.3 stepped slices v5.45.0)
+- ✅ **Package-system runway CLOSED** (v5.44.0 Ps.\*,
+  v5.44.1 Ps.11+Ps.12 — installed packages compile as normal
+  dependencies)
+- ✅ **v5.43.0 lowerer-bug closeout CLOSED at v5.46.0** (Lf.1
+  + Lf.2 + Lf.3 — single ~30 LOC fix at
+  `mapanare/lower.py:2398-2453` closed three symptoms via
+  one root cause)
+- ✅ **Pre-panel hygiene cleanup CLOSED at v5.47.0** (Cl.1
+  variant-name collision; Cl.4 websocket.mn `str(byte)`
+  cleanup; Cl.2 + Cl.3 honest splits to v5.47.1)
+- ✅ Mb.\* arc CLOSED (since v5.29.0)
+- ✅ Pv.\* arc CLOSED (since v5.32.0/v5.33.0)
+- ✅ Js.4.\* arc CLOSED (v5.39.7)
+- ✅ Terseness arc CLOSED (since v5.27.0)
+
+**v5 totals:**
+- Strict 3-stage fixed-point: **50-release strict streak**
+  from v5.7.1 baseline (244,654 lines / 0 diff at v5.47.0
+  HEAD)
+- Goldens: 95 → 103 across the arc (8 net-new, every one
+  falsifiability-locked)
+- Stdlib cookbooks: 8 new under `docs/stdlib/` (time, sql,
+  json, http, regex, crypto, ai, agent)
+- Runtime exports: 30+ new `__mn_*` symbols across
+  `mapanare_time.c`, `mapanare_db.c`, `mapanare_io.c`,
+  `mapanare_node.c`, `mapanare_runtime.c` extensions
+
+**v6.0 PLAN drafting begins** at `docs/roadmap/v6/PLAN.md`
+per `.reviews/v5.47.5/V5_TO_V6_CARRY.md` inputs. The 9-item
+v6.0 PLAN input list (borrow checker / multi-level alias
+analysis; hard removal of `{}`; STRICT 3-stage fixed-point
+gate carve-out; tensor surface unification; distributed-
+supervision orchestration; registry-side package signing;
+`_specialize_fn` body-walk fix; PRE_PHASE_AUDIT.md mandatory;
+convergent-recommendation pattern explicit) is the load-
+bearing v6.0 docket. Recommended v6.0 sub-release split
+per the v5.43.0 sizing lesson: v6.0.0 (Bc.1.0 inference) /
+v6.0.1 (Bc.2.0 enforcement + perf baseline) / v6.0.2
+(Bc.3.0 hard `{}` removal + tensor unification).
+
+**v5.47.x patches recommended pre-v6.0:** v5.47.1 (already
+named — Cl.2 agent stdlib ergonomic refactor; Cl.3 fs.mn
+walk_dir IR codegen); v5.47.2 (proposed — `.reviews/CARRY_FORWARD.md`
+refresh, `tests/KNOWN_FAILURES.md` ledger, localized README
+refresh, `docs/stdlib/INDEX.md`, manifesto.md As.\*+Da.\*
+section). These are docs/process polish, not load-bearing
+for v6.0 correctness.
+
+**Cadence-gap closure.** v5.47.5 closes 19 minor versions
+late on purpose. Per project memory + v5.28.0 directive:
+panels run at the end of an arc, not in the middle.
+`check_cadence.py` is informational REMINDER per v5.33.2
+Cd.\* exactly to support this shape.
+
+See `.reviews/v5.47.5/{PRE_PANEL_AUDIT.md, V5_DECISION.md,
+V5_TO_V6_CARRY.md, V5_RETRO.md, README.md,
+<reviewer>/findings.md}` for the full panel docket.

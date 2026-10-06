@@ -1,0 +1,269 @@
+// stdlib/net/http/streaming.mn — Ht.4 streaming-response encoders.
+//
+// v5.37.0 Ht.4. Two encoders:
+//
+//   1. RFC 7230 §4.1 chunked transfer encoding. Each chunk is prefixed
+//      with its length in lowercase hex + CRLF; trailing `0\r\n\r\n`
+//      closes the response.
+//
+//   2. Server-Sent Events (text/event-stream): per-event lines
+//      `id: ID\n`, `event: TYPE\n`, `data: LINE\n` (one `data:` prefix
+//      per line of the data payload), terminated by a blank line.
+//      Optional `retry: MS\n` for client reconnect-delay control.
+//
+// PROMPT/PLAN deviation: v5.37.0 ships *encoders* that produce wire-
+// format strings, not a true bounded-RSS streamer that writes to an fd
+// in a loop. Reason: the existing TCP send primitive
+// `__mn_tcp_send_str(fd, data: String)` takes a whole string. A real
+// streaming writer needs `__mn_tcp_send_bytes(fd, ptr, len)` plus a
+// chunk-oriented driver loop with progress callbacks. That C-runtime
+// addition is deferred to v5.38.0 (Ht.4.B). Today's encoders compose
+// cleanly into the v5.38.0 streaming API: the wire format is identical;
+// only the driver loop changes.
+//
+// SseEvent / format_event live in stdlib/net/http/sse.mn (v5.32+).
+// This file ADDS the chunked encoder + a thin reusable pump helper that
+// concatenates a list of chunks. Existing sse.mn is unchanged; new SSE
+// code should keep using its `SseEvent` / `format_event` surface.
+
+// ---------------------------------------------------------------------------
+// Chunked transfer encoding (RFC 7230 §4.1).
+//
+// Wire format:
+//   chunk        = chunk-size CRLF chunk-data CRLF
+//   last-chunk   = "0" CRLF CRLF
+//
+// chunk-size is the chunk-data length in hexadecimal, no leading "0x".
+// ---------------------------------------------------------------------------
+
+fn _stream_digit_char(d: Int) -> String {
+    if d == 0 { return "0" }
+    if d == 1 { return "1" }
+    if d == 2 { return "2" }
+    if d == 3 { return "3" }
+    if d == 4 { return "4" }
+    if d == 5 { return "5" }
+    if d == 6 { return "6" }
+    if d == 7 { return "7" }
+    if d == 8 { return "8" }
+    return "9"
+}
+
+fn _stream_hex_char(d: Int) -> String {
+    if d < 10 { return _stream_digit_char(d) }
+    if d == 10 { return "a" }
+    if d == 11 { return "b" }
+    if d == 12 { return "c" }
+    if d == 13 { return "d" }
+    if d == 14 { return "e" }
+    return "f"
+}
+
+// Convert a non-negative integer to lowercase hexadecimal, no prefix.
+// 0 maps to "0".
+pub fn int_to_hex(n: Int) -> String {
+    if n == 0 { return "0" }
+    let mut x: Int = n
+    if x < 0 { x = 0 - x }
+    let mut buf: String = ""
+    while x > 0 {
+        let d: Int = x % 16
+        let ch: String = _stream_hex_char(d)
+        buf = ch + buf
+        x = x / 16
+    }
+    return buf
+}
+
+// Encode a single chunk in RFC 7230 wire format. An empty payload is
+// allowed but yields the last-chunk shape ("0\r\n\r\n").
+pub fn chunked_encode_one(payload: String) -> String {
+    let n: Int = len(payload)
+    let size: String = int_to_hex(n)
+    if n == 0 {
+        return size + "\r\n\r\n"
+    }
+    return size + "\r\n" + payload + "\r\n"
+}
+
+// Encode a list of chunks, terminated by the last-chunk marker. The
+// returned string is the complete chunked-encoded response body
+// (everything that goes after the headers, including the trailing
+// CRLF CRLF). Empty payloads in the input are skipped (they would
+// otherwise prematurely terminate the body).
+pub fn chunked_encode(chunks: List<String>) -> String {
+    let mut buf: String = ""
+    let n: Int = len(chunks)
+    let mut i: Int = 0
+    while i < n {
+        let c: String = chunks[i]
+        if len(c) > 0 {
+            buf = buf + chunked_encode_one(c)
+        }
+        i = i + 1
+    }
+    buf = buf + "0\r\n\r\n"
+    return buf
+}
+
+// Build a complete chunked-encoded HTTP response (status line +
+// headers + body). Headers come in as List<String> alternating-kv form
+// (per router.mn's hdr_set convention). Adds the
+// `Transfer-Encoding: chunked` header automatically; existing
+// `Content-Length` is dropped (cannot coexist with chunked encoding
+// per RFC 7230 §3.3.1).
+pub fn build_chunked_response(status: Int, headers: List<String>, chunks: List<String>) -> String {
+    let mut head: String = "HTTP/1.1 " + _stream_status_str(status) + "\r\n"
+    head = head + "Transfer-Encoding: chunked\r\n"
+    let n: Int = len(headers)
+    let mut i: Int = 0
+    while i + 1 < n {
+        let k: String = headers[i]
+        let v: String = headers[i + 1]
+        // Drop Content-Length and any pre-existing Transfer-Encoding.
+        if k == "Content-Length" {
+            i = i + 2
+        } else {
+            if k == "Transfer-Encoding" {
+                i = i + 2
+            } else {
+                head = head + k + ": " + v + "\r\n"
+                i = i + 2
+            }
+        }
+    }
+    head = head + "\r\n"
+    let body: String = chunked_encode(chunks)
+    return head + body
+}
+
+fn _stream_status_str(code: Int) -> String {
+    if code == 200 { return "200 OK" }
+    if code == 201 { return "201 Created" }
+    if code == 204 { return "204 No Content" }
+    if code == 301 { return "301 Moved Permanently" }
+    if code == 302 { return "302 Found" }
+    if code == 304 { return "304 Not Modified" }
+    if code == 400 { return "400 Bad Request" }
+    if code == 401 { return "401 Unauthorized" }
+    if code == 403 { return "403 Forbidden" }
+    if code == 404 { return "404 Not Found" }
+    if code == 405 { return "405 Method Not Allowed" }
+    if code == 413 { return "413 Payload Too Large" }
+    if code == 500 { return "500 Internal Server Error" }
+    if code == 501 { return "501 Not Implemented" }
+    if code == 503 { return "503 Service Unavailable" }
+    return _stream_int_str(code) + " Status"
+}
+
+fn _stream_int_str(n: Int) -> String {
+    if n == 0 { return "0" }
+    let mut x: Int = n
+    let mut neg: Bool = false
+    if x < 0 { neg = true; x = 0 - x }
+    let mut buf: String = ""
+    while x > 0 {
+        let d: Int = x % 10
+        buf = _stream_digit_char(d) + buf
+        x = x / 10
+    }
+    if neg { return "-" + buf }
+    return buf
+}
+
+// ---------------------------------------------------------------------------
+// Server-Sent Events (SSE) — encoder helpers.
+//
+// v5.37.0 adds a builder-style API on top of the existing sse.mn
+// `SseEvent` / `format_event`. The new helpers normalize multi-line
+// data payloads (one `data:` line per `\n`) and assemble a complete
+// stream-prologue + sequence-of-events string.
+// ---------------------------------------------------------------------------
+
+pub tipo SseLite {
+    id: String,
+    event_type: String,
+    data: String,
+    retry_ms: Int
+}
+
+pub fn new_sse_lite(data: String) -> SseLite {
+    return new SseLite { id: "", event_type: "", data: data, retry_ms: 0 }
+}
+
+pub fn sse_lite_with_id(e: SseLite, id: String) -> SseLite {
+    return new SseLite { id: id, event_type: e.event_type, data: e.data, retry_ms: e.retry_ms }
+}
+
+pub fn sse_lite_with_type(e: SseLite, t: String) -> SseLite {
+    return new SseLite { id: e.id, event_type: t, data: e.data, retry_ms: e.retry_ms }
+}
+
+pub fn sse_lite_with_retry(e: SseLite, ms: Int) -> SseLite {
+    return new SseLite { id: e.id, event_type: e.event_type, data: e.data, retry_ms: ms }
+}
+
+// Encode one SSE event in wire format. Multi-line `data` produces one
+// `data: LINE\n` per line. Empty-id / empty-event_type / retry_ms<=0
+// fields are omitted.
+pub fn sse_lite_encode(e: SseLite) -> String {
+    let mut buf: String = ""
+    if len(e.id) > 0 {
+        buf = buf + "id: " + e.id + "\n"
+    }
+    if len(e.event_type) > 0 {
+        buf = buf + "event: " + e.event_type + "\n"
+    }
+    if e.retry_ms > 0 {
+        buf = buf + "retry: " + _stream_int_str(e.retry_ms) + "\n"
+    }
+    // Split data on "\n" and emit `data: LINE\n` per line.
+    let dn: Int = len(e.data)
+    let mut line: String = ""
+    let mut i: Int = 0
+    let mut emitted_any: Bool = false
+    while i < dn {
+        let ch: String = e.data.char_at(i)
+        if ch == "\n" {
+            buf = buf + "data: " + line + "\n"
+            line = ""
+            emitted_any = true
+        } else {
+            line = line + ch
+        }
+        i = i + 1
+    }
+    if len(line) > 0 {
+        buf = buf + "data: " + line + "\n"
+        emitted_any = true
+    }
+    if emitted_any == false {
+        // SSE spec: at least one `data:` line per event.
+        buf = buf + "data: \n"
+    }
+    buf = buf + "\n"
+    return buf
+}
+
+// Encode a list of SSE events into a single stream payload. Includes
+// the standard recommended retry hint at the top if `default_retry_ms`
+// is positive.
+pub fn sse_lite_encode_stream(events: List<SseLite>, default_retry_ms: Int) -> String {
+    let mut buf: String = ""
+    if default_retry_ms > 0 {
+        buf = buf + "retry: " + _stream_int_str(default_retry_ms) + "\n\n"
+    }
+    let n: Int = len(events)
+    let mut i: Int = 0
+    while i < n {
+        buf = buf + sse_lite_encode(events[i])
+        i = i + 1
+    }
+    return buf
+}
+
+// SSE response headers (alternating-kv form for use with router.mn's
+// Response shape). Always includes Cache-Control: no-cache.
+pub fn sse_response_headers() -> List<String> {
+    return ["Content-Type", "text/event-stream", "Cache-Control", "no-cache", "X-Accel-Buffering", "no"]
+}

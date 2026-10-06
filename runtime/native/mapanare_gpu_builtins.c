@@ -50,11 +50,18 @@ MN_EXPORT int64_t __mn_gpu_device_memory(void) {
  * Helper: MnList<Float> ↔ mapanare_tensor_t conversion
  * ----------------------------------------------------------------------- */
 
-/** Create a temporary 1D tensor that borrows list data. */
+/** Create a temporary 1D tensor that borrows list data.
+ *
+ * v5.45.0 Ts.2.A: zero-init via memset to ensure refcount/is_view/
+ * parent fields are not garbage. Borrow tensors bypass the refcount
+ * machinery entirely (freed via tensor_borrow_free, not
+ * mapanare_tensor_free) — but any inadvertent read of the new fields
+ * would be UB without zero-init. */
 static mapanare_tensor_t *tensor_from_list(const MnList *list) {
     if (!list || !list->data || list->len <= 0) return NULL;
     mapanare_tensor_t *t = (mapanare_tensor_t *)malloc(sizeof(mapanare_tensor_t));
     if (!t) return NULL;
+    memset(t, 0, sizeof(*t));
     t->data = list->data;
     t->ndim = 1;
     t->shape = (int64_t *)malloc(sizeof(int64_t));
@@ -225,13 +232,16 @@ MN_EXPORT MnList __mn_gpu_tensor_matmul(const MnList *a, const MnList *b,
         return __mn_list_new((int64_t)sizeof(double));
     }
 
-    /* Phase 2.1 — struct-header NULL checks (unchanged from v3.47.0). */
+    /* Phase 2.1 — struct-header NULL checks (unchanged from v3.47.0).
+     * v5.45.0 Ts.2.A — zero-init the new refcount/is_view/parent fields. */
     mapanare_tensor_t *ta = (mapanare_tensor_t *)malloc(sizeof(mapanare_tensor_t));
     mapanare_tensor_t *tb = (mapanare_tensor_t *)malloc(sizeof(mapanare_tensor_t));
     if (!ta || !tb) {
         free(ta); free(tb);
         return __mn_list_new((int64_t)sizeof(double));
     }
+    memset(ta, 0, sizeof(*ta));
+    memset(tb, 0, sizeof(*tb));
 
     /* Phase 2.1 — shape-array NULL checks. The panel explicitly called
      * these out: previously the code wrote ``ta->shape[0] = m`` without
@@ -748,6 +758,77 @@ MN_EXPORT int64_t __mn_tensor_argmin_i64(const mapanare_tensor_t *t) {
     return idx;
 }
 
+/* ---- Tensor stepped slice (v5.45.0 Ts.3.B) ----
+ *
+ * `t[start..end:step]` (and per-axis combinations). Returns a fresh
+ * contiguous row-major tensor — copy semantics, NOT a view. Stepped
+ * data is non-contiguous in the source; making it a view would
+ * require strides on `mapanare_tensor_t` which is a v6.0+ ABI item.
+ *
+ * Multi-axis: caller passes per-axis starts[], ends[], steps[]. For
+ * non-stepped axes pass step=1 (equivalent to __mn_tensor_slice on
+ * those axes; if all steps==1, lower picks __mn_tensor_slice
+ * instead).
+ *
+ * Per-axis result count: ceil((end - start) / step) =
+ * (end - start + step - 1) / step. Aborts on step <= 0 (negative /
+ * zero step is reserved syntax for v6.0; lower-time check catches
+ * literal violations, runtime backstops non-literal step).
+ */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_step_slice(
+    const mapanare_tensor_t *t, const int64_t *starts,
+    const int64_t *ends, const int64_t *steps, int64_t rank) {
+    if (!t || !t->data || rank != t->ndim) {
+        fprintf(stderr, "mapanare: invalid tensor step slice\n"); abort();
+    }
+    int64_t out_shape[MN_TENSOR_MAX_RANK] = {0};
+    for (int64_t d = 0; d < rank; d++) {
+        int64_t s = starts[d], e = ends[d], k = steps[d];
+        if (k <= 0) {
+            fprintf(stderr,
+                    "mapanare: tensor step slice: step must be positive "
+                    "(got %lld at axis %lld)\n",
+                    (long long)k, (long long)d);
+            abort();
+        }
+        if (s < 0) s = 0;
+        if (e > t->shape[d]) e = t->shape[d];
+        if (e <= s) { out_shape[d] = 0; }
+        else { out_shape[d] = (e - s + k - 1) / k; }
+    }
+    mapanare_tensor_t *result = mapanare_tensor_alloc(rank, out_shape,
+                                                      t->elem_size);
+    if (!result) abort();
+
+    /* Source strides (row-major). */
+    int64_t src_strides[MN_TENSOR_MAX_RANK];
+    src_strides[rank - 1] = 1;
+    for (int64_t d = rank - 2; d >= 0; d--)
+        src_strides[d] = src_strides[d + 1] * t->shape[d + 1];
+
+    /* Output strides. */
+    int64_t out_strides[MN_TENSOR_MAX_RANK];
+    out_strides[rank - 1] = 1;
+    for (int64_t d = rank - 2; d >= 0; d--)
+        out_strides[d] = out_strides[d + 1] * out_shape[d + 1];
+
+    int64_t total = result->size;
+    for (int64_t i = 0; i < total; i++) {
+        int64_t rem = i;
+        int64_t src_flat = 0;
+        for (int64_t d = 0; d < rank; d++) {
+            int64_t out_coord = rem / out_strides[d];
+            rem %= out_strides[d];
+            int64_t src_coord = starts[d] + out_coord * steps[d];
+            src_flat += src_coord * src_strides[d];
+        }
+        const char *src = (const char *)t->data + src_flat * t->elem_size;
+        char *dst = (char *)result->data + i * t->elem_size;
+        for (int64_t b = 0; b < t->elem_size; b++) dst[b] = src[b];
+    }
+    return result;
+}
+
 /* ---- Tensor slicing (v4.45.0) ---- */
 
 MN_EXPORT mapanare_tensor_t *__mn_tensor_slice(
@@ -802,4 +883,134 @@ MN_EXPORT mapanare_tensor_t *__mn_tensor_slice(
         for (int64_t b = 0; b < t->elem_size; b++) dst[b] = src[b];
     }
     return result;
+}
+
+/* ---- Tensor reshape (v5.41.0 Ts.1) ---- */
+
+/** Reshape a tensor to the shape carried by `shape` (List<Int>).
+ *
+ * v5.41.0 shipped **copy semantics**: allocate fresh tensor + memcpy.
+ * v5.45.0 Ts.2.B swaps to **alias semantics**: returns a view sharing
+ * the source's data buffer with refcount-managed lifetime. Surface
+ * API unchanged; semantics changed (writes to reshaped tensor visible
+ * in source). The `noalias` attribute on the LLVM declaration drops
+ * here — it is now a lie under aliasing. Body delegates to
+ * __mn_tensor_view which performs the same element-count validation.
+ *
+ * Migration note: callers that depended on v5.41.0 copy semantics
+ * must explicitly construct an independent tensor (no `t.copy()` API
+ * yet — tracked as a v5.47.0+ ergonomic; the cookbook documents the
+ * manual workaround using __mn_tensor_alloc + element-by-element
+ * copy). Phase 0 audit verified zero production callers relied on
+ * copy semantics.
+ */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_view(
+    mapanare_tensor_t *parent, const MnList *shape);
+
+MN_EXPORT mapanare_tensor_t *__mn_tensor_reshape(
+    mapanare_tensor_t *src, const MnList *shape) {
+    /* Surface-level validation with the user-visible "reshape" prefix.
+     * Without this, errors fall through to __mn_tensor_view's messages
+     * which name the underlying primitive ("tensor view: ...") rather
+     * than the API the user actually called. */
+    if (!src || !src->data) {
+        fprintf(stderr, "mapanare: tensor reshape: null source\n");
+        abort();
+    }
+    if (!shape || !shape->data) {
+        fprintf(stderr, "mapanare: tensor reshape: null shape\n");
+        abort();
+    }
+    int64_t new_rank = shape->len;
+    if (new_rank <= 0) {
+        fprintf(stderr,
+                "mapanare: tensor reshape: rank must be positive (got %lld)\n",
+                (long long)new_rank);
+        abort();
+    }
+    const int64_t *new_shape = (const int64_t *)shape->data;
+    int64_t new_size = 1;
+    for (int64_t i = 0; i < new_rank; i++) {
+        if (new_shape[i] <= 0) {
+            fprintf(stderr,
+                    "mapanare: tensor reshape: invalid dim %lld at axis %lld\n",
+                    (long long)new_shape[i], (long long)i);
+            abort();
+        }
+        new_size *= new_shape[i];
+    }
+    if (new_size != src->size) {
+        fprintf(stderr,
+                "mapanare: tensor reshape: cannot reshape size %lld as size %lld\n",
+                (long long)src->size, (long long)new_size);
+        abort();
+    }
+    return __mn_tensor_view(src, shape);
+}
+
+/* v5.45.0 Ts.2.B — mutable view surface.
+ *
+ * Returns a new tensor metadata that shares the parent's data buffer.
+ * View has its own ndim/shape/size; element count must match parent's.
+ * Single-hop: when parent is itself a view, the new view points at
+ * parent's root parent (not the intermediate). The root's refcount
+ * counts every live view; intermediate views never get their refcount
+ * bumped by descendant views. This keeps drop-glue O(1) per view —
+ * mapanare_tensor_free(leaf) recurses once into root, never through
+ * a view chain.
+ */
+MN_EXPORT mapanare_tensor_t *__mn_tensor_view(
+    mapanare_tensor_t *parent, const MnList *shape) {
+    if (!parent || !parent->data) {
+        fprintf(stderr, "mapanare: tensor view: null parent\n");
+        abort();
+    }
+    if (!shape || !shape->data) {
+        fprintf(stderr, "mapanare: tensor view: null shape\n");
+        abort();
+    }
+    int64_t new_rank = shape->len;
+    if (new_rank <= 0) {
+        fprintf(stderr,
+                "mapanare: tensor view: rank must be positive (got %lld)\n",
+                (long long)new_rank);
+        abort();
+    }
+    const int64_t *new_shape = (const int64_t *)shape->data;
+    int64_t new_size = 1;
+    for (int64_t i = 0; i < new_rank; i++) {
+        if (new_shape[i] <= 0) {
+            fprintf(stderr,
+                    "mapanare: tensor view: invalid dim %lld at axis %lld\n",
+                    (long long)new_shape[i], (long long)i);
+            abort();
+        }
+        new_size *= new_shape[i];
+    }
+    if (new_size != parent->size) {
+        fprintf(stderr,
+                "mapanare: tensor view: cannot view size %lld as size %lld\n",
+                (long long)parent->size, (long long)new_size);
+        abort();
+    }
+
+    /* Single-hop: walk parent->parent until NULL to find the root. */
+    mapanare_tensor_t *root = parent;
+    while (root->parent) root = root->parent;
+
+    mapanare_tensor_t *v = (mapanare_tensor_t *)malloc(sizeof(*v));
+    if (!v) abort();
+    memset(v, 0, sizeof(*v));
+    v->data = root->data;       /* alias the data-owning buffer */
+    v->ndim = new_rank;
+    v->shape = (int64_t *)malloc((size_t)new_rank * sizeof(int64_t));
+    if (!v->shape) { free(v); abort(); }
+    for (int64_t i = 0; i < new_rank; i++) v->shape[i] = new_shape[i];
+    v->size = new_size;
+    v->elem_size = parent->elem_size;
+    v->refcount = 1;
+    v->is_view = 1;
+    v->parent = root;
+    root->refcount++;
+    return v;
 }

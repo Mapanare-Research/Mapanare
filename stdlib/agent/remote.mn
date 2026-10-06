@@ -1,0 +1,194 @@
+// remote.mn — RemoteAgent client surface for distributed agents v0
+//
+// v5.43.0 Da.1 — third manifesto-arc release.
+// v5.54.0 Cl.2 — refactored from flat-tuple Result workaround to
+// ergonomic Result<T, NetworkError>. v5.46.0 Lf.* closed the
+// wrap-shape default bug that motivated the v5.43.0 workaround.
+// BREAKING for stdlib consumers — see CHANGELOG migration recipe.
+//
+// SHAPE: typed handle to an agent on another node, addressed by URL.
+//
+//     match remote_agent_connect("tcp://10.0.0.7:9090/worker", key) {
+//         Ok(r) => {
+//             pon payload: String = to_json::<Task>(my_task)
+//             match remote_agent_send(r, payload) {
+//                 Ok(r2) => {
+//                     match remote_agent_recv(r2) {
+//                         Ok(recv) => {
+//                             pon reply: Reply = from_json::<Reply>(recv.frame.payload)
+//                             remote_agent_disconnect(recv.handle)
+//                         },
+//                         Err(e) => { /* recv failed; r2 still valid */ }
+//                     }
+//                 },
+//                 Err(e) => { /* send failed; r still valid */ }
+//             }
+//         },
+//         Err(e) => { /* connect failed; print ne_msg(e) */ }
+//     }
+//
+// PROMPT/PLAN deviation (load-bearing) — RemoteAgent is NOT generic
+// over T at v5.43.0. The PLAN's RemoteAgent<T> with auto to_json
+// internal call requires the v5.40.0-deferred Ai.1 fix
+// (`_specialize_fn` body-walk to substitute nested generic
+// `CallExpr.type_args` through specialized function bodies). Without
+// that fix, calling `to_json::<T>(msg)` from inside a generic
+// `remote_agent_send<T>` substitutes the parameter T with the literal
+// type-variable name, producing wrong-type encode behavior. The
+// v5.40.0 PROMPT explicitly authorized fall-back to function-syntax
+// when generic-keyword sugar threatens correctness; that is the
+// pattern here. The user calls to_json explicitly, then passes the
+// pre-encoded String to a non-generic remote_agent_send. v5.43.x
+// picks up generic surface once Ai.1 lands.
+//
+// Depends on (in concat order):
+//   - url.mn (parse_agent_url, AgentUrl, url_is_tls, NetworkError)
+//   - remote_proto.mn (Frame, encode_frame, decode_frame, validate_key,
+//     MSG_SEND/RECV/...)
+//   - node.mn (the C-runtime externs are owned there; no new externs
+//     declared here; ne_kind / ne_msg helpers)
+
+// ---------------------------------------------------------------------------
+// RemoteAgent — opaque client-side handle.
+// ---------------------------------------------------------------------------
+
+pub tipo RemoteAgent {
+    conn: Int,                  // mn_node_conn_t * cast to i64
+    url: AgentUrl,
+    key: String,
+    next_seq_send: Int,
+    last_seen_recv: Int
+}
+
+fn new_remote_agent(conn_handle: Int, url: AgentUrl, key: String) -> RemoteAgent {
+    da new RemoteAgent { conn: conn_handle, url: url, key: key, next_seq_send: 1, last_seen_recv: 0 }
+}
+
+// ---------------------------------------------------------------------------
+// RecvOk — paired (handle, frame) for Ok side of remote_agent_recv.
+// Mapanare has no first-class tuples, so we name the pair.
+// ---------------------------------------------------------------------------
+
+pub tipo RecvOk {
+    handle: RemoteAgent,
+    frame: Frame
+}
+
+fn new_recv_ok(h: RemoteAgent, f: Frame) -> RecvOk {
+    da new RecvOk { handle: h, frame: f }
+}
+
+// ---------------------------------------------------------------------------
+// remote_agent_connect — open a connection. Ok = ready RemoteAgent.
+// ---------------------------------------------------------------------------
+
+pub fn remote_agent_connect(url_str: String, key: String) -> Result<RemoteAgent, NetworkError> {
+    si len(key) < 32 {
+        da Err(NoKey("MAPANARE_NODE_KEY must be at least 32 raw bytes (got " + str(len(key)) + ")"))
+    }
+
+    pon mut url: AgentUrl = new_agent_url("", "", 0, "")
+    match parse_agent_url(url_str) {
+        Ok(u) => { url = u },
+        Err(e) => { da Err(e) }
+    }
+
+    pon is_tls_int: Int = url_to_tls_int(url)
+    pon sni: String = url.host
+    pon conn_handle: Int = __mn_node_connect_str(url.host, url.port, is_tls_int, sni)
+    si conn_handle == 0 {
+        da Err(ConnectFailed("connect to " + url.scheme + "://" + url.host + ":" + str(url.port) + " failed"))
+    }
+
+    da Ok(new_remote_agent(conn_handle, url, key))
+}
+
+fn url_to_tls_int(u: AgentUrl) -> Int {
+    si url_is_tls(u) { da 1 }
+    da 0
+}
+
+// ---------------------------------------------------------------------------
+// remote_agent_send — wrap one Send frame around a pre-encoded payload.
+// Ok = updated RemoteAgent with next_seq_send incremented.
+// Err = NetworkError; caller still owns the original (un-mutated) handle
+// they passed in.
+// ---------------------------------------------------------------------------
+
+pub fn remote_agent_send(r: RemoteAgent, payload: String) -> Result<RemoteAgent, NetworkError> {
+    pon f: Frame = new_frame(MSG_SEND(), r.next_seq_send, payload)
+    pon body: String = encode_frame(f, r.key)
+    pon rc: Int = __mn_node_write_str(r.conn, body)
+    si rc == -2 {
+        da Err(ProtoOversized("frame body exceeds 100 MB cap"))
+    }
+    si rc != 0 {
+        da Err(TransportLost("__mn_node_write_str failed (rc=" + str(rc) + ")"))
+    }
+    pon updated: RemoteAgent = new RemoteAgent { conn: r.conn, url: r.url, key: r.key, next_seq_send: r.next_seq_send + 1, last_seen_recv: r.last_seen_recv }
+    da Ok(updated)
+}
+
+// ---------------------------------------------------------------------------
+// remote_agent_recv — read one Reply / Pong / ChildExited frame.
+// Ok = RecvOk { handle: <updated>, frame: <decoded> }.
+// ---------------------------------------------------------------------------
+
+pub fn remote_agent_recv(r: RemoteAgent) -> Result<RecvOk, NetworkError> {
+    pon body: String = __mn_node_read_frame_str(r.conn)
+    si len(body) == 0 {
+        da Err(TransportLost("__mn_node_read_frame_str returned empty (peer close or error)"))
+    }
+    pon dr: DecodeResult = decode_frame(body, r.key, r.last_seen_recv)
+    si !dr.ok {
+        da Err(dr.err)
+    }
+    pon updated: RemoteAgent = new RemoteAgent { conn: r.conn, url: r.url, key: r.key, next_seq_send: r.next_seq_send, last_seen_recv: dr.frame.sequence }
+    da Ok(new_recv_ok(updated, dr.frame))
+}
+
+// ---------------------------------------------------------------------------
+// remote_agent_ping — send a Ping, await a Pong. Used by Phase 4
+// heartbeats. Ok = updated RemoteAgent (after Pong receipt).
+// ---------------------------------------------------------------------------
+
+// Internal: send a frame with explicit msg_type. Used by ping.
+pub fn remote_agent_send_typed_msg(r: RemoteAgent, msg_type: Int, payload: String) -> Result<RemoteAgent, NetworkError> {
+    pon f: Frame = new_frame(msg_type, r.next_seq_send, payload)
+    pon body: String = encode_frame(f, r.key)
+    pon rc: Int = __mn_node_write_str(r.conn, body)
+    si rc != 0 {
+        da Err(TransportLost("__mn_node_write_str failed (rc=" + str(rc) + ")"))
+    }
+    pon updated: RemoteAgent = new RemoteAgent { conn: r.conn, url: r.url, key: r.key, next_seq_send: r.next_seq_send + 1, last_seen_recv: r.last_seen_recv }
+    da Ok(updated)
+}
+
+pub fn remote_agent_ping(r: RemoteAgent) -> Result<RemoteAgent, NetworkError> {
+    pon mut after_send: RemoteAgent = r
+    match remote_agent_send_typed_msg(r, MSG_PING(), "") {
+        Ok(rs) => { after_send = rs },
+        Err(e) => { da Err(e) }
+    }
+    match remote_agent_recv(after_send) {
+        Ok(recv) => {
+            si recv.frame.msg_type != MSG_PONG() {
+                da Err(ProtoMalformed("expected Pong, got msg_type=" + str(recv.frame.msg_type)))
+            }
+            da Ok(recv.handle)
+        },
+        Err(e) => { da Err(e) }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// remote_agent_disconnect — close + free the connection. Idempotent.
+// ---------------------------------------------------------------------------
+
+pub fn remote_agent_disconnect(r: RemoteAgent) -> Bool {
+    si r.conn == 0 {
+        da false
+    }
+    __mn_node_close(r.conn)
+    da true
+}

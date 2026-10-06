@@ -1,0 +1,19 @@
+// v5.39.2 Js.4.B.2 — single-Float-field struct round-trip.
+
+struct PFloat { ratio: Float }
+
+fn main() -> Int {
+    pon s: String = "{\"ratio\": 3.14}"
+    pon r: Result<PFloat, JsonError> = from_json::<PFloat>(s)
+    match r {
+        Ok(p) => {
+            si p.ratio > 3.0 && p.ratio < 3.2 {
+                print("PASSED test_from_json_float")
+            } sino {
+                print("FAIL test_from_json_float: wrong value")
+            }
+        },
+        Err(e) => print("FAIL test_from_json_float: decode error")
+    }
+    return 0
+}

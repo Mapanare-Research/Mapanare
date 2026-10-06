@@ -1,0 +1,31 @@
+// v5.39.3 Js.4.C — link-and-run regression for to_json::<T> on a
+// struct with a struct-typed field. Pre-fix this emitted the
+// `<?>` placeholder at the inner field's encoding site
+// (mapanare/lower.py::_encode_field_to_json fell into the str()
+// fallback for TypeKind.STRUCT). Post-fix the inner struct is
+// encoded recursively via the shared _emit_struct_json_body
+// helper extracted from _lower_encode_struct.
+
+struct Inner { x: Int, y: String }
+struct Wrap { name: String, inner: Inner }
+
+fn main() -> Int {
+    pon w: Wrap = Wrap("ok", Inner(42, "hi"))
+    pon encoded: String = to_json::<Wrap>(w)
+    si encoded.contains("<?>") {
+        print("FAIL test_to_json_nested_struct: still emits <?> placeholder")
+    } sino si encoded.contains("\"x\": 42") {
+        si encoded.contains("\"y\": \"hi\"") {
+            si encoded.contains("\"name\": \"ok\"") {
+                print("PASSED test_to_json_nested_struct")
+            } sino {
+                print("FAIL test_to_json_nested_struct: missing outer name field")
+            }
+        } sino {
+            print("FAIL test_to_json_nested_struct: missing inner.y field")
+        }
+    } sino {
+        print("FAIL test_to_json_nested_struct: missing inner.x field")
+    }
+    return 0
+}

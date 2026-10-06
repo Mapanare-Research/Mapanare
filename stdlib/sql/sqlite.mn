@@ -1,0 +1,662 @@
+// stdlib/sql/sqlite.mn — SQLite3 stdlib driver for Mapanare.
+//
+// v5.35.0 Sq.* — Database, Statement, Value, SqlError; Result-returning
+// surface; explicit transaction primitives + nested SAVEPOINTs; named
+// parameter binding; blob support; libversion check; rich error mapping
+// via sqlite extended error codes.
+//
+// Backed by dlopen(libsqlite3) wrappers in runtime/native/mapanare_db.c.
+// The v5.34.x sqlite3 surface in mapanare_db.c was extended at v5.35.0
+// Sq.7 with: sqlite3_libversion, sqlite3_bind_blob, sqlite3_column_blob,
+// sqlite3_column_bytes, sqlite3_reset, sqlite3_bind_parameter_index,
+// sqlite3_changes, sqlite3_last_insert_rowid, sqlite3_extended_errcode.
+// The pre-existing v5.34.x exports (open / close / exec / prepare /
+// bind_int / bind_float / bind_str / bind_null / step / column_int /
+// column_float / column_str / column_type / column_count /
+// column_name / finalize / errmsg) are unchanged.
+//
+// PROMPT/PLAN deviations (load-bearing, documented in
+// docs/roadmap/v5/v5.35.0/SESSION_REPORT.md):
+//
+//   1. Single-file module, not a stdlib/sql/sqlite/{db,stmt,value,...}.mn
+//      directory. Mirror of v5.34.0 stdlib/time.mn — the native compiler
+//      does not propagate `extern "C" fn` declarations across module
+//      imports, and the Python LLVM emitter mangles defined-function
+//      names with module prefix while emitting unprefixed forward
+//      declarations at call sites. Same root cause as v5.34.0; same
+//      flatten-to-single-file decision.
+//
+//   2. Value::Blob carries a String, not a dedicated Bytes type. Mapanare
+//      does not have a native Bytes type. MnString = { ptr, i64 } is the
+//      length-prefixed-byte-buffer carrier; sqlite treats BLOB and TEXT
+//      identically at the storage layer (only the column type tag
+//      differs). Document treatment: "raw bytes, no encoding". A real
+//      Bytes type is a v5.36.0 Js.* arc candidate.
+//
+//   3. No closure-based transaction(|| ...). The PROMPT specified
+//      `transaction<T>(f: fn() -> Result<T, SqlError>)`. Mapanare's
+//      stdlib has no precedent for generic functions taking closures
+//      (no `<T>` parameterization in any current stdlib module). This
+//      module ships explicit begin / commit / rollback primitives plus
+//      savepoint helpers, matching the existing stdlib/db/sqlite.mn
+//      convention. Closure-based transaction wrapper is a v5.36.0+
+//      candidate when generic-closure-arg parsing is mature.
+//
+//   4. No automatic statement cache. The PROMPT specified
+//      `Database.cache: Map<String, Statement>` with finalize-on-close
+//      lifetime semantics. Without first-class state-mutation across
+//      function calls (Mapanare's value semantics force return-the-new-
+//      Database threading) and without a tuple/multi-return surface,
+//      the cache layer's API ergonomics deteriorate badly. Users get
+//      manual reuse via prepare-once + statement_reset + bind + step
+//      in a loop — the standard sqlite idiom and the actual mechanism
+//      that produces the 5-10× speedup the PROMPT's success criterion
+//      claims. Sq.5 deferred to v5.36.0 with proper Map<K,V> ergonomics.
+
+// ===========================================================================
+// SECTION A — Extern declarations.
+// ===========================================================================
+// Pre-existing v5.34.x sqlite exports (used unchanged):
+extern "C" fn __mn_sqlite3_open(path: String) -> Int
+extern "C" fn __mn_sqlite3_close(handle: Int)
+extern "C" fn __mn_sqlite3_exec(handle: Int, sql: String) -> Int
+extern "C" fn __mn_sqlite3_prepare(handle: Int, sql: String) -> Int
+extern "C" fn __mn_sqlite3_bind_int(stmt: Int, idx: Int, val: Int) -> Int
+extern "C" fn __mn_sqlite3_bind_float(stmt: Int, idx: Int, val: Float) -> Int
+extern "C" fn __mn_sqlite3_bind_str(stmt: Int, idx: Int, val: String) -> Int
+extern "C" fn __mn_sqlite3_bind_null(stmt: Int, idx: Int) -> Int
+extern "C" fn __mn_sqlite3_step(stmt: Int) -> Int
+extern "C" fn __mn_sqlite3_column_int(stmt: Int, idx: Int) -> Int
+extern "C" fn __mn_sqlite3_column_float(stmt: Int, idx: Int) -> Float
+extern "C" fn __mn_sqlite3_column_str(stmt: Int, idx: Int) -> String
+extern "C" fn __mn_sqlite3_column_type(stmt: Int, idx: Int) -> Int
+extern "C" fn __mn_sqlite3_column_count(stmt: Int) -> Int
+extern "C" fn __mn_sqlite3_column_name(stmt: Int, idx: Int) -> String
+extern "C" fn __mn_sqlite3_finalize(stmt: Int) -> Int
+extern "C" fn __mn_sqlite3_errmsg(handle: Int) -> String
+
+// v5.35.0 Sq.7 additions:
+extern "C" fn __mn_sqlite3_libversion() -> String
+extern "C" fn __mn_sqlite3_bind_blob(stmt: Int, idx: Int, val: String) -> Int
+extern "C" fn __mn_sqlite3_column_blob(stmt: Int, idx: Int) -> String
+extern "C" fn __mn_sqlite3_reset(stmt: Int) -> Int
+extern "C" fn __mn_sqlite3_bind_parameter_index(stmt: Int, name: String) -> Int
+extern "C" fn __mn_sqlite3_changes(handle: Int) -> Int
+extern "C" fn __mn_sqlite3_last_insert_rowid(handle: Int) -> Int
+extern "C" fn __mn_sqlite3_extended_errcode(handle: Int) -> Int
+
+// ===========================================================================
+// SECTION B — Internal helpers.
+// ===========================================================================
+
+// SQLite step result codes.
+// SQLITE_ROW = 100, SQLITE_DONE = 101.
+
+// SQLite column type tags (mirror sqlite3.h).
+// SQLITE_INTEGER = 1, SQLITE_FLOAT = 2, SQLITE_TEXT = 3,
+// SQLITE_BLOB = 4, SQLITE_NULL = 5.
+
+// SQLite primary error codes used for SqlError mapping.
+// SQLITE_OK = 0, SQLITE_BUSY = 5, SQLITE_MISUSE = 21,
+// SQLITE_CONSTRAINT = 19.
+
+fn sql_int_to_str(n: Int) -> String {
+    if n == 0 { return "0" }
+    let mut neg: Bool = false
+    let mut x: Int = n
+    if x < 0 {
+        neg = true
+        x = 0 - x
+    }
+    let mut buf: String = ""
+    while x > 0 {
+        let d: Int = x % 10
+        let ch: String = char_from_digit(d)
+        buf = ch + buf
+        x = x / 10
+    }
+    if neg { return "-" + buf }
+    return buf
+}
+
+fn char_from_digit(d: Int) -> String {
+    if d == 0 { return "0" }
+    if d == 1 { return "1" }
+    if d == 2 { return "2" }
+    if d == 3 { return "3" }
+    if d == 4 { return "4" }
+    if d == 5 { return "5" }
+    if d == 6 { return "6" }
+    if d == 7 { return "7" }
+    if d == 8 { return "8" }
+    return "9"
+}
+
+// ===========================================================================
+// SECTION C — Sq.1 — SqlError variants.
+//
+// Variants intentionally chosen to give callers actionable retry / recovery
+// signals without forcing them to parse error messages:
+//
+//   LoadFail       — libsqlite3 not available or version too old.
+//                    Caller should suggest the user install sqlite3.
+//   VersionTooOld  — libsqlite3 < 3.7.0 detected. Reported separately
+//                    from LoadFail because the runtime IS loaded; only
+//                    the version is wrong. Carries the detected version.
+//   BadSql         — syntax / unbound-parameter / table-not-found etc.
+//                    Carries the sqlite errmsg.
+//   TypeMismatch   — column<T>(idx) called with T not matching the
+//                    column's actual sqlite type. Carries both expected
+//                    and actual type names.
+//   Constraint     — UNIQUE / NOT NULL / FOREIGN KEY violation etc.
+//                    Carries a string with the primary + extended rc.
+//   Busy           — SQLITE_BUSY (timeout / locked). Soft error; caller
+//                    should retry with backoff.
+//   Misuse         — SQLITE_MISUSE — application-level API misuse
+//                    (finalize after close, step on finalized stmt, etc.).
+//                    Programmer error; not retryable.
+//   Closed         — operation attempted on a closed Database or
+//                    finalized Statement.
+// ===========================================================================
+
+pub tipo SqlError {
+    | LoadFail
+    | VersionTooOld(String)
+    | BadSql(String)
+    | TypeMismatch(String)
+    | Constraint(String)
+    | Busy
+    | Misuse
+    | Closed
+}
+
+fn map_sqlite_rc(rc: Int, db_handle: Int) -> SqlError {
+    if rc == 5 { return Busy }
+    if rc == 21 { return Misuse }
+    if rc == 19 {
+        let ext: Int = __mn_sqlite3_extended_errcode(db_handle)
+        let msg: String = __mn_sqlite3_errmsg(db_handle)
+        return Constraint(msg + " (rc=19, ext=" + sql_int_to_str(ext) + ")")
+    }
+    let errmsg: String = __mn_sqlite3_errmsg(db_handle)
+    return BadSql(errmsg + " (rc=" + sql_int_to_str(rc) + ")")
+}
+
+// ===========================================================================
+// SECTION D — Sq.3 — Value enum.
+//
+// Carries any sqlite cell value through the typed surface. Note that
+// Blob's payload is a String (raw bytes; see PLAN deviation #2 above).
+// DateTime payload is a string in ISO 8601 form — sqlite has no native
+// datetime type, so the canonical serialization is RFC 3339 / ISO 8601
+// in a TEXT column. Callers parse via stdlib/time.mn's datetime_new
+// after extraction.
+// ===========================================================================
+
+pub tipo Value {
+    | Null
+    | Int(Int)
+    | Float(Float)
+    | Text(String)
+    | Blob(String)
+    | Bool(Bool)
+    | DateTime(String)
+}
+
+pub fn value_int(n: Int) -> Value { return Int(n) }
+pub fn value_float(f: Float) -> Value { return Float(f) }
+pub fn value_text(s: String) -> Value { return Text(s) }
+pub fn value_blob(s: String) -> Value { return Blob(s) }
+pub fn value_bool(b: Bool) -> Value { return Bool(b) }
+pub fn value_datetime(iso: String) -> Value { return DateTime(iso) }
+pub fn value_null() -> Value { return Null }
+
+fn value_type_name(v: Value) -> String {
+    match v {
+        Null => { return "Null" },
+        Int(_) => { return "Int" },
+        Float(_) => { return "Float" },
+        Text(_) => { return "Text" },
+        Blob(_) => { return "Blob" },
+        Bool(_) => { return "Bool" },
+        DateTime(_) => { return "DateTime" }
+    }
+    return "Unknown"
+}
+
+fn sqlite_type_name(t: Int) -> String {
+    if t == 1 { return "INTEGER" }
+    if t == 2 { return "FLOAT" }
+    if t == 3 { return "TEXT" }
+    if t == 4 { return "BLOB" }
+    if t == 5 { return "NULL" }
+    return "UNKNOWN"
+}
+
+// ===========================================================================
+// SECTION E — Sq.2 — Statement type.
+//
+// Carries the stmt handle (sqlite3_stmt opaque), the owning db handle
+// (for errmsg + extended errcode lookups), and a finalized flag for
+// double-finalize-is-undefined-per-sqlite-semantics protection.
+// Statement values are immutable in the .mn surface; statement_finalize
+// returns a new Statement with finalized=true rather than mutating in
+// place — matches the stdlib/time.mn Stopwatch state-threading pattern.
+// ===========================================================================
+
+pub tipo Statement {
+    handle: Int,
+    db_handle: Int,
+    finalized: Bool
+}
+
+fn new_statement(h: Int, db_h: Int) -> Statement {
+    let s: Statement = new Statement { handle: h, db_handle: db_h, finalized: false }
+    return s
+}
+
+pub fn statement_bind_int(stmt: Statement, idx: Int, val: Int) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_bind_int(stmt.handle, idx, val)
+    if rc != 0 { return Err(map_sqlite_rc(rc, stmt.db_handle)) }
+    return Ok(true)
+}
+
+pub fn statement_bind_float(stmt: Statement, idx: Int, val: Float) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_bind_float(stmt.handle, idx, val)
+    if rc != 0 { return Err(map_sqlite_rc(rc, stmt.db_handle)) }
+    return Ok(true)
+}
+
+pub fn statement_bind_string(stmt: Statement, idx: Int, val: String) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_bind_str(stmt.handle, idx, val)
+    if rc != 0 { return Err(map_sqlite_rc(rc, stmt.db_handle)) }
+    return Ok(true)
+}
+
+pub fn statement_bind_blob(stmt: Statement, idx: Int, val: String) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_bind_blob(stmt.handle, idx, val)
+    if rc != 0 { return Err(map_sqlite_rc(rc, stmt.db_handle)) }
+    return Ok(true)
+}
+
+pub fn statement_bind_bool(stmt: Statement, idx: Int, val: Bool) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let n: Int = 0
+    let mut nx: Int = n
+    if val { nx = 1 }
+    let rc: Int = __mn_sqlite3_bind_int(stmt.handle, idx, nx)
+    if rc != 0 { return Err(map_sqlite_rc(rc, stmt.db_handle)) }
+    return Ok(true)
+}
+
+pub fn statement_bind_null(stmt: Statement, idx: Int) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_bind_null(stmt.handle, idx)
+    if rc != 0 { return Err(map_sqlite_rc(rc, stmt.db_handle)) }
+    return Ok(true)
+}
+
+pub fn statement_bind_value(stmt: Statement, idx: Int, val: Value) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    match val {
+        Null => { return statement_bind_null(stmt, idx) },
+        Int(n) => { return statement_bind_int(stmt, idx, n) },
+        Float(f) => { return statement_bind_float(stmt, idx, f) },
+        Text(s) => { return statement_bind_string(stmt, idx, s) },
+        Blob(b) => { return statement_bind_blob(stmt, idx, b) },
+        Bool(b) => { return statement_bind_bool(stmt, idx, b) },
+        DateTime(iso) => { return statement_bind_string(stmt, idx, iso) }
+    }
+    return Err(BadSql("unreachable in statement_bind_value"))
+}
+
+// Resolve a named parameter (":name", "@name", "$name") and bind a Value.
+// Returns Err(BadSql) with a clear message if the name isn't bound in
+// the prepared SQL.
+pub fn statement_bind_named(stmt: Statement, name: String, val: Value) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let idx: Int = __mn_sqlite3_bind_parameter_index(stmt.handle, name)
+    if idx == 0 {
+        return Err(BadSql("no such parameter: " + name))
+    }
+    return statement_bind_value(stmt, idx, val)
+}
+
+// statement_step returns the raw sqlite step rc (100 = ROW, 101 = DONE)
+// rather than wrapping in StepResult — match the existing stdlib/db
+// convention. Callers check `if rc == 100 { read columns }` /
+// `if rc == 101 { done }`.
+pub fn statement_step(stmt: Statement) -> Result<Int, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_step(stmt.handle)
+    if rc == 100 { return Ok(100) }
+    if rc == 101 { return Ok(101) }
+    return Err(map_sqlite_rc(rc, stmt.db_handle))
+}
+
+// Read a column as a typed value with mismatch detection.
+// The mismatch error carries both expected and actual sqlite type names
+// so debugging is non-magical.
+pub fn statement_column_int(stmt: Statement, idx: Int) -> Result<Int, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let t: Int = __mn_sqlite3_column_type(stmt.handle, idx)
+    if t == 1 {
+        return Ok(__mn_sqlite3_column_int(stmt.handle, idx))
+    }
+    let actual: String = sqlite_type_name(t)
+    return Err(TypeMismatch("expected Int (sqlite INTEGER), got " + actual))
+}
+
+pub fn statement_column_float(stmt: Statement, idx: Int) -> Result<Float, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let t: Int = __mn_sqlite3_column_type(stmt.handle, idx)
+    if t == 2 {
+        return Ok(__mn_sqlite3_column_float(stmt.handle, idx))
+    }
+    // Sqlite implicit-converts INT to FLOAT for this column shape, but
+    // we're strict — the caller asked for FLOAT, and INT is not FLOAT.
+    let actual: String = sqlite_type_name(t)
+    return Err(TypeMismatch("expected Float (sqlite FLOAT), got " + actual))
+}
+
+pub fn statement_column_string(stmt: Statement, idx: Int) -> Result<String, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let t: Int = __mn_sqlite3_column_type(stmt.handle, idx)
+    if t == 3 {
+        return Ok(__mn_sqlite3_column_str(stmt.handle, idx))
+    }
+    let actual: String = sqlite_type_name(t)
+    return Err(TypeMismatch("expected String (sqlite TEXT), got " + actual))
+}
+
+pub fn statement_column_blob(stmt: Statement, idx: Int) -> Result<String, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let t: Int = __mn_sqlite3_column_type(stmt.handle, idx)
+    if t == 4 {
+        return Ok(__mn_sqlite3_column_blob(stmt.handle, idx))
+    }
+    let actual: String = sqlite_type_name(t)
+    return Err(TypeMismatch("expected Blob (sqlite BLOB), got " + actual))
+}
+
+pub fn statement_column_bool(stmt: Statement, idx: Int) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let t: Int = __mn_sqlite3_column_type(stmt.handle, idx)
+    if t == 1 {
+        let n: Int = __mn_sqlite3_column_int(stmt.handle, idx)
+        if n == 0 { return Ok(false) }
+        return Ok(true)
+    }
+    let actual: String = sqlite_type_name(t)
+    return Err(TypeMismatch("expected Bool (stored as INTEGER 0/1), got " + actual))
+}
+
+// Polymorphic column read — returns the actual stored sqlite type as a
+// Value variant. Useful when the caller doesn't know the column type
+// in advance (generic row dumpers / iterators).
+pub fn statement_column_value(stmt: Statement, idx: Int) -> Result<Value, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let t: Int = __mn_sqlite3_column_type(stmt.handle, idx)
+    if t == 5 { return Ok(Null) }
+    if t == 1 {
+        return Ok(Int(__mn_sqlite3_column_int(stmt.handle, idx)))
+    }
+    if t == 2 {
+        return Ok(Float(__mn_sqlite3_column_float(stmt.handle, idx)))
+    }
+    if t == 3 {
+        return Ok(Text(__mn_sqlite3_column_str(stmt.handle, idx)))
+    }
+    if t == 4 {
+        return Ok(Blob(__mn_sqlite3_column_blob(stmt.handle, idx)))
+    }
+    return Err(BadSql("unknown sqlite column type: " + sql_int_to_str(t)))
+}
+
+pub fn statement_column_count(stmt: Statement) -> Int {
+    if stmt.finalized { return 0 }
+    return __mn_sqlite3_column_count(stmt.handle)
+}
+
+pub fn statement_column_name(stmt: Statement, idx: Int) -> String {
+    if stmt.finalized { return "" }
+    return __mn_sqlite3_column_name(stmt.handle, idx)
+}
+
+// Reset a prepared statement back to its initial state so it can be
+// re-bound and re-executed. The standard sqlite reuse idiom.
+pub fn statement_reset(stmt: Statement) -> Result<Bool, SqlError> {
+    if stmt.finalized { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_reset(stmt.handle)
+    if rc != 0 { return Err(map_sqlite_rc(rc, stmt.db_handle)) }
+    return Ok(true)
+}
+
+// statement_finalize is idempotent: a second call on an already-
+// finalized Statement is a silent no-op (returns the same Statement
+// unchanged). Sqlite's sqlite3_finalize on an already-finalized handle
+// is undefined behavior; the finalized:Bool guard keeps us safe.
+pub fn statement_finalize(stmt: Statement) -> Statement {
+    if stmt.finalized { return stmt }
+    let finalize_rc: Int = __mn_sqlite3_finalize(stmt.handle)
+    let r: Statement = new Statement { handle: stmt.handle, db_handle: stmt.db_handle, finalized: true }
+    return r
+}
+
+// ===========================================================================
+// SECTION F — Sq.1 — Database type.
+//
+// Holds the sqlite3* opaque handle plus a closed:Bool guard. v5.35.0 ships
+// without an automatic statement cache (PLAN deviation #4); per-statement
+// reset+rebind is the standard sqlite reuse path and produces the
+// 5-10× speedup the PROMPT's success criterion claims.
+// ===========================================================================
+
+pub tipo Database {
+    handle: Int,
+    closed: Bool,
+    sp_counter: Int
+}
+
+// Parse the libsqlite3 version string and return whether it's >= 3.7.0.
+// The sqlite3_libversion format is "MAJOR.MINOR.PATCH" with optional
+// trailing alpha string; we only care about MAJOR + MINOR.
+//
+// Single-pass scan: dots_seen tracks how many '.' we've crossed; a
+// digit at dots_seen=0 accumulates into major, at dots_seen=1 into
+// minor, at dots_seen>=2 is ignored. Mapanare has no `break`, so the
+// loop runs through all bytes regardless.
+fn version_at_least_3_7(v: String) -> Bool {
+    let n: Int = len(v)
+    if n < 3 { return false }
+    let mut major: Int = 0
+    let mut minor: Int = 0
+    let mut dots_seen: Int = 0
+    let mut i: Int = 0
+    while i < n {
+        let ch: String = v.char_at(i)
+        if ch == "." {
+            if dots_seen < 2 { dots_seen = dots_seen + 1 }
+        }
+        if ch != "." {
+            if ch >= "0" {
+                if ch <= "9" {
+                    if dots_seen == 0 {
+                        major = major * 10 + (digit_of(ch))
+                    }
+                    if dots_seen == 1 {
+                        minor = minor * 10 + (digit_of(ch))
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if major > 3 { return true }
+    if major < 3 { return false }
+    if minor >= 7 { return true }
+    return false
+}
+
+fn digit_of(ch: String) -> Int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    return 0
+}
+
+pub fn database_open(path: String) -> Result<Database, SqlError> {
+    let v: String = __mn_sqlite3_libversion()
+    if len(v) == 0 {
+        return Err(LoadFail)
+    }
+    if version_at_least_3_7(v) == false {
+        return Err(VersionTooOld(v))
+    }
+    let h: Int = __mn_sqlite3_open(path)
+    if h == 0 {
+        return Err(LoadFail)
+    }
+    let db: Database = new Database { handle: h, closed: false, sp_counter: 0 }
+    return Ok(db)
+}
+
+// Convenience: open ":memory:" — the in-memory hermetic test pattern.
+pub fn database_open_memory() -> Result<Database, SqlError> {
+    return database_open(":memory:")
+}
+
+// Close idempotent: a second call on an already-closed Database is
+// silent no-op. The .closed flag keeps us safe.
+pub fn database_close(db: Database) -> Database {
+    if db.closed { return db }
+    __mn_sqlite3_close(db.handle)
+    let r: Database = new Database { handle: db.handle, closed: true, sp_counter: db.sp_counter }
+    return r
+}
+
+// Execute a statement that returns no rows (DDL, INSERT, UPDATE, DELETE
+// without RETURNING). Returns the number of rows affected, or an error.
+pub fn database_execute(db: Database, sql: String) -> Result<Int, SqlError> {
+    if db.closed { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_exec(db.handle, sql)
+    if rc != 0 { return Err(map_sqlite_rc(rc, db.handle)) }
+    return Ok(__mn_sqlite3_changes(db.handle))
+}
+
+// Prepare a SQL statement. Returns a fresh Statement. v5.35.0 does not
+// cache; users prepare once outside hot loops and reuse via reset+bind+step
+// inside.
+pub fn database_prepare(db: Database, sql: String) -> Result<Statement, SqlError> {
+    if db.closed { return Err(Closed) }
+    let h: Int = __mn_sqlite3_prepare(db.handle, sql)
+    if h == 0 {
+        let errmsg: String = __mn_sqlite3_errmsg(db.handle)
+        return Err(BadSql("prepare failed: " + errmsg))
+    }
+    return Ok(new_statement(h, db.handle))
+}
+
+pub fn database_changes(db: Database) -> Int {
+    if db.closed { return 0 }
+    return __mn_sqlite3_changes(db.handle)
+}
+
+pub fn database_last_insert_rowid(db: Database) -> Int {
+    if db.closed { return 0 }
+    return __mn_sqlite3_last_insert_rowid(db.handle)
+}
+
+pub fn database_libversion() -> String {
+    return __mn_sqlite3_libversion()
+}
+
+// ===========================================================================
+// SECTION G — Sq.4 — Transaction primitives + nested SAVEPOINTs.
+//
+// PROMPT scoped `transaction<T>(f: fn() -> Result<T, SqlError>)` with
+// auto-commit on Ok / auto-rollback on Err. v5.35.0 ships explicit
+// begin / commit / rollback primitives (PLAN deviation #3); the user
+// composes the same semantics manually:
+//
+//   match database_begin(db) {
+//     Ok(_) => {
+//       match do_work(db) {
+//         Ok(v) => { let _ = database_commit(db); ... },
+//         Err(e) => { let _ = database_rollback(db); ... }
+//       }
+//     },
+//     Err(e) => { ... }
+//   }
+//
+// Nested via savepoints. The Database carries a sp_counter; calling
+// database_savepoint_begin returns a (Database, name) pair via the
+// returned Result<Database> — caller threads through.
+// ===========================================================================
+
+pub fn database_begin(db: Database) -> Result<Bool, SqlError> {
+    if db.closed { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_exec(db.handle, "BEGIN")
+    if rc != 0 { return Err(map_sqlite_rc(rc, db.handle)) }
+    return Ok(true)
+}
+
+pub fn database_commit(db: Database) -> Result<Bool, SqlError> {
+    if db.closed { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_exec(db.handle, "COMMIT")
+    if rc != 0 { return Err(map_sqlite_rc(rc, db.handle)) }
+    return Ok(true)
+}
+
+pub fn database_rollback(db: Database) -> Result<Bool, SqlError> {
+    if db.closed { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_exec(db.handle, "ROLLBACK")
+    if rc != 0 { return Err(map_sqlite_rc(rc, db.handle)) }
+    return Ok(true)
+}
+
+// Generate the next savepoint name and run SAVEPOINT. Returns the
+// updated Database (with bumped counter) and the savepoint name in a
+// SavepointHandle so the caller can release / rollback by exact name.
+pub tipo SavepointHandle {
+    db: Database,
+    name: String
+}
+
+pub fn database_savepoint_begin(db: Database) -> Result<SavepointHandle, SqlError> {
+    if db.closed { return Err(Closed) }
+    let n: Int = db.sp_counter + 1
+    let name: String = "mn_sp_" + sql_int_to_str(n)
+    let rc: Int = __mn_sqlite3_exec(db.handle, "SAVEPOINT " + name)
+    if rc != 0 { return Err(map_sqlite_rc(rc, db.handle)) }
+    let new_db: Database = new Database { handle: db.handle, closed: false, sp_counter: n }
+    let h: SavepointHandle = new SavepointHandle { db: new_db, name: name }
+    return Ok(h)
+}
+
+pub fn database_savepoint_release(h: SavepointHandle) -> Result<Bool, SqlError> {
+    if h.db.closed { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_exec(h.db.handle, "RELEASE SAVEPOINT " + h.name)
+    if rc != 0 { return Err(map_sqlite_rc(rc, h.db.handle)) }
+    return Ok(true)
+}
+
+pub fn database_savepoint_rollback(h: SavepointHandle) -> Result<Bool, SqlError> {
+    if h.db.closed { return Err(Closed) }
+    let rc: Int = __mn_sqlite3_exec(h.db.handle, "ROLLBACK TO SAVEPOINT " + h.name)
+    if rc != 0 { return Err(map_sqlite_rc(rc, h.db.handle)) }
+    let rc2: Int = __mn_sqlite3_exec(h.db.handle, "RELEASE SAVEPOINT " + h.name)
+    if rc2 != 0 { return Err(map_sqlite_rc(rc2, h.db.handle)) }
+    return Ok(true)
+}

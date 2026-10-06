@@ -1,0 +1,84 @@
+// worker_pool_supervised.mn — v5.42.0 As.7
+//
+// Sketches how to combine stdlib/agent/supervisor.mn with the
+// runtime's mapanare_agent_set_on_exit hook to build a self-healing
+// worker pool. The strategy library answers "which workers should I
+// restart?"; the orchestrator (your code) does the actual respawn.
+//
+// At v5.42.0 the @agent surface does not directly expose
+// mapanare_agent_set_on_exit — the wiring is shown in pseudocode in
+// the comments below. The strategy logic itself runs end-to-end as
+// shown.
+//
+// Run:
+//   cat stdlib/agent/supervisor.mn \
+//       examples/agents/worker_pool_supervised.mn > /tmp/pool.mn
+//   python3 -m mapanare run /tmp/pool.mn
+
+fn build_pool(size: Int) -> Supervisor {
+    let mut s = new_supervisor(STRATEGY_ONE_FOR_ONE(), size * 2, 30)
+    let mut i: Int = 1
+    while i <= size {
+        let name = "worker-" + str(i)
+        s = add_child(s, new_child_spec(i, name, RESTART_PERMANENT()))
+        i = i + 1
+    }
+    da s
+}
+
+// Pseudocode for the orchestrator side — not callable at v5.42.0
+// without manual C-level wiring; preserved here as the canonical
+// shape for the v5.43.0 ergonomic upgrade.
+//
+//   for spec in pool.children:
+//       agent_handle = spawn Worker(spec.agent_id)
+//       __mn_supervisor_install_child_hook(agent_handle, supervisor_handle)
+//
+//   loop:
+//       msg = recv supervisor_handle.inbox  // ChildExited from trampoline
+//       transition = supervisor_handle_exit(pool, msg.agent_id, msg.kind, msg.reason)
+//       pool = transition.sup
+//       if transition.decision.escalate:
+//           shutdown_pool(pool)
+//           exit
+//       for old_id in transition.decision.ids_to_restart:
+//           new_handle = spawn Worker(old_id + 10000)  // new id
+//           __mn_supervisor_install_child_hook(new_handle, supervisor_handle)
+//           pool = replace_child_id(pool, old_id, new_id)
+//       backoff = next_backoff_ms(pool)
+//       if backoff > 0: delay_ms(backoff)
+
+fn simulate_crashes(s: Supervisor) -> Supervisor {
+    let mut sup = s
+    let mut i: Int = 0
+    let crash_ids = [3, 7, 1, 9, 5]   // half the workers
+    while i < len(crash_ids) {
+        let id = crash_ids[i]
+        let t = supervisor_handle_exit(sup, id, EXIT_CRASHED(), "simulated panic")
+        si t.decision.escalate {
+            print("ESCALATE — restart limit exceeded")
+            da t.sup
+        }
+        sup = t.sup
+        // In a real orchestrator: tear down + respawn each
+        // ids_to_restart entry, then call replace_child_id with the
+        // new agent_id. This loop just prints what the orchestrator
+        // would do.
+        let mut k: Int = 0
+        while k < len(t.decision.ids_to_restart) {
+            print("restart worker " + str(t.decision.ids_to_restart[k]))
+            k = k + 1
+        }
+        i = i + 1
+    }
+    da sup
+}
+
+fn main() {
+    let pool = build_pool(10)
+    print("supervised pool: " + str(child_count(pool)) + " workers")
+
+    let after = simulate_crashes(pool)
+    print("after crashes: window count = " + str(after.restart_count_in_window))
+    print("PASSED")
+}

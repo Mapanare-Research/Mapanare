@@ -1,0 +1,177 @@
+// test_error_handling.mn — error-class coverage.
+//
+// Pins the SqlError variants to their wire-class bug shapes:
+//   - bad SQL syntax        -> BadSql
+//   - column<Int> on TEXT   -> TypeMismatch
+//   - UNIQUE violation      -> Constraint
+//   - operation on closed db -> Closed
+//   - operation on finalized statement -> Closed
+//   - unbound :name parameter -> BadSql
+//
+// Each branch independently increments fails; the test is exhaustive.
+
+fn fail_with_e(msg: String, fails_in: Int) -> Int {
+    print("FAIL: " + msg)
+    return fails_in + 1
+}
+
+// Returns 1 if `e` matches BadSql, 0 otherwise.
+fn is_bad_sql(e: SqlError) -> Int {
+    match e {
+        BadSql(_) => { return 1 },
+        Null => { return 0 },
+        LoadFail => { return 0 },
+        VersionTooOld(_) => { return 0 },
+        TypeMismatch(_) => { return 0 },
+        Constraint(_) => { return 0 },
+        Busy => { return 0 },
+        Misuse => { return 0 },
+        Closed => { return 0 }
+    }
+    return 0
+}
+
+fn is_type_mismatch(e: SqlError) -> Int {
+    match e {
+        TypeMismatch(_) => { return 1 },
+        Null => { return 0 },
+        LoadFail => { return 0 },
+        VersionTooOld(_) => { return 0 },
+        BadSql(_) => { return 0 },
+        Constraint(_) => { return 0 },
+        Busy => { return 0 },
+        Misuse => { return 0 },
+        Closed => { return 0 }
+    }
+    return 0
+}
+
+fn is_constraint(e: SqlError) -> Int {
+    match e {
+        Constraint(_) => { return 1 },
+        Null => { return 0 },
+        LoadFail => { return 0 },
+        VersionTooOld(_) => { return 0 },
+        BadSql(_) => { return 0 },
+        TypeMismatch(_) => { return 0 },
+        Busy => { return 0 },
+        Misuse => { return 0 },
+        Closed => { return 0 }
+    }
+    return 0
+}
+
+fn is_closed(e: SqlError) -> Int {
+    match e {
+        Closed => { return 1 },
+        Null => { return 0 },
+        LoadFail => { return 0 },
+        VersionTooOld(_) => { return 0 },
+        BadSql(_) => { return 0 },
+        TypeMismatch(_) => { return 0 },
+        Constraint(_) => { return 0 },
+        Busy => { return 0 },
+        Misuse => { return 0 }
+    }
+    return 0
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    let db_r: Result<Database, SqlError> = database_open_memory()
+    match db_r {
+        Ok(db) => {
+            let _r0: Result<Int, SqlError> = database_execute(db, "CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+
+            // 1. Bad SQL syntax → BadSql.
+            let bad_r: Result<Int, SqlError> = database_execute(db, "SELEKT * FROM t")
+            match bad_r {
+                Ok(_) => { fails = fail_with_e("bad SQL returned Ok", fails) },
+                Err(e) => {
+                    if is_bad_sql(e) == 0 { fails = fail_with_e("bad SQL not classified BadSql", fails) }
+                }
+            }
+
+            // 2. Insert one row, then try to read its TEXT column as Int.
+            let _i1: Result<Int, SqlError> = database_execute(db, "INSERT INTO t(name) VALUES('hello')")
+            let q_r: Result<Statement, SqlError> = database_prepare(db, "SELECT name FROM t LIMIT 1")
+            match q_r {
+                Ok(stmt) => {
+                    let _s_r: Result<Int, SqlError> = statement_step(stmt)
+                    let mismatch_r: Result<Int, SqlError> = statement_column_int(stmt, 0)
+                    match mismatch_r {
+                        Ok(_) => { fails = fail_with_e("Int read of TEXT column returned Ok", fails) },
+                        Err(e) => {
+                            if is_type_mismatch(e) == 0 {
+                                fails = fail_with_e("TEXT-as-Int not classified TypeMismatch", fails)
+                            }
+                        }
+                    }
+                    let dropped: Statement = statement_finalize(stmt)
+                    // Operating on a finalized stmt → Closed.
+                    let on_finalized_r: Result<Int, SqlError> = statement_step(dropped)
+                    match on_finalized_r {
+                        Ok(_) => { fails = fail_with_e("step on finalized stmt returned Ok", fails) },
+                        Err(e2) => {
+                            if is_closed(e2) == 0 {
+                                fails = fail_with_e("finalized stmt step not classified Closed", fails)
+                            }
+                        }
+                    }
+                },
+                Err(_) => { fails = fail_with_e("SELECT prepare failed", fails) }
+            }
+
+            // 3. UNIQUE violation → Constraint. id INTEGER PRIMARY KEY auto-rejects dupes.
+            let _i2: Result<Int, SqlError> = database_execute(db, "INSERT INTO t(id, name) VALUES(42, 'a')")
+            let dup_r: Result<Int, SqlError> = database_execute(db, "INSERT INTO t(id, name) VALUES(42, 'b')")
+            match dup_r {
+                Ok(_) => { fails = fail_with_e("duplicate id returned Ok", fails) },
+                Err(e) => {
+                    if is_constraint(e) == 0 {
+                        fails = fail_with_e("UNIQUE violation not classified Constraint", fails)
+                    }
+                }
+            }
+
+            // 4. Unbound :name parameter → BadSql via statement_bind_named.
+            let q2_r: Result<Statement, SqlError> = database_prepare(db, "SELECT * FROM t WHERE id = :id")
+            match q2_r {
+                Ok(stmt2) => {
+                    let bn_r: Result<Bool, SqlError> = statement_bind_named(stmt2, ":nonexistent", value_int(1))
+                    match bn_r {
+                        Ok(_) => { fails = fail_with_e("bind unknown :name returned Ok", fails) },
+                        Err(e) => {
+                            if is_bad_sql(e) == 0 {
+                                fails = fail_with_e("unknown :name not classified BadSql", fails)
+                            }
+                        }
+                    }
+                    let dropped: Statement = statement_finalize(stmt2)
+                },
+                Err(_) => { fails = fail_with_e("named-param prepare failed", fails) }
+            }
+
+            // 5. Operation on closed Database → Closed.
+            let closed_db: Database = database_close(db)
+            let on_closed_r: Result<Int, SqlError> = database_execute(closed_db, "SELECT 1")
+            match on_closed_r {
+                Ok(_) => { fails = fail_with_e("execute on closed db returned Ok", fails) },
+                Err(e) => {
+                    if is_closed(e) == 0 {
+                        fails = fail_with_e("execute on closed db not classified Closed", fails)
+                    }
+                }
+            }
+        },
+        Err(_) => { fails = fail_with_e("open :memory: failed", fails) }
+    }
+
+    if fails == 0 {
+        print("test_error_handling PASSED")
+    }
+    if fails != 0 {
+        print("test_error_handling FAILED")
+    }
+}

@@ -80,7 +80,7 @@ fn compile(pattern: String) -> Result<Regex, RegexError> {
     }
     pon err: String = __mn_regex_error_str(handle)
     si len(err) > 0 {
-        pon _: Int = __mn_regex_free(handle)
+        pon _drop: Int = __mn_regex_free(handle)
         da Err(new_compile_error(err))
     }
     da Ok(new Regex { handle: handle, pattern: pattern })
@@ -121,16 +121,16 @@ fn regex_match(pattern: String, text: String) -> Option<Match> {
     }
     pon err: String = __mn_regex_error_str(handle)
     si len(err) > 0 {
-        pon _: Int = __mn_regex_free(handle)
+        pon _drop: Int = __mn_regex_free(handle)
         da nada
     }
     pon rc: Int = __mn_regex_exec_str(handle, text, 0)
     si rc <= 0 {
-        pon _: Int = __mn_regex_free(handle)
+        pon _drop: Int = __mn_regex_free(handle)
         da nada
     }
     pon m: Match = build_match(handle, text)
-    pon _: Int = __mn_regex_free(handle)
+    pon _drop: Int = __mn_regex_free(handle)
     da Some(m)
 }
 
@@ -146,7 +146,7 @@ fn find_all(pattern: String, text: String) -> List<Match> {
     }
     pon err: String = __mn_regex_error_str(handle)
     si len(err) > 0 {
-        pon _: Int = __mn_regex_free(handle)
+        pon _drop: Int = __mn_regex_free(handle)
         pon empty: List<Match> = []
         da empty
     }
@@ -156,7 +156,7 @@ fn find_all(pattern: String, text: String) -> List<Match> {
     mien offset <= text_len {
         pon rc: Int = __mn_regex_exec_str(handle, text, offset)
         si rc <= 0 {
-            pon _: Int = __mn_regex_free(handle)
+            pon _drop: Int = __mn_regex_free(handle)
             da results
         }
         pon m: Match = build_match(handle, text)
@@ -168,7 +168,7 @@ fn find_all(pattern: String, text: String) -> List<Match> {
             offset = match_end
         }
     }
-    pon _: Int = __mn_regex_free(handle)
+    pon _drop: Int = __mn_regex_free(handle)
     da results
 }
 
@@ -183,11 +183,11 @@ fn replace(pattern: String, text: String, replacement: String) -> String {
     }
     pon err: String = __mn_regex_error_str(handle)
     si len(err) > 0 {
-        pon _: Int = __mn_regex_free(handle)
+        pon _drop: Int = __mn_regex_free(handle)
         da text
     }
     pon result: String = __mn_regex_replace_str(handle, text, replacement, 0)
-    pon _: Int = __mn_regex_free(handle)
+    pon _drop: Int = __mn_regex_free(handle)
     da result
 }
 
@@ -202,11 +202,11 @@ fn replace_all(pattern: String, text: String, replacement: String) -> String {
     }
     pon err: String = __mn_regex_error_str(handle)
     si len(err) > 0 {
-        pon _: Int = __mn_regex_free(handle)
+        pon _drop: Int = __mn_regex_free(handle)
         da text
     }
     pon result: String = __mn_regex_replace_str(handle, text, replacement, 1)
-    pon _: Int = __mn_regex_free(handle)
+    pon _drop: Int = __mn_regex_free(handle)
     da result
 }
 
@@ -222,7 +222,7 @@ fn regex_split(pattern: String, text: String) -> List<String> {
     }
     pon err: String = __mn_regex_error_str(handle)
     si len(err) > 0 {
-        pon _: Int = __mn_regex_free(handle)
+        pon _drop: Int = __mn_regex_free(handle)
         pon fallback: List<String> = [text]
         da fallback
     }
@@ -234,7 +234,7 @@ fn regex_split(pattern: String, text: String) -> List<String> {
         si rc <= 0 {
             pon remaining: String = text.substr(offset, text_len)
             parts = parts + [remaining]
-            pon _: Int = __mn_regex_free(handle)
+            pon _drop: Int = __mn_regex_free(handle)
             da parts
         }
         pon match_start: Int = __mn_regex_group_start(handle, 0)
@@ -247,7 +247,7 @@ fn regex_split(pattern: String, text: String) -> List<String> {
             offset = match_end
         }
     }
-    pon _: Int = __mn_regex_free(handle)
+    pon _drop: Int = __mn_regex_free(handle)
     da parts
 }
 
@@ -262,10 +262,472 @@ fn is_match(pattern: String, text: String) -> Bool {
     }
     pon err: String = __mn_regex_error_str(handle)
     si len(err) > 0 {
-        pon _: Int = __mn_regex_free(handle)
+        pon _drop: Int = __mn_regex_free(handle)
         da false
     }
     pon rc: Int = __mn_regex_exec_str(handle, text, 0)
-    pon _: Int = __mn_regex_free(handle)
+    pon _drop: Int = __mn_regex_free(handle)
     da rc > 0
+}
+
+// ===========================================================================
+// v5.38.0 Re.* — additions
+//
+// All v5.38.0 additions are pure ".mn" wrappers over the existing PCRE2
+// dlopen path; no new C-runtime exports were introduced.
+//
+//   Re.1 — Regex::compile -> Result<Regex, RegexError>     [PRE-EXISTING]
+//   Re.2 — find alias; compile-once "regex_*" verbs        [v5.38.0]
+//   Re.3 — Captures + named groups via PCRE2 (?P<name>...) [v5.38.0]
+//          Backref-bearing replacements ($0..$9, ${name},
+//          $$) already work through the existing
+//          replace / replace_all path because PCRE2's
+//          default substitute mode recognises that syntax.
+//   Re.4 — Test corpus + property tests                    [v5.38.0]
+//   Re.5 — docs/stdlib/regex.md                            [v5.38.0]
+//
+// Backend decision (Phase 0): keep PCRE2; Pike VM rewrite is a v6.0+
+// candidate. Rationale in docs/roadmap/v5/v5.38.0/PRE_PHASE_AUDIT.md.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Re.2 — NOTE on `find` alias: deferred from v5.38.0 pending closure
+// of the v5.x Option<Match>-lowering carry-forward (Re.6, see
+// CLAUDE.md). The pre-v5.38.0 pattern-first API
+// (regex_match / find_all / replace / replace_all / regex_split /
+// is_match) lowers `Option<Match>` locals as i1 instead of as the
+// Match-aggregate, producing invalid `extractvalue i1, 0` IR. The
+// v5.38.0 Regex-first surface below (compile -> regex_find /
+// regex_captures / regex_replace / …) is the recommended path; it
+// does not trigger the same quirk.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Re.3 — NamePair and Captures.
+//
+// Captures is the v5.38.0 "single match with all groups + names" type.
+// `groups` is index-based ([0] = whole match, [1..count] = subgroups);
+// `names` is an alternating-kv-style List<NamePair> (NOT Map<String, Int>
+// per the v5.x drop-glue carry — Map<String,V> in returned struct/enum
+// values has known issues).
+// ---------------------------------------------------------------------------
+
+pub tipo NamePair {
+    name: String,
+    index: Int
+}
+
+// Captures stores group values as parallel lists rather than
+// List<Option<String>> to sidestep v5.x drop-glue carries on
+// List<Option<X>> append. `group_values[i]` is the captured text
+// (or "" when the group did not participate); `group_present[i]`
+// is true iff group i did participate. captures_get returns
+// Some(group_values[i]) when present, None otherwise.
+pub tipo Captures {
+    text: String,
+    start: Int,
+    end_pos: Int,
+    group_values: List<String>,
+    group_present: List<Bool>,
+    names: List<NamePair>
+}
+
+fn new_name_pair(name: String, index: Int) -> NamePair {
+    da new NamePair { name: name, index: index }
+}
+
+// ---------------------------------------------------------------------------
+// Re.3 — parse_named_groups
+//
+// Walks `pattern` looking for `(?P<name>...)` (Python style) and
+// `(?<name>...)` (Perl style); returns the List<NamePair> in
+// pattern-source order. The index is the 1-based capture-group index
+// PCRE2 will assign (group 0 = whole match; group 1 = first
+// capturing-paren occurrence in source order).
+//
+// State machine:
+//   - Track group_index counter (starts at 0; the next `(` that opens
+//     a capturing group bumps it).
+//   - Track in_charclass (chars are passive inside `[...]`).
+//   - On `\`, skip the next char (escape).
+//   - On `(`, look ahead at the next chars:
+//       (?:   non-capturing    — do not bump
+//       (?=   lookahead        — do not bump
+//       (?!   neg lookahead    — do not bump
+//       (?<=  lookbehind       — do not bump
+//       (?<!  neg lookbehind   — do not bump
+//       (?#   comment          — do not bump (PCRE2 skips to `)`)
+//       (?P<NAME>  capturing & named — bump and record name
+//       (?<NAME>   capturing & named — bump and record name
+//       (?>   atomic group     — do not bump
+//       (?    other inline-flag (e.g. `(?i)`) — does not bump
+//                                 unless syntax-actually opens a group
+//       (...  plain capturing  — bump (no name)
+//
+// Conservative: when in doubt, do not bump. PCRE2 itself does the
+// authoritative numbering at compile time; we only need correct
+// names for the named groups we surface.
+// ---------------------------------------------------------------------------
+
+// Helper: scan `pattern` for the first occurrence of `target` at index
+// >= `start`; return the index, or len(pattern) if not found. `target`
+// is a single-character string.
+fn find_char_from(pattern: String, start: Int, target: String) -> Int {
+    pon plen: Int = len(pattern)
+    pon mut i: Int = start
+    pon mut found: Int = plen
+    mien i < plen {
+        pon ch: String = pattern.char_at(i)
+        si ch == target {
+            found = i
+            i = plen
+        } sino {
+            i = i + 1
+        }
+    }
+    da found
+}
+
+fn parse_named_groups(pattern: String) -> List<NamePair> {
+    pon mut names: List<NamePair> = []
+    pon plen: Int = len(pattern)
+    pon mut i: Int = 0
+    pon mut group_index: Int = 0
+    pon mut in_charclass: Bool = false
+
+    mien i < plen {
+        pon ch: String = pattern.char_at(i)
+
+        si ch == "\\" {
+            // Escape — skip next char (if any).
+            i = i + 2
+        } sino {
+            si in_charclass {
+                si ch == "]" {
+                    in_charclass = false
+                }
+                i = i + 1
+            } sino {
+                si ch == "[" {
+                    in_charclass = true
+                    i = i + 1
+                } sino {
+                    si ch == "(" {
+                        // Look ahead: peek next1, next2, next3 (default "" if past end).
+                        pon mut next1: String = ""
+                        si i + 1 < plen { next1 = pattern.char_at(i + 1) }
+                        pon mut next2: String = ""
+                        si i + 2 < plen { next2 = pattern.char_at(i + 2) }
+                        pon mut next3: String = ""
+                        si i + 3 < plen { next3 = pattern.char_at(i + 3) }
+
+                        si next1 != "?" {
+                            // Plain capturing `(`.
+                            group_index = group_index + 1
+                            i = i + 1
+                        } sino {
+                            // `(?` family. Determine which form.
+                            //   (?:   (?=   (?!   (?>   (?#   (?P<NAME>
+                            //   (?<=  (?<!  (?<NAME>   inline-flag (?i)…
+                            si next2 == ":" {
+                                i = i + 3
+                            } sino {
+                                si next2 == "=" {
+                                    i = i + 3
+                                } sino {
+                                    si next2 == "!" {
+                                        i = i + 3
+                                    } sino {
+                                        si next2 == ">" {
+                                            // (?>  atomic group — non-capturing
+                                            i = i + 3
+                                        } sino {
+                                            si next2 == "#" {
+                                                // (?#…)  comment — skip to the next `)`.
+                                                pon close_idx: Int = find_char_from(pattern, i + 3, ")")
+                                                i = close_idx + 1
+                                            } sino {
+                                                si next2 == "P" {
+                                                    si next3 == "<" {
+                                                        // (?P<NAME>  named capturing (Python).
+                                                        group_index = group_index + 1
+                                                        pon name_start: Int = i + 4
+                                                        pon close_idx_p: Int = find_char_from(pattern, name_start, ">")
+                                                        si close_idx_p < plen {
+                                                            pon name: String = pattern.substr(name_start, close_idx_p - name_start)
+                                                            si len(name) > 0 {
+                                                                names = names + [new_name_pair(name, group_index)]
+                                                            }
+                                                            i = close_idx_p + 1
+                                                        } sino {
+                                                            i = plen
+                                                        }
+                                                    } sino {
+                                                        // (?P=NAME)  back-ref (no group opens here).
+                                                        i = i + 3
+                                                    }
+                                                } sino {
+                                                    si next2 == "<" {
+                                                        si next3 == "=" {
+                                                            // (?<= lookbehind
+                                                            i = i + 4
+                                                        } sino {
+                                                            si next3 == "!" {
+                                                                // (?<! neg lookbehind
+                                                                i = i + 4
+                                                            } sino {
+                                                                // (?<NAME>  named capturing (Perl).
+                                                                group_index = group_index + 1
+                                                                pon name_start2: Int = i + 3
+                                                                pon close_idx2: Int = find_char_from(pattern, name_start2, ">")
+                                                                si close_idx2 < plen {
+                                                                    pon nm2: String = pattern.substr(name_start2, close_idx2 - name_start2)
+                                                                    si len(nm2) > 0 {
+                                                                        names = names + [new_name_pair(nm2, group_index)]
+                                                                    }
+                                                                    i = close_idx2 + 1
+                                                                } sino {
+                                                                    i = plen
+                                                                }
+                                                            }
+                                                        }
+                                                    } sino {
+                                                        // Other inline-flag forms:
+                                                        //   (?i)  (?ix)  (?-i)  (?i:...)
+                                                        // None of these open a capturing
+                                                        // group. Skip ahead to the next
+                                                        // `)` or `:` (whichever comes
+                                                        // first) and resume the outer
+                                                        // scan from there.
+                                                        pon close_idx3: Int = find_char_from(pattern, i + 2, ")")
+                                                        pon colon_idx: Int = find_char_from(pattern, i + 2, ":")
+                                                        si colon_idx < close_idx3 {
+                                                            // (?flags:…) — non-capturing
+                                                            // sub-pattern. Continue from
+                                                            // just after the colon.
+                                                            i = colon_idx + 1
+                                                        } sino {
+                                                            // (?flags) — bare flag-set.
+                                                            i = close_idx3 + 1
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } sino {
+                        i = i + 1
+                    }
+                }
+            }
+        }
+    }
+
+    da names
+}
+
+// ---------------------------------------------------------------------------
+// Re.3 — captures helpers (over a Captures value)
+// ---------------------------------------------------------------------------
+
+pub fn captures_count(c: Captures) -> Int {
+    da len(c.group_values)
+}
+
+pub fn captures_get(c: Captures, idx: Int) -> Option<String> {
+    si idx < 0 {
+        da nada
+    }
+    pon n: Int = len(c.group_values)
+    si idx >= n {
+        da nada
+    }
+    pon present: Bool = c.group_present[idx]
+    si present == false {
+        da nada
+    }
+    pon v: String = c.group_values[idx]
+    da Some(v)
+}
+
+pub fn captures_get_named(c: Captures, name: String) -> Option<String> {
+    pon mut i: Int = 0
+    pon n: Int = len(c.names)
+    mien i < n {
+        pon p: NamePair = c.names[i]
+        si p.name == name {
+            da captures_get(c, p.index)
+        }
+        i = i + 1
+    }
+    da nada
+}
+
+// ---------------------------------------------------------------------------
+// Internal: snapshot all groups from the current PCRE2 match into
+// parallel lists of values + present-flags, indexed [0..count]
+// (where [0] is the whole match). Avoids List<Option<String>> append
+// (a known v5.x drop-glue carry; List<X> + List<Bool> works cleanly).
+// ---------------------------------------------------------------------------
+
+fn build_captures(handle: Int, subject: String, names: List<NamePair>) -> Captures {
+    pon start: Int = __mn_regex_group_start(handle, 0)
+    pon end_p: Int = __mn_regex_group_end(handle, 0)
+    pon text: String = __mn_regex_group_str(handle, subject, 0)
+    pon count: Int = __mn_regex_group_count(handle)
+
+    pon mut values: List<String> = [text]
+    pon mut present: List<Bool> = [true]
+
+    pon mut i: Int = 1
+    mien i <= count {
+        pon gs: Int = __mn_regex_group_start(handle, i)
+        si gs < 0 {
+            values = values + [""]
+            present = present + [false]
+        } sino {
+            pon gt: String = __mn_regex_group_str(handle, subject, i)
+            values = values + [gt]
+            present = present + [true]
+        }
+        i = i + 1
+    }
+
+    da new Captures { text: text, start: start, end_pos: end_p, group_values: values, group_present: present, names: names }
+}
+
+// ---------------------------------------------------------------------------
+// Re.3 — regex_captures / regex_captures_iter
+//
+// Both work over a *compiled* Regex — this is the v5.38.0 compile-once-
+// match-many entry point. Names are parsed once from r.pattern; the
+// resulting List<NamePair> is shared across every Captures yielded,
+// which keeps allocation bounded for `_iter`.
+// ---------------------------------------------------------------------------
+
+pub fn regex_captures(r: Regex, subject: String) -> Option<Captures> {
+    si r.handle == 0 {
+        da nada
+    }
+    pon rc: Int = __mn_regex_exec_str(r.handle, subject, 0)
+    si rc <= 0 {
+        da nada
+    }
+    pon names: List<NamePair> = parse_named_groups(r.pattern)
+    pon c: Captures = build_captures(r.handle, subject, names)
+    da Some(c)
+}
+
+pub fn regex_captures_iter(r: Regex, subject: String) -> List<Captures> {
+    pon mut results: List<Captures> = []
+    si r.handle == 0 {
+        da results
+    }
+    pon names: List<NamePair> = parse_named_groups(r.pattern)
+    pon mut offset: Int = 0
+    pon slen: Int = len(subject)
+    mien offset <= slen {
+        pon rc: Int = __mn_regex_exec_str(r.handle, subject, offset)
+        si rc <= 0 {
+            da results
+        }
+        pon c: Captures = build_captures(r.handle, subject, names)
+        results = results + [c]
+        pon match_end: Int = __mn_regex_group_end(r.handle, 0)
+        si match_end <= offset {
+            offset = offset + 1
+        } sino {
+            offset = match_end
+        }
+    }
+    da results
+}
+
+// ---------------------------------------------------------------------------
+// Re.2 — Compile-once "regex_*" verbs.
+//
+// These are the `Regex`-first equivalents of the existing pattern-string-
+// first free functions. Use them when matching the same compiled pattern
+// many times — each call avoids a fresh PCRE2 compile cycle.
+//
+// The existing pattern-first free functions (is_match, regex_match,
+// find_all, replace, replace_all, regex_split) are preserved unchanged
+// for back-compat.
+// ---------------------------------------------------------------------------
+
+pub fn regex_is_match(r: Regex, subject: String) -> Bool {
+    si r.handle == 0 {
+        da false
+    }
+    pon rc: Int = __mn_regex_exec_str(r.handle, subject, 0)
+    da rc > 0
+}
+
+pub fn regex_find(r: Regex, subject: String) -> Option<Match> {
+    si r.handle == 0 {
+        da nada
+    }
+    pon rc: Int = __mn_regex_exec_str(r.handle, subject, 0)
+    si rc <= 0 {
+        da nada
+    }
+    pon m: Match = build_match(r.handle, subject)
+    da Some(m)
+}
+
+pub fn regex_find_all(r: Regex, subject: String) -> List<Match> {
+    pon mut results: List<Match> = []
+    si r.handle == 0 {
+        da results
+    }
+    pon mut offset: Int = 0
+    pon slen: Int = len(subject)
+    mien offset <= slen {
+        pon rc: Int = __mn_regex_exec_str(r.handle, subject, offset)
+        si rc <= 0 {
+            da results
+        }
+        pon m: Match = build_match(r.handle, subject)
+        results = results + [m]
+        pon match_end: Int = __mn_regex_group_end(r.handle, 0)
+        si match_end <= offset {
+            offset = offset + 1
+        } sino {
+            offset = match_end
+        }
+    }
+    da results
+}
+
+pub fn regex_replace(r: Regex, subject: String, replacement: String) -> String {
+    si r.handle == 0 {
+        da subject
+    }
+    da __mn_regex_replace_str(r.handle, subject, replacement, 0)
+}
+
+pub fn regex_replace_all(r: Regex, subject: String, replacement: String) -> String {
+    si r.handle == 0 {
+        da subject
+    }
+    da __mn_regex_replace_str(r.handle, subject, replacement, 1)
+}
+
+// ---------------------------------------------------------------------------
+// Re.* — drop a compiled Regex (free its PCRE2 handle).
+//
+// Idempotent: dropping a Regex with handle == 0 is a no-op. Returns a
+// new Regex value with handle: 0 / pattern unchanged so callers can
+// keep the variable around if they want.
+// ---------------------------------------------------------------------------
+
+pub fn regex_free(r: Regex) -> Regex {
+    si r.handle == 0 {
+        da r
+    }
+    pon _drop: Int = __mn_regex_free(r.handle)
+    da new Regex { handle: 0, pattern: r.pattern }
 }

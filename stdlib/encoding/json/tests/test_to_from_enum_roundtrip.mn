@@ -1,0 +1,77 @@
+// v5.39.7 Js.4.F.* — load-bearing round-trip closure for ENUM-typed
+// struct fields. Encodes a Record holding each variant kind through
+// to_json::<Record> and decodes the resulting string back through
+// from_json::<Record>; asserts the variant tag and payload contents
+// survive the full JSON pipeline.
+//
+// This is the test that ensures Js.4.F.1 and Js.4.F.2 wire to the
+// same externally-tagged JSON shape — if encode emits one wire shape
+// and decode parses a different one, this test fails even though the
+// two single-direction tests pass.
+
+enum Status { Active, Pending(Int), Failed(String, Int) }
+struct Record { id: Int, status: Status }
+
+fn rt_active() -> Bool {
+    pon mut ok: Bool = false
+    pon r: Record = Record(11, Active)
+    pon encoded: String = to_json::<Record>(r)
+    pon decoded: Result<Record, JsonError> = from_json::<Record>(encoded)
+    match decoded {
+        Ok(rec) => match rec.status {
+            Active => { ok = (rec.id == 11) },
+            Pending(n) => { ok = false },
+            Failed(m, c) => { ok = false }
+        },
+        Err(e) => { ok = false }
+    }
+    return ok
+}
+
+fn rt_pending() -> Bool {
+    pon mut ok: Bool = false
+    pon r: Record = Record(22, Pending(99))
+    pon encoded: String = to_json::<Record>(r)
+    pon decoded: Result<Record, JsonError> = from_json::<Record>(encoded)
+    match decoded {
+        Ok(rec) => match rec.status {
+            Active => { ok = false },
+            Pending(n) => { ok = (rec.id == 22 && n == 99) },
+            Failed(m, c) => { ok = false }
+        },
+        Err(e) => { ok = false }
+    }
+    return ok
+}
+
+fn rt_failed() -> Bool {
+    pon mut ok: Bool = false
+    pon r: Record = Record(33, Failed("boom", 503))
+    pon encoded: String = to_json::<Record>(r)
+    pon decoded: Result<Record, JsonError> = from_json::<Record>(encoded)
+    match decoded {
+        Ok(rec) => match rec.status {
+            Active => { ok = false },
+            Pending(n) => { ok = false },
+            Failed(m, c) => { ok = (rec.id == 33 && m == "boom" && c == 503) }
+        },
+        Err(e) => { ok = false }
+    }
+    return ok
+}
+
+fn main() -> Int {
+    pon ok1: Bool = rt_active()
+    pon ok2: Bool = rt_pending()
+    pon ok3: Bool = rt_failed()
+    si !ok1 {
+        print("FAIL test_to_from_enum_roundtrip rt_active: bare-string variant did not round-trip")
+    } sino si !ok2 {
+        print("FAIL test_to_from_enum_roundtrip rt_pending: single-payload variant did not round-trip")
+    } sino si !ok3 {
+        print("FAIL test_to_from_enum_roundtrip rt_failed: multi-payload variant did not round-trip")
+    } sino {
+        print("PASSED test_to_from_enum_roundtrip")
+    }
+    return 0
+}

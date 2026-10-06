@@ -1,0 +1,44 @@
+// v5.39.4 — load-bearing round-trip test for nested-struct
+// typed-serde. Chains v5.39.3's encode-side STRUCT branch
+// (Js.4.C) with v5.39.4's decode-side STRUCT branch (Js.4.D.2)
+// and v5.39.4's encode-side LIST branch (Js.4.D.1) is exercised
+// by the embedded List<Int> field.
+//
+// v5.39.5 Js.4.D.3 — strengthened with inner.ints assertions.
+// Pre-v5.39.5 the embedded List<Int> survived the encode side
+// but decoded as a raw JsonValue::Array enum on the decode side
+// (silent shape mismatch). v5.39.5's _emit_list_decode_body
+// closes the round-trip end-to-end.
+//
+// Failure here is the most actionable diagnostic: an
+// encode-decode disagreement localizes to the diverging field.
+
+struct Inner { x: Int, y: String, ints: List<Int> }
+struct Wrap { name: String, inner: Inner }
+
+fn main() -> Int {
+    pon original: Wrap = Wrap("ok", Inner(42, "hi", [10, 20, 30]))
+    pon encoded: String = to_json::<Wrap>(original)
+    pon r: Result<Wrap, JsonError> = from_json::<Wrap>(encoded)
+    match r {
+        Ok(decoded) => {
+            si decoded.name != "ok" {
+                print("FAIL test_to_from_nested_roundtrip: wrong outer name")
+            } sino si decoded.inner.x != 42 {
+                print("FAIL test_to_from_nested_roundtrip: wrong inner.x")
+            } sino si decoded.inner.y != "hi" {
+                print("FAIL test_to_from_nested_roundtrip: wrong inner.y")
+            } sino si len(decoded.inner.ints) != 3 {
+                print("FAIL test_to_from_nested_roundtrip: wrong inner.ints len")
+            } sino si decoded.inner.ints[0] != 10 {
+                print("FAIL test_to_from_nested_roundtrip: wrong inner.ints[0]")
+            } sino si decoded.inner.ints[2] != 30 {
+                print("FAIL test_to_from_nested_roundtrip: wrong inner.ints[2]")
+            } sino {
+                print("PASSED test_to_from_nested_roundtrip")
+            }
+        },
+        Err(e) => print("FAIL test_to_from_nested_roundtrip: decode error")
+    }
+    return 0
+}

@@ -1,0 +1,101 @@
+// v5.40.0 Ai.5 — exercises every AskError variant through the
+// ask_error_message dispatch. Falsifiability: removing or renaming
+// any variant in `pub tipo AskError` (stdlib/ai/ask.mn) reproduces
+// the corresponding "FAIL " arm here.
+
+fn case_network() -> Bool {
+    pon e: AskError = Network("conn refused")
+    pon m: String = ask_error_message(e)
+    da m == "Network error: conn refused"
+}
+
+fn case_rate_limit() -> Bool {
+    pon e: AskError = RateLimit(60)
+    pon m: String = ask_error_message(e)
+    da m == "Rate limited; retry after 60s"
+}
+
+fn case_schema_mismatch() -> Bool {
+    pon e: AskError = SchemaMismatch("missing field foo")
+    pon m: String = ask_error_message(e)
+    da m == "Schema mismatch: missing field foo"
+}
+
+fn case_content_filtered() -> Bool {
+    pon e: AskError = ContentFiltered("flagged")
+    pon m: String = ask_error_message(e)
+    da m == "Content filtered: flagged"
+}
+
+fn case_timed_out() -> Bool {
+    pon e: AskError = TimedOut
+    pon m: String = ask_error_message(e)
+    da m == "Request timed out"
+}
+
+fn case_provider_unavailable() -> Bool {
+    pon e: AskError = ProviderUnavailable("503")
+    pon m: String = ask_error_message(e)
+    da m == "Provider unavailable: 503"
+}
+
+fn case_malformed() -> Bool {
+    pon e: AskError = MalformedResponse("not json")
+    pon m: String = ask_error_message(e)
+    da m == "Malformed response: not json"
+}
+
+fn case_deserialize_failed() -> Bool {
+    pon e: AskError = DeserializeFailed("expected Int")
+    pon m: String = ask_error_message(e)
+    da m == "Deserialize failed: expected Int"
+}
+
+fn case_map_extract_llm() -> Bool {
+    pon ex: ExtractError = LlmFailed("oops")
+    pon ae: AskError = map_extract_error(ex)
+    pon mut ok: Bool = false
+    match ae {
+        Network(m) => { ok = (m == "oops") },
+        RateLimit(_)            => {},
+        SchemaMismatch(_)       => {},
+        ContentFiltered(_)      => {},
+        TimedOut                => {},
+        ProviderUnavailable(_)  => {},
+        MalformedResponse(_)    => {},
+        DeserializeFailed(_)    => {}
+    }
+    da ok
+}
+
+fn case_map_extract_validation() -> Bool {
+    pon ex: ExtractError = ValidationFailed("bad shape")
+    pon ae: AskError = map_extract_error(ex)
+    pon mut ok: Bool = false
+    match ae {
+        Network(_) => {},
+        RateLimit(_) => {},
+        SchemaMismatch(m) => { ok = (m == "bad shape") },
+        ContentFiltered(_) => {},
+        TimedOut => {},
+        ProviderUnavailable(_) => {},
+        MalformedResponse(_) => {},
+        DeserializeFailed(_) => {}
+    }
+    da ok
+}
+
+fn main() -> Int {
+    si case_network() == false        { print("FAIL test_ask_error: Network") }
+    si case_rate_limit() == false     { print("FAIL test_ask_error: RateLimit") }
+    si case_schema_mismatch() == false { print("FAIL test_ask_error: SchemaMismatch") }
+    si case_content_filtered() == false { print("FAIL test_ask_error: ContentFiltered") }
+    si case_timed_out() == false      { print("FAIL test_ask_error: TimedOut") }
+    si case_provider_unavailable() == false { print("FAIL test_ask_error: ProviderUnavailable") }
+    si case_malformed() == false      { print("FAIL test_ask_error: MalformedResponse") }
+    si case_deserialize_failed() == false { print("FAIL test_ask_error: DeserializeFailed") }
+    si case_map_extract_llm() == false { print("FAIL test_ask_error: map_extract LlmFailed") }
+    si case_map_extract_validation() == false { print("FAIL test_ask_error: map_extract Validation") }
+    print("PASSED test_ask_error_variants")
+    return 0
+}

@@ -1,0 +1,131 @@
+// test_property.mn — Three property-style tests.
+// Concatenated with stdlib/time.mn by tests/stdlib/test_time_dt.py harness.
+//
+// 1. Round-trip: parse_rfc3339(format(dt)) == dt  for many random datetimes.
+// 2. Epoch round-trip: from_epoch(to_epoch(dt)) == dt to the second.
+// 3. Arithmetic associativity: (a + b) + c == a + (b + c) for Durations.
+//
+// NOT random in the runtime sense (no PRNG in stdlib yet) — uses a fixed
+// deterministic table of "interesting" inputs covering boundary cases:
+// year transitions, leap days, DST-tricky times, max/min ranges. This is
+// the property-style coverage that Dt.7 closeout asks for.
+
+fn build_dt(y: Int, mo: Int, d: Int, h: Int, mi: Int, s: Int) -> DateTime {
+    let date: Date = new Date { year: y, month: mo, day: d }
+    let time: Time = new Time { hour: h, minute: mi, second: s, nanos: 0 }
+    return new DateTime { date: date, time: time, tz_offset_minutes: 0 }
+}
+
+fn dt_eq(a: DateTime, b: DateTime) -> Bool {
+    if a.date.year != b.date.year { return false }
+    if a.date.month != b.date.month { return false }
+    if a.date.day != b.date.day { return false }
+    if a.time.hour != b.time.hour { return false }
+    if a.time.minute != b.time.minute { return false }
+    if a.time.second != b.time.second { return false }
+    if a.tz_offset_minutes != b.tz_offset_minutes { return false }
+    return true
+}
+
+fn rt_one(dt: DateTime, label: String, fails: Int) -> Int {
+    let formatted: String = datetime_to_rfc3339(dt)
+    let r: Result<DateTime, String> = datetime_parse_rfc3339(formatted)
+    match r {
+        Ok(dt2) => {
+            if dt_eq(dt, dt2) == false {
+                print("FAIL roundtrip " + label + " formatted='" + formatted + "'")
+                return fails + 1
+            }
+            return fails
+        },
+        Err(msg) => {
+            print("FAIL roundtrip " + label + " parse: " + msg)
+            return fails + 1
+        }
+    }
+    return fails + 1
+}
+
+fn epoch_rt_one(epoch_secs: Int, label: String, fails: Int) -> Int {
+    let dt_r: Result<DateTime, String> = datetime_from_epoch(epoch_secs)
+    match dt_r {
+        Ok(dt) => {
+            let back_r: Result<Int, String> = datetime_to_epoch(dt)
+            match back_r {
+                Ok(secs) => {
+                    if secs != epoch_secs {
+                        print("FAIL epoch rt " + label)
+                        return fails + 1
+                    }
+                    return fails
+                },
+                Err(msg) => {
+                    print("FAIL epoch rt " + label + ": " + msg)
+                    return fails + 1
+                }
+            }
+        },
+        Err(msg) => {
+            print("FAIL epoch from " + label + ": " + msg)
+            return fails + 1
+        }
+    }
+    return fails + 1
+}
+
+fn assoc_one(a_secs: Int, b_secs: Int, c_secs: Int, label: String, fails: Int) -> Int {
+    let a: Duration = duration_seconds(a_secs)
+    let b: Duration = duration_seconds(b_secs)
+    let c: Duration = duration_seconds(c_secs)
+    let left: Duration = duration_add(duration_add(a, b), c)
+    let right: Duration = duration_add(a, duration_add(b, c))
+    if left.seconds != right.seconds {
+        print("FAIL assoc " + label)
+        return fails + 1
+    }
+    if left.nanos != right.nanos {
+        print("FAIL assoc " + label + " nanos")
+        return fails + 1
+    }
+    return fails
+}
+
+fn main() {
+    let mut fails: Int = 0
+
+    // Property 1: parse-then-format round-trip on boundary fixtures.
+    fails = rt_one(build_dt(2026, 5, 3, 14, 32, 7), "regular", fails)
+    fails = rt_one(build_dt(1970, 1, 1, 0, 0, 0), "epoch start", fails)
+    fails = rt_one(build_dt(9999, 12, 31, 23, 59, 59), "max year", fails)
+    fails = rt_one(build_dt(2000, 2, 29, 12, 0, 0), "leap 2000", fails)
+    fails = rt_one(build_dt(2024, 2, 29, 12, 0, 0), "leap 2024", fails)
+    fails = rt_one(build_dt(2400, 2, 29, 12, 0, 0), "leap 2400", fails)
+    fails = rt_one(build_dt(2026, 1, 1, 0, 0, 0), "year boundary", fails)
+    fails = rt_one(build_dt(2026, 12, 31, 23, 59, 59), "year end", fails)
+    fails = rt_one(build_dt(2026, 3, 14, 2, 30, 0), "DST-tricky-spring", fails)
+    fails = rt_one(build_dt(2026, 11, 7, 1, 30, 0), "DST-tricky-fall", fails)
+
+    // Property 2: epoch round-trip across UNIX-epoch span.
+    fails = epoch_rt_one(0, "epoch 0", fails)
+    fails = epoch_rt_one(1, "epoch 1", fails)
+    fails = epoch_rt_one(86400, "1 day", fails)
+    fails = epoch_rt_one(31536000, "1 year (1971-01-01)", fails)
+    fails = epoch_rt_one(1000000000, "year 2001", fails)
+    fails = epoch_rt_one(1700000000, "year 2023", fails)
+    fails = epoch_rt_one(1746230400, "year 2025", fails)
+    fails = epoch_rt_one(2000000000, "year 2033", fails)
+
+    // Property 3: arithmetic associativity for Duration + Duration.
+    fails = assoc_one(0, 0, 0, "all zero", fails)
+    fails = assoc_one(1, 2, 3, "small", fails)
+    fails = assoc_one(60, 3600, 86400, "min/hr/day", fails)
+    fails = assoc_one(0 - 100, 50, 75, "negative left", fails)
+    fails = assoc_one(1000000, 999999, 1, "large", fails)
+    fails = assoc_one(0 - 86400, 0 - 86400, 86400, "balance to negative", fails)
+
+    if fails == 0 {
+        print("test_property PASSED")
+    } else {
+        print("test_property FAILED")
+    }
+}

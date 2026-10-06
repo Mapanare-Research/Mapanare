@@ -65,3 +65,6 @@ test	compile_rc	run_rc	leak_count	leak_bytes	first_frame	class
 64_closure_typed	1	-	-	-	-	COMPILE_FAIL
 65_list_int_indexing	0	0	0	0	-	CLEAN
 66_qualified_type_ref	0	0	0	0	-	CLEAN
+100_result_complex_destructure	0	0	3	43	-	LEAK
+101_match_rewrap_propagation	0	0	1	16	-	LEAK
+102_nested_15arm_match	0	0	1	16	-	LEAK
