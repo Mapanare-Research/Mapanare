@@ -1,0 +1,1432 @@
+{
+  "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "clang": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+  "runs": 15,
+  "pipeline": "native emit-llvm, opt -O2, llc, clang, internal benchmark timer",
+  "compilers": {
+    "before": {
+      "path": "build/mnc-before-string-builder",
+      "sha256": "b6cc6ccf8689e408b108560b37aa236419673e5e1282658ce00f054fe7799df1"
+    },
+    "after": {
+      "path": "mapanare/self/mnc-stage1",
+      "sha256": "f285149b519d55bdc2fed412183175121b9d6db0e613e6af28db21e0de2c3bff"
+    }
+  },
+  "results": {
+    "before": [
+      {
+        "benchmark": "fib_recursive",
+        "language": "Mapanare O2",
+        "lines_of_code": 8,
+        "binary_size_bytes": 87096,
+        "runs": [
+          {
+            "wall_time_s": 0.020938,
+            "cpu_time_s": 0.019043,
+            "peak_memory_kb": 2212.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.02228,
+            "cpu_time_s": 0.020268,
+            "peak_memory_kb": 2244.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.020053,
+            "cpu_time_s": 0.01824,
+            "peak_memory_kb": 2184.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.021968,
+            "cpu_time_s": 0.019978,
+            "peak_memory_kb": 2200.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.020809,
+            "cpu_time_s": 0.018924,
+            "peak_memory_kb": 2204.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.020448,
+            "cpu_time_s": 0.018596,
+            "peak_memory_kb": 2132.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019366,
+            "cpu_time_s": 0.017614,
+            "peak_memory_kb": 2144.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019232,
+            "cpu_time_s": 0.01749,
+            "peak_memory_kb": 2232.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.023291,
+            "cpu_time_s": 0.021182,
+            "peak_memory_kb": 2196.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019412,
+            "cpu_time_s": 0.017685,
+            "peak_memory_kb": 2220.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.020307,
+            "cpu_time_s": 0.018467,
+            "peak_memory_kb": 2152.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.020276,
+            "cpu_time_s": 0.018439,
+            "peak_memory_kb": 2232.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019419,
+            "cpu_time_s": 0.01766,
+            "peak_memory_kb": 2248.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019477,
+            "cpu_time_s": 0.017712,
+            "peak_memory_kb": 2236.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.020259,
+            "cpu_time_s": 0.018423,
+            "peak_memory_kb": 2124.0,
+            "output": "fib(35) = 9227465"
+          }
+        ],
+        "wall_median_ms": 20.276,
+        "wall_min_ms": 19.366,
+        "cpu_median_ms": 18.439,
+        "mem_peak_kb": 2248.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "quicksort",
+        "language": "Mapanare O2",
+        "lines_of_code": 46,
+        "binary_size_bytes": 87160,
+        "runs": [
+          {
+            "wall_time_s": 0.000771,
+            "cpu_time_s": 0.000706,
+            "peak_memory_kb": 3020.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000773,
+            "cpu_time_s": 0.000708,
+            "peak_memory_kb": 3020.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000752,
+            "cpu_time_s": 0.000688,
+            "peak_memory_kb": 2992.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000742,
+            "cpu_time_s": 0.00068,
+            "peak_memory_kb": 3000.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000778,
+            "cpu_time_s": 0.000712,
+            "peak_memory_kb": 2916.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000782,
+            "cpu_time_s": 0.000716,
+            "peak_memory_kb": 2916.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000767,
+            "cpu_time_s": 0.000702,
+            "peak_memory_kb": 3020.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000795,
+            "cpu_time_s": 0.000727,
+            "peak_memory_kb": 3004.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000738,
+            "cpu_time_s": 0.000677,
+            "peak_memory_kb": 2960.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000716,
+            "cpu_time_s": 0.000656,
+            "peak_memory_kb": 3016.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000772,
+            "cpu_time_s": 0.000708,
+            "peak_memory_kb": 3024.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000782,
+            "cpu_time_s": 0.000717,
+            "peak_memory_kb": 3004.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000753,
+            "cpu_time_s": 0.000689,
+            "peak_memory_kb": 3020.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000775,
+            "cpu_time_s": 0.00071,
+            "peak_memory_kb": 2996.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000749,
+            "cpu_time_s": 0.000686,
+            "peak_memory_kb": 2952.0,
+            "output": "checksum = 485"
+          }
+        ],
+        "wall_median_ms": 0.771,
+        "wall_min_ms": 0.7380000000000001,
+        "cpu_median_ms": 0.7060000000000001,
+        "mem_peak_kb": 3024.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "struct_alloc",
+        "language": "Mapanare O2",
+        "lines_of_code": 19,
+        "binary_size_bytes": 87096,
+        "runs": [
+          {
+            "wall_time_s": 2.3e-05,
+            "cpu_time_s": 2.5e-05,
+            "peak_memory_kb": 2184.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.2e-05,
+            "cpu_time_s": 2.5e-05,
+            "peak_memory_kb": 2216.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.8e-05,
+            "cpu_time_s": 3.4e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.6e-05,
+            "cpu_time_s": 3.3e-05,
+            "peak_memory_kb": 2208.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.5e-05,
+            "cpu_time_s": 2.8e-05,
+            "peak_memory_kb": 2196.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.2e-05,
+            "cpu_time_s": 2.5e-05,
+            "peak_memory_kb": 2140.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 3.6e-05,
+            "cpu_time_s": 3.9e-05,
+            "peak_memory_kb": 2180.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.8e-05,
+            "cpu_time_s": 3e-05,
+            "peak_memory_kb": 2148.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.1e-05,
+            "cpu_time_s": 2.3e-05,
+            "peak_memory_kb": 2144.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.3e-05,
+            "cpu_time_s": 2.5e-05,
+            "peak_memory_kb": 2120.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 1.8e-05,
+            "cpu_time_s": 2e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 1.8e-05,
+            "cpu_time_s": 2.1e-05,
+            "peak_memory_kb": 2252.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 1.8e-05,
+            "cpu_time_s": 2.8e-05,
+            "peak_memory_kb": 2228.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 1.8e-05,
+            "cpu_time_s": 2.1e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.5e-05,
+            "cpu_time_s": 2.8e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 29999700000"
+          }
+        ],
+        "wall_median_ms": 0.023,
+        "wall_min_ms": 0.018000000000000002,
+        "cpu_median_ms": 0.025,
+        "mem_peak_kb": 2252.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "enum_match",
+        "language": "Mapanare O2",
+        "lines_of_code": 37,
+        "binary_size_bytes": 87128,
+        "runs": [
+          {
+            "wall_time_s": 0.00017,
+            "cpu_time_s": 0.000159,
+            "peak_memory_kb": 2244.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000183,
+            "cpu_time_s": 0.000171,
+            "peak_memory_kb": 2184.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000199,
+            "cpu_time_s": 0.00019,
+            "peak_memory_kb": 2136.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000183,
+            "cpu_time_s": 0.000176,
+            "peak_memory_kb": 2212.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000178,
+            "cpu_time_s": 0.000166,
+            "peak_memory_kb": 2228.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000178,
+            "cpu_time_s": 0.000166,
+            "peak_memory_kb": 2188.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000193,
+            "cpu_time_s": 0.000183,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000183,
+            "cpu_time_s": 0.000172,
+            "peak_memory_kb": 2220.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.00028,
+            "cpu_time_s": 0.000261,
+            "peak_memory_kb": 2208.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000224,
+            "cpu_time_s": 0.000211,
+            "peak_memory_kb": 2180.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000186,
+            "cpu_time_s": 0.000176,
+            "peak_memory_kb": 2232.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000186,
+            "cpu_time_s": 0.000175,
+            "peak_memory_kb": 2196.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.0002,
+            "cpu_time_s": 0.000187,
+            "peak_memory_kb": 2184.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000207,
+            "cpu_time_s": 0.000195,
+            "peak_memory_kb": 2204.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000205,
+            "cpu_time_s": 0.000192,
+            "peak_memory_kb": 2216.0,
+            "output": "checksum = 52818168"
+          }
+        ],
+        "wall_median_ms": 0.186,
+        "wall_min_ms": 0.178,
+        "cpu_median_ms": 0.176,
+        "mem_peak_kb": 2248.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "prime_sieve",
+        "language": "Mapanare O2",
+        "lines_of_code": 22,
+        "binary_size_bytes": 87096,
+        "runs": [
+          {
+            "wall_time_s": 0.002148,
+            "cpu_time_s": 0.001957,
+            "peak_memory_kb": 2244.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002142,
+            "cpu_time_s": 0.001957,
+            "peak_memory_kb": 2152.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002101,
+            "cpu_time_s": 0.001915,
+            "peak_memory_kb": 2212.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002381,
+            "cpu_time_s": 0.00217,
+            "peak_memory_kb": 2188.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002102,
+            "cpu_time_s": 0.001916,
+            "peak_memory_kb": 2248.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002192,
+            "cpu_time_s": 0.001998,
+            "peak_memory_kb": 2216.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.00218,
+            "cpu_time_s": 0.001986,
+            "peak_memory_kb": 2180.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002109,
+            "cpu_time_s": 0.001922,
+            "peak_memory_kb": 2184.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002136,
+            "cpu_time_s": 0.001946,
+            "peak_memory_kb": 2140.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002182,
+            "cpu_time_s": 0.001988,
+            "peak_memory_kb": 2180.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.00214,
+            "cpu_time_s": 0.00195,
+            "peak_memory_kb": 2252.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002147,
+            "cpu_time_s": 0.001956,
+            "peak_memory_kb": 2224.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002137,
+            "cpu_time_s": 0.001948,
+            "peak_memory_kb": 2248.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002155,
+            "cpu_time_s": 0.001964,
+            "peak_memory_kb": 2248.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002152,
+            "cpu_time_s": 0.001961,
+            "peak_memory_kb": 2184.0,
+            "output": "primes = 9592"
+          }
+        ],
+        "wall_median_ms": 2.1470000000000002,
+        "wall_min_ms": 2.1020000000000003,
+        "cpu_median_ms": 1.957,
+        "mem_peak_kb": 2252.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "string_concat",
+        "language": "Mapanare O2",
+        "lines_of_code": 9,
+        "binary_size_bytes": 87064,
+        "runs": [
+          {
+            "wall_time_s": 0.005183,
+            "cpu_time_s": 0.004726,
+            "peak_memory_kb": 2436.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.005361,
+            "cpu_time_s": 0.004888,
+            "peak_memory_kb": 2484.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.006091,
+            "cpu_time_s": 0.005553,
+            "peak_memory_kb": 2448.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.00535,
+            "cpu_time_s": 0.004881,
+            "peak_memory_kb": 2488.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.005434,
+            "cpu_time_s": 0.004956,
+            "peak_memory_kb": 2484.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.005361,
+            "cpu_time_s": 0.004891,
+            "peak_memory_kb": 2412.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.005303,
+            "cpu_time_s": 0.004836,
+            "peak_memory_kb": 2472.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.005209,
+            "cpu_time_s": 0.004752,
+            "peak_memory_kb": 2468.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.005297,
+            "cpu_time_s": 0.004835,
+            "peak_memory_kb": 2464.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.006357,
+            "cpu_time_s": 0.005795,
+            "peak_memory_kb": 2420.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.005212,
+            "cpu_time_s": 0.004753,
+            "peak_memory_kb": 2388.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.005863,
+            "cpu_time_s": 0.005348,
+            "peak_memory_kb": 2440.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.00546,
+            "cpu_time_s": 0.004978,
+            "peak_memory_kb": 2480.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.00544,
+            "cpu_time_s": 0.00496,
+            "peak_memory_kb": 2484.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 0.005642,
+            "cpu_time_s": 0.005147,
+            "peak_memory_kb": 2376.0,
+            "output": "len = 50000"
+          }
+        ],
+        "wall_median_ms": 5.361000000000001,
+        "wall_min_ms": 5.2090000000000005,
+        "cpu_median_ms": 4.891,
+        "mem_peak_kb": 2488.0,
+        "correct": true,
+        "error": ""
+      }
+    ],
+    "after": [
+      {
+        "benchmark": "fib_recursive",
+        "language": "Mapanare O2",
+        "lines_of_code": 8,
+        "binary_size_bytes": 87096,
+        "runs": [
+          {
+            "wall_time_s": 0.018869,
+            "cpu_time_s": 0.017198,
+            "peak_memory_kb": 2120.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.018594,
+            "cpu_time_s": 0.016943,
+            "peak_memory_kb": 2120.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.022273,
+            "cpu_time_s": 0.020298,
+            "peak_memory_kb": 2152.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019259,
+            "cpu_time_s": 0.017549,
+            "peak_memory_kb": 2248.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.020626,
+            "cpu_time_s": 0.018799,
+            "peak_memory_kb": 2184.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.021097,
+            "cpu_time_s": 0.019225,
+            "peak_memory_kb": 2244.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019464,
+            "cpu_time_s": 0.017738,
+            "peak_memory_kb": 2136.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.021813,
+            "cpu_time_s": 0.019878,
+            "peak_memory_kb": 2092.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.01933,
+            "cpu_time_s": 0.017614,
+            "peak_memory_kb": 2252.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.018655,
+            "cpu_time_s": 0.016996,
+            "peak_memory_kb": 2252.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019696,
+            "cpu_time_s": 0.017943,
+            "peak_memory_kb": 2124.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019462,
+            "cpu_time_s": 0.01773,
+            "peak_memory_kb": 2216.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019069,
+            "cpu_time_s": 0.017376,
+            "peak_memory_kb": 2248.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.019421,
+            "cpu_time_s": 0.017696,
+            "peak_memory_kb": 2144.0,
+            "output": "fib(35) = 9227465"
+          },
+          {
+            "wall_time_s": 0.018738,
+            "cpu_time_s": 0.01707,
+            "peak_memory_kb": 2248.0,
+            "output": "fib(35) = 9227465"
+          }
+        ],
+        "wall_median_ms": 19.421,
+        "wall_min_ms": 18.655,
+        "cpu_median_ms": 17.696,
+        "mem_peak_kb": 2252.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "quicksort",
+        "language": "Mapanare O2",
+        "lines_of_code": 46,
+        "binary_size_bytes": 87160,
+        "runs": [
+          {
+            "wall_time_s": 0.000731,
+            "cpu_time_s": 0.000671,
+            "peak_memory_kb": 2980.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000994,
+            "cpu_time_s": 0.000911,
+            "peak_memory_kb": 2952.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000789,
+            "cpu_time_s": 0.000723,
+            "peak_memory_kb": 3020.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000742,
+            "cpu_time_s": 0.00068,
+            "peak_memory_kb": 3020.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000744,
+            "cpu_time_s": 0.000683,
+            "peak_memory_kb": 3008.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000785,
+            "cpu_time_s": 0.00072,
+            "peak_memory_kb": 2924.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000911,
+            "cpu_time_s": 0.000839,
+            "peak_memory_kb": 2948.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000718,
+            "cpu_time_s": 0.000659,
+            "peak_memory_kb": 2960.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000916,
+            "cpu_time_s": 0.000839,
+            "peak_memory_kb": 2908.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.001107,
+            "cpu_time_s": 0.001013,
+            "peak_memory_kb": 2972.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000771,
+            "cpu_time_s": 0.000707,
+            "peak_memory_kb": 2988.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000828,
+            "cpu_time_s": 0.000759,
+            "peak_memory_kb": 2912.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.00076,
+            "cpu_time_s": 0.000696,
+            "peak_memory_kb": 3020.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000773,
+            "cpu_time_s": 0.000713,
+            "peak_memory_kb": 2924.0,
+            "output": "checksum = 485"
+          },
+          {
+            "wall_time_s": 0.000828,
+            "cpu_time_s": 0.000759,
+            "peak_memory_kb": 2952.0,
+            "output": "checksum = 485"
+          }
+        ],
+        "wall_median_ms": 0.785,
+        "wall_min_ms": 0.731,
+        "cpu_median_ms": 0.7200000000000001,
+        "mem_peak_kb": 3020.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "struct_alloc",
+        "language": "Mapanare O2",
+        "lines_of_code": 19,
+        "binary_size_bytes": 87096,
+        "runs": [
+          {
+            "wall_time_s": 2.1e-05,
+            "cpu_time_s": 2.4e-05,
+            "peak_memory_kb": 2180.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.1e-05,
+            "cpu_time_s": 2.4e-05,
+            "peak_memory_kb": 2224.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2e-05,
+            "cpu_time_s": 2.2e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.3e-05,
+            "cpu_time_s": 2.6e-05,
+            "peak_memory_kb": 2216.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 1.9e-05,
+            "cpu_time_s": 2.2e-05,
+            "peak_memory_kb": 2140.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2e-05,
+            "cpu_time_s": 2.2e-05,
+            "peak_memory_kb": 2208.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 1.8e-05,
+            "cpu_time_s": 2.1e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 4.1e-05,
+            "cpu_time_s": 4.6e-05,
+            "peak_memory_kb": 2216.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.2e-05,
+            "cpu_time_s": 2.4e-05,
+            "peak_memory_kb": 2156.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 1.8e-05,
+            "cpu_time_s": 2e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 1.8e-05,
+            "cpu_time_s": 2.1e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2.1e-05,
+            "cpu_time_s": 2.3e-05,
+            "peak_memory_kb": 2188.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2e-05,
+            "cpu_time_s": 2.3e-05,
+            "peak_memory_kb": 2176.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 2e-05,
+            "cpu_time_s": 2.3e-05,
+            "peak_memory_kb": 2204.0,
+            "output": "checksum = 29999700000"
+          },
+          {
+            "wall_time_s": 1.8e-05,
+            "cpu_time_s": 2.1e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "checksum = 29999700000"
+          }
+        ],
+        "wall_median_ms": 0.02,
+        "wall_min_ms": 0.018000000000000002,
+        "cpu_median_ms": 0.023,
+        "mem_peak_kb": 2248.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "enum_match",
+        "language": "Mapanare O2",
+        "lines_of_code": 37,
+        "binary_size_bytes": 87128,
+        "runs": [
+          {
+            "wall_time_s": 0.000173,
+            "cpu_time_s": 0.000161,
+            "peak_memory_kb": 2220.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000174,
+            "cpu_time_s": 0.000163,
+            "peak_memory_kb": 2216.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000196,
+            "cpu_time_s": 0.000184,
+            "peak_memory_kb": 2204.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000167,
+            "cpu_time_s": 0.000157,
+            "peak_memory_kb": 2244.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000169,
+            "cpu_time_s": 0.000157,
+            "peak_memory_kb": 2180.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000168,
+            "cpu_time_s": 0.000157,
+            "peak_memory_kb": 2244.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000169,
+            "cpu_time_s": 0.000159,
+            "peak_memory_kb": 2180.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000168,
+            "cpu_time_s": 0.000158,
+            "peak_memory_kb": 2140.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000182,
+            "cpu_time_s": 0.000174,
+            "peak_memory_kb": 2212.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000182,
+            "cpu_time_s": 0.000171,
+            "peak_memory_kb": 2196.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000169,
+            "cpu_time_s": 0.000158,
+            "peak_memory_kb": 2204.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000169,
+            "cpu_time_s": 0.000158,
+            "peak_memory_kb": 2140.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000187,
+            "cpu_time_s": 0.000175,
+            "peak_memory_kb": 2216.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000174,
+            "cpu_time_s": 0.000164,
+            "peak_memory_kb": 2208.0,
+            "output": "checksum = 52818168"
+          },
+          {
+            "wall_time_s": 0.000177,
+            "cpu_time_s": 0.00017,
+            "peak_memory_kb": 2244.0,
+            "output": "checksum = 52818168"
+          }
+        ],
+        "wall_median_ms": 0.17300000000000001,
+        "wall_min_ms": 0.16799999999999998,
+        "cpu_median_ms": 0.161,
+        "mem_peak_kb": 2244.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "prime_sieve",
+        "language": "Mapanare O2",
+        "lines_of_code": 22,
+        "binary_size_bytes": 87096,
+        "runs": [
+          {
+            "wall_time_s": 0.002128,
+            "cpu_time_s": 0.001942,
+            "peak_memory_kb": 2228.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002224,
+            "cpu_time_s": 0.002028,
+            "peak_memory_kb": 2120.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002135,
+            "cpu_time_s": 0.001948,
+            "peak_memory_kb": 2252.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002106,
+            "cpu_time_s": 0.001921,
+            "peak_memory_kb": 2248.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002094,
+            "cpu_time_s": 0.001911,
+            "peak_memory_kb": 2140.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002139,
+            "cpu_time_s": 0.001952,
+            "peak_memory_kb": 2120.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002128,
+            "cpu_time_s": 0.001941,
+            "peak_memory_kb": 2140.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002159,
+            "cpu_time_s": 0.001971,
+            "peak_memory_kb": 2180.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002133,
+            "cpu_time_s": 0.001947,
+            "peak_memory_kb": 2120.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002228,
+            "cpu_time_s": 0.002034,
+            "peak_memory_kb": 2196.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002103,
+            "cpu_time_s": 0.001919,
+            "peak_memory_kb": 2156.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002094,
+            "cpu_time_s": 0.001911,
+            "peak_memory_kb": 2184.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002138,
+            "cpu_time_s": 0.001951,
+            "peak_memory_kb": 2248.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002509,
+            "cpu_time_s": 0.00229,
+            "peak_memory_kb": 2212.0,
+            "output": "primes = 9592"
+          },
+          {
+            "wall_time_s": 0.002218,
+            "cpu_time_s": 0.002024,
+            "peak_memory_kb": 2184.0,
+            "output": "primes = 9592"
+          }
+        ],
+        "wall_median_ms": 2.1350000000000002,
+        "wall_min_ms": 2.094,
+        "cpu_median_ms": 1.9480000000000002,
+        "mem_peak_kb": 2252.0,
+        "correct": true,
+        "error": ""
+      },
+      {
+        "benchmark": "string_concat",
+        "language": "Mapanare O2",
+        "lines_of_code": 9,
+        "binary_size_bytes": 87064,
+        "runs": [
+          {
+            "wall_time_s": 8.5e-05,
+            "cpu_time_s": 8.5e-05,
+            "peak_memory_kb": 2264.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 7.8e-05,
+            "cpu_time_s": 7.6e-05,
+            "peak_memory_kb": 2300.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 9.6e-05,
+            "cpu_time_s": 9.5e-05,
+            "peak_memory_kb": 2304.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 8.1e-05,
+            "cpu_time_s": 7.9e-05,
+            "peak_memory_kb": 2248.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 9.4e-05,
+            "cpu_time_s": 9.1e-05,
+            "peak_memory_kb": 2280.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 7.8e-05,
+            "cpu_time_s": 7.6e-05,
+            "peak_memory_kb": 2168.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 7.6e-05,
+            "cpu_time_s": 7.3e-05,
+            "peak_memory_kb": 2228.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 7.2e-05,
+            "cpu_time_s": 7e-05,
+            "peak_memory_kb": 2280.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 7.7e-05,
+            "cpu_time_s": 7.4e-05,
+            "peak_memory_kb": 2200.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 8.2e-05,
+            "cpu_time_s": 8e-05,
+            "peak_memory_kb": 2300.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 8.7e-05,
+            "cpu_time_s": 8.8e-05,
+            "peak_memory_kb": 2192.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 8.9e-05,
+            "cpu_time_s": 8.6e-05,
+            "peak_memory_kb": 2192.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 7.5e-05,
+            "cpu_time_s": 7.4e-05,
+            "peak_memory_kb": 2300.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 8.9e-05,
+            "cpu_time_s": 8.8e-05,
+            "peak_memory_kb": 2196.0,
+            "output": "len = 50000"
+          },
+          {
+            "wall_time_s": 8.4e-05,
+            "cpu_time_s": 8.4e-05,
+            "peak_memory_kb": 2304.0,
+            "output": "len = 50000"
+          }
+        ],
+        "wall_median_ms": 0.082,
+        "wall_min_ms": 0.075,
+        "cpu_median_ms": 0.08,
+        "mem_peak_kb": 2304.0,
+        "correct": true,
+        "error": ""
+      }
+    ]
+  },
+  "date": "2026-10-06",
+  "change_base_commit": "935f9bb32011e7a7a1b1c4db81159acbc4a150e7",
+  "compile_time": {
+    "before": {
+      "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+      "compiler": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/build/mnc-before-string-builder",
+      "source": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/01_hello.mn",
+      "source_sha256": "2976a380c6fdfee06ca2b9452d65bc6a3514862c2a626d64e982503241ada42a",
+      "compiler_sha256": "b6cc6ccf8689e408b108560b37aa236419673e5e1282658ce00f054fe7799df1",
+      "runs": 9,
+      "results": {
+        "emit": {
+          "median_ms": 116.06898903846741,
+          "samples_ms": [
+            117.1673268545419,
+            120.74700999073684,
+            106.2492779456079,
+            117.03237099573016,
+            116.06898903846741,
+            115.69981183856726,
+            121.46006501279771,
+            111.22494889423251,
+            104.83276192098856
+          ]
+        },
+        "build": {
+          "median_ms": 282.05700404942036,
+          "samples_ms": [
+            315.6626189593226,
+            275.5476769525558,
+            282.05700404942036,
+            277.5365759152919,
+            286.35259391739964,
+            271.56073902733624,
+            273.1288268696517,
+            287.63785818591714,
+            347.6620181463659
+          ]
+        },
+        "release": {
+          "median_ms": 404.3308789841831,
+          "samples_ms": [
+            548.014858039096,
+            407.928375992924,
+            384.67469392344356,
+            404.3308789841831,
+            457.86396390758455,
+            391.89607300795615,
+            411.95843811146915,
+            389.93751909583807,
+            389.8853219579905
+          ]
+        },
+        "run": {
+          "median_ms": 303.96394385024905,
+          "samples_ms": [
+            350.91193788684905,
+            303.96394385024905,
+            306.3304319512099,
+            296.43282503820956,
+            285.6412627734244,
+            281.2251360155642,
+            281.9563299417496,
+            308.6774020921439,
+            310.94265915453434
+          ]
+        }
+      }
+    },
+    "after": {
+      "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+      "compiler": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/mapanare/self/mnc-stage1",
+      "source": "/mnt/c/Users/Juan/Documents/GitHub/Mapanare/tests/golden/01_hello.mn",
+      "source_sha256": "2976a380c6fdfee06ca2b9452d65bc6a3514862c2a626d64e982503241ada42a",
+      "compiler_sha256": "f285149b519d55bdc2fed412183175121b9d6db0e613e6af28db21e0de2c3bff",
+      "runs": 9,
+      "results": {
+        "emit": {
+          "median_ms": 112.82933596521616,
+          "samples_ms": [
+            112.82933596521616,
+            114.69632899388671,
+            113.08899195864797,
+            110.99966103211045,
+            117.50410706736147,
+            115.23048602975905,
+            108.35689585655928,
+            106.8555461242795,
+            109.98580395244062
+          ]
+        },
+        "build": {
+          "median_ms": 297.3476839251816,
+          "samples_ms": [
+            298.5609299503267,
+            308.3763658069074,
+            356.34795506484807,
+            297.3476839251816,
+            277.0746818277985,
+            283.8791299145669,
+            269.88308993168175,
+            367.64385108835995,
+            283.6966870818287
+          ]
+        },
+        "release": {
+          "median_ms": 428.92434378154576,
+          "samples_ms": [
+            429.1716390289366,
+            426.6643899027258,
+            453.58788198791444,
+            419.9923351407051,
+            428.92434378154576,
+            477.8290649410337,
+            403.9652249775827,
+            527.5902589783072,
+            389.63279384188354
+          ]
+        },
+        "run": {
+          "median_ms": 301.2801920995116,
+          "samples_ms": [
+            339.86421511508524,
+            332.1291608735919,
+            323.66798305884004,
+            301.2801920995116,
+            313.84781608358026,
+            287.84684208221734,
+            292.6148260012269,
+            286.96317388676107,
+            281.8345311097801
+          ]
+        }
+      }
+    }
+  },
+  "source_sha256": {
+    "mapanare/self/mir_opt.mn": "1e60894c83a5fafe72b06dfbf7336ea89f06bfab2d8a14f4f486216e86e143e5",
+    "mapanare/self/emit_llvm.mn": "dde5bcca340290fbede6f95bf3febcbd2cbdb5757fafe916d317fb11ee8f0ed5",
+    "mapanare/self/mnc_all.mn": "3904846632875504e53d95de492d0cd1c2018153a805d5370e7ec354bfa5e339",
+    "runtime/native/mapanare_core.c": "750f1156f3f44370760ea30445c68975aa00d8bd77c3161fdfe5191ca7774447"
+  },
+  "validation": {
+    "goldens": "103/103",
+    "llvm_mir_optimizer_self_hosted_bootstrap": "1924 passed, 5 xfailed, 2 xpassed",
+    "native_integration_and_sanitizers": "19 passed",
+    "self_emission": "Final compiler emits LLVM-valid mnc_all.mn; llvm-as passes",
+    "compile_time_gate": "Passed both absolute gates and 10% repeated relative gate",
+    "stripped_binary_bytes": 7666912,
+    "bootstrap_ir_lines": 2524877,
+    "bootstrap_ir_limit_lines": 2600000,
+    "scope": "GitNexus low indexed risk; .mn symbols require manual caller review"
+  },
+  "notes": [
+    "Runtime samples were collected after compiler builds and regression tests completed.",
+    "Both runtime measurements link the same updated runtime archive and use identical LLVM optimization flags.",
+    "The builder pass supports a four-block function with a single unobserved accumulation loop; complex loops remain unchanged.",
+    "GCC/Clang replacement tests instrument the C runtime with ASan/UBSan at O0 and O2.",
+    "All rewritten program cases are leak-checked. The unchanged nested-loop case disables leak detection because the baseline emitter misses its final drop; ASan/UBSan and output checks remain enabled.",
+    "Native stage2/stage3 fixed-point correctness and general container heap-to-stack promotion remain open.",
+    "Small compile-time changes can be noisy: build/release medians increased about 5-6% in this run; no universal compiler speedup is claimed."
+  ]
+}

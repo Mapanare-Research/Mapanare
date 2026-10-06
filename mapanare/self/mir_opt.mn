@@ -1504,6 +1504,164 @@ fn escape_analysis_function(f: MIRFunction) -> MIRFunction:
     return f
 
 // ---------------------------------------------------------------------------
+// Simple string-accumulation loops. The native lowerer uses Alloca/Load/Store
+// for mutable locals (the bootstrap optimizer's Copy pattern does not apply).
+// Only entry -> header -> body -> header / exit functions qualify initially.
+// This proves a unique preheader and exit without guessing from block order
+// in arbitrary CFGs. Nested loops, breaks and early returns are left alone.
+// ---------------------------------------------------------------------------
+
+// Conservative use query: unknown instruction forms count as uses. Expanding
+// the optimization requires teaching this query about their operands first.
+fn sb_reads_name(inst: Instruction, name: String) -> Bool:
+    let k: String = instr_kind(inst)
+    if k == "const" || k == "alloca" || k == "jump": return false
+    if k == "load": return instr_load_ptr(inst).name == name
+    if k == "store": return instr_store_ptr(inst).name == name || instr_store_val(inst).name == name
+    if k == "binop": return instr_binop_lhs(inst).name == name || instr_binop_rhs(inst).name == name
+    if k == "copy": return instr_copy_src(inst).name == name
+    if k == "cast": return instr_cast_src(inst).name == name
+    if k == "unaryop": return instr_unaryop_operand(inst).name == name
+    if k == "branch": return instr_branch_cond(inst).name == name
+    if k == "return":
+        let returned: Option<Value> = instr_return_val(inst)
+        match returned:
+            Some(v) => return v.name == name
+            _ => return false
+    if k == "call":
+        if instr_call_fn(inst) == name: return true
+        let args: List<Value> = instr_call_args(inst)
+        for ai in 0..len(args):
+            if args[ai].name == name: return true
+        return false
+    return true
+
+fn sb_add(inst: Instruction) -> Bool:
+    if instr_kind(inst) != "binop": return false
+    if instr_binop_lhs(inst).ty.kind != TK_STRING(): return false
+    if instr_binop_rhs(inst).ty.kind != TK_STRING(): return false
+    match instr_binop_op(inst):
+        Add => return true
+        _ => return false
+
+// Return newly allocated lists directly or as direct struct fields. Bootstrap
+// drop glue recognizes these transfers; it does not yet follow lists nested
+// inside enum payloads or inside another list's elements.
+fn sb_args_one(a: Value) -> List<Value>:
+    let args: List<Value> = [a]
+    return args
+
+fn sb_args_two(a: Value, b: Value) -> List<Value>:
+    let args: List<Value> = [a, b]
+    return args
+
+fn sb_rewrite_block(bb: BasicBlock, bi: Int, add_idx: Int, load_idx: Int, acc: Value) -> BasicBlock:
+    let sb: Value = new_value("%__mn_sbc.builder", new_mir_type("Ptr", TK_PTR()))
+    let seed: Value = new_value("%__mn_sbc.seed", mir_string())
+    let done: Value = new_value("%__mn_sbc.done", mir_string())
+    let cap: Value = new_value("64", mir_int())
+    let mut instrs: List<Instruction> = []
+    if bi == 3:
+        instrs.push(Instruction::Call(done, "__mn_sb_finish", sb_args_one(sb)))
+        instrs.push(Instruction::Store(acc, done))
+    for ii in 0..len(bb.instructions):
+        if bi == 0 && ii == len(bb.instructions) - 1:
+            instrs.push(Instruction::Call(sb, "__mn_sb_new", sb_args_one(cap)))
+            instrs.push(Instruction::Load(seed, acc))
+            instrs.push(Instruction::Call(void_value(), "__mn_sb_append", sb_args_two(sb, seed)))
+        if bi == 2 && ii == add_idx:
+            let chunk: Value = instr_binop_rhs(bb.instructions[ii])
+            instrs.push(Instruction::Call(void_value(), "__mn_sb_append", sb_args_two(sb, chunk)))
+        else if bi == 2 && (ii == load_idx || ii == add_idx + 1):
+            // The accumulator is materialized only at loop exit.
+            let skipped: Int = 0
+        else:
+            instrs.push(bb.instructions[ii])
+    return new BasicBlock { label: bb.label, instructions: instrs }
+
+fn sb_rewrite_loop(f: MIRFunction, add_idx: Int, load_idx: Int, acc: Value) -> MIRFunction:
+    let mut blocks: List<BasicBlock> = []
+    for bi in 0..4:
+        blocks.push(sb_rewrite_block(f.blocks[bi], bi, add_idx, load_idx, acc))
+    return new MIRFunction { name: f.name, params: f.params, return_type: f.return_type, blocks: blocks, decorators: f.decorators, is_public: f.is_public }
+
+fn sb_safe_loop(f: MIRFunction, ai: Int, load_idx: Int, acc: Value) -> Bool:
+    let add: Instruction = f.blocks[2].instructions[ai]
+    let loaded: String = instr_binop_lhs(add).name
+    let result: String = instr_dest(add).name
+    let mut local: Bool = false
+    let mut seeded: Bool = false
+    for bi in 0..4:
+        let bb: BasicBlock = f.blocks[bi]
+        for ii in 0..len(bb.instructions):
+            let inst: Instruction = bb.instructions[ii]
+            let k: String = instr_kind(inst)
+            // Avoid generated-name collisions and malformed CFGs.
+            if instr_dest(inst).name.starts_with("%__mn_sbc."): return false
+            if is_terminator(inst) && ii != len(bb.instructions) - 1: return false
+            if bi == 0 && k == "alloca" && instr_dest(inst).name == acc.name:
+                if instr_alloca_type(inst).kind != TK_STRING(): return false
+                local = true
+            // The slot cannot escape to a call that could observe its
+            // deliberately deferred write. Only direct loads/stores qualify.
+            if k == "load" && instr_load_ptr(inst).name == acc.name:
+                if bi == 1: return false
+                if bi == 2 && ii != load_idx: return false
+            else if k == "store" && instr_store_ptr(inst).name == acc.name:
+                if instr_store_val(inst).name == acc.name: return false
+                if bi == 0 && local: seeded = true
+                if bi == 1: return false
+                if bi == 2 && ii != ai + 1: return false
+            else if sb_reads_name(inst, acc.name):
+                return false
+            // Removing these definitions requires their sole uses to be
+            // the concat and write-back being replaced.
+            if bi == 2 && ii == ai:
+                if instr_binop_rhs(inst).name == loaded || instr_binop_rhs(inst).name == result: return false
+            else if sb_reads_name(inst, loaded):
+                return false
+            if bi == 2 && ii == ai + 1:
+                if instr_store_ptr(inst).name == result: return false
+            else if sb_reads_name(inst, result):
+                return false
+    return local && seeded
+
+fn string_builder_function(f: MIRFunction) -> MIRFunction:
+    if len(f.blocks) != 4: return f
+    let entry: BasicBlock = f.blocks[0]
+    let header: BasicBlock = f.blocks[1]
+    let body: BasicBlock = f.blocks[2]
+    let exit_bb: BasicBlock = f.blocks[3]
+    if len(entry.instructions) == 0 || len(header.instructions) == 0 || len(body.instructions) < 3 || len(exit_bb.instructions) == 0: return f
+    let et: Instruction = entry.instructions[len(entry.instructions) - 1]
+    let ht: Instruction = header.instructions[len(header.instructions) - 1]
+    let bt: Instruction = body.instructions[len(body.instructions) - 1]
+    if instr_kind(et) != "jump" || instr_kind(ht) != "branch" || instr_kind(bt) != "jump": return f
+    if instr_jump_target(et) != header.label || instr_jump_target(bt) != header.label: return f
+    if instr_branch_true(ht) != body.label || instr_branch_false(ht) != exit_bb.label: return f
+    if instr_kind(exit_bb.instructions[len(exit_bb.instructions) - 1]) != "return": return f
+
+    for ai in 0..len(body.instructions) - 1:
+        let add: Instruction = body.instructions[ai]
+        let write: Instruction = body.instructions[ai + 1]
+        if sb_add(add) && instr_kind(write) == "store":
+            if instr_store_val(write).name != instr_dest(add).name: return f
+            let acc: Value = instr_store_ptr(write)
+            let loaded: String = instr_binop_lhs(add).name
+            if instr_binop_rhs(add).name == loaded: return f
+            let mut load_idx: Int = -1
+            for li in 0..ai:
+                let candidate: Instruction = body.instructions[li]
+                if instr_kind(candidate) == "load":
+                    if instr_load_ptr(candidate).name == acc.name && instr_dest(candidate).name == loaded:
+                        load_idx = li
+            if load_idx < 0: return f
+
+            if sb_safe_loop(f, ai, load_idx, acc): return sb_rewrite_loop(f, ai, load_idx, acc)
+            return f
+    return f
+
+// ---------------------------------------------------------------------------
 // Public API: optimize a MIR module
 // ---------------------------------------------------------------------------
 
@@ -1563,6 +1721,6 @@ pub fn optimize_mir(module: MIRModule) -> MIRModule:
         // function once per allocation until codegen can use that information.
         // Structs already emit as SSA aggregates / stack storage. Heap-backed
         // containers still require alias- and lifetime-aware promotion.
-        new_fns.push(f7)
+        new_fns.push(string_builder_function(f7))
         i = i + 1
     return module

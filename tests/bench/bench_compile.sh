@@ -5,12 +5,9 @@
 #   mnc run hello.mn        < 5000ms  (generous for CI runners)
 #   mnc build hello.mn      < 5000ms
 #   mnc-stage1 binary size  < 10MB (stripped)
-#   main.ll IR lines        < 2.5M (v5.8.0: ~2M when regenerated from source via
-#                                   Python bootstrap; previous 1M gate was set at
-#                                   v4.155.0 when committed main.ll was 912K, but
-#                                   commit 3b5262e untracked main.ll so it is now
-#                                   always emitted fresh from .mn sources, which
-#                                   produces a larger IR than the cached form)
+#   main.ll IR lines        < 2.6M (2026-10-06: native string-loop optimization
+#                                   emits 2.525M bootstrap IR lines, up from
+#                                   2.462M; keep a small growth allowance).
 # Source-to-IR ratio is reported for diagnosis, without an absolute gate.
 #
 # Usage:
@@ -85,8 +82,8 @@ if [ "${GATE}" = "--gate" ]; then
     fi
 
     if [ -f "${MAIN_LL}" ]; then
-        if [ "${IR_LINES}" -gt 2500000 ]; then
-            echo "FAIL: IR ${IR_LINES} lines > 2.5M" >&2
+        if [ "${IR_LINES}" -gt 2600000 ]; then
+            echo "FAIL: IR ${IR_LINES} lines > 2.6M" >&2
             FAIL=1
         fi
     fi

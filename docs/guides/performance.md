@@ -70,17 +70,39 @@ run, or incorrect checksum fails the suite; invalid results do not contribute
 to geometric means. Compare the two reports separately rather than assuming
 the native and bootstrap compilers generate equivalent machine code.
 
+## Native string accumulation
+
+The native optimizer now replaces eligible `result = result + chunk` loops
+with a StringBuilder. It copies the initial value once, appends chunks with
+amortized growth, and transfers the final buffer back to the string at exit.
+Existing aliases of the initial string keep their original contents.
+
+The first implementation requires a four-block function: entry, loop header,
+single body, and returning exit. The local accumulator must have exactly one
+load/concat/store update in the body and no other loop observations or writes.
+Nested loops, breaks, early returns, unsupported MIR instructions and loops
+that read the string in their condition or body remain unchanged. This is a
+deliberately narrow optimization, not general loop or alias analysis.
+
+GCC runtime builds also now handle shrinking string replacements correctly:
+lengths are converted from unsigned bit fields to signed integers before
+subtraction. A longer search string is rejected before any search reads.
+
 ## Remaining work
 
-- Native string concatenation still needs the loop-to-StringBuilder
-  optimization available in the bootstrap pipeline. The native benchmark
-  exposes this gap; existing bootstrap results cannot close it.
+- Broaden native StringBuilder matching to more control-flow shapes, with
+  proofs for exits, dominance and aliasing rather than block-order guesses.
 - Native heap-to-stack promotion for containers requires alias/lifetime
   information and matching destruction behavior. The unused native escape
   scan is omitted from the production pipeline; ordinary structs already use
   SSA values/stack storage.
 - Add parser, type-checker, optimizer, emission and linker phase timings,
   plus stable CI baseline artifacts for larger applications.
+- The existing native emitter can miss the final string drop when a return
+  block is emitted before an allocating inner loop. This was reproduced with
+  the pre-change compiler. The nested-loop fallback test checks output,
+  address safety and undefined behavior but disables leak detection for this
+  known case; all transformed test cases are leak-checked.
 - The optimized self-hosted stage2 candidate in this investigation passed
   99/103 goldens and crashed while emitting stage3. The working compiler remains the
   Python-bootstrap-built binary, which passed 103/103 goldens. Full fixed-point
@@ -106,3 +128,29 @@ builds measured 463 ms cached versus 448 ms without reuse. Cache hits were
 independently verified through compiler invocation logs. The release flag now
 performs real LTO, so its latency is not directly comparable with the old
 release flag that omitted LTO.
+
+## StringBuilder follow-up, 2026-10-06
+
+The [follow-up measurement record](../../benchmarks/performance/2026-10-06-string-builder.json)
+contains 15 runtime samples per workload/compiler and nine compile-latency
+samples per case, collected after builds and tests finished on the same WSL2
+machine. Both compilers used identical LLVM `-O2` flags and the same runtime
+archive for the program-throughput comparison.
+
+The 10,000-append string workload improved from **5.361 ms to 0.082 ms** median
+(about **65x faster**). All six native workloads produced correct checksums.
+Other workload medians were broadly similar; this is a string-loop improvement,
+not a 65x improvement to arbitrary programs.
+
+Hello IR emission measured 112.8 ms and compile-and-run 301.3 ms. Cached build
+and release medians increased 5.4% and 6.1%, respectively, versus the saved
+compiler in this run; all four cases passed the 10% relative regression gate.
+The stripped compiler grew from 7,630,048 to 7,666,912 bytes (about 0.5%). The
+new pass increases bootstrap IR from 2.462M to 2.525M lines, so its size ceiling
+is now 2.6M; the 10 MB binary and five-second latency ceilings are unchanged.
+
+Validation: 103/103 native goldens, 1,924 LLVM/MIR/optimizer/self-hosted/bootstrap
+tests passed (five existing expected failures and two existing unexpected
+passes), and 19 native integration/sanitizer tests passed. The final compiler
+also emitted LLVM-valid code for its updated source. This does not close the
+separate stage2/stage3 fixed-point failures described above.

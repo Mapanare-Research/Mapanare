@@ -1073,6 +1073,9 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     let mut s: EmitState = st
 
     // String runtime
+    s = declare_runtime_fn(s, "__mn_sb_new", "ptr", "i64")
+    s = declare_runtime_fn(s, "__mn_sb_append", "void", "ptr, " + llvm_string())
+    s = declare_runtime_fn(s, "__mn_sb_finish", llvm_string(), "ptr")
     s = declare_runtime_fn(s, "__mn_str_concat", llvm_string(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_eq", llvm_int(), llvm_string() + ", " + llvm_string())
     s = declare_runtime_fn(s, "__mn_str_cmp", llvm_int(), llvm_string() + ", " + llvm_string())
@@ -3751,6 +3754,15 @@ fn emit_unwrap(st: EmitState, dest: Value, val: Value) -> EmitState:
 
 fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>) -> EmitState:
     let dn: String = dest.name
+
+    // Optimizer-generated builder calls use the C runtime ABI (including
+    // by-reference String arguments and sret results on Windows).
+    if fn_name == "__mn_sb_new":
+        return emit_rt_call(st, dn, "ptr", fn_name, "i64 " + args[0].name)
+    if fn_name == "__mn_sb_append":
+        return emit_rt_call_void(st, fn_name, "ptr " + args[0].name + ", " + llvm_string() + " " + args[1].name)
+    if fn_name == "__mn_sb_finish":
+        return emit_rt_call(st, dn, llvm_string(), fn_name, "ptr " + args[0].name)
 
     // Built-in: print / println
     if fn_name == "print":

@@ -816,8 +816,15 @@ MN_EXPORT MnString __mn_str_to_lower(MnString s) {
 }
 
 MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) {
-    if (old_s.len == 0 || s.len == 0) {
-        return __mn_str_from_parts(mn_untag(s.data), s.len);
+    /* Materialize signed lengths before subtraction. MnString.len is an
+     * unsigned 63-bit field; GCC can wrap a shrinking replacement delta
+     * within that width, turning -1 into INT64_MAX. Also avoid unsigned
+     * underflow when the needle is longer than the source. */
+    const int64_t s_len = (int64_t)s.len;
+    const int64_t old_len = (int64_t)old_s.len;
+    const int64_t new_size = (int64_t)new_s.len;
+    if (old_len == 0 || old_len > s_len || s_len == 0) {
+        return __mn_str_from_parts(mn_untag(s.data), s_len);
     }
 
     const char *s_data = mn_untag(s.data);
@@ -826,29 +833,29 @@ MN_EXPORT MnString __mn_str_replace(MnString s, MnString old_s, MnString new_s) 
 
     /* Count occurrences to pre-allocate. */
     int64_t count = 0;
-    for (int64_t i = 0; i <= s.len - old_s.len; i++) {
-        if (memcmp(s_data + i, old_data, (size_t)old_s.len) == 0) {
+    for (int64_t i = 0; i <= s_len - old_len; i++) {
+        if (memcmp(s_data + i, old_data, (size_t)old_len) == 0) {
             count++;
-            i += old_s.len - 1;
+            i += old_len - 1;
         }
     }
 
     if (count == 0) {
-        return __mn_str_from_parts(s_data, s.len);
+        return __mn_str_from_parts(s_data, s_len);
     }
 
-    int64_t new_len = mn_checked_add(s.len, mn_checked_mul(count, new_s.len - old_s.len));
-    char *buf = (char *)__mn_alloc(new_len + 1);
+    int64_t new_len = mn_checked_add(s_len, mn_checked_mul(count, new_size - old_len));
+    char *buf = (char *)__mn_alloc(mn_checked_add(new_len, 1));
     int64_t out = 0;
     int64_t i = 0;
-    while (i < s.len) {
-        if (i <= s.len - old_s.len &&
-            memcmp(s_data + i, old_data, (size_t)old_s.len) == 0) {
-            if (new_s.len > 0) {
-                memcpy(buf + out, new_data, (size_t)new_s.len);
+    while (i < s_len) {
+        if (i <= s_len - old_len &&
+            memcmp(s_data + i, old_data, (size_t)old_len) == 0) {
+            if (new_size > 0) {
+                memcpy(buf + out, new_data, (size_t)new_size);
             }
-            out += new_s.len;
-            i += old_s.len;
+            out += new_size;
+            i += old_len;
         } else {
             buf[out++] = s_data[i++];
         }
