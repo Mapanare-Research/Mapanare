@@ -1,7 +1,0 @@
-[package]
-name = "mapanare-chess"
-version = "0.1.0"
-description = "Cascabel, a small native chess engine written in Mapanare"
-license = "MIT"
-
-[dependencies]

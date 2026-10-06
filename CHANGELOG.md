@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Cascabel moved from the compiler examples into the independent
+  [Mapanare-Research/cascabel](https://github.com/Mapanare-Research/cascabel)
+  repository. Its chess execution tests moved with it; the former example
+  README now points to the standalone project.
+
 ## [5.54.1] - 2026-10-05
 
 ### Added
