@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.54.1] - 2026-10-05
+
+### Added
+
+- Cascabel (`examples/mapanare-chess`), a Mapanare chess prototype with
+  legal move generation, FEN input, perft and fixed-depth alpha–beta search.
+  Linux/WSL execution is covered on both compiler paths. The example README
+  records memory-retention and native Windows limitations; this is not yet
+  a UCI or tournament engine.
+
+### Fixed
+
+- `scripts/ir_doctor.py` now bypasses cached stage1 IR for golden validation.
+  Offline comparison commands retain their existing cache behavior.
+- Runtime archive builds use isolated object directories and atomic
+  publication, preventing concurrent builds from deleting each other's objects.
+- Unix toolchain discovery ignores bundled Windows SDKs in shared checkouts.
+- Android CI installs platform-tools explicitly instead of the retired
+  SDK tools package requested by the setup action's default configuration.
+
 ## [5.54.0] - 2026-05-15
 
 **Cl.2 + Cl.3 + Cl.4r — agent stdlib ergonomic refactor + walk_dir

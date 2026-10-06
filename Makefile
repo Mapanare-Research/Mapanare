@@ -50,9 +50,9 @@ build-native:  ## Build from seed (no Python required — needs gcc + llvm)
 # forward and guarantees the next staleness is a build-system bug.
 MAPANARE_VERSION := $(shell cat VERSION)
 
-# v5.29.0: archive output path is parameterized so ``clean-build-test``
-# can rebuild into a sandbox path and then atomically rename the result
-# into place. The default is the canonical path; nothing else changes.
+# Each invocation builds in a private directory beside its destination,
+# then atomically publishes the complete archive. Parallel builds must
+# never share object paths or remove another build's temporary files.
 RT_OUTPUT ?= runtime/native/libmapanare_rt.a
 
 build-rt: check-runtime-sources  ## Pre-compile C runtime into static library (faster linking)
@@ -64,25 +64,19 @@ build-rt: check-runtime-sources  ## Pre-compile C runtime into static library (f
 	# added to the archive. Previously only mapanare_core.c + mn_user_main.c
 	# were included, which left mapanare_db.c (1,130 lines) and
 	# mapanare_html.c (812 lines) and several other modules orphaned.
-	@rm -f /tmp/mapanare_rt_*.o
-	@for src in $(RUNTIME_SOURCES); do \
-		obj=/tmp/mapanare_rt_$${src%.c}.o; \
-		echo "  gcc -O2 -fPIC -DMAPANARE_VERSION=\"\\\"$(MAPANARE_VERSION)\\\"\" -c runtime/native/$$src -o $$obj"; \
-		gcc -O2 -fPIC '-DMAPANARE_VERSION="$(MAPANARE_VERSION)"' -c -I runtime/native runtime/native/$$src -o $$obj || exit 1; \
-	done
-	@# v5.8.8: macOS needs mapanare_metal.m (Objective-C, Metal backend)
-	@# in the archive too — mapanare_gpu.c's __APPLE__-guarded code path
-	@# references mapanare_metal_available() / mapanare_metal_init() from
-	@# mapanare_metal.m. Without this, the macOS integration tests
-	@# (tests/integration/test_golden_pipeline.py for tensor goldens
-	@# 49-53) fail to link with "Undefined symbols for architecture
-	@# arm64". The .m file only compiles on Darwin; gated by uname.
-	@if [ "$$(uname -s)" = "Darwin" ]; then \
-		echo "  clang -O2 -fPIC -fobjc-arc -c runtime/native/mapanare_metal.m -o /tmp/mapanare_rt_mapanare_metal.o"; \
-		clang -O2 -fPIC -fobjc-arc '-DMAPANARE_VERSION="$(MAPANARE_VERSION)"' -c -I runtime/native runtime/native/mapanare_metal.m -o /tmp/mapanare_rt_mapanare_metal.o || exit 1; \
-	fi
-	@ar rcs $(RT_OUTPUT) /tmp/mapanare_rt_*.o
-	@rm -f /tmp/mapanare_rt_*.o
+	@set -eu; \
+	build_dir=$$(mktemp -d "$$(dirname "$(RT_OUTPUT)")/.mapanare-rt.XXXXXX"); \
+	trap 'rm -rf "$$build_dir"' EXIT; \
+	for src in $(RUNTIME_SOURCES); do \
+		obj="$$build_dir/mapanare_rt_$${src%.c}.o"; \
+		echo "  gcc -O2 -fPIC -c runtime/native/$$src -o $$obj"; \
+		gcc -O2 -fPIC '-DMAPANARE_VERSION="$(MAPANARE_VERSION)"' -c -I runtime/native "runtime/native/$$src" -o "$$obj"; \
+	done; \
+	if [ "$$(uname -s)" = "Darwin" ]; then \
+		clang -O2 -fPIC -fobjc-arc '-DMAPANARE_VERSION="$(MAPANARE_VERSION)"' -c -I runtime/native runtime/native/mapanare_metal.m -o "$$build_dir/mapanare_rt_mapanare_metal.o"; \
+	fi; \
+	ar rcs "$$build_dir/runtime.a" "$$build_dir"/*.o; \
+	mv -f "$$build_dir/runtime.a" "$(RT_OUTPUT)"
 	@echo "Built $(RT_OUTPUT) ($(words $(RUNTIME_SOURCES)) modules + Metal on Darwin, -fPIC, MAPANARE_VERSION=$(MAPANARE_VERSION))"
 
 check-runtime-sources:  ## v4.29.0: fail if runtime/native/*.c drifts from RUNTIME_SOURCES
@@ -189,13 +183,9 @@ ci-gates:  ## v5.24.0 Hy.1: run all CI gates locally, exit 1 on any failure
 # raced with parallel workers in tests/bootstrap/, tests/llvm/, etc.
 # that link against the canonical archive, producing flaky
 # "no such file or directory: 'runtime/native/libmapanare_rt.a'"
-# failures. The fix builds the rebuilt archive at a sibling sandbox
-# path (same filesystem so `mv` is atomic) and renames it into place
-# at the end. Stale `.so/.dylib/.dll` shadow targets are cleared
-# from the sandbox path only — the canonical archive is replaced
-# atomically, never absent. The clean-rebuild semantic is preserved
-# because the sandbox archive starts empty (rm before ar rcs); any
-# stale member from a prior build is excluded by construction.
+# failures. build-rt now owns the isolated temporary directory and
+# atomic replacement, including when several callers rebuild at once.
+# Its archive starts empty, so stale members are never carried forward.
 clean-build-test:  ## v5.25.0 Pv.3: clean rebuild of runtime + @test smoke
 	@# Sweep legacy shared-library shadows so `_find_runtime_lib()` cannot
 	@# fall back to a stale name (no current build target produces these,
@@ -204,9 +194,6 @@ clean-build-test:  ## v5.25.0 Pv.3: clean rebuild of runtime + @test smoke
 	@rm -f runtime/native/libmapanare_runtime.so \
 	       runtime/native/libmapanare_runtime.dylib \
 	       runtime/native/libmapanare_runtime.dll
-	@SANDBOX=runtime/native/.libmapanare_rt.cbt-tmp.a; \
-	rm -f $$SANDBOX; \
-	$(MAKE) -s build-rt RT_OUTPUT=$$SANDBOX >/dev/null && \
-	mv -f $$SANDBOX runtime/native/libmapanare_rt.a
+	@$(MAKE) -s build-rt >/dev/null
 	@pytest tests/test_at_test_runtime.py tests/test_runtime_lib_lookup.py \
 	        -q --no-header --tb=short

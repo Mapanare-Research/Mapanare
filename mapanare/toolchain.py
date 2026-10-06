@@ -55,6 +55,11 @@ def _bundle_root() -> Path | None:
       3. Running from source (``pip install -e .``): check alongside the
          package for a ``toolchain/`` — used for local testing.
     """
+    # A shared Windows/WSL checkout may contain a Windows SDK. Never
+    # select its .exe compiler or runtime archive for a Unix host.
+    if sys.platform != "win32":
+        return None
+
     # Running from a PyInstaller bundle
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).resolve().parent

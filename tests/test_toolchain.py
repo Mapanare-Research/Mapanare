@@ -13,6 +13,7 @@ def _touch(path: Path) -> Path:
 
 
 def _pyinstaller_root(monkeypatch, root: Path) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
     exe = _touch(root / "mapanare.exe")
     monkeypatch.setattr(sys, "executable", str(exe))
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -104,3 +105,23 @@ def test_no_bundled_sdk_falls_back_to_path(monkeypatch, tmp_path):
     assert detected.name == "gcc"
     assert detected.compiler == system_gcc
     assert detected.bin_dir is None
+
+
+def test_unix_ignores_windows_sdk_in_shared_checkout(monkeypatch, tmp_path):
+    root = tmp_path / "install"
+    _touch(root / "sdk" / "bin" / "clang.exe")
+    _touch(root / "toolchain" / "bin" / "gcc.exe")
+    _pyinstaller_root(monkeypatch, root)
+    _stub_probe(monkeypatch)
+    monkeypatch.setattr(
+        toolchain.shutil, "which", lambda name: "/usr/bin/gcc" if name == "gcc" else None
+    )
+
+    for platform in ("linux", "darwin"):
+        monkeypatch.setattr(sys, "platform", platform)
+        assert toolchain._bundle_root() is None
+        detected = toolchain.detect_toolchain()
+        assert detected is not None
+        assert detected.compiler == "/usr/bin/gcc"
+        assert detected.bin_dir is None
+        assert detected.rt_archive is None
