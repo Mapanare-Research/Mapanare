@@ -114,11 +114,55 @@ fn main():
 """,
 ]
 
+for forwarding in (False, True):
+    # Scalar parameters do not imply borrowing: the String can escape inside
+    # a returned container, including through another user function.
+    wrapper = (
+        """
+fn forward(text: String) -> List<String>:
+    return capture(text)
+"""
+        if forwarding
+        else ""
+    )
+    callee = "forward" if forwarding else "capture"
+    SOURCES.append(
+        """
+fn capture(text: String) -> List<String>:
+    let mut names: List<String> = []
+    names.push(text)
+    return names
+"""
+        + wrapper
+        + f"""
+fn make_names() -> List<String>:
+    let mut names: List<String> = []
+    for i in 0..2:
+        names = {callee}("field-" + str(42))
+    return names
+fn main():
+    let names: List<String> = make_names()
+    print(names[0])
+    print(len(names[0]))
+    print(names[0])
+    print(len(names[0]))
+"""
+    )
+
 
 @pytest.mark.parametrize(
     "source",
     SOURCES,
-    ids=["nested-struct-borrow", "enum-borrow", "struct-borrow", "owned", "loop-list", "loop-call"],
+    ids=[
+        "nested-struct-borrow",
+        "enum-borrow",
+        "struct-borrow",
+        "owned",
+        "loop-list",
+        "loop-call",
+        "direct-capture",
+        "forwarded-capture",
+    ],
 )
 def test_native_string_return(source: str, tmp_path: Path) -> None:
     clang = shutil.which("clang")

@@ -52,8 +52,93 @@ struct FnEntry:
     name: String
     ret_type: String
     param_types: List<String>
+    borrows_strings: Bool
 
-fn new_fn_entry(name: String, ret: String, params: List<String>) -> FnEntry = new FnEntry { name: name, ret_type: ret, param_types: params }
+fn new_fn_entry(name: String, ret: String, params: List<String>, borrows: Bool) -> FnEntry = new FnEntry { name: name, ret_type: ret, param_types: params, borrows_strings: borrows }
+
+// A deliberately small, fail-closed borrowing proof. No aggregate/pointer
+// parameters, escaping stores, user/extern calls, moves, or async suspension
+// are allowed. Inspect every block, including unreachable ones. In particular,
+// a scalar return alone says nothing about whether a callee captures an input.
+fn borrow_scalar_type(ty: MIRType) -> Bool:
+    return ty.kind == TK_INT() || ty.kind == TK_FLOAT() || ty.kind == TK_BOOL() || ty.kind == TK_CHAR()
+
+fn borrow_local_type(ty: MIRType) -> Bool:
+    return borrow_scalar_type(ty) || ty.kind == TK_STRING()
+
+fn borrow_instruction_safe(inst: Instruction, local_slots: List<String>) -> Bool:
+    let kind: String = instr_kind(inst)
+    if kind == "alloca" || kind == "jump": return true
+    if kind == "const":
+        let const_ty: MIRType = instr_const_type(inst)
+        return borrow_local_type(const_ty) || const_ty.kind == TK_VOID()
+    if kind == "copy":
+        return borrow_local_type(instr_dest(inst).ty) && borrow_local_type(instr_copy_src(inst).ty)
+    if kind == "load" || kind == "store":
+        let mut ptr_name: String = ""
+        if kind == "load":
+            if !borrow_local_type(instr_dest(inst).ty): return false
+            ptr_name = instr_load_ptr(inst).name
+        else:
+            if !borrow_local_type(instr_store_val(inst).ty): return false
+            ptr_name = instr_store_ptr(inst).name
+        for slot_idx in 0..len(local_slots):
+            if local_slots[slot_idx] == ptr_name: return true
+        return false
+    if kind == "binop":
+        return borrow_scalar_type(instr_dest(inst).ty) && borrow_scalar_type(instr_binop_lhs(inst).ty) && borrow_scalar_type(instr_binop_rhs(inst).ty)
+    if kind == "unaryop":
+        return borrow_scalar_type(instr_dest(inst).ty) && borrow_scalar_type(instr_unaryop_operand(inst).ty)
+    if kind == "cast":
+        return borrow_scalar_type(instr_dest(inst).ty) && borrow_scalar_type(instr_cast_src(inst).ty) && borrow_scalar_type(instr_cast_type(inst))
+    if kind == "call":
+        // len(String) borrows; range construction/extraction only manipulates
+        // two integers. No other runtime or user calls are proven here.
+        let name: String = instr_call_fn(inst)
+        let args: List<Value> = instr_call_args(inst)
+        if name == "len":
+            if len(args) != 1: return false
+            return args[0].ty.kind == TK_STRING() && instr_dest(inst).ty.kind == TK_INT()
+        if name == "__mn_range" || name == "__mn_range_inclusive":
+            if len(args) != 2: return false
+            return args[0].ty.kind == TK_INT() && args[1].ty.kind == TK_INT() && instr_dest(inst).ty.kind == TK_RANGE()
+        if name == "__mn_range_start" || name == "__mn_range_end":
+            if len(args) != 1: return false
+            return args[0].ty.kind == TK_RANGE() && instr_dest(inst).ty.kind == TK_INT()
+        return false
+    if kind == "phi":
+        if !borrow_local_type(instr_dest(inst).ty): return false
+        let incoming: List<PhiEntry> = instr_phi_entries(inst)
+        for vi in 0..len(incoming):
+            if !borrow_local_type(incoming[vi].val.ty): return false
+        return true
+    if kind == "return":
+        let val: Option<Value> = instr_return_val(inst)
+        match val:
+            Some(v) => return borrow_scalar_type(v.ty)
+            _ => return true
+    if kind == "branch": return borrow_scalar_type(instr_branch_cond(inst).ty)
+    if kind == "switch": return borrow_scalar_type(instr_switch_tag(inst).ty)
+    return false
+
+fn function_borrows_strings(f: MIRFunction) -> Bool:
+    if len(f.blocks) == 0 || fn_is_async(f): return false
+    if !borrow_scalar_type(f.return_type) && f.return_type.kind != TK_VOID(): return false
+    for pi in 0..len(f.params):
+        if !borrow_local_type(f.params[pi].ty): return false
+    let mut local_slots: List<String> = []
+    for bi in 0..len(f.blocks):
+        let bb: BasicBlock = f.blocks[bi]
+        for ii in 0..len(bb.instructions):
+            let inst: Instruction = bb.instructions[ii]
+            if instr_kind(inst) == "alloca":
+                if !borrow_local_type(instr_alloca_type(inst)): return false
+                local_slots.push(instr_dest(inst).name)
+    for bi in 0..len(f.blocks):
+        let bb: BasicBlock = f.blocks[bi]
+        for ii in 0..len(bb.instructions):
+            if !borrow_instruction_safe(bb.instructions[ii], local_slots): return false
+    return true
 
 struct EmitState:
     lines: List<String>
@@ -162,7 +247,7 @@ fn build_internal_struct_list() -> List<StructEntry>:
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
     list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
-    list.push(make_entry("FnEntry", ["name", "ret_type", "param_types"]))
+    list.push(make_entry("FnEntry", ["name", "ret_type", "param_types", "borrows_strings"]))
     // StructEntry already registered first (above)
     list.push(make_entry("VarInfo", ["name", "current", "mutable"]))
     list.push(make_entry("StructFieldInfo", ["name", "field_names", "field_types"]))
@@ -207,8 +292,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState:
     s = register_internal_struct(s, "CompileResult", ["success", "ir_text", "errors"])
     // MatchBuildResult: state, arm_labels, arm_indices, cases, default_label
     s = register_internal_struct(s, "MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"])
-    // FnEntry: name, ret_type, param_types
-    s = register_internal_struct(s, "FnEntry", ["name", "ret_type", "param_types"])
+    // FnEntry: name, ret_type, param_types, borrows_strings
+    s = register_internal_struct(s, "FnEntry", ["name", "ret_type", "param_types", "borrows_strings"])
     // StructEntry: name, field_names, field_types, llvm_type
     s = register_internal_struct(s, "StructEntry", ["name", "field_names", "field_types", "llvm_type"])
     // VarInfo: name, current, mutable
@@ -4333,20 +4418,22 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                     s = emit_rt_call(s, dn, llvm_string(), "__mn_str_replace", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name)
                     return s
 
-    // User functions may retain a String in their returned aggregate. Transfer
-    // matching ownership slots, including values reloaded through local aliases.
-    // Runtime/builtin calls above borrow their arguments and do not take this path.
-    if !fn_name.starts_with("__mn_"):
-        for ai in 0..len(args):
-            if args[ai].ty.kind == TK_STRING():
-                s = emit_move_string(s, args[ai].name)
-
     // Look up registered function parameter types (more reliable than MIR)
     let fn_opt_pre: Option<FnEntry> = find_function(s, fn_name)
     let mut reg_param_types: List<String> = []
+    let mut borrows_strings: Bool = false
     match fn_opt_pre:
-        Some(fe) => reg_param_types = fe.param_types
+        Some(fe) =>:
+            reg_param_types = fe.param_types
+            borrows_strings = fe.borrows_strings
         _ => {}
+
+    // Unknown/capturing callees still transfer matching ownership slots,
+    // including local aliases. Proven borrowers leave cleanup in the caller.
+    if !fn_name.starts_with("__mn_") && !borrows_strings:
+        for ai in 0..len(args):
+            if args[ai].ty.kind == TK_STRING():
+                s = emit_move_string(s, args[ai].name)
 
     // Build args with byref: large struct args → alloca + pass pointer
     let mut args_str: String = ""
@@ -5683,7 +5770,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
     // forward-declare entry at emit_mir_module.
     let mut reg_ret_ty: String = ret_ty
     if is_async: reg_ret_ty = "ptr"
-    let entry: FnEntry = new_fn_entry(f.name, reg_ret_ty, param_types)
+    let entry: FnEntry = new_fn_entry(f.name, reg_ret_ty, param_types, function_borrows_strings(f))
     let mut s: EmitState = st
     s.functions.push(entry)
 
@@ -6060,7 +6147,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String:
                 if fti < nfwdparams:
                     fn_types.push(resolve_mir_type(f_decl.params[fti].ty))
                     fti = fti + 1
-            let fe: FnEntry = new_fn_entry(f_decl.name, ret_ty, fn_types)
+            let fe: FnEntry = new_fn_entry(f_decl.name, ret_ty, fn_types, function_borrows_strings(f_decl))
             st.functions.push(fe)
             dix = dix + 1
 
