@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-07
 
-The nested-container milestone fixes an allocated-empty-buffer use-after-free
+The nested-container milestone is committed as **`48d381ec`** (`Retain allocated
+empty buffers when cloning nested lists`). It fixes an allocated-empty-buffer use-after-free
 in `__mn_list_deep_clone`. Cleared or popped inner lists still own storage;
 cloning must retain that storage even when their length is zero. This changes
 one runtime ownership condition and does not enable automatic recursive drops.
@@ -38,8 +39,11 @@ Verified hashes (SHA256):
 - Updated runtime archive: `4771333eb0022c11242a6ecd6fc41af3eb2099def2423b655fe376f26f14aeec`.
 
 The prior compiler and runtime are preserved as `nested-containers/mnc-baseline`
-and `nested-containers/runtime-baseline.a`. After committing, promote the exact
-tested successor and record fresh source/runtime equality in `promotion.json`.
+and `nested-containers/runtime-baseline.a`. The exact tested successor is installed
+at `mapanare/self/mnc-stage1`. Promotion verified fresh source at `48d381ec`, the
+runtime archive hash, and the installed binary hash; see
+`build/memory-ownership/nested-containers/promotion.json`. All milestone builds
+and checks are finished. Nothing was pushed or released.
 Validation is Linux/WSL; this does not complete priority 2 or qualify other platforms.
 
 GitNexus context and impact resolve the runtime helper: LOW, zero indexed direct
@@ -47,6 +51,9 @@ callers/processes. Generated calls are outside that graph; manual emitter review
 and the compiler gate cover that limitation. The only production edit is the
 retain condition; the C fixture includes explicitly documented failing diagnostic
 modes, while pytest gates only the fixed contract. Existing user edits remain untouched.
+Staged detection (`nested-containers/precommit.log`) found the expected five files,
+four indexed symbols, zero affected processes, and LOW risk; newly added probes
+and documentation were reviewed manually before indexing.
 
 ## Previous verified milestone — borrowing calls
 
@@ -225,9 +232,10 @@ transfers can still break captured aliases and were not used.
 
 ## Next steps
 
-1. Reproduce nested container and map retention, then design recursive cleanup
-   together with COW cloning/mutation. A deep free alone is unsafe for shared
-   element pointers. Add tests for aliases, detach, overwrite, removal, and return.
+1. Follow [the container implementation sequence](CONTAINER_OWNERSHIP.md), using
+   its confirmed probes: define owned-element copying/destruction, implement
+   COW/map mutation consistently, and integrate lowering plus both emitters.
+   A deep free alone is unsafe for shared element pointers.
 2. Extend the borrowing/capture contract beyond the initial proof. Unknown calls
    must remain conservative; track per-argument capture and forwarding only when
    justified by MIR evidence. Keep all leak and captured-alias regressions passing.
@@ -239,6 +247,7 @@ transfers can still break captured aliases and were not used.
 Run executable checks in Ubuntu WSL from the repository root:
 
 ```bash
+.venv/bin/python -m pytest tests/native/test_nested_list_ownership.py tests/runtime/test_list_bounds.py tests/llvm/test_map_runtime.py -q
 .venv/bin/python -m pytest tests/integration/test_native_string_argument_borrow.py tests/integration/test_native_value_return_cleanup.py tests/integration/test_string_return_ownership.py tests/integration/test_native_generics.py tests/integration/test_native_bool_output.py tests/integration/test_native_loop_stack.py -q
 .venv/bin/python scripts/verify_fixed_point.py --keep
 .venv/bin/python -m pytest tests/self_hosted/ tests/bootstrap/test_verification.py::TestPipelineIntegrity -q --tb=short

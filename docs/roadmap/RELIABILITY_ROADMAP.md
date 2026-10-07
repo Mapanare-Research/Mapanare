@@ -39,7 +39,13 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; second ownership fix committed as `7a54a7bc`.** Proven
+**Priority 2 active; nested-list runtime fix committed as `48d381ec`.** Deep
+cloning now retains allocated empty inner buffers after clear/pop. Eight ASan
+use-after-free failures are fixed; all 16 ownership cases and 22 runtime controls
+pass, alongside the 74/74 standalone C suite. This does not yet enable automatic
+recursive element cleanup in native programs.
+
+The second ownership fix, `7a54a7bc`, means proven
 borrowing calls now leave String cleanup with their callers. The reproduced
 98,890-byte leak over 10,000 items is gone in all 12 new LeakSanitizer cases,
 including aliases, repeated calls, loops, and forward declarations. Unknown
@@ -51,16 +57,20 @@ was 88 bytes per call (880,000 bytes at 10,000 calls); six LeakSanitizer cases n
 pass for flat, nested, and wide records. Heap-bearing returns retain their
 conservative escape protection, checked by String/container lifetime regressions.
 
-The current gate is `build/fixed-point-d3yb2vvg`: both compiler generations pass
+The current gate is `build/fixed-point-ol5n0yze`: both compiler generations pass
 103 LLVM goldens and eight executable fixtures, and stage2/stage3 are byte-identical.
 Its optimized successor passes all 40 focused native checks and is installed as
-`mapanare/self/mnc-stage1`. Promotion verified fresh source at commit `7a54a7bc`
+`mapanare/self/mnc-stage1`. Promotion verified fresh source at commit `48d381ec`
 and the runtime against the gate's hashes. The prior verified compiler remains
-preserved. Native source checks: 343 passed, two pre-existing xpasses.
+preserved. Unchanged native compiler source was checked in the preceding
+milestone: 343 passed, two pre-existing xpasses.
 
-**Next:** reproduce nested container/map retention and address element ownership
-together with COW cloning and destruction; extend capture summaries beyond the
-initial borrowing proof. The current ownership rules, reproductions, hashes, and resume commands are in
+**Next:** implement an explicit owned-element runtime contract, coordinate COW
+mutation and map replacement/deletion, then integrate lowering and both emitters.
+The [container evidence and implementation sequence](memory-ownership/CONTAINER_OWNERSHIP.md)
+records five C probes and native reproductions retaining about 416 KB for nested
+lists and 638 KB for map replacement over 1,000 iterations. Broader borrowing
+summaries also remain open. Current hashes and resume commands are in
 [the ownership work log](memory-ownership/WORK_LOG.md). Priority 2 remains active.
 
 Priority 1 completed generic specialization, native lifetime/stack/boolean fixes,
