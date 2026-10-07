@@ -39,22 +39,28 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; first ownership fix committed as `6ad3110d`.** Returning a
+**Priority 2 active; second ownership fix committed as `7a54a7bc`.** Proven
+borrowing calls now leave String cleanup with their callers. The reproduced
+98,890-byte leak over 10,000 items is gone in all 12 new LeakSanitizer cases,
+including aliases, repeated calls, loops, and forward declarations. Unknown
+calls and captures retain conservative transfer behavior.
+
+The first ownership fix, `6ad3110d`, means returning a
 value-only struct no longer retains unrelated heap locals. The reproduced leak
 was 88 bytes per call (880,000 bytes at 10,000 calls); six LeakSanitizer cases now
 pass for flat, nested, and wide records. Heap-bearing returns retain their
 conservative escape protection, checked by String/container lifetime regressions.
 
-The current gate is `build/fixed-point-gfe7dx_s`: both compiler generations pass
+The current gate is `build/fixed-point-d3yb2vvg`: both compiler generations pass
 103 LLVM goldens and eight executable fixtures, and stage2/stage3 are byte-identical.
-Its optimized successor passes all 26 focused native checks and is installed as
-`mapanare/self/mnc-stage1`. Promotion verified fresh source at commit `6ad3110d`
+Its optimized successor passes all 40 focused native checks and is installed as
+`mapanare/self/mnc-stage1`. Promotion verified fresh source at commit `7a54a7bc`
 and the runtime against the gate's hashes. The prior verified compiler remains
 preserved. Native source checks: 343 passed, two pre-existing xpasses.
 
-**Next:** fix the reproduced read-only String argument leak (98,890 bytes over
-10,000 calls), then address nested container ownership and COW cleanup. The
-current ownership rules, exact reproduction, hashes, and resume commands are in
+**Next:** reproduce nested container/map retention and address element ownership
+together with COW cloning and destruction; extend capture summaries beyond the
+initial borrowing proof. The current ownership rules, reproductions, hashes, and resume commands are in
 [the ownership work log](memory-ownership/WORK_LOG.md). Priority 2 remains active.
 
 Priority 1 completed generic specialization, native lifetime/stack/boolean fixes,

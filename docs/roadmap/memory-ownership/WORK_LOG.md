@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-07
 
-The borrowed-String milestone is now implemented. A conservative MIR proof
+The borrowed-String milestone is committed as **`7a54a7bc`** (`Keep String ownership
+at proven borrowing call sites`). A conservative MIR proof
 records `FnEntry.borrows_strings` in both forward and body registration; callers
 keep ownership when the callee is proven not to retain String parameters.
 The original reproduction and all 12 new leak regressions now pass. The proof
@@ -30,9 +31,11 @@ The previous installed compiler is preserved at
 Strict gate `build/fixed-point-d3yb2vvg` passed: both generations passed all
 103 LLVM goldens and eight executable fixtures; stage2/stage3 IR is byte-identical.
 Its optimized successor also passed all 40 focused checks
-(`successor-regressions.log`). No emitted IR was patched. Promotion will verify
-fresh concatenated source at the implementation commit and record the exact
-installed compiler in `borrowed-string/promotion.json`.
+(`successor-regressions.log`). No emitted IR was patched. Promotion verified
+fresh concatenated source at `7a54a7bc`, the runtime hash, and the installed
+binary hash. The exact verified successor is installed at `mapanare/self/mnc-stage1`;
+the record is `build/memory-ownership/borrowed-string/promotion.json`. Builds and
+tests for this milestone are finished. No push or release was performed.
 
 Verified hashes (SHA256):
 
@@ -40,6 +43,11 @@ Verified hashes (SHA256):
 - Optimized successor: `9c8cd28eec6eeba703f27e7b9b429f4ad665eb289776f78ef5e6bec9afa47d96`.
 - Both stage2/stage3 IR: `3cfe326658775fb4791eac77fe3f99e10506dbdf9a370a040b6af079e4ae050b`.
 - Unchanged runtime: `381638c3b620a87c04376a5988a9b93b409ad170f5b0abcdd9d1f1106a890830`.
+
+Staged impact (`borrowed-string/precommit.log`): four expected files, seven
+indexed symbols, zero affected processes, LOW. Native symbols and the new
+test were not indexed at that point; the manual emitter review and full native
+validation above cover that limitation. Validation was Linux/WSL only.
 
 Next, reproduce nested container/map retention and design element ownership
 together with COW cloning, overwrite, and destruction. Unproven String callees
