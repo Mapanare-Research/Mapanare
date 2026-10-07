@@ -51,13 +51,22 @@ the production compiler emits that exact same fixed point. All 16 new regression
 checks pass. LLVM/MIR: 1,068 passed; self-hosted/bootstrap/optimizer suites:
 864 passed, 5 xfailed, 2 xpassed after correcting the CLI test PATH.
 
-**Next:** native explicit `::<T>` calls and generic-body type substitution parity.
-This needs AST/parser/semantic/lowering work; the Python body-specialization fix
-does not by itself add that native syntax. Stay on priority 1 before moving to
-the general memory-ownership program. Validation here was Linux/WSL.
+**Native generic follow-up implemented:** explicit `::<T>` calls, recursive body
+type substitution, nested type mangling, recursive specialization reuse, typed
+pipes, and schema generation through generic impl methods. The optimized native
+successor passes all 19 focused native checks and has reached an exact fixed
+point. The final gate is running again with standalone match fallbacks included
+in the source snapshot. LLVM/MIR: 1,068 passed; the broader suite's two failures
+are resolved by standalone semantic fixes and a bounded 180-second object-build
+timeout (isolated build passed in 79.72 seconds overall).
 
-Starting HEAD: `cbcfa0da` (v5.54.2). The pre-existing untracked
-`DESKTOP_APP_RESTART_PLAN.md` is user work and remains untouched. No commit or
-release has been made by this task.
+**Next:** record the final source-specific gate, promote its verified optimized
+successor, and close priority 1 before the general memory-ownership program.
+Validation here was Linux/WSL.
+
+Starting HEAD: `cbcfa0da` (v5.54.2). The first verified milestone is committed as
+`9c877e62` (`Fix compiler lifetime bugs and enforce strict self-hosting validation`).
+The pre-existing untracked `DESKTOP_APP_RESTART_PLAN.md` is user work and remains
+untouched. No release has been made by this task.
 
 Resume from [the priority 1 work log](compiler-correctness/WORK_LOG.md).

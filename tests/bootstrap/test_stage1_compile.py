@@ -147,7 +147,9 @@ class TestStage1Compilation:
                 ["clang", "-c", "-O0", ll_path, "-o", obj_path],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                # The full compiler now emits over 2.5 million LLVM lines.
+                # Keep this bounded, but allow a cold O0 build on CI/WSL.
+                timeout=180,
             )
             assert result.returncode == 0, f"clang compile failed:\n{result.stderr}"
             assert os.path.getsize(obj_path) > 0, "Object file is empty"

@@ -1183,7 +1183,7 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             // All downstream uses of the original name are renamed.
                             let mut post_insts: List<Instruction> = []
                             let call_dest: Value = instr_dest(inst)
-                            let do_rename: Bool = call_dest.name.starts_with("%")
+                            let do_rename: Bool = call_dest.name.starts_with("%") && callee.return_type.kind != TK_VOID()
                             let fresh_dest_name: String = "%" + prefix + "dst"
                             if do_rename:
                                 let fresh_dest: Value = new Value { name: fresh_dest_name, ty: call_dest.ty }

@@ -1593,6 +1593,8 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
 
     // Dispatch on callee type
     let ck: String = expr_kind(callee)
+    if ck == "type_apply":
+        return lower_type_applied_call(s, callee, args)
     if ck == "ident":
         return lower_call_by_name(s, expr_ident_name(callee), args)
     if ck == "field_access":
@@ -1678,6 +1680,8 @@ fn mangle_generic_name(base: String, arg_types: List<MIRType>) -> String:
             if tk == TK_RESULT(): result = result + "Result"
             if tk == TK_VOID(): result = result + "Void"
             if tk == TK_UNKNOWN(): result = result + "Unknown"
+            if len(arg_types[i].args) > 0:
+                result = result + "_of_" + mangle_generic_name("", arg_types[i].args) + "_end"
             i = i + 1
     result
 
@@ -1709,20 +1713,156 @@ fn infer_type_args_from_call(gfn: FnDefData, arg_types: List<MIRType>) -> List<M
 
 fn substitute_type_annotation(ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> Option<TypeExpr>:
     match ann:
-        Some(te) =>:
-            let te_name: String = type_expr_name(te)
-            let mut i: Int = 0
-            for _ in 0..20:
-                if i < len(type_params):
-                    if type_params[i] == te_name:
-                        if i < len(concrete):
-                            // Replace with concrete type name
-                            let mut cname: String = concrete[i].name
-                            if cname == "": cname = kind_to_type_name(concrete[i].kind)
-                            return Some(TypeExpr::Named(cname))
-                    i = i + 1
-            return ann
+        Some(te) => return Some(specialize_type_expr(te, type_params, concrete))
         _ => return none
+
+fn concrete_type_expr(ty: MIRType) -> TypeExpr:
+    let mut name: String = ty.name
+    if name == "": name = kind_to_type_name(ty.kind)
+    if len(ty.args) == 0: return TypeExpr::Named(name)
+    let mut args: List<TypeExpr> = []
+    for i in 0..len(ty.args): args.push(concrete_type_expr(ty.args[i]))
+    return TypeExpr::Generic(name, args)
+
+fn specialize_types(items: List<TypeExpr>, names: List<String>, types: List<MIRType>) -> List<TypeExpr>:
+    let mut result: List<TypeExpr> = []
+    for i in 0..len(items): result.push(specialize_type_expr(items[i], names, types))
+    return result
+
+fn specialize_type_expr(te: TypeExpr, names: List<String>, types: List<MIRType>) -> TypeExpr:
+    match te:
+        Named(name) =>:
+            for i in 0..len(names):
+                if names[i] == name && i < len(types): return concrete_type_expr(types[i])
+            return te
+        Generic(name, args) => return TypeExpr::Generic(name, specialize_types(args, names, types))
+        FnTy(args, ret) => return TypeExpr::FnTy(specialize_types(args, names, types), specialize_type_expr(ret, names, types))
+        TensorTy(elem, shape) => return TypeExpr::TensorTy(specialize_type_expr(elem, names, types), specialize_exprs(shape, names, types))
+        _ => return te
+
+fn specialize_exprs(items: List<Expr>, names: List<String>, types: List<MIRType>) -> List<Expr>:
+    let mut result: List<Expr> = []
+    for i in 0..len(items): result.push(specialize_expr(items[i], names, types))
+    return result
+
+fn specialize_expr_opt(item: Option<Expr>, names: List<String>, types: List<MIRType>) -> Option<Expr>:
+    match item:
+        Some(e) => return Some(specialize_expr(e, names, types))
+        _ => return none
+
+fn specialize_params(items: List<Param>, names: List<String>, types: List<MIRType>) -> List<Param>:
+    let mut result: List<Param> = []
+    for i in 0..len(items):
+        let p: Param = items[i]
+        result.push(new Param { span: p.span, name: p.name, type_annotation: substitute_type_annotation(p.type_annotation, names, types) })
+    return result
+
+fn specialize_block(body: Block, names: List<String>, types: List<MIRType>) -> Block:
+    let mut stmts: List<Stmt> = []
+    for i in 0..len(body.stmts): stmts.push(specialize_stmt(body.stmts[i], names, types))
+    return new Block { span: body.span, stmts: stmts }
+
+fn specialize_block_opt(body: Option<Block>, names: List<String>, types: List<MIRType>) -> Option<Block>:
+    match body:
+        Some(b) => return Some(specialize_block(b, names, types))
+        _ => return none
+
+fn specialize_else(body: Option<ElseClause>, names: List<String>, types: List<MIRType>) -> Option<ElseClause>:
+    match body:
+        Some(ec) =>:
+            match ec:
+                ElseBlock(b) => return Some(ElseClause::ElseBlock(specialize_block(b, names, types)))
+                ElseIf(c, b, e) => return Some(ElseClause::ElseIf(specialize_expr(c, names, types), specialize_block(b, names, types), specialize_else(e, names, types)))
+                _ => return body
+        _ => return none
+
+fn specialize_stmt(stmt: Stmt, names: List<String>, types: List<MIRType>) -> Stmt:
+    match stmt:
+        Let(n, m, t, v) => return Stmt::Let(n, m, substitute_type_annotation(t, names, types), specialize_expr(v, names, types))
+        ExprStmt(e) => return Stmt::ExprStmt(specialize_expr(e, names, types))
+        Return(e) => return Stmt::Return(specialize_expr_opt(e, names, types))
+        For(n, e, b) => return Stmt::For(n, specialize_expr(e, names, types), specialize_block(b, names, types))
+        While(e, b) => return Stmt::While(specialize_expr(e, names, types), specialize_block(b, names, types))
+        Assert(e, msg) => return Stmt::Assert(specialize_expr(e, names, types), msg)
+        SignalDecl(n, m, t, v, c) => return Stmt::SignalDecl(n, m, substitute_type_annotation(t, names, types), specialize_expr(v, names, types), c)
+        StreamDecl(n, t, v) => return Stmt::StreamDecl(n, substitute_type_annotation(t, names, types), specialize_expr(v, names, types))
+        LetDestructure(p, m, t, v) => return Stmt::LetDestructure(p, m, substitute_type_annotation(t, names, types), specialize_expr(v, names, types))
+        LetElse(p, e, b) => return Stmt::LetElse(p, specialize_expr(e, names, types), specialize_block(b, names, types))
+        WhileLet(p, e, b) => return Stmt::WhileLet(p, specialize_expr(e, names, types), specialize_block(b, names, types))
+        _ => return stmt
+
+fn specialize_fields(items: List<FieldInit>, names: List<String>, types: List<MIRType>) -> List<FieldInit>:
+    let mut result: List<FieldInit> = []
+    for i in 0..len(items):
+        let f: FieldInit = items[i]
+        result.push(new FieldInit { span: f.span, name: f.name, value: specialize_expr(f.value, names, types) })
+    return result
+
+fn specialize_expr(expr: Expr, names: List<String>, types: List<MIRType>) -> Expr:
+    match expr:
+        Binary(l, op, r) => return Expr::Binary(specialize_expr(l, names, types), op, specialize_expr(r, names, types))
+        Unary(op, e) => return Expr::Unary(op, specialize_expr(e, names, types))
+        Call(c, args) => return Expr::Call(specialize_expr(c, names, types), specialize_exprs(args, names, types))
+        TypeApply(c, args) => return Expr::TypeApply(specialize_expr(c, names, types), specialize_types(args, names, types))
+        MethodCall(o, n, args) => return Expr::MethodCall(specialize_expr(o, names, types), n, specialize_exprs(args, names, types))
+        FieldAccess(o, n) => return Expr::FieldAccess(specialize_expr(o, names, types), n)
+        Index(o, i) => return Expr::Index(specialize_expr(o, names, types), specialize_expr(i, names, types))
+        TensorIndex(o, items) => return Expr::TensorIndex(specialize_expr(o, names, types), specialize_exprs(items, names, types))
+        TensorSlice(o, items) =>:
+            let mut result: List<IndexItem> = []
+            for i in 0..len(items):
+                let item: IndexItem = items[i]
+                result.push(new IndexItem { kind: item.kind, expr: specialize_expr(item.expr, names, types), start: specialize_expr(item.start, names, types), end: specialize_expr(item.end, names, types), step: specialize_expr(item.step, names, types) })
+            return Expr::TensorSlice(specialize_expr(o, names, types), result)
+        Pipe(l, r) => return Expr::Pipe(specialize_expr(l, names, types), specialize_expr(r, names, types))
+        Range(l, r, inc) => return Expr::Range(specialize_expr(l, names, types), specialize_expr(r, names, types), inc)
+        Lambda(params, body) =>:
+            let ps: List<Param> = specialize_params(params, names, types)
+            match body:
+                ExprBody(e) => return Expr::Lambda(ps, LambdaBody::ExprBody(specialize_expr(e, names, types)))
+                BlockBody(b) => return Expr::Lambda(ps, LambdaBody::BlockBody(specialize_block(b, names, types)))
+                _ => return expr
+        Spawn(c, args) => return Expr::Spawn(specialize_expr(c, names, types), specialize_exprs(args, names, types))
+        Sync(e) => return Expr::Sync(specialize_expr(e, names, types))
+        Send(l, r) => return Expr::Send(specialize_expr(l, names, types), specialize_expr(r, names, types))
+        ErrorProp(e) => return Expr::ErrorProp(specialize_expr(e, names, types))
+        ListLit(items) => return Expr::ListLit(specialize_exprs(items, names, types))
+        TensorLit(items, shape) => return Expr::TensorLit(specialize_exprs(items, names, types), shape)
+        MapLit(items) =>:
+            let mut result: List<MapEntry> = []
+            for i in 0..len(items):
+                result.push(new MapEntry { key: specialize_expr(items[i].key, names, types), value: specialize_expr(items[i].value, names, types) })
+            return Expr::MapLit(result)
+        Construct(n, fields) => return Expr::Construct(n, specialize_fields(fields, names, types))
+        ConstructUpdate(n, fields, base) => return Expr::ConstructUpdate(n, specialize_fields(fields, names, types), specialize_expr(base, names, types))
+        SomeWrap(e) => return Expr::SomeWrap(specialize_expr(e, names, types))
+        OkWrap(e) => return Expr::OkWrap(specialize_expr(e, names, types))
+        ErrWrap(e) => return Expr::ErrWrap(specialize_expr(e, names, types))
+        SignalVal(e, c) => return Expr::SignalVal(specialize_expr(e, names, types), c)
+        Assign(l, op, r) => return Expr::Assign(specialize_expr(l, names, types), op, specialize_expr(r, names, types))
+        If(c, b, e) => return Expr::If(specialize_expr(c, names, types), specialize_block(b, names, types), specialize_else(e, names, types))
+        IfLet(p, e, b, alt) => return Expr::IfLet(p, specialize_expr(e, names, types), specialize_block(b, names, types), specialize_block_opt(alt, names, types))
+        Match(e, arms) =>:
+            let mut result: List<MatchArm> = []
+            for i in 0..len(arms):
+                let arm: MatchArm = arms[i]
+                let mut body: MatchArmBody = arm.body
+                match arm.body:
+                    ExprBody(v) => body = MatchArmBody::ExprBody(specialize_expr(v, names, types))
+                    BlockBody(b) => body = MatchArmBody::BlockBody(specialize_block(b, names, types))
+                    _ => {}
+                result.push(new MatchArm { span: arm.span, pattern: arm.pattern, body: body, guard: specialize_expr_opt(arm.guard, names, types) })
+            return Expr::Match(specialize_expr(e, names, types), result)
+        Await(e) => return Expr::Await(specialize_expr(e, names, types))
+        Comprehension(k, e, key, val, clauses) =>:
+            let mut result: List<CompClause> = []
+            for i in 0..len(clauses):
+                let c: CompClause = clauses[i]
+                result.push(new CompClause { span: c.span, target: c.target, iter: specialize_expr(c.iter, names, types), conditions: specialize_exprs(c.conditions, names, types) })
+            return Expr::Comprehension(k, specialize_expr_opt(e, names, types), specialize_expr_opt(key, names, types), specialize_expr_opt(val, names, types), result)
+        InterpString(parts) => return Expr::InterpString(specialize_exprs(parts, names, types))
+        ChainedCmp(items, ops) => return Expr::ChainedCmp(specialize_exprs(items, names, types), ops)
+        _ => return expr
 
 fn specialize_fn(gfn: FnDefData, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> FnDefData:
     // Build new params with substituted type annotations
@@ -1738,7 +1878,8 @@ fn specialize_fn(gfn: FnDefData, mangled: String, type_params: List<String>, con
     // Substitute return type
     let new_ret: Option<TypeExpr> = substitute_type_annotation(gfn.return_type, type_params, concrete)
     let empty_tp: List<String> = []
-    return new_fn_def_data(gfn.span, mangled, gfn.public, empty_tp, new_params, new_ret, gfn.body, gfn.decorators)
+    let body: Block = specialize_block(gfn.body, type_params, concrete)
+    return new_fn_def_data(gfn.span, mangled, gfn.public, empty_tp, new_params, new_ret, body, gfn.decorators)
 
 fn is_already_specialized(st: LowerState, mangled: String) -> Bool:
     // Check if __ret__mangled exists in lambda_vars
@@ -1759,24 +1900,62 @@ fn try_monomorphize_call(st: LowerState, fn_name: String, args: List<Value>) -> 
                     arg_types.push(args[ai].ty)
                     ai = ai + 1
             let concrete: List<MIRType> = infer_type_args_from_call(gfn, arg_types)
-            let mangled: String = mangle_generic_name(fn_name, concrete)
-
-            let mut s: LowerState = st
-            if !is_already_specialized(s, mangled):
-                // Specialize and lower the function
-                let specialized: FnDefData = specialize_fn(gfn, mangled, gfn.type_params, concrete)
-                s = lower_fn(s, specialized, "")
-
-            // Look up return type and emit call
-            let ret_key: String = "__ret__" + mangled
-            let ret_ty: MIRType = decode_ret_type(unwrap_or_default(find_lambda(s, ret_key), ""))
-
-            let dr: LowerResult = make_value(s, ret_ty, "t")
-            let s2: LowerState = emit_instr(dr.state, Instruction::Call(dr.value, mangled, args))
-            return new_lower_result(dr.value, s2)
+            return lower_specialized_call(st, gfn, args, concrete)
         _ =>:
             // Not a generic function — return sentinel
             return new_lower_result(void_value(), st)
+
+fn lower_specialized_call(st: LowerState, gfn: FnDefData, args: List<Value>, concrete: List<MIRType>) -> LowerResult:
+    let mangled: String = mangle_generic_name(gfn.name, concrete)
+    let specialized: FnDefData = specialize_fn(gfn, mangled, gfn.type_params, concrete)
+    let mut s: LowerState = st
+    if !is_already_specialized(s, mangled):
+        // Register before lowering the body, so recursion and repeated calls
+        // reuse one instantiation rather than emitting duplicate definitions.
+        s = register_definition(s, Definition::FnDef(specialized))
+        s = lower_fn(s, specialized, "")
+    let ret_ty: MIRType = resolve_return_type_checked(s, specialized.return_type)
+    let dr: LowerResult = make_value(s, ret_ty, "t")
+    let result: LowerState = emit_instr(dr.state, Instruction::Call(dr.value, mangled, args))
+    return new_lower_result(dr.value, result)
+
+fn lower_type_applied_call(st: LowerState, applied: Expr, args: List<Value>) -> LowerResult:
+    let callee: Expr = expr_type_apply_callee(applied)
+    let mut name: String = expr_ident_name(callee)
+    if expr_kind(callee) == "namespace_access": name = expr_ns_member(callee)
+    let annotations: List<TypeExpr> = expr_type_apply_args(applied)
+    if name == "__struct_meta" && len(annotations) == 1:
+        return lower_native_struct_meta(st, type_expr_name(annotations[0]))
+    let mut concrete: List<MIRType> = []
+    for i in 0..len(annotations): concrete.push(lower_resolve_type_checked(st, annotations[i]))
+    let generic_fn: Option<FnDefData> = find_generic_fn(st, name)
+    match generic_fn:
+        Some(gfn) => return lower_specialized_call(st, gfn, args, concrete)
+        _ => return new_lower_result(void_value(), st)
+
+fn native_schema_type(ty: MIRType) -> String:
+    if ty.kind == TK_INT(): return "integer"
+    if ty.kind == TK_FLOAT(): return "number"
+    if ty.kind == TK_BOOL(): return "boolean"
+    if ty.kind == TK_LIST(): return "array"
+    if ty.kind == TK_OPTION() && len(ty.args) > 0: return native_schema_type(ty.args[0])
+    return "string"
+
+fn lower_native_struct_meta(st: LowerState, name: String) -> LowerResult:
+    let mut props: List<String> = []
+    let mut required: List<String> = []
+    for struct_idx in 0..len(st.struct_fields):
+        let info: StructFieldInfo = st.struct_fields[struct_idx]
+        if info.name == name:
+            for fi in 0..len(info.field_names):
+                let field: String = "\"" + info.field_names[fi] + "\""
+                let ty: MIRType = info.field_types[fi]
+                props.push(field + ": {\"type\": \"" + native_schema_type(ty) + "\"}")
+                if ty.kind != TK_OPTION(): required.push(field)
+    let schema: String = "{\"type\": \"object\", \"properties\": {" + join(", ", props) + "}, \"required\": [" + join(", ", required) + "]}"
+    let dest: LowerResult = make_value(st, mir_string(), "schema")
+    let s: LowerState = emit_instr(dest.state, Instruction::Const(dest.value, mir_string(), schema))
+    return new_lower_result(dest.value, s)
 
 fn find_type_param_index(type_params: List<String>, name: String) -> Int:
     let mut i: Int = 0
@@ -2562,7 +2741,19 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
         let impl_key: String = obj_type_name + "." + method
         let impl_opt: Option<String> = lookup_impl_method(s, impl_key)
         match impl_opt:
-            Some(mangled) => call_name = mangled
+            Some(mangled) =>:
+                call_name = mangled
+                // Specialized methods are already lowered. Preserve their full
+                // return type, including container arguments, at the call site.
+                let mut fn_idx: Int = 0
+                for _ in 0..5000:
+                    if fn_idx < len(s.module.functions):
+                        if s.module.functions[fn_idx].name == mangled:
+                            ret_ty = s.module.functions[fn_idx].return_type
+                            fn_idx = len(s.module.functions)
+                        fn_idx = fn_idx + 1
+                if ret_ty.kind == TK_UNKNOWN():
+                    return lower_call_by_name(s, mangled, all_args)
             _ => {}
 
     let dest_r: LowerResult = make_value(s, ret_ty, "t")
@@ -2998,6 +3189,15 @@ fn lower_pipe_call(arg_r: LowerResult, fn_name: String, extra_exprs: List<Expr>)
     return new_lower_result(dest_r.value, new_s)
 
 fn lower_pipe_with_call(arg_r: LowerResult, callee: Expr, extra_arg_exprs: List<Expr>) -> LowerResult:
+    if expr_kind(callee) == "type_apply":
+        let mut s: LowerState = arg_r.state
+        let mut args: List<Value> = []
+        args.push(arg_r.value)
+        for i in 0..len(extra_arg_exprs):
+            let r: LowerResult = lower_expr(s, extra_arg_exprs[i])
+            s = r.state
+            args.push(r.value)
+        return lower_type_applied_call(s, callee, args)
     if expr_kind(callee) == "ident":
         return lower_pipe_call(arg_r, expr_ident_name(callee), extra_arg_exprs)
     return new_lower_result(arg_r.value, arg_r.state)

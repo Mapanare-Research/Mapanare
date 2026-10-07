@@ -133,6 +133,9 @@ enum Expr:
     // `&&`-joined pairwise comparisons; non-trivial interior
     // operands bound to `__mn_chain_N` so they evaluate exactly once.
     ChainedCmp(List<Expr>, List<String>)
+    // Explicit generic arguments decorate a callee; ordinary Call keeps its
+    // existing layout and all existing variant tags remain unchanged.
+    TypeApply(Expr, List<TypeExpr>)
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -384,6 +387,13 @@ pub fn expr_kind(e: Expr) -> String:
         ConstructUpdate(_, _, _) => return "construct_update"
         IfLet(_, _, _, _) => return "if_let"
         ChainedCmp(_, _) => return "chained_cmp"
+        TypeApply(_, _) => return "type_apply"
+
+pub fn expr_type_apply_callee(e: Expr) -> Expr:
+    match e { TypeApply(c, _) => return c, _ => return Expr::NoneLit }
+
+pub fn expr_type_apply_args(e: Expr) -> List<TypeExpr>:
+    match e { TypeApply(_, a) => return a, _ => let empty: List<TypeExpr> = []; return empty }
 
 pub fn expr_interp_parts(e: Expr) -> List<Expr>:
     match e:

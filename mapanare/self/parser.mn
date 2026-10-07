@@ -1632,7 +1632,14 @@ fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
 
         let tt: String = peek_type(tokens, p)
 
-        if tt == "LPAREN":
+        if tt == "DOUBLE_COLON" && peek_type(tokens, p + 1) == "LT":
+            let tr: TypeResult = parse_generic_type_at(tokens, p + 1, "", filename)
+            let applied: Expr = Expr::TypeApply(left, type_expr_args(tr.type_expr))
+            let call_pos: Int = expect(tokens, tr.pos, "LPAREN") - 1
+            let cr: ExprResult = parse_call_args(tokens, call_pos, filename, applied)
+            left = cr.expr
+            p = cr.pos
+        else if tt == "LPAREN":
             let cr: ExprResult = parse_call_args(tokens, p, filename, left)
             left = cr.expr
             p = cr.pos
@@ -2085,7 +2092,7 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     // Soft keywords: allowed as identifiers in expression position
     if tt == "NAME" || tt == "KW_INPUT" || tt == "KW_OUTPUT" || tt == "KW_AGENT" || tt == "KW_DI" || tt == "KW_STREAM":
         let name: String = val
-        if peek_type(tokens, pos + 1) == "DOUBLE_COLON":
+        if peek_type(tokens, pos + 1) == "DOUBLE_COLON" && peek_type(tokens, pos + 2) != "LT":
             let ns_member: String = peek_value(tokens, pos + 2)
             return new_expr_result(Expr::NamespaceAccess(name, ns_member), pos + 3)
         return new_expr_result(Expr::Ident(name), pos + 1)

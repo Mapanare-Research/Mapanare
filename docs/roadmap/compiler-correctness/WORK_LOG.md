@@ -4,15 +4,19 @@
 
 Priority 1 of the [reliability roadmap](../RELIABILITY_ROADMAP.md) is active.
 Starting revision: `cbcfa0da9cdb69f61c5eef8017b5eb56785d8c9d` (v5.54.2, `dev`).
-Changes are local and uncommitted. The existing untracked desktop restart plan
-was not modified. Do not begin priority 2 until the compiler gates below pass.
+The first verified milestone is committed as `9c877e62` (`Fix compiler lifetime
+bugs and enforce strict self-hosting validation`). Native generic frontend work
+is in progress. The existing untracked desktop restart plan was not modified.
+Do not begin priority 2 until the compiler gates below pass.
 
-**Current checkpoint: first reliability milestone verified.** The optimized
-production compiler and self-hosted successor pass 103/103 LLVM goldens and
-eight executable fixtures. Stage2 and stage3 IR are byte-identical, and the
-production compiler emits that same fixed point. All 16 new regression checks
-pass on the production build. Native explicit `::<T>` syntax remains open;
-priority 1 is not complete. No build or validation remains running for this batch.
+**Current checkpoint: native generic frontend implemented; final validation in
+progress.** The first committed milestone passed 103/103 LLVM goldens, eight
+executable fixtures, exact stage2/stage3 equality, and 16 focused regressions.
+The follow-up adds native explicit `::<T>` syntax and generic body substitution.
+Its 11 executable/diagnostic regressions pass on the diagnostic candidate;
+full-source checks exposed and fixed missing Option payload annotations and
+standalone match fallbacks. Do not treat priority 1 as complete until the final
+fresh-source self-hosting and optimized compiler checks below pass.
 
 ## Implemented changes
 
@@ -48,6 +52,62 @@ ownership contract. The ASan regressions disable leak detection to isolate
 invalid access/free; broader lifetime accounting remains priority 2.
 
 ## Reproductions and evidence
+
+### Native generic frontend follow-up
+
+The follow-up adds explicit `::<T>` calls and recursive generic body
+specialization to the native compiler. `Expr::TypeApply` is appended to the AST
+enum, preserving existing variant tags and the two-field `Call` representation.
+The parser wraps the callee; semantic checking validates type/value argument
+counts and concrete types; lowering substitutes body annotations and nested
+type applications without mutating the template.
+
+Specializations register before lowering their bodies so recursion and repeated
+calls reuse one definition. Nested container arguments participate in mangling.
+The native `__struct_meta::<T>()` intrinsic supports the schema regression used
+for the Python fix, including generic impl methods. Impl calls retain declared
+return types, and the inliner no longer emits a value-copy instruction for a
+Void return.
+
+`tests/integration/test_native_generics.py` covers independent inferred and
+explicit instantiations, nested calls and types, return-only type parameters,
+recursion, pipes, schema generation, generic impl methods, and five invalid-call
+diagnostics. Initial reproductions failed with unresolved `T` or explicit-call
+parse errors. Expanded checks exposed invalid Void and method-return LLVM types;
+both were fixed at their source.
+
+- Diagnostic candidate: **11 passed** (`native-generics-after.log`).
+- Existing milestone regressions on the same candidate: **16 passed**
+  (`generic-existing-regressions.log`).
+- LLVM/MIR: **1,068 passed** (`generic-llvm-mir-tests.log`).
+- First full-source gate (`build/fixed-point-aptewfxb`) passed 103 LLVM goldens
+  and eight executable fixtures, then rejected stage2 IR: direct matching on
+  `scope_lookup(...)` lost the `Option<Symbol>` payload type in the new helper.
+  Added typed `Option<Symbol>` and `Option<FnDefData>` locals before matching.
+  Fresh full compiler IR then passed `llvm-as` (`generic-source-check.stderr`,
+  empty on success). No emitted IR was patched.
+- Optimized native successor: **19 passed** (`generic-successor-regressions.log`).
+  `build/fixed-point-ua3bcdb1/manifest.json` records 103/103 LLVM goldens and eight
+  executable fixtures on both generations, plus exact stage2/stage3 equality.
+  This snapshot includes typed Option locals but predates the standalone match
+  fallbacks. The final current-source run is `build/fixed-point-8a9z1nv3`;
+  `generic-fixed-point-current.log` is its progress log.
+- Broad run: 862 passed, 5 xfailed, 2 xpassed, two failures
+  (`generic-broad-tests.log`). One was a 60-second clang object-build timeout,
+  reproduced on a separate retry (`generic-object-recheck.log`). The other
+  required fallback match arms in the new
+  walkers when checked without AST enum definitions. After adding them, all 18
+  standalone semantic checks pass (`generic-semantic-recheck.log`).
+- The full-compiler object test now allows a bounded 180 seconds for over
+  2.5 million LLVM lines, retaining its exit-status and nonempty-object checks.
+  The isolated test passed in **79.72 seconds overall** (`generic-object-final.log`).
+  Both original broad-run failures are resolved by targeted reruns.
+- The long Python-bootstrap optimized build was deliberately stopped after its
+  source became obsolete (`build-generics-production.log`, SIGTERM). The final
+  production compiler will be the optimized native successor built from current
+  source, once the strict gate and focused executable regressions pass.
+- Preserved previous verified production compiler:
+  `build/compiler-correctness/mnc-reliability-9c877e62`.
 
 Evidence paths below are relative to `build/compiler-correctness/`, an ignored
 local directory. Keep this document as the durable summary; logs may not exist
@@ -127,20 +187,13 @@ of crashes, empty IR, and any byte difference.
 
 ## Remaining work, in order
 
-1. Close the native generic frontend gap: `Expr::Call` currently
-   stores only callee and value args; `parse_call_args` has no explicit type-arg
-   channel; `specialize_fn` substitutes signatures only. Native support needs
-   AST/parser/semantic/lowering changes and executable parity tests, not merely
-   a copy of the Python walker. Native `__struct_meta` parity also needs review.
-2. Add a failing native regression before changing the AST layout, including
-   nested `identity::<T>(value)` calls and independent concrete instantiations.
-   Run impact analysis on each touched symbol and review native callers manually
-   where GitNexus has no coverage.
-3. Rerun strict self-hosting and relevant regressions after that frontend work.
-   Keep the preserved baseline; do not add IR repair or diff tolerance.
-4. Keep priority 1 active until native generic parity is validated, then proceed
-   to priority 2. Update this checkpoint after each milestone. No commit/release
-   was made for the current batch.
+1. Finish strict self-hosting on source including the latest typed Option locals
+   and fallback match arms. Keep exact equality and reject invalid IR.
+2. Run the 11 native generic checks and eight existing native regression checks
+   on the optimized successor before promoting it to `mapanare/self/mnc-stage1`.
+3. Commit the native generic milestone and update this checkpoint with hashes,
+   final results, and commands. Preserve unrelated agent-generated files and
+   the desktop restart plan. Priority 2 remains outside this task's scope.
 
 ## Resume commands
 
@@ -177,4 +230,21 @@ were inspected and broad emitter/inliner risk was communicated before edits.
 tracked files, zero affected flows). It does not cover native symbols or new
 untracked test/validator files. Manual review supplements it. GitNexus-generated
 AGENTS/CLAUDE/skill edits appeared during refresh; they are separate from the
-compiler changes and were left intact. No commit was created.
+compiler changes and were left intact.
+
+The first milestone was subsequently committed as `9c877e62`; its staged scope
+check is `precommit-reliability.log` (13 files, 18 indexed symbols, LOW).
+Post-commit `analyze --embeddings` and `--force --embeddings` both encountered
+duplicate embedding primary keys. The installed CLI documents default embedding
+preservation; `npx --offline gitnexus analyze --force --index-only` then completed
+successfully (`reindex-preserved.log`), recording HEAD `9c877e62`, 36,155 nodes,
+62,366 edges, and 19,351 retained/generated embeddings. `--index-only` avoids
+rewriting agent instructions and skills. Do not run concurrent index writers.
+
+For the generic follow-up, CLI impact calls for native AST/parser/semantic/lowerer
+symbols returned UNKNOWN/not found (`generic-impact.log`). Source review covers
+`lower_expr` -> call/method lowering, specialization -> function lowering, and
+semantic definition registration -> call checking. The same-named Python inliner
+has CRITICAL impact; that warning was reported before changing the native
+inliner's Void-return guard. Full goldens and self-hosting supplement the index's
+missing native coverage. Never interpret zero indexed native callers as low risk.

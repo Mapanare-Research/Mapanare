@@ -1022,6 +1022,8 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult:
 // ---------------------------------------------------------------------------
 
 fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult:
+    if expr_kind(callee) == "type_apply":
+        return check_type_applied_call(st, callee, args)
     // Infer argument types
     let mut st2: SemState = st
     let mut arg_types: List<TypeInfo> = []
@@ -1035,6 +1037,80 @@ fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult:
         arg_types.push(ar.type_info)
         i = i + 1
     return check_call_resolved(st2, callee, arg_types)
+
+fn substitute_sem_type(t: TypeInfo, params: List<TypeInfo>, concrete: List<TypeInfo>) -> TypeInfo:
+    for i in 0..len(params):
+        if params[i].name == t.name && i < len(concrete): return concrete[i]
+    let mut result: TypeInfo = t
+    let mut args: List<TypeInfo> = []
+    for i in 0..len(t.args): args.push(substitute_sem_type(t.args[i], params, concrete))
+    result.args = args
+    let mut fn_params: List<TypeInfo> = []
+    for i in 0..len(t.param_types): fn_params.push(substitute_sem_type(t.param_types[i], params, concrete))
+    result.param_types = fn_params
+    match t.return_type:
+        Some(r) => result.return_type = Some(substitute_sem_type(r, params, concrete))
+        _ => {}
+    return result
+
+fn check_type_applied_call(st: SemState, applied: Expr, args: List<Expr>) -> InferResult:
+    let callee: Expr = expr_type_apply_callee(applied)
+    let mut name: String = expr_ident_name(callee)
+    if expr_kind(callee) == "namespace_access": name = expr_ns_member(callee)
+    let annotations: List<TypeExpr> = expr_type_apply_args(applied)
+    if name == "__struct_meta":
+        if len(annotations) != 1 || len(args) != 0:
+            return new_infer_result(error_type(), add_error_here(st, "__struct_meta expects one type argument and no value arguments"))
+        return new_infer_result(string_type(), st)
+    let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+    match sym_opt:
+        Some(sym) =>:
+            let signature: TypeInfo = sym.type_info
+            if sym.kind != "function" || len(signature.args) == 0:
+                return new_infer_result(error_type(), add_error_here(st, "Function '" + name + "' does not accept type arguments"))
+            if len(annotations) != len(signature.args):
+                return new_infer_result(error_type(), add_error_here(st, "Function '" + name + "' type argument count mismatch"))
+            if len(args) != len(signature.param_types):
+                return new_infer_result(error_type(), add_error_here(st, "Function '" + name + "' argument count mismatch"))
+            let mut concrete: List<TypeInfo> = []
+            for i in 0..len(annotations):
+                let ty: TypeInfo = resolve_type_expr(annotations[i])
+                if !known_explicit_type(st, ty):
+                    return new_infer_result(error_type(), add_error_here(st, "Unknown type argument '" + ty.name + "'"))
+                concrete.push(ty)
+            let mut s: SemState = st
+            for i in 0..len(args):
+                let actual: InferResult = infer_expr(s, args[i])
+                s = actual.st
+                let expected: TypeInfo = substitute_sem_type(signature.param_types[i], signature.args, concrete)
+                if !type_should_skip(actual.type_info.name) && !types_compatible(expected, actual.type_info):
+                    s = add_error_here(s, "Function '" + name + "' argument type mismatch")
+            match signature.return_type:
+                Some(ret) => return new_infer_result(substitute_sem_type(ret, signature.args, concrete), s)
+                _ => return new_infer_result(unknown_type(), s)
+        _ => return new_infer_result(error_type(), add_error_here(st, "Undefined function '" + name + "'"))
+
+fn known_explicit_type(st: SemState, ty: TypeInfo) -> Bool:
+    let mut known: Bool = is_primitive_type(ty.name) || is_builtin_generic(ty.name) || ty.is_function || ty.name == "Tensor"
+    let type_symbol: Option<Symbol> = scope_lookup(st.scope, ty.name)
+    match type_symbol:
+        Some(sym) =>:
+            if sym.kind == "struct" || sym.kind == "enum" || sym.kind == "type_alias": known = true
+        _ => {}
+    let function_symbol: Option<Symbol> = scope_lookup(st.scope, st.current_fn_name)
+    match function_symbol:
+        Some(fn_sym) =>:
+            for i in 0..len(fn_sym.type_info.args):
+                if fn_sym.type_info.args[i].name == ty.name: known = true
+        _ => {}
+    if !known: return false
+    for i in 0..len(ty.args):
+        if !known_explicit_type(st, ty.args[i]): return false
+    for i in 0..len(ty.param_types):
+        if !known_explicit_type(st, ty.param_types[i]): return false
+    match ty.return_type:
+        Some(ret) => return known_explicit_type(st, ret)
+        _ => return true
 
 fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) -> InferResult:
     if expr_kind(callee) == "ident":
@@ -1294,6 +1370,12 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult:
                 let st3_undef: SemState = add_error_here(st2, "Undefined function '" + name + "'")
                 return new_infer_result(error_type(), st3_undef)
     if rk == "call":
+        if expr_kind(expr_call_callee(right)) == "type_apply":
+            let mut args: List<Expr> = []
+            args.push(left)
+            let extras: List<Expr> = expr_call_args(right)
+            for i in 0..len(extras): args.push(extras[i])
+            return check_type_applied_call(st, expr_call_callee(right), args)
         return check_call_expr(st2, expr_call_callee(right), expr_call_args(right))
     let rr: InferResult = infer_expr(st2, right)
     return new_infer_result(unknown_type(), rr.st)
@@ -1614,11 +1696,15 @@ fn register_def(st: SemState, def: Definition) -> SemState:
         for _ in 0..200:
             if pi >= len(data.params):
                 let ret: TypeInfo = resolve_type_opt(data.return_type)
-                let fn_type: TypeInfo = make_fn_type(params, ret)
+                let mut fn_type: TypeInfo = make_fn_type(params, ret)
+                let mut generic_params: List<TypeInfo> = []
+                for ti in 0..len(data.type_params): generic_params.push(make_type(data.type_params[ti]))
+                fn_type.args = generic_params
                 let sym_fn: Symbol = new_symbol(data.name, "function", fn_type, false)
                 return define_in_scope(st, data.name, sym_fn)
             let p: Param = data.params[pi]
             let pt: TypeInfo = resolve_type_opt(p.type_annotation)
+            if len(data.type_params) > 0: params.push(pt)
             pi = pi + 1
         return st
     if dk == "agent_def":
