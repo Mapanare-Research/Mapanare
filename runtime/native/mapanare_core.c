@@ -1440,7 +1440,10 @@ MN_EXPORT MnList __mn_list_deep_clone(MnList *src, const int64_t *list_offsets, 
         char *elem = dst.data + i * dst.elem_size;
         for (int64_t j = 0; j < num_offsets; j++) {
             MnList *nested = (MnList *)(elem + list_offsets[j]);
-            if (nested->data && nested->len > 0) {
+            /* clear/pop can leave an empty list owning its allocated buffer.
+             * Retain that buffer too: both outer copies now own a nested
+             * handle, regardless of the current number of elements. */
+            if (nested->data) {
                 *nested = __mn_list_clone(nested);
             }
         }

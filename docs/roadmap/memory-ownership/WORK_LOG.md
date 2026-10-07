@@ -2,6 +2,54 @@
 
 ## Resume point — 2026-10-07
 
+The nested-container milestone fixes an allocated-empty-buffer use-after-free
+in `__mn_list_deep_clone`. Cleared or popped inner lists still own storage;
+cloning must retain that storage even when their length is zero. This changes
+one runtime ownership condition and does not enable automatic recursive drops.
+The native emitter does not currently call this helper.
+
+The durable [container evidence and implementation sequence](CONTAINER_OWNERSHIP.md)
+contains the next task: introduce explicit owned-element copy/drop semantics,
+coordinate COW mutation and map replacement/deletion, then integrate lowering
+and both emitters. Five C probe modes and two native programs now reproduce
+the remaining gaps. Do not add deep frees before establishing element ownership.
+
+Evidence under `build/memory-ownership/nested-containers/`:
+
+- `before.log`: eight ASan use-after-free failures, eight passing controls.
+- `after.log`: all 16 nested ownership cases plus list/map controls pass (38 total).
+- `c-runtime.log`: the complete standalone C runtime suite passes 74/74.
+- `fixed-point.log`, `build/fixed-point-ol5n0yze`: both generations pass 103 LLVM
+  goldens and eight executable fixtures; stage2/stage3 output is byte-identical.
+- `successor-regressions.log`: all 40 focused native checks pass on the optimized
+  successor linked against the updated runtime.
+- `baseline-probes.json`: shared/detached String-list use-after-free; shallow
+  nested cleanup leaks 80,000 bytes/1,000 allocations; map overwrite leaks
+  9,990 bytes/1,998 allocations; deletion leaks 10,000 bytes/2,000 allocations.
+- `nested-native.log`, `map-native.log`: native programs retain 415,584 bytes /
+  1,998 allocations and 638,000 bytes / 6,000 allocations respectively. Their
+  functional outputs are 42000 and 6000. These gaps remain open.
+
+Verified hashes (SHA256):
+
+- Unchanged compiler source: `3fc824f2de6e75e80795325dba97f7d089dbd7e3a66246020e66c1f77aeafdf0`.
+- Optimized successor: `fc640380ddae8104e18f60dff08787fc9713fc4952f8bb1c958facee47bb945e`.
+- Both compiler IR stages: `3cfe326658775fb4791eac77fe3f99e10506dbdf9a370a040b6af079e4ae050b`.
+- Updated runtime archive: `4771333eb0022c11242a6ecd6fc41af3eb2099def2423b655fe376f26f14aeec`.
+
+The prior compiler and runtime are preserved as `nested-containers/mnc-baseline`
+and `nested-containers/runtime-baseline.a`. After committing, promote the exact
+tested successor and record fresh source/runtime equality in `promotion.json`.
+Validation is Linux/WSL; this does not complete priority 2 or qualify other platforms.
+
+GitNexus context and impact resolve the runtime helper: LOW, zero indexed direct
+callers/processes. Generated calls are outside that graph; manual emitter review
+and the compiler gate cover that limitation. The only production edit is the
+retain condition; the C fixture includes explicitly documented failing diagnostic
+modes, while pytest gates only the fixed contract. Existing user edits remain untouched.
+
+## Previous verified milestone — borrowing calls
+
 The borrowed-String milestone is committed as **`7a54a7bc`** (`Keep String ownership
 at proven borrowing call sites`). A conservative MIR proof
 records `FnEntry.borrows_strings` in both forward and body registration; callers
@@ -49,8 +97,8 @@ indexed symbols, zero affected processes, LOW. Native symbols and the new
 test were not indexed at that point; the manual emitter review and full native
 validation above cover that limitation. Validation was Linux/WSL only.
 
-Next, reproduce nested container/map retention and design element ownership
-together with COW cloning, overwrite, and destruction. Unproven String callees
+Nested container/map retention is now reproduced in the checkpoint above.
+Unproven String callees
 still need broader capture summaries, especially non-inlined forwarding calls.
 Priority 2 remains active.
 
