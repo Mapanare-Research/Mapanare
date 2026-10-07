@@ -19,6 +19,25 @@ COMPILER = Path(os.environ.get("MAPANARE_TEST_COMPILER", ROOT / "mapanare/self/m
 
 SOURCES = [
     """
+struct Name:
+    text: String
+struct Wrapped:
+    name: Name
+fn make_name(n: Int) -> Wrapped:
+    let text: String = "field-" + str(n)
+    return new Wrapped { name: new Name { text: text } }
+fn get_name(value: Wrapped) -> String:
+    return value.name.text
+fn consume(value: Wrapped) -> Int:
+    let name: String = get_name(value)
+    print(name)
+    return len(name)
+fn main():
+    let value: Wrapped = make_name(42)
+    print(consume(value))
+    print(consume(value))
+""",
+    """
 enum Name:
     Text(String)
 fn get_name(value: Name) -> String:
@@ -97,7 +116,9 @@ fn main():
 
 
 @pytest.mark.parametrize(
-    "source", SOURCES, ids=["enum-borrow", "struct-borrow", "owned", "loop-list", "loop-call"]
+    "source",
+    SOURCES,
+    ids=["nested-struct-borrow", "enum-borrow", "struct-borrow", "owned", "loop-list", "loop-call"],
 )
 def test_native_string_return(source: str, tmp_path: Path) -> None:
     clang = shutil.which("clang")

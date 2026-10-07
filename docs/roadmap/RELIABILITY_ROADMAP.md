@@ -10,7 +10,7 @@ compiler.
 1. **Compiler correctness and self-hosting (completed 2026-10-07).** Close generic specialization
    gaps, reproduce and fix optimized stage2 failures, and validate the actual
    candidate through executable comparisons and strict stage2/stage3 checks.
-2. **Memory ownership.** Establish consistent string/container lifetime semantics
+2. **Memory ownership (active).** Establish consistent string/container lifetime semantics
    and bounded memory use in long-running applications.
 3. **Native platforms and installation.** Reproduce current Windows application
    failures, fix confirmed issues, and validate downloaded bundles on clean
@@ -20,8 +20,8 @@ compiler.
 5. **Complete applications.** Ship a calculator and a second application using
    reusable UI and packaging infrastructure. See the desktop restart plan.
 
-Only priority 1 is authorized for implementation in this task. Later priorities
-remain sequenced work, except where a compiler fix necessarily touches them.
+Priority 1 is complete. The follow-up to continue and commit authorizes priority
+2; priorities 3–5 remain sequenced work.
 
 ## Priority 1 acceptance criteria
 
@@ -63,7 +63,15 @@ timeout (isolated build passed in 79.72 seconds overall).
 **Next: priority 2, memory ownership.** Document ownership across function calls
 and container insertion/return, add leak-sensitive long-running regressions,
 then fix recursive cleanup with the current compiler gates as the baseline.
-That work has not started. Validation here was Linux/WSL; Windows/macOS release
+The first priority 2 leak has been reproduced and fixed in a diagnostic candidate:
+value-only struct returns retained unrelated heap locals (88 bytes per call).
+Six LeakSanitizer cases now pass, including on the optimized successor; all 26
+focused native checks pass, along with both generations' goldens and the exact
+fixed point. The next reproduced gap is read-only String call arguments
+(98,890 bytes over 10,000 calls). Continue
+from [the ownership work log](memory-ownership/WORK_LOG.md).
+
+Validation here was Linux/WSL; Windows/macOS release
 qualification and general leak freedom remain outside this milestone.
 
 Starting HEAD: `cbcfa0da` (v5.54.2). The first verified milestone is committed as
