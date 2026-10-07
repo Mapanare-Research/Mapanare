@@ -918,8 +918,8 @@ jobs:
       # "fixed-point bootstrap" claim unfalsifiable by construction
       # (v4.26.0 panel: Rattler #7, Anaconda). All of that logic is
       # now inside ``scripts/verify_fixed_point.sh`` with real teeth
-      # (``set -e``, explicit regression threshold, non-empty
-      # stage3.ll check, llvm-as validation). This job delegates to
+      # (successful compiler exits, exact stage2/stage3 equality,
+      # non-empty IR, llvm-as validation, executable goldens). This job delegates to
       # the script and propagates its exit code.
       - name: Verify fixed-point bootstrap
         shell: bash

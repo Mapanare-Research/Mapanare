@@ -258,7 +258,13 @@ fn emit_line(st: EmitState, line: String) -> EmitState:
     // (tracking-slot allocas queued by emit_track_string / _boxed /
     // _closure) can be flushed in front of it before pushing to lines.
     if st.in_entry_block:
-        st.entry_block_body.push(line)
+        // Fixed-size stack slots must execute once per invocation. Keeping
+        // them in loop blocks grows the stack on every iteration, including
+        // temporary runtime-call arguments. Preserve dynamic-count allocas.
+        if line.starts_with("  %") && line.contains(" = alloca ") && !line.contains(", i64 %") && !line.contains(", i32 %"):
+            st.entry_prelude_lines.push(line)
+        else:
+            st.entry_block_body.push(line)
     else:
         st.lines.push(line)
     st
@@ -1716,6 +1722,8 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         // this handler is symmetric with the Python _do_move stub
         // installed in Phase 1 and ready to consume lowerer output.
         let mv_val: Value = instr_move_val(inst)
+        if mv_val.ty.kind == TK_STRING():
+            return emit_move_string(st, mv_val.name)
         let stripped: String = ret_val_base(mv_val.name)
         if stripped == "": return st
         if list_has_string(st.moved_locals, stripped): return st
@@ -4325,6 +4333,14 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                     s = emit_rt_call(s, dn, llvm_string(), "__mn_str_replace", llvm_string() + " " + s0 + ", " + llvm_string() + " " + args[1].name + ", " + llvm_string() + " " + args[2].name)
                     return s
 
+    // User functions may retain a String in their returned aggregate. Transfer
+    // matching ownership slots, including values reloaded through local aliases.
+    // Runtime/builtin calls above borrow their arguments and do not take this path.
+    if !fn_name.starts_with("__mn_"):
+        for ai in 0..len(args):
+            if args[ai].ty.kind == TK_STRING():
+                s = emit_move_string(s, args[ai].name)
+
     // Look up registered function parameter types (more reliable than MIR)
     let fn_opt_pre: Option<FnEntry> = find_function(s, fn_name)
     let mut reg_param_types: List<String> = []
@@ -4444,7 +4460,9 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState:
         s.counter = s.counter + 1
         let bext: String = "%bext" + cnt_b
         s = emit_line(s, "  " + bext + " = zext i1 " + an + " to i64")
-        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + bext + ")")
+        let bstr: String = "%bstr" + cnt_b
+        s = emit_rt_call(s, bstr, llvm_string(), "__mn_str_from_bool", "i64 " + bext)
+        return emit_rt_call_void(s, "__mn_str_println", llvm_string() + " " + bstr)
     // Unknown type: default to integer (impl methods return i64)
     return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
 
@@ -4466,7 +4484,9 @@ fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState:
         s.counter = s.counter + 1
         let bextp: String = "%bext" + cnt_bp
         s = emit_line(s, "  " + bextp + " = zext i1 " + an + " to i64")
-        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + bextp + ")")
+        let bstrp: String = "%bstr" + cnt_bp
+        s = emit_rt_call(s, bstrp, llvm_string(), "__mn_str_from_bool", "i64 " + bextp)
+        return emit_rt_call_void(s, "__mn_str_println", llvm_string() + " " + bstrp)
     // Unknown type: default to integer (impl methods return i64)
     return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
 
@@ -4654,6 +4674,29 @@ fn is_string_returning_builtin(fn_name: String) -> Bool:
 // a fresh slot per call — the prior snapshot still lives in its own
 // slot, so drop-glue frees both. __mn_str_free / @free tolerate null,
 // so the zero-init is safe even when the slot is never stored to.
+
+// Clear the actual slot at the transfer point. Merely recording a moved SSA
+// name skips final drop glue but leaves loop free-before-store active. Compare
+// data pointers so loads/copies of the source transfer the same owner as well.
+fn emit_move_string(st: EmitState, value: String) -> EmitState:
+    let mut s: EmitState = st
+    if len(s.str_owned) == 0: return s
+    let id: String = toString(s.counter)
+    s.counter = s.counter + 1
+    let value_ptr: String = "%move.string.ptr." + id
+    s = emit_line(s, "  " + value_ptr + " = extractvalue {ptr, i64} " + value + ", 0")
+    for i in 0..len(s.str_owned):
+        let suffix: String = id + "." + toString(i)
+        let owned: String = "%move.string.owned." + suffix
+        let owned_ptr: String = "%move.string.owned.ptr." + suffix
+        let matches: String = "%move.string.matches." + suffix
+        let remaining: String = "%move.string.remaining." + suffix
+        s = emit_line(s, "  " + owned + " = load {ptr, i64}, ptr %" + s.str_owned[i])
+        s = emit_line(s, "  " + owned_ptr + " = extractvalue {ptr, i64} " + owned + ", 0")
+        s = emit_line(s, "  " + matches + " = icmp eq ptr " + value_ptr + ", " + owned_ptr)
+        s = emit_line(s, "  " + remaining + " = select i1 " + matches + ", {ptr, i64} zeroinitializer, {ptr, i64} " + owned)
+        s = emit_line(s, "  store {ptr, i64} " + remaining + ", ptr %" + s.str_owned[i])
+    return s
 
 fn emit_track_string(st: EmitState, val_name: String) -> EmitState:
     let mut s: EmitState = st
@@ -5202,10 +5245,63 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
     s = emit_drop_glue_tensors(s, ret_tensor_ptrs)
     return s
 
+// A String call result is owned by its caller. A field/element/parameter
+// accessor can return borrowed heap storage, so make an independent copy
+// unless this function already owns that exact buffer. Literals need no copy.
+fn emit_string_return(st: EmitState, value: String) -> EmitState:
+    let mut s: EmitState = st
+    let id: String = toString(s.counter)
+    s.counter = s.counter + 1
+    let ptr_name: String = "%ret.string.ptr." + id
+    let len_name: String = "%ret.string.len." + id
+    let heap_name: String = "%ret.string.heap." + id
+    s = emit_line(s, "  " + ptr_name + " = extractvalue {ptr, i64} " + value + ", 0")
+    s = emit_line(s, "  " + len_name + " = extractvalue {ptr, i64} " + value + ", 1")
+    s = emit_line(s, "  " + heap_name + " = icmp slt i64 " + len_name + ", 0")
+    let needs_copy: String = "%ret.string.needs." + id
+    s = emit_line(s, "  " + needs_copy + " = alloca i1")
+    s = emit_line(s, "  store i1 " + heap_name + ", ptr " + needs_copy)
+    let mut i: Int = 0
+    while i < len(s.str_owned):
+        let suffix: String = id + "." + toString(i)
+        let tracked: String = "%ret.string.tracked." + suffix
+        let tracked_ptr: String = "%ret.string.tracked.ptr." + suffix
+        let different: String = "%ret.string.different." + suffix
+        let next: String = "%ret.string.copy." + suffix
+        let previous: String = "%ret.string.previous." + suffix
+        s = emit_line(s, "  " + tracked + " = load {ptr, i64}, ptr %" + s.str_owned[i])
+        s = emit_line(s, "  " + tracked_ptr + " = extractvalue {ptr, i64} " + tracked + ", 0")
+        s = emit_line(s, "  " + different + " = icmp ne ptr " + ptr_name + ", " + tracked_ptr)
+        s = emit_line(s, "  " + previous + " = load i1, ptr " + needs_copy)
+        s = emit_line(s, "  " + next + " = and i1 " + previous + ", " + different)
+        s = emit_line(s, "  store i1 " + next + ", ptr " + needs_copy)
+        i = i + 1
+    let copy_label: String = "ret.string.clone." + id
+    let keep_label: String = "ret.string.keep." + id
+    let merge_label: String = "ret.string.merge." + id
+    let copied: String = "%ret.string.cloned." + id
+    let result: String = "%ret.string.result." + id
+    let condition: String = "%ret.string.condition." + id
+    s = emit_line(s, "  " + condition + " = load i1, ptr " + needs_copy)
+    s = emit_line(s, "  br i1 " + condition + ", label %" + copy_label + ", label %" + keep_label)
+    s = emit_line(s, copy_label + ":")
+    s = emit_rt_call(s, copied, llvm_string(), "__mn_str_concat", llvm_string() + " " + value + ", " + llvm_string() + " zeroinitializer")
+    s = emit_line(s, "  br label %" + merge_label)
+    s = emit_line(s, keep_label + ":")
+    s = emit_line(s, "  br label %" + merge_label)
+    s = emit_line(s, merge_label + ":")
+    s = emit_line(s, "  " + result + " = phi {ptr, i64} [ " + copied + ", %" + copy_label + " ], [ " + value + ", %" + keep_label + " ]")
+    s = emit_drop_glue(s, result, llvm_string())
+    if use_sret_return(s, llvm_string()):
+        s = emit_line(s, "  store " + llvm_string() + " " + result + ", ptr %__sret__")
+        return emit_line(s, emit_ret_void())
+    return emit_line(s, emit_ret(llvm_string(), result))
+
 fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState:
     match val_opt:
         Some(val) =>:
             let ty: String = st.current_ret_type
+            if ty == llvm_string(): return emit_string_return(st, val.name)
             // v5.5.4 Sh.4 Phase 2 — async fn ret rewrite. The
             // current_ret_type was set to "ASYNC_PTR:" + inner_ty by
             // emit_mir_function when entering an async fn. Instead of

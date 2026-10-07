@@ -8,7 +8,7 @@ control flow becomes explicit jumps/branches.
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from typing import Any
 
 from mapanare.ast_nodes import (
@@ -529,6 +529,23 @@ class MIRLowerer:
 
         # Substitute return type
         specialized.return_type = self._substitute_type_expr(specialized.return_type, subst)
+
+        # Explicit type arguments and local annotations belong to this
+        # instantiation too. Walk the copied AST rather than the shared
+        # template so specializing one call cannot change later calls.
+        def rewrite(node: Any) -> Any:
+            if isinstance(node, (NamedType, GenericType)):
+                return self._substitute_type_expr(node, subst)
+            if isinstance(node, ASTNode):
+                for f in fields(node):
+                    setattr(node, f.name, rewrite(getattr(node, f.name)))
+            elif isinstance(node, list):
+                return [rewrite(item) for item in node]
+            elif isinstance(node, tuple):
+                return tuple(rewrite(item) for item in node)
+            return node
+
+        rewrite(specialized.body)
 
         return specialized
 

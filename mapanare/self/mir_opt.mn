@@ -562,6 +562,8 @@ fn replace_use(v: Value, old_name: String, new_name: String) -> Value:
 // preventing SSA name collisions that cause llvm-as to reject the IR.
 fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) -> Instruction:
     let ik: String = instr_kind(inst)
+    if ik == "move":
+        return Instruction::Move(replace_use(instr_move_val(inst), old_name, new_name))
     // No value uses
     if ik == "const": return inst
     if ik == "alloca": return inst
@@ -700,6 +702,12 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
 fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<ConstEntry>, merge_label: String) -> List<Instruction>:
     let ik: String = instr_kind(inst)
     let mut result: List<Instruction> = []
+
+    // Ownership transfers refer to the cloned SSA value too. Keeping the
+    // callee's original name can free the wrong owner or emit undefined IR.
+    if ik == "move":
+        result.push(Instruction::Move(rename_value(instr_move_val(inst), prefix, renames)))
+        return result
 
     // Return → Copy + Jump to merge
     if ik == "return":
