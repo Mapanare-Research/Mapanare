@@ -3,6 +3,8 @@
 ## Resume point — 2026-10-07
 
 Priority 1 of the [reliability roadmap](../RELIABILITY_ROADMAP.md) is complete.
+The subsequent [memory-ownership checkpoint](../memory-ownership/WORK_LOG.md)
+is now active and supersedes the installed-compiler hash recorded below.
 Starting revision: `cbcfa0da9cdb69f61c5eef8017b5eb56785d8c9d` (v5.54.2, `dev`).
 The first verified milestone is committed as `9c877e62` (`Fix compiler lifetime
 bugs and enforce strict self-hosting validation`). The native generic follow-up

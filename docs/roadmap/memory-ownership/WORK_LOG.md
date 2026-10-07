@@ -8,10 +8,24 @@ commit: `32dfbcb4` on `dev`, version 5.54.2. Priority 1's verified compiler is
 preserved at `build/memory-ownership/mnc-baseline` (SHA256
 `819cf7753ef97d8aa0b6b4ee923956a1bc4eaa901b13a567d5845feca23d9bc1`).
 
-First milestone: stop leaking unrelated heap locals when returning a struct
-that contains only scalar values. Candidate and optimized successor validation
-pass; promotion and the final committed checkpoint follow below. This does not
-complete priority 2.
+**First milestone committed and verified:** `6ad3110d` (`Free native heap locals
+when returning value-only structs`). The optimized successor is installed as
+`mapanare/self/mnc-stage1`; its 26 focused checks and strict self-hosting gate
+pass. The previous verified compiler remains preserved. This does not complete
+priority 2. The next reproduced defect is the borrowed-String argument leak below.
+
+Final hashes (SHA256):
+
+- Committed concatenated source: `f804bcb15487183a9599cd87af5046cf4e69bd83b764355fce1efe44faab463f`.
+- Installed optimized compiler: `25ff1d8d5494ca809e1603c65814eb8027e19d94fbcd9140524cf606fb5d35b0`.
+- Both stage2/stage3 IR: `09a247ca5d51f8597682e57a8f13f4aa40d7e63e279872c4998ac081ca55afc7`.
+- Runtime archive: `381638c3b620a87c04376a5988a9b93b409ad170f5b0abcdd9d1f1106a890830`.
+
+Promotion record: `build/memory-ownership/promotion.json`. The gate began at
+`32dfbcb4` with pending changes; promotion regenerated source at `6ad3110d` and
+required byte equality with the validated source, checked the runtime hash,
+and verified the installed compiler hash. Builds and tests for this milestone
+are finished. No push or release was performed.
 
 ## Observed ownership contract
 
@@ -75,9 +89,10 @@ the durable summary for machines without those artifacts.
 | Strict optimized self-hosting | `fixed-point.log`, `build/fixed-point-gfe7dx_s`: both generations pass 103 goldens and eight executable fixtures; stage2/stage3 byte-identical |
 | Optimized successor regressions | `successor-regressions.log`: 26 passed, including all six leak-sensitive cases |
 
-No emitted IR is patched. The production binary remains the priority 1 compiler
-until promotion verifies the current source and runtime match the passed gate.
-The runtime archive is unchanged by this milestone.
+No emitted IR is patched. The installed production compiler is the exact
+verified successor; source and runtime equality were checked before promotion.
+The runtime archive is unchanged by this milestone. Native execution validation
+was Linux/WSL; Windows/macOS release qualification is not implied.
 
 ## Reproduced next issue: borrowed String arguments
 
@@ -108,15 +123,14 @@ callee frees or blanket removal of caller transfers can break captured aliases.
 
 ## Next steps
 
-1. Finish this milestone's optimized validation, promote only a verified
-   successor, and commit the implementation and final evidence.
-2. Resolve the String argument boundary: distinguish borrowing from capture or
+1. Turn the borrowed-String reproduction above into a failing regression, then
+   resolve the String argument boundary: distinguish borrowing from capture or
    consumption using MIR evidence. Repeated calls and returned/captured aliases
    must remain valid; simply enabling callee cleanup can cause use-after-free.
-3. Reproduce nested container and map retention, then design recursive cleanup
+2. Reproduce nested container and map retention, then design recursive cleanup
    together with COW cloning/mutation. A deep free alone is unsafe for shared
    element pointers. Add tests for aliases, detach, overwrite, removal, and return.
-4. Establish a repeated-workload memory gate covering these paths before marking
+3. Establish a repeated-workload memory gate covering these paths before marking
    priority 2 complete. Keep exact compiler self-hosting as a required regression.
 
 ## Commands and impact review
@@ -140,3 +154,13 @@ types. Broad emitter risk was reported before editing. The added nested String
 test's impact is LOW with zero indexed callers/processes. Run staged
 `detect-changes` before each commit, and preserve unrelated AGENTS/CLAUDE/skill
 edits and the untracked desktop restart plan.
+
+`precommit-value-return.log`: five staged files, five indexed symbols, zero
+affected processes, LOW. New files/native symbols were reviewed manually because
+they were not yet indexed. The first post-commit incremental refresh failed in
+GitNexus with `LOWER: Invalid UTF-8` (`reindex-value-return.log`). Use a single
+Windows writer and recover with
+`npx --offline gitnexus analyze --force --embeddings 1 --index-only`:
+rebuild the graph, retain cached embeddings, and cap new embedding generation
+to bypass the previously observed duplicate-key bug. Check `.gitnexus/meta.json`
+for the latest HEAD and a nonzero embedding count after completion.

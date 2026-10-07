@@ -39,40 +39,31 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 1 verified and completed (2026-10-07).** Implemented generic
-body specialization, native String return/transfer fixes, inliner ownership
-operand renaming, bounded loop stack allocation, and boolean output parity.
-Replaced the permissive fixed-point script with a strict validator that records
-reproducible evidence.
+**Priority 2 active; first ownership fix committed as `6ad3110d`.** Returning a
+value-only struct no longer retains unrelated heap locals. The reproduced leak
+was 88 bytes per call (880,000 bytes at 10,000 calls); six LeakSanitizer cases now
+pass for flat, nested, and wide records. Heap-bearing returns retain their
+conservative escape protection, checked by String/container lifetime regressions.
 
-The final current-source gate is `build/fixed-point-8a9z1nv3`: both optimized
-generations pass all 103 LLVM goldens and eight executable fixtures, and stage2
-and stage3 are byte-identical. Its successor passes all 19 focused native checks
-and is installed locally as `mapanare/self/mnc-stage1`. Promotion verified that
-fresh source at commit `888ab1f5` and the runtime match the gate's hashes; the
-previous verified compiler remains preserved.
+The current gate is `build/fixed-point-gfe7dx_s`: both compiler generations pass
+103 LLVM goldens and eight executable fixtures, and stage2/stage3 are byte-identical.
+Its optimized successor passes all 26 focused native checks and is installed as
+`mapanare/self/mnc-stage1`. Promotion verified fresh source at commit `6ad3110d`
+and the runtime against the gate's hashes. The prior verified compiler remains
+preserved. Native source checks: 343 passed, two pre-existing xpasses.
 
-**Native generic follow-up implemented:** explicit `::<T>` calls, recursive body
-type substitution, nested type mangling, recursive specialization reuse, typed
-pipes, and schema generation through generic impl methods. The optimized native
-successor includes the typed Option locals and standalone match fallbacks.
-LLVM/MIR: 1,068 passed; the broader suite's two failures
-are resolved by standalone semantic fixes and a bounded 180-second object-build
-timeout (isolated build passed in 79.72 seconds overall).
+**Next:** fix the reproduced read-only String argument leak (98,890 bytes over
+10,000 calls), then address nested container ownership and COW cleanup. The
+current ownership rules, exact reproduction, hashes, and resume commands are in
+[the ownership work log](memory-ownership/WORK_LOG.md). Priority 2 remains active.
 
-**Next: priority 2, memory ownership.** Document ownership across function calls
-and container insertion/return, add leak-sensitive long-running regressions,
-then fix recursive cleanup with the current compiler gates as the baseline.
-The first priority 2 leak has been reproduced and fixed in a diagnostic candidate:
-value-only struct returns retained unrelated heap locals (88 bytes per call).
-Six LeakSanitizer cases now pass, including on the optimized successor; all 26
-focused native checks pass, along with both generations' goldens and the exact
-fixed point. The next reproduced gap is read-only String call arguments
-(98,890 bytes over 10,000 calls). Continue
-from [the ownership work log](memory-ownership/WORK_LOG.md).
+Priority 1 completed generic specialization, native lifetime/stack/boolean fixes,
+and strict self-hosting validation. Its historical evidence, including 1,068
+LLVM/MIR passes and the bootstrap reruns, is in
+[the compiler correctness work log](compiler-correctness/WORK_LOG.md).
 
-Validation here was Linux/WSL; Windows/macOS release
-qualification and general leak freedom remain outside this milestone.
+Validation here was Linux/WSL. Windows/macOS release qualification and general
+leak freedom remain outside this milestone.
 
 Starting HEAD: `cbcfa0da` (v5.54.2). The first verified milestone is committed as
 `9c877e62` (`Fix compiler lifetime bugs and enforce strict self-hosting validation`).
@@ -81,4 +72,4 @@ The native generic follow-up is committed as `888ab1f5`
 The pre-existing untracked `DESKTOP_APP_RESTART_PLAN.md` is user work and remains
 untouched. No release has been made by this task.
 
-Resume from [the priority 1 work log](compiler-correctness/WORK_LOG.md).
+Resume from [the priority 2 work log](memory-ownership/WORK_LOG.md).
