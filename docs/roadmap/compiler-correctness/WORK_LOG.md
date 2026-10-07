@@ -2,21 +2,33 @@
 
 ## Resume point — 2026-10-07
 
-Priority 1 of the [reliability roadmap](../RELIABILITY_ROADMAP.md) is active.
+Priority 1 of the [reliability roadmap](../RELIABILITY_ROADMAP.md) is complete.
 Starting revision: `cbcfa0da9cdb69f61c5eef8017b5eb56785d8c9d` (v5.54.2, `dev`).
 The first verified milestone is committed as `9c877e62` (`Fix compiler lifetime
-bugs and enforce strict self-hosting validation`). Native generic frontend work
-is in progress. The existing untracked desktop restart plan was not modified.
-Do not begin priority 2 until the compiler gates below pass.
+bugs and enforce strict self-hosting validation`). The native generic follow-up
+is committed as `888ab1f5` (`Support explicit generics and body specialization
+in native compiler`). The existing untracked desktop restart plan was not modified.
 
-**Current checkpoint: native generic frontend implemented; final validation in
-progress.** The first committed milestone passed 103/103 LLVM goldens, eight
-executable fixtures, exact stage2/stage3 equality, and 16 focused regressions.
-The follow-up adds native explicit `::<T>` syntax and generic body substitution.
-Its 11 executable/diagnostic regressions pass on the diagnostic candidate;
-full-source checks exposed and fixed missing Option payload annotations and
-standalone match fallbacks. Do not treat priority 1 as complete until the final
-fresh-source self-hosting and optimized compiler checks below pass.
+**Current checkpoint: final source verified; optimized successor installed.**
+`build/fixed-point-8a9z1nv3/manifest.json` records 103/103 LLVM goldens and eight
+executable fixtures on both optimized generations, LLVM-valid full compiler IR,
+and exact stage2/stage3 equality. The successor passes all 19 native regressions
+(`generic-current-regressions.log`) and is installed as `mapanare/self/mnc-stage1`.
+Promotion regenerated source at commit `888ab1f5`, required exact equality with
+the gate's source, checked the runtime, and verified the installed binary hash.
+The gate began before that commit, so its recorded HEAD is `9c877e62` with dirty
+changes; the promotion manifest establishes the committed-source correspondence.
+
+Final hashes (SHA256):
+
+- Concatenated source: `c6dfc08fa32bbfcdaed33479c2b5732a87075f8f79eb9fa13ace0ac8a22b0164`.
+- Installed optimized compiler: `819cf7753ef97d8aa0b6b4ee923956a1bc4eaa901b13a567d5845feca23d9bc1`.
+- Both stage2/stage3 IR: `adc262722e9b298deecf0053f13b25e476ba3956bcd418bdab159f4a2fe3c761`.
+- Runtime archive: `381638c3b620a87c04376a5988a9b93b409ad170f5b0abcdd9d1f1106a890830`.
+
+Promotion record: `build/compiler-correctness/generic-production-validation/manifest.json`.
+No release or push was performed. Compiler builds/tests are finished. Next work
+is priority 2 (memory ownership); its concrete starting steps are below.
 
 ## Implemented changes
 
@@ -90,8 +102,9 @@ both were fixed at their source.
   `build/fixed-point-ua3bcdb1/manifest.json` records 103/103 LLVM goldens and eight
   executable fixtures on both generations, plus exact stage2/stage3 equality.
   This snapshot includes typed Option locals but predates the standalone match
-  fallbacks. The final current-source run is `build/fixed-point-8a9z1nv3`;
-  `generic-fixed-point-current.log` is its progress log.
+  fallbacks. The final current-source run `build/fixed-point-8a9z1nv3` also passes
+  all gates (`generic-fixed-point-current.log`); its optimized successor passes
+  all 19 native checks (`generic-current-regressions.log`).
 - Broad run: 862 passed, 5 xfailed, 2 xpassed, two failures
   (`generic-broad-tests.log`). One was a 60-second clang object-build timeout,
   reproduced on a separate retry (`generic-object-recheck.log`). The other
@@ -104,10 +117,12 @@ both were fixed at their source.
   Both original broad-run failures are resolved by targeted reruns.
 - The long Python-bootstrap optimized build was deliberately stopped after its
   source became obsolete (`build-generics-production.log`, SIGTERM). The final
-  production compiler will be the optimized native successor built from current
-  source, once the strict gate and focused executable regressions pass.
+  production compiler is the optimized native successor built from current
+  source, promoted only after the strict gate and focused regressions passed.
 - Preserved previous verified production compiler:
   `build/compiler-correctness/mnc-reliability-9c877e62`.
+
+### First committed milestone: historical evidence
 
 Evidence paths below are relative to `build/compiler-correctness/`, an ignored
 local directory. Keep this document as the durable summary; logs may not exist
@@ -145,13 +160,13 @@ page and the fault at `mn_list_detach`'s second register push. The list descript
 was valid. Hoisting fixed-size allocas addresses the growth rather than raising
 the compiler thread's 32 MB stack allowance.
 
-The validated stage2/stage3 IR is 138,775,939 bytes with shared SHA256
+For the first milestone, validated stage2/stage3 IR was 138,775,939 bytes with SHA256
 `7bd42052806224b816222265baee71051b57ecf3fd8e6e94dfccebf08f062492`.
 The optimized successor binary SHA256 is
 `316dedcf569e887a4b29304a4fd0b9371785224acf11c2ad0b658711c9aaf9c8`.
 The input concatenated-source SHA256 is
 `0f9dea758f5721fb8d095306833cbcc690d677fd4e7394b258beabc3fcb73860`.
-The final optimized production binary SHA256 is
+That milestone's optimized production binary SHA256 was
 `ff2934b9795b6ff5286af3a8c0e9cb48c44272c6acebe6ed2c84d06e77ae9542`.
 
 Production validation regenerated concatenated source and required it to match
@@ -180,20 +195,28 @@ of crashes, empty IR, and any byte difference.
   `f285149b519d55bdc2fed412183175121b9d6db0e613e6af28db21e0de2c3bff`.
 - Diagnostic: `build/compiler-correctness/mnc-quick`; Python bootstrap MIR O2,
   clang LLVM O0 for faster investigation. Not the production build.
-- Final optimized production binary: `mapanare/self/mnc-stage1`, rebuilt from
-  current source and verified as above. Check its hash when resuming.
+- Final optimized production binary: `mapanare/self/mnc-stage1`, copied from
+  the verified `build/fixed-point-8a9z1nv3/mnc-stage2` (clang O2). Check the
+  current hash at the top of this document when resuming.
+- Previous verified production: `build/compiler-correctness/mnc-reliability-9c877e62`.
 - Ubuntu WSL; `.venv/bin/python` 3.12.3; clang/LLVM 18.1.3. Runtime rebuilt with
   `make build-rt` for version 5.54.2. Exact hashes live in each gate manifest.
 
-## Remaining work, in order
+## Next work: priority 2
 
-1. Finish strict self-hosting on source including the latest typed Option locals
-   and fallback match arms. Keep exact equality and reject invalid IR.
-2. Run the 11 native generic checks and eight existing native regression checks
-   on the optimized successor before promoting it to `mapanare/self/mnc-stage1`.
-3. Commit the native generic milestone and update this checkpoint with hashes,
-   final results, and commands. Preserve unrelated agent-generated files and
-   the desktop restart plan. Priority 2 remains outside this task's scope.
+1. Record the ownership contract for String/List/Map/struct values at function
+   arguments, returns, container insertion, copies, and destruction. Start with
+   the conservative user-call transfer behavior and alias-clearing fixes above.
+2. Add long-running, leak-sensitive regressions for repeated schema/String
+   creation and nested container insertion/removal. Track live allocations or
+   repeatable steady-state memory growth; the existing ASan tests intentionally
+   disable leak detection and do not prove bounded memory use.
+3. Fix confirmed cleanup/retention defects, preserving borrowed aliases and
+   recursive container semantics. Re-run native executable regressions and
+   exact self-hosting after lifetime changes. Preserve both verified compilers.
+
+Priority 2 is sequenced but was not implemented in this task. Keep unrelated
+agent-generated files and the desktop restart plan out of compiler commits.
 
 ## Resume commands
 
@@ -204,7 +227,7 @@ this task. Avoid `bash -lc`, whose startup PATH expansion fails here.
 
 ```bash
 .venv/bin/python scripts/build_stage1.py
-.venv/bin/python -m pytest tests/llvm/test_generic_specialization.py tests/integration/test_string_return_ownership.py tests/integration/test_native_bool_output.py tests/integration/test_native_loop_stack.py tests/bootstrap/test_fixed_point_validation.py -q
+.venv/bin/python -m pytest tests/llvm/test_generic_specialization.py tests/integration/test_native_generics.py tests/integration/test_string_return_ownership.py tests/integration/test_native_bool_output.py tests/integration/test_native_loop_stack.py tests/bootstrap/test_fixed_point_validation.py -q
 .venv/bin/python scripts/verify_fixed_point.py --keep
 env PATH=/mnt/c/Users/Juan/Documents/GitHub/Mapanare/.venv/bin:/usr/local/bin:/usr/bin:/bin .venv/bin/python -m pytest tests/self_hosted/ tests/bootstrap/ tests/mir_opt/ -q --tb=short
 ```
@@ -248,3 +271,15 @@ semantic definition registration -> call checking. The same-named Python inliner
 has CRITICAL impact; that warning was reported before changing the native
 inliner's Void-return guard. Full goldens and self-hosting supplement the index's
 missing native coverage. Never interpret zero indexed native callers as low risk.
+
+`precommit-native-generics.log`: nine staged files, 12 indexed symbols, zero
+affected processes, LOW. The object-build test timeout change has zero indexed
+callers/processes and LOW risk. Native coverage still requires source review.
+
+The post-`888ab1f5` embedding-generation refresh hit another duplicate primary
+key (`reindex-native-generics.log`). The installed CLI restores cached embeddings
+before applying its generation cap. Recovery command:
+`npx --offline gitnexus analyze --embeddings 1 --index-only`.
+This refreshes the graph while preserving cached embeddings and skipping new
+generation for a repository larger than one node. Verify `.gitnexus/meta.json`
+records the latest commit and a nonzero embedding count after it finishes.

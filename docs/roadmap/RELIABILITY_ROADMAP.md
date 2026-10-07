@@ -7,7 +7,7 @@ compiler.
 
 ## Agreed order
 
-1. **Compiler correctness and self-hosting (active).** Close generic specialization
+1. **Compiler correctness and self-hosting (completed 2026-10-07).** Close generic specialization
    gaps, reproduce and fix optimized stage2 failures, and validate the actual
    candidate through executable comparisons and strict stage2/stage3 checks.
 2. **Memory ownership.** Establish consistent string/container lifetime semantics
@@ -39,33 +39,37 @@ remain sequenced work, except where a compiler fix necessarily touches them.
 
 ## Current checkpoint
 
-**First milestone verified (2026-10-07); priority 1 remains active.** Implemented generic
+**Priority 1 verified and completed (2026-10-07).** Implemented generic
 body specialization, native String return/transfer fixes, inliner ownership
 operand renaming, bounded loop stack allocation, and boolean output parity.
 Replaced the permissive fixed-point script with a strict validator that records
 reproducible evidence.
 
-The optimized production compiler and self-hosted successor pass all 103 LLVM
-goldens and eight executable golden fixtures. Stage2 and stage3 are byte-identical;
-the production compiler emits that exact same fixed point. All 16 new regression
-checks pass. LLVM/MIR: 1,068 passed; self-hosted/bootstrap/optimizer suites:
-864 passed, 5 xfailed, 2 xpassed after correcting the CLI test PATH.
+The final current-source gate is `build/fixed-point-8a9z1nv3`: both optimized
+generations pass all 103 LLVM goldens and eight executable fixtures, and stage2
+and stage3 are byte-identical. Its successor passes all 19 focused native checks
+and is installed locally as `mapanare/self/mnc-stage1`. Promotion verified that
+fresh source at commit `888ab1f5` and the runtime match the gate's hashes; the
+previous verified compiler remains preserved.
 
 **Native generic follow-up implemented:** explicit `::<T>` calls, recursive body
 type substitution, nested type mangling, recursive specialization reuse, typed
 pipes, and schema generation through generic impl methods. The optimized native
-successor passes all 19 focused native checks and has reached an exact fixed
-point. The final gate is running again with standalone match fallbacks included
-in the source snapshot. LLVM/MIR: 1,068 passed; the broader suite's two failures
+successor includes the typed Option locals and standalone match fallbacks.
+LLVM/MIR: 1,068 passed; the broader suite's two failures
 are resolved by standalone semantic fixes and a bounded 180-second object-build
 timeout (isolated build passed in 79.72 seconds overall).
 
-**Next:** record the final source-specific gate, promote its verified optimized
-successor, and close priority 1 before the general memory-ownership program.
-Validation here was Linux/WSL.
+**Next: priority 2, memory ownership.** Document ownership across function calls
+and container insertion/return, add leak-sensitive long-running regressions,
+then fix recursive cleanup with the current compiler gates as the baseline.
+That work has not started. Validation here was Linux/WSL; Windows/macOS release
+qualification and general leak freedom remain outside this milestone.
 
 Starting HEAD: `cbcfa0da` (v5.54.2). The first verified milestone is committed as
 `9c877e62` (`Fix compiler lifetime bugs and enforce strict self-hosting validation`).
+The native generic follow-up is committed as `888ab1f5`
+(`Support explicit generics and body specialization in native compiler`).
 The pre-existing untracked `DESKTOP_APP_RESTART_PLAN.md` is user work and remains
 untouched. No release has been made by this task.
 
