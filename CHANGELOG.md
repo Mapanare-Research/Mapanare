@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.54.2] - 2026-10-06
+
+### Changed
+
+- Native builds reuse cached object code, and the Bash directory build driver
+  supports bounded parallel compilation with dependency-aware invalidation.
+- Native release builds enable LTO, and eligible string accumulation loops
+  use a StringBuilder to reduce repeated copying.
+- Performance measurements and reproduction commands are documented in
+  [the native performance guide](docs/guides/performance.md).
+
+### Fixed
+
+- Native string replacement handles shrinking replacements correctly in GCC
+  builds and rejects search strings longer than the input before reading.
+
 ## [5.54.1] - 2026-10-05
 
 ### Added
@@ -13323,7 +13339,9 @@ The v4.0.0 release marks Mapanare as production-ready. All v3.x milestones are c
 - **Tensor operations** (`tensor.py`) — experimental
 - `CONTRIBUTING.md`, `LICENSE` (MIT), and project scaffolding
 
-[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.54.0...HEAD
+[Unreleased]: https://github.com/Mapanare-Research/Mapanare/compare/v5.54.2...HEAD
+[5.54.2]: https://github.com/Mapanare-Research/Mapanare/compare/v5.54.1...v5.54.2
+[5.54.1]: https://github.com/Mapanare-Research/Mapanare/compare/v5.54.0...v5.54.1
 [5.54.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.53.0...v5.54.0
 [5.53.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.52.0...v5.53.0
 [5.52.0]: https://github.com/Mapanare-Research/Mapanare/compare/v5.51.0...v5.52.0
