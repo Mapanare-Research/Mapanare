@@ -5,6 +5,12 @@ The empty nested-buffer retain and opt-in owned-list/map runtime contracts are
 implemented. Compiler adoption remains open; existing native programs still use
 raw containers and retain the leaks recorded below.
 
+Direct Python map returns now preserve escaping handles and track proven fresh
+factory results in callers; see [MAP_RETURNS.md](MAP_RETURNS.md). This closes the
+direct-return use-after-free without activating owned constructors. Repeated
+map-result replacement within one function still leaks and needs explicit owner
+slots and branch-sensitive transfers before broader adoption.
+
 ## Implemented: opt-in owned lists
 
 `__mn_list_new_owned(elem_size, ops)` accepts `MnElementOps` copy/drop callbacks;

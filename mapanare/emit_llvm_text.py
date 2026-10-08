@@ -11,6 +11,7 @@ from typing import Any
 
 from mapanare.abi import classify_return  # v4.149.0 E5
 from mapanare.borrow import function_borrows_arguments
+from mapanare.map_ownership import owned_map_factories
 from mapanare.mir import (
     AgentSend,
     AgentSpawn,
@@ -976,6 +977,7 @@ class LLVMTextEmitter:
         # Compute before any body so forward calls follow the same ownership
         # rule. Purity alone is insufficient: returned/captured inputs escape.
         self._borrowing_fns = {f.name for f in mir.functions if function_borrows_arguments(f)}
+        self._owned_map_factories = owned_map_factories(mir.functions)
         # 5) emit bodies
         fns: list[str] = []
         for f in mir.functions:
@@ -1901,7 +1903,7 @@ class LLVMTextEmitter:
         self._emit_drop_glue_lists(ret_list_ptrs, ret_ptr_fields)
         if self._map_vars:
             self._ensure("__mn_map_free_deep", VOID, [PTR])
-        self._emit_drop_glue_maps()
+        self._emit_drop_glue_maps(ret_val if self._fn.return_type.kind == TypeKind.MAP else None)
         if self._signal_vars:
             self._ensure("__mn_signal_free", VOID, [PTR])
         self._emit_drop_glue_signals()
@@ -2184,14 +2186,8 @@ class LLVMTextEmitter:
             self._blk[skip_lbl] = []
             self._cb = skip_lbl
 
-    def _emit_drop_glue_maps(self) -> None:
-        """Drop-loop for tracked map variables.
-
-        For each map_var, resolves the alloca, loads the ptr, and
-        calls __mn_map_free_deep unconditionally (no aliasing check —
-        maps do not participate in the return-pointer escape analysis
-        today).
-        """
+    def _emit_drop_glue_maps(self, ret_map: str | None = None) -> None:
+        """Release local maps except the handle escaping through a direct return."""
         for var_name in self._map_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -2212,6 +2208,14 @@ class LLVMTextEmitter:
 
             self._blk[free_lbl] = []
             self._cb = free_lbl
+            if ret_map is not None:
+                same = self._f("drop.msame")
+                self._L(f"{same} = icmp eq ptr {mp}, {ret_map}")
+                release_lbl = f"drop.mrelease.{self._c}"
+                self._c += 1
+                self._L(f"br i1 {same}, label %{skip_lbl}, label %{release_lbl}")
+                self._blk[release_lbl] = []
+                self._cb = release_lbl
             self._L(f"call void @__mn_map_free_deep(ptr {mp})")
             self._L(f"br label %{skip_lbl}")
 
@@ -4513,6 +4517,8 @@ class LLVMTextEmitter:
                 else:
                     self._L(f"{r} = call {ret} @{fn}({astr})")
                 self._put(i.dest, r, ret)
+            if i.dest.ty.kind == TypeKind.MAP and fn in getattr(self, "_owned_map_factories", ()):
+                self._track_container(i.dest.name, "map")
             return
 
         # Check if this is a struct constructor (__new_StructName)

@@ -54,12 +54,11 @@ inclusive iteration ending at `INT64_MAX`. The C range probe checks twelve
 exclusive/inclusive boundary cases against both instrumented runtime source and
 the optimized archive. These tests pass alongside the existing runtime controls.
 
-A separate ownership problem remains: returning a locally allocated map frees
-it before the caller uses it. `tests/native/fixtures/map_return_lifetime.mn`
-reproduces this without any loop. ASan confirms the same use-after-free against
-both the starting and changed bootstrap emitters. Address map return/transfer
-and caller ownership tracking in the next ownership milestone; iterator cleanup
-does not establish general map lifetime safety.
+The separate map-return use-after-free exposed here is now fixed for direct
+Map returns. Callee cleanup preserves the escaping pointer, and callers track
+results only from proven factories; borrowed results stay conservative. See
+[the return contract](../memory-ownership/MAP_RETURNS.md). Replacing handles in
+loops, aggregate returns and general container ownership remain separate work.
 
 Evidence: `build/memory-ownership/range-continue/baseline-tests.log` records
 22 failures (16 native and six bootstrap) and 14 passes before the native fix.

@@ -39,6 +39,17 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
+**Priority 2 active; direct Python map returns fixed and verified.** Callee
+cleanup preserves the returned handle, and callers clean up results only from
+proven fresh-map factories. All 28 new sanitizer executions and thirteen proof
+controls pass; twenty executions failed on the original emitter. The broader
+suites pass 1,151 LLVM/MIR checks and 164 focused regressions. See
+[the map return contract](memory-ownership/MAP_RETURNS.md). Native source and
+runtime are unchanged; the installed compiler remains the prior verified binary.
+Strict self-hosting reran successfully at `build/fixed-point-n45ogd72`: 104 LLVM
+goldens and nine outputs per generation, with byte-identical IR and unchanged
+compiler/runtime hashes.
+
 **Priority 2 active; bootstrap iterator follow-up committed as `970bc93c`.** Inclusive ranges
 now link and safely include `INT64_MAX`. Map loops progress, preserve key types,
 and release private cursors on all exits. All 36 native/bootstrap control cases
@@ -109,10 +120,11 @@ The prior verified pair is preserved under
 `build/memory-ownership/bootstrap-iteration/`.
 Self-hosted source checks pass 253 tests with two expected xfails.
 
-**Next:** fix returned-map transfer and caller ownership. The durable fixture
-`tests/native/fixtures/map_return_lifetime.mn` reproduces a use-after-free in
-both the original and changed bootstrap emitter, even without a loop. Then
-integrate container handles, insertion, and borrowed lookups in lowering
+**Next:** establish branch-sensitive map owner slots and transfer/retain rules,
+then fix repeated map-result replacement within one function. The durable
+`map_return_loop_lifetime.mn` fixture retains 535,464 bytes over 1,000 iterations.
+The original direct-return use-after-free fixture now passes. Continue
+container handles, insertion, and borrowed lookups in lowering
 and both emitters. Map handles currently have exclusive ownership; sharing needs
 an explicit retain/clone or transfer design before generated cleanup is enabled.
 The [container evidence and implementation sequence](memory-ownership/CONTAINER_OWNERSHIP.md)

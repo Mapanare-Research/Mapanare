@@ -1,6 +1,48 @@
 # Memory ownership work log
 
-## Resume point — 2026-10-07
+## Resume point — 2026-10-08
+
+The direct Python map-return fix is verified and ready to commit. Returned map
+handles survive callee cleanup; callers clean up results only from conservatively
+proven factories. Borrowed results are not newly treated as owners. See
+[MAP_RETURNS.md](MAP_RETURNS.md) for the proof, tests, and remaining boundaries.
+
+Evidence under `build/memory-ownership/map-returns/`:
+
+- `baseline-tests.log`: 20 sanitizer failures and eight passing controls against
+  the committed baseline emitter.
+- `candidate-tests.log`: 37 initial checks pass.
+- `final-return-tests.log`: 41 passed (28 executable ASan/UBSan/LSan cases and
+  thirteen proof controls after tightening capture and recursion limits).
+- `llvm-mir-tests.log`: 1,151 passed; the two subsequently added proof-boundary
+  tests are included in the final 41-check run.
+- `ownership-regressions.log`: 164 passed, including prior iterator, borrowing,
+  inlining, lifetime, generic, output and stack controls.
+- `loop-probe.log`, `loop-leak.log`: repeated factory calls within one function
+  leak 535,464 bytes / 1,998 allocations at 1,000 iterations. The durable next
+  reproducer is `tests/native/fixtures/map_return_loop_lifetime.mn`.
+- `fixed-point.log`, `build/fixed-point-n45ogd72`: both generations pass 104 LLVM
+  goldens and nine executable outputs, with byte-identical stage2/stage3 IR.
+  Source, runtime, successor and IR hashes match the previous verified gate.
+
+GitNexus marks the module `emit` entry point CRITICAL (two direct callers, five
+affected flows, thirteen reachable symbols); this was reported before editing.
+Cleanup/dispatch paths have LOW indexed impact. The new ownership summary is
+unindexed until refresh, so its direct caller and conservative cases were checked
+manually. Black/Ruff and whitespace checks pass. No native compiler or runtime
+code changed, and the installed compiler remains the verified `81da982a...`
+binary from the previous milestone.
+
+**Next:** establish branch-sensitive map owner slots and transfer/retain rules,
+then fix the recorded map-result replacement leak without freeing live aliases.
+Keep borrowed and mixed returns conservative. Continue nested/element ownership
+and both-emitter adoption afterward. Priority 2 remains active; nothing pushed.
+
+```bash
+.venv/bin/python -m pytest tests/mir/test_map_ownership.py tests/integration/test_map_return_ownership.py -q
+```
+
+## Previous verified milestone — bootstrap iterators
 
 The Python bootstrap iterator follow-up is committed as **`970bc93c`**
 (`Fix bootstrap range and map iterator lifetimes`). All

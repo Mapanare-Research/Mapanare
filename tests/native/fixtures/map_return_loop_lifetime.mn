@@ -1,0 +1,11 @@
+// Remaining ownership work: expected output 3000, with bounded memory.
+// Python map slots currently keep only the last result for function cleanup.
+fn make_values() -> Map<String, Int>:
+    return #{"a": 1, "bb": 2, "ccc": 3}
+
+fn main():
+    let mut total: Int = 0
+    for i in 0..1000:
+        let values = make_values()
+        total = total + len(values)
+    print(total)
