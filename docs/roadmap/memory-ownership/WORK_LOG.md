@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-07
 
-The opt-in owned-map runtime contract is implemented and verified.
+The opt-in owned-map runtime contract is committed as **`5e2f88db`**
+(`Add opt-in owned map key and value policies`) and verified.
 `__mn_map_new_owned` copies independent key/value policies;
 `__mn_map_str_str_new_owned` provides the String/String case. Insertion copies
 inputs before mutation, replacement drops the old value and unused copied key,
@@ -35,16 +36,30 @@ Verified hashes (SHA256):
 - Runtime archive: `6d857dd5c21b7e159afc8b1efedc4511c28ae1fe5abb6997890da02e77f9a185`.
 
 The prior verified compiler/runtime pair is preserved as `mnc-baseline` and
-`runtime-baseline.a` in this evidence directory. Commit the implementation,
-regenerate compiler source and rebuild the runtime to match the gate hashes,
-then install its tested successor and record promotion before updating this
-checkpoint. The existing installed compiler has not yet been replaced.
+`runtime-baseline.a` in this evidence directory. Promotion regenerated compiler
+source and rebuilt the runtime at `5e2f88db`; both matched the verified hashes.
+The exact tested successor is installed at `mapanare/self/mnc-stage1`. The record
+is `build/memory-ownership/owned-maps/promotion.json`. All builds and checks for
+this milestone are complete. Toolchain: Linux/WSL, Clang/LLVM 18.1.3, Python 3.12.3.
 
 GitNexus impact reported LOW risk: set/get/iterator-next each have one indexed
 direct caller, zero indexed processes; the map struct, delete, keys, free and
 deep-free have zero indexed callers. Generated callers are outside the index,
 so runtime-wide risk was checked through strict self-hosting. New probe symbols
 returned UNKNOWN and were manually reviewed. All validation was Linux/WSL.
+Staged detection (`owned-maps/precommit.log`) found seven expected files,
+23 indexed symbols, zero affected processes and LOW risk. Manual diff review
+confirmed only map dispatch/storage and the new tests/docs changed; line mapping
+also listed nearby unchanged legacy declarations.
+
+To rerun the owned-container checks in Linux/WSL from the repository root:
+
+```bash
+.venv/bin/python -m pytest tests/native/test_owned_maps.py tests/native/test_owned_lists.py -q
+MAPANARE_TEST_RUNTIME=runtime/native/libmapanare_rt.a \
+  .venv/bin/python -m pytest tests/native/test_owned_maps.py tests/native/test_owned_lists.py -q
+.venv/bin/python scripts/verify_fixed_point.py --stage1 mapanare/self/mnc-stage1 --keep
+```
 
 **Next:** integrate container ownership in lowering and both emitters. Begin by
 tracing handle copies, call arguments, returns and captures before activating

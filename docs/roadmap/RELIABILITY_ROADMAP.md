@@ -39,7 +39,7 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; owned-map runtime contract implemented.** Opt-in maps now
+**Priority 2 active; owned-map runtime contract committed as `5e2f88db`.** Opt-in maps now
 copy keys/values before insertion, release replaced/deleted entries, transfer
 ownership during rehash, and return independently owned key lists. Aligned
 storage and bounded probing cover aliasing and collision edge cases. All 31 new
@@ -73,9 +73,10 @@ conservative escape protection, checked by String/container lifetime regressions
 
 The current gate is `build/fixed-point-fjc4esu9`: both compiler generations pass
 103 LLVM goldens and eight executable fixtures, and stage2/stage3 are byte-identical.
-Its optimized successor passes all 40 focused native checks. The prior verified
-pair is preserved under `build/memory-ownership/owned-maps/`; promotion is pending
-the implementation commit and a fresh source/runtime hash check. Unchanged compiler source was checked in the last compiler-source
+Its optimized successor passes all 40 focused native checks and is installed at
+`mapanare/self/mnc-stage1`. Promotion regenerated compiler source and rebuilt the
+runtime at `5e2f88db`, matching the gate hashes. The prior verified pair remains
+preserved under `build/memory-ownership/owned-maps/`. Unchanged compiler source was checked in the last compiler-source
 milestone: 343 passed, two pre-existing xpasses.
 
 **Next:** integrate container handles, insertion, and borrowed lookups in lowering
