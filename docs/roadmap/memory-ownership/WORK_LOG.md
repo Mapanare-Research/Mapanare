@@ -2,6 +2,61 @@
 
 ## Resume point — 2026-10-07
 
+Read-only argument borrowing is implemented in both LLVM emitters. Python now
+suppresses automatic argument moves only for a proven borrowing body; native
+String borrowing now permits read-only list parameters, aliases and indexing.
+Both register summaries before body emission, covering forward calls. Mutators,
+captures, unknown calls and resource-bearing returns remain conservative. See
+[ARGUMENT_BORROWING.md](ARGUMENT_BORROWING.md) for the precise whitelist and
+remaining integration requirements. Owned runtime constructors are not activated.
+
+Evidence under `build/memory-ownership/container-handles/`:
+
+- `baseline-final-cases.log`: ten of 16 leak checks fail against the preserved
+  compilers; six controls pass. Native list-argument cases retain 8,890 bytes
+  over 1,000 calls. The final fixtures preserve the allocating call boundary.
+- `bootstrap-probes.log`: 20 proof checks and eight Python executable cases pass.
+- `candidate-probes.log`: all eight native executable cases pass.
+- `capture-tests.log`: both invalid-access capture controls pass. Leak detection
+  is intentionally disabled only in those controls because legacy returned lists
+  still retain their elements; the 16 borrowing cases use LeakSanitizer.
+- `llvm-mir-tests.log`: 1,088 passed.
+- `source-tests.log`: 253 passed, two expected xfails.
+- `fixed-point.log`, `build/fixed-point-r_9qtc2m`: 103 LLVM goldens and eight
+  executable fixtures pass on both generations; stage2/stage3 IR is identical.
+- `successor-regressions.log`: all 58 checks pass on the optimized successor,
+  including the 18 new executable cases and 40 prior native controls.
+
+Verified hashes (SHA256):
+
+- Compiler source: `9b3bee6a98aad73f05655c584a88735788bb260d0fe71d99bb75e7d3e636e4dd`.
+- Optimized successor: `3c2b89b4d6ab5336857f0aa82cbf89093f9c71fe9216956339ff3039b791f4bb`.
+- Both IR stages: `4627c305beb12f4ac7b0aac758beda3375ac0a1f301fe3ab388b7a35982a93bf`.
+- Unchanged runtime archive: `6d857dd5c21b7e159afc8b1efedc4511c28ae1fe5abb6997890da02e77f9a185`.
+
+The prior compiler/runtime pair is preserved as `mnc-baseline` and
+`runtime-baseline.a` in this evidence directory. The implementation is ready to
+commit, then verify committed source/runtime hashes and install the tested
+successor. The production compiler has not yet been replaced.
+
+GitNexus reports CRITICAL for Python `emit`: two direct callers, 13 affected
+symbols and five process groups across CLI builds/emission and IR diagnostics.
+This warning was reported before editing. `_do_call` reports LOW with no indexed
+callers; native `.mn` helpers and new Python helpers are outside the index and
+were manually traced. Full LLVM/MIR and strict self-hosting checks cover the
+broader risk. No MIR layout or runtime API changed in this milestone.
+
+**Next:** fix the Python optimizer's allocation-lifetime boundary before enabling
+owned containers. The durable diagnostic is
+`tests/native/fixtures/inlined_resource_lifetime.mn`; its body is small enough
+to inline into a loop, losing function-exit cleanup. Preserve cleanup scope or
+conservatively reject affected inline candidates. Then coordinate container
+handle retain/clone/transfer, copy-in insertion markers, returned/captured aliases
+and borrowed lookup lifetimes in lowering and both emitters. Existing native
+container leaks remain open. Priority 2 remains active. Nothing pushed/released.
+
+## Previous verified milestone — owned maps
+
 The opt-in owned-map runtime contract is committed as **`5e2f88db`**
 (`Add opt-in owned map key and value policies`) and verified.
 `__mn_map_new_owned` copies independent key/value policies;

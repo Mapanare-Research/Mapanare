@@ -56,24 +56,35 @@ struct FnEntry:
 
 fn new_fn_entry(name: String, ret: String, params: List<String>, borrows: Bool) -> FnEntry = new FnEntry { name: name, ret_type: ret, param_types: params, borrows_strings: borrows }
 
-// A deliberately small, fail-closed borrowing proof. No aggregate/pointer
-// parameters, escaping stores, user/extern calls, moves, or async suspension
+// A deliberately small, fail-closed borrowing proof. Only scalar/String/List
+// reads are allowed: no escaping stores, user/extern calls, moves, or async suspension
 // are allowed. Inspect every block, including unreachable ones. In particular,
 // a scalar return alone says nothing about whether a callee captures an input.
 fn borrow_scalar_type(ty: MIRType) -> Bool:
     return ty.kind == TK_INT() || ty.kind == TK_FLOAT() || ty.kind == TK_BOOL() || ty.kind == TK_CHAR()
 
+fn borrow_read_type(ty: MIRType, depth: Int) -> Bool:
+    if depth > 32: return false
+    if borrow_scalar_type(ty) || ty.kind == TK_STRING(): return true
+    if ty.kind == TK_LIST() && len(ty.args) == 1:
+        return borrow_read_type(ty.args[0], depth + 1)
+    return false
+
 fn borrow_local_type(ty: MIRType) -> Bool:
-    return borrow_scalar_type(ty) || ty.kind == TK_STRING()
+    return borrow_read_type(ty, 0)
 
 fn borrow_instruction_safe(inst: Instruction, local_slots: List<String>) -> Bool:
     let kind: String = instr_kind(inst)
     if kind == "alloca" || kind == "jump": return true
     if kind == "const":
         let const_ty: MIRType = instr_const_type(inst)
-        return borrow_local_type(const_ty) || const_ty.kind == TK_VOID()
+        return borrow_scalar_type(const_ty) || const_ty.kind == TK_STRING() || const_ty.kind == TK_VOID()
     if kind == "copy":
         return borrow_local_type(instr_dest(inst).ty) && borrow_local_type(instr_copy_src(inst).ty)
+    if kind == "index_get":
+        let obj: Value = instr_indexget_obj(inst)
+        let idx: Value = instr_indexget_idx(inst)
+        return obj.ty.kind == TK_LIST() && borrow_local_type(obj.ty) && idx.ty.kind == TK_INT() && borrow_local_type(instr_dest(inst).ty)
     if kind == "load" || kind == "store":
         let mut ptr_name: String = ""
         if kind == "load":
@@ -92,13 +103,14 @@ fn borrow_instruction_safe(inst: Instruction, local_slots: List<String>) -> Bool
     if kind == "cast":
         return borrow_scalar_type(instr_dest(inst).ty) && borrow_scalar_type(instr_cast_src(inst).ty) && borrow_scalar_type(instr_cast_type(inst))
     if kind == "call":
-        // len(String) borrows; range construction/extraction only manipulates
+        // len(String/List) borrows; range construction/extraction only manipulates
         // two integers. No other runtime or user calls are proven here.
         let name: String = instr_call_fn(inst)
         let args: List<Value> = instr_call_args(inst)
         if name == "len":
             if len(args) != 1: return false
-            return args[0].ty.kind == TK_STRING() && instr_dest(inst).ty.kind == TK_INT()
+            let arg_kind: Int = args[0].ty.kind
+            return (arg_kind == TK_STRING() || arg_kind == TK_LIST()) && borrow_local_type(args[0].ty) && instr_dest(inst).ty.kind == TK_INT()
         if name == "__mn_range" || name == "__mn_range_inclusive":
             if len(args) != 2: return false
             return args[0].ty.kind == TK_INT() && args[1].ty.kind == TK_INT() && instr_dest(inst).ty.kind == TK_RANGE()

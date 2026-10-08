@@ -197,7 +197,10 @@ fn main():
    replacement, deletion, growth, and final destruction follow the same rules.
    Equal-key replacement releases any unused copied key. Rehash moves
    existing ownership without double cloning or dropping it.
-3. **Integrate lowering and both emitters together.** Native `emit_drop_glue`
+3. **Integrate lowering and both emitters together.** Both emitters now preserve
+   caller cleanup for proven read-only String/list calls; see
+   [the borrowing proof and inlining prerequisite](ARGUMENT_BORROWING.md).
+   Native `emit_drop_glue`
    currently calls shallow `__mn_list_free`; map ownership is not tracked there.
    Container insertion also emits Move markers. If insertion becomes copy-in,
    remove the matching transfer markers so caller cleanup still runs. Track

@@ -1,0 +1,18 @@
+// Diagnostic reproduction: Python MIR -O2 inlines score into main's loop.
+// The lost cleanup boundary retains heap allocations. This is deliberately
+// not a passing test until inlining preserves resource lifetimes.
+fn measure(text: String, values: List<Int>) -> Int:
+    if len(values) > 0:
+        return len(text) + values[0]
+    return 0
+
+fn score(n: Int) -> Int:
+    let text: String = "item-" + str(n)
+    let values: List<Int> = [n, 1]
+    return measure(text, values) + measure(text, values) + values[0]
+
+fn main():
+    let mut total: Int = 0
+    for i in 0..1000:
+        total = total + score(i)
+    print(total)

@@ -10,6 +10,7 @@ import struct as pystruct
 from typing import Any
 
 from mapanare.abi import classify_return  # v4.149.0 E5
+from mapanare.borrow import function_borrows_arguments
 from mapanare.mir import (
     AgentSend,
     AgentSpawn,
@@ -972,6 +973,9 @@ class LLVMTextEmitter:
         self._async_fn_names: set[str] = {f.name for f in mir.functions if f.is_async and f.blocks}
         # 4c) v4.146.0 E2: precompute pure function set (fixed-point)
         self._pure_fns = self._compute_pure_fns(mir.functions)
+        # Compute before any body so forward calls follow the same ownership
+        # rule. Purity alone is insufficient: returned/captured inputs escape.
+        self._borrowing_fns = {f.name for f in mir.functions if function_borrows_arguments(f)}
         # 5) emit bodies
         fns: list[str] = []
         for f in mir.functions:
@@ -4429,17 +4433,18 @@ class LLVMTextEmitter:
         # Block — the inner else clause in nested if/else then
         # aliased the outer else body, sending the semantic checker
         # into infinite recursion on nested if/else.
-        for j, (v, t) in enumerate(args):
-            if j < len(i.args):
-                src_name = i.args[j].name
-                if t == LIST and src_name in self._list_vars:
-                    self._list_vars.remove(src_name)
-                root_s = self._lroots.get(src_name)
-                if root_s and root_s in self._list_vars:
-                    self._list_vars.remove(root_s)
-                self._move_resource(src_name)
-                if root_s and root_s != src_name:
-                    self._move_resource(root_s)
+        if fn not in getattr(self, "_borrowing_fns", ()):
+            for j, (v, t) in enumerate(args):
+                if j < len(i.args):
+                    src_name = i.args[j].name
+                    if t == LIST and src_name in self._list_vars:
+                        self._list_vars.remove(src_name)
+                    root_s = self._lroots.get(src_name)
+                    if root_s and root_s in self._list_vars:
+                        self._list_vars.remove(root_s)
+                    self._move_resource(src_name)
+                    if root_s and root_s != src_name:
+                        self._move_resource(root_s)
 
         # User function
         if fn in self._sigs:

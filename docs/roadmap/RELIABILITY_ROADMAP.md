@@ -39,7 +39,14 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; owned-map runtime contract committed as `5e2f88db`.** Opt-in maps now
+**Priority 2 active; read-only argument borrowing now works in both emitters.**
+Proven read-only calls preserve caller cleanup for Strings and lists, including
+aliases, indexed reads and forward calls. All 16 leak regressions and two capture
+controls pass, alongside 1,088 LLVM/MIR checks and strict self-hosting. Mutating
+or capturing callees retain conservative ownership transfer. See
+[the borrowing contract](memory-ownership/ARGUMENT_BORROWING.md).
+
+The owned-map runtime contract was committed as `5e2f88db`. Opt-in maps now
 copy keys/values before insertion, release replaced/deleted entries, transfer
 ownership during rehash, and return independently owned key lists. Aligned
 storage and bounded probing cover aliasing and collision edge cases. All 31 new
@@ -71,15 +78,15 @@ was 88 bytes per call (880,000 bytes at 10,000 calls); six LeakSanitizer cases n
 pass for flat, nested, and wide records. Heap-bearing returns retain their
 conservative escape protection, checked by String/container lifetime regressions.
 
-The current gate is `build/fixed-point-fjc4esu9`: both compiler generations pass
+The current gate is `build/fixed-point-r_9qtc2m`: both compiler generations pass
 103 LLVM goldens and eight executable fixtures, and stage2/stage3 are byte-identical.
-Its optimized successor passes all 40 focused native checks and is installed at
-`mapanare/self/mnc-stage1`. Promotion regenerated compiler source and rebuilt the
-runtime at `5e2f88db`, matching the gate hashes. The prior verified pair remains
-preserved under `build/memory-ownership/owned-maps/`. Unchanged compiler source was checked in the last compiler-source
-milestone: 343 passed, two pre-existing xpasses.
+Its optimized successor passes all 58 focused executable checks. Promotion is
+pending the implementation commit and committed-source hash check. The prior
+verified pair is preserved under `build/memory-ownership/container-handles/`.
+Self-hosted source checks pass 253 tests with two expected xfails.
 
-**Next:** integrate container handles, insertion, and borrowed lookups in lowering
+**Next:** preserve allocation cleanup boundaries through Python MIR inlining,
+then integrate container handles, insertion, and borrowed lookups in lowering
 and both emitters. Map handles currently have exclusive ownership; sharing needs
 an explicit retain/clone or transfer design before generated cleanup is enabled.
 The [container evidence and implementation sequence](memory-ownership/CONTAINER_OWNERSHIP.md)
