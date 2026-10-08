@@ -39,7 +39,7 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; direct Python map returns fixed and verified.** Callee
+**Priority 2 active; direct Python map returns committed as `18c73cda`.** Callee
 cleanup preserves the returned handle, and callers clean up results only from
 proven fresh-map factories. All 28 new sanitizer executions and thirteen proof
 controls pass; twenty executions failed on the original emitter. The broader
@@ -109,7 +109,7 @@ was 88 bytes per call (880,000 bytes at 10,000 calls); six LeakSanitizer cases n
 pass for flat, nested, and wide records. Heap-bearing returns retain their
 conservative escape protection, checked by String/container lifetime regressions.
 
-The current gate is `build/fixed-point-uvraczp_`: both compiler generations pass
+The previous bootstrap iterator gate was `build/fixed-point-uvraczp_`: both compiler generations pass
 104 LLVM goldens and nine executable fixtures, and stage2/stage3 are byte-identical.
 The optimized successor passes 136 focused checks and all 104 golden link/run
 checks plus the corpus-count check. The full LLVM/MIR/optimizer suite passes

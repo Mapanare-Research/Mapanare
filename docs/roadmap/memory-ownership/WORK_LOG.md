@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-08
 
-The direct Python map-return fix is verified and ready to commit. Returned map
+The direct Python map-return fix is committed as **`18c73cda`**
+(`Preserve direct map returns and track proven owned results`). Returned map
 handles survive callee cleanup; callers clean up results only from conservatively
 proven factories. Borrowed results are not newly treated as owners. See
 [MAP_RETURNS.md](MAP_RETURNS.md) for the proof, tests, and remaining boundaries.
@@ -32,6 +33,11 @@ unindexed until refresh, so its direct caller and conservative cases were checke
 manually. Black/Ruff and whitespace checks pass. No native compiler or runtime
 code changed, and the installed compiler remains the verified `81da982a...`
 binary from the previous milestone.
+Staged detection (`precommit.log`) found eleven expected files, thirteen indexed
+symbols and five emitter execution flows, with MEDIUM risk. New proof/test files
+were reviewed directly. `verification.json` records the committed checkpoint;
+the installed compiler and runtime match the successful fixed-point manifest.
+No binary replacement was necessary. All verification processes have finished.
 
 **Next:** establish branch-sensitive map owner slots and transfer/retain rules,
 then fix the recorded map-result replacement leak without freeing live aliases.
