@@ -2,6 +2,55 @@
 
 ## Resume point — 2026-10-07
 
+The inlining cleanup fix is implemented in both optimizers. Resource-bearing
+callees keep their original call boundary, and resource operations after a call
+prevent a block split that would discard the caller's loop-body metadata.
+Scalar arithmetic still inlines. Unsupported operations and unknown types fail
+closed. See [ARGUMENT_BORROWING.md](ARGUMENT_BORROWING.md) for the restrictions.
+No runtime API or MIR layout changed; owned containers remain opt-in.
+
+Evidence is under `build/memory-ownership/inlining-lifetimes/`:
+
+- The original combined fixture retained 92,285 bytes / 2,869 allocations before
+  this fix. A second caller-allocation case retained 3,488 bytes / 872 allocations
+  (`caller-baseline.log`). Both now pass at Python O2/O3.
+- `candidate-inline-tests.log`: 22 checks pass, including String-only, list-only,
+  combined, forward-wrapper and caller-allocation cases on both compilers, plus
+  a native scalar-inlining control. All 21 executable cases use ASan/LSan.
+- `llvm-mir-tests.log`: 1,137 passed, including 49 optimizer checks.
+- `source-tests.log`: 253 passed, two existing expected xfails.
+- `fixed-point-final.log`, `build/fixed-point-nsh_77x0`: both generations pass
+  103 LLVM goldens and eight executable fixtures; stage2/stage3 are byte-identical.
+  The initial gate (`fixed-point.log`, `build/fixed-point-8igqvfv9`) exposed the
+  range-continue bug described below; the final proof avoids that construct.
+  No emitted IR was patched.
+- `successor-regressions.log`: all 80 focused checks pass on the optimized
+  successor, including 22 new inlining checks and 58 prior ownership, generics,
+  output and loop-stack controls. Black/Ruff and whitespace checks pass.
+
+GitNexus impact for `_should_inline` was LOW (one direct caller, three affected
+symbols). Caller-suffix protection also changes `inline_small_functions`, whose
+impact was CRITICAL: one direct caller, ten affected symbols and eleven execution
+flows. This was reported before editing. Native `.mn` symbols and new helpers
+were unindexed; manual review traced them through the full optimization pipeline.
+
+**Next:** fix native range-loop `continue` lowering, then resume compiler adoption
+of owned containers. This existing bug was exposed while building the proof:
+`continue` branches to the range header without incrementing its counter.
+`tests/native/fixtures/range_continue_progress.mn` expects `8`, but the unchanged
+installed compiler's output, linked at Clang O0, times out (exit 124 after three
+seconds; `range-continue.log`). At O1 the same program exits without output.
+The existing golden 33 exercises while-continue and for-break, not for-continue.
+The new proof avoids this construct. Add an executable timeout regression when
+fixing lowering; do not treat LLVM-valid IR alone as evidence of loop progress.
+
+After that, coordinate container handle retain/clone/transfer, copy-in insertion
+markers, returned/captured aliases and borrowed lookup lifetimes in lowering and
+both emitters. Existing native container leaks remain open. Priority 2 remains
+active. Nothing pushed or released.
+
+## Previous verified milestone — read-only argument borrowing
+
 Read-only argument borrowing is committed as **`c3538bd0`** (`Preserve caller
 ownership for proven read-only list calls`) in both LLVM emitters. Python now
 suppresses automatic argument moves only for a proven borrowing body; native

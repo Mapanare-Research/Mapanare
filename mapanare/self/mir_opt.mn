@@ -469,6 +469,55 @@ fn is_recursive(f: MIRFunction) -> Bool:
         bi = bi + 1
     return false
 
+fn inline_scalar_type(ty: MIRType) -> Bool:
+    return ty.kind == TK_INT() || ty.kind == TK_FLOAT() || ty.kind == TK_BOOL() || ty.kind == TK_CHAR() || ty.kind == TK_VOID()
+
+fn inline_preserves_cleanup(callee: MIRFunction) -> Bool:
+    // Inlining has no nested cleanup scope. Resource slots in a loop can
+    // otherwise be overwritten before function-exit cleanup. Keep their
+    // original call boundary; scalar calls retain their callee's cleanup.
+    if !inline_scalar_type(callee.return_type): return false
+    for pi in 0..len(callee.params):
+        if !inline_scalar_type(callee.params[pi].ty): return false
+    for bi in 0..len(callee.blocks):
+        if !inline_instructions_preserve_cleanup(callee.blocks[bi].instructions, 0): return false
+    return true
+
+fn inline_instructions_preserve_cleanup(instructions: List<Instruction>, start: Int) -> Bool:
+    for ii in start..len(instructions):
+        if !inline_instruction_preserves_cleanup(instructions[ii]): return false
+    return true
+
+fn inline_instruction_preserves_cleanup(inst: Instruction) -> Bool:
+    let kind: String = instr_kind(inst)
+    if kind == "jump": return true
+    if kind == "return":
+        let returned: Option<Value> = instr_return_val(inst)
+        match returned:
+            Some(v) => return inline_scalar_type(v.ty)
+            _ => return true
+    // Native lowering uses explicit stack slots for scalar parameters and
+    // locals. These have no heap cleanup; their scalar loads/stores can move.
+    if kind == "alloca": return inline_scalar_type(instr_alloca_type(inst))
+    if kind == "store": return inline_scalar_type(instr_store_val(inst).ty)
+    if !inline_scalar_type(instr_dest(inst).ty): return false
+    if kind == "load": return true
+    if kind == "const": return inline_scalar_type(instr_const_type(inst))
+    if kind == "copy": return inline_scalar_type(instr_copy_src(inst).ty)
+    if kind == "cast":
+        return inline_scalar_type(instr_cast_src(inst).ty) && inline_scalar_type(instr_cast_type(inst))
+    if kind == "binop":
+        return inline_scalar_type(instr_binop_lhs(inst).ty) && inline_scalar_type(instr_binop_rhs(inst).ty)
+    if kind == "unaryop": return inline_scalar_type(instr_unaryop_operand(inst).ty)
+    if kind == "call":
+        let args: List<Value> = instr_call_args(inst)
+        for ai in 0..len(args):
+            if !inline_scalar_type(args[ai].ty): return false
+        return true
+    // Aggregates, ownership markers, indirect calls and new instructions
+    // remain excluded until proved safe.
+    return false
+
 fn should_inline(callee: MIRFunction, call_count: Int) -> Bool:
     // Only single-block callees (no branches, no phi, no switch)
     if len(callee.blocks) != 1: return false
@@ -490,7 +539,7 @@ fn should_inline(callee: MIRFunction, call_count: Int) -> Bool:
     if body_size == 0: return false
     if body_size > 20: return false
     if call_count * body_size > 200: return false
-    return true
+    return inline_preserves_cleanup(callee)
 
 // Count how many times each function is called within fn
 struct CallCount:
@@ -1127,7 +1176,9 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
             let inst: Instruction = bb.instructions[ii]
             if instr_kind(inst) == "call":
                 let callee_name: String = instr_call_fn(inst)
-                if is_in_list(callee_name, eligible):
+                // Splitting also relocates the caller's suffix, whose
+                // resource operations may depend on the loop-body label.
+                if is_in_list(callee_name, eligible) && inline_instructions_preserve_cleanup(bb.instructions, ii + 1):
                     // Found an eligible call site — inline it
                     let callee_opt2: Option<MIRFunction> = find_fn_by_name(lookup, callee_name)
                     match callee_opt2:

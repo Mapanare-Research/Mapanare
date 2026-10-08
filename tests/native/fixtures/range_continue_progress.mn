@@ -1,0 +1,9 @@
+// Diagnostic: native range-loop continue currently skips the counter increment.
+// Expected stdout: 8. Run with a timeout until lowering is fixed.
+fn main():
+    let mut total: Int = 0
+    for i in 0..5:
+        if i == 2:
+            continue
+        total = total + i
+    print(total)

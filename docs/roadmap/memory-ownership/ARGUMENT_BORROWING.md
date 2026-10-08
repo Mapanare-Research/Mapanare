@@ -57,27 +57,41 @@ the legacy raw containers and must be coordinated with future copy-in adoption.
   and 58 successor regressions. `build/fixed-point-r_9qtc2m` passes 103 LLVM
   goldens/eight output fixtures on both generations with identical stage2/stage3 IR.
 
-## Next prerequisite: inlined allocation lifetimes
+## Inlined allocation lifetimes
 
-`tests/native/fixtures/inlined_resource_lifetime.mn` preserves a separate
-diagnostic discovered during this work. Python MIR optimization at O2 inlines
-an allocating scalar-returning helper into the caller's loop. Its allocations
-then share function-exit tracking slots, and String free-before-store detection
-also depends on loop block naming. The observed diagnostic after the borrowing
-fix retained 92,285 bytes in 2,869 allocations over 1,000 iterations.
+`tests/native/fixtures/inlined_resource_lifetime.mn` now has a passing sanitizer
+regression in `tests/integration/test_inlined_resource_lifetime.py`. Previously,
+Python MIR optimization at O2 inlined an allocating scalar-returning helper into
+the caller's loop. Its allocations shared function-exit tracking slots, and
+String free-before-store detection depended on loop block naming. The original
+diagnostic retained 92,285 bytes in 2,869 allocations over 1,000 iterations.
 
-The passing borrowing fixtures include a real early-return branch in their
-allocating helper, preserving the call boundary under the current single-block
-inliner. This isolates the tested borrowing behavior; it does not fix the
-inlining issue. Do not erase that guard without addressing resource scope.
+Both optimizers now keep resource-bearing callees out of the inliner. Scalar
+arguments, results and operations remain eligible; resource or unknown types,
+ownership operations and unsupported instructions fail closed. Native lowering
+uses explicit scalar stack slots, so its proof also accepts scalar allocation,
+load and store instructions. This is a conservative optimization restriction,
+not an implementation of nested cleanup scopes.
+
+The caller's post-call instructions also need the proof: moving an allocation
+into the new merge block loses loop-body metadata even when the callee is purely
+arithmetic. A second Python reproduction retained 3,488 bytes in 872 allocations
+over 1,000 iterations. Such call sites now stay intact. Scalar wrappers may
+inline only where their remaining call and caller suffix satisfy the proof;
+allocating callees keep their own cleanup boundary on subsequent optimizer runs.
+
+The borrowing fixtures retain their early-return branch to isolate borrowing.
+The new regression suite exercises unguarded String/list allocations, the original
+combined fixture, forward scalar wrappers, and allocations in the caller at
+Python O2/O3 and through the native compiler. Existing SSA-renaming tests and a
+native scalar-arithmetic control ensure eligible inlining still runs.
 
 To reproduce, emit the diagnostic with the Python compiler at O2, link the IR
 with Clang `-O1 -g -fsanitize=address -no-pie`, the native runtime archive,
 `-lm -lpthread -ldl`, and run with `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1`.
-Expected stdout is `1514280`; sanitizer output currently reports retention.
+Expected stdout is `1514280`, with no sanitizer diagnostics after this fix.
 
-Before enabling owned lists/maps in generated programs, preserve allocation
-cleanup boundaries through inlining (or conservatively decline affected inline
-candidates). Then coordinate handle retain/clone/transfer rules, copy-in insertion
+Before enabling owned lists/maps in generated programs, coordinate handle
+retain/clone/transfer rules, copy-in insertion
 Move markers, returned/captured containers and borrowed lookup lifetimes. The
 runtime contracts in [CONTAINER_OWNERSHIP.md](CONTAINER_OWNERSHIP.md) remain opt-in.

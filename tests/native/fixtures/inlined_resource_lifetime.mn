@@ -1,6 +1,5 @@
-// Diagnostic reproduction: Python MIR -O2 inlines score into main's loop.
-// The lost cleanup boundary retains heap allocations. This is deliberately
-// not a passing test until inlining preserves resource lifetimes.
+// Regression: score must retain its cleanup boundary inside main's loop.
+// Inlining its allocations used to overwrite function-exit ownership slots.
 fn measure(text: String, values: List<Int>) -> Int:
     if len(values) > 0:
         return len(text) + values[0]

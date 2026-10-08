@@ -34,11 +34,14 @@ from mapanare.mir import (
     BinOpKind,
     Branch,
     Call,
+    Cast,
     ClosureCall,
     ClosureCreate,
     Const,
     Copy,
     EnumInit,
+    EnumPayload,
+    EnumTag,
     FieldGet,
     FieldSet,
     IndexGet,
@@ -2108,6 +2111,58 @@ def _instruction_count(fn: MIRFunction) -> int:
     return sum(len(bb.instructions) for bb in fn.blocks)
 
 
+def _inline_preserves_cleanup(callee: MIRFunction) -> bool:
+    """Keep resource lifetimes inside their original function boundary.
+
+    MIR inlining does not yet carry a cleanup scope into the caller. In a
+    loop, function-exit ownership slots can be overwritten on each iteration.
+    Restrict inlining to scalar values until scopes survive cloning. Calls
+    with scalar arguments/results are safe here: the callee retains its own
+    cleanup boundary, and is checked independently if later considered for
+    inlining. Unknown instructions and types fail closed.
+    """
+    scalar = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.CHAR, TypeKind.VOID}
+    if callee.return_type.kind not in scalar:
+        return False
+    if any(param.ty.kind not in scalar for param in callee.params):
+        return False
+    return all(_inline_instructions_preserve_cleanup(block.instructions) for block in callee.blocks)
+
+
+def _inline_instructions_preserve_cleanup(instructions: list[Instruction]) -> bool:
+    """Prove instructions can move to a new block without cleanup metadata."""
+    scalar = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.CHAR, TypeKind.VOID}
+    for inst in instructions:
+        if type(inst) not in (
+            Const,
+            Copy,
+            Cast,
+            BinOp,
+            UnaryOp,
+            Call,
+            Return,
+            Jump,
+            FieldGet,
+            IndexGet,
+            EnumTag,
+            EnumPayload,
+            StructInit,
+        ):
+            return False
+        values = _get_uses(inst)
+        dest = _get_dest(inst)
+        if dest is not None:
+            values.append(dest)
+        if any(value.ty.kind not in scalar for value in values):
+            return False
+        # Also inspect explicit type operands, not just SSA value types.
+        for attr in ("ty", "target_type", "struct_type"):
+            ty = getattr(inst, attr, None)
+            if isinstance(ty, MIRType) and ty.kind not in scalar:
+                return False
+    return True
+
+
 def _should_inline(callee: MIRFunction, call_count: int) -> bool:
     """Cost-model heuristic: inline if small, not recursive, within budget.
 
@@ -2131,7 +2186,7 @@ def _should_inline(callee: MIRFunction, call_count: int) -> bool:
         return False
     if callee.name == "main":
         return False
-    return True
+    return _inline_preserves_cleanup(callee)
 
 
 _inline_counter = 0
@@ -2254,6 +2309,12 @@ def inline_small_functions(
     for bb_idx, bb in enumerate(fn.blocks):
         for inst_idx, inst in enumerate(bb.instructions):
             if not isinstance(inst, Call) or inst.fn_name not in eligible:
+                continue
+
+            # The split also moves the caller's suffix into a new block.
+            # Until cleanup uses CFG loop membership, do not move resource
+            # operations away from the original loop-body label.
+            if not _inline_instructions_preserve_cleanup(bb.instructions[inst_idx + 1 :]):
                 continue
 
             callee = fn_lookup[inst.fn_name]
