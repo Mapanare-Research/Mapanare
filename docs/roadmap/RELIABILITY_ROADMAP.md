@@ -39,7 +39,14 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; inlining cleanup protection committed as `b280a29f`.**
+**Priority 2 active; native loop-control follow-up committed as `8c341089`.**
+Range `continue` advances the counter, and map break/continue targets stay local
+through nesting. All 18 native cases pass at Clang O0/O2; the old compiler failed
+16. The new golden runs as part of both strict self-hosting generations. See
+[the loop-control notes](compiler-correctness/LOOP_CONTROL.md) for the fix and
+remaining Python bootstrap discrepancies.
+
+Inlining cleanup protection was committed as `b280a29f`.
 Both optimizers preserve the allocating callee's function boundary and prevent
 block splits that lose cleanup metadata for later caller allocations. Scalar
 arithmetic still inlines. All 22 new inlining checks pass, alongside 1,137
@@ -85,18 +92,19 @@ was 88 bytes per call (880,000 bytes at 10,000 calls); six LeakSanitizer cases n
 pass for flat, nested, and wide records. Heap-bearing returns retain their
 conservative escape protection, checked by String/container lifetime regressions.
 
-The current gate is `build/fixed-point-nsh_77x0`: both compiler generations pass
-103 LLVM goldens and eight executable fixtures, and stage2/stage3 are byte-identical.
-Its optimized successor passes all 80 focused checks and is installed
+The current gate is `build/fixed-point-v1axkv58`: both compiler generations pass
+104 LLVM goldens and nine executable fixtures, and stage2/stage3 are byte-identical.
+Its optimized successor passes 110 focused checks (six strict expected Python
+failures) and 1,140 LLVM/MIR/optimizer checks, and is installed
 at `mapanare/self/mnc-stage1`. Promotion regenerated source and rebuilt the runtime
-at `b280a29f`, matching the gate hashes. The prior verified pair is preserved
-under `build/memory-ownership/inlining-lifetimes/`.
+at `8c341089`, matching the gate hashes. The prior verified pair is preserved
+under `build/memory-ownership/range-continue/`.
 Self-hosted source checks pass 253 tests with two expected xfails.
 
-**Next:** fix native range-loop `continue`, which skips counter advancement.
-The new diagnostic `tests/native/fixtures/range_continue_progress.mn` expects `8`
-but times out against the previous verified compiler at Clang O0. This was
-discovered during validation; the new optimizer proof avoids the construct.
+**Next:** fix Python bootstrap inclusive-range linking and nested map/range
+iteration. Both were reproduced against the unchanged bootstrap during the
+native comparison: two link failures and four timeouts are now strict expected
+failures in `tests/integration/test_native_for_continue.py`.
 Then integrate container handles, insertion, and borrowed lookups in lowering
 and both emitters. Map handles currently have exclusive ownership; sharing needs
 an explicit retain/clone or transfer design before generated cleanup is enabled.

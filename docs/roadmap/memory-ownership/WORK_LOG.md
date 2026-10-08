@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-07
 
-Native range-loop `continue` and map-loop control are fixed in `lower_for` and
+Native range-loop `continue` and map-loop control are committed as **`8c341089`**
+(`Fix native for-loop continue progress and map control targets`) in `lower_for` and
 `lower_for_map`. Both bind the current visible value, then advance the hidden
 counter before user control flow. Map loops also install and restore their own
 break/continue targets. This preserves block layout and avoids a state-layout or
@@ -35,6 +36,30 @@ The golden-count test has LOW impact, with zero callers/processes. Its expected
 count now matches the current corpus, and the link harness accepts
 `MAPANARE_TEST_COMPILER` so a candidate can be validated without replacing the
 installed compiler. Historical release reports keep their original denominators.
+Staged detection (`precommit.log`) found nine expected files, three indexed
+symbols, no indexed processes and LOW risk. Native edits and new tests/goldens
+were reviewed manually because the graph does not cover those additions yet.
+
+Verified SHA256 hashes:
+
+- Compiler source: `a79a01a72ccc2734fcefaa50767f5b187891732e8ef94bb94601e8d7302fd4ba`.
+- Optimized successor: `d3e50fce00fd4161c10043aae9cd6ba7803aba8651dfa1b9feb09cc0f477b789`.
+- Both IR stages: `62728337381f7e1c1ff3d5ffd59067f7345a6a9f5a5106a55784ff0efbaa73cb`.
+- Unchanged runtime: `6d857dd5c21b7e159afc8b1efedc4511c28ae1fe5abb6997890da02e77f9a185`.
+
+Promotion regenerated source and rebuilt the runtime at `8c341089`, matching
+the gate hashes. The exact tested optimized successor is installed at
+`mapanare/self/mnc-stage1`. The prior verified pair remains in the evidence
+directory as `mnc-baseline` and `runtime-baseline.a`; `promotion.json` records the
+replacement. All builds/checks are finished. Toolchain: Linux/WSL, Clang/LLVM
+18.1.3, Python 3.12.3.
+
+Rerun from the repository root in Linux/WSL:
+
+```bash
+.venv/bin/python -m pytest tests/integration/test_native_for_continue.py -q -rx
+.venv/bin/python scripts/verify_fixed_point.py --stage1 mapanare/self/mnc-stage1 --keep
+```
 
 **Next:** fix the Python bootstrap's inclusive-range linking and nested map/range
 iteration before container ownership integration. The exact reproductions and
