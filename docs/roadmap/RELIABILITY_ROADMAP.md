@@ -39,7 +39,7 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; bootstrap iterator follow-up verified.** Inclusive ranges
+**Priority 2 active; bootstrap iterator follow-up committed as `970bc93c`.** Inclusive ranges
 now link and safely include `INT64_MAX`. Map loops progress, preserve key types,
 and release private cursors on all exits. All 36 native/bootstrap control cases
 pass; the six expected bootstrap failures have been removed. Twenty new O0–O3
@@ -102,8 +102,9 @@ The current gate is `build/fixed-point-uvraczp_`: both compiler generations pass
 104 LLVM goldens and nine executable fixtures, and stage2/stage3 are byte-identical.
 The optimized successor passes 136 focused checks and all 104 golden link/run
 checks plus the corpus-count check. The full LLVM/MIR/optimizer suite passes
-1,140 tests; iterator/runtime controls pass 128. Promotion follows the
-implementation commit after rechecking committed source/runtime hashes.
+1,140 tests; iterator/runtime controls pass 128. Promotion at `970bc93c`
+regenerated source and rebuilt the runtime, matching the gate hashes. The exact
+tested optimized successor is installed at `mapanare/self/mnc-stage1`.
 The prior verified pair is preserved under
 `build/memory-ownership/bootstrap-iteration/`.
 Self-hosted source checks pass 253 tests with two expected xfails.

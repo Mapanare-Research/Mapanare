@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-07
 
-The Python bootstrap iterator follow-up is verified and ready to commit. All
+The Python bootstrap iterator follow-up is committed as **`970bc93c`**
+(`Fix bootstrap range and map iterator lifetimes`). All
 six expected failures from the native loop-control milestone now pass; their
 markers are removed. Inclusive ranges link and include `INT64_MAX` without
 overflow. Map loops create one cursor per loop entry, retain the correct key
@@ -38,6 +39,11 @@ MEDIUM indexed impact: one direct caller, one process, 41 reachable symbols.
 Generated runtime calls and dynamic emitter dispatch are incompletely indexed,
 so executable and sanitizer checks supplement the graph. No native compiler
 source or public container ownership contract changed.
+Staged detection (`precommit.log`) reports twelve expected files, 22 indexed
+symbols, five emitter execution flows, and MEDIUM risk. Some neighboring symbol
+names reflect index line-range drift; the staged diff contains only the intended
+iterator and map-type edits, tests, and documentation. New helpers/fixtures were
+also reviewed directly.
 
 Gate SHA256 hashes:
 
@@ -47,10 +53,12 @@ Gate SHA256 hashes:
 - Runtime: `b8397083a5f92603487d674f31b00bd00723a64723b92e3a87958cdda9a2b28a`.
 
 The prior verified compiler/runtime are preserved as `mnc-baseline` and
-`runtime-baseline.a` in the evidence directory. Commit the implementation, then
-regenerate source and rebuild the committed runtime to verify the gate hashes
-before installing the exact tested successor. Toolchain: Linux/WSL,
-Clang/LLVM 18.1.3, Python 3.12.3. Black/Ruff pass.
+`runtime-baseline.a` in the evidence directory. Promotion at `970bc93c`
+regenerated compiler source and rebuilt the runtime, matching both gate hashes.
+The exact tested optimized successor is installed at `mapanare/self/mnc-stage1`;
+`promotion.json` records its source revision and prior/current hashes. All
+builds and checks are finished. Toolchain: Linux/WSL, Clang/LLVM 18.1.3,
+Python 3.12.3. Black/Ruff and whitespace checks pass.
 
 Rerun from Linux/WSL:
 
