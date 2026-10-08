@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-08
 
-The Python loop-result leak is fixed for proven nonescaping factory results.
+The Python loop-result fix is committed as **`8f494554`**
+(`Reclaim loop map results when prior aliases are dead`) for proven nonescaping factory results.
 Liveness and a single-origin alias proof select allocation sites; private owner
 slots survive Copy bookkeeping and release previous results only when no alias
 can still be used. Retained/captured/uncertain aliases keep the old behavior.
@@ -20,14 +21,20 @@ Evidence: `build/memory-ownership/map-loop-owners/`.
 - `llvm-mir-tests.log`: 1,174 passed. The two later branch controls are covered
   by `proof-final.log`.
 - `ownership-regressions.log`: 200 passed, including all previous focused checks.
-- `fixed-point.log`: strict self-hosting is running in `build/fixed-point-8ht_8407`;
-  record its result in the final checkpoint.
+- `fixed-point.log`, `build/fixed-point-8ht_8407`: both generations pass 104 LLVM
+  goldens and nine required outputs; stage2/stage3 IR is byte-identical. The
+  compiler source, runtime, successor and IR hashes match the previous gate.
 
 GitNexus marks function emission CRITICAL (one direct caller, five affected
 flows, nine reachable symbols); this was reported before editing. Call dispatch
 has LOW indexed impact. The new analysis was reviewed directly and tested with
 both positive and conservative controls. No runtime or native source changed.
 The installed compiler/runtime remain at the previously verified hashes.
+Staged detection (`precommit.log`) reports ten expected files, ten indexed symbols
+and five emitter flows, with MEDIUM risk. New analysis and tests were also
+reviewed directly. `verification.json` records the committed revision and hashes.
+No native binary replacement was necessary. Black/Ruff and whitespace checks
+pass, and all verification processes are finished.
 
 **Next:** extend ownership beyond the closed alias groups proven here: retained
 aliases, multiple allocation origins and borrowed map views need explicit

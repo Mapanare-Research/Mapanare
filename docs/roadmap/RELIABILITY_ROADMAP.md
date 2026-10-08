@@ -39,12 +39,15 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; nonescaping map factory results in loops now have bounded
-lifetimes.** A liveness proof selects safe allocation sites and private owner
+**Priority 2 active; loop-result cleanup committed as `8f494554`.** A liveness
+proof selects nonescaping factory results and private owner
 slots release their previous maps. The 535,464-byte reproducer now passes, as
 do all 32 new leak-checked executions, four retained-alias guards and 23 proof
 controls. Broad suites pass 1,174 LLVM/MIR checks and 200 focused regressions.
 See [the loop-owner contract](memory-ownership/MAP_LOOP_OWNERS.md).
+Strict self-hosting passes at `build/fixed-point-8ht_8407`: 104 LLVM goldens and
+nine required outputs per generation, with identical IR and unchanged native
+compiler/runtime hashes.
 
 **Priority 2 active; direct Python map returns committed as `18c73cda`.** Callee
 cleanup preserves the returned handle, and callers clean up results only from
