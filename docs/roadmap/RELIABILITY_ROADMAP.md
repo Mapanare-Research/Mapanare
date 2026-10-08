@@ -39,7 +39,14 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; read-only argument borrowing committed as `c3538bd0`.**
+**Priority 2 active; inlining cleanup protection committed as `b280a29f`.**
+Both optimizers preserve the allocating callee's function boundary and prevent
+block splits that lose cleanup metadata for later caller allocations. Scalar
+arithmetic still inlines. All 22 new inlining checks pass, alongside 1,137
+LLVM/MIR/optimizer checks and strict self-hosting. This conservative guard closes
+the inlining prerequisite without introducing nested cleanup scopes.
+
+Read-only argument borrowing was committed as `c3538bd0`.
 Proven read-only calls preserve caller cleanup for Strings and lists, including
 aliases, indexed reads and forward calls. All 16 leak regressions and two capture
 controls pass, alongside 1,088 LLVM/MIR checks and strict self-hosting. Mutating
@@ -78,16 +85,19 @@ was 88 bytes per call (880,000 bytes at 10,000 calls); six LeakSanitizer cases n
 pass for flat, nested, and wide records. Heap-bearing returns retain their
 conservative escape protection, checked by String/container lifetime regressions.
 
-The current gate is `build/fixed-point-r_9qtc2m`: both compiler generations pass
+The current gate is `build/fixed-point-nsh_77x0`: both compiler generations pass
 103 LLVM goldens and eight executable fixtures, and stage2/stage3 are byte-identical.
-Its optimized successor passes all 58 focused executable checks and is installed
+Its optimized successor passes all 80 focused checks and is installed
 at `mapanare/self/mnc-stage1`. Promotion regenerated source and rebuilt the runtime
-at `c3538bd0`, matching the gate hashes. The prior verified pair is preserved
-under `build/memory-ownership/container-handles/`.
+at `b280a29f`, matching the gate hashes. The prior verified pair is preserved
+under `build/memory-ownership/inlining-lifetimes/`.
 Self-hosted source checks pass 253 tests with two expected xfails.
 
-**Next:** preserve allocation cleanup boundaries through Python MIR inlining,
-then integrate container handles, insertion, and borrowed lookups in lowering
+**Next:** fix native range-loop `continue`, which skips counter advancement.
+The new diagnostic `tests/native/fixtures/range_continue_progress.mn` expects `8`
+but times out against the previous verified compiler at Clang O0. This was
+discovered during validation; the new optimizer proof avoids the construct.
+Then integrate container handles, insertion, and borrowed lookups in lowering
 and both emitters. Map handles currently have exclusive ownership; sharing needs
 an explicit retain/clone or transfer design before generated cleanup is enabled.
 The [container evidence and implementation sequence](memory-ownership/CONTAINER_OWNERSHIP.md)

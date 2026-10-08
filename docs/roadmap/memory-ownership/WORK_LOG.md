@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-07
 
-The inlining cleanup fix is implemented in both optimizers. Resource-bearing
+The inlining cleanup fix is committed as **`b280a29f`** (`Preserve cleanup
+boundaries during MIR inlining`) in both optimizers. Resource-bearing
 callees keep their original call boundary, and resource operations after a call
 prevent a block split that would discard the caller's loop-body metadata.
 Scalar arithmetic still inlines. Unsupported operations and unknown types fail
@@ -33,6 +34,31 @@ symbols). Caller-suffix protection also changes `inline_small_functions`, whose
 impact was CRITICAL: one direct caller, ten affected symbols and eleven execution
 flows. This was reported before editing. Native `.mn` symbols and new helpers
 were unindexed; manual review traced them through the full optimization pipeline.
+Staged detection (`precommit.log`) found eight expected files, thirteen indexed
+symbols and no indexed processes (LOW). It also reported neighboring symbols
+shifted by the additions; manual diff review confirmed their bodies are unchanged.
+
+Verified SHA256 hashes:
+
+- Compiler source: `7ac6f42f1f10d1dbfa6ddf65471f9db5383c2268a9a12b21d0aacd4e4278ca33`.
+- Optimized successor: `3980c1f4d157a64a252007217d3b2e7f44e06574bd8fde37cf8f88a7a264203f`.
+- Both IR stages: `a50482c1d226948e668a1dbf98d76a1dac2d3ba0027df0f1066e1b610a4cc2ca`.
+- Unchanged runtime: `6d857dd5c21b7e159afc8b1efedc4511c28ae1fe5abb6997890da02e77f9a185`.
+
+Promotion regenerated compiler source and rebuilt the runtime at `b280a29f`;
+both match the strict gate. The exact tested optimized successor is installed at
+`mapanare/self/mnc-stage1`. The previous compiler/runtime are preserved as
+`mnc-baseline` and `runtime-baseline.a` in the evidence directory; promotion is
+recorded in `promotion.json`. All checks and builds are finished. Toolchain:
+Linux/WSL, Clang/LLVM 18.1.3, Python 3.12.3.
+
+Rerun from the repository root in Linux/WSL:
+
+```bash
+.venv/bin/python -m pytest tests/mir_opt \
+  tests/integration/test_inlined_resource_lifetime.py -q
+.venv/bin/python scripts/verify_fixed_point.py --stage1 mapanare/self/mnc-stage1 --keep
+```
 
 **Next:** fix native range-loop `continue` lowering, then resume compiler adoption
 of owned containers. This existing bug was exposed while building the proof:
