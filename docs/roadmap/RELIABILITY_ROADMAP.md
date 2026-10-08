@@ -39,12 +39,18 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; native loop-control follow-up committed as `8c341089`.**
+**Priority 2 active; bootstrap iterator follow-up verified.** Inclusive ranges
+now link and safely include `INT64_MAX`. Map loops progress, preserve key types,
+and release private cursors on all exits. All 36 native/bootstrap control cases
+pass; the six expected bootstrap failures have been removed. Twenty new O0–O3
+sanitizer cases and two C boundary probes pass alongside existing runtime tests.
+
+Native loop-control was committed as `8c341089`.
 Range `continue` advances the counter, and map break/continue targets stay local
 through nesting. All 18 native cases pass at Clang O0/O2; the old compiler failed
 16. The new golden runs as part of both strict self-hosting generations. See
 [the loop-control notes](compiler-correctness/LOOP_CONTROL.md) for the fix and
-remaining Python bootstrap discrepancies.
+the subsequent Python bootstrap iterator fixes.
 
 Inlining cleanup protection was committed as `b280a29f`.
 Both optimizers preserve the allocating callee's function boundary and prevent
@@ -92,20 +98,20 @@ was 88 bytes per call (880,000 bytes at 10,000 calls); six LeakSanitizer cases n
 pass for flat, nested, and wide records. Heap-bearing returns retain their
 conservative escape protection, checked by String/container lifetime regressions.
 
-The current gate is `build/fixed-point-v1axkv58`: both compiler generations pass
+The current gate is `build/fixed-point-uvraczp_`: both compiler generations pass
 104 LLVM goldens and nine executable fixtures, and stage2/stage3 are byte-identical.
-Its optimized successor passes 110 focused checks (six strict expected Python
-failures) and 1,140 LLVM/MIR/optimizer checks, and is installed
-at `mapanare/self/mnc-stage1`. Promotion regenerated source and rebuilt the runtime
-at `8c341089`, matching the gate hashes. The prior verified pair is preserved
-under `build/memory-ownership/range-continue/`.
+The optimized successor passes 136 focused checks and all 104 golden link/run
+checks plus the corpus-count check. The full LLVM/MIR/optimizer suite passes
+1,140 tests; iterator/runtime controls pass 128. Promotion follows the
+implementation commit after rechecking committed source/runtime hashes.
+The prior verified pair is preserved under
+`build/memory-ownership/bootstrap-iteration/`.
 Self-hosted source checks pass 253 tests with two expected xfails.
 
-**Next:** fix Python bootstrap inclusive-range linking and nested map/range
-iteration. Both were reproduced against the unchanged bootstrap during the
-native comparison: two link failures and four timeouts are now strict expected
-failures in `tests/integration/test_native_for_continue.py`.
-Then integrate container handles, insertion, and borrowed lookups in lowering
+**Next:** fix returned-map transfer and caller ownership. The durable fixture
+`tests/native/fixtures/map_return_lifetime.mn` reproduces a use-after-free in
+both the original and changed bootstrap emitter, even without a loop. Then
+integrate container handles, insertion, and borrowed lookups in lowering
 and both emitters. Map handles currently have exclusive ownership; sharing needs
 an explicit retain/clone or transfer design before generated cleanup is enabled.
 The [container evidence and implementation sequence](memory-ownership/CONTAINER_OWNERSHIP.md)

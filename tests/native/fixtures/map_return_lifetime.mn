@@ -1,0 +1,9 @@
+// Ownership integration reproducer: expected output is 3.
+// Python bootstrap currently frees the map before returning it.
+fn make_values() -> Map<String, Int>:
+    let result: Map<String, Int> = #{"a": 1, "bb": 2, "ccc": 3}
+    return result
+
+fn main():
+    let result: Map<String, Int> = make_values()
+    print(len(result))

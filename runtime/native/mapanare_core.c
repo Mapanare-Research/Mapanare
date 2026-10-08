@@ -3886,13 +3886,15 @@ MN_EXPORT MnString __mn_version_string(void) {
  * Range Iterator
  *
  * Used by `for i in start..end` loops.  The iterator is a heap-allocated
- * struct holding {current, end}.  Values are returned as i8* (inttoptr)
- * so the LLVM IR can ptrtoint them back to i64.
+ * struct holding bounds and inclusive/exhausted flags. Values are returned
+ * as i8* (inttoptr) so the LLVM IR can ptrtoint them back to i64.
  * ----------------------------------------------------------------------- */
 
 typedef struct {
     int64_t current;
     int64_t end;
+    int8_t inclusive;
+    int8_t exhausted;
 } MnRangeIter;
 
 MN_EXPORT void *__mn_range(int64_t start, int64_t end) {
@@ -3903,18 +3905,32 @@ MN_EXPORT void *__mn_range(int64_t start, int64_t end) {
     }
     iter->current = start;
     iter->end = end;
+    iter->inclusive = 0;
+    iter->exhausted = 0;
+    return (void *)iter;
+}
+
+MN_EXPORT void *__mn_range_inclusive(int64_t start, int64_t end) {
+    MnRangeIter *iter = (MnRangeIter *)__mn_range(start, end);
+    iter->inclusive = 1;
     return (void *)iter;
 }
 
 MN_EXPORT int8_t __iter_has_next(void *iter_ptr) {
     MnRangeIter *iter = (MnRangeIter *)iter_ptr;
-    return iter->current < iter->end ? 1 : 0;
+    return !iter->exhausted &&
+        (iter->current < iter->end || (iter->inclusive && iter->current == iter->end));
 }
 
 MN_EXPORT void *__iter_next(void *iter_ptr) {
     MnRangeIter *iter = (MnRangeIter *)iter_ptr;
     int64_t val = iter->current;
-    iter->current++;
+    /* Do not compute end + 1 or increment INT64_MAX for inclusive ranges. */
+    if (val == INT64_MAX) {
+        iter->exhausted = 1;
+    } else {
+        iter->current++;
+    }
     return (void *)(intptr_t)val;
 }
 

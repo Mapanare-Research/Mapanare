@@ -27,24 +27,46 @@ fixtures in `scripts/verify_fixed_point.py`. Both compiler generations must run
 it successfully, not merely emit LLVM-valid IR. This raises the strict corpus
 to 104 LLVM goldens and nine executable fixtures per generation.
 
-## Remaining bootstrap discrepancies
+## Bootstrap iterator follow-up
 
-The Python compiler is unchanged by this native fix. Comparison tests exposed
-two existing problems, reproduced against the starting compiler:
+The six bootstrap failures exposed by the native comparison are now fixed.
+All 36 native/bootstrap control-flow cases pass at Clang O0/O2, with no expected
+failures. The runtime implements `__mn_range_inclusive` using an inclusive flag
+and an exhaustion flag, avoiding `end + 1` and signed overflow at `INT64_MAX`.
+The public handle remains opaque; existing exclusive-range behavior is preserved.
 
-- The inclusive range in the new golden emits an unresolved
-  `__mn_range_inclusive` reference. Both optimization levels fail at link time.
-- Nested map/range iteration, in either nesting order, times out at both
-  optimization levels. The exact programs are `map-in-for` and `for-in-map` in
-  the integration test.
+Python lowering creates a separate map cursor in each loop's preheader. The
+header advances that cursor once, and the body loads its typed key. Previously
+the header created a fresh cursor on each visit, continually restarting the
+map. Map literals also retain their key/value type arguments, so String keys
+are loaded as String values rather than raw pointers.
 
-These six cases are strict expected failures, with the expected exception type
-recorded; the other twelve Python controls pass. Fix these before expanding
-container ownership integration, and remove each expected-failure marker when
-its regression passes. Native cases have no expected-failure markers.
+Each cursor has a null-initialized function-entry slot. Normal exit and `break`
+free it and clear that slot; function-return cleanup releases any still-active
+cursors. Nested and sequential loops over the same map have independent slots.
+Cursor creation borrows the map and does not transfer its ownership. This is
+private iterator cleanup, not adoption of the owned-container runtime API.
+
+`test_bootstrap_iterators.py` exercises five programs at Python O0–O3 under
+ASan/LSan: nested/repeated loops over one map, integer keys, typed empty maps
+followed by insertion, conditional early returns through nested loops, and
+inclusive iteration ending at `INT64_MAX`. The C range probe checks twelve
+exclusive/inclusive boundary cases against both instrumented runtime source and
+the optimized archive. These tests pass alongside the existing runtime controls.
+
+A separate ownership problem remains: returning a locally allocated map frees
+it before the caller uses it. `tests/native/fixtures/map_return_lifetime.mn`
+reproduces this without any loop. ASan confirms the same use-after-free against
+both the starting and changed bootstrap emitters. Address map return/transfer
+and caller ownership tracking in the next ownership milestone; iterator cleanup
+does not establish general map lifetime safety.
 
 Evidence: `build/memory-ownership/range-continue/baseline-tests.log` records
 22 failures (16 native and six bootstrap) and 14 passes before the native fix.
 `candidate-tests.log` records 30 passes and the same six bootstrap failures before
 they were marked. Later verification and promotion are recorded in the
 [ownership work log](../memory-ownership/WORK_LOG.md).
+
+Follow-up evidence: `build/memory-ownership/bootstrap-iteration/`. The strict
+gate is `build/fixed-point-uvraczp_`: 104 LLVM goldens and nine required outputs
+per generation, with byte-identical stage2/stage3 IR.

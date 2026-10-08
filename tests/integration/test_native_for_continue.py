@@ -121,41 +121,9 @@ fn main():
 }
 
 
-# These fail identically against the unchanged bootstrap compiler. Keep the
-# executable reproductions visible without conflating them with native lowering.
-# Strict XPASS forces removal when their separate fixes land.
-BOOTSTRAP_FAILURES = {
-    "golden": ("bootstrap inclusive range emits missing __mn_range_inclusive", AssertionError),
-    "map-in-for": (
-        "bootstrap nested map/range iterator does not progress",
-        subprocess.TimeoutExpired,
-    ),
-    "for-in-map": (
-        "bootstrap nested range/map iterator does not progress",
-        subprocess.TimeoutExpired,
-    ),
-}
-
-
 @pytest.mark.parametrize(
     "case,backend",
-    [
-        pytest.param(
-            case,
-            backend,
-            marks=(
-                pytest.mark.xfail(
-                    reason=BOOTSTRAP_FAILURES[case][0],
-                    raises=BOOTSTRAP_FAILURES[case][1],
-                    strict=True,
-                )
-                if backend == "bootstrap" and case in BOOTSTRAP_FAILURES
-                else []
-            ),
-        )
-        for backend in ("bootstrap", "native")
-        for case in CASES
-    ],
+    [(case, backend) for backend in ("bootstrap", "native") for case in CASES],
 )
 @pytest.mark.parametrize("clang_level", ["-O0", "-O2"])
 def test_for_control_flow(case: str, backend: str, clang_level: str, tmp_path: Path) -> None:

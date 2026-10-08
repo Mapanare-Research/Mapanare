@@ -1865,6 +1865,9 @@ class LLVMTextEmitter:
         preserving for main.ll — the order of ``self._ensure`` and
         ``self._L`` calls is unchanged.
         """
+        # Private map cursors cannot escape. An early return must release
+        # them even when the function owns no other tracked resource.
+        self._emit_drop_glue_map_iterators()
         has_any = (
             (self._local_strings)
             or (self._local_closures)
@@ -1908,6 +1911,14 @@ class LLVMTextEmitter:
         if self._tensor_vars:
             self._ensure("__mn_tensor_free", VOID, [PTR])
         self._emit_drop_glue_tensors(ret_val, ret_ty)
+
+    def _emit_drop_glue_map_iterators(self) -> None:
+        for name, (slot, _) in self._alloc.items():
+            if name.startswith("_map_iter_") and not name.endswith((".kout", ".vout")):
+                iterator = self._f("drop.mi")
+                self._L(f"{iterator} = load ptr, ptr {slot}")
+                self._rt("__mn_map_iter_free", VOID, [PTR], [(iterator, PTR)])
+                self._L(f"store ptr null, ptr {slot}")
 
     def _emit_drop_glue_collect_ret_ptrs(
         self, ret_val: str | None, ret_ty: str
@@ -4348,19 +4359,21 @@ class LLVMTextEmitter:
             self._put(i.dest, s1, rt)
             return
 
-        # Map iteration
-        if fn == "__iter_has_next" and i.args and i.args[0].ty.kind == TypeKind.MAP:
+        # Map cursors are created in the loop preheader, never in its header.
+        if fn == "__mn_map_iter_new" and i.args:
             mv, mt = args[0]
+            itn = f"_map_iter_{i.dest.name}"
+            slot = self._alloca(PTR, "mi")
+            self._ent.append(f"  store ptr null, ptr {slot}")
+            self._alloc[itn] = (slot, PTR)
+            self._alloc[f"{itn}.kout"] = (self._alloca(PTR, "ko"), PTR)
+            self._alloc[f"{itn}.vout"] = (self._alloca(PTR, "vo"), PTR)
+            mi = self._rt("__mn_map_iter_new", PTR, [PTR], [(mv, mt)])
+            self._L(f"store ptr {mi}, ptr {slot}")
+            self._put(i.dest, mi, PTR)
+            return
+        if fn == "__map_iter_has_next" and i.args:
             itn = f"_map_iter_{i.args[0].name}"
-            if itn not in self._alloc:
-                mi = self._rt("__mn_map_iter_new", PTR, [PTR], [(mv, mt)])
-                self._alloc[itn] = (f"%{self._san(itn)}.addr", PTR)
-                self._ent.append(f"  %{self._san(itn)}.addr = alloca ptr, align 8")
-                self._L(f"store ptr {mi}, ptr %{self._san(itn)}.addr")
-                ko = self._alloca(PTR, "ko")
-                self._alloc[f"{itn}.kout"] = (ko, PTR)
-                vo = self._alloca(PTR, "vo")
-                self._alloc[f"{itn}.vout"] = (vo, PTR)
             ia, _ = self._alloc[itn]
             iv = self._f("mi")
             self._L(f"{iv} = load ptr, ptr {ia}")
@@ -4376,7 +4389,7 @@ class LLVMTextEmitter:
             self._L(f"{r} = trunc i64 {ri} to i1")
             self._put(i.dest, r, I1)
             return
-        if fn == "__iter_next" and i.args and i.args[0].ty.kind == TypeKind.MAP:
+        if fn == "__map_iter_next" and i.args:
             itn = f"_map_iter_{i.args[0].name}"
             if f"{itn}.kout" in self._alloc:
                 ka, _ = self._alloc[f"{itn}.kout"]
@@ -4389,6 +4402,16 @@ class LLVMTextEmitter:
                 self._put(i.dest, r, ety)
             else:
                 self._put(i.dest, "0", I64)
+            return
+
+        if fn == "__mn_map_iter_free" and i.args:
+            itn = f"_map_iter_{i.args[0].name}"
+            slot, _ = self._alloc[itn]
+            iv = self._f("mi")
+            self._L(f"{iv} = load ptr, ptr {slot}")
+            self._rt("__mn_map_iter_free", VOID, [PTR], [(iv, PTR)])
+            self._L(f"store ptr null, ptr {slot}")
+            self._put(i.dest, "0", I1)
             return
 
         # Stream iteration

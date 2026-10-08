@@ -1684,6 +1684,15 @@ class MIRLowerer:
         """
         # Lower the iterable
         iterable = self._lower_expr(loop.iterable)
+        elem_ty = self._infer_iterable_elem_type(iterable.ty)
+        is_map = iterable.ty.kind == TypeKind.MAP
+        if is_map:
+            # Each loop owns a distinct cursor, created before its header.
+            # The map itself remains borrowed, including nested loops over
+            # the same map. ANY represents this private opaque runtime handle.
+            iterator = self._make_value(ty=mir_any(), prefix="map_iter")
+            self._emit(Call(dest=iterator, fn_name="__mn_map_iter_new", args=[iterable]))
+            iterable = iterator
 
         # Create blocks
         header = self._new_block(self._fresh_block("for_header"))
@@ -1694,22 +1703,21 @@ class MIRLowerer:
         if not self._block_terminated():
             self._emit(Jump(target=header.label))
 
-        # Infer loop variable type from iterable
-        elem_ty = self._infer_iterable_elem_type(iterable.ty)
-
         # Header: we model the loop variable as receiving values
         self._set_block(header)
         iter_val = self._make_value(ty=elem_ty, prefix="iter")
         self._define_var(loop.var_name, iter_val)
         # For simplicity, we use a Call to a runtime iterator function
         has_next = self._make_value(ty=mir_bool(), prefix="has_next")
-        self._emit(Call(dest=has_next, fn_name="__iter_has_next", args=[iterable]))
+        next_test = "__map_iter_has_next" if is_map else "__iter_has_next"
+        self._emit(Call(dest=has_next, fn_name=next_test, args=[iterable]))
         self._emit(Branch(cond=has_next, true_block=body.label, false_block=exit_bb.label))
 
         # Body
         self._set_block(body)
         next_val = self._make_value(ty=elem_ty, prefix="next")
-        self._emit(Call(dest=next_val, fn_name="__iter_next", args=[iterable]))
+        next_fn = "__map_iter_next" if is_map else "__iter_next"
+        self._emit(Call(dest=next_val, fn_name=next_fn, args=[iterable]))
         self._define_var(loop.var_name, next_val)
         self._push_scope()
         self._loop_exit_stack.append(exit_bb.label)
@@ -1739,7 +1747,10 @@ class MIRLowerer:
 
         # Exit — free range iterator if the iterable was a range
         self._set_block(exit_bb)
-        if iterable.ty.kind == TypeKind.RANGE:
+        if is_map:
+            free_dest = self._make_value(ty=mir_void(), prefix="map_iter_free")
+            self._emit(Call(dest=free_dest, fn_name="__mn_map_iter_free", args=[iterable]))
+        elif iterable.ty.kind == TypeKind.RANGE:
             free_dest = self._make_value(ty=mir_bool(), prefix="range_free")
             self._emit(Call(dest=free_dest, fn_name="__mn_range_free", args=[iterable]))
 
@@ -5081,7 +5092,9 @@ class MIRLowerer:
         pairs = [(self._lower_expr(e.key), self._lower_expr(e.value)) for e in expr.entries]
         key_type = pairs[0][0].ty if pairs else mir_unknown()
         val_type = pairs[0][1].ty if pairs else mir_unknown()
-        dest = self._make_value(ty=MIRType(TypeInfo(kind=TypeKind.MAP)))
+        dest = self._make_value(
+            ty=MIRType(TypeInfo(kind=TypeKind.MAP, args=[key_type.type_info, val_type.type_info]))
+        )
         self._emit(MapInit(dest=dest, key_type=key_type, val_type=val_type, pairs=pairs))
         # v5.4.4 — map owns each key/value pair.
         for _k, _v in pairs:

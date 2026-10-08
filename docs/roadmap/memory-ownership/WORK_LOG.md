@@ -2,6 +2,70 @@
 
 ## Resume point — 2026-10-07
 
+The Python bootstrap iterator follow-up is verified and ready to commit. All
+six expected failures from the native loop-control milestone now pass; their
+markers are removed. Inclusive ranges link and include `INT64_MAX` without
+overflow. Map loops create one cursor per loop entry, retain the correct key
+type, and release private cursors on normal exit, break, and early return.
+Nested and repeated loops over one map keep independent cursors. See
+[the loop-control notes](../compiler-correctness/LOOP_CONTROL.md).
+
+Evidence: `build/memory-ownership/bootstrap-iteration/`.
+
+- `type-fix-tests.log`: 36 loop-control checks pass, including all six former
+  expected bootstrap failures.
+- `iterator-runtime-final.log`: 128 passed. Includes 20 new O0–O3 ASan/LSan
+  executable cases, two range probes covering twelve boundary cases against
+  instrumented source and the optimized runtime, and existing container controls.
+- `llvm-mir-tests.log`: 1,140 passed, using the previously installed native
+  compiler and the updated runtime for native link checks.
+- `successor-link-tests.log`: 105 passed (104 golden programs plus corpus count)
+  against the exact optimized successor.
+- `successor-regressions.log`: 136 passed, including the previous focused
+  ownership/control checks and the new bootstrap iterator cases.
+- `source-tests.log`: 253 passed, two existing expected failures.
+- `fixed-point.log`, `build/fixed-point-uvraczp_`: both generations pass 104 LLVM
+  goldens and nine required executable outputs; stage2/stage3 are byte-identical.
+- `map-return-comparison.log`, `map-return-{baseline,current}.log`: a separate
+  map-return use-after-free reproduces on both emitters. The durable fixture is
+  `tests/native/fixtures/map_return_lifetime.mn` (expected output `3`). No loop is
+  needed: `_emit_drop_glue_maps` frees returned maps, and caller result ownership
+  also needs explicit tracking. This is the next concrete ownership checkpoint.
+
+GitNexus reports LOW impact for iterator lowering, emitter dispatch, return
+cleanup, and the runtime range functions. Map literal type propagation has
+MEDIUM indexed impact: one direct caller, one process, 41 reachable symbols.
+Generated runtime calls and dynamic emitter dispatch are incompletely indexed,
+so executable and sanitizer checks supplement the graph. No native compiler
+source or public container ownership contract changed.
+
+Gate SHA256 hashes:
+
+- Compiler source: `a79a01a72ccc2734fcefaa50767f5b187891732e8ef94bb94601e8d7302fd4ba`.
+- Optimized successor: `81da982abfb246d3bc0cb541480a389d1a0613c941c69558f950642a0adaba85`.
+- Both IR stages: `62728337381f7e1c1ff3d5ffd59067f7345a6a9f5a5106a55784ff0efbaa73cb`.
+- Runtime: `b8397083a5f92603487d674f31b00bd00723a64723b92e3a87958cdda9a2b28a`.
+
+The prior verified compiler/runtime are preserved as `mnc-baseline` and
+`runtime-baseline.a` in the evidence directory. Commit the implementation, then
+regenerate source and rebuild the committed runtime to verify the gate hashes
+before installing the exact tested successor. Toolchain: Linux/WSL,
+Clang/LLVM 18.1.3, Python 3.12.3. Black/Ruff pass.
+
+Rerun from Linux/WSL:
+
+```bash
+.venv/bin/python -m pytest tests/integration/test_native_for_continue.py tests/integration/test_bootstrap_iterators.py tests/native/test_range_iterators.py -q
+.venv/bin/python scripts/verify_fixed_point.py --stage1 mapanare/self/mnc-stage1 --keep
+```
+
+**Next:** fix returned-map transfer and caller ownership first, using the saved
+ASan reproducer. Then continue handle retain/clone/transfer, copy-in insertion,
+and borrowed lookup lifetimes in both emitters. Raw-container leaks remain open;
+owned runtime constructors stay opt-in. Priority 2 remains active. Nothing pushed.
+
+## Previous verified milestone — native loop control
+
 Native range-loop `continue` and map-loop control are committed as **`8c341089`**
 (`Fix native for-loop continue progress and map control targets`) in `lower_for` and
 `lower_for_map`. Both bind the current visible value, then advance the hidden

@@ -805,11 +805,17 @@ MN_EXPORT int64_t __mn_host_arch_bits(void);
 /** Create a range iterator from start (inclusive) to end (exclusive). */
 MN_EXPORT void *__mn_range(int64_t start, int64_t end);
 
+/** Create an inclusive range, including end even when it is INT64_MAX. */
+MN_EXPORT void *__mn_range_inclusive(int64_t start, int64_t end);
+
 /** Check if the iterator has more elements. Returns 1 or 0. */
 MN_EXPORT int8_t __iter_has_next(void *iter);
 
 /** Get the next element and advance. Returns value as i8* (inttoptr). */
 MN_EXPORT void *__iter_next(void *iter);
+
+/** Release a range iterator. Accepts NULL. */
+MN_EXPORT void __mn_range_free(void *iter);
 
 /* -----------------------------------------------------------------------
  * Function Type Registry — global, lives outside LowerState
