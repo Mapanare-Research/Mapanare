@@ -929,23 +929,29 @@ fn lower_for_map(st: LowerState, var_name: String, map_val: Value, body: Block) 
     s = emit_instr(s, Instruction::Store(var_addr.value, key_r.value))
     s = define_var(s, var_name, var_addr.value, false)
 
+    // Advance the hidden counter after binding the current key, before any
+    // user control flow can continue to the header and skip the increment.
+    let one_r: LowerResult = make_value(s, mir_int(), "mapfor_one")
+    s = one_r.state
+    s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
+    let inc_r: LowerResult = make_value(s, mir_int(), "mapfor_inc")
+    s = inc_r.state
+    s = emit_instr(s, Instruction::BinOp(inc_r.value, BinOpKind::Add, idx_val.value, one_r.value))
+    s = emit_instr(s, Instruction::Store(counter_addr, inc_r.value))
+
+    let old_header: String = s.loop_header_label
+    let old_exit: String = s.loop_exit_label
+    s.loop_header_label = header_label
+    s.loop_exit_label = exit_label
     s = lower_push_scope(s)
     let body_result: LowerResult = lower_block(s, body)
     s = body_result.state
     s = lower_pop_scope(s)
+    s.loop_header_label = old_header
+    s.loop_exit_label = old_exit
 
-    // Increment counter, jump to header
+    // Normal fallthrough and continue both resume at the header.
     if !current_block_terminated(s):
-        let inc_i: LowerResult = make_value(s, mir_int(), "mapfor_ci")
-        s = inc_i.state
-        s = emit_instr(s, Instruction::Load(inc_i.value, counter_addr))
-        let one_r: LowerResult = make_value(s, mir_int(), "mapfor_one")
-        s = one_r.state
-        s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
-        let inc_r: LowerResult = make_value(s, mir_int(), "mapfor_inc")
-        s = inc_r.state
-        s = emit_instr(s, Instruction::BinOp(inc_r.value, BinOpKind::Add, inc_i.value, one_r.value))
-        s = emit_instr(s, Instruction::Store(counter_addr, inc_r.value))
         s = emit_instr(s, Instruction::Jump(header_label))
 
     s = set_block(s, exit_idx)
@@ -1030,6 +1036,17 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = emit_instr(s, Instruction::Store(loop_addr_r.value, cur_i.value))
     s = define_var(s, var_name, loop_addr_r.value, false)
 
+    // The visible loop variable keeps the current value. Advance only the
+    // hidden counter now, so every path through the user body (including
+    // continue) makes progress without changing the loop's block layout.
+    let inc_val: LowerResult = make_value(s, mir_int(), "for_inc")
+    s = inc_val.state
+    let one_r: LowerResult = make_value(s, mir_int(), "one")
+    s = one_r.state
+    s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
+    s = emit_instr(s, Instruction::BinOp(inc_val.value, BinOpKind::Add, cur_i.value, one_r.value))
+    s = emit_instr(s, Instruction::Store(counter_addr, inc_val.value))
+
     let old_header2: String = s.loop_header_label
     let old_exit2: String = s.loop_exit_label
     s.loop_header_label = header_label
@@ -1041,18 +1058,8 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s.loop_header_label = old_header2
     s.loop_exit_label = old_exit2
 
-    // Increment counter and jump back to header
+    // Normal fallthrough and continue both resume at the header.
     if !current_block_terminated(s):
-        let inc_val: LowerResult = make_value(s, mir_int(), "for_inc")
-        s = inc_val.state
-        let inc_i: LowerResult = make_value(s, mir_int(), "for_ci")
-        s = inc_i.state
-        s = emit_instr(s, Instruction::Load(inc_i.value, counter_addr))
-        let one_r: LowerResult = make_value(s, mir_int(), "one")
-        s = one_r.state
-        s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
-        s = emit_instr(s, Instruction::BinOp(inc_val.value, BinOpKind::Add, inc_i.value, one_r.value))
-        s = emit_instr(s, Instruction::Store(counter_addr, inc_val.value))
         s = emit_instr(s, Instruction::Jump(header_label))
 
     // Exit block

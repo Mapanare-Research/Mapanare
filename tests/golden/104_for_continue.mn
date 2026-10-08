@@ -1,0 +1,53 @@
+// Executable regression: continue must advance range/map loops and stay local.
+fn range_sum() -> Int:
+    let mut total: Int = 0
+    for i in -2..=3:
+        if i == 0:
+            continue
+        total = total + i
+    return total
+
+fn nested_ranges() -> Int:
+    let mut total: Int = 0
+    for i in 0..3:
+        for j in 0..4:
+            if j == 1:
+                continue
+            total = total + i * 10 + j
+        if i == 1:
+            continue
+        total = total + 100
+    return total
+
+fn break_after_continue() -> Int:
+    let mut total: Int = 0
+    for i in 0..8:
+        if i == 2:
+            continue
+        if i == 5:
+            break
+        total = total + i
+    return total
+
+fn return_after_continue() -> Int:
+    for i in 0..5:
+        if i < 2:
+            continue
+        return i
+    return -1
+
+fn map_count() -> Int:
+    let values: Map<String, Int> = #{"a": 1, "b": 2, "c": 3}
+    let mut total: Int = 0
+    for key in values:
+        if key == "b":
+            continue
+        total = total + 1
+    return total
+
+fn main():
+    print(range_sum())
+    print(nested_ranges())
+    print(break_after_continue())
+    print(return_after_continue())
+    print(map_count())

@@ -1,5 +1,5 @@
-// Diagnostic: native range-loop continue currently skips the counter increment.
-// Expected stdout: 8. Run with a timeout until lowering is fixed.
+// Regression: native range-loop continue must advance the hidden counter.
+// Expected stdout: 8. Executable tests enforce a timeout as well as output.
 fn main():
     let mut total: Int = 0
     for i in 0..5:

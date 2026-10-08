@@ -2,6 +2,51 @@
 
 ## Resume point — 2026-10-07
 
+Native range-loop `continue` and map-loop control are fixed in `lower_for` and
+`lower_for_map`. Both bind the current visible value, then advance the hidden
+counter before user control flow. Map loops also install and restore their own
+break/continue targets. This preserves block layout and avoids a state-layout or
+runtime change. See [the loop-control notes](../compiler-correctness/LOOP_CONTROL.md).
+
+Evidence is under `build/memory-ownership/range-continue/`:
+
+- `baseline-tests.log`: 16 of 18 native cases fail against the preserved compiler;
+  the empty-range controls pass. Six additional failures are unchanged Python
+  bootstrap bugs; twelve other Python controls pass.
+- `candidate-tests.log`: all 18 native and twelve Python controls pass. The six
+  bootstrap failures remain and are now strict expected failures with specific
+  exception types. The tests cover O0/O2 execution, bounds, nested range/map/while
+  loops, unconditional continue, break and early return, with a three-second
+  execution timeout.
+- `fixed-point.log`, `build/fixed-point-v1axkv58`: both generations pass **104 LLVM
+  goldens and nine executable fixtures**; stage2/stage3 are byte-identical. The
+  new `104_for_continue` golden must execute successfully on both generations.
+- `source-tests.log`: 253 passed, two pre-existing expected xfails.
+- `llvm-mir-final.log`: 1,140 passed. The link harness uses the optimized
+  successor; the earlier run used the preserved installed compiler and exposed
+  the new regression plus the outdated 103-corpus count.
+- `successor-regressions.log`: 110 passed, six strict expected bootstrap failures.
+  This includes the prior 80 focused checks. Black/Ruff and whitespace checks pass.
+
+GitNexus returned UNKNOWN for both native lowerers (unindexed language). Manual
+tracing identified `lower_stmt -> lower_for -> lower_for_map`; this affects all
+native for loops and self-hosting, so HIGH risk was reported before editing.
+The golden-count test has LOW impact, with zero callers/processes. Its expected
+count now matches the current corpus, and the link harness accepts
+`MAPANARE_TEST_COMPILER` so a candidate can be validated without replacing the
+installed compiler. Historical release reports keep their original denominators.
+
+**Next:** fix the Python bootstrap's inclusive-range linking and nested map/range
+iteration before container ownership integration. The exact reproductions and
+strict expected-failure markers are in `test_native_for_continue.py`: `golden`
+fails to link `__mn_range_inclusive`; `map-in-for` and `for-in-map` time out at
+both optimization levels. These failed before this native change too. Remove
+each marker once its regression passes. Then resume handle retain/clone/transfer,
+copy-in insertion and borrowed lookup lifetimes in lowering and both emitters.
+Priority 2 remains active; raw-container leaks remain open. Nothing pushed/released.
+
+## Previous verified milestone — inlining cleanup
+
 The inlining cleanup fix is committed as **`b280a29f`** (`Preserve cleanup
 boundaries during MIR inlining`) in both optimizers. Resource-bearing
 callees keep their original call boundary, and resource operations after a call

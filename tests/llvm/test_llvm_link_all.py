@@ -49,6 +49,7 @@ the try-operator codepath. Keeping both files separates the
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -61,7 +62,7 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 from _link_compat import darwin_link_extras  # noqa: E402, I001
 
 GOLDEN_DIR = REPO_ROOT / "tests" / "golden"
-STAGE1 = REPO_ROOT / "mapanare" / "self" / "mnc-stage1"
+STAGE1 = Path(os.environ.get("MAPANARE_TEST_COMPILER", REPO_ROOT / "mapanare/self/mnc-stage1"))
 RT_ARCHIVE = REPO_ROOT / "runtime" / "native" / "libmapanare_rt.a"
 
 
@@ -114,19 +115,14 @@ def _emit_ir(stage1_binary: Path, src: Path) -> str:
 
 
 def test_golden_corpus_count() -> None:
-    """The 95-golden corpus is itself a load-bearing claim.
+    """Keep the current inventory aligned with the reliability checkpoint.
 
-    The CLAUDE.md release-notes line, the BENCHMARKS.md table, and
-    the v5.34.0 SESSION_REPORT all assert "Goldens 95/95". If a
-    golden is added or removed without coordinating that change with
-    the docs, this gate fires and forces the documentation to stay
-    in sync.
+    Historical release reports retain their original corpus denominators.
     """
     goldens = _all_goldens()
-    assert len(goldens) == 103, (
-        f"Golden corpus drifted from 103 to {len(goldens)}. Update "
-        f"this test, BENCHMARKS.md, the CLAUDE.md release-notes "
-        f"entry, and the most recent SESSION_REPORT."
+    assert len(goldens) == 104, (
+        f"Golden corpus drifted from 104 to {len(goldens)}. Update "
+        "this test and docs/roadmap/RELIABILITY_ROADMAP.md with the verified count."
     )
 
 

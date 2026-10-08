@@ -26,6 +26,7 @@ EXECUTABLE_GOLDENS = (
     "29_generic_impl",
     "30_nested_generics",
     "31_generic_multi",
+    "104_for_continue",
 )
 
 
