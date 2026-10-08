@@ -41,15 +41,14 @@ chains. All pass. Evidence lives under `build/memory-ownership/map-returns/`.
 
 ## Remaining lifetime work
 
-The existing variable-based map cleanup retains only the last value assigned to
-a slot. Repeated factory calls inside one function can therefore leak prior
-results. `tests/native/fixtures/map_return_loop_lifetime.mn` prints `3000` but
-LeakSanitizer reports 535,464 bytes in 1,998 allocations after 1,000 iterations.
-This is the next concrete regression to fix.
+The original loop replacement reproducer is now fixed for proven nonescaping
+factory results: [MAP_LOOP_OWNERS.md](MAP_LOOP_OWNERS.md) describes the liveness
+proof and private owner slots. Its former 535,464-byte leak is absent at O0–O3.
+Variable-based cleanup remains the fallback for cases outside that proof.
 
 Do not simply free the previous handle before every store: copies and captured
-aliases may still reference it. Establish explicit owner slots and transfer or
-retain/clone rules first, including branch-sensitive cleanup. Mixed fresh/borrowed
+aliases may still reference it. Broader sharing still needs transfer or
+retain/clone rules, including branch-sensitive cleanup. Mixed fresh/borrowed
 returns, maps nested in aggregate returns, native map cleanup, and recursive
 element ownership remain open. The installed native fixed-point compiler stays
 at the previously verified hash because this milestone changes only Python.

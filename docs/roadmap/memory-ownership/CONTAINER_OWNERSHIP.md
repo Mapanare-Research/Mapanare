@@ -7,9 +7,10 @@ raw containers and retain the leaks recorded below.
 
 Direct Python map returns now preserve escaping handles and track proven fresh
 factory results in callers; see [MAP_RETURNS.md](MAP_RETURNS.md). This closes the
-direct-return use-after-free without activating owned constructors. Repeated
-map-result replacement within one function still leaks and needs explicit owner
-slots and branch-sensitive transfers before broader adoption.
+direct-return use-after-free without activating owned constructors. Nonescaping
+factory results in loops now use private owner slots guarded by alias liveness;
+see [MAP_LOOP_OWNERS.md](MAP_LOOP_OWNERS.md). Shared/captured handles and general
+mutable replacement still need explicit transfers or retain/clone semantics.
 
 ## Implemented: opt-in owned lists
 

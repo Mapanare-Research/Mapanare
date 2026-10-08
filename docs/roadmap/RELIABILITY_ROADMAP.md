@@ -39,6 +39,13 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
+**Priority 2 active; nonescaping map factory results in loops now have bounded
+lifetimes.** A liveness proof selects safe allocation sites and private owner
+slots release their previous maps. The 535,464-byte reproducer now passes, as
+do all 32 new leak-checked executions, four retained-alias guards and 23 proof
+controls. Broad suites pass 1,174 LLVM/MIR checks and 200 focused regressions.
+See [the loop-owner contract](memory-ownership/MAP_LOOP_OWNERS.md).
+
 **Priority 2 active; direct Python map returns committed as `18c73cda`.** Callee
 cleanup preserves the returned handle, and callers clean up results only from
 proven fresh-map factories. All 28 new sanitizer executions and thirteen proof
@@ -120,11 +127,10 @@ The prior verified pair is preserved under
 `build/memory-ownership/bootstrap-iteration/`.
 Self-hosted source checks pass 253 tests with two expected xfails.
 
-**Next:** establish branch-sensitive map owner slots and transfer/retain rules,
-then fix repeated map-result replacement within one function. The durable
-`map_return_loop_lifetime.mn` fixture retains 535,464 bytes over 1,000 iterations.
-The original direct-return use-after-free fixture now passes. Continue
-container handles, insertion, and borrowed lookups in lowering
+**Next:** extend ownership to retained aliases, multiple allocation origins and
+borrowed map views. The original loop and direct-return fixtures now pass for
+the proven cases. Broader transfer/retain/clone rules are still needed before
+enabling general recycling. Continue container handles, insertion, and borrowed lookups in lowering
 and both emitters. Map handles currently have exclusive ownership; sharing needs
 an explicit retain/clone or transfer design before generated cleanup is enabled.
 The [container evidence and implementation sequence](memory-ownership/CONTAINER_OWNERSHIP.md)

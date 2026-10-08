@@ -11,6 +11,7 @@ from typing import Any
 
 from mapanare.abi import classify_return  # v4.149.0 E5
 from mapanare.borrow import function_borrows_arguments
+from mapanare.map_liveness import recyclable_map_results
 from mapanare.map_ownership import owned_map_factories
 from mapanare.mir import (
     AgentSend,
@@ -2482,6 +2483,16 @@ class LLVMTextEmitter:
         self._last_tracked_boxed_slot = None
         self._list_vars = []
         self._map_vars = []
+        self._loop_map_owners: dict[str, str] = {}
+        for name in sorted(
+            recyclable_map_results(fn, getattr(self, "_owned_map_factories", set()))
+        ):
+            slot = self._alloca(PTR, "map_owner")
+            self._ent.append(f"  store ptr null, ptr {slot}")
+            owner_name = f"_map_owner_{name}"
+            self._alloc[owner_name] = (slot, PTR)
+            self._map_vars.append(owner_name)
+            self._loop_map_owners[name] = slot
         self._signal_vars = []
         self._stream_vars = []
         self._tensor_vars = []
@@ -4518,7 +4529,17 @@ class LLVMTextEmitter:
                     self._L(f"{r} = call {ret} @{fn}({astr})")
                 self._put(i.dest, r, ret)
             if i.dest.ty.kind == TypeKind.MAP and fn in getattr(self, "_owned_map_factories", ()):
-                self._track_container(i.dest.name, "map")
+                owner = getattr(self, "_loop_map_owners", {}).get(i.dest.name)
+                if owner is not None:
+                    # All aliases of the prior result are dead at this point.
+                    # A separate slot survives Copy ownership bookkeeping and
+                    # is present at every return, even in earlier-listed blocks.
+                    previous = self._f("map_previous")
+                    self._L(f"{previous} = load ptr, ptr {owner}")
+                    self._rt("__mn_map_free_deep", VOID, [PTR], [(previous, PTR)])
+                    self._L(f"store ptr {r}, ptr {owner}")
+                else:
+                    self._track_container(i.dest.name, "map")
             return
 
         # Check if this is a struct constructor (__new_StructName)

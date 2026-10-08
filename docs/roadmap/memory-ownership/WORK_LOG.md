@@ -2,6 +2,45 @@
 
 ## Resume point — 2026-10-08
 
+The Python loop-result leak is fixed for proven nonescaping factory results.
+Liveness and a single-origin alias proof select allocation sites; private owner
+slots survive Copy bookkeeping and release previous results only when no alias
+can still be used. Retained/captured/uncertain aliases keep the old behavior.
+See [MAP_LOOP_OWNERS.md](MAP_LOOP_OWNERS.md) for the exact scope and next boundary.
+
+Evidence: `build/memory-ownership/map-loop-owners/`.
+
+- `baseline-tests.log`: all 32 new leak cases fail on the committed emitter.
+  The original fixture reproduces 535,464 bytes / 1,998 allocations retained.
+- `final-tests.log`: 57 passed (32 leak-checked executions, four retained-alias
+  invalid-access guards, and 21 MIR proof cases).
+- `proof-final.log`: 23 proof cases pass, including two later single-origin
+  branch-liveness controls. The initial candidate test expected an unused capture
+  to survive optimization; its corrected fixture keeps that capture live.
+- `llvm-mir-tests.log`: 1,174 passed. The two later branch controls are covered
+  by `proof-final.log`.
+- `ownership-regressions.log`: 200 passed, including all previous focused checks.
+- `fixed-point.log`: strict self-hosting is running in `build/fixed-point-8ht_8407`;
+  record its result in the final checkpoint.
+
+GitNexus marks function emission CRITICAL (one direct caller, five affected
+flows, nine reachable symbols); this was reported before editing. Call dispatch
+has LOW indexed impact. The new analysis was reviewed directly and tested with
+both positive and conservative controls. No runtime or native source changed.
+The installed compiler/runtime remain at the previously verified hashes.
+
+**Next:** extend ownership beyond the closed alias groups proven here: retained
+aliases, multiple allocation origins and borrowed map views need explicit
+transfer/retain/clone rules or stronger lifetime proofs. Keep the retained-alias
+guard passing before enabling broader recycling. Nested element ownership and
+native adoption remain open. Priority 2 stays active; nothing pushed.
+
+```bash
+.venv/bin/python -m pytest tests/mir/test_map_liveness.py tests/integration/test_map_loop_ownership.py -q
+```
+
+## Previous verified milestone — direct map returns
+
 The direct Python map-return fix is committed as **`18c73cda`**
 (`Preserve direct map returns and track proven owned results`). Returned map
 handles survive callee cleanup; callers clean up results only from conservatively

@@ -1,5 +1,5 @@
-// Remaining ownership work: expected output 3000, with bounded memory.
-// Python map slots currently keep only the last result for function cleanup.
+// Loop ownership regression: expected output 3000, with bounded memory.
+// No aliases of a result survive to the next factory call.
 fn make_values() -> Map<String, Int>:
     return #{"a": 1, "bb": 2, "ccc": 3}
 
