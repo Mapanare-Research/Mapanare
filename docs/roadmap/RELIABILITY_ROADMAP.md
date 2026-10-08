@@ -39,7 +39,7 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; read-only argument borrowing now works in both emitters.**
+**Priority 2 active; read-only argument borrowing committed as `c3538bd0`.**
 Proven read-only calls preserve caller cleanup for Strings and lists, including
 aliases, indexed reads and forward calls. All 16 leak regressions and two capture
 controls pass, alongside 1,088 LLVM/MIR checks and strict self-hosting. Mutating
@@ -80,9 +80,10 @@ conservative escape protection, checked by String/container lifetime regressions
 
 The current gate is `build/fixed-point-r_9qtc2m`: both compiler generations pass
 103 LLVM goldens and eight executable fixtures, and stage2/stage3 are byte-identical.
-Its optimized successor passes all 58 focused executable checks. Promotion is
-pending the implementation commit and committed-source hash check. The prior
-verified pair is preserved under `build/memory-ownership/container-handles/`.
+Its optimized successor passes all 58 focused executable checks and is installed
+at `mapanare/self/mnc-stage1`. Promotion regenerated source and rebuilt the runtime
+at `c3538bd0`, matching the gate hashes. The prior verified pair is preserved
+under `build/memory-ownership/container-handles/`.
 Self-hosted source checks pass 253 tests with two expected xfails.
 
 **Next:** preserve allocation cleanup boundaries through Python MIR inlining,

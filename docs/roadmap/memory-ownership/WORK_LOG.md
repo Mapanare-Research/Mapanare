@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-07
 
-Read-only argument borrowing is implemented in both LLVM emitters. Python now
+Read-only argument borrowing is committed as **`c3538bd0`** (`Preserve caller
+ownership for proven read-only list calls`) in both LLVM emitters. Python now
 suppresses automatic argument moves only for a proven borrowing body; native
 String borrowing now permits read-only list parameters, aliases and indexing.
 Both register summaries before body emission, covering forward calls. Mutators,
@@ -35,9 +36,11 @@ Verified hashes (SHA256):
 - Unchanged runtime archive: `6d857dd5c21b7e159afc8b1efedc4511c28ae1fe5abb6997890da02e77f9a185`.
 
 The prior compiler/runtime pair is preserved as `mnc-baseline` and
-`runtime-baseline.a` in this evidence directory. The implementation is ready to
-commit, then verify committed source/runtime hashes and install the tested
-successor. The production compiler has not yet been replaced.
+`runtime-baseline.a` in this evidence directory. Promotion regenerated compiler
+source and rebuilt the runtime at `c3538bd0`; both match the gate hashes. The
+exact tested successor is installed at `mapanare/self/mnc-stage1`. The record is
+`build/memory-ownership/container-handles/promotion.json`. All validation/builds
+are finished. Toolchain: Linux/WSL, Clang/LLVM 18.1.3, Python 3.12.3.
 
 GitNexus reports CRITICAL for Python `emit`: two direct callers, 13 affected
 symbols and five process groups across CLI builds/emission and IR diagnostics.
@@ -45,11 +48,25 @@ This warning was reported before editing. `_do_call` reports LOW with no indexed
 callers; native `.mn` helpers and new Python helpers are outside the index and
 were manually traced. Full LLVM/MIR and strict self-hosting checks cover the
 broader risk. No MIR layout or runtime API changed in this milestone.
+Staged detection (`container-handles/precommit.log`) found eleven expected files,
+nine indexed symbols and five affected call-emission flows, MEDIUM risk.
+Manual review also covered the unindexed native helpers and new proof/tests.
+
+Rerun the new checks from the repository root in Linux/WSL:
+
+```bash
+.venv/bin/python -m pytest tests/llvm/test_argument_borrow_proof.py \
+  tests/integration/test_container_argument_borrow.py \
+  tests/integration/test_container_capture_lifetime.py -q
+.venv/bin/python scripts/verify_fixed_point.py --stage1 mapanare/self/mnc-stage1 --keep
+```
 
 **Next:** fix the Python optimizer's allocation-lifetime boundary before enabling
 owned containers. The durable diagnostic is
 `tests/native/fixtures/inlined_resource_lifetime.mn`; its body is small enough
-to inline into a loop, losing function-exit cleanup. Preserve cleanup scope or
+to inline into a loop, losing function-exit cleanup. The durable fixture was
+rerun: expected stdout `1514280`, with 92,285 bytes / 2,869 allocations retained
+under LeakSanitizer (`inline-repro.log`). Preserve cleanup scope or
 conservatively reject affected inline candidates. Then coordinate container
 handle retain/clone/transfer, copy-in insertion markers, returned/captured aliases
 and borrowed lookup lifetimes in lowering and both emitters. Existing native
