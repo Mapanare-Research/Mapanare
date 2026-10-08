@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-07
 
-The owned-list runtime contract is implemented and verified. New constructors
+The owned-list runtime contract is committed as **`8449beb2`** (`Add opt-in owned
+list copy and destruction policies`). New constructors
 `__mn_list_new_owned` and `__mn_list_str_new_owned` attach copy/drop operations to
 an aligned backing buffer. Descriptor values are copied; the public `MnList`
 layout and raw-list behavior stay compatible. The list API now supports copy-in
@@ -38,8 +39,11 @@ Verified hashes (SHA256):
 - Runtime archive: `802a1e99dade4880cc64c0baa331f0fe7fae6c6f53c7e90aec41911bb7bc183f`.
 
 The previous compiler/runtime pair is preserved under `owned-lists/`. Promotion
-will regenerate compiler source and rebuild the runtime after the implementation
-commit, require equality with the verified hashes, and record `promotion.json`.
+regenerated compiler source and rebuilt the runtime at `8449beb2`; both matched
+the verified hashes. The exact tested successor is installed at
+`mapanare/self/mnc-stage1`. The record is
+`build/memory-ownership/owned-lists/promotion.json`. All checks and builds for this
+milestone are finished. Nothing was pushed or released.
 
 GitNexus impact: push has six direct callers, 13 affected symbols, MEDIUM risk,
 and zero indexed processes. String convenience functions, directory listing,
@@ -48,6 +52,10 @@ Set/pop/clear/concat/deep-clone/free-strings report LOW; free and clone each hav
 one indexed direct caller. Generated calls are not represented; broad runtime
 risk was reported and checked with self-hosting. New probe symbols were manually
 reviewed before indexing. All validation was Linux/WSL. Priority 2 remains active.
+Staged detection (`owned-lists/precommit.log`) found six expected files, 32 indexed
+symbols, zero affected processes, and LOW risk. Manual diff review confirmed the
+nine lifecycle dispatch changes and new helpers; index line mapping also listed
+nearby unchanged legacy helpers.
 
 ## Previous verified milestone — allocated empty nested buffers
 
@@ -196,7 +204,8 @@ claim that all ownership boundaries are consistent or leak-free.
 | String-producing operation | Emitter tracks an owned slot; overwrite and return cleanup release it unless moved/returned | Ownership transfer through user calls is conservative |
 | String return | Locally owned buffers transfer; borrowed heap buffers are cloned; literals stay borrowed | Aggregate escape accounting is still separate |
 | User-call String argument | Proven borrowers leave ownership with the caller; unknown/capturing calls clear matching slots | The initial proof is deliberately narrow; non-inlined forwarding and broader capture summaries remain |
-| List buffer | COW refcount owns the outer allocation; shallow list free releases it at the last reference | Element ownership and recursive destruction are not encoded in that buffer contract |
+| Raw list buffer | COW refcount owns the outer allocation; shallow free releases it at the last reference | Compiler-generated lists still use this contract without recursive element destruction |
+| Opt-in owned list buffer | Copy/drop policy follows the buffer; detach copies elements and final-owner release drops them | Runtime API is tested; compiler handle/insertion/lookup integration remains |
 | String inserted into container | Lowering emits Move so caller cleanup does not free the captured String | Shallow container cleanup does not establish recursive element cleanup |
 | Map entry | Runtime set copies entry bytes; shallow/deep free helpers are separate | Replacement/removal ownership and native emitter map tracking need investigation |
 | Heap-bearing struct/enum/boxed return | Native emitter conservatively suppresses cleanup to protect transitive escaping resources | Unrelated temporaries can leak; one-level pointer comparisons are insufficient |
@@ -282,8 +291,8 @@ transfers can still break captured aliases and were not used.
 ## Next steps
 
 1. Follow [the container implementation sequence](CONTAINER_OWNERSHIP.md), using
-   its confirmed probes: define owned-element copying/destruction, implement
-   COW/map mutation consistently, and integrate lowering plus both emitters.
+   its confirmed probes: extend owned policies to map keys/values and mutation,
+   then integrate handle copying/insertion/lookup in lowering plus both emitters.
    A deep free alone is unsafe for shared element pointers.
 2. Extend the borrowing/capture contract beyond the initial proof. Unknown calls
    must remain conservative; track per-argument capture and forwarding only when

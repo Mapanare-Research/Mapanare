@@ -39,7 +39,14 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Priority 2 active; nested-list runtime fix committed as `48d381ec`.** Deep
+**Priority 2 active; owned-list runtime contract committed as `8449beb2`.** Opt-in
+lists now carry copy/drop policies through COW cloning, mutation, growth, concat,
+clear, pop, and final-owner destruction. All 23 new checks pass both with an
+instrumented runtime and against the optimized archive; the combined runtime
+suite passes 61 checks and the standalone C suite passes 74/74. Compiler-generated
+lists still use the raw contract; activation requires coordinated emitter work.
+
+The previous nested-list runtime fix, `48d381ec`, means deep
 cloning now retains allocated empty inner buffers after clear/pop. Eight ASan
 use-after-free failures are fixed; all 16 ownership cases and 22 runtime controls
 pass, alongside the 74/74 standalone C suite. This does not yet enable automatic
@@ -57,16 +64,17 @@ was 88 bytes per call (880,000 bytes at 10,000 calls); six LeakSanitizer cases n
 pass for flat, nested, and wide records. Heap-bearing returns retain their
 conservative escape protection, checked by String/container lifetime regressions.
 
-The current gate is `build/fixed-point-ol5n0yze`: both compiler generations pass
+The current gate is `build/fixed-point-xa4kv481`: both compiler generations pass
 103 LLVM goldens and eight executable fixtures, and stage2/stage3 are byte-identical.
 Its optimized successor passes all 40 focused native checks and is installed as
-`mapanare/self/mnc-stage1`. Promotion verified fresh source at commit `48d381ec`
-and the runtime against the gate's hashes. The prior verified compiler remains
-preserved. Unchanged native compiler source was checked in the preceding
+`mapanare/self/mnc-stage1`. Promotion regenerated source and rebuilt the runtime
+at commit `8449beb2`, matching the gate's hashes. The prior verified pair remains
+preserved. Unchanged compiler source was checked in the last compiler-source
 milestone: 343 passed, two pre-existing xpasses.
 
-**Next:** implement an explicit owned-element runtime contract, coordinate COW
-mutation and map replacement/deletion, then integrate lowering and both emitters.
+**Next:** extend owned policies to map keys/values, including replacement/deletion
+and rehash, then integrate container handles, insertion, and lookups in lowering
+and both emitters.
 The [container evidence and implementation sequence](memory-ownership/CONTAINER_OWNERSHIP.md)
 records five C probes and native reproductions retaining about 416 KB for nested
 lists and 638 KB for map replacement over 1,000 iterations. Broader borrowing
