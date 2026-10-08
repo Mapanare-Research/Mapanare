@@ -2457,6 +2457,9 @@ struct MnMap {
     int64_t  bucket_size; /* 2 + key_size + val_size (status + psl + key + val) */
     int64_t  key_type;    /* MN_MAP_KEY_INT / STR / FLOAT */
     int64_t  val_type;    /* MN_MAP_VAL_OPAQUE / STR */
+    int64_t  owned;       /* Explicit policies; legacy maps remain byte-copying. */
+    int64_t  key_offset, val_offset;
+    MnElementOps key_ops, val_ops;
 };
 
 struct MnMapIter {
@@ -2563,6 +2566,132 @@ static inline void *mn_bucket_val(char *bucket, int64_t key_size) {
 
 static void mn_map_grow(MnMap *map);
 
+/* Owned maps use aligned buckets and bounded linear probing. Tombstones must
+ * not hide equal keys further along a probe chain. Rehash transfers entries
+ * without invoking copy/drop; borrowed inputs are copied before any mutation. */
+static int64_t mn_map_align(int64_t size) {
+    int64_t alignment = _Alignof(max_align_t);
+    return mn_checked_mul(mn_checked_add(size, alignment - 1) / alignment, alignment);
+}
+
+static MnElementOps mn_map_policy(const MnElementOps *ops) {
+    if (ops && (!ops->copy || !ops->drop)) {
+        fprintf(stderr, "mapanare: owned map policy requires copy/drop operations\n");
+        abort();
+    }
+    return ops ? *ops : (MnElementOps){0};
+}
+
+MN_EXPORT MnMap *__mn_map_new_owned(int64_t key_size, int64_t val_size,
+                                    int64_t key_type, const MnElementOps *key_ops,
+                                    const MnElementOps *val_ops) {
+    int64_t expected = key_type == MN_MAP_KEY_STR ? (int64_t)sizeof(MnString)
+        : key_type == MN_MAP_KEY_INT ? (int64_t)sizeof(int64_t)
+        : key_type == MN_MAP_KEY_FLOAT ? (int64_t)sizeof(double) : 0;
+    if (!expected || key_size != expected || val_size <= 0 ||
+        (key_type == MN_MAP_KEY_STR && !key_ops)) {
+        fprintf(stderr, "mapanare: invalid owned map sizes, key type, or String key policy\n");
+        abort();
+    }
+    MnElementOps keys = mn_map_policy(key_ops), vals = mn_map_policy(val_ops);
+    MnMap *map = (MnMap *)__mn_alloc(sizeof(MnMap));
+    map->owned = 1;
+    map->key_size = key_size;
+    map->val_size = val_size;
+    map->key_type = key_type;
+    map->key_ops = keys;
+    map->val_ops = vals;
+    map->key_offset = mn_map_align(1);
+    map->val_offset = mn_checked_add(map->key_offset, mn_map_align(key_size));
+    map->bucket_size = mn_checked_add(map->val_offset, mn_map_align(val_size));
+    map->cap = MN_MAP_INITIAL_CAP;
+    map->buckets = (char *)__mn_alloc(mn_checked_mul(map->cap, map->bucket_size));
+    return map;
+}
+
+MN_EXPORT MnMap *__mn_map_str_str_new_owned(void) {
+    MnElementOps strings = {mn_owned_string_copy, mn_owned_string_drop};
+    return __mn_map_new_owned(sizeof(MnString), sizeof(MnString), MN_MAP_KEY_STR,
+                              &strings, &strings);
+}
+
+/* Return the matching entry, or NULL, and optionally the first reusable slot.
+ * Search past tombstones for an existing key before reusing any of them. */
+static char *mn_owned_map_find(MnMap *map, const void *key, char **vacant) {
+    mn_hash_fn hash = mn_map_hash_fn(map->key_type);
+    mn_eq_fn eq = mn_map_eq_fn(map->key_type);
+    int64_t mask = map->cap - 1;
+    int64_t index = (int64_t)(hash(key) & (uint64_t)mask);
+    if (vacant) *vacant = NULL;
+    for (int64_t seen = 0; seen < map->cap; ++seen) {
+        char *bucket = mn_bucket_at(map, index);
+        if (bucket[0] != MN_BUCKET_OCCUPIED) {
+            if (vacant && !*vacant) *vacant = bucket;
+            if (bucket[0] == MN_BUCKET_EMPTY) return NULL;
+        } else if (eq(bucket + map->key_offset, key)) {
+            return bucket;
+        }
+        index = (index + 1) & mask;
+    }
+    return NULL;
+}
+
+static void mn_owned_map_grow(MnMap *map) {
+    int64_t old_cap = map->cap;
+    char *old = map->buckets;
+    map->cap = mn_checked_mul(old_cap, 2);
+    map->buckets = (char *)__mn_alloc(mn_checked_mul(map->cap, map->bucket_size));
+    mn_hash_fn hash = mn_map_hash_fn(map->key_type);
+    int64_t mask = map->cap - 1;
+    for (int64_t i = 0; i < old_cap; ++i) {
+        char *entry = old + i * map->bucket_size;
+        if (entry[0] != MN_BUCKET_OCCUPIED) continue;
+        int64_t index = (int64_t)(hash(entry + map->key_offset) & (uint64_t)mask);
+        while (mn_bucket_at(map, index)[0] == MN_BUCKET_OCCUPIED)
+            index = (index + 1) & mask;
+        memcpy(mn_bucket_at(map, index), entry, (size_t)map->bucket_size);
+    }
+    __mn_free(old);
+}
+
+static void mn_owned_map_copy(void *dest, const void *src, int64_t size,
+                              MnElementOps ops) {
+    if (ops.copy) ops.copy(dest, src);
+    else memcpy(dest, src, (size_t)size);
+}
+
+static void mn_owned_map_drop(MnMap *map, char *entry) {
+    if (map->key_ops.drop) map->key_ops.drop(entry + map->key_offset);
+    if (map->val_ops.drop) map->val_ops.drop(entry + map->val_offset);
+}
+
+static void mn_owned_map_set(MnMap *map, const void *key, const void *val) {
+    _Alignas(max_align_t) char local[512];
+    char *copy = map->bucket_size <= (int64_t)sizeof(local)
+        ? local : (char *)__mn_alloc(map->bucket_size);
+    void *new_key = copy + map->key_offset, *new_val = copy + map->val_offset;
+    mn_owned_map_copy(new_key, key, map->key_size, map->key_ops);
+    mn_owned_map_copy(new_val, val, map->val_size, map->val_ops);
+    char *vacant;
+    char *existing = mn_owned_map_find(map, new_key, &vacant);
+    if (existing) {
+        if (map->key_ops.drop) map->key_ops.drop(new_key);
+        if (map->val_ops.drop) map->val_ops.drop(existing + map->val_offset);
+        memcpy(existing + map->val_offset, new_val, (size_t)map->val_size);
+    } else {
+        /* cap is a power of two >= 16; division avoids load-check overflow. */
+        if (!vacant || map->len >= map->cap - map->cap / 4) {
+            mn_owned_map_grow(map);
+            mn_owned_map_find(map, new_key, &vacant);
+        }
+        vacant[0] = MN_BUCKET_OCCUPIED;
+        memcpy(vacant + map->key_offset, new_key, (size_t)map->key_size);
+        memcpy(vacant + map->val_offset, new_val, (size_t)map->val_size);
+        ++map->len;
+    }
+    if (copy != local) __mn_free(copy); /* constructed values transferred */
+}
+
 MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type, int64_t val_type) {
     MnMap *map = (MnMap *)__mn_alloc(sizeof(MnMap));
     map->key_size = key_size;
@@ -2586,6 +2715,7 @@ MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_ty
 }
 
 MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
+    if (map->owned) { mn_owned_map_set(map, key, val); return; }
     /* Grow if load factor exceeded */
     if (map->len * MN_MAP_LOAD_FACTOR_DEN >= map->cap * MN_MAP_LOAD_FACTOR_NUM) {
         mn_map_grow(map);
@@ -2674,6 +2804,10 @@ MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val) {
 }
 
 MN_EXPORT void *__mn_map_get(MnMap *map, const void *key) {
+    if (map->owned) {
+        char *entry = mn_owned_map_find(map, key, NULL);
+        return entry ? entry + map->val_offset : NULL;
+    }
     mn_hash_fn hash = mn_map_hash_fn(map->key_type);
     mn_eq_fn   eq   = mn_map_eq_fn(map->key_type);
     uint64_t h = hash(key);
@@ -2700,6 +2834,15 @@ MN_EXPORT void *__mn_map_get(MnMap *map, const void *key) {
 }
 
 MN_EXPORT int64_t __mn_map_del(MnMap *map, const void *key) {
+    if (map->owned) {
+        char *entry = mn_owned_map_find(map, key, NULL);
+        if (!entry) return 0;
+        mn_owned_map_drop(map, entry);
+        memset(entry, 0, (size_t)map->bucket_size);
+        entry[0] = MN_BUCKET_TOMBSTONE;
+        --map->len;
+        return 1;
+    }
     mn_hash_fn hash = mn_map_hash_fn(map->key_type);
     mn_eq_fn   eq   = mn_map_eq_fn(map->key_type);
     uint64_t h = hash(key);
@@ -2770,8 +2913,8 @@ MN_EXPORT int64_t __mn_map_iter_next(MnMapIter *iter, void **key_out, void **val
         char *bucket = mn_bucket_at(map, iter->index);
         iter->index++;
         if (mn_bucket_status(bucket) == MN_BUCKET_OCCUPIED) {
-            *key_out = mn_bucket_key(bucket);
-            *val_out = mn_bucket_val(bucket, map->key_size);
+            *key_out = map->owned ? bucket + map->key_offset : mn_bucket_key(bucket);
+            *val_out = map->owned ? bucket + map->val_offset : mn_bucket_val(bucket, map->key_size);
             return 1;
         }
     }
@@ -2783,6 +2926,17 @@ MN_EXPORT void __mn_map_iter_free(MnMapIter *iter) {
 }
 
 MN_EXPORT MnList __mn_map_keys(MnMap *map) {
+    if (map && map->owned) {
+        MnList keys = map->key_ops.copy
+            ? __mn_list_new_owned(map->key_size, &map->key_ops)
+            : __mn_list_new(map->key_size);
+        for (int64_t i = 0; i < map->cap; ++i) {
+            char *entry = mn_bucket_at(map, i);
+            if (entry[0] == MN_BUCKET_OCCUPIED)
+                __mn_list_push(&keys, entry + map->key_offset);
+        }
+        return keys;
+    }
     MnList lst = __mn_list_new(sizeof(MnString));
     if (!map) return lst;
     MnMapIter *iter = __mn_map_iter_new(map);
@@ -2797,6 +2951,12 @@ MN_EXPORT MnList __mn_map_keys(MnMap *map) {
 
 MN_EXPORT void __mn_map_free(MnMap *map) {
     if (map) {
+        if (map->owned) {
+            for (int64_t i = 0; i < map->cap; ++i) {
+                char *entry = mn_bucket_at(map, i);
+                if (entry[0] == MN_BUCKET_OCCUPIED) mn_owned_map_drop(map, entry);
+            }
+        }
         if (map->buckets) __mn_free(map->buckets);
         __mn_free(map);
     }
@@ -2804,6 +2964,7 @@ MN_EXPORT void __mn_map_free(MnMap *map) {
 
 MN_EXPORT void __mn_map_free_deep(MnMap *map) {
     if (!map) return;
+    if (map->owned) { __mn_map_free(map); return; }
     if (map->buckets) {
         for (int64_t i = 0; i < map->cap; i++) {
             char *bucket = mn_bucket_at(map, i);

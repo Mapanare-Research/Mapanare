@@ -1,9 +1,9 @@
 # Container ownership: evidence and implementation sequence
 
 This is the next-step design for priority 2, based on the 2026-10-07 probes.
-The empty nested-buffer retain and the opt-in owned-list runtime contract are
-implemented. Map ownership and compiler adoption remain proposed work; existing
-native programs still use raw lists and retain the leaks recorded below.
+The empty nested-buffer retain and opt-in owned-list/map runtime contracts are
+implemented. Compiler adoption remains open; existing native programs still use
+raw containers and retain the leaks recorded below.
 
 ## Implemented: opt-in owned lists
 
@@ -45,6 +45,55 @@ concat check. The legacy failing probe modes below deliberately stay unchanged.
 Compiler adoption is still required: enabling this constructor while retaining
 old Move markers would leak caller inputs, and borrowed lookups must not be
 mistaken for owned values. See step 3 below before switching generated programs.
+
+## Implemented: opt-in owned maps
+
+`__mn_map_new_owned(key_size, val_size, key_type, key_ops, val_ops)` copies
+independent `MnElementOps` descriptors for keys and values. A null descriptor
+means a plain value with no owned resources; a supplied descriptor must contain
+both callbacks. String keys require a policy. String values and other owning
+values also require a policy; a null value policy is not an inferred destructor.
+`__mn_map_str_str_new_owned()` supplies both String policies.
+
+Key sizes must match the selected Int, Float, or String representation. Callbacks
+follow the list contract and must preserve key hash/equality. Callback code must
+outlive the map. Both fields and temporary copies are aligned to `max_align_t`;
+the opaque map layout can carry this policy without changing generated handles.
+
+| Operation | Owned-map behavior |
+|---|---|
+| Set | Copy borrowed key and value before growth or destruction; caller retains inputs |
+| Equal-key replacement | Keep the stored key, drop the unused copied key and old value, transfer the new value |
+| Delete | Drop both stored fields exactly once and mark the slot reusable |
+| Grow/rehash | Move live entries without extra callback copies or drops |
+| Get/iteration | Borrow read-only storage, including nested fields, until mutation/free |
+| Keys | Return an independent list with the actual key size and key ownership policy; it can outlive the map |
+| Free/free_deep | Equivalent: drop every live key/value and free storage |
+
+Owned maps use bounded linear probing with tombstones and aligned bucket offsets.
+Search continues past tombstones before choosing a vacant slot, so deletion does
+not introduce duplicate equal keys. Missing lookup/delete terminates even if
+every bucket is a tombstone. There is no eight-bit probe-distance limit. The
+legacy packed Robin Hood implementation and its raw ownership behavior remain
+unchanged. These correctness choices are not a performance claim or benchmark.
+
+Map handles remain exclusive, with no retain/clone API or concurrent access
+support. Copying the handle does not create another owner. Mutation invalidates
+borrows and active iterators. Cyclic owning values and callback re-entry into the
+same container are unsupported. Nested-list policies can explicitly retain list
+buffers and release them on replacement/deletion; the runtime never guesses
+nested types from element size.
+
+`tests/native/fixtures/owned_maps.c` covers replacement and deletion with aliased
+inputs, equal keys from distinct heap allocations, growth with borrowed keys/values,
+all-tombstone tables, wraparound collisions, chains exceeding 255 entries,
+independent key lists, large aligned callback values, exact callback counts,
+nested list fields in both destruction orders, Float zero equality, plain values
+the same size as a String, and a deterministic reference model. Twenty-six lifecycle cases exercise both free
+entry points; five rejection cases cover malformed constructor inputs. Most
+lifecycle cases repeat 1,000 times; the long-chain and reference-model cases
+repeat ten times. The pytest harness enables ASan/UBSan/LSan and also accepts
+`MAPANARE_TEST_RUNTIME=runtime/native/libmapanare_rt.a` to check the exact archive.
 
 ## Fixed: allocated empty inner lists
 
@@ -134,19 +183,19 @@ fn main():
 
 ## Implementation sequence
 
-1. **Owned-list runtime contract implemented.** Preserve generic raw-byte APIs
-   for borrowed callers. Extend the explicit copy/drop contract to maps, covering
-   key and value policies independently. Element size alone cannot identify
+1. **Owned-list and map runtime contracts implemented.** Preserve generic raw-byte
+   APIs for borrowed callers. Maps carry key and value policies independently.
+   Element size alone cannot identify
    Strings, lists, or structs; do not infer types by inspecting arbitrary pointers.
-2. **List mutations implemented; map mutation remains.** A shared list buffer owns its
+2. **List and map mutations implemented.** A shared list buffer owns its
    elements once; shallow handle clones retain the buffer. Detach copies or
    retains elements into the new buffer before releasing the old reference.
    Only the last buffer owner destroys elements. Growth transfers storage;
    concat creates independently owned elements. Replacement copies the incoming
    value before dropping the old one, including self-aliasing input. Clear
    drops live elements; pop transfers one element to its caller. Map insertion,
-   replacement, deletion, growth, and final destruction need the same rules.
-   Equal-key replacement must release any unused copied key. Rehash must move
+   replacement, deletion, growth, and final destruction follow the same rules.
+   Equal-key replacement releases any unused copied key. Rehash moves
    existing ownership without double cloning or dropping it.
 3. **Integrate lowering and both emitters together.** Native `emit_drop_glue`
    currently calls shallow `__mn_list_free`; map ownership is not tracked there.

@@ -507,6 +507,25 @@ typedef struct MnMapIter MnMapIter;
 /** Create a new empty map. key_type: MN_MAP_KEY_INT/STR/FLOAT. */
 MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type, int64_t val_type);
 
+/** Create an owned map. Policies are copied; a NULL policy means plain byte
+ *  values with no owned resources. Non-NULL policies require both copy/drop.
+ *  String keys require an explicit policy; key_size must match key_type.
+ *  String values and other owning values require an appropriate value policy.
+ *  Callbacks obey the MnElementOps contract, preserve key hash/equality, and
+ *  must not re-enter this map. Stored objects support max_align_t alignment.
+ *  Set copies borrowed inputs before mutation; replacement drops the old value,
+ *  deletion/free drops both fields, and growth transfers existing ownership.
+ *  Get/iteration borrow read-only values (including nested fields), valid only
+ *  until mutation/free. Keys returns independent copies, sized to key_size.
+ *  The map handle is exclusive: no retain/clone or concurrent access support.
+ *  Free and free_deep are equivalent for owned maps. */
+MN_EXPORT MnMap *__mn_map_new_owned(int64_t key_size, int64_t val_size,
+                                    int64_t key_type, const MnElementOps *key_ops,
+                                    const MnElementOps *val_ops);
+
+/** Owned Map<String, String> with independent String copies on insertion. */
+MN_EXPORT MnMap *__mn_map_str_str_new_owned(void);
+
 /** Insert or update a key-value pair. */
 MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val);
 
@@ -531,13 +550,14 @@ MN_EXPORT int64_t __mn_map_iter_next(MnMapIter *iter, void **key_out, void **val
 /** Free the iterator (does NOT free the map). */
 MN_EXPORT void __mn_map_iter_free(MnMapIter *iter);
 
-/** Return a list of all keys (as MnString). Caller owns the list. */
+/** Return all keys. Owned maps return independent elements of key_size;
+ *  legacy maps return borrowed MnString elements. Caller owns the list. */
 MN_EXPORT MnList __mn_map_keys(MnMap *map);
 
-/** Free the map and its storage. Does NOT free contained strings. */
+/** Free storage and, for owned maps, drop live entries. Legacy entries are borrowed. */
 MN_EXPORT void __mn_map_free(MnMap *map);
 
-/** Free the map, its storage, AND free string keys/values. */
+/** Owned maps: same as free. Legacy maps: also free tagged String keys/values. */
 MN_EXPORT void __mn_map_free_deep(MnMap *map);
 
 /* -----------------------------------------------------------------------

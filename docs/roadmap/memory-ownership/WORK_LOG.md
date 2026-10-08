@@ -2,6 +2,64 @@
 
 ## Resume point — 2026-10-07
 
+The opt-in owned-map runtime contract is implemented and verified.
+`__mn_map_new_owned` copies independent key/value policies;
+`__mn_map_str_str_new_owned` provides the String/String case. Insertion copies
+inputs before mutation, replacement drops the old value and unused copied key,
+deletion releases both fields, and rehash transfers entries without extra
+copies/drops. Keys returns an independent list with the correct key size.
+Owned storage is aligned, and bounded linear probing handles tombstones and
+long collision chains. Existing raw APIs remain compatible. See
+[the contract](CONTAINER_OWNERSHIP.md) before compiler adoption.
+
+Evidence under `build/memory-ownership/owned-maps/`:
+
+- `runtime-tests.log`: 88 initial passes (27 new checks plus 61 controls).
+- `map-tests.log`: all 31 final map checks pass under ASan/UBSan/LSan, including
+  four added borrowed-key growth/plain-value checks. There are 92 unique runtime
+  checks across these two runs; unchanged controls were not rerun.
+- `archive-tests.log`: all 54 owned-list/map checks pass against the exact
+  optimized archive. The source run instruments runtime internals; the archive
+  run checks the artifact with sanitizer allocation interception.
+- `c-runtime.log`: 74/74 standalone C runtime checks pass.
+- `fixed-point.log`, `build/fixed-point-fjc4esu9`: both generations pass 103 LLVM
+  goldens and eight executable fixtures; stage2/stage3 IR is byte-identical.
+- `successor-regressions.log`: all 40 focused native regressions pass on that
+  optimized successor. Compiler source is unchanged.
+
+Verified hashes (SHA256):
+
+- Compiler source: `3fc824f2de6e75e80795325dba97f7d089dbd7e3a66246020e66c1f77aeafdf0`.
+- Optimized successor: `23d39cf6f225b1b63f7526c0c38ed434c69ed4e127f83afbfb1168d9b1568651`.
+- Both IR stages: `3cfe326658775fb4791eac77fe3f99e10506dbdf9a370a040b6af079e4ae050b`.
+- Runtime archive: `6d857dd5c21b7e159afc8b1efedc4511c28ae1fe5abb6997890da02e77f9a185`.
+
+The prior verified compiler/runtime pair is preserved as `mnc-baseline` and
+`runtime-baseline.a` in this evidence directory. Commit the implementation,
+regenerate compiler source and rebuild the runtime to match the gate hashes,
+then install its tested successor and record promotion before updating this
+checkpoint. The existing installed compiler has not yet been replaced.
+
+GitNexus impact reported LOW risk: set/get/iterator-next each have one indexed
+direct caller, zero indexed processes; the map struct, delete, keys, free and
+deep-free have zero indexed callers. Generated callers are outside the index,
+so runtime-wide risk was checked through strict self-hosting. New probe symbols
+returned UNKNOWN and were manually reviewed. All validation was Linux/WSL.
+
+**Next:** integrate container ownership in lowering and both emitters. Begin by
+tracing handle copies, call arguments, returns and captures before activating
+owned constructors or recursive drops. Map handles currently have exclusive
+ownership; choose an explicit retain/clone or transfer contract for aliases.
+Insertion copies inputs, so matching Move markers must stop suppressing caller
+cleanup. Lookup/iterator results are borrowed, including nested fields, and
+must not be independently freed or outlive mutation/destruction. Start with
+`List<String>`, `List<List<Int>>`, and String-key/value maps, keeping both
+destruction orders and returned/captured aliases in the regression gates.
+Existing native container leaks remain open until this integration lands.
+Priority 2 remains active; nothing was pushed or released.
+
+## Previous verified milestone — owned lists
+
 The owned-list runtime contract is committed as **`8449beb2`** (`Add opt-in owned
 list copy and destruction policies`). New constructors
 `__mn_list_new_owned` and `__mn_list_str_new_owned` attach copy/drop operations to
