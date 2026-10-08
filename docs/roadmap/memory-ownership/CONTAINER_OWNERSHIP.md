@@ -1,8 +1,50 @@
 # Container ownership: evidence and implementation sequence
 
 This is the next-step design for priority 2, based on the 2026-10-07 probes.
-Only the empty nested-buffer retain is implemented in this milestone. The
-element ownership changes below are proposed work, not runtime guarantees.
+The empty nested-buffer retain and the opt-in owned-list runtime contract are
+implemented. Map ownership and compiler adoption remain proposed work; existing
+native programs still use raw lists and retain the leaks recorded below.
+
+## Implemented: opt-in owned lists
+
+`__mn_list_new_owned(elem_size, ops)` accepts `MnElementOps` copy/drop callbacks;
+`__mn_list_str_new_owned()` supplies the String policy. The callback pair is copied
+into an aligned backing header, so a stack-allocated descriptor is safe. Callback
+code must outlive the list. The public five-field `MnList` layout is unchanged.
+The internal management tag selects the owned header; legacy buffers retain their
+original format. Empty owned lists allocate a buffer to preserve their policy.
+
+The ordinary list API then follows these rules:
+
+| Operation | Owned-list behavior |
+|---|---|
+| Push/set | Copy borrowed input before detach/growth/destruction; caller retains its input |
+| Get | Borrow read-only storage, including nested fields; mutation/free can invalidate it |
+| Clone | Retain the shared buffer without duplicating elements |
+| Detach | Construct independently owned element copies, then release the old reference |
+| Grow | Transfer storage without copying/dropping existing elements |
+| Deep clone | Detach the outer buffer using its policy; callbacks handle nested fields instead of the offset array |
+| Clear | Drop live elements and retain an empty buffer with its policy |
+| Pop | Transfer one owned element to non-aliasing caller storage |
+| Free | Drop elements only when releasing the last buffer reference |
+| Concat | Independently copy elements; both lists must have equal sizes and callback pairs |
+
+Raw/owned or incompatible-policy concat aborts with a diagnostic. Callbacks must
+construct an independent value in uninitialized storage, must not fail or re-enter
+the same container, and support at most `max_align_t` alignment. Cyclic owning
+values are unsupported. Clone owning handles rather than byte-copying them, and
+replace stored values through set rather than mutating borrowed pointers.
+
+`tests/native/fixtures/owned_lists.c` covers the former shared/detached String
+failure shapes using the new API, plus self-replacement, aliased input during
+growth, clear/reuse, pop lifetime, concat, empty buffers, explicit deep clone,
+large aligned elements, exact callback balance, and two nested list fields.
+There are 22 sanitizer lifecycle cases (1,000 iterations each) and one incompatible
+concat check. The legacy failing probe modes below deliberately stay unchanged.
+
+Compiler adoption is still required: enabling this constructor while retaining
+old Move markers would leak caller inputs, and borrowed lookups must not be
+mistaken for owned values. See step 3 below before switching generated programs.
 
 ## Fixed: allocated empty inner lists
 
@@ -92,13 +134,11 @@ fn main():
 
 ## Implementation sequence
 
-1. **Add an explicit owned-element runtime contract.** Preserve generic raw-byte
-   APIs for borrowed callers. Owned containers need element copy/retain and
-   destruction operations attached to the backing allocation, with a policy
-   for empty containers as well. Element size alone cannot identify Strings,
-   lists, or structs. Define descriptor lifetime and the native ABI before
-   implementing it; do not infer types by inspecting arbitrary pointers.
-2. **Make all mutations obey that contract.** A shared list buffer owns its
+1. **Owned-list runtime contract implemented.** Preserve generic raw-byte APIs
+   for borrowed callers. Extend the explicit copy/drop contract to maps, covering
+   key and value policies independently. Element size alone cannot identify
+   Strings, lists, or structs; do not infer types by inspecting arbitrary pointers.
+2. **List mutations implemented; map mutation remains.** A shared list buffer owns its
    elements once; shallow handle clones retain the buffer. Detach copies or
    retains elements into the new buffer before releasing the old reference.
    Only the last buffer owner destroys elements. Growth transfers storage;
@@ -112,6 +152,8 @@ fn main():
    currently calls shallow `__mn_list_free`; map ownership is not tracked there.
    Container insertion also emits Move markers. If insertion becomes copy-in,
    remove the matching transfer markers so caller cleanup still runs. Track
+   container handle copies/arguments/returns with explicit retain/transfer rules;
+   a raw copy of an owned handle does not acquire another buffer reference. Track
    returned containers and popped values, and distinguish borrowed lookup results
    from owned copies before tracking String results. Start with `List<String>`,
    `List<List<Int>>`, and String-key/value maps; fail conservatively on unsupported

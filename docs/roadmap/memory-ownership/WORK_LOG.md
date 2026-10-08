@@ -2,6 +2,55 @@
 
 ## Resume point — 2026-10-07
 
+The owned-list runtime contract is implemented and verified. New constructors
+`__mn_list_new_owned` and `__mn_list_str_new_owned` attach copy/drop operations to
+an aligned backing buffer. Descriptor values are copied; the public `MnList`
+layout and raw-list behavior stay compatible. The list API now supports copy-in
+insertion/replacement, COW detach, growth, concat, clear, pop transfer, deep clone,
+and final-owner destruction for these opt-in lists. Nested owned fields are
+handled by callbacks. See [the contract](CONTAINER_OWNERSHIP.md) for requirements.
+
+This is the runtime foundation. Existing compiler-generated lists have not been
+switched to it, and raw-list/map retention probes remain unresolved. Next:
+extend the explicit policy to map keys/values, then coordinate lowering and both
+emitters. Before compiler adoption, fix handle copying/argument/return ownership,
+remove transfer markers where insertion copies inputs, and preserve borrowed
+lookup lifetimes. Do not activate recursive cleanup in isolation.
+
+Evidence under `build/memory-ownership/owned-lists/`:
+
+- `runtime-tests.log`: 61 passed, including 22 new lifecycle cases repeated
+  1,000 times under ASan/UBSan/LSan, one incompatible-concat check, and 38 controls.
+- `archive-tests.log`: all 23 new checks also pass against the exact GCC-optimized
+  runtime archive. The direct-source run instruments runtime internals; the
+  archive run verifies the artifact and uses sanitizer allocation interception.
+- `c-runtime.log`: the existing standalone runtime suite passes 74/74.
+- `fixed-point.log`, `build/fixed-point-xa4kv481`: both generations pass 103 LLVM
+  goldens and eight executable fixtures; stage2/stage3 IR is byte-identical.
+- `successor-regressions.log`: all 40 focused native checks pass on the optimized
+  successor linked with the new runtime. Compiler source itself is unchanged.
+
+Verified hashes (SHA256):
+
+- Compiler source: `3fc824f2de6e75e80795325dba97f7d089dbd7e3a66246020e66c1f77aeafdf0`.
+- Optimized successor: `e398ce11961617df0cac2b0432d0106a8eadcf76ed9c3285ceaf75fd3cfc9079`.
+- Both IR stages: `3cfe326658775fb4791eac77fe3f99e10506dbdf9a370a040b6af079e4ae050b`.
+- Runtime archive: `802a1e99dade4880cc64c0baa331f0fe7fae6c6f53c7e90aec41911bb7bc183f`.
+
+The previous compiler/runtime pair is preserved under `owned-lists/`. Promotion
+will regenerate compiler source and rebuild the runtime after the implementation
+commit, require equality with the verified hashes, and record `promotion.json`.
+
+GitNexus impact: push has six direct callers, 13 affected symbols, MEDIUM risk,
+and zero indexed processes. String convenience functions, directory listing,
+map keys, stream collect, and tensor list conversion are among its callers.
+Set/pop/clear/concat/deep-clone/free-strings report LOW; free and clone each have
+one indexed direct caller. Generated calls are not represented; broad runtime
+risk was reported and checked with self-hosting. New probe symbols were manually
+reviewed before indexing. All validation was Linux/WSL. Priority 2 remains active.
+
+## Previous verified milestone — allocated empty nested buffers
+
 The nested-container milestone is committed as **`48d381ec`** (`Retain allocated
 empty buffers when cloning nested lists`). It fixes an allocated-empty-buffer use-after-free
 in `__mn_list_deep_clone`. Cleared or popped inner lists still own storage;
@@ -247,7 +296,8 @@ transfers can still break captured aliases and were not used.
 Run executable checks in Ubuntu WSL from the repository root:
 
 ```bash
-.venv/bin/python -m pytest tests/native/test_nested_list_ownership.py tests/runtime/test_list_bounds.py tests/llvm/test_map_runtime.py -q
+.venv/bin/python -m pytest tests/native/test_owned_lists.py tests/native/test_nested_list_ownership.py tests/runtime/test_list_bounds.py tests/llvm/test_map_runtime.py -q
+MAPANARE_TEST_RUNTIME=runtime/native/libmapanare_rt.a .venv/bin/python -m pytest tests/native/test_owned_lists.py -q
 .venv/bin/python -m pytest tests/integration/test_native_string_argument_borrow.py tests/integration/test_native_value_return_cleanup.py tests/integration/test_string_return_ownership.py tests/integration/test_native_generics.py tests/integration/test_native_bool_output.py tests/integration/test_native_loop_stack.py -q
 .venv/bin/python scripts/verify_fixed_point.py --keep
 .venv/bin/python -m pytest tests/self_hosted/ tests/bootstrap/test_verification.py::TestPipelineIntegrity -q --tb=short

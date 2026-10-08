@@ -235,6 +235,33 @@ MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts);
 /** Create an empty list for elements of `elem_size` bytes. */
 MN_EXPORT MnList __mn_list_new(int64_t elem_size);
 
+/** Opt-in element ownership. copy constructs an independently owned value in
+ *  uninitialized dst from borrowed src; drop destroys one owned value. Both
+ *  callbacks are required, must not fail/re-enter this container, and their code
+ *  must outlive it. The descriptor itself is copied into the backing buffer.
+ *  Callbacks/element storage must not require alignment beyond max_align_t.
+ *  Cyclic owning values are unsupported. */
+typedef struct MnElementOps {
+    void (*copy)(void *dst, const void *src);
+    void (*drop)(void *value);
+} MnElementOps;
+
+/** Create an owned list (including an empty backing buffer to retain its policy).
+ *  The ordinary list API dispatches by the list's internal management tag:
+ *  push/set copy borrowed input; get borrows read-only storage, including nested
+ *  fields; clone shares a COW buffer; mutation
+ *  detaches with element copies; clear/free drop elements; pop transfers one
+ *  owned value into non-aliasing caller storage. Do not byte-copy owning handles:
+ *  use clone. concat requires identical element sizes and callback pairs on both
+ *  lists; mixing owned/raw lists aborts. Existing raw-byte lists are unchanged.
+ *  Treat managed and backing headers as opaque; MnList's public layout is stable. */
+MN_EXPORT MnList __mn_list_new_owned(int64_t elem_size, const MnElementOps *ops);
+
+/** An owned String list. Insertion copies the String; callers keep their input.
+ *  Returned/popped owned Strings must be freed by the caller. Getter results
+ *  remain borrowed until mutation/free of the owning buffer. */
+MN_EXPORT MnList __mn_list_str_new_owned(void);
+
 /** Push an element (copied from `elem_ptr`) onto the end of the list. */
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr);
 
@@ -251,7 +278,7 @@ MN_EXPORT int64_t __mn_list_len(MnList *list);
  *  Returns 0 on success, -1 if empty. */
 MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr);
 
-/** Deep-clone a list: allocates a new data buffer and copies elements. */
+/** Clone a list handle, sharing managed buffers through copy-on-write. */
 MN_EXPORT MnList __mn_list_clone(MnList *src);
 
 /** Deep-clone a list, also cloning nested MnList fields within each element.
@@ -262,13 +289,16 @@ MN_EXPORT MnList __mn_list_deep_clone(MnList *src, const int64_t *list_offsets, 
 /** Clear the list (set len to 0, keep capacity). */
 MN_EXPORT void __mn_list_clear(MnList *list);
 
-/** Free the list's data buffer (does NOT free contained elements). */
+/** Release a list handle. Raw lists free only the buffer; the last owner of an
+ *  owned list also drops its elements. */
 MN_EXPORT void __mn_list_free(MnList *list);
 
 /** Concatenate two lists into a new list. Both must have the same elem_size. */
 MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b);
 
-/** Free a list of strings: frees each contained string, then the buffer. */
+/** Destroy a raw String list with exclusive ownership of its elements, or
+ *  release an owned String list's COW handle. Raw clones/detaches do not establish
+ *  independent String ownership; use __mn_list_str_new_owned for that contract. */
 MN_EXPORT void __mn_list_free_strings(MnList *list);
 
 /* -----------------------------------------------------------------------

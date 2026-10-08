@@ -1081,6 +1081,104 @@ MN_EXPORT MnString __mn_str_join(MnString sep, MnList *parts) {
 #define MN_LIST_HEADER_SIZE 16  /* [magic: i64][refcount: i64] */
 #define MN_COW_MAGIC ((int64_t)0x434F574C495354LL)  /* "COWLIST" in ASCII */
 
+/* Owned lists are opt-in and keep MnList's ABI unchanged. Raw lists retain
+ * their original 16-byte header and semantics. The tag prevents interpreting
+ * a legacy allocation as an owned header. Empty owned lists keep a buffer so
+ * clear/pop never lose the element policy. */
+#define MN_LIST_OWNED 2
+typedef struct MnOwnedListHeader {
+    _Alignas(max_align_t) MnElementOps ops;
+    int64_t magic;
+    int64_t refs;
+} MnOwnedListHeader;
+
+static MnOwnedListHeader *mn_owned_header(const MnList *list) {
+    return ((MnOwnedListHeader *)list->data) - 1;
+}
+
+static char *mn_owned_alloc(int64_t cap, int64_t elem_size, MnElementOps ops) {
+    int64_t bytes = mn_checked_add(sizeof(MnOwnedListHeader), mn_checked_mul(cap, elem_size));
+    MnOwnedListHeader *header = __mn_alloc(bytes);
+    header->ops = ops;
+    header->magic = MN_COW_MAGIC;
+    header->refs = 1;
+#ifdef MN_PROFILE_MEM
+    atomic_fetch_add_explicit(&mn_listbuf_count, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&mn_listbuf_bytes, bytes, memory_order_relaxed);
+#endif
+    return (char *)(header + 1);
+}
+
+static void mn_owned_release(MnList *list) {
+    MnOwnedListHeader *header = mn_owned_header(list);
+    if (__atomic_fetch_sub(&header->refs, 1, __ATOMIC_ACQ_REL) == 1) {
+        for (int64_t i = 0; i < list->len; ++i)
+            header->ops.drop(list->data + i * list->elem_size);
+        __mn_free(header);
+    }
+}
+
+static void mn_owned_detach(MnList *list) {
+    MnOwnedListHeader *header = mn_owned_header(list);
+    if (__atomic_load_n(&header->refs, __ATOMIC_ACQUIRE) == 1) return;
+    MnList copy = *list;
+    copy.data = mn_owned_alloc(list->cap, list->elem_size, header->ops);
+    for (int64_t i = 0; i < list->len; ++i)
+        header->ops.copy(copy.data + i * list->elem_size, list->data + i * list->elem_size);
+    /* Keep the original reference alive until every source element is copied. */
+    mn_owned_release(list);
+    *list = copy;
+}
+
+static void mn_owned_write(MnList *list, int64_t index, const void *value, int append) {
+    MnElementOps ops = mn_owned_header(list)->ops;
+    /* The input may point inside this buffer. Copy before detach, grow, or drop. */
+    _Alignas(max_align_t) char local[256];
+    void *copy = list->elem_size <= (int64_t)sizeof(local) ? local : __mn_alloc(list->elem_size);
+    ops.copy(copy, value);
+    mn_owned_detach(list);
+    if (append && list->len == list->cap) {
+        int64_t cap = mn_checked_mul(list->cap, 2);
+        int64_t bytes = mn_checked_add(sizeof(MnOwnedListHeader), mn_checked_mul(cap, list->elem_size));
+        MnOwnedListHeader *header = __mn_realloc(mn_owned_header(list), bytes);
+        list->data = (char *)(header + 1);
+        list->cap = cap;
+    }
+    char *dest = list->data + index * list->elem_size;
+    if (!append) ops.drop(dest);
+    memcpy(dest, copy, (size_t)list->elem_size); /* transfer the temporary */
+    if (copy != local) __mn_free(copy);
+    if (append) ++list->len;
+}
+
+MN_EXPORT MnList __mn_list_new_owned(int64_t elem_size, const MnElementOps *ops) {
+    if (elem_size <= 0 || !ops || !ops->copy || !ops->drop) {
+        fprintf(stderr, "mapanare: owned list requires a size and copy/drop operations\n");
+        abort();
+    }
+    MnList list = {mn_owned_alloc(MN_LIST_INITIAL_CAP, elem_size, *ops),
+                   0, MN_LIST_INITIAL_CAP, elem_size, MN_LIST_OWNED};
+    return list;
+}
+
+static void mn_owned_string_copy(void *dest, const void *source) {
+    MnString value;
+    memcpy(&value, source, sizeof(value));
+    value = __mn_str_from_parts(mn_untag(value.data), (int64_t)value.len);
+    memcpy(dest, &value, sizeof(value));
+}
+
+static void mn_owned_string_drop(void *value) {
+    MnString str;
+    memcpy(&str, value, sizeof(str));
+    mn_str_free_value(str);
+}
+
+MN_EXPORT MnList __mn_list_str_new_owned(void) {
+    const MnElementOps ops = {mn_owned_string_copy, mn_owned_string_drop};
+    return __mn_list_new_owned(sizeof(MnString), &ops);
+}
+
 /* Access the refcount for a list's data buffer */
 static int64_t *mn_list_rc(MnList *list) {
     if (!list->data || !list->managed) return NULL;
@@ -1200,6 +1298,10 @@ static void mn_list_grow(MnList *list) {
 }
 
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr) {
+    if (list->managed == MN_LIST_OWNED) {
+        mn_owned_write(list, list->len, elem_ptr, 1);
+        return;
+    }
     /* E7-L3 (v4.151.0): fast path — valid sole-owner list with capacity.
      * The common case in a hot loop: data is non-NULL, len < cap, managed
      * buffer with refcount 1 (sole owner after prior detach or fresh alloc).
@@ -1302,6 +1404,10 @@ MN_EXPORT void __mn_list_set(MnList *list, int64_t i, const void *elem_ptr) {
                 (long)i, (long)list->len);
         abort();
     }
+    if (list->managed == MN_LIST_OWNED) {
+        mn_owned_write(list, i, elem_ptr, 0);
+        return;
+    }
     mn_list_detach(list);  /* COW: ensure sole ownership */
     memcpy(list->data + i * list->elem_size,
            elem_ptr, (size_t)list->elem_size);
@@ -1330,6 +1436,14 @@ MN_EXPORT int64_t __mn_list_len(MnList *list) {
 
 MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr) {
     if (list->len <= 0) return -1;
+    if (list->managed == MN_LIST_OWNED) {
+        mn_owned_detach(list);
+        --list->len;
+        char *last = list->data + list->len * list->elem_size;
+        memcpy(out_ptr, last, (size_t)list->elem_size);
+        memset(last, 0, (size_t)list->elem_size);
+        return 0;
+    }
     mn_list_detach(list);  /* COW */
     list->len--;
     memcpy(out_ptr, list->data + list->len * list->elem_size,
@@ -1338,11 +1452,25 @@ MN_EXPORT int64_t __mn_list_pop(MnList *list, void *out_ptr) {
 }
 
 MN_EXPORT void __mn_list_clear(MnList *list) {
+    if (list->managed == MN_LIST_OWNED) {
+        mn_owned_detach(list);
+        MnElementOps ops = mn_owned_header(list)->ops;
+        for (int64_t i = 0; i < list->len; ++i)
+            ops.drop(list->data + i * list->elem_size);
+        list->len = 0;
+        return;
+    }
     mn_list_detach(list);  /* COW */
     list->len = 0;
 }
 
 MN_EXPORT void __mn_list_free(MnList *list) {
+    if (list->managed == MN_LIST_OWNED) {
+        mn_owned_release(list);
+        list->data = NULL;
+        list->len = list->cap = list->managed = 0;
+        return;
+    }
     if (list->data && list->managed) {
         int64_t *rc = mn_list_rc(list);
         if (rc) {
@@ -1372,6 +1500,11 @@ MN_EXPORT void __mn_cow_stats(void) {
 }
 
 MN_EXPORT MnList __mn_list_clone(MnList *src) {
+    if (src->managed == MN_LIST_OWNED) {
+        MnList copy = *src;
+        __atomic_fetch_add(&mn_owned_header(src)->refs, 1, __ATOMIC_RELAXED);
+        return copy;
+    }
 #ifdef MN_PROFILE_MEM
     atomic_fetch_add_explicit(&mn_clone_count, 1, memory_order_relaxed);
 #endif
@@ -1430,6 +1563,12 @@ MN_EXPORT MnList __mn_list_clone(MnList *src) {
 }
 
 MN_EXPORT MnList __mn_list_deep_clone(MnList *src, const int64_t *list_offsets, int64_t num_offsets) {
+    /* The owned policy already handles nested fields when the buffer detaches. */
+    if (src->managed == MN_LIST_OWNED) {
+        MnList copy = __mn_list_clone(src);
+        mn_owned_detach(&copy);
+        return copy;
+    }
     MnList dst = __mn_list_clone(src);
     if (num_offsets <= 0 || list_offsets == NULL || dst.len <= 0) return dst;
     /* Detach first — we're about to modify element data (nested list headers) */
@@ -1452,6 +1591,22 @@ MN_EXPORT MnList __mn_list_deep_clone(MnList *src, const int64_t *list_offsets, 
 }
 
 MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
+    if (a->managed == MN_LIST_OWNED || b->managed == MN_LIST_OWNED) {
+        if (a->managed != MN_LIST_OWNED || b->managed != MN_LIST_OWNED ||
+            a->elem_size != b->elem_size ||
+            mn_owned_header(a)->ops.copy != mn_owned_header(b)->ops.copy ||
+            mn_owned_header(a)->ops.drop != mn_owned_header(b)->ops.drop) {
+            fprintf(stderr, "mapanare: incompatible owned list concat policies\n");
+            abort();
+        }
+        MnElementOps ops = mn_owned_header(a)->ops;
+        MnList result = __mn_list_new_owned(a->elem_size, &ops);
+        for (int64_t i = 0; i < a->len; ++i)
+            __mn_list_push(&result, a->data + i * a->elem_size);
+        for (int64_t i = 0; i < b->len; ++i)
+            __mn_list_push(&result, b->data + i * b->elem_size);
+        return result;
+    }
     int64_t es = a->elem_size;
     MnList result = __mn_list_new(es);
     int64_t total = mn_checked_add(a->len, b->len);
@@ -1479,6 +1634,10 @@ MN_EXPORT MnList __mn_list_concat(MnList *a, MnList *b) {
 
 MN_EXPORT void __mn_list_free_strings(MnList *list) {
     if (!list || !list->data) return;
+    if (list->managed == MN_LIST_OWNED) {
+        __mn_list_free(list);
+        return;
+    }
     /* Free each contained MnString before freeing the list buffer. */
     for (int64_t i = 0; i < list->len; i++) {
         MnString *sp = (MnString *)(list->data + i * list->elem_size);
