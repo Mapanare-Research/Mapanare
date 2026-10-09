@@ -2,7 +2,8 @@
 
 ## Resume point — 2026-10-08
 
-Borrowed map views now participate in the Python loop-result lifetime proof.
+Borrowed map views now participate in the Python loop-result lifetime proof,
+committed as **`c81dfb64`** (`Track borrowed map views before recycling loop results`).
 Local cursors and String key/value reads permit recycling only when all derived
 aliases are dead; copied scalar results may survive independently. Retained
 views, unknown consumers and mixed origins still reject recycling. See
@@ -27,8 +28,10 @@ Evidence: `build/memory-ownership/map-borrowed-views/`.
 - `ownership-regressions.log`: 240 passed, including 32 new leak-checked runs and
   eight retained-view invalid-access guards. Those eight guards intentionally
   disable leak detection because retained ownership remains open.
-- Strict self-host validation is running at `build/fixed-point-yip0m8ol`;
-  promotion and final hashes are pending this checkpoint.
+- `fixed-point.log`, `build/fixed-point-yip0m8ol`: both generations pass 104 LLVM
+  goldens and nine required outputs; stage2/stage3 IR is byte-identical. Native
+  source and emitted IR hashes are unchanged. The corrected runtime changes
+  the archive and linked successor hashes.
 
 GitNexus reports HIGH impact for the recycling proof: one direct caller, four
 reachable indexed symbols, zero indexed processes. The warning was reported
@@ -38,8 +41,24 @@ helpers have LOW indexed impact; generated calls/function-pointer dispatch were
 checked through sanitizer executions. The initial candidate failures exposed
 the alignment bug; all affected cases pass with that correction.
 
-**Next:** finish the strict gate and record/promote the verified compiler/runtime
-pair. Then continue retained aliases, multiple allocation origins and general
+Staged detection reports four expected runtime files with LOW risk, then eight
+expected ownership/documentation files with LOW risk (`runtime-precommit.log`,
+`precommit.log`). Some indexed ranges drift across added lines, so the exact
+diffs and new symbols were reviewed directly. Black/Ruff and whitespace checks
+pass. All verification processes have finished.
+
+The exact tested successor is installed at `mapanare/self/mnc-stage1`, with its
+previous binary preserved under the evidence directory as `previous-mnc-stage1`.
+`verification.json` ties the committed source to the successful gate and hashes:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Installed compiler | `5eeaa3ecee02868fbc7530eba7dff33374c6f34dfac1d9d2a26fb904fd4dc41d` |
+| Runtime archive | `b6374c61abf9e7630b7efc1d80cb5008421b5975f82d82c52558d2f24a386db9` |
+| Concatenated native source | `a79a01a72ccc2734fcefaa50767f5b187891732e8ef94bb94601e8d7302fd4ba` |
+| Stage2 and stage3 IR | `62728337381f7e1c1ff3d5ffd59067f7345a6a9f5a5106a55784ff0efbaa73cb` |
+
+**Next:** continue retained aliases, multiple allocation origins and general
 transfer/retain/clone semantics. Nested element ownership and native adoption
 remain open. Priority 2 stays active; nothing pushed.
 
