@@ -1,16 +1,17 @@
 # Proposed retained-map emitter integration
 
-Status: not applied. Automatic approval review requires the user's explicit
-approval of this emitter integration after rejecting it twice. The runtime is
+Status: explicitly approved by the user and applied in the working tree.
+Automatic approval review's earlier block is resolved for this integration. The runtime is
 already committed as `d82e2078`; its final 45 sanitizer lifecycle tests pass.
 The separate, currently unconnected `shared_map_aliases` analysis passes 38
 tests. Baseline compilation with the unchanged emitter reproduces 36 leaks
 across Python O0–O3, with four passing skipped-loop controls. The exact 40-case
-integration suite is preserved as
-[retained_map_ownership.py.pending](retained_map_ownership.py.pending), outside
-active test discovery because the emitter implementation is not yet approved.
-After approval, restore it to `tests/integration/test_retained_map_ownership.py`
-and use it as the acceptance gate; its assertions must not be weakened.
+integration suite is restored to `tests/integration/test_retained_map_ownership.py`.
+All cases are leak-free, but the rotating-alias program reveals a pre-existing
+O2/O3 copy-propagation output error. The expected output is unchanged. Three
+standalone MIR cases reproduce that optimizer bug; the separate correction
+awaits approval in [COPY_SNAPSHOT_PROPOSAL.md](COPY_SNAPSHOT_PROPOSAL.md).
+Do not commit this integration as verified until that acceptance gate passes.
 
 ## Exact implementation scope
 

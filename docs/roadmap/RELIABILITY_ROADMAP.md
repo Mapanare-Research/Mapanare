@@ -39,6 +39,15 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
+**Retained-map emitter approved and applied; optimizer correction pending.**
+The restored acceptance suite is leak-free, including bounded live-map counts
+over 100,000 iterations. Full integration validation has 432 passes and two
+failures from a separately reproduced, pre-existing O2/O3 copy-propagation bug.
+The 1,252 existing LLVM/MIR checks and strict self-host gate pass. The emitter
+increment remains uncommitted until its complete acceptance gate passes.
+Automatic approval review requires separate approval for the prepared
+[copy-snapshot correction](memory-ownership/COPY_SNAPSHOT_PROPOSAL.md).
+
 **Priority 2 active; explicit map references committed as `d82e2078`.** Retained
 handles and cursors keep maps alive until the last release. The runtime passes
 45 sanitizer cases; broad suites pass 1,252 LLVM/MIR tests and 240 ownership

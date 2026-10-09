@@ -2,6 +2,51 @@
 
 ## Resume point — 2026-10-08
 
+The user explicitly approved the retained-map emitter integration. It is now
+applied in the working tree, with the proposed acceptance suite restored to
+`tests/integration/test_retained_map_ownership.py`. The integration is not yet
+committed: the rotating-alias case exposed an existing optimizer correctness
+bug at O2/O3 (`4853` instead of `4756`). The saved pre-integration executable
+has the same wrong output. Three isolated copy-snapshot regressions reproduce
+reassigned-source, reassigned-parameter and loop-source failures.
+
+Automatic approval review accepted the emitter after user approval but rejected
+the separate `copy_propagation` correction as outside that exact approval. Its
+new explicit approval request is pending; no optimizer edits were applied.
+See [COPY_SNAPSHOT_PROPOSAL.md](COPY_SNAPSHOT_PROPOSAL.md). Keep the expected
+outputs and all acceptance checks intact.
+
+Evidence: `build/memory-ownership/retained-map-emitter/`.
+
+- Initial candidate: 176 passed, six failed. Two are the actual optimizer output
+  mismatch; four old retained-alias guards expected cleanup to be declined.
+  Those guards now require leak freedom and pass in the focused suite below.
+- `copy-baseline.log`: three new MIR snapshot failures and one safe-copy control.
+- `rotating-baseline-output.log`: saved pre-integration O2 executable confirms
+  the same wrong result with leak detection disabled solely to inspect stdout.
+- `bounded.log`: all four O0–O3 runs of 100,000 iterations pass with at most eight
+  live maps and zero remaining references, ASan/UBSan/LSan clean. Observers wrap
+  real runtime calls; they do not replace allocation or destruction behavior.
+- `llvm-mir-before-optimizer.log`: 1,252 existing checks pass. The new three
+  failing snapshot cases are explicitly excluded from this existing-suite run.
+- `ownership-before-optimizer.log`: all 240 existing ownership checks pass,
+  including the strengthened retained-map leak checks.
+- `fixed-point.log`, `build/fixed-point-q3waed5b`: both generations pass 104 LLVM
+  goldens and nine outputs, with byte-identical IR. Compiler/runtime hashes
+  match the installed pair below; no replacement is needed.
+- `full-integration-before-optimizer.log`: 432 passed, seven skipped, five
+  expected failures, and exactly two failures: the documented O2/O3 rotating-
+  alias output mismatch. All processes are finished. No additional integration
+  regression was found.
+
+**Next:** obtain approval for the concrete optimizer correction, apply it, and
+require the snapshot tests and all retained-map cases to pass. Then complete
+broad validation, commit this integration, and continue remaining ownership
+boundaries. Nothing pushed. No task code from this working increment is yet
+committed; the last complete verified checkpoint remains `3fc3f2b7` below.
+
+## Previous verified milestone — explicit runtime map references
+
 Explicit runtime map references are committed as **`d82e2078`** (`Add explicit
 map references and retain iterator parents`). Constructors start with one
 reference; retained handles and cursors keep the map alive; the last release
