@@ -1,21 +1,21 @@
-# Proposed retained-map emitter integration
+# Retained-map emitter integration
 
-Status: explicitly approved by the user and applied in the working tree.
-Automatic approval review's earlier block is resolved for this integration. The runtime is
+Status: implemented under the user's full integration authorization. The runtime is
 already committed as `d82e2078`; its final 45 sanitizer lifecycle tests pass.
-The separate, currently unconnected `shared_map_aliases` analysis passes 38
+The connected `shared_map_aliases` analysis passes 38
 tests. Baseline compilation with the unchanged emitter reproduces 36 leaks
 across Python O0–O3, with four passing skipped-loop controls. The exact 40-case
 integration suite is restored to `tests/integration/test_retained_map_ownership.py`.
-All cases are leak-free, but the rotating-alias program reveals a pre-existing
-O2/O3 copy-propagation output error. The expected output is unchanged. Three
-standalone MIR cases reproduce that optimizer bug; the separate correction
-awaits approval in [COPY_SNAPSHOT_PROPOSAL.md](COPY_SNAPSHOT_PROPOSAL.md).
-Do not commit this integration as verified until that acceptance gate passes.
+All 40 cases are now leak-free and produce the expected output. The rotating-
+alias program exposed a pre-existing O2/O3 copy-propagation error, fixed in
+`ddcb8f9b`; see [COPY_SNAPSHOT_PROPOSAL.md](COPY_SNAPSHOT_PROPOSAL.md).
+Four additional O0–O3 cases run 100,000 iterations, observing at most eight live
+maps and zero references remaining at exit. The observer wraps real runtime
+calls and all executions run with ASan/UBSan/LSan.
 
 ## Exact implementation scope
 
-Only `mapanare/emit_llvm_text.py` is to be connected to the new proof. Import
+`mapanare/emit_llvm_text.py` imports the proof
 `shared_map_aliases` from `mapanare.map_shared`. The following four existing
 methods and one new helper implement the integration:
 
@@ -34,7 +34,7 @@ methods and one new helper implement the integration:
    `_shared_map_owners`. After inserting all initial entries, pass the completed
    map to the helper with `borrow=False`, then run the existing `_put`.
 
-The proposed helper is:
+The helper is:
 
 ```python
 def _store_shared_map(self, name: str, value: str, *, borrow: bool) -> bool:
@@ -70,4 +70,6 @@ Incorrect integration could cause widespread premature frees or leaks. Before
 committing, run the 40 new executable cases, retained-view guards, broad LLVM/MIR
 and ownership suites, and strict self-hosting. Update any existing retained-map
 guard to require leak freedom only after proving it is eligible and passing.
-Do not weaken tests, alter emitted IR, or bypass the approval requirement.
+The targeted suite passes 225 tests. Broad-suite and strict self-hosting results
+are recorded in [WORK_LOG.md](WORK_LOG.md). Expected outputs and sanitizer
+checks remain intact.

@@ -39,24 +39,20 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
-**Retained-map emitter approved and applied; optimizer correction pending.**
-The restored acceptance suite is leak-free, including bounded live-map counts
-over 100,000 iterations. Full integration validation has 432 passes and two
-failures from a separately reproduced, pre-existing O2/O3 copy-propagation bug.
-The 1,252 existing LLVM/MIR checks and strict self-host gate pass. The emitter
-increment remains uncommitted until its complete acceptance gate passes.
-Automatic approval review requires separate approval for the prepared
-[copy-snapshot correction](memory-ownership/COPY_SNAPSHOT_PROPOSAL.md).
+**Retained-map compiler integration passes its acceptance gate.** Local map
+aliases now own runtime references; replacements release obsolete maps while
+retained aliases remain valid. All 40 sanitizer executions and four bounded
+100,000-iteration tests pass. The optimizer snapshot correction is committed as
+`ddcb8f9b`. Broad validation passes **1,690 tests**, with seven skips and five
+expected failures. Strict self-hosting at `build/fixed-point-q3waed5b` passes
+104 LLVM goldens and nine outputs per generation with byte-identical IR.
 
-**Priority 2 active; explicit map references committed as `d82e2078`.** Retained
-handles and cursors keep maps alive until the last release. The runtime passes
-45 sanitizer cases; broad suites pass 1,252 LLVM/MIR tests and 240 ownership
-regressions. Strict self-hosting passes at `build/fixed-point-_p8lbaiq`, and the
-tested successor is installed. The independent compiler proof is committed as
-`dd8c2ce3`, but its emitter integration remains unapplied: automatic approval
-review requires explicit user re-approval. The [concrete proposal and tests](memory-ownership/RETAINED_MAP_EMITTER_PROPOSAL.md)
-are ready. The 36 newly reproduced compiler leaks remain unresolved pending that
-integration. See [the work log](memory-ownership/WORK_LOG.md) for hashes and resume steps.
+Runtime references (`d82e2078`) and the group proof (`dd8c2ce3`) are integrated.
+The user has authorized continuation without further step-by-step approval.
+Next is retained-map return transfer: its 24-case baseline reproduces 20 leaks
+and four passing controls. Consumed Phi ownership, retained borrowed views and
+native compiler adoption follow. See [the work log](memory-ownership/WORK_LOG.md)
+for evidence, exact limits, hashes and the resume point.
 
 **Priority 2 active; borrowed-view loop cleanup committed as `c81dfb64`.**
 Private cursors and borrowed String key/value aliases must be dead before the

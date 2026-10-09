@@ -174,6 +174,6 @@ fn main():
         print(len(saved))
     print(len(saved))
 """
-    # Legacy escaping-map ownership still leaks; this guards against turning
-    # that retention into a use-after-free by recycling a live alias.
-    _run(source, "3\n" * 101, opt, instrumented_core, tmp_path, leaks=False)
+    # This group cannot recycle a sole owner, but explicit retained references
+    # now keep the saved map alive and release every obsolete result.
+    _run(source, "3\n" * 101, opt, instrumented_core, tmp_path, leaks=True)

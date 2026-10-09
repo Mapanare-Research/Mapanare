@@ -2,48 +2,34 @@
 
 ## Resume point — 2026-10-08
 
-The user explicitly approved the retained-map emitter integration. It is now
-applied in the working tree, with the proposed acceptance suite restored to
-`tests/integration/test_retained_map_ownership.py`. The integration is not yet
-committed: the rotating-alias case exposed an existing optimizer correctness
-bug at O2/O3 (`4853` instead of `4756`). The saved pre-integration executable
-has the same wrong output. Three isolated copy-snapshot regressions reproduce
-reassigned-source, reassigned-parameter and loop-source failures.
-
-Automatic approval review accepted the emitter after user approval but rejected
-the separate `copy_propagation` correction as outside that exact approval. Its
-new explicit approval request is pending; no optimizer edits were applied.
-See [COPY_SNAPSHOT_PROPOSAL.md](COPY_SNAPSHOT_PROPOSAL.md). Keep the expected
-outputs and all acceptance checks intact.
+The user authorized the full integration and subsequent fixes without repeated
+approval requests. The optimizer correction is committed as **`ddcb8f9b`**.
+Retained map aliases are now connected to explicit runtime references in the
+Python LLVM emitter: copies retain before replacement, fresh allocations
+transfer their initial reference, and every local owner is released on return.
 
 Evidence: `build/memory-ownership/retained-map-emitter/`.
 
-- Initial candidate: 176 passed, six failed. Two are the actual optimizer output
-  mismatch; four old retained-alias guards expected cleanup to be declined.
-  Those guards now require leak freedom and pass in the focused suite below.
-- `copy-baseline.log`: three new MIR snapshot failures and one safe-copy control.
-- `rotating-baseline-output.log`: saved pre-integration O2 executable confirms
-  the same wrong result with leak detection disabled solely to inspect stdout.
-- `bounded.log`: all four O0–O3 runs of 100,000 iterations pass with at most eight
-  live maps and zero remaining references, ASan/UBSan/LSan clean. Observers wrap
-  real runtime calls; they do not replace allocation or destruction behavior.
-- `llvm-mir-before-optimizer.log`: 1,252 existing checks pass. The new three
-  failing snapshot cases are explicitly excluded from this existing-suite run.
-- `ownership-before-optimizer.log`: all 240 existing ownership checks pass,
-  including the strengthened retained-map leak checks.
+- `corrected.log`: 225 targeted checks pass, including the four copy-snapshot
+  regressions and exact rotating-alias output at O0–O3.
+- `full-corrected.log`: **1,690 passed, seven skipped, five expected failures**
+  across `tests/llvm`, `tests/mir`, `tests/mir_opt`, and `tests/integration`.
+- All 40 retained-alias executions pass ASan/UBSan/LSan with exact output.
+  The before-emitter baseline had 36 leaks and four passing skipped-loop cases.
+- Four bounded-memory executions run 100,000 iterations: at most eight live
+  maps and zero references remaining at exit, using real runtime calls.
 - `fixed-point.log`, `build/fixed-point-q3waed5b`: both generations pass 104 LLVM
-  goldens and nine outputs, with byte-identical IR. Compiler/runtime hashes
-  match the installed pair below; no replacement is needed.
-- `full-integration-before-optimizer.log`: 432 passed, seven skipped, five
-  expected failures, and exactly two failures: the documented O2/O3 rotating-
-  alias output mismatch. All processes are finished. No additional integration
-  regression was found.
+  goldens and nine outputs, with byte-identical stage2/stage3 IR. The installed
+  compiler/runtime hashes remain those recorded below.
+- Black/Ruff and staged whitespace checks pass. GitNexus scope detection runs
+  before each commit; the optimizer impact is CRITICAL and emitter integration
+  impact is CRITICAL, as reported before editing.
 
-**Next:** obtain approval for the concrete optimizer correction, apply it, and
-require the snapshot tests and all retained-map cases to pass. Then complete
-broad validation, commit this integration, and continue remaining ownership
-boundaries. Nothing pushed. No task code from this working increment is yet
-committed; the last complete verified checkpoint remains `3fc3f2b7` below.
+**Next, already authorized:** retained map return transfer. The new 24-case
+baseline (`returns-baseline.log`) has 20 leak failures and four passing controls.
+Acquire exactly one caller reference before releasing all local alias owners.
+Then handle consumed Phi ownership and borrowed views, followed by native
+compiler adoption. No push has been requested or performed.
 
 ## Previous verified milestone — explicit runtime map references
 
@@ -53,13 +39,10 @@ reference; retained handles and cursors keep the map alive; the last release
 destroys it. Legacy deep-release obligations survive intermediate shallow
 releases. See [RETAINED_MAPS.md](RETAINED_MAPS.md).
 
-The independent, unconnected compiler proof is committed as **`dd8c2ce3`**
-(`Prove closed map alias groups for explicit ownership`). It identifies complete
-local groups and rejects escaping/uncertain uses. **The emitter integration is
-not applied.** Automatic approval review rejected it twice, including after
-staged validation, and explicitly required user re-approval. A question is
-pending in the chat. The exact implementation scope and prepared test suite are
-in [RETAINED_MAP_EMITTER_PROPOSAL.md](RETAINED_MAP_EMITTER_PROPOSAL.md).
+The independent compiler proof was committed as **`dd8c2ce3`**
+(`Prove closed map alias groups for explicit ownership`). The runtime checkpoint
+predated emitter integration; the current completed integration is described
+above and in [RETAINED_MAP_EMITTER_PROPOSAL.md](RETAINED_MAP_EMITTER_PROPOSAL.md).
 
 Evidence: `build/memory-ownership/retained-maps/`.
 
@@ -70,7 +53,7 @@ Evidence: `build/memory-ownership/retained-maps/`.
 - `baseline.log`: 36 leaking executions and four passing skipped-loop controls
   with the unchanged Python emitter and new runtime. These are unresolved
   compiler leaks, not passing integration tests. The proposed acceptance suite
-  is saved as `retained_map_ownership.py.pending`, outside active discovery.
+  was subsequently activated as `tests/integration/test_retained_map_ownership.py`.
 - `runtime-llvm-mir.log`: 1,252 passed, including the independent new proof.
 - `runtime-ownership-regressions.log`: 240 passed.
 - `fixed-point.log`, `build/fixed-point-_p8lbaiq`: both generations pass 104 LLVM
@@ -91,16 +74,9 @@ binary is preserved as `build/memory-ownership/retained-maps/previous-mnc-stage1
 GitNexus reports LOW indexed runtime impact (at most one direct caller per
 helper, no indexed flows). Runtime staged detection covers six expected files;
 the newly added proof/proposal files were unindexed and reviewed directly.
-The blocked emitter change has CRITICAL function-emission impact: one direct
-caller, nine reachable symbols and five flows. No emitter edits were applied.
-Black/Ruff and staged whitespace checks pass. Nothing pushed.
-
-**Next:** obtain the explicitly requested re-approval for the documented emitter
-integration, restore the prepared acceptance suite, apply the bounded patch,
-and require all 40 cases plus existing retained-view and broad compiler gates
-to pass before committing. Then extend consumed Phi/returned/borrowed-view
-ownership and adopt owned containers more broadly. Do not bypass the approval
-review or mistake runtime support for completed compiler integration.
+The subsequent emitter integration has CRITICAL function-emission impact:
+one direct caller, nine reachable symbols and five flows. Its completed
+validation and current next steps are recorded at the top of this log.
 
 ## Previous verified milestone — borrowed map views
 

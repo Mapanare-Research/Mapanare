@@ -13,6 +13,7 @@ from mapanare.abi import classify_return  # v4.149.0 E5
 from mapanare.borrow import function_borrows_arguments
 from mapanare.map_liveness import recyclable_map_results
 from mapanare.map_ownership import owned_map_factories
+from mapanare.map_shared import shared_map_aliases
 from mapanare.mir import (
     AgentSend,
     AgentSpawn,
@@ -2484,9 +2485,17 @@ class LLVMTextEmitter:
         self._list_vars = []
         self._map_vars = []
         self._loop_map_owners: dict[str, str] = {}
-        for name in sorted(
-            recyclable_map_results(fn, getattr(self, "_owned_map_factories", set()))
-        ):
+        factories = getattr(self, "_owned_map_factories", set())
+        recycled = recyclable_map_results(fn, factories)
+        self._shared_map_owners: dict[str, str] = {}
+        for name in sorted(shared_map_aliases(fn, factories, recycled)):
+            slot = self._alloca(PTR, "map_owner_ref")
+            self._ent.append(f"  store ptr null, ptr {slot}")
+            owner_name = f"_map_ref_{name}"
+            self._alloc[owner_name] = (slot, PTR)
+            self._map_vars.append(owner_name)
+            self._shared_map_owners[name] = slot
+        for name in sorted(recycled):
             slot = self._alloca(PTR, "map_owner")
             self._ent.append(f"  store ptr null, ptr {slot}")
             owner_name = f"_map_owner_{name}"
@@ -3040,8 +3049,24 @@ class LLVMTextEmitter:
             self._put(i.dest, str(v), ty)
 
     # --- Copy ---
+    def _store_shared_map(self, name: str, value: str, *, borrow: bool) -> bool:
+        """Acquire before releasing: self-assignment and shared handles are safe."""
+        owner = getattr(self, "_shared_map_owners", {}).get(name)
+        if owner is None:
+            return False
+        if borrow:
+            value = self._rt("__mn_map_retain", PTR, [PTR], [(value, PTR)])
+        previous = self._f("map_ref_previous")
+        self._L(f"{previous} = load ptr, ptr {owner}")
+        self._rt("__mn_map_free_deep", VOID, [PTR], [(previous, PTR)])
+        self._L(f"store ptr {value}, ptr {owner}")
+        return True
+
     def _do_copy(self, i: Copy) -> None:
         v, t = self._get(i.src)
+        if self._store_shared_map(i.dest.name, v, borrow=True):
+            self._put(i.dest, v, t)
+            return
         self._put(i.dest, v, t)
         # Track list aliases: when a list is copied, the dest should see
         # future push write-backs to the source. Record the alias so
@@ -4529,6 +4554,8 @@ class LLVMTextEmitter:
                     self._L(f"{r} = call {ret} @{fn}({astr})")
                 self._put(i.dest, r, ret)
             if i.dest.ty.kind == TypeKind.MAP and fn in getattr(self, "_owned_map_factories", ()):
+                if self._store_shared_map(i.dest.name, r, borrow=False):
+                    return
                 owner = getattr(self, "_loop_map_owners", {}).get(i.dest.name)
                 if owner is not None:
                     # All aliases of the prior result are dead at this point.
@@ -5278,7 +5305,8 @@ class LLVMTextEmitter:
             [I64, I64, I64, I64],
             [(str(ksz), I64), (str(vsz), I64), (str(ktag), I64), (str(vtag), I64)],
         )
-        self._track_container(i.dest.name, "map")
+        if i.dest.name not in getattr(self, "_shared_map_owners", {}):
+            self._track_container(i.dest.name, "map")
         for kv, vv in i.pairs:
             k, kt = self._get(kv)
             v, vt = self._get(vv)
@@ -5289,6 +5317,7 @@ class LLVMTextEmitter:
             self._L(f"store {vt} {v}, ptr {va}")
             vp = va  # opaque ptr, no bitcast
             self._rt("__mn_map_set", VOID, [PTR, PTR, PTR], [(mp, PTR), (kp, PTR), (vp, PTR)])
+        self._store_shared_map(i.dest.name, mp, borrow=False)
         self._put(i.dest, mp, PTR)
 
     # --- EnumInit ---
