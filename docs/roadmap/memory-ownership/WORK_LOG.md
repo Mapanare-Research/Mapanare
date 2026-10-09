@@ -26,9 +26,10 @@ Validation:
   `llvm-as`. Black and Ruff passed on changed Python files.
 - Strict fixed-point attempt: stage-1 goldens **104/104**, including nine
   executable outputs, passed. Stage-2 IR passed `llvm-as`; compiling its
-  184 MB IR at `-O2` hit the gate's former 600-second timeout. An O2 compile
-  of that same IR is in progress with no 600-second limit; full fixed-point
-  equality remains **pending**. Do not treat this as a passed strict gate.
+  184 MB IR at `-O2` hit the gate's former 600-second timeout. Recompiling
+  that IR without the timeout succeeded, but its optimized stage-2 compiler
+  timed out after 60 seconds on the first trivial golden. Full fixed-point
+  equality **failed and remains open**; do not treat this as a passed gate.
 - GitNexus staged change detection before the commit: 14 indexed symbols,
   eight affected execution flows, **HIGH** risk. Native `.mn` symbols are
   absent from the current graph and were checked in source and generated IR.
@@ -42,7 +43,8 @@ that probe, but copied range aliases need a lifetime policy or diagnostic.
 Live map String views must be checked across replacement/deletion and escape.
 Cycle limitations still need an explicit contract statement.
 
-Next: finish the extended strict gate; implement and sanitizer-test owned
+Next: fix the stage-2 compiler hang and finish the extended strict gate;
+implement and sanitizer-test owned
 String/Map fields and deeper struct nesting. Then close or diagnose the range
 and map-view cases, rerun both compiler suites, bounded-memory stress, and the
 strict fixed-point gate.
