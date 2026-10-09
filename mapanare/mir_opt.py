@@ -612,14 +612,32 @@ def copy_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
     """
     # Build map: copy dest name -> source value (single pass over all instructions)
     # Exclude multiply-defined values and mutation targets
-    def_counts: dict[str, int] = {}
+    def_counts: dict[str, int] = {param.name: 1 for param in fn.params}
     mutated_names: set[str] = set()
     copy_candidates: list[Copy] = []
+    # A single definition inside a cycle may produce a new value on every
+    # visit. A copy can preserve a value from an earlier visit.
+    successors, _ = _build_cfg(fn)
+    cyclic_blocks: set[str] = set()
+    for label in successors:
+        pending = list(successors[label])
+        seen: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current == label:
+                cyclic_blocks.add(label)
+                break
+            if current not in seen:
+                seen.add(current)
+                pending.extend(successors.get(current, ()))
+    cyclic_defs: set[str] = set()
     for bb in fn.blocks:
         for inst in bb.instructions:
             dest = _get_dest(inst)
             if dest is not None and dest.name:
                 def_counts[dest.name] = def_counts.get(dest.name, 0) + 1
+                if bb.label in cyclic_blocks:
+                    cyclic_defs.add(dest.name)
             if isinstance(inst, Copy):
                 copy_candidates.append(inst)
             elif isinstance(inst, FieldSet):
@@ -629,7 +647,13 @@ def copy_propagation(fn: MIRFunction, stats: MIRPassStats) -> bool:
 
     copy_map: dict[str, Value] = {}
     for inst in copy_candidates:
-        if def_counts.get(inst.dest.name, 0) <= 1 and inst.dest.name not in mutated_names:
+        if (
+            def_counts.get(inst.dest.name, 0) <= 1
+            and def_counts.get(inst.src.name, 0) <= 1
+            and inst.dest.name not in mutated_names
+            and inst.src.name not in mutated_names
+            and inst.src.name not in cyclic_defs
+        ):
             copy_map[inst.dest.name] = inst.src
 
     # Resolve chains: if %a = copy %b, %b = copy %c → %a maps to %c

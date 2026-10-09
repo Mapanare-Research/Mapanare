@@ -1,15 +1,15 @@
 # Copy snapshot correction
 
-Status: proposed; automatic approval review requires separate user approval.
-The map emitter integration is approved and applied. Its rotating-alias test
-returns `4756` at O0/O1 but the wrong value `4853` at O2/O3. The root cause is
+Status: implemented under the user's full integration authorization.
+The map emitter integration's rotating-alias test previously
+returned `4756` at O0/O1 but the wrong value `4853` at O2/O3. The root cause was
 `copy_propagation` replacing a copied snapshot with a source that can change.
 Three new standalone MIR regression cases fail before the fix; a stable-source
 control passes. Evidence: `build/memory-ownership/retained-map-emitter/copy-baseline.log`.
 
-## Proposed change
+## Implemented change
 
-Modify only `mapanare/mir_opt.py::copy_propagation`:
+The correction changes only `mapanare/mir_opt.py::copy_propagation`:
 
 1. Seed definition counts with one definition for each parameter, so assigning
    to a parameter counts as reassignment.
@@ -36,6 +36,7 @@ if (
 This preserves snapshots conservatively; it can reduce optimization of loop
 copies until a stronger reaching-definition proof is implemented. GitNexus
 rates the optimizer CRITICAL: one direct caller, ten reachable symbols and
-eleven affected flows. Required gates: new snapshot tests, retained-map output
-and sanitizer cases, broad LLVM/MIR tests, and strict self-hosting. Do not change
-the expected rotating-alias output to disguise the bug.
+eleven affected flows. All four snapshot checks and the rotating-alias output
+checks now pass without changing expected output. The targeted run passes 225
+checks. Broad-suite results and strict self-hosting evidence are recorded in
+[WORK_LOG.md](WORK_LOG.md).
