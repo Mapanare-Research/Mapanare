@@ -39,6 +39,16 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
+**Priority 2 active; borrowed map views now participate in loop cleanup.**
+Private cursors and borrowed String key/value aliases must be dead before the
+next allocation; copied scalars are independent. All 32 new leak cases pass,
+with eight retained-view guards and 38 new proof controls. Broader validation
+passes 1,214 LLVM/MIR tests, 240 ownership regressions and 33 runtime checks.
+See [the borrowed-view contract](memory-ownership/MAP_BORROWED_VIEWS.md).
+The tests exposed packed-key alignment UB, fixed separately in `ace5c43a`.
+Strict self-hosting is running at `build/fixed-point-yip0m8ol`; promotion and final
+hashes are pending in [the work log](memory-ownership/WORK_LOG.md).
+
 **Priority 2 active; loop-result cleanup committed as `8f494554`.** A liveness
 proof selects nonescaping factory results and private owner
 slots release their previous maps. The 535,464-byte reproducer now passes, as
@@ -131,7 +141,7 @@ The prior verified pair is preserved under
 Self-hosted source checks pass 253 tests with two expected xfails.
 
 **Next:** extend ownership to retained aliases, multiple allocation origins and
-borrowed map views. The original loop and direct-return fixtures now pass for
+unrecognized borrowed views. The original loop and direct-return fixtures now pass for
 the proven cases. Broader transfer/retain/clone rules are still needed before
 enabling general recycling. Continue container handles, insertion, and borrowed lookups in lowering
 and both emitters. Map handles currently have exclusive ownership; sharing needs

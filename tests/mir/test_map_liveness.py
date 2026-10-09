@@ -31,7 +31,7 @@ FACTORY = "fn make() -> Map<Int, Int>:\n    return #{1: 2}\n"
         ("        let m = make()\n        let alias = m\n        print(len(alias))\n", True),
         ("        let m = make()\n        capture(m)\n", False),
         ("        let m = make()\n        let captured = [m]\n        sink(captured)\n", False),
-        ("        let m = make()\n        for key in m:\n            print(key)\n", False),
+        ("        let m = make()\n        for key in m:\n            print(key)\n", True),
     ],
 )
 @pytest.mark.parametrize("opt", list(MIROptLevel))

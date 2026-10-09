@@ -2,6 +2,53 @@
 
 ## Resume point — 2026-10-08
 
+Borrowed map views now participate in the Python loop-result lifetime proof.
+Local cursors and String key/value reads permit recycling only when all derived
+aliases are dead; copied scalar results may survive independently. Retained
+views, unknown consumers and mixed origins still reject recycling. See
+[MAP_BORROWED_VIEWS.md](MAP_BORROWED_VIEWS.md) for the contract and next boundary.
+
+The tests also exposed packed-key alignment UB. Its separate fix is committed
+as **`ace5c43a`** (`Read packed map keys without alignment assumptions`); see
+[PACKED_MAP_KEYS.md](PACKED_MAP_KEYS.md). Hash/equality/deep cleanup use aligned
+local copies without changing the map layout or ABI.
+
+Evidence: `build/memory-ownership/map-borrowed-views/`.
+
+- `baseline-tests.log`: all 32 borrowed-view leak cases fail with the previous
+  proof and corrected runtime, isolating the ownership change.
+- `candidate-tests.log`: 95 passed (40 executions, 32 new proof cases and 23
+  existing proof cases). Six subsequent branch-liveness controls pass in the
+  broad suite below.
+- `runtime-baseline.log`: both packed-key tests fail on the previous runtime.
+- `runtime-tests.log`: 33 passed, including both packed-key cases and 31 owned-map
+  lifecycle/policy controls.
+- `llvm-mir-tests.log`: 1,214 passed, including all 38 new MIR proof controls.
+- `ownership-regressions.log`: 240 passed, including 32 new leak-checked runs and
+  eight retained-view invalid-access guards. Those eight guards intentionally
+  disable leak detection because retained ownership remains open.
+- Strict self-host validation is running at `build/fixed-point-yip0m8ol`;
+  promotion and final hashes are pending this checkpoint.
+
+GitNexus reports HIGH impact for the recycling proof: one direct caller, four
+reachable indexed symbols, zero indexed processes. The warning was reported
+before editing. The new helper is unindexed until refresh; its one direct
+caller and all recognized/rejected consumers were reviewed manually. Runtime
+helpers have LOW indexed impact; generated calls/function-pointer dispatch were
+checked through sanitizer executions. The initial candidate failures exposed
+the alignment bug; all affected cases pass with that correction.
+
+**Next:** finish the strict gate and record/promote the verified compiler/runtime
+pair. Then continue retained aliases, multiple allocation origins and general
+transfer/retain/clone semantics. Nested element ownership and native adoption
+remain open. Priority 2 stays active; nothing pushed.
+
+```bash
+.venv/bin/python -m pytest tests/mir/test_map_borrowed_liveness.py tests/integration/test_map_borrowed_views.py tests/native/test_packed_map_keys.py -q
+```
+
+## Previous verified milestone — loop map owners
+
 The Python loop-result fix is committed as **`8f494554`**
 (`Reclaim loop map results when prior aliases are dead`) for proven nonescaping factory results.
 Liveness and a single-origin alias proof select allocation sites; private owner

@@ -3,9 +3,12 @@
 from dataclasses import fields
 
 from mapanare.mir import (
+    BinOp,
+    BinOpKind,
     Branch,
     Call,
     Copy,
+    IndexGet,
     Instruction,
     Jump,
     MIRFunction,
@@ -15,6 +18,105 @@ from mapanare.mir import (
     Value,
 )
 from mapanare.types import TypeKind
+
+_SCALARS = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.CHAR}
+
+
+def _alias_closure(roots: set[str], aliases: dict[str, set[str]]) -> set[str]:
+    result = set(roots)
+    pending = list(roots)
+    while pending:
+        for alias in aliases.get(pending.pop(), ()):
+            if alias not in result:
+                result.add(alias)
+                pending.append(alias)
+    return result
+
+
+def _borrowed_uses_safe(
+    maps: set[str],
+    instructions: list[Instruction],
+    aliases: dict[str, set[str]],
+    live: set[str],
+    parameters: set[str],
+) -> bool:
+    """Keep the parent map alive for cursors and borrowed String reads.
+
+    Scalar loads are detached values. String loads retain a dependency on the
+    map and may only flow through copies/phis and known noncapturing reads.
+    """
+    cursor_defs = {
+        id(inst): inst
+        for inst in instructions
+        if isinstance(inst, Call)
+        and inst.fn_name == "__mn_map_iter_new"
+        and len(inst.args) == 1
+        and inst.args[0].name in maps
+        and inst.dest.ty.kind == TypeKind.ANY
+    }
+    cursors = _alias_closure({inst.dest.name for inst in cursor_defs.values()}, aliases)
+    read_defs: dict[int, IndexGet | Call] = {}
+    for inst in instructions:
+        if isinstance(inst, IndexGet) and inst.obj.name in maps:
+            if inst.dest.ty.kind in _SCALARS | {TypeKind.STRING}:
+                read_defs[id(inst)] = inst
+        if isinstance(inst, Call) and inst.fn_name == "__map_iter_next":
+            if len(inst.args) == 1 and inst.args[0].name in cursors:
+                if inst.dest.ty.kind in _SCALARS | {TypeKind.STRING}:
+                    read_defs[id(inst)] = inst
+    strings = _alias_closure(
+        {inst.dest.name for inst in read_defs.values() if inst.dest.ty.kind == TypeKind.STRING},
+        aliases,
+    )
+    if (cursors | strings) & (live | parameters):
+        return False
+    if maps & (cursors | strings) or cursors & strings:
+        return False
+    for inst in instructions:
+        uses = _uses(inst)
+        dest = getattr(inst, "dest", None)
+        if isinstance(dest, Value):
+            if dest.name in cursors:
+                if dest.ty.kind != TypeKind.ANY:
+                    return False
+                if id(inst) not in cursor_defs and not isinstance(inst, (Copy, Phi)):
+                    return False
+            if dest.name in strings:
+                if dest.ty.kind != TypeKind.STRING:
+                    return False
+                if id(inst) not in read_defs and not isinstance(inst, (Copy, Phi)):
+                    return False
+        if uses & maps:
+            if isinstance(inst, (Copy, Phi)) or id(inst) in cursor_defs or id(inst) in read_defs:
+                pass
+            elif isinstance(inst, Call) and inst.fn_name == "len" and len(inst.args) == 1:
+                pass
+            else:
+                return False
+        if uses & cursors:
+            if isinstance(inst, (Copy, Phi)) or id(inst) in read_defs:
+                pass
+            elif isinstance(inst, Call) and len(inst.args) == 1 and inst.args[0].name in cursors:
+                if not (
+                    (inst.fn_name == "__map_iter_has_next" and inst.dest.ty.kind == TypeKind.BOOL)
+                    or (inst.fn_name == "__mn_map_iter_free" and inst.dest.ty.kind == TypeKind.VOID)
+                ):
+                    return False
+            else:
+                return False
+        if uses & strings:
+            if isinstance(inst, (Copy, Phi)) or id(inst) in read_defs:
+                continue
+            if isinstance(inst, Call) and inst.fn_name in ("len", "print", "println"):
+                if len(inst.args) == 1 and inst.args[0].ty.kind == TypeKind.STRING:
+                    continue
+            if isinstance(inst, BinOp) and inst.op in (BinOpKind.EQ, BinOpKind.NE):
+                if inst.dest.ty.kind == TypeKind.BOOL and all(
+                    value.ty.kind == TypeKind.STRING for value in (inst.lhs, inst.rhs)
+                ):
+                    continue
+            return False
+    return True
 
 
 def _uses(inst: Instruction) -> set[str]:
@@ -33,9 +135,9 @@ def _uses(inst: Instruction) -> set[str]:
 def recyclable_map_results(fn: MIRFunction, factories: set[str]) -> set[str]:
     """Select closed, single-origin alias groups dead before their next allocation.
 
-    Only Copy/Phi and len uses qualify today. Unknown consumers may retain a
-    handle or derive a borrowed view, so they fail closed. Phi uses are treated
-    as live on every predecessor, deliberately overestimating liveness.
+    Map aliases, cursors and borrowed String views must all be dead. Unknown
+    consumers fail closed. Phi uses are treated as live on every predecessor,
+    deliberately overestimating liveness.
     """
     if fn.is_async:
         return set()
@@ -104,14 +206,7 @@ def recyclable_map_results(fn: MIRFunction, factories: set[str]) -> set[str]:
                 pending.extend(successors[current] - visited)
         if label not in visited:
             continue
-        group = {allocation.dest.name}
-        pending = [allocation.dest.name]
-        while pending:
-            name = pending.pop()
-            for alias in aliases.get(name, ()):
-                if alias not in group:
-                    group.add(alias)
-                    pending.append(alias)
+        group = _alias_closure({allocation.dest.name}, aliases)
         if group & live_before[id(allocation)] or any(p.name in group for p in fn.params):
             continue
         safe = True
@@ -120,12 +215,8 @@ def recyclable_map_results(fn: MIRFunction, factories: set[str]) -> set[str]:
             if isinstance(dest, Value) and dest.name in group:
                 if inst is not allocation and not isinstance(inst, (Copy, Phi)):
                     safe = False
-            if _uses(inst) & group:
-                if isinstance(inst, (Copy, Phi)):
-                    continue
-                if isinstance(inst, Call) and inst.fn_name == "len" and len(inst.args) == 1:
-                    continue
-                safe = False
-        if safe:
+        if safe and _borrowed_uses_safe(
+            group, instructions, aliases, live_before[id(allocation)], {p.name for p in fn.params}
+        ):
             eligible.add(allocation.dest.name)
     return eligible

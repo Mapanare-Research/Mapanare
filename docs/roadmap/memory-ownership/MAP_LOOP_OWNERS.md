@@ -15,8 +15,10 @@ operands. Phi inputs are conservatively live on every predecessor.
 
 Copy/Phi relationships form an alias group. The group must have exactly one
 allocation origin, no parameter origin, and no member live before that allocation.
-Only copies, phis, and `len` may consume its values. Unknown calls, aggregate
-captures, returns, moves, map iterators and other borrowed views are rejected.
+Copies, phis, `len`, private iteration and scalar/String index reads may consume
+its values. The [borrowed-view proof](MAP_BORROWED_VIEWS.md) additionally requires
+all dependent cursors and String aliases to be dead. Unknown calls, aggregate
+captures, returns, moves and unrecognized borrowed views are rejected.
 Malformed control-flow targets and async functions are also rejected. This is
 deliberately narrower than general map ownership or reference counting.
 
@@ -53,8 +55,8 @@ code changed; Windows/macOS execution was not qualified by these Linux/WSL tests
 ## Next boundary
 
 Escaping aliases, groups with multiple allocation origins, mutable replacement,
-map iteration/borrowed views, and nested element ownership keep their previous
+retained or unrecognized borrowed views, and nested element ownership keep their previous
 behavior. Fixing these requires explicit transfer/retain/clone semantics or a
-stronger proof that follows derived views. Do not remove the conservative guards
+stronger proof beyond the local views now covered. Do not remove the conservative guards
 or free every overwritten map variable. Native map cleanup and owned-container
 constructor adoption remain separate work.
