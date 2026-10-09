@@ -1,5 +1,52 @@
 # Memory ownership work log
 
+## Resume point — 2026-10-09 (owned nested lists; task 3 in progress)
+
+Commit `dc236294` integrates copy/drop policy for `List<String>` and nested
+`List<List<T>>` in the C runtime, Python LLVM backend, and native compiler.
+String elements are copied into owned list buffers; nested lists acquire a
+separate COW reference. Both backends now retain independent list aliases,
+release overwritten owners, detach on mutation, and retain one reference for
+returned lists before local cleanup. The Python factory proof accepts safe
+nested list reads. Native List concatenation checks matching element shapes.
+The native lowerer no longer clears list metadata after embedding its handle
+in a compiler struct; those rebindings had prematurely freed enum/struct
+registry buffers during strict self-hosting.
+
+Validation for this exact milestone:
+
+- `tests/integration/test_nested_container_ownership.py` plus
+  `test_container_capture_lifetime.py`: **46 passed** on both compilers,
+  `-O0`/`-O2`, with an instrumented C core and ASan/UBSan/LSan. Cases include
+  bounded String-list loops, nested Int/String lists, COW aliases and growth,
+  replacement, concat, nested extraction, returns, and early captures.
+- Broad suite (`tests/llvm`, `tests/mir`, `tests/mir_opt`,
+  `tests/integration`, `tests/native`, `tests/runtime`): **2,344 passed,
+  91 skipped, 5 xfailed** in 400.24 seconds. The installed ignored
+  `mapanare/self/mnc-stage1` binary was replaced with the exact verified
+  stage2 artifact so tests hardcoding that path used a working compiler;
+  its previous binary is preserved in `build/memory-ownership/nested-candidate/`.
+- Strict fixed-point: `build/fixed-point-cjf_uyog`, 104/104 goldens in both
+  generations, executable outputs passing, byte-identical stage2/stage3 IR.
+  Black and Ruff pass on touched Python source; GitNexus staged detection
+  reported 26 changed symbols, 10 affected processes, HIGH risk (the `.mn`
+  symbols are absent from its current index).
+
+Task 3 is **not complete**. Structs containing owned list fields still lack
+recursive destruction: `build/memory-ownership/nested-candidate/struct_probe.mn`
+under ASan/LSan retained 173,103 bytes across 1,000 returned `Box` values.
+Compiler metadata structs currently transfer list handles without recursive
+cleanup; the self-hosting pass does not prove bounded ownership for them.
+String-key/value map copy-in and drop were completed in earlier commits.
+
+Next concrete work: implement and test sound copy, return, alias, and deep
+destruction for structs containing String/List/Map fields, including lists of
+such structs. Then address task 4: a retained map reference does not preserve
+a String entry that is replaced/deleted on that same map; copied view aliases
+and map mutation owner release need one coherent fix. Probe copied/escaping
+ranges and emit explicit diagnostics for cases without a safe lifetime model.
+Finally rerun sanitizer stress, the broad suite, and strict fixed-point gate.
+
 ## Resume point — 2026-10-09 (native map ownership)
 
 Task 2b/2c complete: the native compiler now owns its maps. `emit_llvm.mn`
