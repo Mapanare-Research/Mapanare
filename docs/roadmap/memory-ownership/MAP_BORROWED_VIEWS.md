@@ -1,5 +1,33 @@
 # Borrowed views in loop map ownership
 
+## Retained parent references
+
+The Python emitter now supports local String views that survive map replacement.
+Each proven view alias has a private parent-map reference slot. Lookup and
+cursor-next acquire a parent reference; Copy duplicates that reference before
+releasing the destination's previous parent. Literal assignment releases the
+old parent. Function cleanup releases all view references, including when the
+parent map itself is returned. Private cursor parent slots let a saved key
+remain valid after the cursor closes or its source map variable is replaced.
+
+The complete-view proof accepts literal origins, map reads and copies; known
+read-only consumers include print, length and equality. Unknown calls, captures,
+returned String views, parameter origins, String concatenation and consumed
+String Phis remain conservative boundaries. Map mutation is still excluded.
+The existing cheaper liveness-based loop recycler retains precedence.
+
+All 24 new O0–O3 programs pass with ASan/UBSan/LSan; direct pre-fix executions
+confirm all 24 leaked. They cover saved values and keys, copy snapshots,
+self-assignment, literal clearing, replacement during iteration and early
+scalar returns. Ten proof controls pass. The eight previous retained-view
+guards now also require leak freedom. The bounded-memory suite includes saved
+keys and values over 100,000 iterations at O0–O3, with at most eight live maps
+and no references remaining at exit. See the current broad gate in WORK_LOG.
+
+Evidence: `build/memory-ownership/retained-map-emitter/views-*.log`.
+
+## Earlier liveness milestone
+
 The Python compiler's loop-result proof now follows private map cursors and
 borrowed String keys/values. Maps produced by proven fresh factories can be
 recycled after local iteration or lookup, provided every dependent view is dead
@@ -34,10 +62,10 @@ break and early return. All 32 leak with the previous proof (`34a33421`) and
 pass with the new proof. That comparison uses the corrected runtime in both
 cases, so it isolates the ownership change.
 
-Eight retained-key/value executions verify that recycling is declined and the
-view remains readable. Leak detection is disabled for these guards because
-retained map ownership is still unresolved. The tests do not claim those
-programs are leak-free.
+Eight retained-key/value executions originally verified that recycling was
+declined and the view remained readable with leak detection disabled. The
+retained-parent integration above strengthens those same guards to require
+leak freedom.
 
 Thirty-eight new MIR controls cover accepted reads, unknown calls, captures,
 returns, and single-origin branch liveness. In the branch controls, skipping

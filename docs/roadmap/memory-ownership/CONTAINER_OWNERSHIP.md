@@ -9,8 +9,11 @@ Direct Python map returns now preserve escaping handles and track proven fresh
 factory results in callers; see [MAP_RETURNS.md](MAP_RETURNS.md). This closes the
 direct-return use-after-free without activating owned constructors. Nonescaping
 factory results in loops now use private owner slots guarded by alias liveness;
-see [MAP_LOOP_OWNERS.md](MAP_LOOP_OWNERS.md). Shared/captured handles and general
-mutable replacement still need explicit transfers or retain/clone semantics.
+see [MAP_LOOP_OWNERS.md](MAP_LOOP_OWNERS.md). Closed local shared handles, direct
+returns and consumed map Phis now use explicit references; retained String views
+also keep their parent maps alive. See [MAP_PHI_OWNERSHIP.md](MAP_PHI_OWNERSHIP.md)
+and [MAP_BORROWED_VIEWS.md](MAP_BORROWED_VIEWS.md). Captures, mutation, nested
+resources and native owned-container adoption still need further contracts.
 
 ## Implemented: opt-in owned lists
 

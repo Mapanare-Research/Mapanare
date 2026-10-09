@@ -2,7 +2,24 @@
 
 ## Resume point — 2026-10-08
 
-**Consumed map Phi ownership is complete.** Dedicated selected-edge blocks
+**Retained String views are integrated.** View aliases and private cursors hold
+parent-map references; replacing or clearing a view releases its old parent.
+All 24 new executable cases and ten proof controls pass. The eight former
+retained-view guards now require leak freedom. Twelve bounded-memory runs
+(saved maps, values and keys, O0–O3) each execute 100,000 iterations with at most
+eight live maps and zero references remaining at exit. `views-full.log` records
+**1,800 passed, seven skipped, five expected failures**. Direct baseline runs
+confirm all 24 view programs leaked. See [MAP_BORROWED_VIEWS.md](MAP_BORROWED_VIEWS.md).
+
+Next, already authorized: consumed String Phi parents. Twelve new source cases
+all leak before integration. Preserve selected-edge semantics and parallel
+descriptor/parent snapshots; include literal alternatives and merged views
+from different map groups. Captures and returned String views remain separate
+ownership contracts. Native owned-container adoption is still open.
+
+## Completed milestone — consumed map Phis
+
+**Consumed map Phi ownership is committed as `65e441b1`.** Dedicated selected-edge blocks
 acquire every incoming reference before replacing parallel Phi owners. The
 factory summary recognizes match tag reads while rejecting borrowed returns.
 All 16 source match cases and four direct-MIR critical-edge executions pass
@@ -10,10 +27,7 @@ ASan/UBSan/LSan; the latter also enforce bounded live maps. Eight new proof
 controls pass. `phi-full.log`: **1,758 passed, seven skipped, five expected
 failures**. See [MAP_PHI_OWNERSHIP.md](MAP_PHI_OWNERSHIP.md).
 
-Next, already authorized: retained String key/value views. The standalone
-parent-reference proof passes ten controls and is not yet connected. Execute
-all 24 before/after view cases, then retain a parent reference for each String
-alias and private cursor. Captured, returned and uncertain views stay rejected.
+Retained String key/value ownership followed this milestone, as recorded above.
 
 ## Completed milestone — retained map returns
 

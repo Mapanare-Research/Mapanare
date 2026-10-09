@@ -153,5 +153,6 @@ fn main():
         let values = make(i)
 """ + body + "        print(saved)\n    print(saved)\n"
     expected = ("key-0\n" if kind == "key" else "value-0\n") * 101
-    # The fallback still retains maps; verify it never reclaims a live view.
-    _run(source, expected, opt, instrumented_core, tmp_path, leaks=False)
+    # Single-owner recycling remains unsafe, but explicit parent references
+    # now preserve the view and reclaim all obsolete maps.
+    _run(source, expected, opt, instrumented_core, tmp_path, leaks=True)

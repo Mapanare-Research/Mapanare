@@ -9,16 +9,18 @@ import pytest
 from mapanare.cli import _compile_to_llvm_ir
 from mapanare.mir_opt import MIROptLevel
 from tests.integration.test_retained_map_ownership import CASES
+from tests.integration.test_retained_map_views import CASES as VIEW_CASES
 
 pytest_plugins = ["tests.integration.test_map_return_ownership"]
 ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize("opt", list(MIROptLevel))
+@pytest.mark.parametrize("case", ["retain-first", "saved-value", "saved-key"])
 def test_live_map_count_stays_bounded(
-    opt: MIROptLevel, instrumented_core: Path, tmp_path: Path
+    case: str, opt: MIROptLevel, instrumented_core: Path, tmp_path: Path
 ) -> None:
-    source, expected = CASES["retain-first"]
+    source, expected = (CASES if case == "retain-first" else VIEW_CASES)[case]
     source = source.replace("0..100:", "0..100000:")
     ir = tmp_path / "bounded.ll"
     ir.write_text(_compile_to_llvm_ir(source, "bounded.mn", opt_level=opt))

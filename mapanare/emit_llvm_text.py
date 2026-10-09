@@ -15,6 +15,7 @@ from mapanare.borrow import function_borrows_arguments
 from mapanare.map_liveness import recyclable_map_results
 from mapanare.map_ownership import owned_map_factories
 from mapanare.map_shared import shared_map_aliases
+from mapanare.map_views import retained_map_views
 from mapanare.mir import (
     AgentSend,
     AgentSpawn,
@@ -2192,6 +2193,7 @@ class LLVMTextEmitter:
     def _emit_drop_glue_maps(self, ret_map: str | None = None) -> None:
         """Release references; only legacy owners transfer their returned handle."""
         shared_slots = set(getattr(self, "_shared_map_owners", {}).values())
+        shared_slots.update(getattr(self, "_map_view_owners", {}).values())
         for var_name in self._map_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -2497,6 +2499,16 @@ class LLVMTextEmitter:
             self._alloc[owner_name] = (slot, PTR)
             self._map_vars.append(owner_name)
             self._shared_map_owners[name] = slot
+        self._map_view_owners: dict[str, str] = {}
+        view_plan = retained_map_views(fn, set(self._shared_map_owners))
+        if view_plan is not None:
+            for name in sorted(view_plan.strings | view_plan.cursors):
+                slot = self._alloca(PTR, "map_owner_view")
+                self._ent.append(f"  store ptr null, ptr {slot}")
+                owner_name = f"_map_view_{name}"
+                self._alloc[owner_name] = (slot, PTR)
+                self._map_vars.append(owner_name)
+                self._map_view_owners[name] = slot
         for name in sorted(recycled):
             slot = self._alloca(PTR, "map_owner")
             self._ent.append(f"  store ptr null, ptr {slot}")
@@ -3033,6 +3045,7 @@ class LLVMTextEmitter:
 
     # --- Const ---
     def _do_const(self, i: Const) -> None:
+        self._store_map_view(i.dest.name, "null")
         k = i.ty.kind
         v = i.value
         if k == TypeKind.INT:
@@ -3090,6 +3103,25 @@ class LLVMTextEmitter:
                 self._L(f"store ptr {pointer}, ptr {addr}")
             self._L(f"br label %{target}")
 
+    def _map_view_parent(self, name: str) -> str:
+        slot = getattr(self, "_map_view_owners", {}).get(name)
+        if slot is None:
+            return "null"
+        parent = self._f("map_view_parent")
+        self._L(f"{parent} = load ptr, ptr {slot}")
+        return parent
+
+    def _store_map_view(self, name: str, parent: str) -> bool:
+        slot = getattr(self, "_map_view_owners", {}).get(name)
+        if slot is None:
+            return False
+        retained = self._rt("__mn_map_retain", PTR, [PTR], [(parent, PTR)])
+        previous = self._f("map_view_previous")
+        self._L(f"{previous} = load ptr, ptr {slot}")
+        self._rt("__mn_map_free_deep", VOID, [PTR], [(previous, PTR)])
+        self._L(f"store ptr {retained}, ptr {slot}")
+        return True
+
     # --- Copy ---
     def _store_shared_map(self, name: str, value: str, *, borrow: bool) -> bool:
         """Acquire before releasing: self-assignment and shared handles are safe."""
@@ -3106,6 +3138,10 @@ class LLVMTextEmitter:
 
     def _do_copy(self, i: Copy) -> None:
         v, t = self._get(i.src)
+        if i.dest.name in getattr(self, "_map_view_owners", {}):
+            self._store_map_view(i.dest.name, self._map_view_parent(i.src.name))
+            self._put(i.dest, v, t)
+            return
         if self._store_shared_map(i.dest.name, v, borrow=True):
             self._put(i.dest, v, t)
             return
@@ -4451,6 +4487,7 @@ class LLVMTextEmitter:
             self._alloc[f"{itn}.kout"] = (self._alloca(PTR, "ko"), PTR)
             self._alloc[f"{itn}.vout"] = (self._alloca(PTR, "vo"), PTR)
             mi = self._rt("__mn_map_iter_new", PTR, [PTR], [(mv, mt)])
+            self._store_map_view(i.dest.name, mv)
             self._L(f"store ptr {mi}, ptr {slot}")
             self._put(i.dest, mi, PTR)
             return
@@ -4481,6 +4518,8 @@ class LLVMTextEmitter:
                 tp = kp  # opaque ptr, no bitcast
                 r = self._f("kv")
                 self._L(f"{r} = load {ety}, ptr {tp}")
+                if i.dest.name in getattr(self, "_map_view_owners", {}):
+                    self._store_map_view(i.dest.name, self._map_view_parent(i.args[0].name))
                 self._put(i.dest, r, ety)
             else:
                 self._put(i.dest, "0", I64)
@@ -4492,6 +4531,7 @@ class LLVMTextEmitter:
             iv = self._f("mi")
             self._L(f"{iv} = load ptr, ptr {slot}")
             self._rt("__mn_map_iter_free", VOID, [PTR], [(iv, PTR)])
+            self._store_map_view(i.args[0].name, "null")
             self._L(f"store ptr null, ptr {slot}")
             self._put(i.dest, "0", I1)
             return
@@ -5266,6 +5306,7 @@ class LLVMTextEmitter:
             tp = raw  # opaque ptr, no bitcast
             r = self._f("mv")
             self._L(f"{r} = load {ety}, ptr {tp}")
+            self._store_map_view(i.dest.name, ov)
             self._put(i.dest, r, ety)
         else:
             self._put(i.dest, "null", PTR)

@@ -39,12 +39,19 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
+**Retained String key/value ownership passes its acceptance gate.** Saved views
+keep their parent maps alive across replacement and cursor closure. All 24 new
+sanitizer cases, ten proof controls and eight strengthened retained-view guards
+pass. Twelve 100,000-iteration runs enforce bounded live maps. Broad validation
+passes **1,800 tests**, with seven skips and five expected failures. Consumed
+String merge ownership is next, with twelve reproduced leaks.
+
 **Consumed map Phi ownership passes its acceptance gate.** Selected-edge
 transfers preserve parallel assignments, including critical branch/switch
 edges. All 20 new executable cases and eight proof controls pass. Broad
 validation passes **1,758 tests**, with seven skips and five expected failures.
 See [the Phi contract](memory-ownership/MAP_PHI_OWNERSHIP.md). Retained borrowed
-String views are the next integration milestone.
+String views followed this milestone. Committed as `65e441b1`.
 
 **Retained-map return transfer passes its acceptance gate.** One reference
 escapes to the caller while all callee aliases are released. All 24 new

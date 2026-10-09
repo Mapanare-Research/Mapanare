@@ -1,6 +1,7 @@
 """Closed local map groups whose handle copies can own runtime references."""
 
 from mapanare.map_liveness import _alias_closure, _uses
+from mapanare.map_views import retained_map_views
 from mapanare.mir import (
     Branch,
     Call,
@@ -55,9 +56,9 @@ def _valid_map_phis(fn: MIRFunction) -> set[int]:
 def shared_map_aliases(fn: MIRFunction, factories: set[str], recycled: set[str]) -> set[str]:
     """Prove complete map alias groups for retain-before-replace assignments.
 
-    No parameters, captures, mutations or borrowed String/cursor
-    results qualify yet. Direct map returns transfer a retained reference to
-    the caller. Literal construction accepts only scalar or literal
+    No parameters, captures or mutations qualify. Local String views retain
+    their parent; private cursors have explicit lifetimes. Direct map returns
+    transfer a retained reference to the caller. Construction accepts scalar or literal
     String fields. Factory arguments must be scalars, so a result cannot borrow
     caller-owned storage through its inputs. Existing cheaper recycling wins.
     """
@@ -104,6 +105,8 @@ def shared_map_aliases(fn: MIRFunction, factories: set[str], recycled: set[str])
         group = _alias_closure({root}, aliases)
         visited.update(group)
         if group & (parameters | recycled) or any(name not in definitions for name in group):
+            continue
+        if retained_map_views(fn, group) is None:
             continue
         safe = True
         has_origin = False
@@ -159,9 +162,16 @@ def shared_map_aliases(fn: MIRFunction, factories: set[str], recycled: set[str])
             if isinstance(inst, Call) and inst.fn_name == "len" and len(inst.args) == 1:
                 continue
             if (
+                isinstance(inst, Call)
+                and inst.fn_name == "__mn_map_iter_new"
+                and len(inst.args) == 1
+                and inst.dest.ty.kind == TypeKind.ANY
+            ):
+                continue
+            if (
                 isinstance(inst, IndexGet)
                 and inst.obj.name in group
-                and inst.dest.ty.kind in _SCALARS
+                and inst.dest.ty.kind in _SCALARS | {TypeKind.STRING}
             ):
                 continue
             safe = False

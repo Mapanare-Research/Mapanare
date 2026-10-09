@@ -23,7 +23,7 @@ FACTORY = "fn make(n: Int) -> Map<Int, Int>:\n    return #{1: n}\n"
         ("        saved = current\n        let box = [saved]\n        capture(box)\n", False),
         ("        saved = current\n        return saved\n", False),
         ("        saved = current\n        saved[1] = i\n        print(saved[1])\n", False),
-        ("        saved = current\n        for key in saved: print(key)\n", False),
+        ("        saved = current\n        for key in saved: print(key)\n", True),
     ],
 )
 @pytest.mark.parametrize("opt", list(MIROptLevel))
@@ -76,9 +76,9 @@ fn main():
     print(saved)
 """
     module = lower(parse(source))
-    assert not shared_map_aliases(
-        module.functions[-1], owned_map_factories(module.functions), set()
-    )
+    # The original map-only proof rejected this lookup. Retained parent slots
+    # now preserve the String even when its source map handle is replaced.
+    assert shared_map_aliases(module.functions[-1], owned_map_factories(module.functions), set())
 
 
 def test_resource_factory_argument_rejected() -> None:
