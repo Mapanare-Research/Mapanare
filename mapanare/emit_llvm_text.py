@@ -74,6 +74,7 @@ from mapanare.mir import (
     WrapOk,
     WrapSome,
 )
+from mapanare.range_ownership import private_range_results
 from mapanare.types import TypeInfo, TypeKind
 
 # ── LLVM type string constants ──────────────────────────────────────
@@ -1874,6 +1875,7 @@ class LLVMTextEmitter:
         # Private map cursors cannot escape. An early return must release
         # them even when the function owns no other tracked resource.
         self._emit_drop_glue_map_iterators()
+        self._emit_drop_glue_ranges()
         has_any = (
             (self._local_strings)
             or (self._local_closures)
@@ -1917,6 +1919,13 @@ class LLVMTextEmitter:
         if self._tensor_vars:
             self._ensure("__mn_tensor_free", VOID, [PTR])
         self._emit_drop_glue_tensors(ret_val, ret_ty)
+
+    def _emit_drop_glue_ranges(self) -> None:
+        for slot in getattr(self, "_range_owners", {}).values():
+            iterator = self._f("drop.range")
+            self._L(f"{iterator} = load ptr, ptr {slot}")
+            self._rt("__mn_range_free", VOID, [PTR], [(iterator, PTR)])
+            self._L(f"store ptr null, ptr {slot}")
 
     def _emit_drop_glue_map_iterators(self) -> None:
         for name, (slot, _) in self._alloc.items():
@@ -2488,6 +2497,11 @@ class LLVMTextEmitter:
         self._last_tracked_boxed_slot = None
         self._list_vars = []
         self._map_vars = []
+        self._range_owners: dict[str, str] = {}
+        for name in sorted(private_range_results(fn)):
+            slot = self._alloca(PTR, "range_owner")
+            self._ent.append(f"  store ptr null, ptr {slot}")
+            self._range_owners[name] = slot
         self._loop_map_owners: dict[str, str] = {}
         factories = getattr(self, "_owned_map_factories", set())
         recycled = recyclable_map_results(fn, factories)
@@ -3613,6 +3627,31 @@ class LLVMTextEmitter:
             r = self._rt("__mn_sb_finish", STR, [PTR], [(sbv, PTR)])
             self._track_string(r)
             self._put(i.dest, r, STR)
+            return
+
+        if fn in ("__mn_range", "__mn_range_inclusive") and i.dest.name in getattr(
+            self, "_range_owners", {}
+        ):
+            bounds = [(self._coerce(v, t, I64) if t != I64 else v, I64) for v, t in args]
+            iterator = self._rt(fn, PTR, [I64, I64], bounds)
+            slot = self._range_owners[i.dest.name]
+            previous = self._f("range.previous")
+            self._L(f"{previous} = load ptr, ptr {slot}")
+            self._rt("__mn_range_free", VOID, [PTR], [(previous, PTR)])
+            self._L(f"store ptr {iterator}, ptr {slot}")
+            self._put(i.dest, iterator, PTR)
+            return
+        if (
+            fn == "__mn_range_free"
+            and i.args
+            and i.args[0].name in getattr(self, "_range_owners", {})
+        ):
+            slot = self._range_owners[i.args[0].name]
+            iterator = self._f("range.release")
+            self._L(f"{iterator} = load ptr, ptr {slot}")
+            self._rt(fn, VOID, [PTR], [(iterator, PTR)])
+            self._L(f"store ptr null, ptr {slot}")
+            self._put(i.dest, "0", I1)
             return
 
         # v5.49.0 Wn.1 — direct ``__mn_*`` runtime call from .mn source.
