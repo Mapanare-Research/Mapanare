@@ -6,18 +6,29 @@
 static struct { MnMap *map; int refs; } owners[64];
 static int live, peak;
 MnMap *__real___mn_map_new(int64_t, int64_t, int64_t, int64_t);
+MnMap *__real___mn_map_new_copying(int64_t, int64_t, int64_t, int64_t);
 MnMap *__real___mn_map_retain(MnMap *);
 void __real___mn_map_free_deep(MnMap *);
 
-MnMap *__wrap___mn_map_new(int64_t ks, int64_t vs, int64_t kt, int64_t vt) {
-    MnMap *map = __real___mn_map_new(ks, vs, kt, vt);
+static void register_map(MnMap *map) {
     for (int i = 0; i < 64; ++i) if (!owners[i].map) {
         owners[i].map = map;
         owners[i].refs = 1;
         if (++live > peak) peak = live;
-        return map;
+        return;
     }
     assert(!"unbounded retained maps");
+}
+
+MnMap *__wrap___mn_map_new(int64_t ks, int64_t vs, int64_t kt, int64_t vt) {
+    MnMap *map = __real___mn_map_new(ks, vs, kt, vt);
+    register_map(map);
+    return map;
+}
+
+MnMap *__wrap___mn_map_new_copying(int64_t ks, int64_t vs, int64_t kt, int64_t vt) {
+    MnMap *map = __real___mn_map_new_copying(ks, vs, kt, vt);
+    register_map(map);
     return map;
 }
 

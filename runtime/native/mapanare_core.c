@@ -2631,6 +2631,23 @@ MN_EXPORT MnMap *__mn_map_str_str_new_owned(void) {
                               &strings, &strings);
 }
 
+MN_EXPORT MnMap *__mn_map_new_copying(int64_t key_size, int64_t val_size,
+                                     int64_t key_type, int64_t value_type) {
+    if ((value_type != 0 && value_type != 1) ||
+        (value_type == 1 && val_size != (int64_t)sizeof(MnString))) {
+        fprintf(stderr, "mapanare: invalid copy-in map value policy\n");
+        abort();
+    }
+    const MnElementOps strings = {mn_owned_string_copy, mn_owned_string_drop};
+    return __mn_map_new_owned(key_size, val_size, key_type,
+                              key_type == MN_MAP_KEY_STR ? &strings : NULL,
+                              value_type == 1 ? &strings : NULL);
+}
+
+MN_EXPORT MnString __mn_str_copy(MnString value) {
+    return __mn_str_from_parts(mn_untag(value.data), (int64_t)value.len);
+}
+
 /* Return the matching entry, or NULL, and optionally the first reusable slot.
  * Search past tombstones for an existing key before reusing any of them. */
 static char *mn_owned_map_find(MnMap *map, const void *key, char **vacant) {

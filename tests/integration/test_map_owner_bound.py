@@ -39,6 +39,7 @@ def test_live_map_count_stays_bounded(
             str(instrumented_core),
             str(ROOT / "tests/native/fixtures/map_owner_bound.c"),
             "-Wl,--wrap=__mn_map_new",
+            "-Wl,--wrap=__mn_map_new_copying",
             "-Wl,--wrap=__mn_map_retain",
             "-Wl,--wrap=__mn_map_free_deep",
             "-lm",

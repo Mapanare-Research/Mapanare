@@ -527,6 +527,13 @@ MN_EXPORT MnMap *__mn_map_new_owned(int64_t key_size, int64_t val_size,
 /** Owned Map<String, String> with independent String copies on insertion. */
 MN_EXPORT MnMap *__mn_map_str_str_new_owned(void);
 
+/** Compiler copy-in maps: value_type is 1 for String, 0 for plain values.
+ *  Resource-bearing aggregates must use explicit element policies instead. */
+MN_EXPORT MnMap *__mn_map_new_copying(int64_t key_size, int64_t val_size,
+                                     int64_t key_type, int64_t value_type);
+/** Independent owned copy of a borrowed String descriptor. */
+MN_EXPORT MnString __mn_str_copy(MnString value);
+
 /** Acquire another owner of the same map, returning the same handle (NULL-safe).
  *  Balance each successful retain and initial allocation with one free/free_deep.
  *  A plain pointer copy does not acquire ownership. Not atomic/thread-safe. */

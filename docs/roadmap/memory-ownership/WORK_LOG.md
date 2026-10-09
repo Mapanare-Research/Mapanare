@@ -1,5 +1,56 @@
 # Memory ownership work log
 
+## Resume point — 2026-10-09 (copying maps)
+
+Copy-in map ownership is integrated in the Python LLVM backend. String/scalar
+maps (`Int`/`Float`/`String` keys; `Int`/`Float`/`Bool`/`Char`/`String` values)
+now use the new `__mn_map_new_copying` runtime constructor, which attaches the
+String copy/drop policies to an owned map. Insertion and `MapInit` copy caller
+inputs, so lowering no longer emits `Move` markers for those maps; caller
+cleanup runs normally. `map.remove(key)` lowers to `__mn_map_del` with the key
+passed by pointer through an alloca, and deletion drops both stored fields.
+Map reads of Strings that are not proven retained views now make an independent
+`__mn_str_copy` snapshot, and internal String-returning calls copy their result
+in `_do_ret`; both kinds of owned copies live in per-dest slots created during
+function setup, so every return site frees the latest copy even when the copy
+site sits in a block emitted after that exit (nested loops). Aggregate maps
+keep the legacy transfer markers and raw constructor.
+
+Evidence: `build/memory-ownership/copying-maps/`.
+
+- `broad-gate-2.log`: **1,882 passed, seven skipped, five expected failures**
+  across `tests/llvm`, `tests/mir`, `tests/mir_opt`, and `tests/integration`.
+  The one initial failure (`104_for_continue`) passes on isolated and
+  full-file reruns; it is load-sensitive, not ownership-related.
+- The unfinished integration baseline (`broad-gate.log`) had 36 failures:
+  12 borrowed-view sanitizer leaks at O1–O3 (late-registered copy slots missed
+  by earlier-emitted drop glue) and 24 owner-bound/Phi-edge assertion failures
+  (`map_owner_bound.c` did not wrap the new constructor). Both root causes are
+  fixed; the fixture and the three link flag lists now wrap
+  `__mn_map_new_copying`.
+- `tests/integration/test_copying_map_ownership.py`: 24 executable
+  ASan/UBSan/LSan cases (six programs × O0–O3) covering delete/reinsert,
+  deleted views, replacement, saved views, same key/value input, and numeric
+  keys with exact output assertions.
+- Runtime suites: 292 passed (`tests/native/test_owned_maps.py`,
+  `test_owned_lists.py`, `tests/llvm/test_map_runtime.py`, `tests/runtime`).
+- `fixed-point.log`, `build/fixed-point-ockdodm5`: both generations pass the
+  LLVM goldens and executable outputs; stage2/stage3 IR is byte-identical.
+  The rebuilt runtime archive is SHA-256
+  `83a0efb0c8be8cceb1a1ca3dfe8979f22b4a597a35dc6c3c429da3e8396a53ad`.
+
+GitNexus reports no resolved callers for the edited emitter methods (Python
+method dispatch is outside the indexed graph); emitter changes are treated as
+CRITICAL by construction, as in earlier milestones, and covered by the gates
+above. Black/Ruff pass on all touched Python files.
+
+**Next:** native compiler ownership parity — port copy-in maps, retained-map
+references, return transfer, Map/String Phi transfers, and borrowed-view
+handling into `mapanare/self/lower.mn` and `mapanare/self/emit_llvm.mn`, then
+rebuild through the strict gate. Nested element ownership, captured/returned
+String views, mutation with live borrows, escaping/copied ranges and cyclic
+ownership remain conservative boundaries.
+
 ## Resume point — 2026-10-09
 
 The retained-map integration in the Python LLVM backend is complete for the

@@ -99,6 +99,7 @@ from mapanare.ast_nodes import (
     WhileLoop,
     WildcardPattern,
 )
+from mapanare.container_policy import map_copies_inputs
 from mapanare.mir import (
     AgentSend,
     AgentSpawn,
@@ -4082,6 +4083,11 @@ class MIRLowerer:
         obj = self._lower_expr(expr.object)
         args = [self._lower_expr(a) for a in expr.args]
 
+        if obj.ty.kind == TypeKind.MAP and expr.method == "remove" and len(args) == 1:
+            dest = self._make_value(ty=mir_int())
+            self._emit(Call(dest=dest, fn_name="__mn_map_del", args=[obj, args[0]]))
+            return dest
+
         # Check if this is a stream operation
         stream_op = _STREAM_OP_MAP.get(expr.method)
         if stream_op is not None:
@@ -5096,10 +5102,11 @@ class MIRLowerer:
             ty=MIRType(TypeInfo(kind=TypeKind.MAP, args=[key_type.type_info, val_type.type_info]))
         )
         self._emit(MapInit(dest=dest, key_type=key_type, val_type=val_type, pairs=pairs))
-        # v5.4.4 — map owns each key/value pair.
-        for _k, _v in pairs:
-            self._emit(Move(value=_k))
-            self._emit(Move(value=_v))
+        # String/scalar maps copy their inputs; raw aggregate maps still transfer.
+        if not map_copies_inputs(key_type.kind, val_type.kind):
+            for _k, _v in pairs:
+                self._emit(Move(value=_k))
+                self._emit(Move(value=_v))
         return dest
 
     def _lower_construct(self, expr: ConstructExpr) -> Value:
@@ -5233,9 +5240,16 @@ class MIRLowerer:
                 return val
             index = indices[0] if indices else self._make_value()
             self._emit(IndexSet(obj=obj, index=index, val=val))
-            # v5.4.4 — map_set / list_set memcpy key+val into the container.
-            self._emit(Move(value=index))
-            self._emit(Move(value=val))
+            # Copy-in maps keep caller ownership of both arguments.
+            types = obj.ty.type_info.args
+            copying = (
+                obj.ty.kind == TypeKind.MAP
+                and len(types) == 2
+                and map_copies_inputs(types[0].kind, types[1].kind)
+            )
+            if not copying:
+                self._emit(Move(value=index))
+                self._emit(Move(value=val))
             # Write back: if the list came from a struct field, the IndexSet
             # only modifies a local copy.  Emit FieldSet to persist the change.
             if isinstance(expr.target.object, FieldAccessExpr):

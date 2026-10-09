@@ -12,6 +12,7 @@ from typing import Any
 
 from mapanare.abi import classify_return  # v4.149.0 E5
 from mapanare.borrow import function_borrows_arguments
+from mapanare.container_policy import map_copies_inputs
 from mapanare.map_liveness import recyclable_map_results
 from mapanare.map_ownership import owned_map_factories
 from mapanare.map_shared import shared_map_aliases
@@ -956,6 +957,11 @@ class LLVMTextEmitter:
             elif isinstance(cval, float):
                 self._globals.append(f"@{cname} = private constant double {cval}")
         # 3) forward-declare MIR functions (strip % from names)
+        self._owned_string_returns = {
+            f.name.lstrip("%")
+            for f in mir.functions
+            if f.blocks and not f.is_async and f.return_type.kind == TypeKind.STRING
+        }
         for f in mir.functions:
             if f.name.startswith("%"):
                 f.name = f.name[1:]
@@ -1811,6 +1817,24 @@ class LLVMTextEmitter:
         self._local_strings_source.append(val.lstrip("%"))
         self._last_tracked_str_slot = slot
 
+    def _track_copied_string(self, name: str, val: str) -> None:
+        """Store an owned String copy into its pre-created slot.
+
+        Unlike _track_string, the slot is registered at function setup, so
+        drop glue frees the latest copy at every exit even when the copy site
+        sits in a block emitted after that exit. Falls back to ordinary
+        tracking when the dest was not pre-planned.
+        """
+        slot = getattr(self, "_copied_string_views", {}).get(name)
+        if slot is None:
+            self._track_string(val)
+            return
+        self._ensure("__mn_str_free", VOID, [STR])
+        prev = self._f("prev_str")
+        self._L(f"{prev} = load {{ptr, i64}}, ptr {slot}")
+        self._L(f"call void @__mn_str_free({{ptr, i64}} {prev})")
+        self._L(f"store {{ptr, i64}} {val}, ptr {slot}")
+
     def _track_closure(self, val: str) -> None:
         """Track a heap-allocated closure env for drop glue cleanup."""
         slot = self._f("clos_track")
@@ -2523,6 +2547,34 @@ class LLVMTextEmitter:
                 self._alloc[owner_name] = (slot, PTR)
                 self._map_vars.append(owner_name)
                 self._map_view_owners[name] = slot
+        # Owned String copies from borrowed map reads and owned String call
+        # results. Slots are created up front so every return site frees them,
+        # including exits whose block is emitted before the copy site (nested
+        # loops place the outer exit before the inner body).
+        self._copied_string_views: dict[str, str] = {}
+        copied: set[str] = set()
+        for bb in fn.blocks:
+            for inst in bb.instructions:
+                dest_name = None
+                if (
+                    isinstance(inst, IndexGet)
+                    and inst.obj.ty.kind == TypeKind.MAP
+                    and inst.dest.ty.kind == TypeKind.STRING
+                ):
+                    dest_name = inst.dest.name
+                elif isinstance(inst, Call) and inst.dest.ty.kind == TypeKind.STRING:
+                    callee = inst.fn_name.lstrip("%")
+                    if callee == "__map_iter_next" or callee in self._owned_string_returns:
+                        dest_name = inst.dest.name
+                if dest_name and dest_name not in self._map_view_owners:
+                    copied.add(dest_name)
+        for name in sorted(copied):
+            slot = self._f("str_view")
+            self._ent.append(f"  {slot} = alloca {{ptr, i64}}, align 8")
+            self._ent.append(f"  store {{ptr, i64}} zeroinitializer, ptr {slot}")
+            self._copied_string_views[name] = slot
+            self._local_strings.append(slot)
+            self._local_strings_source.append(name)
         for name in sorted(recycled):
             slot = self._alloca(PTR, "map_owner")
             self._ent.append(f"  store ptr null, ptr {slot}")
@@ -3654,6 +3706,14 @@ class LLVMTextEmitter:
             self._put(i.dest, "0", I1)
             return
 
+        if fn == "__mn_map_del" and len(args) == 2:
+            key, key_ty = args[1]
+            key_slot = self._alloca(key_ty, "map.delete.key")
+            self._L(f"store {key_ty} {key}, ptr {key_slot}")
+            result = self._rt(fn, I64, [PTR, PTR], [args[0], (key_slot, PTR)])
+            self._put(i.dest, result, I64)
+            return
+
         # v5.49.0 Wn.1 — direct ``__mn_*`` runtime call from .mn source.
         # Route through ``_rt`` for ABI-correct Win64 sarg/sret lowering
         # using the canonical signature from ``_RUNTIME_FN_SIGS``. The
@@ -4568,6 +4628,9 @@ class LLVMTextEmitter:
                 self._L(f"{r} = load {ety}, ptr {tp}")
                 if i.dest.name in getattr(self, "_map_view_owners", {}):
                     self._store_map_view(i.dest.name, self._map_view_parent(i.args[0].name))
+                elif ety == STR:
+                    r = self._rt("__mn_str_copy", STR, [STR], [(r, STR)])
+                    self._track_copied_string(i.dest.name, r)
                 self._put(i.dest, r, ety)
             else:
                 self._put(i.dest, "0", I64)
@@ -4669,6 +4732,8 @@ class LLVMTextEmitter:
                 self._L(f"call void @{fn}({a_str})")
                 r = self._f("c")
                 self._L(f"{r} = load {ret}, ptr {sret_a}")
+                if fn in self._owned_string_returns:
+                    self._track_copied_string(i.dest.name, r)
                 self._put(i.dest, r, ret)
             elif ret == VOID:
                 astr = ", ".join(f"{t} {v}" for v, t in abi_args)
@@ -4682,6 +4747,8 @@ class LLVMTextEmitter:
                     self._L(f"{r} = call {ft} @{fn}({astr})")
                 else:
                     self._L(f"{r} = call {ret} @{fn}({astr})")
+                if fn in self._owned_string_returns:
+                    self._track_copied_string(i.dest.name, r)
                 self._put(i.dest, r, ret)
             if i.dest.ty.kind == TypeKind.MAP and fn in getattr(self, "_owned_map_factories", ()):
                 if self._store_shared_map(i.dest.name, r, borrow=False):
@@ -4837,6 +4904,10 @@ class LLVMTextEmitter:
     def _do_ret(self, i: Return) -> None:
         if i.val is not None:
             v, t = self._get(i.val)
+            if self._fn is not None and self._fn.return_type.kind == TypeKind.STRING:
+                # Internal String results have independent ownership, including
+                # borrowed fields/parameters. Cleanup releases the original locals.
+                v = self._rt("__mn_str_copy", STR, [STR], [(v, STR)])
             if i.val.name in getattr(self, "_shared_map_owners", {}):
                 # The caller receives one reference. Drop glue still releases
                 # every local owner, including aliases of this same pointer.
@@ -5354,7 +5425,12 @@ class LLVMTextEmitter:
             tp = raw  # opaque ptr, no bitcast
             r = self._f("mv")
             self._L(f"{r} = load {ety}, ptr {tp}")
-            self._store_map_view(i.dest.name, ov)
+            retained_view = self._store_map_view(i.dest.name, ov)
+            if ety == STR and not retained_view:
+                # Runtime get returns a borrow. Unproven/mutable views need an
+                # independent snapshot before an entry can be replaced/deleted.
+                r = self._rt("__mn_str_copy", STR, [STR], [(r, STR)])
+                self._track_copied_string(i.dest.name, r)
             self._put(i.dest, r, ety)
         else:
             self._put(i.dest, "null", PTR)
@@ -5434,8 +5510,13 @@ class LLVMTextEmitter:
         else:
             vsz = _tsz(self._rty(i.val_type))
         vtag = 1 if i.val_type.kind == TypeKind.STRING else 0
+        constructor = (
+            "__mn_map_new_copying"
+            if map_copies_inputs(i.key_type.kind, i.val_type.kind)
+            else "__mn_map_new"
+        )
         mp = self._rt(
-            "__mn_map_new",
+            constructor,
             PTR,
             [I64, I64, I64, I64],
             [(str(ksz), I64), (str(vsz), I64), (str(ktag), I64), (str(vtag), I64)],

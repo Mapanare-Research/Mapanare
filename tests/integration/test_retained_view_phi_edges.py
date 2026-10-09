@@ -74,6 +74,7 @@ def test_parallel_view_phi_critical_edge(
             str(ROOT / "runtime/native"),
             str(ROOT / "tests/native/fixtures/map_owner_bound.c"),
             "-Wl,--wrap=__mn_map_new",
+            "-Wl,--wrap=__mn_map_new_copying",
             "-Wl,--wrap=__mn_map_retain",
             "-Wl,--wrap=__mn_map_free_deep",
             "-lm",
