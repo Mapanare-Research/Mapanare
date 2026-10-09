@@ -624,6 +624,7 @@ class LLVMTextEmitter:
         # drop glue tracking (reset per function)
         self._local_strings: list[str] = []
         self._str_slots: dict[str, str] = {}  # dest var name → str tracking slot
+        self._str_slots_all: dict[str, list[str]] = {}  # name → every slot ever wired
         self._last_tracked_str_slot: str | None = None
         self._local_closures: list[str] = []
         self._local_boxed: list[str] = []  # boxed enum payload ptrs
@@ -1591,6 +1592,9 @@ class LLVMTextEmitter:
         # Associate variable with its tracking slot for move semantics
         if ty == STR and self._last_tracked_str_slot:
             self._str_slots[dest.name] = self._last_tracked_str_slot
+            self._str_slots_all.setdefault(dest.name, [])
+            if self._last_tracked_str_slot not in self._str_slots_all[dest.name]:
+                self._str_slots_all[dest.name].append(self._last_tracked_str_slot)
             self._last_tracked_str_slot = None
 
     def _move_resource(self, name: str) -> None:
@@ -1599,13 +1603,23 @@ class LLVMTextEmitter:
         When a variable is passed to a function call or used as an enum
         payload, its value is "moved" into the callee's data structure.
         Zeroing the tracking slot prevents drop glue from freeing the
-        now-owned value.
+        now-owned value. The wiring is kept (not popped): the same variable
+        can be moved on several mutually exclusive branches, and every Move
+        site must emit its own zeroing — only the first-emitted site would
+        zero if the entry were popped.
         """
         if name in self._str_slots:
-            slot = self._str_slots.pop(name)
+            slot = self._str_slots[name]
             self._L(f"store {{ptr, i64}} zeroinitializer, ptr {slot}")
+        # Zero every slot ever wired to this name: reassignment rewires the
+        # name to a newer slot, but on paths where that reassignment did not
+        # execute the moved value still lives in an older slot. Zeroing an
+        # already-zero slot is harmless.
+        for slot in self._str_slots_all.get(name, []):
+            if slot != self._str_slots.get(name):
+                self._L(f"store {{ptr, i64}} zeroinitializer, ptr {slot}")
         if name in self._boxed_slots:
-            slot = self._boxed_slots.pop(name)
+            slot = self._boxed_slots[name]
             self._L(f"store ptr null, ptr {slot}")
         # v5.4.4 — record the move in _moved_locals so drop glue skips
         # any tracked slot whose source aliases this name, even when
@@ -1822,18 +1836,21 @@ class LLVMTextEmitter:
 
         Unlike _track_string, the slot is registered at function setup, so
         drop glue frees the latest copy at every exit even when the copy site
-        sits in a block emitted after that exit. Falls back to ordinary
-        tracking when the dest was not pre-planned.
+        sits in a block emitted after that exit. The slot is wired through
+        _last_tracked_str_slot so moves and copy-remaps keep working. When the
+        dest no longer owns the slot (remapped to an alias), fall back to a
+        fresh tracked slot instead of freeing storage the alias still uses.
         """
         slot = getattr(self, "_copied_string_views", {}).get(name)
-        if slot is None:
-            self._track_string(val)
+        if slot is not None and slot not in self._str_slots.values():
+            self._ensure("__mn_str_free", VOID, [STR])
+            prev = self._f("prev_str")
+            self._L(f"{prev} = load {{ptr, i64}}, ptr {slot}")
+            self._L(f"call void @__mn_str_free({{ptr, i64}} {prev})")
+            self._L(f"store {{ptr, i64}} {val}, ptr {slot}")
+            self._last_tracked_str_slot = slot
             return
-        self._ensure("__mn_str_free", VOID, [STR])
-        prev = self._f("prev_str")
-        self._L(f"{prev} = load {{ptr, i64}}, ptr {slot}")
-        self._L(f"call void @__mn_str_free({{ptr, i64}} {prev})")
-        self._L(f"store {{ptr, i64}} {val}, ptr {slot}")
+        self._track_string(val)
 
     def _track_closure(self, val: str) -> None:
         """Track a heap-allocated closure env for drop glue cleanup."""
@@ -2514,6 +2531,7 @@ class LLVMTextEmitter:
         self._current_subprogram_id = self._debug_subprogram_ids.get(fn.name, -1)
         self._local_strings = []
         self._str_slots = {}
+        self._str_slots_all = {}
         self._last_tracked_str_slot = None
         self._local_closures = []
         self._local_boxed = []
@@ -3220,6 +3238,13 @@ class LLVMTextEmitter:
         if self._store_shared_map(i.dest.name, v, borrow=True):
             self._put(i.dest, v, t)
             return
+        if t == STR and i.src.name not in self._str_slots and i.src.name in self._str_slots_all:
+            # The source previously owned a tracked string that another
+            # binding took over (remap) or consumed (move). A second binding
+            # must own an independent copy; sharing the buffer would let one
+            # owner's cleanup invalidate the other.
+            v = self._rt("__mn_str_copy", STR, [STR], [(v, t)])
+            self._track_copied_string(i.dest.name, v)
         self._put(i.dest, v, t)
         # Track list aliases: when a list is copied, the dest should see
         # future push write-backs to the source. Record the alias so
@@ -3258,6 +3283,9 @@ class LLVMTextEmitter:
                 # Ownership transfer: remap tracking slot src → dest
                 slot = self._str_slots.pop(i.src.name)
                 self._str_slots[i.dest.name] = slot
+                self._str_slots_all.setdefault(i.dest.name, [])
+                if slot not in self._str_slots_all[i.dest.name]:
+                    self._str_slots_all[i.dest.name].append(slot)
             else:
                 # src is an alias; untrack dest if it was previously an owner
                 if i.dest.name in self._str_slots:

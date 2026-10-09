@@ -1,5 +1,42 @@
 # Memory ownership work log
 
+## Resume point — 2026-10-09 (emitter string-wiring fix + native copy-in maps)
+
+Follow-up to the copying-map milestone: compiling the native compiler itself
+with the task-1 Python emitter exposed three emitter wiring defects that the
+program-level gates do not cover. All three are fixed:
+
+1. `_move_resource` popped the `_str_slots` wiring, so only the first-emitted
+   Move of a variable zeroed its tracking slot. A variable moved on two
+   mutually exclusive branches (e.g. `StringLit(val)` vs `Ident(name)` in
+   `parse_atom`) leaked the zeroing on the second path, and drop glue freed
+   the escaped string. Moves now keep the wiring and zero every slot ever
+   wired to the name (`_str_slots_all`), covering reassignments that rewired
+   the name on paths the Move path never took (`parse_type_expr`).
+2. `_do_copy` treated a second binding of an already-remapped source as a
+   borrowed alias (`let first_name = peek_value(...); let target = first_name`
+   in `parse_impl_def`). The second binding now makes an independent
+   `__mn_str_copy` when the source has ownership history, so both bindings
+   own their buffers.
+3. Pre-created copied-string slots (owned map reads / String call results)
+   are now wired through `_last_tracked_str_slot` so Move/Copy bookkeeping
+   applies to them like any other tracked string.
+
+Evidence: ASan traced the corruption to parse-time String returns freed while
+escaped in aggregates (`build/memory-ownership/bisect/asan2.log`);
+replicas live in that directory. After the fixes: 104/104 goldens,
+**1,883 passed, 7 skipped, 5 xfailed, 12 expected failures** (the new
+native-side copying-map tests, xfail-marked until native map drop glue lands)
+across the broad gate (`copying-maps/broad-gate-3.log`), and the strict
+fixed-point gate passes with byte-identical stage2/stage3 IR
+(`copying-maps/fixed-point-2.log`, `build/fixed-point-*`).
+
+Native parity (task 2a) is implemented: `map_copies_inputs`/`mir_map_of` in
+`mir.mn`, copy-in constructor selection in `emit_map_init`, `__mn_map_del`
+lowering for `map.remove` with the key passed by pointer, and Move-marker
+suppression for copy-in maps in `lower.mn` — mirroring the Python pipeline.
+Native map handles themselves are still not tracked/freed (task 2b next).
+
 ## Resume point — 2026-10-09 (copying maps)
 
 Copy-in map ownership is integrated in the Python LLVM backend. String/scalar
