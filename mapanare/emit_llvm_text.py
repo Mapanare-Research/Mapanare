@@ -6,6 +6,7 @@ Generates alloca/load/store IR. clang mem2reg optimizes to SSA.
 from __future__ import annotations
 
 import os
+import re
 import struct as pystruct
 from typing import Any
 
@@ -2593,6 +2594,7 @@ class LLVMTextEmitter:
                                     self._param_list_fields.append((a, sty, idx))
 
         # phi allocas
+        shared_phis: dict[str, tuple[str, str]] = {}
         for bb in fn.blocks:
             for inst in bb.instructions:
                 if not isinstance(inst, Phi):
@@ -2606,6 +2608,8 @@ class LLVMTextEmitter:
                 self._ent.append(f"  {a} = alloca {ty}, align 8")
                 self._ent.append(f"  store {ty} {_zero(ty)}, ptr {a}")
                 self._dphi.append((a, ty, inst.incoming))
+                if inst.dest.name in self._shared_map_owners:
+                    shared_phis[a] = (bb.label, inst.dest.name)
 
         # Pre-allocate values used before definition (cross-block forward refs).
         # Without this, _get for a value defined in a later block returns
@@ -2700,6 +2704,7 @@ class LLVMTextEmitter:
                     )
 
         # emit blocks
+        block_tails: dict[str, str] = {}
         for bb in fn.blocks:
             self._cb = bb.label
             self._blk[bb.label] = []
@@ -2718,9 +2723,17 @@ class LLVMTextEmitter:
                     h(inst)
             if bumped:
                 self._loop_depth -= 1
+            block_tails[bb.label] = self._cb
 
         # deferred phi stores
+        shared_edges: dict[tuple[str, str], list[tuple[str, str, Value]]] = {}
         for addr, ty, incoming in self._dphi:
+            if addr in shared_phis:
+                target, name = shared_phis[addr]
+                for predecessor, value in incoming:
+                    tail = block_tails[predecessor]
+                    shared_edges.setdefault((tail, target), []).append((name, addr, value))
+                continue
             for plbl, val in incoming:
                 if plbl not in self._blk:
                     continue
@@ -2746,6 +2759,7 @@ class LLVMTextEmitter:
                 pos = max(len(lines) - 1, 0)
                 for idx_ins, ln in enumerate(ins):
                     lines.insert(pos + idx_ins, ln)
+        self._emit_shared_map_phi_edges(shared_edges)
 
         # ensure terminated
         for bb in fn.blocks:
@@ -3048,6 +3062,33 @@ class LLVMTextEmitter:
         else:
             ty = self._rty(i.ty)
             self._put(i.dest, str(v), ty)
+
+    def _emit_shared_map_phi_edges(
+        self, edges: dict[tuple[str, str], list[tuple[str, str, Value]]]
+    ) -> None:
+        """Execute parallel owner transfers only on the selected CFG edge."""
+        for (predecessor, target), transfers in edges.items():
+            edge = f"map.phi.edge.{self._c}"
+            self._c += 1
+            lines = self._blk[predecessor]
+            pattern = rf"label %{re.escape(target)}(?=$|[\s,\]])"
+            terminator, count = re.subn(pattern, f"label %{edge}", lines[-1])
+            if not count:
+                raise ValueError(f"Missing map Phi edge: {predecessor} -> {target}")
+            lines[-1] = terminator
+            self._blk[edge] = []
+            self._cb = edge
+            retained: list[tuple[str, str, str]] = []
+            # All reads/acquisitions precede any replacement. This also handles
+            # loop-backedge swaps when the Phi owners hold the final references.
+            for name, addr, value in transfers:
+                pointer, _ = self._get(value)
+                pointer = self._rt("__mn_map_retain", PTR, [PTR], [(pointer, PTR)])
+                retained.append((name, addr, pointer))
+            for name, addr, pointer in retained:
+                self._store_shared_map(name, pointer, borrow=False)
+                self._L(f"store ptr {pointer}, ptr {addr}")
+            self._L(f"br label %{target}")
 
     # --- Copy ---
     def _store_shared_map(self, name: str, value: str, *, borrow: bool) -> bool:

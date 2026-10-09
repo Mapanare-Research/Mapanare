@@ -39,12 +39,18 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
+**Consumed map Phi ownership passes its acceptance gate.** Selected-edge
+transfers preserve parallel assignments, including critical branch/switch
+edges. All 20 new executable cases and eight proof controls pass. Broad
+validation passes **1,758 tests**, with seven skips and five expected failures.
+See [the Phi contract](memory-ownership/MAP_PHI_OWNERSHIP.md). Retained borrowed
+String views are the next integration milestone.
+
 **Retained-map return transfer passes its acceptance gate.** One reference
 escapes to the caller while all callee aliases are released. All 24 new
 sanitizer executions pass; 20 leaked before the fix. Sixteen proof controls
 also pass. Broad validation now passes **1,730 tests**, with seven skips and
-five expected failures. Next is consumed Phi ownership, with 16 reproduced
-merge leaks and explicit parallel-assignment/critical-edge coverage in progress.
+five expected failures. Committed as `6cf5a249`; Phi ownership followed it.
 
 **Retained-map compiler integration passes its acceptance gate.** Local map
 aliases now own runtime references; replacements release obsolete maps while

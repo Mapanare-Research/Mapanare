@@ -2,7 +2,22 @@
 
 ## Resume point — 2026-10-08
 
-**Retained-map return transfer is complete.** Closed fresh-map groups now retain
+**Consumed map Phi ownership is complete.** Dedicated selected-edge blocks
+acquire every incoming reference before replacing parallel Phi owners. The
+factory summary recognizes match tag reads while rejecting borrowed returns.
+All 16 source match cases and four direct-MIR critical-edge executions pass
+ASan/UBSan/LSan; the latter also enforce bounded live maps. Eight new proof
+controls pass. `phi-full.log`: **1,758 passed, seven skipped, five expected
+failures**. See [MAP_PHI_OWNERSHIP.md](MAP_PHI_OWNERSHIP.md).
+
+Next, already authorized: retained String key/value views. The standalone
+parent-reference proof passes ten controls and is not yet connected. Execute
+all 24 before/after view cases, then retain a parent reference for each String
+alias and private cursor. Captured, returned and uncertain views stay rejected.
+
+## Completed milestone — retained map returns
+
+**Retained-map return transfer is committed as `6cf5a249`.** Closed fresh-map groups now retain
 one reference for the caller before return cleanup releases every local owner,
 including owners whose pointer equals the return value. Legacy borrowed and
 uncertain groups keep their existing rules. All 24 new executable cases pass
@@ -11,10 +26,8 @@ Sixteen proof controls cover fresh returns and rejected borrowed/unknown/
 captured/incorrectly typed returns. `returns-full.log` records **1,730 passed,
 seven skipped, five expected failures** across LLVM/MIR and integration suites.
 
-Next, already authorized: consumed Phi ownership. The 16 new source-level
-merge cases all leak before that change (`phi-baseline.log`). Use edge-specific
-transfers and acquire all incoming references before releasing any owner in a
-parallel Phi assignment. Add executable critical-branch and switch-edge tests.
+Consumed Phi ownership followed this milestone; its baseline and completed
+validation are recorded above.
 
 ## Completed milestone — retained local aliases
 
