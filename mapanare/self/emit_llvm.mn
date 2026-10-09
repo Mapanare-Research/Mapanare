@@ -1331,6 +1331,9 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     s = declare_runtime_fn(s, "__mn_map_retain", "ptr", "ptr")
     s = declare_runtime_fn(s, "__mn_map_free_deep", "void", "ptr")
     s = declare_runtime_fn(s, "__mn_str_copy", "{ptr, i64}", "{ptr, i64}")
+    s = declare_runtime_fn(s, "__mn_list_str_new_owned", llvm_list_rt(), "")
+    s = declare_runtime_fn(s, "__mn_list_list_new_owned", llvm_list_rt(), "")
+    s = declare_runtime_fn(s, "__mn_list_retain", "void", "ptr")
     s = declare_runtime_fn(s, "__mn_map_set", "void", "ptr, ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_get", "ptr", "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_len", "i64", "ptr")
@@ -2348,6 +2351,7 @@ fn emit_binop(st: EmitState, dest: Value, op: BinOpKind, lhs: Value, rhs: Value)
             s = emit_line(s, "  " + ra_name + " = alloca " + llvm_list_rt())
             s = emit_line(s, "  store " + llvm_list_rt() + " " + rn + ", ptr " + ra_name)
             s = emit_rt_call(s, dn, llvm_list_rt(), "__mn_list_concat", "ptr " + la_name + ", ptr " + ra_name)
+            s = emit_track_list(s, dn)
         else:
             if is_float { s = emit_line(s, emit_fadd(dn, ln, rn)) } else { s = emit_line(s, emit_add(dn, llvm_int(), ln, rn)) }
     else if op_str == "sub":
@@ -2984,23 +2988,31 @@ fn emit_list_init(st: EmitState, dest: Value, elem_ty: MIRType, elements: List<V
     // ~376 bytes of dead stack space per List<scalar>.
     let list_name: String = dn + ".new"
     let elem_llvm_ty: String = resolve_mir_type(elem_ty)
+    // Owned constructors carry the element copy/drop policy: push/set
+    // copy in, final release drops elements. Mirrors container_policy.py.
     let mut use_gep_trick: Bool = false
     if elem_llvm_ty.starts_with("%struct."): use_gep_trick = true
     if elem_llvm_ty.starts_with("%enum."): use_gep_trick = true
     if elem_llvm_ty.starts_with("{"): use_gep_trick = true
-    if use_gep_trick:
-        let elem_sz: String = dn + ".elem.sz"
-        s = emit_line(s, "  " + elem_sz + " = ptrtoint ptr getelementptr (" + elem_llvm_ty + ", ptr null, i32 1) to i64")
-        s = emit_rt_call(s, list_name, llvm_list_rt(), "__mn_list_new", "i64 " + elem_sz)
+    if elem_ty.kind == TK_STRING():
+        s = emit_rt_call(s, list_name, llvm_list_rt(), "__mn_list_str_new_owned", "")
     else:
-        let mut elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
-        if elem_ty.kind == TK_UNKNOWN():
-            // Genuinely unknown elem_ty — keep a defensive 384-byte
-            // floor. Investigation candidate for v5.6.13: every UNKNOWN
-            // here is a potential lowerer-side gap (let lower_let_list_hint
-            // failed to propagate the type).
-            if elem_sz_n < 384: elem_sz_n = 384
-        s = emit_rt_call(s, list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n))
+        if elem_ty.kind == TK_LIST():
+            s = emit_rt_call(s, list_name, llvm_list_rt(), "__mn_list_list_new_owned", "")
+        else:
+            if use_gep_trick:
+                let elem_sz: String = dn + ".elem.sz"
+                s = emit_line(s, "  " + elem_sz + " = ptrtoint ptr getelementptr (" + elem_llvm_ty + ", ptr null, i32 1) to i64")
+                s = emit_rt_call(s, list_name, llvm_list_rt(), "__mn_list_new", "i64 " + elem_sz)
+            else:
+                let mut elem_sz_n: Int = llvm_type_size(elem_llvm_ty)
+                if elem_ty.kind == TK_UNKNOWN():
+                    // Genuinely unknown elem_ty — keep a defensive 384-byte
+                    // floor. Investigation candidate for v5.6.13: every UNKNOWN
+                    // here is a potential lowerer-side gap (let lower_let_list_hint
+                    // failed to propagate the type).
+                    if elem_sz_n < 384: elem_sz_n = 384
+                s = emit_rt_call(s, list_name, llvm_list_rt(), "__mn_list_new", "i64 " + toString(elem_sz_n))
 
     // v5.4.1 Phase 3.7 — hoist the alloca to the entry-block prelude
     // so it dominates drop-glue loads at every function exit, even
@@ -3139,9 +3151,16 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
         s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + ep)
     else:
         // Slow path: opaque call for String, Bool, structs, etc.
+        // String results take an owned snapshot: the borrow dies at
+        // the next mutation/growth of the owning buffer.
         let raw: String = dn + ".raw"
         s = emit_rt_call(s, raw, "ptr", "__mn_list_get", "ptr " + tmp + ", i64 " + idx.name)
-        s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + raw)
+        if dest.ty.kind == TK_STRING():
+            s = emit_line(s, "  " + raw + ".v = load " + llvm_string() + ", ptr " + raw)
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_copy", llvm_string() + " " + raw + ".v")
+            s = emit_track_string(s, dn)
+        else:
+            s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + raw)
     return s
 
 // ---------------------------------------------------------------------------
@@ -3255,13 +3274,45 @@ fn emit_index_set(st: EmitState, obj: Value, idx: Value, val: Value) -> EmitStat
 // Alloca/Load/Store instructions
 // ---------------------------------------------------------------------------
 
-fn emit_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState = emit_line(st, llvm_alloca(dest.name, resolve_type(st, ty)))
+fn list_type_copies_inputs(ty: MIRType) -> Bool:
+    if ty.kind != TK_LIST(): return false
+    if len(ty.args) == 0: return false
+    return list_copies_inputs(ty.args[0].kind)
+
+fn emit_alloca(st: EmitState, dest: Value, ty: MIRType) -> EmitState:
+    if list_type_copies_inputs(ty) && dest.name.ends_with(".addr"):
+        let mut s: EmitState = st
+        s.entry_prelude_lines.push("  " + dest.name + " = alloca " + llvm_list_rt() + ", align 8")
+        s.entry_prelude_lines.push("  store " + llvm_list_rt() + " zeroinitializer, ptr " + dest.name)
+        return s
+    return emit_line(st, llvm_alloca(dest.name, resolve_type(st, ty)))
 
 fn emit_load(st: EmitState, dest: Value, ptr: Value) -> EmitState = emit_line(st, llvm_load(dest.name, resolve_type(st, dest.ty), ptr.name))
 
 fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState:
     let val_ty: String = resolve_type(st, val.ty)
     let ptr_ty: String = resolve_type(st, ptr.ty)
+    // The function prologue writes borrowed parameters to their local
+    // address slots. Retaining them would force COW detachment in mutating
+    // callees and drop a caller-owned reference on callee exit.
+    if ptr.name == val.name + ".addr":
+        return emit_line(st, llvm_store(val_ty, val.name, ptr.name))
+    if list_type_copies_inputs(ptr.ty) && val.ty.kind == TK_LIST() && ptr.name.ends_with(".addr"):
+        let mut s: EmitState = st
+        let held: String = "%store.lr" + toString(s.counter)
+        s.counter = s.counter + 1
+        s = emit_line(s, "  " + held + " = alloca " + llvm_list_rt())
+        s = emit_line(s, "  store " + llvm_list_rt() + " " + val.name + ", ptr " + held)
+        s = emit_rt_call_void(s, "__mn_list_retain", "ptr " + held)
+        let slot: String = ret_val_base(ptr.name)
+        // A loop store executes again on each backedge even though the
+        // emitter sees it only once. Its hoisted slot begins at zero.
+        if s.loop_depth > 0 || list_has_string(s.list_owned, slot):
+            s = emit_rt_call_void(s, "__mn_list_free", "ptr " + ptr.name)
+        if !list_has_string(s.list_owned, slot):
+            s.list_owned.push(slot)
+            s.list_owned_source.push("")
+        return emit_line(s, llvm_store(val_ty, val.name, ptr.name))
     // When storing a generic None ({i1, ptr}) to a specific Option alloca
     // ({i1, %enum.T}), use zeroinitializer with the alloca's type instead.
     // None has tag=0 and null payload — zeroinitializer is equivalent.
@@ -4564,10 +4615,14 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                 s = emit_line(s, "  " + dn + " = load " + fe.ret_type + ", ptr " + sret_a)
                 if dest.ty.kind == TK_MAP():
                     s = emit_track_map(s, dn)
+                if dest.ty.kind == TK_LIST():
+                    s = emit_track_list(s, dn)
                 return s
             s = emit_line(s, emit_call_ir(dn, fe.ret_type, fn_name, args_str))
             if dest.ty.kind == TK_MAP():
                 s = emit_track_map(s, dn)
+            if dest.ty.kind == TK_LIST():
+                s = emit_track_list(s, dn)
             // v5.6.4 Rt.06 — attach tensor drop-glue tracking for the
             // 20 tensor binop runtime fns (broadcast / scalar / rscalar).
             // The non-Some arm (below) mirrors this injection for fns
@@ -4592,10 +4647,14 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                 s = emit_line(s, "  " + dn + " = load " + ret_ty + ", ptr " + sret_b)
                 if dest.ty.kind == TK_MAP():
                     s = emit_track_map(s, dn)
+                if dest.ty.kind == TK_LIST():
+                    s = emit_track_list(s, dn)
                 return s
             s = emit_line(s, emit_call_ir(dn, ret_ty, fn_name, args_str))
             if dest.ty.kind == TK_MAP():
                 s = emit_track_map(s, dn)
+            if dest.ty.kind == TK_LIST():
+                s = emit_track_list(s, dn)
             // v5.6.4 Rt.06 — tensor tracking for non-FnEntry-registered calls.
             if is_tensor_allocating_fn(fn_name):
                 s = emit_track_tensor(s, dn)
@@ -4910,6 +4969,24 @@ fn emit_track_map(st: EmitState, val_name: String) -> EmitState:
     s = emit_line(s, "  store {ptr, i64} " + val_name + ", ptr " + slot)
     s.map_owned.push(slot_base)
     s.map_owned_source.push(ret_val_base(val_name))
+    return s
+
+// Shadow-slot tracking for owned lists (call results). Mirrors
+// emit_track_map; __mn_list_free releases the COW/owned reference.
+fn emit_track_list(st: EmitState, val_name: String) -> EmitState:
+    let mut s: EmitState = st
+    let idx: Int = s.counter
+    s.counter = s.counter + 1
+    let slot_base: String = "list_track." + toString(idx)
+    let slot: String = "%" + slot_base
+    s.entry_prelude_lines.push("  " + slot + " = alloca " + llvm_list_rt() + ", align 8")
+    s.entry_prelude_lines.push("  store " + llvm_list_rt() + " zeroinitializer, ptr " + slot)
+    if s.loop_depth > 0:
+        // Release the previous binding before overwriting.
+        s = emit_line(s, "  call void @__mn_list_free(ptr " + slot + ")")
+    s = emit_line(s, "  store " + llvm_list_rt() + " " + val_name + ", ptr " + slot)
+    s.list_owned.push(slot_base)
+    s.list_owned_source.push(ret_val_base(val_name))
     return s
 
 // Clear the shadow slot whose current handle equals the moved value
@@ -5541,6 +5618,28 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState:
     match val_opt:
         Some(val) =>:
             let ty: String = st.current_ret_type
+            if st.current_ret_kind == TK_LIST() && ty == llvm_list_rt() && len(st.boxed_owned) == 0:
+                // List return transfer: retain the buffer for the
+                // caller, then release every local reference (no
+                // return-value exemption here). The boxed_owned guard
+                // preserves the v5.6.9 Ve.3 conservative boundary for
+                // lists of boxed payloads.
+                let mut sl: EmitState = st
+                let idl: String = toString(sl.counter)
+                sl.counter = sl.counter + 1
+                let lbox: String = "%ret.lb." + idl
+                sl = emit_line(sl, "  " + lbox + " = alloca " + llvm_list_rt())
+                sl = emit_line(sl, "  store " + llvm_list_rt() + " " + val.name + ", ptr " + lbox)
+                sl = emit_rt_call_void(sl, "__mn_list_retain", "ptr " + lbox)
+                sl = emit_drop_glue_strings(sl, [])
+                sl = emit_drop_glue_lists(sl, [])
+                sl = emit_drop_glue_boxed(sl, [])
+                sl = emit_drop_glue_tensors(sl, [])
+                sl = emit_drop_glue_maps(sl)
+                if use_sret_return(st, ty):
+                    sl = emit_line(sl, "  store " + ty + " " + val.name + ", ptr %__sret__")
+                    return emit_line(sl, emit_ret_void())
+                return emit_line(sl, emit_ret(ty, val.name))
             if st.current_ret_kind == TK_MAP() && ty == llvm_map_type():
                 // Map return transfer: retain one reference for the
                 // caller, then drop glue releases every local owner

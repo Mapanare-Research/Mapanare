@@ -12,7 +12,8 @@ from typing import Any
 
 from mapanare.abi import classify_return  # v4.149.0 E5
 from mapanare.borrow import function_borrows_arguments
-from mapanare.container_policy import map_copies_inputs
+from mapanare.container_policy import list_copies_inputs, list_owned_constructor, map_copies_inputs
+from mapanare.list_ownership import owned_list_factories
 from mapanare.map_liveness import recyclable_map_results
 from mapanare.map_ownership import owned_map_factories
 from mapanare.map_shared import shared_map_aliases
@@ -147,6 +148,12 @@ def _talign(ty: str) -> int:
         inner = t[1:].rstrip("]")
         return _talign(inner.split("x", 1)[1].strip())
     return 8
+
+
+def _list_copy_in(ty) -> bool:
+    """Whether lists of this MIR type copy pushed elements (owned policy)."""
+    args = getattr(getattr(ty, "type_info", None), "args", None) or []
+    return len(args) > 0 and list_copies_inputs(args[0].kind)
 
 
 def _tsz(ty: str) -> int:
@@ -990,6 +997,7 @@ class LLVMTextEmitter:
         # rule. Purity alone is insufficient: returned/captured inputs escape.
         self._borrowing_fns = {f.name for f in mir.functions if function_borrows_arguments(f)}
         self._owned_map_factories = owned_map_factories(mir.functions)
+        self._owned_list_factories = owned_list_factories(mir.functions)
         # 5) emit bodies
         fns: list[str] = []
         for f in mir.functions:
@@ -1554,6 +1562,17 @@ class LLVMTextEmitter:
             if k in self._alloc:
                 return self._alloc[k]
         return None
+
+    def _ensure_value_alloca(self, v: Value, ty: str) -> tuple[str, str]:
+        """Return the dest's alloca, creating it in the entry block if needed."""
+        pi = self._get_ptr(v)
+        if pi is not None:
+            return pi
+        a = self._f(f"{self._san(v.name)}.a")
+        self._alloc[v.name] = (a, ty)
+        self._ent.append(f"  {a} = alloca {ty}, align 8")
+        self._ent.append(f"  store {ty} {_zero(ty)}, ptr {a}")
+        return a, ty
 
     def _put(self, dest: Value, val: str, ty: str) -> None:
         """Store val to dest's alloca."""
@@ -2580,6 +2599,12 @@ class LLVMTextEmitter:
                     and inst.dest.ty.kind == TypeKind.STRING
                 ):
                     dest_name = inst.dest.name
+                elif (
+                    isinstance(inst, IndexGet)
+                    and inst.obj.ty.kind == TypeKind.LIST
+                    and inst.dest.ty.kind == TypeKind.STRING
+                ):
+                    dest_name = inst.dest.name
                 elif isinstance(inst, Call) and inst.dest.ty.kind == TypeKind.STRING:
                     callee = inst.fn_name.lstrip("%")
                     if callee == "__map_iter_next" or callee in self._owned_string_returns:
@@ -3245,13 +3270,28 @@ class LLVMTextEmitter:
             # owner's cleanup invalidate the other.
             v = self._rt("__mn_str_copy", STR, [STR], [(v, t)])
             self._track_copied_string(i.dest.name, v)
+        copied_list = t == LIST and i.src.name in self._lroots
+        if copied_list:
+            # A second binding owns its own COW reference. The initial
+            # ListInit temporary -> user variable copy is a transfer; a
+            # later variable -> variable copy is an independent alias.
+            held = self._alloca(LIST, "list_ref")
+            self._L(f"store {LIST} {v}, ptr {held}")
+            self._ensure("__mn_list_retain", VOID, [PTR])
+            self._L(f"call void @__mn_list_retain(ptr {held})")
+        if t == LIST and i.src.name in self._list_vars:
+            # Release the destination only after acquiring a new alias.
+            # This also makes a repeated self-assignment safe.
+            a_prev, _ = self._ensure_value_alloca(i.dest, LIST)
+            self._ensure("__mn_list_free", VOID, ["ptr"])
+            self._L(f"call void @__mn_list_free(ptr {a_prev})")
         self._put(i.dest, v, t)
         # Track list aliases: when a list is copied, the dest should see
         # future push write-backs to the source. Record the alias so
         # _do_list_push can write back to all copies.
         if t == LIST:
             root = self._lroots.get(i.src.name, i.src.name)
-            self._lroots[i.dest.name] = root
+            self._lroots[i.dest.name] = i.dest.name if copied_list else root
             # v4.131.0 Sh.2 fix: only track dest as an owner when we are
             # transferring ownership from src. If src is not tracked (it
             # came from a field-get, enum-payload extract, or function
@@ -3261,7 +3301,9 @@ class LLVMTextEmitter:
             # by `x = fe.param_types`), untrack it to prevent UAF on the
             # aliased buffer. The original `[]` buffer leaks, but UAF is
             # corrupted-memory, not a leak. See docs/roadmap/v4/v4.131.0.
-            if i.src.name in self._list_vars:
+            if copied_list:
+                self._track_container(i.dest.name, "list")
+            elif i.src.name in self._list_vars:
                 # Ownership transfer: src was an owner, dest becomes the owner
                 self._list_vars.remove(i.src.name)
                 self._track_container(i.dest.name, "list")
@@ -3669,12 +3711,14 @@ class LLVMTextEmitter:
                 # v4.101.0 + v4.103.0: move semantics — the element is
                 # now owned by the list; zero its tracking slot so
                 # drop glue does not free it. See _do_list_push.
-                if elem_val.name in self._list_vars:
-                    self._list_vars.remove(elem_val.name)
-                root_e = self._lroots.get(elem_val.name)
-                if root_e and root_e in self._list_vars:
-                    self._list_vars.remove(root_e)
-                self._move_resource(elem_val.name)
+                # Owned lists copy the element; the caller keeps ownership.
+                if not _list_copy_in(list_val.ty):
+                    if elem_val.name in self._list_vars:
+                        self._list_vars.remove(elem_val.name)
+                    root_e = self._lroots.get(elem_val.name)
+                    if root_e and root_e in self._list_vars:
+                        self._list_vars.remove(root_e)
+                    self._move_resource(elem_val.name)
                 self._ensure("__mn_list_push", VOID, ["ptr", PTR])
                 self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
                 self._put(i.dest, "0", I1)  # push returns void
@@ -4741,6 +4785,9 @@ class LLVMTextEmitter:
             # Apply byref ABI: large struct args → pointer, large struct ret → sret.
             # v4.149.0 E5: return sret uses per-target classifier.
             use_sret = self._use_sret(ret) and fn != "main"
+            list_factory_result = i.dest.ty.kind == TypeKind.LIST and fn in getattr(
+                self, "_owned_list_factories", ()
+            )
             abi_args: list[tuple[str, str]] = []
             for v, t in coerced:
                 if self._use_byref(t):
@@ -4778,6 +4825,8 @@ class LLVMTextEmitter:
                 if fn in self._owned_string_returns:
                     self._track_copied_string(i.dest.name, r)
                 self._put(i.dest, r, ret)
+            if list_factory_result:
+                self._track_container(i.dest.name, "list")
             if i.dest.ty.kind == TypeKind.MAP and fn in getattr(self, "_owned_map_factories", ()):
                 if self._store_shared_map(i.dest.name, r, borrow=False):
                     return
@@ -4941,6 +4990,15 @@ class LLVMTextEmitter:
                 # every local owner, including aliases of this same pointer.
                 v = self._rt("__mn_map_retain", PTR, [PTR], [(v, PTR)])
             assert self._fn is not None
+            list_return = self._fn.return_type.kind == TypeKind.LIST
+            if list_return:
+                # Transfer exactly one list reference to the caller. Releasing
+                # every local owner also handles an inner list owned by an
+                # outer list and a separate indexed-read snapshot.
+                held = self._alloca(LIST, "list_return")
+                self._L(f"store {LIST} {v}, ptr {held}")
+                self._ensure("__mn_list_retain", VOID, [PTR])
+                self._L(f"call void @__mn_list_retain(ptr {held})")
             rt = self._rty(self._fn.return_type)
             if rt == VOID:
                 self._emit_drop_glue(None, VOID)
@@ -4949,7 +5007,9 @@ class LLVMTextEmitter:
             elif self._fn_use_sret:
                 # Store return value into sret pointer and return void
                 v = self._coerce(v, t, self._fn_sret_ty) if t != self._fn_sret_ty else v
-                self._emit_drop_glue(v, self._fn_sret_ty)
+                self._emit_drop_glue(
+                    None if list_return else v, VOID if list_return else self._fn_sret_ty
+                )
                 self._emit_arena_destroy()
                 self._L(f"store {self._fn_sret_ty} {v}, ptr {self._sret_ptr}")
                 self._L("ret void")
@@ -4959,13 +5019,13 @@ class LLVMTextEmitter:
                 # enabling SimplifyCFG to merge redundant enum switches.
                 urt = self._fn_unified_ret_ty
                 v = self._coerce(v, t, urt) if t != urt else v
-                self._emit_drop_glue(v, urt)
+                self._emit_drop_glue(None if list_return else v, VOID if list_return else urt)
                 self._emit_arena_destroy()
                 self._L(f"store {urt} {v}, ptr %__ret_alloca")
                 self._L("br label %__unified_ret")
             else:
                 v = self._coerce(v, t, rt) if t != rt else v
-                self._emit_drop_glue(v, rt)
+                self._emit_drop_glue(None if list_return else v, VOID if list_return else rt)
                 self._emit_arena_destroy()
                 self._L(f"ret {rt} {v}")
         else:
@@ -5226,7 +5286,11 @@ class LLVMTextEmitter:
         # 384 heuristic.
         if not i.elements and esz <= 8 and i.elem_type.kind in (TypeKind.UNKNOWN,):
             esz = 256
-        lv = self._rt("__mn_list_new", LIST, [I64], [(str(esz), I64)], "ln")
+        owned_list = list_owned_constructor(i.elem_type.kind)
+        if owned_list is not None:
+            lv = self._rt(owned_list, LIST, [], [], "ln")
+        else:
+            lv = self._rt("__mn_list_new", LIST, [I64], [(str(esz), I64)], "ln")
         self._track_container(i.dest.name, "list")
         if i.elements:
             la = self._alloca(LIST, "lp")
@@ -5238,15 +5302,15 @@ class LLVMTextEmitter:
                 self._L(f"store {et} {ev}, ptr {ea}")
                 ep = self._f("ep")
                 ep = ea  # opaque ptr, no bitcast
-                # v4.101.0 + v4.103.0: move element ownership into the
-                # list so drop glue does not free the backing buffer
-                # (see _do_list_push for the full rationale).
-                if elem.name in self._list_vars:
-                    self._list_vars.remove(elem.name)
-                root_e = self._lroots.get(elem.name)
-                if root_e and root_e in self._list_vars:
-                    self._list_vars.remove(root_e)
-                self._move_resource(elem.name)
+                # Owned lists copy elements in; raw lists take ownership
+                # (v4.101.0 + v4.103.0 move semantics — see _do_list_push).
+                if owned_list is None:
+                    if elem.name in self._list_vars:
+                        self._list_vars.remove(elem.name)
+                    root_e = self._lroots.get(elem.name)
+                    if root_e and root_e in self._list_vars:
+                        self._list_vars.remove(root_e)
+                    self._move_resource(elem.name)
                 self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
             r = self._f("ll")
             self._L(f"{r} = load {LIST}, ptr {la}")
@@ -5332,12 +5396,15 @@ class LLVMTextEmitter:
             # output.)
             # v4.103.0: also drop from _list_vars so list drop-glue
             # doesn't free pushed-list buffers (List<List<T>> case).
-            if i.element.name in self._list_vars:
-                self._list_vars.remove(i.element.name)
-            root_e = self._lroots.get(i.element.name)
-            if root_e and root_e in self._list_vars:
-                self._list_vars.remove(root_e)
-            self._move_resource(i.element.name)
+            # Owned lists instead copy the element, so the caller keeps
+            # ownership and cleanup runs normally.
+            if not _list_copy_in(i.list_val.ty):
+                if i.element.name in self._list_vars:
+                    self._list_vars.remove(i.element.name)
+                root_e = self._lroots.get(i.element.name)
+                if root_e and root_e in self._list_vars:
+                    self._list_vars.remove(root_e)
+                self._move_resource(i.element.name)
             self._ensure("__mn_list_push", VOID, ["ptr", PTR])
             # Use the SOURCE alloca directly for push (not a copy)
             if t != LIST:
@@ -5370,12 +5437,13 @@ class LLVMTextEmitter:
             ep = ea  # opaque ptr, no bitcast
             # v4.101.0 + v4.103.0 (see _do_list_push main path above):
             # move the element into the list so drop glue does not free it.
-            if i.element.name in self._list_vars:
-                self._list_vars.remove(i.element.name)
-            root_e = self._lroots.get(i.element.name)
-            if root_e and root_e in self._list_vars:
-                self._list_vars.remove(root_e)
-            self._move_resource(i.element.name)
+            if not _list_copy_in(i.list_val.ty):
+                if i.element.name in self._list_vars:
+                    self._list_vars.remove(i.element.name)
+                root_e = self._lroots.get(i.element.name)
+                if root_e and root_e in self._list_vars:
+                    self._list_vars.remove(root_e)
+                self._move_resource(i.element.name)
             self._ensure("__mn_list_push", VOID, ["ptr", PTR])
             self._L(f"call void @__mn_list_push(ptr {la}, ptr {ep})")
             r = self._f("ul")
@@ -5440,6 +5508,19 @@ class LLVMTextEmitter:
                     tp = raw  # opaque ptr, no bitcast
                     r = self._f("el")
                     self._L(f"{r} = load {ety}, ptr {tp}")
+                    if ety == STR:
+                        # Owned snapshot: the borrow dies at the next
+                        # mutation/growth of the owning buffer.
+                        r = self._rt("__mn_str_copy", STR, [STR], [(r, STR)])
+                        self._track_copied_string(i.dest.name, r)
+                    elif ety == LIST:
+                        # Nested list lookup takes a COW reference before
+                        # the outer buffer can detach or be destroyed.
+                        held = self._alloca(LIST, "list_get_ref")
+                        self._L(f"store {LIST} {r}, ptr {held}")
+                        self._ensure("__mn_list_retain", VOID, [PTR])
+                        self._L(f"call void @__mn_list_retain(ptr {held})")
+                        self._track_container(i.dest.name, "list")
                     self._put(i.dest, r, ety)
         elif ok == TypeKind.STRING:
             r = self._rt("__mn_str_byte_at", I64, [STR, I64], [(ov, ot), (iv, it)])
@@ -5503,9 +5584,21 @@ class LLVMTextEmitter:
                 self._L(f"store {vt} {vv}, ptr {ep}")
             else:
                 # Slow path: opaque call for String, structs, etc.
-                raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)])
-                tp = raw  # opaque ptr, no bitcast
-                self._L(f"store {vt} {vv}, ptr {tp}")
+                if _list_copy_in(i.obj.ty):
+                    # Owned list: set drops the old element and copies the
+                    # new one in; an in-place store would leak the old value.
+                    ea = self._alloca(vt, "es")
+                    self._L(f"store {vt} {vv}, ptr {ea}")
+                    self._rt(
+                        "__mn_list_set",
+                        VOID,
+                        [PTR, I64, PTR],
+                        [(la, PTR), (iv, I64), (ea, PTR)],
+                    )
+                else:
+                    raw = self._rt("__mn_list_get", PTR, ["ptr", I64], [(la, "ptr"), (iv, I64)])
+                    tp = raw  # opaque ptr, no bitcast
+                    self._L(f"store {vt} {vv}, ptr {tp}")
         elif i.obj.ty.kind == TypeKind.MAP:
             ka = self._alloca(it, "ka")
             self._L(f"store {it} {iv}, ptr {ka}")

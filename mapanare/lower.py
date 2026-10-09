@@ -99,7 +99,7 @@ from mapanare.ast_nodes import (
     WhileLoop,
     WildcardPattern,
 )
-from mapanare.container_policy import map_copies_inputs
+from mapanare.container_policy import list_copies_inputs, map_copies_inputs
 from mapanare.mir import (
     AgentSend,
     AgentSpawn,
@@ -4162,7 +4162,11 @@ class MIRLowerer:
             self._emit(ListPush(dest=dest, list_val=obj, element=args[0]))
             # v5.4.4 — list.push copies the element into the list buffer;
             # the list owns it now. Drop glue must skip the caller's slot.
-            self._emit(Move(value=args[0]))
+            # Owned lists (String/List elements) copy the input instead, so
+            # caller cleanup still runs.
+            _push_args = obj.ty.type_info.args
+            if not (_push_args and list_copies_inputs(_push_args[0].kind)):
+                self._emit(Move(value=args[0]))
             # Update the variable so subsequent reads see the modified list
             if isinstance(expr.object, Identifier):
                 self._update_var(expr.object.name, dest)
@@ -5240,12 +5244,16 @@ class MIRLowerer:
                 return val
             index = indices[0] if indices else self._make_value()
             self._emit(IndexSet(obj=obj, index=index, val=val))
-            # Copy-in maps keep caller ownership of both arguments.
+            # Copy-in maps and owned lists keep caller ownership of inputs.
             types = obj.ty.type_info.args
             copying = (
                 obj.ty.kind == TypeKind.MAP
                 and len(types) == 2
                 and map_copies_inputs(types[0].kind, types[1].kind)
+            ) or (
+                obj.ty.kind == TypeKind.LIST
+                and len(types) >= 1
+                and list_copies_inputs(types[0].kind)
             )
             if not copying:
                 self._emit(Move(value=index))

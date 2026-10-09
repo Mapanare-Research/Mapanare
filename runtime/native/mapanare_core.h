@@ -261,6 +261,12 @@ MN_EXPORT MnList __mn_list_new_owned(int64_t elem_size, const MnElementOps *ops)
  *  Returned/popped owned Strings must be freed by the caller. Getter results
  *  remain borrowed until mutation/free of the owning buffer. */
 MN_EXPORT MnList __mn_list_str_new_owned(void);
+/** Owned nested list: copy retains the inner COW buffer, drop releases it.
+ *  The inner buffer keeps its own element policy, so List<List<String>>
+ *  destruction cascades. */
+MN_EXPORT MnList __mn_list_list_new_owned(void);
+/** Retain one share of a list buffer (NULL/unmanaged-safe). */
+MN_EXPORT void __mn_list_retain(MnList *list);
 
 /** Push an element (copied from `elem_ptr`) onto the end of the list. */
 MN_EXPORT void __mn_list_push(MnList *list, const void *elem_ptr);

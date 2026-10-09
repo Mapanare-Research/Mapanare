@@ -285,13 +285,8 @@ fn register_struct(st: LowerState, data: StructDefData) -> LowerState:
             let mut sf_lst: List<StructFieldInfo> = s.struct_fields
             sf_lst.push(sfi)
             s.struct_fields = sf_lst
-            // Own.1 (v5.1.3): clear moved-ownership locals.
-            // Mirrors Cb.7 pattern at monomorphize sites (lines 1795-1798).
-            // fields/field_names/field_types ownership moved into module via
-            // info and sfi. Zero headers so future drop-glue won't double-free.
-            fields = []
-            field_names = []
-            field_types = []
+            // The registered structs now refer to these list buffers.
+            // Rebinding a local would release the buffer underneath them.
             return s
         let field: StructField = data.fields[i]
         let fty: MIRType = lower_resolve_type_checked(s, field.type_annotation)
@@ -316,12 +311,9 @@ fn register_enum(st: LowerState, data: EnumDefData) -> LowerState:
             let mut ev_lst: List<EnumVariantNames> = s.enum_variants
             ev_lst.push(evn)
             s.enum_variants = ev_lst
-            // Own.1 (v5.1.3): clear moved-ownership locals.
-            // Mirrors Cb.7 pattern at monomorphize sites (lines 1997-1998).
-            // variants/variant_names ownership moved into module via
-            // info and evn. Zero headers so future drop-glue won't double-free.
-            variants = []
-            variant_names = []
+            // The lists are now reachable through info and evn. Rebinding
+            // either local would release its old buffer while the struct
+            // still points into it. These values transfer with the structs.
             return s
         let variant: EnumVariant = data.variants[i]
         let mut payload_types: List<MIRType> = []
@@ -2046,10 +2038,9 @@ fn try_monomorphize_struct(st: LowerState, struct_name: String, args: List<Value
                 let mut sf_lst: List<StructFieldInfo> = s.struct_fields
                 sf_lst.push(sfi)
                 s.struct_fields = sf_lst
-                // Cb.7 (v4.144.0): clear moved-ownership locals.
-                fields = []
-                field_names = []
-                field_types = []
+                // The new StructInfo and StructFieldInfo refer to these
+                // buffers. Rebinding a local would release the buffer
+                // while the registered metadata still references it.
 
                 // Monomorphize generic impl methods for this struct
                 s = monomorphize_impl_methods(s, struct_name, mangled, gs.type_params, concrete)
@@ -2210,12 +2201,8 @@ fn try_monomorphize_enum(st: LowerState, variant_name: String, args: List<Value>
                         let mut ev_lst: List<EnumVariantNames> = s.enum_variants
                         ev_lst.push(evn)
                         s.enum_variants = ev_lst
-                        // Ownership of the specialized enum metadata has moved
-                        // into the returned state. Clear the local list headers
-                        // so the function epilogue does not free the same
-                        // buffers while the emitter still needs them.
-                        new_variants = []
-                        new_variant_names = []
+                        // The metadata structs refer to these list buffers.
+                        // Rebinding here would release the live buffers.
 
                     // Emit EnumInit with mangled type name
                     let enum_ty: MIRType = mir_enum(mangled)
@@ -2848,6 +2835,13 @@ fn lower_push_method(st: LowerState, obj: Expr, obj_r: LowerResult, arg_exprs: L
     all_args.push(arg_r.value)
     let dest_r: LowerResult = make_value(s, mir_void(), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::Call(dest_r.value, "push", all_args))
+    // Owned lists (String/List elements) copy the pushed value, so the
+    // caller keeps ownership; raw lists keep the v5.4.4 transfer marker.
+    let mut copy_in: Bool = false
+    if obj_r.value.ty.kind == TK_LIST() && len(obj_r.value.ty.args) > 0:
+        copy_in = list_copies_inputs(obj_r.value.ty.args[0].kind)
+    if copy_in:
+        return new_lower_result(dest_r.value, new_s)
     // v5.4.4 — list.push copies the element into the list buffer; the
     // container owns it now. Drop glue must skip the caller's slot.
     let moved_s: LowerState = emit_instr(new_s, Instruction::Move(arg_r.value))
@@ -3563,7 +3557,7 @@ fn lower_list_typed(st: LowerState, elements: List<Expr>, hinted_elem_ty: MIRTyp
     else:
         if hinted_elem_ty.kind != TK_UNKNOWN():
             elem_type = hinted_elem_ty
-    let dest_r: LowerResult = make_value(s, mir_list(), "t")
+    let dest_r: LowerResult = make_value(s, mir_list_of(elem_type), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::ListInit(dest_r.value, elem_type, vals))
     return new_lower_result(dest_r.value, new_s)
 

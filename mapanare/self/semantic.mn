@@ -928,7 +928,23 @@ fn check_binary_expr(st: SemState, left: Expr, op: String, right: Expr) -> Infer
 
     return new_infer_result(unknown_type(), st2)
 
+fn same_generic_shape(a: TypeInfo, b: TypeInfo, depth: Int) -> Bool:
+    if depth >= 32: return false
+    if a.name != b.name: return false
+    if len(a.args) != len(b.args): return false
+    let mut i: Int = 0
+    for _ in 0..32:
+        if i >= len(a.args): return true
+        if !same_generic_shape(a.args[i], b.args[i], depth + 1): return false
+        i = i + 1
+    return false
+
 fn check_arithmetic_binary(st: SemState, lt: String, rt: String, op: String, left_ti: TypeInfo, right_ti: TypeInfo) -> InferResult:
+    if op == "+" && lt == "List" && rt == "List":
+        if !same_generic_shape(left_ti, right_ti, 0) || len(left_ti.args) != 1:
+            let bad_lists: SemState = add_error_here(st, "List concatenation requires matching element types")
+            return new_infer_result(error_type(), bad_lists)
+        return new_infer_result(left_ti, st)
     // Tensor element-wise operations
     if lt == "Tensor":
         if !type_should_skip(rt):

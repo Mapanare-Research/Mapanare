@@ -1179,6 +1179,27 @@ MN_EXPORT MnList __mn_list_str_new_owned(void) {
     return __mn_list_new_owned(sizeof(MnString), &ops);
 }
 
+/* Nested lists: copy retains the inner buffer (COW), drop releases it.
+ * The inner buffer carries its own element policy, so destruction cascades
+ * correctly for List<List<String>> and similar shapes. */
+static void mn_owned_list_copy(void *dest, const void *source) {
+    MnList inner;
+    memcpy(&inner, source, sizeof(inner));
+    MnList copied = __mn_list_clone(&inner);
+    memcpy(dest, &copied, sizeof(copied));
+}
+
+static void mn_owned_list_drop(void *value) {
+    MnList inner;
+    memcpy(&inner, value, sizeof(inner));
+    __mn_list_free(&inner);
+}
+
+MN_EXPORT MnList __mn_list_list_new_owned(void) {
+    const MnElementOps ops = {mn_owned_list_copy, mn_owned_list_drop};
+    return __mn_list_new_owned(sizeof(MnList), &ops);
+}
+
 /* Access the refcount for a list's data buffer */
 static int64_t *mn_list_rc(MnList *list) {
     if (!list->data || !list->managed) return NULL;
@@ -1497,6 +1518,18 @@ static int mn_list_is_managed(MnList *list) {
 MN_EXPORT void __mn_cow_stats(void) {
     fprintf(stderr, "[COW] shares=%ld fallbacks=%ld detaches=%ld\n",
             (long)cow_shares, (long)cow_fallbacks, (long)cow_detaches);
+}
+
+/* Retain one share of a list buffer (NULL/unmanaged-safe). Both the COW
+ * header refcount and the owned-list header refcount are covered. */
+MN_EXPORT void __mn_list_retain(MnList *list) {
+    if (!list || !list->data) return;
+    if (list->managed == MN_LIST_OWNED) {
+        __atomic_fetch_add(&mn_owned_header(list)->refs, 1, __ATOMIC_RELAXED);
+        return;
+    }
+    int64_t *rc = mn_list_rc(list);
+    if (rc) __atomic_fetch_add(rc, 1, __ATOMIC_RELAXED);
 }
 
 MN_EXPORT MnList __mn_list_clone(MnList *src) {
