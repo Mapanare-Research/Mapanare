@@ -976,6 +976,18 @@ MN_EXPORT void __mn_str_free(const char *data, int64_t len_with_heap_bit) {
     }
 }
 
+MN_EXPORT void __mn_str_clear_matching_owners(const char *data, MnString **slots) {
+    if (!data || !slots) return;
+    for (MnString **it = slots; *it; ++it) {
+        MnString *slot = *it;
+        if (slot->data == data) {
+            slot->data = NULL;
+            slot->len = 0;
+            slot->is_heap = 0;
+        }
+    }
+}
+
 MN_EXPORT void __mn_str_print(MnString s) {
     if (s.len > 0) {
         fwrite(s.data, 1, (size_t)s.len, stdout);

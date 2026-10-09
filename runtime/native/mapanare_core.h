@@ -72,6 +72,9 @@ MN_EXPORT MnString __mn_temp_path(MnString name);
 #define MN_STR_LEN_MASK   0x7FFFFFFFFFFFFFFFLL
 #define MN_STR_HEAP_BIT   ((int64_t)0x8000000000000000LL)
 
+/* Transfer a String out of local owner slots. The table ends with NULL. */
+MN_EXPORT void __mn_str_clear_matching_owners(const char *data, MnString **slots);
+
 /** Create a string from a C string (copies the data). */
 MN_EXPORT MnString __mn_str_from_cstr(const char *cstr);
 

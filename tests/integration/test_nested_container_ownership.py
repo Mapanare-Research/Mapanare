@@ -224,6 +224,102 @@ fn main():
 """,
         "4890\n",
     ),
+    "struct-string-return": (
+        """
+struct Box:
+    text: String
+fn make_box(n: Int) -> Box:
+    let text = "v" + str(n)
+    return new Box { text: text }
+fn main():
+    let mut total = 0
+    for i in 0..1000:
+        let box: Box = make_box(i)
+        total = total + len(box.text)
+    print(total)
+""",
+        "3890\n",
+    ),
+    "struct-string-copy-replace": (
+        """
+struct Box:
+    text: String
+fn make_box(n: Int) -> Box:
+    let text = "v" + str(n)
+    return new Box { text: text }
+fn choose(n: Int) -> Box:
+    let mut first: Box = make_box(n)
+    let second: Box = first
+    first.text = "changed-" + str(n)
+    return second
+fn main():
+    let mut total = 0
+    for i in 0..1000:
+        let box: Box = choose(i)
+        total = total + len(box.text)
+    print(total)
+""",
+        "3890\n",
+    ),
+    "struct-map-return": (
+        """
+struct Box:
+    values: Map<String, String>
+fn make_box(n: Int) -> Box:
+    let mut values: Map<String, String> = #{}
+    values["key"] = "v" + str(n)
+    return new Box { values: values }
+fn main():
+    let mut total = 0
+    for i in 0..1000:
+        let box: Box = make_box(i)
+        total = total + len(box.values["key"])
+    print(total)
+""",
+        "3890\n",
+    ),
+    "struct-map-copy-replace": (
+        """
+struct Box:
+    values: Map<String, String>
+fn make_box(n: Int) -> Box:
+    let mut values: Map<String, String> = #{}
+    values["key"] = "v" + str(n)
+    return new Box { values: values }
+fn choose(n: Int) -> Box:
+    let mut first: Box = make_box(n)
+    let second: Box = first
+    first.values["key"] = "changed-" + str(n)
+    return second
+fn main():
+    let mut total = 0
+    for i in 0..1000:
+        let box: Box = choose(i)
+        total = total + len(box.values["key"])
+    print(total)
+""",
+        "10890\n",
+    ),
+    "struct-map-field-reassign": (
+        """
+struct Box:
+    values: Map<String, String>
+fn make_box(n: Int) -> Box:
+    let mut values: Map<String, String> = #{}
+    values["key"] = "v" + str(n)
+    return new Box { values: values }
+fn main():
+    let mut total = 0
+    for i in 0..1000:
+        let mut box: Box = make_box(i)
+        let mut other: Map<String, String> = #{}
+        other["key"] = "replacement-" + str(i)
+        box.values = other
+        total = total + len(box.values["key"])
+    print(total)
+""",
+        "14890\n",
+    ),
 }
 
 

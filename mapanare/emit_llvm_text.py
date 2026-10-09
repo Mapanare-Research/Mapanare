@@ -587,7 +587,7 @@ class LLVMTextEmitter:
         self._name = module_name
         self._triple = target_triple or "x86_64-pc-linux-gnu"
         self._layout = data_layout or (
-            "e-m:e-p270:32:32-p271:32:32-p272:64:64-" "i64:64-i128:128-f80:128-n8:16:32:64-S128"
+            "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
         )
         # type registries
         self._structs: dict[str, list[tuple[str, str]]] = {}
@@ -1939,6 +1939,55 @@ class LLVMTextEmitter:
                 result.append(index)
         return result
 
+    def _owned_struct_string_fields(self, name: str) -> list[int]:
+        return [
+            index
+            for index, (_, llvm_type) in enumerate(self._structs.get(name, ()))
+            if llvm_type == STR
+        ]
+
+    def _owned_struct_map_fields(self, name: str) -> list[int]:
+        mir_fields = self._struct_mir_types.get(name, {})
+        return [
+            index
+            for index, (_, llvm_type) in enumerate(self._structs.get(name, ()))
+            if llvm_type == PTR and index in mir_fields and mir_fields[index].kind == TypeKind.MAP
+        ]
+
+    def _track_struct_maps(self, dest: Value, value: str, *, borrow: bool) -> None:
+        slots = self._struct_map_owners.get(dest.name, ())
+        if not slots:
+            return
+        struct_type = self._rty(dest.ty)
+        for index, slot in slots:
+            field = self._f("struct.map")
+            self._L(f"{field} = extractvalue {struct_type} {value}, {index}")
+            if borrow:
+                self._rt("__mn_map_retain", PTR, [PTR], [(field, PTR)])
+            previous = self._f("struct.map.previous")
+            self._L(f"{previous} = load ptr, ptr {slot}")
+            self._rt("__mn_map_free_deep", VOID, [PTR], [(previous, PTR)])
+            self._L(f"store ptr {field}, ptr {slot}")
+
+    def _track_struct_strings(self, dest: Value, value: str, *, borrow: bool) -> str:
+        slots = self._struct_string_owners.get(dest.name, ())
+        if not slots:
+            return value
+        struct_type = self._rty(dest.ty)
+        for index, slot in slots:
+            field = self._f("struct.string")
+            self._L(f"{field} = extractvalue {struct_type} {value}, {index}")
+            if borrow:
+                field = self._rt("__mn_str_copy", STR, [STR], [(field, STR)])
+                updated = self._f("struct.string.copy")
+                self._L(f"{updated} = insertvalue {struct_type} {value}, {STR} {field}, {index}")
+                value = updated
+            previous = self._f("struct.string.previous")
+            self._L(f"{previous} = load {STR}, ptr {slot}")
+            self._rt("__mn_str_free", VOID, [STR], [(previous, STR)])
+            self._L(f"store {STR} {field}, ptr {slot}")
+        return value
+
     def _track_struct_lists(self, dest: Value, value: str, *, borrow: bool) -> None:
         slots = self._struct_list_owners.get(dest.name, ())
         if not slots:
@@ -1978,6 +2027,8 @@ class LLVMTextEmitter:
             or self._stream_vars
             or self._tensor_vars
             or self._struct_list_owners
+            or self._struct_string_owners
+            or self._struct_map_owners
         )
         if not has_any:
             return
@@ -2004,6 +2055,16 @@ class LLVMTextEmitter:
             for _, slot in slots:
                 self._ensure("__mn_list_free", VOID, [PTR])
                 self._L(f"call void @__mn_list_free(ptr {slot})")
+        for slots in self._struct_string_owners.values():
+            for _, slot in slots:
+                previous = self._f("struct.string.drop")
+                self._L(f"{previous} = load {STR}, ptr {slot}")
+                self._rt("__mn_str_free", VOID, [STR], [(previous, STR)])
+        for slots in self._struct_map_owners.values():
+            for _, slot in slots:
+                previous = self._f("struct.map.drop")
+                self._L(f"{previous} = load ptr, ptr {slot}")
+                self._rt("__mn_map_free_deep", VOID, [PTR], [(previous, PTR)])
         if self._map_vars:
             self._ensure("__mn_map_free_deep", VOID, [PTR])
         self._emit_drop_glue_maps(ret_val if self._fn.return_type.kind == TypeKind.MAP else None)
@@ -2667,24 +2728,45 @@ class LLVMTextEmitter:
         self._tensor_vars = []
         self._loop_depth = 0
         self._struct_list_owners: dict[str, list[tuple[int, str]]] = {}
+        self._struct_string_owners: dict[str, list[tuple[int, str]]] = {}
+        self._struct_map_owners: dict[str, list[tuple[int, str]]] = {}
         self._mutated_list_values: set[str] = set()
         for block in fn.blocks:
             for inst in block.instructions:
                 dest = getattr(inst, "dest", None)
                 if not isinstance(dest, Value) or dest.ty.kind != TypeKind.STRUCT:
                     continue
-                if dest.name in self._struct_list_owners:
+                if (
+                    dest.name in self._struct_list_owners
+                    or dest.name in self._struct_string_owners
+                    or dest.name in self._struct_map_owners
+                ):
                     continue
                 name = self._res_struct(dest.ty.type_info.name)
                 fields = self._owned_struct_list_fields(name)
-                if not fields:
-                    continue
-                slots: list[tuple[int, str]] = []
-                for index in fields:
-                    slot = self._alloca(LIST, "struct_owner")
-                    self._ent.append(f"  store {LIST} zeroinitializer, ptr {slot}")
-                    slots.append((index, slot))
-                self._struct_list_owners[dest.name] = slots
+                if fields:
+                    slots: list[tuple[int, str]] = []
+                    for index in fields:
+                        slot = self._alloca(LIST, "struct_owner")
+                        self._ent.append(f"  store {LIST} zeroinitializer, ptr {slot}")
+                        slots.append((index, slot))
+                    self._struct_list_owners[dest.name] = slots
+                string_fields = self._owned_struct_string_fields(name)
+                if string_fields:
+                    string_slots: list[tuple[int, str]] = []
+                    for index in string_fields:
+                        slot = self._alloca(STR, "struct_string_owner")
+                        self._ent.append(f"  store {STR} zeroinitializer, ptr {slot}")
+                        string_slots.append((index, slot))
+                    self._struct_string_owners[dest.name] = string_slots
+                map_fields = self._owned_struct_map_fields(name)
+                if map_fields:
+                    map_slots: list[tuple[int, str]] = []
+                    for index in map_fields:
+                        slot = self._alloca(PTR, "struct_map_owner")
+                        self._ent.append(f"  store ptr null, ptr {slot}")
+                        map_slots.append((index, slot))
+                    self._struct_map_owners[dest.name] = map_slots
         # v5.4.4 — reset parallel SSA-source arrays + moved_locals set.
         self._local_strings_source = []
         self._local_boxed_source = []
@@ -2946,9 +3028,7 @@ class LLVMTextEmitter:
             ls = self._blk[bb.label]
             if not ls or not self._is_term(ls[-1]):
                 if self._fn_use_sret:
-                    ls.append(
-                        f"  store {self._fn_sret_ty} zeroinitializer," f" ptr {self._sret_ptr}"
-                    )
+                    ls.append(f"  store {self._fn_sret_ty} zeroinitializer, ptr {self._sret_ptr}")
                     ls.append("  ret void")
                 elif self._fn_unified_ret:
                     urt = self._fn_unified_ret_ty
@@ -3341,9 +3421,24 @@ class LLVMTextEmitter:
             a_prev, _ = self._ensure_value_alloca(i.dest, LIST)
             self._ensure("__mn_list_free", VOID, ["ptr"])
             self._L(f"call void @__mn_list_free(ptr {a_prev})")
-        self._put(i.dest, v, t)
         if i.dest.ty.kind == TypeKind.STRUCT:
+            v = self._track_struct_strings(i.dest, v, borrow=True)
             self._track_struct_lists(i.dest, v, borrow=True)
+            self._track_struct_maps(i.dest, v, borrow=True)
+        if (
+            i.dest.ty.kind == TypeKind.MAP
+            and i.src.name in self._map_vars
+            and i.dest.name != i.src.name
+            and self._loop_depth > 0
+        ):
+            # A MapInit temporary transfers into a loop-local binding on
+            # every iteration. Release the binding's prior handle before
+            # overwriting its alloca; the temporary remains untracked below.
+            dest_slot, _ = self._ensure_value_alloca(i.dest, PTR)
+            previous = self._f("map.copy.previous")
+            self._L(f"{previous} = load ptr, ptr {dest_slot}")
+            self._rt("__mn_map_free_deep", VOID, [PTR], [(previous, PTR)])
+        self._put(i.dest, v, t)
         # Track list aliases: when a list is copied, the dest should see
         # future push write-backs to the source. Record the alias so
         # _do_list_push can write back to all copies.
@@ -3516,9 +3611,7 @@ class LLVMTextEmitter:
         vals = ", ".join(f"i64 {o}" for o in offsets)
         self._globals.append(f"{name} = private constant [{len(offsets)} x i64] [{vals}]")
         gep = self._f("offp")
-        self._L(
-            f"{gep} = getelementptr inbounds [{len(offsets)} x i64], " f"ptr {name}, i64 0, i64 0"
-        )
+        self._L(f"{gep} = getelementptr inbounds [{len(offsets)} x i64], ptr {name}, i64 0, i64 0")
         return gep
 
     # --- Cast ---
@@ -4885,6 +4978,8 @@ class LLVMTextEmitter:
                 self._put(i.dest, r, ret)
             if i.dest.ty.kind == TypeKind.STRUCT and ret != VOID:
                 self._track_struct_lists(i.dest, r, borrow=False)
+                self._track_struct_strings(i.dest, r, borrow=False)
+                self._track_struct_maps(i.dest, r, borrow=False)
             if list_factory_result:
                 self._track_container(i.dest.name, "list")
             if i.dest.ty.kind == TypeKind.MAP and fn in getattr(self, "_owned_map_factories", ()):
@@ -4922,6 +5017,8 @@ class LLVMTextEmitter:
                     cur = _zero(sty)
                 self._put(i.dest, cur, sty)
                 self._track_struct_lists(i.dest, cur, borrow=False)
+                self._track_struct_strings(i.dest, cur, borrow=False)
+                self._track_struct_maps(i.dest, cur, borrow=False)
                 return
 
         # Check if this is an enum variant constructor call
@@ -4974,6 +5071,8 @@ class LLVMTextEmitter:
             self._put(i.dest, r, ret_auto)
             if i.dest.ty.kind == TypeKind.STRUCT:
                 self._track_struct_lists(i.dest, r, borrow=False)
+                self._track_struct_strings(i.dest, r, borrow=False)
+                self._track_struct_maps(i.dest, r, borrow=False)
         elif ret_auto == VOID:
             astr2 = ", ".join(f"{t} {v}" for v, t in abi_args2)
             self._L(f"call void @{fn}({astr2})")
@@ -4985,6 +5084,8 @@ class LLVMTextEmitter:
             self._put(i.dest, r, ret_auto)
             if i.dest.ty.kind == TypeKind.STRUCT:
                 self._track_struct_lists(i.dest, r, borrow=False)
+                self._track_struct_strings(i.dest, r, borrow=False)
+                self._track_struct_maps(i.dest, r, borrow=False)
 
     # --- ExternCall ---
     def _do_extern(self, i: ExternCall) -> None:
@@ -5067,6 +5168,19 @@ class LLVMTextEmitter:
             owned_struct_return = False
             if self._fn.return_type.kind == TypeKind.STRUCT:
                 name = self._res_struct(self._fn.return_type.type_info.name)
+                for index in self._owned_struct_map_fields(name):
+                    field = self._f("ret.struct.map")
+                    self._L(f"{field} = extractvalue {t} {v}, {index}")
+                    self._rt("__mn_map_retain", PTR, [PTR], [(field, PTR)])
+                    owned_struct_return = True
+                for index in self._owned_struct_string_fields(name):
+                    field = self._f("ret.struct.string")
+                    self._L(f"{field} = extractvalue {t} {v}, {index}")
+                    copied = self._rt("__mn_str_copy", STR, [STR], [(field, STR)])
+                    updated = self._f("ret.struct.string.copy")
+                    self._L(f"{updated} = insertvalue {t} {v}, {STR} {copied}, {index}")
+                    v = updated
+                    owned_struct_return = True
                 for index in self._owned_struct_list_fields(name):
                     field = self._f("ret.struct.list")
                     self._L(f"{field} = extractvalue {t} {v}, {index}")
@@ -5216,6 +5330,8 @@ class LLVMTextEmitter:
                 self._move_resource(fval.name)
             self._put(i.dest, cur, sty)
             self._track_struct_lists(i.dest, cur, borrow=False)
+            self._track_struct_strings(i.dest, cur, borrow=False)
+            self._track_struct_maps(i.dest, cur, borrow=True)
         else:
             # unknown struct
             if i.fields:
@@ -5331,6 +5447,19 @@ class LLVMTextEmitter:
                         self._ensure("__mn_list_free", VOID, [PTR])
                         self._L(f"call void @__mn_list_free(ptr {owner_slot})")
                     self._L(f"store {LIST} {vv}, ptr {owner_slot}")
+                string_slot = dict(self._struct_string_owners.get(i.obj.name, ())).get(idx)
+                if string_slot is not None and ft == STR:
+                    previous = self._f("struct.string.replaced")
+                    self._L(f"{previous} = load {STR}, ptr {string_slot}")
+                    self._rt("__mn_str_free", VOID, [STR], [(previous, STR)])
+                    self._L(f"store {STR} {vv}, ptr {string_slot}")
+                map_slot = dict(self._struct_map_owners.get(i.obj.name, ())).get(idx)
+                if map_slot is not None and ft == PTR:
+                    self._rt("__mn_map_retain", PTR, [PTR], [(vv, PTR)])
+                    previous = self._f("struct.map.replaced")
+                    self._L(f"{previous} = load ptr, ptr {map_slot}")
+                    self._rt("__mn_map_free_deep", VOID, [PTR], [(previous, PTR)])
+                    self._L(f"store ptr {vv}, ptr {map_slot}")
             # v4.101.0: move semantics for the stored value (see
             # _do_list_push / _do_struct_init for the rationale).
             # v4.103.0: also drop from _list_vars (see _do_struct_init).
