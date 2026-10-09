@@ -39,6 +39,16 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
+**Priority 2 active; explicit map references committed as `d82e2078`.** Retained
+handles and cursors keep maps alive until the last release. The runtime passes
+45 sanitizer cases; broad suites pass 1,252 LLVM/MIR tests and 240 ownership
+regressions. Strict self-hosting passes at `build/fixed-point-_p8lbaiq`, and the
+tested successor is installed. The independent compiler proof is committed as
+`dd8c2ce3`, but its emitter integration remains unapplied: automatic approval
+review requires explicit user re-approval. The [concrete proposal and tests](memory-ownership/RETAINED_MAP_EMITTER_PROPOSAL.md)
+are ready. The 36 newly reproduced compiler leaks remain unresolved pending that
+integration. See [the work log](memory-ownership/WORK_LOG.md) for hashes and resume steps.
+
 **Priority 2 active; borrowed-view loop cleanup committed as `c81dfb64`.**
 Private cursors and borrowed String key/value aliases must be dead before the
 next allocation; copied scalars are independent. All 32 new leak cases pass,

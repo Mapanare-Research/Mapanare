@@ -5,7 +5,12 @@ approval of this emitter integration after rejecting it twice. The runtime is
 already committed as `d82e2078`; its final 45 sanitizer lifecycle tests pass.
 The separate, currently unconnected `shared_map_aliases` analysis passes 38
 tests. Baseline compilation with the unchanged emitter reproduces 36 leaks
-across Python O0–O3, with four passing skipped-loop controls.
+across Python O0–O3, with four passing skipped-loop controls. The exact 40-case
+integration suite is preserved as
+[retained_map_ownership.py.pending](retained_map_ownership.py.pending), outside
+active test discovery because the emitter implementation is not yet approved.
+After approval, restore it to `tests/integration/test_retained_map_ownership.py`
+and use it as the acceptance gate; its assertions must not be weakened.
 
 ## Exact implementation scope
 

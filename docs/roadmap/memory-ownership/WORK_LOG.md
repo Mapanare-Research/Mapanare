@@ -2,6 +2,63 @@
 
 ## Resume point — 2026-10-08
 
+Explicit runtime map references are committed as **`d82e2078`** (`Add explicit
+map references and retain iterator parents`). Constructors start with one
+reference; retained handles and cursors keep the map alive; the last release
+destroys it. Legacy deep-release obligations survive intermediate shallow
+releases. See [RETAINED_MAPS.md](RETAINED_MAPS.md).
+
+The independent, unconnected compiler proof is committed as **`dd8c2ce3`**
+(`Prove closed map alias groups for explicit ownership`). It identifies complete
+local groups and rejects escaping/uncertain uses. **The emitter integration is
+not applied.** Automatic approval review rejected it twice, including after
+staged validation, and explicitly required user re-approval. A question is
+pending in the chat. The exact implementation scope and prepared test suite are
+in [RETAINED_MAP_EMITTER_PROPOSAL.md](RETAINED_MAP_EMITTER_PROPOSAL.md).
+
+Evidence: `build/memory-ownership/retained-maps/`.
+
+- `runtime-final.log`: 45 passed, including twelve new lifecycle executions at
+  C O0/O2, each repeating 1,000 times under ASan/UBSan/LSan.
+- `proof-tests.log`: 38 passed. Unused statement-result Phis are harmless;
+  consumed map Phis still reject this ownership path.
+- `baseline.log`: 36 leaking executions and four passing skipped-loop controls
+  with the unchanged Python emitter and new runtime. These are unresolved
+  compiler leaks, not passing integration tests. The proposed acceptance suite
+  is saved as `retained_map_ownership.py.pending`, outside active discovery.
+- `runtime-llvm-mir.log`: 1,252 passed, including the independent new proof.
+- `runtime-ownership-regressions.log`: 240 passed.
+- `fixed-point.log`, `build/fixed-point-_p8lbaiq`: both generations pass 104 LLVM
+  goldens and nine outputs; stage2/stage3 IR is byte-identical. The native source
+  and IR are unchanged; the new runtime changes the linked compiler hash.
+
+The exact tested successor is installed at `mapanare/self/mnc-stage1`; the prior
+binary is preserved as `build/memory-ownership/retained-maps/previous-mnc-stage1`.
+`verification.json` records the committed revision and successful gate.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Installed compiler | `d17e99cf9dbc484430fac74b33e4f7ef3b4a5200bd8cf8dff8da4c00c4341598` |
+| Runtime archive | `be8506f00f9248ef0038d331a94f8d5a87d0bbdce398e6e2b03e6246484d8400` |
+| Concatenated native source | `a79a01a72ccc2734fcefaa50767f5b187891732e8ef94bb94601e8d7302fd4ba` |
+| Stage2 and stage3 IR | `62728337381f7e1c1ff3d5ffd59067f7345a6a9f5a5106a55784ff0efbaa73cb` |
+
+GitNexus reports LOW indexed runtime impact (at most one direct caller per
+helper, no indexed flows). Runtime staged detection covers six expected files;
+the newly added proof/proposal files were unindexed and reviewed directly.
+The blocked emitter change has CRITICAL function-emission impact: one direct
+caller, nine reachable symbols and five flows. No emitter edits were applied.
+Black/Ruff and staged whitespace checks pass. Nothing pushed.
+
+**Next:** obtain the explicitly requested re-approval for the documented emitter
+integration, restore the prepared acceptance suite, apply the bounded patch,
+and require all 40 cases plus existing retained-view and broad compiler gates
+to pass before committing. Then extend consumed Phi/returned/borrowed-view
+ownership and adopt owned containers more broadly. Do not bypass the approval
+review or mistake runtime support for completed compiler integration.
+
+## Previous verified milestone — borrowed map views
+
 Borrowed map views now participate in the Python loop-result lifetime proof,
 committed as **`c81dfb64`** (`Track borrowed map views before recycling loop results`).
 Local cursors and String key/value reads permit recycling only when all derived
