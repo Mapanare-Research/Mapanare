@@ -2449,6 +2449,8 @@ MN_EXPORT MnList __mn_dir_list_strings(MnString path) {
 #define MN_BUCKET_TOMBSTONE 2
 
 struct MnMap {
+    int64_t  refs;        /* Explicit handle owners; not atomic. */
+    int64_t  deep_free;   /* Preserve a legacy deep-release request until last owner. */
     char    *buckets;     /* Array of (status:1 + psl:1 + key:key_size + val:val_size) */
     int64_t  len;         /* Live entry count */
     int64_t  cap;         /* Number of buckets (power of 2) */
@@ -2608,6 +2610,7 @@ MN_EXPORT MnMap *__mn_map_new_owned(int64_t key_size, int64_t val_size,
     }
     MnElementOps keys = mn_map_policy(key_ops), vals = mn_map_policy(val_ops);
     MnMap *map = (MnMap *)__mn_alloc(sizeof(MnMap));
+    map->refs = 1;
     map->owned = 1;
     map->key_size = key_size;
     map->val_size = val_size;
@@ -2707,6 +2710,7 @@ static void mn_owned_map_set(MnMap *map, const void *key, const void *val) {
 
 MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_type, int64_t val_type) {
     MnMap *map = (MnMap *)__mn_alloc(sizeof(MnMap));
+    map->refs = 1;
     map->key_size = key_size;
     map->val_size = val_size;
     map->key_type = key_type;
@@ -2915,7 +2919,7 @@ static void mn_map_grow(MnMap *map) {
 
 MN_EXPORT MnMapIter *__mn_map_iter_new(MnMap *map) {
     MnMapIter *iter = (MnMapIter *)__mn_alloc(sizeof(MnMapIter));
-    iter->map = map;
+    iter->map = __mn_map_retain(map);
     iter->index = 0;
     return iter;
 }
@@ -2935,6 +2939,8 @@ MN_EXPORT int64_t __mn_map_iter_next(MnMapIter *iter, void **key_out, void **val
 }
 
 MN_EXPORT void __mn_map_iter_free(MnMapIter *iter) {
+    if (!iter) return;
+    __mn_map_free(iter->map);
     __mn_free(iter);
 }
 
@@ -2962,26 +2968,21 @@ MN_EXPORT MnList __mn_map_keys(MnMap *map) {
     return lst;
 }
 
-MN_EXPORT void __mn_map_free(MnMap *map) {
-    if (map) {
-        if (map->owned) {
-            for (int64_t i = 0; i < map->cap; ++i) {
-                char *entry = mn_bucket_at(map, i);
-                if (entry[0] == MN_BUCKET_OCCUPIED) mn_owned_map_drop(map, entry);
-            }
-        }
-        if (map->buckets) __mn_free(map->buckets);
-        __mn_free(map);
-    }
+MN_EXPORT MnMap *__mn_map_retain(MnMap *map) {
+    if (map) map->refs = mn_checked_add(map->refs, 1);
+    return map;
 }
 
-MN_EXPORT void __mn_map_free_deep(MnMap *map) {
-    if (!map) return;
-    if (map->owned) { __mn_map_free(map); return; }
+static void mn_map_destroy(MnMap *map) {
     if (map->buckets) {
-        for (int64_t i = 0; i < map->cap; i++) {
+        for (int64_t i = 0; (map->owned || map->deep_free) && i < map->cap; i++) {
             char *bucket = mn_bucket_at(map, i);
             if ((uint8_t)bucket[0] != MN_BUCKET_OCCUPIED) continue;
+            if (map->owned) {
+                mn_owned_map_drop(map, bucket);
+                continue;
+            }
+            if (!map->deep_free) continue;
             /* Free string keys */
             if (map->key_type == MN_MAP_KEY_STR) {
                 MnString key;
@@ -2998,6 +2999,17 @@ MN_EXPORT void __mn_map_free_deep(MnMap *map) {
         __mn_free(map->buckets);
     }
     __mn_free(map);
+}
+
+MN_EXPORT void __mn_map_free(MnMap *map) {
+    if (!map || --map->refs != 0) return;
+    mn_map_destroy(map);
+}
+
+MN_EXPORT void __mn_map_free_deep(MnMap *map) {
+    if (!map) return;
+    map->deep_free = 1;
+    __mn_map_free(map);
 }
 
 /* -----------------------------------------------------------------------

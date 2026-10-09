@@ -84,8 +84,9 @@ every bucket is a tombstone. There is no eight-bit probe-distance limit. The
 legacy packed Robin Hood implementation and its raw ownership behavior remain
 unchanged. These correctness choices are not a performance claim or benchmark.
 
-Map handles remain exclusive, with no retain/clone API or concurrent access
-support. Copying the handle does not create another owner. Mutation invalidates
+Map handles now support explicit retain/release; see [RETAINED_MAPS.md](RETAINED_MAPS.md).
+There is no independent clone API or concurrent access support. Copying the
+handle does not create another owner without retain. Mutation invalidates
 borrows and active iterators. Cyclic owning values and callback re-entry into the
 same container are unsupported. Nested-list policies can explicitly retain list
 buffers and release them on replacement/deletion; the runtime never guesses

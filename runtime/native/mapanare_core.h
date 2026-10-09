@@ -517,7 +517,8 @@ MN_EXPORT MnMap *__mn_map_new(int64_t key_size, int64_t val_size, int64_t key_ty
  *  deletion/free drops both fields, and growth transfers existing ownership.
  *  Get/iteration borrow read-only values (including nested fields), valid only
  *  until mutation/free. Keys returns independent copies, sized to key_size.
- *  The map handle is exclusive: no retain/clone or concurrent access support.
+ *  Retain explicitly to share the same mutable map; no independent clone or
+ *  concurrent access support. Retaining does not preserve views across mutation.
  *  Free and free_deep are equivalent for owned maps. */
 MN_EXPORT MnMap *__mn_map_new_owned(int64_t key_size, int64_t val_size,
                                     int64_t key_type, const MnElementOps *key_ops,
@@ -525,6 +526,11 @@ MN_EXPORT MnMap *__mn_map_new_owned(int64_t key_size, int64_t val_size,
 
 /** Owned Map<String, String> with independent String copies on insertion. */
 MN_EXPORT MnMap *__mn_map_str_str_new_owned(void);
+
+/** Acquire another owner of the same map, returning the same handle (NULL-safe).
+ *  Balance each successful retain and initial allocation with one free/free_deep.
+ *  A plain pointer copy does not acquire ownership. Not atomic/thread-safe. */
+MN_EXPORT MnMap *__mn_map_retain(MnMap *map);
 
 /** Insert or update a key-value pair. */
 MN_EXPORT void __mn_map_set(MnMap *map, const void *key, const void *val);
@@ -541,23 +547,26 @@ MN_EXPORT int64_t __mn_map_len(MnMap *map);
 /** Check if key exists. Returns 1 if present, 0 otherwise. */
 MN_EXPORT int64_t __mn_map_contains(MnMap *map, const void *key);
 
-/** Create an iterator over map entries. */
+/** Create an iterator over map entries, retaining its parent until iterator free.
+ *  Mutation still invalidates active iterators and borrowed element pointers. */
 MN_EXPORT MnMapIter *__mn_map_iter_new(MnMap *map);
 
 /** Advance iterator. Returns 1 and sets key_out/val_out, or 0 when done. */
 MN_EXPORT int64_t __mn_map_iter_next(MnMapIter *iter, void **key_out, void **val_out);
 
-/** Free the iterator (does NOT free the map). */
+/** Free the iterator and release its retained parent reference (NULL-safe). */
 MN_EXPORT void __mn_map_iter_free(MnMapIter *iter);
 
 /** Return all keys. Owned maps return independent elements of key_size;
  *  legacy maps return borrowed MnString elements. Caller owns the list. */
 MN_EXPORT MnList __mn_map_keys(MnMap *map);
 
-/** Free storage and, for owned maps, drop live entries. Legacy entries are borrowed. */
+/** Release one owner; the last release frees storage and drops owned-map entries.
+ *  Legacy entries remain borrowed unless any owner requested free_deep. */
 MN_EXPORT void __mn_map_free(MnMap *map);
 
-/** Owned maps: same as free. Legacy maps: also free tagged String keys/values. */
+/** Release one owner. Owned maps: same as free. Legacy maps: request destruction
+ *  of tagged String keys/values on the last release, even if it uses free. */
 MN_EXPORT void __mn_map_free_deep(MnMap *map);
 
 /* -----------------------------------------------------------------------
