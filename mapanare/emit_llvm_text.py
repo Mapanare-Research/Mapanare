@@ -1924,6 +1924,38 @@ class LLVMTextEmitter:
             if dest_name not in self._stream_vars:
                 self._stream_vars.append(dest_name)
 
+    def _owned_struct_list_fields(self, name: str) -> list[int]:
+        fields = self._structs.get(name, ())
+        mir_fields = self._struct_mir_types.get(name, {})
+        result: list[int] = []
+        for index, (_, llvm_type) in enumerate(fields):
+            mir_type = mir_fields.get(index)
+            if (
+                llvm_type == LIST
+                and mir_type is not None
+                and mir_type.type_info.args
+                and list_copies_inputs(mir_type.type_info.args[0].kind)
+            ):
+                result.append(index)
+        return result
+
+    def _track_struct_lists(self, dest: Value, value: str, *, borrow: bool) -> None:
+        slots = self._struct_list_owners.get(dest.name, ())
+        if not slots:
+            return
+        struct_type = self._rty(dest.ty)
+        for index, slot in slots:
+            field = self._f("struct.list")
+            self._L(f"{field} = extractvalue {struct_type} {value}, {index}")
+            if borrow:
+                held = self._alloca(LIST, "struct.retain")
+                self._L(f"store {LIST} {field}, ptr {held}")
+                self._ensure("__mn_list_retain", VOID, [PTR])
+                self._L(f"call void @__mn_list_retain(ptr {held})")
+            self._ensure("__mn_list_free", VOID, [PTR])
+            self._L(f"call void @__mn_list_free(ptr {slot})")
+            self._L(f"store {LIST} {field}, ptr {slot}")
+
     def _emit_drop_glue(self, ret_val: str | None, ret_ty: str) -> None:
         """Dispatch per-resource cleanup before a return instruction.
 
@@ -1945,6 +1977,7 @@ class LLVMTextEmitter:
             or self._signal_vars
             or self._stream_vars
             or self._tensor_vars
+            or self._struct_list_owners
         )
         if not has_any:
             return
@@ -1967,6 +2000,10 @@ class LLVMTextEmitter:
         if self._list_vars:
             self._ensure("__mn_list_free", VOID, ["ptr"])
         self._emit_drop_glue_lists(ret_list_ptrs, ret_ptr_fields)
+        for slots in self._struct_list_owners.values():
+            for _, slot in slots:
+                self._ensure("__mn_list_free", VOID, [PTR])
+                self._L(f"call void @__mn_list_free(ptr {slot})")
         if self._map_vars:
             self._ensure("__mn_map_free_deep", VOID, [PTR])
         self._emit_drop_glue_maps(ret_val if self._fn.return_type.kind == TypeKind.MAP else None)
@@ -2629,6 +2666,25 @@ class LLVMTextEmitter:
         self._stream_vars = []
         self._tensor_vars = []
         self._loop_depth = 0
+        self._struct_list_owners: dict[str, list[tuple[int, str]]] = {}
+        self._mutated_list_values: set[str] = set()
+        for block in fn.blocks:
+            for inst in block.instructions:
+                dest = getattr(inst, "dest", None)
+                if not isinstance(dest, Value) or dest.ty.kind != TypeKind.STRUCT:
+                    continue
+                if dest.name in self._struct_list_owners:
+                    continue
+                name = self._res_struct(dest.ty.type_info.name)
+                fields = self._owned_struct_list_fields(name)
+                if not fields:
+                    continue
+                slots: list[tuple[int, str]] = []
+                for index in fields:
+                    slot = self._alloca(LIST, "struct_owner")
+                    self._ent.append(f"  store {LIST} zeroinitializer, ptr {slot}")
+                    slots.append((index, slot))
+                self._struct_list_owners[dest.name] = slots
         # v5.4.4 — reset parallel SSA-source arrays + moved_locals set.
         self._local_strings_source = []
         self._local_boxed_source = []
@@ -3286,6 +3342,8 @@ class LLVMTextEmitter:
             self._ensure("__mn_list_free", VOID, ["ptr"])
             self._L(f"call void @__mn_list_free(ptr {a_prev})")
         self._put(i.dest, v, t)
+        if i.dest.ty.kind == TypeKind.STRUCT:
+            self._track_struct_lists(i.dest, v, borrow=True)
         # Track list aliases: when a list is copied, the dest should see
         # future push write-backs to the source. Record the alias so
         # _do_list_push can write back to all copies.
@@ -4825,6 +4883,8 @@ class LLVMTextEmitter:
                 if fn in self._owned_string_returns:
                     self._track_copied_string(i.dest.name, r)
                 self._put(i.dest, r, ret)
+            if i.dest.ty.kind == TypeKind.STRUCT and ret != VOID:
+                self._track_struct_lists(i.dest, r, borrow=False)
             if list_factory_result:
                 self._track_container(i.dest.name, "list")
             if i.dest.ty.kind == TypeKind.MAP and fn in getattr(self, "_owned_map_factories", ()):
@@ -4861,6 +4921,7 @@ class LLVMTextEmitter:
                 if not args:
                     cur = _zero(sty)
                 self._put(i.dest, cur, sty)
+                self._track_struct_lists(i.dest, cur, borrow=False)
                 return
 
         # Check if this is an enum variant constructor call
@@ -4911,6 +4972,8 @@ class LLVMTextEmitter:
             r = self._f("c")
             self._L(f"{r} = load {ret_auto}, ptr {sret_a2}")
             self._put(i.dest, r, ret_auto)
+            if i.dest.ty.kind == TypeKind.STRUCT:
+                self._track_struct_lists(i.dest, r, borrow=False)
         elif ret_auto == VOID:
             astr2 = ", ".join(f"{t} {v}" for v, t in abi_args2)
             self._L(f"call void @{fn}({astr2})")
@@ -4920,6 +4983,8 @@ class LLVMTextEmitter:
             r = self._f("c")
             self._L(f"{r} = call {ret_auto} @{fn}({astr2})")
             self._put(i.dest, r, ret_auto)
+            if i.dest.ty.kind == TypeKind.STRUCT:
+                self._track_struct_lists(i.dest, r, borrow=False)
 
     # --- ExternCall ---
     def _do_extern(self, i: ExternCall) -> None:
@@ -4999,6 +5064,17 @@ class LLVMTextEmitter:
                 self._L(f"store {LIST} {v}, ptr {held}")
                 self._ensure("__mn_list_retain", VOID, [PTR])
                 self._L(f"call void @__mn_list_retain(ptr {held})")
+            owned_struct_return = False
+            if self._fn.return_type.kind == TypeKind.STRUCT:
+                name = self._res_struct(self._fn.return_type.type_info.name)
+                for index in self._owned_struct_list_fields(name):
+                    field = self._f("ret.struct.list")
+                    self._L(f"{field} = extractvalue {t} {v}, {index}")
+                    held = self._alloca(LIST, "ret.struct.keep")
+                    self._L(f"store {LIST} {field}, ptr {held}")
+                    self._ensure("__mn_list_retain", VOID, [PTR])
+                    self._L(f"call void @__mn_list_retain(ptr {held})")
+                    owned_struct_return = True
             rt = self._rty(self._fn.return_type)
             if rt == VOID:
                 self._emit_drop_glue(None, VOID)
@@ -5008,7 +5084,8 @@ class LLVMTextEmitter:
                 # Store return value into sret pointer and return void
                 v = self._coerce(v, t, self._fn_sret_ty) if t != self._fn_sret_ty else v
                 self._emit_drop_glue(
-                    None if list_return else v, VOID if list_return else self._fn_sret_ty
+                    None if list_return or owned_struct_return else v,
+                    VOID if list_return or owned_struct_return else self._fn_sret_ty,
                 )
                 self._emit_arena_destroy()
                 self._L(f"store {self._fn_sret_ty} {v}, ptr {self._sret_ptr}")
@@ -5019,13 +5096,19 @@ class LLVMTextEmitter:
                 # enabling SimplifyCFG to merge redundant enum switches.
                 urt = self._fn_unified_ret_ty
                 v = self._coerce(v, t, urt) if t != urt else v
-                self._emit_drop_glue(None if list_return else v, VOID if list_return else urt)
+                self._emit_drop_glue(
+                    None if list_return or owned_struct_return else v,
+                    VOID if list_return or owned_struct_return else urt,
+                )
                 self._emit_arena_destroy()
                 self._L(f"store {urt} {v}, ptr %__ret_alloca")
                 self._L("br label %__unified_ret")
             else:
                 v = self._coerce(v, t, rt) if t != rt else v
-                self._emit_drop_glue(None if list_return else v, VOID if list_return else rt)
+                self._emit_drop_glue(
+                    None if list_return or owned_struct_return else v,
+                    VOID if list_return or owned_struct_return else rt,
+                )
                 self._emit_arena_destroy()
                 self._L(f"ret {rt} {v}")
         else:
@@ -5132,6 +5215,7 @@ class LLVMTextEmitter:
                     self._list_vars.remove(root_fv)
                 self._move_resource(fval.name)
             self._put(i.dest, cur, sty)
+            self._track_struct_lists(i.dest, cur, borrow=False)
         else:
             # unknown struct
             if i.fields:
@@ -5241,6 +5325,12 @@ class LLVMTextEmitter:
                 if vt != ft:
                     vv = self._coerce(vv, vt, ft)
                 self._L(f"store {ft} {vv}, ptr {fp}")
+                owner_slot = dict(self._struct_list_owners.get(i.obj.name, ())).get(idx)
+                if owner_slot is not None and ft == LIST:
+                    if i.val.name not in self._mutated_list_values:
+                        self._ensure("__mn_list_free", VOID, [PTR])
+                        self._L(f"call void @__mn_list_free(ptr {owner_slot})")
+                    self._L(f"store {LIST} {vv}, ptr {owner_slot}")
             # v4.101.0: move semantics for the stored value (see
             # _do_list_push / _do_struct_init for the rationale).
             # v4.103.0: also drop from _list_vars (see _do_struct_init).
@@ -5416,6 +5506,7 @@ class LLVMTextEmitter:
             r = self._f("ul")
             self._L(f"{r} = load {LIST}, ptr {a}" if t == LIST else f"{r} = load {t}, ptr {a}")
             self._put(i.dest, r, LIST)
+            self._mutated_list_values.add(i.dest.name)
             self._lroots[i.dest.name] = root
             # Write-back to source and root aliases
             for tn in {root, src, i.list_val.name}:
@@ -5449,6 +5540,7 @@ class LLVMTextEmitter:
             r = self._f("ul")
             self._L(f"{r} = load {LIST}, ptr {la}")
             self._put(i.dest, r, LIST)
+            self._mutated_list_values.add(i.dest.name)
             self._lroots[i.dest.name] = root
 
     # --- IndexGet ---

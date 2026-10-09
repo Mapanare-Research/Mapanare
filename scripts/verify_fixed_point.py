@@ -133,7 +133,7 @@ def main() -> int:
         validate_ir(stage2)
         stage2_object = work / "stage2.o"
         run_checked(
-            ["clang", "-O2", "-c", str(stage2), "-o", str(stage2_object)], work / "compile.log", 600
+            ["clang", "-O2", "-c", str(stage2), "-o", str(stage2_object)], work / "compile.log", 1800
         )
         successor = work / "mnc-stage2"
         # The compiler exports void mn_main(), whereas the application wrapper

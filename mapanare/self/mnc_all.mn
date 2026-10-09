@@ -15269,6 +15269,8 @@ struct EmitState:
     // Native map ownership: shadow slots mirroring str_owned.
     map_owned: List<String>
     map_owned_source: List<String>
+    owned_struct_names: List<String>
+    owned_struct_list_indices: List<Int>
     // MIR kind of the current function's return type — distinguishes
     // Map from String, which share the {ptr, i64} LLVM layout.
     current_ret_kind: Int
@@ -15312,7 +15314,9 @@ fn new_emit_state(module_name: String) -> EmitState:
     let tensor_owned_source: List<String> = []
     let map_owned: List<String> = []
     let map_owned_source: List<String> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, tensor_owned: tensor_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0, str_owned_source: str_owned_source, list_owned_source: list_owned_source, boxed_owned_source: boxed_owned_source, tensor_owned_source: tensor_owned_source, map_owned: map_owned, map_owned_source: map_owned_source, current_ret_kind: 0, is_windows: false, win_arch: 0 }
+    let owned_struct_names: List<String> = []
+    let owned_struct_list_indices: List<Int> = []
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, tensor_owned: tensor_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0, str_owned_source: str_owned_source, list_owned_source: list_owned_source, boxed_owned_source: boxed_owned_source, tensor_owned_source: tensor_owned_source, map_owned: map_owned, map_owned_source: map_owned_source, owned_struct_names: owned_struct_names, owned_struct_list_indices: owned_struct_list_indices, current_ret_kind: 0, is_windows: false, win_arch: 0 }
 
 fn build_internal_struct_list() -> List<StructEntry>:
     let mut list: List<StructEntry> = []
@@ -16598,6 +16602,11 @@ fn register_mir_struct(st: EmitState, info: StructInfo) -> EmitState:
         let self_enum2: String = "%enum." + info.name + "}"
         if fty.contains(self_struct) || fty.contains(self_struct2) || fty.contains(self_enum) || fty.contains(self_enum2):
             fty = llvm_ptr()
+        if fp.val.ty.kind == TK_LIST():
+            if len(fp.val.ty.args) > 0:
+                if list_copies_inputs(fp.val.ty.args[0].kind):
+                    st.owned_struct_names.push(info.name)
+                    st.owned_struct_list_indices.push(fi)
         field_names.push(fp.name)
         field_types.push(fty)
         if fi > 0:
@@ -16826,7 +16835,12 @@ fn emit_mir_instruction(st: EmitState, inst: Instruction) -> EmitState:
     // of which compiler produced this binary.  Dispatches via match-on-string
     // (not match-on-enum) for cross-compilation stability.
     let kind: String = instr_kind(inst)
-    emit_mir_by_kind(st, inst, kind)
+    let emitted: EmitState = emit_mir_by_kind(st, inst, kind)
+    if kind == "call" || kind == "copy" || kind == "struct_init":
+        let dest: Value = instr_dest(inst)
+        if dest.ty.kind == TK_STRUCT():
+            return emit_track_struct_lists(emitted, dest, dest.name, kind == "copy" || kind == "struct_init")
+    return emitted
 
 fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState:
     if kind == "const": return emit_const(st, instr_dest(inst), instr_const_type(inst), instr_const_val(inst))
@@ -18004,6 +18018,11 @@ fn emit_list_push_call(st: EmitState, dest: Value, args: List<Value>) -> EmitSta
             let wb_sf: String = "%push_wb" + cnt
             s = emit_line(s, "  " + wb_sf + " = load " + llvm_list_rt() + ", ptr " + tmp_sf)
             s = emit_line(s, "  store " + llvm_list_rt() + " " + wb_sf + ", ptr " + gep)
+            // Push may detach a shared list. Keep the struct field owner
+            // pointed at the new handle; the runtime consumed its old share.
+            let owner_slot: String = "struct_owner." + ret_val_base(list_ref) + "." + field_idx
+            if list_has_string(s.list_owned, owner_slot):
+                s = emit_line(s, "  store " + llvm_list_rt() + " " + wb_sf + ", ptr %" + owner_slot)
         else if list_ref.contains(".addr"):
             // Simple alloca push: same temp+writeback pattern
             let tmp_sa: String = "%push_tmp" + cnt
@@ -18356,6 +18375,9 @@ fn emit_store(st: EmitState, ptr: Value, val: Value) -> EmitState:
     // callees and drop a caller-owned reference on callee exit.
     if ptr.name == val.name + ".addr":
         return emit_line(st, llvm_store(val_ty, val.name, ptr.name))
+    if ptr.ty.kind == TK_STRUCT() && val.ty.kind == TK_STRUCT() && ptr.name.ends_with(".addr"):
+        let mut s: EmitState = emit_line(st, llvm_store(val_ty, val.name, ptr.name))
+        return emit_track_struct_lists(s, ptr, val.name, true)
     if list_type_copies_inputs(ptr.ty) && val.ty.kind == TK_LIST() && ptr.name.ends_with(".addr"):
         let mut s: EmitState = st
         let held: String = "%store.lr" + toString(s.counter)
@@ -19881,11 +19903,8 @@ fn emit_builtin_float(st: EmitState, dest: Value, args: List<Value>) -> EmitStat
 
 fn list_has_string(lst: List<String>, name: String) -> Bool:
     let n: Int = len(lst)
-    let mut i: Int = 0
-    for _ in 0..1024:
-        if i >= n: return false
+    for i in 0..n:
         if lst[i] == name: return true
-        i = i + 1
     return false
 
 fn ret_val_base(ret_val: String) -> String:
@@ -20046,6 +20065,60 @@ fn emit_track_list(st: EmitState, val_name: String) -> EmitState:
     s = emit_line(s, "  store " + llvm_list_rt() + " " + val_name + ", ptr " + slot)
     s.list_owned.push(slot_base)
     s.list_owned_source.push(ret_val_base(val_name))
+    return s
+
+fn owned_struct_list_indices(st: EmitState, name: String) -> List<Int>:
+    let mut result: List<Int> = []
+    let n: Int = len(st.owned_struct_names)
+    for i in 0..n:
+        if st.owned_struct_names[i] == name:
+            result.push(st.owned_struct_list_indices[i])
+    return result
+
+fn struct_list_slot(dest: Value, index: Int) -> String:
+    return "struct_owner." + ret_val_base(dest.name) + "." + toString(index)
+
+fn register_struct_owner_slots(st: EmitState, f: MIRFunction) -> EmitState:
+    let mut s: EmitState = st
+    for bi in 0..len(f.blocks):
+        let bb: BasicBlock = f.blocks[bi]
+        for ii in 0..len(bb.instructions):
+            let inst: Instruction = bb.instructions[ii]
+            let kind: String = instr_kind(inst)
+            if kind == "call" || kind == "copy" || kind == "struct_init" || kind == "store":
+                let mut dest: Value = instr_dest(inst)
+                if kind == "store": dest = instr_store_ptr(inst)
+                if dest.ty.kind == TK_STRUCT():
+                    let indices: List<Int> = owned_struct_list_indices(s, dest.ty.name)
+                    for fi in 0..len(indices):
+                        let slot: String = struct_list_slot(dest, indices[fi])
+                        if !list_has_string(s.list_owned, slot):
+                            s.entry_prelude_lines.push("  %" + slot + " = alloca " + llvm_list_rt() + ", align 8")
+                            s.entry_prelude_lines.push("  store " + llvm_list_rt() + " zeroinitializer, ptr %" + slot)
+                            s.list_owned.push(slot)
+                            s.list_owned_source.push("")
+    return s
+
+fn emit_track_struct_lists(st: EmitState, dest: Value, value_name: String, borrow: Bool) -> EmitState:
+    if dest.ty.kind != TK_STRUCT(): return st
+    let mut s: EmitState = st
+    let indices: List<Int> = owned_struct_list_indices(s, dest.ty.name)
+    let sty: String = resolve_type(s, dest.ty)
+    for fi in 0..len(indices):
+        let index: Int = indices[fi]
+        let slot: String = struct_list_slot(dest, index)
+        if list_has_string(s.list_owned, slot):
+            let field: String = "%struct.list." + toString(s.counter)
+            s.counter = s.counter + 1
+            s = emit_line(s, "  " + field + " = extractvalue " + sty + " " + value_name + ", " + toString(index))
+            if borrow:
+                let held: String = "%struct.retain." + toString(s.counter)
+                s.counter = s.counter + 1
+                s = emit_line(s, "  " + held + " = alloca " + llvm_list_rt())
+                s = emit_line(s, "  store " + llvm_list_rt() + " " + field + ", ptr " + held)
+                s = emit_rt_call_void(s, "__mn_list_retain", "ptr " + held)
+            s = emit_rt_call_void(s, "__mn_list_free", "ptr %" + slot)
+            s = emit_line(s, "  store " + llvm_list_rt() + " " + field + ", ptr %" + slot)
     return s
 
 // Clear the shadow slot whose current handle equals the moved value
@@ -20716,6 +20789,25 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState:
                     sm = emit_line(sm, "  store " + ty + " " + val.name + ", ptr %__sret__")
                     return emit_line(sm, emit_ret_void())
                 return emit_line(sm, emit_ret(ty, val.name))
+            if st.current_ret_kind == TK_STRUCT() && val.ty.kind == TK_STRUCT():
+                let indices: List<Int> = owned_struct_list_indices(st, val.ty.name)
+                if len(indices) > 0:
+                    let mut ss: EmitState = st
+                    for fi in 0..len(indices):
+                        let idx: Int = indices[fi]
+                        let id: String = toString(ss.counter)
+                        ss.counter = ss.counter + 1
+                        let field: String = "%ret.struct.list." + id
+                        let held: String = "%ret.struct.keep." + id
+                        ss = emit_line(ss, "  " + field + " = extractvalue " + ty + " " + val.name + ", " + toString(idx))
+                        ss = emit_line(ss, "  " + held + " = alloca " + llvm_list_rt())
+                        ss = emit_line(ss, "  store " + llvm_list_rt() + " " + field + ", ptr " + held)
+                        ss = emit_rt_call_void(ss, "__mn_list_retain", "ptr " + held)
+                    ss = emit_drop_glue(ss, "", "void")
+                    if use_sret_return(st, ty):
+                        ss = emit_line(ss, "  store " + ty + " " + val.name + ", ptr %__sret__")
+                        return emit_line(ss, emit_ret_void())
+                    return emit_line(ss, emit_ret(ty, val.name))
             if ty == llvm_string(): return emit_string_return(st, val.name)
             // v5.5.4 Sh.4 Phase 2 — async fn ret rewrite. The
             // current_ret_type was set to "ASYNC_PTR:" + inner_ty by
@@ -21159,6 +21251,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
     s.map_owned = fresh_map_owned
     s.map_owned_source = fresh_map_owned_src
     s.current_ret_kind = f.return_type.kind
+    s = register_struct_owner_slots(s, f)
 
     // Emit function header
     let fn_name: String = strip_percent(f.name)

@@ -198,6 +198,32 @@ fn main():
 """,
         "1\ninner\n",
     ),
+    "struct-list-copy": (
+        """
+struct Box:
+    items: List<String>
+
+fn make_box(n: Int) -> Box:
+    let mut items: List<String> = []
+    items.push("v" + str(n))
+    return new Box { items: items }
+
+fn choose(n: Int) -> Box:
+    let mut first: Box = make_box(n)
+    let second: Box = first
+    first.items.push("more")
+    return second
+
+fn main():
+    let mut total = 0
+    for i in 0..1000:
+        let box: Box = choose(i)
+        total = total + len(box.items)
+        total = total + len(box.items[0])
+    print(total)
+""",
+        "4890\n",
+    ),
 }
 
 
