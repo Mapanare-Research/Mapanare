@@ -1,5 +1,45 @@
 # Memory ownership work log
 
+## Resume point — 2026-10-09 (String and Map struct fields; task 3 open)
+
+Commit `db6c21e3` gives String and Map fields of compiler-known structs
+independent owners in both LLVM backends. Construction, copying, assignment,
+return, and cleanup now preserve or release the field reference explicitly.
+Native String field reads take owned snapshots; a compact runtime Move helper
+keeps the native compiler's generated LLVM below its function-body limit.
+The Python backend also releases a prior loop-local Map on repeated transfer
+from a MapInit temporary. The tracked `mnc_all.mn` was regenerated.
+
+Validation on this exact source and native `mnc-map` candidate:
+
+- Nested-container executable suite: **68 passed** across both compilers,
+  `-O0`/`-O2`, with ASan/UBSan/LSan and exact output. New 1,000-iteration
+  struct Map cases cover return, alias mutation, and field reassignment;
+  String fields cover return and copy/replacement. Instrumented native core
+  is linked for both backends.
+- `ruff check` passed; `ruff format` was applied. The candidate self-emitted
+  73,744,446 bytes of LLVM accepted by `llvm-as`; an unoptimized candidate
+  compiled the first golden successfully.
+- The previous String-only candidate's broad suite passed **2,356 passed,
+  91 skipped, 5 xfailed** in 545.94 seconds. The Map-field broad rerun is
+  underway; do not count the earlier run as validation of this commit.
+- The previous String-only candidate's strict gate **failed**: stage1 goldens
+  passed, stage2 IR compiled at `-O2`, then stage2 crashed on the first golden
+  with `free(): double free detected`, stack ending at `new_mir_module`.
+  Optimized fixed-point validation remains open. An instrumented optimized
+  compiler build is underway to locate the owner error.
+- GitNexus staged detection reported **HIGH** risk: 22 indexed symbols and
+  eight affected flows. Native `.mn` functions remain absent from its graph;
+  their callers and generated IR were inspected directly.
+
+Task 3 remains open for lists of resource-bearing structs and nested structs.
+Task 4 remains open for escaping String views, live Map views under mutation,
+and copied/escaping ranges. The current native compiler still emits invalid
+`%struct.Range` IR for an annotated returned Range. Cyclic containers need
+an explicit limitation statement. Next: diagnose the optimized stage2 double
+free, test deeper struct/list nesting and lifetime boundaries, implement or
+diagnose unsupported cases, then rerun broad and strict gates.
+
 ## Resume point — 2026-10-09 (struct list fields; task 3 still open)
 
 Commit `33408389` tracks owned `List<String>` and nested-list fields in
