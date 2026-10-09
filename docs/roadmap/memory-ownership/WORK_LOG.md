@@ -1,5 +1,52 @@
 # Memory ownership work log
 
+## Resume point — 2026-10-09 (struct list fields; task 3 still open)
+
+Commit `33408389` tracks owned `List<String>` and nested-list fields in
+structs in both LLVM emitters. Struct construction, copying, mutation through
+a field, calls, returns, and exit cleanup now carry a separate owner for each
+supported list field. A native owner-slot lookup previously stopped after
+1,024 entries and produced duplicate LLVM names when self-hosting; it now
+searches the full list. The strict fixed-point gate's Clang timeout was raised
+from 600 to 1,800 seconds because the expanded stage-2 IR exceeded 600 seconds
+at `-O2` on WSL.
+
+Validation:
+
+- Struct copy/mutation stress: 1,000 iterations, exact `4890` output, clean
+  ASan/UBSan/LSan with both compilers. The direct native 1,000-return probe
+  is also sanitizer-clean.
+- Focused list, capture, and native copying-map suites on the final native
+  candidate: **62 passed**. The new struct case runs for both compilers at
+  `-O0` and `-O2` and passed all four combinations.
+- Broad Python/MIR/integration/native/runtime suite: **2,348 passed,
+  91 skipped, 5 xfailed** in 549.93 seconds. This started with the immediately
+  preceding native candidate, before the 1,024-slot search fix; the final
+  candidate passed the 62 focused cases and self-emitted LLVM accepted by
+  `llvm-as`. Black and Ruff passed on changed Python files.
+- Strict fixed-point attempt: stage-1 goldens **104/104**, including nine
+  executable outputs, passed. Stage-2 IR passed `llvm-as`; compiling its
+  184 MB IR at `-O2` hit the gate's former 600-second timeout. An O2 compile
+  of that same IR is in progress with no 600-second limit; full fixed-point
+  equality remains **pending**. Do not treat this as a passed strict gate.
+- GitNexus staged change detection before the commit: 14 indexed symbols,
+  eight affected execution flows, **HIGH** risk. Native `.mn` symbols are
+  absent from the current graph and were checked in source and generated IR.
+
+Task 3 remains open. A 1,000-return `Box { text: String }` probe leaks 4,885
+bytes with the Python backend and 8,374 bytes with the native compiler under
+LSan; struct String and Map fields, nested structs, and lists of structs still
+need ownership-aware copy/drop. Task 4 also remains open: the native compiler
+emits invalid `%struct.Range` IR for a copied/returned `Range`; Python accepts
+that probe, but copied range aliases need a lifetime policy or diagnostic.
+Live map String views must be checked across replacement/deletion and escape.
+Cycle limitations still need an explicit contract statement.
+
+Next: finish the extended strict gate; implement and sanitizer-test owned
+String/Map fields and deeper struct nesting. Then close or diagnose the range
+and map-view cases, rerun both compiler suites, bounded-memory stress, and the
+strict fixed-point gate.
+
 ## Resume point — 2026-10-09 (owned nested lists; task 3 in progress)
 
 Commit `dc236294` integrates copy/drop policy for `List<String>` and nested
