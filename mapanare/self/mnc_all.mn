@@ -137,6 +137,9 @@ enum Expr:
     // `&&`-joined pairwise comparisons; non-trivial interior
     // operands bound to `__mn_chain_N` so they evaluate exactly once.
     ChainedCmp(List<Expr>, List<String>)
+    // Explicit generic arguments decorate a callee; ordinary Call keeps its
+    // existing layout and all existing variant tags remain unchanged.
+    TypeApply(Expr, List<TypeExpr>)
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -388,6 +391,13 @@ pub fn expr_kind(e: Expr) -> String:
         ConstructUpdate(_, _, _) => return "construct_update"
         IfLet(_, _, _, _) => return "if_let"
         ChainedCmp(_, _) => return "chained_cmp"
+        TypeApply(_, _) => return "type_apply"
+
+pub fn expr_type_apply_callee(e: Expr) -> Expr:
+    match e { TypeApply(c, _) => return c, _ => return Expr::NoneLit }
+
+pub fn expr_type_apply_args(e: Expr) -> List<TypeExpr>:
+    match e { TypeApply(_, a) => return a, _ => let empty: List<TypeExpr> = []; return empty }
 
 pub fn expr_interp_parts(e: Expr) -> List<Expr>:
     match e:
@@ -3032,7 +3042,14 @@ fn parse_postfix(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
 
         let tt: String = peek_type(tokens, p)
 
-        if tt == "LPAREN":
+        if tt == "DOUBLE_COLON" && peek_type(tokens, p + 1) == "LT":
+            let tr: TypeResult = parse_generic_type_at(tokens, p + 1, "", filename)
+            let applied: Expr = Expr::TypeApply(left, type_expr_args(tr.type_expr))
+            let call_pos: Int = expect(tokens, tr.pos, "LPAREN") - 1
+            let cr: ExprResult = parse_call_args(tokens, call_pos, filename, applied)
+            left = cr.expr
+            p = cr.pos
+        else if tt == "LPAREN":
             let cr: ExprResult = parse_call_args(tokens, p, filename, left)
             left = cr.expr
             p = cr.pos
@@ -3485,7 +3502,7 @@ fn parse_atom(tokens: List<Token>, pos: Int, filename: String) -> ExprResult:
     // Soft keywords: allowed as identifiers in expression position
     if tt == "NAME" || tt == "KW_INPUT" || tt == "KW_OUTPUT" || tt == "KW_AGENT" || tt == "KW_DI" || tt == "KW_STREAM":
         let name: String = val
-        if peek_type(tokens, pos + 1) == "DOUBLE_COLON":
+        if peek_type(tokens, pos + 1) == "DOUBLE_COLON" && peek_type(tokens, pos + 2) != "LT":
             let ns_member: String = peek_value(tokens, pos + 2)
             return new_expr_result(Expr::NamespaceAccess(name, ns_member), pos + 3)
         return new_expr_result(Expr::Ident(name), pos + 1)
@@ -5043,6 +5060,8 @@ fn check_unary_expr(st: SemState, op: String, operand: Expr) -> InferResult:
 // ---------------------------------------------------------------------------
 
 fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult:
+    if expr_kind(callee) == "type_apply":
+        return check_type_applied_call(st, callee, args)
     // Infer argument types
     let mut st2: SemState = st
     let mut arg_types: List<TypeInfo> = []
@@ -5056,6 +5075,80 @@ fn check_call_expr(st: SemState, callee: Expr, args: List<Expr>) -> InferResult:
         arg_types.push(ar.type_info)
         i = i + 1
     return check_call_resolved(st2, callee, arg_types)
+
+fn substitute_sem_type(t: TypeInfo, params: List<TypeInfo>, concrete: List<TypeInfo>) -> TypeInfo:
+    for i in 0..len(params):
+        if params[i].name == t.name && i < len(concrete): return concrete[i]
+    let mut result: TypeInfo = t
+    let mut args: List<TypeInfo> = []
+    for i in 0..len(t.args): args.push(substitute_sem_type(t.args[i], params, concrete))
+    result.args = args
+    let mut fn_params: List<TypeInfo> = []
+    for i in 0..len(t.param_types): fn_params.push(substitute_sem_type(t.param_types[i], params, concrete))
+    result.param_types = fn_params
+    match t.return_type:
+        Some(r) => result.return_type = Some(substitute_sem_type(r, params, concrete))
+        _ => {}
+    return result
+
+fn check_type_applied_call(st: SemState, applied: Expr, args: List<Expr>) -> InferResult:
+    let callee: Expr = expr_type_apply_callee(applied)
+    let mut name: String = expr_ident_name(callee)
+    if expr_kind(callee) == "namespace_access": name = expr_ns_member(callee)
+    let annotations: List<TypeExpr> = expr_type_apply_args(applied)
+    if name == "__struct_meta":
+        if len(annotations) != 1 || len(args) != 0:
+            return new_infer_result(error_type(), add_error_here(st, "__struct_meta expects one type argument and no value arguments"))
+        return new_infer_result(string_type(), st)
+    let sym_opt: Option<Symbol> = scope_lookup(st.scope, name)
+    match sym_opt:
+        Some(sym) =>:
+            let signature: TypeInfo = sym.type_info
+            if sym.kind != "function" || len(signature.args) == 0:
+                return new_infer_result(error_type(), add_error_here(st, "Function '" + name + "' does not accept type arguments"))
+            if len(annotations) != len(signature.args):
+                return new_infer_result(error_type(), add_error_here(st, "Function '" + name + "' type argument count mismatch"))
+            if len(args) != len(signature.param_types):
+                return new_infer_result(error_type(), add_error_here(st, "Function '" + name + "' argument count mismatch"))
+            let mut concrete: List<TypeInfo> = []
+            for i in 0..len(annotations):
+                let ty: TypeInfo = resolve_type_expr(annotations[i])
+                if !known_explicit_type(st, ty):
+                    return new_infer_result(error_type(), add_error_here(st, "Unknown type argument '" + ty.name + "'"))
+                concrete.push(ty)
+            let mut s: SemState = st
+            for i in 0..len(args):
+                let actual: InferResult = infer_expr(s, args[i])
+                s = actual.st
+                let expected: TypeInfo = substitute_sem_type(signature.param_types[i], signature.args, concrete)
+                if !type_should_skip(actual.type_info.name) && !types_compatible(expected, actual.type_info):
+                    s = add_error_here(s, "Function '" + name + "' argument type mismatch")
+            match signature.return_type:
+                Some(ret) => return new_infer_result(substitute_sem_type(ret, signature.args, concrete), s)
+                _ => return new_infer_result(unknown_type(), s)
+        _ => return new_infer_result(error_type(), add_error_here(st, "Undefined function '" + name + "'"))
+
+fn known_explicit_type(st: SemState, ty: TypeInfo) -> Bool:
+    let mut known: Bool = is_primitive_type(ty.name) || is_builtin_generic(ty.name) || ty.is_function || ty.name == "Tensor"
+    let type_symbol: Option<Symbol> = scope_lookup(st.scope, ty.name)
+    match type_symbol:
+        Some(sym) =>:
+            if sym.kind == "struct" || sym.kind == "enum" || sym.kind == "type_alias": known = true
+        _ => {}
+    let function_symbol: Option<Symbol> = scope_lookup(st.scope, st.current_fn_name)
+    match function_symbol:
+        Some(fn_sym) =>:
+            for i in 0..len(fn_sym.type_info.args):
+                if fn_sym.type_info.args[i].name == ty.name: known = true
+        _ => {}
+    if !known: return false
+    for i in 0..len(ty.args):
+        if !known_explicit_type(st, ty.args[i]): return false
+    for i in 0..len(ty.param_types):
+        if !known_explicit_type(st, ty.param_types[i]): return false
+    match ty.return_type:
+        Some(ret) => return known_explicit_type(st, ret)
+        _ => return true
 
 fn check_call_resolved(st: SemState, callee: Expr, arg_types: List<TypeInfo>) -> InferResult:
     if expr_kind(callee) == "ident":
@@ -5315,6 +5408,12 @@ fn check_pipe_expr(st: SemState, left: Expr, right: Expr) -> InferResult:
                 let st3_undef: SemState = add_error_here(st2, "Undefined function '" + name + "'")
                 return new_infer_result(error_type(), st3_undef)
     if rk == "call":
+        if expr_kind(expr_call_callee(right)) == "type_apply":
+            let mut args: List<Expr> = []
+            args.push(left)
+            let extras: List<Expr> = expr_call_args(right)
+            for i in 0..len(extras): args.push(extras[i])
+            return check_type_applied_call(st, expr_call_callee(right), args)
         return check_call_expr(st2, expr_call_callee(right), expr_call_args(right))
     let rr: InferResult = infer_expr(st2, right)
     return new_infer_result(unknown_type(), rr.st)
@@ -5635,11 +5734,15 @@ fn register_def(st: SemState, def: Definition) -> SemState:
         for _ in 0..200:
             if pi >= len(data.params):
                 let ret: TypeInfo = resolve_type_opt(data.return_type)
-                let fn_type: TypeInfo = make_fn_type(params, ret)
+                let mut fn_type: TypeInfo = make_fn_type(params, ret)
+                let mut generic_params: List<TypeInfo> = []
+                for ti in 0..len(data.type_params): generic_params.push(make_type(data.type_params[ti]))
+                fn_type.args = generic_params
                 let sym_fn: Symbol = new_symbol(data.name, "function", fn_type, false)
                 return define_in_scope(st, data.name, sym_fn)
             let p: Param = data.params[pi]
             let pt: TypeInfo = resolve_type_opt(p.type_annotation)
+            if len(data.type_params) > 0: params.push(pt)
             pi = pi + 1
         return st
     if dk == "agent_def":
@@ -6292,6 +6395,24 @@ fn mir_tensor_of(elem: MIRType) -> MIRType:
     t.args.push(elem)
     t
 fn mir_map() -> MIRType: return new_mir_type("Map", TK_MAP())
+fn mir_map_of(key: MIRType, val: MIRType) -> MIRType:
+    let mut t: MIRType = new_mir_type("Map", TK_MAP())
+    t.args.push(key)
+    t.args.push(val)
+    t
+
+// Copy-in map policy shared by lowering and emission. Mirrors
+// mapanare/container_policy.py: only supported keys and resource-free or
+// String values have a built-in owned policy; aggregate values keep the
+// legacy raw constructor and transfer markers.
+pub fn map_copies_inputs(key_kind: Int, val_kind: Int) -> Bool:
+    if key_kind != TK_INT() && key_kind != TK_FLOAT() && key_kind != TK_STRING(): return false
+    if val_kind == TK_INT(): return true
+    if val_kind == TK_FLOAT(): return true
+    if val_kind == TK_BOOL(): return true
+    if val_kind == TK_CHAR(): return true
+    if val_kind == TK_STRING(): return true
+    return false
 fn mir_signal() -> MIRType: return new_mir_type("Signal", TK_SIGNAL())
 fn mir_range() -> MIRType: return new_mir_type("Range", TK_RANGE())
 fn mir_fn_type() -> MIRType: return new_mir_type("<fn>", TK_FN())
@@ -8416,23 +8537,29 @@ fn lower_for_map(st: LowerState, var_name: String, map_val: Value, body: Block) 
     s = emit_instr(s, Instruction::Store(var_addr.value, key_r.value))
     s = define_var(s, var_name, var_addr.value, false)
 
+    // Advance the hidden counter after binding the current key, before any
+    // user control flow can continue to the header and skip the increment.
+    let one_r: LowerResult = make_value(s, mir_int(), "mapfor_one")
+    s = one_r.state
+    s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
+    let inc_r: LowerResult = make_value(s, mir_int(), "mapfor_inc")
+    s = inc_r.state
+    s = emit_instr(s, Instruction::BinOp(inc_r.value, BinOpKind::Add, idx_val.value, one_r.value))
+    s = emit_instr(s, Instruction::Store(counter_addr, inc_r.value))
+
+    let old_header: String = s.loop_header_label
+    let old_exit: String = s.loop_exit_label
+    s.loop_header_label = header_label
+    s.loop_exit_label = exit_label
     s = lower_push_scope(s)
     let body_result: LowerResult = lower_block(s, body)
     s = body_result.state
     s = lower_pop_scope(s)
+    s.loop_header_label = old_header
+    s.loop_exit_label = old_exit
 
-    // Increment counter, jump to header
+    // Normal fallthrough and continue both resume at the header.
     if !current_block_terminated(s):
-        let inc_i: LowerResult = make_value(s, mir_int(), "mapfor_ci")
-        s = inc_i.state
-        s = emit_instr(s, Instruction::Load(inc_i.value, counter_addr))
-        let one_r: LowerResult = make_value(s, mir_int(), "mapfor_one")
-        s = one_r.state
-        s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
-        let inc_r: LowerResult = make_value(s, mir_int(), "mapfor_inc")
-        s = inc_r.state
-        s = emit_instr(s, Instruction::BinOp(inc_r.value, BinOpKind::Add, inc_i.value, one_r.value))
-        s = emit_instr(s, Instruction::Store(counter_addr, inc_r.value))
         s = emit_instr(s, Instruction::Jump(header_label))
 
     s = set_block(s, exit_idx)
@@ -8517,6 +8644,17 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s = emit_instr(s, Instruction::Store(loop_addr_r.value, cur_i.value))
     s = define_var(s, var_name, loop_addr_r.value, false)
 
+    // The visible loop variable keeps the current value. Advance only the
+    // hidden counter now, so every path through the user body (including
+    // continue) makes progress without changing the loop's block layout.
+    let inc_val: LowerResult = make_value(s, mir_int(), "for_inc")
+    s = inc_val.state
+    let one_r: LowerResult = make_value(s, mir_int(), "one")
+    s = one_r.state
+    s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
+    s = emit_instr(s, Instruction::BinOp(inc_val.value, BinOpKind::Add, cur_i.value, one_r.value))
+    s = emit_instr(s, Instruction::Store(counter_addr, inc_val.value))
+
     let old_header2: String = s.loop_header_label
     let old_exit2: String = s.loop_exit_label
     s.loop_header_label = header_label
@@ -8528,18 +8666,8 @@ fn lower_for(st: LowerState, var_name: String, iterable: Expr, body: Block) -> L
     s.loop_header_label = old_header2
     s.loop_exit_label = old_exit2
 
-    // Increment counter and jump back to header
+    // Normal fallthrough and continue both resume at the header.
     if !current_block_terminated(s):
-        let inc_val: LowerResult = make_value(s, mir_int(), "for_inc")
-        s = inc_val.state
-        let inc_i: LowerResult = make_value(s, mir_int(), "for_ci")
-        s = inc_i.state
-        s = emit_instr(s, Instruction::Load(inc_i.value, counter_addr))
-        let one_r: LowerResult = make_value(s, mir_int(), "one")
-        s = one_r.state
-        s = emit_instr(s, Instruction::Const(one_r.value, mir_int(), "1"))
-        s = emit_instr(s, Instruction::BinOp(inc_val.value, BinOpKind::Add, inc_i.value, one_r.value))
-        s = emit_instr(s, Instruction::Store(counter_addr, inc_val.value))
         s = emit_instr(s, Instruction::Jump(header_label))
 
     // Exit block
@@ -9080,6 +9208,8 @@ fn lower_call(st: LowerState, callee: Expr, arg_exprs: List<Expr>) -> LowerResul
 
     // Dispatch on callee type
     let ck: String = expr_kind(callee)
+    if ck == "type_apply":
+        return lower_type_applied_call(s, callee, args)
     if ck == "ident":
         return lower_call_by_name(s, expr_ident_name(callee), args)
     if ck == "field_access":
@@ -9165,6 +9295,8 @@ fn mangle_generic_name(base: String, arg_types: List<MIRType>) -> String:
             if tk == TK_RESULT(): result = result + "Result"
             if tk == TK_VOID(): result = result + "Void"
             if tk == TK_UNKNOWN(): result = result + "Unknown"
+            if len(arg_types[i].args) > 0:
+                result = result + "_of_" + mangle_generic_name("", arg_types[i].args) + "_end"
             i = i + 1
     result
 
@@ -9196,20 +9328,156 @@ fn infer_type_args_from_call(gfn: FnDefData, arg_types: List<MIRType>) -> List<M
 
 fn substitute_type_annotation(ann: Option<TypeExpr>, type_params: List<String>, concrete: List<MIRType>) -> Option<TypeExpr>:
     match ann:
-        Some(te) =>:
-            let te_name: String = type_expr_name(te)
-            let mut i: Int = 0
-            for _ in 0..20:
-                if i < len(type_params):
-                    if type_params[i] == te_name:
-                        if i < len(concrete):
-                            // Replace with concrete type name
-                            let mut cname: String = concrete[i].name
-                            if cname == "": cname = kind_to_type_name(concrete[i].kind)
-                            return Some(TypeExpr::Named(cname))
-                    i = i + 1
-            return ann
+        Some(te) => return Some(specialize_type_expr(te, type_params, concrete))
         _ => return none
+
+fn concrete_type_expr(ty: MIRType) -> TypeExpr:
+    let mut name: String = ty.name
+    if name == "": name = kind_to_type_name(ty.kind)
+    if len(ty.args) == 0: return TypeExpr::Named(name)
+    let mut args: List<TypeExpr> = []
+    for i in 0..len(ty.args): args.push(concrete_type_expr(ty.args[i]))
+    return TypeExpr::Generic(name, args)
+
+fn specialize_types(items: List<TypeExpr>, names: List<String>, types: List<MIRType>) -> List<TypeExpr>:
+    let mut result: List<TypeExpr> = []
+    for i in 0..len(items): result.push(specialize_type_expr(items[i], names, types))
+    return result
+
+fn specialize_type_expr(te: TypeExpr, names: List<String>, types: List<MIRType>) -> TypeExpr:
+    match te:
+        Named(name) =>:
+            for i in 0..len(names):
+                if names[i] == name && i < len(types): return concrete_type_expr(types[i])
+            return te
+        Generic(name, args) => return TypeExpr::Generic(name, specialize_types(args, names, types))
+        FnTy(args, ret) => return TypeExpr::FnTy(specialize_types(args, names, types), specialize_type_expr(ret, names, types))
+        TensorTy(elem, shape) => return TypeExpr::TensorTy(specialize_type_expr(elem, names, types), specialize_exprs(shape, names, types))
+        _ => return te
+
+fn specialize_exprs(items: List<Expr>, names: List<String>, types: List<MIRType>) -> List<Expr>:
+    let mut result: List<Expr> = []
+    for i in 0..len(items): result.push(specialize_expr(items[i], names, types))
+    return result
+
+fn specialize_expr_opt(item: Option<Expr>, names: List<String>, types: List<MIRType>) -> Option<Expr>:
+    match item:
+        Some(e) => return Some(specialize_expr(e, names, types))
+        _ => return none
+
+fn specialize_params(items: List<Param>, names: List<String>, types: List<MIRType>) -> List<Param>:
+    let mut result: List<Param> = []
+    for i in 0..len(items):
+        let p: Param = items[i]
+        result.push(new Param { span: p.span, name: p.name, type_annotation: substitute_type_annotation(p.type_annotation, names, types) })
+    return result
+
+fn specialize_block(body: Block, names: List<String>, types: List<MIRType>) -> Block:
+    let mut stmts: List<Stmt> = []
+    for i in 0..len(body.stmts): stmts.push(specialize_stmt(body.stmts[i], names, types))
+    return new Block { span: body.span, stmts: stmts }
+
+fn specialize_block_opt(body: Option<Block>, names: List<String>, types: List<MIRType>) -> Option<Block>:
+    match body:
+        Some(b) => return Some(specialize_block(b, names, types))
+        _ => return none
+
+fn specialize_else(body: Option<ElseClause>, names: List<String>, types: List<MIRType>) -> Option<ElseClause>:
+    match body:
+        Some(ec) =>:
+            match ec:
+                ElseBlock(b) => return Some(ElseClause::ElseBlock(specialize_block(b, names, types)))
+                ElseIf(c, b, e) => return Some(ElseClause::ElseIf(specialize_expr(c, names, types), specialize_block(b, names, types), specialize_else(e, names, types)))
+                _ => return body
+        _ => return none
+
+fn specialize_stmt(stmt: Stmt, names: List<String>, types: List<MIRType>) -> Stmt:
+    match stmt:
+        Let(n, m, t, v) => return Stmt::Let(n, m, substitute_type_annotation(t, names, types), specialize_expr(v, names, types))
+        ExprStmt(e) => return Stmt::ExprStmt(specialize_expr(e, names, types))
+        Return(e) => return Stmt::Return(specialize_expr_opt(e, names, types))
+        For(n, e, b) => return Stmt::For(n, specialize_expr(e, names, types), specialize_block(b, names, types))
+        While(e, b) => return Stmt::While(specialize_expr(e, names, types), specialize_block(b, names, types))
+        Assert(e, msg) => return Stmt::Assert(specialize_expr(e, names, types), msg)
+        SignalDecl(n, m, t, v, c) => return Stmt::SignalDecl(n, m, substitute_type_annotation(t, names, types), specialize_expr(v, names, types), c)
+        StreamDecl(n, t, v) => return Stmt::StreamDecl(n, substitute_type_annotation(t, names, types), specialize_expr(v, names, types))
+        LetDestructure(p, m, t, v) => return Stmt::LetDestructure(p, m, substitute_type_annotation(t, names, types), specialize_expr(v, names, types))
+        LetElse(p, e, b) => return Stmt::LetElse(p, specialize_expr(e, names, types), specialize_block(b, names, types))
+        WhileLet(p, e, b) => return Stmt::WhileLet(p, specialize_expr(e, names, types), specialize_block(b, names, types))
+        _ => return stmt
+
+fn specialize_fields(items: List<FieldInit>, names: List<String>, types: List<MIRType>) -> List<FieldInit>:
+    let mut result: List<FieldInit> = []
+    for i in 0..len(items):
+        let f: FieldInit = items[i]
+        result.push(new FieldInit { span: f.span, name: f.name, value: specialize_expr(f.value, names, types) })
+    return result
+
+fn specialize_expr(expr: Expr, names: List<String>, types: List<MIRType>) -> Expr:
+    match expr:
+        Binary(l, op, r) => return Expr::Binary(specialize_expr(l, names, types), op, specialize_expr(r, names, types))
+        Unary(op, e) => return Expr::Unary(op, specialize_expr(e, names, types))
+        Call(c, args) => return Expr::Call(specialize_expr(c, names, types), specialize_exprs(args, names, types))
+        TypeApply(c, args) => return Expr::TypeApply(specialize_expr(c, names, types), specialize_types(args, names, types))
+        MethodCall(o, n, args) => return Expr::MethodCall(specialize_expr(o, names, types), n, specialize_exprs(args, names, types))
+        FieldAccess(o, n) => return Expr::FieldAccess(specialize_expr(o, names, types), n)
+        Index(o, i) => return Expr::Index(specialize_expr(o, names, types), specialize_expr(i, names, types))
+        TensorIndex(o, items) => return Expr::TensorIndex(specialize_expr(o, names, types), specialize_exprs(items, names, types))
+        TensorSlice(o, items) =>:
+            let mut result: List<IndexItem> = []
+            for i in 0..len(items):
+                let item: IndexItem = items[i]
+                result.push(new IndexItem { kind: item.kind, expr: specialize_expr(item.expr, names, types), start: specialize_expr(item.start, names, types), end: specialize_expr(item.end, names, types), step: specialize_expr(item.step, names, types) })
+            return Expr::TensorSlice(specialize_expr(o, names, types), result)
+        Pipe(l, r) => return Expr::Pipe(specialize_expr(l, names, types), specialize_expr(r, names, types))
+        Range(l, r, inc) => return Expr::Range(specialize_expr(l, names, types), specialize_expr(r, names, types), inc)
+        Lambda(params, body) =>:
+            let ps: List<Param> = specialize_params(params, names, types)
+            match body:
+                ExprBody(e) => return Expr::Lambda(ps, LambdaBody::ExprBody(specialize_expr(e, names, types)))
+                BlockBody(b) => return Expr::Lambda(ps, LambdaBody::BlockBody(specialize_block(b, names, types)))
+                _ => return expr
+        Spawn(c, args) => return Expr::Spawn(specialize_expr(c, names, types), specialize_exprs(args, names, types))
+        Sync(e) => return Expr::Sync(specialize_expr(e, names, types))
+        Send(l, r) => return Expr::Send(specialize_expr(l, names, types), specialize_expr(r, names, types))
+        ErrorProp(e) => return Expr::ErrorProp(specialize_expr(e, names, types))
+        ListLit(items) => return Expr::ListLit(specialize_exprs(items, names, types))
+        TensorLit(items, shape) => return Expr::TensorLit(specialize_exprs(items, names, types), shape)
+        MapLit(items) =>:
+            let mut result: List<MapEntry> = []
+            for i in 0..len(items):
+                result.push(new MapEntry { key: specialize_expr(items[i].key, names, types), value: specialize_expr(items[i].value, names, types) })
+            return Expr::MapLit(result)
+        Construct(n, fields) => return Expr::Construct(n, specialize_fields(fields, names, types))
+        ConstructUpdate(n, fields, base) => return Expr::ConstructUpdate(n, specialize_fields(fields, names, types), specialize_expr(base, names, types))
+        SomeWrap(e) => return Expr::SomeWrap(specialize_expr(e, names, types))
+        OkWrap(e) => return Expr::OkWrap(specialize_expr(e, names, types))
+        ErrWrap(e) => return Expr::ErrWrap(specialize_expr(e, names, types))
+        SignalVal(e, c) => return Expr::SignalVal(specialize_expr(e, names, types), c)
+        Assign(l, op, r) => return Expr::Assign(specialize_expr(l, names, types), op, specialize_expr(r, names, types))
+        If(c, b, e) => return Expr::If(specialize_expr(c, names, types), specialize_block(b, names, types), specialize_else(e, names, types))
+        IfLet(p, e, b, alt) => return Expr::IfLet(p, specialize_expr(e, names, types), specialize_block(b, names, types), specialize_block_opt(alt, names, types))
+        Match(e, arms) =>:
+            let mut result: List<MatchArm> = []
+            for i in 0..len(arms):
+                let arm: MatchArm = arms[i]
+                let mut body: MatchArmBody = arm.body
+                match arm.body:
+                    ExprBody(v) => body = MatchArmBody::ExprBody(specialize_expr(v, names, types))
+                    BlockBody(b) => body = MatchArmBody::BlockBody(specialize_block(b, names, types))
+                    _ => {}
+                result.push(new MatchArm { span: arm.span, pattern: arm.pattern, body: body, guard: specialize_expr_opt(arm.guard, names, types) })
+            return Expr::Match(specialize_expr(e, names, types), result)
+        Await(e) => return Expr::Await(specialize_expr(e, names, types))
+        Comprehension(k, e, key, val, clauses) =>:
+            let mut result: List<CompClause> = []
+            for i in 0..len(clauses):
+                let c: CompClause = clauses[i]
+                result.push(new CompClause { span: c.span, target: c.target, iter: specialize_expr(c.iter, names, types), conditions: specialize_exprs(c.conditions, names, types) })
+            return Expr::Comprehension(k, specialize_expr_opt(e, names, types), specialize_expr_opt(key, names, types), specialize_expr_opt(val, names, types), result)
+        InterpString(parts) => return Expr::InterpString(specialize_exprs(parts, names, types))
+        ChainedCmp(items, ops) => return Expr::ChainedCmp(specialize_exprs(items, names, types), ops)
+        _ => return expr
 
 fn specialize_fn(gfn: FnDefData, mangled: String, type_params: List<String>, concrete: List<MIRType>) -> FnDefData:
     // Build new params with substituted type annotations
@@ -9225,7 +9493,8 @@ fn specialize_fn(gfn: FnDefData, mangled: String, type_params: List<String>, con
     // Substitute return type
     let new_ret: Option<TypeExpr> = substitute_type_annotation(gfn.return_type, type_params, concrete)
     let empty_tp: List<String> = []
-    return new_fn_def_data(gfn.span, mangled, gfn.public, empty_tp, new_params, new_ret, gfn.body, gfn.decorators)
+    let body: Block = specialize_block(gfn.body, type_params, concrete)
+    return new_fn_def_data(gfn.span, mangled, gfn.public, empty_tp, new_params, new_ret, body, gfn.decorators)
 
 fn is_already_specialized(st: LowerState, mangled: String) -> Bool:
     // Check if __ret__mangled exists in lambda_vars
@@ -9246,24 +9515,62 @@ fn try_monomorphize_call(st: LowerState, fn_name: String, args: List<Value>) -> 
                     arg_types.push(args[ai].ty)
                     ai = ai + 1
             let concrete: List<MIRType> = infer_type_args_from_call(gfn, arg_types)
-            let mangled: String = mangle_generic_name(fn_name, concrete)
-
-            let mut s: LowerState = st
-            if !is_already_specialized(s, mangled):
-                // Specialize and lower the function
-                let specialized: FnDefData = specialize_fn(gfn, mangled, gfn.type_params, concrete)
-                s = lower_fn(s, specialized, "")
-
-            // Look up return type and emit call
-            let ret_key: String = "__ret__" + mangled
-            let ret_ty: MIRType = decode_ret_type(unwrap_or_default(find_lambda(s, ret_key), ""))
-
-            let dr: LowerResult = make_value(s, ret_ty, "t")
-            let s2: LowerState = emit_instr(dr.state, Instruction::Call(dr.value, mangled, args))
-            return new_lower_result(dr.value, s2)
+            return lower_specialized_call(st, gfn, args, concrete)
         _ =>:
             // Not a generic function — return sentinel
             return new_lower_result(void_value(), st)
+
+fn lower_specialized_call(st: LowerState, gfn: FnDefData, args: List<Value>, concrete: List<MIRType>) -> LowerResult:
+    let mangled: String = mangle_generic_name(gfn.name, concrete)
+    let specialized: FnDefData = specialize_fn(gfn, mangled, gfn.type_params, concrete)
+    let mut s: LowerState = st
+    if !is_already_specialized(s, mangled):
+        // Register before lowering the body, so recursion and repeated calls
+        // reuse one instantiation rather than emitting duplicate definitions.
+        s = register_definition(s, Definition::FnDef(specialized))
+        s = lower_fn(s, specialized, "")
+    let ret_ty: MIRType = resolve_return_type_checked(s, specialized.return_type)
+    let dr: LowerResult = make_value(s, ret_ty, "t")
+    let result: LowerState = emit_instr(dr.state, Instruction::Call(dr.value, mangled, args))
+    return new_lower_result(dr.value, result)
+
+fn lower_type_applied_call(st: LowerState, applied: Expr, args: List<Value>) -> LowerResult:
+    let callee: Expr = expr_type_apply_callee(applied)
+    let mut name: String = expr_ident_name(callee)
+    if expr_kind(callee) == "namespace_access": name = expr_ns_member(callee)
+    let annotations: List<TypeExpr> = expr_type_apply_args(applied)
+    if name == "__struct_meta" && len(annotations) == 1:
+        return lower_native_struct_meta(st, type_expr_name(annotations[0]))
+    let mut concrete: List<MIRType> = []
+    for i in 0..len(annotations): concrete.push(lower_resolve_type_checked(st, annotations[i]))
+    let generic_fn: Option<FnDefData> = find_generic_fn(st, name)
+    match generic_fn:
+        Some(gfn) => return lower_specialized_call(st, gfn, args, concrete)
+        _ => return new_lower_result(void_value(), st)
+
+fn native_schema_type(ty: MIRType) -> String:
+    if ty.kind == TK_INT(): return "integer"
+    if ty.kind == TK_FLOAT(): return "number"
+    if ty.kind == TK_BOOL(): return "boolean"
+    if ty.kind == TK_LIST(): return "array"
+    if ty.kind == TK_OPTION() && len(ty.args) > 0: return native_schema_type(ty.args[0])
+    return "string"
+
+fn lower_native_struct_meta(st: LowerState, name: String) -> LowerResult:
+    let mut props: List<String> = []
+    let mut required: List<String> = []
+    for struct_idx in 0..len(st.struct_fields):
+        let info: StructFieldInfo = st.struct_fields[struct_idx]
+        if info.name == name:
+            for fi in 0..len(info.field_names):
+                let field: String = "\"" + info.field_names[fi] + "\""
+                let ty: MIRType = info.field_types[fi]
+                props.push(field + ": {\"type\": \"" + native_schema_type(ty) + "\"}")
+                if ty.kind != TK_OPTION(): required.push(field)
+    let schema: String = "{\"type\": \"object\", \"properties\": {" + join(", ", props) + "}, \"required\": [" + join(", ", required) + "]}"
+    let dest: LowerResult = make_value(st, mir_string(), "schema")
+    let s: LowerState = emit_instr(dest.state, Instruction::Const(dest.value, mir_string(), schema))
+    return new_lower_result(dest.value, s)
 
 fn find_type_param_index(type_params: List<String>, name: String) -> Int:
     let mut i: Int = 0
@@ -10022,6 +10329,20 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
             let s_red: LowerState = emit_instr(red_dest.state, Instruction::Call(red_dest.value, red_fn, red_args))
             return new_lower_result(red_dest.value, s_red)
 
+    // Map deletion routes to the runtime with the key passed by pointer.
+    // Mirrors mapanare/lower.py::_lower_method_call (__mn_map_del).
+    if method == "remove":
+        if obj_r.value.ty.kind == TK_MAP():
+            if len(arg_exprs) == 1:
+                let key_r: LowerResult = lower_expr(s, arg_exprs[0])
+                s = key_r.state
+                let mut del_args: List<Value> = []
+                del_args.push(obj_r.value)
+                del_args.push(key_r.value)
+                let del_dest: LowerResult = make_value(s, mir_int(), "t")
+                let s_del: LowerState = emit_instr(del_dest.state, Instruction::Call(del_dest.value, "__mn_map_del", del_args))
+                return new_lower_result(del_dest.value, s_del)
+
     // Build arg list: [obj_value, arg_values...]
     let mut all_args: List<Value> = []
     all_args.push(obj_r.value)
@@ -10049,7 +10370,19 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
         let impl_key: String = obj_type_name + "." + method
         let impl_opt: Option<String> = lookup_impl_method(s, impl_key)
         match impl_opt:
-            Some(mangled) => call_name = mangled
+            Some(mangled) =>:
+                call_name = mangled
+                // Specialized methods are already lowered. Preserve their full
+                // return type, including container arguments, at the call site.
+                let mut fn_idx: Int = 0
+                for _ in 0..5000:
+                    if fn_idx < len(s.module.functions):
+                        if s.module.functions[fn_idx].name == mangled:
+                            ret_ty = s.module.functions[fn_idx].return_type
+                            fn_idx = len(s.module.functions)
+                        fn_idx = fn_idx + 1
+                if ret_ty.kind == TK_UNKNOWN():
+                    return lower_call_by_name(s, mangled, all_args)
             _ => {}
 
     let dest_r: LowerResult = make_value(s, ret_ty, "t")
@@ -10485,6 +10818,15 @@ fn lower_pipe_call(arg_r: LowerResult, fn_name: String, extra_exprs: List<Expr>)
     return new_lower_result(dest_r.value, new_s)
 
 fn lower_pipe_with_call(arg_r: LowerResult, callee: Expr, extra_arg_exprs: List<Expr>) -> LowerResult:
+    if expr_kind(callee) == "type_apply":
+        let mut s: LowerState = arg_r.state
+        let mut args: List<Value> = []
+        args.push(arg_r.value)
+        for i in 0..len(extra_arg_exprs):
+            let r: LowerResult = lower_expr(s, extra_arg_exprs[i])
+            s = r.state
+            args.push(r.value)
+        return lower_type_applied_call(s, callee, args)
     if expr_kind(callee) == "ident":
         return lower_pipe_call(arg_r, expr_ident_name(callee), extra_arg_exprs)
     return new_lower_result(arg_r.value, arg_r.state)
@@ -10940,9 +11282,12 @@ fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult:
     if len(pairs) > 0:
         key_ty = pairs[0].key.ty
         val_ty = pairs[0].val.ty
-    let dest_r: LowerResult = make_value(s, mir_map(), "t")
+    let dest_r: LowerResult = make_value(s, mir_map_of(key_ty, val_ty), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::MapInit(dest_r.value, key_ty, val_ty, pairs))
-    // v5.4.4 — map owns each key/value pair.
+    // Copy-in maps keep caller ownership of their inputs; raw aggregate
+    // maps still transfer each key/value pair (v5.4.4).
+    if map_copies_inputs(key_ty.kind, val_ty.kind):
+        return new_lower_result(dest_r.value, new_s)
     let moved_s: LowerState = emit_move_kvpairs(new_s, pairs)
     return new_lower_result(dest_r.value, moved_s)
 
@@ -11594,10 +11939,15 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
             return new_lower_result(val_r.value, s)
         let idx_r: LowerResult = lower_expr(obj_r_idx.state, expr_index_idx(target))
         s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r_idx.value, idx_r.value, val_r.value))
-        // v5.4.4 — map_set / list_set memcpy key+val into the container;
-        // ownership transfers. Emit Move so drop glue skips the slot.
-        s = emit_instr(s, Instruction::Move(idx_r.value))
-        s = emit_instr(s, Instruction::Move(val_r.value))
+        // Copy-in maps keep caller ownership of both arguments; raw
+        // containers still transfer key+val (v5.4.4 Move markers).
+        let mut copying_idx: Bool = false
+        if obj_r_idx.value.ty.kind == TK_MAP():
+            if len(obj_r_idx.value.ty.args) == 2:
+                copying_idx = map_copies_inputs(obj_r_idx.value.ty.args[0].kind, obj_r_idx.value.ty.args[1].kind)
+        if !copying_idx:
+            s = emit_instr(s, Instruction::Move(idx_r.value))
+            s = emit_instr(s, Instruction::Move(val_r.value))
         return new_lower_result(val_r.value, s)
     // v5.6.1 Sh.6 Phase 2 — `d[i, j] = val` for Tensor assignment. Lower as
     // a direct Call to __mn_tensor_set_{f64,i64}_nd (variadic); skip
@@ -13367,6 +13717,55 @@ fn is_recursive(f: MIRFunction) -> Bool:
         bi = bi + 1
     return false
 
+fn inline_scalar_type(ty: MIRType) -> Bool:
+    return ty.kind == TK_INT() || ty.kind == TK_FLOAT() || ty.kind == TK_BOOL() || ty.kind == TK_CHAR() || ty.kind == TK_VOID()
+
+fn inline_preserves_cleanup(callee: MIRFunction) -> Bool:
+    // Inlining has no nested cleanup scope. Resource slots in a loop can
+    // otherwise be overwritten before function-exit cleanup. Keep their
+    // original call boundary; scalar calls retain their callee's cleanup.
+    if !inline_scalar_type(callee.return_type): return false
+    for pi in 0..len(callee.params):
+        if !inline_scalar_type(callee.params[pi].ty): return false
+    for bi in 0..len(callee.blocks):
+        if !inline_instructions_preserve_cleanup(callee.blocks[bi].instructions, 0): return false
+    return true
+
+fn inline_instructions_preserve_cleanup(instructions: List<Instruction>, start: Int) -> Bool:
+    for ii in start..len(instructions):
+        if !inline_instruction_preserves_cleanup(instructions[ii]): return false
+    return true
+
+fn inline_instruction_preserves_cleanup(inst: Instruction) -> Bool:
+    let kind: String = instr_kind(inst)
+    if kind == "jump": return true
+    if kind == "return":
+        let returned: Option<Value> = instr_return_val(inst)
+        match returned:
+            Some(v) => return inline_scalar_type(v.ty)
+            _ => return true
+    // Native lowering uses explicit stack slots for scalar parameters and
+    // locals. These have no heap cleanup; their scalar loads/stores can move.
+    if kind == "alloca": return inline_scalar_type(instr_alloca_type(inst))
+    if kind == "store": return inline_scalar_type(instr_store_val(inst).ty)
+    if !inline_scalar_type(instr_dest(inst).ty): return false
+    if kind == "load": return true
+    if kind == "const": return inline_scalar_type(instr_const_type(inst))
+    if kind == "copy": return inline_scalar_type(instr_copy_src(inst).ty)
+    if kind == "cast":
+        return inline_scalar_type(instr_cast_src(inst).ty) && inline_scalar_type(instr_cast_type(inst))
+    if kind == "binop":
+        return inline_scalar_type(instr_binop_lhs(inst).ty) && inline_scalar_type(instr_binop_rhs(inst).ty)
+    if kind == "unaryop": return inline_scalar_type(instr_unaryop_operand(inst).ty)
+    if kind == "call":
+        let args: List<Value> = instr_call_args(inst)
+        for ai in 0..len(args):
+            if !inline_scalar_type(args[ai].ty): return false
+        return true
+    // Aggregates, ownership markers, indirect calls and new instructions
+    // remain excluded until proved safe.
+    return false
+
 fn should_inline(callee: MIRFunction, call_count: Int) -> Bool:
     // Only single-block callees (no branches, no phi, no switch)
     if len(callee.blocks) != 1: return false
@@ -13388,7 +13787,7 @@ fn should_inline(callee: MIRFunction, call_count: Int) -> Bool:
     if body_size == 0: return false
     if body_size > 20: return false
     if call_count * body_size > 200: return false
-    return true
+    return inline_preserves_cleanup(callee)
 
 // Count how many times each function is called within fn
 struct CallCount:
@@ -13460,6 +13859,8 @@ fn replace_use(v: Value, old_name: String, new_name: String) -> Value:
 // preventing SSA name collisions that cause llvm-as to reject the IR.
 fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) -> Instruction:
     let ik: String = instr_kind(inst)
+    if ik == "move":
+        return Instruction::Move(replace_use(instr_move_val(inst), old_name, new_name))
     // No value uses
     if ik == "const": return inst
     if ik == "alloca": return inst
@@ -13598,6 +13999,12 @@ fn replace_uses_in_instr(inst: Instruction, old_name: String, new_name: String) 
 fn clone_instr_for_inline(inst: Instruction, prefix: String, renames: List<ConstEntry>, merge_label: String) -> List<Instruction>:
     let ik: String = instr_kind(inst)
     let mut result: List<Instruction> = []
+
+    // Ownership transfers refer to the cloned SSA value too. Keeping the
+    // callee's original name can free the wrong owner or emit undefined IR.
+    if ik == "move":
+        result.push(Instruction::Move(rename_value(instr_move_val(inst), prefix, renames)))
+        return result
 
     // Return → Copy + Jump to merge
     if ik == "return":
@@ -14017,7 +14424,9 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
             let inst: Instruction = bb.instructions[ii]
             if instr_kind(inst) == "call":
                 let callee_name: String = instr_call_fn(inst)
-                if is_in_list(callee_name, eligible):
+                // Splitting also relocates the caller's suffix, whose
+                // resource operations may depend on the loop-body label.
+                if is_in_list(callee_name, eligible) && inline_instructions_preserve_cleanup(bb.instructions, ii + 1):
                     // Found an eligible call site — inline it
                     let callee_opt2: Option<MIRFunction> = find_fn_by_name(lookup, callee_name)
                     match callee_opt2:
@@ -14073,7 +14482,7 @@ fn inline_small_functions(f: MIRFunction, lookup: List<FnLookupEntry>) -> MIRFun
                             // All downstream uses of the original name are renamed.
                             let mut post_insts: List<Instruction> = []
                             let call_dest: Value = instr_dest(inst)
-                            let do_rename: Bool = call_dest.name.starts_with("%")
+                            let do_rename: Bool = call_dest.name.starts_with("%") && callee.return_type.kind != TK_VOID()
                             let fresh_dest_name: String = "%" + prefix + "dst"
                             if do_rename:
                                 let fresh_dest: Value = new Value { name: fresh_dest_name, ty: call_dest.ty }
@@ -14675,8 +15084,105 @@ struct FnEntry:
     name: String
     ret_type: String
     param_types: List<String>
+    borrows_strings: Bool
 
-fn new_fn_entry(name: String, ret: String, params: List<String>) -> FnEntry = new FnEntry { name: name, ret_type: ret, param_types: params }
+fn new_fn_entry(name: String, ret: String, params: List<String>, borrows: Bool) -> FnEntry = new FnEntry { name: name, ret_type: ret, param_types: params, borrows_strings: borrows }
+
+// A deliberately small, fail-closed borrowing proof. Only scalar/String/List
+// reads are allowed: no escaping stores, user/extern calls, moves, or async suspension
+// are allowed. Inspect every block, including unreachable ones. In particular,
+// a scalar return alone says nothing about whether a callee captures an input.
+fn borrow_scalar_type(ty: MIRType) -> Bool:
+    return ty.kind == TK_INT() || ty.kind == TK_FLOAT() || ty.kind == TK_BOOL() || ty.kind == TK_CHAR()
+
+fn borrow_read_type(ty: MIRType, depth: Int) -> Bool:
+    if depth > 32: return false
+    if borrow_scalar_type(ty) || ty.kind == TK_STRING(): return true
+    if ty.kind == TK_LIST() && len(ty.args) == 1:
+        return borrow_read_type(ty.args[0], depth + 1)
+    return false
+
+fn borrow_local_type(ty: MIRType) -> Bool:
+    return borrow_read_type(ty, 0)
+
+fn borrow_instruction_safe(inst: Instruction, local_slots: List<String>) -> Bool:
+    let kind: String = instr_kind(inst)
+    if kind == "alloca" || kind == "jump": return true
+    if kind == "const":
+        let const_ty: MIRType = instr_const_type(inst)
+        return borrow_scalar_type(const_ty) || const_ty.kind == TK_STRING() || const_ty.kind == TK_VOID()
+    if kind == "copy":
+        return borrow_local_type(instr_dest(inst).ty) && borrow_local_type(instr_copy_src(inst).ty)
+    if kind == "index_get":
+        let obj: Value = instr_indexget_obj(inst)
+        let idx: Value = instr_indexget_idx(inst)
+        return obj.ty.kind == TK_LIST() && borrow_local_type(obj.ty) && idx.ty.kind == TK_INT() && borrow_local_type(instr_dest(inst).ty)
+    if kind == "load" || kind == "store":
+        let mut ptr_name: String = ""
+        if kind == "load":
+            if !borrow_local_type(instr_dest(inst).ty): return false
+            ptr_name = instr_load_ptr(inst).name
+        else:
+            if !borrow_local_type(instr_store_val(inst).ty): return false
+            ptr_name = instr_store_ptr(inst).name
+        for slot_idx in 0..len(local_slots):
+            if local_slots[slot_idx] == ptr_name: return true
+        return false
+    if kind == "binop":
+        return borrow_scalar_type(instr_dest(inst).ty) && borrow_scalar_type(instr_binop_lhs(inst).ty) && borrow_scalar_type(instr_binop_rhs(inst).ty)
+    if kind == "unaryop":
+        return borrow_scalar_type(instr_dest(inst).ty) && borrow_scalar_type(instr_unaryop_operand(inst).ty)
+    if kind == "cast":
+        return borrow_scalar_type(instr_dest(inst).ty) && borrow_scalar_type(instr_cast_src(inst).ty) && borrow_scalar_type(instr_cast_type(inst))
+    if kind == "call":
+        // len(String/List) borrows; range construction/extraction only manipulates
+        // two integers. No other runtime or user calls are proven here.
+        let name: String = instr_call_fn(inst)
+        let args: List<Value> = instr_call_args(inst)
+        if name == "len":
+            if len(args) != 1: return false
+            let arg_kind: Int = args[0].ty.kind
+            return (arg_kind == TK_STRING() || arg_kind == TK_LIST()) && borrow_local_type(args[0].ty) && instr_dest(inst).ty.kind == TK_INT()
+        if name == "__mn_range" || name == "__mn_range_inclusive":
+            if len(args) != 2: return false
+            return args[0].ty.kind == TK_INT() && args[1].ty.kind == TK_INT() && instr_dest(inst).ty.kind == TK_RANGE()
+        if name == "__mn_range_start" || name == "__mn_range_end":
+            if len(args) != 1: return false
+            return args[0].ty.kind == TK_RANGE() && instr_dest(inst).ty.kind == TK_INT()
+        return false
+    if kind == "phi":
+        if !borrow_local_type(instr_dest(inst).ty): return false
+        let incoming: List<PhiEntry> = instr_phi_entries(inst)
+        for vi in 0..len(incoming):
+            if !borrow_local_type(incoming[vi].val.ty): return false
+        return true
+    if kind == "return":
+        let val: Option<Value> = instr_return_val(inst)
+        match val:
+            Some(v) => return borrow_scalar_type(v.ty)
+            _ => return true
+    if kind == "branch": return borrow_scalar_type(instr_branch_cond(inst).ty)
+    if kind == "switch": return borrow_scalar_type(instr_switch_tag(inst).ty)
+    return false
+
+fn function_borrows_strings(f: MIRFunction) -> Bool:
+    if len(f.blocks) == 0 || fn_is_async(f): return false
+    if !borrow_scalar_type(f.return_type) && f.return_type.kind != TK_VOID(): return false
+    for pi in 0..len(f.params):
+        if !borrow_local_type(f.params[pi].ty): return false
+    let mut local_slots: List<String> = []
+    for bi in 0..len(f.blocks):
+        let bb: BasicBlock = f.blocks[bi]
+        for ii in 0..len(bb.instructions):
+            let inst: Instruction = bb.instructions[ii]
+            if instr_kind(inst) == "alloca":
+                if !borrow_local_type(instr_alloca_type(inst)): return false
+                local_slots.push(instr_dest(inst).name)
+    for bi in 0..len(f.blocks):
+        let bb: BasicBlock = f.blocks[bi]
+        for ii in 0..len(bb.instructions):
+            if !borrow_instruction_safe(bb.instructions[ii], local_slots): return false
+    return true
 
 struct EmitState:
     lines: List<String>
@@ -14785,7 +15291,7 @@ fn build_internal_struct_list() -> List<StructEntry>:
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
     list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
-    list.push(make_entry("FnEntry", ["name", "ret_type", "param_types"]))
+    list.push(make_entry("FnEntry", ["name", "ret_type", "param_types", "borrows_strings"]))
     // StructEntry already registered first (above)
     list.push(make_entry("VarInfo", ["name", "current", "mutable"]))
     list.push(make_entry("StructFieldInfo", ["name", "field_names", "field_types"]))
@@ -14830,8 +15336,8 @@ fn register_all_internal_structs(st: EmitState) -> EmitState:
     s = register_internal_struct(s, "CompileResult", ["success", "ir_text", "errors"])
     // MatchBuildResult: state, arm_labels, arm_indices, cases, default_label
     s = register_internal_struct(s, "MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"])
-    // FnEntry: name, ret_type, param_types
-    s = register_internal_struct(s, "FnEntry", ["name", "ret_type", "param_types"])
+    // FnEntry: name, ret_type, param_types, borrows_strings
+    s = register_internal_struct(s, "FnEntry", ["name", "ret_type", "param_types", "borrows_strings"])
     // StructEntry: name, field_names, field_types, llvm_type
     s = register_internal_struct(s, "StructEntry", ["name", "field_names", "field_types", "llvm_type"])
     // VarInfo: name, current, mutable
@@ -14881,7 +15387,13 @@ fn emit_line(st: EmitState, line: String) -> EmitState:
     // (tracking-slot allocas queued by emit_track_string / _boxed /
     // _closure) can be flushed in front of it before pushing to lines.
     if st.in_entry_block:
-        st.entry_block_body.push(line)
+        // Fixed-size stack slots must execute once per invocation. Keeping
+        // them in loop blocks grows the stack on every iteration, including
+        // temporary runtime-call arguments. Preserve dynamic-count allocas.
+        if line.starts_with("  %") && line.contains(" = alloca ") && !line.contains(", i64 %") && !line.contains(", i32 %"):
+            st.entry_prelude_lines.push(line)
+        else:
+            st.entry_block_body.push(line)
     else:
         st.lines.push(line)
     st
@@ -15452,6 +15964,7 @@ fn get_fn_ret_prefix(name: String) -> String:
     if name == "malloc": return "noalias "
     if name == "__mn_alloc": return "noalias "
     if name == "__mn_map_new": return "noalias "
+    if name == "__mn_map_new_copying": return "noalias "
     if name == "__mn_signal_new": return "noalias "
     if name == "mapanare_agent_new": return "noalias "
     if name == "mn_arena_create": return "noalias "
@@ -15538,6 +16051,8 @@ fn get_fn_attrs(name: String) -> String:
     if name == "__mn_list_new": return " nounwind willreturn"
     if name == "__mn_list_concat": return " nounwind willreturn"
     if name == "__mn_map_new": return " nounwind willreturn"
+    if name == "__mn_map_new_copying": return " nounwind willreturn"
+    if name == "__mn_map_del": return " nounwind willreturn"
     if name == "__mn_map_keys": return " nounwind willreturn"
     if name == "__mn_signal_new": return " nounwind willreturn"
     if name == "mapanare_agent_new": return " nounwind willreturn"
@@ -15835,6 +16350,8 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     // passed four args; the self-hosted emitter was declaring three
     // (panel carry-forward, 7th cycle closed here).
     s = declare_runtime_fn(s, "__mn_map_new", "ptr", "i64, i64, i64, i64")
+    s = declare_runtime_fn(s, "__mn_map_new_copying", "ptr", "i64, i64, i64, i64")
+    s = declare_runtime_fn(s, "__mn_map_del", "i64", "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_set", "void", "ptr, ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_get", "ptr", "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_len", "i64", "ptr")
@@ -16339,6 +16856,8 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         // this handler is symmetric with the Python _do_move stub
         // installed in Phase 1 and ready to consume lowerer output.
         let mv_val: Value = instr_move_val(inst)
+        if mv_val.ty.kind == TK_STRING():
+            return emit_move_string(st, mv_val.name)
         let stripped: String = ret_val_base(mv_val.name)
         if stripped == "": return st
         if list_has_string(st.moved_locals, stripped): return st
@@ -17780,11 +18299,14 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     if val_ty.kind == TK_STRUCT(): val_size = "64"
     if val_ty.kind == TK_ENUM(): val_size = "64"
 
-    // Call __mn_map_new(key_size, val_size, key_type, val_type) — 4 args
+    // Call __mn_map_new(key_size, val_size, key_type, val_type) — 4 args,
+    // or __mn_map_new_copying when the copy-in policy applies.
     // (v4.32.0 Phase 1.2 closes the arity mismatch flagged as a 7-cycle
     // carry-forward by Rattler at the v4.31.0 arc-end panel).
+    let mut map_ctor: String = "__mn_map_new"
+    if map_copies_inputs(key_ty.kind, val_ty.kind): map_ctor = "__mn_map_new_copying"
     let map_ptr: String = dn + ".mp"
-    s = emit_line(s, "  " + map_ptr + " = call ptr @__mn_map_new(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ", i64 " + val_tag + ")")
+    s = emit_line(s, "  " + map_ptr + " = call ptr @" + map_ctor + "(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ", i64 " + val_tag + ")")
 
     // Insert each pair
     let npairs: Int = len(pairs)
@@ -18423,6 +18945,20 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "__mn_str_eprint":
         let as_epr: String = llvm_string() + " " + args[0].name
         return emit_rt_call_void(st, "__mn_str_eprint", as_epr)
+
+    // Owned-map deletion: the runtime takes the key by pointer, so
+    // store it into an alloca first. Mirrors the Python emitter.
+    if fn_name == "__mn_map_del":
+        let mut s_md: EmitState = st
+        let cnt_md: String = toString(s_md.counter)
+        s_md.counter = s_md.counter + 1
+        let mptr_md: String = "%md_mptr" + cnt_md
+        s_md = emit_line(s_md, "  " + mptr_md + " = extractvalue " + llvm_map_type() + " " + args[0].name + ", 0")
+        let kty_md: String = resolve_type(s_md, args[1].ty)
+        let ka_md: String = "%md_ka" + cnt_md
+        s_md = emit_line(s_md, "  " + ka_md + " = alloca " + kty_md)
+        s_md = emit_line(s_md, "  store " + kty_md + " " + args[1].name + ", ptr " + ka_md)
+        return emit_rt_call(s_md, dn, llvm_int(), "__mn_map_del", "ptr " + mptr_md + ", ptr " + ka_md)
     // v5.26.0 Mb.9: route the v5.23.2 Te.3.B.2 brace-deprecation
     // functions through emit_rt_call(_void). The default user-call
     // path uses is_byref_type_st (64-byte threshold), but MnString
@@ -18951,9 +19487,19 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     // Look up registered function parameter types (more reliable than MIR)
     let fn_opt_pre: Option<FnEntry> = find_function(s, fn_name)
     let mut reg_param_types: List<String> = []
+    let mut borrows_strings: Bool = false
     match fn_opt_pre:
-        Some(fe) => reg_param_types = fe.param_types
+        Some(fe) =>:
+            reg_param_types = fe.param_types
+            borrows_strings = fe.borrows_strings
         _ => {}
+
+    // Unknown/capturing callees still transfer matching ownership slots,
+    // including local aliases. Proven borrowers leave cleanup in the caller.
+    if !fn_name.starts_with("__mn_") && !borrows_strings:
+        for ai in 0..len(args):
+            if args[ai].ty.kind == TK_STRING():
+                s = emit_move_string(s, args[ai].name)
 
     // Build args with byref: large struct args → alloca + pass pointer
     let mut args_str: String = ""
@@ -19067,7 +19613,9 @@ fn emit_builtin_print(st: EmitState, args: List<Value>) -> EmitState:
         s.counter = s.counter + 1
         let bext: String = "%bext" + cnt_b
         s = emit_line(s, "  " + bext + " = zext i1 " + an + " to i64")
-        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + bext + ")")
+        let bstr: String = "%bstr" + cnt_b
+        s = emit_rt_call(s, bstr, llvm_string(), "__mn_str_from_bool", "i64 " + bext)
+        return emit_rt_call_void(s, "__mn_str_println", llvm_string() + " " + bstr)
     // Unknown type: default to integer (impl methods return i64)
     return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
 
@@ -19089,7 +19637,9 @@ fn emit_builtin_println(st: EmitState, args: List<Value>) -> EmitState:
         s.counter = s.counter + 1
         let bextp: String = "%bext" + cnt_bp
         s = emit_line(s, "  " + bextp + " = zext i1 " + an + " to i64")
-        return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + bextp + ")")
+        let bstrp: String = "%bstr" + cnt_bp
+        s = emit_rt_call(s, bstrp, llvm_string(), "__mn_str_from_bool", "i64 " + bextp)
+        return emit_rt_call_void(s, "__mn_str_println", llvm_string() + " " + bstrp)
     // Unknown type: default to integer (impl methods return i64)
     return emit_line(s, "  call i32 (ptr, ...) @printf(ptr @.fmt_int_nl, i64 " + an + ")")
 
@@ -19277,6 +19827,29 @@ fn is_string_returning_builtin(fn_name: String) -> Bool:
 // a fresh slot per call — the prior snapshot still lives in its own
 // slot, so drop-glue frees both. __mn_str_free / @free tolerate null,
 // so the zero-init is safe even when the slot is never stored to.
+
+// Clear the actual slot at the transfer point. Merely recording a moved SSA
+// name skips final drop glue but leaves loop free-before-store active. Compare
+// data pointers so loads/copies of the source transfer the same owner as well.
+fn emit_move_string(st: EmitState, value: String) -> EmitState:
+    let mut s: EmitState = st
+    if len(s.str_owned) == 0: return s
+    let id: String = toString(s.counter)
+    s.counter = s.counter + 1
+    let value_ptr: String = "%move.string.ptr." + id
+    s = emit_line(s, "  " + value_ptr + " = extractvalue {ptr, i64} " + value + ", 0")
+    for i in 0..len(s.str_owned):
+        let suffix: String = id + "." + toString(i)
+        let owned: String = "%move.string.owned." + suffix
+        let owned_ptr: String = "%move.string.owned.ptr." + suffix
+        let matches: String = "%move.string.matches." + suffix
+        let remaining: String = "%move.string.remaining." + suffix
+        s = emit_line(s, "  " + owned + " = load {ptr, i64}, ptr %" + s.str_owned[i])
+        s = emit_line(s, "  " + owned_ptr + " = extractvalue {ptr, i64} " + owned + ", 0")
+        s = emit_line(s, "  " + matches + " = icmp eq ptr " + value_ptr + ", " + owned_ptr)
+        s = emit_line(s, "  " + remaining + " = select i1 " + matches + ", {ptr, i64} zeroinitializer, {ptr, i64} " + owned)
+        s = emit_line(s, "  store {ptr, i64} " + remaining + ", ptr %" + s.str_owned[i])
+    return s
 
 fn emit_track_string(st: EmitState, val_name: String) -> EmitState:
     let mut s: EmitState = st
@@ -19674,37 +20247,34 @@ fn emit_drop_glue_destroy(st: EmitState) -> EmitState:
         m = m + 1
     return s
 
+fn return_type_has_no_resources(st: EmitState, ty: String, depth: Int) -> Bool:
+    // Prove absence of escaping resources rather than guessing from size.
+    // Unknown metadata, pointers, containers, enums and cycles stay conservative.
+    if depth >= 64: return false
+    if ty == "i1" || ty == "i8" || ty == "i16" || ty == "i32" || ty == "i64" || ty == "double" || ty == "float":
+        return true
+    if !ty.starts_with("%struct."): return false
+    let name: String = ty.substr(8, len(ty) - 8)
+    let entry_opt: Option<StructEntry> = find_struct_entry(st, name)
+    match entry_opt:
+        Some(entry) =>:
+            // Internal name-only placeholders are not complete type metadata.
+            if !entry.llvm_type.starts_with("{"): return false
+            if len(entry.field_names) != len(entry.field_types): return false
+            for i in 0..len(entry.field_types):
+                if !return_type_has_no_resources(st, entry.field_types[i], depth + 1):
+                    return false
+            return true
+        _ => return false
+
 fn ret_ty_is_aggregate(st: EmitState, ret_ty: String) -> Bool:
-    // v5.6.6 RESCOPE — Rt.04 cannot be closed by a one-level walk.
-    // Attempt: re-lift the `%struct.*` guard with a struct-size gate
-    // (N≤4 fields, M≤10 slots) so the walk fires for small data
-    // structs like 62_list_output's `St { lines: List<String>, n: Int }`.
-    // The walk extracts `lines` as a list ret-ptr and `n` skips
-    // (not a resource); String drop glue alias-checks against the
-    // list ret-ptr — but the tracked String slots' data pointers
-    // are the INDIVIDUAL STRINGS *inside* the list, not the list
-    // itself. The single-level walk doesn't see them; drop glue
-    // frees them; caller's `__mn_str_join` reads freed memory →
-    // confirmed heap-use-after-free under ASan.
-    //
-    // This is a STRUCT-OF-LIST-OF-STRING shape (2 levels deep).
-    // The PLAN's exit criterion #1 (62_list_output CLEAN) is
-    // unreachable without a multi-level walk that the PLAN
-    // itself excluded as "v5.7.x scope or v6.0 borrow checker".
-    //
-    // Decision: keep `%struct.*` returns conservatively skipped
-    // (62_list_output stays LEAK 9 objs / 141 B, baseline-gated)
-    // until the borrow checker or multi-level walk lands. The
-    // walk infrastructure at `emit_drop_glue:4753+` remains in
-    // place for the future fix; the gate parameters (st: EmitState
-    // signature) are preserved for the same reason.
-    //
-    // What this release DOES contribute: the signature change
-    // threads `st` through `ret_ty_is_aggregate` so future re-
-    // lift attempts can size-gate without another invasive
-    // refactor. The first such attempt landed and reverted in
-    // v5.4.4; the second (v5.6.6) lands and reverts here.
-    if ret_ty.starts_with("%struct."): return true
+    // A struct containing only scalar values cannot carry any tracked heap
+    // allocation out of the function, even through nested value-only structs.
+    // Heap-bearing structs still need transitive escape analysis: a returned
+    // List<String> field may contain individually tracked strings. Comparing
+    // only the list buffer pointer would free those live elements (62_list_output).
+    if ret_ty.starts_with("%struct."):
+        return !return_type_has_no_resources(st, ret_ty, 0)
     if ret_ty.starts_with("%enum."): return true
     if ret_ty.starts_with("{") && ret_ty != llvm_string() && ret_ty != llvm_list_rt():
         return true
@@ -19715,10 +20285,8 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
     if len(st.str_owned) == 0 && len(st.list_owned) == 0 && len(st.boxed_owned) == 0 && len(st.tensor_owned) == 0:
         return st
 
-    // Conservative skip for enum / option / result / anonymous struct
-    // returns; for `%struct.*` the v5.6.6 size gate inside
-    // `ret_ty_is_aggregate` decides whether to walk one level of fields
-    // (small struct in small-slot fn) or skip (large struct or hot fn).
+    // Conservative skip for resource-bearing aggregate returns. Value-only
+    // structs cannot retain heap locals, so they use normal cleanup below.
     if ret_ty_is_aggregate(st, ret_ty):
         return st
 
@@ -19825,10 +20393,63 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
     s = emit_drop_glue_tensors(s, ret_tensor_ptrs)
     return s
 
+// A String call result is owned by its caller. A field/element/parameter
+// accessor can return borrowed heap storage, so make an independent copy
+// unless this function already owns that exact buffer. Literals need no copy.
+fn emit_string_return(st: EmitState, value: String) -> EmitState:
+    let mut s: EmitState = st
+    let id: String = toString(s.counter)
+    s.counter = s.counter + 1
+    let ptr_name: String = "%ret.string.ptr." + id
+    let len_name: String = "%ret.string.len." + id
+    let heap_name: String = "%ret.string.heap." + id
+    s = emit_line(s, "  " + ptr_name + " = extractvalue {ptr, i64} " + value + ", 0")
+    s = emit_line(s, "  " + len_name + " = extractvalue {ptr, i64} " + value + ", 1")
+    s = emit_line(s, "  " + heap_name + " = icmp slt i64 " + len_name + ", 0")
+    let needs_copy: String = "%ret.string.needs." + id
+    s = emit_line(s, "  " + needs_copy + " = alloca i1")
+    s = emit_line(s, "  store i1 " + heap_name + ", ptr " + needs_copy)
+    let mut i: Int = 0
+    while i < len(s.str_owned):
+        let suffix: String = id + "." + toString(i)
+        let tracked: String = "%ret.string.tracked." + suffix
+        let tracked_ptr: String = "%ret.string.tracked.ptr." + suffix
+        let different: String = "%ret.string.different." + suffix
+        let next: String = "%ret.string.copy." + suffix
+        let previous: String = "%ret.string.previous." + suffix
+        s = emit_line(s, "  " + tracked + " = load {ptr, i64}, ptr %" + s.str_owned[i])
+        s = emit_line(s, "  " + tracked_ptr + " = extractvalue {ptr, i64} " + tracked + ", 0")
+        s = emit_line(s, "  " + different + " = icmp ne ptr " + ptr_name + ", " + tracked_ptr)
+        s = emit_line(s, "  " + previous + " = load i1, ptr " + needs_copy)
+        s = emit_line(s, "  " + next + " = and i1 " + previous + ", " + different)
+        s = emit_line(s, "  store i1 " + next + ", ptr " + needs_copy)
+        i = i + 1
+    let copy_label: String = "ret.string.clone." + id
+    let keep_label: String = "ret.string.keep." + id
+    let merge_label: String = "ret.string.merge." + id
+    let copied: String = "%ret.string.cloned." + id
+    let result: String = "%ret.string.result." + id
+    let condition: String = "%ret.string.condition." + id
+    s = emit_line(s, "  " + condition + " = load i1, ptr " + needs_copy)
+    s = emit_line(s, "  br i1 " + condition + ", label %" + copy_label + ", label %" + keep_label)
+    s = emit_line(s, copy_label + ":")
+    s = emit_rt_call(s, copied, llvm_string(), "__mn_str_concat", llvm_string() + " " + value + ", " + llvm_string() + " zeroinitializer")
+    s = emit_line(s, "  br label %" + merge_label)
+    s = emit_line(s, keep_label + ":")
+    s = emit_line(s, "  br label %" + merge_label)
+    s = emit_line(s, merge_label + ":")
+    s = emit_line(s, "  " + result + " = phi {ptr, i64} [ " + copied + ", %" + copy_label + " ], [ " + value + ", %" + keep_label + " ]")
+    s = emit_drop_glue(s, result, llvm_string())
+    if use_sret_return(s, llvm_string()):
+        s = emit_line(s, "  store " + llvm_string() + " " + result + ", ptr %__sret__")
+        return emit_line(s, emit_ret_void())
+    return emit_line(s, emit_ret(llvm_string(), result))
+
 fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState:
     match val_opt:
         Some(val) =>:
             let ty: String = st.current_ret_type
+            if ty == llvm_string(): return emit_string_return(st, val.name)
             // v5.5.4 Sh.4 Phase 2 — async fn ret rewrite. The
             // current_ret_type was set to "ASYNC_PTR:" + inner_ty by
             // emit_mir_function when entering an async fn. Instead of
@@ -20215,7 +20836,7 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
     // forward-declare entry at emit_mir_module.
     let mut reg_ret_ty: String = ret_ty
     if is_async: reg_ret_ty = "ptr"
-    let entry: FnEntry = new_fn_entry(f.name, reg_ret_ty, param_types)
+    let entry: FnEntry = new_fn_entry(f.name, reg_ret_ty, param_types, function_borrows_strings(f))
     let mut s: EmitState = st
     s.functions.push(entry)
 
@@ -20592,7 +21213,7 @@ pub fn emit_mir_module(module: MIRModule, module_name: String) -> String:
                 if fti < nfwdparams:
                     fn_types.push(resolve_mir_type(f_decl.params[fti].ty))
                     fti = fti + 1
-            let fe: FnEntry = new_fn_entry(f_decl.name, ret_ty, fn_types)
+            let fe: FnEntry = new_fn_entry(f_decl.name, ret_ty, fn_types, function_borrows_strings(f_decl))
             st.functions.push(fe)
             dix = dix + 1
 

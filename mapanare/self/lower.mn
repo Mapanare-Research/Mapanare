@@ -2721,6 +2721,20 @@ fn lower_method_call(st: LowerState, obj: Expr, method: String, arg_exprs: List<
             let s_red: LowerState = emit_instr(red_dest.state, Instruction::Call(red_dest.value, red_fn, red_args))
             return new_lower_result(red_dest.value, s_red)
 
+    // Map deletion routes to the runtime with the key passed by pointer.
+    // Mirrors mapanare/lower.py::_lower_method_call (__mn_map_del).
+    if method == "remove":
+        if obj_r.value.ty.kind == TK_MAP():
+            if len(arg_exprs) == 1:
+                let key_r: LowerResult = lower_expr(s, arg_exprs[0])
+                s = key_r.state
+                let mut del_args: List<Value> = []
+                del_args.push(obj_r.value)
+                del_args.push(key_r.value)
+                let del_dest: LowerResult = make_value(s, mir_int(), "t")
+                let s_del: LowerState = emit_instr(del_dest.state, Instruction::Call(del_dest.value, "__mn_map_del", del_args))
+                return new_lower_result(del_dest.value, s_del)
+
     // Build arg list: [obj_value, arg_values...]
     let mut all_args: List<Value> = []
     all_args.push(obj_r.value)
@@ -3660,9 +3674,12 @@ fn lower_map(st: LowerState, entries: List<MapEntry>) -> LowerResult:
     if len(pairs) > 0:
         key_ty = pairs[0].key.ty
         val_ty = pairs[0].val.ty
-    let dest_r: LowerResult = make_value(s, mir_map(), "t")
+    let dest_r: LowerResult = make_value(s, mir_map_of(key_ty, val_ty), "t")
     let new_s: LowerState = emit_instr(dest_r.state, Instruction::MapInit(dest_r.value, key_ty, val_ty, pairs))
-    // v5.4.4 — map owns each key/value pair.
+    // Copy-in maps keep caller ownership of their inputs; raw aggregate
+    // maps still transfer each key/value pair (v5.4.4).
+    if map_copies_inputs(key_ty.kind, val_ty.kind):
+        return new_lower_result(dest_r.value, new_s)
     let moved_s: LowerState = emit_move_kvpairs(new_s, pairs)
     return new_lower_result(dest_r.value, moved_s)
 
@@ -4314,10 +4331,15 @@ fn lower_assign(st: LowerState, target: Expr, op: String, value: Expr) -> LowerR
             return new_lower_result(val_r.value, s)
         let idx_r: LowerResult = lower_expr(obj_r_idx.state, expr_index_idx(target))
         s = emit_instr(idx_r.state, Instruction::IndexSet(obj_r_idx.value, idx_r.value, val_r.value))
-        // v5.4.4 — map_set / list_set memcpy key+val into the container;
-        // ownership transfers. Emit Move so drop glue skips the slot.
-        s = emit_instr(s, Instruction::Move(idx_r.value))
-        s = emit_instr(s, Instruction::Move(val_r.value))
+        // Copy-in maps keep caller ownership of both arguments; raw
+        // containers still transfer key+val (v5.4.4 Move markers).
+        let mut copying_idx: Bool = false
+        if obj_r_idx.value.ty.kind == TK_MAP():
+            if len(obj_r_idx.value.ty.args) == 2:
+                copying_idx = map_copies_inputs(obj_r_idx.value.ty.args[0].kind, obj_r_idx.value.ty.args[1].kind)
+        if !copying_idx:
+            s = emit_instr(s, Instruction::Move(idx_r.value))
+            s = emit_instr(s, Instruction::Move(val_r.value))
         return new_lower_result(val_r.value, s)
     // v5.6.1 Sh.6 Phase 2 — `d[i, j] = val` for Tensor assignment. Lower as
     // a direct Call to __mn_tensor_set_{f64,i64}_nd (variadic); skip

@@ -932,6 +932,7 @@ fn get_fn_ret_prefix(name: String) -> String:
     if name == "malloc": return "noalias "
     if name == "__mn_alloc": return "noalias "
     if name == "__mn_map_new": return "noalias "
+    if name == "__mn_map_new_copying": return "noalias "
     if name == "__mn_signal_new": return "noalias "
     if name == "mapanare_agent_new": return "noalias "
     if name == "mn_arena_create": return "noalias "
@@ -1018,6 +1019,8 @@ fn get_fn_attrs(name: String) -> String:
     if name == "__mn_list_new": return " nounwind willreturn"
     if name == "__mn_list_concat": return " nounwind willreturn"
     if name == "__mn_map_new": return " nounwind willreturn"
+    if name == "__mn_map_new_copying": return " nounwind willreturn"
+    if name == "__mn_map_del": return " nounwind willreturn"
     if name == "__mn_map_keys": return " nounwind willreturn"
     if name == "__mn_signal_new": return " nounwind willreturn"
     if name == "mapanare_agent_new": return " nounwind willreturn"
@@ -1315,6 +1318,8 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     // passed four args; the self-hosted emitter was declaring three
     // (panel carry-forward, 7th cycle closed here).
     s = declare_runtime_fn(s, "__mn_map_new", "ptr", "i64, i64, i64, i64")
+    s = declare_runtime_fn(s, "__mn_map_new_copying", "ptr", "i64, i64, i64, i64")
+    s = declare_runtime_fn(s, "__mn_map_del", "i64", "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_set", "void", "ptr, ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_get", "ptr", "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_len", "i64", "ptr")
@@ -3262,11 +3267,14 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     if val_ty.kind == TK_STRUCT(): val_size = "64"
     if val_ty.kind == TK_ENUM(): val_size = "64"
 
-    // Call __mn_map_new(key_size, val_size, key_type, val_type) — 4 args
+    // Call __mn_map_new(key_size, val_size, key_type, val_type) — 4 args,
+    // or __mn_map_new_copying when the copy-in policy applies.
     // (v4.32.0 Phase 1.2 closes the arity mismatch flagged as a 7-cycle
     // carry-forward by Rattler at the v4.31.0 arc-end panel).
+    let mut map_ctor: String = "__mn_map_new"
+    if map_copies_inputs(key_ty.kind, val_ty.kind): map_ctor = "__mn_map_new_copying"
     let map_ptr: String = dn + ".mp"
-    s = emit_line(s, "  " + map_ptr + " = call ptr @__mn_map_new(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ", i64 " + val_tag + ")")
+    s = emit_line(s, "  " + map_ptr + " = call ptr @" + map_ctor + "(i64 " + key_size + ", i64 " + val_size + ", i64 " + key_tag + ", i64 " + val_tag + ")")
 
     // Insert each pair
     let npairs: Int = len(pairs)
@@ -3905,6 +3913,20 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
     if fn_name == "__mn_str_eprint":
         let as_epr: String = llvm_string() + " " + args[0].name
         return emit_rt_call_void(st, "__mn_str_eprint", as_epr)
+
+    // Owned-map deletion: the runtime takes the key by pointer, so
+    // store it into an alloca first. Mirrors the Python emitter.
+    if fn_name == "__mn_map_del":
+        let mut s_md: EmitState = st
+        let cnt_md: String = toString(s_md.counter)
+        s_md.counter = s_md.counter + 1
+        let mptr_md: String = "%md_mptr" + cnt_md
+        s_md = emit_line(s_md, "  " + mptr_md + " = extractvalue " + llvm_map_type() + " " + args[0].name + ", 0")
+        let kty_md: String = resolve_type(s_md, args[1].ty)
+        let ka_md: String = "%md_ka" + cnt_md
+        s_md = emit_line(s_md, "  " + ka_md + " = alloca " + kty_md)
+        s_md = emit_line(s_md, "  store " + kty_md + " " + args[1].name + ", ptr " + ka_md)
+        return emit_rt_call(s_md, dn, llvm_int(), "__mn_map_del", "ptr " + mptr_md + ", ptr " + ka_md)
     // v5.26.0 Mb.9: route the v5.23.2 Te.3.B.2 brace-deprecation
     // functions through emit_rt_call(_void). The default user-call
     // path uses is_byref_type_st (64-byte threshold), but MnString

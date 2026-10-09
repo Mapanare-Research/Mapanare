@@ -86,6 +86,24 @@ fn mir_tensor_of(elem: MIRType) -> MIRType:
     t.args.push(elem)
     t
 fn mir_map() -> MIRType: return new_mir_type("Map", TK_MAP())
+fn mir_map_of(key: MIRType, val: MIRType) -> MIRType:
+    let mut t: MIRType = new_mir_type("Map", TK_MAP())
+    t.args.push(key)
+    t.args.push(val)
+    t
+
+// Copy-in map policy shared by lowering and emission. Mirrors
+// mapanare/container_policy.py: only supported keys and resource-free or
+// String values have a built-in owned policy; aggregate values keep the
+// legacy raw constructor and transfer markers.
+pub fn map_copies_inputs(key_kind: Int, val_kind: Int) -> Bool:
+    if key_kind != TK_INT() && key_kind != TK_FLOAT() && key_kind != TK_STRING(): return false
+    if val_kind == TK_INT(): return true
+    if val_kind == TK_FLOAT(): return true
+    if val_kind == TK_BOOL(): return true
+    if val_kind == TK_CHAR(): return true
+    if val_kind == TK_STRING(): return true
+    return false
 fn mir_signal() -> MIRType: return new_mir_type("Signal", TK_SIGNAL())
 fn mir_range() -> MIRType: return new_mir_type("Range", TK_RANGE())
 fn mir_fn_type() -> MIRType: return new_mir_type("<fn>", TK_FN())
