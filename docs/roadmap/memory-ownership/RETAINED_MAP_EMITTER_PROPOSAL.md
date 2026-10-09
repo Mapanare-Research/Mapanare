@@ -13,7 +13,14 @@ Four additional O0–O3 cases run 100,000 iterations, observing at most eight li
 maps and zero references remaining at exit. The observer wraps real runtime
 calls and all executions run with ASan/UBSan/LSan.
 
-## Exact implementation scope
+This records the initial integration committed as `92467283`. Follow-ups now
+cover direct retained returns, consumed Map/String Phis and retained String
+views. See [MAP_RETURNS.md](MAP_RETURNS.md),
+[MAP_PHI_OWNERSHIP.md](MAP_PHI_OWNERSHIP.md),
+[MAP_BORROWED_VIEWS.md](MAP_BORROWED_VIEWS.md), and the current
+[WORK_LOG.md](WORK_LOG.md) checkpoint. The original acceptance suite remains active.
+
+## Initial implementation scope
 
 `mapanare/emit_llvm_text.py` imports the proof
 `shared_map_aliases` from `mapanare.map_shared`. The following four existing
@@ -52,14 +59,15 @@ def _store_shared_map(self, name: str, value: str, *, borrow: bool) -> bool:
 
 Acquiring before release makes self-assignment safe. Fresh factory/literal
 allocations transfer their initial reference into the slot. Existing return
-cleanup releases every registered slot. The proof rejects map returns, so this
-patch does not change return-transfer semantics.
+cleanup releases every registered slot. The initial proof rejected map returns;
+the later return-transfer milestone now handles them explicitly.
 
 ## Limits and required validation
 
-Only complete local groups qualify. Parameter aliases, captured maps, returned
-maps, mutations, consumed Phi results, cursor/String views and uncertain origins
-reject this path. Unused statement-result Phis may be ignored because their
+Only complete local groups qualify. Parameter aliases, captured maps, mutations
+and uncertain origins still reject this path. Returned maps, consumed Phis and
+cursor/String views were conservative boundaries in this initial milestone and
+are now covered by the linked follow-ups. Unused statement-result Phis may be ignored because their
 stored pointer cannot be consumed. Literal maps admit scalars and literal
 Strings; factory arguments must be scalars. Existing cheaper loop recycling
 takes precedence.

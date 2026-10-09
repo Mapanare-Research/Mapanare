@@ -37,50 +37,28 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
   passes. Do not patch emitted IR to disguise a source/compiler failure.
 - Check GitNexus impact before symbol edits and detect changes before completion.
 
-## Current checkpoint
+## Current checkpoint — 2026-10-09
 
-**Map and String merge integration passes its combined acceptance gate.**
-Descriptors and parent references transfer on selected edges with correct
-parallel-assignment semantics. Broad validation passes **1,823 tests**, with
-seven skips and five expected failures. Fresh strict self-hosting at
-`build/fixed-point-c2fybyz0` passes 104 LLVM goldens and nine outputs per generation,
-with byte-identical IR. Next: private range early-return cleanup, with 20 leaks
-reproduced and four passing normal-exit controls.
+**The retained-map Python compiler integration is complete for its closed
+ownership contract.** Seven successive commits cover optimizer snapshots,
+retained map aliases, direct returns, Map/String Phi transfers, saved views and
+private range cleanup. The latest code milestone is `cb611f0a`. The exact
+sequence and resume instructions are in [the work log](memory-ownership/WORK_LOG.md).
 
-**Retained String key/value ownership passes its acceptance gate.** Saved views
-keep their parent maps alive across replacement and cursor closure. All 24 new
-sanitizer cases, ten proof controls and eight strengthened retained-view guards
-pass. Twelve 100,000-iteration runs enforce bounded live maps. Broad validation
-passes **1,800 tests**, with seven skips and five expected failures. Consumed
-String merge ownership followed this milestone. Committed as `a17c0e3a`.
+Broad validation passes **1,859 tests**, with seven skips and five expected
+failures. New executable cases are ASan/UBSan/LSan clean; twelve 100,000-iteration
+checks keep at most eight maps live and leave zero references. Strict
+self-hosting at `build/fixed-point-c2fybyz0` passes 104 LLVM goldens and nine
+outputs per generation with byte-identical IR. Installed compiler/runtime hashes
+match the tested pair.
 
-**Consumed map Phi ownership passes its acceptance gate.** Selected-edge
-transfers preserve parallel assignments, including critical branch/switch
-edges. All 20 new executable cases and eight proof controls pass. Broad
-validation passes **1,758 tests**, with seven skips and five expected failures.
-See [the Phi contract](memory-ownership/MAP_PHI_OWNERSHIP.md). Retained borrowed
-String views followed this milestone. Committed as `65e441b1`.
+**Priority 2 remains active:** adopt owned-container callbacks in compiler
+lowering, starting with String map replacement/deletion and caller-input cleanup;
+then complete native-emitter parity and nested resources. Captures, mutation
+with live views and escaping ranges remain explicit boundaries. The user has
+authorized continued work without new step-by-step approval requests.
 
-**Retained-map return transfer passes its acceptance gate.** One reference
-escapes to the caller while all callee aliases are released. All 24 new
-sanitizer executions pass; 20 leaked before the fix. Sixteen proof controls
-also pass. Broad validation now passes **1,730 tests**, with seven skips and
-five expected failures. Committed as `6cf5a249`; Phi ownership followed it.
-
-**Retained-map compiler integration passes its acceptance gate.** Local map
-aliases now own runtime references; replacements release obsolete maps while
-retained aliases remain valid. All 40 sanitizer executions and four bounded
-100,000-iteration tests pass. The optimizer snapshot correction is committed as
-`ddcb8f9b`. Broad validation passes **1,690 tests**, with seven skips and five
-expected failures. Strict self-hosting at `build/fixed-point-q3waed5b` passes
-104 LLVM goldens and nine outputs per generation with byte-identical IR.
-
-Runtime references (`d82e2078`) and the group proof (`dd8c2ce3`) are integrated
-in `92467283`.
-The user has authorized continuation without further step-by-step approval.
-Retained-map returns are now integrated as described above. Retained borrowed
-views and native compiler adoption follow Phi ownership. See [the work log](memory-ownership/WORK_LOG.md)
-for evidence, exact limits, hashes and the resume point.
+## Earlier checkpoints
 
 **Priority 2 active; borrowed-view loop cleanup committed as `c81dfb64`.**
 Private cursors and borrowed String key/value aliases must be dead before the

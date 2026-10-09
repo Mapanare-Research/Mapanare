@@ -1,21 +1,64 @@
 # Memory ownership work log
 
-## Resume point — 2026-10-08
+## Resume point — 2026-10-09
 
-**Consumed String Phi ownership is complete.** Selected edges carry descriptors
-and their parent references together. Parallel loads/retains precede every
-replacement. Connected parents are proved as one component, including views
-from different maps and literal alternatives. Twelve new source cases, four
-critical-edge executions and seven proof controls pass. `final-full.log` records
-**1,823 passed, seven skipped, five expected failures**. Fresh strict self-hosting
-passes at `build/fixed-point-c2fybyz0`: 104 LLVM goldens and nine outputs per
-generation; stage2/stage3 IR is byte-identical.
+The retained-map integration in the Python LLVM backend is complete for the
+documented closed ownership contract: local aliases, replacement, direct map
+returns, consumed Map/String Phis, retained String keys/values and private
+cursors. Private range iterators now also clean up on early returns, so map and
+view lifetime tests run through ordinary `for` loops without range leaks.
 
-Next, already authorized: private range cleanup on early returns. Its baseline
-has 20 sanitizer leak failures and four passing normal-exit controls. This closes
-the reason earlier retained-map return tests used `while` to isolate range leaks.
-Only proven nonescaping range temporaries should be tracked; borrowed/escaped
-range values need separate rules. Native owned-container adoption remains open.
+| Commit | Verified milestone |
+| --- | --- |
+| `ddcb8f9b` | Preserve optimizer snapshots of reassigned and cyclic sources |
+| `92467283` | Integrate retained map aliases and bounded replacement |
+| `6cf5a249` | Transfer one return reference and release every callee owner |
+| `65e441b1` | Execute parallel map Phi transfers on selected CFG edges |
+| `a17c0e3a` | Retain parents for saved String views and private cursors |
+| `a4ff606b` | Transfer merged String descriptors and parent references together |
+| `cb611f0a` | Release private range iterators on every function exit |
+
+Final broad gate: **1,859 passed, seven skipped, five expected failures** across
+`tests/llvm`, `tests/mir`, `tests/mir_opt`, and `tests/integration`. Evidence is
+`build/memory-ownership/retained-map-emitter/range-full.log`. All new executable
+ownership cases use ASan/UBSan/LSan and exact output assertions. Twelve long-loop
+cases each run 100,000 iterations with at most eight live maps and zero remaining
+references; critical-edge map/String swaps also enforce that bound. Black/Ruff,
+whitespace checks and staged GitNexus detection pass for each milestone.
+
+Fresh strict self-hosting passes at `build/fixed-point-c2fybyz0`: **104 LLVM
+goldens and nine outputs per generation**, followed by byte-identical stage2/3
+IR. `final-fixed-point.log` and that directory's manifest preserve the evidence.
+The installed compiler is byte-identical to the tested successor; runtime,
+native source and IR hashes remain those in the table below. No binary
+replacement is necessary. Subsequent private-range changes affect Python only.
+
+The range baseline has 20 sanitizer leak failures and four normal-exit controls;
+all 24 now pass, along with twelve proof controls and the 92-test targeted gate.
+See [PRIVATE_RANGE_CLEANUP.md](PRIVATE_RANGE_CLEANUP.md). Earlier isolated view,
+return and merge baselines remain alongside the passing logs.
+
+**Priority 2 remains active.** The next implementation task is compiler adoption
+of the owned-container APIs, beginning with String map insertion/replacement/
+deletion and correct caller-input cleanup. Continue with native-emitter parity
+and nested element ownership. Captured/returned String views, mutation with
+live borrows, escaping/copied ranges and cyclic ownership remain conservative
+boundaries. Windows/macOS runtime qualification belongs to priority 3.
+
+The user has authorized continuing the integration and necessary fixes without
+step-by-step approval requests. No approval question is pending. Nothing pushed.
+Preserve the user's AGENTS/CLAUDE/skill edits and desktop restart plan. Start
+from this checkpoint; do not repeat completed milestones or treat passing
+native self-hosting as proof of native container ownership.
+
+## Completed milestone — consumed String Phis
+
+Committed as **`a4ff606b`**. Selected edges carry descriptors and parent references
+together. All parallel loads/retains precede replacement. Parent components can
+contain different maps and literal alternatives. Twelve source cases, four
+critical-edge executions and seven proof controls pass. `final-full.log`
+records 1,823 passes, seven skips and five expected failures before the range
+follow-up. The complete contract is in [MAP_BORROWED_VIEWS.md](MAP_BORROWED_VIEWS.md).
 
 ## Completed milestone — retained String views
 
