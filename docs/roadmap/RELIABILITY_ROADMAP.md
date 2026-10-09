@@ -39,12 +39,20 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
+**Map and String merge integration passes its combined acceptance gate.**
+Descriptors and parent references transfer on selected edges with correct
+parallel-assignment semantics. Broad validation passes **1,823 tests**, with
+seven skips and five expected failures. Fresh strict self-hosting at
+`build/fixed-point-c2fybyz0` passes 104 LLVM goldens and nine outputs per generation,
+with byte-identical IR. Next: private range early-return cleanup, with 20 leaks
+reproduced and four passing normal-exit controls.
+
 **Retained String key/value ownership passes its acceptance gate.** Saved views
 keep their parent maps alive across replacement and cursor closure. All 24 new
 sanitizer cases, ten proof controls and eight strengthened retained-view guards
 pass. Twelve 100,000-iteration runs enforce bounded live maps. Broad validation
 passes **1,800 tests**, with seven skips and five expected failures. Consumed
-String merge ownership is next, with twelve reproduced leaks.
+String merge ownership followed this milestone. Committed as `a17c0e3a`.
 
 **Consumed map Phi ownership passes its acceptance gate.** Selected-edge
 transfers preserve parallel assignments, including critical branch/switch

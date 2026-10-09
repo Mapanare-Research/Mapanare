@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from mapanare.map_liveness import _alias_closure, _uses
+from mapanare.map_liveness import _alias_closure, _uses, valid_ownership_phis
 from mapanare.mir import BinOp, BinOpKind, Call, Const, Copy, IndexGet, MIRFunction, Phi, Value
 from mapanare.types import TypeKind
 
@@ -15,12 +15,40 @@ class MapViewPlan:
     cursors: frozenset[str]
 
 
+def connected_view_maps(fn: MIRFunction, aliases: dict[str, set[str]]) -> list[set[str]]:
+    """Group parent maps when copied/merged String views can select either."""
+    instructions = [inst for block in fn.blocks for inst in block.instructions]
+    cursors = {
+        inst.dest.name: inst.args[0].name
+        for inst in instructions
+        if isinstance(inst, Call)
+        and inst.fn_name == "__mn_map_iter_new"
+        and len(inst.args) == 1
+        and inst.args[0].ty.kind == TypeKind.MAP
+    }
+    parents: dict[str, set[str]] = {}
+    for inst in instructions:
+        dest = getattr(inst, "dest", None)
+        if not isinstance(dest, Value) or dest.ty.kind != TypeKind.STRING:
+            continue
+        parent = None
+        if isinstance(inst, IndexGet) and inst.obj.ty.kind == TypeKind.MAP:
+            parent = inst.obj.name
+        elif isinstance(inst, Call) and inst.fn_name == "__map_iter_next" and len(inst.args) == 1:
+            parent = cursors.get(inst.args[0].name)
+        if parent is not None:
+            for name in _alias_closure({dest.name}, aliases):
+                parents.setdefault(name, set()).add(parent)
+    return [group for group in parents.values() if len(group) > 1]
+
+
 def retained_map_views(fn: MIRFunction, maps: set[str]) -> MapViewPlan | None:
     """Reject escaping views and unknown origins; private cursors cannot alias."""
     instructions = [inst for block in fn.blocks for inst in block.instructions]
     definitions: dict[str, list[object]] = {}
     aliases: dict[str, set[str]] = {}
     used = set().union(*(_uses(inst) for inst in instructions))
+    valid_phis = valid_ownership_phis(fn, TypeKind.STRING)
     cursors = {
         inst.dest.name
         for inst in instructions
@@ -39,6 +67,10 @@ def retained_map_views(fn: MIRFunction, maps: set[str]) -> MapViewPlan | None:
         if isinstance(inst, Copy):
             aliases.setdefault(inst.dest.name, set()).add(inst.src.name)
             aliases.setdefault(inst.src.name, set()).add(inst.dest.name)
+        elif isinstance(inst, Phi) and inst.dest.name in used:
+            for _, value in inst.incoming:
+                aliases.setdefault(inst.dest.name, set()).add(value.name)
+                aliases.setdefault(value.name, set()).add(inst.dest.name)
         if (
             isinstance(inst, IndexGet)
             and inst.obj.name in maps
@@ -70,6 +102,8 @@ def retained_map_views(fn: MIRFunction, maps: set[str]) -> MapViewPlan | None:
                 continue
             if isinstance(origin, Copy) and origin.src.ty.kind == TypeKind.STRING:
                 continue
+            if isinstance(origin, Phi) and id(origin) in valid_phis:
+                continue
             return None
     for inst in instructions:
         uses = _uses(inst)
@@ -89,6 +123,8 @@ def retained_map_views(fn: MIRFunction, maps: set[str]) -> MapViewPlan | None:
         if not uses & strings:
             continue
         if isinstance(inst, Phi) and inst.dest.name not in used:
+            continue
+        if isinstance(inst, Phi) and id(inst) in valid_phis and inst.dest.name in strings:
             continue
         if isinstance(inst, Copy) and inst.dest.name in strings:
             continue

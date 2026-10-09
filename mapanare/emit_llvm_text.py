@@ -2620,7 +2620,10 @@ class LLVMTextEmitter:
                 self._ent.append(f"  {a} = alloca {ty}, align 8")
                 self._ent.append(f"  store {ty} {_zero(ty)}, ptr {a}")
                 self._dphi.append((a, ty, inst.incoming))
-                if inst.dest.name in self._shared_map_owners:
+                if (
+                    inst.dest.name in self._shared_map_owners
+                    or inst.dest.name in self._map_view_owners
+                ):
                     shared_phis[a] = (bb.label, inst.dest.name)
 
         # Pre-allocate values used before definition (cross-block forward refs).
@@ -3091,16 +3094,22 @@ class LLVMTextEmitter:
             lines[-1] = terminator
             self._blk[edge] = []
             self._cb = edge
-            retained: list[tuple[str, str, str]] = []
+            retained: list[tuple[str, str, str, str, str]] = []
             # All reads/acquisitions precede any replacement. This also handles
             # loop-backedge swaps when the Phi owners hold the final references.
             for name, addr, value in transfers:
-                pointer, _ = self._get(value)
-                pointer = self._rt("__mn_map_retain", PTR, [PTR], [(pointer, PTR)])
-                retained.append((name, addr, pointer))
-            for name, addr, pointer in retained:
-                self._store_shared_map(name, pointer, borrow=False)
-                self._L(f"store ptr {pointer}, ptr {addr}")
+                result, ty = self._get(value)
+                parent = (
+                    result if name in self._shared_map_owners else self._map_view_parent(value.name)
+                )
+                parent = self._rt("__mn_map_retain", PTR, [PTR], [(parent, PTR)])
+                retained.append((name, addr, parent, result, ty))
+            for name, addr, parent, result, ty in retained:
+                if name in self._shared_map_owners:
+                    self._store_shared_map(name, parent, borrow=False)
+                else:
+                    self._store_map_view(name, parent, borrow=False)
+                self._L(f"store {ty} {result}, ptr {addr}")
             self._L(f"br label %{target}")
 
     def _map_view_parent(self, name: str) -> str:
@@ -3111,11 +3120,11 @@ class LLVMTextEmitter:
         self._L(f"{parent} = load ptr, ptr {slot}")
         return parent
 
-    def _store_map_view(self, name: str, parent: str) -> bool:
+    def _store_map_view(self, name: str, parent: str, *, borrow: bool = True) -> bool:
         slot = getattr(self, "_map_view_owners", {}).get(name)
         if slot is None:
             return False
-        retained = self._rt("__mn_map_retain", PTR, [PTR], [(parent, PTR)])
+        retained = self._rt("__mn_map_retain", PTR, [PTR], [(parent, PTR)]) if borrow else parent
         previous = self._f("map_view_previous")
         self._L(f"{previous} = load ptr, ptr {slot}")
         self._rt("__mn_map_free_deep", VOID, [PTR], [(previous, PTR)])

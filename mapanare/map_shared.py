@@ -1,19 +1,16 @@
 """Closed local map groups whose handle copies can own runtime references."""
 
-from mapanare.map_liveness import _alias_closure, _uses
-from mapanare.map_views import retained_map_views
+from mapanare.map_liveness import _alias_closure, _uses, valid_ownership_phis
+from mapanare.map_views import connected_view_maps, retained_map_views
 from mapanare.mir import (
-    Branch,
     Call,
     Const,
     Copy,
     IndexGet,
-    Jump,
     MapInit,
     MIRFunction,
     Phi,
     Return,
-    Switch,
     Value,
 )
 from mapanare.types import TypeKind
@@ -23,34 +20,7 @@ _SCALARS = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.CHAR}
 
 def _valid_map_phis(fn: MIRFunction) -> set[int]:
     """Require leading, typed Phis covering each real predecessor exactly once."""
-    predecessors: dict[str, set[str]] = {block.label: set() for block in fn.blocks}
-    for block in fn.blocks:
-        term = block.terminator
-        targets: list[str] = []
-        if isinstance(term, Jump):
-            targets = [term.target]
-        elif isinstance(term, Branch):
-            targets = [term.true_block, term.false_block]
-        elif isinstance(term, Switch):
-            targets = [term.default_block] + [label for _, label in term.cases]
-        for target in targets:
-            if target in predecessors:
-                predecessors[target].add(block.label)
-    valid: set[int] = set()
-    for block in fn.blocks:
-        for inst in block.instructions:
-            if not isinstance(inst, Phi):
-                break
-            labels = [label for label, _ in inst.incoming]
-            if (
-                labels
-                and len(labels) == len(set(labels))
-                and set(labels) == predecessors[block.label]
-                and inst.dest.ty.kind == TypeKind.MAP
-                and all(value.ty.kind == TypeKind.MAP for _, value in inst.incoming)
-            ):
-                valid.add(id(inst))
-    return valid
+    return valid_ownership_phis(fn, TypeKind.MAP)
 
 
 def shared_map_aliases(fn: MIRFunction, factories: set[str], recycled: set[str]) -> set[str]:
@@ -83,6 +53,13 @@ def shared_map_aliases(fn: MIRFunction, factories: set[str], recycled: set[str])
             for _, value in inst.incoming:
                 aliases.setdefault(inst.dest.name, set()).add(value.name)
                 aliases.setdefault(value.name, set()).add(inst.dest.name)
+    # A String merge may select a view from independent parent maps. Prove
+    # their ownership together so every possible selected parent is managed.
+    for parents in connected_view_maps(fn, aliases):
+        first = min(parents)
+        for parent in parents:
+            aliases.setdefault(first, set()).add(parent)
+            aliases.setdefault(parent, set()).add(first)
     parameters = {param.name for param in fn.params}
 
     def literal_string(value: Value, seen: frozenset[str] = frozenset()) -> bool:

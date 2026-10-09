@@ -11,9 +11,13 @@ parent map itself is returned. Private cursor parent slots let a saved key
 remain valid after the cursor closes or its source map variable is replaced.
 
 The complete-view proof accepts literal origins, map reads and copies; known
-read-only consumers include print, length and equality. Unknown calls, captures,
-returned String views, parameter origins, String concatenation and consumed
-String Phis remain conservative boundaries. Map mutation is still excluded.
+read-only consumers include print, length and equality. Consumed String Phis
+carry both the selected descriptor and its parent reference. Parent maps are
+proved together when a merge can select either map. Literal alternatives carry
+a null parent. Edge blocks acquire all incoming parents before replacing any
+old owner, preserving parallel swaps. Unknown calls, captures, returned String
+views, parameter origins and concatenation remain conservative boundaries.
+Map mutation is still excluded.
 The existing cheaper liveness-based loop recycler retains precedence.
 
 All 24 new O0–O3 programs pass with ASan/UBSan/LSan; direct pre-fix executions
@@ -25,6 +29,16 @@ keys and values over 100,000 iterations at O0–O3, with at most eight live maps
 and no references remaining at exit. See the current broad gate in WORK_LOG.
 
 Evidence: `build/memory-ownership/retained-map-emitter/views-*.log`.
+
+The String-Phi follow-up adds twelve source executions (selected views, literal
+alternatives and nested merges), all leaking before integration. Four direct
+MIR executions swap String descriptors and parent references across critical
+conditional/switch edges at Clang O0/O2, with exact output and bounded live-map
+checks. Seven proof controls reject uncertain parents and escaping merges.
+All pass. The combined broad gate passes **1,823 tests**, with seven skips and
+five expected failures; strict self-hosting passes at `build/fixed-point-c2fybyz0`.
+See `view-phi-*.log`, `final-full.log` and `final-fixed-point.log` in the same
+evidence directory.
 
 ## Earlier liveness milestone
 

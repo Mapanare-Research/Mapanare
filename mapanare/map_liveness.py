@@ -22,6 +22,38 @@ from mapanare.types import TypeKind
 _SCALARS = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.CHAR}
 
 
+def valid_ownership_phis(fn: MIRFunction, kind: TypeKind) -> set[int]:
+    """Require leading, typed Phis covering each real predecessor exactly once."""
+    predecessors: dict[str, set[str]] = {block.label: set() for block in fn.blocks}
+    for block in fn.blocks:
+        term = block.terminator
+        targets: list[str] = []
+        if isinstance(term, Jump):
+            targets = [term.target]
+        elif isinstance(term, Branch):
+            targets = [term.true_block, term.false_block]
+        elif isinstance(term, Switch):
+            targets = [term.default_block] + [label for _, label in term.cases]
+        for target in targets:
+            if target in predecessors:
+                predecessors[target].add(block.label)
+    valid: set[int] = set()
+    for block in fn.blocks:
+        for inst in block.instructions:
+            if not isinstance(inst, Phi):
+                break
+            labels = [label for label, _ in inst.incoming]
+            if (
+                labels
+                and len(labels) == len(set(labels))
+                and set(labels) == predecessors[block.label]
+                and inst.dest.ty.kind == kind
+                and all(value.ty.kind == kind for _, value in inst.incoming)
+            ):
+                valid.add(id(inst))
+    return valid
+
+
 def _alias_closure(roots: set[str], aliases: dict[str, set[str]]) -> set[str]:
     result = set(roots)
     pending = list(roots)

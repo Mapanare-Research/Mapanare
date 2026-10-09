@@ -2,7 +2,24 @@
 
 ## Resume point — 2026-10-08
 
-**Retained String views are integrated.** View aliases and private cursors hold
+**Consumed String Phi ownership is complete.** Selected edges carry descriptors
+and their parent references together. Parallel loads/retains precede every
+replacement. Connected parents are proved as one component, including views
+from different maps and literal alternatives. Twelve new source cases, four
+critical-edge executions and seven proof controls pass. `final-full.log` records
+**1,823 passed, seven skipped, five expected failures**. Fresh strict self-hosting
+passes at `build/fixed-point-c2fybyz0`: 104 LLVM goldens and nine outputs per
+generation; stage2/stage3 IR is byte-identical.
+
+Next, already authorized: private range cleanup on early returns. Its baseline
+has 20 sanitizer leak failures and four passing normal-exit controls. This closes
+the reason earlier retained-map return tests used `while` to isolate range leaks.
+Only proven nonescaping range temporaries should be tracked; borrowed/escaped
+range values need separate rules. Native owned-container adoption remains open.
+
+## Completed milestone — retained String views
+
+**Retained String views are committed as `a17c0e3a`.** View aliases and private cursors hold
 parent-map references; replacing or clearing a view releases its old parent.
 All 24 new executable cases and ten proof controls pass. The eight former
 retained-view guards now require leak freedom. Twelve bounded-memory runs
@@ -11,11 +28,7 @@ eight live maps and zero references remaining at exit. `views-full.log` records
 **1,800 passed, seven skipped, five expected failures**. Direct baseline runs
 confirm all 24 view programs leaked. See [MAP_BORROWED_VIEWS.md](MAP_BORROWED_VIEWS.md).
 
-Next, already authorized: consumed String Phi parents. Twelve new source cases
-all leak before integration. Preserve selected-edge semantics and parallel
-descriptor/parent snapshots; include literal alternatives and merged views
-from different map groups. Captures and returned String views remain separate
-ownership contracts. Native owned-container adoption is still open.
+Consumed String Phi ownership followed this milestone, as recorded above.
 
 ## Completed milestone — consumed map Phis
 
