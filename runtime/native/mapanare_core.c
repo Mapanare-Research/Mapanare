@@ -2470,7 +2470,9 @@ struct MnMapIter {
 /* --- Hash functions (FNV-1a) --- */
 
 MN_EXPORT uint64_t __mn_hash_int(const void *key) {
-    int64_t v = *(const int64_t *)key;
+    /* Legacy map buckets are packed; callers may pass unaligned keys. */
+    int64_t v;
+    memcpy(&v, key, sizeof(v));
     /* Splitmix64-style finalizer */
     uint64_t x = (uint64_t)v;
     x ^= x >> 30;
@@ -2482,9 +2484,10 @@ MN_EXPORT uint64_t __mn_hash_int(const void *key) {
 }
 
 MN_EXPORT uint64_t __mn_hash_str(const void *key) {
-    const MnString *s = (const MnString *)key;
-    const char *data = mn_untag(s->data);
-    int64_t len = s->len;
+    MnString s;
+    memcpy(&s, key, sizeof(s));
+    const char *data = mn_untag(s.data);
+    int64_t len = s.len;
     /* FNV-1a */
     uint64_t h = 14695981039346656037ULL;
     for (int64_t i = 0; i < len; i++) {
@@ -2495,7 +2498,8 @@ MN_EXPORT uint64_t __mn_hash_str(const void *key) {
 }
 
 MN_EXPORT uint64_t __mn_hash_float(const void *key) {
-    double v = *(const double *)key;
+    double v;
+    memcpy(&v, key, sizeof(v));
     /* Handle -0.0 == 0.0 */
     if (v == 0.0) v = 0.0;
     uint64_t bits;
@@ -2512,15 +2516,24 @@ MN_EXPORT uint64_t __mn_hash_float(const void *key) {
 /* --- Internal equality functions --- */
 
 static int64_t mn_eq_int(const void *a, const void *b) {
-    return *(const int64_t *)a == *(const int64_t *)b ? 1 : 0;
+    int64_t lhs, rhs;
+    memcpy(&lhs, a, sizeof(lhs));
+    memcpy(&rhs, b, sizeof(rhs));
+    return lhs == rhs ? 1 : 0;
 }
 
 static int64_t mn_eq_str(const void *a, const void *b) {
-    return __mn_str_eq(*(const MnString *)a, *(const MnString *)b);
+    MnString lhs, rhs;
+    memcpy(&lhs, a, sizeof(lhs));
+    memcpy(&rhs, b, sizeof(rhs));
+    return __mn_str_eq(lhs, rhs);
 }
 
 static int64_t mn_eq_float(const void *a, const void *b) {
-    return *(const double *)a == *(const double *)b ? 1 : 0;
+    double lhs, rhs;
+    memcpy(&lhs, a, sizeof(lhs));
+    memcpy(&rhs, b, sizeof(rhs));
+    return lhs == rhs ? 1 : 0;
 }
 
 /* --- Internal helpers --- */
@@ -2971,13 +2984,15 @@ MN_EXPORT void __mn_map_free_deep(MnMap *map) {
             if ((uint8_t)bucket[0] != MN_BUCKET_OCCUPIED) continue;
             /* Free string keys */
             if (map->key_type == MN_MAP_KEY_STR) {
-                MnString *key = (MnString *)(bucket + 2);
-                mn_str_free_value(*key);
+                MnString key;
+                memcpy(&key, bucket + 2, sizeof(key));
+                mn_str_free_value(key);
             }
             /* Free string values using explicit val_type tag */
             if (map->val_type == MN_MAP_VAL_STR) {
-                MnString *val = (MnString *)(bucket + 2 + map->key_size);
-                mn_str_free_value(*val);
+                MnString val;
+                memcpy(&val, bucket + 2 + map->key_size, sizeof(val));
+                mn_str_free_value(val);
             }
         }
         __mn_free(map->buckets);
