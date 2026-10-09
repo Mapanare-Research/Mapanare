@@ -5,7 +5,7 @@ handle. The caller then accessed released storage. Suppressing that free alone
 would leak the result because user-function map results were never tracked by
 caller cleanup.
 
-Direct Map returns now compare each tracked local map with the returned pointer.
+Legacy direct Map returns compare each tracked local map with the returned pointer.
 Only the matching handle escapes; unrelated maps still get freed. Runtime
 comparison handles aliases and conditional returns. Private iterator cleanup
 still runs before map cleanup, including an early return from a map loop.
@@ -23,7 +23,23 @@ Callers track results from proven factories through the existing map cleanup
 mechanism. Borrowed and uncertain results keep their previous behavior. This
 summary proves ownership of the map handle; it does not establish ownership of
 String or nested-container elements, and it does not enable owned constructors.
-The native emitter and runtime are unchanged.
+The native emitter is unchanged by these Python emitter milestones.
+
+## Retained local groups
+
+Closed fresh-map alias groups now transfer exactly one retained reference to
+the caller. Return cleanup releases every local reference slot, including slots
+holding the same pointer as the returned map. Skipping all matching slots would
+leak one reference per surviving alias. Unrelated groups are also released.
+Legacy owner slots keep pointer-based escape handling; parameter aliases,
+unknown captures and uncertain origins cannot enter the retained group.
+
+`test_shared_map_returns.py` runs six programs at O0–O3: retaining the first map,
+skipped loops, early returns, multiple independent groups, forwarding wrappers,
+and heap String keys. All 24 pass with exact output and ASan/UBSan/LSan; 20 leaked
+before integration. Sixteen MIR proof controls pass. Broad validation passes
+1,730 tests, with seven skips and five expected failures. Evidence lives in
+`build/memory-ownership/retained-map-emitter/returns-*.log`.
 
 ## Verification
 

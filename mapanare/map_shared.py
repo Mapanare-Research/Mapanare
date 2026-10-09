@@ -1,7 +1,7 @@
 """Closed local map groups whose handle copies can own runtime references."""
 
 from mapanare.map_liveness import _alias_closure, _uses
-from mapanare.mir import Call, Const, Copy, IndexGet, MapInit, MIRFunction, Phi, Value
+from mapanare.mir import Call, Const, Copy, IndexGet, MapInit, MIRFunction, Phi, Return, Value
 from mapanare.types import TypeKind
 
 _SCALARS = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.CHAR}
@@ -10,8 +10,9 @@ _SCALARS = {TypeKind.INT, TypeKind.FLOAT, TypeKind.BOOL, TypeKind.CHAR}
 def shared_map_aliases(fn: MIRFunction, factories: set[str], recycled: set[str]) -> set[str]:
     """Prove complete map alias groups for retain-before-replace assignments.
 
-    No parameters, phis, captures, returns, mutations or borrowed String/cursor
-    results qualify yet. Literal construction accepts only scalar or literal
+    No parameters, consumed phis, captures, mutations or borrowed String/cursor
+    results qualify yet. Direct map returns transfer a retained reference to
+    the caller. Literal construction accepts only scalar or literal
     String fields. Factory arguments must be scalars, so a result cannot borrow
     caller-owned storage through its inputs. Existing cheaper recycling wins.
     """
@@ -92,6 +93,13 @@ def shared_map_aliases(fn: MIRFunction, factories: set[str], recycled: set[str])
             if isinstance(inst, Phi) and inst.dest.name not in used:
                 continue
             if isinstance(inst, Copy) and inst.dest.name in group:
+                continue
+            if (
+                isinstance(inst, Return)
+                and fn.return_type.kind == TypeKind.MAP
+                and inst.val is not None
+                and inst.val.ty.kind == TypeKind.MAP
+            ):
                 continue
             if isinstance(inst, Call) and inst.fn_name == "len" and len(inst.args) == 1:
                 continue

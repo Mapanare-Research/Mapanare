@@ -2,9 +2,25 @@
 
 ## Resume point — 2026-10-08
 
+**Retained-map return transfer is complete.** Closed fresh-map groups now retain
+one reference for the caller before return cleanup releases every local owner,
+including owners whose pointer equals the return value. Legacy borrowed and
+uncertain groups keep their existing rules. All 24 new executable cases pass
+ASan/UBSan/LSan; the baseline reproduced 20 leaks and four passing controls.
+Sixteen proof controls cover fresh returns and rejected borrowed/unknown/
+captured/incorrectly typed returns. `returns-full.log` records **1,730 passed,
+seven skipped, five expected failures** across LLVM/MIR and integration suites.
+
+Next, already authorized: consumed Phi ownership. The 16 new source-level
+merge cases all leak before that change (`phi-baseline.log`). Use edge-specific
+transfers and acquire all incoming references before releasing any owner in a
+parallel Phi assignment. Add executable critical-branch and switch-edge tests.
+
+## Completed milestone — retained local aliases
+
 The user authorized the full integration and subsequent fixes without repeated
 approval requests. The optimizer correction is committed as **`ddcb8f9b`**.
-Retained map aliases are now connected to explicit runtime references in the
+Retained-map integration is committed as **`92467283`**. Aliases are connected to explicit runtime references in the
 Python LLVM emitter: copies retain before replacement, fresh allocations
 transfer their initial reference, and every local owner is released on return.
 
@@ -25,11 +41,9 @@ Evidence: `build/memory-ownership/retained-map-emitter/`.
   before each commit; the optimizer impact is CRITICAL and emitter integration
   impact is CRITICAL, as reported before editing.
 
-**Next, already authorized:** retained map return transfer. The new 24-case
-baseline (`returns-baseline.log`) has 20 leak failures and four passing controls.
-Acquire exactly one caller reference before releasing all local alias owners.
-Then handle consumed Phi ownership and borrowed views, followed by native
-compiler adoption. No push has been requested or performed.
+Return transfer followed this milestone, as recorded above. Borrowed views and
+native compiler adoption remain later ownership work. No push has been
+requested or performed.
 
 ## Previous verified milestone — explicit runtime map references
 

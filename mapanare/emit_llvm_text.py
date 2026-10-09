@@ -2189,7 +2189,8 @@ class LLVMTextEmitter:
             self._cb = skip_lbl
 
     def _emit_drop_glue_maps(self, ret_map: str | None = None) -> None:
-        """Release local maps except the handle escaping through a direct return."""
+        """Release references; only legacy owners transfer their returned handle."""
+        shared_slots = set(getattr(self, "_shared_map_owners", {}).values())
         for var_name in self._map_vars:
             alloc_info = None
             for k in (var_name, var_name.lstrip("%"), "%" + var_name.lstrip("%")):
@@ -2210,7 +2211,7 @@ class LLVMTextEmitter:
 
             self._blk[free_lbl] = []
             self._cb = free_lbl
-            if ret_map is not None:
+            if ret_map is not None and addr not in shared_slots:
                 same = self._f("drop.msame")
                 self._L(f"{same} = icmp eq ptr {mp}, {ret_map}")
                 release_lbl = f"drop.mrelease.{self._c}"
@@ -4707,6 +4708,10 @@ class LLVMTextEmitter:
     def _do_ret(self, i: Return) -> None:
         if i.val is not None:
             v, t = self._get(i.val)
+            if i.val.name in getattr(self, "_shared_map_owners", {}):
+                # The caller receives one reference. Drop glue still releases
+                # every local owner, including aliases of this same pointer.
+                v = self._rt("__mn_map_retain", PTR, [PTR], [(v, PTR)])
             assert self._fn is not None
             rt = self._rty(self._fn.return_type)
             if rt == VOID:

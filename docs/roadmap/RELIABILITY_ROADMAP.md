@@ -39,6 +39,13 @@ Priority 1 is complete. The follow-up to continue and commit authorizes priority
 
 ## Current checkpoint
 
+**Retained-map return transfer passes its acceptance gate.** One reference
+escapes to the caller while all callee aliases are released. All 24 new
+sanitizer executions pass; 20 leaked before the fix. Sixteen proof controls
+also pass. Broad validation now passes **1,730 tests**, with seven skips and
+five expected failures. Next is consumed Phi ownership, with 16 reproduced
+merge leaks and explicit parallel-assignment/critical-edge coverage in progress.
+
 **Retained-map compiler integration passes its acceptance gate.** Local map
 aliases now own runtime references; replacements release obsolete maps while
 retained aliases remain valid. All 40 sanitizer executions and four bounded
@@ -47,11 +54,11 @@ retained aliases remain valid. All 40 sanitizer executions and four bounded
 expected failures. Strict self-hosting at `build/fixed-point-q3waed5b` passes
 104 LLVM goldens and nine outputs per generation with byte-identical IR.
 
-Runtime references (`d82e2078`) and the group proof (`dd8c2ce3`) are integrated.
+Runtime references (`d82e2078`) and the group proof (`dd8c2ce3`) are integrated
+in `92467283`.
 The user has authorized continuation without further step-by-step approval.
-Next is retained-map return transfer: its 24-case baseline reproduces 20 leaks
-and four passing controls. Consumed Phi ownership, retained borrowed views and
-native compiler adoption follow. See [the work log](memory-ownership/WORK_LOG.md)
+Retained-map returns are now integrated as described above. Retained borrowed
+views and native compiler adoption follow Phi ownership. See [the work log](memory-ownership/WORK_LOG.md)
 for evidence, exact limits, hashes and the resume point.
 
 **Priority 2 active; borrowed-view loop cleanup committed as `c81dfb64`.**
