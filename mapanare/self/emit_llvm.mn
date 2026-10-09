@@ -207,6 +207,12 @@ struct EmitState:
     boxed_owned_source: List<String>
     // v5.6.4 — parallel source-SSA list for tensor_owned.
     tensor_owned_source: List<String>
+    // Native map ownership: shadow slots mirroring str_owned.
+    map_owned: List<String>
+    map_owned_source: List<String>
+    // MIR kind of the current function's return type — distinguishes
+    // Map from String, which share the {ptr, i64} LLVM layout.
+    current_ret_kind: Int
     // v5.8.6 We.1: host target detection (OS-1 mechanism, refined).
     // Replaces the v5.8.4 single `is_win64` flag — that name claimed
     // to mean "Win64" but was set whenever `_WIN32` was defined
@@ -245,7 +251,9 @@ fn new_emit_state(module_name: String) -> EmitState:
     let list_owned_source: List<String> = []
     let boxed_owned_source: List<String> = []
     let tensor_owned_source: List<String> = []
-    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, tensor_owned: tensor_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0, str_owned_source: str_owned_source, list_owned_source: list_owned_source, boxed_owned_source: boxed_owned_source, tensor_owned_source: tensor_owned_source, is_windows: false, win_arch: 0 }
+    let map_owned: List<String> = []
+    let map_owned_source: List<String> = []
+    return new EmitState { lines: lines, counter: 0, functions: functions, structs: structs, module_name: module_name, str_counter: 0, str_globals: str_globals, current_ret_type: "void", enum_names: enum_names, enum_infos: enum_infos, enum_inline_slots: enum_inline_slots, str_owned: str_owned, list_owned: list_owned, boxed_owned: boxed_owned, tensor_owned: tensor_owned, moved_locals: moved_locals, entry_prelude_lines: entry_prelude_lines, entry_block_body: entry_block_body, in_entry_block: false, loop_depth: 0, str_owned_source: str_owned_source, list_owned_source: list_owned_source, boxed_owned_source: boxed_owned_source, tensor_owned_source: tensor_owned_source, map_owned: map_owned, map_owned_source: map_owned_source, current_ret_kind: 0, is_windows: false, win_arch: 0 }
 
 fn build_internal_struct_list() -> List<StructEntry>:
     let mut list: List<StructEntry> = []
@@ -255,7 +263,7 @@ fn build_internal_struct_list() -> List<StructEntry>:
     list.push(make_entry("StructEntry", ["name", "field_names", "field_types", "llvm_type"]))
     list.push(make_entry("MIRModule", ["name", "functions", "structs", "enums", "extern_fns", "agents", "pipes", "imports", "trait_names", "consts"]))
     list.push(make_entry("LowerState", ["module", "current_fn", "current_block_idx", "tmp_counter", "block_counter", "vars", "scope_stack", "impl_methods", "struct_fields", "enum_variants", "lambda_vars", "fn_blocks", "generic_fns", "generic_structs", "generic_enums", "loop_header_label", "loop_exit_label", "comp_type_hint", "struct_update_counter", "chain_compare_counter", "expected_enum_name"]))
-    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "is_windows", "win_arch"]))
+    list.push(make_entry("EmitState", ["lines", "counter", "functions", "structs", "module_name", "str_counter", "str_globals", "current_ret_type", "enum_names", "enum_infos", "enum_inline_slots", "str_owned", "list_owned", "boxed_owned", "tensor_owned", "moved_locals", "entry_prelude_lines", "entry_block_body", "in_entry_block", "loop_depth", "str_owned_source", "list_owned_source", "boxed_owned_source", "tensor_owned_source", "map_owned", "map_owned_source", "current_ret_kind", "is_windows", "win_arch"]))
     list.push(make_entry("LowerResult", ["value", "state"]))
     list.push(make_entry("CompileResult", ["success", "ir_text", "errors"]))
     list.push(make_entry("MatchBuildResult", ["state", "arm_labels", "arm_indices", "cases", "default_label"]))
@@ -1320,6 +1328,9 @@ fn declare_all_runtime(st: EmitState) -> EmitState:
     s = declare_runtime_fn(s, "__mn_map_new", "ptr", "i64, i64, i64, i64")
     s = declare_runtime_fn(s, "__mn_map_new_copying", "ptr", "i64, i64, i64, i64")
     s = declare_runtime_fn(s, "__mn_map_del", "i64", "ptr, ptr")
+    s = declare_runtime_fn(s, "__mn_map_retain", "ptr", "ptr")
+    s = declare_runtime_fn(s, "__mn_map_free_deep", "void", "ptr")
+    s = declare_runtime_fn(s, "__mn_str_copy", "{ptr, i64}", "{ptr, i64}")
     s = declare_runtime_fn(s, "__mn_map_set", "void", "ptr, ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_get", "ptr", "ptr, ptr")
     s = declare_runtime_fn(s, "__mn_map_len", "i64", "ptr")
@@ -1826,6 +1837,8 @@ fn emit_mir_by_kind(st: EmitState, inst: Instruction, kind: String) -> EmitState
         let mv_val: Value = instr_move_val(inst)
         if mv_val.ty.kind == TK_STRING():
             return emit_move_string(st, mv_val.name)
+        if mv_val.ty.kind == TK_MAP():
+            return emit_move_map(st, mv_val.name)
         let stripped: String = ret_val_base(mv_val.name)
         if stripped == "": return st
         if list_has_string(st.moved_locals, stripped): return st
@@ -2220,6 +2233,20 @@ fn emit_copy(st: EmitState, dest: Value, src: Value) -> EmitState:
     // Bool: use bitwise identity (and true)
     if ty == "i1":
         return emit_line(s, "  " + dest.name + " = and i1 " + src.name + ", true")
+    // Owned map alias: acquire a reference for the new binding so both
+    // bindings release independently at exit (retain/free_deep balance).
+    if src.ty.kind == TK_MAP():
+        let msrc: String = "%copy.mp" + toString(s.counter)
+        s.counter = s.counter + 1
+        s = emit_line(s, "  " + msrc + " = extractvalue {ptr, i64} " + src.name + ", 0")
+        let mkeep: String = "%copy.mr" + toString(s.counter)
+        s.counter = s.counter + 1
+        s = emit_rt_call(s, mkeep, "ptr", "__mn_map_retain", "ptr " + msrc)
+        let map_tmp: String = dest.name + ".cpy"
+        s = emit_line(s, "  " + map_tmp + " = alloca " + use_ty)
+        s = emit_line(s, "  store " + use_ty + " " + src.name + ", ptr " + map_tmp)
+        s = emit_line(s, "  " + dest.name + " = load " + use_ty + ", ptr " + map_tmp)
+        return emit_track_map(s, dest.name)
     // Aggregate types (structs, enums, options, results, lists) cannot use `add`.
     // Use alloca/store/load to copy the value through memory.
     if use_ty.starts_with("%struct.") || use_ty.starts_with("%enum.") || use_ty.starts_with("{"):
@@ -3043,8 +3070,16 @@ fn emit_index_get(st: EmitState, dest: Value, obj: Value, idx: Value) -> EmitSta
         // Call __mn_map_get → ptr to value
         let vptr: String = "%mg_vp" + cnt_mg
         s = emit_line(s, "  " + vptr + " = call ptr @__mn_map_get(ptr " + mptr + ", ptr " + ka + ")")
-        // Load value from pointer
+        // Load value from pointer. Runtime get returns a borrow, so
+        // String results take an owned snapshot that survives entry
+        // replacement/deletion (mirrors the Python unproven-view copy).
         let dest_ty: String = resolve_type(st, dest.ty)
+        if dest.ty.kind == TK_STRING():
+            let rawv: String = dn + ".raw"
+            s = emit_line(s, "  " + rawv + " = load " + llvm_string() + ", ptr " + vptr)
+            s = emit_rt_call(s, dn, llvm_string(), "__mn_str_copy", llvm_string() + " " + rawv)
+            s = emit_track_string(s, dn)
+            return s
         if dest_ty != "i64" && dest_ty != "ptr":
             s = emit_line(s, "  " + dn + " = load " + dest_ty + ", ptr " + vptr)
         else:
@@ -3284,7 +3319,7 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
             // Store map pointer into result: {ptr, i64} with ptr=map, i64=0
             s = emit_line(s, "  " + dn + ".s0 =insertvalue {ptr, i64} undef, ptr " + map_ptr + ", 0")
             s = emit_line(s, "  " + dn + " = insertvalue {ptr, i64} " + dn + ".s0, i64 0, 1")
-            return s
+            return emit_track_map(s, dn)
         let pair: KVPair = pairs[i]
         let pi: String = toString(i)
         let k_ty: String = resolve_mir_type(pair.key.ty)
@@ -3304,7 +3339,7 @@ fn emit_map_init(st: EmitState, dest: Value, key_ty: MIRType, val_ty: MIRType, p
     // Fallback: return empty map
     s = emit_line(s, "  " + dn + ".s0 =insertvalue {ptr, i64} undef, ptr " + map_ptr + ", 0")
     s = emit_line(s, "  " + dn + " = insertvalue {ptr, i64} " + dn + ".s0, i64 0, 1")
-    return s
+    return emit_track_map(s, dn)
 
 // ---------------------------------------------------------------------------
 // EnumInit instruction
@@ -4527,8 +4562,12 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                 if len(args_str) > 0: full_args = sret_arg + ", " + args_str
                 s = emit_line(s, "  call void @" + fn_name + "(" + full_args + ")")
                 s = emit_line(s, "  " + dn + " = load " + fe.ret_type + ", ptr " + sret_a)
+                if dest.ty.kind == TK_MAP():
+                    s = emit_track_map(s, dn)
                 return s
             s = emit_line(s, emit_call_ir(dn, fe.ret_type, fn_name, args_str))
+            if dest.ty.kind == TK_MAP():
+                s = emit_track_map(s, dn)
             // v5.6.4 Rt.06 — attach tensor drop-glue tracking for the
             // 20 tensor binop runtime fns (broadcast / scalar / rscalar).
             // The non-Some arm (below) mirrors this injection for fns
@@ -4551,8 +4590,12 @@ fn emit_mir_call(st: EmitState, dest: Value, fn_name: String, args: List<Value>)
                 if len(args_str) > 0: full_args_b = sret_arg_b + ", " + args_str
                 s = emit_line(s, "  call void @" + fn_name + "(" + full_args_b + ")")
                 s = emit_line(s, "  " + dn + " = load " + ret_ty + ", ptr " + sret_b)
+                if dest.ty.kind == TK_MAP():
+                    s = emit_track_map(s, dn)
                 return s
             s = emit_line(s, emit_call_ir(dn, ret_ty, fn_name, args_str))
+            if dest.ty.kind == TK_MAP():
+                s = emit_track_map(s, dn)
             // v5.6.4 Rt.06 — tensor tracking for non-FnEntry-registered calls.
             if is_tensor_allocating_fn(fn_name):
                 s = emit_track_tensor(s, dn)
@@ -4842,6 +4885,86 @@ fn emit_track_string(st: EmitState, val_name: String) -> EmitState:
     // v5.4.4 — record the SSA source name in parallel so drop glue
     // can consult moved_locals when the lowerer emits Move(val_name).
     s.str_owned_source.push(ret_val_base(val_name))
+    return s
+
+// Native map ownership: snapshot an owned map handle into a shadow slot.
+// Mirrors emit_track_string; drop glue releases each slot once with
+// __mn_map_free_deep. Aliases acquire their own reference via
+// __mn_map_retain at Copy time, so slot frees always balance.
+fn emit_track_map(st: EmitState, val_name: String) -> EmitState:
+    let mut s: EmitState = st
+    let idx: Int = s.counter
+    s.counter = s.counter + 1
+    let slot_base: String = "map_track." + toString(idx)
+    let slot: String = "%" + slot_base
+    s.entry_prelude_lines.push("  " + slot + " = alloca {ptr, i64}, align 8")
+    s.entry_prelude_lines.push("  store {ptr, i64} zeroinitializer, ptr " + slot)
+    if s.loop_depth > 0:
+        let prev_tmp: String = "%prev.map." + toString(s.counter)
+        s.counter = s.counter + 1
+        let prev_ptr: String = "%prev.mapp." + toString(s.counter)
+        s.counter = s.counter + 1
+        s = emit_line(s, "  " + prev_tmp + " = load {ptr, i64}, ptr " + slot)
+        s = emit_line(s, "  " + prev_ptr + " = extractvalue {ptr, i64} " + prev_tmp + ", 0")
+        s = emit_line(s, "  call void @__mn_map_free_deep(ptr " + prev_ptr + ")")
+    s = emit_line(s, "  store {ptr, i64} " + val_name + ", ptr " + slot)
+    s.map_owned.push(slot_base)
+    s.map_owned_source.push(ret_val_base(val_name))
+    return s
+
+// Clear the shadow slot whose current handle equals the moved value
+// (pointer comparison, robust to SSA aliasing). Mirrors emit_move_string.
+fn emit_move_map(st: EmitState, value: String) -> EmitState:
+    let mut s: EmitState = st
+    if len(s.map_owned) == 0: return s
+    let id: String = toString(s.counter)
+    s.counter = s.counter + 1
+    let value_ptr: String = "%move.map.ptr." + id
+    s = emit_line(s, "  " + value_ptr + " = extractvalue {ptr, i64} " + value + ", 0")
+    for i in 0..len(s.map_owned):
+        let suffix: String = id + "." + toString(i)
+        let owned: String = "%move.map.owned." + suffix
+        let owned_ptr: String = "%move.map.owned.ptr." + suffix
+        let matches: String = "%move.map.matches." + suffix
+        let remaining: String = "%move.map.remaining." + suffix
+        s = emit_line(s, "  " + owned + " = load {ptr, i64}, ptr %" + s.map_owned[i])
+        s = emit_line(s, "  " + owned_ptr + " = extractvalue {ptr, i64} " + owned + ", 0")
+        s = emit_line(s, "  " + matches + " = icmp eq ptr " + value_ptr + ", " + owned_ptr)
+        s = emit_line(s, "  " + remaining + " = select i1 " + matches + ", {ptr, i64} zeroinitializer, {ptr, i64} " + owned)
+        s = emit_line(s, "  store {ptr, i64} " + remaining + ", ptr %" + s.map_owned[i])
+    return s
+
+// Release every owned map slot once. Mirrors emit_drop_glue_boxed.
+// emit_mir_return retains an escaping map before this runs, so no
+// return-value exemption is needed here.
+fn emit_drop_glue_maps(st: EmitState) -> EmitState:
+    let mut s: EmitState = st
+    let n: Int = len(s.map_owned)
+    let ns: Int = len(s.map_owned_source)
+    let mut i: Int = 0
+    for _ in 0..1024:
+        if i >= n: return s
+        let name: String = s.map_owned[i]
+        let mut source: String = ""
+        if i < ns: source = s.map_owned_source[i]
+        let is_moved: Bool = (len(source) > 0) && list_has_string(s.moved_locals, source)
+        if !is_moved:
+            let cnt: Int = s.counter
+            s.counter = s.counter + 1
+            let dv: String = "%drop.mv" + toString(cnt)
+            let dp: String = "%drop.mp" + toString(cnt)
+            let isn: String = "%drop.mnull" + toString(cnt)
+            let free_lbl: String = "drop.mfree." + toString(cnt)
+            let skip_lbl: String = "drop.mskip." + toString(cnt)
+            s = emit_line(s, "  " + dv + " = load {ptr, i64}, ptr %" + name)
+            s = emit_line(s, "  " + dp + " = extractvalue {ptr, i64} " + dv + ", 0")
+            s = emit_line(s, "  " + isn + " = icmp eq ptr " + dp + ", null")
+            s = emit_line(s, "  br i1 " + isn + ", label %" + skip_lbl + ", label %" + free_lbl)
+            s = emit_line(s, free_lbl + ":")
+            s = emit_line(s, "  call void @__mn_map_free_deep(ptr " + dp + ")")
+            s = emit_line(s, "  br label %" + skip_lbl)
+            s = emit_line(s, skip_lbl + ":")
+        i = i + 1
     return s
 
 fn emit_track_boxed(st: EmitState, ptr_val: String) -> EmitState:
@@ -5244,13 +5367,13 @@ fn ret_ty_is_aggregate(st: EmitState, ret_ty: String) -> Bool:
     if ret_ty.starts_with("%struct."):
         return !return_type_has_no_resources(st, ret_ty, 0)
     if ret_ty.starts_with("%enum."): return true
-    if ret_ty.starts_with("{") && ret_ty != llvm_string() && ret_ty != llvm_list_rt():
+    if ret_ty.starts_with("{") && ret_ty != llvm_string() && ret_ty != llvm_list_rt() && ret_ty != llvm_map_type():
         return true
     return false
 
 fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
     // Fast path: no owners means nothing to drop.
-    if len(st.str_owned) == 0 && len(st.list_owned) == 0 && len(st.boxed_owned) == 0 && len(st.tensor_owned) == 0:
+    if len(st.str_owned) == 0 && len(st.list_owned) == 0 && len(st.boxed_owned) == 0 && len(st.tensor_owned) == 0 && len(st.map_owned) == 0:
         return st
 
     // Conservative skip for resource-bearing aggregate returns. Value-only
@@ -5359,6 +5482,7 @@ fn emit_drop_glue(st: EmitState, ret_val: String, ret_ty: String) -> EmitState:
     s = emit_drop_glue_lists(s, ret_list_ptrs)
     s = emit_drop_glue_boxed(s, ret_box_ptrs)
     s = emit_drop_glue_tensors(s, ret_tensor_ptrs)
+    s = emit_drop_glue_maps(s)
     return s
 
 // A String call result is owned by its caller. A field/element/parameter
@@ -5417,6 +5541,23 @@ fn emit_mir_return(st: EmitState, val_opt: Option<Value>) -> EmitState:
     match val_opt:
         Some(val) =>:
             let ty: String = st.current_ret_type
+            if st.current_ret_kind == TK_MAP() && ty == llvm_map_type():
+                // Map return transfer: retain one reference for the
+                // caller, then drop glue releases every local owner
+                // (including this value's own slot). Mirrors the Python
+                // emitter's retained-map return contract.
+                let mut sm: EmitState = st
+                let idm: String = toString(sm.counter)
+                sm.counter = sm.counter + 1
+                let mp: String = "%ret.mp." + idm
+                sm = emit_line(sm, "  " + mp + " = extractvalue {ptr, i64} " + val.name + ", 0")
+                let keep: String = "%ret.mr." + idm
+                sm = emit_rt_call(sm, keep, "ptr", "__mn_map_retain", "ptr " + mp)
+                sm = emit_drop_glue(sm, val.name, ty)
+                if use_sret_return(st, ty):
+                    sm = emit_line(sm, "  store " + ty + " " + val.name + ", ptr %__sret__")
+                    return emit_line(sm, emit_ret_void())
+                return emit_line(sm, emit_ret(ty, val.name))
             if ty == llvm_string(): return emit_string_return(st, val.name)
             // v5.5.4 Sh.4 Phase 2 — async fn ret rewrite. The
             // current_ret_type was set to "ASYNC_PTR:" + inner_ty by
@@ -5855,6 +5996,11 @@ fn emit_mir_function(st: EmitState, f: MIRFunction, module: MIRModule) -> EmitSt
     s.str_owned_source = fresh_str_src
     s.list_owned_source = fresh_list_src
     s.boxed_owned_source = fresh_boxed_src
+    let fresh_map_owned: List<String> = []
+    let fresh_map_owned_src: List<String> = []
+    s.map_owned = fresh_map_owned
+    s.map_owned_source = fresh_map_owned_src
+    s.current_ret_kind = f.return_type.kind
 
     // Emit function header
     let fn_name: String = strip_percent(f.name)

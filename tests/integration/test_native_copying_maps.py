@@ -119,10 +119,6 @@ fn main():
 
 @pytest.mark.parametrize("case", CASES)
 @pytest.mark.parametrize("clang_level", ["-O0", "-O2"])
-@pytest.mark.xfail(
-    strict=True,
-    reason="native map handles are not yet tracked/freed (task 2b: native map drop glue)",
-)
 def test_native_copying_maps(case: str, clang_level: str, tmp_path: Path) -> None:
     clang = shutil.which("clang")
     compiler = Path(os.environ.get("MAPANARE_TEST_COMPILER", ROOT / "mapanare/self/mnc-stage1"))

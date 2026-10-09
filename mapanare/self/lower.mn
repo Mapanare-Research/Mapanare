@@ -799,6 +799,14 @@ fn lower_let(st_in: LowerState, name: String, mutable: Bool, type_ann: Option<Ty
                 val = new_value(r.value.name, declared)
         _ => {}
 
+    // Empty MapLit with a Map<K, V> annotation: patch the just-emitted
+    // MapInit key/val types so emit_map_init picks the right key tag,
+    // sizes, and copy-in constructor (mirrors Python lower.py::_lower_let).
+    if expr_kind(value) == "map_lit" && len(expr_map_entries(value)) == 0:
+        match type_ann:
+            Some(te_m) => s = patch_last_mapinit_types(s, te_m)
+            _ => {}
+
     // Find or create alloca for this variable (use counter for uniqueness
     // when the same variable name appears in different branches)
     let addr_name: String = "%" + name + toString(s.tmp_counter) + ".addr"

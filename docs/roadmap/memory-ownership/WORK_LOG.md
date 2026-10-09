@@ -1,5 +1,40 @@
 # Memory ownership work log
 
+## Resume point — 2026-10-09 (native map ownership)
+
+Task 2b/2c complete: the native compiler now owns its maps. `emit_llvm.mn`
+tracks owned map handles in per-function shadow slots (`map_owned`), mirroring
+`str_owned`: MapInit results, map-returning call results, and Copy aliases
+(which first acquire a `__mn_map_retain` reference) are all tracked; Move of a
+map zeroes matching slots by pointer comparison; drop glue releases every
+remaining slot with `__mn_map_free_deep` at every exit. Map returns retain one
+reference for the caller before local cleanup (transfer), and
+`ret_ty_is_aggregate` no longer suppresses cleanup for `{ptr, i64}` map
+returns. Map reads of String values now take an owned `__mn_str_copy` snapshot
+(native has no retained-view proof, so every read copies — safe under entry
+replacement/deletion). `lower_let` also patches empty `Map<K, V>` literals with
+their annotation's key/value types, fixing a pre-existing native bug where
+`let m: Map<Int, String> = #{}` built a String-keyed map and crashed hashing
+Int keys.
+
+Evidence: `build/memory-ownership/native-map-ownership/`.
+
+- `broad-gate.log`: **2,300 passed, 91 skipped, 5 xfailed** across
+  `tests/llvm`, `tests/mir`, `tests/mir_opt`, `tests/integration`,
+  `tests/native`, and `tests/runtime` (skips are platform gates in the
+  native/runtime suites).
+- `tests/integration/test_native_copying_maps.py`: all 12 cases (six programs
+  × O0/O2) pass ASan/UBSan/LSan with exact output, covering delete/reinsert,
+  deleted views, replacement, saved views, same key/value input, and Int keys.
+- `fixed-point.log`: strict self-hosting gate passes with byte-identical
+  stage2/stage3 IR. Goldens 104/104.
+
+Known native boundaries (unchanged unless noted): maps inside enum/struct
+payloads are not deep-freed (leak, not UAF); `__mn_map_keys` iteration lists
+are not tracked; String view copies are unconditional (no retained-view
+proof); Map Phi results rely on incoming-owner slots plus Copy-time retains.
+Nested list element ownership (List<String>, List<List<Int>>) is task 3.
+
 ## Resume point — 2026-10-09 (emitter string-wiring fix + native copy-in maps)
 
 Follow-up to the copying-map milestone: compiling the native compiler itself
